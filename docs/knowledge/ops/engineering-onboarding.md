@@ -5,6 +5,10 @@ description: "The post-GA new-engineer ramp — offer to first-PR in ≤5 days, 
 source_files:
   - "docs/internal/ENGINEERING-ONBOARDING.md"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md"
+  - ".github/workflows/corelink-meta.yml"
+  - ".github/workflows/cargo-deny.yml"
+  - ".github/workflows/spec_validation.yml"
+  - ".pre-commit-config.yaml"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["ops", "onboarding", "buddy", "process", "runbook"]
@@ -39,7 +43,15 @@ ad hoc.
 
 # Invariants
 
-- Every PR (including the first) must pass build, test, clippy `-D warnings`, `cargo deny`, `validate_specs.py`, and pre-commit `docs/internal/ENGINEERING-ONBOARDING.md:253-258`.
+- Every PR (including the first) must pass build, test, clippy `-D warnings`, `cargo deny`,
+  `validate_specs.py`, and pre-commit. This aggregate list is a **process statement** (the onboarding
+  doc), not a single enforcer — it is distributed across separate CI workflows + a local pre-commit
+  hook: crate-scoped `cargo clippy -- -D warnings` + `cargo test`
+  (`.github/workflows/corelink-meta.yml:58-65`), `cargo deny`
+  (`.github/workflows/cargo-deny.yml:75`), `validate_specs.py`
+  (`.github/workflows/spec_validation.yml:56`), and the pre-commit config — which currently runs ONLY
+  the build.rs timestamp lint, not clippy/test/deny (`.pre-commit-config.yaml:12-20`)
+  `docs/internal/ENGINEERING-ONBOARDING.md:253-258`.
 - New-hire branches use `<handle>/<short-desc>`; the `wt/` prefix is reserved for orchestrator worktrees `docs/internal/ENGINEERING-ONBOARDING.md:250-252`.
 - The buddy is explicitly NOT the reviewer-of-record, manager, domain mentor, or on-call backup `docs/internal/onboarding/BUDDY-PROTOCOL.md:92-99`.
 - The Day-30 buddy→manager note is manager-prep only; the new hire never sees it directly `docs/internal/onboarding/BUDDY-PROTOCOL.md:122-125`.
@@ -65,3 +77,7 @@ ad hoc.
 12. `docs/internal/onboarding/BUDDY-PROTOCOL.md:72-89` — buddy translation duties.
 13. `docs/internal/onboarding/BUDDY-PROTOCOL.md:92-99` — what the buddy is NOT.
 14. `docs/internal/onboarding/BUDDY-PROTOCOL.md:122-125` — Day-30 note is manager-prep only.
+15. `.github/workflows/corelink-meta.yml:58-65` — the per-PR crate-scoped gate: `cargo clippy … -- -D warnings` + `cargo test` (debug + release).
+16. `.github/workflows/cargo-deny.yml:75` — the `cargo-deny` license/advisories/bans gate.
+17. `.github/workflows/spec_validation.yml:56` — `python3 scripts/validate_specs.py` PR gate.
+18. `.pre-commit-config.yaml:12-20` — the pre-commit config: a single local hook (build.rs timestamp lint); it does NOT run clippy/test/deny, so the full "every PR must pass …" list is an aggregate process claim, not a pre-commit guarantee.

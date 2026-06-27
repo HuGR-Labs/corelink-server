@@ -71,7 +71,10 @@ never floating point.
   `D1QuotaStore` in a `LeasedQuotaStore` (`crates/corelink-container/src/tenant_quota.rs:112-125`). On the
   first op of a `(tenant, cycle)` it atomically debits a CHUNK of budget — `DEFAULT_LEASE_OPS = 16` ops'
   worth — from D1 up front, then serves the next ~15 ops **from an in-memory lease without touching D1**,
-  refilling when the lease drains (`crates/corelink-container/src/tenant_quota.rs:366-451`). This amortises
+  refilling when the lease drains — the executed mechanism is `LeasedQuotaStore::charge`: an in-memory
+  fast-path consume (`crates/corelink-container/src/tenant_quota.rs:558-566`) then the slow-path debit /
+  progressively-smaller partial-lease refill loop, fail-CLOSED at the minimum chunk
+  (`crates/corelink-container/src/tenant_quota.rs:578-620`). This amortises
   the D1-over-HTTP round-trip ~16:1. The fail-CLOSED ceiling is preserved (a lease is acquired only when
   the inner atomic `check_and_accrue` returns `Ok(true)`; a refill that would breach the ceiling falls
   back to progressively smaller partial leases then fail-CLOSES) and the durable side NEVER exceeds the
@@ -101,6 +104,6 @@ never floating point.
 10. `crates/corelink-container/src/tenant_quota.rs:777-810` — atomic roll + check-and-accrue (no lost-update / over-admission).
 11. `crates/corelink-container/src/tenant_quota.rs:794-804` — over-ceiling `402 Payment Required`.
 12. `crates/corelink-container/src/tenant_quota.rs:112-125` — `quota_guard_from_env` fronts the durable `D1QuotaStore` with `LeasedQuotaStore` (the budget-lease wrapper).
-13. `crates/corelink-container/src/tenant_quota.rs:366-451` — `DEFAULT_LEASE_OPS = 16` + the `LeasedQuotaStore` mechanism (debit a chunk up front, serve subsequent ops in-memory, fail-CLOSED refill).
+13. `crates/corelink-container/src/tenant_quota.rs:536-621` — `LeasedQuotaStore::charge`: the executed budget-lease mechanism (in-memory consume fast-path `:558-566`, slow-path debit-a-chunk-up-front + progressively-smaller partial-lease refill loop, fail-CLOSED at the minimum chunk `:578-620`); the leased `check_and_accrue`/`seed_checked_accrue` hot-path entry points are `crates/corelink-container/src/tenant_quota.rs:658-667`.
 14. `crates/corelink-container/src/main.rs:246-250` — prod-detection = `StorageEnv::from_env().is_some() && PAT_SIGNING_KEY` (the circular watchdog: the same signal that arms the controls arms the FATAL check).
 15. `crates/corelink-container/src/main.rs:253-266` — `std::process::exit(1)` wired ONLY to the native-PAT-gate check; the metering guards just return `None` when `StorageEnv` is absent.

@@ -4,6 +4,10 @@ title: "Data-plane attack surface"
 description: "What an attacker-grade red-team of CoreLink's cache data plane and every cache surface actually found — and why the data plane held."
 source_files:
   - "docs/security/2026-06-23-brutal-dataplane.md"
+  - "crates/corelink-container/src/routes.rs"
+  - "crates/corelink-container/src/routes/cas.rs"
+  - "crates/corelink-container/src/routes/cas_erase.rs"
+  - "crates/corelink-container/src/storage/r2_s3.rs"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["security", "data-plane", "cache-poisoning", "tenant-isolation", "red-team"]
@@ -34,15 +38,26 @@ were tried and failed. It is the data-plane companion to the broader
   charging, or DoS action run against prod; the verdict was DATA PLANE HELD, 0 new / 0 regressed
   exploitable findings (`docs/security/2026-06-23-brutal-dataplane.md:1-13`).
 - The GDPR-erasure (tombstone-410) gate was verified fixed **by construction**: it moved out of
-  per-route inline checks into a single shared `TombstoneGatedCasHandler` that is cloned into all 7
-  surfaces, so a re-PUT of a tombstoned `(tenant,hash)` is refused and a read 410s uniformly
-  (`docs/security/2026-06-23-brutal-dataplane.md:19-31`).
-- CAS poisoning is closed at one gate: the production `R2CasHandler` recomputes and verifies the
-  content hash before any R2 put, and the keyspace is explicitly partitioned (Blake3 native/sccache
-  vs Sha256 for the Bazel keyspace) so the two never collide (`docs/security/2026-06-23-brutal-dataplane.md:33-43`).
+  per-route inline checks into a single shared `TombstoneGatedCasHandler` (struct at
+  `crates/corelink-container/src/routes/cas_erase.rs:938`) that is wrapped around the shared
+  read/write/delete trait objects at one chokepoint and cloned into every surface
+  (`crates/corelink-container/src/routes.rs:457`), so a re-PUT of a tombstoned `(tenant,hash)` is refused
+  by the write-handler gate (`crates/corelink-container/src/routes/cas_erase.rs:1015`) and a read is
+  short-circuited by the read-handler gate (`crates/corelink-container/src/routes/cas_erase.rs:983`); the
+  native route additionally answers a precise 410 before the handler at
+  `crates/corelink-container/src/routes/cas.rs:674` (`docs/security/2026-06-23-brutal-dataplane.md:19-31`).
+- CAS poisoning is closed at one gate: the production `R2CasHandler`
+  (`crates/corelink-container/src/storage/r2_s3.rs:466`) recomputes and verifies the content hash
+  before any R2 put — `verify_content_hash` runs at `crates/corelink-container/src/storage/r2_s3.rs:973`
+  and a mismatch returns `HashMismatch` with nothing written
+  (`crates/corelink-container/src/storage/r2_s3.rs:986`) — and the keyspace is explicitly partitioned
+  (Blake3 native/sccache vs Sha256 for the Bazel keyspace) so the two never collide
+  (`docs/security/2026-06-23-brutal-dataplane.md:33-43`).
 - Tenant isolation at the R2 key layer is a secret-keyed ~96-bit HMAC namespace prefix that fails
-  CLOSED on a non-UUID or missing key, with `_public` a reserved sentinel UUID that cannot collide
-  with a real tenant prefix (`docs/security/2026-06-23-brutal-dataplane.md:45-51`).
+  CLOSED on a non-UUID or missing key: the R2 object key is built only via `r2_key`, which derives the
+  prefix through `tenant_prefix(self.tdk, tenant)?` and propagates its error
+  (`crates/corelink-container/src/storage/r2_s3.rs:519`), with `_public` a reserved sentinel UUID that
+  cannot collide with a real tenant prefix (`docs/security/2026-06-23-brutal-dataplane.md:45-51`).
 - The edge trust boundary is comprehensive strip-then-set: the Worker structurally strips the full
   client-trust header set on every forward and re-establishes them from the PAT-resolved tenant +
   D1 scope + tier, and the container re-verifies the bearer PAT and the path-vs-auth tenant before
@@ -60,9 +75,13 @@ were tried and failed. It is the data-plane companion to the broader
 # Invariants
 
 - Erased CAS bytes do not resurrect on any surface: read 410/NotFound and re-PUT refused everywhere,
-  because the gate lives in the shared handler cloned into all 7 surfaces (`docs/security/2026-06-23-brutal-dataplane.md:103-107`).
+  because the gate lives in the shared `TombstoneGatedCasHandler` wrapped at the one chokepoint and
+  cloned into all surfaces (`crates/corelink-container/src/routes.rs:457`,
+  `crates/corelink-container/src/routes/cas_erase.rs:983`,
+  `crates/corelink-container/src/routes/cas_erase.rs:1015`; `docs/security/2026-06-23-brutal-dataplane.md:103-107`).
 - Served bytes always match the requested digest: cross-algo digest confusion is impossible (keyspace
-  explicit + R2-key-partitioned) and `MoatCache` re-verifies on read (`docs/security/2026-06-23-brutal-dataplane.md:108-118`).
+  explicit + R2-key-partitioned) and the write path verifies the content hash before any PUT
+  (`crates/corelink-container/src/storage/r2_s3.rs:973`; `docs/security/2026-06-23-brutal-dataplane.md:108-118`).
 - Forged tenant/scope/quota headers cannot smuggle past the edge: they are stripped structurally and
   re-set from trusted sources, and the container re-verifies the PAT (`docs/security/2026-06-23-brutal-dataplane.md:115-118`).
 
@@ -88,3 +107,8 @@ were tried and failed. It is the data-plane companion to the broader
 8. `docs/security/2026-06-23-brutal-dataplane.md:87-99` — npm/pip/brew `_public` poisoning closed + MoatCache re-verify.
 9. `docs/security/2026-06-23-brutal-dataplane.md:103-118` — kill-chains attempted and refuted.
 10. `docs/security/2026-06-23-brutal-dataplane.md:120-129` — the two accepted residuals (shared OCI buckets; `_public` survives DSR).
+11. `crates/corelink-container/src/routes.rs:457` — the single chokepoint: shared CAS read/write/delete handlers wrapped in `TombstoneGatedCasHandler` and cloned into every surface (erasure gate by construction).
+12. `crates/corelink-container/src/routes/cas_erase.rs:938` / `:983` / `:1015` — `TombstoneGatedCasHandler` struct; read gate (tombstoned read short-circuits); write gate (re-PUT of a tombstoned hash refused).
+13. `crates/corelink-container/src/storage/r2_s3.rs:466` / `:973` / `:986` — `R2CasHandler`; `verify_content_hash` before any R2 PUT; `HashMismatch` returned with nothing written (poisoning gate).
+14. `crates/corelink-container/src/storage/r2_s3.rs:519` — every R2 key is built via `r2_key`, which derives the HMAC tenant prefix through `tenant_prefix(self.tdk, tenant)?` and fails CLOSED on its error.
+15. `crates/corelink-container/src/routes/cas.rs:674` — the native read route's precise 410-Gone tombstone gate (answers 410 before reaching the handler).

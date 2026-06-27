@@ -48,10 +48,13 @@ cross-tenant access is impossible.
 - axum honours the INNERMOST `DefaultBodyLimit`, so the order of the layers matters: the `events`
   route's own 64 KiB limit must be layered directly on its handler, otherwise the outer 100 MiB
   artifact limit would widen telemetry back to 100 MiB and reopen the OOM vector.
-- The R2-backed swap is DONE: when storage credentials are configured the handler is backed by the
-  durable `R2KvStore`, so artifacts now persist across container restarts
-  (`crates/corelink-container/src/routes/turbo_v8.rs:705-708`). The in-RAM `InMemoryKvStore` is only the
-  no-credentials dev/CI fallback (the route handlers and audit surface are identical for both backings).
+- The R2-backed swap is DONE: the executed `build_handlers` selects the backing at runtime —
+  `if StorageEnv::from_env().is_some()` builds the durable `R2KvStore` and returns the state wired to it
+  (`crates/corelink-container/src/routes/turbo_v8.rs:722-745`), and if creds ARE present but the store
+  refuses to build it mounts the fail-CLOSED `UnavailableTurboHandler` rather than silently falling back
+  (`crates/corelink-container/src/routes/turbo_v8.rs:749-754`). So artifacts persist across container
+  restarts; the in-RAM `InMemoryKvStore` is only the no-credentials dev/CI fallback (the route handlers
+  and audit surface are identical for both backings; the `:705-708` /// only narrates this).
 
 # Citations
 1. `crates/corelink-container/src/routes/turbo_v8.rs:794-823` — the router with static-before-wildcard ordering + body-limit layers.
@@ -62,4 +65,4 @@ cross-tenant access is impossible.
 6. `crates/corelink-container/src/routes/turbo_v8.rs:815-822` — per-route 100 MiB artifact limit override.
 7. `crates/corelink-container/src/routes/turbo_v8.rs:103` — `TURBO_BODY_LIMIT_BYTES` (100 MiB).
 8. `crates/corelink-container/src/routes/turbo_v8.rs:848` — `caller_tenant = auth.0`: the PAT-resolved authenticated tenant is the isolation key; `teamId` is a sub-namespace label only.
-9. `crates/corelink-container/src/routes/turbo_v8.rs:705-708` — the durable `R2KvStore` backing (R2 swap DONE; `InMemoryKvStore` is the no-creds dev fallback).
+9. `crates/corelink-container/src/routes/turbo_v8.rs:722-745` — the EXECUTED runtime backing selection (`StorageEnv::from_env().is_some()` → durable `R2KvStore`), with the fail-CLOSED `UnavailableTurboHandler` on a creds-present build failure at `:749-754`; the `:705-708` /// only documents it.

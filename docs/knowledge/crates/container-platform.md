@@ -4,6 +4,7 @@ title: "Container/platform crate cluster"
 description: "The composition layer — the Rust container HTTP binary that hosts the data plane, the per-region config-singleton Durable Object, and the Cloudflare binding adapters that wire trait-fakes onto real worker::* types."
 source_files:
   - "crates/corelink-container/src/main.rs"
+  - "crates/corelink-container/Cargo.toml"
   - "crates/corelink-config-do/src/lib.rs"
   - "crates/corelink-config-do/src/store.rs"
   - "crates/corelink-config-do/src/validation.rs"
@@ -27,13 +28,13 @@ The cluster realises the [Rust container compute plane](/planes/container.md) an
 # How it works
 
 - `corelink-container/src/main.rs` boots a single HTTP/1.1 stack on `PORT` (default 50051 — the port the DO reaches via `container.getTcpPort()`), serving the composed CAS/AC/Admin/audit/signup router, a `/_health` readiness probe, and the Stripe webhook route when its secret is set (`crates/corelink-container/src/main.rs:1-17`).
-- Storage backing is chosen once at boot: `"r2"` when all `R2_S3_*` env vars are present (durable), else an ephemeral in-memory fallback requiring operator action — captured in a `OnceLock` set before the listener binds (`crates/corelink-container/src/main.rs:48-55`).
+- Storage backing is chosen once at boot: `"r2"` when all `R2_S3_*` env vars are present (durable), else an ephemeral in-memory fallback requiring operator action — captured in the `STORAGE_BACKING: OnceLock<&'static str>` static (`crates/corelink-container/src/main.rs:58`), selected and set in `main()` before the listener binds (`crates/corelink-container/src/main.rs:219-230`).
 - `corelink-cf-bindings` maps the canonical host traits (`R2Backend`, `KvBackend`, D1/DO accessors) onto real `worker::*` types as wasm32-only adapters, with a native stub for `CfR2BucketReal` so the type is constructible on the host for trait-bound tests (`crates/corelink-cf-bindings/src/lib.rs:1-33`).
 - `corelink-config-do` holds a versioned `ConfigPayload` (feature flags + rate-limit tunables + retention) with a rollback API (`crates/corelink-config-do/src/lib.rs:1-48`); the store's `update` does CAS atomicity (`current_version != expected_version` → `VersionConflict`) with `validate_payload` before the lock and fail-CLOSED audit-before-mutation ordering (`crates/corelink-config-do/src/store.rs:223-255`); the version is the SHA-256 `payload_hash` over the JCS-canonical payload (`crates/corelink-config-do/src/hash.rs:20-32`), and a write is gated by `validate_payload` first (`crates/corelink-config-do/src/validation.rs:22-57`).
 
 # Invariants
 
-- The DO speaks only HTTP to the container port; the binary serves the real HTTP data plane there (the dead gRPC server that blocked the port was removed) (`crates/corelink-container/src/main.rs:11-17`).
+- The DO speaks only HTTP to the container port: `main()` binds exactly one server — `axum::serve(listener, app)` on `PORT` — and starts no gRPC server (the dead tonic server that blocked the port was removed) (`crates/corelink-container/src/main.rs:725-728`; the removal note is the `//!` at `:11-17`). This is a negative/serve-site property, NOT a clean Cargo.toml dep-absence: `tonic`/`prost` remain workspace deps (`crates/corelink-container/Cargo.toml:121-122`) used off the serve path.
 - Config writes are atomic and fail-CLOSED: the store's `update` rejects on `current_version != expected_version` with `VersionConflict`, and audit `emit` runs BEFORE state mutation so a failed emit aborts the write unchanged (`crates/corelink-config-do/src/store.rs:223-255`).
 - Config schema drift is a hard error, never a silent default — `validate_payload` rejects an unsupported `schema_version` and any out-of-range flag rollout / rate-limit / retention value with `SchemaInvalid` (in addition to the `#[serde(deny_unknown_fields)]` on every inbound struct) (`crates/corelink-config-do/src/validation.rs:22-57`).
 - Binding adapters carry R2 keys in a `TenantScopedKey` whose inner string is never logged by the crate (`crates/corelink-cf-bindings/src/r2_real.rs:185-199`), and the `audit_and_scope` helper fires the audit hook fail-CLOSED (`?`) before returning the scoped key, gating every mutation — called by `put_if_absent` and `delete` (CTRL-PRIV-001) (`crates/corelink-cf-bindings/src/r2_real.rs:337-341`, `crates/corelink-cf-bindings/src/r2_real.rs:414`, `crates/corelink-cf-bindings/src/r2_real.rs:442`).
@@ -47,8 +48,8 @@ The cluster realises the [Rust container compute plane](/planes/container.md) an
 # Citations
 
 1. `crates/corelink-container/src/main.rs:1-17` — the HTTP data-plane binary on the DO's container port (`getTcpPort`).
-2. `crates/corelink-container/src/main.rs:11-17` — historical gRPC removal; the real HTTP data plane is served here.
-3. `crates/corelink-container/src/main.rs:48-55` — boot-time storage-backing selection (`r2` vs in-memory fallback) in a `OnceLock`.
+2. `crates/corelink-container/src/main.rs:725-728` — the single `axum::serve(listener, app)` (only server bound; no gRPC); removal note at `:11-17`. `tonic`/`prost` remain deps (`crates/corelink-container/Cargo.toml:121-122`) — NOT a dep-absence guard.
+3. `crates/corelink-container/src/main.rs:58` + `:219-230` — the `STORAGE_BACKING` `OnceLock` static and its boot-time selection/set (`r2` vs in-memory fallback) before the listener binds.
 4. `crates/corelink-config-do/src/lib.rs:1-48` — the versioned config-singleton DO surface: `ConfigPayload`, the `ConfigSingletonStore` trait, and the rollback API.
 5. `crates/corelink-config-do/src/validation.rs:22-57` — `validate_payload`: unsupported `schema_version` + out-of-range flag/rate/retention → `SchemaInvalid` (schema drift is a hard error).
 6. `crates/corelink-config-do/src/hash.rs:20-32` — `compute_payload_hash`: SHA-256 over the JCS-canonical payload = the CAS version.

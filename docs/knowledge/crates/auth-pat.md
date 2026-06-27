@@ -11,6 +11,8 @@ source_files:
   - "crates/corelink-clerk/src/lib.rs"
   - "crates/corelink-clerk/src/jwks.rs"
   - "crates/corelink-clerk/src/adapter.rs"
+  - "crates/corelink-auth/src/schema/rls.rs"
+  - "migrations/002_auth_tables.sql"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["crates", "auth", "pat", "clerk", "jwt", "security"]
@@ -37,7 +39,7 @@ The cluster is the trust spine feeding the [2-level PAT moat](/auth/pat-moat.md)
 - PAT secret material is unloggable: `PatPlaintext` has no `Display`/`Serialize`/secret-revealing `Debug` and zeroizes its inner `String` on drop (`crates/corelink-pat/src/types.rs:41-91`); `PatSigningKey` redacts in `Debug`, derives `ZeroizeOnDrop`, and `from_bytes` rejects keys < 32 bytes with `SigningKeyTooShort` (`crates/corelink-pat/src/types.rs:219-241`).
 - The HMAC fast-fail layer runs before any DB hit, bounding the cost a forged token can impose; the truncated-MAC compare is constant-time, evaluates the whole overlap key set without early-return, and an empty key set fails closed (`crates/corelink-pat/src/sig.rs:64-104`).
 - The Clerk adapter accepts RS256 only — `validate_inner` rejects any non-`RS256` `alg` (no HS256, no `alg=none`) before key lookup (`crates/corelink-clerk/src/adapter.rs:286-293`), and the JWKS parser drops every non-RS256 / non-`sig` key (`crates/corelink-clerk/src/jwks.rs:62-66`).
-- The aggregator never redefines types or weakens charter guarantees — RLS-default-on, constant-time PAT compare, and `SecretString` are preserved by reference, not re-implemented (`crates/corelink-auth/src/lib.rs:76-91`).
+- The aggregator never redefines types or weakens charter guarantees — it preserves them by reference, not re-implementation; the executed enforcers live in the sub-crates: constant-time PAT compare in `corelink-pat`'s `verify_hmac_sig` (`crates/corelink-pat/src/sig.rs:64-104`), `SecretString`/zeroize in `crates/corelink-pat/src/types.rs:41-91`, and RLS-default-on as a Postgres `CREATE POLICY` in the SQL migration `migrations/002_auth_tables.sql` (the in-crate `crates/corelink-auth/src/schema/rls.rs:25` is documentation-only and points there — there is NO Rust enforcer for RLS in this cluster). The `//!` charter list at `crates/corelink-auth/src/lib.rs:76-91` only narrates these.
 
 # Gotchas
 
@@ -48,7 +50,7 @@ The cluster is the trust spine feeding the [2-level PAT moat](/auth/pat-moat.md)
 # Citations
 
 1. `crates/corelink-auth/src/lib.rs:1-15` — the single-import aggregator over the 6 auth primitives.
-2. `crates/corelink-auth/src/lib.rs:76-91` — charter guarantees (RLS, constant-time, `SecretString`) preserved by reference.
+2. `crates/corelink-auth/src/lib.rs:76-91` — the `//!` charter list (RLS / constant-time / `SecretString`); narration only — the executed enforcers are `crates/corelink-pat/src/sig.rs:64-104` (ct), `crates/corelink-pat/src/types.rs:41-91` (`SecretString`/zeroize), and the RLS `CREATE POLICY` in `migrations/002_auth_tables.sql:330` (in-crate doc at `crates/corelink-auth/src/schema/rls.rs:25`).
 3. `crates/corelink-auth/src/lib.rs:136-141` — the canonical `pub mod` map (clerk/pat/schema/webauthn/tenant_path).
 4. `crates/corelink-pat/src/lib.rs:11-43` — canonical PAT format + the 4-step verify pipeline (HMAC fast-fail → Argon2id).
 5. `crates/corelink-pat/src/sig.rs:64-104` — `verify_hmac_sig`: HMAC fast-fail pre-DB, constant-time overlap-set compare, fail-closed on empty key set.

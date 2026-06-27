@@ -95,7 +95,10 @@ keyed on the same trusted tenant id this control establishes.
   (the shared-prefix arm `crates/corelink-container/src/storage/r2_s3.rs:579-581`, keyed off the reserved
   sentinel `PUBLIC_NAMESPACE_UUID` `crates/corelink-container/src/storage/r2_s3.rs:571`;
   acknowledged in `security/attack-surface-dataplane`). cargo/sccache, by contrast, is PRIVATE per-tenant
-  with no `_public` (`crates/corelink-container/src/routes/cargo.rs:92`).
+  with no `_public` — its `CargoMoatStore` passes the `tenant_id` itself as the moat namespace on every
+  read/write, so the namespace IS the tenant id and can never be `_public`
+  (`crates/corelink-container/src/routes/cargo.rs:117-119`,
+  `crates/corelink-container/src/routes/cargo.rs:124-137`).
 
 # Citations
 
@@ -112,6 +115,6 @@ keyed on the same trusted tenant id this control establishes.
 10. `crates/tenant-path/src/prefix.rs:91-92` — the `TenantPrefix` private-tuple newtype (single derivation trust boundary).
 10b. `crates/tenant-path/src/lib.rs:27` — crate-doc public contract: do not construct `TenantPrefix` from raw bytes outside this crate.
 11. `crates/corelink-container/src/storage/r2_s3.rs:579-581` — the ONE deliberate cross-tenant carve-out: the `tenant == PUBLIC_NAMESPACE` arm derives the shared `_public` dedup prefix (reserved sentinel `:571`).
-12. `crates/corelink-container/src/routes/cargo.rs:92` — cargo/sccache is PRIVATE per-tenant (never `_public`), confirming the carve-out is scoped to public-package dedup only.
+12. `crates/corelink-container/src/routes/cargo.rs:117-119` (`CargoMoatStore::get`) + `crates/corelink-container/src/routes/cargo.rs:124-137` (`CargoMoatStore::put`) — the executed per-tenant namespacing: `tenant_id` is passed as the moat namespace, so cargo/sccache is PRIVATE per-tenant (never `_public`), confirming the carve-out is scoped to public-package dedup only.
 13. `worker/src/index.ts:1817-1828` — the OCI pass-through deletes `x-corelink-tenant-id` (no edge-resolved tenant for OCI).
 14. `crates/corelink-container/src/routes/oci.rs:810-820` — `oci_bearer_tenant` resolves the OCI tenant in-process from the HMAC-verified bearer (not a request header).

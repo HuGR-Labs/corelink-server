@@ -5,6 +5,7 @@ description: "How CoreLink is DESIGNED to wrap data-encryption keys under a cust
 source_files:
   - "crates/corelink-container/src/byok.rs"
   - "crates/corelink-byok/src/lib.rs"
+  - "deny.toml"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["storage", "byok", "encryption", "kms", "envelope"]
@@ -22,9 +23,12 @@ PUBLIC provider features (`aws`/`gcp`/`azure`/`vault`) are rejected at compile t
 runtime branching on the hot crypto path. The `compile_error!` mutual-exclusion guards are NOT the whole
 story, though: they inspect ONLY the public namespace features, so the internal `_internal-*` /
 `_matrix-test` features (which the matrix integration tests use) link ALL FOUR provider modules at once
-WITHOUT tripping any guard (`crates/corelink-byok/src/lib.rs:159-188`). The "exactly one KMS SDK linked"
-guarantee for a PRODUCTION binary is therefore upheld by the public-feature `compile_error!` guards PLUS
-cargo-deny's single-SDK-per-binary rule at the workspace boundary — not by the `compile_error!` alone. BYOK is the **designed** envelope-encryption layer: the
+WITHOUT tripping any guard (`crates/corelink-byok/src/lib.rs:159-188`). The "exactly one PUBLIC provider
+feature" guarantee for a PRODUCTION binary therefore rests on the public-feature `compile_error!` guards
+(activating two public features is a hard compile error). Note: `crates/corelink-byok/src/lib.rs:165-166`
+is a COMMENT asserting cargo-deny "enforces the single-provider-SDK-per-binary rule" — but the repo's
+`deny.toml` carries only a `multiple-versions = "deny"` duplicate-version ban (`deny.toml:180`), NOT a
+literal single-KMS-SDK rule, so cargo-deny is a duplicate-version backstop, not the single-SDK enforcer. BYOK is the **designed** envelope-encryption layer: the
 container exposes a feature-gated factory that can construct the production provider behind an
 `Arc<dyn KmsProvider>`, but at-rest encryption is **not yet on the live R2 write path** — the default build
 links no real KMS SDK (it uses the in-memory fake) and the live storage layer (`storage.rs`/`r2_s3.rs`) wires
@@ -47,17 +51,20 @@ no `KmsProvider`. It is the intended at-rest confidentiality complement to the d
 3. The container constructs the production provider behind an `Arc<dyn KmsProvider>` via a feature-gated
    async factory so future providers drop in behind the same surface
    (`crates/corelink-container/src/byok.rs:1-9`).
-4. The AWS factory enforces the FIPS endpoint unconditionally and resolves credentials via the standard
-   AWS SDK chain (env, shared config, IRSA, IMDS, SSO)
-   (`crates/corelink-container/src/byok.rs:17-29`).
+4. The container AWS factory `make_aws_kms_provider` only DELEGATES to `AwsKmsRealProvider::new(region)`
+   (returning `Arc<dyn KmsProvider>`); the FIPS endpoint is enforced inside that provider in
+   `corelink-byok`, NOT in this factory, which otherwise resolves credentials via the standard AWS SDK
+   chain (env, shared config, IRSA, IMDS, SSO) (`crates/corelink-container/src/byok.rs:26-29`).
 
 # Invariants
 - AT MOST ONE PUBLIC KMS provider feature (`aws`/`gcp`/`azure`/`vault`) may be active in any build; a
   multi-public-provider build is rejected at compile time by the `compile_error!` guards
   (`crates/corelink-byok/src/lib.rs:105-139`). This guard does NOT cover the internal `_internal-*` /
   `_matrix-test` feature path, which deliberately links all four provider modules without tripping it
-  (`crates/corelink-byok/src/lib.rs:159-188`); the single-SDK-per-PRODUCTION-binary guarantee is closed by
-  cargo-deny at the workspace boundary (`:165-166`), not by the `compile_error!` alone.
+  (`crates/corelink-byok/src/lib.rs:159-188`); the single-public-provider guarantee for a PRODUCTION
+  binary rests on those `compile_error!` guards — `crates/corelink-byok/src/lib.rs:165-166` is only a
+  COMMENT claiming cargo-deny enforces it, whereas `deny.toml` carries a `multiple-versions = "deny"`
+  duplicate-version ban (`deny.toml:180`), not a literal single-KMS-SDK rule.
 - `Dek`/`WrappedDek` zeroize discipline + `SecretString` credential bytes + `subtle::ConstantTimeEq`
   comparisons are preserved by reference across the wave-35 absorption
   (`crates/corelink-byok/src/lib.rs:64-90`).
@@ -74,10 +81,10 @@ no `KmsProvider`. It is the intended at-rest confidentiality complement to the d
 # Citations
 1. `crates/corelink-container/src/byok.rs:1-9` — feature-gated factory returning an `Arc<dyn KmsProvider>`.
 2. `crates/corelink-container/src/byok.rs:10` — `#![forbid(unsafe_code)]` on the factory.
-3. `crates/corelink-container/src/byok.rs:17-29` — AWS KMS provider construction: FIPS endpoint enforced, SDK credential chain.
+3. `crates/corelink-container/src/byok.rs:26-29` — `make_aws_kms_provider`: DELEGATES to `AwsKmsRealProvider::new` (FIPS enforced there, not in this factory); SDK credential chain.
 4. `crates/corelink-byok/src/lib.rs:1-21` — umbrella re-export of the core trait/types + microkernel mutual-exclusion intro.
 5. `crates/corelink-byok/src/lib.rs:105-139` — compile-time at-most-one-PUBLIC-provider `compile_error!` guards.
-5b. `crates/corelink-byok/src/lib.rs:159-188` — the `_internal-*`/`_matrix-test` feature path links all four provider modules WITHOUT tripping the guards (the public-namespace gates are the only ones the `compile_error!`s inspect); cargo-deny at the workspace boundary enforces the single-SDK-per-binary rule for production.
+5b. `crates/corelink-byok/src/lib.rs:159-188` — the `_internal-*`/`_matrix-test` feature path links all four provider modules WITHOUT tripping the guards (the public-namespace gates are the only ones the `compile_error!`s inspect). `:165-166` is a COMMENT asserting cargo-deny enforces a single-SDK-per-binary rule; the actual `deny.toml:180` rule is `multiple-versions = "deny"` (a duplicate-version ban), so the production single-public-provider guarantee is the `compile_error!` guards, not cargo-deny.
 6. `crates/corelink-byok/src/lib.rs:34-43` — cargo feature reference (`aws`/`gcp`/`azure`/`vault`), default no provider.
 7. `crates/corelink-byok/src/lib.rs:52-62` — charter compliance: `forbid(unsafe_code)`, zeroize, `SecretString`, `ConstantTimeEq`.
 8. `crates/corelink-byok/src/lib.rs:64-90` — wave-35 absorption preserving zeroize + credential discipline by reference.

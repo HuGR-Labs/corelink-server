@@ -5,6 +5,9 @@ description: "How large objects are stored across the chunk and manifest R2 buck
 source_files:
   - "crates/corelink-r2-multipart/src/lib.rs"
   - "crates/corelink-r2-multipart/src/object_key.rs"
+  - "crates/corelink-r2-multipart/src/adapter.rs"
+  - "crates/corelink-r2-multipart/src/in_memory.rs"
+  - "crates/corelink-r2-multipart/src/types.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "multipart", "chunk", "manifest", "tenant-isolation"]
@@ -44,18 +47,21 @@ tenant prefix or inject path traversal. It shares the per-tenant-prefix isolatio
 
 # Invariants
 - The tenant-prefix segment is structurally sandwiched between the family and the digest, so no
-  caller-controlled string can move it or inject `..` — `INV-MULTIPART-PATH-TENANT-SCOPED`
-  (`crates/corelink-r2-multipart/src/object_key.rs:24-32`,
-  `crates/corelink-r2-multipart/src/object_key.rs:54-58`).
+  caller-controlled string can move it or inject `..` — `INV-MULTIPART-PATH-TENANT-SCOPED`; the executed
+  `compose` body pushes `family`/`region`/`/`/`tenant_prefix`/`/`/`digest` in fixed order
+  (`crates/corelink-r2-multipart/src/object_key.rs:85-91`).
 - The region literal must match `[a-z0-9_-]{1,16}` or `compose` returns `InvalidObjectKey`
   (`crates/corelink-r2-multipart/src/object_key.rs:95-110`).
 - The content digest must be exactly 64-char lower-case hex or `compose` rejects it
   (`crates/corelink-r2-multipart/src/object_key.rs:112-127`).
 - An `upload_id` is bound to its `tenant_id` at initiate; every later call with a disagreeing tenant is
-  rejected with `CrossTenantUpload` and the session is left untouched
-  (`crates/corelink-r2-multipart/src/lib.rs:20-25`).
+  rejected with `CrossTenantUpload` and the session is left untouched — the executed guard is
+  `check_session_tenant` (`crates/corelink-r2-multipart/src/in_memory.rs:192-203`, the
+  `session.tenant_id != tenant_id` → `CrossTenantUpload` arm); the trait contract is documented at
+  `crates/corelink-r2-multipart/src/adapter.rs:86-92`.
 - The public types carry `#[non_exhaustive]` so additive variants/fields don't break downstream callers
-  post-v1 (`crates/corelink-r2-multipart/src/lib.rs:62-70`).
+  post-v1 — the attribute sits on each `types.rs` definition (`crates/corelink-r2-multipart/src/types.rs:22`,
+  `:133`, `:163`, `:207`, `:225`).
 
 # Gotchas
 - The `<region>` literal here is the worker's `Region::bucket_suffix()` output passed in as a plain
@@ -67,12 +73,12 @@ tenant prefix or inject path traversal. It shares the per-tenant-prefix isolatio
 # Citations
 1. `crates/corelink-r2-multipart/src/lib.rs:1-39` — `MultipartAdapter` trait + tenant-scoped keys, idempotent lifecycle, cross-tenant rejection, bounded concurrency.
 2. `crates/corelink-r2-multipart/src/lib.rs:14-19` — idempotent init/upload/complete/abort semantics.
-3. `crates/corelink-r2-multipart/src/lib.rs:20-25` — `upload_id ↔ tenant_id` binding + `CrossTenantUpload` rejection.
+3. `crates/corelink-r2-multipart/src/in_memory.rs:192-203` — `check_session_tenant`: the executed `upload_id ↔ tenant_id` guard returning `CrossTenantUpload` (trait contract documented at `crates/corelink-r2-multipart/src/adapter.rs:86-92`).
 4. `crates/corelink-r2-multipart/src/lib.rs:26-39` — bounded per-tenant concurrency + `1..=10_000` part-number bound.
-5. `crates/corelink-r2-multipart/src/lib.rs:62-70` — `#[non_exhaustive]` public-type stability.
+5. `crates/corelink-r2-multipart/src/types.rs:22`/`:133`/`:163`/`:207`/`:225` — `#[non_exhaustive]` on each public type (additive-stability).
 6. `crates/corelink-r2-multipart/src/object_key.rs:1-22` — canonical key `<family>-<region>/<tenant_prefix>/<digest_hex>[.suffix]`.
 7. `crates/corelink-r2-multipart/src/object_key.rs:24-32` — structural tenant scoping (typed inputs, no traversal).
-8. `crates/corelink-r2-multipart/src/object_key.rs:54-58` — `INV-MULTIPART-PATH-TENANT-SCOPED` captured by construction.
+8. `crates/corelink-r2-multipart/src/object_key.rs:85-91` — `INV-MULTIPART-PATH-TENANT-SCOPED` captured by the `compose` body (fixed family/region/prefix/digest push order).
 9. `crates/corelink-r2-multipart/src/object_key.rs:59-93` — `compose` validate-then-build.
 10. `crates/corelink-r2-multipart/src/object_key.rs:95-110` — region-literal alphabet validation.
 11. `crates/corelink-r2-multipart/src/object_key.rs:112-127` — 64-char lower-hex digest validation.

@@ -70,10 +70,11 @@ behind the [native CAS surface](/surfaces/native-cas.md) and the [CAS write flow
 - `StorageEnv::from_env` is all-or-nothing: a partial credential set yields `None` and the caller falls
   back to in-memory fakes rather than a half-configured client
   (`crates/corelink-container/src/storage.rs:98-113`).
-- The tenant prefix segment is derived via `derive_prefix`, so cross-tenant key co-residence is
-  impossible for PRIVATE content — layer 5 of `INV-TENANT-ISOLATION`
-  (`crates/corelink-container/src/storage/r2_s3.rs:1-19`). The lone exception is the reserved `_public`
-  dedup namespace, which is intentionally shared cross-tenant via a fixed sentinel-UUID prefix
+- The tenant prefix segment is derived per-tenant in `tenant_prefix` (`derive_prefix(tdk, uuid)`), and
+  `blob_key` sandwiches it between region and digest, so cross-tenant key co-residence is impossible for
+  PRIVATE content — layer 5 of `INV-TENANT-ISOLATION` (`crates/corelink-container/src/storage/r2_s3.rs:573-601`
+  the `tenant_prefix` enforcer, `:453-458` the `blob_key` composer). The lone exception is the reserved
+  `_public` dedup namespace, intentionally shared cross-tenant via the fixed sentinel-UUID prefix
   (`crates/corelink-container/src/storage/r2_s3.rs:571`, `:579-581`).
 - The S3 config MUST be built from explicit static credentials; calling `aws_config::defaults` would
   trigger IMDS probes that have no endpoint in CF Containers and burn 60-90s of cold-start

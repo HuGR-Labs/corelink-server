@@ -5,6 +5,8 @@ description: "The tenant control-plane store: the native container reaches Cloud
 source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-config-do/src/lib.rs"
+  - "crates/corelink-config-do/src/store.rs"
+  - "crates/corelink-config-do/src/types.rs"
   - "crates/corelink-container/src/storage/d1_http.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
@@ -45,36 +47,44 @@ the [billing quota check](/flows/billing-quota-check.md).
 5. The per-region config singleton is a DO holding a schema-versioned `ConfigPayload` (feature flags,
    rate-limit tunables, retention), updated via CAS and logged to a D1 `config_change_log` with 90d
    retention (`crates/corelink-config-do/src/lib.rs:1-26`).
-6. A config update takes an `expected_version` and returns `VersionConflict` on mismatch; in production
-   the check runs inside a DO `storage.transaction()` for true atomicity
-   (`crates/corelink-config-do/src/lib.rs:42-49`).
+6. A config update takes an `expected_version` and returns `VersionConflict` on mismatch; the crate ships
+   only `InMemoryConfigSingletonStore`, whose `update` does the CAS check under an in-process `Mutex` (a DO
+   `storage.transaction()`-backed impl is DESIGNED but NOT present in this crate)
+   (`crates/corelink-config-do/src/store.rs:223-255`).
 
 # Invariants
 - Every D1 statement is parameterised (positional binds) and tenant-scoped via `WHERE tenant_id = ?` —
-  `INV-TENANT-ISOLATION` (`crates/corelink-container/src/customer_d1.rs:48-51`).
-- A D1 transport / non-2xx / decode error fails CLOSED to a 500, never to fabricated empty data
-  (`crates/corelink-container/src/customer_d1.rs:46-48`).
+  `INV-TENANT-ISOLATION`; the executed queries carry it (e.g. `tenant_row`
+  `crates/corelink-container/src/customer_d1.rs:598-603`, plus `:623`/`:639`/`:799`/`:906`/`:1044`).
+- A D1 transport / non-2xx / decode error fails CLOSED to a 500, never to fabricated empty data — the
+  `run` helper maps any `db.query` error to `CustomerHandlerError::Internal`
+  (`crates/corelink-container/src/customer_d1.rs:589-593`).
 - The CF API bearer token is redacted in the client's manual `Debug` impl — a `{:?}` can never print it
   (`crates/corelink-container/src/storage/d1_http.rs:44-51`).
-- The config schema uses `#[serde(deny_unknown_fields)]`, so schema drift is a hard error, never a
-  silent default (`crates/corelink-config-do/src/lib.rs:9-12`).
+- The config schema uses `#[serde(deny_unknown_fields)]` on every inbound struct, so schema drift is a
+  hard error, never a silent default (`crates/corelink-config-do/src/types.rs:34`, and
+  `:66`/`:83`/`:96`/`:109`).
 - A config CAS update with a stale `expected_version` is rejected with `VersionConflict` — no last-writer
-  -wins clobber (`crates/corelink-config-do/src/lib.rs:42-49`).
+  -wins clobber; the executed check is in `InMemoryConfigSingletonStore::update`
+  (`crates/corelink-config-do/src/store.rs:243-255`, the `current_version != expected_version` →
+  `VersionConflict` arm).
 
 # Gotchas
 - CONFIG_DB is reached over the slow REST control-plane HTTP API from the container, NOT the Worker's
   fast binding — two of these round-trips in series on the CAS hot path are the measured ~1.5s warm cost.
 - The DO config singleton (`corelink-config-do`) and the REST-reached CONFIG_DB tables are two different
-  D1 surfaces; the former is per-region DO-transactional config, the latter is the tenant control-plane.
+  D1 surfaces; the former is the per-region CAS-versioned config singleton (the crate ships the in-memory
+  store; the DO `storage.transaction()` binding is designed, not shipped), the latter is the tenant
+  control-plane.
 
 # Citations
 1. `crates/corelink-container/src/customer_d1.rs:1-25` — D1-backed customer handler + deployed-table source-of-truth matrix.
 2. `crates/corelink-container/src/customer_d1.rs:26-39` — the sync↔async `block_in_place` D1 bridge.
-3. `crates/corelink-container/src/customer_d1.rs:46-48` — fail-CLOSED on D1 transport error (→ 500, never fabricated data).
-4. `crates/corelink-container/src/customer_d1.rs:48-51` — parameterised, tenant-scoped SQL (`WHERE tenant_id = ?`).
-5. `crates/corelink-config-do/src/lib.rs:1-26` — per-region DO config singleton (schema-versioned payload, CAS update, 90d change log).
-6. `crates/corelink-config-do/src/lib.rs:9-12` — `deny_unknown_fields` schema-drift hard error.
-7. `crates/corelink-config-do/src/lib.rs:42-49` — CAS `expected_version` → `VersionConflict`, DO-transactional.
+3. `crates/corelink-container/src/customer_d1.rs:589-593` — the `run` helper's fail-CLOSED `.map_err` → `CustomerHandlerError::Internal` (→ 500, never fabricated data).
+4. `crates/corelink-container/src/customer_d1.rs:598-603` — parameterised, tenant-scoped SQL (`tenant_row`: `WHERE tenant_id = ?1`; representative of every query).
+5. `crates/corelink-config-do/src/lib.rs:1-26` — per-region config singleton (schema-versioned payload, CAS update, 90d change log).
+6. `crates/corelink-config-do/src/types.rs:34` — `#[serde(deny_unknown_fields)]` on the inbound config structs (schema-drift hard error; also `:66`/`:83`/`:96`/`:109`).
+7. `crates/corelink-config-do/src/store.rs:223-255` — `InMemoryConfigSingletonStore::update`: CAS `expected_version` → `VersionConflict` (in-memory `Mutex`; DO-transactional impl designed-not-shipped).
 8. `crates/corelink-container/src/storage/d1_http.rs:1-23` — D1 reached via the CF REST query endpoint from the native container.
 9. `crates/corelink-container/src/storage/d1_http.rs:44-51` — CF API token redacted in the manual `Debug` impl.
 10. `crates/corelink-container/src/storage/d1_http.rs:90-103` — query-URL construction from account + database id + bearer token.

@@ -58,8 +58,11 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 - The route uses a DEDICATED `FABRIC_INTROSPECT_AUTH_KEY`, never the Worker↔container mint secret, so a
   fabric-key leak cannot mint and a mint-key leak cannot introspect — `build_state_from_env` reads that
   dedicated key and gates the mount on it (`crates/corelink-container/src/routes/auth_introspect.rs:660-683`).
-- Not reachable from the public internet — mounted on the container listener, reached only via the DO /
-  fabric forwarder (`crates/corelink-container/src/routes/auth_introspect.rs:16-18`).
+- Not reachable from the public internet — this is a DEPLOYMENT/TOPOLOGY fact (the route is mounted on the
+  internal container listener, reachable only via the DO / fabric forwarder), NOT a code-enforced
+  invariant: there is no in-process enforcer for it; `crates/corelink-container/src/routes/auth_introspect.rs:16-18`
+  is the module `//!` DOCUMENTING the topology, not an executed gate. (The executed access control on this
+  route is the dedicated-key caller gate, below.)
 - A `valid: false` response carries no `tenant_id` and no reason (uniform with `VerifyError`)
   (`crates/corelink-container/src/routes/auth_introspect.rs:629-631`).
 - Any tier or entitlement resolution fault fails CLOSED with 503 — never a guessed plan or cap
@@ -71,8 +74,11 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
   `decode_runner_cap` returns `Ok(None)` — the field is OMITTED (empty table = no cap = no Runners
   entitlement), NOT a hard reject from this endpoint; the fabric then declines to place runner work for a
   cache-only tenant (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`). An absent
-  `max_vcpu_h` ⇒ wall-off (let the job through, fail-OPEN). A row that EXISTS but is out-of-contract
-  (non-positive / out of `u32` range) is the only hard fail-CLOSED arm here → `Err` → 503.
+  `max_vcpu_h` ⇒ wall-off (let the job through, fail-OPEN) — decoded by the SEPARATE
+  `decode_runner_vcpu_h`, whose `if raw.is_null() { return Ok(None) }` (plus the missing-column arm) is the
+  executed wall-off (`crates/corelink-container/src/routes/auth_introspect.rs:426-454`, the `is_null` arm
+  at `:434-436`). A row that EXISTS but is out-of-contract (non-positive / out of `u32` range) is the only
+  hard fail-CLOSED arm here → `Err` → 503.
 - `plan` is the cache tier and is informational only for runners — it NEVER feeds the concurrency cap,
   which comes solely from the SEPARATE `runners_entitlement` decode
   (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`).
@@ -83,10 +89,11 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 # Citations
 
 1. `crates/corelink-container/src/routes/auth_introspect.rs:1-12` — why the endpoint exists (fabric tenant/plan resolution).
-2. `crates/corelink-container/src/routes/auth_introspect.rs:16-18` — not public; container-listener only.
+2. `crates/corelink-container/src/routes/auth_introspect.rs:16-18` — the module `//!` DOCUMENTING the "not public; container-listener only" deployment/topology fact (no in-process code enforcer for it).
 3. `crates/corelink-container/src/routes/auth_introspect.rs:660-683` — `build_state_from_env` mount-gate: dedicated `FABRIC_INTROSPECT_AUTH_KEY` present + ≥32 chars, else `None` (route NOT mounted) — fail-CLOSED.
 4. `crates/corelink-container/src/routes/auth_introspect.rs:566-576` — the multi-key caller gate (`|=` over every configured key, reusing the constant-time `internal_auth_ok`).
-5. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — `decode_runner_cap`: the runner entitlement decode (absent row → `Ok(None)` / field omitted; out-of-contract existing row → 503) — the cap/vCPU asymmetry origin, separate from `plan`.
+5. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — `decode_runner_cap`: the CONCURRENCY (`max_concurrency`) entitlement decode (absent row → `Ok(None)` / field omitted; out-of-contract existing row → 503), separate from `plan`. NOTE: this fn carries NO vCPU logic.
+5b. `crates/corelink-container/src/routes/auth_introspect.rs:426-454` — `decode_runner_vcpu_h`: the SEPARATE `max_vcpu_h` decode and the deliberate fail-OPEN wall-off; the executed wall-off is the `if raw.is_null() { return Ok(None) }` arm (+ the missing-column arm) at `:434-436`. A present, non-null, out-of-contract value → `Err` → 503.
 6. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — entitlement decode is the SEPARATE axis; `plan` (cache tier) never feeds the cap.
 7. `crates/corelink-container/src/routes/auth_introspect.rs:559-576` — non-short-circuit multi-key caller gate.
 8. `crates/corelink-container/src/routes/auth_introspect.rs:592-637` — verify → tier → entitlement → uniform invalid / 503.

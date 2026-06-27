@@ -22,7 +22,8 @@ and deduped **cross-tenant** — the network-effect moat (`crates/corelink-conta
 `crates/corelink-container/src/routes/brew.rs:85-95`). **npm and OCI are per-tenant today:** npm tarball
 bytes are namespaced per-tenant (`crates/corelink-container/src/routes/npm.rs:149-177`) — only npm
 *metadata* splits public/private — and OCI images are likewise stored under the per-tenant namespace,
-isolated by default (`crates/corelink-container/src/routes/oci.rs:188-192`). For both, cross-tenant
+isolated by default: the moat is keyed on `tenant.to_canonical_text()` at the executed put/get
+(`crates/corelink-container/src/routes/oci.rs:534-536`, `crates/corelink-container/src/routes/oci.rs:568-570`). For both, cross-tenant
 public-byte dedup (npm tarballs / public base images) is a tracked, not-yet-built OPEN DECISION. They
 build on the same [native CAS](/surfaces/native-cas.md) moat the first-party surfaces use.
 
@@ -50,12 +51,12 @@ hold.
    recovered from the VERIFIED HMAC bearer, never a request header. The live gate charges the $-ceiling
    (fail-CLOSED, 402 over) on **EVERY method including reads** — a `docker pull` (GET/HEAD of
    manifests/blobs) does real billable work on the shared cache, matching the native CAS/AC read-charge
-   behavior (`crates/corelink-container/src/routes/oci.rs:842-849`). (The mount-site comment at
+   behavior — the executed unconditional `if let Some(gate) = st.gate.as_ref() { if let Some(resp) = gate.check(&tenant).await {` (`crates/corelink-container/src/routes/oci.rs:850-854`); the `:842-849` block above it is the explanatory comment. (The mount-site comment at
    `crates/corelink-container/src/routes/oci.rs:754-790` still reads "charge on write methods PUT/POST/PATCH" and is STALE — the actual gate
    body charges all methods.)
 
 # Invariants
-- Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted (`crates/corelink-container/src/routes/npm.rs:30-32`; `crates/corelink-container/src/routes/pip.rs:28-30`; `crates/corelink-container/src/routes/brew.rs:25-27`).
+- Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted — the executed `TenantResolver::resolve` impls call `self.0.verify(pat_plaintext)` on the shared `PatVerifier` (`crates/corelink-container/src/routes/npm.rs:238-247`; `crates/corelink-container/src/routes/pip.rs:236-247`; `crates/corelink-container/src/routes/brew.rs:118-123`).
 - Public upstream bytes are deduped cross-tenant under `PUBLIC_NAMESPACE`; the PAT gates access, the public content is shared (`crates/corelink-container/src/routes/pip.rs:32-37`; `crates/corelink-container/src/routes/brew.rs:27-30`).
 - npm `@scoped` (private) packages stay in the per-tenant namespace, never `PUBLIC_NAMESPACE` (`crates/corelink-container/src/routes/npm.rs:97-106`).
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
@@ -89,9 +90,9 @@ hold.
 17. `crates/corelink-container/src/routes/oci.rs:34-45` — OCI two-leg `/token` HMAC bearer auth.
 18. `crates/corelink-container/src/routes/oci.rs:690-753` — OCI router (`.merge` mount).
 19. `crates/corelink-container/src/routes/oci.rs:19-30` — why stripping the first segment would corrupt the repo.
-20. `crates/corelink-container/src/routes/oci.rs:842-849` — the real OCI $-ceiling charge-all-methods gate (charges on EVERY method incl reads; the `:754-790` mount-site comment is stale).
+20. `crates/corelink-container/src/routes/oci.rs:850-854` — the EXECUTED OCI $-ceiling charge-all-methods gate (`if let Some(gate) = st.gate.as_ref() { gate.check(&tenant) }`, charges on EVERY method incl reads); the `:842-849` block is the explanatory comment and the `:754-790` mount-site comment is stale.
 21. `crates/corelink-container/src/routes/oci.rs:810-820` — `oci_bearer_tenant` (verify HMAC bearer → recover tenant); used by `oci_quota_gate` at `crates/corelink-container/src/routes/oci.rs:841` — cost attribution keyed on the verified bearer, not a header.
 22. `crates/corelink-container/src/routes/pip.rs:115-118` — pip wheels dedup cross-tenant under `PUBLIC_NAMESPACE`.
 23. `crates/corelink-container/src/routes/brew.rs:85-95` — brew bottles dedup cross-tenant under `PUBLIC_NAMESPACE`.
 24. `crates/corelink-container/src/routes/npm.rs:149-177` — `NpmMoatStore` get/put namespace npm tarball BYTES per-tenant (cross-tenant dedup is a tracked enhancement).
-25. `crates/corelink-container/src/routes/oci.rs:188-192` — OCI images stored under the per-tenant namespace; cross-tenant public-image dedup is a tracked OPEN DECISION.
+25. `crates/corelink-container/src/routes/oci.rs:534-536` / `crates/corelink-container/src/routes/oci.rs:568-570` — the EXECUTED per-tenant namespacing: `put_blob`/`get_blob` key the moat on `tenant.to_canonical_text()` (the `:188-192` //! only narrates it); cross-tenant public-image dedup is a tracked OPEN DECISION.

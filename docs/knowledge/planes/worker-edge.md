@@ -24,8 +24,10 @@ keeps forged tokens cheap to reject before any expensive work.
 # Role
 - The sole HTTPS ingress and route dispatcher: the architecture header documents the
   `Internet → Worker → DO → container` topology (`worker/src/index.ts:1-20`).
-- The auth authority for the native plane: it is the only layer that reads the D1 `pat.scope` and
-  forwards it as a server-trust header (`worker/src/index.ts:285-300`).
+- The auth authority for the native plane: it is the only layer that reads the D1 `pat.scope` — the
+  executed `SELECT tenant_id, expires_ms, scope FROM pat WHERE token_id = ?1 ...`
+  (`worker/src/index.ts:1013-1014`) — and forwards it as the `x-corelink-scope` server-trust header
+  (`worker/src/index.ts:2501`).
 
 # How it works
 1. The exported handler is `baseHandler.fetch`, which resolves a request-id, handles CORS preflight,
@@ -71,7 +73,7 @@ keeps forged tokens cheap to reject before any expensive work.
 
 # Citations
 1. `worker/src/index.ts:1-20` — the architecture header documenting the Worker → DO → container topology.
-2. `worker/src/index.ts:285-300` — the `AuthResult` carrying the D1-resolved scope (the Worker is its sole authority).
+2. `worker/src/index.ts:1013-1014` — the EXECUTED D1 read of `pat.scope` (`SELECT ... scope FROM pat WHERE token_id = ?1`); the `AuthResult` type doc at `:285-300` only carries it.
 3. `worker/src/index.ts:427-466` — the `CLIENT_TRUST_HEADERS` strip list.
 4. `worker/src/index.ts:473-477` — `stripClientTrustHeaders` (delete-then-set discipline).
 5. `worker/src/index.ts:525-789` — the `matchRoute` ordered route table.

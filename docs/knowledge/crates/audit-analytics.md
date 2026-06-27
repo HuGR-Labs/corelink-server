@@ -36,7 +36,7 @@ The cluster underpins the [RFC-6962 audit / transparency chain](/compliance/audi
 
 - `INV-AUDIT-NO-RAW-PII`: no public type carries raw-`String` PII — only the hash newtypes, whose sole constructor is the SHA-256-prefix derivation and which have no `From<String>` (`crates/corelink-audit/src/redact.rs:50-62`).
 - `INV-AUDIT-CHAIN-HASH-DETERMINISTIC`: `compute_content_hash` JCS-canonicalizes (`serde_jcs`) then SHA-256s, so the digest is independent of map iteration order / locale / float formatting (`crates/corelink-audit/src/link_hash.rs:156-160`).
-- The chain processor never re-canonicalizes at link time — it reads the persisted JCS bytes / `content_hash` directly to avoid double-canonicalization drift (`crates/corelink-audit/src/lib.rs:66-70`).
+- The chain processor never re-canonicalizes at link time — `link_chain_hash` takes the already-computed `content_hash` and only concatenates `SHA-256(prev_chain_hash || content_hash)`, never re-running JCS on the event (`crates/corelink-audit/src/link_hash.rs:171-176`).
 - The chain verifier is fail-CLOSED and per-tenant partitioned — a cross-tenant slice is rejected at the tenant-isolation guard and the first break aborts after a constant-time `prev_hash` compare (`crates/corelink-audit-chain/src/verifier.rs:140-156`, `crates/corelink-audit-chain/src/verifier.rs:167-191`).
 - The Rekor witness is fail-OPEN: `witness_or_degrade` folds a transient transport fault into `WitnessOutcome::Degraded` (queued retry), never an `Err` onto a caller's hot path, because the entry is already durably logged (`crates/corelink-transparency-log/src/submit.rs:87-107`).
 
@@ -52,7 +52,7 @@ The cluster underpins the [RFC-6962 audit / transparency chain](/compliance/audi
 2. `crates/corelink-audit/src/redact.rs:50-62` — `INV-AUDIT-NO-RAW-PII` enforcer: the `*Hash` newtype + `derive`-only constructor (no `From<String>`).
 3. `crates/corelink-audit/src/link_hash.rs:156-160` — `INV-AUDIT-CHAIN-HASH-DETERMINISTIC` enforcer: `compute_content_hash` = SHA-256(JCS(event)).
 4. `crates/corelink-audit/src/lib.rs:57-65` — forbidden surface: no raw-PII fields, no `From<String>`.
-5. `crates/corelink-audit/src/lib.rs:66-70` — no re-canonicalization at chain link time.
+5. `crates/corelink-audit/src/link_hash.rs:171-176` — `link_chain_hash`: consumes the precomputed `content_hash` and concatenates only, never re-canonicalizing at link time.
 6. `crates/corelink-audit-chain/src/chain.rs:152-162` — `link_chain_hash_streaming` = `BLAKE3(prev || JCS(event))`.
 7. `crates/corelink-audit-chain/src/chain.rs:285-303` — `HashChainBuilder::append`: sequence + `prev_hash` enforcement before head advance.
 8. `crates/corelink-audit-chain/src/verifier.rs:140-156` — `ChainVerifier` tenant-isolation + sequence-monotonicity guards.

@@ -42,7 +42,7 @@ path segment.
    per-tenant `$`-ceiling quota charge (402 over-ceiling), and the 410-Gone tombstone gate — each
    BEFORE the R2 GET — then the digest-keyed lookup via `handle_read`
    (`crates/corelink-container/src/routes/cas.rs:625`; gate order `crates/corelink-container/src/routes/cas.rs:654-687`).
-   These control-plane gates are OPTIONAL `CasHandlerState` fields (`pat_gate`/`quota`/`tombstones`) —
+   These control-plane gates are OPTIONAL `CasRouteState` fields (`pat_gate`/`quota`/`tombstones`) —
    wired in prod, `None` in dev/CI (`crates/corelink-container/src/routes/cas.rs:142-154`).
 3. A write rejects a path/auth tenant mismatch with 403, then validates the digest, then the write
    scope, then the native PAT possession gate, all before storage (`crates/corelink-container/src/routes/cas.rs:713-747`).
@@ -93,4 +93,4 @@ path segment.
 14. `crates/corelink-container/src/native_pat_gate.rs:196` — `NativePatGate::verify` delegates to the full HMAC→D1→`Argon2id`→scope gauntlet (the native backstop, finding #4).
 15. `crates/corelink-container/src/native_pat_gate.rs:170` — warm fingerprint-cache fast-path that skips the `Argon2id` round on a hit.
 16. `crates/corelink-container/src/routes/cas.rs:654-687` — the read-path gate order: native PAT gate → `$`-ceiling quota → 410 tombstone, all BEFORE the R2 GET.
-17. `crates/corelink-container/src/routes/cas.rs:142-154` — the OPTIONAL `CasHandlerState` control-plane fields (`tombstones`/`quota`/`pat_gate`); `None` in dev/CI, wired in prod.
+17. `crates/corelink-container/src/routes/cas.rs:142-154` — the OPTIONAL `CasRouteState` control-plane fields (`tombstones`/`quota`/`pat_gate`); `None` in dev/CI, wired in prod (struct declared at `crates/corelink-container/src/routes/cas.rs:125`).

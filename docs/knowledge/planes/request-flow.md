@@ -41,22 +41,25 @@ semantics in the container.
 5. The DO's `fetch` binds the forwarded tenant-id, ensures the container is running, then proxies the
    request (`worker/src/durable_object.ts:303-370`).
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
-   DO→container hop (`worker/src/durable_object.ts:251-264`).
+   DO→container hop, constructed at the executed `const fetcher = container.getTcpPort(CONTAINER_PORT)`
+   (`worker/src/durable_object.ts:367`).
 7. The container's composed router (built by `build_with_factory`) receives the request and routes it to
    the matching handler (`crates/corelink-container/src/routes.rs:333-341`).
 8. The shared CAS/AC handler objects — wrapped once with byte-accounting, the erasure tombstone gate,
-   and the native PAT possession backstop — execute the actual cache operation
-   (`crates/corelink-container/src/routes.rs:392-480`).
+   and the native PAT possession backstop — execute the actual cache operation: the CAS handlers are
+   built at `crates/corelink-container/src/routes.rs:392` and the AC handlers at `:481`, then cloned
+   into every billable surface (`crates/corelink-container/src/routes.rs:392-480`).
 
 # Invariants
 - The DO is always selected from the PAT-resolved tenant, never the URL tenant — isolation is
   established at this hop (`worker/src/index.ts:2465-2468`).
 - The request that crosses Worker→DO carries only Worker-established trust headers; client values are
   stripped first (`worker/src/index.ts:2470-2528`).
-- The DO→container hop always targets port 50051 via the `getTcpPort` fetcher
-  (`worker/src/durable_object.ts:251-264`).
+- The DO→container hop always targets port 50051 via the `getTcpPort` fetcher — the executed
+  `container.getTcpPort(CONTAINER_PORT)` construction (`worker/src/durable_object.ts:367`).
 - The container re-verifies possession at the shared handler chokepoint rather than trusting the hop
-  blindly (`crates/corelink-container/src/routes.rs:392-480`).
+  blindly — the single CAS (`crates/corelink-container/src/routes.rs:392`) + AC (`:481`) handler
+  build, wrapped once and cloned into every surface (`crates/corelink-container/src/routes.rs:392-480`).
 - The DO will not proxy until the container is confirmed running (or it returns 503/500)
   (`worker/src/durable_object.ts:332-361`).
 
@@ -74,8 +77,8 @@ semantics in the container.
 4. `worker/src/index.ts:2465-2468` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
 5. `worker/src/index.ts:2470-2528` — strip-then-set trust headers on the forward.
 6. `worker/src/index.ts:2470-2532` — the augmented forward + `stub.fetch` dispatch to the DO.
-7. `worker/src/durable_object.ts:251-264` — the DO→container proxy via `getTcpPort(50051)`.
+7. `worker/src/durable_object.ts:367` — the EXECUTED `container.getTcpPort(CONTAINER_PORT)` fetcher construction (the DO→container proxy hop); the `:251-264` region only documents it.
 8. `worker/src/durable_object.ts:303-370` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:332-361` — the ensure-running gate before proxying (503/500 otherwise).
 10. `crates/corelink-container/src/routes.rs:333-341` — the container's composed router receiving the request.
-11. `crates/corelink-container/src/routes.rs:392-480` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
+11. `crates/corelink-container/src/routes.rs:392` (CAS build) + `crates/corelink-container/src/routes.rs:481` (AC build) — the shared CAS/AC handlers (accounting + tombstone + PAT gate), wrapped once across `:392-480` and cloned into every surface.

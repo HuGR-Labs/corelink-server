@@ -40,13 +40,15 @@ gates, `customer_d1.rs` persists.
 - Concurrent Argon2id work is capped process-wide at 16 permits so a flood of valid-PAT requests cannot
   OOM-kill the shared container (`crates/corelink-container/src/adapter_pat.rs:160-170`).
 - A per-tenant sub-cap (¼ of the global pool, floor 2) keeps one tenant flooding distinct PATs from
-  draining all global permits and starving others
-  (`crates/corelink-container/src/adapter_pat.rs:172-199`).
+  draining all global permits and starving others — enforced at the acquire site, where the real verify
+  takes `acquire_per_tenant(&row.tenant_id)` after the global permit
+  (`crates/corelink-container/src/adapter_pat.rs:638-641`).
 - An unknown/expired/revoked `token_id` runs a dummy Argon2id burn for timing parity so latency does not
   leak whether the token exists (`crates/corelink-container/src/adapter_pat.rs:545-598`).
 - That dummy burn is routed through ONE shared synthetic bucket so a leaked-key flood across bogus
-  `token_id`s cannot drain the pool via the timing-burn path
-  (`crates/corelink-container/src/adapter_pat.rs:220-229`).
+  `token_id`s cannot drain the pool via the timing-burn path — enforced where the burn path takes
+  `acquire_per_tenant(UNKNOWN_TOKEN_BUCKET)` before its `spawn_blocking`
+  (`crates/corelink-container/src/adapter_pat.rs:586`).
 - The final scope gate fails CLOSED unless the D1 `scope` grants cache read, then surfaces the write bit
   for credential-minting callers to downscope (`crates/corelink-container/src/adapter_pat.rs:652-660`).
 - The scope vocabulary lives in `scope.rs`: `requires_cache_read` / `requires_cache_write` grant by
@@ -83,8 +85,8 @@ gates, `customer_d1.rs` persists.
 # Citations
 
 1. `crates/corelink-container/src/adapter_pat.rs:160-170` — the global Argon2id concurrency cap (OOM guard).
-2. `crates/corelink-container/src/adapter_pat.rs:172-199` — the per-tenant Argon2id sub-cap (fairness).
-3. `crates/corelink-container/src/adapter_pat.rs:220-229` — the shared synthetic dummy-burn bucket.
+2. `crates/corelink-container/src/adapter_pat.rs:638-641` — the per-tenant Argon2id sub-cap acquire site (`acquire_per_tenant(&row.tenant_id)`, the executed fairness enforcer; the const-def of the sub-cap is `:172-199`).
+3. `crates/corelink-container/src/adapter_pat.rs:586` — the dummy-burn routing enforcer (`acquire_per_tenant(UNKNOWN_TOKEN_BUCKET)`, the executed shared-bucket gate; the const-def is `:220-229`).
 4. `crates/corelink-container/src/adapter_pat.rs:545-598` — the None-row constant-time Argon2id timing-burn.
 5. `crates/corelink-container/src/adapter_pat.rs:602-650` — the Argon2id possession verify on a blocking thread.
 6. `crates/corelink-container/src/adapter_pat.rs:616-629` — permit-acquire timeout → fail-CLOSED `Backend`.

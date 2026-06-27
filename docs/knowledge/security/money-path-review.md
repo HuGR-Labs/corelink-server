@@ -4,6 +4,9 @@ title: "Money-path security review"
 description: "The go-live review of the Stripe webhook → materializer → D1 → quota/$-ceiling chain: which money-integrity invariants hold, and the MED/LOW robustness gaps that remain."
 source_files:
   - "docs/security/2026-06-23-review-money-path.md"
+  - "worker/src/lib/quota.ts"
+  - "crates/corelink-container/src/customer_d1.rs"
+  - "crates/corelink-container/src/oci_cap.rs"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["security", "billing", "stripe", "money-path", "quota"]
@@ -40,8 +43,10 @@ container materializer defense-in-depth) that an operator must understand before
   short-circuits to 200 with no dispatch, and insert-vs-replay is detected atomically — no
   double-dispatch (`docs/security/2026-06-23-review-money-path.md:137-153`).
 - The `subscription_state='active'` gate (no paid tier for unpaid) is enforced consistently in three
-  places: the Worker read path, the container materializer write path, and the OCI cap resolver
-  (`docs/security/2026-06-23-review-money-path.md:154-162`).
+  places, each with the same `... AND subscription_state = 'active'` D1 filter: the Worker read path
+  (`worker/src/lib/quota.ts:152`), the container materializer / tier resolver
+  (`crates/corelink-container/src/customer_d1.rs:799`), and the OCI cap resolver
+  (`crates/corelink-container/src/oci_cap.rs:131`) (`docs/security/2026-06-23-review-money-path.md:154-162`).
 - Runners-vs-cache routing never cross-grants: a runners price seeds the runners entitlement and
   suppresses the cache reconcile, a cache price never touches the runners table, and the two env
   price tables are disjoint by construction (`docs/security/2026-06-23-review-money-path.md:163-172`).
@@ -54,7 +59,9 @@ container materializer defense-in-depth) that an operator must understand before
 # Invariants
 
 - A signature is verified before the body is parsed; an unpaid/non-active subscription never reaches
-  the paid-tier upsert on any of the three enforcement points (`docs/security/2026-06-23-review-money-path.md:154-162`).
+  the paid-tier upsert on any of the three enforcement points — the identical `subscription_state =
+  'active'` filter at `worker/src/lib/quota.ts:152`, `crates/corelink-container/src/customer_d1.rs:799`,
+  and `crates/corelink-container/src/oci_cap.rs:131` (`docs/security/2026-06-23-review-money-path.md:154-162`).
 - The `$`-ceiling and byte accounting use reserve-before-PUT atomic check-and-accrue that fails
   CLOSED on indeterminate/transport errors — never serves for free (`docs/security/2026-06-23-review-money-path.md:173-182`).
 - Audit-before-write is fail-closed: every state mutation emits the billing audit before the D1
@@ -89,3 +96,6 @@ container materializer defense-in-depth) that an operator must understand before
 7. `docs/security/2026-06-23-review-money-path.md:154-162` — the `subscription_state='active'` triple gate.
 8. `docs/security/2026-06-23-review-money-path.md:163-182` — runners-vs-cache routing + `$`-ceiling/byte-accounting TOCTOU closed.
 9. `docs/security/2026-06-23-review-money-path.md:183-188` — F-018: billing/PII surfaces require `requires_cache_write`.
+10. `worker/src/lib/quota.ts:152` — Worker read path: `SELECT tier FROM tier_selections WHERE tenant_id = ?1 AND subscription_state = 'active'` (no paid tier for a `pending_checkout` row).
+11. `crates/corelink-container/src/customer_d1.rs:799` — container tier resolver: the same `AND subscription_state = 'active'` filter (mirrors the Worker; defense-in-depth second writer).
+12. `crates/corelink-container/src/oci_cap.rs:131` — OCI cap resolver: the same active-only filter so a `pending_checkout` row yields no paid OCI quota.

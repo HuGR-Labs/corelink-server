@@ -5,6 +5,7 @@ description: "CoreLink's overall security posture: the four invariant guarantees
 source_files:
   - "docs/security/2026-06-13-CAA-360-audit-report.md"
   - "ARCHITECTURE.md"
+  - "crates/corelink-container/src/storage/r2_s3.rs"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["security", "posture", "audit", "tenant-isolation", "compliance"]
@@ -41,11 +42,18 @@ launch gate).
   over Cloudflare service bindings — no public endpoint exists for the container, so the attack
   surface is the WAF, not the gRPC server (`ARCHITECTURE.md:93-101`).
 - Tenant isolation is enforced in two independent layers: a Worker authZ check that the PAT scope
-  equals the requested tenant, and an HMAC-derived per-tenant R2 prefix at the storage binding —
-  both must agree for a request to land bytes (`ARCHITECTURE.md:170-199`).
-- The trust-security model layers BYOK envelope encryption, the Merkle-chained audit, TLA+-verified
-  invariants, a STRIDE/LINDDUN boundary model (TB-0..TB-4), SLSA-L3 supply chain, and constant-time
-  side-channel hygiene (`ARCHITECTURE.md:274-345`).
+  equals the requested tenant, and an HMAC-derived per-tenant R2 prefix at the storage binding — both
+  must agree for a request to land bytes. The storage-layer enforcer is real and live: every R2 object
+  key is built only through `r2_key`, which derives the per-tenant prefix via
+  `tenant_prefix(self.tdk, tenant)?` and fails CLOSED on its error
+  (`crates/corelink-container/src/storage/r2_s3.rs:519`, `crates/corelink-container/src/storage/r2_s3.rs:466`;
+  `ARCHITECTURE.md:170-199`).
+- The trust-security model layers the Merkle-chained audit, TLA+-verified invariants, a STRIDE/LINDDUN
+  boundary model (TB-0..TB-4), SLSA-L3 supply chain, and constant-time side-channel hygiene
+  (`ARCHITECTURE.md:274-345`). **BYOK envelope encryption is a DESIGNED posture layer, not a live one:**
+  ARCHITECTURE.md describes it as engineered intent, but the at-rest BYOK encryption path is
+  pure-logic skeleton / unwired in the deployed container (see CLAUDE.md "Designed ≠ wired"); do not
+  cite it as an active control (`ARCHITECTURE.md:274-345`).
 - The CAA-360 audit was a PTES/OWASP/MITRE-method 360° sweep with adversarial verification: of 49 raw
   candidates, 37 confirmed and 12 were refuted as false-positives on re-reading the real code
   (`docs/security/2026-06-13-CAA-360-audit-report.md:1-5`).
@@ -62,7 +70,9 @@ launch gate).
   the trust root the rest of the system enforces — verified by TLA+, proptest, or runtime assertions
   (`ARCHITECTURE.md:33-52`).
 - Tenant isolation is defense-in-depth: a logic bug in either the Worker authZ layer or the storage
-  prefix layer still produces zero cross-tenant blast (`ARCHITECTURE.md:170-183`).
+  prefix layer still produces zero cross-tenant blast; the storage-prefix half is enforced at
+  `crates/corelink-container/src/storage/r2_s3.rs:519` (the only path that builds an R2 key)
+  (`ARCHITECTURE.md:170-183`).
 - The audited posture is gated on closing the fail-open-secrets class: set the secrets, make them
   mandatory, add the AC divergence guard, fix the migration triggers, then launch
   (`docs/security/2026-06-13-CAA-360-audit-report.md:22-27`).
@@ -84,7 +94,8 @@ launch gate).
 2. `ARCHITECTURE.md:33-52` — invariant detail (integrity, isolation, confidentiality, audit).
 3. `ARCHITECTURE.md:93-101` — control/data plane split; container is service-binding-only.
 4. `ARCHITECTURE.md:170-199` — two-layer tenant isolation (Worker authZ + HMAC R2 prefix).
-5. `ARCHITECTURE.md:274-345` — trust & security model (BYOK, Merkle audit, TLA+, STRIDE/LINDDUN, SLSA-L3, constant-time).
+5. `ARCHITECTURE.md:274-345` — trust & security model (Merkle audit, TLA+, STRIDE/LINDDUN, SLSA-L3, constant-time); BYOK envelope encryption is listed here as DESIGNED intent, not a wired/live control.
+11. `crates/corelink-container/src/storage/r2_s3.rs:519` / `:466` — the live storage-layer tenant-isolation enforcer: `r2_key` derives the HMAC per-tenant prefix and fails CLOSED; this is the second of the two isolation layers (the first is the Worker authZ scope check).
 6. `docs/security/2026-06-13-CAA-360-audit-report.md:1-5` — audit counts (49 raw / 37 confirmed / 12 refuted; 1 High).
 7. `docs/security/2026-06-13-CAA-360-audit-report.md:13-27` — executive summary: launch-safe conditionally, no Critical.
 8. `docs/security/2026-06-13-CAA-360-audit-report.md:22-27` — the fail-open-secrets root cause + the launch gate.

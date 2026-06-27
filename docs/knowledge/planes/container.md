@@ -70,7 +70,9 @@ surface.
   NOT cover it, so it does NOT inherit the shared 410 tombstone gate (turbo's quota/PAT/accounting are
   wired separately at its route) (`crates/corelink-container/src/routes/turbo_v8.rs:978-980`).
 - The rate-limit + residency layers wrap exactly the data plane, never `/_health` or `/_internal/*`
-  (which mount later in `main`) (`crates/corelink-container/src/routes.rs:782-822`).
+  (which mount later in `main`): the per-tenant rate-limit middleware is applied by the executed
+  `router = router.layer(axum::middleware::from_fn_with_state(rate_limit_state, rate_limit_layer))`
+  (`crates/corelink-container/src/routes.rs:825`), over the data-plane router assembled at `:782-822`.
 
 # Gotchas
 - The native CAS/AC/Bazel/Turbo plane trusts the Worker-injected `x-corelink-tenant-id`, with the
@@ -97,4 +99,4 @@ surface.
 13c. `crates/corelink-container/src/storage/r2_kv.rs:248` — the Turbo `R2KvStore` bucket = `R2_TURBO_BUCKET`, default `corelink-turbo-prod`.
 14. `crates/corelink-container/src/routes.rs:641-773` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
 15. `crates/corelink-container/src/routes.rs:780-822` — residency guard + per-tenant rate-limit outer layers.
-16. `crates/corelink-container/src/routes.rs:782-822` — the rate-limit layer scoped to the data plane only.
+16. `crates/corelink-container/src/routes.rs:825` — the EXECUTED `.layer(...rate_limit_layer)` application of the per-tenant rate-limit middleware over the data-plane router built at `:782-822`.

@@ -66,8 +66,8 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 - In prod a `None` from the builder is a SILENT security downgrade; the container's boot path treats it
   as FATAL when prod is detected — the teeth live in `main.rs`, not this builder
   (`crates/corelink-container/src/native_pat_gate.rs:264-279`; the prod-fatal backstop is
-  `should_fatal_on_missing_gate` at `crates/corelink-container/src/main.rs:77` wired at
-  `crates/corelink-container/src/main.rs:253`).
+  `should_fatal_on_missing_gate`, whose enforcing body is `prod && !gate_present` at
+  `crates/corelink-container/src/main.rs:78`, wired at `crates/corelink-container/src/main.rs:253`).
 - **The prod-FATAL backstop is CIRCULAR — it can be silently neutralised by the SAME misconfig it is meant
   to catch.** "Prod is detected" is itself `StorageEnv::from_env().is_some() && PAT_SIGNING_KEY`
   (`crates/corelink-container/src/main.rs:246-250`), and `std::process::exit(1)` fires ONLY for the native
@@ -90,7 +90,7 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 5. `crates/corelink-container/src/native_pat_gate.rs:247-251` — the uniform 401 (no rejection oracle).
 6. `crates/corelink-container/src/native_pat_gate.rs:253-257` — SHA-256 fingerprint cache key, never the plaintext.
 7. `crates/corelink-container/src/native_pat_gate.rs:264-279` — env-gated builder; prod-fatal on a missing gate.
-8. `crates/corelink-container/src/main.rs:77` — `should_fatal_on_missing_gate` (prod && !gate_present).
+8. `crates/corelink-container/src/main.rs:78` — the `should_fatal_on_missing_gate` enforcing body `prod && !gate_present` (the executed predicate, not the `:77` fn-sig).
 9. `crates/corelink-container/src/main.rs:253` — boot-path call site enforcing the prod-fatal backstop.
 10. `crates/corelink-container/src/main.rs:246-250` — prod-detection = `StorageEnv::from_env().is_some() && PAT_SIGNING_KEY` (the circular dependency: a dropped storage var makes prod-detection false → the FATAL never fires).
 11. `crates/corelink-container/src/main.rs:253-266` — `std::process::exit(1)` wired ONLY to the native-PAT-gate check; the other metering guards just disarm to `None` when `StorageEnv` is absent.

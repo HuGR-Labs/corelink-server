@@ -27,7 +27,7 @@ This endpoint is the runners fabric's authorization oracle. It is the boundary t
 4. PAT verification: `state.verifier.verify(&req.token)` runs the full HMAC + D1 liveness + Argon2id + scope [PAT verification gauntlet](/flows/pat-gauntlet.md), returning the owning tenant (`crates/corelink-container/src/routes/auth_introspect.rs:592-593`; `crates/corelink-container/src/adapter_pat.rs:731-735`).
 5. Plan resolution: `tier_for_tenant` resolves the cache plan; a tier-query fault fails closed 503 — never serve a wrong plan (`crates/corelink-container/src/routes/auth_introspect.rs:595-597`; `crates/corelink-container/src/routes/auth_introspect.rs:490-490`).
 6. Entitlement resolution: `runner_concurrency_for_tenant` reads the SEPARATE `runners_entitlement` D1 table (migrations 0070 + 0072) in one lookup for both the concurrency cap and the monthly vCPU-h ceiling — NOT derived from the plan (`crates/corelink-container/src/routes/auth_introspect.rs:606-621`; `crates/corelink-container/src/routes/auth_introspect.rs:308-318`).
-7. Entitlement decode: an absent `max_concurrency` row means no entitlement (omitted -> fabric rejects the placement); an absent `max_vcpu_h` is a wall-off, not an error (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`).
+7. Entitlement decode: an absent `max_concurrency` row means no entitlement (omitted -> fabric rejects the placement) — `decode_runner_cap` (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`); an absent/NULL `max_vcpu_h` is a wall-off (`Ok(None)`), not an error — the executed `if raw.is_null() { return Ok(None) }` in `decode_runner_vcpu_h` (`crates/corelink-container/src/routes/auth_introspect.rs:426-455`).
 8. Response: a valid PAT yields 200 `{valid, tenant_id, plan, max_concurrency?, max_vcpu_h?}`; an invalid PAT yields 200 `{valid:false}` with no tenant and no reason; a verifier backend fault is 503 (`crates/corelink-container/src/routes/auth_introspect.rs:594-637`).
 
 # Invariants
@@ -48,7 +48,7 @@ This endpoint is the runners fabric's authorization oracle. It is the boundary t
 # Citations
 
 1. `crates/corelink-container/src/routes/auth_introspect.rs:308-318` — the `runners_entitlement` SQL (separate-axis cap + vCPU-h, one lookup).
-2. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — entitlement decode (absent cap -> reject).
+2. `crates/corelink-container/src/routes/auth_introspect.rs:382-394` — `decode_runner_cap`: concurrency-cap decode (absent `max_concurrency` -> omitted -> fabric rejects). The `max_vcpu_h` wall-off is a SEPARATE decoder: `decode_runner_vcpu_h`'s `if raw.is_null() { return Ok(None) }` (`crates/corelink-container/src/routes/auth_introspect.rs:426-455`).
 3. `crates/corelink-container/src/routes/auth_introspect.rs:490-490` — `tier_for_tenant` plan resolution.
 4. `crates/corelink-container/src/routes/auth_introspect.rs:554-639` — `handle_introspect`: constant-time auth, parse, verify, plan + entitlement resolution, response.
 5. `crates/corelink-container/src/routes/auth_introspect.rs:660-683` — `build_state_from_env`: dedicated-secret mount gating (fail-closed).

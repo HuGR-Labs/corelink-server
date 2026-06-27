@@ -5,6 +5,10 @@ description: "How CoreLink stores, separates, and protects its secrets and PATs 
 source_files:
   - "docs/security/2026-06-23-secreview-credentials.md"
   - "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md"
+  - "worker/src/lib/internal_auth.ts"
+  - "crates/corelink-container/src/routes/tier_select.rs"
+  - "crates/corelink-container/src/routes/admin.rs"
+  - "crates/corelink-container/src/main.rs"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
 tags: ["security", "credentials", "pat", "secrets", "clerk"]
@@ -36,13 +40,21 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
   predictable-salt fallback fails CLOSED in prod (`docs/security/2026-06-23-secreview-credentials.md:9-29`).
 - The two highest-value internal surfaces — cross-tenant introspection (`FABRIC_INTROSPECT_AUTH_KEY`)
   and billing ingest (`BILLING_INGEST_AUTH_KEY`) — read their dedicated key directly with a ≥32-char
-  floor and NO fallback to the shared key (`docs/security/2026-06-23-secreview-credentials.md:72-82`).
+  floor and NO fallback to the shared key: both routes mount only when their DEDICATED key is present
+  (`crates/corelink-container/src/main.rs:482` introspect, `crates/corelink-container/src/main.rs:503`
+  billing) (`docs/security/2026-06-23-secreview-credentials.md:72-82`).
 - PAT plane separation holds: the native plane verifies via constant-time HMAC, the adapter plane via
   Argon2id, mint is a pure function that returns the plaintext once and never logs it, and rotate/
   revoke is tenant-scoped and never opens a zero-valid-PAT window (`docs/security/2026-06-23-secreview-credentials.md:116-139`).
 - Internal-auth compares are constant-time on both the TS and Rust gates: the provided value is
   padded to the expected length, one timing-safe compare runs, then a length-equality bit is AND-ed
-  in — no length oracle (`docs/security/2026-06-23-secreview-credentials.md:135-139`).
+  in — no length oracle. The Worker gate is `constantTimeSecretEqual`
+  (`worker/src/lib/internal_auth.ts:112`, the `bytesEqual && lenEqual` at
+  `worker/src/lib/internal_auth.ts:126`); the container gate mirrors it in `verify_internal_auth`
+  (`crates/corelink-container/src/routes/tier_select.rs:348` the `ct_eq`,
+  `:350` the `(content_ok & len_ok) == 1`) and `internal_auth_ok`
+  (`crates/corelink-container/src/routes/admin.rs:102`)
+  (`docs/security/2026-06-23-secreview-credentials.md:135-139`).
 - The earlier HIGH finding: the signup flow wrote the freshly-minted PAT plaintext into Clerk
   `public_metadata`, which is client-readable and embedded in the session JWT — so the PAT was
   broadcast in every session token to every service that validates it (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:8-21`).
@@ -62,14 +74,19 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
   (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:32-46`).
 - No live secret is committed: the repo secret sweep returns only test literals and doc placeholders,
   and `.env.local` (real test keys) is gitignored and untracked (`docs/security/2026-06-23-secreview-credentials.md:155-168`).
-- Internal-auth verification is constant-time with no length oracle on both planes (`docs/security/2026-06-23-secreview-credentials.md:135-139`).
+- Internal-auth verification is constant-time with no length oracle on both planes — Worker
+  `constantTimeSecretEqual` (`worker/src/lib/internal_auth.ts:112-126`) and container `verify_internal_auth`
+  / `internal_auth_ok` (`crates/corelink-container/src/routes/tier_select.rs:348-350`,
+  `crates/corelink-container/src/routes/admin.rs:102`) (`docs/security/2026-06-23-secreview-credentials.md:135-139`).
 
 # Gotchas
 
 - The internal-auth consumer-key split is INERT until the operator actually provisions the dedicated
-  per-consumer keys: until then `pat_mint`/`admin`/`erase`/`runner_mint` all fall back to the one
-  shared `CORELINK_INTERNAL_AUTH_KEY`, so a single leaked secret unlocks all four (LOW-1; the two
-  highest-blast-radius keys are exempt from this fallback) (`docs/security/2026-06-23-secreview-credentials.md:34-53`).
+  per-consumer keys: `resolveConsumerKey` returns the dedicated key only when it is set AND ≥32 chars,
+  else falls through to the shared key (`worker/src/lib/internal_auth.ts:82-88`), so until then
+  `pat_mint`/`admin`/`erase`/`runner_mint` all fall back to the one shared `CORELINK_INTERNAL_AUTH_KEY`
+  and a single leaked secret unlocks all four (LOW-1; the two highest-blast-radius keys above are exempt
+  from this fallback) (`docs/security/2026-06-23-secreview-credentials.md:34-53`).
 - The remediation leaves a documented, accepted residual: the plaintext still lives transiently in
   Clerk `private_metadata` (a sub-processor backend store) until the clear/cron — the future
   hardening is a single-use reveal in our own D1 (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:48-51`).
@@ -90,3 +107,7 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
 7. `docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:18-26` — client-driven cleanup → PAT persists forever.
 8. `docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:32-46` — the SOTA fix: move to `private_metadata` + server reveal + scrub cron.
 9. `docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:48-51` — the accepted transient-residual at the sub-processor.
+10. `worker/src/lib/internal_auth.ts:112-126` — `constantTimeSecretEqual`: padded `timingSafeEqual` + `bytesEqual && lenEqual` length bit (no length oracle).
+11. `worker/src/lib/internal_auth.ts:73-90` — `resolveConsumerKey`: dedicated per-consumer key iff set AND ≥32 chars, else shared-key fallback, else `null` (fail-CLOSED) — the LOW-1 fallback enforcer.
+12. `crates/corelink-container/src/routes/tier_select.rs:348-350` / `crates/corelink-container/src/routes/admin.rs:102` — the container's mirrored constant-time `ct_eq` + length-bit internal-auth gate.
+13. `crates/corelink-container/src/main.rs:482` / `:503` — `/internal/v1/auth/introspect` and `/internal/v1/billing/usage` mount only with their DEDICATED `FABRIC_INTROSPECT_AUTH_KEY` / `BILLING_INGEST_AUTH_KEY` (no shared-key fallback).

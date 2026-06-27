@@ -7,6 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/customer.rs"
   - "crates/corelink-container/src/routes/users.rs"
   - "crates/corelink-container/src/routes.rs"
+  - "crates/corelink-container/src/main.rs"
 checkpoint_sha: "bdf83b18abf324a57d93b0bc8db8366ddea6e182"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
@@ -36,8 +37,10 @@ self-service plane. It rests on the same trusted tenant id established by
 
 - The rate limiter is wired as ONE final `router.layer(axum::middleware::from_fn_with_state(rate_limit_state, rate_limit_layer))`
   call at the end of `build_with_factory` (`crates/corelink-container/src/routes.rs:825-828`), so it covers exactly the
-  composed data-plane router and intentionally excludes `/_health` and `/_internal/*`
-  (`crates/corelink-container/src/routes/ratelimit_layer.rs:15-22`). When the D1 tier-resolver is unavailable
+  composed data-plane router; `/_health` and `/_internal/*` are excluded BY ROUTE-MERGE ORDER — `main.rs`
+  appends `.route("/_health", …)` to the already-rate-limited router returned by `build_with_factory`
+  (`crates/corelink-container/src/main.rs:460-461`) and merges every `/_internal/*` surface AFTER it
+  (`crates/corelink-container/src/main.rs:471`), so they sit OUTSIDE the layer by construction. When the D1 tier-resolver is unavailable
   the layer falls back to the team-default `RateLimitLayerState` for all tenants rather than failing the router (F-017).
 - The per-tenant bucket is keyed on the edge-injected `x-corelink-tenant-id`, the trustworthy tenant
   source for the native surfaces (`crates/corelink-container/src/routes/ratelimit_layer.rs:24-35`). It is
@@ -63,8 +66,10 @@ self-service plane. It rests on the same trusted tenant id established by
 
 # Invariants
 
-- The data-plane rate limiter never covers the DO readiness probe or the internal shared-secret surfaces
-  (`crates/corelink-container/src/routes/ratelimit_layer.rs:18-22`).
+- The data-plane rate limiter never covers the DO readiness probe or the internal shared-secret surfaces,
+  enforced by route-merge order: `/_health` + every `/_internal/*` are appended to the rate-limited router
+  AFTER `build_with_factory` returns (`crates/corelink-container/src/main.rs:460-461`,
+  `crates/corelink-container/src/main.rs:471`).
 - Every customer surface rejects a missing/sentinel tenant with `401` before touching that tenant's
   billing/keys/team data (`crates/corelink-container/src/routes/customer.rs:225-235`).
 - Credential revocation requires cache-write scope; a read-only token cannot revoke any credential in the
@@ -84,8 +89,8 @@ self-service plane. It rests on the same trusted tenant id established by
 
 # Citations
 
-1. `crates/corelink-container/src/routes/ratelimit_layer.rs:15-22` — the limiter is one layer over the data-plane router; excludes health/internal.
-2. `crates/corelink-container/src/routes/ratelimit_layer.rs:18-22` — health probe + internal surfaces are outside the limiter.
+1. `crates/corelink-container/src/main.rs:460-461` — the route-merge order enforcer: `/_health` is appended to the already-rate-limited router returned by `build_with_factory`, so it sits OUTSIDE the limiter by construction.
+2. `crates/corelink-container/src/main.rs:471` — `/_internal/*` surfaces (pat/mint, introspect, billing-ingest, dsr, cas-erase, tier-select, webhook) are merged AFTER `build_with_factory`, also outside the limiter (the `//!` narration is `crates/corelink-container/src/routes/ratelimit_layer.rs:15-22`).
 3. `crates/corelink-container/src/routes/ratelimit_layer.rs:24-35` — the per-tenant bucket keyed on the edge-injected tenant header.
 3b. `crates/corelink-container/src/routes/ratelimit_layer.rs:133-161` — the OCI per-repo velocity gate (`OCI_NS`/`OCI_REPO_REQ_PER_SEC`/`OCI_REPO_BURST`): the per-tenant gate fail-OPENS on OCI (header deleted), so a separate repo-keyed limiter guards the shared `_oci` pool.
 3c. `crates/corelink-container/src/routes/ratelimit_layer.rs:204-208` — the `oci_limiter` field: a SEPARATE limiter (not tenant-keyed) for the OCI plane.
