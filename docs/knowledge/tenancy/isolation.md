@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-container/src/auth_tenant.rs"
   - "crates/tenant-path/src/lib.rs"
   - "crates/tenant-path/src/prefix.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "29e159f2b0c93913ba4c15689fa966195a56deb0"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -40,7 +40,7 @@ keyed on the same trusted tenant id this control establishes.
 - Non-tenant system traffic uses reserved sentinel DO names (e.g. `_system`, `_oci`) that are deliberately
   distinct from any real tenant id — `worker/src/index.ts:1500`.
 - Inside the container the ONLY trustworthy tenant source is the DO-injected `x-corelink-tenant-id` header;
-  the `AuthTenant` extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:24-30`.
+  the `AuthTenant` extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:49-54`.
 - Storage keys are namespaced by a per-tenant prefix derived via HMAC-SHA256 over the tenant UUID,
   base64url-encoded and truncated to `TENANT_PREFIX_LEN = 16` ASCII chars by `derive_prefix`
   (`crates/tenant-path/src/prefix.rs:148-166`; `crates/tenant-path/src/prefix.rs:15`).
@@ -51,8 +51,12 @@ keyed on the same trusted tenant id this control establishes.
 
 - No code path may construct a tenant key from a caller-supplied prefix; the prefix field is private and
   only the deriving constructor can populate it (`crates/corelink-worker/src/tenant.rs:36-44`).
-- The container fails CLOSED with `401` when the tenant header is empty or a sentinel — it never acts on
-  unauthenticated or non-tenant traffic (`crates/corelink-container/src/auth_tenant.rs:31-34`).
+- The container fails CLOSED with `401` when the tenant header is empty or a reserved sentinel — and the
+  reserved-sentinel set now also includes the adapter prefixes `_oci` (the synthetic shared OCI
+  Durable-Object id) and `_public` (`PUBLIC_NAMESPACE`, the cross-tenant dedup namespace) alongside
+  `_anonymous`/`_unknown`/`_system`/`_pending`/`""`, so a request masquerading as a shared-namespace
+  prefix is rejected, never treated as a tenant (`crates/corelink-container/src/auth_tenant.rs:35-43`;
+  `crates/corelink-container/src/auth_tenant.rs:55-58`).
 - The `TenantPrefix` newtype cannot be built from raw bytes outside its crate (its tuple field is private),
   so `derive_prefix` is the single trust boundary for namespacing (`crates/tenant-path/src/prefix.rs:91-92`;
   `crates/tenant-path/src/prefix.rs:148-166`; crate-doc rule `crates/tenant-path/src/lib.rs:27`).
@@ -64,7 +68,7 @@ keyed on the same trusted tenant id this control establishes.
   has already had it overwritten upstream — the extractor's job is the fail-closed sentinel check, not
   origin authentication (`crates/corelink-container/src/auth_tenant.rs:1-3`).
 - The empty string `""` is in the sentinel list, so a present-but-blank header is rejected exactly like a
-  missing one (`crates/corelink-container/src/auth_tenant.rs:19`).
+  missing one (`crates/corelink-container/src/auth_tenant.rs:42`).
 
 # Citations
 
@@ -73,9 +77,9 @@ keyed on the same trusted tenant id this control establishes.
 3. `crates/corelink-worker/src/tenant.rs:36-44` — the `TenantCtx` struct with a private, derived prefix field.
 4. `crates/corelink-worker/src/tenant.rs:55-63` — `TenantCtx::new` derives the prefix from `(tdk, tenant_id)`.
 5. `crates/corelink-container/src/auth_tenant.rs:1-3` — the only trustworthy tenant source is the DO-injected header.
-6. `crates/corelink-container/src/auth_tenant.rs:19` — the sentinel set (including the empty string).
-7. `crates/corelink-container/src/auth_tenant.rs:24-30` — the `AuthTenant` extractor reads + trims the header.
-8. `crates/corelink-container/src/auth_tenant.rs:31-34` — fail-CLOSED `401` on empty/sentinel tenant.
+6. `crates/corelink-container/src/auth_tenant.rs:35-43` — the sentinel set (incl. `_oci`, `_public`/`PUBLIC_NAMESPACE`, and the empty string).
+7. `crates/corelink-container/src/auth_tenant.rs:49-54` — the `AuthTenant` extractor reads + trims the header.
+8. `crates/corelink-container/src/auth_tenant.rs:55-58` — fail-CLOSED `401` on empty/sentinel tenant.
 9. `crates/tenant-path/src/prefix.rs:148-166` — `derive_prefix`: HMAC-SHA256 derivation + 16-char truncation.
 9b. `crates/tenant-path/src/prefix.rs:15` — `TENANT_PREFIX_LEN = 16`.
 10. `crates/tenant-path/src/prefix.rs:91-92` — the `TenantPrefix` private-tuple newtype (single derivation trust boundary).
