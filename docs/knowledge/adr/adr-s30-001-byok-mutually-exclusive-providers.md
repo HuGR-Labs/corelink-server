@@ -4,6 +4,7 @@ title: "ADR-S30-001 — BYOK real providers: mutually-exclusive compile-time car
 description: "Ratifies that the BYOK orchestrator enforces exactly one real KMS provider per binary via pairwise compile_error! macros, making the --all-features build fail by design and CI run a per-provider matrix instead."
 source_files:
   - "specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md"
+  - "crates/corelink-byok/src/lib.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "storage", "byok", "kms", "cargo-features", "compile-error", "fips", "s30"]
@@ -26,8 +27,21 @@ The orchestrator enforces exactly one real-provider feature per binary (zero yie
 
 There is a single canonical reference for the `--all-features` failure mode, a compile-time guarantee that production binaries link exactly one provider (FIPS-matrix and audit-chain integrity preserved), at the accepted cost that `--all-features` fails by design and CI pays a five-config matrix per touching commit, with per-tenant provider mixing explicitly unsupported at the binary level (multi-binary routing is the GA shape), per `specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md:189-223`.
 
+# Status vs shipped code
+
+The `compile_error!` mutual-exclusion guard **is real** — it is the load-bearing part of this ADR and
+holds as shipped. But "ships BYOK envelope encryption across four KMS providers" is **designed-only**:
+with zero real-provider features the orchestrator defaults to the **in-memory fake**
+(`crates/corelink-byok/src/lib.rs:42,48` — "Default = no provider (trait + InMemoryFake...)"), and no
+real provider is exercised on the deployed plane (no `byok`/`wrap_dek`/`EnvelopeEncryptor` call site
+under `crates/corelink-container/src/routes/`; see the
+[ADR-S14-004 status note](/adr/adr-s14-004-byok-trait-envelope-encryption.md)). So the "this binary IS
+the AWS binary" invariant and the per-provider CI matrix are real guard rails for *when* a provider
+binary ships; today the production default is the in-memory fake, not a live KMS provider.
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md:41-108` — the 4-provider surface, why runtime multi-provider is unsafe (surface bloat, FIPS, audit-chain fork), and the wave-18 incident (Context).
 2. `specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md:110-187` — D1-D5: one-feature rule, six pairwise compile_error! macros, --all-features fails by design, per-provider CI matrix, AP-11 cite.
 3. `specs/03_architecture/adrs/ADR-S30-001-byok-mutually-exclusive-providers.md:189-223` — positive/accepted consequences and the not-supported per-tenant-mixing note.
+4. `crates/corelink-byok/src/lib.rs:42` — with zero real-provider features the orchestrator defaults to the in-memory fake ("Default = no provider"), so the four-provider surface is designed-only on the deployed plane (see also :48).

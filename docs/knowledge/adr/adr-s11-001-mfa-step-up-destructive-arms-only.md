@@ -4,6 +4,7 @@ title: "ADR-S11-001 — MFA step-up required only on destructive DSR arms"
 description: "Why DSR MFA step-up is required only on the irreversible arms (erasure, rectification, restriction) and forbidden on the read-only arms."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md"
+  - "crates/corelink-container/src/main.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s11", "auth", "mfa", "dsr", "privacy"]
@@ -46,6 +47,17 @@ reducing attack surface.
   capturing every step-up attempt.
 - Forbidden by this ADR: adding step-up on the `access` / `portability` / `confirmation` arms — it
   commits to NOT adding friction there.
+
+# Status vs shipped code
+
+The "seven-endpoint DSR API" this ADR gates is **designed, not shipped**. The deployed container exposes
+the erasure path as a single internal route — `POST /_internal/dsr/erase`, gated by
+`CORELINK_INTERNAL_AUTH_KEY` and driving the 12-backend erasure orchestrator
+(`crates/corelink-container/src/main.rs:525-532`) — plus a per-hash CAS-erase route and the
+Clerk-`user.deleted` account-delete enqueue; there is **no seven-arm public DSR API and no WebAuthn
+MFA step-up wiring** in the live request path. The destructive-arms-only step-up rule is the
+forward-looking policy for when that API is built; today the irreversible erasure path is guarded by an
+internal-auth key, not by subject MFA step-up.
 
 # Citations
 

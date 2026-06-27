@@ -68,6 +68,16 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
   (`crates/corelink-container/src/native_pat_gate.rs:264-279`; the prod-fatal backstop is
   `should_fatal_on_missing_gate` at `crates/corelink-container/src/main.rs:77` wired at
   `crates/corelink-container/src/main.rs:253`).
+- **The prod-FATAL backstop is CIRCULAR — it can be silently neutralised by the SAME misconfig it is meant
+  to catch.** "Prod is detected" is itself `StorageEnv::from_env().is_some() && PAT_SIGNING_KEY`
+  (`crates/corelink-container/src/main.rs:246-250`), and `std::process::exit(1)` fires ONLY for the native
+  PAT gate (`:253-266`). The other metering guards (`$-ceiling`, byte-accounting, request-quota) just
+  return `None` when `StorageEnv` is absent — no FATAL of their own. So a dropped `R2_S3_*`/`D1` var makes
+  prod-detection FALSE → the watchdog never fires → the native planes mount WITHOUT the Argon2id backstop
+  AND with the `$-ceiling`/byte-cap/request-quota all silently OFF, and the container boots cleanly. The
+  config that disables the controls also disables the watchdog that is supposed to catch their absence;
+  the backstop only protects against a malformed-but-present `PAT_SIGNING_KEY` *rotation sibling* (the
+  case it was written for), not against the whole storage env going missing.
 - The single-flight shards are a FIXED 256-entry array, not a per-token map — bounded memory by
   construction (`crates/corelink-container/src/native_pat_gate.rs:72-77`).
 
@@ -82,3 +92,5 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 7. `crates/corelink-container/src/native_pat_gate.rs:264-279` — env-gated builder; prod-fatal on a missing gate.
 8. `crates/corelink-container/src/main.rs:77` — `should_fatal_on_missing_gate` (prod && !gate_present).
 9. `crates/corelink-container/src/main.rs:253` — boot-path call site enforcing the prod-fatal backstop.
+10. `crates/corelink-container/src/main.rs:246-250` — prod-detection = `StorageEnv::from_env().is_some() && PAT_SIGNING_KEY` (the circular dependency: a dropped storage var makes prod-detection false → the FATAL never fires).
+11. `crates/corelink-container/src/main.rs:253-266` — `std::process::exit(1)` wired ONLY to the native-PAT-gate check; the other metering guards just disarm to `None` when `StorageEnv` is absent.

@@ -5,6 +5,7 @@ description: "The Worker-trusted storage-cap header and the atomic byte-accounti
 source_files:
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-rate-headers/src/headers.rs"
+  - "crates/corelink-adapter-host/src/oci/auth.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "storage", "byte-accounting", "rate-limit-type", "fail-closed"]
@@ -28,8 +29,20 @@ contract §5 reason vocabulary — NOT "RFC 9331", which is the unrelated ECN/L4
 This is the bytes axis of the tenancy abuse triad, alongside the
 [$-ceiling](/tenancy/dollar-ceiling.md) (dollar axis) and the
 [request-quota](/tenancy/request-quota.md) (count axis). The header is the seam between the Worker's
-quota resolution and the container's enforcement; the accountant is the enforcement; the rate-headers
-crate is the customer-facing signal that an over-plan boundary (not a bug) caused the rejection.
+quota resolution and the container's enforcement *on the native surfaces*; the accountant is the
+enforcement; the rate-headers crate is the customer-facing signal that an over-plan boundary (not a bug)
+caused the rejection.
+
+**The header is NOT the only cap-delivery seam — OCI is the exception.** The Worker DELETES
+`x-corelink-tenant-id` (and therefore never sets `x-corelink-storage-quota-bytes`) on the OCI
+pass-through, so on the OCI surface the resolved per-tier cap travels INSIDE the verified OCI bearer
+token instead: the cap is signed into the token at mint time (`encode_cap`,
+`crates/corelink-adapter-host/src/oci/auth.rs:285-303`) as the `storage_cap_bytes` field of the
+HMAC-verified `VerifiedToken` (`:200-220`), decoded fail-closed only after the signature check
+(`decode_cap`, `:250-263`, `:350-359`). It uses the SAME sentinel vocabulary as the header — `Some(n)`
+finite cap, `Some(0)` genuine-unlimited, `None`/`"-"` indeterminate → data-plane fail-closed — so the two
+delivery paths agree. On OCI an ABSENT `x-corelink-storage-quota-bytes` header is therefore NORMAL, not an
+attack: the cap simply rides the bearer.
 
 # How it works
 
@@ -86,3 +99,5 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
 10. `crates/corelink-container/src/byte_accounting.rs:120-129` — a fresh row is never seeded uncapped from absence.
 11. `crates/corelink-rate-headers/src/headers.rs:30-37` — the `over_quota` arm of the `X-Rate-Limit-Type` taxonomy.
 12. `crates/corelink-rate-headers/src/headers.rs:101-105` — `counts_against_sli` excludes `over_quota` from the SLO.
+13. `crates/corelink-adapter-host/src/oci/auth.rs:200-220` — `VerifiedToken.storage_cap_bytes`: the per-tier cap carried INSIDE the verified OCI bearer (the 2nd cap-delivery seam; same `Some(n)`/`Some(0)`/`None` vocabulary as the header).
+14. `crates/corelink-adapter-host/src/oci/auth.rs:250-263` — `decode_cap` fail-closed parse of the signed cap field (`"-"` → indeterminate, negative/non-numeric → rejected).

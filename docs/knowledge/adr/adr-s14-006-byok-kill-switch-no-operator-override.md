@@ -4,6 +4,7 @@ title: "ADR-S14-006 — BYOK CMK revocation kill switch (hard-fail, no operator 
 description: "Why CMK revocation propagates in <=5 min via 60s detection + 300s hard DEK-cache TTL, with a compile-time absence of any operator override and conservative network-partition degrade."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-006-byok-kill-switch-no-operator-override.md"
+  - "crates/corelink-byok/src/byok_revocation/detector.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s14", "byok", "kill-switch", "crypto-sovereignty"]
@@ -33,6 +34,17 @@ BYOK grants crypto sovereignty; three questions needed explicit decisions: how f
 
 The 300s DEK-cache TTL this kill switch relies on is the D2 decision of [ADR-S14-004 — BYOK adapter trait](/adr/adr-s14-004-byok-trait-envelope-encryption.md).
 
+# Status vs shipped code
+
+The kill switch is real code (`RevocationDetector` + the no-override compile-time absence live in
+`crates/corelink-byok/src/byok_revocation/detector.rs`), but it **guards nothing live yet**: no
+production blob is BYOK-envelope-encrypted because the envelope path is unwired on the deployed CAS
+plane (see [ADR-S14-004's status note](/adr/adr-s14-004-byok-trait-envelope-encryption.md) — no
+`EnvelopeEncryptor` call site under `crates/corelink-container/src/routes/`). So the ≤5-min revocation
+SLA, the absent-override invariant, and the conservative-degrade behavior are designed-and-tested
+properties of the BYOK crate, not yet an enforced control over live customer data. The decision stands;
+its scope is "when BYOK at-rest is wired," not "today."
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S14-006-byok-kill-switch-no-operator-override.md:24-39` — the three kill-switch design questions.
@@ -40,3 +52,4 @@ The 300s DEK-cache TTL this kill switch relies on is the D2 decision of [ADR-S14
 3. `specs/03_architecture/adrs/ADR-S14-006-byok-kill-switch-no-operator-override.md:58-89` — D-2 compile-time no-override and D-3 conservative partition degrade.
 4. `specs/03_architecture/adrs/ADR-S14-006-byok-kill-switch-no-operator-override.md:91-102` — D-4 no-countdown and D-5 multi-channel alert.
 5. `specs/03_architecture/adrs/ADR-S14-006-byok-kill-switch-no-operator-override.md:116-129` — consequences and the invariants enforced.
+6. `crates/corelink-byok/src/byok_revocation/detector.rs:95` — the `RevocationDetector` + the compile-time absence of any operator override; real BYOK-crate code that guards nothing live yet (the envelope path is unwired on the deployed CAS plane).

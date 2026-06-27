@@ -4,6 +4,7 @@ title: "ADR-0032 — WebAuthn Level 3 admin step-up + AAGUID + OTP recovery"
 description: "Why admin operations are gated by phishing-resistant WebAuthn L3 via webauthn-rs, with a closed-default AAGUID allowlist, a bound step-up token, and 6-digit OTP (not magic-link) recovery."
 source_files:
   - "specs/03_architecture/adrs/ADR-0032-webauthn-level3.md"
+  - "crates/corelink-auth/src/webauthn.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "webauthn", "passkey", "mfa", "step-up", "auth", "s03"]
@@ -26,9 +27,22 @@ The canonical questions are resolved by using `webauthn-rs = 0.5` behind a trait
 
 Every WebAuthn invariant is enforced algorithmically by the in-memory engine and adversarial regressions, the trait surface freezes the production-shim contract, and the type system blocks any future drift toward magic-link recovery, traded against Argon2id mint+verify being the wall-clock bottleneck of the recovery-OTP property tests (~200 ms/cycle, bounding that proptest to 100 iterations) (ADR-0032:190-219). It governs the [D1 PAT store](/auth/d1-pat-store.md).
 
+# Status vs shipped code
+
+The `webauthn-rs = 0.5` production engine is **designed, not wired**. The shipped crate ships only the
+in-memory engine plus a `ProductionEngineNotConfigured` stub that returns
+`WebAuthnError::EngineNotConfigured`; the real `webauthn-rs` shim is gated behind a
+`feature = "host-server"` that is **unimplemented in this Lote** so the no-default-features build stays
+wasm32-clean (`crates/corelink-auth/src/webauthn.rs:24,64-66,147`), and there is **no `webauthn-rs`
+entry in `Cargo.lock`**. So the admin step-up ceremony, AAGUID allowlist, bound step-up token, and OTP
+recovery exist as the in-memory engine + invariant tests but are not exercised by a deployed production
+authenticator path. The type-level guarantees (single-variant `RecoveryChannel`, COSE alg-none
+rejection) are real in the crate; the production ceremony is not yet live.
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-0032-webauthn-level3.md:34-47` — the five WebAuthn load-bearing invariants (Context).
 2. `specs/03_architecture/adrs/ADR-0032-webauthn-level3.md:50-91` — webauthn-rs over hand-roll, closed-default AAGUID, bound step-up token, OTP-not-magic-link recovery (Decision).
 3. `specs/03_architecture/adrs/ADR-0032-webauthn-level3.md:154-188` — Argon2id OTP params, single-use/rate-limit, COSE alg-none rejection (Decision).
 4. `specs/03_architecture/adrs/ADR-0032-webauthn-level3.md:190-219` — invariants enforced + frozen trait contract vs Argon2id proptest cost (Consequences).
+5. `crates/corelink-auth/src/webauthn.rs:24` — the `host-server` feature gate is unimplemented in this Lote, so the shipped crate ships only the in-memory engine + a `ProductionEngineNotConfigured` stub (the production `webauthn-rs` shim at :147 is not wired).

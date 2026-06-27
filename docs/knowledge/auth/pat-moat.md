@@ -5,6 +5,7 @@ description: "How CoreLink rejects forged tokens cheaply at the edge and proves 
 source_files:
   - "worker/src/lib/internal_auth.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
+  - "crates/corelink-container/src/native_pat_gate.rs"
 checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
@@ -26,10 +27,18 @@ there.
 
 The moat is the trust spine for all six cache surfaces. The Worker resolves a request's tenant from its
 PAT under a tight CPU budget (HMAC fast-fail + D1 expiry lookup) and forwards a server-trusted
-`x-corelink-tenant-id`; the container re-runs the **full** Option-B verification rather than trusting
+`x-corelink-tenant-id`; the container re-runs the full Option-B verification rather than trusting
 that header blindly, so a compromised or misconfigured Worker cannot grant cache access on its own
 (`crates/corelink-container/src/adapter_pat.rs:5-14`). The same cheap-then-deep shape protects the
 control surfaces (mint, introspect) at the Worker edge.
+
+**Qualifier — the "full" verification is cached on the data plane.** On the six cache surfaces the
+native gate is `NativePatGate::verify`, which fronts the full Argon2id path with a 5-second verify
+cache: a cache HIT returns `Ok` after only a constant-time tenant-equality check and **SKIPS D1 +
+Argon2id** for the TTL (`crates/corelink-container/src/native_pat_gate.rs:170-176`). So "re-runs the
+FULL Option-B verification" is true on a cache MISS (and on the first request of each 5s window, which
+single-flights the D1 + Argon2id round) but NOT on every request — a recently-verified PAT is admitted
+on the tenant-equality check alone until its cache entry expires.
 
 # How it works
 

@@ -30,9 +30,12 @@ The design yields forensic completeness, compile-time PII safety, a drift-proof 
 # Status vs shipped code
 
 One clarification on the hash primitive: the ADR describes the content hash as `SHA-256(JCS-canonicalize(event))`,
-but the shipped per-tenant **chain-link** hash is **BLAKE3-256** over the JCS-canonical bytes
-(`crates/corelink-audit-chain/src/chain.rs:156-160`, streaming variant `:188-191`). SHA-256 survives only
-in the Rekor/transparency `hashedrekord` path, not in the per-tenant audit chain. The decision (atomic
+but the shipped per-tenant **chain-link** hash is **BLAKE3-256** over the JCS-canonical bytes. The
+ADR's "read the persisted JCS bytes rather than re-canonicalize" path is
+`link_chain_hash_from_canonical` (`crates/corelink-audit-chain/src/chain.rs:182-191`), and its
+inline-canonicalizing **streaming variant** is `link_chain_hash_streaming`
+(`crates/corelink-audit-chain/src/chain.rs:152-162`) — both BLAKE3. SHA-256 survives only in the
+Rekor/transparency `hashedrekord` path, not in the per-tenant audit chain. The decision (atomic
 outbox, hash-newtype PII redaction, read-persisted-JCS-not-recanonicalize, deterministic chain) is
 unchanged — only the named chain digest reflects the shipped BLAKE3.
 

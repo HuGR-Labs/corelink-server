@@ -4,6 +4,8 @@ title: "ADR-0039 — corelink-chunker public API stability + mask seed versionin
 description: "Freezes the chunker's algorithm constants and public API for the life of crate v1.x, because any drift remaps chunk boundaries and invalidates every customer's manifest cache."
 source_files:
   - "specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md"
+  - "crates/corelink-cas/src/chunker.rs"
+  - "crates/corelink-cas/src/lib.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s05", "chunker", "api-stability", "semver"]
@@ -44,9 +46,20 @@ lock-step, and additive variants don't break callers; the accepted cost is that 
 mask-seed bug requires a coordinated dual-write migration rather than a hotfix (mitigated by property
 tests + a fuzz harness and the canonical-vector pins on the Gear table).
 
+# Status vs shipped code
+
+There is **no standalone `corelink-chunker` crate** in the workspace. The chunker ships as a **module of
+`corelink-cas`** (`pub mod chunker;` at `crates/corelink-cas/src/lib.rs:86`, implemented in
+`crates/corelink-cas/src/chunker.rs`), so the "public API stability for the life of crate v1.x" framing
+is the stability contract for that module + its re-exports rather than a separately versioned crate.
+The substance — frozen algorithm constants, exhaustive `ChunkerStep`, determinism — applies to the
+module as shipped; only the "standalone crate" packaging differs.
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md:28-40` — Context: chunker consumers + why any API/constant drift invalidates the global cache.
 2. `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md:45-60` — Decision: the frozen algorithm constants table + drift = breaking change requiring a coordinated migration.
 3. `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md:71-71` — `ChunkerStep` is frozen (NOT `#[non_exhaustive]`) so a forgotten arm cannot stall the pipeline.
 4. `specs/03_architecture/adrs/ADR-0039-chunker-public-api-stability.md:96-112` — Consequences: byte-for-byte reproducibility + lock-step constants vs the coordinated-migration cost.
+5. `crates/corelink-cas/src/lib.rs:86` — `pub mod chunker;`: the chunker ships as a module of `corelink-cas`, not a standalone crate.
+6. `crates/corelink-cas/src/chunker.rs:84-110` — the frozen public API surface (`ChunkerKind` dispatch + `#[non_exhaustive]` config) the stability contract governs.

@@ -39,8 +39,16 @@ self-service plane. It rests on the same trusted tenant id established by
   composed data-plane router and intentionally excludes `/_health` and `/_internal/*`
   (`crates/corelink-container/src/routes/ratelimit_layer.rs:15-22`). When the D1 tier-resolver is unavailable
   the layer falls back to the team-default `RateLimitLayerState` for all tenants rather than failing the router (F-017).
-- The bucket is keyed on the edge-injected `x-corelink-tenant-id`, the only trustworthy tenant source in
-  the container (`crates/corelink-container/src/routes/ratelimit_layer.rs:24-35`).
+- The per-tenant bucket is keyed on the edge-injected `x-corelink-tenant-id`, the trustworthy tenant
+  source for the native surfaces (`crates/corelink-container/src/routes/ratelimit_layer.rs:24-35`). It is
+  NOT uniformly tenant-keyed across the WHOLE data plane: the OCI surface reaches this layer with
+  `x-corelink-tenant-id` deleted by the Worker (the tenant is resolved from the OCI bearer AFTER the
+  limiter runs), so the per-tenant gate fail-OPENS for every OCI request. A SEPARATE per-repo limiter
+  (`oci_limiter`, its own tighter config) keyed on the OCI repository name parsed from the request path
+  guards the shared, unauthenticated `_oci` pool instead — `OCI_REPO_REQ_PER_SEC = 50` / `OCI_REPO_BURST
+  = 200` (F-016) (`crates/corelink-container/src/routes/ratelimit_layer.rs:133-161`,
+  `:204-208`). So the data-plane velocity bulkhead is tenant-keyed on the native surfaces but
+  repo/realm-keyed on OCI.
 - A stable 128-bit bucket key is derived from the raw tenant string via `tenant_key_uuid`, so non-UUID
   tenants still land in distinct buckets (`crates/corelink-container/src/routes/ratelimit_layer.rs:415`).
 - The customer router exposes the self-serve surface — overview, usage, audit, billing, keys, team, account-delete — under
@@ -78,7 +86,9 @@ self-service plane. It rests on the same trusted tenant id established by
 
 1. `crates/corelink-container/src/routes/ratelimit_layer.rs:15-22` — the limiter is one layer over the data-plane router; excludes health/internal.
 2. `crates/corelink-container/src/routes/ratelimit_layer.rs:18-22` — health probe + internal surfaces are outside the limiter.
-3. `crates/corelink-container/src/routes/ratelimit_layer.rs:24-35` — keyed on the edge-injected tenant header.
+3. `crates/corelink-container/src/routes/ratelimit_layer.rs:24-35` — the per-tenant bucket keyed on the edge-injected tenant header.
+3b. `crates/corelink-container/src/routes/ratelimit_layer.rs:133-161` — the OCI per-repo velocity gate (`OCI_NS`/`OCI_REPO_REQ_PER_SEC`/`OCI_REPO_BURST`): the per-tenant gate fail-OPENS on OCI (header deleted), so a separate repo-keyed limiter guards the shared `_oci` pool.
+3c. `crates/corelink-container/src/routes/ratelimit_layer.rs:204-208` — the `oci_limiter` field: a SEPARATE limiter (not tenant-keyed) for the OCI plane.
 4. `crates/corelink-container/src/routes/ratelimit_layer.rs:38-49` — bounded NoOp production sinks (the InMemory-OOM trap).
 5. `crates/corelink-container/src/routes/ratelimit_layer.rs:415` — `tenant_key_uuid` stable 128-bit bucket key.
 6. `crates/corelink-container/src/routes/customer.rs:185-198` — the `/v1/customer/*` routes (overview/usage/audit/billing/keys/team/account-delete).

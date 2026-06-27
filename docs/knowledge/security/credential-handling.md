@@ -50,8 +50,10 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
   un-visited welcome page left the PAT resident forever — confirmed on the owner's own account weeks
   after signup (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:18-26`).
 - The fix moves the secret off all client/JWT surfaces: write the plaintext to Clerk
-  `private_metadata` (backend-only), reveal it server-side via the Backend API, and add a guaranteed
-  scrub cron so an un-visited welcome cannot leave it resident (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:32-46`).
+  `private_metadata` (backend-only), reveal it server-side via the Backend API, and add a scrub cron so an
+  un-visited welcome cannot leave it resident — though this concept does NOT confirm that cron is
+  wired-and-running in prod (live status unverified; see Gotchas)
+  (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:32-46`).
 
 # Invariants
 
@@ -71,6 +73,11 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
 - The remediation leaves a documented, accepted residual: the plaintext still lives transiently in
   Clerk `private_metadata` (a sub-processor backend store) until the clear/cron — the future
   hardening is a single-use reveal in our own D1 (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:48-51`).
+- The "guaranteed scrub cron" is described in the fix design, but this concept does NOT confirm the cron
+  is wired-and-running in prod — its live status is UNVERIFIED here. Until that is independently
+  confirmed, PAT plaintext must be assumed to persist in Clerk `private_metadata`, so an IR responder must
+  NOT conclude "no live PATs in Clerk" from the existence of the scrub-cron design
+  (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:32-46`).
 
 # Citations
 

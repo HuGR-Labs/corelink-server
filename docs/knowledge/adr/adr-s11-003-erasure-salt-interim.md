@@ -4,6 +4,7 @@ title: "ADR-S11-003 — Erasure salt management interim (D1-encrypted vault, BYO
 description: "Why the per-DSR erasure salt is stored interim in an AES-256-GCM-encrypted D1 vault for S-11→S-13, with customer-held BYOK KMS as the final S-14 solution."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-003-erasure-salt-interim.md"
+  - "crates/corelink-container/src/routes/customer.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s11", "privacy", "erasure", "byok", "kms", "interim"]
@@ -47,6 +48,18 @@ involvement.
 - Neutral: the code change at S-14 is binding-only — the `pseudonymize_subject_id` surface is
   unchanged; only the salt source swaps from D1 vault to KMS HKDF. Signed off by Privacy, Compliance,
   Architect, and interim DPO subject to the S-14 ship commitment.
+
+# Status vs shipped code
+
+The shipped salt derivation is **simpler than this ADR's interim design**. The live requester derives
+the erasure salt as a deterministic `HMAC-SHA256(ERASURE_SALT_KEY, dsr_id)`, recomputed on the fly from
+a **single process-global env key** and fail-CLOSED if that key is unset
+(`crates/corelink-container/src/routes/customer.rs:1111-1130`) — it is **not** a per-tenant 32-byte
+CSPRNG salt persisted in an AES-256-GCM-encrypted D1 vault with a tenant-key-derivation chain. The
+regulatory property the ADR cares about (a stable, unlinkable per-DSR pseudonymization key, mirrored by
+the worker `deriveErasureSalt`) holds — the salt is per-DSR via `dsr_id` and never predictable — but the
+storage model is global-key HMAC, not the encrypted-vault interim; treat the AES-GCM D1 vault as the
+designed shape, not the deployed one (BYOK-KMS at S-14 remains future work).
 
 # Citations
 

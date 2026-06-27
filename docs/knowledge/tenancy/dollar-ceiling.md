@@ -4,6 +4,7 @@ title: "Per-tenant monthly $-ceiling"
 description: "The fail-CLOSED cumulative-dollar spend cap that bounds each tenant's monthly cost blast-radius, orthogonal to the rate limit and the request quota."
 source_files:
   - "crates/corelink-container/src/tenant_quota.rs"
+  - "crates/corelink-container/src/main.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "billing", "dollar-ceiling", "adr-0068", "fail-closed"]
@@ -38,9 +39,11 @@ never floating point.
   (`crates/corelink-container/src/tenant_quota.rs:743-752`).
 - A quota-store transport/decode error also returns `503` — a billable op that cannot be cost-checked is
   never served (`crates/corelink-container/src/tenant_quota.rs:762-768`).
-- The ceiling decision is an atomic DB-side `check_and_accrue` (`accrued + delta <= budget`), so two
-  concurrent ops cannot both read the same baseline and both pass; over the ceiling returns `402`
-  (`crates/corelink-container/src/tenant_quota.rs:794-804`).
+- The ceiling decision is an atomic DB-side `check_and_accrue` (`accrued + delta <= budget`) in the
+  durable `D1QuotaStore`, so two concurrent ops cannot both read the same baseline and both pass; over the
+  ceiling returns `402` (`crates/corelink-container/src/tenant_quota.rs:794-804`). NOTE: the durable store
+  is consulted per-op only in the abstract — the live guard fronts it with `LeasedQuotaStore` (below), so
+  the ceiling is enforced **approximately, by budget-lease**, not literally once per op.
 - A cycle rolls (accrued resets to 0, the anchor advances) once the clock is `CYCLE_LENGTH_MS` (~30 days)
   past the tenant's `cycle_anchor_ms` (`crates/corelink-container/src/tenant_quota.rs:155-158`).
 - The batch variant charges `n * cost_each` in ONE atomic check using `saturating_mul` to stop integer
@@ -63,6 +66,26 @@ never floating point.
 - The guard is `None` (so billable routes run WITHOUT the gate) when the storage env is unset, so a
   credential-less local/CI run is unaffected — the cap only arms in a real deployment
   (`crates/corelink-container/src/tenant_quota.rs:105-116`).
+- **The ceiling is APPROXIMATE BY DESIGN — `LeasedQuotaStore` (budget-lease), not per-op atomic.** The
+  production guard does NOT hit D1 on every billable op: `quota_guard_from_env` wraps the durable
+  `D1QuotaStore` in a `LeasedQuotaStore` (`crates/corelink-container/src/tenant_quota.rs:112-125`). On the
+  first op of a `(tenant, cycle)` it atomically debits a CHUNK of budget — `DEFAULT_LEASE_OPS = 16` ops'
+  worth — from D1 up front, then serves the next ~15 ops **from an in-memory lease without touching D1**,
+  refilling when the lease drains (`crates/corelink-container/src/tenant_quota.rs:366-451`). This amortises
+  the D1-over-HTTP round-trip ~16:1. The fail-CLOSED ceiling is preserved (a lease is acquired only when
+  the inner atomic `check_and_accrue` returns `Ok(true)`; a refill that would breach the ceiling falls
+  back to progressively smaller partial leases then fail-CLOSES) and the durable side NEVER exceeds the
+  budget — but the consequence is that the cap is enforced at LEASE-CHUNK granularity, and a container
+  crash discards the unused tail of an in-flight lease (the tenant is then slightly *under*-charged,
+  bounded at `lease_ops * cost_per_op` ≈ `$0.016` on a `$5`/mo ceiling). It over-charges, never over-serves.
+- **The prod-FATAL watchdog that backstops this gate is CIRCULAR.** The boot path treats a missing native
+  PAT gate as FATAL only when prod is *detected*, and prod-detection is itself
+  `StorageEnv::from_env().is_some() && PAT_SIGNING_KEY` (`crates/corelink-container/src/main.rs:246-250`),
+  with `std::process::exit(1)` wired ONLY to the native-PAT-gate check (`:253-266`). The `$-ceiling` guard
+  (along with byte-accounting and request-quota) ALSO disarms to `None` precisely when `StorageEnv` is
+  absent. So a dropped `R2_S3_*`/`D1` var makes prod-detection FALSE → the watchdog never fires → the
+  container boots happily with the `$-ceiling` silently OFF and no boot failure. The same config that
+  disables the controls also disables the watchdog that is supposed to catch their absence.
 
 # Citations
 
@@ -77,3 +100,7 @@ never floating point.
 9. `crates/corelink-container/src/tenant_quota.rs:762-768` — store-unavailable `503` fail-close.
 10. `crates/corelink-container/src/tenant_quota.rs:777-810` — atomic roll + check-and-accrue (no lost-update / over-admission).
 11. `crates/corelink-container/src/tenant_quota.rs:794-804` — over-ceiling `402 Payment Required`.
+12. `crates/corelink-container/src/tenant_quota.rs:112-125` — `quota_guard_from_env` fronts the durable `D1QuotaStore` with `LeasedQuotaStore` (the budget-lease wrapper).
+13. `crates/corelink-container/src/tenant_quota.rs:366-451` — `DEFAULT_LEASE_OPS = 16` + the `LeasedQuotaStore` mechanism (debit a chunk up front, serve subsequent ops in-memory, fail-CLOSED refill).
+14. `crates/corelink-container/src/main.rs:246-250` — prod-detection = `StorageEnv::from_env().is_some() && PAT_SIGNING_KEY` (the circular watchdog: the same signal that arms the controls arms the FATAL check).
+15. `crates/corelink-container/src/main.rs:253-266` — `std::process::exit(1)` wired ONLY to the native-PAT-gate check; the metering guards just return `None` when `StorageEnv` is absent.

@@ -10,6 +10,7 @@ source_files:
   - "crates/tenant-path/src/prefix.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
   - "crates/corelink-container/src/routes/cargo.rs"
+  - "crates/corelink-container/src/routes/oci.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
@@ -45,8 +46,15 @@ keyed on the same trusted tenant id this control establishes.
   DO is the sole serialization point for that tenant's state — `worker/src/index.ts:2465-2467`.
 - Non-tenant system traffic uses reserved sentinel DO names (e.g. `_system`, `_oci`) that are deliberately
   distinct from any real tenant id — `worker/src/index.ts:1500`.
-- Inside the container the ONLY trustworthy tenant source is the DO-injected `x-corelink-tenant-id` header;
-  the `AuthTenant` extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:24-30`.
+- Inside the container the trustworthy tenant source for the native cache surfaces (CAS/AC/Bazel/Turbo
+  and the customer/admin planes) is the DO-injected `x-corelink-tenant-id` header; the `AuthTenant`
+  extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:24-30`. The ONE
+  surface that does NOT take its tenant from that header is OCI: the Worker forwards `/v2/*` + `/token`
+  raw and DELETES `x-corelink-tenant-id` (`worker/src/index.ts:1817-1828`), so the container resolves the
+  OCI tenant in-process from the HMAC-verified OCI bearer token instead
+  (`crates/corelink-container/src/routes/oci.rs:810-820`, `:834-841`). That bearer is signed under the OCI
+  realm key, so it is just as trusted as the DO header — but the trust ROOT differs (verified-bearer vs
+  edge-injected header), and OCI requests legitimately arrive with NO tenant header at all.
 - Storage keys are namespaced by a per-tenant prefix derived via HMAC-SHA256 over the tenant UUID,
   base64url-encoded and truncated to `TENANT_PREFIX_LEN = 16` ASCII chars by `derive_prefix`
   (`crates/tenant-path/src/prefix.rs:148-166`; `crates/tenant-path/src/prefix.rs:15`).
@@ -71,6 +79,14 @@ keyed on the same trusted tenant id this control establishes.
   origin authentication (`crates/corelink-container/src/auth_tenant.rs:1-3`).
 - The empty string `""` is in the sentinel list, so a present-but-blank header is rejected exactly like a
   missing one (`crates/corelink-container/src/auth_tenant.rs:19`).
+- **Do not assume every reserved DO name is in the container's reject set.** The container `AuthTenant`
+  `SENTINELS` list is exactly `["_anonymous", "_unknown", "_system", "_pending", ""]`
+  (`crates/corelink-container/src/auth_tenant.rs:19`) — `_oci` is NOT in it. `_oci` is a *Worker-side* DO
+  name (the shared OCI Durable Object, `worker/src/index.ts:1818`), not a value the `AuthTenant` extractor
+  blocks. This is safe in practice because the OCI plane never reaches `AuthTenant` with a tenant header
+  (the Worker deletes `x-corelink-tenant-id` and OCI auths off the bearer instead), so `_oci` never
+  surfaces there as a candidate tenant — but the claim "`_oci` is a rejected container sentinel" would be
+  false. Only `_system` (and `""`) bridges both the Worker DO-name set and the container reject set.
 - **The `_public` carve-out is the ONE intentional cross-tenant share.** "Every blob belongs to exactly
   one tenant" holds for *private* content; public-package dedup (pip/brew/npm) deliberately writes
   digest-verified bytes under the reserved `_public` namespace, which is shared across tenants by design
@@ -97,3 +113,5 @@ keyed on the same trusted tenant id this control establishes.
 10b. `crates/tenant-path/src/lib.rs:27` — crate-doc public contract: do not construct `TenantPrefix` from raw bytes outside this crate.
 11. `crates/corelink-container/src/storage/r2_s3.rs:579-581` — the ONE deliberate cross-tenant carve-out: the `tenant == PUBLIC_NAMESPACE` arm derives the shared `_public` dedup prefix (reserved sentinel `:571`).
 12. `crates/corelink-container/src/routes/cargo.rs:92` — cargo/sccache is PRIVATE per-tenant (never `_public`), confirming the carve-out is scoped to public-package dedup only.
+13. `worker/src/index.ts:1817-1828` — the OCI pass-through deletes `x-corelink-tenant-id` (no edge-resolved tenant for OCI).
+14. `crates/corelink-container/src/routes/oci.rs:810-820` — `oci_bearer_tenant` resolves the OCI tenant in-process from the HMAC-verified bearer (not a request header).

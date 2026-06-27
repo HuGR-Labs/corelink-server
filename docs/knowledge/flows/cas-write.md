@@ -36,7 +36,7 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 
 - The authenticated tenant `auth.0`, not the path `:tenant`, is the isolation key; the path is a client echo that must match or the request 403s before storage (`crates/corelink-container/src/routes/cas.rs:728-730`).
 - Every gate runs BEFORE storage and fails closed: scope (`crates/corelink-container/src/routes/cas.rs:738-740`), possession (`crates/corelink-container/src/routes/cas.rs:741-744`), $-ceiling (`crates/corelink-container/src/routes/cas.rs:747-751`).
-- The per-tenant write-concurrency cap is checked before the body is buffered, bounding peak per-tenant memory (`crates/corelink-container/src/routes/cas.rs:259-296`).
+- The per-tenant write-concurrency cap (`CAS_WRITE_CONCURRENCY_LIMIT = 8`) is checked before the body is buffered on the **single** `PUT` path, bounding peak per-tenant memory there (`crates/corelink-container/src/routes/cas.rs:259-296`). **This bound does NOT hold on the batch route:** `handle_batch_write` (`crates/corelink-container/src/routes/cas.rs:832-839`) declares NO `CasPutGuard` extractor, so a tenant's concurrent batch uploads bypass the 8-slot cap entirely — each concurrent batch buffers up to `BATCH_MAX_BYTES = 8MB`, so peak per-tenant memory on the batch path is bounded only by inbound request concurrency, not by `CAS_WRITE_CONCURRENCY_LIMIT`.
 - The byte-cap is enforced atomically at the shared write trait object, not in the route, so every surface accounts identically and the route never double-counts (`crates/corelink-container/src/routes/cas.rs:766-775`).
 - R2 S3 credentials are env-sourced only and the real adapter is constructed solely when all creds are present; absent creds fall back to the dev/in-memory path (`crates/corelink-container/src/storage.rs:98-113`; `crates/corelink-container/src/routes/cas.rs:407-486`).
 
@@ -44,7 +44,7 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 
 - A CAS 401 on this path means the PAT failed the possession gate (bad key OR no D1 row), NOT a malformed hash — that is a distinct 400. A 402 means the monthly ceiling tripped; a 503 means a gate's backend (D1 / quota store) was unreachable and the write fail-closed rather than serve uncounted.
 - `state.write.write` is synchronous in the handler, but the byte-accounting + R2 PUT happen inside the decorated trait object; an over-cap or accounting fault surfaces as a sentinel-tagged error mapped to 402/503, not as a panic.
-- The batch route (`POST /v1/cas/:tenant/batch`) mirrors this exact gate sequence but charges the quota ONCE for the whole batch, never per object.
+- The batch route (`POST /v1/cas/:tenant/batch`) mirrors the cross-tenant / scope / PAT / quota gate sequence (and charges the quota ONCE for the whole batch, never per object) — but it does NOT mirror step 1: there is NO `CasPutGuard` concurrency reservation on `handle_batch_write` (`crates/corelink-container/src/routes/cas.rs:832-839`, vs the single PUT's reservation at `:259-296` / `:722`). So the `CAS_WRITE_CONCURRENCY_LIMIT = 8` per-tenant cap is bypassed on batch, and concurrent batches are a memory-amplification DoS vector (each buffers up to `BATCH_MAX_BYTES = 8MB`) that the single-PUT path bounds but the batch path does not.
 
 # Citations
 

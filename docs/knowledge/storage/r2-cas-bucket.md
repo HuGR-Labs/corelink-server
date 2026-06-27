@@ -19,8 +19,9 @@ The CAS bucket is where every content-addressed blob actually lands. The native 
 cannot use the Worker's R2 binding (that is wasm-only), so it reaches R2 through the S3-compatible API
 over egress (`aws-sdk-s3` pointed at `https://<account>.r2.cloudflarestorage.com`). Unlike the
 [Action Cache](/storage/r2-ac-regional.md), in the native S3 adapter CAS is **one** bucket: the residency
-region and the tenant are not separate buckets but segments baked into the object key, so tenant
-co-residence is structurally impossible — while the region is carried only as a **LOGICAL key-prefix
+region and the tenant are not separate buckets but segments baked into the object key, so *private*
+cross-tenant co-residence is structurally impossible (one deliberate exception — the shared `_public`
+dedup namespace — is carved out below) — while the region is carried only as a **LOGICAL key-prefix
 tag, NOT physical residency**: changing it relabels keys *inside the same physical bucket* and does
 not relocate any bytes, so a key-prefix "region migration" is a false-confidence trap and must NOT be
 mistaken for a residency fix (`specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md:40-51`).
@@ -42,9 +43,21 @@ behind the [native CAS surface](/surfaces/native-cas.md) and the [CAS write flow
    required variable is present and non-empty (`crates/corelink-container/src/storage.rs:98-113`).
 3. The S3 config is built directly from explicit static R2 credentials, deliberately bypassing the AWS
    credential-provider chain (`crates/corelink-container/src/storage/r2_s3.rs:88-116`).
-4. CAS is a single bucket; the tenant and region are encoded in the object KEY
-   `<region>/<tenant_prefix_16>/<digest>`, not in the bucket name
-   (`crates/corelink-container/src/storage/r2_s3.rs:1-19`).
+4. CAS is a single bucket; the tenant and region are encoded in the object KEY, not in the bucket name
+   (`crates/corelink-container/src/storage/r2_s3.rs:1-19`). There are TWO key shapes, selected by digest
+   algorithm in `blob_key`: BLAKE3 → `<region>/<tenant_prefix_16>/<digest>`; SHA-256 (the Bazel REAPI
+   surface) → `<region>/<tenant_prefix_16>/bazel/sha256/<digest>`
+   (`crates/corelink-container/src/storage/r2_s3.rs:453-458`). Both carry the same tenant-prefix segment,
+   so the isolation guarantee is identical across the two.
+4b. **The ONE deliberate cross-tenant carve-out: the `_public` shared-dedup namespace.** A write whose
+   tenant is the exact reserved string `_public` (`adapter_cache::PUBLIC_NAMESPACE`, used by
+   public-package dedup for npm/brew/pip) derives its prefix from a FIXED reserved sentinel UUID
+   (`PUBLIC_NAMESPACE_UUID`) under the same secret TDK, so every caller storing the same public blob dedups
+   to ONE shared `_public` R2 key that ALL tenants read/write — the network-effect moat
+   (`crates/corelink-container/src/storage/r2_s3.rs:571`, `:579-581`, full carve-out `:559-601`). It is
+   reserved so it can never collide with a real (random v4/v7) tenant's HMAC prefix, and digest-verified
+   bytes are content-addressed, but it IS genuine cross-tenant co-residence by design — so "co-residence is
+   structurally impossible" holds for PRIVATE content only (mirror of `tenancy/isolation`'s `_public` gotcha).
 5. The client serializes measure-and-delete per object key so two racing deletes cannot both report the
    same bytes reclaimed (`crates/corelink-container/src/storage/r2_s3.rs:61-77`).
 6. Bucket / region env reads route through `env_or` so an absent OR empty value falls back to the
@@ -58,8 +71,10 @@ behind the [native CAS surface](/surfaces/native-cas.md) and the [CAS write flow
   back to in-memory fakes rather than a half-configured client
   (`crates/corelink-container/src/storage.rs:98-113`).
 - The tenant prefix segment is derived via `derive_prefix`, so cross-tenant key co-residence is
-  impossible — layer 5 of `INV-TENANT-ISOLATION`
-  (`crates/corelink-container/src/storage/r2_s3.rs:1-19`).
+  impossible for PRIVATE content — layer 5 of `INV-TENANT-ISOLATION`
+  (`crates/corelink-container/src/storage/r2_s3.rs:1-19`). The lone exception is the reserved `_public`
+  dedup namespace, which is intentionally shared cross-tenant via a fixed sentinel-UUID prefix
+  (`crates/corelink-container/src/storage/r2_s3.rs:571`, `:579-581`).
 - The S3 config MUST be built from explicit static credentials; calling `aws_config::defaults` would
   trigger IMDS probes that have no endpoint in CF Containers and burn 60-90s of cold-start
   (`crates/corelink-container/src/storage/r2_s3.rs:88-116`).
@@ -77,6 +92,8 @@ behind the [native CAS surface](/surfaces/native-cas.md) and the [CAS write flow
 3. `crates/corelink-container/src/storage.rs:98-113` — all-or-nothing `StorageEnv::from_env`.
 4. `crates/corelink-container/src/storage.rs:127-139` — `env_or` (absent OR empty → default; AC-500 incident).
 5. `crates/corelink-container/src/storage/r2_s3.rs:1-19` — CAS key scheme `<region>/<tenant_prefix_16>/<digest>` + tenant isolation.
+5b. `crates/corelink-container/src/storage/r2_s3.rs:453-458` — `blob_key`: the two key shapes (BLAKE3 plain vs SHA-256 `…/bazel/sha256/<digest>`).
+5c. `crates/corelink-container/src/storage/r2_s3.rs:559-601` — the `_public` shared-dedup carve-out (`PUBLIC_NAMESPACE_UUID` sentinel at `:571`; the `tenant == _public` shared-prefix arm at `:579-581`).
 6. `crates/corelink-container/src/storage/r2_s3.rs:61-77` — `R2S3Client` bucket field + per-key delete-serialization locks.
 7. `crates/corelink-container/src/storage/r2_s3.rs:88-116` — direct static-credential S3 config; IMDS-bypass cold-start fix.
 8. `crates/corelink-region/src/region.rs:66-70` — `Region::r2_bucket_name()` → per-region `corelink-cas-{region}` (the regional-bucket topology this native adapter does not use).

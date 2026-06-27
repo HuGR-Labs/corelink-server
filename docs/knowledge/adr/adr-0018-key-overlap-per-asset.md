@@ -6,7 +6,7 @@ source_files:
   - "specs/03_architecture/adrs/ADR-0018-key-overlap-per-asset.md"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
-tags: ["adr", "key-management", "rotation", "overlap", "invariant"]
+tags: ["adr", "key-management", "rotation", "overlap", "invariants"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
 

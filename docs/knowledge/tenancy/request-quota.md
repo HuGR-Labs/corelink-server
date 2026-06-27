@@ -1,9 +1,10 @@
 ---
 type: "TenancyControl"
 title: "Request-quota enforcement"
-description: "The container-side mirror of the Worker's monthly request-count cap, closing the OCI pass-through bypass with a fail-OPEN per-tenant allowance limiter."
+description: "The container-side mirror of the Worker's monthly request-count cap, narrowing the OCI pass-through bypass with a fail-OPEN per-tenant allowance limiter (armed only with StorageEnv; no-bearer OCI reads stay uncounted)."
 source_files:
   - "crates/corelink-container/src/request_count.rs"
+  - "crates/corelink-container/src/routes/oci.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "request-count", "oci", "fail-open"]
@@ -20,6 +21,15 @@ pass-through: the Worker forwards `/v2/*` + `/token` raw and returns BEFORE its 
 strips `x-corelink-tenant-id`), so OCI billable writes were never counted. This module is the
 container-side mirror of `checkRequestQuota`, keyed on the same verified-HMAC-bearer tenant the OCI gate
 resolves — never a request header.
+
+**It NARROWS the bypass; it does not fully close it.** Two gaps remain by design: (1) the mirror is only
+*armed* when the storage env is present (the gate is `Option`-wired off `StorageEnv`, like every other D1
+adapter), and even when armed it is deliberately fail-OPEN on a clock-unavailable or tier-resolution D1
+fault — so during a partial outage OCI requests run uncounted rather than being rejected; (2) the OCI
+charge is taken inside `if let Some(tenant) = oci_bearer_tenant(...)`
+(`crates/corelink-container/src/routes/oci.rs:841-867`), so an OCI request with NO resolvable bearer
+tenant (e.g. an anonymous public-read) is never counted at all. Unauthenticated reads stay unmetered
+exactly as before; the mirror only ADDS counting once a tenant is resolvable.
 
 # Role
 
@@ -79,3 +89,4 @@ the Worker's `QUOTAS[tier].requestsPerMonthMax` byte-for-byte so the two enforce
 8. `crates/corelink-container/src/request_count.rs:262-270` — tier-fault fail-OPEN + uncapped-tier skip.
 9. `crates/corelink-container/src/request_count.rs:272-285` — atomic increment + `count <= cap` allow.
 10. `crates/corelink-container/src/request_count.rs:287-296` — over-cap `429` + `Retry-After`.
+11. `crates/corelink-container/src/routes/oci.rs:841-867` — the OCI count charge is GATED inside `if let Some(tenant) = oci_bearer_tenant(...)`, so a no-bearer OCI read is never counted (and `request_count` is `Option`-wired off `StorageEnv`).

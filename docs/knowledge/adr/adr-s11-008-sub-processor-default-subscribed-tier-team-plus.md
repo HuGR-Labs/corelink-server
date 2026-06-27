@@ -6,7 +6,7 @@ source_files:
   - "specs/03_architecture/adrs/ADR-S11-008-sub-processor-default-subscribed-tier-team-plus.md"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
-tags: ["adr", "s11", "sub-processor", "gdpr", "lgpd", "legal-obligation"]
+tags: ["adr", "s11", "sub-processors", "gdpr", "lgpd", "legal-obligation"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
 
@@ -25,6 +25,16 @@ Reversed: **all 5 canonical plans** (`free`, `solo`, `team`, `business`, `enterp
 # Consequences
 
 All 5 plans get 30-day advance notice emails on sub-processor changes; the `sub_processor_notifications` purpose's `legal_obligation` basis means `POST /v1/privacy/dsr/consent_revoke` cannot opt out of it; the broadcast log seeds all subscribed tenants; and any future re-introduction of tier-gating requires Privacy Officer + Compliance + Legal sign-off (`specs/03_architecture/adrs/ADR-S11-008-sub-processor-default-subscribed-tier-team-plus.md:76-82`).
+
+# Status vs shipped code
+
+The "5 canonical plans" list this ADR enumerates — `free`, `solo`, `team`, `business`, `enterprise` —
+does **not** match CoreLink's canonical **billing** taxonomy, which is the 6 tiers
+`free | solo | starter | pro | max | enterprise`. `team`/`business` are **eviction `Tier` enum** names,
+not sold billing plans, so the plan list here conflates the two axes. This does not change the
+decision (sub-processor notices are a `legal_obligation` sent to **all** plans, non-opt-out-able) — the
+"all plans" universality is exactly what makes the specific plan enumeration immaterial — but for the
+authoritative plan set defer to [ADR-S19-001](/adr/adr-s19-001-tier-taxonomy-amendment-5-to-6.md).
 
 # Citations
 

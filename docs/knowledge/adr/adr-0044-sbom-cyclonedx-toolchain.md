@@ -4,6 +4,8 @@ title: "ADR-0044 (sbom) — SBOM CycloneDX toolchain: cargo-cyclonedx + sbomqs +
 description: "Pins the canonical SBOM generation/validation/signing stack with NTIA 10/10 gate, cosign keyless OIDC via Fulcio+Rekor, a release-only signing guard, and a fail-closed Sigstore-outage policy."
 source_files:
   - "specs/03_architecture/adrs/ADR-0044-sbom-cyclonedx-toolchain.md"
+  - ".github/workflows/sbom.yml"
+  - ".github/workflows/cosign-sign.yml"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "sbom", "supply-chain", "cosign", "ci"]
@@ -42,6 +44,16 @@ Supply-chain provenance is publicly verifiable via Rekor, there is zero long-liv
 leak, the SBOM is NTIA-compliant out of the box, and the flow is fully automated; the accepted costs
 are a hard Sigstore dependency (outage blocks releases, mitigated by a runbook), a GitHub-Actions OIDC
 dependency, and the fork-PR limitation that external contributors cannot emit signatures.
+
+# Status vs shipped code
+
+The "canonical pinned versions" in this ADR are **stale vs the live workflows**. The deployed SBOM job
+pins `CARGO_CYCLONEDX_VERSION = "0.5.4"` and `CYCLONEDX_CLI_VERSION = "0.27.2"`
+(`.github/workflows/sbom.yml:32-33`), not the ADR's `cargo-cyclonedx =0.5.9` + `sbomqs v1.0.5`; signing
+lives in a separate workflow pinning `cosign-release: 'v2.4.3'`
+(`.github/workflows/cosign-sign.yml:107`), not the ADR's `cosign v2.4.1`. The policy shape
+(NTIA-validated CycloneDX, keyless OIDC cosign, release-only signing guard, fail-closed Sigstore
+posture) holds; the specific version numbers should be read off the workflows, not this ADR.
 
 # Citations
 

@@ -16,8 +16,13 @@ The corelink-runners fabric is handed an inbound `Bearer` PAT per job and must r
 and the tenant's plan before it places work on a runner. Rather than re-implement PAT verification (HMAC
 + Argon2id + D1 liveness) in the fabric, the fabric calls `POST /internal/v1/auth/introspect`, which
 reuses the container's one full verification pipeline and returns a frozen, minimal result. The endpoint
-is the authorization seam between the cache product and the runners entitlement axis — and it is
-fail-CLOSED at every step, so the fabric never serves a plan it could not resolve.
+is the authorization seam between the cache product and the runners entitlement axis. PAT verification,
+the tier/plan resolve, and the concurrency-cap decode all fail-CLOSED (a fault → 503, an empty
+concurrency row → reject), so the fabric never serves a plan or a concurrency cap it could not resolve —
+with ONE deliberate exception: the metered vCPU-hours axis fails **OPEN**. An absent `max_vcpu_h` row is
+decoded as "wall-off / let the job through", so a tenant with no `max_vcpu_h` runs unbounded vCPU-hours
+(see Gotchas). The headline "fail-CLOSED at every step" holds for tenant/plan/concurrency but NOT for the
+vCPU-h cap.
 
 # Role
 

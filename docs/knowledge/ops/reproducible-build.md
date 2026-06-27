@@ -8,7 +8,7 @@ source_files:
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md"
 checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
 provenance: "AUTHORED"
-tags: ["ops", "reproducible-build", "supply-chain", "tamper-detection", "runbook"]
+tags: ["ops", "reproducible-builds", "supply-chain", "tamper-detection", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
 

@@ -4,6 +4,8 @@ title: "ADR-S14-004 — BYOK adapter trait + envelope-encryption flow"
 description: "The six BYOK envelope-encryption decisions: random CSPRNG DEK, 5-min hard DEK-cache TTL, 96-bit random GCM nonce, mandatory AAD context binding, async KmsProvider trait, and the 16-cell matrix test."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-004-byok-trait-envelope-encryption.md"
+  - "crates/corelink-byok/src/byok_core/dek_cache.rs"
+  - "crates/corelink-byok/src/byok_core/envelope.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s14", "byok", "crypto", "kms", "envelope-encryption"]
@@ -34,9 +36,21 @@ BYOK must simultaneously deliver crypto sovereignty (revoke → inaccessible ≤
 
 This trait is extended to the other three providers in [ADR-S14-005 — BYOK 4-provider semantics](/adr/adr-s14-005-byok-gcp-azure-vault.md) and consumed by the kill switch in [ADR-S14-006](/adr/adr-s14-006-byok-kill-switch-no-operator-override.md).
 
+# Status vs shipped code
+
+This envelope-encryption flow is **designed-only on the deployed data plane**. The `DekCache` (5-min
+hard TTL), the AES-256-GCM `EnvelopeEncryptor`, and the `{tenant_id, blob_hash}` AAD binding live in
+`corelink-byok` (`crates/corelink-byok/src/byok_core/dek_cache.rs`,
+`crates/corelink-byok/src/byok_core/envelope.rs`), but **no deployed CAS read/write path invokes them** —
+there is no `wrap_dek` / `EnvelopeEncryptor` call site under `crates/corelink-container/src/routes/`. So
+the six decisions are real, tested logic in the BYOK crate; they are not yet "enforced in code" on a
+live blob. Read present-tense claims here as the crate's contract, not the production cache path.
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S14-004-byok-trait-envelope-encryption.md:34-47` — the four simultaneous BYOK requirements.
 2. `specs/03_architecture/adrs/ADR-S14-004-byok-trait-envelope-encryption.md:51-101` — D1 random DEK, D2 5-min hard TTL, and D3 96-bit random nonce.
 3. `specs/03_architecture/adrs/ADR-S14-004-byok-trait-envelope-encryption.md:105-139` — D4 mandatory AAD binding, D5 async KmsProvider trait, and D6 matrix test.
 4. `specs/03_architecture/adrs/ADR-S14-004-byok-trait-envelope-encryption.md:145-158` — positive consequences and trade-offs.
+5. `crates/corelink-byok/src/byok_core/dek_cache.rs:52` — the `DekCache` (5-min hard TTL) — designed-only logic in the BYOK crate, not invoked by any deployed CAS read/write path.
+6. `crates/corelink-byok/src/byok_core/envelope.rs:46` — the AES-256-GCM `EnvelopeEncryptor` with `{tenant_id, blob_hash}` AAD binding — no production call site under `crates/corelink-container/src/routes/`.

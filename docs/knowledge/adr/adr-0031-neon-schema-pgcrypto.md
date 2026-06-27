@@ -4,6 +4,7 @@ title: "ADR-0031 — Auth Neon schema: pgcrypto + RLS + DSR cascade"
 description: "Why the auth domain lives in Neon Postgres with pgcrypto column encryption, default-on RLS, deterministic HMAC email-hash lookup, additive-only migrations, and a hard-coded DSR cascade."
 source_files:
   - "specs/03_architecture/adrs/ADR-0031-neon-schema-pgcrypto.md"
+  - "crates/corelink-container/src/customer_d1.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "neon", "postgres", "pgcrypto", "rls", "dsr", "auth", "s03"]
@@ -25,6 +26,17 @@ Neon is the canonical auth store with UUIDv7 minted app-side; encrypted columns 
 # Consequences
 
 An insider DB read or backup leak sees ciphertext only, app-layer tenant-filter bugs fail safe to zero rows, key rotation is gradual, and GDPR Art. 17 / LGPD Art. 18 erasure is a single SQL transaction — traded against ~5-10% RLS hot-path overhead, a required rotation worker, and `email_hash_key` secrecy as a rainbow-attack dependency mitigated by its own separate quarterly rotation (ADR-0031:186-204). It governs the [D1 PAT store](/auth/d1-pat-store.md) and [tenant isolation](/tenancy/isolation.md).
+
+# Status vs shipped code
+
+The deployed auth/tenant store is **D1/SQLite, not Neon-Postgres** — the live customer/PAT/team
+handlers run their reads and writes against D1 (`crates/corelink-container/src/customer_d1.rs`), so
+the pgcrypto BYTEA columns, default-on Postgres RLS, and logical-replication properties this ADR
+specifies are NOT what backs the production auth path. PII pseudonymization is also simpler than the
+ADR's HMAC-SHA256(HKDF-keyed) design: the shipped email pseudonym is a plain
+`SHA-256(email.trim().to_lowercase())` (`crates/corelink-container/src/customer_d1.rs:1163`), with the
+raw email never stored. Neon, where it exists at all, is a feature-gated analytics/consent shadow, not the canonical auth
+store. Treat this ADR as the Neon-target design, not the deployed reality.
 
 # Citations
 

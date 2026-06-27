@@ -8,11 +8,12 @@ source_files:
   - "crates/corelink-eviction/src/lib.rs"
   - "crates/corelink-eviction/src/reachable.rs"
   - "crates/corelink-eviction/src/blob_meta.rs"
+  - "crates/corelink-eviction/src/reservation.rs"
   - "crates/corelink-ratelimit/src/lib.rs"
   - "crates/corelink-ratelimit/src/key.rs"
 checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
 provenance: "AUTHORED"
-tags: ["crates", "gc", "eviction", "ratelimit", "ops", "sre"]
+tags: ["crates", "gc", "eviction", "rate-limit", "ops", "sre"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
 
@@ -41,7 +42,7 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 # Gotchas
 
 - Eviction is BLOB-only scope — chunks are owned by GC (S-06), not the evictor; mixing the two ownerships was an explicit Lote 10.7bis correction.
-- TTLs are per-tier (free=7d … enterprise=365d default, admin-capped 730d) and the multipart reservation TTL is size-proportional (`max(60s, bytes/1MB/s × 2x), capped 7d`) so a 160 GiB upload no longer trips its own quota mid-stream.
+- TTLs are per-tier (free=7d … enterprise=365d default, admin-capped 730d) and the multipart reservation TTL is size-proportional (`clamp(request_bytes / RESERVATION_THROUGHPUT_BYTES_PER_MS × 2, 60s, 7d)` where the throughput baseline is `RESERVATION_THROUGHPUT_BYTES_PER_MS = 1024` bytes/ms ≈ 1.024 MB/s — NOT a round 1 MB/s; `crates/corelink-eviction/src/reservation.rs:64`) so a 160 GiB upload no longer trips its own quota mid-stream.
 - These crates ship pure-logic skeletons + in-memory fakes whose semantics mirror the embedded SQL migrations byte-for-byte; production binds them to real Cron Durable Objects.
 
 # Citations
@@ -53,3 +54,4 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 5. `crates/corelink-ratelimit/src/key.rs:77-87` — tenant-leftmost `BucketKey` struct (`tenant_id` first field): `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`.
 6. `crates/corelink-ratelimit/src/lib.rs:11-18` — RFC 6585 Retry-After seconds clamped to a per-config floor + hard ceiling.
 6b. `crates/corelink-ratelimit/src/lib.rs:28-43` — the tenant-leftmost bucket key + lazy-refill + RFC 6585 Retry-After.
+7. `crates/corelink-eviction/src/reservation.rs:64` — `RESERVATION_THROUGHPUT_BYTES_PER_MS = 1024` bytes/ms (≈1.024 MB/s), the size-proportional reservation-TTL throughput baseline.

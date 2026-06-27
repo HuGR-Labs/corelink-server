@@ -4,6 +4,7 @@ title: "ADR-S12-046 — License Allowlist: OSI-Approved Permissive + Banned Copy
 description: "Why CoreLink enforces a default-deny license allowlist of permissive OSI licenses (plus copyleft = deny defence-in-depth) at the cargo-deny CI gate to keep its shipped WASM blob free of GPL/AGPL copyleft exposure."
 source_files:
   - "specs/03_architecture/adrs/ADR-S12-046-license-allowlist-7-osi.md"
+  - "deny.toml"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
 tags: ["adr", "s12", "supply-chain", "license-allowlist", "compliance"]
@@ -25,6 +26,14 @@ A default-deny allowlist of permissive SPDX expressions (MIT, Apache-2.0, Apache
 # Consequences
 
 Zero GPL/AGPL exposure via automated enforcement at every PR; quarterly Legal review limited to a 5% sample since the gate catches most drift; and a clear ADR + sign-off process for new licenses. Trade-offs: some useful crates may use non-allowlisted licenses and need a per-exception ADR (mitigated since most mature crates are MIT/Apache dual-licensed), and SPDX-expression drift (a crate declaring MIT but carrying a GPL fragment) is not caught by the tool — mitigated by the quarterly Legal sample audit (`specs/03_architecture/adrs/ADR-S12-046-license-allowlist-7-osi.md:120-131`).
+
+# Status vs shipped code
+
+The "7-osi" slug **undercounts the live allowlist**. The shipped `deny.toml [licenses].allow` is wider
+than seven entries and additionally permits `BSL-1.0` (`deny.toml:146`) and `CDLA-Permissive-2.0`
+(`deny.toml:155`) — both ratified by ADR-S32-001 (`BSL-1.0` for `ryu`/`ryu-js`, the CDLA data license).
+The default-deny + `copyleft = "deny"` posture and the per-license ADR-addition process are intact; only
+the headline count is stale — read the allowed set off `deny.toml`, not the slug.
 
 # Citations
 

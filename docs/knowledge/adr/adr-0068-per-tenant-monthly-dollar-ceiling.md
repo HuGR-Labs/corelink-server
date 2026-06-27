@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/tenant_quota.rs"
 checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
 provenance: "AUTHORED"
-tags: ["adr", "quota", "cost-ceiling", "fail-closed", "abuse", "hugit-p2"]
+tags: ["adr", "quota", "cost-ceiling", "dollar-ceiling", "fail-closed", "abuse", "hugit-p2"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
 
