@@ -11,6 +11,9 @@
 //! 6. JCS canonicalization tamper (Unicode NFC bypass attempt).
 //! 7. Signing key compromise simulation — old attestation verifiable with
 //!    old Overlap key; NOT verifiable with emergency rotation new key.
+//! 8. Payload substitution — KEEP the original valid canonical_payload_jcs +
+//!    signature, but mutate the typed `payload` (tenant_id) → MUST fail
+//!    verify (binds typed payload to the signed bytes).
 
 #![allow(
     clippy::unwrap_used,
@@ -206,5 +209,55 @@ fn signing_key_compromise_emergency_rotation() {
     assert!(
         verify_attestation_signature(&att, &new_pk).is_err(),
         "old attestation MUST NOT verify with new emergency rotation key"
+    );
+}
+
+/// Scenario 8: payload substitution (H2).
+///
+/// The signature is valid over `canonical_payload_jcs`, but consumers read the
+/// typed `payload`. An attacker keeps the ORIGINAL (validly signed) canonical
+/// bytes + signature UNTOUCHED, and only mutates the typed `payload` (here:
+/// `tenant_id`) — mis-attributing the erasure to a victim tenant. Verification
+/// MUST reject this: the typed payload must re-canonicalize to the signed bytes.
+#[test]
+fn payload_substitution_keeps_canonical_and_sig_fails_verify() {
+    let sk = ErasureSigningKey::generate(1, Region::Weur, 0, 30 * 24 * 3_600 * 1_000);
+    let pk = sk.public_key();
+    let signer = ErasureAttestationSigner::new(sk);
+    let mut att = signer.sign(sample_payload()).unwrap();
+
+    // Sanity: genuine attestation verifies before tampering.
+    assert!(
+        verify_attestation_signature(&att, &pk).is_ok(),
+        "genuine attestation must verify"
+    );
+
+    // Snapshot the validly-signed bytes + signature.
+    let original_canonical = att.canonical_payload_jcs.clone();
+    let original_sig = att.signature_ed25519.clone();
+
+    // Attack: mutate ONLY the typed payload; leave canonical + sig intact
+    // (do NOT re-canonicalize — that is the prior, already-covered attack).
+    att.payload.tenant_id = "victim-tenant".to_string();
+    assert_eq!(
+        att.canonical_payload_jcs, original_canonical,
+        "attack keeps original canonical bytes"
+    );
+    assert_eq!(
+        att.signature_ed25519, original_sig,
+        "attack keeps original signature"
+    );
+
+    assert!(
+        verify_attestation_signature(&att, &pk).is_err(),
+        "payload substitution (mutated typed payload, original canonical+sig) must fail verify"
+    );
+
+    // Also confirm request_id substitution is caught.
+    let mut att2 = signer.sign(sample_payload()).unwrap();
+    att2.payload.request_id = "req-forged".to_string();
+    assert!(
+        verify_attestation_signature(&att2, &pk).is_err(),
+        "request_id substitution must fail verify"
     );
 }

@@ -270,7 +270,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // The native-PAT FATAL above keys on the SAME `StorageEnv` signal that ALSO
     // gates the $-ceiling (`tenant_quota::quota_guard_from_env`), byte-cap
     // (`byte_accounting::byte_accountant_from_env`) and request-count
-    // (`request_count::RequestCountGate::from_env`) controls: a single dropped
+    // (`request_count::RequestCountGate::from_env`) controls. NOTE the scope
+    // asymmetry: the $-ceiling, byte-cap and native-PAT backstop are wired
+    // FLEET-WIDE into every native container state (CAS/AC/Bazel/Turbo); the
+    // request-count gate is wired ONLY into the OCI router (it is the OCI op-cap
+    // mirror — native is op-count-bounded at the Worker edge instead, see the
+    // `missing.push("request-count gate …")` note below). All four are still
+    // co-gated by `StorageEnv`, so the drift hazard is identical: a single
+    // dropped
     // or renamed `R2_S3_*` / `CLOUDFLARE_ACCOUNT_ID` / `CF_API_TOKEN` /
     // `D1_DATABASE_ID` var flips `StorageEnv` to `None`, which SILENTLY disarms
     // every one of those guards AND simultaneously makes prod-detection FALSE —
@@ -321,7 +328,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 missing.push("byte-cap accountant (tenant_storage_state)");
             }
             if corelink_server::request_count::RequestCountGate::from_env().is_none() {
-                missing.push("request-count gate (monthly op cap)");
+                // SCOPE: this gate is the OCI-surface monthly op-cap (the
+                // container-side mirror of the Worker's `checkRequestQuota`).
+                // The Worker forwards `/v2/*` + `/token` RAW and returns BEFORE
+                // its quota block, so OCI is the ONE surface the edge cannot
+                // count — the container gate is its sole enforcer and so is a
+                // genuine must-arm. The native CAS/AC/Bazel/Turbo + cargo/brew/
+                // npm/pip surfaces are op-count-bounded at the WORKER edge
+                // (`incrementMonthlyRequestCount`, exactly once per request);
+                // they deliberately do NOT carry this gate at the container —
+                // doing so would double-increment `monthly_request_counts` and
+                // false-deny legitimate native traffic. So this assertion is
+                // NOT a fleet-wide-native claim; it asserts exactly what is
+                // wired (the OCI op-cap, routes.rs).
+                missing.push("request-count gate (OCI monthly op cap)");
             }
             if !missing.is_empty() {
                 tracing::error!(

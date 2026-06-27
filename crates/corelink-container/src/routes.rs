@@ -357,7 +357,18 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // counts against `monthly_request_counts` (migration 0071). D1-backed;
     // `None` in dev/CI (no D1 storage env), mirroring the $-ceiling gate above.
     // Only the OCI router consumes it — the native + other-adapter surfaces are
-    // already metered at the Worker edge by `checkRequestQuota`.
+    // already metered at the Worker edge by `checkRequestQuota`
+    // (`incrementMonthlyRequestCount`, exactly once per request). DELIBERATELY
+    // not cloned into the native CAS/AC/Bazel/Turbo states like `quota` /
+    // `pat_gate` are: unlike the $-ceiling (a SUM read) and byte-cap (an
+    // idempotent reserve→commit on real bytes), the request counter is a raw
+    // per-request INCREMENT, so wiring it here too would double-count every
+    // native op (Worker edge + container) and false-deny legitimate traffic at
+    // half the contracted cap. OCI is the ONE surface the Worker forwards RAW
+    // (never counted at the edge), so the container gate is its sole enforcer —
+    // together the two planes meter the fleet exactly once each. The boot
+    // watchdog (`main.rs`) asserts THIS gate must arm in prod for exactly that
+    // reason, scoped to OCI (not a fleet-wide-native claim).
     let request_count = crate::request_count::RequestCountGate::from_env();
     if request_count.is_none() {
         tracing::warn!(

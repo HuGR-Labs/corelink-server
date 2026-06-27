@@ -23,6 +23,20 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **GDPR erasure attestation honest-downgraded — signed "proof" was theater (brutal-review H1, HIGH).** The
+  `VerifiedComplete` path computed an Ed25519 signature but PERSISTED only the UNSIGNED `evidence_hash`: the
+  `signature_ed25519` and `canonical_payload_jcs` were discarded (migration 0032 has no columns for them),
+  no R2 object was ever written (so the persisted `r2_key` was a dangling pointer), and no verifier endpoint
+  exists — i.e. it persisted a forgeable, unsigned digest while claiming a cryptographic certificate of
+  erasure. The prior "attestation honesty" claim was therefore incomplete. `sign_and_persist` now FAILS
+  CLOSED honestly: it evaluates the per-backend evidence gate and logs, but does **not** sign or persist any
+  attestation/public-key row (no theater). The erasure itself remains complete + audited + ledgered
+  (`audit_outbox`) — unchanged. The real signed + served attestation is now explicitly **DEFERRED** (needs:
+  `signature_ed25519` + `canonical_payload_jcs` migration columns + persistence, the R2 audit-object write,
+  the `GET /v1/public/attestation/{request_id}` + `GET /v1/public/keys/erasure/{region}.pub` verifier
+  endpoints, and the `verify.rs` payload-binding from finding H2 — see the module-level DEFERRED block in
+  `attestation.rs`). Also corrected a false in-code comment that claimed a non-existent route integration
+  test.
 - **OKF brutal-audit code findings remediated (7).** (#1 HIGH) the GDPR erasure attestation now binds its
   signed `evidence_hash` to the REAL per-backend verification results (was a synthetic constant) + the
   Stripe arm does a live re-fingerprint (was a hardcoded no-op) + region resolves fail-CLOSED — the signer

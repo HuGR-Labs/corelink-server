@@ -2282,6 +2282,74 @@ mod tests {
         }
     }
 
+    /// finding #2 (HIGH DoS) on the BULK path: with the tenant AT
+    /// `CAS_WRITE_CONCURRENCY_LIMIT` in-flight writes, the next `/batch` upload
+    /// is rejected 429 BEFORE its body is buffered — the `_concurrency:
+    /// CasPutGuard` `FromRequestParts` extractor on `handle_batch_write` runs
+    /// ahead of `body: Bytes` and SHARES the same per-tenant pool as the single
+    /// PUT (so single+batch uploads count together). Proven deterministically by
+    /// sending a body LARGER than the limit: if the guard were missing, the body
+    /// would be buffered and the request would 413 (batch byte-cap / body-limit)
+    /// or otherwise parse — anything but 429. So a 429 here is a witness that the
+    /// pre-body concurrency reservation ran first; DELETING the `CasPutGuard`
+    /// extractor from `handle_batch_write` flips this to 413 and FAILS the test.
+    #[tokio::test]
+    async fn batch_write_at_concurrency_limit_returns_429_before_body() {
+        let state = fixture();
+        {
+            let mut g = state.put_inflight.lock().expect("lock");
+            g.insert(TEST_TENANT.to_owned(), CAS_WRITE_CONCURRENCY_LIMIT);
+        }
+        let app = router(state);
+        // > 10 MiB: if the guard is absent the body-limit/byte-cap layer rejects
+        // it (413), never 429. Body content is irrelevant — the guard runs in
+        // `FromRequestParts`, before the body is read.
+        let oversized = Body::from(vec![0u8; 11 * 1024 * 1024]);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(oversized)
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "an at-limit /batch upload must be rejected 429 by the pre-body concurrency guard \
+             (the CasPutGuard extractor on handle_batch_write)"
+        );
+    }
+
+    /// Companion to the at-limit case: a `/batch` upload BELOW the limit succeeds
+    /// and RELEASES its shared concurrency slot (counter back to 0). Together with
+    /// the 429 test this pins that `handle_batch_write` both reserves AND releases
+    /// the same per-tenant pool — a leaked slot would wedge the tenant's writes.
+    #[tokio::test]
+    async fn batch_write_below_limit_releases_slot() {
+        let state = fixture();
+        let app = router(state.clone());
+        let b = b"batch-slot-release".to_vec();
+        let body = build_batch_upload(&[(fake_hash(&b), b)]);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(axum::http::header::CONTENT_TYPE, BATCH_CONTENT_TYPE)
+            .body(Body::from(body))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let g = state.put_inflight.lock().expect("lock");
+        assert_eq!(
+            g.get(TEST_TENANT),
+            None,
+            "the batch upload's concurrency slot must be released after it completes"
+        );
+    }
+
     /// (b) Re-upload of already-present objects returns `exists` (idempotent).
     #[tokio::test]
     async fn batch_reupload_returns_exists() {
