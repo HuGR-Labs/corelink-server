@@ -231,7 +231,7 @@ impl BackendErasureAdapter for StripePseudonymizeAdapter {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, reason = "tests")]
+#[allow(clippy::unwrap_used, clippy::panic, reason = "tests")]
 mod tests {
     use super::*;
 
