@@ -4,7 +4,7 @@ title: "Bazel REAPI v2 surface"
 description: "The five REAPI v2 REST cache endpoints that let any Bazel client point --remote_cache at CoreLink and hit the same R2 blobs as native CAS/AC."
 source_files:
   - "crates/corelink-container/src/routes/bazel_v2.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "b4b332ab0a95ac3fb86003024c13fac1e37b7285"
 provenance: "AUTHORED"
 tags: ["surfaces", "bazel", "reapi", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -32,12 +32,14 @@ path params, builds the REAPI digest, reads Worker-injected caller metadata, and
 4. CAS write is `PUT /bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size` (`crates/corelink-container/src/routes/bazel_v2.rs:292-295`).
 5. Batch find-missing is `POST /bazel/v2/:instance/findMissingBlobs` (`crates/corelink-container/src/routes/bazel_v2.rs:297-300`).
 6. Caller metadata is read from Worker-injected headers via `header_str`, defaulting when absent (`crates/corelink-container/src/routes/bazel_v2.rs:307-314`).
+7. The authenticated tenant is extracted fail-CLOSED by `caller_tenant`, which now routes its missing/empty/reserved-sentinel rejection through the SHARED `crate::auth_tenant::is_reserved_sentinel` — so this REAPI surface (which has no `AuthTenant` extractor) rejects the full reserved set including `_oci` and `_public` (`PUBLIC_NAMESPACE`), and `BazelPutGuard` reserves a write slot only for a non-sentinel tenant via the same check (`crates/corelink-container/src/routes/bazel_v2.rs:331-341`; `crates/corelink-container/src/routes/bazel_v2.rs:166`).
 
 # Invariants
 - The `:instance` path segment MUST equal the Worker-injected `x-corelink-tenant-id`; a mismatch is 403 with an audit row (`crates/corelink-container/src/routes/bazel_v2.rs:22-25`).
 - All routes use the matchit `:name` capture form, never `{name}`, per the DEBT-029 rule (`crates/corelink-container/src/routes/bazel_v2.rs:38-41`).
 - Per-tenant concurrent writes are bounded by `BAZEL_WRITE_CONCURRENCY_LIMIT` (`crates/corelink-container/src/routes/bazel_v2.rs:112`).
 - The bytes served are the same R2 blobs as the native CAS/AC endpoints (a shared store, not a copy) (`crates/corelink-container/src/routes/bazel_v2.rs:5-8`).
+- A missing/empty/reserved-sentinel `x-corelink-tenant-id` is rejected `401` through the shared `is_reserved_sentinel`, so a `_oci`/`_public` masquerade can never reach the cross-tenant dedup namespace via this surface (`crates/corelink-container/src/routes/bazel_v2.rs:331-341`).
 
 # Gotchas
 - `/blobs/ac/:hash/:size` resolves AHEAD of `/blobs/:hash/:size` because axum/matchit ranks the literal
@@ -57,3 +59,5 @@ path params, builds the REAPI digest, reads Worker-injected caller metadata, and
 8. `crates/corelink-container/src/routes/bazel_v2.rs:38-41` — matchit `:name` capture-form rule (DEBT-029).
 9. `crates/corelink-container/src/routes/bazel_v2.rs:112` — `BAZEL_WRITE_CONCURRENCY_LIMIT`.
 10. `crates/corelink-container/src/routes/bazel_v2.rs:5-8` — same R2 blobs as native CAS/AC.
+11. `crates/corelink-container/src/routes/bazel_v2.rs:331-341` — `caller_tenant` fail-CLOSED via the shared `is_reserved_sentinel` (rejects `_oci`/`_public`).
+12. `crates/corelink-container/src/routes/bazel_v2.rs:166` — `BazelPutGuard` reserves only for a non-sentinel tenant (same shared check).
