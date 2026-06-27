@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/internal_auth.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/native_pat_gate.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "7f62573f2be4f07352de830fe98f400bb1345adb"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -57,7 +57,16 @@ on the tenant-equality check alone until its cache entry expires.
 - The Worker-edge internal gate compares a presented secret against the expected one in constant time,
   copying into a fixed buffer so neither length nor content leaks via an early branch — one
   `timingSafeEqual` over equal-length buffers AND a single length-equality bit
-  (`worker/src/lib/internal_auth.ts:112-127`).
+  (`worker/src/lib/internal_auth.ts:112-127`). This `constantTimeSecretEqual` is the SHARED edge
+  primitive: `index.ts` reuses its exact padded semantics for both the `/_internal/*` proxy gate and the
+  #11 fan-out-metering check, so no Worker surface hand-rolls a compare.
+- The key the edge gate verifies against is itself selected fail-CLOSED and per-consumer:
+  `resolveConsumerKey` returns the consumer-specific internal-auth key only when it is ≥
+  `MIN_INTERNAL_AUTH_KEY_LEN` (32 bytes), else falls back to the shared `CORELINK_INTERNAL_AUTH_KEY`
+  (also length-floored), else `null` → the caller MUST fail CLOSED. A sub-floor dedicated key is treated
+  as ABSENT (it falls through to the shared key), never as a weakened gate — mirroring the Rust split so
+  one leaked consumer secret cannot unlock every internal surface
+  (`worker/src/lib/internal_auth.ts:75-89`).
 - That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (403),
   a missing/wrong header is 401, and only an exact match returns `null` to let the caller proceed
   (`worker/src/lib/internal_auth.ts:152-164`).
@@ -102,3 +111,4 @@ on the tenant-equality check alone until its cache entry expires.
 6. `crates/corelink-container/src/adapter_pat.rs:602-650` — the deep Argon2id possession proof on a blocking thread.
 7. `crates/corelink-container/src/adapter_pat.rs:558-599` — the valid-HMAC-but-unknown-`token_id` timing-parity dummy burn (the leaked-key path that DOES reach an Argon2id round), with the dummy verify at `crates/corelink-container/src/adapter_pat.rs:591`.
 8. `crates/corelink-container/src/adapter_pat.rs:586` — the dummy-burn bound: a shared synthetic per-tenant sub-permit via `UNKNOWN_TOKEN_BUCKET` (atop the global Argon2id permit), so a leaked-key flood across bogus token_ids cannot drain the pool (finding #12).
+9. `worker/src/lib/internal_auth.ts:75-89` — `resolveConsumerKey`: per-consumer key with shared `CORELINK_INTERNAL_AUTH_KEY` fallback, both floored at `MIN_INTERNAL_AUTH_KEY_LEN`=32, else `null` (fail-CLOSED); a sub-floor dedicated key is treated as absent so one leaked consumer secret can't unlock every surface.

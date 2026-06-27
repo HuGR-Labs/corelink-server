@@ -9,9 +9,13 @@
 # THIS FILE IS THE C10 / C10b ORACLE (01-okf-corelink-profile.contract.md §4):
 #   - C10  : every candidate with status: active has a concept doc OR a deferred: marker.
 #   - C10b : the manifest itself is cross-checked against the mechanically-enumerable
-#            repo surface — every specs/03_architecture/adrs/*.md (76), every
-#            crates/corelink-container/src/routes/*.rs (27), and every crates/* dir (73)
-#            maps to a candidate (via id/seed_from) OR an explicit excludes: entry.
+#            repo surface — every specs/03_architecture/adrs/*.md, every
+#            crates/corelink-container/src/routes/*.rs, every crates/* dir, AND the
+#            Worker EDGE PLANE + apps/ workers (BR5 root fix): worker/src/*.ts,
+#            worker/src/lib/*.ts, apps/{signup,cas,analytics}-worker/src/**/*.ts, and
+#            apps/migrate-single-to-multi-region/src/main.rs — each maps to a candidate
+#            (via id/seed_from) OR an explicit excludes: entry. A future load-bearing
+#            edge file with no concept therefore REDs the gate (no silent edge gaps).
 #
 # Transcribed from a frozen contract (W-MANIFEST). Agents do not design or deviate.
 # ============================================================================
@@ -23,18 +27,46 @@ okf_base: "0.1"
 excludes:
   - surface: "apps/get-corelink-worker"
     reason: "Install-script worker (apps/, not crates/); operational glue, no cross-crate architecture narrative; covered transitively by planes/worker-edge."
-  - surface: "apps/signup-worker"
-    reason: "Live Clerk->Svix signup worker (apps/); its flow is documented by launch/signup-onboarding; not a crates/ enumerable item."
-  - surface: "apps/analytics-worker"
-    reason: "Analytics ingestion worker (apps/); covered by ops/audit-analytics-plane; not a crates/ enumerable item."
   - surface: "apps/admin-ui"
-    reason: "Next.js admin SPA (apps/); UI, outside the narrative/architecture-above-rustdoc scope (D7)."
+    reason: "Next.js admin SPA (apps/); UI, covered at app-level only — outside the narrative/architecture-above-rustdoc scope (D7)."
   - surface: "tests/e2e-user-journeys"
     reason: "Black-box e2e harness (tests/, excluded from cargo-mutants per 2f82a2a3); test-only, no architecture concept."
   - surface: "docs/knowledge/index.md"
     reason: "OKF reserved file (machine-generated listing) — never a concept doc (contract C9)."
   - surface: "docs/knowledge/log.md"
     reason: "OKF reserved file (machine-appended history) — never a concept doc (contract C9)."
+  # ---- EDGE-PLANE / apps file-granular exempts (BR5; glob-matched) ----
+  # signup-worker + analytics-worker are now gated FILE-GRANULAR (their load-bearing
+  # files seed the edge concepts below); only the genuinely concept-exempt files
+  # (types / config / test / UI / data / boilerplate) are excluded here.
+  - surface: "**/*.d.ts"
+    reason: "Ambient TypeScript type declarations — no runtime behavior, no architecture narrative."
+  - surface: "**/*.test.ts"
+    reason: "Unit/integration test files — test-only, not a load-bearing subsystem."
+  - surface: "**/__tests__/**"
+    reason: "Test directories — test-only."
+  - surface: "**/e2e/**"
+    reason: "End-to-end test fixtures — test-only."
+  - surface: "**/tests/**"
+    reason: "Test directories — test-only."
+  - surface: "**/*.config.ts"
+    reason: "Build/tooling config (vitest/eslint/etc.) — operational config, no architecture concept."
+  - surface: "**/wrangler.toml"
+    reason: "Cloudflare deployment manifest — declarative config, not a narrative subsystem."
+  - surface: "worker/src/region-map.ts"
+    reason: "Pure colo->region lookup data table (static map) — data, no architecture narrative."
+  - surface: "apps/*/src/types/**"
+    reason: "Per-app shared type/binding declarations — types, no runtime behavior."
+  - surface: "apps/analytics-worker/src/types.ts"
+    reason: "Pure TS type/binding declarations (Env interface mirroring wrangler bindings) — types, no architecture narrative."
+  - surface: "**/i18n/**"
+    reason: "Localization message catalogs — UI data, no architecture concept."
+  - surface: "**/content/**"
+    reason: "Static content assets — data, no architecture concept."
+  - surface: "**/package.json"
+    reason: "npm manifest — declarative dependency/config metadata."
+  - surface: "**/tsconfig.json"
+    reason: "TypeScript compiler config — tooling config, no architecture concept."
 
 candidates:
   # ---- ARCHITECTURE (38) ----
@@ -49,7 +81,7 @@ candidates:
     title: "Durable Object lifecycle (CoreLinkServer)"
     status: "active"
     source_cluster: "planes"
-    seed_from: ["worker/src/durable_object.ts"]
+    seed_from: ["worker/src/durable_object.ts", "worker/src/event_log_do.ts", "worker/src/rollout_controller.ts"]
   - id: "planes/container"
     type: "Plane"
     title: "Rust container compute plane"
@@ -266,6 +298,43 @@ candidates:
     status: "active"
     source_cluster: "crates"
     seed_from: ["crates/corelink-container", "crates/corelink-config-do", "crates/corelink-cf-bindings", "crates/corelink-meta", "crates/corelink-handler-admin", "crates/corelink-handler-customer", "crates/corelink-worker", "crates/corelink-wasm", "crates/tenant-path"]
+  # ---- WORKER EDGE PLANE / apps (6; BR5 root fix — file-granular edge coverage) ----
+  - id: "auth/edge-pat-mint-lifecycle"
+    type: "AuthFlow"
+    title: "The edge PAT-mint lifecycle (one authority, three consumers)"
+    status: "active"
+    source_cluster: "auth"
+    seed_from: ["worker/src/lib/session_exchange.ts", "worker/src/lib/runner_mint.ts", "worker/src/lib/auth_rotate.ts"]
+  - id: "auth/edge-identity-resolution"
+    type: "AuthMechanism"
+    title: "Edge identity resolution (Clerk session -> tenant)"
+    status: "active"
+    source_cluster: "auth"
+    seed_from: ["worker/src/lib/clerk_auth.ts", "worker/src/lib/tenant_lookup.ts"]
+  - id: "launch/edge-quota-tier-serving"
+    type: "BillingControl"
+    title: "Edge quota & tier serving"
+    status: "active"
+    source_cluster: "docs/launch"
+    seed_from: ["worker/src/lib/quota.ts"]
+  - id: "launch/stripe-activation-webhook"
+    type: "BillingControl"
+    title: "Stripe activation webhook — the money-path activation half"
+    status: "active"
+    source_cluster: "docs/launch"
+    seed_from: ["apps/signup-worker/src/webhooks/stripe.ts"]
+  - id: "compliance/dsr-edge-crons"
+    type: "ComplianceControl"
+    title: "DSR edge crons + erasure-queue consumer"
+    status: "active"
+    source_cluster: "docs/compliance"
+    seed_from: ["apps/signup-worker/src/webhooks/dsr_consumer.ts", "apps/signup-worker/src/webhooks/dsr_verify_cron.ts", "apps/signup-worker/src/webhooks/pat_scrub_cron.ts", "apps/signup-worker/src/lib/erase-auth-key.ts", "apps/signup-worker/src/index.ts"]
+  - id: "flows/signup-auto-provision"
+    type: "Flow"
+    title: "Signup auto-provision + account-deletion erasure (Clerk webhook)"
+    status: "active"
+    source_cluster: "flows"
+    seed_from: ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/index.ts", "apps/signup-worker/src/lib/clerk-metadata.ts", "apps/signup-worker/src/lib/corelink-internal.ts", "apps/signup-worker/src/lib/d1.ts"]
   # ---- ADR re-index (76) ----
   - id: "adr/adr-0012-ff-hr-011-gc-reachability"
     type: "ADR"
@@ -626,7 +695,7 @@ candidates:
     title: "ADR S14 001 multi region terraform module"
     status: "active"
     source_cluster: "adr"
-    seed_from: ["specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md"]
+    seed_from: ["specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md", "apps/migrate-single-to-multi-region/src/main.rs"]
   - id: "adr/adr-s14-002-region-pinning-enforcement"
     type: "ADR"
     title: "ADR S14 002 region pinning enforcement"
@@ -729,7 +798,7 @@ candidates:
     title: "Security posture overview"
     status: "active"
     source_cluster: "docs/security"
-    seed_from: ["docs/security/2026-06-13-CAA-360-audit-report.md", "ARCHITECTURE.md"]
+    seed_from: ["docs/security/2026-06-13-CAA-360-audit-report.md", "ARCHITECTURE.md", "apps/signup-worker/src/security-headers.ts", "apps/analytics-worker/src/security-headers.ts"]
   - id: "security/pentest-learnings"
     type: "SecurityControl"
     title: "Pentest & red-team learnings"
@@ -753,7 +822,7 @@ candidates:
     title: "Credential handling & PAT secrecy"
     status: "active"
     source_cluster: "docs/security"
-    seed_from: ["docs/security/2026-06-23-secreview-credentials.md", "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md"]
+    seed_from: ["docs/security/2026-06-23-secreview-credentials.md", "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md", "worker/src/lib/internal_auth.ts"]
   - id: "security/money-path-review"
     type: "SecurityControl"
     title: "Money-path security review"
@@ -867,7 +936,7 @@ candidates:
     title: "Audit/analytics export plane"
     status: "active"
     source_cluster: "docs/cli"
-    seed_from: ["crates/corelink-container/src/routes/audit_analytics.rs", "crates/corelink-container/src/routes/audit_export.rs", "docs/cli/audit-export.md"]
+    seed_from: ["crates/corelink-container/src/routes/audit_analytics.rs", "crates/corelink-container/src/routes/audit_export.rs", "docs/cli/audit-export.md", "apps/analytics-worker/src/index.ts", "apps/analytics-worker/src/ingest.ts", "apps/analytics-worker/src/cron/weekly-email.ts", "apps/signup-worker/src/lib/analytics-server.ts", "apps/cas-worker/src/middleware/analytics.ts"]
   - id: "ops/perf-playbook"
     type: "Runbook"
     title: "Performance playbook"

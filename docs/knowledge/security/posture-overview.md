@@ -8,7 +8,8 @@ source_files:
   - "crates/corelink-container/src/storage/r2_s3.rs"
   - "worker/src/index.ts"
   - "crates/corelink-container/src/routes/dsr/audit.rs"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+  - "apps/signup-worker/src/security-headers.ts"
+checkpoint_sha: "7f62573f2be4f07352de830fe98f400bb1345adb"
 provenance: "AUTHORED"
 tags: ["security", "posture", "audit", "tenant-isolation", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -73,6 +74,13 @@ launch gate).
 - The honest top risks cluster on one root cause — secrets and invariants that fail OPEN and silently
   instead of fail-closed and loud: the TDK unset in prod, optional secrets that fail open, and an AC
   divergent-body overwrite (`docs/security/2026-06-13-CAA-360-audit-report.md:22-27`).
+- Defense-in-depth at the public webhook edge: every response from the signup worker carries a hardened
+  header set — a strict `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri
+  'none'`, `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`, plus `nosniff` /
+  `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer` / a locked-down `Permissions-Policy`
+  (`apps/signup-worker/src/security-headers.ts:14-24`); `withSecurityHeaders` merges them onto every
+  response, gap-filling only so per-route values (e.g. `Content-Type`) survive
+  (`apps/signup-worker/src/security-headers.ts:31-41`).
 
 # Invariants
 
@@ -117,3 +125,4 @@ launch gate).
 9. `docs/security/2026-06-13-CAA-360-audit-report.md:51-81` — the one High (F36): migration 0064 trigger-loss documentation defect.
 10. `docs/security/2026-06-13-CAA-360-audit-report.md:104-120` — F1: cross-tenant co-residence when `R2_TDK_HEX` is unset in prod.
 13. `crates/corelink-container/src/routes/dsr/audit.rs:7-8`, `crates/corelink-container/src/routes/dsr/audit.rs:82` — the audit append-only MUST is designed-not-yet-live: the live sink writes *unchained* CloudEvents to `audit_outbox` (`emitted_at=NULL`, no `prev_hash`/`sequence_number`); chain-sealing is the unbuilt WI-S09-007.
+14. `apps/signup-worker/src/security-headers.ts:14-24` / `:31-41` — the edge security-header set (strict CSP `default-src 'none'`, HSTS 2y preload, nosniff / `X-Frame-Options: DENY` / no-referrer / `Permissions-Policy`) and the `withSecurityHeaders` gap-fill merge applied to every signup-worker response.

@@ -4,7 +4,7 @@ title: "Cloudflare Worker edge plane"
 description: "The HTTPS entry point: route table, PAT auth, server-trust header hygiene, per-tier quota, and forwarding to the per-tenant Durable Object."
 source_files:
   - "worker/src/index.ts"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "7f62573f2be4f07352de830fe98f400bb1345adb"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -40,8 +40,11 @@ keeps forged tokens cheap to reject before any expensive work.
    signing key is the sole possession gate for the native plane (`worker/src/index.ts:851-878`).
 5. PAT validation is HMAC-SHA256 fast-reject (with rotation siblings) BEFORE any D1 round-trip, then a
    D1 lookup by `token_id` and an application-side expiry check (`worker/src/index.ts:916-1031`).
-6. `stripClientTrustHeaders` deletes every client-suppliable trust header on every forward, then the
-   Worker re-sets its own verified values (`worker/src/index.ts:473-477`).
+6. `stripClientTrustHeaders` iterates the `CLIENT_TRUST_HEADERS` strip list
+   (`worker/src/index.ts:427-470`) and `h.delete()`s every client-suppliable trust header on every
+   forward (`worker/src/index.ts:475`); the Worker then re-sets its own verified values — it is the
+   SOLE setter of `x-corelink-tenant-id`/`-scope`/`-token-prefix`/`-client-ip`/`-storage-quota-bytes`/
+   `-primary-region`, so no client can smuggle any of them on any path.
 7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
    request-count fail-CLOSED; storage verb-aware (reads fail-open for availability, byte-adding writes
    fail-closed) (`worker/src/index.ts:2151-2172`).
@@ -49,15 +52,27 @@ keeps forged tokens cheap to reject before any expensive work.
    (`worker/src/index.ts:2465-2468`) and dispatched with `stub.fetch` (`worker/src/index.ts:2532`).
 9. The forwarded request is augmented: strip-then-set the trusted tenant-id, scope, token-prefix, and
    client-ip headers (`worker/src/index.ts:2470-2528`).
-10. The whole handler is wrapped by `Sentry.withSentry`, inert until `SENTRY_DSN` is set
+10. `/_internal/*` routes bypass the PAT path and are gated by a padded constant-time secret check:
+    `resolveConsumerKey` picks the per-consumer or shared internal-auth key and the route is
+    403-unavailable when none is ≥ 32 bytes (`worker/src/index.ts:1565`); a present caller secret is
+    verified by copying it into a fixed buffer sized to the EXPECTED key, running exactly one
+    `timingSafeEqual` over equal-length buffers AND a single length-equality bit — no provided-length
+    oracle — else 401 (`worker/src/index.ts:1574-1601`).
+11. The whole handler is wrapped by `Sentry.withSentry`, inert until `SENTRY_DSN` is set
     (`worker/src/index.ts:2599-2617`), scrubbing Authorization/Cookie/internal-auth headers via the
     `SENTRY_SENSITIVE_HEADER_PATTERN` scrub list (`worker/src/index.ts:2584-2596`).
 
 # Invariants
 - Tenant isolation is structural: the DO id is derived solely from the PAT-resolved tenant, never the
   URL path segment (`worker/src/index.ts:2465-2468`).
-- A client can never smuggle a server-trust header: `stripClientTrustHeaders` deletes the strip list on
-  every forward path before the Worker sets its own values (`worker/src/index.ts:473-477`).
+- A client can never smuggle a server-trust header: `stripClientTrustHeaders` `h.delete()`s the
+  `CLIENT_TRUST_HEADERS` strip list (`worker/src/index.ts:427-470`) on every forward path
+  (`worker/src/index.ts:475`) before the Worker sets its own values — the Worker is the sole setter of
+  every server-trust header it forwards.
+- The `/_internal/*` proxy gate fails CLOSED and is constant-time: no internal-auth key ≥ 32 bytes
+  bound → 403 unavailable (`worker/src/index.ts:1565`); a present secret is matched by exactly one
+  padded `timingSafeEqual` plus a length-equality bit, with no provided-length oracle
+  (`worker/src/index.ts:1574-1601`).
 - The signing-key gate is mandatory — a missing/short `PAT_SIGNING_KEY` is a 503, never a silent skip
   (`worker/src/index.ts:851-878`).
 - The Worker forwards the D1-resolved `scope` as `x-corelink-scope` and is its sole setter
@@ -74,8 +89,8 @@ keeps forged tokens cheap to reject before any expensive work.
 # Citations
 1. `worker/src/index.ts:1-20` — the architecture header documenting the Worker → DO → container topology.
 2. `worker/src/index.ts:1013-1014` — the EXECUTED D1 read of `pat.scope` (`SELECT ... scope FROM pat WHERE token_id = ?1`); the `AuthResult` type doc at `:285-300` only carries it.
-3. `worker/src/index.ts:427-466` — the `CLIENT_TRUST_HEADERS` strip list.
-4. `worker/src/index.ts:473-477` — `stripClientTrustHeaders` (delete-then-set discipline).
+3. `worker/src/index.ts:427-470` — the `CLIENT_TRUST_HEADERS` strip list (every server-trust header the Worker is the sole setter of).
+4. `worker/src/index.ts:475` — the executed `h.delete(name)` strip inside `stripClientTrustHeaders` (delete-then-set discipline).
 5. `worker/src/index.ts:525-789` — the `matchRoute` ordered route table.
 6. `worker/src/index.ts:851-878` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
 7. `worker/src/index.ts:916-1031` — HMAC fast-reject + D1 lookup + expiry check.
@@ -89,3 +104,5 @@ keeps forged tokens cheap to reject before any expensive work.
 15. `worker/src/index.ts:2546-2553` — 404 timing-pad.
 16. `worker/src/index.ts:2599-2617` — the Sentry wrapper (inert until `SENTRY_DSN`).
 17. `worker/src/index.ts:2584-2596` — `SENTRY_SENSITIVE_HEADER_PATTERN` + `scrubSentryEvent` header-scrub list.
+18. `worker/src/index.ts:1565` — `resolveConsumerKey` fail-CLOSED on the `/_internal/*` arm (no ≥32-byte internal-auth key → 403 unavailable).
+19. `worker/src/index.ts:1574-1601` — the padded constant-time `/_internal/*` auth gate (one `timingSafeEqual` over equal-length buffers + a length-equality bit, no provided-length oracle).

@@ -46,6 +46,7 @@ the house approach in scripts/validate_specs.py.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import os
 import re
 import subprocess
@@ -749,6 +750,17 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             if surf and ex.get("reason"):
                 excludes.append(str(surf))
 
+    def _glob_match(rel: str, pattern: str) -> bool:
+        # fnmatch with `**/`-anywhere semantics: `**/*.test.ts` also matches a
+        # bare `foo.test.ts`, and `apps/*/src/types/**` matches anything beneath.
+        if fnmatch.fnmatch(rel, pattern):
+            return True
+        if pattern.startswith("**/"):
+            tail = pattern[3:]
+            if fnmatch.fnmatch(rel, tail) or fnmatch.fnmatch(rel.split("/")[-1], tail):
+                return True
+        return False
+
     def is_covered(rel: str, is_dir: bool) -> bool:
         if rel in seed_paths:
             return True
@@ -756,8 +768,12 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         # dir itself or lives under it
         if is_dir and any(s == rel or s.startswith(rel.rstrip("/") + "/") for s in seed_paths):
             return True
-        if any(rel == ex or rel.startswith(ex.rstrip("/") + "/") for ex in excludes):
-            return True
+        for ex in excludes:
+            exn = ex.rstrip("/")
+            if rel == exn or rel.startswith(exn + "/"):
+                return True
+            if ("*" in ex or "?" in ex or "[" in ex) and _glob_match(rel, ex):
+                return True
         return False
 
     surface: list[tuple[str, bool]] = []
@@ -771,7 +787,30 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     if crates_dir.is_dir():
         surface += [(p.relative_to(surface_root).as_posix(), True) for p in sorted(crates_dir.iterdir()) if p.is_dir()]
 
-    for rel, is_dir in surface:
+    # --- Worker EDGE PLANE + apps/ (BR5 root fix) ------------------------------
+    # The completeness oracle must also gate the TypeScript edge plane and the
+    # apps/ workers (file-granular), not just the Rust container + ADRs — else a
+    # future load-bearing worker/src or apps/*/src file with no concept stays
+    # invisible. Enumerated as completeness-required surfaces; legit-exempt files
+    # (types/config/test/UI/data) live in the manifest `excludes:`.
+    def _add_files(base_rel: str, pattern: str, recursive: bool = False) -> None:
+        base = surface_root / base_rel
+        if not base.is_dir():
+            return
+        globber = base.rglob if recursive else base.glob
+        for p in sorted(globber(pattern)):
+            if p.is_file():
+                surface.append((p.relative_to(surface_root).as_posix(), False))
+
+    _add_files("worker/src", "*.ts")                 # edge plane (top-level)
+    _add_files("worker/src/lib", "*.ts")             # edge plane (lib/)
+    for app in ("signup-worker", "cas-worker", "analytics-worker"):
+        _add_files(f"apps/{app}/src", "*.ts", recursive=True)
+    mig = surface_root / "apps" / "migrate-single-to-multi-region" / "src" / "main.rs"
+    if mig.is_file():
+        surface.append((mig.relative_to(surface_root).as_posix(), False))
+
+    for rel, is_dir in dict.fromkeys(surface):
         if not is_covered(rel, is_dir):
             fails.add("C10b", str(manifest_path),
                       f"repo-surface item `{rel}` has no manifest entry and no exclude (silent gap)")
