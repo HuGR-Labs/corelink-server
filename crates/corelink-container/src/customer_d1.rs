@@ -377,6 +377,22 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     )
 }
 
+/// Civil (y, m, d) → days-since-epoch. Howard Hinnant's `days_from_civil`
+/// algorithm (public domain), the exact inverse of [`civil_from_days`]. Used to
+/// turn an ISO-8601 `since` filter back into the integer `ts_ms` domain.
+fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let m = i64::from(m);
+    let d = i64::from(d);
+    let y = if m <= 2 { y - 1 } else { y };
+    // `div_euclid` floors (matching `civil_from_days`), so no truncating-
+    // division `y - 399` adjustment is needed — that would double-correct.
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400; // [0, 399]
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    era * 146_097 + doe - 719_468
+}
+
 /// Unix-ms → `"YYYY-MM-DDTHH:MM:SSZ"` (UTC, second precision).
 #[must_use]
 pub fn ms_to_iso8601(unix_ms: i64) -> String {
@@ -388,6 +404,45 @@ pub fn ms_to_iso8601(unix_ms: i64) -> String {
     let mi = (sod % 3600) / 60;
     let ss = sod % 60;
     format!("{y:04}-{m:02}-{d:02}T{hh:02}:{mi:02}:{ss:02}Z")
+}
+
+/// ISO-8601 / RFC3339 UTC timestamp → unix-ms. The inverse of
+/// [`ms_to_iso8601`], used to honor the `GET /v1/customer/audit?from=` filter
+/// (`AuditQueryRequest::since`), whose contract type is an ISO-8601 string while
+/// the `customer_audit_events.ts_ms` column is integer millis.
+///
+/// Accepts the canonical `ms_to_iso8601` output (`YYYY-MM-DDTHH:MM:SSZ`) plus
+/// common variants: a bare date (`YYYY-MM-DD`), a space date/time separator, an
+/// optional fractional-second part, and an optional trailing `Z`. Returns
+/// `None` for anything it cannot parse — the caller then applies NO `since`
+/// filter (lenient: a malformed param never silently drops the customer's rows,
+/// nor errors their whole activity read). UTC-only, mirroring `ms_to_iso8601`.
+#[must_use]
+fn iso8601_to_ms(s: &str) -> Option<i64> {
+    let s = s.trim();
+    // Split date from the optional time component on 'T' or ' '.
+    let (date, time) = s.split_once(['T', ' ']).map_or((s, None), |(d, t)| (d, Some(t)));
+    let mut dp = date.split('-');
+    let y: i64 = dp.next()?.parse().ok()?;
+    let m: u32 = dp.next()?.parse().ok()?;
+    let d: u32 = dp.next()?.parse().ok()?;
+    if dp.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+        return None;
+    }
+    let (mut hh, mut mi, mut ss): (i64, i64, i64) = (0, 0, 0);
+    if let Some(t) = time {
+        // Strip a trailing 'Z' and any fractional-second suffix.
+        let t = t.trim_end_matches('Z');
+        let t = t.split_once('.').map_or(t, |(whole, _)| whole);
+        let mut tp = t.split(':');
+        hh = tp.next()?.parse().ok()?;
+        mi = tp.next().map_or(Ok(0), str::parse).ok()?;
+        ss = tp.next().map_or(Ok(0), str::parse).ok()?;
+        if !(0..=23).contains(&hh) || !(0..=59).contains(&mi) || !(0..=60).contains(&ss) {
+            return None;
+        }
+    }
+    Some((days_from_civil(y, m, d) * 86_400 + hh * 3_600 + mi * 60 + ss) * 1_000)
 }
 
 /// Unix-ms → billing period `"YYYY-MM"` (UTC).
@@ -1350,12 +1405,46 @@ impl CustomerAuditHandler for D1CustomerHandler {
         // tenant-scoped, bounded. Written best-effort by the control-plane
         // mutations (`create` / `invite`). Fail-CLOSED on transport error
         // (`self.run`), never degraded to fabricated empty data.
-        let rows = self.run(
+        //
+        // Contract: honor the `?from=`/`?kind=` filters (`req.since` /
+        // `req.event_types`). The WHERE clause is BUILT with generated
+        // positional placeholders (`?N`) and every value is BOUND through
+        // `self.run` — no value is ever string-interpolated, so the dynamic
+        // shape carries NO injection surface. An absent filter is omitted
+        // (behaves as before — no narrowing). Tenant scope stays fail-CLOSED
+        // (always `WHERE tenant_id = ?1`).
+        let mut sql = String::from(
             "SELECT id, event_type, actor, target, ts_ms, detail \
-             FROM customer_audit_events WHERE tenant_id = ?1 \
-             ORDER BY ts_ms DESC LIMIT ?2",
-            vec![json!(req.caller_tenant), json!(AUDIT_QUERY_LIMIT)],
-        )?;
+             FROM customer_audit_events WHERE tenant_id = ?1",
+        );
+        let mut binds: Vec<Value> = vec![json!(req.caller_tenant)];
+
+        // `?from=` → `AND ts_ms >= ?` (ISO-8601 parsed to the integer ts_ms
+        // domain). A present-but-unparseable `since` applies NO filter
+        // (lenient — never silently drops the customer's rows on a bad param).
+        if let Some(since_ms) = req.since.as_deref().and_then(iso8601_to_ms) {
+            binds.push(json!(since_ms));
+            sql.push_str(&format!(" AND ts_ms >= ?{}", binds.len()));
+        }
+
+        // `?kind=` → `AND event_type IN (?, ?, …)`. Placeholders are GENERATED
+        // (positional `?N`); each event-type value is BOUND, never interpolated.
+        if !req.event_types.is_empty() {
+            let first = binds.len() + 1;
+            let placeholders: Vec<String> = (first..first + req.event_types.len())
+                .map(|n| format!("?{n}"))
+                .collect();
+            for et in &req.event_types {
+                binds.push(json!(et));
+            }
+            sql.push_str(&format!(" AND event_type IN ({})", placeholders.join(", ")));
+        }
+
+        // Newest-first, bounded (preserved).
+        binds.push(json!(AUDIT_QUERY_LIMIT));
+        sql.push_str(&format!(" ORDER BY ts_ms DESC LIMIT ?{}", binds.len()));
+
+        let rows = self.run(&sql, binds)?;
         let event_rows: Vec<CustomerAuditEventRow> = rows
             .iter()
             .map(|row| {
@@ -2548,6 +2637,171 @@ mod tests {
         );
         assert_eq!(resp.rows[1].event_id, "1");
         assert_eq!(resp.rows[1].event_type, "pat.created");
+    }
+
+    #[test]
+    fn iso8601_to_ms_round_trips_and_rejects_garbage() {
+        // Exact inverse of `ms_to_iso8601` on the canonical (second-precision)
+        // form, plus the lenient variants the contract may receive.
+        assert_eq!(iso8601_to_ms("1970-01-01T00:00:00Z"), Some(0));
+        assert_eq!(
+            iso8601_to_ms("2023-11-14T22:13:20Z"),
+            Some(1_700_000_000_000)
+        );
+        assert_eq!(iso8601_to_ms("2023-11-14"), Some(1_699_920_000_000)); // bare date → 00:00:00Z
+        assert_eq!(
+            iso8601_to_ms("2023-11-14T22:13:20.999Z"), // fractional dropped
+            Some(1_700_000_000_000)
+        );
+        assert_eq!(iso8601_to_ms("2023-11-14 22:13:20"), Some(1_700_000_000_000)); // space sep, no Z
+        // Garbage → None (caller then applies no filter).
+        assert_eq!(iso8601_to_ms("not-a-date"), None);
+        assert_eq!(iso8601_to_ms("2023-13-01"), None); // month out of range
+        assert_eq!(iso8601_to_ms("2023-11-14T25:00:00Z"), None); // hour out of range
+        assert_eq!(iso8601_to_ms(""), None);
+    }
+
+    #[test]
+    fn audit_query_applies_since_filter_in_sql_and_binds() {
+        // `?from=` must reach the SQL as `ts_ms >= ?` with the ISO-8601 value
+        // parsed into the integer ts_ms domain — not silently ignored.
+        let f = fixture_with(MockD1::with(vec![]), None);
+        let _ = f
+            .handler
+            .query(AuditQueryRequest::new(
+                TENANT,
+                "clpat_x",
+                Some("2023-11-14T22:13:20Z".to_owned()),
+                vec![],
+                0,
+            ))
+            .unwrap();
+        let calls = f.db.calls();
+        let (sql, binds) = calls
+            .iter()
+            .find(|(s, _)| s.contains("FROM customer_audit_events"))
+            .expect("the audit SELECT must have run");
+        assert!(sql.contains("ts_ms >= ?2"), "since filter missing: {sql}");
+        // tenant (?1), since-ms (?2), LIMIT (?3) — parameterized, no interpolation.
+        assert_eq!(binds.len(), 3, "binds: {binds:?}");
+        assert_eq!(binds[0], json!(TENANT));
+        assert_eq!(binds[1], json!(1_700_000_000_000_i64));
+        assert_eq!(binds[2], json!(AUDIT_QUERY_LIMIT));
+        assert!(sql.ends_with("ORDER BY ts_ms DESC LIMIT ?3"), "{sql}");
+    }
+
+    #[test]
+    fn audit_query_applies_event_types_filter_in_sql_and_binds() {
+        // `?kind=` must reach the SQL as a parameterized `event_type IN (…)`
+        // with one BOUND placeholder per type (never string-interpolated).
+        let f = fixture_with(MockD1::with(vec![]), None);
+        let _ = f
+            .handler
+            .query(AuditQueryRequest::new(
+                TENANT,
+                "clpat_x",
+                None,
+                vec!["pat.created".to_owned(), "team.invited".to_owned()],
+                0,
+            ))
+            .unwrap();
+        let calls = f.db.calls();
+        let (sql, binds) = calls
+            .iter()
+            .find(|(s, _)| s.contains("FROM customer_audit_events"))
+            .expect("the audit SELECT must have run");
+        assert!(
+            sql.contains("event_type IN (?2, ?3)"),
+            "event_types filter missing/not parameterized: {sql}"
+        );
+        // The values are BOUND, not embedded in the SQL string (no injection).
+        assert!(!sql.contains("pat.created"), "value interpolated: {sql}");
+        // tenant (?1), two event types (?2,?3), LIMIT (?4).
+        assert_eq!(binds.len(), 4, "binds: {binds:?}");
+        assert_eq!(binds[0], json!(TENANT));
+        assert_eq!(binds[1], json!("pat.created"));
+        assert_eq!(binds[2], json!("team.invited"));
+        assert_eq!(binds[3], json!(AUDIT_QUERY_LIMIT));
+        assert!(sql.ends_with("ORDER BY ts_ms DESC LIMIT ?4"), "{sql}");
+    }
+
+    #[test]
+    fn audit_query_combines_since_and_event_types_filters() {
+        // Both filters together: placeholders stay correctly numbered and the
+        // tenant scope stays fail-CLOSED at ?1.
+        let f = fixture_with(MockD1::with(vec![]), None);
+        let _ = f
+            .handler
+            .query(AuditQueryRequest::new(
+                TENANT,
+                "clpat_x",
+                Some("2023-11-14T22:13:20Z".to_owned()),
+                vec!["pat.created".to_owned()],
+                0,
+            ))
+            .unwrap();
+        let calls = f.db.calls();
+        let (sql, binds) = calls
+            .iter()
+            .find(|(s, _)| s.contains("FROM customer_audit_events"))
+            .expect("the audit SELECT must have run");
+        assert!(sql.contains("WHERE tenant_id = ?1"), "{sql}");
+        assert!(sql.contains("ts_ms >= ?2"), "{sql}");
+        assert!(sql.contains("event_type IN (?3)"), "{sql}");
+        assert!(sql.ends_with("ORDER BY ts_ms DESC LIMIT ?4"), "{sql}");
+        assert_eq!(
+            binds,
+            &vec![
+                json!(TENANT),
+                json!(1_700_000_000_000_i64),
+                json!("pat.created"),
+                json!(AUDIT_QUERY_LIMIT),
+            ]
+        );
+    }
+
+    #[test]
+    fn audit_query_unparseable_since_applies_no_filter() {
+        // A malformed `from=` is lenient: NO `ts_ms` clause, behaves as before.
+        let f = fixture_with(MockD1::with(vec![]), None);
+        let _ = f
+            .handler
+            .query(AuditQueryRequest::new(
+                TENANT,
+                "clpat_x",
+                Some("garbage".to_owned()),
+                vec![],
+                0,
+            ))
+            .unwrap();
+        let calls = f.db.calls();
+        let (sql, binds) = calls
+            .iter()
+            .find(|(s, _)| s.contains("FROM customer_audit_events"))
+            .expect("the audit SELECT must have run");
+        assert!(!sql.contains("ts_ms >="), "bad since must not filter: {sql}");
+        assert_eq!(binds.len(), 2, "tenant + LIMIT only: {binds:?}");
+        assert!(sql.ends_with("ORDER BY ts_ms DESC LIMIT ?2"), "{sql}");
+    }
+
+    #[test]
+    fn audit_query_no_filters_matches_prior_shape() {
+        // Regression guard: with neither param the SQL is the original
+        // tenant-only, bounded, newest-first form.
+        let f = fixture_with(MockD1::with(vec![]), None);
+        let _ = f
+            .handler
+            .query(AuditQueryRequest::new(TENANT, "clpat_x", None, vec![], 0))
+            .unwrap();
+        let calls = f.db.calls();
+        let (sql, binds) = calls
+            .iter()
+            .find(|(s, _)| s.contains("FROM customer_audit_events"))
+            .expect("the audit SELECT must have run");
+        assert!(!sql.contains("ts_ms >="), "{sql}");
+        assert!(!sql.contains("event_type IN"), "{sql}");
+        assert_eq!(binds, &vec![json!(TENANT), json!(AUDIT_QUERY_LIMIT)]);
+        assert!(sql.ends_with("ORDER BY ts_ms DESC LIMIT ?2"), "{sql}");
     }
 
     // ── Misc plumbing ────────────────────────────────────────────────────────

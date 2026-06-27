@@ -10,8 +10,13 @@ use ed25519_dalek::{Signature, Verifier};
 /// supplied public key.
 ///
 /// The verifier checks:
-/// 1. The `signature_ed25519` field decodes from base64 to 64 bytes.
-/// 2. The decoded signature verifies against `canonical_payload_jcs`
+/// 1. The typed `payload` re-canonicalizes (RFC 8785 JCS, `serde_jcs` — the
+///    EXACT canonicalizer the signer uses) to bytes IDENTICAL to
+///    `canonical_payload_jcs`. This binds the consumer-readable typed
+///    `payload` to the bytes that were actually signed, so a substituted
+///    `payload` (with the original canonical+signature kept) is rejected.
+/// 2. The `signature_ed25519` field decodes from base64 to 64 bytes.
+/// 3. The decoded signature verifies against `canonical_payload_jcs`
 ///    using the provided `public_key.verifying_key`.
 ///
 /// The `public_key.key_id` SHOULD match `attestation.payload.attestation_key_id`;
@@ -42,6 +47,23 @@ pub fn verify_attestation_signature(
     attestation: &ErasureAttestation,
     public_key: &ErasurePublicKey,
 ) -> Result<(), AttestationError> {
+    // 0. Bind the typed payload to the signed bytes.
+    //
+    // The signature is computed over `canonical_payload_jcs`, but consumers
+    // read the typed `attestation.payload`. Without this check an attacker can
+    // keep the original (validly signed) `canonical_payload_jcs` + signature
+    // while mutating `payload.tenant_id` / `request_id` / `region`, mis-
+    // attributing an erasure to a victim tenant. Re-canonicalize the typed
+    // payload with the SAME canonicalizer the signer uses (`serde_jcs`, RFC
+    // 8785 JCS) and require BYTE-EQUALITY with the signed bytes.
+    let recomputed = serde_jcs::to_string(&attestation.payload)
+        .map_err(|e| AttestationError::Canonicalization(e.to_string()))?;
+    if recomputed != attestation.canonical_payload_jcs {
+        return Err(AttestationError::Verify(
+            "payload does not match signed canonical bytes (payload substitution)".to_string(),
+        ));
+    }
+
     // 1. Decode base64 signature.
     let sig_bytes = base64::engine::general_purpose::STANDARD
         .decode(&attestation.signature_ed25519)

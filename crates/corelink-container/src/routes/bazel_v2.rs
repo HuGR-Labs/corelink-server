@@ -163,7 +163,7 @@ impl FromRequestParts<BazelRouteState> for BazelPutGuard {
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .unwrap_or("");
-        if raw.is_empty() || TENANT_SENTINELS.contains(&raw) {
+        if crate::auth_tenant::is_reserved_sentinel(raw) {
             return Err(unauthenticated_tenant());
         }
         let tenant_key = raw.to_owned();
@@ -313,11 +313,6 @@ fn header_str(headers: &HeaderMap, name: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_owned())
 }
 
-/// Sentinels the Worker/DO use for non-tenant traffic — never a real tenant.
-/// Mirrors `auth_tenant::AuthTenant`'s sentinel set so every cache surface
-/// rejects the same non-authenticated values.
-const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
-
 /// Extract the authenticated `x-corelink-tenant-id`, **fail-CLOSED**.
 ///
 /// F-defense: the previous version fell back to the `"_unknown"` sentinel on a
@@ -326,13 +321,20 @@ const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pendi
 /// a missing/empty/sentinel value is an `Err(())` that the handler maps to a
 /// hard `401`. Only a concrete, non-sentinel tenant is returned. (The bridge's
 /// `instance == caller_tenant` cross-tenant check still applies on top of this.)
+///
+/// Rejection routes through [`crate::auth_tenant::is_reserved_sentinel`] — the
+/// SAME shared source-of-truth `AuthTenant` uses — so this REAPI surface (which
+/// has no `AuthTenant` extractor) rejects the full reserved set, incl. `_oci`
+/// and [`crate::adapter_cache::PUBLIC_NAMESPACE`] (`_public`). Otherwise a
+/// `_public` claim would land in the shared cross-tenant dedup namespace
+/// (`storage/r2_s3.rs`) → cache poisoning if the Worker's header-strip regresses.
 fn caller_tenant(headers: &HeaderMap) -> Result<String, ()> {
     let raw = headers
         .get("x-corelink-tenant-id")
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
         .unwrap_or("");
-    if raw.is_empty() || TENANT_SENTINELS.contains(&raw) {
+    if crate::auth_tenant::is_reserved_sentinel(raw) {
         return Err(());
     }
     Ok(raw.to_owned())
@@ -779,6 +781,50 @@ mod tests {
 
     const HASH_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const TENANT: &str = "acme";
+
+    /// Build a `HeaderMap` carrying the given `x-corelink-tenant-id` value.
+    fn headers_with_tenant(value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(
+            "x-corelink-tenant-id",
+            axum::http::HeaderValue::from_str(value).expect("valid header value"),
+        );
+        h
+    }
+
+    // ── Reserved-sentinel tenant rejection (fix-#4 parity) ────────────────────
+    //
+    // The REAPI surface has NO `AuthTenant` extractor; `caller_tenant` is the
+    // backstop and MUST reject the SAME reserved set as `auth_tenant`, incl.
+    // `_oci` and `_public` (the shared cross-tenant dedup namespace). A `_public`
+    // claim reaching storage poisons the shared namespace.
+
+    #[tokio::test]
+    async fn caller_tenant_rejects_oci_sentinel() {
+        let h = headers_with_tenant("_oci");
+        assert!(
+            caller_tenant(&h).is_err(),
+            "_oci must never be accepted as a tenant on the REAPI surface"
+        );
+    }
+
+    #[tokio::test]
+    async fn caller_tenant_rejects_public_namespace_sentinel() {
+        let h = headers_with_tenant(crate::adapter_cache::PUBLIC_NAMESPACE);
+        assert!(
+            caller_tenant(&h).is_err(),
+            "_public (shared dedup namespace) must never be accepted as a tenant"
+        );
+    }
+
+    #[tokio::test]
+    async fn caller_tenant_accepts_concrete_tenant() {
+        let h = headers_with_tenant("acme");
+        assert_eq!(
+            caller_tenant(&h).expect("concrete tenant must be accepted"),
+            "acme"
+        );
+    }
 
     fn make_state() -> BazelRouteState {
         build_handlers()
