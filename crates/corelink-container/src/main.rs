@@ -266,6 +266,82 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     }
 
+    // ── Positive prod-arming assertion (config-drift finding #3, MEDIUM) ──
+    // The native-PAT FATAL above keys on the SAME `StorageEnv` signal that ALSO
+    // gates the $-ceiling (`tenant_quota::quota_guard_from_env`), byte-cap
+    // (`byte_accounting::byte_accountant_from_env`) and request-count
+    // (`request_count::RequestCountGate::from_env`) controls: a single dropped
+    // or renamed `R2_S3_*` / `CLOUDFLARE_ACCOUNT_ID` / `CF_API_TOKEN` /
+    // `D1_DATABASE_ID` var flips `StorageEnv` to `None`, which SILENTLY disarms
+    // every one of those guards AND simultaneously makes prod-detection FALSE —
+    // so the watchdog that should scream goes quiet. The missing config that
+    // disables the controls also disables the alarm (the circular dependency).
+    //
+    // Close the loop with an INDEPENDENT positive prod signal that does NOT
+    // depend on `StorageEnv`: the multi-region R2 placement vars
+    // (`R2_AC_REGION` / `R2_CAS_REGION` / `R2_AC_BUCKET`). Every prod env
+    // (`[env.prod*.vars]` in wrangler.toml) sets them and the DO forwards them
+    // into the container (`worker/src/durable_object.ts`); dev/CI sets NONE of
+    // them, so this whole block is a no-op there (dev/CI behavior unchanged).
+    // They are NOT part of `StorageEnv` and gate NONE of the controls, so they
+    // cannot be co-dropped with the very thing they witness — and we read all
+    // THREE so dropping any one still leaves the prod signal standing. If this
+    // signal says "prod", then ALL of the launch controls MUST be armed; if any
+    // is missing we refuse to boot a HALF-ARMED prod (loud FATAL naming it).
+    {
+        let prod_by_independent_signal = ["R2_AC_REGION", "R2_CAS_REGION", "R2_AC_BUCKET"]
+            .iter()
+            .any(|v| {
+                std::env::var(v)
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false)
+            });
+        if prod_by_independent_signal {
+            let mut missing: Vec<&str> = Vec::new();
+            if corelink_server::storage::StorageEnv::from_env().is_none() {
+                missing.push(
+                    "durable StorageEnv (R2_S3_ENDPOINT / R2_S3_ACCESS_KEY_ID / \
+                     R2_S3_SECRET_ACCESS_KEY / CLOUDFLARE_ACCOUNT_ID / CF_API_TOKEN / \
+                     D1_DATABASE_ID)",
+                );
+            }
+            let signing_key_present = std::env::var("PAT_SIGNING_KEY")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if !signing_key_present {
+                missing.push("PAT_SIGNING_KEY");
+            }
+            if corelink_server::adapter_pat::PatVerifier::from_env().is_none() {
+                missing.push("native PAT verifier (Argon2id possession backstop)");
+            }
+            if corelink_server::tenant_quota::quota_guard_from_env().is_none() {
+                missing.push("$-ceiling quota guard (tenant_quota)");
+            }
+            if corelink_server::byte_accounting::byte_accountant_from_env().is_none() {
+                missing.push("byte-cap accountant (tenant_storage_state)");
+            }
+            if corelink_server::request_count::RequestCountGate::from_env().is_none() {
+                missing.push("request-count gate (monthly op cap)");
+            }
+            if !missing.is_empty() {
+                tracing::error!(
+                    event = "prod_controls_not_fully_armed",
+                    severity = "FATAL",
+                    missing_controls = ?missing,
+                    "PROD detected via an INDEPENDENT signal (R2_AC_REGION / \
+                     R2_CAS_REGION / R2_AC_BUCKET is set) but one or more launch \
+                     controls did NOT arm — refusing to boot a HALF-ARMED prod. The \
+                     most likely cause is a dropped or renamed config var (an \
+                     R2_S3_* / CLOUDFLARE_ACCOUNT_ID / CF_API_TOKEN / D1_DATABASE_ID) \
+                     that silently disabled the listed guard(s) WHILE leaving the \
+                     independent prod signal set. Restore the missing config and \
+                     redeploy."
+                );
+                std::process::exit(1);
+            }
+        }
+    }
+
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|s| s.parse().ok())

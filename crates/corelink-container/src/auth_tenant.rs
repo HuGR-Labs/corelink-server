@@ -16,7 +16,31 @@ pub struct AuthTenant(
 );
 
 /// Sentinels the Worker/DO use for non-tenant traffic — never a real tenant.
-const SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending", ""];
+///
+/// This is the fail-CLOSED backstop: the Worker normally resolves the real
+/// tenant and strips/overwrites `x-corelink-tenant-id`, but if any reserved
+/// namespace prefix reaches a native `AuthTenant` handler it MUST be rejected,
+/// never accepted as a tenant. Covers EVERY reserved prefix the routing layer
+/// can emit:
+///   - `_anonymous` / `_unknown` / `_system` / `_pending` — Worker routing /
+///     fail-CLOSED defaults (worker/src/index.ts; routes/customer.rs et al.).
+///   - `_oci` — the synthetic shared OCI Durable-Object tenant id
+///     (`tenantId: "_oci"`, `idFromName("_oci")` — worker/src/index.ts:558/569);
+///     all OCI `/v2/` traffic shares this id, so it is never a real tenant.
+///   - [`crate::adapter_cache::PUBLIC_NAMESPACE`] (`_public`) — the shared
+///     cross-tenant dedup namespace, explicitly NOT a tenant (see
+///     `storage/r2_s3.rs`); accepting it would let a caller masquerade as the
+///     public-share namespace.
+///   - `""` — empty / missing header.
+const SENTINELS: &[&str] = &[
+    "_anonymous",
+    "_unknown",
+    "_system",
+    "_pending",
+    "_oci",
+    crate::adapter_cache::PUBLIC_NAMESPACE,
+    "",
+];
 
 #[axum::async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for AuthTenant {
@@ -96,6 +120,20 @@ mod tests {
     #[tokio::test]
     async fn pending_sentinel_is_rejected() {
         assert_sentinel_rejected("_pending").await;
+    }
+
+    #[tokio::test]
+    async fn oci_sentinel_is_rejected() {
+        // The synthetic shared OCI DO tenant id must never be accepted as a
+        // real tenant if it reaches a native handler (defense-in-depth backstop
+        // for the Worker's header strip on the OCI path).
+        assert_sentinel_rejected("_oci").await;
+    }
+
+    #[tokio::test]
+    async fn public_namespace_sentinel_is_rejected() {
+        // The shared cross-tenant dedup namespace is NOT a tenant.
+        assert_sentinel_rejected(crate::adapter_cache::PUBLIC_NAMESPACE).await;
     }
 
     #[tokio::test]

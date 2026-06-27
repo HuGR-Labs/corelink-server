@@ -13,6 +13,24 @@
 //!
 //! Pseudonymization is a `POST /v1/customers/:id` (idempotent via a
 //! deterministic key), so a replayed erasure is a safe no-op.
+//!
+//! ## Verification is REAL (finding #1, option a — no hardcoded sentinel)
+//!
+//! `verification_hash` no longer returns a constant "assume redacted" sentinel.
+//! It performs a LIVE `GET /v1/customers/:id` for every retained customer and
+//! asserts the returned `email` is a CoreLink DSR-redaction pseudonym
+//! (`erased-<16hex>@deleted.invalid`) — i.e. the live object no longer carries
+//! the subject's original PII email. Because `pseudonymize_customer` overwrites
+//! `email`/`name`, clears `phone`/`address`, and stamps `metadata.pii_redacted`
+//! in ONE atomic `POST`, a redacted email on the LIVE object proves that POST
+//! took effect. A non-redacted (or unexpected) email ⇒ a non-sentinel mismatch
+//! fingerprint ⇒ the orchestrator counts the backend unverified
+//! (`VerifiedPartial`) ⇒ the attestation signer withholds the proof. No Stripe
+//! key (when there IS a customer to verify) ⇒ fail CLOSED (Transport error),
+//! never a silent pass. (Deeper field-level verification — name/phone/address
+//! and the `metadata.pii_redacted` marker — is bounded by the `CustomerObject`
+//! field set this crate deserializes; the email is the canonical subject
+//! identifier and the load-bearing PII field.)
 
 use std::sync::Arc;
 
@@ -82,6 +100,43 @@ fn redaction_values(subject_id: Uuid, erasure_salt: &[u8; 32]) -> (String, Strin
     (pseudo_email, pseudo_name, marker_hex)
 }
 
+/// True when `email` is a CoreLink DSR-redaction pseudonym
+/// (`erased-<16 lowercase hex>@deleted.invalid`) as written by
+/// [`redaction_values`] — i.e. the live Stripe object no longer carries the
+/// subject's original PII email. We verify the SHAPE (not the exact pseudonym)
+/// because the 24h verify sweep does not retain the per-DSR salt needed to
+/// recompute the exact value (`DsrVerifyV1` carries no salt); the shape is
+/// unique to our redaction writer and an original customer email can never
+/// match it (the `@deleted.invalid` RFC-2606 reserved domain + the fixed
+/// `erased-` prefix + the 16-hex namespace).
+fn email_is_redacted(email: Option<&str>) -> bool {
+    let Some(email) = email else { return false };
+    let Some(rest) = email.strip_prefix("erased-") else {
+        return false;
+    };
+    let Some(short) = rest.strip_suffix("@deleted.invalid") else {
+        return false;
+    };
+    short.len() == 16 && short.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Non-sentinel verification fingerprint for a Stripe re-verify MISMATCH (a
+/// live customer still carries non-redacted PII). Deterministically distinct
+/// from [`CANONICAL_EMPTY_TENANT_HASH`] so the orchestrator counts the backend
+/// unverified (→ `VerifiedPartial` → the attestation signer withholds the
+/// proof). Bound to the customer-id set so a replayed sweep is stable.
+fn reverify_mismatch_hash(customer_ids: &[String]) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(b"stripe-reverify-mismatch-v1");
+    for id in customer_ids {
+        h.update(id.as_bytes());
+        h.update(b"\0");
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&h.finalize());
+    out
+}
+
 impl BackendErasureAdapter for StripePseudonymizeAdapter {
     fn kind(&self) -> BackendKind {
         BackendKind::Stripe
@@ -139,13 +194,38 @@ impl BackendErasureAdapter for StripePseudonymizeAdapter {
 
     fn verification_hash(
         &self,
-        _ctx: VerificationContext,
+        ctx: VerificationContext,
     ) -> Result<[u8; 32], ErasureBackendError> {
-        // Post-pseudonymization no customer PII remains (email/name/phone/
-        // address are redacted; only fiscal references survive), so the
-        // canonical "no PII for tenant" sentinel applies. A deeper sweep could
-        // GET each customer and assert `metadata.pii_redacted = true`; deferred
-        // (heavier Stripe round-trip) — tracked in ADR-S11-013.
+        // HONEST re-fingerprint (finding #1, option a): drive the result from a
+        // LIVE Stripe GET, NOT a hardcoded "assume redacted" sentinel.
+        let tid = ctx.tenant_id.to_string();
+        let customer_ids = self.customer_ids(&tid)?;
+        if customer_ids.is_empty() {
+            // Tenant never had a Stripe customer ⇒ no external PII to verify ⇒
+            // genuinely empty (the canonical "no rows for tenant" sentinel).
+            return Ok(CANONICAL_EMPTY_TENANT_HASH);
+        }
+        // There IS external PII to re-verify. No Stripe key ⇒ we cannot confirm
+        // redaction ⇒ fail CLOSED (Transport err → orchestrator counts the
+        // backend unverified → VerifiedPartial → attestation withheld). NEVER a
+        // silent pass.
+        let stripe = StripeRealClient::from_env().map_err(|e| {
+            ErasureBackendError::Transport(format!("Stripe client init failed: {e}"))
+        })?;
+        for customer_id in &customer_ids {
+            // The Stripe client does blocking HTTP — hand the worker thread back
+            // to the scheduler for the round-trip (mirrors the erase path).
+            let customer = tokio::task::block_in_place(|| stripe.get_customer(customer_id))
+                .map_err(|e| {
+                    ErasureBackendError::Transport(format!("Stripe get_customer failed: {e}"))
+                })?;
+            if !email_is_redacted(customer.email.as_deref()) {
+                // The live object still carries a non-redacted (or unexpected)
+                // email ⇒ redaction NOT confirmed ⇒ verification MISMATCH.
+                return Ok(reverify_mismatch_hash(&customer_ids));
+            }
+        }
+        // Every live customer's email is a redacted pseudonym ⇒ verified empty.
         Ok(CANONICAL_EMPTY_TENANT_HASH)
     }
 }
@@ -180,5 +260,39 @@ mod tests {
         let (_, _, m1) = redaction_values(sid, &[1u8; 32]);
         let (_, _, m2) = redaction_values(sid, &[2u8; 32]);
         assert_ne!(m1, m2);
+    }
+
+    #[test]
+    fn redacted_email_accepts_real_redaction_value() {
+        // The exact pseudonym our writer produces must be recognised as redacted
+        // (the verification re-fingerprint asserts this SHAPE on the live object).
+        let sid = Uuid::from_u128(0xdead_beef);
+        let (email, _, _) = redaction_values(sid, &[5u8; 32]);
+        assert!(email_is_redacted(Some(&email)), "writer output must verify: {email}");
+    }
+
+    #[test]
+    fn redacted_email_rejects_original_pii_and_garbage() {
+        assert!(!email_is_redacted(None), "missing email is NOT redacted");
+        assert!(!email_is_redacted(Some("alice@example.com")), "real PII not redacted");
+        assert!(!email_is_redacted(Some("erased-short@deleted.invalid")), "non-16-hex");
+        assert!(
+            !email_is_redacted(Some("erased-zzzzzzzzzzzzzzzz@deleted.invalid")),
+            "non-hex middle"
+        );
+        assert!(
+            !email_is_redacted(Some("erased-0123456789abcdef@evil.example")),
+            "wrong domain"
+        );
+    }
+
+    #[test]
+    fn reverify_mismatch_hash_is_not_the_empty_sentinel() {
+        // A mismatch MUST be distinct from the canonical verified-empty sentinel
+        // so the orchestrator counts the backend unverified (→ VerifiedPartial).
+        let h = reverify_mismatch_hash(&["cus_123".to_string()]);
+        assert_ne!(h, CANONICAL_EMPTY_TENANT_HASH);
+        // Deterministic for a replayed sweep.
+        assert_eq!(h, reverify_mismatch_hash(&["cus_123".to_string()]));
     }
 }
