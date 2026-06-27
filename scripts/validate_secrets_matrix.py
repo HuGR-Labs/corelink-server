@@ -161,6 +161,14 @@ ALLOWLIST_REGEX = re.compile(
     #   the suite grows (was 5 individually-listed vars; the 45-journey rebuild added
     #   RUN_SLOW/TENANT(_B)/PAT_*/TOMBSTONED_HASH/INTROSPECT_KEY).
     r"|CORELINK_E2E_"
+    #   E2E Clerk-session minter (scripts/e2e-real-client/clerk-session-minter.mjs):
+    #   a LOCAL/dev test harness (Playwright + Clerk testing-token) that reads
+    #   these from .env.local to mint a real session bearer for the Clerk-session
+    #   -gated journeys. NONE are deployed container secrets — CLERK_FAPI/
+    #   CORELINK_API_ENDPOINT/CORELINK_APP_URL are public hosts/URLs, and
+    #   CLERK_LIVE_SECRET_KEY is the operator's local .env.local Clerk key (the
+    #   DEPLOYED Clerk secret is the matrix's canonical CLERK_SECRET_KEY row).
+    r"|CLERK_FAPI$|CLERK_LIVE_SECRET_KEY$|CORELINK_API_ENDPOINT$|CORELINK_APP_URL$"
     #   Cloudflare D1 database UUID — committed in wrangler.toml [[d1_databases]];
     #   a resource identifier, not a credential (CF_API_TOKEN gates access).
     r"|D1_DATABASE_ID$"
