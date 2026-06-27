@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "e3ab218a549a161083a52327b34c6a04d524f179"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -16,8 +16,8 @@ timestamp: "2026-06-26T00:00:00Z"
 # D1 PAT store + existence/scope check
 
 A PAT's secret is never stored — only its non-secret `token_id` (the lookup key), its tenant, its
-Argon2id PHC `pat_hash`, and its `scope` string live in the D1 `pat` table. That row is the existence,
-expiry, revocation, and scope authority every verification path consults: a verifier resolves a token by
+Argon2id PHC `pat_hash`, and its `scope` string live in the D1 `pat` table. That single row is the
+existence, expiry, revocation, and scope authority every verification path consults: a verifier resolves a token by
 `token_id` and a missing/expired/revoked row is the auth decision. Two writers populate the store — the
 internal mint route (Clerk auto-provision) and the customer keys-create handler (self-serve) — and a
 single revoke handler soft-deletes rows tenant-scoped (`crates/corelink-container/src/customer_d1.rs:18-22`).

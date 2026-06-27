@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-container/src/main.rs"
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/routes/ratelimit_layer.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "e3ab218a549a161083a52327b34c6a04d524f179"
 provenance: "AUTHORED"
 tags: ["flows", "cas", "hot-path", "storage", "request-flow"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -16,7 +16,7 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # CAS write flow
 
-A `PUT /v1/cas/:tenant/:hash` is the single most-walked billable path in CoreLink, and it is also the one a malicious tenant most wants to abuse — to write across a tenant boundary, to dodge the spend ceiling, or to exhaust the box with concurrent uploads. So the write handler runs a fixed gauntlet of cheap-to-expensive checks BEFORE it ever touches storage, then commits the bytes through ONE shared, byte-accounted chokepoint into the R2 S3 bucket. This concept traces that path across the container route plane (`routes/cas.rs`) and the native R2 storage adapter (`storage.rs`); the two heavyweight gates it invokes are documented in their own flows: the [PAT verification gauntlet](/flows/pat-gauntlet.md) and the [billing quota check](/flows/billing-quota-check.md).
+A `PUT /v1/cas/:tenant/:hash` is the single most-walked billable write path in CoreLink, and it is also the one a malicious tenant most wants to abuse — to write across a tenant boundary, to dodge the spend ceiling, or to exhaust the box with concurrent uploads. So the write handler runs a fixed gauntlet of cheap-to-expensive checks BEFORE it ever touches storage, then commits the bytes through ONE shared, byte-accounted chokepoint into the R2 S3 bucket. This concept traces that path across the container route plane (`routes/cas.rs`) and the native R2 storage adapter (`storage.rs`); the two heavyweight gates it invokes are documented in their own flows: the [PAT verification gauntlet](/flows/pat-gauntlet.md) and the [billing quota check](/flows/billing-quota-check.md).
 
 # Role
 

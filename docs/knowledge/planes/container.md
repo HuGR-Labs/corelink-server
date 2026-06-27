@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/routes/turbo_v8.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "e3ab218a549a161083a52327b34c6a04d524f179"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -15,7 +15,7 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # Rust container compute plane
 
-The container plane is the `corelink-server` Rust binary — the only place the actual cache logic runs.
+The container plane is the `corelink-server` Rust binary — the only place the actual cache and adapter logic runs.
 It binds a single HTTP/1.1 axum stack on port 50051 (the exact port the Durable Object proxies to) and
 serves the composed data plane: native CAS/AC, Bazel REAPI, Turbo, sccache/cargo, the `_public`
 package-manager adapters, admin, audit-export/analytics, signup, the Stripe webhook, and the internal

@@ -241,6 +241,131 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C5 POSITION-SHIFT: the blind spot the content-anchor closes ---------------
+# Proves the hardening. Commit A defines a file; the concept cites lines 3-4
+# (content "cite-line-a"/"cite-line-b") with checkpoint_sha=A. Commit B inserts
+# TWO lines ABOVE the cited range — the authored content slides to lines 5-6 but
+# the cite still says 3-4. The OLD two-tree-diff ∩ cited-range check saw the
+# insertion hunk only at new-lines {1,2}, which does NOT intersect [3,4] -> it
+# reported 0-stale (the blind spot). The NEW content-anchor check compares the
+# CONTENT at lines 3-4 (was "cite-line-a/b", now the shifted-down original head)
+# and MUST fire [C5]. Negative control: a file left untouched between A and HEAD
+# must NOT fire (its blob is identical -> trivially fresh).
+assert_c5_shift() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # cited content lives at lines 3-4 at checkpoint A.
+    printf 'head1\nhead2\ncite-line-a\ncite-line-b\ntail1\n' > shift.txt
+    # an untouched companion file (negative control: blob identical A..HEAD).
+    printf 'stable1\nstable2\nstable3\n' > stable.txt
+    git add shift.txt stable.txt
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [shift](/ops/shift.md)
+- [stable](/ops/stable.md)
+EOF
+    cat > docs/knowledge/ops/shift.md <<EOF
+---
+type: "Runbook"
+title: "Position-shift anchor (hermetic)"
+description: "cites a byte-identical range that gets shifted DOWN by an insertion above."
+source_files:
+  - "shift.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Position-shift anchor (hermetic)
+
+Lead paragraph for the hermetic position-shift case.
+
+# How it works
+- the cited anchor block (\`shift.txt:3-4\`).
+
+# Invariants
+- the cited anchor block is reconciled (\`shift.txt:3-4\`).
+
+# Citations
+1. \`shift.txt:3-4\` — the anchor content under test.
+EOF
+    cat > docs/knowledge/ops/stable.md <<EOF
+---
+type: "Runbook"
+title: "Stable anchor (negative control)"
+description: "cites a file untouched between checkpoint and HEAD."
+source_files:
+  - "stable.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Stable anchor (negative control)
+
+Lead paragraph for the untouched-file control.
+
+# How it works
+- the untouched anchor (\`stable.txt:2\`).
+
+# Invariants
+- the untouched anchor holds (\`stable.txt:2\`).
+
+# Citations
+1. \`stable.txt:2\` — unchanged between A and HEAD.
+EOF
+    git add -A
+    git commit -q -m A
+
+    # commit B: insert TWO lines ABOVE the cited range in shift.txt ONLY.
+    # cited content "cite-line-a/b" moves from lines 3-4 to lines 5-6; the cite
+    # still points at lines 3-4, which now hold the shifted-down head lines.
+    printf 'INSERTED-1\nINSERTED-2\nhead1\nhead2\ncite-line-a\ncite-line-b\ntail1\n' > shift.txt
+    git add -A
+    git commit -q -m B
+
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.shift_out" 2>&1 || true
+
+    # Demonstrate the OLD diff-∩-range check would NOT have flagged it: the only
+    # changed HEAD-side new-lines are {1,2}, disjoint from the cited range [3,4].
+    git diff --unified=0 "$sha_a" HEAD -- shift.txt | grep '^@@' > "$tmp/.shift_hunks" 2>&1 || true
+  )
+
+  # positive: the content-anchor C5 fires on the pure position-shift.
+  total=$((total + 1))
+  if grep -q '^\[C5\]' "$tmp/.shift_out" 2>/dev/null \
+     && grep -q 'shift.txt:3-4' "$tmp/.shift_out" 2>/dev/null; then
+    ok "C5 position-shift: insertion-above slides cite off content -> fires [C5]"
+  else
+    miss "C5 position-shift positive (no [C5] on shift.txt:3-4): $(tail -1 "$tmp/.shift_out" 2>/dev/null)" "C5-shift-pos"
+  fi
+  # corroboration: prove the OLD hunk ∩ cited-range check would have passed
+  # (the only changed new-lines are 1,2 — disjoint from [3,4]) AND the untouched
+  # file did NOT get flagged (no stable.txt in the stale output).
+  total=$((total + 1))
+  if grep -q '+1,2 @@' "$tmp/.shift_hunks" 2>/dev/null \
+     && ! grep -q 'stable.txt' "$tmp/.shift_out" 2>/dev/null; then
+    ok "C5 position-shift: old diff-∩-range would PASS (hunk @+1,2 ∌ [3,4]); untouched file not flagged"
+  else
+    miss "C5 position-shift corroboration (hunks: $(cat "$tmp/.shift_hunks" 2>/dev/null | tr '\n' ' '); stable flagged?)" "C5-shift-corr"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -251,6 +376,7 @@ assert_bad C2  C2  --bundle "$FIX/bad/C2"  --manifest "$NONE"
 assert_bad C3  C3  --bundle "$FIX/bad/C3"  --manifest "$NONE"
 assert_bad C4  C4  --bundle "$FIX/bad/C4"  --manifest "$NONE"
 assert_c5
+assert_c5_shift
 assert_c5b
 assert_bad C6  C6  --bundle "$FIX/bad/C6"  --manifest "$NONE"
 assert_bad C6b C6b --bundle "$FIX/bad/C6b" --manifest "$NONE"

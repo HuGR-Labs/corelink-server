@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-container/src/oci_cap.rs"
   - "crates/corelink-container/src/tenant_quota.rs"
   - "crates/corelink-container/src/routes/customer.rs"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "e3ab218a549a161083a52327b34c6a04d524f179"
 provenance: "AUTHORED"
 tags: ["security", "billing", "stripe", "money-path", "quota"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -21,7 +21,7 @@ The money path is the chain from a signed Stripe webhook through the materialize
 quota / `$`-ceiling enforcement — the thing that must never serve a paid tier without payment, never
 double-grant, and never lose billing state. This concept records the 2026-06-23 go-live review: the
 core money-integrity invariants hold (HMAC-verify-before-parse, idempotency-before-materialize,
-audit-before-write fail-closed, the `subscription_state='active'` gate enforced in three places,
+audit-before-write fail-closed, the `subscription_state='active'` active-subscription gate enforced in three places,
 atomic check-and-accrue for the `$`-ceiling, and clean runners-vs-cache routing), and the residual
 findings are MED/LOW correctness and robustness gaps, not money-loss defects. It complements the
 [billing/quota check flow](/flows/billing-quota-check.md), the

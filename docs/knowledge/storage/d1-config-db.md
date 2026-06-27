@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-config-do/src/store.rs"
   - "crates/corelink-config-do/src/types.rs"
   - "crates/corelink-container/src/storage/d1_http.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "e3ab218a549a161083a52327b34c6a04d524f179"
 provenance: "AUTHORED"
 tags: ["storage", "d1", "config-db", "control-plane", "tenant-isolation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -16,7 +16,7 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # D1 CONFIG_DB
 
-CONFIG_DB is CoreLink's control-plane database: tenant rows, storage-state byte accounting, billing,
+CONFIG_DB is CoreLink's control-plane D1 database: tenant rows, storage-state byte accounting, billing,
 tier selections, and PAT rows. The native container cannot use the Worker's fast D1 binding, so it
 reaches CONFIG_DB over the Cloudflare D1 REST API (`api.cloudflare.com/.../d1/database/{db}/query`) via
 an async `reqwest` client, while the sync handler traits (shared with the wasm Worker) bridge to it with

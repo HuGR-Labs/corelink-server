@@ -11,7 +11,7 @@ source_files:
   - crates/corelink-erasure-attestation/src/evidence.rs
   - crates/corelink-container/src/routes/dsr.rs
   - crates/corelink-container/src/routes/dsr/attestation.rs
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "e3ab218a549a161083a52327b34c6a04d524f179"
 provenance: "AUTHORED"
 tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", "gdpr-art-17", "byok", "dsr"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -43,7 +43,7 @@ This crate is the pure-logic signing and verification surface for erasure attest
 
 # Invariants
 
-- INV-ERASURE-ATTESTATION-SIGNED (HIGH): the crate `//!` frames a fail-CLOSED, BYOK-only "every erasure MUST be attested" contract `crates/corelink-erasure-attestation/src/lib.rs:35-39` — but **reconcile that against the SHIPPED path** (sibling `compliance/dsr-erasure`): the live container signs an attestation **best-effort / fail-OPEN**, only on a fully-`VerifiedComplete` 24h verify sweep, and for **ordinary tenants — NOT BYOK-only** (`crates/corelink-container/src/routes/dsr.rs:503`). Absence of an attestation does NOT mean the erasure failed — the erasure is already complete + audited; the attestation is an extra evidence artifact. The signing primitive is live; the "persisted in R2 (7y) and indexed in D1" half is WI-S11-008 wiring not yet on the live path.
+- INV-ERASURE-ATTESTATION-SIGNED (HIGH): the crate `//!` frames a fail-CLOSED, BYOK-only "every erasure MUST be attested" contract `crates/corelink-erasure-attestation/src/lib.rs:35-39` — but **reconcile that against the SHIPPED path** (sibling `compliance/dsr-erasure`): the live container signs an attestation **best-effort / fail-OPEN**, gated by the executed `if matches!(decision, ErasureDecision::VerifiedComplete { .. })` check on the 24h verify sweep, and for **ordinary tenants — NOT BYOK-only** (`crates/corelink-container/src/routes/dsr.rs:503`). Absence of an attestation does NOT mean the erasure failed — the erasure is already complete + audited; the attestation is an extra evidence artifact. The signing primitive is live; the "persisted in R2 (7y) and indexed in D1" half is WI-S11-008 wiring not yet on the live path.
 - The signature MUST be verified against the exact `canonical_payload_jcs` byte string, not a re-serialized payload `crates/corelink-erasure-attestation/src/attestation.rs:60-62`.
 - Identical payloads always canonicalize byte-identically (RFC 8785 determinism), so a signature is stable and reproducible `crates/corelink-erasure-attestation/src/attestation.rs:98-100`.
 - Signing key material is zeroized on drop and never appears in logs, traces, or `Debug` output — the `signing_key` field renders as `[REDACTED]` `crates/corelink-erasure-attestation/src/key.rs:41-52`.

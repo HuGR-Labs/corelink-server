@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
   - "crates/corelink-container/src/customer_d1.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "e3ab218a549a161083a52327b34c6a04d524f179"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "argon2id", "scope", "dos"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -15,7 +15,7 @@ timestamp: "2026-06-26T00:00:00Z"
 # Argon2id adapter-plane verification + scope
 
 Argon2id is the expensive, memory-hard half of PAT verification — the step that actually proves the
-caller holds the random secret, not just a valid HMAC signature. It runs only at the bottom of the
+caller holds the random secret itself, not merely a valid HMAC signature over it. It runs only at the bottom of the
 container pipeline, after the HMAC fast-reject and the D1 row lookup have already filtered out forged and
 nonexistent tokens. Because each Argon2id verify allocates tens of MiB, the verifier is wrapped in two
 concurrency bounds (global + per-tenant) and an unknown-token timing-burn, so neither a token-enumeration

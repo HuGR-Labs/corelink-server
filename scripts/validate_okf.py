@@ -9,14 +9,18 @@ schema), §3 (body conventions), §4 (checks C1-C10b + secondary C-AGE/C-REV),
 §4.1 (ADR/doc sub-profile), §5 (invariants). It does NOT design beyond it.
 
 All STRUCTURAL checks validate the working tree at HEAD (the thing being gated);
-`checkpoint_sha` is used ONLY as the diff base for the C5 freshness check.
+`checkpoint_sha` is used ONLY as the content baseline for the C5 freshness check.
 
-C5 freshness mechanism (FROZEN, do not change): a TWO-TREE
-    git diff <checkpoint_sha> HEAD --unified=0 -- <path>
-over the whole file (merge-safe), THEN post-filter to the diff hunks that
-intersect the concept's cited line ranges for that file. We NEVER use
-`git log -L` / blame (line-history reintroduces the merge-simplification the
-two-tree diff was chosen to avoid).
+C5 freshness mechanism (CONTENT-ANCHOR): for each cited `path:Lx-Ly`, compare the
+CONTENT of lines Lx..Ly of `path` between the concept's `checkpoint_sha` and HEAD
+(each line trailing-whitespace-stripped, internal whitespace preserved). If the
+content the author cited no longer occupies those exact lines, the concept is
+STALE on that cite. This catches an in-range edit AND — critically — a pure
+POSITION-SHIFT (code inserted ABOVE the cited range), which slides the cite off
+its authored content WITHOUT the cited line numbers ever appearing in a diff hunk
+(the blind spot of the old two-tree `git diff` ∩ cited-range mechanism this
+replaces). We NEVER use `git log -L` / blame. Per-file fast skip: when the file
+blob is byte-identical at checkpoint and HEAD, no content can have drifted.
 
 Usage:
     python3 scripts/validate_okf.py                       # default bundle docs/knowledge/
@@ -141,6 +145,8 @@ class Git:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
         self._sha_cache: dict[str, bool] = {}
+        self._show_cache: dict[tuple[str, str], list[str] | None] = {}
+        self._blob_cache: dict[tuple[str, str], str | None] = {}
 
     def run(self, args: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -158,30 +164,27 @@ class Git:
         self._sha_cache[sha] = ok
         return ok
 
-    def changed_new_lines(self, base_sha: str, path: str) -> set[int]:
-        """Two-tree diff base_sha..HEAD for `path`; return the set of HEAD-side
-        line numbers touched by any hunk (using --unified=0 for tight bounds)."""
-        cp = self.run(["diff", base_sha, "HEAD", "--unified=0", "--", path])
-        changed: set[int] = set()
-        if cp.returncode != 0:
-            # path not comparable (e.g. added/removed) — be conservative: whole file.
-            return {-1}  # sentinel: "everything changed"
-        for line in cp.stdout.splitlines():
-            if not line.startswith("@@"):
-                continue
-            m = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", line)
-            if not m:
-                continue
-            new_start = int(m.group(1))
-            new_count = int(m.group(2)) if m.group(2) is not None else 1
-            if new_count == 0:
-                # pure deletion at the boundary; mark adjacent HEAD lines
-                changed.add(new_start)
-                if new_start > 1:
-                    changed.add(new_start - 1)
-            else:
-                changed.update(range(new_start, new_start + new_count))
-        return changed
+    def file_blob_sha(self, rev: str, repo_rel: str):
+        """The git blob object id of `repo_rel` at `rev` (None if the path does
+        not exist at that rev). Used for the C5 per-file trivially-fresh skip."""
+        key = (rev, repo_rel)
+        if key in self._blob_cache:
+            return self._blob_cache[key]
+        cp = self.run(["rev-parse", "--verify", "--quiet", f"{rev}:{repo_rel}"])
+        val = cp.stdout.strip() if cp.returncode == 0 and cp.stdout.strip() else None
+        self._blob_cache[key] = val
+        return val
+
+    def show_lines(self, rev: str, repo_rel: str):
+        """Lines of `repo_rel` at `rev` (line terminators stripped), or None if
+        the path does not exist at that rev. Cached per (rev, path)."""
+        key = (rev, repo_rel)
+        if key in self._show_cache:
+            return self._show_cache[key]
+        content = self.show_file(rev, repo_rel)
+        lines = content.splitlines() if content is not None else None
+        self._show_cache[key] = lines
+        return lines
 
     def commit_date(self, sha: str):
         cp = self.run(["show", "-s", "--format=%cI", sha])
@@ -257,6 +260,34 @@ def _collect_cites(body: str):
             l1, l2 = l2, l1
         out.append((m.group("path"), l1, l2))
     return out
+
+
+def _norm_block(lines: list[str], l1: int, l2: int) -> list[str]:
+    """1-based inclusive slice of `lines`, each line trailing-whitespace-stripped
+    (internal whitespace preserved — the comparison stays faithful)."""
+    return [ln.rstrip() for ln in lines[l1 - 1 : l2]]
+
+
+def cited_range_drifted(git: "Git", checkpoint_sha: str, path: str, l1: int, l2: int) -> bool:
+    """CONTENT-ANCHOR C5 predicate (shared by validate_okf and okf_reconcile so
+    the two tools can never disagree on what "stale" means).
+
+    True iff the CONTENT of lines l1..l2 of `path` differs between
+    `checkpoint_sha` and HEAD (each line trailing-whitespace-stripped). This
+    fires both when the cited lines were edited in place AND when a pure
+    position-shift (an insertion above) slid the authored content off those line
+    numbers. False (trivially fresh) when the file blob is byte-identical at both
+    revs. A file added/removed between the revs is incomparable -> reported drifted.
+    """
+    ckpt_blob = git.file_blob_sha(checkpoint_sha, path)
+    head_blob = git.file_blob_sha("HEAD", path)
+    if ckpt_blob is not None and head_blob is not None and ckpt_blob == head_blob:
+        return False  # file unchanged checkpoint->HEAD: no content could drift
+    ckpt_lines = git.show_lines(checkpoint_sha, path)
+    head_lines = git.show_lines("HEAD", path)
+    if ckpt_lines is None or head_lines is None:
+        return True  # added/removed between revs — conservatively stale
+    return _norm_block(ckpt_lines, l1, l2) != _norm_block(head_lines, l1, l2)
 
 
 def _sections(body: str) -> dict[str, list[str]]:
@@ -474,7 +505,9 @@ def run_checks(args, git: Git, fails: Failures):
                                 f"ungrounded claim under `# {title.title()}` (no path:line): {first[:70]!r}",
                             )
 
-        # C5: freshness — two-tree diff per source file, hunks ∩ cited ranges.
+        # C5: freshness — CONTENT-ANCHOR. For each cited range compare the
+        # CONTENT of those exact lines between checkpoint and HEAD; drift fires
+        # whether the cause is an in-range edit OR a pure position-shift.
         if ckpt_ok:
             for sf in c.source_files:
                 if sf in missing_sources:
@@ -483,27 +516,19 @@ def run_checks(args, git: Git, fails: Failures):
                 # it governs — C5 applies only to the ADR file's own content.
                 if c.is_adr and not sf.endswith(".md"):
                     continue
-                changed = git.changed_new_lines(c.checkpoint_sha, sf)
-                if not changed:
-                    continue
                 cranges = ranges_by_file.get(sf, [])
                 if not cranges:
                     continue
-                stale_hit = None
-                if -1 in changed:  # whole file changed (incomparable)
-                    stale_hit = cranges[0]
-                else:
-                    for (l1, l2) in cranges:
-                        if any(l1 <= ln <= l2 for ln in changed):
-                            stale_hit = (l1, l2)
-                            break
-                if stale_hit:
-                    fails.add(
-                        "C5",
-                        loc,
-                        f"STALE: cited range `{sf}:{stale_hit[0]}-{stale_hit[1]}` changed "
-                        f"since checkpoint {c.checkpoint_sha[:12]}",
-                    )
+                for (l1, l2) in cranges:
+                    if cited_range_drifted(git, c.checkpoint_sha, sf, l1, l2):
+                        fails.add(
+                            "C5",
+                            loc,
+                            f"STALE: cited content `{sf}:{l1}-{l2}` no longer matches "
+                            f"checkpoint {c.checkpoint_sha[:12]} "
+                            "(in-range edit or position-shift)",
+                        )
+                        break
 
     # --- C5b: SHA advanced without a body edit (needs a 'previous' version) ---
     _check_c5b(args, git, bundle_root, concepts, fails)
