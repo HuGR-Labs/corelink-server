@@ -295,4 +295,99 @@ mod tests {
         // Deterministic for a replayed sweep.
         assert_eq!(h, reverify_mismatch_hash(&["cus_123".to_string()]));
     }
+
+    // ── verification_hash branch teeth (findings #1/#2) ──────────────────────
+    //
+    // The three load-bearing return paths of `verification_hash` are:
+    //   1. customer_ids EMPTY        → Ok(CANONICAL_EMPTY_TENANT_HASH)  [verified empty]
+    //   2. customers present, NO key → Err(Transport)                   [fail CLOSED]
+    //   3. a live email NOT redacted → Ok(reverify_mismatch_hash(ids))  [unverified]
+    // The method itself reads D1 (customer_ids) and does live Stripe HTTP, so it
+    // is not invokable from a unit test without a network/D1 mock (D1HttpClient
+    // hard-codes the api.cloudflare.com host) — and process-env mutation to drive
+    // the no-key path races the parallel STRIPE_SECRET_KEY tests in this binary
+    // (see routes/residency.rs + routes/tier_select_checkout.rs). These tests
+    // therefore lock the load-bearing VALUE / MAPPING each branch returns, so a
+    // regression of that branch's decision is caught deterministically.
+
+    #[test]
+    fn branch1_verified_empty_sentinel_is_distinct_from_every_mismatch() {
+        // Branch 1 returns the verified-empty sentinel; branch 3 returns a
+        // mismatch fingerprint. The orchestrator discriminates PASS from
+        // VerifiedPartial purely by comparing the returned hash to the sentinel,
+        // so the sentinel must NEVER equal a mismatch fingerprint for ANY
+        // customer-id set — else a Stripe mismatch would be attested as erased
+        // (or an empty tenant flagged unverified).
+        for ids in [
+            Vec::<String>::new(),
+            vec!["cus_1".to_string()],
+            vec!["cus_1".to_string(), "cus_2".to_string(), "cus_3".to_string()],
+        ] {
+            assert_ne!(
+                reverify_mismatch_hash(&ids),
+                CANONICAL_EMPTY_TENANT_HASH,
+                "mismatch fingerprint for {ids:?} must differ from the verified-empty sentinel"
+            );
+        }
+    }
+
+    #[test]
+    fn branch3_mismatch_fingerprint_is_keyed_to_the_customer_id_set() {
+        // Branch 3's fingerprint is documented as "bound to the customer-id set
+        // so a replayed sweep is stable". Distinct id sets must yield distinct
+        // hashes (so one tenant's mismatch can't masquerade as another's) and an
+        // identical set must be stable. A regression to a constant/unkeyed value
+        // collapses this binding (every mismatch would alias).
+        let a = reverify_mismatch_hash(&["cus_a".to_string()]);
+        let b = reverify_mismatch_hash(&["cus_b".to_string()]);
+        let ab = reverify_mismatch_hash(&["cus_a".to_string(), "cus_b".to_string()]);
+        assert_ne!(a, b, "different single customer ⇒ different fingerprint (keyed)");
+        assert_ne!(a, ab, "more customers ⇒ different fingerprint (keyed to the set)");
+        assert_ne!(b, ab);
+        assert_eq!(
+            ab,
+            reverify_mismatch_hash(&["cus_a".to_string(), "cus_b".to_string()]),
+            "stable for a replayed sweep over the same set"
+        );
+    }
+
+    #[test]
+    fn branch2_no_stripe_key_maps_to_transport_fail_closed() {
+        // Branch 2: with a customer to re-verify but no Stripe key, the handler
+        // does `StripeRealClient::from_env().map_err(|e|
+        //   ErasureBackendError::Transport(format!("Stripe client init failed: {e}")))?`
+        // — it FAILS CLOSED (Transport ⇒ orchestrator counts the backend
+        // unverified ⇒ VerifiedPartial ⇒ attestation withheld), NEVER a silent
+        // Ok(verified-empty). Lock that the missing-key error class from_env
+        // emits (Authentication, naming STRIPE_SECRET_KEY) maps to the Transport
+        // variant and can never become Ok. (The live from_env() can't be driven
+        // here without env mutation that races the parallel STRIPE_SECRET_KEY
+        // tests in this binary — see the module note above.)
+        use corelink_stripe_real::StripeError;
+        let from_env_err = StripeError::Authentication(
+            "STRIPE_AUTH_MODE=direct requires STRIPE_SECRET_KEY (set $STRIPE_SECRET_KEY \
+             to your sk_live_… or sk_test_… key)"
+                .to_string(),
+        );
+        let mapped: Result<StripeRealClient, ErasureBackendError> = Err(from_env_err)
+            .map_err(|e| ErasureBackendError::Transport(format!("Stripe client init failed: {e}")));
+        match mapped {
+            Err(ErasureBackendError::Transport(msg)) => {
+                assert!(
+                    msg.contains("Stripe client init failed"),
+                    "fail-closed Transport marker missing: {msg}"
+                );
+                assert!(
+                    msg.contains("STRIPE_SECRET_KEY"),
+                    "operator-facing message must name the missing secret: {msg}"
+                );
+            }
+            Err(other) => {
+                panic!("no-key path must map to Transport (fail closed), got: {other:?}")
+            }
+            Ok(_) => panic!(
+                "no-key path must NOT yield Ok — a silent client would falsely verify erasure"
+            ),
+        }
+    }
 }

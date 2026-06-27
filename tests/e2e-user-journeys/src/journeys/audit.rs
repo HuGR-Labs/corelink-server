@@ -148,9 +148,15 @@ fn audit_seed_then_rederive(cfg: &Config, client: &Client) -> JourneyResult {
             );
         }
 
-        // Re-derive: every row carries the required fields and `ts` is monotonic
-        // (only enforceable when numeric — ISO-8601 strings only get presence).
-        let mut prev_ts: Option<i64> = None;
+        // Re-derive: every row carries the required fields AND the page is
+        // newest-first. The server emits `ts` as an ISO-8601 string via
+        // `ms_to_iso8601` (NOT an integer — the old `as_i64()` check was dead
+        // code that never ran). The canonical query is `ORDER BY ts_ms DESC`,
+        // and fixed-width ISO-8601 (`YYYY-MM-DDTHH:MM:SSZ`) sorts
+        // lexicographically == chronologically, so each row's `ts` string MUST
+        // be NON-INCREASING down the page. A `DESC→ASC` flip (or dropping the
+        // ordering) makes a later row's `ts` exceed an earlier one ⇒ this fails.
+        let mut prev_ts: Option<String> = None;
         for (i, row) in rows.iter().enumerate() {
             for field in ["event_id", "ts", "event_type"] {
                 if row.get(field).map(Value::is_null).unwrap_or(true) {
@@ -161,18 +167,33 @@ fn audit_seed_then_rederive(cfg: &Config, client: &Client) -> JourneyResult {
                     );
                 }
             }
-            if let Some(ts) = row["ts"].as_i64() {
-                if let Some(p) = prev_ts {
-                    if ts < p {
-                        return JourneyResult::fail(
-                            name,
-                            ms(start),
-                            format!("ordering violation: row {i} ts={ts} < prev={p}"),
-                        );
-                    }
+            // `ts` must be an ISO-8601 STRING (the real wire shape). Anything
+            // else (incl. the integer the old dead check assumed) is a contract
+            // break that the ordering invariant can no longer rely on.
+            let ts = match row["ts"].as_str() {
+                Some(s) => s.to_owned(),
+                None => {
+                    return JourneyResult::fail(
+                        name,
+                        ms(start),
+                        format!("row {i} 'ts' is not an ISO-8601 string (got {}): {row}", row["ts"]),
+                    );
                 }
-                prev_ts = Some(ts);
+            };
+            if let Some(prev) = &prev_ts {
+                // Newest-first ⇒ current must be ≤ previous (lexicographic).
+                if ts.as_str() > prev.as_str() {
+                    return JourneyResult::fail(
+                        name,
+                        ms(start),
+                        format!(
+                            "newest-first ordering violation: row {i} ts={ts} > prev={prev} \
+                             (server must return audit rows ORDER BY ts_ms DESC)"
+                        ),
+                    );
+                }
             }
+            prev_ts = Some(ts);
         }
 
         return JourneyResult::pass(name, ms(start));

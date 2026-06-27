@@ -42,6 +42,18 @@ const SENTINELS: &[&str] = &[
     "",
 ];
 
+/// Shared source-of-truth: is `raw` a reserved sentinel / non-tenant value that
+/// must NEVER be accepted as a tenant on ANY cache surface?
+///
+/// Every surface's fail-CLOSED tenant backstop MUST funnel through this so the
+/// reserved set (incl. `_oci` and [`crate::adapter_cache::PUBLIC_NAMESPACE`])
+/// stays in lock-step instead of drifting per-surface. `caller` must pass the
+/// already-trimmed header value; the empty string is itself a sentinel here, so
+/// a missing/blank header is rejected without a separate `is_empty()` check.
+pub fn is_reserved_sentinel(raw: &str) -> bool {
+    SENTINELS.contains(&raw)
+}
+
 #[axum::async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for AuthTenant {
     type Rejection = Response;
@@ -52,7 +64,7 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthTenant {
             .and_then(|v| v.to_str().ok())
             .map(str::trim)
             .unwrap_or("");
-        if raw.is_empty() || SENTINELS.contains(&raw) {
+        if is_reserved_sentinel(raw) {
             // Fail CLOSED: no authenticated tenant ⇒ deny. Do not leak which.
             return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
         }

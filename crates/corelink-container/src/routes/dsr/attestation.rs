@@ -1,170 +1,80 @@
-//! Erasure-attestation signing on `VerifiedComplete` (WI-S11-008 Wave 1, G3).
+//! Erasure-evidence gate on `VerifiedComplete` (WI-S11-008 Wave 1, G3).
 //!
 //! When the 24h verify sweep lands [`ErasureDecision::VerifiedComplete`] for a
-//! DSR, this module signs an Ed25519 erasure attestation
-//! ([`corelink_erasure_attestation`]) and persists it to D1 so the existing
-//! public verifier (`GET /v1/public/keys/erasure/{region}.pub` +
-//! `GET /v1/public/attestation/{request_id}`) can serve it. The customer /
-//! auditor verifies the signature offline against the per-region public key.
+//! DSR, [`sign_and_persist`] evaluates the per-backend verification evidence and
+//! logs the outcome. The erasure itself is already done + audited + ledgered
+//! (`audit_outbox`) by the time this runs; anything here is an *additional*
+//! evidence artifact on top of that completed deletion.
 //!
-//! ## What is signed (binds REAL per-backend verification — finding #1)
+//! ## ⚠️ Signed + served attestation is DEFERRED (brutal-review H1)
 //!
-//! CoreLink's launch erasure is a real D1 / R2 / Stripe delete-set (NOT a BYOK
-//! KMS crypto-erase), so the attestation records the *mechanism truthfully*:
-//! `kms_provider = "corelink_d1r2_erase"` and `kms_key_id = "dsr:{dsr_id}"`.
+//! This module does NOT currently emit a cryptographic proof — it is an
+//! *evidence digest gate*, not a certificate of erasure. An earlier version
+//! computed an Ed25519 signature over the payload and then PERSISTED a D1 row
+//! carrying only the UNSIGNED `evidence_hash`: the `signature_ed25519` and the
+//! `canonical_payload_jcs` were discarded (migration 0032 has no columns for
+//! them) and no R2 object was ever written (so the persisted `r2_key` pointed at
+//! a non-existent object). That row therefore masqueraded as a cryptographic
+//! certificate of erasure while being a forgeable, unsigned digest with no
+//! verifier. Per the brutal review (finding H1) we now FAIL CLOSED honestly: we
+//! do NOT persist that theater. We evaluate the evidence gate and log; the real
+//! signed + served attestation is a deferred feature (see the DEFERRED block
+//! below).
 //!
-//! The signed `evidence_hash` is bound to the ACTUAL per-backend verification
-//! results carried by the orchestrator's [`ErasureDecision::VerifiedComplete`]
-//! decision (`Vec<BackendCompletion>`), NOT a synthetic self-referential
-//! constant. The [`EvidenceBundle::audit_chain_segment_ids`] carries one
-//! segment per canonical backend = `"{backend}:{outcome}:{hex(verification_hash)}"`,
-//! so the SHA-256 is a function of every backend's re-fingerprint outcome; an
-//! auditor recomputes it from the per-backend ledger. The hash is built via
-//! [`EvidenceBundle::validated_hash`], so the "empty mandatory field" guard is
-//! load-bearing (an empty completion set is a hard refuse, not a vacuous pass).
+//! ## Evidence gate (finding #1) — still evaluated
 //!
-//! ## Fail-CLOSED signing gate (finding #1)
-//!
-//! The signer emits a proof ONLY when it is bound to real, complete deletion
-//! evidence. It REFUSES to sign (no attestation row written; the erasure is
-//! still done + audited + ledgered) when ANY of:
+//! [`verified_evidence_segments`] binds the decision to the ACTUAL per-backend
+//! verification results carried by [`ErasureDecision::VerifiedComplete`]
+//! (`Vec<BackendCompletion>`) — one segment per canonical backend =
+//! `"{backend}:{outcome}:{hex(verification_hash)}"`. It REFUSES (returns `None`,
+//! logged fail-CLOSED) when ANY of:
 //!
 //! - the completion set is not the canonical 12 (a partial/short decision);
-//! - any backend's outcome is not successful;
+//! - any backend's outcome is not successful; or
 //! - any backend's `verification_hash` is not [`CANONICAL_EMPTY_TENANT_HASH`]
 //!   (the re-fingerprint did not prove the backend empty / fully-redacted —
-//!   includes the Stripe re-verify mismatch and any unverified arm);
-//! - the seed secret is unset/malformed; or
-//! - no trustworthy signing region can be resolved (see below).
+//!   includes the Stripe re-verify mismatch and any unverified arm).
 //!
-//! (The Stripe arm is now a REAL re-fingerprint — see `adapter_stripe.rs`,
-//! finding #1 option a — so a `CANONICAL_EMPTY_TENANT_HASH` from Stripe means a
+//! So an incomplete or unverified erasure is logged as fail-CLOSED, never
+//! treated as verified. (The Stripe arm is a REAL re-fingerprint — see
+//! `adapter_stripe.rs` — so a `CANONICAL_EMPTY_TENANT_HASH` from Stripe means a
 //! genuine live-verified redaction, not a hardcoded no-op.)
 //!
-//! ## Region key (no silent mis-attribution — finding #1)
+//! ## DEFERRED — what a REAL served attestation needs
 //!
-//! The per-region signing key is reproduced deterministically from a write-only
-//! secret seed ([`ErasureSigningKey::from_seed`]) keyed by the tenant's region.
-//! At `VerifiedComplete` the `tenant` row is normally already deleted, so the
-//! authoritative `tenant.primary_region` lookup usually misses. We MUST NOT
-//! silently fall back to the deployment home region (that would let an EU
-//! tenant's erasure be signed with the wrong key). The env region
-//! (`ERASURE_ATTESTATION_REGION`) is honoured ONLY when the operator has
-//! EXPLICITLY asserted this deployment is single-region
-//! (`ERASURE_ATTESTATION_SINGLE_REGION` truthy) — an audited operator decision,
-//! NOT a silent default. Otherwise the region is treated as unavailable and the
-//! attestation is withheld (fail-CLOSED). We ALSO upsert the matching public
-//! key into `erasure_public_keys` so the public key endpoint serves the exact
-//! key that signed.
+//! A genuine, verifiable "certificate of erasure" (NOT yet built) requires, end
+//! to end:
+//! - migration columns on `erasure_attestations` for `signature_ed25519` AND
+//!   `canonical_payload_jcs` (0032 has neither today);
+//! - persisting BOTH of those (not just `evidence_hash`) alongside the row;
+//! - writing the signed JSON to the R2 audit object the `r2_key` points at
+//!   (today no R2 object is ever written, so `r2_key` is a dangling pointer);
+//! - the public verifier endpoints `GET /v1/public/attestation/{request_id}`
+//!   and `GET /v1/public/keys/erasure/{region}.pub` (neither route exists);
+//! - the `verify.rs` payload-binding so a served attestation's signature is
+//!   checked against its canonical payload (brutal-review finding H2, fixed
+//!   separately);
+//! - re-wiring the per-region signing-key derivation + fail-CLOSED region
+//!   resolution + public-key upsert (removed here with the theater; preserved in
+//!   git history for the un-defer).
 //!
-//! ## Non-blocking, idempotent
-//!
-//! Attestation is an *additional evidence artifact on top of* a completed +
-//! audited + ledgered erasure — it MUST NOT fail the verify response (the
-//! erasure already happened and is recorded in `audit_outbox`). It is therefore
-//! non-blocking, but it fails CLOSED on the EVIDENCE: rather than emit a proof
-//! that proves nothing, it logs and skips. Persistence is `INSERT OR IGNORE`
-//! keyed on `request_id == dsr_id`, so a re-sweep of the same DSR never
-//! double-writes.
+//! Until ALL of the above land, this module must NOT pretend to hold a proof.
 
 use std::sync::Arc;
 
-use serde_json::json;
-use zeroize::Zeroizing;
-
-use corelink_erasure_attestation::{
-    ErasureAttestationPayload, ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle, Region,
-};
 use corelink_privacy_erasure_worker::backends::CANONICAL_EMPTY_TENANT_HASH;
 use corelink_privacy_erasure_worker::event::{BackendCompletion, BACKEND_COUNT};
 
-use super::d1util::{clamp_ms, col_str, d1_query_blocking};
 use crate::storage::d1_http::D1HttpClient;
 
-/// `kms_provider` recorded in the attestation — truthful: CoreLink's launch
-/// erasure is a D1/R2/Stripe delete-set, not a BYOK KMS crypto-erase.
+/// `kms_provider` that a (DEFERRED) attestation would record — truthful:
+/// CoreLink's launch erasure is a D1/R2/Stripe delete-set, not a BYOK KMS
+/// crypto-erase. Retained for the deferred signed-attestation path and the
+/// crypto-contract tests below; unused on the live (gate-only) path.
+#[allow(dead_code)]
 const ERASE_MECHANISM: &str = "corelink_d1r2_erase";
 
-/// Load the 32-byte per-region attestation signing seed from
-/// `ERASURE_ATTESTATION_SEED_HEX` (64 hex chars). `None` when unset/malformed
-/// → caller skips signing (fail-OPEN). Held in [`Zeroizing`] so the secret is
-/// wiped from memory after the [`ErasureSigningKey`] is constructed.
-fn load_seed() -> Option<Zeroizing<[u8; 32]>> {
-    let hex_str = std::env::var("ERASURE_ATTESTATION_SEED_HEX").ok()?;
-    let hex_str = hex_str.trim();
-    if hex_str.len() != 64 {
-        return None;
-    }
-    let mut bytes = Zeroizing::new([0u8; 32]);
-    hex::decode_to_slice(hex_str, bytes.as_mut()).ok()?;
-    Some(bytes)
-}
-
-/// Monotonic signing-key id from `ERASURE_ATTESTATION_KEY_ID` (defaults to 1 —
-/// the launch key; the S-13 rotation worker bumps it on rotation).
-fn key_id() -> u64 {
-    std::env::var("ERASURE_ATTESTATION_KEY_ID")
-        .ok()
-        .and_then(|s| s.trim().parse::<u64>().ok())
-        .unwrap_or(1)
-}
-
-/// Whether the operator has EXPLICITLY asserted this deployment is
-/// single-region via `ERASURE_ATTESTATION_SINGLE_REGION` (truthy). This makes
-/// `ERASURE_ATTESTATION_REGION` an audited operator decision rather than a
-/// silent default for the (live) case where the tenant row is already deleted.
-fn single_region_asserted() -> bool {
-    std::env::var("ERASURE_ATTESTATION_SINGLE_REGION")
-        .map(|v| {
-            matches!(
-                v.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(false)
-}
-
-/// Resolve the attestation [`Region`] for a tenant WITHOUT silent
-/// mis-attribution (finding #1, region).
-///
-/// 1. Authoritative: `tenant.primary_region`, IF the row still exists (rare
-///    partial-state / re-sweep ordering before the D1 adapter deleted it). When
-///    present this is always correct.
-/// 2. Tenant row gone (the live path): there is NO pre-deletion region source
-///    in this layer (`dsr_requested` / `DsrVerifyV1` carry none — see the card).
-///    We do NOT silently default to the deployment home region. The env region
-///    is used ONLY when the operator has EXPLICITLY asserted single-region; that
-///    assertion is the only thing that makes attributing the erasure to
-///    `ERASURE_ATTESTATION_REGION` correct.
-/// 3. Otherwise → `None` (caller withholds the attestation, fail-CLOSED — the
-///    erasure is still done + audited; we just do not sign with a possibly-wrong
-///    region).
-fn resolve_region(d1: &Arc<D1HttpClient>, tenant_id: &str) -> Option<Region> {
-    let from_d1 = d1_query_blocking(
-        d1,
-        "SELECT primary_region FROM tenant WHERE tenant_id = ?1 LIMIT 1",
-        vec![json!(tenant_id)],
-    )
-    .ok()
-    .and_then(|rows| {
-        rows.first()
-            .and_then(|r| col_str(r, "primary_region"))
-            .and_then(|s| Region::parse(&s))
-    });
-    if let Some(region) = from_d1 {
-        return Some(region);
-    }
-    // Tenant row gone: only an explicit single-region operator assertion makes
-    // the env region a correct (non-silent) attribution.
-    if !single_region_asserted() {
-        return None;
-    }
-    std::env::var("ERASURE_ATTESTATION_REGION")
-        .ok()
-        .and_then(|s| Region::parse(s.trim()))
-}
-
-/// Build the signed `evidence_hash` segments from the REAL per-backend
+/// Build the evidence-digest segments from the REAL per-backend
 /// verification outcomes carried by the `VerifiedComplete` decision — or `None`
 /// (refuse to sign) unless EVERY canonical backend is provably verified-empty.
 ///
@@ -176,9 +86,9 @@ fn resolve_region(d1: &Arc<D1HttpClient>, tenant_id: &str) -> Option<Region> {
 ///   includes a Stripe re-verify mismatch or any unverified arm).
 ///
 /// On success returns one canonical segment per backend
-/// (`"{backend}:{outcome}:{hex(verification_hash)}"`) in completion order, to be
-/// hashed into the signed `evidence_hash` so the proof binds the actual
-/// per-backend evidence.
+/// (`"{backend}:{outcome}:{hex(verification_hash)}"`) in completion order. (The
+/// signed proof that would consume these into a served `evidence_hash` is
+/// DEFERRED — see the module-level DEFERRED block.)
 fn verified_evidence_segments(completions: &[BackendCompletion]) -> Option<Vec<String>> {
     if completions.len() != BACKEND_COUNT {
         return None;
@@ -203,153 +113,56 @@ fn verified_evidence_segments(completions: &[BackendCompletion]) -> Option<Vec<S
     Some(segments)
 }
 
-/// Sign + persist an erasure attestation for a `VerifiedComplete` DSR.
+/// Evaluate the erasure-evidence gate for a `VerifiedComplete` DSR and log the
+/// outcome.
 ///
-/// Non-blocking but fail-CLOSED on the evidence: returns silently (no row
-/// written) on any misconfiguration OR when the per-backend verification
-/// evidence is incomplete/unverified OR when no trustworthy region resolves.
-/// The caller invokes this ONLY on the `VerifiedComplete` arm and passes that
-/// decision's real per-backend `completions`.
+/// **This does NOT emit a cryptographic proof.** The signed + served erasure
+/// attestation is DEFERRED (brutal-review H1; see the module docs). This
+/// function deliberately refuses to persist an UNSIGNED row that would
+/// masquerade as a certificate of erasure — it evaluates the fail-CLOSED
+/// evidence gate and logs, nothing more.
+///
+/// Non-blocking: the erasure itself is already complete + audited + ledgered
+/// (`audit_outbox`) before this runs. The caller invokes this ONLY on the
+/// `VerifiedComplete` arm and passes that decision's real per-backend
+/// `completions`. The unused params (`_d1`, `_tenant_id`, `_verified_at_ms`) are
+/// retained so the call site is stable for when the signed-attestation path is
+/// un-deferred.
 pub(super) fn sign_and_persist(
-    d1: &Arc<D1HttpClient>,
+    _d1: &Arc<D1HttpClient>,
     dsr_id: &str,
-    tenant_id: &str,
-    verified_at_ms: u64,
+    _tenant_id: &str,
+    _verified_at_ms: u64,
     completions: &[BackendCompletion],
 ) {
-    // Fail-CLOSED evidence gate (finding #1): bind the proof to the REAL
-    // per-backend verification results, and refuse to sign unless every
-    // canonical backend is provably verified-empty.
-    let Some(evidence_segments) = verified_evidence_segments(completions) else {
+    // Fail-CLOSED evidence gate (finding #1): bind to the REAL per-backend
+    // verification results; treat anything short of every canonical backend
+    // provably verified-empty as fail-CLOSED.
+    let Some(_evidence_segments) = verified_evidence_segments(completions) else {
         tracing::warn!(
             dsr_id = %dsr_id,
             backend_completions = completions.len(),
             "dsr/verify: per-backend verification evidence incomplete/unverified \
-             — NOT signing attestation (fail-CLOSED)"
+             — no attestation (fail-CLOSED)"
         );
         return;
     };
-    let Some(seed) = load_seed() else {
-        tracing::debug!(
-            dsr_id = %dsr_id,
-            "dsr/verify: ERASURE_ATTESTATION_SEED_HEX unset/malformed — skipping attestation"
-        );
-        return;
-    };
-    let Some(region) = resolve_region(d1, tenant_id) else {
-        tracing::warn!(
-            dsr_id = %dsr_id,
-            "dsr/verify: no trustworthy attestation region (tenant row gone + no \
-             explicit ERASURE_ATTESTATION_SINGLE_REGION assertion) — NOT signing \
-             attestation (fail-CLOSED; never a possibly-wrong region)"
-        );
-        return;
-    };
-    let kid = key_id();
 
-    // Deterministic key from the seed (stable public key across restarts).
-    let signing_key = ErasureSigningKey::from_seed(kid, region, verified_at_ms, 0, *seed);
-    let public_key = signing_key.public_key();
-    let signer = ErasureAttestationSigner::new(signing_key);
-
-    // Evidence bundle binds the REAL per-backend verification results (one
-    // segment per canonical backend = "{backend}:{outcome}:{hex(verification_hash)}")
-    // — NOT a synthetic self-referential constant. `validated_hash` makes the
-    // "empty mandatory field" guard load-bearing (an empty segment set is a hard
-    // refuse). The "destroy ts" is the verify instant; key id is the dsr-scoped
-    // sentinel.
-    let kms_key_id = format!("dsr:{dsr_id}");
-    let bundle = EvidenceBundle {
-        audit_chain_segment_ids: evidence_segments,
-        kms_destroy_ts: verified_at_ms,
-        kms_key_id: kms_key_id.clone(),
-        tenant_id: tenant_id.to_string(),
-    };
-    let evidence_hash = match bundle.validated_hash() {
-        Ok(h) => h,
-        Err(e) => {
-            tracing::error!(
-                dsr_id = %dsr_id,
-                error = %e,
-                "dsr/verify: evidence bundle failed validation — NOT signing attestation (fail-CLOSED)"
-            );
-            return;
-        }
-    };
-    let payload = ErasureAttestationPayload {
-        tenant_id: tenant_id.to_string(),
-        request_id: dsr_id.to_string(),
-        destroyed_ts: verified_at_ms,
-        kms_provider: ERASE_MECHANISM.to_string(),
-        kms_key_id,
-        evidence_hash,
-        region,
-        attestation_key_id: kid,
-    };
-
-    let attestation = match signer.sign(payload) {
-        Ok(a) => a,
-        Err(e) => {
-            tracing::error!(dsr_id = %dsr_id, error = %e, "dsr/verify: attestation sign failed");
-            return;
-        }
-    };
-
-    // Upsert the matching public key so the public key endpoint serves the
-    // exact key that signed (idempotent on (key_id, region)).
-    let pub_sql = "INSERT OR IGNORE INTO erasure_public_keys \
-         (key_id, region, state, created_at_ms, overlap_until_ms, public_key_pem) \
-         VALUES (?1, ?2, 'active', ?3, ?4, ?5)";
-    if let Err(e) = d1_query_blocking(
-        d1,
-        pub_sql,
-        vec![
-            json!(kid),
-            json!(region.as_str()),
-            json!(clamp_ms(public_key.created_at_ms)),
-            json!(clamp_ms(public_key.overlap_until_ms)),
-            json!(public_key.pem),
-        ],
-    ) {
-        tracing::error!(dsr_id = %dsr_id, error = %e, "dsr/verify: erasure_public_keys upsert failed");
-        // continue — the attestation row is the load-bearing artifact.
-    }
-
-    // R2 audit bucket is the authoritative store; D1 is the lookup index. We
-    // index here (the signed JSON is also embedded so the index is
-    // self-sufficient even before the quarterly R2 reconcile).
-    let r2_key = format!(
-        "{}/erasure_attestations/{dsr_id}.json",
-        region.audit_bucket()
-    );
-    let att_sql = "INSERT OR IGNORE INTO erasure_attestations \
-         (request_id, tenant_id, region, attestation_key_id, r2_key, signed_at_ms, \
-          kms_provider, kms_key_id, evidence_hash) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
-    if let Err(e) = d1_query_blocking(
-        d1,
-        att_sql,
-        vec![
-            json!(attestation.payload.request_id),
-            json!(attestation.payload.tenant_id),
-            json!(region.as_str()),
-            json!(kid),
-            json!(r2_key),
-            json!(clamp_ms(verified_at_ms)),
-            json!(attestation.payload.kms_provider),
-            json!(attestation.payload.kms_key_id),
-            json!(attestation.payload.evidence_hash),
-        ],
-    ) {
-        tracing::error!(dsr_id = %dsr_id, error = %e, "dsr/verify: erasure_attestations index failed");
-        return;
-    }
-
-    tracing::info!(
+    // DEFERRED (brutal-review H1): the signed + served erasure attestation is
+    // NOT implemented. We refuse to persist an UNSIGNED evidence row that would
+    // masquerade as a cryptographic proof — migration 0032 has no
+    // `signature_ed25519` / `canonical_payload_jcs` columns, the signature was
+    // discarded, and no R2 object is ever written (so the persisted `r2_key`
+    // would be a dangling pointer). The erasure itself is already complete +
+    // audited + ledgered; emitting a forgeable "certificate" is worse than
+    // emitting none. See the module-level DEFERRED block for the full list of
+    // what a real served attestation requires before this can persist again.
+    tracing::warn!(
         dsr_id = %dsr_id,
-        region = %region,
-        attestation_key_id = kid,
-        "dsr/verify: signed + persisted erasure attestation (VerifiedComplete)"
+        backend_completions = completions.len(),
+        "dsr/verify: erasure verified-complete; signed erasure-attestation \
+         persistence is DEFERRED (brutal-review H1) — NOT writing an unsigned \
+         attestation row; the erasure is complete + audited"
     );
 }
 
@@ -363,13 +176,15 @@ mod tests {
 
     use super::ERASE_MECHANISM;
 
-    /// The exact payload `sign_and_persist` builds must produce a signature
-    /// that verifies against the public key derived from the SAME seed — the
-    /// property the persisted `erasure_public_keys` row + the public verifier
-    /// rely on. (The D1 round-trip is exercised by the route integration test;
-    /// here we cover the crypto contract the persistence wraps.)
+    /// Crypto-contract coverage for the `corelink_erasure_attestation` crate: a
+    /// payload signed with a seed-derived key verifies against the public key
+    /// derived from the SAME seed. NOTE: the signed + served attestation path is
+    /// DEFERRED (brutal-review H1) — this module no longer signs or persists
+    /// attestations / public keys, so there is NO D1 round-trip and NO route
+    /// integration test; this covers only the offline signature contract that a
+    /// future served attestation would rely on.
     #[test]
-    fn signed_attestation_verifies_against_persisted_public_key() {
+    fn signed_attestation_verifies_against_derived_public_key() {
         let seed = [9u8; 32];
         let dsr_id = "00000000-0000-7000-8000-000000000abc";
         let tenant_id = "00000000-0000-7000-8000-000000000def";
