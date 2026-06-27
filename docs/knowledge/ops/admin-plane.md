@@ -17,8 +17,12 @@ timestamp: "2026-06-26T00:00:00Z"
 The admin plane is the operator control surface. The **LIVE** container admin mutate route gates
 privileged tenant-scoped actions — granting a tenant tier (`set_tenant_tier`) and rotating the admin
 token (`rotate_admin_token`), the only two mutate ops it supports — each internal-auth-gated,
-dual-approval-bounded, MFA-bounded, and audit-logged; a missing gate key fails closed rather than
-running privileged logic (`crates/corelink-container/src/routes/admin.rs:573-586`).
+dual-approval-bounded, and audit-logged; a missing gate key fails closed rather than
+running privileged logic (`crates/corelink-container/src/routes/admin.rs:573-586`). **MFA / step-up is
+NOT wired in the live container route** — the "fresh MFA" requirement is design-spec only
+(`docs/internal/admin-plane.md`, the unwired config-singleton rollback path; cf. ADR-S11-001 MFA
+step-up); the route enforces internal-auth + dual-approval + audit, with no MFA primitive in
+`routes/admin.rs`.
 The per-region Durable-Object config singleton (feature flags, rate-limit tunables, retention policies)
 mutated with compare-and-swap versioning — plus Queue propagation, rollback, and the monthly drill — is a
 **designed control** (implemented in `corelink-config-do`, consumed only by `corelink-ops`), **NOT yet
@@ -50,7 +54,7 @@ behind one fail-closed authorization gate.
 # Invariants
 
 - A CAS write whose `expected_version` is stale must 409, never silently overwrite `docs/internal/admin-plane.md:80-86`.
-- Rollback requires fresh MFA AND a dual approver (`X-Dual-Approver`) `docs/internal/admin-plane.md:120-123`.
+- Rollback requires fresh MFA AND a dual approver (`X-Dual-Approver`) `docs/internal/admin-plane.md:120-123` — **design-plane only**: this belongs to the unwired config-singleton rollback path; the live container route has no MFA primitive.
 - The admin plane never runs privileged logic without a configured gate key (unconfigured ⇒ reject) `crates/corelink-container/src/routes/admin.rs:79`.
 - A dual-approval pair must be set together: an **incomplete** pair (one of `approval_id`/`approver` present, the other absent) is rejected at request construction (`crates/corelink-container/src/routes/admin.rs:592`); a **fully-absent** pair yields `None` (no approval requested) and proceeds — the per-operation approval *requirement* is enforced in the handler, not at construction.
 - Pilot mutations emit a `corelink.admin.pilot_*` audit event on attempt and success `crates/corelink-container/src/routes/admin_pilot.rs:1141-1179`.

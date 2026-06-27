@@ -6,6 +6,7 @@ source_files:
   - "docs/testing/2026-06-23-gapmap-MASTER.md"
   - "tests/e2e-user-journeys/src/main.rs"
   - "tests/e2e-user-journeys/src/harness.rs"
+  - "scripts/e2e-real-client/lib/clients.sh"
 checkpoint_sha: "a367df9b6df02af27b91ef22a6d3a53824eca42d"
 provenance: "AUTHORED"
 tags: ["testing", "e2e", "user-simulation", "coverage", "gap-map"]
@@ -47,12 +48,14 @@ correctly" and "we have a test that proves it stays correct."
   gate-probe helper `expect_gate_denied` accepts 401/403 only, `tests/e2e-user-journeys/src/harness.rs:436`),
   and all webhook→tier transitions gated (M4) (`docs/testing/2026-06-23-gapmap-MASTER.md:37-45`).
 - The P1 tier is real-client fidelity + the money/runner value paths: curl-not-CLI probes (M5), a 502
-  graded PASS (M6), Bazel `findMissingBlobs`/AC never exercised (M7), runner admit/over-cap/reject
-  absent (M8), the CAS batch plane untested (M9), and 8 of 12 personas never run (M10)
-  (`docs/testing/2026-06-23-gapmap-MASTER.md:47-56`).
+  graded PASS (M6 — **now FIXED**: the real-client artifact probe classifies every status and a 5xx/502
+  is a hard FAIL, `scripts/e2e-real-client/lib/clients.sh:208-237`), Bazel `findMissingBlobs`/AC never
+  exercised (M7), runner admit/over-cap/reject absent (M8), the CAS batch plane untested (M9), and 8 of
+  12 personas never run (M10) (`docs/testing/2026-06-23-gapmap-MASTER.md:47-56`).
 - The recommended closure order led with harness honesty (M1+M3 — **both now landed**), then the moat
   journey (M2, still the highest-value open item), then provisioning+money+runners (M10+M4+M8), then
-  real-client fidelity (M5+M6+M7) (`docs/testing/2026-06-23-gapmap-MASTER.md:83-92`).
+  real-client fidelity (M5+M6+M7 — M6 now landed, `scripts/e2e-real-client/lib/clients.sh:208-237`)
+  (`docs/testing/2026-06-23-gapmap-MASTER.md:83-92`).
 
 # Invariants
 
@@ -86,3 +89,4 @@ correctly" and "we have a test that proves it stays correct."
 6. `docs/testing/2026-06-23-gapmap-MASTER.md:83-93` — recommended closure order + the "not a prod bug" caveat.
 7. `tests/e2e-user-journeys/src/main.rs:117-163` — M1 FIX (live): the runner's PASS-floor + gated-ceiling refuse green-by-vacuum.
 8. `tests/e2e-user-journeys/src/harness.rs:436` — M3 FIX (live): `expect_gate_denied` (401/403-only) for active-gate probes.
+9. `scripts/e2e-real-client/lib/clients.sh:208-237` — M6 FIX (live): the real-client artifact probe grades a 5xx/502 (the `_public` fail-closed signature) as a hard FAIL, not the old catch-all PASS.

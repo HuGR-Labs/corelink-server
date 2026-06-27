@@ -40,7 +40,13 @@ proves the artifact, and to the GA staffing waiver in
    then-current count at D-day. Treat 262 as the draft-snapshot value, not the current corpus size.**
 3. The production wiring is enumerated: 4-target Cloudflare binding (D1 ×5 regions, R2 25 buckets, KV,
    Durable Objects) + BYOK 4 providers + the hash-chained audit chain
-   (`docs/release/v1.0.0-GA-tag-draft-final.txt:26-44`).
+   (`docs/release/v1.0.0-GA-tag-draft-final.txt:26-44`). **⚠️ Designed ≠ wired: the BYOK-4-providers
+   envelope encryption and the hash-chained (R2 Object-Lock + cron) audit chain are DESIGNED-but-UNWIRED
+   skeletons on the deployed plane** (per CLAUDE.md "Designed ≠ wired" + the
+   [ADR-S30-001 BYOK status note](/adr/adr-s30-001-byok-mutually-exclusive-providers.md): with zero
+   real-provider features the BYOK orchestrator defaults to the in-memory fake; no `wrap_dek`/Object-Lock
+   call site under `crates/corelink-container/src/routes/`). The draft tag enumerates them as the GA
+   *target* posture — do not read these two lines as live GA wiring; the CF binding (D1/R2/KV/DO) IS wired.
 4. The quality bar is attested: adversarial-review mean 9.41/10 across waves 21-25, chaos + 24h endurance
    + perf-regression harnesses green (`docs/release/v1.0.0-GA-tag-draft-final.txt:46-64`).
 5. The compliance posture is frozen into the tag: SOC 2 Type 2, ISO 27001:2022, GDPR, LGPD, LFPDPPP, PCI
@@ -75,7 +81,7 @@ proves the artifact, and to the GA staffing waiver in
 # Citations
 1. `docs/release/v1.0.0-GA-tag-draft-final.txt:7-11` — cut script + 2-key sign-off + placeholder fill.
 2. `docs/release/v1.0.0-GA-tag-draft-final.txt:13-24` — spec-corpus freeze state + validator exit 0.
-3. `docs/release/v1.0.0-GA-tag-draft-final.txt:26-44` — production wiring (CF 4-target, BYOK, audit chain).
+3. `docs/release/v1.0.0-GA-tag-draft-final.txt:26-44` — production wiring (CF 4-target IS wired; BYOK-4-providers + hash-chained audit chain are the GA *target* posture, DESIGNED-but-UNWIRED per CLAUDE.md / ADR-S30-001, not live GA wiring).
 4. `docs/release/v1.0.0-GA-tag-draft-final.txt:46-64` — quality bar (adversarial 9.41, chaos, endurance).
 5. `docs/release/v1.0.0-GA-tag-draft-final.txt:57-59` — 24h endurance dress-run vs scheduled full slot.
 6. `docs/release/v1.0.0-GA-tag-draft-final.txt:66-80` — attested compliance frameworks.

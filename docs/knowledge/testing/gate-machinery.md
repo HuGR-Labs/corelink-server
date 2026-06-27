@@ -1,11 +1,14 @@
 ---
 type: "TestStrategy"
 title: "CI gate machinery & quality gaps"
-description: "The test-quality / methodology weakness map: how the user-simulation suites are built, where they USED to create false confidence (green-by-vacuum, 404-as-PASS, curl-not-CLI, 502-as-PASS), the fix themes, and the two now-LANDED harness fixes (the green-by-vacuum runner and the 404-deny helper)."
+description: "The test-quality / methodology weakness map: how the user-simulation suites are built, where they USED to create false confidence (green-by-vacuum, 404-as-PASS, curl-not-CLI, 502-as-PASS), the fix themes, and the now-LANDED harness fixes (Q1-Q5 all closed: the green-by-vacuum runner, the 404-deny helper, the real-client 502-FAIL + run.sh PASS-floor, and the strict-409 AC integrity journey)."
 source_files:
   - "docs/testing/2026-06-23-gapmap-quality.md"
   - "tests/e2e-user-journeys/src/harness.rs"
   - "tests/e2e-user-journeys/src/main.rs"
+  - "tests/e2e-user-journeys/src/journeys/ac.rs"
+  - "scripts/e2e-real-client/run.sh"
+  - "scripts/e2e-real-client/lib/clients.sh"
 checkpoint_sha: "a367df9b6df02af27b91ef22a6d3a53824eca42d"
 provenance: "AUTHORED"
 tags: ["testing", "ci", "gates", "false-confidence", "methodology"]
@@ -24,8 +27,13 @@ contracts the code doesn't assert. **The two harness-level findings (Q1 green-by
 404-as-deny helper) are now FIXED in the live harness** (#484/#489/#495/#501): the runner refuses
 green-by-vacuum and goes RED on an all-gated run (`tests/e2e-user-journeys/src/main.rs:117-163`), and
 a separate gate-probe helper `expect_gate_denied` accepts 401/403 ONLY — a 404 is a failure
-(`tests/e2e-user-journeys/src/harness.rs:436`). The remaining audit entries (Q3-Q5, the curl-shaped
-real-client harness and the AC-tautology) are still open. It is the methodology companion to the
+(`tests/e2e-user-journeys/src/harness.rs:436`). **The remaining three (Q3 502-as-PASS, Q4
+SHIP-by-vacuum, Q5 the AC-tautology) are now ALSO FIXED**: the real-client harness classifies every
+status so a 5xx/502 is a hard FAIL (`scripts/e2e-real-client/lib/clients.sh:208-237`), `run.sh` is
+NO-SHIP unless `PASS ≥ CORELINK_E2E_MIN_PASS` so an all-gated credential-less run can no longer
+false-certify (`scripts/e2e-real-client/run.sh:33-37`, `scripts/e2e-real-client/run.sh:120-130`), and the AC divergent-body journey now
+requires a strict 409 + original-body-preserved instead of the 409-OR-LWW tautology (the "M11 fix",
+`tests/e2e-user-journeys/src/journeys/ac.rs:158,198-218`). It is the methodology companion to the
 [e2e strategy](/testing/e2e-strategy.md) gap map and the
 [real-user suites](/testing/real-user-suites.md).
 
@@ -56,15 +64,24 @@ distinguish a real gate from an absent route.
   ONLY for paths where a hidden-object 404 is the privacy-preserving contract (e.g. tenant-isolation
   reads), with a doc-comment forbidding its use to prove a gate rejected
   (`tests/e2e-user-journeys/src/harness.rs:420`).
-- Q3 (CRITICAL) the real-client harness is curl-shaped, not the real CLI (only docker + cargo/sccache
-  drive a real binary), and it graded a known-bad 502 — the `_public` fail-closed signature — as PASS
-  in the committed run (`docs/testing/2026-06-23-gapmap-quality.md:78-116`).
-- Q4 (HIGH) `run.sh` declares SHIP when it could bootstrap nothing (no Clerk secret → entire run gates
-  → exits 0/SHIP), and grades the docker digest on an empty value as PASS
-  (`docs/testing/2026-06-23-gapmap-quality.md:118-133`).
-- Q5 (HIGH) the `ac.rs::divergent_body_reput` journey is named "→ 409 integrity guard" but accepts
-  BOTH 409 and last-write-wins — a tautology that advertises AC-poisoning coverage it doesn't have
-  (`docs/testing/2026-06-23-gapmap-quality.md:135-154`).
+- Q3 (CRITICAL — **NOW FIXED**) the real-client harness is curl-shaped, not the real CLI (only docker +
+  cargo/sccache drive a real binary), and it graded a known-bad 502 — the `_public` fail-closed
+  signature — as PASS in the committed run (`docs/testing/2026-06-23-gapmap-quality.md:78-116`). The
+  502-as-PASS half is now closed: the brew/artifact probe classifies every status code and a `server5xx`
+  (including the `_public` fail-closed 502) is an explicit FAIL, never the old `*)` catch-all PASS
+  (`scripts/e2e-real-client/lib/clients.sh:208-237`).
+- Q4 (HIGH — **NOW FIXED**) `run.sh` USED to declare SHIP when it could bootstrap nothing (no Clerk
+  secret → entire run gates → exits 0/SHIP) (`docs/testing/2026-06-23-gapmap-quality.md:118-133`). It now
+  carries an anti-vacuum PASS floor: a run with `PASS < CORELINK_E2E_MIN_PASS` (default 1) is
+  `NO-SHIP (vacuum)` / exit 1 — so a credential-less all-gated run can no longer false-certify a launch
+  (`scripts/e2e-real-client/run.sh:33-37`, `scripts/e2e-real-client/run.sh:120-130`; the floor is
+  computed once in `emit_cert`/`E2E_VERDICT_RC`).
+- Q5 (HIGH — **NOW FIXED**) the AC divergent-body journey USED to be named "→ 409 integrity guard" but
+  accept BOTH 409 and last-write-wins — a tautology that advertised AC-poisoning coverage it didn't have
+  (`docs/testing/2026-06-23-gapmap-quality.md:135-154`). The "M11 fix" rewrote it
+  (`divergent_body_integrity_guard`): the second divergent re-PUT MUST be 409 (a 200/201 LWW is a FAILED
+  cache-poisoning regression) and the follow-up GET MUST return the ORIGINAL body
+  (`tests/e2e-user-journeys/src/journeys/ac.rs:158,198-218`).
 - The cross-cutting fix themes: fail-closed on "asserted nothing," split the deny helper (401/403 for
   gate probes), grade real-client probes on bytes + the 502 signature, make names match assertions,
   and provision the full persona set (`docs/testing/2026-06-23-gapmap-quality.md:324-339`).
@@ -79,7 +96,14 @@ distinguish a real gate from an absent route.
   (`docs/testing/2026-06-23-gapmap-quality.md:329-332`) — **now ENFORCED** by the
   `expect_gate_denied` (401/403-only) helper for gate probes (`tests/e2e-user-journeys/src/harness.rs:436`).
 - Real-client probes must FAIL (not PASS) on a 502 and must GET-and-compare bytes, not assert status
-  codes only (`docs/testing/2026-06-23-gapmap-quality.md:333-335`).
+  codes only (`docs/testing/2026-06-23-gapmap-quality.md:333-335`) — **now ENFORCED**: a 5xx is a hard
+  FAIL in the artifact probe (`scripts/e2e-real-client/lib/clients.sh:208-237`).
+- A real-client SHIP verdict must clear the anti-vacuum PASS floor — an all-gated/credential-less run is
+  `NO-SHIP (vacuum)`, never a silent green — **now ENFORCED** by `CORELINK_E2E_MIN_PASS`
+  (`scripts/e2e-real-client/run.sh:33-37`, gating block `scripts/e2e-real-client/run.sh:120-130`).
+- The AC divergent-body re-PUT must be graded strictly (409 + original-body-preserved, never 409-OR-LWW)
+  so it actually proves AC cache-poisoning resistance — **now ENFORCED**
+  (`tests/e2e-user-journeys/src/journeys/ac.rs:198-218`).
 
 # Gotchas
 
@@ -104,3 +128,6 @@ distinguish a real gate from an absent route.
 10. `tests/e2e-user-journeys/src/main.rs:117-163` — Q1 FIX: the runner refuses green-by-vacuum (PASS floor `CORELINK_E2E_MIN_PASS` + gated ceiling `CORELINK_E2E_MAX_GATED` → RED on all-gated / Pass→Gated).
 11. `tests/e2e-user-journeys/src/harness.rs:436` — Q2 FIX: `expect_gate_denied` accepts 401/403 ONLY (a 404 is a FAILURE) for active-gate probes.
 12. `tests/e2e-user-journeys/src/harness.rs:420` — the legacy `expect_denied` (401|403|404) retained ONLY for hidden-object/tenant-isolation 404-deny paths.
+13. `scripts/e2e-real-client/lib/clients.sh:208-237` — Q3 FIX: the artifact probe classifies every status; a `server5xx` (incl. the `_public` 502) is an explicit FAIL, not the old `*)` catch-all PASS.
+14. `scripts/e2e-real-client/run.sh:33-37` (exit-code contract) + `scripts/e2e-real-client/run.sh:120-130` (the gating block) — Q4 FIX: the anti-vacuum PASS floor (`CORELINK_E2E_MIN_PASS`, default 1) makes a credential-less all-gated run `NO-SHIP (vacuum)`/exit 1.
+15. `tests/e2e-user-journeys/src/journeys/ac.rs:158,198-218` — Q5 FIX ("M11"): `divergent_body_integrity_guard` requires a strict 409 on the divergent re-PUT (200/201 LWW = FAIL) + the original body on the follow-up GET.

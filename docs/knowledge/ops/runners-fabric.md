@@ -50,9 +50,12 @@ the operational runbook for that gate; its authz mechanism is documented as the
    (`crates/corelink-container/src/routes/auth_introspect.rs:246`, `crates/corelink-container/src/routes/auth_introspect.rs:257`).
 8. The route is only mounted when `FABRIC_INTROSPECT_AUTH_KEY` is present and ≥32 chars; otherwise it
    returns `None` and is not mounted (fail-CLOSED) (`crates/corelink-container/src/routes/auth_introspect.rs:660-663`).
-9. The fabric's compute itself is being moved off the shared founder Mac onto off-Mac Linux capacity
-   (Blacksmith is the roadmap meta-fix for the chronic single-runner fragility)
-   (`docs/launch/2026-06-18-sota-tooling-roadmap.md:40-56`).
+9. The customer build-compute fabric (corelink-runners) runs on **Cloudflare Containers** (Firecracker
+   microVMs in the SAME CF account as the R2 CAS — the proximity advantage); it was NEVER on the shared
+   founder Mac. Do NOT conflate it with the Blacksmith/"move CI off the shared Mac" roadmap item — that
+   line is about CoreLink's OWN self-hosted **CI** runners (the founder's Mac), a different thing from the
+   customer runner fabric (`docs/launch/2026-06-18-sota-tooling-roadmap.md:40-56` is the CI roadmap, not
+   the fabric's compute).
 
 # Invariants
 - Any D1 fault during plan OR entitlement resolution fails CLOSED with 503 — the fabric maps 503 to
@@ -93,4 +96,4 @@ the operational runbook for that gate; its authz mechanism is documented as the
 12. `crates/corelink-container/src/routes/auth_introspect.rs:617-637` — fail-CLOSED 503 on entitlement/tier/backend fault.
 13. `crates/corelink-container/src/routes/auth_introspect.rs:630-631` — uniform `valid:false`, no oracle.
 14. `crates/corelink-container/src/routes/auth_introspect.rs:660-663` — `FABRIC_INTROSPECT_AUTH_KEY` ≥32 or route not mounted.
-15. `docs/launch/2026-06-18-sota-tooling-roadmap.md:40-56` — move compute off the shared Mac (Blacksmith / Linux runner).
+15. `docs/launch/2026-06-18-sota-tooling-roadmap.md:40-56` — the Blacksmith / "move CI off the shared Mac" roadmap item is about CoreLink's OWN self-hosted CI runners (the founder's Mac), NOT the customer runner fabric (which runs on CF Containers).

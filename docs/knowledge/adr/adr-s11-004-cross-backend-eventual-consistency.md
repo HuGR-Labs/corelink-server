@@ -52,6 +52,20 @@ incomplete → an `SlaBreached` arm + SEV-1.
 - Neutral: WI-S11-008's `dsr_erasure_atomicity.tla` proof binds INV-DATA-ERASURE-COMPLETE to this
   eventual-consistency model (a finite t ≤ queued + 30d where every backend is successful).
 
+# Status vs shipped code
+
+This ADR is written present-tense ("a 24h verification cron re-fingerprints each backend", "every run
+emits a byte-deterministic signed forensic report (R2, 7y)", "any non-green → SEV-1"), but that
+pipeline is **DESIGNED-but-INERT on the deployed plane**. Per the sibling
+[ADR-S11-013](/adr/adr-s11-013-erasure-topology-reconciliation-d1-primary.md) status, Wave 1 builds an
+inert, verified pipeline and **nothing deletes in prod until owner provisioning** (the erasure queues +
+`ERASURE_SALT_KEY` + internal-auth key) — so the verification cron, the attestation/forensic-report
+serving, and the SEV-1 paging are the designed target behaviour, not running production wiring today
+(cf. CLAUDE.md "Designed ≠ wired": the erasure-attestation serving endpoint + audit-chain cron are
+unwired). The *consistency model* (eventual consistency + a 24h gate, not 2PC) is the load-bearing
+decision and holds; read the operational mechanics as the spec for when the owner flips the pipeline
+live, not as live cron/paging.
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-S11-004-cross-backend-eventual-consistency.md:23-54` — the Context:
