@@ -378,6 +378,38 @@ def _has_cite(text: str) -> bool:
     return any(CITE_RE.match(inner.strip()) for inner in BACKTICK_RE.findall(text))
 
 
+def _block_cite_paths(text: str) -> list[str]:
+    """The cited file paths (no line numbers) inside a single bullet block."""
+    out: list[str] = []
+    for inner in BACKTICK_RE.findall(text):
+        m = CITE_RE.match(inner.strip())
+        if m:
+            out.append(m.group("path"))
+    return out
+
+
+def _is_test_cite(path: str) -> bool:
+    """True iff a cited path points at TEST code, not a runtime enforcer.
+
+    Rust: a `*_test.rs` / `*_tests.rs` / `tests_*.rs` file, or anything under a
+    `tests/` directory. TS/JS: `*.test.ts` / `*.spec.ts` or anything under a
+    `__tests__/` directory. C6c uses this to forbid grounding an invariant SOLELY
+    on a test (a test can be neutered later; an invariant must point at the
+    non-test code that enforces it). Tests remain valid as ADDITIONAL cites.
+    """
+    p = path.lower()
+    base = p.rsplit("/", 1)[-1]
+    if p.startswith("tests/") or "/tests/" in p or "/__tests__/" in p:
+        return True
+    if base.endswith("_test.rs") or base.endswith("_tests.rs"):
+        return True
+    if base.startswith("tests_") and base.endswith(".rs"):
+        return True
+    if base.endswith(".test.ts") or base.endswith(".spec.ts"):
+        return True
+    return False
+
+
 def _line_count(path: Path) -> int:
     try:
         with path.open("rb") as fh:
@@ -542,16 +574,35 @@ def run_checks(args, git: Git, fails: Failures):
         # C6c: per-claim grounding under `# How it works` and `# Invariants`
         #      (relaxed for ADRs per §4.1)
         if not c.is_adr:
+            # A TestStrategy / `testing/` concept's SUBJECT is the test harness, so
+            # grounding an invariant on a test path is correct there — the test IS
+            # the enforcer (parallel to C6c being relaxed for ADRs per §4.1). The
+            # test-only ban applies only to NON-testing concepts, where a sole test
+            # cite is the neuter-the-test bypass fix #5 closes.
+            is_testing = (c.type == "TestStrategy") or c.concept_id.startswith("testing/")
             secs = _sections(c.body)
             for title in ("how it works", "invariants"):
                 if title in secs:
                     for block in _bullet_blocks(secs[title]):
-                        if not _has_cite(block):
-                            first = block.splitlines()[0].strip()
+                        paths = _block_cite_paths(block)
+                        first = block.splitlines()[0].strip()
+                        if not paths:
                             fails.add(
                                 "C6c",
                                 loc,
                                 f"ungrounded claim under `# {title.title()}` (no path:line): {first[:70]!r}",
+                            )
+                        elif not is_testing and all(_is_test_cite(p) for p in paths):
+                            # An invariant must be grounded on a NON-test enforcer:
+                            # a test path (isolation_tests.rs:42 …) as the SOLE cite
+                            # lets the grounding be neutered later by editing the
+                            # test. Tests are allowed only as ADDITIONAL cites.
+                            fails.add(
+                                "C6c",
+                                loc,
+                                f"test-only grounding under `# {title.title()}` "
+                                f"(an invariant must cite a non-test enforcer; sole cite(s) {paths!r} "
+                                f"are all test paths): {first[:70]!r}",
                             )
 
         # C5: freshness — CONTENT-ANCHOR. For each cited range compare the
@@ -782,7 +833,20 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(adr_dir.glob("*.md"))]
     routes_dir = surface_root / "crates" / "corelink-container" / "src" / "routes"
     if routes_dir.is_dir():
-        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(routes_dir.glob("*.rs"))]
+        # RECURSIVE: a handler dropped in routes/dsr/, routes/audit_export/, or
+        # routes/audit_analytics/ (or any future subdir) must be enumerated too —
+        # a non-recursive glob("*.rs") was a silent completeness hole (a new
+        # handler at routes/dsr/backdoor.rs would never be gated). Genuine
+        # non-handlers (tests_*.rs) are exempted via the manifest `excludes:`.
+        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(routes_dir.rglob("*.rs"))]
+    # The container crate ROOT, file-granular: a handler dropped directly in
+    # crates/corelink-container/src/ (sibling to webhook.rs / native_pat_gate.rs)
+    # is invisible if the crate is gated dir-granular only. Enumerate each src/*.rs
+    # (subdirs like routes/ are handled above); non-handlers (lib.rs is the crate
+    # wiring root) are covered via the manifest like the rest.
+    container_src = surface_root / "crates" / "corelink-container" / "src"
+    if container_src.is_dir():
+        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(container_src.glob("*.rs"))]
     crates_dir = surface_root / "crates"
     if crates_dir.is_dir():
         surface += [(p.relative_to(surface_root).as_posix(), True) for p in sorted(crates_dir.iterdir()) if p.is_dir()]

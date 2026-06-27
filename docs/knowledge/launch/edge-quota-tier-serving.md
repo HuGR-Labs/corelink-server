@@ -4,7 +4,7 @@ title: "Edge quota & tier serving"
 description: "How the Worker edge resolves a tenant's served tier and enforces per-tier storage and monthly-request caps — including the launch-blocker filter that refuses paid quota on a non-active subscription row."
 source_files:
   - worker/src/lib/quota.ts
-checkpoint_sha: "7f62573f2be4f07352de830fe98f400bb1345adb"
+checkpoint_sha: "8924bd84e98462a309205d15a3f8747acc997d62"
 provenance: "AUTHORED"
 tags: [launch, billing, quota, tier, money-path, worker-edge]
 timestamp: "2026-06-27T00:00:00Z"
@@ -23,7 +23,7 @@ This is the read-side counterpart to the [money path](/launch/money-path.md): on
 - The `QUOTAS` table is the single source of per-tier ceilings — `free` = 10 GB / 500 K req/mo up through `max` = 2 TB / 80 M req/mo, with `team`/`enterprise` using `MAX_SAFE_INTEGER` as the "no cap" sentinel (`worker/src/lib/quota.ts:85-92`).
 - **The launch-blocker filter:** tier resolution reads the canonical subscription row with `SELECT tier FROM tier_selections WHERE tenant_id = ?1 AND subscription_state = 'active'` — the `= 'active'` predicate is what refuses to serve a paid tier on a `pending_checkout` (written at click-time, before payment) or `inactive` row (`worker/src/lib/quota.ts:152`).
 - A confirmed, valid `active` row short-circuits and returns that tier with `d1Error: false` (`worker/src/lib/quota.ts:161-162`).
-- When no active subscription is found, resolution falls through to the tenant default column `SELECT tier FROM tenant WHERE tenant_id = ?1` (migration 0057, `DEFAULT 'free'`) (`worker/src/lib/quota.ts:171`).
+- When no active subscription is found, resolution falls through to the tenant column `SELECT tier FROM tenant WHERE tenant_id = ?1` (migration 0057, `DEFAULT 'free'`) and returns **ANY valid `Tier` value that column holds — with NO active-subscription re-check** (`worker/src/lib/quota.ts:171-180`). This is `free` for every tenant TODAY only because the column defaults to `'free'` and no in-scope code writes it to a paid value; it is NOT guarded by a subscription check (see the defense-in-depth gotcha below).
 - If BOTH D1 reads fail, the resolver returns the hard-coded `free` fallback but flags `d1Error = tierSelError && tenantTierError` so callers can tell a confirmed `free` from an outage-derived one (`worker/src/lib/quota.ts:187-188`).
 - Storage enforcement reads `SELECT SUM(bytes_used) AS total_bytes FROM tenant_storage_state WHERE tenant_id = ?1` and compares it to the tier ceiling, returning `ok:true` while `totalBytes < storageBytesMax` (`worker/src/lib/quota.ts:344`, `worker/src/lib/quota.ts:356`).
 - Unlimited tiers (ceiling = `MAX_SAFE_INTEGER`) skip the storage SUM entirely — there is nothing to check (`worker/src/lib/quota.ts:336`).
@@ -31,7 +31,7 @@ This is the read-side counterpart to the [money path](/launch/money-path.md): on
 
 # Invariants
 
-- A paid tier is served ONLY on a row whose `subscription_state = 'active'`; a `pending_checkout`/`inactive` row falls through to the tenant default → `free`, so an abandoned checkout can never be served paid quota for free (`worker/src/lib/quota.ts:152`).
+- Paid serving is granted on EITHER of two arms: (1) an `active` `tier_selections` row (subscription-gated — the launch-blocker filter), OR (2) a paid value in the `tenant.tier` column (an UNGUARDED fallback with NO active-subscription check). Arm (1) is what makes an abandoned checkout (`pending_checkout`/`inactive`) fall through and never be served paid quota (`worker/src/lib/quota.ts:152`). Arm (2) is safe TODAY only because `tenant.tier` defaults to `'free'` and no in-scope code writes it paid — it is NOT a subscription guarantee (`worker/src/lib/quota.ts:171-180`); see the defense-in-depth gotcha.
 - The per-tier ceilings served at the edge are exactly the frozen `QUOTAS` rate-card values — no tier is silently uncapped except the explicit `MAX_SAFE_INTEGER` sentinel tiers (`worker/src/lib/quota.ts:85-92`).
 - The monthly request count is incremented atomically in one round trip (`INSERT … ON CONFLICT … RETURNING`), so two concurrent requests cannot both read the same pre-increment value (`worker/src/lib/quota.ts:523`).
 - Tier resolution and storage enforcement share ONE failure posture: an unconfirmed (`d1Error`) tier never seeds a cap header (`storageQuotaHeaderValue` returns `null`) (`worker/src/lib/quota.ts:234`).
@@ -39,6 +39,7 @@ This is the read-side counterpart to the [money path](/launch/money-path.md): on
 # Gotchas
 
 - **F21 fail-OPEN symmetry — disclosed honestly.** If BOTH tier queries error, `getTierForTenant` returns `{ tier: 'free', d1Error: true }` (`worker/src/lib/quota.ts:187-188`); `checkStorageQuota` then SKIPS the storage SUM and returns `ok:true` for READ-style requests rather than enforce a possibly-wrong `free` cap (`worker/src/lib/quota.ts:327`). This is deliberate: combining an error-derived `free` tier with a successful storage query would 429 a paid tenant who legitimately stores > 10 GiB. The cost of the symmetry is real, though — during a *total* tier-lookup outage a tenant who IS over their real cap is not blocked at the edge on reads. The bound is that this is fail-open only; MUTATING (PUT/POST) requests fail CLOSED with a short Retry-After (`worker/src/lib/quota.ts:316-322`), and the Durable Object's CAS quota FSM remains the deeper net on every write.
+- **Defense-in-depth gap — the `tenant.tier` fallback is unguarded.** Fallback arm (2) returns whatever valid `Tier` the `tenant.tier` column holds with NO `subscription_state = 'active'` re-check (`worker/src/lib/quota.ts:171-180`). Today this is safe ONLY because the column's migration-0057 default is `'free'` and no in-scope writer sets it to a paid value — the protection is a default, not an invariant. A future or rogue writer that set `tenant.tier = 'pro'` directly (bypassing `tier_selections`) would be served paid quota with NO active subscription, contradicting the money-path guarantee. The robust fix would be to either gate this arm on an active subscription too, or never store a paid value in `tenant.tier`. Tracked as a defense-in-depth seam, not an exploitable bug at HEAD.
 - The monthly request gate is the *aggregate* monthly cap, NOT the container's per-second token-bucket rate limit — a slow-but-steady tenant can stay under req/s yet exceed the contracted monthly allowance, which is exactly the gap this edge check closes (`worker/src/lib/quota.ts:444`).
 - `storageQuotaHeaderValue` emits `"0"` for a genuinely-unlimited tier and `null` (do-not-inject) for an unconfirmed `d1Error` tier — `"0"` is the container's unlimited sentinel and is NOT the same as absence; conflating them re-opens the legacy "fresh tenant uncapped" hole (`worker/src/lib/quota.ts:234`).
 
@@ -47,7 +48,7 @@ This is the read-side counterpart to the [money path](/launch/money-path.md): on
 1. `worker/src/lib/quota.ts:85-92` — the frozen `QUOTAS` per-tier storage/request ceilings (rate card).
 2. `worker/src/lib/quota.ts:152` — the launch-blocker filter: `subscription_state = 'active'` refuses paid tiers on non-active rows.
 3. `worker/src/lib/quota.ts:161-162` — confirmed active row returns the tier (`d1Error: false`).
-4. `worker/src/lib/quota.ts:171` — fallback to the `tenant.tier` default column.
+4. `worker/src/lib/quota.ts:171-180` — UNGUARDED fallback to the `tenant.tier` column: returns ANY valid `Tier` value with NO active-subscription re-check (safe only by the migration-0057 `'free'` default).
 5. `worker/src/lib/quota.ts:187-188` — both-queries-failed → `free` fallback flagged `d1Error: true`.
 6. `worker/src/lib/quota.ts:234` — `storageQuotaHeaderValue` returns `null` on an unconfirmed tier (no cap-header injection).
 7. `worker/src/lib/quota.ts:316-322` — D1-error posture: writes fail CLOSED with a short Retry-After.

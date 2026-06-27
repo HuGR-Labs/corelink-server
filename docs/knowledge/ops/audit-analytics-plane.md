@@ -28,11 +28,11 @@ offline or off-the-wire with the `corelink` CLI, and run bounded analytics queri
 (load-bearing): "append-only, Merkle-chained ... re-verify the whole chain" describes the DESIGNED
 plane, not the deployed trail.** The chain machinery (the [audit-analytics crate cluster](/crates/audit-analytics.md))
 has no live producer — nothing in the container calls `HashChainBuilder::append` outside tests, and the
-live DSR audit sink appends plain *unchained* CloudEvents to D1 `audit_outbox` with `emitted_at=NULL`
-and no `prev_hash`/`sequence_number` (`crates/corelink-container/src/routes/dsr/audit.rs:7-8`,
-`crates/corelink-container/src/routes/dsr/audit.rs:82`). The chain-sealing drain that would link those
+live DSR audit sink appends plain *unchained* CloudEvents to D1 `audit_outbox` with `digest=NULL`,
+`emitted_at=NULL` and no `prev_hash`/`sequence_number` (`crates/corelink-container/src/routes/dsr/audit.rs:7-8`,
+`crates/corelink-container/src/routes/dsr/audit.rs:82-84`). The chain-sealing drain that would link those
 rows (and give the CLI a real chain to re-verify) is the unbuilt **WI-S09-007** — so today the exported
-rows are unsealed/unchained and there is no live chain to re-verify offline. The trust property below is
+rows are unsealed/unchained and there is no live chain to re-verify offline. **More than missing — tamperable (red-team-confirmed):** because nothing ever `SET`s `emitted_at`, seals a digest, or applies R2 Object-Lock, and no compliance reader validates a chain, `audit_outbox` is a plain MUTABLE D1 table — the app's own D1 credential can `DELETE`/`UPDATE` any audit row **undetectably**, so an exported log proves nothing an operator couldn't have rewritten post-hoc. "Edit/deletion detectable" is **FALSE on the deployed plane** until sealing is wired. The trust property below is
 end-to-end *once that producer is wired*: the server emits a chain-head anchor and,
 if it detects a break mid-stream, an abort trailer that the CLI surfaces as a distinct exit code so
 SIEM/Drata wrappers can tell a data-integrity event from a generic failure. Every route is per-tenant
@@ -88,4 +88,4 @@ another tenant's rows.
 10c. `tools/cli/src/commands/verify_ndjson_http.rs:294` / `:348` — `ascii_eq_ct(flag.trim(), header.trim())` constant-time anchor flag-vs-header cross-check (refuses on disagreement) + the `fn ascii_eq_ct` constant-time helper (the enforcer of the constant-time-anchor invariant).
 11. `docs/cli/audit-export.md:100-102` — 64 MiB response-body cap (spec).
 11b. `tools/cli/src/commands/verify_ndjson_http.rs:370`, `tools/cli/src/commands/verify_ndjson_http.rs:378` — `MAX_BYTES = 64 MiB` body cap (the enforcer).
-12. `crates/corelink-container/src/routes/dsr/audit.rs:7-8`, `crates/corelink-container/src/routes/dsr/audit.rs:82` — the live audit sink writes *unchained* CloudEvents to `audit_outbox` (`emitted_at=NULL`, no `prev_hash`/`sequence_number`); chain-sealing is the unbuilt WI-S09-007, so the exported rows are unsealed — there is no live chain to re-verify yet.
+12. `crates/corelink-container/src/routes/dsr/audit.rs:7-8`, `crates/corelink-container/src/routes/dsr/audit.rs:82-84` — the live audit sink writes *unchained* CloudEvents to `audit_outbox` (`digest=NULL`, `emitted_at=NULL`, no `prev_hash`/`sequence_number`); nothing ever seals those columns, so the deployed trail is a mutable D1 table the app's own credential can rewrite undetectably; chain-sealing is the unbuilt WI-S09-007, so the exported rows are unsealed — there is no live chain to re-verify yet.

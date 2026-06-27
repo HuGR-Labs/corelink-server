@@ -8,42 +8,60 @@ PROVE each finding wrong (Round 4). The severities below are the **post-verifica
 > *pre-launch blockers*. Adversarial verification **refuted that severity** — both have a true kernel
 > but are **NOT** the severe issues first claimed. Neither is a launch blocker. Corrected below.
 >
-> **2026-06-27 update (10x-brutal exhaustive re-read):** the code team has since FIXED the Stripe
-> re-fingerprint no-op (#1's old residual is CLOSED — it is now a real `GET /v1/customers/:id` redaction
-> check, `adapter_stripe.rs:195-230`). But the exhaustive read found a SHARPER residual on #1 (the signed
-> attestation is not durably persisted — see below) and confirmed #2's batch hardening gap is STILL OPEN
-> (a sibling agent's "guard now exists" claim was a cold-checked hallucination — `CasPutGuard` is only at
-> `cas.rs:722`, not in `handle_batch_write`).
+> **2026-06-27 CORRECTION (red-team round, cold-checked) — retracting a propagated hallucination:**
+> An earlier "2026-06-27 update" here claimed the code team had FIXED the Stripe re-fingerprint no-op
+> ("a real `GET /v1/customers/:id` check at `adapter_stripe.rs:195-230`"). **That was WRONG and is retracted:**
+> `adapter_stripe.rs` is only **184 lines long** — `:195-230` does not exist; the claim was a sub-agent
+> hallucination I failed to cold-check and then propagated. The real code at
+> `adapter_stripe.rs:140-149` STILL returns `Ok(CANONICAL_EMPTY_TENANT_HASH)` unconditionally (comment:
+> "GET each customer … **deferred**"). The Stripe re-fingerprint is a **deferred no-op, NOT closed.**
+> **This also retracts the V1 refutation of #1 below** ("no sign-while-PII-survives path"): there IS one —
+> see #1-REOPENED. Lesson re-learned: cold-check every "it's fixed" claim before recording it.
+> Separately, #2's batch hardening gap is STILL OPEN (the "guard now exists at `:843`" claim was also a
+> cold-checked hallucination — `CasPutGuard` is only at `cas.rs:722`, not in `handle_batch_write`).
 
 Severity = engineering/security severity, post-verification.
 
 ---
 
-## 1. GDPR erasure attestation — **NOT theater** (residual: deferred Stripe re-fingerprint) — **LOW–MED**
+## 1-REOPENED. GDPR erasure attestation — **VerifiedComplete can be signed while PII survives** — **HIGH (compliance)**
 
-Round-3 claimed the attestation signs over fabricated evidence (theater). **Verified WRONG (V1):**
-- The `VerifiedComplete` gate is **dual** — `orchestrator.rs:503` requires the canonical-hash check
-  **AND** `prior.outcome.is_successful()`. That prior success tombstone is only written if the backend
-  erase succeeded **fail-closed** (`adapter.erase(...)?` propagates → no tombstone → `VerifiedPartial`
-  → **no signature**, `orchestrator.rs:339,449-477`). **PII surviving the erase BLOCKS VerifiedComplete**
-  — there is no sign-while-PII-survives path.
-- The signed bundle hard-codes exactly the three fields `validated_hash` checks (`evidence.rs:68-85`),
-  so `compute_hash` ≡ `validated_hash` here — not a bypass. The signature is a real Ed25519 binding
-  (proven by the crate's tamper tests).
-- The region fallback is correct by design (the D1 erase deletes the tenant row; deployment is US-only;
-  the published per-region public key still verifies).
+Round-3 called it "theater"; the round-4 "V1" refutation **over-corrected** to "no sign-while-PII-survives
+path." The red-team round (cold-checked) shows the refutation was **wrong**, and the original concern was
+closer to right. Three layers, all confirmed in code:
 
-**Real residual (sharpened 2026-06-27, BR4 exhaustive read) — MED, compliance-not-yet-live:** the signed
-attestation is **NOT durably persisted**. `sign_and_persist` writes ONLY a D1 metadata INDEX row to
-`erasure_attestations`, whose schema (`migrations/d1/0032_erasure_attestation.sql`) has **no column for the
-Ed25519 signature or the canonical JCS payload** — they are computed then dropped; there is **no R2 PutObject**
-(`audit_bucket()` only builds the key string); and the public verify endpoints
-`GET /v1/public/keys/erasure/{region}.pub` + `GET /v1/public/attestation/{id}` have **zero route registrations**.
-So the wiki's old "portable tamper-evident proof a customer/auditor can verify offline" was hollow — the signing
-LOGIC is real, but durable persistence + the serving surface are DEFERRED (WI-S11-008). (The wiki concept has
-been rewritten to state this.) Also: the "BYOK CMK-destroy" is not the live flow (`kms_provider="corelink_d1r2_erase"`,
-no CMK destroy). **Recommend:** if the GDPR posture depends on a portable offline-verifiable erasure proof, wire
-the R2 persist + the serving endpoint (or stop advertising it); the Stripe-no-op part is already CLOSED.
+- **The dual gate only protects the backends that actually re-scan.** `VerifiedComplete` requires every
+  backend's `verification_hash == CANONICAL_EMPTY_TENANT_HASH` (`orchestrator.rs ~485-510`). D1, R2-CAS,
+  and R2-AC genuinely re-scan (`adapter_d1.rs`, `adapter_r2_cas.rs:196-218`). **But the Stripe adapter
+  returns the clean sentinel UNCONDITIONALLY without ever querying Stripe** —
+  `adapter_stripe.rs:140-149` (`Ok(CANONICAL_EMPTY_TENANT_HASH)`, comment "GET each customer … deferred";
+  the file is 184 lines — there is no "real check at :195-230", that was a retracted hallucination). The
+  8 not-shipped backends do the same (`adapter_not_applicable.rs`). So a Stripe pseudonymize that silently
+  no-ops or partially applies is **never caught**: `VerifiedComplete` is reachable — and a signature minted —
+  while the subject's email/name/phone still live in Stripe. The reconciliation that is actually live is a
+  check of **3 backends, not 12**.
+- **The attestation is fail-OPEN dropped and unserved.** `sign_and_persist` is best-effort fail-open
+  (`attestation.rs:108-120` — seed unset/malformed → returns silently, no artifact), yet `handle_verify`
+  returns `200 verified_complete` regardless (`routes/dsr.rs ~498-516`). It is **not durably persisted**
+  (`erasure_attestations` D1 index row only; migration `0032` has no signature/JCS column; no R2 PutObject)
+  and there is **no serving route** (`GET /v1/public/attestation/{id}` + `/keys/erasure/{region}.pub` have
+  zero registrations). On any env without `ERASURE_ATTESTATION_SEED_HEX` every "completed" DSR yields
+  `verified_complete` + ZERO signed artifact; even when signed it is unfetchable. The customer's "proof" is
+  an unsigned, repudiable JSON label.
+- **TDK-rotation blindspot (MED):** R2-CAS erase + verify both address via `derive_prefix(load_tdk(), tenant)`
+  (`adapter_r2_cas.rs:177` erase, `:205` verify); rotating `R2_TDK_HEX` between write and erase makes both
+  look under the WRONG prefix → erase deletes 0, verify counts 0 → `CANONICAL_EMPTY` → `VerifiedComplete`
+  while the blobs survive under the old-TDK prefix (the file flags the identical mode for multipart at `:91-99`).
+
+**Status / fix shape.** The deep parts (audit-chain seal WI-S09-007, attestation R2-persist + serving
+WI-S11-008, the real Stripe re-fingerprint per ADR-S11-013) are **tracked deferred launch work** — building
+them is the real remaining engineering. But the **exploit (false `VerifiedComplete`) is closable now without
+building them, by failing HONEST**: a deferred/not-yet-verified backend must return an *indeterminate* marker
+that yields `VerifiedPartial`, NOT the clean `CANONICAL_EMPTY` sentinel that yields `VerifiedComplete`; and
+`handle_verify` must not return `verified_complete` when the attestation drops in prod. **This changes the
+GDPR erasure-verification protocol's semantics → flagged to the Owner as a compliance/legal stakeholder call,
+not auto-applied.** The wiki concepts have been corrected to stop claiming `VerifiedComplete` proves
+cross-backend PII destruction.
 
 ## 2. Batch CAS write lacks the hard concurrency semaphore — **NOT a DoS** — **LOW–MED (hardening)**
 
@@ -102,7 +120,40 @@ relevant if the SDKs are sold as a live integration surface. (The wiki concept h
 
 ---
 
-**Net (post-verification):** there is **no launch-blocker** in this set. The two Round-3 "blockers" were
-overstated and are downgraded; the confirmed-real items (#3 circular watchdog, #5 audit-not-sealed) are
-MEDIUM defense-in-depth / compliance-not-yet-live, owner-judged. The verification round's value was
-precisely catching the over-escalation before it cost engineering time.
+---
+
+## Red-team exploit round (2026-06-27) — "build a working chain or prove the wired block"
+
+8 red-teamers attacked the live system (default-broken, no benefit-of-the-doubt). Result:
+
+- **CORE IS SEALED (0 working chains, each block verified wired):** tenant isolation (RT1 — prefix is
+  secret-HMAC-keyed, cross-tenant 403 fires before any storage touch, `_public` takes only server-fetched
+  digest-verified bytes), auth/privesc (RT2 — the leaked-`PAT_SIGNING_KEY` native forgery is closed by the
+  `NativePatGate` Argon2id re-verify, wired into every billable handler + boot-FATAL in prod), money bypass
+  (RT3 — `subscription_state='active'` read identically worker+container, webhook sig+timestamp+idempotency,
+  fail-open is read-only and grants no paid tier), cache poisoning (RT4 — compute-then-ct_eq on every durable
+  surface, no cross-tenant poison). These held under a genuine exploit attempt — a strong positive result.
+- **#R7 [HIGH, cross-tenant DoS] OCI rate-limiter unbounded bucket map → shared `_oci` OOM.** The limiter's
+  `Arc<Mutex<HashMap<BucketKey,…>>>` has no eviction (`corelink-ratelimit/src/limiter.rs ~196,317`), and the
+  OCI bucket key is the attacker-controlled, pre-auth repo string from the URL path
+  (`ratelimit_layer.rs:513-556`). `GET /v2/<random>/manifests/…` with distinct repos grows the map without
+  bound → OOM-kills the SINGLETON `_oci` container (one DO for all OCI tenants). Inconsistency confirming the
+  oversight: the Argon2 map (`PER_TENANT_MAP_CAP=10_000`) and the Turbo maps ARE capped. **Fix in flight**
+  (LRU-cap the limiter map, mirroring the Argon2 pattern).
+- **#R8 [1 CRITICAL + 2 HIGH + 4 MED] the OKF gate itself is bypassable.** CRITICAL **callee-swap**: a concept
+  can cite a line that DELEGATES to an enforcer in an uncited file (`pat-moat` cited `adapter_pat.rs:538-543`,
+  but the real HMAC verify is in the uncited `corelink-pat/src/verify.rs`) → rewrite the callee and the
+  content-anchor sees the cited line byte-identical = "fresh". HIGH: the C10b route glob is non-recursive
+  (misses `routes/dsr/` etc.) and the per-PR CI trigger omits `worker/**`+`apps/**` (edge-plane PRs skip the
+  gate). **Fix in flight** (recursive glob, crate-root file-granular, CI paths, an authoring rule that an
+  invariant must cite the executed enforcer not a delegate, a C6c test-as-sole-grounding ban).
+- **#R6 = #1-REOPENED above** (false `VerifiedComplete`), now HIGH.
+
+**Net (post red-team):** the **core data-plane (isolation / auth / money / integrity) is genuinely hard** —
+verified, not asserted. The real open exposure is **compliance**: false `VerifiedComplete` (#1-REOPENED) and
+the **mutable, unsealed, unread audit trail** (#5 — the same D1 credential the app uses can rewrite any
+`audit_outbox` row undetectably, since nothing seals `emitted_at` / applies R2 Object-Lock). Plus the OCI
+DoS (#R7, fix in flight) and our own gate's bypasses (#R8, fix in flight). The deep compliance closures
+(audit seal, attestation persist+serve, real Stripe re-fingerprint) are tracked deferred launch work; their
+**exploits are closable now by failing honest** (return `VerifiedPartial` for unverified backends) — flagged
+to the Owner as a compliance/legal stakeholder call.

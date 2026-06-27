@@ -6,7 +6,8 @@ source_files:
   - "worker/src/lib/internal_auth.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/native_pat_gate.rs"
-checkpoint_sha: "7f62573f2be4f07352de830fe98f400bb1345adb"
+  - "crates/corelink-pat/src/verify.rs"
+checkpoint_sha: "8924bd84e98462a309205d15a3f8747acc997d62"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -70,17 +71,22 @@ on the tenant-equality check alone until its cache entry expires.
 - That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (403),
   a missing/wrong header is 401, and only an exact match returns `null` to let the caller proceed
   (`worker/src/lib/internal_auth.ts:152-164`).
-- In the container the **first** verification step is the HMAC fast-reject: the plaintext is parsed and
-  a bad signature is rejected pre-D1, so a forged token drives no D1 cost and consumes no Argon2id
-  permit (`crates/corelink-container/src/adapter_pat.rs:538-543`).
+- In the container the **first** verification step is the HMAC fast-reject. The call site in
+  `verify_capability` rejects a bad signature pre-D1 (`crates/corelink-container/src/adapter_pat.rs:538-543`),
+  but that line only DELEGATES — the HMAC check itself EXECUTES in the callee `verify_hmac_only_multi`,
+  which parses the plaintext then runs `verify_hmac_sig_multi` over the rotation key set and fails CLOSED
+  on a bad/absent signature (`crates/corelink-pat/src/verify.rs:119-125`). So a forged token drives no D1
+  cost and consumes no Argon2id permit. (Per the contract §3 authoring rule, the invariant is anchored on
+  the executed callee, not only on the delegating adapter line.)
 - Only a token that passes HMAC and resolves to a live D1 row reaches the expensive layer: an Argon2id
   verify of the secret segment against the stored PHC hash, run on a blocking thread under a bounded
   permit (`crates/corelink-container/src/adapter_pat.rs:602-650`).
 
 # Invariants
 
-- A token that fails the cheap HMAC fast-reject NEVER reaches the Argon2id layer
-  (`crates/corelink-container/src/adapter_pat.rs:538-543`).
+- A token that fails the cheap HMAC fast-reject NEVER reaches the Argon2id layer — the rejection is the
+  `verify_hmac_sig_multi` failure inside the executed callee (`crates/corelink-pat/src/verify.rs:119-125`),
+  reached from the container call site (`crates/corelink-container/src/adapter_pat.rs:538-543`).
 - Both layers are constant-time with no length or content oracle — the edge compare
   (`worker/src/lib/internal_auth.ts:112-127`) and the uniform `VerifyError::InvalidPat` returned by
   EVERY distinguishable container-side rejection (`crates/corelink-container/src/adapter_pat.rs:543`,
@@ -107,7 +113,8 @@ on the tenant-equality check alone until its cache entry expires.
 2. `worker/src/lib/internal_auth.ts:152-164` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
 4. `crates/corelink-container/src/adapter_pat.rs:543`, `:598`, `:650`, `:656` — every distinguishable rejection returns the uniform `VerifyError::InvalidPat` (HMAC fast-reject, unknown/expired row, Argon2id mismatch, no-cache-scope): no on-the-wire oracle.
-5. `crates/corelink-container/src/adapter_pat.rs:538-543` — the HMAC fast-reject, pre-D1, no permit consumed.
+5. `crates/corelink-container/src/adapter_pat.rs:538-543` — the HMAC fast-reject CALL SITE (delegates to the callee below), pre-D1, no permit consumed.
+5b. `crates/corelink-pat/src/verify.rs:119-125` — the executed HMAC verify `verify_hmac_only_multi`: parses the plaintext then runs `verify_hmac_sig_multi` over the rotation key set and fails CLOSED — the line that PERFORMS the fast-reject the adapter call site delegates to (contract §3 authoring rule).
 6. `crates/corelink-container/src/adapter_pat.rs:602-650` — the deep Argon2id possession proof on a blocking thread.
 7. `crates/corelink-container/src/adapter_pat.rs:558-599` — the valid-HMAC-but-unknown-`token_id` timing-parity dummy burn (the leaked-key path that DOES reach an Argon2id round), with the dummy verify at `crates/corelink-container/src/adapter_pat.rs:591`.
 8. `crates/corelink-container/src/adapter_pat.rs:586` — the dummy-burn bound: a shared synthetic per-tenant sub-permit via `UNKNOWN_TOKEN_BUCKET` (atop the global Argon2id permit), so a leaked-key flood across bogus token_ids cannot drain the pool (finding #12).
