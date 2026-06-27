@@ -47,6 +47,7 @@
 //! state across cases.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use uuid::Uuid;
@@ -57,6 +58,47 @@ use crate::config::RateLimitConfig;
 use crate::error::RateLimitError;
 use crate::key::{BucketKey, KeyDimension};
 use crate::metrics::{RateLimitMetricsObserver, RateLimitResultLabel};
+
+/// Upper bound on the number of live token buckets the in-memory
+/// orchestrator retains, mirroring the Argon2id verifier's
+/// `PER_TENANT_MAP_CAP` (`corelink-container::adapter_pat`).
+///
+/// ## DoS rationale (cross-tenant, HIGH — red-team confirmed)
+///
+/// The bucket map is keyed off [`BucketKey::scope_key`], and for the
+/// UNAUTHENTICATED OCI plane that scope is derived from the
+/// attacker-controlled repository name parsed VERBATIM from the
+/// `/v2/<repo>/...` URL path (`corelink-container::routes::ratelimit_layer`
+/// `oci_repo_scope` → `oci_bucket_key`). A flood of distinct repo segments
+/// (`GET /v2/<random-N>/manifests/latest`, each `N` unique) made every request
+/// materialise a NEW, PERMANENT map entry — the map had no cap and no eviction,
+/// so the heap grew without bound until the OOM-killer reaped the SINGLETON
+/// `_oci` Durable Object that fronts EVERY OCI tenant (one DO for all of them →
+/// a cross-tenant registry outage, not just the attacker's own).
+///
+/// Bounding the map as an LRU defeats the flood: when a new bucket would push
+/// the map past the cap we evict the least-recently-accessed entry first. An
+/// evicted bucket simply re-materialises FRESH (full) on its next hit — exactly
+/// what would have happened had it never existed — so the cap is sound and can
+/// never become a rate-limit BYPASS (eviction only ever resets a bucket to
+/// "full", the most permissive state, and a real attacker keeping a key hot
+/// keeps it from being the LRU victim anyway).
+///
+/// 100k is deliberately generous: each entry is a [`BucketKey`] + a small
+/// [`TokenBucketState`] (well under ~200 B → the full map is tens-of-MB scale),
+/// far above any legitimate concurrently-active keyspace, so steady-state
+/// eviction is effectively never reached by real traffic — the cap exists
+/// solely to cap adversarial distinct-key churn.
+const LIMITER_BUCKET_MAP_CAP: usize = 100_000;
+
+/// One entry in the bounded bucket LRU: the [`TokenBucketState`] plus the
+/// monotonic tick at which it was last accessed (materialised, refreshed, or
+/// touched). The smallest tick is the eviction candidate when the map is full.
+#[derive(Clone, Copy, Debug)]
+struct Bucket {
+    state: TokenBucketState,
+    last_access: u64,
+}
 
 /// Per-request decision rendered by [`RateLimiter::try_acquire`].
 ///
@@ -193,7 +235,13 @@ where
     audit: Arc<A>,
     metrics: Arc<M>,
     config: RateLimitConfig,
-    state: Arc<Mutex<HashMap<BucketKey, TokenBucketState>>>,
+    state: Arc<Mutex<HashMap<BucketKey, Bucket>>>,
+    /// Max live buckets before LRU eviction kicks in (see
+    /// [`LIMITER_BUCKET_MAP_CAP`]).
+    bucket_cap: usize,
+    /// Monotonic LRU tick source. Bumped on every bucket access so the
+    /// least-recently-used entry can be identified for eviction.
+    access_tick: AtomicU64,
 }
 
 impl<A, M> core::fmt::Debug for InMemoryTokenBucketRateLimiter<A, M>
@@ -216,22 +264,57 @@ where
     /// Construct with the canonical default config.
     #[must_use]
     pub fn with_defaults(audit: Arc<A>, metrics: Arc<M>) -> Self {
-        Self {
-            audit,
-            metrics,
-            config: RateLimitConfig::canonical(),
-            state: Arc::new(Mutex::new(HashMap::new())),
-        }
+        Self::new(audit, metrics, RateLimitConfig::canonical())
     }
 
     /// Construct with an explicit config.
     #[must_use]
     pub fn new(audit: Arc<A>, metrics: Arc<M>, config: RateLimitConfig) -> Self {
+        Self::new_with_cap(audit, metrics, config, LIMITER_BUCKET_MAP_CAP)
+    }
+
+    /// Construct with an explicit config AND an explicit bucket-map cap.
+    /// The cap defaults to [`LIMITER_BUCKET_MAP_CAP`] in the public
+    /// constructors; a smaller cap is used by the bounded-map regression
+    /// test so the distinct-key flood is cheap to drive.
+    #[must_use]
+    fn new_with_cap(
+        audit: Arc<A>,
+        metrics: Arc<M>,
+        config: RateLimitConfig,
+        bucket_cap: usize,
+    ) -> Self {
         Self {
             audit,
             metrics,
             config,
             state: Arc::new(Mutex::new(HashMap::new())),
+            bucket_cap: bucket_cap.max(1),
+            access_tick: AtomicU64::new(0),
+        }
+    }
+
+    /// Next monotonic LRU tick (interior-mutable; cheap relaxed bump).
+    fn next_tick(&self) -> u64 {
+        self.access_tick.fetch_add(1, Ordering::Relaxed)
+    }
+
+    /// Enforce the bucket-map cap BEFORE a NEW key is inserted: if the map is
+    /// at/over the cap and `incoming` is not already present, evict the
+    /// least-recently-accessed entry. This is the bound that defeats the OCI
+    /// distinct-repo DoS (see [`LIMITER_BUCKET_MAP_CAP`]). The scan is `O(n)`
+    /// but only runs while the map sits at the cap — i.e. under adversarial
+    /// churn, never on legitimate steady-state traffic.
+    fn evict_if_at_cap(map: &mut HashMap<BucketKey, Bucket>, incoming: &BucketKey, cap: usize) {
+        if map.len() < cap || map.contains_key(incoming) {
+            return;
+        }
+        if let Some(victim) = map
+            .iter()
+            .min_by_key(|(_, b)| b.last_access)
+            .map(|(k, _)| k.clone())
+        {
+            map.remove(&victim);
         }
     }
 
@@ -268,11 +351,19 @@ where
         key: BucketKey,
         state: TokenBucketState,
     ) -> Result<(), RateLimitError> {
+        let tick = self.next_tick();
         let mut g = self
             .state
             .lock()
             .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
-        g.insert(key, state);
+        Self::evict_if_at_cap(&mut g, &key, self.bucket_cap);
+        g.insert(
+            key,
+            Bucket {
+                state,
+                last_access: tick,
+            },
+        );
         Ok(())
     }
 
@@ -309,15 +400,25 @@ where
         }
 
         // Step 2: per-instance Mutex (mirrors DO actor serialisation).
+        let tick = self.next_tick();
         let mut guard = self
             .state
             .lock()
             .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
 
-        // Lazy materialise the bucket.
-        let state = *guard
+        // Enforce the bounded-map cap BEFORE lazily materialising a NEW bucket
+        // (the unbounded-growth DoS sink — see `LIMITER_BUCKET_MAP_CAP`).
+        Self::evict_if_at_cap(&mut guard, &bucket_key, self.bucket_cap);
+
+        // Lazy materialise the bucket (and mark it freshly accessed for LRU).
+        let entry = guard
             .entry(bucket_key.clone())
-            .or_insert_with(|| self.fresh_bucket(now_ms));
+            .or_insert_with(|| Bucket {
+                state: self.fresh_bucket(now_ms),
+                last_access: tick,
+            });
+        entry.last_access = tick;
+        let state = entry.state;
 
         // Step 3: cost overflow guard.
         if cost > state.burst_capacity {
@@ -378,8 +479,15 @@ where
             })?;
         }
 
-        // Step 6: commit state to the in-memory mirror.
-        guard.insert(bucket_key.clone(), next_state);
+        // Step 6: commit state to the in-memory mirror. The key was
+        // materialised above, so this overwrite cannot grow the map.
+        guard.insert(
+            bucket_key.clone(),
+            Bucket {
+                state: next_state,
+                last_access: tick,
+            },
+        );
         // Drop the lock before metrics emit (metrics are off-the-hot-path).
         drop(guard);
 
@@ -453,18 +561,24 @@ where
             dimension,
             scope_key: scope_key.to_string(),
         };
+        let tick = self.next_tick();
         let mut g = self
             .state
             .lock()
             .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
-        let entry = g.entry(key).or_insert_with(|| self.fresh_bucket(now_ms));
+        Self::evict_if_at_cap(&mut g, &key, self.bucket_cap);
+        let entry = g.entry(key).or_insert_with(|| Bucket {
+            state: self.fresh_bucket(now_ms),
+            last_access: tick,
+        });
+        entry.last_access = tick;
         // Snap available_tokens to new capacity if shrinking.
         let new_cap_f = f64::from(new_burst_capacity);
-        if entry.available_tokens > new_cap_f {
-            entry.available_tokens = new_cap_f;
+        if entry.state.available_tokens > new_cap_f {
+            entry.state.available_tokens = new_cap_f;
         }
-        entry.burst_capacity = new_burst_capacity;
-        entry.refill_rate_per_sec = f64::from(new_refill_rate_per_sec);
+        entry.state.burst_capacity = new_burst_capacity;
+        entry.state.refill_rate_per_sec = f64::from(new_refill_rate_per_sec);
         Ok(())
     }
 
@@ -476,7 +590,7 @@ where
             .state
             .lock()
             .map_err(|_| RateLimitError::Backend("limiter state mutex poisoned".to_string()))?;
-        Ok(g.get(bucket_key).copied())
+        Ok(g.get(bucket_key).map(|b| b.state))
     }
 }
 
@@ -760,5 +874,38 @@ mod tests {
             )
             .unwrap();
         assert_eq!(lim.bucket_count().unwrap(), 3);
+    }
+
+    // ---- bounded-map DoS regression --------------------------------
+
+    /// Red-team OCI distinct-repo flood: a torrent of distinct
+    /// attacker-controlled scope keys must NOT grow the bucket map without
+    /// bound. With the LRU cap in place the map size stays clamped at the cap
+    /// no matter how many unique keys are thrown at it.
+    #[test]
+    fn bucket_map_is_bounded_under_distinct_key_flood() {
+        let audit = Arc::new(InMemoryRateLimitAuditSink::new());
+        let metrics = Arc::new(InMemoryRateLimitMetrics::new());
+        // Small cap so the flood is cheap to drive; the production cap is
+        // LIMITER_BUCKET_MAP_CAP (100k).
+        let cap = 16usize;
+        let lim = InMemoryTokenBucketRateLimiter::new_with_cap(
+            Arc::clone(&audit),
+            Arc::clone(&metrics),
+            RateLimitConfig::canonical(),
+            cap,
+        );
+        // Simulate `GET /v2/<random-N>/manifests/latest` — each a distinct
+        // attacker-controlled repo scope under ONE (unauth/shared) tenant.
+        for i in 0..(cap * 8) as u32 {
+            let key = BucketKey::per_tenant_per_endpoint(ten_a(), format!("oci.repo.{i}"));
+            let out = lim.try_acquire(ten_a(), key, 1, 1000).unwrap();
+            // Each fresh (re-materialised) bucket still serves correctly.
+            assert!(out.decision.is_allow());
+            // Invariant holds at EVERY step, not just at the end.
+            assert!(lim.bucket_count().unwrap() <= cap);
+        }
+        // Map is clamped at exactly the cap despite 128 distinct keys.
+        assert_eq!(lim.bucket_count().unwrap(), cap);
     }
 }
