@@ -35,7 +35,7 @@ written.
 - Self-serve key create mints a PAT then writes the row with `INSERT INTO pat (pat_id, tenant_id,
   pat_hash, scope, expires_ms, …, token_id, name)` — the hash and the non-secret `token_id` are
   persisted, the plaintext is returned once and never stored
-  (`crates/corelink-container/src/customer_d1.rs:982-994`).
+  (`crates/corelink-container/src/customer_d1.rs:994-1009`).
 - The requested-scope → stored-scope map is FROZEN and fail-CLOSED: `admin` is NEVER grantable
   self-serve, anything-with-write → `read-write`, else `read-only` — `map_requested_scopes`
   (`crates/corelink-container/src/customer_d1.rs:311-324`).
@@ -82,7 +82,7 @@ written.
 1. `crates/corelink-container/src/customer_d1.rs:18-22` — the PAT-store overview: tables, create, revoke.
 2. `crates/corelink-container/src/customer_d1.rs:311-324` — `map_requested_scopes`: the FROZEN requested→stored scope map (admin never grantable). (Legacy-NULL `scope` handling is NOT here — it is the verifier's row reader `crates/corelink-container/src/adapter_pat.rs:144-150`, citation 10.)
 3. `crates/corelink-container/src/customer_d1.rs:902-908` — tenant-scoped key listing SELECT.
-4. `crates/corelink-container/src/customer_d1.rs:982-994` — `INSERT INTO pat` (hash + token_id persisted, plaintext not).
+4. `crates/corelink-container/src/customer_d1.rs:994-1009` — `INSERT INTO pat` column list + VALUES bindings (hash + token_id persisted, plaintext not).
 5. `crates/corelink-container/src/customer_d1.rs:1060-1064` — idempotent tenant-scoped revoke UPDATE (D1 `revoked_at_ms` is the revocation SoT, superseding ADR-0030's "Neon" note).
 6. `crates/corelink-container/src/routes/internal_pat.rs:1-13` — the `/_internal/pat/mint` route + internal-auth gate.
 7. `crates/corelink-container/src/routes/internal_pat.rs:623-631` — the `PatMinted` emit logs a hashed tenant handle + ids/scope, never the plaintext (plaintext never logged/persisted).
