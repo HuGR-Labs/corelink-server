@@ -61,6 +61,190 @@ assert_bad() {
   fi
 }
 
+# --- C10b seed_from GROUNDING cross-check (fix #3) -----------------------------
+# Hermetic git repo so the concept can cite REAL (repo-local) files and C3/C6
+# pass. Two surface FILES exist under the container-src walk: cited_handler.rs is
+# CITED by the concept (grounded -> covered), uncited_handler.rs is named in the
+# concept's seed_from but NEVER cited (self-certifying -> NOT covered). Proves:
+#  POSITIVE  — [C10b] fires and NAMES the uncited file (self-cert rejected);
+#  NEGATIVE  — the SAME run does NOT name the cited file (grounded seed covered);
+#  also exercises the RECURSIVE container-src walk into src/storage/ (a file
+#  dropped there is enumerated -> the storage-subdir enumeration is proven).
+assert_seed_selfcert() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # surface tree the container-src walk enumerates (src/*.rs + src/storage/*.rs).
+    mkdir -p crates/corelink-container/src/storage
+    printf 'fn cited_handler() {}\n'   > crates/corelink-container/src/cited_handler.rs
+    printf 'fn uncited_handler() {}\n' > crates/corelink-container/src/uncited_handler.rs
+    printf 'fn region_lookup() {}\n'   > crates/corelink-container/src/storage/region_map.rs
+
+    mkdir -p docs/knowledge/compliance
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/compliance/x.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+
+    # concept grounds (cites) ONLY cited_handler.rs.
+    cat > docs/knowledge/compliance/x.md <<EOF
+---
+type: "ComplianceControl"
+title: "Seed grounding cross-check (hermetic)"
+description: "cites cited_handler.rs only; the manifest also seeds uncited_handler.rs."
+source_files:
+  - "crates/corelink-container/src/cited_handler.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Seed grounding cross-check (hermetic)
+
+Lead paragraph: the concept grounds only the cited handler.
+
+# How it works
+- the grounded handler (\`crates/corelink-container/src/cited_handler.rs:1\`).
+
+# Invariants
+- the grounded handler stays present (\`crates/corelink-container/src/cited_handler.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/cited_handler.rs:1\` — the ONLY grounded file.
+EOF
+    # manifest seeds BOTH handlers + excludes the storage file (focus the test on
+    # the cited-vs-uncited discrimination). uncited_handler is self-certifying.
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes:
+  - surface: "crates/corelink-container/src/storage/region_map.rs"
+    reason: "fixture: data-table, excluded so the assertion focuses on the cited-vs-uncited seed discrimination."
+candidates:
+  - id: "compliance/x"
+    type: "ComplianceControl"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/cited_handler.rs"
+      - "crates/corelink-container/src/uncited_handler.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.sc_out" 2>&1 || true
+  )
+
+  # POSITIVE: [C10b] fires naming the UNCITED (self-certifying) file.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.sc_out" 2>/dev/null \
+     && grep -q 'uncited_handler.rs' "$tmp/.sc_out" 2>/dev/null; then
+    ok "C10b seed-grounding: uncited seed is self-certifying -> fires [C10b] naming uncited_handler.rs"
+  else
+    miss "C10b seed-grounding positive (no [C10b] naming uncited_handler.rs): $(tail -1 "$tmp/.sc_out" 2>/dev/null)" "C10b-selfcert-pos"
+  fi
+  # NEGATIVE (selectivity): the GROUNDED (cited) seed is covered -> NOT named.
+  # Anchor the grep on the `/cited_handler.rs` path boundary so it does NOT
+  # substring-match `uncited_handler.rs` (which legitimately IS flagged).
+  total=$((total + 1))
+  if ! grep -q '/cited_handler.rs' "$tmp/.sc_out" 2>/dev/null; then
+    ok "C10b seed-grounding: grounded (cited) seed IS covered -> not flagged (cross-check is selective)"
+  else
+    miss "C10b seed-grounding negative: grounded cited_handler.rs was wrongly flagged" "C10b-selfcert-neg"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- C10b storage-subdir RECURSIVE container-src enumeration --------------------
+# A handler dropped in crates/corelink-container/src/storage/ (a subdir) must be
+# enumerated by the recursive container-src walk. Hermetic: the file is seeded by
+# NO concept and has NO exclude -> it MUST surface as a [C10b] silent gap naming
+# the storage/ path. Proves the recursion into src/storage/ (the d1_http/r2_kv/
+# r2_s3/region_map subtree the lead's rglob fix closed) is gated, not skipped.
+assert_storage_subdir_enum() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/storage
+    printf 'fn cited_handler() {}\n'   > crates/corelink-container/src/cited_handler.rs
+    printf 'fn d1_over_http() {}\n'     > crates/corelink-container/src/storage/d1_http.rs
+    mkdir -p docs/knowledge/storage
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [s](/storage/s.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    cat > docs/knowledge/storage/s.md <<EOF
+---
+type: "StorageComponent"
+title: "Storage enum (hermetic)"
+description: "grounds cited_handler.rs only; the storage subdir file is unseeded."
+source_files:
+  - "crates/corelink-container/src/cited_handler.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Storage enum (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the grounded file (\`crates/corelink-container/src/cited_handler.rs:1\`).
+
+# Invariants
+- it stays present (\`crates/corelink-container/src/cited_handler.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/cited_handler.rs:1\` — grounded anchor.
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "storage/s"
+    type: "StorageComponent"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/cited_handler.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.st_out" 2>&1 || true
+  )
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.st_out" 2>/dev/null \
+     && grep -q 'storage/d1_http.rs' "$tmp/.st_out" 2>/dev/null; then
+    ok "C10b storage-subdir: recursive container-src walk enumerates src/storage/d1_http.rs -> [C10b]"
+  else
+    miss "C10b storage-subdir enumeration (no [C10b] naming storage/d1_http.rs): $(tail -1 "$tmp/.st_out" 2>/dev/null)" "C10b-storage-enum"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- C5b: real git two-revision harness ---------------------------------------
 # Builds a temp repo, commits a concept, then a commit that bumps ONLY the
 # checkpoint_sha line (body byte-identical) -> [C5b] MUST fire. Negative control:
@@ -553,6 +737,10 @@ assert_bad C9  C9  --bundle "$FIX/bad/C9"  --manifest "$NONE"
 # Manifest checks need their fixture manifest; isolate C10 from C10b via surface root.
 assert_bad C10  C10  --bundle "$FIX/bad/C10"  --manifest "$FIX/bad/C10/manifest.yaml"  --surface-root "$FIX/bad/C10/empty-surface"
 assert_bad C10b C10b --bundle "$FIX/bad/C10b" --manifest "$FIX/bad/C10b/manifest.yaml" --surface-root "$FIX/bad/C10b/surface"
+# fix #3 (seed_from self-certification grounding cross-check) + the lead's
+# recursive container-src/storage-subdir enumeration — hermetic git harnesses.
+assert_seed_selfcert
+assert_storage_subdir_enum
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then

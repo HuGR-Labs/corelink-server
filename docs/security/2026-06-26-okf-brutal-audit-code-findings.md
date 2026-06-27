@@ -157,3 +157,37 @@ DoS (#R7, fix in flight) and our own gate's bypasses (#R8, fix in flight). The d
 (audit seal, attestation persist+serve, real Stripe re-fingerprint) are tracked deferred launch work; their
 **exploits are closable now by failing honest** (return `VerifiedPartial` for unverified backends) — flagged
 to the Owner as a compliance/legal stakeholder call.
+
+---
+
+## Audit #2 (2026-06-27) — code findings (the wiki/gate fixes landed; these are CODE, for the Owner/code-team)
+
+- **[MED, GDPR] `team_member` PII survives erasure (incomplete D1 erase-set).** Migration `0074_team_member`
+  carries `email_hash` (HMAC of invitee email) + Clerk `user_id`, tenant-keyed, but appears NOWHERE in the
+  DSR erase path (`crates/corelink-container/src/routes/dsr/adapter_d1.rs` erase-set, nor `remaining_rows`).
+  On a tenant erasure, member PII survives AND the D1 verify still returns `CANONICAL_EMPTY` → `VerifiedComplete`
+  attested over surviving PII. Policy-inconsistent: the project's own ratified standard erases
+  `survey_responses.recipient_hash` as tenant-linked PII (`adapter_d1.rs:72-75`), so `email_hash` must be too.
+  Even the "D1 verify-PROVEN" plane has an incomplete table-set (0074 postdates the 2026-06-11 erase-set
+  cold-verify). **Secondary:** NO exhaustive migration-vs-eraseset completeness gate (only a no-overlap/no-retain
+  test), so `pilot_tenants` (0065), `abuse_score_history` (0013) sit unclassified. **Fix:** add `team_member`
+  (+ audit the other tenant-linked tables) to the erase-set + `remaining_rows`; add a completeness gate.
+- **[MED, latent — server-secret-gated] runner-mint binds entitlement to a caller-supplied `owner_tenant`**
+  with no dispatcher→tenant binding, behind the runner_mint key with a SHARED fallback to
+  `CORELINK_INTERNAL_AUTH_KEY` (`worker/src/lib/runner_mint.ts:119-133,147-185`). Leak of EITHER key → mint a
+  cas:rw PAT for ANY runners-entitled tenant (bounded: cas:rw, 90-min TTL, entitled tenants). **Fix:** require
+  the dedicated runner_mint key (no shared fallback) and/or bind `owner_tenant` to the dispatcher.
+- **[MED, latent] admin "dual-approval" is a sham two-person control** — `approver` is an UNVERIFIED arbitrary
+  body string with no ledger/identity lookup (`admin.rs:642-646` `DualApprovalToken::new(id, approver)`); one
+  leaked operator key satisfies "two-person" with any approver string. **Fix:** verify the approver against a
+  real operator identity, or drop the dual-approval claim.
+- **[LOW, latent] event-log DO `/_eventlog/read` has no per-scope gate** (`event_log_do.ts:286-318`) — IF the
+  DO is ever wired (currently UNWIRED, zero callers), any tenant PAT (even cas:read) reads the full event log.
+  Pre-wiring design trap.
+- **[LOW, auth-gated] uncapped `planned` HashSet** (`ratelimit_layer.rs:307`) — one entry per distinct tenant
+  ever seen, never evicted; bounded only by the post-auth tenant boundary. Cap it like the bucket map.
+
+None are externally-reachable script-kiddie chains (team_member requires being the erasing tenant's own member;
+the rest need a leaked server secret or a future wiring step). Audit #2 ALSO confirmed the iteration-1 honesty
+edits are factually correct (backend split = exactly 3 real-rescan / 9 sentinel) and the new-surface sweep
+(Bazel/Turbo/sccache/admin/introspect/webhooks) found **0 externally-reachable chains** — all wired-blocked.

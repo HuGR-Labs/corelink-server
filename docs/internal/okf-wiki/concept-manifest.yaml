@@ -67,13 +67,43 @@ excludes:
     reason: "npm manifest — declarative dependency/config metadata."
   - surface: "**/tsconfig.json"
     reason: "TypeScript compiler config — tooling config, no architecture concept."
+  # ---- App-internal glue helpers (C10b file-granular; seed_from self-cert closed) ----
+  # These apps/ FILE surfaces were named in a concept's seed_from but the concept
+  # doc never cites/declares them (so the now-strict seed_from grounding cross-check
+  # — fix #3, audit-round R — no longer counts them as covered). They are genuine
+  # app-internal glue (D1 helpers, metadata/internal-fetch helpers, ingest/cron,
+  # security-header middleware): operational plumbing under an already-narrated
+  # parent concept, not separately load-bearing architecture surfaces. Excluded with
+  # reason (the sanctioned alternative to a per-file cite) rather than left as a
+  # silent gap; their parent concepts (flows/signup-auto-provision,
+  # ops/audit-analytics-plane, security/posture-overview) carry the narrative.
+  - surface: "apps/signup-worker/src/lib/analytics-server.ts"
+    reason: "Server-side analytics emit helper (signup-worker lib glue) — plumbing under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/signup-worker/src/lib/clerk-metadata.ts"
+    reason: "Clerk private/public-metadata read/write helper (signup-worker lib glue) — plumbing under flows/signup-auto-provision; no standalone narrative."
+  - surface: "apps/signup-worker/src/lib/corelink-internal.ts"
+    reason: "Internal-auth fetch helper to the CoreLink container (signup-worker lib glue) — plumbing under flows/signup-auto-provision; no standalone narrative."
+  - surface: "apps/signup-worker/src/lib/d1.ts"
+    reason: "D1 query helper (signup-worker lib glue) — plumbing under flows/signup-auto-provision; no standalone architecture narrative."
+  - surface: "apps/signup-worker/src/lib/erase-auth-key.ts"
+    reason: "Auth-key erasure helper (signup-worker lib glue) — plumbing under compliance/dsr-edge-crons; no standalone narrative."
+  - surface: "apps/cas-worker/src/middleware/analytics.ts"
+    reason: "CAS-worker analytics middleware (request-tap glue) — plumbing under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/analytics-worker/src/cron/weekly-email.ts"
+    reason: "Weekly-email cron handler (analytics-worker) — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/analytics-worker/src/index.ts"
+    reason: "analytics-worker entrypoint/router wiring — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/analytics-worker/src/ingest.ts"
+    reason: "analytics-worker ingest handler — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/analytics-worker/src/security-headers.ts"
+    reason: "analytics-worker security-header middleware (mirror of signup-worker's, which security/posture-overview cites) — boilerplate, no standalone narrative."
   # ---- Container route-subdir test modules (C10b is now RECURSIVE over routes/) ----
   # The recursive routes/**/*.rs enumeration surfaces the route subdirs' inline test
   # modules. These are test-only (genuine non-handlers); the REAL handlers in the same
   # subdirs are covered by their parent concept's seed_from (compliance/dsr-erasure,
   # ops/audit-analytics-plane).
   - surface: "crates/corelink-container/src/routes/**/tests_*.rs"
-    reason: "Inline test modules under a route subdir (audit_export/audit_analytics) — test-only, not a load-bearing handler."
+    reason: "Inline test modules under a route subdir (audit_export/audit_analytics) — test-only, not a load-bearing handler. ANTI-SHADOW (fix #5): the `tests_` BASENAME PREFIX is, by repo convention, exclusive to inline-test modules — no production route handler is named `tests_*.rs` (handlers are `<noun>.rs` / `handler*.rs`), AND `_is_test_cite` independently classifies the same prefix as test, so this exclude cannot hide a real handler. Accepted residual: a future handler deliberately misnamed `tests_foo.rs` would be masked — caught by review (the same place a handler hidden in a test file is caught) and by the convention that handlers are never `tests_`-prefixed."
 
 candidates:
   # ---- ARCHITECTURE (38) ----
@@ -94,7 +124,7 @@ candidates:
     title: "Rust container compute plane"
     status: "active"
     source_cluster: "planes"
-    seed_from: ["crates/corelink-container/src/main.rs", "crates/corelink-container/src/routes.rs", "crates/corelink-container/src/lib.rs"]
+    seed_from: ["crates/corelink-container/src/main.rs", "crates/corelink-container/src/routes.rs", "crates/corelink-container/src/lib.rs", "crates/corelink-container/src/storage/r2_kv.rs"]
   - id: "planes/request-flow"
     type: "Plane"
     title: "Worker -> DO -> Container request flow"
@@ -172,7 +202,7 @@ candidates:
     title: "R2 CAS bucket topology"
     status: "active"
     source_cluster: "storage"
-    seed_from: ["crates/corelink-container/src/storage.rs"]
+    seed_from: ["crates/corelink-container/src/storage.rs", "crates/corelink-container/src/storage/r2_s3.rs"]
   - id: "storage/r2-ac-regional"
     type: "StorageComponent"
     title: "R2 AC x5 regional buckets"
@@ -190,7 +220,7 @@ candidates:
     title: "D1 CONFIG_DB"
     status: "active"
     source_cluster: "storage"
-    seed_from: ["crates/corelink-config-do", "crates/corelink-container/src/customer_d1.rs"]
+    seed_from: ["crates/corelink-config-do", "crates/corelink-container/src/customer_d1.rs", "crates/corelink-container/src/storage/d1_http.rs"]
   - id: "storage/cas-hot-path-latency"
     type: "StorageComponent"
     title: "CAS hot-path D1-over-HTTP latency"
@@ -702,7 +732,7 @@ candidates:
     title: "ADR S14 001 multi region terraform module"
     status: "active"
     source_cluster: "adr"
-    seed_from: ["specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md", "apps/migrate-single-to-multi-region/src/main.rs"]
+    seed_from: ["specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md", "apps/migrate-single-to-multi-region/src/main.rs", "crates/corelink-container/src/storage/region_map.rs"]
   - id: "adr/adr-s14-002-region-pinning-enforcement"
     type: "ADR"
     title: "ADR S14 002 region pinning enforcement"

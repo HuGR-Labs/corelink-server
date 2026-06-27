@@ -91,17 +91,34 @@ this table via a contract revision so the taxonomy stays curated.
    MAY also point to ADRs (`/adr/adr-0033.md`), other concepts, or `references/` artifacts.
 5. Inline code-anchor format: `crates/foo/src/bar.rs:42` or `:42-58`. The cited file MUST exist and the
    line(s) MUST be within the file's bounds at `checkpoint_sha`.
-6. **Cite the line that PERFORMS the check, never a line that DELEGATES to an uncited callee
+6. **Cite the in-repo LEAF enforcer, never a line that DELEGATES to an uncited callee
    (AUTHORING RULE — closes the C5 "callee-swap" bypass).** C5 freshness is mechanical: it re-reads the
    cited *lines*, it cannot follow a function call. So if a concept anchors an invariant on a line that
    merely *calls* a helper, and the real enforcement lives in that helper in an **uncited** file, an
    author can rewrite the helper (changing the behaviour) while the cited call line stays byte-identical
-   — C5 still reports "fresh." Therefore: **an invariant's inline cite MUST point at the line that
-   executes the check.** When the enforcement is in a helper, cite (and add to `source_files`) the
-   helper's executed line — the delegating call site MAY be cited *in addition*, never *instead*.
-   (Worked example: the PAT moat's HMAC fast-reject delegates from `adapter_pat.rs` to
-   `verify_hmac_only_multi` in `crates/corelink-pat/src/verify.rs` — the concept cites the verify.rs
-   line that runs `verify_hmac_sig_multi`, not only the adapter call site.)
+   — C5 still reports "fresh." Therefore: **an invariant's inline anchor cite MUST point at the in-repo
+   LEAF enforcer — the line that PERFORMS the check**, where "leaf" = the deepest line in *our own* code
+   on the call chain; an external-crate call (e.g. `subtle::ct_eq`, `hmac`) at that line IS the leaf (we
+   do not chase a cite into a third-party dependency we do not version-pin in `source_files`). Every file
+   on the full verify chain SHOULD appear in `source_files` (and so be C5-gated); the delegating /
+   intermediate-wrapper call sites MAY be cited *in addition*, never *instead* of the leaf.
+   (Worked example: the PAT moat's HMAC fast-reject delegates `adapter_pat.rs` → `verify_hmac_only_multi`
+   in `crates/corelink-pat/src/verify.rs` → `verify_hmac_sig_multi` in `crates/corelink-pat/src/sig.rs`.
+   `verify_hmac_only_multi` is ITSELF a wrapper (it just calls onward), so the leaf is one hop deeper: the
+   `ct_eq` constant-time fold in `sig.rs`. The concept's invariant anchors on the `sig.rs` fold; verify.rs
+   and the adapter call site are cited only as call-chain context — audit #2 corrected an earlier draft
+   that stopped one hop shallow at the verify.rs wrapper.)
+
+   **ACCEPTED STRUCTURAL RESIDUAL of content-anchoring (callee-swap, audit #2).** Content-anchoring is a
+   line-content oracle; it fundamentally **cannot follow a call graph**. So a cite can ALWAYS be authored
+   one call shallower than the real enforcer (anchor on a wrapper that just delegates), and C5 cannot
+   detect it — the wrapper line is byte-stable while the leaf it calls is rewritten. This is not a bug to
+   "fix" mechanically (it is undecidable without whole-program call-graph following, which C3's
+   no-rename-follow / declared-dependency stance deliberately rejects); it is an **accepted structural
+   residual**. The mitigations are (a) the hard authoring rule above (anchor on the in-repo leaf), (b)
+   `source_files` SHOULD carry every file on the verify chain so C5 gates each, and (c) review catches a
+   wrapper-anchored invariant. The residual is review-caught, in the same family as the C5b
+   cosmetic-edit / rename-reset residuals (§4).
 7. **GENERATED concepts** carry a top-of-body marker: `> GENERATED — do not hand-edit. Reconcile via the updater.`
 
 ---

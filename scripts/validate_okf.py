@@ -391,18 +391,26 @@ def _block_cite_paths(text: str) -> list[str]:
 def _is_test_cite(path: str) -> bool:
     """True iff a cited path points at TEST code, not a runtime enforcer.
 
-    Rust: a `*_test.rs` / `*_tests.rs` / `tests_*.rs` file, or anything under a
-    `tests/` directory. TS/JS: `*.test.ts` / `*.spec.ts` or anything under a
-    `__tests__/` directory. C6c uses this to forbid grounding an invariant SOLELY
-    on a test (a test can be neutered later; an invariant must point at the
-    non-test code that enforces it). Tests remain valid as ADDITIONAL cites.
+    Rust — any of: a `tests/` directory anywhere; a file ending `test.rs` /
+    `tests.rs` (covers `foo_test.rs`, `foo_tests.rs`, the underscore-less
+    `footest.rs`/`footests.rs`, and the bare `tests.rs` module file); a
+    `tests_*.rs` file (e.g. `tests_helpers.rs`). TS/JS — `*.test.ts` / `*.spec.ts`,
+    or anything under a `__tests__/` directory. C6c uses this to forbid grounding
+    an invariant SOLELY on a test (a test can be neutered later; an invariant must
+    point at the non-test code that enforces it). Tests remain valid as ADDITIONAL
+    cites. (fix #4 widened the Rust suffix set so `tests.rs`/`*tests.rs`/`*test.rs`
+    inline-test modules can't masquerade as a non-test enforcer.)
     """
     p = path.lower()
     base = p.rsplit("/", 1)[-1]
     if p.startswith("tests/") or "/tests/" in p or "/__tests__/" in p:
         return True
-    if base.endswith("_test.rs") or base.endswith("_tests.rs"):
+    # Rust: any *.rs whose stem ends in `test` or `tests` (with or without a
+    # leading underscore separator) — `foo_test.rs`, `foo_tests.rs`, `footest.rs`,
+    # `footests.rs`, and the bare `test.rs`/`tests.rs` module files.
+    if base.endswith("test.rs") or base.endswith("tests.rs"):
         return True
+    # Rust: a `tests_*.rs` inline-test module (the prefix form).
     if base.startswith("tests_") and base.endswith(".rs"):
         return True
     if base.endswith(".test.ts") or base.endswith(".spec.ts"):
@@ -574,12 +582,16 @@ def run_checks(args, git: Git, fails: Failures):
         # C6c: per-claim grounding under `# How it works` and `# Invariants`
         #      (relaxed for ADRs per §4.1)
         if not c.is_adr:
-            # A TestStrategy / `testing/` concept's SUBJECT is the test harness, so
-            # grounding an invariant on a test path is correct there — the test IS
-            # the enforcer (parallel to C6c being relaxed for ADRs per §4.1). The
-            # test-only ban applies only to NON-testing concepts, where a sole test
-            # cite is the neuter-the-test bypass fix #5 closes.
-            is_testing = (c.type == "TestStrategy") or c.concept_id.startswith("testing/")
+            # A `testing/` concept's SUBJECT is the test harness, so grounding an
+            # invariant on a test path is correct there — the test IS the enforcer
+            # (parallel to C6c being relaxed for ADRs per §4.1). The exemption is
+            # FILE-DIR based (fix #4): ONLY a concept whose doc physically lives
+            # under `docs/knowledge/testing/` is exempt. The old `type ==
+            # "TestStrategy"` escape was a taxonomy dodge — any concept anywhere
+            # (e.g. under auth/) could self-declare `type: TestStrategy` and shed
+            # the non-test-enforcer requirement. Anchoring on the file's directory
+            # makes the exemption un-spoofable from frontmatter.
+            is_testing = (c.rel == "testing" or c.rel.startswith("testing/"))
             secs = _sections(c.body)
             for title in ("how it works", "invariants"):
                 if title in secs:
@@ -771,11 +783,69 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         return
 
     concept_ids = {c.concept_id for c in concepts}
+    concept_by_id = {c.concept_id: c for c in concepts}
+
+    def _concept_grounds(c: "Concept", seed: str) -> bool:
+        """True iff concept `c` ACTUALLY grounds the surface `seed` — i.e. `seed`
+        appears in the concept's resolved `source_files` OR in its `# Citations`
+        (the inline-cited files), under one of these GENUINE-coverage relations:
+
+          (a) verbatim — `seed` is declared/cited as-is;
+          (b) `seed` is a directory containing a declared/cited path;
+          (c) `seed` is a file/dir under a declared/cited directory;
+          (d) Rust module-parent — `seed` is `X/sub.rs` and the concept grounds
+              the sibling module-root file `X.rs` (in Rust `X.rs` is the parent
+              `mod` of every `X/*.rs`; citing the parent IS grounding the module);
+          (e) crate-cluster ADOPTION — a `type: CrateCluster` concept that grounds
+              a crate directory adopts the whole crate as its narrative home, so a
+              file/dir under that crate is covered even without a per-file cite
+              (the §1.1 taxonomy assigns `crates/` to "the 8 crate clusters"; a
+              cluster's job is breadth-of-narrative, not file-granular citation).
+
+        This is the anti-self-certification check (fix #3): a `seed_from` entry
+        counts as coverage ONLY when the concept it names really explains the
+        surface — a manifest can no longer silently "cover" a file by listing it
+        under a concept that never mentions it (the silent-gap bypass). Relations
+        (d)/(e) are principled coverage, NOT a weakening: (d) is the Rust module
+        system, (e) is the taxonomy-sanctioned cluster model.
+        """
+        grounded = set(c.source_files) | set(c.cited_files)
+        s = seed.rstrip("/")
+        is_cluster = (c.type == "CrateCluster")
+        for g in grounded:
+            gn = g.rstrip("/")
+            if s == gn:
+                return True
+            # (b) seed is a directory that contains a grounded path
+            if gn == s or gn.startswith(s + "/"):
+                return True
+            # (c) seed lives under a grounded directory
+            if s.startswith(gn + "/"):
+                return True
+            # (d) Rust module-parent: grounded `X.rs` is the module root of `X/sub.rs`
+            if gn.endswith(".rs"):
+                mod_dir = gn[:-3] + "/"
+                if s.startswith(mod_dir):
+                    return True
+            # (e) crate-cluster adoption: a CrateCluster grounding a crate dir
+            #     adopts everything under that crate (its src files + subdirs).
+            if is_cluster:
+                m = re.match(r"^(crates/[^/]+)/", gn + "/")
+                if m:
+                    crate = m.group(1)
+                    if s == crate or s.startswith(crate + "/"):
+                        return True
+        return False
+
     # Real W-MANIFEST schema: top-level `candidates:` (id/type/title/status/
     # source_cluster/seed_from) + `excludes:` (surface/reason). A candidate maps
     # to repo surface via its `seed_from` paths; C10b coverage = seed_from ∪ excludes.
+    # A `seed_from` path counts as COVERAGE only when the candidate's concept doc
+    # actually GROUNDS that path (declares/cites it) — a seed naming a concept that
+    # doesn't mention the file is self-certifying and is REJECTED (fix #3).
     entries = data.get("candidates") or data.get("concepts") or []
-    seed_paths: set[str] = set()
+    seed_paths: set[str] = set()           # every declared seed (for diagnostics)
+    grounded_seed_paths: set[str] = set()  # seeds a real concept grounds — THESE cover
     for e in entries:
         if not isinstance(e, dict):
             continue
@@ -783,8 +853,15 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         status = (e.get("status") or "").strip().lower()
         if status == "planned":
             args._planned_ids.add(cid)
+        c = concept_by_id.get(cid)
         for s in (e.get("seed_from") or e.get("covers") or []):
-            seed_paths.add(str(s))
+            sp = str(s)
+            seed_paths.add(sp)
+            # The seed grounds coverage iff its declaring concept exists AND
+            # actually declares/cites the path. A planned (doc-less) candidate's
+            # seed cannot self-certify coverage — there is no concept to ground it.
+            if c is not None and _concept_grounds(c, sp):
+                grounded_seed_paths.add(sp)
         # C10: active candidate must have a doc or a deferred marker (deferred
         # docs are scanned as concepts, so concept_ids already covers both).
         if status == "active" and cid:
@@ -813,12 +890,34 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         return False
 
     def is_covered(rel: str, is_dir: bool) -> bool:
-        if rel in seed_paths:
-            return True
-        # a directory surface (a crate) is covered if any seed_from path is the
-        # dir itself or lives under it
-        if is_dir and any(s == rel or s.startswith(rel.rstrip("/") + "/") for s in seed_paths):
-            return True
+        # --- DIRECTORY (crate) surface: coverage = reviewed cluster MEMBERSHIP ---
+        # A crate-dir surface is covered if ANY seed_from path is the dir itself or
+        # lives under it. Crate-level membership is the curated, review-gated
+        # cluster assignment (taxonomy §1.1: `crates/` = "the 8 crate clusters"),
+        # so it self-certifies at the COARSE crate granularity by design — the
+        # nightly C-REV reverse-coverage WARN is what pressures source_files
+        # completeness WITHIN a member crate. Fix #3's anti-self-certification is a
+        # FILE-granular guard (a handler FILE slipped under a concept that never
+        # mentions it), so it does NOT apply to a whole-crate directory surface.
+        if is_dir:
+            if any(s == rel or s.startswith(rel.rstrip("/") + "/") for s in seed_paths):
+                return True
+        else:
+            # --- FILE surface: coverage requires GENUINE grounding (fix #3) -------
+            # A file counts as covered ONLY by a seed whose declaring concept
+            # actually grounds it (`grounded_seed_paths`, not the raw seed set): a
+            # manifest entry naming a FILE under a concept that never cites/declares
+            # it is self-certifying and is NOT coverage — closing the silent-gap
+            # bypass where a load-bearing handler hides under an unrelated concept.
+            if rel in grounded_seed_paths:
+                return True
+            # a file is also covered when a GROUNDED directory seed contains it
+            # (the concept that adopts the dir grounds the files beneath it).
+            if any(
+                (s.rstrip("/") != "" and rel.startswith(s.rstrip("/") + "/"))
+                for s in grounded_seed_paths
+            ):
+                return True
         for ex in excludes:
             exn = ex.rstrip("/")
             if rel == exn or rel.startswith(exn + "/"):
@@ -841,12 +940,15 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(routes_dir.rglob("*.rs"))]
     # The container crate ROOT, file-granular: a handler dropped directly in
     # crates/corelink-container/src/ (sibling to webhook.rs / native_pat_gate.rs)
-    # is invisible if the crate is gated dir-granular only. Enumerate each src/*.rs
-    # (subdirs like routes/ are handled above); non-handlers (lib.rs is the crate
-    # wiring root) are covered via the manifest like the rest.
+    # is invisible if the crate is gated dir-granular only. Enumerate each
+    # src/**/*.rs RECURSIVELY — a non-recursive glob left the src/storage/ subtree
+    # (d1_http/r2_kv/r2_s3/region_map) silently un-gated (audit #2). routes/ is
+    # also under src/ but already enumerated above; the dedup (dict.fromkeys on the
+    # surface list) collapses the overlap. non-handlers (lib.rs is the crate wiring
+    # root) are covered via the manifest like the rest.
     container_src = surface_root / "crates" / "corelink-container" / "src"
     if container_src.is_dir():
-        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(container_src.glob("*.rs"))]
+        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(container_src.rglob("*.rs"))]
     crates_dir = surface_root / "crates"
     if crates_dir.is_dir():
         surface += [(p.relative_to(surface_root).as_posix(), True) for p in sorted(crates_dir.iterdir()) if p.is_dir()]

@@ -7,7 +7,8 @@ source_files:
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
   - "crates/corelink-pat/src/verify.rs"
-checkpoint_sha: "8924bd84e98462a309205d15a3f8747acc997d62"
+  - "crates/corelink-pat/src/sig.rs"
+checkpoint_sha: "09f92d5193f5a529e18c8f65c3b5a0c57bb430a1"
 provenance: "AUTHORED"
 tags: ["flows", "auth", "pat", "argon2id", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -27,7 +28,7 @@ This is the data-plane possession gate and the second of CoreLink's 2-level PAT 
 2. Verify-cache fast path: a non-expired cached entry returns immediately, skipping Argon2id — but the cached tenant must still equal the claimed tenant or it is rejected like a miss (`crates/corelink-container/src/native_pat_gate.rs:167-176`).
 3. Single-flight on miss: concurrent misses for the same fingerprint coalesce onto ONE verification via a fixed shard array, with a double-checked cache read after the lock, so a same-PAT burst cannot stampede D1 / the Argon2id pool into 503s (`crates/corelink-container/src/native_pat_gate.rs:182-192`).
 4. The full pipeline runs through `PatVerifier::verify` -> `verify_capability` (`crates/corelink-container/src/native_pat_gate.rs:196-196`; `crates/corelink-container/src/adapter_pat.rs:731-735`; `crates/corelink-container/src/adapter_pat.rs:534-537`).
-5. Stage 1 — HMAC fast-reject (pre-D1): the `verify_capability` call site rejects a forged token as `InvalidPat` with NO D1 round-trip (`crates/corelink-container/src/adapter_pat.rs:538-543`), but that line DELEGATES — the HMAC check itself EXECUTES in the callee `verify_hmac_only_multi`, which parses the plaintext then runs `verify_hmac_sig_multi` over the signing-key overlap set and fails CLOSED (`crates/corelink-pat/src/verify.rs:119-125`). (Contract §3 authoring rule: ground on the executed callee, not only the delegating adapter line.)
+5. Stage 1 — HMAC fast-reject (pre-D1): the `verify_capability` call site rejects a forged token as `InvalidPat` with NO D1 round-trip (`crates/corelink-container/src/adapter_pat.rs:538-543`), but that line DELEGATES — and so does its callee: `verify_hmac_only_multi` parses the plaintext then itself CALLS `verify_hmac_sig_multi` (`crates/corelink-pat/src/verify.rs:119-125`). The check is PERFORMED one hop deeper, at the in-repo LEAF: the constant-time fold `matched |= expected.ct_eq(sig_bytes)` over the signing-key overlap set, fail-CLOSED `InvalidPat` on no match (`crates/corelink-pat/src/sig.rs:108-117`). (Contract §3 authoring rule: ground on the in-repo LEAF that performs the check — the `ct_eq` fold — not the delegating wrappers above it.)
 6. Stage 2 — D1 lookup by the non-secret `token_id`, expiry-filtered in SQL; an unknown/expired/revoked id runs a bounded dummy Argon2id burn for timing parity, then returns `InvalidPat` (`crates/corelink-container/src/adapter_pat.rs:545-599`).
 7. Stage 3 — Argon2id: the secret segment is verified against the stored PHC hash on a blocking thread, gated by a global concurrency permit AND a per-tenant sub-permit (consistent global->per-tenant order); an acquire-timeout fails closed as `Backend` (`crates/corelink-container/src/adapter_pat.rs:602-650`).
 8. Stage 4 — scope gate (fail-closed): no cache-read capability -> `InvalidPat`; otherwise the read/write split is surfaced — the executed scope allowlists are `matches!(t, "cas:rw" | "cas:r" | "cas:w" | "read-write" | "read-only" | "admin")` (read) and `matches!(t, "cas:rw" | "cas:w" | "read-write" | "admin")` (write) (`crates/corelink-container/src/adapter_pat.rs:652-660`; `crates/corelink-container/src/scope.rs:77`; `crates/corelink-container/src/scope.rs:94`).
@@ -36,7 +37,7 @@ This is the data-plane possession gate and the second of CoreLink's 2-level PAT 
 
 # Invariants
 
-- A token that fails the HMAC layer NEVER reaches Argon2id — the rejection is the `verify_hmac_sig_multi` failure in the executed callee (`crates/corelink-pat/src/verify.rs:119-125`), reached from the pre-D1, pre-permit call site (`crates/corelink-container/src/adapter_pat.rs:538-543`).
+- A token that fails the HMAC layer NEVER reaches Argon2id — the rejection is the in-repo LEAF `ct_eq` fold that PERFORMS the constant-time compare and returns `InvalidPat` on no match (`crates/corelink-pat/src/sig.rs:108-117`), reached via `verify_hmac_only_multi` (`crates/corelink-pat/src/verify.rs:119-125`) from the pre-D1, pre-permit call site (`crates/corelink-container/src/adapter_pat.rs:538-543`).
 - The D1 row lookup runs BEFORE the expensive Argon2id, so a valid-HMAC token for a nonexistent/expired/revoked `token_id` is decided cheaply and only hits the bounded dummy burn (`crates/corelink-container/src/adapter_pat.rs:545-599`).
 - Argon2id concurrency is double-bounded (global permit + per-tenant sub-permit) so neither a global flood nor one tenant flooding distinct PATs can drain the pool; saturation fails closed 503, never serves (`crates/corelink-container/src/adapter_pat.rs:602-650`).
 - The scope gate is fail-closed: an empty/absent scope grants nothing — the executed `tokens(scope).any(|t| matches!(t, …))` allowlist returns `false` on no matching token (`crates/corelink-container/src/adapter_pat.rs:652-660`; `crates/corelink-container/src/scope.rs:77`).
@@ -56,7 +57,8 @@ This is the data-plane possession gate and the second of CoreLink's 2-level PAT 
 3. `crates/corelink-container/src/native_pat_gate.rs:218-257` — cache get/put eviction and the SHA-256 fingerprint helper.
 4. `crates/corelink-container/src/native_pat_gate.rs:247-251` — uniform 401 for every PAT-rejection condition (no oracle).
 5. `crates/corelink-container/src/adapter_pat.rs:534-660` — `verify_capability`: HMAC fast-reject -> D1 lookup (+ bounded dummy burn) -> bounded Argon2id -> scope gate (the HMAC line at `:538-543` delegates to the callee below).
-5b. `crates/corelink-pat/src/verify.rs:119-125` — the executed HMAC verify `verify_hmac_only_multi` (parse + `verify_hmac_sig_multi` over the overlap key set, fail-CLOSED): the line that PERFORMS the Stage-1 fast-reject the adapter delegates to (contract §3 authoring rule).
+5b. `crates/corelink-pat/src/verify.rs:119-125` — `verify_hmac_only_multi` (parse + CALL `verify_hmac_sig_multi` over the overlap key set): the intermediate call-chain hop — itself a wrapper, NOT the leaf — between the adapter call site and the sig.rs enforcer.
+5c. `crates/corelink-pat/src/sig.rs:108-117` — the in-repo LEAF enforcer: the constant-time fold `matched |= expected.ct_eq(sig_bytes)` over the overlap key set + the fail-CLOSED `InvalidPat` on no match — the line that ACTUALLY PERFORMS the Stage-1 fast-reject (`ct_eq` = `subtle::ConstantTimeEq`, external-crate call, so this is the deepest line in our own code; contract §3 authoring rule).
 6. `crates/corelink-container/src/adapter_pat.rs:731-735` — `verify`: thin wrapper returning the owning tenant id.
 7. `crates/corelink-container/src/scope.rs:77` — the executed `requires_cache_read` allowlist `matches!(t, "cas:rw" | "cas:r" | "cas:w" | "read-write" | "read-only" | "admin")` (fail-closed read capability; the fn-sig is `:73`).
 8. `crates/corelink-container/src/scope.rs:94` — the executed `requires_cache_write` allowlist `matches!(t, "cas:rw" | "cas:w" | "read-write" | "admin")` (the write-capability split; the fn-sig is `:93`).

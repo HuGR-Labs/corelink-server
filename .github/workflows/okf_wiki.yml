@@ -14,15 +14,21 @@ on:
   pull_request:
     paths:
       - 'docs/knowledge/**'
+      - 'docs/internal/okf-wiki/**'   # the oracle itself (manifest + contract) — editing it must re-run the gate
       - 'crates/**'
       - 'specs/**'
       - 'worker/**'
       - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'tests/okf/**'
   push:
     branches: [main]
     paths:
       - 'docs/knowledge/**'
+      - 'docs/internal/okf-wiki/**'
+      - 'crates/**'
+      - 'worker/**'
+      - 'apps/**'
       - 'scripts/validate_okf.py'
 
 permissions:
