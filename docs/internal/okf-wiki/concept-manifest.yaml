@@ -67,36 +67,38 @@ excludes:
     reason: "npm manifest — declarative dependency/config metadata."
   - surface: "**/tsconfig.json"
     reason: "TypeScript compiler config — tooling config, no architecture concept."
-  # ---- App-internal glue helpers (C10b file-granular; seed_from self-cert closed) ----
-  # These apps/ FILE surfaces were named in a concept's seed_from but the concept
-  # doc never cites/declares them (so the now-strict seed_from grounding cross-check
-  # — fix #3, audit-round R — no longer counts them as covered). They are genuine
-  # app-internal glue (D1 helpers, metadata/internal-fetch helpers, ingest/cron,
-  # security-header middleware): operational plumbing under an already-narrated
-  # parent concept, not separately load-bearing architecture surfaces. Excluded with
-  # reason (the sanctioned alternative to a per-file cite) rather than left as a
-  # silent gap; their parent concepts (flows/signup-auto-provision,
-  # ops/audit-analytics-plane, security/posture-overview) carry the narrative.
+  # ---- App-internal glue helpers (C10b file-granular) ----
+  # gate v5 (audit #3 HIGH #5) UNDID the v4 massaging: three of these apps/ FILE
+  # surfaces were LOAD-BEARING enforcers wrongly labeled "plumbing" and are now
+  # AUTHORED (declared+cited in a concept's source_files), NOT excluded:
+  #   - apps/signup-worker/src/lib/erase-auth-key.ts  -> compliance/dsr-edge-crons
+  #     (the per-consumer erase-auth-key split, resolveEraseAuthKey);
+  #   - apps/signup-worker/src/lib/d1.ts              -> flows/signup-auto-provision
+  #     (tenant_state='active' provision, PAT shown_once_consumed, email_hash seat
+  #      isolation);
+  #   - apps/signup-worker/src/lib/clerk-metadata.ts  -> flows/signup-auto-provision
+  #     (public-vs-private metadata secret-classification boundary);
+  #   - apps/analytics-worker/src/ingest.ts           -> ops/audit-analytics-plane
+  #     (the edge ingest privacy gate forbidding email/IP + constant-time key auth).
+  # The remainder below are GENUINELY-trivial app-internal glue (thin typed HTTP
+  # clients, router wiring, request-tap middleware, a static security-header bag):
+  # no standalone enforcement, narrated by an already-existing parent concept.
+  # Excluded with reason (the sanctioned alternative to a per-file cite) rather
+  # than left as a silent gap. Each was re-examined in gate v5; corelink-internal.ts
+  # and security-headers.ts re-confirmed trivial (a mint-proxy that defers all
+  # enforcement to the container; a static header table).
   - surface: "apps/signup-worker/src/lib/analytics-server.ts"
     reason: "Server-side analytics emit helper (signup-worker lib glue) — plumbing under ops/audit-analytics-plane; no standalone architecture narrative."
-  - surface: "apps/signup-worker/src/lib/clerk-metadata.ts"
-    reason: "Clerk private/public-metadata read/write helper (signup-worker lib glue) — plumbing under flows/signup-auto-provision; no standalone narrative."
   - surface: "apps/signup-worker/src/lib/corelink-internal.ts"
-    reason: "Internal-auth fetch helper to the CoreLink container (signup-worker lib glue) — plumbing under flows/signup-auto-provision; no standalone narrative."
-  - surface: "apps/signup-worker/src/lib/d1.ts"
-    reason: "D1 query helper (signup-worker lib glue) — plumbing under flows/signup-auto-provision; no standalone architecture narrative."
-  - surface: "apps/signup-worker/src/lib/erase-auth-key.ts"
-    reason: "Auth-key erasure helper (signup-worker lib glue) — plumbing under compliance/dsr-edge-crons; no standalone narrative."
+    reason: "Thin typed HTTP client for the container's /_internal/pat/mint (signup-worker lib glue) — it only forwards the shared internal-auth secret; ALL mint enforcement (HMAC, Argon2id, scope, D1 write) lives in the container (auth/* concepts). Re-examined gate v5: genuinely trivial, no standalone enforcement."
   - surface: "apps/cas-worker/src/middleware/analytics.ts"
     reason: "CAS-worker analytics middleware (request-tap glue) — plumbing under ops/audit-analytics-plane; no standalone architecture narrative."
   - surface: "apps/analytics-worker/src/cron/weekly-email.ts"
     reason: "Weekly-email cron handler (analytics-worker) — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
   - surface: "apps/analytics-worker/src/index.ts"
     reason: "analytics-worker entrypoint/router wiring — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
-  - surface: "apps/analytics-worker/src/ingest.ts"
-    reason: "analytics-worker ingest handler — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
   - surface: "apps/analytics-worker/src/security-headers.ts"
-    reason: "analytics-worker security-header middleware (mirror of signup-worker's, which security/posture-overview cites) — boilerplate, no standalone narrative."
+    reason: "analytics-worker security-header middleware (mirror of signup-worker's, which security/posture-overview cites) — a static header bag + merge helper, no standalone enforcement. Re-examined gate v5: genuinely trivial/declarative."
   # ---- Container route-subdir test modules (C10b is now RECURSIVE over routes/) ----
   # The recursive routes/**/*.rs enumeration surfaces the route subdirs' inline test
   # modules. These are test-only (genuine non-handlers); the REAL handlers in the same

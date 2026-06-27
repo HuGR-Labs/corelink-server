@@ -15,7 +15,8 @@ source_files:
   - "tools/cli/src/commands/verify_ndjson_http.rs"
   - "docs/cli/audit-export.md"
   - "crates/corelink-container/src/routes/dsr/audit.rs"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+  - "apps/analytics-worker/src/ingest.ts"
+checkpoint_sha: "d0e4f8bd669cb1e982f7511de9a895c602a5ee45"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -54,11 +55,15 @@ another tenant's rows.
 - The CLI HTTP-aware mode streams directly off the wire and watches for the abort trailer `docs/cli/audit-export.md:33-55`.
 - Analytics routes (event-count, timeline) ship their router (`crates/corelink-container/src/routes/audit_analytics/state.rs:80`) + per-tenant rate-limit config (`crates/corelink-container/src/routes/audit_analytics/state.rs:63`) enforced by `rate_limit_check` (`crates/corelink-container/src/routes/audit_analytics/rate_limit.rs:99`).
 - Each analytics handler runs the native PAT possession gate before any data access `crates/corelink-container/src/routes/audit_analytics.rs:118`.
+- The product-analytics EDGE collector (`POST /v1/event` on the standalone analytics-worker) is the ingest tap that feeds this plane's D1 store; it authenticates each request two ways — a CORS `Origin` allow-list for browsers, or a constant-time-compared `X-Corelink-Ingest-Key` for trusted servers — and rejects anything matching neither with 403 (`apps/analytics-worker/src/ingest.ts:114-136`, `apps/analytics-worker/src/ingest.ts:127-136`).
+- The ingest validator enforces a HARD privacy gate at the edge so no PII reaches the analytics store: a forbidden `email`/`ip`/`ip_address`/`remote_addr` key anywhere in an event's `properties` is rejected, the `event_name` must be in a closed allow-list, and a single bad event never poisons the batch (`apps/analytics-worker/src/ingest.ts:85-112`, `apps/analytics-worker/src/ingest.ts:104-107`).
 
 # Invariants
 
 - The export audit row is emitted fail-CLOSED — a sink `Err` aborts with 503 before streaming `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105`.
 - Analytics data access is gated per-tenant: the PAT gate rejects forged/wrong-tenant (401) or verifier fault (503) before reads `crates/corelink-container/src/routes/audit_analytics.rs:118`.
+- The edge ingest tap is authenticated, never anonymous: an event with neither an allow-listed `Origin` nor a correct constant-time-matched `X-Corelink-Ingest-Key` is rejected 403 before any D1 write, and the key compare is length-checked + XOR-folded so a wrong key cannot be timing-probed (`apps/analytics-worker/src/ingest.ts:127-136`, `apps/analytics-worker/src/ingest.ts:71-78`).
+- PII can never land in the analytics store: the edge validator hard-rejects any event whose `properties` carries an `email`/`ip`/`ip_address`/`remote_addr` field, so the privacy rule is enforced at the gate, not left to each caller (`apps/analytics-worker/src/ingest.ts:104-107`).
 - A mid-stream abort surfaces as sysexits DATAERR (65) on the CLI, distinct from generic exit 1 — the `EXIT_DATAERR = 65` constant and the `AbortedMidStream => EXIT_DATAERR` mapping (`tools/cli/src/commands/verify_ndjson_http.rs:80`, `tools/cli/src/commands/verify_ndjson_http.rs:141`), wired in `main` (`tools/cli/src/main.rs:410-411`).
 - The bearer token is never logged, printed, or surfaced in `Display`/error messages (CTRL-CRED-001):
   the `HttpVerifyOutcome` `Display` impl is "intentionally human-readable and never includes the
@@ -89,3 +94,5 @@ another tenant's rows.
 11. `docs/cli/audit-export.md:100-102` — 64 MiB response-body cap (spec).
 11b. `tools/cli/src/commands/verify_ndjson_http.rs:370`, `tools/cli/src/commands/verify_ndjson_http.rs:378` — `MAX_BYTES = 64 MiB` body cap (the enforcer).
 12. `crates/corelink-container/src/routes/dsr/audit.rs:7-8`, `crates/corelink-container/src/routes/dsr/audit.rs:82-84` — the live audit sink writes *unchained* CloudEvents to `audit_outbox` (`digest=NULL`, `emitted_at=NULL`, no `prev_hash`/`sequence_number`); nothing ever seals those columns, so the deployed trail is a mutable D1 table the app's own credential can rewrite undetectably; chain-sealing is the unbuilt WI-S09-007, so the exported rows are unsealed — there is no live chain to re-verify yet.
+13. `apps/analytics-worker/src/ingest.ts:114-136` — the edge `POST /v1/event` collector entry (CORS-origin OR ingest-key auth, 403 otherwise); the dual-auth 403 gate: `apps/analytics-worker/src/ingest.ts:127-136`; the constant-time key compare `constantTimeEqual`: `apps/analytics-worker/src/ingest.ts:71-78`.
+14. `apps/analytics-worker/src/ingest.ts:85-112` — the `validate()` event gate (closed `event_name` allow-list + size bounds); the hard PII privacy gate forbidding `email`/`ip`/`ip_address`/`remote_addr` in `properties`: `apps/analytics-worker/src/ingest.ts:104-107`.

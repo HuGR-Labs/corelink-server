@@ -5,7 +5,9 @@ description: "The edge signup-worker webhook: a Svix-verified Clerk user.created
 source_files:
   - "apps/signup-worker/src/webhooks/clerk.ts"
   - "apps/signup-worker/src/index.ts"
-checkpoint_sha: "7f62573f2be4f07352de830fe98f400bb1345adb"
+  - "apps/signup-worker/src/lib/d1.ts"
+  - "apps/signup-worker/src/lib/clerk-metadata.ts"
+checkpoint_sha: "d0e4f8bd669cb1e982f7511de9a895c602a5ee45"
 provenance: "AUTHORED"
 tags: ["flows", "signup", "clerk", "webhook", "dsr", "erasure", "worker-edge"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -31,6 +33,9 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 - The tenant is resolved by `SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1`; a D1 read error returns 500 (not a no-op) so Svix retries rather than dropping the deletion (`apps/signup-worker/src/webhooks/clerk.ts:301-313`).
 - When a tenant DOES exist but `DSR_QUEUE` is unbound, the handler logs and returns 500 `dsr_queue_unconfigured` — it refuses to ack a deletion it cannot honor (`apps/signup-worker/src/webhooks/clerk.ts:321-330`).
 - On the happy path it builds the `dsr.queued.v1` message (deterministic `dsr_id` + erasure salt + resolved legal-hold), writes an `INSERT OR IGNORE` `dsr_requested` SLA anchor, `DSR_QUEUE.send(msg)`s it, and returns 200 `erasure_enqueued:true` — logging only the pseudonymous `dsr_id`/`tenant_id`, never the salt (`apps/signup-worker/src/webhooks/clerk.ts:341-385`, `apps/signup-worker/src/webhooks/clerk.ts:388-395`).
+- **The tenant + PAT D1 writes are race-safe and self-serve-active.** `insertTenant` writes the new row `INSERT OR IGNORE` with `tenant_state` hard-coded to `'active'` (self-serve bypasses the DPA-pending pilot flow), and `insertPat` writes `shown_once_consumed = 1` so the one-time reveal endpoint cannot re-surface a plaintext the PLG `/welcome` session already delivered; both are `INSERT OR IGNORE` so a double Svix delivery is a no-op (`apps/signup-worker/src/lib/d1.ts:76-95`, `apps/signup-worker/src/lib/d1.ts:108-130`).
+- **A team-seat acceptance is keyed by the SHA-256 `email_hash`, never the raw email.** `acceptTeamInvitation` selects an outstanding `team_member` row by `email_hash` (CTRL-PRIV-001) and re-asserts `status='invited'` on the UPDATE so a concurrent acceptance cannot double-flip a seat (`apps/signup-worker/src/lib/d1.ts:154-177`).
+- **The PAT plaintext is classified into PRIVATE metadata, the tenant claims into PUBLIC.** `updateClerkUserMetadata` PATCHes Clerk `public_metadata` with only `{tenant_id, region}` (the legit session-JWT claims) and routes the one-time `pat_plaintext` into `private_metadata` (backend-only, never in the JWT, never readable by `useUser()`) — the secret-classification boundary that keeps the credential out of the client-visible session (`apps/signup-worker/src/lib/clerk-metadata.ts:67-86`, `apps/signup-worker/src/lib/clerk-metadata.ts:82-85`).
 
 # Invariants
 
@@ -40,6 +45,9 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 - Provisioning is fail-CLOSED on its mint secret: `handleClerkWebhook` 500s on an absent `CORELINK_INTERNAL_AUTH_KEY` before writing a tenant row, so a half-provisioned PAT-less tenant is never committed (`apps/signup-worker/src/webhooks/clerk.ts:940-949`).
 - Secret-bearing webhook headers are scrubbed from Sentry telemetry: the `SENSITIVE_HEADER_PATTERN` regex filters `authorization`/`cookie`/`svix-signature`/`svix-id`/`svix-timestamp`/`stripe-signature` (and more) to `[Filtered]` in `beforeSend` (`apps/signup-worker/src/index.ts:125-138`).
 - The DSR erasure queue consumer rethrows on error so the Cloudflare queue runtime redelivers the whole batch; redelivery is safe because the erasure orchestrator is idempotent (`apps/signup-worker/src/index.ts:69-79`).
+- The PAT plaintext NEVER enters a client-readable surface: `updateClerkUserMetadata` writes it ONLY to Clerk `private_metadata` (backend-only) and the legit `{tenant_id, region}` claims to `public_metadata`, so the secret is never embedded in the session JWT nor exposed via `useUser()` (`apps/signup-worker/src/lib/clerk-metadata.ts:82-85`).
+- A double Svix delivery of the same `user.created` can never create a second tenant or a second PAT: both `insertTenant` and `insertPat` are `INSERT OR IGNORE`, so the second writer is silently dropped (`apps/signup-worker/src/lib/d1.ts:82-85`, `apps/signup-worker/src/lib/d1.ts:114-117`).
+- A team-seat flip is isolated to the SHA-256 `email_hash` and cannot be double-applied: `acceptTeamInvitation` re-asserts `status='invited'` in the `WHERE` so a concurrent acceptance clobbers nothing (`apps/signup-worker/src/lib/d1.ts:168-175`).
 
 # Gotchas
 
@@ -68,3 +76,7 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 17. `apps/signup-worker/src/webhooks/clerk.ts:871-885` — Svix-PoP residency gotcha (colo = null).
 18. `apps/signup-worker/src/webhooks/clerk.ts:887-926` — `user.created` idempotency (tenant + live PAT).
 19. `apps/signup-worker/src/webhooks/clerk.ts:940-949` — `CORELINK_INTERNAL_AUTH_KEY` fail-LOUD before any write.
+20. `apps/signup-worker/src/lib/d1.ts:76-95` — `insertTenant` (`tenant_state='active'`, `INSERT OR IGNORE`); the `'active'` literal + idempotent VALUES: `apps/signup-worker/src/lib/d1.ts:82-85`.
+21. `apps/signup-worker/src/lib/d1.ts:108-130` — `insertPat` (`shown_once_consumed = 1`, `INSERT OR IGNORE`); the `, 1, ` consumed flag in VALUES: `apps/signup-worker/src/lib/d1.ts:114-117`.
+22. `apps/signup-worker/src/lib/d1.ts:154-177` — `acceptTeamInvitation` (`email_hash`-keyed seat lookup, re-asserted `status='invited'` on UPDATE); the isolation UPDATE: `apps/signup-worker/src/lib/d1.ts:168-175`.
+23. `apps/signup-worker/src/lib/clerk-metadata.ts:67-86` — `updateClerkUserMetadata` (public-vs-private metadata secret-classification boundary); the PATCH body split routing `pat_plaintext` to `private_metadata`: `apps/signup-worker/src/lib/clerk-metadata.ts:82-85`.

@@ -46,7 +46,6 @@ the house approach in scripts/validate_specs.py.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import os
 import re
 import subprocess
@@ -391,31 +390,113 @@ def _block_cite_paths(text: str) -> list[str]:
 def _is_test_cite(path: str) -> bool:
     """True iff a cited path points at TEST code, not a runtime enforcer.
 
-    Rust — any of: a `tests/` directory anywhere; a file ending `test.rs` /
-    `tests.rs` (covers `foo_test.rs`, `foo_tests.rs`, the underscore-less
-    `footest.rs`/`footests.rs`, and the bare `tests.rs` module file); a
-    `tests_*.rs` file (e.g. `tests_helpers.rs`). TS/JS — `*.test.ts` / `*.spec.ts`,
-    or anything under a `__tests__/` directory. C6c uses this to forbid grounding
-    an invariant SOLELY on a test (a test can be neutered later; an invariant must
+    Rust — any of: a `tests/` directory anywhere; the bare module files
+    `test.rs` / `tests.rs`; a `*_test.rs` / `*_tests.rs` file (the underscore-
+    separated suffix form, `foo_test.rs` / `foo_tests.rs`); a `test_*.rs` /
+    `tests_*.rs` file (the prefix form). TS/JS — `*.test.ts` / `*.spec.ts`, or
+    anything under a `__tests__/` directory. C6c uses this to forbid grounding an
+    invariant SOLELY on a test (a test can be neutered later; an invariant must
     point at the non-test code that enforces it). Tests remain valid as ADDITIONAL
-    cites. (fix #4 widened the Rust suffix set so `tests.rs`/`*tests.rs`/`*test.rs`
-    inline-test modules can't masquerade as a non-test enforcer.)
+    cites.
+
+    (fix #4 — audit #3 MED — a SEPARATOR BOUNDARY is now required: the old bare
+    `endswith("test.rs"/"tests.rs")` matched mid-word, misclassifying real
+    enforcers `attest.rs` / `latest.rs` / `contest.rs` / `protest.rs` as tests.
+    A test suffix only counts when it is the WHOLE stem or follows a `_`.)
     """
     p = path.lower()
     base = p.rsplit("/", 1)[-1]
     if p.startswith("tests/") or "/tests/" in p or "/__tests__/" in p:
         return True
-    # Rust: any *.rs whose stem ends in `test` or `tests` (with or without a
-    # leading underscore separator) — `foo_test.rs`, `foo_tests.rs`, `footest.rs`,
-    # `footests.rs`, and the bare `test.rs`/`tests.rs` module files.
-    if base.endswith("test.rs") or base.endswith("tests.rs"):
-        return True
-    # Rust: a `tests_*.rs` inline-test module (the prefix form).
-    if base.startswith("tests_") and base.endswith(".rs"):
-        return True
+    if base.endswith(".rs"):
+        stem = base[:-3]
+        # the bare module files, exactly
+        if stem in ("test", "tests"):
+            return True
+        # the underscore-SEPARATED suffix form: `<word>_test` / `<word>_tests`
+        # (boundary required — `attest`/`latest`/`contest` have no `_` separator
+        # before the suffix, so they are NOT tests).
+        if stem.endswith("_test") or stem.endswith("_tests"):
+            return True
+        # the prefix form: `test_*` / `tests_*` inline-test modules.
+        if stem.startswith("test_") or stem.startswith("tests_"):
+            return True
+        return False
     if base.endswith(".test.ts") or base.endswith(".spec.ts"):
         return True
     return False
+
+
+def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
+    """Compile a path glob to a regex with PROPER segment semantics (fix #6,
+    audit #3 HIGH): a single `*` matches any run of NON-`/` chars (it does NOT
+    cross a path separator), `?` matches one non-`/` char, and `**` is the ONLY
+    token that crosses segments (`**/` = "zero or more leading segments", a bare
+    `**` = "anything including `/`"). Character classes `[...]` are passed through.
+
+    The old matcher used Python's `fnmatch`, whose `*` matches `/`, so `**/tests/**`,
+    `apps/*/src/types/**`, and `*.config.ts` silently swallowed ANY path that
+    merely CONTAINED those fragments anywhere — a real handler at
+    `routes/tests/realhandler.rs` would be excluded by `**/tests/**`, and a
+    `*.config.ts` exclude would swallow `a/b/foo.config.ts`. Segment-aware
+    matching restricts `*` to a single segment so only genuinely-matching paths
+    are excluded.
+    """
+    i, n = 0, len(pattern)
+    out = ["^"]
+    while i < n:
+        c = pattern[i]
+        if c == "*":
+            if i + 1 < n and pattern[i + 1] == "*":
+                # `**` — crosses segments.
+                # `**/` at a boundary = zero-or-more whole leading segments.
+                if i + 2 < n and pattern[i + 2] == "/":
+                    out.append("(?:[^/]+/)*")
+                    i += 3
+                    continue
+                # a bare/trailing `**` = anything, including `/`.
+                out.append(".*")
+                i += 2
+                continue
+            # single `*` — one segment, never `/`.
+            out.append("[^/]*")
+            i += 1
+            continue
+        if c == "?":
+            out.append("[^/]")
+            i += 1
+            continue
+        if c == "[":
+            j = i + 1
+            if j < n and pattern[j] in ("!", "^"):
+                j += 1
+            if j < n and pattern[j] == "]":
+                j += 1
+            while j < n and pattern[j] != "]":
+                j += 1
+            if j >= n:
+                # unterminated class — treat `[` literally
+                out.append(re.escape("["))
+                i += 1
+                continue
+            cls = pattern[i + 1 : j]
+            if cls and cls[0] in ("!", "^"):
+                cls = "^" + cls[1:]
+            out.append("[" + cls + "]")
+            i = j + 1
+            continue
+        out.append(re.escape(c))
+        i += 1
+    out.append("$")
+    return re.compile("".join(out))
+
+
+def _segment_glob_match(rel: str, pattern: str) -> bool:
+    """True iff `rel` matches the path glob `pattern` under SEGMENT-AWARE
+    semantics (see `_glob_to_regex`). `**/<tail>` also matches a bare `<tail>`
+    with no leading directory (the "zero leading segments" arm of `**/`), so
+    `**/*.test.ts` still matches a top-level `foo.test.ts`."""
+    return _glob_to_regex(pattern).match(rel) is not None
 
 
 def _line_count(path: Path) -> int:
@@ -793,21 +874,30 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
           (a) verbatim — `seed` is declared/cited as-is;
           (b) `seed` is a directory containing a declared/cited path;
           (c) `seed` is a file/dir under a declared/cited directory;
-          (d) Rust module-parent — `seed` is `X/sub.rs` and the concept grounds
-              the sibling module-root file `X.rs` (in Rust `X.rs` is the parent
-              `mod` of every `X/*.rs`; citing the parent IS grounding the module);
-          (e) crate-cluster ADOPTION — a `type: CrateCluster` concept that grounds
+          (d) crate-cluster ADOPTION — a `type: CrateCluster` concept that grounds
               a crate directory adopts the whole crate as its narrative home, so a
               file/dir under that crate is covered even without a per-file cite
               (the §1.1 taxonomy assigns `crates/` to "the 8 crate clusters"; a
               cluster's job is breadth-of-narrative, not file-granular citation).
 
-        This is the anti-self-certification check (fix #3): a `seed_from` entry
-        counts as coverage ONLY when the concept it names really explains the
-        surface — a manifest can no longer silently "cover" a file by listing it
-        under a concept that never mentions it (the silent-gap bypass). Relations
-        (d)/(e) are principled coverage, NOT a weakening: (d) is the Rust module
-        system, (e) is the taxonomy-sanctioned cluster model.
+        This is the anti-self-certification check (fix #3 / audit-round R): a
+        `seed_from` entry counts as coverage ONLY when the concept it names really
+        explains the surface — a manifest can no longer silently "cover" a file by
+        listing it under a concept that never mentions it (the silent-gap bypass).
+
+        REMOVED in gate v5 (audit #3 HIGH #2): the former Rust "module-parent"
+        relation auto-grounded an ENTIRE module subtree from a single parent-file
+        cite — a concept citing `routes.rs` (the `mod routes;` declaration site)
+        auto-covered ANY `routes/*.rs` added to its `seed_from` WITHOUT the concept
+        ever mentioning that handler. That is the same self-certification
+        relations (a)-(c) exist to forbid, one level deeper: `X.rs` is the module
+        DECLARATION, not an explanation of `X/sub.rs`'s behaviour. A file under a
+        declared module is now covered ONLY when the concept declares/cites that
+        file (a), or grounds a DIRECTORY that contains it (b/c — a `routes/` or
+        `routes/dsr/` directory seed, an explicit narrative-home decision), or is
+        the crate-cluster adopting the whole crate (d). The `X.rs`-as-module-root
+        shortcut is gone — cite the file or seed its directory, do not lean on the
+        `mod` declaration to self-certify the subtree.
         """
         grounded = set(c.source_files) | set(c.cited_files)
         s = seed.rstrip("/")
@@ -822,12 +912,7 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             # (c) seed lives under a grounded directory
             if s.startswith(gn + "/"):
                 return True
-            # (d) Rust module-parent: grounded `X.rs` is the module root of `X/sub.rs`
-            if gn.endswith(".rs"):
-                mod_dir = gn[:-3] + "/"
-                if s.startswith(mod_dir):
-                    return True
-            # (e) crate-cluster adoption: a CrateCluster grounding a crate dir
+            # (d) crate-cluster adoption: a CrateCluster grounding a crate dir
             #     adopts everything under that crate (its src files + subdirs).
             if is_cluster:
                 m = re.match(r"^(crates/[^/]+)/", gn + "/")
@@ -878,16 +963,9 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             if surf and ex.get("reason"):
                 excludes.append(str(surf))
 
-    def _glob_match(rel: str, pattern: str) -> bool:
-        # fnmatch with `**/`-anywhere semantics: `**/*.test.ts` also matches a
-        # bare `foo.test.ts`, and `apps/*/src/types/**` matches anything beneath.
-        if fnmatch.fnmatch(rel, pattern):
-            return True
-        if pattern.startswith("**/"):
-            tail = pattern[3:]
-            if fnmatch.fnmatch(rel, tail) or fnmatch.fnmatch(rel.split("/")[-1], tail):
-                return True
-        return False
+    # NOTE: _glob_match is defined at module scope (`_segment_glob_match`) so it
+    # is unit-testable and segment-aware; bound here as a local alias.
+    _glob_match = _segment_glob_match
 
     def is_covered(rel: str, is_dir: bool) -> bool:
         # --- DIRECTORY (crate) surface: coverage = reviewed cluster MEMBERSHIP ---

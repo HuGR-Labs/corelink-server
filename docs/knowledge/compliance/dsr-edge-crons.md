@@ -6,8 +6,9 @@ source_files:
   - apps/signup-worker/src/webhooks/dsr_verify_cron.ts
   - apps/signup-worker/src/webhooks/dsr_consumer.ts
   - apps/signup-worker/src/webhooks/pat_scrub_cron.ts
+  - apps/signup-worker/src/lib/erase-auth-key.ts
   - apps/signup-worker/src/index.ts
-checkpoint_sha: "7f62573f2be4f07352de830fe98f400bb1345adb"
+checkpoint_sha: "d0e4f8bd669cb1e982f7511de9a895c602a5ee45"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "erasure", "cron", "queue", "scheduled", "pat", "compliance", "worker-edge"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -26,6 +27,7 @@ This control is the **edge-plane scheduler for GDPR Art.17 erasure + credential 
 - **24h SLA enumeration from the load-bearing `dsr_requested` anchor.** The sweep's primary source is `SELECT dsr_id, tenant_id, requested_at FROM dsr_requested WHERE status = 'requested' AND requested_at <= ?1`, where `?1 = nowMs - DEADLINE_MS` (24h), catching DSRs that failed before any tombstone and so have no `dsr_erasure_log` row (`apps/signup-worker/src/webhooks/dsr_verify_cron.ts:165-171`, `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:146-149`, `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:66`).
 - **Legacy second source + dedupe.** A second query over `dsr_erasure_log` (bounded by a 7-day look-back window) catches DSRs that produced ≥1 tombstone, and the two sets are merged by `dsr_id` with the `dsr_requested` anchor winning as the true SLA clock (`apps/signup-worker/src/webhooks/dsr_verify_cron.ts:182-189`, `apps/signup-worker/src/webhooks/dsr_verify_cron.ts:199-221`).
 - **Each candidate POSTs the container verify endpoint.** `postVerify` sends `POST /_internal/dsr/verify` with the `x-corelink-internal-auth` header, preferring the dedicated erase key over the shared key, optionally via the `CORELINK_API_SVC` service binding (`apps/signup-worker/src/webhooks/dsr_verify_cron.ts:95-110`).
+- **The erase-path auth key is resolved erase-first, shared-fallback by a single shared enforcer.** Both the verify sweep and the queue consumer pick WHICH internal-auth key to present through `resolveEraseAuthKey`, which returns the dedicated `CORELINK_ERASE_AUTH_KEY` when non-empty, else the shared `CORELINK_INTERNAL_AUTH_KEY`, else `null` — mirroring the container's `erase_auth_key_from_env()` and the main Worker's `resolveConsumerKey(env,"erase")` so the key always matches the gate the call routes through (`apps/signup-worker/src/lib/erase-auth-key.ts:50-60`, `apps/signup-worker/src/lib/erase-auth-key.ts:51-53`).
 - **Sweep flips the anchor only on `verified_complete`.** A `VerifiedComplete` (ok) response with `decision === "verified_complete"` flips the anchor to `status = 'verified'` so it drops out of future sweeps; a `verified_partial` / `sla_breached` still returns HTTP 200 but leaves the row enumerable for the next tick (`apps/signup-worker/src/webhooks/dsr_verify_cron.ts:237-249`).
 - **Erasure-queue consumer carries `dsr.queued.v1` to the container.** The `queue()` handler delegates each batch to `handleErasureQueueBatch`, which calls `processErasureMessage` per message and acks on a 2xx, retries otherwise — per-message isolation, no head-of-line block (`apps/signup-worker/src/index.ts:69-79`, `apps/signup-worker/src/webhooks/dsr_consumer.ts:94-106`).
 - **Consumer forwards to the internal erase endpoint.** `processErasureMessage` POSTs the message body to `POST /_internal/dsr/erase` with the `x-corelink-internal-auth` header, via the service binding when present (`apps/signup-worker/src/webhooks/dsr_consumer.ts:68-80`).
@@ -42,6 +44,7 @@ This control is the **edge-plane scheduler for GDPR Art.17 erasure + credential 
 - **Redelivery is safe because the container erase is idempotent.** A non-2xx or transport error retries the message; the container orchestrator dedups per `(dsr_id, backend)`, so a redelivered erasure never double-erases (`apps/signup-worker/src/webhooks/dsr_consumer.ts:76-86`).
 - **The PAT scrub never proceeds without the Clerk key.** `runPatScrubSweep` returns `skipped: true` when `CLERK_SECRET_KEY` is unbound, and `scrubUser` never throws on a single bad user so the sweep completes (`apps/signup-worker/src/webhooks/pat_scrub_cron.ts:140-143`, `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:122-127`).
 - **A secret with no usable reveal clock is scrubbed, not kept.** `shouldScrub` returns `true` for a present `pat_plaintext` whose `pat_revealed_at` is missing/NaN/≤0, so a legacy or mis-written secret is never left resident forever (`apps/signup-worker/src/webhooks/pat_scrub_cron.ts:88-92`).
+- **No erase call is ever made un-authenticated: an absent key returns `null`, never the empty string.** `resolveEraseAuthKey` returns `null` (not `""`) when NEITHER the dedicated erase key nor the shared key is bound, so the caller must skip/retry rather than POST an empty `x-corelink-internal-auth` header — the ≥32-char floor is then enforced authoritatively at the verify gate, never silently bypassed by a too-short or empty key (`apps/signup-worker/src/lib/erase-auth-key.ts:50-60`).
 
 # Gotchas
 
@@ -66,6 +69,5 @@ This control is the **edge-plane scheduler for GDPR Art.17 erasure + credential 
 12. PAT scrub pages Clerk users + per-user scrub: `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:149-172`; PATCH `private_metadata.pat_plaintext = null`: `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:102-128`.
 13. `shouldScrub` TTL + fail-closed stale decision: `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:81-94`, `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:88-92`; 1h reveal TTL: `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:38`.
 14. Scrub inert without `CLERK_SECRET_KEY`; `scrubUser` never throws on one bad user: `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:140-143`, `apps/signup-worker/src/webhooks/pat_scrub_cron.ts:122-127`.
-15. Sibling container-side erasure engine: [DSR / right-to-erasure pipeline](/compliance/dsr-erasure.md).
-</content>
-</invoke>
+15. Erase-path internal-auth key resolver (erase-first, shared-fallback, `null` when unbound — the shared enforcer both crons present on `/_internal/dsr/{verify,erase}`): `apps/signup-worker/src/lib/erase-auth-key.ts:50-60`; the dedicated-key-preferred branch: `apps/signup-worker/src/lib/erase-auth-key.ts:51-53`.
+16. Sibling container-side erasure engine: [DSR / right-to-erasure pipeline](/compliance/dsr-erasure.md).

@@ -714,6 +714,203 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v5 #2: module-parent grounding REMOVED -------------------------------
+# A concept that cites the module-ROOT file `routes.rs` (the `mod routes;`
+# declaration site) but NOT the handler `routes/sub_handler.rs` must NO LONGER
+# auto-cover that handler. The handler is in the concept's seed_from but is never
+# cited -> with the v5 removal of relation (d) it is self-certifying -> [C10b]
+# MUST fire naming sub_handler.rs. Negative control: a handler the concept DOES
+# cite stays covered (not flagged). Proves the module-parent self-cert hole closed.
+assert_module_parent_removed() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/routes
+    printf 'pub mod sub_handler;\npub mod cited_handler;\n' > crates/corelink-container/src/routes.rs
+    printf 'fn sub() {}\n'    > crates/corelink-container/src/routes/sub_handler.rs
+    printf 'fn cited() {}\n'  > crates/corelink-container/src/routes/cited_handler.rs
+    mkdir -p docs/knowledge/planes
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [p](/planes/p.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # concept cites the module ROOT routes.rs + the cited_handler, NOT sub_handler.
+    cat > docs/knowledge/planes/p.md <<EOF
+---
+type: "Plane"
+title: "Module-parent removal (hermetic)"
+description: "cites routes.rs (module root) + cited_handler.rs; sub_handler.rs is only seeded."
+source_files:
+  - "crates/corelink-container/src/routes.rs"
+  - "crates/corelink-container/src/routes/cited_handler.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Module-parent removal (hermetic)
+
+Lead paragraph: the concept grounds the module root and one handler, not the sibling.
+
+# How it works
+- the module root (\`crates/corelink-container/src/routes.rs:1\`).
+- the cited handler (\`crates/corelink-container/src/routes/cited_handler.rs:1\`).
+
+# Invariants
+- the module root holds (\`crates/corelink-container/src/routes.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/routes.rs:1\` — module root.
+2. \`crates/corelink-container/src/routes/cited_handler.rs:1\` — the cited handler.
+EOF
+    # manifest seeds routes.rs + BOTH handlers. sub_handler is named but uncited;
+    # the v5 removal of the X.rs-module-parent relation means routes.rs no longer
+    # auto-grounds it -> it must surface as a silent gap.
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "planes/p"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/routes.rs"
+      - "crates/corelink-container/src/routes/cited_handler.rs"
+      - "crates/corelink-container/src/routes/sub_handler.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.mp_out" 2>&1 || true
+  )
+  # POSITIVE: sub_handler.rs (module-parent only, uncited) is NOT covered -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.mp_out" 2>/dev/null \
+     && grep -q 'routes/sub_handler.rs' "$tmp/.mp_out" 2>/dev/null; then
+    ok "module-parent removed: a seeded-but-uncited routes/ handler under a cited routes.rs -> [C10b] naming sub_handler.rs"
+  else
+    miss "module-parent removal positive (no [C10b] naming sub_handler.rs): $(tail -1 "$tmp/.mp_out" 2>/dev/null)" "module-parent-pos"
+  fi
+  # NEGATIVE: the genuinely-cited handler is still covered (not flagged).
+  total=$((total + 1))
+  if ! grep -q '/cited_handler.rs' "$tmp/.mp_out" 2>/dev/null; then
+    ok "module-parent removed: a genuinely-cited routes/ handler stays covered (selective)"
+  else
+    miss "module-parent removal negative: cited_handler.rs was wrongly flagged" "module-parent-neg"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- gate v5 #6: glob is SEGMENT-AWARE (a single `*` does not cross `/`) --------
+# A real handler at `crates/.../routes/tests_helpers/realhandler.rs` is enumerated
+# by the recursive routes walk. The manifest carries the existing broad-looking
+# exclude `crates/corelink-container/src/routes/**/tests_*.rs`. Under the OLD
+# fnmatch matcher `*` crossed `/`, so `**/tests_*.rs`-style patterns could swallow
+# a path with `tests_` ANYWHERE. We prove the SEGMENT-aware matcher does NOT
+# exclude a real handler whose DIRECTORY merely starts with `tests_`: the file is
+# seeded by no concept and matches no segment-correct exclude -> [C10b] MUST fire
+# naming it. Negative control: an actual `tests_foo.rs` inline-test module under a
+# route subdir IS excluded by `routes/**/tests_*.rs` (segment-correct) -> NOT flagged.
+assert_glob_segment_aware() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/routes/tests_helpers
+    mkdir -p crates/corelink-container/src/routes/audit_export
+    printf 'fn anchor() {}\n'   > crates/corelink-container/src/routes/anchor.rs
+    # a REAL handler whose DIRECTORY name starts with tests_ — must NOT be swallowed.
+    printf 'fn real() {}\n'     > crates/corelink-container/src/routes/tests_helpers/realhandler.rs
+    # a genuine inline-test module file — MUST be excluded by routes/**/tests_*.rs.
+    printf 'mod t {}\n'         > crates/corelink-container/src/routes/audit_export/tests_proptest.rs
+    mkdir -p docs/knowledge/planes
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [g](/planes/g.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    cat > docs/knowledge/planes/g.md <<EOF
+---
+type: "Plane"
+title: "Glob segment-aware (hermetic)"
+description: "grounds the anchor handler only."
+source_files:
+  - "crates/corelink-container/src/routes/anchor.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Glob segment-aware (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the anchor handler (\`crates/corelink-container/src/routes/anchor.rs:1\`).
+
+# Invariants
+- the anchor handler holds (\`crates/corelink-container/src/routes/anchor.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/routes/anchor.rs:1\` — grounded anchor.
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes:
+  - surface: "crates/corelink-container/src/routes/**/tests_*.rs"
+    reason: "fixture: inline test modules under a route subdir — test-only."
+candidates:
+  - id: "planes/g"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/routes/anchor.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.gl_out" 2>&1 || true
+  )
+  # POSITIVE: the real handler under a tests_-prefixed DIR is NOT excluded -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.gl_out" 2>/dev/null \
+     && grep -q 'tests_helpers/realhandler.rs' "$tmp/.gl_out" 2>/dev/null; then
+    ok "glob segment-aware: a real handler under a tests_-prefixed DIR is NOT swallowed -> [C10b] names realhandler.rs"
+  else
+    miss "glob segment-aware positive (no [C10b] naming tests_helpers/realhandler.rs): $(tail -1 "$tmp/.gl_out" 2>/dev/null)" "glob-seg-pos"
+  fi
+  # NEGATIVE: a genuine tests_*.rs inline-test file IS excluded (segment-correct).
+  total=$((total + 1))
+  if ! grep -q 'audit_export/tests_proptest.rs' "$tmp/.gl_out" 2>/dev/null; then
+    ok "glob segment-aware: a genuine tests_*.rs inline-test module stays excluded (segment-correct match)"
+  else
+    miss "glob segment-aware negative: tests_proptest.rs was wrongly flagged (exclude failed to match)" "glob-seg-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -741,6 +938,9 @@ assert_bad C10b C10b --bundle "$FIX/bad/C10b" --manifest "$FIX/bad/C10b/manifest
 # recursive container-src/storage-subdir enumeration — hermetic git harnesses.
 assert_seed_selfcert
 assert_storage_subdir_enum
+# gate v5: #2 module-parent grounding removed + #6 glob is segment-aware.
+assert_module_parent_removed
+assert_glob_segment_aware
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then
