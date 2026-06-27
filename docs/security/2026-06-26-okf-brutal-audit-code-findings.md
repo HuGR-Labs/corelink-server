@@ -7,6 +7,13 @@ PROVE each finding wrong (Round 4). The severities below are the **post-verifica
 > **Verification correction (read first):** Round 3 flagged #1 (attestation) and #2 (batch) as
 > *pre-launch blockers*. Adversarial verification **refuted that severity** — both have a true kernel
 > but are **NOT** the severe issues first claimed. Neither is a launch blocker. Corrected below.
+>
+> **2026-06-27 update (10x-brutal exhaustive re-read):** the code team has since FIXED the Stripe
+> re-fingerprint no-op (#1's old residual is CLOSED — it is now a real `GET /v1/customers/:id` redaction
+> check, `adapter_stripe.rs:195-230`). But the exhaustive read found a SHARPER residual on #1 (the signed
+> attestation is not durably persisted — see below) and confirmed #2's batch hardening gap is STILL OPEN
+> (a sibling agent's "guard now exists" claim was a cold-checked hallucination — `CasPutGuard` is only at
+> `cas.rs:722`, not in `handle_batch_write`).
 
 Severity = engineering/security severity, post-verification.
 
@@ -26,19 +33,29 @@ Round-3 claimed the attestation signs over fabricated evidence (theater). **Veri
 - The region fallback is correct by design (the D1 erase deletes the tenant row; deployment is US-only;
   the published per-region public key still verifies).
 
-**Real residual:** the Stripe verify-sweep **re-fingerprint** is a hardcoded no-op
-(`adapter_stripe.rs:140-150`) — an **acknowledged deferred** deeper sweep (ADR-S11-013), i.e. a
-defense-in-depth deepening, not a forge path. **Recommend:** finish the deferred Stripe re-fingerprint
-when convenient; NOT a launch blocker.
+**Real residual (sharpened 2026-06-27, BR4 exhaustive read) — MED, compliance-not-yet-live:** the signed
+attestation is **NOT durably persisted**. `sign_and_persist` writes ONLY a D1 metadata INDEX row to
+`erasure_attestations`, whose schema (`migrations/d1/0032_erasure_attestation.sql`) has **no column for the
+Ed25519 signature or the canonical JCS payload** — they are computed then dropped; there is **no R2 PutObject**
+(`audit_bucket()` only builds the key string); and the public verify endpoints
+`GET /v1/public/keys/erasure/{region}.pub` + `GET /v1/public/attestation/{id}` have **zero route registrations**.
+So the wiki's old "portable tamper-evident proof a customer/auditor can verify offline" was hollow — the signing
+LOGIC is real, but durable persistence + the serving surface are DEFERRED (WI-S11-008). (The wiki concept has
+been rewritten to state this.) Also: the "BYOK CMK-destroy" is not the live flow (`kms_provider="corelink_d1r2_erase"`,
+no CMK destroy). **Recommend:** if the GDPR posture depends on a portable offline-verifiable erasure proof, wire
+the R2 persist + the serving endpoint (or stop advertising it); the Stripe-no-op part is already CLOSED.
 
 ## 2. Batch CAS write lacks the hard concurrency semaphore — **NOT a DoS** — **LOW–MED (hardening)**
 
-Round-3 claimed an unbounded memory DoS. **Verified OVERSTATED (V2):** every data-plane request is
-hard-capped at **10 MiB** by `DefaultBodyLimit` (`main.rs:462`) and per-tenant arrival is rate-limited
-(100 rps / burst 200, `ratelimit_layer.rs:122,128`), so peak memory is **bounded**. The true residual:
-`handle_batch_write` (`cas.rs:832-839`) omits the per-tenant `CasPutGuard` 8-slot semaphore the single
-PUT holds (`cas.rs:722`), so the batch route has a **looser** concurrency bound (rate-limit-derived, not
-a hard semaphore). **Recommend:** add the `CasPutGuard` to the batch path as defense-in-depth; not urgent.
+Round-3 claimed an unbounded memory DoS. **Verified OVERSTATED (V2), STILL OPEN as a hardening gap (BR3/BR8
+2026-06-27):** `handle_batch_write` (`cas.rs:832-839`) still omits the per-tenant `CasPutGuard` 8-slot
+semaphore the single PUT holds (`cas.rs:722`) — cold-checked, the gap is real (a claim that "the guard now
+exists at :843" was a hallucination). Memory is NOT unbounded: the CAS/AC paths are hard-capped at 10 MiB by
+`DefaultBodyLimit` (`main.rs:459-464`). **Caveat (BR3):** 10 MiB is NOT the bound on *every* data-plane path —
+the **Turbo PUT path overrides to 100 MiB** (`turbo_v8.rs:103`, carved out at `main.rs:455-458`) and is bounded
+by its own `TURBO_PUT_CONCURRENCY_LIMIT` (4/tenant, 16 global) instead. So the batch route has a looser
+concurrency bound than the single PUT (rate-limit-derived, not a hard semaphore). **Recommend:** add the
+`CasPutGuard` to the batch path as defense-in-depth; not urgent.
 
 ## 3. Prod "FATAL" boot watchdog is circular — **MEDIUM (config-drift)** — CONFIRMED
 
