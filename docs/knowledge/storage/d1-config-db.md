@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-config-do/src/lib.rs"
   - "crates/corelink-container/src/storage/d1_http.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "ad6768e80a6f7705a994fd2815a615198f19041c"
 provenance: "AUTHORED"
 tags: ["storage", "d1", "config-db", "control-plane", "tenant-isolation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -37,8 +37,9 @@ the [billing quota check](/flows/billing-quota-check.md).
 2. The client builds its query URL from the account id + database id and carries the CF API token as a
    bearer (`crates/corelink-container/src/storage/d1_http.rs:90-103`).
 3. `D1CustomerHandler` serves dashboard data from deployed tables (`tenant`, `tenant_storage_state`,
-   `tenant_billing`, `tier_selections`, `pat`) — real where a table exists, honest empty/501 where it
-   does not (`crates/corelink-container/src/customer_d1.rs:1-25`).
+   `tenant_billing`, `tier_selections`, `pat`, and `customer_audit_events` for the audit log — migration
+   0077) — real where a table exists, honest empty/501 where it does not
+   (`crates/corelink-container/src/customer_d1.rs:1-25`).
 4. Each sync handler call bridges to the async D1 client through `block_in_place` +
    `Handle::current().block_on`, valid because the native server is multi-thread `#[tokio::main]`
    (`crates/corelink-container/src/customer_d1.rs:26-39`).
