@@ -807,6 +807,12 @@ struct OciCostGate {
 /// the gate leaves them uncharged. Verifying (not just parsing) is load-bearing:
 /// the tenant segment is attacker-controlled, so an unverified read would let one
 /// tenant bill another.
+// SECURITY-REVIEW (OCI trust path, audit #7 — INFO, pending review): OCI resolves
+// the attribution tenant from the HMAC-verified realm bearer here — a SEPARATE
+// trust path from the header-based planes (native CAS/AC trust a Worker-injected
+// `x-corelink-tenant-id`). Accepted pending review: anon reads with no resolvable
+// bearer go UNCOUNTED, and the `oci_limiter`/quota gate is fail-OPEN on reads. See
+// the findings doc (#7) — the actual trust-path review is a separate task.
 fn oci_bearer_tenant(realm_key: &SecretWrap, headers: &axum::http::HeaderMap) -> Option<String> {
     let raw = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
     let token = raw.strip_prefix("Bearer ").or_else(|| raw.strip_prefix("bearer "))?;

@@ -449,6 +449,27 @@ pub const DEFAULT_LEASE_OPS: i64 = 16;
 /// which the guard funnels every billable op through); `get`, `put`,
 /// `accrue`, and `roll_if_stale` pass straight through to the inner store
 /// (the guard's roll + seed bookkeeping stays exact and durable).
+///
+/// # Accepted approximation (audit #6, ACCEPTED — by design)
+///
+/// This is an **approximate** `$`-ceiling, accepted explicitly so it is a
+/// documented design choice, not a hidden surprise. With the default
+/// `lease_ops = 16` ([`DEFAULT_LEASE_OPS`]):
+///
+/// * **D1 consulted ~once per 16 ops.** The durable inner store (the sole
+///   ceiling authority) is touched only at lease acquire/refill — roughly
+///   once every 16 billable ops — so in-memory ops between refills do not
+///   re-check D1.
+/// * **Up to ~16-op revocation/staleness latency.** A budget change made
+///   durably (e.g. a ceiling drop, or charges from another container) is
+///   not observed until the current in-memory lease drains and a refill
+///   re-reads the inner store — i.e. up to `lease_ops` ops of staleness.
+/// * **Crash ⇒ slight under-charge.** A container crash loses the UNUSED
+///   tail of an in-flight lease; that budget was already debited durably,
+///   so the tenant is slightly *under*-charged (safe for us), never
+///   over-served (invariants 1 & 3). The overshoot is bounded at
+///   `lease_ops * cost_per_op` micro-dollars (`$0.016` on a `$5`/mo
+///   ceiling — see [`DEFAULT_LEASE_OPS`]).
 #[derive(Debug)]
 pub struct LeasedQuotaStore {
     inner: Arc<dyn QuotaStore>,

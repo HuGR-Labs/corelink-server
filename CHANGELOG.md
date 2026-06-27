@@ -22,6 +22,19 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **OKF brutal-audit code findings remediated (7).** (#1 HIGH) the GDPR erasure attestation now binds its
+  signed `evidence_hash` to the REAL per-backend verification results (was a synthetic constant) + the
+  Stripe arm does a live re-fingerprint (was a hardcoded no-op) + region resolves fail-CLOSED — the signer
+  REFUSES to sign a `VerifiedComplete` attestation unless every backend genuinely re-verified empty (no
+  more "proof that proves nothing"). (#2 HIGH) `handle_batch_write` now holds the same per-tenant
+  `CasPutGuard` concurrency reservation as single PUT (was unguarded → batch-upload memory-exhaustion DoS).
+  (#3 MED) a positive prod-arming boot assertion (independent R2-region signal) refuses to boot a half-armed
+  prod where dropped config silently disabled both the controls AND the watchdog. (#4 MED) `_oci`/`_public`
+  added to the container fail-closed sentinel set. (#5 MED) audit-trail docs corrected to state the live
+  trail is unchained `audit_outbox` (BLAKE3 seal deferred to S-09 — not yet tamper-evident). (#6 LOW) the
+  16-op quota lease approximation documented. (#7 INFO) OCI bearer→tenant trust-path review note added.
+
 ### Added
 - **Customer audit log is now real (`GET /v1/customer/audit`).** Added the `customer_audit_events` D1
   table (migration 0077, additive) + a real read path in `customer_d1.rs` (was a stubbed empty list).

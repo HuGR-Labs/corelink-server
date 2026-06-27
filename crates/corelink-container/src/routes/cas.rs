@@ -835,6 +835,12 @@ async fn handle_batch_write(
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
     headers: axum::http::HeaderMap,
+    // finding #2 (HIGH DoS): pre-body per-tenant concurrency reservation (declared
+    // AHEAD of `body: Bytes`, so axum runs it BEFORE the up-to-BATCH_MAX_BYTES body
+    // is buffered). 429 on over-cap; the RAII slot releases on return. SHARES the
+    // same per-tenant CAS_WRITE_CONCURRENCY_LIMIT pool as `handle_write` (keyed on
+    // the authenticated tenant) — a tenant's single+batch uploads count together.
+    _concurrency: CasPutGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     // Cross-tenant: path echo must equal the authenticated tenant (mirrors
