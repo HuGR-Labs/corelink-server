@@ -1,38 +1,38 @@
-//! Audit journeys — customer-facing audit export + offline row re-derive.
+//! Audit journeys — customer-facing audit log: SEED real events, then read back.
 //!
-//! URL CORRECTED (round-3 live run): the worker does NOT route
-//! `/v1/audit/export` (404 at the edge). The customer-facing audit surface is
-//! `GET /v1/customer/audit` (under the `/v1/customer/*` proxy), whose handler
-//! (`routes/customer.rs::handle_audit`) returns
+//! The customer-facing audit surface is `GET /v1/customer/audit` (under the
+//! `/v1/customer/*` proxy), whose handler (`routes/customer.rs::handle_audit` →
+//! `customer_d1.rs::CustomerAuditHandler::query`) returns
 //! `{"rows":[{event_id, ts, event_type, severity, actor, summary}]}`.
 //!
-//! Re-derive contract (black-box, no internal read): assert 200 + a well-formed
-//! `rows` array, and validate every row's required fields + monotonic `ts`. The
-//! customer audit sink is a SEPARATE store from the request-path audit chain, so
-//! it is legitimately empty for a quiet tenant — the live handler returns an
-//! empty `rows` array for a new tenant (server test
-//! `audit_route_returns_empty_rows_for_new_tenant`). We therefore treat an empty
-//! `rows` (well-formed) as a PASS on the SHAPE contract rather than forcing a
-//! seed we cannot deterministically land in this sink from the public edge.
+//! As of migration 0077 the audit log has a real D1 backing
+//! (`customer_audit_events`): the control-plane mutations (PAT create, team
+//! invite) each write a row best-effort, and the query reads them newest-first.
+//! So this journey is no longer a black-box shape-only probe: it SEEDS by
+//! performing real authenticated mutations as the read-write persona, then GETs
+//! the audit log and ASSERTS non-empty rows + re-derives the row shape (required
+//! fields present + `ts` monotonic where numeric). It PASSES once rows exist
+//! (it no longer gates on an empty page — an empty page after a successful seed
+//! is a real failure).
 
 use std::time::Instant;
 
 use reqwest::blocking::Client;
-use reqwest::header::AUTHORIZATION;
-use serde_json::Value;
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
+use serde_json::{json, Value};
 
-use crate::harness::{bearer, url_customer, url_users_me, Config, JourneyResult};
+use crate::harness::{bearer, url_customer, Config, JourneyResult};
 use crate::personas::Persona;
 
 /// Run the audit journeys.
 pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
-    vec![audit_export_rederive(cfg, client)]
+    vec![audit_seed_then_rederive(cfg, client)]
 }
 
-/// Perform a few authenticated ops, read the customer audit log, and re-derive
-/// the structure from ONLY the public payload (black-box: no internal read).
-fn audit_export_rederive(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "Audit: GET /v1/customer/audit → re-derive row shape from public payload";
+/// Seed real control-plane events (PAT create + team invite), read the customer
+/// audit log, and re-derive the structure from ONLY the public payload.
+fn audit_seed_then_rederive(cfg: &Config, client: &Client) -> JourneyResult {
+    let name = "Audit: seed (pat.create + team.invite) → GET /v1/customer/audit → non-empty rows + re-derive shape";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
@@ -42,93 +42,145 @@ fn audit_export_rederive(cfg: &Config, client: &Client) -> JourneyResult {
     };
     let token = p1.token.expect("P1 has a token");
 
-    // Generate a few audit-worthy events on the request path.
-    let me = url_users_me(cfg);
-    for _ in 0..3 {
-        let _ = client.get(&me).header(AUTHORIZATION, bearer(token)).send();
+    // ── SEED ──────────────────────────────────────────────────────────────────
+    // Each committed mutation writes a `customer_audit_events` row (0077). We
+    // count how many seed ops actually landed: if NONE land (e.g. the env can't
+    // mint keys), we cannot fairly assert non-empty → gate; if at least one
+    // lands, an empty audit read afterwards is a real failure.
+    let mut seeded = 0u32;
+
+    // Event 1 — PAT create (event_type `pat.created`). A read-only key needs no
+    // write-scope gate, so this lands for any read-write caller.
+    let keys_url = url_customer(cfg, "keys");
+    match client
+        .post(&keys_url)
+        .header(AUTHORIZATION, bearer(token))
+        .header(CONTENT_TYPE, "application/json")
+        .json(&json!({ "name": "e2e-audit-seed", "scopes": ["cache:read"] }))
+        .send()
+    {
+        Ok(r) if r.status().as_u16() == 201 => seeded += 1,
+        Ok(r) if r.status().as_u16() == 403 => {
+            return JourneyResult::gated(
+                name,
+                "POST /v1/customer/keys → 403 — PAT lacks the scope to seed an audit event",
+            )
+        }
+        Ok(_) | Err(_) => { /* fall through; the invite below may still seed */ }
     }
 
-    // Customer-facing audit list (worker-routed under /v1/customer/*).
-    let url = url_customer(cfg, "audit?limit=100");
-    let resp = match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
-        Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
-    };
-    let status = resp.status().as_u16();
-    if status == 403 {
+    // Event 2 — team invite (event_type `team.invited`). Best-effort; only when
+    // an invite email is configured (a `Developer` role needs no privileged gate).
+    if let Some(email) = cfg.team_invite_email.as_deref().filter(|e| !e.is_empty()) {
+        let invite_url = url_customer(cfg, "team/invite");
+        if let Ok(r) = client
+            .post(&invite_url)
+            .header(AUTHORIZATION, bearer(token))
+            .header(CONTENT_TYPE, "application/json")
+            .json(&json!({ "email": email, "role": "Developer" }))
+            .send()
+        {
+            if matches!(r.status().as_u16(), 200 | 201) {
+                seeded += 1;
+            }
+        }
+    }
+
+    if seeded == 0 {
         return JourneyResult::gated(
             name,
-            "GET /v1/customer/audit → 403 — PAT lacks audit-read scope; supply a scoped PAT",
-        );
-    }
-    if status != 200 {
-        return JourneyResult::fail(
-            name,
-            ms(start),
-            format!("GET /v1/customer/audit got {status} (expected 200). url={url}"),
+            "no audit-seed event landed (key create + team invite both unavailable in this env) \
+             — cannot assert a non-empty audit log",
         );
     }
 
-    let body: Value = match resp.json() {
-        Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("audit not JSON: {e}")),
-    };
-    // Contract (routes/customer.rs handle_audit): {"rows":[...]}.
-    let rows = match body.get("rows").and_then(Value::as_array) {
-        Some(a) => a,
-        None => {
+    // ── READ (bounded poll for D1 read-replica lag) ─────────────────────────────
+    let url = url_customer(cfg, "audit?limit=100");
+    let mut last_body = Value::Null;
+    for attempt in 0..7u32 {
+        let resp = match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
+            Ok(r) => r,
+            Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
+        };
+        let status = resp.status().as_u16();
+        if status == 403 {
+            return JourneyResult::gated(
+                name,
+                "GET /v1/customer/audit → 403 — PAT lacks audit-read scope; supply a scoped PAT",
+            );
+        }
+        if status != 200 {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("audit 200 but missing/non-array 'rows' field: {body}"),
-            )
+                format!("GET /v1/customer/audit got {status} (expected 200). url={url}"),
+            );
         }
-    };
-
-    // An empty `rows` is the documented contract for a quiet tenant (the
-    // customer audit sink is distinct from the request-path chain, and the
-    // /users/me reads above land in the request-path chain, NOT this sink — so
-    // we cannot deterministically seed it black-box). GATED, not PASS (auditor
-    // finding): an empty page validates NOTHING about row re-derivation, so
-    // passing on it is a false-green that counts toward the floor. We only PASS
-    // when there is at least one row and the per-row + monotonic-ts checks below
-    // actually run. Auto-arms the moment the sink carries a row.
-    if rows.is_empty() {
-        return JourneyResult::gated(
-            name,
-            "GET /v1/customer/audit returned an empty rows page (quiet tenant; the \
-             customer audit sink cannot be seeded black-box) — re-derive asserts \
-             nothing on an empty page, so this is GATED not PASS",
-        );
-    }
-
-    // Re-derive: every row carries the required fields and `ts` is monotonic.
-    let mut prev_ts: Option<i64> = None;
-    for (i, row) in rows.iter().enumerate() {
-        for field in ["event_id", "ts", "event_type"] {
-            if row.get(field).map(Value::is_null).unwrap_or(true) {
+        let body: Value = match resp.json() {
+            Ok(v) => v,
+            Err(e) => return JourneyResult::fail(name, ms(start), format!("audit not JSON: {e}")),
+        };
+        // Contract (routes/customer.rs handle_audit): {"rows":[...]}.
+        let rows = match body.get("rows").and_then(Value::as_array) {
+            Some(a) => a.clone(),
+            None => {
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("row {i} missing required field '{field}': {row}"),
-                );
+                    format!("audit 200 but missing/non-array 'rows' field: {body}"),
+                )
             }
+        };
+
+        if rows.is_empty() {
+            // Seeded rows not visible yet — tolerate replication lag, then retry.
+            if attempt < 6 {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                last_body = body;
+                continue;
+            }
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "GET /v1/customer/audit returned an empty rows page AFTER seeding \
+                 pat.create/team.invite — the customer audit log is not recording events"
+                    .to_owned(),
+            );
         }
-        // `ts` may be a numeric epoch or an RFC-3339 string; only enforce
-        // monotonicity when it is numeric (the only black-box-orderable form).
-        if let Some(ts) = row["ts"].as_i64() {
-            if let Some(p) = prev_ts {
-                if ts < p {
+
+        // Re-derive: every row carries the required fields and `ts` is monotonic
+        // (only enforceable when numeric — ISO-8601 strings only get presence).
+        let mut prev_ts: Option<i64> = None;
+        for (i, row) in rows.iter().enumerate() {
+            for field in ["event_id", "ts", "event_type"] {
+                if row.get(field).map(Value::is_null).unwrap_or(true) {
                     return JourneyResult::fail(
                         name,
                         ms(start),
-                        format!("ordering violation: row {i} ts={ts} < prev={p}"),
+                        format!("row {i} missing required field '{field}': {row}"),
                     );
                 }
             }
-            prev_ts = Some(ts);
+            if let Some(ts) = row["ts"].as_i64() {
+                if let Some(p) = prev_ts {
+                    if ts < p {
+                        return JourneyResult::fail(
+                            name,
+                            ms(start),
+                            format!("ordering violation: row {i} ts={ts} < prev={p}"),
+                        );
+                    }
+                }
+                prev_ts = Some(ts);
+            }
         }
+
+        return JourneyResult::pass(name, ms(start));
     }
 
-    JourneyResult::pass(name, ms(start))
+    JourneyResult::fail(
+        name,
+        ms(start),
+        format!("audit log never became non-empty after seeding; last body: {last_body}"),
+    )
 }

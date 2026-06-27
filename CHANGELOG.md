@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Customer audit log is now real (`GET /v1/customer/audit`).** Added the `customer_audit_events` D1
+  table (migration 0077, additive) + a real read path in `customer_d1.rs` (was a stubbed empty list).
+  Control-plane events now write durable audit rows: PAT create → `pat.created`, team invite →
+  `team.invited` (actor + target + ts; fail-OPEN so the audit insert never blocks the primary op; the
+  invite summary names only the role, never the raw email, per CTRL-PRIV-001). `GET /v1/customer/audit`
+  returns the rows newest-first. Covered by D1-mapping unit tests + the `audit` e2e journey (seeds via a
+  real PAT-create + invite, then asserts a non-empty, well-shaped page).
 - **OKF wiki filled to 146/146 code-grounded concepts (waves 1–4 + truth-audit remediation).** The OKF
   bundle (`docs/knowledge/`) now carries the complete concept set — architecture (planes/surfaces/auth/
   flows/storage/tenancy/crates), 76 ADR concepts, and 32 doc-extraction concepts — each `path:line`

@@ -14,7 +14,7 @@
 //! |---------------------|------------------------------------------------------------|
 //! | overview            | `tenant` (0023/0031/0056/0057) + `tenant_storage_state` (0008) `SUM(bytes_used)` / `MAX(bytes_quota)` + `tenant_billing` (0055) + `byok_envelope` (0030) existence; `tenant_name` = `tenant_id`; `recent_activity` = `[]` (no suitable table) |
 //! | usage               | real `cas_bytes`/`quota_bytes` from `tenant_storage_state`; `reads`/`writes` = 0 + `daily` = `[]` (no per-day table) — only the CURRENT period is retained, an earlier period honestly reports 0 bytes |
-//! | audit               | `rows: []` (no suitable customer-audit table yet)          |
+//! | audit               | `customer_audit_events` (migration 0077): newest-first, tenant-scoped, bounded; rows written best-effort by `keys create` (`pat.created`) + `team invite` (`team.invited`) |
 //! | billing             | `tenant_billing` (0055) + `tier_selections` (0039/0062); status map FROZEN (see [`map_billing_status`]); `invoices` = `[]` (no invoice-history surface yet) |
 //! | billing/portal      | `tenant_billing.stripe_customer_id` → Stripe billing-portal session; no customer id → 404 "no billing account" |
 //! | keys list           | `pat` (0037/0054 + WP-2 columns `name`, `revoked_at_ms` — migration 0063, parallel PR); `last_used_at` = `None` (not tracked) |
@@ -416,6 +416,11 @@ fn col_opt_i64(row: &D1Row, key: &str) -> Option<i64> {
 /// migration 0037's `pat.expires_ms` contract).
 const SELF_SERVE_PAT_TTL: Duration = Duration::from_secs(90 * 86_400);
 
+/// Max customer-facing audit rows returned by `GET /v1/customer/audit`
+/// (newest-first). Bounds the row source (migration 0077) so a long-lived
+/// tenant's activity log can never return an unbounded page.
+const AUDIT_QUERY_LIMIT: i64 = 100;
+
 /// Production D1-backed customer handler. Implements all 6
 /// `corelink-handler-customer` traits over the [`CustomerD1`] seam.
 /// See the module docs for the per-endpoint HONEST-v1 matrix.
@@ -591,6 +596,33 @@ impl D1CustomerHandler {
             self.emit_sli(true);
             CustomerHandlerError::Internal(format!("customer_d1: {e}"))
         })
+    }
+
+    /// Best-effort write of one customer-facing audit row (migration 0077) —
+    /// the WRITE half of `GET /v1/customer/audit`. Fail-OPEN by design: a failed
+    /// audit insert is logged and SWALLOWED so it can NEVER block the primary
+    /// control-plane op (key create / team invite), and it does NOT mark the
+    /// primary op's SLI as errored. Tenant-scoped + fully parameterised
+    /// (INV-TENANT-ISOLATION). `target` / `detail` MUST be PII-free (e.g. a PAT
+    /// id / invitation id + role, never a raw email — CTRL-PRIV-001).
+    fn insert_audit_event(&self, tenant_id: &str, event_type: &str, actor: &str, target: &str, detail: &str) {
+        let ts_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
+        if let Err(e) = self.db.query(
+            "INSERT INTO customer_audit_events \
+             (tenant_id, event_type, actor, target, ts_ms, detail) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            vec![
+                json!(tenant_id),
+                json!(event_type),
+                json!(actor),
+                json!(target),
+                json!(ts_ms),
+                json!(detail),
+            ],
+        ) {
+            // Fail-OPEN: log and continue; the primary op already succeeded.
+            tracing::warn!(error = %e, event_type, "customer_d1: best-effort audit insert failed");
+        }
     }
 
     /// Fetch the tenant row (`tier` / `clerk_user_id` / `byok_status` /
@@ -1017,6 +1049,17 @@ impl CustomerKeysHandler for D1CustomerHandler {
             None,
         );
 
+        // Customer-facing audit row (migration 0077, write half). Best-effort /
+        // fail-OPEN: never blocks the just-committed mint. `target` is the PAT id
+        // (no PII); the summary names the key + granted scope.
+        self.insert_audit_event(
+            &req.caller_tenant,
+            "pat.created",
+            &req.principal,
+            &pat.id.to_string(),
+            &format!("Created API key {:?} ({scope})", req.name),
+        );
+
         self.emit_audit(
             AuditEventKind::KeyCreateCommitted,
             &req.caller_tenant,
@@ -1184,6 +1227,18 @@ impl CustomerTeamHandler for D1CustomerHandler {
             ],
         )?;
 
+        // Customer-facing audit row (migration 0077, write half). Best-effort /
+        // fail-OPEN: never blocks the just-committed invite. PII-safe — `target`
+        // is the invitation id and the summary names only the role, NEVER the raw
+        // invitee email (CTRL-PRIV-001; only `email_hash` is persisted above).
+        self.insert_audit_event(
+            &req.caller_tenant,
+            "team.invited",
+            &req.principal,
+            &invitation_id,
+            &format!("Invited a team member with role {role}"),
+        );
+
         self.emit_audit(
             AuditEventKind::TeamInviteCommitted,
             &req.caller_tenant,
@@ -1291,11 +1346,34 @@ impl CustomerAuditHandler for D1CustomerHandler {
             "",
         )?;
 
-        // HONEST v1: no customer-queryable audit table is deployed (the
-        // canonical chain lives in the R2 NDJSON archive, served by
-        // /v1/audit/export) — explicit empty rows, never synthesized
-        // events.
-        let resp = AuditQueryResponse::new(Vec::<CustomerAuditEventRow>::new());
+        // Real customer-facing activity log (migration 0077): newest-first,
+        // tenant-scoped, bounded. Written best-effort by the control-plane
+        // mutations (`create` / `invite`). Fail-CLOSED on transport error
+        // (`self.run`), never degraded to fabricated empty data.
+        let rows = self.run(
+            "SELECT id, event_type, actor, target, ts_ms, detail \
+             FROM customer_audit_events WHERE tenant_id = ?1 \
+             ORDER BY ts_ms DESC LIMIT ?2",
+            vec![json!(req.caller_tenant), json!(AUDIT_QUERY_LIMIT)],
+        )?;
+        let event_rows: Vec<CustomerAuditEventRow> = rows
+            .iter()
+            .map(|row| {
+                CustomerAuditEventRow::new(
+                    col_opt_i64(row, "id")
+                        .map(|i| i.to_string())
+                        .unwrap_or_default(),
+                    col_opt_i64(row, "ts_ms").map(ms_to_iso8601).unwrap_or_default(),
+                    col_opt_str(row, "event_type").unwrap_or_default(),
+                    // No per-event severity column; the customer-facing surface
+                    // carries only informational activity rows.
+                    "info",
+                    col_opt_str(row, "actor").unwrap_or_default(),
+                    col_opt_str(row, "detail").unwrap_or_default(),
+                )
+            })
+            .collect();
+        let resp = AuditQueryResponse::new(event_rows);
 
         self.emit_audit(
             AuditEventKind::AuditQueryServed,
@@ -2415,13 +2493,61 @@ mod tests {
     // ── Audit query ──────────────────────────────────────────────────────────
 
     #[test]
-    fn audit_query_returns_honest_empty_rows() {
+    fn audit_query_empty_source_returns_empty_rows() {
+        // No rows in customer_audit_events → honest empty page (never fabricated).
         let f = fixture_with(MockD1::with(vec![]), None);
         let resp = f
             .handler
             .query(AuditQueryRequest::new(TENANT, "clpat_x", None, vec![], 0))
             .unwrap();
-        assert!(resp.rows.is_empty(), "no customer-audit table: honest []");
+        assert!(resp.rows.is_empty());
+    }
+
+    #[test]
+    fn audit_query_maps_customer_audit_events_rows() {
+        // Two seeded events (migration 0077). The read maps each row to a
+        // `CustomerAuditEventRow` and preserves the SQL's newest-first order;
+        // `ts` is rendered ISO-8601 and `severity` is the constant `info`.
+        let f = fixture_with(
+            MockD1::with(vec![(
+                "FROM customer_audit_events",
+                vec![
+                    row(&[
+                        ("id", json!(2)),
+                        ("event_type", json!("team.invited")),
+                        ("actor", json!("clpat_admin")),
+                        ("target", json!("inv-2")),
+                        ("ts_ms", json!(1_700_000_000_000_i64)),
+                        ("detail", json!("Invited a team member with role member")),
+                    ]),
+                    row(&[
+                        ("id", json!(1)),
+                        ("event_type", json!("pat.created")),
+                        ("actor", json!("clpat_admin")),
+                        ("target", json!("pat-1")),
+                        ("ts_ms", json!(1_699_999_999_000_i64)),
+                        ("detail", json!("Created API key \"ci\" (read-only)")),
+                    ]),
+                ],
+            )]),
+            None,
+        );
+        let resp = f
+            .handler
+            .query(AuditQueryRequest::new(TENANT, "clpat_x", None, vec![], 0))
+            .unwrap();
+        assert_eq!(resp.rows.len(), 2);
+        assert_eq!(resp.rows[0].event_id, "2");
+        assert_eq!(resp.rows[0].event_type, "team.invited");
+        assert_eq!(resp.rows[0].severity, "info");
+        assert_eq!(resp.rows[0].actor, "clpat_admin");
+        assert!(
+            resp.rows[0].ts.ends_with('Z'),
+            "ISO-8601 ts: {}",
+            resp.rows[0].ts
+        );
+        assert_eq!(resp.rows[1].event_id, "1");
+        assert_eq!(resp.rows[1].event_type, "pat.created");
     }
 
     // ── Misc plumbing ────────────────────────────────────────────────────────
