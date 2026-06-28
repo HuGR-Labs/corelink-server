@@ -4,7 +4,7 @@ title: "Durable Object lifecycle (CoreLinkServer)"
 description: "The per-tenant Durable Object that manages the Rust container lifecycle (cold start, health, idle stop) and proxies HTTP to it."
 source_files:
   - "worker/src/durable_object.ts"
-checkpoint_sha: "f00ec7b71ab8196df8a6620e3bf5a73bd1bc82b9"
+checkpoint_sha: "cc1542cf950c5b40979945b3b88cc63b5eb9e143"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -43,11 +43,14 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 6. Cold start emits the `corelink.do.cold_start.v1` audit event BEFORE calling `container.start`, per
    the charter's audit-before-mutation rule (`worker/src/durable_object.ts:505-519`).
 7. `waitForContainerHealth` polls `GET /_health` on the container port until a 200 or the 90s startup
-   timeout (`worker/src/durable_object.ts:752-782`).
+   timeout (`worker/src/durable_object.ts:764-794`). The wait loop FAST-EXITS the moment the container
+   status flips to the terminal `"stopped"` state (a bad deploy / OOM / panic) — it no longer spins the
+   full ~90s `STARTUP_TIMEOUT_MS` on a container that is already dead, returning a prompt `503` so the
+   next request triggers a restart (`worker/src/durable_object.ts:742-753`).
 8. An idle timer destroys the container after `IDLE_TIMEOUT_MS` (5 min), emitting the death event first
-   (`worker/src/durable_object.ts:80-83`, `worker/src/durable_object.ts:852-883`).
+   (`worker/src/durable_object.ts:80-83`, `worker/src/durable_object.ts:864-895`).
 9. A periodic `alarm` re-probes health and marks the container `degraded` after `MAX_HEALTH_FAILURES`
-   (`worker/src/durable_object.ts:905-959`).
+   (`worker/src/durable_object.ts:917-971`).
 
 # Invariants
 - One DO instance per tenant — the DO ID is tenant-derived, never cross-tenant
@@ -78,6 +81,6 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 8. `worker/src/durable_object.ts:474-500` — the synchronous in-memory `"starting"` concurrent-start guard.
 9. `worker/src/durable_object.ts:505-519` — audit-before-mutation cold-start event + `container.start`.
 10. `worker/src/durable_object.ts:523-663` — the `container.start({ env })` env-contract forward.
-11. `worker/src/durable_object.ts:752-782` — `waitForContainerHealth` polling `/_health`.
-12. `worker/src/durable_object.ts:852-883` — the idle-timeout destroy path.
-13. `worker/src/durable_object.ts:905-959` — the periodic `alarm` health re-probe + degrade.
+11. `worker/src/durable_object.ts:764-794` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:742-753` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
+12. `worker/src/durable_object.ts:864-895` — the idle-timeout destroy path.
+13. `worker/src/durable_object.ts:917-971` — the periodic `alarm` health re-probe + degrade.
