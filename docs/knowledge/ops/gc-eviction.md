@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-eviction/src/reservation.rs"
   - "crates/corelink-eviction/src/trigger.rs"
   - "docs/internal/gc-prod-rollout-plan.md"
-checkpoint_sha: "d8ef7dfc9e3fb278e50cad25277c6b4cf6060502"
+checkpoint_sha: "2cfa6827a54076ff11847be74f24dee4afe3222a"
 provenance: "AUTHORED"
 tags: ["ops", "gc", "eviction", "storage", "runbook", "rollout"]
 timestamp: "2026-06-26T00:00:00Z"
