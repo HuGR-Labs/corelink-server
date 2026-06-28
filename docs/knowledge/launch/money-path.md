@@ -5,8 +5,10 @@ description: "How CoreLink turns a tier selection into a paid Stripe subscriptio
 source_files:
   - crates/corelink-container/src/routes/tier_select_checkout.rs
   - crates/corelink-container/src/routes/billing_ingest.rs
+  - crates/corelink-container/src/main.rs
+  - worker/src/index.ts
   - docs/operator/stripe-checkout-e2e-2026-05-29.md
-checkpoint_sha: "664d78b8e6f62ad6d0e95a94552c6c0997f8fea1"
+checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
 provenance: "AUTHORED"
 tags: [launch, billing, stripe, checkout, usage, money-path]
 timestamp: "2026-06-26T00:00:00Z"
@@ -16,7 +18,7 @@ The "money path" is the chain that converts a self-serve tier selection into act
 
 # Role
 
-The money path has three moving parts. (1) **Checkout creation** — `StripeCheckoutCreator` is the production adapter behind `POST /v1/onboarding/tier-select`; it builds a Stripe Checkout Session and returns only the hosted URL. (2) **Activation** — the live Stripe webhook handler (in `apps/signup-worker/src/webhooks/stripe.ts`, outside these container sources) writes the `tenant_billing` row on `checkout.session.completed`. (3) **Usage ingest** — `POST /internal/v1/billing/usage` durably stages runner per-lease usage records into D1 for the downstream aggregator. Note the asymmetry: runner usage is NOT a Stripe meter — runners are priced on the concurrency axis, so this ingest is reconciliation-only, never a charge.
+The money path has three moving parts. (1) **Checkout creation** — `StripeCheckoutCreator` is the production adapter behind `POST /v1/onboarding/tier-select`; it builds a Stripe Checkout Session and returns only the hosted URL. (2) **Activation** — there are TWO live, signature-verified Stripe activation surfaces, NOT one: the signup-worker handler (`apps/signup-worker/src/webhooks/stripe.ts`, outside these container sources) AND the CONTAINER's own webhook materializer (`crates/corelink-container/src/main.rs:708-847` mounts the route; `corelink-billing-stripe-materializer`'s `D1SubscriptionStateHandler` + `build_tier_selector` write `subscription_state='active'` + the resolved tier to `tier_selections`). The **container is the routed authority**: `worker/src/index.ts:763-773` routes `/v1/billing/stripe-webhook` to the `_system` DO → container as a pure pass-through (Stripe's `Stripe-Signature` HMAC, not a PAT), so the container is the SOLE signature-verifier on that route. Sibling concepts `security/money-path-review` (:42-43, "the `subscription_state='active'` gate is enforced in the container materializer write path") and `launch/go-live-readiness` (:25, two live webhook handlers / two tier writers) corroborate this — and go-live-readiness flags the divergent-tier-map risk between the two writers (both must key the same `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env map or a real `customer.subscription.updated` resolves to `UnknownPlan` → 422; see `crates/corelink-container/src/main.rs:759-780`). (3) **Usage ingest** — `POST /internal/v1/billing/usage` durably stages runner per-lease usage records into D1 for the downstream aggregator. Note the asymmetry: runner usage is NOT a Stripe meter — runners are priced on the concurrency axis, so this ingest is reconciliation-only, never a charge.
 
 # How it works
 
@@ -44,7 +46,8 @@ The money path has three moving parts. (1) **Checkout creation** — `StripeChec
 
 # Gotchas
 
-- **Paid is only served when active, not at "pending_checkout."** The serving filter that requires `subscription_state='active'` lives in the Worker quota path (`quota.ts`, outside these sources), not in the checkout adapter — the adapter merely opens the session. The webhook writing `status="paid"` on `checkout.session.completed` is what flips a tenant from pending to served (`docs/operator/stripe-checkout-e2e-2026-05-29.md:88-90`).
+- **Paid is only served when active, not at "pending_checkout."** The serving filter that requires `subscription_state='active'` lives in the Worker quota path (`quota.ts`, outside these sources), not in the checkout adapter — the adapter merely opens the session. The webhook writing `status="paid"`/`subscription_state='active'` is what flips a tenant from pending to served. That write happens on the **container materializer** when the route is hit there (`crates/corelink-container/src/main.rs:781-847`), and the signup-worker carries an equivalent handler — so an audit of "what activates a tenant" must look at BOTH surfaces, not just the worker (`docs/operator/stripe-checkout-e2e-2026-05-29.md:88-90`).
+- **Two live activation writers ⇒ a divergent-tier-map risk.** Both the container materializer and the signup-worker resolve `customer.subscription.updated` → tier off the `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env map; if the two are seeded with different price ids one writer resolves `UnknownPlan` → 422 and Stripe stops retrying. go-live-readiness flags this; keep the two maps identical (`crates/corelink-container/src/main.rs:759-780`).
 - API-created subscriptions that bypass Checkout do NOT auto-populate `tenant_billing` (only `checkout.session.completed` writes the row) — operators must use the checkout flow for self-serve signups (`docs/operator/stripe-checkout-e2e-2026-05-29.md:91-93`).
 - `current_period_end_ms` is left NULL by `checkout.session.completed`; it is filled by the subsequent `customer.subscription.updated` event, so don't read it immediately after activation (`docs/operator/stripe-checkout-e2e-2026-05-29.md:47-48`).
 - A stale `STRIPE_WEBHOOK_SECRET` silently 400s every webhook (`invalid_signature`) — when recreating a Stripe endpoint, immediately `wrangler secret put STRIPE_WEBHOOK_SECRET` and resync `.env.local` (`docs/operator/stripe-checkout-e2e-2026-05-29.md:70-78`).
@@ -60,3 +63,5 @@ The money path has three moving parts. (1) **Checkout creation** — `StripeChec
 - `crates/corelink-container/src/routes/billing_ingest.rs:475-543` — handler: auth-before-parse, all-or-nothing validation, accepted/deduped tally, 503 fail-closed.
 - `crates/corelink-container/src/routes/billing_ingest.rs:407-442` — `validate_record`: lowercase-canonicalize `idem_key` (case-variant dedup-bypass close) + `MAX_SOURCE_LEN` (256) cap → `SourceTooLong` 400.
 - `docs/operator/stripe-checkout-e2e-2026-05-29.md:85-93` — verified webhook → `tenant_billing` activation behavior + the API-bypass gotcha.
+- `crates/corelink-container/src/main.rs:708-847` — the SECOND live activation surface: the container's signature-verified Stripe webhook mount → `D1SubscriptionStateHandler` (`build_tier_selector` resolves the tier off `STRIPE_PRICE_ID_*`) materializing `subscription_state='active'`+tier to `tier_selections` over D1-HTTP.
+- `worker/src/index.ts:763-773` — the worker routes `/v1/billing/stripe-webhook` to the `_system` DO → container as a pure pass-through; the container is the SOLE signature-verifier / routed authority.

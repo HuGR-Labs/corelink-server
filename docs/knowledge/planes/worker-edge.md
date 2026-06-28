@@ -4,7 +4,7 @@ title: "Cloudflare Worker edge plane"
 description: "The HTTPS entry point: route table, PAT auth, server-trust header hygiene, per-tier quota, and forwarding to the per-tenant Durable Object."
 source_files:
   - "worker/src/index.ts"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -37,7 +37,12 @@ keeps forged tokens cheap to reject before any expensive work.
 4. `extractAuth` fails CLOSED (503) when `PAT_SIGNING_KEY` is absent or decodes to < 32 bytes — the
    signing key is the sole possession gate for the native plane (`worker/src/index.ts:851-878`).
 5. PAT validation is HMAC-SHA256 fast-reject (with rotation siblings) BEFORE any D1 round-trip, then a
-   D1 lookup by `token_id` and an application-side expiry check (`worker/src/index.ts:916-1031`).
+   D1 lookup by `token_id` and an application-side expiry check (`worker/src/index.ts:916-1031`). The D1
+   lookup is wrapped in try/catch and a TRANSIENT D1 fault (network partition / DB unavailable) returns
+   the distinct reason `d1_lookup_error` (`worker/src/index.ts:1013-1021`), which the caller maps to
+   `401` — the edge fails CLOSED on a D1 fault ("security > availability at this layer"), it does NOT
+   emit a retryable 503 for it. The ONLY edge-auth 503 is the config fault `signing_key_not_configured`
+   (absent/short `PAT_SIGNING_KEY`), an operator-alert case (`worker/src/index.ts:2108-2117`).
 6. `stripClientTrustHeaders` deletes every client-suppliable trust header on every forward, then the
    Worker re-sets its own verified values (`worker/src/index.ts:473-477`).
 7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
@@ -76,7 +81,8 @@ keeps forged tokens cheap to reject before any expensive work.
 4. `worker/src/index.ts:473-477` — `stripClientTrustHeaders` (delete-then-set discipline).
 5. `worker/src/index.ts:525-789` — the `matchRoute` ordered route table.
 6. `worker/src/index.ts:851-878` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
-7. `worker/src/index.ts:916-1031` — HMAC fast-reject + D1 lookup + expiry check.
+7. `worker/src/index.ts:916-1031` — HMAC fast-reject + D1 lookup + expiry check (incl. the try/catch that turns a transient D1 fault into `d1_lookup_error` at `:1013-1021`).
+7b. `worker/src/index.ts:2108-2117` — caller reason→status mapping: `signing_key_not_configured` → 503 (config fault), every other reason (incl. `d1_lookup_error`) → 401 (fail-CLOSED on a D1 fault, not a retryable 503).
 8. `worker/src/index.ts:1457-1470` — the `baseHandler.fetch` entry, request-id, CORS, route match.
 9. `worker/src/index.ts:1476-1489` — health short-circuit (no auth, no DO).
 10. `worker/src/index.ts:2151-2172` — per-tier quota enforcement after auth, before forward.

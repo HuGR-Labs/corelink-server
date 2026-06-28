@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-eviction/src/reservation.rs"
   - "crates/corelink-eviction/src/trigger.rs"
   - "docs/internal/gc-prod-rollout-plan.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
 provenance: "AUTHORED"
 tags: ["ops", "gc", "eviction", "storage", "runbook", "rollout"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -48,7 +48,14 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
    (`crates/corelink-gc/src/degrade.rs:65`).
 6. Eviction resolves a retention TTL per the 5-tier `Tier` enum (`crates/corelink-eviction/src/tier.rs:51-61`)
    through the `ttl_for_tier` resolver (free=7d, solo=30d, team=90d, business/enterprise=365d)
-   (`crates/corelink-eviction/src/tier.rs:89-93`).
+   (`crates/corelink-eviction/src/tier.rs:89-93`). ⚠️ **This `Tier` enum is a SEPARATE LEGACY 5-arm domain
+   `{Free,Solo,Team,Business,Enterprise}` that does NOT match the sold 6-tier ladder
+   `{Free,Solo,Starter,Pro,Max,Enterprise}` (ADR-S19-001 — see `launch/tier-model`).** It has Team+Business
+   (neither in the sold ladder: Team was removed by S19-001, Business never shipped) and lacks
+   Starter/Pro/Max; it is a Rust enum with NO `FromStr`/`from_slug` conversion, so there is no path that
+   maps a sold `starter`/`pro`/`max` slug INTO this enum — a live Starter/Pro/Max tenant has NO eviction
+   TTL of its own here. This is a real coverage GAP, not a clean live mapping; eviction is still a
+   pure-logic skeleton (no live cron — see the gotcha) so it bites only when eviction is actually wired.
 7. The size-proportional reservation TTL clamps between a 60s floor and a 7d ceiling so a large multipart
    upload never expires mid-write (`crates/corelink-eviction/src/reservation.rs:77-81`).
 8. The 95% quota trigger fires (boundary-inclusive) when `bytes_used / bytes_quota >= 0.95`, computed by
@@ -80,6 +87,13 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
   batch-boundary scoped (`docs/internal/gc-prod-rollout-plan.md:84-88`).
 - The 5 rollout regions (`sam/iad/lhr/nrt/syd`) are colo strings, distinct from the macro `Tier` vocabulary
   — do not conflate a region cohort with a tenant tier.
+- **The eviction `Tier` taxonomy is NOT the sold tier ladder.** Eviction's `{Free,Solo,Team,Business,Enterprise}`
+  predates ADR-S19-001's sold `{Free,Solo,Starter,Pro,Max,Enterprise}` and has no `FromStr` to ingest the new
+  slugs — so `starter`/`pro`/`max` map to NO eviction TTL here. Treat eviction-TTL coverage of the sold
+  Starter/Pro/Max tiers as an OPEN gap to close before eviction goes live; the request-quota count axis, by
+  contrast, DOES cover those slugs (it keys off slug strings, not this enum — see the sibling concept
+  [request-quota](/tenancy/request-quota.md)) — so the gap is eviction-only
+  (`crates/corelink-eviction/src/tier.rs:51-61`).
 - Both crates are pure-logic skeletons today: the real D1 `blob_meta.deleted_at` UPDATE + cron DO binding
   land at the PRR ship gate, so "GC is wired" means the invariants are proven against fakes, not that a
   live cron is reclaiming prod bytes yet.
@@ -94,7 +108,7 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
 6. `crates/corelink-gc/src/degrade.rs:65` — `blocks_new_runs` matches `GcPause | GcReadOnly`.
 7. `crates/corelink-eviction/src/tier.rs:41` — `MAX_ENTERPRISE_TTL_DAYS = 730` override cap.
 7b. `crates/corelink-eviction/src/tier.rs:145-148` — `ttl_for_tier_with_override` rejects a longer override with `ExceedsMaxTtl`.
-8. `crates/corelink-eviction/src/tier.rs:51-61` — the 5-value `Tier` enum.
+8. `crates/corelink-eviction/src/tier.rs:51-61` — the 5-value LEGACY `Tier` enum `{Free,Solo,Team,Business,Enterprise}` (no `FromStr`; does NOT cover the sold Starter/Pro/Max — a coverage gap vs ADR-S19-001).
 9. `crates/corelink-eviction/src/tier.rs:89-93` — `ttl_for_tier` per-tier TTL resolution.
 10. `crates/corelink-eviction/src/reservation.rs:50` — `MIN_RESERVATION_TTL_MS = 60_000` floor.
 11. `crates/corelink-eviction/src/reservation.rs:54` — `MAX_RESERVATION_TTL_MS = 7 × 86_400_000` cap.

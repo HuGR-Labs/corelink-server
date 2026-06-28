@@ -4,8 +4,9 @@ title: "The 2-level PAT moat"
 description: "How CoreLink rejects forged tokens cheaply at the edge and proves possession deeply in the container."
 source_files:
   - "worker/src/lib/internal_auth.ts"
+  - "worker/src/index.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
+checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -72,6 +73,17 @@ control surfaces (mint, introspect) at the Worker edge.
 - A container CAS 401 means bad HMAC OR no live D1 row, not necessarily a wrong password — the Argon2id
   step is only reached once a row exists. See [the Argon2id verify](/auth/argon2id-verify.md) and
   [the D1 PAT store](/auth/d1-pat-store.md).
+- **Availability-vs-auth at the Worker edge: a transient D1 PAT-lookup FAULT also collapses to 401, not
+  503.** `extractAuth` wraps the `SELECT … FROM pat` in a try/catch and on any D1 error (network
+  partition / DB unavailable) returns the distinct reason `d1_lookup_error`
+  (`worker/src/index.ts:1013-1021`), and the caller maps EVERYTHING except `signing_key_not_configured`
+  to `401 authentication required` (`worker/src/index.ts:2114-2117`) — so the edge deliberately fails
+  CLOSED ("security > availability at this layer"), it does NOT surface a retryable 503 for a D1 fault.
+  Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") is INCOMPLETE for the worker edge: a
+  transient D1 fault is a THIRD cause of a 401 there. The only edge path that returns 503 is the
+  config-fault `signing_key_not_configured` (absent/short `PAT_SIGNING_KEY`), an operator-alert case —
+  NOT a per-request availability signal. (The comment at `worker/src/index.ts:1019` notes the caller
+  *could* map `d1_lookup_error` to 503 "if desired"; in this tree it does not.)
 
 # Citations
 

@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/main.rs"
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
+checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -50,7 +50,15 @@ surface.
    `crates/corelink-container/src/main.rs:835-837`).
 4. Privileged routes are env-gated mounts: `/_internal/pat/mint`, `/internal/v1/auth/introspect`,
    `/internal/v1/billing/usage`, `/_internal/dsr/erase`, CAS-erase, tier-select, and the Stripe webhook
-   each mount only when their secrets are present (`crates/corelink-container/src/main.rs:575-832`).
+   each mount only when their secrets are present (`crates/corelink-container/src/main.rs:575-832`). The
+   Stripe-webhook mount here is NOT a stub: gated on `STRIPE_WEBHOOK_SECRET`, it is a LIVE,
+   signature-verified billing materializer — `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes
+   `subscription_state='active'`+tier to `tier_selections` over D1-HTTP, and the Worker routes
+   `/v1/billing/stripe-webhook` to THIS container as the sole signature-verifier
+   (`crates/corelink-container/src/main.rs:708-847`). It is one of TWO live activation writers (the other
+   is the signup-worker), so go-live-readiness flags a divergent-tier-map risk: both must key the same
+   `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env map or a real `customer.subscription.updated` resolves to
+   `UnknownPlan` → 422 (`crates/corelink-container/src/main.rs:759-780`). See `launch/money-path`.
 5. `build_with_factory` resolves the shared gates from env — the $-ceiling `QuotaGate`, the OCI-scoped
    request-count gate, the native PAT gate, and the byte-accountant — warning (not failing) when absent.
    The request-count gate is DELIBERATELY consumed only by the OCI router (not cloned into the native
@@ -98,6 +106,7 @@ surface.
 6. `crates/corelink-container/src/main.rs:568-573` — the 10 MiB global body limit + `/_health` route.
 7. `crates/corelink-container/src/main.rs:575-588` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
 8. `crates/corelink-container/src/main.rs:575-832` — the full set of env-gated privileged route mounts.
+8b. `crates/corelink-container/src/main.rs:708-847` — the LIVE Stripe-webhook materializer mount: signature-verified `D1SubscriptionStateHandler` writes `subscription_state='active'`+tier to `tier_selections` (one of two activation writers; the worker routes `/v1/billing/stripe-webhook` here as the authority).
 9. `crates/corelink-container/src/main.rs:835-837` — binding the composed router to the PORT listener.
 10. `crates/corelink-container/src/routes.rs:333-341` — `build`/`build_with_factory` router composition.
 11. `crates/corelink-container/src/routes.rs:347-401` — shared gates resolved from env (quota, OCI-scoped request-count, PAT, accountant); the request-count gate is OCI-only, not cloned into native states (would double-count vs the Worker edge).

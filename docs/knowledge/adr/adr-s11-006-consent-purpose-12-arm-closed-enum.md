@@ -4,7 +4,8 @@ title: "ADR-S11-006 — 12-Arm Closed ConsentPurpose Enum Discipline"
 description: "Why CoreLink enforces purpose-limitation at the type level with a closed 12-variant ConsentPurpose enum and a compile-time-fixed legal-basis mapping."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-006-consent-purpose-12-arm-closed-enum.md"
-checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
+  - "crates/corelink-privacy/src/consent/schema.rs"
+checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
 provenance: "AUTHORED"
 tags: ["adr", "s11", "consent", "purpose-limitation", "privacy"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -15,6 +16,8 @@ timestamp: "2026-06-26T00:00:00Z"
 GDPR Art. 5(1)(b) and LGPD Art. 6 II demand purpose limitation: every consent is tied to a specific, explicit, legitimate purpose. This ADR settles the DESIGN-INTENT for *how* CoreLink enforces that specificity — at the Rust type level — favouring a 12-variant enum over a free-form string, so the type system constrains which purposes code may name.
 
 > **Status vs shipped code (2026-06-28):** the spec's "**closed** enum (no `#[non_exhaustive]`) + compile-time exhaustiveness + `const legal_basis_for`" framing is DESIGN-INTENT, not the shipped shape. The live `ConsentPurpose` enum IS `#[non_exhaustive]` (consent/schema.rs:99) — so it deliberately reserves room for additive purposes — and its legal-basis mapping is a **non-`const`** method, `fn legal_basis(&self) -> LegalBasis` (consent/schema.rs:137), whose doc states the mapping "MUST NOT be changed dynamically" as a discipline rather than a `const`-enforced guarantee. Read the "closed enum / `const` mapping / `#[non_exhaustive]`-forbidden" passages below as the design rationale; the deployed enum is non_exhaustive with a non-const basis method. Adding a purpose still requires this ADR's update + a DPIA refresh.
+>
+> **Purpose-NAME divergence (ADR spec vs code/privacy_model):** the ADR *spec's* illustrative Rust block (`specs/.../ADR-S11-006…:37-58`) lists a DIFFERENT 12 names (`ServiceDelivery, SecurityIncidentResponse, BillingFiscalCompliance, LegalObligation, UsageAnalytics, PerformanceTelemetry, ProductImprovementResearch, MarketingEmail, PersonalizedRecommendations, ThirdPartyIntegrations, AbuseDetectionML, AccountRecoveryAssistance`) that overlap the SHIPPED enum in only ~3 arms. The **canonical, live set** is the one in `privacy_model.md §5.6.1` AND the code `ConsentPurpose` (`crates/corelink-privacy/src/consent/schema.rs:99-133`) — they MATCH each other exactly. Per the live `legal_basis()` mapping (`crates/corelink-privacy/src/consent/schema.rs:137-149`) the 12 are: **contract (2)** `ServiceDelivery`, `AccountManagement`; **legal_obligation (1)** `RegulatoryCompliance`; **legitimate_interest (2)** `SecurityMonitoring`, `AnalyticsAggregated`; **consent / revocable (7)** `AnalyticsPersonalized`, `MarketingEmail`, `MarketingResearch`, `BetaFeatures`, `ThirdPartyIntegrations`, `CrossTenantBenchmarks`, `TrainingMlModels`. (Note: the enum's own header doc-comment summarises this as `3 contract + 1 legal_obligation + 2 legitimate_interest + 6 consent`, which mis-counts its OWN `legal_basis()` — that mapping is 2 contract + 7 consent; the per-arm `match` is authoritative.) Treat the ADR spec's name block as a stale early draft; the privacy_model/code names are authoritative. The DESIGN INTENT (12-arm cap, fixed legal-basis-per-purpose) is unchanged either way.
 
 # Context
 
@@ -34,3 +37,5 @@ Positive: regulator-defensible, a compile-time guarantee that no path uses an un
 2. `specs/03_architecture/adrs/ADR-S11-006-consent-purpose-12-arm-closed-enum.md:37-70` — Decision: the 12-variant closed enum + fixed `const` legal-basis mapping.
 3. `specs/03_architecture/adrs/ADR-S11-006-consent-purpose-12-arm-closed-enum.md:72-84` — Rationale: closed-enum exhaustiveness, fixed mapping, "12 is a cap."
 4. `specs/03_architecture/adrs/ADR-S11-006-consent-purpose-12-arm-closed-enum.md:86-97` — Consequences and the three forbidden patterns.
+5. `crates/corelink-privacy/src/consent/schema.rs:99-133` — the SHIPPED `#[non_exhaustive] ConsentPurpose` enum: the canonical 12 variant NAMES (matching privacy_model §5.6.1, NOT the ADR spec's name block).
+6. `crates/corelink-privacy/src/consent/schema.rs:137-149` — the live `legal_basis()` per-arm mapping (non-`const` method): 2 contract / 1 legal_obligation / 2 legitimate_interest / 7 consent.
