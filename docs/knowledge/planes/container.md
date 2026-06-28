@@ -5,7 +5,8 @@ description: "The native Rust binary serving the composed axum data-plane on por
 source_files:
   - "crates/corelink-container/src/main.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "664d78b8e6f62ad6d0e95a94552c6c0997f8fea1"
+  - "crates/corelink-container/src/storage/r2_kv.rs"
+checkpoint_sha: "30ec21dc78d79c85f4d7e1e19e13118c66025c9e"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -63,6 +64,11 @@ surface.
    and the D1 moat map build from env (`crates/corelink-container/src/routes.rs:652-784`).
 8. The residency guard and the per-tenant rate-limit token-bucket are applied as outer layers over the
    composed data plane (`crates/corelink-container/src/routes.rs:791-833`).
+9. The Turbo/sccache surface gets its durable backing from the container's R2 KV store: `R2KvStore`
+   derives each object key as `<hmac_prefix16>/<opaque_key>` and fails CLOSED (`TurboBridgeError::Internal`)
+   on the production path when the TDK is absent or the tenant is not a UUID, rather than degrade to a
+   public, predictable prefix two same-millisecond UUIDv7 tenants could collide into
+   (`crates/corelink-container/src/storage/r2_kv.rs:122-143`).
 
 # Invariants
 - A single HTTP listener on PORT (default 50051) serves the whole data plane — the DO's only target
@@ -101,3 +107,4 @@ surface.
 15. `crates/corelink-container/src/routes.rs:791-833` — residency guard + per-tenant rate-limit outer layers.
 16. `crates/corelink-container/src/routes.rs:793-833` — the rate-limit layer scoped to the data plane only.
 17. `crates/corelink-container/src/main.rs:298-376` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one as the OCI op-cap, plus `ERASURE_SALT_KEY` at `crates/corelink-container/src/main.rs:346-358`), else a FATAL boot refusal (no half-armed prod).
+18. `crates/corelink-container/src/storage/r2_kv.rs:122-143` — `R2KvStore::object_key`: per-tenant `derive_prefix` HMAC key layout, fail-CLOSED on a non-derivable tenant rather than a public predictable prefix.

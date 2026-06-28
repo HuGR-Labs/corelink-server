@@ -6,14 +6,20 @@ source_files:
   - "crates/corelink-container/src/routes/audit_analytics.rs"
   - "crates/corelink-container/src/routes/audit_analytics/state.rs"
   - "crates/corelink-container/src/routes/audit_analytics/rate_limit.rs"
+  - "crates/corelink-container/src/routes/audit_analytics/audit_sink.rs"
+  - "crates/corelink-container/src/routes/audit_analytics/handler_event_count.rs"
+  - "crates/corelink-container/src/routes/audit_analytics/handler_timeline.rs"
+  - "crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs"
   - "crates/corelink-container/src/routes/audit_export.rs"
   - "crates/corelink-container/src/routes/audit_export/audit_sink.rs"
+  - "crates/corelink-container/src/routes/audit_export/handler.rs"
+  - "crates/corelink-container/src/routes/audit_export/parse.rs"
   - "crates/corelink-container/src/routes/audit_export/stream.rs"
   - "crates/corelink-container/src/routes/audit_export/state.rs"
   - "crates/corelink-container/src/routes/audit_export/types.rs"
   - "apps/analytics-worker/src/ingest.ts"
   - "docs/cli/audit-export.md"
-checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
+checkpoint_sha: "30ec21dc78d79c85f4d7e1e19e13118c66025c9e"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -44,6 +50,12 @@ another tenant's rows.
 - The CLI HTTP-aware mode streams directly off the wire and watches for the abort trailer `docs/cli/audit-export.md:33-55`.
 - Analytics routes (event-count, timeline) ship their router (`crates/corelink-container/src/routes/audit_analytics/state.rs:80`) + per-tenant rate-limit config (`crates/corelink-container/src/routes/audit_analytics/state.rs:63`) enforced by `rate_limit_check` (`crates/corelink-container/src/routes/audit_analytics/rate_limit.rs:99`).
 - Each analytics handler runs the native PAT possession gate before any data access `crates/corelink-container/src/routes/audit_analytics.rs:118`.
+- The analytics audit emit is itself a fail-CLOSED helper: `emit_or_503` pushes the row through the sink and, on `Err`, drops the prepared success response and returns `503 "audit pipeline closed"` instead `crates/corelink-container/src/routes/audit_analytics/audit_sink.rs:76-85`.
+- The `/event-count` handler binds the tenant SOLELY to the `AuthTenant`-extracted `x-corelink-tenant-id` header (400 on a non-UUID), runs the PAT gate, rejects inverted windows, rate-limits, then aggregates per-tenant bucket counts emitting an `analytics_query` audit row on every arm `crates/corelink-container/src/routes/audit_analytics/handler_event_count.rs:42-61`.
+- The `/timeline` handler additionally caps query cost with a bucket-cardinality guard — `(to - from) / granularity` must not exceed `MAX_TIMELINE_BUCKETS`, with `granularity` itself bounded to `(0, MAX_GRANULARITY_MS]` — before any aggregate runs `crates/corelink-container/src/routes/audit_analytics/handler_timeline.rs:94-124`.
+- `resolve_shadow_via_prelude` prefers the wave-26 `RequestPrelude` region (hot path skips the per-request region round-trip) and, when the prelude is absent or bound to a different tenant, emits a `request_prelude_missing` marker row + WARN and falls back to `shadow_factory.for_tenant` rather than failing the route `crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs:121-156`.
+- The export handler treats the client-controllable `:tenant` path segment as an untrusted echo: it is parsed and constant-time-compared against the `AuthTenant` header tenant, and a mismatch emits a SEV-1 cross-tenant audit row and returns 403 (fail-CLOSED: 503 on sink failure) BEFORE any data access `crates/corelink-container/src/routes/audit_export/handler.rs:83-99`.
+- The export window timestamps are parsed by `parse_timestamp`, which accepts a raw Unix-epoch-ms integer or a deliberately minimal RFC 3339 `YYYY-MM-DDTHH:MM:SSZ` subset (UTC-only, no fractional seconds, no offsets) to keep the security-sensitive window grammar small `crates/corelink-container/src/routes/audit_export/parse.rs:25-32`.
 - The product-analytics EDGE collector (`POST /v1/event` on the standalone analytics-worker) is the ingest tap that feeds the analytics D1 store; it authenticates each request two ways — a CORS `Origin` allow-list for browsers, or a constant-time-compared `X-Corelink-Ingest-Key` for trusted servers — and rejects anything matching neither with 403 before any write (`apps/analytics-worker/src/ingest.ts:114-136`, `apps/analytics-worker/src/ingest.ts:127-136`), the compare being length-checked + XOR-folded so a wrong key cannot be timing-probed (`apps/analytics-worker/src/ingest.ts:71-78`).
 - The ingest validator enforces a HARD privacy gate at the edge so no PII reaches the analytics store: a forbidden `email`/`ip`/`ip_address`/`remote_addr` key anywhere in an event's `properties` is rejected and the `event_name` must be in a closed allow-list (`apps/analytics-worker/src/ingest.ts:85-112`, `apps/analytics-worker/src/ingest.ts:104-107`).
 
@@ -76,3 +88,9 @@ another tenant's rows.
 11. `docs/cli/audit-export.md:100-102` — 64 MiB response-body cap.
 12. `apps/analytics-worker/src/ingest.ts:114-136` — the edge `POST /v1/event` collector entry (CORS-origin OR ingest-key auth, 403 otherwise); the dual-auth 403 gate at `apps/analytics-worker/src/ingest.ts:127-136`; the constant-time key compare `constantTimeEqual` at `apps/analytics-worker/src/ingest.ts:71-78`.
 13. `apps/analytics-worker/src/ingest.ts:85-112` — the `validate()` event gate (closed `event_name` allow-list + size bounds); the hard PII privacy gate forbidding `email`/`ip`/`ip_address`/`remote_addr` in `properties` at `apps/analytics-worker/src/ingest.ts:104-107`.
+14. `crates/corelink-container/src/routes/audit_analytics/audit_sink.rs:76-85` — analytics `emit_or_503` fail-CLOSED helper (drops success response, returns 503 on sink `Err`).
+15. `crates/corelink-container/src/routes/audit_analytics/handler_event_count.rs:42-61` — `/event-count` handler: `AuthTenant`-bound tenant (400 on non-UUID) + native PAT gate before data access.
+16. `crates/corelink-container/src/routes/audit_analytics/handler_timeline.rs:94-124` — `/timeline` bucket-cardinality + granularity cost guards (`MAX_TIMELINE_BUCKETS` / `MAX_GRANULARITY_MS`).
+17. `crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs:121-156` — `resolve_shadow_via_prelude`: prelude-preferred region with `request_prelude_missing` marker + factory fallback.
+18. `crates/corelink-container/src/routes/audit_export/handler.rs:83-99` — export `:tenant` path-segment constant-time cross-tenant check → SEV-1 row + 403 (fail-CLOSED).
+19. `crates/corelink-container/src/routes/audit_export/parse.rs:25-32` — `parse_timestamp`: epoch-ms-or-minimal-RFC3339 window parser.

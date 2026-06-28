@@ -499,6 +499,46 @@ def _segment_glob_match(rel: str, pattern: str) -> bool:
     return _glob_to_regex(pattern).match(rel) is not None
 
 
+# The SECURITY-CRITICAL trees the C10b file enumeration walks FILE-GRANULAR.
+# A file under one of these is a request-reachable enforcer (a route handler, the
+# native PAT gate, an edge auth/quota/webhook module, an app worker), so it is
+# only "covered" when a concept GROUNDS that EXACT file (per-file source_files /
+# `# Citations` cite) or it is an explicit `excludes:` entry. Crate-cluster /
+# whole-directory ADOPTION must NOT auto-cover an individual file here.
+#
+# gate v6 fix #1 (audit #1 HIGH — cluster-directory-adoption neutralized the
+# recursive enumeration): the `crates/container-platform` CrateCluster seeds the
+# whole `crates/corelink-container` DIRECTORY, which clause (b) of
+# `_concept_grounds` promotes to a grounded-directory seed; the FILE branch of
+# `is_covered` then auto-covered EVERY `.rs` under that crate via the
+# "rel.startswith(grounded_dir + '/')" relation — so dropping a brand-new
+# `routes/poison.rs` / `src/poison_top.rs` stayed GREEN (the anti-shadow walk was
+# dead). The fix CLASS: in these trees the directory-grounded-seed coverage relation
+# is suppressed — a file is covered ONLY by an exact grounded seed or an exclude.
+# Directory/cluster adoption still covers files OUTSIDE these trees (non-file-
+# granular library crates), where the coarse crate-membership self-cert is by design.
+_FILE_GRANULAR_STRICT_PREFIXES = (
+    "crates/corelink-container/src/",   # the Rust container compute plane (routes/ + src/**)
+    "worker/src/",                      # the TS edge plane (recursive)
+)
+# apps/<app>/src/** — file-granular per the BR5 edge-plane enumeration. Matched
+# via a segment-aware glob so only the `src/` subtree of an app is strict (an
+# app's top-level config/manifest files are not request-reachable enforcers).
+_FILE_GRANULAR_STRICT_GLOBS = (
+    "apps/*/src/**",
+)
+
+
+def _is_file_granular_strict(rel: str) -> bool:
+    """True iff `rel` lives in a SECURITY-CRITICAL file-granular tree where
+    directory/cluster ADOPTION must not auto-cover an individual file (gate v6
+    fix #1). Such a file is covered only by an exact grounded seed or an
+    `excludes:` entry."""
+    if any(rel.startswith(p) for p in _FILE_GRANULAR_STRICT_PREFIXES):
+        return True
+    return any(_segment_glob_match(rel, g) for g in _FILE_GRANULAR_STRICT_GLOBS)
+
+
 def _line_count(path: Path) -> int:
     try:
         with path.open("rb") as fh:
@@ -663,16 +703,34 @@ def run_checks(args, git: Git, fails: Failures):
         # C6c: per-claim grounding under `# How it works` and `# Invariants`
         #      (relaxed for ADRs per §4.1)
         if not c.is_adr:
-            # A `testing/` concept's SUBJECT is the test harness, so grounding an
-            # invariant on a test path is correct there — the test IS the enforcer
-            # (parallel to C6c being relaxed for ADRs per §4.1). The exemption is
-            # FILE-DIR based (fix #4): ONLY a concept whose doc physically lives
-            # under `docs/knowledge/testing/` is exempt. The old `type ==
-            # "TestStrategy"` escape was a taxonomy dodge — any concept anywhere
-            # (e.g. under auth/) could self-declare `type: TestStrategy` and shed
-            # the non-test-enforcer requirement. Anchoring on the file's directory
-            # makes the exemption un-spoofable from frontmatter.
-            is_testing = (c.rel == "testing" or c.rel.startswith("testing/"))
+            # The test-only-grounding exemption is for a concept whose SUBJECT *is*
+            # the test harness — there the test IS the enforcer, so grounding an
+            # invariant on a test path is correct (parallel to C6c being relaxed for
+            # ADRs per §4.1).
+            #
+            # gate v6 fix #2 (audit #2 MED — the exemption was defeated by file
+            # PLACEMENT): the old gate keyed the exemption on the doc living under
+            # `docs/knowledge/testing/` ALONE. An author could file a SECURITY /
+            # auth / compliance invariant at `docs/knowledge/testing/sneaky.md`
+            # grounded SOLELY on a test and inherit the exemption — a neuterable
+            # grounding masquerading as enforced. (The earlier `type ==
+            # "TestStrategy"` ALONE was the symmetric dodge — self-declare the type
+            # under auth/ and shed the requirement.) The exemption now requires
+            # BOTH axes to agree: the doc lives under `testing/` AND its declared
+            # `type` is a testing type (`TestStrategy`). A concept ABOUT the harness
+            # satisfies both; a security/auth/compliance concept satisfies neither —
+            # so it cannot inherit the test-enforcer exemption by placement OR by a
+            # frontmatter relabel alone (it would have to mislabel BOTH the folder
+            # and the type, which is review-visible and miscategorizes it in the
+            # taxonomy/index). This binds the exemption to the concept being a
+            # genuine test-harness concept, closing the placement bypass without
+            # breaking the 3 legit testing/ concepts (all `type: TestStrategy`).
+            _TESTING_TYPES = {"TestStrategy"}
+            _in_testing_dir = (c.rel == "testing" or c.rel.startswith("testing/"))
+            _is_testing_type = (
+                isinstance(c.type, str) and c.type.strip() in _TESTING_TYPES
+            )
+            is_testing = _in_testing_dir and _is_testing_type
             secs = _sections(c.body)
             for title in ("how it works", "invariants"):
                 if title in secs:
@@ -990,8 +1048,15 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             if rel in grounded_seed_paths:
                 return True
             # a file is also covered when a GROUNDED directory seed contains it
-            # (the concept that adopts the dir grounds the files beneath it).
-            if any(
+            # (the concept that adopts the dir grounds the files beneath it) —
+            # EXCEPT in the SECURITY-CRITICAL file-granular trees (gate v6 fix #1):
+            # there, directory/cluster ADOPTION must NOT auto-cover an individual
+            # file, or a new request-reachable handler (routes/poison.rs,
+            # src/poison_top.rs, a new worker/src/** or apps/*/src/** module) would
+            # ride the whole-crate `crates/corelink-container` seed and stay GREEN —
+            # the dead anti-shadow enumeration. Those files are covered only by an
+            # exact grounded seed (above) or an explicit `excludes:` entry (below).
+            if not _is_file_granular_strict(rel) and any(
                 (s.rstrip("/") != "" and rel.startswith(s.rstrip("/") + "/"))
                 for s in grounded_seed_paths
             ):
@@ -1046,8 +1111,14 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             if p.is_file():
                 surface.append((p.relative_to(surface_root).as_posix(), False))
 
-    _add_files("worker/src", "*.ts")                 # edge plane (top-level)
-    _add_files("worker/src/lib", "*.ts")             # edge plane (lib/)
+    # gate v6 fix #3 (audit #3 LOW — worker/src was enumerated NON-recursively):
+    # the old gate globbed `worker/src/*.ts` + a HARDCODED `worker/src/lib/*.ts`,
+    # so a new `worker/src/<subdir>/*.ts` (any future subdir other than lib/)
+    # escaped the surface entirely. Enumerate `worker/src/**/*.ts` RECURSIVELY,
+    # consistent with the routes/ and apps/*/src/ walks — a new edge handler in any
+    # subdir is now gated (genuine non-handler subdirs surface as [C10b] and get an
+    # honest manifest `excludes:` entry, the same as the container tree).
+    _add_files("worker/src", "*.ts", recursive=True)  # edge plane (recursive)
     for app in ("signup-worker", "cas-worker", "analytics-worker"):
         _add_files(f"apps/{app}/src", "*.ts", recursive=True)
     mig = surface_root / "apps" / "migrate-single-to-multi-region" / "src" / "main.rs"

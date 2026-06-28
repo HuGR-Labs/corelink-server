@@ -106,6 +106,16 @@ excludes:
   # ops/audit-analytics-plane).
   - surface: "crates/corelink-container/src/routes/**/tests_*.rs"
     reason: "Inline test modules under a route subdir (audit_export/audit_analytics) — test-only, not a load-bearing handler. ANTI-SHADOW (fix #5): the `tests_` BASENAME PREFIX is, by repo convention, exclusive to inline-test modules — no production route handler is named `tests_*.rs` (handlers are `<noun>.rs` / `handler*.rs`), AND `_is_test_cite` independently classifies the same prefix as test, so this exclude cannot hide a real handler. Accepted residual: a future handler deliberately misnamed `tests_foo.rs` would be masked — caught by review (the same place a handler hidden in a test file is caught) and by the convention that handlers are never `tests_`-prefixed."
+  # ---- Container src file-granular trivial wiring (gate v6 fix #1) ----
+  # gate v6 made the container src tree FILE-GRANULAR-STRICT: directory/cluster
+  # adoption (the whole-crate `crates/corelink-container` seed) no longer auto-covers
+  # an individual .rs, so each file is now covered by a per-file cite OR an honest
+  # exclude. These two are GENUINELY-trivial non-handlers (crate-root module wiring /
+  # a pure type+constant carrier) — the sanctioned alternative to a per-file cite.
+  - surface: "crates/corelink-container/src/lib.rs"
+    reason: "Crate-root library wiring (`pub mod` declarations + the INV-pin doc map) — no runtime enforcement of its own; every module it declares is grounded by its owning concept (auth/*, storage/*, surfaces/*, tenancy/*). mod.rs/lib.rs wiring, not a request-reachable handler."
+  - surface: "crates/corelink-container/src/routes/audit_analytics/types.rs"
+    reason: "Pure type + constant carrier for the audit-analytics routes (route-path consts, the audit-row data shape, query/response structs) — declarations only, no enforcement (parallel to the `apps/*/src/types/**` and `analytics-worker/src/types.ts` type-declaration excludes). The behaviour these types serve is grounded in the handler files of ops/audit-analytics-plane."
 
 candidates:
   # ---- ARCHITECTURE (38) ----

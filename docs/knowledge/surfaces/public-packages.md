@@ -7,7 +7,8 @@ source_files:
   - "crates/corelink-container/src/routes/pip.rs"
   - "crates/corelink-container/src/routes/brew.rs"
   - "crates/corelink-container/src/routes/oci.rs"
-checkpoint_sha: "4124b1ace1ac7e0bbd2769c0b3636c52315a335d"
+  - "crates/corelink-container/src/oci_cap.rs"
+checkpoint_sha: "30ec21dc78d79c85f4d7e1e19e13118c66025c9e"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -48,6 +49,11 @@ hold.
    path surgery (`crates/corelink-container/src/routes/oci.rs:10-30`; `crates/corelink-container/src/routes/oci.rs:34-45`; `crates/corelink-container/src/routes/oci.rs:690-753`).
 6. OCI also layers a $-ceiling + monthly request-count gate that attributes cost to the tenant
    recovered from the VERIFIED HMAC bearer, never a request header (`crates/corelink-container/src/routes/oci.rs:754-790`).
+7. Because the Worker forwards `/v2/*` + `/token` RAW (it never sets the storage-cap header for OCI), the
+   container resolves the tenant's per-tier storage cap itself at the `/token` mint: `tier_to_cap_bytes`
+   ports the Worker's `QUOTAS` table (finite caps per tier, `Some(0)` only for `enterprise`, unknown tier →
+   the `free` cap, never unlimited) so the OCI bearer carries the same cap the native plane would resolve
+   (`crates/corelink-container/src/oci_cap.rs:63-82`).
 
 # Invariants
 - Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted (`crates/corelink-container/src/routes/npm.rs:30-32`; `crates/corelink-container/src/routes/pip.rs:28-30`; `crates/corelink-container/src/routes/brew.rs:25-27`).
@@ -93,3 +99,4 @@ hold.
 23. `crates/corelink-container/src/routes/brew.rs:85-95` — brew bottles dedup cross-tenant under `PUBLIC_NAMESPACE`.
 24. `crates/corelink-container/src/routes/npm.rs:149-177` — `NpmMoatStore` get/put namespace npm tarball BYTES per-tenant (cross-tenant dedup is a tracked enhancement).
 25. `crates/corelink-container/src/routes/oci.rs:188-192` — OCI images stored under the per-tenant namespace; cross-tenant public-image dedup is a tracked OPEN DECISION.
+26. `crates/corelink-container/src/oci_cap.rs:63-82` — `tier_to_cap_bytes`: container-side port of the Worker `QUOTAS` per-tier storage cap for the OCI `/token` mint (unknown tier → `free`, never unlimited).

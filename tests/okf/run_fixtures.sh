@@ -911,6 +911,286 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v6 #1: cluster-directory adoption does NOT auto-cover a container file --
+# THE class fix. A `type: CrateCluster` concept seeds the WHOLE `crates/corelink-
+# container` directory (the real `crates/container-platform` shape) and cites that
+# crate dir, so clause (b) of `_concept_grounds` makes the directory a grounded
+# seed. Before v6 the FILE branch of `is_covered` then auto-covered EVERY .rs under
+# the crate via `rel.startswith(grounded_dir + '/')` — so a brand-new
+# `routes/poison.rs` stayed GREEN (the recursive anti-shadow walk was dead). v6
+# makes `crates/corelink-container/src/**` FILE-GRANULAR-STRICT: directory/cluster
+# adoption no longer auto-covers an individual file there. We prove BOTH:
+#  POSITIVE — a new uncited handler (routes/poison.rs) REDs [C10b] naming it;
+#  NEGATIVE — the genuinely-cited handler under the SAME crate stays covered.
+assert_cluster_adoption_strict() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/routes
+    printf 'fn cited() {}\n'   > crates/corelink-container/src/routes/cited_handler.rs
+    # a NEW handler dropped beside the cited one — no per-file cite anywhere.
+    printf 'fn poison() {}\n'  > crates/corelink-container/src/routes/poison.rs
+    mkdir -p docs/knowledge/crates
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [c](/crates/c.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # a CrateCluster that ADOPTS the whole crate dir + cites ONE handler file.
+    cat > docs/knowledge/crates/c.md <<EOF
+---
+type: "CrateCluster"
+title: "Container cluster adoption (hermetic)"
+description: "adopts the whole crate dir; cites only cited_handler.rs."
+source_files:
+  - "crates/corelink-container"
+  - "crates/corelink-container/src/routes/cited_handler.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Container cluster adoption (hermetic)
+
+Lead paragraph: the cluster adopts the crate dir and cites one handler.
+
+# How it works
+- the adopted crate dir (\`crates/corelink-container:1\` is NOT a file cite; use the handler) and the cited handler (\`crates/corelink-container/src/routes/cited_handler.rs:1\`).
+
+# Invariants
+- the cited handler holds (\`crates/corelink-container/src/routes/cited_handler.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/routes/cited_handler.rs:1\` — the one grounded handler.
+EOF
+    # manifest: the cluster seeds the whole crate dir (adoption). poison.rs is NOT
+    # individually seeded and NOT excluded -> under v6 file-granular-strict it must
+    # surface as a silent gap (directory adoption does not reach it).
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes:
+  - surface: "crates/corelink-container/src/routes/cited_handler.rs"
+    reason: "fixture: focus the assertion on poison.rs; this one is also genuinely cited."
+candidates:
+  - id: "crates/c"
+    type: "CrateCluster"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.ca_out" 2>&1 || true
+  )
+  # POSITIVE: the new uncited handler is NOT covered by the whole-crate adoption -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.ca_out" 2>/dev/null \
+     && grep -q 'routes/poison.rs' "$tmp/.ca_out" 2>/dev/null; then
+    ok "cluster-adoption strict: a new uncited container handler under a whole-crate-adopted dir -> [C10b] names poison.rs"
+  else
+    miss "cluster-adoption strict positive (no [C10b] naming routes/poison.rs): $(tail -1 "$tmp/.ca_out" 2>/dev/null)" "cluster-adopt-pos"
+  fi
+  # NEGATIVE (selectivity): the cited handler stays covered (here via its exclude) -> not a poison-style gap.
+  total=$((total + 1))
+  if ! grep -q 'routes/cited_handler.rs' "$tmp/.ca_out" 2>/dev/null; then
+    ok "cluster-adoption strict: the genuinely-covered handler is not flagged (selective)"
+  else
+    miss "cluster-adoption strict negative: cited_handler.rs was wrongly flagged" "cluster-adopt-neg"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- gate v6 #2: testing exemption requires `testing/` dir AND `type: TestStrategy` -
+# A SECURITY invariant filed under docs/knowledge/testing/ but grounded SOLELY on a
+# test path must STILL fire [C6c] — the old placement-only exemption let it through.
+# POSITIVE: a `type: SecurityControl` concept placed at testing/sneaky.md with a
+# test-only Invariants cite fires [C6c]. NEGATIVE: a genuine `type: TestStrategy`
+# concept at testing/legit.md with the same test-only cite is exempt (no [C6c]).
+assert_testing_exemption_typed() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/x/tests
+    printf 'fn anchor() {}\n'        > crates/x/anchor.rs
+    printf '#[test] fn t() {}\n'     > crates/x/tests/iso_tests.rs
+    mkdir -p docs/knowledge/testing
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # the BYPASS attempt: a SecurityControl placed under testing/, grounded ONLY on a test.
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [sneaky](/testing/sneaky.md)
+- [legit](/testing/legit.md)
+EOF
+    cat > docs/knowledge/testing/sneaky.md <<EOF
+---
+type: "SecurityControl"
+title: "Placement-bypass attempt (hermetic)"
+description: "a security invariant filed under testing/ grounded only on a test."
+source_files:
+  - "crates/x/tests/iso_tests.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Placement-bypass attempt (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the test that 'enforces' it (\`crates/x/tests/iso_tests.rs:1\`).
+
+# Invariants
+- tenant isolation holds (\`crates/x/tests/iso_tests.rs:1\`).
+EOF
+    # the LEGIT control: a real TestStrategy under testing/ MAY ground on a test.
+    cat > docs/knowledge/testing/legit.md <<EOF
+---
+type: "TestStrategy"
+title: "Genuine test-harness concept (hermetic)"
+description: "subject IS the harness; grounding on a test is correct."
+source_files:
+  - "crates/x/tests/iso_tests.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Genuine test-harness concept (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the harness test (\`crates/x/tests/iso_tests.rs:1\`).
+
+# Invariants
+- the harness asserts isolation (\`crates/x/tests/iso_tests.rs:1\`).
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.te_out" 2>&1 || true
+  )
+  # POSITIVE: the SecurityControl-under-testing/ bypass STILL fires [C6c] naming it.
+  total=$((total + 1))
+  if grep -q '^\[C6c\]' "$tmp/.te_out" 2>/dev/null \
+     && grep -q 'testing/sneaky.md' "$tmp/.te_out" 2>/dev/null; then
+    ok "testing exemption typed: a SecurityControl placed under testing/ with a test-only cite STILL fires [C6c]"
+  else
+    miss "testing exemption typed positive (no [C6c] naming testing/sneaky.md): $(tail -1 "$tmp/.te_out" 2>/dev/null)" "testing-typed-pos"
+  fi
+  # NEGATIVE: the genuine TestStrategy concept is exempt -> NOT flagged for [C6c].
+  total=$((total + 1))
+  if ! grep -q 'testing/legit.md' "$tmp/.te_out" 2>/dev/null; then
+    ok "testing exemption typed: a genuine type:TestStrategy concept under testing/ stays exempt (no C6c)"
+  else
+    miss "testing exemption typed negative: legit TestStrategy concept was wrongly flagged [C6c]" "testing-typed-neg"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- gate v6 #3: worker/src enumeration is RECURSIVE -----------------------------
+# A new file under a worker/src SUBDIR (other than lib/) must be enumerated. Before
+# v6 only worker/src/*.ts + the hardcoded worker/src/lib/*.ts were walked, so a new
+# worker/src/<subdir>/*.ts escaped. Hermetic: a file at worker/src/handlers/new.ts
+# is seeded by NO concept and NOT excluded -> it MUST surface as a [C10b] gap.
+assert_worker_src_recursive() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p worker/src/handlers
+    printf 'export const anchor = 1;\n' > worker/src/index.ts
+    # a NEW edge file in a worker/src SUBDIR other than lib/ — must be enumerated.
+    printf 'export const h = 1;\n'      > worker/src/handlers/new.ts
+    mkdir -p docs/knowledge/planes
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [w](/planes/w.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    cat > docs/knowledge/planes/w.md <<EOF
+---
+type: "Plane"
+title: "Worker edge recursive (hermetic)"
+description: "grounds the index entrypoint only."
+source_files:
+  - "worker/src/index.ts"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Worker edge recursive (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the edge entrypoint (\`worker/src/index.ts:1\`).
+
+# Invariants
+- the entrypoint holds (\`worker/src/index.ts:1\`).
+
+# Citations
+1. \`worker/src/index.ts:1\` — grounded anchor.
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "planes/w"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "worker/src/index.ts"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.ws_out" 2>&1 || true
+  )
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.ws_out" 2>/dev/null \
+     && grep -q 'worker/src/handlers/new.ts' "$tmp/.ws_out" 2>/dev/null; then
+    ok "worker/src recursive: a new worker/src/<subdir>/*.ts is enumerated -> [C10b] names handlers/new.ts"
+  else
+    miss "worker/src recursive (no [C10b] naming worker/src/handlers/new.ts): $(tail -1 "$tmp/.ws_out" 2>/dev/null)" "worker-recursive"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -941,6 +1221,11 @@ assert_storage_subdir_enum
 # gate v5: #2 module-parent grounding removed + #6 glob is segment-aware.
 assert_module_parent_removed
 assert_glob_segment_aware
+# gate v6: #1 cluster-directory adoption no longer auto-covers a container file +
+# #2 testing exemption requires testing/ dir AND type:TestStrategy + #3 worker/src recursive.
+assert_cluster_adoption_strict
+assert_testing_exemption_typed
+assert_worker_src_recursive
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then
