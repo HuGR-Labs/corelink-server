@@ -867,7 +867,7 @@ candidates:
     title: "Audit/analytics export plane"
     status: "active"
     source_cluster: "docs/cli"
-    seed_from: ["crates/corelink-container/src/routes/audit_analytics.rs", "crates/corelink-container/src/routes/audit_export.rs", "docs/cli/audit-export.md"]
+    seed_from: ["crates/corelink-container/src/routes/audit_analytics.rs", "crates/corelink-container/src/routes/audit_export.rs", "crates/corelink-container/src/routes/audit_drain.rs", "docs/cli/audit-export.md"]
   - id: "ops/perf-playbook"
     type: "Runbook"
     title: "Performance playbook"
