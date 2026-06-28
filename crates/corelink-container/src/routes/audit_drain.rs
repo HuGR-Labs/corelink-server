@@ -137,7 +137,6 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
 }
 
 /// Mount `POST /_internal/audit/drain`.
-#[must_use]
 pub fn router(state: AuditDrainState) -> Router {
     Router::new()
         .route("/_internal/audit/drain", post(handle_drain))
@@ -610,7 +609,7 @@ mod tests {
     #[test]
     fn canonical_jcs_stored_is_exactly_what_was_hashed() {
         let payload = json!({"z": 1, "a": 2, "m": {"y": 9, "b": 8}});
-        let input = rows(&[payload.clone()]);
+        let input = rows(std::slice::from_ref(&payload));
         let (sealed, _, _) = seal_rows(ChainHash::genesis(), 0, &input).unwrap();
         let s = &sealed[0];
 
@@ -650,12 +649,12 @@ mod tests {
         let combined = seal_rows(ChainHash::genesis(), 0, &rows(&[r0.clone(), r1.clone()])).unwrap();
 
         // Drain A: just r0 from genesis.
-        let a = seal_rows(ChainHash::genesis(), 0, &rows(&[r0.clone()])).unwrap();
+        let a = seal_rows(ChainHash::genesis(), 0, &rows(std::slice::from_ref(&r0))).unwrap();
         assert_eq!(a.0[0], combined.0[0]);
 
         // Drain B resumes from the sealed tail A produced (head=a.1, seq=a.2),
         // then seals r1.
-        let b = seal_rows(a.1, a.2, &rows(&[r1.clone()])).unwrap();
+        let b = seal_rows(a.1, a.2, &rows(std::slice::from_ref(&r1))).unwrap();
         // r1's sealed link is identical to the single-drain result.
         assert_eq!(b.0[0].sequence_number, combined.0[1].sequence_number);
         assert_eq!(b.0[0].prev_hash_hex, combined.0[1].prev_hash_hex);
