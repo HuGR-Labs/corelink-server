@@ -6,7 +6,7 @@ source_files:
   - "docs/sdk/python.md"
   - "docs/sdk/go.md"
   - "docs/sdk/javascript.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
 provenance: "AUTHORED"
 tags: ["ops", "sdk", "client-verify", "blake3", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -14,13 +14,22 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # SDK reference (python/go/javascript)
 
-CoreLink ships three first-party client SDKs over the [native CAS surface](/surfaces/native-cas.md) —
+CoreLink defines three first-party client SDKs over the [native CAS surface](/surfaces/native-cas.md) —
 Python (PyO3), Go (cgo cdylib), and JavaScript/TypeScript (wasm-bindgen WASM) — that share one API shape
 (`put`/`get`/`stat`) and one load-bearing safety default: **client-side BLAKE3 verification on every
 `get`, on by default per control CTRL-CAS-002**, implemented through the single Rust truth
 (`corelink-client-verify`) so all three languages cannot disagree about what a valid digest is. The
 content-addressing guarantee is therefore enforced at the edge of the customer's process, not just on the
 server. This runbook is the cross-language contract an integrator reads before wiring a client.
+
+> **Status vs shipped code (2026-06-28):** what SHIPS today in these SDK crates is the client-side
+> BLAKE3 compute + verify layer — NOT a live CAS network surface. The `put`/`get`/`stat` network layer
+> is a STUB: `get` simulates a cache miss and returns empty bytes (it only succeeds for the empty-blob
+> digest), `put` computes the local BLAKE3 digest but uploads nothing, and `stat` returns a placeholder
+> (`exists: false`) — see the Python crate (tools/sdks/python/src/lib.rs, the `get`/`put`/`stat` bodies
+> around lines 106-114, 146 and 155-164, each documented as a stub awaiting the production HTTP/gRPC
+> wiring). Treat the `put`/`get`/`stat` "live CAS surface" framing below as the intended FFI contract;
+> only the client-side BLAKE3/verify truth is actually exercised end-to-end today.
 
 # Role
 - The integration surface: the supported, first-party way a customer talks to CAS in three ecosystems.

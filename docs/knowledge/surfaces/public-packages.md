@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-container/src/routes/brew.rs"
   - "crates/corelink-container/src/routes/oci.rs"
   - "crates/corelink-container/src/oci_cap.rs"
-checkpoint_sha: "30ec21dc78d79c85f4d7e1e19e13118c66025c9e"
+checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -56,7 +56,7 @@ hold.
    (`crates/corelink-container/src/oci_cap.rs:63-82`).
 
 # Invariants
-- Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted (`crates/corelink-container/src/routes/npm.rs:30-32`; `crates/corelink-container/src/routes/pip.rs:28-30`; `crates/corelink-container/src/routes/brew.rs:25-27`).
+- Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted. The executed enforcers: `PipPatResolver::resolve` / `BrewPatResolver::resolve` derive the tenant by calling `verify(pat_plaintext)` (`crates/corelink-container/src/routes/pip.rs:236-237`; `crates/corelink-container/src/routes/brew.rs:118-119`), and the gate REWRITES the wire path to strip the leading `<tenant>` segment before the adapter sees it (`crates/corelink-container/src/routes/pip.rs:518-523`; `crates/corelink-container/src/routes/brew.rs:335`) (`crates/corelink-container/src/routes/npm.rs:30-32`).
 - Public upstream bytes are deduped cross-tenant under `PUBLIC_NAMESPACE`; the PAT gates access, the public content is shared (`crates/corelink-container/src/routes/pip.rs:32-37`; `crates/corelink-container/src/routes/brew.rs:27-30`).
 - npm `@scoped` (private) packages stay in the per-tenant namespace, never `PUBLIC_NAMESPACE` (`crates/corelink-container/src/routes/npm.rs:97-106`).
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
@@ -82,11 +82,11 @@ hold.
 6. `crates/corelink-container/src/routes/pip.rs:32-40` — pip wheels/sdists immutable public → `PUBLIC_NAMESPACE`.
 7. `crates/corelink-container/src/routes/pip.rs:116-118` — pip moat get under `PUBLIC_NAMESPACE`.
 8. `crates/corelink-container/src/routes/pip.rs:303-372` — pip router + gate.
-9. `crates/corelink-container/src/routes/pip.rs:28-30` — pip tenant-from-PAT, path never trusted.
+9. `crates/corelink-container/src/routes/pip.rs:236-237` — `PipPatResolver::resolve` derives the tenant from the verified PAT (executed); the wire `<tenant>` is path-stripped at `crates/corelink-container/src/routes/pip.rs:518-523`.
 10. `crates/corelink-container/src/routes/pip.rs:32-37` — pip access-gated, content-shared model.
 11. `crates/corelink-container/src/routes/brew.rs:84-93` — brew moat get under `PUBLIC_NAMESPACE`.
 12. `crates/corelink-container/src/routes/brew.rs:157-206` — brew router (`nest_service` + inner gate).
-13. `crates/corelink-container/src/routes/brew.rs:25-27` — brew tenant-from-PAT, path never trusted.
+13. `crates/corelink-container/src/routes/brew.rs:118-119` — `BrewPatResolver::resolve` derives the tenant from the verified PAT (executed); the wire `<tenant>` is path-stripped at `crates/corelink-container/src/routes/brew.rs:335`.
 14. `crates/corelink-container/src/routes/brew.rs:27-30` — brew public-bottle cross-tenant dedup.
 15. `crates/corelink-container/src/routes/brew.rs:99-104` — fresh-row `None`-cap posture.
 16. `crates/corelink-container/src/routes/oci.rs:10-30` — OCI `.merge` (no tenant path segment) rationale.

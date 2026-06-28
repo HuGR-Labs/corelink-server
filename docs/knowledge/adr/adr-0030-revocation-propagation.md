@@ -4,7 +4,7 @@ title: "ADR-0030 — PAT revocation propagation (DO + CF Queue, ≤ 60 s p99)"
 description: "Why PAT revocation uses Neon as source-of-truth with a Durable-Object broadcast cache and CF-Queue cross-region fan-out to hit a single 60 s p99 stale-window SLA."
 source_files:
   - "specs/03_architecture/adrs/ADR-0030-revocation-propagation.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
+checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
 provenance: "AUTHORED"
 tags: ["adr", "revocation", "pat", "durable-object", "cf-queue", "auth", "s03"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -12,7 +12,9 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # ADR-0030 — PAT revocation propagation (DO + CF Queue, ≤ 60 s p99)
 
-A compromised PAT must stop being accepted globally within one minute of revocation. This ADR records how that `SLO-FRESH-PAT-REVOKE ≤ 60 s p99` is met by coordinating three Cloudflare primitives — Neon as transactional truth, a region-pinned Durable Object as a broadcast cache, and CF Queue for cross-region fan-out — and why the hot caches are never allowed to become sources of truth.
+A compromised PAT must stop being accepted globally within one minute of revocation. This ADR records the DESIGN-INTENT for how that `SLO-FRESH-PAT-REVOKE ≤ 60 s p99` would be met by coordinating three Cloudflare primitives — Neon as transactional truth, a region-pinned Durable Object as a broadcast cache, and CF Queue for cross-region fan-out — and why the hot caches are never allowed to become sources of truth.
+
+> **Status vs shipped code (2026-06-28):** the Neon-SoT + `RevocationDo` broadcast + CF-Queue cross-region fan-out backbone is DEFERRED, not deployed. What ships today is the in-memory `InMemoryRevocationStore` behind the `RevocationStore` trait — a single-process `HashMap` of revoked entries with a per-PAT propagation-status map (`corelink-worker/src/auth/revocation/in_memory_store.rs` around lines 30 and 69). There is no Neon source-of-truth, no Durable-Object broadcast, and no CF-Queue fan-out wired in the running system; the three-axis `≤ 60 s p99` SLA, the `INV-AUTH-NEON-IS-SOT` fail-closed cold path, and the cross-region drain below describe the target architecture, not the deployed one.
 
 # Context
 

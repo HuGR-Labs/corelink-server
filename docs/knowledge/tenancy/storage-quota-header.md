@@ -5,7 +5,7 @@ description: "The Worker-trusted storage-cap header and the atomic byte-accounti
 source_files:
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-rate-headers/src/headers.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "storage", "byte-accounting", "rfc-9331", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -40,7 +40,10 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
   (`crates/corelink-container/src/byte_accounting.rs:96-110`).
 - After a successful write the handler calls an atomic DB-side check-and-accrue
   (`bytes_used = bytes_used + n` gated by the cap in ONE statement), so concurrent over-cap writes cannot
-  both read the same baseline and pass (`crates/corelink-container/src/byte_accounting.rs:13-37`).
+  both read the same baseline and pass — the executed INSERT…ON CONFLICT…RETURNING statement is at
+  `crates/corelink-container/src/byte_accounting.rs:347-377`, whose serialized cap predicate
+  (`WHERE ?5 = 0 OR tenant_storage_state.bytes_used + ?3 <= ?5`) is at
+  `crates/corelink-container/src/byte_accounting.rs:355-363`.
 - `AccrueOutcome::OverCap` means the caller must reject the write (bytes NOT counted) and `Indeterminate`
   means a missing row with no resolved cap — never seed an uncapped row from absence
   (`crates/corelink-container/src/byte_accounting.rs:112-130`).
@@ -56,7 +59,7 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
 - A fresh tenant with an indeterminate cap is NEVER seeded uncapped; absence fails CLOSED rather than
   defaulting to unlimited (`crates/corelink-container/src/byte_accounting.rs:120-129`).
 - The cap check is serialized with the increment in one SQL statement, so two concurrent over-cap writes
-  cannot both pass (`crates/corelink-container/src/byte_accounting.rs:33-37`).
+  cannot both pass (`crates/corelink-container/src/byte_accounting.rs:355-363`).
 - `over_quota` 429s are excluded from the SLO denominator as legitimate over-plan traffic
   (`crates/corelink-rate-headers/src/headers.rs:101-105`).
 
@@ -73,8 +76,8 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
 
 # Citations
 
-1. `crates/corelink-container/src/byte_accounting.rs:13-37` — the atomic check-and-accrue SQL (DB-side add, serialized cap).
-2. `crates/corelink-container/src/byte_accounting.rs:33-37` — the cap check serialized with the increment.
+1. `crates/corelink-container/src/byte_accounting.rs:347-377` — the executed atomic check-and-accrue SQL (DB-side add via INSERT…ON CONFLICT…RETURNING).
+2. `crates/corelink-container/src/byte_accounting.rs:355-363` — the cap check serialized with the increment (the `WHERE` predicate in the one statement).
 3. `crates/corelink-container/src/byte_accounting.rs:39-41` — uncapped `bytes_quota = 0` still moves the counter.
 4. `crates/corelink-container/src/byte_accounting.rs:50-55` — `release` saturating decrement on delete.
 5. `crates/corelink-container/src/byte_accounting.rs:57-64` — `None` accountant when the storage env is unset.

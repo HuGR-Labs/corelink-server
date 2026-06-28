@@ -4,7 +4,7 @@ title: "Bazel REAPI v2 surface"
 description: "The five REAPI v2 REST cache endpoints that let any Bazel client point --remote_cache at CoreLink and hit the same R2 blobs as native CAS/AC."
 source_files:
   - "crates/corelink-container/src/routes/bazel_v2.rs"
-checkpoint_sha: "b4b332ab0a95ac3fb86003024c13fac1e37b7285"
+checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
 provenance: "AUTHORED"
 tags: ["surfaces", "bazel", "reapi", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -35,7 +35,7 @@ path params, builds the REAPI digest, reads Worker-injected caller metadata, and
 7. The authenticated tenant is extracted fail-CLOSED by `caller_tenant`, which now routes its missing/empty/reserved-sentinel rejection through the SHARED `crate::auth_tenant::is_reserved_sentinel` — so this REAPI surface (which has no `AuthTenant` extractor) rejects the full reserved set including `_oci` and `_public` (`PUBLIC_NAMESPACE`), and `BazelPutGuard` reserves a write slot only for a non-sentinel tenant via the same check (`crates/corelink-container/src/routes/bazel_v2.rs:331-341`; `crates/corelink-container/src/routes/bazel_v2.rs:166`).
 
 # Invariants
-- The `:instance` path segment MUST equal the Worker-injected `x-corelink-tenant-id`; a mismatch is 403 with an audit row (`crates/corelink-container/src/routes/bazel_v2.rs:22-25`).
+- The `:instance` path segment MUST equal the Worker-injected `x-corelink-tenant-id`; a mismatch is 403 with an audit row — the executed enforcer maps the bridge's `BazelBridgeError::CrossTenantDenied` (raised by the adapter's `check_tenant(instance, caller)`) to `StatusCode::FORBIDDEN` (`crates/corelink-container/src/routes/bazel_v2.rs:450`).
 - All routes use the matchit `:name` capture form, never `{name}`, per the DEBT-029 rule (`crates/corelink-container/src/routes/bazel_v2.rs:38-41`).
 - Per-tenant concurrent writes are bounded by `BAZEL_WRITE_CONCURRENCY_LIMIT` (`crates/corelink-container/src/routes/bazel_v2.rs:112`).
 - The bytes served are the same R2 blobs as the native CAS/AC endpoints (a shared store, not a copy) (`crates/corelink-container/src/routes/bazel_v2.rs:5-8`).
@@ -55,7 +55,7 @@ path params, builds the REAPI digest, reads Worker-injected caller metadata, and
 4. `crates/corelink-container/src/routes/bazel_v2.rs:292-295` — CAS write (uploads/:uuid) route.
 5. `crates/corelink-container/src/routes/bazel_v2.rs:297-300` — `findMissingBlobs` batch route.
 6. `crates/corelink-container/src/routes/bazel_v2.rs:307-314` — `header_str` Worker-metadata reader.
-7. `crates/corelink-container/src/routes/bazel_v2.rs:22-25` — `:instance` == `x-corelink-tenant-id` isolation rule.
+7. `crates/corelink-container/src/routes/bazel_v2.rs:450` — `CrossTenantDenied → 403`: the executed enforcer of the `:instance` == `x-corelink-tenant-id` isolation rule (`check_tenant(instance, caller)` mismatch).
 8. `crates/corelink-container/src/routes/bazel_v2.rs:38-41` — matchit `:name` capture-form rule (DEBT-029).
 9. `crates/corelink-container/src/routes/bazel_v2.rs:112` — `BAZEL_WRITE_CONCURRENCY_LIMIT`.
 10. `crates/corelink-container/src/routes/bazel_v2.rs:5-8` — same R2 blobs as native CAS/AC.

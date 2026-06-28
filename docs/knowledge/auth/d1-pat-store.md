@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "664d78b8e6f62ad6d0e95a94552c6c0997f8fea1"
+checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -38,7 +38,7 @@ written.
   (`crates/corelink-container/src/customer_d1.rs:982-994`).
 - The requested-scope → stored-scope map is FROZEN and fail-CLOSED: `admin` is NEVER grantable
   self-serve, anything-with-write → `read-write`, else `read-only`
-  (`crates/corelink-container/src/customer_d1.rs:299-318`).
+  (`crates/corelink-container/src/customer_d1.rs:307-329`).
 - Revoke is an idempotent, tenant-scoped soft delete: `UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id =
   ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL` — a PAT owned by another tenant is simply not found
   (`crates/corelink-container/src/customer_d1.rs:1049-1051`).
@@ -60,7 +60,7 @@ written.
 - The PAT plaintext is never logged or persisted at the mint route; the caller writes it to Clerk
   session metadata once and discards it (`crates/corelink-container/src/routes/internal_pat.rs:63-65`).
 - The `admin` scope is never grantable via self-serve key creation; unrecognized tokens fail CLOSED
-  (`crates/corelink-container/src/customer_d1.rs:299-318`).
+  (`crates/corelink-container/src/customer_d1.rs:307-329`).
 - Revoke is tenant-scoped: a cross-tenant `pat_id` cannot be revoked (or even observed)
   (`crates/corelink-container/src/customer_d1.rs:1049-1051`).
 
@@ -78,7 +78,7 @@ written.
 # Citations
 
 1. `crates/corelink-container/src/customer_d1.rs:18-22` — the PAT-store overview: tables, create, revoke.
-2. `crates/corelink-container/src/customer_d1.rs:299-323` — the FROZEN scope map (admin never grantable) + legacy NULL handling.
+2. `crates/corelink-container/src/customer_d1.rs:307-329` — `map_requested_scopes`: the FROZEN requested-scope → `pat.scope` map (admin never grantable, unrecognized tokens fail CLOSED).
 3. `crates/corelink-container/src/customer_d1.rs:888-894` — tenant-scoped key listing SELECT.
 4. `crates/corelink-container/src/customer_d1.rs:982-994` — `INSERT INTO pat` (hash + token_id persisted, plaintext not).
 5. `crates/corelink-container/src/customer_d1.rs:1049-1051` — idempotent tenant-scoped revoke UPDATE.
