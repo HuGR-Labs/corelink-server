@@ -24,14 +24,27 @@
 //! | `apac` | `nrt`           |
 //! | `afr`  | (none — reject) |
 //!
-//! Provisioned Phase-1 = `{wnam, enam, weur, sam}`. `apac`/`afr` are valid macro
-//! codes (the D1 CHECK accepts them) but are NOT provisioned.
+//! Provisioned = `{wnam, enam, weur}` — exactly the macros backed by a
+//! jurisdiction-correct R2 bucket. `sam`/`apac`/`afr` are valid macro codes (the
+//! D1 CHECK accepts them and routing still recognises them) but are NOT
+//! provisioned. `sam` in particular stays ROUTABLE (`colo_for_macro` still maps
+//! it) but is NOT provisionable: PROD_SAM still points at the DEFAULT US R2
+//! endpoint + shared US bucket, so a `sam`-labelled tenant would mis-land in US
+//! storage — an LGPD cross-border violation. Re-add `sam` only once PROD_SAM has
+//! a real SAM-jurisdiction bucket/endpoint.
+//!
+//! This provisioned set is the SINGLE SOURCE OF TRUTH shared by THREE consumers
+//! (this file, the worker `region-map.ts`, and signup `clerk.ts`), pinned
+//! together by `worker/tests/region-map.test.ts` (the 3-way drift gate).
 
 /// The canonical CoreLink data-residency MACRO region codes (the D1 CHECK set).
 pub const MACRO_REGIONS: [&str; 6] = ["wnam", "enam", "weur", "sam", "apac", "afr"];
 
-/// Macro regions provisioned in Phase 1. Signup rejects the rest (`apac`/`afr`).
-pub const PROVISIONED_MACROS: [&str; 4] = ["wnam", "enam", "weur", "sam"];
+/// Macro regions provisioned today — exactly those with a jurisdiction-correct
+/// R2 bucket. Signup rejects the rest (`sam`/`apac`/`afr`). `sam` stays routable
+/// (`colo_for_macro` recognises it) but is NOT provisionable until PROD_SAM has a
+/// real SAM-jurisdiction bucket (else its data mis-lands in US R2 — LGPD).
+pub const PROVISIONED_MACROS: [&str; 3] = ["wnam", "enam", "weur"];
 
 /// Map a MACRO region code to its serving Cloudflare colo, or `None` when the
 /// macro is `afr` (no provisioned colo) or the input is not a recognised macro
@@ -92,14 +105,21 @@ mod tests {
 
     #[test]
     fn provisioned_set_is_exact() {
-        // Mirror of `worker/src/region-map.ts` PROVISIONED_MACROS.
+        // Mirror of `worker/src/region-map.ts` PROVISIONED_MACROS — the canonical
+        // provisionable set is EXACTLY {wnam, enam, weur}.
+        assert_eq!(PROVISIONED_MACROS, ["wnam", "enam", "weur"]);
         assert!(is_provisioned_macro("wnam"));
         assert!(is_provisioned_macro("enam"));
         assert!(is_provisioned_macro("weur"));
-        assert!(is_provisioned_macro("sam"));
-        // apac/afr are valid macros but NOT provisioned.
+        // sam/apac/afr are valid macros but NOT provisioned. `sam` in particular
+        // stays ROUTABLE (still maps to a colo) but is not provisionable until
+        // PROD_SAM has a real SAM-jurisdiction bucket (LGPD).
+        assert!(!is_provisioned_macro("sam"));
         assert!(!is_provisioned_macro("apac"));
         assert!(!is_provisioned_macro("afr"));
+        // ...yet `sam` is still a recognised, routable macro.
+        assert!(is_macro_region("sam"));
+        assert!(colo_for_macro("sam").is_some());
         assert!(is_macro_region("apac"));
         assert!(is_macro_region("afr"));
         assert!(!is_macro_region("iad"));

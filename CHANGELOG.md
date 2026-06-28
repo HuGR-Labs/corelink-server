@@ -22,6 +22,23 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **Brutal-audit round-3 remediation (economic / residency / time / migration lenses).** (H1) Region-table
+  DRIFT closed + the `sam` residency trap removed: the provisionable-macro set is now a single source of
+  truth `{wnam,enam,weur}` across worker + container + signup-worker (was a 4-set incl. `sam` in worker/
+  container but a 2-set in signup — the drift was the only thing preventing an LGPD cross-border write of a
+  `sam` tenant into US R2), gated by a 3-way drift test; `sam` stays routable but not provisionable. (H2)
+  the Worker honors the PAT `expires_ms = 0` never-expires sentinel (was rejecting it → split-brain vs the
+  container). (H3) `cf-deploy-prod` now applies D1 migrations BEFORE the container deploy (a single
+  idempotent job) so code can't ship ahead of its schema → fail-closed 500. (M1) GDPR DSR SLA is now a
+  calendar MONTH (Art.12(3)), not a flat 30 days. (M2) the DSR verify cron skips rows with a NULL/malformed
+  `started_at` instead of anchoring the SLA clock at epoch-1970 (false PagerDuty pages). (M3) `check-env
+  -contract.py` now detects `env::var(CONST)` reads (was blind to the identifier-arg form) + the 4
+  previously-unforwarded tuning vars are now in the DO env forward-list (the ERASURE_SALT_KEY class). (M4)
+  the `corelink-signup` region enum emits the canonical `weur` (was an invalid `"eu"`). (M5) `cf-deploy-prod`
+  matrix-deploys all 5 prod envs in one dispatch (no more silent regional code-skew). Plus the cargo-fuzz
+  FFI target compiles again (its own manifest forbade `unsafe`, which an FFI harness requires).
+
 ### Added
 - **S-09 audit-chain drain — the live audit trail is now tamper-evident (deferred compliance artifact).**
   `audit_outbox` rows were plain UNCHAINED CloudEvents (the BLAKE3 `HashChainBuilder` was real but

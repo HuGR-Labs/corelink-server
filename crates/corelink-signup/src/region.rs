@@ -58,7 +58,11 @@ pub enum PrimaryRegion {
     Enam,
     /// `sam` — South America (`pt-BR`).
     Sam,
-    /// `eu` — Europe (reserved for S-14 EU residency routing).
+    /// `weur` — Western Europe (`de-DE` / `fr-FR` / `es-ES`; reserved
+    /// for S-14 EU residency routing). NOTE: the canonical D1 label is
+    /// `weur`, NOT `eu` — the `tenant.primary_region` CHECK set is
+    /// `{wnam, enam, weur, sam}` and an `"eu"` string would `RAISE(ABORT)`
+    /// every DE/FR/ES signup.
     Eu,
 }
 
@@ -70,7 +74,11 @@ impl PrimaryRegion {
         match self {
             Self::Enam => "enam",
             Self::Sam => "sam",
-            Self::Eu => "eu",
+            // Canonical D1 label is `weur` (Western Europe). Emitting the
+            // non-canonical `"eu"` here would violate the
+            // `tenant.primary_region` CHECK set `{wnam, enam, weur, sam}`
+            // and fail-closed every DE/FR/ES signup with RAISE(ABORT).
+            Self::Eu => "weur",
         }
     }
 
@@ -105,12 +113,19 @@ impl core::fmt::Display for PrimaryRegion {
     }
 }
 
-/// Canonical 3-element list of [`PrimaryRegion`] for surface-stability
-/// regression tests.
+/// Canonical 3-element list of [`PrimaryRegion`] labels (as persisted to
+/// D1) for surface-stability regression tests. Every entry MUST be a
+/// member of the `tenant.primary_region` D1 CHECK set
+/// `{wnam, enam, weur, sam}`.
 #[must_use]
 pub const fn canonical_regions() -> &'static [&'static str; 3] {
-    &["enam", "sam", "eu"]
+    &["enam", "sam", "weur"]
 }
+
+/// The canonical `tenant.primary_region` D1 CHECK set — the EXACT string
+/// set the D1 column constraint admits. Every [`PrimaryRegion::as_str`]
+/// output MUST be a member or the INSERT fails-closed with RAISE(ABORT).
+pub const D1_PRIMARY_REGION_CHECK_SET: &[&str] = &["wnam", "enam", "weur", "sam"];
 
 #[cfg(test)]
 #[allow(
@@ -140,6 +155,9 @@ mod tests {
     fn de_maps_eu() {
         let r = PrimaryRegion::from_locale(&Bcp47Locale::new("de-DE"));
         assert_eq!(r, PrimaryRegion::Eu);
+        // The EU arm MUST serialize to the canonical D1 label `weur`,
+        // NOT `eu` (which is not in the CHECK set and would RAISE(ABORT)).
+        assert_eq!(r.as_str(), "weur");
     }
 
     #[test]
@@ -150,6 +168,29 @@ mod tests {
 
     #[test]
     fn canonical_regions_stable() {
-        assert_eq!(canonical_regions(), &["enam", "sam", "eu"]);
+        assert_eq!(canonical_regions(), &["enam", "sam", "weur"]);
+    }
+
+    #[test]
+    fn every_region_as_str_is_in_d1_check_set() {
+        // Regression guard for the M4 finding: every PrimaryRegion arm
+        // MUST serialize to a value the `tenant.primary_region` D1 CHECK
+        // constraint admits, else the INSERT fails-closed (RAISE(ABORT)).
+        // The previous `Eu => "eu"` violated this for every DE/FR/ES
+        // signup.
+        for region in [PrimaryRegion::Enam, PrimaryRegion::Sam, PrimaryRegion::Eu] {
+            let s = region.as_str();
+            assert!(
+                D1_PRIMARY_REGION_CHECK_SET.contains(&s),
+                "region {region:?} as_str() = {s:?} is NOT in the D1 CHECK set {D1_PRIMARY_REGION_CHECK_SET:?}"
+            );
+        }
+        // Belt-and-braces: the surface-stability list is also all-valid.
+        for s in canonical_regions() {
+            assert!(
+                D1_PRIMARY_REGION_CHECK_SET.contains(s),
+                "canonical_regions() entry {s:?} not in D1 CHECK set"
+            );
+        }
     }
 }

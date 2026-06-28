@@ -117,6 +117,17 @@ RUST_ENV_CONST_ARG_RE = re.compile(
     r"\b(?:non_empty_env|env_or)\(\s*(?:\w+::)*([A-Z][A-Z0-9_]+)\s*(?:[,)])"
 )
 
+# std::env::var(some::CONST_NAME) / env::var(CONST_NAME) — const-IDENTIFIER arg
+# (NOT a string literal: the literal form is handled by RUST_STD_ENV_RE above,
+# whose first arg char is a `"` so it can never match this [A-Z] group). This
+# closes the ERASURE_SALT_KEY-class blind spot where a tuning var read via a
+# const alias — e.g. std::env::var(PAT_MINT_MAX_INFLIGHT) — was invisible to the
+# scanner and therefore silently never required in the DO forward-list. Resolved
+# through const_aliases like the non_empty_env/env_or const form above.
+RUST_STD_ENV_CONST_ARG_RE = re.compile(
+    r"\benv::var\(\s*(?:\w+::)*([A-Z][A-Z0-9_]+)\s*\)"
+)
+
 # pub const NAME: &str = "VALUE";  — captures both NAME and VALUE.
 # Used to resolve the const-alias pattern (OCI_TOKEN_KEY_ENV → CORELINK_OCI_TOKEN_KEY).
 RUST_CONST_STR_RE = re.compile(
@@ -216,6 +227,13 @@ def collect_container_env_vars() -> dict[str, list[str]]:
                     _record(m.group(1), f"{rel}:{lineno}")
             # Match const-alias arguments (e.g. non_empty_env(oci::OCI_TOKEN_KEY_ENV)).
             for m in RUST_ENV_CONST_ARG_RE.finditer(scan_line):
+                const_name = m.group(1)
+                resolved = const_aliases.get(const_name)
+                if resolved and resolved not in EXCLUSIONS:
+                    _record(resolved, f"{rel}:{lineno} (via const {const_name})")
+            # Match std::env::var(CONST_NAME) const-identifier arguments
+            # (e.g. std::env::var(MAX_INFLIGHT_MINTS_ENV)).
+            for m in RUST_STD_ENV_CONST_ARG_RE.finditer(scan_line):
                 const_name = m.group(1)
                 resolved = const_aliases.get(const_name)
                 if resolved and resolved not in EXCLUSIONS:

@@ -109,10 +109,12 @@ fn signup_audit_event_type_as_str_strings_canonical_and_distinct() {
 
 #[test]
 fn primary_region_as_str_strings_canonical_and_distinct() {
+    // Eu => "weur" (the canonical D1 macro; the old "eu" string was invalid —
+    // not in the tenant.primary_region CHECK set — M4 fix).
     let pairs = [
         (PrimaryRegion::Enam, "enam"),
         (PrimaryRegion::Sam, "sam"),
-        (PrimaryRegion::Eu, "eu"),
+        (PrimaryRegion::Eu, "weur"),
     ];
     for (r, expected) in &pairs {
         assert_eq!(r.as_str(), *expected);
@@ -120,7 +122,7 @@ fn primary_region_as_str_strings_canonical_and_distinct() {
         assert_ne!(r.as_str(), "xyzzy");
         assert_eq!(format!("{}", r), *expected);
     }
-    assert_eq!(canonical_regions(), &["enam", "sam", "eu"]);
+    assert_eq!(canonical_regions(), &["enam", "sam", "weur"]);
 }
 
 // =====================================================================

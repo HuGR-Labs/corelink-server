@@ -1028,7 +1028,12 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   }
 
   // ── Step 5: Expiry check ──────────────────────────────────────────────────
-  if (row.expires_ms <= Date.now()) {
+  // `expires_ms === 0` is the canonical "never expires" sentinel (mint:
+  // internal_pat.rs:400) — the container SQL honors it (adapter_pat.rs:115:
+  // `expires_ms = 0 OR expires_ms > now`). The edge MUST match, else a no-TTL
+  // PAT works in the container but is dead-on-arrival here (split-brain, looks
+  // like a forged token). Guard the sentinel.
+  if (row.expires_ms !== 0 && row.expires_ms <= Date.now()) {
     return { ok: false, reason: "pat_expired" };
   }
 

@@ -12,7 +12,11 @@ description = "cargo-fuzz harnesses for corelink-client-verify — exercises the
 cargo-fuzz = true
 
 [lints.rust]
-unsafe_code = "forbid"
+# This is an FFI libFuzzer harness: exercising the `extern "C"` surface (raw
+# pointers, null handles, manual `corelink_verifier_free`) REQUIRES `unsafe`.
+# `forbid` here made the fuzz target uncompilable (cargo-fuzz-smoke break). The
+# library crate keeps `unsafe_code = "deny"`; only this FFI fuzz target allows it.
+unsafe_code = "allow"
 
 [lints.clippy]
 unwrap_used = "deny"
