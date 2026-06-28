@@ -4,7 +4,7 @@ title: "Introspection endpoint (runners fabric authz)"
 description: "The internal POST /internal/v1/auth/introspect endpoint that resolves a PAT to its tenant, plan, and runner entitlement for the compute fabric."
 source_files:
   - "crates/corelink-container/src/routes/auth_introspect.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "30f803a9e1d3feb13d0d746184fd1161e38fe8a4"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "introspect", "runners", "fabric"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -29,8 +29,9 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 # How it works
 
 - The route is mounted only when its dedicated secret is present and ≥32 chars; absent/short →
-  `build_state_from_env` returns `None` and the route is NOT mounted (fail-CLOSED)
-  (`crates/corelink-container/src/routes/auth_introspect.rs:19-30`).
+  `build_state_from_env` reads `FABRIC_INTROSPECT_AUTH_KEY`, checks `len() < MIN_FABRIC_AUTH_KEY_LEN`,
+  warn-logs and returns `None`, so the route is NOT mounted (fail-CLOSED)
+  (`crates/corelink-container/src/routes/auth_introspect.rs:660-668`).
 - The caller gate checks the `X-Corelink-Internal-Auth` header against EVERY configured consumer key
   with non-short-circuiting `|=`, so timing reveals no consumer identity; no match → 401
   (`crates/corelink-container/src/routes/auth_introspect.rs:559-576`).
@@ -70,7 +71,7 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 
 1. `crates/corelink-container/src/routes/auth_introspect.rs:1-12` — why the endpoint exists (fabric tenant/plan resolution).
 2. `crates/corelink-container/src/routes/auth_introspect.rs:16-18` — not public; container-listener only.
-3. `crates/corelink-container/src/routes/auth_introspect.rs:19-30` — dedicated fabric secret, fail-CLOSED (not mounted if absent/short).
+3. `crates/corelink-container/src/routes/auth_introspect.rs:660-668` — `build_state_from_env`: reads the dedicated `FABRIC_INTROSPECT_AUTH_KEY`, enforces `len() < MIN_FABRIC_AUTH_KEY_LEN`, returns `None` (route NOT mounted) when absent/short — fail-CLOSED.
 4. `crates/corelink-container/src/routes/auth_introspect.rs:24-27` — reuses the constant-time `internal_auth_ok` gate.
 5. `crates/corelink-container/src/routes/auth_introspect.rs:68-92` — runner entitlement axis + the cap/vCPU asymmetry.
 6. `crates/corelink-container/src/routes/auth_introspect.rs:74-83` — entitlement is separate from `plan`.

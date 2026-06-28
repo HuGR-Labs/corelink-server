@@ -4,7 +4,7 @@ title: "ADR-0031 — Auth Neon schema: pgcrypto + RLS + DSR cascade"
 description: "Why the auth domain lives in Neon Postgres with pgcrypto column encryption, default-on RLS, deterministic HMAC email-hash lookup, additive-only migrations, and a hard-coded DSR cascade."
 source_files:
   - "specs/03_architecture/adrs/ADR-0031-neon-schema-pgcrypto.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
+checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
 provenance: "AUTHORED"
 tags: ["adr", "neon", "postgres", "pgcrypto", "rls", "dsr", "auth", "s03"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -12,7 +12,9 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # ADR-0031 — Auth Neon schema: pgcrypto + RLS + DSR cascade
 
-The auth domain is global, relational, and PII-bearing, so it cannot ride on regional D1 and cannot trust a single defence layer. This ADR records why the auth tables live in Neon Postgres and how five load-bearing invariants — default-on RLS, encrypted PII at rest, additive-only migrations, a complete DSR cascade, and audit pseudonymization — are each met by a specific schema decision.
+The auth domain is global, relational, and PII-bearing, so it cannot ride on regional D1 and cannot trust a single defence layer. This ADR records the DESIGN-INTENT for why the auth tables would live in Neon Postgres and how five load-bearing invariants — default-on RLS, encrypted PII at rest, additive-only migrations, a complete DSR cascade, and audit pseudonymization — are each met by a specific schema decision.
+
+> **Status vs shipped code (2026-06-28):** Neon Postgres is NOT the live auth store. The deployed control plane is **D1 + Clerk** — identity/session live in Clerk, and the per-tenant/PAT rows live in D1 (see [the D1 PAT store](/auth/d1-pat-store.md)). The pgcrypto BYTEA encryption, default-on RLS, HMAC `email_hash` lookup, and the `account → tenant/membership/pat/webauthn` DSR cascade described below are spec-level design that is DEFERRED in production; the cascade exists only as a host-side in-memory simulator of the WI-S03-005 schema (`crates/corelink-auth/src/schema/sim.rs`, the `dsr_hard_delete_account` cascade), not against a real Neon database (this ADR's own deferral note, spec lines 178-184).
 
 # Context
 

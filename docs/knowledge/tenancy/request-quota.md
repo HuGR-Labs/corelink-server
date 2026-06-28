@@ -4,7 +4,7 @@ title: "Request-quota enforcement"
 description: "The container-side mirror of the Worker's monthly request-count cap, closing the OCI pass-through bypass with a fail-OPEN per-tenant allowance limiter."
 source_files:
   - "crates/corelink-container/src/request_count.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "request-count", "oci", "fail-open"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -34,9 +34,15 @@ the Worker's `QUOTAS[tier].requestsPerMonthMax` byte-for-byte so the two enforce
 
 - Per-tier caps mirror the Worker's rate card — free 500K up to max 80M requests/month
   (`crates/corelink-container/src/request_count.rs:67-77`).
-- `cap_for_tier` resolves the cap for a tier slug; `team`/`enterprise` return `None` (uncapped → skip the
-  counter write entirely) and an unknown slug maps to the most-restrictive `free` floor
-  (`crates/corelink-container/src/request_count.rs:89-100`).
+- `cap_for_tier` resolves the cap from a tier SLUG (string), and — unlike the eviction `Tier` enum — it
+  DOES cover the full sold paid ladder: `solo`/`starter`/`pro`(=`org`)/`max` each map to their distinct
+  monthly cap; `team`/`enterprise` return `None` (uncapped → skip the counter write entirely) and any
+  unknown slug maps to the most-restrictive `free` floor
+  (`crates/corelink-container/src/request_count.rs:89-100`). Note the taxonomy seam: `team` is RETAINED
+  here as an uncapped legacy slug even though ADR-S19-001 removed it from the sold ladder (and `business`
+  never shipped, so it is absent → falls to the `free` floor). So the count axis covers Starter/Pro/Max
+  cleanly — the only tier-coverage gap in the wider system is on the eviction side (see
+  `ops/gc-eviction`'s legacy 5-arm `Tier` enum), NOT here.
 - `check_and_increment` fail-OPENs (returns `None`, no count) when the wall clock is unavailable
   (`now_ms == 0`) — this is an availability limiter, not a cost cap
   (`crates/corelink-container/src/request_count.rs:253-259`).

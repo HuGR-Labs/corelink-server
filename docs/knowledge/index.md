@@ -11,12 +11,13 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 146**
+**Concepts: 157**
 
 ## planes
 
 - [Rust container compute plane](/planes/container.md)
 - [Durable Object lifecycle (CoreLinkServer)](/planes/durable-object.md)
+- [Multi-region replication + failover plane](/planes/replication-failover.md)
 - [Worker → DO → Container request flow](/planes/request-flow.md)
 - [Cloudflare Worker edge plane](/planes/worker-edge.md)
 
@@ -33,13 +34,15 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 - [Argon2id adapter-plane verification + scope](/auth/argon2id-verify.md)
 - [D1 PAT store + existence/scope check](/auth/d1-pat-store.md)
+- [Edge identity resolution (Clerk session → tenant)](/auth/edge-identity-resolution.md)
+- [The edge PAT-mint lifecycle (one authority, three consumers)](/auth/edge-pat-mint-lifecycle.md)
 - [Native HMAC fast-reject PAT gate](/auth/hmac-fast-reject.md)
 - [Introspection endpoint (runners fabric authz)](/auth/introspect.md)
 - [The 2-level PAT moat](/auth/pat-moat.md)
 
 ## storage
 
-- [BYOK envelope encryption at rest](/storage/byok-envelope-encryption.md)
+- [BYOK envelope-encryption skeleton (UNWIRED — no storage call site)](/storage/byok-envelope-encryption.md)
 - [CAS hot-path D1-over-HTTP latency](/storage/cas-hot-path-latency.md)
 - [Chunk / manifest multipart buckets](/storage/chunk-manifest-buckets.md)
 - [D1 CONFIG_DB](/storage/d1-config-db.md)
@@ -60,6 +63,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [CAS write flow](/flows/cas-write.md)
 - [Introspection flow (runners fabric)](/flows/introspection-fabric.md)
 - [PAT verification gauntlet](/flows/pat-gauntlet.md)
+- [Signup auto-provision + account-deletion erasure (Clerk webhook)](/flows/signup-auto-provision.md)
 
 ## crates
 
@@ -67,8 +71,10 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [Audit/analytics crate cluster](/crates/audit-analytics.md)
 - [Auth/PAT crate cluster](/crates/auth-pat.md)
 - [Billing/commerce crate cluster](/crates/billing-commerce.md)
+- [Billing usage→charge pipeline (emit/reconcile/aggregate/materialize + stripe-real egress)](/crates/billing-pipeline.md)
 - [CAS/AC core crate cluster](/crates/cas-ac-core.md)
 - [Container/platform crate cluster](/crates/container-platform.md)
+- [Handler-trait seam (CAS/AC/customer/erase/admin)](/crates/handler-trait-seam.md)
 - [Operations crate cluster (GC, replication, ratelimit, SRE)](/crates/operations.md)
 - [Privacy/compliance crate cluster](/crates/privacy-compliance.md)
 
@@ -161,12 +167,14 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [CF Worker deployment POC: wasm32 trait-adapter gotchas](/ops/dev-deployment.md)
 - [Engineering onboarding & the buddy protocol](/ops/engineering-onboarding.md)
 - [GC / eviction operations](/ops/gc-eviction.md)
+- [Observability plane (telemetry / tracing / SLO)](/ops/observability-plane.md)
 - [Performance playbook](/ops/perf-playbook.md)
 - [Release / GA tag process](/ops/release-process.md)
 - [Reproducible-build process](/ops/reproducible-build.md)
 - [Runners fabric (introspect-gated compute)](/ops/runners-fabric.md)
 - [SDK reference (python/go/javascript)](/ops/sdk-reference.md)
 - [Secrets lifecycle & PAT-scope runbook](/ops/secrets-lifecycle.md)
+- [SRE operations hub (corelink-ops + satellites)](/ops/sre-operations-hub.md)
 
 ## security
 
@@ -181,6 +189,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 - [RFC-6962 audit / transparency chain](/compliance/audit-chain.md)
 - [Data residency posture](/compliance/data-residency.md)
+- [DSR edge crons + erasure-queue consumer](/compliance/dsr-edge-crons.md)
 - [DSR / right-to-erasure pipeline](/compliance/dsr-erasure.md)
 - [Ed25519/JCS erasure attestation](/compliance/erasure-attestation.md)
 - [Sub-processor / vendor DPA reviews](/compliance/sub-processors.md)
@@ -193,7 +202,9 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 ## launch
 
+- [Edge quota & tier serving](/launch/edge-quota-tier-serving.md)
 - [Go-live readiness / launch due-diligence](/launch/go-live-readiness.md)
 - [Money-path: checkout + billing ingest](/launch/money-path.md)
 - [Signup -> tenant onboarding flow](/launch/signup-onboarding.md)
+- [Stripe activation webhook — the money-path activation half](/launch/stripe-activation-webhook.md)
 - [The 6-tier model & DPA-first tier-select checkout](/launch/tier-model.md)

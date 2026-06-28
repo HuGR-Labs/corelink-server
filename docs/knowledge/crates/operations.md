@@ -4,9 +4,17 @@ title: "Operations crate cluster (GC, replication, ratelimit, SRE)"
 description: "The background-plane workers — garbage collection with reachability + degrade-mode, soft-delete-first eviction, and the per-tenant token-bucket rate limiter."
 source_files:
   - "crates/corelink-gc/src/lib.rs"
+  - "crates/corelink-gc/src/run.rs"
+  - "crates/corelink-gc/src/degrade.rs"
+  - "crates/corelink-gc/src/worker.rs"
   - "crates/corelink-eviction/src/lib.rs"
+  - "crates/corelink-eviction/src/reachable.rs"
+  - "crates/corelink-eviction/src/blob_meta.rs"
   - "crates/corelink-ratelimit/src/lib.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+  - "crates/corelink-ratelimit/src/limiter.rs"
+  - "crates/corelink-ratelimit/src/bucket.rs"
+  - "crates/corelink-ratelimit/src/key.rs"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["crates", "gc", "eviction", "ratelimit", "ops", "sre"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -22,17 +30,17 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 
 # How it works
 
-- `corelink-gc` ships the GC run state machine (`GcPhase`/`GcStatus`, partial-UNIQUE on `WHERE status='running'`, monotone phase transitions, idempotent resume) plus the scheduler driving `cron tick → list candidate tenants → spawn worker per tenant` (`crates/corelink-gc/src/lib.rs:16-39`).
-- GC carries a `gc-pause` emergency stop: a `DegradeProbe` consulted at every phase transition with a ≤100ms next-batch propagation gate, so an operator can halt reclamation fleet-wide (`crates/corelink-gc/src/lib.rs:40-56`).
-- `corelink-eviction` is soft-delete-first and reachability-gated: it `UPDATE … SET deleted_at` (NEVER a direct R2 DELETE) only for blobs no live AC entry references, using the strict `<` evict-arm / `>=` protect-arm boundary mirroring the GC TLA semantics (`crates/corelink-eviction/src/lib.rs:42-57`).
-- `corelink-ratelimit` is a lazy-refill token bucket keyed by a tenant-leftmost composite (`per_tenant` / `per_ip` / `per_tenant_per_endpoint`) per DO singleton, emitting RFC 6585 Retry-After seconds clamped to a floor/ceiling (`crates/corelink-ratelimit/src/lib.rs:11-18`; `crates/corelink-ratelimit/src/lib.rs:28-43`).
+- `corelink-gc` ships the GC run state machine — the executed `GcPhase::can_transition_to` enforces the monotone forward chain (Idle→Mark→Sweep→PhysicalDelete→Reconcile→Completed, any-pre-terminal→Failed, everything else rejected) (`crates/corelink-gc/src/run.rs:102-119`).
+- GC carries a `gc-pause` emergency stop: the worker consults the `DegradeProbe` (contract: `crates/corelink-gc/src/degrade.rs:114-122`) at every phase transition — `transition_or_abort` probes BEFORE advancing the phase (`crates/corelink-gc/src/worker.rs:213`); only `GcPause` forces an abort at the next batch boundary (`requires_abort`, `crates/corelink-gc/src/degrade.rs:57-60`).
+- `corelink-eviction` is soft-delete-first and reachability-gated: the executed reachable probe protects any blob a live AC entry references, using the strict `<` evict-arm / `>=` protect-arm boundary mirroring the GC TLA semantics (`crates/corelink-eviction/src/reachable.rs:177-200`); reclamation is the soft-delete `UPDATE … SET deleted_at` (NEVER a direct R2 DELETE), idempotent on `deleted_at IS NULL` (`crates/corelink-eviction/src/blob_meta.rs:336-353`).
+- `corelink-ratelimit` is a lazy-refill token bucket keyed by a tenant-leftmost composite (`per_tenant` / `per_ip` / `per_tenant_per_endpoint`) per DO singleton, emitting RFC 6585 Retry-After seconds clamped to a floor/ceiling — the executed bucket math (`crates/corelink-ratelimit/src/bucket.rs:208-272`), the key dimensions (`crates/corelink-ratelimit/src/key.rs:30-49`). The live-bucket `HashMap` is **LRU-bounded** (`LIMITER_BUCKET_MAP_CAP`): a new key past the cap evicts the least-recently-accessed of a bounded sample (Redis-style approximate LRU, `O(1)` amortised) BEFORE materialising — closing the #534 OCI distinct-repo cross-tenant DoS where unbounded distinct keys grew the singleton's heap until the OOM-killer reaped it (`crates/corelink-ratelimit/src/limiter.rs:445` guard, eviction `evict_if_at_cap`).
 
 # Invariants
 
-- GC reclamation is pausable: the degrade probe is honored at every state transition, bounding blast radius of a bad sweep (`crates/corelink-gc/src/lib.rs:40-56`).
-- `INV-EVICT-SOFT-DELETE-FIRST`: eviction soft-deletes via `deleted_at`, never a direct R2 DELETE; physical cleanup is GC's job post-grace (`crates/corelink-eviction/src/lib.rs:50-57`).
-- The reachable-check is race-aware: `a.created_at < evict_started_at_ms` strict-evict with a `>=` protect mirror, so a blob written concurrently with the sweep is protected (`crates/corelink-eviction/src/lib.rs:42-49`).
-- `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`: rate-limit buckets are per-tenant DO singletons with a tenant-leftmost PK, so cross-tenant throttling is impossible by design (`crates/corelink-ratelimit/src/lib.rs:11-18`).
+- GC reclamation is pausable: the degrade probe is honored at every state transition, bounding blast radius of a bad sweep — consulted at the phase boundary in `transition_or_abort` (`crates/corelink-gc/src/worker.rs:213`).
+- `INV-EVICT-SOFT-DELETE-FIRST`: eviction soft-deletes via `deleted_at`, never a direct R2 DELETE; physical cleanup is GC's job post-grace (`crates/corelink-eviction/src/blob_meta.rs:336-353`).
+- The reachable-check is race-aware: `a.created_at < evict_started_at_ms` strict-evict with a `>=` protect mirror, so a blob written concurrently with the sweep is protected (`crates/corelink-eviction/src/reachable.rs:185-193`).
+- `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`: rate-limit buckets are per-tenant with a tenant-leftmost PK and an executed tenant-mismatch guard, so cross-tenant throttling is impossible by design (`crates/corelink-ratelimit/src/limiter.rs:445-454`).
 
 # Gotchas
 
@@ -42,10 +50,15 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 
 # Citations
 
-1. `crates/corelink-gc/src/lib.rs:16-39` — the GC run state machine + scheduler (cron → list → spawn-per-tenant).
-2. `crates/corelink-gc/src/lib.rs:40-56` — the `gc-pause` degrade-mode emergency stop with ≤100ms propagation.
-3. `crates/corelink-eviction/src/lib.rs:42-49` — the race-aware reachable check (`created_at < evict_started_at_ms`).
-4. `crates/corelink-eviction/src/lib.rs:50-57` — `INV-EVICT-SOFT-DELETE-FIRST` (soft-delete, never direct R2 DELETE).
-5. `crates/corelink-ratelimit/src/lib.rs:11-18` — `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION` per-tenant DO singleton.
-6. `crates/corelink-ratelimit/src/lib.rs:11-18` — RFC 6585 Retry-After seconds clamped to a per-config floor + hard ceiling.
-6b. `crates/corelink-ratelimit/src/lib.rs:28-43` — the tenant-leftmost bucket key + lazy-refill + RFC 6585 Retry-After.
+0a. `crates/corelink-gc/src/lib.rs:83-96` — the `corelink-gc` crate `pub mod` map (run/degrade/scheduler/sweep/worker).
+0b. `crates/corelink-eviction/src/lib.rs:171-181` — the `corelink-eviction` crate `pub mod` map (reachable/blob_meta/trigger/storage_state).
+0c. `crates/corelink-ratelimit/src/lib.rs:169-176` — the `corelink-ratelimit` crate `pub mod` map (bucket/limiter/key/config).
+1. `crates/corelink-gc/src/run.rs:102-119` — `GcPhase::can_transition_to`: the executed monotone GC phase state machine.
+2. `crates/corelink-gc/src/degrade.rs:114-122` — `DegradeProbe::probe`: the `gc-pause` degrade-mode emergency-stop CONTRACT; consulted at every phase transition by the worker (`crates/corelink-gc/src/worker.rs:213`, `transition_or_abort`).
+2b. `crates/corelink-gc/src/degrade.rs:57-60` — `DegradeKind::requires_abort`: only `GcPause` aborts a Running worker at the next batch boundary.
+3. `crates/corelink-eviction/src/reachable.rs:177-200` — the executed reachable check (strict `<` evict / `>=` protect; race-aware).
+4. `crates/corelink-eviction/src/blob_meta.rs:336-353` — `INV-EVICT-SOFT-DELETE-FIRST`: the executed soft-delete `deleted_at` write (never a direct R2 DELETE; idempotent).
+5. `crates/corelink-ratelimit/src/limiter.rs:445-454` — `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`: the executed tenant-mismatch guard.
+5b. `crates/corelink-ratelimit/src/limiter.rs:465` — `evict_if_at_cap`: the LRU-bounded live-bucket map (#534 OCI distinct-repo DoS fix; cap = `LIMITER_BUCKET_MAP_CAP`, approximate-LRU sample eviction).
+6. `crates/corelink-ratelimit/src/bucket.rs:208-272` — `try_acquire`: lazy-refill token bucket + RFC 6585 Retry-After clamped to a per-config floor + hard ceiling.
+6b. `crates/corelink-ratelimit/src/key.rs:30-49` — the tenant-leftmost bucket-key dimensions (`per_tenant` / `per_ip` / `per_tenant_per_endpoint`).

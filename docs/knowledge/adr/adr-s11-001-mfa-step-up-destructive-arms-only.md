@@ -4,7 +4,7 @@ title: "ADR-S11-001 — MFA step-up required only on destructive DSR arms"
 description: "Why DSR MFA step-up is required only on the irreversible arms (erasure, rectification, restriction) and forbidden on the read-only arms."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
+checkpoint_sha: "04a7eccfdbe5733a9059ab12518f6ee571db0248"
 provenance: "AUTHORED"
 tags: ["adr", "s11", "auth", "mfa", "dsr", "privacy"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -27,15 +27,19 @@ erasure-via-stolen-credentials path that is a GDPR Art. 32 "appropriate security
 
 # Decision
 
-**MFA step-up is required only on the irreversible / destructive arms** — `erasure`, `rectification`,
-`restriction` (the three that mutate the subject's record in a way affecting future processing).
-Erasure is structurally irreversible cross-backend (e.g. Stripe customer pseudonymize, not delete),
-rectification mutates downstream cached/derived state, and restriction flips legal-hold flags affecting
-retention windows — so a forged one is the worst case. The **non-destructive arms** (`access`,
-`portability`, `confirmation`, `objection`) require only primary credentials + a signed challenge token
-+ an existing session (three factors in aggregate, no step-up prompt), because they return data the
-subject already has primary-credentialed UI access to and step-up there would add friction without
-reducing attack surface.
+**MFA step-up is required only on the irreversible / destructive arms** — `erasure` and `rectification`
+(the two that mutate the subject's record in a way affecting future processing).
+Erasure is structurally irreversible cross-backend (e.g. Stripe customer pseudonymize, not delete) and
+rectification mutates downstream cached/derived state — so a forged one is the worst case. The
+**non-destructive arms** (`access`, `portability`, `confirmation`, `objection`, `restriction`) do not
+trigger a step-up prompt, because they return or policy-flag data without irreversibly mutating the
+subject's stored record; step-up there would add friction without reducing attack surface.
+
+> **Status vs shipped code (2026-06-28):** the spec text above originally listed `restriction` among
+> the destructive arms; the shipped enforcement does NOT. The live `DsrRequestKind::is_destructive()`
+> predicate that gates the MFA step-up is `matches!(self, Self::Erasure | Self::Rectification)` — exactly
+> **two** arms (event.rs lines 90-92, in the `corelink-dsr` crate). `Restriction` is treated as
+> policy-only and SKIPS the MFA step-up; this ADR has been reconciled to that 2-arm reality.
 
 # Consequences
 
@@ -52,6 +56,8 @@ reducing attack surface.
 1. `specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md:23-37` — the Context:
    the verification requirement and the two rejected extremes (always-on vs never).
 2. `specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md:39-47` — the Decision:
-   step-up only on erasure/rectification/restriction; read-only arms need no prompt.
+   step-up only on the destructive arms {Erasure, Rectification} (the live `is_destructive()` predicate,
+   `event.rs` lines 90-92 — `matches!(self, Self::Erasure | Self::Rectification)`); read-only arms need
+   no prompt.
 3. `specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md:63-74` — the
    Consequences: the friction win, the residual two-factor-compromise surface, and the forbidden cases.

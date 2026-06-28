@@ -4,8 +4,9 @@ title: "The 2-level PAT moat"
 description: "How CoreLink rejects forged tokens cheaply at the edge and proves possession deeply in the container."
 source_files:
   - "worker/src/lib/internal_auth.ts"
+  - "worker/src/index.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -40,6 +41,10 @@ control surfaces (mint, introspect) at the Worker edge.
 - That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (403),
   a missing/wrong header is 401, and only an exact match returns `null` to let the caller proceed
   (`worker/src/lib/internal_auth.ts:152-164`).
+- Per-consumer key resolution is `resolveConsumerKey`, which prefers a consumer's dedicated key but
+  treats a too-short dedicated key as ABSENT and falls back to the shared secret — so a mis-set
+  per-consumer key degrades to the shared gate rather than failing open
+  (`worker/src/lib/internal_auth.ts:73`).
 - In the container the **first** verification step is the HMAC fast-reject: the plaintext is parsed and
   a bad signature is rejected pre-D1, so a forged token drives no D1 cost and consumes no Argon2id
   permit (`crates/corelink-container/src/adapter_pat.rs:538-543`).
@@ -68,11 +73,26 @@ control surfaces (mint, introspect) at the Worker edge.
 - A container CAS 401 means bad HMAC OR no live D1 row, not necessarily a wrong password — the Argon2id
   step is only reached once a row exists. See [the Argon2id verify](/auth/argon2id-verify.md) and
   [the D1 PAT store](/auth/d1-pat-store.md).
+- **Availability-vs-auth at the Worker edge: a transient D1 PAT-lookup FAULT now maps to a retryable
+  503, NOT a 401.** `extractAuth` wraps the `SELECT … FROM pat` in a try/catch and on any D1 error
+  (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
+  (`worker/src/index.ts:1013-1023`). The PAT-gate caller (H1 fix) now maps BOTH
+  `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
+  (`worker/src/index.ts:2121-2129`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
+  surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
+  chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
+  still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
+  COMPLETE for the worker edge — a transient D1 fault is NOT a cause of a 401 there; it is a 503. The
+  in-line comment at `worker/src/index.ts:1020` ("map to 503 if desired") is now stale relative to the
+  caller, which DOES map it to 503. Both the D1-fault and the `signing_key_not_configured` config-fault
+  are retryable 503s; the edge still fails CLOSED (security > availability) for every credential-shaped
+  failure.
 
 # Citations
 
 1. `worker/src/lib/internal_auth.ts:112-127` — the edge constant-time secret compare with no length oracle.
 2. `worker/src/lib/internal_auth.ts:152-164` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
+2a. `worker/src/lib/internal_auth.ts:73` — `resolveConsumerKey`: dedicated-key preference with too-short→absent shared-key fallback.
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
 4. `crates/corelink-container/src/adapter_pat.rs:43-47` — uniform `InvalidPat`: no on-the-wire oracle.
 5. `crates/corelink-container/src/adapter_pat.rs:538-543` — the HMAC fast-reject, pre-D1, no permit consumed.

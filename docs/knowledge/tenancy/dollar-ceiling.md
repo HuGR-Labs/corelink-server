@@ -4,7 +4,7 @@ title: "Per-tenant monthly $-ceiling"
 description: "The fail-CLOSED cumulative-dollar spend cap that bounds each tenant's monthly cost blast-radius, orthogonal to the rate limit and the request quota."
 source_files:
   - "crates/corelink-container/src/tenant_quota.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "billing", "dollar-ceiling", "adr-0068", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -35,16 +35,15 @@ never floating point.
   via the `tenant_quota` row, not a product tier (`crates/corelink-container/src/tenant_quota.rs:59-64`).
 - `QuotaGuard::check` reads the wall clock first and fail-CLOSES with `503` when it is unavailable
   (`now_ms == 0`), because without a trustworthy clock the cycle boundary is unknowable
-  (`crates/corelink-container/src/tenant_quota.rs:743-752`).
+  (`crates/corelink-container/src/tenant_quota.rs:784-790`).
 - A quota-store transport/decode error also returns `503` — a billable op that cannot be cost-checked is
-  never served (`crates/corelink-container/src/tenant_quota.rs:762-768`).
-- The ceiling decision is an atomic DB-side `check_and_accrue` (`accrued + delta <= budget`), so two
-  concurrent ops cannot both read the same baseline and both pass; over the ceiling returns `402`
-  (`crates/corelink-container/src/tenant_quota.rs:794-804`).
+  never served (`crates/corelink-container/src/tenant_quota.rs:801-808`).
+- The DURABLE ceiling authority is an atomic DB-side `check_and_accrue` (`UPDATE … WHERE accrued + ?delta <= budget RETURNING …`), so the inner store can never durably exceed `accrued + delta <= budget`; over the ceiling returns `402` (`crates/corelink-container/src/tenant_quota.rs:1060-1088`). **That per-op DB-side atomicity holds for the `D1QuotaStore` OVERRIDE specifically — the `QuotaStore` trait's DEFAULT `check_and_accrue` is a non-atomic `get` → check → `accrue` two-step with a TOCTOU window (correct only for the single-threaded in-memory test store) (`crates/corelink-container/src/tenant_quota.rs:252-273`).**
+- **Production does NOT call the durable store on every op.** `quota_guard_from_env` fronts `D1QuotaStore` with a `LeasedQuotaStore` (`crates/corelink-container/src/tenant_quota.rs:126-127`): the hot path pre-DEBITS a 16-op chunk into an in-memory lease via ONE inner `check_and_accrue`, then serves subsequent ops FROM MEMORY without a per-op D1 round-trip, refilling (with a halving partial-lease fallback near the ceiling) when the lease drains (`crates/corelink-container/src/tenant_quota.rs:355-502`). Consequences, all by design: (1) **over-CHARGE, never over-SERVE** — the full chunk is debited durably UP FRONT, so a near-ceiling refill may CHARGE for ops it never serves (over-charge), and a crash loses the already-debited unused tail (the tenant is then slightly under-served for budget already spent) — but no op is ever served without first being paid for in D1. (2) **bounded overshoot ~0.32%** — `16 ops × $0.001 = $0.016` against the `$5/mo` tripwire is the worst-case crash-tail. (3) **up to ~16-op staleness** — a durable budget change (ceiling drop, or charges from another container) is not seen until the current lease drains. The durable D1 atomic `accrued + delta <= budget` remains the SOLE ceiling authority, so this stays a hard cost-blast-radius bound: a tenant can be slightly over-charged but can NEVER be over-served past the ceiling.
 - A cycle rolls (accrued resets to 0, the anchor advances) once the clock is `CYCLE_LENGTH_MS` (~30 days)
-  past the tenant's `cycle_anchor_ms` (`crates/corelink-container/src/tenant_quota.rs:155-158`).
+  past the tenant's `cycle_anchor_ms` (`crates/corelink-container/src/tenant_quota.rs:155-161`).
 - The batch variant charges `n * cost_each` in ONE atomic check using `saturating_mul` to stop integer
-  overflow from an untrusted batch size (`crates/corelink-container/src/tenant_quota.rs:716-722`).
+  overflow from an untrusted batch size (`crates/corelink-container/src/tenant_quota.rs:755-761`).
 
 # Invariants
 
@@ -52,8 +51,12 @@ never floating point.
   (`crates/corelink-container/src/tenant_quota.rs:32-37`).
 - Every uncertain path fail-CLOSES: over-ceiling → `402`, store/clock error → `503`; only an explicit
   in-budget `Allow` proceeds (`crates/corelink-container/src/tenant_quota.rs:18-30`).
-- The accrue is a serialized DB-side increment, so concurrent ops at the cycle boundary cannot lose an
-  update or over-admit spend (`crates/corelink-container/src/tenant_quota.rs:777-810`).
+- The DURABLE accrue is a serialized DB-side increment (the `D1QuotaStore` override), so concurrent ops
+  at the cycle boundary cannot lose an update or over-admit DURABLE spend
+  (`crates/corelink-container/src/tenant_quota.rs:816-876`). The in-memory `LeasedQuotaStore` in front
+  amortises the round-trip but never over-SERVES: every op is paid for in D1 before it is served, so the
+  cap is a hard over-serve bound even though it permits a bounded over-CHARGE
+  (`crates/corelink-container/src/tenant_quota.rs:126-127`, `crates/corelink-container/src/tenant_quota.rs:355-502`).
 
 # Gotchas
 
@@ -71,9 +74,13 @@ never floating point.
 3. `crates/corelink-container/src/tenant_quota.rs:59-64` — the `$5/mo` launch tripwire constant.
 4. `crates/corelink-container/src/tenant_quota.rs:75-89` — the coarse flat per-op cost model.
 5. `crates/corelink-container/src/tenant_quota.rs:105-116` — `None` guard when the storage env is unset (dev/CI).
-6. `crates/corelink-container/src/tenant_quota.rs:155-158` — cycle-elapsed test against `CYCLE_LENGTH_MS`.
-7. `crates/corelink-container/src/tenant_quota.rs:716-722` — `check_batch` atomic charge with `saturating_mul`.
-8. `crates/corelink-container/src/tenant_quota.rs:743-752` — clock-unavailable `503` fail-close.
-9. `crates/corelink-container/src/tenant_quota.rs:762-768` — store-unavailable `503` fail-close.
-10. `crates/corelink-container/src/tenant_quota.rs:777-810` — atomic roll + check-and-accrue (no lost-update / over-admission).
-11. `crates/corelink-container/src/tenant_quota.rs:794-804` — over-ceiling `402 Payment Required`.
+6. `crates/corelink-container/src/tenant_quota.rs:155-161` — cycle-elapsed test against `CYCLE_LENGTH_MS`.
+7. `crates/corelink-container/src/tenant_quota.rs:755-761` — `check_batch` atomic charge with `saturating_mul`.
+8. `crates/corelink-container/src/tenant_quota.rs:784-790` — clock-unavailable `503` fail-close.
+9. `crates/corelink-container/src/tenant_quota.rs:801-808` — store-unavailable `503` fail-close.
+10. `crates/corelink-container/src/tenant_quota.rs:816-876` — atomic roll + check-and-accrue (no lost-update / over-admission).
+11. `crates/corelink-container/src/tenant_quota.rs:900-908` — over-ceiling `402 Payment Required` (guard mapping).
+12. `crates/corelink-container/src/tenant_quota.rs:252-273` — the `QuotaStore` trait DEFAULT `check_and_accrue`: a non-atomic `get`→check→`accrue` two-step with a TOCTOU window (the per-op atomicity is store-specific to the override below).
+13. `crates/corelink-container/src/tenant_quota.rs:1060-1088` — `D1QuotaStore::check_and_accrue`: the single atomic `UPDATE … WHERE accrued + ?delta <= budget RETURNING …` — the SOLE durable ceiling authority.
+14. `crates/corelink-container/src/tenant_quota.rs:126-127` — `quota_guard_from_env` fronts `D1QuotaStore` with `LeasedQuotaStore` (the live production wiring).
+15. `crates/corelink-container/src/tenant_quota.rs:355-502` — `LeasedQuotaStore`: the in-memory 16-op budget lease (amortised D1 round-trip, bounded ~0.32% overshoot, over-charge-not-over-serve, fail-CLOSED on drained+unreachable).

@@ -9,14 +9,14 @@ worklist mechanically — no LLM, no judgement. It is the deterministic half of
 the self-healing loop; the LLM half (re-authoring) is in
 `.claude/skills/okf-reconcile/SKILL.md`.
 
-Staleness is detected with the EXACT C5 mechanic transcribed from
-`scripts/validate_okf.py` (and the frozen contract §4): a TWO-TREE
-    git diff <checkpoint_sha> HEAD --unified=0 -- <path>
-over the whole file (merge-safe), post-filtered to the diff hunks that intersect
-the concept's cited line ranges for that file. It NEVER uses `git log -L`/blame
-(line-history reintroduces the merge-simplification the two-tree diff removed).
-The Concept model and the diff helper are imported from `validate_okf` so the
-two tools can never disagree on what "stale" means.
+Staleness is detected with the EXACT C5 mechanic shared with
+`scripts/validate_okf.py` (and the frozen contract §4): the CONTENT-ANCHOR
+predicate `validate_okf.cited_range_drifted` — for each cited `path:Lx-Ly` it
+compares the CONTENT of lines Lx..Ly between `checkpoint_sha` and HEAD (each line
+trailing-whitespace-stripped). This fires on an in-range edit AND on a pure
+position-shift (an insertion above the cited range). It NEVER uses `git log -L`/
+blame. The Concept model AND the drift predicate are imported from `validate_okf`
+so the two tools can never disagree on what "stale" means.
 
 For the ADR sub-profile (§4.1) an accepted ADR does not go stale on the code it
 governs, so — mirroring C5 — non-`.md` source files of an ADR concept are skipped.
@@ -92,17 +92,11 @@ def collect_stale(git: "okf.Git", bundle_root: Path):
             cranges = ranges_by_file.get(sf, [])
             if not cranges:
                 continue
-            changed = git.changed_new_lines(c.checkpoint_sha, sf)
-            if not changed:
-                continue
 
             hit: list[tuple[int, int]] = []
-            if -1 in changed:  # whole file incomparable -> all cited ranges suspect
-                hit = list(cranges)
-            else:
-                for (l1, l2) in cranges:
-                    if any(l1 <= ln <= l2 for ln in changed):
-                        hit.append((l1, l2))
+            for (l1, l2) in cranges:
+                if okf.cited_range_drifted(git, c.checkpoint_sha, sf, l1, l2):
+                    hit.append((l1, l2))
             # dedup while preserving order (a concept may cite a range N times)
             hit_ranges = [[a, b] for (a, b) in dict.fromkeys(hit)]
             if not hit_ranges:

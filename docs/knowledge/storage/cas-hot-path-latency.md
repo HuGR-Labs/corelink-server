@@ -5,7 +5,7 @@ description: "The measured root cause of slow /v1/cas: two synchronous D1-over-H
 source_files:
   - "crates/corelink-container/src/billing_d1_http.rs"
   - "docs/perf/2026-06-19-cas-hot-path-latency.md"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "175a91320376cd80ada9797944e118ec1ff81c63"
 provenance: "AUTHORED"
 tags: ["storage", "perf", "d1", "cas", "latency", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -49,8 +49,8 @@ view of the [native CAS surface](/surfaces/native-cas.md) running on the [contai
   multi-thread runtime is the single documented bridge point — no nested runtime
   (`crates/corelink-container/src/billing_d1_http.rs:90-114`).
 - Any D1 transport / non-2xx / decode error maps to `Transient` → HTTP 500 so the caller retries; the
-  store is fail-CLOSED, never silently treating a failed read as success
-  (`crates/corelink-container/src/billing_d1_http.rs:40-51`).
+  store is fail-CLOSED, never silently treating a failed read as success — the executing
+  `.map_err(|e| BillingD1Error::Transient(..))` is at `crates/corelink-container/src/billing_d1_http.rs:113`.
 - WP-2 must keep the $-ceiling fail-CLOSED with a bounded, reconciled overshoot — a charge is NEVER lost
   and a tenant definitely over-ceiling is still refused
   (`docs/perf/2026-06-19-cas-hot-path-latency.md:68-80`).
@@ -73,5 +73,5 @@ view of the [native CAS surface](/surfaces/native-cas.md) running on the [contai
 5. `docs/perf/2026-06-19-cas-hot-path-latency.md:68-80` — WP-2 $-ceiling fail-closed + tombstone no-false-negative invariants.
 6. `docs/perf/2026-06-19-cas-hot-path-latency.md:74-80` — GDPR Art.17 tombstone false-negative prohibition.
 7. `crates/corelink-container/src/billing_d1_http.rs:1-28` — the sync↔async D1-over-HTTP bridge rationale.
-8. `crates/corelink-container/src/billing_d1_http.rs:40-51` — fail-CLOSED transport-error → `Transient` → 500.
+8. `crates/corelink-container/src/billing_d1_http.rs:113` — fail-CLOSED transport-error → `Transient` → 500 (the executing `.map_err`).
 9. `crates/corelink-container/src/billing_d1_http.rs:90-114` — `run`: `block_in_place` + `block_on` per D1 round-trip.
