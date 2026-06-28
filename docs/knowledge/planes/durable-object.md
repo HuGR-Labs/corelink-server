@@ -4,7 +4,10 @@ title: "Durable Object lifecycle (CoreLinkServer)"
 description: "The per-tenant Durable Object that manages the Rust container lifecycle (cold start, health, idle stop) and proxies HTTP to it."
 source_files:
   - "worker/src/durable_object.ts"
-checkpoint_sha: "f00ec7b71ab8196df8a6620e3bf5a73bd1bc82b9"
+  - "worker/src/index.ts"
+  - "worker/src/event_log_do.ts"
+  - "worker/src/rollout_controller.ts"
+checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -48,6 +51,20 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
    (`worker/src/durable_object.ts:80-83`, `worker/src/durable_object.ts:852-883`).
 9. A periodic `alarm` re-probes health and marks the container `degraded` after `MAX_HEALTH_FAILURES`
    (`worker/src/durable_object.ts:905-959`).
+10. The Worker exports two SIBLING DO classes alongside `CoreLinkServer`
+    (`worker/src/index.ts:2618`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
+    primitive — it adopts the first `x-corelink-tenant-id` it sees, persists that pin, and refuses any
+    other tenant's request with a `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`). Its
+    `append` monotonically assigns `seq` under `blockConcurrencyWhile` (persist the entry, THEN advance
+    the head, so a crash orphans rather than gaps), dispatched from `/_eventlog/append`
+    (`worker/src/event_log_do.ts:220-225`, `worker/src/event_log_do.ts:266-277`). It is bound in
+    `wrangler.toml` and exported, but NO edge route dispatches to it — the `EVENT_LOG_DO` binding is
+    referenced only as an OPTIONAL field of `Env` (`worker/src/index.ts:54-59`); it is a ready primitive
+    awaiting its hugit-P2 seam-D consumer.
+11. `RolloutController` is an UNWIRED stub: bound in `wrangler.toml` and exported, it answers
+    `/_do/health` with 200 but returns `501 NOT_IMPLEMENTED` ("RolloutController WASM bridge not yet
+    wired (Phase C)") for every other request — the real rollout logic lives in Rust/WASM and is not yet
+    bridged (`worker/src/rollout_controller.ts:34-56`).
 
 # Invariants
 - One DO instance per tenant — the DO ID is tenant-derived, never cross-tenant
@@ -60,12 +77,23 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   every request forever (the F-020 `_system` wedge fix) (`worker/src/durable_object.ts:96-104`).
 - The proxy never reads or logs the request body (INV-NO-BODY-IN-LOGS)
   (`worker/src/durable_object.ts:251-264`).
+- `EventLogDO` is per-tenant and append-only: a DO pinned to one tenant rejects a request carrying a
+  different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`),
+  and `seq` is strictly monotonic + gap-free under `blockConcurrencyWhile` (persist-entry-then-advance-
+  head) (`worker/src/event_log_do.ts:266-277`).
+- Honest wiring: of the three exported DO classes, only `CoreLinkServer` is a live serving path.
+  `EventLogDO` is implemented + bound + exported but has NO live edge caller yet (`EVENT_LOG_DO` is an
+  OPTIONAL `Env` field, `worker/src/index.ts:54-59`), and `RolloutController` is a bound+exported STUB
+  returning `501 NOT_IMPLEMENTED` for everything but health (`worker/src/rollout_controller.ts:34-56`).
 
 # Gotchas
 - DOs are single-threaded but ASYNC-concurrent: every `await` is a yield point where another queued
   `fetch` can run — which is exactly why the concurrent-start guard flips the status synchronously.
 - The container env forward is a silent-failure trap: a secret the container reads via `env::var` but
   the DO never forwards will appear "set" to the operator yet never reach the container.
+- Two of the Worker's three exported DO classes are NOT live request paths: `EventLogDO` is a wired-but-
+  unconsumed primitive (no edge dispatcher reads the optional `EVENT_LOG_DO` binding) and
+  `RolloutController` is a Phase-C stub (501) — don't cite either as an active serving plane.
 
 # Citations
 1. `worker/src/durable_object.ts:1-26` — the DO's responsibilities + per-tenant pinning doc.
@@ -81,3 +109,9 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 11. `worker/src/durable_object.ts:752-782` — `waitForContainerHealth` polling `/_health`.
 12. `worker/src/durable_object.ts:852-883` — the idle-timeout destroy path.
 13. `worker/src/durable_object.ts:905-959` — the periodic `alarm` health re-probe + degrade.
+14. `worker/src/index.ts:2618` — the Worker exports `CoreLinkServer`, `RolloutController`, `EventLogDO`.
+15. `worker/src/event_log_do.ts:207-218` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).
+16. `worker/src/event_log_do.ts:220-225` — the `/_eventlog/append` + `/_eventlog/read` route dispatch.
+17. `worker/src/event_log_do.ts:266-277` — `handleAppend`: monotonic gap-free `seq` under `blockConcurrencyWhile` (persist-entry-then-advance-head).
+18. `worker/src/index.ts:54-59` — the `EVENT_LOG_DO` binding declared OPTIONAL on `Env` (the only `worker/src` reference; no edge route dispatches to it yet).
+19. `worker/src/rollout_controller.ts:34-56` — `RolloutController` UNWIRED stub: `/_do/health` 200 but `501 NOT_IMPLEMENTED` "WASM bridge not yet wired (Phase C)" for all other requests.

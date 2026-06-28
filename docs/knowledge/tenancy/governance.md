@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/customer.rs"
   - "crates/corelink-container/src/routes/users.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "cfb46abdef8a9d460b00c2b13d56f9a4caa328a7"
+checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -35,7 +35,7 @@ self-service plane. It rests on the same trusted tenant id established by
 # How it works
 
 - The rate limiter is wired as ONE `.layer(...)` line at the end of `build_with_factory`
-  (`crates/corelink-container/src/routes.rs:819-822`), so it covers exactly the composed data-plane router
+  (`crates/corelink-container/src/routes.rs:837-840`), so it covers exactly the composed data-plane router
   and intentionally excludes `/_health` and `/_internal/*`
   (`crates/corelink-container/src/routes/ratelimit_layer.rs:15-22`).
 - The bucket is keyed on the edge-injected `x-corelink-tenant-id`, the only trustworthy tenant source in
@@ -87,4 +87,4 @@ self-service plane. It rests on the same trusted tenant id established by
 10. `crates/corelink-container/src/routes/customer.rs:762-775` — revoke requires cache-write scope; read-only → `403`.
 11. `crates/corelink-container/src/routes/users.rs:18-27` — `/v1/users/me` security model (fail-CLOSED, never reflects the PAT).
 12. `crates/corelink-container/src/routes/users.rs:106-110` — the `handle_me` handler signature using the `AuthTenant` extractor.
-13. `crates/corelink-container/src/routes.rs:819-822` — the single `.layer(...)` wiring of the rate limiter in `build_with_factory`.
+13. `crates/corelink-container/src/routes.rs:837-840` — the single `.layer(...)` wiring of the rate limiter in `build_with_factory`.

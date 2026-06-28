@@ -5,7 +5,7 @@ description: "How CoreLink rejects forged tokens cheaply at the edge and proves 
 source_files:
   - "worker/src/lib/internal_auth.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -40,6 +40,10 @@ control surfaces (mint, introspect) at the Worker edge.
 - That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (403),
   a missing/wrong header is 401, and only an exact match returns `null` to let the caller proceed
   (`worker/src/lib/internal_auth.ts:152-164`).
+- Per-consumer key resolution is `resolveConsumerKey`, which prefers a consumer's dedicated key but
+  treats a too-short dedicated key as ABSENT and falls back to the shared secret — so a mis-set
+  per-consumer key degrades to the shared gate rather than failing open
+  (`worker/src/lib/internal_auth.ts:73`).
 - In the container the **first** verification step is the HMAC fast-reject: the plaintext is parsed and
   a bad signature is rejected pre-D1, so a forged token drives no D1 cost and consumes no Argon2id
   permit (`crates/corelink-container/src/adapter_pat.rs:538-543`).
@@ -73,6 +77,7 @@ control surfaces (mint, introspect) at the Worker edge.
 
 1. `worker/src/lib/internal_auth.ts:112-127` — the edge constant-time secret compare with no length oracle.
 2. `worker/src/lib/internal_auth.ts:152-164` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
+2a. `worker/src/lib/internal_auth.ts:73` — `resolveConsumerKey`: dedicated-key preference with too-short→absent shared-key fallback.
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
 4. `crates/corelink-container/src/adapter_pat.rs:43-47` — uniform `InvalidPat`: no on-the-wire oracle.
 5. `crates/corelink-container/src/adapter_pat.rs:538-543` — the HMAC fast-reject, pre-D1, no permit consumed.

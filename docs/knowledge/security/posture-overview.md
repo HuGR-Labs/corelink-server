@@ -5,7 +5,8 @@ description: "CoreLink's overall security posture: the four invariant guarantees
 source_files:
   - "docs/security/2026-06-13-CAA-360-audit-report.md"
   - "ARCHITECTURE.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+  - "apps/signup-worker/src/security-headers.ts"
+checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
 provenance: "AUTHORED"
 tags: ["security", "posture", "audit", "tenant-isolation", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -55,6 +56,13 @@ launch gate).
 - The honest top risks cluster on one root cause — secrets and invariants that fail OPEN and silently
   instead of fail-closed and loud: the TDK unset in prod, optional secrets that fail open, and an AC
   divergent-body overwrite (`docs/security/2026-06-13-CAA-360-audit-report.md:22-27`).
+- At the edge, defense-in-depth includes a strict security-header set applied to EVERY signup-worker
+  response: `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'`,
+  `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`, plus
+  `nosniff` / `X-Frame-Options: DENY` / `Referrer-Policy: no-referrer` / a locked-down `Permissions-
+  Policy` (`apps/signup-worker/src/security-headers.ts:14-24`); `withSecurityHeaders` merges them
+  gap-fill onto each response so a per-route header is never clobbered
+  (`apps/signup-worker/src/security-headers.ts:31-41`).
 
 # Invariants
 
@@ -90,3 +98,5 @@ launch gate).
 8. `docs/security/2026-06-13-CAA-360-audit-report.md:22-27` — the fail-open-secrets root cause + the launch gate.
 9. `docs/security/2026-06-13-CAA-360-audit-report.md:51-81` — the one High (F36): migration 0064 trigger-loss documentation defect.
 10. `docs/security/2026-06-13-CAA-360-audit-report.md:104-120` — F1: cross-tenant co-residence when `R2_TDK_HEX` is unset in prod.
+11. `apps/signup-worker/src/security-headers.ts:14-24` — the strict edge security-header set (CSP `default-src 'none'`, HSTS 2y preload, nosniff / `X-Frame-Options: DENY` / no-referrer / `Permissions-Policy`).
+12. `apps/signup-worker/src/security-headers.ts:31-41` — `withSecurityHeaders`: gap-fill merge applied to every signup-worker response.

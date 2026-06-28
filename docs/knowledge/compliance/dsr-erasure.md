@@ -14,7 +14,7 @@ source_files:
   - crates/corelink-dsr/src/receipt.rs
   - crates/corelink-dsr/src/event.rs
   - crates/corelink-dsr/src/lib.rs
-checkpoint_sha: "cfb46abdef8a9d460b00c2b13d56f9a4caa328a7"
+checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "lgpd", "erasure", "right-to-erasure", "compliance", "mfa", "attestation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -49,7 +49,7 @@ This control implements the data-subject right-to-erasure (and the sibling DSR r
 - **Erasure intake is legitimacy-gated (anti mass-erase).** Every erase binds to a D1-authenticated `dsr_requested` row; a forged body-asserted `tenant_id` with the shared internal key lands as `Rejected` → HTTP 422, no fan-out, no bytes deleted; a D1 fault also fails CLOSED (`crates/corelink-container/src/routes/dsr.rs:397-398`, `crates/corelink-container/src/routes/dsr.rs:180-184`).
 - **The destructive route is mounted only with a ≥32-char dedicated key.** `build_state_from_env` prefers `CORELINK_ERASE_AUTH_KEY`, falls back to the shared internal key, and refuses to mount below the 32-char floor (`crates/corelink-container/src/routes/dsr.rs:316-332`); the check itself is constant-time, length-folded (`crates/corelink-container/src/routes/dsr.rs:126-143`).
 - **Cannot attest "complete" while data survives.** The attestation is signed only on the `VerifiedComplete` arm, which the orchestrator emits iff every backend's verification hash is the canonical-empty sentinel — surviving CAS/AC bytes yield a non-canonical hash → `VerifiedPartial` → no signature (`crates/corelink-container/src/routes/dsr.rs:443-446`, `docs/security/2026-06-23-secreview-gdpr-residency.md:75-85`).
-- **A tombstoned hash never resurrects.** A read of a tombstoned digest returns 410 on the native CAS route — the read-side enforcer short-circuits `Ok(true) => return (StatusCode::GONE, "erased")` BEFORE the R2 GET (`crates/corelink-container/src/routes/cas.rs:665-676`, tombstone-WRITE side `crates/corelink-container/src/routes/cas_erase.rs:1-8`), a re-PUT is refused, and a gate transport fault fails CLOSED 503; the bloom is re-seeded from D1 on every reload to close the cross-writer false-negative window (`crates/corelink-container/src/routes/cas_erase.rs:797-825`).
+- **A tombstoned hash never resurrects.** A read of a tombstoned digest returns 410 on the native CAS route — the read-side enforcer short-circuits `Ok(true) => return (StatusCode::GONE, "erased")` BEFORE the R2 GET (`crates/corelink-container/src/routes/cas.rs:786-798`, tombstone-WRITE side `crates/corelink-container/src/routes/cas_erase.rs:1-8`), a re-PUT is refused, and a gate transport fault fails CLOSED 503; the bloom is re-seeded from D1 on every reload to close the cross-writer false-negative window (`crates/corelink-container/src/routes/cas_erase.rs:797-825`).
 - **The receipt caps customer-side replay at 90 days.** `DsrReceipt::is_expired` enforces the `submitted + 90d` cap independent of DB state (`crates/corelink-dsr/src/receipt.rs:153-154`).
 
 # Gotchas
@@ -72,4 +72,4 @@ This control implements the data-subject right-to-erasure (and the sibling DSR r
 - MFA verifier fail-CLOSED contract: `crates/corelink-dsr/src/mfa.rs:80-102`, `crates/corelink-dsr/src/mfa.rs:146-154`.
 - Idempotency + divergent-payload SEV-1: `crates/corelink-dsr/src/store.rs:133-158`; store keyed `(tenant,request)`: `crates/corelink-dsr/src/store.rs:45`.
 - Receipt 90d cap + SLA per jurisdiction (enforcer `sla_for`): `crates/corelink-dsr/src/receipt.rs:136-149`, `crates/corelink-dsr/src/event.rs:403`, `crates/corelink-dsr/src/lib.rs:116-119`.
-- CAS per-hash erase module + tombstone-WRITE side: `crates/corelink-container/src/routes/cas_erase.rs:1-8`, `crates/corelink-container/src/routes/cas_erase.rs:70`, `crates/corelink-container/src/routes/cas_erase.rs:830-850`; read-side 410 enforcer: `crates/corelink-container/src/routes/cas.rs:665-676`.
+- CAS per-hash erase module + tombstone-WRITE side: `crates/corelink-container/src/routes/cas_erase.rs:1-8`, `crates/corelink-container/src/routes/cas_erase.rs:70`, `crates/corelink-container/src/routes/cas_erase.rs:830-850`; read-side 410 enforcer: `crates/corelink-container/src/routes/cas.rs:786-798`.

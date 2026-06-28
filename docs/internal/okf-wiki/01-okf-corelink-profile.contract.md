@@ -91,7 +91,35 @@ this table via a contract revision so the taxonomy stays curated.
    MAY also point to ADRs (`/adr/adr-0033.md`), other concepts, or `references/` artifacts.
 5. Inline code-anchor format: `crates/foo/src/bar.rs:42` or `:42-58`. The cited file MUST exist and the
    line(s) MUST be within the file's bounds at `checkpoint_sha`.
-6. **GENERATED concepts** carry a top-of-body marker: `> GENERATED — do not hand-edit. Reconcile via the updater.`
+6. **Cite the in-repo LEAF enforcer, never a line that DELEGATES to an uncited callee
+   (AUTHORING RULE — closes the C5 "callee-swap" bypass).** C5 freshness is mechanical: it re-reads the
+   cited *lines*, it cannot follow a function call. So if a concept anchors an invariant on a line that
+   merely *calls* a helper, and the real enforcement lives in that helper in an **uncited** file, an
+   author can rewrite the helper (changing the behaviour) while the cited call line stays byte-identical
+   — C5 still reports "fresh." Therefore: **an invariant's inline anchor cite MUST point at the in-repo
+   LEAF enforcer — the line that PERFORMS the check**, where "leaf" = the deepest line in *our own* code
+   on the call chain; an external-crate call (e.g. `subtle::ct_eq`, `hmac`) at that line IS the leaf (we
+   do not chase a cite into a third-party dependency we do not version-pin in `source_files`). Every file
+   on the full verify chain SHOULD appear in `source_files` (and so be C5-gated); the delegating /
+   intermediate-wrapper call sites MAY be cited *in addition*, never *instead* of the leaf.
+   (Worked example: the PAT moat's HMAC fast-reject delegates `adapter_pat.rs` → `verify_hmac_only_multi`
+   in `crates/corelink-pat/src/verify.rs` → `verify_hmac_sig_multi` in `crates/corelink-pat/src/sig.rs`.
+   `verify_hmac_only_multi` is ITSELF a wrapper (it just calls onward), so the leaf is one hop deeper: the
+   `ct_eq` constant-time fold in `sig.rs`. The concept's invariant anchors on the `sig.rs` fold; verify.rs
+   and the adapter call site are cited only as call-chain context — audit #2 corrected an earlier draft
+   that stopped one hop shallow at the verify.rs wrapper.)
+
+   **ACCEPTED STRUCTURAL RESIDUAL of content-anchoring (callee-swap, audit #2).** Content-anchoring is a
+   line-content oracle; it fundamentally **cannot follow a call graph**. So a cite can ALWAYS be authored
+   one call shallower than the real enforcer (anchor on a wrapper that just delegates), and C5 cannot
+   detect it — the wrapper line is byte-stable while the leaf it calls is rewritten. This is not a bug to
+   "fix" mechanically (it is undecidable without whole-program call-graph following, which C3's
+   no-rename-follow / declared-dependency stance deliberately rejects); it is an **accepted structural
+   residual**. The mitigations are (a) the hard authoring rule above (anchor on the in-repo leaf), (b)
+   `source_files` SHOULD carry every file on the verify chain so C5 gates each, and (c) review catches a
+   wrapper-anchored invariant. The residual is review-caught, in the same family as the C5b
+   cosmetic-edit / rename-reset residuals (§4).
+7. **GENERATED concepts** carry a top-of-body marker: `> GENERATED — do not hand-edit. Reconcile via the updater.`
 
 ---
 
@@ -121,12 +149,14 @@ freshness.
 | **C5b** No phantom reconcile | If a PR advances a concept's `checkpoint_sha`, that concept's body MUST also change in the same PR. | SHA bumped without a body edit (reconcile-without-reconciling). |
 | **C6** Citation resolves | Every inline `path:line[-line]` cite: file exists at HEAD, line(s) in bounds; every `source_files` path appears ≥1× under `# Citations`. | Dangling cite, out-of-range line, or an ungrounded declared source. |
 | **C6b** Cited ⊆ declared | Every file appearing in any inline `path:line` cite is in `source_files`. | A cited file not declared (would escape C5 freshness). |
-| **C6c** Per-claim grounding | Every bullet/line under `# How it works` and `# Invariants` contains ≥1 `path:line` token. | An ungrounded claim bullet (mechanical proxy against hallucinated prose). |
+| **C6c** Per-claim grounding | Every bullet/line under `# How it works` and `# Invariants` contains ≥1 `path:line` token **AND ≥1 of those cites is a NON-test path** (a bullet whose only cites are test paths is a FAILURE — a test can be neutered later, so an invariant must be grounded on the enforcer; tests allowed only as ADDITIONAL cites). **A test path = `tests/…`, `…/tests/…`, `…/__tests__/…`, the bare `test.rs`/`tests.rs` module files, a SEPARATOR-bounded `*_test.rs`/`*_tests.rs`, a `test_*.rs`/`tests_*.rs` prefix, or `*.test.ts`/`*.spec.ts`. The boundary is required (fix #4): `attest.rs`/`latest.rs`/`contest.rs`/`proptests.rs` are NOT tests — the old bare `…test.rs`-suffix match misclassified them as test-only.** | An ungrounded claim bullet, OR a bullet grounded SOLELY on a test path. |
 | **C7** Link integrity | Every bundle-relative link to a **declared** concept resolves. (Links to not-yet-written/`deferred` concepts tolerated per OKF.) | A link to a declared concept path with no file. |
 | **C8** Orphan | Every concept reachable from `index.md`. | An unreachable concept. |
 | **C9** Reserved names | `index.md`/`log.md` never concept docs; no concept uses a reserved path. | Violation. |
 | **C10** Manifest completeness | Every candidate in `concept-manifest.yaml` with **`status: active`** has a concept doc OR a `deferred:` marker. Candidates `status: planned` (not-yet-dispatched backlog) do NOT block — they let the foundation be green before the fill waves run; a concept-authoring WP flips its candidates to `active` and lands the docs in the same PR. | An `active` candidate with neither. |
-| **C10b** Manifest ⊇ repo surface | The manifest itself is cross-checked against the mechanically-enumerable surface: `specs/03_architecture/adrs/*.md` (76 ADRs), `crates/corelink-container/src/routes/*.rs`, and each `crates/*` dir → each maps to a manifest entry or an explicit `excludes:` list with a reason. | A repo-surface item with no manifest entry and no exclude (silent gap one level up). |
+| **C10b** Manifest ⊇ repo surface | The manifest itself is cross-checked against the mechanically-enumerable surface: `specs/03_architecture/adrs/*.md` (76 ADRs), **`crates/corelink-container/src/routes/**/*.rs` (RECURSIVE — route handlers in `routes/dsr/`, `routes/audit_export/`, `routes/audit_analytics/` subdirs are enumerated, not just top-level)**, **`crates/corelink-container/src/*.rs` (the crate ROOT, file-granular — a handler dropped beside `webhook.rs`/`native_pat_gate.rs` is gated)**, each `crates/*` dir, plus the Worker edge plane + apps/ (`worker/src/**`, `apps/*/src/**`) → each maps to a manifest entry or an explicit `excludes:` reason. | A repo-surface item with no manifest entry and no exclude (silent gap one level up). |
+
+**C10b — ACCEPTED RESIDUAL: coarse crate-DIR coverage for the non-container library crates (audit #3 MED #3, documented honest, NOT closed).** The C10b enumeration is FILE-granular for the deployed compute plane and the edge plane — `crates/corelink-container/src/**/*.rs` (root + recursive `routes/`), `worker/src/**`, and `apps/*/src/**` are walked file-by-file, so a new load-bearing file there REDs the gate. But every OTHER `crates/*` library crate is enumerated as a single **DIRECTORY** surface, covered by reviewed cluster MEMBERSHIP (a `seed_from` path that is the crate dir or lives under it — `is_covered`'s `is_dir` arm). Consequence: a NEW file added inside an already-covered library crate dir is **invisible to C10b** — the directory is already "covered," so the new file does not surface as a silent gap. This is ~92% of the Rust surface by file count (the non-container crates). It is an **accepted residual, not a closed hole**: (a) the deployed/reachable plane — `corelink-container` — IS file-granular, so the code an attacker actually hits is fully gated; (b) library crates are covered at the cluster-narrative level by design (taxonomy §1.1 assigns `crates/` to "the 8 crate clusters", whose job is breadth-of-narrative, not per-file citation); (c) the nightly **C-REV** reverse-coverage WARN is the backstop that pressures `source_files` completeness WITHIN a member crate when it changes. Making all of `crates/*` file-granular is a large authoring change deferred deliberately; it is logged here as a KNOWN LIMITATION so it is never mistaken for a silent gap that the gate proves absent.
 
 **Secondary (nightly, WARN — not a per-PR blocker; catches undeclared-dependency rot):**
 - **C-AGE** — a non-`deferred` concept whose `checkpoint_sha` is older than **90 days** is flagged for
@@ -142,12 +172,29 @@ freshness.
 - (String says *profile*-valid, not OKF-conformance — C2-strict/C6c/C8 are stricter-than-OKF profile rules; the bundle stays OKF-portable because we only ADD requirements and never reject on tolerated conditions.)
 
 **Gate wiring (W-C):** `.github/workflows/okf_wiki.yml`, `on: pull_request`, paths
-`['docs/knowledge/**','crates/**','specs/**','scripts/validate_okf.py']`, `runs-on: ubuntu-latest`
+`['docs/knowledge/**','crates/**','specs/**','worker/**','apps/**','scripts/validate_okf.py']`
+(`worker/**`+`apps/**` are REQUIRED — C5/C10b cite+gate the TypeScript edge plane and the apps/
+workers, so a PR touching only `worker/src` or `apps/*/src` must still run the gate; omitting them
+was a silent bypass), `runs-on: ubuntu-latest`
 (zero Mac load), **`actions/checkout` with `fetch-depth: 0`** (C4/C5 need full history; shallow
 checkout errors). Step `python3 scripts/validate_okf.py`. Auto-surfaces in `gh pr checks` →
 `pre-merge-gate-check.sh`. C5 firing on a PR that touched a cited line-range is the anti-drift
 mechanism: the author reconciles the concept and advances `checkpoint_sha` in the same PR (and C5b
 forces a real body edit, not just a SHA bump).
+
+**C5b — accepted residual limitations (documented, not over-engineered).** C5b proves a SHA bump is
+accompanied by *some* body change; it does NOT prove the body change is *meaningful*. Two residuals
+remain, both requiring a **malicious author** (not an honest drift) and both caught by ordinary review:
+- **Cosmetic-edit defeat:** a one-word/whitespace body edit alongside the SHA bump satisfies C5b
+  without a real reconcile. Mechanizing "meaningful" is undecidable; the guard is the human reviewer,
+  who sees a checkpoint advance paired with a trivial diff and rejects it.
+- **Rename-reset:** renaming a concept file makes it look NEW to C5b (no `base_ref` predecessor at the
+  new path), so its `checkpoint_sha` can jump straight to HEAD with no body edit and no phantom-reconcile
+  finding. The guard is review: a rename **plus** a checkpoint jump in the same PR is the exact pattern a
+  reviewer is told to scrutinize. (A code-level fix would need rename-following — deliberately avoided
+  here per C3's "renames do NOT auto-follow" stance, which keeps the dependency set author-attested.)
+These are accepted residuals: the cost of closing them mechanically exceeds the benefit given a
+review-gated, malicious-author-only threat model.
 
 ### 4.1 ADR & doc-extraction sub-profile (FROZEN — closes the maximal-scope gap)
 
@@ -163,6 +210,10 @@ their own grounding/freshness semantics, else 76+ agents guess:
   operational claims about code, those claims fall under C6c like any other.
 - Both sub-types are enumerated in `concept-manifest.yaml` and gated by C10/C10b like architecture
   concepts.
+- **C6c test-only-grounding relaxation for `testing/` (`type: TestStrategy`).** The C6c rule that an
+  invariant must cite ≥1 NON-test path does NOT apply to a `testing/` concept: its subject IS the test
+  harness, so a test file (`tests/…/*.rs`) is the legitimate enforcer it grounds on, not a neuterable
+  proxy. The ban stands for every other taxonomy (where a sole test cite is the bypass it closes).
 
 ---
 
@@ -174,7 +225,7 @@ their own grounding/freshness semantics, else 76+ agents guess:
 4. Every inline `path:line` cite resolves; every `source_files` path is cited; every cited file is declared (C6/C6b); every `# How it works`/`# Invariants` claim carries a `path:line` (C6c).
 5. No orphan concepts; no broken links to declared concepts (C7/C8).
 6. Reserved filenames never used as concepts (C9).
-7. GENERATED layer marked and never hand-edited (§3.6).
+7. GENERATED layer marked and never hand-edited (§3.7).
 8. No concept candidate silently omitted — `deferred:` or a doc, never nothing (C10); the manifest itself covers the enumerable repo surface (C10b).
 
 ---

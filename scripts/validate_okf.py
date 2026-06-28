@@ -9,14 +9,22 @@ schema), §3 (body conventions), §4 (checks C1-C10b + secondary C-AGE/C-REV),
 §4.1 (ADR/doc sub-profile), §5 (invariants). It does NOT design beyond it.
 
 All STRUCTURAL checks validate the working tree at HEAD (the thing being gated);
-`checkpoint_sha` is used ONLY as the diff base for the C5 freshness check.
+`checkpoint_sha` is used ONLY as the content baseline for the C5 freshness check.
 
-C5 freshness mechanism (FROZEN, do not change): a TWO-TREE
-    git diff <checkpoint_sha> HEAD --unified=0 -- <path>
-over the whole file (merge-safe), THEN post-filter to the diff hunks that
-intersect the concept's cited line ranges for that file. We NEVER use
-`git log -L` / blame (line-history reintroduces the merge-simplification the
-two-tree diff was chosen to avoid).
+C5 freshness mechanism (CONTENT-ANCHOR): for each cited `path:Lx-Ly`, compare the
+CONTENT of lines Lx..Ly of `path` between the concept's `checkpoint_sha` and the
+on-disk WORKING TREE (each line trailing-whitespace-stripped, internal whitespace
+preserved). If the content the author cited no longer occupies those exact lines,
+the concept is STALE on that cite. This catches an in-range edit AND — critically
+— a pure POSITION-SHIFT (code inserted ABOVE the cited range), which slides the
+cite off its authored content WITHOUT the cited line numbers ever appearing in a
+diff hunk (the blind spot of the old two-tree `git diff` ∩ cited-range mechanism
+this replaces). The HEAD side is read from the WORKING TREE — the SAME tree C3
+(file-exists) and C6 (line-bounds) read — so a dirty/pre-commit run is self-
+consistent (worktree≠HEAD can't produce a false verdict); in CI worktree==HEAD so
+behavior is unchanged. We NEVER use `git log -L` / blame. Per-file fast skip: when
+the file is byte-identical at checkpoint and in the working tree, no content can
+have drifted.
 
 Usage:
     python3 scripts/validate_okf.py                       # default bundle docs/knowledge/
@@ -141,6 +149,10 @@ class Git:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
         self._sha_cache: dict[str, bool] = {}
+        self._show_cache: dict[tuple[str, str], list[str] | None] = {}
+        self._blob_cache: dict[tuple[str, str], str | None] = {}
+        self._wt_blob_cache: dict[str, str | None] = {}
+        self._wt_lines_cache: dict[str, list[str] | None] = {}
 
     def run(self, args: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -158,30 +170,62 @@ class Git:
         self._sha_cache[sha] = ok
         return ok
 
-    def changed_new_lines(self, base_sha: str, path: str) -> set[int]:
-        """Two-tree diff base_sha..HEAD for `path`; return the set of HEAD-side
-        line numbers touched by any hunk (using --unified=0 for tight bounds)."""
-        cp = self.run(["diff", base_sha, "HEAD", "--unified=0", "--", path])
-        changed: set[int] = set()
-        if cp.returncode != 0:
-            # path not comparable (e.g. added/removed) — be conservative: whole file.
-            return {-1}  # sentinel: "everything changed"
-        for line in cp.stdout.splitlines():
-            if not line.startswith("@@"):
-                continue
-            m = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", line)
-            if not m:
-                continue
-            new_start = int(m.group(1))
-            new_count = int(m.group(2)) if m.group(2) is not None else 1
-            if new_count == 0:
-                # pure deletion at the boundary; mark adjacent HEAD lines
-                changed.add(new_start)
-                if new_start > 1:
-                    changed.add(new_start - 1)
-            else:
-                changed.update(range(new_start, new_start + new_count))
-        return changed
+    def file_blob_sha(self, rev: str, repo_rel: str):
+        """The git blob object id of `repo_rel` at `rev` (None if the path does
+        not exist at that rev). Used for the C5 per-file trivially-fresh skip."""
+        key = (rev, repo_rel)
+        if key in self._blob_cache:
+            return self._blob_cache[key]
+        cp = self.run(["rev-parse", "--verify", "--quiet", f"{rev}:{repo_rel}"])
+        val = cp.stdout.strip() if cp.returncode == 0 and cp.stdout.strip() else None
+        self._blob_cache[key] = val
+        return val
+
+    def show_lines(self, rev: str, repo_rel: str):
+        """Lines of `repo_rel` at `rev` (line terminators stripped), or None if
+        the path does not exist at that rev. Cached per (rev, path)."""
+        key = (rev, repo_rel)
+        if key in self._show_cache:
+            return self._show_cache[key]
+        content = self.show_file(rev, repo_rel)
+        lines = content.splitlines() if content is not None else None
+        self._show_cache[key] = lines
+        return lines
+
+    def worktree_blob_sha(self, repo_rel: str):
+        """The git blob object id the on-disk WORKING-TREE file would hash to
+        (None if the path does not exist on disk). The working-tree analogue of
+        `file_blob_sha`, used for the C5 per-file trivially-fresh skip so the
+        skip stays correct in a dirty tree (where worktree != HEAD)."""
+        if repo_rel in self._wt_blob_cache:
+            return self._wt_blob_cache[repo_rel]
+        p = self.repo_root / repo_rel
+        if not p.exists():
+            self._wt_blob_cache[repo_rel] = None
+            return None
+        cp = self.run(["hash-object", "--", repo_rel])
+        val = cp.stdout.strip() if cp.returncode == 0 and cp.stdout.strip() else None
+        self._wt_blob_cache[repo_rel] = val
+        return val
+
+    def worktree_lines(self, repo_rel: str):
+        """Lines of the on-disk WORKING-TREE file `repo_rel` (line terminators
+        stripped), or None if the path does not exist on disk. This is the SAME
+        tree C3 (file-exists) and C6 (line-bounds) validate, so the C5 HEAD-side
+        baseline stays consistent with them on a dirty/pre-commit run. Cached."""
+        if repo_rel in self._wt_lines_cache:
+            return self._wt_lines_cache[repo_rel]
+        p = self.repo_root / repo_rel
+        if not p.exists():
+            self._wt_lines_cache[repo_rel] = None
+            return None
+        try:
+            content = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            content = None
+        lines = content.splitlines() if content is not None else None
+        self._wt_lines_cache[repo_rel] = lines
+        return lines
 
     def commit_date(self, sha: str):
         cp = self.run(["show", "-s", "--format=%cI", sha])
@@ -259,6 +303,41 @@ def _collect_cites(body: str):
     return out
 
 
+def _norm_block(lines: list[str], l1: int, l2: int) -> list[str]:
+    """1-based inclusive slice of `lines`, each line trailing-whitespace-stripped
+    (internal whitespace preserved — the comparison stays faithful)."""
+    return [ln.rstrip() for ln in lines[l1 - 1 : l2]]
+
+
+def cited_range_drifted(git: "Git", checkpoint_sha: str, path: str, l1: int, l2: int) -> bool:
+    """CONTENT-ANCHOR C5 predicate (shared by validate_okf and okf_reconcile so
+    the two tools can never disagree on what "stale" means).
+
+    True iff the CONTENT of lines l1..l2 of `path` differs between
+    `checkpoint_sha` and the on-disk WORKING TREE (each line trailing-whitespace-
+    stripped). This fires both when the cited lines were edited in place AND when
+    a pure position-shift (an insertion above) slid the authored content off those
+    line numbers. False (trivially fresh) when the file is byte-identical between
+    the checkpoint and the working tree. A file added/removed between the two is
+    incomparable -> reported drifted.
+
+    The HEAD side is read from the WORKING TREE — the SAME tree C3 (file-exists)
+    and C6 (line-bounds) validate — not `git show HEAD:path`. In CI the worktree
+    equals HEAD so behavior is identical; on a dirty/pre-commit run it makes C5
+    agree with C3/C6 (no false-negative when a cited source is edited-but-
+    uncommitted, no false-positive when a source is added on disk but not in HEAD).
+    """
+    ckpt_blob = git.file_blob_sha(checkpoint_sha, path)
+    wt_blob = git.worktree_blob_sha(path)
+    if ckpt_blob is not None and wt_blob is not None and ckpt_blob == wt_blob:
+        return False  # file unchanged checkpoint->working-tree: no content could drift
+    ckpt_lines = git.show_lines(checkpoint_sha, path)
+    wt_lines = git.worktree_lines(path)
+    if ckpt_lines is None or wt_lines is None:
+        return True  # added/removed between checkpoint and working tree — conservatively stale
+    return _norm_block(ckpt_lines, l1, l2) != _norm_block(wt_lines, l1, l2)
+
+
 def _sections(body: str) -> dict[str, list[str]]:
     """Map normalized level-1/2 heading title -> list of its lines."""
     sections: dict[str, list[str]] = {}
@@ -296,6 +375,128 @@ def _bullet_blocks(lines: list[str]) -> list[str]:
 
 def _has_cite(text: str) -> bool:
     return any(CITE_RE.match(inner.strip()) for inner in BACKTICK_RE.findall(text))
+
+
+def _block_cite_paths(text: str) -> list[str]:
+    """The cited file paths (no line numbers) inside a single bullet block."""
+    out: list[str] = []
+    for inner in BACKTICK_RE.findall(text):
+        m = CITE_RE.match(inner.strip())
+        if m:
+            out.append(m.group("path"))
+    return out
+
+
+def _is_test_cite(path: str) -> bool:
+    """True iff a cited path points at TEST code, not a runtime enforcer.
+
+    Rust — any of: a `tests/` directory anywhere; the bare module files
+    `test.rs` / `tests.rs`; a `*_test.rs` / `*_tests.rs` file (the underscore-
+    separated suffix form, `foo_test.rs` / `foo_tests.rs`); a `test_*.rs` /
+    `tests_*.rs` file (the prefix form). TS/JS — `*.test.ts` / `*.spec.ts`, or
+    anything under a `__tests__/` directory. C6c uses this to forbid grounding an
+    invariant SOLELY on a test (a test can be neutered later; an invariant must
+    point at the non-test code that enforces it). Tests remain valid as ADDITIONAL
+    cites.
+
+    (fix #4 — audit #3 MED — a SEPARATOR BOUNDARY is now required: the old bare
+    `endswith("test.rs"/"tests.rs")` matched mid-word, misclassifying real
+    enforcers `attest.rs` / `latest.rs` / `contest.rs` / `protest.rs` as tests.
+    A test suffix only counts when it is the WHOLE stem or follows a `_`.)
+    """
+    p = path.lower()
+    base = p.rsplit("/", 1)[-1]
+    if p.startswith("tests/") or "/tests/" in p or "/__tests__/" in p:
+        return True
+    if base.endswith(".rs"):
+        stem = base[:-3]
+        # the bare module files, exactly
+        if stem in ("test", "tests"):
+            return True
+        # the underscore-SEPARATED suffix form: `<word>_test` / `<word>_tests`
+        # (boundary required — `attest`/`latest`/`contest` have no `_` separator
+        # before the suffix, so they are NOT tests).
+        if stem.endswith("_test") or stem.endswith("_tests"):
+            return True
+        # the prefix form: `test_*` / `tests_*` inline-test modules.
+        if stem.startswith("test_") or stem.startswith("tests_"):
+            return True
+        return False
+    if base.endswith(".test.ts") or base.endswith(".spec.ts"):
+        return True
+    return False
+
+
+def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
+    """Compile a path glob to a regex with PROPER segment semantics (fix #6,
+    audit #3 HIGH): a single `*` matches any run of NON-`/` chars (it does NOT
+    cross a path separator), `?` matches one non-`/` char, and `**` is the ONLY
+    token that crosses segments (`**/` = "zero or more leading segments", a bare
+    `**` = "anything including `/`"). Character classes `[...]` are passed through.
+
+    The old matcher used Python's `fnmatch`, whose `*` matches `/`, so `**/tests/**`,
+    `apps/*/src/types/**`, and `*.config.ts` silently swallowed ANY path that
+    merely CONTAINED those fragments anywhere — a real handler at
+    `routes/tests/realhandler.rs` would be excluded by `**/tests/**`, and a
+    `*.config.ts` exclude would swallow `a/b/foo.config.ts`. Segment-aware
+    matching restricts `*` to a single segment so only genuinely-matching paths
+    are excluded.
+    """
+    i, n = 0, len(pattern)
+    out = ["^"]
+    while i < n:
+        c = pattern[i]
+        if c == "*":
+            if i + 1 < n and pattern[i + 1] == "*":
+                # `**` — crosses segments.
+                # `**/` at a boundary = zero-or-more whole leading segments.
+                if i + 2 < n and pattern[i + 2] == "/":
+                    out.append("(?:[^/]+/)*")
+                    i += 3
+                    continue
+                # a bare/trailing `**` = anything, including `/`.
+                out.append(".*")
+                i += 2
+                continue
+            # single `*` — one segment, never `/`.
+            out.append("[^/]*")
+            i += 1
+            continue
+        if c == "?":
+            out.append("[^/]")
+            i += 1
+            continue
+        if c == "[":
+            j = i + 1
+            if j < n and pattern[j] in ("!", "^"):
+                j += 1
+            if j < n and pattern[j] == "]":
+                j += 1
+            while j < n and pattern[j] != "]":
+                j += 1
+            if j >= n:
+                # unterminated class — treat `[` literally
+                out.append(re.escape("["))
+                i += 1
+                continue
+            cls = pattern[i + 1 : j]
+            if cls and cls[0] in ("!", "^"):
+                cls = "^" + cls[1:]
+            out.append("[" + cls + "]")
+            i = j + 1
+            continue
+        out.append(re.escape(c))
+        i += 1
+    out.append("$")
+    return re.compile("".join(out))
+
+
+def _segment_glob_match(rel: str, pattern: str) -> bool:
+    """True iff `rel` matches the path glob `pattern` under SEGMENT-AWARE
+    semantics (see `_glob_to_regex`). `**/<tail>` also matches a bare `<tail>`
+    with no leading directory (the "zero leading segments" arm of `**/`), so
+    `**/*.test.ts` still matches a top-level `foo.test.ts`."""
+    return _glob_to_regex(pattern).match(rel) is not None
 
 
 def _line_count(path: Path) -> int:
@@ -462,19 +663,45 @@ def run_checks(args, git: Git, fails: Failures):
         # C6c: per-claim grounding under `# How it works` and `# Invariants`
         #      (relaxed for ADRs per §4.1)
         if not c.is_adr:
+            # A `testing/` concept's SUBJECT is the test harness, so grounding an
+            # invariant on a test path is correct there — the test IS the enforcer
+            # (parallel to C6c being relaxed for ADRs per §4.1). The exemption is
+            # FILE-DIR based (fix #4): ONLY a concept whose doc physically lives
+            # under `docs/knowledge/testing/` is exempt. The old `type ==
+            # "TestStrategy"` escape was a taxonomy dodge — any concept anywhere
+            # (e.g. under auth/) could self-declare `type: TestStrategy` and shed
+            # the non-test-enforcer requirement. Anchoring on the file's directory
+            # makes the exemption un-spoofable from frontmatter.
+            is_testing = (c.rel == "testing" or c.rel.startswith("testing/"))
             secs = _sections(c.body)
             for title in ("how it works", "invariants"):
                 if title in secs:
                     for block in _bullet_blocks(secs[title]):
-                        if not _has_cite(block):
-                            first = block.splitlines()[0].strip()
+                        paths = _block_cite_paths(block)
+                        first = block.splitlines()[0].strip()
+                        if not paths:
                             fails.add(
                                 "C6c",
                                 loc,
                                 f"ungrounded claim under `# {title.title()}` (no path:line): {first[:70]!r}",
                             )
+                        elif not is_testing and all(_is_test_cite(p) for p in paths):
+                            # An invariant must be grounded on a NON-test enforcer:
+                            # a test path (isolation_tests.rs:42 …) as the SOLE cite
+                            # lets the grounding be neutered later by editing the
+                            # test. Tests are allowed only as ADDITIONAL cites.
+                            fails.add(
+                                "C6c",
+                                loc,
+                                f"test-only grounding under `# {title.title()}` "
+                                f"(an invariant must cite a non-test enforcer; sole cite(s) {paths!r} "
+                                f"are all test paths): {first[:70]!r}",
+                            )
 
-        # C5: freshness — two-tree diff per source file, hunks ∩ cited ranges.
+        # C5: freshness — CONTENT-ANCHOR. For each cited range compare the
+        # CONTENT of those exact lines between checkpoint and the working tree;
+        # drift fires
+        # whether the cause is an in-range edit OR a pure position-shift.
         if ckpt_ok:
             for sf in c.source_files:
                 if sf in missing_sources:
@@ -483,27 +710,19 @@ def run_checks(args, git: Git, fails: Failures):
                 # it governs — C5 applies only to the ADR file's own content.
                 if c.is_adr and not sf.endswith(".md"):
                     continue
-                changed = git.changed_new_lines(c.checkpoint_sha, sf)
-                if not changed:
-                    continue
                 cranges = ranges_by_file.get(sf, [])
                 if not cranges:
                     continue
-                stale_hit = None
-                if -1 in changed:  # whole file changed (incomparable)
-                    stale_hit = cranges[0]
-                else:
-                    for (l1, l2) in cranges:
-                        if any(l1 <= ln <= l2 for ln in changed):
-                            stale_hit = (l1, l2)
-                            break
-                if stale_hit:
-                    fails.add(
-                        "C5",
-                        loc,
-                        f"STALE: cited range `{sf}:{stale_hit[0]}-{stale_hit[1]}` changed "
-                        f"since checkpoint {c.checkpoint_sha[:12]}",
-                    )
+                for (l1, l2) in cranges:
+                    if cited_range_drifted(git, c.checkpoint_sha, sf, l1, l2):
+                        fails.add(
+                            "C5",
+                            loc,
+                            f"STALE: cited content `{sf}:{l1}-{l2}` no longer matches "
+                            f"checkpoint {c.checkpoint_sha[:12]} "
+                            "(in-range edit or position-shift)",
+                        )
+                        break
 
     # --- C5b: SHA advanced without a body edit (needs a 'previous' version) ---
     _check_c5b(args, git, bundle_root, concepts, fails)
@@ -645,11 +864,73 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         return
 
     concept_ids = {c.concept_id for c in concepts}
+    concept_by_id = {c.concept_id: c for c in concepts}
+
+    def _concept_grounds(c: "Concept", seed: str) -> bool:
+        """True iff concept `c` ACTUALLY grounds the surface `seed` — i.e. `seed`
+        appears in the concept's resolved `source_files` OR in its `# Citations`
+        (the inline-cited files), under one of these GENUINE-coverage relations:
+
+          (a) verbatim — `seed` is declared/cited as-is;
+          (b) `seed` is a directory containing a declared/cited path;
+          (c) `seed` is a file/dir under a declared/cited directory;
+          (d) crate-cluster ADOPTION — a `type: CrateCluster` concept that grounds
+              a crate directory adopts the whole crate as its narrative home, so a
+              file/dir under that crate is covered even without a per-file cite
+              (the §1.1 taxonomy assigns `crates/` to "the 8 crate clusters"; a
+              cluster's job is breadth-of-narrative, not file-granular citation).
+
+        This is the anti-self-certification check (fix #3 / audit-round R): a
+        `seed_from` entry counts as coverage ONLY when the concept it names really
+        explains the surface — a manifest can no longer silently "cover" a file by
+        listing it under a concept that never mentions it (the silent-gap bypass).
+
+        REMOVED in gate v5 (audit #3 HIGH #2): the former Rust "module-parent"
+        relation auto-grounded an ENTIRE module subtree from a single parent-file
+        cite — a concept citing `routes.rs` (the `mod routes;` declaration site)
+        auto-covered ANY `routes/*.rs` added to its `seed_from` WITHOUT the concept
+        ever mentioning that handler. That is the same self-certification
+        relations (a)-(c) exist to forbid, one level deeper: `X.rs` is the module
+        DECLARATION, not an explanation of `X/sub.rs`'s behaviour. A file under a
+        declared module is now covered ONLY when the concept declares/cites that
+        file (a), or grounds a DIRECTORY that contains it (b/c — a `routes/` or
+        `routes/dsr/` directory seed, an explicit narrative-home decision), or is
+        the crate-cluster adopting the whole crate (d). The `X.rs`-as-module-root
+        shortcut is gone — cite the file or seed its directory, do not lean on the
+        `mod` declaration to self-certify the subtree.
+        """
+        grounded = set(c.source_files) | set(c.cited_files)
+        s = seed.rstrip("/")
+        is_cluster = (c.type == "CrateCluster")
+        for g in grounded:
+            gn = g.rstrip("/")
+            if s == gn:
+                return True
+            # (b) seed is a directory that contains a grounded path
+            if gn == s or gn.startswith(s + "/"):
+                return True
+            # (c) seed lives under a grounded directory
+            if s.startswith(gn + "/"):
+                return True
+            # (d) crate-cluster adoption: a CrateCluster grounding a crate dir
+            #     adopts everything under that crate (its src files + subdirs).
+            if is_cluster:
+                m = re.match(r"^(crates/[^/]+)/", gn + "/")
+                if m:
+                    crate = m.group(1)
+                    if s == crate or s.startswith(crate + "/"):
+                        return True
+        return False
+
     # Real W-MANIFEST schema: top-level `candidates:` (id/type/title/status/
     # source_cluster/seed_from) + `excludes:` (surface/reason). A candidate maps
     # to repo surface via its `seed_from` paths; C10b coverage = seed_from ∪ excludes.
+    # A `seed_from` path counts as COVERAGE only when the candidate's concept doc
+    # actually GROUNDS that path (declares/cites it) — a seed naming a concept that
+    # doesn't mention the file is self-certifying and is REJECTED (fix #3).
     entries = data.get("candidates") or data.get("concepts") or []
-    seed_paths: set[str] = set()
+    seed_paths: set[str] = set()           # every declared seed (for diagnostics)
+    grounded_seed_paths: set[str] = set()  # seeds a real concept grounds — THESE cover
     for e in entries:
         if not isinstance(e, dict):
             continue
@@ -657,8 +938,15 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         status = (e.get("status") or "").strip().lower()
         if status == "planned":
             args._planned_ids.add(cid)
+        c = concept_by_id.get(cid)
         for s in (e.get("seed_from") or e.get("covers") or []):
-            seed_paths.add(str(s))
+            sp = str(s)
+            seed_paths.add(sp)
+            # The seed grounds coverage iff its declaring concept exists AND
+            # actually declares/cites the path. A planned (doc-less) candidate's
+            # seed cannot self-certify coverage — there is no concept to ground it.
+            if c is not None and _concept_grounds(c, sp):
+                grounded_seed_paths.add(sp)
         # C10: active candidate must have a doc or a deferred marker (deferred
         # docs are scanned as concepts, so concept_ids already covers both).
         if status == "active" and cid:
@@ -675,15 +963,45 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             if surf and ex.get("reason"):
                 excludes.append(str(surf))
 
+    # NOTE: _glob_match is defined at module scope (`_segment_glob_match`) so it
+    # is unit-testable and segment-aware; bound here as a local alias.
+    _glob_match = _segment_glob_match
+
     def is_covered(rel: str, is_dir: bool) -> bool:
-        if rel in seed_paths:
-            return True
-        # a directory surface (a crate) is covered if any seed_from path is the
-        # dir itself or lives under it
-        if is_dir and any(s == rel or s.startswith(rel.rstrip("/") + "/") for s in seed_paths):
-            return True
-        if any(rel == ex or rel.startswith(ex.rstrip("/") + "/") for ex in excludes):
-            return True
+        # --- DIRECTORY (crate) surface: coverage = reviewed cluster MEMBERSHIP ---
+        # A crate-dir surface is covered if ANY seed_from path is the dir itself or
+        # lives under it. Crate-level membership is the curated, review-gated
+        # cluster assignment (taxonomy §1.1: `crates/` = "the 8 crate clusters"),
+        # so it self-certifies at the COARSE crate granularity by design — the
+        # nightly C-REV reverse-coverage WARN is what pressures source_files
+        # completeness WITHIN a member crate. Fix #3's anti-self-certification is a
+        # FILE-granular guard (a handler FILE slipped under a concept that never
+        # mentions it), so it does NOT apply to a whole-crate directory surface.
+        if is_dir:
+            if any(s == rel or s.startswith(rel.rstrip("/") + "/") for s in seed_paths):
+                return True
+        else:
+            # --- FILE surface: coverage requires GENUINE grounding (fix #3) -------
+            # A file counts as covered ONLY by a seed whose declaring concept
+            # actually grounds it (`grounded_seed_paths`, not the raw seed set): a
+            # manifest entry naming a FILE under a concept that never cites/declares
+            # it is self-certifying and is NOT coverage — closing the silent-gap
+            # bypass where a load-bearing handler hides under an unrelated concept.
+            if rel in grounded_seed_paths:
+                return True
+            # a file is also covered when a GROUNDED directory seed contains it
+            # (the concept that adopts the dir grounds the files beneath it).
+            if any(
+                (s.rstrip("/") != "" and rel.startswith(s.rstrip("/") + "/"))
+                for s in grounded_seed_paths
+            ):
+                return True
+        for ex in excludes:
+            exn = ex.rstrip("/")
+            if rel == exn or rel.startswith(exn + "/"):
+                return True
+            if ("*" in ex or "?" in ex or "[" in ex) and _glob_match(rel, ex):
+                return True
         return False
 
     surface: list[tuple[str, bool]] = []
@@ -692,12 +1010,51 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(adr_dir.glob("*.md"))]
     routes_dir = surface_root / "crates" / "corelink-container" / "src" / "routes"
     if routes_dir.is_dir():
-        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(routes_dir.glob("*.rs"))]
+        # RECURSIVE: a handler dropped in routes/dsr/, routes/audit_export/, or
+        # routes/audit_analytics/ (or any future subdir) must be enumerated too —
+        # a non-recursive glob("*.rs") was a silent completeness hole (a new
+        # handler at routes/dsr/backdoor.rs would never be gated). Genuine
+        # non-handlers (tests_*.rs) are exempted via the manifest `excludes:`.
+        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(routes_dir.rglob("*.rs"))]
+    # The container crate ROOT, file-granular: a handler dropped directly in
+    # crates/corelink-container/src/ (sibling to webhook.rs / native_pat_gate.rs)
+    # is invisible if the crate is gated dir-granular only. Enumerate each
+    # src/**/*.rs RECURSIVELY — a non-recursive glob left the src/storage/ subtree
+    # (d1_http/r2_kv/r2_s3/region_map) silently un-gated (audit #2). routes/ is
+    # also under src/ but already enumerated above; the dedup (dict.fromkeys on the
+    # surface list) collapses the overlap. non-handlers (lib.rs is the crate wiring
+    # root) are covered via the manifest like the rest.
+    container_src = surface_root / "crates" / "corelink-container" / "src"
+    if container_src.is_dir():
+        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(container_src.rglob("*.rs"))]
     crates_dir = surface_root / "crates"
     if crates_dir.is_dir():
         surface += [(p.relative_to(surface_root).as_posix(), True) for p in sorted(crates_dir.iterdir()) if p.is_dir()]
 
-    for rel, is_dir in surface:
+    # --- Worker EDGE PLANE + apps/ (BR5 root fix) ------------------------------
+    # The completeness oracle must also gate the TypeScript edge plane and the
+    # apps/ workers (file-granular), not just the Rust container + ADRs — else a
+    # future load-bearing worker/src or apps/*/src file with no concept stays
+    # invisible. Enumerated as completeness-required surfaces; legit-exempt files
+    # (types/config/test/UI/data) live in the manifest `excludes:`.
+    def _add_files(base_rel: str, pattern: str, recursive: bool = False) -> None:
+        base = surface_root / base_rel
+        if not base.is_dir():
+            return
+        globber = base.rglob if recursive else base.glob
+        for p in sorted(globber(pattern)):
+            if p.is_file():
+                surface.append((p.relative_to(surface_root).as_posix(), False))
+
+    _add_files("worker/src", "*.ts")                 # edge plane (top-level)
+    _add_files("worker/src/lib", "*.ts")             # edge plane (lib/)
+    for app in ("signup-worker", "cas-worker", "analytics-worker"):
+        _add_files(f"apps/{app}/src", "*.ts", recursive=True)
+    mig = surface_root / "apps" / "migrate-single-to-multi-region" / "src" / "main.rs"
+    if mig.is_file():
+        surface.append((mig.relative_to(surface_root).as_posix(), False))
+
+    for rel, is_dir in dict.fromkeys(surface):
         if not is_covered(rel, is_dir):
             fails.add("C10b", str(manifest_path),
                       f"repo-surface item `{rel}` has no manifest entry and no exclude (silent gap)")
@@ -814,3 +1171,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+# marker-test

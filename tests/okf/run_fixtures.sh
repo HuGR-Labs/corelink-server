@@ -61,6 +61,190 @@ assert_bad() {
   fi
 }
 
+# --- C10b seed_from GROUNDING cross-check (fix #3) -----------------------------
+# Hermetic git repo so the concept can cite REAL (repo-local) files and C3/C6
+# pass. Two surface FILES exist under the container-src walk: cited_handler.rs is
+# CITED by the concept (grounded -> covered), uncited_handler.rs is named in the
+# concept's seed_from but NEVER cited (self-certifying -> NOT covered). Proves:
+#  POSITIVE  — [C10b] fires and NAMES the uncited file (self-cert rejected);
+#  NEGATIVE  — the SAME run does NOT name the cited file (grounded seed covered);
+#  also exercises the RECURSIVE container-src walk into src/storage/ (a file
+#  dropped there is enumerated -> the storage-subdir enumeration is proven).
+assert_seed_selfcert() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # surface tree the container-src walk enumerates (src/*.rs + src/storage/*.rs).
+    mkdir -p crates/corelink-container/src/storage
+    printf 'fn cited_handler() {}\n'   > crates/corelink-container/src/cited_handler.rs
+    printf 'fn uncited_handler() {}\n' > crates/corelink-container/src/uncited_handler.rs
+    printf 'fn region_lookup() {}\n'   > crates/corelink-container/src/storage/region_map.rs
+
+    mkdir -p docs/knowledge/compliance
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/compliance/x.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+
+    # concept grounds (cites) ONLY cited_handler.rs.
+    cat > docs/knowledge/compliance/x.md <<EOF
+---
+type: "ComplianceControl"
+title: "Seed grounding cross-check (hermetic)"
+description: "cites cited_handler.rs only; the manifest also seeds uncited_handler.rs."
+source_files:
+  - "crates/corelink-container/src/cited_handler.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Seed grounding cross-check (hermetic)
+
+Lead paragraph: the concept grounds only the cited handler.
+
+# How it works
+- the grounded handler (\`crates/corelink-container/src/cited_handler.rs:1\`).
+
+# Invariants
+- the grounded handler stays present (\`crates/corelink-container/src/cited_handler.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/cited_handler.rs:1\` — the ONLY grounded file.
+EOF
+    # manifest seeds BOTH handlers + excludes the storage file (focus the test on
+    # the cited-vs-uncited discrimination). uncited_handler is self-certifying.
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes:
+  - surface: "crates/corelink-container/src/storage/region_map.rs"
+    reason: "fixture: data-table, excluded so the assertion focuses on the cited-vs-uncited seed discrimination."
+candidates:
+  - id: "compliance/x"
+    type: "ComplianceControl"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/cited_handler.rs"
+      - "crates/corelink-container/src/uncited_handler.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.sc_out" 2>&1 || true
+  )
+
+  # POSITIVE: [C10b] fires naming the UNCITED (self-certifying) file.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.sc_out" 2>/dev/null \
+     && grep -q 'uncited_handler.rs' "$tmp/.sc_out" 2>/dev/null; then
+    ok "C10b seed-grounding: uncited seed is self-certifying -> fires [C10b] naming uncited_handler.rs"
+  else
+    miss "C10b seed-grounding positive (no [C10b] naming uncited_handler.rs): $(tail -1 "$tmp/.sc_out" 2>/dev/null)" "C10b-selfcert-pos"
+  fi
+  # NEGATIVE (selectivity): the GROUNDED (cited) seed is covered -> NOT named.
+  # Anchor the grep on the `/cited_handler.rs` path boundary so it does NOT
+  # substring-match `uncited_handler.rs` (which legitimately IS flagged).
+  total=$((total + 1))
+  if ! grep -q '/cited_handler.rs' "$tmp/.sc_out" 2>/dev/null; then
+    ok "C10b seed-grounding: grounded (cited) seed IS covered -> not flagged (cross-check is selective)"
+  else
+    miss "C10b seed-grounding negative: grounded cited_handler.rs was wrongly flagged" "C10b-selfcert-neg"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- C10b storage-subdir RECURSIVE container-src enumeration --------------------
+# A handler dropped in crates/corelink-container/src/storage/ (a subdir) must be
+# enumerated by the recursive container-src walk. Hermetic: the file is seeded by
+# NO concept and has NO exclude -> it MUST surface as a [C10b] silent gap naming
+# the storage/ path. Proves the recursion into src/storage/ (the d1_http/r2_kv/
+# r2_s3/region_map subtree the lead's rglob fix closed) is gated, not skipped.
+assert_storage_subdir_enum() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/storage
+    printf 'fn cited_handler() {}\n'   > crates/corelink-container/src/cited_handler.rs
+    printf 'fn d1_over_http() {}\n'     > crates/corelink-container/src/storage/d1_http.rs
+    mkdir -p docs/knowledge/storage
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [s](/storage/s.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    cat > docs/knowledge/storage/s.md <<EOF
+---
+type: "StorageComponent"
+title: "Storage enum (hermetic)"
+description: "grounds cited_handler.rs only; the storage subdir file is unseeded."
+source_files:
+  - "crates/corelink-container/src/cited_handler.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Storage enum (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the grounded file (\`crates/corelink-container/src/cited_handler.rs:1\`).
+
+# Invariants
+- it stays present (\`crates/corelink-container/src/cited_handler.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/cited_handler.rs:1\` — grounded anchor.
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "storage/s"
+    type: "StorageComponent"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/cited_handler.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.st_out" 2>&1 || true
+  )
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.st_out" 2>/dev/null \
+     && grep -q 'storage/d1_http.rs' "$tmp/.st_out" 2>/dev/null; then
+    ok "C10b storage-subdir: recursive container-src walk enumerates src/storage/d1_http.rs -> [C10b]"
+  else
+    miss "C10b storage-subdir enumeration (no [C10b] naming storage/d1_http.rs): $(tail -1 "$tmp/.st_out" 2>/dev/null)" "C10b-storage-enum"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- C5b: real git two-revision harness ---------------------------------------
 # Builds a temp repo, commits a concept, then a commit that bumps ONLY the
 # checkpoint_sha line (body byte-identical) -> [C5b] MUST fire. Negative control:
@@ -241,6 +425,492 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C5 POSITION-SHIFT: the blind spot the content-anchor closes ---------------
+# Proves the hardening. Commit A defines a file; the concept cites lines 3-4
+# (content "cite-line-a"/"cite-line-b") with checkpoint_sha=A. Commit B inserts
+# TWO lines ABOVE the cited range — the authored content slides to lines 5-6 but
+# the cite still says 3-4. The OLD two-tree-diff ∩ cited-range check saw the
+# insertion hunk only at new-lines {1,2}, which does NOT intersect [3,4] -> it
+# reported 0-stale (the blind spot). The NEW content-anchor check compares the
+# CONTENT at lines 3-4 (was "cite-line-a/b", now the shifted-down original head)
+# and MUST fire [C5]. Negative control: a file left untouched between A and HEAD
+# must NOT fire (its blob is identical -> trivially fresh).
+assert_c5_shift() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # cited content lives at lines 3-4 at checkpoint A.
+    printf 'head1\nhead2\ncite-line-a\ncite-line-b\ntail1\n' > shift.txt
+    # an untouched companion file (negative control: blob identical A..HEAD).
+    printf 'stable1\nstable2\nstable3\n' > stable.txt
+    git add shift.txt stable.txt
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [shift](/ops/shift.md)
+- [stable](/ops/stable.md)
+EOF
+    cat > docs/knowledge/ops/shift.md <<EOF
+---
+type: "Runbook"
+title: "Position-shift anchor (hermetic)"
+description: "cites a byte-identical range that gets shifted DOWN by an insertion above."
+source_files:
+  - "shift.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Position-shift anchor (hermetic)
+
+Lead paragraph for the hermetic position-shift case.
+
+# How it works
+- the cited anchor block (\`shift.txt:3-4\`).
+
+# Invariants
+- the cited anchor block is reconciled (\`shift.txt:3-4\`).
+
+# Citations
+1. \`shift.txt:3-4\` — the anchor content under test.
+EOF
+    cat > docs/knowledge/ops/stable.md <<EOF
+---
+type: "Runbook"
+title: "Stable anchor (negative control)"
+description: "cites a file untouched between checkpoint and HEAD."
+source_files:
+  - "stable.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Stable anchor (negative control)
+
+Lead paragraph for the untouched-file control.
+
+# How it works
+- the untouched anchor (\`stable.txt:2\`).
+
+# Invariants
+- the untouched anchor holds (\`stable.txt:2\`).
+
+# Citations
+1. \`stable.txt:2\` — unchanged between A and HEAD.
+EOF
+    git add -A
+    git commit -q -m A
+
+    # commit B: insert TWO lines ABOVE the cited range in shift.txt ONLY.
+    # cited content "cite-line-a/b" moves from lines 3-4 to lines 5-6; the cite
+    # still points at lines 3-4, which now hold the shifted-down head lines.
+    printf 'INSERTED-1\nINSERTED-2\nhead1\nhead2\ncite-line-a\ncite-line-b\ntail1\n' > shift.txt
+    git add -A
+    git commit -q -m B
+
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.shift_out" 2>&1 || true
+
+    # Demonstrate the OLD diff-∩-range check would NOT have flagged it: the only
+    # changed HEAD-side new-lines are {1,2}, disjoint from the cited range [3,4].
+    git diff --unified=0 "$sha_a" HEAD -- shift.txt | grep '^@@' > "$tmp/.shift_hunks" 2>&1 || true
+  )
+
+  # positive: the content-anchor C5 fires on the pure position-shift AND the STALE
+  # offender line NAMES the specific drifted cite (not just "some [C5] fired").
+  total=$((total + 1))
+  if grep -q '^\[C5\]' "$tmp/.shift_out" 2>/dev/null \
+     && grep -q 'STALE: cited content `shift.txt:3-4`' "$tmp/.shift_out" 2>/dev/null; then
+    ok "C5 position-shift: insertion-above slides cite off content -> fires [C5] naming shift.txt:3-4"
+  else
+    miss "C5 position-shift positive (no [C5] STALE naming shift.txt:3-4): $(tail -1 "$tmp/.shift_out" 2>/dev/null)" "C5-shift-pos"
+  fi
+  # corroboration: prove the OLD hunk ∩ cited-range check would have passed
+  # (the only changed new-lines are 1,2 — disjoint from [3,4]) AND the untouched
+  # file did NOT get flagged (no stable.txt in the stale output).
+  total=$((total + 1))
+  if grep -q '+1,2 @@' "$tmp/.shift_hunks" 2>/dev/null \
+     && ! grep -q 'stable.txt' "$tmp/.shift_out" 2>/dev/null; then
+    ok "C5 position-shift: old diff-∩-range would PASS (hunk @+1,2 ∌ [3,4]); untouched file not flagged"
+  else
+    miss "C5 position-shift corroboration (hunks: $(cat "$tmp/.shift_hunks" 2>/dev/null | tr '\n' ' '); stable flagged?)" "C5-shift-corr"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- C5 INSERT-BELOW: the DISCRIMINATOR that proves content-anchor, not blob ----
+# A blob-anchor (fire whenever the file changed at all) and a content-anchor
+# (fire only when the CITED lines' content changed) agree on every test above —
+# so none of them actually PROVE we are content-anchored. This one separates
+# them. Commit A defines a file with cited content at lines 2-3; commit B inserts
+# a line BELOW the cited range. The file BLOB changes (a blob-anchor WOULD fire),
+# but the content at lines 2-3 is byte-identical -> the content-anchor MUST NOT
+# fire [C5]. If this ever fires, C5 has silently regressed to a blob-anchor.
+assert_c5_below() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # cited content lives at lines 2-3 at checkpoint A.
+    printf 'head1\ncite-line-a\ncite-line-b\ntail1\ntail2\n' > below.txt
+    git add below.txt
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [below](/ops/below.md)
+EOF
+    cat > docs/knowledge/ops/below.md <<EOF
+---
+type: "Runbook"
+title: "Insert-below discriminator (hermetic)"
+description: "code inserted BELOW the cited range; the cited lines' content is unchanged."
+source_files:
+  - "below.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Insert-below discriminator (hermetic)
+
+Lead paragraph for the insert-below content-anchor discriminator.
+
+# How it works
+- the cited anchor block (\`below.txt:2-3\`).
+
+# Invariants
+- the cited anchor block holds (\`below.txt:2-3\`).
+
+# Citations
+1. \`below.txt:2-3\` — content stays put; only a line BELOW it is inserted.
+EOF
+    git add -A
+    git commit -q -m A
+
+    # commit B: insert a line BELOW the cited range (after line 3). The blob
+    # CHANGES but lines 2-3 (cite-line-a/cite-line-b) are byte-identical.
+    printf 'head1\ncite-line-a\ncite-line-b\nINSERTED-BELOW\ntail1\ntail2\n' > below.txt
+    git add -A
+    git commit -q -m B
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.below_out" 2>&1 || true
+    # record that the file blob genuinely changed A..HEAD (a blob-anchor WOULD fire).
+    if git diff --quiet "$sha_a" HEAD -- below.txt; then echo "blobrc=0"; else echo "blobrc=1"; fi > "$tmp/.below_blobrc"
+  )
+
+  # NEGATIVE discriminator: cited content unchanged -> [C5] must NOT fire (bundle valid).
+  total=$((total + 1))
+  if ! grep -q '^\[C5\]' "$tmp/.below_out" 2>/dev/null \
+     && grep -q 'OKF-CoreLink profile valid' "$tmp/.below_out" 2>/dev/null; then
+    ok "C5 insert-below: cited content unchanged -> does NOT fire [C5] (content-anchor, not blob-anchor)"
+  else
+    miss "C5 insert-below discriminator fired [C5] or invalid bundle: $(tail -1 "$tmp/.below_out" 2>/dev/null)" "C5-below"
+  fi
+  # corroboration: the blob DID change, so a blob-anchor would have mis-fired here.
+  total=$((total + 1))
+  if grep -q 'blobrc=1' "$tmp/.below_blobrc" 2>/dev/null; then
+    ok "C5 insert-below: file blob changed A..HEAD (a blob-anchor WOULD mis-fire; content-anchor did not)"
+  else
+    miss "C5 insert-below corroboration (blob unchanged? $(cat "$tmp/.below_blobrc" 2>/dev/null))" "C5-below-corr"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- C5 ADDED-FILE: a cited source absent at checkpoint but present at HEAD ------
+# The "incomparable -> conservatively stale" branch of cited_range_drifted. The
+# concept cites added.txt with checkpoint_sha=A, but added.txt did NOT exist at A
+# (it is introduced in the same commit as the concept). C3/C6 pass (the file is
+# present in the working tree at HEAD), but C5 cannot anchor the cite to any
+# checkpoint content -> MUST fire [C5] naming added.txt.
+assert_c5_added_file() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # checkpoint A: added.txt does NOT exist yet.
+    printf 'placeholder\n' > other.txt
+    git add other.txt
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [added](/ops/added.md)
+EOF
+    # added.txt is introduced HERE (so it is absent at the checkpoint sha_a).
+    printf 'newly-added-line\nsecond\n' > added.txt
+    cat > docs/knowledge/ops/added.md <<EOF
+---
+type: "Runbook"
+title: "Added-file anchor (hermetic)"
+description: "cites a file that did not exist at the checkpoint commit."
+source_files:
+  - "added.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Added-file anchor (hermetic)
+
+Lead paragraph for the added-file (incomparable) C5 branch.
+
+# How it works
+- the cited anchor (\`added.txt:1\`).
+
+# Invariants
+- the cited anchor holds (\`added.txt:1\`).
+
+# Citations
+1. \`added.txt:1\` — absent at the checkpoint, present at HEAD.
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.added_out" 2>&1 || true
+  )
+
+  # positive: file absent at checkpoint -> incomparable -> [C5] naming added.txt.
+  total=$((total + 1))
+  if grep -q '^\[C5\]' "$tmp/.added_out" 2>/dev/null \
+     && grep -q 'added.txt:1' "$tmp/.added_out" 2>/dev/null; then
+    ok "C5 added-file: cite absent at checkpoint, present at HEAD -> fires [C5] naming added.txt"
+  else
+    miss "C5 added-file positive (no [C5] naming added.txt): $(tail -1 "$tmp/.added_out" 2>/dev/null)" "C5-added"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- gate v5 #2: module-parent grounding REMOVED -------------------------------
+# A concept that cites the module-ROOT file `routes.rs` (the `mod routes;`
+# declaration site) but NOT the handler `routes/sub_handler.rs` must NO LONGER
+# auto-cover that handler. The handler is in the concept's seed_from but is never
+# cited -> with the v5 removal of relation (d) it is self-certifying -> [C10b]
+# MUST fire naming sub_handler.rs. Negative control: a handler the concept DOES
+# cite stays covered (not flagged). Proves the module-parent self-cert hole closed.
+assert_module_parent_removed() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/routes
+    printf 'pub mod sub_handler;\npub mod cited_handler;\n' > crates/corelink-container/src/routes.rs
+    printf 'fn sub() {}\n'    > crates/corelink-container/src/routes/sub_handler.rs
+    printf 'fn cited() {}\n'  > crates/corelink-container/src/routes/cited_handler.rs
+    mkdir -p docs/knowledge/planes
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [p](/planes/p.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # concept cites the module ROOT routes.rs + the cited_handler, NOT sub_handler.
+    cat > docs/knowledge/planes/p.md <<EOF
+---
+type: "Plane"
+title: "Module-parent removal (hermetic)"
+description: "cites routes.rs (module root) + cited_handler.rs; sub_handler.rs is only seeded."
+source_files:
+  - "crates/corelink-container/src/routes.rs"
+  - "crates/corelink-container/src/routes/cited_handler.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Module-parent removal (hermetic)
+
+Lead paragraph: the concept grounds the module root and one handler, not the sibling.
+
+# How it works
+- the module root (\`crates/corelink-container/src/routes.rs:1\`).
+- the cited handler (\`crates/corelink-container/src/routes/cited_handler.rs:1\`).
+
+# Invariants
+- the module root holds (\`crates/corelink-container/src/routes.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/routes.rs:1\` — module root.
+2. \`crates/corelink-container/src/routes/cited_handler.rs:1\` — the cited handler.
+EOF
+    # manifest seeds routes.rs + BOTH handlers. sub_handler is named but uncited;
+    # the v5 removal of the X.rs-module-parent relation means routes.rs no longer
+    # auto-grounds it -> it must surface as a silent gap.
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "planes/p"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/routes.rs"
+      - "crates/corelink-container/src/routes/cited_handler.rs"
+      - "crates/corelink-container/src/routes/sub_handler.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.mp_out" 2>&1 || true
+  )
+  # POSITIVE: sub_handler.rs (module-parent only, uncited) is NOT covered -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.mp_out" 2>/dev/null \
+     && grep -q 'routes/sub_handler.rs' "$tmp/.mp_out" 2>/dev/null; then
+    ok "module-parent removed: a seeded-but-uncited routes/ handler under a cited routes.rs -> [C10b] naming sub_handler.rs"
+  else
+    miss "module-parent removal positive (no [C10b] naming sub_handler.rs): $(tail -1 "$tmp/.mp_out" 2>/dev/null)" "module-parent-pos"
+  fi
+  # NEGATIVE: the genuinely-cited handler is still covered (not flagged).
+  total=$((total + 1))
+  if ! grep -q '/cited_handler.rs' "$tmp/.mp_out" 2>/dev/null; then
+    ok "module-parent removed: a genuinely-cited routes/ handler stays covered (selective)"
+  else
+    miss "module-parent removal negative: cited_handler.rs was wrongly flagged" "module-parent-neg"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- gate v5 #6: glob is SEGMENT-AWARE (a single `*` does not cross `/`) --------
+# A real handler at `crates/.../routes/tests_helpers/realhandler.rs` is enumerated
+# by the recursive routes walk. The manifest carries the existing broad-looking
+# exclude `crates/corelink-container/src/routes/**/tests_*.rs`. Under the OLD
+# fnmatch matcher `*` crossed `/`, so `**/tests_*.rs`-style patterns could swallow
+# a path with `tests_` ANYWHERE. We prove the SEGMENT-aware matcher does NOT
+# exclude a real handler whose DIRECTORY merely starts with `tests_`: the file is
+# seeded by no concept and matches no segment-correct exclude -> [C10b] MUST fire
+# naming it. Negative control: an actual `tests_foo.rs` inline-test module under a
+# route subdir IS excluded by `routes/**/tests_*.rs` (segment-correct) -> NOT flagged.
+assert_glob_segment_aware() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/routes/tests_helpers
+    mkdir -p crates/corelink-container/src/routes/audit_export
+    printf 'fn anchor() {}\n'   > crates/corelink-container/src/routes/anchor.rs
+    # a REAL handler whose DIRECTORY name starts with tests_ — must NOT be swallowed.
+    printf 'fn real() {}\n'     > crates/corelink-container/src/routes/tests_helpers/realhandler.rs
+    # a genuine inline-test module file — MUST be excluded by routes/**/tests_*.rs.
+    printf 'mod t {}\n'         > crates/corelink-container/src/routes/audit_export/tests_proptest.rs
+    mkdir -p docs/knowledge/planes
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [g](/planes/g.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    cat > docs/knowledge/planes/g.md <<EOF
+---
+type: "Plane"
+title: "Glob segment-aware (hermetic)"
+description: "grounds the anchor handler only."
+source_files:
+  - "crates/corelink-container/src/routes/anchor.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Glob segment-aware (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the anchor handler (\`crates/corelink-container/src/routes/anchor.rs:1\`).
+
+# Invariants
+- the anchor handler holds (\`crates/corelink-container/src/routes/anchor.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/routes/anchor.rs:1\` — grounded anchor.
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes:
+  - surface: "crates/corelink-container/src/routes/**/tests_*.rs"
+    reason: "fixture: inline test modules under a route subdir — test-only."
+candidates:
+  - id: "planes/g"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/routes/anchor.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.gl_out" 2>&1 || true
+  )
+  # POSITIVE: the real handler under a tests_-prefixed DIR is NOT excluded -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.gl_out" 2>/dev/null \
+     && grep -q 'tests_helpers/realhandler.rs' "$tmp/.gl_out" 2>/dev/null; then
+    ok "glob segment-aware: a real handler under a tests_-prefixed DIR is NOT swallowed -> [C10b] names realhandler.rs"
+  else
+    miss "glob segment-aware positive (no [C10b] naming tests_helpers/realhandler.rs): $(tail -1 "$tmp/.gl_out" 2>/dev/null)" "glob-seg-pos"
+  fi
+  # NEGATIVE: a genuine tests_*.rs inline-test file IS excluded (segment-correct).
+  total=$((total + 1))
+  if ! grep -q 'audit_export/tests_proptest.rs' "$tmp/.gl_out" 2>/dev/null; then
+    ok "glob segment-aware: a genuine tests_*.rs inline-test module stays excluded (segment-correct match)"
+  else
+    miss "glob segment-aware negative: tests_proptest.rs was wrongly flagged (exclude failed to match)" "glob-seg-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -251,6 +921,9 @@ assert_bad C2  C2  --bundle "$FIX/bad/C2"  --manifest "$NONE"
 assert_bad C3  C3  --bundle "$FIX/bad/C3"  --manifest "$NONE"
 assert_bad C4  C4  --bundle "$FIX/bad/C4"  --manifest "$NONE"
 assert_c5
+assert_c5_shift
+assert_c5_below
+assert_c5_added_file
 assert_c5b
 assert_bad C6  C6  --bundle "$FIX/bad/C6"  --manifest "$NONE"
 assert_bad C6b C6b --bundle "$FIX/bad/C6b" --manifest "$NONE"
@@ -261,6 +934,13 @@ assert_bad C9  C9  --bundle "$FIX/bad/C9"  --manifest "$NONE"
 # Manifest checks need their fixture manifest; isolate C10 from C10b via surface root.
 assert_bad C10  C10  --bundle "$FIX/bad/C10"  --manifest "$FIX/bad/C10/manifest.yaml"  --surface-root "$FIX/bad/C10/empty-surface"
 assert_bad C10b C10b --bundle "$FIX/bad/C10b" --manifest "$FIX/bad/C10b/manifest.yaml" --surface-root "$FIX/bad/C10b/surface"
+# fix #3 (seed_from self-certification grounding cross-check) + the lead's
+# recursive container-src/storage-subdir enumeration — hermetic git harnesses.
+assert_seed_selfcert
+assert_storage_subdir_enum
+# gate v5: #2 module-parent grounding removed + #6 glob is segment-aware.
+assert_module_parent_removed
+assert_glob_segment_aware
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then

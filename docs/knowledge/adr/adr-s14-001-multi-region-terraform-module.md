@@ -4,7 +4,9 @@ title: "ADR-S14-001 — Multi-region Terraform module + per-region KV namespace 
 description: "Why CoreLink's 4-region infra uses one reusable Terraform module, a per-region KV namespace, a pinned EU DO jurisdiction, and a Rust migration binary."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
+  - "apps/migrate-single-to-multi-region/src/main.rs"
+  - "crates/corelink-container/src/storage/region_map.rs"
+checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
 provenance: "AUTHORED"
 tags: ["adr", "s14", "region", "terraform", "residency"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -23,7 +25,7 @@ The four regions are the foundation layer for S-14, and four architectural decis
 - **Decision 1 — reusable Terraform module** `infra/terraform/modules/corelink-region/` with per-region inputs and `validation {}` blocks, rather than per-region copy-paste HCL whose drift over 4 regions × many sprints produces silent compliance gaps (`specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:39-52`).
 - **Decision 2 — per-region KV namespace** `corelink-session-{region}` scoped in the Worker binding, because a single global KV namespace lets a WEUR Worker be served by WNAM KV nodes (FM-054 = EU data on US infra = Schrems II); a key-prefix scheme is rejected since CF KV does not enforce read isolation by prefix (`specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:58-71`).
 - **Decision 3 — DO `jurisdictional_restriction = "eu"` for WEUR**, enforced by a post-deploy `verify_do_jurisdiction.sh` CI gate because CF provider 4.x does not expose the field in Terraform; an unpinned DO may route to US edge by capacity, violating Schrems II + GDPR Art. 46 (`specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:77-96`).
-- **Decision 4 — Rust migration binary** `apps/migrate-single-to-multi-region/` with dry-run/execute/rollback modes and atomic audit emission, chosen over bash/Python for type-safe region enums, idempotent re-run, and a real audit trail (`specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:98-118`).
+- **Decision 4 — Rust migration binary** `apps/migrate-single-to-multi-region/` with dry-run/execute/rollback modes and atomic audit emission, chosen over bash/Python for type-safe region enums, idempotent re-run, and a real audit trail (`specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:98-118`). The binary is built: `main` dispatches the three modes (rollback / execute / dry-run-default) (`apps/migrate-single-to-multi-region/src/main.rs:96-106`), and the execute path emits a per-tenant audit record BEFORE any state mutation, failing CLOSED on an audit-sink error (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER) (`apps/migrate-single-to-multi-region/src/main.rs:225-234`).
 
 # Consequences
 
@@ -31,6 +33,10 @@ The four regions are the foundation layer for S-14, and four architectural decis
 - Operationally: module breaking changes require a major bump + migration plan; the per-region `.tf` files are thin wrappers; 4 KV namespaces (~$20/mo) are provisioned; and the WEUR deploy checklist must run `verify_do_jurisdiction.sh` to exit 0 (`specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:54-56`, `specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:72-75`, `specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:93-96`).
 
 Runtime enforcement of this region pinning is the subject of [ADR-S14-002 — Region pinning enforcement](/adr/adr-s14-002-region-pinning-enforcement.md).
+
+# Status vs shipped code
+
+The **artifacts** this ADR mandates exist in the repo — the reusable Terraform module and the Rust migration binary (`apps/migrate-single-to-multi-region/src/main.rs:96-106`) are both present — but the **deployed reality is US-only**. All R2 buckets are ENAM (R2 has no SA region), so the Consequences as written — "four production regions stood up (WNAM/ENAM/WEUR/SAM)" and "4 KV namespaces provisioned" — are **not live**; the region topology is a built-and-tested module applied to a single live region, not four standing regions. The container's `region_map` carries `PROVISIONED_MACROS = {wnam, enam, weur, sam}` as the **intended** Phase-1 set (`crates/corelink-container/src/storage/region_map.rs:34`), but that is the macro-mapping table, not evidence of four provisioned regions. Treat the multi-region infra as designed-and-coded, US-only-deployed.
 
 # Citations
 
@@ -41,3 +47,5 @@ Runtime enforcement of this region pinning is the subject of [ADR-S14-002 — Re
 5. `specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:54-56` — module-breaking-change consequence.
 6. `specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:72-75` — KV-namespace provisioning consequence.
 7. `specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md:93-96` — WEUR deploy-checklist consequence.
+8. `apps/migrate-single-to-multi-region/src/main.rs:96-106` — `main` dispatches the rollback / execute / dry-run-default migration modes (Decision 4's type-safe binary, designed + built).
+9. `apps/migrate-single-to-multi-region/src/main.rs:225-234` — execute mode emits the per-tenant audit record BEFORE state mutation and fails CLOSED on a sink error (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER).

@@ -11,7 +11,7 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 146**
+**Concepts: 152**
 
 ## planes
 
@@ -33,6 +33,8 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 - [Argon2id adapter-plane verification + scope](/auth/argon2id-verify.md)
 - [D1 PAT store + existence/scope check](/auth/d1-pat-store.md)
+- [Edge identity resolution (Clerk session → tenant)](/auth/edge-identity-resolution.md)
+- [The edge PAT-mint lifecycle (one authority, three consumers)](/auth/edge-pat-mint-lifecycle.md)
 - [Native HMAC fast-reject PAT gate](/auth/hmac-fast-reject.md)
 - [Introspection endpoint (runners fabric authz)](/auth/introspect.md)
 - [The 2-level PAT moat](/auth/pat-moat.md)
@@ -60,6 +62,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [CAS write flow](/flows/cas-write.md)
 - [Introspection flow (runners fabric)](/flows/introspection-fabric.md)
 - [PAT verification gauntlet](/flows/pat-gauntlet.md)
+- [Signup auto-provision + account-deletion erasure (Clerk webhook)](/flows/signup-auto-provision.md)
 
 ## crates
 
@@ -181,6 +184,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 - [RFC-6962 audit / transparency chain](/compliance/audit-chain.md)
 - [Data residency posture](/compliance/data-residency.md)
+- [DSR edge crons + erasure-queue consumer](/compliance/dsr-edge-crons.md)
 - [DSR / right-to-erasure pipeline](/compliance/dsr-erasure.md)
 - [Ed25519/JCS erasure attestation](/compliance/erasure-attestation.md)
 - [Sub-processor / vendor DPA reviews](/compliance/sub-processors.md)
@@ -193,7 +197,9 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 ## launch
 
+- [Edge quota & tier serving](/launch/edge-quota-tier-serving.md)
 - [Go-live readiness / launch due-diligence](/launch/go-live-readiness.md)
 - [Money-path: checkout + billing ingest](/launch/money-path.md)
 - [Signup -> tenant onboarding flow](/launch/signup-onboarding.md)
+- [Stripe activation webhook — the money-path activation half](/launch/stripe-activation-webhook.md)
 - [The 6-tier model & DPA-first tier-select checkout](/launch/tier-model.md)

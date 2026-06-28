@@ -4,21 +4,31 @@ name: OKF-CoreLink Wiki Validation
 # profile contract (docs/internal/okf-wiki/01-okf-corelink-profile.contract.md)
 # via scripts/validate_okf.py — checks C1-C10b (+ secondary C-AGE/C-REV nightly).
 #
-# Triggers on changes to the bundle OR to any grounding surface (crates/, specs/)
-# OR to the validator itself: a code change can make a declared-and-cited line
-# range drift (C5), so the gate must re-run when the cited files move.
-
+# Triggers on changes to the bundle OR to any grounding surface (crates/, specs/,
+# worker/, apps/) OR to the validator itself: a code change can make a declared-
+# and-cited line range drift (C5), so the gate must re-run when the cited files
+# move. C5/C10b now cite+gate the TypeScript edge plane (worker/) and the apps/
+# workers, so a PR touching ONLY worker/src or apps/*/src MUST run the gate too —
+# omitting them was a silent bypass (the edge-plane concepts went un-revalidated).
 on:
   pull_request:
     paths:
       - 'docs/knowledge/**'
+      - 'docs/internal/okf-wiki/**'   # the oracle itself (manifest + contract) — editing it must re-run the gate
       - 'crates/**'
       - 'specs/**'
+      - 'worker/**'
+      - 'apps/**'
       - 'scripts/validate_okf.py'
+      - 'tests/okf/**'
   push:
     branches: [main]
     paths:
       - 'docs/knowledge/**'
+      - 'docs/internal/okf-wiki/**'
+      - 'crates/**'
+      - 'worker/**'
+      - 'apps/**'
       - 'scripts/validate_okf.py'
 
 permissions:

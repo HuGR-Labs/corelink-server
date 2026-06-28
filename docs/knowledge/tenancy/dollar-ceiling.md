@@ -4,7 +4,7 @@ title: "Per-tenant monthly $-ceiling"
 description: "The fail-CLOSED cumulative-dollar spend cap that bounds each tenant's monthly cost blast-radius, orthogonal to the rate limit and the request quota."
 source_files:
   - "crates/corelink-container/src/tenant_quota.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "billing", "dollar-ceiling", "adr-0068", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -35,16 +35,16 @@ never floating point.
   via the `tenant_quota` row, not a product tier (`crates/corelink-container/src/tenant_quota.rs:59-64`).
 - `QuotaGuard::check` reads the wall clock first and fail-CLOSES with `503` when it is unavailable
   (`now_ms == 0`), because without a trustworthy clock the cycle boundary is unknowable
-  (`crates/corelink-container/src/tenant_quota.rs:743-752`).
+  (`crates/corelink-container/src/tenant_quota.rs:764-773`).
 - A quota-store transport/decode error also returns `503` — a billable op that cannot be cost-checked is
-  never served (`crates/corelink-container/src/tenant_quota.rs:762-768`).
+  never served (`crates/corelink-container/src/tenant_quota.rs:783-790`).
 - The ceiling decision is an atomic DB-side `check_and_accrue` (`accrued + delta <= budget`), so two
   concurrent ops cannot both read the same baseline and both pass; over the ceiling returns `402`
-  (`crates/corelink-container/src/tenant_quota.rs:794-804`).
+  (`crates/corelink-container/src/tenant_quota.rs:876-896`).
 - A cycle rolls (accrued resets to 0, the anchor advances) once the clock is `CYCLE_LENGTH_MS` (~30 days)
   past the tenant's `cycle_anchor_ms` (`crates/corelink-container/src/tenant_quota.rs:155-158`).
 - The batch variant charges `n * cost_each` in ONE atomic check using `saturating_mul` to stop integer
-  overflow from an untrusted batch size (`crates/corelink-container/src/tenant_quota.rs:716-722`).
+  overflow from an untrusted batch size (`crates/corelink-container/src/tenant_quota.rs:737-744`).
 
 # Invariants
 
@@ -53,7 +53,7 @@ never floating point.
 - Every uncertain path fail-CLOSES: over-ceiling → `402`, store/clock error → `503`; only an explicit
   in-budget `Allow` proceeds (`crates/corelink-container/src/tenant_quota.rs:18-30`).
 - The accrue is a serialized DB-side increment, so concurrent ops at the cycle boundary cannot lose an
-  update or over-admit spend (`crates/corelink-container/src/tenant_quota.rs:777-810`).
+  update or over-admit spend (`crates/corelink-container/src/tenant_quota.rs:798-857`).
 
 # Gotchas
 
@@ -72,8 +72,8 @@ never floating point.
 4. `crates/corelink-container/src/tenant_quota.rs:75-89` — the coarse flat per-op cost model.
 5. `crates/corelink-container/src/tenant_quota.rs:105-116` — `None` guard when the storage env is unset (dev/CI).
 6. `crates/corelink-container/src/tenant_quota.rs:155-158` — cycle-elapsed test against `CYCLE_LENGTH_MS`.
-7. `crates/corelink-container/src/tenant_quota.rs:716-722` — `check_batch` atomic charge with `saturating_mul`.
-8. `crates/corelink-container/src/tenant_quota.rs:743-752` — clock-unavailable `503` fail-close.
-9. `crates/corelink-container/src/tenant_quota.rs:762-768` — store-unavailable `503` fail-close.
-10. `crates/corelink-container/src/tenant_quota.rs:777-810` — atomic roll + check-and-accrue (no lost-update / over-admission).
-11. `crates/corelink-container/src/tenant_quota.rs:794-804` — over-ceiling `402 Payment Required`.
+7. `crates/corelink-container/src/tenant_quota.rs:737-744` — `check_batch` atomic charge with `saturating_mul`.
+8. `crates/corelink-container/src/tenant_quota.rs:764-773` — clock-unavailable `503` fail-close.
+9. `crates/corelink-container/src/tenant_quota.rs:783-790` — store-unavailable `503` fail-close.
+10. `crates/corelink-container/src/tenant_quota.rs:798-857` — atomic roll + check-and-accrue (no lost-update / over-admission).
+11. `crates/corelink-container/src/tenant_quota.rs:876-896` — over-ceiling `402 Payment Required`.

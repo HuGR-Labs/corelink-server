@@ -4,7 +4,7 @@ title: "Native CAS surface"
 description: "CoreLink's first-party content-addressable storage surface — the GET/PUT/DELETE/list + bulk-batch CAS routes every other surface ultimately stores into."
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
 provenance: "AUTHORED"
 tags: ["surfaces", "cas", "cache", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -29,7 +29,7 @@ path segment.
 
 # How it works
 1. The router mounts read/write/delete on `CAS_READ_ROUTE` and adds the three bulk routes as static
-   siblings ranked above the `:hash` wildcard by matchit (`crates/corelink-container/src/routes/cas.rs:515-531`).
+   siblings ranked above the `:hash` wildcard by matchit (`crates/corelink-container/src/routes/cas.rs:627-643`).
 2. A read is a digest-keyed lookup via `handle_read` (`crates/corelink-container/src/routes/cas.rs:625`).
 3. A write rejects a path/auth tenant mismatch with 403, then validates the digest, then the write
    scope, then the native PAT possession gate, all before storage (`crates/corelink-container/src/routes/cas.rs:713-747`).
@@ -57,7 +57,7 @@ path segment.
   whole request 400.
 
 # Citations
-1. `crates/corelink-container/src/routes/cas.rs:515-531` — the router: single-object + three bulk batch routes.
+1. `crates/corelink-container/src/routes/cas.rs:627-643` — the router: single-object + three bulk batch routes.
 2. `crates/corelink-container/src/routes/cas.rs:625` — `handle_read`, the digest-keyed read.
 3. `crates/corelink-container/src/routes/cas.rs:713-747` — `handle_write`: cross-tenant 403, canonical-digest, scope, native PAT gate order.
 4. `crates/corelink-container/src/routes/cas.rs:728` — the cross-tenant 403.
