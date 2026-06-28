@@ -4,7 +4,7 @@ title: "ADR-S11-001 — MFA step-up required only on destructive DSR arms"
 description: "Why DSR MFA step-up is required only on the irreversible arms (erasure, rectification, restriction) and forbidden on the read-only arms."
 source_files:
   - "specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md"
-checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
+checkpoint_sha: "04a7eccfdbe5733a9059ab12518f6ee571db0248"
 provenance: "AUTHORED"
 tags: ["adr", "s11", "auth", "mfa", "dsr", "privacy"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -56,6 +56,8 @@ subject's stored record; step-up there would add friction without reducing attac
 1. `specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md:23-37` — the Context:
    the verification requirement and the two rejected extremes (always-on vs never).
 2. `specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md:39-47` — the Decision:
-   step-up only on erasure/rectification/restriction; read-only arms need no prompt.
+   step-up only on the destructive arms {Erasure, Rectification} (the live `is_destructive()` predicate,
+   `event.rs` lines 90-92 — `matches!(self, Self::Erasure | Self::Rectification)`); read-only arms need
+   no prompt.
 3. `specs/03_architecture/adrs/ADR-S11-001-mfa-step-up-destructive-arms-only.md:63-74` — the
    Consequences: the friction win, the residual two-factor-compromise surface, and the forbidden cases.

@@ -29,6 +29,8 @@ excludes:
     reason: "Install-script worker (apps/, not crates/); operational glue, no cross-crate architecture narrative; covered transitively by planes/worker-edge."
   - surface: "apps/admin-ui"
     reason: "Next.js admin SPA (apps/); UI, covered at app-level only — outside the narrative/architecture-above-rustdoc scope (D7)."
+  - surface: "apps/docs"
+    reason: "Docusaurus 3 public documentation SITE (apps/docs/, corelink-docs.humangr.com); presentation/content app (pages/components/pricing-calculator/sdk-guides), not a request-reachable enforcer — covered at app-level only, same class as apps/admin-ui, outside the architecture-narrative scope (D7)."
   - surface: "tests/e2e-user-journeys"
     reason: "Black-box e2e harness (tests/, excluded from cargo-mutants per 2f82a2a3); test-only, no architecture concept."
   - surface: "docs/knowledge/index.md"

@@ -228,15 +228,49 @@ All are closed at the root (no rigor loosened), each with a self-running fixture
   a review WARN for every strict-tree-hitting exclude entry, so a human reviewer sees exactly which
   strict surfaces were waived (the sanctioned alternative to a per-file cite stays review-visible).
 
+**gate v8 — two MATERIAL backdoor-coverage bypasses CLOSED (PoC-proven; a real backdoor shipped GREEN).**
+A brutal refute proved two more ways a request-reachable backdoor passed the file-granular strict trees:
+
+- **#1 — app enumeration was a HARDCODED 3-app allowlist (MEDIUM, closed).** `_is_file_granular_strict`
+  classifies EVERY `apps/*/src/**` as strict, but the C10b surface WALK enumerated only a hardcoded
+  `("signup-worker","cas-worker","analytics-worker")` — MISALIGNED. A brand-new app's handler was
+  classified strict yet NEVER enumerated, so it could never surface as a [C10b] gap: `apps/runner-worker/
+  src/poison.ts` shipped GREEN with zero coverage. v8 enumerates ALL `apps/*/src/**/*.{ts,rs}` DYNAMICALLY
+  (glob the `apps/` dir for any app with a `src/`), so strict-classification and the surface walk AGREE.
+  A genuinely-non-app/presentation dir under `apps/` (e.g. `apps/admin-ui`, `apps/docs`, `apps/get-corelink-
+  worker`) stays out of the surface via its existing exact-prefix `excludes:` entry — the same honest,
+  review-visible waiver every wholesale-exempt app carries. (Verified: `apps/runner-worker/src/poison.ts`
+  now REDs; a wholesale-excluded UI app's file stays covered.)
+- **#2 — a strict-tree covering cite must be a SUBSTANTIVE line, not boilerplate (HIGH, RAISES the bar).**
+  v7 #2 required the covering cite to be a CODE line (non-comment), but `_line_is_code` accepted ANY
+  non-comment line — including pure BOILERPLATE that SUBSTANTIATES NOTHING: a `use crate::auth;` /
+  `mod x;` / `pub use …` / `extern crate …` / an `import …`/`from …` line, a line that is ONLY a brace/
+  paren/bracket (`{`,`}`,`);`,`});`,`,`), or a bare TYPE/BLOCK declaration-header with no body on the
+  line (`impl X {`, `struct X {`, `enum X {`, `trait X {`, `match … {`). A backdoor handler cited at its
+  `use` line therefore shipped GREEN. v8 adds `_line_is_substantive` (used by `_cite_is_code_line`): a
+  strict-tree covering cite must land on a line carrying real statement/expression content. A NAMED
+  function-signature opener (`fn NAME(…)` / `async fn NAME(…)`, body may open on the next line) IS
+  substantive — it names the actual callable enforcer (its identity + interface), the legitimate anchor
+  a per-file cite uses — so this is a RAISED bar, not a behavioural break (real existing concepts that
+  cite a handler at its signature line stay covered). (Verified: the `use`-line PoC and a bare-brace-line
+  PoC now RED; the same file cited at a genuine enforcer statement stays covered.)
+  **⚠️ This only RAISES the bar.** A backdoor cited at a REAL-but-misdescribed enforcer line — e.g. the
+  handler's own `pub async fn poison(…)` signature, a real code line that names a real function — is STILL
+  the C5 **freshness ≠ authoring-correctness** structural residual below (the gate attests the cited line
+  is a substantive code line, never that it is the RIGHT line that enforces the prose claim). That residual
+  is owned by the periodic human/panel deep-audit layer, NOT by this fix; v8 #2 only stops the trivial
+  boilerplate-line bypass (the cite that names nothing at all).
+
 **ACCEPTED STRUCTURAL RESIDUAL — C5 freshness ≠ authoring-correctness (gate v7 #4: documented, NOT
 "fixed").** C5 proves FRESHNESS — that the CONTENT of each cited `path:Lx-Ly` has not drifted since the
 concept's `checkpoint_sha` (an in-range edit or a pure position-shift makes it STALE). It does NOT — and
 structurally CANNOT — prove authoring-CORRECTNESS: that the cited line actually *substantiates the prose
 claim* it anchors. A cite repointed to a WRONG but in-bounds, byte-unchanged line (e.g. an author moves
 an invariant's anchor onto a neighbouring line that happens to be stable) passes C5 TRIVIALLY — the gate
-attests the cited content is unchanged, never that it is the RIGHT content. gate v7 #2 narrows this for
-the strict trees (the cite must at least be a CODE line, not a doc-comment), but "this code line is the
-one that enforces this claim" remains a semantic judgement no mechanical freshness check can make. This
+attests the cited content is unchanged, never that it is the RIGHT content. gate v7 #2 + v8 #2 narrow this
+for the strict trees (the cite must be a SUBSTANTIVE code line — not a doc-comment, and not pure
+import/module-wiring/brace boilerplate), but "this code line is the one that enforces this claim" remains
+a semantic judgement no mechanical freshness check can make. This
 is an **accepted structural residual**, in the same family as the C5b cosmetic-edit / rename-reset
 residuals: the gate owns FRESHNESS; **authoring-CORRECTNESS is owned by the periodic human/panel
 deep-audit layer** (the N-lens `okf-truth-panel` + the standing human re-attestation), which is a

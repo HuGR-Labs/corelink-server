@@ -1350,6 +1350,180 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v8 #1: app enumeration is DYNAMIC (not a hardcoded 3-app allowlist) ----
+# `_is_file_granular_strict` classifies EVERY `apps/*/src/**` as strict, but the
+# surface walk used to enumerate only ("signup-worker","cas-worker","analytics-
+# worker") — MISALIGNED, so a NEW app's handler was classified strict yet never
+# enumerated and could never surface as a [C10b] gap (it shipped GREEN). v8
+# enumerates ALL `apps/*/src/**/*.{ts,rs}` dynamically. Hermetic: a brand-new
+# `apps/runner-worker/src/poison.ts` seeded by NO concept and NOT excluded MUST
+# surface as a [C10b] silent gap naming it. NEGATIVE control: a `.ts` under an app
+# whose dir IS excluded (apps/admin-ui-style) stays covered (not flagged).
+assert_new_app_enumerated() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # a BRAND-NEW app (not in the old hardcoded allowlist) with a handler.
+    mkdir -p apps/runner-worker/src
+    printf 'export async function poison() { /* reachable backdoor */ }\n' \
+      > apps/runner-worker/src/poison.ts
+    # a non-handler app whose WHOLE dir is wholesale-excluded (admin-ui class).
+    mkdir -p apps/some-ui/src
+    printf 'export const page = 1;\n' > apps/some-ui/src/page.ts
+    mkdir -p docs/knowledge
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+EOF
+    git add -A
+    git commit -q -m base
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+candidates: []
+excludes:
+  - surface: "apps/some-ui"
+    reason: "fixture: presentation-only UI app, wholesale-excluded (admin-ui class) — covered at app-level only, not a request-reachable enforcer."
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.na_out" 2>&1 || true
+  )
+  # POSITIVE: the new app's uncited handler is enumerated -> fires naming it.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.na_out" 2>/dev/null \
+     && grep -q 'apps/runner-worker/src/poison.ts' "$tmp/.na_out" 2>/dev/null; then
+    ok "dynamic app enum: a NEW app's handler (runner-worker/src/poison.ts) is enumerated -> [C10b] names it"
+  else
+    miss "dynamic app enum positive (no [C10b] naming apps/runner-worker/src/poison.ts): $(tail -1 "$tmp/.na_out" 2>/dev/null)" "new-app-pos"
+  fi
+  # NEGATIVE (selectivity): the wholesale-excluded UI app's file is NOT flagged.
+  total=$((total + 1))
+  if ! grep -q 'apps/some-ui/src/page.ts' "$tmp/.na_out" 2>/dev/null; then
+    ok "dynamic app enum: a wholesale-excluded UI app's file stays covered (selective)"
+  else
+    miss "dynamic app enum negative: apps/some-ui/src/page.ts was wrongly flagged" "new-app-neg"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- gate v8 #2: a strict-tree covering cite must be a SUBSTANTIVE code line ------
+# `_line_is_code` accepted ANY non-comment line — including pure BOILERPLATE that
+# substantiates nothing (`use crate::auth;`, `mod x;`, a bare `}`, `});`). A
+# backdoor handler cited at its `use` line therefore shipped GREEN. v8 requires the
+# covering cite to land on a SUBSTANTIVE line (real statement/expression or a named
+# fn signature), rejecting import/module-wiring/brace scaffolding. We prove THREE:
+#  POSITIVE-A — poison.rs cited solely at its `use` line REDs [C10b];
+#  POSITIVE-B — the SAME file cited solely at a bare-brace `}` line REDs [C10b];
+#  NEGATIVE   — the same file cited at its GENUINE enforcer (a real statement) line
+#               stays covered (no gap) — proving the bar is raised, not broken.
+assert_boilerplate_line_cite_rejected() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/routes/poisony docs/knowledge/compliance
+    # line1: use (boilerplate); line2: blank; line3: bare-brace block;
+    # line5: the GENUINE enforcer statement; line6: closing brace.
+    cat > crates/corelink-container/src/routes/poisony/poison.rs <<'RS'
+use crate::auth::PatVerifier;
+pub async fn handle() {
+    {
+        let _scaffold = ();
+        return deny_unless_authorized(&caller);
+    }
+}
+RS
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/compliance/x.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # the concept declares + cites the file ONLY at its line-1 \`use\` boilerplate.
+    cat > docs/knowledge/compliance/x.md <<EOF
+---
+type: Concept
+title: "Boilerplate-line cite (hermetic)"
+description: "covers poison only at its use-line boilerplate"
+source_files:
+  - "crates/corelink-container/src/routes/poisony/poison.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# How it works
+- the import (\`crates/corelink-container/src/routes/poisony/poison.rs:1\`).
+
+# Citations
+1. \`crates/corelink-container/src/routes/poisony/poison.rs:1\` — the use line only.
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "compliance/x"
+    type: "Concept"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/routes/poisony/poison.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.bp_use" 2>&1 || true
+    # POSITIVE-B: repoint BOTH cites to the bare-brace line (:3) -> still REDs.
+    sed -i.bak 's/poison.rs:1/poison.rs:3/g' docs/knowledge/compliance/x.md && rm -f docs/knowledge/compliance/x.md.bak
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.bp_brace" 2>&1 || true
+    # NEGATIVE: repoint BOTH cites to the GENUINE enforcer statement (:5) -> covered.
+    sed -i.bak 's/poison.rs:3/poison.rs:5/g' docs/knowledge/compliance/x.md && rm -f docs/knowledge/compliance/x.md.bak
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.bp_ok" 2>&1 || true
+  )
+  # POSITIVE-A: use-line-only cite does NOT cover the strict file -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.bp_use" 2>/dev/null \
+     && grep -q 'routes/poisony/poison.rs' "$tmp/.bp_use" 2>/dev/null; then
+    ok "boilerplate-line cite: a \`use\`-line-only citation does NOT cover -> [C10b] names poison.rs"
+  else
+    miss "boilerplate-line cite use-line positive (no [C10b] naming routes/poisony/poison.rs): $(tail -1 "$tmp/.bp_use" 2>/dev/null)" "bp-use-pos"
+  fi
+  # POSITIVE-B: bare-brace-line cite also does NOT cover -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.bp_brace" 2>/dev/null \
+     && grep -q 'routes/poisony/poison.rs' "$tmp/.bp_brace" 2>/dev/null; then
+    ok "boilerplate-line cite: a bare-brace (\`{\`) line citation does NOT cover -> [C10b] names poison.rs"
+  else
+    miss "boilerplate-line cite brace-line positive (no [C10b] naming routes/poisony/poison.rs): $(tail -1 "$tmp/.bp_brace" 2>/dev/null)" "bp-brace-pos"
+  fi
+  # NEGATIVE (selectivity): the GENUINE enforcer statement (:5) stays covered.
+  total=$((total + 1))
+  if grep -q 'OKF-CoreLink profile valid' "$tmp/.bp_ok" 2>/dev/null; then
+    ok "boilerplate-line cite: the same file cited at its GENUINE enforcer statement (:5) stays covered (raised bar, not broken)"
+  else
+    miss "boilerplate-line cite negative: genuine enforcer-line (:5) citation was NOT accepted: $(tail -1 "$tmp/.bp_ok" 2>/dev/null)" "bp-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -1389,6 +1563,10 @@ assert_worker_src_recursive
 # cite must resolve to a real CODE line (not a doc-comment header).
 assert_strict_tree_exclude_escape
 assert_cite_must_be_code_line
+# gate v8: #1 app enumeration is DYNAMIC (a new app's handler is enumerated) +
+# #2 a strict-tree covering cite must be a SUBSTANTIVE line (use/mod/brace REDs).
+assert_new_app_enumerated
+assert_boilerplate_line_cite_rejected
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then

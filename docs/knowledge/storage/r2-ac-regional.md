@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-region/src/r2_crr.rs"
   - "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs"
   - "crates/corelink-container/src/routes/ac.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "04a7eccfdbe5733a9059ab12518f6ee571db0248"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "action-cache", "region", "residency"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -41,8 +41,12 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
    (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:50-56`).
 4. The live AC route resolves its bucket + region from env, defaulting to `corelink-ac-iad` / `iad`
    (`crates/corelink-container/src/routes/ac.rs:360-361`).
-5. The region's uppercase R2 `locationHint` is what physically pins object placement to that region
-   (`crates/corelink-region/src/region.rs:44-53`).
+5. The region's uppercase R2 `locationHint` (`crates/corelink-region/src/region.rs:44-53`) requests
+   placement IN the hinted region WHERE it is set — but this only pins placement to the extent the
+   deployed buckets are genuinely per-region. Today only `corelink-ac-eu` is a real per-region (EU)
+   bucket; the other deployed non-EU AC buckets (`lhr`/`iad`/…) are physically ENAM/US regardless of the
+   colo suffix in their name. Genuine per-region physical placement for the full set + CRR/multi-region
+   is disclosed deferred (see the CRR SLI below and the gotcha).
 6. Cross-region replication has no direct managed lag metric, so an indirect SLI writes a synthetic
    probe object per region every 5 minutes and confirms presence in the sibling region
    (`crates/corelink-region/src/r2_crr.rs:1-34`).
@@ -66,7 +70,7 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
 
 # Citations
 1. `crates/corelink-region/src/region.rs:8-27` — canonical 4-value `Region` enum + its CF R2/D1/domain mapping.
-2. `crates/corelink-region/src/region.rs:44-53` — `r2_location_hint` (uppercase per CF API) pinning placement.
+2. `crates/corelink-region/src/region.rs:44-53` — `r2_location_hint` (uppercase per CF API) requesting placement where set; only `corelink-ac-eu` is genuinely per-region physical, the deployed non-EU AC buckets are physically US (CRR/multi-region deferred).
 3. `crates/corelink-region/src/region.rs:112-127` — `DoJurisdiction`: WEUR mandatory EU (Schrems II).
 4. `crates/corelink-region/src/region.rs:140-158` — `expected_for_region` / `is_valid_for_region` jurisdiction rule.
 5. `crates/corelink-region/src/r2_crr.rs:1-34` — indirect CRR lag SLI via per-region synthetic probe objects.

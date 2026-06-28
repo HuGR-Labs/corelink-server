@@ -488,18 +488,110 @@ def _line_is_code(line: str) -> bool:
     return True
 
 
+# gate v8 fix #2 (HIGH — raise-the-bar): `_line_is_code` accepts ANY non-comment
+# line as a covering cite, including pure BOILERPLATE that substantiates NOTHING —
+# a `use crate::auth;` / `mod x;` / `impl X {` / a bare `}` / `});`. A backdoor
+# handler cited at its `use` line therefore shipped GREEN. A SUBSTANTIVE line must
+# carry actual statement/expression content, not pure import/declaration-header/
+# brace scaffolding. (This only RAISES the bar — see the contract: a backdoor cited
+# at a real-but-misdescribed enforcer line is STILL the C5 freshness≠correctness
+# structural residual the human/panel deep-audit owns. This stops the trivial
+# boilerplate-line bypass only.)
+_BOILERPLATE_LEADERS = (
+    # Rust imports / module wiring.
+    "use ", "pub use ", "mod ", "pub mod ", "pub(crate) mod ", "extern crate ",
+    # TS/JS imports + re-exports.
+    "import ", "export *", "export {", "export type {", "export default {",
+    "from ", "require(",
+)
+# A line that is ONLY a bracket/paren/brace (block scaffolding) substantiates
+# nothing. Compared after stripping whitespace.
+_PURE_SCAFFOLD = {
+    "{", "}", "(", ")", "[", "]",
+    ");", "})", "});", "],", "},", "),", ");}", "});}",
+    ",", ";", "=> {", "{}", "})", "}),",
+}
+# TYPE / BLOCK declaration-HEADER leaders: a bare `impl X {` / `struct X {` /
+# `enum X {` / `trait X {` / a bare `match …{`/`if …{`/`for …{` block opener with
+# NO body on the line is pure container scaffolding, not the enforcing statement.
+# We accept such a line only when it carries content BEYOND the opening brace (a
+# single-line body). A NAMED FUNCTION signature (`fn NAME(…)`) is treated as
+# substantive even when its body opens on the next line — it names the actual
+# callable enforcer (its identity + interface), which is what a per-file cite is
+# anchoring; that is NOT the boilerplate bypass this fix closes (the bypass is the
+# `use`/`mod`/import/brace line, which names nothing). A backdoor cited at its own
+# real handler signature line remains the C5 freshness≠correctness structural
+# residual the human/panel deep-audit owns (see the contract).
+_TYPE_HEADER_LEADERS = (
+    "impl ", "impl<", "struct ", "pub struct ", "pub(crate) struct ",
+    "enum ", "pub enum ", "pub(crate) enum ",
+    "trait ", "pub trait ", "pub(crate) trait ",
+    "match ", "if ", "else", "for ", "while ", "loop", "unsafe {",
+    "class ", "export class ", "interface ", "export interface ",
+    "namespace ", "module ",
+)
+# A NAMED function signature opener: substantive (names the callable enforcer)
+# even when the body opens on a following line. Must carry the `(` argument list.
+_FN_SIG_LEADERS = (
+    "fn ", "pub fn ", "pub(crate) fn ", "async fn ", "pub async fn ",
+    "pub(crate) async fn ", "const fn ", "pub const fn ", "unsafe fn ",
+    "pub unsafe fn ", "function ", "export function ", "async function ",
+    "export async function ",
+)
+
+
+def _line_is_substantive(line: str) -> bool:
+    """True iff `line` is a SUBSTANTIVE code line (gate v8 fix #2): a non-comment,
+    non-blank line that carries real statement/expression content — NOT a pure
+    import (`use`/`mod`/`import`/`from`), NOT a line that is only brace/paren/
+    bracket scaffolding (`{`,`}`,`);`,`});`,…), and NOT a bare TYPE/BLOCK
+    declaration HEADER with no body on the line (`impl X {`, `struct X {`,
+    `match … {` with nothing after the brace). A single-line body
+    (`fn deny() { false }`) and a NAMED function signature opener (`fn router(…)`)
+    are substantive."""
+    if not _line_is_code(line):
+        return False
+    s = line.strip()
+    if s in _PURE_SCAFFOLD:
+        return False
+    low = s.lower()
+    for lead in _BOILERPLATE_LEADERS:
+        if low.startswith(lead) or s.startswith(lead):
+            return False
+    # A named function signature (`fn NAME(…)` / `async fn NAME(…)`) names the
+    # callable enforcer → substantive (its body may open on the next line).
+    for lead in _FN_SIG_LEADERS:
+        if s.startswith(lead) and "(" in s:
+            return True
+    # TYPE / BLOCK headers: substantive ONLY if there is content AFTER the opening
+    # `{` (a single-line body). A bare `… {` (or no brace at all, a multi-line
+    # opener) is pure container scaffolding.
+    for lead in _TYPE_HEADER_LEADERS:
+        if s.startswith(lead):
+            brace = s.find("{")
+            if brace == -1:
+                return False  # opener with no body on the line
+            tail = s[brace + 1:].strip()
+            if tail in ("", "}"):
+                return False
+            return True
+    return True
+
+
 def _cite_is_code_line(file_lines: list[str], l1: int, l2: int) -> bool:
     """True iff the 1-based inclusive cited range `l1..l2` of `file_lines`
-    contains AT LEAST ONE grounding CODE line (gate v7 fix #2). A range that is
-    entirely blank / comment / doc-comment lines (e.g. the `:1-2` file-header
-    doc block) does NOT substantiate an executed handler body and so does not
-    count as a covering cite in a strict tree."""
+    contains AT LEAST ONE SUBSTANTIVE code line (gate v7 fix #2, RAISED by gate v8
+    fix #2). A range that is entirely blank / comment / doc-comment lines (the
+    `:1-2` file-header PoC) OR entirely pure-boilerplate (import / module-wiring /
+    brace-scaffold / bare declaration-header — the `use`-line PoC) does NOT
+    substantiate an executed handler body and so does not count as a covering
+    cite in a strict tree."""
     if l1 < 1:
         l1 = 1
     if l2 > len(file_lines):
         l2 = len(file_lines)
     for i in range(l1 - 1, l2):
-        if 0 <= i < len(file_lines) and _line_is_code(file_lines[i]):
+        if 0 <= i < len(file_lines) and _line_is_substantive(file_lines[i]):
             return True
     return False
 
@@ -1331,11 +1423,27 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     # subdir is now gated (genuine non-handler subdirs surface as [C10b] and get an
     # honest manifest `excludes:` entry, the same as the container tree).
     _add_files("worker/src", "*.ts", recursive=True)  # edge plane (recursive)
-    for app in ("signup-worker", "cas-worker", "analytics-worker"):
-        _add_files(f"apps/{app}/src", "*.ts", recursive=True)
-    mig = surface_root / "apps" / "migrate-single-to-multi-region" / "src" / "main.rs"
-    if mig.is_file():
-        surface.append((mig.relative_to(surface_root).as_posix(), False))
+    # gate v8 fix #1 (MEDIUM — app enumeration was a HARDCODED 3-app allowlist):
+    # the surface walk only enumerated ("signup-worker","cas-worker","analytics-
+    # worker"), but `_is_file_granular_strict` classifies EVERY `apps/*/src/**` as
+    # strict — MISALIGNED. A brand-new app (e.g. `apps/runner-worker/src/poison.ts`)
+    # was classified strict yet never ENUMERATED, so it could never surface as a
+    # [C10b] gap → a new app's request-reachable handler shipped GREEN with zero
+    # coverage. We now enumerate ALL `apps/*/src/**/*.{ts,rs}` DYNAMICALLY by
+    # globbing the apps/ dir for any app that has a `src/`, so strict-classification
+    # and the surface walk AGREE. Genuinely-non-app dirs under apps/ stay out of the
+    # surface via the existing manifest `excludes:` (apps/admin-ui, apps/get-corelink-
+    # worker are exact-prefix excludes honored by is_covered) — and any future
+    # non-handler app that is wholesale-waived gets the same honest exclude entry.
+    apps_dir = surface_root / "apps"
+    if apps_dir.is_dir():
+        for app in sorted(p for p in apps_dir.iterdir() if p.is_dir()):
+            app_src = app / "src"
+            if not app_src.is_dir():
+                continue
+            base_rel = app_src.relative_to(surface_root).as_posix()
+            _add_files(base_rel, "*.ts", recursive=True)
+            _add_files(base_rel, "*.rs", recursive=True)
 
     for rel, is_dir in dict.fromkeys(surface):
         if not is_covered(rel, is_dir):
