@@ -104,8 +104,15 @@ pub struct DsrRouteState {
     worker: Arc<InMemoryErasureWorker>,
     /// D1 client for the verify-path attestation signer (G3). `None` in the
     /// unconfigured/test fallback (all-placeholder worker) — attestation is then
-    /// skipped (fail-OPEN), exactly as when the seed secret is unset.
+    /// skipped (fail-CLOSED), exactly as when the seed secret is unset.
     d1: Option<Arc<crate::storage::d1_http::D1HttpClient>>,
+    /// R2 client bound to the region's audit bucket (`corelink-audit-{region}`),
+    /// the AUTHORITATIVE store the verify-path attestation signer (Artifact 1)
+    /// PUTs the signed bundle to BEFORE the D1 index row. `None` when storage is
+    /// unconfigured OR no single-region attestation region is asserted — the
+    /// signer then withholds the attestation (fail-CLOSED; never a dangling
+    /// `r2_key`).
+    r2_audit: Option<Arc<crate::storage::r2_s3::R2S3Client>>,
 }
 
 impl std::fmt::Debug for DsrRouteState {
@@ -115,6 +122,7 @@ impl std::fmt::Debug for DsrRouteState {
             .field("internal_auth_key", &"<redacted>")
             .field("worker", &self.worker)
             .field("d1", &self.d1.as_ref().map(|_| "[D1HttpClient]"))
+            .field("r2_audit", &self.r2_audit.as_ref().map(|_| "[R2S3Client]"))
             .finish()
     }
 }
@@ -248,6 +256,43 @@ fn build_d1_worker() -> Option<(InMemoryErasureWorker, Arc<crate::storage::d1_ht
     Some((worker, d1))
 }
 
+/// Build the R2 client bound to the region's audit bucket
+/// (`corelink-audit-{region}`) for the verify-path signed-attestation store
+/// (Artifact 1). `None` (signing then fails CLOSED) unless ALL hold:
+/// `StorageEnv` is configured, the operator has EXPLICITLY asserted single
+/// region (`ERASURE_ATTESTATION_SINGLE_REGION` truthy), and
+/// `ERASURE_ATTESTATION_REGION` parses to a canonical region. Resolving the
+/// bucket from the SAME env the signer reads guarantees the bucket can never
+/// disagree with the region in the signed payload (no mis-attributed object).
+fn build_audit_r2_client() -> Option<Arc<crate::storage::r2_s3::R2S3Client>> {
+    // Honour the env region ONLY under an explicit single-region assertion —
+    // mirrors `attestation::resolve_region_from_env` (never a silent default).
+    let single_region = std::env::var("ERASURE_ATTESTATION_SINGLE_REGION")
+        .map(|v| {
+            matches!(
+                v.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false);
+    if !single_region {
+        return None;
+    }
+    let region = corelink_erasure_attestation::Region::parse(
+        std::env::var("ERASURE_ATTESTATION_REGION").ok()?.trim(),
+    )?;
+    let storage_env = crate::storage::StorageEnv::from_env()?;
+    let bucket = region.audit_bucket();
+    // `R2S3Client::new` is async; we are called from the multi-thread runtime
+    // (main's async body), so bridge with `block_in_place` like `d1util`.
+    let handle = tokio::runtime::Handle::current();
+    let client = tokio::task::block_in_place(|| {
+        handle.block_on(crate::storage::r2_s3::R2S3Client::new(&storage_env, bucket))
+    })
+    .ok()?;
+    Some(Arc::new(client))
+}
+
 // ─── Account-deletion erasure sink (C-ACCTDEL transport) ───────────────────────
 
 /// Production [`crate::routes::customer::DsrErasureSink`] that drives the SAME
@@ -338,10 +383,19 @@ pub fn build_state_from_env() -> Option<DsrRouteState> {
         Some((w, d1)) => (w, Some(d1)),
         None => (build_placeholder_worker().ok()?, None),
     };
+    // R2 audit-bucket client for the verify-path signed attestation (Artifact
+    // 1). Only built when D1 is present (no point signing without the index);
+    // `None` ⇒ the signer fails CLOSED (no dangling r2_key).
+    let r2_audit = if d1.is_some() {
+        build_audit_r2_client()
+    } else {
+        None
+    };
     Some(DsrRouteState {
         internal_auth_key,
         worker: Arc::new(worker),
         d1,
+        r2_audit,
     })
 }
 
@@ -497,9 +551,12 @@ async fn handle_verify(
     };
     match state.worker.verify_erasure(&request, now_ms()) {
         Ok(decision) => {
-            // G3: on a fully-verified erasure, sign + persist an Ed25519
-            // attestation (best-effort, fail-OPEN — the erasure is already
-            // complete + audited; attestation is an extra evidence artifact).
+            // G3 / Artifact 1: on a fully-verified erasure, sign + persist a
+            // REAL Ed25519 attestation (non-blocking — the erasure is already
+            // complete + audited; the attestation is an extra evidence
+            // artifact — but fail-CLOSED on the evidence/region/R2/D1 so a
+            // forgeable "certificate" is never written). Strict ordering:
+            // R2 PUT → pubkey → D1 index (see `attestation`).
             if let ErasureDecision::VerifiedComplete { completions } = &decision {
                 if let Some(d1) = state.d1.as_ref() {
                     // Bind the signed attestation to the REAL per-backend
@@ -507,6 +564,7 @@ async fn handle_verify(
                     // unless every backend genuinely re-verified empty.
                     attestation::sign_and_persist(
                         d1,
+                        state.r2_audit.as_ref(),
                         &msg.dsr_id,
                         &msg.tenant_id,
                         now_ms(),

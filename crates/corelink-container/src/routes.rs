@@ -159,6 +159,11 @@ pub mod oci;
 /// the mutable simple index in a per-tenant D1 KV. Env-gated mount in
 /// [`build_with_factory`].
 pub mod pip;
+/// PUBLIC erasure-attestation verifier routes (Artifact 1, WP-C1):
+/// `GET /v1/public/attestation/{request_id}` + `GET /v1/public/keys/erasure/{region}.pub`.
+/// UNAUTHENTICATED by design (an erasure proof is publicly verifiable) — D1-read
+/// only, mounted OUTSIDE the ratelimit/residency/auth layers in [`crate::main`].
+pub mod public_attestation;
 /// Data-residency guard middleware (backlog #29 — Schrems II leak). A router
 /// `layer` that runs BEFORE any handler: it reads the trusted
 /// `x-corelink-primary-region` macro (set by the edge Worker), maps it to a colo

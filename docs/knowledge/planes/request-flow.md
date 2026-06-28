@@ -6,7 +6,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
+checkpoint_sha: "01274fea4ad4228fbf2e0633443f759fb40582b0"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -31,35 +31,39 @@ semantics in the container.
 
 # How it works
 1. The request enters `baseHandler.fetch`: request-id, CORS, then `matchRoute` selects a `RouteKind` +
-   tenant (`worker/src/index.ts:1463-1476`).
+   tenant (`worker/src/index.ts:1476-1489`).
 2. The Worker authenticates the Bearer PAT — HMAC fast-reject then a D1 `token_id` lookup + expiry —
-   resolving the trusted tenant (`worker/src/index.ts:917-1037`). The edge expiry check honors the
+   resolving the trusted tenant (`worker/src/index.ts:930-1050`). EXCEPTION (Artifact 1): the unauth
+   `/v1/public/*` arm (the erasure-attestation verifier) is matched BEFORE the generic `/v1/*` PAT bucket
+   and forwarded as `_anonymous` with NO PAT and NO internal-auth — an erasure proof is publicly
+   verifiable, so this route skips the auth hop entirely (matchRoute arm `worker/src/index.ts:777-787`,
+   forward arm `worker/src/index.ts:1941-1965`). The edge expiry check honors the
    `expires_ms === 0` "never expires" sentinel (`row.expires_ms !== 0 && row.expires_ms <= now`),
    matching the container's `adapter_pat` SQL (`expires_ms = 0 OR expires_ms > now`) — so a no-TTL PAT
    is no longer a split-brain edge-reject that worked in the container but died at the Worker.
 3. The Worker derives the per-tenant DO with `idFromName(resolvedTenantId)`, making isolation structural
-   (`worker/src/index.ts:2481-2484`).
+   (`worker/src/index.ts:2527-2530`).
 4. It strips client trust headers, sets its own verified tenant-id/scope/token-prefix, and dispatches
-   via `stub.fetch` (`worker/src/index.ts:2486-2548`).
+   via `stub.fetch` (`worker/src/index.ts:2532-2594`).
 5. The DO's `fetch` binds the forwarded tenant-id, ensures the container is running, then proxies the
    request (`worker/src/durable_object.ts:303-370`).
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
    DO→container hop (`worker/src/durable_object.ts:251-264`).
 7. The container's composed router (built by `build_with_factory`) receives the request and routes it to
-   the matching handler (`crates/corelink-container/src/routes.rs:333-341`).
+   the matching handler (`crates/corelink-container/src/routes.rs:338-346`).
 8. The shared CAS/AC handler objects — wrapped once with byte-accounting, the erasure tombstone gate,
    and the native PAT possession backstop — execute the actual cache operation
-   (`crates/corelink-container/src/routes.rs:388-492`).
+   (`crates/corelink-container/src/routes.rs:393-497`).
 
 # Invariants
 - The DO is always selected from the PAT-resolved tenant, never the URL tenant — isolation is
-  established at this hop (`worker/src/index.ts:2481-2484`).
+  established at this hop (`worker/src/index.ts:2527-2530`).
 - The request that crosses Worker→DO carries only Worker-established trust headers; client values are
-  stripped first (`worker/src/index.ts:2486-2544`).
+  stripped first (`worker/src/index.ts:2532-2590`).
 - The DO→container hop always targets port 50051 via the `getTcpPort` fetcher
   (`worker/src/durable_object.ts:251-264`).
 - The container re-verifies possession at the shared handler chokepoint rather than trusting the hop
-  blindly (`crates/corelink-container/src/routes.rs:388-492`).
+  blindly (`crates/corelink-container/src/routes.rs:393-497`).
 - The DO will not proxy until the container is confirmed running (or it returns 503/500)
   (`worker/src/durable_object.ts:332-361`).
 
@@ -72,13 +76,13 @@ semantics in the container.
 
 # Citations
 1. `worker/src/index.ts:1-20` — the `Internet → Worker → DO → container` topology header.
-2. `worker/src/index.ts:917-1037` — edge PAT auth (HMAC fast-reject + D1 lookup + expiry).
-3. `worker/src/index.ts:1463-1476` — the Worker `fetch` entry + `matchRoute`.
-4. `worker/src/index.ts:2481-2484` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
-5. `worker/src/index.ts:2486-2544` — strip-then-set trust headers on the forward.
-6. `worker/src/index.ts:2486-2548` — the augmented forward + `stub.fetch` dispatch to the DO.
+2. `worker/src/index.ts:930-1050` — edge PAT auth (HMAC fast-reject + D1 lookup + expiry).
+3. `worker/src/index.ts:1476-1489` — the Worker `fetch` entry + `matchRoute`.
+4. `worker/src/index.ts:2527-2530` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
+5. `worker/src/index.ts:2532-2590` — strip-then-set trust headers on the forward.
+6. `worker/src/index.ts:2532-2594` — the augmented forward + `stub.fetch` dispatch to the DO.
 7. `worker/src/durable_object.ts:251-264` — the DO→container proxy via `getTcpPort(50051)`.
 8. `worker/src/durable_object.ts:303-370` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:332-361` — the ensure-running gate before proxying (503/500 otherwise).
-10. `crates/corelink-container/src/routes.rs:333-341` — the container's composed router receiving the request.
-11. `crates/corelink-container/src/routes.rs:388-492` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
+10. `crates/corelink-container/src/routes.rs:338-346` — the container's composed router receiving the request.
+11. `crates/corelink-container/src/routes.rs:393-497` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.

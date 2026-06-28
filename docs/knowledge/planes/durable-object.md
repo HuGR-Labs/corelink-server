@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/event_log_do.ts"
   - "worker/src/rollout_controller.ts"
-checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
+checkpoint_sha: "01274fea4ad4228fbf2e0633443f759fb40582b0"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -60,7 +60,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 9. A periodic `alarm` re-probes health and marks the container `degraded` after `MAX_HEALTH_FAILURES`
    (`worker/src/durable_object.ts:935-989`).
 10. The Worker exports two SIBLING DO classes alongside `CoreLinkServer`
-    (`worker/src/index.ts:2634`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
+    (`worker/src/index.ts:2680`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
     primitive — it adopts the first `x-corelink-tenant-id` it sees, persists that pin, and refuses any
     other tenant's request with a `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`). Its
     `append` monotonically assigns `seq` under `blockConcurrencyWhile` (persist the entry, THEN advance
@@ -117,7 +117,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 11. `worker/src/durable_object.ts:778-808` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:756-767` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
 12. `worker/src/durable_object.ts:896-913` — `onIdleTimeout`: death event emitted, then the idle-timeout destroy.
 13. `worker/src/durable_object.ts:935-989` — the periodic `alarm` health re-probe + degrade.
-14. `worker/src/index.ts:2634` — the Worker exports `CoreLinkServer`, `RolloutController`, `EventLogDO`.
+14. `worker/src/index.ts:2680` — the Worker exports `CoreLinkServer`, `RolloutController`, `EventLogDO`.
 15. `worker/src/event_log_do.ts:207-218` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).
 16. `worker/src/event_log_do.ts:220-225` — the `/_eventlog/append` + `/_eventlog/read` route dispatch.
 17. `worker/src/event_log_do.ts:266-277` — `handleAppend`: monotonic gap-free `seq` under `blockConcurrencyWhile` (persist-entry-then-advance-head).

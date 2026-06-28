@@ -22,6 +22,19 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **Real signed + served GDPR erasure attestation (Artifact 1 — closes brutal-review H1).** The attestation
+  was fail-closed/DEFERRED because the prior impl computed an Ed25519 signature then discarded it (no DB
+  columns, no R2 object, no verifier endpoint — "theater"). Now genuine + verifiable: migration 0079 adds
+  `signature_ed25519` + `canonical_payload_jcs` to `erasure_attestations`; `sign_and_persist` signs the
+  RFC-8785 JCS-canonical payload and persists ALL-OR-NOTHING fail-closed (region-authorized via
+  `ERASURE_ATTESTATION_SINGLE_REGION` → R2 PUT the bundle FIRST → public-key upsert → only then the D1
+  index row carrying the signature + canonical bytes; any failure persists nothing, never a dangling or
+  unsigned row); plus two public unauth verifier endpoints — `GET /v1/public/attestation/{request_id}`
+  (serves the signed bundle; 404 for a missing or pre-0079 unsigned row) and
+  `GET /v1/public/keys/erasure/{region}.pub` (active/overlap public keys for offline Ed25519 verification).
+  Built on CF-1's now-complete erase-set, so the certificate attests a genuinely-complete erasure.
+
 ### Fixed
 - **OKF most-brutal audit (12-finder + adversarial-verify) — correct the audit-chain tamper-evidence overstatement + 7 more.** A deeper pass than all prior (meta-skeptic re-audit of every CLEAN verdict, exhaustive numeric ~900 constants, exploit-chains, gate-location attack, fresh-vector vs #541's just-landed code). Security held (40 invariants traced, 1 LOW intentional ordering); numeric 3-wrong/900. It found the layer prior passes missed: **(headline) `compliance/audit-chain` + `crates/audit-analytics` sold SOC2-grade tamper-evidence ("trust even if CoreLink is compromised / append-only")** while the live chain is a PLAIN UN-KEYED BLAKE3 sealed at the hourly drain over mutable D1 rows with R2 Object-Lock unwired — i.e. an insider with D1 write can forge a self-consistent chain; corrected to tamper-EVIDENCE-at-verify (not insider-proof), acknowledged the wired drain producer, fixed INV-AUDIT-APPEND-ONLY (D1 seal live; Object-Lock/keyed-head/write-time-chaining deferred), and re-attributed the live hash to corelink-audit-chain BLAKE3 (corelink-audit's SHA-256 is dead/legacy). Also: `ops/observability-plane` INV-TENANT-ISOLATION corrected (the span ledger keys by billing TIER, not tenant — per-tier bucketing, not per-tenant isolation); `security/money-path-review` F-MP-2/F-MP-3 marked RESOLVED (fixed in e423ed23, were presented as live gaps); `ops/reproducible-build` toolchain 1.84→1.91.1; `adr-s14-001` PROVISIONED_MACROS 4→3 (sam excluded); `adr-s14-002` region-pin logical-not-physical caveat; + 4 imprecise cite re-anchors. **Gate v14**: the wrangler-`main` enumeration walked only root+apps/*+crates/* one level — replaced with a recursive `wrangler*.{toml,jsonc,json}` walk (build-output/vendor pruned), closing 3 PoC-proven location bypasses (crate-nested, sibling-top-level, worker/ alt-config). Code-level findings (the un-keyed audit chain hardening, a sub-processor legal-doc gap, a tracing tier/tenant doc-comment, the erase-set KEY_COLS allowlist) handed to the repo TL as CF-6…CF-9. Gate green: 157 concepts, 0 stale/drift; 61/61 fixtures.
 - **OKF post-merge severe independent audit — close 1 wiki self-contradiction + 1 gate hole.** A 4-agent

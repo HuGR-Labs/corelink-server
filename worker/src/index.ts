@@ -268,6 +268,7 @@ type RouteKind =
   | "cargo"
   | "reapi_v2"
   | "customer_v1"
+  | "public_attestation"
   | "reapi_v1"
   | "bazel_v2"
   | "turbo_v8"
@@ -771,6 +772,18 @@ function matchRoute(url: URL): RouteMatch {
   // into the PAT-required reapi_v1 bucket (which would 401 the un-PAT'd webhook).
   if (path === "/v1/billing/stripe-webhook") {
     return { tenantId: "_system", pathSuffix: path, routeKind: "billing_webhook" };
+  }
+
+  // PUBLIC erasure-attestation verifier — /v1/public/* (Artifact 1, WP-C1).
+  // UNAUTHENTICATED by design: anyone can verify a GDPR erasure offline (fetch the
+  // signed bundle + the region public key, recompute the Ed25519 signature). The
+  // container mounts these GET routes OUTSIDE its auth/ratelimit/residency layers
+  // (same as the /_internal/* family) and is the SOLE authority. So the Worker is a
+  // pure pass-through: NO PAT gate, NO internal-auth. Checked BEFORE the generic
+  // /v1/* arm so it is never swallowed into the PAT-required reapi_v1 bucket.
+  // tenantId="_anonymous" (no tenant in the URL; an erasure proof is public).
+  if (path.startsWith("/v1/public/")) {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "public_attestation" };
   }
 
   // REAPI v1 — /v1/users/me, /v1/cas/blobs/<digest>/<size>, /v1/admin/audit/events, …
@@ -1917,6 +1930,39 @@ const baseHandler: ExportedHandler<Env> = {
         );
       }
       return applyCors(billingResp, request);
+    }
+
+    // PUBLIC erasure-attestation verifier — /v1/public/* (Artifact 1, WP-C1).
+    // Pure pass-through to the _anonymous DO → container, which is the SOLE
+    // authority. These are UNAUTHENTICATED GETs (an erasure proof is publicly
+    // verifiable) — NO PAT gate, NO internal-auth (mirrors the billing-webhook
+    // carve-out, minus any signature). Client-forged x-corelink-* trust headers
+    // are stripped; the container routes are mounted outside its auth layers.
+    if (route.routeKind === "public_attestation") {
+      const pubDoId = env.CORELINK_SERVER.idFromName("_anonymous");
+      const pubStub = env.CORELINK_SERVER.get(pubDoId);
+      const pubReq = new Request(request, {
+        headers: (() => {
+          const h = new Headers(request.headers);
+          stripClientTrustHeaders(h);
+          h.set("x-request-id", requestId);
+          h.set("x-corelink-route-kind", "public_attestation");
+          h.set("x-corelink-tenant-id", "_anonymous");
+          return h;
+        })(),
+      });
+      let pubResp: Response;
+      try {
+        pubResp = await pubStub.fetch(pubReq);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        console.error(`[${requestId}] public attestation DO fetch failed: ${message.slice(0, 80)}`);
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "upstream error", 500, requestId),
+          request,
+        );
+      }
+      return applyCors(pubResp, request);
     }
 
     // corelink-runners fabric introspect — pure pass-through to the _system DO →
