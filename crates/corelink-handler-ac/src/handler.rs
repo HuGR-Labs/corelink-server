@@ -758,6 +758,7 @@ mod tests {
             principal: "p1".into(),
             caller_tenant: "t1".into(),
             at_unix_ms: 1,
+            storage_quota_bytes: None,
         })
         .expect("update");
         let resp = h
@@ -838,6 +839,7 @@ mod tests {
                 principal: "p1".into(),
                 caller_tenant: "t1".into(),
                 at_unix_ms: 1,
+                storage_quota_bytes: None,
             })
             .expect_err("audit closed");
         assert!(matches!(err, AcHandlerError::AuditFailed(_)));
@@ -856,6 +858,7 @@ mod tests {
                 principal: "attacker".into(),
                 caller_tenant: "attacker_t".into(),
                 at_unix_ms: 1,
+                storage_quota_bytes: None,
             })
             .expect_err("denied");
         assert!(matches!(err, AcHandlerError::CrossTenantDenied { .. }));
