@@ -1068,6 +1068,10 @@ pub fn router(state: TurboRouteState) -> Router {
 ///
 /// Returns 200 + raw artifact bytes on hit, 404 on miss, 400 on bad params,
 /// 403 on cross-tenant, 503 on audit-closed.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum handler — every parameter is a request extractor (State / Path / Query / headers + the GET concurrency guards); not a refactorable argument list. Mirrors handle_put."
+)]
 async fn handle_get(
     State(state): State<TurboRouteState>,
     Path(hash): Path<String>,
