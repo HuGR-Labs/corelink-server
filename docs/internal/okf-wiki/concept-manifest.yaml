@@ -349,6 +349,40 @@ candidates:
     status: "active"
     source_cluster: "crates"
     seed_from: ["crates/corelink-container", "crates/corelink-config-do", "crates/corelink-cf-bindings", "crates/corelink-meta", "crates/corelink-handler-admin", "crates/corelink-handler-customer", "crates/corelink-worker", "crates/corelink-wasm", "crates/tenant-path", "crates/corelink-container/src/adapter_cache.rs", "crates/corelink-container/src/adapter_kv.rs", "crates/corelink-container/src/adapter_oci_kv.rs", "crates/corelink-container/src/neon_shadow_factory.rs", "crates/corelink-container/src/wall_clock.rs", "crates/corelink-container/src/webhook.rs"]
+  # ---- Dedicated deep-dive concepts for load-bearing subsystems the breadth
+  #      clusters above only NAME-DROP (final-audit LENS-4 completeness gaps,
+  #      2026-06-28). These crates remain in their cluster's seed_from for breadth;
+  #      these candidates add the file-granular narrative the clusters lack. ----
+  - id: "planes/replication-failover"
+    type: "CrateCluster"
+    title: "Multi-region replication + failover plane"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-replication", "crates/corelink-replication-coordinator", "crates/corelink-replica-worker", "crates/corelink-failover-router"]
+  - id: "ops/observability-plane"
+    type: "CrateCluster"
+    title: "Observability plane (telemetry / tracing / SLO)"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-telemetry", "crates/corelink-tracing", "crates/corelink-slo"]
+  - id: "ops/sre-operations-hub"
+    type: "CrateCluster"
+    title: "SRE operations hub (corelink-ops + satellites)"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-ops", "crates/corelink-chaos-scheduler", "crates/corelink-rotation-adapters", "crates/corelink-dt-webhook", "crates/corelink-terraform-drift-consumer", "crates/corelink-runbook-tracker", "crates/corelink-statuspage-real", "crates/corelink-slack-real", "crates/corelink-dsr-statuspage-scheduler"]
+  - id: "crates/handler-trait-seam"
+    type: "CrateCluster"
+    title: "Handler-trait seam (CAS/AC/customer/erase/admin)"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-handler-cas", "crates/corelink-handler-ac", "crates/corelink-handler-customer", "crates/corelink-handler-cas-erase", "crates/corelink-handler-admin"]
+  - id: "crates/billing-pipeline"
+    type: "CrateCluster"
+    title: "Billing usage→charge pipeline (emit/reconcile/aggregate/materialize + stripe-real egress)"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-billing-emit", "crates/corelink-billing-reconcile", "crates/corelink-billing-aggregator", "crates/corelink-billing-stripe-materializer", "crates/corelink-stripe-real", "crates/corelink-analytics"]
   # ---- WORKER EDGE PLANE / apps (6; BR5 root fix — file-granular edge coverage) ----
   - id: "auth/edge-pat-mint-lifecycle"
     type: "AuthFlow"

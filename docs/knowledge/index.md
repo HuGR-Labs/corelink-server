@@ -11,12 +11,13 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 152**
+**Concepts: 157**
 
 ## planes
 
 - [Rust container compute plane](/planes/container.md)
 - [Durable Object lifecycle (CoreLinkServer)](/planes/durable-object.md)
+- [Multi-region replication + failover plane](/planes/replication-failover.md)
 - [Worker → DO → Container request flow](/planes/request-flow.md)
 - [Cloudflare Worker edge plane](/planes/worker-edge.md)
 
@@ -70,8 +71,10 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [Audit/analytics crate cluster](/crates/audit-analytics.md)
 - [Auth/PAT crate cluster](/crates/auth-pat.md)
 - [Billing/commerce crate cluster](/crates/billing-commerce.md)
+- [Billing usage→charge pipeline (emit/reconcile/aggregate/materialize + stripe-real egress)](/crates/billing-pipeline.md)
 - [CAS/AC core crate cluster](/crates/cas-ac-core.md)
 - [Container/platform crate cluster](/crates/container-platform.md)
+- [Handler-trait seam (CAS/AC/customer/erase/admin)](/crates/handler-trait-seam.md)
 - [Operations crate cluster (GC, replication, ratelimit, SRE)](/crates/operations.md)
 - [Privacy/compliance crate cluster](/crates/privacy-compliance.md)
 
@@ -164,12 +167,14 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [CF Worker deployment POC: wasm32 trait-adapter gotchas](/ops/dev-deployment.md)
 - [Engineering onboarding & the buddy protocol](/ops/engineering-onboarding.md)
 - [GC / eviction operations](/ops/gc-eviction.md)
+- [Observability plane (telemetry / tracing / SLO)](/ops/observability-plane.md)
 - [Performance playbook](/ops/perf-playbook.md)
 - [Release / GA tag process](/ops/release-process.md)
 - [Reproducible-build process](/ops/reproducible-build.md)
 - [Runners fabric (introspect-gated compute)](/ops/runners-fabric.md)
 - [SDK reference (python/go/javascript)](/ops/sdk-reference.md)
 - [Secrets lifecycle & PAT-scope runbook](/ops/secrets-lifecycle.md)
+- [SRE operations hub (corelink-ops + satellites)](/ops/sre-operations-hub.md)
 
 ## security
 
