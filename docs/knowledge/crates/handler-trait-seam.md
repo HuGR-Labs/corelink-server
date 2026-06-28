@@ -19,7 +19,7 @@ source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
+checkpoint_sha: "01274fea4ad4228fbf2e0633443f759fb40582b0"
 provenance: "AUTHORED"
 tags: ["handlers", "traits", "cas", "hot-path", "dependency-injection"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -35,7 +35,7 @@ The seam exists for two reasons that the code makes concrete:
 
 1. **Read/write are split into separate traits per surface, not one fat handler.** `CasReadHandler::read` and `CasWriteHandler::write` are distinct traits (`crates/corelink-handler-cas/src/handler.rs:34`, `:102`), as are `CasDeleteHandler::delete` (`:125`) and `CasListHandler::list` (`:145`). The split lets the route table compose read and write capability independently and lets a decorator wrap *only* the mutating half. The shared collaborator pair `(Arc<dyn AuditSink>, Arc<dyn SliObserver>)` is held by the concrete impl, so the cross-handler invariants (audit-fail-CLOSED ordering, SLI-emit-on-entry) are provable by composition rather than inheritance.
 
-2. **One injection chokepoint fans the cross-cutting decorators out to every surface.** `routes.rs` builds the raw CAS handlers once (`crates/corelink-container/src/routes.rs:410`), wraps the *write + delete* trait objects in the byte-accounting decorator (`:425`), then wraps read/write/delete in the erasure-gate decorator (`:475`), and hands the resulting `Arc<dyn …>` to `CasRouteState`. Because native CAS, Bazel REAPI, OCI, and the cargo/brew/npm/pip language adapters all drive these *same* shared trait objects, wrapping at this one point gives all of them identical, atomic, fail-CLOSED accounting and a uniform erasure gate with zero per-surface duplication.
+2. **One injection chokepoint fans the cross-cutting decorators out to every surface.** `routes.rs` builds the raw CAS handlers once (`crates/corelink-container/src/routes.rs:415`), wraps the *write + delete* trait objects in the byte-accounting decorator (`:430`), then wraps read/write/delete in the erasure-gate decorator (`:480`), and hands the resulting `Arc<dyn …>` to `CasRouteState`. Because native CAS, Bazel REAPI, OCI, and the cargo/brew/npm/pip language adapters all drive these *same* shared trait objects, wrapping at this one point gives all of them identical, atomic, fail-CLOSED accounting and a uniform erasure gate with zero per-surface duplication.
 
 The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate: it lets two decorators (`AccountingCasHandler`, `TombstoneGatedCasHandler`) stack at runtime behind the same `CasRouteState` field type, and lets the *same* handler instance back several surfaces from one R2 connection.
 
@@ -59,15 +59,15 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - **SLI emit on every return path.** `read`/`write`/`delete`/`list` emit their availability + latency SLI tuple on *every* exit including error paths (the trait doc at `crates/corelink-handler-cas/src/handler.rs:34`; the fake's `emit(true)` on the denial path).
 - **Read and write are separable trait objects.** `CasReadHandler` and `CasWriteHandler` are distinct traits (`crates/corelink-handler-cas/src/handler.rs:34`, `:102`) so a decorator can wrap only the mutating half and a read-only build can omit the write half.
 - **Accounting reserves before the durable write.** `AccountingCasHandler::write` reserves bytes before `write_inner.write` (`crates/corelink-container/src/byte_accounting.rs:742`); an over-cap reservation means the inner PUT never runs.
-- **Cross-cutting decorators stack at one chokepoint.** `routes.rs` wraps the shared write/delete objects in accounting (`crates/corelink-container/src/routes.rs:425`) then read/write/delete in the erasure gate (`:475`) once, so all surfaces sharing those `Arc<dyn>` inherit both.
-- **One shared handler instance backs many surfaces.** The same `cas_read`/`cas_write` `Arc`s are cloned into the cargo/brew/Bazel states (`crates/corelink-container/src/routes.rs:533`), so the decorators apply uniformly.
+- **Cross-cutting decorators stack at one chokepoint.** `routes.rs` wraps the shared write/delete objects in accounting (`crates/corelink-container/src/routes.rs:430`) then read/write/delete in the erasure gate (`:480`) once, so all surfaces sharing those `Arc<dyn>` inherit both.
+- **One shared handler instance backs many surfaces.** The same `cas_read`/`cas_write` `Arc`s are cloned into the cargo/brew/Bazel states (`crates/corelink-container/src/routes.rs:538`), so the decorators apply uniformly.
 
 # Gotchas
 
 - **`corelink-handler-cas-erase` defines no trait object.** Unlike the other four crates, it is a pure-logic kernel (`prepare_erase`, `read_gate`, `validate_digest`) — the `TombstoneStore` trait and the `TombstoneGatedCasHandler` `CasReadHandler`/`CasWriteHandler` impls live in the container's `cas_erase.rs` (`crates/corelink-container/src/routes/cas_erase.rs:81`, `:983`), not in the handler crate. Don't look for an `Arc<dyn EraseHandler>`; there isn't one.
 - **The customer production impl lives in the container, not the handler crate.** `corelink-handler-customer` ships only the six traits + an in-memory fake; the live D1-backed `D1CustomerHandler` is in `crates/corelink-container/src/customer_d1.rs:759`. The handler crate is the *contract*, the container is the *impl* — a `customer_d1.rs:141 impl CustomerD1` is a *second* transport trait the handler delegates to, not the route-facing trait.
 - **`exists` HEAD-probe must be overridden by storage-backed impls.** The default `CasReadHandler::exists` (`crates/corelink-handler-cas/src/handler.rs:74`) falls back to a full `read` (download + rehash). A storage adapter that forgets to override it turns Bazel `findMissingBlobs` into tens of GiB of egress per request — correct but ruinously expensive.
-- **Byte accounting wraps write+delete only, not read/list.** `crates/corelink-container/src/routes.rs:419` leaves read/list unwrapped (they are not write surfaces). If a future read path needs accounting, it does *not* get it for free from this decorator.
+- **Byte accounting wraps write+delete only, not read/list.** `crates/corelink-container/src/routes.rs:424` leaves read/list unwrapped (they are not write surfaces). If a future read path needs accounting, it does *not* get it for free from this decorator.
 - **Decorator order matters: accounting is inner, erasure-gate is outer.** `routes.rs` wraps accounting first (`:425`) then the tombstone gate (`:475`) around the already-accounted handler, so a tombstoned re-PUT is refused by the outer gate *before* the inner accounting reserves bytes — reversing the order would reserve bytes for a write the erasure gate then rejects.
 - **`AuditSink` is fail-CLOSED but `SliObserver` is fail-OPEN.** A failed audit emit aborts the operation; a failed SLI observe must not. Conflating them (making the observer fallible-and-aborting) would let a metrics hiccup take down the data plane.
 
@@ -113,7 +113,7 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - `crates/corelink-container/src/byte_accounting.rs:695` — `impl CasWriteHandler for AccountingCasHandler` (accounting decorator).
 - `crates/corelink-container/src/byte_accounting.rs:742` — reserves bytes (`block_on_accrue`) before `write_inner.write(req)`.
 - `crates/corelink-container/src/byte_accounting.rs:761` — `impl CasDeleteHandler for AccountingCasHandler`.
-- `crates/corelink-container/src/routes.rs:410` — `cas::build_handlers()` produces the raw `Arc<dyn>` tuple.
-- `crates/corelink-container/src/routes.rs:425` — wraps write+delete in `AccountingCasHandler` at the chokepoint.
-- `crates/corelink-container/src/routes.rs:475` — wraps read/write/delete in `TombstoneGatedCasHandler` at the same chokepoint.
-- `crates/corelink-container/src/routes.rs:533` — clones the shared CAS `Arc`s into the cargo/brew/Bazel surfaces.
+- `crates/corelink-container/src/routes.rs:415` — `cas::build_handlers()` produces the raw `Arc<dyn>` tuple.
+- `crates/corelink-container/src/routes.rs:430` — wraps write+delete in `AccountingCasHandler` at the chokepoint.
+- `crates/corelink-container/src/routes.rs:480` — wraps read/write/delete in `TombstoneGatedCasHandler` at the same chokepoint.
+- `crates/corelink-container/src/routes.rs:538` — clones the shared CAS `Arc`s into the cargo/brew/Bazel surfaces.

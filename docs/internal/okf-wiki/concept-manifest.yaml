@@ -943,7 +943,7 @@ candidates:
     title: "Ed25519/JCS erasure attestation"
     status: "active"
     source_cluster: "docs/compliance"
-    seed_from: ["crates/corelink-erasure-attestation", "specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md"]
+    seed_from: ["crates/corelink-erasure-attestation", "specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md", "crates/corelink-container/src/routes/public_attestation.rs"]
   - id: "testing/e2e-strategy"
     type: "TestStrategy"
     title: "End-to-end testing strategy"
