@@ -5,7 +5,7 @@ description: "The native Rust binary serving the composed axum data-plane on por
 source_files:
   - "crates/corelink-container/src/main.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "b4b332ab0a95ac3fb86003024c13fac1e37b7285"
+checkpoint_sha: "664d78b8e6f62ad6d0e95a94552c6c0997f8fea1"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -40,8 +40,10 @@ surface.
    verifier, $-ceiling, byte-cap and request-count controls must ALL be armed or it FATAL-exits naming the
    missing one. The request-count control it asserts is specifically the OCI-scoped monthly op-cap (the one
    surface the Worker forwards RAW and so cannot meter at the edge); native CAS/AC/Bazel/Turbo +
-   cargo/brew/npm/pip are op-count-metered at the WORKER edge, NOT by this container gate
-   (`crates/corelink-container/src/main.rs:298-363`).
+   cargo/brew/npm/pip are op-count-metered at the WORKER edge, NOT by this container gate. The must-arm set
+   also includes `ERASURE_SALT_KEY` (the GDPR DSR account-delete/erasure HMAC salt) — absent it, a prod boot
+   looks healthy while every erasure call silently 500s, so it is asserted alongside the PAT/quota/byte-cap
+   controls (`crates/corelink-container/src/main.rs:298-376`; `crates/corelink-container/src/main.rs:346-358`).
 3. The composed router is built and given a global 10 MiB body limit + the `/_health` route, then bound
    to the listener on PORT (`crates/corelink-container/src/main.rs:555-560`,
    `crates/corelink-container/src/main.rs:821-824`).
@@ -54,8 +56,9 @@ surface.
    CAS/AC/Bazel/Turbo states like `quota`/`pat_gate`) because native ops are already op-count-metered at
    the Worker edge — cloning it would double-count (`crates/corelink-container/src/routes.rs:347-401`).
 6. One set of CAS handler objects is wrapped with byte-accounting + the 410-Gone tombstone gate at a
-   single chokepoint, then cloned into every billable surface
-   (`crates/corelink-container/src/routes.rs:403-491`).
+   single chokepoint, then cloned into every billable surface; the shared `CasRouteState` is constructed
+   here with both a `put_inflight` and a `read_inflight` per-tenant concurrency pool
+   (`crates/corelink-container/src/routes.rs:403-492`).
 7. Cache-adapter surfaces (cargo/brew/npm/pip/oci) mount only when the shared `adapter_pat::PatVerifier`
    and the D1 moat map build from env (`crates/corelink-container/src/routes.rs:652-784`).
 8. The residency guard and the per-tenant rate-limit token-bucket are applied as outer layers over the
@@ -92,9 +95,9 @@ surface.
 9. `crates/corelink-container/src/main.rs:821-824` — binding the composed router to the PORT listener.
 10. `crates/corelink-container/src/routes.rs:333-341` — `build`/`build_with_factory` router composition.
 11. `crates/corelink-container/src/routes.rs:347-401` — shared gates resolved from env (quota, OCI-scoped request-count, PAT, accountant); the request-count gate is OCI-only, not cloned into native states (would double-count vs the Worker edge).
-12. `crates/corelink-container/src/routes.rs:403-491` — shared CAS handler objects + accounting/tombstone wrap.
+12. `crates/corelink-container/src/routes.rs:403-492` — shared CAS handler objects + accounting/tombstone wrap (incl. `put_inflight`/`read_inflight` pools in the `CasRouteState` ctor).
 13. `crates/corelink-container/src/routes.rs:448-481` — centralized 410-Gone erasure gate at the CAS chokepoint.
 14. `crates/corelink-container/src/routes.rs:652-784` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
 15. `crates/corelink-container/src/routes.rs:791-833` — residency guard + per-tenant rate-limit outer layers.
 16. `crates/corelink-container/src/routes.rs:793-833` — the rate-limit layer scoped to the data plane only.
-17. `crates/corelink-container/src/main.rs:298-363` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one asserted as the OCI op-cap), else a FATAL boot refusal (no half-armed prod).
+17. `crates/corelink-container/src/main.rs:298-376` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one as the OCI op-cap, plus `ERASURE_SALT_KEY` at `crates/corelink-container/src/main.rs:346-358`), else a FATAL boot refusal (no half-armed prod).

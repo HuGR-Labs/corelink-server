@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "664d78b8e6f62ad6d0e95a94552c6c0997f8fea1"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -49,7 +49,11 @@ written.
   (`crates/corelink-container/src/routes/internal_pat.rs:1-13`).
 - That mint route is a PURE function — it NEVER persists the row itself; the caller (signup-worker)
   writes the returned `hash` to the D1 `pat` row and discards the plaintext after one use
-  (`crates/corelink-container/src/routes/internal_pat.rs:586-639`).
+  (`crates/corelink-container/src/routes/internal_pat.rs:586-646`).
+- A mint failure returns an OPAQUE 503 body (`{"error":"mint_failed"}`): the real `PatError` detail
+  (e.g. `SigningKeyTooShort`, entropy/hash-corruption internals) is logged SERVER-SIDE only and never
+  disclosed in the response — even to a holder of the mint auth key
+  (`crates/corelink-container/src/routes/internal_pat.rs:596-608`).
 
 # Invariants
 
@@ -81,6 +85,6 @@ written.
 6. `crates/corelink-container/src/routes/internal_pat.rs:1-13` — the `/_internal/pat/mint` route + internal-auth gate.
 7. `crates/corelink-container/src/routes/internal_pat.rs:63-65` — plaintext never persisted; caller's responsibility.
 8. `crates/corelink-container/src/routes/internal_pat.rs:78-82` — M7: signup-worker writes the hash to the D1 row.
-9. `crates/corelink-container/src/routes/internal_pat.rs:586-639` — mint is a pure function returning plaintext + hash.
+9. `crates/corelink-container/src/routes/internal_pat.rs:586-646` — mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:596-608`).
 10. `crates/corelink-container/src/adapter_pat.rs:144-150` — the verifier's D1 row reader mapping a NULL `scope` to `""`.
 11. `crates/corelink-container/src/scope.rs:73-95` — the fail-CLOSED scope gate (`""` grants nothing).
