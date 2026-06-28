@@ -659,6 +659,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // Artifact 1 (WP-C1): PUBLIC erasure-attestation verifier routes —
+    // `GET /v1/public/attestation/{request_id}` + `GET /v1/public/keys/erasure/{region}.pub`.
+    // UNAUTHENTICATED by design (an erasure proof is publicly verifiable): merged
+    // here, OUTSIDE the ratelimit/residency/auth layers (same as the `/_internal/*`
+    // family above) but with NO internal-auth gate. D1-read only; mounts only when
+    // the D1 `StorageEnv` is present (nothing to serve without the index).
+    if let Some(public_att_state) =
+        corelink_server::routes::public_attestation::build_state_from_env()
+    {
+        info!("routes: /v1/public/{{attestation,keys}} mounted (public verifier; D1 present)");
+        app = app.merge(corelink_server::routes::public_attestation::router(
+            public_att_state,
+        ));
+    } else {
+        warn!(
+            "D1 StorageEnv absent; /v1/public/attestation + /v1/public/keys/erasure \
+             NOT mounted (dev/CI mode)"
+        );
+    }
+
     // hugit-P2 seam B, WP-B: `POST /_internal/cas/:tenant/:hash/erase` — per-hash
     // CAS erase + 410-Gone tombstone, gated by the same CORELINK_INTERNAL_AUTH_KEY.
     // The WRITE route mounts only when ALL prod transports build from env: the

@@ -22,6 +22,19 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **Real signed + served GDPR erasure attestation (Artifact 1 — closes brutal-review H1).** The attestation
+  was fail-closed/DEFERRED because the prior impl computed an Ed25519 signature then discarded it (no DB
+  columns, no R2 object, no verifier endpoint — "theater"). Now genuine + verifiable: migration 0079 adds
+  `signature_ed25519` + `canonical_payload_jcs` to `erasure_attestations`; `sign_and_persist` signs the
+  RFC-8785 JCS-canonical payload and persists ALL-OR-NOTHING fail-closed (region-authorized via
+  `ERASURE_ATTESTATION_SINGLE_REGION` → R2 PUT the bundle FIRST → public-key upsert → only then the D1
+  index row carrying the signature + canonical bytes; any failure persists nothing, never a dangling or
+  unsigned row); plus two public unauth verifier endpoints — `GET /v1/public/attestation/{request_id}`
+  (serves the signed bundle; 404 for a missing or pre-0079 unsigned row) and
+  `GET /v1/public/keys/erasure/{region}.pub` (active/overlap public keys for offline Ed25519 verification).
+  Built on CF-1's now-complete erase-set, so the certificate attests a genuinely-complete erasure.
+
 ### Fixed
 - **OKF final-audit code findings (CF-1 HIGH GDPR + CF-2/3/4).** **CF-1 (HIGH):** the DSR erase-set was
   incomplete — tenant-keyed tables added after the 2026-06-11 ADR-S11-013 freeze (`team_member` seat-PII,
