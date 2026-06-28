@@ -196,6 +196,54 @@ remain, both requiring a **malicious author** (not an honest drift) and both cau
 These are accepted residuals: the cost of closing them mechanically exceeds the benefit given a
 review-gated, malicious-author-only threat model.
 
+**gate v7 — two HIGH strict-tree backdoor holes CLOSED + one MED hardened (PoC-proven).** A brutal
+refute proved three ways to slip a backdoor handler past the file-granular strict trees
+(`crates/corelink-container/src/**`, `worker/src/**`, `apps/*/src/**`) with the gate staying GREEN.
+All are closed at the root (no rigor loosened), each with a self-running fixture:
+
+- **#1 — strict-tree exclude-glob escape (HIGH, closed).** The broad manifest `excludes:` PATTERN globs
+  (`**/tests/**`, `**/e2e/**`, `**/__tests__/**`, `**/*.test.ts`, `**/*.config.ts`, `**/*.d.ts`) ran
+  AFTER the `_is_file_granular_strict` guard, so the strict guard suppressed directory/cluster ADOPTION
+  but NOT the bulk excludes. A REAL request-reachable handler dropped under any `tests/` dir inside a
+  strict tree (`routes/tests/poison.rs`) was swallowed by `**/tests/**` with ZERO edits and stayed
+  GREEN. v7: inside a strict tree, a BROAD pattern exclude may exclude a file ONLY when that file is
+  GENUINELY a test/config by its OWN BASENAME (`_basename_is_test_or_config` — `test.rs`/`*_tests.rs`/
+  `test_*.rs`/`*.test.ts`/`*.spec.ts`/`*.d.ts`/`*.config.ts`/`wrangler.toml`/`package.json`/
+  `tsconfig.json`). A real handler name (`poison.rs`) under a `tests/` dir now requires an EXPLICIT
+  per-file `excludes:` entry (an exact, review-visible surface) or grounded coverage — else it REDs.
+  Genuine inline tests under `tests/` stay excluded.
+- **#2 — a strict-tree COVERING cite must be a CODE line (HIGH, closed).** A strict file counted as
+  covered when a concept listed it in `source_files` + cited it under `# Citations` — but the cite
+  could point at a NON-grounding line (a `//`/`//!`/`///` doc-comment, e.g. the `:1-2` file header)
+  while the executed handler body stayed uncited. A backdoor `routes/poisonx/poison.rs` cited at `:1-2`
+  stayed GREEN. v7 adds `_cite_is_code_line`: for a strict-tree file that IS cited, at least one of its
+  cite ranges must contain a real CODE line (non-blank, not a `//`/`//!`/`///`/`#`/`*`/`/*` comment).
+  A strict file whose only citations are comment/blank lines is NOT covered (REDs). (CrateCluster
+  ADOPTION — a `seed_from` entry under a `type: CrateCluster` concept with NO per-file cite — is a
+  different, already review-gated path and is unaffected; the code-line rule binds only the per-file
+  CITE relation, the exact hole the PoC used.)
+- **#3 — unvalidated strict-tree exclude reason (MED, hardened).** A one-line `excludes:` entry with a
+  fabricated reason can hide a backdoor. v7 (a) HARD-FAILS [C10b] any strict-tree exclude whose reason
+  is trivial/placeholder (too short, or a known placeholder like `TODO`/`TBD`/`N/A`), and (b) surfaces
+  a review WARN for every strict-tree-hitting exclude entry, so a human reviewer sees exactly which
+  strict surfaces were waived (the sanctioned alternative to a per-file cite stays review-visible).
+
+**ACCEPTED STRUCTURAL RESIDUAL — C5 freshness ≠ authoring-correctness (gate v7 #4: documented, NOT
+"fixed").** C5 proves FRESHNESS — that the CONTENT of each cited `path:Lx-Ly` has not drifted since the
+concept's `checkpoint_sha` (an in-range edit or a pure position-shift makes it STALE). It does NOT — and
+structurally CANNOT — prove authoring-CORRECTNESS: that the cited line actually *substantiates the prose
+claim* it anchors. A cite repointed to a WRONG but in-bounds, byte-unchanged line (e.g. an author moves
+an invariant's anchor onto a neighbouring line that happens to be stable) passes C5 TRIVIALLY — the gate
+attests the cited content is unchanged, never that it is the RIGHT content. gate v7 #2 narrows this for
+the strict trees (the cite must at least be a CODE line, not a doc-comment), but "this code line is the
+one that enforces this claim" remains a semantic judgement no mechanical freshness check can make. This
+is an **accepted structural residual**, in the same family as the C5b cosmetic-edit / rename-reset
+residuals: the gate owns FRESHNESS; **authoring-CORRECTNESS is owned by the periodic human/panel
+deep-audit layer** (the N-lens `okf-truth-panel` + the standing human re-attestation), which is a
+**PERMANENT, non-optional part of the OKF system, not a stopgap.** The gate makes drift mechanical and
+cheap to catch; it deliberately does not pretend to mechanize correctness, and the deep-audit layer is
+the load-bearing guarantor of it.
+
 ### 4.1 ADR & doc-extraction sub-profile (FROZEN — closes the maximal-scope gap)
 
 The 35 architecture concepts are code-grounded. The ratified ADR re-index and docs/ extraction need

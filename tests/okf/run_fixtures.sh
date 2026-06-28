@@ -1191,6 +1191,165 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v7 #1: strict-tree exclude-glob escape closed ------------------------
+# A REAL request-reachable handler dropped under a `tests/` dir INSIDE a strict
+# tree (crates/corelink-container/src/**) was swallowed by the broad `**/tests/**`
+# manifest exclude with ZERO edits — the exclude globs ran AFTER the strict guard,
+# so the strict guard suppressed dir/cluster ADOPTION but not the bulk exclude.
+# v7: inside a strict tree a BROAD pattern exclude may exclude a file ONLY when
+# that file is GENUINELY a test/config by its own BASENAME. We prove BOTH:
+#  POSITIVE — routes/tests/poison.rs (a real handler name) REDs [C10b] naming it;
+#  NEGATIVE — a genuine inline test (mod_tests.rs) under the SAME tests/ dir stays
+#             excluded by `**/tests/**` (no [C10b] naming it).
+assert_strict_tree_exclude_escape() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/routes/tests
+    # a REAL handler name dropped under a tests/ dir (NOT a test by its basename).
+    printf 'pub async fn poison_handler() { /* reachable */ }\n' \
+      > crates/corelink-container/src/routes/tests/poison.rs
+    # a GENUINE inline-test module (basename is a test) under the SAME tests/ dir.
+    printf '#[test]\nfn it_works() {}\n' \
+      > crates/corelink-container/src/routes/tests/mod_tests.rs
+    mkdir -p docs/knowledge
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+EOF
+    git add -A
+    git commit -q -m base
+    # manifest: the broad `**/tests/**` bulk exclude is the ONLY thing that could
+    # cover either file. v7 lets it cover mod_tests.rs (genuine test basename) but
+    # NOT poison.rs (real handler basename -> needs an explicit per-file entry).
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+candidates: []
+excludes:
+  - surface: "**/tests/**"
+    reason: "Test directories — test-only, not a load-bearing subsystem."
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.se_out" 2>&1 || true
+  )
+  # POSITIVE: the real handler name under tests/ is NOT auto-excluded -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.se_out" 2>/dev/null \
+     && grep -q 'routes/tests/poison.rs' "$tmp/.se_out" 2>/dev/null; then
+    ok "strict-tree exclude-escape: a real handler under a tests/ dir is NOT swallowed by **/tests/** -> [C10b] names poison.rs"
+  else
+    miss "strict-tree exclude-escape positive (no [C10b] naming routes/tests/poison.rs): $(tail -1 "$tmp/.se_out" 2>/dev/null)" "se-pos"
+  fi
+  # NEGATIVE (selectivity): the genuine inline test stays excluded by the glob.
+  total=$((total + 1))
+  if ! grep -q 'routes/tests/mod_tests.rs' "$tmp/.se_out" 2>/dev/null; then
+    ok "strict-tree exclude-escape: a genuine inline test (mod_tests.rs) under tests/ stays excluded (selective)"
+  else
+    miss "strict-tree exclude-escape negative: mod_tests.rs was wrongly flagged" "se-neg"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- gate v7 #2: a strict-tree COVERING cite must be a CODE line ----------------
+# In a strict tree a file counted as covered when a concept listed it in
+# source_files + cited it under `# Citations` — but the cite could point at a
+# NON-grounding line (a `//`/`//!` doc-comment, e.g. `:1-2`) while the executed
+# handler body stayed uncited. v7: a strict-tree file whose ONLY covering cites
+# resolve to comment/blank lines is NOT covered. We prove BOTH:
+#  POSITIVE — poison.rs cited solely at its `:1-2` doc-comment header REDs [C10b];
+#  NEGATIVE — the SAME file cited at its CODE line (:3) stays covered (no gap).
+assert_cite_must_be_code_line() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src/routes/poisonx docs/knowledge/compliance
+    cat > crates/corelink-container/src/routes/poisonx/poison.rs <<'RS'
+//! poison module header doc-comment
+//! second doc-comment line
+pub async fn exfiltrate() { /* uncited executed body */ }
+RS
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/compliance/x.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # the concept declares + cites the file ONLY at its :1-2 doc-comment header.
+    cat > docs/knowledge/compliance/x.md <<EOF
+---
+type: Concept
+title: "Poison (hermetic)"
+description: "covers poison only at its doc-comment header"
+source_files:
+  - "crates/corelink-container/src/routes/poisonx/poison.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# How it works
+- the module header (\`crates/corelink-container/src/routes/poisonx/poison.rs:1-2\`).
+
+# Citations
+1. \`crates/corelink-container/src/routes/poisonx/poison.rs:1-2\` — the doc-comment header only.
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "compliance/x"
+    type: "Concept"
+    status: "active"
+    seed_from:
+      - "crates/corelink-container/src/routes/poisonx/poison.rs"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.cl_out" 2>&1 || true
+    # NEGATIVE control: repoint BOTH cites to the CODE line (:3) -> covered.
+    sed -i.bak 's/poison.rs:1-2/poison.rs:3/g' docs/knowledge/compliance/x.md
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.cl_ok" 2>&1 || true
+  )
+  # POSITIVE: doc-comment-only cite does not ground the strict file -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.cl_out" 2>/dev/null \
+     && grep -q 'routes/poisonx/poison.rs' "$tmp/.cl_out" 2>/dev/null; then
+    ok "strict-tree code-line cite: a doc-comment-only (:1-2) citation does NOT cover -> [C10b] names poison.rs"
+  else
+    miss "strict-tree code-line cite positive (no [C10b] naming routes/poisonx/poison.rs): $(tail -1 "$tmp/.cl_out" 2>/dev/null)" "cl-pos"
+  fi
+  # NEGATIVE (selectivity): the CODE-line (:3) citation stays covered (valid run).
+  total=$((total + 1))
+  if grep -q 'OKF-CoreLink profile valid' "$tmp/.cl_ok" 2>/dev/null; then
+    ok "strict-tree code-line cite: the same file cited at its CODE line (:3) stays covered (selective)"
+  else
+    miss "strict-tree code-line cite negative: code-line (:3) citation was NOT accepted: $(tail -1 "$tmp/.cl_ok" 2>/dev/null)" "cl-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -1226,6 +1385,10 @@ assert_glob_segment_aware
 assert_cluster_adoption_strict
 assert_testing_exemption_typed
 assert_worker_src_recursive
+# gate v7: #1 strict-tree exclude-glob escape closed + #2 a strict-tree covering
+# cite must resolve to a real CODE line (not a doc-comment header).
+assert_strict_tree_exclude_escape
+assert_cite_must_be_code_line
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then

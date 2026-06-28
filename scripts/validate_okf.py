@@ -427,6 +427,83 @@ def _is_test_cite(path: str) -> bool:
     return False
 
 
+def _basename_is_test_or_config(rel: str) -> bool:
+    """True iff the BASENAME of `rel` is GENUINELY a test or config file by its
+    OWN name — independent of any ancestor directory (gate v7 fix #1).
+
+    `_is_test_cite` answers a DIFFERENT question: it returns True for ANY file
+    that merely LIVES under a `tests/`/`__tests__/` directory, regardless of the
+    file's own name. That directory-membership semantics is exactly the
+    exclude-glob escape hatch: a REAL request-reachable handler named
+    `poison.rs` dropped under `routes/tests/` is swept up by the broad
+    `**/tests/**` manifest exclude even though `poison.rs` is not itself a test.
+
+    This predicate looks ONLY at the basename, so it answers "is THIS FILE,
+    by its own name, a test/config artifact?" — which is the only thing a BROAD
+    pattern exclude (a dir-name or extension glob) is allowed to auto-exclude
+    inside a strict tree. A real handler name fails it and must therefore carry
+    an EXPLICIT per-file `excludes:` entry (an exact, non-glob surface) or be
+    covered by a grounded concept.
+    """
+    base = rel.rsplit("/", 1)[-1].lower()
+    # Rust test-named files (stem-exact / `_test(s)` suffix / `test(s)_` prefix).
+    if base.endswith(".rs"):
+        stem = base[:-3]
+        if stem in ("test", "tests"):
+            return True
+        if stem.endswith("_test") or stem.endswith("_tests"):
+            return True
+        if stem.startswith("test_") or stem.startswith("tests_"):
+            return True
+        return False
+    # TS/JS test + ambient-type + tooling-config artifacts (by their own name).
+    if base.endswith(".test.ts") or base.endswith(".spec.ts"):
+        return True
+    if base.endswith(".d.ts") or base.endswith(".config.ts") or base.endswith(".config.js"):
+        return True
+    if base in ("wrangler.toml", "package.json", "tsconfig.json"):
+        return True
+    return False
+
+
+# A line is GROUNDING CODE only if it is non-blank AND not a comment/doc-comment
+# line. Comment leaders we reject: Rust `//` and `//!`/`///` doc-comments, the
+# `#` shell/yaml/python comment, and a `*` continuation line (the body of a
+# `/* … */` or `/** … */` block, conventionally column-aligned with a leading
+# `*`). A cite that resolves ONLY to such lines points at the file's narrative
+# header, not at the executed behaviour it claims to ground (gate v7 fix #2).
+_COMMENT_LEADERS = ("//", "#", "*", "/*")
+
+
+def _line_is_code(line: str) -> bool:
+    """True iff `line` is a NON-COMMENT, NON-BLANK source line (gate v7 fix #2)."""
+    s = line.strip()
+    if not s:
+        return False
+    # `//`, `///`, `//!` all start with `//`; `/*`, `/**` start with `/*`;
+    # `*` is a block-comment continuation; `#` is the shell/yaml/py comment.
+    for lead in _COMMENT_LEADERS:
+        if s.startswith(lead):
+            return False
+    return True
+
+
+def _cite_is_code_line(file_lines: list[str], l1: int, l2: int) -> bool:
+    """True iff the 1-based inclusive cited range `l1..l2` of `file_lines`
+    contains AT LEAST ONE grounding CODE line (gate v7 fix #2). A range that is
+    entirely blank / comment / doc-comment lines (e.g. the `:1-2` file-header
+    doc block) does NOT substantiate an executed handler body and so does not
+    count as a covering cite in a strict tree."""
+    if l1 < 1:
+        l1 = 1
+    if l2 > len(file_lines):
+        l2 = len(file_lines)
+    for i in range(l1 - 1, l2):
+        if 0 <= i < len(file_lines) and _line_is_code(file_lines[i]):
+            return True
+    return False
+
+
 def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
     """Compile a path glob to a regex with PROPER segment semantics (fix #6,
     audit #3 HIGH): a single `*` matches any run of NON-`/` chars (it does NOT
@@ -986,9 +1063,60 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     # A `seed_from` path counts as COVERAGE only when the candidate's concept doc
     # actually GROUNDS that path (declares/cites it) — a seed naming a concept that
     # doesn't mention the file is self-certifying and is REJECTED (fix #3).
+    surface_root = Path(args.surface_root).resolve()
+
+    # gate v7 fix #2: a strict-tree file is GENUINELY grounded only when the
+    # covering concept cites that exact file at a range that contains a real CODE
+    # line (not a blank / `//`-`//!`-`///` doc-comment / `#`-`*` comment line).
+    # A cite that resolves only to the file's leading doc/license header (the
+    # `:1-2` PoC) does NOT substantiate the executed handler body, so it does not
+    # code-ground a strict-tree seed. Cached per (path) since file content is
+    # shared across concepts.
+    _strict_file_lines_cache: dict[str, list[str] | None] = {}
+
+    def _strict_file_lines(rel: str):
+        if rel not in _strict_file_lines_cache:
+            p = surface_root / rel
+            try:
+                _strict_file_lines_cache[rel] = p.read_text(encoding="utf-8").splitlines()
+            except (OSError, UnicodeDecodeError):
+                _strict_file_lines_cache[rel] = None
+        return _strict_file_lines_cache[rel]
+
+    def _concept_code_grounds(c: "Concept", sp: str) -> bool:
+        """True iff concept `c`'s grounding of the EXACT strict-tree file `sp`
+        is GENUINE for gate v7 fix #2.
+
+        The hole fix #2 closes is the per-file CITE that points at a non-code
+        line: a concept lists `sp` in `source_files` + cites it under
+        `# Citations`, but the cite resolves only to the file's `//`/`//!`
+        doc-comment header (the `:1-2` PoC), leaving the executed handler body
+        uncited. So when `sp` IS cited by `c`, AT LEAST ONE of its cite ranges
+        must contain a real CODE line.
+
+        A strict file grounded by CrateCluster ADOPTION (relation (d): an
+        explicit `seed_from` entry under a `type: CrateCluster` concept, NOT a
+        per-file cite) is a DIFFERENT, already review-gated coverage path — the
+        cluster adopts the crate as its narrative home and is not expected to
+        cite every file. That path is unaffected: `sp` is code-grounded when it
+        is NOT cited by `c` at all (pure adoption) OR it is cited with a code
+        line. It is NOT code-grounded only when it IS cited yet EVERY cite is a
+        comment/blank line — the exact PoC shape."""
+        if sp not in c.cited_files:
+            return True  # adoption-only (or source_files-only) — not a cite hole
+        lines = _strict_file_lines(sp)
+        if lines is None:
+            return False
+        for (f, l1, l2) in c.cites:
+            if f == sp and _cite_is_code_line(lines, l1, l2):
+                return True
+        return False
+
     entries = data.get("candidates") or data.get("concepts") or []
     seed_paths: set[str] = set()           # every declared seed (for diagnostics)
     grounded_seed_paths: set[str] = set()  # seeds a real concept grounds — THESE cover
+    # strict-tree seeds whose covering concept cites a real CODE line (fix #2).
+    code_grounded_seed_paths: set[str] = set()
     for e in entries:
         if not isinstance(e, dict):
             continue
@@ -1005,6 +1133,8 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             # seed cannot self-certify coverage — there is no concept to ground it.
             if c is not None and _concept_grounds(c, sp):
                 grounded_seed_paths.add(sp)
+                if _concept_code_grounds(c, sp):
+                    code_grounded_seed_paths.add(sp)
         # C10: active candidate must have a doc or a deferred marker (deferred
         # docs are scanned as concepts, so concept_ids already covers both).
         if status == "active" and cid:
@@ -1013,17 +1143,74 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
                           f"active candidate `{cid}` has no concept doc and no deferred marker")
 
     # C10b: manifest must cover the mechanically-enumerable repo surface.
-    surface_root = Path(args.surface_root).resolve()
+    # NOTE: _glob_match is defined at module scope (`_segment_glob_match`) so it
+    # is unit-testable and segment-aware; bound here as a local alias.
+    _glob_match = _segment_glob_match
+
+    # gate v7 fix #3 — a one-line `excludes:` entry with a fabricated reason can
+    # hide a backdoor. We (a) require every exclude reason to be non-trivial (a
+    # real sentence, not a placeholder), and (b) SURFACE-via-WARN every exclude
+    # entry that targets a SECURITY-CRITICAL strict tree, so a human reviewer
+    # sees exactly which strict-tree surfaces were waived (the sanctioned
+    # alternative to a per-file cite must remain review-visible). A trivially-
+    # reasoned strict-tree exclude is a hard [C10b] failure; an honest one is a
+    # surfaced WARN.
+    _PLACEHOLDER_REASONS = {
+        "todo", "tbd", "fixme", "n/a", "na", "none", "test", "wip",
+        "placeholder", "exclude", "excluded", "skip", "ignore", "-", "x",
+    }
+
+    def _reason_is_trivial(reason: str) -> bool:
+        r = (reason or "").strip()
+        if len(r) < 12:
+            return True
+        if r.lower().rstrip(".") in _PLACEHOLDER_REASONS:
+            return True
+        return False
+
+    def _exclude_can_hit_strict(surf: str) -> bool:
+        """True iff this exclude surface (exact or glob) can match SOME path in a
+        strict tree — i.e. it waives strict-tree surface and must be reviewed."""
+        s = surf.rstrip("/")
+        # exact / prefix entry pointing into a strict tree
+        if _is_file_granular_strict(s) or _is_file_granular_strict(s + "/x.rs"):
+            return True
+        # a broad pattern (e.g. **/tests/**) — does it match any strict prefix?
+        if "*" in surf or "?" in surf or "[" in surf:
+            probes = [
+                "crates/corelink-container/src/routes/tests/x.rs",
+                "crates/corelink-container/src/x.config.ts",
+                "crates/corelink-container/src/x.d.ts",
+                "worker/src/__tests__/x.ts",
+                "worker/src/x.test.ts",
+                "worker/src/x.config.ts",
+                "apps/signup-worker/src/e2e/x.ts",
+                "apps/signup-worker/src/x.test.ts",
+            ]
+            return any(_glob_match(p, surf) for p in probes)
+        return False
+
     excludes: list[str] = []
     for ex in (data.get("excludes") or []):
         if isinstance(ex, dict):
             surf = ex.get("surface") or ex.get("path")
-            if surf and ex.get("reason"):
-                excludes.append(str(surf))
-
-    # NOTE: _glob_match is defined at module scope (`_segment_glob_match`) so it
-    # is unit-testable and segment-aware; bound here as a local alias.
-    _glob_match = _segment_glob_match
+            reason = ex.get("reason")
+            if surf and reason:
+                surf = str(surf)
+                excludes.append(surf)
+                if _exclude_can_hit_strict(surf):
+                    if _reason_is_trivial(str(reason)):
+                        fails.add(
+                            "C10b", str(manifest_path),
+                            f"strict-tree exclude `{surf}` has a trivial/placeholder "
+                            f"reason ({str(reason).strip()[:40]!r}) — a strict-tree waiver "
+                            "must carry a real justification",
+                        )
+                    else:
+                        fails.warn(
+                            "C10b", str(manifest_path),
+                            f"strict-tree exclude (review): `{surf}` — {str(reason).strip()[:80]}",
+                        )
 
     def is_covered(rel: str, is_dir: bool) -> bool:
         # --- DIRECTORY (crate) surface: coverage = reviewed cluster MEMBERSHIP ---
@@ -1045,8 +1232,16 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             # manifest entry naming a FILE under a concept that never cites/declares
             # it is self-certifying and is NOT coverage — closing the silent-gap
             # bypass where a load-bearing handler hides under an unrelated concept.
+            # gate v7 fix #2 — in a strict tree, a verbatim grounded seed is
+            # coverage ONLY when the covering cite resolves to a real CODE line.
+            # A backdoor handler cited solely at its `:1-2` doc-comment header is
+            # NOT grounded (the cited line doesn't substantiate the executed
+            # body), so it falls through to the exclude check and REDs unless it
+            # carries an explicit per-file exclude. Outside strict trees the
+            # verbatim grounded seed covers unchanged.
             if rel in grounded_seed_paths:
-                return True
+                if not _is_file_granular_strict(rel) or rel in code_grounded_seed_paths:
+                    return True
             # a file is also covered when a GROUNDED directory seed contains it
             # (the concept that adopts the dir grounds the files beneath it) —
             # EXCEPT in the SECURITY-CRITICAL file-granular trees (gate v6 fix #1):
@@ -1061,11 +1256,28 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
                 for s in grounded_seed_paths
             ):
                 return True
+        strict = (not is_dir) and _is_file_granular_strict(rel)
         for ex in excludes:
             exn = ex.rstrip("/")
+            # An EXACT (or exact-prefix) exclude entry is an EXPLICIT, review-
+            # visible per-file/per-dir decision — always honored, in or out of a
+            # strict tree.
             if rel == exn or rel.startswith(exn + "/"):
                 return True
-            if ("*" in ex or "?" in ex or "[" in ex) and _glob_match(rel, ex):
+            # A BROAD PATTERN exclude (dir-name glob like `**/tests/**`, or an
+            # extension glob like `*.config.ts`) is a bulk rule. gate v7 fix #1:
+            # inside a SECURITY-CRITICAL strict tree, a broad pattern may exclude
+            # a file ONLY when that file is GENUINELY a test/config artifact by
+            # its OWN basename. A real handler name (`poison.rs`) dropped under a
+            # `tests/` dir matches `**/tests/**` but is NOT a test by its name —
+            # it must NOT be auto-swallowed; it requires an explicit per-file
+            # `excludes:` entry (handled above) or grounded coverage, else it
+            # REDs. Outside strict trees the bulk rule applies unchanged.
+            if "*" in ex or "?" in ex or "[" in ex:
+                if not _glob_match(rel, ex):
+                    continue
+                if strict and not _basename_is_test_or_config(rel):
+                    continue
                 return True
         return False
 
