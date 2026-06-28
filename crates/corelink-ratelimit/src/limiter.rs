@@ -963,6 +963,33 @@ mod tests {
         assert_eq!(lim.bucket_count().unwrap(), cap);
     }
 
+    /// `next_tick` is the monotonic LRU recency counter — every access stamps a
+    /// strictly-increasing tick so the approximate-LRU eviction can pick the
+    /// least-recently-accessed bucket. A sabotaged `next_tick` that returned a
+    /// CONSTANT (0/1) would silently collapse all recency to one value → the LRU
+    /// victim selection becomes meaningless (a hot key could be evicted, a cold
+    /// one kept) with no other test noticing. Pin strict monotonicity so that
+    /// blind spot is closed (kills the changed-line mutants that replace the body
+    /// with a constant).
+    #[test]
+    fn next_tick_is_strictly_monotonic() {
+        let lim = InMemoryTokenBucketRateLimiter::new_with_cap(
+            Arc::new(InMemoryRateLimitAuditSink::new()),
+            Arc::new(InMemoryRateLimitMetrics::new()),
+            RateLimitConfig::canonical(),
+            16,
+        );
+        let t0 = lim.next_tick();
+        let t1 = lim.next_tick();
+        let t2 = lim.next_tick();
+        assert!(
+            t1 > t0 && t2 > t1,
+            "next_tick must be strictly increasing (LRU recency); got {t0}, {t1}, {t2}"
+        );
+        // Distinctness too (a constant body fails this as well).
+        assert!(t0 != t1 && t1 != t2, "next_tick values must be unique per call");
+    }
+
     /// F2 algorithmic-complexity DoS closure: eviction must be `O(1)` — it
     /// inspects at most [`LIMITER_EVICTION_SAMPLE_K`] entries (Redis-style
     /// sampled approximate-LRU), NOT all `n` entries. This pins the property
