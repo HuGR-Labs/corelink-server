@@ -753,8 +753,10 @@ pub fn router(
     let mut router = Router::new().merge(oci_router(state));
     // Per-tenant monthly $-ceiling gate (ADR-0068): OCI previously bypassed the
     // Worker `$`-ceiling/quota path entirely (cluster B). Charge the flat per-op
-    // cost on write methods (PUT/POST/PATCH — manifest pushes + blob upload
-    // legs) so OCI is subject to the SAME ceiling as CAS/AC/Bazel/Turbo. Blob
+    // cost on EVERY method (reads AND writes — `docker pull` GET/HEAD of
+    // manifests/blobs has real R2 Class-B/egress COGS, exactly like the native
+    // CAS/AC read path) so OCI is subject to the SAME ceiling as
+    // CAS/AC/Bazel/Turbo. The $-ceiling charge is fail-CLOSED (402 over). Blob
     // BYTE accrual is already enforced by the `AccountingCasHandler` decorator
     // wrapping the shared `cas_write`.
     //
@@ -767,12 +769,13 @@ pub fn router(
     // adapter's data plane 401s it (no billable work succeeds). 402 over-ceiling.
     //
     // rt-nuclear #8 (request-count half): the SAME middleware also meters OCI
-    // write methods against the tenant's monthly REQUEST-count cap
-    // (`monthly_request_counts`, migration 0071) — keyed on the SAME verified
-    // bearer. The Worker forwards OCI RAW and returns before its
-    // `checkRequestQuota` block, so OCI writes bypassed the request cap exactly
-    // as they bypassed the $-ceiling; this closes the sibling gap container-side.
-    // 429 over the cap (SLO-style, fail-OPEN — unlike the fail-CLOSED $-ceiling).
+    // requests on EVERY method (reads AND writes) against the tenant's monthly
+    // REQUEST-count cap (`monthly_request_counts`, migration 0071) — keyed on
+    // the SAME verified bearer. The Worker forwards OCI RAW and returns before
+    // its `checkRequestQuota` block, so OCI requests bypassed the request cap
+    // exactly as they bypassed the $-ceiling; this closes the sibling gap
+    // container-side. 429 over the cap (SLO-style, fail-OPEN — unlike the
+    // fail-CLOSED $-ceiling).
     //
     // Wire the layer when EITHER gate is present (they are independent axes; in
     // dev/CI without a D1 storage env BOTH are `None` and no layer mounts).
@@ -811,8 +814,9 @@ struct OciCostGate {
 // the attribution tenant from the HMAC-verified realm bearer here — a SEPARATE
 // trust path from the header-based planes (native CAS/AC trust a Worker-injected
 // `x-corelink-tenant-id`). Accepted pending review: anon reads with no resolvable
-// bearer go UNCOUNTED, and the `oci_limiter`/quota gate is fail-OPEN on reads. See
-// the findings doc (#7) — the actual trust-path review is a separate task.
+// bearer go UNCOUNTED. Note: for a RESOLVED bearer the $-ceiling is now charged
+// fail-CLOSED on reads too (402 over); only the request-count axis is fail-OPEN
+// (429). See the findings doc (#7) — the actual trust-path review is a separate task.
 fn oci_bearer_tenant(realm_key: &SecretWrap, headers: &axum::http::HeaderMap) -> Option<String> {
     let raw = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
     let token = raw.strip_prefix("Bearer ").or_else(|| raw.strip_prefix("bearer "))?;
@@ -825,13 +829,15 @@ fn oci_bearer_tenant(realm_key: &SecretWrap, headers: &axum::http::HeaderMap) ->
         .map(|vt| vt.tenant.to_canonical_text())
 }
 
-/// Per-tenant quota charge for OCI requests. The monthly request-count axis is
-/// metered on EVERY method (reads AND writes) — `docker pull` (GET/HEAD of
-/// manifests/blobs) does real, billable work on the shared multi-tenant cache,
-/// so leaving it uncounted let a free tenant loop pulls to evade the monthly
-/// request cap and burn unmetered egress (rt-nuclear r34 #1/#11). The `$`-ceiling
-/// stays write-only: native-plane reads also only charge the request-count axis,
-/// not the `$`-ceiling, and OCI stays consistent with that. See the `router` doc.
+/// Per-tenant quota charge for OCI requests. BOTH axes are metered on EVERY
+/// method (reads AND writes) — `docker pull` (GET/HEAD of manifests/blobs) does
+/// real, billable work on the shared multi-tenant cache (R2 Class-B GETs +
+/// egress), so leaving it uncharged let a free tenant loop pulls to evade the
+/// monthly request cap and burn unmetered egress (rt-nuclear r34 #1/#11). The
+/// `$`-ceiling axis is fail-CLOSED (402 over, charged on reads too — matching
+/// the native CAS/AC read path; a prior write-only carve-out, PR #318, let an
+/// authenticated tenant pull unlimited blobs without ever hitting their ceiling);
+/// the request-count axis is fail-OPEN (429 over). See the `router` doc.
 async fn oci_quota_gate(
     axum::extract::State(st): axum::extract::State<OciCostGate>,
     req: axum::extract::Request,
