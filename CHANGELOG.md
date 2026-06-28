@@ -49,6 +49,27 @@ Each entry cross-references:
   endpoints, and the `verify.rs` payload-binding from finding H2 — see the module-level DEFERRED block in
   `attestation.rs`). Also corrected a false in-code comment that claimed a non-existent route integration
   test.
+- **In-app rate-limiter bucket map is now LRU-bounded (cross-tenant DoS, HIGH — red-team confirmed).**
+  The `InMemoryTokenBucketRateLimiter` stored token buckets in an unbounded `HashMap<BucketKey,
+  TokenBucketState>` with no cap and no eviction. On the UNAUTHENTICATED OCI plane the bucket scope is
+  derived from the attacker-controlled repo name parsed verbatim from `/v2/<repo>/...`, so a flood of
+  distinct repo segments (`GET /v2/<random-N>/manifests/latest`) materialised a new permanent map entry
+  per request → unbounded heap growth → OOM-kill of the SINGLETON `_oci` Durable Object that fronts every
+  OCI tenant (a cross-tenant registry outage). Bounded the map with a `LIMITER_BUCKET_MAP_CAP` (100k) LRU
+  — evicting the least-recently-accessed bucket on overflow (an evicted bucket re-materialises fresh/full
+  on its next hit, identical semantics, never a rate-limit bypass), mirroring the Argon2id verifier's
+  existing `PER_TENANT_MAP_CAP`. Added a bounded-map regression test.
+  **Follow-up (F2, algorithmic-complexity DoS the first fix introduced):** the initial eviction did
+  `map.iter().min_by_key(last_access)` — an `O(n)` FULL SCAN of the up-to-100k-entry map under the single
+  per-instance `Mutex` on EVERY new distinct key once the map sat at the cap. The same attacker-controlled
+  OCI repo-path flood pins the shared `_oci` limiter at the cap and makes every new key pay a ~O(100k) scan
+  under the one Mutex serialising the whole singleton OCI plane → CPU + lock-contention starvation (the
+  same cross-tenant blast radius the cap was meant to remove). Replaced it with `O(1)`-amortised
+  **Redis-style sampled approximate-LRU**: sample `LIMITER_EVICTION_SAMPLE_K` (8) entries from the
+  SipHash-randomised iteration order and evict the oldest of the sample (no new dep). Safety preserved —
+  evicted buckets still re-materialise fresh/full (no bypass) and a hot/just-throttled key is statistically
+  unlikely to be the sample minimum (an attacker can't steer eviction onto a key they're hammering). Added
+  an `eviction_touches_at_most_sample_k_entries_not_o_n` test asserting the `≤K`-touch bound.
 - **OKF brutal-audit code findings remediated (7).** (#1 HIGH) the GDPR erasure attestation now binds its
   signed `evidence_hash` to the REAL per-backend verification results (was a synthetic constant) + the
   Stripe arm does a live re-fingerprint (was a hardcoded no-op) + region resolves fail-CLOSED — the signer
