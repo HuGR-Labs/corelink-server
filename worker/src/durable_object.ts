@@ -739,6 +739,18 @@ export class CoreLinkServer implements DurableObject {
       ) {
         return { ok: true };
       }
+      // M1: FAST-DEATH EXIT. A bad deploy (binary OOM/panic) flips the status to
+      // the terminal-dead "stopped" state — there is nothing left starting to
+      // wait for, so spinning the full STARTUP_TIMEOUT_MS only makes every queued
+      // request hang ~90s before the inevitable 503. Bail immediately so the
+      // caller returns a prompt 503 (and the next request triggers a restart via
+      // ensureContainerRunning's stopped→startContainer branch). We break ONLY on
+      // "stopped" (genuinely dead); "starting" is transient and still waits out
+      // the 90s ceiling below, and "degraded" is handled on the next request.
+      if (this.lifecycleState.containerStatus === "stopped") {
+        console.error(`[${requestId}] container in terminal "stopped" state — fast-exit (no wait)`);
+        return { ok: false, reason: "container_dead" };
+      }
       await new Promise<void>((r) => setTimeout(r, 100));
     }
     console.error(`[${requestId}] timeout waiting for container to start`);

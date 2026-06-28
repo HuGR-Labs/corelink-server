@@ -96,8 +96,10 @@ service = "corelink-prod"
 # DSR_QUEUE (src/webhooks/clerk.ts::handleUserDeleted); this same worker CONSUMES
 # them (src/index.ts `queue` → src/webhooks/dsr_consumer.ts) and forwards each to
 # the container's `/_internal/dsr/erase` endpoint (internal-auth gated). The
-# erasure orchestrator dedups per (dsr_id, backend), so redelivery is safe;
-# poison messages land in the dead-letter queue after max_retries.
+# erasure orchestrator dedups per (dsr_id, backend), so redelivery is safe.
+# Permanent 4xx failures are poison-acked at the consumer (M2) and never reach
+# the DLQ; only sustained transient faults dead-letter to corelink-dsr-erasure-dlq,
+# which has its own handler (M3, see below).
 #
 # Infra (one-time, operator — task #46 adjacent):
 #   worker/node_modules/.bin/wrangler queues create corelink-dsr-erasure
@@ -115,6 +117,20 @@ max_batch_timeout = 30
 # manual review rather than dropping a right-to-erasure request.
 max_retries = 10
 dead_letter_queue = "corelink-dsr-erasure-dlq"
+
+# DLQ consumer (M3, GDPR Art.17): the dead-letter queue MUST have a handler, not
+# just the hourly verify cron's console.error. The SAME worker `queue()` entry
+# dispatches on `batch.queue` to src/webhooks/dsr_consumer.ts::handleErasureDlqBatch,
+# which emits a STRUCTURED critical alert per dead-lettered erasure and gives it
+# ONE bounded re-enqueue back onto corelink-dsr-erasure (capped by the
+# `_dlq_requeue` marker — no DLQ⇄main loop), else leaves it dead with the alert.
+# Small budget: a dead-letter is already exceptional; we only need a couple of
+# delivery attempts of the alert/re-enqueue itself. No further DLQ (terminal).
+[[queues.consumers]]
+queue = "corelink-dsr-erasure-dlq"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
 
 # Hourly Cron Trigger → src/index.ts `scheduled()`. Drives TWO sweeps:
 #   1. DSR 24h verification sweep (WI-S11-008 incr 5) → runDsrVerifySweep →

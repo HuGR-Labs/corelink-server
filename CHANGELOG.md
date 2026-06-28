@@ -22,6 +22,24 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **Fresh-lens brutal-audit remediation (correctness / conformance / operability).** A 4-auditor fleet
+  (data-integrity, concurrency, spec-conformance, operability lenses) surfaced: **(H1)** a transient D1
+  PAT-lookup fault returned `401` (bad credentials) instead of `503` → now retryable 503 (a real bad PAT
+  still 401s); **(H2)** the OCI blob `HEAD` omitted `Content-Length` (violating Distribution v1.1 §5.2 —
+  containerd/skopeo/crane pre-allocate from it) → now reports the real blob size, mirroring the manifest
+  HEAD; **(H3)** a storage-cap DOWNGRADE never reconciled the stored `bytes_quota` on adapter (brew/npm/
+  pip) writes (reconcile was coupled to a successful native write an over-cap tenant can't make) → the
+  reconcile is now decoupled (runs on a native write attempt, success or rejection), closing a COGS
+  evasion; **(M1)** `waitForContainerReady` now fast-exits on a terminal `stopped` status (was spinning
+  the full ~90s); **(M6)** OCI upload `PATCH 202` now sets the `Location` header (§5.3.2); **(M7)** the
+  sccache `HEAD` probe now uses a metadata-only `exists` port instead of a full blob fetch (halves R2
+  egress per probe); **(M2)** the DSR queue consumer now acks permanent 4xx poison messages (with a
+  structured log) and retries only 5xx/transport; **(M3)** the DSR erasure DLQ gained a consumer
+  (bounded one-shot re-enqueue + a critical structured alert). Plus three honest doc corrections (the
+  bazel REAPI module doc's false "any Bazel client" claim, the audit-export in-memory-not-durable note,
+  and the quota-lease "removes the round-trip" overstatement).
+
 ### Security
 - **Brutal-audit-fleet round-2 hardening (1 HIGH + MED/LOW).** A standing 4-auditor fleet (2 Opus + 2
   Sonnet) over live prod found: **Turbo GET was unguarded** while PUT had per-tenant + global concurrency

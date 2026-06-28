@@ -179,6 +179,17 @@ pub async fn patch(
         return Err(OciAdapterError::BlobOversized(new_len));
     }
     let mut headers = HeaderMap::new();
+    // OCI Distribution Spec v1.1 §5.3.2: the chunk-accepted (202) response MUST
+    // carry the upload `Location` so the client targets the next PATCH/PUT at the
+    // right session URL (mirrors the POST-open handler). Without it some clients
+    // fall back to the request URL — fragile behind a path-rewriting gate.
+    let location = format!("/v2/{repo}/blobs/uploads/{upload_uuid}");
+    headers.insert(
+        axum::http::header::LOCATION,
+        location
+            .parse()
+            .map_err(|_| OciAdapterError::Cas(String::from("location header parse")))?,
+    );
     let range = format!("0-{}", new_len.saturating_sub(1));
     headers.insert(
         "Range",

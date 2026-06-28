@@ -96,6 +96,31 @@ async fn head_blob_returns_200_when_present() {
     let resp = rig.app().oneshot(req).await.expect("oneshot");
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(resp.headers().get("Docker-Content-Digest").is_some());
+    // H2: a blob HEAD MUST report the blob size in Content-Length (OCI v1.1
+    // §5.2) — containerd/skopeo/crane pre-allocate from it; a 0 breaks the pull.
+    let cl = resp
+        .headers()
+        .get(axum::http::header::CONTENT_LENGTH)
+        .expect("blob HEAD must carry Content-Length")
+        .to_str()
+        .unwrap();
+    assert_eq!(
+        cl,
+        payload.len().to_string(),
+        "Content-Length must equal the real blob size"
+    );
+    // HEAD mirrors GET's Content-Type (no body).
+    assert_eq!(
+        resp.headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .expect("Content-Type")
+            .to_str()
+            .unwrap(),
+        "application/octet-stream"
+    );
+    // The body must be empty on a HEAD even though Content-Length is non-zero.
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    assert!(body.is_empty(), "HEAD response body must be empty");
 }
 
 #[tokio::test]

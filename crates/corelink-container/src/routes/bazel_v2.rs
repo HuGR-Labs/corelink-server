@@ -2,10 +2,19 @@
 //!
 //! # Purpose
 //!
-//! Mounts the five REAPI v2 REST cache endpoints so any Bazel user can
-//! point `--remote_cache=https://corelink-api.humangr.com/bazel/v2` and
-//! get distributed cache backed by the same R2 blobs the native CAS/AC
-//! endpoints serve.
+//! Mounts the five REAPI v2 REST cache endpoints (the ByteStream-style
+//! `/bazel/v2/:instance/blobs/:hash/:size` scheme — see the mapping
+//! below) backed by the same R2 blobs the native CAS/AC endpoints serve.
+//!
+//! # Client contract (read before assuming `--remote_cache` works)
+//!
+//! This surface implements the CoreLink REAPI scheme and requires a
+//! compatible client (a REAPI/ByteStream client, or `bazel` configured
+//! against this scheme). It is NOT stock Bazel's plain HTTP cache: vanilla
+//! `--remote_cache=http(s)://…` sends `/<cache>/<hash>` (e.g. `/cas/<hash>`,
+//! `/ac/<hash>` — no `:instance` segment, no `:size`), which does NOT match
+//! the routes below and 404s here. A stock-Bazel-HTTP `/cas|/ac` alias is a
+//! tracked enhancement (TODO/DEFERRED), not a current capability.
 //!
 //! # Endpoint mapping
 //!

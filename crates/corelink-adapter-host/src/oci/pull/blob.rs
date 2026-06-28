@@ -70,14 +70,30 @@ pub async fn head(
 ) -> Result<axum::response::Response, OciAdapterError> {
     check_repo_pull(repo, scope)?;
     let digest = OciDigest::parse(digest_str)?;
-    let exists = cas
-        .blob_exists(tenant, &digest.to_wire())
+    // A HEAD must carry the SAME Content-Type + Content-Length as the GET (just
+    // no body). OCI Distribution Spec v1.1 §5.2 requires the blob size in
+    // Content-Length; without the explicit header the empty body yields
+    // `Content-Length: 0`, and containerd/skopeo/crane pre-allocate the download
+    // buffer from it (a zero makes them reject the descriptor). Use the
+    // metadata-only `blob_size` port (`None` ⇒ 404), mirroring the manifest HEAD.
+    let size = cas
+        .blob_size(tenant, &digest.to_wire())
         .await
-        .map_err(OciAdapterError::Cas)?;
-    if !exists {
-        return Err(OciAdapterError::NotFound);
-    }
+        .map_err(OciAdapterError::Cas)?
+        .ok_or(OciAdapterError::NotFound)?;
     let mut headers = HeaderMap::new();
+    headers.insert(
+        header::CONTENT_TYPE,
+        "application/octet-stream"
+            .parse()
+            .map_err(|_| OciAdapterError::Cas(String::from("header parse")))?,
+    );
+    headers.insert(
+        header::CONTENT_LENGTH,
+        size.to_string()
+            .parse()
+            .map_err(|_| OciAdapterError::Cas(String::from("len header parse")))?,
+    );
     headers.insert(
         "Docker-Content-Digest",
         digest

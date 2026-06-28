@@ -12,7 +12,7 @@ source_files:
   - "crates/corelink-container/src/routes/audit_export/state.rs"
   - "crates/corelink-container/src/routes/audit_export/types.rs"
   - "docs/cli/audit-export.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "cc1542cf950c5b40979945b3b88cc63b5eb9e143"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -35,7 +35,8 @@ another tenant's rows.
 
 # How it works
 
-- The export route's public surface (router + state) lives in the `state` submodule (`crates/corelink-container/src/routes/audit_export/state.rs:85`, `crates/corelink-container/src/routes/audit_export/state.rs:154`), re-exported verbatim through the barrel `crates/corelink-container/src/routes/audit_export.rs:146-148`.
+- The export route's public surface (router + state) lives in the `state` submodule (`crates/corelink-container/src/routes/audit_export/state.rs:88`, `crates/corelink-container/src/routes/audit_export/state.rs:157`), re-exported verbatim through the barrel `crates/corelink-container/src/routes/audit_export.rs:146-148`.
+- `build_state` wires the LIVE native exporter + export-audit sink as IN-MEMORY implementations (`InMemoryAuditExporter` + `InMemoryExportAuditSink`) — non-durable, lost on process restart and not shared across containers; the durable R2-backed exporter + `RateLimiter` DO singleton + CloudEvents audit sink are DEFERRED behind the stable `Arc<dyn ...>` trait-object surface (`crates/corelink-container/src/routes/audit_export/state.rs:88`).
 - The export audit emit is routed through `emit_or_503`, aborting with 503 on sink error `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105`.
 - Mid-stream chain-break detection emits the abort trailer via `mid_stream_abort_trailer_value` `crates/corelink-container/src/routes/audit_export/stream.rs:412-417`.
 - The trailer + chain-head anchor header names are canonical constants `crates/corelink-container/src/routes/audit_export/types.rs:42-57`.
@@ -59,7 +60,7 @@ another tenant's rows.
 # Citations
 
 1. `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105` — `emit_or_503` fail-closed export audit (the enforcing impl).
-2. `crates/corelink-container/src/routes/audit_export/state.rs:85`, `crates/corelink-container/src/routes/audit_export/state.rs:154` — export `build_state` + `router` impl; `crates/corelink-container/src/routes/audit_export.rs:146-148` — barrel re-export of that public surface.
+2. `crates/corelink-container/src/routes/audit_export/state.rs:88`, `crates/corelink-container/src/routes/audit_export/state.rs:157` — export `build_state` (in-memory exporter/sink; durable R2/CloudEvents sink deferred) + `router` impl; `crates/corelink-container/src/routes/audit_export.rs:146-148` — barrel re-export of that public surface.
 3. `crates/corelink-container/src/routes/audit_export/stream.rs:412-417` — `mid_stream_abort_trailer_value` builder.
 4. `crates/corelink-container/src/routes/audit_export/types.rs:42-57` — chain-head-anchor + abort header constants.
 5. `crates/corelink-container/src/routes/audit_analytics/state.rs:80` — analytics `router`; `crates/corelink-container/src/routes/audit_analytics/state.rs:63` + `crates/corelink-container/src/routes/audit_analytics/rate_limit.rs:99` — per-tenant rate-limit config + `rate_limit_check`.

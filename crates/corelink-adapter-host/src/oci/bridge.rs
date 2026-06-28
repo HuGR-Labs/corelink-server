@@ -429,6 +429,28 @@ mod tests {
         assert!(!exists);
     }
 
+    #[tokio::test]
+    async fn blob_size_reports_real_size_and_none_on_miss() {
+        // H2: the OCI blob HEAD path needs the real blob size for Content-Length.
+        // The bridge inherits the default `blob_size` (derives from `get_blob`).
+        let h = make_handler();
+        let bridge = make_blob_bridge(h);
+        let t = tid(6);
+        let data = b"blob-of-known-length".to_vec();
+        let hash = fake_hash(&data);
+        let uuid = bridge.open_upload(&t).await.unwrap();
+        bridge
+            .append_chunk(&t, &uuid, Bytes::from(data.clone()))
+            .await
+            .unwrap();
+        bridge.finalize_upload(&t, &uuid, &hash, None).await.unwrap();
+
+        let size = bridge.blob_size(&t, &hash).await.unwrap();
+        assert_eq!(size, Some(data.len() as u64));
+        let miss = bridge.blob_size(&t, "sha256:nothere").await.unwrap();
+        assert_eq!(miss, None);
+    }
+
     // ---- ManifestKvStore bridge --------------------------------------------
 
     #[tokio::test]
