@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/tenant_quota.rs"
   - "crates/corelink-container/src/routes/billing_ingest.rs"
-checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
+checkpoint_sha: "9b98c097e0aaac5103e2fc2b4e2114a0bf29739d"
 provenance: "AUTHORED"
 tags: ["flows", "billing", "quota", "tenancy", "request-flow"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -22,14 +22,14 @@ The `QuotaGate` is the economic fail-closed spend cap on the hot path: it conver
 
 # How it works
 
-1. Placement: a billable handler holds `Option<QuotaGate>` and calls `gate.check(&tenant)` at the top, after scope/rate-limit and before the work; absent in dev/CI (`crates/corelink-container/src/routes.rs:228-251`).
-2. Cost resolution: `QuotaGate` resolves the flat per-op micro-dollar cost once at build and delegates `check` to `QuotaGuard::check` (`crates/corelink-container/src/routes.rs:245-259`).
+1. Placement: a billable handler holds `Option<QuotaGate>` and calls `gate.check(&tenant)` at the top, after scope/rate-limit and before the work; absent in dev/CI (`crates/corelink-container/src/routes.rs:225-244`).
+2. Cost resolution: `QuotaGate` resolves the flat per-op micro-dollar cost once at build and delegates `check` to `QuotaGuard::check` (`crates/corelink-container/src/routes.rs:246-264`).
 3. Clock gate: `QuotaGuard::check` fails closed 503 if the wall clock is unavailable — it cannot reason about the cycle boundary without a trustworthy clock (`crates/corelink-container/src/tenant_quota.rs:786-795`).
 4. Row load: the tenant's `tenant_quota` row is loaded; a store error is 503, a missing row is treated as a fresh default-tripwire tenant (`crates/corelink-container/src/tenant_quota.rs:805-813`).
 5. Cycle decision: a brand-new row or an elapsed cycle opens a fresh accrual baseline; otherwise the steady path continues from the prior accrued total (`crates/corelink-container/src/tenant_quota.rs:815-818`).
 6. Steady path — atomic check-and-accrue: the ceiling test is serialized WITH the increment in one statement (`UPDATE ... WHERE accrued + delta <= budget RETURNING accrued`); over-ceiling -> 402, store error -> 503 (`crates/corelink-container/src/tenant_quota.rs:899-919`). The store trait has NO non-atomic default — CF-4 made the default `check_and_accrue` fail CLOSED (`Err`), so a backend that forgets to override can never silently over-admit (`crates/corelink-container/src/tenant_quota.rs:260-277`).
 7. Fresh-tenant path: a brand-new tenant's FIRST op is ceiling-checked via `seed_checked_accrue`, so a single fat first op cannot bypass the cap; an over-budget first op is 402 (`crates/corelink-container/src/tenant_quota.rs:854-880`).
-8. Batch variant: `check_batch` charges `n x cost` in ONE atomic check-and-accrue (saturating product) rather than N round-trips (`crates/corelink-container/src/tenant_quota.rs:759-766`; `crates/corelink-container/src/routes.rs:276-278`). The PRODUCTION guard wraps its inner store in a `LeasedQuotaStore`, so the $-ceiling is enforced as a LEASED/approximate cap: each accrue debits a small ops-chunk lease up front and serves subsequent ops against the warm lease — worst-case overshoot is bounded to ONE lease chunk, so it never over-serves materially (`crates/corelink-container/src/tenant_quota.rs:118-127`, `crates/corelink-container/src/tenant_quota.rs:359-373`).
+8. Batch variant: `check_batch` charges `n x cost` in ONE atomic check-and-accrue (saturating product) rather than N round-trips (`crates/corelink-container/src/tenant_quota.rs:759-766`; `crates/corelink-container/src/routes.rs:281-283`). The PRODUCTION guard wraps its inner store in a `LeasedQuotaStore`, so the $-ceiling is enforced as a LEASED/approximate cap: each accrue debits a small ops-chunk lease up front and serves subsequent ops against the warm lease — worst-case overshoot is bounded to ONE lease chunk, so it never over-serves materially (`crates/corelink-container/src/tenant_quota.rs:118-127`, `crates/corelink-container/src/tenant_quota.rs:359-373`).
 9. Decoupled usage ingest: `POST /internal/v1/billing/usage` gates on a DEDICATED `BILLING_INGEST_AUTH_KEY` (constant-time), validates the whole batch, then idempotently stages each record (`crates/corelink-container/src/routes/billing_ingest.rs:480-515`).
 10. Idempotent persist: each record is staged with `ON CONFLICT DO NOTHING` (dedup by `(tenant_id, request_id)`); a backend fault is 503 so the runner can safely retry, accepted/deduped tallies return 202 (`crates/corelink-container/src/routes/billing_ingest.rs:517-542`).
 
@@ -51,9 +51,9 @@ The `QuotaGate` is the economic fail-closed spend cap on the hot path: it conver
 
 # Citations
 
-1. `crates/corelink-container/src/routes.rs:228-251` — `QuotaGate` usage contract + struct (called at the top of a billable handler).
-2. `crates/corelink-container/src/routes.rs:245-259` — `from_env` cost resolution + `check` delegating to `QuotaGuard::check`.
-3. `crates/corelink-container/src/routes.rs:276-278` — `check_batch` delegating the proportional batch charge.
+1. `crates/corelink-container/src/routes.rs:225-244` — `QuotaGate` usage contract + struct (called at the top of a billable handler).
+2. `crates/corelink-container/src/routes.rs:246-264` — `from_env` cost resolution + `check` delegating to `QuotaGuard::check`.
+3. `crates/corelink-container/src/routes.rs:281-283` — `check_batch` delegating the proportional batch charge.
 4. `crates/corelink-container/src/tenant_quota.rs:260-277` — the `check_and_accrue` store-trait method; CF-4: the default fails CLOSED (`Err`/503, no non-atomic fallback) — every backend MUST provide its own atomic check-and-increment.
 5. `crates/corelink-container/src/tenant_quota.rs:759-766` — `check_batch`: one atomic `n x cost` charge with a saturating product.
 6. `crates/corelink-container/src/tenant_quota.rs:786-922` — `check`: clock gate, row load, cycle decision, steady/fresh atomic accrual, 402/503 outcomes.
