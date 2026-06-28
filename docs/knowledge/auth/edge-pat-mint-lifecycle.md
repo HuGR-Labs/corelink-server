@@ -138,6 +138,10 @@ place a leaked token can be revoked, since every consumer's token lands in the s
   so an unauthenticated caller learns nothing about the internal mint surface
   (`worker/src/lib/session_exchange.ts:507-515`). See [the 2-level PAT moat](/auth/pat-moat.md)
   for the verification side of the same tokens.
+- A minted PAT with `expires_ms = 0` is the canonical "never-expires" sentinel; as of the H2 fix
+  (#538, 2026-06-28) the edge PAT-verify path honors it (`expires_ms === 0` skips the expiry check,
+  matching the container SQL `expires_ms = 0 OR expires_ms > now`), so a no-TTL PAT minted here is no
+  longer a split-brain that the edge rejects while the container accepts — see [the 2-level PAT moat](/auth/pat-moat.md).
 
 # Citations
 

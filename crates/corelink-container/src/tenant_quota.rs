@@ -188,10 +188,12 @@ impl QuotaState {
 /// the atomic accrual** in a single DB statement, eliminating the TOCTOU
 /// over-admission window where concurrent requests can each read the same
 /// pre-accrual baseline, all pass the ceiling test, and all proceed past the
-/// cap. The default implementation falls back to the existing `get` + `accrue`
-/// two-step (same semantics as before F13); production overrides this with the
-/// serialized `UPDATE … WHERE accrued + delta <= budget RETURNING accrued`
-/// statement.
+/// cap. It has NO safe generic default — every backend MUST provide its own
+/// atomic implementation (`D1QuotaStore` via the serialized
+/// `UPDATE … WHERE accrued + delta <= budget RETURNING accrued` statement,
+/// `InMemoryQuotaStore` under its in-process `Mutex`); the trait-level default
+/// fails CLOSED (returns `Err`) rather than silently over-admitting via a
+/// non-atomic two-step.
 #[axum::async_trait]
 pub trait QuotaStore: std::fmt::Debug + Send + Sync {
     /// Read a tenant's quota row. `Ok(None)` ⇒ no row yet (treated as a
@@ -246,30 +248,32 @@ pub trait QuotaStore: std::fmt::Debug + Send + Sync {
     /// callers must seed the row via [`Self::put`] when `get` returns
     /// `None`).
     ///
-    /// The default implementation falls back to the pre-F13 `get` +
-    /// `accrue` two-step (has the TOCTOU window). Override in production
-    /// with the D1 atomic statement for exact enforcement.
+    /// There is NO safe generic default. A `get` + `accrue` two-step has a
+    /// TOCTOU over-admission window (concurrent ops each read the same
+    /// pre-accrual baseline, all pass the ceiling test, and all proceed past
+    /// the cap) — i.e. a backend that fell back to a default two-step would
+    /// silently let spend exceed the `$`-ceiling. So the default fails CLOSED:
+    /// it returns `Err`, which the caller maps to a 503 (a hard deny), never an
+    /// over-admission. Every backend MUST override this with an atomic
+    /// check-and-increment: `D1QuotaStore` with the serialized SQL,
+    /// `InMemoryQuotaStore` under its in-process `Mutex`.
     async fn check_and_accrue(
         &self,
-        tenant_id: &str,
-        delta_micros: i64,
-        seed_anchor_ms: i64,
-        updated_at_ms: i64,
+        _tenant_id: &str,
+        _delta_micros: i64,
+        _seed_anchor_ms: i64,
+        _updated_at_ms: i64,
     ) -> Result<bool, String> {
-        // Default: two-step (pre-F13 behaviour; has the TOCTOU window).
-        // Production `D1QuotaStore` overrides this with the atomic query.
-        let state = self.get(tenant_id).await?;
-        let budget = state
-            .as_ref()
-            .map(|s| s.monthly_budget_usd_micros)
-            .unwrap_or(DEFAULT_MONTHLY_BUDGET_USD_MICROS);
-        let accrued = state.as_ref().map(|s| s.accrued_usd_micros).unwrap_or(0);
-        if accrued.saturating_add(delta_micros) > budget {
-            return Ok(false);
-        }
-        self.accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
-            .await?;
-        Ok(true)
+        // Fail-CLOSED: refuse rather than over-admit. A non-atomic generic
+        // default (get → accrue) would let a future non-D1 backend silently
+        // over-spend past the `$`-ceiling under concurrency, so there is
+        // deliberately no working default — every backend MUST provide its
+        // own atomic accrue (D1: serialized SQL; in-memory: under the Mutex).
+        Err(
+            "QuotaStore::check_and_accrue has no default: a backend MUST provide \
+             an atomic check-and-accrue (the trait refuses to over-admit)"
+                .to_owned(),
+        )
     }
 
     /// **Atomic seed-and-check** for a tenant's FIRST billable op (red-team
@@ -886,8 +890,9 @@ impl QuotaGuard {
             // `check_and_accrue` serializes the check with the increment in a
             // single DB statement (`UPDATE … WHERE accrued + delta <= budget
             // RETURNING accrued`). The production D1 override issues that atomic
-            // SQL; the default trait implementation falls back to the pre-F13
-            // two-step for non-D1 stores (tests, in-memory).
+            // SQL; the in-memory store overrides it under its `Mutex`. There is
+            // no non-atomic trait default — it fails CLOSED (`Err`) so a backend
+            // that forgets to override can never silently over-admit.
             //
             // Returns `Ok(false)` when the ceiling would be exceeded (reject
             // 402) and `Err(_)` on store error (reject 503).
@@ -987,6 +992,38 @@ impl QuotaStore for InMemoryQuotaStore {
             .or_insert_with(|| QuotaState::fresh(seed_anchor_ms));
         row.accrued_usd_micros = row.accrued_usd_micros.saturating_add(delta_micros);
         Ok(())
+    }
+
+    /// Atomic check-and-accrue under the single in-process `Mutex` — the
+    /// in-memory analogue of D1's serialized
+    /// `UPDATE … WHERE accrued + delta <= budget`. Required because the trait
+    /// default now fails CLOSED (no non-atomic generic fallback); holding the
+    /// lock across the ceiling test and the increment makes the check + accrue
+    /// indivisible in-process, so the result matches the D1 store exactly
+    /// (no row is created on the rejected path, mirroring the prior two-step).
+    async fn check_and_accrue(
+        &self,
+        tenant_id: &str,
+        delta_micros: i64,
+        seed_anchor_ms: i64,
+        _updated_at_ms: i64,
+    ) -> Result<bool, String> {
+        let mut rows = self
+            .rows
+            .lock()
+            .map_err(|_| "InMemoryQuotaStore: poisoned lock".to_owned())?;
+        let (budget, accrued) = match rows.get(tenant_id) {
+            Some(s) => (s.monthly_budget_usd_micros, s.accrued_usd_micros),
+            None => (DEFAULT_MONTHLY_BUDGET_USD_MICROS, 0),
+        };
+        if accrued.saturating_add(delta_micros) > budget {
+            return Ok(false);
+        }
+        let row = rows
+            .entry(tenant_id.to_owned())
+            .or_insert_with(|| QuotaState::fresh(seed_anchor_ms));
+        row.accrued_usd_micros = row.accrued_usd_micros.saturating_add(delta_micros);
+        Ok(true)
     }
 }
 

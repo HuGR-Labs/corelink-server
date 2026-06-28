@@ -35,6 +35,21 @@ Each entry cross-references:
   fix (evaluation-count ledger, not flapping). A latent MED residency code finding (`sam` macro routable to
   the US bucket at request-time; provisioning already fail-closed) was handed to the repo TL (CF-5 in the
   handoff doc) — no wiki change. Gate green: 157 concepts, 0 stale / 0 drift; 57/57 fixtures.
+- **OKF final-audit code findings (CF-1 HIGH GDPR + CF-2/3/4).** **CF-1 (HIGH):** the DSR erase-set was
+  incomplete — tenant-keyed tables added after the 2026-06-11 ADR-S11-013 freeze (`team_member` seat-PII,
+  `runners_entitlement`, `monthly_request_counts`, `pilot_tenants`, `stripe_checkout_sessions`, GC/region-
+  migration tables, …) were in neither the DELETE set nor the verification sweep, so a team-tenant Art.17
+  erasure left PII behind while the pipeline still emitted `VerifiedComplete` (over-attestation). Now: all
+  60 live tenant-keyed tables enumerated + classified erase-vs-retain per ADR-S11-013 (11 added to the
+  erase set incl. `team_member`; billing/audit-evidence to `RETAIN_SET`, now promoted out of `#[cfg(test)]`;
+  `abuse_score_history` retained as a documented owner/legal call); plus a **runtime completeness drift gate**
+  + a migration-parsing test so a future tenant-keyed table can't silently escape erasure. **CF-2:** the OCI
+  quota-gate comments corrected (the $-ceiling is charged fail-closed on reads too, not write-only). **CF-3:**
+  the eviction `Tier` gained `from_slug`/`FromStr` mapping the sold `starter/pro/max` slugs to their intended
+  TTLs (a non-free paid-safe default) so a paying tenant can't fall to the free-tier eviction floor. **CF-4:**
+  `QuotaStore::check_and_accrue`'s default impl is now fail-closed (a future non-D1 backend that forgets to
+  override can't silently over-admit past the $-ceiling; the in-memory store got an explicit atomic override).
+
 - **OKF architecture wiki — SOTA rebuild + 10-lens audit + reconcile to current main (#540).** Rebuilt
   `docs/knowledge/` on current `main` to **157 code-grounded concepts** (was 146), gate-hardened
   `validate_okf.py` v5→v12 (wrangler `main` env/array/alt-config coverage; file-granular strict trees;
