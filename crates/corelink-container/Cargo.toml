@@ -218,6 +218,15 @@ corelink-privacy-erasure-worker = { workspace = true }
 # WI-S11-008 G3: Ed25519 erasure-attestation signing on VerifiedComplete
 # (`routes/dsr/attestation.rs`), persisted to `erasure_attestations` (0032).
 corelink-erasure-attestation = { workspace = true }
+# CF-6 (enterprise-DD finding #4): the S-09 audit-chain drain
+# (`routes/audit_drain.rs`) signs the per-partition `audit_chain_head` tuple with
+# the seed-derived Ed25519 key (reusing the erasure-attestation seed) + base64-
+# encodes the signature, and re-verifies it on resume (fail-CLOSED on tamper).
+# The keypair is the `corelink-erasure-attestation` `ErasureSigningKey` (its
+# `signing_key`/`verifying_key` fields are Ed25519-dalek types), so the drain
+# links ed25519-dalek (Signer/Verifier) directly; base64 promoted from dev-deps.
+ed25519-dalek = { workspace = true }
+base64 = { workspace = true }
 # FINDING Gap 1 — the cargo adapter's `CargoAdapterConfig.auditor` is an
 # `Arc<dyn corelink_audit::ports::AuditEmitter>`; the container constructs it
 # (InMemoryAuditEmitter) when mounting `/cargo/*` (see `routes/cargo.rs`).
@@ -276,8 +285,8 @@ proptest = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 serde_json = { workspace = true }
-# OCI adapter route tests Basic-auth-encode the PAT (base64) — see routes/oci.rs.
-base64 = { workspace = true }
+# (base64 — used by OCI route tests, routes/oci.rs — is now a main dependency
+# for the CF-6 audit-chain head signing; main deps are visible to tests.)
 # Wave-30 stream-9 — live-D1 signup integration tests
 # (`tests/signup_pilot_live_d1.rs` + `tests/harness/d1_container.rs`).
 # D1 is SQLite at storage level, so locally we back the surrogate

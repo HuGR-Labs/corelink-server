@@ -22,6 +22,17 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **Audit chain is now tamper-evident against a D1-writer (enterprise-DD #4 / CF-6).** The S-09 audit
+  chain hashed with UNKEYED BLAKE3 over mutable D1 rows, so an insider with D1 write could rewrite a
+  suffix + recompute a self-consistent chain + head and the verifier would pass. Now the per-partition
+  `audit_chain_head` is SIGNED with Ed25519 (migration 0080 adds `head_signature`/`head_signed_at_ms`/
+  `signing_key_id`): the drain signs the canonical head tuple (JCS of `{head_hash, next_sequence, region,
+  tenant_id}`) on every advance and verifies it on resume — a tampered head whose signature doesn't
+  verify FAILS CLOSED (SEV-1 tamper-detected, refuses to extend the chain). Reuses the erasure-attestation
+  Ed25519 key infra (optional dedicated `AUDIT_CHAIN_SIGNING_SEED_HEX` override); legacy pre-0080 NULL-sig
+  heads are tolerated + re-signed on next advance; key rotation (different key_id) is tolerated.
+
 ### Added
 - **Real signed + served GDPR erasure attestation (Artifact 1 — closes brutal-review H1).** The attestation
   was fail-closed/DEFERRED because the prior impl computed an Ed25519 signature then discarded it (no DB

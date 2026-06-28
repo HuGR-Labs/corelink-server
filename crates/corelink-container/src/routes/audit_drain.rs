@@ -35,6 +35,38 @@
 //!    chain. The rows we sealed are deterministic/identical to the concurrent
 //!    drain's, so they remain safe; we simply do not double-advance.
 //!
+//! ## CF-6 — keyed (Ed25519-SIGNED) chain head (enterprise-DD finding #4)
+//!
+//! The BLAKE3 chain above is UNKEYED: an insider with D1 write can rewrite the
+//! sealed `audit_outbox` rows, recompute a self-consistent chain + head, overwrite
+//! the `audit_chain_head` checkpoint to match, and the unkeyed verifier still
+//! passes. To make the head un-forgeable without a secret, every checkpoint
+//! ADVANCE (step 3) ALSO Ed25519-SIGNS the canonical head tuple
+//! `(tenant_id, region, head_hash, next_sequence)` — RFC-8785 JCS bytes via
+//! [`canonical_head_bytes`] — and persists `head_signature` (base64) +
+//! `head_signed_at_ms` + `signing_key_id` (migration 0080).
+//!
+//! On RESUME ([`check_head_on_resume`]) a checkpoint carrying a NON-NULL signature
+//! signed under the CURRENT key id is re-verified against the canonical tuple +
+//! the seed-derived public key; a signature that does NOT verify (or a signed head
+//! with no seed configured to verify it) is TAMPER → the drain refuses to extend
+//! the chain from a forged head (fail-CLOSED, SEV-1). A NULL signature (pre-0080
+//! legacy head) is tolerated and re-signed on the next advance; a head signed
+//! under a DIFFERENT key id (seed/key rotation) cannot be verified with the
+//! current seed, so it is tolerated and re-signed too.
+//!
+//! ### Key source (REUSED — no new secret)
+//!
+//! The signing key is the per-region erasure-attestation Ed25519 key
+//! ([`ErasureSigningKey::from_seed`], seed `ERASURE_ATTESTATION_SEED_HEX`,
+//! key id `ERASURE_ATTESTATION_KEY_ID`). The Ed25519 keypair is PURELY
+//! seed-derived (`key.rs::from_seed` ignores region/timestamps for key material),
+//! so one seed signs every partition and the partition's region is bound in the
+//! SIGNED tuple — not in the key. An optional dedicated `AUDIT_CHAIN_SIGNING_SEED_HEX`
+//! / `AUDIT_CHAIN_SIGNING_KEY_ID` takes precedence for operators who want key
+//! separation. When NO seed is configured the head is advanced UNSIGNED
+//! (legacy/tolerated) — preserving drain liveness in dev/CI.
+//!
 //! ## Why `link_chain_hash_from_canonical` and not `HashChainBuilder::append`
 //!
 //! `HashChainBuilder::append` takes a typed `corelink_audit_chain::AuditEvent` and
@@ -61,10 +93,15 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use base64::Engine as _;
+use ed25519_dalek::{Signature, Signer as _, Verifier as _};
+use serde::Serialize;
 use serde_json::{json, Value};
 use subtle::ConstantTimeEq;
+use zeroize::Zeroizing;
 
 use corelink_audit_chain::{link_chain_hash_from_canonical, ChainHash, HashChainBuilder};
+use corelink_erasure_attestation::{ErasureSigningKey, Region};
 
 use crate::storage::d1_http::D1HttpClient;
 
@@ -75,16 +112,145 @@ const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 pub struct AuditDrainState {
     internal_auth_key: String,
     d1: Arc<D1HttpClient>,
+    /// 32-byte Ed25519 seed for the CF-6 keyed chain head. `None` ⇒ heads are
+    /// advanced UNSIGNED (legacy/tolerated). Held in [`Zeroizing`] (wiped on drop)
+    /// behind an [`Arc`] so cloning the state never copies the secret bytes.
+    signing_seed: Option<Arc<Zeroizing<[u8; 32]>>>,
+    /// The Ed25519 key id stamped into `audit_chain_head.signing_key_id`.
+    signing_key_id: u64,
 }
 
 impl std::fmt::Debug for AuditDrainState {
-    // Redact the internal-auth secret; never let it reach a log/Debug sink.
+    // Redact the internal-auth secret + signing seed; never let either reach a
+    // log/Debug sink.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AuditDrainState")
             .field("internal_auth_key", &"<redacted>")
             .field("d1", &"[D1HttpClient]")
+            .field("signing_seed", &self.signing_seed.as_ref().map(|_| "<redacted>"))
+            .field("signing_key_id", &self.signing_key_id)
             .finish()
     }
+}
+
+/// Load the 32-byte Ed25519 signing seed for the CF-6 keyed chain head.
+///
+/// Prefers a dedicated `AUDIT_CHAIN_SIGNING_SEED_HEX`; otherwise REUSES the
+/// erasure-attestation seed `ERASURE_ATTESTATION_SEED_HEX` (same key material —
+/// the keypair is purely seed-derived, see `key.rs::from_seed`). 64 hex chars →
+/// 32 bytes. `None` when neither is set / malformed (caller then advances the
+/// head UNSIGNED). Held in [`Zeroizing`] so the secret is wiped after the
+/// [`ErasureSigningKey`] is constructed.
+fn load_signing_seed() -> Option<Zeroizing<[u8; 32]>> {
+    let hex_str = std::env::var("AUDIT_CHAIN_SIGNING_SEED_HEX")
+        .ok()
+        .or_else(|| std::env::var("ERASURE_ATTESTATION_SEED_HEX").ok())?;
+    let hex_str = hex_str.trim();
+    if hex_str.len() != 64 {
+        return None;
+    }
+    let mut bytes = Zeroizing::new([0u8; 32]);
+    hex::decode_to_slice(hex_str, bytes.as_mut()).ok()?;
+    Some(bytes)
+}
+
+/// Monotonic signing-key id for the chain head — `AUDIT_CHAIN_SIGNING_KEY_ID`
+/// (dedicated) else `ERASURE_ATTESTATION_KEY_ID` (reused) else `1` (launch key).
+/// Stamped into `audit_chain_head.signing_key_id` so a seed/key rotation is
+/// distinguishable from tampering on resume.
+fn signing_key_id_from_env() -> u64 {
+    std::env::var("AUDIT_CHAIN_SIGNING_KEY_ID")
+        .ok()
+        .or_else(|| std::env::var("ERASURE_ATTESTATION_KEY_ID").ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(1)
+}
+
+/// Map a stored partition region string to the attestation [`Region`] enum used
+/// to construct the [`ErasureSigningKey`].
+///
+/// The Ed25519 keypair is PURELY seed-derived (`key.rs::from_seed` ignores
+/// region/timestamps for key material) and the partition region is bound in the
+/// SIGNED canonical tuple — NOT in the key. So a macro region with no attestation
+/// enum (e.g. `apac`/`afr`) maps to a harmless default here WITHOUT changing the
+/// key or the signed message; signing/verification of those partitions still
+/// works and stays region-bound via [`canonical_head_bytes`].
+fn region_for_key(region: &str) -> Region {
+    Region::parse(region).unwrap_or(Region::Wnam)
+}
+
+/// The canonical head tuple `(tenant_id, region, head_hash, next_sequence)` that
+/// is Ed25519-signed. RFC-8785 JCS (`serde_jcs`, the SAME canonicalizer the row
+/// seals + the erasure attestation use) sorts keys lexicographically, yielding the
+/// deterministic byte string
+/// `{"head_hash":"<64hex>","next_sequence":<int>,"region":"<r>","tenant_id":"<uuid>"}`.
+#[derive(Serialize)]
+struct CanonicalAuditHead<'a> {
+    head_hash: &'a str,
+    next_sequence: u64,
+    region: &'a str,
+    tenant_id: &'a str,
+}
+
+/// RFC-8785 JCS bytes of the canonical head tuple (what is signed / verified).
+fn canonical_head_bytes(
+    tenant_id: &str,
+    region: &str,
+    head_hash: &str,
+    next_sequence: u64,
+) -> Result<Vec<u8>, String> {
+    serde_jcs::to_vec(&CanonicalAuditHead {
+        head_hash,
+        next_sequence,
+        region,
+        tenant_id,
+    })
+    .map_err(|e| format!("JCS canonicalize audit head: {e}"))
+}
+
+/// Ed25519-sign the canonical head tuple with the seed-derived key. Returns the
+/// base64 signature stored in `audit_chain_head.head_signature`.
+fn sign_head(
+    seed: &[u8; 32],
+    key_id: u64,
+    tenant_id: &str,
+    region: &str,
+    head_hash: &str,
+    next_sequence: u64,
+) -> Result<String, String> {
+    let canonical = canonical_head_bytes(tenant_id, region, head_hash, next_sequence)?;
+    // Reuse the erasure-attestation key infra (mirrors `routes/dsr/attestation.rs`).
+    let sk = ErasureSigningKey::from_seed(key_id, region_for_key(region), 0, 0, *seed);
+    let sig = sk.signing_key.sign(&canonical);
+    Ok(base64::engine::general_purpose::STANDARD.encode(sig.to_bytes()))
+}
+
+/// Verify a stored base64 head signature against the canonical head tuple + the
+/// seed-derived public key. `false` on ANY mismatch / malformed input (a forged
+/// head, a wrong seed, a corrupt signature) — the caller treats `false` as
+/// tamper (fail-CLOSED).
+fn verify_head(
+    seed: &[u8; 32],
+    key_id: u64,
+    tenant_id: &str,
+    region: &str,
+    head_hash: &str,
+    next_sequence: u64,
+    signature_b64: &str,
+) -> bool {
+    let Ok(canonical) = canonical_head_bytes(tenant_id, region, head_hash, next_sequence) else {
+        return false;
+    };
+    let vk = ErasureSigningKey::from_seed(key_id, region_for_key(region), 0, 0, *seed)
+        .public_key()
+        .verifying_key;
+    let Ok(sig_bytes) = base64::engine::general_purpose::STANDARD.decode(signature_b64) else {
+        return false;
+    };
+    let Ok(sig_arr): Result<[u8; 64], _> = sig_bytes.try_into() else {
+        return false;
+    };
+    vk.verify(&canonical, &Signature::from_bytes(&sig_arr)).is_ok()
 }
 
 /// Constant-time internal-auth check. Mirrors
@@ -130,9 +296,23 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
     };
     let storage_env = crate::storage::StorageEnv::from_env()?;
     let d1 = Arc::new(crate::storage::d1_http::D1HttpClient::new(&storage_env).ok()?);
+    // CF-6: the seed-derived Ed25519 key for the keyed chain head. `None` ⇒ heads
+    // are advanced UNSIGNED (legacy/tolerated) — the route still mounts (dev/CI),
+    // but the head is NOT tamper-evident until a seed is provisioned.
+    let signing_seed = load_signing_seed().map(Arc::new);
+    let signing_key_id = signing_key_id_from_env();
+    if signing_seed.is_none() {
+        tracing::warn!(
+            "audit/drain: no AUDIT_CHAIN_SIGNING_SEED_HEX / ERASURE_ATTESTATION_SEED_HEX \
+             configured — chain heads will be advanced UNSIGNED (legacy/tolerated); set the \
+             seed to make the per-partition chain head tamper-evident (CF-6)"
+        );
+    }
     Some(AuditDrainState {
         internal_auth_key,
         d1,
+        signing_seed,
+        signing_key_id,
     })
 }
 
@@ -168,6 +348,12 @@ struct HeadCheckpoint {
     /// The EXACT stored hex (used verbatim in the compare-and-set WHERE clause).
     head_hex: String,
     next_sequence: u64,
+    /// CF-6: base64 Ed25519 signature over the canonical head tuple (`None` for a
+    /// pre-0080 / legacy head — tolerated, re-signed on the next advance).
+    head_signature: Option<String>,
+    /// CF-6: the key id the stored signature was produced under (lets a
+    /// seed/key rotation be told apart from tampering on resume).
+    signing_key_id: Option<u64>,
 }
 
 /// One `audit_outbox` row sealed into the BLAKE3 chain. Pure value — the seal is
@@ -253,6 +439,70 @@ fn resolve_resume(
     }
 }
 
+/// Outcome of the CF-6 head-signature check on resume.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HeadResumeCheck {
+    /// No checkpoint, or a NULL signature (pre-0080 legacy), or a signature
+    /// produced under a DIFFERENT key id (seed/key rotation — un-verifiable with
+    /// the current seed): proceed, the head is re-signed on the next advance.
+    Proceed,
+    /// A signature signed under the CURRENT key id verified OK.
+    Verified,
+    /// A NON-NULL signature signed under the current key id did NOT verify, OR a
+    /// signed head is present but no seed is configured to verify it: TAMPER /
+    /// fail-CLOSED — refuse to extend the chain from this head.
+    FailClosed,
+}
+
+/// Verify the stored head signature of the checkpoint we resume from (CF-6).
+///
+/// A checkpoint carrying a non-NULL signature signed under the CURRENT key id MUST
+/// verify against the canonical head tuple + the seed-derived public key. A NULL
+/// signature (legacy), a signature under a different key id (rotation), or no
+/// checkpoint at all are tolerated ([`HeadResumeCheck::Proceed`]); the head is
+/// (re-)signed on advance. A signature that fails to verify — or a signed head
+/// with no seed available to verify it — is [`HeadResumeCheck::FailClosed`].
+fn check_head_on_resume(
+    checkpoint: Option<&HeadCheckpoint>,
+    signing_seed: Option<&[u8; 32]>,
+    current_key_id: u64,
+    tenant_id: &str,
+    region: &str,
+) -> HeadResumeCheck {
+    let Some(cp) = checkpoint else {
+        return HeadResumeCheck::Proceed;
+    };
+    let Some(sig) = cp.head_signature.as_deref() else {
+        // Pre-0080 legacy head — tolerated, re-signed on advance.
+        return HeadResumeCheck::Proceed;
+    };
+    // A signature produced under a different key id (a seed/key rotation) cannot
+    // be verified with the current seed: tolerate + re-sign on advance.
+    if cp.signing_key_id != Some(current_key_id) {
+        return HeadResumeCheck::Proceed;
+    }
+    // Signed under the current key id ⇒ MUST be verifiable, else tamper.
+    match signing_seed {
+        Some(seed) => {
+            if verify_head(
+                seed,
+                current_key_id,
+                tenant_id,
+                region,
+                &cp.head_hex,
+                cp.next_sequence,
+                sig,
+            ) {
+                HeadResumeCheck::Verified
+            } else {
+                HeadResumeCheck::FailClosed
+            }
+        }
+        // A signed head but no seed to verify it: cannot prove integrity.
+        None => HeadResumeCheck::FailClosed,
+    }
+}
+
 /// Read the `(tenant_id, region)` partitions with pending (unsealed) rows.
 async fn read_pending_partitions(d1: &D1HttpClient) -> Result<Vec<(String, String)>, String> {
     let rows = d1
@@ -279,7 +529,8 @@ async fn read_checkpoint(
 ) -> Result<Option<HeadCheckpoint>, String> {
     let rows = d1
         .query(
-            "SELECT head_hash, next_sequence FROM audit_chain_head \
+            "SELECT head_hash, next_sequence, head_signature, signing_key_id \
+             FROM audit_chain_head \
              WHERE tenant_id = ?1 AND region = ?2",
             &[json!(tenant_id), json!(region)],
         )
@@ -299,10 +550,21 @@ async fn read_checkpoint(
         .and_then(Value::as_i64)
         .and_then(|n| u64::try_from(n).ok())
         .ok_or("audit_chain_head.next_sequence missing/negative/non-integer")?;
+    // CF-6: nullable signature columns (0080). A NULL is a legacy head.
+    let head_signature = row
+        .get("head_signature")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let signing_key_id = row
+        .get("signing_key_id")
+        .and_then(Value::as_i64)
+        .and_then(|n| u64::try_from(n).ok());
     Ok(Some(HeadCheckpoint {
         head,
         head_hex,
         next_sequence,
+        head_signature,
+        signing_key_id,
     }))
 }
 
@@ -399,6 +661,7 @@ async fn write_seal(d1: &D1HttpClient, row: &SealedRow, now: i64) -> Result<(), 
 /// Uses `RETURNING` to detect whether the guarded write actually matched: a
 /// guarded `UPDATE` (or an `INSERT OR IGNORE`) that hits no row / a conflict
 /// returns zero rows ⇒ drift.
+#[allow(clippy::too_many_arguments, reason = "explicit, no shared config struct")]
 async fn advance_head_cas(
     d1: &D1HttpClient,
     tenant_id: &str,
@@ -407,14 +670,23 @@ async fn advance_head_cas(
     new_head_hex: &str,
     new_seq: u64,
     now: i64,
+    // CF-6: the keyed-head columns persisted alongside the advance. `signature`
+    // is `None` when no seed is configured (head advanced UNSIGNED / legacy).
+    signature: Option<&str>,
+    signed_at_ms: Option<i64>,
+    signing_key_id: Option<u64>,
 ) -> Result<bool, String> {
     let new_seq_i = i64::try_from(new_seq).map_err(|_| "next_sequence exceeds i64")?;
+    let signing_key_id_i = signing_key_id
+        .map(|k| i64::try_from(k).map_err(|_| "signing_key_id exceeds i64"))
+        .transpose()?;
     let rows = match expected {
         Some(cp) => {
             let exp_seq = i64::try_from(cp.next_sequence).map_err(|_| "next_sequence exceeds i64")?;
             d1.query(
                 "UPDATE audit_chain_head \
-                 SET head_hash = ?1, next_sequence = ?2, updated_at = ?3 \
+                 SET head_hash = ?1, next_sequence = ?2, updated_at = ?3, \
+                     head_signature = ?8, head_signed_at_ms = ?9, signing_key_id = ?10 \
                  WHERE tenant_id = ?4 AND region = ?5 \
                    AND head_hash = ?6 AND next_sequence = ?7 \
                  RETURNING tenant_id",
@@ -426,6 +698,9 @@ async fn advance_head_cas(
                     json!(region),
                     json!(cp.head_hex),
                     json!(exp_seq),
+                    json!(signature),
+                    json!(signed_at_ms),
+                    json!(signing_key_id_i),
                 ],
             )
             .await?
@@ -436,8 +711,9 @@ async fn advance_head_cas(
             // ON CONFLICT DO NOTHING then returns zero rows ⇒ drift.
             d1.query(
                 "INSERT INTO audit_chain_head \
-                     (tenant_id, region, head_hash, next_sequence, updated_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5) \
+                     (tenant_id, region, head_hash, next_sequence, updated_at, \
+                      head_signature, head_signed_at_ms, signing_key_id) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) \
                  ON CONFLICT(tenant_id, region) DO NOTHING \
                  RETURNING tenant_id",
                 &[
@@ -446,6 +722,9 @@ async fn advance_head_cas(
                     json!(new_head_hex),
                     json!(new_seq_i),
                     json!(now),
+                    json!(signature),
+                    json!(signed_at_ms),
+                    json!(signing_key_id_i),
                 ],
             )
             .await?
@@ -455,13 +734,54 @@ async fn advance_head_cas(
 }
 
 /// Drain a single `(tenant_id, region)` partition.
+#[allow(clippy::too_many_arguments, reason = "explicit, no shared config struct")]
 async fn drain_partition(
     d1: &D1HttpClient,
     tenant_id: &str,
     region: &str,
     now: i64,
+    signing_seed: Option<&[u8; 32]>,
+    signing_key_id: u64,
 ) -> Result<PartitionOutcome, String> {
     let checkpoint = read_checkpoint(d1, tenant_id, region).await?;
+
+    // CF-6: verify the keyed head signature of the checkpoint we resume from. A
+    // non-NULL signature signed under the current key id that does NOT verify (or
+    // a signed head with no seed to verify it) is tampering — refuse to extend the
+    // chain from a forged head (fail-CLOSED, SEV-1).
+    match check_head_on_resume(
+        checkpoint.as_ref(),
+        signing_seed,
+        signing_key_id,
+        tenant_id,
+        region,
+    ) {
+        HeadResumeCheck::FailClosed => {
+            tracing::error!(
+                tenant_id = %tenant_id,
+                region = %region,
+                signing_key_id = signing_key_id,
+                severity = "SEV-1",
+                tamper_detected = true,
+                "audit/drain: audit_chain_head signature does NOT verify — TAMPER DETECTED; \
+                 refusing to extend the chain from a forged head (fail-CLOSED, CF-6)"
+            );
+            return Err(
+                "audit_chain_head signature verification failed (tamper-detected): refusing to \
+                 extend the chain from a forged head"
+                    .to_string(),
+            );
+        }
+        HeadResumeCheck::Verified => {
+            tracing::debug!(
+                tenant_id = %tenant_id,
+                region = %region,
+                "audit/drain: resumed-head signature verified (CF-6)"
+            );
+        }
+        HeadResumeCheck::Proceed => {}
+    }
+
     let sealed_tail = read_sealed_tail(d1, tenant_id, region).await?;
 
     // Resume the builder honestly via resume()/new() (GENESIS when there is no
@@ -489,15 +809,29 @@ async fn drain_partition(
         write_seal(d1, row, now).await?;
     }
 
+    // CF-6: sign the canonical head tuple we are about to commit (when a seed is
+    // configured). No seed ⇒ advance UNSIGNED (NULL columns, legacy/tolerated).
+    let new_head_hex = new_head.to_hex();
+    let (signature, signed_at_ms, key_id_col) = match signing_seed {
+        Some(seed) => {
+            let sig = sign_head(seed, signing_key_id, tenant_id, region, &new_head_hex, new_seq)?;
+            (Some(sig), Some(now), Some(signing_key_id))
+        }
+        None => (None, None, None),
+    };
+
     // Advance the checkpoint with a compare-and-set on the resumed value.
     let committed = advance_head_cas(
         d1,
         tenant_id,
         region,
         checkpoint.as_ref(),
-        &new_head.to_hex(),
+        &new_head_hex,
         new_seq,
         now,
+        signature.as_deref(),
+        signed_at_ms,
+        key_id_col,
     )
     .await?;
 
@@ -530,8 +864,19 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
     let mut rows_sealed: u64 = 0;
     let mut partitions_drifted: u64 = 0;
     let mut partitions_failed: u64 = 0;
+    // CF-6: borrow the keyed-head signing seed once for the whole sweep.
+    let signing_seed: Option<&[u8; 32]> = state.signing_seed.as_deref().map(|z| &**z);
     for (tenant_id, region) in partitions {
-        match drain_partition(&state.d1, &tenant_id, &region, now).await {
+        match drain_partition(
+            &state.d1,
+            &tenant_id,
+            &region,
+            now,
+            signing_seed,
+            state.signing_key_id,
+        )
+        .await
+        {
             Ok(PartitionOutcome::Sealed(n)) => {
                 partitions_drained = partitions_drained.saturating_add(1);
                 rows_sealed = rows_sealed.saturating_add(n);
@@ -729,5 +1074,209 @@ mod tests {
         assert_eq!(chain_hash_from_hex(&h.to_hex()), Some(h));
         assert_eq!(chain_hash_from_hex("zz"), None);
         assert_eq!(chain_hash_from_hex(&"ab".repeat(31)), None); // 62 hex chars
+    }
+
+    // ---- CF-6: keyed (Ed25519-signed) chain head ----
+
+    const SEED_A: [u8; 32] = [0x11; 32];
+    const SEED_B: [u8; 32] = [0x22; 32];
+    const TENANT: &str = "00000000-0000-7000-8000-00000000aaaa";
+    const REGION: &str = "weur";
+    const HEAD_HEX: &str = "ab"; // expanded to 64 hex below via repeat
+    const KID: u64 = 1;
+
+    fn head_hex() -> String {
+        HEAD_HEX.repeat(32) // 64 lowercase hex chars
+    }
+
+    /// Build a checkpoint whose stored signature is a GENUINE signature over its
+    /// own (tenant, region, head_hex, next_sequence) tuple under `seed`/`kid`.
+    fn signed_checkpoint(
+        seed: &[u8; 32],
+        kid: u64,
+        head_hex: &str,
+        next_sequence: u64,
+    ) -> HeadCheckpoint {
+        let sig = sign_head(seed, kid, TENANT, REGION, head_hex, next_sequence).unwrap();
+        HeadCheckpoint {
+            head: chain_hash_from_hex(head_hex).unwrap(),
+            head_hex: head_hex.to_string(),
+            next_sequence,
+            head_signature: Some(sig),
+            signing_key_id: Some(kid),
+        }
+    }
+
+    #[test]
+    fn canonical_head_bytes_is_deterministic_and_jcs_key_ordered() {
+        let a = canonical_head_bytes(TENANT, REGION, &head_hex(), 7).unwrap();
+        let b = canonical_head_bytes(TENANT, REGION, &head_hex(), 7).unwrap();
+        assert_eq!(a, b, "canonical head bytes must be deterministic");
+        let s = String::from_utf8(a).unwrap();
+        // RFC-8785 JCS sorts keys lexicographically: head_hash < next_sequence <
+        // region < tenant_id.
+        let pos = |k: &str| s.find(k).unwrap();
+        assert!(pos("head_hash") < pos("next_sequence"));
+        assert!(pos("next_sequence") < pos("region"));
+        assert!(pos("region") < pos("tenant_id"));
+    }
+
+    /// A genuine advance signs a head whose signature verifies (round-trip).
+    #[test]
+    fn genuine_head_signature_verifies() {
+        let sig = sign_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42).unwrap();
+        assert!(
+            verify_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42, &sig),
+            "a genuine head signature must verify"
+        );
+    }
+
+    /// A tampered head_hash with the ORIGINAL signature must NOT verify (the core
+    /// CF-6 tamper-detection: a D1 writer who rewrites the head is caught).
+    #[test]
+    fn tampered_head_hash_fails_verification() {
+        let sig = sign_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42).unwrap();
+        let forged = "cd".repeat(32);
+        assert_ne!(forged, head_hex());
+        assert!(
+            !verify_head(&SEED_A, KID, TENANT, REGION, &forged, 42, &sig),
+            "a rewritten head_hash must fail verification"
+        );
+    }
+
+    /// Tampering with any other bound field (sequence / region / tenant) also
+    /// fails — the whole tuple is signed.
+    #[test]
+    fn tampered_tuple_fields_fail_verification() {
+        let sig = sign_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42).unwrap();
+        // Rewound sequence.
+        assert!(!verify_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 41, &sig));
+        // Different region.
+        assert!(!verify_head(&SEED_A, KID, TENANT, "enam", &head_hex(), 42, &sig));
+        // Different tenant.
+        assert!(!verify_head(
+            &SEED_A,
+            KID,
+            "00000000-0000-7000-8000-00000000bbbb",
+            REGION,
+            &head_hex(),
+            42,
+            &sig
+        ));
+    }
+
+    /// A different seed (forged signer) must NOT verify — the head cannot be
+    /// re-signed without the write-only seed.
+    #[test]
+    fn wrong_seed_fails_verification() {
+        let sig = sign_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42).unwrap();
+        assert!(!verify_head(&SEED_B, KID, TENANT, REGION, &head_hex(), 42, &sig));
+    }
+
+    /// Malformed signature material is rejected (treated as tamper / fail-CLOSED).
+    #[test]
+    fn malformed_signature_fails_verification() {
+        assert!(!verify_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42, "not-base64!!!"));
+        let short = base64::engine::general_purpose::STANDARD.encode([0u8; 32]);
+        assert!(!verify_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42, &short));
+    }
+
+    /// Resume re-verifies: a genuine signed checkpoint under the current key id →
+    /// Verified.
+    #[test]
+    fn resume_verifies_genuine_signed_head() {
+        let cp = signed_checkpoint(&SEED_A, KID, &head_hex(), 9);
+        assert_eq!(
+            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION),
+            HeadResumeCheck::Verified
+        );
+    }
+
+    /// Resume catches tampering: a checkpoint whose head_hex was rewritten after
+    /// signing → FailClosed (the drain refuses to extend).
+    #[test]
+    fn resume_fails_closed_on_tampered_head() {
+        let mut cp = signed_checkpoint(&SEED_A, KID, &head_hex(), 9);
+        // Insider rewrites the head (keeping the original signature).
+        cp.head_hex = "cd".repeat(32);
+        cp.head = chain_hash_from_hex(&cp.head_hex).unwrap();
+        assert_eq!(
+            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION),
+            HeadResumeCheck::FailClosed
+        );
+    }
+
+    /// A NULL-signature legacy head (pre-0080) is tolerated on resume.
+    #[test]
+    fn resume_tolerates_legacy_null_signature() {
+        let cp = HeadCheckpoint {
+            head: chain_hash_from_hex(&head_hex()).unwrap(),
+            head_hex: head_hex(),
+            next_sequence: 9,
+            head_signature: None,
+            signing_key_id: None,
+        };
+        assert_eq!(
+            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION),
+            HeadResumeCheck::Proceed
+        );
+    }
+
+    /// The legacy head is RE-SIGNED on the next advance: signing it with the
+    /// configured seed yields a signature that verifies.
+    #[test]
+    fn legacy_head_gets_signed_on_next_advance() {
+        // Simulate the advance signing the new head computed from the legacy state.
+        let sig = sign_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 10).unwrap();
+        assert!(verify_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 10, &sig));
+        // And a checkpoint carrying that fresh signature now Verifies on resume.
+        let cp = signed_checkpoint(&SEED_A, KID, &head_hex(), 10);
+        assert_eq!(
+            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION),
+            HeadResumeCheck::Verified
+        );
+    }
+
+    /// A head signed under a DIFFERENT key id (seed/key rotation) is tolerated
+    /// (re-signed on advance), not a false tamper alarm.
+    #[test]
+    fn resume_tolerates_rotated_key_id() {
+        let cp = signed_checkpoint(&SEED_A, 1, &head_hex(), 9);
+        // Current deployment uses key id 2 + a (possibly) different seed.
+        assert_eq!(
+            check_head_on_resume(Some(&cp), Some(&SEED_B), 2, TENANT, REGION),
+            HeadResumeCheck::Proceed
+        );
+    }
+
+    /// A signed head with NO seed configured to verify it → fail-CLOSED (cannot
+    /// prove integrity of a head that claims to be signed).
+    #[test]
+    fn resume_fails_closed_when_signed_but_no_seed() {
+        let cp = signed_checkpoint(&SEED_A, KID, &head_hex(), 9);
+        assert_eq!(
+            check_head_on_resume(Some(&cp), None, KID, TENANT, REGION),
+            HeadResumeCheck::FailClosed
+        );
+    }
+
+    /// No checkpoint (genesis) → proceed.
+    #[test]
+    fn resume_proceeds_with_no_checkpoint() {
+        assert_eq!(
+            check_head_on_resume(None, Some(&SEED_A), KID, TENANT, REGION),
+            HeadResumeCheck::Proceed
+        );
+    }
+
+    /// `region_for_key` is irrelevant to the keypair: a macro region with no enum
+    /// (e.g. `apac`) still signs + verifies (the region is bound in the tuple,
+    /// not the key).
+    #[test]
+    fn macro_region_still_signs_and_verifies() {
+        let sig = sign_head(&SEED_A, KID, TENANT, "apac", &head_hex(), 5).unwrap();
+        assert!(verify_head(&SEED_A, KID, TENANT, "apac", &head_hex(), 5, &sig));
+        // But it is region-bound: a different region must fail.
+        assert!(!verify_head(&SEED_A, KID, TENANT, "afr", &head_hex(), 5, &sig));
     }
 }
