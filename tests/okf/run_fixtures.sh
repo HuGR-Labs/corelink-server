@@ -1798,6 +1798,115 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v11: an [env.*] main OVERRIDE outside src/ is enumerated -------------
+# A wrangler config may declare a top-level `main` (decoy) AND a per-environment
+# override — `[env.prod]\nmain = "build/worker-prod.mjs"`. `wrangler deploy --env
+# prod` deploys the ENV main, not the top-level one. The old parser used .search()
+# (FIRST match only) so it saw ONLY the top-level decoy → the REAL prod entrypoint
+# shipped GREEN with zero coverage. v11 parses EVERY main (findall) — top-level AND
+# every [env.<name>] override. We prove TWO:
+#  POSITIVE — apps/envmain-worker's [env.prod] main `build/worker-prod.mjs` (outside
+#             src/, uncited) REDs [C10b] naming it, EVEN THOUGH the top-level
+#             src/index.ts decoy is concept-cited (the decoy no longer masks it);
+#  NEGATIVE — that concept-cited top-level src/index.ts main stays covered (the
+#             widened net stays selective).
+assert_env_main_override_outside_src() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # The app: a CONCEPT-CITED top-level src/index.ts main (the decoy) PLUS an
+    # [env.prod] override main living OUTSIDE src/ (the real prod deploy surface,
+    # uncited) — the v11 hole.
+    mkdir -p apps/envmain-worker/src apps/envmain-worker/build
+    printf 'export default {\n  async fetch() { return deny_unless_authorized(); },\n};\n' \
+      > apps/envmain-worker/src/index.ts
+    printf 'export default { async fetch() { /* prod-only backdoor */ } };\n' \
+      > apps/envmain-worker/build/worker-prod.mjs
+    cat > apps/envmain-worker/wrangler.toml <<'TOML'
+name = "envmain-worker"
+main = "src/index.ts"
+
+[env.prod]
+main = "build/worker-prod.mjs"
+TOML
+    mkdir -p docs/knowledge/planes
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [h](/planes/h.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # The concept grounds ONLY the top-level src/index.ts main (line 2 = the
+    # substantive enforcer). The [env.prod] override is left uncited on purpose.
+    cat > docs/knowledge/planes/h.md <<EOF
+---
+type: "Plane"
+title: "Envmain worker (hermetic)"
+description: "grounds the top-level app entrypoint only."
+source_files:
+  - "apps/envmain-worker/src/index.ts"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Envmain worker (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the entrypoint (\`apps/envmain-worker/src/index.ts:2\`).
+
+# Invariants
+- it holds (\`apps/envmain-worker/src/index.ts:2\`).
+
+# Citations
+1. \`apps/envmain-worker/src/index.ts:2\` — grounded anchor (the fetch enforcer).
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "planes/h"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "apps/envmain-worker/src/index.ts"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.em_out" 2>&1 || true
+  )
+  # POSITIVE: the [env.prod] override main (outside src/, uncited) is enumerated
+  # -> fires naming it, even though the top-level decoy IS concept-cited.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.em_out" 2>/dev/null \
+     && grep -q 'apps/envmain-worker/build/worker-prod.mjs' "$tmp/.em_out" 2>/dev/null; then
+    ok "env-main override outside src: an [env.prod] main (build/worker-prod.mjs) is enumerated -> [C10b] names it"
+  else
+    miss "env-main override outside src positive (no [C10b] naming apps/envmain-worker/build/worker-prod.mjs): $(tail -1 "$tmp/.em_out" 2>/dev/null)" "envmain-pos"
+  fi
+  # NEGATIVE (selectivity): the concept-cited top-level src/index.ts is NOT flagged.
+  total=$((total + 1))
+  if ! grep -q 'apps/envmain-worker/src/index.ts' "$tmp/.em_out" 2>/dev/null; then
+    ok "env-main override outside src: the concept-cited top-level src/index.ts main stays covered (selective)"
+  else
+    miss "env-main override outside src negative: covered apps/envmain-worker/src/index.ts was wrongly flagged" "envmain-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -1850,6 +1959,10 @@ assert_exec_ext_set_unified
 # wrangler `main` OUTSIDE src/ (the real deploy surface) is enumerated.
 assert_rust_case_insensitive
 assert_wrangler_main_outside_src
+# gate v11: a wrangler [env.<name>] main OVERRIDE (TOML) / "env":{…} (JSONC) is now
+# parsed via findall (not search) — an env-override entrypoint outside src/ that a
+# top-level decoy used to mask is enumerated and REDs [C10b] (PoC: apps/poc-envmain).
+assert_env_main_override_outside_src
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then

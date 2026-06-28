@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/routes/admin.rs"
   - "crates/corelink-container/src/routes/admin_pilot.rs"
   - "docs/internal/admin-plane.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "a7c16588ead34ed6095e0aa9db67ddf77ac96688"
 provenance: "AUTHORED"
 tags: ["ops", "admin", "config", "dual-approval", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -52,7 +52,7 @@ behind one fail-closed authorization gate.
 - A CAS write whose `expected_version` is stale must 409, never silently overwrite `docs/internal/admin-plane.md:80-86`.
 - Rollback requires fresh MFA AND a dual approver (`X-Dual-Approver`) `docs/internal/admin-plane.md:120-123`.
 - The admin plane never runs privileged logic without a configured gate key (unconfigured ⇒ reject) `crates/corelink-container/src/routes/admin.rs:79`.
-- A dual-approval pair must be set together: an **incomplete** pair (one of `approval_id`/`approver` present, the other absent) is rejected at request construction (`crates/corelink-container/src/routes/admin.rs:592`); a **fully-absent** pair yields `None` (no approval requested) and proceeds — the per-operation approval *requirement* is enforced in the handler, not at construction.
+- A dual-approval pair must be set together: an **incomplete** pair (one of `approval_id`/`approver` present, the other absent) is rejected at request construction (`crates/corelink-container/src/routes/admin.rs:591`); a **fully-absent** pair yields `None` (no approval requested) and proceeds — the per-operation approval *requirement* is enforced in the handler, not at construction.
 - Pilot mutations emit a `corelink.admin.pilot_*` audit event on attempt and success `crates/corelink-container/src/routes/admin_pilot.rs:1141-1179`.
 
 # Gotchas
@@ -71,7 +71,7 @@ behind one fail-closed authorization gate.
 7. `crates/corelink-container/src/routes/admin.rs:79` — internal-auth fail-closed gate.
 8. `crates/corelink-container/src/routes/admin.rs:401` — specific-then-shared internal-auth key resolution.
 9. `crates/corelink-container/src/routes/admin.rs:464` — the admin read+mutate router.
-10. `crates/corelink-container/src/routes/admin.rs:592` — incomplete dual-approval pair rejected at request construction.
+10. `crates/corelink-container/src/routes/admin.rs:591` — incomplete dual-approval pair rejected at request construction (the `_ => return Err(...)` arm).
 10b. `crates/corelink-container/src/routes/admin.rs:573-586` — the only two LIVE mutate ops: `set_tenant_tier` + `rotate_admin_token` (the config-singleton CAS is design-plane, not wired here).
 11. `crates/corelink-container/src/routes/admin_pilot.rs:110` — canonical grant-tier pilot route const.
 12. `crates/corelink-container/src/routes/admin_pilot.rs:1141-1179` — pilot create handler emits the `corelink.admin.pilot_*` audit on attempt + success.

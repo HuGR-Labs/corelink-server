@@ -6,6 +6,7 @@ source_files:
   - "crates/corelink-gc/src/lib.rs"
   - "crates/corelink-gc/src/run.rs"
   - "crates/corelink-gc/src/degrade.rs"
+  - "crates/corelink-gc/src/worker.rs"
   - "crates/corelink-eviction/src/lib.rs"
   - "crates/corelink-eviction/src/reachable.rs"
   - "crates/corelink-eviction/src/blob_meta.rs"
@@ -13,7 +14,7 @@ source_files:
   - "crates/corelink-ratelimit/src/limiter.rs"
   - "crates/corelink-ratelimit/src/bucket.rs"
   - "crates/corelink-ratelimit/src/key.rs"
-checkpoint_sha: "04a7eccfdbe5733a9059ab12518f6ee571db0248"
+checkpoint_sha: "a7c16588ead34ed6095e0aa9db67ddf77ac96688"
 provenance: "AUTHORED"
 tags: ["crates", "gc", "eviction", "ratelimit", "ops", "sre"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -30,13 +31,13 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 # How it works
 
 - `corelink-gc` ships the GC run state machine — the executed `GcPhase::can_transition_to` enforces the monotone forward chain (Idle→Mark→Sweep→PhysicalDelete→Reconcile→Completed, any-pre-terminal→Failed, everything else rejected) (`crates/corelink-gc/src/run.rs:102-119`).
-- GC carries a `gc-pause` emergency stop: a `DegradeProbe` consulted at every phase transition (`crates/corelink-gc/src/degrade.rs:114-122`); only `GcPause` forces an abort at the next batch boundary (`requires_abort`, `crates/corelink-gc/src/degrade.rs:57-60`).
+- GC carries a `gc-pause` emergency stop: the worker consults the `DegradeProbe` (contract: `crates/corelink-gc/src/degrade.rs:114-122`) at every phase transition — `transition_or_abort` probes BEFORE advancing the phase (`crates/corelink-gc/src/worker.rs:213`); only `GcPause` forces an abort at the next batch boundary (`requires_abort`, `crates/corelink-gc/src/degrade.rs:57-60`).
 - `corelink-eviction` is soft-delete-first and reachability-gated: the executed reachable probe protects any blob a live AC entry references, using the strict `<` evict-arm / `>=` protect-arm boundary mirroring the GC TLA semantics (`crates/corelink-eviction/src/reachable.rs:177-200`); reclamation is the soft-delete `UPDATE … SET deleted_at` (NEVER a direct R2 DELETE), idempotent on `deleted_at IS NULL` (`crates/corelink-eviction/src/blob_meta.rs:336-353`).
 - `corelink-ratelimit` is a lazy-refill token bucket keyed by a tenant-leftmost composite (`per_tenant` / `per_ip` / `per_tenant_per_endpoint`) per DO singleton, emitting RFC 6585 Retry-After seconds clamped to a floor/ceiling — the executed bucket math (`crates/corelink-ratelimit/src/bucket.rs:208-272`), the key dimensions (`crates/corelink-ratelimit/src/key.rs:30-49`).
 
 # Invariants
 
-- GC reclamation is pausable: the degrade probe is honored at every state transition, bounding blast radius of a bad sweep (`crates/corelink-gc/src/degrade.rs:114-122`).
+- GC reclamation is pausable: the degrade probe is honored at every state transition, bounding blast radius of a bad sweep — consulted at the phase boundary in `transition_or_abort` (`crates/corelink-gc/src/worker.rs:213`).
 - `INV-EVICT-SOFT-DELETE-FIRST`: eviction soft-deletes via `deleted_at`, never a direct R2 DELETE; physical cleanup is GC's job post-grace (`crates/corelink-eviction/src/blob_meta.rs:336-353`).
 - The reachable-check is race-aware: `a.created_at < evict_started_at_ms` strict-evict with a `>=` protect mirror, so a blob written concurrently with the sweep is protected (`crates/corelink-eviction/src/reachable.rs:185-193`).
 - `INV-AVAIL-ISOLATION` / `INV-TENANT-ISOLATION`: rate-limit buckets are per-tenant with a tenant-leftmost PK and an executed tenant-mismatch guard, so cross-tenant throttling is impossible by design (`crates/corelink-ratelimit/src/limiter.rs:301-307`).
@@ -53,7 +54,7 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 0b. `crates/corelink-eviction/src/lib.rs:171-181` — the `corelink-eviction` crate `pub mod` map (reachable/blob_meta/trigger/storage_state).
 0c. `crates/corelink-ratelimit/src/lib.rs:169-176` — the `corelink-ratelimit` crate `pub mod` map (bucket/limiter/key/config).
 1. `crates/corelink-gc/src/run.rs:102-119` — `GcPhase::can_transition_to`: the executed monotone GC phase state machine.
-2. `crates/corelink-gc/src/degrade.rs:114-122` — `DegradeProbe::probe`: the `gc-pause` degrade-mode emergency stop consulted at every phase transition.
+2. `crates/corelink-gc/src/degrade.rs:114-122` — `DegradeProbe::probe`: the `gc-pause` degrade-mode emergency-stop CONTRACT; consulted at every phase transition by the worker (`crates/corelink-gc/src/worker.rs:213`, `transition_or_abort`).
 2b. `crates/corelink-gc/src/degrade.rs:57-60` — `DegradeKind::requires_abort`: only `GcPause` aborts a Running worker at the next batch boundary.
 3. `crates/corelink-eviction/src/reachable.rs:177-200` — the executed reachable check (strict `<` evict / `>=` protect; race-aware).
 4. `crates/corelink-eviction/src/blob_meta.rs:336-353` — `INV-EVICT-SOFT-DELETE-FIRST`: the executed soft-delete `deleted_at` write (never a direct R2 DELETE; idempotent).

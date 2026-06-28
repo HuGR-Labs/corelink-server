@@ -775,16 +775,42 @@ def _iter_exec_sources(base: Path, surface_root: Path, *, js_ts: bool = True,
 # excludes still cover THEIR mains — `.open-next/worker.js` / `src/index.ts` both
 # live under the excluded app dir — so a build-output/presentation main stays
 # review-waived, as designed.)
+#
+# gate v11 fix (HIGH — env-OVERRIDE main shipped GREEN; PoC-proven): a wrangler
+# config may declare a top-level `main` AND a PER-ENVIRONMENT override — TOML
+# `[env.prod]\nmain = "build/worker-prod.mjs"` or JSONC `"env": {"prod": {"main":
+# ...}}`. `wrangler deploy --env prod` deploys the ENV main, not the top-level one.
+# The old `_wrangler_main` used `.search()` (FIRST match only), so it saw ONLY the
+# top-level `main` — a decoy `main = "src/index.ts"` over an `[env.prod]` override
+# pointing at `build/worker-prod.mjs` made the REAL prod entrypoint ship GREEN with
+# zero coverage (PoC: apps/poc-envmain). We now parse EVERY `main` declaration in
+# the file (`findall`, not `search`) — the top-level main AND every `[env.<name>]`
+# (TOML) / `"env": {"<name>": {…}}` (JSONC) override — and enumerate EACH distinct
+# entrypoint as a required surface (each strict). An env-override main outside src/
+# now surfaces as a [C10b] gap unless a concept grounds it or an `excludes:` entry
+# waives it. The matcher also tolerates single quotes and a TOML/JSONC ARRAY form
+# (`main = ["a", "b"]` / `"main": ["a", "b"]`) if the wrangler schema ever allows it,
+# enumerating every element. (Real apps declare only a top-level `src/index.ts` main
+# with no env override — and the excluded apps' env mains, if any, stay covered by
+# their wholesale exact-prefix excludes — so the widened net stays selective.)
 _WRANGLER_MAIN_RE = re.compile(
-    r"""^\s*["']?main["']?\s*[:=]\s*["']([^"']+)["']""", re.MULTILINE
+    r"""["']?main["']?\s*[:=]\s*(\[[^\]]*\]|["'][^"']+["'])""", re.MULTILINE
 )
+_WRANGLER_MAIN_ELEM_RE = re.compile(r"""["']([^"',\[\]]+)["']""")
 
 
-def _wrangler_main(app_dir: Path):
-    """The app-relative `main` entrypoint declared in `app_dir`'s wrangler config
-    (`wrangler.toml` then `wrangler.jsonc`/`wrangler.json`), or None. Parsed with a
-    tolerant regex so the same matcher handles TOML (`main = "x"`) and JSONC
-    (`"main": "x"`, possibly with `//` comments) without a TOML/JSONC dependency."""
+def _wrangler_mains(app_dir: Path) -> list[str]:
+    """ALL app-relative `main` entrypoints declared in `app_dir`'s wrangler config
+    (`wrangler.toml` then `wrangler.jsonc`/`wrangler.json`) — the top-level `main`
+    AND every per-environment override (`[env.<name>]` in TOML, `"env": {…}` in
+    JSONC). Returns a de-duplicated, order-preserving list (possibly empty).
+
+    Parsed with a tolerant regex so the SAME matcher handles TOML (`main = "x"`) and
+    JSONC (`"main": "x"`, possibly with `//` comments) without a TOML/JSONC
+    dependency, and `findall` (NOT `search`) so an env-override main is not masked by
+    a top-level decoy (gate v11). Single quotes and an array form (`main = ["a",
+    "b"]`) are tolerated — every element of an array is enumerated. The FIRST config
+    file that exists wins (a project ships exactly one wrangler config)."""
     for name in ("wrangler.toml", "wrangler.jsonc", "wrangler.json"):
         cfg = app_dir / name
         if not cfg.is_file():
@@ -793,10 +819,21 @@ def _wrangler_main(app_dir: Path):
             text = cfg.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        m = _WRANGLER_MAIN_RE.search(text)
-        if m:
-            return m.group(1).strip()
-    return None
+        mains: list[str] = []
+        for raw in _WRANGLER_MAIN_RE.findall(text):
+            raw = raw.strip()
+            if raw.startswith("["):
+                # array form: enumerate every quoted element.
+                for elem in _WRANGLER_MAIN_ELEM_RE.findall(raw):
+                    elem = elem.strip()
+                    if elem and elem not in mains:
+                        mains.append(elem)
+            else:
+                val = raw.strip("\"'").strip()
+                if val and val not in mains:
+                    mains.append(val)
+        return mains
+    return []
 
 
 def _line_count(path: Path) -> int:
@@ -1404,18 +1441,17 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     _apps_dir_for_main = surface_root / "apps"
     if _apps_dir_for_main.is_dir():
         for _app in sorted(p for p in _apps_dir_for_main.iterdir() if p.is_dir()):
-            _main_rel = _wrangler_main(_app)
-            if not _main_rel:
-                continue
-            _mp = (_app / _main_rel).resolve()
-            try:
-                _r = _mp.relative_to(surface_root).as_posix()
-            except ValueError:
-                continue
-            if _mp.is_file() and _is_exec_source(_r, js_ts=True, rust=True):
-                # only the ones NOT already strict by the apps/*/src/** rule.
-                if not _is_file_granular_strict(_r):
-                    wrangler_main_strict.add(_r)
+            # gate v11: EVERY declared main — top-level AND every [env.*] override.
+            for _main_rel in _wrangler_mains(_app):
+                _mp = (_app / _main_rel).resolve()
+                try:
+                    _r = _mp.relative_to(surface_root).as_posix()
+                except ValueError:
+                    continue
+                if _mp.is_file() and _is_exec_source(_r, js_ts=True, rust=True):
+                    # only the ones NOT already strict by the apps/*/src/** rule.
+                    if not _is_file_granular_strict(_r):
+                        wrangler_main_strict.add(_r)
 
     def _strict(rel: str) -> bool:
         """`_is_file_granular_strict`, EXTENDED with the gate-v10 wrangler-`main`
@@ -1577,8 +1613,11 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             # a non-src dir, build output). An executable main OUTSIDE src/ now
             # surfaces as a required [C10b] surface; an excluded app's main stays
             # covered by its existing exact-prefix exclude.
-            main_rel = _wrangler_main(app)
-            if main_rel:
+            # gate v11 fix (HIGH): enumerate EVERY declared main — the top-level
+            # main AND every per-environment `[env.<name>]` override — so an
+            # env-override entrypoint (e.g. `[env.prod] main = "build/worker.mjs"`)
+            # that the top-level decoy used to mask is now a required surface.
+            for main_rel in _wrangler_mains(app):
                 main_path = (app / main_rel).resolve()
                 try:
                     rel = main_path.relative_to(surface_root).as_posix()
