@@ -589,6 +589,10 @@ export class CoreLinkServer implements DurableObject {
           // the exact ERASURE_SALT_KEY-class gap. (caught by check-env-contract.py)
           ERASURE_ATTESTATION_SEED_HEX: this.env.ERASURE_ATTESTATION_SEED_HEX ?? "",
           ERASURE_ATTESTATION_KEY_ID: this.env.ERASURE_ATTESTATION_KEY_ID ?? "",
+          // CF-6: OPTIONAL dedicated audit-chain head-signing key (defaults to
+          // reusing the erasure-attestation seed/key above when unset).
+          AUDIT_CHAIN_SIGNING_SEED_HEX: this.env.AUDIT_CHAIN_SIGNING_SEED_HEX ?? "",
+          AUDIT_CHAIN_SIGNING_KEY_ID: this.env.AUDIT_CHAIN_SIGNING_KEY_ID ?? "",
           ERASURE_ATTESTATION_REGION: this.env.ERASURE_ATTESTATION_REGION ?? "",
           // Brutal-audit #1 fix: the single-region assertion flag gates whether a
           // post-deletion attestation may sign with the env-default region. MUST be

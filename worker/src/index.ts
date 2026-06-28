@@ -183,6 +183,8 @@ export interface Env {
   ERASURE_ATTESTATION_KEY_ID?: string;
   ERASURE_ATTESTATION_REGION?: string;
   ERASURE_ATTESTATION_SINGLE_REGION?: string;
+  AUDIT_CHAIN_SIGNING_SEED_HEX?: string;
+  AUDIT_CHAIN_SIGNING_KEY_ID?: string;
   FABRIC_INTROSPECT_AUTH_KEY?: string;
   FABRIC_INTROSPECT_AUTH_KEY_HUGR?: string; // HuGR toolkits introspect consumer (#398) — forwarded to the container
   BILLING_INGEST_AUTH_KEY?: string; // ASK-2 runner billing usage-push ingest — gate for `/internal/v1/billing/usage`; forwarded to the container
