@@ -77,10 +77,13 @@ impl core::fmt::Debug for AuditExportRouteState {
 
 /// Build the in-memory native-target route state.
 ///
-/// Production wiring slots the durable R2-backed exporter +
-/// `RateLimiter` DO singleton + CloudEvents audit sink here. The
-/// trait-object surface keeps the route shape stable across the
-/// swap.
+/// The LIVE native exporter and audit sink are IN-MEMORY
+/// ([`InMemoryAuditExporter`] + [`InMemoryExportAuditSink`]) — i.e.
+/// non-durable: their contents are lost on process restart and are not
+/// shared across containers. The durable R2-backed exporter +
+/// `RateLimiter` DO singleton + CloudEvents audit sink are DEFERRED (not
+/// yet wired). The `Arc<dyn ...>` trait-object surface is what keeps the
+/// route shape stable across that future swap.
 #[must_use]
 pub fn build_state() -> AuditExportRouteState {
     #[cfg(not(target_arch = "wasm32"))]

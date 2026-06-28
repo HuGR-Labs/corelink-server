@@ -75,15 +75,54 @@ proptest! {
         prop_assert_eq!(result, key);
     }
 
+    // NOTE (corrected vs the pre-#507 contract): a non-64-hex key is NOT rejected.
+    // sccache sends NON-hex CONTROL keys (e.g. `.sccache_check`), so normalize_key
+    // ACCEPTS any single safe path segment of `[alnum._-]`, length 1..=256, that is
+    // not `.`/`..`/contains `/`. The real rejection axes are: empty, >256, traversal,
+    // and illegal characters — pinned below. (The old prop_short/long_key_rejected
+    // asserted the pre-#507 "exactly 64 hex or reject" behaviour and were stale —
+    // the flaky tests gate never caught the contradiction.)
+
     #[test]
-    fn prop_short_key_rejected(len in 0usize..64) {
+    fn prop_short_alnum_key_accepted_as_control_key(len in 1usize..64) {
+        // A short all-alnum key (a control-key shape) is ACCEPTED verbatim.
         let short: String = "a".repeat(len);
-        prop_assert!(normalize_key(&short).is_none());
+        let got = normalize_key(&short);
+        prop_assert_eq!(got.as_deref(), Some(short.as_str()));
     }
 
     #[test]
-    fn prop_long_key_rejected(extra in 1usize..32) {
-        let long: String = "a".repeat(DIGEST_HEX_LEN + extra);
+    fn prop_midsize_alnum_key_accepted(extra in 1usize..(256 - DIGEST_HEX_LEN)) {
+        // 65..=256 chars of `[alnum._-]` is a valid control key (not a 64-hex
+        // object key) → accepted verbatim, no longer rejected for being "too long".
+        let mid: String = "a".repeat(DIGEST_HEX_LEN + extra);
+        let got = normalize_key(&mid);
+        prop_assert_eq!(got.as_deref(), Some(mid.as_str()));
+    }
+
+    #[test]
+    fn prop_oversize_key_rejected(extra in 1usize..64) {
+        // >256 chars is the real length-rejection boundary.
+        let long: String = "a".repeat(256 + extra);
         prop_assert!(normalize_key(&long).is_none());
+    }
+
+    #[test]
+    fn prop_traversal_key_rejected(seg in "[a-z]{1,20}") {
+        // Any key containing a path separator is rejected (no traversal).
+        let with_slash = format!("{seg}/{seg}");
+        prop_assert!(normalize_key(&with_slash).is_none());
+        // The exact `.` and `..` segments are rejected too.
+        prop_assert!(normalize_key(".").is_none());
+        prop_assert!(normalize_key("..").is_none());
+    }
+
+    #[test]
+    fn prop_illegal_char_key_rejected(prefix in "[a-z]{1,10}", bad in "[!@#$%^&*()+=:;,?<>|]", suffix in "[a-z]{1,10}") {
+        // A non-whitespace character outside [alnum._-], embedded in the middle
+        // (so it can't be trimmed away), rejects the whole key. (Whitespace is
+        // excluded from `bad` because normalize_key trims it first.)
+        let key = format!("{prefix}{bad}{suffix}");
+        prop_assert!(normalize_key(&key).is_none());
     }
 }

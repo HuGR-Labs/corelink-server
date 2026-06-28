@@ -504,22 +504,34 @@ export async function verifySvixSignature(ctx: VerifyContext): Promise<boolean> 
 export type MacroRegion = "wnam" | "enam" | "weur" | "sam" | "apac" | "afr";
 
 /**
- * Macro regions whose serving infra is actually DEPLOYED; signup MUST reject the
- * rest with a terminal 422 (never silently downgrade to US — backlog #29).
+ * Macro regions backed by a jurisdiction-correct R2 bucket; signup MUST reject
+ * the rest with a terminal 422 (never silently mis-land a tenant's data — backlog
+ * #29).
  *
- * Launch (Phase 1) = US-only. Only `wnam`/`enam` map to a colo (`iad`) that has a
- * live DO + container + R2 bucket. The other canonical macros (`weur`→lhr,
- * `sam`→sam, `apac`→nrt, `afr`) have NO regional Worker `[[services]]` binding and
- * NO per-region CAS/AC bucket yet, so the residency guard would (correctly,
- * fail-closed) 503 every request from such a tenant. Provisioning a region we
- * cannot serve onboards customers straight into a 503 wall — so signup rejects
- * them up front instead. Re-add a macro here ONLY once its regional Worker
- * binding + per-region bucket + container region var are deployed (the EU/SAM
- * serving build-out — tracked as the residency Phase-2 follow-up).
+ * Provisionable = `{wnam, enam, weur}` — exactly the macros whose serving infra
+ * stores data in the CORRECT legal jurisdiction. `wnam`/`enam`→`iad` (US R2);
+ * `weur`→`lhr` (EU R2 bucket `corelink-cas-eu` via the eu R2 endpoint — LGPD/GDPR
+ * compliant).
+ *
+ * `sam` is DELIBERATELY EXCLUDED even though it is a valid, routable macro:
+ * `PROD_SAM` still points at the DEFAULT US R2 endpoint + the shared US bucket
+ * (`corelink-cas-prod`), so a `sam`-labelled tenant's data would land in US
+ * storage under a FALSE residency label — an LGPD cross-border violation. The
+ * drift that previously made this set a 2-set `{wnam, enam}` was the only thing
+ * preventing it; the fix is to make `sam` non-provisionable EVERYWHERE while
+ * keeping it routable. Re-add `sam` here ONLY once `PROD_SAM` has a real
+ * SAM-jurisdiction bucket/endpoint. `apac`/`afr` remain unprovisioned (no colo
+ * build-out).
+ *
+ * SINGLE SOURCE OF TRUTH: this set MUST equal `worker/src/region-map.ts`
+ * `PROVISIONED_MACROS` and the Rust `region_map.rs` `PROVISIONED_MACROS`. The
+ * 3-way drift is gated by `worker/tests/region-map.test.ts` (which parses all
+ * three copies) and by `tests/clerk.test.ts` here.
  */
 export const PROVISIONED_MACROS: ReadonlySet<MacroRegion> = new Set<MacroRegion>([
   "wnam",
   "enam",
+  "weur",
 ]);
 
 /**
@@ -872,15 +884,16 @@ export async function handleClerkWebhook(
   // `cf.colo`. A Clerk webhook is delivered by SVIX (server-to-server), so
   // `request.cf.colo` is SVIX's sender PoP, NOT the end-user's location. Deriving
   // residency from it is a category error: e.g. a US user whose webhook Svix routes
-  // via a European PoP (observed live: `sender-9YMgn` → `weur`) would be assigned
-  // `weur` and then REJECTED by PROVISIONED_MACROS (US-only at launch) — a
+  // via a South-American PoP (observed live: `sender-9YMgn` → `sam`) would be
+  // assigned `sam` and then REJECTED by PROVISIONED_MACROS (`sam` is recognised but
+  // NOT provisionable — PROD_SAM still has no SAM-jurisdiction bucket) — a
   // legitimate paying signup lost to the luck of Svix's routing. The webhook
-  // carries no reliable user-geo signal, and at launch ONLY enam/wnam (IAD) is
-  // actually served (see PROVISIONED_MACROS), so webhook-provisioned tenants
-  // default to the launch-served region (enam, via regionFromColo's null default).
-  // Real per-tenant residency selection is a deliberate post-signup action, wired
-  // when the EU/SAM serving build-out lands (residency Phase-2). (Svix's sender PoP
-  // is still captured in the request logs for diagnostics — it just never drives
+  // carries no reliable user-geo signal, so webhook-provisioned tenants default to
+  // a provisioned region (enam, via regionFromColo's null default; see
+  // PROVISIONED_MACROS = {wnam, enam, weur}). Real per-tenant residency selection
+  // is a deliberate post-signup action; SAM stays gated until its
+  // jurisdiction-correct bucket lands (residency Phase-2). (Svix's sender PoP is
+  // still captured in the request logs for diagnostics — it just never drives
   // provisioning.)
   const colo = null;
 

@@ -190,8 +190,9 @@ async fn handle_get(
 
 /// `HEAD /<key>` — existence check; 200 on hit, 404 on miss.
 ///
-/// Per spec §3: use `cas.get` and ignore the body — no separate
-/// `exists()` on the port.
+/// Uses the metadata-only [`crate::cargo::ports::CasStore::exists`] probe — NOT
+/// `cas.get` — so a sccache HEAD does not pull (and discard) the full blob body,
+/// which would double R2 GET egress on every pre-write existence check (COGS).
 async fn handle_head(
     State(state): State<CargoRouterState>,
     Path(raw_key): Path<String>,
@@ -218,9 +219,9 @@ async fn handle_head(
         }
     };
 
-    match state.cas.get(&tenant_id, &key).await {
-        Ok(Some(_)) => StatusCode::OK.into_response(),
-        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+    match state.cas.exists(&tenant_id, &key).await {
+        Ok(true) => StatusCode::OK.into_response(),
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Err(CasError::Backend(msg)) => CargoAdapterError::Cas(msg).into_response(),
     }
 }
@@ -507,5 +508,121 @@ mod tests {
         let resp = router.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(cas.puts.lock().unwrap().len(), 0, "no write on auth failure");
+    }
+
+    // --- M7 (COGS): sccache HEAD must use the metadata-only `exists` probe,
+    // never pull (and discard) the full blob body via `get` ---
+
+    /// CAS that records whether `get` (body fetch) or `exists` (metadata) was
+    /// called. `present` is the set of keys that "exist". `get` returns a large
+    /// payload so a HEAD that mistakenly fetched would be obvious egress.
+    #[derive(Debug, Default)]
+    struct HeadProbeCas {
+        present: StdMutex<std::collections::HashSet<String>>,
+        get_calls: StdMutex<usize>,
+        exists_calls: StdMutex<usize>,
+    }
+
+    #[async_trait::async_trait]
+    impl CasStore for HeadProbeCas {
+        async fn get(
+            &self,
+            _tenant_id: &str,
+            digest_hex: &str,
+        ) -> Result<Option<Vec<u8>>, CasError> {
+            *self.get_calls.lock().unwrap() += 1;
+            if self.present.lock().unwrap().contains(digest_hex) {
+                Ok(Some(vec![0u8; 1_000_000])) // 1 MiB — body fetch would be costly
+            } else {
+                Ok(None)
+            }
+        }
+
+        async fn put(
+            &self,
+            _tenant_id: &str,
+            _digest_hex: &str,
+            _bytes: Vec<u8>,
+        ) -> Result<(), CasError> {
+            Ok(())
+        }
+
+        async fn exists(&self, _tenant_id: &str, digest_hex: &str) -> Result<bool, CasError> {
+            *self.exists_calls.lock().unwrap() += 1;
+            Ok(self.present.lock().unwrap().contains(digest_hex))
+        }
+    }
+
+    /// Resolver that resolves any PAT to a fixed tenant (so the HEAD path
+    /// reaches the CAS probe). Distinct from `PanicResolver`, which aborts.
+    #[derive(Debug, Default)]
+    struct FixedResolver;
+
+    #[async_trait::async_trait]
+    impl TenantResolver for FixedResolver {
+        async fn resolve(&self, _pat: &str) -> Result<String, TenantResolveError> {
+            Ok("tenant-fixed".to_owned())
+        }
+    }
+
+    fn head_config(cas: Arc<dyn CasStore>) -> CargoAdapterConfig {
+        use std::net::{Ipv4Addr, SocketAddr};
+        CargoAdapterConfig::new(
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+            crate::cargo::config::DEFAULT_BODY_SIZE_LIMIT_BYTES,
+            cas,
+            Arc::new(FixedResolver),
+            Arc::new(corelink_audit::ports::InMemoryAuditEmitter::new()),
+        )
+    }
+
+    #[tokio::test]
+    async fn head_hit_uses_exists_and_never_fetches_body() {
+        let cas = Arc::new(HeadProbeCas::default());
+        let key = "a".repeat(64);
+        cas.present.lock().unwrap().insert(key.clone());
+        let router = build_router(head_config(cas.clone()));
+
+        let req = HttpRequest::builder()
+            .method(http::Method::HEAD)
+            .uri(format!("/{key}"))
+            .header(http::header::AUTHORIZATION, "Bearer corelink_pat_test")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert_eq!(
+            *cas.exists_calls.lock().unwrap(),
+            1,
+            "HEAD must probe via exists()"
+        );
+        assert_eq!(
+            *cas.get_calls.lock().unwrap(),
+            0,
+            "HEAD must NOT fetch the body via get() (COGS: doubled R2 egress)"
+        );
+    }
+
+    #[tokio::test]
+    async fn head_miss_returns_404_without_fetching_body() {
+        let cas = Arc::new(HeadProbeCas::default());
+        let router = build_router(head_config(cas.clone()));
+
+        let key = "b".repeat(64);
+        let req = HttpRequest::builder()
+            .method(http::Method::HEAD)
+            .uri(format!("/{key}"))
+            .header(http::header::AUTHORIZATION, "Bearer corelink_pat_test")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.oneshot(req).await.unwrap();
+
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            *cas.get_calls.lock().unwrap(),
+            0,
+            "miss path also must not fetch the body"
+        );
     }
 }

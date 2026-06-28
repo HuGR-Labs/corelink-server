@@ -43,6 +43,25 @@ pub trait CasStore: Send + Sync + Debug {
     /// entries are overwritten idempotently (content-addressable equality
     /// is presumed at the caller via the BLAKE3 key).
     async fn put(&self, tenant_id: &str, digest_hex: &str, bytes: Vec<u8>) -> Result<(), CasError>;
+
+    /// Cheap existence probe for `HEAD /<key>` (sccache HTTP backend) —
+    /// MUST NOT download or rehash the blob.
+    ///
+    /// sccache issues a `HEAD` before every cache write to skip an upload it
+    /// already has; serving that probe via [`Self::get`] pulls the FULL blob
+    /// (and discards it), doubling R2 GET egress per probe (a COGS leak). The
+    /// HEAD handler calls this instead of `get`.
+    ///
+    /// # Default
+    ///
+    /// The default falls back to [`Self::get`] (downloads the body) and maps
+    /// the outcome to a boolean — CORRECT but not cheap; it exists so existing
+    /// in-memory/test impls keep working. A storage-backed impl SHOULD override
+    /// it with a true metadata/HEAD lookup (the production bridge does, via the
+    /// workspace `CasReadHandler::exists`).
+    async fn exists(&self, tenant_id: &str, digest_hex: &str) -> Result<bool, CasError> {
+        Ok(self.get(tenant_id, digest_hex).await?.is_some())
+    }
 }
 
 /// CAS backend failure surface.

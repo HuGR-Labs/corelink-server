@@ -3,6 +3,7 @@ type: "Runbook"
 title: "The audit export + analytics plane and customer re-verification"
 description: "How a tenant exports its tamper-evident audit chain, re-verifies it with the CLI, and queries analytics — all per-tenant isolated and fail-closed."
 source_files:
+  - "crates/corelink-container/src/routes/audit_drain.rs"
   - "crates/corelink-container/src/routes/audit_analytics.rs"
   - "crates/corelink-container/src/routes/audit_analytics/state.rs"
   - "crates/corelink-container/src/routes/audit_analytics/rate_limit.rs"
@@ -18,8 +19,9 @@ source_files:
   - "crates/corelink-container/src/routes/audit_export/state.rs"
   - "crates/corelink-container/src/routes/audit_export/types.rs"
   - "apps/analytics-worker/src/ingest.ts"
+  - "apps/signup-worker/src/webhooks/audit_drain_cron.ts"
   - "docs/cli/audit-export.md"
-checkpoint_sha: "30ec21dc78d79c85f4d7e1e19e13118c66025c9e"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -27,12 +29,28 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # The audit export + analytics plane and customer re-verification
 
-The audit plane lets a tenant pull its own append-only, Merkle-chained audit log as a streaming NDJSON
+The audit plane lets a tenant pull its own append-only, BLAKE3-chained audit log as a streaming NDJSON
 envelope, re-verify the whole chain offline or off-the-wire with the `corelink` CLI, and run bounded
 analytics queries over it. The trust property is end-to-end: the server emits a chain-head anchor and,
 if it detects a break mid-stream, an abort trailer that the CLI surfaces as a distinct exit code so
 SIEM/Drata wrappers can tell a data-integrity event from a generic failure. Every route is per-tenant
 isolated and the audit emit is fail-closed. Related: [the audit-analytics crate cluster](/crates/audit-analytics.md).
+
+The tamper-evidence the export plane proves is produced UPSTREAM by the **S-09 audit-chain drain**
+(`POST /_internal/audit/drain`), which as of current main is **LIVE** — no longer a deferred skeleton.
+The `corelink_audit_chain` BLAKE3 [`HashChainBuilder`] was always real + property-tested but had no live
+producer; the drain is that producer. It seals the pending `audit_outbox` rows (the plain, unchained
+CloudEvents envelopes written by the DSR/analytics/export sinks, where `emitted_at IS NULL`) into the
+hash chain — computing `chain_hash = BLAKE3(prev_hash || RFC-8785-JCS(payload))` per row, persisting the
+exact JCS bytes the verifier re-hashes, and advancing the per-`(tenant, region)` `audit_chain_head`
+checkpoint. Until a drain runs, a given partition's `audit_outbox` rows are NOT yet tamper-evident (a D1
+writer could alter or delete a row undetected); after it runs they are linked into the verifiable chain.
+An hourly Cloudflare Cron Trigger in the signup-worker (`apps/signup-worker/src/webhooks/audit_drain_cron.ts`)
+POSTs the drain endpoint so the seal converges (idempotent → a missed hour just seals a bigger batch
+next run; INERT no-op until the erase/internal-auth key is bound). Note the EXPORT route's durable backing is still partly
+deferred — `build_state` wires an IN-MEMORY exporter + sink; the durable R2-backed exporter + CloudEvents
+sink remain DEFERRED behind the stable `Arc<dyn …>` surface (see below) — but the chain-sealing producer
+itself is now wired.
 
 # Role
 
@@ -42,7 +60,13 @@ another tenant's rows.
 
 # How it works
 
-- The export route's public surface (router + state) lives in the `state` submodule (`crates/corelink-container/src/routes/audit_export/state.rs:85`, `crates/corelink-container/src/routes/audit_export/state.rs:154`), re-exported verbatim through the barrel `crates/corelink-container/src/routes/audit_export.rs:146-148`.
+- The S-09 drain endpoint is mounted (env-gated, internal-auth) as `POST /_internal/audit/drain` and is the LIVE chain-seal producer: `handle_drain` scans the `(tenant_id, region)` partitions with pending rows then seals each `crates/corelink-container/src/routes/audit_drain.rs:514-564`.
+- The per-partition seal is crash-safe and fork-free: `drain_partition` resolves the resume head (the durable sealed-rows tail is authoritative over the checkpoint when ahead), seals every pending row IN ORDER guarded by `emitted_at IS NULL` (idempotent), then advances the `audit_chain_head` checkpoint with a compare-and-set (single-writer anti-fork → aborts the partition on drift rather than forking) `crates/corelink-container/src/routes/audit_drain.rs:457-512`.
+- The link itself is `chain_hash = BLAKE3(prev_hash || RFC-8785-JCS(payload))` over the EXACT bytes persisted as `canonical_jcs` (what the verifier re-hashes); `seal_rows` is fully deterministic, which is the basis of concurrent-drain fork-freedom `crates/corelink-container/src/routes/audit_drain.rs:208-235`.
+- The drain auth gate is the constant-time internal-auth check (≥32-char key floor, fail-CLOSED: unmounted without the erase/internal-auth key + D1) `crates/corelink-container/src/routes/audit_drain.rs:95-137`.
+- The drain is invoked by an hourly Cloudflare Cron Trigger in the signup-worker — `runAuditDrainSweep` resolves the erase-first/shared-fallback key and POSTs `/_internal/audit/drain`, INERT (no-op skip, never a 401 storm) until that key is bound `apps/signup-worker/src/webhooks/audit_drain_cron.ts:49-100`.
+- The export route's public surface (router + state) lives in the `state` submodule (`crates/corelink-container/src/routes/audit_export/state.rs:88`, `crates/corelink-container/src/routes/audit_export/state.rs:157`), re-exported verbatim through the barrel `crates/corelink-container/src/routes/audit_export.rs:144-148`.
+- `build_state` wires the LIVE native exporter + export-audit sink as IN-MEMORY implementations (`InMemoryAuditExporter` + `InMemoryExportAuditSink`) — non-durable, lost on process restart and not shared across containers; the durable R2-backed exporter + `RateLimiter` DO singleton + CloudEvents audit sink are DEFERRED behind the stable `Arc<dyn ...>` trait-object surface (`crates/corelink-container/src/routes/audit_export/state.rs:88`).
 - The export audit emit is routed through `emit_or_503`, aborting with 503 on sink error `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105`.
 - Mid-stream chain-break detection emits the abort trailer via `mid_stream_abort_trailer_value` `crates/corelink-container/src/routes/audit_export/stream.rs:412-417`.
 - The trailer + chain-head anchor header names are canonical constants `crates/corelink-container/src/routes/audit_export/types.rs:42-57`.
@@ -61,6 +85,8 @@ another tenant's rows.
 
 # Invariants
 
+- The chain seal is idempotent + fork-free: each row UPDATE is guarded by `emitted_at IS NULL` and the head advance is a compare-and-set on the resumed value, so a re-run or a concurrent drain never double-seals and never forks the chain `crates/corelink-container/src/routes/audit_drain.rs:457-512`.
+- The persisted `canonical_jcs` is byte-for-byte what was hashed (`chain_hash = BLAKE3(prev || canonical_jcs)`), so the verifier path re-hashes the stored bytes rather than re-canonicalizing `crates/corelink-container/src/routes/audit_drain.rs:208-235`.
 - The export audit row is emitted fail-CLOSED — a sink `Err` aborts with 503 before streaming `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105`.
 - Analytics data access is gated per-tenant: the PAT gate rejects forged/wrong-tenant (401) or verifier fault (503) before reads `crates/corelink-container/src/routes/audit_analytics.rs:118`.
 - The edge ingest tap is authenticated, never anonymous: an event with neither an allow-listed `Origin` nor a correct constant-time-matched `X-Corelink-Ingest-Key` is rejected 403 before any D1 write `apps/analytics-worker/src/ingest.ts:127-136`.
@@ -76,7 +102,7 @@ another tenant's rows.
 # Citations
 
 1. `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105` — `emit_or_503` fail-closed export audit (the enforcing impl).
-2. `crates/corelink-container/src/routes/audit_export/state.rs:85`, `crates/corelink-container/src/routes/audit_export/state.rs:154` — export `build_state` + `router` impl; `crates/corelink-container/src/routes/audit_export.rs:146-148` — barrel re-export of that public surface.
+2. `crates/corelink-container/src/routes/audit_export/state.rs:88`, `crates/corelink-container/src/routes/audit_export/state.rs:157` — export `build_state` (in-memory exporter/sink; durable R2/CloudEvents sink deferred) + `router` impl; `crates/corelink-container/src/routes/audit_export.rs:144-148` — barrel re-export of that public surface.
 3. `crates/corelink-container/src/routes/audit_export/stream.rs:412-417` — `mid_stream_abort_trailer_value` builder.
 4. `crates/corelink-container/src/routes/audit_export/types.rs:42-57` — chain-head-anchor + abort header constants.
 5. `crates/corelink-container/src/routes/audit_analytics/state.rs:80` — analytics `router`; `crates/corelink-container/src/routes/audit_analytics/state.rs:63` + `crates/corelink-container/src/routes/audit_analytics/rate_limit.rs:99` — per-tenant rate-limit config + `rate_limit_check`.
@@ -94,3 +120,8 @@ another tenant's rows.
 17. `crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs:121-156` — `resolve_shadow_via_prelude`: prelude-preferred region with `request_prelude_missing` marker + factory fallback.
 18. `crates/corelink-container/src/routes/audit_export/handler.rs:83-99` — export `:tenant` path-segment constant-time cross-tenant check → SEV-1 row + 403 (fail-CLOSED).
 19. `crates/corelink-container/src/routes/audit_export/parse.rs:25-32` — `parse_timestamp`: epoch-ms-or-minimal-RFC3339 window parser.
+20. `crates/corelink-container/src/routes/audit_drain.rs:514-564` — `handle_drain`: LIVE S-09 `POST /_internal/audit/drain` entry (partition scan → seal → summary).
+21. `crates/corelink-container/src/routes/audit_drain.rs:457-512` — `drain_partition`: crash-safe resume (sealed-tail authoritative) + idempotent `emitted_at IS NULL`-guarded seal + compare-and-set head advance (anti-fork).
+22. `crates/corelink-container/src/routes/audit_drain.rs:208-235` — `seal_rows`: deterministic `chain_hash = BLAKE3(prev || RFC-8785-JCS(payload))` over the exact persisted `canonical_jcs` bytes.
+23. `crates/corelink-container/src/routes/audit_drain.rs:95-137` — constant-time internal-auth gate + fail-CLOSED env mount (≥32-char key + D1 required).
+24. `apps/signup-worker/src/webhooks/audit_drain_cron.ts:49-100` — `runAuditDrainSweep`: hourly cron that POSTs the drain (erase-first/shared-fallback key; inert until bound).

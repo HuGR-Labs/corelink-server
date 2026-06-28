@@ -659,6 +659,20 @@ export class CoreLinkServer implements DurableObject {
           // silently no-op without these — the ERASURE_SALT_KEY-class bug.
           R2_AC_BUCKET_PREFIX: this.env.R2_AC_BUCKET_PREFIX ?? "",
           R2_TURBO_BUCKET: this.env.R2_TURBO_BUCKET ?? "",
+          // Brutal-audit M3 — container tuning knobs read via a const-aliased
+          // `std::env::var(CONST)` (invisible to the old check-env-contract.py
+          // string-literal scan, now caught). Each falls back to a built-in
+          // default when unset, so an operator `wrangler secret put` was being
+          // SILENTLY ignored — the ERASURE_SALT_KEY class. Forward them so an
+          // override actually reaches the container (empty ⇒ default, unchanged):
+          //   PAT_MINT_MAX_INFLIGHT     routes/internal_pat.rs:165 (MAX_INFLIGHT_MINTS_ENV)
+          //   PAT_MINT_MAX_PER_MINUTE   routes/internal_pat.rs:298 (MAX_MINTS_PER_WINDOW_ENV)
+          //   QUOTA_COST_PER_OP_MICROS  tenant_quota.rs:98       (COST_PER_OP_MICROS_ENV)
+          //   EXPORT_ROW_BUFFER_BYTES   routes/audit_export/stream.rs:320 (ENV_EXPORT_ROW_BUFFER_BYTES)
+          PAT_MINT_MAX_INFLIGHT: this.env.PAT_MINT_MAX_INFLIGHT ?? "",
+          PAT_MINT_MAX_PER_MINUTE: this.env.PAT_MINT_MAX_PER_MINUTE ?? "",
+          QUOTA_COST_PER_OP_MICROS: this.env.QUOTA_COST_PER_OP_MICROS ?? "",
+          EXPORT_ROW_BUFFER_BYTES: this.env.EXPORT_ROW_BUFFER_BYTES ?? "",
         },
       });
 
@@ -738,6 +752,18 @@ export class CoreLinkServer implements DurableObject {
         container.running
       ) {
         return { ok: true };
+      }
+      // M1: FAST-DEATH EXIT. A bad deploy (binary OOM/panic) flips the status to
+      // the terminal-dead "stopped" state — there is nothing left starting to
+      // wait for, so spinning the full STARTUP_TIMEOUT_MS only makes every queued
+      // request hang ~90s before the inevitable 503. Bail immediately so the
+      // caller returns a prompt 503 (and the next request triggers a restart via
+      // ensureContainerRunning's stopped→startContainer branch). We break ONLY on
+      // "stopped" (genuinely dead); "starting" is transient and still waits out
+      // the 90s ceiling below, and "degraded" is handled on the next request.
+      if (this.lifecycleState.containerStatus === "stopped") {
+        console.error(`[${requestId}] container in terminal "stopped" state — fast-exit (no wait)`);
+        return { ok: false, reason: "container_dead" };
       }
       await new Promise<void>((r) => setTimeout(r, 100));
     }
@@ -967,5 +993,12 @@ export class CoreLinkServer implements DurableObject {
 declare module "./index.js" {
   interface Env {
     PAGERDUTY_ROUTING_KEY?: string;
+    // Brutal-audit M3 — container tuning knobs forwarded by container.start()
+    // above (read in the container via const-aliased std::env::var). Optional:
+    // unset ⇒ the container uses its built-in default.
+    PAT_MINT_MAX_INFLIGHT?: string;
+    PAT_MINT_MAX_PER_MINUTE?: string;
+    QUOTA_COST_PER_OP_MICROS?: string;
+    EXPORT_ROW_BUFFER_BYTES?: string;
   }
 }

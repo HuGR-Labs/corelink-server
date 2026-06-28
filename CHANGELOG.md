@@ -22,6 +22,51 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **Brutal-audit round-3 remediation (economic / residency / time / migration lenses).** (H1) Region-table
+  DRIFT closed + the `sam` residency trap removed: the provisionable-macro set is now a single source of
+  truth `{wnam,enam,weur}` across worker + container + signup-worker (was a 4-set incl. `sam` in worker/
+  container but a 2-set in signup — the drift was the only thing preventing an LGPD cross-border write of a
+  `sam` tenant into US R2), gated by a 3-way drift test; `sam` stays routable but not provisionable. (H2)
+  the Worker honors the PAT `expires_ms = 0` never-expires sentinel (was rejecting it → split-brain vs the
+  container). (H3) `cf-deploy-prod` now applies D1 migrations BEFORE the container deploy (a single
+  idempotent job) so code can't ship ahead of its schema → fail-closed 500. (M1) GDPR DSR SLA is now a
+  calendar MONTH (Art.12(3)), not a flat 30 days. (M2) the DSR verify cron skips rows with a NULL/malformed
+  `started_at` instead of anchoring the SLA clock at epoch-1970 (false PagerDuty pages). (M3) `check-env
+  -contract.py` now detects `env::var(CONST)` reads (was blind to the identifier-arg form) + the 4
+  previously-unforwarded tuning vars are now in the DO env forward-list (the ERASURE_SALT_KEY class). (M4)
+  the `corelink-signup` region enum emits the canonical `weur` (was an invalid `"eu"`). (M5) `cf-deploy-prod`
+  matrix-deploys all 5 prod envs in one dispatch (no more silent regional code-skew). Plus the cargo-fuzz
+  FFI target compiles again (its own manifest forbade `unsafe`, which an FFI harness requires).
+
+### Added
+- **S-09 audit-chain drain — the live audit trail is now tamper-evident (deferred compliance artifact).**
+  `audit_outbox` rows were plain UNCHAINED CloudEvents (the BLAKE3 `HashChainBuilder` was real but
+  test-only). Added the drain: migration 0078 (`audit_outbox` seal columns + `audit_chain_head` per-
+  (tenant,region) checkpoint), an internal-auth-gated `POST /_internal/audit/drain` handler that seals
+  pending rows in `(enqueued_at,id)` order — `chain_hash = BLAKE3(prev_hash ‖ canonical_jcs)`, storing the
+  exact JCS bytes the verifier re-hashes — with a compare-and-set head advance (anti-fork) + crash-safe
+  resume (sealed-tail wins over a stale checkpoint), and an hourly signup-worker cron that triggers it.
+  Idempotent.
+
+### Fixed
+- **Fresh-lens brutal-audit remediation (correctness / conformance / operability).** A 4-auditor fleet
+  (data-integrity, concurrency, spec-conformance, operability lenses) surfaced: **(H1)** a transient D1
+  PAT-lookup fault returned `401` (bad credentials) instead of `503` → now retryable 503 (a real bad PAT
+  still 401s); **(H2)** the OCI blob `HEAD` omitted `Content-Length` (violating Distribution v1.1 §5.2 —
+  containerd/skopeo/crane pre-allocate from it) → now reports the real blob size, mirroring the manifest
+  HEAD; **(H3)** a storage-cap DOWNGRADE never reconciled the stored `bytes_quota` on adapter (brew/npm/
+  pip) writes (reconcile was coupled to a successful native write an over-cap tenant can't make) → the
+  reconcile is now decoupled (runs on a native write attempt, success or rejection), closing a COGS
+  evasion; **(M1)** `waitForContainerReady` now fast-exits on a terminal `stopped` status (was spinning
+  the full ~90s); **(M6)** OCI upload `PATCH 202` now sets the `Location` header (§5.3.2); **(M7)** the
+  sccache `HEAD` probe now uses a metadata-only `exists` port instead of a full blob fetch (halves R2
+  egress per probe); **(M2)** the DSR queue consumer now acks permanent 4xx poison messages (with a
+  structured log) and retries only 5xx/transport; **(M3)** the DSR erasure DLQ gained a consumer
+  (bounded one-shot re-enqueue + a critical structured alert). Plus three honest doc corrections (the
+  bazel REAPI module doc's false "any Bazel client" claim, the audit-export in-memory-not-durable note,
+  and the quota-lease "removes the round-trip" overstatement).
+
 ### Security
 - **Brutal-audit-fleet round-2 hardening (1 HIGH + MED/LOW).** A standing 4-auditor fleet (2 Opus + 2
   Sonnet) over live prod found: **Turbo GET was unguarded** while PUT had per-tenant + global concurrency
@@ -49,6 +94,27 @@ Each entry cross-references:
   endpoints, and the `verify.rs` payload-binding from finding H2 — see the module-level DEFERRED block in
   `attestation.rs`). Also corrected a false in-code comment that claimed a non-existent route integration
   test.
+- **In-app rate-limiter bucket map is now LRU-bounded (cross-tenant DoS, HIGH — red-team confirmed).**
+  The `InMemoryTokenBucketRateLimiter` stored token buckets in an unbounded `HashMap<BucketKey,
+  TokenBucketState>` with no cap and no eviction. On the UNAUTHENTICATED OCI plane the bucket scope is
+  derived from the attacker-controlled repo name parsed verbatim from `/v2/<repo>/...`, so a flood of
+  distinct repo segments (`GET /v2/<random-N>/manifests/latest`) materialised a new permanent map entry
+  per request → unbounded heap growth → OOM-kill of the SINGLETON `_oci` Durable Object that fronts every
+  OCI tenant (a cross-tenant registry outage). Bounded the map with a `LIMITER_BUCKET_MAP_CAP` (100k) LRU
+  — evicting the least-recently-accessed bucket on overflow (an evicted bucket re-materialises fresh/full
+  on its next hit, identical semantics, never a rate-limit bypass), mirroring the Argon2id verifier's
+  existing `PER_TENANT_MAP_CAP`. Added a bounded-map regression test.
+  **Follow-up (F2, algorithmic-complexity DoS the first fix introduced):** the initial eviction did
+  `map.iter().min_by_key(last_access)` — an `O(n)` FULL SCAN of the up-to-100k-entry map under the single
+  per-instance `Mutex` on EVERY new distinct key once the map sat at the cap. The same attacker-controlled
+  OCI repo-path flood pins the shared `_oci` limiter at the cap and makes every new key pay a ~O(100k) scan
+  under the one Mutex serialising the whole singleton OCI plane → CPU + lock-contention starvation (the
+  same cross-tenant blast radius the cap was meant to remove). Replaced it with `O(1)`-amortised
+  **Redis-style sampled approximate-LRU**: sample `LIMITER_EVICTION_SAMPLE_K` (8) entries from the
+  SipHash-randomised iteration order and evict the oldest of the sample (no new dep). Safety preserved —
+  evicted buckets still re-materialise fresh/full (no bypass) and a hot/just-throttled key is statistically
+  unlikely to be the sample minimum (an attacker can't steer eviction onto a key they're hammering). Added
+  an `eviction_touches_at_most_sample_k_entries_not_o_n` test asserting the `≤K`-touch bound.
 - **OKF brutal-audit code findings remediated (7).** (#1 HIGH) the GDPR erasure attestation now binds its
   signed `evidence_hash` to the REAL per-backend verification results (was a synthetic constant) + the
   Stripe arm does a live re-fingerprint (was a hardcoded no-op) + region resolves fail-CLOSED — the signer

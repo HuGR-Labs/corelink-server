@@ -54,6 +54,13 @@ pub mod admin_pilot;
 /// the canonical chain-integrity store is the R2 NDJSON archive
 /// (Wave 15) — see `specs/_audits/sealed/2026-05-15-neon-analytics-shadow.md`.
 pub mod audit_analytics;
+/// Internal S-09 audit-chain drain route: `POST /_internal/audit/drain`.
+/// Seals the live `audit_outbox` trail into the BLAKE3 tamper-evident hash
+/// chain (computes each row's RFC-8785 JCS canonical bytes + BLAKE3 link,
+/// flips `emitted_at`, advances the per-partition `audit_chain_head`
+/// checkpoint under a compare-and-set anti-fork guard). Internal-auth gated
+/// (mirrors [`dsr`]); env-gated mount in [`crate::main`] (erase key + D1).
+pub mod audit_drain;
 /// Customer-facing audit-export route (Wave-15.3 wiring of
 /// WI-S09-008): `GET /v1/audit/export?from=&to=` streams NDJSON
 /// audit events + inclusion proofs.

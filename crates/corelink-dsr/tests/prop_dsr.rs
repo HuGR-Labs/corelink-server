@@ -355,9 +355,12 @@ proptest! {
         let gdpr = sla_for(DsrJurisdiction::Gdpr, submitted_at_ms);
         let ccpa = sla_for(DsrJurisdiction::Ccpa, submitted_at_ms);
         prop_assert_eq!(lgpd, submitted_at_ms + (SLA_LGPD_DAYS as u64) * 86_400_000);
-        prop_assert_eq!(gdpr, submitted_at_ms + (SLA_GDPR_DAYS as u64) * 86_400_000);
         prop_assert_eq!(ccpa, submitted_at_ms + (SLA_CCPA_DAYS as u64) * 86_400_000);
-        // Invariant: LGPD < GDPR < CCPA (15 < 30 < 45 days).
+        // GDPR Art.12(3) is ONE CALENDAR MONTH (28-31 days), not a flat 30 —
+        // so assert the deadline falls in [+28d, +31d], not an exact +30d.
+        prop_assert!(gdpr >= submitted_at_ms + 28 * 86_400_000);
+        prop_assert!(gdpr <= submitted_at_ms + 31 * 86_400_000);
+        // Invariant: LGPD < GDPR < CCPA (15d < ~1mo < 45d).
         prop_assert!(lgpd < gdpr);
         prop_assert!(gdpr < ccpa);
     }

@@ -182,6 +182,7 @@ export interface Env {
   ERASURE_ATTESTATION_SEED_HEX?: string;
   ERASURE_ATTESTATION_KEY_ID?: string;
   ERASURE_ATTESTATION_REGION?: string;
+  ERASURE_ATTESTATION_SINGLE_REGION?: string;
   FABRIC_INTROSPECT_AUTH_KEY?: string;
   FABRIC_INTROSPECT_AUTH_KEY_HUGR?: string; // HuGR toolkits introspect consumer (#398) — forwarded to the container
   BILLING_INGEST_AUTH_KEY?: string; // ASK-2 runner billing usage-push ingest — gate for `/internal/v1/billing/usage`; forwarded to the container
@@ -1027,7 +1028,12 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   }
 
   // ── Step 5: Expiry check ──────────────────────────────────────────────────
-  if (row.expires_ms <= Date.now()) {
+  // `expires_ms === 0` is the canonical "never expires" sentinel (mint:
+  // internal_pat.rs:400) — the container SQL honors it (adapter_pat.rs:115:
+  // `expires_ms = 0 OR expires_ms > now`). The edge MUST match, else a no-TTL
+  // PAT works in the container but is dead-on-arrival here (split-brain, looks
+  // like a forged token). Guard the sentinel.
+  if (row.expires_ms !== 0 && row.expires_ms <= Date.now()) {
     return { ok: false, reason: "pat_expired" };
   }
 
@@ -2105,9 +2111,19 @@ const baseHandler: ExportedHandler<Env> = {
         // too short — the operator MUST be alerted via 503 (not 401, which would
         // silently look like a bad client credential). The structured error log
         // is emitted inside extractAuth; here we map to 503 Service Unavailable.
-        if (result.reason === "signing_key_not_configured") {
+        //
+        // H1: d1_lookup_error is a TRANSIENT D1 infra fault (network partition /
+        // DB unavailable) raised by the PAT D1 lookup — NOT a bad credential. It
+        // MUST map to 503 (retryable) too, otherwise a D1 hiccup makes every
+        // client see "bad credentials" → CI failures + spurious PAT rotation +
+        // on-call chasing the wrong thing. Genuine bad/unknown PATs
+        // (pat_not_found / pat_expired / invalid_*) still fall through to 401.
+        if (
+          result.reason === "signing_key_not_configured" ||
+          result.reason === "d1_lookup_error"
+        ) {
           return applyCors(
-            reapiError("SERVICE_UNAVAILABLE", "authentication service misconfigured", 503, requestId),
+            reapiError("SERVICE_UNAVAILABLE", "authentication service unavailable", 503, requestId),
             request,
           );
         }

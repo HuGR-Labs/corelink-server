@@ -204,6 +204,12 @@ corelink-handler-customer = { workspace = true }
 # (`Arc<dyn AuditExporter>` + `Arc<dyn RateLimiter>`) preserves the
 # binary shape across the native / wasm32 CF-Worker swap.
 corelink-audit-chain = { workspace = true }
+# S-09 audit-chain drain (`routes/audit_drain.rs`): RFC 8785 JCS canonicalization
+# of the generic `audit_outbox.payload_json` CloudEvents envelopes before BLAKE3
+# linking. The audit-chain crate's `compute_canonical_bytes` is typed to its own
+# `AuditEvent` struct, so the drain canonicalizes the raw JSON value directly with
+# the same `serde_jcs` the crate's link hash uses (pinned identically — 0.2).
+serde_jcs = { workspace = true }
 corelink-ratelimit = { workspace = true }
 # Stream-5: internal PAT mint route (`/_internal/pat/mint`).
 corelink-pat = { workspace = true }

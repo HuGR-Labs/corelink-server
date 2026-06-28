@@ -5,6 +5,8 @@ import {
   handleClerkWebhook,
   tenantSlugFor,
   regionFromColo,
+  isProvisionedMacro,
+  PROVISIONED_MACROS,
   verifySvixSignature,
   type AutoProvisionEnv,
   type ClerkUserCreatedEvent,
@@ -51,6 +53,29 @@ describe("tenantSlugFor", () => {
     }).data;
     // 'x' is 1 char — falls back to `user-${id.slice(0,12)}-default`.
     expect(tenantSlugFor(u)).toBe("user-user_2abc-default");
+  });
+});
+
+describe("PROVISIONED_MACROS (backlog #29 / H1 — canonical provisionable set)", () => {
+  // This set is the SINGLE SOURCE OF TRUTH shared with worker/src/region-map.ts
+  // and crates/corelink-container/src/storage/region_map.rs. The 3-way cross-file
+  // diff lives in worker/tests/region-map.test.ts; this asserts the clerk copy in
+  // isolation so a drift here fails the signup-worker suite directly.
+  it("provisions EXACTLY {wnam, enam, weur}", () => {
+    expect([...PROVISIONED_MACROS].sort()).toEqual(["enam", "weur", "wnam"]);
+    expect(isProvisionedMacro("wnam")).toBe(true);
+    expect(isProvisionedMacro("enam")).toBe(true);
+    expect(isProvisionedMacro("weur")).toBe(true);
+  });
+
+  it("does NOT provision sam — the LGPD cross-border trap (PROD_SAM = US bucket)", () => {
+    // sam is a valid, geo-derivable macro (regionFromColo("GRU") === "sam") but
+    // must be REJECTED at signup until PROD_SAM has a real SAM-jurisdiction
+    // bucket, else the tenant's data mis-lands in US R2 under a false label.
+    expect(regionFromColo("GRU")).toBe("sam");
+    expect(isProvisionedMacro("sam")).toBe(false);
+    expect(isProvisionedMacro("apac")).toBe(false);
+    expect(isProvisionedMacro("afr")).toBe(false);
   });
 });
 

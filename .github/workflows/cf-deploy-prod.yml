@@ -3,11 +3,24 @@
 # Gates production deploys on:
 #   1. Secrets-checklist drift verification (scripts/secrets-checklist-verify.sh).
 #      Fails the deploy if the matrix is out of sync with the codebase.
-#   2. CF secrets population sanity check (wrangler secret list).
+#   2. CF secrets population sanity check (wrangler secret list), per env.
+#   3. D1 migrations applied to the shared prod D1 BEFORE any container deploy
+#      (brutal-audit H3): the container reads new tables/columns fail-closed
+#      (customer_d1.rs audit/team/legal-hold reads 500 if the migration lags the
+#      code). The migration step always runs first; it is idempotent
+#      (additive + IF-NOT-EXISTS + ledger-guarded), so running it every deploy is
+#      safe.
 #
 # Triggered manually (workflow_dispatch) or by an upstream release pipeline.
 # This workflow is the canonical entry point for `wrangler deploy --env prod`;
 # direct deploys from local machines are forbidden by policy.
+#
+# Fleet rollout (brutal-audit M5): all 5 live prod envs (prod + prod-{sam,lhr,
+# nrt,syd}) serve traffic and MUST run the same code. A manual dispatch with NO
+# `env` input deploys ALL 5 via a matrix so one dispatch converges the whole
+# fleet (no undetected code skew where a fix landed on IAD only). Supplying a
+# single `env` input still deploys just that one env (the prior per-env manual
+# behavior is preserved). The release-pipeline trigger (no inputs) deploys all 5.
 
 name: cf-deploy-prod
 
@@ -19,10 +32,10 @@ on:
         required: true
         type: string
       env:
-        description: 'Which prod env to deploy (prod | prod-sam | prod-lhr | prod-nrt | prod-syd). All 5 serve live traffic; dispatch once per env.'
+        description: 'Which prod env to deploy. Leave BLANK to deploy ALL 5 (prod + prod-{sam,lhr,nrt,syd}) in one dispatch, or set one of: prod | prod-sam | prod-lhr | prod-nrt | prod-syd to deploy a single env.'
         required: false
         type: string
-        default: prod
+        default: ''
   workflow_run:
     workflows: ["release-cli"]
     types: [completed]
@@ -31,19 +44,15 @@ permissions:
   contents: read
   id-token: write  # for OIDC if we move CF auth to OIDC in future
 
-env:
-  # Defaults to the main prod env (covers the workflow_run/release trigger which
-  # has no inputs). Manual dispatch can target any of the 5 live prod envs so a
-  # container repin can be rolled to all regions (prod + prod-{sam,lhr,nrt,syd}).
-  WRANGLER_ENV: ${{ github.event.inputs.env || 'prod' }}
-
 jobs:
   # ---------------------------------------------------------------------------
-  # Gate 1 — confirm input + secrets-checklist drift.
+  # Gate 1 — confirm input + secrets-checklist drift + compute the deploy matrix.
   # ---------------------------------------------------------------------------
   gate-secrets-checklist:
     name: gate — secrets checklist drift
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
       - name: Confirm intent (manual dispatch only)
         if: github.event_name == 'workflow_dispatch'
@@ -65,13 +74,82 @@ jobs:
           chmod +x ./scripts/secrets-checklist-verify.sh
           ./scripts/secrets-checklist-verify.sh
 
+      - name: Compute deploy matrix (all 5 envs unless one is specified)
+        id: set-matrix
+        env:
+          # Empty for the release-pipeline (workflow_run) trigger, which has no
+          # inputs → deploys the whole fleet.
+          ENV_IN: ${{ github.event.inputs.env }}
+        run: |
+          if [ -z "${ENV_IN:-}" ]; then
+            echo 'matrix={"env":["prod","prod-sam","prod-lhr","prod-nrt","prod-syd"]}' >> "$GITHUB_OUTPUT"
+            echo "Deploy target: ALL 5 prod envs (no specific env given) — one dispatch converges the whole fleet."
+          else
+            case "$ENV_IN" in
+              prod|prod-sam|prod-lhr|prod-nrt|prod-syd) ;;
+              *)
+                echo "::error ::Invalid env input: '${ENV_IN}' (must be one of prod | prod-sam | prod-lhr | prod-nrt | prod-syd, or blank for all 5)."
+                exit 1
+                ;;
+            esac
+            printf 'matrix={"env":["%s"]}\n' "$ENV_IN" >> "$GITHUB_OUTPUT"
+            echo "Deploy target: single env ${ENV_IN}."
+          fi
+
   # ---------------------------------------------------------------------------
-  # Gate 2 — verify required CF secrets are populated.
+  # Migrate — apply D1 migrations to the SHARED prod D1 BEFORE any deploy (H3).
+  #
+  # All 5 prod envs bind the SAME D1 database (corelink-config-prod,
+  # d64742ea-…; see wrangler.toml [[env.*.d1_databases]]), so migrations are
+  # applied exactly ONCE here — a single, non-matrix job — rather than per
+  # deploy leg (5 concurrent `migrations apply` would race the d1_migrations
+  # ledger). scripts/apply-d1-migrations-prod.sh targets that prod D1 directly
+  # (DB_NAME=CONFIG_DB / --env prod, hardcoded; it takes only --apply) and is
+  # idempotent — wrangler skips already-applied migrations. Runs before deploy
+  # so code that reads a new table/column never lands ahead of its migration.
   # ---------------------------------------------------------------------------
-  gate-cf-secrets-populated:
-    name: gate — CF secrets populated
+  migrate-d1:
+    name: apply D1 migrations (shared prod D1)
     needs: gate-secrets-checklist
     runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+
+      - name: Install wrangler
+        run: npm install -g wrangler@4.95.0  # pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]] arrays (verified 2026-06-05)
+
+      - name: Apply D1 migrations (idempotent; shared prod D1)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          # Use the globally-installed wrangler (no local node_modules path on the
+          # ubuntu runner); the script honours the WRANGLER override.
+          WRANGLER: wrangler
+        run: |
+          chmod +x ./scripts/apply-d1-migrations-prod.sh
+          bash scripts/apply-d1-migrations-prod.sh --apply
+
+  # ---------------------------------------------------------------------------
+  # Gate 2 — verify required CF secrets are populated (per env, via the matrix).
+  # ---------------------------------------------------------------------------
+  gate-cf-secrets-populated:
+    name: gate — CF secrets populated (${{ matrix.env }})
+    needs: gate-secrets-checklist
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.gate-secrets-checklist.outputs.matrix) }}
+    env:
+      WRANGLER_ENV: ${{ matrix.env }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -152,15 +230,23 @@ jobs:
           echo "All required prod secrets are populated."
 
   # ---------------------------------------------------------------------------
-  # Deploy — only runs after both gates pass.
+  # Deploy — one matrix leg per target env. Runs only after both gates pass AND
+  # the D1 migrations have been applied (migrate-d1) so the container never ships
+  # ahead of its schema.
   # ---------------------------------------------------------------------------
   deploy:
-    name: wrangler deploy --env prod
+    name: wrangler deploy --env ${{ matrix.env }}
     needs:
       - gate-secrets-checklist
       - gate-cf-secrets-populated
+      - migrate-d1
     runs-on: ubuntu-latest
     environment: production
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.gate-secrets-checklist.outputs.matrix) }}
+    env:
+      WRANGLER_ENV: ${{ matrix.env }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -217,6 +303,6 @@ jobs:
             curl -fsS -X POST "${CF_DEPLOY_VERIFIER_URL}/audit" \
               -H "Authorization: Bearer ${DEPLOY_WEBHOOK_SECRET}" \
               -H "Content-Type: application/json" \
-              -d "{\"kind\":\"deploy.prod\",\"actor\":\"${GITHUB_ACTOR}\",\"commit\":\"${GITHUB_SHA}\",\"workflow\":\"cf-deploy-prod\"}" \
+              -d "{\"kind\":\"deploy.prod\",\"actor\":\"${GITHUB_ACTOR}\",\"commit\":\"${GITHUB_SHA}\",\"workflow\":\"cf-deploy-prod\",\"env\":\"${WRANGLER_ENV}\"}" \
               || echo "::warning ::Audit sink unreachable; deploy proceeded but audit event not recorded."
           fi

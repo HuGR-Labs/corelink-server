@@ -371,6 +371,53 @@ impl ByteStore for D1ByteStore {
                     )
                     .await?;
                 if rows.is_empty() {
+                    // brutal-audit H3 (money/COGS reconcile-DEADLOCK): the
+                    // in-UPSERT `bytes_quota` reconcile above lives INSIDE the
+                    // ON CONFLICT DO UPDATE, which is GATED by the cap predicate —
+                    // so it fires ONLY on a write that is itself WITHIN the (new)
+                    // cap. A tenant whose tier was DOWNGRADED below its current
+                    // usage is already OVER the new cap: every NATIVE write it
+                    // makes is refused (empty RETURNING ⇒ DO UPDATE skipped ⇒ the
+                    // stored `bytes_quota` is NEVER lowered). Adapter writes
+                    // (brew/npm/pip pass `None`) then keep gating against the STALE
+                    // higher stored cap and accrue past the paid-for cap forever —
+                    // a COGS-evasion deadlock (the reconcile was coupled to a
+                    // SUCCESSFUL native write that, for an over-cap tenant, can
+                    // never succeed).
+                    //
+                    // Break the coupling: on the refused path, reconcile the stored
+                    // cap in a SEPARATE, UN-gated UPDATE so the lowered cap is
+                    // observed by subsequent adapter writes WITHOUT requiring any
+                    // native write to succeed. The over-cap write itself stays
+                    // REJECTED (we still return `OverCap`) — enforcement is
+                    // unchanged; only the stale stored cap is corrected. This extra
+                    // hop is paid ONLY on the (rare) refused path; the hot accepted
+                    // path keeps its single statement (its UPSERT already reconciled
+                    // the cap via `COALESCE(NULLIF(?5,0), …)`).
+                    //
+                    // Skipped for a `Some(0)` genuine-unlimited carrier — it must
+                    // never clobber a finite stored cap (mirrors the
+                    // `COALESCE(NULLIF(?5,0), …)` rule above); and a no-op for the
+                    // fresh-row case an over-cap first write left uncreated (the
+                    // `WHERE` matches no row), which is the correct fail-closed
+                    // posture (absence is never seeded uncapped).
+                    if seed > 0 {
+                        self.client
+                            .query(
+                                "UPDATE tenant_storage_state SET \
+                                   bytes_quota   = ?4, \
+                                   updated_at_ms = ?3 \
+                                 WHERE tenant_id = ?1 AND region = ?2 \
+                                   AND bytes_quota <> ?4",
+                                &[
+                                    serde_json::Value::String(tenant_id.to_owned()),
+                                    serde_json::Value::String(region.to_owned()),
+                                    serde_json::Value::from(now_ms),
+                                    serde_json::Value::from(seed),
+                                ],
+                            )
+                            .await?;
+                    }
                     Ok(AccrueOutcome::OverCap)
                 } else {
                     Ok(AccrueOutcome::Accrued)
@@ -996,6 +1043,13 @@ pub(crate) mod testing {
                 // NOT clobber the stored cap and gates by the stored value.
                 Some(row) => {
                     // Reseed the stored cap only when the incoming cap is finite.
+                    // brutal-audit H3: this reconcile is DELIBERATELY decoupled from
+                    // the accrual outcome below — it runs BEFORE the over-cap check,
+                    // so a downgrade carrier that is itself OverCap STILL lowers the
+                    // stored cap (mirroring the D1 path's separate refused-path
+                    // reconcile UPDATE). Do NOT move it after the OverCap return, or
+                    // the deadlock (adapter writes gating on a stale higher cap)
+                    // re-opens and this fake stops faithfully modelling D1.
                     if let Some(seed) = quota_seed {
                         if seed != 0 {
                             row.quota = seed;
@@ -1151,6 +1205,62 @@ mod tests {
         // An unlimited / absent incoming cap must NOT clobber the finite stored cap.
         assert_eq!(acc.accrue("t-down", 1, UNLIMITED).await.unwrap(), AccrueOutcome::Accrued);
         assert_eq!(store.quota("t-down", REGION), 500, "an unlimited carrier must not lower/raise the stored finite cap");
+    }
+
+    #[tokio::test]
+    async fn over_cap_downgrade_write_still_reconciles_so_adapter_writes_are_gated() {
+        // brutal-audit H3 (HIGH money/COGS) — the reconcile-DEADLOCK.
+        //
+        // A tenant is DOWNGRADED below its current usage, so it is ALREADY OVER
+        // the new (lower) cap. Its NATIVE writes carry the new cap but are refused
+        // (OverCap). Pre-fix, the stored `bytes_quota` was reconciled ONLY inside
+        // the cap-gated accrue, so a refused write never lowered it — and ADAPTER
+        // writes (brew/npm/pip pass `None`, gating against the STORED cap) kept
+        // accruing past the paid-for cap indefinitely. The fix decouples the
+        // reconcile from accrual success: a refused native write STILL lowers the
+        // stored cap, WITHOUT any native write needing to succeed.
+        let store = Arc::new(InMemoryByteStore::new());
+        // Seeded HIGH cap (10_000), already at 800 used. New tier cap = 500 ⇒ the
+        // tenant is over the new cap from the outset.
+        store.seed("t-dead", REGION, Row { used: 800, quota: 10_000 });
+        let acc = accountant(store.clone());
+
+        // (1) A NATIVE write carrying the new lower cap (500): 800 + 10 = 810 > 500
+        // ⇒ OverCap (correctly REJECTED; counter unchanged). The stored cap MUST
+        // still be reconciled DOWN to 500 even though this write was rejected.
+        assert_eq!(
+            acc.accrue("t-dead", 10, Some(500)).await.unwrap(),
+            AccrueOutcome::OverCap
+        );
+        assert_eq!(store.used("t-dead", REGION), 800, "a rejected write must not move the counter");
+        assert_eq!(
+            store.quota("t-dead", REGION),
+            500,
+            "the REJECTED downgrade write MUST still reconcile the stored cap down \
+             (reconcile decoupled from accrual success) — else adapter writes evade the cap",
+        );
+
+        // (2) An ADAPTER write (brew/npm/pip pass `None`) now gates against the
+        // reconciled stored cap (500): 800 + 10 = 810 > 500 ⇒ OverCap. Pre-fix it
+        // gated against the STALE 10_000 cap and wrongly Accrued (the COGS evasion).
+        assert_eq!(
+            acc.accrue("t-dead", 10, None).await.unwrap(),
+            AccrueOutcome::OverCap
+        );
+        assert_eq!(
+            store.used("t-dead", REGION),
+            800,
+            "the adapter write must be blocked at the LOWERED cap, not the stale one"
+        );
+
+        // (3) Headroom under the new cap is still honoured: dropping below 500 (via
+        // a delete) lets an adapter write through at the lowered limit.
+        acc.release("t-dead", 400).await.unwrap(); // 800 → 400
+        assert_eq!(
+            acc.accrue("t-dead", 50, None).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
+        assert_eq!(store.used("t-dead", REGION), 450, "writes within the lowered cap still accrue");
     }
 
     #[tokio::test]
