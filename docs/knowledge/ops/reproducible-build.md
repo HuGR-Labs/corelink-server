@@ -5,7 +5,8 @@ description: "Best-effort reproducible builds: the 2-runner SHA-256 diff matrix,
 source_files:
   - "docs/build/reproducible.md"
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+  - "rust-toolchain.toml"
+checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
 provenance: "AUTHORED"
 tags: ["ops", "reproducible-build", "supply-chain", "tamper-detection", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -16,7 +17,7 @@ timestamp: "2026-06-26T00:00:00Z"
 Reproducible builds are CoreLink's supply-chain tamper-detection defense-in-depth: if two independent
 runners compile the same source commit to within a tiny byte-diff, an attacker who compromises one builder
 but not the other is mechanically detectable. CoreLink runs a **best-effort** version of this — a 2-runner
-SHA-256 diff with a **≤5% byte-diff gate** rather than 100% bit-identical, because Rust 1.84 + LLVM 18 in
+SHA-256 diff with a **≤5% byte-diff gate** rather than 100% bit-identical, because Rust 1.91 + LLVM 21 in
 2026 cannot reliably hit 0% (residual DWARF path leaks, runner CPU heterogeneity). The 5% threshold and
 the roadmap to 100% post-GA Q3 are ratified in ADR-0015. This is the build-integrity counterpart of the
 GA tag's signed freeze in the [release process](/ops/release-process.md); the decision rationale lives in
@@ -52,8 +53,8 @@ GA tag's signed freeze in the [release process](/ops/release-process.md); the de
   (`specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:222-227`).
 - The reproducible matrix uses `--jobs 1` to eliminate link-order non-determinism, even though release CI
   uses parallel jobs for throughput (`docs/build/reproducible.md:161-172`).
-- The rustc toolchain is pinned to exact minor `1.84.0` via `rust-toolchain.toml`; a bump requires the
-  workflow green on the PR + an ADR-0015 amendment (`docs/build/reproducible.md:117-133`).
+- The rustc toolchain is pinned to exact minor `1.91.1` via `rust-toolchain.toml`; a bump requires the
+  workflow green on the PR + an ADR-0015 amendment (`rust-toolchain.toml:13`).
 - A `build.rs` that bypasses `SOURCE_DATE_EPOCH` (e.g. `SystemTime::now()`) is blocked by the pre-commit
   lint `scripts/build_rs_lint.sh` (`docs/build/reproducible.md:222-248`).
 - Threshold change requires Security Lead + Architect sign-off; a toolchain bump requires the workflow

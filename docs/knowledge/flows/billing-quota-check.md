@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/tenant_quota.rs"
   - "crates/corelink-container/src/routes/billing_ingest.rs"
-checkpoint_sha: "2cfa6827a54076ff11847be74f24dee4afe3222a"
+checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
 provenance: "AUTHORED"
 tags: ["flows", "billing", "quota", "tenancy", "request-flow"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -22,8 +22,8 @@ The `QuotaGate` is the economic fail-closed spend cap on the hot path: it conver
 
 # How it works
 
-1. Placement: a billable handler holds `Option<QuotaGate>` and calls `gate.check(&tenant)` at the top, after scope/rate-limit and before the work; absent in dev/CI (`crates/corelink-container/src/routes.rs:220-234`).
-2. Cost resolution: `QuotaGate` resolves the flat per-op micro-dollar cost once at build and delegates `check` to `QuotaGuard::check` (`crates/corelink-container/src/routes.rs:241-259`).
+1. Placement: a billable handler holds `Option<QuotaGate>` and calls `gate.check(&tenant)` at the top, after scope/rate-limit and before the work; absent in dev/CI (`crates/corelink-container/src/routes.rs:228-251`).
+2. Cost resolution: `QuotaGate` resolves the flat per-op micro-dollar cost once at build and delegates `check` to `QuotaGuard::check` (`crates/corelink-container/src/routes.rs:245-259`).
 3. Clock gate: `QuotaGuard::check` fails closed 503 if the wall clock is unavailable — it cannot reason about the cycle boundary without a trustworthy clock (`crates/corelink-container/src/tenant_quota.rs:786-795`).
 4. Row load: the tenant's `tenant_quota` row is loaded; a store error is 503, a missing row is treated as a fresh default-tripwire tenant (`crates/corelink-container/src/tenant_quota.rs:805-813`).
 5. Cycle decision: a brand-new row or an elapsed cycle opens a fresh accrual baseline; otherwise the steady path continues from the prior accrued total (`crates/corelink-container/src/tenant_quota.rs:815-818`).
@@ -51,8 +51,8 @@ The `QuotaGate` is the economic fail-closed spend cap on the hot path: it conver
 
 # Citations
 
-1. `crates/corelink-container/src/routes.rs:220-234` — `QuotaGate` usage contract (called at the top of a billable handler).
-2. `crates/corelink-container/src/routes.rs:241-259` — `from_env` cost resolution + `check` delegating to `QuotaGuard::check`.
+1. `crates/corelink-container/src/routes.rs:228-251` — `QuotaGate` usage contract + struct (called at the top of a billable handler).
+2. `crates/corelink-container/src/routes.rs:245-259` — `from_env` cost resolution + `check` delegating to `QuotaGuard::check`.
 3. `crates/corelink-container/src/routes.rs:276-278` — `check_batch` delegating the proportional batch charge.
 4. `crates/corelink-container/src/tenant_quota.rs:260-277` — the `check_and_accrue` store-trait method; CF-4: the default fails CLOSED (`Err`/503, no non-atomic fallback) — every backend MUST provide its own atomic check-and-increment.
 5. `crates/corelink-container/src/tenant_quota.rs:759-766` — `check_batch`: one atomic `n x cost` charge with a saturating product.

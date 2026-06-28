@@ -4,7 +4,8 @@ title: "Request-quota enforcement"
 description: "The container-side mirror of the Worker's monthly request-count cap, closing the OCI pass-through bypass with a fail-OPEN per-tenant allowance limiter."
 source_files:
   - "crates/corelink-container/src/request_count.rs"
-checkpoint_sha: "d24ff6f3093497a7f2a63aa232ef181733423c19"
+  - "crates/corelink-eviction/src/tier.rs"
+checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "request-count", "oci", "fail-open"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -41,8 +42,9 @@ the Worker's `QUOTAS[tier].requestsPerMonthMax` byte-for-byte so the two enforce
   (`crates/corelink-container/src/request_count.rs:89-100`). Note the taxonomy seam: `team` is RETAINED
   here as an uncapped legacy slug even though ADR-S19-001 removed it from the sold ladder (and `business`
   never shipped, so it is absent → falls to the `free` floor). So the count axis covers Starter/Pro/Max
-  cleanly — the only tier-coverage gap in the wider system is on the eviction side (see
-  `ops/gc-eviction`'s legacy 5-arm `Tier` enum), NOT here.
+  cleanly — and eviction's legacy 5-arm `Tier` enum (see `ops/gc-eviction`) is no longer an open
+  coverage gap either: CF-3's `Tier::from_slug` now bridges the sold `starter`/`pro`/`max` slugs onto
+  it (`crates/corelink-eviction/src/tier.rs:114-136`).
 - `check_and_increment` fail-OPENs (returns `None`, no count) when the wall clock is unavailable
   (`now_ms == 0`) — this is an availability limiter, not a cost cap
   (`crates/corelink-container/src/request_count.rs:253-259`).
