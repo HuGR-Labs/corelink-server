@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/pip.rs"
   - "crates/corelink-container/src/routes/brew.rs"
   - "crates/corelink-container/src/routes/oci.rs"
-checkpoint_sha: "4124b1ace1ac7e0bbd2769c0b3636c52315a335d"
+checkpoint_sha: "0150de7ef40b4c23d3d9fbac97999192b2ae48de"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -47,14 +47,17 @@ hold.
    rides inside the HMAC bearer minted at `/token`, so the gate does pure scope enforcement and no
    path surgery (`crates/corelink-container/src/routes/oci.rs:10-30`; `crates/corelink-container/src/routes/oci.rs:34-45`; `crates/corelink-container/src/routes/oci.rs:690-753`).
 6. OCI also layers a $-ceiling + monthly request-count gate that attributes cost to the tenant
-   recovered from the VERIFIED HMAC bearer, never a request header (`crates/corelink-container/src/routes/oci.rs:754-790`).
+   recovered from the VERIFIED HMAC bearer, never a request header. Both axes meter EVERY method
+   (reads AND writes — `docker pull` GET/HEAD of manifests/blobs has real R2 Class-B/egress COGS): the
+   $-ceiling is charged fail-CLOSED (402 over, on reads too — matching the native CAS/AC read path),
+   while only the request-count axis is fail-OPEN (429 over) (`crates/corelink-container/src/routes/oci.rs:754-790`).
 
 # Invariants
 - Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted (`crates/corelink-container/src/routes/npm.rs:30-32`; `crates/corelink-container/src/routes/pip.rs:28-30`; `crates/corelink-container/src/routes/brew.rs:25-27`).
 - Public upstream bytes are deduped cross-tenant under `PUBLIC_NAMESPACE`; the PAT gates access, the public content is shared (`crates/corelink-container/src/routes/pip.rs:32-37`; `crates/corelink-container/src/routes/brew.rs:27-30`).
 - npm `@scoped` (private) packages stay in the per-tenant namespace, never `PUBLIC_NAMESPACE` (`crates/corelink-container/src/routes/npm.rs:97-106`).
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
-- OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci.rs:816-826`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci.rs:856-857`).
+- OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci.rs:820-830`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci.rs:862-863`).
 
 # Gotchas
 - `_public` writes need BOTH a `tenant_storage_state` row AND a sentinel R2 prefix for byte accounting;
@@ -64,8 +67,10 @@ hold.
   the old header-based charge was always empty — a total $-ceiling bypass — until the gate was rekeyed
   on the verified bearer.
 - The OCI bearer→tenant attribution is a SEPARATE trust path from the header-based native planes and is
-  flagged `SECURITY-REVIEW` (audit #7, pending review): a request with no resolvable verified bearer goes
-  UNCOUNTED and the quota gate is fail-OPEN on reads (`crates/corelink-container/src/routes/oci.rs:810-826`).
+  flagged `SECURITY-REVIEW` (audit #7, pending review): a request with no resolvable verified bearer (anon
+  read) goes UNCOUNTED on both axes. For a RESOLVED bearer the $-ceiling is charged fail-CLOSED on EVERY
+  method incl. reads (402 over) — correcting the prior write-only carve-out (PR #318) — and only the
+  request-count axis is fail-OPEN (429 over) (`crates/corelink-container/src/routes/oci.rs:813-819`).
 
 # Citations
 1. `crates/corelink-container/src/routes/npm.rs:35-44` — npm public/private metadata split.
@@ -88,7 +93,7 @@ hold.
 18. `crates/corelink-container/src/routes/oci.rs:690-753` — OCI router (`.merge` mount).
 19. `crates/corelink-container/src/routes/oci.rs:19-30` — why stripping the first segment would corrupt the repo.
 20. `crates/corelink-container/src/routes/oci.rs:754-790` — OCI $-ceiling + request-count gate.
-21. `crates/corelink-container/src/routes/oci.rs:816-826` — `oci_bearer_tenant` (verify HMAC bearer → recover tenant); used by `oci_quota_gate` at `crates/corelink-container/src/routes/oci.rs:856-857` — cost attribution keyed on the verified bearer, not a header.
+21. `crates/corelink-container/src/routes/oci.rs:820-830` — `oci_bearer_tenant` (verify HMAC bearer → recover tenant); used by `oci_quota_gate` at `crates/corelink-container/src/routes/oci.rs:862-863` — cost attribution keyed on the verified bearer, not a header.
 22. `crates/corelink-container/src/routes/pip.rs:115-118` — pip wheels dedup cross-tenant under `PUBLIC_NAMESPACE`.
 23. `crates/corelink-container/src/routes/brew.rs:85-95` — brew bottles dedup cross-tenant under `PUBLIC_NAMESPACE`.
 24. `crates/corelink-container/src/routes/npm.rs:149-177` — `NpmMoatStore` get/put namespace npm tarball BYTES per-tenant (cross-tenant dedup is a tracked enhancement).
