@@ -800,26 +800,45 @@ _WRANGLER_MAIN_ELEM_RE = re.compile(r"""["']([^"',\[\]]+)["']""")
 
 
 def _wrangler_mains(app_dir: Path) -> list[str]:
-    """ALL app-relative `main` entrypoints declared in `app_dir`'s wrangler config
-    (`wrangler.toml` then `wrangler.jsonc`/`wrangler.json`) — the top-level `main`
-    AND every per-environment override (`[env.<name>]` in TOML, `"env": {…}` in
-    JSONC). Returns a de-duplicated, order-preserving list (possibly empty).
+    """ALL app-relative `main` entrypoints declared in ANY of `app_dir`'s wrangler
+    config files — the top-level `main` AND every per-environment override
+    (`[env.<name>]` in TOML, `"env": {…}` in JSONC), UNIONED across EVERY
+    `wrangler*.{toml,jsonc,json}` file in the dir. Returns a de-duplicated,
+    order-preserving list (possibly empty).
+
+    gate v12 (LOW, two same-root holes closed):
+      1. ALT-NAMED / per-env config — `wrangler deploy --config wrangler.prod.toml`
+         (or the convention `wrangler.<env>.toml`) deploys a main declared in a
+         NON-canonical-named config. The old loop checked ONLY the three canonical
+         names (`wrangler.toml`/`.jsonc`/`.json`), so a main declared solely in
+         `wrangler.prod.toml` was NEVER read → could ship GREEN uncovered. We now
+         GLOB every `wrangler*.{toml,jsonc,json}` in the app dir.
+      2. DUAL-CONFIG precedence — the old loop was FIRST-FILE-WINS (it `return`ed on
+         the first existing canonical name, `wrangler.toml` before `.jsonc`), but
+         modern wrangler prefers `.jsonc`/`.json` over `.toml`. So a decoy
+         `wrangler.toml` (cited `src/index.ts`) over a `wrangler.jsonc` (real,
+         uncited `build/*.mjs`) hid the real entrypoint. We no longer first-file-win:
+         we UNION the mains from EVERY config file, so neither a precedence decoy nor
+         an alt-named config can hide the real entrypoint. (Over-enumerating a decoy
+         main is conservative/safe — it merely demands that main be concept-covered
+         or excluded; never HIDING a real one is the goal.)
 
     Parsed with a tolerant regex so the SAME matcher handles TOML (`main = "x"`) and
     JSONC (`"main": "x"`, possibly with `//` comments) without a TOML/JSONC
     dependency, and `findall` (NOT `search`) so an env-override main is not masked by
     a top-level decoy (gate v11). Single quotes and an array form (`main = ["a",
-    "b"]`) are tolerated — every element of an array is enumerated. The FIRST config
-    file that exists wins (a project ships exactly one wrangler config)."""
-    for name in ("wrangler.toml", "wrangler.jsonc", "wrangler.json"):
-        cfg = app_dir / name
-        if not cfg.is_file():
-            continue
+    "b"]`) are tolerated — every element of an array is enumerated."""
+    mains: list[str] = []
+    cfgs = sorted(
+        p
+        for p in app_dir.glob("wrangler*")
+        if p.is_file() and p.suffix.lower() in (".toml", ".jsonc", ".json")
+    )
+    for cfg in cfgs:
         try:
             text = cfg.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        mains: list[str] = []
         for raw in _WRANGLER_MAIN_RE.findall(text):
             raw = raw.strip()
             if raw.startswith("["):
@@ -832,8 +851,7 @@ def _wrangler_mains(app_dir: Path) -> list[str]:
                 val = raw.strip("\"'").strip()
                 if val and val not in mains:
                     mains.append(val)
-        return mains
-    return []
+    return mains
 
 
 def _line_count(path: Path) -> int:

@@ -1907,6 +1907,174 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v12: ALT-NAMED + DUAL-CONFIG wrangler mains are unioned --------------
+# Two same-root LOW holes (both: the gate's stated contract is "every wrangler
+# main", but config resolution diverged from wrangler's actual selection):
+#  1. ALT-NAMED config — `wrangler deploy --config wrangler.prod.toml` (or the
+#     convention wrangler.<env>.toml) deploys a main declared in a NON-canonical-
+#     named config. The old loop checked ONLY wrangler.toml/.jsonc/.json, so a main
+#     declared solely in wrangler.prod.toml was NEVER read → shipped GREEN uncovered.
+#     v12 globs every wrangler*.{toml,jsonc,json}.
+#  2. DUAL-CONFIG precedence — the old loop was first-file-wins (returned on the
+#     first existing canonical name, .toml before .jsonc), but modern wrangler
+#     prefers .jsonc/.json. A decoy wrangler.toml (cited src/index.ts) over a
+#     wrangler.jsonc (real, uncited build/*.mjs) hid the real entrypoint. v12 unions
+#     the mains across ALL config files — no first-file-win.
+# We prove THREE:
+#  POSITIVE-A — apps/altcfg-worker's wrangler.prod.toml main `dist/prod.mjs` (outside
+#               src/, declared ONLY in the alt-named config, uncited) REDs [C10b];
+#  POSITIVE-B — apps/dualcfg-worker's wrangler.jsonc main `build/real.mjs` (the real
+#               entrypoint, uncited) REDs [C10b] EVEN THOUGH a wrangler.toml decoy
+#               cites src/index.ts (no first-file-win);
+#  NEGATIVE   — that concept-cited top-level src/index.ts main stays covered.
+assert_alt_and_dual_wrangler_config() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # APP A: a main declared ONLY in an alt-named wrangler.prod.toml, outside src/.
+    mkdir -p apps/altcfg-worker/src apps/altcfg-worker/dist
+    printf 'export default {\n  async fetch() { return ok(); },\n};\n' \
+      > apps/altcfg-worker/src/index.ts
+    printf 'export default { async fetch() { /* prod-only backdoor */ } };\n' \
+      > apps/altcfg-worker/dist/prod.mjs
+    # NO canonical wrangler.toml — the entrypoint lives ONLY in the alt-named config.
+    cat > apps/altcfg-worker/wrangler.prod.toml <<'TOML'
+name = "altcfg-worker"
+main = "dist/prod.mjs"
+TOML
+    # APP B: a wrangler.toml decoy (cites src/index.ts) PLUS a wrangler.jsonc whose
+    # real (uncited) main lives outside src/ — the dual-config precedence hole.
+    mkdir -p apps/dualcfg-worker/src apps/dualcfg-worker/build
+    printf 'export default {\n  async fetch() { return deny_unless_authorized(); },\n};\n' \
+      > apps/dualcfg-worker/src/index.ts
+    printf 'export default { async fetch() { /* the real, hidden entrypoint */ } };\n' \
+      > apps/dualcfg-worker/build/real.mjs
+    cat > apps/dualcfg-worker/wrangler.toml <<'TOML'
+name = "dualcfg-worker"
+main = "src/index.ts"
+TOML
+    cat > apps/dualcfg-worker/wrangler.jsonc <<'JSONC'
+{
+  // modern wrangler prefers .jsonc over .toml
+  "name": "dualcfg-worker",
+  "main": "build/real.mjs"
+}
+JSONC
+    mkdir -p docs/knowledge/planes
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [a](/planes/a.md)
+- [b](/planes/b.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # Concepts ground ONLY the cited src/index.ts mains; the alt-named & jsonc
+    # mains (outside src/) are left uncited on purpose.
+    cat > docs/knowledge/planes/a.md <<EOF
+---
+type: "Plane"
+title: "Altcfg worker (hermetic)"
+description: "grounds the src entrypoint only."
+source_files:
+  - "apps/altcfg-worker/src/index.ts"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Altcfg worker (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the entrypoint (\`apps/altcfg-worker/src/index.ts:2\`).
+
+# Invariants
+- it holds (\`apps/altcfg-worker/src/index.ts:2\`).
+
+# Citations
+1. \`apps/altcfg-worker/src/index.ts:2\` — grounded anchor (the fetch enforcer).
+EOF
+    cat > docs/knowledge/planes/b.md <<EOF
+---
+type: "Plane"
+title: "Dualcfg worker (hermetic)"
+description: "grounds the top-level toml entrypoint only."
+source_files:
+  - "apps/dualcfg-worker/src/index.ts"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Dualcfg worker (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the entrypoint (\`apps/dualcfg-worker/src/index.ts:2\`).
+
+# Invariants
+- it holds (\`apps/dualcfg-worker/src/index.ts:2\`).
+
+# Citations
+1. \`apps/dualcfg-worker/src/index.ts:2\` — grounded anchor (the fetch enforcer).
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "planes/a"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "apps/altcfg-worker/src/index.ts"
+  - id: "planes/b"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "apps/dualcfg-worker/src/index.ts"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.av_out" 2>&1 || true
+  )
+  # POSITIVE-A: the alt-named wrangler.prod.toml main (outside src/, uncited) fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.av_out" 2>/dev/null \
+     && grep -q 'apps/altcfg-worker/dist/prod.mjs' "$tmp/.av_out" 2>/dev/null; then
+    ok "alt-named wrangler config: a main in wrangler.prod.toml (dist/prod.mjs) is enumerated -> [C10b] names it"
+  else
+    miss "alt-named wrangler config positive (no [C10b] naming apps/altcfg-worker/dist/prod.mjs): $(tail -1 "$tmp/.av_out" 2>/dev/null)" "altcfg-pos"
+  fi
+  # POSITIVE-B: the dual-config .jsonc real main is enumerated despite the .toml decoy.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.av_out" 2>/dev/null \
+     && grep -q 'apps/dualcfg-worker/build/real.mjs' "$tmp/.av_out" 2>/dev/null; then
+    ok "dual-config wrangler (no first-file-win): the .jsonc main (build/real.mjs) is enumerated despite a .toml decoy -> [C10b] names it"
+  else
+    miss "dual-config wrangler positive (no [C10b] naming apps/dualcfg-worker/build/real.mjs): $(tail -1 "$tmp/.av_out" 2>/dev/null)" "dualcfg-pos"
+  fi
+  # NEGATIVE (selectivity): the concept-cited top-level src/index.ts mains are NOT flagged.
+  total=$((total + 1))
+  if ! grep -qE 'apps/(altcfg|dualcfg)-worker/src/index.ts' "$tmp/.av_out" 2>/dev/null; then
+    ok "alt/dual wrangler config: the concept-cited top-level src/index.ts mains stay covered (selective)"
+  else
+    miss "alt/dual wrangler config negative: a covered src/index.ts main was wrongly flagged" "altdual-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -1963,6 +2131,10 @@ assert_wrangler_main_outside_src
 # parsed via findall (not search) — an env-override entrypoint outside src/ that a
 # top-level decoy used to mask is enumerated and REDs [C10b] (PoC: apps/poc-envmain).
 assert_env_main_override_outside_src
+# gate v12: wrangler config resolution now globs ALL wrangler*.{toml,jsonc,json} and
+# UNIONs every declared main (no first-file-win) — an ALT-NAMED wrangler.prod.toml
+# main outside src/ REDs, and a DUAL-CONFIG .jsonc real main REDs despite a .toml decoy.
+assert_alt_and_dual_wrangler_config
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then
