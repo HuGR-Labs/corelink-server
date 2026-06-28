@@ -5,7 +5,7 @@ description: "The native Rust binary serving the composed axum data-plane on por
 source_files:
   - "crates/corelink-container/src/main.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "664d78b8e6f62ad6d0e95a94552c6c0997f8fea1"
+checkpoint_sha: "f0079c732069dffdf0e7de6e2d8c717bc903db9c"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -17,7 +17,7 @@ The container plane is the `corelink-server` Rust binary — the only place the 
 It binds a single HTTP/1.1 axum stack on port 50051 (the exact port the Durable Object proxies to) and
 serves the composed data plane: native CAS/AC, Bazel REAPI, Turbo, sccache/cargo, the `_public`
 package-manager adapters, admin, audit-export/analytics, signup, the Stripe webhook, and the internal
-mint/introspect/erase routes. Its defining design property is fail-CLOSED env-gating: every privileged
+mint/introspect/erase + audit-chain-drain routes. Its defining design property is fail-CLOSED env-gating: every privileged
 or stateful route mounts only when its secrets + D1/R2 storage env are present, so dev/CI runs the same
 binary with those routes simply absent. One shared set of CAS/AC handler objects (and one PAT gate, one
 $-ceiling gate, one byte-accountant) is cloned into every billable surface, so accounting, the erasure
@@ -28,7 +28,7 @@ surface.
 - The native compute plane that serves the real product surface on the DO's `getTcpPort` target port
   50051 (`crates/corelink-container/src/main.rs:1-17`).
 - The router composer: `build_with_factory` assembles every data-plane sub-router with shared state
-  (`crates/corelink-container/src/routes.rs:333-341`).
+  (`crates/corelink-container/src/routes.rs:340-348`).
 
 # How it works
 1. `main` selects the storage backing (`"r2"` vs `"inmemory"`) once at boot and surfaces it on
@@ -46,23 +46,26 @@ surface.
    controls (`crates/corelink-container/src/main.rs:298-376`; `crates/corelink-container/src/main.rs:346-358`).
 3. The composed router is built and given a global 10 MiB body limit + the `/_health` route, then bound
    to the listener on PORT (`crates/corelink-container/src/main.rs:555-560`,
-   `crates/corelink-container/src/main.rs:821-824`).
+   `crates/corelink-container/src/main.rs:852-855`).
 4. Privileged routes are env-gated mounts: `/_internal/pat/mint`, `/internal/v1/auth/introspect`,
-   `/internal/v1/billing/usage`, `/_internal/dsr/erase`, CAS-erase, tier-select, and the Stripe webhook
-   each mount only when their secrets are present (`crates/corelink-container/src/main.rs:562-819`).
+   `/internal/v1/billing/usage`, `/_internal/dsr/erase`, the S-09 `POST /_internal/audit/drain`
+   audit-chain drain (seals the `audit_outbox` trail into the BLAKE3 tamper-evident chain — internal-auth
+   gated, env-gated on D1; sits alongside the `/_internal/dsr/*` routes), CAS-erase, tier-select, and the
+   Stripe webhook each mount only when their secrets are present
+   (`crates/corelink-container/src/main.rs:562-850`).
 5. `build_with_factory` resolves the shared gates from env — the $-ceiling `QuotaGate`, the OCI-scoped
    request-count gate, the native PAT gate, and the byte-accountant — warning (not failing) when absent.
    The request-count gate is DELIBERATELY consumed only by the OCI router (not cloned into the native
    CAS/AC/Bazel/Turbo states like `quota`/`pat_gate`) because native ops are already op-count-metered at
-   the Worker edge — cloning it would double-count (`crates/corelink-container/src/routes.rs:347-401`).
+   the Worker edge — cloning it would double-count (`crates/corelink-container/src/routes.rs:354-408`).
 6. One set of CAS handler objects is wrapped with byte-accounting + the 410-Gone tombstone gate at a
    single chokepoint, then cloned into every billable surface; the shared `CasRouteState` is constructed
    here with both a `put_inflight` and a `read_inflight` per-tenant concurrency pool
-   (`crates/corelink-container/src/routes.rs:403-492`).
+   (`crates/corelink-container/src/routes.rs:410-499`).
 7. Cache-adapter surfaces (cargo/brew/npm/pip/oci) mount only when the shared `adapter_pat::PatVerifier`
-   and the D1 moat map build from env (`crates/corelink-container/src/routes.rs:652-784`).
+   and the D1 moat map build from env (`crates/corelink-container/src/routes.rs:659-791`).
 8. The residency guard and the per-tenant rate-limit token-bucket are applied as outer layers over the
-   composed data plane (`crates/corelink-container/src/routes.rs:791-833`).
+   composed data plane (`crates/corelink-container/src/routes.rs:798-840`).
 
 # Invariants
 - A single HTTP listener on PORT (default 50051) serves the whole data plane — the DO's only target
@@ -72,9 +75,9 @@ surface.
 - Privileged routes fail CLOSED: absent secrets ⇒ the route is simply not mounted (404), never an open
   proxy (`crates/corelink-container/src/main.rs:542-555`).
 - The 410-Gone erasure gate and byte-accounting are centralized at the shared CAS chokepoint, so every
-  surface inherits them by construction (`crates/corelink-container/src/routes.rs:448-481`).
+  surface inherits them by construction (`crates/corelink-container/src/routes.rs:455-488`).
 - The rate-limit + residency layers wrap exactly the data plane, never `/_health` or `/_internal/*`
-  (which mount later in `main`) (`crates/corelink-container/src/routes.rs:793-833`).
+  (which mount later in `main`) (`crates/corelink-container/src/routes.rs:800-840`).
 
 # Gotchas
 - The native CAS/AC/Bazel/Turbo plane trusts the Worker-injected `x-corelink-tenant-id`, with the
@@ -91,13 +94,13 @@ surface.
 5. `crates/corelink-container/src/main.rs:365-368` — PORT resolution (default 50051).
 6. `crates/corelink-container/src/main.rs:555-560` — the 10 MiB global body limit + `/_health` route.
 7. `crates/corelink-container/src/main.rs:562-575` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
-8. `crates/corelink-container/src/main.rs:562-819` — the full set of env-gated privileged route mounts.
-9. `crates/corelink-container/src/main.rs:821-824` — binding the composed router to the PORT listener.
-10. `crates/corelink-container/src/routes.rs:333-341` — `build`/`build_with_factory` router composition.
-11. `crates/corelink-container/src/routes.rs:347-401` — shared gates resolved from env (quota, OCI-scoped request-count, PAT, accountant); the request-count gate is OCI-only, not cloned into native states (would double-count vs the Worker edge).
-12. `crates/corelink-container/src/routes.rs:403-492` — shared CAS handler objects + accounting/tombstone wrap (incl. `put_inflight`/`read_inflight` pools in the `CasRouteState` ctor).
-13. `crates/corelink-container/src/routes.rs:448-481` — centralized 410-Gone erasure gate at the CAS chokepoint.
-14. `crates/corelink-container/src/routes.rs:652-784` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
-15. `crates/corelink-container/src/routes.rs:791-833` — residency guard + per-tenant rate-limit outer layers.
-16. `crates/corelink-container/src/routes.rs:793-833` — the rate-limit layer scoped to the data plane only.
+8. `crates/corelink-container/src/main.rs:562-850` — the full set of env-gated privileged route mounts, now including the S-09 `POST /_internal/audit/drain` audit-chain drain (BLAKE3 tamper-evident seal of `audit_outbox`; internal-auth gated, env-gated on D1) alongside `/_internal/dsr/*`.
+9. `crates/corelink-container/src/main.rs:852-855` — binding the composed router to the PORT listener.
+10. `crates/corelink-container/src/routes.rs:340-348` — `build`/`build_with_factory` router composition.
+11. `crates/corelink-container/src/routes.rs:354-408` — shared gates resolved from env (quota, OCI-scoped request-count, PAT, accountant); the request-count gate is OCI-only, not cloned into native states (would double-count vs the Worker edge).
+12. `crates/corelink-container/src/routes.rs:410-499` — shared CAS handler objects + accounting/tombstone wrap (incl. `put_inflight`/`read_inflight` pools in the `CasRouteState` ctor).
+13. `crates/corelink-container/src/routes.rs:455-488` — centralized 410-Gone erasure gate at the CAS chokepoint.
+14. `crates/corelink-container/src/routes.rs:659-791` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
+15. `crates/corelink-container/src/routes.rs:798-840` — residency guard + per-tenant rate-limit outer layers.
+16. `crates/corelink-container/src/routes.rs:800-840` — the rate-limit layer scoped to the data plane only.
 17. `crates/corelink-container/src/main.rs:298-376` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one as the OCI op-cap, plus `ERASURE_SALT_KEY` at `crates/corelink-container/src/main.rs:346-358`), else a FATAL boot refusal (no half-armed prod).
