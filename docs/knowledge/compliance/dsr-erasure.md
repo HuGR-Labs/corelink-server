@@ -24,7 +24,7 @@ source_files:
   - crates/corelink-dsr/src/receipt.rs
   - crates/corelink-dsr/src/event.rs
   - crates/corelink-dsr/src/lib.rs
-checkpoint_sha: "a7c16588ead34ed6095e0aa9db67ddf77ac96688"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "lgpd", "erasure", "right-to-erasure", "compliance", "mfa", "attestation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -42,7 +42,7 @@ This control implements the data-subject right-to-erasure (and the sibling DSR r
 - **MFA step-up on destructive arms only.** Erasure and Rectification require a non-empty step-up token; without one the orchestrator returns `MfaRequired` after a `mfa_step_up_required` audit, with no store insert; read/policy arms skip the gate (`crates/corelink-dsr/src/endpoint.rs:351-379`).
 - **The MFA verifier contract.** `MfaStepUpVerifier::verify` is fail-CLOSED: `None` token → `Required`, empty bytes / bad binding → `Invalid`, expired → `Expired`; production wiring binds it to a 5-min WebAuthn step-up token scoped to `op_class = "dsr_destructive"` (`crates/corelink-dsr/src/mfa.rs:80-102`).
 - **Idempotency by `(tenant_id, request_id)`.** A prior non-terminal ticket short-circuits to the original receipt + SLA deadline with no second audit/insert; a replay with a divergent `(data_subject_id, request_kind, jurisdiction)` tuple is a SEV-1 forensic anomaly surfaced as `DivergentPayload` (`crates/corelink-dsr/src/store.rs:133-158`).
-- **Receipt + SLA.** On accept, a JWT (RS256) receipt is issued with a 90-day anti-replay expiry cap and an SLA deadline derived per jurisdiction (LGPD 15d / GDPR 30d / CCPA 45d) by the `pub const fn sla_for` enforcer (`crates/corelink-dsr/src/receipt.rs:136-149`, `crates/corelink-dsr/src/event.rs:403`, `crates/corelink-dsr/src/lib.rs:116-119`).
+- **Receipt + SLA.** On accept, a JWT (RS256) receipt is issued with a 90-day anti-replay expiry cap and an SLA deadline derived per jurisdiction (LGPD 15d / GDPR one-calendar-MONTH — a true `add_one_calendar_month_ms`, NOT a flat 30 days, so a Jan-31 submission is legally due Feb-28/29 not Mar-2 / CCPA 45d) by the `pub const fn sla_for` enforcer (`crates/corelink-dsr/src/receipt.rs:136-149`, `crates/corelink-dsr/src/event.rs:410-427`, `crates/corelink-dsr/src/lib.rs:116-119`).
 - **Status poll is constant-time confidential.** `poll_status` returns the ticket status on a hit, but a miss OR a cross-tenant lookup both surface as `RequestRejected{IdentityVerificationFailed}` — never disclosing whether a `request_id` exists for another tenant (`crates/corelink-dsr/src/endpoint.rs:420-457`).
 - **Live erasure intake (container).** `POST /_internal/dsr/erase` deserialises the `dsr.queued.v1` message (forwarded by the signup-worker queue consumer for the Clerk `user.deleted` path), maps it to a canonical `ErasureRequest` via `parse_request`, and drives the 12-backend orchestrator with `process_erasure` (`crates/corelink-container/src/routes/dsr.rs:411-427`, `crates/corelink-container/src/routes/dsr.rs:429`).
 - **Self-serve account-delete uses the same DSR message + anchor (LIVE).** A self-serve account delete routes through `routes/customer.rs::handle_account_delete` (`crates/corelink-container/src/routes/customer.rs:955`), which builds a `dsr.queued.v1` message and `INSERT OR IGNORE`s a `dsr_requested` anchor row, then hands erasure to the `DsrErasureSink` trait — production wires `dsr::InProcessErasureSink` (via `routes/customer.rs::account_deletion_from_env`), which drives the **same** in-process, D1-backed erasure worker the `/_internal/dsr/erase` consumer runs (the container has no CF Queue producer, so the "enqueue" is a synchronous same-worker drive, not an async queue). `None` in dev/CI → the route fails CLOSED 503; in prod the sink is wired (deployed 2026-06-26).
@@ -98,7 +98,7 @@ The 4 live effective/pseudonymize adapters, the not-applicable reconciler, and t
 - Constant-time confidential status poll: `crates/corelink-dsr/src/endpoint.rs:420-457`.
 - MFA verifier fail-CLOSED contract: `crates/corelink-dsr/src/mfa.rs:80-102`, `crates/corelink-dsr/src/mfa.rs:146-154`.
 - Idempotency + divergent-payload SEV-1: `crates/corelink-dsr/src/store.rs:133-158`; store keyed `(tenant,request)`: `crates/corelink-dsr/src/store.rs:45`.
-- Receipt 90d cap + SLA per jurisdiction (enforcer `sla_for`): `crates/corelink-dsr/src/receipt.rs:136-149`, `crates/corelink-dsr/src/event.rs:403`, `crates/corelink-dsr/src/lib.rs:116-119`.
+- Receipt 90d cap + SLA per jurisdiction (enforcer `sla_for`; GDPR = calendar-month add, not flat 30d): `crates/corelink-dsr/src/receipt.rs:136-149`, `crates/corelink-dsr/src/event.rs:410-427`, `crates/corelink-dsr/src/lib.rs:116-119`.
 - CAS per-hash erase module + tombstone-WRITE side: `crates/corelink-container/src/routes/cas_erase.rs:1-8`, `crates/corelink-container/src/routes/cas_erase.rs:70`, `crates/corelink-container/src/routes/cas_erase.rs:830-850`; read-side 410 enforcer: `crates/corelink-container/src/routes/cas.rs:786-798`.
 - D1 control-plane ordered erase (child rows → root `tenant` LAST; legal-hold preserve): `crates/corelink-container/src/routes/dsr/adapter_d1.rs:194-227`.
 - D1 erase-set / retain-set const partition (injection-safe constant tables): `crates/corelink-container/src/routes/dsr/adapter_d1.rs:54-103`.

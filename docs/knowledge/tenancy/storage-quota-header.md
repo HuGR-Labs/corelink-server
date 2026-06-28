@@ -5,7 +5,7 @@ description: "The Worker-trusted storage-cap header and the atomic byte-accounti
 source_files:
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-rate-headers/src/headers.rs"
-checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "storage", "byte-accounting", "rfc-9331", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -41,7 +41,7 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
 - After a successful write the handler calls an atomic DB-side check-and-accrue
   (`bytes_used = bytes_used + n` gated by the cap in ONE statement), so concurrent over-cap writes cannot
   both read the same baseline and pass — the executed INSERT…ON CONFLICT…RETURNING statement is at
-  `crates/corelink-container/src/byte_accounting.rs:347-377`, whose serialized cap predicate
+  `crates/corelink-container/src/byte_accounting.rs:347-372`, whose serialized cap predicate
   (`WHERE ?5 = 0 OR tenant_storage_state.bytes_used + ?3 <= ?5`) is at
   `crates/corelink-container/src/byte_accounting.rs:355-363`.
 - `AccrueOutcome::OverCap` means the caller must reject the write (bytes NOT counted) and `Indeterminate`
@@ -76,7 +76,7 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
 
 # Citations
 
-1. `crates/corelink-container/src/byte_accounting.rs:347-377` — the executed atomic check-and-accrue SQL (DB-side add via INSERT…ON CONFLICT…RETURNING).
+1. `crates/corelink-container/src/byte_accounting.rs:347-372` — the executed atomic check-and-accrue SQL (DB-side add via INSERT…ON CONFLICT…RETURNING).
 2. `crates/corelink-container/src/byte_accounting.rs:355-363` — the cap check serialized with the increment (the `WHERE` predicate in the one statement).
 3. `crates/corelink-container/src/byte_accounting.rs:39-41` — uncapped `bytes_quota = 0` still moves the counter.
 4. `crates/corelink-container/src/byte_accounting.rs:50-55` — `release` saturating decrement on delete.

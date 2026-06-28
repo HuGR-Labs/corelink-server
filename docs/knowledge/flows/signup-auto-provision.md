@@ -7,7 +7,7 @@ source_files:
   - "apps/signup-worker/src/index.ts"
   - "apps/signup-worker/src/lib/d1.ts"
   - "apps/signup-worker/src/lib/clerk-metadata.ts"
-checkpoint_sha: "d0e4f8bd669cb1e982f7511de9a895c602a5ee45"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["flows", "signup", "clerk", "webhook", "dsr", "erasure", "worker-edge"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -23,11 +23,11 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 
 # How it works
 
-- The worker `route()` dispatches `POST /webhooks/clerk` to `handleClerkWebhook`, `POST /webhooks/stripe` to the Stripe handler, and `/health` to a liveness JSON; anything else is 404 (`apps/signup-worker/src/index.ts:26-35`).
-- `handleClerkWebhook` requires `POST`, reads the `svix-id`/`svix-timestamp`/`svix-signature` headers, and rejects a missing header set with 400 before any work (`apps/signup-worker/src/webhooks/clerk.ts:834-842`).
-- Svix verification HMAC-SHA256s `${svix-id}.${svix-timestamp}.${body}` and constant-time compares each `v1,<sig>` candidate; an anti-replay window rejects a `svix-timestamp` outside ±300s before any HMAC work; failure is 401 (`apps/signup-worker/src/webhooks/clerk.ts:451-497`, `apps/signup-worker/src/webhooks/clerk.ts:851-853`).
-- After verify, the body is parsed and `user.deleted` routes to `handleUserDeleted`, `user.created` falls through to provisioning, and any other event type is a 200 `ignored` no-op (`apps/signup-worker/src/webhooks/clerk.ts:862-868`).
-- `user.created` provisioning is gated FAIL-LOUD: a missing `CORELINK_INTERNAL_AUTH_KEY` returns 500 with ZERO side effects (before the first tenant write) so a Svix redelivery cleanly re-provisions once the secret is set (`apps/signup-worker/src/webhooks/clerk.ts:940-949`).
+- The worker `route()` dispatches `POST /webhooks/clerk` to `handleClerkWebhook`, `POST /webhooks/stripe` to the Stripe handler, and `/health` to a liveness JSON; anything else is 404 (`apps/signup-worker/src/index.ts:25-37`).
+- `handleClerkWebhook` requires `POST`, reads the `svix-id`/`svix-timestamp`/`svix-signature` headers, and rejects a missing header set with 400 before any work (`apps/signup-worker/src/webhooks/clerk.ts:849-854`).
+- Svix verification HMAC-SHA256s `${svix-id}.${svix-timestamp}.${body}` and constant-time compares each `v1,<sig>` candidate; an anti-replay window rejects a `svix-timestamp` outside ±300s before any HMAC work; failure is 401 (`apps/signup-worker/src/webhooks/clerk.ts:451-497`, `apps/signup-worker/src/webhooks/clerk.ts:856-865`).
+- After verify, the body is parsed and `user.deleted` routes to `handleUserDeleted`, `user.created` falls through to provisioning, and any other event type is a 200 `ignored` no-op (`apps/signup-worker/src/webhooks/clerk.ts:874-880`).
+- `user.created` provisioning is gated FAIL-LOUD: a missing `CORELINK_INTERNAL_AUTH_KEY` returns 500 with ZERO side effects (before the first tenant write) so a Svix redelivery cleanly re-provisions once the secret is set (`apps/signup-worker/src/webhooks/clerk.ts:953-962`).
 - `deterministicDsrId` derives a stable v5-shaped UUID from `SHA-256("corelink-dsr-v1:" + clerkUserId)`, so the same deleted account always maps to ONE `dsr_id` and the erasure orchestrator (which dedups per `(dsr_id, backend)`) is idempotent across redeliveries (`apps/signup-worker/src/webhooks/clerk.ts:135-145`, `apps/signup-worker/src/webhooks/clerk.ts:216`).
 - `handleUserDeleted` short-circuits to a 200 `erasure_enqueued:false` no-op when the event carries no user id (`reason:"no_user_id"`) or when no provisioned tenant maps to the Clerk user (`reason:"no_tenant"`) — nothing exists to erase (`apps/signup-worker/src/webhooks/clerk.ts:293-296`, `apps/signup-worker/src/webhooks/clerk.ts:316-319`).
 - The tenant is resolved by `SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1`; a D1 read error returns 500 (not a no-op) so Svix retries rather than dropping the deletion (`apps/signup-worker/src/webhooks/clerk.ts:301-313`).
@@ -42,24 +42,24 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 - An erasure obligation is NEVER silently dropped: every failure mode after a tenant is resolved (unbound queue, salt-derivation failure, D1 lookup error) returns 500 so Svix redelivers, instead of a misleading 200 (`apps/signup-worker/src/webhooks/clerk.ts:321-330`, `apps/signup-worker/src/webhooks/clerk.ts:351-362`, `apps/signup-worker/src/webhooks/clerk.ts:307-313`).
 - The `dsr_id` is deterministic per Clerk user, so a Svix redelivery of the same `user.deleted` enqueues an idempotent message and the `dsr_requested` anchor is an `INSERT OR IGNORE` no-op — erasure never double-runs (`apps/signup-worker/src/webhooks/clerk.ts:135-145`, `apps/signup-worker/src/webhooks/clerk.ts:373-377`).
 - The erasure salt is derived `HMAC-SHA256(ERASURE_SALT_KEY, dsr_id)`; when the key is absent in a `prod` environment `deriveErasureSalt` THROWS, the caller returns 500, and the predictable non-secret SHA-256 fallback can never reach production (`apps/signup-worker/src/webhooks/clerk.ts:160-189`).
-- Provisioning is fail-CLOSED on its mint secret: `handleClerkWebhook` 500s on an absent `CORELINK_INTERNAL_AUTH_KEY` before writing a tenant row, so a half-provisioned PAT-less tenant is never committed (`apps/signup-worker/src/webhooks/clerk.ts:940-949`).
-- Secret-bearing webhook headers are scrubbed from Sentry telemetry: the `SENSITIVE_HEADER_PATTERN` regex filters `authorization`/`cookie`/`svix-signature`/`svix-id`/`svix-timestamp`/`stripe-signature` (and more) to `[Filtered]` in `beforeSend` (`apps/signup-worker/src/index.ts:125-138`).
-- The DSR erasure queue consumer rethrows on error so the Cloudflare queue runtime redelivers the whole batch; redelivery is safe because the erasure orchestrator is idempotent (`apps/signup-worker/src/index.ts:69-79`).
+- Provisioning is fail-CLOSED on its mint secret: `handleClerkWebhook` 500s on an absent `CORELINK_INTERNAL_AUTH_KEY` before writing a tenant row, so a half-provisioned PAT-less tenant is never committed (`apps/signup-worker/src/webhooks/clerk.ts:953-962`).
+- Secret-bearing webhook headers are scrubbed from Sentry telemetry: the `SENSITIVE_HEADER_PATTERN` regex filters `authorization`/`cookie`/`svix-signature`/`svix-id`/`svix-timestamp`/`stripe-signature` (and more) to `[Filtered]` in `beforeSend` (`apps/signup-worker/src/index.ts:156-169`).
+- The DSR erasure queue consumer captures + rethrows on a thrown error so the Cloudflare queue runtime redelivers the whole batch; the single `queue()` handler dispatches on `batch.queue` (main erasure queue vs `corelink-dsr-erasure-dlq`), and redelivery is safe because the erasure orchestrator is idempotent (`apps/signup-worker/src/index.ts:75-92`).
 - The PAT plaintext NEVER enters a client-readable surface: `updateClerkUserMetadata` writes it ONLY to Clerk `private_metadata` (backend-only) and the legit `{tenant_id, region}` claims to `public_metadata`, so the secret is never embedded in the session JWT nor exposed via `useUser()` (`apps/signup-worker/src/lib/clerk-metadata.ts:82-85`).
 - A double Svix delivery of the same `user.created` can never create a second tenant or a second PAT: both `insertTenant` and `insertPat` are `INSERT OR IGNORE`, so the second writer is silently dropped (`apps/signup-worker/src/lib/d1.ts:82-85`, `apps/signup-worker/src/lib/d1.ts:114-117`).
 - A team-seat flip is isolated to the SHA-256 `email_hash` and cannot be double-applied: `acceptTeamInvitation` re-asserts `status='invited'` in the `WHERE` so a concurrent acceptance clobbers nothing (`apps/signup-worker/src/lib/d1.ts:168-175`).
 
 # Gotchas
 
-- The webhook's `request.cf.colo` is SVIX's sender PoP, NOT the end-user's geo, so residency is deliberately NOT derived from it; webhook-provisioned tenants default to the launch-served region (`apps/signup-worker/src/webhooks/clerk.ts:871-885`).
-- Idempotency on `user.created` keys on a tenant row AND a still-live PAT — a tenant row alone is treated as a half-failed prior attempt and falls through to re-issue the PAT, never acked as done (`apps/signup-worker/src/webhooks/clerk.ts:887-926`).
+- The webhook's `request.cf.colo` is SVIX's sender PoP, NOT the end-user's geo, so residency is deliberately NOT derived from it; webhook-provisioned tenants default to the launch-served region (enam, via `regionFromColo`'s null default) — deriving residency from the Svix PoP was an observed SAM-trap (a US signup Svix-routed via a South-American PoP would be assigned `sam`, which is recognised but NOT provisionable, and REJECTED) (`apps/signup-worker/src/webhooks/clerk.ts:883-898`).
+- Idempotency on `user.created` keys on a tenant row AND a still-live PAT — a tenant row alone is treated as a half-failed prior attempt and falls through to re-issue the PAT, never acked as done (`apps/signup-worker/src/webhooks/clerk.ts:900-939`).
 - `legal_hold` is resolved from D1 (`tenant_legal_hold` existence) and carried into the message; the read posture on a query error is `false` (erase proceeds) — deliberately, so a not-yet-provisioned hold table cannot silently no-op every deletion (`apps/signup-worker/src/webhooks/clerk.ts:258-280`).
 
 # Citations
 
-1. `apps/signup-worker/src/index.ts:26-35` — `route()` path table (`/webhooks/clerk`, `/webhooks/stripe`, `/health`, 404).
-2. `apps/signup-worker/src/index.ts:69-79` — DSR erasure queue consumer (capture + rethrow → batch redelivery).
-3. `apps/signup-worker/src/index.ts:125-138` — `SENSITIVE_HEADER_PATTERN` + `scrubAuthorization` (Svix/Stripe sig-header scrub).
+1. `apps/signup-worker/src/index.ts:25-37` — `route()` path table (`/webhooks/clerk`, `/webhooks/stripe`, `/health`, 404).
+2. `apps/signup-worker/src/index.ts:75-92` — DSR erasure queue consumer (`batch.queue` dispatch main vs DLQ; capture + rethrow → batch redelivery).
+3. `apps/signup-worker/src/index.ts:156-169` — `SENSITIVE_HEADER_PATTERN` + `scrubAuthorization` (Svix/Stripe sig-header scrub).
 4. `apps/signup-worker/src/webhooks/clerk.ts:135-145` — `deterministicDsrId` (stable v5-shaped dsr_id).
 5. `apps/signup-worker/src/webhooks/clerk.ts:160-189` — `deriveErasureSalt` (HMAC salt; fail-CLOSED in prod).
 6. `apps/signup-worker/src/webhooks/clerk.ts:216` — `deterministicDsrId` call inside `buildErasureQueueMessage`.
@@ -72,10 +72,10 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 13. `apps/signup-worker/src/webhooks/clerk.ts:351-362` — salt-derivation failure → 500.
 14. `apps/signup-worker/src/webhooks/clerk.ts:388-395` — `DSR_QUEUE.send` enqueue + redacted log + 200 `erasure_enqueued:true`.
 15. `apps/signup-worker/src/webhooks/clerk.ts:451-497` — `verifySvixSignature` (HMAC + anti-replay + constant-time).
-16. `apps/signup-worker/src/webhooks/clerk.ts:834-868` — `handleClerkWebhook` header gate, verify, event dispatch.
-17. `apps/signup-worker/src/webhooks/clerk.ts:871-885` — Svix-PoP residency gotcha (colo = null).
-18. `apps/signup-worker/src/webhooks/clerk.ts:887-926` — `user.created` idempotency (tenant + live PAT).
-19. `apps/signup-worker/src/webhooks/clerk.ts:940-949` — `CORELINK_INTERNAL_AUTH_KEY` fail-LOUD before any write.
+16. `apps/signup-worker/src/webhooks/clerk.ts:841-880` — `handleClerkWebhook` header gate, verify, event dispatch.
+17. `apps/signup-worker/src/webhooks/clerk.ts:883-898` — Svix-PoP residency gotcha (colo = null; SAM-trap).
+18. `apps/signup-worker/src/webhooks/clerk.ts:900-939` — `user.created` idempotency (tenant + live PAT).
+19. `apps/signup-worker/src/webhooks/clerk.ts:953-962` — `CORELINK_INTERNAL_AUTH_KEY` fail-LOUD before any write.
 20. `apps/signup-worker/src/lib/d1.ts:76-95` — `insertTenant` (`tenant_state='active'`, `INSERT OR IGNORE`); the `'active'` literal + idempotent VALUES: `apps/signup-worker/src/lib/d1.ts:82-85`.
 21. `apps/signup-worker/src/lib/d1.ts:108-130` — `insertPat` (`shown_once_consumed = 1`, `INSERT OR IGNORE`); the `, 1, ` consumed flag in VALUES: `apps/signup-worker/src/lib/d1.ts:114-117`.
 22. `apps/signup-worker/src/lib/d1.ts:154-177` — `acceptTeamInvitation` (`email_hash`-keyed seat lookup, re-asserted `status='invited'` on UPDATE); the isolation UPDATE: `apps/signup-worker/src/lib/d1.ts:168-175`.

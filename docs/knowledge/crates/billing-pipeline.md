@@ -20,7 +20,7 @@ source_files:
   - "crates/corelink-analytics/src/lib.rs"
   - "crates/corelink-analytics/src/validator.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "0c44977b9ee49e2a67556377c1f973aa92d5f5b2"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["billing", "stripe", "usage-metering", "reconciliation", "money-path"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -47,7 +47,7 @@ The crates split into a **deferred pure-logic front** and a **live egress + mate
 - **Inbound webhook verify (live).** `verify_webhook_signature` parses `t=…,v1=…`, enforces the ±5-minute replay window, recomputes `HMAC-SHA256("{t}.{payload}", secret)` over the EXACT body bytes, and constant-time-compares each `v1` candidate via `subtle::ConstantTimeEq` (`crates/corelink-stripe-real/src/webhook.rs:41-78`).
 - **Dispatch (live).** `WebhookDispatcher::process` runs the strict order: header present → signature verify → parse → idempotency dedup (`try_insert`) → materialize → audit/SLI. An already-processed event returns `200` with NO re-dispatch; a bad signature is `401`; a materializer transient is `500` so Stripe retries (`crates/corelink-stripe-real/src/webhook_dispatch.rs:530-622`, `crates/corelink-stripe-real/src/webhook_dispatch.rs:648-690`).
 - **Materialize → D1 write (live).** `D1SubscriptionStateHandler` emits the billing audit BEFORE every D1 mutation; on `customer.subscription.updated` it recomputes the tier and, for a granting status, drives `SQL_UPSERT_TIER` which writes the literal `subscription_state='active'` + the new `tier` row on `ON CONFLICT(tenant_id)` (`crates/corelink-billing-stripe-materializer/src/handler.rs:435-478`, `crates/corelink-billing-stripe-materializer/src/d1.rs:173`).
-- **Container wiring (live).** When `STRIPE_WEBHOOK_SECRET` is set, the container mounts the dispatcher on the data-plane listener, wiring the durable `D1HttpBillingWriter` (CF D1 REST API) so webhook state survives restarts; without the D1 env it falls back to the in-memory mirror (`crates/corelink-container/src/main.rs:708-782`, `crates/corelink-container/src/main.rs:831-847`).
+- **Container wiring (live).** When `STRIPE_WEBHOOK_SECRET` is set, the container mounts the dispatcher on the data-plane listener, wiring the durable `D1HttpBillingWriter` (CF D1 REST API) so webhook state survives restarts; without the D1 env it falls back to the in-memory mirror (`crates/corelink-container/src/main.rs:744-782`, `crates/corelink-container/src/main.rs:830-847`).
 - **Outbound egress (live).** `StripeRealClient::post_form` is the real HTTPS POST: `bearer_auth` with the secret-wrapped key, an `Idempotency-Key` header for retry safety, the pinned `Stripe-Version`, and exponential backoff on `5xx`/`429` with no silent cross-mode fallback (`crates/corelink-stripe-real/src/client.rs:452-501`).
 - **Analytics validator (skeleton).** `CardinalityValidator::validate_and_register` rejects an emit that would push a metric over its per-metric or global budget BEFORE registering the tuple — the runtime half of INV-OBS-CARDINALITY-BUDGET (`crates/corelink-analytics/src/validator.rs:195-237`).
 
@@ -89,8 +89,8 @@ The crates split into a **deferred pure-logic front** and a **live egress + mate
 16. `crates/corelink-billing-stripe-materializer/src/d1.rs:173` — `SQL_UPSERT_TIER`: writes literal `subscription_state='active'` + tier on `ON CONFLICT(tenant_id)`.
 17. `crates/corelink-billing-stripe-materializer/src/wasm32_binders.rs:157-191` — wasm32 `sync_gate` validates+ct-eq then stages (`wasm32_async_dispatch_pending`); real call one frame above.
 18. `crates/corelink-billing-stripe-materializer/src/lib.rs:1-56` — materializer ships the production `StateMaterializer`; native InMemory vs wasm32/native-HTTP binders.
-19. `crates/corelink-container/src/main.rs:708-847` — the LIVE container webhook mount: `D1HttpBillingWriter` durable writer + `WebhookDispatcher` on the data-plane listener.
-20. `crates/corelink-container/src/main.rs:784-800` — plan→tier map MUST key off real `STRIPE_PRICE_ID_{TIER}` env values or every event is `UnknownPlan` 422.
+19. `crates/corelink-container/src/main.rs:708-850` — the LIVE container webhook mount (`STRIPE_WEBHOOK_SECRET`-gated): durable `D1HttpBillingWriter` wiring (`:744-782`) + `WebhookDispatcher::new` (`:831-841`) on the data-plane listener.
+20. `crates/corelink-container/src/main.rs:784-800` — plan→tier map MUST key off real `STRIPE_PRICE_ID_{TIER}` env values or every event is `UnknownPlan` 422 (env→tier table + `build_tier_selector` at `:93-183`).
 21. `crates/corelink-analytics/src/validator.rs:195-237` — `validate_and_register` rejects over-budget emits BEFORE registering (INV-OBS-CARDINALITY-BUDGET runtime half).
 22. `crates/corelink-analytics/src/lib.rs:98-103` — `tenant_id` forbidden as a label; only canonical `Tier` appears.
 </content>

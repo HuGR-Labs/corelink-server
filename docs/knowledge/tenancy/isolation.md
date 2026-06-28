@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-container/src/auth_tenant.rs"
   - "crates/tenant-path/src/lib.rs"
   - "crates/tenant-path/src/prefix.rs"
-checkpoint_sha: "b4b332ab0a95ac3fb86003024c13fac1e37b7285"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -35,10 +35,10 @@ keyed on the same trusted tenant id this control establishes.
 
 # How it works
 
-- The Worker maps each tenant to its own Durable Object instance via `idFromName(tenant_id)`, so a single
-  DO is the sole serialization point for that tenant's state — `worker/src/index.ts:2465-2467`.
+- The Worker maps each tenant to its own Durable Object instance via `idFromName(resolvedTenantId)`, so a
+  single DO is the sole serialization point for that tenant's state — `worker/src/index.ts:2481-2483`.
 - Non-tenant system traffic uses reserved sentinel DO names (e.g. `_system`, `_oci`) that are deliberately
-  distinct from any real tenant id — `worker/src/index.ts:1500`.
+  distinct from any real tenant id — `worker/src/index.ts:1506`.
 - Inside the container the ONLY trustworthy tenant source is the DO-injected `x-corelink-tenant-id` header;
   the `AuthTenant` extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:60-66`.
 - The reserved-sentinel rejection is now a SHARED source-of-truth `pub fn is_reserved_sentinel`, reused
@@ -77,8 +77,8 @@ keyed on the same trusted tenant id this control establishes.
 
 # Citations
 
-1. `worker/src/index.ts:2465-2467` — one DO instance per tenant via `idFromName(resolvedTenantId)`.
-2. `worker/src/index.ts:1500` — reserved `_system` sentinel DO name for non-tenant traffic.
+1. `worker/src/index.ts:2481-2483` — one DO instance per tenant via `idFromName(resolvedTenantId)`.
+2. `worker/src/index.ts:1506` — reserved `_system` sentinel DO name for non-tenant traffic.
 3. `crates/corelink-worker/src/tenant.rs:36-44` — the `TenantCtx` struct with a private, derived prefix field.
 4. `crates/corelink-worker/src/tenant.rs:55-63` — `TenantCtx::new` derives the prefix from `(tdk, tenant_id)`.
 5. `crates/corelink-container/src/auth_tenant.rs:1-3` — the only trustworthy tenant source is the DO-injected header.
