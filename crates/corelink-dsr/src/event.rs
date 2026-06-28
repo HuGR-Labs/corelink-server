@@ -469,8 +469,10 @@ const fn last_day_of_month(y: i64, m: u32) -> u32 {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
         2 if is_leap_year(y) => 29,
-        2 => 28,
-        // Unreachable for callers (month is always 1..=12); fail-safe 28.
+        // February non-leap (28) intentionally shares the fail-safe default: a
+        // separate `2 => 28` arm is an EQUIVALENT mutant (cargo-mutants
+        // "delete arm" can't be killed when the arm and the fallback return the
+        // same value). `m` is always 1..=12 from callers; 28 is the fail-safe too.
         _ => 28,
     }
 }
