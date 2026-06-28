@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/clerk_auth.ts"
   - "worker/src/lib/tenant_lookup.ts"
   - "migrations/d1/0074_team_member.sql"
-checkpoint_sha: "8924bd84e98462a309205d15a3f8747acc997d62"
+checkpoint_sha: "b9b40160869bc1907dd2d1527aeb8670a9d18411"
 provenance: "AUTHORED"
 tags: ["auth", "clerk", "tenant-resolution", "edge"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -121,6 +121,10 @@ secrets are provisioned, so today it never executes.
   pin before deploy or all Clerk auth 401s (`worker/src/lib/clerk_auth.ts:197-211`).
 - `tenant.email_hash` is `SHA-256(clerk_user_id)`, NOT a raw-email hash, so the lookup endpoint's
   email-fallback is genuinely N/A — only the `sub` key resolves (`worker/src/lib/tenant_lookup.ts:103-108`).
+- The `team_member` table this concept resolves the multi-seat identity arm from (citation 12) carries
+  seat PII (`tenant_id` + raw Clerk `user_id` + `email_hash`); as of CF-1 (2026-06-28) it is in the GDPR
+  Art.17 erase-set + the post-erase verification sweep, so a team-tenant erasure removes the seat roster
+  too (it was previously omitted — see [DSR / right-to-erasure](/compliance/dsr-erasure.md)).
 
 # Citations
 
