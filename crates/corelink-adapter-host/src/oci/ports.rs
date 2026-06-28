@@ -115,6 +115,32 @@ pub trait BlobStore: Send + Sync + fmt::Debug {
 
     /// Cheap existence check (`HEAD /blobs/<digest>`).
     async fn blob_exists(&self, tenant: &TenantId, blob_key: &str) -> PortResult<bool>;
+
+    /// Blob size in bytes by `(tenant, blob_key)`, or `None` for
+    /// not-found — the metadata surface for `HEAD /blobs/<digest>`.
+    ///
+    /// OCI Distribution Spec v1.1 §5.2 requires a blob `HEAD` to report the
+    /// blob size in `Content-Length` (containerd / skopeo / crane pre-allocate
+    /// the download buffer from it; a `Content-Length: 0` makes them reject the
+    /// descriptor). The pull handler sets the header from this value and maps
+    /// `None` to `404` — mirroring the manifest `HEAD` path, which already
+    /// reports `Content-Length`.
+    ///
+    /// # Default
+    ///
+    /// The default falls back to [`Self::get_blob`] and measures the returned
+    /// bytes — CORRECT but it transfers the body. An implementation backed by
+    /// an object store that can report size from a HEAD/metadata lookup SHOULD
+    /// override this to avoid the body transfer; the in-memory test fake does.
+    async fn blob_size(&self, tenant: &TenantId, blob_key: &str) -> PortResult<Option<u64>> {
+        match self.get_blob(tenant, blob_key).await? {
+            Some(bytes) => {
+                let len = u64::try_from(bytes.len()).map_err(|e| e.to_string())?;
+                Ok(Some(len))
+            }
+            None => Ok(None),
+        }
+    }
 }
 
 /// KV port for manifests + tag lists. Wave-33's `corelink-adapters-cloud::cf::kv`
@@ -285,6 +311,16 @@ pub mod testing {
         async fn blob_exists(&self, tenant: &TenantId, blob_key: &str) -> PortResult<bool> {
             let g = self.inner.lock();
             Ok(g.blobs.contains_key(&(*tenant, blob_key.to_string())))
+        }
+
+        async fn blob_size(&self, tenant: &TenantId, blob_key: &str) -> PortResult<Option<u64>> {
+            // Metadata-only: read the stored length WITHOUT cloning the bytes
+            // (the default impl would clone via `get_blob`).
+            let g = self.inner.lock();
+            match g.blobs.get(&(*tenant, blob_key.to_string())) {
+                Some(b) => Ok(Some(u64::try_from(b.len()).map_err(|e| e.to_string())?)),
+                None => Ok(None),
+            }
         }
     }
 

@@ -2105,9 +2105,19 @@ const baseHandler: ExportedHandler<Env> = {
         // too short — the operator MUST be alerted via 503 (not 401, which would
         // silently look like a bad client credential). The structured error log
         // is emitted inside extractAuth; here we map to 503 Service Unavailable.
-        if (result.reason === "signing_key_not_configured") {
+        //
+        // H1: d1_lookup_error is a TRANSIENT D1 infra fault (network partition /
+        // DB unavailable) raised by the PAT D1 lookup — NOT a bad credential. It
+        // MUST map to 503 (retryable) too, otherwise a D1 hiccup makes every
+        // client see "bad credentials" → CI failures + spurious PAT rotation +
+        // on-call chasing the wrong thing. Genuine bad/unknown PATs
+        // (pat_not_found / pat_expired / invalid_*) still fall through to 401.
+        if (
+          result.reason === "signing_key_not_configured" ||
+          result.reason === "d1_lookup_error"
+        ) {
           return applyCors(
-            reapiError("SERVICE_UNAVAILABLE", "authentication service misconfigured", 503, requestId),
+            reapiError("SERVICE_UNAVAILABLE", "authentication service unavailable", 503, requestId),
             request,
           );
         }

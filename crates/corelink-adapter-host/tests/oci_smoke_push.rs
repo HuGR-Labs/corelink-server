@@ -69,6 +69,19 @@ async fn push_pull_roundtrip() {
         .unwrap();
     let resp = rig.app().oneshot(req).await.expect("patch");
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    // M6: the chunk-accepted (202) response MUST carry the upload Location
+    // (OCI v1.1 §5.3.2) so the client targets the next PATCH/PUT correctly.
+    let patch_location = resp
+        .headers()
+        .get("Location")
+        .expect("PATCH 202 must carry a Location header")
+        .to_str()
+        .unwrap();
+    assert_eq!(
+        patch_location,
+        format!("/v2/foo/bar/blobs/uploads/{uuid}"),
+        "PATCH Location must point at the upload session URL"
+    );
 
     // 3) PUT finalize.
     let req = Request::builder()

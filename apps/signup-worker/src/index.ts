@@ -13,8 +13,8 @@ import { handleClerkWebhook, defaultApiClient } from "./webhooks/clerk.js";
 import type { AutoProvisionEnv, DsrQueuedV1 } from "./webhooks/clerk.js";
 import { handleStripeWebhook } from "./webhooks/stripe.js";
 import type { StripeWebhookEnv } from "./webhooks/stripe.js";
-import { handleErasureQueueBatch } from "./webhooks/dsr_consumer.js";
-import type { QueueMessageBatch } from "./webhooks/dsr_consumer.js";
+import { handleErasureQueueBatch, handleErasureDlqBatch } from "./webhooks/dsr_consumer.js";
+import type { QueueMessageBatch, DsrDlqBody } from "./webhooks/dsr_consumer.js";
 import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
 import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
 import { withSecurityHeaders } from "./security-headers.js";
@@ -62,16 +62,28 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     }
   },
 
-  // DSR erasure queue consumer (dsr.queued.v1 → container /_internal/dsr/erase).
-  // Per-message ack/retry lives in handleErasureQueueBatch; a thrown error here
-  // is captured + rethrown so the queue runtime redelivers the whole batch
-  // (the erasure orchestrator is idempotent, so redelivery is safe).
+  // DSR erasure queue consumer. ONE handler serves BOTH bound consumers,
+  // dispatched on `batch.queue`:
+  //   • corelink-dsr-erasure      → handleErasureQueueBatch (dsr.queued.v1 →
+  //     container /_internal/dsr/erase; per-message ack/poison-ack/retry).
+  //   • corelink-dsr-erasure-dlq  → handleErasureDlqBatch (M3: structured
+  //     Art.17 alert + ONE bounded re-enqueue onto the main queue).
+  // Per-message disposition lives in the handlers; a thrown error here is
+  // captured + rethrown so the queue runtime redelivers the whole batch (the
+  // erasure orchestrator is idempotent, so redelivery is safe).
   async queue(batch, env: SignupEnv): Promise<void> {
     try {
-      await handleErasureQueueBatch(
-        batch as unknown as QueueMessageBatch<DsrQueuedV1>,
-        env,
-      );
+      if (batch.queue === "corelink-dsr-erasure-dlq") {
+        await handleErasureDlqBatch(
+          batch as unknown as QueueMessageBatch<DsrDlqBody>,
+          env,
+        );
+      } else {
+        await handleErasureQueueBatch(
+          batch as unknown as QueueMessageBatch<DsrQueuedV1>,
+          env,
+        );
+      }
     } catch (err) {
       Sentry.captureException(err);
       throw err;

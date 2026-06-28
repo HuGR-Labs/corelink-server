@@ -115,8 +115,10 @@ pub fn quota_guard_from_env() -> Option<Arc<QuotaGuard>> {
         .map_err(|e| tracing::warn!(error = %e, "tenant-quota: D1 client init failed"))
         .ok()?;
     // WP-2a integration: front the durable D1 store with the in-process budget
-    // lease so the hot path debits a chunk once and serves subsequent ops from
-    // memory, removing the per-request D1-over-HTTP round-trip. The lease debits
+    // lease so the hot path debits a chunk once and serves subsequent ops' ACCRUE
+    // from memory, removing the per-request D1-over-HTTP accrue-WRITE hop (the
+    // rolling-decision `get` read still hits D1 per op — see `LeasedQuotaStore`'s
+    // scope note; a warm-lease read is a tracked perf follow-up). The lease debits
     // up-front in `inner` (charge-never-lost), stays fail-CLOSED when drained +
     // inner-unreachable, and bounds overshoot to one lease chunk — see
     // `LeasedQuotaStore`. The guard's seed/cycle-roll bookkeeping is unchanged
@@ -362,21 +364,36 @@ pub trait QuotaStore: std::fmt::Debug + Send + Sync {
 /// `16 * 1_000 = 16_000` micro-USD (`$0.016`) against a `$5`/mo
 /// (`5_000_000` micro-USD) tripwire — a `0.32 %` worst-case overshoot,
 /// negligible for a preventive cost cap, in exchange for amortising the
-/// per-request D1-over-HTTP round-trip 16:1 on the CAS hot path.
+/// per-request D1-over-HTTP accrue-WRITE hop 16:1 on the CAS hot path (the
+/// rolling-decision `get` read still runs per op — see [`LeasedQuotaStore`]).
 pub const DEFAULT_LEASE_OPS: i64 = 16;
 
 /// A per-`(tenant, cycle)` in-memory lease over an inner durable
-/// [`QuotaStore`], to amortise the per-request D1-over-HTTP round-trip on
-/// the CAS hot path — WITHOUT weakening the fail-CLOSED `$`-ceiling
-/// (WP-2a; preserves the #318 paid-without-payment fail-closed gate and
-/// every CAA-360 invariant of the inner store).
+/// [`QuotaStore`], to amortise the per-request D1-over-HTTP
+/// **accrue-write** on the CAS hot path — WITHOUT weakening the
+/// fail-CLOSED `$`-ceiling (WP-2a; preserves the #318 paid-without-payment
+/// fail-closed gate and every CAA-360 invariant of the inner store).
+///
+/// # Scope of the optimisation (do NOT overstate this)
+///
+/// This lease removes ONE of the gate's TWO D1 hops, not both. The gate
+/// ([`QuotaGuard::check`]) does (a) a `get` to read the rolling-decision /
+/// cycle-anchor row, THEN (b) an atomic `check_and_accrue` write. This
+/// wrapper short-circuits only the WRITE hop (b): subsequent ops in a lease
+/// are served without an inner `check_and_accrue`. It does NOT override
+/// `get` (it passes straight through — see "What this wrapper is NOT"), so
+/// `QuotaGuard::check` still performs one synchronous D1-over-HTTP `get`
+/// read per billable op. A warm-lease read of the rolling decision (so the
+/// hot path skips D1 entirely while a lease is live) is a tracked perf
+/// follow-up, NOT yet implemented.
 ///
 /// # The problem
 ///
 /// The hot path calls the `$`-ceiling gate on EVERY billable op. Against
-/// the production [`D1QuotaStore`] that is one synchronous D1-over-HTTP
-/// round-trip to `api.cloudflare.com` (~0.3–0.7 s) per op — a measured
-/// root cause of CAS latency.
+/// the production [`D1QuotaStore`] each hop is a synchronous D1-over-HTTP
+/// round-trip to `api.cloudflare.com` (~0.3–0.7 s) — a measured root cause
+/// of CAS latency. This wrapper amortises the accrue-WRITE hop; the
+/// rolling-decision `get` read remains per-op (see scope note above).
 ///
 /// # The mechanism — budget LEASING
 ///
@@ -387,7 +404,8 @@ pub const DEFAULT_LEASE_OPS: i64 = 16;
 /// for `lease_ops * cost`), then serves subsequent ops **from the lease,
 /// in memory, without touching the inner store** until the lease is
 /// drained. When a lease drains it refills the same way. This amortises
-/// the D1 round-trip `lease_ops : 1`.
+/// the D1 accrue-WRITE hop `lease_ops : 1` (the rolling-decision `get`
+/// read still runs per op — see the scope note above).
 ///
 /// # The five INVIOLABLE invariants (and how each is upheld)
 ///

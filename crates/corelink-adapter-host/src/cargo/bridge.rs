@@ -106,6 +106,24 @@ impl CasStore for CargoCasBridge {
             .map(|_| ())
             .map_err(|e| CasError::Backend(format!("handler: {e:?}")))
     }
+
+    async fn exists(&self, tenant_id: &str, digest_hex: &str) -> Result<bool, CasError> {
+        // Metadata-only HEAD: delegate to `CasReadHandler::exists`, which the
+        // SPI contract guarantees does NOT download or rehash the blob. This
+        // is the COGS fix — the default impl would `read` the full body.
+        let handler = Arc::clone(&self.read_handler);
+        let req = CasReadRequest::new(
+            tenant_id,
+            digest_hex,
+            self.principal.as_str(),
+            tenant_id,
+            unix_ms_now(),
+        );
+        let result = tokio::task::spawn_blocking(move || handler.exists(req))
+            .await
+            .map_err(|e| CasError::Backend(format!("spawn_blocking join: {e}")))?;
+        result.map_err(|e| CasError::Backend(format!("handler: {e:?}")))
+    }
 }
 
 // ---------------------------------------------------------------------------
