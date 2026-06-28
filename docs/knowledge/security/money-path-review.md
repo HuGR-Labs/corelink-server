@@ -4,13 +4,23 @@ title: "Money-path security review"
 description: "The go-live review of the Stripe webhook → materializer → D1 → quota/$-ceiling chain: which money-integrity invariants hold, and the MED/LOW robustness gaps that remain."
 source_files:
   - "docs/security/2026-06-23-review-money-path.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+  - "crates/corelink-stripe-real/src/webhook_dispatch.rs"
+  - "crates/corelink-billing-stripe-materializer/src/handler.rs"
+checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
 provenance: "AUTHORED"
 tags: ["security", "billing", "stripe", "money-path", "quota"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
 
 # Money-path security review
+
+> **Dated snapshot — 2026-06-23.** This concept transcribes the verdict and finding list of the
+> `docs/security/2026-06-23-review-money-path.md` go-live money-path review **as it stood on
+> 2026-06-23**. The core money-integrity invariants are durable, but the individual robustness
+> findings are a point-in-time record: **two of them (F-MP-2, F-MP-3) have since been RESOLVED in
+> code** (see the Gotchas, below) and predate this concept's `checkpoint_sha`. Read the findings for
+> WHAT the review checked and HOW it separates money-loss defects from robustness debt, not as a list
+> of still-open gaps.
 
 The money path is the chain from a signed Stripe webhook through the materializer into D1 and the
 quota / `$`-ceiling enforcement — the thing that must never serve a paid tier without payment, never
@@ -68,12 +78,22 @@ container materializer defense-in-depth) that an operator must understand before
   the entitlement reconcile is silently dropped (no DLQ; Stripe stops retrying). NOT a live
   money-loss because the signup-worker is the authoritative tier writer and DOES map `team` — but it
   is the "two writers must agree" intent violated (`docs/security/2026-06-23-review-money-path.md:30-59`).
-- `UnknownPlan`/`InvalidPayload` 422s on the container path are not DLQ'd (only `Transient` is), so a
-  config-drift 422 from a real-but-unknown price-id is operationally indistinguishable from a
-  malformed event and is permanently, silently dropped (F-MP-2) (`docs/security/2026-06-23-review-money-path.md:61-76`).
-- The container resolvers read the legacy `data.object.plan.id` only; if the pinned Stripe API
-  version nests the price under `items.data[].price.id`, every container reconcile 422s (F-MP-3) —
-  verify the live event shape (`docs/security/2026-06-23-review-money-path.md:78-97`).
+- **F-MP-2 — RESOLVED in code (fix commit `e423ed23`, predates this checkpoint).** The review noted
+  that `InvalidPayload` 422s on the container path were not DLQ'd (only `Transient` was), so a
+  config-drift 422 from a real-but-unknown price-id was operationally indistinguishable from a
+  malformed event and was permanently, silently dropped (`docs/security/2026-06-23-review-money-path.md:61-76`).
+  This is now FIXED: the `InvalidPayload` dispatch arm calls `quarantine_transient(...)` before
+  returning 422, so the event lands in the DLQ (operator-replayable, depth/age-alertable) rather than
+  being silently lost (`crates/corelink-stripe-real/src/webhook_dispatch.rs:740-765`). The `Err(_)`
+  catch-all arm quarantines too (`crates/corelink-stripe-real/src/webhook_dispatch.rs:770-774`).
+- **F-MP-3 — RESOLVED in code (fix commit `e423ed23`, predates this checkpoint).** The review noted
+  that the container resolvers read the legacy `data.object.plan.id` only, so a pinned Stripe API
+  version that nests the price under `items.data[].price.id` would 422 every container reconcile
+  (`docs/security/2026-06-23-review-money-path.md:78-97`). This is now FIXED: `extract_plan_id`
+  prefers the legacy `plan.id` and **falls back to the modern `items.data[0].price.id`**
+  (`crates/corelink-billing-stripe-materializer/src/handler.rs:150-163`), and it is the shared
+  extractor for both the cache-tier and Runners reconciles, so an API-version shape change no longer
+  drops the event.
 - The `$`-ceiling charges a flat op cost on CAS reads that 404/410 (over-charge of the tenant, never
   under-charge) — acceptable-by-design coarse metering, worth a doc note (F-MP-4)
   (`docs/security/2026-06-23-review-money-path.md:99-111`).
@@ -82,8 +102,8 @@ container materializer defense-in-depth) that an operator must understand before
 
 1. `docs/security/2026-06-23-review-money-path.md:6-26` — verdict: core invariants hold, no CRITICAL defect.
 2. `docs/security/2026-06-23-review-money-path.md:30-59` — F-MP-1: `team` price has no container-side mapping → 422 + silent drop.
-3. `docs/security/2026-06-23-review-money-path.md:61-76` — F-MP-2: `InvalidPayload` not DLQ'd → unrecoverable on the container path.
-4. `docs/security/2026-06-23-review-money-path.md:78-97` — F-MP-3: legacy `plan.id` vs modern `items.data[].price.id`.
+3. `docs/security/2026-06-23-review-money-path.md:61-76` — F-MP-2 (as reviewed): `InvalidPayload` not DLQ'd → unrecoverable on the container path. **RESOLVED →** `crates/corelink-stripe-real/src/webhook_dispatch.rs:740-765` — the `InvalidPayload` arm now `quarantine_transient(...)`-DLQs the event.
+4. `docs/security/2026-06-23-review-money-path.md:78-97` — F-MP-3 (as reviewed): legacy `plan.id` vs modern `items.data[].price.id`. **RESOLVED →** `crates/corelink-billing-stripe-materializer/src/handler.rs:150-163` — `extract_plan_id` reads `plan.id` WITH an `items.data[0].price.id` fallback.
 5. `docs/security/2026-06-23-review-money-path.md:99-111` — F-MP-4: `$`-ceiling charges flat op cost on 404/410 reads.
 6. `docs/security/2026-06-23-review-money-path.md:137-153` — verified clean: HMAC-before-parse + idempotency ordering + audit-before-write.
 7. `docs/security/2026-06-23-review-money-path.md:154-162` — the `subscription_state='active'` triple gate.

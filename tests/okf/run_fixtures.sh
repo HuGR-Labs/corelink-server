@@ -2221,6 +2221,199 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v14: config LOCATION can no longer hide a wrangler main -------------
+# v13 enumerated wrangler mains over a FIXED 3-class LOCATION set — the repo ROOT +
+# ONE level into apps/* + ONE level into crates/* — yet claimed "EVERY directory
+# that hosts a wrangler config." A config whose LOCATION fell OUTSIDE that set
+# shipped GREEN with only coarse crate-dir/cluster adoption. Three PoC-proven
+# location bypasses (all reverted):
+#   * crate-NESTED      — crates/<x>/cf/wrangler.toml (one-level-only misses cf/);
+#   * sibling top-level  — services/edge/wrangler.toml (only root/apps/crates seen);
+#   * worker/ alt config — worker/wrangler.staging.toml (worker/ not in the set).
+# v14 RECURSIVELY rglobs wrangler*.{toml,jsonc,json} over the surface root (pruning
+# build-output/vendor dirs), so config LOCATION can no longer hide a deploy
+# entrypoint. We prove FOUR:
+#  POSITIVE (crate-NESTED)    — crates/poc-cf/cf's main poison_nested.mjs (outside
+#                               src/, riding whole-crate adoption) REDs [C10b];
+#  POSITIVE (sibling top-dir) — services/edge's main poison_edge.mjs (a dir outside
+#                               root/apps/crates entirely) REDs [C10b];
+#  NEGATIVE (build-output)    — a config UNDER a pruned build/ dir is NOT walked, so
+#                               its main is not scanned (we never scan generated
+#                               bundles — same spirit as the other gates);
+#  NEGATIVE (selectivity)     — a crate-nested config whose main IS a concept-cited
+#                               src/index.ts stays covered (the widened net stays
+#                               selective; src/-internal mains unaffected).
+assert_wrangler_config_location_recursive() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # BYPASS 1 — crate-NESTED config: crates/poc-cf/cf/wrangler.toml. The one-level
+    # crates/* walk never descended into cf/, so its main rode whole-crate adoption.
+    # The main is relative to the config's OWN dir and lives outside any src/.
+    mkdir -p crates/poc-cf/cf crates/poc-cf/src
+    printf 'fn anchor() {}\n' > crates/poc-cf/src/lib.rs
+    printf 'export default { async fetch() { /* reachable backdoor */ } };\n' \
+      > crates/poc-cf/cf/poison_nested.mjs
+    cat > crates/poc-cf/cf/wrangler.toml <<'TOML'
+name = "poc-cf-nested"
+main = "poison_nested.mjs"
+TOML
+    # BYPASS 2 — sibling TOP-LEVEL dir: services/edge/wrangler.toml. Only root/apps/
+    # crates were ever considered, so a config in a brand-new top-level dir was
+    # invisible. (No concept/exclude grounds it -> must RED.)
+    mkdir -p services/edge
+    printf 'export default { async fetch() { /* reachable backdoor */ } };\n' \
+      > services/edge/poison_edge.mjs
+    cat > services/edge/wrangler.toml <<'TOML'
+name = "edge"
+main = "poison_edge.mjs"
+TOML
+    # NEGATIVE 1 — a config UNDER a pruned build/ dir: must NOT be walked (generated
+    # bundles are not authored surface). If it WERE walked, build/gen/main.mjs would
+    # RED — so a clean run proves the prune works.
+    mkdir -p crates/poc-cf/build/gen
+    printf 'export default { async fetch() {} };\n' \
+      > crates/poc-cf/build/gen/main.mjs
+    cat > crates/poc-cf/build/gen/wrangler.toml <<'TOML'
+name = "generated-bundle"
+main = "main.mjs"
+TOML
+    # NEGATIVE 2 — a crate-nested config whose main IS its concept-cited src/index.ts.
+    # Line 2 is the SUBSTANTIVE enforcer the concept cites (line 1 is boilerplate).
+    mkdir -p crates/honest-cf/deploy crates/honest-cf/src
+    printf 'export default {\n  async fetch() { return deny_unless_authorized(); },\n};\n' \
+      > crates/honest-cf/src/index.ts
+    cat > crates/honest-cf/deploy/wrangler.toml <<'TOML'
+name = "honest-cf"
+main = "../src/index.ts"
+TOML
+    mkdir -p docs/knowledge/crates
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [a](/crates/a.md)
+- [b](/crates/b.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # CrateCluster A: ADOPTS the whole crates/poc-cf dir (so the nested main is
+    # dir-covered by adoption) + cites src/lib.rs — NOT the nested deploy main.
+    cat > docs/knowledge/crates/a.md <<EOF
+---
+type: "CrateCluster"
+title: "POC CF cluster (hermetic)"
+description: "adopts the whole crates/poc-cf dir; cites src/lib.rs, NOT the nested main."
+source_files:
+  - "crates/poc-cf"
+  - "crates/poc-cf/src/lib.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# POC CF cluster (hermetic)
+
+Lead paragraph: the cluster adopts the crate dir and cites the lib anchor.
+
+# How it works
+- the adopted crate (the cited anchor is \`crates/poc-cf/src/lib.rs:1\`).
+
+# Invariants
+- the lib anchor holds (\`crates/poc-cf/src/lib.rs:1\`).
+
+# Citations
+1. \`crates/poc-cf/src/lib.rs:1\` — the one grounded file (NOT the nested deploy main).
+EOF
+    cat > docs/knowledge/crates/b.md <<EOF
+---
+type: "CrateCluster"
+title: "Honest CF cluster (hermetic)"
+description: "grounds the honest crate entrypoint (its nested wrangler main IS src/index.ts)."
+source_files:
+  - "crates/honest-cf/src/index.ts"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Honest CF cluster (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the entrypoint (\`crates/honest-cf/src/index.ts:2\`).
+
+# Invariants
+- it holds (\`crates/honest-cf/src/index.ts:2\`).
+
+# Citations
+1. \`crates/honest-cf/src/index.ts:2\` — grounded anchor (the fetch enforcer).
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "crates/a"
+    type: "CrateCluster"
+    status: "active"
+    seed_from:
+      - "crates/poc-cf"
+  - id: "crates/b"
+    type: "CrateCluster"
+    status: "active"
+    seed_from:
+      - "crates/honest-cf/src/index.ts"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.loc_out" 2>&1 || true
+  )
+  # POSITIVE (crate-NESTED): crates/poc-cf/cf/poison_nested.mjs, in a dir one level
+  # deeper than the v13 walk ever descended, is enumerated strict -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.loc_out" 2>/dev/null \
+     && grep -q 'crates/poc-cf/cf/poison_nested.mjs' "$tmp/.loc_out" 2>/dev/null; then
+    ok "wrangler config LOCATION recursive: a crate-NESTED main (crates/poc-cf/cf/poison_nested.mjs) is enumerated despite whole-crate adoption -> [C10b] names it"
+  else
+    miss "wrangler config LOCATION crate-nested positive (no [C10b] naming crates/poc-cf/cf/poison_nested.mjs): $(tail -1 "$tmp/.loc_out" 2>/dev/null)" "loc-nested-pos"
+  fi
+  # POSITIVE (sibling top-level): services/edge/poison_edge.mjs, in a top-level dir
+  # outside root/apps/crates entirely, is enumerated -> fires.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.loc_out" 2>/dev/null \
+     && grep -q 'services/edge/poison_edge.mjs' "$tmp/.loc_out" 2>/dev/null; then
+    ok "wrangler config LOCATION recursive: a sibling top-level main (services/edge/poison_edge.mjs) is enumerated -> [C10b] names it"
+  else
+    miss "wrangler config LOCATION sibling-top-level positive (no [C10b] naming services/edge/poison_edge.mjs): $(tail -1 "$tmp/.loc_out" 2>/dev/null)" "loc-sibling-pos"
+  fi
+  # NEGATIVE (build-output prune): a config UNDER build/ is NOT walked, so its main
+  # is never scanned (we never scan generated bundles).
+  total=$((total + 1))
+  if ! grep -q 'crates/poc-cf/build/gen/main.mjs' "$tmp/.loc_out" 2>/dev/null; then
+    ok "wrangler config LOCATION recursive: a config under a pruned build/ dir is NOT walked (generated bundles not scanned)"
+  else
+    miss "wrangler config LOCATION build-output prune: crates/poc-cf/build/gen/main.mjs was wrongly scanned" "loc-build-prune"
+  fi
+  # NEGATIVE (selectivity): a crate-nested config whose main IS its concept-cited
+  # src/index.ts stays covered — src/-internal mains unaffected.
+  total=$((total + 1))
+  if ! grep -q 'crates/honest-cf/src/index.ts' "$tmp/.loc_out" 2>/dev/null; then
+    ok "wrangler config LOCATION recursive: a concept-cited src/index.ts main (declared by a nested config) stays covered (selective)"
+  else
+    miss "wrangler config LOCATION selectivity: covered crates/honest-cf/src/index.ts was wrongly flagged" "loc-selective-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -2286,6 +2479,12 @@ assert_alt_and_dual_wrangler_config
 # riding whole-crate cluster adoption) REDs [C10b], closing the same wrangler-main
 # class the apps-only v10/v11/v12 fix missed (PoC: crates/corelink-clerk-cf shim).
 assert_crate_wrangler_main_outside_src
+# gate v14: the wrangler-config walk is now a RECURSIVE rglob over the surface root
+# (build-output/vendor dirs pruned), not a fixed root+apps/*+crates/* LOCATION set —
+# a crate-NESTED (crates/<x>/cf/) and a sibling top-level (services/edge/) wrangler
+# main outside src/ both RED [C10b], while a config under a pruned build/ dir is not
+# scanned and a concept-cited src/index.ts main stays covered (selective).
+assert_wrangler_config_location_recursive
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then

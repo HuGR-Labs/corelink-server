@@ -6,7 +6,7 @@ source_files:
   - "specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md"
   - "apps/migrate-single-to-multi-region/src/main.rs"
   - "crates/corelink-container/src/storage/region_map.rs"
-checkpoint_sha: "57fd1bbeba017a3a9ac60d1a045728295fcf88d7"
+checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
 provenance: "AUTHORED"
 tags: ["adr", "s14", "region", "terraform", "residency"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -36,7 +36,7 @@ Runtime enforcement of this region pinning is the subject of [ADR-S14-002 — Re
 
 # Status vs shipped code
 
-The **artifacts** this ADR mandates exist in the repo — the reusable Terraform module and the Rust migration binary (`apps/migrate-single-to-multi-region/src/main.rs:96-106`) are both present — but the **deployed reality is US-only**. All R2 buckets are ENAM (R2 has no SA region), so the Consequences as written — "four production regions stood up (WNAM/ENAM/WEUR/SAM)" and "4 KV namespaces provisioned" — are **not live**; the region topology is a built-and-tested module applied to a single live region, not four standing regions. The container's `region_map` carries `PROVISIONED_MACROS = {wnam, enam, weur, sam}` as the **intended** Phase-1 set (`crates/corelink-container/src/storage/region_map.rs:34`), but that is the macro-mapping table, not evidence of four provisioned regions. Treat the multi-region infra as designed-and-coded, US-only-deployed.
+The **artifacts** this ADR mandates exist in the repo — the reusable Terraform module and the Rust migration binary (`apps/migrate-single-to-multi-region/src/main.rs:96-106`) are both present — but the **deployed reality is US-only**. All R2 buckets are ENAM (R2 has no SA region), so the Consequences as written — "four production regions stood up (WNAM/ENAM/WEUR/SAM)" and "4 KV namespaces provisioned" — are **not live**; the region topology is a built-and-tested module applied to a single live region, not four standing regions. The container's `region_map` carries `PROVISIONED_MACROS = {wnam, enam, weur}` (3, NOT 4 — `sam` is EXCLUDED: it stays routable but is NOT provisionable until PROD_SAM has a real SAM-jurisdiction bucket, else its data mis-lands in US R2) as the Phase-1 set (`crates/corelink-container/src/storage/region_map.rs:47`), but that is the macro-mapping table, not evidence of four provisioned regions. Treat the multi-region infra as designed-and-coded, US-only-deployed.
 
 # Citations
 

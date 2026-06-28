@@ -131,6 +131,72 @@ discloses the single-bucket posture; no wiki change needed.
 
 ---
 
+> **Status (2026-06-28):** CF-1 (GDPR erase-set) + CF-2/3/4 were implemented in code by #541
+> (`0150de7e`). CF-5 (sam) remains open. The findings below (CF-6…CF-9) are NEW, from the
+> post-merge **severe brutal audit** (12-finder + adversarial-verify pass on current `main`).
+
+## CF-6 [HIGH · compliance/integrity] — the audit chain is forgeable by a D1 writer (un-keyed BLAKE3, drain-time seal, unwired Object-Lock)
+
+**Where:** `crates/corelink-audit-chain/src/chain.rs:156,168` (`Hasher::new()` — plain **un-keyed** BLAKE3,
+no `keyed_hash`/HMAC) + `crates/corelink-container/src/routes/audit_drain.rs:208-235` (the seal runs at the
+**hourly** drain, reading rows back from D1) + `crates/corelink-audit-chain/src/lib.rs:89-92` (the R2
+Object-Lock binding the chain's append-only durability depends on).
+
+**What's wrong:** the OKF `compliance/audit-chain` concept sells SOC2-grade tamper-evidence ("an audit log a
+customer/auditor can trust **even if CoreLink itself is compromised** … append-only … CC7.2"), but the code
+does not deliver that against an **insider with D1 write** (per CLAUDE.md, `.env.local`'s
+`CLOUDFLARE_API_TOKEN` has D1 read/write):
+1. Audit rows are written **plain/unchained** to `audit_outbox`; the chain link is computed **later** at the
+   hourly drain — so a D1 writer can alter/delete a row in the **≤1h pre-seal window** (unbounded while the
+   drain cron is inert without the key) and the next drain seals a **valid** chain over the forged content.
+2. The chain hash is **un-keyed** BLAKE3 — so even **post-seal**, a D1 writer can recompute every downstream
+   `chain_hash`/`prev_hash` **and the head** to forge a fully self-consistent chain; the plain-BLAKE3 verifier
+   passes. There is no secret the forger lacks.
+3. The storage-level immutability that would stop this (**R2 Object-Lock**) and the external witness (**Rekor**)
+   are both **deferred / in-memory fakes**.
+
+So the tamper-evidence is real only against an **external** reader who already has an independent trusted copy
+of the head — NOT "even if CoreLink is compromised." (The OKF wiki is being corrected to say
+tamper-EVIDENCE-at-verify, not tamper-proof-against-insider; this CF is the **code** half.)
+
+**Recommended:** (a) **key the chain** — HMAC-BLAKE3 (`keyed_hash`) or **Ed25519-sign the sealed head** with a
+secret the D1 writer lacks (a Worker-only signing key), so a forged chain can't be made self-consistent;
+(b) **chain at write-time** (or shrink the pre-seal window) so rows are linked before they can be mutated;
+(c) **wire the R2 Object-Lock** immutability the INV-AUDIT-APPEND-ONLY invariant assumes. Until then, do not
+represent the audit trail as insider-tamper-proof to an auditor.
+
+## CF-7 [LOW · GDPR transparency] — the legal sub-processor disclosure omits Clerk
+
+**Where:** `legal/sub-processors.md` lists **7** vendors and omits **Clerk**, while
+`docs/compliance/vendor-reviews/clerk-dpa-review-2026-04.md` exists and the OKF `compliance/sub-processors`
+concept correctly lists **8**. A published sub-processor list that omits an active processor is a GDPR Art.28/
+transparency gap. **Recommended:** add Clerk to `legal/sub-processors.md` (it's already DPA-reviewed).
+
+## CF-8 [LOW · observability, deferred-façade] — the in-flight span ledger key conflates tier with tenant
+
+**Where:** `crates/corelink-tracing/src/service.rs:44` — `InFlightKey { tenant_tier, span_id_hex }` keys the
+ledger by the **billing plan tier** (Free/Solo/Team), not a tenant id, yet the doc-comment + the
+`INV-TENANT-ISOLATION` invariant call it per-tenant isolation; the proof test
+(`crates/corelink-tracing/tests/prop_tracing.rs:300-304`) forces two **distinct tiers** so it never exercises
+the same-tier-two-tenant collision. Two tenants on the same tier share one key namespace → per-**tier**
+bucketing. Practically near-zero risk (in-memory deferred-façade + random `span_id`), but the doc-comment +
+test are misleading. **Recommended:** rename the field / fix the doc-comment to "tier bucket", and make the
+prop-test use two distinct **tenants on the same tier**. (The OKF wiki claim is being corrected too.)
+
+## CF-9 [LOW · erasure robustness] — the CF-1 erase-set drift gate's `KEY_COLS` is a fixed name allowlist
+
+**Where:** the CF-1 migration-vs-eraseset completeness gate keys on a 6-name `KEY_COLS` allowlist
+(`crates/corelink-container/src/routes/dsr/adapter_d1.rs`). A **future** migration whose tenant-subject column
+is named differently (`subject_hash`, `principal_id`, …) would be **silently unclassified** by both the parser
+and the completeness gate while the gate stays green — re-opening the exact CF-1 class. **Recommended:** make
+the classifier detect tenant-key columns structurally (FK to `tenant`, or a registry the migration must
+update) rather than by a fixed name list.
+
+*(Doc note, not code: `CLAUDE.md` is stale — it says "146 OKF concepts / ~71 crates / 463 specs"; the repo is
+now 157 concepts / ~105 crate Cargo.tomls / `validate_specs.py` 466. Worth a one-line refresh.)*
+
+---
+
 ## Not in scope here (handled in the wiki, no code change)
 
 The other final-audit findings were **documentation** overstatements and are already fixed on

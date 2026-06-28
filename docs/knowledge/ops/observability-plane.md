@@ -12,6 +12,7 @@ source_files:
   - "crates/corelink-tracing/src/context.rs"
   - "crates/corelink-tracing/src/sampler.rs"
   - "crates/corelink-tracing/src/service.rs"
+  - "crates/corelink-tracing/tests/prop_tracing.rs"
   - "crates/corelink-slo/src/lib.rs"
   - "crates/corelink-slo/src/window.rs"
   - "crates/corelink-slo/src/calculator.rs"
@@ -20,7 +21,7 @@ source_files:
   - "crates/corelink-slo/src/pagerduty.rs"
   - "crates/corelink-slo/src/definition.rs"
   - "crates/corelink-handler-cas/src/observer.rs"
-checkpoint_sha: "b9b40160869bc1907dd2d1527aeb8670a9d18411"
+checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
 provenance: "AUTHORED"
 tags: ["observability", "telemetry", "tracing", "slo"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -45,7 +46,7 @@ This is the *designed* observability plane backing the [Grafana-Cloud-vs-self-ho
 # Invariants
 
 - **INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER** (designed, enforced in the fakes): every state mutation is preceded by its audit emit, and an audit-sink failure aborts the path fail-CLOSED — in tracing's `start_span` (`crates/corelink-tracing/src/service.rs:208-222`) and in the SLO orchestrator's evaluate envelope (`crates/corelink-slo/src/alert.rs:163-209`).
-- **INV-TENANT-ISOLATION** (CRITICAL, structurally enforced in the skeleton): the tracing in-flight ledger is keyed by `(tenant_tier, span_id)` so a cross-tenant span lookup is impossible, and the SLO orchestrator keeps a per-tenant **evaluation-count ledger** (`PerTenantLedger::evaluation_count`, a monotonic count of `evaluate` calls per tenant — NOT flapping detection, which is deferred) under a per-instance `Arc<Mutex<>>` (`crates/corelink-tracing/src/service.rs:227-235`; `crates/corelink-slo/src/alert.rs:213-223`).
+- **INV-TENANT-ISOLATION** (in-memory deferred-façade — per-TIER bucketing, NOT per-tenant): the tracing in-flight ledger key is `InFlightKey { tenant_tier, span_id_hex }` where `tenant_tier` is a **billing-plan tier** (Free/Solo/Team), NOT a tenant id (`crates/corelink-tracing/src/service.rs:130-132`). So the key namespace is partitioned **per tier, not per tenant** — two DISTINCT tenants on the SAME tier share one key namespace and can collide on a span id; "a cross-tenant span lookup is impossible" is therefore FALSE. (The proof test forces two DISTINCT tiers, so it never exercises the same-tier-two-tenant collision — `crates/corelink-tracing/tests/prop_tracing.rs:300-304`.) The practical risk is ~zero because this whole plane is an in-memory, not-yet-prod-wired skeleton façade, but it must NOT be claimed as per-tenant isolation. The SLO orchestrator keeps a per-tenant **evaluation-count ledger** (`PerTenantLedger::evaluation_count`, a monotonic count of `evaluate` calls per tenant — NOT flapping detection, which is deferred) under a per-instance `Arc<Mutex<>>` (`crates/corelink-slo/src/alert.rs:213-223`).
 - **W3C Trace Context strict reject** (real): malformed length / dash positions / non-`00` version / uppercase or malformed hex / all-zero IDs are all rejected by the parser (`crates/corelink-tracing/src/context.rs:151-193`).
 - **Google SRE Table 4 boundary discipline** (real pure-logic): the multipliers are pinned at the type-system layer and the decision arm fires at-or-above `multiplier × error_budget_pct` (`crates/corelink-slo/src/window.rs:49-56`; `crates/corelink-slo/src/calculator.rs:114-127`).
 - **PagerDuty dedup idempotency** (designed, modeled in the fake): a repeated `Trigger` with an open dedup key is collapsed via `HashMap::entry(..).or_insert` — no second incident (`crates/corelink-slo/src/pagerduty.rs:239-243`).
@@ -71,7 +72,9 @@ This is the *designed* observability plane backing the [Grafana-Cloud-vs-self-ho
 8. `crates/corelink-slo/src/window.rs:49-56` — Google SRE Table 4 multipliers 14.4× / 6× / 3× / 1× pinned.
 9. `crates/corelink-slo/src/calculator.rs:107-127` — `decide`: error_rate ≥ threshold → Fast1h=PageSev0 / Medium6h=PageSev1 / Slow24h=TicketSev2 / Long3d=TicketSev3 / else Quiet.
 10. `crates/corelink-slo/src/alert.rs:155-209` — evaluate envelope: audit-before-mutation, page IFF `is_page()`, canonical dedup key.
-11. `crates/corelink-slo/src/alert.rs:213-223` — per-tenant evaluation-count ledger (`PerTenantLedger::evaluation_count`, counts `evaluate` calls; NOT flapping detection) under per-instance `Arc<Mutex<>>` (INV-TENANT-ISOLATION).
+11. `crates/corelink-slo/src/alert.rs:213-223` — per-tenant evaluation-count ledger (`PerTenantLedger::evaluation_count`, counts `evaluate` calls; NOT flapping detection) under per-instance `Arc<Mutex<>>`.
+11a. `crates/corelink-tracing/src/service.rs:130-132` — the in-flight ledger key is `InFlightKey { tenant_tier, span_id_hex }`; `tenant_tier` is a billing-plan tier, NOT a tenant id → per-TIER bucketing, NOT per-tenant isolation (INV-TENANT-ISOLATION corrected).
+11b. `crates/corelink-tracing/tests/prop_tracing.rs:300-304` — `prop_tenant_isolation` forces two DISTINCT tiers (`tier_b_offset >= 1`), so it never exercises the same-tier-two-tenant span-id collision.
 12. `crates/corelink-slo/src/pagerduty.rs:238-253` — in-memory dedup-key idempotency (HashMap), NOT a real HTTPS POST.
 13. `crates/corelink-slo/src/lib.rs:111-129` — production wiring (PagerDuty POST / Terraform / flapping cron / Twilio) deferred to WI-S09-007.
 14. `crates/corelink-slo/src/definition.rs:97-118` — `Sli` closed taxonomy `slug()` + `prometheus_metric_base()`.
