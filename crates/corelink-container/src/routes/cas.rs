@@ -53,6 +53,12 @@ const DEFAULT_LIST_LIMIT: u32 = 200;
 /// Hard cap on the CAS list page size (contract: `1..=1000`).
 const MAX_LIST_LIMIT: u32 = 1000;
 
+/// Hard cap on the opaque continuation `?cursor` length. A legitimate cursor is
+/// a short server-minted token; bounding it keeps a malformed/abusive value a
+/// clean 400 reject instead of one that rides the ~16 KB edge query limit into
+/// the list backend.
+const MAX_CURSOR_LEN: usize = 1024;
+
 /// Query parameters for the paginated CAS list route (`?limit=&cursor=`).
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct ListQuery {
@@ -160,6 +166,19 @@ pub struct CasRouteState {
     /// `body: Bytes` increments this BEFORE the body is buffered and rejects the
     /// over-cap PUT 429; the RAII [`CasPutSlot`] releases on return.
     pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
+    /// Per-tenant in-flight CAS bulk-READ concurrency counter (brutal-fleet M2 —
+    /// MED DoS). The `batch-read` path accumulates up to [`BATCH_MAX_BYTES`] of
+    /// object bytes into a per-request payload buffer, and `batch-exists` fans out
+    /// up to [`BATCH_MAX_OBJECTS`] storage existence probes — neither held a
+    /// per-tenant concurrency cap, so one authenticated tenant could open N
+    /// concurrent bulk reads and consume N × payload heap (≈ N × 8 MiB) on the
+    /// shared container. A [`CasReadConcurrencyGuard`] `FromRequestParts` extractor
+    /// declared AHEAD of `body: Bytes` increments this BEFORE the body is buffered
+    /// and rejects the over-cap read 429; the RAII [`CasReadSlot`] releases on
+    /// return. This is a SEPARATE pool from [`Self::put_inflight`] — reads and
+    /// writes do not contend on one counter (sharing would over-throttle a tenant
+    /// that legitimately reads and writes concurrently).
+    pub(crate) read_inflight: Arc<Mutex<HashMap<String, usize>>>,
     // Storage byte accounting (red-team finding #1 / cluster B+C) is NOT a route
     // field: it is enforced INSIDE the `write`/`delete` trait objects above by
     // the [`crate::byte_accounting::AccountingCasHandler`] decorator (wired in
@@ -193,6 +212,7 @@ impl CasRouteState {
             quota,
             pat_gate,
             put_inflight: Arc::new(Mutex::new(HashMap::new())),
+            read_inflight: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -293,6 +313,98 @@ impl FromRequestParts<CasRouteState> for CasPutGuard {
         Ok(Self {
             _slot: CasPutSlot {
                 inflight: Arc::clone(&state.put_inflight),
+                tenant_key,
+            },
+        })
+    }
+}
+
+/// Maximum concurrent in-flight native CAS bulk READs for a single tenant. Excess
+/// bulk reads are rejected 429 BEFORE the body is buffered. Bounds peak per-tenant
+/// read-payload heap (`batch-read` accumulates up to [`BATCH_MAX_BYTES`] per
+/// request) and read fan-out (`batch-exists`). SEPARATE axis from the write cap
+/// [`CAS_WRITE_CONCURRENCY_LIMIT`] so reads and writes don't over-throttle each
+/// other; same per-tenant ceiling (8).
+pub const CAS_READ_CONCURRENCY_LIMIT: usize = 8;
+
+/// RAII release of one per-tenant in-flight CAS bulk-READ slot (decrements on
+/// every return path — success, error, panic). Mirrors [`CasPutSlot`] against the
+/// SEPARATE `read_inflight` pool. See [`CasReadConcurrencyGuard`].
+pub(crate) struct CasReadSlot {
+    inflight: Arc<Mutex<HashMap<String, usize>>>,
+    tenant_key: String,
+}
+
+impl Drop for CasReadSlot {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.inflight.lock() {
+            if let Some(c) = g.get_mut(&self.tenant_key) {
+                *c = c.saturating_sub(1);
+                if *c == 0 {
+                    g.remove(&self.tenant_key);
+                }
+            }
+        }
+    }
+}
+
+/// `FromRequestParts` extractor reserving a per-tenant in-flight CAS bulk-READ
+/// slot BEFORE the body is buffered (brutal-fleet M2 — pre-buffer DoS guard).
+/// Declared ahead of `body: Bytes` in `handle_batch_read` / `handle_batch_exists`
+/// so axum 0.7 runs it first: a tenant already at [`CAS_READ_CONCURRENCY_LIMIT`]
+/// concurrent bulk reads is rejected 429 with no body read. Mirrors [`CasPutGuard`]
+/// exactly but against the SEPARATE [`CasRouteState::read_inflight`] pool — bulk
+/// reads and writes are bounded on independent counters (sharing one pool would
+/// over-throttle a tenant that legitimately reads and writes at the same time).
+pub(crate) struct CasReadConcurrencyGuard {
+    _slot: CasReadSlot,
+}
+
+#[axum::async_trait]
+impl FromRequestParts<CasRouteState> for CasReadConcurrencyGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &CasRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        // Reserve per AUTHENTICATED tenant (fail-CLOSED on missing/sentinel —
+        // mirrors `AuthTenant` / `CasPutGuard`): an unauthenticated request never
+        // reserves a slot and never buffers a body.
+        let raw = parts
+            .headers
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        if raw.is_empty() || TENANT_SENTINELS.contains(&raw) {
+            return Err(unauthenticated_tenant());
+        }
+        let tenant_key = raw.to_owned();
+        {
+            let mut inflight = match state.read_inflight.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!(tenant_id = %tenant_key, error = %e, "cas read concurrency tracker poisoned; failing closed");
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "concurrency tracker unavailable",
+                    )
+                        .into_response());
+                }
+            };
+            let count = inflight.entry(tenant_key.clone()).or_insert(0);
+            if *count >= CAS_READ_CONCURRENCY_LIMIT {
+                tracing::warn!(tenant_id = %tenant_key, in_flight = *count, limit = CAS_READ_CONCURRENCY_LIMIT, "cas bulk-read concurrency limit reached; 429 BEFORE body buffering");
+                return Err(
+                    (StatusCode::TOO_MANY_REQUESTS, "too many concurrent reads").into_response(),
+                );
+            }
+            *count += 1;
+        }
+        Ok(Self {
+            _slot: CasReadSlot {
+                inflight: Arc::clone(&state.read_inflight),
                 tenant_key,
             },
         })
@@ -1004,6 +1116,13 @@ async fn handle_batch_read(
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
     headers: axum::http::HeaderMap,
+    // brutal-fleet M2 (MED DoS): pre-body per-tenant bulk-read concurrency
+    // reservation (declared AHEAD of `body: Bytes`, so axum runs it BEFORE the
+    // body is buffered AND before the up-to-BATCH_MAX_BYTES payload accumulator is
+    // built). 429 on over-cap; the RAII slot releases on return. SEPARATE pool
+    // from the write guard (`CAS_READ_CONCURRENCY_LIMIT`, keyed on the
+    // authenticated tenant) — bulk reads don't contend with the tenant's writes.
+    _read_concurrency: CasReadConcurrencyGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     if tenant != auth.0 {
@@ -1143,6 +1262,12 @@ async fn handle_batch_exists(
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
     headers: axum::http::HeaderMap,
+    // brutal-fleet M2 (MED DoS): pre-body per-tenant bulk-read concurrency
+    // reservation (declared AHEAD of `body: Bytes`). `batch-exists` doesn't
+    // accumulate object bytes, but it fans out up to BATCH_MAX_OBJECTS storage
+    // existence probes per request, so it shares the same bulk-read concurrency
+    // axis as `batch-read`. 429 on over-cap; RAII slot releases on return.
+    _read_concurrency: CasReadConcurrencyGuard,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
     if tenant != auth.0 {
@@ -1304,6 +1429,11 @@ async fn handle_list(
     if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
         return resp;
     }
+    // Length-cap the opaque continuation cursor: a clean 400 reject rather than
+    // letting an over-length value ride the edge query limit into the backend.
+    if q.cursor.as_deref().is_some_and(|c| c.len() > MAX_CURSOR_LEN) {
+        return (StatusCode::BAD_REQUEST, "cursor too long").into_response();
+    }
     if let Some(gate) = state.quota.as_ref() {
         if let Some(resp) = gate.check(&auth.0).await {
             return resp;
@@ -1463,6 +1593,7 @@ mod tests {
             quota: None,
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -1488,6 +1619,7 @@ mod tests {
             quota: None,
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -1509,6 +1641,7 @@ mod tests {
             quota: None,
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -1932,6 +2065,7 @@ mod tests {
             quota: None,
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -1994,6 +2128,7 @@ mod tests {
             quota: Some(gate),
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -2043,6 +2178,7 @@ mod tests {
             quota: Some(crate::routes::QuotaGate::new_for_test(guard, 1_000)),
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let app = router(st);
         let req = Request::builder()
@@ -2094,6 +2230,7 @@ mod tests {
             quota: None,
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -2153,6 +2290,7 @@ mod tests {
             quota: None,
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let app = router(st);
         let body = b"hello-cas".to_vec();
@@ -2216,6 +2354,7 @@ mod tests {
             quota: None,
             pat_gate: Some(Arc::new(NativePatGate::new_for_test(verifier))),
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         };
         let app = router(st);
         let req = Request::builder()
@@ -2347,6 +2486,100 @@ mod tests {
             g.get(TEST_TENANT),
             None,
             "the batch upload's concurrency slot must be released after it completes"
+        );
+    }
+
+    /// brutal-fleet M2 (MED DoS) on the BULK-READ path: with the tenant AT
+    /// `CAS_READ_CONCURRENCY_LIMIT` in-flight bulk reads, the next `/batch-read`
+    /// is rejected 429 BEFORE its body is buffered — the `_read_concurrency:
+    /// CasReadConcurrencyGuard` `FromRequestParts` extractor on `handle_batch_read`
+    /// runs ahead of `body: Bytes`. Proven deterministically by sending a body
+    /// LARGER than the 10 MiB body limit: if the guard were missing, the body
+    /// would be buffered and the request would 413 (body-limit) — anything but
+    /// 429. So a 429 here is a witness that the pre-body read reservation ran
+    /// first; DELETING the extractor flips this to 413 and FAILS the test. The
+    /// reservation is on the SEPARATE `read_inflight` pool — pre-loading
+    /// `put_inflight` would NOT trip it (asserted implicitly: the fixture's write
+    /// pool stays empty).
+    #[tokio::test]
+    async fn batch_read_at_concurrency_limit_returns_429_before_body() {
+        let state = fixture();
+        {
+            let mut g = state.read_inflight.lock().expect("lock");
+            g.insert(TEST_TENANT.to_owned(), CAS_READ_CONCURRENCY_LIMIT);
+        }
+        let app = router(state);
+        // > 10 MiB: absent the guard the body-limit layer rejects it (413), never
+        // 429. Body content is irrelevant — the guard runs in `FromRequestParts`.
+        let oversized = Body::from(vec![0u8; 11 * 1024 * 1024]);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch-read"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+            .body(oversized)
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "an at-limit /batch-read must be rejected 429 by the pre-body read-concurrency guard \
+             (the CasReadConcurrencyGuard extractor on handle_batch_read)"
+        );
+    }
+
+    /// Same guard covers the sibling `/batch-exists` route (it shares the
+    /// `CasReadConcurrencyGuard` read pool): at the cap ⇒ 429 before the body.
+    #[tokio::test]
+    async fn batch_exists_at_concurrency_limit_returns_429_before_body() {
+        let state = fixture();
+        {
+            let mut g = state.read_inflight.lock().expect("lock");
+            g.insert(TEST_TENANT.to_owned(), CAS_READ_CONCURRENCY_LIMIT);
+        }
+        let app = router(state);
+        let oversized = Body::from(vec![0u8; 11 * 1024 * 1024]);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch-exists"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+            .body(oversized)
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "an at-limit /batch-exists must be rejected 429 by the pre-body read-concurrency guard"
+        );
+    }
+
+    /// Companion: a `/batch-read` BELOW the limit succeeds and RELEASES its read
+    /// slot (read pool back to empty), pinning the RAII release on the read axis.
+    #[tokio::test]
+    async fn batch_read_below_limit_releases_slot() {
+        let state = fixture();
+        let app = router(state.clone());
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch-read"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+            .body(Body::from(format!(
+                "{}\n",
+                serde_json::json!({ "hash": fake_hash(b"absent-blob") })
+            )))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let g = state.read_inflight.lock().expect("lock");
+        assert_eq!(
+            g.get(TEST_TENANT),
+            None,
+            "the batch-read's read-concurrency slot must be released after it completes"
         );
     }
 

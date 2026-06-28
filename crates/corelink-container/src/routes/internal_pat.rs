@@ -594,10 +594,15 @@ async fn handle_mint(
     ) {
         Ok(r) => r,
         Err(e) => {
+            // Log the real PatError detail SERVER-SIDE only — never in the response.
+            // `e.to_string()` discloses signing-key/entropy/hash-corruption internals
+            // (e.g. `SigningKeyTooShort`) which are operationally sensitive even to a
+            // holder of CORELINK_PAT_MINT_AUTH_KEY. Return an OPAQUE body; operators
+            // recover the cause from this structured log line.
             tracing::error!(error = %e, "internal_pat: mint failed");
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(serde_json::json!({ "error": "mint_failed", "detail": e.to_string() })),
+                Json(serde_json::json!({ "error": "mint_failed" })),
             )
                 .into_response();
         }

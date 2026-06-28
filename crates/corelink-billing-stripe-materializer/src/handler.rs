@@ -121,17 +121,23 @@ fn tier_to_mat(e: TierSelectError) -> MaterializerError {
     }
 }
 
-/// Whether a Stripe subscription `status` means the tenant still has
-/// entitlement. Mirrors the signup-worker's `subscriptionStatusGrantsAccess`
-/// (`apps/signup-worker/src/webhooks/stripe.ts`): ONLY `active` and `trialing`
-/// keep access; everything else (`past_due`, `unpaid`, `incomplete`,
-/// `incomplete_expired`, `paused`, `canceled`, unknown/absent) loses it.
-/// Fail-safe: an unknown/absent status is treated as NOT entitled.
+/// Whether a Stripe subscription `status` is one this container materializer is
+/// allowed to GRANT entitlement on. Mirrors the signup-worker's
+/// `subscriptionStatusGrantsAccess` (`apps/signup-worker/src/webhooks/stripe.ts`):
+/// ONLY `active` and `trialing` qualify. Fail-safe: an unknown/absent status is
+/// treated as NOT grantable.
 ///
-/// This is the defense-in-depth gate that prevents the container materializer
-/// (a SECOND writer of the canonical `subscription_state` gate) from
-/// (re-)granting `subscription_state='active'` on a `customer.subscription.updated`
-/// carrying a recognized plan but a non-granting payment status.
+/// IMPORTANT — on a `customer.subscription.updated`, this status-gated path is
+/// GRANT-ONLY: a non-granting status (`past_due`, `unpaid`, `incomplete`,
+/// `incomplete_expired`, `paused`, `disputed`, unknown/absent) is NOT downgraded
+/// here — the entitlement write is simply skipped. Active access DOWNGRADE on
+/// those payment statuses is the signup-worker's responsibility — it is the
+/// authoritative writer that flips the `subscription_state` gate off (see the
+/// inline note in `reconcile_tier`). (Explicit `customer.subscription.deleted`
+/// is handled separately and DOES downgrade to Free.) This gate is the
+/// defense-in-depth guard that stops the container materializer (a SECOND writer
+/// of `subscription_state`) from (re-)granting `subscription_state='active'` on
+/// an `updated` event carrying a recognized plan but a non-granting status.
 fn subscription_status_grants_access(status: &str) -> bool {
     matches!(status, "active" | "trialing")
 }
