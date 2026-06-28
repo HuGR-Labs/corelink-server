@@ -22,6 +22,16 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **S-09 audit-chain drain — the live audit trail is now tamper-evident (deferred compliance artifact).**
+  `audit_outbox` rows were plain UNCHAINED CloudEvents (the BLAKE3 `HashChainBuilder` was real but
+  test-only). Added the drain: migration 0078 (`audit_outbox` seal columns + `audit_chain_head` per-
+  (tenant,region) checkpoint), an internal-auth-gated `POST /_internal/audit/drain` handler that seals
+  pending rows in `(enqueued_at,id)` order — `chain_hash = BLAKE3(prev_hash ‖ canonical_jcs)`, storing the
+  exact JCS bytes the verifier re-hashes — with a compare-and-set head advance (anti-fork) + crash-safe
+  resume (sealed-tail wins over a stale checkpoint), and an hourly signup-worker cron that triggers it.
+  Idempotent.
+
 ### Fixed
 - **Fresh-lens brutal-audit remediation (correctness / conformance / operability).** A 4-auditor fleet
   (data-integrity, concurrency, spec-conformance, operability lenses) surfaced: **(H1)** a transient D1

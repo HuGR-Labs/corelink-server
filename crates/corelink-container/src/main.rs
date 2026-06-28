@@ -641,6 +641,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         warn!("CORELINK_INTERNAL_AUTH_KEY unset; /_internal/dsr/erase route NOT mounted (dev/CI)");
     }
 
+    // S-09 audit-chain drain: `POST /_internal/audit/drain` — seals the live
+    // `audit_outbox` trail into the BLAKE3 tamper-evident hash chain (closes the
+    // "audit trail is mutable / not tamper-evident" gap). Gated by the dedicated
+    // ERASE key (falls back to CORELINK_INTERNAL_AUTH_KEY), same as the DSR
+    // surface; mounts only when that key (≥32 chars) + the D1 `StorageEnv` are
+    // present. Without D1 there is nothing to seal → unmounted (fail-CLOSED).
+    if let Some(audit_drain_state) = corelink_server::routes::audit_drain::build_state_from_env() {
+        info!("routes: /_internal/audit/drain route mounted (erase/internal auth key + D1 present)");
+        app = app.merge(corelink_server::routes::audit_drain::router(
+            audit_drain_state,
+        ));
+    } else {
+        warn!(
+            "CORELINK_ERASE_AUTH_KEY/CORELINK_INTERNAL_AUTH_KEY (<32) or D1 absent; \
+             /_internal/audit/drain route NOT mounted (fail-CLOSED)"
+        );
+    }
+
     // hugit-P2 seam B, WP-B: `POST /_internal/cas/:tenant/:hash/erase` — per-hash
     // CAS erase + 410-Gone tombstone, gated by the same CORELINK_INTERNAL_AUTH_KEY.
     // The WRITE route mounts only when ALL prod transports build from env: the

@@ -17,6 +17,7 @@ import { handleErasureQueueBatch, handleErasureDlqBatch } from "./webhooks/dsr_c
 import type { QueueMessageBatch, DsrDlqBody } from "./webhooks/dsr_consumer.js";
 import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
 import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
+import { runAuditDrainSweep } from "./webhooks/audit_drain_cron.js";
 import { withSecurityHeaders } from "./security-headers.js";
 
 type WorkerEnv = AutoProvisionEnv & StripeWebhookEnv;
@@ -90,7 +91,7 @@ const baseHandler: ExportedHandler<SignupEnv> = {
     }
   },
 
-  // Hourly Cron Trigger (`0 * * * *`). Drives two independent sweeps:
+  // Hourly Cron Trigger (`0 * * * *`). Drives three independent sweeps:
   //   1. DSR 24h verification sweep — re-fingerprints every DSR past its 24h
   //      SLA deadline via the container /_internal/dsr/verify endpoint (inert
   //      until CORELINK_INTERNAL_AUTH_KEY is bound, task #46).
@@ -98,6 +99,10 @@ const baseHandler: ExportedHandler<SignupEnv> = {
   //      pat_plaintext` for any Clerk user whose reveal is older than the TTL,
   //      so an un-visited /welcome cannot leave the secret resident (inert
   //      until CLERK_SECRET_KEY is bound).
+  //   3. S-09 audit-chain drain — seals pending audit_outbox rows into the
+  //      tamper-evident hash chain via the container /_internal/audit/drain
+  //      endpoint (idempotent; inert until the erase/internal-auth key is
+  //      bound, task #46).
   async scheduled(_event, env: SignupEnv, ctx: ExecutionContext): Promise<void> {
     const nowMs = Date.now();
 
@@ -124,6 +129,20 @@ const baseHandler: ExportedHandler<SignupEnv> = {
           if (!r.skipped) {
             console.log(
               `[pat-scrub-cron] scanned=${r.scanned} scrubbed=${r.scrubbed} failed=${r.failed}`,
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          Sentry.captureException(err);
+        }),
+    );
+
+    ctx.waitUntil(
+      runAuditDrainSweep(env, nowMs)
+        .then((r) => {
+          if (!r.skipped) {
+            console.log(
+              `[audit-drain-cron] ok=${r.ok} status=${r.status} sealed=${r.sealed} partitions=${r.partitions}`,
             );
           }
         })

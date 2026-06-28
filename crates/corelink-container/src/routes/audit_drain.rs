@@ -1,0 +1,734 @@
+//! Internal S-09 audit-chain drain endpoint.
+//!
+//! `POST /_internal/audit/drain` — seals the live `audit_outbox` trail into the
+//! BLAKE3 tamper-evident hash chain. Until this drain runs, `audit_outbox` rows
+//! are PLAIN, UNCHAINED CloudEvents envelopes (`emitted_at IS NULL`; see
+//! `routes/dsr/audit.rs`), so the live audit trail is **not** tamper-evident —
+//! a D1 writer could alter or delete a row undetected. The BLAKE3
+//! [`HashChainBuilder`] (`corelink_audit_chain::chain`) is real + property-tested
+//! but had no live producer; this is that producer.
+//!
+//! ## What it does
+//!
+//! For each `(tenant_id, region)` partition that has pending rows
+//! (`emitted_at IS NULL`):
+//!
+//! 1. **Resume** the chain head. The authoritative resume point is the durable
+//!    sealed-rows tail (the sealed row with the MAX `sequence_number`); the
+//!    `audit_chain_head` checkpoint is the fast path. When the sealed tail is
+//!    AHEAD of the checkpoint — a prior drain crashed after sealing rows but
+//!    before advancing the checkpoint — we trust the sealed rows. This makes the
+//!    drain crash-safe (the rows, not the checkpoint, are the source of truth).
+//!    The builder is seeded via [`HashChainBuilder::resume`] (or
+//!    [`HashChainBuilder::new`] at GENESIS).
+//! 2. **Seal** each pending row IN ORDER (`enqueued_at, id`): compute the
+//!    RFC-8785 JCS-canonical bytes of the payload, link it into the chain
+//!    (`chain_hash = BLAKE3(prev_hash || canonical_jcs)` via
+//!    [`link_chain_hash_from_canonical`]), and atomically write the sealed
+//!    columns + flip `emitted_at`. The row UPDATE is guarded by
+//!    `emitted_at IS NULL`, so a re-run never double-seals (IDEMPOTENT). The
+//!    computation is fully deterministic, so two concurrent drains compute
+//!    byte-identical seals — overlapping row writes are identical, never a fork.
+//! 3. **Advance** the `audit_chain_head` checkpoint with a compare-and-set on the
+//!    value we resumed from (SINGLE-WRITER anti-fork): if the stored head drifted
+//!    (a concurrent drain advanced it), abort the partition rather than fork the
+//!    chain. The rows we sealed are deterministic/identical to the concurrent
+//!    drain's, so they remain safe; we simply do not double-advance.
+//!
+//! ## Why `link_chain_hash_from_canonical` and not `HashChainBuilder::append`
+//!
+//! `HashChainBuilder::append` takes a typed `corelink_audit_chain::AuditEvent` and
+//! re-canonicalizes it. The `audit_outbox.payload_json` rows are GENERIC
+//! CloudEvents JSON written by several sinks (`routes/dsr/audit.rs` etc.), NOT the
+//! crate's `AuditEvent` struct, so `append` cannot consume them. Instead we
+//! canonicalize the raw payload with `serde_jcs` and drive
+//! `link_chain_hash_from_canonical` directly on those bytes — which is exactly the
+//! verifier path the crate documents (the verifier reads the persisted JCS bytes
+//! off the row and recomputes BLAKE3, never re-canonicalizing). The builder is
+//! still used to seed `(head, next_sequence)` honestly via `resume`/`new`.
+//!
+//! Gated by the internal-auth shared secret (constant-time), mirroring
+//! [`crate::routes::dsr`] byte-for-byte. Env-gated mount in [`crate::main`]
+//! (unmounted in dev/CI without the erase key + D1).
+
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use axum::{
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    routing::post,
+    Json, Router,
+};
+use serde_json::{json, Value};
+use subtle::ConstantTimeEq;
+
+use corelink_audit_chain::{link_chain_hash_from_canonical, ChainHash, HashChainBuilder};
+
+use crate::storage::d1_http::D1HttpClient;
+
+const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
+
+/// Shared state for the audit-chain drain route.
+#[derive(Clone)]
+pub struct AuditDrainState {
+    internal_auth_key: String,
+    d1: Arc<D1HttpClient>,
+}
+
+impl std::fmt::Debug for AuditDrainState {
+    // Redact the internal-auth secret; never let it reach a log/Debug sink.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuditDrainState")
+            .field("internal_auth_key", &"<redacted>")
+            .field("d1", &"[D1HttpClient]")
+            .finish()
+    }
+}
+
+/// Constant-time internal-auth check. Mirrors
+/// [`crate::routes::dsr`]`::internal_auth_ok` byte-for-byte so the internal-auth
+/// gates stay consistent (pad provided to the secret length, run `ct_eq`, fold in
+/// the real length-equality so a longer/shorter value can never match).
+#[must_use]
+fn internal_auth_ok(expected: &[u8], headers: &HeaderMap) -> bool {
+    let provided = headers
+        .get(INTERNAL_AUTH_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let provided_bytes = provided.as_bytes();
+    let provided_padded: Vec<u8> = if provided_bytes.len() >= expected.len() {
+        provided_bytes.get(..expected.len()).unwrap_or(&[]).to_vec()
+    } else {
+        let mut v = provided_bytes.to_vec();
+        v.resize(expected.len(), 0);
+        v
+    };
+    let content_ok = expected.ct_eq(&provided_padded).unwrap_u8();
+    let len_ok = u8::from(expected.len() == provided_bytes.len());
+    (content_ok & len_ok) == 1
+}
+
+/// Build the route state from env. `None` when the erase/internal-auth key is
+/// unset or shorter than 32 chars, OR when D1 `StorageEnv` is not configured
+/// (route not mounted — fail-CLOSED). Mirrors the DSR route's gate: prefers the
+/// dedicated `CORELINK_ERASE_AUTH_KEY`, falls back to the shared
+/// `CORELINK_INTERNAL_AUTH_KEY`, preserves the ≥32-char floor (F28/F15). Without
+/// D1 there is nothing to seal, so the route is simply not mounted.
+#[must_use]
+pub fn build_state_from_env() -> Option<AuditDrainState> {
+    let internal_auth_key = match crate::routes::admin::erase_auth_key_from_env() {
+        Some(k) if k.len() >= 32 => k.to_string(),
+        _ => {
+            tracing::warn!(
+                "no usable CORELINK_ERASE_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY \
+                 (< 32 chars); /_internal/audit/drain NOT mounted (fail-CLOSED)"
+            );
+            return None;
+        }
+    };
+    let storage_env = crate::storage::StorageEnv::from_env()?;
+    let d1 = Arc::new(crate::storage::d1_http::D1HttpClient::new(&storage_env).ok()?);
+    Some(AuditDrainState {
+        internal_auth_key,
+        d1,
+    })
+}
+
+/// Mount `POST /_internal/audit/drain`.
+#[must_use]
+pub fn router(state: AuditDrainState) -> Router {
+    Router::new()
+        .route("/_internal/audit/drain", post(handle_drain))
+        .with_state(state)
+}
+
+fn now_ms() -> i64 {
+    i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0),
+    )
+    .unwrap_or(i64::MAX)
+}
+
+/// Parse a 64-char lowercase-hex BLAKE3 digest into a [`ChainHash`]. `None` on
+/// any malformed value (wrong length / non-hex).
+fn chain_hash_from_hex(s: &str) -> Option<ChainHash> {
+    let mut out = [0u8; 32];
+    hex::decode_to_slice(s.trim(), &mut out).ok()?;
+    Some(ChainHash(out))
+}
+
+/// The persisted per-partition chain checkpoint (`audit_chain_head` row).
+#[derive(Clone, Debug)]
+struct HeadCheckpoint {
+    head: ChainHash,
+    /// The EXACT stored hex (used verbatim in the compare-and-set WHERE clause).
+    head_hex: String,
+    next_sequence: u64,
+}
+
+/// One `audit_outbox` row sealed into the BLAKE3 chain. Pure value — the seal is
+/// computed in memory, then written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SealedRow {
+    id: String,
+    sequence_number: u64,
+    prev_hash_hex: String,
+    chain_hash_hex: String,
+    /// The EXACT RFC-8785 JCS bytes that were hashed (what the verifier re-hashes).
+    canonical_jcs: String,
+}
+
+/// Outcome of draining a single partition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PartitionOutcome {
+    /// `n` rows sealed and the head advanced.
+    Sealed(u64),
+    /// The stored head drifted under us (a concurrent drain advanced it) — the
+    /// partition was aborted to avoid forking the chain.
+    Drift,
+    /// No pending rows (raced away between the partition scan and the read).
+    Empty,
+}
+
+/// Pure chain-seal computation. Given the resume `(start_head, start_seq)` and the
+/// pending rows in deterministic order, compute the sealed link for each row.
+/// Returns `(sealed_rows, new_head, new_next_sequence)`.
+///
+/// Fully deterministic: identical inputs yield identical outputs — the basis of
+/// the concurrent-drain fork-freedom (two drains compute byte-identical seals).
+///
+/// # Errors
+/// Aborts the whole partition (returns `Err`) if any row's payload cannot be
+/// JCS-canonicalized (would break sequence contiguity if skipped). Our own sinks
+/// only ever write valid JSON, so this is defensive.
+fn seal_rows(
+    start_head: ChainHash,
+    start_seq: u64,
+    rows: &[(String, Value)],
+) -> Result<(Vec<SealedRow>, ChainHash, u64), String> {
+    let mut prev = start_head;
+    let mut seq = start_seq;
+    let mut out = Vec::with_capacity(rows.len());
+    for (id, payload) in rows {
+        let jcs = serde_jcs::to_vec(payload)
+            .map_err(|e| format!("JCS canonicalize row {id}: {e}"))?;
+        // `chain_hash = BLAKE3(prev_hash || canonical_jcs)` over the EXACT bytes
+        // we persist as `canonical_jcs` — the verifier re-hashes these.
+        let chain = link_chain_hash_from_canonical(&prev, &jcs);
+        let canonical_jcs =
+            String::from_utf8(jcs).map_err(|e| format!("JCS bytes not UTF-8 for row {id}: {e}"))?;
+        out.push(SealedRow {
+            id: id.clone(),
+            sequence_number: seq,
+            prev_hash_hex: prev.to_hex(),
+            chain_hash_hex: chain.to_hex(),
+            canonical_jcs,
+        });
+        prev = chain;
+        seq = seq.saturating_add(1);
+    }
+    Ok((out, prev, seq))
+}
+
+/// Resolve the authoritative resume `(head, next_sequence)` for a partition.
+/// Prefers the durable sealed-rows tail when it is AHEAD of the checkpoint (a
+/// prior drain crashed after sealing rows but before advancing the head); else
+/// the `audit_chain_head` checkpoint; else GENESIS (`None`).
+fn resolve_resume(
+    checkpoint: Option<(ChainHash, u64)>,
+    sealed_tail: Option<(ChainHash, u64)>,
+) -> Option<(ChainHash, u64)> {
+    // sealed_tail carries (chain_hash, sequence_number) of the MAX sealed row; the
+    // next sequence is that + 1.
+    let from_tail = sealed_tail.map(|(h, seq)| (h, seq.saturating_add(1)));
+    match (checkpoint, from_tail) {
+        (Some((_, cp_seq)), Some((th, t_seq))) if t_seq > cp_seq => Some((th, t_seq)),
+        (Some(cp), _) => Some(cp),
+        (None, Some(t)) => Some(t),
+        (None, None) => None,
+    }
+}
+
+/// Read the `(tenant_id, region)` partitions with pending (unsealed) rows.
+async fn read_pending_partitions(d1: &D1HttpClient) -> Result<Vec<(String, String)>, String> {
+    let rows = d1
+        .query(
+            "SELECT DISTINCT tenant_id, region FROM audit_outbox WHERE emitted_at IS NULL",
+            &[],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|r| {
+            let t = r.get("tenant_id").and_then(Value::as_str)?.to_owned();
+            let region = r.get("region").and_then(Value::as_str)?.to_owned();
+            Some((t, region))
+        })
+        .collect())
+}
+
+/// Read the `audit_chain_head` checkpoint for a partition.
+async fn read_checkpoint(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+) -> Result<Option<HeadCheckpoint>, String> {
+    let rows = d1
+        .query(
+            "SELECT head_hash, next_sequence FROM audit_chain_head \
+             WHERE tenant_id = ?1 AND region = ?2",
+            &[json!(tenant_id), json!(region)],
+        )
+        .await?;
+    let Some(row) = rows.into_iter().next() else {
+        return Ok(None);
+    };
+    let head_hex = row
+        .get("head_hash")
+        .and_then(Value::as_str)
+        .ok_or("audit_chain_head.head_hash missing/non-text")?
+        .to_owned();
+    let head = chain_hash_from_hex(&head_hex)
+        .ok_or("audit_chain_head.head_hash is not a 64-hex BLAKE3 digest")?;
+    let next_sequence = row
+        .get("next_sequence")
+        .and_then(Value::as_i64)
+        .and_then(|n| u64::try_from(n).ok())
+        .ok_or("audit_chain_head.next_sequence missing/negative/non-integer")?;
+    Ok(Some(HeadCheckpoint {
+        head,
+        head_hex,
+        next_sequence,
+    }))
+}
+
+/// Read the durable sealed-rows tail (MAX sequence sealed row) for a partition.
+async fn read_sealed_tail(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+) -> Result<Option<(ChainHash, u64)>, String> {
+    let rows = d1
+        .query(
+            "SELECT sequence_number, chain_hash FROM audit_outbox \
+             WHERE tenant_id = ?1 AND region = ?2 \
+               AND emitted_at IS NOT NULL AND sequence_number IS NOT NULL \
+             ORDER BY sequence_number DESC LIMIT 1",
+            &[json!(tenant_id), json!(region)],
+        )
+        .await?;
+    let Some(row) = rows.into_iter().next() else {
+        return Ok(None);
+    };
+    let seq = row
+        .get("sequence_number")
+        .and_then(Value::as_i64)
+        .and_then(|n| u64::try_from(n).ok())
+        .ok_or("audit_outbox.sequence_number negative/non-integer on a sealed row")?;
+    let chain_hex = row
+        .get("chain_hash")
+        .and_then(Value::as_str)
+        .ok_or("audit_outbox.chain_hash missing on a sealed row")?;
+    let chain = chain_hash_from_hex(chain_hex)
+        .ok_or("audit_outbox.chain_hash is not a 64-hex BLAKE3 digest")?;
+    Ok(Some((chain, seq)))
+}
+
+/// Read the pending rows of a partition in deterministic seal order.
+async fn read_pending_rows(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+) -> Result<Vec<(String, Value)>, String> {
+    let rows = d1
+        .query(
+            "SELECT id, payload_json FROM audit_outbox \
+             WHERE tenant_id = ?1 AND region = ?2 AND emitted_at IS NULL \
+             ORDER BY enqueued_at, id",
+            &[json!(tenant_id), json!(region)],
+        )
+        .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let id = row
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or("audit_outbox.id missing/non-text")?
+            .to_owned();
+        let payload_str = row
+            .get("payload_json")
+            .and_then(Value::as_str)
+            .ok_or("audit_outbox.payload_json missing/non-text")?;
+        let payload: Value = serde_json::from_str(payload_str)
+            .map_err(|e| format!("audit_outbox.payload_json row {id} is not valid JSON: {e}"))?;
+        out.push((id, payload));
+    }
+    Ok(out)
+}
+
+/// Write the sealed columns for one row, guarded by `emitted_at IS NULL` so a
+/// re-run (or a concurrent drain) never double-seals.
+async fn write_seal(d1: &D1HttpClient, row: &SealedRow, now: i64) -> Result<(), String> {
+    let seq = i64::try_from(row.sequence_number).map_err(|_| "sequence_number exceeds i64")?;
+    d1.query(
+        "UPDATE audit_outbox \
+         SET sequence_number = ?1, prev_hash = ?2, chain_hash = ?3, \
+             canonical_jcs = ?4, chained_at = ?5, emitted_at = ?5 \
+         WHERE id = ?6 AND emitted_at IS NULL",
+        &[
+            json!(seq),
+            json!(row.prev_hash_hex),
+            json!(row.chain_hash_hex),
+            json!(row.canonical_jcs),
+            json!(now),
+            json!(row.id),
+        ],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Advance the `audit_chain_head` checkpoint with a compare-and-set on the value
+/// we resumed from (single-writer anti-fork). Returns `true` when the head was
+/// committed, `false` on drift (a concurrent drain advanced it first).
+///
+/// Uses `RETURNING` to detect whether the guarded write actually matched: a
+/// guarded `UPDATE` (or an `INSERT OR IGNORE`) that hits no row / a conflict
+/// returns zero rows ⇒ drift.
+async fn advance_head_cas(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+    expected: Option<&HeadCheckpoint>,
+    new_head_hex: &str,
+    new_seq: u64,
+    now: i64,
+) -> Result<bool, String> {
+    let new_seq_i = i64::try_from(new_seq).map_err(|_| "next_sequence exceeds i64")?;
+    let rows = match expected {
+        Some(cp) => {
+            let exp_seq = i64::try_from(cp.next_sequence).map_err(|_| "next_sequence exceeds i64")?;
+            d1.query(
+                "UPDATE audit_chain_head \
+                 SET head_hash = ?1, next_sequence = ?2, updated_at = ?3 \
+                 WHERE tenant_id = ?4 AND region = ?5 \
+                   AND head_hash = ?6 AND next_sequence = ?7 \
+                 RETURNING tenant_id",
+                &[
+                    json!(new_head_hex),
+                    json!(new_seq_i),
+                    json!(now),
+                    json!(tenant_id),
+                    json!(region),
+                    json!(cp.head_hex),
+                    json!(exp_seq),
+                ],
+            )
+            .await?
+        }
+        None => {
+            // No checkpoint row (genesis, or a crashed drain never created one):
+            // claim it. A concurrent drain that inserted first wins the PK; our
+            // ON CONFLICT DO NOTHING then returns zero rows ⇒ drift.
+            d1.query(
+                "INSERT INTO audit_chain_head \
+                     (tenant_id, region, head_hash, next_sequence, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) \
+                 ON CONFLICT(tenant_id, region) DO NOTHING \
+                 RETURNING tenant_id",
+                &[
+                    json!(tenant_id),
+                    json!(region),
+                    json!(new_head_hex),
+                    json!(new_seq_i),
+                    json!(now),
+                ],
+            )
+            .await?
+        }
+    };
+    Ok(!rows.is_empty())
+}
+
+/// Drain a single `(tenant_id, region)` partition.
+async fn drain_partition(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+    now: i64,
+) -> Result<PartitionOutcome, String> {
+    let checkpoint = read_checkpoint(d1, tenant_id, region).await?;
+    let sealed_tail = read_sealed_tail(d1, tenant_id, region).await?;
+
+    // Resume the builder honestly via resume()/new() (GENESIS when there is no
+    // prior state at all). The resume point is crash-safe (sealed-tail authoritative).
+    let resume = resolve_resume(
+        checkpoint.as_ref().map(|c| (c.head, c.next_sequence)),
+        sealed_tail,
+    );
+    let builder = match resume {
+        Some((head, seq)) => HashChainBuilder::resume(head, seq),
+        None => HashChainBuilder::new(),
+    };
+
+    let rows = read_pending_rows(d1, tenant_id, region).await?;
+    if rows.is_empty() {
+        return Ok(PartitionOutcome::Empty);
+    }
+
+    let (sealed, new_head, new_seq) = seal_rows(*builder.head(), builder.next_sequence(), &rows)?;
+
+    // Seal the rows FIRST (deterministic + idempotent: guarded by emitted_at IS
+    // NULL). A crash here leaves correctly-sealed rows the next drain resumes from
+    // (sealed-tail authoritative) — never a gap.
+    for row in &sealed {
+        write_seal(d1, row, now).await?;
+    }
+
+    // Advance the checkpoint with a compare-and-set on the resumed value.
+    let committed = advance_head_cas(
+        d1,
+        tenant_id,
+        region,
+        checkpoint.as_ref(),
+        &new_head.to_hex(),
+        new_seq,
+        now,
+    )
+    .await?;
+
+    if committed {
+        Ok(PartitionOutcome::Sealed(sealed.len() as u64))
+    } else {
+        // Drift: a concurrent drain advanced the head. Our sealed rows are
+        // byte-identical to that drain's (deterministic), so they are safe; we
+        // just do not double-advance the checkpoint.
+        Ok(PartitionOutcome::Drift)
+    }
+}
+
+/// `POST /_internal/audit/drain` — seal every pending partition. Returns a
+/// summary `{ ok, partitions_drained, rows_sealed, partitions_drifted,
+/// partitions_failed }`. Internal-auth gated; no request body.
+async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) -> Response {
+    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let partitions = match read_pending_partitions(&state.d1).await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!(error = %e, "audit/drain: partition scan failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "drain scan failed").into_response();
+        }
+    };
+    let now = now_ms();
+    let mut partitions_drained: u64 = 0;
+    let mut rows_sealed: u64 = 0;
+    let mut partitions_drifted: u64 = 0;
+    let mut partitions_failed: u64 = 0;
+    for (tenant_id, region) in partitions {
+        match drain_partition(&state.d1, &tenant_id, &region, now).await {
+            Ok(PartitionOutcome::Sealed(n)) => {
+                partitions_drained = partitions_drained.saturating_add(1);
+                rows_sealed = rows_sealed.saturating_add(n);
+            }
+            Ok(PartitionOutcome::Drift) => {
+                partitions_drifted = partitions_drifted.saturating_add(1);
+                tracing::warn!(
+                    region = %region,
+                    "audit/drain: head drift (concurrent drain) — partition aborted, no fork"
+                );
+            }
+            Ok(PartitionOutcome::Empty) => {}
+            Err(e) => {
+                partitions_failed = partitions_failed.saturating_add(1);
+                tracing::error!(error = %e, region = %region, "audit/drain: partition failed");
+            }
+        }
+    }
+    (
+        StatusCode::OK,
+        Json(json!({
+            "ok": true,
+            "partitions_drained": partitions_drained,
+            "rows_sealed": rows_sealed,
+            "partitions_drifted": partitions_drifted,
+            "partitions_failed": partitions_failed,
+        })),
+    )
+        .into_response()
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "tests are allowed to use these primitives"
+)]
+mod tests {
+    use super::*;
+
+    fn rows(payloads: &[Value]) -> Vec<(String, Value)> {
+        payloads
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (format!("row-{i:04}"), p.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn fresh_partition_seals_from_genesis_monotonic_and_linked() {
+        let input = rows(&[json!({"a": 1}), json!({"b": 2}), json!({"c": 3})]);
+        let (sealed, head, next_seq) =
+            seal_rows(ChainHash::genesis(), 0, &input).unwrap();
+
+        assert_eq!(sealed.len(), 3);
+        // Monotonic sequence from genesis.
+        assert_eq!(sealed[0].sequence_number, 0);
+        assert_eq!(sealed[1].sequence_number, 1);
+        assert_eq!(sealed[2].sequence_number, 2);
+        assert_eq!(next_seq, 3);
+        // Genesis prev_hash is 64 zeros.
+        assert_eq!(sealed[0].prev_hash_hex, "0".repeat(64));
+        // Each row's prev_hash == the previous row's chain_hash (the link).
+        assert_eq!(sealed[1].prev_hash_hex, sealed[0].chain_hash_hex);
+        assert_eq!(sealed[2].prev_hash_hex, sealed[1].chain_hash_hex);
+        // The returned head is the last link.
+        assert_eq!(head.to_hex(), sealed[2].chain_hash_hex);
+        // Distinct links.
+        assert_ne!(sealed[0].chain_hash_hex, sealed[1].chain_hash_hex);
+        assert_ne!(sealed[1].chain_hash_hex, sealed[2].chain_hash_hex);
+    }
+
+    #[test]
+    fn canonical_jcs_stored_is_exactly_what_was_hashed() {
+        let payload = json!({"z": 1, "a": 2, "m": {"y": 9, "b": 8}});
+        let input = rows(&[payload.clone()]);
+        let (sealed, _, _) = seal_rows(ChainHash::genesis(), 0, &input).unwrap();
+        let s = &sealed[0];
+
+        // The stored canonical_jcs is byte-for-byte the RFC-8785 JCS of the payload.
+        let expected_jcs = serde_jcs::to_vec(&payload).unwrap();
+        assert_eq!(s.canonical_jcs.as_bytes(), expected_jcs.as_slice());
+
+        // And the chain_hash is exactly BLAKE3(prev || canonical_jcs) over THOSE bytes.
+        let recomputed =
+            link_chain_hash_from_canonical(&ChainHash::genesis(), s.canonical_jcs.as_bytes());
+        assert_eq!(recomputed.to_hex(), s.chain_hash_hex);
+    }
+
+    #[test]
+    fn rerun_is_idempotent_and_deterministic_no_fork() {
+        // Two concurrent drains resuming from the SAME state over the SAME rows
+        // compute byte-identical seals — so overlapping row writes are identical,
+        // never a fork. (The DB-level idempotency is the `emitted_at IS NULL`
+        // guard on the UPDATE; the determinism proven here is its foundation.)
+        let input = rows(&[json!({"e": "x"}), json!({"e": "y"})]);
+        let a = seal_rows(ChainHash::genesis(), 0, &input).unwrap();
+        let b = seal_rows(ChainHash::genesis(), 0, &input).unwrap();
+        assert_eq!(a.0, b.0);
+        assert_eq!(a.1.to_hex(), b.1.to_hex());
+        assert_eq!(a.2, b.2);
+    }
+
+    #[test]
+    fn split_drain_does_not_fork_the_sequence() {
+        // Drain A sees [r0]; a new row r1 arrives; Drain B (resuming from the
+        // sealed tail after A sealed r0) sees [r1]. The split must produce the
+        // SAME chain as a single drain over [r0, r1].
+        let r0 = json!({"n": 0});
+        let r1 = json!({"n": 1});
+
+        // Single drain over both.
+        let combined = seal_rows(ChainHash::genesis(), 0, &rows(&[r0.clone(), r1.clone()])).unwrap();
+
+        // Drain A: just r0 from genesis.
+        let a = seal_rows(ChainHash::genesis(), 0, &rows(&[r0.clone()])).unwrap();
+        assert_eq!(a.0[0], combined.0[0]);
+
+        // Drain B resumes from the sealed tail A produced (head=a.1, seq=a.2),
+        // then seals r1.
+        let b = seal_rows(a.1, a.2, &rows(&[r1.clone()])).unwrap();
+        // r1's sealed link is identical to the single-drain result.
+        assert_eq!(b.0[0].sequence_number, combined.0[1].sequence_number);
+        assert_eq!(b.0[0].prev_hash_hex, combined.0[1].prev_hash_hex);
+        assert_eq!(b.0[0].chain_hash_hex, combined.0[1].chain_hash_hex);
+        assert_eq!(b.1.to_hex(), combined.1.to_hex());
+    }
+
+    #[test]
+    fn resolve_resume_genesis_when_no_state() {
+        assert_eq!(resolve_resume(None, None), None);
+    }
+
+    #[test]
+    fn resolve_resume_uses_checkpoint_when_no_sealed_tail() {
+        let h = ChainHash([0x11; 32]);
+        assert_eq!(resolve_resume(Some((h, 5)), None), Some((h, 5)));
+    }
+
+    #[test]
+    fn resolve_resume_prefers_sealed_tail_when_ahead_of_checkpoint() {
+        // Crash/drift recovery: the checkpoint lagged behind the durable sealed
+        // rows (a prior drain crashed after sealing but before advancing the head).
+        // The sealed tail is authoritative.
+        let cp = ChainHash([0x11; 32]);
+        let tail = ChainHash([0x22; 32]);
+        // Checkpoint says next_sequence = 3; sealed tail row has seq = 4 → tail
+        // next = 5 > 3 → resume from the tail.
+        assert_eq!(
+            resolve_resume(Some((cp, 3)), Some((tail, 4))),
+            Some((tail, 5))
+        );
+    }
+
+    #[test]
+    fn resolve_resume_keeps_checkpoint_when_tail_not_ahead() {
+        let cp = ChainHash([0x11; 32]);
+        let tail = ChainHash([0x22; 32]);
+        // Checkpoint next_sequence = 5; sealed tail seq = 4 → tail next = 5, NOT
+        // strictly greater → keep the (faster) checkpoint.
+        assert_eq!(
+            resolve_resume(Some((cp, 5)), Some((tail, 4))),
+            Some((cp, 5))
+        );
+    }
+
+    #[test]
+    fn builder_resume_seeds_start_state() {
+        // Genesis path: new().
+        let g = HashChainBuilder::new();
+        assert_eq!(g.head().as_bytes(), &[0u8; 32]);
+        assert_eq!(g.next_sequence(), 0);
+        // Resume path: resume(head, seq).
+        let h = ChainHash([0xAB; 32]);
+        let r = HashChainBuilder::resume(h, 7);
+        assert_eq!(r.head(), &h);
+        assert_eq!(r.next_sequence(), 7);
+    }
+
+    #[test]
+    fn empty_partition_seals_nothing_and_leaves_head_unchanged() {
+        // No pending rows → no seals, head + sequence pass through unchanged.
+        let h = ChainHash([0x42; 32]);
+        let (sealed, head, next_seq) = seal_rows(h, 9, &[]).unwrap();
+        assert!(sealed.is_empty());
+        assert_eq!(head, h);
+        assert_eq!(next_seq, 9);
+    }
+
+    #[test]
+    fn chain_hash_from_hex_round_trips_and_rejects_bad() {
+        let h = ChainHash([0x5A; 32]);
+        assert_eq!(chain_hash_from_hex(&h.to_hex()), Some(h));
+        assert_eq!(chain_hash_from_hex("zz"), None);
+        assert_eq!(chain_hash_from_hex(&"ab".repeat(31)), None); // 62 hex chars
+    }
+}
