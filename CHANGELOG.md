@@ -36,6 +36,12 @@ Each entry cross-references:
   Built on CF-1's now-complete erase-set, so the certificate attests a genuinely-complete erasure.
 
 ### Fixed
+- **OKF self-healing — LOCAL variant (no API key, uses your Claude Code CLI auth).** Adds
+  `scripts/okf-reconcile-local.sh` + a `hooks/post-merge` git hook: on a local `git pull`/merge to main
+  that drifts a concept's cited lines, it detects the drift (0-cost reporter) and runs the `okf-reconcile`
+  skill via the local `claude` CLI (your login/subscription — no `ANTHROPIC_API_KEY`, no CI cost), in an
+  isolated worktree, opening a pre-validated PR. Activate with `git config core.hooksPath hooks`. Complements
+  the CI `okf-autoreconcile.yml` (which covers GitHub-UI merges; this covers the solo-local workflow).
 - **OKF self-healing loop — the on-merge auto-reconcile agent is now wired (was designed-not-built).** A new
   `.github/workflows/okf-autoreconcile.yml` fires on a `main` merge that touches source code: the deterministic
   `okf_reconcile.py` reporter detects drifted cited lines, and only if drift exists, the Claude Code CLI runs the
