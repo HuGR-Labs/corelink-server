@@ -1524,6 +1524,122 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v9: strict-classifier vs surface-walk EXTENSION set unified -----------
+# `_is_file_granular_strict` classifies EVERY file under worker/src/** and
+# apps/*/src/** as strict (file-granular-required) REGARDLESS of extension, but the
+# C10b surface WALK used to glob only `*.ts` (worker) and `*.ts`/`*.rs` (apps). So a
+# real request-reachable Cloudflare-Worker backdoor with ANY OTHER executable
+# extension — .mts/.mjs/.cts/.cjs/.tsx/.jsx/.js (all wrangler-`main`-eligible) —
+# was classified strict yet NEVER enumerated and shipped GREEN. v9 enumerates the
+# FULL executable matrix via the shared `_is_exec_source` predicate so the two sides
+# AGREE. We prove THREE:
+#  POSITIVE-A — worker/src/poison.mts (an ES-module edge handler) REDs [C10b];
+#  POSITIVE-B — worker/src/widget.tsx (a JSX edge handler) REDs [C10b];
+#  POSITIVE-C — a NEW app's apps/runner-worker/src/poison.mjs REDs [C10b];
+#  NEGATIVE   — a genuine .ts edge file that IS concept-cited stays covered
+#               (no gap) — proving the widened net stays SELECTIVE.
+assert_exec_ext_set_unified() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # worker edge plane: a genuine cited .ts entrypoint + two NON-.ts backdoors.
+    mkdir -p worker/src
+    printf 'export const anchor = 1;\n'                                  > worker/src/index.ts
+    printf 'export default { async fetch() { /* backdoor */ } };\n'      > worker/src/poison.mts
+    printf 'export const Widget = () => null; /* jsx backdoor */\n'      > worker/src/widget.tsx
+    # a BRAND-NEW app with an ES-module (.mjs) request-reachable handler.
+    mkdir -p apps/runner-worker/src
+    printf 'export async function poison() { /* reachable backdoor */ }\n' \
+      > apps/runner-worker/src/poison.mjs
+    mkdir -p docs/knowledge/planes
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [w](/planes/w.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    cat > docs/knowledge/planes/w.md <<EOF
+---
+type: "Plane"
+title: "Worker edge ext (hermetic)"
+description: "grounds the index entrypoint only."
+source_files:
+  - "worker/src/index.ts"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Worker edge ext (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the edge entrypoint (\`worker/src/index.ts:1\`).
+
+# Invariants
+- the entrypoint holds (\`worker/src/index.ts:1\`).
+
+# Citations
+1. \`worker/src/index.ts:1\` — grounded anchor.
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "planes/w"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "worker/src/index.ts"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.xx_out" 2>&1 || true
+  )
+  # POSITIVE-A: the .mts worker handler is enumerated -> fires naming it.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.xx_out" 2>/dev/null \
+     && grep -q 'worker/src/poison.mts' "$tmp/.xx_out" 2>/dev/null; then
+    ok "exec-ext unified: a .mts worker handler is enumerated -> [C10b] names poison.mts"
+  else
+    miss "exec-ext unified (no [C10b] naming worker/src/poison.mts): $(tail -1 "$tmp/.xx_out" 2>/dev/null)" "ext-mts-pos"
+  fi
+  # POSITIVE-B: the .tsx worker handler is enumerated -> fires naming it.
+  total=$((total + 1))
+  if grep -q 'worker/src/widget.tsx' "$tmp/.xx_out" 2>/dev/null; then
+    ok "exec-ext unified: a .tsx worker handler is enumerated -> [C10b] names widget.tsx"
+  else
+    miss "exec-ext unified (no [C10b] naming worker/src/widget.tsx): $(tail -1 "$tmp/.xx_out" 2>/dev/null)" "ext-tsx-pos"
+  fi
+  # POSITIVE-C: the NEW app's .mjs handler is enumerated -> fires naming it.
+  total=$((total + 1))
+  if grep -q 'apps/runner-worker/src/poison.mjs' "$tmp/.xx_out" 2>/dev/null; then
+    ok "exec-ext unified: a NEW app's .mjs handler is enumerated -> [C10b] names poison.mjs"
+  else
+    miss "exec-ext unified (no [C10b] naming apps/runner-worker/src/poison.mjs): $(tail -1 "$tmp/.xx_out" 2>/dev/null)" "ext-mjs-pos"
+  fi
+  # NEGATIVE (selectivity): the genuine concept-cited .ts entrypoint is NOT flagged.
+  total=$((total + 1))
+  if ! grep -q 'worker/src/index.ts' "$tmp/.xx_out" 2>/dev/null; then
+    ok "exec-ext unified: a genuine concept-cited .ts entrypoint stays covered (selective)"
+  else
+    miss "exec-ext unified negative: covered worker/src/index.ts was wrongly flagged" "ext-ts-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -1567,6 +1683,10 @@ assert_cite_must_be_code_line
 # #2 a strict-tree covering cite must be a SUBSTANTIVE line (use/mod/brace REDs).
 assert_new_app_enumerated
 assert_boilerplate_line_cite_rejected
+# gate v9: the strict-classifier and the surface walk use ONE shared executable-
+# extension set — a .mts/.tsx worker handler + a .mjs new-app handler now RED [C10b]
+# (was GREEN: classified strict but never enumerated because the walk globbed .ts only).
+assert_exec_ext_set_unified
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then

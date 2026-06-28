@@ -708,6 +708,59 @@ def _is_file_granular_strict(rel: str) -> bool:
     return any(_segment_glob_match(rel, g) for g in _FILE_GRANULAR_STRICT_GLOBS)
 
 
+# gate v9 fix (HIGH — strict-classifier vs surface-walk EXTENSION MISALIGNMENT):
+# `_is_file_granular_strict` classifies EVERY file under worker/src/** and
+# apps/*/src/** as a strict, file-granular-required tree REGARDLESS of extension —
+# but the C10b surface ENUMERATION only globbed `*.ts` (worker) and `*.ts`/`*.rs`
+# (apps). So a real request-reachable Cloudflare-Worker backdoor handler dropped in
+# those trees with ANY OTHER executable extension — `.mts`/`.mjs`/`.cts`/`.cjs`/
+# `.tsx`/`.jsx`/`.js` (all of which wrangler accepts as `main`) — was classified
+# strict yet NEVER enumerated, so it could never surface as a [C10b] gap and shipped
+# GREEN with zero coverage (PoCs: worker/src/poison.mts + apps/runner-worker/src/
+# poison.mts). The surface walk and the strict classifier MUST agree on WHAT is an
+# executable source file. We factor that predicate ONCE here so both sides use the
+# IDENTICAL extension set.
+#   - JS/TS executable extensions (an edge/app worker entrypoint or imported
+#     module): the full module-system matrix {.ts,.mts,.cts,.tsx,.js,.mjs,.cjs,.jsx}.
+#   - .rs for the Rust trees.
+# Genuinely-non-source files surfaced by the recursive walk (e.g. .json/.md/.css
+# under src/) are NOT executable source and so are not enumerated by the JS/TS walk;
+# they remain handled by the existing manifest data/config `excludes:` where they
+# are intentionally surfaced as .rs/.ts today — but the closing of the JS/TS hole
+# adds no spurious data-file surface (we enumerate only the executable extensions).
+_EXEC_JS_TS_EXTS = (".ts", ".mts", ".cts", ".tsx", ".js", ".mjs", ".cjs", ".jsx")
+_EXEC_RS_EXTS = (".rs",)
+
+
+def _is_exec_source(rel: str, *, js_ts: bool = True, rust: bool = True) -> bool:
+    """True iff `rel` names an EXECUTABLE source file under the shared predicate
+    used by BOTH the strict file-granular classification and the C10b surface walk
+    (gate v9). `js_ts` covers the full Cloudflare-Worker module matrix; `rust`
+    covers `.rs`. The two callers MUST pass the same flags for the same tree so the
+    classifier and the enumeration never disagree on what is request-reachable."""
+    suffix = "." + rel.rsplit(".", 1)[-1].lower() if "." in rel else ""
+    if js_ts and suffix in _EXEC_JS_TS_EXTS:
+        return True
+    if rust and suffix in _EXEC_RS_EXTS:
+        return True
+    return False
+
+
+def _iter_exec_sources(base: Path, surface_root: Path, *, js_ts: bool = True,
+                       rust: bool = True):
+    """Yield (rel, False) for every RECURSIVE executable source file under `base`
+    matching the shared `_is_exec_source` predicate — the surface-walk half of the
+    gate-v9 strict-classifier == surface-walk unification."""
+    if not base.is_dir():
+        return
+    for p in sorted(base.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(surface_root).as_posix()
+        if _is_exec_source(rel, js_ts=js_ts, rust=rust):
+            yield (rel, False)
+
+
 def _line_count(path: Path) -> int:
     try:
         with path.open("rb") as fh:
@@ -1405,24 +1458,22 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     # apps/ workers (file-granular), not just the Rust container + ADRs — else a
     # future load-bearing worker/src or apps/*/src file with no concept stays
     # invisible. Enumerated as completeness-required surfaces; legit-exempt files
-    # (types/config/test/UI/data) live in the manifest `excludes:`.
-    def _add_files(base_rel: str, pattern: str, recursive: bool = False) -> None:
-        base = surface_root / base_rel
-        if not base.is_dir():
-            return
-        globber = base.rglob if recursive else base.glob
-        for p in sorted(globber(pattern)):
-            if p.is_file():
-                surface.append((p.relative_to(surface_root).as_posix(), False))
-
+    # (types/config/test/UI/data) live in the manifest `excludes:`. The recursive
+    # executable-source enumeration uses the shared `_iter_exec_sources` helper so
+    # the surface walk and `_is_file_granular_strict` agree on the extension set
+    # (gate v9).
     # gate v6 fix #3 (audit #3 LOW — worker/src was enumerated NON-recursively):
     # the old gate globbed `worker/src/*.ts` + a HARDCODED `worker/src/lib/*.ts`,
     # so a new `worker/src/<subdir>/*.ts` (any future subdir other than lib/)
-    # escaped the surface entirely. Enumerate `worker/src/**/*.ts` RECURSIVELY,
-    # consistent with the routes/ and apps/*/src/ walks — a new edge handler in any
-    # subdir is now gated (genuine non-handler subdirs surface as [C10b] and get an
-    # honest manifest `excludes:` entry, the same as the container tree).
-    _add_files("worker/src", "*.ts", recursive=True)  # edge plane (recursive)
+    # escaped the surface entirely. Enumerate `worker/src/**` RECURSIVELY.
+    # gate v9 fix (HIGH — extension misalignment): enumerate the FULL executable-
+    # extension set via the shared `_is_exec_source` predicate (so the surface walk
+    # and `_is_file_granular_strict` AGREE) — a `.mts`/`.mjs`/`.cts`/`.cjs`/`.tsx`/
+    # `.jsx`/`.js` edge handler (all wrangler-`main`-eligible) is now enumerated, not
+    # just `.ts`. Genuine non-handler subdirs surface as [C10b] and get an honest
+    # manifest `excludes:` entry, the same as the container tree.
+    worker_src = surface_root / "worker" / "src"
+    surface += list(_iter_exec_sources(worker_src, surface_root, js_ts=True, rust=False))
     # gate v8 fix #1 (MEDIUM — app enumeration was a HARDCODED 3-app allowlist):
     # the surface walk only enumerated ("signup-worker","cas-worker","analytics-
     # worker"), but `_is_file_granular_strict` classifies EVERY `apps/*/src/**` as
@@ -1435,15 +1486,18 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     # surface via the existing manifest `excludes:` (apps/admin-ui, apps/get-corelink-
     # worker are exact-prefix excludes honored by is_covered) — and any future
     # non-handler app that is wholesale-waived gets the same honest exclude entry.
+    # gate v9 fix (HIGH): same extension unification for apps/*/src/** — enumerate
+    # the FULL executable matrix ({.ts,.mts,.cts,.tsx,.js,.mjs,.cjs,.jsx} + .rs) via
+    # the shared `_is_exec_source` predicate, not just `.ts`/`.rs`. A new app's
+    # `.mts`/`.mjs` request-reachable handler is classified strict, so it must be
+    # ENUMERATED too (PoC apps/runner-worker/src/poison.mts now REDs [C10b]).
     apps_dir = surface_root / "apps"
     if apps_dir.is_dir():
         for app in sorted(p for p in apps_dir.iterdir() if p.is_dir()):
             app_src = app / "src"
             if not app_src.is_dir():
                 continue
-            base_rel = app_src.relative_to(surface_root).as_posix()
-            _add_files(base_rel, "*.ts", recursive=True)
-            _add_files(base_rel, "*.rs", recursive=True)
+            surface += list(_iter_exec_sources(app_src, surface_root, js_ts=True, rust=True))
 
     for rel, is_dir in dict.fromkeys(surface):
         if not is_covered(rel, is_dir):

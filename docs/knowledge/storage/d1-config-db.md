@@ -5,8 +5,9 @@ description: "The tenant control-plane store: the native container reaches Cloud
 source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-config-do/src/lib.rs"
+  - "crates/corelink-config-do/src/types.rs"
   - "crates/corelink-container/src/storage/d1_http.rs"
-checkpoint_sha: "ad6768e80a6f7705a994fd2815a615198f19041c"
+checkpoint_sha: "175a91320376cd80ada9797944e118ec1ff81c63"
 provenance: "AUTHORED"
 tags: ["storage", "d1", "config-db", "control-plane", "tenant-isolation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -58,7 +59,8 @@ the [billing quota check](/flows/billing-quota-check.md).
 - The CF API bearer token is redacted in the client's manual `Debug` impl — a `{:?}` can never print it
   (`crates/corelink-container/src/storage/d1_http.rs:44-51`).
 - The config schema uses `#[serde(deny_unknown_fields)]`, so schema drift is a hard error, never a
-  silent default (`crates/corelink-config-do/src/lib.rs:9-12`).
+  silent default — the attribute sits on the `ConfigPayload` struct at
+  `crates/corelink-config-do/src/types.rs:34-35`.
 - A config CAS update with a stale `expected_version` is rejected with `VersionConflict` — no last-writer
   -wins clobber (`crates/corelink-config-do/src/lib.rs:42-49`).
 
@@ -74,7 +76,7 @@ the [billing quota check](/flows/billing-quota-check.md).
 3. `crates/corelink-container/src/customer_d1.rs:46-48` — fail-CLOSED on D1 transport error (→ 500, never fabricated data).
 4. `crates/corelink-container/src/customer_d1.rs:48-51` — parameterised, tenant-scoped SQL (`WHERE tenant_id = ?`).
 5. `crates/corelink-config-do/src/lib.rs:1-26` — per-region DO config singleton (schema-versioned payload, CAS update, 90d change log).
-6. `crates/corelink-config-do/src/lib.rs:9-12` — `deny_unknown_fields` schema-drift hard error.
+6. `crates/corelink-config-do/src/types.rs:34-35` — `#[serde(deny_unknown_fields)]` on the `ConfigPayload` struct (schema-drift hard error).
 7. `crates/corelink-config-do/src/lib.rs:42-49` — CAS `expected_version` → `VersionConflict`, DO-transactional.
 8. `crates/corelink-container/src/storage/d1_http.rs:1-23` — D1 reached via the CF REST query endpoint from the native container.
 9. `crates/corelink-container/src/storage/d1_http.rs:44-51` — CF API token redacted in the manual `Debug` impl.
