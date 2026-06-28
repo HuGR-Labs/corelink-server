@@ -17,7 +17,7 @@
 //! 4. Decrypt body with AES-256-GCM.
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{Aead, KeyInit, Payload},
     Aes256Gcm, Key, Nonce,
 };
 use getrandom::getrandom;
@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, warn};
 
 use super::{
+    context::CryptoContext,
     dek_cache::DekCache,
     types::{BYOKError, Dek, KmsKeyId, WrappedDek},
     KmsProvider,
@@ -57,13 +58,10 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
         }
     }
 
-    /// Encrypt `plaintext` for `(tenant_id, blob_hash)` under the customer CMK.
-    ///
-    /// # Security
-    ///
-    /// - Ephemeral DEK is generated fresh via CSPRNG for each call.
-    /// - Nonce is 96-bit random.
-    /// - AAD binding prevents cross-blob wrapped-DEK swap attacks.
+    /// Encrypt `plaintext` for `(tenant_id, blob_hash)` under the customer CMK
+    /// (Mode B — random DEK + random nonce). Thin back-compat wrapper over
+    /// [`EnvelopeEncryptor::encrypt_with_ctx`] using a default
+    /// [`CryptoContext`] (`CryptoContext::legacy`).
     pub async fn encrypt(
         &self,
         plaintext: &[u8],
@@ -71,34 +69,63 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
         tenant_id: &str,
         blob_hash: &str,
     ) -> Result<EncryptedBlob, BYOKError> {
+        let ctx = CryptoContext::legacy(tenant_id, blob_hash, key_id.as_str());
+        self.encrypt_with_ctx(plaintext, key_id, &ctx).await
+    }
+
+    /// Encrypt `plaintext` (Mode B — random DEK + random nonce) binding the
+    /// FULL [`CryptoContext`] into the body AEAD AAD.
+    ///
+    /// # Security
+    ///
+    /// - Ephemeral DEK is generated fresh via CSPRNG for each call.
+    /// - Nonce is 96-bit random.
+    /// - **[H-2]** the body AEAD binds `aad = JCS(ctx)` (NOT nonce-only), so a
+    ///   ciphertext cannot be relabelled / moved to a different context — any
+    ///   divergent field fails the decrypt tag check.
+    /// - The KMS `encryption_context` binds `{tenant_id, blob_hash}` so the
+    ///   wrapped DEK cannot be swapped cross-blob.
+    pub async fn encrypt_with_ctx(
+        &self,
+        plaintext: &[u8],
+        key_id: &KmsKeyId,
+        ctx: &CryptoContext,
+    ) -> Result<EncryptedBlob, BYOKError> {
         // Step 1: generate ephemeral DEK (CSPRNG; NOT deterministic).
         let dek = generate_dek()?;
 
-        // Step 2: AES-256-GCM encrypt body with random 96-bit nonce.
+        // Step 2: AES-256-GCM encrypt body, binding aad = JCS(ctx) [H-2].
         let nonce_bytes = generate_nonce()?;
         let nonce = Nonce::from_slice(&nonce_bytes);
+        let aad = ctx.to_jcs_bytes()?;
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek.bytes));
         let ciphertext = cipher
-            .encrypt(nonce, plaintext)
+            .encrypt(
+                nonce,
+                Payload {
+                    msg: plaintext,
+                    aad: &aad,
+                },
+            )
             .map_err(|e| BYOKError::AesGcm(e.to_string()))?;
 
-        // Step 3: build mandatory AAD.
-        let aad = build_aad(tenant_id, blob_hash);
-
-        // Step 4: wrap DEK via KMS.
+        // Step 3: wrap DEK via KMS with the string-map encryption_context.
+        let kms_aad = ctx.kms_encryption_context();
         let wrapped_dek = self
             .provider
-            .wrap_dek(&dek, key_id, Some(&aad))
+            .wrap_dek(&dek, key_id, Some(&kms_aad))
             .await
             .map_err(|e| {
                 error!(provider = ?key_id.provider, error = %e, "wrap_dek failed");
                 e
             })?;
 
+        // NOTE [H-4]: the plaintext digest (ctx.plaintext_digest) is content
+        // material and is intentionally NOT logged here.
         debug!(
             provider = ?key_id.provider,
-            tenant_id = tenant_id,
-            blob_hash = blob_hash,
+            tenant_id = %ctx.tenant_id,
+            namespace = %ctx.namespace,
             "envelope encrypt ok"
         );
 
@@ -109,19 +136,60 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
         })
     }
 
-    /// Decrypt an [`EncryptedBlob`] using the cached or freshly-unwrapped DEK.
-    ///
-    /// # Cache behaviour
-    ///
-    /// DEK is cached for up to 5 min (TTL hard).  On cache miss a KMS network
-    /// call is made (p99 ≤ 30 ms region-co-located).
+    /// Decrypt an [`EncryptedBlob`] for `(tenant_id, blob_hash)`. Thin
+    /// back-compat wrapper over [`EnvelopeEncryptor::decrypt_with_ctx`].
     pub async fn decrypt(
         &self,
         blob: &EncryptedBlob,
         tenant_id: &str,
         blob_hash: &str,
     ) -> Result<Vec<u8>, BYOKError> {
-        // Step 1: check DEK cache.
+        let ctx =
+            CryptoContext::legacy(tenant_id, blob_hash, blob.wrapped_dek.key_id.as_str());
+        self.decrypt_with_ctx(blob, &ctx).await
+    }
+
+    /// Decrypt an [`EncryptedBlob`] under an explicit [`CryptoContext`].
+    ///
+    /// # Cache behaviour & [H-1] fix
+    ///
+    /// The mandatory `encryption_context` presence + match check now runs
+    /// **before** the cache lookup, so it is enforced on BOTH the cache-HIT
+    /// and the cache-MISS arms (the pre-fix code skipped it on a hit). The
+    /// DEK is cached for up to 5 min (TTL hard); the cache key is bound to the
+    /// `(tenant, blob, context)` tuple so a poisoned context can never alias to
+    /// another blob's DEK.
+    ///
+    /// # M-1 (zeroize)
+    ///
+    /// The returned `Vec<u8>` is plaintext and CALLER-OWNED — the caller must
+    /// zeroize it after use. The internal DEK ([`Dek`]) is `ZeroizeOnDrop` and
+    /// is cleared when this function returns.
+    pub async fn decrypt_with_ctx(
+        &self,
+        blob: &EncryptedBlob,
+        ctx: &CryptoContext,
+    ) -> Result<Vec<u8>, BYOKError> {
+        // Step 1 [H-1]: validate the KMS encryption_context on EVERY path
+        // (before any cache lookup), failing closed on absence or mismatch.
+        let stored_aad = blob
+            .wrapped_dek
+            .encryption_context
+            .as_ref()
+            .ok_or_else(|| {
+                warn!("encryption_context missing on wrapped DEK — rejecting");
+                BYOKError::EncryptionContextMissing
+            })?;
+        let expected_aad = ctx.kms_encryption_context();
+        if stored_aad != &expected_aad {
+            warn!(
+                tenant_id = %ctx.tenant_id,
+                "AAD mismatch — cross-blob swap attempt rejected"
+            );
+            return Err(BYOKError::AadMismatch);
+        }
+
+        // Step 2: DEK cache (key is bound to the encryption_context).
         let dek = match self.dek_cache.get(&blob.wrapped_dek).await {
             Some(cached) => {
                 debug!(provider = ?blob.wrapped_dek.provider, "DEK cache hit");
@@ -129,32 +197,6 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
             }
             None => {
                 debug!(provider = ?blob.wrapped_dek.provider, "DEK cache miss — unwrapping via KMS");
-
-                // Validate AAD field present.
-                if blob.wrapped_dek.encryption_context.is_none() {
-                    warn!("encryption_context missing on wrapped DEK — rejecting");
-                    return Err(BYOKError::EncryptionContextMissing);
-                }
-
-                // Verify AAD matches expected tenant/blob binding.
-                let expected_aad = build_aad(tenant_id, blob_hash);
-                let stored_aad = match blob.wrapped_dek.encryption_context.as_ref() {
-                    Some(v) => v,
-                    None => {
-                        warn!("encryption_context None after presence check — logic error");
-                        return Err(BYOKError::EncryptionContextMissing);
-                    }
-                };
-                if stored_aad != &expected_aad {
-                    warn!(
-                        tenant_id = tenant_id,
-                        blob_hash = blob_hash,
-                        "AAD mismatch — cross-blob swap attempt rejected"
-                    );
-                    return Err(BYOKError::AadMismatch);
-                }
-
-                // Step 2: KMS unwrap.
                 let fresh_dek = self
                     .provider
                     .unwrap_dek(&blob.wrapped_dek)
@@ -163,22 +205,30 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
                         error!(provider = ?blob.wrapped_dek.provider, error = %e, "unwrap_dek failed");
                         e
                     })?;
-
-                // Step 3: cache for TTL window.
-                let dek_for_cache = Dek {
-                    bytes: fresh_dek.bytes,
-                };
-                self.dek_cache.put(&blob.wrapped_dek, dek_for_cache).await?;
-
+                self.dek_cache
+                    .put(
+                        &blob.wrapped_dek,
+                        Dek {
+                            bytes: fresh_dek.bytes,
+                        },
+                    )
+                    .await?;
                 fresh_dek
             }
         };
 
-        // Step 4: AES-256-GCM decrypt.
+        // Step 3 [H-2]: AES-256-GCM decrypt with aad = JCS(ctx).
         let nonce = Nonce::from_slice(&blob.nonce);
+        let aad = ctx.to_jcs_bytes()?;
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek.bytes));
         let plaintext = cipher
-            .decrypt(nonce, blob.ciphertext.as_ref())
+            .decrypt(
+                nonce,
+                Payload {
+                    msg: blob.ciphertext.as_ref(),
+                    aad: &aad,
+                },
+            )
             .map_err(|e| {
                 error!(error = %e, "AES-GCM decrypt failed");
                 BYOKError::AesGcm(e.to_string())
@@ -186,8 +236,8 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
 
         debug!(
             provider = ?blob.wrapped_dek.provider,
-            tenant_id = tenant_id,
-            blob_hash = blob_hash,
+            tenant_id = %ctx.tenant_id,
+            namespace = %ctx.namespace,
             "envelope decrypt ok"
         );
 
@@ -209,14 +259,6 @@ fn generate_nonce() -> Result<[u8; 12], BYOKError> {
     let mut nonce = [0u8; 12];
     getrandom(&mut nonce).map_err(|e| BYOKError::EnvelopeError(format!("getrandom nonce: {e}")))?;
     Ok(nonce)
-}
-
-/// Build the mandatory AAD `{"tenant_id": "...", "blob_hash": "..."}`.
-fn build_aad(tenant_id: &str, blob_hash: &str) -> serde_json::Value {
-    serde_json::json!({
-        "tenant_id": tenant_id,
-        "blob_hash": blob_hash,
-    })
 }
 
 #[cfg(test)]
@@ -348,6 +390,163 @@ mod tests {
             "expected AadMismatch, got {:?}",
             result
         );
+    }
+
+    // ── Counting provider: distinguishes a cache HIT from a MISS ──────────
+
+    struct CountingKmsProvider {
+        unwraps: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl KmsProvider for CountingKmsProvider {
+        fn provider_kind(&self) -> KmsProviderKind {
+            KmsProviderKind::AwsKms
+        }
+        fn region(&self) -> &str {
+            "us-east-1"
+        }
+        fn fips_level(&self) -> crate::types::FipsLevel {
+            crate::types::FipsLevel::Fips140_3_L1
+        }
+        async fn wrap_dek(
+            &self,
+            dek: &Dek,
+            key_id: &KmsKeyId,
+            encryption_context: Option<&serde_json::Value>,
+        ) -> Result<WrappedDek, BYOKError> {
+            Ok(WrappedDek {
+                provider: KmsProviderKind::AwsKms,
+                key_id: key_id.clone(),
+                ciphertext: dek.bytes.to_vec(),
+                encryption_context: encryption_context.cloned(),
+            })
+        }
+        async fn unwrap_dek(&self, wrapped: &WrappedDek) -> Result<Dek, BYOKError> {
+            self.unwraps
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if wrapped.ciphertext.len() != 32 {
+                return Err(BYOKError::DekLengthInvalid {
+                    got: wrapped.ciphertext.len(),
+                });
+            }
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(&wrapped.ciphertext);
+            Ok(Dek { bytes })
+        }
+        async fn check_access(&self, _key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
+            Ok(KmsAccessStatus::Ok)
+        }
+    }
+
+    fn make_ctx(tenant: &str, digest: &str) -> CryptoContext {
+        use super::super::context::{CryptoAlgo, CryptoMode};
+        CryptoContext::new_single_shot(
+            tenant,
+            digest,
+            CryptoAlgo::Aes256Gcm,
+            "ns",
+            CryptoMode::Random,
+            "cas",
+            "arn:aws:kms:us-east-1:123456789012:key/test-cmk",
+            32,
+        )
+    }
+
+    #[tokio::test]
+    async fn test_body_aad_binding_rejects_tampered_nonctx_field() {
+        // [H-2] A field NOT in the KMS encryption_context (namespace) is bound
+        // only by the BODY AEAD. Tampering it must fail the decrypt tag check.
+        let cache = DekCache::new(300).unwrap();
+        let enc = EnvelopeEncryptor::new(StubKmsProvider, cache);
+        let key_id = make_key_id();
+        let ctx_a = make_ctx("tenant_a", "sha256:abc");
+
+        let blob = enc
+            .encrypt_with_ctx(b"top secret", &key_id, &ctx_a)
+            .await
+            .unwrap();
+
+        // Each of these differs from ctx_a in exactly one body-only field.
+        let mut variants = Vec::new();
+        let mut v = ctx_a.clone();
+        v.namespace = "evil".into();
+        variants.push(v);
+        let mut v = ctx_a.clone();
+        v.version = 2;
+        variants.push(v);
+        let mut v = ctx_a.clone();
+        v.surface = "ac".into();
+        variants.push(v);
+        let mut v = ctx_a.clone();
+        v.mode = super::super::context::CryptoMode::Convergent;
+        variants.push(v);
+        let mut v = ctx_a.clone();
+        v.key_id = "arn:aws:kms:us-east-1:123456789012:key/other".into();
+        variants.push(v);
+
+        for bad in variants {
+            let r = enc.decrypt_with_ctx(&blob, &bad).await;
+            assert!(
+                matches!(r, Err(BYOKError::AesGcm(_))),
+                "tampered body-AAD field must fail closed, got {:?}",
+                r
+            );
+        }
+
+        // tenant / digest live in the KMS context → caught earlier as AadMismatch.
+        let mut bad_tenant = ctx_a.clone();
+        bad_tenant.tenant_id = "tenant_b".into();
+        assert!(matches!(
+            enc.decrypt_with_ctx(&blob, &bad_tenant).await,
+            Err(BYOKError::AadMismatch)
+        ));
+        let mut bad_digest = ctx_a.clone();
+        bad_digest.plaintext_digest = "sha256:zzz".into();
+        assert!(matches!(
+            enc.decrypt_with_ctx(&blob, &bad_digest).await,
+            Err(BYOKError::AadMismatch)
+        ));
+
+        // The correct context still round-trips.
+        assert_eq!(
+            enc.decrypt_with_ctx(&blob, &ctx_a).await.unwrap(),
+            b"top secret"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cache_hit_same_dek_and_enforces_context() {
+        // [H-1] Second decrypt is a HIT (no extra unwrap) and returns the same
+        // plaintext; a poisoned context fails closed regardless of cache state.
+        let unwraps = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let cache = DekCache::new(300).unwrap();
+        let enc = EnvelopeEncryptor::new(
+            CountingKmsProvider {
+                unwraps: std::sync::Arc::clone(&unwraps),
+            },
+            cache,
+        );
+        let key_id = make_key_id();
+        let ctx = make_ctx("tenant_cache", "sha256:hit");
+
+        let blob = enc.encrypt_with_ctx(b"cache me", &key_id, &ctx).await.unwrap();
+
+        let first = enc.decrypt_with_ctx(&blob, &ctx).await.unwrap();
+        assert_eq!(unwraps.load(std::sync::atomic::Ordering::SeqCst), 1, "miss");
+        let second = enc.decrypt_with_ctx(&blob, &ctx).await.unwrap();
+        assert_eq!(
+            unwraps.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "second decrypt must hit cache (no extra unwrap)"
+        );
+        assert_eq!(first, second);
+        assert_eq!(first, b"cache me");
+
+        // Poisoned context after the cache is warm → still fails closed.
+        let mut poisoned = ctx.clone();
+        poisoned.namespace = "poison".into();
+        assert!(enc.decrypt_with_ctx(&blob, &poisoned).await.is_err());
     }
 
     #[tokio::test]

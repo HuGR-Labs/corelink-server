@@ -40,14 +40,21 @@
 //! umbrella's `lib.rs` (inner attributes on a non-root module are
 //! illegal). All other behaviour is unchanged.
 
+pub mod context;
+pub mod convergent;
 pub mod dek_cache;
 pub mod envelope;
 pub mod types;
 
+pub use context::{CryptoAlgo, CryptoContext, CryptoMode, CRYPTO_CONTEXT_VERSION};
+pub use convergent::{
+    decrypt_convergent, derive_dek_convergent, derive_nonce_convergent, encrypt_convergent,
+    ConvergentBlob,
+};
 pub use dek_cache::DekCache;
 pub use envelope::EnvelopeEncryptor;
 pub use types::{
-    BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek,
+    BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, Tcs, WrappedDek,
 };
 
 use async_trait::async_trait;

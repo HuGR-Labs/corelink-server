@@ -131,7 +131,7 @@ mod native {
     };
     use async_trait::async_trait;
     use aws_sdk_kms::{
-        config::{Builder as KmsConfigBuilder, Region},
+        config::{BehaviorVersion, Builder as KmsConfigBuilder, Credentials, Region},
         primitives::Blob,
         Client,
     };
@@ -181,24 +181,80 @@ mod native {
         /// callers should always use [`AwsKmsRealProvider::new`]; this is
         /// exposed only for the matrix test that exercises both endpoint
         /// shapes.
+        ///
+        /// # [C4] No `aws_config::from_env().load()` — cold-start fix
+        ///
+        /// `aws_config::from_env()...load()` triggers the AWS
+        /// credential-provider chain (IMDS / ECS / STS), which performs
+        /// blocking outbound metadata probes. In CF Containers there is no
+        /// IMDS endpoint, so each probe runs to its full retry budget —
+        /// observed 60-90s cold-start hang (the exact pattern banned in
+        /// `corelink-container/src/storage/r2_s3.rs:101`). This mirrors that
+        /// adapter: EXPLICIT static credentials + an EXPLICIT FIPS endpoint
+        /// URL + an EXPLICIT region, bypassing the auto-detection path
+        /// entirely (zero I/O at construction; no provider chain).
+        ///
+        /// Credentials are read from BYOK-KMS-specific env vars, falling back
+        /// to the standard AWS env vars the S3 adapter uses:
+        ///
+        /// | role     | BYOK-specific                         | fallback                |
+        /// |----------|---------------------------------------|-------------------------|
+        /// | access   | `CORELINK_BYOK_KMS_ACCESS_KEY_ID`     | `AWS_ACCESS_KEY_ID`     |
+        /// | secret   | `CORELINK_BYOK_KMS_SECRET_ACCESS_KEY` | `AWS_SECRET_ACCESS_KEY` |
+        /// | session  | `CORELINK_BYOK_KMS_SESSION_TOKEN`     | `AWS_SESSION_TOKEN`     |
+        ///
+        /// # Errors
+        ///
+        /// [`BYOKError::Provider`] if the access-key / secret-key env vars are
+        /// not set.
         pub async fn with_fips(region: &str, fips: bool) -> Result<Self, BYOKError> {
-            let mut loader = aws_config::from_env().region(Region::new(region.to_string()));
-            if fips {
-                loader = loader.use_fips(true);
-            }
-            let shared = loader.load().await;
+            let access_key =
+                read_env_fallback("CORELINK_BYOK_KMS_ACCESS_KEY_ID", "AWS_ACCESS_KEY_ID")
+                    .ok_or_else(|| {
+                        BYOKError::Provider(
+                            "BYOK KMS credentials missing: set \
+                             CORELINK_BYOK_KMS_ACCESS_KEY_ID (or AWS_ACCESS_KEY_ID)"
+                                .to_string(),
+                        )
+                    })?;
+            let secret_key =
+                read_env_fallback("CORELINK_BYOK_KMS_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY")
+                    .ok_or_else(|| {
+                        BYOKError::Provider(
+                            "BYOK KMS credentials missing: set \
+                             CORELINK_BYOK_KMS_SECRET_ACCESS_KEY (or AWS_SECRET_ACCESS_KEY)"
+                                .to_string(),
+                        )
+                    })?;
+            let session_token =
+                read_env_fallback("CORELINK_BYOK_KMS_SESSION_TOKEN", "AWS_SESSION_TOKEN");
 
-            let mut svc_cfg = KmsConfigBuilder::from(&shared);
-            if fips {
-                svc_cfg = svc_cfg.use_fips(true);
-            }
-            let client = Client::from_conf(svc_cfg.build());
+            let credentials = Credentials::new(
+                access_key,
+                secret_key,
+                session_token,
+                None, // expiry
+                "corelink-byok-kms",
+            );
+
+            // Explicit FIPS (or standard) endpoint URL — no endpoint
+            // auto-resolution, no IMDS probe.
+            let endpoint_host = resolve_endpoint_hostname(region, fips);
+            let endpoint_url = format!("https://{endpoint_host}");
+
+            let svc_cfg = KmsConfigBuilder::default()
+                .behavior_version(BehaviorVersion::latest())
+                .region(Region::new(region.to_string()))
+                .endpoint_url(&endpoint_url)
+                .credentials_provider(credentials)
+                .build();
+            let client = Client::from_conf(svc_cfg);
 
             Ok(Self {
                 client,
                 region: region.to_string(),
                 fips_endpoint: fips,
-                resolved_fips_endpoint: resolve_endpoint_hostname(region, fips),
+                resolved_fips_endpoint: endpoint_host,
                 mock_mode: false,
             })
         }
@@ -374,6 +430,19 @@ mod native {
         pub async fn describe_key(&self, key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
             self.check_access(key_id).await
         }
+    }
+
+    /// Read `primary` from the environment, falling back to `fallback`.
+    /// Empty values are treated as unset. Returns `None` if neither is set.
+    fn read_env_fallback(primary: &str, fallback: &str) -> Option<String> {
+        for name in [primary, fallback] {
+            if let Ok(v) = std::env::var(name) {
+                if !v.is_empty() {
+                    return Some(v);
+                }
+            }
+        }
+        None
     }
 
     /// Map a stringified AWS SDK error into a [`BYOKError`] variant, emitting

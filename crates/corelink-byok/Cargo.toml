@@ -93,6 +93,13 @@ lru = { workspace = true }
 # wasm32 so AAD-bound ciphertext can be verified anywhere.
 serde_jcs = { workspace = true }
 
+# HKDF-SHA256 — convergent (Mode A) DEK + nonce derivation from the
+# per-tenant Tenant Convergence Secret (TCS). `sha2` is also used for
+# the DEK-cache enc-context hash. Both are pure-Rust and compile to
+# wasm32; the convergence layer must derive identically across targets.
+hkdf = { workspace = true }
+sha2 = { workspace = true }
+
 # Base64 — Azure RSA-OAEP wrapped-key body + Vault transit context.
 base64 = { workspace = true }
 
