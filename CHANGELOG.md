@@ -38,6 +38,20 @@ Each entry cross-references:
   `QuotaStore::check_and_accrue`'s default impl is now fail-closed (a future non-D1 backend that forgets to
   override can't silently over-admit past the $-ceiling; the in-memory store got an explicit atomic override).
 
+- **OKF architecture wiki — SOTA rebuild + 10-lens audit + reconcile to current main (#540).** Rebuilt
+  `docs/knowledge/` on current `main` to **157 code-grounded concepts** (was 146), gate-hardened
+  `validate_okf.py` v5→v12 (wrangler `main` env/array/alt-config coverage; file-granular strict trees;
+  substantive-cite). A final audit using 10 lenses the prior convergence rounds could not apply
+  (cross-concept contradiction, code-first/negative-space, completeness, numeric, would-mislead,
+  stale-phase-via-git, wiki-vs-spec, security-invariant falsification, meta-re-audit) found + fixed ~6
+  reader-facing material errors (the container 2nd-live-Stripe-webhook truth, the 5↔6 tier-taxonomy split,
+  the leased-not-exact `$`-ceiling, the consent-purpose enum, OCI-reads-now-metered, the edge D1-fault→503).
+  Authored 5 dedicated concepts for load-bearing subsystems the breadth-clusters only name-dropped
+  (replication-failover, observability-plane, sre-operations-hub, handler-trait-seam, billing-pipeline) —
+  each verified material-clean. Merged current `main` (202d597d) + reconciled 19 C5 code-movement stales +
+  2 C10b new-file gaps, updating claims where `main` changed behavior. Code findings (a HIGH/GDPR DSR
+  erase-set gap + 3 LOW) handed to the repo TL in `docs/handoff/2026-06-28-okf-final-audit-code-findings.md`
+  (the wiki makes no code changes). Gate green: 157 concepts, 0 stale / 0 drift; 55/55 fixtures.
 - **Brutal-audit round-3 remediation (economic / residency / time / migration lenses).** (H1) Region-table
   DRIFT closed + the `sam` residency trap removed: the provisionable-macro set is now a single source of
   truth `{wnam,enam,weur}` across worker + container + signup-worker (was a 4-set incl. `sam` in worker/

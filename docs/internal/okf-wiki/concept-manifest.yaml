@@ -9,9 +9,13 @@
 # THIS FILE IS THE C10 / C10b ORACLE (01-okf-corelink-profile.contract.md §4):
 #   - C10  : every candidate with status: active has a concept doc OR a deferred: marker.
 #   - C10b : the manifest itself is cross-checked against the mechanically-enumerable
-#            repo surface — every specs/03_architecture/adrs/*.md (76), every
-#            crates/corelink-container/src/routes/*.rs (27), and every crates/* dir (73)
-#            maps to a candidate (via id/seed_from) OR an explicit excludes: entry.
+#            repo surface — every specs/03_architecture/adrs/*.md, every
+#            crates/corelink-container/src/routes/*.rs, every crates/* dir, AND the
+#            Worker EDGE PLANE + apps/ workers (BR5 root fix): worker/src/*.ts,
+#            worker/src/lib/*.ts, apps/{signup,cas,analytics}-worker/src/**/*.ts, and
+#            apps/migrate-single-to-multi-region/src/main.rs — each maps to a candidate
+#            (via id/seed_from) OR an explicit excludes: entry. A future load-bearing
+#            edge file with no concept therefore REDs the gate (no silent edge gaps).
 #
 # Transcribed from a frozen contract (W-MANIFEST). Agents do not design or deviate.
 # ============================================================================
@@ -23,18 +27,97 @@ okf_base: "0.1"
 excludes:
   - surface: "apps/get-corelink-worker"
     reason: "Install-script worker (apps/, not crates/); operational glue, no cross-crate architecture narrative; covered transitively by planes/worker-edge."
-  - surface: "apps/signup-worker"
-    reason: "Live Clerk->Svix signup worker (apps/); its flow is documented by launch/signup-onboarding; not a crates/ enumerable item."
-  - surface: "apps/analytics-worker"
-    reason: "Analytics ingestion worker (apps/); covered by ops/audit-analytics-plane; not a crates/ enumerable item."
   - surface: "apps/admin-ui"
-    reason: "Next.js admin SPA (apps/); UI, outside the narrative/architecture-above-rustdoc scope (D7)."
+    reason: "Next.js admin SPA (apps/); UI, covered at app-level only — outside the narrative/architecture-above-rustdoc scope (D7)."
+  - surface: "apps/docs"
+    reason: "Docusaurus 3 public documentation SITE (apps/docs/, corelink-docs.humangr.com); presentation/content app (pages/components/pricing-calculator/sdk-guides), not a request-reachable enforcer — covered at app-level only, same class as apps/admin-ui, outside the architecture-narrative scope (D7)."
   - surface: "tests/e2e-user-journeys"
     reason: "Black-box e2e harness (tests/, excluded from cargo-mutants per 2f82a2a3); test-only, no architecture concept."
   - surface: "docs/knowledge/index.md"
     reason: "OKF reserved file (machine-generated listing) — never a concept doc (contract C9)."
   - surface: "docs/knowledge/log.md"
     reason: "OKF reserved file (machine-appended history) — never a concept doc (contract C9)."
+  # ---- EDGE-PLANE / apps file-granular exempts (BR5; glob-matched) ----
+  # signup-worker + analytics-worker are now gated FILE-GRANULAR (their load-bearing
+  # files seed the edge concepts below); only the genuinely concept-exempt files
+  # (types / config / test / UI / data / boilerplate) are excluded here.
+  - surface: "**/*.d.ts"
+    reason: "Ambient TypeScript type declarations — no runtime behavior, no architecture narrative."
+  - surface: "**/*.test.ts"
+    reason: "Unit/integration test files — test-only, not a load-bearing subsystem."
+  - surface: "**/__tests__/**"
+    reason: "Test directories — test-only."
+  - surface: "**/e2e/**"
+    reason: "End-to-end test fixtures — test-only."
+  - surface: "**/tests/**"
+    reason: "Test directories — test-only."
+  - surface: "**/*.config.ts"
+    reason: "Build/tooling config (vitest/eslint/etc.) — operational config, no architecture concept."
+  - surface: "**/wrangler.toml"
+    reason: "Cloudflare deployment manifest — declarative config, not a narrative subsystem."
+  - surface: "worker/src/region-map.ts"
+    reason: "Pure colo->region lookup data table (static map) — data, no architecture narrative."
+  - surface: "apps/*/src/types/**"
+    reason: "Per-app shared type/binding declarations — types, no runtime behavior."
+  - surface: "apps/analytics-worker/src/types.ts"
+    reason: "Pure TS type/binding declarations (Env interface mirroring wrangler bindings) — types, no architecture narrative."
+  - surface: "**/i18n/**"
+    reason: "Localization message catalogs — UI data, no architecture concept."
+  - surface: "**/content/**"
+    reason: "Static content assets — data, no architecture concept."
+  - surface: "**/package.json"
+    reason: "npm manifest — declarative dependency/config metadata."
+  - surface: "**/tsconfig.json"
+    reason: "TypeScript compiler config — tooling config, no architecture concept."
+  # ---- App-internal glue helpers (C10b file-granular) ----
+  # gate v5 (audit #3 HIGH #5) UNDID the v4 massaging: three of these apps/ FILE
+  # surfaces were LOAD-BEARING enforcers wrongly labeled "plumbing" and are now
+  # AUTHORED (declared+cited in a concept's source_files), NOT excluded:
+  #   - apps/signup-worker/src/lib/erase-auth-key.ts  -> compliance/dsr-edge-crons
+  #     (the per-consumer erase-auth-key split, resolveEraseAuthKey);
+  #   - apps/signup-worker/src/lib/d1.ts              -> flows/signup-auto-provision
+  #     (tenant_state='active' provision, PAT shown_once_consumed, email_hash seat
+  #      isolation);
+  #   - apps/signup-worker/src/lib/clerk-metadata.ts  -> flows/signup-auto-provision
+  #     (public-vs-private metadata secret-classification boundary);
+  #   - apps/analytics-worker/src/ingest.ts           -> ops/audit-analytics-plane
+  #     (the edge ingest privacy gate forbidding email/IP + constant-time key auth).
+  # The remainder below are GENUINELY-trivial app-internal glue (thin typed HTTP
+  # clients, router wiring, request-tap middleware, a static security-header bag):
+  # no standalone enforcement, narrated by an already-existing parent concept.
+  # Excluded with reason (the sanctioned alternative to a per-file cite) rather
+  # than left as a silent gap. Each was re-examined in gate v5; corelink-internal.ts
+  # and security-headers.ts re-confirmed trivial (a mint-proxy that defers all
+  # enforcement to the container; a static header table).
+  - surface: "apps/signup-worker/src/lib/analytics-server.ts"
+    reason: "Server-side analytics emit helper (signup-worker lib glue) — plumbing under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/signup-worker/src/lib/corelink-internal.ts"
+    reason: "Thin typed HTTP client for the container's /_internal/pat/mint (signup-worker lib glue) — it only forwards the shared internal-auth secret; ALL mint enforcement (HMAC, Argon2id, scope, D1 write) lives in the container (auth/* concepts). Re-examined gate v5: genuinely trivial, no standalone enforcement."
+  - surface: "apps/cas-worker/src/middleware/analytics.ts"
+    reason: "CAS-worker analytics middleware (request-tap glue) — plumbing under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/analytics-worker/src/cron/weekly-email.ts"
+    reason: "Weekly-email cron handler (analytics-worker) — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/analytics-worker/src/index.ts"
+    reason: "analytics-worker entrypoint/router wiring — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/analytics-worker/src/security-headers.ts"
+    reason: "analytics-worker security-header middleware (mirror of signup-worker's, which security/posture-overview cites) — a static header bag + merge helper, no standalone enforcement. Re-examined gate v5: genuinely trivial/declarative."
+  # ---- Container route-subdir test modules (C10b is now RECURSIVE over routes/) ----
+  # The recursive routes/**/*.rs enumeration surfaces the route subdirs' inline test
+  # modules. These are test-only (genuine non-handlers); the REAL handlers in the same
+  # subdirs are covered by their parent concept's seed_from (compliance/dsr-erasure,
+  # ops/audit-analytics-plane).
+  - surface: "crates/corelink-container/src/routes/**/tests_*.rs"
+    reason: "Inline test modules under a route subdir (audit_export/audit_analytics) — test-only, not a load-bearing handler. ANTI-SHADOW (fix #5): the `tests_` BASENAME PREFIX is, by repo convention, exclusive to inline-test modules — no production route handler is named `tests_*.rs` (handlers are `<noun>.rs` / `handler*.rs`), AND `_is_test_cite` independently classifies the same prefix as test, so this exclude cannot hide a real handler. Accepted residual: a future handler deliberately misnamed `tests_foo.rs` would be masked — caught by review (the same place a handler hidden in a test file is caught) and by the convention that handlers are never `tests_`-prefixed."
+  # ---- Container src file-granular trivial wiring (gate v6 fix #1) ----
+  # gate v6 made the container src tree FILE-GRANULAR-STRICT: directory/cluster
+  # adoption (the whole-crate `crates/corelink-container` seed) no longer auto-covers
+  # an individual .rs, so each file is now covered by a per-file cite OR an honest
+  # exclude. These two are GENUINELY-trivial non-handlers (crate-root module wiring /
+  # a pure type+constant carrier) — the sanctioned alternative to a per-file cite.
+  - surface: "crates/corelink-container/src/lib.rs"
+    reason: "Crate-root library wiring (`pub mod` declarations + the INV-pin doc map) — no runtime enforcement of its own; every module it declares is grounded by its owning concept (auth/*, storage/*, surfaces/*, tenancy/*). mod.rs/lib.rs wiring, not a request-reachable handler."
+  - surface: "crates/corelink-container/src/routes/audit_analytics/types.rs"
+    reason: "Pure type + constant carrier for the audit-analytics routes (route-path consts, the audit-row data shape, query/response structs) — declarations only, no enforcement (parallel to the `apps/*/src/types/**` and `analytics-worker/src/types.ts` type-declaration excludes). The behaviour these types serve is grounded in the handler files of ops/audit-analytics-plane."
 
 candidates:
   # ---- ARCHITECTURE (38) ----
@@ -49,13 +132,13 @@ candidates:
     title: "Durable Object lifecycle (CoreLinkServer)"
     status: "active"
     source_cluster: "planes"
-    seed_from: ["worker/src/durable_object.ts"]
+    seed_from: ["worker/src/durable_object.ts", "worker/src/event_log_do.ts", "worker/src/rollout_controller.ts"]
   - id: "planes/container"
     type: "Plane"
     title: "Rust container compute plane"
     status: "active"
     source_cluster: "planes"
-    seed_from: ["crates/corelink-container/src/main.rs", "crates/corelink-container/src/routes.rs"]
+    seed_from: ["crates/corelink-container/src/main.rs", "crates/corelink-container/src/routes.rs", "crates/corelink-container/src/lib.rs", "crates/corelink-container/src/storage/r2_kv.rs"]
   - id: "planes/request-flow"
     type: "Plane"
     title: "Worker -> DO -> Container request flow"
@@ -97,13 +180,13 @@ candidates:
     title: "_public package-manager surfaces (npm/pip/brew/oci)"
     status: "active"
     source_cluster: "surfaces"
-    seed_from: ["crates/corelink-container/src/routes/npm.rs", "crates/corelink-container/src/routes/pip.rs", "crates/corelink-container/src/routes/brew.rs", "crates/corelink-container/src/routes/oci.rs"]
+    seed_from: ["crates/corelink-container/src/routes/npm.rs", "crates/corelink-container/src/routes/pip.rs", "crates/corelink-container/src/routes/brew.rs", "crates/corelink-container/src/routes/oci.rs", "crates/corelink-container/src/oci_cap.rs"]
   - id: "auth/pat-moat"
     type: "AuthMechanism"
     title: "2-level PAT moat (PatVerifier)"
     status: "active"
     source_cluster: "auth"
-    seed_from: ["crates/corelink-container/src/adapter_pat.rs"]
+    seed_from: ["crates/corelink-container/src/adapter_pat.rs", "worker/src/lib/internal_auth.ts"]
   - id: "auth/hmac-fast-reject"
     type: "AuthMechanism"
     title: "Native HMAC fast-reject PAT gate"
@@ -133,7 +216,7 @@ candidates:
     title: "R2 CAS bucket topology"
     status: "active"
     source_cluster: "storage"
-    seed_from: ["crates/corelink-container/src/storage.rs"]
+    seed_from: ["crates/corelink-container/src/storage.rs", "crates/corelink-container/src/storage/r2_s3.rs"]
   - id: "storage/r2-ac-regional"
     type: "StorageComponent"
     title: "R2 AC x5 regional buckets"
@@ -151,7 +234,7 @@ candidates:
     title: "D1 CONFIG_DB"
     status: "active"
     source_cluster: "storage"
-    seed_from: ["crates/corelink-config-do", "crates/corelink-container/src/customer_d1.rs"]
+    seed_from: ["crates/corelink-config-do", "crates/corelink-container/src/customer_d1.rs", "crates/corelink-container/src/storage/d1_http.rs"]
   - id: "storage/cas-hot-path-latency"
     type: "StorageComponent"
     title: "CAS hot-path D1-over-HTTP latency"
@@ -163,7 +246,7 @@ candidates:
     title: "BYOK envelope encryption at rest"
     status: "active"
     source_cluster: "storage"
-    seed_from: ["crates/corelink-container/src/byok.rs", "crates/corelink-byok"]
+    seed_from: ["crates/corelink-container/src/byok.rs", "crates/corelink-byok", "crates/corelink-container/src/byok_orchestrator.rs"]
   - id: "tenancy/isolation"
     type: "TenancyControl"
     title: "Tenant isolation via idFromName(tenant_id)"
@@ -265,7 +348,78 @@ candidates:
     title: "Container/platform crate cluster"
     status: "active"
     source_cluster: "crates"
-    seed_from: ["crates/corelink-container", "crates/corelink-config-do", "crates/corelink-cf-bindings", "crates/corelink-meta", "crates/corelink-handler-admin", "crates/corelink-handler-customer", "crates/corelink-worker", "crates/corelink-wasm", "crates/tenant-path"]
+    seed_from: ["crates/corelink-container", "crates/corelink-config-do", "crates/corelink-cf-bindings", "crates/corelink-meta", "crates/corelink-handler-admin", "crates/corelink-handler-customer", "crates/corelink-worker", "crates/corelink-wasm", "crates/tenant-path", "crates/corelink-container/src/adapter_cache.rs", "crates/corelink-container/src/adapter_kv.rs", "crates/corelink-container/src/adapter_oci_kv.rs", "crates/corelink-container/src/neon_shadow_factory.rs", "crates/corelink-container/src/wall_clock.rs", "crates/corelink-container/src/webhook.rs"]
+  # ---- Dedicated deep-dive concepts for load-bearing subsystems the breadth
+  #      clusters above only NAME-DROP (final-audit LENS-4 completeness gaps,
+  #      2026-06-28). These crates remain in their cluster's seed_from for breadth;
+  #      these candidates add the file-granular narrative the clusters lack. ----
+  - id: "planes/replication-failover"
+    type: "CrateCluster"
+    title: "Multi-region replication + failover plane"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-replication", "crates/corelink-replication-coordinator", "crates/corelink-replica-worker", "crates/corelink-failover-router"]
+  - id: "ops/observability-plane"
+    type: "CrateCluster"
+    title: "Observability plane (telemetry / tracing / SLO)"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-telemetry", "crates/corelink-tracing", "crates/corelink-slo"]
+  - id: "ops/sre-operations-hub"
+    type: "CrateCluster"
+    title: "SRE operations hub (corelink-ops + satellites)"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-ops", "crates/corelink-chaos-scheduler", "crates/corelink-rotation-adapters", "crates/corelink-dt-webhook", "crates/corelink-terraform-drift-consumer", "crates/corelink-runbook-tracker", "crates/corelink-statuspage-real", "crates/corelink-slack-real", "crates/corelink-dsr-statuspage-scheduler"]
+  - id: "crates/handler-trait-seam"
+    type: "CrateCluster"
+    title: "Handler-trait seam (CAS/AC/customer/erase/admin)"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-handler-cas", "crates/corelink-handler-ac", "crates/corelink-handler-customer", "crates/corelink-handler-cas-erase", "crates/corelink-handler-admin"]
+  - id: "crates/billing-pipeline"
+    type: "CrateCluster"
+    title: "Billing usage→charge pipeline (emit/reconcile/aggregate/materialize + stripe-real egress)"
+    status: "active"
+    source_cluster: "crates"
+    seed_from: ["crates/corelink-billing-emit", "crates/corelink-billing-reconcile", "crates/corelink-billing-aggregator", "crates/corelink-billing-stripe-materializer", "crates/corelink-stripe-real", "crates/corelink-analytics"]
+  # ---- WORKER EDGE PLANE / apps (6; BR5 root fix — file-granular edge coverage) ----
+  - id: "auth/edge-pat-mint-lifecycle"
+    type: "AuthFlow"
+    title: "The edge PAT-mint lifecycle (one authority, three consumers)"
+    status: "active"
+    source_cluster: "auth"
+    seed_from: ["worker/src/lib/session_exchange.ts", "worker/src/lib/runner_mint.ts", "worker/src/lib/auth_rotate.ts"]
+  - id: "auth/edge-identity-resolution"
+    type: "AuthMechanism"
+    title: "Edge identity resolution (Clerk session -> tenant)"
+    status: "active"
+    source_cluster: "auth"
+    seed_from: ["worker/src/lib/clerk_auth.ts", "worker/src/lib/tenant_lookup.ts"]
+  - id: "launch/edge-quota-tier-serving"
+    type: "BillingControl"
+    title: "Edge quota & tier serving"
+    status: "active"
+    source_cluster: "docs/launch"
+    seed_from: ["worker/src/lib/quota.ts"]
+  - id: "launch/stripe-activation-webhook"
+    type: "BillingControl"
+    title: "Stripe activation webhook — the money-path activation half"
+    status: "active"
+    source_cluster: "docs/launch"
+    seed_from: ["apps/signup-worker/src/webhooks/stripe.ts"]
+  - id: "compliance/dsr-edge-crons"
+    type: "ComplianceControl"
+    title: "DSR edge crons + erasure-queue consumer"
+    status: "active"
+    source_cluster: "docs/compliance"
+    seed_from: ["apps/signup-worker/src/webhooks/dsr_consumer.ts", "apps/signup-worker/src/webhooks/dsr_verify_cron.ts", "apps/signup-worker/src/webhooks/pat_scrub_cron.ts", "apps/signup-worker/src/lib/erase-auth-key.ts", "apps/signup-worker/src/index.ts"]
+  - id: "flows/signup-auto-provision"
+    type: "Flow"
+    title: "Signup auto-provision + account-deletion erasure (Clerk webhook)"
+    status: "active"
+    source_cluster: "flows"
+    seed_from: ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/index.ts", "apps/signup-worker/src/lib/clerk-metadata.ts", "apps/signup-worker/src/lib/corelink-internal.ts", "apps/signup-worker/src/lib/d1.ts"]
   # ---- ADR re-index (76) ----
   - id: "adr/adr-0012-ff-hr-011-gc-reachability"
     type: "ADR"
@@ -626,7 +780,7 @@ candidates:
     title: "ADR S14 001 multi region terraform module"
     status: "active"
     source_cluster: "adr"
-    seed_from: ["specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md"]
+    seed_from: ["specs/03_architecture/adrs/ADR-S14-001-multi-region-terraform-module.md", "apps/migrate-single-to-multi-region/src/main.rs", "crates/corelink-container/src/storage/region_map.rs"]
   - id: "adr/adr-s14-002-region-pinning-enforcement"
     type: "ADR"
     title: "ADR S14 002 region pinning enforcement"
@@ -729,7 +883,7 @@ candidates:
     title: "Security posture overview"
     status: "active"
     source_cluster: "docs/security"
-    seed_from: ["docs/security/2026-06-13-CAA-360-audit-report.md", "ARCHITECTURE.md"]
+    seed_from: ["docs/security/2026-06-13-CAA-360-audit-report.md", "ARCHITECTURE.md", "apps/signup-worker/src/security-headers.ts", "apps/analytics-worker/src/security-headers.ts"]
   - id: "security/pentest-learnings"
     type: "SecurityControl"
     title: "Pentest & red-team learnings"
@@ -753,7 +907,7 @@ candidates:
     title: "Credential handling & PAT secrecy"
     status: "active"
     source_cluster: "docs/security"
-    seed_from: ["docs/security/2026-06-23-secreview-credentials.md", "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md"]
+    seed_from: ["docs/security/2026-06-23-secreview-credentials.md", "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md", "worker/src/lib/internal_auth.ts"]
   - id: "security/money-path-review"
     type: "SecurityControl"
     title: "Money-path security review"
@@ -765,13 +919,13 @@ candidates:
     title: "DSR / right-to-erasure pipeline"
     status: "active"
     source_cluster: "docs/compliance"
-    seed_from: ["crates/corelink-container/src/routes/dsr.rs", "crates/corelink-container/src/routes/cas_erase.rs", "crates/corelink-dsr", "docs/security/2026-06-23-secreview-gdpr-residency.md"]
+    seed_from: ["crates/corelink-container/src/routes/dsr.rs", "crates/corelink-container/src/routes/cas_erase.rs", "crates/corelink-dsr", "docs/security/2026-06-23-secreview-gdpr-residency.md", "crates/corelink-container/src/routes/dsr/adapter_d1.rs", "crates/corelink-container/src/routes/dsr/adapter_not_applicable.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_cas.rs", "crates/corelink-container/src/routes/dsr/adapter_stripe.rs", "crates/corelink-container/src/routes/dsr/attestation.rs", "crates/corelink-container/src/routes/dsr/audit.rs", "crates/corelink-container/src/routes/dsr/d1util.rs", "crates/corelink-container/src/routes/dsr/ledger.rs", "crates/corelink-container/src/routes/dsr/legitimacy.rs"]
   - id: "compliance/data-residency"
     type: "ComplianceControl"
     title: "Data residency posture"
     status: "active"
     source_cluster: "docs/compliance"
-    seed_from: ["crates/corelink-container/src/routes/residency.rs", "specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md", "docs/security/2026-06-23-secreview-gdpr-residency.md"]
+    seed_from: ["crates/corelink-container/src/routes/residency.rs", "crates/corelink-container/src/storage/region_map.rs", "specs/03_architecture/adrs/ADR-S14-009-cas-residency-single-bucket-launch-posture.md", "docs/security/2026-06-23-secreview-gdpr-residency.md"]
   - id: "compliance/sub-processors"
     type: "ComplianceControl"
     title: "Sub-processor / vendor DPA reviews"
@@ -867,7 +1021,7 @@ candidates:
     title: "Audit/analytics export plane"
     status: "active"
     source_cluster: "docs/cli"
-    seed_from: ["crates/corelink-container/src/routes/audit_analytics.rs", "crates/corelink-container/src/routes/audit_export.rs", "crates/corelink-container/src/routes/audit_drain.rs", "docs/cli/audit-export.md"]
+    seed_from: ["crates/corelink-container/src/routes/audit_analytics.rs", "crates/corelink-container/src/routes/audit_export.rs", "crates/corelink-container/src/routes/audit_drain.rs", "apps/signup-worker/src/webhooks/audit_drain_cron.ts", "docs/cli/audit-export.md", "apps/analytics-worker/src/index.ts", "apps/analytics-worker/src/ingest.ts", "apps/analytics-worker/src/cron/weekly-email.ts", "apps/signup-worker/src/lib/analytics-server.ts", "apps/cas-worker/src/middleware/analytics.ts", "crates/corelink-container/src/routes/audit_export/audit_sink.rs", "crates/corelink-container/src/routes/audit_export/handler.rs", "crates/corelink-container/src/routes/audit_export/parse.rs", "crates/corelink-container/src/routes/audit_export/state.rs", "crates/corelink-container/src/routes/audit_export/stream.rs", "crates/corelink-container/src/routes/audit_export/types.rs", "crates/corelink-container/src/routes/audit_analytics/audit_sink.rs", "crates/corelink-container/src/routes/audit_analytics/handler_event_count.rs", "crates/corelink-container/src/routes/audit_analytics/handler_timeline.rs", "crates/corelink-container/src/routes/audit_analytics/rate_limit.rs", "crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs", "crates/corelink-container/src/routes/audit_analytics/state.rs", "crates/corelink-container/src/routes/audit_analytics/types.rs"]
   - id: "ops/perf-playbook"
     type: "Runbook"
     title: "Performance playbook"

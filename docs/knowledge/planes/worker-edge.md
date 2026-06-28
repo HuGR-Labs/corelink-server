@@ -4,7 +4,7 @@ title: "Cloudflare Worker edge plane"
 description: "The HTTPS entry point: route table, PAT auth, server-trust header hygiene, per-tier quota, and forwarding to the per-tenant Durable Object."
 source_files:
   - "worker/src/index.ts"
-checkpoint_sha: "2d82ec319d0d20a3689bc444d2875b6b38338031"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -41,7 +41,16 @@ keeps forged tokens cheap to reject before any expensive work.
    expiry check honors the `expires_ms === 0` "never expires" sentinel
    (`row.expires_ms !== 0 && row.expires_ms <= now`), matching the container's `adapter_pat` SQL
    (`expires_ms = 0 OR expires_ms > now`) — so a no-TTL PAT is no longer a split-brain edge-reject that
-   would pass in the container but die at the Worker (looking like a forged token).
+   would pass in the container but die at the Worker (looking like a forged token). The D1 lookup is
+   wrapped in try/catch: a TRANSIENT D1 fault (network partition / DB unavailable) returns the distinct
+   reason `d1_lookup_error` (`worker/src/index.ts:1013-1023`). The caller maps BOTH the config fault
+   `signing_key_not_configured` (absent/short `PAT_SIGNING_KEY`) AND `d1_lookup_error` to a retryable
+   `503` — a D1 infra hiccup is treated as "auth service unavailable", NOT a bad credential, so a
+   transient outage can't masquerade as a 401 (which would trigger spurious CI failures, PAT rotation,
+   and on-call chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` /
+   `invalid_*`) still fall through to `401` (`worker/src/index.ts:2104-2134`). NOTE: the inline comment
+   at `:1019-1021` ("for now we 401 to fail-closed") is STALE — it describes a superseded posture; the
+   live caller mapping returns 503.
 6. `stripClientTrustHeaders` deletes every client-suppliable trust header on every forward, then the
    Worker re-sets its own verified values (`worker/src/index.ts:474-478`).
 7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
@@ -80,7 +89,8 @@ keeps forged tokens cheap to reject before any expensive work.
 4. `worker/src/index.ts:474-478` — `stripClientTrustHeaders` (delete-then-set discipline).
 5. `worker/src/index.ts:526-790` — the `matchRoute` ordered route table.
 6. `worker/src/index.ts:852-879` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
-7. `worker/src/index.ts:917-1037` — HMAC fast-reject + D1 lookup + expiry check.
+7. `worker/src/index.ts:917-1037` — HMAC fast-reject + D1 lookup + expiry check (incl. the `expires_ms === 0` never-expires sentinel at `:1036`, and the try/catch that turns a transient D1 fault into `d1_lookup_error` at `:1013-1023`).
+7b. `worker/src/index.ts:2104-2134` — caller reason→status mapping: BOTH `signing_key_not_configured` (config fault) AND `d1_lookup_error` (transient D1 fault) → retryable `503`; every other reason (`pat_not_found` / `pat_expired` / `invalid_*`) → `401`.
 8. `worker/src/index.ts:1463-1476` — the `baseHandler.fetch` entry, request-id, CORS, route match.
 9. `worker/src/index.ts:1482-1495` — health short-circuit (no auth, no DO).
 10. `worker/src/index.ts:2167-2188` — per-tier quota enforcement after auth, before forward.

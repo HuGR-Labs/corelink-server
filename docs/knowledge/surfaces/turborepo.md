@@ -4,7 +4,7 @@ title: "Turborepo v8 remote-cache surface"
 description: "The Vercel Turborepo /v8/artifacts remote-cache protocol wired onto CoreLink, with teamId-as-sub-namespace isolation and per-route body caps."
 source_files:
   - "crates/corelink-container/src/routes/turbo_v8.rs"
-checkpoint_sha: "664d78b8e6f62ad6d0e95a94552c6c0997f8fea1"
+checkpoint_sha: "30f803a9e1d3feb13d0d746184fd1161e38fe8a4"
 provenance: "AUTHORED"
 tags: ["surfaces", "turborepo", "vercel", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -55,8 +55,12 @@ cross-tenant access is impossible.
 - axum honours the INNERMOST `DefaultBodyLimit`, so the order of the layers matters: the `events`
   route's own 64 KiB limit must be layered directly on its handler, otherwise the outer 100 MiB
   artifact limit would widen telemetry back to 100 MiB and reopen the OOM vector.
-- The Phase-0 backing store is an in-RAM `InMemoryKvStore` that does NOT persist across container
-  restarts; the route handlers and audit surface are unchanged by the planned R2-backed swap.
+- The backing store is selected at `build_handlers` time: when storage credentials are configured
+  (`StorageEnv::from_env()`), it is the **durable** per-tenant R2-backed `R2KvStore` ("durable storage"),
+  so artifacts persist across container restarts (this closed the former `TODO(v2)`); only the no-creds
+  dev/CI path falls back to the in-RAM `InMemoryKvStore`. If creds ARE present but `R2KvStore` refuses to
+  build, the handler does NOT silently fall back — it mounts a fail-CLOSED handler that 503s every verb so
+  durability is never silently lost. The route handlers and audit surface are identical across both backings.
 
 # Citations
 1. `crates/corelink-container/src/routes/turbo_v8.rs:1033-1063` — the router with static-before-wildcard ordering + body-limit layers.
@@ -70,3 +74,4 @@ cross-tenant access is impossible.
 9. `crates/corelink-container/src/routes/turbo_v8.rs:651-723` — `GetConcurrencyGuard`: per-tenant GET concurrency cap (429 before buffering), the read twin of `PutConcurrencyGuard`.
 10. `crates/corelink-container/src/routes/turbo_v8.rs:742-779` — `GlobalGetBudgetGuard`: process-wide GET budget (503 on saturation), separate pool from the PUT budget.
 11. `crates/corelink-container/src/routes/turbo_v8.rs:128` — `TURBO_GET_CONCURRENCY_LIMIT` (4); `crates/corelink-container/src/routes/turbo_v8.rs:183` — `GLOBAL_TURBO_GET_PERMITS` (16).
+12. `crates/corelink-container/src/routes/turbo_v8.rs:957-989` — `build_handlers` store selection: durable `R2KvStore` when `StorageEnv::from_env()` is present (persists across restarts), in-RAM `InMemoryKvStore` only in the no-creds dev/CI fallback, fail-CLOSED handler when creds are present but R2 refuses to build.

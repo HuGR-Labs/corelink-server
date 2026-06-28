@@ -5,8 +5,9 @@ description: "The composition layer — the Rust container HTTP binary that host
 source_files:
   - "crates/corelink-container/src/main.rs"
   - "crates/corelink-config-do/src/lib.rs"
+  - "crates/corelink-config-do/src/types.rs"
   - "crates/corelink-cf-bindings/src/lib.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "a7c16588ead34ed6095e0aa9db67ddf77ac96688"
 provenance: "AUTHORED"
 tags: ["crates", "container", "platform", "cloudflare", "durable-object", "bindings"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -31,7 +32,7 @@ The cluster realises the [Rust container compute plane](/planes/container.md) an
 
 - The DO speaks only HTTP to the container port; the binary serves the real HTTP data plane there (the dead gRPC server that blocked the port was removed) (`crates/corelink-container/src/main.rs:11-17`).
 - Config writes are atomic and fail-CLOSED: `update` rejects on `current_version != expected_version` with `VersionConflict`, and audit `emit` runs BEFORE state mutation so a failed emit aborts the write unchanged (`crates/corelink-config-do/src/lib.rs:27-48`).
-- Config schema drift is a hard error, never a silent default — `ConfigPayload` uses `#[serde(deny_unknown_fields)]` (`crates/corelink-config-do/src/lib.rs:8-11`).
+- Config schema drift is a hard error, never a silent default — `ConfigPayload` uses `#[serde(deny_unknown_fields)]` (`crates/corelink-config-do/src/types.rs:34`).
 - Binding adapters emit no `tracing::*` carrying R2 keys, D1 results, or KV values beyond a correlation-id / digest hash (CTRL-PRIV-001) (`crates/corelink-cf-bindings/src/lib.rs:35-40`).
 
 # Gotchas
@@ -46,7 +47,7 @@ The cluster realises the [Rust container compute plane](/planes/container.md) an
 2. `crates/corelink-container/src/main.rs:11-17` — historical gRPC removal; the real HTTP data plane is served here.
 3. `crates/corelink-container/src/main.rs:48-55` — boot-time storage-backing selection (`r2` vs in-memory fallback) in a `OnceLock`.
 4. `crates/corelink-config-do/src/lib.rs:1-48` — the versioned config-singleton DO: payload, CAS update, audit ordering, rollback.
-5. `crates/corelink-config-do/src/lib.rs:8-11` — `#[serde(deny_unknown_fields)]`: schema drift → hard error.
+5. `crates/corelink-config-do/src/types.rs:34` — `#[serde(deny_unknown_fields)]`: schema drift → hard error.
 6. `crates/corelink-config-do/src/lib.rs:27-48` — fail-CLOSED audit-before-mutation + CAS `expected_version` atomicity.
 7. `crates/corelink-cf-bindings/src/lib.rs:1-33` — trait → `worker::*` adapter map + the `CfR2BucketReal` native stub.
 8. `crates/corelink-cf-bindings/src/lib.rs:35-40` — CTRL-PRIV-001: no binding payloads in logs.

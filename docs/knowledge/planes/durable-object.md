@@ -4,7 +4,10 @@ title: "Durable Object lifecycle (CoreLinkServer)"
 description: "The per-tenant Durable Object that manages the Rust container lifecycle (cold start, health, idle stop) and proxies HTTP to it."
 source_files:
   - "worker/src/durable_object.ts"
-checkpoint_sha: "2d82ec319d0d20a3689bc444d2875b6b38338031"
+  - "worker/src/index.ts"
+  - "worker/src/event_log_do.ts"
+  - "worker/src/rollout_controller.ts"
+checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -48,14 +51,28 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 6. Cold start emits the `corelink.do.cold_start.v1` audit event BEFORE calling `container.start`, per
    the charter's audit-before-mutation rule (`worker/src/durable_object.ts:505-519`).
 7. `waitForContainerHealth` polls `GET /_health` on the container port until a 200 or the 90s startup
-   timeout (`worker/src/durable_object.ts:778-808`). The wait loop FAST-EXITS the moment the container
-   status flips to the terminal `"stopped"` state (a bad deploy / OOM / panic) — it no longer spins the
-   full ~90s `STARTUP_TIMEOUT_MS` on a container that is already dead, returning a prompt `503` so the
-   next request triggers a restart (`worker/src/durable_object.ts:756-767`).
+   timeout (`worker/src/durable_object.ts:778-808`). The `waitForContainerReady` queue FAST-EXITS the
+   moment the container status flips to the terminal `"stopped"` state (a bad deploy / OOM / panic) — it
+   no longer spins the full ~90s `STARTUP_TIMEOUT_MS` on a container that is already dead, returning a
+   prompt `503` so the next request triggers a restart (`worker/src/durable_object.ts:756-767`).
 8. An idle timer destroys the container after `IDLE_TIMEOUT_MS` (5 min), emitting the death event first
-   (`worker/src/durable_object.ts:80-83`, `worker/src/durable_object.ts:878-909`).
+   (`worker/src/durable_object.ts:80-83`, `worker/src/durable_object.ts:896-913`).
 9. A periodic `alarm` re-probes health and marks the container `degraded` after `MAX_HEALTH_FAILURES`
-   (`worker/src/durable_object.ts:931-985`).
+   (`worker/src/durable_object.ts:935-989`).
+10. The Worker exports two SIBLING DO classes alongside `CoreLinkServer`
+    (`worker/src/index.ts:2634`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
+    primitive — it adopts the first `x-corelink-tenant-id` it sees, persists that pin, and refuses any
+    other tenant's request with a `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`). Its
+    `append` monotonically assigns `seq` under `blockConcurrencyWhile` (persist the entry, THEN advance
+    the head, so a crash orphans rather than gaps), dispatched from `/_eventlog/append`
+    (`worker/src/event_log_do.ts:220-225`, `worker/src/event_log_do.ts:266-277`). It is bound in
+    `wrangler.toml` and exported, but NO edge route dispatches to it — the `EVENT_LOG_DO` binding is
+    referenced only as an OPTIONAL field of `Env` (`worker/src/index.ts:54-59`); it is a ready primitive
+    awaiting its hugit-P2 seam-D consumer.
+11. `RolloutController` is an UNWIRED stub: bound in `wrangler.toml` and exported, it answers
+    `/_do/health` with 200 but returns `501 NOT_IMPLEMENTED` ("RolloutController WASM bridge not yet
+    wired (Phase C)") for every other request — the real rollout logic lives in Rust/WASM and is not yet
+    bridged (`worker/src/rollout_controller.ts:34-56`).
 
 # Invariants
 - One DO instance per tenant — the DO ID is tenant-derived, never cross-tenant
@@ -68,12 +85,23 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   every request forever (the F-020 `_system` wedge fix) (`worker/src/durable_object.ts:96-104`).
 - The proxy never reads or logs the request body (INV-NO-BODY-IN-LOGS)
   (`worker/src/durable_object.ts:251-264`).
+- `EventLogDO` is per-tenant and append-only: a DO pinned to one tenant rejects a request carrying a
+  different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`),
+  and `seq` is strictly monotonic + gap-free under `blockConcurrencyWhile` (persist-entry-then-advance-
+  head) (`worker/src/event_log_do.ts:266-277`).
+- Honest wiring: of the three exported DO classes, only `CoreLinkServer` is a live serving path.
+  `EventLogDO` is implemented + bound + exported but has NO live edge caller yet (`EVENT_LOG_DO` is an
+  OPTIONAL `Env` field, `worker/src/index.ts:54-59`), and `RolloutController` is a bound+exported STUB
+  returning `501 NOT_IMPLEMENTED` for everything but health (`worker/src/rollout_controller.ts:34-56`).
 
 # Gotchas
 - DOs are single-threaded but ASYNC-concurrent: every `await` is a yield point where another queued
   `fetch` can run — which is exactly why the concurrent-start guard flips the status synchronously.
 - The container env forward is a silent-failure trap: a secret the container reads via `env::var` but
   the DO never forwards will appear "set" to the operator yet never reach the container.
+- Two of the Worker's three exported DO classes are NOT live request paths: `EventLogDO` is a wired-but-
+  unconsumed primitive (no edge dispatcher reads the optional `EVENT_LOG_DO` binding) and
+  `RolloutController` is a Phase-C stub (501) — don't cite either as an active serving plane.
 
 # Citations
 1. `worker/src/durable_object.ts:1-26` — the DO's responsibilities + per-tenant pinning doc.
@@ -87,5 +115,11 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 9. `worker/src/durable_object.ts:505-519` — audit-before-mutation cold-start event + `container.start`.
 10. `worker/src/durable_object.ts:523-677` — the `container.start({ env })` env-contract forward.
 11. `worker/src/durable_object.ts:778-808` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:756-767` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
-12. `worker/src/durable_object.ts:878-909` — the idle-timeout destroy path.
-13. `worker/src/durable_object.ts:931-985` — the periodic `alarm` health re-probe + degrade.
+12. `worker/src/durable_object.ts:896-913` — `onIdleTimeout`: death event emitted, then the idle-timeout destroy.
+13. `worker/src/durable_object.ts:935-989` — the periodic `alarm` health re-probe + degrade.
+14. `worker/src/index.ts:2634` — the Worker exports `CoreLinkServer`, `RolloutController`, `EventLogDO`.
+15. `worker/src/event_log_do.ts:207-218` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).
+16. `worker/src/event_log_do.ts:220-225` — the `/_eventlog/append` + `/_eventlog/read` route dispatch.
+17. `worker/src/event_log_do.ts:266-277` — `handleAppend`: monotonic gap-free `seq` under `blockConcurrencyWhile` (persist-entry-then-advance-head).
+18. `worker/src/index.ts:54-59` — the `EVENT_LOG_DO` binding declared OPTIONAL on `Env` (the only `worker/src` reference; no edge route dispatches to it yet).
+19. `worker/src/rollout_controller.ts:34-56` — `RolloutController` UNWIRED stub: `/_do/health` 200 but `501 NOT_IMPLEMENTED` "WASM bridge not yet wired (Phase C)" for all other requests.

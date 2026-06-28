@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-eviction/src/reservation.rs"
   - "crates/corelink-eviction/src/trigger.rs"
   - "docs/internal/gc-prod-rollout-plan.md"
-checkpoint_sha: "0150de7ef40b4c23d3d9fbac97999192b2ae48de"
+checkpoint_sha: "d8ef7dfc9e3fb278e50cad25277c6b4cf6060502"
 provenance: "AUTHORED"
 tags: ["ops", "gc", "eviction", "storage", "runbook", "rollout"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -46,16 +46,21 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
    `requires_abort` predicate encodes as matching only `GcPause` (`crates/corelink-gc/src/degrade.rs:59`).
 5. Both `GcPause` and `GcReadOnly` block *new* runs from spawning, per the `blocks_new_runs` predicate
    (`crates/corelink-gc/src/degrade.rs:65`).
-6. Eviction resolves a retention TTL per the 5-tier `Tier` enum (`crates/corelink-eviction/src/tier.rs:51-61`)
+6. Eviction resolves a retention TTL per the 5-tier `Tier` enum (`crates/corelink-eviction/src/tier.rs:51-62`)
    through the `ttl_for_tier` resolver (free=7d, solo=30d, team=90d, business/enterprise=365d)
-   (`crates/corelink-eviction/src/tier.rs:172-180`).
-6b. The sold billing slugs now reach that ladder through a slug resolver (CF-3): `Tier::from_slug` —
-   mirrored by `FromStr`/`TryFrom` — maps the live `tier_selections.tier` strings `starter→Team` (90d),
-   `pro`/`max`→`Business` (365d), `solo→Solo`, `enterprise→Enterprise` so a paying tenant resolves to its
-   intended retention, and the infallible `from_slug_paid_safe` falls back to a NON-FREE default (`Team`/90d)
-   for any unknown/future slug. Only the literal `"free"` slug resolves to the free-tier floor — closing the
-   CF-3 footgun where an eviction-side string→`Tier` lookup could silently drop a payer onto the free-tier TTL
-   (`crates/corelink-eviction/src/tier.rs:114-123`, `crates/corelink-eviction/src/tier.rs:133-136`).
+   (`crates/corelink-eviction/src/tier.rs:172-180`). The eviction `Tier` is a SEPARATE LEGACY 5-arm domain
+   `{Free,Solo,Team,Business,Enterprise}` that does NOT structurally match the sold 6-tier ladder
+   `{Free,Solo,Starter,Pro,Max,Enterprise}` (ADR-S19-001 — see `launch/tier-model`): it has Team+Business
+   (Team was removed by S19-001, Business never shipped) and lacks the literal Starter/Pro/Max arms.
+   **CF-3 (2026-06-28) CLOSED the former footgun:** `Tier::from_slug` now BRIDGES the sold slugs INTO
+   this 5-arm enum — `starter`/`team`→`Team` (90d), `pro`/`org`/`max`→`Business` (365d), `free`→`Free`,
+   `solo`→`Solo`, `enterprise`→`Enterprise` — mirroring the ratified
+   `corelink_ratelimit::tier_for_billing_label` mapping, so a live Starter/Pro/Max tenant resolves to a
+   real eviction TTL rather than dropping to the free floor (`crates/corelink-eviction/src/tier.rs:114-123`).
+   The hot-path-safe `from_slug_paid_safe` (+ `FromStr`/`TryFrom`) defaults ANY unknown/future slug to
+   `Team` (NON-free), so no slug except literal `"free"` can ever collapse to the free-tier TTL
+   (`crates/corelink-eviction/src/tier.rs:133-136`). Eviction is still a pure-logic skeleton (no live cron
+   — see the gotcha), so this resolver bites only when eviction is actually wired.
 7. The size-proportional reservation TTL clamps between a 60s floor and a 7d ceiling so a large multipart
    upload never expires mid-write (`crates/corelink-eviction/src/reservation.rs:77-81`).
 8. The 95% quota trigger fires (boundary-inclusive) when `bytes_used / bytes_quota >= 0.95`, computed by
@@ -74,10 +79,6 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
   `GcPause` forces abort within one batch boundary (`crates/corelink-gc/src/degrade.rs:59`).
 - The enterprise TTL admin override is hard-capped at 730 days; a longer override is rejected by
   `ttl_for_tier_with_override` with `ExceedsMaxTtl` (`crates/corelink-eviction/src/tier.rs:230-235`).
-- No paid slug silently collapses to the free-tier eviction TTL: `from_slug` recognises every sold slug and
-  `from_slug_paid_safe` defaults an unknown/future slug to `Team` (90d), never `Free` — only the literal
-  `"free"` slug resolves to the 7d floor (`crates/corelink-eviction/src/tier.rs:114-123`,
-  `crates/corelink-eviction/src/tier.rs:133-136`).
 - The reservation TTL never drops below the 60s floor nor exceeds the 7d cap, bounding both tiny and
   pathological uploads (`crates/corelink-eviction/src/reservation.rs:50`, `crates/corelink-eviction/src/reservation.rs:54`).
 - A zero `bytes_quota` is defended: the trigger returns below-threshold rather than firing forever
@@ -91,6 +92,14 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
   batch-boundary scoped (`docs/internal/gc-prod-rollout-plan.md:84-88`).
 - The 5 rollout regions (`sam/iad/lhr/nrt/syd`) are colo strings, distinct from the macro `Tier` vocabulary
   — do not conflate a region cohort with a tenant tier.
+- **The eviction `Tier` taxonomy is a separate LEGACY domain, now BRIDGED to the sold ladder (CF-3).**
+  Eviction's `{Free,Solo,Team,Business,Enterprise}` predates ADR-S19-001's sold
+  `{Free,Solo,Starter,Pro,Max,Enterprise}`, but CF-3 added `from_slug`/`from_slug_paid_safe`/`FromStr`/`TryFrom`
+  so the sold `starter`/`pro`/`max` slugs DO map in (→ `Team`/`Business`/`Business`) with a non-free
+  paid-safe default — the prior "no conversion exists, so a paid tenant drops to the free TTL" gap is
+  CLOSED. The request-quota count axis already covered those slugs (it keys off slug strings — see the
+  sibling concept [request-quota](/tenancy/request-quota.md)); eviction's TTL resolution now agrees with
+  it (`crates/corelink-eviction/src/tier.rs:114-136`).
 - Both crates are pure-logic skeletons today: the real D1 `blob_meta.deleted_at` UPDATE + cron DO binding
   land at the PRR ship gate, so "GC is wired" means the invariants are proven against fakes, not that a
   live cron is reclaiming prod bytes yet.
@@ -105,9 +114,8 @@ governs turning GC on. The reclaim math it protects is the same per-tenant accou
 6. `crates/corelink-gc/src/degrade.rs:65` — `blocks_new_runs` matches `GcPause | GcReadOnly`.
 7. `crates/corelink-eviction/src/tier.rs:41` — `MAX_ENTERPRISE_TTL_DAYS = 730` override cap.
 7b. `crates/corelink-eviction/src/tier.rs:230-235` — `ttl_for_tier_with_override` rejects a longer override with `ExceedsMaxTtl`.
-8. `crates/corelink-eviction/src/tier.rs:51-61` — the 5-value `Tier` enum.
+8. `crates/corelink-eviction/src/tier.rs:51-62` — the 5-value LEGACY `Tier` enum `{Free,Solo,Team,Business,Enterprise}`; CF-3's `from_slug` (`crates/corelink-eviction/src/tier.rs:114-123`) + `from_slug_paid_safe`/`FromStr`/`TryFrom` (`crates/corelink-eviction/src/tier.rs:133-136`) bridge the sold Starter/Pro/Max slugs into it (non-free default), closing the prior coverage gap vs ADR-S19-001.
 9. `crates/corelink-eviction/src/tier.rs:172-180` — `ttl_for_tier` per-tier TTL resolution.
-9b. `crates/corelink-eviction/src/tier.rs:114-123` — `Tier::from_slug` (sold slug → `Tier`, CF-3); `crates/corelink-eviction/src/tier.rs:133-136` — `from_slug_paid_safe` non-free (`Team`) fallback.
 10. `crates/corelink-eviction/src/reservation.rs:50` — `MIN_RESERVATION_TTL_MS = 60_000` floor.
 11. `crates/corelink-eviction/src/reservation.rs:54` — `MAX_RESERVATION_TTL_MS = 7 × 86_400_000` cap.
 12. `crates/corelink-eviction/src/reservation.rs:77-81` — the floor/cap clamp of the proportional TTL.

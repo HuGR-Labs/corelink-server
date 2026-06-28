@@ -4,7 +4,7 @@ title: "sccache / cargo (WebDAV) surface"
 description: "The sccache HTTP build-cache surface mounted at /cargo/<tenant>/<key>, with nest_service path bridging and F27 two-layer write enforcement."
 source_files:
   - "crates/corelink-container/src/routes/cargo.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "0aad76e1d132cd98d35c814a5bb23008c226d08e"
 provenance: "AUTHORED"
 tags: ["surfaces", "sccache", "cargo", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -36,11 +36,12 @@ namespaced per tenant.
 4. `cargo_gate` enforces per-operation scope: PUT requires cache-write, GET/HEAD require cache-read,
    any other method fails closed 403 (`crates/corelink-container/src/routes/cargo.rs:271-298`).
 5. For PUT, the F27 second layer requires the PAT's D1-verified `can_write` bit from the SAME single
-   verification (no redundant verify) (`crates/corelink-container/src/routes/cargo.rs:37-51`).
+   verification (no redundant verify) — the executed gate checks the Worker-set scope header
+   (`scope_ok`) and then `resolve_with_capability(...).can_write` (`crates/corelink-container/src/routes/cargo.rs:296-345`).
 
 # Invariants
 - Tenant identity comes from the PAT, re-verified against D1; the path `<tenant>` is NEVER trusted for storage (`crates/corelink-container/src/routes/cargo.rs:27-35`).
-- A write must pass BOTH the scope header AND the PAT-derived `can_write` bit (F27), closing the single-header-trust gap (`crates/corelink-container/src/routes/cargo.rs:37-51`).
+- A write must pass BOTH the scope header AND the PAT-derived `can_write` bit (F27), closing the single-header-trust gap — enforced in `cargo_gate` (`crates/corelink-container/src/routes/cargo.rs:296-345`).
 - Per-operation scope is enforced before the adapter runs: PUT→write, GET/HEAD→read (`crates/corelink-container/src/routes/cargo.rs:283-298`).
 - An unmapped HTTP method is denied at the gate rather than assumed safe (fail-closed) (`crates/corelink-container/src/routes/cargo.rs:289-296`).
 
@@ -61,4 +62,4 @@ namespaced per tenant.
 7. `crates/corelink-container/src/routes/cargo.rs:271-298` — `cargo_gate` per-operation scope enforcement.
 8. `crates/corelink-container/src/routes/cargo.rs:283-298` — method→scope mapping + 403.
 9. `crates/corelink-container/src/routes/cargo.rs:289-296` — fail-closed unmapped method.
-10. `crates/corelink-container/src/routes/cargo.rs:37-51` — F27 two-layer write enforcement.
+10. `crates/corelink-container/src/routes/cargo.rs:296-345` — `cargo_gate` F27 two-layer write enforcement (scope header + `resolve_with_capability` `can_write`), executed.

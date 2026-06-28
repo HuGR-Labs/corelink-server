@@ -4,11 +4,18 @@ title: "Go-live readiness / launch due-diligence"
 description: "The 2026-06-15 pre-launch due-diligence audit verdict (NO-GO), the launch paths it checked, and the blocking vs non-blocking findings."
 source_files:
   - docs/security/2026-06-15-launch-due-diligence-audit.md
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
 provenance: "AUTHORED"
 tags: ["launch", "due-diligence", "go-live", "readiness", "security", "compliance"]
 timestamp: "2026-06-26T00:00:00Z"
 ---
+
+> **Dated snapshot — 2026-06-15.** This concept transcribes the verdict and blocker list of the
+> `docs/security/2026-06-15-launch-due-diligence-audit.md` due-diligence audit **as it stood on
+> 2026-06-15**. Its NO-GO verdict and every blocker below are a HISTORICAL record of that audit, NOT
+> the current go/no-go posture: the two CRITICALs and the top-tier HIGHs it gated on were subsequently
+> fixed and deployed (see MEMORY's launch-hardening / pentest-fix campaigns). Read this for WHAT the
+> audit checked and HOW it separates blockers from debt, not for today's verdict.
 
 The go-live readiness gate is the pre-launch due-diligence audit: an adversarial sweep (82 agents, 131 raw findings, 21 confirmed) over the load-bearing launch paths — money path, auth/PAT, DSR/GDPR erasure, secrets posture, and data residency — that produces a single ship/no-ship verdict plus the prioritized must-fix set. Its discipline is that a launch promise (residency, proof-of-erasure, BYOK, rate-card caps) cannot be sold if the running data plane cannot deliver it, and that a control must fail CLOSED, not silently degrade. This concept captures WHAT the audit checked, the verdict it returned, and HOW it separates launch-blockers from deferrable debt. Sibling concepts launch/money-path and launch/signup-onboarding cover the Stripe checkout and Clerk provisioning paths in depth.
 
@@ -32,7 +39,7 @@ The audit answers one question — is CoreLink safe to launch self-serve to SMBs
 
 # Invariants
 
-- The honest verdict TODAY is NO-GO because the must-fix set still contains two open CRITICALs plus a payment/auth/compliance break — never blind-ship on a green gate `docs/security/2026-06-15-launch-due-diligence-audit.md:5-11`.
+- The verdict the audit returned (2026-06-15) was NO-GO because the must-fix set at that snapshot still contained two open CRITICALs plus a payment/auth/compliance break — its discipline (never blind-ship on a green gate) is the durable rule, while the NO-GO state itself is historical (those blockers were since fixed) `docs/security/2026-06-15-launch-due-diligence-audit.md:5-11`.
 - Either CRITICAL alone is disqualifying: each breaks a load-bearing launch path with no workaround `docs/security/2026-06-15-launch-due-diligence-audit.md:7`.
 - The two CRITICALs must be re-verified with the exact cases existing tests miss — a non-IAD regional-worker test `docs/security/2026-06-15-launch-due-diligence-audit.md:115` and an auth-key-present transient-mint-failure test `docs/security/2026-06-15-launch-due-diligence-audit.md:120`.
 - Every isolation/compliance boundary must fail CLOSED (refuse 503/409/401) rather than serve under a public/shared/predictable fallback when a tenant id, TDK, region, or auth dependency is missing `docs/security/2026-06-15-launch-due-diligence-audit.md:142`.

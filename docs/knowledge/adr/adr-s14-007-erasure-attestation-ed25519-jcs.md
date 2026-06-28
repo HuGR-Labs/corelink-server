@@ -4,7 +4,9 @@ title: "ADR-S14-007 — Erasure attestation: Ed25519 + RFC 8785 JCS + 30d key ov
 description: "Why crypto-erasure proofs are Ed25519 (FIPS 186-5) signatures over RFC 8785 JCS-canonicalized payloads with a 30d signing-key overlap, retained 7 years."
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
+  - "crates/corelink-erasure-attestation/src/attestation.rs"
+  - "crates/corelink-container/src/routes/dsr/attestation.rs"
+checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
 provenance: "AUTHORED"
 tags: ["adr", "s14", "erasure-attestation", "ed25519", "jcs", "gdpr"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -12,7 +14,9 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # ADR-S14-007 — Erasure attestation: Ed25519 + RFC 8785 JCS + 30d key overlap
 
-When a BYOK tenant files a DSR erasure request, CoreLink must produce a cryptographic proof of erasure that the customer and external auditors can verify offline, that complies with NIST SP 800-88 Rev.1 §2.4 crypto-erase, and that survives a 7-year audit retention. This ADR (ACCEPTED, WI-S14-007 SEALED) records three simultaneous choices — signature scheme, JSON canonicalization, and signing-key overlap window — and why each well-audited standard was selected over its alternatives.
+When a BYOK tenant files a DSR erasure request, CoreLink must produce a cryptographic proof of erasure that the customer and external auditors can verify offline, that complies with NIST SP 800-88 Rev.1 §2.4 crypto-erase, and that survives a 7-year audit retention. This ADR (ACCEPTED) records three simultaneous choices — signature scheme, JSON canonicalization, and signing-key overlap window — and why each well-audited standard was selected over its alternatives.
+
+> **Status vs shipped code (2026-06-28):** the **signing primitive is real + tested** — `ErasureAttestationSigner::sign` JCS-canonicalizes (RFC 8785) and produces a 64-byte Ed25519 signature, with a property test asserting the 64-byte base64 output (`crates/corelink-erasure-attestation/src/attestation.rs:94`, test at `:164`). But the **produce → persist → SERVE path is DEFERRED**: the DSR route's `sign_and_persist` is a stub that, on the verified-complete arm, deliberately writes NO attestation — no signing key is loaded, the signature is discarded, no R2 object is written, and migration 0032 has no `signature_ed25519` / `canonical_payload_jcs` columns (`crates/corelink-container/src/routes/dsr/attestation.rs:131-167`, brutal-review H1). So an attestation cannot yet be served/verified offline by a customer; the offline-verifiable proof described below is the DESIGN-INTENT and the live signing math, not a served artifact. (Consistent with the erasure-attestation deferral noted in [go-live-readiness](/launch/go-live-readiness.md).)
 
 # Context
 
@@ -36,3 +40,5 @@ The attestation must be independently offline-verifiable by customer + auditors,
 3. `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:52-64` — RFC 8785 JCS over a custom canonicalizer.
 4. `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:65-80` — the 30d key-overlap decision.
 5. `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:83-96` — positive and mitigated-negative consequences.
+6. `crates/corelink-erasure-attestation/src/attestation.rs:94` — `ErasureAttestationSigner::sign`: the real, tested JCS+Ed25519 signing primitive (64-byte sig; test at `:164`).
+7. `crates/corelink-container/src/routes/dsr/attestation.rs:131-167` — `sign_and_persist`: the DEFERRED (brutal-review H1) produce/persist/serve stub that writes NO attestation (signature discarded, no R2 write, no signed columns in migration 0032).
