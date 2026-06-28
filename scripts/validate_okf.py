@@ -761,6 +761,44 @@ def _iter_exec_sources(base: Path, surface_root: Path, *, js_ts: bool = True,
             yield (rel, False)
 
 
+# gate v10 fix #2 (HIGH — app ENTRYPOINT outside src/): the apps surface walk +
+# the strict classifier are hardcoded to `apps/*/src/**`, but a Cloudflare Worker's
+# wrangler `main` can point ANYWHERE — `apps/sneaky-worker/index.ts` at app-root,
+# `apps/x/dist/worker.mjs`, etc. (admin-ui's real main is `.open-next/worker.js`).
+# An app whose deploy entrypoint lives OUTSIDE `src/` therefore had its actual
+# request-reachable handler NEVER enumerated → it could ship GREEN with zero
+# coverage. We parse each app's `wrangler.toml`/`wrangler.jsonc` `main = "..."` and
+# ALSO enumerate that entrypoint file as a required surface (in addition to
+# `apps/*/src/**`). A main at app-root (or any non-src dir) now surfaces as a
+# [C10b] gap unless a concept grounds it or an explicit `excludes:` entry waives it.
+# (The existing wholesale `apps/admin-ui` / `apps/get-corelink-worker` exact-prefix
+# excludes still cover THEIR mains — `.open-next/worker.js` / `src/index.ts` both
+# live under the excluded app dir — so a build-output/presentation main stays
+# review-waived, as designed.)
+_WRANGLER_MAIN_RE = re.compile(
+    r"""^\s*["']?main["']?\s*[:=]\s*["']([^"']+)["']""", re.MULTILINE
+)
+
+
+def _wrangler_main(app_dir: Path):
+    """The app-relative `main` entrypoint declared in `app_dir`'s wrangler config
+    (`wrangler.toml` then `wrangler.jsonc`/`wrangler.json`), or None. Parsed with a
+    tolerant regex so the same matcher handles TOML (`main = "x"`) and JSONC
+    (`"main": "x"`, possibly with `//` comments) without a TOML/JSONC dependency."""
+    for name in ("wrangler.toml", "wrangler.jsonc", "wrangler.json"):
+        cfg = app_dir / name
+        if not cfg.is_file():
+            continue
+        try:
+            text = cfg.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        m = _WRANGLER_MAIN_RE.search(text)
+        if m:
+            return m.group(1).strip()
+    return None
+
+
 def _line_count(path: Path) -> int:
     try:
         with path.open("rb") as fh:
@@ -1357,6 +1395,34 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
                             f"strict-tree exclude (review): `{surf}` — {str(reason).strip()[:80]}",
                         )
 
+    # gate v10 fix #2 (HIGH): the set of wrangler-`main` entrypoints that live
+    # OUTSIDE the conventional `apps/*/src/**` strict tree. Such a main IS the real
+    # request-reachable deploy surface, so it must be treated as STRICT — directory/
+    # cluster ADOPTION must NOT auto-cover it; it needs an exact grounded seed or an
+    # explicit `excludes:` entry, the same as any other request-reachable enforcer.
+    wrangler_main_strict: set[str] = set()
+    _apps_dir_for_main = surface_root / "apps"
+    if _apps_dir_for_main.is_dir():
+        for _app in sorted(p for p in _apps_dir_for_main.iterdir() if p.is_dir()):
+            _main_rel = _wrangler_main(_app)
+            if not _main_rel:
+                continue
+            _mp = (_app / _main_rel).resolve()
+            try:
+                _r = _mp.relative_to(surface_root).as_posix()
+            except ValueError:
+                continue
+            if _mp.is_file() and _is_exec_source(_r, js_ts=True, rust=True):
+                # only the ones NOT already strict by the apps/*/src/** rule.
+                if not _is_file_granular_strict(_r):
+                    wrangler_main_strict.add(_r)
+
+    def _strict(rel: str) -> bool:
+        """`_is_file_granular_strict`, EXTENDED with the gate-v10 wrangler-`main`
+        entrypoints that live outside `apps/*/src/**` (a non-conventional but
+        request-reachable deploy surface)."""
+        return _is_file_granular_strict(rel) or rel in wrangler_main_strict
+
     def is_covered(rel: str, is_dir: bool) -> bool:
         # --- DIRECTORY (crate) surface: coverage = reviewed cluster MEMBERSHIP ---
         # A crate-dir surface is covered if ANY seed_from path is the dir itself or
@@ -1385,7 +1451,7 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             # carries an explicit per-file exclude. Outside strict trees the
             # verbatim grounded seed covers unchanged.
             if rel in grounded_seed_paths:
-                if not _is_file_granular_strict(rel) or rel in code_grounded_seed_paths:
+                if not _strict(rel) or rel in code_grounded_seed_paths:
                     return True
             # a file is also covered when a GROUNDED directory seed contains it
             # (the concept that adopts the dir grounds the files beneath it) —
@@ -1396,12 +1462,12 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             # ride the whole-crate `crates/corelink-container` seed and stay GREEN —
             # the dead anti-shadow enumeration. Those files are covered only by an
             # exact grounded seed (above) or an explicit `excludes:` entry (below).
-            if not _is_file_granular_strict(rel) and any(
+            if not _strict(rel) and any(
                 (s.rstrip("/") != "" and rel.startswith(s.rstrip("/") + "/"))
                 for s in grounded_seed_paths
             ):
                 return True
-        strict = (not is_dir) and _is_file_granular_strict(rel)
+        strict = (not is_dir) and _strict(rel)
         for ex in excludes:
             exn = ex.rstrip("/")
             # An EXACT (or exact-prefix) exclude entry is an EXPLICIT, review-
@@ -1437,7 +1503,13 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
         # a non-recursive glob("*.rs") was a silent completeness hole (a new
         # handler at routes/dsr/backdoor.rs would never be gated). Genuine
         # non-handlers (tests_*.rs) are exempted via the manifest `excludes:`.
-        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(routes_dir.rglob("*.rs"))]
+        # gate v10 fix #1 (MED — CASE-SENSITIVE rglob vs case-insensitive
+        # classifier): `rglob("*.rs")` is case-SENSITIVE while `_is_exec_source`
+        # lowercases the suffix, so a `Poison.RS` (pulled via `#[path]`) was
+        # classified strict yet NEVER enumerated → shipped GREEN. Enumerate via
+        # the SAME `_is_exec_source` predicate (case-insensitive) so the surface
+        # walk and the strict classifier AGREE on what is a Rust source file.
+        surface += list(_iter_exec_sources(routes_dir, surface_root, js_ts=False, rust=True))
     # The container crate ROOT, file-granular: a handler dropped directly in
     # crates/corelink-container/src/ (sibling to webhook.rs / native_pat_gate.rs)
     # is invisible if the crate is gated dir-granular only. Enumerate each
@@ -1446,9 +1518,12 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     # also under src/ but already enumerated above; the dedup (dict.fromkeys on the
     # surface list) collapses the overlap. non-handlers (lib.rs is the crate wiring
     # root) are covered via the manifest like the rest.
+    # gate v10 fix #1 (MED): same case-insensitive unification — enumerate via the
+    # shared `_is_exec_source` predicate (which lowercases the suffix) instead of a
+    # case-sensitive `rglob("*.rs")`, so a `src/Poison.RS` (classified strict by the
+    # lowercasing classifier) is also ENUMERATED and surfaces as a [C10b] gap.
     container_src = surface_root / "crates" / "corelink-container" / "src"
-    if container_src.is_dir():
-        surface += [(p.relative_to(surface_root).as_posix(), False) for p in sorted(container_src.rglob("*.rs"))]
+    surface += list(_iter_exec_sources(container_src, surface_root, js_ts=False, rust=True))
     crates_dir = surface_root / "crates"
     if crates_dir.is_dir():
         surface += [(p.relative_to(surface_root).as_posix(), True) for p in sorted(crates_dir.iterdir()) if p.is_dir()]
@@ -1495,9 +1570,26 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     if apps_dir.is_dir():
         for app in sorted(p for p in apps_dir.iterdir() if p.is_dir()):
             app_src = app / "src"
-            if not app_src.is_dir():
-                continue
-            surface += list(_iter_exec_sources(app_src, surface_root, js_ts=True, rust=True))
+            if app_src.is_dir():
+                surface += list(_iter_exec_sources(app_src, surface_root, js_ts=True, rust=True))
+            # gate v10 fix #2 (HIGH): ALSO enumerate the app's wrangler `main`
+            # entrypoint — the real deploy surface — wherever it lives (app-root,
+            # a non-src dir, build output). An executable main OUTSIDE src/ now
+            # surfaces as a required [C10b] surface; an excluded app's main stays
+            # covered by its existing exact-prefix exclude.
+            main_rel = _wrangler_main(app)
+            if main_rel:
+                main_path = (app / main_rel).resolve()
+                try:
+                    rel = main_path.relative_to(surface_root).as_posix()
+                except ValueError:
+                    rel = None
+                if (
+                    rel
+                    and main_path.is_file()
+                    and _is_exec_source(rel, js_ts=True, rust=True)
+                ):
+                    surface.append((rel, False))
 
     for rel, is_dir in dict.fromkeys(surface):
         if not is_covered(rel, is_dir):

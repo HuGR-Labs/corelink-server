@@ -10,7 +10,7 @@ source_files:
   - "crates/corelink-tier-selection/src/lib.rs"
   - "crates/corelink-tier-selection/src/dpa.rs"
   - "crates/corelink-tier-selection/src/ledger.rs"
-checkpoint_sha: "04a7eccfdbe5733a9059ab12518f6ee571db0248"
+checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
 provenance: "AUTHORED"
 tags: ["crates", "billing", "stripe", "tier", "money-path", "commerce"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -55,5 +55,5 @@ The cluster powers the [money-path checkout + billing ingest](/launch/money-path
 5. `crates/corelink-billing-stripe/src/signature.rs:53` — `REPLAY_WINDOW_MS = 300_000` (the canonical 5-minute skew window).
 6. `crates/corelink-tier-selection/src/ledger.rs:191-244` — `select_tier`: the executed audit → DPA-gate → Enterprise-route → D1 row-lock checkout orchestrator.
 7. `crates/corelink-tier-selection/src/ledger.rs:206-220` — `INV-ONBOARD-DPA-FIRST` (DPA gate consulted before Stripe, all tiers → `DpaRequired`).
-8. `crates/corelink-tier-selection/src/dpa.rs:18-20` — the `DpaGate::is_accepted` trait the checkout consults.
+8. `crates/corelink-tier-selection/src/dpa.rs:18-20` — the `DpaAcceptanceGate::is_accepted` trait the checkout consults.
 9. `crates/corelink-tier-selection/src/ledger.rs:38` + `:236-244` — the 60s `tier_selection_locks` window const + `INSERT OR IGNORE` row-lock acquire (`TierError::LockHeld`).

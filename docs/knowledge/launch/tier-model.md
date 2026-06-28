@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/tier_select_store.rs"
   - "crates/corelink-container/src/routes/tier_select_audit.rs"
   - "specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
 provenance: "AUTHORED"
 tags: ["launch", "tier", "checkout", "stripe", "onboarding", "money-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -45,7 +45,7 @@ legal (DPA) precondition and a fail-closed audit trail.
 
 - DPA not accepted ⇒ `403 dpa_required` (INV-ONBOARD-DPA-FIRST): the enforcement is `return Err(TierSelectHttpError::DpaRequired)` after the fail-closed store check at `crates/corelink-container/src/routes/tier_select.rs:798` (the `403`/`dpa_required` status mapping itself is the `parts()` arm at `crates/corelink-container/src/routes/tier_select.rs:291`).
 - A direct paid Checkout for Enterprise is rejected `422 use_inquiry_form` — the UI hint alone is bypassable: the enforcement is `ParsedTier::Enterprise => return Err(...UseInquiryForm)` at `crates/corelink-container/src/routes/tier_select.rs:438` (the `422`/`use_inquiry_form` status mapping is the `parts()` arm at `crates/corelink-container/src/routes/tier_select.rs:290`).
-- The route is only mounted when the Stripe config AND `CORELINK_DPA_VERSION` are present; a missing DPA version means the endpoint is NOT mounted `crates/corelink-container/src/routes/tier_select.rs:551`.
+- The route is only mounted when the Stripe config AND `CORELINK_DPA_VERSION` are present; a missing DPA version means the endpoint is NOT mounted — the actual `CORELINK_DPA_VERSION` unset-⇒-`None` guard is `crates/corelink-container/src/routes/tier_select.rs:561-567` (inside `build_state_from_env`, whose header is at `:551`).
 - The DPA gate is fail-CLOSED: a transport error never reads as "accepted" `crates/corelink-container/src/routes/tier_select_store.rs:173-181`.
 - Audit emit returning `Err` ABORTS the whole operation before mutation (audit-before-mutation) — the abort logic lives in `crates/corelink-container/src/routes/tier_select.rs:735-738`, vacuous today since the `tracing`-only adapter (`crates/corelink-container/src/routes/tier_select_audit.rs:75`) never returns `Err`.
 - Supersession is scoped to tier cardinality/membership only — no invariant, security control, or latency/cost gate changes `specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md:128-144`.
@@ -64,7 +64,7 @@ legal (DPA) precondition and a fail-closed audit trail.
 4b. `crates/corelink-container/src/routes/tier_select.rs:290` — `parts()` status-mapping arm: `UseInquiryForm` → 422 `use_inquiry_form`.
 5. `crates/corelink-container/src/routes/tier_select.rs:798` — DPA-not-accepted → `return Err(TierSelectHttpError::DpaRequired)` (the enforcement, gated by the fail-closed store check).
 5b. `crates/corelink-container/src/routes/tier_select.rs:291` — `parts()` status-mapping arm: `DpaRequired` → 403 `dpa_required`.
-6. `crates/corelink-container/src/routes/tier_select.rs:551` — mount-only-with-DPA-version build_state guard.
+6. `crates/corelink-container/src/routes/tier_select.rs:561-567` — the `CORELINK_DPA_VERSION` unset-⇒-NOT-mounted guard (in `build_state_from_env`, header `:551`).
 7. `crates/corelink-container/src/routes/tier_select_store.rs:173-181` — the fail-CLOSED DPA-first D1 check.
 8. `crates/corelink-container/src/routes/tier_select_store.rs:214` — persist `pending_checkout` upsert.
 9. `crates/corelink-container/src/routes/tier_select_audit.rs:75` — `tracing`-only audit emit (always `Ok` today; durable D1 chain is Wave-37).

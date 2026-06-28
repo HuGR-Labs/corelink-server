@@ -1640,6 +1640,164 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v10 #1: Rust enumeration is CASE-INSENSITIVE -------------------------
+# The container/routes surface used a case-SENSITIVE `rglob("*.rs")` while
+# `_is_exec_source` lowercases the suffix — so `crates/corelink-container/src/
+# Poison.RS` (pulled via `#[path]`) was classified strict yet NEVER enumerated and
+# shipped GREEN. v10 enumerates via the SAME `_is_exec_source` predicate
+# (case-insensitive). Hermetic: a `src/Poison.RS` seeded by NO concept and NOT
+# excluded MUST surface as a [C10b] gap naming it.
+assert_rust_case_insensitive() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    mkdir -p crates/corelink-container/src
+    # an upper-case-extension Rust file (a `#[path]`-pulled module) — invisible to
+    # a case-sensitive `*.rs` glob, classified strict by the lowercasing classifier.
+    printf 'pub async fn poison() { deny_unless_authorized(); }\n' \
+      > crates/corelink-container/src/Poison.RS
+    mkdir -p docs/knowledge
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+EOF
+    git add -A
+    git commit -q -m base
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+candidates: []
+excludes: []
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.ci_out" 2>&1 || true
+  )
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.ci_out" 2>/dev/null \
+     && grep -q 'crates/corelink-container/src/Poison.RS' "$tmp/.ci_out" 2>/dev/null; then
+    ok "rust case-insensitive: a Poison.RS (upper-case ext) is enumerated -> [C10b] names it"
+  else
+    miss "rust case-insensitive (no [C10b] naming src/Poison.RS): $(tail -1 "$tmp/.ci_out" 2>/dev/null)" "rust-case-pos"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- gate v10 #2: wrangler `main` OUTSIDE src/ is enumerated -------------------
+# The apps surface walk + the strict classifier were hardcoded to `apps/*/src/**`,
+# but a CF Worker's wrangler `main` can be ANYWHERE (app-root, a non-src dir, build
+# output). An app whose deploy entrypoint lives outside src/ had its real
+# request-reachable handler NEVER enumerated -> shipped GREEN. v10 parses each app's
+# wrangler `main` and ALSO enumerates that entrypoint. We prove TWO:
+#  POSITIVE — apps/sneaky-worker/index.ts (main at APP-ROOT, outside src/) REDs;
+#  NEGATIVE — an app whose wrangler main IS its concept-cited src/index.ts stays
+#             covered (no gap) — proving the widened net stays SELECTIVE.
+assert_wrangler_main_outside_src() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # APP A: wrangler main lives at APP-ROOT (outside src/) — the backdoor surface.
+    mkdir -p apps/sneaky-worker
+    printf 'export default { async fetch() { /* reachable backdoor */ } };\n' \
+      > apps/sneaky-worker/index.ts
+    cat > apps/sneaky-worker/wrangler.toml <<'TOML'
+name = "sneaky-worker"
+main = "index.ts"
+TOML
+    # APP B: a genuine app whose wrangler main is its concept-cited src/index.ts.
+    # Line 2 is the SUBSTANTIVE enforcer statement the concept cites (line 1 is a
+    # boilerplate `export default {` opener, rejected by the v8 substantive rule).
+    mkdir -p apps/honest-worker/src
+    printf 'export default {\n  async fetch() { return deny_unless_authorized(); },\n};\n' \
+      > apps/honest-worker/src/index.ts
+    cat > apps/honest-worker/wrangler.toml <<'TOML'
+name = "honest-worker"
+main = "src/index.ts"
+TOML
+    mkdir -p docs/knowledge/planes
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [h](/planes/h.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    cat > docs/knowledge/planes/h.md <<EOF
+---
+type: "Plane"
+title: "Honest worker (hermetic)"
+description: "grounds the honest app entrypoint only."
+source_files:
+  - "apps/honest-worker/src/index.ts"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Honest worker (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the entrypoint (\`apps/honest-worker/src/index.ts:2\`).
+
+# Invariants
+- it holds (\`apps/honest-worker/src/index.ts:2\`).
+
+# Citations
+1. \`apps/honest-worker/src/index.ts:2\` — grounded anchor (the fetch enforcer).
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "planes/h"
+    type: "Plane"
+    status: "active"
+    seed_from:
+      - "apps/honest-worker/src/index.ts"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.wm_out" 2>&1 || true
+  )
+  # POSITIVE: the app-root main (outside src/) is enumerated -> fires naming it.
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.wm_out" 2>/dev/null \
+     && grep -q 'apps/sneaky-worker/index.ts' "$tmp/.wm_out" 2>/dev/null; then
+    ok "wrangler-main outside src: an app-root main (apps/sneaky-worker/index.ts) is enumerated -> [C10b] names it"
+  else
+    miss "wrangler-main outside src positive (no [C10b] naming apps/sneaky-worker/index.ts): $(tail -1 "$tmp/.wm_out" 2>/dev/null)" "wmain-pos"
+  fi
+  # NEGATIVE (selectivity): the concept-cited honest src/index.ts is NOT flagged.
+  total=$((total + 1))
+  if ! grep -q 'apps/honest-worker/src/index.ts' "$tmp/.wm_out" 2>/dev/null; then
+    ok "wrangler-main outside src: a concept-cited src/index.ts main stays covered (selective)"
+  else
+    miss "wrangler-main outside src negative: covered apps/honest-worker/src/index.ts was wrongly flagged" "wmain-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -1687,6 +1845,11 @@ assert_boilerplate_line_cite_rejected
 # extension set — a .mts/.tsx worker handler + a .mjs new-app handler now RED [C10b]
 # (was GREEN: classified strict but never enumerated because the walk globbed .ts only).
 assert_exec_ext_set_unified
+# gate v10: #1 the Rust enumeration is CASE-INSENSITIVE (a Poison.RS upper-case ext
+# is enumerated, was GREEN under the case-sensitive *.rs glob) + #2 an app's
+# wrangler `main` OUTSIDE src/ (the real deploy surface) is enumerated.
+assert_rust_case_insensitive
+assert_wrangler_main_outside_src
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then

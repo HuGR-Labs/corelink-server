@@ -299,6 +299,30 @@ deep-audit layer** (the N-lens `okf-truth-panel` + the standing human re-attesta
 cheap to catch; it deliberately does not pretend to mechanize correctness, and the deep-audit layer is
 the load-bearing guarantor of it.
 
+**ACCEPTED STRUCTURAL RESIDUAL — C10b COVERAGE-BY-CONVENTION ≠ BUILD-REACHABLE SURFACE (gate v10,
+round 5: documented, NOT "fixed").** The C10b enumeration walks the conventional source trees — the
+wrangler-`main` entrypoints, every app's `*/src/**`, the container `src/**` (root + recursive
+`routes/`), and `worker/src/**` — so a load-bearing file placed in those conventional locations is gated.
+gate v10 closes two FILESYSTEM-CONVENTION holes within that model: the Rust enumeration is now
+case-INSENSITIVE (it shares the lowercasing `_is_exec_source` predicate, so a `#[path]`-pulled
+`src/Poison.RS` is enumerated, not skipped by a case-sensitive `*.rs` glob — fix #1), and each app's
+wrangler `main` is parsed and enumerated WHEREVER it lives (an entrypoint at app-root or any non-`src/`
+dir is now a required surface, not just `apps/*/src/**` — fix #2). But the gate still enumerates by
+CONVENTION (those source trees), **NOT the full build/import graph** — it is not an esbuild bundler nor a
+cargo module-tree analyzer. A load-bearing handler placed OUTSIDE the conventional trees and pulled in
+ONLY via an import or a `#[path]` is NOT enumerated: e.g. `worker/handlers/poison.ts` imported by
+`worker/src/index.ts` ships in the esbuild bundle the gate does not follow; a `crates/.../src/x.rs`
+declared with `#[path = "../../../elsewhere/poison.rs"]` outside the walked tree is in the cargo build
+but off the convention. Fully closing this needs a RECURSIVE import-graph traversal from each wrangler
+`main` (and the cargo `#[path]`/`mod` tree) — out of scope for a content-anchor completeness gate, and a
+large analyzer dependency. This is an **accepted structural residual**, in the same family as the C5
+freshness ≠ authoring-correctness residual above: such a non-conventional deploy layout is
+**DIFF-VISIBLE** (a handler file outside the conventional trees, an import/`#[path]` that reaches across
+to it) and is owned by **code-review + the human/panel deep-audit layer** — the SAME permanent
+correctness backstop that owns the C5 residual. The gate RAISES the bar (every conventional layout is
+gated file-granular; a non-conventional deploy layout is itself a review red-flag), it deliberately does
+**not** pretend to be a build-graph analyzer.
+
 ### 4.1 ADR & doc-extraction sub-profile (FROZEN — closes the maximal-scope gap)
 
 The 35 architecture concepts are code-grounded. The ratified ADR re-index and docs/ extraction need
