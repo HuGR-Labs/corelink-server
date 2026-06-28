@@ -2075,6 +2075,152 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- gate v13: a CRATE-HOSTED (or root) wrangler main outside src/ is enumerated -
+# v10/v11/v12 closed the wrangler-main class FOR APPS ONLY — the enumeration globbed
+# `apps/*/wrangler*` exclusively. A wrangler config that lives OUTSIDE apps/ (in a
+# `crates/<x>` dir, or the repo root) declaring a `main` OUTSIDE `*/src/**` (e.g. a
+# wasm POC's `build/worker/shim.mjs`) was NEVER enumerated as a strict surface: the
+# crate is dir-covered by a CrateCluster seed, so the build-output entrypoint rode
+# coarse cluster ADOPTION and shipped GREEN with zero coverage (PoC-proven via
+# crates/corelink-clerk-cf/build/worker/shim.mjs). v13 runs the SAME _wrangler_mains
+# enumeration over apps/ + crates/* + the repo ROOT. We prove TWO:
+#  POSITIVE — crates/poc-cf's wrangler main `build/worker/shim.mjs` (outside src/,
+#             uncited), under a whole-crate-adopted CrateCluster seed, REDs [C10b];
+#  NEGATIVE — a crate whose wrangler main IS its concept-cited src/index.ts stays
+#             covered (the widened net stays SELECTIVE; src/-internal mains unaffected).
+assert_crate_wrangler_main_outside_src() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # CRATE A: a crate-hosted wrangler whose main is BUILD OUTPUT outside src/ — the
+    # backdoor surface that rode whole-crate cluster adoption. The shim file exists.
+    mkdir -p crates/poc-cf/build/worker crates/poc-cf/src
+    printf 'fn anchor() {}\n' > crates/poc-cf/src/lib.rs
+    printf 'export default { async fetch() { /* reachable backdoor */ } };\n' \
+      > crates/poc-cf/build/worker/shim.mjs
+    cat > crates/poc-cf/wrangler.toml <<'TOML'
+name = "poc-cf"
+main = "build/worker/shim.mjs"
+TOML
+    # CRATE B: a genuine crate whose wrangler main is its concept-cited src/index.ts.
+    # Line 2 is the SUBSTANTIVE enforcer the concept cites (line 1 is boilerplate).
+    mkdir -p crates/honest-cf/src
+    printf 'export default {\n  async fetch() { return deny_unless_authorized(); },\n};\n' \
+      > crates/honest-cf/src/index.ts
+    cat > crates/honest-cf/wrangler.toml <<'TOML'
+name = "honest-cf"
+main = "src/index.ts"
+TOML
+    mkdir -p docs/knowledge/crates
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [a](/crates/a.md)
+- [b](/crates/b.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha0="$(git rev-parse HEAD)"
+    # CrateCluster A: ADOPTS the whole crates/poc-cf dir (so the build-output main is
+    # dir-covered by adoption — exactly the corelink-clerk-cf shape) + cites src/lib.rs.
+    cat > docs/knowledge/crates/a.md <<EOF
+---
+type: "CrateCluster"
+title: "POC CF cluster (hermetic)"
+description: "adopts the whole crates/poc-cf dir; cites src/lib.rs, NOT the build main."
+source_files:
+  - "crates/poc-cf"
+  - "crates/poc-cf/src/lib.rs"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# POC CF cluster (hermetic)
+
+Lead paragraph: the cluster adopts the crate dir and cites the lib anchor.
+
+# How it works
+- the adopted crate (the cited anchor is \`crates/poc-cf/src/lib.rs:1\`).
+
+# Invariants
+- the lib anchor holds (\`crates/poc-cf/src/lib.rs:1\`).
+
+# Citations
+1. \`crates/poc-cf/src/lib.rs:1\` — the one grounded file (NOT the build-output main).
+EOF
+    cat > docs/knowledge/crates/b.md <<EOF
+---
+type: "CrateCluster"
+title: "Honest CF cluster (hermetic)"
+description: "grounds the honest crate entrypoint (its wrangler main IS src/index.ts)."
+source_files:
+  - "crates/honest-cf/src/index.ts"
+checkpoint_sha: "$sha0"
+provenance: "AUTHORED"
+---
+
+# Honest CF cluster (hermetic)
+
+Lead paragraph.
+
+# How it works
+- the entrypoint (\`crates/honest-cf/src/index.ts:2\`).
+
+# Invariants
+- it holds (\`crates/honest-cf/src/index.ts:2\`).
+
+# Citations
+1. \`crates/honest-cf/src/index.ts:2\` — grounded anchor (the fetch enforcer).
+EOF
+    cat > manifest.yaml <<EOF
+profile_version: "0.1"
+excludes: []
+candidates:
+  - id: "crates/a"
+    type: "CrateCluster"
+    status: "active"
+    seed_from:
+      - "crates/poc-cf"
+  - id: "crates/b"
+    type: "CrateCluster"
+    status: "active"
+    seed_from:
+      - "crates/honest-cf/src/index.ts"
+EOF
+    git add -A
+    git commit -q -m A
+    python3 "$absval" --bundle docs/knowledge --manifest manifest.yaml --surface-root . > "$tmp/.cwm_out" 2>&1 || true
+  )
+  # POSITIVE: the crate-hosted build-output main (outside src/), under whole-crate
+  # adoption, is enumerated strict -> fires naming it. (THE v13 hole.)
+  total=$((total + 1))
+  if grep -q '^\[C10b\]' "$tmp/.cwm_out" 2>/dev/null \
+     && grep -q 'crates/poc-cf/build/worker/shim.mjs' "$tmp/.cwm_out" 2>/dev/null; then
+    ok "crate wrangler-main outside src: a crate-hosted build-output main (crates/poc-cf/build/worker/shim.mjs) is enumerated despite whole-crate adoption -> [C10b] names it"
+  else
+    miss "crate wrangler-main outside src positive (no [C10b] naming crates/poc-cf/build/worker/shim.mjs): $(tail -1 "$tmp/.cwm_out" 2>/dev/null)" "crate-wmain-pos"
+  fi
+  # NEGATIVE (selectivity): a crate whose main IS its concept-cited src/index.ts
+  # stays covered — a main INSIDE the owning crate's src/** is unaffected.
+  total=$((total + 1))
+  if ! grep -q 'crates/honest-cf/src/index.ts' "$tmp/.cwm_out" 2>/dev/null; then
+    ok "crate wrangler-main outside src: a concept-cited crate src/index.ts main stays covered (selective; src/-internal mains unaffected)"
+  else
+    miss "crate wrangler-main outside src negative: covered crates/honest-cf/src/index.ts was wrongly flagged" "crate-wmain-neg"
+  fi
+  rm -rf "$tmp"
+}
+
 echo "OKF-CoreLink validator acceptance suite"
 echo "---------------------------------------"
 assert_good
@@ -2135,6 +2281,11 @@ assert_env_main_override_outside_src
 # UNIONs every declared main (no first-file-win) — an ALT-NAMED wrangler.prod.toml
 # main outside src/ REDs, and a DUAL-CONFIG .jsonc real main REDs despite a .toml decoy.
 assert_alt_and_dual_wrangler_config
+# gate v13: the wrangler-main enumeration now runs over apps/ + crates/* + the repo
+# ROOT (not apps/ only) — a CRATE-HOSTED wrangler main outside src/ (build output,
+# riding whole-crate cluster adoption) REDs [C10b], closing the same wrangler-main
+# class the apps-only v10/v11/v12 fix missed (PoC: crates/corelink-clerk-cf shim).
+assert_crate_wrangler_main_outside_src
 
 echo "---------------------------------------"
 if [ ${#misses[@]} -eq 0 ]; then

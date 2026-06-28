@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **OKF post-merge severe independent audit — close 1 wiki self-contradiction + 1 gate hole.** A 4-agent
+  severe audit of the landed wiki (157 concepts, all reconcile claim-updates re-verified TRUE, security
+  4/5 invariants SOLID) found: (1) `ops/release-process` still lumped the S-09 audit-chain producer/seal
+  into "UNWIRED skeletons" while the sibling `compliance/audit-chain` (and the code) treat the drain as
+  WIRED on main — reconciled to a 3-tier list (wired-live / wired-but-dormant-until-keyed / still-deferred,
+  keeping the customer audit-EXPORT exporter+cron deferred); (2) **gate v13** — the wrangler-`main`
+  enumeration was hardcoded to `apps/` only, so a wrangler config in a crate or the repo root with a `main`
+  outside `*/src/**` shipped green with coarse crate-dir coverage; `_wrangler_mains` now unions all
+  `wrangler*.{toml,jsonc,json}` under `apps/`, `crates/`, AND the repo root. Plus an observability wording
+  fix (evaluation-count ledger, not flapping). A latent MED residency code finding (`sam` macro routable to
+  the US bucket at request-time; provisioning already fail-closed) was handed to the repo TL (CF-5 in the
+  handoff doc) — no wiki change. Gate green: 157 concepts, 0 stale / 0 drift; 57/57 fixtures.
 - **OKF final-audit code findings (CF-1 HIGH GDPR + CF-2/3/4).** **CF-1 (HIGH):** the DSR erase-set was
   incomplete — tenant-keyed tables added after the 2026-06-11 ADR-S11-013 freeze (`team_member` seat-PII,
   `runners_entitlement`, `monthly_request_counts`, `pilot_tenants`, `stripe_checkout_sessions`, GC/region-

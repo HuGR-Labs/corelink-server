@@ -6,8 +6,9 @@ the architecture wiki; the wiki itself has been corrected separately (commit `0c
 `feat/okf-sota-on-main`). This report touches **no code** — it hands the code items to you to decide
 and implement.
 
-Severity legend: **HIGH** = correctness/compliance risk that can ship a real failure; **LOW** =
-hygiene / latent footgun. One HIGH, three LOW.
+Severity legend: **HIGH** = correctness/compliance risk that can ship a real failure; **MED** =
+latent / defense-in-depth gap; **LOW** = hygiene / latent footgun. One HIGH, one MED, three LOW.
+(CF-5 added 2026-06-28 from the post-merge severe independent audit.)
 
 ---
 
@@ -99,6 +100,34 @@ override `check_and_accrue`, it would **silently over-admit spend past the $-cei
 backend must consciously provide an atomic accrue, rather than inheriting a silent over-admit. (Note:
 the leased layer over-**charges** but never over-**serves**, and the audit verified the live D1 path is
 sound — this is purely about protecting future backends.)
+
+---
+
+## CF-5 [MED · latent residency / Schrems II] — `sam` macro is request-time routable into the US bucket
+
+**Where:** `crates/corelink-container/src/storage/region_map.rs:60` (`colo_for_macro("sam") => Some("sam")`)
++ `wrangler.toml:638/646` (`env.PROD_SAM` CAS bucket = physically `corelink-cas-prod`, the US bucket)
++ `r2_s3.rs:453-456` (a `sam` tenant's blobs are only key-prefixed `sam/...` *inside* the US bucket).
+
+**What's wrong (today: not reachable via product):** the round-3 Schrems II fix closed the **provisioning**
+path — signup rejects `sam`/`apac`/`afr` (`apps/signup-worker/.../clerk.ts:743-751`) and `primary_region` is
+immutable post-INSERT — so a `sam` tenant cannot be created through product ingress. But the **request-time**
+path is NOT fail-closed: `colo_for_macro("sam")` still returns `Some("sam")`, routing a `sam` tenant to
+`env.PROD_SAM`, whose CAS bucket is physically the **US** `corelink-cas-prod`. So a `sam` tenant that exists
+**only via an out-of-band D1 row** (not via signup) would have its blobs stored in a US bucket while presenting
+as South-America-resident — the exact cross-border placement the residency model forbids. `region_map.rs:30-34`
+own doc-comment already admits this. `afr`/unknown fail-closed correctly (`colo_for_macro` → `None` → 503).
+
+**Severity MED / latent / defense-in-depth:** unreachable via product ingress (provisioning rejects `sam`),
+and consistent with the **ADR-S14-009 single-bucket launch posture** (at launch, all CAS physically lives in
+one US bucket regardless of macro — physical per-region is deferred to S-14). So this is not a live leak today;
+it's a missing request-time guard that would matter the moment `sam` becomes provisionable or a `sam` row is
+injected by any non-signup path.
+
+**Recommended (one line):** make `colo_for_macro("sam") => None` (like `afr`) so the request path fail-closes a
+non-provisioned macro too — matching the provisioning-side rejection. (Then re-confirm the worker mirror
+`worker/src/region-map.ts` stays byte-for-byte consistent.) The OKF `compliance/data-residency` concept already
+discloses the single-bucket posture; no wiki change needed.
 
 ---
 
