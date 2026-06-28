@@ -1,0 +1,59 @@
+-- 0080_audit_chain_head_signature.sql
+--
+-- CF-6 (enterprise-DD finding #4): make the live audit chain HEAD tamper-evident
+-- against a D1 WRITER. Today the per-partition chain head in `audit_chain_head`
+-- (migration 0078) is an UNKEYED BLAKE3 checkpoint, sealed by the S-09 drain
+-- (`routes/audit_drain.rs`, `POST /_internal/audit/drain`) over MUTABLE D1 rows.
+-- An insider with D1 write can rewrite the sealed `audit_outbox` rows, recompute
+-- a self-consistent BLAKE3 chain + head, overwrite the `audit_chain_head`
+-- checkpoint to match, and the unkeyed verifier still passes — the chain proves
+-- nothing against the very actor who can write the rows.
+--
+-- ## Fix
+--
+-- SIGN the per-partition chain head with the per-region Ed25519 key already wired
+-- for erasure attestations (`crates/corelink-erasure-attestation`,
+-- `ErasureSigningKey::from_seed`, seed `ERASURE_ATTESTATION_SEED_HEX` — REUSED to
+-- avoid a new secret; the Ed25519 keypair is purely seed-derived, so one seed
+-- signs every partition and the partition's region is bound in the SIGNED tuple,
+-- not in the key. An optional dedicated `AUDIT_CHAIN_SIGNING_SEED_HEX` overrides
+-- it for operators who want key separation).
+--
+-- On every compare-and-set advance the drain signs the canonical head tuple
+-- `(tenant_id, region, head_hash, next_sequence)` — RFC-8785 JCS bytes — and
+-- stores the base64 Ed25519 signature + the sign time + the signing key id below.
+-- On drain RESUME the stored signature is re-verified against the canonical tuple
+-- + the seed-derived public key: a head carrying a NON-NULL signature that does
+-- NOT verify is TAMPER, so the drain REFUSES to extend the chain from a forged
+-- head (fail-CLOSED, SEV-1). A D1 writer cannot forge the head without the
+-- write-only signing seed.
+--
+-- ## Columns (all NULLABLE — additive, legacy-tolerant)
+--
+--   * head_signature    — base64 Ed25519 signature over the canonical head-tuple
+--                         JCS bytes `{"head_hash","next_sequence","region","tenant_id"}`.
+--   * head_signed_at_ms — unix epoch ms the head signature was produced.
+--   * signing_key_id    — the Ed25519 key id used (= the attestation key id). Lets
+--                         a seed/key rotation be detected: a head signed under a
+--                         DIFFERENT key id is not a false-tamper alarm — it cannot
+--                         be verified with the current seed, so it is tolerated and
+--                         re-signed on the next advance.
+--
+-- A NULL `head_signature` is a pre-0080 (legacy) head: tolerated on resume and
+-- RE-SIGNED on the next advance, so the live chain becomes signed without a
+-- backfill. (Residual: a D1 writer who NULLs an existing signature AND rewrites
+-- the head downgrades that partition to "legacy/unsigned" until the next advance
+-- re-signs it; the separate S-09 row-chain verifier still recomputes the head
+-- from the genuine genesis and catches a row rewrite.)
+--
+-- ## Additive policy
+--
+-- Purely additive: `ALTER TABLE … ADD COLUMN` (all NULLABLE, no DEFAULT rewrite).
+-- No DROP, no column retype, no rewrite of existing rows —
+-- INV-AUTH-MIGRATION-ADDITIVE + INV-AUDIT-APPEND-ONLY. SQLite has no
+-- `ADD COLUMN IF NOT EXISTS`; the d1_migrations ledger guarantees exactly-once
+-- application (d1-migrations-ledger-desync).
+
+ALTER TABLE audit_chain_head ADD COLUMN head_signature    TEXT;     -- base64 Ed25519 over canonical (tenant_id,region,head_hash,next_sequence) JCS
+ALTER TABLE audit_chain_head ADD COLUMN head_signed_at_ms INTEGER;  -- unix epoch ms the head signature was produced
+ALTER TABLE audit_chain_head ADD COLUMN signing_key_id    INTEGER;  -- Ed25519 key id used to sign the head (seed/key rotation marker)

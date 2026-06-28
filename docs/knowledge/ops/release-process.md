@@ -6,7 +6,7 @@ source_files:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt"
   - "crates/corelink-container/src/routes/audit_drain.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "b9b40160869bc1907dd2d1527aeb8670a9d18411"
+checkpoint_sha: "1c9daedc0a8e96301cae7b640e4da7fd0507be97"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -42,9 +42,10 @@ proves the artifact, and to the GA staffing waiver in
    **(a) wired-and-live** — the CF 4-target binding (D1 / R2 / KV / Durable Objects);
    **(b) wired-but-dormant-until-keyed** — the hash-chained **audit-chain producer/seal** (the S-09
    drain): the `POST /_internal/audit/drain` route is mounted and actually seals the live `audit_outbox`
-   into the BLAKE3 tamper-evident chain when the erase/internal auth key + D1 are bound
+   into the BLAKE3 tamper-evident chain — now with an Ed25519-SIGNED chain head (CF-6, migration 0080) —
+   when the erase/internal auth key + D1 are bound
    (`crates/corelink-container/src/main.rs:650`; seal logic at
-   `crates/corelink-container/src/routes/audit_drain.rs:208`/`:458`/`:517`), and stays mounted-inert
+   `crates/corelink-container/src/routes/audit_drain.rs:394`/`:738`/`:851`), and stays mounted-inert
    (fail-CLOSED unmount) when the key+D1 are absent — it is NOT a designed-only skeleton (this matches the
    audit-chain concept's WIRED treatment, [compliance/audit-chain.md](/compliance/audit-chain.md));
    **(c) DESIGNED-but-UNWIRED skeletons** enumerated as the target GA posture, not running GA wiring —

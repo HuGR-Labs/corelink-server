@@ -21,7 +21,7 @@ source_files:
   - "apps/analytics-worker/src/ingest.ts"
   - "apps/signup-worker/src/webhooks/audit_drain_cron.ts"
   - "docs/cli/audit-export.md"
-checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
+checkpoint_sha: "1c9daedc0a8e96301cae7b640e4da7fd0507be97"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -52,6 +52,21 @@ deferred — `build_state` wires an IN-MEMORY exporter + sink; the durable R2-ba
 sink remain DEFERRED behind the stable `Arc<dyn …>` surface (see below) — but the chain-sealing producer
 itself is now wired.
 
+As of current main the drain is also **keyed** (CF-6): the per-`(tenant, region)` `audit_chain_head` is
+Ed25519-SIGNED, not just BLAKE3-chained. Unkeyed BLAKE3 alone is forgeable by an insider with D1 write —
+they can rewrite the sealed rows, recompute a self-consistent chain + head, overwrite the checkpoint to
+match, and the unkeyed verifier still passes. So on every checkpoint ADVANCE the drain signs the canonical
+head tuple — RFC-8785 JCS of `{head_hash, next_sequence, region, tenant_id}` — and persists the
+`head_signature` (base64) + `head_signed_at_ms` + `signing_key_id` columns (migration 0080). On RESUME the
+stored signature is re-verified against that canonical tuple + the seed-derived public key; a head that
+does NOT verify (or a signed head with no seed configured to verify it) is treated as TAMPER and the drain
+refuses to extend the chain from it — fail-CLOSED, logged SEV-1 `tamper_detected`. A NULL signature
+(pre-0080 legacy head) or a head signed under a DIFFERENT `signing_key_id` (seed/key rotation) is tolerated
+and re-signed on the next advance. The signing key REUSES the per-region erasure-attestation Ed25519 seed
+(no new secret; an optional dedicated `AUDIT_CHAIN_SIGNING_SEED_HEX` takes precedence), and with NO seed
+configured the head is advanced UNSIGNED (legacy/tolerated) to preserve drain liveness in dev/CI. Net: the
+live audit chain head is now tamper-EVIDENT against a malicious D1 writer, not merely append-linked.
+
 # Role
 
 It is the compliance read-and-prove surface: customers (and their evidence-collection automation) get
@@ -60,10 +75,11 @@ another tenant's rows.
 
 # How it works
 
-- The S-09 drain endpoint is mounted (env-gated, internal-auth) as `POST /_internal/audit/drain` and is the LIVE chain-seal producer: `handle_drain` scans the `(tenant_id, region)` partitions with pending rows then seals each `crates/corelink-container/src/routes/audit_drain.rs:514-564`.
-- The per-partition seal is crash-safe and fork-free: `drain_partition` resolves the resume head (the durable sealed-rows tail is authoritative over the checkpoint when ahead), seals every pending row IN ORDER guarded by `emitted_at IS NULL` (idempotent), then advances the `audit_chain_head` checkpoint with a compare-and-set (single-writer anti-fork → aborts the partition on drift rather than forking) `crates/corelink-container/src/routes/audit_drain.rs:457-512`.
-- The link itself is `chain_hash = BLAKE3(prev_hash || RFC-8785-JCS(payload))` over the EXACT bytes persisted as `canonical_jcs` (what the verifier re-hashes); `seal_rows` is fully deterministic, which is the basis of concurrent-drain fork-freedom `crates/corelink-container/src/routes/audit_drain.rs:208-235`.
-- The drain auth gate is the constant-time internal-auth check (≥32-char key floor, fail-CLOSED: unmounted without the erase/internal-auth key + D1) `crates/corelink-container/src/routes/audit_drain.rs:95-137`.
+- The S-09 drain endpoint is mounted (env-gated, internal-auth) as `POST /_internal/audit/drain` and is the LIVE chain-seal producer: `handle_drain` scans the `(tenant_id, region)` partitions with pending rows then seals each `crates/corelink-container/src/routes/audit_drain.rs:851-909`.
+- The per-partition seal is crash-safe and fork-free: `drain_partition` resolves the resume head (the durable sealed-rows tail is authoritative over the checkpoint when ahead), seals every pending row IN ORDER guarded by `emitted_at IS NULL` (idempotent), then advances the `audit_chain_head` checkpoint with a compare-and-set (single-writer anti-fork → aborts the partition on drift rather than forking) `crates/corelink-container/src/routes/audit_drain.rs:737-846`.
+- The link itself is `chain_hash = BLAKE3(prev_hash || RFC-8785-JCS(payload))` over the EXACT bytes persisted as `canonical_jcs` (what the verifier re-hashes); `seal_rows` is fully deterministic, which is the basis of concurrent-drain fork-freedom `crates/corelink-container/src/routes/audit_drain.rs:394-421`.
+- The drain auth gate is the constant-time internal-auth check (`internal_auth_ok` `crates/corelink-container/src/routes/audit_drain.rs:261-277`) plus the ≥32-char key floor + fail-CLOSED env mount (unmounted without the erase/internal-auth key + D1) in `build_state_from_env` `crates/corelink-container/src/routes/audit_drain.rs:286-317`.
+- CF-6 keyed head: every advance Ed25519-SIGNS the canonical head tuple (JCS of `{head_hash, next_sequence, region, tenant_id}` via `canonical_head_bytes` `crates/corelink-container/src/routes/audit_drain.rs:196-209`, signed by `sign_head` `crates/corelink-container/src/routes/audit_drain.rs:213-226`) and persists it alongside the checkpoint `crates/corelink-container/src/routes/audit_drain.rs:812-821`; on resume `check_head_on_resume` re-verifies the stored signature and returns `FailClosed` on tamper / signed-but-no-seed `crates/corelink-container/src/routes/audit_drain.rs:465-504`, which the partition drain converts into a SEV-1 `tamper_detected` abort `crates/corelink-container/src/routes/audit_drain.rs:759-774`.
 - The drain is invoked by an hourly Cloudflare Cron Trigger in the signup-worker — `runAuditDrainSweep` resolves the erase-first/shared-fallback key and POSTs `/_internal/audit/drain`, INERT (no-op skip, never a 401 storm) until that key is bound `apps/signup-worker/src/webhooks/audit_drain_cron.ts:49-100`.
 - The export route's public surface (router + state) lives in the `state` submodule (`crates/corelink-container/src/routes/audit_export/state.rs:88`, `crates/corelink-container/src/routes/audit_export/state.rs:157`), re-exported verbatim through the barrel `crates/corelink-container/src/routes/audit_export.rs:144-148`.
 - `build_state` wires the LIVE native exporter + export-audit sink as IN-MEMORY implementations (`InMemoryAuditExporter` + `InMemoryExportAuditSink`) — non-durable, lost on process restart and not shared across containers; the durable R2-backed exporter + `RateLimiter` DO singleton + CloudEvents audit sink are DEFERRED behind the stable `Arc<dyn ...>` trait-object surface (`crates/corelink-container/src/routes/audit_export/state.rs:88`).
@@ -85,8 +101,9 @@ another tenant's rows.
 
 # Invariants
 
-- The chain seal is idempotent + fork-free: each row UPDATE is guarded by `emitted_at IS NULL` and the head advance is a compare-and-set on the resumed value, so a re-run or a concurrent drain never double-seals and never forks the chain `crates/corelink-container/src/routes/audit_drain.rs:457-512`.
-- The persisted `canonical_jcs` is byte-for-byte what was hashed (`chain_hash = BLAKE3(prev || canonical_jcs)`), so the verifier path re-hashes the stored bytes rather than re-canonicalizing `crates/corelink-container/src/routes/audit_drain.rs:208-235`.
+- The chain seal is idempotent + fork-free: each row UPDATE is guarded by `emitted_at IS NULL` (`write_seal` `crates/corelink-container/src/routes/audit_drain.rs:635-655`) and the head advance is a compare-and-set on the resumed value (`advance_head_cas` `crates/corelink-container/src/routes/audit_drain.rs:664-734`), so a re-run or a concurrent drain never double-seals and never forks the chain.
+- The persisted `canonical_jcs` is byte-for-byte what was hashed (`chain_hash = BLAKE3(prev || canonical_jcs)`), so the verifier path re-hashes the stored bytes rather than re-canonicalizing `crates/corelink-container/src/routes/audit_drain.rs:394-421`.
+- The chain HEAD is tamper-evident, not just append-linked (CF-6): a resumed checkpoint whose Ed25519 signature does not verify under the current key id — or a signed head with no seed to verify it — is rejected as TAMPER and the drain refuses to extend it (fail-CLOSED, SEV-1), so a D1 writer cannot silently rewrite the head `crates/corelink-container/src/routes/audit_drain.rs:465-504`.
 - The export audit row is emitted fail-CLOSED — a sink `Err` aborts with 503 before streaming `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105`.
 - Analytics data access is gated per-tenant: the PAT gate rejects forged/wrong-tenant (401) or verifier fault (503) before reads `crates/corelink-container/src/routes/audit_analytics.rs:118`.
 - The edge ingest tap is authenticated, never anonymous: an event with neither an allow-listed `Origin` nor a correct constant-time-matched `X-Corelink-Ingest-Key` is rejected 403 before any D1 write `apps/analytics-worker/src/ingest.ts:127-136`.
@@ -120,8 +137,9 @@ another tenant's rows.
 17. `crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs:121-156` — `resolve_shadow_via_prelude`: prelude-preferred region with `request_prelude_missing` marker + factory fallback.
 18. `crates/corelink-container/src/routes/audit_export/handler.rs:83-99` — export `:tenant` path-segment constant-time cross-tenant check → SEV-1 row + 403 (fail-CLOSED).
 19. `crates/corelink-container/src/routes/audit_export/parse.rs:25-32` — `parse_timestamp`: epoch-ms-or-minimal-RFC3339 window parser.
-20. `crates/corelink-container/src/routes/audit_drain.rs:514-564` — `handle_drain`: LIVE S-09 `POST /_internal/audit/drain` entry (partition scan → seal → summary).
-21. `crates/corelink-container/src/routes/audit_drain.rs:457-512` — `drain_partition`: crash-safe resume (sealed-tail authoritative) + idempotent `emitted_at IS NULL`-guarded seal + compare-and-set head advance (anti-fork).
-22. `crates/corelink-container/src/routes/audit_drain.rs:208-235` — `seal_rows`: deterministic `chain_hash = BLAKE3(prev || RFC-8785-JCS(payload))` over the exact persisted `canonical_jcs` bytes.
-23. `crates/corelink-container/src/routes/audit_drain.rs:95-137` — constant-time internal-auth gate + fail-CLOSED env mount (≥32-char key + D1 required).
+20. `crates/corelink-container/src/routes/audit_drain.rs:851-909` — `handle_drain`: LIVE S-09 `POST /_internal/audit/drain` entry (partition scan → seal → summary).
+21. `crates/corelink-container/src/routes/audit_drain.rs:737-846` — `drain_partition`: crash-safe resume (sealed-tail authoritative) + idempotent `emitted_at IS NULL`-guarded seal + compare-and-set head advance (anti-fork) + CF-6 resume-signature check (SEV-1 fail-CLOSED on tamper at `crates/corelink-container/src/routes/audit_drain.rs:759-774`).
+22. `crates/corelink-container/src/routes/audit_drain.rs:394-421` — `seal_rows`: deterministic `chain_hash = BLAKE3(prev || RFC-8785-JCS(payload))` over the exact persisted `canonical_jcs` bytes.
+23. `crates/corelink-container/src/routes/audit_drain.rs:261-277` — constant-time internal-auth gate (`internal_auth_ok`); `crates/corelink-container/src/routes/audit_drain.rs:286-317` — fail-CLOSED env mount (≥32-char key + D1 required) in `build_state_from_env`.
+24. `crates/corelink-container/src/routes/audit_drain.rs:196-209` (`canonical_head_bytes`) + `crates/corelink-container/src/routes/audit_drain.rs:213-226` (`sign_head`) + `crates/corelink-container/src/routes/audit_drain.rs:232-254` (`verify_head`) + `crates/corelink-container/src/routes/audit_drain.rs:465-504` (`check_head_on_resume`) — CF-6 keyed (Ed25519-signed) `audit_chain_head` sign-on-advance + verify-on-resume (migration 0080 columns `head_signature`/`head_signed_at_ms`/`signing_key_id`).
 24. `apps/signup-worker/src/webhooks/audit_drain_cron.ts:49-100` — `runAuditDrainSweep`: hourly cron that POSTs the drain (erase-first/shared-fallback key; inert until bound).
