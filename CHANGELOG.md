@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **OKF post-merge severe independent audit — close 1 wiki self-contradiction + 1 gate hole.** A 4-agent
+  severe audit of the landed wiki (157 concepts, all reconcile claim-updates re-verified TRUE, security
+  4/5 invariants SOLID) found: (1) `ops/release-process` still lumped the S-09 audit-chain producer/seal
+  into "UNWIRED skeletons" while the sibling `compliance/audit-chain` (and the code) treat the drain as
+  WIRED on main — reconciled to a 3-tier list (wired-live / wired-but-dormant-until-keyed / still-deferred,
+  keeping the customer audit-EXPORT exporter+cron deferred); (2) **gate v13** — the wrangler-`main`
+  enumeration was hardcoded to `apps/` only, so a wrangler config in a crate or the repo root with a `main`
+  outside `*/src/**` shipped green with coarse crate-dir coverage; `_wrangler_mains` now unions all
+  `wrangler*.{toml,jsonc,json}` under `apps/`, `crates/`, AND the repo root. Plus an observability wording
+  fix (evaluation-count ledger, not flapping). A latent MED residency code finding (`sam` macro routable to
+  the US bucket at request-time; provisioning already fail-closed) was handed to the repo TL (CF-5 in the
+  handoff doc) — no wiki change. Gate green: 157 concepts, 0 stale / 0 drift; 57/57 fixtures.
 - **OKF architecture wiki — SOTA rebuild + 10-lens audit + reconcile to current main (#540).** Rebuilt
   `docs/knowledge/` on current `main` to **157 code-grounded concepts** (was 146), gate-hardened
   `validate_okf.py` v5→v12 (wrangler `main` env/array/alt-config coverage; file-granular strict trees;

@@ -4,7 +4,9 @@ title: "Release / GA tag process"
 description: "How the v1.0.0-GA tag is cut: the dual-key 2-signer sign-off (ADR-0034b fallback), the spec-corpus + production-wiring + compliance freeze state recorded in the tag, and the acknowledged open carve-outs tracked for post-GA closure."
 source_files:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt"
-checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
+  - "crates/corelink-container/src/routes/audit_drain.rs"
+  - "crates/corelink-container/src/main.rs"
+checkpoint_sha: "b9b40160869bc1907dd2d1527aeb8670a9d18411"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -36,13 +38,22 @@ proves the artifact, and to the GA staffing waiver in
 3. The production wiring is enumerated: 4-target Cloudflare binding (D1 ×5 regions, R2 25 buckets, KV,
    Durable Objects) + BYOK 4 providers + the hash-chained audit chain
    (`docs/release/v1.0.0-GA-tag-draft-final.txt:26-44`). ⚠️ **Designed ≠ wired** — this tag section is the
-   GA *target* posture, not a uniform statement of live wiring. The CF 4-target binding (D1 / R2 / KV /
-   Durable Objects) IS wired and live, but the BYOK-4-providers orchestrator, the hash-chained
-   audit-chain producer/seal, the Neon shadow-sync, and WebAuthn admin-enrollment are
-   **DESIGNED-but-UNWIRED skeletons** enumerated as the target GA posture — not running GA wiring (see
-   the BYOK envelope-encryption concept [storage/byok-envelope-encryption.md](/storage/byok-envelope-encryption.md),
-   the audit chain [compliance/audit-chain.md](/compliance/audit-chain.md), and the erasure-attestation
-   persist/serve deferral noted in [ADR-S14-007](/adr/adr-s14-007-erasure-attestation-ed25519-jcs.md)).
+   GA *target* posture, not a uniform statement of live wiring. Three tiers coexist here:
+   **(a) wired-and-live** — the CF 4-target binding (D1 / R2 / KV / Durable Objects);
+   **(b) wired-but-dormant-until-keyed** — the hash-chained **audit-chain producer/seal** (the S-09
+   drain): the `POST /_internal/audit/drain` route is mounted and actually seals the live `audit_outbox`
+   into the BLAKE3 tamper-evident chain when the erase/internal auth key + D1 are bound
+   (`crates/corelink-container/src/main.rs:650`; seal logic at
+   `crates/corelink-container/src/routes/audit_drain.rs:208`/`:458`/`:517`), and stays mounted-inert
+   (fail-CLOSED unmount) when the key+D1 are absent — it is NOT a designed-only skeleton (this matches the
+   audit-chain concept's WIRED treatment, [compliance/audit-chain.md](/compliance/audit-chain.md));
+   **(c) DESIGNED-but-UNWIRED skeletons** enumerated as the target GA posture, not running GA wiring —
+   the BYOK-4-providers orchestrator, the Neon shadow-sync, WebAuthn admin-enrollment, and the customer
+   **R2 audit-EXPORT exporter + its cron** (the seal is wired per (b), but exporting the sealed chain to the
+   customer's R2 + the scheduled drain cron remain deferred) (see the BYOK envelope-encryption concept
+   [storage/byok-envelope-encryption.md](/storage/byok-envelope-encryption.md), the audit chain
+   [compliance/audit-chain.md](/compliance/audit-chain.md), and the erasure-attestation persist/serve
+   deferral noted in [ADR-S14-007](/adr/adr-s14-007-erasure-attestation-ed25519-jcs.md)).
 4. The quality bar is attested: adversarial-review mean 9.41/10 across waves 21-25, chaos + 24h endurance
    + perf-regression harnesses green (`docs/release/v1.0.0-GA-tag-draft-final.txt:46-64`).
 5. The compliance posture is frozen into the tag: SOC 2 Type 2, ISO 27001:2022, GDPR, LGPD, LFPDPPP, PCI

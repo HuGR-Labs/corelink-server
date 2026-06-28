@@ -854,6 +854,54 @@ def _wrangler_mains(app_dir: Path) -> list[str]:
     return mains
 
 
+def _wrangler_config_dirs(surface_root: Path) -> list[Path]:
+    """EVERY directory in the repo that hosts a `wrangler*.{toml,jsonc,json}`
+    config whose declared `main` is the real deploy surface — the UNION of:
+
+      * `apps/*`            (the conventional app workers; existing coverage),
+      * `crates/*`          (a crate that ships its own Worker — e.g. a wasm
+                             POC with `main = "build/worker/shim.mjs"`), AND
+      * the repo ROOT       (the top-level `wrangler.toml`).
+
+    gate v13 (HIGH — the wrangler-`main` enumeration was scoped to `apps/` ONLY):
+      v10/v11/v12 claimed to close the wrangler-main class ("every wrangler
+      main, wherever it lives, strict"), but the enumeration only globbed
+      `apps/*/wrangler*`. A wrangler config OUTSIDE `apps/` — in a `crates/<x>`
+      dir, or the repo root — that declares a `main` pointing OUTSIDE `*/src/**`
+      (e.g. `build/worker/shim.mjs`) was NEVER enumerated as a strict surface:
+      it rode coarse crate-dir/cluster ADOPTION and shipped GREEN with a
+      zero-coverage edge entrypoint (PoC-proven via
+      `crates/corelink-clerk-cf/build/worker/shim.mjs`). We now run the SAME
+      `_wrangler_mains` enumeration over apps/ + crates/* + root — the union of
+      all mains — so a crate/root main outside `src/**` is enumerated as a
+      STRICT required surface, not silently inherited.
+    """
+    dirs: list[Path] = []
+    seen: set[Path] = set()
+
+    def _add(d: Path) -> None:
+        rd = d.resolve()
+        if rd in seen:
+            return
+        # does this dir host at least one wrangler*.{toml,jsonc,json}?
+        if any(
+            p.is_file() and p.suffix.lower() in (".toml", ".jsonc", ".json")
+            for p in d.glob("wrangler*")
+        ):
+            seen.add(rd)
+            dirs.append(d)
+
+    # repo ROOT
+    _add(surface_root)
+    # apps/* and crates/*
+    for parent in ("apps", "crates"):
+        pdir = surface_root / parent
+        if pdir.is_dir():
+            for child in sorted(p for p in pdir.iterdir() if p.is_dir()):
+                _add(child)
+    return dirs
+
+
 def _line_count(path: Path) -> int:
     try:
         with path.open("rb") as fh:
@@ -1455,26 +1503,31 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     # request-reachable deploy surface, so it must be treated as STRICT — directory/
     # cluster ADOPTION must NOT auto-cover it; it needs an exact grounded seed or an
     # explicit `excludes:` entry, the same as any other request-reachable enforcer.
+    # gate v13 (HIGH): enumerate over EVERY wrangler config in the repo — apps/* +
+    # crates/* + the repo ROOT (`_wrangler_config_dirs`), not just apps/. A crate-
+    # hosted or root wrangler `main` pointing OUTSIDE `*/src/**` (e.g. a wasm POC's
+    # `build/worker/shim.mjs`) is now classified STRICT, so coarse crate-dir/cluster
+    # ADOPTION can no longer auto-cover it.
     wrangler_main_strict: set[str] = set()
-    _apps_dir_for_main = surface_root / "apps"
-    if _apps_dir_for_main.is_dir():
-        for _app in sorted(p for p in _apps_dir_for_main.iterdir() if p.is_dir()):
-            # gate v11: EVERY declared main — top-level AND every [env.*] override.
-            for _main_rel in _wrangler_mains(_app):
-                _mp = (_app / _main_rel).resolve()
-                try:
-                    _r = _mp.relative_to(surface_root).as_posix()
-                except ValueError:
-                    continue
-                if _mp.is_file() and _is_exec_source(_r, js_ts=True, rust=True):
-                    # only the ones NOT already strict by the apps/*/src/** rule.
-                    if not _is_file_granular_strict(_r):
-                        wrangler_main_strict.add(_r)
+    for _cfg_dir in _wrangler_config_dirs(surface_root):
+        # gate v11: EVERY declared main — top-level AND every [env.*] override.
+        for _main_rel in _wrangler_mains(_cfg_dir):
+            _mp = (_cfg_dir / _main_rel).resolve()
+            try:
+                _r = _mp.relative_to(surface_root).as_posix()
+            except ValueError:
+                continue
+            if _mp.is_file() and _is_exec_source(_r, js_ts=True, rust=True):
+                # only the ones NOT already strict by the file-granular rule
+                # (a main INSIDE the owning crate's src/** is already covered).
+                if not _is_file_granular_strict(_r):
+                    wrangler_main_strict.add(_r)
 
     def _strict(rel: str) -> bool:
-        """`_is_file_granular_strict`, EXTENDED with the gate-v10 wrangler-`main`
-        entrypoints that live outside `apps/*/src/**` (a non-conventional but
-        request-reachable deploy surface)."""
+        """`_is_file_granular_strict`, EXTENDED with the gate-v10/v13 wrangler-`main`
+        entrypoints that live outside `*/src/**` — a non-conventional but
+        request-reachable deploy surface declared by ANY wrangler config under
+        apps/, crates/, or the repo root."""
         return _is_file_granular_strict(rel) or rel in wrangler_main_strict
 
     def is_covered(rel: str, is_dir: bool) -> bool:
@@ -1626,27 +1679,34 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             app_src = app / "src"
             if app_src.is_dir():
                 surface += list(_iter_exec_sources(app_src, surface_root, js_ts=True, rust=True))
-            # gate v10 fix #2 (HIGH): ALSO enumerate the app's wrangler `main`
-            # entrypoint — the real deploy surface — wherever it lives (app-root,
-            # a non-src dir, build output). An executable main OUTSIDE src/ now
-            # surfaces as a required [C10b] surface; an excluded app's main stays
-            # covered by its existing exact-prefix exclude.
-            # gate v11 fix (HIGH): enumerate EVERY declared main — the top-level
-            # main AND every per-environment `[env.<name>]` override — so an
-            # env-override entrypoint (e.g. `[env.prod] main = "build/worker.mjs"`)
-            # that the top-level decoy used to mask is now a required surface.
-            for main_rel in _wrangler_mains(app):
-                main_path = (app / main_rel).resolve()
-                try:
-                    rel = main_path.relative_to(surface_root).as_posix()
-                except ValueError:
-                    rel = None
-                if (
-                    rel
-                    and main_path.is_file()
-                    and _is_exec_source(rel, js_ts=True, rust=True)
-                ):
-                    surface.append((rel, False))
+
+    # gate v10 fix #2 (HIGH): ALSO enumerate every wrangler `main` entrypoint —
+    # the real deploy surface — wherever it lives (app-root, a non-src dir, build
+    # output). An executable main OUTSIDE src/ surfaces as a required [C10b]
+    # surface; an excluded surface stays covered by its existing exact-prefix
+    # exclude.
+    # gate v11 fix (HIGH): enumerate EVERY declared main — the top-level main AND
+    # every per-environment `[env.<name>]` override — so an env-override
+    # entrypoint (e.g. `[env.prod] main = "build/worker.mjs"`) that the top-level
+    # decoy used to mask is now a required surface.
+    # gate v13 fix (HIGH): enumerate over the UNION of ALL wrangler configs in the
+    # repo — apps/* + crates/* + the repo ROOT (`_wrangler_config_dirs`) — not just
+    # apps/. A crate-hosted or root wrangler main pointing OUTSIDE `*/src/**` (e.g.
+    # a wasm POC's `build/worker/shim.mjs`) now surfaces as a required [C10b]
+    # surface instead of riding coarse crate-dir/cluster adoption.
+    for cfg_dir in _wrangler_config_dirs(surface_root):
+        for main_rel in _wrangler_mains(cfg_dir):
+            main_path = (cfg_dir / main_rel).resolve()
+            try:
+                rel = main_path.relative_to(surface_root).as_posix()
+            except ValueError:
+                rel = None
+            if (
+                rel
+                and main_path.is_file()
+                and _is_exec_source(rel, js_ts=True, rust=True)
+            ):
+                surface.append((rel, False))
 
     for rel, is_dir in dict.fromkeys(surface):
         if not is_covered(rel, is_dir):
