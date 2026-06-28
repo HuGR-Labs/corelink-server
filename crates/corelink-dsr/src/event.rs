@@ -789,6 +789,55 @@ mod tests {
         assert_eq!(deadline, submitted + 45 * 86_400_000);
     }
 
+    // Direct pins on the calendar helpers (kill the cargo-mutants survivors:
+    // last_day_of_month arm-deletes + the Hinnant civil/days arithmetic ops).
+
+    #[test]
+    fn last_day_of_month_exact_per_month() {
+        // 31-day months
+        for m in [1u32, 3, 5, 7, 8, 10, 12] {
+            assert_eq!(last_day_of_month(2023, m), 31, "month {m}");
+        }
+        // 30-day months (kills the `4|6|9|11 => 30` arm-delete)
+        for m in [4u32, 6, 9, 11] {
+            assert_eq!(last_day_of_month(2023, m), 30, "month {m}");
+        }
+        // February: 28 non-leap (kills the `2 => 28` arm-delete) / 29 leap
+        assert_eq!(last_day_of_month(2023, 2), 28);
+        assert_eq!(last_day_of_month(2024, 2), 29); // leap
+        assert_eq!(last_day_of_month(2100, 2), 28); // century non-leap
+        assert_eq!(last_day_of_month(2000, 2), 29); // 400-divisible leap
+    }
+
+    #[test]
+    fn civil_days_known_anchors_and_roundtrip() {
+        // Known (days-since-epoch ↔ civil-date) anchors — any flipped operator
+        // in civil_from_days / days_from_civil shifts these and fails.
+        let anchors: &[(i64, (i64, u32, u32))] = &[
+            (0, (1970, 1, 1)),
+            (10_957, (2000, 1, 1)),
+            (19_416, (2023, 2, 28)),
+            (19_782, (2024, 2, 29)), // leap day
+        ];
+        for &(days, ymd) in anchors {
+            assert_eq!(civil_from_days(days), ymd, "civil_from_days({days})");
+            let (y, m, d) = ymd;
+            assert_eq!(days_from_civil(y, m, d), days, "days_from_civil{ymd:?}");
+        }
+        // Exhaustive round-trip over two dense windows — the modern range AND a
+        // window crossing the era boundary (~ -719_468 days, i.e. year < 0) so
+        // the `era<0` / `y<0` branches (civil_from_days / days_from_civil) are
+        // exercised. Any flipped arithmetic operator breaks the inverse here.
+        for &(lo, hi) in &[(-20_000_i64, 20_000_i64), (-740_000_i64, -700_000_i64)] {
+            let mut z = lo;
+            while z <= hi {
+                let (y, m, d) = civil_from_days(z);
+                assert_eq!(days_from_civil(y, m, d), z, "roundtrip day {z}");
+                z += 1;
+            }
+        }
+    }
+
     #[test]
     fn sla_for_saturating_at_overflow_boundary() {
         // Pin the canonical saturating_add semantic (no wrap, no panic).
