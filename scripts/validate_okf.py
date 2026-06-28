@@ -854,6 +854,97 @@ def _wrangler_mains(app_dir: Path) -> list[str]:
     return mains
 
 
+# gate v14: build-output / vendor dirs the recursive wrangler-config walk MUST
+# skip — generated bundles + dependency trees are not authored deploy surface, and
+# scanning them would (a) be slow and (b) re-discover the very build outputs the
+# other gates already exclude (same spirit as validate_secrets_matrix / the
+# secrets-checklist: never scan `.open-next`/`.wrangler`/generated bundles). Any
+# directory whose NAME is in this set (at any depth) prunes that subtree.
+_WRANGLER_WALK_EXCLUDE_DIRS = frozenset({
+    ".wrangler", ".open-next", "node_modules", "target", ".git",
+    "dist", "build",
+})
+
+
+def _wrangler_config_dirs(surface_root: Path) -> list[Path]:
+    """EVERY directory in the repo that hosts a `wrangler*.{toml,jsonc,json}`
+    config whose declared `main` is the real deploy surface — found by a RECURSIVE
+    walk of `surface_root` (build-output / vendor dirs pruned), NOT a fixed
+    location allowlist.
+
+    gate v14 (MATERIAL — config LOCATION could still hide a deploy entrypoint):
+      v13 enumerated wrangler mains over a FIXED 3-class location set — the repo
+      ROOT + ONE level into `apps/*` + ONE level into `crates/*` — yet its
+      docstring claimed "EVERY directory that hosts a wrangler config." So a
+      wrangler config whose LOCATION fell OUTSIDE that set shipped GREEN with only
+      coarse crate-dir / cluster adoption, and a real edge entrypoint (a `main`
+      pointing outside `*/src/**`) declared there rode that adoption uncovered.
+      Three PoC-proven location bypasses (all reverted):
+        * crate-NESTED — `crates/corelink-clerk-cf/cf/wrangler.toml`
+          (the one-level-only walk misses `crates/<x>/cf/`);
+        * sibling top-level dir — `services/edge/wrangler.toml`
+          (only root + apps/ + crates/ were considered);
+        * `worker/` alt config — `worker/wrangler.staging.toml`
+          (the `worker/` dir itself was never in the set).
+      We now RECURSIVELY `rglob("wrangler*.{toml,jsonc,json}")` over the surface
+      root, so config LOCATION can no longer hide a deploy entrypoint — matching
+      what v10–v13 already do for config NAME (`wrangler*` glob) and env-override
+      SYNTAX (`findall` over `[env.*]`). Build-output / vendor dirs
+      (`_WRANGLER_WALK_EXCLUDE_DIRS`) are PRUNED so we never scan generated
+      bundles (same exclusion the secrets gates apply). Every config found, in ANY
+      dir, contributes its mains (top-level + `[env.*]` + array, via the existing
+      `_wrangler_mains`) as STRICT required surfaces (concept cite or explicit
+      exclude), exactly as before.
+
+      (The `crates/corelink-clerk-cf` dormant POC stays GREEN because its declared
+      `main = "build/worker/shim.mjs"` is a build artifact that does not exist on
+      disk — the `_mp.is_file()` guard at the call site drops a non-existent main;
+      if it ever materialises it surfaces as a strict [C10b] gap requiring a
+      precise concept cite or an explicit exclude.)
+    """
+    dirs: list[Path] = []
+    seen: set[Path] = set()
+
+    def _hosts_config(d: Path) -> bool:
+        try:
+            return any(
+                p.is_file() and p.suffix.lower() in (".toml", ".jsonc", ".json")
+                for p in d.glob("wrangler*")
+            )
+        except OSError:
+            return False
+
+    def _add(d: Path) -> None:
+        rd = d.resolve()
+        if rd in seen:
+            return
+        if _hosts_config(d):
+            seen.add(rd)
+            dirs.append(d)
+
+    if not surface_root.is_dir():
+        return dirs
+
+    # RECURSIVE walk, pruning build-output / vendor subtrees by directory NAME.
+    stack = [surface_root]
+    while stack:
+        cur = stack.pop()
+        _add(cur)
+        try:
+            children = sorted(p for p in cur.iterdir() if p.is_dir())
+        except OSError:
+            continue
+        for child in children:
+            if child.name in _WRANGLER_WALK_EXCLUDE_DIRS:
+                continue
+            if child.is_symlink():
+                continue
+            stack.append(child)
+    # Deterministic order (the recursive pop order is not lexicographic).
+    dirs.sort()
+    return dirs
+
+
 def _line_count(path: Path) -> int:
     try:
         with path.open("rb") as fh:
@@ -1455,26 +1546,33 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
     # request-reachable deploy surface, so it must be treated as STRICT — directory/
     # cluster ADOPTION must NOT auto-cover it; it needs an exact grounded seed or an
     # explicit `excludes:` entry, the same as any other request-reachable enforcer.
+    # gate v14 (MATERIAL): enumerate over EVERY wrangler config in the repo via a
+    # RECURSIVE walk of the surface root (`_wrangler_config_dirs`, build-output /
+    # vendor dirs pruned), not a fixed root+apps/*+crates/* location set. A wrangler
+    # `main` pointing OUTSIDE `*/src/**` declared in ANY dir — a crate-NESTED
+    # `crates/<x>/cf/`, a sibling top-level `services/edge/`, a `worker/` alt config,
+    # or anywhere else — is now classified STRICT, so config LOCATION can no longer
+    # hide a deploy entrypoint behind coarse crate-dir/cluster ADOPTION.
     wrangler_main_strict: set[str] = set()
-    _apps_dir_for_main = surface_root / "apps"
-    if _apps_dir_for_main.is_dir():
-        for _app in sorted(p for p in _apps_dir_for_main.iterdir() if p.is_dir()):
-            # gate v11: EVERY declared main — top-level AND every [env.*] override.
-            for _main_rel in _wrangler_mains(_app):
-                _mp = (_app / _main_rel).resolve()
-                try:
-                    _r = _mp.relative_to(surface_root).as_posix()
-                except ValueError:
-                    continue
-                if _mp.is_file() and _is_exec_source(_r, js_ts=True, rust=True):
-                    # only the ones NOT already strict by the apps/*/src/** rule.
-                    if not _is_file_granular_strict(_r):
-                        wrangler_main_strict.add(_r)
+    for _cfg_dir in _wrangler_config_dirs(surface_root):
+        # gate v11: EVERY declared main — top-level AND every [env.*] override.
+        for _main_rel in _wrangler_mains(_cfg_dir):
+            _mp = (_cfg_dir / _main_rel).resolve()
+            try:
+                _r = _mp.relative_to(surface_root).as_posix()
+            except ValueError:
+                continue
+            if _mp.is_file() and _is_exec_source(_r, js_ts=True, rust=True):
+                # only the ones NOT already strict by the file-granular rule
+                # (a main INSIDE the owning crate's src/** is already covered).
+                if not _is_file_granular_strict(_r):
+                    wrangler_main_strict.add(_r)
 
     def _strict(rel: str) -> bool:
-        """`_is_file_granular_strict`, EXTENDED with the gate-v10 wrangler-`main`
-        entrypoints that live outside `apps/*/src/**` (a non-conventional but
-        request-reachable deploy surface)."""
+        """`_is_file_granular_strict`, EXTENDED with the gate-v10/v13 wrangler-`main`
+        entrypoints that live outside `*/src/**` — a non-conventional but
+        request-reachable deploy surface declared by ANY wrangler config under
+        apps/, crates/, or the repo root."""
         return _is_file_granular_strict(rel) or rel in wrangler_main_strict
 
     def is_covered(rel: str, is_dir: bool) -> bool:
@@ -1626,27 +1724,36 @@ def _check_manifest(args, bundle_root: Path, concepts, deferred_ids, fails: Fail
             app_src = app / "src"
             if app_src.is_dir():
                 surface += list(_iter_exec_sources(app_src, surface_root, js_ts=True, rust=True))
-            # gate v10 fix #2 (HIGH): ALSO enumerate the app's wrangler `main`
-            # entrypoint — the real deploy surface — wherever it lives (app-root,
-            # a non-src dir, build output). An executable main OUTSIDE src/ now
-            # surfaces as a required [C10b] surface; an excluded app's main stays
-            # covered by its existing exact-prefix exclude.
-            # gate v11 fix (HIGH): enumerate EVERY declared main — the top-level
-            # main AND every per-environment `[env.<name>]` override — so an
-            # env-override entrypoint (e.g. `[env.prod] main = "build/worker.mjs"`)
-            # that the top-level decoy used to mask is now a required surface.
-            for main_rel in _wrangler_mains(app):
-                main_path = (app / main_rel).resolve()
-                try:
-                    rel = main_path.relative_to(surface_root).as_posix()
-                except ValueError:
-                    rel = None
-                if (
-                    rel
-                    and main_path.is_file()
-                    and _is_exec_source(rel, js_ts=True, rust=True)
-                ):
-                    surface.append((rel, False))
+
+    # gate v10 fix #2 (HIGH): ALSO enumerate every wrangler `main` entrypoint —
+    # the real deploy surface — wherever it lives (app-root, a non-src dir, build
+    # output). An executable main OUTSIDE src/ surfaces as a required [C10b]
+    # surface; an excluded surface stays covered by its existing exact-prefix
+    # exclude.
+    # gate v11 fix (HIGH): enumerate EVERY declared main — the top-level main AND
+    # every per-environment `[env.<name>]` override — so an env-override
+    # entrypoint (e.g. `[env.prod] main = "build/worker.mjs"`) that the top-level
+    # decoy used to mask is now a required surface.
+    # gate v14 fix (MATERIAL): enumerate over EVERY wrangler config found by a
+    # RECURSIVE walk of the surface root (`_wrangler_config_dirs`, build-output /
+    # vendor dirs pruned) — not a fixed root+apps/*+crates/* location set. A wrangler
+    # main pointing OUTSIDE `*/src/**` declared in ANY dir — crate-NESTED
+    # (`crates/<x>/cf/`), a sibling top-level dir (`services/edge/`), a `worker/` alt
+    # config, etc. — now surfaces as a required [C10b] surface instead of riding
+    # coarse crate-dir/cluster adoption from a hidden config LOCATION.
+    for cfg_dir in _wrangler_config_dirs(surface_root):
+        for main_rel in _wrangler_mains(cfg_dir):
+            main_path = (cfg_dir / main_rel).resolve()
+            try:
+                rel = main_path.relative_to(surface_root).as_posix()
+            except ValueError:
+                rel = None
+            if (
+                rel
+                and main_path.is_file()
+                and _is_exec_source(rel, js_ts=True, rust=True)
+            ):
+                surface.append((rel, False))
 
     for rel, is_dir in dict.fromkeys(surface):
         if not is_covered(rel, is_dir):

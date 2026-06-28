@@ -5,7 +5,7 @@ description: "Why the TLS-terminated edge (not an X-Region header) is the author
 source_files:
   - "specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md"
   - "crates/corelink-container/src/routes/residency.rs"
-checkpoint_sha: "30ec21dc78d79c85f4d7e1e19e13118c66025c9e"
+checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
 provenance: "AUTHORED"
 tags: ["adr", "s14", "region", "residency", "schrems-ii"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -16,6 +16,8 @@ timestamp: "2026-06-26T00:00:00Z"
 With CoreLink serving four regions, a tenant pinned to WEUR served by the ENAM endpoint routes EU PII to US infrastructure — a Schrems II + LGPD Art. 33 catastrophe. This ADR (ACCEPTED) settles the central question — where `request_region` is derived from — in favor of the TLS-terminated edge over an attacker-controllable header, and SPECIFIES a four-layer fail-closed enforcement stack plus a 30k property test for INV-REGION-NO-CROSS-LEAK.
 
 > **Status vs shipped code (read this first).** The 4-layer 451 stack described below is the ADR's **design target (spec text)**, not the live shape. What is actually wired in the container today is **ONE** thing: a single router layer `residency_guard` (`crates/corelink-container/src/routes/residency.rs:62`) that reads the edge-stamped, trusted `x-corelink-primary-region` header, compares the claimed macro-region to the colo THIS container serves, and returns **HTTP 409 `residency_violation`** (NOT 451) before any handler runs — fail-closed on an absent-colo-mapping / unknown macro. Of the four ADR layers: the D1 immutability trigger `trg_tenant_primary_region_immutable` IS shipped (migrations 0028/0064); `assert_request_residency` / `assert_write_residency` exist only as methods on a **test-only** enforcer in `crates/corelink-privacy/tests/residency_property_region_pinning_30k.rs` (the 30k property test), not as a live Tower layer; and the per-region `region_enforcer` Durable Object does NOT exist in code (it appears only in SQL comments). So treat "4-layer / 451 / SEALED" as the planned stack, and "single 1-line header→409 guard + immutability trigger + property test" as shipped reality.
+>
+> **Scope caveat — LOGICAL only, NOT physical CAS residency.** This guard enforces *logical-region consistency*: it 409s when the edge-stamped macro-region label disagrees with the colo this container serves (`residency_decision` compares the claimed macro → its expected colo against the container's own colo). It does **NOT** enforce *physical CAS residency*. At launch CAS is a **single US bucket** (`corelink-cas-prod`); the region is only a key-prefix within that one bucket, and the SAM bucket (`corelink-cas-sam`) is undeployed — per [ADR-S14-009 — CAS residency single-bucket launch posture](/adr/adr-s14-009-cas-residency-single-bucket-launch-posture.md). So a 409 never means "EU bytes are stored on EU disk"; physical at-rest residency is single-bucket-US and is NOT guaranteed by this 409 guard. Don't overstate the 409 as physical-residency enforcement.
 
 # Context
 

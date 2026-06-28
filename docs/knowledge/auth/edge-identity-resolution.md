@@ -69,6 +69,17 @@ secrets are provisioned, so today it never executes.
 - The server-to-server endpoint runs only the owner-arm parameterized lookup
   (`worker/src/lib/tenant_lookup.ts:114`) — it does NOT consult `team_member`. A D1 fault on either path
   is a fail-CLOSED 500, never fail-open (`worker/src/lib/clerk_auth.ts:273-279`).
+- **Owner-only ASYMMETRY:** because the lookup endpoint omits the `team_member` arm, the two surfaces are
+  NOT interchangeable for a team-seat user. A verified user who owns no `tenant` row but holds an active
+  `team_member` seat resolves successfully in the dashboard pipeline (to the team-owning tenant) yet gets
+  a fail-CLOSED 404 from `POST /internal/v1/auth/tenant/lookup` — the endpoint's contract is deliberately
+  owner-only (`role: "owner"`, 1:1 at provision), so githugr's `owner_tenant` mapping never silently
+  inherits a second-seat membership (`worker/src/lib/tenant_lookup.ts:66-71`,
+  `worker/src/lib/tenant_lookup.ts:125-126`).
+- The lookup endpoint's success envelope coerces an unset/empty `tier` column to the most-restrictive
+  `"free"` plan rather than emitting a null — a fail-safe default mirroring `getTierForTenant`, so a
+  half-provisioned tenant can never be read back as more privileged than it is
+  (`worker/src/lib/tenant_lookup.ts:130-137`).
 - A subject that matches NEITHER the owner row NOR an active team_member row is a hard denial: the
   team-member-MISS branch returns 403 in the dashboard pipeline (`worker/src/lib/clerk_auth.ts:265-269`),
   and the server-to-server endpoint returns 404 when no owner row exists
@@ -146,4 +157,6 @@ secrets are provisioned, so today it never executes.
 16. `worker/src/lib/tenant_lookup.ts:79` — `handleTenantLookup`, the internal-auth-gated server-to-server endpoint.
 17. `worker/src/lib/tenant_lookup.ts:103-108` — `sub` required; email fallback is N/A (email_hash is a clerk-id surrogate).
 18. `worker/src/lib/tenant_lookup.ts:114` — parameterized `SELECT ... FROM tenant WHERE clerk_user_id = ?1`.
-19. `worker/src/lib/tenant_lookup.ts:125-126` — no row → fail-CLOSED 404.
+19. `worker/src/lib/tenant_lookup.ts:125-126` — no row → fail-CLOSED 404 (and the owner-only asymmetry: a team-seat-only user that resolves in the dashboard is a 404 here, since this endpoint never consults `team_member`).
+20. `worker/src/lib/tenant_lookup.ts:66-71` — the lookup response contract is `role: "owner"` only — owner-keyed, 1:1 at provision; no team-member arm.
+21. `worker/src/lib/tenant_lookup.ts:130-137` — success envelope coerces an unset/empty `tier` to the most-restrictive `"free"` (fail-safe default, never read back more privileged).

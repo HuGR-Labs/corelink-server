@@ -36,6 +36,19 @@ Each entry cross-references:
   Built on CF-1's now-complete erase-set, so the certificate attests a genuinely-complete erasure.
 
 ### Fixed
+- **OKF most-brutal audit (12-finder + adversarial-verify) — correct the audit-chain tamper-evidence overstatement + 7 more.** A deeper pass than all prior (meta-skeptic re-audit of every CLEAN verdict, exhaustive numeric ~900 constants, exploit-chains, gate-location attack, fresh-vector vs #541's just-landed code). Security held (40 invariants traced, 1 LOW intentional ordering); numeric 3-wrong/900. It found the layer prior passes missed: **(headline) `compliance/audit-chain` + `crates/audit-analytics` sold SOC2-grade tamper-evidence ("trust even if CoreLink is compromised / append-only")** while the live chain is a PLAIN UN-KEYED BLAKE3 sealed at the hourly drain over mutable D1 rows with R2 Object-Lock unwired — i.e. an insider with D1 write can forge a self-consistent chain; corrected to tamper-EVIDENCE-at-verify (not insider-proof), acknowledged the wired drain producer, fixed INV-AUDIT-APPEND-ONLY (D1 seal live; Object-Lock/keyed-head/write-time-chaining deferred), and re-attributed the live hash to corelink-audit-chain BLAKE3 (corelink-audit's SHA-256 is dead/legacy). Also: `ops/observability-plane` INV-TENANT-ISOLATION corrected (the span ledger keys by billing TIER, not tenant — per-tier bucketing, not per-tenant isolation); `security/money-path-review` F-MP-2/F-MP-3 marked RESOLVED (fixed in e423ed23, were presented as live gaps); `ops/reproducible-build` toolchain 1.84→1.91.1; `adr-s14-001` PROVISIONED_MACROS 4→3 (sam excluded); `adr-s14-002` region-pin logical-not-physical caveat; + 4 imprecise cite re-anchors. **Gate v14**: the wrangler-`main` enumeration walked only root+apps/*+crates/* one level — replaced with a recursive `wrangler*.{toml,jsonc,json}` walk (build-output/vendor pruned), closing 3 PoC-proven location bypasses (crate-nested, sibling-top-level, worker/ alt-config). Code-level findings (the un-keyed audit chain hardening, a sub-processor legal-doc gap, a tracing tier/tenant doc-comment, the erase-set KEY_COLS allowlist) handed to the repo TL as CF-6…CF-9. Gate green: 157 concepts, 0 stale/drift; 61/61 fixtures.
+- **OKF post-merge severe independent audit — close 1 wiki self-contradiction + 1 gate hole.** A 4-agent
+  severe audit of the landed wiki (157 concepts, all reconcile claim-updates re-verified TRUE, security
+  4/5 invariants SOLID) found: (1) `ops/release-process` still lumped the S-09 audit-chain producer/seal
+  into "UNWIRED skeletons" while the sibling `compliance/audit-chain` (and the code) treat the drain as
+  WIRED on main — reconciled to a 3-tier list (wired-live / wired-but-dormant-until-keyed / still-deferred,
+  keeping the customer audit-EXPORT exporter+cron deferred); (2) **gate v13** — the wrangler-`main`
+  enumeration was hardcoded to `apps/` only, so a wrangler config in a crate or the repo root with a `main`
+  outside `*/src/**` shipped green with coarse crate-dir coverage; `_wrangler_mains` now unions all
+  `wrangler*.{toml,jsonc,json}` under `apps/`, `crates/`, AND the repo root. Plus an observability wording
+  fix (evaluation-count ledger, not flapping). A latent MED residency code finding (`sam` macro routable to
+  the US bucket at request-time; provisioning already fail-closed) was handed to the repo TL (CF-5 in the
+  handoff doc) — no wiki change. Gate green: 157 concepts, 0 stale / 0 drift; 57/57 fixtures.
 - **OKF final-audit code findings (CF-1 HIGH GDPR + CF-2/3/4).** **CF-1 (HIGH):** the DSR erase-set was
   incomplete — tenant-keyed tables added after the 2026-06-11 ADR-S11-013 freeze (`team_member` seat-PII,
   `runners_entitlement`, `monthly_request_counts`, `pilot_tenants`, `stripe_checkout_sessions`, GC/region-

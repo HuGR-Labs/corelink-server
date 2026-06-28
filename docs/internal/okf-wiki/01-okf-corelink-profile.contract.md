@@ -154,7 +154,7 @@ freshness.
 | **C8** Orphan | Every concept reachable from `index.md`. | An unreachable concept. |
 | **C9** Reserved names | `index.md`/`log.md` never concept docs; no concept uses a reserved path. | Violation. |
 | **C10** Manifest completeness | Every candidate in `concept-manifest.yaml` with **`status: active`** has a concept doc OR a `deferred:` marker. Candidates `status: planned` (not-yet-dispatched backlog) do NOT block — they let the foundation be green before the fill waves run; a concept-authoring WP flips its candidates to `active` and lands the docs in the same PR. | An `active` candidate with neither. |
-| **C10b** Manifest ⊇ repo surface | The manifest itself is cross-checked against the mechanically-enumerable surface: `specs/03_architecture/adrs/*.md` (76 ADRs), **`crates/corelink-container/src/routes/**/*.rs` (RECURSIVE — route handlers in `routes/dsr/`, `routes/audit_export/`, `routes/audit_analytics/` subdirs are enumerated, not just top-level)**, **`crates/corelink-container/src/*.rs` (the crate ROOT, file-granular — a handler dropped beside `webhook.rs`/`native_pat_gate.rs` is gated)**, each `crates/*` dir, plus the Worker edge plane + apps/ (`worker/src/**` **RECURSIVE** — any `worker/src/<subdir>/` file, not just top-level + `lib/`; gate v6 fix #3 — and `apps/*/src/**`), enumerated over the FULL **executable-extension set** `{.ts,.mts,.cts,.tsx,.js,.mjs,.cjs,.jsx}` (+`.rs` for Rust) via ONE shared `_is_exec_source` predicate so the surface walk and the `_is_file_granular_strict` classifier AGREE — a `.mts`/`.mjs` edge handler is gated, not just `.ts` (gate v9) — **plus every wrangler `main` an app declares — enumerated over ALL `wrangler*.{toml,jsonc,json}` configs in the app dir (not just the three canonical names), taking the UNION of all mains (NO first-file-win): the top-level main AND every per-environment `[env.<name>]` (TOML) / `"env": {…}` (JSONC) override, from EVERY config file, wherever each lives (app-root, a non-`src/` dir, build output); each distinct entrypoint is enumerated STRICT so an env-override main outside `src/` masked by a top-level decoy is gated, not just the first `main` (gate v11), AND a main declared only in an alt-named config (`wrangler.prod.toml`) or hidden by dual-config precedence (a `wrangler.toml` decoy over the real `wrangler.jsonc` main) is gated, not just the canonical-name first-file (gate v12)** → each maps to a manifest entry or an explicit `excludes:` reason. | A repo-surface item with no manifest entry and no exclude (silent gap one level up). |
+| **C10b** Manifest ⊇ repo surface | The manifest itself is cross-checked against the mechanically-enumerable surface: `specs/03_architecture/adrs/*.md` (76 ADRs), **`crates/corelink-container/src/routes/**/*.rs` (RECURSIVE — route handlers in `routes/dsr/`, `routes/audit_export/`, `routes/audit_analytics/` subdirs are enumerated, not just top-level)**, **`crates/corelink-container/src/*.rs` (the crate ROOT, file-granular — a handler dropped beside `webhook.rs`/`native_pat_gate.rs` is gated)**, each `crates/*` dir, plus the Worker edge plane + apps/ (`worker/src/**` **RECURSIVE** — any `worker/src/<subdir>/` file, not just top-level + `lib/`; gate v6 fix #3 — and `apps/*/src/**`), enumerated over the FULL **executable-extension set** `{.ts,.mts,.cts,.tsx,.js,.mjs,.cjs,.jsx}` (+`.rs` for Rust) via ONE shared `_is_exec_source` predicate so the surface walk and the `_is_file_granular_strict` classifier AGREE — a `.mts`/`.mjs` edge handler is gated, not just `.ts` (gate v9) — **plus every wrangler `main` declared by ANY `wrangler*.{toml,jsonc,json}` config in the repo — enumerated over a RECURSIVE `rglob` of the surface root (gate v14: excluding build-output/vendor dirs `.wrangler`/`.open-next`/`node_modules`/`target`/`.git`/`dist`/`build`), so config LOCATION no longer hides a main — wherever each config lives (`apps/*`, `crates/*`, the repo ROOT, a crate-NESTED `crates/<x>/cf/`, a sibling top-level `services/edge/`, the `worker/` dir, any dir), not just the three canonical names, taking the UNION of all mains (NO first-file-win): the top-level main AND every per-environment `[env.<name>]` (TOML) / `"env": {…}` (JSONC) override, from EVERY config file; each distinct entrypoint that resolves to a real file OUTSIDE `*/src/**` is enumerated STRICT so an env-override main outside `src/` masked by a top-level decoy is gated, not just the first `main` (gate v11), a main declared only in an alt-named config (`wrangler.prod.toml`) or hidden by dual-config precedence (a `wrangler.toml` decoy over the real `wrangler.jsonc` main) is gated, not just the canonical-name first-file (gate v12), a CRATE-hosted or ROOT wrangler `main` outside `src/` (e.g. `crates/<x>/build/worker/shim.mjs` build output) is enumerated, not silently inherited via whole-crate cluster adoption (gate v13), AND a config whose LOCATION is outside the old fixed root+apps/*+crates/* set (a crate-NESTED `crates/<x>/cf/`, a sibling top-level `services/edge/`, a `worker/wrangler.staging.toml`) can no longer hide its main behind coarse dir-adoption (gate v14)** → each maps to a manifest entry or an explicit `excludes:` reason. | A repo-surface item with no manifest entry and no exclude (silent gap one level up). |
 
 **C10b — ACCEPTED RESIDUAL: coarse crate-DIR coverage for the non-container library crates (audit #3 MED #3, documented honest, NOT closed).** The C10b enumeration is FILE-granular for the deployed compute plane and the edge plane — `crates/corelink-container/src/**/*.rs` (root + recursive `routes/`), `worker/src/**` (recursive — gate v6 fix #3), and `apps/*/src/**` are walked file-by-file, so a new load-bearing file there REDs the gate. **gate v6 fix #1 (audit #1 HIGH): in these SECURITY-CRITICAL file-granular trees, directory / crate-cluster ADOPTION no longer auto-covers an individual file.** Before v6 the `crates/container-platform` `CrateCluster` seeded the whole `crates/corelink-container` DIRECTORY, which `_concept_grounds` clause (b) promoted to a grounded-directory seed; the FILE branch of `is_covered` then auto-covered EVERY `.rs` under the crate via the `rel.startswith(grounded_dir + '/')` relation — so dropping a new `routes/poison.rs` / `src/poison_top.rs` stayed GREEN and the recursive anti-shadow enumeration was DEAD. v6 suppresses the directory-grounded-seed coverage relation for `crates/corelink-container/src/**`, `worker/src/**`, and `apps/*/src/**` (`_is_file_granular_strict`): a file there is covered ONLY by an exact grounded seed (a per-file `source_files`/`# Citations` cite) or an explicit `excludes:` entry. (Cluster/dir adoption still covers files OUTSIDE these trees — the non-file-granular library crates below.) But every OTHER `crates/*` library crate is enumerated as a single **DIRECTORY** surface, covered by reviewed cluster MEMBERSHIP (a `seed_from` path that is the crate dir or lives under it — `is_covered`'s `is_dir` arm). Consequence: a NEW file added inside an already-covered library crate dir is **invisible to C10b** — the directory is already "covered," so the new file does not surface as a silent gap. This is ~92% of the Rust surface by file count (the non-container crates). It is an **accepted residual, not a closed hole**: (a) the deployed/reachable plane — `corelink-container` — IS file-granular, so the code an attacker actually hits is fully gated; (b) library crates are covered at the cluster-narrative level by design (taxonomy §1.1 assigns `crates/` to "the 8 crate clusters", whose job is breadth-of-narrative, not per-file citation); (c) the nightly **C-REV** reverse-coverage WARN is the backstop that pressures `source_files` completeness WITHIN a member crate when it changes. Making all of `crates/*` file-granular is a large authoring change deferred deliberately; it is logged here as a KNOWN LIMITATION so it is never mistaken for a silent gap that the gate proves absent.
 
@@ -326,6 +326,61 @@ wrangler main").** `_wrangler_mains` resolved configs by checking only the three
   (Verified: an `apps/altcfg-worker/wrangler.prod.toml` main `dist/prod.mjs` outside `src/` REDs [C10b]; an
   `apps/dualcfg-worker` with a `wrangler.toml` decoy + a `wrangler.jsonc` real `build/real.mjs` main has the
   `.jsonc` main RED [C10b] despite the decoy; the concept-cited top-level `src/index.ts` mains stay covered.)
+
+**gate v13 — one MATERIAL coverage hole CLOSED (PoC-proven): the wrangler-`main` enumeration was scoped to
+`apps/` ONLY.** v10/v11/v12 each claimed to close the wrangler-main class ("every wrangler main, wherever it
+lives, strict"), but the enumeration (both the strict-classifier set AND the surface walk) globbed only
+`apps/*/wrangler*`. A wrangler config that lives OUTSIDE `apps/` — in a `crates/<x>` dir, or the repo ROOT —
+declaring a `main` pointing OUTSIDE `*/src/**` was therefore NEVER enumerated as a strict surface:
+
+- **CRATE-hosted / ROOT wrangler main outside `src/` (HIGH, closed).** A crate is dir-covered by its
+  `CrateCluster` `seed_from`, so a crate-hosted wrangler `main` pointing at build output (e.g.
+  `crates/corelink-clerk-cf/wrangler.toml` → `main = "build/worker/shim.mjs"`) rode coarse crate-dir/cluster
+  ADOPTION and shipped GREEN with a **zero-coverage edge entrypoint**. PoC-proven: creating
+  `crates/corelink-clerk-cf/build/worker/shim.mjs` kept the gate GREEN under the apps-only fix. v13 runs the
+  SAME `_wrangler_mains` enumeration over the **UNION of ALL `wrangler*.{toml,jsonc,json}` configs under
+  `apps/`, `crates/*`, AND the repo ROOT** (`_wrangler_config_dirs`) — every declared main (top-level +
+  `[env.*]` + array forms) that resolves to a real file outside `*/src/**` is enumerated as a STRICT required
+  surface, exactly as `apps/` mains are. A main INSIDE the owning crate's `src/**` is already covered by the
+  file-granular-strict tree and is untouched; the hole was specifically a main outside `src/`. The default is
+  ENUMERATION, not silent inheritance: a crate/root build-output main now needs a concept cite or an explicit
+  `excludes:` reason. No real surface regressed — the root `wrangler.toml` main is `worker/src/index.ts`
+  (inside the strict tree → already covered); the only crate-hosted wrangler is `corelink-clerk-cf` whose
+  build-output main is a DORMANT POC (the shim file is not built/present), so its main does not resolve and the
+  gate stays GREEN. (Verified: with the `corelink-clerk-cf/build/worker/shim.mjs` shim present the gate REDs
+  [C10b] naming it; absent, it is GREEN. A hermetic fixture proves a crate-hosted `build/worker/shim.mjs` main
+  under whole-crate adoption REDs [C10b] while a crate whose main IS its concept-cited `src/index.ts` stays
+  covered.)
+
+**gate v14 — three MATERIAL coverage holes CLOSED (PoC-proven; SAME root cause: config LOCATION could still
+hide a deploy entrypoint).** v13's `_wrangler_config_dirs` enumerated a FIXED 3-class LOCATION set — the repo
+ROOT + ONE level into `apps/*` + ONE level into `crates/*` — yet its docstring claimed "EVERY directory that
+hosts a wrangler config." So a wrangler config whose LOCATION fell OUTSIDE that set shipped GREEN with only
+coarse crate-dir/cluster ADOPTION, and a real edge entrypoint (a `main` resolving outside `*/src/**`) declared
+there rode that adoption uncovered. Three PoC-proven location bypasses (all reverted):
+
+- **crate-NESTED config (MATERIAL, closed).** `crates/corelink-clerk-cf/cf/wrangler.toml` — the one-level-only
+  walk into `crates/*` never descended into `crates/<x>/cf/`, so a `main` declared there was invisible.
+- **sibling top-level dir (MATERIAL, closed).** `services/edge/wrangler.toml` — only `root` + `apps/` +
+  `crates/` were ever considered, so a config in a brand-new top-level dir was never enumerated.
+- **`worker/` alt config (MATERIAL, closed).** `worker/wrangler.staging.toml` — the `worker/` dir itself was
+  not in the set, so an alt-named staging config there was never read.
+
+v14 replaces the hardcoded 3-class walk with a RECURSIVE `rglob("wrangler*.{toml,jsonc,json}")` over the
+**surface root** (excluding build-output / vendor dirs: `.wrangler`, `.open-next`, `node_modules`, `target`,
+`.git`, `dist`, `build` — we never scan generated bundles, the same exclusion the secrets gates apply), so
+config LOCATION can no longer hide a deploy entrypoint — matching what v10–v13 already do for config NAME
+(`wrangler*` glob) and env-override SYNTAX (`findall` over `[env.*]`). Every config found, in ANY dir,
+contributes its mains (top-level + `[env.*]` + array, via the existing `_wrangler_mains`) as STRICT required
+surfaces (concept cite or explicit exclude), exactly as before. The `corelink-clerk-cf` dormant POC stays
+GREEN: its `main = "build/worker/shim.mjs"` is a build artifact that does not exist on disk, so the
+`_mp.is_file()` guard drops the non-existent main (the exclude, if it ever materialises, must be PRECISE).
+No real apps/main config regressed — they live under `apps/*` and `crates/*` exactly as before; the rglob is a
+SUPERSET of the v13 set. (Verified: a crate-NESTED `crates/x/cf/wrangler.toml`, a sibling-top-level
+`services/edge/wrangler.toml`, and a `worker/wrangler.staging.toml` — each with a main outside `src/` — now RED
+[C10b]; a config UNDER a pruned `build/` dir is NOT walked; a crate-nested config whose main IS its
+concept-cited `src/index.ts` stays covered. A hermetic fixture proves the crate-NESTED + sibling-top-level
+positives, the build-output prune, and the selectivity negative.)
 
 **ACCEPTED STRUCTURAL RESIDUAL — C5 freshness ≠ authoring-correctness (gate v7 #4: documented, NOT
 "fixed").** C5 proves FRESHNESS — that the CONTENT of each cited `path:Lx-Ly` has not drifted since the
