@@ -113,6 +113,20 @@ pub const TURBO_BODY_LIMIT_BYTES: usize = 100 * 1024 * 1024;
 /// concurrent tasks). Excess requests get 429, not 503 — the client retries.
 pub const TURBO_PUT_CONCURRENCY_LIMIT: usize = 4;
 
+/// Maximum concurrent in-flight `GET /v8/artifacts/:hash` requests for a single
+/// tenant. Excess GETs are rejected with 429 (Too Many Requests).
+///
+/// Rationale (H1 — read-path OOM, mirrors [`TURBO_PUT_CONCURRENCY_LIMIT`]): a
+/// successful GET buffers the FULL artifact (up to [`TURBO_BODY_LIMIT_BYTES`] =
+/// 100 MiB) into the heap before responding. Without a concurrency cap, an
+/// authenticated tenant who has uploaded a 100 MiB artifact can burst N
+/// concurrent GETs of it and consume N × 100 MiB of heap, OOM-ing the shared
+/// container — the read path was left asymmetrically open while the PUT path was
+/// hardened. Capping at 4 bounds peak per-tenant read working set to ~400 MiB
+/// while still allowing realistic parallel cache reads. Excess requests get 429,
+/// not 503 — the client retries.
+pub const TURBO_GET_CONCURRENCY_LIMIT: usize = 4;
+
 /// Per-route request-body cap for `POST /v8/artifacts/events` (64 KiB).
 ///
 /// C4: the events route is "accept-and-drop" telemetry — it has NO storage,
@@ -146,6 +160,27 @@ pub const EVENTS_BODY_LIMIT_BYTES: usize = 64 * 1024;
 /// extractor fails CLOSED (503) after a short acquire wait rather than
 /// blocking forever.
 pub const GLOBAL_TURBO_PUT_PERMITS: usize = 16;
+
+/// Process-wide cap on concurrent large Turbo GETs (H1 — read-path twin of
+/// [`GLOBAL_TURBO_PUT_PERMITS`]).
+///
+/// [`GetConcurrencyGuard`] is PER-TENANT (4 × 100 MiB each). With N distinct
+/// authenticated tenants, peak transient read heap is `N × 4 × 100 MiB` — N
+/// tenants can together OOM the shared container even though each is within its
+/// own per-tenant cap. This is a SECOND, PROCESS-WIDE budget, reserved (like the
+/// per-tenant guard) in a `FromRequestParts` extractor — which axum 0.7 runs
+/// BEFORE the response body is buffered — so a permit is taken (or the request
+/// 503s) BEFORE the artifact is read into the heap.
+///
+/// Sizing mirrors [`GLOBAL_TURBO_PUT_PERMITS`]: each in-flight GET buffers up to
+/// [`TURBO_BODY_LIMIT_BYTES`] (100 MiB). 16 × 100 MiB ≈ 1.6 GiB peak read
+/// working set on a standard-1 instance (~4 GiB), leaving ample room for the
+/// rest of the process. Reads get a SEPARATE pool from writes: a GET flood must
+/// not be able to consume PUT permits (and vice-versa), and the combined
+/// PUT+GET ceiling (16 + 16 = 32 × 100 MiB ≈ 3.2 GiB) still fits with headroom.
+/// Beyond 16 concurrent GETs the extractor fails CLOSED (503) after a short
+/// acquire wait rather than blocking forever.
+pub const GLOBAL_TURBO_GET_PERMITS: usize = 16;
 
 /// Process-wide concurrency budget for the accept-and-drop `/v8/artifacts/events`
 /// telemetry route — SEPARATE from the PUT write budget (rt-nuclear cycle-2
@@ -270,6 +305,17 @@ pub struct TurboRouteState {
     /// 429 BEFORE its (up to 100 MiB) body is read into the heap. The RAII guard
     /// the extractor yields releases the slot when the handler returns.
     pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
+    /// Per-tenant in-flight GET concurrency counter (H1 — pre-buffer read-path
+    /// self-DoS guard, the read twin of [`put_inflight`](Self::put_inflight)).
+    ///
+    /// Maps `tenant_id → count` of GET requests currently in-flight (artifact
+    /// buffered in memory before the response is written). The reservation is
+    /// taken by the [`GetConcurrencyGuard`] `FromRequestParts` extractor — which
+    /// axum runs BEFORE the handler buffers the response body — so a 5th
+    /// concurrent GET is rejected 429 BEFORE its (up to 100 MiB) artifact is read
+    /// into the heap. The RAII guard the extractor yields releases the slot when
+    /// the handler returns.
+    pub(crate) get_inflight: Arc<Mutex<HashMap<String, usize>>>,
     /// Per-tenant in-flight `/events` concurrency counter (rt-nuclear cycle-2
     /// #9 — events fairness).
     ///
@@ -317,6 +363,21 @@ static GLOBAL_TURBO_PUT_BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();
 fn global_turbo_put_budget() -> Arc<Semaphore> {
     Arc::clone(
         GLOBAL_TURBO_PUT_BUDGET.get_or_init(|| Arc::new(Semaphore::new(GLOBAL_TURBO_PUT_PERMITS))),
+    )
+}
+
+/// Process-wide Turbo-GET read budget (H1) — the read-path twin of
+/// [`GLOBAL_TURBO_PUT_BUDGET`]. A single [`Semaphore`] shared by EVERY
+/// [`TurboRouteState`] (and thus every tenant) in the process, sized to
+/// [`GLOBAL_TURBO_GET_PERMITS`]. SEPARATE from the PUT budget so reads and writes
+/// don't share one pool. Lazily initialised so it is a true singleton regardless
+/// of how many routers are built.
+static GLOBAL_TURBO_GET_BUDGET: OnceLock<Arc<Semaphore>> = OnceLock::new();
+
+/// Accessor for the process-wide GET budget (H1).
+fn global_turbo_get_budget() -> Arc<Semaphore> {
+    Arc::clone(
+        GLOBAL_TURBO_GET_BUDGET.get_or_init(|| Arc::new(Semaphore::new(GLOBAL_TURBO_GET_PERMITS))),
     )
 }
 
@@ -542,6 +603,181 @@ impl axum::extract::FromRequestParts<TurboRouteState> for GlobalPutBudgetGuard {
     }
 }
 
+// ── Pre-buffer GET concurrency guard (H1 — read-path twin of PUT) ──────────────
+
+/// RAII release of one per-tenant in-flight GET slot.
+///
+/// Decrements the tenant's `get_inflight` count on `Drop`, so the slot is freed
+/// on EVERY return path (success, handler error, panic). Carried out of the
+/// [`GetConcurrencyGuard`] extractor into the handler so the slot stays held for
+/// the whole request lifetime (including the response-body buffer). Mirrors
+/// [`PutSlot`].
+pub(crate) struct GetSlot {
+    inflight: Arc<Mutex<HashMap<String, usize>>>,
+    tenant_key: String,
+}
+
+impl Drop for GetSlot {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.inflight.lock() {
+            if let Some(c) = g.get_mut(&self.tenant_key) {
+                *c = c.saturating_sub(1);
+                if *c == 0 {
+                    g.remove(&self.tenant_key);
+                }
+            }
+        }
+    }
+}
+
+/// `FromRequestParts` extractor that reserves a per-tenant in-flight GET slot
+/// (H1 — pre-buffer read-path OOM guard).
+///
+/// # Why an extractor (mirrors [`PutConcurrencyGuard`])
+///
+/// `handle_get` buffers the FULL artifact (up to [`TURBO_BODY_LIMIT_BYTES`] =
+/// 100 MiB) into the heap before responding. Without a cap, a burst of
+/// concurrent GETs each buffers ~100 MiB — `burst × 100 MiB` of transient heap
+/// could OOM the shared container. The PUT path was hardened against exactly
+/// this; the GET path was left asymmetrically open.
+///
+/// As a [`FromRequestParts`] extractor this runs while only request **parts**
+/// (headers/method/uri) are available — BEFORE the handler ever touches storage
+/// or buffers a response body. Declaring it AHEAD of any body work in the handler
+/// signature therefore does the lock+count+increment BEFORE a single artifact
+/// byte is read: an over-cap request is rejected 429 with no buffering. The
+/// yielded [`GetSlot`] RAII-releases the slot when the handler returns. Like the
+/// PUT guard it fails CLOSED (401) on a missing/sentinel tenant.
+pub(crate) struct GetConcurrencyGuard {
+    /// The reserved slot — released on drop. Held by the handler for the whole
+    /// request (it is NOT dropped at the end of extraction).
+    _slot: GetSlot,
+}
+
+#[axum::async_trait]
+impl axum::extract::FromRequestParts<TurboRouteState> for GetConcurrencyGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &TurboRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        // The isolation tenant is the DO-injected, PAT-resolved authenticated
+        // tenant. A missing/empty/sentinel header fails CLOSED (401) — the same
+        // gate `AuthTenant` and `PutConcurrencyGuard` enforce; we mirror it so the
+        // reservation is per AUTHENTICATED tenant (an unauthenticated request
+        // never reserves a slot, and never buffers an artifact).
+        let tenant = parts
+            .headers
+            .get("x-corelink-tenant-id")
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .unwrap_or("");
+        const TENANT_SENTINELS: &[&str] = &["_anonymous", "_unknown", "_system", "_pending"];
+        if tenant.is_empty() || TENANT_SENTINELS.contains(&tenant) {
+            return Err((StatusCode::UNAUTHORIZED, "authenticated tenant required").into_response());
+        }
+        let tenant_key = tenant.to_owned();
+
+        {
+            let mut inflight = match state.get_inflight.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!(
+                        tenant_id = %tenant_key,
+                        error = %e,
+                        "turbo GET concurrency tracker mutex poisoned; failing closed"
+                    );
+                    return Err((
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "concurrency tracker unavailable",
+                    )
+                        .into_response());
+                }
+            };
+            let count = inflight.entry(tenant_key.clone()).or_insert(0);
+            if *count >= TURBO_GET_CONCURRENCY_LIMIT {
+                tracing::warn!(
+                    tenant_id = %tenant_key,
+                    in_flight = *count,
+                    limit = TURBO_GET_CONCURRENCY_LIMIT,
+                    "turbo GET concurrency limit reached; returning 429 BEFORE body buffering"
+                );
+                return Err((
+                    StatusCode::TOO_MANY_REQUESTS,
+                    "too many concurrent artifact downloads",
+                )
+                    .into_response());
+            }
+            *count += 1;
+        }
+
+        Ok(Self {
+            _slot: GetSlot {
+                inflight: Arc::clone(&state.get_inflight),
+                tenant_key,
+            },
+        })
+    }
+}
+
+// ── Global process-wide GET budget guard (H1) ──────────────────────────────────
+
+/// `FromRequestParts` extractor that reserves ONE permit from the process-wide
+/// [`GLOBAL_TURBO_GET_BUDGET`] semaphore (H1 — read-path twin of
+/// [`GlobalPutBudgetGuard`]).
+///
+/// The per-tenant [`GetConcurrencyGuard`] bounds ONE tenant to
+/// `TURBO_GET_CONCURRENCY_LIMIT × TURBO_BODY_LIMIT_BYTES`, but with N tenants the
+/// aggregate transient read heap is `N × that` — N tenants can together OOM the
+/// shared container. This extractor adds a SECOND, process-wide bound on a pool
+/// SEPARATE from writes. As a `FromRequestParts` extractor axum runs it BEFORE
+/// the handler buffers the response, so the permit is reserved (or the request
+/// 503s) BEFORE any artifact byte is buffered. The held [`OwnedSemaphorePermit`]
+/// RAII-releases when the handler returns.
+///
+/// Under global saturation we wait at most [`GLOBAL_PUT_PERMIT_WAIT`] for a
+/// permit, then fail CLOSED with 503 rather than block forever — the client
+/// retries.
+pub(crate) struct GlobalGetBudgetGuard {
+    /// Held for the whole request; releases the permit on drop.
+    _permit: OwnedSemaphorePermit,
+}
+
+#[axum::async_trait]
+impl axum::extract::FromRequestParts<TurboRouteState> for GlobalGetBudgetGuard {
+    type Rejection = axum::response::Response;
+
+    async fn from_request_parts(
+        _parts: &mut axum::http::request::Parts,
+        _state: &TurboRouteState,
+    ) -> Result<Self, Self::Rejection> {
+        let budget = global_turbo_get_budget();
+        match tokio::time::timeout(GLOBAL_PUT_PERMIT_WAIT, budget.acquire_owned()).await {
+            Ok(Ok(permit)) => Ok(Self { _permit: permit }),
+            // `acquire_owned` only errs if the semaphore is closed — we never
+            // close it, so this is unreachable, but fail CLOSED if it happens.
+            Ok(Err(_)) => Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "global download budget unavailable",
+            )
+                .into_response()),
+            // Timed out waiting: the container is globally saturated.
+            Err(_) => {
+                tracing::warn!(
+                    permits = GLOBAL_TURBO_GET_PERMITS,
+                    "turbo GET global budget saturated; returning 503 BEFORE body buffering"
+                );
+                Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server busy: too many concurrent downloads",
+                )
+                    .into_response())
+            }
+        }
+    }
+}
+
 /// Per-request guard over the SEPARATE `/events` telemetry budget
 /// ([`GLOBAL_TURBO_EVENTS_PERMITS`]) — decoupled from the PUT write budget so a
 /// telemetry flood / slow-body events POST cannot starve real cache writes
@@ -740,6 +976,7 @@ pub fn build_handlers() -> TurboRouteState {
                         pat_gate: None,
                         bytes: None,
                         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+                        get_inflight: Arc::new(Mutex::new(HashMap::new())),
                         events_inflight: Arc::new(Mutex::new(HashMap::new())),
                         write_locks: new_write_locks(),
                     };
@@ -757,6 +994,7 @@ pub fn build_handlers() -> TurboRouteState {
                         pat_gate: None,
                         bytes: None,
                         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+                        get_inflight: Arc::new(Mutex::new(HashMap::new())),
                         events_inflight: Arc::new(Mutex::new(HashMap::new())),
                         write_locks: new_write_locks(),
                     };
@@ -776,6 +1014,7 @@ pub fn build_handlers() -> TurboRouteState {
         pat_gate: None,
         bytes: None,
         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+        get_inflight: Arc::new(Mutex::new(HashMap::new())),
         events_inflight: Arc::new(Mutex::new(HashMap::new())),
         write_locks: new_write_locks(),
     }
@@ -829,6 +1068,10 @@ pub fn router(state: TurboRouteState) -> Router {
 ///
 /// Returns 200 + raw artifact bytes on hit, 404 on miss, 400 on bad params,
 /// 403 on cross-tenant, 503 on audit-closed.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum handler — every parameter is a request extractor (State / Path / Query / headers + the GET concurrency guards); not a refactorable argument list. Mirrors handle_put."
+)]
 async fn handle_get(
     State(state): State<TurboRouteState>,
     Path(hash): Path<String>,
@@ -836,6 +1079,20 @@ async fn handle_get(
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
     headers: axum::http::HeaderMap,
+    // H1: the per-tenant read concurrency reservation is a `FromRequestParts`
+    // extractor (lock+count+increment, 429 on over-cap). axum runs every
+    // `FromRequestParts` extractor during extraction — BEFORE the handler body
+    // runs and buffers the artifact — so an over-cap GET is rejected 429 BEFORE
+    // the (up to 100 MiB) artifact is read into the heap. Holding `_concurrency`
+    // for the whole handler keeps the slot reserved until return; its `GetSlot`
+    // RAII-releases on drop. Mirrors `handle_put`'s `PutConcurrencyGuard`.
+    _concurrency: GetConcurrencyGuard,
+    // H1: the process-wide GET budget — a SECOND `FromRequestParts` extractor. It
+    // reserves one of `GLOBAL_TURBO_GET_PERMITS` global permits (503 on global
+    // saturation) BEFORE the artifact is buffered, bounding aggregate
+    // cross-tenant read heap on a pool SEPARATE from writes. The held permit
+    // RAII-releases when the handler returns. Mirrors `GlobalPutBudgetGuard`.
+    _global_budget: GlobalGetBudgetGuard,
 ) -> impl IntoResponse {
     // Scope gate (fail-CLOSED): Turbo GET is a cache READ — require
     // `cas:rw` or `cas:r`. BEFORE any audit or storage. NO-OP for `cas:rw`.
@@ -1835,6 +2092,61 @@ mod tests {
             g.get(TEST_AUTH_TENANT),
             None, // removed when count reaches 0
             "concurrency counter must be released after PUT completes"
+        );
+    }
+
+    // ── H1: GET pre-buffer concurrency guard (read-path twin of PUT) ──────────
+
+    #[tokio::test]
+    async fn get_at_limit_returns_429() {
+        // H1: mirror `put_at_limit_returns_429` for the read path. Simulate
+        // reaching TURBO_GET_CONCURRENCY_LIMIT by pre-seeding the per-tenant GET
+        // counter, then issue one more GET — the `GetConcurrencyGuard`
+        // `FromRequestParts` extractor must reject it 429 BEFORE the handler
+        // touches storage or buffers the (up to 100 MiB) artifact.
+        let state = fixture();
+        {
+            let mut g = state.get_inflight.lock().unwrap();
+            g.insert(TEST_AUTH_TENANT.to_owned(), TURBO_GET_CONCURRENCY_LIMIT);
+        }
+        let app = router(state);
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/v8/artifacts/h_get_limit?teamId=team_x")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "at-limit GET must return 429 (pre-buffer per-tenant guard)"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_below_limit_succeeds_and_decrements_counter() {
+        // A GET that completes must release its concurrency slot (counter goes
+        // back to 0 / removed, not leaked). Mirrors the PUT decrement test.
+        let state = fixture();
+        let app = router(state.clone());
+        let req = Request::builder()
+            .method(Method::GET)
+            .uri("/v8/artifacts/h_get_decr?teamId=team_y")
+            .header("x-corelink-tenant-id", TEST_AUTH_TENANT)
+            .header(crate::scope::SCOPE_HEADER, TEST_SCOPE_RW)
+            .body(Body::empty())
+            .expect("request");
+        // 404 (artifact absent) is fine — the slot must still be released after
+        // the handler returns on EVERY path.
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let g = state.get_inflight.lock().unwrap();
+        assert_eq!(
+            g.get(TEST_AUTH_TENANT),
+            None,
+            "GET concurrency counter must be released after the request completes"
         );
     }
 

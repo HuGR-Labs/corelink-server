@@ -488,6 +488,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         quota: quota.clone(),
         pat_gate: native_pat_gate.clone(),
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     };
     let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) = ac::build_handlers();
     // Storage byte accounting (cluster B+C) for the AC plane: same decorator

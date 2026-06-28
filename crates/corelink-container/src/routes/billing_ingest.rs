@@ -383,6 +383,8 @@ enum RecordError {
     BadIdemKey,
     /// `source` is empty.
     EmptySource,
+    /// `source` exceeds [`MAX_SOURCE_LEN`].
+    SourceTooLong,
 }
 
 impl RecordError {
@@ -394,9 +396,15 @@ impl RecordError {
             Self::BadRegion => "bad_region",
             Self::BadIdemKey => "bad_idem_key",
             Self::EmptySource => "empty_source",
+            Self::SourceTooLong => "source_too_long",
         }
     }
 }
+
+/// Upper bound on the free-text `source` field. A `source` is a short,
+/// machine-emitted provenance tag (e.g. `corelink/runner/iad`); 256 bytes is
+/// generous for any legitimate value while keeping an abusive one a clean 400.
+const MAX_SOURCE_LEN: usize = 256;
 
 /// Validate one wire record into a [`StagedUsageRecord`]. Pure logic — no
 /// I/O — so it is unit-testable in isolation (mirrors the `decode_*` split
@@ -413,11 +421,25 @@ fn validate_record(wire: UsageRecordWire) -> Result<StagedUsageRecord, RecordErr
     // 64-char lowercase hex (BLAKE3-256 canonical form) — matches the
     // staging CHECK(length(event_payload_hash) = 64) discipline + gives a
     // well-formed `(tenant_id, request_id)` dedup coordinate.
-    if wire.idem_key.len() != 64 || !wire.idem_key.bytes().all(|b| b.is_ascii_hexdigit()) {
+    //
+    // CANONICALIZE to lowercase BEFORE validating + storing: `is_ascii_hexdigit`
+    // also accepts `A-F`, so the upper- and lower-case spellings of the SAME
+    // BLAKE3 key would otherwise become two distinct `(tenant_id, idem_key)`
+    // dedup coordinates → the idempotency dedup is silently bypassable
+    // (double-processing). Collapsing case-variants to one canonical key closes
+    // that hole.
+    let idem_key = wire.idem_key.to_ascii_lowercase();
+    if idem_key.len() != 64 || !idem_key.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(RecordError::BadIdemKey);
     }
     if wire.source.is_empty() {
         return Err(RecordError::EmptySource);
+    }
+    // Explicit length cap on the free-text `source`: bound it to a sane value
+    // so an abusive/malformed `source` is a CLEAN 400 reject, not something that
+    // rides the 10 MiB / ~16 KB edge limits into the staging store.
+    if wire.source.len() > MAX_SOURCE_LEN {
+        return Err(RecordError::SourceTooLong);
     }
     Ok(StagedUsageRecord {
         tenant_id,
@@ -427,7 +449,7 @@ fn validate_record(wire: UsageRecordWire) -> Result<StagedUsageRecord, RecordErr
         region: wire.region,
         source: wire.source,
         time_ms: wire.time_ms,
-        idem_key: wire.idem_key,
+        idem_key,
     })
 }
 
@@ -894,6 +916,48 @@ mod tests {
         assert_eq!(rec.event_kind, UsageEventKind::RunnerSlotSeconds);
         assert_eq!(rec.region, "iad");
         assert_eq!(rec.qty, 7200);
+    }
+
+    #[test]
+    fn idem_key_is_canonicalized_lowercase() {
+        // The SAME BLAKE3 key spelled upper- vs lower-case must canonicalize to
+        // ONE coordinate, else the `(tenant_id, idem_key)` dedup is bypassable.
+        let lower = hex64(0xab); // "abab…" (32×"ab")
+        let upper = lower.to_ascii_uppercase(); // "ABAB…"
+        assert_ne!(lower, upper, "fixture must actually differ in case");
+
+        let wire_lower: UsageRecordWire =
+            serde_json::from_value(record_json(&tenant_a(), &lower)).unwrap();
+        let wire_upper: UsageRecordWire =
+            serde_json::from_value(record_json(&tenant_a(), &upper)).unwrap();
+
+        let rec_lower = validate_record(wire_lower).unwrap();
+        let rec_upper = validate_record(wire_upper).unwrap();
+
+        // Both collapse to the same canonical (lowercase) idem_key → one row.
+        assert_eq!(rec_lower.idem_key, lower);
+        assert_eq!(rec_upper.idem_key, lower);
+        assert_eq!(rec_lower.idem_key, rec_upper.idem_key);
+    }
+
+    #[test]
+    fn source_over_cap_is_rejected() {
+        let too_long: UsageRecordWire = serde_json::from_value({
+            let mut r = record_json(&tenant_a(), &hex64(0x23));
+            r["source"] = serde_json::json!("x".repeat(MAX_SOURCE_LEN + 1));
+            r
+        })
+        .unwrap();
+        assert_eq!(validate_record(too_long), Err(RecordError::SourceTooLong));
+
+        // A source exactly at the cap is still accepted.
+        let at_cap: UsageRecordWire = serde_json::from_value({
+            let mut r = record_json(&tenant_a(), &hex64(0x24));
+            r["source"] = serde_json::json!("x".repeat(MAX_SOURCE_LEN));
+            r
+        })
+        .unwrap();
+        assert!(validate_record(at_cap).is_ok());
     }
 
     #[test]

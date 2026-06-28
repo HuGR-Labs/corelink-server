@@ -6,7 +6,7 @@ source_files:
   - crates/corelink-container/src/routes/tier_select_checkout.rs
   - crates/corelink-container/src/routes/billing_ingest.rs
   - docs/operator/stripe-checkout-e2e-2026-05-29.md
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "664d78b8e6f62ad6d0e95a94552c6c0997f8fea1"
 provenance: "AUTHORED"
 tags: [launch, billing, stripe, checkout, usage, money-path]
 timestamp: "2026-06-26T00:00:00Z"
@@ -26,18 +26,19 @@ The money path has three moving parts. (1) **Checkout creation** — `StripeChec
 - Any Stripe failure — a dropped sender or a Stripe error — collapses to `Err(String)`, which the orchestration surfaces as a 502 `stripe_unavailable` (`crates/corelink-container/src/routes/tier_select_checkout.rs:200-210`).
 - On success the adapter returns only the Stripe-hosted `checkout_url`, the `session_id`, and the `stripe_customer_id` — card data never transits CoreLink (`crates/corelink-container/src/routes/tier_select_checkout.rs:212-216`).
 - Operator E2E confirms the activation seam: `checkout.session.completed` INSERTs the `tenant_billing` row with `status = "paid"`, `customer.subscription.updated` maps the Stripe status, and `customer.subscription.deleted` sets `canceled` (`docs/operator/stripe-checkout-e2e-2026-05-29.md:85-90`).
-- The usage ingest route auth gate runs FIRST on raw bytes — an unauthenticated caller is rejected 401 before the body is ever JSON-parsed, denying parse CPU/heap to an attacker (`crates/corelink-container/src/routes/billing_ingest.rs:448-465`).
-- The whole batch is validated before any row is persisted (all-or-nothing): a single malformed record 400s the entire batch and stages nothing (`crates/corelink-container/src/routes/billing_ingest.rs:483-493`).
+- The usage ingest route auth gate runs FIRST on raw bytes — an unauthenticated caller is rejected 401 before the body is ever JSON-parsed, denying parse CPU/heap to an attacker (`crates/corelink-container/src/routes/billing_ingest.rs:475-496`).
+- The whole batch is validated before any row is persisted (all-or-nothing): a single malformed record 400s the entire batch and stages nothing (`crates/corelink-container/src/routes/billing_ingest.rs:505-515`).
+- Per-record validation canonicalizes the `idem_key` to lowercase BEFORE validating/storing it, so the upper- and lower-case spellings of the same BLAKE3 key collapse to ONE `(tenant_id, idem_key)` dedup coordinate (a case-variant cannot bypass the idempotency dedup), and it caps the free-text `source` at `MAX_SOURCE_LEN` (256) — an over-long `source` is a clean 400 (`SourceTooLong`), not something that rides the body limits into the store (`crates/corelink-container/src/routes/billing_ingest.rs:431-442`; `crates/corelink-container/src/routes/billing_ingest.rs:407`).
 - Persistence is idempotent by `idem_key`: the store probes the `(tenant_id, request_id)` coordinate, then inserts `ON CONFLICT DO NOTHING`, tallying `accepted` vs `deduped` (`crates/corelink-container/src/routes/billing_ingest.rs:250-291`).
-- A genuine D1 backend fault mid-persist returns 503 fail-CLOSED so the runner safely retries the (idempotent) batch (`crates/corelink-container/src/routes/billing_ingest.rs:502-507`).
+- A genuine D1 backend fault mid-persist returns 503 fail-CLOSED so the runner safely retries the (idempotent) batch (`crates/corelink-container/src/routes/billing_ingest.rs:524-531`).
 
 # Invariants
 
 - Free tier must never reach Stripe checkout — it is an internal invariant violation that returns `Err`, not a silently-opened paid session (`crates/corelink-container/src/routes/tier_select_checkout.rs:177-179`).
 - CoreLink surfaces only the Stripe-hosted checkout URL; the bearer token lives inside `StripeRealClient` and the adapter's `Debug` emits only a redaction marker, so a leaked `Debug` can never expose the Stripe secret (`crates/corelink-container/src/routes/tier_select_checkout.rs:150-157`).
 - The ingest route is gated by a DEDICATED `BILLING_INGEST_AUTH_KEY` via a constant-time compare — NOT the Worker↔container key and NOT the introspect key — so an ingest-secret leak shares no blast radius (`crates/corelink-container/src/routes/billing_ingest.rs:29-37`).
-- The ingest route fails CLOSED at boot: if `BILLING_INGEST_AUTH_KEY` is absent or shorter than 32 chars the route is NOT mounted (`crates/corelink-container/src/routes/billing_ingest.rs:548-556`).
-- `idem_key` is the dedup coordinate — re-pushing the same record is a no-op (`deduped`), never a double-count (`crates/corelink-container/src/routes/billing_ingest.rs:85-87`).
+- The ingest route fails CLOSED at boot: if `BILLING_INGEST_AUTH_KEY` is absent or shorter than 32 chars the route is NOT mounted (`crates/corelink-container/src/routes/billing_ingest.rs:570-578`).
+- `idem_key` is the dedup coordinate — re-pushing the same record is a no-op (`deduped`), never a double-count (`crates/corelink-container/src/routes/billing_ingest.rs:85-87`); it is lowercase-canonicalized at validation so a case-variant cannot mint a second coordinate and bypass dedup (`crates/corelink-container/src/routes/billing_ingest.rs:431-433`).
 - A single batch is bounded to `MAX_BATCH_RECORDS = 1024` so one caller cannot stage an unbounded batch in one request (`crates/corelink-container/src/routes/billing_ingest.rs:119-121`).
 - Runner slot-seconds are NOT a Stripe-billable meter — runners are priced on the per-tenant concurrency axis, so this endpoint only stages records for dashboard/capacity reconciliation (`crates/corelink-container/src/routes/billing_ingest.rs:6-12`).
 
@@ -56,5 +57,6 @@ The money path has three moving parts. (1) **Checkout creation** — `StripeChec
 - `crates/corelink-container/src/routes/billing_ingest.rs:6-12` — runner concurrency-priced (not Stripe-metered) rationale.
 - `crates/corelink-container/src/routes/billing_ingest.rs:29-40` — dedicated fail-closed `BILLING_INGEST_AUTH_KEY` gate.
 - `crates/corelink-container/src/routes/billing_ingest.rs:250-291` — idempotent probe-then-insert staging.
-- `crates/corelink-container/src/routes/billing_ingest.rs:448-521` — handler: auth-before-parse, all-or-nothing validation, accepted/deduped tally, 503 fail-closed.
+- `crates/corelink-container/src/routes/billing_ingest.rs:475-543` — handler: auth-before-parse, all-or-nothing validation, accepted/deduped tally, 503 fail-closed.
+- `crates/corelink-container/src/routes/billing_ingest.rs:407-442` — `validate_record`: lowercase-canonicalize `idem_key` (case-variant dedup-bypass close) + `MAX_SOURCE_LEN` (256) cap → `SourceTooLong` 400.
 - `docs/operator/stripe-checkout-e2e-2026-05-29.md:85-93` — verified webhook → `tenant_billing` activation behavior + the API-bypass gotcha.

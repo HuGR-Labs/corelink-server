@@ -168,7 +168,7 @@ ALLOWLIST_REGEX = re.compile(
     #   CORELINK_API_ENDPOINT/CORELINK_APP_URL are public hosts/URLs, and
     #   CLERK_LIVE_SECRET_KEY is the operator's local .env.local Clerk key (the
     #   DEPLOYED Clerk secret is the matrix's canonical CLERK_SECRET_KEY row).
-    r"|CLERK_FAPI$|CLERK_LIVE_SECRET_KEY$|CORELINK_API_ENDPOINT$|CORELINK_APP_URL$"
+    r"|CLERK_FAPI$|CLERK_LIVE_SECRET_KEY$|CORELINK_API_ENDPOINT$|CORELINK_APP_URL$|CLERK_JS_VERSION$"
     #   Cloudflare D1 database UUID — committed in wrangler.toml [[d1_databases]];
     #   a resource identifier, not a credential (CF_API_TOKEN gates access).
     r"|D1_DATABASE_ID$"

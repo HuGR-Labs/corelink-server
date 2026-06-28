@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Security
+- **Brutal-audit-fleet round-2 hardening (1 HIGH + MED/LOW).** A standing 4-auditor fleet (2 Opus + 2
+  Sonnet) over live prod found: **Turbo GET was unguarded** while PUT had per-tenant + global concurrency
+  budgets → a 100 MiB artifact + GET burst could OOM the shared container (added `GetConcurrencyGuard` 4/
+  tenant + `GlobalGetBudgetGuard` 16, mirroring PUT); **batch-read/batch-exists** had no read-concurrency
+  guard (added `CasReadConcurrencyGuard` 8/tenant, separate pool); **`ERASURE_SALT_KEY`** added to the
+  prod-arming FATAL boot watchdog (was omitted → boots "healthy" while every erasure call 500s); **PAT-mint
+  503** no longer leaks `PatError` detail (opaque body, real error logged server-side); **idem_key**
+  canonicalized lowercase (uppercase-hex dedup bypass); explicit length caps on the billing `source` (256)
+  + list `cursor` (1024); and the Stripe-materializer's false "loses access" comment corrected (it's
+  grant-only — downgrade is the signup-worker's job). The exploit-chain lens (native-plane forgery /
+  `_public` poisoning / cross-tenant isolation across all surfaces) came back clean.
+
 - **GDPR erasure attestation honest-downgraded — signed "proof" was theater (brutal-review H1, HIGH).** The
   `VerifiedComplete` path computed an Ed25519 signature but PERSISTED only the UNSIGNED `evidence_hash`: the
   `signature_ed25519` and `canonical_payload_jcs` were discarded (migration 0032 has no columns for them),

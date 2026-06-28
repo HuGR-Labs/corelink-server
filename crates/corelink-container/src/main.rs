@@ -343,6 +343,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // wired (the OCI op-cap, routes.rs).
                 missing.push("request-count gate (OCI monthly op cap)");
             }
+            // ERASURE_SALT_KEY: the GDPR DSR account-delete / erasure path derives
+            // a per-DSR salt via `HMAC-SHA256(ERASURE_SALT_KEY, dsr_id)` in
+            // `routes/customer.rs::derive_salt_hex`, which fail-CLOSEDs to a 500 when
+            // the key is absent/empty. Without this assertion a prod boot missing the
+            // key looks "healthy" while EVERY erasure/account-delete call silently
+            // 500s — the GDPR Art. 17 path is broken with no early alarm. Treat it as
+            // a must-arm prod control (read identically to PAT_SIGNING_KEY).
+            let erasure_salt_key_present = std::env::var("ERASURE_SALT_KEY")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if !erasure_salt_key_present {
+                missing.push("ERASURE_SALT_KEY (GDPR erasure/account-delete salt)");
+            }
             if !missing.is_empty() {
                 tracing::error!(
                     event = "prod_controls_not_fully_armed",
