@@ -75,10 +75,20 @@ export function isoFromMs(ms: number): string {
   return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
-/** Parse an ISO-8601 instant to epoch-ms (0 on malformed input). */
-export function msFromIso(iso: string): number {
+/**
+ * Parse an ISO-8601 instant to epoch-ms, or `null` on NULL/empty/unparseable
+ * input.
+ *
+ * MUST NOT return 0 (epoch-1970) on bad input: a NULL/corrupt `started_at`
+ * would otherwise anchor the DSR SLA clock at 1970 → the row is permanently
+ * past the 24h deadline → a recurring FALSE `sla_breached` PagerDuty page on
+ * every 24h cron tick. Returning `null` lets the call site SKIP the row instead
+ * of anchoring it at the epoch.
+ */
+export function msFromIso(iso: string): number | null {
+  if (!iso) return null;
   const t = Date.parse(iso);
-  return Number.isNaN(t) ? 0 : t;
+  return Number.isNaN(t) ? null : t;
 }
 
 /**
@@ -212,10 +222,21 @@ export async function runDsrVerifySweep(
     const dsr_id = String(r.dsr_id ?? "");
     const tenant_id = String(r.tenant_id ?? "");
     if (!dsr_id || !tenant_id || byId.has(dsr_id)) continue;
+    // SLA-clock anchor: a NULL/malformed started_at must NEVER anchor at
+    // epoch-1970 — that would make the row permanently past the 24h deadline
+    // and fire a recurring FALSE sla_breached page every cron tick. Skip the
+    // row (with a structured warn) when the timestamp is unparseable.
+    const queued_at_ms = msFromIso(String(r.queued_at ?? ""));
+    if (queued_at_ms === null) {
+      console.warn(
+        `[dsr-verify-cron] skipping row with invalid started_at dsr_id=${dsr_id} tenant_id=${tenant_id} raw_started_at=${JSON.stringify(r.queued_at ?? null)}`,
+      );
+      continue;
+    }
     byId.set(dsr_id, {
       dsr_id,
       tenant_id,
-      queued_at_ms: msFromIso(String(r.queued_at ?? "")),
+      queued_at_ms,
       fromRequested: false,
     });
   }

@@ -16,14 +16,24 @@
  * ADR + the mirror in region_map.rs):
  *   wnam → iad   (US west traffic served from IAD today)
  *   enam → iad   (US east — IAD)
- *   weur → lhr   (EU — London; the leak this fix closes)
- *   sam  → sam   (South America)
+ *   weur → lhr   (EU — London; jurisdiction-correct EU R2 bucket — the leak this fix closes)
+ *   sam  → sam   (South America — RECOGNISED/routable, but NOT provisionable: PROD_SAM
+ *                 still points at the DEFAULT US R2 endpoint + shared US bucket, so a
+ *                 `sam`-labelled tenant would mis-land in US storage — an LGPD cross-border
+ *                 violation. Re-add to PROVISIONED_MACROS only once PROD_SAM has a real
+ *                 SAM-jurisdiction bucket/endpoint.)
  *   apac → nrt   (Asia-Pacific — Tokyo; NOT provisioned in Phase 1)
  *   afr  → REJECT (no African colo provisioned; must be rejected at signup)
  *
- * Provisioned Phase-1 = { wnam, enam, weur, sam }. apac/afr are valid macro
- * codes (the D1 CHECK accepts them) but are NOT provisioned, so signup MUST
- * reject them rather than silently downgrade to a US region.
+ * Provisioned = { wnam, enam, weur } — exactly the macros backed by a
+ * jurisdiction-correct R2 bucket today. sam/apac/afr are valid macro codes (the
+ * D1 CHECK accepts them and routing still recognises them) but are NOT
+ * provisioned, so signup MUST reject them rather than silently mis-land the
+ * tenant's data in the wrong jurisdiction.
+ *
+ * This provisioned set is the SINGLE SOURCE OF TRUTH shared by THREE consumers
+ * (this file, the Rust `region_map.rs`, and signup `clerk.ts`); all three are
+ * pinned together by `worker/tests/region-map.test.ts` (the 3-way drift gate).
  */
 
 /** The canonical CoreLink data-residency MACRO region codes (D1 CHECK set). */
@@ -47,14 +57,17 @@ const MACRO_TO_COLO: Readonly<Record<MacroRegion, Colo | undefined>> = {
 };
 
 /**
- * Macro regions provisioned in Phase 1. Signup MUST reject any macro NOT in
- * this set (apac/afr today) rather than route/store the tenant anywhere.
+ * Macro regions provisioned today — exactly those with a jurisdiction-correct R2
+ * bucket. Signup MUST reject any macro NOT in this set (sam/apac/afr today)
+ * rather than route/store the tenant anywhere. `sam` is deliberately EXCLUDED:
+ * it stays routable (`MACRO_TO_COLO`/`coloForMacro` still recognise it) but is
+ * NOT provisionable until PROD_SAM has a real SAM-jurisdiction bucket — provisioning
+ * it today would mis-land data in US R2 under a false residency label (LGPD).
  */
 export const PROVISIONED_MACROS: ReadonlySet<MacroRegion> = new Set<MacroRegion>([
   "wnam",
   "enam",
   "weur",
-  "sam",
 ]);
 
 /** Type guard: is `s` one of the six canonical macro region codes? */

@@ -337,9 +337,12 @@ pub enum DsrJurisdiction {
     /// Brazil — Lei Geral de Proteção de Dados (LGPD). Art. 19
     /// canonical SLA = 15 days for the controller response.
     Lgpd,
-    /// EU — General Data Protection Regulation (GDPR). Art. 12.3
-    /// canonical SLA = 1 month (extendable to 3 for complex requests;
-    /// the trait-level deadline is the un-extended 30 days).
+    /// EU — General Data Protection Regulation (GDPR). Art. 12(3)
+    /// canonical SLA = **one calendar month** (extendable to 3 for
+    /// complex requests; the trait-level deadline is the un-extended
+    /// one-calendar-month add per [`sla_for`] — NOT a flat 30 days,
+    /// which would silently overshoot the legal deadline for short
+    /// months, e.g. a Jan-31 submission is due Feb-28/29, not Mar-2).
     Gdpr,
     /// California — CCPA + CPRA. §1798.130 canonical SLA = 45 days
     /// for the controller response.
@@ -377,10 +380,14 @@ pub const fn canonical_dsr_jurisdictions() -> &'static [DsrJurisdiction; 3] {
 /// LGPD Art. 19 canonical SLA: 15 days for the controller response.
 pub const SLA_LGPD_DAYS: u32 = 15;
 
-/// GDPR Art. 12.3 canonical SLA: 1 month (un-extended; the law
-/// allows extension to 3 months for complex requests, but the
-/// trait-level deadline is the un-extended 30 days so the system
-/// fails-CLOSED on time-budget surprises).
+/// GDPR Art. 12(3) reference window: "one calendar month" ≈ 30 days.
+/// RETAINED as a documentation / sizing reference only — the canonical
+/// GDPR deadline in [`sla_for`] is a true CALENDAR-month add (see
+/// [`add_one_calendar_month_ms`]), NOT this flat day count. Computing
+/// `30 * 86_400_000` overshoots the legal "one month" deadline for any
+/// month shorter than 30 days (a Jan-31 submission is legally due
+/// Feb-28/29, not Mar-2). The law allows extension to 3 months for
+/// complex requests (Privacy Officer review path).
 pub const SLA_GDPR_DAYS: u32 = 30;
 
 /// CCPA §1798.130 canonical SLA: 45 days.
@@ -401,12 +408,105 @@ pub const RECEIPT_EXPIRY_DAYS: u32 = 90;
 /// Officer review path).
 #[must_use]
 pub const fn sla_for(jurisdiction: DsrJurisdiction, submitted_at_ms: u64) -> u64 {
-    let days = match jurisdiction {
-        DsrJurisdiction::Lgpd => SLA_LGPD_DAYS,
-        DsrJurisdiction::Gdpr => SLA_GDPR_DAYS,
-        DsrJurisdiction::Ccpa => SLA_CCPA_DAYS,
+    match jurisdiction {
+        // GDPR Art. 12(3) requires "one calendar MONTH", not 30 days.
+        // A flat `30 * 86_400_000` silently overshoots the legal
+        // deadline for any month shorter than 30 days — e.g. a Jan-31
+        // submission is legally due Feb-28 (Feb-29 in a leap year), but
+        // the day-based math lands on Mar-2 = up to 2 days LATE during
+        // the real breach window. Use a true calendar-month add.
+        DsrJurisdiction::Gdpr => add_one_calendar_month_ms(submitted_at_ms),
+        // LGPD (15d) and CCPA (45d) are genuinely DAY-based per statute.
+        DsrJurisdiction::Lgpd => {
+            submitted_at_ms.saturating_add((SLA_LGPD_DAYS as u64) * MS_PER_DAY)
+        }
+        DsrJurisdiction::Ccpa => {
+            submitted_at_ms.saturating_add((SLA_CCPA_DAYS as u64) * MS_PER_DAY)
+        }
+    }
+}
+
+/// Milliseconds per 24h day (UTC; no leap-second modelling — DSR SLA
+/// granularity is days, not seconds).
+const MS_PER_DAY: u64 = 86_400_000;
+
+/// Add **one calendar month** to a Unix-epoch-ms instant, clamping the
+/// day-of-month to the target month's last valid day (so Jan-31 →
+/// Feb-28, or Feb-29 in a leap year — never spilling into March), and
+/// preserving the time-of-day component. Pure const integer civil-
+/// calendar arithmetic (Howard Hinnant's algorithm); no external date
+/// crate (corelink-dsr must stay wasm32-clean with a minimal dep graph).
+#[must_use]
+const fn add_one_calendar_month_ms(epoch_ms: u64) -> u64 {
+    let days = (epoch_ms / MS_PER_DAY) as i64;
+    let time_of_day_ms = epoch_ms % MS_PER_DAY;
+    let (year, month, day) = civil_from_days(days);
+    // Advance one calendar month (Dec → next Jan).
+    let (ny, nm) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
     };
-    submitted_at_ms.saturating_add((days as u64) * 86_400_000)
+    // Clamp the day to the target month's last valid day.
+    let last = last_day_of_month(ny, nm);
+    let nd = if day > last { last } else { day };
+    let out_days = days_from_civil(ny, nm, nd);
+    (out_days as u64)
+        .saturating_mul(MS_PER_DAY)
+        .saturating_add(time_of_day_ms)
+}
+
+/// Whether `y` is a Gregorian leap year.
+#[must_use]
+const fn is_leap_year(y: i64) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
+}
+
+/// Last (highest) valid day-of-month for `(y, m)` (`m` in 1..=12).
+#[must_use]
+const fn last_day_of_month(y: i64, m: u32) -> u32 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(y) => 29,
+        // February non-leap (28) intentionally shares the fail-safe default: a
+        // separate `2 => 28` arm is an EQUIVALENT mutant (cargo-mutants
+        // "delete arm" can't be killed when the arm and the fallback return the
+        // same value). `m` is always 1..=12 from callers; 28 is the fail-safe too.
+        _ => 28,
+    }
+}
+
+/// Civil date `(year, month, day)` from a count of days since the Unix
+/// epoch (1970-01-01). Howard Hinnant's `civil_from_days`.
+#[must_use]
+const fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let year = if m <= 2 { y + 1 } else { y };
+    (year, m as u32, d)
+}
+
+/// Count of days since the Unix epoch for a civil date `(y, m, d)`.
+/// Howard Hinnant's `days_from_civil` (inverse of [`civil_from_days`]).
+#[must_use]
+const fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let m = m as i64;
+    let d = d as i64;
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400; // [0, 399]
+    let mp = if m > 2 { m - 3 } else { m + 9 }; // [0, 11]
+    let doy = (153 * mp + 2) / 5 + d - 1; // [0, 365]
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy; // [0, 146096]
+    era * 146_097 + doe - 719_468
 }
 
 /// Canonical DSR request input shape. Per WI-S11-001 §1: every DSR
@@ -648,10 +748,40 @@ mod tests {
     }
 
     #[test]
-    fn sla_for_gdpr_30d() {
-        let submitted = 1_000_000_000_000_u64;
-        let deadline = sla_for(DsrJurisdiction::Gdpr, submitted);
-        assert_eq!(deadline, submitted + 30 * 86_400_000);
+    fn sla_for_gdpr_is_calendar_month_not_30_days() {
+        // GDPR Art. 12(3) = "one calendar MONTH". A Jan-31 submission is
+        // legally due Feb-28 (non-leap), NOT Mar-2 (= +30 days). The old
+        // `30 * 86_400_000` math overshot the legal deadline by 2 days.
+        //
+        // Epoch-day anchors (days since 1970-01-01, × 86_400_000 ms):
+        //   2023-01-31 = day 19_388 ; 2023-02-28 = day 19_416 (Δ 28d)
+        //   30 days later would be   day 19_418 = 2023-03-02 (2d LATE)
+        let jan31_2023 = 19_388_u64 * 86_400_000;
+        let feb28_2023 = 19_416_u64 * 86_400_000;
+        let deadline = sla_for(DsrJurisdiction::Gdpr, jan31_2023);
+        assert_eq!(deadline, feb28_2023, "Jan-31 GDPR must land Feb-28, not Mar-2");
+        // It must be STRICTLY before the buggy 30-day computation.
+        assert!(deadline < jan31_2023 + 30 * 86_400_000);
+
+        // Leap-year arm: Jan-31-2024 → Feb-29-2024 (1 day before +30d).
+        //   2024-01-31 = day 19_753 ; 2024-02-29 = day 19_782 (Δ 29d)
+        let jan31_2024 = 19_753_u64 * 86_400_000;
+        let feb29_2024 = 19_782_u64 * 86_400_000;
+        assert_eq!(sla_for(DsrJurisdiction::Gdpr, jan31_2024), feb29_2024);
+
+        // Time-of-day is preserved across the calendar-month add.
+        let with_tod = jan31_2023 + 13 * 3_600_000 + 17 * 60_000; // 13:17 UTC
+        assert_eq!(
+            sla_for(DsrJurisdiction::Gdpr, with_tod),
+            feb28_2023 + 13 * 3_600_000 + 17 * 60_000
+        );
+
+        // A 31-day month (e.g. Mar-15 → Apr-15) adds exactly that month's
+        // length, never a flat 30.
+        //   2023-03-15 = day 19_431 ; 2023-04-15 = day 19_462 (Δ 31d)
+        let mar15_2023 = 19_431_u64 * 86_400_000;
+        let apr15_2023 = 19_462_u64 * 86_400_000;
+        assert_eq!(sla_for(DsrJurisdiction::Gdpr, mar15_2023), apr15_2023);
     }
 
     #[test]
@@ -659,6 +789,55 @@ mod tests {
         let submitted = 1_000_000_000_000_u64;
         let deadline = sla_for(DsrJurisdiction::Ccpa, submitted);
         assert_eq!(deadline, submitted + 45 * 86_400_000);
+    }
+
+    // Direct pins on the calendar helpers (kill the cargo-mutants survivors:
+    // last_day_of_month arm-deletes + the Hinnant civil/days arithmetic ops).
+
+    #[test]
+    fn last_day_of_month_exact_per_month() {
+        // 31-day months
+        for m in [1u32, 3, 5, 7, 8, 10, 12] {
+            assert_eq!(last_day_of_month(2023, m), 31, "month {m}");
+        }
+        // 30-day months (kills the `4|6|9|11 => 30` arm-delete)
+        for m in [4u32, 6, 9, 11] {
+            assert_eq!(last_day_of_month(2023, m), 30, "month {m}");
+        }
+        // February: 28 non-leap (kills the `2 => 28` arm-delete) / 29 leap
+        assert_eq!(last_day_of_month(2023, 2), 28);
+        assert_eq!(last_day_of_month(2024, 2), 29); // leap
+        assert_eq!(last_day_of_month(2100, 2), 28); // century non-leap
+        assert_eq!(last_day_of_month(2000, 2), 29); // 400-divisible leap
+    }
+
+    #[test]
+    fn civil_days_known_anchors_and_roundtrip() {
+        // Known (days-since-epoch ↔ civil-date) anchors — any flipped operator
+        // in civil_from_days / days_from_civil shifts these and fails.
+        let anchors: &[(i64, (i64, u32, u32))] = &[
+            (0, (1970, 1, 1)),
+            (10_957, (2000, 1, 1)),
+            (19_416, (2023, 2, 28)),
+            (19_782, (2024, 2, 29)), // leap day
+        ];
+        for &(days, ymd) in anchors {
+            assert_eq!(civil_from_days(days), ymd, "civil_from_days({days})");
+            let (y, m, d) = ymd;
+            assert_eq!(days_from_civil(y, m, d), days, "days_from_civil{ymd:?}");
+        }
+        // Exhaustive round-trip over two dense windows — the modern range AND a
+        // window crossing the era boundary (~ -719_468 days, i.e. year < 0) so
+        // the `era<0` / `y<0` branches (civil_from_days / days_from_civil) are
+        // exercised. Any flipped arithmetic operator breaks the inverse here.
+        for &(lo, hi) in &[(-20_000_i64, 20_000_i64), (-740_000_i64, -700_000_i64)] {
+            let mut z = lo;
+            while z <= hi {
+                let (y, m, d) = civil_from_days(z);
+                assert_eq!(days_from_civil(y, m, d), z, "roundtrip day {z}");
+                z += 1;
+            }
+        }
     }
 
     #[test]
