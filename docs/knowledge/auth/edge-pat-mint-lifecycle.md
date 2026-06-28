@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/session_exchange.ts"
   - "worker/src/lib/runner_mint.ts"
   - "worker/src/lib/auth_rotate.ts"
-checkpoint_sha: "7f62573f2be4f07352de830fe98f400bb1345adb"
+checkpoint_sha: "b9b40160869bc1907dd2d1527aeb8670a9d18411"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "mint", "worker-edge", "tenancy"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -56,7 +56,22 @@ place a leaked token can be revoked, since every consumer's token lands in the s
   is never minted (`worker/src/lib/session_exchange.ts:153-163`, `worker/src/lib/session_exchange.ts:457-460`).
 - A per-principal fixed-window throttle gates the mint: over the cap returns 429
   fail-CLOSED, so a still-valid session/key cannot loop-mint unbounded PATs
-  (`worker/src/lib/session_exchange.ts:466-468`).
+  (`worker/src/lib/session_exchange.ts:466-468`). The durable counter is ONE atomic
+  D1 statement (`INSERT … ON CONFLICT … DO UPDATE … RETURNING count`), so concurrent
+  mints cannot race past the cap (`worker/src/lib/session_exchange.ts:201-215`).
+- **Transient-D1-fault handling (F20):** when the durable throttle's D1 write THROWS
+  (an outage), the code does NOT fail the mint open — it logs the outage fail-LOUD and
+  falls through to a module-level in-memory backstop. A per-isolate `Map`
+  (`_inMemoryMintCounts`) caps mints per principal to `MAX_IN_MEMORY_BURST` (5, a
+  TIGHTER ceiling than the durable cap of 10) for the isolate's lifetime, bounding the
+  Argon2id CPU a loop-mint can burn while D1 is down; the backstop increments and is
+  evaluated on EVERY request (both D1-healthy and D1-outage paths), not only during the
+  outage (`worker/src/lib/session_exchange.ts:216-225`,
+  `worker/src/lib/session_exchange.ts:237-265`). The map is LRU-bounded at
+  `MAX_IN_MEMORY_MINT_ENTRIES` (50 000) via delete-then-set + oldest-key eviction, so a
+  long-lived isolate under principal churn cannot grow it unbounded; an evicted
+  principal only loses its tighter in-isolate burst memory, never the persistent gate
+  (`worker/src/lib/session_exchange.ts:244-254`).
 - After a 200 from the container it persists the `pat` row (using the returned Argon2id
   hash) and fails CLOSED on any FK/UNIQUE/CHECK/transport error — a token whose row was
   not written is never returned (`worker/src/lib/session_exchange.ts:567-602`).
@@ -96,6 +111,11 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 - Every mint is throttled and every issuance failure fails CLOSED — an unmappable scope
   is a 500 and an over-cap principal is a 429, never an issued-but-unusable token
   (`worker/src/lib/session_exchange.ts:457-460`, `worker/src/lib/session_exchange.ts:466-468`).
+- A D1 fault on the throttle path never opens the mint gate: the durable-counter write
+  throwing falls through to the in-memory per-isolate backstop (cap 5, < the durable cap
+  10), so a loop-mint during a D1 outage is still 429-bounded to protect Argon2id CPU —
+  fail-LOUD, never fail-open (`worker/src/lib/session_exchange.ts:216-225`,
+  `worker/src/lib/session_exchange.ts:255-265`).
 - Revocation shares ONE surface: both the runner-revoke and the rotate-old-key write are
   the same idempotent `UPDATE pat SET revoked_at_ms ... WHERE ... revoked_at_ms IS NULL`
   the native plane honors (`worker/src/lib/runner_mint.ts:279-280`,
@@ -128,6 +148,10 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 5. `worker/src/lib/session_exchange.ts:448` — SHA-256-derived stable per-principal UUID for the mint.
 6. `worker/src/lib/session_exchange.ts:457-460` — unmappable scope fails CLOSED with a 500 before any container call.
 7. `worker/src/lib/session_exchange.ts:466-468` — per-principal mint throttle → 429 fail-CLOSED.
+7a. `worker/src/lib/session_exchange.ts:201-215` — durable throttle is ONE atomic `INSERT … ON CONFLICT … DO UPDATE … RETURNING count` (concurrent mints cannot race the cap).
+7b. `worker/src/lib/session_exchange.ts:216-225` — F20: a thrown D1 write logs fail-LOUD and falls through to the in-memory backstop (never fail-open).
+7c. `worker/src/lib/session_exchange.ts:237-265` — the in-memory per-isolate burst backstop (cap 5 < durable 10) fires on EVERY request to bound Argon2id CPU during a D1 outage.
+7d. `worker/src/lib/session_exchange.ts:244-254` — LRU bound (50 000 entries, delete-then-set + oldest-key eviction) so a long-lived isolate can't grow the map unbounded.
 8. `worker/src/lib/session_exchange.ts:485-496` — the FRESH server-to-server request to `/_internal/pat/mint` with the server-trusted internal-auth header.
 9. `worker/src/lib/session_exchange.ts:507-515` — a non-200 container mint collapses to a single fail-CLOSED 500 (no internal oracle).
 10. `worker/src/lib/session_exchange.ts:537-543` — the container mint writes NO `pat` row; the caller persists it (the load-bearing fix).
