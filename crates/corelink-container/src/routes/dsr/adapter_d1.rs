@@ -72,6 +72,8 @@ const TENANT_ID_TABLES: &[&str] = &[
     "quota_fsm_state",
     "ratelimit_buckets",
     "byok_envelope",
+    "tenant_byok_config",
+    "tenant_byok_secret",
     "adapter_oci_kv",
     // CAA-360 #4: tenant-linked NPS/CSAT PII (recipient_hash); `tenant_id`-keyed
     // (migration 0046). Not a legal-retention category, so it IS erased on a DSR
@@ -223,6 +225,8 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "quota_fsm_state",
     "ratelimit_buckets",
     "byok_envelope",
+    "tenant_byok_config",
+    "tenant_byok_secret",
     "adapter_oci_kv",
     "survey_responses",
     "tenant_quota",

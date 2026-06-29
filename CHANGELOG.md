@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **BYOK schema + read-model (Wave 2 — additive, no data-plane wiring).** Migration 0081 adds
+  `tenant_byok_config` (mode managed/byok/hyok, crypto_mode convergent/random, CMK provider/key/region,
+  monotonic state inactive→pending→active→partial→shredded) + `tenant_byok_secret` (CMK-wrapped TCS,
+  tcs_version) — additive, nothing on the hot path reads/writes them yet. Container read-model
+  `get_byok_config` + `is_encryption_active` with FAIL-CLOSED enum parsing (an unknown mode/state errors,
+  never silently becomes "encryption off"). Both new tenant-keyed tables registered in the DSR erasure
+  classification (CF-1 drift-gate caught the gap) so a tenant's BYOK config + wrapped key are erased on a
+  GDPR deletion. 9 read-model tests.
 - **BYOK crypto foundation (Wave 1, `corelink-byok` only — no data-plane wiring yet).** The dedup-preserving
   convergence layer for customer-key encryption-at-rest, per the audited plan
   (`docs/design/2026-06-28-byok-encryption-at-rest-plan.md`): `CryptoContext` (JCS/RFC-8785 canonical,
