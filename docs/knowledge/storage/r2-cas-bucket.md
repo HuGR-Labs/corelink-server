@@ -6,10 +6,10 @@ source_files:
   - "crates/corelink-container/src/storage.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
   - "crates/corelink-region/src/region.rs"
-checkpoint_sha: "5571b910292cbe3d53cbf46d7e0f120dbef877e2"
+checkpoint_sha: "c631a9522dd13136f7a69e1678b4578b4f933c47"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "cas", "s3", "tenant-isolation"]
-timestamp: "2026-06-26T00:00:00Z"
+timestamp: "2026-06-28T00:00:00Z"
 ---
 
 # R2 CAS bucket topology
@@ -24,18 +24,23 @@ co-residence is structurally impossible and a region migration is a key-prefix c
 bucket names — `crates/corelink-region/src/region.rs:66-70` — the regional-bucket topology the native
 adapter here does not itself use.) This is the durable tier
 behind the [native CAS surface](/surfaces/native-cas.md) and the [CAS write flow](/flows/cas-write.md).
+For a `tenant_byok_config.state='active'` tenant the blob bytes that land here are now stored
+ENVELOPED (convergent AES-256-GCM) rather than as raw plaintext — the at-rest confidentiality layer is
+wired into this adapter's write/read path via `byok_cas.rs`; see
+[BYOK envelope encryption at rest](/storage/byok-envelope-encryption.md). The key scheme, tenant
+isolation, and credential handling described below are unchanged by that layer.
 
 # Role
 - The native-side durable storage adapter for R2, the complement to the Worker-only wasm R2 bindings
-  (`crates/corelink-container/src/storage.rs:1-34`).
+  (`crates/corelink-container/src/storage.rs:1-30`).
 - The S3 client + tenant-scoped key deriver that every CAS handler writes through
   (`crates/corelink-container/src/storage/r2_s3.rs:1-19`).
 
 # How it works
 1. R2 is reached via the S3-compatible API over egress; this module is the native complement to the
-   Worker's wasm bindings (`crates/corelink-container/src/storage.rs:1-34`).
+   Worker's wasm bindings (`crates/corelink-container/src/storage.rs:1-30`).
 2. All S3/D1 config is sourced from env all-or-nothing — `from_env` returns `Some` only if every
-   required variable is present and non-empty (`crates/corelink-container/src/storage.rs:98-113`).
+   required variable is present and non-empty (`crates/corelink-container/src/storage.rs:98-114`).
 3. The S3 config is built directly from explicit static R2 credentials, deliberately bypassing the AWS
    credential-provider chain (`crates/corelink-container/src/storage/r2_s3.rs:88-116`).
 4. CAS is a single bucket; the tenant and region are encoded in the object KEY
@@ -45,14 +50,14 @@ behind the [native CAS surface](/surfaces/native-cas.md) and the [CAS write flow
    same bytes reclaimed (`crates/corelink-container/src/storage/r2_s3.rs:61-77`).
 6. Bucket / region env reads route through `env_or` so an absent OR empty value falls back to the
    container default instead of producing a request-breaking empty bucket name
-   (`crates/corelink-container/src/storage.rs:127-139`).
+   (`crates/corelink-container/src/storage.rs:128-140`).
 
 # Invariants
 - S3 credentials come only from env and are redacted in both `Debug` and `Display` — a `{:?}` must
-  never leak the R2 secret key or CF token (`crates/corelink-container/src/storage.rs:65-89`).
+  never leak the R2 secret key or CF token (`crates/corelink-container/src/storage.rs:66-90`).
 - `StorageEnv::from_env` is all-or-nothing: a partial credential set yields `None` and the caller falls
   back to in-memory fakes rather than a half-configured client
-  (`crates/corelink-container/src/storage.rs:98-113`).
+  (`crates/corelink-container/src/storage.rs:98-114`).
 - The tenant prefix segment is derived via `derive_prefix`, so cross-tenant key co-residence is
   impossible — layer 5 of `INV-TENANT-ISOLATION`
   (`crates/corelink-container/src/storage/r2_s3.rs:1-19`).
@@ -68,10 +73,10 @@ behind the [native CAS surface](/surfaces/native-cas.md) and the [CAS write flow
   surfaces share a topology.
 
 # Citations
-1. `crates/corelink-container/src/storage.rs:1-34` — module charter: native R2 access via the S3-compatible API over egress.
-2. `crates/corelink-container/src/storage.rs:65-89` — credential-redacting `Debug`/`Display` impls.
-3. `crates/corelink-container/src/storage.rs:98-113` — all-or-nothing `StorageEnv::from_env`.
-4. `crates/corelink-container/src/storage.rs:127-139` — `env_or` (absent OR empty → default; AC-500 incident).
+1. `crates/corelink-container/src/storage.rs:1-30` — module charter: native R2 access via the S3-compatible API over egress.
+2. `crates/corelink-container/src/storage.rs:66-90` — credential-redacting `Debug`/`Display` impls.
+3. `crates/corelink-container/src/storage.rs:98-114` — all-or-nothing `StorageEnv::from_env`.
+4. `crates/corelink-container/src/storage.rs:128-140` — `env_or` (absent OR empty → default; AC-500 incident).
 5. `crates/corelink-container/src/storage/r2_s3.rs:1-19` — CAS key scheme `<region>/<tenant_prefix_16>/<digest>` + tenant isolation.
 6. `crates/corelink-container/src/storage/r2_s3.rs:61-77` — `R2S3Client` bucket field + per-key delete-serialization locks.
 7. `crates/corelink-container/src/storage/r2_s3.rs:88-116` — direct static-credential S3 config; IMDS-bypass cold-start fix.

@@ -246,7 +246,7 @@ candidates:
     title: "BYOK envelope encryption at rest"
     status: "active"
     source_cluster: "storage"
-    seed_from: ["crates/corelink-container/src/byok.rs", "crates/corelink-byok", "crates/corelink-container/src/byok_orchestrator.rs"]
+    seed_from: ["crates/corelink-container/src/byok.rs", "crates/corelink-byok", "crates/corelink-container/src/byok_orchestrator.rs", "crates/corelink-container/src/storage/byok_cas.rs"]
   - id: "tenancy/isolation"
     type: "TenancyControl"
     title: "Tenant isolation via idFromName(tenant_id)"

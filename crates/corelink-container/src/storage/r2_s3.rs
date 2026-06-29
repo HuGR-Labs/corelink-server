@@ -43,6 +43,7 @@ use corelink_handler_cas::{
     CasWriteResponse, DigestAlgo, InMemoryAuditSink, InMemorySliObserver, SliObservation,
     SliObserver,
 };
+use corelink_byok::{CryptoContext, Tcs};
 use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 use sha2::{Digest as _, Sha256};
@@ -51,6 +52,10 @@ use tracing::{debug, warn};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+use super::byok_cas::{
+    cas_crypto_context, decrypt_cas_blob, encrypt_cas_blob, engagement_for, ByokConfigCache,
+    ByokEngagement, TcsResolver,
+};
 use super::StorageEnv;
 
 /// Low-level async R2/S3 client.
@@ -472,6 +477,14 @@ pub struct R2CasHandler {
     tdk: Option<TenantDerivationKey>,
     audit: Arc<dyn AuditSink>,
     sli: Arc<dyn SliObserver>,
+    /// BYOK Wave 3a (GATED-INERT): per-tenant BYOK config cache. `None` on the
+    /// non-BYOK build / tests → the plaintext path runs unchanged. When `Some`
+    /// AND a tenant is `active`, the CAS write/read path encrypts at rest.
+    byok_config_cache: Option<Arc<ByokConfigCache>>,
+    /// BYOK Wave 3a: the Tcs resolver (CMK-unwrap → convergence secret). `None`
+    /// → plaintext path. Both this and `byok_config_cache` must be `Some` for
+    /// encryption to engage (frozen policy §3).
+    tcs_resolver: Option<Arc<TcsResolver>>,
 }
 
 impl core::fmt::Debug for R2CasHandler {
@@ -502,7 +515,124 @@ impl R2CasHandler {
             tdk,
             audit,
             sli,
+            byok_config_cache: None,
+            tcs_resolver: None,
         }
+    }
+
+    /// Attach the BYOK Wave-3a collaborators (config cache + Tcs resolver),
+    /// enabling convergent encryption-at-rest for `active` tenants.
+    ///
+    /// GATED-INERT: encryption engages ONLY for a tenant whose
+    /// `tenant_byok_config.state == 'active'`; every other tenant (and the
+    /// `_public` namespace) keeps the exact plaintext path. The production
+    /// builder ([`build_r2_cas_handler_from_env`]) does NOT call this yet —
+    /// onboarding (the sole writer of the `active` state) is a later wave, and
+    /// the default build links no real `KmsProvider` — so production stays on
+    /// the unchanged plaintext path until that wave wires a provider here.
+    #[must_use]
+    pub fn with_byok(
+        mut self,
+        byok_config_cache: Arc<ByokConfigCache>,
+        tcs_resolver: Arc<TcsResolver>,
+    ) -> Self {
+        self.byok_config_cache = Some(byok_config_cache);
+        self.tcs_resolver = Some(tcs_resolver);
+        self
+    }
+
+    /// Resolve the convergent crypto context for a (tenant, digest, algo) IF the
+    /// tenant has BYOK encryption ACTIVE (Wave 3a). Returns:
+    ///
+    /// - `Ok(None)` — the plaintext path (BYOK not wired, not configured,
+    ///   inactive, or the `_public` namespace). Today's behaviour, unchanged.
+    /// - `Ok(Some((tcs, ctx)))` — encrypt/decrypt with this Tcs + context.
+    /// - `Err(..)` — active-but-unresolvable (KMS/Tcs down, Mode B, partial):
+    ///   the caller FAILS CLOSED (5xx) and NEVER stores/serves plaintext.
+    async fn resolve_byok_ctx(
+        &self,
+        tenant: &str,
+        digest: &str,
+        algo: DigestAlgo,
+    ) -> Result<Option<(Tcs, CryptoContext)>, CasHandlerError> {
+        // Both collaborators must be present (frozen policy §3); otherwise the
+        // existing plaintext path runs unchanged — no D1 hop, no behaviour change.
+        let (Some(cache), Some(resolver)) =
+            (self.byok_config_cache.as_ref(), self.tcs_resolver.as_ref())
+        else {
+            return Ok(None);
+        };
+        // `_public` is deterministic public content with no secret — it MUST
+        // stay plaintext so cross-tenant dedup is preserved (plan §3).
+        if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
+            return Ok(None);
+        }
+        // ONE D1 read on a cache miss; cached (incl. the not-configured answer)
+        // for ~60s. A config error fails closed — never a silent plaintext
+        // downgrade for a tenant whose custody is undetermined.
+        let Some(cfg) = cache
+            .get(tenant)
+            .await
+            .map_err(|e| CasHandlerError::Internal(format!("byok config read: {e}")))?
+        else {
+            return Ok(None);
+        };
+        match engagement_for(&cfg) {
+            ByokEngagement::Plaintext => Ok(None),
+            ByokEngagement::FailClosed(why) => Err(CasHandlerError::Internal(format!(
+                "byok active but {why}; refusing to fall back to plaintext (fail-closed)"
+            ))),
+            ByokEngagement::Encrypt => {
+                let key_id = cfg.cmk_key_id.clone().unwrap_or_default();
+                let ctx = cas_crypto_context(tenant, digest, algo, &key_id);
+                let tcs = resolver
+                    .resolve(&cfg)
+                    .await
+                    .map_err(|e| CasHandlerError::Internal(format!("byok tcs resolve: {e}")))?;
+                Ok(Some((tcs, ctx)))
+            }
+        }
+    }
+
+    /// BYOK write hook: return the bytes to STORE.
+    ///
+    /// `Ok(None)` ⇒ store `req.bytes` (plaintext path unchanged). `Ok(Some(ct))`
+    /// ⇒ store the convergent ciphertext blob. `Err` ⇒ fail closed (the caller
+    /// returns before any PUT — plaintext is NEVER stored for an active tenant).
+    async fn byok_encrypt_for_write(
+        &self,
+        req: &CasWriteRequest,
+    ) -> Result<Option<Vec<u8>>, CasHandlerError> {
+        let Some((tcs, ctx)) = self
+            .resolve_byok_ctx(&req.tenant, &req.claimed_hash, req.algo)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let stored = encrypt_cas_blob(&req.bytes, &tcs, &ctx)
+            .map_err(|e| CasHandlerError::Internal(format!("byok encrypt: {e}")))?;
+        Ok(Some(stored))
+    }
+
+    /// BYOK read hook: turn the STORED bytes into the plaintext to serve.
+    ///
+    /// `Ok(stored)` ⇒ plaintext path unchanged. For an active tenant the stored
+    /// blob is decrypted; any failure is `Err` (fail closed — the raw stored
+    /// bytes are NEVER served). The post-decrypt content-hash re-verify (audit
+    /// C1) runs on the returned PLAINTEXT, in the caller.
+    async fn byok_decrypt_for_read(
+        &self,
+        req: &CasReadRequest,
+        stored: Vec<u8>,
+    ) -> Result<Vec<u8>, CasHandlerError> {
+        let Some((tcs, ctx)) = self
+            .resolve_byok_ctx(&req.tenant, &req.hash, req.algo)
+            .await?
+        else {
+            return Ok(stored);
+        };
+        decrypt_cas_blob(&stored, &tcs, &ctx)
+            .map_err(|e| CasHandlerError::Internal(format!("byok decrypt: {e}")))
     }
 
     /// Derive the R2 key for a (tenant, digest) pair.
@@ -781,7 +911,24 @@ impl CasReadHandler for R2CasHandler {
         let result = tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
 
         match result {
-            Ok(Some(bytes)) => {
+            Ok(Some(stored)) => {
+                // BYOK Wave 3a (GATED-INERT): for an `active` tenant, decrypt the
+                // stored convergent blob to plaintext BEFORE the content-hash
+                // re-verify (audit C1: the integrity re-verify MUST run on the
+                // PLAINTEXT, never on ciphertext). FAIL-CLOSED: any decrypt /
+                // unwrap failure returns Err — the raw stored bytes are NEVER
+                // served for an active tenant. `None`-path tenants get their
+                // bytes back unchanged (byte-identical to today).
+                let bytes = match tokio::task::block_in_place(|| {
+                    handle.block_on(self.byok_decrypt_for_read(&req, stored))
+                }) {
+                    Ok(pt) => pt,
+                    Err(e) => {
+                        emit(true);
+                        return Err(e);
+                    }
+                };
+
                 // Read-path content-addressing RE-verification: the
                 // bytes R2 returned MUST still hash to the requested
                 // digest. This catches R2 bitrot, storage-tier
@@ -1041,8 +1188,26 @@ impl CasWriteHandler for R2CasHandler {
             }
         }
 
+        // BYOK Wave 3a (GATED-INERT): for an `active` tenant, encrypt at rest
+        // AFTER the plaintext integrity verify + the dedup HEAD check, replacing
+        // the stored bytes with the convergent ciphertext blob. Convergent ⇒
+        // deterministic ⇒ the HEAD dedup above stays idempotent. FAIL-CLOSED: an
+        // active tenant whose encryptor/KMS/Tcs is unavailable returns Err here —
+        // plaintext is NEVER PUT for an active tenant. `None` ⇒ the plaintext
+        // path (req.bytes), byte-identical to today for every non-BYOK tenant.
+        let payload = match tokio::task::block_in_place(|| {
+            handle.block_on(self.byok_encrypt_for_write(&req))
+        }) {
+            Ok(Some(ciphertext)) => ciphertext,
+            Ok(None) => req.bytes,
+            Err(e) => {
+                emit(true);
+                return Err(e);
+            }
+        };
+
         let result =
-            tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, req.bytes)));
+            tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, payload)));
 
         match result {
             Ok(()) => {
@@ -2491,6 +2656,256 @@ mod tests {
             matches!(err, AcHandlerError::Internal(_)),
             "update must fail closed (Internal) on an ambiguous pre-PUT GET, \
              never blind-overwrite — got {err:?}"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // BYOK Wave 3a — handler-level encrypt/decrypt hooks + Option-gating
+    // + fail-closed (the data-plane integration, minus the R2 I/O which
+    // is unchanged plumbing). These exercise `R2CasHandler`'s own
+    // `byok_encrypt_for_write` / `byok_decrypt_for_read` /
+    // `resolve_byok_ctx`; the convergent crypto + caches themselves are
+    // covered in `storage::byok_cas::tests`.
+    // ---------------------------------------------------------------
+
+    use crate::customer_d1::{
+        ByokConfigError, ByokCryptoMode, ByokMode, ByokState, TenantByokConfig,
+    };
+    use crate::storage::byok_cas::{
+        ByokConfigCache, ByokConfigSource, ByokSecretSource, TcsResolver, WrappedTcsRow,
+    };
+    use corelink_byok::{
+        BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
+    };
+
+    const BYOK_TENANT: &str = "byok-tenant-x";
+
+    fn byok_cfg(crypto_mode: ByokCryptoMode, state: ByokState) -> TenantByokConfig {
+        TenantByokConfig {
+            tenant_id: BYOK_TENANT.to_owned(),
+            mode: ByokMode::Byok,
+            crypto_mode,
+            cmk_provider: Some("aws".to_owned()),
+            cmk_key_id: Some("arn:cmk".to_owned()),
+            cmk_region: Some("iad".to_owned()),
+            state,
+        }
+    }
+
+    #[derive(Debug)]
+    struct CfgSrc(Option<TenantByokConfig>);
+    #[async_trait::async_trait]
+    impl ByokConfigSource for CfgSrc {
+        async fn get_byok_config(
+            &self,
+            _t: &str,
+        ) -> Result<Option<TenantByokConfig>, ByokConfigError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    #[derive(Debug)]
+    struct SecSrc;
+    #[async_trait::async_trait]
+    impl ByokSecretSource for SecSrc {
+        async fn get_wrapped_tcs(&self, _t: &str) -> Result<Option<WrappedTcsRow>, String> {
+            Ok(Some(WrappedTcsRow {
+                tcs_wrapped: vec![5u8; 32],
+                cmk_key_id: Some("arn:cmk".to_owned()),
+                tcs_version: 1,
+            }))
+        }
+    }
+
+    #[derive(Debug)]
+    struct Kms {
+        fail: bool,
+    }
+    #[async_trait::async_trait]
+    impl KmsProvider for Kms {
+        fn provider_kind(&self) -> KmsProviderKind {
+            KmsProviderKind::AwsKms
+        }
+        fn region(&self) -> &str {
+            "iad"
+        }
+        fn fips_level(&self) -> corelink_byok::FipsLevel {
+            corelink_byok::FipsLevel::Fips140_3_L1
+        }
+        async fn wrap_dek(
+            &self,
+            dek: &Dek,
+            key_id: &KmsKeyId,
+            ec: Option<&serde_json::Value>,
+        ) -> Result<WrappedDek, BYOKError> {
+            Ok(WrappedDek {
+                provider: KmsProviderKind::AwsKms,
+                key_id: key_id.clone(),
+                ciphertext: dek.bytes.to_vec(),
+                encryption_context: ec.cloned(),
+            })
+        }
+        async fn unwrap_dek(&self, w: &WrappedDek) -> Result<Dek, BYOKError> {
+            if self.fail {
+                return Err(BYOKError::Provider("kms down".to_owned()));
+            }
+            let mut b = [0u8; 32];
+            b.copy_from_slice(&w.ciphertext);
+            Ok(Dek { bytes: b })
+        }
+        async fn check_access(&self, _k: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
+            Ok(KmsAccessStatus::Ok)
+        }
+    }
+
+    /// Wire a handler with BYOK collaborators (config + Tcs resolver).
+    async fn handler_with_byok(cfg: Option<TenantByokConfig>, kms_fail: bool) -> R2CasHandler {
+        let base = make_test_handler_with_tdk("iad").await;
+        let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
+        let resolver = Arc::new(
+            TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: kms_fail }), 300).unwrap(),
+        );
+        base.with_byok(cache, resolver)
+    }
+
+    fn write_req(tenant: &str, bytes: Vec<u8>) -> CasWriteRequest {
+        let claimed = Digest::compute(&bytes).to_hex();
+        CasWriteRequest::new(tenant, claimed, bytes, "p", tenant, 1)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_inactive_handler_is_plaintext_passthrough() {
+        // No `with_byok` at all → the existing plaintext path, byte-identical.
+        let h = make_test_handler_with_tdk("iad").await;
+        let req = write_req(BYOK_TENANT, b"hello".to_vec());
+        assert!(
+            h.byok_encrypt_for_write(&req).await.unwrap().is_none(),
+            "no BYOK collaborators ⇒ store plaintext (None)"
+        );
+        let rreq = CasReadRequest::new(BYOK_TENANT, &req.claimed_hash, "p", BYOK_TENANT, 1);
+        let out = h
+            .byok_decrypt_for_read(&rreq, b"hello".to_vec())
+            .await
+            .unwrap();
+        assert_eq!(out, b"hello", "read must return the stored bytes unchanged");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_inactive_config_is_plaintext_passthrough() {
+        // Collaborators present but state=inactive → still the plaintext path.
+        let h = handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Inactive)),
+            false,
+        )
+        .await;
+        let req = write_req(BYOK_TENANT, b"data".to_vec());
+        assert!(h.byok_encrypt_for_write(&req).await.unwrap().is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_active_encrypts_then_round_trips() {
+        let h = handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            false,
+        )
+        .await;
+        let plaintext = b"top secret artifact".to_vec();
+        let req = write_req(BYOK_TENANT, plaintext.clone());
+
+        let stored = h
+            .byok_encrypt_for_write(&req)
+            .await
+            .unwrap()
+            .expect("active tenant must encrypt");
+        assert_ne!(stored, plaintext, "stored bytes must be ciphertext");
+
+        // Convergent dedup: a second encrypt of the same content is identical.
+        let stored2 = h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
+        assert_eq!(stored, stored2, "convergent ⇒ idempotent stored bytes");
+
+        // Read back: decrypt → plaintext; the content-hash re-verify (in `read`)
+        // then runs on this plaintext.
+        let rreq = CasReadRequest::new(BYOK_TENANT, &req.claimed_hash, "p", BYOK_TENANT, 1);
+        let out = h.byok_decrypt_for_read(&rreq, stored).await.unwrap();
+        assert_eq!(out, plaintext, "decrypt must recover the plaintext");
+        assert!(verify_content_hash(DigestAlgo::Blake3, &req.claimed_hash, &out).is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_active_write_fails_closed_when_kms_down() {
+        let h = handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            true, // KMS unwrap fails
+        )
+        .await;
+        let req = write_req(BYOK_TENANT, b"secret".to_vec());
+        assert!(
+            matches!(h.byok_encrypt_for_write(&req).await, Err(CasHandlerError::Internal(_))),
+            "active tenant + failing KMS must fail closed on write (never plaintext)"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_active_read_fails_closed_when_kms_down() {
+        let h = handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            true,
+        )
+        .await;
+        let rreq = CasReadRequest::new(BYOK_TENANT, "a".repeat(64), "p", BYOK_TENANT, 1);
+        // Even given some stored bytes, a failed unwrap must NOT return them raw.
+        assert!(
+            matches!(
+                h.byok_decrypt_for_read(&rreq, b"CLB1raw".to_vec()).await,
+                Err(CasHandlerError::Internal(_))
+            ),
+            "active tenant + failing KMS must fail closed on read (raw bytes never served)"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_mode_b_random_fails_closed() {
+        // Mode B (random) is deferred to Wave 3b — must fail closed, not plaintext.
+        let h = handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active)),
+            false,
+        )
+        .await;
+        let req = write_req(BYOK_TENANT, b"x".to_vec());
+        assert!(matches!(
+            h.byok_encrypt_for_write(&req).await,
+            Err(CasHandlerError::Internal(_))
+        ));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_partial_state_fails_closed() {
+        // Partial/backfill dual-read is deferred to Wave 4 — fail closed.
+        let h = handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Partial)),
+            false,
+        )
+        .await;
+        let req = write_req(BYOK_TENANT, b"x".to_vec());
+        assert!(matches!(
+            h.byok_encrypt_for_write(&req).await,
+            Err(CasHandlerError::Internal(_))
+        ));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_public_namespace_never_encrypts() {
+        // `_public` is shared deterministic content — it must stay plaintext even
+        // with an active config, so cross-tenant dedup is preserved (plan §3).
+        let h = handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            false,
+        )
+        .await;
+        let req = write_req(crate::adapter_cache::PUBLIC_NAMESPACE, b"public bottle".to_vec());
+        assert!(
+            h.byok_encrypt_for_write(&req).await.unwrap().is_none(),
+            "_public must never be encrypted"
         );
     }
 }
