@@ -785,6 +785,21 @@ pub trait ByokEnvelopeStore: Send + Sync + core::fmt::Debug {
         row: &ByokEnvelopeRow,
         created_at_ms: i64,
     ) -> Result<(), String>;
+
+    /// Reclaim (delete) the envelope row for `(tenant, blob_key)` — the inverse
+    /// of [`Self::put_envelope_if_absent`], called on blob DELETE so a deleted
+    /// Mode-B blob does not leave its wrapped-DEK row lingering (BYOK Wave 4a
+    /// crypto-shred reclaim). Idempotent: deleting an absent row is a no-op.
+    /// `blob_key` is the SURFACE-QUALIFIED key ([`envelope_blob_key`]), matching
+    /// exactly the key the write path used.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on any D1 transport / encode failure. The caller
+    /// treats this as a reclaim failure (warn + continue), NEVER a delete
+    /// failure — the R2 object is already gone, so an orphaned envelope row
+    /// wraps nothing (the safe-fail direction).
+    async fn delete_envelope(&self, tenant: &str, blob_key: &str) -> Result<(), String>;
 }
 
 /// Production [`ByokEnvelopeStore`] over the async D1 row seam (reuses
@@ -897,6 +912,18 @@ impl<R: ByokConfigRows + core::fmt::Debug + 'static> ByokEnvelopeStore for D1Byo
                     json!(b64.encode(row.nonce)),
                     json!(created_at_ms),
                 ],
+            )
+            .await?;
+        Ok(())
+    }
+
+    async fn delete_envelope(&self, tenant: &str, blob_key: &str) -> Result<(), String> {
+        // `blob_key` is the surface-qualified PK component (`cas:<digest>` /
+        // `ac:<digest>`) — byte-for-byte the key the write path persisted.
+        self.rows
+            .query_rows(
+                "DELETE FROM byok_envelope WHERE tenant_id = ?1 AND blob_hash = ?2",
+                vec![json!(tenant), json!(blob_key)],
             )
             .await?;
         Ok(())
@@ -1061,6 +1088,28 @@ impl ModeBEncryptor {
             .decrypt_with_ctx(&blob, ctx)
             .await
             .map_err(|e| format!("mode-b decrypt: {e}"))
+    }
+
+    /// Reclaim the `byok_envelope` row for a deleted Mode-B blob (BYOK Wave 4a
+    /// crypto-shred). Resolves the SAME surface-qualified key the write path
+    /// minted (`envelope_blob_key(ctx.surface, ctx.plaintext_digest)`) and
+    /// deletes the row, so a deleted blob's wrapped DEK does not linger as an
+    /// orphan key-material row (a small info-leak + storage leak).
+    ///
+    /// MUST be called only AFTER the R2 object has been removed: the persisted
+    /// wrapped DEK protects the now-deleted ciphertext, so reclaiming it after
+    /// the body is gone leaves nothing readable. Idempotent (deleting an absent
+    /// row is a no-op).
+    ///
+    /// # Errors
+    ///
+    /// Propagates any [`ByokEnvelopeStore::delete_envelope`] failure as
+    /// `Err(String)`. The caller treats this as a reclaim failure (warn +
+    /// continue), NOT a delete failure — the R2 object is already gone.
+    pub async fn reclaim(&self, ctx: &CryptoContext) -> Result<(), String> {
+        let tenant = ctx.tenant_id.as_str();
+        let blob_key = envelope_blob_key(&ctx.surface, &ctx.plaintext_digest);
+        self.store.delete_envelope(tenant, &blob_key).await
     }
 }
 
@@ -1543,6 +1592,10 @@ mod tests {
                 .or_insert_with(|| row.clone());
             Ok(())
         }
+        async fn delete_envelope(&self, tenant: &str, blob_key: &str) -> Result<(), String> {
+            lock(&self.inner).remove(&(tenant.to_owned(), blob_key.to_owned()));
+            Ok(())
+        }
     }
 
     fn mode_b_ctx() -> CryptoContext {
@@ -1608,6 +1661,58 @@ mod tests {
         assert_eq!(first, second, "re-PUT reuses the persisted DEK (no orphan)");
         assert_eq!(me.decrypt(&first, &ctx).await.unwrap(), pt, "original still decrypts");
         assert_eq!(lock(&store.inner).len(), 1, "exactly one envelope row per blob");
+    }
+
+    #[tokio::test]
+    async fn mode_b_reclaim_deletes_the_envelope_row() {
+        // Wave 4a: reclaim removes the matching surface-qualified envelope row.
+        let store = Arc::new(MemEnvelopeStore::default());
+        let me = mode_b_enc(Arc::clone(&store), false);
+        let ctx = mode_b_ctx();
+        me.encrypt(b"reclaim me", &ctx).await.unwrap();
+        assert_eq!(lock(&store.inner).len(), 1, "write minted one envelope row");
+        let expected_key = envelope_blob_key(&ctx.surface, &ctx.plaintext_digest);
+        assert!(
+            lock(&store.inner).contains_key(&(TENANT.to_owned(), expected_key)),
+            "row stored under the surface-qualified key"
+        );
+        me.reclaim(&ctx).await.unwrap();
+        assert_eq!(lock(&store.inner).len(), 0, "reclaim deletes the envelope row");
+    }
+
+    #[tokio::test]
+    async fn mode_b_reclaim_then_re_put_mints_a_fresh_envelope() {
+        // After reclaim, a re-PUT of the SAME blob mints a FRESH envelope (the
+        // deleted DEK is not reused) — proves the reclaim actually happened.
+        let store = Arc::new(MemEnvelopeStore::default());
+        let me = mode_b_enc(Arc::clone(&store), false);
+        let ctx = mode_b_ctx();
+        let key = (
+            TENANT.to_owned(),
+            envelope_blob_key(&ctx.surface, &ctx.plaintext_digest),
+        );
+        me.encrypt(b"fresh-dek", &ctx).await.unwrap();
+        let dek_before = lock(&store.inner).get(&key).unwrap().wrapped_dek.clone();
+        let nonce_before = lock(&store.inner).get(&key).unwrap().nonce;
+        me.reclaim(&ctx).await.unwrap();
+        assert!(lock(&store.inner).get(&key).is_none(), "row gone after reclaim");
+        // Re-PUT mints a brand-new random DEK + nonce (no stale reuse).
+        me.encrypt(b"fresh-dek", &ctx).await.unwrap();
+        let row_after = lock(&store.inner).get(&key).unwrap().clone();
+        assert!(
+            row_after.wrapped_dek != dek_before || row_after.nonce != nonce_before,
+            "re-PUT after reclaim mints a FRESH envelope, not the deleted one"
+        );
+    }
+
+    #[tokio::test]
+    async fn mode_b_reclaim_is_idempotent_on_absent_row() {
+        // Deleting an absent row is a no-op success (idempotent reclaim).
+        let store = Arc::new(MemEnvelopeStore::default());
+        let me = mode_b_enc(store, false);
+        let ctx = mode_b_ctx();
+        me.reclaim(&ctx).await.unwrap();
+        me.reclaim(&ctx).await.unwrap();
     }
 
     #[tokio::test]
