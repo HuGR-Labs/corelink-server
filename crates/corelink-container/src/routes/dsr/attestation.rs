@@ -90,7 +90,8 @@ use serde_json::{json, Value};
 use zeroize::Zeroizing;
 
 use corelink_erasure_attestation::{
-    ErasureAttestationPayload, ErasureAttestationSigner, ErasureSigningKey, EvidenceBundle, Region,
+    ErasureAttestation, ErasureAttestationPayload, ErasureAttestationSigner, ErasureSigningKey,
+    EvidenceBundle, Region,
 };
 use corelink_privacy_erasure_worker::backends::CANONICAL_EMPTY_TENANT_HASH;
 use corelink_privacy_erasure_worker::event::{BackendCompletion, BACKEND_COUNT};
@@ -102,6 +103,13 @@ use crate::storage::r2_s3::R2S3Client;
 /// `kms_provider` recorded in the attestation — truthful: CoreLink's launch
 /// erasure is a D1/R2/Stripe delete-set, not a BYOK KMS crypto-erase.
 const ERASE_MECHANISM: &str = "corelink_d1r2_erase";
+
+/// `kms_provider` recorded in a DSR PORTABILITY (Art.20) export signature —
+/// truthful: this is a detached Ed25519 signature over the export bundle's
+/// SHA-256 content digest, NOT a crypto-erase. Reuses the SAME per-region
+/// signing-key infra as the erasure attestation so an auditor verifies it
+/// offline against the same served public key.
+const EXPORT_MECHANISM: &str = "corelink_dsr_export";
 
 /// Load the 32-byte per-region attestation signing seed from
 /// `ERASURE_ATTESTATION_SEED_HEX` (64 hex chars). `None` when unset/malformed
@@ -446,6 +454,48 @@ fn persist_signed_attestation<S: AttestationSinks>(
         attestation_key_id = kid,
         "dsr/verify: signed + persisted erasure attestation (R2→pubkey→index, VerifiedComplete)"
     );
+}
+
+/// Sign a DSR PORTABILITY (Art.20) export bundle's SHA-256 content digest,
+/// reusing the Ed25519 erasure-attestation signer infra. The returned
+/// [`ErasureAttestation`] is a detached signature over the export content
+/// (`evidence_hash` binds `content_sha256_hex`), verifiable offline with the
+/// SAME per-region public key the erasure verifier already serves.
+///
+/// Returns `None` (fail-CLOSED, no signature) when the region cannot be
+/// trustworthily resolved (no explicit single-region assertion) or the seed
+/// secret is unset/malformed — the caller then delivers the machine-readable
+/// bundle inline WITHOUT a signed durable copy (never a forgeable certificate).
+pub(super) fn sign_export_digest(
+    dsr_id: &str,
+    tenant_id: &str,
+    signed_at_ms: u64,
+    content_sha256_hex: &str,
+) -> Option<(ErasureAttestation, Region)> {
+    let region = resolve_region_from_env()?;
+    let seed = load_seed()?;
+    let kid = key_id();
+    let signing_key = ErasureSigningKey::from_seed(kid, region, signed_at_ms, 0, *seed);
+    let signer = ErasureAttestationSigner::new(signing_key);
+    let kms_key_id = format!("export:{dsr_id}");
+    let bundle = EvidenceBundle {
+        audit_chain_segment_ids: vec![format!("corelink/dsr/export/sha256:{content_sha256_hex}")],
+        kms_destroy_ts: signed_at_ms,
+        kms_key_id: kms_key_id.clone(),
+        tenant_id: tenant_id.to_string(),
+    };
+    let evidence_hash = bundle.validated_hash().ok()?;
+    let payload = ErasureAttestationPayload {
+        tenant_id: tenant_id.to_string(),
+        request_id: dsr_id.to_string(),
+        destroyed_ts: signed_at_ms,
+        kms_provider: EXPORT_MECHANISM.to_string(),
+        kms_key_id,
+        evidence_hash,
+        region,
+        attestation_key_id: kid,
+    };
+    signer.sign(payload).ok().map(|a| (a, region))
 }
 
 #[cfg(test)]

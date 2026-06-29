@@ -65,6 +65,7 @@ use corelink_privacy_erasure_worker::orchestrator::{ErasureWorker, InMemoryErasu
 // WI-S11-008 Wave 1 real transports. The 4 effective/pseudonymize backends
 // (D1, R2Ac, R2Cas, Stripe) are real; the other 8 are reconciled to
 // NotApplicable (not shipped in prod — ADR-S11-013).
+mod access;
 mod adapter_d1;
 mod adapter_not_applicable;
 mod adapter_r2_ac;
@@ -399,12 +400,173 @@ pub fn build_state_from_env() -> Option<DsrRouteState> {
     })
 }
 
-/// Mount `POST /_internal/dsr/{erase,verify}`.
+/// Mount `POST /_internal/dsr/{erase,verify,access,portability,rectification}`.
+///
+/// `erase` (Art.17) + `verify` are the destructive/verification legs; `access`
+/// (Art.15), `portability` (Art.20), and `rectification` (Art.16) complete the
+/// data-subject-rights surface. All five share the SAME internal-auth gate +
+/// audit + idempotency-ledger discipline.
 pub fn router(state: DsrRouteState) -> Router {
     Router::new()
         .route("/_internal/dsr/erase", post(handle_erase))
         .route("/_internal/dsr/verify", post(handle_verify))
+        .route("/_internal/dsr/access", post(handle_access))
+        .route("/_internal/dsr/portability", post(handle_portability))
+        .route("/_internal/dsr/rectification", post(handle_rectification))
         .with_state(state)
+}
+
+/// Wire shape for the read rights (access / portability). `dsr_id` is the
+/// idempotency/audit key; `tenant_id` is the subject (one-user-per-tenant).
+#[derive(Debug, Deserialize)]
+pub struct DsrSubjectV1 {
+    /// Canonical DSR id (idempotency key for the audit ledger).
+    pub dsr_id: String,
+    /// Tenant id whose data is gathered.
+    pub tenant_id: String,
+}
+
+/// Wire shape for `POST /_internal/dsr/rectification` (Art.16).
+#[derive(Debug, Deserialize)]
+pub struct DsrRectifyV1 {
+    /// Canonical DSR id (idempotency/audit key).
+    pub dsr_id: String,
+    /// Tenant id whose PII field is corrected.
+    pub tenant_id: String,
+    /// Target table (must host an editable subject-PII field).
+    pub table: String,
+    /// Target column (must be on the editable-PII allowlist).
+    pub field: String,
+    /// New value (e.g. the new contact email; stored pseudonymized).
+    pub new_value: String,
+}
+
+/// `POST /_internal/dsr/access` (Art.15) — gather + return the subject's data
+/// inline (machine-readable structured JSON). Audits BEFORE disclosing;
+/// fail-CLOSED on any gather/D1 error (never a partial export).
+async fn handle_access(
+    State(state): State<DsrRouteState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let msg: DsrSubjectV1 = match serde_json::from_slice(&body) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(error = %e, "dsr/access: invalid request body");
+            return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
+        }
+    };
+    let Some(d1) = state.d1.as_ref() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "storage unconfigured").into_response();
+    };
+    match access::run_access(d1, &msg.dsr_id, &msg.tenant_id, now_ms()) {
+        Ok(export) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "ok": true, "dsr_id": msg.dsr_id, "export": export })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, dsr_id = %msg.dsr_id, "dsr/access: gather failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "access failed").into_response()
+        }
+    }
+}
+
+/// `POST /_internal/dsr/portability` (Art.20) — gather the SAME structured
+/// bundle as access, return it inline (machine-readable), and best-effort
+/// persist a signed durable copy to the R2 audit bucket. Fail-CLOSED on gather.
+async fn handle_portability(
+    State(state): State<DsrRouteState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let msg: DsrSubjectV1 = match serde_json::from_slice(&body) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(error = %e, "dsr/portability: invalid request body");
+            return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
+        }
+    };
+    let Some(d1) = state.d1.as_ref() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "storage unconfigured").into_response();
+    };
+    match access::run_portability(
+        d1,
+        state.r2_audit.as_ref(),
+        &msg.dsr_id,
+        &msg.tenant_id,
+        now_ms(),
+    ) {
+        Ok((export, receipt)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({
+                "ok": true,
+                "dsr_id": msg.dsr_id,
+                "export": export,
+                "receipt": receipt,
+            })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, dsr_id = %msg.dsr_id, "dsr/portability: gather failed");
+            (StatusCode::INTERNAL_SERVER_ERROR, "portability export failed").into_response()
+        }
+    }
+}
+
+/// `POST /_internal/dsr/rectification` (Art.16) — correct an editable subject
+/// PII field. Content-addressed cache data + non-editable fields fail CLOSED
+/// (4xx). Audits BEFORE the mutation; idempotent at the value level.
+async fn handle_rectification(
+    State(state): State<DsrRouteState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+    let msg: DsrRectifyV1 = match serde_json::from_slice(&body) {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(error = %e, "dsr/rectification: invalid request body");
+            return (StatusCode::BAD_REQUEST, "invalid request body").into_response();
+        }
+    };
+    let Some(d1) = state.d1.as_ref() else {
+        return (StatusCode::SERVICE_UNAVAILABLE, "storage unconfigured").into_response();
+    };
+    match access::run_rectification(
+        d1,
+        &msg.dsr_id,
+        &msg.tenant_id,
+        &msg.table,
+        &msg.field,
+        &msg.new_value,
+        now_ms(),
+    ) {
+        // Applied.
+        Ok(Ok(result)) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "ok": true, "dsr_id": msg.dsr_id, "rectified": result })),
+        )
+            .into_response(),
+        // Fail-CLOSED 4xx: content-immutable / non-editable / invalid value.
+        Ok(Err(reject)) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({ "ok": false, "error": reject.message() })),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = %e, dsr_id = %msg.dsr_id, "dsr/rectification: engine error");
+            (StatusCode::INTERNAL_SERVER_ERROR, "rectification failed").into_response()
+        }
+    }
 }
 
 /// Compact, non-PII label for an [`ErasureDecision`] arm (the verify endpoint

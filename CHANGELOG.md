@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **GDPR data-subject rights completed — Access (Art.15), Portability (Art.20), Rectification (Art.16).**
+  Previously only erasure (Art.17) + verify were wired. New `/_internal/dsr/{access,portability,rectification}`
+  routes (same constant-time internal-auth gate + audit-before-act + idempotency as erase). A gather pipeline
+  (`gather_subject_data`) assembles a `SubjectExport` across the tenant's subject-indexed tables —
+  **single-sourced with the erase-set** (`TENANT_ID_TABLES`/`NAMESPACE_TABLES`/`SPECIAL_ERASE_TABLES`), so a
+  future erase-set table is auto-covered by access (asserted by `access_set_equals_erase_set`); retained
+  fiscal/audit data is disclosed (marked `retained:true`) but secret columns (pat hashes, BYOK envelope/cipher
+  material, tokens) are redacted (raw secrets never exported). Access returns the bundle inline; portability
+  also persists a signed copy (Ed25519, reusing the erasure-attestation signer) to the R2 audit bucket.
+  Rectification is bounded + honest — content-addressed cache is immutable (422), only the pseudonymized
+  contact `email_hash` is editable. Fail-closed throughout (a D1 error → whole export Err, no partial). No
+  migration. (enterprise-DD #5)
 - **BYOK key-hardening + Mode B (Wave 3c — GATED-INERT).** §4 confirmation-oracle hardening (audit H-4):
   for BYOK-active tenants the physical R2 key's digest component is now `HMAC-SHA256(TCS, plaintext_digest)`
   (computed on-the-fly, never persisted), so an R2-read attacker can't confirm a guessed plaintext — while

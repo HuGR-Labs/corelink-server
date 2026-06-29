@@ -55,7 +55,12 @@ use crate::storage::d1_http::D1HttpClient;
 /// `remaining_rows()` scans this whole slice, so any table added here is
 /// automatically covered by the post-erase verification sweep (no separate
 /// edit needed) — the property the **CF-1 fix** relies on.
-const TENANT_ID_TABLES: &[&str] = &[
+///
+/// `pub(super)` so the DSR ACCESS / PORTABILITY gather pipeline
+/// ([`super::access`]) single-sources this exact erase-set — a future table
+/// added here is then covered by BOTH erase AND access (no parallel list to
+/// drift).
+pub(super) const TENANT_ID_TABLES: &[&str] = &[
     "tier_selections",
     "tenant_billing",
     "pilot_signups",
@@ -118,7 +123,10 @@ const TENANT_ID_TABLES: &[&str] = &[
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
 /// tenant UUID, which can never equal the shared `'_public'` namespace —
 /// so shared public-registry content is never touched.
-const NAMESPACE_TABLES: &[&str] = &["adapter_cache_map", "adapter_npm_meta", "adapter_pip_index"];
+///
+/// `pub(super)` — single-sourced by the DSR ACCESS gather ([`super::access`]).
+pub(super) const NAMESPACE_TABLES: &[&str] =
+    &["adapter_cache_map", "adapter_npm_meta", "adapter_pip_index"];
 
 /// Tables that MUST NEVER appear in the erase-set (retain-set per
 /// ADR-S11-013: a lawful retention basis — the erasure record itself,
@@ -129,7 +137,7 @@ const NAMESPACE_TABLES: &[&str] = &["adapter_cache_map", "adapter_npm_meta", "ad
 /// **CF-1 (2026-06-28): PROMOTED out of `#[cfg(test)]`** so it exists at
 /// runtime — the completeness gate / runtime drift assertion can consult it,
 /// not just the test build.
-const RETAIN_SET: &[&str] = &[
+pub(super) const RETAIN_SET: &[&str] = &[
     "dsr_erasure_log",
     "dsr_requested",
     "dpa_acceptances",
@@ -194,7 +202,8 @@ const CAS_PLANE_OWNED: &[&str] = &[
 /// Erase-set tables handled by bespoke logic (not the simple
 /// `WHERE <col> = ?1` loop): `signup_attempts` joins through
 /// `signup_orchestration.idempotency_key`; `tenant` is deleted LAST.
-const SPECIAL_ERASE_TABLES: &[&str] = &["signup_orchestration", "signup_attempts", "tenant"];
+pub(super) const SPECIAL_ERASE_TABLES: &[&str] =
+    &["signup_orchestration", "signup_attempts", "tenant"];
 
 /// **Every** live, tenant-scoped D1 table (keyed by `tenant_id`, `namespace`,
 /// or an opaque principal id), derived from `migrations/d1/*.sql`. Transient
