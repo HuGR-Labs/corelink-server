@@ -5,10 +5,10 @@ description: "End-to-end path of a native CAS blob write: the tenant/scope/PAT/$
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
   - "crates/corelink-container/src/storage.rs"
-checkpoint_sha: "664d78b8e6f62ad6d0e95a94552c6c0997f8fea1"
+checkpoint_sha: "c631a9522dd13136f7a69e1678b4578b4f933c47"
 provenance: "AUTHORED"
 tags: ["flows", "cas", "hot-path", "storage", "request-flow"]
-timestamp: "2026-06-26T00:00:00Z"
+timestamp: "2026-06-28T00:00:00Z"
 ---
 
 # CAS write flow
@@ -29,7 +29,7 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 6. Monthly $-ceiling gate: when wired, `state.quota.check(&auth.0)` runs the [billing quota check](/flows/billing-quota-check.md) and rejects 402/503 before storage (`crates/corelink-container/src/routes/cas.rs:857-863`).
 7. Storage-cap threading: the Worker-resolved per-tier storage cap header is threaded into the write request so the accounting decorator seeds a real cap, never treating an unseeded tenant as unlimited (`crates/corelink-container/src/routes/cas.rs:873-877`).
 8. Commit: `state.write.write(req)` goes through the byte-accounting decorator — the single chokepoint every CAS surface shares — which reserves/commits the cap atomically before the R2 PUT (`crates/corelink-container/src/routes/cas.rs:887-897`).
-9. The production write target is the native R2 S3 adapter (`R2CasHandler`), built from S3 credentials only when they are present in env (`crates/corelink-container/src/routes/cas.rs:511-621`); the adapter module and its credential loader live in storage (`crates/corelink-container/src/storage.rs:32-34`, `crates/corelink-container/src/storage.rs:98-113`).
+9. The production write target is the native R2 S3 adapter (`R2CasHandler`), built from S3 credentials only when they are present in env (`crates/corelink-container/src/routes/cas.rs:511-621`); the adapter module and its credential loader live in storage (`crates/corelink-container/src/storage.rs:35`, `crates/corelink-container/src/storage.rs:98-114`).
 10. Result: a fresh durable write returns 201 CREATED, an idempotent already-present write returns 200 OK (`crates/corelink-container/src/routes/cas.rs:887-897`).
 11. Bulk reads are symmetrically capped: a `CasReadConcurrencyGuard` extractor — declared AHEAD of the body on `handle_batch_read`/`handle_batch_exists`, like `CasPutGuard` on writes — reserves one per-tenant in-flight READ slot from a SEPARATE `read_inflight` pool (cap 8) and rejects over-cap bulk reads 429 before any payload is buffered (`crates/corelink-container/src/routes/cas.rs:359-412`).
 
@@ -39,13 +39,14 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 - Every gate runs BEFORE storage and fails closed: scope (`crates/corelink-container/src/routes/cas.rs:847-852`), possession (`crates/corelink-container/src/routes/cas.rs:853-856`), $-ceiling (`crates/corelink-container/src/routes/cas.rs:857-863`).
 - The per-tenant write-concurrency cap is checked before the body is buffered, bounding peak per-tenant memory (`crates/corelink-container/src/routes/cas.rs:272-319`); the bulk-read path mirrors this on a SEPARATE per-tenant cap (`crates/corelink-container/src/routes/cas.rs:359-412`).
 - The byte-cap is enforced atomically at the shared write trait object, not in the route, so every surface accounts identically and the route never double-counts (`crates/corelink-container/src/routes/cas.rs:887-897`).
-- R2 S3 credentials are env-sourced only and the real adapter is constructed solely when all creds are present; absent creds fall back to the dev/in-memory path (`crates/corelink-container/src/storage.rs:98-113`; `crates/corelink-container/src/routes/cas.rs:511-621`).
+- R2 S3 credentials are env-sourced only and the real adapter is constructed solely when all creds are present; absent creds fall back to the dev/in-memory path (`crates/corelink-container/src/storage.rs:98-114`; `crates/corelink-container/src/routes/cas.rs:511-621`).
 
 # Gotchas
 
 - A CAS 401 on this path means the PAT failed the possession gate (bad key OR no D1 row), NOT a malformed hash — that is a distinct 400. A 402 means the monthly ceiling tripped; a 503 means a gate's backend (D1 / quota store) was unreachable and the write fail-closed rather than serve uncounted.
 - `state.write.write` is synchronous in the handler, but the byte-accounting + R2 PUT happen inside the decorated trait object; an over-cap or accounting fault surfaces as a sentinel-tagged error mapped to 402/503, not as a panic.
 - The batch route (`POST /v1/cas/:tenant/batch`) mirrors this exact gate sequence but charges the quota ONCE for the whole batch, never per object.
+- After the gauntlet, for a `tenant_byok_config.state='active'` tenant the committed bytes are enveloped at rest (convergent AES-256-GCM) inside the R2 adapter before the PUT, and decrypted on read before the content-address integrity check — gated-inert today (zero active tenants); see [BYOK envelope encryption at rest](/storage/byok-envelope-encryption.md).
 
 # Citations
 
@@ -57,6 +58,6 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 6. `crates/corelink-container/src/routes/cas.rs:843-863` — hash, write-scope, PAT-possession, and $-ceiling gates, all before storage.
 7. `crates/corelink-container/src/routes/cas.rs:873-897` — storage-cap header threading and the byte-accounted commit chokepoint.
 8. `crates/corelink-container/src/routes/cas.rs:359-412` — `CasReadConcurrencyGuard`: per-tenant bulk-READ concurrency cap (separate `read_inflight` pool), 429 before buffering — the read twin of `CasPutGuard`.
-9. `crates/corelink-container/src/storage.rs:32-34` — the native `r2_s3` adapter module (R2 over the S3-compatible API).
-10. `crates/corelink-container/src/storage.rs:98-113` — `StorageEnv::from_env`: env-only R2/D1 credential loading.
+9. `crates/corelink-container/src/storage.rs:35` — the native `r2_s3` adapter module (R2 over the S3-compatible API).
+10. `crates/corelink-container/src/storage.rs:98-114` — `StorageEnv::from_env`: env-only R2/D1 credential loading.
 </content>
