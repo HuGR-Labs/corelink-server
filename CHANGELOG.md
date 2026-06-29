@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **BYOK CAS data-plane encryption (Wave 3a — GATED-INERT).** Wires convergent (Mode A) encryption into
+  the native CAS write/read path: a per-tenant `ByokConfigCache` (TTL 60s — no D1 hop on the non-BYOK hot
+  path after warmup) + a `TcsResolver` (wrapped-TCS → KMS unwrap → ≤300s cache). Write encrypts after the
+  plaintext content-hash verify (stored bytes = `CLB1‖nonce‖ciphertext`); read decrypts BEFORE the integrity
+  re-verify (audit C1 — never re-verify ciphertext). FAIL-CLOSED: a BYOK-active tenant whose KMS/TCS/encrypt
+  is unavailable gets an Err on write (never stores plaintext) and on read (never serves raw bytes).
+  GATED-INERT: only fires for `state='active'` tenants, of which there are zero (no onboarding yet) + no prod
+  `KmsProvider` is wired, so existing tenants are byte-identical to today. 32 BYOK tests incl. fail-closed +
+  convergent-dedup + plaintext-passthrough. Deferred to 3b/4: §4 key-hardening, AC path, accounting
+  reconciliation, Mode B, Partial/backfill.
 - **BYOK schema + read-model (Wave 2 — additive, no data-plane wiring).** Migration 0081 adds
   `tenant_byok_config` (mode managed/byok/hyok, crypto_mode convergent/random, CMK provider/key/region,
   monotonic state inactive→pending→active→partial→shredded) + `tenant_byok_secret` (CMK-wrapped TCS,
