@@ -287,6 +287,23 @@ mod tests {
     }
 
     #[test]
+    fn nonce_varies_with_context_and_is_not_constant() {
+        // Kills constant-nonce mutants (`Ok([0;12])` / `Ok([1;12])`) AND any
+        // context-independent constant: different contexts → different nonces.
+        let tcs = tcs_of(11);
+        let a = ctx("tenant_a", "sha256:aaa");
+        let mut b = a.clone();
+        b.plaintext_digest = "sha256:bbb".into();
+        let na = derive_nonce_convergent(&tcs, &a).unwrap();
+        let nb = derive_nonce_convergent(&tcs, &b).unwrap();
+        assert_ne!(na, nb, "different contexts must yield different nonces");
+        assert_ne!(na, [0u8; 12], "nonce must not be all-zeros");
+        assert_ne!(na, [1u8; 12], "nonce must not be all-ones");
+        assert_ne!(nb, [0u8; 12], "nonce must not be all-zeros");
+        assert_ne!(nb, [1u8; 12], "nonce must not be all-ones");
+    }
+
+    #[test]
     fn different_tcs_changes_the_dek() {
         let c = ctx("tenant_a", "sha256:abc");
         let a = derive_dek_convergent(&tcs_of(1), &c).unwrap().bytes;

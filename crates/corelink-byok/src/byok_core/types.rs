@@ -286,3 +286,40 @@ pub enum BYOKError {
         actual: FipsLevel,
     },
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tcs_debug_redacts_secret_and_emits_nonempty() {
+        // The `Tcs` Debug impl MUST redact key material. A mutant that writes
+        // nothing (`Ok(Default::default())`) produces an empty string with no
+        // "REDACTED" marker → this assertion fails and kills it.
+        let tcs = Tcs::from_bytes([0xABu8; 32]);
+        let rendered = format!("{tcs:?}");
+        assert!(
+            rendered.contains("REDACTED"),
+            "Tcs Debug must contain REDACTED, got {rendered:?}"
+        );
+        // And it must NOT leak the raw byte value (0xAB == 171 decimal).
+        assert!(
+            !rendered.contains("171"),
+            "Tcs Debug must not leak secret bytes, got {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn dek_debug_redacts_secret() {
+        let dek = Dek { bytes: [0xCDu8; 32] };
+        let rendered = format!("{dek:?}");
+        assert!(rendered.contains("REDACTED"), "got {rendered:?}");
+    }
+
+    #[test]
+    fn tcs_from_bytes_roundtrips_value() {
+        let tcs = Tcs::from_bytes([7u8; 32]);
+        assert_eq!(tcs.bytes, [7u8; 32]);
+    }
+}
