@@ -70,7 +70,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::storage::byok_cas::{engagement_for, ByokConfigCache, ByokEngagement, BYOK_CLB1_OVERHEAD};
+use crate::customer_d1::ByokCryptoMode;
+use crate::storage::byok_cas::{
+    engagement_for, ByokConfigCache, ByokEngagement, BYOK_CLB1_OVERHEAD, BYOK_CLB2_OVERHEAD,
+};
 
 /// Container's own storage region, sourced from `R2_CAS_REGION` (default
 /// `"iad"`), used as the second component of the `tenant_storage_state`
@@ -615,8 +618,13 @@ fn byok_committed_len(
         return Ok(plaintext_len);
     };
     match engagement_for(&cfg) {
-        ByokEngagement::Encrypt => Ok(plaintext_len
+        // Mode A (convergent) stores `CLB1` (+32 B); Mode B (random) stores `CLB2`
+        // (+20 B — the nonce lives in `byok_envelope`, not inline). Account the
+        // committed CIPHERTEXT size so the reservation matches the real R2 object.
+        ByokEngagement::Encrypt(ByokCryptoMode::Convergent) => Ok(plaintext_len
             .saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX))),
+        ByokEngagement::Encrypt(ByokCryptoMode::Random) => Ok(plaintext_len
+            .saturating_add(i64::try_from(BYOK_CLB2_OVERHEAD).unwrap_or(i64::MAX))),
         ByokEngagement::Plaintext | ByokEngagement::FailClosed(_) => Ok(plaintext_len),
     }
 }
@@ -2068,13 +2076,27 @@ mod byok_accounting_tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn committed_len_is_plaintext_for_failclosed_modes() {
-        // Mode B / partial engage `FailClosed`: the inner write stores NOTHING
-        // (fails closed), so the reservation rolls back net-zero ⇒ plaintext size.
+    async fn committed_len_adds_clb2_overhead_for_active_random() {
+        // Wave 3c: Mode B (random) is an ENCRYPTING mode and stores a `CLB2` blob
+        // (+20 B — nonce lives in `byok_envelope`, not inline), so the reservation
+        // must reflect the committed ciphertext size.
         let mode_b = cache(Some(cfg(ByokCryptoMode::Random, ByokState::Active)), false);
-        assert_eq!(byok_committed_len(Some(&mode_b), TENANT, 1000).unwrap(), 1000);
+        assert_eq!(
+            byok_committed_len(Some(&mode_b), TENANT, 1000).unwrap(),
+            1000 + BYOK_CLB2_OVERHEAD as i64,
+            "an active random tenant stores CLB2 ciphertext ⇒ reserve plaintext + 20"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn committed_len_is_plaintext_for_failclosed_modes() {
+        // `partial` (backfill dual-read) still engages `FailClosed` (Wave 4): the
+        // inner write stores NOTHING (fails closed), so the reservation rolls back
+        // net-zero ⇒ plaintext size.
         let partial = cache(Some(cfg(ByokCryptoMode::Convergent, ByokState::Partial)), false);
         assert_eq!(byok_committed_len(Some(&partial), TENANT, 1000).unwrap(), 1000);
+        let partial_random = cache(Some(cfg(ByokCryptoMode::Random, ByokState::Partial)), false);
+        assert_eq!(byok_committed_len(Some(&partial_random), TENANT, 1000).unwrap(), 1000);
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -170,54 +170,11 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
         blob: &EncryptedBlob,
         ctx: &CryptoContext,
     ) -> Result<Vec<u8>, BYOKError> {
-        // Step 1 [H-1]: validate the KMS encryption_context on EVERY path
-        // (before any cache lookup), failing closed on absence or mismatch.
-        let stored_aad = blob
-            .wrapped_dek
-            .encryption_context
-            .as_ref()
-            .ok_or_else(|| {
-                warn!("encryption_context missing on wrapped DEK — rejecting");
-                BYOKError::EncryptionContextMissing
-            })?;
-        let expected_aad = ctx.kms_encryption_context();
-        if stored_aad != &expected_aad {
-            warn!(
-                tenant_id = %ctx.tenant_id,
-                "AAD mismatch — cross-blob swap attempt rejected"
-            );
-            return Err(BYOKError::AadMismatch);
-        }
+        // [H-1] validate the encryption_context AAD on EVERY path + unwrap the
+        // DEK (cache-first). Failing closed on absence/mismatch.
+        let dek = self.unwrap_validated(&blob.wrapped_dek, ctx).await?;
 
-        // Step 2: DEK cache (key is bound to the encryption_context).
-        let dek = match self.dek_cache.get(&blob.wrapped_dek).await {
-            Some(cached) => {
-                debug!(provider = ?blob.wrapped_dek.provider, "DEK cache hit");
-                cached
-            }
-            None => {
-                debug!(provider = ?blob.wrapped_dek.provider, "DEK cache miss — unwrapping via KMS");
-                let fresh_dek = self
-                    .provider
-                    .unwrap_dek(&blob.wrapped_dek)
-                    .await
-                    .map_err(|e| {
-                        error!(provider = ?blob.wrapped_dek.provider, error = %e, "unwrap_dek failed");
-                        e
-                    })?;
-                self.dek_cache
-                    .put(
-                        &blob.wrapped_dek,
-                        Dek {
-                            bytes: fresh_dek.bytes,
-                        },
-                    )
-                    .await?;
-                fresh_dek
-            }
-        };
-
-        // Step 3 [H-2]: AES-256-GCM decrypt with aad = JCS(ctx).
+        // [H-2]: AES-256-GCM decrypt with aad = JCS(ctx).
         let nonce = Nonce::from_slice(&blob.nonce);
         let aad = ctx.to_jcs_bytes()?;
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek.bytes));
@@ -242,6 +199,95 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
         );
 
         Ok(plaintext)
+    }
+
+    /// Validate the mandatory `encryption_context` AAD ([H-1]) and unwrap the
+    /// DEK (DEK-cache first, KMS on miss). Shared by [`Self::decrypt_with_ctx`]
+    /// and [`Self::encrypt_body_with_wrapped`] so the AAD-match + unwrap policy
+    /// is single-sourced (the check runs on BOTH the cache-HIT and -MISS arms).
+    ///
+    /// # Errors
+    ///
+    /// - [`BYOKError::EncryptionContextMissing`] if the wrapped DEK carries no
+    ///   `encryption_context`.
+    /// - [`BYOKError::AadMismatch`] if it does not match `ctx`.
+    /// - Any [`BYOKError`] from [`KmsProvider::unwrap_dek`] on a cache miss.
+    async fn unwrap_validated(
+        &self,
+        wrapped: &WrappedDek,
+        ctx: &CryptoContext,
+    ) -> Result<Dek, BYOKError> {
+        let stored_aad = wrapped.encryption_context.as_ref().ok_or_else(|| {
+            warn!("encryption_context missing on wrapped DEK — rejecting");
+            BYOKError::EncryptionContextMissing
+        })?;
+        let expected_aad = ctx.kms_encryption_context();
+        if stored_aad != &expected_aad {
+            warn!(
+                tenant_id = %ctx.tenant_id,
+                "AAD mismatch — cross-blob swap attempt rejected"
+            );
+            return Err(BYOKError::AadMismatch);
+        }
+        match self.dek_cache.get(wrapped).await {
+            Some(cached) => {
+                debug!(provider = ?wrapped.provider, "DEK cache hit");
+                Ok(cached)
+            }
+            None => {
+                debug!(provider = ?wrapped.provider, "DEK cache miss — unwrapping via KMS");
+                let fresh = self.provider.unwrap_dek(wrapped).await.map_err(|e| {
+                    error!(provider = ?wrapped.provider, error = %e, "unwrap_dek failed");
+                    e
+                })?;
+                self.dek_cache
+                    .put(wrapped, Dek { bytes: fresh.bytes })
+                    .await?;
+                Ok(fresh)
+            }
+        }
+    }
+
+    /// Re-encrypt `plaintext` under an EXISTING wrapped DEK + a FIXED nonce
+    /// (Mode B idempotency, audit [C2]).
+    ///
+    /// The Mode-B write path persists one random `(DEK, nonce)` per blob in the
+    /// `byok_envelope` D1 row, then derives the stored ciphertext by encrypting
+    /// the body under THAT authoritative `(DEK, nonce)`. AES-256-GCM is
+    /// deterministic given `(key, nonce, plaintext, aad)`, so every writer —
+    /// including a loser of the INSERT-OR-IGNORE envelope race and any re-PUT —
+    /// produces BYTE-IDENTICAL ciphertext. This is what makes the R2 PUT
+    /// idempotent and prevents a ciphertext/envelope desync (a permanently
+    /// undecryptable blob).
+    ///
+    /// Binds `aad = JCS(ctx)` and validates the wrapped DEK's
+    /// `encryption_context` against `ctx` exactly as the read path does.
+    ///
+    /// # Errors
+    ///
+    /// - [`BYOKError::EncryptionContextMissing`] / [`BYOKError::AadMismatch`] /
+    ///   unwrap failure (see [`Self::unwrap_validated`]).
+    /// - [`BYOKError::AesGcm`] on AEAD failure; [`BYOKError::EnvelopeError`] on
+    ///   JCS failure.
+    pub async fn encrypt_body_with_wrapped(
+        &self,
+        plaintext: &[u8],
+        wrapped: &WrappedDek,
+        nonce: &[u8; 12],
+        ctx: &CryptoContext,
+    ) -> Result<Vec<u8>, BYOKError> {
+        let dek = self.unwrap_validated(wrapped, ctx).await?;
+        let aad = ctx.to_jcs_bytes()?;
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek.bytes));
+        cipher
+            .encrypt(
+                Nonce::from_slice(nonce),
+                Payload {
+                    msg: plaintext,
+                    aad: &aad,
+                },
+            )
+            .map_err(|e| BYOKError::AesGcm(e.to_string()))
     }
 }
 
