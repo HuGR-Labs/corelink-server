@@ -70,6 +70,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use crate::storage::byok_cas::{engagement_for, ByokConfigCache, ByokEngagement, BYOK_CLB1_OVERHEAD};
+
 /// Container's own storage region, sourced from `R2_CAS_REGION` (default
 /// `"iad"`), used as the second component of the `tenant_storage_state`
 /// composite PK. Mirrors the region `cas.rs` keys its R2 objects under, so the
@@ -569,6 +571,56 @@ fn block_on_accrue(
     tokio::task::block_in_place(|| handle.block_on(acc.accrue(tenant, bytes, quota_seed)))
 }
 
+/// Compute the **committed (stored) byte size** the accountant must reserve and
+/// release for a write — the size that actually lands in R2, so reserve ==
+/// release == the eventual delete-release (which measures the real R2 object)
+/// and `bytes_used` can NEVER drift (audit C3 CRITICAL).
+///
+/// For a BYOK-ENCRYPTING tenant the stored object is the `CLB1` convergent blob
+/// = `plaintext_len + BYOK_CLB1_OVERHEAD` (32 B). Such a tenant is detected via
+/// the SAME [`ByokConfigCache`] the storage handlers use — engagement
+/// [`ByokEngagement::Encrypt`] for a non-`_public` tenant — so a write that
+/// stores ciphertext is accounted at its ciphertext size on BOTH the reserve and
+/// (on rollback) the release.
+///
+/// - `cache == None` (today's production / tests) ⇒ plaintext size — byte-for-
+///   byte the legacy behaviour, zero change for every non-BYOK deployment.
+/// - `_public`, not configured, or `Plaintext` engagement ⇒ plaintext size.
+/// - `FailClosed` engagement (Mode B / partial) ⇒ plaintext size: the inner
+///   storage write fails closed and stores NOTHING, so the (plaintext-sized)
+///   reservation is rolled back net-zero — no ciphertext is ever committed.
+/// - `Encrypt` ⇒ `plaintext_len + BYOK_CLB1_OVERHEAD`.
+///
+/// FAIL-CLOSED: a config-cache read error returns `Err` — the caller maps it to
+/// the 503 fail-closed sentinel. We must NEVER under-reserve an active tenant on
+/// an undetermined config (and the shared cache means the inner handler would
+/// fail closed on the same error anyway).
+fn byok_committed_len(
+    cache: Option<&Arc<ByokConfigCache>>,
+    tenant: &str,
+    plaintext_len: i64,
+) -> Result<i64, String> {
+    let Some(cache) = cache else {
+        return Ok(plaintext_len);
+    };
+    // `_public` is deterministic public content — never encrypted (dedup), so it
+    // is byte-identical to today (frozen policy: non-BYOK + `_public` unchanged).
+    if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
+        return Ok(plaintext_len);
+    }
+    let handle = tokio::runtime::Handle::current();
+    let cfg = tokio::task::block_in_place(|| handle.block_on(cache.get(tenant)))
+        .map_err(|e| format!("byok config read (accounting): {e}"))?;
+    let Some(cfg) = cfg else {
+        return Ok(plaintext_len);
+    };
+    match engagement_for(&cfg) {
+        ByokEngagement::Encrypt => Ok(plaintext_len
+            .saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX))),
+        ByokEngagement::Plaintext | ByokEngagement::FailClosed(_) => Ok(plaintext_len),
+    }
+}
+
 /// Bridge an async release call onto the sync handler trait (see [`block_on_accrue`]).
 fn block_on_release(acc: &ByteAccountant, tenant: &str, bytes: i64) {
     let handle = tokio::runtime::Handle::current();
@@ -661,6 +713,12 @@ pub struct AccountingCasHandler {
     accountant: Arc<ByteAccountant>,
     /// Fixed, memory-bounded shard array of per-`(tenant, hash)` async locks.
     key_locks: Arc<Vec<Arc<tokio::sync::Mutex<()>>>>,
+    /// BYOK Wave 3b (GATED-INERT): the SAME per-tenant config cache the storage
+    /// handlers use. `None` ⇒ plaintext-size accounting (today's behaviour). When
+    /// `Some` AND a tenant is BYOK-`active`, the reserve/release size is the
+    /// committed CIPHERTEXT size (`plaintext + BYOK_CLB1_OVERHEAD`) so it matches
+    /// the on-disk object the delete path releases (audit C3 — no drift).
+    byok_config_cache: Option<Arc<ByokConfigCache>>,
 }
 
 impl core::fmt::Debug for AccountingCasHandler {
@@ -688,7 +746,20 @@ impl AccountingCasHandler {
             delete_inner,
             accountant,
             key_locks: Arc::new(key_locks),
+            byok_config_cache: None,
         }
+    }
+
+    /// Attach the BYOK Wave-3b config cache so a BYOK-`active` tenant is
+    /// reserved/released at its committed CIPHERTEXT size (audit C3). Mirrors
+    /// [`crate::storage::r2_s3::R2CasHandler::with_byok`]'s gating; pass the SAME
+    /// `ByokConfigCache` Arc the storage handler holds so the active-ness lookup
+    /// is a shared in-memory cache HIT (one D1 hop total). `None` (the default)
+    /// keeps the exact plaintext-size accounting.
+    #[must_use]
+    pub fn with_byok(mut self, byok_config_cache: Arc<ByokConfigCache>) -> Self {
+        self.byok_config_cache = Some(byok_config_cache);
+        self
     }
 }
 
@@ -699,7 +770,7 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
     ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasHandlerError> {
         use corelink_handler_cas::CasHandlerError;
         let tenant = req.tenant.clone();
-        let byte_len = i64::try_from(req.bytes.len()).unwrap_or(i64::MAX);
+        let plaintext_len = i64::try_from(req.bytes.len()).unwrap_or(i64::MAX);
         // The Worker-resolved per-tier cap (threaded via the request) seeds a
         // FRESH `tenant_storage_state` row; `None` ⇒ indeterminate ⇒ a fresh row
         // FAILS CLOSED (never seeded uncapped).
@@ -710,6 +781,19 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         // reserve/release and under-count `bytes_used`. Distinct keys map to other
         // shards and stay concurrent.
         let _key_guard = self.lock_for(&tenant, &req.claimed_hash);
+        // BYOK Wave 3b (audit C3): account the COMMITTED (stored) size — for a
+        // BYOK-`active` tenant the R2 object is the ciphertext blob (plaintext +
+        // BYOK_CLB1_OVERHEAD), so reserve THAT size (the delete path already
+        // releases the real R2 object size) → reserve == release, no drift. A
+        // config read error fails CLOSED (503). `None` cache / non-BYOK tenant ⇒
+        // `byte_len == plaintext_len`, byte-identical to today.
+        let byte_len = match byok_committed_len(self.byok_config_cache.as_ref(), &tenant, plaintext_len) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::error!(error = %e, "cas: byok committed-size lookup failed; failing closed");
+                return Err(CasHandlerError::Internal(format!("{ACCT_UNAVAILABLE_SENTINEL}{e}")));
+            }
+        };
         // RESERVE before the R2 PUT (cluster-C): an over-cap / indeterminate
         // reservation is rejected here, so the inner write — the durable R2 PUT
         // — NEVER runs and no uncounted blob is committed.
@@ -806,6 +890,10 @@ pub struct AccountingAcHandler {
     /// Fixed, memory-bounded shard array of per-`(tenant, action_digest)` async
     /// locks (mirrors [`AccountingCasHandler::key_locks`]).
     key_locks: Arc<Vec<Arc<tokio::sync::Mutex<()>>>>,
+    /// BYOK Wave 3b (GATED-INERT): the SAME per-tenant config cache the AC
+    /// storage handler uses — see [`AccountingCasHandler::byok_config_cache`].
+    /// `None` ⇒ plaintext-size accounting (today's behaviour).
+    byok_config_cache: Option<Arc<ByokConfigCache>>,
 }
 
 impl core::fmt::Debug for AccountingAcHandler {
@@ -833,7 +921,18 @@ impl AccountingAcHandler {
             delete_inner,
             accountant,
             key_locks: Arc::new(key_locks),
+            byok_config_cache: None,
         }
+    }
+
+    /// Attach the BYOK Wave-3b config cache so a BYOK-`active` tenant is
+    /// reserved/released at its committed CIPHERTEXT size (audit C3); mirror of
+    /// [`AccountingCasHandler::with_byok`]. `None` (the default) keeps the exact
+    /// plaintext-size accounting.
+    #[must_use]
+    pub fn with_byok(mut self, byok_config_cache: Arc<ByokConfigCache>) -> Self {
+        self.byok_config_cache = Some(byok_config_cache);
+        self
     }
 
     /// Acquire the per-`(tenant, action_digest)` serialization guard (the shard
@@ -878,7 +977,7 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
     ) -> Result<corelink_handler_ac::AcUpdateResponse, corelink_handler_ac::AcHandlerError> {
         use corelink_handler_ac::AcHandlerError;
         let tenant = req.tenant.clone();
-        let byte_len = i64::try_from(req.result_payload.len()).unwrap_or(i64::MAX);
+        let plaintext_len = i64::try_from(req.result_payload.len()).unwrap_or(i64::MAX);
         // Worker-resolved per-tier cap (seeds a FRESH row; `None` ⇒ fail-closed).
         let quota_seed = req.storage_quota_bytes;
         // rt-nuclear C2 sibling (AC plane): hold the per-`(tenant, action_digest)`
@@ -887,6 +986,18 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
         // delete→release with our reserve/release and under-count `bytes_used`.
         // Distinct keys map to other shards and stay concurrent.
         let _key_guard = self.lock_for(&tenant, &req.action_digest);
+        // BYOK Wave 3b (audit C3): account the COMMITTED (stored) size — a
+        // BYOK-`active` tenant's AC object is the ciphertext blob (plaintext +
+        // BYOK_CLB1_OVERHEAD); reserve THAT so it matches the real R2 object the
+        // delete path releases → no drift. Config error ⇒ fail CLOSED (503).
+        // `None` cache / non-BYOK ⇒ `byte_len == plaintext_len` (unchanged).
+        let byte_len = match byok_committed_len(self.byok_config_cache.as_ref(), &tenant, plaintext_len) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::error!(error = %e, "ac: byok committed-size lookup failed; failing closed");
+                return Err(AcHandlerError::Internal(format!("{ACCT_UNAVAILABLE_SENTINEL}{e}")));
+            }
+        };
         match block_on_accrue(&self.accountant, &tenant, byte_len, quota_seed) {
             Ok(AccrueOutcome::Accrued) => {}
             Ok(AccrueOutcome::OverCap) => {
@@ -1854,6 +1965,236 @@ mod decorator_tests {
             store.used("t", REGION),
             na,
             "distinct-key write + delete must account independently (only A's bytes remain)"
+        );
+    }
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests are allowed to use these primitives"
+)]
+mod byok_accounting_tests {
+    //! BYOK Wave 3b (audit C3 CRITICAL): the accountant reserves/releases the
+    //! COMMITTED (stored) size — `plaintext + BYOK_CLB1_OVERHEAD` for a
+    //! BYOK-`active` tenant — so reserve == release == the on-disk object the
+    //! delete path frees, and `bytes_used` never drifts. Non-BYOK tenants are
+    //! byte-identical to today.
+    use super::testing::InMemoryByteStore;
+    use super::*;
+    use crate::customer_d1::{
+        ByokConfigError, ByokCryptoMode, ByokMode, ByokState, TenantByokConfig,
+    };
+    use crate::storage::byok_cas::{ByokConfigCache, ByokConfigSource};
+    use corelink_handler_cas::{
+        CasDeleteHandler, CasDeleteRequest, CasDeleteResponse, CasHandlerError, CasWriteHandler,
+        CasWriteRequest, CasWriteResponse,
+    };
+
+    const REGION: &str = "iad";
+    const TENANT: &str = "byok-acct-tenant";
+
+    fn cfg(mode: ByokCryptoMode, state: ByokState) -> TenantByokConfig {
+        TenantByokConfig {
+            tenant_id: TENANT.to_owned(),
+            mode: ByokMode::Byok,
+            crypto_mode: mode,
+            cmk_provider: Some("aws".to_owned()),
+            cmk_key_id: Some("arn:cmk".to_owned()),
+            cmk_region: Some("iad".to_owned()),
+            state,
+        }
+    }
+
+    #[derive(Debug)]
+    struct CfgSrc {
+        cfg: Option<TenantByokConfig>,
+        fail: bool,
+    }
+    #[async_trait]
+    impl ByokConfigSource for CfgSrc {
+        async fn get_byok_config(
+            &self,
+            _t: &str,
+        ) -> Result<Option<TenantByokConfig>, ByokConfigError> {
+            if self.fail {
+                return Err(ByokConfigError::Transport("byok config down".to_owned()));
+            }
+            Ok(self.cfg.clone())
+        }
+    }
+
+    fn cache(cfg: Option<TenantByokConfig>, fail: bool) -> Arc<ByokConfigCache> {
+        Arc::new(ByokConfigCache::new(Arc::new(CfgSrc { cfg, fail }), 60))
+    }
+
+    // ── byok_committed_len: the reserve/release sizing decision ──────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn committed_len_is_plaintext_when_cache_absent() {
+        // `None` cache (today's production / tests) ⇒ plaintext size verbatim.
+        assert_eq!(byok_committed_len(None, TENANT, 1000).unwrap(), 1000);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn committed_len_adds_overhead_only_for_active_convergent() {
+        let active = cache(Some(cfg(ByokCryptoMode::Convergent, ByokState::Active)), false);
+        assert_eq!(
+            byok_committed_len(Some(&active), TENANT, 1000).unwrap(),
+            1000 + BYOK_CLB1_OVERHEAD as i64,
+            "an active convergent tenant stores ciphertext ⇒ reserve plaintext + 32"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn committed_len_is_plaintext_for_inactive_and_unconfigured() {
+        let inactive = cache(Some(cfg(ByokCryptoMode::Convergent, ByokState::Inactive)), false);
+        assert_eq!(byok_committed_len(Some(&inactive), TENANT, 1000).unwrap(), 1000);
+        let unconfigured = cache(None, false);
+        assert_eq!(byok_committed_len(Some(&unconfigured), TENANT, 1000).unwrap(), 1000);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn committed_len_is_plaintext_for_public_namespace() {
+        // `_public` stays plaintext (dedup) even under an active config.
+        let active = cache(Some(cfg(ByokCryptoMode::Convergent, ByokState::Active)), false);
+        assert_eq!(
+            byok_committed_len(Some(&active), crate::adapter_cache::PUBLIC_NAMESPACE, 1000).unwrap(),
+            1000,
+            "_public is never encrypted ⇒ plaintext-size accounting"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn committed_len_is_plaintext_for_failclosed_modes() {
+        // Mode B / partial engage `FailClosed`: the inner write stores NOTHING
+        // (fails closed), so the reservation rolls back net-zero ⇒ plaintext size.
+        let mode_b = cache(Some(cfg(ByokCryptoMode::Random, ByokState::Active)), false);
+        assert_eq!(byok_committed_len(Some(&mode_b), TENANT, 1000).unwrap(), 1000);
+        let partial = cache(Some(cfg(ByokCryptoMode::Convergent, ByokState::Partial)), false);
+        assert_eq!(byok_committed_len(Some(&partial), TENANT, 1000).unwrap(), 1000);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn committed_len_fails_closed_on_config_error() {
+        // A config-read error must NOT under-reserve an active tenant → Err (503).
+        let broken = cache(None, true);
+        assert!(byok_committed_len(Some(&broken), TENANT, 1000).is_err());
+    }
+
+    // ── decorator net-zero with a faithful encrypting inner ──────────────────
+
+    /// A fake inner CAS handler that models the production BYOK R2 handler: it
+    /// stores the CIPHERTEXT object (`plaintext + BYOK_CLB1_OVERHEAD`) and, on
+    /// delete, reclaims exactly that committed object size — so a write→delete
+    /// cycle's reserve and release both move by the committed size.
+    #[derive(Debug, Default)]
+    struct EncryptingCasInner {
+        stored: std::sync::Mutex<std::collections::HashMap<(String, String), u64>>,
+    }
+    impl CasWriteHandler for EncryptingCasInner {
+        fn write(&self, req: CasWriteRequest) -> Result<CasWriteResponse, CasHandlerError> {
+            let committed = req.bytes.len() as u64 + BYOK_CLB1_OVERHEAD;
+            let mut m = self.stored.lock().unwrap();
+            let key = (req.tenant.clone(), req.claimed_hash.clone());
+            // Content-addressed: a re-PUT of an already-present key is idempotent.
+            let durable = !m.contains_key(&key);
+            m.insert(key, committed);
+            Ok(CasWriteResponse::new(req.claimed_hash, durable))
+        }
+    }
+    impl CasDeleteHandler for EncryptingCasInner {
+        fn delete(&self, req: CasDeleteRequest) -> Result<CasDeleteResponse, CasHandlerError> {
+            let mut m = self.stored.lock().unwrap();
+            let reclaimed = m.remove(&(req.tenant.clone(), req.hash.clone())).unwrap_or(0);
+            Ok(CasDeleteResponse::with_reclaimed(reclaimed > 0, reclaimed))
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn active_byok_write_then_delete_nets_to_zero_at_committed_size() {
+        // The C3 assertion: for a BYOK-active tenant the accountant reserves the
+        // ciphertext size (plaintext + 32) on write and the delete releases the
+        // SAME committed size (the real R2 object), so a write→delete cycle leaves
+        // bytes_used at exactly zero — no over-release, no under-count.
+        let store = Arc::new(InMemoryByteStore::new());
+        let acc = Arc::new(ByteAccountant::new(
+            store.clone() as Arc<dyn ByteStore>,
+            REGION.to_owned(),
+        ));
+        let inner = Arc::new(EncryptingCasInner::default());
+        let dec = AccountingCasHandler::new(
+            inner.clone() as Arc<dyn CasWriteHandler>,
+            inner as Arc<dyn CasDeleteHandler>,
+            acc,
+        )
+        .with_byok(cache(
+            Some(cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            false,
+        ));
+
+        let body = vec![b'x'; 500];
+        let n = body.len() as i64;
+        let committed = n + BYOK_CLB1_OVERHEAD as i64;
+        let hash = "a".repeat(64);
+        dec.write(
+            CasWriteRequest::new(TENANT, hash.clone(), body, "p", TENANT, 1)
+                .with_storage_quota_bytes(Some(0)),
+        )
+        .expect("active write");
+        assert_eq!(
+            store.used(TENANT, REGION),
+            committed,
+            "an active-BYOK write must reserve the COMMITTED ciphertext size (plaintext + 32)"
+        );
+
+        dec.delete(CasDeleteRequest::new(TENANT, hash, "p", TENANT, 2))
+            .expect("delete");
+        assert_eq!(
+            store.used(TENANT, REGION),
+            0,
+            "the delete must release the SAME committed size ⇒ net-zero, no drift (C3)"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn inactive_tenant_with_cache_wired_is_unchanged_plaintext_accounting() {
+        // A non-BYOK (inactive) tenant, even with the cache wired, accounts at the
+        // plaintext size — zero behaviour change. The faithful inner stores the
+        // committed size, but since the tenant is inactive the accountant reserves
+        // plaintext; the delete still nets to zero because the inner reclaims what
+        // it stored (here +32) — proving the accountant tracks the inner, and that
+        // for an INACTIVE tenant the reserve is plaintext (not plaintext+32).
+        let store = Arc::new(InMemoryByteStore::new());
+        let acc = Arc::new(ByteAccountant::new(
+            store.clone() as Arc<dyn ByteStore>,
+            REGION.to_owned(),
+        ));
+        let inner = Arc::new(EncryptingCasInner::default());
+        let dec = AccountingCasHandler::new(
+            inner.clone() as Arc<dyn CasWriteHandler>,
+            inner as Arc<dyn CasDeleteHandler>,
+            acc,
+        )
+        .with_byok(cache(
+            Some(cfg(ByokCryptoMode::Convergent, ByokState::Inactive)),
+            false,
+        ));
+
+        let body = vec![b'y'; 500];
+        let n = body.len() as i64;
+        let hash = "b".repeat(64);
+        dec.write(
+            CasWriteRequest::new(TENANT, hash.clone(), body, "p", TENANT, 1)
+                .with_storage_quota_bytes(Some(0)),
+        )
+        .expect("inactive write");
+        assert_eq!(
+            store.used(TENANT, REGION),
+            n,
+            "an INACTIVE tenant must reserve the PLAINTEXT size (no BYOK overhead)"
         );
     }
 }

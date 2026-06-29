@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **BYOK AC encryption + accounting reconciliation (Wave 3b — GATED-INERT).** Wires convergent encryption
+  into the Action Cache path (`R2AcHandler`, surface `"ac"` — cryptographically domain-separated from CAS
+  via the JCS-bound AAD, so an AC blob can't be swapped with a CAS blob), closing the audit-H1
+  silent-plaintext gap; fail-closed on write+read like the CAS path. Fixes audit-C3 accounting drift: a
+  BYOK-active tenant's quota now accounts the COMMITTED ciphertext size (`plaintext + BYOK_CLB1_OVERHEAD`,
+  =32: 4 magic + 12 nonce + 16 GCM tag, single-sourced with the wire format) on both reserve and release, so
+  a write→delete cycle nets to zero (no under-reserve / over-release bypass); a config-read error fails
+  closed (503), never under-reserves. Still gated-inert (no active tenants, no prod KmsProvider). Deferred to
+  3c/4: §4 key-hardening, Mode B, Partial/backfill.
 - **BYOK CAS data-plane encryption (Wave 3a — GATED-INERT).** Wires convergent (Mode A) encryption into
   the native CAS write/read path: a per-tenant `ByokConfigCache` (TTL 60s — no D1 hop on the non-BYOK hot
   path after warmup) + a `TcsResolver` (wrapped-TCS → KMS unwrap → ≤300s cache). Write encrypts after the

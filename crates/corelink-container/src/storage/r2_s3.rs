@@ -53,8 +53,8 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::byok_cas::{
-    cas_crypto_context, decrypt_cas_blob, encrypt_cas_blob, engagement_for, ByokConfigCache,
-    ByokEngagement, TcsResolver,
+    ac_crypto_context, cas_crypto_context, decrypt_cas_blob, encrypt_cas_blob, engagement_for,
+    ByokConfigCache, ByokEngagement, TcsResolver,
 };
 use super::StorageEnv;
 
@@ -1498,6 +1498,16 @@ pub struct R2AcHandler {
     tdk: Option<TenantDerivationKey>,
     audit: Arc<dyn corelink_handler_ac::AuditSink>,
     sli: Arc<dyn corelink_handler_ac::SliObserver>,
+    /// BYOK Wave 3b (GATED-INERT): per-tenant BYOK config cache. `None` on the
+    /// non-BYOK build / tests → the plaintext path runs unchanged. When `Some`
+    /// AND a tenant is `active`, the AC update/lookup path encrypts the
+    /// `result_payload` at rest under the `"ac"` surface (closes audit H1).
+    /// Mirrors [`R2CasHandler::byok_config_cache`].
+    byok_config_cache: Option<Arc<ByokConfigCache>>,
+    /// BYOK Wave 3b: the Tcs resolver (CMK-unwrap → convergence secret). `None`
+    /// → plaintext path. Both this and `byok_config_cache` must be `Some` for
+    /// AC encryption to engage. Mirrors [`R2CasHandler::tcs_resolver`].
+    tcs_resolver: Option<Arc<TcsResolver>>,
 }
 
 impl core::fmt::Debug for R2AcHandler {
@@ -1526,7 +1536,119 @@ impl R2AcHandler {
             tdk,
             audit,
             sli,
+            byok_config_cache: None,
+            tcs_resolver: None,
         }
+    }
+
+    /// Attach the BYOK Wave-3b collaborators (config cache + Tcs resolver),
+    /// enabling convergent encryption-at-rest of the AC `result_payload` for
+    /// `active` tenants. Mirrors [`R2CasHandler::with_byok`].
+    ///
+    /// GATED-INERT: encryption engages ONLY for a tenant whose
+    /// `tenant_byok_config.state == 'active'`; every other tenant (and the
+    /// `_public` namespace) keeps the exact plaintext path. The production
+    /// builder ([`build_r2_ac_handler_from_env`]) does NOT call this yet —
+    /// onboarding (the sole writer of the `active` state, and the prod
+    /// `KmsProvider` wiring) is a later wave.
+    #[must_use]
+    pub fn with_byok(
+        mut self,
+        byok_config_cache: Arc<ByokConfigCache>,
+        tcs_resolver: Arc<TcsResolver>,
+    ) -> Self {
+        self.byok_config_cache = Some(byok_config_cache);
+        self.tcs_resolver = Some(tcs_resolver);
+        self
+    }
+
+    /// Resolve the convergent crypto context for an AC `(tenant, action_digest)`
+    /// IF the tenant has BYOK encryption ACTIVE (Wave 3b). Mirrors
+    /// [`R2CasHandler::resolve_byok_ctx`] exactly, but binds the `"ac"` surface
+    /// ([`ac_crypto_context`]) so an AC blob is domain-separated from CAS.
+    ///
+    /// - `Ok(None)` — plaintext path (BYOK not wired, not configured, inactive,
+    ///   or `_public`). Today's behaviour, unchanged.
+    /// - `Ok(Some((tcs, ctx)))` — encrypt/decrypt with this Tcs + context.
+    /// - `Err(..)` — active-but-unresolvable (KMS/Tcs down, Mode B, partial):
+    ///   the caller FAILS CLOSED (5xx) and NEVER stores/serves plaintext.
+    async fn resolve_byok_ctx(
+        &self,
+        tenant: &str,
+        action_digest: &str,
+    ) -> Result<Option<(Tcs, CryptoContext)>, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::AcHandlerError;
+        let (Some(cache), Some(resolver)) =
+            (self.byok_config_cache.as_ref(), self.tcs_resolver.as_ref())
+        else {
+            return Ok(None);
+        };
+        // `_public` is deterministic public content — never encrypted (dedup).
+        if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
+            return Ok(None);
+        }
+        let Some(cfg) = cache
+            .get(tenant)
+            .await
+            .map_err(|e| AcHandlerError::Internal(format!("byok config read: {e}")))?
+        else {
+            return Ok(None);
+        };
+        match engagement_for(&cfg) {
+            ByokEngagement::Plaintext => Ok(None),
+            ByokEngagement::FailClosed(why) => Err(AcHandlerError::Internal(format!(
+                "byok active but {why}; refusing to fall back to plaintext (fail-closed)"
+            ))),
+            ByokEngagement::Encrypt => {
+                let key_id = cfg.cmk_key_id.clone().unwrap_or_default();
+                let ctx = ac_crypto_context(tenant, action_digest, &key_id);
+                let tcs = resolver
+                    .resolve(&cfg)
+                    .await
+                    .map_err(|e| AcHandlerError::Internal(format!("byok tcs resolve: {e}")))?;
+                Ok(Some((tcs, ctx)))
+            }
+        }
+    }
+
+    /// BYOK AC write hook: return the bytes to STORE for this update.
+    ///
+    /// `Ok(None)` ⇒ store `req.result_payload` (plaintext path unchanged).
+    /// `Ok(Some(ct))` ⇒ store the convergent ciphertext blob. `Err` ⇒ fail
+    /// closed (the caller returns before any PUT — plaintext is NEVER stored for
+    /// an active tenant). Convergent ⇒ identical payload yields byte-identical
+    /// ciphertext, so the divergent-body GET-and-compare (done on the ciphertext
+    /// for an active tenant) stays idempotent.
+    async fn byok_encrypt_for_update(
+        &self,
+        req: &corelink_handler_ac::AcUpdateRequest,
+    ) -> Result<Option<Vec<u8>>, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::AcHandlerError;
+        let Some((tcs, ctx)) = self.resolve_byok_ctx(&req.tenant, &req.action_digest).await? else {
+            return Ok(None);
+        };
+        let stored = encrypt_cas_blob(&req.result_payload, &tcs, &ctx)
+            .map_err(|e| AcHandlerError::Internal(format!("byok ac encrypt: {e}")))?;
+        Ok(Some(stored))
+    }
+
+    /// BYOK AC read hook: turn the STORED bytes into the plaintext to serve.
+    ///
+    /// `Ok(stored)` ⇒ plaintext path unchanged. For an active tenant the stored
+    /// blob is decrypted; any failure is `Err` (fail closed — the raw stored
+    /// bytes are NEVER served).
+    async fn byok_decrypt_for_lookup(
+        &self,
+        tenant: &str,
+        action_digest: &str,
+        stored: Vec<u8>,
+    ) -> Result<Vec<u8>, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::AcHandlerError;
+        let Some((tcs, ctx)) = self.resolve_byok_ctx(tenant, action_digest).await? else {
+            return Ok(stored);
+        };
+        decrypt_cas_blob(&stored, &tcs, &ctx)
+            .map_err(|e| AcHandlerError::Internal(format!("byok ac decrypt: {e}")))
     }
 
     /// Derive the R2 key for a (tenant, action_digest) pair. Mirrors
@@ -1625,6 +1747,24 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
 
         match result {
             Ok(Some(bytes)) => {
+                // BYOK Wave 3b (GATED-INERT): for an `active` tenant decrypt the
+                // stored convergent blob to plaintext before serving (surface
+                // `"ac"`). FAIL-CLOSED: any decrypt/unwrap failure returns Err —
+                // the raw stored bytes are NEVER served. `None`-path tenants get
+                // their bytes back unchanged (byte-identical to today).
+                let bytes = match tokio::task::block_in_place(|| {
+                    handle.block_on(self.byok_decrypt_for_lookup(
+                        &req.tenant,
+                        &req.action_digest,
+                        bytes,
+                    ))
+                }) {
+                    Ok(pt) => pt,
+                    Err(e) => {
+                        self.emit_lookup_sli(true);
+                        return Err(e);
+                    }
+                };
                 self.audit
                     .emit(AcAuditEvent::new(
                         AcAuditEventKind::LookupHit,
@@ -1722,6 +1862,28 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         // comment in `<R2AcHandler as AcLookupHandler>::lookup` above.
         let handle = tokio::runtime::Handle::current();
 
+        // BYOK Wave 3b (GATED-INERT): compute the bytes we WOULD store — the
+        // convergent ciphertext for an `active` tenant (surface `"ac"`), else
+        // the plaintext payload. Encrypting BEFORE the divergent-body compare is
+        // LOAD-BEARING: for an active tenant the stored prior is ciphertext, and
+        // convergent encryption is deterministic, so comparing the prior against
+        // the would-be-stored CIPHERTEXT keeps the immutability + idempotency
+        // contract exact (an identical payload re-PUT is byte-identical → no-op;
+        // a divergent payload yields divergent ciphertext → DivergentBody).
+        // FAIL-CLOSED: an active tenant whose encryptor/KMS/Tcs is unavailable
+        // returns Err here — plaintext is NEVER PUT for an active tenant. The
+        // non-BYOK path computes nothing (`None`) and stores `req.result_payload`
+        // verbatim, byte-identical to today.
+        let encrypted: Option<Vec<u8>> = match tokio::task::block_in_place(|| {
+            handle.block_on(self.byok_encrypt_for_update(&req))
+        }) {
+            Ok(maybe_ct) => maybe_ct,
+            Err(e) => {
+                self.emit_update_sli(true);
+                return Err(e);
+            }
+        };
+
         // AC IMMUTABILITY INVARIANT (F5): the Action Cache maps an
         // `action_digest` (hash of the build *action*, not its result)
         // to a result payload. AC bytes are therefore NOT
@@ -1731,16 +1893,18 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         // same digest (supply-chain compromise).
         //
         // GET-and-compare BEFORE any PUT (mirrors
-        // `InMemoryAcHandler::update`):
-        //   - existing != payload → `DivergentBody` (409); NO PUT.
-        //   - existing == payload → idempotent no-op (`durable=false`).
-        //   - absent              → PUT (`durable=true`).
-        //   - ambiguous GET error → fail CLOSED (`Internal`); never
+        // `InMemoryAcHandler::update`), against the WOULD-BE-STORED bytes
+        // (`stored_view`: ciphertext for an active tenant, else the plaintext):
+        //   - existing != stored_view → `DivergentBody` (409); NO PUT.
+        //   - existing == stored_view → idempotent no-op (`durable=false`).
+        //   - absent                  → PUT (`durable=true`).
+        //   - ambiguous GET error     → fail CLOSED (`Internal`); never
         //     blind-overwrite on an unknown prior state.
+        let stored_view: &[u8] = encrypted.as_deref().unwrap_or(req.result_payload.as_slice());
         let existing =
             tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
         match existing {
-            Ok(Some(prior)) if prior != req.result_payload => {
+            Ok(Some(prior)) if prior.as_slice() != stored_view => {
                 warn!(
                     key = %key,
                     "R2AcHandler::update divergent body — refusing to overwrite a \
@@ -1768,8 +1932,11 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
             }
         }
 
+        // Store the ciphertext (active) or the plaintext payload (non-BYOK) —
+        // the same bytes the compare above proved are non-divergent.
+        let payload = encrypted.unwrap_or(req.result_payload);
         let result = tokio::task::block_in_place(|| {
-            handle.block_on(self.client.put(&key, req.result_payload))
+            handle.block_on(self.client.put(&key, payload))
         });
 
         match result {
@@ -2906,6 +3073,183 @@ mod tests {
         assert!(
             h.byok_encrypt_for_write(&req).await.unwrap().is_none(),
             "_public must never be encrypted"
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // BYOK Wave 3b — AC handler encrypt/decrypt hooks (surface="ac"),
+    // Option-gating, fail-closed, + surface separation from CAS (H1).
+    // Exercise `R2AcHandler::byok_encrypt_for_update` /
+    // `byok_decrypt_for_lookup` / `resolve_byok_ctx`; the crypto itself
+    // is covered in `storage::byok_cas::tests`.
+    // ---------------------------------------------------------------
+
+    /// Wire an `R2AcHandler` with BYOK collaborators (mirrors `handler_with_byok`).
+    async fn ac_handler_with_byok(cfg: Option<TenantByokConfig>, kms_fail: bool) -> R2AcHandler {
+        let base = make_test_ac_handler("iad").await;
+        let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
+        let resolver = Arc::new(
+            TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: kms_fail }), 300).unwrap(),
+        );
+        base.with_byok(cache, resolver)
+    }
+
+    fn ac_update_req(tenant: &str, payload: Vec<u8>) -> corelink_handler_ac::AcUpdateRequest {
+        corelink_handler_ac::AcUpdateRequest::new(tenant, "a".repeat(64), payload, "p", tenant, 1)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac_byok_inactive_handler_is_plaintext_passthrough() {
+        // No `with_byok` ⇒ AC plaintext path, byte-identical to today.
+        let h = make_test_ac_handler("iad").await;
+        let req = ac_update_req(BYOK_TENANT, b"ac-result".to_vec());
+        assert!(
+            h.byok_encrypt_for_update(&req).await.unwrap().is_none(),
+            "no BYOK collaborators ⇒ store the AC payload plaintext (None)"
+        );
+        let out = h
+            .byok_decrypt_for_lookup(BYOK_TENANT, &req.action_digest, b"ac-result".to_vec())
+            .await
+            .unwrap();
+        assert_eq!(out, b"ac-result", "lookup must return the stored bytes unchanged");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac_byok_active_encrypts_then_round_trips() {
+        let h = ac_handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            false,
+        )
+        .await;
+        let payload = b"proven action result metadata".to_vec();
+        let req = ac_update_req(BYOK_TENANT, payload.clone());
+        let stored = h
+            .byok_encrypt_for_update(&req)
+            .await
+            .unwrap()
+            .expect("active tenant must encrypt the AC payload");
+        assert_ne!(stored, payload, "AC stored bytes must be ciphertext");
+        // Convergent ⇒ identical payload yields byte-identical stored bytes — this
+        // is what keeps the divergent-body GET-and-compare idempotent for an
+        // active tenant (ciphertext-vs-ciphertext).
+        let stored2 = h.byok_encrypt_for_update(&req).await.unwrap().unwrap();
+        assert_eq!(stored, stored2, "convergent ⇒ idempotent AC stored bytes");
+        let out = h
+            .byok_decrypt_for_lookup(BYOK_TENANT, &req.action_digest, stored)
+            .await
+            .unwrap();
+        assert_eq!(out, payload, "decrypt must recover the AC plaintext");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac_byok_active_write_fails_closed_when_kms_down() {
+        let h = ac_handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            true,
+        )
+        .await;
+        let req = ac_update_req(BYOK_TENANT, b"secret".to_vec());
+        assert!(
+            matches!(
+                h.byok_encrypt_for_update(&req).await,
+                Err(corelink_handler_ac::AcHandlerError::Internal(_))
+            ),
+            "active tenant + failing KMS must fail closed on AC write (never plaintext)"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac_byok_active_read_fails_closed_when_kms_down() {
+        let h = ac_handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            true,
+        )
+        .await;
+        assert!(
+            matches!(
+                h.byok_decrypt_for_lookup(BYOK_TENANT, &"a".repeat(64), b"CLB1raw".to_vec())
+                    .await,
+                Err(corelink_handler_ac::AcHandlerError::Internal(_))
+            ),
+            "active tenant + failing KMS must fail closed on AC read (raw bytes never served)"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac_byok_mode_b_and_partial_fail_closed() {
+        for (mode, state) in [
+            (ByokCryptoMode::Random, ByokState::Active),
+            (ByokCryptoMode::Convergent, ByokState::Partial),
+        ] {
+            let h = ac_handler_with_byok(Some(byok_cfg(mode, state)), false).await;
+            let req = ac_update_req(BYOK_TENANT, b"x".to_vec());
+            assert!(
+                matches!(
+                    h.byok_encrypt_for_update(&req).await,
+                    Err(corelink_handler_ac::AcHandlerError::Internal(_))
+                ),
+                "Mode B / partial AC write must fail closed, never plaintext ({mode:?},{state:?})"
+            );
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac_byok_public_namespace_never_encrypts() {
+        let h = ac_handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            false,
+        )
+        .await;
+        let req = ac_update_req(crate::adapter_cache::PUBLIC_NAMESPACE, b"shared".to_vec());
+        assert!(
+            h.byok_encrypt_for_update(&req).await.unwrap().is_none(),
+            "_public AC entries must never be encrypted (dedup)"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac_blob_does_not_decrypt_under_cas_and_vice_versa() {
+        // Frozen policy H1 at the HANDLER level: an AC-encrypted blob must NOT be
+        // decryptable by the CAS read hook, and a CAS blob must NOT be decryptable
+        // by the AC lookup hook — even for the SAME tenant + digest + tcs (same
+        // SecSrc/Kms). Domain separation by `surface` makes an AC↔CAS blob swap
+        // fail closed end-to-end.
+        let digest = "a".repeat(64);
+        let payload = b"cross-surface".to_vec();
+        let ac = ac_handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            false,
+        )
+        .await;
+        let cas = handler_with_byok(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            false,
+        )
+        .await;
+
+        let ac_req = corelink_handler_ac::AcUpdateRequest::new(
+            BYOK_TENANT,
+            digest.clone(),
+            payload.clone(),
+            "p",
+            BYOK_TENANT,
+            1,
+        );
+        let ac_blob = ac.byok_encrypt_for_update(&ac_req).await.unwrap().unwrap();
+        let cas_rreq = CasReadRequest::new(BYOK_TENANT, &digest, "p", BYOK_TENANT, 1);
+        assert!(
+            cas.byok_decrypt_for_read(&cas_rreq, ac_blob).await.is_err(),
+            "an AC blob must NOT decrypt under the CAS surface"
+        );
+
+        let cas_wreq =
+            CasWriteRequest::new(BYOK_TENANT, digest.clone(), payload, "p", BYOK_TENANT, 1);
+        let cas_blob = cas.byok_encrypt_for_write(&cas_wreq).await.unwrap().unwrap();
+        assert!(
+            ac.byok_decrypt_for_lookup(BYOK_TENANT, &digest, cas_blob)
+                .await
+                .is_err(),
+            "a CAS blob must NOT decrypt under the AC surface"
         );
     }
 }
