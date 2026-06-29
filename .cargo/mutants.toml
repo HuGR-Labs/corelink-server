@@ -13,6 +13,23 @@
 # always outside real mutation scope; only the per-diff PR gate caught it by
 # accident on every e2e-suite PR.) Excluding it makes the per-diff gate correct:
 # mutation testing stays focused on product crates whose tests run in CI.
+#
+# corelink-byok provider modules (byok_aws/gcp/azure/vault) are gated behind the
+# non-default cargo features `_internal-aws`/`-gcp`/`-azure`/`-vault` (see
+# `lib.rs` `#[cfg(feature = "_internal-aws")] mod byok_aws;`). Their unit tests
+# (e.g. `read_env_fallback`, `with_fips`) only COMPILE + RUN under those features
+# — verified green via `cargo test -p corelink-byok --features _internal-aws`.
+# But BOTH mutation lanes run DEFAULT features (the per-diff gate workspace-wide,
+# the nightly `--package corelink-byok` with no `--features`), so the provider
+# tests never run there and every changed provider line surfaces as a FALSE
+# survivor (the per-diff gate only sees these mutants at all via incidental
+# workspace feature-unification). The provider code is unit-tested in the
+# crate-scoped + `_matrix-test` lanes; the DEFAULT-compiled crypto core
+# (envelope/dek_cache/convergent/context/types) stays fully mutation-covered.
 exclude_globs = [
     "tests/e2e-user-journeys/**",
+    "crates/corelink-byok/src/byok_aws/**",
+    "crates/corelink-byok/src/byok_gcp.rs",
+    "crates/corelink-byok/src/byok_azure.rs",
+    "crates/corelink-byok/src/byok_vault.rs",
 ]
