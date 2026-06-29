@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/byok_orchestrator.rs"
   - "crates/corelink-byok/src/lib.rs"
   - "crates/corelink-byok/src/byok_aws/real.rs"
-checkpoint_sha: "04a7eccfdbe5733a9059ab12518f6ee571db0248"
+checkpoint_sha: "6e76fff7b2ed2031aa58f32e1adc0846f1309a3a"
 provenance: "AUTHORED"
 tags: ["storage", "byok", "encryption", "kms", "envelope"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -49,10 +49,13 @@ deferred.
 3. The container CAN construct the production provider behind an `Arc<dyn KmsProvider>` via a feature-gated
    async factory so future providers drop in behind the same surface
    (`crates/corelink-container/src/byok.rs:1-9`) — but no encrypt/decrypt call site consumes it today.
-4. The container factory delegates to the real enforcer `AwsKmsRealProvider::new`, which unconditionally
-   enables `use_fips(true)` (`crates/corelink-byok/src/byok_aws/real.rs:176-193`) and resolves credentials
-   via the standard AWS SDK chain (env, shared config, IRSA, IMDS, SSO); the `make_aws_kms_provider`
-   wrapper just boxes the returned handle (`crates/corelink-container/src/byok.rs:1-29`).
+4. The container factory delegates to the real enforcer `AwsKmsRealProvider::new` (`crates/corelink-byok/src/byok_aws/real.rs:176-208`), which
+   unconditionally enables `use_fips(true)` via `with_fips` (`crates/corelink-byok/src/byok_aws/real.rs:210-256`).
+   As of the BYOK Wave-1 hardening (audit C4) it NO LONGER uses the AWS SDK credential chain
+   (`from_env().load()`, which hangs 60-90s on CF Containers with no IMDS): it resolves EXPLICIT static
+   credentials via `read_env_fallback` (`CORELINK_BYOK_KMS_ACCESS_KEY_ID`→`AWS_ACCESS_KEY_ID`, etc.) and an
+   EXPLICIT FIPS endpoint URL — mirroring the R2 S3 client pattern. The `make_aws_kms_provider` wrapper just
+   boxes the returned handle (`crates/corelink-container/src/byok.rs:1-29`).
 5. The orchestrator's `make_provider` is the singleton dispatch: it constructs exactly ONE
    `Arc<dyn KmsProvider>` for the binary and emits one boot-time `audit = true` event recording the
    active provider label, but the returned handle is consumed only by callers of this factory — not by
@@ -88,7 +91,7 @@ deferred.
 # Citations
 1. `crates/corelink-container/src/byok.rs:1-9` — feature-gated factory returning an `Arc<dyn KmsProvider>` (handle not consumed by storage).
 2. `crates/corelink-container/src/byok.rs:10` — `#![forbid(unsafe_code)]` on the factory.
-3. `crates/corelink-byok/src/byok_aws/real.rs:176-193` — `AwsKmsRealProvider::new` / `with_fips`: the real enforcer that unconditionally sets `use_fips(true)` (the container `make_aws_kms_provider` factory only boxes the handle).
+3. `crates/corelink-byok/src/byok_aws/real.rs:176-256` — `AwsKmsRealProvider::new`/`with_fips`: the real enforcer that unconditionally sets `use_fips(true)` and (Wave-1/C4) resolves EXPLICIT static creds + an explicit FIPS endpoint instead of the CF-cold-start-hanging AWS SDK chain (the container `make_aws_kms_provider` factory only boxes the handle).
 4. `crates/corelink-byok/src/lib.rs:1-21` — umbrella re-export of the core trait/types + microkernel mutual-exclusion intro.
 5. `crates/corelink-byok/src/lib.rs:105-139` — compile-time at-most-one-provider `compile_error!` guards.
 6. `crates/corelink-byok/src/lib.rs:34-43` — cargo feature reference (`aws`/`gcp`/`azure`/`vault`), default no provider.

@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use lru::LruCache;
+use sha2::{Digest, Sha256};
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
@@ -54,15 +55,28 @@ pub struct DekCache {
     ttl: Duration,
 }
 
-/// Cache key derived from the wrapped-DEK ciphertext (first 32 bytes SHA-256 truncated is
-/// overkill; we use the canonical key ARN + ciphertext length as a cheap unique-enough key
-/// for the in-process cache).  The actual DEK is verified after unwrap by the KMS provider.
+/// Cache key bound to the LOGICAL blob identity (audit fix **[H-1]**).
+///
+/// The pre-fix key was `(key_arn, ciphertext_len, ciphertext_prefix)` — it
+/// omitted the tenant / blob binding, so two distinct blobs whose wrapped-DEK
+/// ciphertexts collided on `(len, prefix)` could return EACH OTHER's cached
+/// DEK with no AAD check. The key now includes
+/// `(key_arn, tenant_id, blob_hash, enc_context_hash)` extracted from the
+/// wrapped DEK's `encryption_context`, so a cached entry is bound to the exact
+/// `(tenant, blob, context)` tuple. The ciphertext discriminators are retained
+/// as an extra collision guard for entries that carry no encryption context.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct CacheKey {
     key_arn: String,
-    /// Ciphertext length acts as a quick discriminator.
+    /// `encryption_context.tenant_id` (empty when no context).
+    tenant_id: String,
+    /// `encryption_context.blob_hash` (empty when no context).
+    blob_hash: String,
+    /// SHA-256 of the JCS-canonical `encryption_context` (all-zero when none).
+    enc_context_hash: [u8; 32],
+    /// Ciphertext length — extra discriminator.
     ciphertext_len: usize,
-    /// First 16 bytes of ciphertext — not secret; used for cache key identity.
+    /// First 16 bytes of ciphertext — extra discriminator (not secret).
     ciphertext_prefix: [u8; 16],
 }
 
@@ -76,8 +90,34 @@ impl CacheKey {
         if let (Some(dst), Some(src_slice)) = (prefix.get_mut(..copy_len), src.get(..copy_len)) {
             dst.copy_from_slice(src_slice);
         }
+
+        // Extract the (tenant, blob, context-hash) identity from the mandatory
+        // encryption_context. Absent context → empty/zero (test-only path).
+        let (tenant_id, blob_hash, enc_context_hash) = match &wrapped.encryption_context {
+            Some(ctx) => {
+                let tenant_id = ctx
+                    .get("tenant_id")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let blob_hash = ctx
+                    .get("blob_hash")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                // JCS so the hash is stable regardless of key ordering.
+                let jcs = serde_jcs::to_vec(ctx).unwrap_or_default();
+                let digest: [u8; 32] = Sha256::digest(&jcs).into();
+                (tenant_id, blob_hash, digest)
+            }
+            None => (String::new(), String::new(), [0u8; 32]),
+        };
+
         Self {
             key_arn: wrapped.key_id.key_arn_or_id.clone(),
+            tenant_id,
+            blob_hash,
+            enc_context_hash,
             ciphertext_len: src.len(),
             ciphertext_prefix: prefix,
         }
@@ -252,6 +292,44 @@ mod tests {
         let fetched = cache.get(&wrapped).await;
         assert!(fetched.is_some());
         assert_eq!(fetched.unwrap().bytes, [42u8; 32]);
+    }
+
+    #[tokio::test]
+    async fn test_cache_key_binds_encryption_context() {
+        // [H-1] Two wrapped DEKs with IDENTICAL ciphertext but DIFFERENT
+        // encryption_context must NOT alias in the cache — the pre-fix key
+        // (key_arn, len, prefix) would have collided and returned the wrong DEK.
+        use super::super::types::{KmsKeyId, KmsProviderKind};
+        let cache = DekCache::new(300).unwrap();
+        let key_id = KmsKeyId {
+            provider: KmsProviderKind::AwsKms,
+            key_arn_or_id: "arn:aws:kms:us-east-1:123:key/test-key".to_string(),
+            region: "us-east-1".to_string(),
+        };
+        let mut a = WrappedDek {
+            provider: KmsProviderKind::AwsKms,
+            key_id: key_id.clone(),
+            ciphertext: vec![7u8; 40],
+            encryption_context: Some(serde_json::json!({
+                "tenant_id": "tenant_a", "blob_hash": "sha256:abc"
+            })),
+        };
+        cache.put(&a, Dek { bytes: [1u8; 32] }).await.unwrap();
+
+        // Same ciphertext, different tenant context → must be a MISS.
+        a.encryption_context = Some(serde_json::json!({
+            "tenant_id": "tenant_b", "blob_hash": "sha256:abc"
+        }));
+        assert!(
+            cache.get(&a).await.is_none(),
+            "different encryption_context must not alias to another blob's DEK"
+        );
+
+        // Original context still hits with the original DEK.
+        a.encryption_context = Some(serde_json::json!({
+            "tenant_id": "tenant_a", "blob_hash": "sha256:abc"
+        }));
+        assert_eq!(cache.get(&a).await.unwrap().bytes, [1u8; 32]);
     }
 
     #[tokio::test]

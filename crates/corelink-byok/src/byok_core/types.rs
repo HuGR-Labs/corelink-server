@@ -89,6 +89,55 @@ impl Dek {
     }
 }
 
+/// Tenant Convergence Secret (TCS) — 32-byte per-tenant secret (plan §1).
+///
+/// The TCS is the input keying material for convergent (Mode A) DEK + nonce
+/// derivation: identical plaintext within an org yields an identical DEK →
+/// identical ciphertext → intra-org dedup is preserved, while a *different*
+/// org's TCS yields different ciphertext for the same bytes (no cross-org
+/// correlation). The TCS is itself wrapped by the customer CMK (via
+/// [`crate::KmsProvider::wrap_dek`]); the plaintext lives only inside the
+/// `≤300s` cache window.
+///
+/// # Security invariants
+///
+/// - 32 bytes, CSPRNG-generated via [`Tcs::generate`].
+/// - `ZeroizeOnDrop`: memory cleared when dropped (same discipline as [`Dek`]).
+/// - `Debug` redacts the bytes; no `Display` / `Serialize` / `Clone`, so the
+///   secret never reaches logs, traces, or serialized payloads.
+#[derive(ZeroizeOnDrop, Zeroize)]
+pub struct Tcs {
+    /// Raw 32-byte secret. Access only for HKDF derivation.
+    pub bytes: [u8; 32],
+}
+
+impl std::fmt::Debug for Tcs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tcs").field("bytes", &"[REDACTED]").finish()
+    }
+}
+
+impl Tcs {
+    /// Generate a fresh 32-byte TCS via OS CSPRNG (NIST SP 800-90A DRBG).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BYOKError::EnvelopeError`] if the OS CSPRNG is unavailable.
+    pub fn generate() -> Result<Self, BYOKError> {
+        let mut bytes = [0u8; 32];
+        getrandom::getrandom(&mut bytes)
+            .map_err(|e| BYOKError::EnvelopeError(format!("getrandom tcs: {e}")))?;
+        Ok(Self { bytes })
+    }
+
+    /// Wrap raw bytes as a [`Tcs`] (e.g. after unwrapping the CMK-wrapped
+    /// form). The caller is responsible for the provenance of `bytes`.
+    #[must_use]
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self { bytes }
+    }
+}
+
 /// CMK access status returned by [`crate::KmsProvider::check_access`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[non_exhaustive]
@@ -215,6 +264,19 @@ pub enum BYOKError {
     #[error("encryption_context (AAD) missing — mandatory for BYOK envelope")]
     EncryptionContextMissing,
 
+    /// Convergent (Mode A) crypto was invoked with a chunked/multipart
+    /// context. This crate is single-shot ONLY (audit [C-1]): reusing a
+    /// whole-object-digest `(DEK, nonce)` across parts is a catastrophic
+    /// AES-GCM break. Multipart BYOK is deferred and must be gated elsewhere.
+    #[error(
+        "convergent crypto is single-shot only; chunked/multipart unsupported \
+         (chunk_index={chunk_index}) — audit C-1"
+    )]
+    ChunkedConvergentUnsupported {
+        /// The offending non-zero chunk index.
+        chunk_index: u64,
+    },
+
     /// FIPS compliance level is below required threshold.
     #[error("FIPS compliance mismatch: required={required:?} actual={actual:?}")]
     FipsMismatch {
@@ -223,4 +285,41 @@ pub enum BYOKError {
         /// Reported level.
         actual: FipsLevel,
     },
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tcs_debug_redacts_secret_and_emits_nonempty() {
+        // The `Tcs` Debug impl MUST redact key material. A mutant that writes
+        // nothing (`Ok(Default::default())`) produces an empty string with no
+        // "REDACTED" marker → this assertion fails and kills it.
+        let tcs = Tcs::from_bytes([0xABu8; 32]);
+        let rendered = format!("{tcs:?}");
+        assert!(
+            rendered.contains("REDACTED"),
+            "Tcs Debug must contain REDACTED, got {rendered:?}"
+        );
+        // And it must NOT leak the raw byte value (0xAB == 171 decimal).
+        assert!(
+            !rendered.contains("171"),
+            "Tcs Debug must not leak secret bytes, got {rendered:?}"
+        );
+    }
+
+    #[test]
+    fn dek_debug_redacts_secret() {
+        let dek = Dek { bytes: [0xCDu8; 32] };
+        let rendered = format!("{dek:?}");
+        assert!(rendered.contains("REDACTED"), "got {rendered:?}");
+    }
+
+    #[test]
+    fn tcs_from_bytes_roundtrips_value() {
+        let tcs = Tcs::from_bytes([7u8; 32]);
+        assert_eq!(tcs.bytes, [7u8; 32]);
+    }
 }

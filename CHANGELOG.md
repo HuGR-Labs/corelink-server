@@ -22,6 +22,18 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **BYOK crypto foundation (Wave 1, `corelink-byok` only — no data-plane wiring yet).** The dedup-preserving
+  convergence layer for customer-key encryption-at-rest, per the audited plan
+  (`docs/design/2026-06-28-byok-encryption-at-rest-plan.md`): `CryptoContext` (JCS/RFC-8785 canonical,
+  length-framed domain separation), `Tcs` (tenant convergence secret, zeroized), `derive_dek_convergent` +
+  `derive_nonce_convergent` (HKDF-SHA256, DEK and nonce from distinct labels), `encrypt/decrypt_convergent`
+  (single-shot only — chunked/multipart rejected via `ChunkedConvergentUnsupported`, audit C-1). Hardening
+  from the adversarial audit: AAD now bound into the BODY AEAD (was nonce-only); warm-DEK cache key includes
+  `(key_arn, tenant_id, blob_hash, enc_context_hash)` and the context match runs on hit AND miss; the AWS KMS
+  client uses explicit static creds + FIPS endpoint (no `from_env().load()` CF cold-start hang); raw plaintext
+  digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
+
 ### Security
 - **Audit chain is now tamper-evident against a D1-writer (enterprise-DD #4 / CF-6).** The S-09 audit
   chain hashed with UNKEYED BLAKE3 over mutable D1 rows, so an insider with D1 write could rewrite a

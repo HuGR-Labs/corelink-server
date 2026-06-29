@@ -250,7 +250,18 @@ mod prop {
     }
 
     fn arb_ctx_pair() -> impl Strategy<Value = (serde_json::Value, serde_json::Value)> {
-        proptest::collection::vec(arb_kv(), 1..=6).prop_map(|mut kvs| {
+        proptest::collection::vec(arb_kv(), 1..=6).prop_map(|kvs| {
+            // Dedup by key (keep first occurrence) so both maps share an
+            // IDENTICAL key/value set and differ ONLY in insertion order. Without
+            // this, a duplicate key makes the surviving value order-dependent
+            // (m1 keeps the last in original order, m2 the last in reversed
+            // order) → the "same logical AAD → same bytes" invariant under test
+            // is ill-defined and the assertion flakes on random seeds.
+            let mut seen = std::collections::HashSet::new();
+            let mut kvs: Vec<(String, String)> = kvs
+                .into_iter()
+                .filter(|(k, _)| seen.insert(k.clone()))
+                .collect();
             // Build two values: one in original order, one reversed.
             let mut m1 = serde_json::Map::new();
             for (k, v) in &kvs {
