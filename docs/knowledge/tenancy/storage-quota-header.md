@@ -5,10 +5,10 @@ description: "The Worker-trusted storage-cap header and the atomic byte-accounti
 source_files:
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-rate-headers/src/headers.rs"
-checkpoint_sha: "0a794270a785e2e121c856a30ee3577e30dc2ebc"
+checkpoint_sha: "a5575900faa8c3b1684b2f822ef384f291c13c7a"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "storage", "byte-accounting", "rfc-9331", "fail-closed"]
-timestamp: "2026-06-26T00:00:00Z"
+timestamp: "2026-06-29T00:00:00Z"
 ---
 
 # Storage-quota / byte-accounting header
@@ -34,25 +34,28 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
 
 - `STORAGE_QUOTA_HEADER` (`x-corelink-storage-quota-bytes`) is set SOLELY by the Worker and stripped from
   any client-supplied value, exactly like `x-corelink-tenant-id`
-  (`crates/corelink-container/src/byte_accounting.rs:87-96`).
+  (`crates/corelink-container/src/byte_accounting.rs:90-99`).
 - `storage_quota_from_headers` parses it fail-CLOSED: absent/empty/non-ASCII/non-`i64`/negative → `None`
   (indeterminate), `"0"` means genuine-unlimited
-  (`crates/corelink-container/src/byte_accounting.rs:98-112`).
+  (`crates/corelink-container/src/byte_accounting.rs:106-115`).
 - After a successful write the handler calls an atomic DB-side check-and-accrue
   (`bytes_used = bytes_used + n` gated by the cap in ONE statement), so concurrent over-cap writes cannot
   both read the same baseline and pass — the executed INSERT…ON CONFLICT…RETURNING statement is at
-  `crates/corelink-container/src/byte_accounting.rs:352-374`, whose serialized cap predicate
+  `crates/corelink-container/src/byte_accounting.rs:352-377`, whose serialized cap predicate
   (`WHERE ?5 = 0 OR tenant_storage_state.bytes_used + ?3 <= ?5`) is at
-  `crates/corelink-container/src/byte_accounting.rs:358-365`.
+  `crates/corelink-container/src/byte_accounting.rs:360-367`.
 - `AccrueOutcome::OverCap` means the caller must reject the write (bytes NOT counted) and `Indeterminate`
   means a missing row with no resolved cap — never seed an uncapped row from absence
-  (`crates/corelink-container/src/byte_accounting.rs:114-132`).
+  (`crates/corelink-container/src/byte_accounting.rs:117-135`).
 - The size reserved is the **committed** (stored) size, not the raw request length: for a BYOK-`active`
-  tenant the R2 object is the convergent ciphertext blob (plaintext + the fixed 32-byte BYOK envelope
-  overhead), so the decorator reserves THAT size and the delete path releases the same — `reserve ==
-  release`, so `bytes_used` cannot drift once encryption engages. A non-BYOK / inactive tenant reserves
-  the plaintext length, byte-identical to before; a config-read error fails CLOSED. The sizing decision is
-  `byok_committed_len` (`crates/corelink-container/src/byte_accounting.rs:598-622`).
+  tenant the R2 object is the ciphertext blob, and `byok_committed_len` is now mode-aware — Mode A
+  (convergent) reserves `plaintext + CLB1` (32 B: 4-byte magic + 12-byte nonce + 16-byte AEAD tag), Mode B
+  (random) reserves `plaintext + CLB2` (20 B: 4-byte magic + 16-byte tag, the Mode-B nonce living in the
+  `byok_envelope` D1 row, not inline) — so the decorator reserves THAT size and the delete path releases
+  the same (`reserve == release`, so `bytes_used` cannot drift once encryption engages). A non-BYOK /
+  inactive tenant reserves the plaintext length, byte-identical to before; a config-read error fails
+  CLOSED. The sizing decision is `byok_committed_len`
+  (`crates/corelink-container/src/byte_accounting.rs:601-630`).
 - The over-quota rejection carries the `over_quota` arm of the RFC 9331 `X-Rate-Limit-Type` taxonomy
   (storage/bandwidth 100% boundary) (`crates/corelink-rate-headers/src/headers.rs:30-37`).
 - `counts_against_sli` classifies `over_quota` as legitimate over-plan (NOT counted against the SLO),
@@ -61,11 +64,11 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
 # Invariants
 
 - The cap header is server-trusted only — set by the Worker and stripped from client input
-  (`crates/corelink-container/src/byte_accounting.rs:87-90`).
+  (`crates/corelink-container/src/byte_accounting.rs:90-93`).
 - A fresh tenant with an indeterminate cap is NEVER seeded uncapped; absence fails CLOSED rather than
-  defaulting to unlimited (`crates/corelink-container/src/byte_accounting.rs:122-130`).
+  defaulting to unlimited (`crates/corelink-container/src/byte_accounting.rs:125-134`).
 - The cap check is serialized with the increment in one SQL statement, so two concurrent over-cap writes
-  cannot both pass (`crates/corelink-container/src/byte_accounting.rs:358-365`).
+  cannot both pass (`crates/corelink-container/src/byte_accounting.rs:360-367`).
 - `over_quota` 429s are excluded from the SLO denominator as legitimate over-plan traffic
   (`crates/corelink-rate-headers/src/headers.rs:101-105`).
 
@@ -82,15 +85,15 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
 
 # Citations
 
-1. `crates/corelink-container/src/byte_accounting.rs:352-374` — the executed atomic check-and-accrue SQL (DB-side add via INSERT…ON CONFLICT…RETURNING).
-2. `crates/corelink-container/src/byte_accounting.rs:358-365` — the cap check serialized with the increment (the `WHERE` predicate in the one statement).
+1. `crates/corelink-container/src/byte_accounting.rs:352-377` — the executed atomic check-and-accrue SQL (DB-side add via INSERT…ON CONFLICT…RETURNING).
+2. `crates/corelink-container/src/byte_accounting.rs:360-367` — the cap check serialized with the increment (the `WHERE` predicate in the one statement).
 3. `crates/corelink-container/src/byte_accounting.rs:39-41` — uncapped `bytes_quota = 0` still moves the counter.
 4. `crates/corelink-container/src/byte_accounting.rs:50-55` — `release` saturating decrement on delete.
 5. `crates/corelink-container/src/byte_accounting.rs:57-64` — `None` accountant when the storage env is unset.
-6. `crates/corelink-container/src/byte_accounting.rs:87-90` — `STORAGE_QUOTA_HEADER` is server-trusted, stripped from client input.
-7. `crates/corelink-container/src/byte_accounting.rs:87-96` — the header name + value semantics.
-8. `crates/corelink-container/src/byte_accounting.rs:98-112` — fail-CLOSED header parse (`None` indeterminate, `"0"` unlimited).
-9. `crates/corelink-container/src/byte_accounting.rs:114-132` — `AccrueOutcome` (`OverCap` / `Indeterminate` fail-closed).
-10. `crates/corelink-container/src/byte_accounting.rs:122-130` — a fresh row is never seeded uncapped from absence.
+6. `crates/corelink-container/src/byte_accounting.rs:90-93` — `STORAGE_QUOTA_HEADER` is server-trusted, stripped from client input.
+7. `crates/corelink-container/src/byte_accounting.rs:90-99` — the header name + value semantics.
+8. `crates/corelink-container/src/byte_accounting.rs:106-115` — fail-CLOSED header parse (`None` indeterminate, `"0"` unlimited).
+9. `crates/corelink-container/src/byte_accounting.rs:117-135` — `AccrueOutcome` (`OverCap` / `Indeterminate` fail-closed).
+10. `crates/corelink-container/src/byte_accounting.rs:125-134` — a fresh row is never seeded uncapped from absence.
 11. `crates/corelink-rate-headers/src/headers.rs:30-37` — the `over_quota` arm of the `X-Rate-Limit-Type` taxonomy.
 12. `crates/corelink-rate-headers/src/headers.rs:101-105` — `counts_against_sli` excludes `over_quota` from the SLO.

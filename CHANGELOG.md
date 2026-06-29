@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **BYOK key-hardening + Mode B (Wave 3c — GATED-INERT).** §4 confirmation-oracle hardening (audit H-4):
+  for BYOK-active tenants the physical R2 key's digest component is now `HMAC-SHA256(TCS, plaintext_digest)`
+  (computed on-the-fly, never persisted), so an R2-read attacker can't confirm a guessed plaintext — while
+  in-tenant dedup still hits (deterministic per TCS) and the AAD/integrity check keeps the REAL digest
+  (storage key ≠ AAD digest, by test). Mode B (max-isolation, `crypto_mode='random'`): random per-blob DEK
+  wrapped via KMS and persisted in `byok_envelope` (surface-qualified PK), stored as `CLB2‖ciphertext`,
+  decrypted via the wrapped DEK; no dedup (independent DEKs → non-convergent), but re-PUT of the same blob
+  is idempotent/no-orphan (reuses the persisted envelope, deterministic AES-GCM under the stored DEK/nonce —
+  audit C2). Accounting adds the CLB2 overhead (plaintext+20) for Mode B. Fail-closed throughout. Still
+  gated-inert (no active tenants, no prod KmsProvider). Deferred to Wave 4: Partial/backfill, onboarding/CMK,
+  prod provider wiring, crypto-shred (incl. reclaiming Mode-B envelope rows on delete).
 - **BYOK AC encryption + accounting reconciliation (Wave 3b — GATED-INERT).** Wires convergent encryption
   into the Action Cache path (`R2AcHandler`, surface `"ac"` — cryptographically domain-separated from CAS
   via the JCS-bound AAD, so an AC blob can't be swapped with a CAS blob), closing the audit-H1

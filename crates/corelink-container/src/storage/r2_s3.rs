@@ -43,7 +43,7 @@ use corelink_handler_cas::{
     CasWriteResponse, DigestAlgo, InMemoryAuditSink, InMemorySliObserver, SliObservation,
     SliObserver,
 };
-use corelink_byok::{CryptoContext, Tcs};
+use corelink_byok::{CryptoContext, CryptoMode, Tcs};
 use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 use sha2::{Digest as _, Sha256};
@@ -53,9 +53,11 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::byok_cas::{
-    ac_crypto_context, cas_crypto_context, decrypt_cas_blob, encrypt_cas_blob, engagement_for,
-    ByokConfigCache, ByokEngagement, TcsResolver,
+    ac_crypto_context, ac_crypto_context_for, cas_crypto_context, cas_crypto_context_for,
+    decrypt_cas_blob, encrypt_cas_blob, engagement_for, harden_digest, ByokConfigCache,
+    ByokEngagement, ModeBEncryptor, TcsResolver,
 };
+use crate::customer_d1::ByokCryptoMode;
 use super::StorageEnv;
 
 /// Low-level async R2/S3 client.
@@ -463,6 +465,28 @@ impl R2S3Client {
     }
 }
 
+/// The body-crypto plan for a CAS/AC object under a resolved BYOK config
+/// (surface-neutral — shared by [`R2CasHandler`] and [`R2AcHandler`]). The
+/// physical R2 key digest is resolved alongside it (see [`ByokResolved`]).
+enum ByokBodyPlan {
+    /// Store/serve `req.bytes` unchanged (non-BYOK / `_public` / inactive).
+    Plaintext,
+    /// Mode A — convergent: body keyed by the Tcs-derived DEK (dedup-preserving).
+    Convergent { tcs: Tcs, ctx: CryptoContext },
+    /// Mode B — random: body keyed by a random per-blob DEK persisted in
+    /// `byok_envelope` (no dedup). The crypto material is held by the handler's
+    /// [`ModeBEncryptor`]; only the (real-digest) context travels in the plan.
+    Random { ctx: CryptoContext },
+}
+
+/// The full BYOK resolution for a CAS op: the **physical** R2 key digest (the
+/// §4-hardened HMAC for an active tenant, audit H-4; the raw digest otherwise)
+/// plus the body crypto [`ByokBodyPlan`].
+struct ByokResolved {
+    physical_digest: String,
+    plan: ByokBodyPlan,
+}
+
 /// A sync `CasReadHandler` + `CasWriteHandler` backed by [`R2S3Client`].
 ///
 /// Wraps the async S3 operations with
@@ -485,6 +509,10 @@ pub struct R2CasHandler {
     /// → plaintext path. Both this and `byok_config_cache` must be `Some` for
     /// encryption to engage (frozen policy §3).
     tcs_resolver: Option<Arc<TcsResolver>>,
+    /// BYOK Wave 3c: the Mode-B (random-DEK) encryptor + `byok_envelope` store.
+    /// `None` → a tenant configured for `crypto_mode='random'` fails CLOSED on
+    /// the data plane (never plaintext); Mode A (convergent) is unaffected.
+    byok_mode_b: Option<Arc<ModeBEncryptor>>,
 }
 
 impl core::fmt::Debug for R2CasHandler {
@@ -517,6 +545,7 @@ impl R2CasHandler {
             sli,
             byok_config_cache: None,
             tcs_resolver: None,
+            byok_mode_b: None,
         }
     }
 
@@ -541,98 +570,182 @@ impl R2CasHandler {
         self
     }
 
-    /// Resolve the convergent crypto context for a (tenant, digest, algo) IF the
-    /// tenant has BYOK encryption ACTIVE (Wave 3a). Returns:
+    /// Attach the BYOK Wave-3c Mode-B (random-DEK) encryptor. GATED-INERT: only
+    /// engaged for an `active` tenant whose `crypto_mode='random'`. Without it,
+    /// such a tenant fails CLOSED on the data plane (never plaintext); Mode A is
+    /// unaffected. Chains after [`Self::with_byok`].
+    #[must_use]
+    pub fn with_byok_random(mut self, mode_b: Arc<ModeBEncryptor>) -> Self {
+        self.byok_mode_b = Some(mode_b);
+        self
+    }
+
+    /// Resolve the BYOK plan for a (tenant, digest, algo): the **physical R2 key
+    /// digest** (§4-hardened for an active tenant — audit H-4) plus the body
+    /// crypto plan. Single source of truth for the read/write/exists/delete
+    /// paths.
     ///
-    /// - `Ok(None)` — the plaintext path (BYOK not wired, not configured,
-    ///   inactive, or the `_public` namespace). Today's behaviour, unchanged.
-    /// - `Ok(Some((tcs, ctx)))` — encrypt/decrypt with this Tcs + context.
-    /// - `Err(..)` — active-but-unresolvable (KMS/Tcs down, Mode B, partial):
-    ///   the caller FAILS CLOSED (5xx) and NEVER stores/serves plaintext.
-    async fn resolve_byok_ctx(
+    /// - `Plaintext` — BYOK not wired / not configured / inactive / `_public`:
+    ///   the physical digest is the RAW digest (byte-identical to today).
+    /// - `Convergent` / `Random` — active: the physical digest is
+    ///   `harden_digest(tcs, digest)`; the body plan carries the real-digest
+    ///   [`CryptoContext`].
+    /// - `Err(..)` — active-but-unresolvable (KMS/Tcs down, Mode-B unwired,
+    ///   partial): FAIL CLOSED (5xx); NEVER plaintext.
+    async fn resolve_byok(
         &self,
         tenant: &str,
         digest: &str,
         algo: DigestAlgo,
-    ) -> Result<Option<(Tcs, CryptoContext)>, CasHandlerError> {
-        // Both collaborators must be present (frozen policy §3); otherwise the
+    ) -> Result<ByokResolved, CasHandlerError> {
+        let plaintext = || ByokResolved {
+            physical_digest: digest.to_owned(),
+            plan: ByokBodyPlan::Plaintext,
+        };
+        // Both Wave-3a collaborators must be present (frozen policy §3); else the
         // existing plaintext path runs unchanged — no D1 hop, no behaviour change.
         let (Some(cache), Some(resolver)) =
             (self.byok_config_cache.as_ref(), self.tcs_resolver.as_ref())
         else {
-            return Ok(None);
+            return Ok(plaintext());
         };
-        // `_public` is deterministic public content with no secret — it MUST
-        // stay plaintext so cross-tenant dedup is preserved (plan §3).
+        // `_public` is deterministic public content with no secret — it MUST stay
+        // plaintext (raw key) so cross-tenant dedup is preserved (plan §3).
         if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
-            return Ok(None);
+            return Ok(plaintext());
         }
-        // ONE D1 read on a cache miss; cached (incl. the not-configured answer)
-        // for ~60s. A config error fails closed — never a silent plaintext
-        // downgrade for a tenant whose custody is undetermined.
+        // ONE D1 read on a cache miss; cached (incl. the not-configured answer).
+        // A config error fails closed — never a silent plaintext downgrade.
         let Some(cfg) = cache
             .get(tenant)
             .await
             .map_err(|e| CasHandlerError::Internal(format!("byok config read: {e}")))?
         else {
-            return Ok(None);
+            return Ok(plaintext());
         };
         match engagement_for(&cfg) {
-            ByokEngagement::Plaintext => Ok(None),
+            ByokEngagement::Plaintext => Ok(plaintext()),
             ByokEngagement::FailClosed(why) => Err(CasHandlerError::Internal(format!(
                 "byok active but {why}; refusing to fall back to plaintext (fail-closed)"
             ))),
-            ByokEngagement::Encrypt => {
+            ByokEngagement::Encrypt(mode) => {
                 let key_id = cfg.cmk_key_id.clone().unwrap_or_default();
-                let ctx = cas_crypto_context(tenant, digest, algo, &key_id);
+                // The Tcs is resolved for BOTH modes — Mode A uses it for the
+                // convergent DEK, and BOTH modes use it to §4-harden the physical
+                // R2 key (audit H-4: the on-disk key reveals nothing without it).
                 let tcs = resolver
                     .resolve(&cfg)
                     .await
                     .map_err(|e| CasHandlerError::Internal(format!("byok tcs resolve: {e}")))?;
-                Ok(Some((tcs, ctx)))
+                let physical_digest = harden_digest(&tcs, digest);
+                let plan = match mode {
+                    ByokCryptoMode::Convergent => ByokBodyPlan::Convergent {
+                        tcs,
+                        ctx: cas_crypto_context(tenant, digest, algo, &key_id),
+                    },
+                    ByokCryptoMode::Random => {
+                        if self.byok_mode_b.is_none() {
+                            return Err(CasHandlerError::Internal(
+                                "byok active Mode B (random) but the random-mode encryptor is \
+                                 not wired; refusing to fall back to plaintext (fail-closed)"
+                                    .to_owned(),
+                            ));
+                        }
+                        ByokBodyPlan::Random {
+                            ctx: cas_crypto_context_for(
+                                tenant,
+                                digest,
+                                algo,
+                                &key_id,
+                                CryptoMode::Random,
+                            ),
+                        }
+                    }
+                };
+                Ok(ByokResolved {
+                    physical_digest,
+                    plan,
+                })
             }
         }
     }
 
-    /// BYOK write hook: return the bytes to STORE.
-    ///
-    /// `Ok(None)` ⇒ store `req.bytes` (plaintext path unchanged). `Ok(Some(ct))`
-    /// ⇒ store the convergent ciphertext blob. `Err` ⇒ fail closed (the caller
-    /// returns before any PUT — plaintext is NEVER stored for an active tenant).
+    /// Encrypt the body for a resolved plan. `Ok(None)` ⇒ store the plaintext
+    /// unchanged; `Ok(Some(ct))` ⇒ store the ciphertext blob; `Err` ⇒ fail closed
+    /// (the caller returns before any PUT — plaintext is NEVER stored).
+    async fn encrypt_body(
+        &self,
+        plan: &ByokBodyPlan,
+        plaintext: &[u8],
+    ) -> Result<Option<Vec<u8>>, CasHandlerError> {
+        match plan {
+            ByokBodyPlan::Plaintext => Ok(None),
+            ByokBodyPlan::Convergent { tcs, ctx } => {
+                let stored = encrypt_cas_blob(plaintext, tcs, ctx)
+                    .map_err(|e| CasHandlerError::Internal(format!("byok encrypt: {e}")))?;
+                Ok(Some(stored))
+            }
+            ByokBodyPlan::Random { ctx } => {
+                let mode_b = self.byok_mode_b.as_ref().ok_or_else(|| {
+                    CasHandlerError::Internal("byok mode-b encryptor missing".to_owned())
+                })?;
+                let stored = mode_b
+                    .encrypt(plaintext, ctx)
+                    .await
+                    .map_err(|e| CasHandlerError::Internal(format!("byok mode-b encrypt: {e}")))?;
+                Ok(Some(stored))
+            }
+        }
+    }
+
+    /// Decrypt the stored body for a resolved plan. `Plaintext` ⇒ return the
+    /// stored bytes unchanged; otherwise decrypt (fail closed on any failure —
+    /// raw stored bytes are NEVER served). The post-decrypt content-hash
+    /// re-verify (audit C1) runs on the returned PLAINTEXT, in the caller.
+    async fn decrypt_body(
+        &self,
+        plan: &ByokBodyPlan,
+        stored: Vec<u8>,
+    ) -> Result<Vec<u8>, CasHandlerError> {
+        match plan {
+            ByokBodyPlan::Plaintext => Ok(stored),
+            ByokBodyPlan::Convergent { tcs, ctx } => decrypt_cas_blob(&stored, tcs, ctx)
+                .map_err(|e| CasHandlerError::Internal(format!("byok decrypt: {e}"))),
+            ByokBodyPlan::Random { ctx } => {
+                let mode_b = self.byok_mode_b.as_ref().ok_or_else(|| {
+                    CasHandlerError::Internal("byok mode-b encryptor missing".to_owned())
+                })?;
+                mode_b
+                    .decrypt(&stored, ctx)
+                    .await
+                    .map_err(|e| CasHandlerError::Internal(format!("byok mode-b decrypt: {e}")))
+            }
+        }
+    }
+
+    /// BYOK write hook (test-facing): resolve + encrypt the body. The production
+    /// `write` path resolves ONCE and calls [`Self::encrypt_body`] directly.
+    #[cfg(test)]
     async fn byok_encrypt_for_write(
         &self,
         req: &CasWriteRequest,
     ) -> Result<Option<Vec<u8>>, CasHandlerError> {
-        let Some((tcs, ctx)) = self
-            .resolve_byok_ctx(&req.tenant, &req.claimed_hash, req.algo)
-            .await?
-        else {
-            return Ok(None);
-        };
-        let stored = encrypt_cas_blob(&req.bytes, &tcs, &ctx)
-            .map_err(|e| CasHandlerError::Internal(format!("byok encrypt: {e}")))?;
-        Ok(Some(stored))
+        let resolved = self
+            .resolve_byok(&req.tenant, &req.claimed_hash, req.algo)
+            .await?;
+        self.encrypt_body(&resolved.plan, &req.bytes).await
     }
 
-    /// BYOK read hook: turn the STORED bytes into the plaintext to serve.
-    ///
-    /// `Ok(stored)` ⇒ plaintext path unchanged. For an active tenant the stored
-    /// blob is decrypted; any failure is `Err` (fail closed — the raw stored
-    /// bytes are NEVER served). The post-decrypt content-hash re-verify (audit
-    /// C1) runs on the returned PLAINTEXT, in the caller.
+    /// BYOK read hook (test-facing): resolve + decrypt the stored body. The
+    /// production `read` path resolves ONCE and calls [`Self::decrypt_body`].
+    #[cfg(test)]
     async fn byok_decrypt_for_read(
         &self,
         req: &CasReadRequest,
         stored: Vec<u8>,
     ) -> Result<Vec<u8>, CasHandlerError> {
-        let Some((tcs, ctx)) = self
-            .resolve_byok_ctx(&req.tenant, &req.hash, req.algo)
-            .await?
-        else {
-            return Ok(stored);
-        };
-        decrypt_cas_blob(&stored, &tcs, &ctx)
-            .map_err(|e| CasHandlerError::Internal(format!("byok decrypt: {e}")))
+        let resolved = self.resolve_byok(&req.tenant, &req.hash, req.algo).await?;
+        self.decrypt_body(&resolved.plan, stored).await
     }
 
     /// Derive the R2 key for a (tenant, digest) pair.
@@ -887,15 +1000,6 @@ impl CasReadHandler for R2CasHandler {
         // R2 under a degraded/empty (SHARED) prefix. `req.algo` routes the
         // read into the blob's own keyspace (`bazel/sha256/` for SHA-256,
         // native for BLAKE3) so read-back is single-function.
-        let key = match self.r2_key(&req.tenant, &req.hash, req.algo) {
-            Ok(k) => k,
-            Err(e) => {
-                emit(true);
-                return Err(CasHandlerError::Internal(e));
-            }
-        };
-        debug!(key = %key, "R2CasHandler::read");
-
         // CRITICAL — must wrap in `block_in_place`.
         //
         // This trait method is `fn read(...)` (sync), but it is invoked
@@ -908,19 +1012,42 @@ impl CasReadHandler for R2CasHandler {
         // can drive the future to completion. Valid only on the
         // multi-thread runtime — `#[tokio::main]` gives us that.
         let handle = tokio::runtime::Handle::current();
+
+        // BYOK Wave 3c: resolve ONCE — the §4-hardened physical key digest
+        // (audit H-4) + the body crypto plan. Non-BYOK tenants get the RAW digest
+        // (byte-identical to today); an active-but-unresolvable tenant fails
+        // CLOSED here (never serves plaintext).
+        let resolved = match tokio::task::block_in_place(|| {
+            handle.block_on(self.resolve_byok(&req.tenant, &req.hash, req.algo))
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                emit(true);
+                return Err(e);
+            }
+        };
+        let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
+            Ok(k) => k,
+            Err(e) => {
+                emit(true);
+                return Err(CasHandlerError::Internal(e));
+            }
+        };
+        debug!(key = %key, "R2CasHandler::read");
+
         let result = tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
 
         match result {
             Ok(Some(stored)) => {
-                // BYOK Wave 3a (GATED-INERT): for an `active` tenant, decrypt the
-                // stored convergent blob to plaintext BEFORE the content-hash
-                // re-verify (audit C1: the integrity re-verify MUST run on the
-                // PLAINTEXT, never on ciphertext). FAIL-CLOSED: any decrypt /
-                // unwrap failure returns Err — the raw stored bytes are NEVER
-                // served for an active tenant. `None`-path tenants get their
-                // bytes back unchanged (byte-identical to today).
+                // BYOK Wave 3a/3c (GATED-INERT): for an `active` tenant, decrypt
+                // the stored blob to plaintext BEFORE the content-hash re-verify
+                // (audit C1: the integrity re-verify MUST run on the PLAINTEXT,
+                // never on ciphertext). FAIL-CLOSED: any decrypt / unwrap failure
+                // returns Err — the raw stored bytes are NEVER served for an
+                // active tenant. `Plaintext`-plan tenants get their bytes back
+                // unchanged (byte-identical to today).
                 let bytes = match tokio::task::block_in_place(|| {
-                    handle.block_on(self.byok_decrypt_for_read(&req, stored))
+                    handle.block_on(self.decrypt_body(&resolved.plan, stored))
                 }) {
                     Ok(pt) => pt,
                     Err(e) => {
@@ -1036,11 +1163,28 @@ impl CasReadHandler for R2CasHandler {
             ))
             .map_err(CasHandlerError::AuditFailed)?;
 
+        // CRITICAL — `block_in_place` rationale: see `read` above. This is
+        // a HEAD (`head_size`), not a GET — no body transfer, no rehash.
+        let handle = tokio::runtime::Handle::current();
+
+        // BYOK Wave 3c: the existence probe MUST target the §4-hardened physical
+        // key for an active tenant (audit H-4), so it hits the SAME key `read`
+        // and `write` use. Non-BYOK tenants resolve to the raw digest (unchanged);
+        // an active-but-unresolvable tenant fails CLOSED.
+        let resolved = match tokio::task::block_in_place(|| {
+            handle.block_on(self.resolve_byok(&req.tenant, &req.hash, req.algo))
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                emit(true);
+                return Err(e);
+            }
+        };
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix. `req.algo` routes the
         // probe into the blob's own keyspace (`bazel/sha256/` for SHA-256,
         // native for BLAKE3) so the HEAD targets the SAME key `read` would.
-        let key = match self.r2_key(&req.tenant, &req.hash, req.algo) {
+        let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
             Ok(k) => k,
             Err(e) => {
                 emit(true);
@@ -1049,9 +1193,6 @@ impl CasReadHandler for R2CasHandler {
         };
         debug!(key = %key, "R2CasHandler::exists");
 
-        // CRITICAL — `block_in_place` rationale: see `read` above. This is
-        // a HEAD (`head_size`), not a GET — no body transfer, no rehash.
-        let handle = tokio::runtime::Handle::current();
         let result = tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key)));
 
         match result {
@@ -1136,9 +1277,26 @@ impl CasWriteHandler for R2CasHandler {
             });
         }
 
+        // CRITICAL — `block_in_place` rationale: see the matching
+        // comment in `<Self as CasReadHandler>::read` above.
+        let handle = tokio::runtime::Handle::current();
+
+        // BYOK Wave 3c: resolve ONCE — the §4-hardened physical key digest (audit
+        // H-4) + the body crypto plan. Non-BYOK tenants resolve to the RAW digest
+        // (byte-identical to today); an active-but-unresolvable tenant fails
+        // CLOSED here (never PUTs plaintext).
+        let resolved = match tokio::task::block_in_place(|| {
+            handle.block_on(self.resolve_byok(&req.tenant, &req.claimed_hash, req.algo))
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                emit(true);
+                return Err(e);
+            }
+        };
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &req.claimed_hash, req.algo) {
+        let key = match self.r2_key(&req.tenant, &resolved.physical_digest, req.algo) {
             Ok(k) => k,
             Err(e) => {
                 emit(true);
@@ -1146,10 +1304,6 @@ impl CasWriteHandler for R2CasHandler {
             }
         };
         debug!(key = %key, bytes = req.bytes.len(), "R2CasHandler::write");
-
-        // CRITICAL — `block_in_place` rationale: see the matching
-        // comment in `<Self as CasReadHandler>::read` above.
-        let handle = tokio::runtime::Handle::current();
 
         // Idempotent-rewrite detection (rt-nuclear #13 — byte double-charge).
         // CAS is content-addressed: the key already embeds the verified content
@@ -1162,41 +1316,50 @@ impl CasWriteHandler for R2CasHandler {
         // PUT path (correctness over the accounting optimisation — a transient
         // HEAD blip must never drop a write); a duplicate PUT is harmless (same
         // bytes) and the worst case is the legacy double-charge, never data loss.
-        match tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key))) {
-            Ok(Some(_)) => {
-                // Already durable under this content-addressed key → idempotent
-                // no-op; do not re-PUT and do not re-charge the bytes.
-                self.audit
-                    .emit(AuditEvent::new(
-                        AuditEventKind::WriteCommitted,
-                        req.tenant.clone(),
-                        req.claimed_hash.clone(),
-                        req.principal.clone(),
-                        req.at_unix_ms,
-                    ))
-                    .map_err(CasHandlerError::AuditFailed)?;
-                self.sli
-                    .observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
-                emit(false);
-                return Ok(CasWriteResponse::new(req.claimed_hash, false));
-            }
-            Ok(None) => { /* absent — fall through to the PUT below */ }
-            Err(e) => {
-                // Ambiguous prior state: fall through to the PUT (fail-CLOSED to a
-                // durable write) rather than risk dropping a fresh blob.
-                warn!(error = %e, key = %key, "R2CasHandler::write pre-PUT HEAD error; PUTting");
+        //
+        // BYOK Wave 3c — the dedup HEAD-skip is gated to the convergent/plaintext
+        // path ONLY. Mode B (random DEK) is deliberately NOT deduped (audit C2):
+        // the §4-hardened key + random DEK + the `byok_envelope` idempotency
+        // (reuse-the-row, deterministic ciphertext) own the no-orphan guarantee,
+        // so a Mode-B write always proceeds to the PUT below.
+        let dedup_eligible = !matches!(resolved.plan, ByokBodyPlan::Random { .. });
+        if dedup_eligible {
+            match tokio::task::block_in_place(|| handle.block_on(self.client.head_size(&key))) {
+                Ok(Some(_)) => {
+                    // Already durable under this content-addressed key → idempotent
+                    // no-op; do not re-PUT and do not re-charge the bytes.
+                    self.audit
+                        .emit(AuditEvent::new(
+                            AuditEventKind::WriteCommitted,
+                            req.tenant.clone(),
+                            req.claimed_hash.clone(),
+                            req.principal.clone(),
+                            req.at_unix_ms,
+                        ))
+                        .map_err(CasHandlerError::AuditFailed)?;
+                    self.sli
+                        .observe(SliObservation::new(Sli::CorrectnessCas, false, 0));
+                    emit(false);
+                    return Ok(CasWriteResponse::new(req.claimed_hash, false));
+                }
+                Ok(None) => { /* absent — fall through to the PUT below */ }
+                Err(e) => {
+                    // Ambiguous prior state: fall through to the PUT (fail-CLOSED to
+                    // a durable write) rather than risk dropping a fresh blob.
+                    warn!(error = %e, key = %key, "R2CasHandler::write pre-PUT HEAD error; PUTting");
+                }
             }
         }
 
-        // BYOK Wave 3a (GATED-INERT): for an `active` tenant, encrypt at rest
-        // AFTER the plaintext integrity verify + the dedup HEAD check, replacing
-        // the stored bytes with the convergent ciphertext blob. Convergent ⇒
-        // deterministic ⇒ the HEAD dedup above stays idempotent. FAIL-CLOSED: an
-        // active tenant whose encryptor/KMS/Tcs is unavailable returns Err here —
-        // plaintext is NEVER PUT for an active tenant. `None` ⇒ the plaintext
-        // path (req.bytes), byte-identical to today for every non-BYOK tenant.
+        // BYOK Wave 3a/3c (GATED-INERT): for an `active` tenant, encrypt at rest
+        // AFTER the plaintext integrity verify + the (gated) dedup HEAD check,
+        // replacing the stored bytes with the ciphertext blob (convergent CLB1 or
+        // Mode-B CLB2). FAIL-CLOSED: an active tenant whose encryptor/KMS/Tcs/
+        // envelope-store is unavailable returns Err here — plaintext is NEVER PUT
+        // for an active tenant. `None` ⇒ the plaintext path (req.bytes),
+        // byte-identical to today for every non-BYOK tenant.
         let payload = match tokio::task::block_in_place(|| {
-            handle.block_on(self.byok_encrypt_for_write(&req))
+            handle.block_on(self.encrypt_body(&resolved.plan, &req.bytes))
         }) {
             Ok(Some(ciphertext)) => ciphertext,
             Ok(None) => req.bytes,
@@ -1288,11 +1451,29 @@ impl CasDeleteHandler for R2CasHandler {
             ))
             .map_err(CasHandlerError::AuditFailed)?;
 
+        // CRITICAL — `block_in_place`: see `read` above.
+        let handle = tokio::runtime::Handle::current();
+
+        // BYOK Wave 3c: delete must target the §4-hardened physical key for an
+        // active tenant (audit H-4), matching what `write`/`read` stored. Non-BYOK
+        // tenants resolve to the raw digest (unchanged); an active-but-unresolvable
+        // tenant fails CLOSED rather than delete the wrong (or no) key. (The
+        // `byok_envelope` row for a deleted Mode-B blob is reclaimed by the Wave-4
+        // crypto-shred / erasure path, not here.)
+        let resolved = match tokio::task::block_in_place(|| {
+            handle.block_on(self.resolve_byok(&req.tenant, &req.hash, DigestAlgo::Blake3))
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                emit(true);
+                return Err(e);
+            }
+        };
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix. DELETE is native-only
         // (the Bazel REAPI bridge exposes no delete surface), so the BLAKE3
         // keyspace applies.
-        let key = match self.r2_key(&req.tenant, &req.hash, DigestAlgo::Blake3) {
+        let key = match self.r2_key(&req.tenant, &resolved.physical_digest, DigestAlgo::Blake3) {
             Ok(k) => k,
             Err(e) => {
                 emit(true);
@@ -1315,7 +1496,6 @@ impl CasDeleteHandler for R2CasHandler {
         // release reflect what THIS request actually removed, so two racing
         // deletes can never both credit the same bytes. CRITICAL — `block_in_place`:
         // see `read` above.
-        let handle = tokio::runtime::Handle::current();
         let result =
             tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)));
 
@@ -1508,6 +1688,9 @@ pub struct R2AcHandler {
     /// → plaintext path. Both this and `byok_config_cache` must be `Some` for
     /// AC encryption to engage. Mirrors [`R2CasHandler::tcs_resolver`].
     tcs_resolver: Option<Arc<TcsResolver>>,
+    /// BYOK Wave 3c: the Mode-B (random-DEK) encryptor + `byok_envelope` store
+    /// for the AC surface. Mirrors [`R2CasHandler::byok_mode_b`].
+    byok_mode_b: Option<Arc<ModeBEncryptor>>,
 }
 
 impl core::fmt::Debug for R2AcHandler {
@@ -1538,6 +1721,7 @@ impl R2AcHandler {
             sli,
             byok_config_cache: None,
             tcs_resolver: None,
+            byok_mode_b: None,
         }
     }
 
@@ -1562,93 +1746,159 @@ impl R2AcHandler {
         self
     }
 
-    /// Resolve the convergent crypto context for an AC `(tenant, action_digest)`
-    /// IF the tenant has BYOK encryption ACTIVE (Wave 3b). Mirrors
-    /// [`R2CasHandler::resolve_byok_ctx`] exactly, but binds the `"ac"` surface
-    /// ([`ac_crypto_context`]) so an AC blob is domain-separated from CAS.
-    ///
-    /// - `Ok(None)` — plaintext path (BYOK not wired, not configured, inactive,
-    ///   or `_public`). Today's behaviour, unchanged.
-    /// - `Ok(Some((tcs, ctx)))` — encrypt/decrypt with this Tcs + context.
-    /// - `Err(..)` — active-but-unresolvable (KMS/Tcs down, Mode B, partial):
-    ///   the caller FAILS CLOSED (5xx) and NEVER stores/serves plaintext.
-    async fn resolve_byok_ctx(
+    /// Attach the BYOK Wave-3c Mode-B (random-DEK) encryptor for the AC surface.
+    /// Mirrors [`R2CasHandler::with_byok_random`].
+    #[must_use]
+    pub fn with_byok_random(mut self, mode_b: Arc<ModeBEncryptor>) -> Self {
+        self.byok_mode_b = Some(mode_b);
+        self
+    }
+
+    /// Resolve the BYOK plan for an AC `(tenant, action_digest)`: the §4-hardened
+    /// physical key digest (audit H-4) + the body crypto plan, binding the
+    /// `"ac"` surface ([`ac_crypto_context`]) so an AC blob is domain-separated
+    /// from CAS. Mirrors [`R2CasHandler::resolve_byok`].
+    async fn resolve_byok(
         &self,
         tenant: &str,
         action_digest: &str,
-    ) -> Result<Option<(Tcs, CryptoContext)>, corelink_handler_ac::AcHandlerError> {
+    ) -> Result<ByokResolved, corelink_handler_ac::AcHandlerError> {
         use corelink_handler_ac::AcHandlerError;
+        let plaintext = || ByokResolved {
+            physical_digest: action_digest.to_owned(),
+            plan: ByokBodyPlan::Plaintext,
+        };
         let (Some(cache), Some(resolver)) =
             (self.byok_config_cache.as_ref(), self.tcs_resolver.as_ref())
         else {
-            return Ok(None);
+            return Ok(plaintext());
         };
         // `_public` is deterministic public content — never encrypted (dedup).
         if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
-            return Ok(None);
+            return Ok(plaintext());
         }
         let Some(cfg) = cache
             .get(tenant)
             .await
             .map_err(|e| AcHandlerError::Internal(format!("byok config read: {e}")))?
         else {
-            return Ok(None);
+            return Ok(plaintext());
         };
         match engagement_for(&cfg) {
-            ByokEngagement::Plaintext => Ok(None),
+            ByokEngagement::Plaintext => Ok(plaintext()),
             ByokEngagement::FailClosed(why) => Err(AcHandlerError::Internal(format!(
                 "byok active but {why}; refusing to fall back to plaintext (fail-closed)"
             ))),
-            ByokEngagement::Encrypt => {
+            ByokEngagement::Encrypt(mode) => {
                 let key_id = cfg.cmk_key_id.clone().unwrap_or_default();
-                let ctx = ac_crypto_context(tenant, action_digest, &key_id);
                 let tcs = resolver
                     .resolve(&cfg)
                     .await
                     .map_err(|e| AcHandlerError::Internal(format!("byok tcs resolve: {e}")))?;
-                Ok(Some((tcs, ctx)))
+                let physical_digest = harden_digest(&tcs, action_digest);
+                let plan = match mode {
+                    ByokCryptoMode::Convergent => ByokBodyPlan::Convergent {
+                        tcs,
+                        ctx: ac_crypto_context(tenant, action_digest, &key_id),
+                    },
+                    ByokCryptoMode::Random => {
+                        if self.byok_mode_b.is_none() {
+                            return Err(AcHandlerError::Internal(
+                                "byok active Mode B (random) but the random-mode encryptor is \
+                                 not wired; refusing to fall back to plaintext (fail-closed)"
+                                    .to_owned(),
+                            ));
+                        }
+                        ByokBodyPlan::Random {
+                            ctx: ac_crypto_context_for(
+                                tenant,
+                                action_digest,
+                                &key_id,
+                                CryptoMode::Random,
+                            ),
+                        }
+                    }
+                };
+                Ok(ByokResolved {
+                    physical_digest,
+                    plan,
+                })
             }
         }
     }
 
-    /// BYOK AC write hook: return the bytes to STORE for this update.
-    ///
-    /// `Ok(None)` ⇒ store `req.result_payload` (plaintext path unchanged).
-    /// `Ok(Some(ct))` ⇒ store the convergent ciphertext blob. `Err` ⇒ fail
-    /// closed (the caller returns before any PUT — plaintext is NEVER stored for
-    /// an active tenant). Convergent ⇒ identical payload yields byte-identical
-    /// ciphertext, so the divergent-body GET-and-compare (done on the ciphertext
-    /// for an active tenant) stays idempotent.
+    /// Encrypt the AC body for a resolved plan (`None` ⇒ store plaintext). See
+    /// [`R2CasHandler::encrypt_body`].
+    async fn encrypt_body(
+        &self,
+        plan: &ByokBodyPlan,
+        payload: &[u8],
+    ) -> Result<Option<Vec<u8>>, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::AcHandlerError;
+        match plan {
+            ByokBodyPlan::Plaintext => Ok(None),
+            ByokBodyPlan::Convergent { tcs, ctx } => {
+                let stored = encrypt_cas_blob(payload, tcs, ctx)
+                    .map_err(|e| AcHandlerError::Internal(format!("byok ac encrypt: {e}")))?;
+                Ok(Some(stored))
+            }
+            ByokBodyPlan::Random { ctx } => {
+                let mode_b = self.byok_mode_b.as_ref().ok_or_else(|| {
+                    AcHandlerError::Internal("byok mode-b encryptor missing".to_owned())
+                })?;
+                let stored = mode_b.encrypt(payload, ctx).await.map_err(|e| {
+                    AcHandlerError::Internal(format!("byok ac mode-b encrypt: {e}"))
+                })?;
+                Ok(Some(stored))
+            }
+        }
+    }
+
+    /// Decrypt the stored AC body for a resolved plan. See
+    /// [`R2CasHandler::decrypt_body`].
+    async fn decrypt_body(
+        &self,
+        plan: &ByokBodyPlan,
+        stored: Vec<u8>,
+    ) -> Result<Vec<u8>, corelink_handler_ac::AcHandlerError> {
+        use corelink_handler_ac::AcHandlerError;
+        match plan {
+            ByokBodyPlan::Plaintext => Ok(stored),
+            ByokBodyPlan::Convergent { tcs, ctx } => decrypt_cas_blob(&stored, tcs, ctx)
+                .map_err(|e| AcHandlerError::Internal(format!("byok ac decrypt: {e}"))),
+            ByokBodyPlan::Random { ctx } => {
+                let mode_b = self.byok_mode_b.as_ref().ok_or_else(|| {
+                    AcHandlerError::Internal("byok mode-b encryptor missing".to_owned())
+                })?;
+                mode_b.decrypt(&stored, ctx).await.map_err(|e| {
+                    AcHandlerError::Internal(format!("byok ac mode-b decrypt: {e}"))
+                })
+            }
+        }
+    }
+
+    /// BYOK AC write hook (test-facing): resolve + encrypt the body. The
+    /// production `update` path resolves ONCE and calls [`Self::encrypt_body`].
+    #[cfg(test)]
     async fn byok_encrypt_for_update(
         &self,
         req: &corelink_handler_ac::AcUpdateRequest,
     ) -> Result<Option<Vec<u8>>, corelink_handler_ac::AcHandlerError> {
-        use corelink_handler_ac::AcHandlerError;
-        let Some((tcs, ctx)) = self.resolve_byok_ctx(&req.tenant, &req.action_digest).await? else {
-            return Ok(None);
-        };
-        let stored = encrypt_cas_blob(&req.result_payload, &tcs, &ctx)
-            .map_err(|e| AcHandlerError::Internal(format!("byok ac encrypt: {e}")))?;
-        Ok(Some(stored))
+        let resolved = self.resolve_byok(&req.tenant, &req.action_digest).await?;
+        self.encrypt_body(&resolved.plan, &req.result_payload).await
     }
 
-    /// BYOK AC read hook: turn the STORED bytes into the plaintext to serve.
-    ///
-    /// `Ok(stored)` ⇒ plaintext path unchanged. For an active tenant the stored
-    /// blob is decrypted; any failure is `Err` (fail closed — the raw stored
-    /// bytes are NEVER served).
+    /// BYOK AC read hook (test-facing): resolve + decrypt the stored body. The
+    /// production `lookup` path resolves ONCE and calls [`Self::decrypt_body`].
+    #[cfg(test)]
     async fn byok_decrypt_for_lookup(
         &self,
         tenant: &str,
         action_digest: &str,
         stored: Vec<u8>,
     ) -> Result<Vec<u8>, corelink_handler_ac::AcHandlerError> {
-        use corelink_handler_ac::AcHandlerError;
-        let Some((tcs, ctx)) = self.resolve_byok_ctx(tenant, action_digest).await? else {
-            return Ok(stored);
-        };
-        decrypt_cas_blob(&stored, &tcs, &ctx)
-            .map_err(|e| AcHandlerError::Internal(format!("byok ac decrypt: {e}")))
+        let resolved = self.resolve_byok(tenant, action_digest).await?;
+        self.decrypt_body(&resolved.plan, stored).await
     }
 
     /// Derive the R2 key for a (tenant, action_digest) pair. Mirrors
@@ -1726,9 +1976,28 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
             ))
             .map_err(AcHandlerError::AuditFailed)?;
 
+        // CRITICAL — `block_in_place` rationale: this sync trait method
+        // is invoked from inside an async axum handler on the tokio
+        // multi-thread runtime; a bare `handle.block_on(future)` from
+        // inside a running future on the SAME runtime hangs forever
+        // (observed: 60s curl timeout in prod before this fix).
+        let handle = tokio::runtime::Handle::current();
+
+        // BYOK Wave 3c: resolve ONCE — §4-hardened physical key (audit H-4) +
+        // the body crypto plan. Non-BYOK tenants get the raw digest (unchanged);
+        // an active-but-unresolvable tenant fails CLOSED.
+        let resolved = match tokio::task::block_in_place(|| {
+            handle.block_on(self.resolve_byok(&req.tenant, &req.action_digest))
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                self.emit_lookup_sli(true);
+                return Err(e);
+            }
+        };
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &req.action_digest) {
+        let key = match self.r2_key(&req.tenant, &resolved.physical_digest) {
             Ok(k) => k,
             Err(e) => {
                 self.emit_lookup_sli(true);
@@ -1737,27 +2006,17 @@ impl corelink_handler_ac::AcLookupHandler for R2AcHandler {
         };
         debug!(key = %key, "R2AcHandler::lookup");
 
-        // CRITICAL — `block_in_place` rationale: this sync trait method
-        // is invoked from inside an async axum handler on the tokio
-        // multi-thread runtime; a bare `handle.block_on(future)` from
-        // inside a running future on the SAME runtime hangs forever
-        // (observed: 60s curl timeout in prod before this fix).
-        let handle = tokio::runtime::Handle::current();
         let result = tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
 
         match result {
             Ok(Some(bytes)) => {
-                // BYOK Wave 3b (GATED-INERT): for an `active` tenant decrypt the
-                // stored convergent blob to plaintext before serving (surface
-                // `"ac"`). FAIL-CLOSED: any decrypt/unwrap failure returns Err —
-                // the raw stored bytes are NEVER served. `None`-path tenants get
+                // BYOK Wave 3b/3c (GATED-INERT): for an `active` tenant decrypt the
+                // stored blob to plaintext before serving (surface `"ac"`).
+                // FAIL-CLOSED: any decrypt/unwrap failure returns Err — the raw
+                // stored bytes are NEVER served. `Plaintext`-plan tenants get
                 // their bytes back unchanged (byte-identical to today).
                 let bytes = match tokio::task::block_in_place(|| {
-                    handle.block_on(self.byok_decrypt_for_lookup(
-                        &req.tenant,
-                        &req.action_digest,
-                        bytes,
-                    ))
+                    handle.block_on(self.decrypt_body(&resolved.plan, bytes))
                 }) {
                     Ok(pt) => pt,
                     Err(e) => {
@@ -1843,9 +2102,24 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
             ))
             .map_err(AcHandlerError::AuditFailed)?;
 
+        // CRITICAL — `block_in_place` rationale: see the matching
+        // comment in `<R2AcHandler as AcLookupHandler>::lookup` above.
+        let handle = tokio::runtime::Handle::current();
+
+        // BYOK Wave 3c: resolve ONCE — §4-hardened physical key (audit H-4) + the
+        // body crypto plan. Fail CLOSED for an active-but-unresolvable tenant.
+        let resolved = match tokio::task::block_in_place(|| {
+            handle.block_on(self.resolve_byok(&req.tenant, &req.action_digest))
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                self.emit_update_sli(true);
+                return Err(e);
+            }
+        };
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &req.action_digest) {
+        let key = match self.r2_key(&req.tenant, &resolved.physical_digest) {
             Ok(k) => k,
             Err(e) => {
                 self.emit_update_sli(true);
@@ -1858,24 +2132,21 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
             "R2AcHandler::update"
         );
 
-        // CRITICAL — `block_in_place` rationale: see the matching
-        // comment in `<R2AcHandler as AcLookupHandler>::lookup` above.
-        let handle = tokio::runtime::Handle::current();
-
-        // BYOK Wave 3b (GATED-INERT): compute the bytes we WOULD store — the
-        // convergent ciphertext for an `active` tenant (surface `"ac"`), else
-        // the plaintext payload. Encrypting BEFORE the divergent-body compare is
-        // LOAD-BEARING: for an active tenant the stored prior is ciphertext, and
-        // convergent encryption is deterministic, so comparing the prior against
-        // the would-be-stored CIPHERTEXT keeps the immutability + idempotency
-        // contract exact (an identical payload re-PUT is byte-identical → no-op;
-        // a divergent payload yields divergent ciphertext → DivergentBody).
-        // FAIL-CLOSED: an active tenant whose encryptor/KMS/Tcs is unavailable
+        // BYOK Wave 3b/3c (GATED-INERT): compute the bytes we WOULD store — the
+        // ciphertext for an `active` tenant (surface `"ac"`), else the plaintext
+        // payload. Encrypting BEFORE the divergent-body compare is LOAD-BEARING:
+        // for an active tenant the stored prior is ciphertext and the encryption
+        // is deterministic (convergent CLB1, or Mode-B CLB2 under the persisted
+        // per-(tenant,action_digest) DEK), so comparing the prior against the
+        // would-be-stored CIPHERTEXT keeps the immutability + idempotency contract
+        // exact (an identical payload re-PUT is byte-identical → no-op; a divergent
+        // payload yields divergent ciphertext → DivergentBody). FAIL-CLOSED: an
+        // active tenant whose encryptor/KMS/Tcs/envelope-store is unavailable
         // returns Err here — plaintext is NEVER PUT for an active tenant. The
         // non-BYOK path computes nothing (`None`) and stores `req.result_payload`
         // verbatim, byte-identical to today.
         let encrypted: Option<Vec<u8>> = match tokio::task::block_in_place(|| {
-            handle.block_on(self.byok_encrypt_for_update(&req))
+            handle.block_on(self.encrypt_body(&resolved.plan, &req.result_payload))
         }) {
             Ok(maybe_ct) => maybe_ct,
             Err(e) => {
@@ -2013,9 +2284,29 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
             ))
             .map_err(AcHandlerError::AuditFailed)?;
 
+        // Byte-accounting (finding #1 / cluster-C) + concurrent double-DELETE
+        // over-release (rt-nuclear #6/#10/#14): `delete_if_present` serializes the
+        // measure-and-delete per key and returns the reclaimed size to AT MOST ONE
+        // racer, so two racing deletes can never both credit the same bytes.
+        // CRITICAL — `block_in_place`.
+        let handle = tokio::runtime::Handle::current();
+
+        // BYOK Wave 3c: delete must target the §4-hardened physical key for an
+        // active tenant (audit H-4), matching what `update`/`lookup` stored.
+        // Fail CLOSED for an active-but-unresolvable tenant. (A Mode-B
+        // `byok_envelope` row is reclaimed by the Wave-4 erasure path.)
+        let resolved = match tokio::task::block_in_place(|| {
+            handle.block_on(self.resolve_byok(&req.tenant, &req.action_digest))
+        }) {
+            Ok(r) => r,
+            Err(e) => {
+                self.emit_update_sli(true);
+                return Err(e);
+            }
+        };
         // Fail CLOSED if the tenant prefix is not derivable: never touch
         // R2 under a degraded/empty (SHARED) prefix.
-        let key = match self.r2_key(&req.tenant, &req.action_digest) {
+        let key = match self.r2_key(&req.tenant, &resolved.physical_digest) {
             Ok(k) => k,
             Err(e) => {
                 self.emit_update_sli(true);
@@ -2024,12 +2315,6 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
         };
         debug!(key = %key, "R2AcHandler::delete");
 
-        // Byte-accounting (finding #1 / cluster-C) + concurrent double-DELETE
-        // over-release (rt-nuclear #6/#10/#14): `delete_if_present` serializes the
-        // measure-and-delete per key and returns the reclaimed size to AT MOST ONE
-        // racer, so two racing deletes can never both credit the same bytes.
-        // CRITICAL — `block_in_place`.
-        let handle = tokio::runtime::Handle::current();
         let result =
             tokio::task::block_in_place(|| handle.block_on(self.client.delete_if_present(&key)));
 
@@ -2839,11 +3124,49 @@ mod tests {
         ByokConfigError, ByokCryptoMode, ByokMode, ByokState, TenantByokConfig,
     };
     use crate::storage::byok_cas::{
-        ByokConfigCache, ByokConfigSource, ByokSecretSource, TcsResolver, WrappedTcsRow,
+        ByokConfigCache, ByokConfigSource, ByokEnvelopeRow, ByokEnvelopeStore, ByokSecretSource,
+        ModeBEncryptor, TcsResolver, WrappedTcsRow,
     };
     use corelink_byok::{
         BYOKError, Dek, KmsAccessStatus, KmsKeyId, KmsProvider, KmsProviderKind, WrappedDek,
     };
+    use std::collections::HashMap as StdHashMap;
+    use std::sync::Mutex as StdMutex;
+
+    /// Hermetic in-memory `byok_envelope` store for the Mode-B handler tests.
+    #[derive(Debug, Default)]
+    struct MemEnvStore {
+        inner: StdMutex<StdHashMap<(String, String), ByokEnvelopeRow>>,
+    }
+    #[async_trait::async_trait]
+    impl ByokEnvelopeStore for MemEnvStore {
+        async fn get_envelope(
+            &self,
+            tenant: &str,
+            blob_key: &str,
+        ) -> Result<Option<ByokEnvelopeRow>, String> {
+            Ok(self
+                .inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(&(tenant.to_owned(), blob_key.to_owned()))
+                .cloned())
+        }
+        async fn put_envelope_if_absent(
+            &self,
+            tenant: &str,
+            blob_key: &str,
+            row: &ByokEnvelopeRow,
+            _created_at_ms: i64,
+        ) -> Result<(), String> {
+            self.inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .entry((tenant.to_owned(), blob_key.to_owned()))
+                .or_insert_with(|| row.clone());
+            Ok(())
+        }
+    }
 
     const BYOK_TENANT: &str = "byok-tenant-x";
 
@@ -2933,6 +3256,19 @@ mod tests {
             TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: kms_fail }), 300).unwrap(),
         );
         base.with_byok(cache, resolver)
+    }
+
+    /// A CAS handler with BOTH the convergent collaborators AND the Mode-B
+    /// (random-DEK) encryptor wired over a shared in-memory envelope store.
+    async fn handler_with_byok_random(cfg: Option<TenantByokConfig>) -> R2CasHandler {
+        let base = make_test_handler_with_tdk("iad").await;
+        let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
+        let resolver =
+            Arc::new(TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap());
+        let kms: Arc<dyn KmsProvider> = Arc::new(Kms { fail: false });
+        let store: Arc<dyn ByokEnvelopeStore> = Arc::new(MemEnvStore::default());
+        let mode_b = Arc::new(ModeBEncryptor::new(kms, store, 300).unwrap());
+        base.with_byok(cache, resolver).with_byok_random(mode_b)
     }
 
     fn write_req(tenant: &str, bytes: Vec<u8>) -> CasWriteRequest {
@@ -3031,8 +3367,9 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn byok_mode_b_random_fails_closed() {
-        // Mode B (random) is deferred to Wave 3b — must fail closed, not plaintext.
+    async fn byok_mode_b_unwired_fails_closed() {
+        // Mode B active but the random-mode encryptor is NOT wired → fail closed,
+        // never plaintext (frozen policy: `byok_mode_b` is `None` here).
         let h = handler_with_byok(
             Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active)),
             false,
@@ -3043,6 +3380,68 @@ mod tests {
             h.byok_encrypt_for_write(&req).await,
             Err(CasHandlerError::Internal(_))
         ));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_mode_b_wired_round_trips_via_envelope() {
+        // Mode B (random) wired: encrypt → CLB2 ciphertext (+ a byok_envelope row),
+        // read back → plaintext.
+        let h =
+            handler_with_byok_random(Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active))).await;
+        let plaintext = b"mode-b artifact bytes".to_vec();
+        let req = write_req(BYOK_TENANT, plaintext.clone());
+        let stored = h
+            .byok_encrypt_for_write(&req)
+            .await
+            .unwrap()
+            .expect("active Mode-B tenant must encrypt");
+        assert_ne!(stored, plaintext, "Mode-B stored bytes must be ciphertext");
+        let rreq = CasReadRequest::new(BYOK_TENANT, &req.claimed_hash, "p", BYOK_TENANT, 1);
+        let out = h.byok_decrypt_for_read(&rreq, stored).await.unwrap();
+        assert_eq!(out, plaintext, "Mode-B decrypt must recover the plaintext");
+        assert!(verify_content_hash(DigestAlgo::Blake3, &req.claimed_hash, &out).is_ok());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_mode_b_re_put_is_idempotent_no_orphan() {
+        // Re-encrypt of the same blob reuses the persisted envelope ⇒ byte-identical
+        // ciphertext (no orphan; audit C2), and the original still decrypts.
+        let h =
+            handler_with_byok_random(Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active))).await;
+        let req = write_req(BYOK_TENANT, b"idempotent mode-b".to_vec());
+        let a = h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
+        let b = h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
+        assert_eq!(a, b, "Mode-B re-PUT reuses the persisted DEK (no orphan)");
+        let rreq = CasReadRequest::new(BYOK_TENANT, &req.claimed_hash, "p", BYOK_TENANT, 1);
+        assert_eq!(
+            h.byok_decrypt_for_read(&rreq, a).await.unwrap(),
+            req.bytes,
+            "the original Mode-B ciphertext still decrypts"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_mode_b_read_fails_closed_when_kms_down() {
+        // A wired Mode-B handler whose KMS unwrap fails must NOT serve raw bytes.
+        let base = make_test_handler_with_tdk("iad").await;
+        let cfg = Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active));
+        let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
+        let resolver =
+            Arc::new(TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap());
+        let kms: Arc<dyn KmsProvider> = Arc::new(Kms { fail: true });
+        let store: Arc<dyn ByokEnvelopeStore> = Arc::new(MemEnvStore::default());
+        let mode_b = Arc::new(ModeBEncryptor::new(kms, store, 300).unwrap());
+        let h = base.with_byok(cache, resolver).with_byok_random(mode_b);
+        let rreq = CasReadRequest::new(BYOK_TENANT, "a".repeat(64), "p", BYOK_TENANT, 1);
+        let mut blob = b"CLB2".to_vec();
+        blob.extend_from_slice(b"ciphertext");
+        assert!(
+            matches!(
+                h.byok_decrypt_for_read(&rreq, blob).await,
+                Err(CasHandlerError::Internal(_))
+            ),
+            "Mode-B read with KMS down must fail closed"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

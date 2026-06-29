@@ -52,7 +52,7 @@ pub use convergent::{
     ConvergentBlob,
 };
 pub use dek_cache::DekCache;
-pub use envelope::EnvelopeEncryptor;
+pub use envelope::{EncryptedBlob, EnvelopeEncryptor};
 pub use types::{
     BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, Tcs, WrappedDek,
 };
@@ -100,4 +100,36 @@ pub trait KmsProvider: Send + Sync {
     ///
     /// Called every 60 s in background; revoked → kill switch path (WI-S14-006).
     async fn check_access(&self, key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError>;
+}
+
+/// Blanket delegation so a type-erased `Arc<dyn KmsProvider>` is itself a
+/// [`KmsProvider`]. This lets the data plane hold ONE `Arc<dyn KmsProvider>`
+/// (chosen at boot — AWS/GCP/Azure/Vault or the test fake) and still construct
+/// a generic [`EnvelopeEncryptor<Arc<dyn KmsProvider>>`] for the Mode-B
+/// (random-DEK) path without re-monomorphising per provider.
+#[async_trait]
+impl KmsProvider for std::sync::Arc<dyn KmsProvider> {
+    fn provider_kind(&self) -> KmsProviderKind {
+        (**self).provider_kind()
+    }
+    fn region(&self) -> &str {
+        (**self).region()
+    }
+    fn fips_level(&self) -> FipsLevel {
+        (**self).fips_level()
+    }
+    async fn wrap_dek(
+        &self,
+        dek: &Dek,
+        key_id: &KmsKeyId,
+        encryption_context: Option<&serde_json::Value>,
+    ) -> Result<WrappedDek, BYOKError> {
+        (**self).wrap_dek(dek, key_id, encryption_context).await
+    }
+    async fn unwrap_dek(&self, wrapped: &WrappedDek) -> Result<Dek, BYOKError> {
+        (**self).unwrap_dek(wrapped).await
+    }
+    async fn check_access(&self, key_id: &KmsKeyId) -> Result<KmsAccessStatus, BYOKError> {
+        (**self).check_access(key_id).await
+    }
 }

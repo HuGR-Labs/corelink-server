@@ -47,15 +47,18 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
 use base64::Engine as _;
 use corelink_byok::{
     decrypt_convergent, encrypt_convergent, BYOKError, ConvergentBlob, CryptoAlgo, CryptoContext,
-    CryptoMode, KmsKeyId, KmsProvider, Tcs, WrappedDek,
+    CryptoMode, DekCache, EncryptedBlob, EnvelopeEncryptor, KmsKeyId, KmsProvider, KmsProviderKind,
+    Tcs, WrappedDek,
 };
 use corelink_handler_cas::DigestAlgo;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use serde_json::{json, Value};
 use zeroize::Zeroizing;
 
@@ -502,12 +505,64 @@ const fn namespace_for(algo: DigestAlgo) -> &'static str {
     }
 }
 
-/// Build the convergent (Mode A) [`CryptoContext`] for a CAS object.
+/// **§4 key-hardening (audit H-4) — close the confirmation oracle.**
 ///
-/// `total_len` is fixed to `0` (like [`CryptoContext::legacy`]) so the read
-/// side reconstructs a byte-identical context WITHOUT knowing the plaintext
-/// length before decrypt. `plaintext_digest` is the raw content digest for 3a
-/// (the §4 HMAC'd-digest key hardening is deferred to Wave 3b).
+/// Returns `hex(HMAC-SHA256(key = TCS, msg = plaintext_digest))`.
+///
+/// For a BYOK-active tenant the *physical* R2 object key embeds THIS value
+/// instead of the raw plaintext digest, so an attacker with R2 read who *guesses*
+/// a plaintext cannot confirm its presence by computing its digest — the
+/// hardened key reveals nothing without the per-tenant `TCS` (which dies with the
+/// CMK).
+///
+/// # Invariants (audit H-4)
+///
+/// - **Computed ON-THE-FLY** at every write+read; a raw-digest→hardened map is
+///   NEVER persisted (a map would re-leak the digest under R2-read).
+/// - **Deterministic per `(TCS, digest)`** ⇒ identical plaintext within a tenant
+///   maps to the identical hardened key ⇒ intra-tenant convergent dedup (the
+///   write-path HEAD check) still hits. A *different* tenant's TCS yields a
+///   different hardened key (no cross-tenant correlation).
+/// - This is the STORAGE-KEY digest only. The convergent [`CryptoContext`]'s
+///   `plaintext_digest` (bound into the AEAD AAD + re-verified on the decrypted
+///   plaintext) stays the REAL digest — the two are deliberately distinct.
+#[must_use]
+pub fn harden_digest(tcs: &Tcs, plaintext_digest: &str) -> String {
+    // HMAC-SHA256 accepts a key of any length; the 32-byte TCS never errors.
+    let mut mac = <Hmac<Sha256>>::new_from_slice(&tcs.bytes)
+        .unwrap_or_else(|_| unreachable!("HMAC-SHA256 accepts any key length"));
+    mac.update(plaintext_digest.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+/// Build the [`CryptoContext`] for a CAS object under an explicit policy `mode`.
+///
+/// `total_len` is fixed to `0` (like [`CryptoContext::legacy`]) so the read side
+/// reconstructs a byte-identical context WITHOUT knowing the plaintext length
+/// before decrypt. `plaintext_digest` is ALWAYS the raw content digest (the §4
+/// hardening applies to the storage key, never to the AAD-bound digest).
+#[must_use]
+pub fn cas_crypto_context_for(
+    tenant: &str,
+    digest: &str,
+    algo: DigestAlgo,
+    key_id: &str,
+    mode: CryptoMode,
+) -> CryptoContext {
+    CryptoContext::new_single_shot(
+        tenant,
+        digest,
+        CryptoAlgo::Aes256Gcm,
+        namespace_for(algo),
+        mode,
+        CAS_SURFACE,
+        key_id,
+        0,
+    )
+}
+
+/// Build the convergent (Mode A) [`CryptoContext`] for a CAS object — the
+/// `mode = Convergent` specialisation of [`cas_crypto_context_for`].
 #[must_use]
 pub fn cas_crypto_context(
     tenant: &str,
@@ -515,41 +570,38 @@ pub fn cas_crypto_context(
     algo: DigestAlgo,
     key_id: &str,
 ) -> CryptoContext {
-    CryptoContext::new_single_shot(
-        tenant,
-        digest,
-        CryptoAlgo::Aes256Gcm,
-        namespace_for(algo),
-        CryptoMode::Convergent,
-        CAS_SURFACE,
-        key_id,
-        0,
-    )
+    cas_crypto_context_for(tenant, digest, algo, key_id, CryptoMode::Convergent)
 }
 
-/// Build the convergent (Mode A) [`CryptoContext`] for an **AC** result payload
-/// (Wave 3b — closes audit H1 silent-plaintext on the action cache).
-///
-/// Mirrors [`cas_crypto_context`] but binds [`AC_SURFACE`] (`"ac"`) instead of
-/// `"cas"`, so the derived key + AEAD AAD are domain-separated from the CAS
-/// surface: an AC ciphertext can never be decrypted as (or swapped with) a CAS
-/// ciphertext. The AC content identity is the `action_digest` (the AC keyspace
-/// is BLAKE3 — see `R2AcHandler::r2_key`). Like the CAS context, `total_len` is
-/// fixed to `0` so the read side reconstructs a byte-identical context without
-/// knowing the plaintext length, and the raw digest is used for 3b (§4 HMAC'd-
-/// digest key hardening stays deferred to a later wave).
+/// Build the [`CryptoContext`] for an **AC** result payload under an explicit
+/// policy `mode`. Binds [`AC_SURFACE`] (`"ac"`) so the derived key + AEAD AAD
+/// are domain-separated from CAS: an AC ciphertext can never be decrypted as (or
+/// swapped with) a CAS ciphertext. The AC content identity is the
+/// `action_digest` (BLAKE3 keyspace — see `R2AcHandler::r2_key`).
 #[must_use]
-pub fn ac_crypto_context(tenant: &str, action_digest: &str, key_id: &str) -> CryptoContext {
+pub fn ac_crypto_context_for(
+    tenant: &str,
+    action_digest: &str,
+    key_id: &str,
+    mode: CryptoMode,
+) -> CryptoContext {
     CryptoContext::new_single_shot(
         tenant,
         action_digest,
         CryptoAlgo::Aes256Gcm,
         namespace_for(DigestAlgo::Blake3),
-        CryptoMode::Convergent,
+        mode,
         AC_SURFACE,
         key_id,
         0,
     )
+}
+
+/// Build the convergent (Mode A) [`CryptoContext`] for an AC result payload —
+/// the `mode = Convergent` specialisation of [`ac_crypto_context_for`].
+#[must_use]
+pub fn ac_crypto_context(tenant: &str, action_digest: &str, key_id: &str) -> CryptoContext {
+    ac_crypto_context_for(tenant, action_digest, key_id, CryptoMode::Convergent)
 }
 
 /// Encrypt CAS plaintext into the stored on-disk representation
@@ -600,18 +652,432 @@ pub fn decrypt_cas_blob(stored: &[u8], tcs: &Tcs, ctx: &CryptoContext) -> Result
     decrypt_convergent(&blob, tcs, ctx).map_err(|e| format!("byok decrypt: {e}"))
 }
 
-/// The Wave-3a engagement decision for a tenant's `state`.
+// ─── Mode B (random, max-isolation — plan §2) ───────────────────────────────
+
+/// 4-byte magic prefixing a stored Mode-B (random-DEK) blob (`CoreLink Blob
+/// v2`). DISTINCT from the convergent [`BLOB_MAGIC`] (`CLB1`) so the read path
+/// can never confuse the two encodings, and a non-magic (legacy plaintext)
+/// object is refused fail-closed. Unlike `CLB1`, a Mode-B blob carries NO inline
+/// nonce — the per-blob nonce + wrapped DEK live in the `byok_envelope` D1 row.
+const MODE_B_MAGIC: &[u8; 4] = b"CLB2";
+
+/// On-disk byte overhead of a stored `CLB2` (Mode-B) blob over its plaintext.
 ///
-/// Wave 3a wires ONLY `active`. `partial` (backfill dual-read — audit H7) is
-/// deferred to Wave 4 and fail-closed here (refuse rather than risk plaintext
-/// for an encrypting tenant). Every other state is the plaintext path.
+/// Layout `MAGIC ‖ ciphertext` where `ciphertext = plaintext ‖ GCM-tag`, i.e.
+/// **4** (magic `CLB2`) + **16** (GCM tag) = **20** bytes. UNLIKE the convergent
+/// `CLB1` (which carries an inline 12-byte nonce → 32 bytes), Mode B stores the
+/// nonce in the `byok_envelope` D1 row, so its on-disk overhead is smaller.
+/// Single-sourced here so quota accounting (audit C3) can never drift.
+pub const BYOK_CLB2_OVERHEAD: u64 = MODE_B_MAGIC.len() as u64 + 16;
+
+/// The `byok_envelope.blob_hash` primary-key component for a `(surface, digest)`
+/// pair. The PK is surface-qualified (`"cas:<digest>"` / `"ac:<digest>"`) so a
+/// CAS blob and an AC entry that happen to share a digest string never collide
+/// on one envelope row (which would orphan one ciphertext). The KMS
+/// `encryption_context` AAD bound at wrap time stays the RAW
+/// `{tenant_id, blob_hash:digest}` (see [`CryptoContext::kms_encryption_context`]);
+/// only this storage PK is qualified.
+#[must_use]
+fn envelope_blob_key(surface: &str, digest: &str) -> String {
+    format!("{surface}:{digest}")
+}
+
+/// Unix-epoch-ms clock for `byok_envelope.created_at_ms`.
+fn now_ms() -> i64 {
+    i64::try_from(
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0),
+    )
+    .unwrap_or(i64::MAX)
+}
+
+/// Canonical snake_case D1 label for a [`KmsProviderKind`] (matches the
+/// `byok_envelope.kms_provider` CHECK constraint, mig 0030).
+const fn provider_kind_str(k: KmsProviderKind) -> &'static str {
+    match k {
+        KmsProviderKind::AwsKms => "aws_kms",
+        KmsProviderKind::GcpKms => "gcp_kms",
+        KmsProviderKind::AzureKeyVault => "azure_key_vault",
+        KmsProviderKind::HashicorpVault => "hashicorp_vault",
+    }
+}
+
+/// Parse the snake_case `byok_envelope.kms_provider` value (fail-closed on an
+/// unknown label).
+fn parse_provider_kind(s: &str) -> Result<KmsProviderKind, String> {
+    match s {
+        "aws_kms" => Ok(KmsProviderKind::AwsKms),
+        "gcp_kms" => Ok(KmsProviderKind::GcpKms),
+        "azure_key_vault" => Ok(KmsProviderKind::AzureKeyVault),
+        "hashicorp_vault" => Ok(KmsProviderKind::HashicorpVault),
+        other => Err(format!("byok_envelope.kms_provider: unknown value {other:?}")),
+    }
+}
+
+/// A decoded `byok_envelope` row — the per-blob Mode-B crypto metadata (the
+/// wrapped DEK + the KMS identity + the AAD + the 12-byte AES-GCM nonce). The
+/// body ciphertext lives separately in R2.
+#[derive(Debug, Clone)]
+pub struct ByokEnvelopeRow {
+    /// KMS-wrapped DEK ciphertext (provider-opaque).
+    pub wrapped_dek: Vec<u8>,
+    /// Provider that performed the wrap.
+    pub kms_provider: KmsProviderKind,
+    /// CMK identifier (ARN / resource name / URI / path).
+    pub kms_key_id: String,
+    /// CMK region.
+    pub kms_region: String,
+    /// The wrap-time KMS `encryption_context` AAD (`{tenant_id, blob_hash}`).
+    pub encryption_context: Value,
+    /// 12-byte AES-256-GCM nonce.
+    pub nonce: [u8; 12],
+}
+
+impl ByokEnvelopeRow {
+    /// Reconstruct the [`WrappedDek`] needed to unwrap / re-encrypt under this
+    /// row's persisted DEK.
+    #[must_use]
+    fn to_wrapped_dek(&self) -> WrappedDek {
+        let key_id = KmsKeyId {
+            provider: self.kms_provider,
+            key_arn_or_id: self.kms_key_id.clone(),
+            region: self.kms_region.clone(),
+        };
+        WrappedDek {
+            provider: self.kms_provider,
+            key_id,
+            ciphertext: self.wrapped_dek.clone(),
+            encryption_context: Some(self.encryption_context.clone()),
+        }
+    }
+}
+
+/// Async store for the per-blob Mode-B `byok_envelope` rows (the wrapped DEK +
+/// nonce). The production impl is [`D1ByokEnvelopeStore`]; tests supply a mock.
+#[async_trait]
+pub trait ByokEnvelopeStore: Send + Sync + core::fmt::Debug {
+    /// Load the envelope row for `(tenant, blob_key)` (`Ok(None)` ⇒ absent).
+    ///
+    /// # Errors
+    ///
+    /// Fail-CLOSED: a D1 transport / decode failure is `Err(String)` — never
+    /// coerced into "no row".
+    async fn get_envelope(
+        &self,
+        tenant: &str,
+        blob_key: &str,
+    ) -> Result<Option<ByokEnvelopeRow>, String>;
+
+    /// Insert the envelope row IFF absent (`INSERT … ON CONFLICT DO NOTHING`).
+    /// MUST NOT overwrite an existing row (audit C2: a fresh random DEK over an
+    /// existing row orphans the stored ciphertext). The caller re-reads the
+    /// authoritative row afterwards to converge on the winner of any race.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on any D1 transport / encode failure.
+    async fn put_envelope_if_absent(
+        &self,
+        tenant: &str,
+        blob_key: &str,
+        row: &ByokEnvelopeRow,
+        created_at_ms: i64,
+    ) -> Result<(), String>;
+}
+
+/// Production [`ByokEnvelopeStore`] over the async D1 row seam (reuses
+/// [`ByokConfigRows`], which [`D1HttpClient`] already implements — the
+/// `query_rows` seam runs both the `SELECT` and the idempotent `INSERT`).
+#[derive(Debug)]
+pub struct D1ByokEnvelopeStore<R = D1HttpClient> {
+    rows: Arc<R>,
+}
+
+impl<R: ByokConfigRows> D1ByokEnvelopeStore<R> {
+    /// Wire the store over an async row source.
+    #[must_use]
+    pub fn new(rows: Arc<R>) -> Self {
+        Self { rows }
+    }
+}
+
+#[async_trait]
+impl<R: ByokConfigRows + core::fmt::Debug + 'static> ByokEnvelopeStore for D1ByokEnvelopeStore<R> {
+    async fn get_envelope(
+        &self,
+        tenant: &str,
+        blob_key: &str,
+    ) -> Result<Option<ByokEnvelopeRow>, String> {
+        let rows = self
+            .rows
+            .query_rows(
+                "SELECT wrapped_dek, kms_provider, kms_key_id, kms_region, \
+                 encryption_context, aes_gcm_nonce \
+                 FROM byok_envelope WHERE tenant_id = ?1 AND blob_hash = ?2 LIMIT 1",
+                vec![json!(tenant), json!(blob_key)],
+            )
+            .await?;
+        let Some(row) = rows.first() else {
+            return Ok(None);
+        };
+        let wrapped_dek = decode_blob(
+            row.get("wrapped_dek")
+                .ok_or("byok_envelope.wrapped_dek missing")?,
+        )?;
+        let kms_provider = parse_provider_kind(
+            row.get("kms_provider")
+                .and_then(Value::as_str)
+                .ok_or("byok_envelope.kms_provider missing")?,
+        )?;
+        let kms_key_id = row
+            .get("kms_key_id")
+            .and_then(Value::as_str)
+            .ok_or("byok_envelope.kms_key_id missing")?
+            .to_owned();
+        let kms_region = row
+            .get("kms_region")
+            .and_then(Value::as_str)
+            .ok_or("byok_envelope.kms_region missing")?
+            .to_owned();
+        let enc_ctx_str = row
+            .get("encryption_context")
+            .and_then(Value::as_str)
+            .ok_or("byok_envelope.encryption_context missing")?;
+        let encryption_context: Value = serde_json::from_str(enc_ctx_str)
+            .map_err(|e| format!("byok_envelope.encryption_context JSON: {e}"))?;
+        let nonce_vec = decode_blob(
+            row.get("aes_gcm_nonce")
+                .ok_or("byok_envelope.aes_gcm_nonce missing")?,
+        )?;
+        if nonce_vec.len() != 12 {
+            return Err(format!(
+                "byok_envelope.aes_gcm_nonce must be 12 bytes, got {}",
+                nonce_vec.len()
+            ));
+        }
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&nonce_vec);
+        Ok(Some(ByokEnvelopeRow {
+            wrapped_dek,
+            kms_provider,
+            kms_key_id,
+            kms_region,
+            encryption_context,
+            nonce,
+        }))
+    }
+
+    async fn put_envelope_if_absent(
+        &self,
+        tenant: &str,
+        blob_key: &str,
+        row: &ByokEnvelopeRow,
+        created_at_ms: i64,
+    ) -> Result<(), String> {
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let enc_ctx_str = serde_json::to_string(&row.encryption_context)
+            .map_err(|e| format!("byok_envelope.encryption_context encode: {e}"))?;
+        self.rows
+            .query_rows(
+                "INSERT INTO byok_envelope \
+                 (tenant_id, blob_hash, wrapped_dek, kms_provider, kms_key_id, kms_region, \
+                  encryption_context, aes_gcm_nonce, created_at_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) \
+                 ON CONFLICT(tenant_id, blob_hash) DO NOTHING",
+                vec![
+                    json!(tenant),
+                    json!(blob_key),
+                    json!(b64.encode(&row.wrapped_dek)),
+                    json!(provider_kind_str(row.kms_provider)),
+                    json!(row.kms_key_id),
+                    json!(row.kms_region),
+                    json!(enc_ctx_str),
+                    json!(b64.encode(row.nonce)),
+                    json!(created_at_ms),
+                ],
+            )
+            .await?;
+        Ok(())
+    }
+}
+
+/// Mode B (random, max-isolation) encryptor — random per-blob DEK + random
+/// nonce, wrapped by the customer CMK and persisted in `byok_envelope` (plan
+/// §2). NO dedup (each blob a unique DEK), so the caller MUST NOT apply the
+/// convergent HEAD-skip to a Mode-B write.
+///
+/// Idempotency / atomicity (audit C2): the authoritative `(DEK, nonce)` is the
+/// PERSISTED envelope row. On a fresh write a random `(DEK, nonce)` is minted,
+/// `INSERT … ON CONFLICT DO NOTHING`-ed, then the row is re-read; the stored
+/// ciphertext is ALWAYS derived from the authoritative row via
+/// [`EnvelopeEncryptor::encrypt_body_with_wrapped`]. Because AES-GCM is
+/// deterministic given `(key, nonce, plaintext, aad)`, every writer (a race
+/// loser, a re-PUT of the same `blob_hash`) produces byte-identical ciphertext —
+/// the envelope row is never orphaned and the R2 PUT is idempotent.
+pub struct ModeBEncryptor {
+    kms: Arc<dyn KmsProvider>,
+    enc: EnvelopeEncryptor<Arc<dyn KmsProvider>>,
+    store: Arc<dyn ByokEnvelopeStore>,
+}
+
+impl core::fmt::Debug for ModeBEncryptor {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("ModeBEncryptor").finish_non_exhaustive()
+    }
+}
+
+impl ModeBEncryptor {
+    /// Build over a KMS provider + an envelope store with an explicit DEK-cache
+    /// TTL (seconds, ≤300 — INV-BYOK-CRYPTO-SOVEREIGNTY).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BYOKError::DekCacheTtlViolation`] if `dek_ttl_seconds > 300`.
+    pub fn new(
+        kms: Arc<dyn KmsProvider>,
+        store: Arc<dyn ByokEnvelopeStore>,
+        dek_ttl_seconds: u64,
+    ) -> Result<Self, BYOKError> {
+        let cache = DekCache::new(dek_ttl_seconds)?;
+        let enc = EnvelopeEncryptor::new(Arc::clone(&kms), cache);
+        Ok(Self { kms, enc, store })
+    }
+
+    /// Build with the canonical [`BYOK_TCS_TTL_SECONDS`] (300 s) DEK-cache TTL.
+    ///
+    /// # Errors
+    ///
+    /// Mirrors [`Self::new`] (infallible in practice at 300 s).
+    pub fn with_default_ttl(
+        kms: Arc<dyn KmsProvider>,
+        store: Arc<dyn ByokEnvelopeStore>,
+    ) -> Result<Self, BYOKError> {
+        Self::new(kms, store, BYOK_TCS_TTL_SECONDS)
+    }
+
+    /// The CMK identity for a context — the injected KMS provider is the custody
+    /// authority (its kind + region), keyed by the context's CMK ARN.
+    fn key_id(&self, ctx: &CryptoContext) -> KmsKeyId {
+        KmsKeyId {
+            provider: self.kms.provider_kind(),
+            key_arn_or_id: ctx.key_id.clone(),
+            region: self.kms.region().to_owned(),
+        }
+    }
+
+    /// Mode-B encrypt: return the on-disk bytes to STORE
+    /// (`MODE_B_MAGIC ‖ ciphertext`). Writes (idempotently) the `byok_envelope`
+    /// row BEFORE deriving the ciphertext, so the wrapped DEK is durable before
+    /// any R2 PUT. See the type docs for the idempotency proof.
+    ///
+    /// # Errors
+    ///
+    /// Fail-CLOSED: any envelope read/write or KMS wrap/unwrap failure is
+    /// `Err(String)` — the caller refuses the write (never stores plaintext).
+    pub async fn encrypt(&self, plaintext: &[u8], ctx: &CryptoContext) -> Result<Vec<u8>, String> {
+        let tenant = ctx.tenant_id.as_str();
+        let blob_key = envelope_blob_key(&ctx.surface, &ctx.plaintext_digest);
+
+        // The authoritative envelope row (a pre-existing one, OR one we mint +
+        // persist + re-read so every racer converges on the same DEK).
+        let row = match self.store.get_envelope(tenant, &blob_key).await? {
+            Some(existing) => existing,
+            None => {
+                let key_id = self.key_id(ctx);
+                let blob = self
+                    .enc
+                    .encrypt_with_ctx(plaintext, &key_id, ctx)
+                    .await
+                    .map_err(|e| format!("mode-b wrap: {e}"))?;
+                let new_row = ByokEnvelopeRow {
+                    wrapped_dek: blob.wrapped_dek.ciphertext.clone(),
+                    kms_provider: blob.wrapped_dek.provider,
+                    kms_key_id: blob.wrapped_dek.key_id.key_arn_or_id.clone(),
+                    kms_region: blob.wrapped_dek.key_id.region.clone(),
+                    encryption_context: blob
+                        .wrapped_dek
+                        .encryption_context
+                        .clone()
+                        .unwrap_or_else(|| ctx.kms_encryption_context()),
+                    nonce: blob.nonce,
+                };
+                self.store
+                    .put_envelope_if_absent(tenant, &blob_key, &new_row, now_ms())
+                    .await?;
+                self.store
+                    .get_envelope(tenant, &blob_key)
+                    .await?
+                    .ok_or_else(|| {
+                        "mode-b envelope row vanished after insert (fail-closed)".to_owned()
+                    })?
+            }
+        };
+
+        // Deterministic ciphertext under the PERSISTED (DEK, nonce).
+        let wrapped = row.to_wrapped_dek();
+        let ciphertext = self
+            .enc
+            .encrypt_body_with_wrapped(plaintext, &wrapped, &row.nonce, ctx)
+            .await
+            .map_err(|e| format!("mode-b encrypt: {e}"))?;
+        let mut out = Vec::with_capacity(MODE_B_MAGIC.len() + ciphertext.len());
+        out.extend_from_slice(MODE_B_MAGIC);
+        out.extend_from_slice(&ciphertext);
+        Ok(out)
+    }
+
+    /// Mode-B decrypt: fetch the `byok_envelope` row → unwrap the DEK → AES-GCM
+    /// decrypt the body. `stored` is `MODE_B_MAGIC ‖ ciphertext`.
+    ///
+    /// # Errors
+    ///
+    /// Fail-CLOSED: a non-magic object, a missing envelope row, or any KMS /
+    /// AEAD failure is `Err(String)` — the raw stored bytes are NEVER served.
+    pub async fn decrypt(&self, stored: &[u8], ctx: &CryptoContext) -> Result<Vec<u8>, String> {
+        let magic = stored
+            .get(..MODE_B_MAGIC.len())
+            .ok_or_else(|| "stored Mode-B blob too short for magic".to_owned())?;
+        if magic != MODE_B_MAGIC {
+            return Err("stored object is not a BYOK Mode-B blob (bad magic)".to_owned());
+        }
+        let ciphertext = stored
+            .get(MODE_B_MAGIC.len()..)
+            .ok_or_else(|| "stored Mode-B blob missing ciphertext".to_owned())?
+            .to_vec();
+        let blob_key = envelope_blob_key(&ctx.surface, &ctx.plaintext_digest);
+        let row = self
+            .store
+            .get_envelope(&ctx.tenant_id, &blob_key)
+            .await?
+            .ok_or_else(|| "mode-b envelope row missing (fail-closed)".to_owned())?;
+        let blob = EncryptedBlob {
+            wrapped_dek: row.to_wrapped_dek(),
+            ciphertext,
+            nonce: row.nonce,
+        };
+        self.enc
+            .decrypt_with_ctx(&blob, ctx)
+            .await
+            .map_err(|e| format!("mode-b decrypt: {e}"))
+    }
+}
+
+/// The engagement decision for a tenant's `state` (Wave 3a/3b/3c).
+///
+/// `active` engages encryption in the tenant's configured [`ByokCryptoMode`]
+/// (Mode A convergent OR Mode B random — both wired as of Wave 3c). `partial`
+/// (backfill dual-read — audit H7) is deferred to Wave 4 and fail-closed here
+/// (refuse rather than risk plaintext for an encrypting tenant). Every other
+/// state is the plaintext path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ByokEngagement {
     /// Run the plaintext path unchanged (not configured / inactive).
     Plaintext,
-    /// Engage Mode A convergent encryption (state `active`).
-    Encrypt,
-    /// Active-but-unsupported in 3a → caller must FAIL CLOSED (never plaintext).
+    /// Engage encryption in this crypto mode (state `active`).
+    Encrypt(ByokCryptoMode),
+    /// Active-but-unsupported here → caller must FAIL CLOSED (never plaintext).
     FailClosed(&'static str),
 }
 
@@ -620,13 +1086,9 @@ pub enum ByokEngagement {
 #[must_use]
 pub fn engagement_for(cfg: &TenantByokConfig) -> ByokEngagement {
     match cfg.state {
-        ByokState::Active => match cfg.crypto_mode {
-            ByokCryptoMode::Convergent => ByokEngagement::Encrypt,
-            // Mode B (random) is deferred to Wave 3b — never plaintext.
-            ByokCryptoMode::Random => {
-                ByokEngagement::FailClosed("BYOK Mode B (random) not wired (deferred to Wave 3b)")
-            }
-        },
+        // Both Mode A (convergent) and Mode B (random) encrypt for an active
+        // tenant; the caller dispatches on the carried mode.
+        ByokState::Active => ByokEngagement::Encrypt(cfg.crypto_mode),
         // Backfill dual-read (audit H7) deferred to Wave 4 — never plaintext.
         ByokState::Partial => {
             ByokEngagement::FailClosed("BYOK partial/backfill dual-read not wired (deferred to Wave 4)")
@@ -873,16 +1335,23 @@ mod tests {
 
     #[test]
     fn engagement_truth_table() {
+        // Wave 3c: an active tenant now engages BOTH modes (Random no longer
+        // fail-closed); the caller dispatches on the carried mode.
         assert_eq!(
             engagement_for(&active_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
-            ByokEngagement::Encrypt
+            ByokEngagement::Encrypt(ByokCryptoMode::Convergent)
         );
-        assert!(matches!(
+        assert_eq!(
             engagement_for(&active_cfg(ByokCryptoMode::Random, ByokState::Active)),
+            ByokEngagement::Encrypt(ByokCryptoMode::Random)
+        );
+        // Partial/backfill dual-read stays deferred (Wave 4) → fail-closed.
+        assert!(matches!(
+            engagement_for(&active_cfg(ByokCryptoMode::Convergent, ByokState::Partial)),
             ByokEngagement::FailClosed(_)
         ));
         assert!(matches!(
-            engagement_for(&active_cfg(ByokCryptoMode::Convergent, ByokState::Partial)),
+            engagement_for(&active_cfg(ByokCryptoMode::Random, ByokState::Partial)),
             ByokEngagement::FailClosed(_)
         ));
         for s in [ByokState::Inactive, ByokState::Pending, ByokState::Shredded] {
@@ -891,6 +1360,49 @@ mod tests {
                 ByokEngagement::Plaintext
             );
         }
+    }
+
+    // ── §4 key-hardening (audit H-4) ──────────────────────────────────────────
+
+    #[test]
+    fn harden_digest_is_not_the_raw_digest_and_is_deterministic() {
+        let tcs = Tcs::from_bytes([4u8; 32]);
+        let digest = "a".repeat(64);
+        let h1 = harden_digest(&tcs, &digest);
+        let h2 = harden_digest(&tcs, &digest);
+        assert_ne!(h1, digest, "hardened key must not reveal the raw digest");
+        assert_eq!(h1, h2, "deterministic per (TCS, digest) ⇒ intra-tenant dedup hits");
+        // HMAC-SHA256 ⇒ 32 bytes ⇒ 64 hex chars (same shape as a digest slot).
+        assert_eq!(h1.len(), 64);
+        assert!(h1.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn harden_digest_differs_per_tcs_and_per_digest() {
+        let digest = "a".repeat(64);
+        let other = "b".repeat(64);
+        let a = harden_digest(&Tcs::from_bytes([1u8; 32]), &digest);
+        let b = harden_digest(&Tcs::from_bytes([2u8; 32]), &digest);
+        assert_ne!(a, b, "different TCS ⇒ different hardened key (no cross-tenant correlation)");
+        let c = harden_digest(&Tcs::from_bytes([1u8; 32]), &other);
+        assert_ne!(a, c, "different digest ⇒ different hardened key");
+    }
+
+    #[test]
+    fn convergent_ctx_keeps_the_real_digest_after_hardening() {
+        // The storage key uses the hardened digest, but the AAD-bound context
+        // digest stays the REAL digest so the post-decrypt integrity re-verify
+        // (on the plaintext) still checks the true content hash.
+        let tcs = Tcs::from_bytes([7u8; 32]);
+        let digest = "c".repeat(64);
+        let hardened = harden_digest(&tcs, &digest);
+        let ctx = cas_crypto_context(TENANT, &digest, DigestAlgo::Blake3, "arn:cmk");
+        assert_eq!(ctx.plaintext_digest, digest, "ctx must bind the REAL digest");
+        assert_ne!(ctx.plaintext_digest, hardened, "ctx digest is NOT the storage key");
+        // Round-trip still works with the real-digest context.
+        let pt = b"payload".to_vec();
+        let stored = encrypt_cas_blob(&pt, &tcs, &ctx).unwrap();
+        assert_eq!(decrypt_cas_blob(&stored, &tcs, &ctx).unwrap(), pt);
     }
 
     // ── blob round-trip + convergent dedup + tamper ──────────────────────────
@@ -999,5 +1511,149 @@ mod tests {
                 "stored len must be plaintext + CLB1 overhead for pt_len={pt_len}"
             );
         }
+    }
+
+    // ── Mode B (random, max-isolation — Wave 3c) ──────────────────────────────
+
+    #[derive(Debug, Default)]
+    struct MemEnvelopeStore {
+        inner: Mutex<HashMap<(String, String), ByokEnvelopeRow>>,
+    }
+    #[async_trait]
+    impl ByokEnvelopeStore for MemEnvelopeStore {
+        async fn get_envelope(
+            &self,
+            tenant: &str,
+            blob_key: &str,
+        ) -> Result<Option<ByokEnvelopeRow>, String> {
+            Ok(lock(&self.inner)
+                .get(&(tenant.to_owned(), blob_key.to_owned()))
+                .cloned())
+        }
+        async fn put_envelope_if_absent(
+            &self,
+            tenant: &str,
+            blob_key: &str,
+            row: &ByokEnvelopeRow,
+            _created_at_ms: i64,
+        ) -> Result<(), String> {
+            // INSERT … ON CONFLICT DO NOTHING semantics: only the first writer wins.
+            lock(&self.inner)
+                .entry((tenant.to_owned(), blob_key.to_owned()))
+                .or_insert_with(|| row.clone());
+            Ok(())
+        }
+    }
+
+    fn mode_b_ctx() -> CryptoContext {
+        cas_crypto_context_for(
+            TENANT,
+            &"d".repeat(64),
+            DigestAlgo::Blake3,
+            "arn:cmk",
+            CryptoMode::Random,
+        )
+    }
+
+    fn mode_b_enc(store: Arc<MemEnvelopeStore>, kms_fail: bool) -> ModeBEncryptor {
+        let kms: Arc<dyn KmsProvider> = if kms_fail {
+            Arc::new(MockKms::failing())
+        } else {
+            Arc::new(MockKms::ok())
+        };
+        ModeBEncryptor::new(kms, store, 300).unwrap()
+    }
+
+    #[tokio::test]
+    async fn mode_b_round_trip() {
+        let store = Arc::new(MemEnvelopeStore::default());
+        let me = mode_b_enc(store, false);
+        let ctx = mode_b_ctx();
+        let pt = b"mode b secret payload".to_vec();
+        let stored = me.encrypt(&pt, &ctx).await.unwrap();
+        assert_eq!(&stored[..4], MODE_B_MAGIC, "Mode-B blob carries the CLB2 magic");
+        assert_ne!(stored[4..].to_vec(), pt, "stored bytes must be ciphertext");
+        assert_eq!(me.decrypt(&stored, &ctx).await.unwrap(), pt, "round-trip");
+    }
+
+    #[tokio::test]
+    async fn mode_b_independent_writes_do_not_converge() {
+        // No convergence: two INDEPENDENT Mode-B encryptors each mint their own
+        // random DEK, so the SAME content+digest yields DIFFERENT ciphertext —
+        // and each still decrypts under its own envelope.
+        let ctx = mode_b_ctx();
+        let pt = b"identical bytes".to_vec();
+        let s1 = Arc::new(MemEnvelopeStore::default());
+        let s2 = Arc::new(MemEnvelopeStore::default());
+        let e1 = mode_b_enc(Arc::clone(&s1), false);
+        let e2 = mode_b_enc(Arc::clone(&s2), false);
+        let c1 = e1.encrypt(&pt, &ctx).await.unwrap();
+        let c2 = e2.encrypt(&pt, &ctx).await.unwrap();
+        assert_ne!(c1, c2, "random DEK ⇒ no convergence (vs Mode A)");
+        assert_eq!(e1.decrypt(&c1, &ctx).await.unwrap(), pt);
+        assert_eq!(e2.decrypt(&c2, &ctx).await.unwrap(), pt);
+    }
+
+    #[tokio::test]
+    async fn mode_b_re_put_reuses_envelope_no_orphan() {
+        // Re-PUT of the same blob_hash reuses the persisted (DEK, nonce) — the
+        // ciphertext is byte-identical (idempotent) and the original still
+        // decrypts (the envelope was NOT rotated to a fresh DEK; audit C2).
+        let store = Arc::new(MemEnvelopeStore::default());
+        let me = mode_b_enc(Arc::clone(&store), false);
+        let ctx = mode_b_ctx();
+        let pt = b"idempotent payload".to_vec();
+        let first = me.encrypt(&pt, &ctx).await.unwrap();
+        let second = me.encrypt(&pt, &ctx).await.unwrap();
+        assert_eq!(first, second, "re-PUT reuses the persisted DEK (no orphan)");
+        assert_eq!(me.decrypt(&first, &ctx).await.unwrap(), pt, "original still decrypts");
+        assert_eq!(lock(&store.inner).len(), 1, "exactly one envelope row per blob");
+    }
+
+    #[tokio::test]
+    async fn mode_b_write_fails_closed_when_kms_down() {
+        let store = Arc::new(MemEnvelopeStore::default());
+        let me = mode_b_enc(store, true);
+        let ctx = mode_b_ctx();
+        assert!(
+            me.encrypt(b"x", &ctx).await.is_err(),
+            "kms unwrap down ⇒ Mode-B write fails closed (never plaintext)"
+        );
+    }
+
+    #[tokio::test]
+    async fn mode_b_read_fails_closed_without_envelope_row() {
+        let store = Arc::new(MemEnvelopeStore::default());
+        let me = mode_b_enc(store, false);
+        let ctx = mode_b_ctx();
+        // Valid CLB2 magic but no envelope row → fail closed (never serve raw).
+        let mut orphan = MODE_B_MAGIC.to_vec();
+        orphan.extend_from_slice(b"ciphertext-without-a-row");
+        assert!(me.decrypt(&orphan, &ctx).await.is_err());
+        // A non-magic (legacy plaintext) object → fail closed.
+        assert!(me.decrypt(b"raw plaintext", &ctx).await.is_err());
+    }
+
+    #[test]
+    fn envelope_blob_key_is_surface_qualified() {
+        assert_eq!(envelope_blob_key("cas", "abc"), "cas:abc");
+        assert_ne!(
+            envelope_blob_key("cas", "abc"),
+            envelope_blob_key("ac", "abc"),
+            "CAS and AC must not collide on one envelope row"
+        );
+    }
+
+    #[test]
+    fn provider_kind_str_round_trips() {
+        for k in [
+            KmsProviderKind::AwsKms,
+            KmsProviderKind::GcpKms,
+            KmsProviderKind::AzureKeyVault,
+            KmsProviderKind::HashicorpVault,
+        ] {
+            assert_eq!(parse_provider_kind(provider_kind_str(k)).unwrap(), k);
+        }
+        assert!(parse_provider_kind("nope").is_err());
     }
 }
