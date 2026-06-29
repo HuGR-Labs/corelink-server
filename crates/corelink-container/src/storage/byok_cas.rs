@@ -30,13 +30,20 @@
 //!
 //! - **In scope:** the native CAS single-shot write+read path, Mode A
 //!   (convergent) only, state `active`.
-//! - **Deferred to Wave 3b/4 (documented, never silently skipped):**
+//! - **Wave 3b (now wired here, GATED-INERT):** the AC (`R2AcHandler`) path —
+//!   the action cache encrypts its `result_payload` at rest under
+//!   [`ac_crypto_context`] (surface `"ac"`, domain-separated from CAS; audit
+//!   H1), and the ciphertext-size accounting reconciliation (audit C3) is
+//!   single-sourced via [`BYOK_CLB1_OVERHEAD`].
+//! - **Deferred to Wave 3c/4 (documented, never silently skipped):**
 //!   - §4 HMAC'd-digest key hardening (confirmation-oracle) — the R2 key keeps
-//!     the raw plaintext digest for 3a; see [`cas_crypto_context`].
-//!   - The AC (`R2AcHandler`) path (surface stays `"cas"` here).
-//!   - Accounting/quota reconciliation for ciphertext size (audit C3).
-//!   - Mode B (`crypto_mode = 'random'`) — fail-closed here, NOT plaintext.
-//!   - The `partial`/backfill dual-read state (audit H7) — fail-closed here.
+//!     the raw plaintext digest for 3a/3b; see [`cas_crypto_context`] /
+//!     [`ac_crypto_context`] (Wave 3c).
+//!   - Mode B (`crypto_mode = 'random'`) — fail-closed here, NOT plaintext
+//!     (Wave 3c).
+//!   - The `partial`/backfill dual-read state (audit H7) — fail-closed here
+//!     (Wave 4).
+//!   - The production `KmsProvider` wiring (Wave 4 onboarding).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -58,8 +65,17 @@ use crate::customer_d1::{
 use crate::storage::d1_http::D1HttpClient;
 
 /// The CAS surface tag bound into the convergent [`CryptoContext`] — domain
-/// separation from other cache surfaces (e.g. a future `"ac"`).
+/// separation from other cache surfaces (e.g. the AC surface, [`AC_SURFACE`]).
 const CAS_SURFACE: &str = "cas";
+
+/// The AC (action-cache) surface tag bound into the convergent
+/// [`CryptoContext`] — domain separation from the CAS surface (Wave 3b, closes
+/// audit H1 silent-plaintext). Because `surface` is bound into the JCS bytes
+/// that feed BOTH the HKDF `info` and the AEAD AAD (see
+/// [`corelink_byok::CryptoContext`]), an AC blob produced under this tag CANNOT
+/// be decrypted under a `"cas"` context (and vice-versa) even for the same
+/// `(tenant, digest)` — so an AC ciphertext can never be swapped for a CAS one.
+const AC_SURFACE: &str = "ac";
 
 /// 4-byte magic prefixing a stored convergent CAS blob (`CoreLink Blob v1`).
 ///
@@ -70,6 +86,18 @@ const CAS_SURFACE: &str = "cas";
 /// from before activation — a `partial`/backfill concern deferred to Wave 4),
 /// so [`decrypt_cas_blob`] refuses it rather than risk mis-decoding.
 const BLOB_MAGIC: &[u8; 4] = b"CLB1";
+
+/// On-disk byte overhead of the stored `CLB1` convergent blob over its
+/// plaintext — **single-sourced here with the [`encrypt_cas_blob`] format** so
+/// quota accounting (audit C3) can never drift from the wire layout.
+///
+/// Breakdown: `MAGIC ‖ nonce ‖ ciphertext` where `ciphertext = plaintext ‖
+/// GCM-tag`, i.e. **4** (magic `CLB1`) + **12** (AES-256-GCM nonce) + **16**
+/// (GCM authentication tag) = **32** bytes. The plaintext length is unchanged
+/// (AES-GCM is length-preserving), so `stored_len == plaintext_len +
+/// BYOK_CLB1_OVERHEAD`. The CAS and AC surfaces share the identical format, so
+/// the AC plane (Wave 3b) reuses this same const.
+pub const BYOK_CLB1_OVERHEAD: u64 = BLOB_MAGIC.len() as u64 + 12 + 16;
 
 /// Config-cache default TTL — 60 s. After warm-up the non-BYOK hot path adds no
 /// D1 hop (a HIT is in-memory; a MISS does ONE D1 read and caches the result,
@@ -499,6 +527,31 @@ pub fn cas_crypto_context(
     )
 }
 
+/// Build the convergent (Mode A) [`CryptoContext`] for an **AC** result payload
+/// (Wave 3b — closes audit H1 silent-plaintext on the action cache).
+///
+/// Mirrors [`cas_crypto_context`] but binds [`AC_SURFACE`] (`"ac"`) instead of
+/// `"cas"`, so the derived key + AEAD AAD are domain-separated from the CAS
+/// surface: an AC ciphertext can never be decrypted as (or swapped with) a CAS
+/// ciphertext. The AC content identity is the `action_digest` (the AC keyspace
+/// is BLAKE3 — see `R2AcHandler::r2_key`). Like the CAS context, `total_len` is
+/// fixed to `0` so the read side reconstructs a byte-identical context without
+/// knowing the plaintext length, and the raw digest is used for 3b (§4 HMAC'd-
+/// digest key hardening stays deferred to a later wave).
+#[must_use]
+pub fn ac_crypto_context(tenant: &str, action_digest: &str, key_id: &str) -> CryptoContext {
+    CryptoContext::new_single_shot(
+        tenant,
+        action_digest,
+        CryptoAlgo::Aes256Gcm,
+        namespace_for(DigestAlgo::Blake3),
+        CryptoMode::Convergent,
+        AC_SURFACE,
+        key_id,
+        0,
+    )
+}
+
 /// Encrypt CAS plaintext into the stored on-disk representation
 /// (`MAGIC ‖ nonce ‖ ciphertext`). Convergent ⇒ identical content yields
 /// byte-identical output ⇒ dedup preserved.
@@ -846,6 +899,10 @@ mod tests {
         cas_crypto_context(TENANT, &"a".repeat(64), DigestAlgo::Blake3, "arn:cmk")
     }
 
+    fn ac_ctx() -> CryptoContext {
+        ac_crypto_context(TENANT, &"a".repeat(64), "arn:cmk")
+    }
+
     #[test]
     fn blob_roundtrip_and_ciphertext_differs_from_plaintext() {
         let tcs = Tcs::from_bytes([3u8; 32]);
@@ -895,5 +952,52 @@ mod tests {
             namespace_for(DigestAlgo::Blake3),
             namespace_for(DigestAlgo::Sha256)
         );
+    }
+
+    // ── AC surface (Wave 3b) ──────────────────────────────────────────────────
+
+    #[test]
+    fn ac_blob_roundtrips_under_ac_context() {
+        // The AC payload encrypts + decrypts cleanly under an `"ac"`-surface ctx.
+        let tcs = Tcs::from_bytes([5u8; 32]);
+        let pt = b"action-result-metadata payload".to_vec();
+        let stored = encrypt_cas_blob(&pt, &tcs, &ac_ctx()).unwrap();
+        assert_ne!(stored, pt, "AC stored bytes must be ciphertext");
+        assert_eq!(&stored[..4], BLOB_MAGIC);
+        assert_eq!(decrypt_cas_blob(&stored, &tcs, &ac_ctx()).unwrap(), pt);
+    }
+
+    #[test]
+    fn ac_and_cas_surfaces_are_domain_separated() {
+        // Frozen policy H1: an AC blob must NOT decrypt under a CAS context, and
+        // a CAS blob must NOT decrypt under an AC context — `surface` is bound
+        // into the derived key + AEAD AAD, so swapping surfaces fails closed even
+        // for the identical (tenant, digest, tcs).
+        let tcs = Tcs::from_bytes([6u8; 32]);
+        let pt = b"swap-me".to_vec();
+        let ac_blob = encrypt_cas_blob(&pt, &tcs, &ac_ctx()).unwrap();
+        let cas_blob = encrypt_cas_blob(&pt, &tcs, &ctx()).unwrap();
+        // Different surface ⇒ different ciphertext for identical input.
+        assert_ne!(ac_blob, cas_blob, "surface must perturb the derivation");
+        // Cross-surface decrypt must fail (never returns plaintext).
+        assert!(decrypt_cas_blob(&ac_blob, &tcs, &ctx()).is_err(), "AC blob must not decrypt as CAS");
+        assert!(decrypt_cas_blob(&cas_blob, &tcs, &ac_ctx()).is_err(), "CAS blob must not decrypt as AC");
+    }
+
+    #[test]
+    fn clb1_overhead_matches_the_wire_format() {
+        // Single-source check: the stored blob is exactly plaintext + 32 (4 magic
+        // + 12 nonce + 16 GCM tag), so the accounting const can never drift.
+        assert_eq!(BYOK_CLB1_OVERHEAD, 32);
+        let tcs = Tcs::from_bytes([8u8; 32]);
+        for pt_len in [0usize, 1, 17, 4096] {
+            let pt = vec![b'z'; pt_len];
+            let stored = encrypt_cas_blob(&pt, &tcs, &ctx()).unwrap();
+            assert_eq!(
+                stored.len() as u64,
+                pt_len as u64 + BYOK_CLB1_OVERHEAD,
+                "stored len must be plaintext + CLB1 overhead for pt_len={pt_len}"
+            );
+        }
     }
 }
