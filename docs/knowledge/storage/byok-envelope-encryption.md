@@ -1,14 +1,14 @@
 ---
 type: "StorageComponent"
 title: "BYOK envelope encryption at rest (CAS path wired, gated-inert)"
-description: "The BYOK microkernel (a KmsProvider trait + Dek/WrappedDek types + EnvelopeEncryptor + one compile-time-selected provider per build) PLUS the Wave-3a CAS wiring: byok_cas.rs now encrypts native CAS objects at rest for tenant_byok_config.state='active' tenants (convergent Mode A), fail-closed. STATUS: wired into the native CAS write/read path but gated-inert — zero active tenants and no prod KmsProvider; AC + ciphertext-accounting + §4 key-hardening remain deferred."
+description: "The BYOK microkernel (a KmsProvider trait + Dek/WrappedDek types + EnvelopeEncryptor + one compile-time-selected provider per build) PLUS the Wave-3a CAS wiring: byok_cas.rs now encrypts native CAS objects at rest for tenant_byok_config.state='active' tenants (convergent Mode A), fail-closed. STATUS: wired into the native CAS AND (Wave 3b) AC write/read paths but gated-inert — zero active tenants and no prod KmsProvider; §4 key-hardening + Mode B/partial remain deferred."
 source_files:
   - "crates/corelink-container/src/byok.rs"
   - "crates/corelink-container/src/byok_orchestrator.rs"
   - "crates/corelink-byok/src/lib.rs"
   - "crates/corelink-byok/src/byok_aws/real.rs"
   - "crates/corelink-container/src/storage/byok_cas.rs"
-checkpoint_sha: "c631a9522dd13136f7a69e1678b4578b4f933c47"
+checkpoint_sha: "0a794270a785e2e121c856a30ee3577e30dc2ebc"
 provenance: "AUTHORED"
 tags: ["storage", "byok", "encryption", "kms", "envelope"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -29,23 +29,34 @@ previous "UNWIRED — no storage call site" status is OBSOLETE for CAS: BYOK Wav
 glue module [`byok_cas`](#) (`crates/corelink-container/src/storage/byok_cas.rs:1-9`), consumed by
 `R2CasHandler` on the native CAS write/read path. On write, for an `active` tenant the plaintext is
 enveloped with `encrypt_convergent` before the R2 PUT
-(`crates/corelink-container/src/storage/byok_cas.rs:510-521`); on read the stored blob is decrypted
+(`crates/corelink-container/src/storage/byok_cas.rs:563-574`); on read the stored blob is decrypted
 BEFORE the content-address integrity check
-(`crates/corelink-container/src/storage/byok_cas.rs:529-548`). The whole path is **gated-inert**:
+(`crates/corelink-container/src/storage/byok_cas.rs:582-601`). The whole path is **gated-inert**:
 engagement is keyed on `tenant_byok_config.state == 'active'`
-(`crates/corelink-container/src/storage/byok_cas.rs:568-583`), the onboarding wave that writes those
+(`crates/corelink-container/src/storage/byok_cas.rs:621-636`), the onboarding wave that writes those
 rows is deferred, so today **zero** tenants are active and every existing tenant keeps the exact
 current plaintext behaviour; the handler also threads the BYOK collaborators as `Option`s, so a
 default build (no prod `KmsProvider` wired — the orchestrator falls back to the in-memory fake) runs
-the plaintext path unchanged (`crates/corelink-container/src/storage/byok_cas.rs:11-40`). This is the
+the plaintext path unchanged (`crates/corelink-container/src/storage/byok_cas.rs:11-46`). This is the
 at-rest confidentiality complement to the durable [R2 CAS bucket](/storage/r2-cas-bucket.md).
 
-**Still deferred (documented, never silently skipped):** the Action Cache (`R2AcHandler`) path; the §4
-HMAC'd-digest key hardening (the CAS R2 key keeps the raw plaintext digest for 3a); ciphertext-size
-accounting/quota reconciliation; Mode B (`crypto_mode='random'`) and the `partial`/backfill dual-read
-state (both **fail-closed** here, NOT plaintext); and the provider/`EnvelopeEncryptor` factory wiring
-into a production KMS (`byok.rs` / `byok_orchestrator.rs` still construct a provider behind an
-`Arc<dyn KmsProvider>` but the default binary links the in-memory fake).
+**BYOK Wave 3b (now wired, gated-inert) extended encryption to the Action Cache.** `R2AcHandler` now
+envelopes its `result_payload` at rest for an `active` tenant under `ac_crypto_context`
+(`crates/corelink-container/src/storage/byok_cas.rs:542-553`), which binds `AC_SURFACE` (`"ac"`) instead
+of `"cas"` so the derived key + AEAD AAD are domain-separated — an AC ciphertext can never be decrypted
+as (or swapped with) a CAS ciphertext (audit H1 silent-plaintext). Wave 3b also closed the
+ciphertext-size accounting gap: the byte accountant reserves/releases the COMMITTED size (plaintext +
+the fixed `BYOK_CLB1_OVERHEAD` = 32 B envelope: 4-byte magic + 12-byte nonce + 16-byte AEAD tag),
+single-sourced from `byok_cas.rs` (`crates/corelink-container/src/storage/byok_cas.rs:100`) so
+`reserve == release` and `bytes_used` cannot drift (audit C3). BYOK now covers BOTH the CAS and AC
+paths — still **gated-inert** (zero `active` tenants, no prod `KmsProvider`).
+
+**Still deferred (documented, never silently skipped):** the §4 HMAC'd-digest key hardening (the CAS/AC
+R2 key keeps the raw plaintext digest for 3a/3b); Mode B (`crypto_mode='random'`) and the
+`partial`/backfill dual-read state (both **fail-closed** here, NOT plaintext); and the
+provider/`EnvelopeEncryptor` factory wiring into a production KMS (`byok.rs` / `byok_orchestrator.rs`
+still construct a provider behind an `Arc<dyn KmsProvider>` but the default binary links the in-memory
+fake).
 
 # Role
 - The Wave-3a CAS storage glue: a per-tenant BYOK config cache + Tcs resolver + the convergent
@@ -60,22 +71,22 @@ into a production KMS (`byok.rs` / `byok_orchestrator.rs` still construct a prov
 1. The native CAS write/read path runs through `R2CasHandler`, which threads the BYOK collaborators
    (config cache, Tcs resolver) as `Option`s — when any is `None` (the default binary), or the tenant
    is not `active`, the plaintext path runs unchanged
-   (`crates/corelink-container/src/storage/byok_cas.rs:11-40`).
+   (`crates/corelink-container/src/storage/byok_cas.rs:11-46`).
 2. The per-tenant engagement decision is a single source of truth shared by write and read:
    `active` + convergent ⇒ encrypt; `active` + random / `partial` ⇒ FAIL-CLOSED; everything else ⇒
-   plaintext (`crates/corelink-container/src/storage/byok_cas.rs:568-583`).
+   plaintext (`crates/corelink-container/src/storage/byok_cas.rs:621-636`).
 3. `ByokConfigCache::get` resolves the tenant's BYOK config with at most ONE D1 read on a miss and
    caches even the "not configured / inactive" answer, so the non-BYOK hot path adds no D1 hop after
-   warm-up (`crates/corelink-container/src/storage/byok_cas.rs:171-201`).
+   warm-up (`crates/corelink-container/src/storage/byok_cas.rs:199-228`).
 4. For an `active` tenant, `TcsResolver::resolve` reads the CMK-wrapped Tenant Convergence Secret,
    unwraps it via the customer CMK through the injected `KmsProvider`, and caches the plaintext Tcs in
-   a ≤300 s window (`crates/corelink-container/src/storage/byok_cas.rs:412-454`).
+   a ≤300 s window (`crates/corelink-container/src/storage/byok_cas.rs:440-482`).
 5. On write the plaintext is enveloped as `MAGIC ‖ nonce ‖ ciphertext` via `encrypt_convergent` —
    convergent so identical content yields byte-identical output and dedup is preserved
-   (`crates/corelink-container/src/storage/byok_cas.rs:510-521`).
+   (`crates/corelink-container/src/storage/byok_cas.rs:563-574`).
 6. On read the stored blob is decrypted (and its 4-byte magic checked) BEFORE integrity verification,
    so a non-ciphertext / tampered object for an active tenant is refused rather than served raw
-   (`crates/corelink-container/src/storage/byok_cas.rs:529-548`).
+   (`crates/corelink-container/src/storage/byok_cas.rs:582-601`).
 7. The provider plugins are exposed as cargo features `aws`/`gcp`/`azure`/`vault`, at most one active per
    build, with no provider as the default test/CI build
    (`crates/corelink-byok/src/lib.rs:34-43`).
@@ -93,16 +104,16 @@ into a production KMS (`byok.rs` / `byok_orchestrator.rs` still construct a prov
 # Invariants
 - **The CAS path encrypts at rest ONLY for an `active`, convergent tenant.** `partial`/`random` are
   active-but-unsupported in 3a and FAIL CLOSED (never plaintext); inactive/pending/shredded/not-configured
-  run plaintext (`crates/corelink-container/src/storage/byok_cas.rs:568-583`).
+  run plaintext (`crates/corelink-container/src/storage/byok_cas.rs:621-636`).
 - **Fail-CLOSED on undetermined state.** For an active tenant an unavailable config/KMS/Tcs surfaces as an
   `Err` (5xx), never a downgrade to storing/serving plaintext: the config cache propagates the source
-  error (`crates/corelink-container/src/storage/byok_cas.rs:171-201`) and the Tcs resolver propagates a
-  missing-secret / KMS-unwrap failure (`crates/corelink-container/src/storage/byok_cas.rs:412-454`).
+  error (`crates/corelink-container/src/storage/byok_cas.rs:199-228`) and the Tcs resolver propagates a
+  missing-secret / KMS-unwrap failure (`crates/corelink-container/src/storage/byok_cas.rs:440-482`).
 - **Read refuses non-ciphertext for an active tenant.** A stored object lacking the BYOK magic, or any
   AEAD failure, is an error — the raw stored bytes are never returned
-  (`crates/corelink-container/src/storage/byok_cas.rs:529-548`).
+  (`crates/corelink-container/src/storage/byok_cas.rs:582-601`).
 - **The unwrapped Tcs lives only inside a bounded ≤300 s window** (INV-BYOK-CRYPTO-SOVEREIGNTY): the Tcs
-  cache rejects a TTL over 300 s (`crates/corelink-container/src/storage/byok_cas.rs:313-323`).
+  cache rejects a TTL over 300 s (`crates/corelink-container/src/storage/byok_cas.rs:340-351`).
 - AT MOST ONE KMS provider may be linked in any build; a multi-provider build is rejected at compile time
   by the `compile_error!` guards (`crates/corelink-byok/src/lib.rs:105-139`).
 - `#![forbid(unsafe_code)]` holds on both the container factory and the umbrella crate's surface
@@ -113,7 +124,7 @@ into a production KMS (`byok.rs` / `byok_orchestrator.rs` still construct a prov
   they only engage for `tenant_byok_config.state='active'`, of which there are currently zero (onboarding
   is a later wave). Do not read "wired" as "encrypting production traffic today."
 - Convergent (Mode A) is deliberate: identical content ⇒ byte-identical ciphertext ⇒ dedup preserved
-  (`crates/corelink-container/src/storage/byok_cas.rs:510-521`). The trade-off is a confirmation oracle on
+  (`crates/corelink-container/src/storage/byok_cas.rs:563-574`). The trade-off is a confirmation oracle on
   the raw digest; the §4 HMAC'd-digest key hardening that closes it is deferred to Wave 3b.
 - Provider selection is a build-time decision, not runtime config: switching a tenant's KMS provider is a
   rebuild + redeploy, not a flag flip. Even with a `byok-*-real` feature enabled, a tenant only encrypts
@@ -122,13 +133,13 @@ into a production KMS (`byok.rs` / `byok_orchestrator.rs` still construct a prov
 # Citations
 1. `crates/corelink-container/src/storage/byok_cas.rs:1-9` — module charter: the Wave-3a glue between the
    Wave-1 crypto primitives and the Wave-2 config read model, consumed by `R2CasHandler` on the CAS write/read path.
-2. `crates/corelink-container/src/storage/byok_cas.rs:11-40` — GATED-INERT + FAIL-CLOSED safety envelope and the Wave-3a scope/deferrals.
-3. `crates/corelink-container/src/storage/byok_cas.rs:171-201` — `ByokConfigCache::get`: one D1 read on miss, caches the not-configured/inactive answer, fail-closed on source error.
-4. `crates/corelink-container/src/storage/byok_cas.rs:313-323` — `TcsCache::new`: rejects a Tcs TTL over 300 s (INV-BYOK-CRYPTO-SOVEREIGNTY).
-5. `crates/corelink-container/src/storage/byok_cas.rs:412-454` — `TcsResolver::resolve`: wrapped-Tcs read → CMK unwrap → ≤300 s cache, fail-closed.
-6. `crates/corelink-container/src/storage/byok_cas.rs:510-521` — `encrypt_cas_blob`: convergent envelope `MAGIC ‖ nonce ‖ ciphertext`, dedup-preserving.
-7. `crates/corelink-container/src/storage/byok_cas.rs:529-548` — `decrypt_cas_blob`: magic check + AEAD decrypt, fail-closed (no raw bytes served).
-8. `crates/corelink-container/src/storage/byok_cas.rs:568-583` — `engagement_for`: the state → encrypt / fail-closed / plaintext truth table.
+2. `crates/corelink-container/src/storage/byok_cas.rs:11-46` — GATED-INERT + FAIL-CLOSED safety envelope and the Wave-3a scope/deferrals.
+3. `crates/corelink-container/src/storage/byok_cas.rs:199-228` — `ByokConfigCache::get`: one D1 read on miss, caches the not-configured/inactive answer, fail-closed on source error.
+4. `crates/corelink-container/src/storage/byok_cas.rs:340-351` — `TcsCache::new`: rejects a Tcs TTL over 300 s (INV-BYOK-CRYPTO-SOVEREIGNTY).
+5. `crates/corelink-container/src/storage/byok_cas.rs:440-482` — `TcsResolver::resolve`: wrapped-Tcs read → CMK unwrap → ≤300 s cache, fail-closed.
+6. `crates/corelink-container/src/storage/byok_cas.rs:563-574` — `encrypt_cas_blob`: convergent envelope `MAGIC ‖ nonce ‖ ciphertext`, dedup-preserving.
+7. `crates/corelink-container/src/storage/byok_cas.rs:582-601` — `decrypt_cas_blob`: magic check + AEAD decrypt, fail-closed (no raw bytes served).
+8. `crates/corelink-container/src/storage/byok_cas.rs:621-636` — `engagement_for`: the state → encrypt / fail-closed / plaintext truth table.
 9. `crates/corelink-container/src/byok.rs:1-29` — feature-gated factory returning an `Arc<dyn KmsProvider>`.
 10. `crates/corelink-container/src/byok.rs:10` — `#![forbid(unsafe_code)]` on the factory.
 11. `crates/corelink-byok/src/byok_aws/real.rs:176-256` — `AwsKmsRealProvider::new`/`with_fips`: unconditional `use_fips(true)` + EXPLICIT static creds + explicit FIPS endpoint (no CF-cold-start-hanging AWS SDK chain).
