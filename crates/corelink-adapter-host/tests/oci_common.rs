@@ -46,6 +46,16 @@ impl Default for TestRig {
 
 impl TestRig {
     pub fn new() -> Self {
+        Self::with_blob_limit(defaults::BLOB_SIZE_LIMIT_BYTES)
+    }
+
+    /// Like [`TestRig::new`] but with an explicit `blob_size_limit_bytes`.
+    ///
+    /// Lets the DoS tests pin a tiny ceiling so an over-cap PATCH/PUT body
+    /// (the attacker-controlled blob-upload `to_bytes` site in
+    /// `oci/server/handlers.rs`) can be exercised without allocating a
+    /// multi-GiB body.
+    pub fn with_blob_limit(blob_size_limit_bytes: u64) -> Self {
         let cas: Arc<InMemoryBlobStore> = Arc::new(InMemoryBlobStore::default());
         let kv: Arc<InMemoryKv> = Arc::new(InMemoryKv::default());
         let resolver: Arc<StaticTenantResolver> = Arc::new(StaticTenantResolver::default());
@@ -55,7 +65,7 @@ impl TestRig {
         let cfg = OciAdapterConfig::new(
             ([127u8, 0, 0, 1], 0).into(),
             String::from("http://localhost:5000/token"),
-            defaults::BLOB_SIZE_LIMIT_BYTES,
+            blob_size_limit_bytes,
             defaults::MULTIPART_CHUNK_SIZE_BYTES,
             false,
             defaults::TOKEN_TTL_SECS,

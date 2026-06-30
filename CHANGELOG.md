@@ -100,6 +100,13 @@ Each entry cross-references:
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
 ### Security
+- **OCI blob-upload OOM DoS capped (enterprise-DD HIGH).** The OCI blob `PATCH`/`PUT` chunk handler read
+  the inbound body with `to_bytes(body, usize::MAX)` — any authenticated tenant could drive an unbounded
+  single allocation (multi-GB heap → OOM). Now capped at the configured `blob_size_limit_bytes` (5 GiB
+  default, the documented max layer), failing fast on the size hint → **413 Payload Too Large** before
+  allocation (large blobs upload as bounded chunks). Audited all 29 `to_bytes(_, usize::MAX)` sites: this
+  was the only attacker-controlled request-body one; the other 28 are `#[cfg(test)]` response-body reads.
+  4 regression tests.
 - **Audit chain is now tamper-evident against a D1-writer (enterprise-DD #4 / CF-6).** The S-09 audit
   chain hashed with UNKEYED BLAKE3 over mutable D1 rows, so an insider with D1 write could rewrite a
   suffix + recompute a self-consistent chain + head and the verifier would pass. Now the per-partition
