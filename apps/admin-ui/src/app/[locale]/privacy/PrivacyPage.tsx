@@ -44,7 +44,12 @@ export interface PrivacyPageProps {
 
 export function PrivacyPage({ locale, content, version, lastUpdated }: PrivacyPageProps) {
   return (
-    <article className="mx-auto max-w-3xl py-8">
+    // `<main id="main">` (not `<article>`): `<article>`'s implicit role is not
+    // a landmark, so the page had zero main landmarks — axe `landmark-one-main`
+    // + `region` (page content not contained by a landmark) both failed. A
+    // single top-level `<main>` wrapping all content satisfies both and matches
+    // the landing page's `<main id="main">` pattern.
+    <main id="main" className="mx-auto max-w-3xl py-8">
       <PageHeader title={TITLE[locale]} />
       <div
         role="note"
@@ -67,6 +72,6 @@ export function PrivacyPage({ locale, content, version, lastUpdated }: PrivacyPa
           {SUBPROC_LABEL[locale]} →
         </Link>
       </p>
-    </article>
+    </main>
   );
 }

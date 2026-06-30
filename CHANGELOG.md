@@ -100,6 +100,15 @@ Each entry cross-references:
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
 ### Security
+- **admin-ui CSP was silently disabled in prod — now restored (found while fixing the red e2e gate).** The
+  Next.js middleware lived at the package root (`apps/admin-ui/middleware.ts`) but the App Router is under
+  `src/`, so Next.js **ignored it and emitted NO `Content-Security-Policy` header at all** (dev + prod) — the
+  admin-ui ran with no CSP. Moved to `src/middleware.ts` (pure rename — the existing nonce-based strict CSP,
+  no `unsafe-inline`, is unchanged), which activates it; the CSP-violation e2e test now passes (the injected
+  inline script is blocked + the `securitypolicyviolation` fires). Also fixed the admin-ui accessibility
+  violations dragging the Lighthouse a11y score below 1.0 (invalid `aria-readonly` on a `<p>`,
+  missing `<main>` landmark + `<h1>` on the privacy/consent routes) — root-fixed in markup, no threshold/test
+  weakened.
 - **Sentry event bodies are now PII/secret-scrubbed before send (enterprise-DD MED).** Every live Sentry init
   (the admin-ui client/server/edge configs + the 5 TS workers — corelink-prod CAS, signup-worker, analytics,
   get-corelink) only scrubbed request *header keys*; message/exception bodies + extra/contexts/breadcrumbs
