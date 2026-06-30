@@ -7,15 +7,23 @@
 //! served by the *public* edge Worker (`corelink-api.humangr.com/*`) and
 //! is reachable from the public internet. The sole gate is a constant-time
 //! compare of the caller-supplied `x-corelink-internal-auth` header against
-//! the `CORELINK_INTERNAL_AUTH_KEY` shared secret. The compare is
+//! the **dedicated** `CORELINK_PAT_MINT_AUTH_KEY` secret. The compare is
 //! fail-closed and uses padded `ct_eq` so neither secret length nor content
-//! leaks via an early branch — but the secret is a single, internet-reachable,
-//! operator-grade credential shared with the signup-worker.
+//! leaks via an early branch.
 //!
-//! **Recommended hardening (tracked, not yet implemented):** (1) separate
-//! per-consumer secrets so a signup-worker leak cannot exercise the mint;
-//! (2) restrict `/_internal/pat/mint` to a Worker-to-Worker Service Binding
-//! (no public route); (3) add per-tenant authorisation to the mint.
+//! **DD HIGH remediation — dedicated key, NO shared-key fallback:** because
+//! this surface can mint ANY tenant's PAT (including `SCOPE_ADMIN_ALL`), its
+//! gate is keyed ONLY to the dedicated `CORELINK_PAT_MINT_AUTH_KEY` and MUST
+//! NOT fall back to the broad shared `CORELINK_INTERNAL_AUTH_KEY` (unlike the
+//! other internal surfaces, which resolve via
+//! [`crate::routes::admin::resolve_internal_auth_key`]). The dedicated key is
+//! REQUIRED in prod; if it is unset/blank/`< 32` chars the route fails CLOSED
+//! — it is NOT mounted and the endpoint is unavailable (503) rather than
+//! silently widening the mint to the shared signup-worker credential.
+//!
+//! **Recommended hardening (tracked, not yet implemented):** (1) restrict
+//! `/_internal/pat/mint` to a Worker-to-Worker Service Binding (no public
+//! route); (2) add per-tenant authorisation to the mint.
 //!
 //! **PAT verification on native routes (F3):** the container's native
 //! data-plane routes (CAS, AC, Bazel REAPI, Turbo) do NOT perform a
@@ -26,10 +34,12 @@
 //! `adapter_pat::PatVerifier`. Wiring Argon2id onto the native CAS/AC
 //! plane is tracked as a TODO (Option-B extension).
 //!
-//! The shared secret is bound to the container via the `CORELINK_INTERNAL_AUTH_KEY`
-//! env var (passed at `container.start({ env })` — same mechanism as
-//! `R2_S3_ENDPOINT`). The Worker AND signup-worker both carry the same
-//! secret as a Worker secret (`wrangler secret put CORELINK_INTERNAL_AUTH_KEY`).
+//! The dedicated mint secret is bound to the container via the
+//! `CORELINK_PAT_MINT_AUTH_KEY` env var (passed at `container.start({ env })`
+//! — same mechanism as `R2_S3_ENDPOINT`). The Worker AND signup-worker carry
+//! the same dedicated secret as a Worker secret
+//! (`wrangler secret put CORELINK_PAT_MINT_AUTH_KEY`); the broad shared
+//! `CORELINK_INTERNAL_AUTH_KEY` does NOT authorize the mint.
 //!
 //! # Request shape
 //!
@@ -477,7 +487,9 @@ pub fn router(state: InternalPatRouteState) -> Router {
 /// `POST /_internal/pat/mint` handler.
 ///
 /// Security gate: constant-time comparison of the `X-Corelink-Internal-Auth`
-/// header against the shared secret. Any mismatch or missing header → 401,
+/// header against the **dedicated** `CORELINK_PAT_MINT_AUTH_KEY` (DD HIGH
+/// remediation — never the shared `CORELINK_INTERNAL_AUTH_KEY`; see
+/// [`build_state_from_env`]). Any mismatch or missing header → 401,
 /// immediately, BEFORE parsing the body.
 ///
 /// M3 fix: the request body is taken as raw [`Bytes`] (NOT the `Json`
@@ -676,39 +688,71 @@ fn hex_nibble(b: u8) -> Option<u8> {
     }
 }
 
+/// Resolve the **dedicated** mint auth key from its raw env value
+/// (DD HIGH remediation).
+///
+/// Unlike every other internal surface — which resolves via
+/// [`crate::routes::admin::resolve_internal_auth_key`] and falls back to the
+/// broad shared `CORELINK_INTERNAL_AUTH_KEY` — the any-tenant PAT mint is gated
+/// ONLY by the dedicated `CORELINK_PAT_MINT_AUTH_KEY`. This resolver therefore
+/// reads NOTHING but the value it is handed and **never** consults the shared
+/// key: a leak of the shared signup-worker secret cannot, by itself, exercise
+/// the any-tenant (incl. `SCOPE_ADMIN_ALL`) mint.
+///
+/// Fail-CLOSED: an absent / blank / `< INTERNAL_AUTH_KEY_MIN_LEN`-char value
+/// yields `None`. The caller then declines to mount the route, so the endpoint
+/// is unavailable (503) rather than silently widening to the shared key. The
+/// `≥ 32`-char floor matches the other internal keys
+/// ([`crate::routes::admin::INTERNAL_AUTH_KEY_MIN_LEN`]); the secrets-checklist
+/// instructs `openssl rand -hex 32` (64 chars).
+///
+/// Kept as a pure function (env value in, decision out) so the no-fallback /
+/// fail-closed gate is unit-testable without racing the process environment.
+#[must_use]
+fn resolve_mint_auth_key(dedicated: Option<&str>) -> Option<Arc<str>> {
+    match dedicated {
+        Some(key) if key.len() >= crate::routes::admin::INTERNAL_AUTH_KEY_MIN_LEN => {
+            Some(Arc::from(key))
+        }
+        _ => None,
+    }
+}
+
 /// Build the route state from env vars at binary boot time.
 ///
-/// - `CORELINK_PAT_MINT_AUTH_KEY` — **consumer-specific** secret for the
-///   mint auth header gate (red-team #3). Falls back to the shared
-///   `CORELINK_INTERNAL_AUTH_KEY` when unset/blank/too-short (see
-///   [`crate::routes::admin::resolve_internal_auth_key`]). The selected key
-///   must be at least 32 chars; if NEITHER is properly sized the route is
-///   NOT mounted (fail-CLOSED: we never mint PATs without a properly sized
-///   secret gate). The secrets-checklist instructs `openssl rand -hex 32`
-///   (64 chars); anything shorter is rejected.
-///
-///   Splitting the mint off its own key means a leak of the shared
-///   signup-worker secret no longer, by itself, exercises the any-tenant
-///   admin-PAT mint — once the operator provisions `CORELINK_PAT_MINT_AUTH_KEY`.
+/// - `CORELINK_PAT_MINT_AUTH_KEY` — the **dedicated, REQUIRED** secret for the
+///   mint auth header gate (DD HIGH remediation). It is read on its own and
+///   **MUST NOT** fall back to the shared `CORELINK_INTERNAL_AUTH_KEY`: this
+///   surface can mint ANY tenant's PAT (including `SCOPE_ADMIN_ALL`), so a leak
+///   of the broad shared secret must never, by itself, exercise it. The key
+///   must be at least 32 chars; if it is unset/blank/too-short the route is
+///   NOT mounted (fail-CLOSED — the endpoint is unavailable rather than gated
+///   only by the shared key). The secrets-checklist instructs
+///   `openssl rand -hex 32` (64 chars); anything shorter is rejected. The
+///   dedicated key is REQUIRED in prod (no shared-key fallback).
 /// - `PAT_SIGNING_KEY` — hex-encoded HMAC signing key (≥ 32 bytes decoded).
 ///   Missing → route returns 503 (same fail-CLOSED policy).
 ///
 /// Returns `None` when either key is absent or invalid; the caller logs
 /// a warning and skips mounting the route (dev/CI without secrets).
 pub fn build_state_from_env() -> Option<InternalPatRouteState> {
-    // Red-team #3: read the mint-specific key first, fall back to the
-    // shared key. `resolve_internal_auth_key` already enforces the 32-char
-    // floor on whichever key it returns, and returns `None` when neither is
-    // properly sized → route NOT mounted (fail-CLOSED).
-    let auth_key = crate::routes::admin::resolve_internal_auth_key("CORELINK_PAT_MINT_AUTH_KEY")
-        .or_else(|| {
-            tracing::warn!(
-                "no usable mint auth key (CORELINK_PAT_MINT_AUTH_KEY / \
-                 CORELINK_INTERNAL_AUTH_KEY both unset or < 32 chars); \
-                 /_internal/pat/mint route NOT mounted (use `openssl rand -hex 32`)"
-            );
-            None
-        })?;
+    // DD HIGH remediation: the mint gate requires the DEDICATED
+    // `CORELINK_PAT_MINT_AUTH_KEY` and MUST NOT fall back to the shared
+    // `CORELINK_INTERNAL_AUTH_KEY`. Unset/blank/< 32 chars ⇒ fail CLOSED
+    // (route NOT mounted, endpoint unavailable — never silently widened to
+    // the broad shared secret).
+    let auth_key = resolve_mint_auth_key(
+        std::env::var("CORELINK_PAT_MINT_AUTH_KEY").ok().as_deref(),
+    )
+    .or_else(|| {
+        tracing::warn!(
+            "CORELINK_PAT_MINT_AUTH_KEY unset/blank/< 32 chars; \
+             /_internal/pat/mint route NOT mounted (fail-CLOSED — NO fallback to \
+             the shared CORELINK_INTERNAL_AUTH_KEY; DD HIGH remediation; \
+             use `openssl rand -hex 32`)"
+        );
+        None
+    })?;
 
     let signing_key_hex = std::env::var("PAT_SIGNING_KEY").ok()?;
     let key_bytes = hex_decode(&signing_key_hex)?;
@@ -1325,5 +1369,101 @@ mod tests {
             exactly_32.len() >= 32,
             "32-char key must pass the >= 32 gate"
         );
+    }
+
+    // ── DD HIGH: mint gate requires the DEDICATED key, NO shared fallback ──────
+
+    /// A properly sized dedicated `CORELINK_PAT_MINT_AUTH_KEY` resolves to that
+    /// exact key — the mint stays available when correctly provisioned.
+    #[test]
+    fn mint_auth_key_resolves_dedicated_when_set_and_sized() {
+        let key = "a".repeat(32);
+        let resolved =
+            resolve_mint_auth_key(Some(&key)).expect("32-char dedicated key must resolve");
+        assert_eq!(&*resolved, key.as_str());
+
+        // A generous 64-char key (the secrets-checklist `openssl rand -hex 32`)
+        // also resolves.
+        let key64 = "b".repeat(64);
+        let resolved64 =
+            resolve_mint_auth_key(Some(&key64)).expect("64-char dedicated key must resolve");
+        assert_eq!(&*resolved64, key64.as_str());
+    }
+
+    /// CORE REGRESSION (DD HIGH): when the dedicated `CORELINK_PAT_MINT_AUTH_KEY`
+    /// is UNSET, the gate fails CLOSED. There is NO fallback to the shared
+    /// `CORELINK_INTERNAL_AUTH_KEY` — the resolver ignores the environment
+    /// entirely (it only sees the dedicated value, here `None`), so a present
+    /// shared key can never authorize the mint. `None` ⇒ route NOT mounted.
+    #[test]
+    fn mint_auth_key_fails_closed_when_dedicated_unset_no_shared_fallback() {
+        assert!(
+            resolve_mint_auth_key(None).is_none(),
+            "dedicated key unset MUST fail closed (no shared-key fallback)"
+        );
+    }
+
+    /// A blank or sub-floor dedicated key is treated as absent and fails CLOSED
+    /// — it is NOT silently widened to the shared key.
+    #[test]
+    fn mint_auth_key_fails_closed_when_dedicated_blank_or_short() {
+        assert!(
+            resolve_mint_auth_key(Some("")).is_none(),
+            "blank dedicated key must fail closed"
+        );
+        let short_31 = "a".repeat(31);
+        assert!(
+            resolve_mint_auth_key(Some(&short_31)).is_none(),
+            "31-char dedicated key (< 32 floor) must fail closed"
+        );
+    }
+
+    /// End-to-end at the handler: a route built with the dedicated key accepts
+    /// the correct key (mint succeeds) and rejects a wrong key (401). This pins
+    /// that the live gate compares against the dedicated key — the value that
+    /// `resolve_mint_auth_key` (NOT the shared key) selected.
+    #[tokio::test]
+    async fn handler_mints_with_dedicated_key_and_rejects_wrong() {
+        let dedicated = "d".repeat(40);
+        let resolved =
+            resolve_mint_auth_key(Some(&dedicated)).expect("dedicated key must resolve");
+        let signing = PatSigningKey::from_bytes(vec![0x42u8; 32]).unwrap();
+        let state = InternalPatRouteState {
+            internal_auth_key: resolved,
+            signing_key: Arc::new(signing),
+            signing_key_id: 1,
+            inflight: Arc::new(MintInflightLimiter::new(DEFAULT_MAX_INFLIGHT_MINTS)),
+            rate: Arc::new(MintRateLimiter::new(DEFAULT_MAX_MINTS_PER_WINDOW)),
+        };
+
+        // Correct dedicated key ⇒ 200.
+        let ok = router(state.clone())
+            .oneshot(make_mint_request(
+                &dedicated,
+                serde_json::json!({
+                    "tenant_id": Uuid::now_v7(),
+                    "principal_id": Uuid::now_v7(),
+                    "scopes": "admin",
+                    "ttl_seconds": 86400
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(ok.status(), StatusCode::OK);
+
+        // Wrong key ⇒ 401.
+        let bad = router(state)
+            .oneshot(make_mint_request(
+                "not-the-dedicated-key-but-32-chars!!",
+                serde_json::json!({
+                    "tenant_id": Uuid::now_v7(),
+                    "principal_id": Uuid::now_v7(),
+                    "scopes": "admin",
+                    "ttl_seconds": 86400
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(bad.status(), StatusCode::UNAUTHORIZED);
     }
 }
