@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "04a7eccfdbe5733a9059ab12518f6ee571db0248"
+checkpoint_sha: "81896b3ceb3f30e5e09969a2eff0fc84ff9f6fe1"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -44,21 +44,25 @@ written.
   (`crates/corelink-container/src/customer_d1.rs:1159-1161`).
 - Listing is read-only and always self-tenant-scoped, mapping the stored `scope` back to a dashboard
   scopes list (`crates/corelink-container/src/customer_d1.rs:992-994`).
-- The internal mint route is the SECOND writer's mint half: `POST /_internal/pat/mint` gated by a
-  constant-time internal-auth compare, mints the PAT and returns plaintext + Argon2id hash
-  (`crates/corelink-container/src/routes/internal_pat.rs:1-13`).
+- The internal mint route is the SECOND writer's mint half: `POST /_internal/pat/mint` mints the PAT
+  and returns plaintext + Argon2id hash, gated by a constant-time compare against the DEDICATED
+  `CORELINK_PAT_MINT_AUTH_KEY` ONLY — with NO fallback to the shared `CORELINK_INTERNAL_AUTH_KEY`. Because
+  this surface can mint ANY tenant's PAT (incl. `SCOPE_ADMIN_ALL`), the dedicated key is REQUIRED and an
+  unset/blank/`< 32`-char value fails CLOSED: the route is NOT mounted and the endpoint is unavailable
+  (503) rather than silently widened to the broad shared signup-worker credential — the DD-HIGH
+  remediation (`crates/corelink-container/src/routes/internal_pat.rs:1-22`).
 - That mint route is a PURE function — it NEVER persists the row itself; the caller (signup-worker)
   writes the returned `hash` to the D1 `pat` row and discards the plaintext after one use
-  (`crates/corelink-container/src/routes/internal_pat.rs:586-646`).
+  (`crates/corelink-container/src/routes/internal_pat.rs:502-659`).
 - A mint failure returns an OPAQUE 503 body (`{"error":"mint_failed"}`): the real `PatError` detail
   (e.g. `SigningKeyTooShort`, entropy/hash-corruption internals) is logged SERVER-SIDE only and never
   disclosed in the response — even to a holder of the mint auth key
-  (`crates/corelink-container/src/routes/internal_pat.rs:596-608`).
+  (`crates/corelink-container/src/routes/internal_pat.rs:608-620`).
 
 # Invariants
 
 - The PAT plaintext is never logged or persisted at the mint route; the caller writes it to Clerk
-  session metadata once and discards it (`crates/corelink-container/src/routes/internal_pat.rs:63-65`).
+  session metadata once and discards it (`crates/corelink-container/src/routes/internal_pat.rs:73-75`).
 - The `admin` scope is never grantable via self-serve key creation; unrecognized tokens fail CLOSED
   (`crates/corelink-container/src/customer_d1.rs:307-329`).
 - Revoke is tenant-scoped: a cross-tenant `pat_id` cannot be revoked (or even observed)
@@ -68,7 +72,7 @@ written.
 
 - The mint route returns the Argon2id `hash` in its 200 body because the signup-worker — not the
   container — is what WRITES that hash to the D1 `pat` row (the M7 follow-up to move the write into the
-  container is deferred) (`crates/corelink-container/src/routes/internal_pat.rs:78-82`).
+  container is deferred) (`crates/corelink-container/src/routes/internal_pat.rs:88-92`).
 - `scope` may be NULL on legacy rows; the verifier's D1 row reader maps that to `""`
   (`crates/corelink-container/src/adapter_pat.rs:144-150`), which then fails CLOSED at the scope gate
   rather than erroring (`crates/corelink-container/src/scope.rs:73-95`).
@@ -82,9 +86,9 @@ written.
 3. `crates/corelink-container/src/customer_d1.rs:992-994` — tenant-scoped key listing SELECT.
 4. `crates/corelink-container/src/customer_d1.rs:1081-1094` — `INSERT INTO pat` (hash + token_id persisted, plaintext not).
 5. `crates/corelink-container/src/customer_d1.rs:1159-1161` — idempotent tenant-scoped revoke UPDATE.
-6. `crates/corelink-container/src/routes/internal_pat.rs:1-13` — the `/_internal/pat/mint` route + internal-auth gate.
-7. `crates/corelink-container/src/routes/internal_pat.rs:63-65` — plaintext never persisted; caller's responsibility.
-8. `crates/corelink-container/src/routes/internal_pat.rs:78-82` — M7: signup-worker writes the hash to the D1 row.
-9. `crates/corelink-container/src/routes/internal_pat.rs:586-646` — mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:596-608`).
+6. `crates/corelink-container/src/routes/internal_pat.rs:1-22` — the `/_internal/pat/mint` route + the DEDICATED-key-only auth gate (no shared-key fallback; fail-CLOSED — DD-HIGH remediation).
+7. `crates/corelink-container/src/routes/internal_pat.rs:73-75` — plaintext never persisted; caller's responsibility.
+8. `crates/corelink-container/src/routes/internal_pat.rs:88-92` — M7: signup-worker writes the hash to the D1 row.
+9. `crates/corelink-container/src/routes/internal_pat.rs:502-659` — `handle_mint`: mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:608-620`).
 10. `crates/corelink-container/src/adapter_pat.rs:144-150` — the verifier's D1 row reader mapping a NULL `scope` to `""`.
 11. `crates/corelink-container/src/scope.rs:73-95` — the fail-CLOSED scope gate (`""` grants nothing).
