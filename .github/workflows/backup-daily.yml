@@ -1,0 +1,180 @@
+name: Backup Daily (live)
+
+# DD-1 closure: the LIVE scheduled backup lane.
+#
+# Runs scripts/backup-daily.sh in NON-dry-run mode against prod every day:
+#   D1 export (per database) → GPG encrypt → R2 upload  [+ R2 cold-tier
+#   rclone snapshot + KV dumps when their tooling/secrets are present].
+#
+# This is READ-ONLY on prod (wrangler d1 export / r2 list / kv get) and only
+# WRITES to the dedicated backup R2 bucket (BACKUP_R2_BUCKET) — it never
+# mutates prod state.
+#
+# Runs on GitHub-hosted ubuntu-latest (Mac-free; same pattern as
+# cf-deploy-prod.yml) so the founder's self-hosted Mac is never loaded by the
+# backup.
+#
+# ──────────────────────────────────────────────────────────────────────────
+# OWNER ACTION REQUIRED before the scheduled run can go green (cron ships now;
+# it cannot succeed until these secrets/vars exist — this is documented, NOT
+# faked):
+#   secrets.CF_API_TOKEN        — EXISTS (reused from cf-deploy-prod).
+#   secrets.CF_ACCOUNT_ID       — EXISTS (reused from cf-deploy-prod).
+#   secrets.BACKUP_GPG_RECIPIENT     — MISSING. GPG key id / email used to
+#                                      encrypt artifacts (gpg --recipient).
+#   secrets.BACKUP_GPG_PUBLIC_KEY    — MISSING. ASCII-armored PUBLIC key for
+#                                      BACKUP_GPG_RECIPIENT, imported so gpg
+#                                      can encrypt to it (no private key on CI).
+#   vars.BACKUP_R2_BUCKET            — MISSING (optional; defaults to
+#                                      corelink-backups-production). The bucket
+#                                      MUST already exist in R2.
+#   secrets.RCLONE_CONF_BASE64       — MISSING. base64 of an rclone.conf that
+#                                      defines the `corelink-r2-source` and
+#                                      `corelink-r2-backup` S3 remotes. Required
+#                                      ONLY for the R2 cold-tier snapshot
+#                                      (Phase 2); D1 + KV backup work without it.
+#   secrets.AUDIT_OUTBOX_URL         — MISSING (optional). Endpoint that ingests
+#                                      corelink.backup.* audit events.
+# ──────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    # Daily at 04:00 UTC — one hour BEFORE backup-daily-verify (05:00 UTC),
+    # so the verify lane checks the freshly-produced snapshot.
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "CoreLink env (production | staging)"
+        required: false
+        default: "production"
+      dry_run:
+        description: "If true, run the backup in dry-run mode (no live calls / no R2 writes)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  issues: write   # SEV-2 alert via GitHub issue on failure
+
+concurrency:
+  group: backup-daily
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Daily backup (live)
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 35
+    env:
+      CORELINK_ENV: ${{ github.event.inputs.env || 'production' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 1
+
+      - name: Resolve dry-run flag
+        id: mode
+        run: |
+          set -euo pipefail
+          # Scheduled runs are LIVE (dry_run=false). workflow_dispatch may
+          # override to "true" for a no-write rehearsal.
+          DRY="${{ github.event.inputs.dry_run }}"
+          DRY="${DRY:-false}"
+          echo "dry=${DRY}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: '22'
+
+      - name: Install wrangler
+        run: npm install -g wrangler@4.95.0  # pinned exact (matches cf-deploy-prod.yml)
+
+      - name: Install backup tooling (jq, gpg, rclone)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends jq gnupg rclone
+
+      - name: Import GPG recipient public key (live only)
+        if: steps.mode.outputs.dry == 'false'
+        env:
+          BACKUP_GPG_PUBLIC_KEY: ${{ secrets.BACKUP_GPG_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BACKUP_GPG_PUBLIC_KEY:-}" ]; then
+            echo "::error ::secrets.BACKUP_GPG_PUBLIC_KEY is not set — cannot encrypt backups. Provision it (see workflow header)."
+            exit 1
+          fi
+          printf '%s' "${BACKUP_GPG_PUBLIC_KEY}" | gpg --batch --import
+
+      - name: Configure rclone R2 remotes (live only; for R2 cold-tier phase)
+        if: steps.mode.outputs.dry == 'false'
+        env:
+          RCLONE_CONF_BASE64: ${{ secrets.RCLONE_CONF_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RCLONE_CONF_BASE64:-}" ]; then
+            echo "::warning ::secrets.RCLONE_CONF_BASE64 not set — R2 cold-tier snapshot (Phase 2) will fail. D1+KV backup still run. Provision it to enable cold-tier."
+          else
+            mkdir -p "$HOME/.config/rclone"
+            printf '%s' "${RCLONE_CONF_BASE64}" | base64 -d > "$HOME/.config/rclone/rclone.conf"
+          fi
+
+      - name: Run daily backup
+        id: backup
+        env:
+          # CF auth for wrangler d1 export / r2 / kv (reused prod secrets).
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          # Backup-specific config (see workflow header for which are missing).
+          BACKUP_GPG_RECIPIENT: ${{ secrets.BACKUP_GPG_RECIPIENT }}
+          BACKUP_R2_BUCKET: ${{ vars.BACKUP_R2_BUCKET }}
+          AUDIT_OUTBOX_URL: ${{ secrets.AUDIT_OUTBOX_URL }}
+          # Use the globally-installed wrangler (no local node_modules on the
+          # ubuntu runner).
+          WRANGLER: wrangler
+          # Opt in to the sanctioned prod-from-CI backup lane (the script's
+          # guard refuses prod-from-CI unless this is set).
+          BACKUP_ALLOW_CI: "true"
+        run: |
+          set -euo pipefail
+          ARGS=("--env" "${CORELINK_ENV}")
+          if [[ "${{ steps.mode.outputs.dry }}" == "true" ]]; then
+            ARGS+=("--dry-run")
+          fi
+          bash scripts/backup-daily.sh "${ARGS[@]}"
+
+      - name: Alert on backup failure
+        if: failure()
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const dry = '${{ steps.mode.outputs.dry }}';
+            const severity = dry === 'true' ? 'SEV-3' : 'SEV-2';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `${severity}: daily backup failed (run ${context.runId})`,
+              labels: ['backup', 'dr', 'r-prep', severity.toLowerCase()],
+              body: [
+                `The daily live backup (scripts/backup-daily.sh) failed.`,
+                ``,
+                `**Mode:** dry_run=${dry}`,
+                `**Env:** ${process.env.CORELINK_ENV}`,
+                `**Workflow run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                ``,
+                `**Likely cause if this is the first scheduled run:** a backup`,
+                `secret is not yet provisioned (see the OWNER ACTION REQUIRED`,
+                `block in .github/workflows/backup-daily.yml).`,
+                ``,
+                `**Action required:**`,
+                `- Confirm BACKUP_GPG_RECIPIENT / BACKUP_GPG_PUBLIC_KEY / RCLONE_CONF_BASE64 are set.`,
+                `- Confirm the BACKUP_R2_BUCKET exists in R2.`,
+                `- Re-run via workflow_dispatch once provisioned.`,
+              ].join('\n'),
+            });
+        env:
+          CORELINK_ENV: ${{ env.CORELINK_ENV }}
