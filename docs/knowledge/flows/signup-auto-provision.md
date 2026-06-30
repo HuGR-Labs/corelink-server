@@ -7,7 +7,8 @@ source_files:
   - "apps/signup-worker/src/index.ts"
   - "apps/signup-worker/src/lib/d1.ts"
   - "apps/signup-worker/src/lib/clerk-metadata.ts"
-checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
+  - "apps/signup-worker/src/sentry-scrub.ts"
+checkpoint_sha: "3bd41aa08497f5b59572fb8edebb2553bf38f85c"
 provenance: "AUTHORED"
 tags: ["flows", "signup", "clerk", "webhook", "dsr", "erasure", "worker-edge"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -23,7 +24,7 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 
 # How it works
 
-- The worker `route()` dispatches `POST /webhooks/clerk` to `handleClerkWebhook`, `POST /webhooks/stripe` to the Stripe handler, and `/health` to a liveness JSON; anything else is 404 (`apps/signup-worker/src/index.ts:25-37`).
+- The worker `route()` dispatches `POST /webhooks/clerk` to `handleClerkWebhook`, `POST /webhooks/stripe` to the Stripe handler, and `/health` to a liveness JSON; anything else is 404 (`apps/signup-worker/src/index.ts:26-38`).
 - `handleClerkWebhook` requires `POST`, reads the `svix-id`/`svix-timestamp`/`svix-signature` headers, and rejects a missing header set with 400 before any work (`apps/signup-worker/src/webhooks/clerk.ts:849-854`).
 - Svix verification HMAC-SHA256s `${svix-id}.${svix-timestamp}.${body}` and constant-time compares each `v1,<sig>` candidate; an anti-replay window rejects a `svix-timestamp` outside ±300s before any HMAC work; failure is 401 (`apps/signup-worker/src/webhooks/clerk.ts:451-497`, `apps/signup-worker/src/webhooks/clerk.ts:856-865`).
 - After verify, the body is parsed and `user.deleted` routes to `handleUserDeleted`, `user.created` falls through to provisioning, and any other event type is a 200 `ignored` no-op (`apps/signup-worker/src/webhooks/clerk.ts:874-880`).
@@ -43,8 +44,8 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 - The `dsr_id` is deterministic per Clerk user, so a Svix redelivery of the same `user.deleted` enqueues an idempotent message and the `dsr_requested` anchor is an `INSERT OR IGNORE` no-op — erasure never double-runs (`apps/signup-worker/src/webhooks/clerk.ts:135-145`, `apps/signup-worker/src/webhooks/clerk.ts:373-377`).
 - The erasure salt is derived `HMAC-SHA256(ERASURE_SALT_KEY, dsr_id)`; when the key is absent in a `prod` environment `deriveErasureSalt` THROWS, the caller returns 500, and the predictable non-secret SHA-256 fallback can never reach production (`apps/signup-worker/src/webhooks/clerk.ts:160-189`).
 - Provisioning is fail-CLOSED on its mint secret: `handleClerkWebhook` 500s on an absent `CORELINK_INTERNAL_AUTH_KEY` before writing a tenant row, so a half-provisioned PAT-less tenant is never committed (`apps/signup-worker/src/webhooks/clerk.ts:953-962`).
-- Secret-bearing webhook headers are scrubbed from Sentry telemetry: the `SENSITIVE_HEADER_PATTERN` regex filters `authorization`/`cookie`/`svix-signature`/`svix-id`/`svix-timestamp`/`stripe-signature` (and more) to `[Filtered]` in `beforeSend` (`apps/signup-worker/src/index.ts:156-169`).
-- The DSR erasure queue consumer captures + rethrows on a thrown error so the Cloudflare queue runtime redelivers the whole batch; the single `queue()` handler dispatches on `batch.queue` (main erasure queue vs `corelink-dsr-erasure-dlq`), and redelivery is safe because the erasure orchestrator is idempotent (`apps/signup-worker/src/index.ts:75-92`).
+- Secret-bearing PII never reaches Sentry telemetry: `beforeSend`/`beforeSendTransaction` run `scrubSentryEvent` (`apps/signup-worker/src/sentry-scrub.ts`), which default-DENYs sensitive object KEYS (`authorization`/`cookie`/`svix-signature`/`stripe-signature`/`token`/`secret`/`email`, and more) to `[REDACTED]` AND substring-redacts secret/PII SHAPES (CoreLink PATs, bearer/basic auth, Stripe `sk_`/`whsec_` keys, emails) inside message/exception bodies + `extra`/`contexts` values — not just header keys (the WP4 hardening over the old header-key-only filter) — before any event leaves the Worker (`apps/signup-worker/src/index.ts:170-175`).
+- The DSR erasure queue consumer captures + rethrows on a thrown error so the Cloudflare queue runtime redelivers the whole batch; the single `queue()` handler dispatches on `batch.queue` (main erasure queue vs `corelink-dsr-erasure-dlq`), and redelivery is safe because the erasure orchestrator is idempotent (`apps/signup-worker/src/index.ts:76-93`).
 - The PAT plaintext NEVER enters a client-readable surface: `updateClerkUserMetadata` writes it ONLY to Clerk `private_metadata` (backend-only) and the legit `{tenant_id, region}` claims to `public_metadata`, so the secret is never embedded in the session JWT nor exposed via `useUser()` (`apps/signup-worker/src/lib/clerk-metadata.ts:82-85`).
 - A double Svix delivery of the same `user.created` can never create a second tenant or a second PAT: both `insertTenant` and `insertPat` are `INSERT OR IGNORE`, so the second writer is silently dropped (`apps/signup-worker/src/lib/d1.ts:82-85`, `apps/signup-worker/src/lib/d1.ts:114-117`).
 - A team-seat flip is isolated to the SHA-256 `email_hash` and cannot be double-applied: `acceptTeamInvitation` re-asserts `status='invited'` in the `WHERE` so a concurrent acceptance clobbers nothing (`apps/signup-worker/src/lib/d1.ts:168-175`).
@@ -57,9 +58,9 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 
 # Citations
 
-1. `apps/signup-worker/src/index.ts:25-37` — `route()` path table (`/webhooks/clerk`, `/webhooks/stripe`, `/health`, 404).
-2. `apps/signup-worker/src/index.ts:75-92` — DSR erasure queue consumer (`batch.queue` dispatch main vs DLQ; capture + rethrow → batch redelivery).
-3. `apps/signup-worker/src/index.ts:156-169` — `SENSITIVE_HEADER_PATTERN` + `scrubAuthorization` (Svix/Stripe sig-header scrub).
+1. `apps/signup-worker/src/index.ts:26-38` — `route()` path table (`/webhooks/clerk`, `/webhooks/stripe`, `/health`, 404).
+2. `apps/signup-worker/src/index.ts:76-93` — DSR erasure queue consumer (`batch.queue` dispatch main vs DLQ; capture + rethrow → batch redelivery).
+3. `apps/signup-worker/src/index.ts:170-175` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`apps/signup-worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (sensitive keys + free-text shapes like Svix/Stripe sig material), not just header keys.
 4. `apps/signup-worker/src/webhooks/clerk.ts:135-145` — `deterministicDsrId` (stable v5-shaped dsr_id).
 5. `apps/signup-worker/src/webhooks/clerk.ts:160-189` — `deriveErasureSalt` (HMAC salt; fail-CLOSED in prod).
 6. `apps/signup-worker/src/webhooks/clerk.ts:216` — `deterministicDsrId` call inside `buildErasureQueueMessage`.

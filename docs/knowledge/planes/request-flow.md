@@ -6,7 +6,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "2ca7714476506bd7702b44cdb53e19600432e0b6"
+checkpoint_sha: "3bd41aa08497f5b59572fb8edebb2553bf38f85c"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -31,7 +31,7 @@ semantics in the container.
 
 # How it works
 1. The request enters `baseHandler.fetch`: request-id, CORS, then `matchRoute` selects a `RouteKind` +
-   tenant (`worker/src/index.ts:1478-1491`).
+   tenant (`worker/src/index.ts:1479-1492`).
 2. The Worker authenticates the Bearer PAT — HMAC fast-reject then a D1 `token_id` lookup + expiry —
    resolving the trusted tenant (`worker/src/index.ts:932-1052`). EXCEPTION (Artifact 1): the unauth
    `/v1/public/*` arm (the erasure-attestation verifier) is matched BEFORE the generic `/v1/*` PAT bucket
@@ -77,10 +77,10 @@ semantics in the container.
 # Citations
 1. `worker/src/index.ts:1-20` — the `Internet → Worker → DO → container` topology header.
 2. `worker/src/index.ts:932-1052` — edge PAT auth (HMAC fast-reject + D1 lookup + expiry).
-3. `worker/src/index.ts:1478-1491` — the Worker `fetch` entry + `matchRoute`.
+3. `worker/src/index.ts:1479-1492` — the Worker `fetch` entry + `matchRoute`.
 4. `worker/src/index.ts:2529-2532` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
 5. `worker/src/index.ts:2534-2592` — strip-then-set trust headers on the forward.
-6. `worker/src/index.ts:2534-2596` — the augmented forward + `stub.fetch` dispatch to the DO.
+6. `worker/src/index.ts:2534-2597` — the augmented forward + `stub.fetch` dispatch to the DO.
 7. `worker/src/durable_object.ts:251-264` — the DO→container proxy via `getTcpPort(50051)`.
 8. `worker/src/durable_object.ts:303-370` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:332-361` — the ensure-running gate before proxying (503/500 otherwise).

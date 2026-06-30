@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/internal_auth.ts"
   - "worker/src/index.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "2ca7714476506bd7702b44cdb53e19600432e0b6"
+checkpoint_sha: "3bd41aa08497f5b59572fb8edebb2553bf38f85c"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -78,15 +78,16 @@ control surfaces (mint, introspect) at the Worker edge.
   (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
   (`worker/src/index.ts:1028-1038`). The PAT-gate caller (H1 fix) now maps BOTH
   `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
-  (`worker/src/index.ts:2169-2177`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
+  (`worker/src/index.ts:2170-2178`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
   surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
   chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
   still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
   COMPLETE for the worker edge — a transient D1 fault is NOT a cause of a 401 there; it is a 503. The
-  in-line comment at `worker/src/index.ts:1035` ("map to 503 if desired") is now stale relative to the
+  in-line comment at `worker/src/index.ts:1036` ("map to 503 if desired") is now stale relative to the
   caller, which DOES map it to 503 (the cited line numbers shifted after the Artifact 1 `/v1/public/*`
-  attestation-verifier route arm was added above this handler, and again when the CF-6 audit-chain
-  signing env vars were declared on the `Env` type). Both the D1-fault and the
+  attestation-verifier route arm was added above this handler, again when the CF-6 audit-chain
+  signing env vars were declared on the `Env` type, and most recently when the WP4 Sentry `beforeSend`
+  PII/secret scrubber import was added at the top of the module). Both the D1-fault and the
   `signing_key_not_configured` config-fault
   are retryable 503s; the edge still fails CLOSED (security > availability) for every credential-shaped
   failure.
