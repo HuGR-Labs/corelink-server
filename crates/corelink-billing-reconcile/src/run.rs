@@ -143,16 +143,15 @@ pub type TenantSnapshotInput = ReconcileSnapshot;
 pub struct ReconcileRunInput {
     /// Canonical billing period (`YYYY-MM`) the snapshots cover.
     pub billing_period: String,
-    /// Run-start watermark (Unix epoch ms). Optional in the JSON;
-    /// defaults to [`DEFAULT_RUN_STARTED_AT_MS`].
-    #[serde(default = "default_run_started_at_ms")]
+    /// Run-start watermark (Unix epoch ms). Optional in the JSON; absent →
+    /// `u64::default()` (0), which equals [`DEFAULT_RUN_STARTED_AT_MS`] — the
+    /// deterministic no-op default (prod passes an explicit watermark). Using
+    /// `#[serde(default)]` rather than a custom default-fn deliberately leaves
+    /// no `-> 0` mutation surface for the changed-line mutant gate.
+    #[serde(default)]
     pub run_started_at_ms: u64,
     /// Per-tenant three-layer totals.
     pub snapshots: Vec<TenantSnapshotInput>,
-}
-
-const fn default_run_started_at_ms() -> u64 {
-    DEFAULT_RUN_STARTED_AT_MS
 }
 
 /// A serializable view of one orchestrator audit record (the audit
@@ -517,6 +516,10 @@ mod tests {
         assert_eq!(
             ReconcileSeverity::parse_floor("sev3"),
             Some(ReconcileSeverity::Sev3)
+        );
+        assert_eq!(
+            ReconcileSeverity::parse_floor("sev2"),
+            Some(ReconcileSeverity::Sev2)
         );
         assert_eq!(
             ReconcileSeverity::parse_floor("SEV1"),

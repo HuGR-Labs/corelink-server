@@ -27,6 +27,7 @@
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Absolute path to the compiled bin (cargo provides this to integration
@@ -252,5 +253,74 @@ fn empty_stdin_input_exits_two() {
     assert!(
         stderr.contains("BILLING_RECONCILE_ERROR"),
         "empty input must print the error marker; stderr={stderr}"
+    );
+}
+
+
+/// CLEAN input piped via STDIN with `--input -` → exit 0 + the clean
+/// marker. The bin must route `-` to the stdin read branch.
+///
+/// Kills the `read_input_bytes` match guard (`p != "-"` at :99) forced to
+/// `true`: with the guard always-true, `--input -` would take the FILE
+/// branch and `std::fs::read("-")` fails (no such file) → exit 2, not 0.
+#[test]
+fn clean_input_piped_via_stdin_dash_exits_zero() {
+    let mut child = Command::new(BIN)
+        .arg("--input")
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn billing-reconcile-run");
+    {
+        let mut stdin = child.stdin.take().expect("child stdin handle");
+        stdin
+            .write_all(clean_input_json().as_bytes())
+            .expect("write child stdin");
+    } // drop closes stdin so the child's read_to_end completes (no hang)
+    let out = child.wait_with_output().expect("wait for child");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "clean stdin input via `--input -` must exit 0; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("BILLING_RECONCILE_CLEAN"),
+        "clean stdin pass must print the clean marker; stdout={stdout}"
+    );
+}
+
+/// `--help` → exit 0 + the usage line on stdout (NOT the error marker).
+///
+/// Kills the `main` match guard (`msg == "help"` at :170) forced to
+/// `false`: with the guard always-false the help string falls through to
+/// the fail-CLOSED error arm → `BILLING_RECONCILE_ERROR` on stderr +
+/// exit 2, not 0.
+#[test]
+fn help_flag_exits_zero_with_usage() {
+    let out = Command::new(BIN)
+        .arg("--help")
+        .stdin(Stdio::null())
+        .output()
+        .expect("spawn billing-reconcile-run");
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "--help must exit 0; stdout={stdout} stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("usage: billing-reconcile-run"),
+        "--help must print the usage line; stdout={stdout}"
+    );
+    assert!(
+        !stderr.contains("BILLING_RECONCILE_ERROR"),
+        "--help must NOT be treated as a run error; stderr={stderr}"
     );
 }
