@@ -23,6 +23,12 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **BYOK Mode-B envelope reclaim on blob delete (Wave 4a — GATED-INERT).** When a Mode-B (random-DEK)
+  blob is deleted, its `byok_envelope` wrapped-DEK row is now reclaimed (CAS + AC, surface-qualified key),
+  closing the Wave-3c deferral — no orphan key-material rows accumulate. Fail-safe ordering: R2 object
+  deleted FIRST, then the envelope row; a reclaim failure is warned but never rolls back the blob delete
+  (an orphaned DEK wraps nothing = the safe direction). Mode A / non-BYOK / `_public` are no-ops. 73 BYOK
+  tests; clippy clean.
 - **BYOK key-hardening + Mode B (Wave 3c — GATED-INERT).** §4 confirmation-oracle hardening (audit H-4):
   for BYOK-active tenants the physical R2 key's digest component is now `HMAC-SHA256(TCS, plaintext_digest)`
   (computed on-the-fly, never persisted), so an R2-read attacker can't confirm a guessed plaintext — while

@@ -723,6 +723,25 @@ impl R2CasHandler {
         }
     }
 
+    /// BYOK Wave 4a — reclaim the Mode-B `byok_envelope` row for a resolved plan
+    /// AFTER the R2 object has been deleted. ONLY Mode B (`Random`) writes an
+    /// envelope row, so `Plaintext` / `Convergent` (Mode A) are no-ops.
+    ///
+    /// Ordering + fail-safety (frozen policy §3): the caller deletes the R2
+    /// object FIRST, then calls this. A failed reclaim leaves an orphan
+    /// wrapped-DEK row that now wraps NOTHING (the blob is already gone) — the
+    /// SAFE-fail direction — so the caller WARNS and continues rather than fail
+    /// the whole delete (which could leave a readable blob whose key was
+    /// destroyed). `Ok(())` ⇒ nothing to reclaim or reclaim succeeded.
+    async fn reclaim_byok_envelope(&self, plan: &ByokBodyPlan) -> Result<(), String> {
+        if let ByokBodyPlan::Random { ctx } = plan {
+            if let Some(mode_b) = self.byok_mode_b.as_ref() {
+                return mode_b.reclaim(ctx).await;
+            }
+        }
+        Ok(())
+    }
+
     /// BYOK write hook (test-facing): resolve + encrypt the body. The production
     /// `write` path resolves ONCE and calls [`Self::encrypt_body`] directly.
     #[cfg(test)]
@@ -746,6 +765,25 @@ impl R2CasHandler {
     ) -> Result<Vec<u8>, CasHandlerError> {
         let resolved = self.resolve_byok(&req.tenant, &req.hash, req.algo).await?;
         self.decrypt_body(&resolved.plan, stored).await
+    }
+
+    /// BYOK delete-reclaim hook (test-facing): resolve + reclaim the Mode-B
+    /// `byok_envelope` row, mirroring the post-R2-delete step in the production
+    /// `delete` path (which WARNS on the returned `Err` and never fails the
+    /// delete). Returns the reclaim `Result` so a test can assert the safe-fail
+    /// direction.
+    #[cfg(test)]
+    async fn byok_reclaim_for_delete(
+        &self,
+        tenant: &str,
+        digest: &str,
+        algo: DigestAlgo,
+    ) -> Result<(), String> {
+        let resolved = self
+            .resolve_byok(tenant, digest, algo)
+            .await
+            .map_err(|e| format!("resolve: {e}"))?;
+        self.reclaim_byok_envelope(&resolved.plan).await
     }
 
     /// Derive the R2 key for a (tenant, digest) pair.
@@ -1457,9 +1495,9 @@ impl CasDeleteHandler for R2CasHandler {
         // BYOK Wave 3c: delete must target the §4-hardened physical key for an
         // active tenant (audit H-4), matching what `write`/`read` stored. Non-BYOK
         // tenants resolve to the raw digest (unchanged); an active-but-unresolvable
-        // tenant fails CLOSED rather than delete the wrong (or no) key. (The
-        // `byok_envelope` row for a deleted Mode-B blob is reclaimed by the Wave-4
-        // crypto-shred / erasure path, not here.)
+        // tenant fails CLOSED rather than delete the wrong (or no) key. BYOK Wave
+        // 4a: the resolved plan also drives the Mode-B `byok_envelope` reclaim
+        // performed AFTER the R2 object is removed (see below).
         let resolved = match tokio::task::block_in_place(|| {
             handle.block_on(self.resolve_byok(&req.tenant, &req.hash, DigestAlgo::Blake3))
         }) {
@@ -1502,6 +1540,19 @@ impl CasDeleteHandler for R2CasHandler {
         match result {
             Ok(prior) => {
                 let reclaimed = prior.unwrap_or(0);
+                // BYOK Wave 4a: the R2 object is now gone — reclaim the Mode-B
+                // `byok_envelope` row so the deleted blob's wrapped DEK does not
+                // linger (orphan key-material). A reclaim failure is the SAFE-fail
+                // direction (the DEK wraps nothing now), so WARN + continue — the
+                // delete still SUCCEEDS and the R2 delete is NOT rolled back.
+                if let Err(e) = tokio::task::block_in_place(|| {
+                    handle.block_on(self.reclaim_byok_envelope(&resolved.plan))
+                }) {
+                    warn!(
+                        error = %e, key = %key, tenant = %req.tenant,
+                        "R2CasHandler::delete byok_envelope reclaim failed (orphan wrapped-DEK row; blob already deleted)"
+                    );
+                }
                 self.audit
                     .emit(AuditEvent::new(
                         AuditEventKind::DeleteCommitted,
@@ -1877,6 +1928,20 @@ impl R2AcHandler {
         }
     }
 
+    /// BYOK Wave 4a — reclaim the Mode-B `byok_envelope` row for the AC surface
+    /// after the R2 object is deleted. Mirrors [`R2CasHandler::reclaim_byok_envelope`]
+    /// (only `Random` writes a row; same R2-first ordering + warn-on-failure
+    /// safe-fail rationale). The plan's `ctx` carries `AC_SURFACE`, so the
+    /// reclaimed key is `ac:<digest>` (surface-correct).
+    async fn reclaim_byok_envelope(&self, plan: &ByokBodyPlan) -> Result<(), String> {
+        if let ByokBodyPlan::Random { ctx } = plan {
+            if let Some(mode_b) = self.byok_mode_b.as_ref() {
+                return mode_b.reclaim(ctx).await;
+            }
+        }
+        Ok(())
+    }
+
     /// BYOK AC write hook (test-facing): resolve + encrypt the body. The
     /// production `update` path resolves ONCE and calls [`Self::encrypt_body`].
     #[cfg(test)]
@@ -1899,6 +1964,22 @@ impl R2AcHandler {
     ) -> Result<Vec<u8>, corelink_handler_ac::AcHandlerError> {
         let resolved = self.resolve_byok(tenant, action_digest).await?;
         self.decrypt_body(&resolved.plan, stored).await
+    }
+
+    /// BYOK AC delete-reclaim hook (test-facing): resolve + reclaim the Mode-B
+    /// `byok_envelope` row (surface = `ac`), mirroring the post-R2-delete step in
+    /// the production AC `delete` path.
+    #[cfg(test)]
+    async fn byok_reclaim_for_delete(
+        &self,
+        tenant: &str,
+        action_digest: &str,
+    ) -> Result<(), String> {
+        let resolved = self
+            .resolve_byok(tenant, action_digest)
+            .await
+            .map_err(|e| format!("resolve: {e}"))?;
+        self.reclaim_byok_envelope(&resolved.plan).await
     }
 
     /// Derive the R2 key for a (tenant, action_digest) pair. Mirrors
@@ -2293,8 +2374,9 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
 
         // BYOK Wave 3c: delete must target the §4-hardened physical key for an
         // active tenant (audit H-4), matching what `update`/`lookup` stored.
-        // Fail CLOSED for an active-but-unresolvable tenant. (A Mode-B
-        // `byok_envelope` row is reclaimed by the Wave-4 erasure path.)
+        // Fail CLOSED for an active-but-unresolvable tenant. BYOK Wave 4a: the
+        // resolved plan also drives the Mode-B `byok_envelope` reclaim performed
+        // AFTER the R2 object is removed (see below).
         let resolved = match tokio::task::block_in_place(|| {
             handle.block_on(self.resolve_byok(&req.tenant, &req.action_digest))
         }) {
@@ -2321,6 +2403,18 @@ impl corelink_handler_ac::AcDeleteHandler for R2AcHandler {
         match result {
             Ok(prior) => {
                 let reclaimed = prior.unwrap_or(0);
+                // BYOK Wave 4a: the R2 object is gone — reclaim the Mode-B
+                // `byok_envelope` row (surface = `ac`) so a deleted AC entry does
+                // not leave an orphan wrapped-DEK row. WARN + continue on failure
+                // (safe-fail direction); the delete still SUCCEEDS.
+                if let Err(e) = tokio::task::block_in_place(|| {
+                    handle.block_on(self.reclaim_byok_envelope(&resolved.plan))
+                }) {
+                    warn!(
+                        error = %e, key = %key, tenant = %req.tenant,
+                        "R2AcHandler::delete byok_envelope reclaim failed (orphan wrapped-DEK row; entry already deleted)"
+                    );
+                }
                 self.audit
                     .emit(AcAuditEvent::new(
                         AcAuditEventKind::DeleteCommitted,
@@ -3134,9 +3228,36 @@ mod tests {
     use std::sync::Mutex as StdMutex;
 
     /// Hermetic in-memory `byok_envelope` store for the Mode-B handler tests.
+    /// `fail_delete` injects a reclaim (`delete_envelope`) failure for the Wave-4a
+    /// safe-fail test.
     #[derive(Debug, Default)]
     struct MemEnvStore {
         inner: StdMutex<StdHashMap<(String, String), ByokEnvelopeRow>>,
+        fail_delete: bool,
+    }
+    impl MemEnvStore {
+        fn failing_delete() -> Self {
+            Self { inner: StdMutex::default(), fail_delete: true }
+        }
+        fn len(&self) -> usize {
+            self.inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .len()
+        }
+        fn contains(&self, tenant: &str, blob_key: &str) -> bool {
+            self.inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .contains_key(&(tenant.to_owned(), blob_key.to_owned()))
+        }
+        fn wrapped_dek(&self, tenant: &str, blob_key: &str) -> Option<Vec<u8>> {
+            self.inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get(&(tenant.to_owned(), blob_key.to_owned()))
+                .map(|r| r.wrapped_dek.clone())
+        }
     }
     #[async_trait::async_trait]
     impl ByokEnvelopeStore for MemEnvStore {
@@ -3164,6 +3285,16 @@ mod tests {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .entry((tenant.to_owned(), blob_key.to_owned()))
                 .or_insert_with(|| row.clone());
+            Ok(())
+        }
+        async fn delete_envelope(&self, tenant: &str, blob_key: &str) -> Result<(), String> {
+            if self.fail_delete {
+                return Err("mem env store: injected delete failure".to_owned());
+            }
+            self.inner
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .remove(&(tenant.to_owned(), blob_key.to_owned()));
             Ok(())
         }
     }
@@ -3268,6 +3399,23 @@ mod tests {
         let kms: Arc<dyn KmsProvider> = Arc::new(Kms { fail: false });
         let store: Arc<dyn ByokEnvelopeStore> = Arc::new(MemEnvStore::default());
         let mode_b = Arc::new(ModeBEncryptor::new(kms, store, 300).unwrap());
+        base.with_byok(cache, resolver).with_byok_random(mode_b)
+    }
+
+    /// Like [`handler_with_byok_random`] but threads a caller-supplied
+    /// [`MemEnvStore`] so a test can assert on the persisted envelope rows
+    /// (Wave 4a reclaim). The store is shared (the handler holds an `Arc` clone).
+    async fn handler_with_byok_random_store(
+        cfg: Option<TenantByokConfig>,
+        store: Arc<MemEnvStore>,
+    ) -> R2CasHandler {
+        let base = make_test_handler_with_tdk("iad").await;
+        let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
+        let resolver =
+            Arc::new(TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap());
+        let kms: Arc<dyn KmsProvider> = Arc::new(Kms { fail: false });
+        let store_dyn: Arc<dyn ByokEnvelopeStore> = store;
+        let mode_b = Arc::new(ModeBEncryptor::new(kms, store_dyn, 300).unwrap());
         base.with_byok(cache, resolver).with_byok_random(mode_b)
     }
 
@@ -3420,6 +3568,119 @@ mod tests {
         );
     }
 
+    // ── BYOK Wave 4a — Mode-B `byok_envelope` reclaim on delete ───────────────
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_mode_b_delete_reclaims_envelope_row_cas_surface() {
+        // A Mode-B blob delete removes the matching CAS-surface envelope row.
+        let store = Arc::new(MemEnvStore::default());
+        let h = handler_with_byok_random_store(
+            Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active)),
+            Arc::clone(&store),
+        )
+        .await;
+        let req = write_req(BYOK_TENANT, b"delete-me mode-b".to_vec());
+        h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
+        let key = format!("cas:{}", req.claimed_hash);
+        assert!(store.contains(BYOK_TENANT, &key), "write minted the cas: envelope row");
+        assert!(!store.contains(BYOK_TENANT, &format!("ac:{}", req.claimed_hash)), "no ac: row");
+        h.byok_reclaim_for_delete(BYOK_TENANT, &req.claimed_hash, DigestAlgo::Blake3)
+            .await
+            .unwrap();
+        assert!(!store.contains(BYOK_TENANT, &key), "delete reclaimed the envelope row");
+        assert_eq!(store.len(), 0, "no orphan row lingers");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_mode_a_delete_touches_no_envelope_row() {
+        // Mode A (convergent) writes NO envelope row; reclaim is a no-op.
+        let store = Arc::new(MemEnvStore::default());
+        let h = handler_with_byok_random_store(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            Arc::clone(&store),
+        )
+        .await;
+        let req = write_req(BYOK_TENANT, b"convergent payload".to_vec());
+        h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
+        assert_eq!(store.len(), 0, "Mode A writes no envelope row");
+        h.byok_reclaim_for_delete(BYOK_TENANT, &req.claimed_hash, DigestAlgo::Blake3)
+            .await
+            .unwrap();
+        assert_eq!(store.len(), 0, "Mode-A delete touches no envelope row");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_non_byok_and_public_delete_touch_no_envelope_row() {
+        // Non-BYOK (no collaborators) → reclaim is a plaintext no-op.
+        let h = make_test_handler_with_tdk("iad").await;
+        h.byok_reclaim_for_delete(BYOK_TENANT, &"a".repeat(64), DigestAlgo::Blake3)
+            .await
+            .unwrap();
+        // `_public` under an active Mode-B config → still plaintext (no row).
+        let store = Arc::new(MemEnvStore::default());
+        let hp = handler_with_byok_random_store(
+            Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active)),
+            Arc::clone(&store),
+        )
+        .await;
+        hp.byok_reclaim_for_delete(
+            crate::adapter_cache::PUBLIC_NAMESPACE,
+            &"b".repeat(64),
+            DigestAlgo::Blake3,
+        )
+        .await
+        .unwrap();
+        assert_eq!(store.len(), 0, "_public never writes/reclaims an envelope row");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_mode_b_re_put_after_delete_mints_fresh_envelope() {
+        // After a delete-reclaim, a re-PUT of the SAME blob mints a FRESH envelope
+        // row (no stale reuse of the deleted DEK) — confirms the reclaim happened.
+        let store = Arc::new(MemEnvStore::default());
+        let h = handler_with_byok_random_store(
+            Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active)),
+            Arc::clone(&store),
+        )
+        .await;
+        let req = write_req(BYOK_TENANT, b"re-put mode-b".to_vec());
+        let key = format!("cas:{}", req.claimed_hash);
+        h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
+        let dek_before = store.wrapped_dek(BYOK_TENANT, &key).unwrap();
+        h.byok_reclaim_for_delete(BYOK_TENANT, &req.claimed_hash, DigestAlgo::Blake3)
+            .await
+            .unwrap();
+        assert_eq!(store.len(), 0, "row gone after reclaim");
+        // Re-PUT: a brand-new envelope row (fresh random DEK), not the deleted one.
+        h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
+        assert!(store.contains(BYOK_TENANT, &key), "re-PUT minted a fresh envelope row");
+        let dek_after = store.wrapped_dek(BYOK_TENANT, &key).unwrap();
+        assert_ne!(dek_before, dek_after, "re-PUT after delete uses a FRESH DEK, not the reclaimed one");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn byok_mode_b_reclaim_failure_is_safe_fail() {
+        // A failed envelope-delete is the SAFE-fail direction: the production
+        // delete WARNS and continues (the R2 object is already gone, never rolled
+        // back). The reclaim hook surfaces the Err that production swallows.
+        let store = Arc::new(MemEnvStore::failing_delete());
+        let h = handler_with_byok_random_store(
+            Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active)),
+            Arc::clone(&store),
+        )
+        .await;
+        let req = write_req(BYOK_TENANT, b"reclaim-fails".to_vec());
+        h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
+        let res = h
+            .byok_reclaim_for_delete(BYOK_TENANT, &req.claimed_hash, DigestAlgo::Blake3)
+            .await;
+        assert!(res.is_err(), "reclaim failure surfaces as Err (production warns, never fails the delete)");
+        // The row lingers (the failed delete left it) — an orphan that wraps the
+        // already-deleted ciphertext (the safe direction); the blob delete itself
+        // is unaffected (R2 delete is not rolled back).
+        assert!(store.contains(BYOK_TENANT, &format!("cas:{}", req.claimed_hash)));
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn byok_mode_b_read_fails_closed_when_kms_down() {
         // A wired Mode-B handler whose KMS unwrap fails must NOT serve raw bytes.
@@ -3493,8 +3754,60 @@ mod tests {
         base.with_byok(cache, resolver)
     }
 
+    /// Wire an `R2AcHandler` with the Mode-B encryptor over a shared envelope
+    /// store (mirrors `handler_with_byok_random_store`).
+    async fn ac_handler_with_byok_random_store(
+        cfg: Option<TenantByokConfig>,
+        store: Arc<MemEnvStore>,
+    ) -> R2AcHandler {
+        let base = make_test_ac_handler("iad").await;
+        let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
+        let resolver =
+            Arc::new(TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap());
+        let kms: Arc<dyn KmsProvider> = Arc::new(Kms { fail: false });
+        let store_dyn: Arc<dyn ByokEnvelopeStore> = store;
+        let mode_b = Arc::new(ModeBEncryptor::new(kms, store_dyn, 300).unwrap());
+        base.with_byok(cache, resolver).with_byok_random(mode_b)
+    }
+
     fn ac_update_req(tenant: &str, payload: Vec<u8>) -> corelink_handler_ac::AcUpdateRequest {
         corelink_handler_ac::AcUpdateRequest::new(tenant, "a".repeat(64), payload, "p", tenant, 1)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac_byok_mode_b_delete_reclaims_envelope_row_ac_surface() {
+        // Wave 4a: an AC Mode-B delete reclaims the `ac:<digest>` envelope row —
+        // surface-correct (a CAS row for the same digest would be `cas:<digest>`).
+        let store = Arc::new(MemEnvStore::default());
+        let h = ac_handler_with_byok_random_store(
+            Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active)),
+            Arc::clone(&store),
+        )
+        .await;
+        let req = ac_update_req(BYOK_TENANT, b"ac mode-b payload".to_vec());
+        h.byok_encrypt_for_update(&req).await.unwrap().unwrap();
+        let ac_key = format!("ac:{}", req.action_digest);
+        assert!(store.contains(BYOK_TENANT, &ac_key), "write minted the ac: envelope row");
+        assert!(!store.contains(BYOK_TENANT, &format!("cas:{}", req.action_digest)), "no cas: row");
+        h.byok_reclaim_for_delete(BYOK_TENANT, &req.action_digest).await.unwrap();
+        assert!(!store.contains(BYOK_TENANT, &ac_key), "AC delete reclaimed the ac: row");
+        assert_eq!(store.len(), 0, "no orphan AC envelope row lingers");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn ac_byok_mode_a_delete_touches_no_envelope_row() {
+        // Mode A on the AC surface writes no envelope row; reclaim is a no-op.
+        let store = Arc::new(MemEnvStore::default());
+        let h = ac_handler_with_byok_random_store(
+            Some(byok_cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            Arc::clone(&store),
+        )
+        .await;
+        let req = ac_update_req(BYOK_TENANT, b"ac convergent".to_vec());
+        h.byok_encrypt_for_update(&req).await.unwrap().unwrap();
+        assert_eq!(store.len(), 0, "Mode A writes no AC envelope row");
+        h.byok_reclaim_for_delete(BYOK_TENANT, &req.action_digest).await.unwrap();
+        assert_eq!(store.len(), 0, "Mode-A AC delete touches no envelope row");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

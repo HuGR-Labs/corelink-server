@@ -1,14 +1,14 @@
 ---
 type: "StorageComponent"
 title: "BYOK envelope encryption at rest (CAS+AC wired, both modes + §4 hardening; gated-inert)"
-description: "The BYOK microkernel (a KmsProvider trait + Dek/WrappedDek types + EnvelopeEncryptor + one compile-time-selected provider per build) PLUS the CAS+AC encryption-at-rest wiring in byok_cas.rs. As of Wave 3c BOTH crypto modes are implemented: Mode A (convergent) dedup-preserving envelopes AND Mode B (crypto_mode='random') with a random per-blob DEK wrapped in byok_envelope (no dedup, but idempotent/no-orphan re-PUT), PLUS §4 key-hardening — for a BYOK-active tenant the physical R2 object key embeds HMAC-SHA256(TCS, plaintext_digest), computed on-the-fly (never persisted), which closes the confirmation oracle while keeping intra-tenant convergent dedup and leaving the AAD-bound digest the REAL digest. STILL gated-inert (zero active tenants, no prod KmsProvider). Deferred: partial/backfill dual-read, onboarding/CMK provisioning, prod KmsProvider wiring, crypto-shred (incl. Mode-B envelope-row reclaim on delete)."
+description: "The BYOK microkernel (a KmsProvider trait + Dek/WrappedDek types + EnvelopeEncryptor + one compile-time-selected provider per build) PLUS the CAS+AC encryption-at-rest wiring in byok_cas.rs. As of Wave 3c BOTH crypto modes are implemented: Mode A (convergent) dedup-preserving envelopes AND Mode B (crypto_mode='random') with a random per-blob DEK wrapped in byok_envelope (no dedup, but idempotent/no-orphan re-PUT), PLUS §4 key-hardening — for a BYOK-active tenant the physical R2 object key embeds HMAC-SHA256(TCS, plaintext_digest), computed on-the-fly (never persisted), which closes the confirmation oracle while keeping intra-tenant convergent dedup and leaving the AAD-bound digest the REAL digest. STILL gated-inert (zero active tenants, no prod KmsProvider). Deferred: partial/backfill dual-read, onboarding/CMK provisioning, prod KmsProvider wiring, broader crypto-shred (bulk shred on state='shredded'); Mode-B envelope-row reclaim on blob delete is DONE (Wave 4a)."
 source_files:
   - "crates/corelink-container/src/byok.rs"
   - "crates/corelink-container/src/byok_orchestrator.rs"
   - "crates/corelink-byok/src/lib.rs"
   - "crates/corelink-byok/src/byok_aws/real.rs"
   - "crates/corelink-container/src/storage/byok_cas.rs"
-checkpoint_sha: "a5575900faa8c3b1684b2f822ef384f291c13c7a"
+checkpoint_sha: "f1b9f77277635e6ff38d06a9ceb8ce87a2025614"
 provenance: "AUTHORED"
 tags: ["storage", "byok", "encryption", "kms", "envelope"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -30,7 +30,7 @@ crypto modes, but gated-inert.** The storage glue module
 / `R2AcHandler`. The per-tenant engagement decision is a single source of truth: `active` engages
 encryption in the tenant's configured `ByokCryptoMode` (Mode A convergent OR Mode B random), `partial`
 (backfill dual-read) fails CLOSED, everything else is plaintext
-(`crates/corelink-container/src/storage/byok_cas.rs:1087-1098`). The whole path is **gated-inert**:
+(`crates/corelink-container/src/storage/byok_cas.rs:1136-1147`). The whole path is **gated-inert**:
 the onboarding wave that writes `tenant_byok_config.state='active'` rows is deferred, so today **zero**
 tenants are active and every existing tenant keeps the exact current plaintext behaviour; the handler
 also threads the BYOK collaborators as `Option`s, so a default build (no prod `KmsProvider`) runs the
@@ -62,8 +62,10 @@ string never collide on one row (`crates/corelink-container/src/storage/byok_cas
 H7) — fail-CLOSED here, NOT plaintext (Wave 4); onboarding / CMK provisioning (the sole writer of
 `active` rows); the production `KmsProvider` factory wiring into a real KMS (`byok.rs` /
 `byok_orchestrator.rs` still construct a provider behind an `Arc<dyn KmsProvider>` but the default
-binary links the in-memory fake); and crypto-shred, INCLUDING reclaim of the Mode-B `byok_envelope` row
-on delete.
+binary links the in-memory fake); and broader crypto-shred (bulk shred on `state='shredded'`). NOTE:
+reclaim of the Mode-B `byok_envelope` row on blob delete is now DONE (Wave 4a) — `CasDeleteHandler`/
+`AcDeleteHandler` delete the surface-qualified envelope row after the R2 object (fail-safe ordering: a
+reclaim failure warns but never rolls back the delete, since an orphaned wrapped DEK wraps nothing).
 
 # Role
 - The CAS+AC storage glue: a per-tenant BYOK config cache + Tcs resolver + the §4 storage-key hardening +
@@ -79,7 +81,7 @@ on delete.
 1. The per-tenant engagement decision is the single source of truth shared by write and read:
    `active` ⇒ `Encrypt(crypto_mode)` carrying the tenant's `ByokCryptoMode`; `partial` ⇒ FAIL-CLOSED
    (Wave 4); inactive/pending/shredded ⇒ plaintext
-   (`crates/corelink-container/src/storage/byok_cas.rs:1087-1098`).
+   (`crates/corelink-container/src/storage/byok_cas.rs:1136-1147`).
 2. `ByokConfigCache::get` resolves the tenant's BYOK config with at most ONE D1 read on a miss and
    caches even the "not configured / inactive" answer, fail-closed on a source error
    (`crates/corelink-container/src/storage/byok_cas.rs:202-230`).
@@ -128,7 +130,7 @@ on delete.
 # Invariants
 - **Encrypt at rest ONLY for an `active` tenant, in its configured mode.** `partial` is active-but-deferred
   and FAILS CLOSED (never plaintext); inactive/pending/shredded/not-configured run plaintext
-  (`crates/corelink-container/src/storage/byok_cas.rs:1087-1098`).
+  (`crates/corelink-container/src/storage/byok_cas.rs:1136-1147`).
 - **The §4 hardened storage key is never persisted and never leaks the digest.** It is computed on-the-fly,
   deterministic per `(TCS, digest)`, and distinct from the REAL AAD-bound `plaintext_digest`
   (`crates/corelink-container/src/storage/byok_cas.rs:530-536`).
@@ -180,7 +182,7 @@ on delete.
 12. `crates/corelink-container/src/storage/byok_cas.rs:673-683` — `envelope_blob_key`: surface-qualified PK (`"cas:"/"ac:"`) so a digest collision can't orphan a ciphertext.
 13. `crates/corelink-container/src/storage/byok_cas.rs:757-904` — `ByokEnvelopeStore` trait + `D1ByokEnvelopeStore`: idempotent `INSERT … ON CONFLICT DO NOTHING` + `SELECT` over the D1 row seam (audit C2).
 14. `crates/corelink-container/src/storage/byok_cas.rs:919-1029` — `ModeBEncryptor`: random per-blob DEK wrapped in `byok_envelope`, deterministic `CLB2` ciphertext, no dedup but idempotent/no-orphan.
-15. `crates/corelink-container/src/storage/byok_cas.rs:1087-1098` — `engagement_for`: the state → `Encrypt(mode)` / fail-closed / plaintext truth table.
+15. `crates/corelink-container/src/storage/byok_cas.rs:1136-1147` — `engagement_for`: the state → `Encrypt(mode)` / fail-closed / plaintext truth table.
 16. `crates/corelink-container/src/byok.rs:1-29` — feature-gated factory returning an `Arc<dyn KmsProvider>`.
 17. `crates/corelink-container/src/byok.rs:10` — `#![forbid(unsafe_code)]` on the factory.
 18. `crates/corelink-byok/src/byok_aws/real.rs:176-256` — `AwsKmsRealProvider::new`/`with_fips`: unconditional `use_fips(true)` + EXPLICIT static creds + explicit FIPS endpoint (no CF-cold-start-hanging AWS SDK chain).
