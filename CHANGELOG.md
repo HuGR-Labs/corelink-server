@@ -100,6 +100,12 @@ Each entry cross-references:
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
 ### Security
+- **PAT-mint gate is now dedicated-key-only, fail-closed (enterprise-DD HIGH).** `/_internal/pat/mint` (which
+  can mint ANY tenant's PAT, incl. `SCOPE_ADMIN_ALL`) gated its dedicated `CORELINK_PAT_MINT_AUTH_KEY` with a
+  silent FALLBACK to the broad shared `CORELINK_INTERNAL_AUTH_KEY` when unset — full-compromise blast radius
+  if the dedicated key wasn't provisioned. Now it requires the dedicated key ONLY (≥32 chars, constant-time
+  compare): an unset/blank/short key → the route is NOT mounted (503/unavailable), never widened to the
+  shared key. Mint business logic unchanged. 4 tests incl. the core "shared key does not authorize the mint".
 - **OCI blob-upload OOM DoS capped (enterprise-DD HIGH).** The OCI blob `PATCH`/`PUT` chunk handler read
   the inbound body with `to_bytes(body, usize::MAX)` — any authenticated tenant could drive an unbounded
   single allocation (multi-GB heap → OOM). Now capped at the configured `blob_size_limit_bytes` (5 GiB
