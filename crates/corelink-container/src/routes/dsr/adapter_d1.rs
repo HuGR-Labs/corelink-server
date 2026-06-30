@@ -118,6 +118,11 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // Operational residency-move state, no retention basis → ERASE.
     "region_migration_request",
     "region_migration_progress",
+    // Clerk org → isolated tenant identity map (migr. 0083). PRIMARY identity is
+    // `clerk_org_id`, but it CARRIES `tenant_id` — classify by tenant_id: the
+    // org→tenant mapping is operational identity state with no retention basis
+    // and is removed when that tenant is erased (GDPR Art.17). ERASE.
+    "tenant_org_map",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -250,6 +255,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "gc_candidates",
     "region_migration_request",
     "region_migration_progress",
+    "tenant_org_map",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",
