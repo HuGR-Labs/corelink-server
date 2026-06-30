@@ -108,6 +108,11 @@ pub mod byok_orchestrator;
 /// deployed table exists, explicit empty/zero/501 where it doesn't.
 /// See module docs for the per-endpoint matrix.
 pub mod customer_d1;
+/// Canonical pseudonymized email-hash helper (CTRL-PRIV-001) — the ONE
+/// `hash_email` every email-hash site shares so the invite→match flow and DSR
+/// rectification stay byte-identical (HMAC-SHA256 under `EMAIL_HASH_SALT`, with
+/// a no-regression unsalted SHA-256 fallback).
+pub mod email_hash;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;
 /// Container-side resolution of a tenant's resolved per-tier storage cap for the
