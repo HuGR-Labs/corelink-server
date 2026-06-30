@@ -541,6 +541,10 @@ fn is_valid_tier(value: &str) -> bool {
 pub fn router(state: AuthIntrospectRouteState) -> Router {
     Router::new()
         .route("/internal/v1/auth/introspect", post(handle_introspect))
+        .route(
+            "/internal/v1/auth/resolve-tenant",
+            post(handle_resolve_tenant),
+        )
         .with_state(state)
 }
 
@@ -633,6 +637,143 @@ async fn handle_introspect(
         // Genuine backend fault — the fabric maps 503 → Err(Unreachable).
         Err(VerifyError::Backend(e)) => {
             tracing::error!(error = %e, "auth_introspect: verifier backend fault");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Tenant-per-org resolution (githugr ADR-0007 Epic A primitive)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// JSON request body for `POST /internal/v1/auth/resolve-tenant`. The
+/// `clerk_org_id` is the Clerk organization id (`org_...`) to resolve.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResolveTenantRequest {
+    /// The Clerk organization id to resolve to its isolated CoreLink tenant.
+    pub clerk_org_id: String,
+}
+
+/// JSON response body for a SUCCESSFUL (`200`) tenant resolution.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResolveTenantResponse {
+    /// The isolated CoreLink tenant UUID the org maps to.
+    pub tenant_id: String,
+}
+
+/// SQL: the isolated tenant for a Clerk org from the `tenant_org_map` table
+/// (migration 0083). The table is written ONLY by the provisioning authority;
+/// this read is LOOKUP-ONLY (never auto-creates a mapping). A missing row is a
+/// non-fault miss (the org is not yet provisioned).
+const RESOLVE_TENANT_SQL: &str =
+    "SELECT tenant_id FROM tenant_org_map WHERE clerk_org_id = ?1 LIMIT 1";
+
+/// Resolve a Clerk org id to its isolated CoreLink tenant via `tenant_org_map`
+/// (migration 0083).
+///
+/// - Row present → `Ok(Some(tenant_id))` (the org is provisioned).
+/// - No row → `Ok(None)` (the org is NOT mapped — the caller falls back to its
+///   own unmapped-org behaviour; this endpoint NEVER auto-provisions).
+///
+/// # Fail-CLOSED
+///
+/// A genuine D1 backend fault surfaces as `Err(String)` so the route maps it to
+/// **503** rather than guessing a tenant — the caller must never be handed a
+/// WRONG tenant (which would break tenant isolation). A non-fault "no row" is
+/// `Ok(None)`, not an error.
+///
+/// # Errors
+///
+/// Returns `Err(String)` only on a D1 backend fault (so the route can 503).
+pub async fn resolve_tenant_for_org(
+    d1: &D1HttpClient,
+    clerk_org_id: &str,
+) -> Result<Option<String>, String> {
+    let rows = d1
+        .query(
+            RESOLVE_TENANT_SQL,
+            &[serde_json::Value::String(clerk_org_id.to_owned())],
+        )
+        .await?;
+    Ok(decode_resolved_tenant(&rows))
+}
+
+/// Pure decode of the `tenant_org_map` query result into the resolved tenant.
+///
+/// Split from [`resolve_tenant_for_org`] so the row→tenant mapping is
+/// unit-testable without a network (mirrors [`decode_runner_cap`]): the I/O
+/// wrapper does the keyed query, this maps rows → `Option<tenant_id>`.
+///
+/// - A row carrying a non-empty `tenant_id` string → `Some(tenant_id)`.
+/// - No row (the org is not provisioned) → `None` (the handler maps this to a
+///   404 `org_not_mapped` — never an auto-provision).
+/// - A row whose `tenant_id` is missing / non-string / empty → `None` (treated
+///   as "no mapping": a malformed row must never resolve to a wrong/blank
+///   tenant — fail to a clean 404, never serve a bad isolation boundary).
+fn decode_resolved_tenant(rows: &[crate::storage::d1_http::D1Row]) -> Option<String> {
+    rows.first()
+        .and_then(|row| row.get("tenant_id"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
+/// `POST /internal/v1/auth/resolve-tenant` handler.
+///
+/// Mirrors [`handle_introspect`]'s posture: the dedicated-secret auth gate runs
+/// FIRST on raw [`Bytes`] (before the body is parsed), so an unauthenticated
+/// caller is rejected with 401 without any JSON parse. A mapped org → 200
+/// `{ "tenant_id": ... }`; an unmapped org → 404 `{ "error": "org_not_mapped" }`
+/// (provisioning is a SEPARATE owner step — never auto-created here); a D1 fault
+/// → 503 (fail-CLOSED: never serve a wrong tenant).
+async fn handle_resolve_tenant(
+    State(state): State<AuthIntrospectRouteState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    // ── 1. Dedicated-secret gate (constant-time; the SAME key set introspect
+    //       uses) — non-short-circuiting OR so timing reveals no consumer. ────
+    let mut auth_ok = false;
+    for key in &state.internal_auth_keys {
+        auth_ok |= internal_auth_ok(key.as_bytes(), &headers);
+    }
+    if !auth_ok {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": "unauthorized" })),
+        )
+            .into_response();
+    }
+
+    // ── 1b. Parse the body — ONLY after the auth gate passed. ───────────────
+    let req: ResolveTenantRequest = match serde_json::from_slice(&body) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::warn!(error = %e, "resolve_tenant: invalid request body");
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": "invalid_body" })),
+            )
+                .into_response();
+        }
+    };
+
+    // ── 2. D1 read of tenant_org_map (lookup-only, never auto-create). ──────
+    match resolve_tenant_for_org(&state.d1, &req.clerk_org_id).await {
+        Ok(Some(tenant_id)) => {
+            (StatusCode::OK, Json(ResolveTenantResponse { tenant_id })).into_response()
+        }
+        // Unmapped org → 404 (the showcase-tenant fallback path is the caller's;
+        // this endpoint NEVER provisions).
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "org_not_mapped" })),
+        )
+            .into_response(),
+        // D1 fault → fail-CLOSED 503 (never serve a guessed/wrong tenant).
+        Err(e) => {
+            tracing::error!(error = %e, "resolve_tenant: D1 lookup failed");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
@@ -1290,5 +1431,162 @@ mod tests {
         }
         assert!(!is_valid_tier("platinum"));
         assert!(!is_valid_tier(""));
+    }
+
+    // ── resolve-tenant: tenant-per-org primitive (migration 0083) ────────────
+
+    /// Build a `POST /internal/v1/auth/resolve-tenant` request, with an optional
+    /// `X-Corelink-Internal-Auth` header.
+    fn resolve_request(auth: Option<&str>, body: serde_json::Value) -> Request<Body> {
+        let mut b = Request::builder()
+            .method(http::Method::POST)
+            .uri("/internal/v1/auth/resolve-tenant")
+            .header("content-type", "application/json");
+        if let Some(a) = auth {
+            b = b.header("x-corelink-internal-auth", a);
+        }
+        b.body(Body::from(serde_json::to_string(&body).unwrap()))
+            .unwrap()
+    }
+
+    /// A `verifier` that is never reached by the resolve route (it has its own
+    /// D1-only path); the resolve tests only exercise the auth gate + D1 read.
+    fn unused_verifier() -> Arc<PatVerifier> {
+        Arc::new(PatVerifier::new(
+            Arc::new(FakeLookup::backend("unused")),
+            test_key(),
+        ))
+    }
+
+    fn resolve_app() -> Router {
+        router(state_with(unused_verifier(), unreachable_d1()))
+    }
+
+    #[test]
+    fn decode_resolved_tenant_seeded_org_yields_some() {
+        // A `tenant_org_map` row carrying the org's tenant → Some(tenant_id):
+        // the resolution that backs githugr's per-org token exchange.
+        let mut row = serde_json::Map::new();
+        row.insert(
+            "tenant_id".to_owned(),
+            serde_json::json!("11111111-1111-4111-8111-111111111111"),
+        );
+        assert_eq!(
+            decode_resolved_tenant(&[row]),
+            Some("11111111-1111-4111-8111-111111111111".to_owned()),
+            "a seeded org row must resolve to its mapped tenant"
+        );
+    }
+
+    #[test]
+    fn decode_resolved_tenant_unmapped_org_yields_none() {
+        // Empty result set (GATED-INERT: no rows until provisioning) → None →
+        // the handler returns 404 org_not_mapped (the showcase-tenant fallback
+        // path is the caller's; this endpoint never auto-provisions).
+        assert_eq!(
+            decode_resolved_tenant(&[]),
+            None,
+            "an unmapped org must yield None (→ 404 org_not_mapped)"
+        );
+    }
+
+    #[test]
+    fn decode_resolved_tenant_malformed_row_yields_none() {
+        // A row whose tenant_id is missing / non-string / empty must NOT resolve
+        // to a wrong/blank tenant — it falls to None (clean 404), never a bad
+        // isolation boundary.
+        let mut missing = serde_json::Map::new();
+        missing.insert("other".to_owned(), serde_json::json!("x"));
+        assert_eq!(decode_resolved_tenant(&[missing]), None);
+
+        let mut non_str = serde_json::Map::new();
+        non_str.insert("tenant_id".to_owned(), serde_json::json!(42));
+        assert_eq!(decode_resolved_tenant(&[non_str]), None);
+
+        let mut empty = serde_json::Map::new();
+        empty.insert("tenant_id".to_owned(), serde_json::json!(""));
+        assert_eq!(decode_resolved_tenant(&[empty]), None);
+    }
+
+    #[tokio::test]
+    async fn resolve_missing_service_secret_returns_401() {
+        let resp = resolve_app()
+            .oneshot(resolve_request(
+                None,
+                serde_json::json!({ "clerk_org_id": "org_123" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn resolve_wrong_service_secret_returns_401() {
+        let resp = resolve_app()
+            .oneshot(resolve_request(
+                Some("wrong-secret-which-is-also-32-chars!!"),
+                serde_json::json!({ "clerk_org_id": "org_123" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn resolve_unknown_field_returns_400() {
+        // deny_unknown_fields: an extra field is rejected on shape (after the
+        // auth gate passes, before any D1 read).
+        let resp = resolve_app()
+            .oneshot(resolve_request(
+                Some(TEST_AUTH_KEY),
+                serde_json::json!({ "clerk_org_id": "org_123", "evil": true }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let v = body_json(resp).await;
+        assert_eq!(v["error"], serde_json::json!("invalid_body"));
+    }
+
+    #[tokio::test]
+    async fn resolve_d1_fault_returns_503_failclosed() {
+        // A well-formed, authenticated request whose D1 lookup faults must 503 —
+        // never a guessed tenant (which would break tenant isolation).
+        let resp = resolve_app()
+            .oneshot(resolve_request(
+                Some(TEST_AUTH_KEY),
+                serde_json::json!({ "clerk_org_id": "org_123" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::SERVICE_UNAVAILABLE,
+            "a D1 fault on resolve must fail CLOSED (503), never serve a guessed tenant"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_for_org_errors_on_d1_fault() {
+        // The I/O wrapper surfaces a D1 fault as Err (→ route 503), mirroring
+        // tier_for_tenant's fail-CLOSED contract.
+        let d1 = unreachable_d1();
+        let err = resolve_tenant_for_org(&d1, "org_123").await;
+        assert!(
+            err.is_err(),
+            "a D1 fault must surface as Err (fail-CLOSED → 503)"
+        );
+    }
+
+    #[test]
+    fn resolve_tenant_response_serialises() {
+        let v = serde_json::to_value(ResolveTenantResponse {
+            tenant_id: "11111111-1111-4111-8111-111111111111".to_owned(),
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({ "tenant_id": "11111111-1111-4111-8111-111111111111" })
+        );
     }
 }

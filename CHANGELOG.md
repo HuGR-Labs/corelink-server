@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Tenant-per-org identity primitive — `clerk_org_id → tenant_id` resolution (githugr Epic A / pilot).** The
+  CoreLink-side seam for per-org isolation (isolation itself is already the core product — every surface is
+  `tenant_id`-scoped). Migration 0083 adds `tenant_org_map (clerk_org_id PK, tenant_id, created_at_ms)`; a new
+  internal-auth-gated `POST /internal/v1/auth/resolve-tenant {clerk_org_id}` → `200 {tenant_id}` if mapped /
+  `404 org_not_mapped` (lookup-only, never auto-provisions) / `503` fail-closed on D1 fault, so githugr's
+  session→token exchange can mint a token scoped to a principal's OWN tenant instead of the fixed showcase
+  tenant. `tenant_org_map` is classified in the DSR erase-set (a GDPR deletion erases the org→tenant mapping).
+  GATED-INERT (empty until the owner provisions pilot tenants + mappings). 9 tests.
 - **GC physical-delete sweep entrypoint, dry-run-first (enterprise-DD note: "erased bytes never reclaimed").**
   `corelink-gc` had the reclaim logic but no call site. New `sweep_runner` + `gc_sweep` bin + a daily GHA cron
   (`gc-sweep-dry-run.yml`) run one sweep per run/tenant/region. **DRY-RUN BY DEFAULT + fail-closed**: only a
