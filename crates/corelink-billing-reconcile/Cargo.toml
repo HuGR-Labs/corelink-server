@@ -24,6 +24,15 @@ proptest = { workspace = true }
 rand = "0.9"
 rand_chacha = "0.9"
 
+[[bin]]
+# Scheduled prod billing-reconciliation runner (WI-S10-007 closure):
+# reads the extracted three-layer totals JSON, runs one canonical
+# reconcile pass, emits the drift report + a SEV marker, exits non-zero
+# on drift past the `--fail-on` floor. Pure-logic (no tokio / HTTP) —
+# the credentialed D1 + Stripe extraction is the cron workflow's job.
+name = "billing-reconcile-run"
+path = "src/bin/billing-reconcile-run.rs"
+
 [[test]]
 name = "prop_billing_reconcile"
 path = "tests/prop_billing_reconcile.rs"

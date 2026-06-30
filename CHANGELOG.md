@@ -30,6 +30,14 @@ Each entry cross-references:
   read-only `classify_candidate` and emits a report with ZERO R2 deletes / D1 purges / candidate transitions.
   Live mode (gated off) deletes ONLY positively-classified reclaimable objects (post-grace, refcount==0) —
   never a live blob. Owner reviews a dry-run report, then flips the gate. 164 gc tests green.
+- **Live billing reconciliation (enterprise-DD #5, HIGH).** `corelink-billing-reconcile` was an unwired
+  in-memory skeleton (no usage→Stripe drift detection ran → the company couldn't prove what it billed). Now
+  `run_reconcile_pass` + the `billing-reconcile-run` bin drive a daily GHA cron (`billing-reconcile-daily.yml`,
+  04:00 UTC) that runs one READ-ONLY pass per tenant — D1 metered usage vs the Stripe submission ledger →
+  4-tier drift report + audit trail; drift past the floor → non-zero exit + PagerDuty SEV-2 + a 90-day
+  evidence artifact (SOC2/ASC-606). Report-only: the auto-pause runs against the in-memory dry-run control
+  (never mutates Stripe/D1); fail-closed on any source error (never a false "no drift"). Live lane secret-gated
+  (`BILLING_RECONCILE_LIVE` + a billing-D1 db-id the owner provisions). 92 tests.
 - **Live daily backups + real restore verification (enterprise-DD #1, CRITICAL data-loss).** New scheduled
   `backup-daily.yml` cron runs `backup-daily.sh` non-dry-run against prod (read-only D1/KV export + GPG +
   R2 cold-tier), gated by an explicit `BACKUP_ALLOW_CI` opt-in. `backup-daily-verify` flipped from the
@@ -107,6 +115,15 @@ Each entry cross-references:
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
 ### Security
+- **admin-ui CSP was silently disabled in prod — now restored (found while fixing the red e2e gate).** The
+  Next.js middleware lived at the package root (`apps/admin-ui/middleware.ts`) but the App Router is under
+  `src/`, so Next.js **ignored it and emitted NO `Content-Security-Policy` header at all** (dev + prod) — the
+  admin-ui ran with no CSP. Moved to `src/middleware.ts` (pure rename — the existing nonce-based strict CSP,
+  no `unsafe-inline`, is unchanged), which activates it; the CSP-violation e2e test now passes (the injected
+  inline script is blocked + the `securitypolicyviolation` fires). Also fixed the admin-ui accessibility
+  violations dragging the Lighthouse a11y score below 1.0 (invalid `aria-readonly` on a `<p>`,
+  missing `<main>` landmark + `<h1>` on the privacy/consent routes) — root-fixed in markup, no threshold/test
+  weakened.
 - **Sentry event bodies are now PII/secret-scrubbed before send (enterprise-DD MED).** Every live Sentry init
   (the admin-ui client/server/edge configs + the 5 TS workers — corelink-prod CAS, signup-worker, analytics,
   get-corelink) only scrubbed request *header keys*; message/exception bodies + extra/contexts/breadcrumbs
