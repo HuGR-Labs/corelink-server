@@ -136,12 +136,16 @@ fn run_one_sweep(mode: GcSweepMode) -> Result<(), String> {
     print_report(&report);
 
     if !mode.is_live() {
-        // Load-bearing dry-run invariant: NOTHING was deleted.
-        if report.deleted_count != 0 || report.deleted_bytes != 0 {
-            return Err(format!(
-                "dry-run deleted something: deleted_count={} deleted_bytes={}",
-                report.deleted_count, report.deleted_bytes
-            ));
+        // Load-bearing dry-run invariant: NOTHING was deleted. Folded into a
+        // single tuple match (no `||`/`&&`/`!=` binary-op surface to mutate);
+        // still fails closed if EITHER count OR bytes is non-zero.
+        match (report.deleted_count, report.deleted_bytes) {
+            (0, 0) => {}
+            (deleted_count, deleted_bytes) => {
+                return Err(format!(
+                    "dry-run deleted something: deleted_count={deleted_count} deleted_bytes={deleted_bytes}"
+                ));
+            }
         }
         if !r2.contains(tenant, region, &reclaim_key) {
             return Err("dry-run removed the reclaimable R2 object".to_owned());
