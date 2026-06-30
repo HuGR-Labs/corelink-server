@@ -21,6 +21,7 @@
 
 import type { D1Database, DurableObjectNamespace, ExecutionContext, ExportedHandler } from "@cloudflare/workers-types";
 import * as Sentry from "@sentry/cloudflare";
+import { scrubSentryEvent } from "./sentry-scrub.js";
 import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
 import { EventLogDO } from "./event_log_do.js";
@@ -2641,24 +2642,10 @@ const baseHandler: ExportedHandler<Env> = {
 // unhandled error thrown out of the fetch handler before the runtime 500s, with
 // no behavior change to the (already error-mapped) success paths.
 //
-// INV-NO-PII-IN-LOGS: scrub Authorization / Cookie / API-key headers from every
-// event before it leaves the Worker (same scrub list as analytics-worker), and
-// sendDefaultPii=false so Sentry never auto-attaches request bodies / IPs.
-
-const SENTRY_SENSITIVE_HEADER_PATTERN =
-  /^(authorization|cookie|set-cookie|x-api-key|x-corelink-internal-auth|proxy-authorization)$/i;
-
-function scrubSentryEvent(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
-  if (event.request?.headers) {
-    const h = event.request.headers as Record<string, string>;
-    for (const k of Object.keys(h)) {
-      if (SENTRY_SENSITIVE_HEADER_PATTERN.test(k)) {
-        h[k] = "[Filtered]";
-      }
-    }
-  }
-  return event;
-}
+// INV-NO-PII-IN-LOGS: scrub PII/secrets from every event before it leaves the
+// Worker — not just header KEYS but message/exception bodies + extra/contexts
+// VALUES (see ./sentry-scrub.ts) — and sendDefaultPii=false so Sentry never
+// auto-attaches request bodies / IPs.
 
 const handler = Sentry.withSentry(
   (env: Env) => ({
@@ -2670,6 +2657,9 @@ const handler = Sentry.withSentry(
     tracesSampleRate: 0.1,
     sampleRate: 1.0,
     beforeSend(event: Sentry.ErrorEvent) {
+      return scrubSentryEvent(event);
+    },
+    beforeSendTransaction(event) {
       return scrubSentryEvent(event);
     },
   }),

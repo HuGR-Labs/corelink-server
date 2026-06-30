@@ -9,6 +9,7 @@
  */
 
 import * as Sentry from "@sentry/cloudflare";
+import { scrubSentryEvent } from "./sentry-scrub.js";
 import { handleClerkWebhook, defaultApiClient } from "./webhooks/clerk.js";
 import type { AutoProvisionEnv, DsrQueuedV1 } from "./webhooks/clerk.js";
 import { handleStripeWebhook } from "./webhooks/stripe.js";
@@ -153,21 +154,6 @@ const baseHandler: ExportedHandler<SignupEnv> = {
   },
 };
 
-const SENSITIVE_HEADER_PATTERN =
-  /^(authorization|cookie|set-cookie|x-api-key|proxy-authorization|svix-signature|svix-id|svix-timestamp|stripe-signature)$/i;
-
-function scrubAuthorization(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
-  if (event.request?.headers) {
-    const h = event.request.headers as Record<string, string>;
-    for (const k of Object.keys(h)) {
-      if (SENSITIVE_HEADER_PATTERN.test(k)) {
-        h[k] = "[Filtered]";
-      }
-    }
-  }
-  return event;
-}
-
 export default Sentry.withSentry(
   (env: SignupEnv) => ({
     // Empty string when secret unset → Sentry SDK treats as init no-op.
@@ -179,8 +165,13 @@ export default Sentry.withSentry(
     sendDefaultPii: false,
     tracesSampleRate: 0.1,
     sampleRate: 1.0,
+    // Scrub PII/secrets from message + exception bodies + extra/contexts
+    // VALUES (not just header keys) before any event leaves the Worker.
     beforeSend(event: Sentry.ErrorEvent) {
-      return scrubAuthorization(event);
+      return scrubSentryEvent(event);
+    },
+    beforeSendTransaction(event) {
+      return scrubSentryEvent(event);
     },
   }),
   // `@sentry/cloudflare` re-bundles `@cloudflare/workers-types`; cast keeps
