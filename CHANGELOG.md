@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Live billing reconciliation (enterprise-DD #5, HIGH).** `corelink-billing-reconcile` was an unwired
+  in-memory skeleton (no usage→Stripe drift detection ran → the company couldn't prove what it billed). Now
+  `run_reconcile_pass` + the `billing-reconcile-run` bin drive a daily GHA cron (`billing-reconcile-daily.yml`,
+  04:00 UTC) that runs one READ-ONLY pass per tenant — D1 metered usage vs the Stripe submission ledger →
+  4-tier drift report + audit trail; drift past the floor → non-zero exit + PagerDuty SEV-2 + a 90-day
+  evidence artifact (SOC2/ASC-606). Report-only: the auto-pause runs against the in-memory dry-run control
+  (never mutates Stripe/D1); fail-closed on any source error (never a false "no drift"). Live lane secret-gated
+  (`BILLING_RECONCILE_LIVE` + a billing-D1 db-id the owner provisions). 92 tests.
 - **Live daily backups + real restore verification (enterprise-DD #1, CRITICAL data-loss).** New scheduled
   `backup-daily.yml` cron runs `backup-daily.sh` non-dry-run against prod (read-only D1/KV export + GPG +
   R2 cold-tier), gated by an explicit `BACKUP_ALLOW_CI` opt-in. `backup-daily-verify` flipped from the
