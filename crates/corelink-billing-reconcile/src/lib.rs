@@ -199,6 +199,7 @@ pub mod error;
 pub mod event;
 pub mod history;
 pub mod reconciler;
+pub mod run;
 pub mod stripe_pause;
 
 pub use audit::{
@@ -222,6 +223,11 @@ pub use history::{
     InMemoryDriftHistoryLedger,
 };
 pub use reconciler::{BillingReconciler, InMemoryBillingReconciler};
+pub use run::{
+    empty_input, parse_input, reconcile_snapshots, run_reconcile_pass, ReconcileAuditEntry,
+    ReconcileReport, ReconcileRunInput, ReconcileSeverity, TenantReconcileOutcome,
+    TenantSnapshotInput, DEFAULT_RUN_STARTED_AT_MS, MARKER_CLEAN, MARKER_DRIFT, MARKER_ERROR,
+};
 pub use stripe_pause::{
     FailingStripeSubmissionControl, InMemoryStripeSubmissionControl, StripePauseOutcome,
     StripeSubmissionControl,
