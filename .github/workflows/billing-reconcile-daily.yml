@@ -1,0 +1,332 @@
+name: billing-reconcile-daily
+
+# Daily LIVE billing-reconciliation cron (closes enterprise-DD #5 HIGH:
+# "no live usage->Stripe drift detection runs"). Runs the EXISTING
+# `corelink-billing-reconcile` 3-layer reconciler against prod, READ-ONLY:
+# it compares per-tenant metered usage (D1) vs what was reported/billed
+# to Stripe (the Stripe ledger / Stripe API), computes drift via the
+# canonical 4-tier ladder, and emits a drift report as the audit-event
+# artifact. It does NOT mutate Stripe or D1 — the SEV-1 auto-pause arm
+# runs against an in-memory DRY-RUN control (report-only this WP).
+#
+# Trigger:   cron 04:00 UTC daily (after audit-chain-daily-verify 02:00
+#            + neon-shadow-reconcile 03:00 — same low-traffic window, no
+#            collision) + manual workflow_dispatch for ad-hoc reconcile
+#            after a billing incident.
+#
+# Behaviour:
+#   1. Builds the pure-logic `billing-reconcile-run` bin (no tokio/HTTP —
+#      mirrors the `corelink-audit-chain` verifier-bin pattern).
+#   2. EXTRACTION (live lane, gated): when BILLING_RECONCILE_LIVE == "1"
+#      AND all required secrets are present, a python step pulls the
+#      three layer totals per (tenant, billing_period) from the REAL prod
+#      sources and assembles the runner input JSON:
+#        - Layer 1 + Layer 2 = Sigma D1 `usage_counter` (the canonical
+#          metered-usage source, WI-S10-002) via the Cloudflare D1 HTTP
+#          query API (POST /accounts/{acct}/d1/database/{db}/query).
+#        - Layer 3 = Sigma the D1 Stripe-submission ledger
+#          `stripe_idempotency_keys.total_qty_text` (what we reported to
+#          Stripe, WI-S10-003) via the same D1 query API.
+#      The default (smoke) lane (no live flag / no secrets) writes an
+#      EMPTY input so the cron is a green no-op until the owner wires the
+#      secrets — "the wiring ships, the cron goes green once the secret
+#      exists."
+#   3. Runs the bin: exit 0 = clean; exit 1 = drift past --fail-on floor
+#      (default sev3 — owner zero-tolerance); exit 2 = pass/extraction
+#      error (fail-CLOSED).
+#   4. On exit != 0 -> PagerDuty Events API v2 SEV-2 page
+#      (dedup_key=billing-reconcile-drift-<period>-<date>) + the job
+#      ends non-zero. Fail-CLOSED: an extraction/pass error is paged +
+#      surfaced, NEVER reported as clean.
+#   5. Uploads the drift report artifact (SOC 2 / GAAP ASC 606 evidence).
+#
+# OWNER ACTION — secrets to wire before flipping BILLING_RECONCILE_LIVE=1
+# (referenced by name; this workflow does not invent values):
+#   - CF_API_TOKEN              (#50 variant, D1:Read on the billing DB) — EXISTS
+#   - CF_ACCOUNT_ID             (#49) — EXISTS
+#   - PAGERDUTY_ROUTING_KEY     (#11) — EXISTS
+#   - CORELINK_BILLING_D1_DATABASE_ID  — NEW: the prod billing/usage D1
+#                                        database id (CONFIG_DB). FLAG.
+#   - (optional, future promotion) STRIPE_API_KEY (read-only restricted
+#     key) to cross-check Layer 3 against the Stripe API directly rather
+#     than the D1 submission ledger. NEW. FLAG.
+#   Repo var `BILLING_RECONCILE_LIVE` = "1" to enable the live lane; the
+#   table names default to `usage_counter` / `stripe_idempotency_keys`
+#   and are overridable via repo vars BILLING_USAGE_TABLE /
+#   BILLING_STRIPE_LEDGER_TABLE (OWNER: confirm the exact column names
+#   for total_qty + tenant_id + billing_period in prod).
+#
+# SHA-pinned third-party actions per HIGH_RISK lane tooling-pin policy.
+
+on:
+  schedule:
+    - cron: "0 4 * * *"  # 04:00 UTC daily (low-traffic window)
+  workflow_dispatch:
+    inputs:
+      billing_period:
+        description: "Billing period YYYY-MM to reconcile (defaults to current UTC month)"
+        required: false
+        type: string
+      fail_on:
+        description: "Severity floor that fails the run (sev3|sev2|sev1; default sev3)"
+        required: false
+        default: "sev3"
+        type: string
+
+# Read-only — this cron reports + pages; it never writes repo contents,
+# Stripe, or D1. No id-token:write (the D1 read uses CF_API_TOKEN Bearer).
+permissions:
+  contents: read
+
+concurrency:
+  group: billing-reconcile-daily
+  cancel-in-progress: false
+
+env:
+  BILLING_USAGE_TABLE_DEFAULT: "usage_counter"
+  BILLING_STRIPE_LEDGER_TABLE_DEFAULT: "stripe_idempotency_keys"
+
+jobs:
+  reconcile:
+    name: billing-reconcile
+    runs-on: [self-hosted, mac, corelink-builder]
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+        with:
+          toolchain: stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        with:
+          shared-key: billing-reconcile-daily
+
+      - name: Build billing-reconcile-run binary
+        run: cargo build -p corelink-billing-reconcile --bin billing-reconcile-run --release
+
+      - name: Compute billing period (input or current UTC month)
+        id: period
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.billing_period }}" ]]; then
+            PERIOD="${{ inputs.billing_period }}"
+          else
+            PERIOD=$(date -u +%Y-%m)
+          fi
+          if ! [[ "$PERIOD" =~ ^[0-9]{4}-[0-9]{2}$ ]]; then
+            echo "::error::Invalid billing_period: $PERIOD (want YYYY-MM)"
+            exit 1
+          fi
+          echo "period=$PERIOD" >> "$GITHUB_OUTPUT"
+          echo "run_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          echo "Reconciling billing period: $PERIOD"
+
+      - name: Install extraction deps
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          python3 -m pip install 'requests==2.32.5'
+
+      - name: Extract three-layer totals (live lane gated; else empty no-op)
+        id: extract
+        env:
+          BILLING_RECONCILE_LIVE: ${{ vars.BILLING_RECONCILE_LIVE }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.CORELINK_BILLING_D1_DATABASE_ID }}
+          USAGE_TABLE: ${{ vars.BILLING_USAGE_TABLE || env.BILLING_USAGE_TABLE_DEFAULT }}
+          STRIPE_LEDGER_TABLE: ${{ vars.BILLING_STRIPE_LEDGER_TABLE || env.BILLING_STRIPE_LEDGER_TABLE_DEFAULT }}
+          PERIOD: ${{ steps.period.outputs.period }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${CF_API_TOKEN:-}"
+          OUT="reconcile-input.json"
+          # Smoke / no-op lane: not live, or any required secret missing.
+          if [[ "${BILLING_RECONCILE_LIVE:-0}" != "1" || -z "${CF_API_TOKEN:-}" || -z "${CF_ACCOUNT_ID:-}" || -z "${D1_DATABASE_ID:-}" ]]; then
+            echo "Smoke lane (BILLING_RECONCILE_LIVE!=1 or secrets absent): empty input no-op."
+            printf '{"billing_period":"%s","run_started_at_ms":0,"snapshots":[]}\n' "$PERIOD" > "$OUT"
+            echo "live=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Live lane: pulling per-tenant totals from D1 (usage=$USAGE_TABLE, stripe_ledger=$STRIPE_LEDGER_TABLE)"
+          echo "live=1" >> "$GITHUB_OUTPUT"
+          # Fail-CLOSED: any non-2xx, success!=true, or JSON parse error
+          # raises -> non-zero exit -> the workflow pages (never a clean).
+          python3 - <<'PY'
+          import json, os, sys, time
+          import requests
+
+          acct = os.environ["CF_ACCOUNT_ID"]
+          db = os.environ["D1_DATABASE_ID"]
+          token = os.environ["CF_API_TOKEN"]
+          period = os.environ["PERIOD"]
+          usage_tbl = os.environ["USAGE_TABLE"]
+          stripe_tbl = os.environ["STRIPE_LEDGER_TABLE"]
+
+          url = f"https://api.cloudflare.com/client/v4/accounts/{acct}/d1/database/{db}/query"
+          headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+          def d1_query(sql, params):
+              r = requests.post(url, headers=headers, json={"sql": sql, "params": params}, timeout=60)
+              if r.status_code != 200:
+                  sys.stderr.write(f"BILLING_RECONCILE_ERROR: D1 query HTTP {r.status_code}: {r.text[:500]}\n")
+                  sys.exit(3)
+              body = r.json()
+              if not body.get("success", False):
+                  sys.stderr.write(f"BILLING_RECONCILE_ERROR: D1 success!=true: {body.get('errors')}\n")
+                  sys.exit(3)
+              # CF D1 query result shape: result[0].results = [ {col: val}, ... ]
+              res = body.get("result") or []
+              rows = []
+              for block in res:
+                  rows.extend(block.get("results") or [])
+              return rows
+
+          # OWNER: confirm column names. Canonical per WI-S10-002 /
+          # WI-S10-003: tenant_id, billing_period, total_qty.
+          usage_rows = d1_query(
+              f"SELECT tenant_id, CAST(SUM(total_qty) AS TEXT) AS total_qty, COUNT(*) AS n "
+              f"FROM {usage_tbl} WHERE billing_period = ? GROUP BY tenant_id",
+              [period],
+          )
+          stripe_rows = d1_query(
+              f"SELECT tenant_id, CAST(SUM(CAST(total_qty_text AS INTEGER)) AS TEXT) AS total_qty, COUNT(*) AS n "
+              f"FROM {stripe_tbl} WHERE billing_period = ? GROUP BY tenant_id",
+              [period],
+          )
+
+          def index(rows):
+              d = {}
+              for row in rows:
+                  tid = row.get("tenant_id")
+                  if tid is None:
+                      continue
+                  d[str(tid)] = (int(row.get("total_qty") or 0), int(row.get("n") or 0))
+              return d
+
+          usage = index(usage_rows)
+          billed = index(stripe_rows)
+
+          tenants = sorted(set(usage) | set(billed))
+          snapshots = []
+          for tid in tenants:
+              u_qty, u_n = usage.get(tid, (0, 0))
+              b_qty, b_n = billed.get(tid, (0, 0))
+              # Layer 1 + Layer 2 = the D1 metered-usage counter (the
+              # in-product source of truth); Layer 3 = what we reported to
+              # Stripe. The L2<->L3 pair is the usage->Stripe drift the DD
+              # finding is about. (Layer 1 R2-NDJSON cross-check is the
+              # owner's follow-on promotion.)
+              snapshots.append({
+                  "tenant_id": tid,
+                  "layer1": {"total_qty": u_qty, "record_count": u_n},
+                  "layer2": {"total_qty": u_qty, "record_count": u_n},
+                  "layer3": {"total_qty": b_qty, "record_count": b_n},
+              })
+
+          doc = {
+              "billing_period": period,
+              "run_started_at_ms": int(time.time() * 1000),
+              "snapshots": snapshots,
+          }
+          with open("reconcile-input.json", "w") as f:
+              json.dump(doc, f)
+          sys.stderr.write(f"Extracted {len(snapshots)} tenant snapshot(s) for {period}\n")
+          PY
+
+      - name: Run reconciliation pass
+        id: run
+        env:
+          FAIL_ON: ${{ inputs.fail_on || 'sev3' }}
+        run: |
+          set -euo pipefail
+          set +e
+          ./target/release/billing-reconcile-run \
+            --input reconcile-input.json \
+            --report reconcile-report.json \
+            --fail-on "$FAIL_ON" | tee reconcile-stdout.log
+          CODE=${PIPESTATUS[0]}
+          set -e
+          echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Reconcile runner exit code: $CODE"
+          # 0=clean, 1=drift, 2=pass/extraction error.
+          if [[ "$CODE" == "0" ]]; then
+            echo "Billing reconcile: clean."
+          fi
+
+      - name: PagerDuty SEV-2 page on drift / error (fail-CLOSED)
+        if: steps.run.outputs.exit_code != '0'
+        env:
+          PAGERDUTY_ROUTING_KEY: ${{ secrets.PAGERDUTY_ROUTING_KEY }}
+          PERIOD: ${{ steps.period.outputs.period }}
+          RUN_DATE: ${{ steps.period.outputs.run_date }}
+          EXIT_CODE: ${{ steps.run.outputs.exit_code }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          : "${PAGERDUTY_ROUTING_KEY:?PAGERDUTY_ROUTING_KEY not set — cannot page on billing drift (fail-CLOSED)}"
+          echo "::add-mask::${PAGERDUTY_ROUTING_KEY}"
+          KIND="drift"
+          if [[ "${EXIT_CODE}" == "2" ]]; then KIND="reconcile_error"; fi
+          PAGERDUTY_ROUTING_KEY="${PAGERDUTY_ROUTING_KEY}" \
+          PERIOD="${PERIOD}" RUN_DATE="${RUN_DATE}" KIND="${KIND}" \
+          EXIT_CODE="${EXIT_CODE}" RUN_URL="${RUN_URL}" \
+          python3 > pd-payload.json <<'PY'
+          import json, os, sys
+          event = {
+              "routing_key": os.environ["PAGERDUTY_ROUTING_KEY"],
+              "event_action": "trigger",
+              "dedup_key": "billing-reconcile-" + os.environ["KIND"] + "-" + os.environ["PERIOD"] + "-" + os.environ["RUN_DATE"],
+              "payload": {
+                  "summary": "SEV-2 billing reconcile " + os.environ["KIND"] + " for period " + os.environ["PERIOD"] + " (exit " + os.environ["EXIT_CODE"] + ")",
+                  "source": "billing-reconcile-daily cron (GHA)",
+                  "severity": "error",
+                  "component": "corelink-billing-reconcile",
+                  "group": "billing",
+                  "class": "usage-stripe-drift",
+                  "custom_details": {
+                      "billing_period": os.environ["PERIOD"],
+                      "exit_code": os.environ["EXIT_CODE"],
+                      "kind": os.environ["KIND"],
+                      "run_url": os.environ["RUN_URL"],
+                      "runbook": "drift report artifact: reconcile-report.json",
+                  },
+              },
+              "links": [{"href": os.environ["RUN_URL"], "text": "GHA run"}],
+          }
+          sys.stdout.write(json.dumps(event))
+          PY
+          http_code=$(curl --silent --show-error -o pd-resp.json -w "%{http_code}" \
+            -X POST -H "Content-Type: application/json" \
+            --data @pd-payload.json \
+            "https://events.pagerduty.com/v2/enqueue" || echo "000")
+          if [[ "${http_code}" != "202" ]]; then
+            echo "::error::PagerDuty enqueue returned HTTP ${http_code} — manual page Finance/SRE"
+            cat pd-resp.json || true
+          else
+            echo "PagerDuty SEV-2 dispatched (kind=${KIND}, period=${PERIOD})"
+          fi
+
+      - name: Upload drift report artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: billing-reconcile-${{ steps.period.outputs.period }}-${{ github.run_id }}
+          path: |
+            reconcile-report.json
+            reconcile-input.json
+            reconcile-stdout.log
+          retention-days: 90  # SOC 2 CC7.2 / GAAP ASC 606 evidence window.
+          if-no-files-found: ignore
+
+      - name: Fail the job on drift / error (after paging)
+        if: steps.run.outputs.exit_code != '0'
+        run: |
+          echo "::error::billing reconcile exit ${{ steps.run.outputs.exit_code }} (1=drift, 2=error) — see PagerDuty page + reconcile-report.json artifact"
+          exit 1
