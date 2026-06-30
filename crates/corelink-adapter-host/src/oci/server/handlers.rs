@@ -488,9 +488,27 @@ async fn dispatch_blob_upload_session(
     body: Body,
     now_ms: u64,
 ) -> Result<axum::response::Response, OciAdapterError> {
-    let chunk = axum::body::to_bytes(body, usize::MAX)
+    // DoS guard (enterprise-DD HIGH "OCI blob upload OOM"): without a cap,
+    // `to_bytes` buffers this ATTACKER-CONTROLLED PATCH/PUT body in ONE
+    // unbounded allocation, so any authenticated tenant can drive a multi-GB
+    // single-allocation and OOM the shared container process. Cap the
+    // single-request body at the configured max-blob ceiling
+    // (`blob_size_limit_bytes`, default 5 GiB — see `oci::config::defaults`):
+    // a single chunk / monolithic body can never LEGITIMATELY exceed the max
+    // blob size, so an over-cap body is rejected with `413 Payload Too Large`
+    // (`BlobOversized` → `status_for`) BEFORE the allocation completes. This
+    // mirrors the manifest-PUT `MAX_MANIFEST_BYTES` and token-form
+    // `MAX_TOKEN_FORM_BYTES` caps. The cumulative multi-chunk oversize check
+    // in `push::upload` still applies on top of this per-request bound.
+    //
+    // `blob_size_limit_bytes` is `u64`; the container target is 64-bit so the
+    // conversion is lossless. On a hypothetical 32-bit build it saturates to
+    // the max addressable `usize`, which is still a finite, bounded cap (never
+    // the original unbounded `usize::MAX` against an arbitrary 64-bit length).
+    let max_body_bytes = usize::try_from(state.config.blob_size_limit_bytes).unwrap_or(usize::MAX);
+    let chunk = axum::body::to_bytes(body, max_body_bytes)
         .await
-        .map_err(|e| OciAdapterError::Cas(format!("body drain: {e}")))?;
+        .map_err(|_| OciAdapterError::BlobOversized(state.config.blob_size_limit_bytes))?;
     match method {
         Method::PATCH => {
             crate::oci::push::upload::patch(
