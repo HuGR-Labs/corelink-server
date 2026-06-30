@@ -115,19 +115,28 @@ export function ConsentCaptureFlow({
 
   if (step === "done" && result) {
     return (
-      <section aria-label="Consent receipt" data-testid="consent-success">
-        <h1>Consent recorded</h1>
-        <p>
-          Audit event: <code data-testid="audit-event-id">{result.audit_event_id}</code>
-        </p>
-        <JwtReceiptDisplay jwt={result.jwt_receipt} />
-      </section>
+      <main id="main">
+        <section aria-label="Consent receipt" data-testid="consent-success">
+          <h1>Consent recorded</h1>
+          <p>
+            Audit event: <code data-testid="audit-event-id">{result.audit_event_id}</code>
+          </p>
+          <JwtReceiptDisplay jwt={result.jwt_receipt} />
+        </section>
+      </main>
     );
   }
 
   return (
-    <section aria-label="Capture consent" data-testid="consent-capture">
-      <ol aria-label="Steps">
+    // `<main id="main">` + a top-level `<h1>`: the flow previously rendered
+    // only `<h2>` step headings inside a bare `<section>`, so the page had no
+    // main landmark (axe `landmark-one-main`) and no level-1 heading
+    // (`page-has-heading-one`) — both dragged the Lighthouse a11y category
+    // below the 1.0 gate. Matches the landing page's `<main id="main">`.
+    <main id="main">
+      <section aria-label="Capture consent" data-testid="consent-capture">
+        <h1>Grant consent</h1>
+        <ol aria-label="Steps">
         <li aria-current={step === "review" ? "step" : undefined}>1. Review</li>
         <li aria-current={step === "scroll" ? "step" : undefined}>2. Read in full</li>
         <li aria-current={step === "consent" ? "step" : undefined}>3. Consent</li>
@@ -192,6 +201,7 @@ export function ConsentCaptureFlow({
           </button>
         </div>
       )}
-    </section>
+      </section>
+    </main>
   );
 }

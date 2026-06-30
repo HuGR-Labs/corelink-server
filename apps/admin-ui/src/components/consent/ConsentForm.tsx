@@ -176,10 +176,15 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
 
         <div>
           <span id="consent-withdrawal-label">{t.withdrawal_method}</span>
+          {/* Static disclosure text. `aria-readonly` is NOT a valid ARIA
+              attribute on a paragraph (it only applies to widget roles like
+              textbox/checkbox/grid), so it tripped axe `aria-allowed-attr`
+              (critical) and dragged the Lighthouse a11y category below 1.0.
+              The element is plain non-interactive text — no readonly semantics
+              are needed; the label association via aria-labelledby is kept. */}
           <p
             aria-labelledby="consent-withdrawal-label"
             data-testid="field-withdrawal-method"
-            aria-readonly="true"
           >
             {value.withdrawal_method}
           </p>
