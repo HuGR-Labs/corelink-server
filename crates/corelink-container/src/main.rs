@@ -635,10 +635,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // CORELINK_INTERNAL_AUTH_KEY. Drives the 12-backend erasure orchestrator
     // (Wave 1: real D1/R2/Stripe/KV/Loki transports wired in #254).
     if let Some(dsr_state) = corelink_server::routes::dsr::build_state_from_env() {
-        info!("routes: /_internal/dsr/erase route mounted (Wave 1 real adapters)");
+        info!(
+            "routes: /_internal/dsr/{{erase,verify,access,portability,rectification}} mounted \
+             (Art.17/15/20/16 data-subject rights; Wave 1 real adapters)"
+        );
         app = app.merge(corelink_server::routes::dsr::router(dsr_state));
     } else {
-        warn!("CORELINK_INTERNAL_AUTH_KEY unset; /_internal/dsr/erase route NOT mounted (dev/CI)");
+        warn!("CORELINK_INTERNAL_AUTH_KEY unset; /_internal/dsr/* routes NOT mounted (dev/CI)");
     }
 
     // S-09 audit-chain drain: `POST /_internal/audit/drain` — seals the live

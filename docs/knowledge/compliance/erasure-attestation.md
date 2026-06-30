@@ -11,7 +11,7 @@ source_files:
   - crates/corelink-erasure-attestation/src/evidence.rs
   - crates/corelink-container/src/routes/dsr/attestation.rs
   - crates/corelink-container/src/routes/public_attestation.rs
-checkpoint_sha: "01274fea4ad4228fbf2e0633443f759fb40582b0"
+checkpoint_sha: "aa017e11c7ae579b5565f444d21fcefe0612068b"
 provenance: "AUTHORED"
 tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", "gdpr-art-17", "byok", "dsr"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -28,7 +28,7 @@ This crate is the pure-logic signing and verification surface for erasure attest
 # How it works
 
 - A BYOK erasure destroys CMK access via the KMS provider API, then emits one Ed25519-signed attestation persisted to R2 (7y retention) and indexed in D1 for the public verify endpoint `crates/corelink-erasure-attestation/src/lib.rs:5-14`.
-- LIVE in the container (Artifact 1): on a bound `VerifiedComplete`, `sign_and_persist` signs the JCS payload and persists STRICTLY ordered + fail-CLOSED — R2 PUT FIRST (the signed bundle JSON), then the `erasure_public_keys` upsert (a served cert MUST have a verifiable pubkey BEFORE the index row that flips it to "served"), then the `erasure_attestations` index row carrying BOTH `signature_ed25519` AND `canonical_payload_jcs` (migration 0079); ANY step failing aborts WITHOUT the index row (never a dangling `r2_key`, never a row missing the signature). The verifier treats a row with either column NULL as "not a verifiable signed attestation" `crates/corelink-container/src/routes/dsr/attestation.rs:376-441`.
+- LIVE in the container (Artifact 1): on a bound `VerifiedComplete`, `sign_and_persist` signs the JCS payload and persists STRICTLY ordered + fail-CLOSED — R2 PUT FIRST (the signed bundle JSON), then the `erasure_public_keys` upsert (a served cert MUST have a verifiable pubkey BEFORE the index row that flips it to "served"), then the `erasure_attestations` index row carrying BOTH `signature_ed25519` AND `canonical_payload_jcs` (migration 0079); ANY step failing aborts WITHOUT the index row (never a dangling `r2_key`, never a row missing the signature). The verifier treats a row with either column NULL as "not a verifiable signed attestation" `crates/corelink-container/src/routes/dsr/attestation.rs:304-457`. The SAME signer infra is now ALSO reused for DSR portability (Art.20): `sign_export_digest` detaches an Ed25519 signature over a portability export bundle's SHA-256 content digest using the SAME per-region key the erasure verifier serves, so a customer verifies a portability receipt offline with the identical public key — fail-CLOSED to `None` (an unsigned inline bundle, never a forgeable certificate) when the region/seed cannot be trustworthily resolved `crates/corelink-container/src/routes/dsr/attestation.rs:469-499`.
 - The signed payload carries `tenant_id`, `request_id`, `destroyed_ts`, KMS provider/key id, `evidence_hash`, region, and `attestation_key_id` — every field is included in the canonical JSON `crates/corelink-erasure-attestation/src/attestation.rs:17-45`.
 - Signing first JCS-canonicalizes the payload via `serde_jcs::to_string` (RFC 8785) `crates/corelink-erasure-attestation/src/attestation.rs:99`, then signs those canonical bytes with Ed25519 `crates/corelink-erasure-attestation/src/attestation.rs:103`, then base64-encodes the 64-byte signature `crates/corelink-erasure-attestation/src/attestation.rs:104`.
 - The resulting `ErasureAttestation` stores the payload, the base64 signature, and the exact JCS byte string that was signed, which a verifier MUST verify against `crates/corelink-erasure-attestation/src/attestation.rs:52-63`.
@@ -42,7 +42,7 @@ This crate is the pure-logic signing and verification surface for erasure attest
 
 # Invariants
 
-- INV-ERASURE-ATTESTATION-SIGNED (HIGH): every DSR erasure that reaches a bound `VerifiedComplete` MUST produce exactly one Ed25519-signed attestation persisted in R2 (7y) and indexed in D1 — the executed container enforcer now SATISFIES it: `sign_and_persist` signs the JCS payload and persists STRICTLY ordered + fail-CLOSED (R2 PUT → pubkey upsert → signed index row), and REFUSES (no row, never an unsigned theater row) on incomplete/unverified evidence; `INSERT OR IGNORE` keyed on `request_id` makes a re-sweep idempotent `crates/corelink-container/src/routes/dsr/attestation.rs:241-290`.
+- INV-ERASURE-ATTESTATION-SIGNED (HIGH): every DSR erasure that reaches a bound `VerifiedComplete` MUST produce exactly one Ed25519-signed attestation persisted in R2 (7y) and indexed in D1 — the executed container enforcer now SATISFIES it: `sign_and_persist` signs the JCS payload and persists STRICTLY ordered + fail-CLOSED (R2 PUT → pubkey upsert → signed index row), and REFUSES (no row, never an unsigned theater row) on incomplete/unverified evidence; `INSERT OR IGNORE` keyed on `request_id` makes a re-sweep idempotent `crates/corelink-container/src/routes/dsr/attestation.rs:249-298`.
 - The signature MUST be verified against the exact `canonical_payload_jcs` byte string, not a re-serialized payload `crates/corelink-erasure-attestation/src/attestation.rs:60-62`.
 - Identical payloads always canonicalize byte-identically (RFC 8785 determinism), so a signature is stable and reproducible `crates/corelink-erasure-attestation/src/attestation.rs:98-100`.
 - Signing key material is zeroized on drop and never appears in logs, traces, or `Debug` output — the `signing_key` field renders as `[REDACTED]` `crates/corelink-erasure-attestation/src/key.rs:41-52`.
@@ -68,7 +68,7 @@ This crate is the pure-logic signing and verification surface for erasure attest
 - `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:93-96` — old-key read-only / emergency rotation.
 - `crates/corelink-erasure-attestation/src/lib.rs:5-14` — destroy → sign → R2 → D1 flow.
 - `crates/corelink-erasure-attestation/src/lib.rs:27-33` — 30d key rotation / overlap serving.
-- `crates/corelink-container/src/routes/dsr/attestation.rs:241-290` — INV-ERASURE-ATTESTATION-SIGNED, the executed `sign_and_persist` enforcer (LIVE: signs + persists fail-CLOSED, refuses on incomplete evidence).
+- `crates/corelink-container/src/routes/dsr/attestation.rs:249-298` — INV-ERASURE-ATTESTATION-SIGNED, the executed `sign_and_persist` enforcer (LIVE: signs + persists fail-CLOSED, refuses on incomplete evidence).
 - `crates/corelink-erasure-attestation/src/attestation.rs:17-45` — signed payload fields.
 - `crates/corelink-erasure-attestation/src/attestation.rs:52-63` — `ErasureAttestation` (canonical bytes + signature).
 - `crates/corelink-erasure-attestation/src/attestation.rs:98-104` — JCS canonicalize + Ed25519 sign + base64.
