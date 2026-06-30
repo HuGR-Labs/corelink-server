@@ -99,6 +99,8 @@ excludes:
     reason: "Weekly-email cron handler (analytics-worker) — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
   - surface: "apps/analytics-worker/src/index.ts"
     reason: "analytics-worker entrypoint/router wiring — operational glue under ops/audit-analytics-plane; no standalone architecture narrative."
+  - surface: "apps/analytics-worker/src/sentry-scrub.ts"
+    reason: "Pure dependency-free Sentry event PII/secret scrubber (a verbatim mirror of worker/src/sentry-scrub.ts, which planes/worker-edge grounds, and apps/signup-worker/src/sentry-scrub.ts, which flows/signup-auto-provision grounds) — registered in analytics-worker's beforeSend; a small utility module with no standalone architecture narrative, same operational-glue class as the analytics-worker/src/index.ts exclude under ops/audit-analytics-plane."
   - surface: "apps/analytics-worker/src/security-headers.ts"
     reason: "analytics-worker security-header middleware (mirror of signup-worker's, which security/posture-overview cites) — a static header bag + merge helper, no standalone enforcement. Re-examined gate v5: genuinely trivial/declarative."
   # ---- Container route-subdir test modules (C10b is now RECURSIVE over routes/) ----
@@ -126,7 +128,7 @@ candidates:
     title: "Cloudflare Worker edge plane"
     status: "active"
     source_cluster: "planes"
-    seed_from: ["worker/src/index.ts"]
+    seed_from: ["worker/src/index.ts", "worker/src/sentry-scrub.ts"]
   - id: "planes/durable-object"
     type: "Plane"
     title: "Durable Object lifecycle (CoreLinkServer)"
@@ -419,7 +421,7 @@ candidates:
     title: "Signup auto-provision + account-deletion erasure (Clerk webhook)"
     status: "active"
     source_cluster: "flows"
-    seed_from: ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/index.ts", "apps/signup-worker/src/lib/clerk-metadata.ts", "apps/signup-worker/src/lib/corelink-internal.ts", "apps/signup-worker/src/lib/d1.ts"]
+    seed_from: ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/index.ts", "apps/signup-worker/src/lib/clerk-metadata.ts", "apps/signup-worker/src/lib/corelink-internal.ts", "apps/signup-worker/src/lib/d1.ts", "apps/signup-worker/src/sentry-scrub.ts"]
   # ---- ADR re-index (76) ----
   - id: "adr/adr-0012-ff-hr-011-gc-reachability"
     type: "ADR"

@@ -26,6 +26,7 @@
  */
 
 import * as Sentry from "@sentry/nextjs";
+import { scrubObject, scrubSentryEvent } from "@/lib/sentry-scrub";
 
 const DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -45,9 +46,13 @@ if (DSN) {
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 0,
 
-    // Scrub Authorization headers from every event before transmit.
+    // Scrub PII/secrets from message + exception bodies + extra/contexts
+    // VALUES (not just header keys) from every event before transmit.
     beforeSend(event) {
-      return scrubAuthorization(event);
+      return scrubSentryEvent(event);
+    },
+    beforeSendTransaction(event) {
+      return scrubSentryEvent(event);
     },
     beforeBreadcrumb(breadcrumb) {
       if (breadcrumb.data && typeof breadcrumb.data === "object") {
@@ -56,42 +61,4 @@ if (DSN) {
       return breadcrumb;
     },
   });
-}
-
-type SentryEvent = Parameters<NonNullable<Parameters<typeof Sentry.init>[0]["beforeSend"]>>[0];
-
-/**
- * Recursively remove any property whose name matches `Authorization` /
- * `Cookie` / `Set-Cookie` / `X-Api-Key` / `Proxy-Authorization` (case-
- * insensitive). These are the headers we never want shipped to a third-
- * party error pipeline.
- */
-const SENSITIVE_HEADER_PATTERN = /^(authorization|cookie|set-cookie|x-api-key|proxy-authorization)$/i;
-
-function scrubObject(obj: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(obj)) {
-    if (SENSITIVE_HEADER_PATTERN.test(k)) {
-      out[k] = "[Filtered]";
-      continue;
-    }
-    if (v && typeof v === "object" && !Array.isArray(v)) {
-      out[k] = scrubObject(v as Record<string, unknown>);
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
-}
-
-function scrubAuthorization(event: SentryEvent): SentryEvent {
-  if (event.request?.headers) {
-    event.request.headers = scrubObject(
-      event.request.headers as unknown as Record<string, unknown>,
-    ) as typeof event.request.headers;
-  }
-  if (event.contexts) {
-    event.contexts = scrubObject(event.contexts as Record<string, unknown>) as typeof event.contexts;
-  }
-  return event;
 }

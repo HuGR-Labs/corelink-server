@@ -23,6 +23,7 @@
 
 import type { ExecutionContext, ExportedHandler } from "@cloudflare/workers-types";
 import * as Sentry from "@sentry/cloudflare";
+import { scrubSentryEvent } from "./sentry-scrub.ts";
 import { renderInstallScript } from "./install.ts";
 
 /**
@@ -203,8 +204,13 @@ export default Sentry.withSentry(
     sendDefaultPii: false,
     tracesSampleRate: 0.1,
     sampleRate: 1.0,
+    // Scrub PII/secrets from message + exception bodies + extra/contexts
+    // VALUES (not just header keys) before any event leaves the Worker.
     beforeSend(event: Sentry.ErrorEvent) {
-      return scrubAuthorization(event);
+      return scrubSentryEvent(event);
+    },
+    beforeSendTransaction(event) {
+      return scrubSentryEvent(event);
     },
   }),
   // `@sentry/cloudflare` ships its own `@cloudflare/workers-types` bundle which
@@ -212,17 +218,3 @@ export default Sentry.withSentry(
   // identical at runtime, so an `unknown` cast keeps both type graphs happy.
   baseHandler as unknown as Parameters<typeof Sentry.withSentry>[1],
 ) as ExportedHandler<Env>;
-
-const SENSITIVE_HEADER_PATTERN = /^(authorization|cookie|set-cookie|x-api-key|proxy-authorization)$/i;
-
-function scrubAuthorization(event: Sentry.ErrorEvent): Sentry.ErrorEvent {
-  if (event.request?.headers) {
-    const h = event.request.headers as Record<string, string>;
-    for (const k of Object.keys(h)) {
-      if (SENSITIVE_HEADER_PATTERN.test(k)) {
-        h[k] = "[Filtered]";
-      }
-    }
-  }
-  return event;
-}

@@ -100,6 +100,15 @@ Each entry cross-references:
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
 ### Security
+- **Sentry event bodies are now PII/secret-scrubbed before send (enterprise-DD MED).** Every live Sentry init
+  (the admin-ui client/server/edge configs + the 5 TS workers — corelink-prod CAS, signup-worker, analytics,
+  get-corelink) only scrubbed request *header keys*; message/exception bodies + extra/contexts/breadcrumbs
+  shipped raw. A new `sentry-scrub` module (pure, dependency-free) is now wired into `beforeSend` +
+  `beforeSendTransaction` at every init: default-DENY on sensitive keys (authorization, cookie,
+  x-corelink-internal-auth, svix/stripe-signature, token/secret/password/email) + substring redaction of PAT
+  tokens (`corelink_pat_*`), bearer/basic auth, Stripe keys (`sk_/pk_/rk_`, `whsec_`), and emails → `[REDACTED]`.
+  Covers message, exception values, breadcrumbs, request headers/cookies/data, extra, contexts, tags, user.
+  (The Rust container has no Sentry SDK — nothing to scrub there.) 50 tests (10/package).
 - **PAT-mint gate is now dedicated-key-only, fail-closed (enterprise-DD HIGH).** `/_internal/pat/mint` (which
   can mint ANY tenant's PAT, incl. `SCOPE_ADMIN_ALL`) gated its dedicated `CORELINK_PAT_MINT_AUTH_KEY` with a
   silent FALLBACK to the broad shared `CORELINK_INTERNAL_AUTH_KEY` when unset — full-compromise blast radius
