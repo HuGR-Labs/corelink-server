@@ -93,6 +93,7 @@ pub mod run;
 pub mod schedule;
 pub mod scheduler;
 pub mod sweep;
+pub mod sweep_runner;
 pub mod worker;
 
 pub use admin::{admin_trigger, AdminTriggerOutcome};
@@ -140,6 +141,17 @@ pub use sweep::{
     BlobState, CountingSweepClock, InMemoryAcReferenceIndex, InMemoryBlobMetaStore,
     InMemorySweepPhase, SweepClock, SweepConfig, SweepDecision, SweepError, SweepPhase,
     SweepResult, CANONICAL_SWEEP_PHASE_BUDGET_MS, GRACE_AC_MS, GRACE_CAS_MS,
+};
+pub use physical_delete::{
+    BlobMetaPurgeStore, CountingPhysicalDeleteClock, InMemoryBlobMetaPurgeStore,
+    InMemoryPhysicalDeletePhase, InMemoryR2Delete, PhysicalDeleteClock, PhysicalDeleteConfig,
+    PhysicalDeleteDecision, PhysicalDeleteError, PhysicalDeletePhase, PhysicalDeleteResult,
+    PurgeState, R2Delete, R2DeleteError, R2DeleteOutcome, ReclaimClassification,
+    CANONICAL_PHYSICAL_DELETE_PHASE_BUDGET_MS,
+};
+pub use sweep_runner::{
+    GcSweepError, GcSweepMode, GcSweepReportError, GcSweepReportSink, GcSweepRunner,
+    InMemoryGcSweepReportSink, SweepReport,
 };
 pub use worker::{GcWorker, InMemoryGcWorker, WorkerStepOutcome};
 

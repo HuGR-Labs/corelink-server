@@ -558,6 +558,67 @@ pub enum PhysicalDeleteDecision {
     },
 }
 
+/// Read-only classification of a single candidate against the reclaim
+/// gate, with **zero side effects** (no R2 DeleteObject, no D1 purge,
+/// no candidate-status transition, no audit emit).
+///
+/// This is the single source of truth for "is this object reclaimable?"
+/// — both the mutating [`InMemoryPhysicalDeletePhase::step_candidate`]
+/// live path AND the non-destructive dry-run sweep
+/// ([`crate::sweep_runner::GcSweepRunner`]) route through
+/// [`InMemoryPhysicalDeletePhase::classify_candidate`], so the dry-run
+/// report provably reflects exactly what a live delete WOULD remove.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ReclaimClassification {
+    /// Positively reclaimable: candidate is `Swept`, the `blob_meta`
+    /// row is soft-deleted past the grace window, AND `refcount == 0`.
+    /// The live path purges it; the dry-run path REPORTS it and does
+    /// nothing.
+    Reclaimable {
+        /// Canonical R2 object key that WOULD be deleted.
+        r2_key: String,
+        /// Bytes that WOULD be reclaimed.
+        size_bytes: u64,
+        /// Soft-delete instant captured from `blob_meta`.
+        deleted_at_ms: u64,
+        /// `now_ms` observed at the gate (one clock tick).
+        now_ms: u64,
+        /// Effective grace window applied.
+        grace_period_ms: u64,
+    },
+    /// Candidate is not in `Swept` state (idempotent re-run / not yet
+    /// swept) — never reclaimable on this tick.
+    NotSwept {
+        /// Status observed at inspection.
+        observed_status: CandidateStatus,
+    },
+    /// Candidate is `Swept` but the `blob_meta` row is absent / no
+    /// longer soft-deleted (re-uploaded within the grace window —
+    /// CAP-GC-002 reversibility). Not reclaimable.
+    Resolved {
+        /// Status observed at inspection (always `Swept`).
+        observed_status: CandidateStatus,
+    },
+    /// Grace window has NOT yet elapsed (`now - deleted_at_ms <=
+    /// grace_period_ms`). Not reclaimable on this tick.
+    GracePending {
+        /// `now_ms` observed at the gate.
+        now_ms: u64,
+        /// Soft-delete instant captured from `blob_meta`.
+        deleted_at_ms: u64,
+        /// Effective grace window applied.
+        grace_period_ms: u64,
+    },
+    /// A live re-reference incremented `refcount` above zero in the race
+    /// window. NEVER reclaimable — this is the guard that protects live
+    /// blobs from deletion.
+    RefcountNonZero {
+        /// Refcount observed at the gate.
+        refcount: u32,
+    },
+}
+
 /// Aggregate outcome of one physical-delete phase execution.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PhysicalDeleteResult {
@@ -857,10 +918,86 @@ where
         self.config
     }
 
+    /// Classify a single candidate against the reclaim gate with **zero
+    /// side effects** — no R2 DeleteObject, no D1 purge, no candidate
+    /// transition, no audit emit. The only observable effect is one
+    /// [`PhysicalDeleteClock::now_ms`] read (when the candidate reaches
+    /// the grace gate), exactly as the live path consumes it.
+    ///
+    /// This is the single source of truth for the reclaim predicate:
+    /// [`Self::step_candidate`] (live) routes through it, and the
+    /// non-destructive dry-run sweep ([`crate::sweep_runner`]) calls it
+    /// directly so a dry-run report provably matches what a live delete
+    /// WOULD remove.
+    ///
+    /// # Errors
+    ///
+    /// Surface as [`PhysicalDeleteError`] (the `blob_meta` lookup is the
+    /// only fallible backend call); fail-closed.
+    pub fn classify_candidate(
+        &self,
+        candidate: &GcCandidate,
+    ) -> Result<ReclaimClassification, PhysicalDeleteError> {
+        // Idempotent re-run guard: only `Swept` candidates progress;
+        // any other status is a no-op (mark→sweep→physical-delete
+        // monotone status graph). No clock read on this arm.
+        if candidate.status != CandidateStatus::Swept {
+            return Ok(ReclaimClassification::NotSwept {
+                observed_status: candidate.status,
+            });
+        }
+        // 1. Lookup the soft-deleted blob_meta row's purge state. A
+        // missing row means the sweep pre-condition is no longer
+        // satisfied (e.g. customer re-uploaded same digest within the
+        // grace window — CAP-GC-002 reversibility — and the CAS write
+        // handler reset `deleted_at_ms = NULL`). Surface as Resolved.
+        let Some(purge_state) = self
+            .blob_meta_purge
+            .lookup_purge_state(candidate.tenant_id, &candidate.digest)?
+        else {
+            return Ok(ReclaimClassification::Resolved {
+                observed_status: candidate.status,
+            });
+        };
+        let now = self.clock.now_ms();
+        let grace_period_ms = self.config.grace_cas_ms;
+
+        // 2. Post-grace gate (strict `>` per WI §6.1.3).
+        if now.saturating_sub(purge_state.deleted_at_ms) <= grace_period_ms {
+            return Ok(ReclaimClassification::GracePending {
+                now_ms: now,
+                deleted_at_ms: purge_state.deleted_at_ms,
+                grace_period_ms,
+            });
+        }
+
+        // 3. refcount = 0 guard (Lote 10.6bis P0-4 race protection) —
+        // this is the live-blob protection: a re-referenced blob is
+        // NEVER classified reclaimable.
+        if purge_state.refcount != 0 {
+            return Ok(ReclaimClassification::RefcountNonZero {
+                refcount: purge_state.refcount,
+            });
+        }
+
+        Ok(ReclaimClassification::Reclaimable {
+            r2_key: purge_state.r2_key,
+            size_bytes: purge_state.size_bytes,
+            deleted_at_ms: purge_state.deleted_at_ms,
+            now_ms: now,
+            grace_period_ms,
+        })
+    }
+
     /// Process a single candidate row through the physical-delete
     /// decision pipeline. Visible for property tests so the decision
     /// boundary can be exercised independently of the phase
     /// orchestration.
+    ///
+    /// The reclaim gate is delegated to [`Self::classify_candidate`]
+    /// (the single source of truth); only the
+    /// [`ReclaimClassification::Reclaimable`] arm performs the mutating
+    /// R2 + D1 + transition steps.
     ///
     /// # Errors
     ///
@@ -870,50 +1007,33 @@ where
         candidate: &GcCandidate,
         region: GcRegion,
     ) -> Result<PhysicalDeleteDecision, PhysicalDeleteError> {
-        // Idempotent re-run guard: only `Swept` candidates progress;
-        // any other status is a no-op (mark→sweep→physical-delete
-        // monotone status graph).
-        if candidate.status != CandidateStatus::Swept {
-            return Ok(PhysicalDeleteDecision::AlreadyResolved {
-                observed_status: candidate.status,
-            });
-        }
-        // 1. Lookup the soft-deleted blob_meta row's purge state. A
-        // missing row means the sweep pre-condition is no longer
-        // satisfied (e.g. customer re-uploaded same digest within the
-        // grace window — CAP-GC-002 reversibility — and the CAS write
-        // handler reset `deleted_at_ms = NULL`). Surface as
-        // AlreadyResolved.
-        let Some(purge_state) = self
-            .blob_meta_purge
-            .lookup_purge_state(candidate.tenant_id, &candidate.digest)?
-        else {
-            return Ok(PhysicalDeleteDecision::AlreadyResolved {
-                observed_status: candidate.status,
-            });
-        };
-        let now = self.clock.now_ms();
-        let grace_period_ms = self.config.grace_cas_ms;
-
-        // 2. Post-grace gate (strict `>` per WI §6.1.3).
-        if now.saturating_sub(purge_state.deleted_at_ms) <= grace_period_ms {
-            return Ok(PhysicalDeleteDecision::SkippedGracePending {
-                now_ms: now,
-                deleted_at_ms: purge_state.deleted_at_ms,
+        let (r2_key, size_bytes, now) = match self.classify_candidate(candidate)? {
+            ReclaimClassification::NotSwept { observed_status }
+            | ReclaimClassification::Resolved { observed_status } => {
+                return Ok(PhysicalDeleteDecision::AlreadyResolved { observed_status });
+            }
+            ReclaimClassification::GracePending {
+                now_ms,
+                deleted_at_ms,
                 grace_period_ms,
-            });
-        }
-
-        // 3. Conditional refcount = 0 re-check (Lote 10.6bis P0-4 race
-        // protection). The orchestrator already saw refcount=0 in
-        // `purge_state` but the predicate is re-evaluated atomically
-        // at SQL DELETE time by the production wiring; we mirror that
-        // by passing the condition into `conditional_purge`.
-        if purge_state.refcount != 0 {
-            return Ok(PhysicalDeleteDecision::SkippedRefcountNonZero {
-                refcount: purge_state.refcount,
-            });
-        }
+            } => {
+                return Ok(PhysicalDeleteDecision::SkippedGracePending {
+                    now_ms,
+                    deleted_at_ms,
+                    grace_period_ms,
+                });
+            }
+            ReclaimClassification::RefcountNonZero { refcount } => {
+                return Ok(PhysicalDeleteDecision::SkippedRefcountNonZero { refcount });
+            }
+            ReclaimClassification::Reclaimable {
+                r2_key,
+                size_bytes,
+                now_ms,
+                ..
+            } => (r2_key, size_bytes, now_ms),
+        };
+        let grace_period_ms = self.config.grace_cas_ms;
 
         // 4. R2 DeleteObject FIRST (Lote 10.6bis P0-2 ordering;
         // PAT-RETRY-IDEMPOTENT-001 semantics — both `Deleted` and
@@ -936,7 +1056,7 @@ where
         // state.
         let r2_outcome = self
             .r2
-            .delete(candidate.tenant_id, region, &purge_state.r2_key)
+            .delete(candidate.tenant_id, region, &r2_key)
             .map_err(PhysicalDeleteError::from)?;
 
         // 5. Audit emit BEFORE flipping the row status — fail-closed
@@ -971,10 +1091,10 @@ where
             // false at SQL evaluation time (customer CAS write
             // re-incremented refcount post-lookup, OR clock ran
             // backwards). Surface as a skipped decision so the
-            // candidate row is preserved.
-            return Ok(PhysicalDeleteDecision::SkippedRefcountNonZero {
-                refcount: purge_state.refcount,
-            });
+            // candidate row is preserved. The classified refcount was 0
+            // (we reached the Reclaimable arm); the race re-incremented
+            // it at SQL evaluation time.
+            return Ok(PhysicalDeleteDecision::SkippedRefcountNonZero { refcount: 0 });
         }
 
         // 7. Atomic candidate transition; if drift detected (concurrent
@@ -1004,7 +1124,7 @@ where
         }
         Ok(PhysicalDeleteDecision::Purged {
             purged_at_ms: now,
-            bytes_reclaimed: purge_state.size_bytes,
+            bytes_reclaimed: size_bytes,
             r2_outcome,
         })
     }
