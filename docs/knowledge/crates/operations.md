@@ -14,7 +14,7 @@ source_files:
   - "crates/corelink-ratelimit/src/limiter.rs"
   - "crates/corelink-ratelimit/src/bucket.rs"
   - "crates/corelink-ratelimit/src/key.rs"
-checkpoint_sha: "202d597d16133c49d04501553d6d5d263a28d3fd"
+checkpoint_sha: "db0dc2936842d0e43fa41a613317245b80c89da6"
 provenance: "AUTHORED"
 tags: ["crates", "gc", "eviction", "ratelimit", "ops", "sre"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -50,7 +50,7 @@ The cluster backs the [GC / eviction operations](/ops/gc-eviction.md) runbook an
 
 # Citations
 
-0a. `crates/corelink-gc/src/lib.rs:83-96` — the `corelink-gc` crate `pub mod` map (run/degrade/scheduler/sweep/worker).
+0a. `crates/corelink-gc/src/lib.rs:83-97` — the `corelink-gc` crate `pub mod` map (run/degrade/scheduler/sweep/**sweep_runner**/worker; `sweep_runner` is the new dry-run-first GC sweep entrypoint that closes the DD "GC has no entrypoint" gap — a daily cron + `gc_sweep` bin that deletes NOTHING unless `GC_LIVE_DELETE` is explicitly enabled).
 0b. `crates/corelink-eviction/src/lib.rs:171-181` — the `corelink-eviction` crate `pub mod` map (reachable/blob_meta/trigger/storage_state).
 0c. `crates/corelink-ratelimit/src/lib.rs:169-176` — the `corelink-ratelimit` crate `pub mod` map (bucket/limiter/key/config).
 1. `crates/corelink-gc/src/run.rs:102-119` — `GcPhase::can_transition_to`: the executed monotone GC phase state machine.

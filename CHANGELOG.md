@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **GC physical-delete sweep entrypoint, dry-run-first (enterprise-DD note: "erased bytes never reclaimed").**
+  `corelink-gc` had the reclaim logic but no call site. New `sweep_runner` + `gc_sweep` bin + a daily GHA cron
+  (`gc-sweep-dry-run.yml`) run one sweep per run/tenant/region. **DRY-RUN BY DEFAULT + fail-closed**: only a
+  literal `GC_LIVE_DELETE=true/1` enables deletion; otherwise it classifies reclaimable R2 keys via a new
+  read-only `classify_candidate` and emits a report with ZERO R2 deletes / D1 purges / candidate transitions.
+  Live mode (gated off) deletes ONLY positively-classified reclaimable objects (post-grace, refcount==0) —
+  never a live blob. Owner reviews a dry-run report, then flips the gate. 164 gc tests green.
 - **Live billing reconciliation (enterprise-DD #5, HIGH).** `corelink-billing-reconcile` was an unwired
   in-memory skeleton (no usage→Stripe drift detection ran → the company couldn't prove what it billed). Now
   `run_reconcile_pass` + the `billing-reconcile-run` bin drive a daily GHA cron (`billing-reconcile-daily.yml`,

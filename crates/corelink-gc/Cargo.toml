@@ -19,6 +19,10 @@ proptest = { workspace = true }
 rand = "0.9"
 rand_chacha = "0.9"
 
+[[bin]]
+name = "gc_sweep"
+path = "src/bin/gc_sweep.rs"
+
 [[test]]
 name = "migration_canonical"
 path = "tests/migration_canonical.rs"
