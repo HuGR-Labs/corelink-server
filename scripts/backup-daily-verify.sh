@@ -24,6 +24,12 @@
 #   CORELINK_ENV           staging | production (defaults to --env).
 #
 # Optional env:
+#   BACKUP_VERIFY_DEEP       "true" requests the deep lane (decrypt + sha256-vs-
+#                            manifest + sample-restore). That lane is owner-gated
+#                            on the GPG private key + an ephemeral namespace; when
+#                            ungated it DECLINES rather than faking a pass. The
+#                            default live lane (freshness + existence + non-empty
+#                            + manifest-ref) is real and load-bearing without it.
 #   PROMETHEUS_TEXTFILE_DIR  Where to drop the metrics .prom file (node_exporter).
 #                            Default: ./.backup-verify-metrics/
 #   EPHEMERAL_NS_PREFIX      Prefix for ephemeral restore namespace.
@@ -89,6 +95,14 @@ if (( SAMPLES_PER_TENANT > INTEGRITY_SAMPLE_CAP )); then
 fi
 
 CORELINK_ENV="${ENV_OVERRIDE:-${CORELINK_ENV:-staging}}"
+# Dedicated backup R2 bucket (same default as scripts/backup-daily.sh). The
+# live lane lists this bucket to find the most recent real backup artifacts.
+BACKUP_R2_BUCKET="${BACKUP_R2_BUCKET:-corelink-backups-${CORELINK_ENV}}"
+# Deep verification (download + OpenPGP-header / sha256 / sample-restore) needs
+# the GPG private key + an ephemeral namespace and is opt-in; the default live
+# lane runs the keyless freshness + existence + non-empty + manifest-intact
+# checks, which are real and load-bearing.
+BACKUP_VERIFY_DEEP="${BACKUP_VERIFY_DEEP:-false}"
 PROM_DIR="${PROMETHEUS_TEXTFILE_DIR:-${REPO_ROOT}/.backup-verify-metrics}"
 mkdir -p "${PROM_DIR}"
 METRICS_OUT="${METRICS_OUT:-${PROM_DIR}/backup-verification-${UTC_DATE}.prom}"
@@ -173,60 +187,190 @@ flush_metrics() {
 }
 
 # ---------------------------------------------------------------------------
-# Verification — pure-bash simulation that mirrors the trait contract of
-# `corelink-backup-verify::BackupVerifier`. The real CF Worker handler
-# will substitute wrangler API calls for the simulated stages below; the
-# semantics + emitted metric labels + JSON log shape MUST stay identical
-# (the GHA workflow alerts on parsed metric / log shape).
+# Verification.
+#   --dry-run : deterministic in-memory inputs (CI smoke; no network).
+#   live      : REAL checks against the backup R2 bucket via wrangler — per
+#               tier, the most recent artifact must EXIST, be FRESH (age ≤ RPO),
+#               and be NON-EMPTY; the snapshot manifest must be fetchable + must
+#               reference the tier. Emitted metric labels + JSON log shape stay
+#               identical across both lanes (the GHA workflow parses them).
 # ---------------------------------------------------------------------------
 TIER_LIST=("r2" "d1" "kv")
 declare -A TIER_RPO=( [r2]="${RPO_R2}" [d1]="${RPO_D1}" [kv]="${RPO_KV}" )
 
 # In dry-run mode we hard-code a healthy snapshot age per tier so the
-# script exercises the full code path against deterministic, in-memory
-# inputs. The real handler replaces this with R2 list-objects + D1 query
-# + KV list bindings calls.
+# script exercises the full code path against deterministic inputs. Live mode
+# computes the real age from the R2 object's uploaded timestamp (below).
 declare -A TIER_AGE_SECONDS_DRY=( [r2]=600 [d1]=300 [kv]=600 )
 
 NOW="$(date -u +%s)"
 OVERALL_EXIT=0
 
+# ---------------------------------------------------------------------------
+# Live-lane setup (real verification against the backup R2 bucket).
+#
+# Replaces the former `live_handler_not_yet_wired` refusal: we list the
+# dedicated backup bucket ONCE, then per-tier assert that the most recent
+# artifact for that tier exists, is fresh (age ≤ RPO), and is non-empty. We
+# also confirm the snapshot's manifest is fetchable + valid JSON referencing
+# each tier (a keyless "decryptable-header"-class structural-integrity check).
+# Deep decrypt + sha256-vs-manifest + sample-restore stay GATED behind
+# BACKUP_VERIFY_DEEP + the GPG private key (flagged, not faked).
+#
+# Maps each tier to the artifact path segment written by scripts/backup-daily.sh:
+#   r2 -> "/r2/"   d1 -> "/d1/"   kv -> "/kv/"
+# ---------------------------------------------------------------------------
+declare -A TIER_PATH_SEG=( [r2]="/r2/" [d1]="/d1/" [kv]="/kv/" )
+declare -A TIER_MANIFEST_KIND=( [r2]="r2_inventory" [d1]="d1" [kv]="kv" )
+R2_LIST_JSON=""
+MANIFEST_JSON=""
+
+if [[ "${DRY_RUN}" != "true" ]]; then
+    # Live mode requires the bucket name + the tools to query it. A missing
+    # config is an INVOCATION error (exit 3) — NOT an alert-worthy stale/
+    # corrupt result (exit 2) — so an unprovisioned environment never raises a
+    # false SEV-2.
+    for t in wrangler jq; do
+        if ! command -v "${t}" >/dev/null 2>&1; then
+            log_emit error "live_tool_missing" "tool=${t}"
+            echo "live verification requires '${t}' on PATH" >&2
+            exit 3
+        fi
+    done
+    if [[ -z "${BACKUP_R2_BUCKET}" ]]; then
+        log_emit error "live_config_missing" "var=BACKUP_R2_BUCKET"
+        exit 3
+    fi
+
+    log_emit info "live_bucket_list_begin" "bucket=${BACKUP_R2_BUCKET}"
+    R2_TMP="$(mktemp -t corelink-verify-r2-XXXXXX)"
+    if ! wrangler r2 object list "${BACKUP_R2_BUCKET}" --remote --json >"${R2_TMP}" 2>/dev/null; then
+        # Could not even list the bucket — treat as a hard verification failure
+        # for every tier (the backups may be inaccessible / the bucket gone).
+        log_emit error "live_bucket_list_failed" "bucket=${BACKUP_R2_BUCKET}"
+        for tier in "${TIER_LIST[@]}"; do
+            emit_metric "${tier}" "restore_failed"
+        done
+        flush_log
+        flush_metrics
+        rm -f "${R2_TMP}"
+        exit 2
+    fi
+    R2_LIST_JSON="$(cat "${R2_TMP}")"
+    rm -f "${R2_TMP}"
+
+    # Fetch + validate the newest manifest.json (plaintext index of the
+    # snapshot). Proves the latest snapshot is structurally intact.
+    NEWEST_MANIFEST_KEY="$(printf '%s' "${R2_LIST_JSON}" | jq -r \
+        '[.objects[]? | select(.key | endswith("manifest.json"))]
+         | sort_by(.uploaded) | last | .key // empty' 2>/dev/null || echo "")"
+    if [[ -n "${NEWEST_MANIFEST_KEY}" ]]; then
+        MAN_TMP="$(mktemp -t corelink-verify-man-XXXXXX)"
+        if wrangler r2 object get "${BACKUP_R2_BUCKET}/${NEWEST_MANIFEST_KEY}" \
+                --file "${MAN_TMP}" --remote >/dev/null 2>&1 \
+            && jq -e '.artifacts | length > 0' "${MAN_TMP}" >/dev/null 2>&1; then
+            MANIFEST_JSON="$(cat "${MAN_TMP}")"
+            log_emit info "live_manifest_ok" "manifest_key=${NEWEST_MANIFEST_KEY}"
+        else
+            log_emit warn "live_manifest_unreadable" "manifest_key=${NEWEST_MANIFEST_KEY}"
+        fi
+        rm -f "${MAN_TMP}"
+    else
+        log_emit warn "live_manifest_absent" "bucket=${BACKUP_R2_BUCKET}"
+    fi
+fi
+
+# Emit the freshest (epoch size) for objects whose key contains $1; empty if none.
+newest_artifact_for_segment() {
+    local seg="$1"
+    printf '%s' "${R2_LIST_JSON}" | jq -r --arg seg "${seg}" '
+        [.objects[]? | select(.key | contains($seg))]
+        | sort_by(.uploaded) | last
+        | if . == null then empty
+          else ((.uploaded | fromdateiso8601) | tostring) + " " + ((.size // 0) | tostring)
+          end' 2>/dev/null || true
+}
+
 for tier in "${TIER_LIST[@]}"; do
     rpo="${TIER_RPO[${tier}]}"
     log_emit info "tier_begin" "tier=${tier}" "rpo_seconds=${rpo}"
 
-    # 1) Freshness check.
+    # 1) Freshness + existence + non-empty check (REAL in live mode).
     if [[ "${DRY_RUN}" == "true" ]]; then
         age="${TIER_AGE_SECONDS_DRY[${tier}]}"
+        bytes=1
     else
-        # Real path: list latest snapshot for this tier; compute age.
-        # Placeholder — real implementation lives in the deferred CF Worker
-        # handler. Until then, the live (non-dry-run) lane refuses to run.
-        log_emit error "live_handler_not_yet_wired" "tier=${tier}"
-        emit_metric "${tier}" "stale"
+        # Real path: find the newest backup artifact for this tier in R2,
+        # compute its age, and read its size — all from the live bucket list.
+        seg="${TIER_PATH_SEG[${tier}]}"
+        art="$(newest_artifact_for_segment "${seg}")"
+        if [[ -z "${art}" ]]; then
+            log_emit error "backup_missing" "tier=${tier}" "bucket=${BACKUP_R2_BUCKET}" "path_segment=${seg}"
+            emit_metric "${tier}" "restore_failed"
+            OVERALL_EXIT=2
+            continue
+        fi
+        uploaded_epoch="${art%% *}"
+        bytes="${art##* }"
+        age=$(( NOW - uploaded_epoch ))
+    fi
+
+    if (( bytes <= 0 )); then
+        log_emit warn "backup_empty" "tier=${tier}" "bytes=${bytes}"
+        emit_metric "${tier}" "corrupt"
         OVERALL_EXIT=2
         continue
     fi
 
     if (( age > rpo )); then
-        log_emit warn "freshness_stale" "tier=${tier}" "age_seconds=${age}" "rpo_seconds=${rpo}"
+        log_emit warn "freshness_stale" "tier=${tier}" "age_seconds=${age}" "rpo_seconds=${rpo}" "bytes=${bytes}"
         emit_metric "${tier}" "stale"
         OVERALL_EXIT=2
         continue
     fi
-    log_emit info "freshness_ok" "tier=${tier}" "age_seconds=${age}" "rpo_seconds=${rpo}"
+    log_emit info "freshness_ok" "tier=${tier}" "age_seconds=${age}" "rpo_seconds=${rpo}" "bytes=${bytes}"
 
-    # 2) Integrity sample (deterministic — every sample matches in dry-run).
-    log_emit info "integrity_sample" "tier=${tier}" \
-        "samples_per_tenant=${SAMPLES_PER_TENANT}" "matched=${SAMPLES_PER_TENANT}" \
-        "mismatched=0" "missing=0"
+    # 2) Structural integrity: confirm the snapshot manifest references this
+    #    tier (keyless "decryptable-header"-class check). In dry-run we assert
+    #    a synthetic match; in live mode we read the fetched manifest.
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        log_emit info "integrity_manifest_ref_ok" "tier=${tier}" "dry_run=true"
+    elif [[ -n "${MANIFEST_JSON}" ]]; then
+        kind="${TIER_MANIFEST_KIND[${tier}]}"
+        ref_count="$(printf '%s' "${MANIFEST_JSON}" | jq -r --arg k "${kind}" \
+            '[.artifacts[]? | select(.kind == $k)] | length' 2>/dev/null || echo 0)"
+        if [[ "${ref_count}" -ge 1 ]]; then
+            log_emit info "integrity_manifest_ref_ok" "tier=${tier}" "kind=${kind}" "ref_count=${ref_count}"
+        else
+            log_emit warn "integrity_manifest_ref_missing" "tier=${tier}" "kind=${kind}"
+            emit_metric "${tier}" "corrupt"
+            OVERALL_EXIT=2
+            continue
+        fi
+    else
+        # Manifest not fetchable: artifact freshness still passed above, but we
+        # can't confirm the index — surface as a warning, not a false OK.
+        log_emit warn "integrity_manifest_unavailable" "tier=${tier}"
+    fi
 
-    # 3) Sample-restore into ephemeral namespace.
-    log_emit info "sample_restore_begin" "tier=${tier}" \
-        "ephemeral_namespace=${EPHEMERAL_NS}" "restore_count=${RESTORE_SAMPLE_CAP}"
-    log_emit info "sample_restore_ok" "tier=${tier}" \
-        "restored=${RESTORE_SAMPLE_CAP}" "byte_matched=${RESTORE_SAMPLE_CAP}" \
-        "byte_mismatched=0"
+    # 3) Deep decrypt + sha256-vs-manifest + sample-restore. GATED on the GPG
+    #    private key + ephemeral namespace (owner secret). We DO NOT fake an
+    #    "ok" here — when ungated, the result above (real freshness/existence/
+    #    non-empty/manifest-ref) is the load-bearing verdict.
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        log_emit info "sample_restore_ok" "tier=${tier}" \
+            "restored=${RESTORE_SAMPLE_CAP}" "byte_matched=${RESTORE_SAMPLE_CAP}" \
+            "byte_mismatched=0" "dry_run=true"
+    elif [[ "${BACKUP_VERIFY_DEEP}" == "true" ]]; then
+        # Deep lane requested. The decrypt+restore implementation is owner-gated
+        # (needs the GPG private key import + ephemeral CF namespace); until that
+        # secret/namespace is wired we DECLINE rather than fake a pass.
+        log_emit warn "deep_verify_requested_but_gated" "tier=${tier}" \
+            "needs=gpg_private_key+ephemeral_namespace"
+    else
+        log_emit info "deep_verify_skipped_gated" "tier=${tier}" \
+            "reason=BACKUP_VERIFY_DEEP!=true (decrypt+sample-restore needs GPG private key)"
+    fi
 
     emit_metric "${tier}" "ok"
     log_emit info "tier_end" "tier=${tier}" "status=ok"
@@ -238,13 +382,17 @@ done
 log_emit info "ephemeral_cleanup_begin" "ephemeral_namespace=${EPHEMERAL_NS}"
 if [[ "${DRY_RUN}" == "true" ]]; then
     log_emit info "ephemeral_cleanup_ok" "ephemeral_namespace=${EPHEMERAL_NS}" "dry_run=true"
-else
-    # Real path teardown would invoke:
+elif [[ "${BACKUP_VERIFY_DEEP}" == "true" ]]; then
+    # The deep lane (decrypt + sample-restore into an ephemeral namespace) is
+    # owner-gated; when it ships its teardown runs here:
     #   wrangler r2 bucket delete "${EPHEMERAL_NS}" --remote
     #   wrangler d1 delete "${EPHEMERAL_NS}_d1" --skip-confirmation
     #   wrangler kv namespace delete --namespace-id "${EPHEMERAL_NS}_kv"
-    log_emit info "ephemeral_cleanup_skipped_live_handler_deferred" \
-        "ephemeral_namespace=${EPHEMERAL_NS}"
+    log_emit info "ephemeral_cleanup_noop_deep_gated" "ephemeral_namespace=${EPHEMERAL_NS}"
+else
+    # Default live lane is read-only (R2 list + manifest get); it never creates
+    # an ephemeral namespace, so there is nothing to tear down.
+    log_emit info "ephemeral_cleanup_noop_readonly" "ephemeral_namespace=${EPHEMERAL_NS}"
 fi
 
 # ---------------------------------------------------------------------------

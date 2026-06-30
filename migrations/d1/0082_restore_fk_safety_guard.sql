@@ -1,0 +1,75 @@
+-- Migration 0082: restore/replay FK-safety guard + validation (DD-1 closure).
+--
+-- WHY THIS EXISTS (enterprise-DD finding DD-1, "broken restore"):
+--   A fresh disaster-recovery rebuild replays the WHOLE migration chain
+--   (0001 → latest) against an EMPTY D1 to re-materialize the schema before
+--   data is loaded from an encrypted snapshot (see RB-COLD-RESTORE-FROM-ZERO
+--   §3.3 + scripts/migrate_d1.sh). Migration 0064 rebuilds the `tenant` table
+--   (DROP TABLE + RENAME TO) to widen an inline CHECK. `tenant` is the parent
+--   of 5 inbound FK children (pat, usage_counter, region_migration_request,
+--   dpa_acceptance_pending, signup_orchestration), so the rebuild's DROP step
+--   would orphan those children and trip `FOREIGN KEY constraint failed` UNLESS
+--   foreign-key enforcement is deferred across the DROP/RENAME window.
+--
+-- 0064 IS IMMUTABLE (already applied to prod corelink-config-prod 2026-06-13)
+--   and is NOT edited here. This forward migration instead pins, in one
+--   authoritative place, the FK-safe table-rebuild idiom that every fresh
+--   replay relies on, and asserts FK integrity once the full chain has been
+--   replayed.
+--
+-- THE FK-SAFE REBUILD IDIOM (canonical — SQLite/D1):
+--   A parent-table rebuild MUST be wrapped so FK checks are deferred to the
+--   end of the transaction, where the 1:1 row copy has already re-satisfied
+--   every child reference:
+--       PRAGMA defer_foreign_keys = true;   -- honoured in-transaction by D1
+--       ... DROP TABLE parent; ... RENAME TO parent; ...
+--       (checks run at COMMIT; rebuilt parent satisfies all children → clean)
+--   `PRAGMA foreign_keys = OFF/ON` is a NO-OP inside a transaction (SQLite
+--   documents this), so it does NOT help on D1 — `defer_foreign_keys` is the
+--   load-bearing mechanism. D1 runs each migration file as ONE transaction and
+--   DOES honour `defer_foreign_keys` in that transaction, so a parent rebuild
+--   that sets it (as 0064 does, alongside `legacy_alter_table = ON` for the
+--   trigger re-parse during RENAME) replays FK-clean from empty under BOTH
+--   `wrangler d1 migrations apply` and per-file `wrangler d1 execute --file`.
+--   This supersedes the earlier (pre-2026-06-13, now-stale) hypothesis that a
+--   fresh `migrations apply` of 0064 must fail on the FK constraint; the real
+--   2026-06-13 incident was the cross-object trigger re-parse during RENAME
+--   ("no such table: main.tenant"), fixed by `legacy_alter_table = ON`.
+--   Belt-and-suspenders for restore tooling: any future FK-PARENT rebuild may
+--   ALSO be applied via `wrangler d1 execute --file <file>` (one transaction,
+--   defer honoured) — which is exactly what scripts/migrate_d1.sh and
+--   scripts/restore-from-snapshot.sh already do per file.
+--
+-- WHAT THIS MIGRATION DOES (data no-op; ZERO schema mutation):
+--   1. Sets the FK-safe transaction posture (defer_foreign_keys) so this file
+--      itself models the canonical idiom.
+--   2. Runs `PRAGMA foreign_key_check` — a read-only assertion that, after the
+--      full chain has replayed, the materialized schema has NO dangling FK
+--      references. On a clean fresh replay it returns zero rows; if a future
+--      migration regresses FK integrity the offending rows surface in the
+--      migration-runner output (and the in-memory replay gate
+--      `corelink-ops::migrations` runs the whole chain with foreign_keys = ON,
+--      hard-failing any real ordering/FK regression at PR time).
+--
+-- ADDITIVE intent (INV-AUTH-MIGRATION-ADDITIVE, HIGH):
+--   No table, column, index, or trigger is created, dropped, renamed, or
+--   altered. No row is inserted, mutated, or deleted. Adds NO tenant-keyed
+--   table, so there is nothing to classify in adapter_d1's DSR registry (CF-1).
+--   The file is a pure transaction-posture + integrity-assertion no-op and is
+--   safe to (re-)apply any number of times.
+--
+-- Canonical sources kept in lock-step with this idiom:
+--   - migrations/d1/0064_tenant_tier_max.sql  (the FK-parent rebuild it guards)
+--   - migrations/d1/0062_expand_tier_selections_6tier.sql (sibling rebuild)
+--   - scripts/migrate_d1.sh                   (per-file execute --file replay)
+--   - scripts/restore-from-snapshot.sh        (snapshot-dump restore)
+--   - specs/_runbooks/RB-COLD-RESTORE-FROM-ZERO.md §3.3
+--   - specs/_runbooks/RB-D1-MIGRATION-APPLY.md
+
+-- Model the FK-safe posture (honoured in-transaction by D1; no-op locally).
+PRAGMA defer_foreign_keys = true;
+
+-- Read-only integrity assertion over the fully-replayed schema. Returns zero
+-- rows on a clean chain; any returned row is a dangling FK reference that the
+-- operator/CI must investigate before trusting the restore.
+PRAGMA foreign_key_check;

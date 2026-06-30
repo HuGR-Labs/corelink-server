@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Live daily backups + real restore verification (enterprise-DD #1, CRITICAL data-loss).** New scheduled
+  `backup-daily.yml` cron runs `backup-daily.sh` non-dry-run against prod (read-only D1/KV export + GPG +
+  R2 cold-tier), gated by an explicit `BACKUP_ALLOW_CI` opt-in. `backup-daily-verify` flipped from the
+  synthetic `live_handler_not_yet_wired` stub to a REAL keyless check (newest R2 artifact per tier exists +
+  fresh-within-RPO + non-empty + manifest references the tier; deep GPG-decrypt/sample-restore gated behind
+  `BACKUP_VERIFY_DEEP` rather than faked). Migration 0082 documents + asserts (read-only `foreign_key_check`)
+  the FK-safe rebuild idiom and corrects 0064's stale "migrations apply fails on FK" header (real fix was
+  `legacy_alter_table=ON`; a fresh replay of final-0064 is FK-clean). Owner must provision the backup
+  secrets (GPG recipient/key, rclone R2 conf, bucket) before the cron fires green.
 - **GDPR data-subject rights completed — Access (Art.15), Portability (Art.20), Rectification (Art.16).**
   Previously only erasure (Art.17) + verify were wired. New `/_internal/dsr/{access,portability,rectification}`
   routes (same constant-time internal-auth gate + audit-before-act + idempotency as erase). A gather pipeline

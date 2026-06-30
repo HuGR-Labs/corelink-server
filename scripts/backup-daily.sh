@@ -75,9 +75,15 @@ log "d1_databases=${D1_DATABASES}"
 log "kv_namespaces=${KV_NAMESPACES}"
 log "sla_seconds=${SLA_SECONDS}"
 
-# Hard guard: refuse to run against prod from CI (constraint).
-if [[ "${CORELINK_ENV}" == "production" && "${CI:-false}" == "true" ]]; then
-    fail "production backups MUST be triggered by SRE on-call, not CI"
+# Guard: refuse to run against prod from an ARBITRARY CI context (e.g. a PR
+# build). The sanctioned daily backup automation
+# (.github/workflows/backup-daily.yml — DD-1) opts in explicitly by exporting
+# BACKUP_ALLOW_CI=true, which is the SRE-owned, scheduled, prod-backup lane.
+# This keeps incidental CI from ever touching prod while letting the one
+# blessed scheduled workflow run the live export.
+if [[ "${CORELINK_ENV}" == "production" && "${CI:-false}" == "true" \
+      && "${BACKUP_ALLOW_CI:-false}" != "true" ]]; then
+    fail "production backups from CI require BACKUP_ALLOW_CI=true (sanctioned scheduled lane only)"
 fi
 
 # Required env validation.
