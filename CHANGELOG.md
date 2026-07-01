@@ -23,6 +23,10 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Container idle timeout raised 5→30 min (#368 WP-3, cheap version).** Keeps a recently-active tenant's
+  container warm across normal work-session gaps so the ~2.5s cold-start is rarely re-paid, while the
+  container still dies after a bounded idle tail — COGS proportional to real activity, not a global always-on
+  warm pool. Infra-free (a single constant in the DO), no warm-pool needed.
 - **CAS quota hot-path now makes ZERO D1 round-trips warm (#368 WP-2a residual).** The quota lease already
   removed the per-op D1 accrue-WRITE; this removes the last per-op D1 hop — the rolling-decision `get()` READ.
   `QuotaGuard::check` first tries `try_serve_from_lease`: a warm lease with pre-paid budget (and an

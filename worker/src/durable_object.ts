@@ -78,8 +78,19 @@ interface LifecycleEvent {
 // ──────────────────────────────────────────────────────────────────────────────
 
 const CONTAINER_PORT = 50051;
-/** Idle timeout before container is destroyed (ms). 5 minutes. */
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+/**
+ * Idle timeout before container is destroyed (ms). 30 minutes.
+ *
+ * Raised from 5→30min (2026-07-01): the ~2.5s cold-start is only paid on the
+ * FIRST request after the container is reaped, and warm steady-state is already
+ * fast (post-#368, sub-second). A 30-min idle window keeps a tenant's container
+ * warm across normal work-session gaps (a coffee break / a meeting) so they
+ * rarely re-pay the cold-start, while the container STILL dies after a bounded
+ * idle tail — so the COGS is proportional to real activity (recently-active
+ * tenants only), NOT a global always-on warm pool. The cheap, infra-free
+ * version of WP-3 (`docs/perf/2026-06-19-cas-hot-path-latency.md`).
+ */
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 /** Health check interval when container is running (ms). */
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 /** Max consecutive health-check failures before marking degraded. */
