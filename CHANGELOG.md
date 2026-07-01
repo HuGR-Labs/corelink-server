@@ -30,6 +30,13 @@ Each entry cross-references:
   path on lease drain/absence/cycle-roll and 503 fail-closed on error. Invariants preserved (charge-never-lost,
   never-over-serve — durable atomic `accrued+delta<=budget` stays the sole ceiling authority, fail-closed,
   overshoot ≤1 chunk, cycle correctness); a spy test proves the warm path makes no per-op inner `get`.
+- **Auto-provision the `tenant_org_map` on signup (go-live A1 — no manual step).** The signup-worker's Clerk
+  provisioning flow now writes the `clerk_org_id → tenant_id` mapping row that `resolve-tenant` reads, so an
+  arbitrary new user gets an isolated tenant AND a resolvable identity mapping first-try — no owner/operator
+  step. The map write is load-bearing (a throw fails the webhook → Svix retries; idempotent via `INSERT OR
+  IGNORE`). Key = the Clerk `org_id` if the event carries one, else the user `sub` (individual signups map on
+  `sub` — Clerk `user.created` carries no org; the `org_id` branch future-proofs org-scoped provisioning).
+  ⚠️ githugr's token exchange must pass the SAME principal id (today: `sub`) to `resolve-tenant`.
 - **Structured over-quota / fail-closed error responses (go-live Q1).** When a tenant hits the monthly
   `$`-ceiling the gate now returns `402` with a machine-parseable JSON body
   (`{"error":"quota_exceeded","message":…,"docs_url":…,"retriable":false}`) instead of an opaque
