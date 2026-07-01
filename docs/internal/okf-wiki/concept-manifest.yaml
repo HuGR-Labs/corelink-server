@@ -397,7 +397,7 @@ candidates:
     title: "Edge identity resolution (Clerk session -> tenant)"
     status: "active"
     source_cluster: "auth"
-    seed_from: ["worker/src/lib/clerk_auth.ts", "worker/src/lib/tenant_lookup.ts"]
+    seed_from: ["worker/src/lib/clerk_auth.ts", "worker/src/lib/githugr_provision.ts", "worker/src/lib/tenant_lookup.ts"]
   - id: "launch/edge-quota-tier-serving"
     type: "BillingControl"
     title: "Edge quota & tier serving"

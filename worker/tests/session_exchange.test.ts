@@ -29,11 +29,13 @@ const mockVerifyToken = vi.mocked(verifyToken);
 const INTERNAL_KEY = "test-internal-auth-key-0123456789"; // ≥16 chars
 const CLERK_SECRET = "sk_test_clerk_secret";
 
-// githugr multi-issuer (Option B) test fixtures.
+// githugr multi-issuer test fixtures.
 const GITHUGR_ISSUER = "https://clerk.githugr.com";
 const GITHUGR_JWT_KEY = "-----BEGIN PUBLIC KEY-----\nMOCKKEY\n-----END PUBLIC KEY-----";
-const GITHUGR_TENANT = "ee30f7ba-fc25-4d71-939e-ebe130b4c6a3";
 const GITHUGR_AZP = "https://www.githugr.com";
+
+/** v5-shaped UUID matcher — the shape of the per-user derived githugr tenant_id. */
+const UUID_V5_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** A JWT whose UNVERIFIED payload carries `iss`/`sub` — for the peek-routing in
  *  `verifyClerkSessionAndResolveTenant`. The signature is mock (`verifyToken` is
@@ -71,8 +73,18 @@ function makeCtx(): ExecutionContext {
  */
 function makeConfigDb(
   clerkUserToTenant: Map<string, string>,
-  opts: { patInsertCapture?: { binds?: unknown[] }; patInsertThrows?: boolean } = {},
+  opts: {
+    patInsertCapture?: { binds?: unknown[] };
+    patInsertThrows?: boolean;
+    /** In-memory tenant_org_map (clerk_org_id → tenant_id) for the githugr
+     *  provision-or-lookup path. Provisioning INSERTs write here; the read-back
+     *  reads from here. Pre-seed it to simulate a PRIOR login. */
+    orgMap?: Map<string, string>;
+    /** Simulate a D1 fault during githugr provisioning (fail-CLOSED path). */
+    githugrProvisionThrows?: boolean;
+  } = {},
 ): D1Database {
+  const orgMap = opts.orgMap;
   return {
     prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
@@ -80,6 +92,15 @@ function makeConfigDb(
           // Throttle INSERT…ON CONFLICT…RETURNING count → 1 (under cap).
           if (sql.includes("session_exchange_throttle")) {
             return { count: 1 } as T;
+          }
+          // githugr provision read-back: SELECT ... FROM tenant_org_map WHERE clerk_org_id.
+          if (sql.includes("tenant_org_map")) {
+            if (opts.githugrProvisionThrows) {
+              throw new Error("D1 tenant_org_map SELECT failure (simulated fault)");
+            }
+            const clerkOrgId = args[0] as string;
+            const t = orgMap?.get(clerkOrgId);
+            return (t ? { tenant_id: t } : null) as T | null;
           }
           // Tenant lookup by clerk_user_id.
           const clerkUserId = args[0] as string;
@@ -94,6 +115,15 @@ function makeConfigDb(
             if (opts.patInsertCapture) {
               opts.patInsertCapture.binds = args;
             }
+          }
+          // githugr provisioning INSERTs — fail-CLOSED simulation + org-map capture.
+          if (opts.githugrProvisionThrows && (sql.includes("INTO tenant") || sql.includes("INTO tier_selections") || sql.includes("INTO runners_entitlement") || sql.includes("INTO tenant_quota") || sql.includes("INTO tenant_org_map"))) {
+            throw new Error("D1 githugr provision INSERT failure (simulated fault)");
+          }
+          if (orgMap && sql.includes("INSERT OR IGNORE INTO tenant_org_map")) {
+            // (clerk_org_id, tenant_id, created_at_ms). PRIMARY KEY = first writer wins.
+            const [clerkOrgId, tenantId] = args as [string, string, number];
+            if (!orgMap.has(clerkOrgId)) orgMap.set(clerkOrgId, tenantId);
           }
           return { success: true } as unknown as D1Result;
         },
@@ -141,13 +171,14 @@ function makeEnv(opts: {
   patInsertCapture?: { binds?: unknown[] };
   patInsertThrows?: boolean;
   withGithugr?: boolean;
+  orgMap?: Map<string, string>;
+  githugrProvisionThrows?: boolean;
 }): Env {
   return {
     ...(opts.withGithugr
       ? {
           GITHUGR_CLERK_ISSUER_URL: GITHUGR_ISSUER,
           GITHUGR_CLERK_JWT_KEY: GITHUGR_JWT_KEY,
-          GITHUGR_TENANT_ID: GITHUGR_TENANT,
         }
       : {}),
     CORELINK_SERVER: makeMintNamespace(opts.captured, {
@@ -158,6 +189,8 @@ function makeEnv(opts: {
     CONFIG_DB: makeConfigDb(opts.clerkUserToTenant, {
       ...(opts.patInsertCapture !== undefined ? { patInsertCapture: opts.patInsertCapture } : {}),
       ...(opts.patInsertThrows !== undefined ? { patInsertThrows: opts.patInsertThrows } : {}),
+      ...(opts.orgMap !== undefined ? { orgMap: opts.orgMap } : {}),
+      ...(opts.githugrProvisionThrows !== undefined ? { githugrProvisionThrows: opts.githugrProvisionThrows } : {}),
     }),
     CLERK_SECRET_KEY: opts.withClerkSecret === false ? undefined : CLERK_SECRET,
     CORELINK_INTERNAL_AUTH_KEY: opts.withInternalKey === false ? undefined : INTERNAL_KEY,
@@ -476,33 +509,102 @@ describe("POST /v1/session/exchange — seam C session→PAT exchange (WP-C)", (
   });
 });
 
-describe("POST /v1/session/exchange — githugr multi-issuer (Option B, single tenant)", () => {
-  it("a githugr-issuer session resolves to the FIXED githugr tenant (no per-user D1 lookup)", async () => {
-    mockVerifyToken.mockResolvedValue({ sub: "user_g", azp: GITHUGR_AZP, iss: GITHUGR_ISSUER } as never);
+describe("POST /v1/session/exchange — githugr multi-issuer (per-user isolated tenant)", () => {
+  beforeEach(() => {
+    mockVerifyToken.mockReset();
+  });
+
+  it("(a) ISOLATION: two distinct githugr subs resolve to two DISTINCT tenant_ids", async () => {
+    const orgMap = new Map<string, string>(); // shared D1 across both logins
+    const run = async (sub: string): Promise<string> => {
+      mockVerifyToken.mockResolvedValue({ sub, azp: GITHUGR_AZP, iss: GITHUGR_ISSUER } as never);
+      const captured: { req?: Request } = {};
+      // EMPTY clerkUserToTenant: a CoreLink clerk_user_id→tenant lookup would 403,
+      // so a 200 proves the githugr provision-or-lookup path resolved it.
+      const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true, orgMap });
+      const resp = await exchangeFetch(env, {
+        Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, sub)}`,
+      });
+      expect(resp.status).toBe(200);
+      return (await resp.json() as Record<string, unknown>)["tenant"] as string;
+    };
+    const tA = await run("user_alice");
+    const tB = await run("user_bob");
+    expect(tA).toMatch(UUID_V5_SHAPE);
+    expect(tB).toMatch(UUID_V5_SHAPE);
+    expect(tA).not.toBe(tB); // NEVER a shared tenant — this is the isolation fix.
+  });
+
+  it("(b) IDEMPOTENT: the same githugr sub twice resolves to the SAME tenant_id (no dup, no error)", async () => {
+    const orgMap = new Map<string, string>(); // persists across the two logins
+    const run = async (): Promise<string> => {
+      mockVerifyToken.mockResolvedValue({ sub: "user_stable", azp: GITHUGR_AZP, iss: GITHUGR_ISSUER } as never);
+      const captured: { req?: Request } = {};
+      const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true, orgMap });
+      const resp = await exchangeFetch(env, {
+        Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_stable")}`,
+      });
+      expect(resp.status).toBe(200);
+      return (await resp.json() as Record<string, unknown>)["tenant"] as string;
+    };
+    const t1 = await run();
+    const t2 = await run();
+    expect(t1).toBe(t2);
+    expect(orgMap.size).toBe(1); // exactly one identity row — no duplicate provision.
+  });
+
+  it("(c) FAIL-CLOSED: a D1 fault during provision → 500, NOT a fixed/shared tenant", async () => {
+    mockVerifyToken.mockResolvedValue({ sub: "user_dberr", azp: GITHUGR_AZP, iss: GITHUGR_ISSUER } as never);
     const captured: { req?: Request } = {};
-    // EMPTY tenant map: a clerk_user_id→tenant lookup would 403. A 200 proves the
-    // fixed-tenant resolution path (Option B) was taken, not the D1 lookup.
-    const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true });
+    const env = makeEnv({
+      captured,
+      clerkUserToTenant: new Map(),
+      withGithugr: true,
+      orgMap: new Map(),
+      githugrProvisionThrows: true,
+    });
     const resp = await exchangeFetch(env, {
-      Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_g")}`,
+      Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_dberr")}`,
+    });
+    expect(resp.status).toBe(500);
+    const body = (await resp.json()) as Record<string, unknown>;
+    expect(body["error"]).toBe("INTERNAL_ERROR");
+    // The container mint must NEVER have run (no tenant resolved → nothing minted).
+    expect(captured.req).toBeUndefined();
+  });
+
+  it("(b′) IDEMPOTENT read-back: a PRE-EXISTING org-map row (prior login) wins", async () => {
+    // Pre-seed the map as if a prior login had provisioned this sub.
+    mockVerifyToken.mockResolvedValue({ sub: "user_prior", azp: GITHUGR_AZP, iss: GITHUGR_ISSUER } as never);
+    const orgMap = new Map<string, string>();
+    // Derive what the code would derive so the pre-seed matches (deterministic).
+    const captured0: { req?: Request } = {};
+    const env0 = makeEnv({ captured: captured0, clerkUserToTenant: new Map(), withGithugr: true, orgMap });
+    await exchangeFetch(env0, { Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_prior")}` });
+    const preExisting = orgMap.get("user_prior");
+    expect(preExisting).toBeDefined();
+
+    // Second login: the read-back returns the SAME pre-existing tenant_id.
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true, orgMap });
+    const resp = await exchangeFetch(env, {
+      Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_prior")}`,
     });
     expect(resp.status).toBe(200);
     const body = (await resp.json()) as Record<string, unknown>;
-    expect(body["tenant"]).toBe(GITHUGR_TENANT);
+    expect(body["tenant"]).toBe(preExisting);
   });
 
-  it("rejects (401) a githugr token whose azp is not in the githugr allowlist", async () => {
-    mockVerifyToken.mockResolvedValue({
-      sub: "user_g",
-      azp: "https://evil.example",
-      iss: GITHUGR_ISSUER,
-    } as never);
+  it("rejects (401) a githugr token whose azp is not in the githugr allowlist (never provisions)", async () => {
+    mockVerifyToken.mockResolvedValue({ sub: "user_g", azp: "https://evil.example", iss: GITHUGR_ISSUER } as never);
     const captured: { req?: Request } = {};
-    const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true });
+    const orgMap = new Map<string, string>();
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true, orgMap });
     const resp = await exchangeFetch(env, {
       Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_g")}`,
     });
     expect(resp.status).toBe(401);
+    expect(orgMap.size).toBe(0); // no provision on a rejected session.
   });
 
   it("with githugr configured, a CoreLink-issuer session STILL uses the CoreLink tenant lookup (no regression)", async () => {

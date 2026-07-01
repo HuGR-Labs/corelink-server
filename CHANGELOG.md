@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Real per-tenant identity for githugr sessions — the exchange now provisions-or-looks-up per `sub` (pilot A1 wire).**
+  `verifyGithugrSession` previously resolved EVERY githugr session to the fixed showcase tenant (`GITHUGR_TENANT_ID`,
+  ee30f7ba) — no isolation. It now derives a DETERMINISTIC tenant_id from the Clerk `sub`, idempotently provisions
+  that tenant's gate rows (tenant + tier/entitlement/quota + `tenant_org_map[sub→tenant]`) on first sight, and resolves
+  it thereafter — so two distinct users get two isolated tenants, same user re-login is stable, and a D1 fault
+  FAILS CLOSED (500, never the shared fallback). `GITHUGR_TENANT_ID` removed. (githugr runs its own Clerk, so the
+  CoreLink signup-worker auto-provision doesn't fire for them — provisioning had to live in the exchange.)
 - **Container idle timeout raised 5→30 min (#368 WP-3, cheap version).** Keeps a recently-active tenant's
   container warm across normal work-session gaps so the ~2.5s cold-start is rarely re-paid, while the
   container still dies after a bounded idle tail — COGS proportional to real activity, not a global always-on
