@@ -36,11 +36,6 @@
 use hmac::{Hmac, Mac as _};
 use sha2::{Digest as _, Sha256};
 
-/// Env var holding the server-held salt (HMAC key). Unset/empty ⇒ legacy
-/// unsalted SHA-256 (pre-salt parity). Owner registers it in the secrets
-/// matrix + DO forward-list (see module docs).
-const EMAIL_HASH_SALT_ENV: &str = "EMAIL_HASH_SALT";
-
 /// Canonical pseudonymized email hash (CTRL-PRIV-001). See module docs.
 ///
 /// Normalizes (`trim` + `to_lowercase`) then HMAC-SHA256s under
@@ -49,7 +44,7 @@ const EMAIL_HASH_SALT_ENV: &str = "EMAIL_HASH_SALT";
 #[must_use]
 pub fn hash_email(email: &str) -> String {
     let normalized = email.trim().to_lowercase();
-    match std::env::var(EMAIL_HASH_SALT_ENV) {
+    match std::env::var("EMAIL_HASH_SALT") {
         Ok(salt) if !salt.is_empty() => {
             // HMAC-SHA256 accepts a key of any length; this never errors (same
             // idiom as `storage::byok_cas::harden_digest`).
@@ -85,19 +80,19 @@ impl EnvGuard {
         let g = ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        std::env::remove_var(EMAIL_HASH_SALT_ENV);
+        std::env::remove_var("EMAIL_HASH_SALT");
         Self(g)
     }
 
     pub(crate) fn set_salt(&self, salt: &str) {
-        std::env::set_var(EMAIL_HASH_SALT_ENV, salt);
+        std::env::set_var("EMAIL_HASH_SALT", salt);
     }
 }
 
 #[cfg(test)]
 impl Drop for EnvGuard {
     fn drop(&mut self) {
-        std::env::remove_var(EMAIL_HASH_SALT_ENV);
+        std::env::remove_var("EMAIL_HASH_SALT");
     }
 }
 
