@@ -4,7 +4,7 @@ title: "Per-tenant monthly $-ceiling"
 description: "The fail-CLOSED cumulative-dollar spend cap that bounds each tenant's monthly cost blast-radius, orthogonal to the rate limit and the request quota."
 source_files:
   - "crates/corelink-container/src/tenant_quota.rs"
-checkpoint_sha: "2cfa6827a54076ff11847be74f24dee4afe3222a"
+checkpoint_sha: "1f8ac8653cddeee4d4257f7f30a04be2744f6c39"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "billing", "dollar-ceiling", "adr-0068", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -32,7 +32,7 @@ never floating point.
 # How it works
 
 - The launch tripwire is `$5/mo` expressed as `5_000_000` micro-dollars; it is owner-tunable per tenant
-  via the `tenant_quota` row, not a product tier (`crates/corelink-container/src/tenant_quota.rs:59-64`).
+  via the `tenant_quota` row, not a product tier (`crates/corelink-container/src/tenant_quota.rs:58-63`).
 - `QuotaGuard::check` reads the wall clock first and fail-CLOSES with `503` when it is unavailable
   (`now_ms == 0`), because without a trustworthy clock the cycle boundary is unknowable
   (`crates/corelink-container/src/tenant_quota.rs:786-795`).
@@ -71,7 +71,7 @@ never floating point.
 
 1. `crates/corelink-container/src/tenant_quota.rs:18-30` — the fail-CLOSED posture (`402`/`503`/Allow).
 2. `crates/corelink-container/src/tenant_quota.rs:32-37` — integer micro-dollar units, no floating point.
-3. `crates/corelink-container/src/tenant_quota.rs:59-64` — the `$5/mo` launch tripwire constant.
+3. `crates/corelink-container/src/tenant_quota.rs:58-63` — the `$5/mo` launch tripwire constant.
 4. `crates/corelink-container/src/tenant_quota.rs:75-89` — the coarse flat per-op cost model.
 5. `crates/corelink-container/src/tenant_quota.rs:105-116` — `None` guard when the storage env is unset (dev/CI).
 6. `crates/corelink-container/src/tenant_quota.rs:155-161` — cycle-elapsed test against `CYCLE_LENGTH_MS`.

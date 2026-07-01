@@ -51,8 +51,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 
 use crate::wall_clock::WallClock;
 
@@ -789,9 +788,9 @@ impl QuotaGuard {
             // Fail-CLOSED: without a trustworthy clock we cannot reason
             // about the cycle boundary (mirrors the rate-limit gate's
             // `clock_unavailable` 503 discipline).
-            return Some(
-                (StatusCode::SERVICE_UNAVAILABLE, "wall clock unavailable").into_response(),
-            );
+            return Some(crate::quota_error::quota_unavailable_response(
+                "wall clock unavailable",
+            ));
         }
         // `now_ms` fits i64 for any realistic wall clock (year ~292M).
         let now_ms = i64::try_from(now_ms_u64).unwrap_or(i64::MAX);
@@ -805,9 +804,9 @@ impl QuotaGuard {
         let existing = match self.store.get(tenant).await {
             Ok(s) => s,
             Err(_) => {
-                return Some(
-                    (StatusCode::SERVICE_UNAVAILABLE, "quota store unavailable").into_response(),
-                );
+                return Some(crate::quota_error::quota_unavailable_response(
+                    "quota store unavailable",
+                ));
             }
         };
         let state = existing.unwrap_or_else(|| QuotaState::fresh(now_ms));
@@ -827,9 +826,9 @@ impl QuotaGuard {
                 // Stale existing row: atomically roll it (idempotent conditional
                 // reset — a no-op if a concurrent op already rolled) …
                 if self.store.roll_if_stale(tenant, now_ms).await.is_err() {
-                    return Some(
-                        (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
-                    );
+                    return Some(crate::quota_error::quota_unavailable_response(
+                        "quota accrual failed",
+                    ));
                 }
                 // … then the SAME atomic check-and-accrue as the steady path, so
                 // concurrent post-roll ops each accrue under one serialized
@@ -837,18 +836,12 @@ impl QuotaGuard {
                 match self.store.check_and_accrue(tenant, cost, now_ms, now_ms).await {
                     Ok(true) => {}
                     Ok(false) => {
-                        return Some(
-                            (
-                                StatusCode::PAYMENT_REQUIRED,
-                                "monthly $-ceiling exceeded; raise the cap or wait for the cycle to reset",
-                            )
-                                .into_response(),
-                        );
+                        return Some(crate::quota_error::quota_exceeded_response());
                     }
                     Err(_) => {
-                        return Some(
-                            (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
-                        );
+                        return Some(crate::quota_error::quota_unavailable_response(
+                            "quota accrual failed",
+                        ));
                     }
                 }
             } else {
@@ -863,18 +856,12 @@ impl QuotaGuard {
                 match self.store.seed_checked_accrue(tenant, cost, now_ms, now_ms).await {
                     Ok(true) => {}
                     Ok(false) => {
-                        return Some(
-                            (
-                                StatusCode::PAYMENT_REQUIRED,
-                                "monthly $-ceiling exceeded; raise the cap or wait for the cycle to reset",
-                            )
-                                .into_response(),
-                        );
+                        return Some(crate::quota_error::quota_exceeded_response());
                     }
                     Err(_) => {
-                        return Some(
-                            (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
-                        );
+                        return Some(crate::quota_error::quota_unavailable_response(
+                            "quota accrual failed",
+                        ));
                     }
                 }
             }
@@ -903,18 +890,12 @@ impl QuotaGuard {
             {
                 Ok(true) => {} // accrued + allowed; proceed
                 Ok(false) => {
-                    return Some(
-                        (
-                            StatusCode::PAYMENT_REQUIRED,
-                            "monthly $-ceiling exceeded; raise the cap or wait for the cycle to reset",
-                        )
-                            .into_response(),
-                    );
+                    return Some(crate::quota_error::quota_exceeded_response());
                 }
                 Err(_) => {
-                    return Some(
-                        (StatusCode::SERVICE_UNAVAILABLE, "quota accrual failed").into_response(),
-                    );
+                    return Some(crate::quota_error::quota_unavailable_response(
+                        "quota accrual failed",
+                    ));
                 }
             }
         }
@@ -1222,6 +1203,7 @@ impl QuotaStore for D1QuotaStore {
 mod tests {
     use super::*;
     use crate::wall_clock::InMemoryFakeWallClock;
+    use axum::http::StatusCode;
 
     const T0: u64 = 1_700_000_000_000;
 
@@ -1292,6 +1274,36 @@ mod tests {
         // A $1 op would project to $5.50 > $5 ⇒ rejected 402.
         let resp = guard.check("tenant-b", 1_000_000).await.expect("rejected");
         assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+    }
+
+    #[tokio::test]
+    async fn over_ceiling_reject_body_is_structured_json() {
+        // The 402 reject flows the CENTRALIZED structured JSON body
+        // (crate::quota_error) — not the old plain-text marker.
+        use axum::body::to_bytes;
+        let store = InMemoryQuotaStore::new();
+        store.seed(
+            "tenant-json",
+            QuotaState {
+                monthly_budget_usd_micros: 5_000_000,
+                accrued_usd_micros: 4_500_000,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let (guard, _clock) = guard_with(store, T0);
+        let resp = guard.check("tenant-json", 1_000_000).await.expect("rejected");
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+        assert_eq!(
+            resp.headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/json"),
+        );
+        let bytes = to_bytes(resp.into_body(), 4096).await.expect("body");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(json.get("error").and_then(|v| v.as_str()), Some("quota_exceeded"));
+        assert_eq!(json.get("retriable").and_then(|v| v.as_bool()), Some(false));
+        assert!(json.get("docs_url").and_then(|v| v.as_str()).is_some());
     }
 
     #[tokio::test]
@@ -1368,6 +1380,31 @@ mod tests {
         let (guard, _clock) = guard_with(store, 0); // now_ms == 0
         let resp = guard.check("tenant-e", 1).await.expect("rejected");
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn fail_closed_reject_body_is_structured_json_with_reason() {
+        // The 503 fail-CLOSED reject flows the CENTRALIZED structured JSON body
+        // (crate::quota_error), preserving the marker as the `reason` field.
+        use axum::body::to_bytes;
+        let store = InMemoryQuotaStore::new();
+        let (guard, _clock) = guard_with(store, 0); // now_ms == 0 ⇒ clock unavailable
+        let resp = guard.check("tenant-503", 1).await.expect("rejected");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            resp.headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/json"),
+        );
+        let bytes = to_bytes(resp.into_body(), 4096).await.expect("body");
+        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(json.get("error").and_then(|v| v.as_str()), Some("quota_unavailable"));
+        assert_eq!(
+            json.get("reason").and_then(|v| v.as_str()),
+            Some("wall clock unavailable"),
+        );
+        assert_eq!(json.get("retriable").and_then(|v| v.as_bool()), Some(true));
     }
 
     #[derive(Debug)]

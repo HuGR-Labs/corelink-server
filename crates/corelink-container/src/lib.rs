@@ -128,6 +128,10 @@ pub mod oci_cap;
 /// never counts — are metered against the tenant's monthly request cap, keyed
 /// on the verified-HMAC-bearer tenant (the same one #318's `$`-ceiling gate
 /// resolves). Fail-OPEN (SLO-style allowance, not a cost cap).
+/// Centralized STRUCTURED-JSON bodies for the per-tenant `$`-ceiling quota
+/// rejects (402 over-ceiling / 503 fail-CLOSED). Body/`Content-Type` only —
+/// status codes and quota LOGIC are unchanged.
+pub mod quota_error;
 pub mod request_count;
 pub mod routes;
 /// Cache-scope enforcement helper + extractor.

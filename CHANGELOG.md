@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Structured over-quota / fail-closed error responses (go-live Q1).** When a tenant hits the monthly
+  `$`-ceiling the gate now returns `402` with a machine-parseable JSON body
+  (`{"error":"quota_exceeded","message":…,"docs_url":…,"retriable":false}`) instead of an opaque
+  plain-text line; a fail-closed metering fault returns `503`
+  (`{"error":"quota_unavailable","reason":…,"retriable":true}`). Centralized in one helper
+  (`quota_error.rs`) at the single `QuotaGuard::check` source of truth, so every surface (CAS, Bazel,
+  OCI …) that forwards the gate's response inherits the clear error + an upgrade path automatically.
+  Quota LOGIC unchanged — error surface only. (githugr consumes the code to render an honest UX.)
 - **Tenant-per-org identity primitive — `clerk_org_id → tenant_id` resolution (githugr Epic A / pilot).** The
   CoreLink-side seam for per-org isolation (isolation itself is already the core product — every surface is
   `tenant_id`-scoped). Migration 0083 adds `tenant_org_map (clerk_org_id PK, tenant_id, created_at_ms)`; a new
