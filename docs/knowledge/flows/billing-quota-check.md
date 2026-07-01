@@ -5,8 +5,9 @@ description: "The synchronous per-tenant monthly $-ceiling gate every billable o
 source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/tenant_quota.rs"
+  - "crates/corelink-container/src/quota_error.rs"
   - "crates/corelink-container/src/routes/billing_ingest.rs"
-checkpoint_sha: "9b98c097e0aaac5103e2fc2b4e2114a0bf29739d"
+checkpoint_sha: "1f8ac8653cddeee4d4257f7f30a04be2744f6c39"
 provenance: "AUTHORED"
 tags: ["flows", "billing", "quota", "tenancy", "request-flow"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -24,14 +25,15 @@ The `QuotaGate` is the economic fail-closed spend cap on the hot path: it conver
 
 1. Placement: a billable handler holds `Option<QuotaGate>` and calls `gate.check(&tenant)` at the top, after scope/rate-limit and before the work; absent in dev/CI (`crates/corelink-container/src/routes.rs:225-244`).
 2. Cost resolution: `QuotaGate` resolves the flat per-op micro-dollar cost once at build and delegates `check` to `QuotaGuard::check` (`crates/corelink-container/src/routes.rs:246-264`).
-3. Clock gate: `QuotaGuard::check` fails closed 503 if the wall clock is unavailable — it cannot reason about the cycle boundary without a trustworthy clock (`crates/corelink-container/src/tenant_quota.rs:786-795`).
+3. Clock gate: `QuotaGuard::check` fails closed 503 if the wall clock is unavailable — it cannot reason about the cycle boundary without a trustworthy clock; the reject body is now the shared structured `quota_unavailable_response(...)` (`crates/corelink-container/src/tenant_quota.rs:786-794`).
 4. Row load: the tenant's `tenant_quota` row is loaded; a store error is 503, a missing row is treated as a fresh default-tripwire tenant (`crates/corelink-container/src/tenant_quota.rs:805-813`).
 5. Cycle decision: a brand-new row or an elapsed cycle opens a fresh accrual baseline; otherwise the steady path continues from the prior accrued total (`crates/corelink-container/src/tenant_quota.rs:815-818`).
 6. Steady path — atomic check-and-accrue: the ceiling test is serialized WITH the increment in one statement (`UPDATE ... WHERE accrued + delta <= budget RETURNING accrued`); over-ceiling -> 402, store error -> 503 (`crates/corelink-container/src/tenant_quota.rs:899-919`). The store trait has NO non-atomic default — CF-4 made the default `check_and_accrue` fail CLOSED (`Err`), so a backend that forgets to override can never silently over-admit (`crates/corelink-container/src/tenant_quota.rs:260-277`).
 7. Fresh-tenant path: a brand-new tenant's FIRST op is ceiling-checked via `seed_checked_accrue`, so a single fat first op cannot bypass the cap; an over-budget first op is 402 (`crates/corelink-container/src/tenant_quota.rs:854-880`).
 8. Batch variant: `check_batch` charges `n x cost` in ONE atomic check-and-accrue (saturating product) rather than N round-trips (`crates/corelink-container/src/tenant_quota.rs:759-766`; `crates/corelink-container/src/routes.rs:281-283`). The PRODUCTION guard wraps its inner store in a `LeasedQuotaStore`, so the $-ceiling is enforced as a LEASED/approximate cap: each accrue debits a small ops-chunk lease up front and serves subsequent ops against the warm lease — worst-case overshoot is bounded to ONE lease chunk, so it never over-serves materially (`crates/corelink-container/src/tenant_quota.rs:118-127`, `crates/corelink-container/src/tenant_quota.rs:359-373`).
-9. Decoupled usage ingest: `POST /internal/v1/billing/usage` gates on a DEDICATED `BILLING_INGEST_AUTH_KEY` (constant-time), validates the whole batch, then idempotently stages each record (`crates/corelink-container/src/routes/billing_ingest.rs:480-515`).
-10. Idempotent persist: each record is staged with `ON CONFLICT DO NOTHING` (dedup by `(tenant_id, request_id)`); a backend fault is 503 so the runner can safely retry, accepted/deduped tallies return 202 (`crates/corelink-container/src/routes/billing_ingest.rs:517-542`).
+9. Structured reject surface: every reject inside `QuotaGuard::check` now returns a machine-parseable JSON envelope from the shared `crate::quota_error` module rather than a bare plain-text body — an over-ceiling trip calls `quota_exceeded_response()` (402 `{"error":"quota_exceeded",…,"retriable":false}` with a `docs_url` remediation pointer) and every fail-CLOSED path (no clock, store error, accrual fault) calls `quota_unavailable_response(reason)` (503 `{"error":"quota_unavailable",…,"reason":<marker>,"retriable":true}`, the static marker preserved as a machine field). Only the response BODY + `Content-Type` changed; the 402/503 status codes and all accrue/check/lease/fail-closed LOGIC are byte-identical (`crates/corelink-container/src/quota_error.rs:37-81`).
+10. Decoupled usage ingest: `POST /internal/v1/billing/usage` gates on a DEDICATED `BILLING_INGEST_AUTH_KEY` (constant-time), validates the whole batch, then idempotently stages each record (`crates/corelink-container/src/routes/billing_ingest.rs:480-515`).
+11. Idempotent persist: each record is staged with `ON CONFLICT DO NOTHING` (dedup by `(tenant_id, request_id)`); a backend fault is 503 so the runner can safely retry, accepted/deduped tallies return 202 (`crates/corelink-container/src/routes/billing_ingest.rs:517-542`).
 
 # Invariants
 
@@ -59,4 +61,5 @@ The `QuotaGate` is the economic fail-closed spend cap on the hot path: it conver
 6. `crates/corelink-container/src/tenant_quota.rs:786-922` — `check`: clock gate, row load, cycle decision, steady/fresh atomic accrual, 402/503 outcomes.
 7. `crates/corelink-container/src/tenant_quota.rs:118-127` — `quota_guard_from_env` wraps the inner store in `LeasedQuotaStore`: the production $-ceiling is LEASED/approximate, overshoot bounded to one lease chunk.
 8. `crates/corelink-container/src/routes/billing_ingest.rs:475-543` — `handle_ingest`: dedicated-secret gate, batch validate, idempotent stage, 202/503.
+9. `crates/corelink-container/src/quota_error.rs:37-81` — `quota_exceeded_response` (402 `quota_exceeded`, `retriable:false`, `docs_url`) + `quota_unavailable_response` (503 `quota_unavailable`, `reason` marker, `retriable:true`): the shared structured-JSON reject bodies every `QuotaGuard::check` path now emits (status codes + logic unchanged).
 </content>
