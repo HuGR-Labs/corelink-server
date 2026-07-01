@@ -129,6 +129,38 @@ export async function insertPat(
     .run();
 }
 
+/**
+ * Write the `tenant_org_map` identity-map row (A1 auto-provision, migration
+ * 0083) that `POST /internal/v1/auth/resolve-tenant` reads. WITHOUT this row,
+ * `resolve-tenant` 404s `org_not_mapped` for every real new user and locks them
+ * out — so this write is LOAD-BEARING, not best-effort.
+ *
+ * `clerkOrgId` is the Clerk principal identifier githugr scopes a token to: the
+ * Clerk `org_id` when the provisioning event carries one, else the user
+ * `sub`/`id` (individual pilot users have no org). Either way, EVERY principal
+ * maps to its isolated tenant.
+ *
+ * `INSERT OR IGNORE` for idempotency: a Svix redelivery (or an idempotent
+ * re-run of provisioning for an existing tenant) is a harmless no-op, and the
+ * `clerk_org_id` PRIMARY KEY means the first mapping wins.
+ *
+ * Deliberately NOT wrapped in try/catch — the caller MUST let a throw propagate
+ * so the webhook returns non-2xx and Svix retries (a tenant without its map row
+ * is the exact lockout A1 fixes).
+ */
+export async function insertTenantOrgMap(
+  db: D1Database,
+  params: { clerkOrgId: string; tenantId: string; nowMs: number },
+): Promise<void> {
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO tenant_org_map " +
+        "(clerk_org_id, tenant_id, created_at_ms) VALUES (?1, ?2, ?3)",
+    )
+    .bind(params.clerkOrgId, params.tenantId, params.nowMs)
+    .run();
+}
+
 /** A single outstanding `invited` team-member row (the acceptance target). */
 interface InvitedMemberRow {
   tenant_id: string;

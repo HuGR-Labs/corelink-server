@@ -4,6 +4,7 @@ import {
   defaultApiClient,
   handleClerkWebhook,
   tenantSlugFor,
+  orgMapKeyFor,
   regionFromColo,
   isProvisionedMacro,
   PROVISIONED_MACROS,
@@ -884,5 +885,253 @@ describe("defaultApiClient.createTenant (concurrent-duplicate webhook → no orp
     expect(s.insertInserted).toBe(false);
     // The read-back queried by the owner's clerk_user_id.
     expect(s.selectClerkUserId).toBe(ownerUserId);
+  });
+});
+
+describe("orgMapKeyFor (A1 — tenant_org_map key: org_id else sub)", () => {
+  it("prefers the Clerk organization_id when the event carries one", () => {
+    const u = fakeUser({ organization_id: "org_live123" }).data;
+    expect(orgMapKeyFor(u)).toBe("org_live123");
+  });
+  it("accepts the alternate org_id field name", () => {
+    const u = fakeUser({ org_id: "org_alt456" }).data;
+    expect(orgMapKeyFor(u)).toBe("org_alt456");
+  });
+  it("falls back to the user sub (id) for an individual (no org)", () => {
+    // The common self-serve pilot case — no org → the principal IS the user.
+    expect(orgMapKeyFor(fakeUser().data)).toBe("user_2abc");
+  });
+  it("ignores an empty-string org and falls back to sub", () => {
+    const u = fakeUser({ organization_id: "" }).data;
+    expect(orgMapKeyFor(u)).toBe("user_2abc");
+  });
+});
+
+describe("autoProvisionFromClerkEvent — A1 tenant_org_map write (LOAD-BEARING)", () => {
+  const baseApi = {
+    async createTenant() {
+      return { id: "t_map" };
+    },
+    async configureTenant() {},
+    async issuePat() {
+      return { id: "pat_map", plaintext: "ct_map" };
+    },
+    async publishUserMetadata() {},
+  };
+  const noopAnalytics = { async emit() {} };
+
+  it("writes the map row keyed on org_id when the event carries one", async () => {
+    const seen: Array<{ key: string; tenant: string }> = [];
+    await autoProvisionFromClerkEvent({
+      event: fakeUser({ organization_id: "org_ACME" }),
+      colo: "ORD",
+      svixId: "msg_map1",
+      api: baseApi,
+      analytics: noopAnalytics,
+      writeOrgMap: async (key, tenant) => {
+        seen.push({ key, tenant });
+      },
+    });
+    // Keyed on the org id, bound to the created tenant.
+    expect(seen).toEqual([{ key: "org_ACME", tenant: "t_map" }]);
+  });
+
+  it("writes the map row keyed on sub (user id) when there is no org", async () => {
+    const seen: Array<{ key: string; tenant: string }> = [];
+    await autoProvisionFromClerkEvent({
+      event: fakeUser(), // no org → fall back to sub
+      colo: "ORD",
+      svixId: "msg_map2",
+      api: baseApi,
+      analytics: noopAnalytics,
+      writeOrgMap: async (key, tenant) => {
+        seen.push({ key, tenant });
+      },
+    });
+    expect(seen).toEqual([{ key: "user_2abc", tenant: "t_map" }]);
+  });
+
+  it("FAILS the provision when the map write throws (fail-closed → Svix retry)", async () => {
+    // A tenant WITHOUT its map row is the exact org_not_mapped lockout A1 fixes,
+    // so a map-write failure must NOT be swallowed — it must propagate so the
+    // webhook returns non-2xx and Svix retries.
+    await expect(
+      autoProvisionFromClerkEvent({
+        event: fakeUser({ organization_id: "org_boom" }),
+        colo: "ORD",
+        svixId: "msg_map_fail",
+        api: baseApi,
+        analytics: noopAnalytics,
+        writeOrgMap: async () => {
+          throw new Error("d1_org_map_write_failed");
+        },
+      }),
+    ).rejects.toThrow(/d1_org_map_write_failed/);
+  });
+});
+
+describe("handleClerkWebhook — A1 tenant_org_map end-to-end", () => {
+  async function signedUserCreated(secretRaw: string, body: string): Promise<Request> {
+    const svixId = "msg_a1";
+    const svixTimestamp = String(Math.floor(Date.now() / 1000));
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secretRaw),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sigBytes = new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        key,
+        new TextEncoder().encode(`${svixId}.${svixTimestamp}.${body}`),
+      ),
+    );
+    const sig = `v1,${btoa(String.fromCharCode(...sigBytes))}`;
+    return new Request("https://signup.test/webhooks/clerk", {
+      method: "POST",
+      headers: {
+        "svix-id": svixId,
+        "svix-timestamp": svixTimestamp,
+        "svix-signature": sig,
+        "content-type": "application/json",
+      },
+      body,
+    });
+  }
+
+  /**
+   * A fake CONFIG_DB that records every tenant_org_map INSERT and, optionally,
+   * throws on the tenant_org_map write to model a D1 failure. No existing tenant
+   * (fresh signup), so provisioning runs the full flow.
+   */
+  function fakeConfigDb(opts: { orgMapThrows?: boolean } = {}) {
+    const orgMapInserts: Array<unknown[]> = [];
+    let orgMapRunCount = 0;
+    const db = {
+      prepare(query: string) {
+        let bound: unknown[] = [];
+        const stmt = {
+          bind(...values: unknown[]) {
+            bound = values;
+            return stmt;
+          },
+          async run() {
+            if (query.includes("INSERT OR IGNORE INTO tenant_org_map")) {
+              orgMapRunCount += 1;
+              if (opts.orgMapThrows) {
+                throw new Error("d1_org_map_write_failed");
+              }
+              orgMapInserts.push(bound);
+            }
+            return { success: true };
+          },
+          async all() {
+            return { results: [] };
+          },
+          async first() {
+            return null; // no existing tenant / no live PAT
+          },
+        };
+        return stmt;
+      },
+    };
+    return { db, orgMapInserts: () => orgMapInserts, orgMapRunCount: () => orgMapRunCount };
+  }
+
+  const apiFactory = (() => ({
+    async createTenant() {
+      return { id: "t_e2e" };
+    },
+    async configureTenant() {},
+    async issuePat() {
+      return { id: "pat_e2e", plaintext: "ct_e2e" };
+    },
+    async publishUserMetadata() {},
+  })) as unknown as Parameters<typeof handleClerkWebhook>[2];
+
+  it("writes BOTH the tenant AND a tenant_org_map row (keyed on sub for an individual)", async () => {
+    const secretRaw = "supersecret-raw-bytes-with-good-entropy";
+    const secret = `whsec_${btoa(secretRaw)}`;
+    const body = JSON.stringify({
+      type: "user.created",
+      data: {
+        id: "user_a1",
+        email_addresses: [{ id: "em_1", email_address: "a1@acme.com" }],
+        primary_email_address_id: "em_1",
+      },
+    });
+    const req = await signedUserCreated(secretRaw, body);
+    const { db, orgMapInserts } = fakeConfigDb();
+    const env = {
+      CLERK_WEBHOOK_SECRET: secret,
+      CONFIG_DB: db,
+      CORELINK_INTERNAL_AUTH_KEY: "internal-key",
+    } as unknown as AutoProvisionEnv;
+
+    const res = await handleClerkWebhook(req, env, apiFactory);
+    expect(res.status).toBe(200);
+
+    const inserts = orgMapInserts();
+    expect(inserts.length).toBe(1);
+    // (?1=clerk_org_id, ?2=tenant_id, ?3=created_at_ms) — no org → sub fallback.
+    expect(inserts[0]?.[0]).toBe("user_a1");
+    expect(inserts[0]?.[1]).toBe("t_e2e");
+    expect(typeof inserts[0]?.[2]).toBe("number");
+  });
+
+  it("writes the tenant_org_map row keyed on org_id when the event carries one", async () => {
+    const secretRaw = "supersecret-raw-bytes-with-good-entropy";
+    const secret = `whsec_${btoa(secretRaw)}`;
+    const body = JSON.stringify({
+      type: "user.created",
+      data: {
+        id: "user_a1org",
+        organization_id: "org_A1",
+        email_addresses: [{ id: "em_1", email_address: "a1org@acme.com" }],
+        primary_email_address_id: "em_1",
+      },
+    });
+    const req = await signedUserCreated(secretRaw, body);
+    const { db, orgMapInserts } = fakeConfigDb();
+    const env = {
+      CLERK_WEBHOOK_SECRET: secret,
+      CONFIG_DB: db,
+      CORELINK_INTERNAL_AUTH_KEY: "internal-key",
+    } as unknown as AutoProvisionEnv;
+
+    const res = await handleClerkWebhook(req, env, apiFactory);
+    expect(res.status).toBe(200);
+    const inserts = orgMapInserts();
+    expect(inserts.length).toBe(1);
+    expect(inserts[0]?.[0]).toBe("org_A1"); // org id wins over sub
+    expect(inserts[0]?.[1]).toBe("t_e2e");
+  });
+
+  it("a map-write FAILURE fails the webhook (500 → Svix retries)", async () => {
+    const secretRaw = "supersecret-raw-bytes-with-good-entropy";
+    const secret = `whsec_${btoa(secretRaw)}`;
+    const body = JSON.stringify({
+      type: "user.created",
+      data: {
+        id: "user_a1fail",
+        email_addresses: [{ id: "em_1", email_address: "a1fail@acme.com" }],
+        primary_email_address_id: "em_1",
+      },
+    });
+    const req = await signedUserCreated(secretRaw, body);
+    const { db, orgMapRunCount } = fakeConfigDb({ orgMapThrows: true });
+    const env = {
+      CLERK_WEBHOOK_SECRET: secret,
+      CONFIG_DB: db,
+      CORELINK_INTERNAL_AUTH_KEY: "internal-key",
+    } as unknown as AutoProvisionEnv;
+
+    const res = await handleClerkWebhook(req, env, apiFactory);
+    // Non-2xx so Svix retries — a tenant without its map row is the lockout.
+    expect(res.status).toBe(500);
+    // The map write was attempted (and threw), not silently skipped.
+    expect(orgMapRunCount()).toBe(1);
   });
 });
