@@ -353,6 +353,63 @@ pub trait QuotaStore: std::fmt::Debug + Send + Sync {
         }
         Ok(())
     }
+
+    /// **Warm-lease fast path (WP-2a step 2): serve the rolling/cycle READ from
+    /// memory too.** The steady-state gate ([`QuotaGuard::check`]) normally
+    /// (a) `get`s the row to make the rolling/cycle decision, THEN (b) atomically
+    /// `check_and_accrue`s. WP-2a step 1 already served (b) from an in-memory
+    /// lease; this method lets a store ALSO serve (a) from memory, so a warm op
+    /// makes ZERO D1 round-trips.
+    ///
+    /// Contract (consulted BEFORE `get`, only for a single billable op of
+    /// `cost_micros` at wall-clock `now_ms`):
+    ///
+    /// - `Ok(Some(true))`  — the store served the op ENTIRELY from an in-memory
+    ///   lease that was already debited durably up front (charge-never-lost) and
+    ///   whose cycle is still current at `now_ms`. The guard returns `Allow`
+    ///   without any `get`/accrue D1 hop. This can NEVER over-serve past the
+    ///   ceiling: the served budget was already debited by the durable atomic
+    ///   `check_and_accrue` at lease-acquire time.
+    /// - `Ok(None)`        — no usable in-memory state (drained/absent lease, a
+    ///   stale cycle, or a store with no lease at all). The guard MUST fall back
+    ///   to the durable `get` + roll/seed/`check_and_accrue` path, which stays
+    ///   the SOLE ceiling authority and the fail-CLOSED gate.
+    /// - `Err(_)`          — an internal fault (e.g. a poisoned lease lock);
+    ///   the guard rejects `503` fail-CLOSED, never fail-open.
+    ///
+    /// The DEFAULT is `Ok(None)`: a store with no in-memory lease (the durable
+    /// [`D1QuotaStore`], the [`InMemoryQuotaStore`]) never short-circuits the
+    /// read, so its behaviour is byte-for-byte unchanged. Only
+    /// [`LeasedQuotaStore`] overrides it.
+    ///
+    /// # Why this cannot weaken any of the five invariants
+    ///
+    /// 1. **charge-never-lost** — untouched: the lease this consumes was debited
+    ///    durably up front by the inner atomic `check_and_accrue`; this method
+    ///    only decrements the already-paid in-memory remainder.
+    /// 2. **never over-SERVE past the ceiling** — untouched: the durable atomic
+    ///    `accrued + delta <= budget` remains the sole ceiling authority; a
+    ///    warm-serve consumes only pre-paid lease budget, and an over-ceiling
+    ///    tenant has no coverable lease → `Ok(None)` → durable path → `402`.
+    /// 3. **fail-CLOSED** — untouched: this method never reaches the inner
+    ///    store, so it cannot mask an outage; a drained/absent lease returns
+    ///    `Ok(None)` and the guard hits the durable path (which `503`s on fault).
+    /// 4. **bounded overshoot** — untouched: no new budget is debited here, so
+    ///    the crash-tail bound (≤ one lease chunk) is exactly as before.
+    /// 5. **cycle correctness** — preserved: a warm serve is granted ONLY when
+    ///    the lease's own cached `cycle_anchor_ms` has NOT elapsed at `now_ms`
+    ///    (`cycle_elapsed(now_ms) == false`). At the cycle boundary the cached
+    ///    cycle is treated as stale → `Ok(None)` → the durable roll path runs.
+    ///    The staleness window is exactly the documented "≤ one lease" bound:
+    ///    the lease is discarded the instant `now_ms` crosses `CYCLE_LENGTH_MS`.
+    async fn try_serve_from_lease(
+        &self,
+        _tenant_id: &str,
+        _cost_micros: i64,
+        _now_ms: i64,
+    ) -> Result<Option<bool>, String> {
+        Ok(None)
+    }
 }
 
 /// Default lease chunk size, in **ops**: how many billable ops one
@@ -726,6 +783,61 @@ impl QuotaStore for LeasedQuotaStore {
     async fn roll_if_stale(&self, tenant_id: &str, now_ms: i64) -> Result<(), String> {
         self.inner.roll_if_stale(tenant_id, now_ms).await
     }
+
+    /// WP-2a step 2: serve the rolling/cycle READ from the in-memory lease too,
+    /// so a warm op makes ZERO D1 round-trips (no inner `get`, no inner
+    /// `check_and_accrue`). See [`QuotaStore::try_serve_from_lease`] for the
+    /// contract and the per-invariant safety argument.
+    ///
+    /// A warm serve is granted ONLY when a lease for this tenant exists whose
+    /// cached cycle has NOT elapsed at `now_ms` AND whose remaining pre-paid
+    /// budget covers this op. In every other case (no lease, drained lease, a
+    /// stale/rolled cycle, non-positive cost) it returns `Ok(None)`, and the
+    /// guard falls back to the durable path — which is the sole ceiling
+    /// authority and the fail-CLOSED gate, exactly as before this optimisation.
+    async fn try_serve_from_lease(
+        &self,
+        tenant_id: &str,
+        cost_micros: i64,
+        now_ms: i64,
+    ) -> Result<Option<bool>, String> {
+        // A non-positive cost is served by the durable path (which clamps it);
+        // do not special-case it here so the two paths stay behaviourally
+        // identical for the zero-cost op.
+        if cost_micros <= 0 {
+            return Ok(None);
+        }
+        let mut leases = self
+            .leases
+            .lock()
+            .map_err(|_| "LeasedQuotaStore: poisoned lock".to_owned())?;
+        if let Some(lease) = leases.get_mut(tenant_id) {
+            // Invariant 5 (cycle correctness): if the lease's OWN cached cycle
+            // has elapsed at `now_ms`, treat the cached state as stale and defer
+            // to the durable roll path (a rolled ceiling is never admitted past
+            // this bounded — ≤ one lease — window). `cycle_elapsed` mirrors the
+            // exact boundary test the guard applies to the durable row, so the
+            // in-memory decision matches the durable one.
+            let cached = QuotaState {
+                // Only the anchor drives the cycle decision; budget/accrued are
+                // not needed here (the lease already carries pre-paid remainder).
+                monthly_budget_usd_micros: 0,
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: lease.cycle_anchor_ms,
+            };
+            if cached.cycle_elapsed(now_ms) {
+                return Ok(None);
+            }
+            // Invariants 1-4: consume only the already-durably-debited remainder;
+            // never over-serve (an op the lease cannot cover falls through to the
+            // durable ceiling authority).
+            if lease.remaining_micros >= cost_micros {
+                lease.remaining_micros -= cost_micros;
+                return Ok(Some(true));
+            }
+        }
+        Ok(None)
+    }
 }
 
 /// The per-tenant monthly $-ceiling gate.
@@ -798,6 +910,30 @@ impl QuotaGuard {
         // A negative cost is a programming error upstream; treat it as 0
         // rather than crediting the tenant.
         let cost = cost_micros.max(0);
+
+        // WP-2a step 2 — WARM-LEASE FAST PATH (ZERO D1 hops): before the `get`
+        // READ, ask the store whether it can serve this op entirely from an
+        // in-memory lease that was already debited durably up front and whose
+        // cycle is still current. When it can (`Ok(Some(true))`), the whole gate
+        // resolves in memory — no `get`, no `check_and_accrue` D1 round-trip —
+        // and this is the common CAS hot-path outcome. A store with no lease
+        // (the durable `D1QuotaStore`, the in-memory test store) returns
+        // `Ok(None)` and we fall through to the exact durable path below, so no
+        // invariant changes: the warm serve consumes only pre-paid lease budget
+        // (never over-serves past the ceiling), and any drained/absent/stale
+        // lease or store fault defers to (or fail-CLOSES on) the durable
+        // authority. See [`QuotaStore::try_serve_from_lease`].
+        match self.store.try_serve_from_lease(tenant, cost, now_ms).await {
+            Ok(Some(true)) => return None,
+            // `Ok(Some(false))` is not part of the contract (a store either
+            // serves warm or defers); treat it defensively as "defer".
+            Ok(Some(false)) | Ok(None) => {}
+            Err(_) => {
+                return Some(crate::quota_error::quota_unavailable_response(
+                    "quota store unavailable",
+                ));
+            }
+        }
 
         // Load the current quota row (or treat a missing row as a fresh
         // default-tripwire tenant). Store error ⇒ 503.
@@ -1815,6 +1951,362 @@ mod tests {
             "concurrent inner debit ({debited}) must cover all served ({}) — no \
              double-spend / over-serve",
             served * COST
+        );
+    }
+
+    // ───────────── WP-2a step 2: warm-lease READ served from memory ─────────────
+
+    /// An inner [`QuotaStore`] that delegates to a real [`InMemoryQuotaStore`]
+    /// but COUNTS every `get` READ — the read-amortisation oracle. This is the
+    /// spy that proves the per-op D1 `get` is GONE on the warm path: after a
+    /// lease is acquired, subsequent warm ops must NOT increment this counter.
+    #[derive(Debug)]
+    struct GetCountingStore {
+        inner: InMemoryQuotaStore,
+        get_calls: AtomicUsize,
+        ceiling_calls: AtomicUsize,
+    }
+
+    impl GetCountingStore {
+        fn new() -> Self {
+            Self {
+                inner: InMemoryQuotaStore::new(),
+                get_calls: AtomicUsize::new(0),
+                ceiling_calls: AtomicUsize::new(0),
+            }
+        }
+        fn gets(&self) -> usize {
+            self.get_calls.load(Ordering::SeqCst)
+        }
+        fn ceiling(&self) -> usize {
+            self.ceiling_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    #[axum::async_trait]
+    impl QuotaStore for GetCountingStore {
+        async fn get(&self, tenant_id: &str) -> Result<Option<QuotaState>, String> {
+            let _ = self.get_calls.fetch_add(1, Ordering::SeqCst);
+            self.inner.get(tenant_id).await
+        }
+        async fn put(
+            &self,
+            tenant_id: &str,
+            state: QuotaState,
+            updated_at_ms: i64,
+        ) -> Result<(), String> {
+            self.inner.put(tenant_id, state, updated_at_ms).await
+        }
+        async fn accrue(
+            &self,
+            tenant_id: &str,
+            delta_micros: i64,
+            seed_anchor_ms: i64,
+            updated_at_ms: i64,
+        ) -> Result<(), String> {
+            self.inner
+                .accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+                .await
+        }
+        async fn check_and_accrue(
+            &self,
+            tenant_id: &str,
+            delta_micros: i64,
+            seed_anchor_ms: i64,
+            updated_at_ms: i64,
+        ) -> Result<bool, String> {
+            let _ = self.ceiling_calls.fetch_add(1, Ordering::SeqCst);
+            self.inner
+                .check_and_accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+                .await
+        }
+        async fn seed_checked_accrue(
+            &self,
+            tenant_id: &str,
+            delta_micros: i64,
+            seed_anchor_ms: i64,
+            updated_at_ms: i64,
+        ) -> Result<bool, String> {
+            let _ = self.ceiling_calls.fetch_add(1, Ordering::SeqCst);
+            self.inner
+                .seed_checked_accrue(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms)
+                .await
+        }
+    }
+
+    /// SPY-PROOF the per-op D1 `get` is GONE on the warm path (the core WP-2a
+    /// step-2 deliverable). N ops within lease chunks of `LEASE_OPS` cause only
+    /// `ceil(N / LEASE_OPS)` inner `get` READS — not one per op — AND the same
+    /// `ceil(N / LEASE_OPS)` ceiling-guarded writes. Warm ops between refills
+    /// make ZERO D1 round-trips of EITHER kind.
+    #[tokio::test]
+    async fn warm_lease_serves_read_from_memory_no_per_op_get() {
+        const LEASE_OPS: i64 = 4;
+        const COST: i64 = 1_000;
+        let spy = Arc::new(GetCountingStore::new());
+        spy.inner.seed(
+            "t-warm",
+            QuotaState {
+                monthly_budget_usd_micros: 100 * COST, // generous — never trips
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(spy.clone(), LEASE_OPS, COST));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(leased, clock);
+
+        // 10 ops, 4-op lease → ceil(10/4)=3 refills. Each refill does ONE `get`
+        // + ONE ceiling write; the 7 warm ops in between do NEITHER.
+        for _ in 0..10 {
+            assert!(guard.check("t-warm", COST).await.is_none());
+        }
+        assert_eq!(
+            spy.gets(),
+            3,
+            "the per-op D1 `get` is GONE: 10 ops with a 4-op lease hit `get` only \
+             ceil(10/4)=3 times (once per refill), NOT once per op"
+        );
+        assert_eq!(
+            spy.ceiling(),
+            3,
+            "ceiling-guarded writes also amortised to ceil(10/4)=3"
+        );
+        // Total D1 round-trips for 10 ops = 3 gets + 3 writes = 6, i.e. the 7
+        // warm ops made ZERO D1 round-trips.
+        assert_eq!(
+            spy.gets() + spy.ceiling(),
+            6,
+            "the 7 warm ops between refills made ZERO D1 round-trips"
+        );
+    }
+
+    /// INVARIANT 2 (never over-SERVE): the warm-read fast path must NOT admit an
+    /// over-ceiling op. A tenant whose lease is drained AND whose durable row is
+    /// at the ceiling is refused 402 — the durable atomic stays the sole ceiling
+    /// authority even with the read served from memory.
+    #[tokio::test]
+    async fn warm_read_still_refuses_over_ceiling_402() {
+        const LEASE_OPS: i64 = 8;
+        const COST: i64 = 1_000_000; // $1/op
+        let spy = Arc::new(GetCountingStore::new());
+        // Budget exactly $3 → at most 3 ops ever, on a fresh cycle.
+        spy.inner.seed(
+            "t-cap2",
+            QuotaState {
+                monthly_budget_usd_micros: 3_000_000,
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(spy.clone(), LEASE_OPS, COST));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(leased, clock);
+
+        // The $3 ceiling admits exactly 3 ops. The 8-op chunk overshoots $3, so
+        // the partial-lease fallback halves (8→4→2) to a 2-op chunk that fits —
+        // so a warm op is served between refills, but the lease is small. What
+        // this test PROVES is invariant 2: no matter how the read is served, the
+        // 4th op is refused 402 (the durable atomic is the sole ceiling
+        // authority) AND at least one op was served warm from memory.
+        assert!(guard.check("t-cap2", COST).await.is_none()); // op1: refill (get)
+        assert!(guard.check("t-cap2", COST).await.is_none()); // op2: warm (no get)
+        assert!(guard.check("t-cap2", COST).await.is_none()); // op3: refill (get)
+        // 4th op: durable row now at the $3 ceiling → the warm path cannot cover
+        // it → durable path → atomic ceiling refuses → 402. The read served from
+        // memory did NOT let an over-ceiling op slip through.
+        let resp = guard.check("t-cap2", COST).await.expect("4th op over ceiling");
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+        // Fewer gets than ops (4 ops, 3 gets): op2 was served warm from memory —
+        // proving the read is served from the lease, WITHOUT ever admitting the
+        // over-ceiling 4th op (invariant 2 holds with the read served warm).
+        assert!(
+            spy.gets() < 4,
+            "at least one op was served warm from memory — fewer gets ({}) than ops (4)",
+            spy.gets()
+        );
+    }
+
+    /// INVARIANT 3 (fail-CLOSED): a drained lease + an unreachable inner store
+    /// refuses 503 — the warm-read path cannot mask an outage, because a drained
+    /// lease returns `Ok(None)` and the guard hits the (now-erroring) durable
+    /// path. Reuses [`ErrorAfterFirstLease`].
+    #[tokio::test]
+    async fn warm_read_drained_then_inner_error_fail_closed_503() {
+        const LEASE_OPS: i64 = 2;
+        const COST: i64 = 1_000;
+        let store = ErrorAfterFirstLease {
+            inner: InMemoryQuotaStore::new(),
+            seen_first_refill: AtomicUsize::new(0),
+        };
+        store.inner.seed(
+            "t-503b",
+            QuotaState {
+                monthly_budget_usd_micros: 100 * COST,
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(Arc::new(store), LEASE_OPS, COST));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(leased, clock);
+
+        // Op1: no lease → refill (2-op lease). Op2: warm from memory (no inner
+        // call, so no error). Op3: lease drained → refill → inner errors → 503.
+        assert!(guard.check("t-503b", COST).await.is_none());
+        assert!(guard.check("t-503b", COST).await.is_none()); // warm, in-memory
+        let resp = guard.check("t-503b", COST).await.expect("refill error → 503");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    /// INVARIANT 3b (fail-CLOSED on a poisoned lease lock): if
+    /// `try_serve_from_lease` itself errors, the guard rejects 503, never
+    /// fail-open. Driven by a fake whose warm path returns `Err`.
+    #[derive(Debug)]
+    struct WarmErrStore;
+    #[axum::async_trait]
+    impl QuotaStore for WarmErrStore {
+        async fn get(&self, _t: &str) -> Result<Option<QuotaState>, String> {
+            Ok(None)
+        }
+        async fn put(&self, _t: &str, _s: QuotaState, _u: i64) -> Result<(), String> {
+            Ok(())
+        }
+        async fn accrue(&self, _t: &str, _d: i64, _a: i64, _u: i64) -> Result<(), String> {
+            Ok(())
+        }
+        async fn try_serve_from_lease(
+            &self,
+            _tenant_id: &str,
+            _cost_micros: i64,
+            _now_ms: i64,
+        ) -> Result<Option<bool>, String> {
+            Err("simulated poisoned lease lock".to_owned())
+        }
+    }
+
+    #[tokio::test]
+    async fn warm_read_lease_lock_error_fail_closed_503() {
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(Arc::new(WarmErrStore), clock);
+        let resp = guard.check("t-warmerr", 1_000).await.expect("warm err → 503");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    /// INVARIANT 4 (bounded overshoot unchanged): serving the READ from memory
+    /// debits NO new budget, so the durable over-charge stays bounded by exactly
+    /// one lease chunk — identical to WP-2a step 1. 10 ops, 4-op lease.
+    #[tokio::test]
+    async fn warm_read_overshoot_still_bounded_one_chunk() {
+        const LEASE_OPS: i64 = 4;
+        const COST: i64 = 1_000;
+        let inner = Arc::new(InMemoryQuotaStore::new());
+        inner.seed(
+            "t-bound",
+            QuotaState {
+                monthly_budget_usd_micros: 1_000 * COST,
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(leased, clock);
+
+        let ops = 10_i64;
+        for _ in 0..ops {
+            assert!(guard.check("t-bound", COST).await.is_none());
+        }
+        let debited = inner.get("t-bound").await.unwrap().unwrap().accrued_usd_micros;
+        let served = ops * COST;
+        assert!(debited >= served, "charge-never-lost: debited ≥ served");
+        assert!(
+            debited <= served + LEASE_OPS * COST,
+            "over-charge still bounded by one lease chunk even with the read served warm"
+        );
+    }
+
+    /// INVARIANT 5 (cycle correctness within the documented staleness): once
+    /// `now_ms` crosses the lease's own cycle boundary, the warm path treats the
+    /// cached cycle as STALE and defers to the durable roll — a rolled ceiling is
+    /// never admitted warm past the ≤ one-lease window. Proven by accounting: the
+    /// post-roll op debits the FRESHLY-RESET inner row (would be free from the
+    /// stale lease if the cycle check were missing).
+    #[tokio::test]
+    async fn warm_read_stale_cycle_defers_to_durable_roll() {
+        const LEASE_OPS: i64 = 8;
+        const COST: i64 = 1_000_000; // $1/op
+        let inner = Arc::new(InMemoryQuotaStore::new());
+        inner.seed(
+            "t-cycle",
+            QuotaState {
+                monthly_budget_usd_micros: 5_000_000, // $5
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let leased: Arc<dyn QuotaStore> =
+            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+
+        // Cycle 1: one op pre-buys a lease (8-op chunk $8 > $5 → partial 4-op
+        // $4 chunk fits). The lease has remaining budget banked (3 ops).
+        let clock1 = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard1 = QuotaGuard::new(leased.clone(), clock1);
+        assert!(guard1.check("t-cycle", COST).await.is_none());
+        assert_eq!(
+            inner.get("t-cycle").await.unwrap().unwrap().accrued_usd_micros,
+            4_000_000,
+            "cycle-1 partial lease debited a 4-op chunk (banked remainder exists)"
+        );
+
+        // Advance one full cycle. The stale lease (anchored at T0) still has
+        // banked remainder, but its cycle has elapsed at `later`. The warm path
+        // MUST defer (cycle_elapsed → Ok(None)) so the durable roll runs and the
+        // op debits the fresh cycle — it is NOT served free from the stale lease.
+        let later = T0 + u64::try_from(CYCLE_LENGTH_MS).unwrap() + 1;
+        let clock2 = Arc::new(InMemoryFakeWallClock::at_unix_ms(later));
+        let guard2 = QuotaGuard::new(leased, clock2);
+        assert!(guard2.check("t-cycle", COST).await.is_none());
+        let post = inner.get("t-cycle").await.unwrap().unwrap();
+        assert!(
+            post.cycle_anchor_ms != i64::try_from(T0).unwrap(),
+            "the inner cycle rolled (anchor advanced past T0)"
+        );
+        assert!(
+            post.accrued_usd_micros > 0,
+            "post-roll op debited the fresh inner cycle — the warm path did NOT \
+             serve it free from the stale-cycle lease"
+        );
+    }
+
+    /// Control: a store WITHOUT a lease (the durable/in-memory store) inherits
+    /// the `Ok(None)` default, so the read is NOT short-circuited and behaviour
+    /// is byte-for-byte the pre-WP-2a-step-2 path (one `get` per op).
+    #[tokio::test]
+    async fn no_lease_store_still_reads_per_op() {
+        let spy = Arc::new(GetCountingStore::new());
+        spy.inner.seed(
+            "t-nolease",
+            QuotaState {
+                monthly_budget_usd_micros: 100_000,
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        // NOTE: no LeasedQuotaStore wrapper — the spy IS the store.
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let guard = QuotaGuard::new(spy.clone(), clock);
+        for _ in 0..5 {
+            assert!(guard.check("t-nolease", 1_000).await.is_none());
+        }
+        assert_eq!(
+            spy.gets(),
+            5,
+            "a store without a lease inherits the Ok(None) default → one `get` per op"
         );
     }
 }

@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **CAS quota hot-path now makes ZERO D1 round-trips warm (#368 WP-2a residual).** The quota lease already
+  removed the per-op D1 accrue-WRITE; this removes the last per-op D1 hop — the rolling-decision `get()` READ.
+  `QuotaGuard::check` first tries `try_serve_from_lease`: a warm lease with pre-paid budget (and an
+  un-rolled cycle) debits in-memory and proceeds with no D1, falling through to the durable get+atomic-accrue
+  path on lease drain/absence/cycle-roll and 503 fail-closed on error. Invariants preserved (charge-never-lost,
+  never-over-serve — durable atomic `accrued+delta<=budget` stays the sole ceiling authority, fail-closed,
+  overshoot ≤1 chunk, cycle correctness); a spy test proves the warm path makes no per-op inner `get`.
 - **Auto-provision the `tenant_org_map` on signup (go-live A1 — no manual step).** The signup-worker's Clerk
   provisioning flow now writes the `clerk_org_id → tenant_id` mapping row that `resolve-tenant` reads, so an
   arbitrary new user gets an isolated tenant AND a resolvable identity mapping first-try — no owner/operator
