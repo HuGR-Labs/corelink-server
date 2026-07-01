@@ -28,6 +28,7 @@
 
 import { verifyToken } from "@clerk/backend";
 import type { Env } from "../index.js";
+import { provisionOrLookupGithugrTenant } from "./githugr_provision.js";
 
 /**
  * Shared azp allowlist for Clerk session verification (M1).
@@ -107,23 +108,26 @@ export async function verifyClerkSessionAndResolveTenant(
   }
 
   // ── Multi-issuer (opt-in, exchange paths only) ──────────────────────────────
-  // The exchange/token-exchange seams (Option B) accept sessions from the SEPARATE
-  // githugr Clerk instance (`clerk.githugr.com`) IN ADDITION to CoreLink's. We
-  // route by the UNVERIFIED issuer (peeked for routing only — the real signature
-  // verify happens inside `verifyGithugrSession`), and ONLY when the caller opted
-  // in AND all three githugr settings are configured. This NEVER touches the
-  // shared `CLERK_ISSUER_URL` path below (dashboard/onboarding stay CoreLink-only),
-  // so it cannot break CoreLink's own login. githugr is ONE CoreLink tenant
-  // (owner-ratified Option B): a githugr session resolves to the fixed
-  // `GITHUGR_TENANT_ID`, NOT a per-user `clerk_user_id` lookup.
+  // The exchange/token-exchange seams accept sessions from the SEPARATE githugr
+  // Clerk instance (`clerk.githugr.com`) IN ADDITION to CoreLink's. We route by
+  // the UNVERIFIED issuer (peeked for routing only — the real signature verify
+  // happens inside `verifyGithugrSession`), and ONLY when the caller opted in AND
+  // both real githugr settings (issuer + public jwtKey) are configured. This
+  // NEVER touches the shared `CLERK_ISSUER_URL` path below (dashboard/onboarding
+  // stay CoreLink-only), so it cannot break CoreLink's own login.
+  //
+  // PILOT ISOLATION FIX: a githugr session no longer resolves to a single fixed
+  // tenant. `verifyGithugrSession` now PROVISIONS-OR-LOOKS-UP a per-user isolated
+  // tenant keyed on the verified Clerk `sub` (githugr runs its own Clerk, so the
+  // CoreLink signup-worker auto-provision never fires for these users). The
+  // routing gate therefore no longer requires `GITHUGR_TENANT_ID` — that legacy
+  // shared-tenant secret is dead (see `verifyGithugrSession`).
   if (
     opts?.allowGithugrIssuer &&
     env.GITHUGR_CLERK_ISSUER_URL &&
     env.GITHUGR_CLERK_ISSUER_URL.length > 0 &&
     env.GITHUGR_CLERK_JWT_KEY &&
     env.GITHUGR_CLERK_JWT_KEY.length > 0 &&
-    env.GITHUGR_TENANT_ID &&
-    env.GITHUGR_TENANT_ID.length > 0 &&
     peekUnverifiedIssuer(sessionToken) === env.GITHUGR_CLERK_ISSUER_URL
   ) {
     return verifyGithugrSession(sessionToken, env, requestId);
@@ -307,19 +311,34 @@ function peekUnverifiedIssuer(token: string): string | undefined {
 }
 
 /**
- * Verify a session minted by the **githugr** Clerk instance and resolve it to the
- * FIXED githugr CoreLink tenant (Option B — githugr is ONE CoreLink tenant; the
- * forge does its own per-user isolation using the passed-through `clerkUserId` =
- * principal). Networkless verification via githugr's PUBLIC `jwtKey` — no githugr
- * secret crosses into CoreLink. The caller has already confirmed the three
- * `GITHUGR_*` settings are present and that the unverified issuer matches; this
- * re-verifies signature + azp + issuer authoritatively (fail-CLOSED on any miss).
+ * Verify a session minted by the **githugr** Clerk instance and resolve it to a
+ * PER-USER ISOLATED CoreLink tenant.
+ *
+ * PILOT ISOLATION FIX (was: fixed `GITHUGR_TENANT_ID` for every githugr user).
+ * githugr runs its OWN Clerk instance, so the CoreLink signup-worker's
+ * `user.created` auto-provision never fires for these users — the old code
+ * therefore mapped EVERY githugr session to one shared tenant, giving NO
+ * isolation between githugr users. This now makes the exchange itself the
+ * provisioning authority: it derives a DETERMINISTIC tenant_id from the verified
+ * Clerk `sub` and PROVISIONS-OR-LOOKS-UP that isolated tenant (with its full
+ * 5-family row-set) on `CONFIG_DB`, idempotently.
+ *
+ * Networkless verification via githugr's PUBLIC `jwtKey` — no githugr secret
+ * crosses into CoreLink. The caller has already confirmed the two githugr
+ * settings (issuer + jwtKey) are present and that the unverified issuer matches;
+ * this re-verifies signature + azp + issuer authoritatively (fail-CLOSED on any
+ * miss).
+ *
+ * FAIL-CLOSED (isolation-critical): ANY D1 error during provision/lookup returns
+ * a 500 — NEVER a fall-back to a shared tenant (that fall-back is the exact
+ * isolation break this fixes).
  */
 async function verifyGithugrSession(
   sessionToken: string,
   env: Env,
   requestId: string,
 ): Promise<ClerkAuthResult> {
+  let clerkUserId: string;
   try {
     const claims = await verifyToken(sessionToken, {
       jwtKey: env.GITHUGR_CLERK_JWT_KEY,
@@ -356,16 +375,31 @@ async function verifyGithugrSession(
         response: reapiError("UNAUTHORIZED", "clerk session missing subject", 401, requestId),
       };
     }
-
-    // Option B: every githugr session resolves to the single configured githugr
-    // tenant. `clerkUserId` (= the Clerk `sub`) flows through as the principal so
-    // the forge can isolate users WITHIN that one tenant. No clerk_user_id → tenant
-    // D1 lookup (githugr users are NOT individual CoreLink tenants).
-    return { ok: true, tenantId: env.GITHUGR_TENANT_ID as string, clerkUserId: claims.sub };
+    clerkUserId = claims.sub;
   } catch {
+    // A verification failure (bad signature / expired / wrong azp / wrong issuer)
+    // is a 401 — never surface the detail.
     return {
       ok: false,
       response: reapiError("UNAUTHORIZED", "invalid clerk session", 401, requestId),
+    };
+  }
+
+  // PROVISION-OR-LOOKUP the per-user isolated tenant, keyed on the verified `sub`.
+  // Deterministic tenant_id ⇒ idempotent re-login (same sub → same tenant); the
+  // read-back of `tenant_org_map` is authoritative (a prior login's row wins).
+  //
+  // FAIL-CLOSED: a D1 fault here is a 500 — we do NOT fall back to any shared
+  // tenant (that would re-open the exact multi-user isolation break this fixes).
+  try {
+    const tenantId = await provisionOrLookupGithugrTenant(env.CONFIG_DB, clerkUserId);
+    return { ok: true, tenantId, clerkUserId };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    console.error(`[${requestId}] githugr tenant provision/lookup failed: ${message.slice(0, 80)}`);
+    return {
+      ok: false,
+      response: reapiError("INTERNAL_ERROR", "tenant resolution error", 500, requestId),
     };
   }
 }
