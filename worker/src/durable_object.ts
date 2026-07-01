@@ -593,6 +593,10 @@ export class CoreLinkServer implements DurableObject {
           // reusing the erasure-attestation seed/key above when unset).
           AUDIT_CHAIN_SIGNING_SEED_HEX: this.env.AUDIT_CHAIN_SIGNING_SEED_HEX ?? "",
           AUDIT_CHAIN_SIGNING_KEY_ID: this.env.AUDIT_CHAIN_SIGNING_KEY_ID ?? "",
+          // CTRL-PRIV-001: server-held salt for the email_hash pseudonym. Unset →
+          // legacy unsalted SHA-256 (zero regression); set → HMAC-SHA256. MUST be
+          // forwarded or the container can't see it when the owner registers it.
+          EMAIL_HASH_SALT: this.env.EMAIL_HASH_SALT ?? "",
           ERASURE_ATTESTATION_REGION: this.env.ERASURE_ATTESTATION_REGION ?? "",
           // Brutal-audit #1 fix: the single-region assertion flag gates whether a
           // post-deletion attestation may sign with the env-default region. MUST be

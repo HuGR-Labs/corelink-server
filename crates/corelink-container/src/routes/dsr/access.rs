@@ -118,12 +118,15 @@ const CONTENT_IMMUTABLE_TABLES: &[&str] = &[
     "hot_blobs",
 ];
 
-/// Canonical pseudonymized email hash (matches `customer_d1` team-invite + the
-/// signup-worker `emailHashFor`): SHA-256 of the trimmed, lowercased email,
-/// hex-encoded. The raw email is NEVER stored (CTRL-PRIV-001).
+/// Canonical pseudonymized email hash (CTRL-PRIV-001) — delegates to the ONE
+/// shared [`crate::email_hash::hash_email`] so this rectification site stays
+/// byte-identical to the `customer_d1` team-invite write (and the signup-worker
+/// `emailHashFor` accept-match): normalized email, HMAC-SHA256 under
+/// `EMAIL_HASH_SALT` when set, else unsalted SHA-256. The raw email is NEVER
+/// stored.
 #[must_use]
-pub(super) fn email_hash(email: &str) -> String {
-    hex::encode(Sha256::digest(email.trim().to_lowercase().as_bytes()))
+pub(crate) fn email_hash(email: &str) -> String {
+    crate::email_hash::hash_email(email)
 }
 
 /// Whether `col` names secret/credential material that must be redacted.
@@ -747,6 +750,9 @@ mod tests {
     /// NotEditable; the allowlisted email field → a hashing UPDATE plan.
     #[test]
     fn rectify_rejects_content_and_non_editable_allows_email() {
+        // `email_hash` reads process-global `EMAIL_HASH_SALT`; hold the shared
+        // lock (forces it UNSET) so the unsalted assertion below is stable.
+        let _env = crate::email_hash::EnvGuard::acquire();
         // Cache content is immutable.
         let r = classify_rectify("blob_meta", "digest", "x");
         assert!(matches!(r, Err(RectifyReject::ContentImmutable(_))));
@@ -787,8 +793,18 @@ mod tests {
 
     #[test]
     fn email_hash_matches_canonical_scheme() {
-        // Must equal hex(sha256(trim+lowercase)) — the customer_d1 / signup-worker scheme.
+        let env = crate::email_hash::EnvGuard::acquire(); // salt UNSET
+        // Unsalted: equals hex(sha256(trim+lowercase)) — pre-salt parity.
         let want = hex::encode(Sha256::digest(b"user@example.com"));
         assert_eq!(email_hash("  USER@Example.com  "), want);
+
+        // Matching invariant: this rectification site routes through the ONE
+        // shared helper, so it equals it in BOTH modes (hence equals the
+        // customer_d1 write site, which also delegates to the helper).
+        assert_eq!(email_hash("user@example.com"), crate::email_hash::hash_email("user@example.com"));
+        env.set_salt("the-server-salt");
+        assert_eq!(email_hash("user@example.com"), crate::email_hash::hash_email("user@example.com"));
+        // Under a salt the pseudonym is no longer the rainbow-attackable SHA-256.
+        assert_ne!(email_hash("user@example.com"), want);
     }
 }

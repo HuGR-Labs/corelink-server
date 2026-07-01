@@ -123,6 +123,14 @@ Each entry cross-references:
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
 ### Security
+- **CTRL-PRIV-001 `email_hash` is now salted (enterprise-DD MED — un-salted hash was rainbow-attackable).** A
+  single shared `email_hash::hash_email` helper (every site delegates: team-invite WRITE, accept-time MATCH,
+  DSR Art.16 rectification) now HMAC-SHA256s the normalized email under a server-held `EMAIL_HASH_SALT` when
+  set; UNSET/empty → the legacy `SHA-256(normalized)` (BYTE-IDENTICAL to the prior scheme → zero regression
+  until the salt is registered). `EMAIL_HASH_SALT` is forwarded to the container via the DO env + registered
+  in the secrets matrix (row 171). Forward-only (raw email never stored → no retro-salt; set during a quiet
+  window); ⚠️ the signup-worker `emailHashFor` (TS) must read the same salt for salted invites to bind
+  (cross-language parity follow-up). 6 helper tests (no-regression + salted-differs + matching-invariant).
 - **admin-ui CSP was silently disabled in prod — now restored (found while fixing the red e2e gate).** The
   Next.js middleware lived at the package root (`apps/admin-ui/middleware.ts`) but the App Router is under
   `src/`, so Next.js **ignored it and emitted NO `Content-Security-Policy` header at all** (dev + prod) — the

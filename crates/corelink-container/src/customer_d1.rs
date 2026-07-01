@@ -77,7 +77,6 @@ use corelink_pat::{
     SCOPE_CACHE_RW,
 };
 use serde_json::{json, Value};
-use sha2::{Digest as _, Sha256};
 use uuid::Uuid;
 
 use crate::storage::d1_http::{D1HttpClient, D1Row};
@@ -1258,7 +1257,11 @@ impl CustomerTeamHandler for D1CustomerHandler {
         // signup-worker `acceptTeamInvitation` (C-ACCEPT, `emailHashFor`) matches on,
         // and it normalizes identically; without it an invite to `Alice@Example.com`
         // would never flip to `active` when Clerk delivers `alice@example.com`.
-        let email_hash = hex::encode(Sha256::digest(req.email.trim().to_lowercase().as_bytes()));
+        // ONE canonical scheme (CTRL-PRIV-001): HMAC-SHA256 under `EMAIL_HASH_SALT`
+        // when set, else unsalted SHA-256 (pre-salt parity). The DSR rectification
+        // and the signup-worker accept-match MUST use the SAME helper, or the join
+        // key diverges. Normalization (trim+lowercase) lives inside the helper.
+        let email_hash = crate::email_hash::hash_email(&req.email);
         // The role is collapsed onto the FROZEN 0074 CHECK domain (CHECK-safe).
         let role = normalize_invite_role(&req.role);
         // No real Clerk user_id exists yet (OB-1) — `team_member.user_id` is NOT
@@ -2699,6 +2702,10 @@ mod tests {
         // WP-T2: invite() is now D1-PURE — it INSERTs an `invited` team_member row
         // (status `invited`, pseudonymized email_hash, CHECK-safe role) and returns
         // the new member; NO synchronous Clerk call (OB-1).
+        //
+        // EMAIL_HASH_SALT is process-global: hold the shared lock (forces salt
+        // UNSET) so a concurrent salted test can't perturb the bind below.
+        let _env = crate::email_hash::EnvGuard::acquire();
         let f = fixture_with(MockD1::with(vec![]), None);
         let resp = f
             .handler
@@ -2724,10 +2731,12 @@ mod tests {
         assert!(insert.0.contains("'invited'"), "row must be status=invited");
         // binds: tenant, user_id(placeholder UUID), email_hash, role, invited_by, invited_at_ms.
         assert_eq!(insert.1[0], json!(TENANT));
-        // CTRL-PRIV-001: the raw email is NEVER a bind value — only its SHA-256 hash
-        // of the NORMALIZED (trim+lowercase) email — the exact join key the
-        // signup-worker accept side matches on (C-ACCEPT parity).
-        let expected_hash = hex::encode(Sha256::digest(b"alice@example.com"));
+        // CTRL-PRIV-001: the raw email is NEVER a bind value — only the canonical
+        // pseudonymized hash of the NORMALIZED (trim+lowercase) email, computed by
+        // the ONE shared helper (the exact join key the rectification + signup-worker
+        // accept side match on — C-ACCEPT parity). Asserting against the helper proves
+        // the WRITE site routes through the single source of truth (matching invariant).
+        let expected_hash = crate::email_hash::hash_email("alice@example.com");
         assert_eq!(insert.1[2], json!(expected_hash));
         for bind in &insert.1 {
             assert_ne!(
