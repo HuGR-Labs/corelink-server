@@ -20,7 +20,11 @@
  * before we ack.
  */
 
-import { insertTenant, acceptTeamInvitation } from "../lib/d1.js";
+import {
+  insertTenant,
+  insertTenantOrgMap,
+  acceptTeamInvitation,
+} from "../lib/d1.js";
 
 export interface ClerkUserCreatedEvent {
   type: "user.created";
@@ -33,6 +37,14 @@ export interface ClerkUserCreatedEvent {
       username?: string | null;
     }>;
     username?: string | null;
+    /**
+     * Clerk organization id (`org_...`) when the provisioning event is scoped to
+     * an org. A plain individual `user.created` carries none — those principals
+     * fall back to the user `id` (sub) as the `tenant_org_map` key. See
+     * {@link orgMapKeyFor}.
+     */
+    organization_id?: string | null;
+    org_id?: string | null;
   };
 }
 
@@ -625,6 +637,25 @@ export function tenantSlugFor(user: ClerkUserCreatedEvent["data"]): string {
 }
 
 /**
+ * The `tenant_org_map` key for this provisioning event — the Clerk principal
+ * identifier githugr scopes a token to (A1 auto-provision, frozen decision).
+ *
+ * Prefer the Clerk **org id** (`organization_id`, else `org_id`) when the event
+ * carries one; otherwise fall back to the user `id` (`sub`). Individual pilot
+ * users have no org, so the sub fallback guarantees EVERY principal maps to its
+ * isolated tenant — which is exactly what `resolve-tenant` looks up (a missing
+ * row is the `org_not_mapped` lockout A1 closes).
+ *
+ * NOTE (githugr contract): "org_id else sub" is a githugr token-scoping
+ * contract; confirm it matches what githugr's Option-B token exchange scopes to.
+ */
+export function orgMapKeyFor(user: ClerkUserCreatedEvent["data"]): string {
+  const org = user.organization_id ?? user.org_id;
+  if (typeof org === "string" && org.length > 0) return org;
+  return user.id;
+}
+
+/**
  * The new user's primary email address (the one a team invitation was sent to),
  * or null when the payload carries no usable address. Mirrors `tenantSlugFor`'s
  * primary-address selection: prefer `primary_email_address_id`, else the first.
@@ -737,6 +768,18 @@ export async function autoProvisionFromClerkEvent(input: {
   svixId: string;
   api: ApiClient;
   analytics: AnalyticsEmitter;
+  /**
+   * A1 auto-provision: write the `tenant_org_map` row (`clerk_org_id →
+   * tenant_id`) that `resolve-tenant` reads. Called with the resolved principal
+   * key (org_id else sub, per {@link orgMapKeyFor}) and the created tenant id.
+   *
+   * LOAD-BEARING: if this throws, the whole provision throws so the webhook
+   * returns non-2xx and Svix retries — a tenant WITHOUT its map row is the exact
+   * `org_not_mapped` lockout A1 fixes, so it must NOT be swallowed. Idempotent
+   * on retry (`INSERT OR IGNORE`). Absent (dev/CI without CONFIG_DB) → the map
+   * write is a no-op, mirroring the other D1 writes in this flow.
+   */
+  writeOrgMap?: (clerkOrgId: string, tenantId: string) => Promise<void>;
 }): Promise<AutoProvisionResult> {
   const user = input.event.data;
   const name = tenantSlugFor(user);
@@ -762,6 +805,18 @@ export async function autoProvisionFromClerkEvent(input: {
     name,
     svix_id: input.svixId,
   });
+
+  // 1b. A1 auto-provision: write the tenant_org_map row (clerk_org_id →
+  //     tenant_id) that POST /internal/v1/auth/resolve-tenant reads. WITHOUT
+  //     this, resolve-tenant 404s `org_not_mapped` for every real new user and
+  //     locks them out — so it is part of "provisioning COMPLETE" (tenant AND
+  //     PAT AND map), NOT best-effort. The key is the Clerk principal id githugr
+  //     scopes a token to: org_id if present, else the user sub (orgMapKeyFor).
+  //     If writeOrgMap throws, it propagates out of this function → the webhook
+  //     returns non-2xx and Svix retries (idempotent: INSERT OR IGNORE).
+  if (input.writeOrgMap) {
+    await input.writeOrgMap(orgMapKeyFor(user), tenant.id);
+  }
 
   // 2. Configure region + plan.
   await input.api.configureTenant(tenant.id, region, "free");
@@ -962,12 +1017,29 @@ export async function handleClerkWebhook(
   }
 
   try {
+    // A1 auto-provision: the real tenant_org_map writer. Bound only when
+    // CONFIG_DB is present (prod/deployed); in dev/CI without the binding it is
+    // undefined and the map write is a no-op (like the other D1 writes here).
+    // A D1 failure here PROPAGATES (insertTenantOrgMap does not swallow) → the
+    // catch below maps it to 500 and Svix retries; the map row is load-bearing.
+    const configDb = env.CONFIG_DB;
+    const writeOrgMap = configDb
+      ? async (clerkOrgId: string, tenantId: string): Promise<void> => {
+          await insertTenantOrgMap(configDb, {
+            clerkOrgId,
+            tenantId,
+            nowMs: Date.now(),
+          });
+        }
+      : undefined;
+
     const result = await autoProvisionFromClerkEvent({
       event,
       colo,
       svixId,
       api: apiFactory(env),
       analytics: d1AnalyticsEmitter(env.ANALYTICS_DB),
+      writeOrgMap,
     });
 
     // WP-T3 (ADR-S33-001 WP-4): if this new user was invited to a team, flip the
