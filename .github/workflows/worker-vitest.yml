@@ -29,7 +29,9 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm ci
+        # package-lock.json is gitignored (.gitignore **/package-lock.json), so
+        # `npm ci` cannot run — use `npm install` like the other node workflows.
+        run: npm install
 
       - name: Run vitest (node config)
         run: npx vitest run
