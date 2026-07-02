@@ -608,6 +608,10 @@ export class CoreLinkServer implements DurableObject {
           // legacy unsalted SHA-256 (zero regression); set → HMAC-SHA256. MUST be
           // forwarded or the container can't see it when the owner registers it.
           EMAIL_HASH_SALT: this.env.EMAIL_HASH_SALT ?? "",
+          // Optional launch coupon id. Set → checkout pre-applies discounts[0][coupon]
+          // (clean checkout→$0); unset → allow_promotion_codes=true (promo-code field).
+          // MUST be forwarded or the container's Stripe client can't see it when set.
+          STRIPE_LAUNCH_COUPON: this.env.STRIPE_LAUNCH_COUPON ?? "",
           ERASURE_ATTESTATION_REGION: this.env.ERASURE_ATTESTATION_REGION ?? "",
           // Brutal-audit #1 fix: the single-region assertion flag gates whether a
           // post-deletion attestation may sign with the env-default region. MUST be

@@ -189,6 +189,7 @@ export interface Env {
   AUDIT_CHAIN_SIGNING_SEED_HEX?: string;
   AUDIT_CHAIN_SIGNING_KEY_ID?: string;
   EMAIL_HASH_SALT?: string;
+  STRIPE_LAUNCH_COUPON?: string;
   FABRIC_INTROSPECT_AUTH_KEY?: string;
   FABRIC_INTROSPECT_AUTH_KEY_HUGR?: string; // HuGR toolkits introspect consumer (#398) — forwarded to the container
   BILLING_INGEST_AUTH_KEY?: string; // ASK-2 runner billing usage-push ingest — gate for `/internal/v1/billing/usage`; forwarded to the container

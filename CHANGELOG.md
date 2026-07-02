@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Stripe Checkout promo-code / launch-coupon wiring (A2 — clean checkout→$0).** The Checkout Session now sends
+  `allow_promotion_codes=true` by default (a promo-code field in Stripe's hosted checkout), OR — when
+  `STRIPE_LAUNCH_COUPON` is set — a pre-applied `discounts[0][coupon]` for a fieldless direct $0 (the two are
+  mutually exclusive by construction, since Stripe rejects both together). Wired in the real Stripe client
+  (`corelink-stripe-real/client.rs`, where the `/v1/checkout/sessions` form is actually built — not
+  `tier_select_checkout.rs`, which only calls the trait). `STRIPE_LAUNCH_COUPON` forwarded to the container +
+  registered (secrets matrix row 172); UNSET → the promo-code path works out of the box (zero config).
 - **Worker now routes `/internal/v1/auth/resolve-tenant` to the container (was mounted but unreachable).** The
   container had the resolve-tenant endpoint but the Worker only exact-matched `/internal/v1/auth/introspect`, so
   resolve-tenant 404'd end-to-end (same #261-class wiring gap). Added the exact-path route, reusing the
