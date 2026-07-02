@@ -162,6 +162,13 @@ Each entry cross-references:
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
 ### Security
+- **`email_hash` dual-read (salted-or-legacy lookup) so the salt can be activated safely + fixed a cross-lang
+  parity bug.** Prod has pre-salt legacy hashes (pending invites + existing tenants); a naive salt-set would
+  break their lookups. Now WRITES salt (when `EMAIL_HASH_SALT` is set) but LOOKUPS try the salted hash then the
+  legacy unsalted hash (`email_hash_candidates` / `emailHashCandidates`, deduped when unset) — so legacy-stored
+  rows still resolve. Also fixed a latent bug: the signup-worker's `emailHashFor` was UNSALTED-ONLY (it never
+  read the salt) — now salt-aware, restoring cross-language parity with the Rust `hash_email`. This unblocks the
+  owner/coordinator setting `EMAIL_HASH_SALT` without breaking the 5 pending invites / 123 legacy tenants.
 - **CTRL-PRIV-001 `email_hash` is now salted (enterprise-DD MED — un-salted hash was rainbow-attackable).** A
   single shared `email_hash::hash_email` helper (every site delegates: team-invite WRITE, accept-time MATCH,
   DSR Art.16 rectification) now HMAC-SHA256s the normalized email under a server-held `EMAIL_HASH_SALT` when
