@@ -57,6 +57,46 @@ pub fn hash_email(email: &str) -> String {
     }
 }
 
+/// The **legacy, always-unsalted** pseudonymized email hash — `hex(SHA-256(trim +
+/// lowercase))`, byte-identical to the pre-salt production scheme regardless of
+/// whether `EMAIL_HASH_SALT` is set.
+///
+/// This is NOT a write helper. It exists solely so a LOOKUP can also match rows
+/// that were written *before* the salt was registered: once `EMAIL_HASH_SALT` is
+/// set, [`hash_email`] emits the salted pseudonym, but the 123 legacy tenant
+/// rows + 5 pending team-invites still carry the unsalted hash. A lookup that
+/// only tried the salted candidate would false-negative every one of them
+/// (invite-accept fails to bind; DSAR-by-email misses the tenant). See
+/// [`email_hash_candidates`].
+#[must_use]
+pub fn hash_email_legacy(email: &str) -> String {
+    let normalized = email.trim().to_lowercase();
+    hex::encode(Sha256::digest(normalized.as_bytes()))
+}
+
+/// The set of `email_hash` values a LOOKUP for `email` must match against — the
+/// salted candidate ([`hash_email`], the current WRITE scheme) plus the legacy
+/// unsalted candidate ([`hash_email_legacy`]), **deduplicated**.
+///
+/// - Salt UNSET → both candidates are byte-identical, so this returns a SINGLE
+///   value and dual-read is behaviorally identical to today (zero regression).
+/// - Salt SET → returns `[salted, legacy]`, so a lookup finds BOTH a row written
+///   under the new salted scheme AND a row written under the pre-salt scheme
+///   (no false-negative on the legacy rows).
+///
+/// WRITES never call this — they stay on [`hash_email`] (salted-if-set). Only
+/// the accept-match / DSAR-by-email LOOKUP sites fan out over these candidates.
+#[must_use]
+pub fn email_hash_candidates(email: &str) -> Vec<String> {
+    let salted = hash_email(email);
+    let legacy = hash_email_legacy(email);
+    if salted == legacy {
+        vec![salted]
+    } else {
+        vec![salted, legacy]
+    }
+}
+
 // ── Test-only env serialization (crate-visible) ──────────────────────────────
 // `EMAIL_HASH_SALT` is process-global, so EVERY test that reads OR mutates it
 // (here AND in `customer_d1` / `routes::dsr::access`) must serialize on the one
@@ -147,6 +187,77 @@ mod tests {
         let g = EnvGuard::acquire();
         g.set_salt(""); // set-but-empty must behave as UNSET (no empty-key HMAC)
         assert_eq!(hash_email("user@example.com"), legacy_unsalted("user@example.com"));
+    }
+
+    // ── Dual-read candidate helper (safe EMAIL_HASH_SALT activation) ─────────
+
+    #[test]
+    fn legacy_helper_is_always_unsalted_regardless_of_salt() {
+        let g = EnvGuard::acquire();
+        // Legacy helper == the pre-salt inline scheme with salt UNSET…
+        assert_eq!(hash_email_legacy("user@example.com"), legacy_unsalted("user@example.com"));
+        // …and STAYS unsalted even after the salt is set (it never reads the env).
+        g.set_salt("server-secret-salt");
+        assert_eq!(hash_email_legacy("user@example.com"), legacy_unsalted("user@example.com"));
+        // Normalizes identically (trim + lowercase).
+        assert_eq!(
+            hash_email_legacy("  Alice@Example.com  "),
+            legacy_unsalted("alice@example.com")
+        );
+    }
+
+    /// INVARIANT (a): salt UNSET → dual-read collapses to ONE candidate == today.
+    #[test]
+    fn candidates_unset_salt_is_single_and_equals_legacy() {
+        let _g = EnvGuard::acquire(); // salt UNSET
+        let c = email_hash_candidates("user@example.com");
+        // Unset salt → exactly ONE candidate, byte-identical to today's single hash.
+        assert_eq!(c.len(), 1, "unset salt must dedupe to a single candidate");
+        assert!(c.contains(&hash_email("user@example.com")));
+        assert!(c.contains(&legacy_unsalted("user@example.com")));
+    }
+
+    /// INVARIANT (b)+(c): salt SET → candidates contain BOTH the salted write
+    /// scheme (finds a SALTED-stored row) AND the legacy unsalted hash (finds a
+    /// LEGACY-stored row — the 5-invite / 123-DSAR case, no false-negative).
+    #[test]
+    fn candidates_set_salt_covers_both_salted_and_legacy() {
+        let g = EnvGuard::acquire();
+        g.set_salt("server-secret-salt");
+        let c = email_hash_candidates("user@example.com");
+        assert_eq!(c.len(), 2, "salt set must yield two distinct candidates");
+        // (c) a row stored under the current salted WRITE scheme is matched.
+        assert!(c.contains(&hash_email("user@example.com")));
+        // (b) a row stored under the pre-salt LEGACY scheme is STILL matched.
+        assert!(c.contains(&legacy_unsalted("user@example.com")));
+    }
+
+    /// INVARIANT (d): distinct emails never collide across the two candidates —
+    /// no legacy-vs-salted candidate of email A equals any candidate of email B,
+    /// so dual-read can't false-POSITIVE onto a different subject's row.
+    #[test]
+    fn candidates_do_not_collide_across_different_emails() {
+        let g = EnvGuard::acquire();
+        g.set_salt("server-secret-salt");
+        let a = email_hash_candidates("alice@example.com");
+        let b = email_hash_candidates("bob@example.com");
+        for x in &a {
+            assert!(!b.contains(x), "candidate {x} collided across distinct emails");
+        }
+    }
+
+    #[test]
+    fn candidates_are_normalized_and_deduped() {
+        let g = EnvGuard::acquire();
+        g.set_salt("salt-X");
+        // Same normalized email → identical candidate set regardless of casing.
+        assert_eq!(
+            email_hash_candidates("  USER@Example.COM  "),
+            email_hash_candidates("user@example.com")
+        );
+        // Empty salt behaves as UNSET → one candidate.
+        g.set_salt("");
+        assert_eq!(email_hash_candidates("user@example.com").len(), 1);
     }
 
     #[test]

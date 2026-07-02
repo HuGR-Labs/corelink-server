@@ -105,6 +105,16 @@ export interface AutoProvisionEnv {
    * are present before driving GDPR erasure. Bound via `[vars]` in wrangler.toml.
    */
   ENVIRONMENT?: string;
+
+  /**
+   * Server-held salt for the CTRL-PRIV-001 `email_hash` pseudonym (secrets
+   * checklist #171). MUST be the SAME value the container reads, or salted
+   * team-invites never bind on accept. UNSET → legacy unsalted SHA-256 (the
+   * pre-salt scheme, zero regression). The accept-match LOOKUP dual-reads
+   * salted-OR-legacy so a pre-salt invite still binds after the salt is set.
+   * Bound via `wrangler secret put EMAIL_HASH_SALT`.
+   */
+  EMAIL_HASH_SALT?: string;
 }
 
 /** Clerk `user.deleted` webhook payload (account-deletion → GDPR erasure). */
@@ -670,18 +680,69 @@ export function primaryEmailOf(
 }
 
 /**
- * SHA-256 hex of a team invitation's email, normalized (trim + lower-case) so
- * the hash is stable regardless of how the invite was typed. This is the
- * `team_member.email_hash` lookup key (CTRL-PRIV-001 — the raw email is never
- * stored). MUST match the normalization the container's `invite()` uses when it
- * writes the `invited` row, or an accepted user will never match their seat.
+ * Canonical `team_member.email_hash` pseudonym for `email`, normalized (trim +
+ * lower-case) — the CROSS-LANG twin of the container's `email_hash::hash_email`
+ * (Rust). CTRL-PRIV-001: the raw email is never stored.
+ *
+ * - `salt` set + non-empty → `hex(HMAC-SHA256(key=salt, msg=normalized))`
+ * - `salt` unset / empty   → legacy `hex(SHA-256(normalized))` (byte-identical
+ *   to the pre-salt scheme → zero regression until the salt is registered)
+ *
+ * MUST match the normalization + scheme the container's `invite()` write uses,
+ * or an accepted user will never match their seat. `salt` is the same server
+ * secret (`EMAIL_HASH_SALT`) the container reads — pass `env.EMAIL_HASH_SALT`.
  */
-export async function emailHashFor(email: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(email.trim().toLowerCase()),
-  );
-  return bytesToHex(digest);
+export async function emailHashFor(
+  email: string,
+  salt?: string,
+): Promise<string> {
+  const normalized = new TextEncoder().encode(email.trim().toLowerCase());
+  if (salt && salt.length > 0) {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(salt),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    return bytesToHex(await crypto.subtle.sign("HMAC", key, normalized));
+  }
+  return bytesToHex(await crypto.subtle.digest("SHA-256", normalized));
+}
+
+/**
+ * The **legacy, always-unsalted** `email_hash` for `email` — `hex(SHA-256(trim +
+ * lowercase))`, byte-identical to the pre-salt scheme regardless of the salt.
+ * Cross-lang twin of the container's `email_hash::hash_email_legacy`.
+ *
+ * NOT a write helper — it exists so a LOOKUP can also match rows written BEFORE
+ * `EMAIL_HASH_SALT` was registered (the 5 pending team-invites + 123 legacy
+ * tenant rows). See {@link emailHashCandidates}.
+ */
+export async function emailHashLegacy(email: string): Promise<string> {
+  return emailHashFor(email, undefined);
+}
+
+/**
+ * The set of `email_hash` values a LOOKUP for `email` must match against — the
+ * salted candidate (current WRITE scheme) plus the legacy unsalted candidate,
+ * **deduplicated**. Cross-lang twin of `email_hash::email_hash_candidates`.
+ *
+ * - salt UNSET → both candidates are identical → returns a SINGLE value → the
+ *   lookup is behaviorally identical to today (zero regression).
+ * - salt SET   → returns `[salted, legacy]` → the lookup finds BOTH a row
+ *   written under the new salted scheme AND a legacy pre-salt row (no
+ *   false-negative on the 5-invite / 123-legacy rows).
+ *
+ * WRITES never call this — they stay on {@link emailHashFor} (salted-if-set).
+ */
+export async function emailHashCandidates(
+  email: string,
+  salt?: string,
+): Promise<string[]> {
+  const salted = await emailHashFor(email, salt);
+  const legacy = await emailHashLegacy(email);
+  return salted === legacy ? [salted] : [salted, legacy];
 }
 
 interface ApiClient {
@@ -1056,7 +1117,9 @@ export async function handleClerkWebhook(
           await acceptTeamInvitation(
             env.CONFIG_DB,
             event.data.id,
-            await emailHashFor(email),
+            // DUAL-READ: match salted-OR-legacy so a pre-salt invite still binds
+            // after EMAIL_HASH_SALT is set (writes stay salted; lookups find both).
+            await emailHashCandidates(email, env.EMAIL_HASH_SALT),
           );
         }
       } catch (inviteErr) {
