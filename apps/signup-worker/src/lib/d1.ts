@@ -182,18 +182,32 @@ interface InvitedMemberRow {
  *
  * The UPDATE re-asserts `status='invited'` so a concurrent acceptance (double
  * webhook delivery) cannot double-flip or clobber an already-`active` seat.
+ *
+ * DUAL-READ (safe EMAIL_HASH_SALT activation): `emailHashCandidates` is the
+ * deduped set `{salted, legacy}` — one value when the salt is unset (identical
+ * to today), two once it is set. Matching `email_hash IN (...)` binds an invite
+ * regardless of whether its row was written under the legacy pre-salt scheme (the
+ * 5 pending invites) or the new salted scheme. Writes stay salted; lookups find
+ * both.
  */
 export async function acceptTeamInvitation(
   db: D1Database,
   clerkUserId: string,
-  emailHash: string,
+  emailHashCandidates: string[],
 ): Promise<boolean> {
+  // Deduped 1-or-2 candidates → a fixed 2-slot IN list. Padding the single-salt
+  // case with a repeat of the same value keeps ONE prepared statement shape and
+  // is a semantic no-op (`x IN (a, a)` ≡ `x = a`).
+  const [c0, c1] = [
+    emailHashCandidates[0],
+    emailHashCandidates[1] ?? emailHashCandidates[0],
+  ];
   const invited = await db
     .prepare(
       "SELECT tenant_id, user_id FROM team_member " +
-        "WHERE email_hash = ?1 AND status = 'invited' LIMIT 1",
+        "WHERE email_hash IN (?1, ?2) AND status = 'invited' LIMIT 1",
     )
-    .bind(emailHash)
+    .bind(c0, c1)
     .first<InvitedMemberRow>();
   if (invited === null) return false;
 
