@@ -1534,7 +1534,7 @@ describe("PAT format validation — parsePat edge cases", () => {
     expect(resp.status).toBe(401);
   });
 
-  it("D1 lookup error (throws) → 401 (fail-closed)", async () => {
+  it("D1 lookup error (throws) → 503 (transient fault, fail-closed)", async () => {
     // D1 mock that throws on prepare/bind/first
     const throwingD1 = {
       prepare: () => ({
@@ -1546,8 +1546,8 @@ describe("PAT format validation — parsePat edge cases", () => {
     const resp = await workerFetch("http://localhost/api/v2/t/p", {
       headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` },
     }, { CONFIG_DB: throwingD1 });
-    // D1 error must fail-closed → 401, not 500
-    expect(resp.status).toBe(401);
+    // D1 throw is a TRANSIENT infra fault → 503 (retryable), still fail-closed (access denied); NOT 401 "bad credentials" (H1). See the reason→status map in index.ts.
+    expect(resp.status).toBe(503);
   });
 });
 
@@ -1936,15 +1936,15 @@ describe("security (H4): forwarded-request trust-header hygiene", () => {
           "x-corelink-primary-region": "enam",
         },
       },
-      { CONFIG_DB: d1, PROD_LHR: regionalBinding },
+      { CONFIG_DB: d1, PROD_LHR: regionalBinding, CORELINK_INTERNAL_AUTH_KEY: "the-real-internal-secret-0123456789" },
     );
     expect(resp.status).toBe(200);
     expect(fanoutHeaders).toBeDefined();
     // Smuggled admin/internal-auth stripped.
     expect(fanoutHeaders?.get("x-admin-scope")).toBeNull();
     expect(fanoutHeaders?.get("x-corelink-internal-auth")).toBeNull();
-    // fanout-from is Worker-established to "prod" (client "spoofed-origin" gone).
-    expect(fanoutHeaders?.get("x-corelink-fanout-from")).toBe("prod");
+    // fanout-from is Worker-established to the forgery-safe internal-auth secret (#349), NOT a guessable literal; the client's smuggled value is stripped + replaced.
+    expect(fanoutHeaders?.get("x-corelink-fanout-from")).toBe("the-real-internal-secret-0123456789");
     // backlog #29: the Worker sets the trusted residency macro from D1
     // (weur), overwriting the client's smuggled "enam".
     expect(fanoutHeaders?.get("x-corelink-primary-region")).toBe("weur");

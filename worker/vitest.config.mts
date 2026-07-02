@@ -28,6 +28,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // *.miniflare.test.ts run under vitest.miniflare.config.mts (workerd pool), not the node pool.
+    exclude: ["tests/**/*.miniflare.test.ts"],
     globals: true,
     coverage: {
       provider: "istanbul",
