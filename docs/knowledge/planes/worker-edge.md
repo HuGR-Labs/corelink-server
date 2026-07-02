@@ -5,7 +5,7 @@ description: "The HTTPS entry point: route table, PAT auth, server-trust header 
 source_files:
   - "worker/src/index.ts"
   - "worker/src/sentry-scrub.ts"
-checkpoint_sha: "8bf9a0fb9cd00430e1487dbe6e5a072c2c82957d"
+checkpoint_sha: "b048ebea52c698cbb14a33afdca65cea6b4bf047"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -71,9 +71,9 @@ keeps forged tokens cheap to reject before any expensive work.
    transient outage can't masquerade as a 401 (which would trigger spurious CI failures, PAT rotation,
    and on-call chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` /
    `invalid_*`) still fall through to `401` (`worker/src/index.ts:2168-2198`). NOTE: the inline
-   `extractAuth` comment at `:1053` (“for now we 401 to fail-closed”) is STALE — it describes a
-   superseded posture and was never updated when the H1 caller-mapping fix landed; the live caller
-   mapping returns 503.
+   `extractAuth` `catch` comment at `:1051-1053` now MATCHES that behaviour — it states the caller maps
+   `d1_lookup_error` to a 503 (transient, retryable; still fail-closed); it previously lied ("for now we
+   401 to fail-closed"), a stale posture left over from before the H1 caller-mapping fix landed.
 6. `stripClientTrustHeaders` deletes every client-suppliable trust header on every forward, then the
    Worker re-sets its own verified values (`worker/src/index.ts:481-485`).
 7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
