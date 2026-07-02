@@ -1,0 +1,37 @@
+name: worker vitest
+
+# Gates the TypeScript `worker/` node vitest suite (previously ungated in PR CI).
+# The `*.miniflare.test.ts` suite is excluded here — it runs separately under the
+# workerd (miniflare) harness via vitest.miniflare.config.mts, not the node pool.
+
+on:
+  pull_request:
+    paths:
+      - "worker/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        # package-lock.json is gitignored (.gitignore **/package-lock.json), so
+        # `npm ci` cannot run — use `npm install` like the other node workflows.
+        run: npm install
+
+      - name: Run vitest (node config)
+        run: npx vitest run
