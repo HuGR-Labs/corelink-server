@@ -368,10 +368,15 @@ export async function handleSessionExchange(
   }
 
   // ── 2. Fail-CLOSED on required server secrets ──────────────────────────────
-  // CLERK_SECRET_KEY is needed to VERIFY the session; CORELINK_INTERNAL_AUTH_KEY
-  // is needed to AUTHORIZE the mint to the container. A missing binding denies
-  // (never an open gate) — same posture as the onboarding arm.
-  const internalAuthKey = env.CORELINK_INTERNAL_AUTH_KEY;
+  // CLERK_SECRET_KEY is needed to VERIFY the session; the mint auth key is needed
+  // to AUTHORIZE the mint to the container. A missing binding denies (never an
+  // open gate) — same posture as the onboarding arm. Prefer the DEDICATED
+  // CORELINK_PAT_MINT_AUTH_KEY — the container's /_internal/pat/mint gate REQUIRES
+  // it with NO shared fallback (DD-HIGH, WP1) — falling back to the shared key
+  // only when the dedicated is unset (additive; once provisioned the shared no
+  // longer authorizes mint).
+  const internalAuthKey =
+    env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
   const clerkSecretKey = env.CLERK_SECRET_KEY;
   if (
     !internalAuthKey ||
@@ -666,7 +671,10 @@ export async function handleTokenExchange(
   }
 
   // ── 3. Fail-CLOSED on required server secrets ──────────────────────────────
-  const internalAuthKey = env.CORELINK_INTERNAL_AUTH_KEY;
+  // Prefer the DEDICATED mint key (container /_internal/pat/mint requires it, no
+  // shared fallback — DD-HIGH); fall back to shared only when unset (additive).
+  const internalAuthKey =
+    env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
   const clerkSecretKey = env.CLERK_SECRET_KEY;
   if (
     !internalAuthKey ||

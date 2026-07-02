@@ -239,6 +239,16 @@ Each entry cross-references:
   Built on CF-1's now-complete erase-set, so the certificate attests a genuinely-complete erasure.
 
 ### Fixed
+- **Worker→container PAT-MINT auth: send the dedicated key (fixes a WP1-introduced prod mint outage).** The
+  DD-HIGH WP1 hardening made the container's `/_internal/pat/mint` gate REQUIRE the dedicated
+  `CORELINK_PAT_MINT_AUTH_KEY` with NO shared-key fallback (route fails-closed if unset) — but the four Worker
+  callers of that route (`session_exchange` mint + token-exchange, `runner_mint`, `auth_rotate`) still presented
+  the SHARED `CORELINK_INTERNAL_AUTH_KEY`, so EVERY mint 401'd/failed-closed → 500 → the engine surfaced 503
+  "upstream mint failure" (latent since the 1st deploy; surfaced by the githugr end-to-end test — provisioning
+  was correct, the mint was broken). All four callers now present `CORELINK_PAT_MINT_AUTH_KEY ?? CORELINK_INTERNAL_AUTH_KEY`
+  (dedicated-if-set, shared fallback — additive). Activation: set `CORELINK_PAT_MINT_AUTH_KEY` on the prod worker
+  (forwarded to the container); until then the shared key is presented (same as pre-fix). DD-HIGH blast-radius is
+  preserved once the dedicated key is provisioned.
 - **OKF self-healing — LOCAL variant (no API key, uses your Claude Code CLI auth).** Adds
   `scripts/okf-reconcile-local.sh` + a `hooks/post-merge` git hook: on a local `git pull`/merge to main
   that drifts a concept's cited lines, it detects the drift (0-cost reporter) and runs the `okf-reconcile`
