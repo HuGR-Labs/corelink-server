@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Runner-mint honors a caller-supplied lease-bound `ttl_seconds` (C2c poison-narrowing + fixes a latent fail-closed bug).**
+  `POST /internal/v1/runner/mint` now accepts an optional `ttl_seconds` in the request body; the runner dispatcher
+  sends the lease's REMAINING time so the minted PAT **expires with the lease** (server-enforced), shrinking the
+  blast radius of a leaked runner credential in the (already env-0-protected, revocable) window. The value is clamped
+  DOWN to the 90-min cap (a caller can only SHORTEN, never extend) and `0`/negative/non-integer is refused `400` — the
+  container maps `ttl_seconds=0` → "no expiry", so a non-expiring runner PAT must be impossible to request. Omitted →
+  the previous 90-min default (backward-compatible). This also fixes a latent fail-closed bug: with the hardcoded
+  5400s TTL, any lease shorter than 90 min minted a PAT that outlived it → the dispatcher's `expires_ms ≤ lease_deadline`
+  assertion tripped → no provision (masked only while the moat-mint is default-off). Completes the mint-scope contract
+  agreed with corelink-runners (option A: relative TTL, server stamps `now + ttl`, caller carries a 30s skew margin).
 - **Stripe Checkout promo-code / launch-coupon wiring (A2 — clean checkout→$0).** The Checkout Session now sends
   `allow_promotion_codes=true` by default (a promo-code field in Stripe's hosted checkout), OR — when
   `STRIPE_LAUNCH_COUPON` is set — a pre-applied `discounts[0][coupon]` for a fieldless direct $0 (the two are

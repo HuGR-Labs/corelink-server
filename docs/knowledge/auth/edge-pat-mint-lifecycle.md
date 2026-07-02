@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/session_exchange.ts"
   - "worker/src/lib/runner_mint.ts"
   - "worker/src/lib/auth_rotate.ts"
-checkpoint_sha: "c88508f15f29a4ef9113b01772b5a01c409bf401"
+checkpoint_sha: "8d6ac08cae448a7c7444dfd7fa73239810589840"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "mint", "worker-edge", "tenancy"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -24,13 +24,13 @@ D1 `pat` row. The three public handlers above it are thin, fail-CLOSED *authoriz
 each proves the caller may mint (a verified session, an internal-auth key plus a
 runners entitlement, or ownership of the old PAT), then delegates the privileged work to
 the shared chokepoint (`worker/src/lib/session_exchange.ts:406-414`,
-`worker/src/lib/runner_mint.ts:190-197`, `worker/src/lib/auth_rotate.ts:278-289`). Each
+`worker/src/lib/runner_mint.ts:215-222`, `worker/src/lib/auth_rotate.ts:278-289`). Each
 consumer now presents the **DEDICATED** `CORELINK_PAT_MINT_AUTH_KEY` to that chokepoint
 — falling back to the shared `CORELINK_INTERNAL_AUTH_KEY` ONLY when the dedicated key is
 unset — because the container's `/_internal/pat/mint` gate now REQUIRES the dedicated
 mint key (DD-HIGH): once the dedicated key is provisioned the shared internal-auth key
 alone no longer authorizes a mint (`worker/src/lib/session_exchange.ts:378-379`,
-`worker/src/lib/runner_mint.ts:131-132`, `worker/src/lib/auth_rotate.ts:178-179`). The
+`worker/src/lib/runner_mint.ts:139-140`, `worker/src/lib/auth_rotate.ts:178-179`). The
 payoff is one signing key, one audit emit, and one revocation surface for
 INV-PAT-REVOKE-PROPAGATION — there is no second mint path to drift, leak, or forget to
 throttle (`worker/src/lib/session_exchange.ts:11-17`).
@@ -91,10 +91,15 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 - **Consumer 2 — runner mint/revoke:** `handleRunnerMint` has no session; it is
   internal-auth gated and checks a SEPARATE Runners authorization axis — a keyed lookup
   on `runners_entitlement` (migration 0070), no row → 403 — then delegates with the
-  runner `job_id` as the principal source (`worker/src/lib/runner_mint.ts:175-176`,
-  `worker/src/lib/runner_mint.ts:185-186`, `worker/src/lib/runner_mint.ts:190-197`).
-  Teardown revoke is a tenant-scoped, idempotent soft-revoke on the shared `pat` table
-  (`worker/src/lib/runner_mint.ts:281-282`).
+  runner `job_id` as the principal source (`worker/src/lib/runner_mint.ts:197-201`,
+  `worker/src/lib/runner_mint.ts:215-222`). It also honors an optional **lease-bound
+  `ttl_seconds`**: the dispatcher sends the lease's remaining time so the runner PAT
+  EXPIRES WITH THE LEASE (server-enforced), clamped DOWN to the 90-min cap — a caller
+  can only shorten, never extend — and `0`/negative/non-integer is refused `400` (the
+  container maps `ttl_seconds=0` → "no expiry", so a non-expiring runner PAT is
+  impossible to request) (`worker/src/lib/runner_mint.ts:174-189`). Teardown revoke is a
+  tenant-scoped, idempotent soft-revoke on the shared `pat` table
+  (`worker/src/lib/runner_mint.ts:307-308`).
 - **Consumer 3 — `clw auth rotate`:** `handleAuthRotate` reads the OLD `pat` row, refuses
   a missing/already-revoked PAT with a 404, refuses a caller-named tenant that does not
   own the row with a 403, mints an equal-scope replacement via the chokepoint, and only
