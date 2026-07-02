@@ -170,11 +170,13 @@ export async function handleAuthRotate(
 
   // ── 3. Fail-CLOSED on the required server secret ───────────────────────────
   // The internal-auth gate proved a sized consumer/shared key is bound; we re-read
-  // the SHARED key here because it is the secret presented to the container's
-  // /_internal/pat/mint route (the mint authority). If only a dedicated pat_mint
-  // key were bound the shared key could still be absent → the mint to the
-  // container cannot be authorized → unavailable. (Same posture as runner-mint.)
-  const internalAuthKey = env.CORELINK_INTERNAL_AUTH_KEY;
+  // the secret presented to the container's /_internal/pat/mint route (the mint
+  // authority). That gate REQUIRES the DEDICATED CORELINK_PAT_MINT_AUTH_KEY with NO
+  // shared fallback (DD-HIGH, WP1), so present the dedicated key when set; fall back
+  // to the shared key only when the dedicated is unset (additive; once provisioned
+  // the shared no longer authorizes mint). (Same posture as runner-mint.)
+  const internalAuthKey =
+    env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
   if (!internalAuthKey || internalAuthKey.length === 0) {
     return reapiError("FORBIDDEN", "auth rotate unavailable", 403, requestId);
   }

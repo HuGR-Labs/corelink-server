@@ -26,20 +26,40 @@
  * reference `tenant.tenant_id`), then the child rows, then the identity map.
  * Every write is `INSERT OR IGNORE` so a concurrent second login of the same sub
  * (or a re-login) is a harmless no-op.
+ *
+ * HARDENING (audit H3 lookup-first + H5 atomic batch):
+ *   - H3 (write-amplification): the COMMON case is a repeat login, whose row-set
+ *     already exists. So we do the read-back `SELECT` FIRST; on a hit we return
+ *     immediately with ZERO writes. The 5 provisioning writes run ONLY on the
+ *     first-ever login for a `sub`. Deterministic id + INSERT OR IGNORE keeps
+ *     this idempotency-safe and returns the identical tenant_id.
+ *   - H5 (partial-provision): the 5 first-login writes are issued as a SINGLE
+ *     D1 `batch([...])` (Cloudflare D1 batches are transactional — all-or-nothing
+ *     on the same connection), so a mid-provision D1 fault can never leave a
+ *     partial row-family lingering. FK order (tenant first) is preserved INSIDE
+ *     the batch; every statement stays INSERT OR IGNORE.
  */
 
 /**
  * Minimal local D1 surface — mirrors `apps/signup-worker/src/lib/d1.ts` so the
  * unit tests can pass a hand-rolled mock without pulling @cloudflare/workers-types.
  * The real `env.CONFIG_DB` (a full `D1Database`) is structurally compatible.
+ *
+ * `bind(...)` returns a prepared STATEMENT handle: it carries `run()` / `first()`
+ * (the read path) AND is the value handed to `batch([...])` (the transactional
+ * provision path). The real `D1PreparedStatement` satisfies this exactly.
  */
+export interface GithugrPreparedStatement {
+  run(): Promise<unknown>;
+  first<T = unknown>(): Promise<T | null>;
+}
+
 export interface GithugrProvisionDb {
   prepare(query: string): {
-    bind(...values: unknown[]): {
-      run(): Promise<unknown>;
-      first<T = unknown>(): Promise<T | null>;
-    };
+    bind(...values: unknown[]): GithugrPreparedStatement;
   };
+  /** Transactional multi-statement apply — all-or-nothing (D1 semantics). */
+  batch(statements: GithugrPreparedStatement[]): Promise<unknown[]>;
 }
 
 /** Namespace prefix so the derivation can never collide with the DSR uuid space. */
@@ -83,14 +103,23 @@ export async function deriveGithugrTenantId(sub: string): Promise<string> {
 /**
  * PROVISION-OR-LOOKUP the isolated CoreLink tenant for a verified githugr subject.
  *
- * Idempotent: derives the deterministic tenant_id from `sub`, `INSERT OR IGNORE`s
- * the full row-family (tenant FIRST for FK order, then tier/runners/quota, then
- * the `tenant_org_map` identity row keyed on `clerk_org_id = sub`), then SELECTs
- * the authoritative mapping back so a row written by a PRIOR login wins.
+ * LOOKUP-FIRST (audit H3): the common case is a REPEAT login whose row-family
+ * already exists, so we SELECT the `tenant_org_map` identity row FIRST; on a hit
+ * we return that tenant_id immediately with ZERO writes. Only on the first-ever
+ * login for this `sub` (no row) do we run the provisioning writes and then
+ * read the mapping back.
  *
- * Returns the resolved tenant_id. THROWS on any D1 error — the caller MUST treat
- * a throw as fail-CLOSED (500) and NEVER fall back to a shared tenant (falling
- * back is the exact isolation break this replaces).
+ * ATOMIC PROVISION (audit H5): the 5 first-login writes are issued as a SINGLE
+ * transactional D1 `batch([...])` (all-or-nothing), FK order preserved (tenant
+ * first), every statement INSERT OR IGNORE — so a mid-provision D1 fault cannot
+ * leave a partial row-family behind. The authoritative read-back runs AFTER the
+ * batch (a concurrent NEW-sub login — deterministic id + first-writer-wins on the
+ * clerk_org_id PK — still converges to the same tenant_id).
+ *
+ * Returns the resolved tenant_id. THROWS on any D1 error (lookup, batch, OR
+ * read-back) — the caller MUST treat a throw as fail-CLOSED (500) and NEVER fall
+ * back to a shared tenant (falling back is the exact isolation break this
+ * replaces).
  */
 export async function provisionOrLookupGithugrTenant(
   db: GithugrProvisionDb,
@@ -99,62 +128,73 @@ export async function provisionOrLookupGithugrTenant(
 ): Promise<string> {
   const tenantId = await deriveGithugrTenantId(sub);
 
-  // (1) tenant — FK target, MUST be written before any child row. Shape mirrors
-  // family-e2e-tier-seed.sql (tenant_id, primary_region, created_at_ms, updated_at_ms).
-  await db
-    .prepare(
-      "INSERT OR IGNORE INTO tenant " +
-        "(tenant_id, primary_region, created_at_ms, updated_at_ms) " +
-        "VALUES (?1, ?2, ?3, ?3)",
-    )
-    .bind(tenantId, DEFAULT_REGION, nowMs)
-    .run();
+  // LOOKUP-FIRST: on a repeat login the identity row already exists — return it
+  // with ZERO writes (removes the 5-write amplification on every session). A D1
+  // fault here PROPAGATES (fail-CLOSED — never a silent shared-tenant fallback).
+  const existing = await db
+    .prepare("SELECT tenant_id FROM tenant_org_map WHERE clerk_org_id = ?1 LIMIT 1")
+    .bind(sub)
+    .first<{ tenant_id: string }>();
+  if (existing && existing.tenant_id) {
+    return existing.tenant_id;
+  }
 
-  // (2) tier_selections — free/active. subscription_started_at_ms MUST be non-NULL
-  // when state='active' (0039 CHECK subscription_started_when_active).
-  await db
-    .prepare(
-      "INSERT OR IGNORE INTO tier_selections " +
-        "(tenant_id, tier, subscription_state, schema_version, correlation_id, subscription_started_at_ms) " +
-        "VALUES (?1, 'free', 'active', 1, ?2, ?3)",
-    )
-    .bind(tenantId, `githugr-provision:${tenantId}`, nowMs)
-    .run();
+  // FIRST-EVER login for this sub: provision the full 5-family row-set as ONE
+  // transactional batch (all-or-nothing) so a mid-provision D1 fault can't leave
+  // a partial row-set. FK order is preserved by statement order (tenant first).
+  await db.batch([
+    // (1) tenant — FK target, MUST be written before any child row. Shape mirrors
+    // family-e2e-tier-seed.sql (tenant_id, primary_region, created_at_ms, updated_at_ms).
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO tenant " +
+          "(tenant_id, primary_region, created_at_ms, updated_at_ms) " +
+          "VALUES (?1, ?2, ?3, ?3)",
+      )
+      .bind(tenantId, DEFAULT_REGION, nowMs),
 
-  // (3) runners_entitlement — free plan, min concurrency (>0 CHECK, 0070).
-  await db
-    .prepare(
-      "INSERT OR IGNORE INTO runners_entitlement " +
-        "(tenant_id, max_concurrency, plan, created_at_ms) VALUES (?1, ?2, 'free', ?3)",
-    )
-    .bind(tenantId, FREE_RUNNER_MAX_CONCURRENCY, nowMs)
-    .run();
+    // (2) tier_selections — free/active. subscription_started_at_ms MUST be non-NULL
+    // when state='active' (0039 CHECK subscription_started_when_active).
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO tier_selections " +
+          "(tenant_id, tier, subscription_state, schema_version, correlation_id, subscription_started_at_ms) " +
+          "VALUES (?1, 'free', 'active', 1, ?2, ?3)",
+      )
+      .bind(tenantId, `githugr-provision:${tenantId}`, nowMs),
 
-  // (4) tenant_quota — non-zero monthly ceiling so the container quota gate isn't
-  // a flat 402 / fail-open None (family-e2e note).
-  await db
-    .prepare(
-      "INSERT OR IGNORE INTO tenant_quota " +
-        "(tenant_id, monthly_budget_usd_micros) VALUES (?1, ?2)",
-    )
-    .bind(tenantId, FREE_MONTHLY_BUDGET_USD_MICROS)
-    .run();
+    // (3) runners_entitlement — free plan, min concurrency (>0 CHECK, 0070).
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO runners_entitlement " +
+          "(tenant_id, max_concurrency, plan, created_at_ms) VALUES (?1, ?2, 'free', ?3)",
+      )
+      .bind(tenantId, FREE_RUNNER_MAX_CONCURRENCY, nowMs),
 
-  // (5) tenant_org_map — the identity row keyed on the Clerk principal (`sub`);
-  // clerk_org_id PRIMARY KEY ⇒ first writer wins (mirrors insertTenantOrgMap).
-  await db
-    .prepare(
-      "INSERT OR IGNORE INTO tenant_org_map " +
-        "(clerk_org_id, tenant_id, created_at_ms) VALUES (?1, ?2, ?3)",
-    )
-    .bind(sub, tenantId, nowMs)
-    .run();
+    // (4) tenant_quota — non-zero monthly ceiling so the container quota gate isn't
+    // a flat 402 / fail-open None (family-e2e note).
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO tenant_quota " +
+          "(tenant_id, monthly_budget_usd_micros) VALUES (?1, ?2)",
+      )
+      .bind(tenantId, FREE_MONTHLY_BUDGET_USD_MICROS),
 
-  // Read back the AUTHORITATIVE mapping. This covers a pre-existing row from a
-  // prior login (which — deterministic derivation — carries the same tenant_id,
-  // but we still trust D1's row over our local derivation). A missing row here is
-  // impossible after the INSERT OR IGNORE above unless the write silently failed,
-  // so we treat an absent read-back as an error (fail-CLOSED at the caller).
+    // (5) tenant_org_map — the identity row keyed on the Clerk principal (`sub`);
+    // clerk_org_id PRIMARY KEY ⇒ first writer wins (mirrors insertTenantOrgMap).
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO tenant_org_map " +
+          "(clerk_org_id, tenant_id, created_at_ms) VALUES (?1, ?2, ?3)",
+      )
+      .bind(sub, tenantId, nowMs),
+  ]);
+
+  // Read back the AUTHORITATIVE mapping. This covers a row written by a CONCURRENT
+  // first login of the same sub (deterministic derivation ⇒ same tenant_id, but we
+  // still trust D1's row over our local derivation). A missing row here is
+  // impossible after the batch above unless the write silently failed, so we treat
+  // an absent read-back as an error (fail-CLOSED at the caller).
   const row = await db
     .prepare("SELECT tenant_id FROM tenant_org_map WHERE clerk_org_id = ?1 LIMIT 1")
     .bind(sub)

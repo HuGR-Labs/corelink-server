@@ -169,6 +169,13 @@ Each entry cross-references:
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
 ### Security
+- **Hardened githugr per-tenant provisioning (brutal-audit H3/H5 — both LOW, pre-pilot).** The exchange's
+  `provisionOrLookupGithugrTenant` now (a) LOOKS UP the `tenant_org_map` row FIRST and returns immediately on a
+  hit — repeat logins are a single read instead of 5 writes (removes the un-throttled write-amplification), and
+  (b) wraps the first-login 5-row provision in a transactional D1 `batch()` so a mid-provision fault can't leave
+  a partial row-set. Fail-closed contract unchanged (any D1 throw → 500, never a partial/wrong tenant). Isolation
+  audit verdict: no cross-tenant landing, no forgeable-sub squatting, no fail-open — the pilot's per-tenant
+  isolation holds; these were the only two (LOW) hardening items.
 - **`email_hash` dual-read (salted-or-legacy lookup) so the salt can be activated safely + fixed a cross-lang
   parity bug.** Prod has pre-salt legacy hashes (pending invites + existing tenants); a naive salt-set would
   break their lookups. Now WRITES salt (when `EMAIL_HASH_SALT` is set) but LOOKUPS try the salted hash then the
@@ -239,6 +246,34 @@ Each entry cross-references:
   Built on CF-1's now-complete erase-set, so the certificate attests a genuinely-complete erasure.
 
 ### Fixed
+- **Perf-regression gate: gate on the MEDIAN (not p99) + CI-canonical baseline recapture + fix 7 orphaned baselines
+  that gated nothing.** Three latent defects made the gate both false-positive and under-cover: (1) **it gated on
+  p99, a tail metric that jitters up to ~22% run-to-run on shared GitHub runners** — measured directly across two
+  identical-code CI runs (`audit_chain_jcs_canonicalize` +21.7%, `signup` −19%, `merkle_append` −14.5%) — so the 5%
+  CRITICAL threshold false-positived on noisy-neighbour scheduling, not code; the **median is stable to <4%** across
+  the same runs, so the split 5%/15% thresholds are sound on it (median is criterion's primary point estimate and
+  what the nightly gate already uses); (2) all 11 tracked baselines were `--quick` *laptop* proxies from 2026-05-16
+  (the umbrella manifest itself flags `measurement_mode: "criterion --quick (laptop wall-clock budget); CI canonical
+  refresh per §5"`), 7 weeks stale versus the CI's real `--measurement-time 5` measurements; (3) 7 of the 11 baseline
+  files carried `bench_id` fields (`audit_chain/append_single`, `Digest::compute/1024 KiB`, …) that never matched
+  criterion's actual group ids (`audit_chain_append_single`, `Digest__compute/1024 KiB`, …), so the checker silently
+  compared only **4 of 11** benches. Fix: switched the gate metric to `--metric median`; recaptured all 11 baselines
+  from a real ubuntu-latest CI run at `--measurement-time 5` (the audit §5 recapture); corrected the 7 orphaned
+  `bench_id`s (checker now compares **11/11**). Verified locally with the gate's own `perf-regression-check.py`:
+  `--metric median → compared: 11, regressions: 0` on a *different* CI run than the baseline capture. No gate
+  loosening — a gate gating a tail metric with ~22% noise on a 5% threshold, and comparing 4/11 benches, was
+  defective, not rigorous; gating the stable median at the same tight thresholds is *more* sensitive to real
+  regressions, not less. The sealed GA-freeze umbrella manifest is left untouched (historical record).
+- **Worker→container PAT-MINT auth: send the dedicated key (fixes a WP1-introduced prod mint outage).** The
+  DD-HIGH WP1 hardening made the container's `/_internal/pat/mint` gate REQUIRE the dedicated
+  `CORELINK_PAT_MINT_AUTH_KEY` with NO shared-key fallback (route fails-closed if unset) — but the four Worker
+  callers of that route (`session_exchange` mint + token-exchange, `runner_mint`, `auth_rotate`) still presented
+  the SHARED `CORELINK_INTERNAL_AUTH_KEY`, so EVERY mint 401'd/failed-closed → 500 → the engine surfaced 503
+  "upstream mint failure" (latent since the 1st deploy; surfaced by the githugr end-to-end test — provisioning
+  was correct, the mint was broken). All four callers now present `CORELINK_PAT_MINT_AUTH_KEY ?? CORELINK_INTERNAL_AUTH_KEY`
+  (dedicated-if-set, shared fallback — additive). Activation: set `CORELINK_PAT_MINT_AUTH_KEY` on the prod worker
+  (forwarded to the container); until then the shared key is presented (same as pre-fix). DD-HIGH blast-radius is
+  preserved once the dedicated key is provisioned.
 - **OKF self-healing — LOCAL variant (no API key, uses your Claude Code CLI auth).** Adds
   `scripts/okf-reconcile-local.sh` + a `hooks/post-merge` git hook: on a local `git pull`/merge to main
   that drifts a concept's cited lines, it detects the drift (0-cost reporter) and runs the `okf-reconcile`

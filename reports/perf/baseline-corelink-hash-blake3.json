@@ -1,14 +1,14 @@
 {
   "bench": "blake3",
   "bench_id": "blake3_hash/1MiB",
-  "captured_at": "2026-05-16T13:45:51Z",
-  "commit": "365dd38",
+  "captured_at": "2026-07-02T20:32:01Z",
+  "commit": "8802e060",
   "crate": "corelink-hash",
   "criticality": "CRITICAL",
-  "mean_ns": 263054.8515625,
-  "median_ns": 263054.8515625,
-  "notes": "Wave-29 stream-9 GA-freeze (--quick mode). Canonical tag: perf-baseline-ga-2026-05-16. p99_ns is upper-CI-bound proxy from --quick (full sample p99 requires --measurement-time 5; operator refresh per audit \u00a75). Pre-GA pilot tenant workloads.",
-  "p99_ns": 263203.375,
-  "sample_count": null,
+  "mean_ns": 299692.0427,
+  "median_ns": 299577.6314,
+  "notes": "Recaptured 2026-07-02 via perf-regression.yml on ubuntu-latest (GitHub-hosted), --measurement-time 5 \u2014 the audit \u00a75 operator recapture that supersedes the wave-29/30 --quick laptop proxy. Gated on MEDIAN (stable to <4% run-to-run on shared CI runners); no per-bench tolerance override needed even though this bench is memory-bandwidth-bound \u2014 the median is robust to the p99 tail jitter that made the old p99 gate false-positive.",
+  "p99_ns": 302104.9575,
+  "sample_count": 100,
   "tolerance_pct": null
 }
