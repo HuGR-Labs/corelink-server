@@ -1,14 +1,14 @@
 {
   "bench": "merkle_append",
-  "bench_id": "audit_chain/append_single",
-  "captured_at": "2026-05-16T14:38:37Z",
-  "commit": "04f2dff",
+  "bench_id": "audit_chain_append_single",
+  "captured_at": "2026-07-02T20:32:01Z",
+  "commit": "8802e060",
   "crate": "corelink-audit-chain",
   "criticality": "CRITICAL",
-  "mean_ns": 19694.0,
-  "median_ns": 19694.0,
-  "notes": "Wave-30 stream-5 recapture (--quick mode); supersedes wave-29 stream-9 pending row. Canonical tag: perf-baseline-ga-2026-05-16. p99_ns is upper 95%-CI bound of the median from --quick mode (proxy). Single-append hot path; sibling append_10k/sequential measured at ~292 ms / 10k records (~33.9 K elem/s) — captured in umbrella manifest. Canonical --measurement-time 5 recapture remains operator-bound per audit §5.",
-  "p99_ns": 19717.0,
-  "sample_count": null,
+  "mean_ns": 6400.6745,
+  "median_ns": 6369.0791,
+  "notes": "Recaptured 2026-07-02T20:32:01Z via perf-regression.yml on ubuntu-latest (GitHub-hosted), --measurement-time 5 \u2014 audit \u00a75 operator recapture; supersedes the wave-29/30 --quick proxy. CPU-bound + stable run-to-run \u2192 tight CRITICAL/NON_CRITICAL class default (no per-bench tolerance override).",
+  "p99_ns": 7648.7951,
+  "sample_count": 100,
   "tolerance_pct": null
 }

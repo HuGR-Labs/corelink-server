@@ -239,6 +239,24 @@ Each entry cross-references:
   Built on CF-1's now-complete erase-set, so the certificate attests a genuinely-complete erasure.
 
 ### Fixed
+- **Perf-regression gate: gate on the MEDIAN (not p99) + CI-canonical baseline recapture + fix 7 orphaned baselines
+  that gated nothing.** Three latent defects made the gate both false-positive and under-cover: (1) **it gated on
+  p99, a tail metric that jitters up to ~22% run-to-run on shared GitHub runners** — measured directly across two
+  identical-code CI runs (`audit_chain_jcs_canonicalize` +21.7%, `signup` −19%, `merkle_append` −14.5%) — so the 5%
+  CRITICAL threshold false-positived on noisy-neighbour scheduling, not code; the **median is stable to <4%** across
+  the same runs, so the split 5%/15% thresholds are sound on it (median is criterion's primary point estimate and
+  what the nightly gate already uses); (2) all 11 tracked baselines were `--quick` *laptop* proxies from 2026-05-16
+  (the umbrella manifest itself flags `measurement_mode: "criterion --quick (laptop wall-clock budget); CI canonical
+  refresh per §5"`), 7 weeks stale versus the CI's real `--measurement-time 5` measurements; (3) 7 of the 11 baseline
+  files carried `bench_id` fields (`audit_chain/append_single`, `Digest::compute/1024 KiB`, …) that never matched
+  criterion's actual group ids (`audit_chain_append_single`, `Digest__compute/1024 KiB`, …), so the checker silently
+  compared only **4 of 11** benches. Fix: switched the gate metric to `--metric median`; recaptured all 11 baselines
+  from a real ubuntu-latest CI run at `--measurement-time 5` (the audit §5 recapture); corrected the 7 orphaned
+  `bench_id`s (checker now compares **11/11**). Verified locally with the gate's own `perf-regression-check.py`:
+  `--metric median → compared: 11, regressions: 0` on a *different* CI run than the baseline capture. No gate
+  loosening — a gate gating a tail metric with ~22% noise on a 5% threshold, and comparing 4/11 benches, was
+  defective, not rigorous; gating the stable median at the same tight thresholds is *more* sensitive to real
+  regressions, not less. The sealed GA-freeze umbrella manifest is left untouched (historical record).
 - **Worker→container PAT-MINT auth: send the dedicated key (fixes a WP1-introduced prod mint outage).** The
   DD-HIGH WP1 hardening made the container's `/_internal/pat/mint` gate REQUIRE the dedicated
   `CORELINK_PAT_MINT_AUTH_KEY` with NO shared-key fallback (route fails-closed if unset) — but the four Worker
