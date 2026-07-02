@@ -6,7 +6,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "8bf9a0fb9cd00430e1487dbe6e5a072c2c82957d"
+checkpoint_sha: "b048ebea52c698cbb14a33afdca65cea6b4bf047"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -40,7 +40,10 @@ semantics in the container.
    forward arm `worker/src/index.ts:1959-1983`). The edge expiry check honors the
    `expires_ms === 0` "never expires" sentinel (`row.expires_ms !== 0 && row.expires_ms <= now`),
    matching the container's `adapter_pat` SQL (`expires_ms = 0 OR expires_ms > now`) — so a no-TTL PAT
-   is no longer a split-brain edge-reject that worked in the container but died at the Worker.
+   is no longer a split-brain edge-reject that worked in the container but died at the Worker. If that
+   D1 lookup itself faults (network partition / DB unavailable) the auth hop fails CLOSED but is mapped
+   to a retryable 503, not a 401 — the request never reaches the DO, and a transient infra fault is
+   never surfaced to the client as "bad credentials" (H1).
 3. The Worker derives the per-tenant DO with `idFromName(resolvedTenantId)`, making isolation structural
    (`worker/src/index.ts:2545-2548`).
 4. It strips any client-supplied trust headers (delete-then-set discipline), sets its own verified

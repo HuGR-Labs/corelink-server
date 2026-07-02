@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/internal_auth.ts"
   - "worker/src/index.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "8bf9a0fb9cd00430e1487dbe6e5a072c2c82957d"
+checkpoint_sha: "b048ebea52c698cbb14a33afdca65cea6b4bf047"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -30,7 +30,9 @@ PAT under a tight CPU budget (HMAC fast-fail + D1 expiry lookup) and forwards a 
 `x-corelink-tenant-id`; the container re-runs the **full** Option-B verification rather than trusting
 that header blindly, so a compromised or misconfigured Worker cannot grant cache access on its own
 (`crates/corelink-container/src/adapter_pat.rs:5-14`). The same cheap-then-deep shape protects the
-control surfaces (mint, introspect) at the Worker edge.
+control surfaces (mint, introspect) at the Worker edge. A transient D1 fault during that edge PAT
+lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hiccup must not read as
+"bad credentials" (H1).
 
 # How it works
 
@@ -83,8 +85,9 @@ control surfaces (mint, introspect) at the Worker edge.
   chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
   still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
   COMPLETE for the worker edge — a transient D1 fault is NOT a cause of a 401 there; it is a 503. The
-  in-line comment at `worker/src/index.ts:1052` (“map to 503 if desired”) is now stale relative to the
-  caller, which DOES map it to 503 (the cited line numbers shifted after the Artifact 1 `/v1/public/*`
+  in-line `catch` comment at `worker/src/index.ts:1051-1053` now correctly states that the caller maps
+  `d1_lookup_error` to a 503 (it previously lied — "for now we 401 to fail-closed"); the cited line
+  numbers shifted after the Artifact 1 `/v1/public/*`
   attestation-verifier route arm was added above this handler, again when the CF-6 audit-chain
   signing env vars were declared on the `Env` type, when the WP4 Sentry `beforeSend`
   PII/secret scrubber import was added at the top of the module, and most recently when the

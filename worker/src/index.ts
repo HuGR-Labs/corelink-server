@@ -1049,8 +1049,8 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
       .first<PatRow>();
   } catch (_err: unknown) {
     // D1 errors (network partition, DB unavailable) must not fail-open.
-    // Return a distinct reason so the caller can map to 503 if desired.
-    // For now we 401 to fail-closed (security > availability at this layer).
+    // Return a distinct reason; the caller maps d1_lookup_error to 503 (transient,
+    // retryable) — still fail-closed (access denied), NOT 401 "bad credentials" (H1).
     return { ok: false, reason: "d1_lookup_error" };
   }
 
