@@ -664,24 +664,93 @@ impl StripeRealClient {
 
     /// `POST /v1/checkout/sessions` — typed Stripe Checkout creation
     /// (returns the raw Stripe object).
+    ///
+    /// # Promotion / coupon capability
+    ///
+    /// `promo` selects the checkout-level discount capability (see
+    /// [`build_checkout_form`] for the exact form pairs it emits). Stripe
+    /// forbids sending `allow_promotion_codes` and `discounts[…]` together on
+    /// the same session, so the two are mutually exclusive: a configured
+    /// launch coupon is PRE-APPLIED (`discounts[0][coupon]`) for a clean
+    /// checkout → $0, otherwise the hosted page shows the promo-code field
+    /// (`allow_promotion_codes=true`).
     fn create_checkout_session_raw(
         &self,
         req: &CheckoutSessionRequest,
         idempotency_key: &str,
         price_id: &str,
+        promo: &CheckoutPromo,
     ) -> Result<CheckoutSessionObject, StripeError> {
-        let form = vec![
-            ("mode", "subscription".to_string()),
-            ("customer_email", req.customer_email.clone()),
-            ("success_url", req.success_url.clone()),
-            ("cancel_url", req.cancel_url.clone()),
-            ("line_items[0][price]", price_id.to_string()),
-            ("line_items[0][quantity]", "1".to_string()),
-            ("metadata[tenant_id]", req.tenant_id.as_str().to_string()),
-            ("metadata[tier]", req.tier.as_str().to_string()),
-        ];
+        let form = build_checkout_form(req, price_id, promo);
         self.post_form::<CheckoutSessionObject>("/v1/checkout/sessions", &form, idempotency_key)
     }
+}
+
+/// Checkout-level promotion capability for a Checkout Session.
+///
+/// Stripe rejects a `/v1/checkout/sessions` request that sets BOTH
+/// `allow_promotion_codes` and `discounts[…]`, so this is a closed choice of
+/// one-or-the-other (never both):
+///
+/// - [`CheckoutPromo::AllowCodes`] → `allow_promotion_codes=true`: Stripe's
+///   hosted page shows a promo-code field the buyer can fill (a code mapped to
+///   e.g. a 100%-off coupon → checkout → $0). This is the DEFAULT.
+/// - [`CheckoutPromo::Coupon`] → `discounts[0][coupon]=<id>`: the coupon is
+///   PRE-APPLIED, so a 100%-off launch coupon yields a clean checkout → $0 with
+///   no field to fill. Sourced from the `STRIPE_LAUNCH_COUPON` env var (never
+///   hardcoded); when unset the client uses `AllowCodes`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckoutPromo {
+    /// Show the hosted promo-code field (`allow_promotion_codes=true`).
+    AllowCodes,
+    /// Pre-apply a specific coupon id (`discounts[0][coupon]=<id>`).
+    Coupon(String),
+}
+
+impl CheckoutPromo {
+    /// Resolve the promotion capability from the environment. If
+    /// `STRIPE_LAUNCH_COUPON` is set (and non-empty after trim) the coupon is
+    /// pre-applied; otherwise the hosted promo-code field is enabled. Never
+    /// hardcodes a coupon id.
+    #[must_use]
+    pub fn from_env() -> Self {
+        match env::var("STRIPE_LAUNCH_COUPON") {
+            Ok(id) if !id.trim().is_empty() => Self::Coupon(id.trim().to_string()),
+            _ => Self::AllowCodes,
+        }
+    }
+}
+
+/// Build the `/v1/checkout/sessions` form pairs. Extracted so the promo /
+/// coupon wiring is unit-testable without a live Stripe round-trip. The
+/// `allow_promotion_codes` and `discounts[…]` pairs are mutually exclusive
+/// (Stripe rejects both together) — [`CheckoutPromo`] enforces the choice.
+fn build_checkout_form(
+    req: &CheckoutSessionRequest,
+    price_id: &str,
+    promo: &CheckoutPromo,
+) -> Vec<(&'static str, String)> {
+    let mut form = vec![
+        ("mode", "subscription".to_string()),
+        ("customer_email", req.customer_email.clone()),
+        ("success_url", req.success_url.clone()),
+        ("cancel_url", req.cancel_url.clone()),
+        ("line_items[0][price]", price_id.to_string()),
+        ("line_items[0][quantity]", "1".to_string()),
+        ("metadata[tenant_id]", req.tenant_id.as_str().to_string()),
+        ("metadata[tier]", req.tier.as_str().to_string()),
+    ];
+    match promo {
+        // Hosted promo-code field (mutually exclusive with `discounts`).
+        CheckoutPromo::AllowCodes => {
+            form.push(("allow_promotion_codes", "true".to_string()));
+        }
+        // Pre-applied coupon (mutually exclusive with `allow_promotion_codes`).
+        CheckoutPromo::Coupon(coupon_id) => {
+            form.push(("discounts[0][coupon]", coupon_id.clone()));
+        }
+    }
+    form
 }
 
 impl StripeClient for StripeRealClient {
@@ -700,8 +769,14 @@ impl StripeClient for StripeRealClient {
         let price_id = env::var(&price_env)
             .map_err(|_| TierError::Stripe(format!("env var {price_env} not set")))?;
 
+        // Promo-code capability: pre-apply a configured launch coupon
+        // (`STRIPE_LAUNCH_COUPON`, for a clean checkout → $0) or, absent one,
+        // enable the hosted promo-code field (`allow_promotion_codes=true`).
+        // Mutually exclusive by construction — Stripe rejects both together.
+        let promo = CheckoutPromo::from_env();
+
         let raw = self
-            .create_checkout_session_raw(req, &idem, &price_id)
+            .create_checkout_session_raw(req, &idem, &price_id, &promo)
             .map_err(|e| TierError::Stripe(e.to_string()))?;
 
         let customer = raw
@@ -1270,5 +1345,90 @@ mod tests {
             }
             other => panic!("expected Generic, got {other:?}"),
         }
+    }
+
+    // ── Checkout promo / coupon wiring (allow_promotion_codes / discounts) ──
+
+    fn checkout_req() -> CheckoutSessionRequest {
+        CheckoutSessionRequest::new(
+            corelink_tier_selection::tenant::TenantId::new("tenant_promo"),
+            corelink_tier_selection::tier::TierKind::Starter,
+            "buyer@example.test",
+            "https://app/ok",
+            "https://app/cancel",
+        )
+    }
+
+    fn form_get<'a>(form: &'a [(&'static str, String)], key: &str) -> Option<&'a str> {
+        form.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str())
+    }
+
+    #[test]
+    fn checkout_form_default_enables_promo_code_field() {
+        // Absent a configured coupon, the hosted page must show the promo-code
+        // field so a user can enter a code mapped to a 100%-off coupon.
+        let form = build_checkout_form(&checkout_req(), "price_123", &CheckoutPromo::AllowCodes);
+        assert_eq!(
+            form_get(&form, "allow_promotion_codes"),
+            Some("true"),
+            "default checkout must set allow_promotion_codes=true: {form:?}"
+        );
+        // Mutually exclusive with `discounts` — must NOT co-occur.
+        assert!(
+            form.iter().all(|(k, _)| !k.starts_with("discounts")),
+            "allow_promotion_codes and discounts must never co-occur: {form:?}"
+        );
+        // The base params are untouched (pricing / mode / metadata preserved).
+        assert_eq!(form_get(&form, "mode"), Some("subscription"));
+        assert_eq!(form_get(&form, "line_items[0][price]"), Some("price_123"));
+        assert_eq!(form_get(&form, "metadata[tenant_id]"), Some("tenant_promo"));
+    }
+
+    #[test]
+    fn checkout_form_coupon_preapplies_discount_and_omits_allow_codes() {
+        // A configured coupon is PRE-APPLIED via discounts[0][coupon] (clean
+        // checkout → $0) and MUST NOT be combined with allow_promotion_codes.
+        let form = build_checkout_form(
+            &checkout_req(),
+            "price_123",
+            &CheckoutPromo::Coupon("coupon_LAUNCH100".to_string()),
+        );
+        assert_eq!(
+            form_get(&form, "discounts[0][coupon]"),
+            Some("coupon_LAUNCH100"),
+            "coupon path must pre-apply discounts[0][coupon]: {form:?}"
+        );
+        assert!(
+            form.iter().all(|(k, _)| *k != "allow_promotion_codes"),
+            "coupon path must NOT also set allow_promotion_codes (Stripe rejects both): {form:?}"
+        );
+        // Base params preserved.
+        assert_eq!(form_get(&form, "line_items[0][quantity]"), Some("1"));
+    }
+
+    #[test]
+    fn promo_from_env_absent_coupon_allows_codes() {
+        let _g = EnvGuard::new(&["STRIPE_LAUNCH_COUPON"]);
+        env::remove_var("STRIPE_LAUNCH_COUPON");
+        assert_eq!(CheckoutPromo::from_env(), CheckoutPromo::AllowCodes);
+    }
+
+    #[test]
+    fn promo_from_env_empty_coupon_allows_codes() {
+        // Empty / whitespace-only env is treated as unset (no phantom coupon).
+        let _g = EnvGuard::new(&["STRIPE_LAUNCH_COUPON"]);
+        env::set_var("STRIPE_LAUNCH_COUPON", "   ");
+        assert_eq!(CheckoutPromo::from_env(), CheckoutPromo::AllowCodes);
+    }
+
+    #[test]
+    fn promo_from_env_present_coupon_preapplies() {
+        let _g = EnvGuard::new(&["STRIPE_LAUNCH_COUPON"]);
+        env::set_var("STRIPE_LAUNCH_COUPON", "  coupon_LAUNCH100  ");
+        // Trimmed value is used.
+        assert_eq!(
+            CheckoutPromo::from_env(),
+            CheckoutPromo::Coupon("coupon_LAUNCH100".to_string())
+        );
     }
 }
