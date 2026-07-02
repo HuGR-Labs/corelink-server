@@ -203,6 +203,54 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     expect(mintBody["principal_id"]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/);
   });
 
+  it("(c) a caller-supplied ttl_seconds below the cap is passed through (lease-bound)", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, entitled: new Set([TENANT]) });
+    const resp = await mintFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { owner_tenant: TENANT, job_id: JOB_ID, ttl_seconds: 600 },
+    });
+    expect(resp.status).toBe(200);
+    const mintBody = (await captured.req!.json()) as Record<string, unknown>;
+    expect(mintBody["ttl_seconds"]).toBe(600); // honored, the PAT expires with the lease
+  });
+
+  it("(c) a ttl_seconds ABOVE the cap is clamped down to 5400 (never extend)", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, entitled: new Set([TENANT]) });
+    const resp = await mintFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { owner_tenant: TENANT, job_id: JOB_ID, ttl_seconds: 999999 },
+    });
+    expect(resp.status).toBe(200);
+    const mintBody = (await captured.req!.json()) as Record<string, unknown>;
+    expect(mintBody["ttl_seconds"]).toBe(5400); // clamped to the 90-min cap
+  });
+
+  it("(c) ttl_seconds=0 is REFUSED 400 (the container maps 0 → no-expiry; never mint)", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, entitled: new Set([TENANT]) });
+    const resp = await mintFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { owner_tenant: TENANT, job_id: JOB_ID, ttl_seconds: 0 },
+    });
+    expect(resp.status).toBe(400);
+    expect(captured.req).toBeUndefined(); // never minted a non-expiring PAT
+  });
+
+  it("(c) a negative or non-integer ttl_seconds is REFUSED 400", async () => {
+    for (const bad of [-1, 3.5, "600", null]) {
+      const captured: { req?: Request } = {};
+      const env = makeEnv({ captured, entitled: new Set([TENANT]) });
+      const resp = await mintFetch(env, {
+        auth: INTERNAL_KEY,
+        body: { owner_tenant: TENANT, job_id: JOB_ID, ttl_seconds: bad },
+      });
+      expect(resp.status).toBe(400);
+      expect(captured.req).toBeUndefined();
+    }
+  });
+
   it("(b) per-job principal UUID is STABLE across mints for the same job_id", async () => {
     const c1: { req?: Request } = {};
     const c2: { req?: Request } = {};

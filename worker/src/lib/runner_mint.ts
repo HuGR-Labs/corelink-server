@@ -48,6 +48,11 @@ import { mintScopedPat } from "./session_exchange.js";
  * lost runner). 90 minutes comfortably covers a long build while keeping the
  * blast radius of a leaked, un-revoked runner token bounded. The container
  * clamps `ttl_seconds=0` to "no expiry"; we never send 0.
+ *
+ * This is now the DEFAULT + HARD CAP: a caller may supply a shorter
+ * `ttl_seconds` (the dispatcher sends the lease's remaining time so the PAT
+ * EXPIRES WITH THE LEASE — see `handleRunnerMint`). We only ever clamp the
+ * request DOWN to this cap; a caller can never extend past 90 min.
  */
 const RUNNER_PAT_TTL_SECONDS = 5400;
 
@@ -91,14 +96,16 @@ function reapiError(error: string, message: string, status: number, requestId: s
  *   3. Secrets: a properly sized internal-auth key must be bound to AUTHORIZE
  *      the mint to the container (the mint is server-to-server). The runner-mint
  *      surface needs NO Clerk secret (no session is verified).
- *   4. Parse body `{ owner_tenant, job_id, scope? }`. Missing/empty
- *      owner_tenant or job_id → 400; admin/owner/unknown scope → 400.
+ *   4. Parse body `{ owner_tenant, job_id, scope?, ttl_seconds? }`. Missing/empty
+ *      owner_tenant or job_id → 400; admin/owner/unknown scope → 400; a
+ *      non-positive/non-integer ttl_seconds → 400 (a caller may only SHORTEN the
+ *      TTL toward its lease deadline; it is clamped down to the 90-min cap).
  *   5. Runners-entitlement check: `runners_entitlement WHERE tenant_id =
  *      owner_tenant`. No row → 403 (not entitled to Runners — the runner-axis
  *      authorization, separate from cache tier).
  *   6. Mint via the SINGLE authority {@link mintScopedPat}, passing `job_id` as
  *      the principal-source string (SHA-256 → stable per-job principal UUID for
- *      audit correlation) and {@link RUNNER_PAT_TTL_SECONDS}.
+ *      audit correlation) and the clamped lease-bound TTL (≤ {@link RUNNER_PAT_TTL_SECONDS}).
  *   7. Return the standard mint envelope `{ token_plaintext, pat_id, token_id,
  *      expires_ms }`.
  */
@@ -139,6 +146,7 @@ export async function handleRunnerMint(
     readonly owner_tenant?: unknown;
     readonly job_id?: unknown;
     readonly scope?: unknown;
+    readonly ttl_seconds?: unknown;
   }
   let body: RunnerMintRequest;
   try {
@@ -161,6 +169,23 @@ export async function handleRunnerMint(
       return reapiError("BAD_REQUEST", "unsupported scope", 400, requestId);
     }
     scope = body.scope;
+  }
+
+  // ── 4b. Lease-bound TTL (optional; clamp DOWN to the cap, never extend) ─────
+  // The dispatcher sends `ttl_seconds` = the lease's REMAINING time so the PAT
+  // EXPIRES WITH THE LEASE. Without honoring it, the 90-min default outlives any
+  // shorter lease → the dispatcher's `expires_ms ≤ lease_deadline` assertion
+  // trips → fail-closed provision. We clamp the request DOWN to the cap and NEVER
+  // up (extending would break that assertion). `0`/negative/non-int is REFUSED
+  // (the container maps `ttl_seconds=0` → "no expiry" — a non-expiring runner PAT
+  // must be impossible to request). Omitted → the 90-min default (backward-compat).
+  let ttlSeconds = RUNNER_PAT_TTL_SECONDS;
+  if (body.ttl_seconds !== undefined) {
+    const t = body.ttl_seconds;
+    if (typeof t !== "number" || !Number.isInteger(t) || t <= 0) {
+      return reapiError("BAD_REQUEST", "ttl_seconds must be a positive integer", 400, requestId);
+    }
+    ttlSeconds = Math.min(t, RUNNER_PAT_TTL_SECONDS);
   }
 
   // ── 5. Runners-entitlement check (the runner-axis authorization) ───────────
@@ -192,7 +217,7 @@ export async function handleRunnerMint(
     requestId,
     ownerTenant,
     jobId,
-    RUNNER_PAT_TTL_SECONDS,
+    ttlSeconds,
     scope,
     internalAuthKey,
   );
