@@ -1,14 +1,14 @@
 {
   "bench": "blake3",
   "bench_id": "blake3_hash/1MiB",
-  "captured_at": "2026-05-16T13:45:51Z",
-  "commit": "365dd38",
+  "captured_at": "2026-07-02T20:32:01Z",
+  "commit": "8802e060",
   "crate": "corelink-hash",
   "criticality": "CRITICAL",
-  "mean_ns": 263054.8515625,
-  "median_ns": 263054.8515625,
-  "notes": "Wave-29 stream-9 GA-freeze (--quick mode). Canonical tag: perf-baseline-ga-2026-05-16. p99_ns is upper-CI-bound proxy from --quick (full sample p99 requires --measurement-time 5; operator refresh per audit \u00a75). Pre-GA pilot tenant workloads.",
-  "p99_ns": 263203.375,
-  "sample_count": null,
-  "tolerance_pct": null
+  "mean_ns": 299692.0427,
+  "median_ns": 299577.6314,
+  "notes": "Recaptured 2026-07-02T20:32:01Z via perf-regression.yml on ubuntu-latest (GitHub-hosted), --measurement-time 5 \u2014 the audit \u00a75 operator recapture that supersedes the wave-29 --quick upper-CI proxy. tolerance_pct=20: this bench is memory-bandwidth-bound; p99 (tail metric) on shared CI runners jitters >15% (perf-regression.yml documents CI jitter >10% p99), so the 5% CRITICAL class default false-positives on runner variance. 20% clears the documented jitter floor with headroom; an algorithmic regression is >>20% and still caught. The nightly (stable self-hosted CPU) gates median/mean tightly.",
+  "p99_ns": 302104.9575,
+  "sample_count": 100,
+  "tolerance_pct": 20.0
 }

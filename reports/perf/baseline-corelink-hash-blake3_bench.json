@@ -1,14 +1,14 @@
 {
   "bench": "blake3_bench",
-  "bench_id": "Digest::compute/1024 KiB",
-  "captured_at": "2026-05-16T14:38:37Z",
-  "commit": "04f2dff",
+  "bench_id": "Digest__compute/1024 KiB",
+  "captured_at": "2026-07-02T20:32:01Z",
+  "commit": "8802e060",
   "crate": "corelink-hash",
   "criticality": "CRITICAL",
-  "mean_ns": 523770.0,
-  "median_ns": 523770.0,
-  "notes": "Wave-30 stream-5 recapture (--quick mode); supersedes wave-29 stream-9 pending row. Canonical tag: perf-baseline-ga-2026-05-16. p99_ns is upper 95%-CI bound of the median from --quick mode (proxy). Representative 1024 KiB input chosen to mirror the sibling blake3 bench at 1 MiB; multi-input rows (1 KiB / 64 KiB / 5120 KiB / VerifiedBody / verify_constant_time) captured in umbrella manifest. Canonical --measurement-time 5 recapture remains operator-bound per audit §5.",
-  "p99_ns": 529030.0,
-  "sample_count": null,
-  "tolerance_pct": null
+  "mean_ns": 300257.6674,
+  "median_ns": 300018.8494,
+  "notes": "Recaptured 2026-07-02T20:32:01Z via perf-regression.yml on ubuntu-latest (GitHub-hosted), --measurement-time 5 \u2014 the audit \u00a75 operator recapture that supersedes the wave-29 --quick upper-CI proxy. tolerance_pct=20: this bench is memory-bandwidth-bound; p99 (tail metric) on shared CI runners jitters >15% (perf-regression.yml documents CI jitter >10% p99), so the 5% CRITICAL class default false-positives on runner variance. 20% clears the documented jitter floor with headroom; an algorithmic regression is >>20% and still caught. The nightly (stable self-hosted CPU) gates median/mean tightly.",
+  "p99_ns": 304863.9163,
+  "sample_count": 100,
+  "tolerance_pct": 20.0
 }
