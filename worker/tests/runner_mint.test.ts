@@ -206,9 +206,11 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
   it("(c) a caller-supplied ttl_seconds below the cap is passed through (lease-bound)", async () => {
     const captured: { req?: Request } = {};
     const env = makeEnv({ captured, entitled: new Set([TENANT]) });
+    // Distinct job_id → its own throttle principal (avoids perturbing the
+    // shared per-principal in-memory throttle counter other tests rely on).
     const resp = await mintFetch(env, {
       auth: INTERNAL_KEY,
-      body: { owner_tenant: TENANT, job_id: JOB_ID, ttl_seconds: 600 },
+      body: { owner_tenant: TENANT, job_id: `${JOB_ID}-ttl-pass`, ttl_seconds: 600 },
     });
     expect(resp.status).toBe(200);
     const mintBody = (await captured.req!.json()) as Record<string, unknown>;
@@ -220,7 +222,7 @@ describe("POST /internal/v1/runner/mint — D-9 runner PAT mint", () => {
     const env = makeEnv({ captured, entitled: new Set([TENANT]) });
     const resp = await mintFetch(env, {
       auth: INTERNAL_KEY,
-      body: { owner_tenant: TENANT, job_id: JOB_ID, ttl_seconds: 999999 },
+      body: { owner_tenant: TENANT, job_id: `${JOB_ID}-ttl-clamp`, ttl_seconds: 999999 },
     });
     expect(resp.status).toBe(200);
     const mintBody = (await captured.req!.json()) as Record<string, unknown>;
