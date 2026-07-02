@@ -85,15 +85,38 @@ function makeConfigDb(
   } = {},
 ): D1Database {
   const orgMap = opts.orgMap;
+  // Apply a single githugr-provision INSERT (used by the transactional batch path).
+  const applyProvisionWrite = (sql: string, args: unknown[]): void => {
+    // fail-CLOSED simulation: a fault ANYWHERE in the batch aborts the whole batch.
+    if (
+      opts.githugrProvisionThrows &&
+      (sql.includes("INTO tenant") ||
+        sql.includes("INTO tier_selections") ||
+        sql.includes("INTO runners_entitlement") ||
+        sql.includes("INTO tenant_quota") ||
+        sql.includes("INTO tenant_org_map"))
+    ) {
+      throw new Error("D1 githugr provision INSERT failure (simulated fault)");
+    }
+    if (orgMap && sql.includes("INSERT OR IGNORE INTO tenant_org_map")) {
+      // (clerk_org_id, tenant_id, created_at_ms). PRIMARY KEY = first writer wins.
+      const [clerkOrgId, tenantId] = args as [string, string, number];
+      if (!orgMap.has(clerkOrgId)) orgMap.set(clerkOrgId, tenantId);
+    }
+  };
   return {
     prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
+        // Carry sql+args so the batch path can replay this statement's effect.
+        __sql: sql,
+        __args: args,
         first: async <T>() => {
           // Throttle INSERT…ON CONFLICT…RETURNING count → 1 (under cap).
           if (sql.includes("session_exchange_throttle")) {
             return { count: 1 } as T;
           }
-          // githugr provision read-back: SELECT ... FROM tenant_org_map WHERE clerk_org_id.
+          // githugr provision SELECT (lookup-first AND post-batch read-back):
+          // SELECT ... FROM tenant_org_map WHERE clerk_org_id.
           if (sql.includes("tenant_org_map")) {
             if (opts.githugrProvisionThrows) {
               throw new Error("D1 tenant_org_map SELECT failure (simulated fault)");
@@ -116,19 +139,20 @@ function makeConfigDb(
               opts.patInsertCapture.binds = args;
             }
           }
-          // githugr provisioning INSERTs — fail-CLOSED simulation + org-map capture.
-          if (opts.githugrProvisionThrows && (sql.includes("INTO tenant") || sql.includes("INTO tier_selections") || sql.includes("INTO runners_entitlement") || sql.includes("INTO tenant_quota") || sql.includes("INTO tenant_org_map"))) {
-            throw new Error("D1 githugr provision INSERT failure (simulated fault)");
-          }
-          if (orgMap && sql.includes("INSERT OR IGNORE INTO tenant_org_map")) {
-            // (clerk_org_id, tenant_id, created_at_ms). PRIMARY KEY = first writer wins.
-            const [clerkOrgId, tenantId] = args as [string, string, number];
-            if (!orgMap.has(clerkOrgId)) orgMap.set(clerkOrgId, tenantId);
-          }
           return { success: true } as unknown as D1Result;
         },
       }),
     }),
+    // Transactional batch — the githugr provision path (all-or-nothing). Replays
+    // each statement's write effect in order; a throw aborts the whole batch.
+    batch: async (statements: Array<{ __sql: string; __args: unknown[] }>) => {
+      const out: unknown[] = [];
+      for (const s of statements) {
+        applyProvisionWrite(s.__sql, s.__args);
+        out.push({ success: true });
+      }
+      return out as unknown as D1Result[];
+    },
   } as unknown as D1Database;
 }
 

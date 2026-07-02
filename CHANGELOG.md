@@ -162,6 +162,13 @@ Each entry cross-references:
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
 ### Security
+- **Hardened githugr per-tenant provisioning (brutal-audit H3/H5 — both LOW, pre-pilot).** The exchange's
+  `provisionOrLookupGithugrTenant` now (a) LOOKS UP the `tenant_org_map` row FIRST and returns immediately on a
+  hit — repeat logins are a single read instead of 5 writes (removes the un-throttled write-amplification), and
+  (b) wraps the first-login 5-row provision in a transactional D1 `batch()` so a mid-provision fault can't leave
+  a partial row-set. Fail-closed contract unchanged (any D1 throw → 500, never a partial/wrong tenant). Isolation
+  audit verdict: no cross-tenant landing, no forgeable-sub squatting, no fail-open — the pilot's per-tenant
+  isolation holds; these were the only two (LOW) hardening items.
 - **`email_hash` dual-read (salted-or-legacy lookup) so the salt can be activated safely + fixed a cross-lang
   parity bug.** Prod has pre-salt legacy hashes (pending invites + existing tenants); a naive salt-set would
   break their lookups. Now WRITES salt (when `EMAIL_HASH_SALT` is set) but LOOKUPS try the salted hash then the
