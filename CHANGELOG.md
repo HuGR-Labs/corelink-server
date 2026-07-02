@@ -23,6 +23,12 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Worker now routes `/internal/v1/auth/resolve-tenant` to the container (was mounted but unreachable).** The
+  container had the resolve-tenant endpoint but the Worker only exact-matched `/internal/v1/auth/introspect`, so
+  resolve-tenant 404'd end-to-end (same #261-class wiring gap). Added the exact-path route, reusing the
+  `fabric_introspect` pass-through (same `FABRIC_INTROSPECT_AUTH_KEY` gate, `_system` DO, auth forwarded
+  unchanged, no edge gate) — so a fabric consumer (githugr) can resolve `clerk_org_id`(=sub)→`tenant_id` for
+  isolation verification + per-tenant reads.
 - **Real per-tenant identity for githugr sessions — the exchange now provisions-or-looks-up per `sub` (pilot A1 wire).**
   `verifyGithugrSession` previously resolved EVERY githugr session to the fixed showcase tenant (`GITHUGR_TENANT_ID`,
   ee30f7ba) — no isolation. It now derives a DETERMINISTIC tenant_id from the Clerk `sub`, idempotently provisions

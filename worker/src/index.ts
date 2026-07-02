@@ -704,6 +704,18 @@ function matchRoute(url: URL): RouteMatch {
     return { tenantId: "_system", pathSuffix: path, routeKind: "fabric_introspect" };
   }
 
+  // resolve-tenant — EXACT /internal/v1/auth/resolve-tenant. The container mounts
+  // it on the SAME router as introspect and is the SOLE auth authority, gated by
+  // the SAME FABRIC_INTROSPECT_AUTH_KEY (+ optional _HUGR). So this reuses the
+  // fabric_introspect pass-through: forward the caller's x-corelink-internal-auth
+  // UNCHANGED to the _system DO, NO edge gate. Lets a fabric consumer (githugr)
+  // resolve clerk_org_id(=sub)→tenant_id for isolation verification + per-tenant
+  // reads. (Same #261-class wiring gap as introspect: the container had the route
+  // but the Worker never forwarded this path — it 404'd end-to-end until here.)
+  if (path === "/internal/v1/auth/resolve-tenant") {
+    return { tenantId: "_system", pathSuffix: path, routeKind: "fabric_introspect" };
+  }
+
   // corelink-runners billing usage-push INGEST — EXACT
   // /internal/v1/billing/usage (no underscore, mirrors the fabric introspect
   // contract). The container mounts this route and is the SOLE auth authority,
