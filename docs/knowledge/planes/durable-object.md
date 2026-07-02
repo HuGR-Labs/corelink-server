@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/event_log_do.ts"
   - "worker/src/rollout_controller.ts"
-checkpoint_sha: "2103eddb4c5a79d3ee4c553d3da9f89c54aebcfa"
+checkpoint_sha: "8bf9a0fb9cd00430e1487dbe6e5a072c2c82957d"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -41,7 +41,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   (the server-held salt for the email-hash pseudonym; unset ⇒ legacy unsalted SHA-256, zero
   regression) — which the container's `email_hash::hash_email` reads, so it MUST be forwarded
   here or a `wrangler secret put EMAIL_HASH_SALT` would never reach the container
-  (`worker/src/durable_object.ts:534-695`).
+  (`worker/src/durable_object.ts:534-699`).
 
 # How it works
 1. The DO restores its persisted `LifecycleState` under `blockConcurrencyWhile` on every wakeup so a
@@ -57,16 +57,16 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 6. Cold start emits the `corelink.do.cold_start.v1` audit event BEFORE calling `container.start`, per
    the charter's audit-before-mutation rule (`worker/src/durable_object.ts:516-526`).
 7. `waitForContainerHealth` polls `GET /_health` on the container port until a 200 or the 90s startup
-   timeout (`worker/src/durable_object.ts:797-827`). The `waitForContainerReady` queue FAST-EXITS the
+   timeout (`worker/src/durable_object.ts:801-831`). The `waitForContainerReady` queue FAST-EXITS the
    moment the container status flips to the terminal `"stopped"` state (a bad deploy / OOM / panic) — it
    no longer spins the full ~90s `STARTUP_TIMEOUT_MS` on a container that is already dead, returning a
-   prompt `503` so the next request triggers a restart (`worker/src/durable_object.ts:775-786`).
+   prompt `503` so the next request triggers a restart (`worker/src/durable_object.ts:779-790`).
 8. An idle timer destroys the container after `IDLE_TIMEOUT_MS` (30 min), emitting the death event first
-   (`worker/src/durable_object.ts:80-93`, `worker/src/durable_object.ts:915-932`).
+   (`worker/src/durable_object.ts:80-93`, `worker/src/durable_object.ts:919-936`).
 9. A periodic `alarm` re-probes health and marks the container `degraded` after `MAX_HEALTH_FAILURES`
-   (`worker/src/durable_object.ts:954-1008`).
+   (`worker/src/durable_object.ts:958-1012`).
 10. The Worker exports two SIBLING DO classes alongside `CoreLinkServer`
-    (`worker/src/index.ts:2687`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
+    (`worker/src/index.ts:2688`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
     primitive — it adopts the first `x-corelink-tenant-id` it sees, persists that pin, and refuses any
     other tenant's request with a `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`). Its
     `append` monotonically assigns `seq` under `blockConcurrencyWhile` (persist the entry, THEN advance
@@ -119,11 +119,11 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 7. `worker/src/durable_object.ts:409-467` — `ensureContainerRunning` lifecycle state machine.
 8. `worker/src/durable_object.ts:485-511` — the synchronous in-memory `"starting"` concurrent-start guard.
 9. `worker/src/durable_object.ts:516-526` — audit-before-mutation cold-start event + `container.start`.
-10. `worker/src/durable_object.ts:534-695` — the `container.start({ env })` env-contract forward.
-11. `worker/src/durable_object.ts:797-827` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:775-786` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
-12. `worker/src/durable_object.ts:915-932` — `onIdleTimeout`: death event emitted, then the idle-timeout destroy.
-13. `worker/src/durable_object.ts:954-1008` — the periodic `alarm` health re-probe + degrade.
-14. `worker/src/index.ts:2687` — the Worker exports `CoreLinkServer`, `RolloutController`, `EventLogDO`.
+10. `worker/src/durable_object.ts:534-699` — the `container.start({ env })` env-contract forward.
+11. `worker/src/durable_object.ts:801-831` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:779-790` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
+12. `worker/src/durable_object.ts:919-936` — `onIdleTimeout`: death event emitted, then the idle-timeout destroy.
+13. `worker/src/durable_object.ts:958-1012` — the periodic `alarm` health re-probe + degrade.
+14. `worker/src/index.ts:2688` — the Worker exports `CoreLinkServer`, `RolloutController`, `EventLogDO`.
 15. `worker/src/event_log_do.ts:207-218` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).
 16. `worker/src/event_log_do.ts:220-225` — the `/_eventlog/append` + `/_eventlog/read` route dispatch.
 17. `worker/src/event_log_do.ts:266-277` — `handleAppend`: monotonic gap-free `seq` under `blockConcurrencyWhile` (persist-entry-then-advance-head).

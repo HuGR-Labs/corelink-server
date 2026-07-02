@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/internal_auth.ts"
   - "worker/src/index.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "2103eddb4c5a79d3ee4c553d3da9f89c54aebcfa"
+checkpoint_sha: "8bf9a0fb9cd00430e1487dbe6e5a072c2c82957d"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -76,14 +76,14 @@ control surfaces (mint, introspect) at the Worker edge.
 - **Availability-vs-auth at the Worker edge: a transient D1 PAT-lookup FAULT now maps to a retryable
   503, NOT a 401.** `extractAuth` wraps the `SELECT … FROM pat` in a try/catch and on any D1 error
   (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
-  (`worker/src/index.ts:1043-1053`). The PAT-gate caller (H1 fix) now maps BOTH
+  (`worker/src/index.ts:1044-1054`). The PAT-gate caller (H1 fix) now maps BOTH
   `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
-  (`worker/src/index.ts:2185-2193`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
+  (`worker/src/index.ts:2186-2194`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
   surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
   chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
   still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
   COMPLETE for the worker edge — a transient D1 fault is NOT a cause of a 401 there; it is a 503. The
-  in-line comment at `worker/src/index.ts:1051` ("map to 503 if desired") is now stale relative to the
+  in-line comment at `worker/src/index.ts:1052` (“map to 503 if desired”) is now stale relative to the
   caller, which DOES map it to 503 (the cited line numbers shifted after the Artifact 1 `/v1/public/*`
   attestation-verifier route arm was added above this handler, again when the CF-6 audit-chain
   signing env vars were declared on the `Env` type, when the WP4 Sentry `beforeSend`
