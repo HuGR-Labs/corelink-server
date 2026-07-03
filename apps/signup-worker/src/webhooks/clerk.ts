@@ -1081,7 +1081,14 @@ export async function handleClerkWebhook(
   // the first write — makes a missing key 500 with ZERO side effects, so
   // redelivery cleanly re-provisions once the secret is set. (issuePat also
   // throws as a backstop.)
-  if (!(env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY)) {
+  // Resolve dedicated-if-set, then fail-loud on a BLANK resolved key too (not
+  // just unset) — mirrors the 4 main-Worker callers' guard exactly
+  // (`!internalAuthKey || internalAuthKey.length === 0`, commit c88508f1): an
+  // empty-string secret would pass a bare truthiness check yet cannot authorize
+  // the mint.
+  const preflightAuthKey =
+    env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
+  if (!preflightAuthKey || preflightAuthKey.length === 0) {
     console.error(
       `[clerk-webhook] CORELINK_PAT_MINT_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY absent — cannot mint PAT; ` +
         `returning 500 before any tenant write (user=${event.data.id}, svix=${svixId})`,
@@ -1278,7 +1285,11 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
       // Same posture as the 4 main-Worker callers (commit c88508f1).
       const internalAuthKey =
         env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
-      if (!internalAuthKey) {
+      // Fail-loud on a BLANK resolved key too (not just unset) — mirrors the 4
+      // main-Worker callers' guard exactly (`!internalAuthKey ||
+      // internalAuthKey.length === 0`, commit c88508f1); an empty-string secret
+      // would pass bare truthiness yet cannot authorize the mint.
+      if (!internalAuthKey || internalAuthKey.length === 0) {
         // FAIL-LOUD (signup money path): without the internal auth key we
         // CANNOT mint a real PAT. The old behavior returned a fake
         // "corelink_pat_DEVSTUB" that looked valid to the user but

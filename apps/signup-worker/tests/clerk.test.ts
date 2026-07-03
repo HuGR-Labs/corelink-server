@@ -522,6 +522,74 @@ describe("defaultApiClient.issuePat (H3: honors scope, no privilege-by-default)"
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
+  // Minimal D1 fake that satisfies the pat INSERT + reads the issuePat path needs.
+  function mintFakeDb() {
+    const stmt = {
+      bind() {
+        return stmt;
+      },
+      async run() {
+        return { success: true };
+      },
+      async all() {
+        return { results: [] };
+      },
+      async first() {
+        return null;
+      },
+    };
+    return { prepare: () => stmt };
+  }
+
+  // Capture the x-corelink-internal-auth header the mint request presents.
+  function spyMintHeader() {
+    let mintAuth: string | null = null;
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (req: Request | string | URL) => {
+        mintAuth = (req as Request).headers.get("x-corelink-internal-auth");
+        return new Response(
+          JSON.stringify({
+            token_plaintext: "corelink_pat_REAL",
+            pat_id: "pat_real",
+            token_id: "tok_real",
+            expires_ms: 9_999_999_999_999,
+            hash: "deadbeefhash",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      });
+    return { fetchSpy, getMintAuth: () => mintAuth };
+  }
+
+  it("presents the DEDICATED CORELINK_PAT_MINT_AUTH_KEY on x-corelink-internal-auth (dedicated wins over shared)", async () => {
+    const { getMintAuth } = spyMintHeader();
+    const env = {
+      CLERK_WEBHOOK_SECRET: "whsec_x",
+      CORELINK_API_BASE: "https://api.example.test",
+      CORELINK_PAT_MINT_AUTH_KEY: "dedicated-mint-key",
+      CORELINK_INTERNAL_AUTH_KEY: "shared-key",
+      CONFIG_DB: mintFakeDb(),
+    } as unknown as AutoProvisionEnv;
+
+    await defaultApiClient(env).issuePat("t_1", "read-write");
+    expect(getMintAuth()).toBe("dedicated-mint-key");
+  });
+
+  it("falls back to the shared CORELINK_INTERNAL_AUTH_KEY when the dedicated key is unset (additive)", async () => {
+    const { getMintAuth } = spyMintHeader();
+    const env = {
+      CLERK_WEBHOOK_SECRET: "whsec_x",
+      CORELINK_API_BASE: "https://api.example.test",
+      // CORELINK_PAT_MINT_AUTH_KEY intentionally UNSET.
+      CORELINK_INTERNAL_AUTH_KEY: "shared-key",
+      CONFIG_DB: mintFakeDb(),
+    } as unknown as AutoProvisionEnv;
+
+    await defaultApiClient(env).issuePat("t_1", "read-write");
+    expect(getMintAuth()).toBe("shared-key");
+  });
+
   it("throws (fail-loud) when CORELINK_INTERNAL_AUTH_KEY is absent — never returns a stub PAT", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const env = {
