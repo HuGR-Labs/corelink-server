@@ -22,6 +22,21 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **Stripe webhook `enabled_events` drift — the signup-worker's live subscription is hand-configured and can
+  silently diverge from the events the code dispatches.** The signup-worker is the authoritative billing +
+  downgrade handler, but nothing tied its live Stripe endpoint's `enabled_events` to `HANDLED_EVENT_TYPES`.
+  As-configured live (endpoint `we_1Tolig…`, 5 events) it was missing `checkout.session.async_payment_succeeded`
+  — so a delayed-payment (SEPA/ACH) checkout that completes `unpaid` and grants on the async event would never
+  provision. More importantly the drift class is unbounded: a future accidental drop of `customer.subscription.deleted`
+  / `invoice.payment_failed` / `customer.subscription.updated` would silently strand a canceled/non-paying customer
+  on a paid tier. Fixed at the root: the dispatched event set is now a **single source of truth**
+  (`apps/signup-worker/src/webhooks/handled-stripe-events.json`) that drives BOTH the runtime allowlist
+  (`HANDLED_EVENT_TYPES`) AND the live endpoint's `enabled_events` (via the new idempotent
+  `scripts/ops/stripe-reconcile-webhook-events.sh`, dry-run by default, same safety pattern as
+  `stripe-setup-tiers.sh`). A vitest guardrail (`tests/handled-stripe-events.test.ts`) fails CI if any
+  downgrade-critical event is dropped. Operator runbook: `docs/operator/stripe-webhook-events-reconcile.md`.
+
 ### Added
 - **Runner-mint honors a caller-supplied lease-bound `ttl_seconds` (C2c poison-narrowing + fixes a latent fail-closed bug).**
   `POST /internal/v1/runner/mint` now accepts an optional `ttl_seconds` in the request body; the runner dispatcher

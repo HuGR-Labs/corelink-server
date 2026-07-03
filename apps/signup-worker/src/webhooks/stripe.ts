@@ -83,6 +83,11 @@
 
 import type { AnalyticsEmitEnv } from "../lib/analytics-server";
 import { emit, newEventId } from "../lib/analytics-server";
+// SINGLE SOURCE OF TRUTH for the dispatched event set (see handled-stripe-events.json).
+// The SAME file drives the live Stripe endpoint's enabled_events via
+// scripts/ops/stripe-reconcile-webhook-events.sh, so the runtime allowlist and the
+// dashboard subscription can never drift. Edit the JSON, not a literal here.
+import handledStripeEvents from "./handled-stripe-events.json";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -357,16 +362,15 @@ function subscriptionStatusGrantsAccess(rawStatus: unknown): boolean {
 // Idempotency claim (#34/#36): dedup on Stripe event.id
 // ---------------------------------------------------------------------------
 
-/** Event types this handler actually dispatches side effects for. */
-const HANDLED_EVENT_TYPES = new Set<string>([
-    "checkout.session.completed",
-    "checkout.session.async_payment_succeeded",
-    "checkout.session.async_payment_failed",
-    "customer.subscription.updated",
-    "customer.subscription.created",
-    "invoice.payment_failed",
-    "customer.subscription.deleted",
-]);
+/**
+ * Event types this handler actually dispatches side effects for.
+ *
+ * Built from the single-source-of-truth JSON (handled-stripe-events.json) so the
+ * runtime allowlist and the live Stripe endpoint's `enabled_events` stay in lockstep
+ * (the reconcile script reads the SAME JSON). Never inline a literal here — a literal
+ * that drifts from the dashboard is exactly the class of bug this indirection kills.
+ */
+export const HANDLED_EVENT_TYPES = new Set<string>(handledStripeEvents.enabled_events);
 
 /** Outcome of an idempotency claim against `stripe_webhook_events_processed`. */
 type ClaimResult =
