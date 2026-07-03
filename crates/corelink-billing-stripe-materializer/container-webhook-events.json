@@ -1,0 +1,16 @@
+{
+  "$comment": "SINGLE SOURCE OF TRUTH for the events the CONTAINER (grant-only) Stripe materializer handles — the exact event-type column of EVENT_MATERIALIZATION_MATRIX in src/handler.rs. A Rust guardrail test (handler.rs) asserts this list == the matrix, so the JSON can never drift from the code. scripts/ops/stripe-reconcile-webhook-events.sh --url <this endpoint_url> --json <this file> reconciles the live 'Corelink prd' endpoint's enabled_events down from the over-broad 236-event catch-all to exactly these 10. Reducing to this set is safe: every event outside the matrix is a no-op ack in the container, so narrowing removes only events it never acted on. The container is grant-only; authoritative DOWNGRADE lives in the signup-worker (handled-stripe-events.json).",
+  "endpoint_url": "https://corelink-api.humangr.com/v1/billing/stripe-webhook",
+  "enabled_events": [
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "customer.subscription.trial_will_end",
+    "customer.created",
+    "invoice.created",
+    "invoice.paid",
+    "invoice.payment_failed",
+    "charge.refunded",
+    "charge.dispute.created"
+  ]
+}

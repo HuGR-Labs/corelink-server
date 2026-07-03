@@ -68,6 +68,34 @@ The script:
   in the dashboard; the script never deletes);
 - sets `enabled_events` to **exactly** the canonical set, then re-reads to verify.
 
+## The container (grant-only) endpoint — second source of truth
+
+The **container materializer** (`corelink-api.humangr.com/v1/billing/stripe-webhook`, "Corelink prd",
+endpoint `we_1Tfh8P…`) is over-subscribed to a ~236-event catch-all, but only materializes the **10**
+events in `EVENT_MATERIALIZATION_MATRIX` (`crates/corelink-billing-stripe-materializer/src/handler.rs`).
+Its source of truth is `crates/corelink-billing-stripe-materializer/container-webhook-events.json`, pinned
+to the matrix by a Rust guardrail test (`handler.rs::container_webhook_events_json_matches_the_matrix`).
+
+Tightening 236 → 10 is **safe**: every event outside the matrix is a no-op ack in the container, so
+narrowing removes only events it never acted on (over-subscription fails safe; under-subscription would
+drop a grant path — which is exactly what the guardrail test prevents from drifting). Reconcile it with the
+SAME tool via the overrides:
+
+```bash
+# DRY-RUN first (--live, read-only) — confirm the diff is ONLY REMOVEs (never an ADD):
+scripts/ops/stripe-reconcile-webhook-events.sh --live \
+  --url  https://corelink-api.humangr.com/v1/billing/stripe-webhook \
+  --json crates/corelink-billing-stripe-materializer/container-webhook-events.json
+
+# APPLY (restricted rk_live_ key):
+STRIPE_API_KEY=rk_live_…  scripts/ops/stripe-reconcile-webhook-events.sh --yes --live \
+  --url  https://corelink-api.humangr.com/v1/billing/stripe-webhook \
+  --json crates/corelink-billing-stripe-materializer/container-webhook-events.json
+```
+
+If the dry-run shows ANY `+ ADD`, STOP — the matrix handles an event the live endpoint isn't subscribed to
+(the reverse of over-subscription); investigate before applying.
+
 ## Boundaries
 
 - The **admin lane (Claude) does not run this against LIVE** — it writes/vets the

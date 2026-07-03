@@ -784,6 +784,37 @@ mod tests {
     }
 
     #[test]
+    fn container_webhook_events_json_matches_the_matrix() {
+        // The reconcile script (scripts/ops/stripe-reconcile-webhook-events.sh)
+        // sets the LIVE container endpoint's `enabled_events` from
+        // container-webhook-events.json. This test makes EVENT_MATERIALIZATION_MATRIX
+        // the sole authority: the JSON can never drift from the code, so the live
+        // endpoint can never be subscribed to more/fewer events than the container
+        // actually materializes (over-subscription is harmless-but-untidy;
+        // under-subscription would silently drop a grant path).
+        let json: serde_json::Value =
+            serde_json::from_str(include_str!("../container-webhook-events.json")).unwrap();
+        let mut from_json: Vec<String> = json["enabled_events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect();
+        from_json.sort();
+        let mut from_matrix: Vec<String> = EVENT_MATERIALIZATION_MATRIX
+            .iter()
+            .map(|(ev, _, _)| (*ev).to_owned())
+            .collect();
+        from_matrix.sort();
+        assert_eq!(
+            from_json, from_matrix,
+            "container-webhook-events.json enabled_events must equal the \
+             EVENT_MATERIALIZATION_MATRIX event-type column exactly — update the JSON \
+             when you change the matrix (the reconcile script drives the live endpoint from it)."
+        );
+    }
+
+    #[test]
     fn subscription_updated_recomputes_tier_and_emits_change_audit() {
         let (handler, d1, audit) = fixture();
         d1.upsert_tier("ten_1", "starter", 1_700_000_000_000, "init")
