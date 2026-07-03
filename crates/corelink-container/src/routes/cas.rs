@@ -1201,11 +1201,17 @@ async fn handle_batch_read(
     for hash in &hashes {
         // Acquire the permit BEFORE spawning so the in-flight count is bounded
         // to BATCH_READ_FANOUT (permit is moved into the task and held for its
-        // lifetime). The semaphore is never closed, so acquire cannot fail.
-        let permit = Arc::clone(&semaphore)
-            .acquire_owned()
-            .await
-            .expect("batch-read semaphore never closed");
+        // lifetime). The semaphore is never closed here, so `Err` (closed) is
+        // unreachable — but we fail CLOSED (500) rather than `.expect()` it
+        // (clippy::expect-used is denied repo-wide).
+        let permit = match Arc::clone(&semaphore).acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => {
+                return map_err(CasHandlerError::Internal(
+                    "batch-read semaphore closed".into(),
+                ))
+            }
+        };
         let read = state.read.clone();
         let tombstones = state.tombstones.clone();
         let tenant = auth.0.clone();
