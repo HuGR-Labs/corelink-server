@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **RBAC roles were dead — every Clerk session (including `viewer` seats) received full `read-write` scope
+  (CAA-360 HIGH).** `verifyClerkSessionAndResolveTenant` never queried the `team_member.role` column and the
+  `customer_v1` forward hardcoded `x-corelink-scope: 'read-write'`, so a read-only `viewer` had the same write
+  access as the owner — and the session/token-exchange mint paths handed viewers a write-capable PAT too. Fixed
+  at the root: the auth resolver now returns the resolved `role` (owner path → `owner`; team_member path → the
+  0074 role, failing safe to least-privilege `viewer` on a missing/unknown role; githugr federated login →
+  `owner`, unchanged), and every scope-deriving consumer (`customer_v1` forward + both `session_exchange` mint
+  flows) caps a `viewer` to `read-only`. Tests assert viewer→read-only, admin→read-write, and missing-role→read-only.
 - **Stripe webhook `enabled_events` drift — the signup-worker's live subscription is hand-configured and can
   silently diverge from the events the code dispatches.** The signup-worker is the authoritative billing +
   downgrade handler, but nothing tied its live Stripe endpoint's `enabled_events` to `HANDLED_EVENT_TYPES`.
