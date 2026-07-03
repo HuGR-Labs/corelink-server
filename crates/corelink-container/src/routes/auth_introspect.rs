@@ -666,6 +666,23 @@ pub struct ResolveTenantResponse {
 /// (migration 0083). The table is written ONLY by the provisioning authority;
 /// this read is LOOKUP-ONLY (never auto-creates a mapping). A missing row is a
 /// non-fault miss (the org is not yet provisioned).
+///
+/// # Ordering contract (A1, Option 2 — ratified)
+///
+/// Provisioning is the SOLE `tenant_org_map` writer — the resolver stays
+/// lookup-only ON PURPOSE. Provision-in-resolver (Option 1) was REJECTED: the
+/// `clerk_org_id` is an unverified, attacker-influenceable string, so writing a
+/// mapping here would risk creating a WRONG/attacker-chosen tenant. The two
+/// provisioning authorities are:
+/// - **CoreLink-Clerk:** the `user.created` webhook (signup-worker) writes the
+///   row (`INSERT OR IGNORE`, idempotent).
+/// - **githugr-Clerk:** the in-worker Option-B token exchange writes the row.
+///
+/// Because the write happens out-of-band, a `resolve-tenant` read may race
+/// AHEAD of provisioning (Svix webhook delivery lag): the row is simply not
+/// there yet. That miss (`Ok(None)` → 404 `org_not_mapped`) is TRANSIENT during
+/// the provisioning window, NOT a permanent "no such tenant". See
+/// [`resolve_tenant_for_org`] / [`handle_resolve_tenant`] for the retry contract.
 const RESOLVE_TENANT_SQL: &str =
     "SELECT tenant_id FROM tenant_org_map WHERE clerk_org_id = ?1 LIMIT 1";
 
@@ -725,8 +742,21 @@ fn decode_resolved_tenant(rows: &[crate::storage::d1_http::D1Row]) -> Option<Str
 /// FIRST on raw [`Bytes`] (before the body is parsed), so an unauthenticated
 /// caller is rejected with 401 without any JSON parse. A mapped org → 200
 /// `{ "tenant_id": ... }`; an unmapped org → 404 `{ "error": "org_not_mapped" }`
-/// (provisioning is a SEPARATE owner step — never auto-created here); a D1 fault
+/// (provisioning is a SEPARATE step — never auto-created here); a D1 fault
 /// → 503 (fail-CLOSED: never serve a wrong tenant).
+///
+/// # Retry contract (A1 ordering, Option 2 — ratified)
+///
+/// Provisioning (the `user.created` webhook for CoreLink-Clerk; the in-worker
+/// token exchange for githugr-Clerk) is the SOLE `tenant_org_map` writer; this
+/// handler NEVER writes. A `404 org_not_mapped` therefore means
+/// "not-yet-provisioned", which during Svix webhook-delivery lag is a
+/// **TRANSIENT** condition, not a permanent answer. Consumers MUST treat 404 as
+/// **retryable** and re-poll with bounded backoff until the provisioning write
+/// lands (an arbitrary new user then resolves reliably). `503` is distinct: it
+/// is the fail-CLOSED D1-fault signal (also retryable, but backend-fault, not
+/// provisioning-lag). Endpoint behaviour is UNCHANGED — this is a contract
+/// clarification only; see `docs/integrations/resolve-tenant-contract.md`.
 async fn handle_resolve_tenant(
     State(state): State<AuthIntrospectRouteState>,
     headers: HeaderMap,
