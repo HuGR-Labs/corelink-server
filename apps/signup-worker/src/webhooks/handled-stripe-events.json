@@ -1,0 +1,18 @@
+{
+  "$comment": "SINGLE SOURCE OF TRUTH for the Stripe events the signup-worker (the AUTHORITATIVE billing + downgrade handler) dispatches side effects for. Consumed by TWO places that MUST NOT drift: (1) the runtime — src/webhooks/stripe.ts builds HANDLED_EVENT_TYPES from `enabled_events`; (2) the Stripe dashboard — scripts/ops/stripe-reconcile-webhook-events.sh reconciles the live endpoint's enabled_events to this list. Editing THIS file is the only place to change the set. A vitest guardrail (tests/handled-stripe-events.test.ts) fails CI if any `downgrade_critical` entry is missing from `enabled_events`, so a careless edit can never silently drop a downgrade path (revenue-leak / churned-customer-keeps-access).",
+  "endpoint_url": "https://corelink-signup.humangr.com/webhooks/stripe",
+  "enabled_events": [
+    "checkout.session.completed",
+    "checkout.session.async_payment_succeeded",
+    "checkout.session.async_payment_failed",
+    "customer.subscription.created",
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "invoice.payment_failed"
+  ],
+  "downgrade_critical": [
+    "customer.subscription.updated",
+    "customer.subscription.deleted",
+    "invoice.payment_failed"
+  ]
+}
