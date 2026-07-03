@@ -35,3 +35,11 @@ jobs:
 
       - name: Run vitest (node config)
         run: npx vitest run
+
+      - name: Run vitest (miniflare / workerd integration)
+        # The workerd DO-dispatch / isolation / CORS integration suite. Its
+        # beforeAll ALWAYS rebuilds the bundle (wrangler --dry-run, headless — no
+        # CF creds) and loads it via scriptPath + nodejs_compat, so it can't rot
+        # against a stale dist again. Kept separate from the node config (workerd
+        # pool, not node).
+        run: npx vitest run --config vitest.miniflare.config.mts

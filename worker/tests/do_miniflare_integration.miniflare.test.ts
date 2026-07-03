@@ -9,17 +9,18 @@
  * bundle (compiled by wrangler --dry-run) is loaded into workerd, and HTTP
  * requests are dispatched through the full Workers runtime (NOT Node.js).
  *
- * Prerequisites:
- *   cd worker && pnpm run build  (produces dist/index.js)
+ * The beforeAll hook ALWAYS rebuilds dist/index.js from current source (via
+ * `wrangler deploy --dry-run --outdir dist`, run from the worktree root) and
+ * loads it into workerd by `scriptPath` (+ nodejs_compat). Always-rebuild is
+ * load-bearing: a stale bundle silently tests old behaviour (that once diverged
+ * 6 tests here); scriptPath (not an in-memory string) is required so miniflare
+ * can resolve the `node:async_hooks` import @sentry/cloudflare injects.
  *
- * If dist/index.js does not exist, the beforeAll hook builds it automatically
- * via `wrangler deploy --dry-run --outdir dist`.
- *
- * Note on @cloudflare/vitest-pool-workers:
- *   pool-workers@0.16.10 has a runtime incompatibility with vitest@4.1.7 —
- *   the cloudflare:test module fails to load `@vitest/expect` named exports
- *   inside workerd. The programmatic miniflare approach achieves the same
- *   workerd-backed test guarantee without this dependency.
+ * Note on @cloudflare/vitest-pool-workers: NOT used. (An older note here claimed
+ * a pool-workers/vitest/miniflare version incompatibility — that was never the
+ * real blocker; the past breakage was the stale-bundle + string-script loader,
+ * now fixed.) The programmatic Miniflare v4 approach gives the same workerd-backed
+ * guarantee directly.
  *
  * What is tested in workerd:
  *   - Worker HTTP handler (health, auth, routing, CORS, error envelopes)
@@ -33,7 +34,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { TEST_PAT_SIGNING_KEY, mintTestPat } from "./setup.js";
 
@@ -60,21 +61,23 @@ async function dispatchFetch(path: string, init?: RequestInit): Promise<Response
 }
 
 beforeAll(async () => {
-  // Build the worker bundle if not already present
-  if (!existsSync(DIST_INDEX)) {
-    console.log("[miniflare-test] Building worker bundle via wrangler dry-run...");
-    // Run from the worktree root so --outdir dist is relative to wrangler.toml
-    execSync(
-      `${WORKER_DIR}/node_modules/.bin/wrangler deploy --dry-run --outdir dist`,
-      { cwd: WORKTREE_ROOT, stdio: "inherit" },
-    );
-  }
+  // ALWAYS rebuild the worker bundle from current source. A stale dist/index.js
+  // silently tests OLD behaviour — the pre-Sentry (May-2026) bundle is exactly
+  // what made 6 tests diverge here. Run from the worktree root so `--outdir dist`
+  // resolves against the root wrangler.toml (there is no worker/wrangler.toml).
+  console.log("[miniflare-test] Building worker bundle via wrangler dry-run...");
+  execSync(
+    // `--containers-rollout=none`: skip the Docker container image build. Without
+    // it, on a runner WITH docker (CI ubuntu) `--dry-run` builds the full container
+    // image before bundling the JS (slow / fails); the worker JS bundle is all this
+    // workerd suite needs. (On macos-without-docker it was a silent no-op.)
+    `${WORKER_DIR}/node_modules/.bin/wrangler deploy --dry-run --outdir dist --containers-rollout=none`,
+    { cwd: WORKTREE_ROOT, stdio: "inherit" },
+  );
 
   if (!existsSync(DIST_INDEX)) {
     throw new Error(`[miniflare-test] Worker bundle not found at ${DIST_INDEX}. Run: cd worker && pnpm build`);
   }
-
-  const script = readFileSync(DIST_INDEX, "utf8");
 
   // Lazy-import miniflare to avoid loading it in the primary test suite
   // (which uses the miniflare pinned by @cloudflare/vitest-pool-workers).
@@ -82,13 +85,20 @@ beforeAll(async () => {
   const { Miniflare } = await import("miniflare");
 
   mf = new Miniflare({
-    script,
+    // Load the bundle from its FILE on disk (not an in-memory string): the
+    // current bundle imports `node:async_hooks` (via @sentry/cloudflare), which
+    // miniflare can only resolve from a real scriptPath + nodejs_compat — a bare
+    // string `script` errors ERR_MODULE_STRING_SCRIPT before any test runs.
+    scriptPath: DIST_INDEX,
+    modulesRoot: resolve(WORKTREE_ROOT, "dist"),
     modules: true,
     durableObjects: {
       CORELINK_SERVER: "CoreLinkServer",
       ROLLOUT_DO: "RolloutController",
     },
     compatibilityDate: "2026-04-01",
+    // Matches the root wrangler.toml — required for the `node:async_hooks` import.
+    compatibilityFlags: ["nodejs_compat"],
     bindings: {
       ENVIRONMENT: "miniflare-test",
       PAGERDUTY_ROUTING_KEY: "",
