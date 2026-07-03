@@ -178,6 +178,15 @@ Each entry cross-references:
   client uses explicit static creds + FIPS endpoint (no `from_env().load()` CF cold-start hang); raw plaintext
   digest no longer logged. 12 new crypto tests. Not wired to the CAS/AC path — that is a later wave.
 
+### Fixed
+- **`/v1/cas/:tenant/batch-read` no longer 500s on large batches (sequential fan-out → bounded parallelism).** The
+  handler read the requested hashes in a fully sequential loop (~80 ms per blocking R2 GET), so a 256-object batch
+  took ~20 s and blew the Cloudflare wall-clock deadline → HTTP 500. Reads now fan out with bounded 16-way concurrency
+  (`BATCH_READ_FANOUT`, one semaphore permit per in-flight read, spawned via `tokio::spawn` so the sync handler's
+  `block_in_place` stays valid) and are reassembled strictly in request order — the manifest + length-framed payload
+  wire format is byte-identical for the same inputs; every gate (canonical-digest, tombstone fail-closed 503,
+  `BATCH_MAX_BYTES` 413, quota/scope/pat) is preserved.
+
 ### Security
 - **Hardened githugr per-tenant provisioning (brutal-audit H3/H5 — both LOW, pre-pilot).** The exchange's
   `provisionOrLookupGithugrTenant` now (a) LOOKS UP the `tenant_org_map` row FIRST and returns immediately on a
