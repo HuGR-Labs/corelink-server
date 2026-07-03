@@ -42,7 +42,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 
 ## storage
 
-- [BYOK envelope-encryption skeleton (UNWIRED — no storage call site)](/storage/byok-envelope-encryption.md)
+- [BYOK envelope encryption at rest (CAS+AC wired, both modes + §4 hardening; gated-inert)](/storage/byok-envelope-encryption.md)
 - [CAS hot-path D1-over-HTTP latency](/storage/cas-hot-path-latency.md)
 - [Chunk / manifest multipart buckets](/storage/chunk-manifest-buckets.md)
 - [D1 CONFIG_DB](/storage/d1-config-db.md)
