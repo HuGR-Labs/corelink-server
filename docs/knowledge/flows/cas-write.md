@@ -5,7 +5,7 @@ description: "End-to-end path of a native CAS blob write: the tenant/scope/PAT/$
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
   - "crates/corelink-container/src/storage.rs"
-checkpoint_sha: "c631a9522dd13136f7a69e1678b4578b4f933c47"
+checkpoint_sha: "6b8f1f2ad0916e283766c7663f58a6c5efb04230"
 provenance: "AUTHORED"
 tags: ["flows", "cas", "hot-path", "storage", "request-flow"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -21,25 +21,25 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 
 # How it works
 
-1. Pre-body concurrency reservation: a `CasPutGuard` extractor is declared AHEAD of the body so axum runs it before the upload is buffered; it reserves one per-tenant in-flight slot and rejects over-cap writes 429 before any bytes are read (`crates/corelink-container/src/routes/cas.rs:272-319`).
-2. Cross-tenant denial: the client-echoed path `:tenant` must equal the authenticated tenant `auth.0` (the sole isolation key); a mismatch is a 403 before any storage access (`crates/corelink-container/src/routes/cas.rs:840-842`).
-3. Hash validation: a non-canonical CAS digest is rejected 400 before it can derive an R2 key (`crates/corelink-container/src/routes/cas.rs:843-846`).
-4. Write-scope gate (fail-closed): the PAT must carry a cache-WRITE capability; a read-only token is rejected 403 here (`crates/corelink-container/src/routes/cas.rs:847-852`).
-5. Native PAT possession gate: `pat_gate_reject` reads the bearer PAT and re-runs the full Argon2id [PAT verification gauntlet](/flows/pat-gauntlet.md) against the claimed tenant, AFTER scope and BEFORE storage (`crates/corelink-container/src/routes/cas.rs:853-856`; helper at `crates/corelink-container/src/routes/cas.rs:717-728`).
-6. Monthly $-ceiling gate: when wired, `state.quota.check(&auth.0)` runs the [billing quota check](/flows/billing-quota-check.md) and rejects 402/503 before storage (`crates/corelink-container/src/routes/cas.rs:857-863`).
-7. Storage-cap threading: the Worker-resolved per-tier storage cap header is threaded into the write request so the accounting decorator seeds a real cap, never treating an unseeded tenant as unlimited (`crates/corelink-container/src/routes/cas.rs:873-877`).
-8. Commit: `state.write.write(req)` goes through the byte-accounting decorator — the single chokepoint every CAS surface shares — which reserves/commits the cap atomically before the R2 PUT (`crates/corelink-container/src/routes/cas.rs:887-897`).
-9. The production write target is the native R2 S3 adapter (`R2CasHandler`), built from S3 credentials only when they are present in env (`crates/corelink-container/src/routes/cas.rs:511-621`); the adapter module and its credential loader live in storage (`crates/corelink-container/src/storage.rs:35`, `crates/corelink-container/src/storage.rs:98-114`).
-10. Result: a fresh durable write returns 201 CREATED, an idempotent already-present write returns 200 OK (`crates/corelink-container/src/routes/cas.rs:887-897`).
-11. Bulk reads are symmetrically capped: a `CasReadConcurrencyGuard` extractor — declared AHEAD of the body on `handle_batch_read`/`handle_batch_exists`, like `CasPutGuard` on writes — reserves one per-tenant in-flight READ slot from a SEPARATE `read_inflight` pool (cap 8) and rejects over-cap bulk reads 429 before any payload is buffered (`crates/corelink-container/src/routes/cas.rs:359-412`).
+1. Pre-body concurrency reservation: a `CasPutGuard` extractor is declared AHEAD of the body so axum runs it before the upload is buffered; it reserves one per-tenant in-flight slot and rejects over-cap writes 429 before any bytes are read (`crates/corelink-container/src/routes/cas.rs:279-326`).
+2. Cross-tenant denial: the client-echoed path `:tenant` must equal the authenticated tenant `auth.0` (the sole isolation key); a mismatch is a 403 before any storage access (`crates/corelink-container/src/routes/cas.rs:847-849`).
+3. Hash validation: a non-canonical CAS digest is rejected 400 before it can derive an R2 key (`crates/corelink-container/src/routes/cas.rs:850-853`).
+4. Write-scope gate (fail-closed): the PAT must carry a cache-WRITE capability; a read-only token is rejected 403 here (`crates/corelink-container/src/routes/cas.rs:854-859`).
+5. Native PAT possession gate: `pat_gate_reject` reads the bearer PAT and re-runs the full Argon2id [PAT verification gauntlet](/flows/pat-gauntlet.md) against the claimed tenant, AFTER scope and BEFORE storage (`crates/corelink-container/src/routes/cas.rs:860-863`; helper at `crates/corelink-container/src/routes/cas.rs:724-735`).
+6. Monthly $-ceiling gate: when wired, `state.quota.check(&auth.0)` runs the [billing quota check](/flows/billing-quota-check.md) and rejects 402/503 before storage (`crates/corelink-container/src/routes/cas.rs:864-870`).
+7. Storage-cap threading: the Worker-resolved per-tier storage cap header is threaded into the write request so the accounting decorator seeds a real cap, never treating an unseeded tenant as unlimited (`crates/corelink-container/src/routes/cas.rs:880-884`).
+8. Commit: `state.write.write(req)` goes through the byte-accounting decorator — the single chokepoint every CAS surface shares — which reserves/commits the cap atomically before the R2 PUT (`crates/corelink-container/src/routes/cas.rs:894-904`).
+9. The production write target is the native R2 S3 adapter (`R2CasHandler`), built from S3 credentials only when they are present in env (`crates/corelink-container/src/routes/cas.rs:518-628`); the adapter module and its credential loader live in storage (`crates/corelink-container/src/storage.rs:35`, `crates/corelink-container/src/storage.rs:98-114`).
+10. Result: a fresh durable write returns 201 CREATED, an idempotent already-present write returns 200 OK (`crates/corelink-container/src/routes/cas.rs:894-904`).
+11. Bulk reads are symmetrically capped: a `CasReadConcurrencyGuard` extractor — declared AHEAD of the body on `handle_batch_read`/`handle_batch_exists`, like `CasPutGuard` on writes — reserves one per-tenant in-flight READ slot from a SEPARATE `read_inflight` pool (cap 8) and rejects over-cap bulk reads 429 before any payload is buffered (`crates/corelink-container/src/routes/cas.rs:366-419`).
 
 # Invariants
 
-- The authenticated tenant `auth.0`, not the path `:tenant`, is the isolation key; the path is a client echo that must match or the request 403s before storage (`crates/corelink-container/src/routes/cas.rs:840-842`).
-- Every gate runs BEFORE storage and fails closed: scope (`crates/corelink-container/src/routes/cas.rs:847-852`), possession (`crates/corelink-container/src/routes/cas.rs:853-856`), $-ceiling (`crates/corelink-container/src/routes/cas.rs:857-863`).
-- The per-tenant write-concurrency cap is checked before the body is buffered, bounding peak per-tenant memory (`crates/corelink-container/src/routes/cas.rs:272-319`); the bulk-read path mirrors this on a SEPARATE per-tenant cap (`crates/corelink-container/src/routes/cas.rs:359-412`).
-- The byte-cap is enforced atomically at the shared write trait object, not in the route, so every surface accounts identically and the route never double-counts (`crates/corelink-container/src/routes/cas.rs:887-897`).
-- R2 S3 credentials are env-sourced only and the real adapter is constructed solely when all creds are present; absent creds fall back to the dev/in-memory path (`crates/corelink-container/src/storage.rs:98-114`; `crates/corelink-container/src/routes/cas.rs:511-621`).
+- The authenticated tenant `auth.0`, not the path `:tenant`, is the isolation key; the path is a client echo that must match or the request 403s before storage (`crates/corelink-container/src/routes/cas.rs:847-849`).
+- Every gate runs BEFORE storage and fails closed: scope (`crates/corelink-container/src/routes/cas.rs:854-859`), possession (`crates/corelink-container/src/routes/cas.rs:860-863`), $-ceiling (`crates/corelink-container/src/routes/cas.rs:864-870`).
+- The per-tenant write-concurrency cap is checked before the body is buffered, bounding peak per-tenant memory (`crates/corelink-container/src/routes/cas.rs:279-326`); the bulk-read path mirrors this on a SEPARATE per-tenant cap (`crates/corelink-container/src/routes/cas.rs:366-419`).
+- The byte-cap is enforced atomically at the shared write trait object, not in the route, so every surface accounts identically and the route never double-counts (`crates/corelink-container/src/routes/cas.rs:894-904`).
+- R2 S3 credentials are env-sourced only and the real adapter is constructed solely when all creds are present; absent creds fall back to the dev/in-memory path (`crates/corelink-container/src/storage.rs:98-114`; `crates/corelink-container/src/routes/cas.rs:518-628`).
 
 # Gotchas
 
@@ -50,14 +50,14 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 
 # Citations
 
-1. `crates/corelink-container/src/routes/cas.rs:272-319` — pre-body per-tenant write-concurrency reservation (429 before buffering).
-2. `crates/corelink-container/src/routes/cas.rs:511-621` — `build_handlers`: builds the real `R2CasHandler` only with S3 creds present, else in-memory.
-3. `crates/corelink-container/src/routes/cas.rs:717-728` — `pat_gate_reject` helper (reads bearer, re-verifies vs the claimed tenant).
-4. `crates/corelink-container/src/routes/cas.rs:825-898` — `handle_write`: cross-tenant / hash / scope / PAT / quota gates, then the byte-accounted commit and 201/200 result.
-5. `crates/corelink-container/src/routes/cas.rs:840-842` — cross-tenant 403 (authenticated tenant is the isolation key).
-6. `crates/corelink-container/src/routes/cas.rs:843-863` — hash, write-scope, PAT-possession, and $-ceiling gates, all before storage.
-7. `crates/corelink-container/src/routes/cas.rs:873-897` — storage-cap header threading and the byte-accounted commit chokepoint.
-8. `crates/corelink-container/src/routes/cas.rs:359-412` — `CasReadConcurrencyGuard`: per-tenant bulk-READ concurrency cap (separate `read_inflight` pool), 429 before buffering — the read twin of `CasPutGuard`.
+1. `crates/corelink-container/src/routes/cas.rs:279-326` — pre-body per-tenant write-concurrency reservation (429 before buffering).
+2. `crates/corelink-container/src/routes/cas.rs:518-628` — `build_handlers`: builds the real `R2CasHandler` only with S3 creds present, else in-memory.
+3. `crates/corelink-container/src/routes/cas.rs:724-735` — `pat_gate_reject` helper (reads bearer, re-verifies vs the claimed tenant).
+4. `crates/corelink-container/src/routes/cas.rs:832-905` — `handle_write`: cross-tenant / hash / scope / PAT / quota gates, then the byte-accounted commit and 201/200 result.
+5. `crates/corelink-container/src/routes/cas.rs:847-849` — cross-tenant 403 (authenticated tenant is the isolation key).
+6. `crates/corelink-container/src/routes/cas.rs:850-870` — hash, write-scope, PAT-possession, and $-ceiling gates, all before storage.
+7. `crates/corelink-container/src/routes/cas.rs:880-904` — storage-cap header threading and the byte-accounted commit chokepoint.
+8. `crates/corelink-container/src/routes/cas.rs:366-419` — `CasReadConcurrencyGuard`: per-tenant bulk-READ concurrency cap (separate `read_inflight` pool), 429 before buffering — the read twin of `CasPutGuard`.
 9. `crates/corelink-container/src/storage.rs:35` — the native `r2_s3` adapter module (R2 over the S3-compatible API).
 10. `crates/corelink-container/src/storage.rs:98-114` — `StorageEnv::from_env`: env-only R2/D1 credential loading.
 </content>

@@ -19,7 +19,7 @@ source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "41109fd0a04c8514c5504fef43851341c2333dc3"
+checkpoint_sha: "6b8f1f2ad0916e283766c7663f58a6c5efb04230"
 provenance: "AUTHORED"
 tags: ["handlers", "traits", "cas", "hot-path", "dependency-injection"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -45,7 +45,7 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 
 **The collaborators are themselves traits.** `AuditSink::emit` (`crates/corelink-handler-cas/src/audit.rs:122`) is fail-CLOSED (returns `Err` if the row cannot be durably written; the handler aborts on that error), and `SliObserver::observe` (`crates/corelink-handler-cas/src/observer.rs:47`) is infallible by design (an observer failure must not take the handler down). This is what makes the audit-before-mutation invariant a composable property of *any* impl, not a property hand-coded into each route.
 
-**The live route consumes the trait, not the type.** `CasRouteState` declares `read: Arc<dyn CasReadHandler>`, `write: Arc<dyn CasWriteHandler>`, `delete`, `list` as four distinct trait-object fields (`crates/corelink-container/src/routes/cas.rs:134`). The handlers delegate one verb each: `handle_read` calls `state.read.read(req)` (`crates/corelink-container/src/routes/cas.rs:813`), `handle_write` calls `state.write.write(req)`, `handle_delete` calls `state.delete.delete(req)` (`:1399`), `handle_list` calls `state.list.list(req)` (`:1451`). When R2 creds are present but the R2 handler refuses to build, the route mounts the fail-CLOSED `UnavailableCasHandler` whose every method returns a 503 sentinel (`crates/corelink-container/src/routes/cas.rs:435`) instead of silently degrading to the in-memory fake.
+**The live route consumes the trait, not the type.** `CasRouteState` declares `read: Arc<dyn CasReadHandler>`, `write: Arc<dyn CasWriteHandler>`, `delete`, `list` as four distinct trait-object fields (`crates/corelink-container/src/routes/cas.rs:141`). The handlers delegate one verb each: `handle_read` calls `state.read.read(req)` (`crates/corelink-container/src/routes/cas.rs:820`), `handle_write` calls `state.write.write(req)`, `handle_delete` calls `state.delete.delete(req)` (`:1469`), `handle_list` calls `state.list.list(req)` (`:1521`). When R2 creds are present but the R2 handler refuses to build, the route mounts the fail-CLOSED `UnavailableCasHandler` whose every method returns a 503 sentinel (`crates/corelink-container/src/routes/cas.rs:442`) instead of silently degrading to the in-memory fake.
 
 **Byte accounting wraps the write/delete trait objects.** `AccountingCasHandler` is itself an impl of `CasWriteHandler` (`crates/corelink-container/src/byte_accounting.rs:774`) and `CasDeleteHandler` (`:853`) that holds the inner `Arc<dyn CasWriteHandler>` + `Arc<dyn CasDeleteHandler>` and a `ByteAccountant`. Its `write` reserves bytes against `tenant_storage_state` *before* calling `self.write_inner.write(req)` (the `block_on_accrue` reservation at `:808`) — an over-cap or indeterminate reservation rejects so the durable PUT never runs — and releases the reservation if the inner write fails or stored nothing new (idempotent re-write). Its `delete` calls `self.delete_inner.delete(req)` (`:866`) then releases the reclaimed bytes. Both hold a per-`(tenant, hash)` shard lock across the whole reserve→commit→release so a concurrent write-vs-delete of the same key cannot interleave their accounting (rt-nuclear C2). As of BYOK Wave 3b/3c the decorator no longer reserves the raw request length blindly: for a BYOK-`active` tenant it computes the COMMITTED (stored) size via `byok_committed_len`, which is now mode-aware — Mode A (convergent) reserves the plaintext length plus `BYOK_CLB1_OVERHEAD` (32 B: 4-byte magic + 12-byte nonce + 16-byte AEAD tag), and Mode B (random) reserves plaintext plus `BYOK_CLB2_OVERHEAD` (20 B: 4-byte magic + 16-byte tag, since the Mode-B nonce lives in the `byok_envelope` D1 row, not inline) — so `reserve == release` and `bytes_used` cannot drift once encryption is engaged; a non-BYOK / inactive tenant still reserves the plaintext length, byte-identical to before. The `AccountingAcHandler` is the exact mirror over `AcUpdateHandler`/`AcDeleteHandler`.
 
@@ -93,11 +93,11 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - `crates/corelink-handler-admin/src/handler.rs:204` — `pub trait AdminMutateHandler` (dual-approval contract).
 - `crates/corelink-handler-cas-erase/src/handler.rs:141` — `prepare_erase` pure decision fn (no trait object in this crate).
 - `crates/corelink-handler-cas-erase/src/handler.rs:164` — `read_gate` pure decision fn.
-- `crates/corelink-container/src/routes/cas.rs:134` — `CasRouteState` holds `Arc<dyn CasReadHandler>` etc. (the seam, route side).
-- `crates/corelink-container/src/routes/cas.rs:435` — fail-CLOSED `UnavailableCasHandler` impl of the read trait.
-- `crates/corelink-container/src/routes/cas.rs:813` — `handle_read` delegates `state.read.read(req)`.
-- `crates/corelink-container/src/routes/cas.rs:1399` — `handle_delete` delegates `state.delete.delete(req)`.
-- `crates/corelink-container/src/routes/cas.rs:1451` — `handle_list` delegates `state.list.list(req)`.
+- `crates/corelink-container/src/routes/cas.rs:141` — `CasRouteState` holds `Arc<dyn CasReadHandler>` etc. (the seam, route side).
+- `crates/corelink-container/src/routes/cas.rs:442` — fail-CLOSED `UnavailableCasHandler` impl of the read trait.
+- `crates/corelink-container/src/routes/cas.rs:820` — `handle_read` delegates `state.read.read(req)`.
+- `crates/corelink-container/src/routes/cas.rs:1469` — `handle_delete` delegates `state.delete.delete(req)`.
+- `crates/corelink-container/src/routes/cas.rs:1521` — `handle_list` delegates `state.list.list(req)`.
 - `crates/corelink-container/src/routes/ac.rs:532` — `state.lookup.lookup(req)` delegation.
 - `crates/corelink-container/src/routes/ac.rs:596` — `state.update.update(req)` delegation.
 - `crates/corelink-container/src/routes/admin.rs:687` — `state.read.read(req)` delegation.
