@@ -67,7 +67,11 @@ beforeAll(async () => {
   // resolves against the root wrangler.toml (there is no worker/wrangler.toml).
   console.log("[miniflare-test] Building worker bundle via wrangler dry-run...");
   execSync(
-    `${WORKER_DIR}/node_modules/.bin/wrangler deploy --dry-run --outdir dist`,
+    // `--containers-rollout=none`: skip the Docker container image build. Without
+    // it, on a runner WITH docker (CI ubuntu) `--dry-run` builds the full container
+    // image before bundling the JS (slow / fails); the worker JS bundle is all this
+    // workerd suite needs. (On macos-without-docker it was a silent no-op.)
+    `${WORKER_DIR}/node_modules/.bin/wrangler deploy --dry-run --outdir dist --containers-rollout=none`,
     { cwd: WORKTREE_ROOT, stdio: "inherit" },
   );
 
