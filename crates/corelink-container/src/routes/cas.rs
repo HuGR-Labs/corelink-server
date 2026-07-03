@@ -126,6 +126,13 @@ pub const BATCH_MAX_OBJECTS: usize = 2_000;
 /// ceiling, the extra 2 MiB headroom covers the manifest framing.
 pub const BATCH_MAX_BYTES: usize = 8 * 1024 * 1024;
 
+/// Bounded per-request read concurrency for `handle_batch_read`: each in-flight
+/// R2 GET holds one permit, so at most this many reads run at once. Keeps a
+/// 2000-object batch under the Cloudflare wall-clock deadline (the old fully
+/// sequential loop @ ~80 ms/object blew past it → HTTP 500) while staying gentle
+/// on R2 and on the blocking pool the sync `read()` bridges through.
+pub const BATCH_READ_FANOUT: usize = 16;
+
 /// Shared route state — distinct trait objects for read and write.
 #[derive(Clone)]
 pub struct CasRouteState {
@@ -1165,68 +1172,137 @@ async fn handle_batch_read(
     // over the cap aborts the WHOLE request 413 (FROZEN: ≤ 8 MiB per batch).
     let mut manifest = String::new();
     let mut payload: Vec<u8> = Vec::new();
+
+    // Per-hash outcome produced by a spawned read task. Carried back across the
+    // spawn boundary (all variants are `Send`) and reassembled IN hash order so
+    // the manifest/payload framing is byte-identical to the old serial loop.
+    enum PerHash {
+        /// Non-canonical hash, or a `NotFound` read ⇒ 404-class `absent`.
+        Absent,
+        /// Tombstoned `(tenant, hash)` ⇒ 410-class `gone`.
+        Gone,
+        /// Present blob bytes.
+        Ok(Vec<u8>),
+        /// Tombstone gate lookup faulted ⇒ fail CLOSED (503) for the whole batch.
+        TombstoneFault,
+        /// Read faulted (non-NotFound) ⇒ propagate via `map_err`.
+        ReadErr(CasHandlerError),
+    }
+
+    // Fan out, in hash order, with bounded (BATCH_READ_FANOUT-way) concurrency.
+    // Each task holds an owned semaphore permit for its whole lifetime, so at
+    // most BATCH_READ_FANOUT reads are in flight at once. We MUST use
+    // `tokio::spawn` (not `spawn_blocking`): the sync `read()` internally does
+    // `tokio::task::block_in_place(..)`, which is only valid on a multi-thread
+    // runtime WORKER thread — spawn_blocking threads are not workers and would
+    // panic.
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(BATCH_READ_FANOUT));
+    let mut handles: Vec<tokio::task::JoinHandle<PerHash>> = Vec::with_capacity(hashes.len());
     for hash in &hashes {
-        // Non-canonical hash ⇒ it cannot name a stored blob; report absent
-        // (it is not a framing error and must not abort the batch).
-        if !super::ac::is_canonical_digest(hash) {
-            manifest.push_str(&format!(
-                "{}\n",
-                serde_json::json!({"hash": hash, "len": 0, "status": "absent"})
-            ));
-            continue;
-        }
-        // Tombstone gate FIRST (mirrors handle_read): an erased blob is `gone`,
-        // never resurrected, never reported absent. A lookup fault fails OPEN to
-        // the normal read (the erase write-side is the source of truth).
-        if let Some(tombstones) = state.tombstones.as_ref() {
-            match tombstones.is_tombstoned(&auth.0, hash).await {
-                Ok(true) => {
-                    manifest.push_str(&format!(
-                        "{}\n",
-                        serde_json::json!({"hash": hash, "len": 0, "status": "gone"})
-                    ));
-                    continue;
-                }
-                Ok(false) => {}
-                Err(e) => {
-                    // PEN-2/REV-S1: fail CLOSED, identical to the single-read gate
-                    // (handle_read ~678). A tombstone-lookup transport error must NOT
-                    // serve a possibly-erased (GDPR) object — fail the whole batch
-                    // rather than risk resurrecting erased bytes during a D1 blip.
-                    tracing::warn!(error = %e, "cas batch-read: tombstone gate lookup failed; failing CLOSED (503)");
-                    return (
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "tombstone gate unavailable",
-                    )
-                        .into_response();
+        // Acquire the permit BEFORE spawning so the in-flight count is bounded
+        // to BATCH_READ_FANOUT (permit is moved into the task and held for its
+        // lifetime). The semaphore is never closed here, so `Err` (closed) is
+        // unreachable — but we fail CLOSED (500) rather than `.expect()` it
+        // (clippy::expect-used is denied repo-wide).
+        let permit = match Arc::clone(&semaphore).acquire_owned().await {
+            Ok(p) => p,
+            Err(_) => {
+                return map_err(CasHandlerError::Internal(
+                    "batch-read semaphore closed".into(),
+                ))
+            }
+        };
+        let read = state.read.clone();
+        let tombstones = state.tombstones.clone();
+        let tenant = auth.0.clone();
+        let hash = hash.clone();
+        handles.push(tokio::spawn(async move {
+            // Hold the permit for the whole task lifetime.
+            let _permit = permit;
+            // Non-canonical hash ⇒ it cannot name a stored blob; report absent
+            // (it is not a framing error and must not abort the batch).
+            if !super::ac::is_canonical_digest(&hash) {
+                return PerHash::Absent;
+            }
+            // Tombstone gate FIRST (mirrors handle_read): an erased blob is
+            // `gone`, never resurrected, never reported absent. A lookup fault
+            // fails CLOSED for the whole batch (the erase write-side is the
+            // source of truth).
+            if let Some(tombstones) = tombstones.as_ref() {
+                match tombstones.is_tombstoned(&tenant, &hash).await {
+                    Ok(true) => return PerHash::Gone,
+                    Ok(false) => {}
+                    Err(e) => {
+                        // PEN-2/REV-S1: fail CLOSED, identical to the single-read
+                        // gate (handle_read ~678). A tombstone-lookup transport
+                        // error must NOT serve a possibly-erased (GDPR) object —
+                        // fail the whole batch rather than risk resurrecting
+                        // erased bytes during a D1 blip.
+                        tracing::warn!(error = %e, "cas batch-read: tombstone gate lookup failed; failing CLOSED (503)");
+                        return PerHash::TombstoneFault;
+                    }
                 }
             }
-        }
-        let req = CasReadRequest::new(
-            auth.0.clone(),
-            hash.clone(),
-            format!("anon@{}", auth.0),
-            auth.0.clone(),
-            now_ms,
-        );
-        match state.read.read(req) {
-            Ok(resp) => {
-                if payload.len() + resp.bytes.len() > BATCH_MAX_BYTES {
-                    return batch_too_large();
-                }
-                manifest.push_str(&format!(
-                    "{}\n",
-                    serde_json::json!({"hash": hash, "len": resp.bytes.len(), "status": "ok"})
-                ));
-                payload.extend_from_slice(&resp.bytes);
+            let req = CasReadRequest::new(
+                tenant.clone(),
+                hash.clone(),
+                format!("anon@{tenant}"),
+                tenant.clone(),
+                now_ms,
+            );
+            // Sync `read()` — `block_in_place` inside it is valid because this is
+            // a multi-thread-runtime worker thread (`tokio::spawn`).
+            match read.read(req) {
+                Ok(resp) => PerHash::Ok(resp.bytes),
+                Err(CasHandlerError::NotFound { .. }) => PerHash::Absent,
+                Err(e) => PerHash::ReadErr(e),
             }
-            Err(CasHandlerError::NotFound { .. }) => {
+        }));
+    }
+
+    // Reassemble IN push order (== hash order). This ordering is LOAD-BEARING:
+    // the client slices the concatenated payload by the manifest `len`s, so the
+    // manifest lines and the payload segments must both follow request order.
+    for (hash, handle) in hashes.iter().zip(handles) {
+        let outcome = match handle.await {
+            Ok(o) => o,
+            // A spawned task panicked (or was cancelled) ⇒ internal read
+            // failure. Map to the same 500 surface as a generic read error.
+            Err(_join_err) => {
+                return map_err(CasHandlerError::Internal("batch read task failed".into()));
+            }
+        };
+        match outcome {
+            PerHash::Absent => {
                 manifest.push_str(&format!(
                     "{}\n",
                     serde_json::json!({"hash": hash, "len": 0, "status": "absent"})
                 ));
             }
-            Err(e) => return map_err(e),
+            PerHash::Gone => {
+                manifest.push_str(&format!(
+                    "{}\n",
+                    serde_json::json!({"hash": hash, "len": 0, "status": "gone"})
+                ));
+            }
+            PerHash::Ok(bytes) => {
+                if payload.len() + bytes.len() > BATCH_MAX_BYTES {
+                    return batch_too_large();
+                }
+                manifest.push_str(&format!(
+                    "{}\n",
+                    serde_json::json!({"hash": hash, "len": bytes.len(), "status": "ok"})
+                ));
+                payload.extend_from_slice(&bytes);
+            }
+            PerHash::TombstoneFault => {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "tombstone gate unavailable",
+                )
+                    .into_response();
+            }
+            PerHash::ReadErr(e) => return map_err(e),
         }
     }
     // Manifest + single blank-line terminator + concatenated payload.
@@ -2883,6 +2959,104 @@ mod tests {
         let mut expected = a.clone();
         expected.extend_from_slice(&bb);
         assert_eq!(payload, expected.as_slice());
+    }
+
+    /// Parallel-fan-out invariant: a large mixed batch (present + absent,
+    /// interleaved) must come back in EXACT request order despite the reads now
+    /// running concurrently (BATCH_READ_FANOUT-way). Asserts, per hash: the
+    /// manifest line order == request order, the reported `len`s, the per-hash
+    /// status, and that the concatenated payload slices back to the right bytes
+    /// for each present object. multi_thread so the sync `read()`'s
+    /// `block_in_place` (in prod) is exercised on a real worker thread.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn batch_read_parallel_preserves_order_and_slicing() {
+        let st = fixture();
+        // 30 hashes: even index = present (seeded, unique bytes), odd = absent.
+        // Present bytes deliberately vary in length so a mis-ordered slice would
+        // corrupt the reassembly and fail the per-hash byte assertion.
+        let n = 30usize;
+        let mut req_hashes: Vec<String> = Vec::with_capacity(n);
+        let mut expected_present: Vec<Option<Vec<u8>>> = Vec::with_capacity(n);
+        for i in 0..n {
+            if i % 2 == 0 {
+                let bytes = format!("blob-{i}-{}", "x".repeat(i)).into_bytes();
+                let h = fake_hash(&bytes);
+                st.write
+                    .write(CasWriteRequest::new(
+                        TEST_TENANT,
+                        h.clone(),
+                        bytes.clone(),
+                        "anon@t1",
+                        TEST_TENANT,
+                        i as u64 + 1,
+                    ))
+                    .expect("seed present blob");
+                req_hashes.push(h);
+                expected_present.push(Some(bytes));
+            } else {
+                // Distinct absent hash per slot (canonical but never stored).
+                let h = fake_hash(format!("never-stored-{i}").as_bytes());
+                req_hashes.push(h);
+                expected_present.push(None);
+            }
+        }
+        let ndjson: String = req_hashes
+            .iter()
+            .map(|h| format!("{}\n", serde_json::json!({ "hash": h })))
+            .collect();
+
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/v1/cas/{TEST_TENANT}/batch-read"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .header(axum::http::header::CONTENT_TYPE, NDJSON_CONTENT_TYPE)
+            .body(Body::from(ndjson))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let (manifest, payload) = split_manifest(&body).expect("framed response");
+        let manifest = std::str::from_utf8(manifest).expect("utf8");
+        let lines: Vec<&str> = manifest.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(lines.len(), n, "one manifest line per requested hash");
+
+        // Walk manifest + payload in lock-step, asserting request order, per-hash
+        // status/len, and that each present segment slices back to its bytes.
+        let mut cursor = 0usize;
+        for (i, line) in lines.iter().enumerate() {
+            let v: serde_json::Value = serde_json::from_str(line).expect("manifest json");
+            assert_eq!(
+                v["hash"],
+                serde_json::Value::String(req_hashes[i].clone()),
+                "manifest line {i} must be the i-th requested hash (order preserved)"
+            );
+            match &expected_present[i] {
+                Some(bytes) => {
+                    assert_eq!(v["status"], "ok", "line {i} should be present");
+                    let len = v["len"].as_u64().expect("len") as usize;
+                    assert_eq!(len, bytes.len(), "line {i} reported len mismatch");
+                    assert_eq!(
+                        &payload[cursor..cursor + len],
+                        bytes.as_slice(),
+                        "payload segment {i} must slice back to the seeded bytes"
+                    );
+                    cursor += len;
+                }
+                None => {
+                    assert_eq!(v["status"], "absent", "line {i} should be absent");
+                    assert_eq!(v["len"].as_u64(), Some(0), "absent line {i} has len 0");
+                }
+            }
+        }
+        assert_eq!(
+            cursor,
+            payload.len(),
+            "the payload is exactly the concatenation of the present segments"
+        );
     }
 
     /// batch-read reports a tombstoned hash as `gone` (mirrors handle_read's
