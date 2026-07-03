@@ -67,6 +67,16 @@ export interface AutoProvisionEnv {
   CORELINK_INTERNAL_AUTH_KEY?: string;
 
   /**
+   * DEDICATED secret for the `X-Corelink-Internal-Auth` header on
+   * `/_internal/pat/mint`. The container mint gate REQUIRES this key with NO
+   * shared fallback (DD-HIGH, WP1); the shared `CORELINK_INTERNAL_AUTH_KEY` no
+   * longer authorizes the mint once this is provisioned. Bound via
+   * `wrangler secret put CORELINK_PAT_MINT_AUTH_KEY`. Unset ⇒ the mint falls
+   * back to the shared key (additive; local dev / pre-provision).
+   */
+  CORELINK_PAT_MINT_AUTH_KEY?: string;
+
+  /**
    * Service binding to the main CoreLink Worker. Set in wrangler.toml under
    * `[[services]] binding = "CORELINK_API_SVC"`. When present, used for the
    * `/_internal/pat/mint` call to bypass Cloudflare edge error 1014
@@ -1055,20 +1065,25 @@ export async function handleClerkWebhook(
   }
 
   // FAIL-LOUD before any tenant is created (brutal-audit B4). Provisioning
-  // REQUIRES CORELINK_INTERNAL_AUTH_KEY to mint the PAT (step 3 of
-  // autoProvisionFromClerkEvent). CONFIG_DB is a declarative binding (always
-  // present once deployed), but the auth key is a `wrangler secret put` value
-  // that can be absent independently — the documented launch landmine. If we
-  // let provisioning START without it, `createTenant` commits a tenant row and
-  // THEN `issuePat` throws; on Svix redelivery the idempotency check ABOVE
-  // short-circuits on that orphan tenant and NEVER re-issues the PAT, leaving
-  // the user permanently PAT-less. Checking HERE — after the idempotency read,
-  // before the first write — makes a missing key 500 with ZERO side effects,
-  // so redelivery cleanly re-provisions once the secret is set. (issuePat also
+  // REQUIRES a mint auth key to mint the PAT (step 3 of
+  // autoProvisionFromClerkEvent). The container mint gate prefers the DEDICATED
+  // CORELINK_PAT_MINT_AUTH_KEY (no shared fallback on the container — DD-HIGH,
+  // WP1) and falls back to the shared CORELINK_INTERNAL_AUTH_KEY only when the
+  // dedicated is unset (additive) — same resolution as issuePat below, so this
+  // pre-flight must accept EITHER or it would 500 when only the dedicated key
+  // is bound. CONFIG_DB is a declarative binding (always present once deployed),
+  // but the auth key is a `wrangler secret put` value that can be absent
+  // independently — the documented launch landmine. If we let provisioning
+  // START without it, `createTenant` commits a tenant row and THEN `issuePat`
+  // throws; on Svix redelivery the idempotency check ABOVE short-circuits on
+  // that orphan tenant and NEVER re-issues the PAT, leaving the user
+  // permanently PAT-less. Checking HERE — after the idempotency read, before
+  // the first write — makes a missing key 500 with ZERO side effects, so
+  // redelivery cleanly re-provisions once the secret is set. (issuePat also
   // throws as a backstop.)
-  if (!env.CORELINK_INTERNAL_AUTH_KEY) {
+  if (!(env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY)) {
     console.error(
-      `[clerk-webhook] CORELINK_INTERNAL_AUTH_KEY absent — cannot mint PAT; ` +
+      `[clerk-webhook] CORELINK_PAT_MINT_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY absent — cannot mint PAT; ` +
         `returning 500 before any tenant write (user=${event.data.id}, svix=${svixId})`,
     );
     return new Response(
@@ -1256,7 +1271,14 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
       tenantId: string,
       scope: "read-write",
     ): Promise<{ id: string; plaintext: string }> {
-      if (!env.CORELINK_INTERNAL_AUTH_KEY) {
+      // Prefer the DEDICATED CORELINK_PAT_MINT_AUTH_KEY — the container's
+      // /_internal/pat/mint gate REQUIRES it with NO shared fallback (DD-HIGH,
+      // WP1) — falling back to the shared key only when the dedicated is unset
+      // (additive; once provisioned the shared no longer authorizes mint).
+      // Same posture as the 4 main-Worker callers (commit c88508f1).
+      const internalAuthKey =
+        env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
+      if (!internalAuthKey) {
         // FAIL-LOUD (signup money path): without the internal auth key we
         // CANNOT mint a real PAT. The old behavior returned a fake
         // "corelink_pat_DEVSTUB" that looked valid to the user but
@@ -1265,7 +1287,7 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
         // no signal. Throw instead: the webhook handler maps this to a 500,
         // Svix redelivers, and the signup self-heals once the secret is set.
         throw new Error(
-          "CORELINK_INTERNAL_AUTH_KEY is not configured — refusing to issue a stub PAT",
+          "CORELINK_PAT_MINT_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY is not configured — refusing to issue a stub PAT",
         );
       }
 
@@ -1278,7 +1300,7 @@ export function defaultApiClient(env: AutoProvisionEnv): ApiClient {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            "x-corelink-internal-auth": env.CORELINK_INTERNAL_AUTH_KEY,
+            "x-corelink-internal-auth": internalAuthKey,
           },
           body: JSON.stringify({
             tenant_id: tenantId,

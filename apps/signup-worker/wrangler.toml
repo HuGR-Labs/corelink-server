@@ -31,6 +31,12 @@ head_sampling_rate = 1
 #   CORELINK_INTERNAL_AUTH_KEY   — shared secret for X-Corelink-Internal-Auth header.
 #                                  Must match the container + main worker binding.
 #                                  Used to call /_internal/pat/mint on the container.
+#   CORELINK_PAT_MINT_AUTH_KEY   — DEDICATED secret for /_internal/pat/mint. The
+#                                  container mint gate REQUIRES this with NO shared
+#                                  fallback (DD-HIGH, WP1) once provisioned, so it
+#                                  MUST be bound here for the Clerk auto-provision
+#                                  mint to authenticate. Unset ⇒ the mint falls back
+#                                  to CORELINK_INTERNAL_AUTH_KEY (additive).
 #   CORELINK_ERASE_AUTH_KEY      — OPTIONAL dedicated erase/DSR consumer secret
 #                                  (red-team #3 split). When the full-split config
 #                                  provisions this on the container + main worker,

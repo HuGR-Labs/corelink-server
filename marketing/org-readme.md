@@ -12,12 +12,13 @@ tools that default to BYOK, residency honesty, and verifiable audit logs.
 
 REAPI v2 compatible cache for Bazel, Buck2, Cargo, npm, pip, OCI Docker
 layers, and ML model registries. Multi-tenant. Per-tenant BYOK across four
-KMS providers (AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault).
-RFC-6962-style append-only audit chain — BLAKE3-addressed, Ed25519-signed,
-replayable by the tenant at any time.
+KMS providers (AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault)
+ships at GA, not in pilot. An RFC-6962-style append-only audit chain —
+BLAKE3-addressed, with tenant-replayable verification and Ed25519-signed,
+Object-Lock-immutable heads — is on the roadmap for GA.
 
 Currently shipping: **pilot-open, pre-GA**. Free tier available; 10 pilot
-slots for organisations that need the BYOK + audit path.
+slots for organisations on the path to the BYOK + verifiable-audit roadmap.
 
 ## Engineering philosophy
 
