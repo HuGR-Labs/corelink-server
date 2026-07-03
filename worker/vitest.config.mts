@@ -7,19 +7,21 @@
  *   envelopes, timing-pad, and the DO state machine. They do NOT require
  *   a live Cloudflare Workers runtime.
  *
- * - Integration tests against the live wrangler dev server are run via
- *   `pnpm test:wrangler` (uses wrangler dev --local + curl) as a separate
- *   Phase B acceptance gate. They are NOT included in the vitest coverage run.
+ * - Workerd integration tests (`*.miniflare.test.ts`) run in a REAL workerd
+ *   runtime via the separate `vitest.miniflare.config.mts` — programmatic
+ *   Miniflare v4 loading the freshly-built bundle by `scriptPath` (+ nodejs_compat).
+ *   They cover DO dispatch / cross-tenant isolation / CORS end-to-end, which the
+ *   node pool can't exercise. Excluded from THIS (node) config below; both run in
+ *   the `worker-vitest` CI gate.
  *
  * Coverage provider: istanbul (v8 requires node:inspector which is not
  * available in the Workers runtime; istanbul works on any JS runtime).
  *
- * NOTE: @cloudflare/vitest-pool-workers is installed but currently cannot be
- * used as a vitest plugin because the pnpm workspace structure causes miniflare
- * to resolve from the main repo's node_modules (miniflare@3) rather than the
- * worker package's node_modules (miniflare@4 required by pool-workers@0.16.x).
- * Unit test coverage ≥70% is achieved via the Node.js pool. The wrangler dev
- * smoke test validates the full Workers runtime path independently.
+ * (Historical note: an older comment here claimed vitest-pool-workers couldn't be
+ * used because miniflare resolved as v3-vs-v4 — that was never true in this tree
+ * (only miniflare v4 resolves). The real past breakage was a stale `dist/index.js`
+ * loaded as a string; the miniflare harness now always rebuilds + loads via
+ * scriptPath. See vitest.miniflare.config.mts.)
  */
 
 import { defineConfig } from "vitest/config";
