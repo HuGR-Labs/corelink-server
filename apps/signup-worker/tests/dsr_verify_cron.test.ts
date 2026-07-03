@@ -60,8 +60,11 @@ describe("iso/ms helpers", () => {
     expect(isoFromMs(ms)).toBe("2023-11-14T22:13:20Z");
     expect(msFromIso(isoFromMs(ms))).toBe(ms);
   });
-  it("msFromIso returns 0 on garbage", () => {
-    expect(msFromIso("not-a-date")).toBe(0);
+  it("msFromIso returns null on garbage", () => {
+    // null (not 0) is load-bearing: the caller skips the row on null rather than
+    // treating an unparseable timestamp as epoch-1970 (which would fire a
+    // recurring false sla_breached page every cron tick). See dsr_verify_cron.ts.
+    expect(msFromIso("not-a-date")).toBe(null);
   });
 });
 
