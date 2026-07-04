@@ -4,7 +4,7 @@ title: "Action Cache (AC) surface"
 description: "The first-party Action Cache routes mapping an action digest to its cached result, with cross-tenant denial and a canonical-digest gate shared with native CAS."
 source_files:
   - "crates/corelink-container/src/routes/ac.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "ccb3a988329147be1c2d490ed2bdbc50ed6f4d0a"
 provenance: "AUTHORED"
 tags: ["surfaces", "action-cache", "cache", "reapi"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -29,7 +29,7 @@ the authenticated tenant; cross-tenant attempts are denied 403 at the route leve
 1. The router mounts lookup/update/delete on `AC_LOOKUP_ROUTE` plus the ref-list route, each carrying
    its SLO-emitting handler (`crates/corelink-container/src/routes/ac.rs:443-451`).
 2. A lookup is served by `handle_lookup` (`crates/corelink-container/src/routes/ac.rs:484`); an update
-   by `handle_update` (`crates/corelink-container/src/routes/ac.rs:539`).
+   by `handle_update` (`crates/corelink-container/src/routes/ac.rs:544`).
 3. The `:action_digest` segment is validated as exactly 64 lowercase-hex chars by `is_canonical_digest`
    BEFORE it derives an R2 key (`crates/corelink-container/src/routes/ac.rs:453-462`).
 4. The native PAT possession gate re-verifies the bearer against the claimed tenant and rejects
@@ -57,7 +57,7 @@ the authenticated tenant; cross-tenant attempts are denied 403 at the route leve
 # Citations
 1. `crates/corelink-container/src/routes/ac.rs:443-451` — the AC router (lookup/update/delete + ref list).
 2. `crates/corelink-container/src/routes/ac.rs:484` — `handle_lookup`.
-3. `crates/corelink-container/src/routes/ac.rs:539` — `handle_update`.
+3. `crates/corelink-container/src/routes/ac.rs:544` — `handle_update`.
 4. `crates/corelink-container/src/routes/ac.rs:453-462` — `is_canonical_digest` (64 lowercase-hex) gate.
 5. `crates/corelink-container/src/routes/ac.rs:464-481` — `pat_gate_reject` native PAT possession gate.
 6. `crates/corelink-container/src/routes/ac.rs:613` — `handle_delete`.

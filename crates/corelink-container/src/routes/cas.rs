@@ -1435,6 +1435,7 @@ async fn handle_delete(
     Path((tenant, hash)): Path<(String, String)>,
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
+    runner_job: crate::scope::RunnerJob,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
     // Cross-tenant: deny 403 BEFORE any storage access (mirrors read).
@@ -1444,6 +1445,17 @@ async fn handle_delete(
     // CAA-360 #9: reject a malformed CAS hash BEFORE it derives an R2 key.
     if !super::ac::is_canonical_digest(&hash) {
         return (StatusCode::BAD_REQUEST, "malformed hash").into_response();
+    }
+    // cf-multitenant WP5b (fail-CLOSED): a narrowed runner-job PAT may NEVER
+    // delete — a stolen per-job credential must not be able to EVICT the
+    // tenant's cache. Denied BEFORE the scope gate (the Worker forwards the
+    // job's write scope, so the write bit alone would let it through).
+    if runner_job.is_runner_job() {
+        return (
+            StatusCode::FORBIDDEN,
+            "delete not permitted for a runner-job credential",
+        )
+            .into_response();
     }
     // Scope gate (fail-CLOSED): delete is a cache WRITE — require `cas:rw`.
     if !scope.can_write() {
@@ -1897,6 +1909,84 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    // ── cf-multitenant WP5b: runner-job PAT deny-DELETE ──────────────────────
+
+    /// A canonical 64-lowercase-hex CAS hash for the runner-job DELETE tests.
+    const WP5B_HASH: &str =
+        "1111111111111111111111111111111111111111111111111111111111111111";
+
+    /// runner-job marker present ⇒ CAS DELETE is denied 403 even with a
+    /// write-capable scope (a per-job credential must not evict the cache).
+    #[tokio::test]
+    async fn runner_job_cas_delete_returns_403() {
+        let app = router(fixture());
+        let req = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/v1/cas/{TEST_TENANT}/{WP5B_HASH}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert_eq!(body.as_ref(), b"delete not permitted for a runner-job credential");
+    }
+
+    /// runner-job + wildcard key (`*`) ⇒ CAS DELETE still denied (deny-DELETE is
+    /// unconditional for a runner-job; the key pin only governs AC writes).
+    #[tokio::test]
+    async fn runner_job_cas_delete_wildcard_still_403() {
+        let app = router(fixture());
+        let req = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/v1/cas/{TEST_TENANT}/{WP5B_HASH}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, "*")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// NO runner-job marker (normal PAT): CAS DELETE with a write scope behaves
+    /// EXACTLY as before — 204 (idempotent), proving the WP5b check is a no-op.
+    #[tokio::test]
+    async fn no_runner_job_marker_cas_delete_is_204() {
+        let app = router(fixture());
+        let req = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/v1/cas/{TEST_TENANT}/{WP5B_HASH}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT, "normal delete unchanged");
+    }
+
+    /// A present-but-non-`"1"` marker is NOT a runner-job: CAS DELETE behaves as
+    /// a normal write (204), proving the exact-`"1"` rule at the route.
+    #[tokio::test]
+    async fn runner_job_cas_marker_non_one_is_not_narrowed() {
+        let app = router(fixture());
+        let req = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/v1/cas/{TEST_TENANT}/{WP5B_HASH}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "true")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT, "marker \"true\" ⇒ not narrowed");
     }
 
     /// cluster F: with the tenant AT `CAS_WRITE_CONCURRENCY_LIMIT` in-flight
