@@ -123,6 +123,16 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // org→tenant mapping is operational identity state with no retention basis
     // and is removed when that tenant is erased (GDPR Art.17). ERASE.
     "tenant_org_map",
+    // GitHub App installation → isolated tenant identity map (migr. 0084).
+    // PRIMARY identity is `installation_id`, but it CARRIES `tenant_id` —
+    // classify by tenant_id: the installation→tenant mapping is operational
+    // identity state with no retention basis and is removed when that tenant is
+    // erased (GDPR Art.17). ERASE.
+    "tenant_gh_installation_map",
+    // Per-tenant runner repo allowlist, tenant-leftmost composite PK
+    // `(tenant_id, repo_full_name)` (migr. 0085). Operational entitlement state
+    // with no retention basis → ERASE.
+    "runner_repo_allowlist",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -256,6 +266,8 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "region_migration_request",
     "region_migration_progress",
     "tenant_org_map",
+    "tenant_gh_installation_map",
+    "runner_repo_allowlist",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",

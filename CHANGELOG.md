@@ -22,6 +22,14 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **cf-multitenant runner-mint identity read models (D1 migrations 0084, 0085).** Two additive, GATED-INERT
+  tables for the multi-tenant runner-CI path: `tenant_gh_installation_map` (GitHub App `installation_id → tenant_id`
+  resolution, DP2) and `runner_repo_allowlist` (per-tenant `(tenant_id, repo_full_name)` allowlist read by BOTH the
+  Rust fabric and the CF mint — one source, DP5). Both are `CREATE TABLE IF NOT EXISTS` only (additive,
+  INV-AUTH-MIGRATION-ADDITIVE), created empty (lookup-only resolvers, no auto-provision), and classified
+  tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
+
 ### Fixed
 - **Container billing materializer wrote a contradictory `active`+`free` row on `subscription.deleted`
   (CAA-360 MEDIUM).** On a cancel, the materializer called `persist_tier_change(Free)` → `upsert_tier`, whose
