@@ -5,10 +5,11 @@ description: "The edge signup-worker webhook: a Svix-verified Clerk user.created
 source_files:
   - "apps/signup-worker/src/webhooks/clerk.ts"
   - "apps/signup-worker/src/index.ts"
+  - "apps/signup-worker/src/webhooks/github_provision.ts"
   - "apps/signup-worker/src/lib/d1.ts"
   - "apps/signup-worker/src/lib/clerk-metadata.ts"
   - "apps/signup-worker/src/sentry-scrub.ts"
-checkpoint_sha: "543c0d13ea7588c6893ca2040ec88c5b18b6f08c"
+checkpoint_sha: "c2db01b974ab9b015828b91a1e30071e0d62ac55"
 provenance: "AUTHORED"
 tags: ["flows", "signup", "clerk", "webhook", "dsr", "erasure", "worker-edge"]
 timestamp: "2026-07-03T00:00:00Z"
@@ -24,7 +25,7 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 
 # How it works
 
-- The worker `route()` dispatches `POST /webhooks/clerk` to `handleClerkWebhook`, `POST /webhooks/stripe` to the Stripe handler, and `/health` to a liveness JSON; anything else is 404 (`apps/signup-worker/src/index.ts:26-38`).
+- The worker `route()` dispatches `POST /webhooks/clerk` to `handleClerkWebhook`, `POST /webhooks/stripe` to the Stripe handler, and `/health` to a liveness JSON; anything else is 404 (`apps/signup-worker/src/index.ts:31-46`).
 - `handleClerkWebhook` requires `POST`, reads the `svix-id`/`svix-timestamp`/`svix-signature` headers, and rejects a missing header set with 400 before any work (`apps/signup-worker/src/webhooks/clerk.ts:972-980`).
 - Svix verification HMAC-SHA256s `${svix-id}.${svix-timestamp}.${body}` and constant-time compares each `v1,<sig>` candidate; an anti-replay window rejects a `svix-timestamp` outside ±300s before any HMAC work; failure is 401 (`apps/signup-worker/src/webhooks/clerk.ts:483-529`, `apps/signup-worker/src/webhooks/clerk.ts:982-991`).
 - After verify, the body is parsed and `user.deleted` routes to `handleUserDeleted`, `user.created` falls through to provisioning, and any other event type is a 200 `ignored` no-op (`apps/signup-worker/src/webhooks/clerk.ts:1001-1006`).
@@ -36,6 +37,7 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 - On the happy path it builds the `dsr.queued.v1` message (deterministic `dsr_id` + erasure salt + resolved legal-hold), writes an `INSERT OR IGNORE` `dsr_requested` SLA anchor, `DSR_QUEUE.send(msg)`s it, and returns 200 `erasure_enqueued:true` — logging only the pseudonymous `dsr_id`/`tenant_id`, never the salt (`apps/signup-worker/src/webhooks/clerk.ts:371-415`, `apps/signup-worker/src/webhooks/clerk.ts:417-427`).
 - **The tenant + PAT D1 writes are race-safe and self-serve-active.** `insertTenant` writes the new row `INSERT OR IGNORE` with `tenant_state` hard-coded to `'active'` (self-serve bypasses the DPA-pending pilot flow), and `insertPat` writes `shown_once_consumed = 1` so the one-time reveal endpoint cannot re-surface a plaintext the PLG `/welcome` session already delivered; both are `INSERT OR IGNORE` so a double Svix delivery is a no-op (`apps/signup-worker/src/lib/d1.ts:76-95`, `apps/signup-worker/src/lib/d1.ts:108-130`).
 - **After the tenant is created, provisioning writes the `tenant_org_map` (`clerk_org_id → tenant_id`) identity-map row (A1 auto-provision).** In `autoProvisionFromClerkEvent`, immediately after `createTenant` (step 1b), the handler-supplied `writeOrgMap` callback calls `insertTenantOrgMap` — an `INSERT OR IGNORE` on `tenant_org_map` keyed on the Clerk `org_id` if the event carries one, else the user `sub` (`orgMapKeyFor`) — so `POST /internal/v1/auth/resolve-tenant` can map the githugr-scoped principal to its tenant instead of 404-ing `org_not_mapped` and locking the user out. This write is LOAD-BEARING, not best-effort: `insertTenantOrgMap` deliberately does NOT swallow, so a throw propagates out of provisioning → the webhook returns non-2xx and Svix retries (idempotent via the `clerk_org_id` PRIMARY KEY) (`apps/signup-worker/src/webhooks/clerk.ts:888-890`, `apps/signup-worker/src/webhooks/clerk.ts:1108-1117`, `apps/signup-worker/src/lib/d1.ts:151-162`).
+- **The signup-worker also hosts the cf-multitenant runner-CI provisioning primitive.** `POST /internal/v1/runner/provision-installation` → `handleInstallationProvision` is an internal-auth-gated (constant-time Bearer compare, fail-CLOSED on an unbound `CORELINK_INTERNAL_AUTH_KEY`) endpoint that, given an ALREADY-authenticated `{installation_id, tenant_id, repositories[]}`, transactionally `INSERT OR IGNORE`s the GitHub-installation→tenant identity row into `tenant_gh_installation_map` (migration 0084) and seeds one `runner_repo_allowlist` row per repo (migration 0085) — the read model the runner-mint authz chokepoint resolves against. It is NOT lazy-provision: it never auto-creates a tenant; the caller (the identity-gated install-flow callback) owns the authenticated identity→tenant binding (`apps/signup-worker/src/webhooks/github_provision.ts:85`, `apps/signup-worker/src/webhooks/github_provision.ts:143`) (`apps/signup-worker/src/index.ts:39-41`).
 - **A team-seat acceptance is keyed by the SHA-256 `email_hash`, never the raw email — and the lookup is now a DUAL-READ so the `EMAIL_HASH_SALT` rollout is safe.** `acceptTeamInvitation` selects an outstanding `team_member` row with `WHERE email_hash IN (?1,?2)` — a salted-OR-legacy match over the deduped `emailHashCandidates` set (CTRL-PRIV-001) — so a pending invite whose row was written under the legacy pre-salt scheme still binds AFTER the salt is registered (writes stay salted; lookups find both); it then re-asserts `status='invited'` on the UPDATE so a concurrent acceptance cannot double-flip a seat (`apps/signup-worker/src/lib/d1.ts:193-223`, dual-read `IN` line `apps/signup-worker/src/lib/d1.ts:208`). The candidate set comes from `emailHashCandidates`, built on the now **salt-aware** `emailHashFor` (HMAC-SHA256 keyed by `EMAIL_HASH_SALT` when set, else legacy byte-identical unsalted SHA-256), called at the accept site with `env.EMAIL_HASH_SALT` (`apps/signup-worker/src/webhooks/clerk.ts:705-721`, `apps/signup-worker/src/webhooks/clerk.ts:749-756`, `apps/signup-worker/src/webhooks/clerk.ts:1139-1145`).
 - **The PAT plaintext is classified into PRIVATE metadata, the tenant claims into PUBLIC.** `updateClerkUserMetadata` PATCHes Clerk `public_metadata` with only `{tenant_id, region}` (the legit session-JWT claims) and routes the one-time `pat_plaintext` into `private_metadata` (backend-only, never in the JWT, never readable by `useUser()`) — the secret-classification boundary that keeps the credential out of the client-visible session (`apps/signup-worker/src/lib/clerk-metadata.ts:67-86`, `apps/signup-worker/src/lib/clerk-metadata.ts:82-85`).
 
@@ -59,7 +61,7 @@ The webhook is the pre-tenant boundary: it turns a Clerk-authenticated identity 
 
 # Citations
 
-1. `apps/signup-worker/src/index.ts:26-38` — `route()` path table (`/webhooks/clerk`, `/webhooks/stripe`, `/health`, 404).
+1. `apps/signup-worker/src/index.ts:31-46` — `route()` path table (`/webhooks/clerk`, `/webhooks/stripe`, `/health`, 404).
 2. `apps/signup-worker/src/index.ts:76-93` — DSR erasure queue consumer (`batch.queue` dispatch main vs DLQ; capture + rethrow → batch redelivery).
 3. `apps/signup-worker/src/index.ts:170-175` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`apps/signup-worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (sensitive keys + free-text shapes like Svix/Stripe sig material), not just header keys.
 4. `apps/signup-worker/src/webhooks/clerk.ts:167-177` — `deterministicDsrId` (stable v5-shaped dsr_id).
