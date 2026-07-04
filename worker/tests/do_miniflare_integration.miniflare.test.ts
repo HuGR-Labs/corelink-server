@@ -117,9 +117,9 @@ beforeAll(async () => {
 
   // Seed the D1 PAT table with a test row so authenticated tests can pass.
   //
-  // The schema MIRRORS the real D1 `pat` table (migrations/d1/0037 + 0054):
+  // The schema MIRRORS the real D1 `pat` table (migrations/d1/0037 + 0054 + 0086):
   // the Worker auth path (worker/src/index.ts extractAuth) runs
-  //   SELECT tenant_id, expires_ms, scope FROM pat WHERE token_id = ?1
+  //   SELECT tenant_id, expires_ms, scope, runner_job_ac_key FROM pat WHERE token_id = ?1
   // so every column it selects MUST exist here — a missing column makes the
   // D1 query throw, which extractAuth maps to a fail-closed 401
   // (reason: d1_lookup_error) and the authenticated tests silently degrade.
@@ -138,7 +138,9 @@ beforeAll(async () => {
       "created_ms BIGINT NOT NULL, " +
       "token_id TEXT, " +
       // 0063: soft-revocation marker — NULL = active (worker filters AND revoked_at_ms IS NULL)
-      "revoked_at_ms BIGINT)",
+      "revoked_at_ms BIGINT, " +
+      // 0086: cf-multitenant narrowed runner-job marker — NULL on normal PATs
+      "runner_job_ac_key TEXT)",
   );
   await d1.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_pat_token_id ON pat (token_id)");
   const seedPat =
