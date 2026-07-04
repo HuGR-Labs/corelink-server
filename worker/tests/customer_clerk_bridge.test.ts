@@ -75,7 +75,7 @@ function makeCtx(): ExecutionContext {
 function makeDualD1(opts: {
   pats?: Map<string, { tenant_id: string; expires_ms: number; revoked_at_ms?: number | null }>;
   clerkUserToTenant?: Map<string, string>;
-  teamMembers?: Map<string, { tenant_id: string; status: string }>;
+  teamMembers?: Map<string, { tenant_id: string; status: string; role?: string }>;
 }): D1Database {
   return {
     prepare: (sql: string) => ({
@@ -102,7 +102,7 @@ function makeDualD1(opts: {
             ) {
               return null as T | null;
             }
-            return { tenant_id: member.tenant_id } as T | null;
+            return { tenant_id: member.tenant_id, role: member.role } as T | null;
           }
           return null as T | null;
         },
@@ -150,7 +150,7 @@ function makeBridgeEnv(opts: {
   captured: { req?: Request; doName?: string };
   pats?: Map<string, { tenant_id: string; expires_ms: number; revoked_at_ms?: number | null }>;
   clerkUserToTenant?: Map<string, string>;
-  teamMembers?: Map<string, { tenant_id: string; status: string }>;
+  teamMembers?: Map<string, { tenant_id: string; status: string; role?: string }>;
   withClerkSecret?: boolean;
 }): Env {
   return {
@@ -406,7 +406,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     const env = makeBridgeEnv({
       captured,
       clerkUserToTenant: new Map(), // NO owner row → forces the fallback
-      teamMembers: new Map([["user_member_a", { tenant_id: TENANT_A_ID, status: "active" }]]),
+      teamMembers: new Map([["user_member_a", { tenant_id: TENANT_A_ID, status: "active", role: "member" }]]),
     });
 
     const resp = await customerFetch(env, { Authorization: "Bearer member.clerk.jwt" });
@@ -414,6 +414,65 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     expect(resp.status).toBe(200);
     expect(captured.doName).toBe(TENANT_A_ID);
     expect(captured.req!.headers.get("x-corelink-tenant-id")).toBe(TENANT_A_ID);
+  });
+
+  it("team_member RBAC: a VIEWER seat gets read-only scope (not read-write)", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_viewer",
+      azp: "https://corelink-app.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map(), // NO owner row → team_member fallback
+      teamMembers: new Map([["user_viewer", { tenant_id: TENANT_A_ID, status: "active", role: "viewer" }]]),
+    });
+
+    const resp = await customerFetch(env, { Authorization: "Bearer viewer.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    // The core of the HIGH finding: a viewer must NOT receive read-write.
+    expect(captured.req!.headers.get("x-corelink-scope")).toBe("read-only");
+  });
+
+  it("team_member RBAC: an ADMIN seat gets read-write scope", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_admin",
+      azp: "https://corelink-app.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map(),
+      teamMembers: new Map([["user_admin", { tenant_id: TENANT_A_ID, status: "active", role: "admin" }]]),
+    });
+
+    const resp = await customerFetch(env, { Authorization: "Bearer admin.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req!.headers.get("x-corelink-scope")).toBe("read-write");
+  });
+
+  it("team_member RBAC: a missing/unknown role fails SAFE to read-only", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_norole",
+      azp: "https://corelink-app.humangr.com",
+      iss: "https://clerk.humangr.com",
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map(),
+      // role intentionally absent (simulates a corrupt/legacy row) → least privilege.
+      teamMembers: new Map([["user_norole", { tenant_id: TENANT_A_ID, status: "active" }]]),
+    });
+
+    const resp = await customerFetch(env, { Authorization: "Bearer norole.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req!.headers.get("x-corelink-scope")).toBe("read-only");
   });
 
   it("team_member fallback: a member of tenant A does NOT resolve to tenant B (cross-tenant)", async () => {
@@ -429,7 +488,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
       captured,
       clerkUserToTenant: new Map(),
       // Only an A-membership exists; nothing maps this user to tenant B.
-      teamMembers: new Map([["user_member_a", { tenant_id: TENANT_A_ID, status: "active" }]]),
+      teamMembers: new Map([["user_member_a", { tenant_id: TENANT_A_ID, status: "active", role: "member" }]]),
     });
 
     const resp = await customerFetch(env, { Authorization: "Bearer member.clerk.jwt" });

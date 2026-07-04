@@ -60,7 +60,7 @@ export const GITHUGR_AZP_ALLOWLIST = ["https://www.githugr.com"] as const;
 
 /** Result of the shared Clerk-session → tenant resolution pipeline. */
 export type ClerkAuthResult =
-  | { ok: true; tenantId: string; clerkUserId: string }
+  | { ok: true; tenantId: string; clerkUserId: string; role: string }
   | { ok: false; response: Response };
 
 /**
@@ -247,14 +247,18 @@ export async function verifyClerkSessionAndResolveTenant(
   // Resolve the CoreLink tenant from the verified Clerk user id. The
   // signup-worker writes tenant.clerk_user_id at provision (migration 0056).
   let tenantId: string;
+  // RBAC: the resolved role gates the scope the caller receives (owner/admin/member
+  // → read-write; viewer → read-only). Fail-safe default is the LEAST privilege.
+  let role = "viewer";
   try {
     const row = await env.CONFIG_DB
       .prepare("SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1 LIMIT 1")
       .bind(clerkUserId)
       .first<{ tenant_id: string }>();
     if (row && row.tenant_id) {
-      // OWNER path (UNCHANGED): this Clerk user provisioned the tenant.
+      // OWNER path (UNCHANGED): this Clerk user provisioned the tenant → owner role.
       tenantId = row.tenant_id;
+      role = "owner";
     } else {
       // ADDITIVE team-member fallback (C-RESOLVE, WP-T4). Only when the OWNER
       // lookup above returns no row do we fall back to the team_member table
@@ -263,9 +267,9 @@ export async function verifyClerkSessionAndResolveTenant(
       // member MUST NOT resolve (a removed seat is denied 403). Index on
       // (user_id, status) backs this lookup. Still 403 if neither matches.
       const memberRow = await env.CONFIG_DB
-        .prepare("SELECT tenant_id FROM team_member WHERE user_id = ?1 AND status = 'active' LIMIT 1")
+        .prepare("SELECT tenant_id, role FROM team_member WHERE user_id = ?1 AND status = 'active' LIMIT 1")
         .bind(clerkUserId)
-        .first<{ tenant_id: string }>();
+        .first<{ tenant_id: string; role: string }>();
       if (!memberRow || !memberRow.tenant_id) {
         return {
           ok: false,
@@ -273,6 +277,9 @@ export async function verifyClerkSessionAndResolveTenant(
         };
       }
       tenantId = memberRow.tenant_id;
+      // RBAC (0074 roles: owner|admin|member|viewer). A missing/unexpected role
+      // fails safe to the least-privilege 'viewer' (read-only) rather than granting.
+      role = memberRow.role || "viewer";
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
@@ -283,7 +290,7 @@ export async function verifyClerkSessionAndResolveTenant(
     };
   }
 
-  return { ok: true, tenantId, clerkUserId };
+  return { ok: true, tenantId, clerkUserId, role };
 }
 
 /**
@@ -393,7 +400,9 @@ async function verifyGithugrSession(
   // tenant (that would re-open the exact multi-user isolation break this fixes).
   try {
     const tenantId = await provisionOrLookupGithugrTenant(env.CONFIG_DB, clerkUserId);
-    return { ok: true, tenantId, clerkUserId };
+    // githugr is a federated-login owner of its own per-user isolated tenant (not a
+    // team_member seat), so it maps to the 'owner' role → read-write (unchanged).
+    return { ok: true, tenantId, clerkUserId, role: "owner" };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] githugr tenant provision/lookup failed: ${message.slice(0, 80)}`);

@@ -2114,10 +2114,13 @@ const baseHandler: ExportedHandler<Env> = {
             h.set("x-corelink-route-kind", "customer_v1");
             h.set("x-corelink-token-prefix", "clerk");
             h.set("x-corelink-tenant-id", custTenantId);
-            // Clerk-session callers get the dashboard read-write surface; the
-            // Worker is the sole setter (stripClientTrustHeaders deleted any
-            // client-supplied value above).
-            h.set("x-corelink-scope", "read-write");
+            // RBAC scope from the resolved team_member role (0074): a `viewer`
+            // gets read-only; owner/admin/member get read-write. The Worker is the
+            // sole setter (stripClientTrustHeaders deleted any client value above).
+            h.set(
+              "x-corelink-scope",
+              custClerkAuth.role === "viewer" ? "read-only" : "read-write",
+            );
             // Deliberately NOT set: x-corelink-internal-auth (least privilege —
             // customer routes don't need the operator-grade credential).
             return h;

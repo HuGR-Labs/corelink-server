@@ -402,14 +402,17 @@ export async function handleSessionExchange(
   }
   const { tenantId, clerkUserId } = clerkAuth;
 
-  // ── 4. Mint a short-lived cas:rw PAT (REUSE the one container mint) ─────────
+  // RBAC: a viewer seat cannot mint a write-capable PAT (least privilege).
+  const mintScope = clerkAuth.role === "viewer" ? "read-only" : EXCHANGE_PAT_SCOPE;
+
+  // ── 4. Mint a short-lived PAT (REUSE the one container mint), scoped by role ─
   return mintScopedPat(
     env,
     requestId,
     tenantId,
     clerkUserId,
     EXCHANGE_PAT_TTL_SECONDS,
-    EXCHANGE_PAT_SCOPE,
+    mintScope,
     internalAuthKey,
   );
 }
@@ -719,6 +722,13 @@ export async function handleTokenExchange(
     return clerkAuth.response;
   }
   const { tenantId, clerkUserId } = clerkAuth;
+
+  // RBAC: a viewer seat cannot mint a write-capable PAT — cap DOWN to read-only
+  // regardless of the requested scope (least privilege; owner/admin/member keep
+  // the requested/default read-write).
+  if (clerkAuth.role === "viewer") {
+    scope = "read-only";
+  }
 
   // ── 6. CROSS-TENANT REJECTION — the githugr CRITICAL ───────────────────────
   // The session resolves to `tenantId`; the caller asked for `audience`. If they
