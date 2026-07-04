@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **cf-multitenant WP2: server-side tenant derivation + authz chokepoint in `handleRunnerMint`
+  (`worker/src/lib/runner_mint.ts`).** The runner-mint endpoint no longer trusts an `owner_tenant`
+  body field (the single-tenant hole). The new body is
+  `{ job_id, repo_full_name, installation_id, scope?, ttl_seconds? }` (all three ids required → 400),
+  and the tenant is DERIVED + AUTHORIZED server-side via a four-check, fail-CLOSED CONFIG_DB chokepoint:
+  (a) derive tenant from `tenant_gh_installation_map[installation_id]`; (b) reject if a
+  `tenant_offboarding_state` row exists (suspended); (c) require a `runner_repo_allowlist(tenant, repo)`
+  row; (d) require a `runners_entitlement` row and capture `max_concurrency`. EVERY miss returns the SAME
+  generic `403 {error:"FORBIDDEN", message:"runner mint unauthorized"}` (no oracle); any D1 error → 500.
+  The PAT is minted for the DERIVED tenant and the response gains `max_concurrency` (threaded through
+  `mintScopedPat` via a new optional `extraFields` bag).
 - **cf-multitenant runner-mint identity read models (D1 migrations 0084, 0085).** Two additive, GATED-INERT
   tables for the multi-tenant runner-CI path: `tenant_gh_installation_map` (GitHub App `installation_id → tenant_id`
   resolution, DP2) and `runner_repo_allowlist` (per-tenant `(tenant_id, repo_full_name)` allowlist read by BOTH the
