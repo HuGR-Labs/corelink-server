@@ -1641,36 +1641,130 @@ const baseHandler: ExportedHandler<Env> = {
           request,
         );
       }
-      // Route to the _system DO which hosts the container.
+      // Route to the _system DO which hosts the LOCAL (this-region) container.
       const systemDoId = env.CORELINK_SERVER.idFromName("_system");
       const systemStub = env.CORELINK_SERVER.get(systemDoId);
-      const internalAugmented = new Request(request, {
-        headers: (() => {
-          const h = new Headers(request.headers);
-          // Strip ALL client-suppliable trust headers BEFORE re-establishing
-          // them from server-trusted values (delete-then-set). A client must
-          // never smuggle x-admin-* / fanout-from, nor a forged internal-auth.
-          stripClientTrustHeaders(h);
-          h.set("x-request-id", requestId);
-          h.set("x-corelink-route-kind", "internal");
-          h.set("x-corelink-tenant-id", "_system");
-          h.set("x-corelink-token-prefix", "internal");
-          // Re-set internal-auth from the server secret the Worker just verified
-          // the caller against — the container's internal-auth gate requires it.
-          h.set("x-corelink-internal-auth", internalAuthKey);
-          return h;
-        })(),
-      });
+      // Build server-trusted internal headers (client trust headers stripped, then
+      // re-established). `fanoutFrom`, when set, marks a request as ALREADY fanned
+      // out so the receiving regional worker does not re-fan (loop guard).
+      const buildInternalHeaders = (src: Headers, fanoutFrom?: string): Headers => {
+        const h = new Headers(src);
+        // Strip ALL client-suppliable trust headers BEFORE re-establishing them
+        // (delete-then-set): a client must never smuggle x-admin-* / fanout-from,
+        // nor a forged internal-auth.
+        stripClientTrustHeaders(h);
+        h.set("x-request-id", requestId);
+        h.set("x-corelink-route-kind", "internal");
+        h.set("x-corelink-tenant-id", "_system");
+        h.set("x-corelink-token-prefix", "internal");
+        h.set("x-corelink-internal-auth", internalAuthKey);
+        if (fanoutFrom) h.set("x-corelink-fanout-from", fanoutFrom);
+        return h;
+      };
+
+      // ── GDPR Art.17 erasure completeness across residency (CAA-360 CRITICAL) ──
+      // A DSR erase MUST run in EVERY jurisdiction the tenant could have data. An
+      // EU tenant's CAS/AC bytes live in the prod-lhr container's EU buckets
+      // (corelink-cas-eu / corelink-ac-eu), which the local (IAD) container's R2
+      // client cannot (and must not) reach. When THIS worker is the erase ORIGIN
+      // (not itself a fan-out target), fan the erase out to every regional worker
+      // (each erases its own jurisdiction's buckets) and return "complete" (the
+      // local 2xx) ONLY when the local AND every regional sweep confirm — else fail
+      // CLOSED (502) so the queue consumer retries and NO false VerifiedComplete is
+      // ever signed. Fail-closed by construction: a missing binding, transport
+      // error, or non-2xx from any region → not complete → retry.
+      const isDsrErase = route.pathSuffix.startsWith("/_internal/dsr/");
+      const isFanoutTarget = request.headers.has("x-corelink-fanout-from");
       let internalResp: Response;
-      try {
-        internalResp = await systemStub.fetch(internalAugmented);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : "unknown error";
-        console.error(`[${requestId}] internal DO fetch failed: ${message.slice(0, 80)}`);
-        return applyCors(
-          reapiError("INTERNAL_ERROR", "internal upstream error", 500, requestId),
-          request,
+      if (isDsrErase && !isFanoutTarget) {
+        // Buffer the body ONCE — it is replayed to the local container + each region.
+        const eraseBody = await request.arrayBuffer();
+        let localResp: Response;
+        try {
+          localResp = await systemStub.fetch(
+            new Request(request.url, {
+              method: request.method,
+              headers: buildInternalHeaders(request.headers),
+              body: eraseBody,
+            }),
+          );
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "unknown error";
+          console.error(`[${requestId}] dsr-erase local DO fetch failed: ${message.slice(0, 80)}`);
+          return applyCors(
+            reapiError("INTERNAL_ERROR", "internal upstream error", 500, requestId),
+            request,
+          );
+        }
+        const regionals: Array<[string, { fetch: typeof fetch } | undefined]> = [
+          ["lhr", env.PROD_LHR],
+          ["sam", env.PROD_SAM],
+          ["nrt", env.PROD_NRT],
+          ["syd", env.PROD_SYD],
+        ];
+        const regionResults = await Promise.all(
+          regionals.map(async ([region, binding]) => {
+            if (binding === undefined) {
+              // A missing regional binding on the ORIGIN worker means we cannot
+              // prove that jurisdiction was erased → fail CLOSED (never assume).
+              console.error(
+                `[${requestId}] dsr-erase fan-out: PROD_${region.toUpperCase()} binding absent`,
+              );
+              return { region, ok: false };
+            }
+            try {
+              const resp = await binding.fetch(
+                new Request(request.url, {
+                  method: request.method,
+                  headers: buildInternalHeaders(request.headers, "iad"),
+                  body: eraseBody,
+                }),
+              );
+              return { region, ok: resp.ok };
+            } catch (err: unknown) {
+              const message = err instanceof Error ? err.message : "unknown error";
+              console.error(
+                `[${requestId}] dsr-erase fan-out to ${region} threw: ${message.slice(0, 80)}`,
+              );
+              return { region, ok: false };
+            }
+          }),
         );
+        const failedRegions = regionResults.filter((r) => !r.ok).map((r) => r.region);
+        if (!localResp.ok || failedRegions.length > 0) {
+          console.error(
+            `[${requestId}] dsr-erase INCOMPLETE (fail-closed): local_ok=${localResp.ok} failed_regions=${
+              failedRegions.join(",") || "none"
+            }`,
+          );
+          return applyCors(
+            reapiError(
+              "INTERNAL_ERROR",
+              "dsr erase incomplete across residency regions; retrying",
+              502,
+              requestId,
+            ),
+            request,
+          );
+        }
+        internalResp = localResp;
+      } else {
+        // Non-erase internal route (pat/mint, admin, …) OR a fan-out target (a
+        // regional worker running the erase for its own jurisdiction): single local
+        // container hit, byte-identical to the pre-fan-out behaviour.
+        const internalAugmented = new Request(request, {
+          headers: buildInternalHeaders(request.headers),
+        });
+        try {
+          internalResp = await systemStub.fetch(internalAugmented);
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "unknown error";
+          console.error(`[${requestId}] internal DO fetch failed: ${message.slice(0, 80)}`);
+          return applyCors(
+            reapiError("INTERNAL_ERROR", "internal upstream error", 500, requestId),
+            request,
+          );
+        }
       }
       const internalHeaders = new Headers(internalResp.headers);
       if (!internalHeaders.has("x-request-id")) {
