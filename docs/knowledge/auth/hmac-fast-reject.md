@@ -5,7 +5,7 @@ description: "The container-side defense-in-depth gate that re-proves PAT posses
 source_files:
   - "crates/corelink-container/src/native_pat_gate.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "488155ba24dabea3d17a2cc0c02c7c9880b433ad"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path", "native-plane"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -67,7 +67,7 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
   as FATAL when prod is detected — the teeth live in `main.rs`, not this builder
   (`crates/corelink-container/src/native_pat_gate.rs:264-279`; the prod-fatal backstop is
   `should_fatal_on_missing_gate` at `crates/corelink-container/src/main.rs:77` wired at
-  `crates/corelink-container/src/main.rs:253`).
+  `crates/corelink-container/src/main.rs:270`).
 - The single-flight shards are a FIXED 256-entry array, not a per-token map — bounded memory by
   construction (`crates/corelink-container/src/native_pat_gate.rs:72-77`).
 
@@ -81,4 +81,4 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 6. `crates/corelink-container/src/native_pat_gate.rs:253-257` — SHA-256 fingerprint cache key, never the plaintext.
 7. `crates/corelink-container/src/native_pat_gate.rs:264-279` — env-gated builder; prod-fatal on a missing gate.
 8. `crates/corelink-container/src/main.rs:77` — `should_fatal_on_missing_gate` (prod && !gate_present).
-9. `crates/corelink-container/src/main.rs:253` — boot-path call site enforcing the prod-fatal backstop.
+9. `crates/corelink-container/src/main.rs:270` — boot-path call site enforcing the prod-fatal backstop.
