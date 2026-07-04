@@ -33,6 +33,20 @@ Each entry cross-references:
   grant path (`SQL_UPSERT_TIER`/`upsert_tier`) is byte-identical. The container is now a convergent
   defense-in-depth downgrade writer (agrees with the signup-worker authority on `inactive`), never a re-grant.
   Tests assert cancel drives `downgrade_tier` and NEVER an `active`-writing statement (41 lib + 43 cf-billing-real).
+- **GDPR Art.17 erasure never swept EU-resident tenants' CAS/AC bytes, yet the Ed25519 attestation signed
+  `VerifiedComplete` (CAA-360 CRITICAL).** The DSR erase (Clerk `user.deleted` / account-delete) forwards to
+  `${CORELINK_API_BASE}/_internal/dsr/erase`, which resolves to the IAD (US) container — its R2 client only
+  reaches the US buckets. An EU tenant's bytes live in the `prod-lhr` container's dedicated EU buckets
+  (`corelink-cas-eu` / `corelink-ac-eu`), which the IAD sweep can neither see nor (by design) hold credentials
+  for — so EU data survived "erasure" while a tenant-wide completion attestation was still signed. Fixed: the
+  Worker's internal arm now **fans a DSR erase out to every regional worker** (`PROD_LHR/SAM/NRT/SYD`) so each
+  container erases its own jurisdiction's buckets, and returns "complete" (2xx) **only when the local AND every
+  regional sweep confirm** — else fails **CLOSED** (502) so the queue consumer retries and no false
+  `VerifiedComplete` is ever signed. Fail-closed by construction: a missing regional binding, transport error,
+  or non-2xx from any region ⇒ not complete. A fan-out target (regional worker) is loop-guarded via
+  `x-corelink-fanout-from`. Deploy dependency: each regional worker must accept the erase internal-auth key +
+  carry its region's `ERASURE_ATTESTATION_*` config; until then the erase safely fails-closed (retries), never
+  false-completes. Tests: fan-out-to-all, fail-closed-on-region-error, fail-closed-on-absent-binding, loop-guard.
 
 - **RBAC roles were dead — every Clerk session (including `viewer` seats) received full `read-write` scope
   (CAA-360 HIGH).** `verifyClerkSessionAndResolveTenant` never queried the `team_member.role` column and the

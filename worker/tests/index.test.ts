@@ -1894,6 +1894,67 @@ describe("security (H4): forwarded-request trust-header hygiene", () => {
     expect(captured.headers?.get("x-corelink-internal-auth")).toBe(INTERNAL_KEY);
   });
 
+  // ── CAA-360 CRITICAL: DSR erase must sweep EVERY residency jurisdiction ──────
+  const ERASE_KEY = "the-real-internal-secret-0123456789";
+  const okRegion = () => ({
+    fetch: async (): Promise<Response> => new Response("{}", { status: 200 }),
+  });
+
+  it("DSR erase ORIGIN fans out to EVERY regional worker + completes (200) when all confirm", async () => {
+    const { env } = makeHeaderCapturingEnv();
+    const called: string[] = [];
+    const mk = (name: string) => ({
+      fetch: async (req: Request): Promise<Response> => {
+        called.push(name);
+        // the fan-out marker MUST be set so the regional worker does not re-fan
+        expect(req.headers.get("x-corelink-fanout-from")).toBe("iad");
+        return new Response("{}", { status: 200 });
+      },
+    });
+    const resp = await workerFetch(
+      "http://localhost/_internal/dsr/erase",
+      { method: "POST", headers: { "x-corelink-internal-auth": ERASE_KEY }, body: JSON.stringify({ dsr_id: "d1", tenant_id: "t1" }) },
+      { ...env, CORELINK_INTERNAL_AUTH_KEY: ERASE_KEY, PROD_LHR: mk("lhr"), PROD_SAM: mk("sam"), PROD_NRT: mk("nrt"), PROD_SYD: mk("syd") },
+    );
+    expect(resp.status).toBe(200);
+    expect(called.sort()).toEqual(["lhr", "nrt", "sam", "syd"]);
+  });
+
+  it("DSR erase FAILS CLOSED (502) when any region errors — no false VerifiedComplete", async () => {
+    const { env } = makeHeaderCapturingEnv();
+    const euFail = { fetch: async (): Promise<Response> => new Response("boom", { status: 500 }) };
+    const resp = await workerFetch(
+      "http://localhost/_internal/dsr/erase",
+      { method: "POST", headers: { "x-corelink-internal-auth": ERASE_KEY }, body: "{}" },
+      { ...env, CORELINK_INTERNAL_AUTH_KEY: ERASE_KEY, PROD_LHR: euFail, PROD_SAM: okRegion(), PROD_NRT: okRegion(), PROD_SYD: okRegion() },
+    );
+    expect(resp.status).toBe(502);
+  });
+
+  it("DSR erase FAILS CLOSED (502) when a regional binding is ABSENT (jurisdiction unprovable)", async () => {
+    const { env } = makeHeaderCapturingEnv();
+    const resp = await workerFetch(
+      "http://localhost/_internal/dsr/erase",
+      { method: "POST", headers: { "x-corelink-internal-auth": ERASE_KEY }, body: "{}" },
+      // PROD_LHR (the EU jurisdiction) intentionally ABSENT → cannot prove EU erased
+      { ...env, CORELINK_INTERNAL_AUTH_KEY: ERASE_KEY, PROD_SAM: okRegion(), PROD_NRT: okRegion(), PROD_SYD: okRegion() },
+    );
+    expect(resp.status).toBe(502);
+  });
+
+  it("a fanned-out DSR erase (x-corelink-fanout-from present) does NOT re-fan (loop guard)", async () => {
+    const { env } = makeHeaderCapturingEnv();
+    let regionCalled = false;
+    const region = { fetch: async (): Promise<Response> => { regionCalled = true; return new Response("{}", { status: 200 }); } };
+    const resp = await workerFetch(
+      "http://localhost/_internal/dsr/erase",
+      { method: "POST", headers: { "x-corelink-internal-auth": ERASE_KEY, "x-corelink-fanout-from": "iad" }, body: "{}" },
+      { ...env, CORELINK_INTERNAL_AUTH_KEY: ERASE_KEY, PROD_LHR: region, PROD_SAM: region, PROD_NRT: region, PROD_SYD: region },
+    );
+    expect(resp.status).toBe(200);
+    expect(regionCalled).toBe(false);
+  });
+
   it("region-fanout forward strips smuggled trust headers but keeps Worker-set fanout-from", async () => {
     // Capture the headers the regional Worker (Service Binding) receives.
     let fanoutHeaders: Headers | undefined;
