@@ -171,6 +171,26 @@ pub const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_i
 /// active). Binds `?1..?4` = (tenant_id, tier, subscription_started_at_ms,
 /// correlation_id). Already schema-correct (the #172 fix).
 pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id";
+/// DOWNGRADE a tenant's tier → `subscription_state='inactive'` (the
+/// `customer.subscription.deleted` cancel path). Binds `?1..?4` =
+/// (tenant_id, tier, subscription_started_at_ms, correlation_id).
+///
+/// The **signup-worker** (`apps/signup-worker/src/webhooks/stripe.ts`) is the
+/// PRIMARY, authoritative downgrade authority on cancel — it is the writer that
+/// flips the canonical `tier_selections.subscription_state` access gate off.
+/// This statement is the container materializer's DEFENSE-IN-DEPTH convergent
+/// write: as a SECOND writer of that gate, on cancel it must never write the
+/// contradictory `subscription_state='active'` that [`SQL_UPSERT_TIER`] hard-codes
+/// — it writes `'inactive'` so a canceled tenant converges to an access-OFF row
+/// regardless of which writer wins the race.
+///
+/// The `subscription_state` CHECK admits `('inactive','pending_checkout',
+/// 'active')` and the `subscription_started_when_active` CHECK only requires
+/// `subscription_started_at_ms` NOT NULL when state=`active` — so an `'inactive'`
+/// row needs no started_at, and the DO UPDATE **deliberately does NOT reset**
+/// `subscription_started_at_ms` (a downgrade must preserve the ORIGINAL
+/// subscription start; only [`SQL_UPSERT_TIER`]'s grant path refreshes it).
+pub const SQL_DOWNGRADE_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'inactive', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'inactive', correlation_id = excluded.correlation_id";
 
 /// UPSERT a tenant's Runners entitlement (`runners_entitlement`, migrations
 /// 0070 `max_concurrency` + 0072 `max_vcpu_h`). A SEPARATE axis from the cache
@@ -234,6 +254,23 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
     /// `0039` requires `subscription_started_at_ms` NOT NULL whenever the
     /// state is `active` — so `now_ms` MUST be supplied.
     fn upsert_tier(
+        &self,
+        tenant_id: &str,
+        tier_wire: &str,
+        now_ms: i64,
+        correlation_id: &str,
+    ) -> Result<(), BillingD1Error>;
+
+    /// DOWNGRADE the tier for `tenant_id` on cancel. Production writes
+    /// `tier_selections.(tier, subscription_state='inactive', correlation_id)`
+    /// via [`SQL_DOWNGRADE_TIER`] — the container's defense-in-depth convergent
+    /// write for `customer.subscription.deleted` (the signup-worker is the
+    /// primary downgrade authority). UNLIKE [`Self::upsert_tier`], this writes
+    /// `subscription_state='inactive'` (the access gate OFF) and does NOT reset
+    /// `subscription_started_at_ms` on conflict (the original start is
+    /// preserved). `now_ms` is threaded for the INSERT (new-row) started_at bind
+    /// + trait parity; the native mirror keeps its `(tier, correlation_id)` shape.
+    fn downgrade_tier(
         &self,
         tenant_id: &str,
         tier_wire: &str,
@@ -430,6 +467,28 @@ impl BillingD1Writer for InMemoryBillingD1 {
         // the production statement. The native mirror keeps its existing
         // `(tier, correlation_id)` shape (no behavior regression); the
         // arg is threaded for trait parity with the wasm32 binder.
+        _now_ms: i64,
+        correlation_id: &str,
+    ) -> Result<(), BillingD1Error> {
+        self.check_armed()?;
+        let mut g = self
+            .tiers
+            .lock()
+            .map_err(|e| BillingD1Error::Transient(format!("tiers mutex poisoned: {e}")))?;
+        g.insert(
+            tenant_id.to_string(),
+            (tier_wire.to_string(), correlation_id.to_string()),
+        );
+        Ok(())
+    }
+
+    fn downgrade_tier(
+        &self,
+        tenant_id: &str,
+        tier_wire: &str,
+        // Bound to `subscription_started_at_ms` on the INSERT (new-row) path in
+        // the production statement; the DO UPDATE does NOT touch it. The native
+        // mirror keeps its `(tier, correlation_id)` shape (parity is enough).
         _now_ms: i64,
         correlation_id: &str,
     ) -> Result<(), BillingD1Error> {
@@ -709,6 +768,40 @@ mod tests {
         assert!(
             SQL_READ_TIER.contains("WHERE tenant_id = ?"),
             "{SQL_READ_TIER}"
+        );
+    }
+
+    #[test]
+    fn downgrade_tier_sql_writes_inactive_not_active_and_preserves_start_0039() {
+        // CAA-360 MEDIUM fix: the cancel/downgrade path MUST write
+        // subscription_state='inactive' (access gate OFF), NEVER 'active'
+        // (which would leave a contradictory active-free row), and MUST NOT
+        // reset subscription_started_at_ms in the DO UPDATE (a downgrade
+        // preserves the original subscription start).
+        let sql = SQL_DOWNGRADE_TIER;
+        assert_eq!(sql.matches('?').count(), 4, "4 binds: {sql}");
+        assert!(sql.contains("INTO tier_selections"), "wrong table: {sql}");
+        assert!(sql.contains("ON CONFLICT(tenant_id)"), "wrong key: {sql}");
+        // Writes 'inactive' on BOTH the INSERT VALUES and the DO UPDATE.
+        assert!(
+            sql.contains("'inactive'"),
+            "must write the 'inactive' state: {sql}"
+        );
+        assert!(
+            sql.contains("subscription_state = 'inactive'"),
+            "DO UPDATE must set subscription_state='inactive': {sql}"
+        );
+        // MUST NOT write 'active' anywhere (the contradictory-row bug).
+        assert!(
+            !sql.contains("'active'"),
+            "cancel path must NEVER write subscription_state='active': {sql}"
+        );
+        // The DO UPDATE must NOT reset the original subscription start — the
+        // downgrade preserves it (only the grant path refreshes it). No
+        // `subscription_started_at_ms = excluded.` clause may appear.
+        assert!(
+            !sql.contains("subscription_started_at_ms = excluded"),
+            "downgrade must NOT reset subscription_started_at_ms on conflict: {sql}"
         );
     }
 }

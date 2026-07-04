@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **Container billing materializer wrote a contradictory `active`+`free` row on `subscription.deleted`
+  (CAA-360 MEDIUM).** On a cancel, the materializer called `persist_tier_change(Free)` → `upsert_tier`, whose
+  `SQL_UPSERT_TIER` UNCONDITIONALLY writes `subscription_state='active'` — so a canceled tenant got
+  `tier='free'` **with `subscription_state='active'`**, i.e. the container (a second writer of the canonical
+  access gate) left the gate open. Fixed: added `SQL_DOWNGRADE_TIER` (`subscription_state='inactive'`, and it
+  does NOT reset `subscription_started_at_ms`) + a `downgrade_tier` writer method, and the cancel arm now calls a
+  new `persist_tier_downgrade` (same audit-before-write as the grant path, but the inactive statement). The
+  grant path (`SQL_UPSERT_TIER`/`upsert_tier`) is byte-identical. The container is now a convergent
+  defense-in-depth downgrade writer (agrees with the signup-worker authority on `inactive`), never a re-grant.
+  Tests assert cancel drives `downgrade_tier` and NEVER an `active`-writing statement (41 lib + 43 cf-billing-real).
+
 - **RBAC roles were dead — every Clerk session (including `viewer` seats) received full `read-write` scope
   (CAA-360 HIGH).** `verifyClerkSessionAndResolveTenant` never queried the `team_member.role` column and the
   `customer_v1` forward hardcoded `x-corelink-scope: 'read-write'`, so a read-only `viewer` had the same write
