@@ -39,6 +39,18 @@ Each entry cross-references:
   `x-corelink-runner-job: 1` + `x-corelink-ac-key-allow: <value>` (strip-then-set, mirroring
   `x-corelink-scope`); both headers are added to the client-trust strip-list so a client can never smuggle
   or redirect the enforcement. Paired with WP5b (container enforcement).
+- **cf-multitenant WP5b: container gate enforces deny-DELETE + exact-key for a runner-job PAT.** The
+  container CAS/AC gate now fails CLOSED on a narrowed per-job credential the Worker marks with the
+  server-trusted headers `x-corelink-runner-job: 1` and `x-corelink-ac-key-allow: <*|blake3-hex>` (WP5a
+  forwards them; the Worker strips any client copy, exactly like `x-corelink-scope`). A new infallible
+  `scope::RunnerJob` extractor (mirroring `CacheScope`) reads them — a request is narrowed ONLY when the
+  marker is present and equal to `"1"` (any other/absent value ⇒ normal PAT, no behavior change). Enforcement:
+  (a) `cas.rs`/`ac.rs` `handle_delete` deny DELETE with `403 "delete not permitted for a runner-job
+  credential"` BEFORE the write-scope gate (a stolen per-job PAT must not evict the tenant's cache); (b)
+  `ac.rs` `handle_update` requires `action_digest == <ac-key-allow>` when a concrete key is pinned, else
+  `403 "ac write outside the job's allowed key"` — a `"*"` pin (launch default) or no pin ⇒ no key
+  restriction (create at any key; overwrite still 409 by INV-AC-RESULT-HASH-IMMUTABLE). No `worker/` or
+  migration changes (that is the paired WP5a branch); the header contract is frozen.
 - **cf-multitenant WP4: identity-gated installation provisioning primitive in the signup-worker
   (`apps/signup-worker`).** New internal-auth-gated endpoint
   `POST /internal/v1/runner/provision-installation` (handler `webhooks/github_provision.ts`) that WRITES the

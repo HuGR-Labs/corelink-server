@@ -207,6 +207,104 @@ impl<S: Send + Sync> FromRequestParts<S> for CacheScope {
     }
 }
 
+/// The SERVER-TRUSTED header the Worker sets to mark a **narrowed runner-job
+/// PAT** (cf-multitenant WP5a→WP5b). Present-and-equal-to-`"1"` ⇒ this request
+/// carries a per-job credential enforced fail-CLOSED at the container cache
+/// gate: no DELETE on CAS/AC, and (if [`RUNNER_JOB_AC_KEY_ALLOW_HEADER`] pins a
+/// key) AC writes only to that exact key.
+///
+/// The Worker strips any client-supplied copy and re-sets it, so the container
+/// may trust it — exactly like [`SCOPE_HEADER`] and
+/// [`crate::byte_accounting::STORAGE_QUOTA_HEADER`]. ABSENT ⇒ a normal PAT with
+/// NO behavior change.
+pub const RUNNER_JOB_HEADER: &str = "x-corelink-runner-job";
+
+/// The SERVER-TRUSTED header the Worker sets alongside [`RUNNER_JOB_HEADER`] to
+/// pin the ONE AC key a runner-job PAT may write. Value semantics
+/// (parsed into [`RunnerJob::ac_key_allowed`]):
+/// - `"*"` (the launch default) → NO key restriction (deny-DELETE only);
+/// - a BLAKE3 hex digest → the runner-job PAT may write ONLY that exact AC key;
+/// - absent / empty → no key pinned (deny-DELETE only).
+pub const RUNNER_JOB_AC_KEY_ALLOW_HEADER: &str = "x-corelink-ac-key-allow";
+
+/// Server-trusted marker + AC-key restriction for a narrowed runner-job PAT.
+///
+/// Construction is infallible: absent [`RUNNER_JOB_HEADER`] yields a
+/// non-runner-job value that is a NO-OP at every gate (fail-SAFE — a normal PAT
+/// is never accidentally narrowed). The narrowing is enforced at the route via
+/// [`RunnerJob::is_runner_job`] + [`RunnerJob::ac_key_allowed`].
+#[derive(Debug, Clone)]
+pub struct RunnerJob {
+    is_runner_job: bool,
+    ac_key_allow: Option<String>,
+}
+
+impl RunnerJob {
+    /// Build from the request parts' [`RUNNER_JOB_HEADER`] +
+    /// [`RUNNER_JOB_AC_KEY_ALLOW_HEADER`].
+    ///
+    /// A request is a runner-job ONLY when the marker is present and equals
+    /// exactly `"1"` (trimmed). Any other value — including a present-but-empty
+    /// or garbage marker — is treated as NOT a runner-job: the narrowing is an
+    /// additive Worker-set signal, so an unrecognized marker means "the Worker
+    /// did not narrow this request", not "narrow it harder".
+    #[must_use]
+    fn from_headers(parts: &Parts) -> Self {
+        let marker = parts
+            .headers
+            .get(RUNNER_JOB_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim);
+        let is_runner_job = marker == Some("1");
+        let ac_key_allow = parts
+            .headers
+            .get(RUNNER_JOB_AC_KEY_ALLOW_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned);
+        Self {
+            is_runner_job,
+            ac_key_allow,
+        }
+    }
+
+    /// Whether this request carries a narrowed runner-job PAT (deny-DELETE +
+    /// exact-key enforcement apply). Fail-SAFE: `false` unless the marker was
+    /// present and exactly `"1"`.
+    #[must_use]
+    pub fn is_runner_job(&self) -> bool {
+        self.is_runner_job
+    }
+
+    /// Whether a runner-job PAT is allowed to write the given AC `key`.
+    ///
+    /// Returns `true` (no restriction) when this is NOT a runner-job, when no
+    /// key is pinned, or when the pinned key is the `"*"` wildcard (the launch
+    /// default). When a concrete key is pinned, only an EXACT match is allowed
+    /// (fail-CLOSED). DELETE is denied separately via [`Self::is_runner_job`].
+    #[must_use]
+    pub fn ac_key_allowed(&self, key: &str) -> bool {
+        if !self.is_runner_job {
+            return true;
+        }
+        match self.ac_key_allow.as_deref() {
+            None | Some("*") => true,
+            Some(allowed) => allowed == key,
+        }
+    }
+}
+
+#[axum::async_trait]
+impl<S: Send + Sync> FromRequestParts<S> for RunnerJob {
+    // Infallible: the narrowing is enforced at the route (like `CacheScope`),
+    // so a non-runner-job request still constructs a (NO-OP) `RunnerJob`.
+    type Rejection = std::convert::Infallible;
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        Ok(Self::from_headers(parts))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -385,5 +483,95 @@ mod tests {
             .expect("infallible");
         assert!(!scope.can_read());
         assert!(!scope.can_write());
+    }
+
+    // ---- RunnerJob (cf-multitenant WP5b) --------------------------------
+
+    /// Build `Parts` carrying an optional runner-job marker + AC-key-allow.
+    fn parts_with_runner_job(marker: Option<&str>, key_allow: Option<&str>) -> Parts {
+        let mut b = axum::http::Request::builder();
+        if let Some(m) = marker {
+            b = b.header(RUNNER_JOB_HEADER, m);
+        }
+        if let Some(k) = key_allow {
+            b = b.header(RUNNER_JOB_AC_KEY_ALLOW_HEADER, k);
+        }
+        b.body(axum::body::Body::empty()).unwrap().into_parts().0
+    }
+
+    async fn extract_runner_job(mut parts: Parts) -> RunnerJob {
+        RunnerJob::from_request_parts(&mut parts, &())
+            .await
+            .expect("infallible")
+    }
+
+    #[tokio::test]
+    async fn runner_job_absent_marker_is_not_narrowed() {
+        let rj = extract_runner_job(parts_with_runner_job(None, None)).await;
+        assert!(!rj.is_runner_job());
+        // A non-runner-job never restricts an AC key.
+        assert!(rj.ac_key_allowed("anykey"));
+    }
+
+    #[tokio::test]
+    async fn runner_job_marker_one_is_narrowed() {
+        let rj = extract_runner_job(parts_with_runner_job(Some("1"), None)).await;
+        assert!(rj.is_runner_job());
+    }
+
+    #[tokio::test]
+    async fn runner_job_marker_non_one_is_not_narrowed() {
+        // Present-but-garbage / present-but-empty marker ⇒ NOT a runner-job
+        // (the marker is an additive Worker-set signal; "1" is the ONLY truth).
+        for bad in ["", "0", "true", "yes", " 2 ", "01", "1 1"] {
+            let rj = extract_runner_job(parts_with_runner_job(Some(bad), None)).await;
+            assert!(
+                !rj.is_runner_job(),
+                "marker {bad:?} must NOT narrow the request",
+            );
+        }
+        // Trimmed "1" (surrounding whitespace) DOES narrow — header values are
+        // trimmed like the scope/quota headers.
+        let rj = extract_runner_job(parts_with_runner_job(Some("  1  "), None)).await;
+        assert!(rj.is_runner_job());
+    }
+
+    #[tokio::test]
+    async fn runner_job_exact_key_restriction() {
+        let key_a = "a".repeat(64);
+        let key_b = "b".repeat(64);
+        let rj =
+            extract_runner_job(parts_with_runner_job(Some("1"), Some(&key_a))).await;
+        assert!(rj.is_runner_job());
+        assert!(rj.ac_key_allowed(&key_a), "the pinned key is allowed");
+        assert!(!rj.ac_key_allowed(&key_b), "a different key is denied");
+    }
+
+    #[tokio::test]
+    async fn runner_job_wildcard_allows_any_key() {
+        let rj = extract_runner_job(parts_with_runner_job(Some("1"), Some("*"))).await;
+        assert!(rj.is_runner_job());
+        assert!(rj.ac_key_allowed(&"a".repeat(64)));
+        assert!(rj.ac_key_allowed(&"deadbeef".repeat(8)));
+    }
+
+    #[tokio::test]
+    async fn runner_job_no_key_pinned_allows_any_key() {
+        // Marker present, no ac-key-allow header ⇒ deny-DELETE only, no key pin.
+        let rj = extract_runner_job(parts_with_runner_job(Some("1"), None)).await;
+        assert!(rj.is_runner_job());
+        assert!(rj.ac_key_allowed(&"c".repeat(64)));
+        // A present-but-empty key-allow header is treated as no pin.
+        let rj2 = extract_runner_job(parts_with_runner_job(Some("1"), Some("   "))).await;
+        assert!(rj2.ac_key_allowed(&"c".repeat(64)));
+    }
+
+    #[tokio::test]
+    async fn runner_job_key_pin_ignored_when_not_narrowed() {
+        // A key-allow header WITHOUT the marker must not restrict anything —
+        // only a genuine runner-job is narrowed.
+        let rj = extract_runner_job(parts_with_runner_job(None, Some(&"a".repeat(64)))).await;
+        assert!(!rj.is_runner_job());
+        assert!(rj.ac_key_allowed(&"b".repeat(64)));
     }
 }
