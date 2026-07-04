@@ -432,6 +432,13 @@ export async function handleSessionExchange(
  * runners-entitlement) BEFORE calling this — it performs no authentication of
  * its own beyond the per-principal mint throttle.
  *
+ * `extraFields` (optional) is a small, JSON-serialisable bag merged verbatim
+ * into the 200 response body AFTER the standard mint envelope — the D-9
+ * runner-mint caller uses it to thread its `max_concurrency` (the derived
+ * tenant's runner ceiling) through this single mint authority without a second
+ * response shape. It NEVER carries token material (that stays in the standard
+ * fields) and is absent for the session/token-exchange callers.
+ *
  * @returns the public {@link SessionExchangeResponse} (200) or a fail-CLOSED
  *   `reapiError` Response (429 throttle, 500 upstream/malformed).
  */
@@ -443,6 +450,7 @@ export async function mintScopedPat(
   ttlSeconds: number,
   scope: string,
   internalAuthKey: string,
+  extraFields?: Readonly<Record<string, string | number | boolean>>,
 ): Promise<Response> {
   // Route to the _system DO which fronts the container, then call the audited
   // /_internal/pat/mint route with the SERVER-trusted internal-auth header.
@@ -622,7 +630,10 @@ export async function mintScopedPat(
     tenant: tenantId,
     expires_ms: minted.expires_ms,
   };
-  return new Response(JSON.stringify(out), {
+  // Merge any caller-supplied extra fields (e.g. runner-mint's max_concurrency)
+  // AFTER the standard envelope. The spread is over a small, non-secret bag.
+  const outBody = extraFields === undefined ? out : { ...out, ...extraFields };
+  return new Response(JSON.stringify(outBody), {
     status: 200,
     headers: {
       "Content-Type": "application/json",
