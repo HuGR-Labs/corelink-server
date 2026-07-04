@@ -1,0 +1,46 @@
+-- 0086_pat_runner_job_ac_key.sql
+--
+-- NARROWED runner-job PAT marker (cf-multitenant WP5a): tag a runner-minted
+-- PAT so the container (WP5b) can ENFORCE a tighter scope than a normal PAT —
+-- specifically deny-DELETE on the native plane, and optionally restrict the
+-- token to a single exact AC key. One nullable column on the shared `pat`
+-- table; the Worker's mint authority writes it, the Worker's auth-resolve
+-- reads it, and the value is forwarded to the container as a server-trusted
+-- header the client can never supply.
+--
+-- ## Semantics
+--
+--   * NULL          — a NORMAL PAT. Behaviour UNCHANGED: every existing PAT row
+--                     (session/token-exchange/rotate/customer) stays NULL and is
+--                     unaffected. This is the launch state for all non-runner
+--                     PATs.
+--   * non-NULL      — a NARROWED runner-job PAT. The container treats it as
+--                     deny-DELETE at minimum.
+--   * value = `"*"` — deny-DELETE ONLY (no exact-key restriction). This is the
+--                     launch value for EVERY runner mint: the output-workspace
+--                     name is not available at mint time today, so every
+--                     runner-minted PAT is narrowed to at least deny-DELETE.
+--   * BLAKE3 hex    — deny-DELETE PLUS the token is additionally restricted to
+--                     that exact AC key (the dormant, forward-wired path: value
+--                     = `blake3("clw/ref/runner/v1/" + output_workspace_name)`).
+--
+-- ## Writer / reader authority
+--
+-- Written ONLY by the single edge mint authority (`mintScopedPat` in
+-- `worker/src/lib/session_exchange.ts`) when the runner-mint consumer supplies
+-- the narrowing value. Read ONLY by the Worker's PAT auth-resolve (`extractAuth`
+-- in `worker/src/index.ts`), which forwards it to the container as the
+-- server-trusted `x-corelink-runner-job` / `x-corelink-ac-key-allow` headers.
+-- No hot path touches it until the runner-mint path writes a non-NULL value.
+--
+-- ## Additive policy
+--
+-- Single `ALTER TABLE … ADD COLUMN` (nullable, no default → existing rows read
+-- NULL = unchanged). No DROP, no retype, no rewrite. Purely additive, zero prod
+-- risk. INV-AUTH-MIGRATION-ADDITIVE (auth-migrations-additive-only). The
+-- d1_migrations ledger guarantees exactly-once application
+-- (d1-migrations-ledger-desync).
+
+-- Narrowed runner-job PAT marker: NULL = normal PAT; "*" = deny-DELETE only;
+-- BLAKE3 hex = deny-DELETE + exact-key AC restriction.
+ALTER TABLE pat ADD COLUMN runner_job_ac_key TEXT;

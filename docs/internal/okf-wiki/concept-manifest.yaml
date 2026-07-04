@@ -57,6 +57,8 @@ excludes:
     reason: "Cloudflare deployment manifest — declarative config, not a narrative subsystem."
   - surface: "worker/src/region-map.ts"
     reason: "Pure colo->region lookup data table (static map) — data, no architecture narrative."
+  - surface: "worker/src/lib/blake3.ts"
+    reason: "Pure BLAKE3-256 hash primitive (self-contained, dependency-free) used only by the dormant runner-job exact-key narrowing (cf-multitenant WP5a) — a stateless crypto helper pinned to the official test vectors, no cross-crate architecture narrative; same class as region-map.ts. The narrowing SEMANTICS live in auth/edge-pat-mint-lifecycle."
   - surface: "apps/*/src/types/**"
     reason: "Per-app shared type/binding declarations — types, no runtime behavior."
   - surface: "apps/analytics-worker/src/types.ts"
