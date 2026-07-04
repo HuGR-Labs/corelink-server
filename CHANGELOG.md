@@ -23,6 +23,22 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **cf-multitenant WP5a: mark + forward the NARROWED runner-job PAT scope (Worker + migration side).**
+  A runner-minted PAT is now MARKED narrowed in D1 and that marker is forwarded to the container as
+  server-trusted headers so the container (WP5b, paired branch) can ENFORCE a tighter scope (deny-DELETE
+  on the native plane). New nullable column `pat.runner_job_ac_key` (migration
+  `0086_pat_runner_job_ac_key.sql`, additive — INV-AUTH-MIGRATION-ADDITIVE): NULL = normal PAT (unchanged);
+  `"*"` = deny-DELETE only; a BLAKE3 hex = additionally exact-key AC restricted. `handleRunnerMint`
+  (`worker/src/lib/runner_mint.ts`) accepts an optional `ac_output_name` (non-empty string else 400) and
+  computes the narrowing value — every runner mint is narrowed to at least `"*"`; with a name it is
+  `blake3("clw/ref/runner/v1/" + name)` (a self-contained, dependency-free `worker/src/lib/blake3.ts`
+  pinned to the official BLAKE3 test vectors, since the name path is dormant at launch). The single mint
+  authority `mintScopedPat` (`worker/src/lib/session_exchange.ts`) persists the column when given the
+  value; the session/token-exchange/rotate callers pass nothing so the column stays NULL (no regression).
+  The Worker's PAT auth-resolve now SELECTs `runner_job_ac_key` and, when non-NULL, forwards
+  `x-corelink-runner-job: 1` + `x-corelink-ac-key-allow: <value>` (strip-then-set, mirroring
+  `x-corelink-scope`); both headers are added to the client-trust strip-list so a client can never smuggle
+  or redirect the enforcement. Paired with WP5b (container enforcement).
 - **cf-multitenant WP5b: container gate enforces deny-DELETE + exact-key for a runner-job PAT.** The
   container CAS/AC gate now fails CLOSED on a narrowed per-job credential the Worker marks with the
   server-trusted headers `x-corelink-runner-job: 1` and `x-corelink-ac-key-allow: <*|blake3-hex>` (WP5a

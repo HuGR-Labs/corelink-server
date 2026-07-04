@@ -305,6 +305,16 @@ type AuthResult =
        * Defaults to `""` for older rows whose `scope` is NULL/absent.
        */
       readonly scope: string;
+      /**
+       * cf-multitenant WP5a: the D1-resolved `pat.runner_job_ac_key` marking a
+       * NARROWED runner-job PAT. `null` = a normal PAT (no narrowing → no extra
+       * headers forwarded). A non-null value (`"*"` = deny-DELETE only, or a
+       * BLAKE3 hex = also exact-key AC restricted) causes the Worker to forward
+       * `x-corelink-runner-job: 1` + `x-corelink-ac-key-allow: <value>` as
+       * server-trust headers the container (WP5b) enforces. Read from the trusted
+       * D1 `pat` mirror only — never the client.
+       */
+      readonly runnerJobAcKey: string | null;
     }
   | { readonly ok: false; readonly reason: string };
 
@@ -472,6 +482,16 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // without re-setting it, so a client could smuggle a forged prefix there. Strip
   // on every forward — same posture as x-corelink-tenant-id.
   "x-corelink-token-prefix",
+  // cf-multitenant WP5a: the NARROWED runner-job PAT markers. The Worker is the
+  // SOLE setter of both — it sets them ONLY when the D1-resolved PAT row carries
+  // a non-NULL `runner_job_ac_key`, from that trusted value, never the client.
+  // A client MUST NOT be able to smuggle a forged `x-corelink-runner-job` (which
+  // would falsely mark its request narrowed — harmless) NOR, more importantly, a
+  // forged `x-corelink-ac-key-allow` (which could try to widen/redirect the
+  // container's exact-key enforcement). Strip both structurally on EVERY forward
+  // so only the Worker's D1-derived values ever reach the container.
+  "x-corelink-runner-job",
+  "x-corelink-ac-key-allow",
 ];
 
 /**
@@ -1040,11 +1060,16 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
     // Prod values are `cas:rw` (post back-fill) / historically `admin`. May be
     // NULL on older rows — normalised to "" at the return site below.
     scope: string | null;
+    // WP5a: the NARROWED runner-job marker (D1 `pat.runner_job_ac_key`). NULL on
+    // every normal PAT (session/token-exchange/rotate/customer); non-NULL only
+    // for runner-minted PATs. Forwarded (when non-NULL) as the server-trust
+    // runner-job headers so the container enforces the narrowing.
+    runner_job_ac_key: string | null;
   }
   let row: PatRow | null;
   try {
     row = await env.CONFIG_DB
-      .prepare("SELECT tenant_id, expires_ms, scope FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1")
+      .prepare("SELECT tenant_id, expires_ms, scope, runner_job_ac_key FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1")
       .bind(parsed.tokenId)
       .first<PatRow>();
   } catch (_err: unknown) {
@@ -1079,6 +1104,9 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
     tenantId: row.tenant_id,
     tokenPrefix,
     scope: row.scope ?? "",
+    // WP5a: carry the narrowed runner-job marker (NULL on normal PATs). The
+    // forward sites set the runner-job headers only when this is non-NULL.
+    runnerJobAcKey: row.runner_job_ac_key ?? null,
   };
 }
 
@@ -2261,7 +2289,8 @@ const baseHandler: ExportedHandler<Env> = {
     if (route.routeKind === "signup") {
       // Signup is pre-tenant: the path :token IS the auth artifact, not a PAT,
       // so there is no D1-resolved scope — forward an empty scope (H1).
-      auth = { ok: true, tenantId: "_anonymous", tokenPrefix: "signup", scope: "" };
+      // WP5a: signup is pre-tenant and never a runner-job PAT → runnerJobAcKey null.
+      auth = { ok: true, tenantId: "_anonymous", tokenPrefix: "signup", scope: "", runnerJobAcKey: null };
     } else {
       const result = await extractAuth(request, env);
       if (!result.ok) {
@@ -2608,6 +2637,15 @@ const baseHandler: ExportedHandler<Env> = {
             // H1: forward the D1-resolved PAT scope as a server-trust header.
             // stripClientTrustHeaders above already deleted any client value.
             h.set("x-corelink-scope", auth.scope);
+            // WP5a: forward the NARROWED runner-job markers when the resolved PAT
+            // carries a non-NULL runner_job_ac_key. Same posture as x-corelink-scope:
+            // stripClientTrustHeaders above already deleted any client-supplied copies
+            // of both headers (the Worker is the sole setter, from trusted D1). A
+            // normal PAT (null) sets NEITHER header.
+            if (auth.runnerJobAcKey !== null) {
+              h.set("x-corelink-runner-job", "1");
+              h.set("x-corelink-ac-key-allow", auth.runnerJobAcKey);
+            }
             // F1: forward CF's unforgeable client IP as x-corelink-client-ip
             // (the client-forgeable x-forwarded-for was stripped above) so the
             // regional Worker/container rate-limits signup off a trusted IP.
@@ -2677,6 +2715,16 @@ const baseHandler: ExportedHandler<Env> = {
         // container can ENFORCE it. stripClientTrustHeaders above already deleted
         // any client-supplied x-corelink-scope (the Worker is the sole setter).
         h.set("x-corelink-scope", auth.scope);
+        // WP5a: forward the NARROWED runner-job markers when the resolved PAT
+        // carries a non-NULL runner_job_ac_key so the container (WP5b) enforces
+        // deny-DELETE (+ optional exact-key). Same posture as x-corelink-scope:
+        // stripClientTrustHeaders above already deleted any client-supplied copies
+        // of both headers (the Worker is the sole setter, from trusted D1). A
+        // normal PAT (null) sets NEITHER header.
+        if (auth.runnerJobAcKey !== null) {
+          h.set("x-corelink-runner-job", "1");
+          h.set("x-corelink-ac-key-allow", auth.runnerJobAcKey);
+        }
         // F1: forward Cloudflare's UNFORGEABLE client IP as the server-trusted
         // x-corelink-client-ip so the container's signup rate-limit keys off it
         // (NOT the client-forgeable x-forwarded-for, which stripClientTrustHeaders

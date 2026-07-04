@@ -74,7 +74,7 @@ function makeCtx(): ExecutionContext {
 function makeConfigDb(
   clerkUserToTenant: Map<string, string>,
   opts: {
-    patInsertCapture?: { binds?: unknown[] };
+    patInsertCapture?: { binds?: unknown[]; sql?: string };
     patInsertThrows?: boolean;
     /** In-memory tenant_org_map (clerk_org_id → tenant_id) for the githugr
      *  provision-or-lookup path. Provisioning INSERTs write here; the read-back
@@ -137,6 +137,7 @@ function makeConfigDb(
             }
             if (opts.patInsertCapture) {
               opts.patInsertCapture.binds = args;
+              opts.patInsertCapture.sql = sql;
             }
           }
           return { success: true } as unknown as D1Result;
@@ -192,7 +193,7 @@ function makeEnv(opts: {
   withInternalKey?: boolean;
   mintStatus?: number;
   mintBody?: unknown;
-  patInsertCapture?: { binds?: unknown[] };
+  patInsertCapture?: { binds?: unknown[]; sql?: string };
   patInsertThrows?: boolean;
   withGithugr?: boolean;
   orgMap?: Map<string, string>;
@@ -448,7 +449,7 @@ describe("POST /v1/session/exchange — seam C session→PAT exchange (WP-C)", (
   it("PERSIST: on a successful mint, INSERTs the pat row with the right columns", async () => {
     mockVerifyToken.mockResolvedValue(validClaims("user_persist_ok"));
     const captured: { req?: Request } = {};
-    const patInsertCapture: { binds?: unknown[] } = {};
+    const patInsertCapture: { binds?: unknown[]; sql?: string } = {};
     const env = makeEnv({
       captured,
       clerkUserToTenant: new Map([["user_persist_ok", "acme-default"]]),
@@ -471,6 +472,13 @@ describe("POST /v1/session/exchange — seam C session→PAT exchange (WP-C)", (
     expect(binds[6]).toBe(CANNED_MINT.token_id); // shown_once_token = unique token_id
     expect(binds[6]).not.toBe(CANNED_MINT.token_plaintext); // NEVER the raw plaintext
     expect(typeof binds[7]).toBe("number"); // created_ms = Date.now()
+    // WP5a no-regression: a normal session-exchange mint is NOT a runner-job PAT.
+    // mintScopedPat is called WITHOUT runnerJobAcKey, so the INSERT uses the
+    // UNCHANGED column set — no runner_job_ac_key column, exactly 8 binds → the
+    // column stays NULL and no narrowing header is ever forwarded for this PAT.
+    expect(patInsertCapture.sql).toBeDefined();
+    expect(patInsertCapture.sql!).not.toContain("runner_job_ac_key");
+    expect(binds.length).toBe(8);
   });
 
   it("PERSIST: cas:rw is canonicalized to the D1 CHECK-legal 'read-write'", async () => {

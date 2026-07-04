@@ -38,6 +38,26 @@
 import type { Env } from "../index.js";
 import { requireConsumerAuth } from "./internal_auth.js";
 import { mintScopedPat } from "./session_exchange.js";
+import { blake3Hex } from "./blake3.js";
+
+/**
+ * Domain-separation prefix for the exact-AC-key narrowing of a runner-job PAT
+ * (cf-multitenant WP5a). When a runner mint carries an `ac_output_name`, the
+ * narrowing value written to `pat.runner_job_ac_key` is
+ * `blake3(RUNNER_AC_KEY_PREFIX + ac_output_name)` (hex). This MUST match the
+ * key the container derives for the output workspace's AC entry (WP5b + clw).
+ */
+const RUNNER_AC_KEY_PREFIX = "clw/ref/runner/v1/";
+
+/**
+ * Sentinel narrowing value = "deny-DELETE only, no exact-key restriction". This
+ * is what EVERY runner mint gets when no `ac_output_name` is supplied (the
+ * launch path): the output-workspace name is not available at mint time today,
+ * so the PAT is narrowed to at least deny-DELETE. A `"*"` in
+ * `pat.runner_job_ac_key` (and forwarded as `x-corelink-ac-key-allow: *`) tells
+ * the container "narrowed, but no key restriction".
+ */
+const RUNNER_AC_KEY_DENY_DELETE_ONLY = "*";
 
 /**
  * Lifetime of a runner-minted PAT, in seconds (5400s = 90 minutes).
@@ -165,6 +185,12 @@ export async function handleRunnerMint(
     readonly installation_id?: unknown;
     readonly scope?: unknown;
     readonly ttl_seconds?: unknown;
+    // WP5a: OPTIONAL exact-key narrowing. When present, the runner-job PAT is
+    // additionally restricted to the single AC key of that output workspace
+    // (blake3(RUNNER_AC_KEY_PREFIX + name)). Dormant at launch — the dispatcher
+    // does not yet know the output workspace name at mint time — so today every
+    // runner mint takes the sentinel ("*" = deny-DELETE only) path.
+    readonly ac_output_name?: unknown;
   }
   let body: RunnerMintRequest;
   try {
@@ -208,6 +234,26 @@ export async function handleRunnerMint(
       return reapiError("BAD_REQUEST", "ttl_seconds must be a positive integer", 400, requestId);
     }
     ttlSeconds = Math.min(t, RUNNER_PAT_TTL_SECONDS);
+  }
+
+  // ── 4c. Narrowed runner-job PAT marker (WP5a) ──────────────────────────────
+  // EVERY runner mint is narrowed: the resulting PAT is marked in D1 so the
+  // container (WP5b) enforces a tighter scope than a normal PAT (deny-DELETE on
+  // the native plane). The marker value:
+  //   - no `ac_output_name`  → the sentinel "*" = deny-DELETE ONLY. This is the
+  //     LAUNCH path (the output-workspace name is unavailable at mint today).
+  //   - an `ac_output_name`  → blake3(RUNNER_AC_KEY_PREFIX + name) hex = additionally
+  //     restrict the token to that exact AC key (dormant, forward-wired path).
+  // `ac_output_name`, if present, MUST be a non-empty string (else 400).
+  let runnerJobAcKey: string;
+  if (body.ac_output_name === undefined) {
+    runnerJobAcKey = RUNNER_AC_KEY_DENY_DELETE_ONLY;
+  } else {
+    const name = body.ac_output_name;
+    if (typeof name !== "string" || name.length === 0) {
+      return reapiError("BAD_REQUEST", "ac_output_name must be a non-empty string", 400, requestId);
+    }
+    runnerJobAcKey = await blake3Hex(RUNNER_AC_KEY_PREFIX + name);
   }
 
   // ── 5. Server-side tenant DERIVATION + AUTHORIZATION chokepoint (WP2) ───────
@@ -284,6 +330,9 @@ export async function handleRunnerMint(
     scope,
     internalAuthKey,
     { max_concurrency: maxConcurrency },
+    // WP5a: persist the narrowed runner-job marker on the `pat` row so the
+    // Worker's auth-resolve can forward it to the container for enforcement.
+    runnerJobAcKey,
   );
 }
 
