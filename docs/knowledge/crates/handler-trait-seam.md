@@ -19,7 +19,7 @@ source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "6de1391331f2b0bbbd430d3f85f22fe09c648d23"
+checkpoint_sha: "ccb3a988329147be1c2d490ed2bdbc50ed6f4d0a"
 provenance: "AUTHORED"
 tags: ["handlers", "traits", "cas", "hot-path", "dependency-injection"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -96,10 +96,10 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - `crates/corelink-container/src/routes/cas.rs:141` — `CasRouteState` holds `Arc<dyn CasReadHandler>` etc. (the seam, route side).
 - `crates/corelink-container/src/routes/cas.rs:442` — fail-CLOSED `UnavailableCasHandler` impl of the read trait.
 - `crates/corelink-container/src/routes/cas.rs:820` — `handle_read` delegates `state.read.read(req)`.
-- `crates/corelink-container/src/routes/cas.rs:1469` — `handle_delete` delegates `state.delete.delete(req)`.
+- `crates/corelink-container/src/routes/cas.rs:1481` — `handle_delete` delegates `state.delete.delete(req)`.
 - `crates/corelink-container/src/routes/cas.rs:1521` — `handle_list` delegates `state.list.list(req)`.
 - `crates/corelink-container/src/routes/ac.rs:532` — `state.lookup.lookup(req)` delegation.
-- `crates/corelink-container/src/routes/ac.rs:596` — `state.update.update(req)` delegation.
+- `crates/corelink-container/src/routes/ac.rs:613` — `state.update.update(req)` delegation.
 - `crates/corelink-container/src/routes/admin.rs:687` — `state.read.read(req)` delegation.
 - `crates/corelink-container/src/routes/admin.rs:747` — `state.mutate.mutate(req)` delegation.
 - `crates/corelink-container/src/routes/customer.rs:114` — `build_handlers_from_env` wires the same `D1CustomerHandler` Arc behind all six slots.
