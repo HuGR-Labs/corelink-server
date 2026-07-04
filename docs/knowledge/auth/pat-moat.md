@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/internal_auth.ts"
   - "worker/src/index.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "b048ebea52c698cbb14a33afdca65cea6b4bf047"
+checkpoint_sha: "b417b12d95f2fcae3ea2928462594d207a85969e"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -80,7 +80,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
   (`worker/src/index.ts:1044-1054`). The PAT-gate caller (H1 fix) now maps BOTH
   `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
-  (`worker/src/index.ts:2186-2194`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
+  (`worker/src/index.ts:2283-2291`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
   surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
   chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
   still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
@@ -90,8 +90,9 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   numbers shifted after the Artifact 1 `/v1/public/*`
   attestation-verifier route arm was added above this handler, again when the CF-6 audit-chain
   signing env vars were declared on the `Env` type, when the WP4 Sentry `beforeSend`
-  PII/secret scrubber import was added at the top of the module, and most recently when the
-  `/internal/v1/auth/resolve-tenant` fabric route was added to `matchRoute`). Both the D1-fault and the
+  PII/secret scrubber import was added at the top of the module, when the
+  `/internal/v1/auth/resolve-tenant` fabric route was added to `matchRoute`, and most recently when the
+  DSR-erase residency fan-out block was added to the internal route arm above this handler). Both the D1-fault and the
   `signing_key_not_configured` config-fault
   are retryable 503s; the edge still fails CLOSED (security > availability) for every credential-shaped
   failure.

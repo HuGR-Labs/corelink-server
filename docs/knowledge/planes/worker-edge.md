@@ -5,7 +5,7 @@ description: "The HTTPS entry point: route table, PAT auth, server-trust header 
 source_files:
   - "worker/src/index.ts"
   - "worker/src/sentry-scrub.ts"
-checkpoint_sha: "b048ebea52c698cbb14a33afdca65cea6b4bf047"
+checkpoint_sha: "b417b12d95f2fcae3ea2928462594d207a85969e"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -46,7 +46,7 @@ keeps forged tokens cheap to reject before any expensive work.
    is matched BEFORE the generic `/v1/*` PAT bucket and forwarded to the `_anonymous` DO → container as a
    pure pass-through with NO PAT gate and NO internal-auth (an erasure proof is publicly verifiable;
    client-forged `x-corelink-*` trust headers are still stripped) — matchRoute arm
-   (`worker/src/index.ts:795-805`), forward arm (`worker/src/index.ts:1959-1983`).
+   (`worker/src/index.ts:795-805`), forward arm (`worker/src/index.ts:2053-2077`).
 3b. Three EXACT-path fabric/ingest carve-outs are matched BEFORE the generic `/v1/*` PAT arm and are pure
    pass-throughs to the `_system` DO → container (the container is the SOLE auth authority; the Worker
    applies NO edge PAT gate and forwards the caller's `x-corelink-internal-auth` unchanged):
@@ -70,7 +70,7 @@ keeps forged tokens cheap to reject before any expensive work.
    `503` — a D1 infra hiccup is treated as "auth service unavailable", NOT a bad credential, so a
    transient outage can't masquerade as a 401 (which would trigger spurious CI failures, PAT rotation,
    and on-call chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` /
-   `invalid_*`) still fall through to `401` (`worker/src/index.ts:2168-2198`). NOTE: the inline
+   `invalid_*`) still fall through to `401` (`worker/src/index.ts:2265-2295`). NOTE: the inline
    `extractAuth` `catch` comment at `:1051-1053` now MATCHES that behaviour — it states the caller maps
    `d1_lookup_error` to a 503 (transient, retryable; still fail-closed); it previously lied ("for now we
    401 to fail-closed"), a stale posture left over from before the H1 caller-mapping fix landed.
@@ -78,29 +78,46 @@ keeps forged tokens cheap to reject before any expensive work.
    Worker re-sets its own verified values (`worker/src/index.ts:481-485`).
 7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
    request-count fail-CLOSED; storage verb-aware (reads fail-open for availability, byte-adding writes
-   fail-closed) (`worker/src/index.ts:2231-2252`).
+   fail-closed) (`worker/src/index.ts:2329-2350`).
 8. The request is routed to the per-tenant DO via `idFromName(resolvedTenantId)`
-   (`worker/src/index.ts:2545-2548`) and dispatched with `stub.fetch` (`worker/src/index.ts:2613`).
+   (`worker/src/index.ts:2643-2646`) and dispatched with `stub.fetch` (`worker/src/index.ts:2710`).
 9. The forwarded request is augmented: strip-then-set the trusted tenant-id, scope, token-prefix, and
-   client-ip headers (`worker/src/index.ts:2550-2608`).
+   client-ip headers (`worker/src/index.ts:2647-2705`).
+9b. On the `customer_v1` dashboard arm the forwarded `x-corelink-scope` is RBAC-derived from the
+   Clerk-session-resolved `team_member` role (migration 0074): a `viewer` seat gets `read-only`,
+   owner/admin/member get `read-write` — the Worker is still the sole setter
+   (`worker/src/index.ts:2214-2217`).
+9c. The `internal` route arm normally makes a single local `_system`-DO hit, but a DSR erase
+   (`/_internal/dsr/*`) originating at this worker ALSO fans out to every regional worker via the
+   `PROD_LHR`/`PROD_SAM`/`PROD_NRT`/`PROD_SYD` service bindings (each region erases its own
+   jurisdiction's buckets); the origin returns the local 2xx ONLY when the local AND every regional
+   sweep confirm, else it fails CLOSED 502 so the queue consumer retries — a missing binding, a
+   transport error, or any non-2xx counts as not-complete
+   (`worker/src/index.ts:1676-1679`, `worker/src/index.ts:1699-1704`, `worker/src/index.ts:1733-1751`).
+   The `x-corelink-fanout-from` header (server-set inside `buildInternalHeaders`, client value always
+   stripped first) marks a request as already fanned out so a receiving region never re-fans (loop
+   guard) (`worker/src/index.ts:1650-1662`, `worker/src/index.ts:1677`).
 10. The whole handler is wrapped by `Sentry.withSentry`, inert until `SENTRY_DSN` is set and with
-    `sendDefaultPii=false` (`worker/src/index.ts:2666-2685`); its `beforeSend`/`beforeSendTransaction`
+    `sendDefaultPii=false` (`worker/src/index.ts:2763-2782`); its `beforeSend`/`beforeSendTransaction`
     run `scrubSentryEvent` (`worker/src/sentry-scrub.ts`) over EVERY event before it leaves the Worker —
     not just sensitive header KEYS but message/exception bodies, breadcrumbs, and `extra`/`contexts`
     VALUES (CoreLink PATs, bearer/basic auth, Stripe `sk_`/`pk_`/`whsec_` keys, emails are
-    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:2675-2680`).
+    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:2772-2777`).
 
 # Invariants
 - Tenant isolation is structural: the DO id is derived solely from the PAT-resolved tenant, never the
-  URL path segment (`worker/src/index.ts:2545-2548`).
+  URL path segment (`worker/src/index.ts:2643-2646`).
 - A client can never smuggle a server-trust header: the strip list is applied on every forward path
   before the Worker sets its own values (`worker/src/index.ts:435-474`).
 - The signing-key gate is mandatory — a missing/short `PAT_SIGNING_KEY` is a 503, never a silent skip
   (`worker/src/index.ts:883-910`).
 - The Worker forwards the D1-resolved `scope` as `x-corelink-scope` and is its sole setter
-  (`worker/src/index.ts:2579-2582`).
+  (`worker/src/index.ts:2675-2678`).
+- A DSR erase is never reported complete unless every residency region confirmed: the origin worker
+  fails CLOSED 502 when the local sweep OR any regional fan-out (including a missing `PROD_*` binding)
+  did not return 2xx (`worker/src/index.ts:1699-1704`, `worker/src/index.ts:1733-1751`).
 - A 404 from the DO is timing-padded to defeat cross-tenant enumeration
-  (`worker/src/index.ts:2626-2633`).
+  (`worker/src/index.ts:2723-2731`).
 
 # Gotchas
 - Argon2id is NOT run in the Worker (cpu_ms budget) — possession on the native CAS/AC/Bazel/Turbo plane
@@ -120,14 +137,19 @@ keeps forged tokens cheap to reject before any expensive work.
 5b. `worker/src/index.ts:704` / `worker/src/index.ts:716` / `worker/src/index.ts:728` — the three exact-path pure-pass-through carve-outs: `/internal/v1/auth/introspect` + `/internal/v1/auth/resolve-tenant` (both `fabric_introspect`, `FABRIC_INTROSPECT_AUTH_KEY`) and `/internal/v1/billing/usage` (`billing_ingest`, `BILLING_INGEST_AUTH_KEY`).
 6. `worker/src/index.ts:883-910` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
 7. `worker/src/index.ts:948-1068` — HMAC fast-reject + D1 lookup + expiry check (incl. the `expires_ms === 0` never-expires sentinel guard at `:1068`, and the try/catch that turns a transient D1 fault into `d1_lookup_error` at `:1032-1042`).
-7b. `worker/src/index.ts:2168-2198` — caller reason→status mapping: BOTH `signing_key_not_configured` (config fault) AND `d1_lookup_error` (transient D1 fault) → retryable `503`; every other reason (`pat_not_found` / `pat_expired` / `invalid_*`) → `401`.
+7b. `worker/src/index.ts:2265-2295` — caller reason→status mapping: BOTH `signing_key_not_configured` (config fault) AND `d1_lookup_error` (transient D1 fault) → retryable `503`; every other reason (`pat_not_found` / `pat_expired` / `invalid_*`) → `401`.
 8. `worker/src/index.ts:1495-1508` — the `baseHandler.fetch` entry, request-id, CORS, route match.
 9. `worker/src/index.ts:1513-1526` — health short-circuit (no auth, no DO).
-10. `worker/src/index.ts:2231-2252` — per-tier quota enforcement after auth, before forward.
-11. `worker/src/index.ts:2545-2548` — `idFromName(resolvedTenantId)` per-tenant DO routing.
-12. `worker/src/index.ts:2550-2608` — the augmented forward (strip-then-set trust headers).
-13. `worker/src/index.ts:2579-2582` — forwarding the D1-resolved scope as `x-corelink-scope`.
-14. `worker/src/index.ts:2613` — `stub.fetch` dispatch to the DO.
-15. `worker/src/index.ts:2626-2633` — 404 timing-pad.
-16. `worker/src/index.ts:2666-2685` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
-17. `worker/src/index.ts:2675-2680` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.
+10. `worker/src/index.ts:2329-2350` — per-tier quota enforcement after auth, before forward.
+11. `worker/src/index.ts:2643-2646` — `idFromName(resolvedTenantId)` per-tenant DO routing.
+12. `worker/src/index.ts:2647-2705` — the augmented forward (strip-then-set trust headers).
+13. `worker/src/index.ts:2675-2678` — forwarding the D1-resolved scope as `x-corelink-scope`.
+13b. `worker/src/index.ts:2214-2217` — `customer_v1` arm: RBAC scope from the resolved role (`viewer` → `read-only`, else `read-write`).
+13c. `worker/src/index.ts:1650-1662` — `buildInternalHeaders`: strip-then-set server-trusted internal headers + the optional `x-corelink-fanout-from` loop-guard marker.
+13d. `worker/src/index.ts:1676-1679` — the DSR-erase origin/fan-out-target split (`isDsrErase && !isFanoutTarget`).
+13e. `worker/src/index.ts:1699-1704` — the `PROD_LHR`/`PROD_SAM`/`PROD_NRT`/`PROD_SYD` regional service-binding fan-out list (a missing binding fails CLOSED).
+13f. `worker/src/index.ts:1733-1751` — erase completeness: any local/regional failure → 502 fail-CLOSED (queue consumer retries; no false complete).
+14. `worker/src/index.ts:2710` — `stub.fetch` dispatch to the DO.
+15. `worker/src/index.ts:2723-2731` — 404 timing-pad.
+16. `worker/src/index.ts:2763-2782` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
+17. `worker/src/index.ts:2772-2777` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.
