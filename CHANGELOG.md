@@ -33,6 +33,12 @@ Each entry cross-references:
   grant path (`SQL_UPSERT_TIER`/`upsert_tier`) is byte-identical. The container is now a convergent
   defense-in-depth downgrade writer (agrees with the signup-worker authority on `inactive`), never a re-grant.
   Tests assert cancel drives `downgrade_tier` and NEVER an `active`-writing statement (41 lib + 43 cf-billing-real).
+- **Restored the native container build after the `downgrade_tier` trait method landed.** Adding
+  `downgrade_tier` as a required `BillingD1Writer` method updated the wasm32 binder + in-memory mirror but MISSED
+  the container's HTTP writer `D1HttpBillingWriter` (`billing_d1_http.rs`), so `cargo check -p corelink-server`
+  broke with `E0046`. Implemented `downgrade_tier` there (mirrors `upsert_tier`, forwards `SQL_DOWNGRADE_TIER`);
+  the container native crate compiles + clippy-clean again. (The native `cargo check` is a nightly gate, not
+  per-PR, which is why it slipped past the materializer-crate tests.)
 - **GDPR Art.17 erasure never swept EU-resident tenants' CAS/AC bytes, yet the Ed25519 attestation signed
   `VerifiedComplete` (CAA-360 CRITICAL).** The DSR erase (Clerk `user.deleted` / account-delete) forwards to
   `${CORELINK_API_BASE}/_internal/dsr/erase`, which resolves to the IAD (US) container — its R2 client only
