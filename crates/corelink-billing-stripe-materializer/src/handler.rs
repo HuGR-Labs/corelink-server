@@ -370,8 +370,13 @@ impl D1SubscriptionStateHandler {
             // On cancel, downgrade tenant to Free (per
             // dispatcher contract — `customer.subscription.deleted`
             // → "downgrade to Free tier"). Emit audit if the
-            // downgrade is a real change.
-            self.persist_tier_change(&tenant_id, TierKind::Free, env, now_ms)?;
+            // downgrade is a real change. This uses the dedicated
+            // DOWNGRADE path, which writes `subscription_state='inactive'`
+            // (the access gate OFF) — NOT the grant path's 'active' — so a
+            // canceled tenant never lands a contradictory active-free row
+            // (the signup-worker is the primary downgrade authority; this is
+            // the container's defense-in-depth convergent write).
+            self.persist_tier_downgrade(&tenant_id, TierKind::Free, env, now_ms)?;
         }
 
         Ok(())
@@ -514,6 +519,56 @@ impl D1SubscriptionStateHandler {
             // bind. The Stripe-event clock is far below i64::MAX (ms
             // since epoch), so the cast is lossless in practice.
             .upsert_tier(tenant_id, new_wire, now_ms as i64, &env.id)
+            .map_err(d1_to_mat)?;
+        Ok(())
+    }
+
+    /// Cancel/downgrade twin of [`Self::persist_tier_change`]: same
+    /// read_tier/changed short-circuit + the same
+    /// `corelink.tenant.tier_changed.v1` audit-BEFORE-write ordering, but
+    /// drives [`BillingD1Writer::downgrade_tier`] (which writes
+    /// `subscription_state='inactive'` — the access gate OFF) instead of
+    /// `upsert_tier` (which hard-codes `'active'`). Used ONLY on
+    /// `customer.subscription.deleted` so a canceled tenant converges to an
+    /// access-OFF row rather than the contradictory active-free row the grant
+    /// path would leave (defense-in-depth; the signup-worker is the primary
+    /// downgrade authority).
+    fn persist_tier_downgrade(
+        &self,
+        tenant_id: &str,
+        new_tier: TierKind,
+        env: &StripeWebhookEnvelope,
+        now_ms: u64,
+    ) -> Result<(), MaterializerError> {
+        let current = self.d1.read_tier(tenant_id).map_err(d1_to_mat)?;
+        let new_wire = new_tier.as_str();
+        let changed = current.as_deref() != Some(new_wire);
+        if !changed {
+            return Ok(());
+        }
+
+        // Audit BEFORE write.
+        self.audit
+            .emit_billing(&BillingAuditRecord {
+                event_name: "corelink.tenant.tier_changed.v1",
+                stripe_event_id: env.id.clone(),
+                stripe_event_type: env.event_type.clone(),
+                tenant_id: tenant_id.to_string(),
+                stripe_object_id: None,
+                severity: AuditSeverity::Notice,
+                ts_ms: now_ms,
+                payload: serde_json::json!({
+                    "from": current,
+                    "to": new_wire,
+                }),
+            })
+            .map_err(audit_to_mat)?;
+
+        self.d1
+            // `now_ms` (u64) → i64 for the `subscription_started_at_ms`
+            // bind (INSERT/new-row path only; the DO UPDATE preserves the
+            // original start). Lossless in practice (ms since epoch).
+            .downgrade_tier(tenant_id, new_wire, now_ms as i64, &env.id)
             .map_err(d1_to_mat)?;
         Ok(())
     }
@@ -1039,6 +1094,150 @@ mod tests {
             audit.count_event("corelink.billing.subscription_canceled.materialized.v1"),
             1
         );
+    }
+
+    /// A [`BillingD1Writer`] decorator that records WHICH tier-write method the
+    /// handler invoked (grant `upsert_tier` vs cancel `downgrade_tier`). Every
+    /// other method + all state forwards to the wrapped [`InMemoryBillingD1`]
+    /// so the existing fixture semantics are preserved.
+    #[derive(Debug)]
+    struct TierPathRecordingD1 {
+        inner: Arc<InMemoryBillingD1>,
+        upsert_calls: std::sync::Mutex<Vec<String>>,
+        downgrade_calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl TierPathRecordingD1 {
+        fn new(inner: Arc<InMemoryBillingD1>) -> Self {
+            Self {
+                inner,
+                upsert_calls: std::sync::Mutex::new(Vec::new()),
+                downgrade_calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl BillingD1Writer for TierPathRecordingD1 {
+        fn upsert_customer(&self, row: MaterializedRow) -> Result<(), BillingD1Error> {
+            self.inner.upsert_customer(row)
+        }
+        fn upsert_subscription(&self, row: MaterializedRow) -> Result<(), BillingD1Error> {
+            self.inner.upsert_subscription(row)
+        }
+        fn mark_subscription_canceled(&self, row: MaterializedRow) -> Result<(), BillingD1Error> {
+            self.inner.mark_subscription_canceled(row)
+        }
+        fn upsert_invoice(&self, row: MaterializedRow) -> Result<(), BillingD1Error> {
+            self.inner.upsert_invoice(row)
+        }
+        fn insert_dispute(&self, row: MaterializedRow) -> Result<(), BillingD1Error> {
+            self.inner.insert_dispute(row)
+        }
+        fn insert_refund(&self, row: MaterializedRow) -> Result<(), BillingD1Error> {
+            self.inner.insert_refund(row)
+        }
+        fn try_record_event(
+            &self,
+            stripe_event_id: &str,
+            canonical_event_type: &str,
+            now_ms: u64,
+        ) -> Result<bool, BillingD1Error> {
+            self.inner
+                .try_record_event(stripe_event_id, canonical_event_type, now_ms)
+        }
+        fn read_tier(&self, tenant_id: &str) -> Result<Option<String>, BillingD1Error> {
+            self.inner.read_tier(tenant_id)
+        }
+        fn upsert_tier(
+            &self,
+            tenant_id: &str,
+            tier_wire: &str,
+            now_ms: i64,
+            correlation_id: &str,
+        ) -> Result<(), BillingD1Error> {
+            self.upsert_calls
+                .lock()
+                .map_err(|e| BillingD1Error::Transient(format!("rec mutex: {e}")))?
+                .push(tier_wire.to_string());
+            self.inner
+                .upsert_tier(tenant_id, tier_wire, now_ms, correlation_id)
+        }
+        fn downgrade_tier(
+            &self,
+            tenant_id: &str,
+            tier_wire: &str,
+            now_ms: i64,
+            correlation_id: &str,
+        ) -> Result<(), BillingD1Error> {
+            self.downgrade_calls
+                .lock()
+                .map_err(|e| BillingD1Error::Transient(format!("rec mutex: {e}")))?
+                .push(tier_wire.to_string());
+            self.inner
+                .downgrade_tier(tenant_id, tier_wire, now_ms, correlation_id)
+        }
+        fn upsert_runners_entitlement(
+            &self,
+            tenant_id: &str,
+            max_concurrency: u32,
+            max_vcpu_h: u32,
+            now_ms: i64,
+        ) -> Result<(), BillingD1Error> {
+            self.inner
+                .upsert_runners_entitlement(tenant_id, max_concurrency, max_vcpu_h, now_ms)
+        }
+    }
+
+    #[test]
+    fn subscription_deleted_takes_downgrade_path_not_grant_path() {
+        // CAA-360 MEDIUM: a `customer.subscription.deleted` must drive the
+        // DOWNGRADE path (which writes subscription_state='inactive'), NOT the
+        // grant `upsert_tier` path (which hard-codes 'active' → contradictory
+        // active-free row). We seed a starting tier via the inner mirror
+        // directly (so that write is NOT counted against the recorder) then
+        // assert the handler used downgrade_tier — never upsert_tier.
+        let inner = Arc::new(InMemoryBillingD1::new());
+        inner
+            .upsert_tier("ten_1", "pro", 1_700_000_000_000, "init")
+            .unwrap();
+        let rec = Arc::new(TierPathRecordingD1::new(inner));
+        let audit = Arc::new(InMemoryBillingAuditEmitter::new());
+        let sel = Arc::new(InMemoryTierSelector::with_mapping(&[(
+            "plan_pro",
+            TierKind::Pro,
+        )]));
+        let handler = D1SubscriptionStateHandler::new(rec.clone(), audit.clone(), sel)
+            .with_clock(Arc::new(InMemoryFakeMatClock::at_unix_ms(1_700_000_000_000)));
+
+        let e = env(
+            "evt_sd2",
+            "customer.subscription.deleted",
+            serde_json::json!({
+                "object": {
+                    "id": "sub_1",
+                    "status": "canceled",
+                    "metadata": { "tenant_id": "ten_1" },
+                }
+            }),
+        );
+        handler.on_subscription_deleted(&e).unwrap();
+
+        // The cancel path drove downgrade_tier exactly once (→ free), and
+        // NEVER the grant path (upsert_tier) — no 'active'-writing statement
+        // was reached.
+        let downgrades = rec.downgrade_calls.lock().unwrap().clone();
+        let upserts = rec.upsert_calls.lock().unwrap().clone();
+        assert_eq!(
+            downgrades,
+            vec!["free".to_string()],
+            "cancel must drive downgrade_tier('free') exactly once"
+        );
+        assert!(
+            upserts.is_empty(),
+            "cancel must NOT drive the grant upsert_tier path: {upserts:?}"
+        );
+        assert_eq!(rec.inner.tier_for("ten_1").as_deref(), Some("free"));
+        assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 1);
     }
 
     #[test]
