@@ -35,6 +35,17 @@ Each entry cross-references:
   `403 "ac write outside the job's allowed key"` — a `"*"` pin (launch default) or no pin ⇒ no key
   restriction (create at any key; overwrite still 409 by INV-AC-RESULT-HASH-IMMUTABLE). No `worker/` or
   migration changes (that is the paired WP5a branch); the header contract is frozen.
+- **cf-multitenant WP4: identity-gated installation provisioning primitive in the signup-worker
+  (`apps/signup-worker`).** New internal-auth-gated endpoint
+  `POST /internal/v1/runner/provision-installation` (handler `webhooks/github_provision.ts`) that WRITES the
+  two control-plane read models the WP2/WP3 readers consume: `tenant_gh_installation_map` (0084,
+  `installation_id → tenant_id`) and `runner_repo_allowlist` (0085, per-tenant `owner/repo`). Fail-CLOSED +
+  idempotent: non-POST → 405; missing/mismatched `Authorization: Bearer` (constant-time compare) or unbound
+  `CORELINK_INTERNAL_AUTH_KEY` → 403; missing `installation_id`/`tenant_id` → 400; any D1 fault → 500 (never a
+  partial-success claim); both writes are `INSERT OR IGNORE` under a transactional D1 `batch`. NOT lazy-provision:
+  the primitive trusts the caller-supplied `tenant_id` (DP3 — the install-flow callback owns the authenticated
+  identity → tenant binding) and NEVER auto-creates a tenant. Endpoint-only; the TRIGGER (who calls it) is
+  pending the coordinator's Option-A/B lane decision.
 - **cf-multitenant fabric-plane resolvers: `resolve_tenant_for_installation` + `repo_on_tenant_allowlist`
   (WP3).** The Rust fabric can now resolve a GitHub App `installation_id → tenant_id` and check the per-tenant
   repo allowlist against the SAME D1 tables the Worker mint reads (single source, no divergent copy). Both are
