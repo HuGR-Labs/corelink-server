@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/session_exchange.ts"
   - "worker/src/lib/runner_mint.ts"
   - "worker/src/lib/auth_rotate.ts"
-checkpoint_sha: "ec16847558005ee4f952a93e109ecf5347b9ee55"
+checkpoint_sha: "5d0c9a9584b9523411e76d96b62e91ff9aa94e88"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "mint", "worker-edge", "tenancy"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -24,7 +24,7 @@ D1 `pat` row. The three public handlers above it are thin, fail-CLOSED *authoriz
 each proves the caller may mint (a verified session, an internal-auth key plus a
 runners entitlement, or ownership of the old PAT), then delegates the privileged work to
 the shared chokepoint (`worker/src/lib/session_exchange.ts:409-417`,
-`worker/src/lib/runner_mint.ts:278-288`, `worker/src/lib/auth_rotate.ts:278-289`). Each
+`worker/src/lib/runner_mint.ts:324-334`, `worker/src/lib/auth_rotate.ts:278-289`). Each
 consumer now presents the **DEDICATED** `CORELINK_PAT_MINT_AUTH_KEY` to that chokepoint
 — falling back to the shared `CORELINK_INTERNAL_AUTH_KEY` ONLY when the dedicated key is
 unset — because the container's `/_internal/pat/mint` gate now REQUIRES the dedicated
@@ -45,7 +45,7 @@ container route, and persist the row). Because the container's `/_internal/pat/m
 computes the token and its Argon2id hash but does NOT write the D1 row, the caller MUST
 persist it — and centralizing that write here is what fixed the class of bug where a
 minted token 401'd at auth because no `pat` row ever existed
-(`worker/src/lib/session_exchange.ts:582-592`). The single authority is also the single
+(`worker/src/lib/session_exchange.ts:600-620`). The single authority is also the single
 place a leaked token can be revoked, since every consumer's token lands in the same
 `pat` table the native plane, adapters and OCI read `revoked_at_ms IS NULL` from
 (`worker/src/lib/runner_mint.ts:24-29`).
@@ -109,7 +109,7 @@ place a leaked token can be revoked, since every consumer's token lands in the s
   500 (`worker/src/lib/runner_mint.ts:222-269`). It then delegates to the chokepoint with
   the DERIVED tenant and the runner `job_id` as the principal source, threading
   `max_concurrency` into the response via `mintScopedPat`'s `extraFields` bag
-  (`worker/src/lib/runner_mint.ts:278-288`). It also honors an optional **lease-bound
+  (`worker/src/lib/runner_mint.ts:324-334`). It also honors an optional **lease-bound
   `ttl_seconds`**: the dispatcher sends the lease's remaining time so the runner PAT
   EXPIRES WITH THE LEASE (server-enforced), clamped DOWN to the 90-min cap — a caller
   can only shorten, never extend — and `0`/negative/non-integer is refused `400` (the
@@ -162,7 +162,7 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 - The container's `/_internal/pat/mint` is a PURE function — it returns the token + hash
   but writes NO D1 row; the CALLER must persist it. That persistence lives ONLY in
   `mintScopedPat`, which is why every consumer must route through it, not the container
-  route directly (`worker/src/lib/session_exchange.ts:582-592`).
+  route directly (`worker/src/lib/session_exchange.ts:600-620`).
 - `mintScopedPat` performs NO authentication of its own beyond the per-principal throttle
   — it trusts that its caller already authorized the request. Calling it without a prior
   authorization gate would be a privilege-escalation hole
@@ -195,7 +195,7 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 7d. `worker/src/lib/session_exchange.ts:244-254` — LRU bound (50 000 entries, delete-then-set + oldest-key eviction) so a long-lived isolate can't grow the map unbounded.
 8. `worker/src/lib/session_exchange.ts:501-512` — the FRESH server-to-server request to `/_internal/pat/mint` with the server-trusted internal-auth header.
 9. `worker/src/lib/session_exchange.ts:529-530` — a non-200 container mint collapses to a single fail-CLOSED 500 (no internal oracle).
-10. `worker/src/lib/session_exchange.ts:582-592` — the container mint writes NO `pat` row; the caller persists it (the load-bearing fix).
+10. `worker/src/lib/session_exchange.ts:600-620` — the container mint writes NO `pat` row; the caller persists it (the load-bearing fix).
 11. `worker/src/lib/session_exchange.ts:582-618` — `INSERT INTO pat` + fail-CLOSED on any FK/UNIQUE/CHECK/transport error.
 12. `worker/src/lib/session_exchange.ts:748-749` — Consumer 1b: `audience !== tenantId` → 403 cross-tenant rejection.
 12a. `worker/src/lib/session_exchange.ts:741` — RBAC: `handleTokenExchange` caps a `viewer` role's scope DOWN to `read-only` regardless of the requested scope.
@@ -208,7 +208,7 @@ place a leaked token can be revoked, since every consumer's token lands in the s
 16b. `worker/src/lib/runner_mint.ts:248-253` — WP2 (c): `runner_repo_allowlist(tenant, repo)` miss → generic 403.
 17. `worker/src/lib/runner_mint.ts:258-265` — WP2 (d): `SELECT max_concurrency FROM runners_entitlement WHERE tenant_id = ?1` (the separate Runners axis, migration 0070); no row → generic 403; capture `max_concurrency`.
 17a. `worker/src/lib/runner_mint.ts:218-219` — the single generic `403 "runner mint unauthorized"` shared by all four checks (no oracle).
-18. `worker/src/lib/runner_mint.ts:278-288` — delegates to `mintScopedPat` with the DERIVED tenant + `job_id` principal source, threading `max_concurrency` through `extraFields`.
+18. `worker/src/lib/runner_mint.ts:324-334` — delegates to `mintScopedPat` with the DERIVED tenant + `job_id` principal source, threading `max_concurrency` through `extraFields`.
 18a. `worker/src/lib/session_exchange.ts:635` — `mintScopedPat` merges the caller's `extraFields` bag into the 200 body (runner-mint's `max_concurrency`).
 19. `worker/src/lib/runner_mint.ts:371-373` — tenant-scoped idempotent `UPDATE pat SET revoked_at_ms ... WHERE pat_id=?2 AND tenant_id=?3 AND revoked_at_ms IS NULL`.
 20. `worker/src/lib/auth_rotate.ts:48` — Consumer 3 imports `mintScopedPat` (no second mint path).

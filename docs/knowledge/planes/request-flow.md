@@ -6,7 +6,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "f62b1fede0d5c1db4ce0f8cc8f9a4dd5b7117fc7"
+checkpoint_sha: "5d0c9a9584b9523411e76d96b62e91ff9aa94e88"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -31,7 +31,7 @@ semantics in the container.
 
 # How it works
 1. The request enters `baseHandler.fetch`: request-id, CORS, then `matchRoute` selects a `RouteKind` +
-   tenant (`worker/src/index.ts:1495-1508`).
+   tenant (`worker/src/index.ts:1523-1536`).
 2. The Worker authenticates the Bearer PAT — HMAC fast-reject then a D1 `token_id` lookup + expiry —
    resolving the trusted tenant (`worker/src/index.ts:948-1068`). EXCEPTION (Artifact 1): the unauth
    `/v1/public/*` arm (the erasure-attestation verifier) is matched BEFORE the generic `/v1/*` PAT bucket
@@ -82,7 +82,7 @@ semantics in the container.
 # Citations
 1. `worker/src/index.ts:1-20` — the `Internet → Worker → DO → container` topology header.
 2. `worker/src/index.ts:948-1068` — edge PAT auth (HMAC fast-reject + D1 lookup + expiry).
-3. `worker/src/index.ts:1495-1508` — the Worker `fetch` entry + `matchRoute`.
+3. `worker/src/index.ts:1523-1536` — the Worker `fetch` entry + `matchRoute`.
 4. `worker/src/index.ts:2643-2645` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
 5. `worker/src/index.ts:2649-2685` — strip-then-set trust headers on the forward.
 6. `worker/src/index.ts:2649-2710` — the augmented forward + `stub.fetch` dispatch to the DO.
