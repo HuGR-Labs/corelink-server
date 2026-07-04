@@ -78,6 +78,23 @@ const fn should_fatal_on_missing_gate(prod: bool, gate_present: bool) -> bool {
     prod && !gate_present
 }
 
+/// Decide whether a missing/empty `EMAIL_HASH_SALT` is a FATAL boot condition
+/// (CAA-360 MEDIUM — email-hash salt fail-fast).
+///
+/// The CTRL-PRIV-001 `email_hash::hash_email` helper HMAC-SHA256s the normalized
+/// email under `EMAIL_HASH_SALT` when it is set+non-empty, but silently falls
+/// back to a rainbow-table-reversible plain `SHA-256(email)` when it is
+/// unset/empty. The salt is now SET on every prod target, so a future deploy
+/// that DROPPED it must NOT be allowed to silently regress to the unsalted
+/// scheme. This pure predicate isolates the policy so it is unit-testable (the
+/// caller does the `std::process::exit(1)`): in prod (`prod == true`) a missing
+/// salt (`salt_present == false`) is fatal; outside prod (dev/CI) or when the
+/// salt is present it is not — so non-prod behavior is unchanged.
+#[must_use]
+const fn email_hash_salt_missing_in_prod(prod: bool, salt_present: bool) -> bool {
+    prod && !salt_present
+}
+
 /// Canonical `(env-var-name, literal-fallback-key, tier)` table for the
 /// container Stripe-webhook tier reconciliation (F-001).
 ///
@@ -355,6 +372,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .unwrap_or(false);
             if !erasure_salt_key_present {
                 missing.push("ERASURE_SALT_KEY (GDPR erasure/account-delete salt)");
+            }
+            // EMAIL_HASH_SALT: the CTRL-PRIV-001 email_hash pseudonym helper
+            // (`email_hash::hash_email` — every team-invite WRITE / accept-time
+            // MATCH / DSR Art.16 rectification routes through it) HMAC-SHA256s the
+            // normalized email under this server-held salt when set+non-empty, but
+            // silently falls back to plain `SHA-256(email)` — a RAINBOW-TABLE-
+            // reversible pseudonym — when it is unset/empty. The salt is now SET on
+            // all prod targets, so a future deploy that DROPPED it would silently
+            // regress every new pseudonym to the unsalted scheme with NO alarm.
+            // Treat it as a must-arm prod control (read identically to
+            // ERASURE_SALT_KEY / PAT_SIGNING_KEY). NOTE the fail-fast lives HERE at
+            // boot, NOT inside `hash_email()` per-call: a per-call error would break
+            // non-prod tests and add hot-path cost — the boot gate just guarantees
+            // the salt exists in prod while `hash_email`'s dual-path logic (salted
+            // write + legacy-unsalted lookup candidate) stays intact.
+            let email_hash_salt_present = std::env::var("EMAIL_HASH_SALT")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if email_hash_salt_missing_in_prod(prod_by_independent_signal, email_hash_salt_present) {
+                missing.push("EMAIL_HASH_SALT (CTRL-PRIV-001 email_hash pseudonym salt)");
             }
             if !missing.is_empty() {
                 tracing::error!(
@@ -885,7 +922,8 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
     use super::{
-        build_runners_resolver_from, build_tier_selector_from, should_fatal_on_missing_gate,
+        build_runners_resolver_from, build_tier_selector_from, email_hash_salt_missing_in_prod,
+        should_fatal_on_missing_gate,
     };
     use corelink_billing_stripe_materializer::{
         RunnersEntitlement, RunnersEntitlementResolver, TierSelectError, TierSelector,
@@ -907,6 +945,23 @@ mod tests {
         assert!(!should_fatal_on_missing_gate(false, false));
         // dev/CI + gate present → OK.
         assert!(!should_fatal_on_missing_gate(false, true));
+    }
+
+    /// CAA-360 MEDIUM truth table: the boot guard refuses to boot ONLY when prod
+    /// is detected AND `EMAIL_HASH_SALT` is unset/empty — the exact case where
+    /// `email_hash::hash_email` would silently regress to the rainbow-table-
+    /// reversible unsalted `SHA-256`. Prod + salt present is fine (salted path);
+    /// non-prod is never fatal regardless of the salt (dev/CI + tests unchanged).
+    #[test]
+    fn email_hash_salt_fatal_only_when_prod_and_salt_missing() {
+        // prod + salt unset/empty → FATAL (the silent-unsalted-regression case).
+        assert!(email_hash_salt_missing_in_prod(true, false));
+        // prod + salt present → OK (the salted HMAC path is guaranteed).
+        assert!(!email_hash_salt_missing_in_prod(true, true));
+        // non-prod + salt unset → OK (no regression: dev/CI + tests run unsalted).
+        assert!(!email_hash_salt_missing_in_prod(false, false));
+        // non-prod + salt present → OK.
+        assert!(!email_hash_salt_missing_in_prod(false, true));
     }
 
     /// F-001 regression: when the live `STRIPE_PRICE_ID_*` env values are

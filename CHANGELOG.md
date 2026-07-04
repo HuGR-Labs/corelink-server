@@ -31,6 +31,16 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **`EMAIL_HASH_SALT` is now REQUIRED in prod, enforced by a boot fail-fast (CAA-360 MEDIUM).** The
+  CTRL-PRIV-001 `email_hash::hash_email` helper HMAC-SHA256s the email under `EMAIL_HASH_SALT` when set, but
+  silently falls back to a rainbow-table-reversible plain `SHA-256(email)` when it is unset/empty. The salt is
+  now SET on all 6 prod targets, so the container's positive prod-arming assertion
+  (`crates/corelink-container/src/main.rs`, the same block that guards `ERASURE_SALT_KEY` / `PAT_SIGNING_KEY`)
+  now refuses to boot when a prod signal is present and `EMAIL_HASH_SALT` is unset/empty (new pure predicate
+  `email_hash_salt_missing_in_prod`, unit-tested) — a future deploy that dropped the salt can no longer silently
+  regress every new pseudonym to the unsalted scheme with no alarm. `hash_email`'s dual-path logic (salted write
+  + legacy-unsalted lookup candidate) is unchanged; the gate lives at BOOT, not per-call, so non-prod/tests are
+  unaffected. Secrets-matrix row #171 flipped to REQUIRED.
 - **Container billing materializer wrote a contradictory `active`+`free` row on `subscription.deleted`
   (CAA-360 MEDIUM).** On a cancel, the materializer called `persist_tier_change(Free)` → `upsert_tier`, whose
   `SQL_UPSERT_TIER` UNCONDITIONALLY writes `subscription_state='active'` — so a canceled tenant got
