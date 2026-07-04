@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **cf-multitenant fabric-plane resolvers: `resolve_tenant_for_installation` + `repo_on_tenant_allowlist`
+  (WP3).** The Rust fabric can now resolve a GitHub App `installation_id → tenant_id` and check the per-tenant
+  repo allowlist against the SAME D1 tables the Worker mint reads (single source, no divergent copy). Both are
+  lookup-only reads in `routes/auth_introspect.rs`, mirroring `resolve_tenant_for_org`'s structure exactly:
+  `resolve_tenant_for_installation` reads `tenant_gh_installation_map` (0084) — a miss is a transient
+  `Ok(None)` → 404 `installation_not_mapped` (never auto-provisions); `repo_on_tenant_allowlist` reads
+  `runner_repo_allowlist` (0085) → bool, fail-CLOSED on D1 fault. Each I/O wrapper splits its row-decode into a
+  pure, unit-tested helper (`decode_resolved_installation_tenant` / `decode_repo_on_allowlist`). No new endpoint
+  surface — the org resolver's endpoint pairs a handler with these pure fns; the fabric consumes them directly.
 - **cf-multitenant WP2: server-side tenant derivation + authz chokepoint in `handleRunnerMint`
   (`worker/src/lib/runner_mint.ts`).** The runner-mint endpoint no longer trusts an `owner_tenant`
   body field (the single-tenant hole). The new body is
