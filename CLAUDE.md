@@ -5,14 +5,14 @@ Context for AI agents working in this repo. Keep it lean + high-signal.
 ## What CoreLink is
 
 A **multi-tenant content-addressable cache + storage-governance platform** on
-Cloudflare (Workers + Durable Objects + Containers + R2 + D1). ~71 Rust crates.
+Cloudflare (Workers + Durable Objects + Containers + R2 + D1). ~73 Rust crates.
 Sold **self-serve to SMBs** — NOT enterprise, and NOT "just a build cache."
 It already exposes multiple cache surfaces: native CAS/AC, **Bazel REAPI v2**
 (`routes/bazel_v2.rs`), **Turborepo** (`routes/turbo_v8.rs`), and **sccache** (WebDAV).
 
 ## Architecture wiki (OKF)
 
-`docs/knowledge/` is the **code-grounded architecture wiki** — 146 OKF concepts,
+`docs/knowledge/` is the **code-grounded architecture wiki** — 157 OKF concepts,
 each naming the `source_files` it explains (anti-drift gated against them).
 Browse `docs/knowledge/index.md`, or the rendered site `docs/okf-wiki-site/index.html` (search + cross-link graph; regen via `scripts/okf_render.py`). **Rule: before modifying a
 subsystem, load its concepts first** — don't work blind. Query them with
