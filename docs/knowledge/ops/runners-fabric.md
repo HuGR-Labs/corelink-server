@@ -5,7 +5,7 @@ description: "How the corelink-runners compute fabric authorizes placement: the 
 source_files:
   - "crates/corelink-container/src/routes/auth_introspect.rs"
   - "docs/launch/2026-06-18-sota-tooling-roadmap.md"
-checkpoint_sha: "f62b1fede0d5c1db4ce0f8cc8f9a4dd5b7117fc7"
+checkpoint_sha: "98d8bc3900f5d52b258ecb376093acdc7854a32e"
 provenance: "AUTHORED"
 tags: ["ops", "runners", "introspect", "entitlement", "fabric", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -49,10 +49,17 @@ the operational runbook for that gate; its authz mechanism is documented as the
    NULLABLE column is set; both are `Option<u32>` with skip-serialization
    (`crates/corelink-container/src/routes/auth_introspect.rs:246`, `crates/corelink-container/src/routes/auth_introspect.rs:257`).
 8. The route is only mounted when `FABRIC_INTROSPECT_AUTH_KEY` is present and ≥32 chars; otherwise it
-   returns `None` and is not mounted (fail-CLOSED) (`crates/corelink-container/src/routes/auth_introspect.rs:831-839`).
+   returns `None` and is not mounted (fail-CLOSED) (`crates/corelink-container/src/routes/auth_introspect.rs:960-968`).
 9. The fabric's compute itself is being moved off the shared founder Mac onto off-Mac Linux capacity
    (Blacksmith is the roadmap meta-fix for the chronic single-runner fragility)
    (`docs/launch/2026-06-18-sota-tooling-roadmap.md:40-56`).
+10. For the multi-tenant runner-CI path (cf-multitenant), the fabric plane shares the SAME identity/authorization
+    source tables as the Worker mint (single source of truth, no divergent copy): `resolve_tenant_for_installation`
+    resolves a GitHub App `installation_id` → isolated tenant via `tenant_gh_installation_map` (migration 0084),
+    lookup-only — a miss is `Ok(None)` → transient `404 installation_not_mapped`, never an auto-provision
+    (`crates/corelink-container/src/routes/auth_introspect.rs:862`); `repo_on_tenant_allowlist` reads
+    `runner_repo_allowlist` (migration 0085) to confirm a `repo_full_name` is explicitly allowed for the tenant,
+    fail-CLOSED (`crates/corelink-container/src/routes/auth_introspect.rs:913`).
 
 # Invariants
 - Any D1 fault during plan OR entitlement resolution fails CLOSED with 503 — the fabric maps 503 to
@@ -64,7 +71,7 @@ the operational runbook for that gate; its authz mechanism is documented as the
 - An invalid PAT returns a uniform `valid:false` with no tenant_id and no reason — no existence/plan oracle
   (`crates/corelink-container/src/routes/auth_introspect.rs:634-636`).
 - The dedicated fabric secret MUST be ≥32 chars or the route is not mounted at all
-  (`crates/corelink-container/src/routes/auth_introspect.rs:831-839`).
+  (`crates/corelink-container/src/routes/auth_introspect.rs:960-968`).
 
 # Gotchas
 - `FABRIC_INTROSPECT_AUTH_KEY` is a DEDICATED secret, NOT `CORELINK_INTERNAL_AUTH_KEY` — a leak of the mint
@@ -92,5 +99,5 @@ the operational runbook for that gate; its authz mechanism is documented as the
 11. `crates/corelink-container/src/routes/auth_introspect.rs:610-620` — 200 valid response assembly (plan informational).
 12. `crates/corelink-container/src/routes/auth_introspect.rs:621-641` — fail-CLOSED 503 on entitlement/tier/backend fault.
 13. `crates/corelink-container/src/routes/auth_introspect.rs:634-636` — uniform `valid:false`, no oracle.
-14. `crates/corelink-container/src/routes/auth_introspect.rs:831-839` — `FABRIC_INTROSPECT_AUTH_KEY` ≥32 or route not mounted.
+14. `crates/corelink-container/src/routes/auth_introspect.rs:960-968` — `FABRIC_INTROSPECT_AUTH_KEY` ≥32 or route not mounted.
 15. `docs/launch/2026-06-18-sota-tooling-roadmap.md:40-56` — move compute off the shared Mac (Blacksmith / Linux runner).
