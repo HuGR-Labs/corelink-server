@@ -23,6 +23,27 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Self-serve Runner purchase — the full flow (tier → checkout → billing → entitlement lifecycle).**
+  Runners become a self-serve purchasable product (5 flat monthly SKUs: Starter $16 / Pro $40 / Team $100 /
+  Scale $200 / Max $400, each granting a fixed `max_concurrency` + monthly `max_vcpu_h` bundle) — a SEPARATE
+  entitlement axis from the cache tier.
+  - **Tier + checkout surface:** 5 `TierKind::Runner*` variants (canonical `runner_*` wire strings that
+    auto-resolve to the deployed `STRIPE_PRICE_ID_RUNNER_*` prices), the mirrored `RequestedTier` allowlist,
+    and admin-ui pricing cards in a distinct "CI runners" section (ids byte-identical backend↔UI).
+  - **Runner-aware checkout (the axis-separation guard):** a runner checkout NEVER writes the cache
+    `tier_selections` / `stripe_checkout_sessions` tables — they are one-row-per-tenant with a cache-only
+    `tier` CHECK, so a runner write would clobber the tenant's cache tier and violate the CHECK. The
+    `AlreadyActive` guard is per-axis (`has_active_runner_subscription`), so a cache-active tenant can still
+    buy runner and a runner-active tenant can still buy cache; a second runner sub is blocked.
+  - **Billing persistence:** new `runner_billing` table (migration `0087_runner_billing.sql`, additive —
+    INV-AUTH-MIGRATION-ADDITIVE) mapping the runner Stripe subscription id → tenant. Keyed by the
+    subscription id (not tenant) so it coexists with the one-row-per-tenant `tenant_billing` AND
+    disambiguates a runner-sub from a cache-sub on price-less events (`invoice.payment_failed`).
+  - **Entitlement lifecycle on the LIVE path (signup-worker webhook):** SEED `runners_entitlement` on a
+    granting runner subscription (created/updated), REVOKE (delete) on cancel / terminal payment-failure /
+    non-granting status — closing the prior "seeds but never revokes" hole (a canceled tenant no longer
+    keeps runner access forever). The container Stripe materializer gained the symmetric revoke
+    (`delete_runners_entitlement` + `runners_entitlement_revoked.v1` audit) for defense-in-depth parity.
 - **cf-multitenant WP5a: mark + forward the NARROWED runner-job PAT scope (Worker + migration side).**
   A runner-minted PAT is now MARKED narrowed in D1 and that marker is forwarded to the container as
   server-trusted headers so the container (WP5b, paired branch) can ENFORCE a tighter scope (deny-DELETE

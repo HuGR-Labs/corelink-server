@@ -88,6 +88,11 @@ fn tier_strategy() -> impl Strategy<Value = TierKind> {
         Just(TierKind::Pro),
         Just(TierKind::Max),
         Just(TierKind::Enterprise),
+        Just(TierKind::RunnerStarter),
+        Just(TierKind::RunnerPro),
+        Just(TierKind::RunnerTeam),
+        Just(TierKind::RunnerScale),
+        Just(TierKind::RunnerMax),
     ]
 }
 
@@ -306,7 +311,7 @@ proptest! {
 }
 
 // -------------------------------------------------------------------
-// Surface-stability regression: canonical 6-tier list
+// Surface-stability regression: canonical 11-tier list
 // -------------------------------------------------------------------
 
 #[test]
@@ -314,7 +319,19 @@ fn canonical_tier_strings_stable() {
     let strs: Vec<&str> = canonical_tiers().iter().map(|t| t.as_str()).collect();
     assert_eq!(
         strs,
-        ["free", "solo", "starter", "pro", "max", "enterprise"]
+        [
+            "free",
+            "solo",
+            "starter",
+            "pro",
+            "max",
+            "enterprise",
+            "runner_starter",
+            "runner_pro",
+            "runner_team",
+            "runner_scale",
+            "runner_max",
+        ]
     );
 }
 

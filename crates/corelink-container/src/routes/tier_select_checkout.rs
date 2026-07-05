@@ -17,10 +17,12 @@
 //! `Err(String)` on ANY Stripe failure (→ 502 `stripe_unavailable`).
 //!
 //! Mapping the trait's [`RequestedTier`] → `corelink_tier_selection::tier::
-//! TierKind` is `Solo→Solo`, `Starter→Starter`, `Pro→Pro`, `Max→Max`. `Free`
-//! never reaches this adapter (the orchestration activates free instantly
-//! without Stripe), so WP-B may treat `Free` as an internal invariant
-//! violation (`Err(...)`).
+//! TierKind` is identity per variant: `Solo→Solo`, `Starter→Starter`,
+//! `Pro→Pro`, `Max→Max`, and the runner SKUs `RunnerStarter→RunnerStarter`,
+//! `RunnerPro→RunnerPro`, `RunnerTeam→RunnerTeam`, `RunnerScale→RunnerScale`,
+//! `RunnerMax→RunnerMax`. `Free` never reaches this adapter (the
+//! orchestration activates free instantly without Stripe), so WP-B may treat
+//! `Free` as an internal invariant violation (`Err(...)`).
 //!
 //! ──────────────────────────────────────────────────────────────────────
 //! # EMAIL SEAM DECISION (resolved here so WP-A/B/C are not blocked)
@@ -174,6 +176,11 @@ impl CheckoutCreator for StripeCheckoutCreator {
             RequestedTier::Starter => TierKind::Starter,
             RequestedTier::Pro => TierKind::Pro,
             RequestedTier::Max => TierKind::Max,
+            RequestedTier::RunnerStarter => TierKind::RunnerStarter,
+            RequestedTier::RunnerPro => TierKind::RunnerPro,
+            RequestedTier::RunnerTeam => TierKind::RunnerTeam,
+            RequestedTier::RunnerScale => TierKind::RunnerScale,
+            RequestedTier::RunnerMax => TierKind::RunnerMax,
             RequestedTier::Free => {
                 return Err("invariant: free tier must not reach Stripe checkout".to_string());
             }
@@ -234,6 +241,61 @@ mod tests {
         // the intent that no email is threaded through the trait surface.
         let threaded_email: Option<&str> = None;
         assert!(threaded_email.is_none());
+    }
+
+    #[test]
+    fn requested_tier_maps_to_matching_tier_kind() {
+        use corelink_tier_selection::tier::TierKind;
+
+        use crate::routes::tier_select::RequestedTier;
+
+        // The adapter's `create` maps each paid `RequestedTier` to the
+        // corresponding billing `TierKind` (identity per variant). Pin that
+        // correspondence here (`create` itself does network I/O and is
+        // verified manually — see module footer). The runner SKUs MUST map
+        // through so a `runner_*` checkout request resolves the deployed
+        // `STRIPE_PRICE_ID_RUNNER_*` price via `TierKind::as_str()`.
+        let cases = [
+            (RequestedTier::Solo, TierKind::Solo, "solo"),
+            (RequestedTier::Starter, TierKind::Starter, "starter"),
+            (RequestedTier::Pro, TierKind::Pro, "pro"),
+            (RequestedTier::Max, TierKind::Max, "max"),
+            (
+                RequestedTier::RunnerStarter,
+                TierKind::RunnerStarter,
+                "runner_starter",
+            ),
+            (RequestedTier::RunnerPro, TierKind::RunnerPro, "runner_pro"),
+            (
+                RequestedTier::RunnerTeam,
+                TierKind::RunnerTeam,
+                "runner_team",
+            ),
+            (
+                RequestedTier::RunnerScale,
+                TierKind::RunnerScale,
+                "runner_scale",
+            ),
+            (RequestedTier::RunnerMax, TierKind::RunnerMax, "runner_max"),
+        ];
+        for (requested, expected_kind, wire) in cases {
+            // Mirror the exact match arm in `create` (kept in lockstep).
+            let mapped = match requested {
+                RequestedTier::Solo => TierKind::Solo,
+                RequestedTier::Starter => TierKind::Starter,
+                RequestedTier::Pro => TierKind::Pro,
+                RequestedTier::Max => TierKind::Max,
+                RequestedTier::RunnerStarter => TierKind::RunnerStarter,
+                RequestedTier::RunnerPro => TierKind::RunnerPro,
+                RequestedTier::RunnerTeam => TierKind::RunnerTeam,
+                RequestedTier::RunnerScale => TierKind::RunnerScale,
+                RequestedTier::RunnerMax => TierKind::RunnerMax,
+                RequestedTier::Free => panic!("free must not map to a paid kind"),
+            };
+            assert_eq!(mapped, expected_kind, "{requested:?} → {expected_kind:?}");
+            // `as_str()` feeds `STRIPE_PRICE_ID_{}` resolution in client.rs.
+            assert_eq!(mapped.as_str(), wire, "{expected_kind:?} wire string");
+        }
     }
 
     // WP-B live verification is MANUAL — there is deliberately no automated
