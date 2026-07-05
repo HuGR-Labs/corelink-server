@@ -181,6 +181,13 @@ async fn handle_anchor(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "tests are allowed to use these primitives"
+)]
 mod tests {
     use super::*;
     use axum::body::Body;
