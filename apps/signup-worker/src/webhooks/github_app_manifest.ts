@@ -141,21 +141,21 @@ export function handleAppManifestForm(request: Request, env: GithubAppManifestEn
 
 /**
  * Step 3 — exchange the manifest `code` for the permanent App credentials and
- * display them ONCE. Setup-token gated. The code is single-use (~1h TTL).
+ * display them ONCE.
+ *
+ * Auth model: this is GitHub's redirect target (the manifest `redirect_url`),
+ * so GitHub controls the request and appends ONLY `?code=…` — it does NOT (and
+ * cannot) carry our `setup_token`. Gating this on the setup token therefore
+ * 403s every legitimate redirect. The correct boundary is possession of the
+ * single-use `code` itself: GitHub issues it only after the operator-gated
+ * step-1 form submission, it is unguessable, single-use, and ~1h TTL. So we
+ * gate on the code (400 if absent) and never on the setup token here.
  */
 export async function handleAppManifestCallback(
   request: Request,
-  env: GithubAppManifestEnv,
+  _env: GithubAppManifestEnv,
 ): Promise<Response> {
   const url = new URL(request.url);
-
-  const expected = env.GITHUB_APP_SETUP_TOKEN;
-  if (!expected) {
-    return new Response("github app manifest flow not configured", { status: 503 });
-  }
-  if (!constantTimeEqual(presentedSetupToken(url, request), expected)) {
-    return new Response("forbidden", { status: 403 });
-  }
 
   const code = url.searchParams.get("code");
   if (!code) {
