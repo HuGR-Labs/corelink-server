@@ -1011,21 +1011,37 @@ async function upsertRunnersEntitlementBySubscription(
 }
 
 /**
- * REVOKE the tenant's Runners entitlement: delete the `runners_entitlement` row
- * for the tenant that owns the runner subscription. Resolves the tenant through
- * `runner_billing` (subscription id → tenant id). An ABSENT row means "no
- * Runners entitlement" (migration 0070 fail-CLOSED semantics), so DELETE is the
- * correct revocation. Idempotent: a redelivery deletes an already-absent row
- * (0 rows affected). Safe no-op if the subscription maps no billing row.
+ * REVOKE the tenant's Runners entitlement for a cancelled/lapsed subscription.
+ * Resolves the tenant through `runner_billing` (subscription id → tenant id) and
+ * deletes the `runners_entitlement` row ONLY when the tenant retains no other
+ * active/trialing runner subscription (see the inline note — avoids nuking a
+ * still-paying tenant). An ABSENT row means "no Runners entitlement" (migration
+ * 0070 fail-CLOSED semantics). Idempotent: a redelivery deletes an already-absent
+ * row (0 rows affected). Safe no-op if the subscription maps no billing row.
  */
 async function revokeRunnersEntitlementBySubscription(
     db: D1DatabaseLike,
     opts: { runnerSubscriptionId: string },
 ): Promise<void> {
+    // Launch-audit finding (MED): `runners_entitlement` is ONE row per tenant, but
+    // `runner_billing` is per-subscription. A blind tenant-keyed DELETE would nuke
+    // the whole entitlement even when the tenant still holds ANOTHER active runner
+    // subscription — over-revoking a still-paying tenant. So DELETE only when NO
+    // OTHER active/trialing runner sub remains for the tenant. The
+    // `runner_subscription_id != ?1` self-exclusion means a SINGLE-sub cancel (the
+    // common case) always sees an empty "other active" set and DELETEs — revoke
+    // stays fail-CLOSED — and it is robust whether or not this sub's own
+    // `runner_billing.status` has already advanced to 'canceled'/'past_due'.
+    // (Normally prevented upstream by the checkout `AlreadyActive` guard that blocks
+    // a 2nd runner purchase; this is the defense-in-depth backstop.)
     await db
         .prepare(
             `DELETE FROM runners_entitlement WHERE tenant_id IN
-               (SELECT tenant_id FROM runner_billing WHERE runner_subscription_id = ?1)`,
+               (SELECT tenant_id FROM runner_billing WHERE runner_subscription_id = ?1)
+             AND tenant_id NOT IN
+               (SELECT tenant_id FROM runner_billing
+                  WHERE status IN ('active', 'trialing')
+                    AND runner_subscription_id != ?1)`,
         )
         .bind(opts.runnerSubscriptionId)
         .run();
