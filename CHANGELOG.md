@@ -142,6 +142,12 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Forward `CORELINK_DSR_ANCHOR_AUTH_KEY` from the DO to the container (fixes the #634 anchor route 401ing every call).**
+  #634 added the `/_internal/dsr/anchor` route + its dedicated consumer key, but the Durable Object env bridge
+  (`worker/src/durable_object.ts`) forwards each per-consumer key explicitly and never forwarded the new one — so the
+  container's anchor route 401'd every request the moment the dedicated key was bound (the exact CP-1 self-inflicted
+  outage the forwarding block guards against). Added the one forwarding line + the `Env` type field. Empty-when-unset,
+  so shared-key fallback is unchanged.
 - **Runner entitlement revoke is now status-aware — a cancelled sub no longer nukes a still-paying tenant (launch-audit finding).**
   `runners_entitlement` is one row per tenant while `runner_billing` is per-subscription, so the blind tenant-keyed
   `DELETE` on `subscription.deleted` / terminal `invoice.payment_failed` / non-granting `subscription.updated` would
