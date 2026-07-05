@@ -909,6 +909,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         warn!("STRIPE_WEBHOOK_SECRET unset; Stripe webhook route NOT mounted (dev/CI mode)");
     }
 
+    // GDPR1 per-user erasure: `POST /_internal/dsr/anchor` — register the
+    // `dsr_requested` legitimacy anchor for a per-user (not whole-account)
+    // erasure, so the per-digest CAS erase can authorize it. Gated by the
+    // dedicated CORELINK_DSR_ANCHOR_AUTH_KEY (shared-key fallback until
+    // provisioned) — held by the erasure-request authority (githugr), a DIFFERENT
+    // party than the eraser (hugit), or the legitimacy gate is moot. (Mounted last,
+    // after the cited-in-OKF blocks above, to keep the anti-drift line-anchors stable.)
+    let dsr_anchor_auth_key = corelink_server::routes::admin::dsr_anchor_auth_key_from_env();
+    if let Some(dsr_anchor_state) =
+        corelink_server::routes::dsr_anchor::build_state_from_env(dsr_anchor_auth_key)
+    {
+        info!("routes: /_internal/dsr/anchor route mounted (auth key + D1 present)");
+        app = app.merge(corelink_server::routes::dsr_anchor::router(dsr_anchor_state));
+    } else {
+        warn!(
+            "CORELINK_DSR_ANCHOR_AUTH_KEY / D1 incomplete; \
+             /_internal/dsr/anchor route NOT mounted (fail-CLOSED)"
+        );
+    }
+
     // Single HTTP/1.1 listener on PORT (50051) — the DO's getTcpPort target.
     let listener = tokio::net::TcpListener::bind(serve_addr).await?;
     info!(%serve_addr, "CoreLink HTTP data-plane server starting");

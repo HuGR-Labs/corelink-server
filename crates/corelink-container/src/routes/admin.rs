@@ -771,6 +771,18 @@ fn map_err(e: AdminHandlerError) -> axum::response::Response {
     }
 }
 
+/// Resolve the DSR legitimacy-anchor register key (`POST /_internal/dsr/anchor`),
+/// preferring the dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY` with the shared
+/// `CORELINK_INTERNAL_AUTH_KEY` as fallback. This key MUST be held by the
+/// erasure-REQUEST authority (e.g. githugr), a DIFFERENT party than the eraser
+/// holding `CORELINK_ERASE_AUTH_KEY` — the anti-forge basis of the legitimacy
+/// gate. See [`crate::routes::dsr_anchor`]. (Placed at the end of the module,
+/// after the OKF-cited items above, to keep anti-drift line-anchors stable.)
+#[must_use]
+pub fn dsr_anchor_auth_key_from_env() -> Option<Arc<str>> {
+    resolve_internal_auth_key("CORELINK_DSR_ANCHOR_AUTH_KEY")
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,

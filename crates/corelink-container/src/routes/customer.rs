@@ -1057,7 +1057,7 @@ const DSR_QUEUED_SCHEMA: &str = "dev.hugr.corelink.dsr.queued.v1";
 /// user id gives the SAME `dsr_id` as the webhook path, so a dashboard-initiated
 /// delete and a Clerk `user.deleted` for the same account are idempotency-compatible.
 #[must_use]
-fn deterministic_dsr_id(subject_key: &str) -> String {
+pub(crate) fn deterministic_dsr_id(subject_key: &str) -> String {
     let digest = Sha256::digest(format!("corelink-dsr-v1:{subject_key}").as_bytes());
     let mut b = [0u8; 16];
     // First 16 bytes of the SHA-256 digest (the digest is 32 bytes — never short).

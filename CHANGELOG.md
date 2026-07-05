@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **`POST /_internal/dsr/anchor` — per-user DSR legitimacy-anchor register seam (GDPR1 erasure path).**
+  The CAS physical-erase seam (`/_internal/cas/:tenant/:hash/erase`) authorises a per-digest delete only if a
+  `dsr_requested` legitimacy row exists for `(dsr_id, tenant)`. The two existing writers of that anchor are both
+  whole-account (Clerk `user.deleted`; self-serve `/v1/customer/account/delete`), so a per-USER erasure inside a
+  shared multi-user tenant (e.g. hugit's git-CAS `d863fafb`, where a githugr user isn't a Clerk user of the tenant)
+  had no way to register the anchor. This new internal-auth route lets the erasure-REQUEST authority register the
+  anchor — deriving the deterministic `dsr_id` from a stable subject key and `INSERT OR IGNORE`-ing the row — so the
+  downstream per-digest erase can authorise it. Gated by a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY` (shared-key
+  fallback), held by a DIFFERENT authority than the eraser (anti-forge, mirroring the Clerk model). Fail-closed
+  (401/400/500), idempotent. Unmounted unless the key + D1 are present.
 - **Runner GitHub-App install flow — identity-gated tenant-map provisioning (signup-worker).**
   The runner *consumption* path: a runner job resolves its tenant via
   `tenant_gh_installation_map` / `runner_repo_allowlist`, populated from an
