@@ -139,6 +139,22 @@ Each entry cross-references:
   `active`/`trialing` runner sub remains for the tenant (self-excluding the cancelled sub by id, so a single-sub cancel
   — the common case — still revokes fail-closed). Normally prevented upstream by the checkout `AlreadyActive` guard;
   this is the defense-in-depth backstop. Never grants free runners (the flaw was over-revoke, not over-grant).
+- **Runner install callback now detects a cross-tenant installation-binding conflict (launch-audit HIGH — detection half).**
+  The `tenant_gh_installation_map.installation_id` is a PK written `INSERT OR IGNORE` (first-writer-wins); the signed
+  install `state` proves the tenant but NOT that the tenant controls the presented `installation_id`. The callback now
+  re-reads the bound row after the write and refuses to report success if the installation is already owned by a
+  DIFFERENT tenant — surfacing a hijacked/mismatched binding instead of silently accepting it (best-effort: only a
+  confirmed cross-tenant row fails; a read fault never blocks a legitimate provision). **FULL prevention — verifying
+  the state-tenant owns the installation's GitHub account — requires a tenant↔GitHub-account link and remains a HARD
+  GATE on flipping the runner App public** (the App ships `public:false`/org-only, so this is not externally
+  exploitable at launch).
+- **Bazel REAPI v2 AC-write now enforces the runner-job AC-key pin (WP5b parity, launch-audit finding).** The native
+  `/v1/ac` write gate restricts a narrowed runner-job PAT to its pinned AC key, but the Bazel AC surface
+  (`PUT /bazel/v2/:instance/blobs/ac/:hash`) never extracted `RunnerJob`, so a per-job credential could have escaped
+  its narrowing by routing an arbitrary AC write through the Bazel path. Wired the same `ac_key_allowed` gate into
+  `bazel_v2::handle_ac_write`. NO-OP on the launch config (every runner PAT mints with the `"*"` wildcard = no key
+  pin); becomes load-bearing the moment the `ac_output_name` pin is enabled. CAS is content-addressed so it needs no
+  such gate. Dormant-vulnerability closure — no live behavior change.
 - **Runner GitHub-App manifest callback no longer 403s GitHub's own redirect.** `handleAppManifestCallback`
   (the manifest `redirect_url`) was gated on `GITHUB_APP_SETUP_TOKEN`, but GitHub controls that redirect and
   appends ONLY `?code=…` — never our setup token — so every legitimate return 403'd ("forbidden") before the
