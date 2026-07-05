@@ -54,8 +54,14 @@ use crate::storage::d1_http::D1HttpClient;
 /// CHECK (`expires_at_ms - acquired_at_ms <= 60000`) and WI §6.4.
 const LOCK_TTL_MS: i64 = 60_000;
 
-/// Map `RequestedTier` → the exact lower-case label the D1 `tier` CHECK
+/// Map `RequestedTier` → the exact snake_case label the D1 `tier` CHECK
 /// constraints accept (`tier_selections` / `stripe_checkout_sessions`).
+///
+/// Kept in lockstep with `corelink_tier_selection::tier::TierKind::as_str`:
+/// the runner SKUs persist as their canonical `runner_*` wire strings. The
+/// D1 CHECK constraint on `tier_selections.tier` / `stripe_checkout_sessions
+/// .tier` MUST admit these `runner_*` values (owned by the tier-migration
+/// WP); this Rust adapter emits the canonical labels unconditionally.
 const fn tier_column(tier: RequestedTier) -> &'static str {
     match tier {
         RequestedTier::Free => "free",
@@ -63,6 +69,11 @@ const fn tier_column(tier: RequestedTier) -> &'static str {
         RequestedTier::Starter => "starter",
         RequestedTier::Pro => "pro",
         RequestedTier::Max => "max",
+        RequestedTier::RunnerStarter => "runner_starter",
+        RequestedTier::RunnerPro => "runner_pro",
+        RequestedTier::RunnerTeam => "runner_team",
+        RequestedTier::RunnerScale => "runner_scale",
+        RequestedTier::RunnerMax => "runner_max",
     }
 }
 

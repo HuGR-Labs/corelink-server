@@ -168,9 +168,11 @@ pub const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 pub const TENANT_HEADER: &str = "x-corelink-tenant-id";
 
 /// Canonical self-serve paid tiers accepted by this route. `free` is an
-/// instant activation (no Stripe); `enterprise` is rejected here and
-/// routed to the inquiry form. Kept in lockstep with
-/// `corelink_tier_selection::tier::TierKind`.
+/// instant activation (no Stripe); the cache tiers (`solo` / `starter` /
+/// `pro` / `max`) and the runner SKUs (`runner_starter` / `runner_pro` /
+/// `runner_team` / `runner_scale` / `runner_max`) require Stripe Checkout;
+/// `enterprise` is rejected here and routed to the inquiry form. Kept in
+/// lockstep with `corelink_tier_selection::tier::TierKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestedTier {
     /// Free tier — instant activation, no Checkout Session.
@@ -183,6 +185,16 @@ pub enum RequestedTier {
     Pro,
     /// Max paid tier.
     Max,
+    /// Runner Starter paid tier (runner SKU).
+    RunnerStarter,
+    /// Runner Pro paid tier (runner SKU).
+    RunnerPro,
+    /// Runner Team paid tier (runner SKU).
+    RunnerTeam,
+    /// Runner Scale paid tier (runner SKU).
+    RunnerScale,
+    /// Runner Max paid tier (runner SKU).
+    RunnerMax,
 }
 
 impl RequestedTier {
@@ -196,6 +208,11 @@ impl RequestedTier {
             "starter" => ParsedTier::Tier(Self::Starter),
             "pro" => ParsedTier::Tier(Self::Pro),
             "max" => ParsedTier::Tier(Self::Max),
+            "runner_starter" => ParsedTier::Tier(Self::RunnerStarter),
+            "runner_pro" => ParsedTier::Tier(Self::RunnerPro),
+            "runner_team" => ParsedTier::Tier(Self::RunnerTeam),
+            "runner_scale" => ParsedTier::Tier(Self::RunnerScale),
+            "runner_max" => ParsedTier::Tier(Self::RunnerMax),
             "enterprise" => ParsedTier::Enterprise,
             _ => ParsedTier::Invalid,
         }
@@ -232,8 +249,9 @@ pub enum ParsedTier {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TierSelectRequest {
-    /// Requested tier: `free` | `solo` | `starter` | `pro` | `max`.
-    /// (`enterprise` → 422.)
+    /// Requested tier: `free` | `solo` | `starter` | `pro` | `max` |
+    /// `runner_starter` | `runner_pro` | `runner_team` | `runner_scale` |
+    /// `runner_max`. (`enterprise` → 422.)
     pub tier: String,
     /// Post-payment success redirect (Stripe appends the session id). The
     /// Worker builds this from a trusted origin — never user-supplied.
@@ -1108,6 +1126,40 @@ mod tests {
             ParsedTier::Enterprise
         );
         assert_eq!(RequestedTier::parse_self_serve(""), ParsedTier::Invalid);
+    }
+
+    #[test]
+    fn runner_tiers_parse_and_are_paid_not_rejected() {
+        // Each runner SKU parses to its variant (case-insensitive + trimmed),
+        // is a paid tier (→ Stripe Checkout), and is NOT rejected as
+        // Invalid/Enterprise (the allowlist previously 400'd unknown tiers).
+        let cases = [
+            ("runner_starter", RequestedTier::RunnerStarter),
+            (" Runner_Pro ", RequestedTier::RunnerPro),
+            ("RUNNER_TEAM", RequestedTier::RunnerTeam),
+            ("runner_scale", RequestedTier::RunnerScale),
+            ("runner_max", RequestedTier::RunnerMax),
+        ];
+        for (wire, expected) in cases {
+            assert_eq!(
+                RequestedTier::parse_self_serve(wire),
+                ParsedTier::Tier(expected),
+                "{wire} must parse to {expected:?}"
+            );
+            assert!(expected.is_paid(), "{expected:?} must be paid");
+        }
+    }
+
+    #[test]
+    fn runner_pro_request_authorizes_and_is_paid() {
+        // A full request carrying `runner_pro` passes auth/validation, is
+        // recognized as the RunnerPro tier, and is NOT 400-rejected.
+        let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
+        let (tenant, tier) =
+            authorize_and_validate(&state(), &h, &req("runner_pro")).unwrap();
+        assert_eq!(tenant, "tenant-abc");
+        assert_eq!(tier, RequestedTier::RunnerPro);
+        assert!(tier.is_paid());
     }
 
     // ── orchestration (durable heart) — adversarial coverage ───────────────

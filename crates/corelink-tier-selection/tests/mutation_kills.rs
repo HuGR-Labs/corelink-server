@@ -45,6 +45,11 @@ fn tier_kind_as_str_canonical_strings_stable_and_distinct() {
         (TierKind::Pro, "pro"),
         (TierKind::Max, "max"),
         (TierKind::Enterprise, "enterprise"),
+        (TierKind::RunnerStarter, "runner_starter"),
+        (TierKind::RunnerPro, "runner_pro"),
+        (TierKind::RunnerTeam, "runner_team"),
+        (TierKind::RunnerScale, "runner_scale"),
+        (TierKind::RunnerMax, "runner_max"),
     ];
     for (t, expected) in &pairs {
         assert_eq!(t.as_str(), *expected, "{:?} as_str", t);
@@ -54,15 +59,15 @@ fn tier_kind_as_str_canonical_strings_stable_and_distinct() {
     }
     // canonical_tiers list must match.
     let canon = canonical_tiers();
-    assert_eq!(canon.len(), 6);
+    assert_eq!(canon.len(), 11);
     for (i, (t, _)) in pairs.iter().enumerate() {
         assert_eq!(canon[i], *t);
     }
-    // Six distinct strings.
+    // Eleven distinct strings.
     let mut sorted: Vec<&str> = pairs.iter().map(|(_, s)| *s).collect();
     sorted.sort_unstable();
     sorted.dedup();
-    assert_eq!(sorted.len(), 6);
+    assert_eq!(sorted.len(), 11);
 }
 
 #[test]
@@ -76,6 +81,11 @@ fn tier_kind_requires_stripe_checkout_only_paid_tiers() {
         TierKind::Starter,
         TierKind::Pro,
         TierKind::Max,
+        TierKind::RunnerStarter,
+        TierKind::RunnerPro,
+        TierKind::RunnerTeam,
+        TierKind::RunnerScale,
+        TierKind::RunnerMax,
     ] {
         assert!(t.requires_stripe_checkout(), "{t:?}");
         assert!(!t.routes_to_inquiry_form(), "{t:?}");

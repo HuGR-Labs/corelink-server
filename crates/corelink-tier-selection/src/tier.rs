@@ -26,6 +26,16 @@ pub enum TierKind {
     Max,
     /// Enterprise tier — `"Contact us"` form route (WI-S19-005).
     Enterprise,
+    /// Runner Starter tier — paid; Stripe Checkout redirect (runner SKU).
+    RunnerStarter,
+    /// Runner Pro tier — paid; Stripe Checkout redirect (runner SKU).
+    RunnerPro,
+    /// Runner Team tier — paid; Stripe Checkout redirect (runner SKU).
+    RunnerTeam,
+    /// Runner Scale tier — paid; Stripe Checkout redirect (runner SKU).
+    RunnerScale,
+    /// Runner Max tier — paid; Stripe Checkout redirect (runner SKU).
+    RunnerMax,
 }
 
 impl TierKind {
@@ -39,6 +49,11 @@ impl TierKind {
             Self::Pro => "pro",
             Self::Max => "max",
             Self::Enterprise => "enterprise",
+            Self::RunnerStarter => "runner_starter",
+            Self::RunnerPro => "runner_pro",
+            Self::RunnerTeam => "runner_team",
+            Self::RunnerScale => "runner_scale",
+            Self::RunnerMax => "runner_max",
         }
     }
 
@@ -46,10 +61,22 @@ impl TierKind {
     ///
     /// Free skips Stripe (instant activation); Enterprise routes to
     /// the inquiry form (not Stripe Checkout); paid tiers
-    /// (Solo / Starter / Pro / Max) require Stripe Checkout.
+    /// (Solo / Starter / Pro / Max and the Runner SKUs) require Stripe
+    /// Checkout.
     #[must_use]
     pub const fn requires_stripe_checkout(self) -> bool {
-        matches!(self, Self::Solo | Self::Starter | Self::Pro | Self::Max)
+        matches!(
+            self,
+            Self::Solo
+                | Self::Starter
+                | Self::Pro
+                | Self::Max
+                | Self::RunnerStarter
+                | Self::RunnerPro
+                | Self::RunnerTeam
+                | Self::RunnerScale
+                | Self::RunnerMax
+        )
     }
 
     /// Returns true if this tier routes to the inquiry form
@@ -66,9 +93,9 @@ impl core::fmt::Display for TierKind {
     }
 }
 
-/// Canonical 6-element list for surface-stability regression tests.
+/// Canonical 11-element list for surface-stability regression tests.
 #[must_use]
-pub const fn canonical_tiers() -> &'static [TierKind; 6] {
+pub const fn canonical_tiers() -> &'static [TierKind; 11] {
     &[
         TierKind::Free,
         TierKind::Solo,
@@ -76,6 +103,11 @@ pub const fn canonical_tiers() -> &'static [TierKind; 6] {
         TierKind::Pro,
         TierKind::Max,
         TierKind::Enterprise,
+        TierKind::RunnerStarter,
+        TierKind::RunnerPro,
+        TierKind::RunnerTeam,
+        TierKind::RunnerScale,
+        TierKind::RunnerMax,
     ]
 }
 
@@ -108,6 +140,11 @@ mod tests {
             TierKind::Starter,
             TierKind::Pro,
             TierKind::Max,
+            TierKind::RunnerStarter,
+            TierKind::RunnerPro,
+            TierKind::RunnerTeam,
+            TierKind::RunnerScale,
+            TierKind::RunnerMax,
         ] {
             assert!(t.requires_stripe_checkout(), "{t:?} should require stripe");
             assert!(!t.routes_to_inquiry_form());
@@ -119,7 +156,19 @@ mod tests {
         let strs: Vec<_> = canonical_tiers().iter().map(|t| t.as_str()).collect();
         assert_eq!(
             strs,
-            ["free", "solo", "starter", "pro", "max", "enterprise"]
+            [
+                "free",
+                "solo",
+                "starter",
+                "pro",
+                "max",
+                "enterprise",
+                "runner_starter",
+                "runner_pro",
+                "runner_team",
+                "runner_scale",
+                "runner_max",
+            ]
         );
     }
 }
