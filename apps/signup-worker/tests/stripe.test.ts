@@ -284,6 +284,13 @@ const baseEnv = (db?: ReturnType<typeof fakeDb>): StripeWebhookEnv => ({
     STRIPE_PRICE_ID_TEAM: "price_team_yyy",
     STRIPE_PRICE_ID_PRO: "price_pro_zzz",
     STRIPE_PRICE_ID_MAX: "price_max_www",
+    // Runner price → entitlement reverse map (the SEPARATE runner subscription
+    // price ladder). Disjoint from the cache prices above.
+    STRIPE_PRICE_ID_RUNNER_STARTER: "price_runner_starter_r1",
+    STRIPE_PRICE_ID_RUNNER_PRO: "price_runner_pro_r2",
+    STRIPE_PRICE_ID_RUNNER_TEAM: "price_runner_team_r3",
+    STRIPE_PRICE_ID_RUNNER_SCALE: "price_runner_scale_r4",
+    STRIPE_PRICE_ID_RUNNER_MAX: "price_runner_max_r5",
     BILLING_DB: db
         ? { prepare: db.prepare }
         : undefined,
@@ -2196,6 +2203,402 @@ describe("handleStripeWebhook", () => {
         expect(billing).toBeDefined();
         // 'canceled' is terminal: even the past_due status writer is guarded.
         expect(billing!.sql).toContain("status != 'canceled'");
+    });
+
+    // ==================================================================
+    // WP2: SELF-SERVE RUNNER PURCHASE — seed + revoke runners_entitlement
+    // via the dedicated runner_billing map (migration 0087). The runner
+    // subscription is a SEPARATE Stripe subscription; a runner event must
+    // NEVER touch tier_selections / tenant_billing (the cache plane), and a
+    // cache event must NEVER touch runners_entitlement / runner_billing.
+    // ==================================================================
+
+    it("runner checkout.session.completed → runner_billing upserted, NO cache tier_selections activation", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_runner_checkout_1",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    id: "cs_runner_1",
+                    customer: "cus_runner_1",
+                    subscription: "sub_runner_1",
+                    amount_total: 3000,
+                    payment_status: "paid",
+                    metadata: { tenant_id: "tenant_runner_1", tier: "runner_starter" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // runner_billing row upserted (subscription→tenant map) with status active.
+        const rb = db.runCalls.find((c) => c.sql.includes("INSERT INTO runner_billing"));
+        expect(rb).toBeDefined();
+        expect(rb!.params).toContain("sub_runner_1");
+        expect(rb!.params).toContain("tenant_runner_1");
+        expect(rb!.params).toContain("runner_starter");
+        expect(rb!.params).toContain("active");
+
+        // NO cache activation: neither tier_selections nor tenant_billing touched.
+        expect(db.runCalls.find((c) => c.sql.includes("tier_selections"))).toBeUndefined();
+        expect(db.runCalls.find((c) => c.sql.includes("tenant_billing"))).toBeUndefined();
+        // Entitlement is NOT seeded at checkout (no price on the session); it
+        // arrives on the subscription.created/updated event.
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO runners_entitlement")),
+        ).toBeUndefined();
+
+        // Analytics: runner_subscription_started (distinct from the cache MRR event).
+        const fetchSpy = vi.mocked(globalThis.fetch);
+        const body = JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string) as {
+            events: Array<{ event_name: string; tenant_id: string }>;
+        };
+        expect(body.events[0]!.event_name).toBe("runner_subscription_started");
+        expect(body.events[0]!.tenant_id).toBe("tenant_runner_1");
+    });
+
+    it("runner checkout.session.completed missing subscription id → 500 fail-loud, no runner_billing write", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_runner_nosub_1",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    id: "cs_runner_nosub_1",
+                    customer: "cus_runner_nosub",
+                    // NOTE: no subscription id — cannot map the runner sub.
+                    amount_total: 3000,
+                    payment_status: "paid",
+                    metadata: { tenant_id: "tenant_runner_nosub", tier: "runner_pro" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(500);
+        expect(await res.text()).toBe("checkout_runner_missing_subscription");
+        expect(db.runCalls.find((c) => c.sql.includes("runner_billing"))).toBeUndefined();
+    });
+
+    // Each of the 5 runner tiers: subscription event with the runner PRICE and a
+    // granting status seeds runners_entitlement with the correct caps.
+    const runnerLadder: Array<[string, string, number, number]> = [
+        ["price_runner_starter_r1", "runner_starter", 20, 100],
+        ["price_runner_pro_r2", "runner_pro", 40, 240],
+        ["price_runner_team_r3", "runner_team", 80, 600],
+        ["price_runner_scale_r4", "runner_scale", 160, 1200],
+        ["price_runner_max_r5", "runner_max", 320, 2400],
+    ];
+    for (const [priceId, tier, maxConcurrency, maxVcpuH] of runnerLadder) {
+        it(`runner subscription.updated (${tier}, active) → runners_entitlement seeded ${maxConcurrency}/${maxVcpuH}`, async () => {
+            const db = fakeDb();
+            const nowMs = Date.now();
+            const event = {
+                id: `evt_runner_seed_${tier}`,
+                type: "customer.subscription.updated",
+                data: {
+                    object: {
+                        id: `sub_runner_seed_${tier}`,
+                        customer: `cus_runner_seed_${tier}`,
+                        status: "active",
+                        current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                        // Runner price; NO cache tier metadata (metadata[tier] is a
+                        // runner tier, which the cache map ignores).
+                        metadata: { tenant_id: `tenant_runner_seed_${tier}`, tier },
+                        items: { data: [{ price: { id: priceId } }] },
+                    },
+                },
+            };
+            const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+            const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+            expect(res.status).toBe(200);
+
+            // runners_entitlement seeded with the tier's caps.
+            const ent = db.runCalls.find((c) =>
+                c.sql.includes("INSERT INTO runners_entitlement"),
+            );
+            expect(ent).toBeDefined();
+            expect(ent!.params).toContain(maxConcurrency); // ?1 max_concurrency
+            expect(ent!.params).toContain(maxVcpuH); // ?3 max_vcpu_h
+            expect(ent!.params).toContain(`sub_runner_seed_${tier}`); // ?4 subscription id
+            // Seeds via the subscription→tenant subquery through runner_billing.
+            expect(ent!.sql).toContain("FROM runner_billing WHERE runner_subscription_id");
+            // runner_billing status upserted (tenant+plan from metadata).
+            const rb = db.runCalls.find((c) => c.sql.includes("INSERT INTO runner_billing"));
+            expect(rb).toBeDefined();
+            expect(rb!.params).toContain(tier);
+            // The cache plane is NOT MUTATED for a runner sub: the cache
+            // tenant_billing UPDATE + any tier_selections re-activation are issued
+            // (the arm is shared) but every one is guarded through tenant_billing,
+            // which has NO row for the runner subscription id → 0 rows affected.
+            // Assert there is NO unguarded/customer-keyed cache write (which WOULD
+            // touch a real cache tenant): no tier_selections write keyed by
+            // customer, and no SET tier propagation (cache resolveSubscriptionTier
+            // is null for a runner price).
+            for (const c of db.runCalls) {
+                if (c.sql.includes("tier_selections")) {
+                    // Every tier_selections statement here MUST be subquery-guarded
+                    // through tenant_billing (safe no-op), never a bare customer key.
+                    expect(c.sql).toContain("tenant_billing");
+                }
+            }
+            expect(
+                db.runCalls.find((c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("SET tier")),
+            ).toBeUndefined();
+            // No revoke on a granting status.
+            expect(
+                db.runCalls.find((c) => c.sql.includes("DELETE FROM runners_entitlement")),
+            ).toBeUndefined();
+        });
+    }
+
+    it("runner subscription.created (runner price, active) → runners_entitlement seeded (created arm)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_runner_created_1",
+            type: "customer.subscription.created",
+            data: {
+                object: {
+                    id: "sub_runner_created_1",
+                    customer: "cus_runner_created_1",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    metadata: { tenant_id: "tenant_runner_created_1", tier: "runner_team" },
+                    items: { data: [{ price: { id: "price_runner_team_r3" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        const ent = db.runCalls.find((c) => c.sql.includes("INSERT INTO runners_entitlement"));
+        expect(ent).toBeDefined();
+        expect(ent!.params).toContain(80);
+        expect(ent!.params).toContain(600);
+    });
+
+    it("runner subscription.updated non-granting status (past_due) → runners_entitlement REVOKED", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_runner_pastdue_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_runner_pastdue_1",
+                    customer: "cus_runner_pastdue_1",
+                    status: "past_due", // non-granting
+                    metadata: { tenant_id: "tenant_runner_pastdue_1", tier: "runner_pro" },
+                    items: { data: [{ price: { id: "price_runner_pro_r2" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // Revoked, not seeded.
+        const del = db.runCalls.find((c) => c.sql.includes("DELETE FROM runners_entitlement"));
+        expect(del).toBeDefined();
+        expect(del!.params).toContain("sub_runner_pastdue_1");
+        expect(
+            db.runCalls.find((c) => c.sql.includes("INSERT INTO runners_entitlement")),
+        ).toBeUndefined();
+        // runner_billing status mirror updated.
+        expect(db.runCalls.find((c) => c.sql.includes("runner_billing"))).toBeDefined();
+    });
+
+    it("runner subscription.deleted → runners_entitlement revoked + runner_billing marked canceled", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_runner_deleted_1",
+            type: "customer.subscription.deleted",
+            data: {
+                object: {
+                    id: "sub_runner_deleted_1",
+                    customer: "cus_runner_deleted_1",
+                    metadata: { tenant_id: "tenant_runner_deleted_1", tier: "runner_max" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // Entitlement DELETEd (resolved through runner_billing subquery).
+        const del = db.runCalls.find((c) => c.sql.includes("DELETE FROM runners_entitlement"));
+        expect(del).toBeDefined();
+        expect(del!.params).toContain("sub_runner_deleted_1");
+        expect(del!.sql).toContain("SELECT tenant_id FROM runner_billing");
+        // runner_billing marked canceled (status-only).
+        const rb = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE runner_billing") && c.params.includes("canceled"),
+        );
+        expect(rb).toBeDefined();
+        expect(rb!.params).toContain("sub_runner_deleted_1");
+    });
+
+    it("runner invoice.payment_failed terminal → runners_entitlement revoked + runner_billing past_due", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_runner_pf_1",
+            type: "invoice.payment_failed",
+            data: {
+                object: {
+                    subscription: "sub_runner_pf_1",
+                    customer: "cus_runner_pf_1",
+                    attempt_count: 4,
+                    next_payment_attempt: null, // terminal
+                    metadata: { tenant_id: "tenant_runner_pf_1" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // Runner entitlement revoked (disambiguated THROUGH runner_billing —
+        // the invoice carries no price, which is exactly why the table exists).
+        const del = db.runCalls.find((c) => c.sql.includes("DELETE FROM runners_entitlement"));
+        expect(del).toBeDefined();
+        expect(del!.params).toContain("sub_runner_pf_1");
+        // runner_billing status → past_due.
+        const rb = db.runCalls.find(
+            (c) => c.sql.includes("UPDATE runner_billing") && c.params.includes("past_due"),
+        );
+        expect(rb).toBeDefined();
+        expect(rb!.params).toContain("sub_runner_pf_1");
+    });
+
+    // ---- NO-REGRESSION: a CACHE event must not touch the runner tables ----
+
+    it("cache checkout.session.completed → NO runner_billing / runners_entitlement writes (no regression)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_cache_noregress_1",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_cache_nr",
+                    subscription: "sub_cache_nr",
+                    amount_total: 4900,
+                    payment_status: "paid",
+                    metadata: { tenant_id: "tenant_cache_nr", tier: "starter" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+        // Cache activation happened …
+        expect(db.runCalls.find((c) => c.sql.includes("INSERT INTO tier_selections"))).toBeDefined();
+        // … but the runner tables are untouched.
+        expect(db.runCalls.find((c) => c.sql.includes("runner_billing"))).toBeUndefined();
+        expect(db.runCalls.find((c) => c.sql.includes("runners_entitlement"))).toBeUndefined();
+    });
+
+    it("cache subscription.updated (cache price) → NO runners_entitlement seed/revoke (no regression)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_cache_sub_noregress_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_cache_nr_2",
+                    customer: "cus_cache_nr_2",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    metadata: { tenant_id: "tenant_cache_nr_2" },
+                    items: { data: [{ price: { id: "price_pro_zzz" } }] }, // CACHE price
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+        // Cache tier propagation ran …
+        expect(
+            db.runCalls.find((c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("SET tier")),
+        ).toBeDefined();
+        // … no runner entitlement write of either kind.
+        expect(
+            db.runCalls.find(
+                (c) =>
+                    c.sql.includes("INSERT INTO runners_entitlement") ||
+                    c.sql.includes("DELETE FROM runners_entitlement"),
+            ),
+        ).toBeUndefined();
+    });
+
+    it("cache subscription.deleted → runner writers issued but are no-ops (subquery matches no runner_billing row)", async () => {
+        // The deleted/payment_failed arms issue the runner revoke UNCONDITIONALLY
+        // (disambiguation via runner_billing). For a CACHE cancel the statements
+        // run but resolve through runner_billing → 0 rows. Assert the runner
+        // revoke SQL is present AND correctly subquery-guarded so it cannot
+        // affect a non-runner tenant.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_cache_del_noregress_1",
+            type: "customer.subscription.deleted",
+            data: {
+                object: {
+                    id: "sub_cache_del_nr",
+                    customer: "cus_cache_del_nr",
+                    metadata: { tenant_id: "tenant_cache_del_nr", tier: "pro" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+        const del = db.runCalls.find((c) => c.sql.includes("DELETE FROM runners_entitlement"));
+        expect(del).toBeDefined();
+        // Guarded through the runner_billing subquery → a cache-sub id matches no
+        // runner_billing row, so this DELETE affects nothing (safe no-op).
+        expect(del!.sql).toContain("SELECT tenant_id FROM runner_billing");
+    });
+
+    // ---- IDEMPOTENCY: redelivery re-runs harmlessly (distinct from same-id dedup) ----
+
+    it("runner subscription.updated REDELIVERY re-runs the idempotent entitlement seed (ON CONFLICT), no error", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_runner_idem_1",
+            type: "customer.subscription.updated",
+            data: {
+                object: {
+                    id: "sub_runner_idem_1",
+                    customer: "cus_runner_idem_1",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    metadata: { tenant_id: "tenant_runner_idem_1", tier: "runner_scale" },
+                    items: { data: [{ price: { id: "price_runner_scale_r4" } }] },
+                },
+            },
+        };
+        // First delivery.
+        const req1 = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        expect((await handleStripeWebhook(req1, baseEnv(db), fakeCtx())).status).toBe(200);
+        // Redelivery (SAME event id, later signature timestamp) — writes re-run.
+        const req2 = await makeStripeRequest(event, TEST_SECRET, nowMs + 1000);
+        expect((await handleStripeWebhook(req2, baseEnv(db), fakeCtx())).status).toBe(200);
+
+        const seeds = db.runCalls.filter((c) => c.sql.includes("INSERT INTO runners_entitlement"));
+        expect(seeds).toHaveLength(2); // idempotent ON CONFLICT upsert ran both times
+        // The seed SQL is a guarded ON CONFLICT upsert (safe on redelivery).
+        expect(seeds[0]!.sql).toContain("ON CONFLICT(tenant_id) DO UPDATE");
     });
 });
 

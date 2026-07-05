@@ -106,6 +106,19 @@ export interface StripeWebhookEnv extends AnalyticsEmitEnv {
     STRIPE_PRICE_ID_TEAM?: string;
     STRIPE_PRICE_ID_PRO?: string;
     STRIPE_PRICE_ID_MAX?: string;
+    // Stripe price ids per RUNNER tier — the runner subscription is its OWN
+    // Stripe subscription (SEPARATE from the cache subscription), so it has its
+    // own price ladder. The webhook reads these in REVERSE (price → runner
+    // entitlement) to seed/revoke `runners_entitlement` (migrations 0070/0072)
+    // via the dedicated `runner_billing` mapping table (migration 0087). A
+    // runner price maps to NO cache tier, so the existing cache-path helpers
+    // (tierFromSubscriptionPrice / resolveSubscriptionTier / detectTierPriceMismatch)
+    // all resolve null for it — the cache path is a clean no-op for runner subs.
+    STRIPE_PRICE_ID_RUNNER_STARTER?: string;
+    STRIPE_PRICE_ID_RUNNER_PRO?: string;
+    STRIPE_PRICE_ID_RUNNER_TEAM?: string;
+    STRIPE_PRICE_ID_RUNNER_SCALE?: string;
+    STRIPE_PRICE_ID_RUNNER_MAX?: string;
 }
 
 // Minimal D1 interface — keeps unit tests independent of @cloudflare/workers-types.
@@ -356,6 +369,112 @@ function detectTierPriceMismatch(
  */
 function subscriptionStatusGrantsAccess(rawStatus: unknown): boolean {
     return rawStatus === "active" || rawStatus === "trialing";
+}
+
+// ---------------------------------------------------------------------------
+// Runner subscription helpers (self-serve Runners entitlement)
+//
+// The runner subscription is a SEPARATE Stripe subscription from the cache
+// subscription. Its lifecycle seeds/revokes `runners_entitlement` (migrations
+// 0070/0072) via the dedicated `runner_billing` map (migration 0087), NOT
+// tenant_billing (which is one-row-per-tenant and reserved for the cache sub).
+// ---------------------------------------------------------------------------
+
+/** The canonical runner tiers a runner purchase may be recorded on. */
+type RunnerTier =
+    | "runner_starter"
+    | "runner_pro"
+    | "runner_team"
+    | "runner_scale"
+    | "runner_max";
+
+/** The per-tier Runners entitlement (max_concurrency, max_vcpu_h). */
+interface RunnerEntitlement {
+    maxConcurrency: number;
+    maxVcpuH: number;
+}
+
+/**
+ * The frozen runner tier → entitlement ladder (max_concurrency, max_vcpu_h).
+ * Mirrors the operator-provisioned axes on `runners_entitlement`:
+ *   runner_starter 20/100 · runner_pro 40/240 · runner_team 80/600 ·
+ *   runner_scale 160/1200 · runner_max 320/2400.
+ * All max_concurrency values are > 0, satisfying the 0070 CHECK.
+ */
+const RUNNER_TIER_ENTITLEMENT: Record<RunnerTier, RunnerEntitlement> = {
+    runner_starter: { maxConcurrency: 20, maxVcpuH: 100 },
+    runner_pro: { maxConcurrency: 40, maxVcpuH: 240 },
+    runner_team: { maxConcurrency: 80, maxVcpuH: 600 },
+    runner_scale: { maxConcurrency: 160, maxVcpuH: 1200 },
+    runner_max: { maxConcurrency: 320, maxVcpuH: 2400 },
+};
+
+/** Coerce an arbitrary string to a known runner tier, or null (fail-safe). */
+function asRunnerTier(raw: unknown): RunnerTier | null {
+    return raw === "runner_starter" ||
+        raw === "runner_pro" ||
+        raw === "runner_team" ||
+        raw === "runner_scale" ||
+        raw === "runner_max"
+        ? raw
+        : null;
+}
+
+/**
+ * Read a runner tier straight from Stripe `metadata[tier]`. Used on
+ * `checkout.session.completed` / `async_payment_succeeded`, which carry NO
+ * price data in the webhook payload — the checkout backend stamps the runner
+ * tier into metadata[tier] exactly as it does for the cache tiers. Returns null
+ * for a cache tier / unknown value, so a CACHE checkout is never misclassified
+ * as a runner purchase (the cache and runner arms are mutually exclusive on the
+ * metadata[tier] value: asPaidTier vs asRunnerTier are disjoint sets).
+ */
+function runnerTierFromMetadata(obj: Record<string, unknown>): RunnerTier | null {
+    const meta = obj["metadata"] as Record<string, unknown> | undefined;
+    return asRunnerTier(meta?.["tier"]);
+}
+
+/**
+ * Reverse-map a subscription's Stripe price id(s) → runner entitlement, using
+ * the `STRIPE_PRICE_ID_RUNNER_{TIER}` env vars. Scans ALL `items.data[*].price.id`
+ * (multi-item subscriptions) plus the legacy top-level `plan.id`, and returns
+ * the FIRST recognised runner price's entitlement, else null.
+ *
+ * A null return means "this subscription is not a runner subscription (by
+ * price)" — the caller then leaves runner entitlement untouched. Because a
+ * runner price is in a DISJOINT env set from the cache price map, the cache
+ * path's tierFromSubscriptionPrice returns null for a runner price (and
+ * vice-versa), so the two paths never both fire on one subscription.
+ */
+function runnerEntitlementFromSubscriptionPrice(
+    obj: Record<string, unknown>,
+    env: StripeWebhookEnv,
+): RunnerEntitlement | null {
+    const map: Array<[string | undefined, RunnerTier]> = [
+        [env.STRIPE_PRICE_ID_RUNNER_STARTER, "runner_starter"],
+        [env.STRIPE_PRICE_ID_RUNNER_PRO, "runner_pro"],
+        [env.STRIPE_PRICE_ID_RUNNER_TEAM, "runner_team"],
+        [env.STRIPE_PRICE_ID_RUNNER_SCALE, "runner_scale"],
+        [env.STRIPE_PRICE_ID_RUNNER_MAX, "runner_max"],
+    ];
+
+    // Collect every price id the subscription carries: each item's price.id
+    // (modern shape) plus the legacy top-level plan.id (older API shape).
+    const priceIds: string[] = [];
+    const items = obj["items"] as { data?: Array<Record<string, unknown>> } | undefined;
+    for (const item of items?.data ?? []) {
+        const priceObj = item?.["price"] as Record<string, unknown> | undefined;
+        if (typeof priceObj?.["id"] === "string") priceIds.push(priceObj["id"] as string);
+    }
+    const planObj = obj["plan"] as Record<string, unknown> | undefined;
+    if (typeof planObj?.["id"] === "string") priceIds.push(planObj["id"] as string);
+
+    for (const priceId of priceIds) {
+        for (const [configured, tier] of map) {
+            if (configured && configured === priceId) return RUNNER_TIER_ENTITLEMENT[tier];
+        }
+    }
+    return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -811,6 +930,129 @@ async function backfillPeriodEnd(
         .run();
 }
 
+// ---------------------------------------------------------------------------
+// Runner billing / entitlement D1 writers
+//
+// All idempotent (ON CONFLICT upsert / guarded UPDATE / DELETE), so a Stripe
+// redelivery re-runs them harmlessly. Pushed onto `requiredWrites` so they
+// inherit the #37 await/500-on-failure durability contract (a runner customer
+// paid and is owed entitlement — a failed write must 500 for redelivery, never
+// silently 200).
+// ---------------------------------------------------------------------------
+
+/**
+ * Upsert the `runner_billing` row that maps a RUNNER Stripe subscription →
+ * tenant (migration 0087). Keyed by `runner_subscription_id` (PK) so it does
+ * NOT clobber the one-row-per-tenant `tenant_billing` cache row and so a tenant
+ * can hold both a cache AND a runner subscription. On conflict we advance only
+ * `status` + `updated_at_ms` (the immutable tenant/plan/customer/created stay
+ * as first written) — a redelivery converges harmlessly.
+ */
+async function upsertRunnerBilling(
+    db: D1DatabaseLike,
+    opts: {
+        runnerSubscriptionId: string;
+        tenantId: string;
+        plan: string;
+        status: string;
+        stripeCustomerId: string | null;
+        nowMs: number;
+    },
+): Promise<void> {
+    await db
+        .prepare(
+            `INSERT INTO runner_billing
+               (runner_subscription_id, tenant_id, plan, status,
+                stripe_customer_id, created_at_ms, updated_at_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
+             ON CONFLICT (runner_subscription_id) DO UPDATE SET
+               status        = excluded.status,
+               updated_at_ms = excluded.updated_at_ms`,
+        )
+        .bind(
+            opts.runnerSubscriptionId,
+            opts.tenantId,
+            opts.plan,
+            opts.status,
+            opts.stripeCustomerId,
+            opts.nowMs,
+        )
+        .run();
+}
+
+/**
+ * SEED the tenant's Runners entitlement (`runners_entitlement`, migrations
+ * 0070/0072) from the runner subscription. Resolves the tenant through
+ * `runner_billing` (subscription id → tenant id) via a correlated SELECT, so it
+ * is a no-op if `upsertRunnerBilling` has not yet mapped the subscription (never
+ * seeds an entitlement for an unknown subscription). Idempotent ON CONFLICT
+ * (tenant_id) — a redelivery re-writes the same caps. `plan` is the fixed
+ * 'runners' source label (matching migration 0070's informational `plan`
+ * column). max_concurrency is always > 0 for every tier, satisfying the 0070
+ * CHECK.
+ */
+async function upsertRunnersEntitlementBySubscription(
+    db: D1DatabaseLike,
+    opts: {
+        runnerSubscriptionId: string;
+        maxConcurrency: number;
+        maxVcpuH: number;
+        nowMs: number;
+    },
+): Promise<void> {
+    await db
+        .prepare(
+            `INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h)
+             SELECT tenant_id, ?1, 'runners', ?2, ?3 FROM runner_billing WHERE runner_subscription_id = ?4
+             ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency=excluded.max_concurrency, max_vcpu_h=excluded.max_vcpu_h`,
+        )
+        .bind(opts.maxConcurrency, opts.nowMs, opts.maxVcpuH, opts.runnerSubscriptionId)
+        .run();
+}
+
+/**
+ * REVOKE the tenant's Runners entitlement: delete the `runners_entitlement` row
+ * for the tenant that owns the runner subscription. Resolves the tenant through
+ * `runner_billing` (subscription id → tenant id). An ABSENT row means "no
+ * Runners entitlement" (migration 0070 fail-CLOSED semantics), so DELETE is the
+ * correct revocation. Idempotent: a redelivery deletes an already-absent row
+ * (0 rows affected). Safe no-op if the subscription maps no billing row.
+ */
+async function revokeRunnersEntitlementBySubscription(
+    db: D1DatabaseLike,
+    opts: { runnerSubscriptionId: string },
+): Promise<void> {
+    await db
+        .prepare(
+            `DELETE FROM runners_entitlement WHERE tenant_id IN
+               (SELECT tenant_id FROM runner_billing WHERE runner_subscription_id = ?1)`,
+        )
+        .bind(opts.runnerSubscriptionId)
+        .run();
+}
+
+/**
+ * Mark a `runner_billing` row's status (status-only; leaves the tenant/plan/
+ * customer/created columns untouched), keyed by subscription id. Used on
+ * cancel ('canceled') and terminal payment failure ('past_due') so the runner
+ * billing mirror tracks the Stripe subscription state even on events that carry
+ * no price. Idempotent bare UPDATE; a no-op if no row maps the subscription id.
+ */
+async function markRunnerBillingStatusBySubscription(
+    db: D1DatabaseLike,
+    opts: { runnerSubscriptionId: string; status: string; nowMs: number },
+): Promise<void> {
+    await db
+        .prepare(
+            `UPDATE runner_billing
+             SET status = ?1,
+                 updated_at_ms = ?2
+             WHERE runner_subscription_id = ?3`,
+        )
+        .bind(opts.status, opts.nowMs, opts.runnerSubscriptionId)
+        .run();
+}
+
 /**
  * Queue the checkout activation (audit fix 1 extraction): the tenant_billing
  * 'paid' upsert + the canonical tier_selections activation, and build the
@@ -1001,6 +1243,64 @@ export async function handleStripeWebhook(
             // Extract Stripe IDs from the session object.
             const stripeCustomerId = obj["customer"] as string | null | undefined;
             const stripeSubscriptionId = obj["subscription"] as string | null | undefined;
+
+            // RUNNER PURCHASE BRANCH. A runner checkout carries metadata[tier]
+            // = runner_starter..runner_max (asPaidTier(runner_*) is null, so the
+            // cache activation below is ALREADY a no-op for it — this branch is
+            // the explicit, self-documenting seed of the SEPARATE runner
+            // subscription). We map the runner subscription → tenant in
+            // runner_billing (the dedicated 0087 table, so it never clobbers the
+            // one-row-per-tenant tenant_billing) and return WITHOUT running any
+            // cache activation. The entitlement itself (runners_entitlement) is
+            // seeded on the customer.subscription.created/updated event that
+            // carries the runner PRICE (checkout sessions carry no price).
+            const runnerTier = runnerTierFromMetadata(obj);
+            if (runnerTier) {
+                if (!tenantId || typeof stripeCustomerId !== "string" || !stripeCustomerId) {
+                    console.error(
+                        `[stripe-webhook] ${event.type} runner purchase missing ` +
+                            `${!tenantId ? "tenant_id" : "customer"} ` +
+                            `(session=${(obj["id"] as string | undefined) ?? "unknown"}); ` +
+                            `returning 500 for redelivery rather than dropping a paid runner signup`,
+                    );
+                    return new Response("checkout_runner_missing_tenant_or_customer", {
+                        status: 500,
+                    });
+                }
+                // A runner subscription MUST carry its subscription id (the map
+                // key). Without it we cannot seed entitlement on the follow-up
+                // subscription event — fail loud so Stripe redelivers.
+                if (typeof stripeSubscriptionId !== "string" || !stripeSubscriptionId) {
+                    console.error(
+                        `[stripe-webhook] ${event.type} runner purchase missing subscription id ` +
+                            `(session=${(obj["id"] as string | undefined) ?? "unknown"}); ` +
+                            `returning 500 for redelivery rather than dropping a paid runner signup`,
+                    );
+                    return new Response("checkout_runner_missing_subscription", { status: 500 });
+                }
+                requiredWrites.push(
+                    upsertRunnerBilling(env.BILLING_DB, {
+                        runnerSubscriptionId: stripeSubscriptionId,
+                        tenantId,
+                        plan: runnerTier,
+                        status: "active",
+                        stripeCustomerId,
+                        nowMs,
+                    }),
+                );
+                emitEvent = {
+                    id: newEventId(),
+                    event_name: "runner_subscription_started",
+                    tenant_id: tenantId,
+                    properties: {
+                        plan: runnerTier,
+                        mrr_usd: centsToUsd(obj["amount_total"] as number | undefined),
+                        stripe_customer_id: stripeCustomerId,
+                        stripe_subscription_id: stripeSubscriptionId,
+                    },
+                };
+                break;
+            }
             // The checkout session sets metadata[tier] (corelink-stripe-real
             // client.rs:630) — there is NO metadata[plan]. Read the real tier so
             // the billing row + the tier_selections activation record the right
@@ -1216,6 +1516,70 @@ export async function handleStripeWebhook(
                               }),
                     );
                 }
+
+                // (d) RUNNER subscription: the SEPARATE runner subscription
+                // lifecycle seeds/revokes runners_entitlement. This is the FIRST
+                // event that carries the runner PRICE (checkout sessions carry
+                // none), so it is where entitlement is actually seeded. The
+                // cache-path writes above (a/b/c) are a clean no-op for a runner
+                // subscription: updateBillingSubscription/reactivate/deactivate
+                // resolve through tenant_billing (which has NO row for the runner
+                // subscription id → 0 rows updated), and (b) never fires because
+                // the cache resolveSubscriptionTier(runner price) is null. The
+                // mismatch assert above is likewise null-null for a runner price
+                // → never trips. Runner and cache prices are disjoint env sets,
+                // so at most ONE of the two paths ever has work to do.
+                const runnerEnt = runnerEntitlementFromSubscriptionPrice(obj, env);
+                if (runnerEnt) {
+                    // Track the runner subscription status in runner_billing (the
+                    // tenant/plan were mapped at checkout; upsert only advances
+                    // status). We resolve tenant_id from metadata when present so
+                    // an out-of-order .updated seen before .completed still maps.
+                    const runnerPlanMeta = runnerTierFromMetadata(obj);
+                    if (tenantId && runnerPlanMeta) {
+                        requiredWrites.push(
+                            upsertRunnerBilling(db, {
+                                runnerSubscriptionId: stripeSubscriptionId,
+                                tenantId,
+                                plan: runnerPlanMeta,
+                                status: rawStatus ?? "unknown",
+                                stripeCustomerId:
+                                    typeof stripeCustomerId === "string" ? stripeCustomerId : null,
+                                nowMs,
+                            }),
+                        );
+                    } else {
+                        // No tenant/plan metadata on this subscription object
+                        // (the common case — checkout mapped the row already):
+                        // status-only mirror update, keyed by subscription id.
+                        requiredWrites.push(
+                            markRunnerBillingStatusBySubscription(db, {
+                                runnerSubscriptionId: stripeSubscriptionId,
+                                status: rawStatus ?? "unknown",
+                                nowMs,
+                            }),
+                        );
+                    }
+                    // Seed on a granting status, revoke otherwise. Both resolve
+                    // the tenant through runner_billing (subscription id → tenant)
+                    // and are idempotent, so a redelivery converges.
+                    if (grantsAccess) {
+                        requiredWrites.push(
+                            upsertRunnersEntitlementBySubscription(db, {
+                                runnerSubscriptionId: stripeSubscriptionId,
+                                maxConcurrency: runnerEnt.maxConcurrency,
+                                maxVcpuH: runnerEnt.maxVcpuH,
+                                nowMs,
+                            }),
+                        );
+                    } else {
+                        requiredWrites.push(
+                            revokeRunnersEntitlementBySubscription(db, {
+                                runnerSubscriptionId: stripeSubscriptionId,
+                            }),
+                        );
+                    }
+                }
             }
 
             emitEvent = {
@@ -1272,6 +1636,61 @@ export async function handleStripeWebhook(
                         nowMs,
                     }),
                 );
+            }
+
+            // RUNNER subscription seed. subscription.created is the first event
+            // to carry the runner PRICE, so — like .updated — it seeds
+            // runners_entitlement. The backfillPeriodEnd above is a no-op for a
+            // runner subscription (tenant_billing has no runner-sub row). Idempotent
+            // with the .updated seed: both upsert the same caps ON CONFLICT.
+            if (env.BILLING_DB && typeof stripeSubscriptionId === "string" && stripeSubscriptionId) {
+                const db = env.BILLING_DB;
+                const runnerEnt = runnerEntitlementFromSubscriptionPrice(obj, env);
+                if (runnerEnt) {
+                    const rawStatus = obj["status"] as string | undefined;
+                    const grantsAccess = subscriptionStatusGrantsAccess(rawStatus);
+                    const runnerPlanMeta = runnerTierFromMetadata(obj);
+                    const stripeCustomerId = obj["customer"] as string | undefined;
+                    // Map/refresh the runner_billing row (tenant/plan from metadata
+                    // when present, else a status-only mirror update).
+                    if (tenantId && runnerPlanMeta) {
+                        requiredWrites.push(
+                            upsertRunnerBilling(db, {
+                                runnerSubscriptionId: stripeSubscriptionId,
+                                tenantId,
+                                plan: runnerPlanMeta,
+                                status: rawStatus ?? "unknown",
+                                stripeCustomerId:
+                                    typeof stripeCustomerId === "string" ? stripeCustomerId : null,
+                                nowMs,
+                            }),
+                        );
+                    } else {
+                        requiredWrites.push(
+                            markRunnerBillingStatusBySubscription(db, {
+                                runnerSubscriptionId: stripeSubscriptionId,
+                                status: rawStatus ?? "unknown",
+                                nowMs,
+                            }),
+                        );
+                    }
+                    if (grantsAccess) {
+                        requiredWrites.push(
+                            upsertRunnersEntitlementBySubscription(db, {
+                                runnerSubscriptionId: stripeSubscriptionId,
+                                maxConcurrency: runnerEnt.maxConcurrency,
+                                maxVcpuH: runnerEnt.maxVcpuH,
+                                nowMs,
+                            }),
+                        );
+                    } else {
+                        requiredWrites.push(
+                            revokeRunnersEntitlementBySubscription(db, {
+                                runnerSubscriptionId: stripeSubscriptionId,
+                            }),
+                        );
+                    }
+                }
             }
             break;
         }
@@ -1347,6 +1766,29 @@ export async function handleStripeWebhook(
                               stripeSubscriptionId,
                           }),
                 );
+
+                // 3. RUNNER entitlement revocation. The invoice carries NO price,
+                // so we CANNOT tell a runner-sub failure from a cache-sub failure
+                // from the payload — this is exactly why runner_billing exists
+                // (migration 0087): both writers resolve the subscription id
+                // THROUGH runner_billing, so they are inherent no-ops when the id
+                // is a cache subscription (the DELETE subquery / the UPDATE match
+                // no runner_billing row). We therefore issue them unconditionally:
+                // if this WAS a runner subscription, its entitlement is revoked
+                // and its billing mirror marked past_due; otherwise, nothing
+                // happens. Idempotent on redelivery (DELETE of an absent row).
+                requiredWrites.push(
+                    revokeRunnersEntitlementBySubscription(db, {
+                        runnerSubscriptionId: stripeSubscriptionId,
+                    }),
+                );
+                requiredWrites.push(
+                    markRunnerBillingStatusBySubscription(db, {
+                        runnerSubscriptionId: stripeSubscriptionId,
+                        status: "past_due",
+                        nowMs,
+                    }),
+                );
             }
 
             emitEvent = {
@@ -1388,6 +1830,28 @@ export async function handleStripeWebhook(
                         : deactivateTierSelectionBySubscription(db, {
                               stripeSubscriptionId,
                           }),
+                );
+
+                // RUNNER entitlement revocation on cancel. Same disambiguation as
+                // invoice.payment_failed: the deleted subscription object may
+                // carry no runner-identifying price, so we resolve THROUGH
+                // runner_billing (migration 0087). Both writers are inherent
+                // no-ops for a cache subscription (no runner_billing row maps its
+                // id) and idempotent on redelivery, so we issue them
+                // unconditionally: a canceled runner subscription loses its
+                // entitlement and its billing mirror is marked 'canceled';
+                // a cache cancel is untouched.
+                requiredWrites.push(
+                    revokeRunnersEntitlementBySubscription(db, {
+                        runnerSubscriptionId: stripeSubscriptionId,
+                    }),
+                );
+                requiredWrites.push(
+                    markRunnerBillingStatusBySubscription(db, {
+                        runnerSubscriptionId: stripeSubscriptionId,
+                        status: "canceled",
+                        nowMs,
+                    }),
                 );
             }
 
