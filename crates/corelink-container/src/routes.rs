@@ -854,6 +854,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     router
 }
 
+/// Internal DSR legitimacy-anchor register route (GDPR1, per-user erasure):
+/// `POST /_internal/dsr/anchor`. Lets the erasure-REQUEST authority register a
+/// `dsr_requested` anchor for `(dsr_id, tenant)` so the per-digest CAS erase can
+/// authorize a per-user (not whole-account) erasure. Dedicated key, held by a
+/// DIFFERENT authority than the eraser (anti-forge). See `routes/dsr_anchor.rs`.
+/// (Declared here, after the OKF-cited items above, to keep line-anchors stable.)
+pub mod dsr_anchor;
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
