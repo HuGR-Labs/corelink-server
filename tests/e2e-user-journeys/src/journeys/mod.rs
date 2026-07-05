@@ -38,6 +38,7 @@ pub mod introspect;
 pub mod oci;
 pub mod pat_lifecycle;
 pub mod quota;
+pub mod runner_purchase;
 pub mod runners;
 pub mod security;
 pub mod shared_cache;
@@ -72,6 +73,7 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     out.extend(abuse::run(cfg, client));
     out.extend(shared_cache::run(cfg, client));
     out.extend(runners::run(cfg, client));
+    out.extend(runner_purchase::run(cfg, client));
     out.extend(team::run(cfg, client));
     out
 }
