@@ -132,6 +132,13 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Bazel REAPI v2 AC-write now enforces the runner-job AC-key pin (WP5b parity, launch-audit finding).** The native
+  `/v1/ac` write gate restricts a narrowed runner-job PAT to its pinned AC key, but the Bazel AC surface
+  (`PUT /bazel/v2/:instance/blobs/ac/:hash`) never extracted `RunnerJob`, so a per-job credential could have escaped
+  its narrowing by routing an arbitrary AC write through the Bazel path. Wired the same `ac_key_allowed` gate into
+  `bazel_v2::handle_ac_write`. NO-OP on the launch config (every runner PAT mints with the `"*"` wildcard = no key
+  pin); becomes load-bearing the moment the `ac_output_name` pin is enabled. CAS is content-addressed so it needs no
+  such gate. Dormant-vulnerability closure — no live behavior change.
 - **Runner GitHub-App manifest callback no longer 403s GitHub's own redirect.** `handleAppManifestCallback`
   (the manifest `redirect_url`) was gated on `GITHUB_APP_SETUP_TOKEN`, but GitHub controls that redirect and
   appends ONLY `?code=…` — never our setup token — so every legitimate return 403'd ("forbidden") before the
