@@ -24,9 +24,10 @@
  * The registered App (private → org-only, dogfood) wires:
  *   - `setup_url`      → /install/github/callback  (the per-tenant install→map
  *                        provisioning — the identity-gated Option-B path).
- *   - `hook_attributes.url` → /webhooks/github     (installation + workflow_job
- *                        events; provisioning consumes installation, workflow_job
- *                        forwarding to the runner fabric is a downstream wire).
+ *   - `hook_attributes.url` → /webhooks/github     (receives the auto-delivered
+ *                        installation events + the subscribed `workflow_job`
+ *                        event; forwarding workflow_job to the runner fabric is a
+ *                        downstream wire).
  */
 
 import { constantTimeEqual } from "./github_provision.js";
@@ -89,7 +90,14 @@ function buildManifest(baseUrl: string): Record<string, unknown> {
       // Baseline repo metadata (enumerate the installation's repos).
       metadata: "read",
     },
-    default_events: ["installation", "installation_repositories", "workflow_job"],
+    // Only SUBSCRIBABLE events belong here. `installation` /
+    // `installation_repositories` are App-lifecycle events GitHub ALWAYS
+    // delivers to the App's webhook regardless of subscription — and it rejects
+    // the manifest outright ("Default events are not supported by permissions")
+    // if you list them, since no permission grants them. So we subscribe only to
+    // `workflow_job` (granted by `actions:read`) and still receive the
+    // installation events for map upkeep automatically.
+    default_events: ["workflow_job"],
   };
 }
 
