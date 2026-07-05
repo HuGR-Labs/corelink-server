@@ -132,6 +132,12 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Runner GitHub-App manifest no longer lists un-subscribable events (GitHub rejected the registration).**
+  The `buildManifest` `default_events` declared `installation` + `installation_repositories`, which are
+  App-lifecycle events GitHub always delivers regardless of subscription and refuses in a manifest ("Default
+  events are not supported by permissions") since no permission grants them. Narrowed `default_events` to the
+  only subscribable one we need — `workflow_job` (granted by `actions:read`); the installation events still
+  arrive on the webhook automatically. Unblocks the one-click App creation.
 - **`EMAIL_HASH_SALT` is now REQUIRED in prod, enforced by a boot fail-fast (CAA-360 MEDIUM).** The
   CTRL-PRIV-001 `email_hash::hash_email` helper HMAC-SHA256s the email under `EMAIL_HASH_SALT` when set, but
   silently falls back to a rainbow-table-reversible plain `SHA-256(email)` when it is unset/empty. The salt is
