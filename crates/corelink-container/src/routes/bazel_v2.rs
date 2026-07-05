@@ -652,6 +652,7 @@ async fn handle_ac_write(
     State(state): State<BazelRouteState>,
     Path((instance, hash, size)): Path<(String, String, String)>,
     scope: crate::scope::CacheScope,
+    runner_job: crate::scope::RunnerJob,
     headers: HeaderMap,
     // cluster F: pre-body per-tenant concurrency reservation (see handle_cas_write).
     _concurrency: BazelPutGuard,
@@ -661,6 +662,20 @@ async fn handle_ac_write(
     // (or `admin`) BEFORE any storage access. A read-only token is rejected.
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    // cf-multitenant WP5b (fail-CLOSED): mirror the native `ac.rs` AC-write gate on
+    // the Bazel REAPI v2 AC surface. A narrowed runner-job PAT with a pinned AC key
+    // may write ONLY that exact key — otherwise a per-job credential could escape its
+    // narrowing by routing an arbitrary AC write through `/bazel/v2/.../blobs/ac/:hash`
+    // instead of `/v1/ac/...`. A `"*"` pin (the launch default) or no pin ⇒ no key
+    // restriction (NO-OP for current traffic). CAS is content-addressed so it needs no
+    // such gate; only the AC (action-cache) surface is key-poisonable.
+    if !runner_job.ac_key_allowed(&hash) {
+        return (
+            StatusCode::FORBIDDEN,
+            "ac write outside the job's allowed key",
+        )
+            .into_response();
     }
     // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
     // BEFORE any storage access.
@@ -969,6 +984,50 @@ mod tests {
         assert_eq!(get_resp.status(), StatusCode::OK);
         let got = to_bytes(get_resp.into_body(), 1 << 20).await.unwrap();
         assert_eq!(got.as_ref(), payload.as_slice());
+    }
+
+    /// WP5b parity with the native `ac.rs` gate: a narrowed runner-job PAT with a
+    /// PINNED AC key may NOT write a DIFFERENT key through the Bazel AC surface
+    /// (403 before any storage), and the `"*"` wildcard (the launch default) is a
+    /// NO-OP that still writes. Closes the pin-bypass where a per-job credential
+    /// could route an arbitrary AC write via `/bazel/v2/.../blobs/ac/:hash`.
+    #[tokio::test]
+    async fn runner_job_ac_pin_denies_bazel_write_to_other_key() {
+        let write_hash = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let pinned_key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let payload = b"result".to_vec();
+        let size = payload.len();
+        let uri = format!("/bazel/v2/{TENANT}/blobs/ac/{write_hash}/{size}");
+
+        // Pinned to a DIFFERENT key → 403 before storage.
+        let app = router(make_state());
+        let put = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, pinned_key)
+            .body(Body::from(payload.clone()))
+            .unwrap();
+        let resp = app.oneshot(put).await.expect("PUT oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "pinned key mismatch must 403");
+        let body = to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        assert_eq!(body.as_ref(), b"ac write outside the job's allowed key");
+
+        // Wildcard `"*"` (launch default) → NO-OP, the write proceeds.
+        let app2 = router(make_state());
+        let put2 = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, "*")
+            .body(Body::from(payload))
+            .unwrap();
+        let resp2 = app2.oneshot(put2).await.expect("PUT oneshot");
+        assert_eq!(resp2.status(), StatusCode::NO_CONTENT, "wildcard write must pass");
     }
 
     // ── findMissingBlobs — all absent ────────────────────────────────────────
