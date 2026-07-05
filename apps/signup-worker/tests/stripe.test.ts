@@ -2437,6 +2437,11 @@ describe("handleStripeWebhook", () => {
         expect(del).toBeDefined();
         expect(del!.params).toContain("sub_runner_deleted_1");
         expect(del!.sql).toContain("SELECT tenant_id FROM runner_billing");
+        // Defense-in-depth (launch-audit): the DELETE is guarded so it does NOT
+        // over-revoke a tenant that still holds ANOTHER active/trialing runner sub,
+        // while a single-sub cancel still deletes (self-exclusion by subscription id).
+        expect(del!.sql).toContain("status IN ('active', 'trialing')");
+        expect(del!.sql).toContain("runner_subscription_id != ?1");
         // runner_billing marked canceled (status-only).
         const rb = db.runCalls.find(
             (c) => c.sql.includes("UPDATE runner_billing") && c.params.includes("canceled"),

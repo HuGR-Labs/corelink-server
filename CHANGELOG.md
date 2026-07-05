@@ -132,6 +132,13 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Runner entitlement revoke is now status-aware — a cancelled sub no longer nukes a still-paying tenant (launch-audit finding).**
+  `runners_entitlement` is one row per tenant while `runner_billing` is per-subscription, so the blind tenant-keyed
+  `DELETE` on `subscription.deleted` / terminal `invoice.payment_failed` / non-granting `subscription.updated` would
+  over-revoke a tenant that still holds another active runner subscription. The revoke now DELETEs only when no other
+  `active`/`trialing` runner sub remains for the tenant (self-excluding the cancelled sub by id, so a single-sub cancel
+  — the common case — still revokes fail-closed). Normally prevented upstream by the checkout `AlreadyActive` guard;
+  this is the defense-in-depth backstop. Never grants free runners (the flaw was over-revoke, not over-grant).
 - **Runner GitHub-App manifest callback no longer 403s GitHub's own redirect.** `handleAppManifestCallback`
   (the manifest `redirect_url`) was gated on `GITHUB_APP_SETUP_TOKEN`, but GitHub controls that redirect and
   appends ONLY `?code=…` — never our setup token — so every legitimate return 403'd ("forbidden") before the
