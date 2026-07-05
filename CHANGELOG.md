@@ -38,7 +38,12 @@ Each entry cross-references:
   (org-only, dogfood), flippable to public later. **Inert (503) until
   `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` (PKCS#8) / `INSTALL_STATE_SIGNING_KEY`
   are bound** — zero behavior change on deploy. New concept
-  `flows/runner-github-install`.
+  `flows/runner-github-install`. The admin-ui entry point (the "Install GitHub
+  App" button + `GET /api/install/github`) mints the signed state SERVER-SIDE
+  from the canonical Clerk `tenant_id` claim (never `org_id`/`user_id`) and
+  redirects into GitHub's install page; it fails closed (503) until
+  `INSTALL_STATE_SIGNING_KEY` + `GITHUB_APP_SLUG` are bound. A cross-deployable
+  test pins the admin-ui mint ↔ signup-worker verify HMAC contract.
 - **Self-serve Runner purchase — the full flow (tier → checkout → billing → entitlement lifecycle).**
   Runners become a self-serve purchasable product (5 flat monthly SKUs: Starter $16 / Pro $40 / Team $100 /
   Scale $200 / Max $400, each granting a fixed `max_concurrency` + monthly `max_vcpu_h` bundle) — a SEPARATE
