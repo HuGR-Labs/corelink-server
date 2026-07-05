@@ -132,6 +132,12 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Runner GitHub-App manifest callback no longer 403s GitHub's own redirect.** `handleAppManifestCallback`
+  (the manifest `redirect_url`) was gated on `GITHUB_APP_SETUP_TOKEN`, but GitHub controls that redirect and
+  appends ONLY `?code=…` — never our setup token — so every legitimate return 403'd ("forbidden") before the
+  code→credentials conversion. Re-gated on possession of the single-use, unguessable, ~1h-TTL manifest `code`
+  (400 if absent), which is GitHub's designed manifest-flow auth boundary; the operator gate stays on the
+  step-1 form. Also tightened a pre-existing `string | undefined` in the App-JWT test (zero-debt).
 - **Runner GitHub-App manifest no longer lists un-subscribable events (GitHub rejected the registration).**
   The `buildManifest` `default_events` declared `installation` + `installation_repositories`, which are
   App-lifecycle events GitHub always delivers regardless of subscription and refuses in a manifest ("Default

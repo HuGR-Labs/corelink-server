@@ -82,19 +82,20 @@ describe("App JWT (RS256)", () => {
 
     const parts = jwt.split(".");
     expect(parts).toHaveLength(3);
+    const [headerB64, payloadB64, sigB64] = parts as [string, string, string];
 
     // Verify the RS256 signature over `${header}.${payload}` with the public key.
-    const signingInput = new TextEncoder().encode(`${parts[0]}.${parts[1]}`);
+    const signingInput = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
     const ok = await crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5",
       kp.publicKey,
-      b64urlToBytes(parts[2]),
+      b64urlToBytes(sigB64),
       signingInput,
     );
     expect(ok).toBe(true);
 
     // Claims: iss = app id, exp within GitHub's 10-minute cap, iat backdated.
-    const payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(parts[1]))) as {
+    const payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(payloadB64))) as {
       iss: string;
       iat: number;
       exp: number;
