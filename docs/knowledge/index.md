@@ -63,6 +63,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [CAS write flow](/flows/cas-write.md)
 - [Introspection flow (runners fabric)](/flows/introspection-fabric.md)
 - [PAT verification gauntlet](/flows/pat-gauntlet.md)
+- [Runner GitHub-App install → tenant-map provisioning flow](/flows/runner-github-install.md)
 - [Signup auto-provision + account-deletion erasure (Clerk webhook)](/flows/signup-auto-provision.md)
 
 ## crates

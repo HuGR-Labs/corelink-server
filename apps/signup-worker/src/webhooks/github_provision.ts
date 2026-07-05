@@ -55,7 +55,7 @@ interface ProvisionBody {
  * early `return`) so mismatched-length inputs are indistinguishable in time from
  * same-length mismatches.
  */
-function constantTimeEqual(a: string, b: string): boolean {
+export function constantTimeEqual(a: string, b: string): boolean {
   const enc = new TextEncoder();
   const ab = enc.encode(a);
   const bb = enc.encode(b);
@@ -74,6 +74,44 @@ function json(status: number, body: unknown): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+/**
+ * Persist the installation→tenant map + repo allowlist (idempotent, transactional
+ * where the binding supports `.batch`). Shared by the internal-auth provisioning
+ * endpoint ([`handleInstallationProvision`]) AND the identity-gated install
+ * callback ([`../webhooks/github_install_callback`]), so the exact same write
+ * path serves both the Option-A (fabric-called) and Option-B (self-owned
+ * callback) provisioning triggers. Throws on a D1 fault (the callers translate
+ * to a fail-closed 500 — never a partial-success claim).
+ */
+export async function writeInstallationProvision(
+  db: D1Database,
+  opts: { installationId: string; tenantId: string; repos: string[]; nowMs: number },
+): Promise<void> {
+  const statements = [
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO tenant_gh_installation_map " +
+          "(installation_id, tenant_id, created_at_ms) VALUES (?1, ?2, ?3)",
+      )
+      .bind(opts.installationId, opts.tenantId, opts.nowMs),
+    ...opts.repos.map((repo) =>
+      db
+        .prepare(
+          "INSERT OR IGNORE INTO runner_repo_allowlist " +
+            "(tenant_id, repo_full_name, created_at_ms) VALUES (?1, ?2, ?3)",
+        )
+        .bind(opts.tenantId, repo, opts.nowMs),
+    ),
+  ];
+  if (typeof db.batch === "function") {
+    await db.batch(statements);
+  } else {
+    for (const st of statements) {
+      await st.run();
+    }
+  }
 }
 
 /**
@@ -134,35 +172,11 @@ export async function handleInstallationProvision(
     return json(500, { error: "config_db_unavailable" });
   }
 
-  // 4. D1 writes (idempotent). One `Date.now()` for all rows in this call.
+  // 4. D1 writes (idempotent, transactional via the shared write path). One
+  // `Date.now()` for all rows in this call.
   const nowMs = Date.now();
   try {
-    const statements = [
-      db
-        .prepare(
-          "INSERT OR IGNORE INTO tenant_gh_installation_map " +
-            "(installation_id, tenant_id, created_at_ms) VALUES (?1, ?2, ?3)",
-        )
-        .bind(installationId, tenantId, nowMs),
-      ...repos.map((repo) =>
-        db
-          .prepare(
-            "INSERT OR IGNORE INTO runner_repo_allowlist " +
-              "(tenant_id, repo_full_name, created_at_ms) VALUES (?1, ?2, ?3)",
-          )
-          .bind(tenantId, repo, nowMs),
-      ),
-    ];
-    // D1 `batch([...])` is transactional (all-or-nothing on one connection) so a
-    // mid-provision fault can never leave the map written but the allowlist half
-    // seeded. Fall back to a sequential loop if the binding lacks `.batch`.
-    if (typeof db.batch === "function") {
-      await db.batch(statements);
-    } else {
-      for (const st of statements) {
-        await st.run();
-      }
-    }
+    await writeInstallationProvision(db, { installationId, tenantId, repos, nowMs });
   } catch {
     // 5. Fail-closed: never partially claim success on a D1 fault.
     return json(500, { error: "provision_failed" });

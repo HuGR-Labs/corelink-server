@@ -23,6 +23,22 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Runner GitHub-App install flow — identity-gated tenant-map provisioning (signup-worker).**
+  The runner *consumption* path: a runner job resolves its tenant via
+  `tenant_gh_installation_map` / `runner_repo_allowlist`, populated from an
+  AUTHENTICATED install (never off the raw installation id — that lazy-provision
+  is forbidden). A Clerk-authed tenant clicks Install → CoreLink mints an
+  HMAC-signed `state = tenant_id` (10m TTL, constant-time verify) → GitHub App
+  install → the App's `setup_url` callback verifies the state, mints a short
+  RS256 App JWT → installation access token → lists repos → persists via the
+  shared idempotent `writeInstallationProvision`. Includes the app-manifest
+  one-click App-creation flow (GitHub has no create-App REST API): a
+  setup-token-gated auto-submit form + a conversion callback that one-time
+  displays the created App's id/private-key/webhook-secret. The App is private
+  (org-only, dogfood), flippable to public later. **Inert (503) until
+  `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` (PKCS#8) / `INSTALL_STATE_SIGNING_KEY`
+  are bound** — zero behavior change on deploy. New concept
+  `flows/runner-github-install`.
 - **Self-serve Runner purchase — the full flow (tier → checkout → billing → entitlement lifecycle).**
   Runners become a self-serve purchasable product (5 flat monthly SKUs: Starter $16 / Pro $40 / Team $100 /
   Scale $200 / Max $400, each granting a fixed `max_concurrency` + monthly `max_vcpu_h` bundle) — a SEPARATE
