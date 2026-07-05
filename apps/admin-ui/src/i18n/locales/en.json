@@ -161,10 +161,14 @@
     "subtitle": "R2 zero-egress means you pay for storage, not bandwidth.",
     "mostPopular": "Most popular",
     "footerNote": "All paid tiers include R2 zero-egress bandwidth. Prices in USD. Billed monthly.",
+    "cacheHeading": "Cache & storage",
+    "runnerHeading": "CI runners",
+    "runnerSubtitle": "Ephemeral, cache-accelerated runners for your CI. Priced on concurrency and monthly vCPU-hours — a separate add-on from cache storage.",
     "cta": {
       "signUpFree": "Sign up free",
       "signUp": "Sign up",
-      "talkToUs": "Talk to us"
+      "talkToUs": "Talk to us",
+      "getRunners": "Get runners"
     }
   },
   "upgrade": {

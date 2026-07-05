@@ -155,5 +155,20 @@
       "terms": "Términos",
       "privacy": "Privacidad"
     }
+  },
+  "pricing": {
+    "title": "Precios simples y transparentes",
+    "subtitle": "Con R2 sin cargos de salida, pagas por almacenamiento, no por ancho de banda.",
+    "mostPopular": "Más popular",
+    "footerNote": "Todos los planes de pago incluyen ancho de banda R2 sin cargos de salida. Precios en USD. Facturación mensual.",
+    "cacheHeading": "Caché y almacenamiento",
+    "runnerHeading": "Runners de CI",
+    "runnerSubtitle": "Runners efímeros acelerados por caché para tu CI. Se cobran por concurrencia y vCPU-horas mensuales — un complemento independiente del almacenamiento en caché.",
+    "cta": {
+      "signUpFree": "Regístrate gratis",
+      "signUp": "Regístrate",
+      "talkToUs": "Habla con nosotros",
+      "getRunners": "Obtener runners"
+    }
   }
 }

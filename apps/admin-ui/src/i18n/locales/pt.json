@@ -155,5 +155,20 @@
       "terms": "Termos",
       "privacy": "Privacidade"
     }
+  },
+  "pricing": {
+    "title": "Preços simples e transparentes",
+    "subtitle": "Com R2 sem taxas de saída, você paga por armazenamento, não por banda.",
+    "mostPopular": "Mais popular",
+    "footerNote": "Todos os planos pagos incluem banda R2 sem taxas de saída. Preços em USD. Cobrança mensal.",
+    "cacheHeading": "Cache e armazenamento",
+    "runnerHeading": "Runners de CI",
+    "runnerSubtitle": "Runners efêmeros acelerados por cache para sua CI. Cobrados por concorrência e vCPU-horas mensais — um adicional separado do armazenamento em cache.",
+    "cta": {
+      "signUpFree": "Cadastre-se grátis",
+      "signUp": "Cadastre-se",
+      "talkToUs": "Fale conosco",
+      "getRunners": "Obter runners"
+    }
   }
 }

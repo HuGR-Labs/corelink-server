@@ -155,5 +155,20 @@
       "terms": "Bedingungen",
       "privacy": "Datenschutz"
     }
+  },
+  "pricing": {
+    "title": "Einfache, transparente Preise",
+    "subtitle": "R2 ohne Egress-Gebühren: Sie zahlen für Speicher, nicht für Bandbreite.",
+    "mostPopular": "Am beliebtesten",
+    "footerNote": "Alle kostenpflichtigen Tarife enthalten R2-Bandbreite ohne Egress-Gebühren. Preise in USD. Monatliche Abrechnung.",
+    "cacheHeading": "Cache & Speicher",
+    "runnerHeading": "CI-Runner",
+    "runnerSubtitle": "Ephemere, Cache-beschleunigte Runner für Ihre CI. Abrechnung nach Parallelität und monatlichen vCPU-Stunden — ein separates Add-on zum Cache-Speicher.",
+    "cta": {
+      "signUpFree": "Kostenlos registrieren",
+      "signUp": "Registrieren",
+      "talkToUs": "Kontakt aufnehmen",
+      "getRunners": "Runner holen"
+    }
   }
 }
