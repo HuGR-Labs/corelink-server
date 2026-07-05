@@ -44,7 +44,20 @@ import { UpgradeButton } from "@/components/UpgradeButton";
 
 describe("normalizeCheckoutTier (?plan= validation)", () => {
   it("accepts every checkout-able tier id verbatim", () => {
-    expect(CHECKOUT_TIER_IDS).toEqual(["solo", "starter", "team", "pro", "max"]);
+    // The frozen checkout contract: the 5 cache SKUs (incl. legacy `team`)
+    // + the 5 self-serve runner SKUs (byte-identical to the backend).
+    expect(CHECKOUT_TIER_IDS).toEqual([
+      "solo",
+      "starter",
+      "team",
+      "pro",
+      "max",
+      "runner_starter",
+      "runner_pro",
+      "runner_team",
+      "runner_scale",
+      "runner_max",
+    ]);
     for (const id of CHECKOUT_TIER_IDS) {
       expect(normalizeCheckoutTier(id)).toBe(id);
     }

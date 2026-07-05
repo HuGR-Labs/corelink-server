@@ -9,6 +9,16 @@
  * Tier numbers last verified: 2026-06-10 (6-tier launch ladder).
  */
 
+/**
+ * Product axis a tier belongs to. `cache` = the storage/CAS ladder
+ * (Free…Enterprise). `runner` = the SEPARATE self-serve CI-runner axis
+ * (concurrency + monthly vCPU-h, NOT storage) — rendered as its own
+ * section of cards so the two ladders are never visually conflated.
+ * Defaults to `cache` when omitted (keeps the existing cache entries
+ * terse).
+ */
+export type TierGroup = "cache" | "runner";
+
 export type Tier = {
   /** Canonical tier id used in Stripe product lookup. */
   id: string;
@@ -22,6 +32,8 @@ export type Tier = {
   ctaHref: string;
   /** When true the card receives a visual "most popular" highlight ring. */
   highlight?: boolean;
+  /** Product axis — omitted means `cache`. See {@link TierGroup}. */
+  group?: TierGroup;
 };
 
 /**
@@ -39,6 +51,14 @@ export const CHECKOUT_TIER_IDS = [
   "team",
   "pro",
   "max",
+  // Self-serve CI-runner axis (separate product from the cache ladder).
+  // These ids are byte-identical to the backend tier-select contract —
+  // a mismatch breaks checkout. Do NOT rename.
+  "runner_starter",
+  "runner_pro",
+  "runner_team",
+  "runner_scale",
+  "runner_max",
 ] as const;
 
 export type CheckoutTierId = (typeof CHECKOUT_TIER_IDS)[number];
@@ -157,5 +177,94 @@ export const TIERS: Tier[] = [
     ],
     cta: "Talk to us",
     ctaHref: "mailto:gustavo@humangr.com",
+  },
+  // ---------------------------------------------------------------------
+  // CI-runner axis — a SEPARATE, self-serve product from the cache ladder
+  // above (ephemeral runners on the CoreLink cache, per
+  // marketing/expansion/ci-build-acceleration.md). Priced on concurrency
+  // + monthly vCPU-h, NOT storage. Flat monthly subscription (no metering
+  // shown). Rendered as its own card section by the pricing page. The ids
+  // are byte-identical to the backend tier-select contract.
+  // ---------------------------------------------------------------------
+  {
+    id: "runner_starter",
+    name: "Runner Starter",
+    price: "$16",
+    cadence: "/mo",
+    group: "runner",
+    features: [
+      "20 concurrent runners",
+      "100 vCPU-hours/mo included",
+      "Cache-accelerated builds (CoreLink CAS)",
+      "Bring your own CI (GitHub Actions, etc.)",
+      "Email support",
+    ],
+    cta: "Get runners",
+    ctaHref: "/upgrade?plan=runner_starter",
+  },
+  {
+    id: "runner_pro",
+    name: "Runner Pro",
+    price: "$40",
+    cadence: "/mo",
+    group: "runner",
+    features: [
+      "40 concurrent runners",
+      "240 vCPU-hours/mo included",
+      "Cache-accelerated builds (CoreLink CAS)",
+      "Bring your own CI (GitHub Actions, etc.)",
+      "Email support",
+    ],
+    cta: "Get runners",
+    ctaHref: "/upgrade?plan=runner_pro",
+    highlight: true,
+  },
+  {
+    id: "runner_team",
+    name: "Runner Team",
+    price: "$100",
+    cadence: "/mo",
+    group: "runner",
+    features: [
+      "80 concurrent runners",
+      "600 vCPU-hours/mo included",
+      "Cache-accelerated builds (CoreLink CAS)",
+      "Bring your own CI (GitHub Actions, etc.)",
+      "Email support",
+    ],
+    cta: "Get runners",
+    ctaHref: "/upgrade?plan=runner_team",
+  },
+  {
+    id: "runner_scale",
+    name: "Runner Scale",
+    price: "$200",
+    cadence: "/mo",
+    group: "runner",
+    features: [
+      "160 concurrent runners",
+      "1,200 vCPU-hours/mo included",
+      "Cache-accelerated builds (CoreLink CAS)",
+      "Bring your own CI (GitHub Actions, etc.)",
+      "Priority email support",
+    ],
+    cta: "Get runners",
+    ctaHref: "/upgrade?plan=runner_scale",
+  },
+  {
+    id: "runner_max",
+    name: "Runner Max",
+    price: "$400",
+    cadence: "/mo",
+    group: "runner",
+    features: [
+      "320 concurrent runners",
+      "2,400 vCPU-hours/mo included",
+      "Cache-accelerated builds (CoreLink CAS)",
+      "Bring your own CI (GitHub Actions, etc.)",
+      "Priority email support",
+    ],
+    cta: "Get runners",
+    ctaHref: "/upgrade?plan=runner_max",
   },
 ];
