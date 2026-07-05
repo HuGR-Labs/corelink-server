@@ -196,5 +196,30 @@ export async function handleInstallGithubCallback(
     return done(env, false, "provision persist failed");
   }
 
+  // 4. Conflict guard (launch-audit HIGH — DETECTION half). The map's
+  //    `installation_id` is a PRIMARY KEY written `INSERT OR IGNORE`
+  //    (first-writer-wins). The signed state proves the TENANT but NOT that this
+  //    tenant controls this installation — a caller could present another party's
+  //    `installation_id`. So after the write, verify the row now bound points at
+  //    THIS tenant; if a DIFFERENT tenant already owns the installation, refuse to
+  //    report success, so a hijacked/mismatched binding surfaces as an error
+  //    instead of being silently accepted. Best-effort: only a CONFIRMED
+  //    cross-tenant row fails the callback (a read fault never blocks a legitimate
+  //    provision — the honest flow always binds its own tenant, incl. `setup_url`
+  //    re-provisions). FULL PREVENTION — proving the state-tenant owns the
+  //    installation's GitHub account — needs a tenant↔GitHub-account link and
+  //    GATES flipping the App public (see docs/knowledge/flows/runner-github-install).
+  try {
+    const bound = await db
+      .prepare("SELECT tenant_id FROM tenant_gh_installation_map WHERE installation_id = ?1")
+      .bind(installationId)
+      .first<{ tenant_id: string }>();
+    if (bound && bound.tenant_id !== tenantId) {
+      return done(env, false, "installation is bound to a different tenant");
+    }
+  } catch {
+    // Detection is best-effort; a read fault must not break a valid provision.
+  }
+
   return done(env, true, `${repos.length} repos`);
 }
