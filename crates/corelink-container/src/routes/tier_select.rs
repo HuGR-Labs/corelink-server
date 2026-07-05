@@ -223,6 +223,27 @@ impl RequestedTier {
     pub const fn is_paid(self) -> bool {
         !matches!(self, Self::Free)
     }
+
+    /// `true` for the runner SKUs. Runner is a SEPARATE entitlement axis from
+    /// the cache tiers: a runner purchase's subscription↔tenant mapping and
+    /// entitlement are written by the signup-worker Stripe webhook into
+    /// `runner_billing` / `runners_entitlement` (migrations 0087 / 0070), NOT
+    /// the cache `tier_selections` / `stripe_checkout_sessions` tables. Those
+    /// cache tables are one-row-per-tenant with a cache-only `tier` CHECK, so
+    /// persisting a runner tier there would both violate the CHECK and CLOBBER
+    /// the tenant's cache tier. The orchestration therefore skips the cache
+    /// persist for a runner checkout and guards the runner axis independently.
+    #[must_use]
+    pub const fn is_runner(self) -> bool {
+        matches!(
+            self,
+            Self::RunnerStarter
+                | Self::RunnerPro
+                | Self::RunnerTeam
+                | Self::RunnerScale
+                | Self::RunnerMax
+        )
+    }
 }
 
 /// Outcome of parsing the wire `tier` string. Distinguishes the
@@ -659,8 +680,19 @@ pub trait TierSelectStore {
         dpa_version: &str,
     ) -> impl std::future::Future<Output = Result<bool, String>> + Send;
 
-    /// `true` iff `tenant_id` already has an `active` subscription.
+    /// `true` iff `tenant_id` already has an `active` (cache-axis) subscription.
     fn has_active_subscription(
+        &self,
+        tenant_id: &str,
+    ) -> impl std::future::Future<Output = Result<bool, String>> + Send;
+
+    /// `true` iff `tenant_id` already holds an active/trialing RUNNER
+    /// subscription (`runner_billing`, migration 0087). The runner axis is
+    /// SEPARATE from the cache [`has_active_subscription`](Self::has_active_subscription):
+    /// a tenant may hold a cache tier AND a runner tier simultaneously, so the
+    /// orchestration guards each axis independently. This guards ONLY against a
+    /// second concurrent runner subscription.
+    fn has_active_runner_subscription(
         &self,
         tenant_id: &str,
     ) -> impl std::future::Future<Output = Result<bool, String>> + Send;
@@ -816,11 +848,17 @@ where
         return Err(TierSelectHttpError::DpaRequired);
     }
 
-    // (4) At most one active subscription per tenant.
-    let active = store
-        .has_active_subscription(tenant_id)
-        .await
-        .map_err(|_| TierSelectHttpError::Internal)?;
+    // (4) At most one active subscription per AXIS. Runner is a separate
+    // entitlement axis from the cache tier (migrations 0070/0087), so a
+    // cache-active tenant may still buy runner and vice-versa; we guard each
+    // axis against a *second* subscription of the SAME kind — never letting a
+    // cache subscription block a runner purchase (or the reverse).
+    let active = if tier.is_runner() {
+        store.has_active_runner_subscription(tenant_id).await
+    } else {
+        store.has_active_subscription(tenant_id).await
+    }
+    .map_err(|_| TierSelectHttpError::Internal)?;
     if active {
         return Err(TierSelectHttpError::AlreadyActive);
     }
@@ -841,10 +879,21 @@ where
             .emit("stripe_checkout_session_created", tenant_id, correlation_id)
             .await
             .map_err(|_| TierSelectHttpError::Internal)?;
-        store
-            .persist_pending_checkout(tenant_id, tier, &created, now_ms, correlation_id)
-            .await
-            .map_err(|_| TierSelectHttpError::Internal)?;
+        // Runner is a SEPARATE entitlement axis (see `RequestedTier::is_runner`):
+        // its subscription↔tenant mapping + entitlement are written by the
+        // signup-worker Stripe webhook into `runner_billing` / `runners_entitlement`
+        // (migrations 0087/0070), NOT the cache `tier_selections` /
+        // `stripe_checkout_sessions` tables. Those are one-row-per-tenant with a
+        // cache-only `tier` CHECK, so persisting a runner tier there would clobber
+        // the tenant's cache tier and violate the CHECK. For a runner checkout we
+        // therefore create the Checkout Session and DO NOT touch the cache tables;
+        // the webhook is the single source of truth for the runner subscription.
+        if !tier.is_runner() {
+            store
+                .persist_pending_checkout(tenant_id, tier, &created, now_ms, correlation_id)
+                .await
+                .map_err(|_| TierSelectHttpError::Internal)?;
+        }
         let _ = store.release_lock(tenant_id).await;
         Ok(TierSelectResponse {
             checkout_url: Some(created.checkout_url),
@@ -1172,8 +1221,10 @@ mod tests {
         locks: Mutex<HashSet<String>>,
         /// Tenants that have accepted the current DPA.
         dpa_accepted: HashSet<String>,
-        /// Tenants with an active subscription.
+        /// Tenants with an active (cache-axis) subscription.
         active: HashSet<String>,
+        /// Tenants with an active RUNNER subscription (separate axis).
+        active_runner: HashSet<String>,
         /// Persisted side-effects (for assertions).
         persisted: Mutex<Vec<String>>,
         /// Force `acquire_lock` to report "already held".
@@ -1193,6 +1244,9 @@ mod tests {
         }
         async fn has_active_subscription(&self, t: &str) -> Result<bool, String> {
             Ok(self.active.contains(t))
+        }
+        async fn has_active_runner_subscription(&self, t: &str) -> Result<bool, String> {
+            Ok(self.active_runner.contains(t))
         }
         async fn persist_pending_checkout(
             &self,
@@ -1361,6 +1415,105 @@ mod tests {
         .await;
         assert_eq!(r.unwrap_err(), TierSelectHttpError::AlreadyActive);
         assert!(!*checkout.called.lock().unwrap());
+    }
+
+    // ── WP6: runner is a SEPARATE entitlement axis ────────────────────────────
+    // A runner checkout must (a) create the Stripe session but NOT persist the
+    // cache tables (`tier_selections`/`stripe_checkout_sessions`) — those are
+    // one-row-per-tenant with a cache-only `tier` CHECK, so a runner write would
+    // clobber the cache tier + violate the CHECK; and (b) guard the runner axis
+    // independently of the cache axis.
+
+    #[tokio::test]
+    async fn runner_checkout_creates_session_but_does_not_persist_cache_tables() {
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        let (r, store, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::RunnerPro,
+        )
+        .await;
+        let resp = r.expect("runner checkout should succeed");
+        assert_eq!(
+            resp.checkout_url.as_deref(),
+            Some("https://checkout.stripe.com/c/pay/cs_test_123"),
+            "runner checkout still returns a Stripe Checkout URL"
+        );
+        assert!(*checkout.called.lock().unwrap(), "Stripe IS called for runner");
+        assert!(
+            store.persisted.lock().unwrap().is_empty(),
+            "runner checkout must NOT write the cache tier_selections / \
+             stripe_checkout_sessions tables (clobber + CHECK-violation guard)"
+        );
+        assert!(
+            store.locks.lock().unwrap().is_empty(),
+            "lock released after runner success"
+        );
+    }
+
+    #[tokio::test]
+    async fn cache_active_tenant_can_still_buy_runner() {
+        // A tenant with an ACTIVE CACHE subscription is NOT blocked from buying
+        // runner — the axes are independent (cache-active must not 409 a runner).
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        store.active.insert("tenant-x".into()); // active on the CACHE axis
+        let (r, _s, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::RunnerStarter,
+        )
+        .await;
+        assert!(
+            r.is_ok(),
+            "a cache-active tenant must be able to buy runner (separate axis)"
+        );
+        assert!(*checkout.called.lock().unwrap());
+    }
+
+    #[tokio::test]
+    async fn runner_active_tenant_blocked_from_second_runner() {
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        store.active_runner.insert("tenant-x".into()); // already has a runner sub
+        let (r, _s, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::RunnerMax,
+        )
+        .await;
+        assert_eq!(r.unwrap_err(), TierSelectHttpError::AlreadyActive);
+        assert!(
+            !*checkout.called.lock().unwrap(),
+            "second runner subscription blocked before Stripe"
+        );
+    }
+
+    #[tokio::test]
+    async fn runner_active_tenant_can_still_buy_cache() {
+        // The mirror of the guard: an active RUNNER subscription must not block a
+        // CACHE purchase, and the cache purchase persists normally.
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        store.active_runner.insert("tenant-x".into());
+        let (r, store, checkout, _a) = run(
+            store,
+            SpyCheckout::default(),
+            SpyAudit::default(),
+            RequestedTier::Pro,
+        )
+        .await;
+        assert!(r.is_ok(), "a runner-active tenant can still buy a cache tier");
+        assert!(*checkout.called.lock().unwrap());
+        assert_eq!(
+            *store.persisted.lock().unwrap(),
+            vec!["paid:tenant-x"],
+            "cache purchase persists the cache tables as normal"
+        );
     }
 
     #[tokio::test]
