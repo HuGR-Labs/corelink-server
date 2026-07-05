@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/event_log_do.ts"
   - "worker/src/rollout_controller.ts"
-checkpoint_sha: "5d0c9a9584b9523411e76d96b62e91ff9aa94e88"
+checkpoint_sha: "ca1509f730063a7f2183569639466bb2bc83f567"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -41,7 +41,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   (the server-held salt for the email-hash pseudonym; unset ⇒ legacy unsalted SHA-256, zero
   regression) — which the container's `email_hash::hash_email` reads, so it MUST be forwarded
   here or a `wrangler secret put EMAIL_HASH_SALT` would never reach the container
-  (`worker/src/durable_object.ts:534-699`).
+  (`worker/src/durable_object.ts:534-704`).
 
 # How it works
 1. The DO restores its persisted `LifecycleState` under `blockConcurrencyWhile` on every wakeup so a
@@ -119,7 +119,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 7. `worker/src/durable_object.ts:409-467` — `ensureContainerRunning` lifecycle state machine.
 8. `worker/src/durable_object.ts:485-511` — the synchronous in-memory `"starting"` concurrent-start guard.
 9. `worker/src/durable_object.ts:516-526` — audit-before-mutation cold-start event + `container.start`.
-10. `worker/src/durable_object.ts:534-699` — the `container.start({ env })` env-contract forward.
+10. `worker/src/durable_object.ts:534-704` — the `container.start({ env })` env-contract forward.
 11. `worker/src/durable_object.ts:801-831` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:779-790` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
 12. `worker/src/durable_object.ts:919-936` — `onIdleTimeout`: death event emitted, then the idle-timeout destroy.
 13. `worker/src/durable_object.ts:958-1012` — the periodic `alarm` health re-probe + degrade.
