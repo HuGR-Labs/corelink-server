@@ -132,6 +132,15 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Runner install callback now detects a cross-tenant installation-binding conflict (launch-audit HIGH — detection half).**
+  The `tenant_gh_installation_map.installation_id` is a PK written `INSERT OR IGNORE` (first-writer-wins); the signed
+  install `state` proves the tenant but NOT that the tenant controls the presented `installation_id`. The callback now
+  re-reads the bound row after the write and refuses to report success if the installation is already owned by a
+  DIFFERENT tenant — surfacing a hijacked/mismatched binding instead of silently accepting it (best-effort: only a
+  confirmed cross-tenant row fails; a read fault never blocks a legitimate provision). **FULL prevention — verifying
+  the state-tenant owns the installation's GitHub account — requires a tenant↔GitHub-account link and remains a HARD
+  GATE on flipping the runner App public** (the App ships `public:false`/org-only, so this is not externally
+  exploitable at launch).
 - **Runner GitHub-App manifest callback no longer 403s GitHub's own redirect.** `handleAppManifestCallback`
   (the manifest `redirect_url`) was gated on `GITHUB_APP_SETUP_TOKEN`, but GitHub controls that redirect and
   appends ONLY `?code=…` — never our setup token — so every legitimate return 403'd ("forbidden") before the
