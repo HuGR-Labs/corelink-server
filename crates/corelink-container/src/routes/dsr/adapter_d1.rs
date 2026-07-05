@@ -110,6 +110,13 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // invoice/customer/subscription rows are the 5y fiscal artifact). ERASE.
     // [owner edge: defensible as billing-adjacent; see FLAGGED note below.]
     "stripe_checkout_sessions",
+    // Runner subscription↔tenant billing mirror, `tenant_id`-indexed (migr. 0087).
+    // The runner analog of `tenant_billing`: an OPERATIONAL subscription-state
+    // mirror (plan/status), NOT the fiscal record (the retained Stripe
+    // customer/invoice/subscription rows are the 5y fiscal artifact). Same class
+    // as `tenant_billing` / `stripe_checkout_sessions` above → ERASE per
+    // ADR-S11-013 (`DELETE ... WHERE tenant_id = ?`; the tenant_id index covers it).
+    "runner_billing",
     // GC run + candidate state, `tenant_id`-keyed (migr. 0006/0007). Operational
     // storage-GC bookkeeping over the tenant's own blobs → ERASE.
     "gc_run",
@@ -261,6 +268,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "monthly_request_counts",
     "tier_selection_locks",
     "stripe_checkout_sessions",
+    "runner_billing",
     "gc_run",
     "gc_candidates",
     "region_migration_request",
