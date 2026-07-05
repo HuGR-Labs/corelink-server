@@ -7,6 +7,7 @@ source_files:
   - crates/corelink-container/src/routes/dsr.rs
   - crates/corelink-container/src/routes/customer.rs
   - crates/corelink-container/src/routes/cas_erase.rs
+  - crates/corelink-container/src/routes/dsr_anchor.rs
   - crates/corelink-container/src/routes/cas.rs
   - crates/corelink-container/src/routes/dsr/adapter_d1.rs
   - crates/corelink-container/src/routes/dsr/access.rs
@@ -26,7 +27,7 @@ source_files:
   - crates/corelink-dsr/src/receipt.rs
   - crates/corelink-dsr/src/event.rs
   - crates/corelink-dsr/src/lib.rs
-checkpoint_sha: "9913819900e370cf0998dcd27f71f122572ab9b6"
+checkpoint_sha: "aa2a298b7f57472cff703be95385cfedc5ef78f8"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "lgpd", "erasure", "right-to-erasure", "compliance", "mfa", "attestation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -51,6 +52,7 @@ This control implements the data-subject right-to-erasure (and the sibling DSR r
 - **Self-serve account-delete uses the same DSR message + anchor (LIVE).** A self-serve account delete routes through `routes/customer.rs::handle_account_delete` (`crates/corelink-container/src/routes/customer.rs:955`), which builds a `dsr.queued.v1` message and `INSERT OR IGNORE`s a `dsr_requested` anchor row, then hands erasure to the `DsrErasureSink` trait — production wires `dsr::InProcessErasureSink` (via `routes/customer.rs::account_deletion_from_env`), which drives the **same** in-process, D1-backed erasure worker the `/_internal/dsr/erase` consumer runs (the container has no CF Queue producer, so the "enqueue" is a synchronous same-worker drive, not an async queue). `None` in dev/CI → the route fails CLOSED 503; in prod the sink is wired (deployed 2026-06-26).
 - **The 12 backends, honestly reconciled.** `build_d1_worker` wires REAL transports for the 4 live planes — D1 erase-set, R2 CAS, R2 AC, and Stripe pseudonymisation — and reconciles the other 8 (Neon/KV/Loki/audit/legal-hold/evidence, not shipped in prod) to `NotApplicable` with a documented reason each, a truthful GDPR record not a silent skip (`crates/corelink-container/src/routes/dsr.rs:198-253`).
 - **CAS tombstone / per-hash erase.** `POST /_internal/cas/:tenant/:hash/erase` deletes the blob from R2 and writes a durable `cas_tombstone` (migration 0067) so subsequent reads return 410 Gone, never 404 or 200 (`crates/corelink-container/src/routes/cas_erase.rs:1-8`, `crates/corelink-container/src/routes/cas_erase.rs:70`).
+- **Per-USER legitimacy-anchor register (GDPR1).** The per-hash erase authorises only against a `dsr_requested` row for `(dsr_id, tenant)`, but the two whole-account writers of that anchor (Clerk `user.deleted`; self-serve `/v1/customer/account/delete`) don't cover a per-user erasure inside a shared multi-user tenant (e.g. a git-CAS tenant hosting many forge users, none a Clerk user of the tenant). `POST /_internal/dsr/anchor` closes that: the erasure-REQUEST authority registers the anchor — the handler derives the deterministic `dsr_id` via the SAME `deterministic_dsr_id` the Clerk/self-serve paths use and `INSERT OR IGNORE`s the `dsr_requested` row, returning the `dsr_id` for the downstream per-digest erases (`crates/corelink-container/src/routes/dsr_anchor.rs:53`, `crates/corelink-container/src/routes/dsr_anchor.rs:136-176`). Anti-forge: it is gated by a DEDICATED `CORELINK_DSR_ANCHOR_AUTH_KEY` (shared-key fallback) that MUST be held by a DIFFERENT authority than the eraser — the anchor writer and the eraser being distinct parties is the whole point of the legitimacy gate (mirrors the Clerk model). Fail-CLOSED: 401 unauth (before body parse), 400 non-UUID-tenant / empty-subject, 500 on any D1 fault; idempotent; unmounted unless the key + D1 are present.
 
 ## The Wave-1 erasure transports (per-backend adapters)
 
