@@ -201,6 +201,17 @@ pub const SQL_DOWNGRADE_TIER: &str = "INSERT INTO tier_selections (tenant_id, ti
 /// ceiling are overwritten; `created_at_ms` is preserved on conflict.
 pub const SQL_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h) VALUES (?, ?, 'runners', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency = excluded.max_concurrency, max_vcpu_h = excluded.max_vcpu_h";
 
+/// REVOKE a tenant's Runners entitlement (`runners_entitlement`). The symmetric
+/// twin of [`SQL_UPSERT_RUNNERS_ENTITLEMENT`] — deletes the tenant's row when a
+/// Runners-tier Stripe subscription reaches a NON-granting status (`past_due`,
+/// `unpaid`, `paused`, `canceled`, …) or is `customer.subscription.deleted`, so
+/// the container materializer never leaves a stale entitlement granted. Binds
+/// `?1` = `tenant_id`. Idempotent (a DELETE of a non-existent row is a no-op).
+/// The **signup-worker** is the PRIMARY authority; this is the container's
+/// defense-in-depth convergent revoke (symmetric to how it seeds).
+pub const SQL_DELETE_RUNNERS_ENTITLEMENT: &str =
+    "DELETE FROM runners_entitlement WHERE tenant_id = ?";
+
 /// Canonical billing-D1 writer trait.
 ///
 /// All write methods are **idempotent**: calling the same method twice
@@ -291,6 +302,15 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
         max_vcpu_h: u32,
         now_ms: i64,
     ) -> Result<(), BillingD1Error>;
+
+    /// REVOKE a tenant's Runners entitlement (`runners_entitlement`; the SEPARATE
+    /// axis from `tier_selections`). The symmetric twin of
+    /// [`Self::upsert_runners_entitlement`]: deletes the tenant's row via
+    /// [`SQL_DELETE_RUNNERS_ENTITLEMENT`] (bind `?1` = `tenant_id`) when a
+    /// Runners-tier subscription reaches a NON-granting status or is
+    /// `customer.subscription.deleted`, so a canceled/lapsed tenant never keeps a
+    /// stale entitlement. Idempotent (revoking an absent entitlement is a no-op).
+    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error>;
 }
 
 /// Native in-memory mirror. Stores every materialized row + every
@@ -519,6 +539,18 @@ impl BillingD1Writer for InMemoryBillingD1 {
         g.insert(tenant_id.to_string(), (max_concurrency, max_vcpu_h));
         Ok(())
     }
+
+    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
+        self.check_armed()?;
+        let mut g = self
+            .runners
+            .lock()
+            .map_err(|e| BillingD1Error::Transient(format!("runners mutex poisoned: {e}")))?;
+        // Idempotent revoke: removing an absent entry is a no-op, mirroring the
+        // production `DELETE … WHERE tenant_id = ?` semantics (0 rows affected).
+        g.remove(tenant_id);
+        Ok(())
+    }
 }
 
 /// Sanity-check that a materializer passed the right table name to
@@ -583,6 +615,36 @@ mod tests {
         d1.clear_failure();
         d1.upsert_customer(row("stripe_customers")).unwrap();
         assert_eq!(d1.count_table("stripe_customers"), 1);
+    }
+
+    #[test]
+    fn runners_entitlement_seed_then_revoke_then_idempotent() {
+        let d1 = InMemoryBillingD1::new();
+        assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+        d1.upsert_runners_entitlement("ten_1", 80, 600, 1_700_000_000_000)
+            .unwrap();
+        assert_eq!(d1.runners_entitlement_of("ten_1"), Some((80, 600)));
+        // Revoke removes the entry.
+        d1.delete_runners_entitlement("ten_1").unwrap();
+        assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+        // Revoking an absent entitlement is an idempotent no-op.
+        d1.delete_runners_entitlement("ten_1").unwrap();
+        assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+    }
+
+    #[test]
+    fn delete_runners_entitlement_sql_shape() {
+        let sql = SQL_DELETE_RUNNERS_ENTITLEMENT;
+        assert!(
+            sql.trim_start().to_ascii_lowercase().starts_with("delete"),
+            "{sql}"
+        );
+        assert!(sql.contains("FROM runners_entitlement"), "{sql}");
+        assert!(
+            sql.contains("WHERE tenant_id = ?"),
+            "must be tenant-scoped by a single bind: {sql}"
+        );
+        assert_eq!(sql.matches('?').count(), 1, "single tenant_id bind: {sql}");
     }
 
     #[test]

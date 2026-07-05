@@ -53,10 +53,10 @@
 use std::sync::Arc;
 
 use corelink_billing_stripe_materializer::{
-    BillingD1Error, BillingD1Writer, MaterializedRow, SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE,
-    SQL_INSERT_REFUND, SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED,
-    SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT,
-    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    BillingD1Error, BillingD1Writer, MaterializedRow, SQL_DELETE_RUNNERS_ENTITLEMENT,
+    SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND, SQL_INSERT_WEBHOOK_EVENT_PROCESSED,
+    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE,
+    SQL_UPSERT_RUNNERS_ENTITLEMENT, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 use serde_json::{json, Value};
 
@@ -397,6 +397,14 @@ impl BillingD1Writer for D1HttpBillingWriter {
                 json!(max_vcpu_h),
             ],
         )?;
+        Ok(())
+    }
+
+    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
+        // Symmetric revoke twin of `upsert_runners_entitlement`. Bind (?1):
+        // tenant_id. `DELETE … WHERE tenant_id = ?` is idempotent (a missing row
+        // is a 0-rows-affected no-op), so a replay/duplicate revoke is harmless.
+        self.run(SQL_DELETE_RUNNERS_ENTITLEMENT, vec![json!(tenant_id)])?;
         Ok(())
     }
 }

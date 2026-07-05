@@ -354,39 +354,62 @@ impl D1SubscriptionStateHandler {
             self.d1.upsert_subscription(row).map_err(d1_to_mat)?;
         }
 
-        // 3) Entitlement reconciliation (only for *.updated arm). Route by
-        // PRODUCT: a Runners-tier price seeds `runners_entitlement`; any other
-        // price reconciles the cache `tier_selections`. `reconcile_runners`
-        // returns Ok(true) when it handled a Runners price (so we must NOT also
-        // run the cache reconcile — a Runners price is not a cache tier and would
-        // 422 UnknownPlan there); Ok(false) when the resolver is dormant or the
-        // price is not a Runners price ⇒ fall through to the cache path (exact
-        // pre-existing behavior).
+        // 3) Entitlement reconciliation (the *.updated and *.deleted arms). Route
+        // by PRODUCT: a Runners-tier price seeds/revokes `runners_entitlement`;
+        // any other price reconciles the cache `tier_selections`.
+        // `reconcile_runners` returns Ok(true) when it HANDLED a Runners price (so
+        // we must NOT also run the cache path — a Runners price is not a cache
+        // tier and would 422 UnknownPlan there); Ok(false) when the resolver is
+        // dormant or the price is not a Runners price ⇒ fall through to the cache
+        // path (exact pre-existing behavior).
+        //
+        // The SAME mutual-exclusion routing applies to BOTH the `updated` and the
+        // `deleted` arms: on a runner-price subscription that goes non-granting
+        // (`updated` with `past_due`/`unpaid`/`canceled`/…) OR is
+        // `customer.subscription.deleted`, `reconcile_runners` REVOKES the
+        // entitlement (symmetric to how it seeds) rather than leaving it stale;
+        // in either handled case the caller skips the cache reconcile/downgrade.
         if env.event_type == "customer.subscription.updated" {
             if !self.reconcile_runners(env, &tenant_id, &status, now_ms)? {
                 self.reconcile_tier(env, &tenant_id, &status, now_ms)?;
             }
         } else if canceled {
-            // On cancel, downgrade tenant to Free (per
-            // dispatcher contract — `customer.subscription.deleted`
-            // → "downgrade to Free tier"). Emit audit if the
-            // downgrade is a real change. This uses the dedicated
-            // DOWNGRADE path, which writes `subscription_state='inactive'`
-            // (the access gate OFF) — NOT the grant path's 'active' — so a
-            // canceled tenant never lands a contradictory active-free row
-            // (the signup-worker is the primary downgrade authority; this is
-            // the container's defense-in-depth convergent write).
-            self.persist_tier_downgrade(&tenant_id, TierKind::Free, env, now_ms)?;
+            // `customer.subscription.deleted`. If the price is a Runners price,
+            // `reconcile_runners` revokes `runners_entitlement` (the `canceled`
+            // status is non-granting → revoke branch) and returns Ok(true), so we
+            // must NOT then run the cache downgrade (a Runners price is not a
+            // cache tier). Otherwise fall through to the cache-tier downgrade.
+            if !self.reconcile_runners(env, &tenant_id, &status, now_ms)? {
+                // On cancel, downgrade tenant to Free (per dispatcher contract —
+                // `customer.subscription.deleted` → "downgrade to Free tier").
+                // Emit audit if the downgrade is a real change. This uses the
+                // dedicated DOWNGRADE path, which writes
+                // `subscription_state='inactive'` (the access gate OFF) — NOT the
+                // grant path's 'active' — so a canceled tenant never lands a
+                // contradictory active-free row (the signup-worker is the primary
+                // downgrade authority; this is the container's defense-in-depth
+                // convergent write).
+                self.persist_tier_downgrade(&tenant_id, TierKind::Free, env, now_ms)?;
+            }
         }
 
         Ok(())
     }
 
-    /// Seed `runners_entitlement` when the subscription's plan is a Runners-tier
-    /// price. Returns `Ok(true)` when it WAS a Runners price (handled — the caller
-    /// must not also run the cache-tier reconcile), `Ok(false)` when the resolver
-    /// is dormant or the price is not a Runners price (caller falls back to the
-    /// cache path). Status-gated + audit-before-write, mirroring `reconcile_tier`.
+    /// Reconcile `runners_entitlement` when the subscription's plan is a
+    /// Runners-tier price. Returns `Ok(true)` when it WAS a Runners price
+    /// (handled — the caller must not also run the cache-tier reconcile/downgrade),
+    /// `Ok(false)` when the resolver is dormant or the price is not a Runners price
+    /// (caller falls back to the cache path). Status-gated + audit-before-write,
+    /// mirroring `reconcile_tier`.
+    ///
+    /// SYMMETRIC seed/revoke: a granting status (`active`/`trialing`) SEEDS the
+    /// entitlement (`corelink.tenant.runners_entitlement_seeded.v1`); a
+    /// NON-granting status (`past_due`, `unpaid`, `paused`, `canceled`, unknown —
+    /// this includes `customer.subscription.deleted`, whose status is `canceled`)
+    /// REVOKES it (`corelink.tenant.runners_entitlement_revoked.v1`) rather than
+    /// leaving a permanently-granted stale row. The signup-worker is the primary
+    /// authority; this is the container's defense-in-depth convergent write.
     fn reconcile_runners(
         &self,
         env: &StripeWebhookEnvelope,
@@ -403,14 +426,34 @@ impl D1SubscriptionStateHandler {
         let Some(ent) = resolver.resolve(plan_id) else {
             return Ok(false); // not a Runners price → cache-tier path
         };
-        // It IS a Runners-tier price. A non-granting status (past_due, unpaid,
-        // paused, …) must NOT seed the entitlement — same defense-in-depth gate
-        // as the cache tier path. Still "handled" (true) so the caller does not
-        // fall through to the cache reconcile (which would 422 UnknownPlan).
+        // It IS a Runners-tier price ⇒ handled (return Ok(true) either way so the
+        // caller never falls through to the cache reconcile, which would 422
+        // UnknownPlan on a Runners price).
         if !subscription_status_grants_access(status) {
+            // Non-granting status (or a `customer.subscription.deleted`, status
+            // 'canceled'): REVOKE the entitlement symmetrically to the seed so the
+            // container materializer never leaves a stale grant. Audit BEFORE the
+            // state mutation (fail-CLOSED ordering), mirroring the seed emit.
+            self.audit
+                .emit_billing(&BillingAuditRecord {
+                    event_name: "corelink.tenant.runners_entitlement_revoked.v1",
+                    stripe_event_id: env.id.clone(),
+                    stripe_event_type: env.event_type.clone(),
+                    tenant_id: tenant_id.to_string(),
+                    stripe_object_id: None,
+                    severity: AuditSeverity::Notice,
+                    ts_ms: now_ms,
+                    payload: serde_json::json!({
+                        "status": status,
+                    }),
+                })
+                .map_err(audit_to_mat)?;
+            self.d1
+                .delete_runners_entitlement(tenant_id)
+                .map_err(d1_to_mat)?;
             return Ok(true);
         }
-        // Audit BEFORE the state mutation (fail-CLOSED ordering).
+        // Granting status: SEED. Audit BEFORE the state mutation (fail-CLOSED).
         self.audit
             .emit_billing(&BillingAuditRecord {
                 event_name: "corelink.tenant.runners_entitlement_seeded.v1",
@@ -963,6 +1006,146 @@ mod tests {
     }
 
     #[test]
+    fn runners_updated_non_granting_status_revokes_prior_entitlement() {
+        // WP4: a Runners subscription that was granted then goes NON-granting
+        // (e.g. `customer.subscription.updated` status=canceled/past_due/unpaid)
+        // must REVOKE `runners_entitlement` (→ None) and emit
+        // `runners_entitlement_revoked.v1`, symmetric to the seed — never leave a
+        // stale grant.
+        for non_granting in ["canceled", "past_due", "unpaid"] {
+            let (handler, d1, audit) = fixture_with_runners();
+            // Seed first via a granting `active` event.
+            let seed = env(
+                "evt_seed",
+                "customer.subscription.updated",
+                serde_json::json!({
+                    "object": {
+                        "id": "sub_run",
+                        "status": "active",
+                        "metadata": { "tenant_id": "ten_run" },
+                        "plan": { "id": "price_runner_team" }
+                    }
+                }),
+            );
+            handler.on_subscription_updated(&seed).unwrap();
+            assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
+
+            // Now the subscription goes non-granting → revoke.
+            let e = env(
+                "evt_revoke",
+                "customer.subscription.updated",
+                serde_json::json!({
+                    "object": {
+                        "id": "sub_run",
+                        "status": non_granting,
+                        "metadata": { "tenant_id": "ten_run" },
+                        "plan": { "id": "price_runner_team" }
+                    }
+                }),
+            );
+            handler.on_subscription_updated(&e).unwrap();
+            assert_eq!(
+                d1.runners_entitlement_of("ten_run"),
+                None,
+                "status {non_granting} must REVOKE the prior runners_entitlement"
+            );
+            assert_eq!(
+                audit.count_event("corelink.tenant.runners_entitlement_revoked.v1"),
+                1,
+                "status {non_granting} must emit a runners_entitlement_revoked.v1 audit"
+            );
+        }
+    }
+
+    #[test]
+    fn runners_subscription_deleted_revokes_entitlement() {
+        // WP4: a `customer.subscription.deleted` for a Runners-price sub must
+        // route through the runner REVOKE (not the cache-tier downgrade) and
+        // remove `runners_entitlement`.
+        let (handler, d1, audit) = fixture_with_runners();
+        // Seed the entitlement first.
+        let seed = env(
+            "evt_seed",
+            "customer.subscription.updated",
+            serde_json::json!({
+                "object": {
+                    "id": "sub_run",
+                    "status": "active",
+                    "metadata": { "tenant_id": "ten_run" },
+                    "plan": { "id": "price_runner_team" }
+                }
+            }),
+        );
+        handler.on_subscription_updated(&seed).unwrap();
+        assert_eq!(d1.runners_entitlement_of("ten_run"), Some((80, 600)));
+
+        // Now delete the subscription (a Runners-price sub).
+        let del = env(
+            "evt_del",
+            "customer.subscription.deleted",
+            serde_json::json!({
+                "object": {
+                    "id": "sub_run",
+                    "status": "canceled",
+                    "metadata": { "tenant_id": "ten_run" },
+                    "plan": { "id": "price_runner_team" }
+                }
+            }),
+        );
+        handler.on_subscription_deleted(&del).unwrap();
+        assert_eq!(
+            d1.runners_entitlement_of("ten_run"),
+            None,
+            "customer.subscription.deleted for a runner price must revoke the entitlement"
+        );
+        assert_eq!(
+            audit.count_event("corelink.tenant.runners_entitlement_revoked.v1"),
+            1
+        );
+        // Runner-handled ⇒ the cache-tier downgrade path was NOT taken (a runner
+        // price is not a cache tier); the cache tier stays untouched (None).
+        assert_eq!(d1.tier_for("ten_run"), None);
+    }
+
+    #[test]
+    fn cache_subscription_deleted_does_not_touch_runners_entitlement() {
+        // WP4 no-regression: a CACHE-price `customer.subscription.deleted` must
+        // still downgrade the cache tier and must NOT touch runners_entitlement
+        // (nor emit a runner revoke audit). We independently seed a runner
+        // entitlement for the SAME tenant to prove the cache cancel leaves it
+        // intact.
+        let (handler, d1, audit) = fixture_with_runners();
+        d1.upsert_tier("ten_cache", "pro", 1_700_000_000_000, "init")
+            .unwrap();
+        // An unrelated runner grant exists for this tenant.
+        d1.upsert_runners_entitlement("ten_cache", 80, 600, 1_700_000_000_000)
+            .unwrap();
+
+        let del = env(
+            "evt_cache_del",
+            "customer.subscription.deleted",
+            serde_json::json!({
+                "object": {
+                    "id": "sub_cache",
+                    "status": "canceled",
+                    "metadata": { "tenant_id": "ten_cache" },
+                    "plan": { "id": "plan_pro" }
+                }
+            }),
+        );
+        handler.on_subscription_deleted(&del).unwrap();
+        // Cache tier downgraded to free.
+        assert_eq!(d1.tier_for("ten_cache"), Some("free".to_string()));
+        // Runner entitlement UNTOUCHED (no revoke ran on a cache-price cancel).
+        assert_eq!(d1.runners_entitlement_of("ten_cache"), Some((80, 600)));
+        assert_eq!(
+            audit.count_event("corelink.tenant.runners_entitlement_revoked.v1"),
+            0,
+            "a cache-price cancel must NOT emit a runner revoke audit"
+        );
+    }
+
+    #[test]
     fn extract_plan_id_falls_back_to_items_price_id() {
         // F-MP-3: a modern Stripe subscription with NO legacy plan.id but a
         // nested items.data[0].price.id must still resolve (tier + runners).
@@ -1185,6 +1368,9 @@ mod tests {
         ) -> Result<(), BillingD1Error> {
             self.inner
                 .upsert_runners_entitlement(tenant_id, max_concurrency, max_vcpu_h, now_ms)
+        }
+        fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
+            self.inner.delete_runners_entitlement(tenant_id)
         }
     }
 
