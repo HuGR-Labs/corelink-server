@@ -26,33 +26,23 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
-body {
-  background: var(--bg);
-  color: var(--t2);
-  font-family: var(--sans);
-  font-size: 14px;
-  line-height: 1.55;
-  letter-spacing: -0.006em;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
-a { color: inherit; text-decoration: none; }
-::selection { background: rgba(255, 255, 255, 0.15); }
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.09); border-radius: 8px; border: 3px solid var(--bg); }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.16); }
-code, kbd {
-  font-family: var(--mono);
-  font-size: 0.9em;
-  color: var(--t1);
-  background: rgba(255, 255, 255, 0.05);
-  padding: 2px 6px;
-  border-radius: 6px;
-}
-
+/* The dark Linear theme is SCOPED to the customer dashboard (.cx-shell) so the
+   public pages (/, /en/privacy, /en/consent/new, /en/admin/*) keep their own
+   styling and pass Lighthouse a11y contrast. */
 /* ===== shell ===== */
-.cx-shell { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+html:has(.cx-shell) { background: var(--bg); }
+.cx-shell {
+  min-height: 100vh; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--t2);
+  font-family: var(--sans); font-size: 14px; line-height: 1.55; letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+.cx-shell a { color: inherit; text-decoration: none; }
+.cx-shell ::selection { background: rgba(255, 255, 255, 0.15); }
+.cx-shell code, .cx-shell kbd {
+  font-family: var(--mono); font-size: 0.9em; color: var(--t1);
+  background: rgba(255, 255, 255, 0.05); padding: 2px 6px; border-radius: 6px;
+}
 .cx-topbar {
   position: sticky; top: 0; z-index: 30; height: 52px;
   display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
@@ -114,7 +104,7 @@ code, kbd {
 .cx-metric { font-size: 26px; font-weight: 560; color: var(--t1); letter-spacing: -0.02em; }
 
 /* ===== status pills ===== */
-.pill, [data-testid$="-status"] {
+.cx-shell .pill, .cx-shell [data-testid$="-status"] {
   display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 500;
   padding: 2px 9px; border-radius: 20px; letter-spacing: 0.01em;
   background: rgba(255, 255, 255, 0.06); color: var(--t1); border: 1px solid var(--line);
@@ -132,18 +122,18 @@ code, kbd {
 .cx-main tbody tr:hover td { background: rgba(255, 255, 255, 0.015); }
 
 /* ===== buttons ===== */
-.btn, .cx-main button {
+.cx-shell .btn, .cx-main button {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   height: 36px; padding: 0 15px; border-radius: 9px; font-family: var(--sans);
   font-size: 13.5px; font-weight: 560; letter-spacing: 0; cursor: pointer;
   background: #f7f8f8; color: #08090a; border: 1px solid transparent;
   transition: background var(--ease), transform var(--ease), box-shadow var(--ease), border-color var(--ease);
 }
-.btn:hover, .cx-main button:hover { background: #fff; transform: translateY(-1px); }
-.btn-ghost, .cx-main button.ghost {
+.cx-shell .btn:hover, .cx-main button:hover { background: #fff; transform: translateY(-1px); }
+.cx-shell .btn-ghost, .cx-main button.ghost {
   background: rgba(255, 255, 255, 0.05); color: var(--t1); border-color: var(--line-2);
 }
-.btn-ghost:hover, .cx-main button.ghost:hover { background: rgba(255, 255, 255, 0.09); }
+.cx-shell .btn-ghost:hover, .cx-main button.ghost:hover { background: rgba(255, 255, 255, 0.09); }
 
 /* ===== inputs ===== */
 .cx-main input, .cx-main select, .cx-main textarea {
@@ -154,8 +144,8 @@ code, kbd {
 .cx-main input:focus, .cx-main select:focus, .cx-main textarea:focus { border-color: rgba(255, 255, 255, 0.3); }
 
 /* loading / error states */
-[data-testid$="-loading"] { color: var(--t3); font-family: var(--mono); font-size: 13px; }
-[data-testid$="-error"] { color: #e06c6c; font-size: 13.5px; }
+.cx-shell [data-testid$="-loading"] { color: var(--t3); font-family: var(--mono); font-size: 13px; }
+.cx-shell [data-testid$="-error"] { color: #e06c6c; font-size: 13.5px; }
 
 @media (max-width: 720px) {
   .cx-body { grid-template-columns: 1fr; }
