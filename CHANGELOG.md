@@ -142,6 +142,12 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Roll the prod container to re-read the re-bound `CORELINK_DSR_ANCHOR_AUTH_KEY`.**
+  After the b6775c4b rollout, the anchor route still 401'd the dedicated key while the erase key worked — isolating
+  it to a stale anchor-key VALUE the container read at its 01:11 boot (the coordinator re-bound it from the canonical
+  value). Container secrets are read at boot, so a fresh roll is needed. HEAD (11045124) is byte-identical to
+  b6775c4b on the container surface (crates/, Dockerfile, Cargo.lock unchanged — only deploy scripts moved), so
+  building it gives the SAME audited binary under a NEW tag that forces the reboot. Repin all 5 envs to 11045124-r1.
 - **Container-pin freshness gate: resolve the pinned SHA under CI's shallow clone (was fail-closing the deploy).**
   The new gate diffs the pinned image SHA against HEAD, but cf-deploy-prod's deploy job checked out `fetch-depth: 1`,
   so the pinned commit wasn't in history and the gate correctly fail-closed — blocking the (valid) rollout. Set the
