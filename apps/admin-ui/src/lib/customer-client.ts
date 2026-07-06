@@ -13,11 +13,27 @@ import type {
   CustomerAuditEvent,
   CustomerAuditFilter,
   CustomerBilling,
+  CustomerByokConfig,
+  CustomerDollarCeiling,
   CustomerOverview,
   CustomerPat,
+  CustomerRunnerEntitlement,
   CustomerTeamMember,
   CustomerUsage,
+  CustomerWorkspace,
 } from "./customer-types";
+
+/**
+ * Thrown by client methods whose backend endpoint is not wired yet (DATA-TRUTH
+ * `[not-wired]`). Screens catch this and render a teaching EmptyState — they
+ * never fabricate a value. Each carries the backend WP that will close it.
+ */
+export class NotWiredError extends Error {
+  constructor(public readonly backendWp: string) {
+    super(`not wired yet (${backendWp})`);
+    this.name = "NotWiredError";
+  }
+}
 
 export interface CustomerClientOptions {
   baseUrl?: string;
@@ -137,5 +153,40 @@ export class CustomerClient {
       method: "POST",
       body: JSON.stringify(input),
     });
+  }
+
+  /** [live] Remove a member (flips seat to removed AND revokes their PATs). */
+  async removeTeamMember(userId: string): Promise<{ member: CustomerTeamMember; revoked_pats: number }> {
+    return this.request<{ member: CustomerTeamMember; revoked_pats: number }>(
+      `/v1/customer/team/${encodeURIComponent(userId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** [live] GDPR self-erasure of the whole tenant (Clerk-session only; MFA-gated upstream). */
+  async deleteAccount(): Promise<{ request_id: string }> {
+    return this.request<{ request_id: string }>("/v1/customer/account/delete", { method: "POST" });
+  }
+
+  // ── [not-wired] reads — throw NotWiredError so screens teach, never fake. ──
+
+  /** [not-wired → BE-7] Spend controls. */
+  async getDollarCeiling(): Promise<CustomerDollarCeiling> {
+    throw new NotWiredError("BE-7 dollar-ceiling read/update");
+  }
+
+  /** [not-wired → BE-8] BYOK self-serve config (status is on overview/keys; config here). */
+  async getByokConfig(): Promise<CustomerByokConfig> {
+    throw new NotWiredError("BE-8 BYOK self-serve");
+  }
+
+  /** [not-wired → BE-10] Runner entitlement + consumption + repo allowlist. */
+  async getRunnerEntitlement(): Promise<CustomerRunnerEntitlement> {
+    throw new NotWiredError("BE-10 runners entitlement read");
+  }
+
+  /** [not-wired → BE-11] Workspace snapshots. */
+  async listWorkspaces(): Promise<{ workspaces: CustomerWorkspace[] }> {
+    throw new NotWiredError("BE-11 workspaces surface");
   }
 }

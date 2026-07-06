@@ -123,9 +123,11 @@ describe("CustomerNav", () => {
 
   it("generates locale-prefixed hrefs", () => {
     const links = customerNavLinks("pt");
-    expect(links[0]!.href).toBe("/pt/customer");
-    expect(links[1]!.href).toBe("/pt/customer/usage");
-    expect(links[3]!.href).toBe("/pt/customer/billing");
+    const href = (testId: string): string | undefined =>
+      links.find((l) => l.testId === testId)?.href;
+    expect(href("nav-overview")).toBe("/pt/customer");
+    expect(href("nav-usage")).toBe("/pt/customer/usage");
+    expect(href("nav-billing")).toBe("/pt/customer/billing");
   });
 
   it("sets data-active=true on the active link", () => {
