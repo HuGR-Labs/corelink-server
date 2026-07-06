@@ -208,6 +208,10 @@ html:has(.cx-shell) { background: var(--bg); }
 .lin-card__meta { font-size: 12px; color: var(--t3); margin-top: 2px; }
 .lin-card__actions { display: flex; align-items: center; gap: var(--s2); flex-shrink: 0; }
 
+/* --- spacing: vertical rhythm between stacked kit blocks (cards/sections) --- */
+.lin-mt { margin-top: var(--s4); }
+.lin-mt-lg { margin-top: var(--s6); }
+
 /* --- Button --- */
 .lin-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);

@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Customer dashboard — remaining 7 screens rebuilt on the Linear kit (W1/W2/W5/W7/W8/W9/W10).**
+  Completes the dashboard rebuild: Home (activation checklist + ROI hero + snapshot), Connect-a-tool
+  (per-surface copy-paste config via SnippetTabs, token always an env-var — never inline `--pat`),
+  Audit (filters + pagination + human event labels + a real error state + a teaching callout for the
+  cryptographic chain verifier), Plan & billing (two-axis plan card, ONE portal + ONE upgrade — the
+  redundant controls removed, enums humanized), Trust & compliance (BYOK status + DSR link + teaching
+  BYOK/residency states), Settings (spend-cap teaching state + danger-zone account deletion behind a
+  confirm), Runners (value-prop + wired GitHub-App install + teaching entitlement), Workspaces (value-
+  prop + teaching snapshot state). Every not-yet-wired field renders a teaching empty-state, never a
+  fabricated number. Kit-only, a11y; typecheck + lint + build + suite (437/437) green. Also adds the
+  `.lin-mt` spacing utility to the kit.
 - **Customer dashboard — Tokens, Usage & Team screens rebuilt on the Linear kit (W3/W4/W6).**
   First screen wave on the W0 foundation. Tokens: mint via `PatModal` (copy + shown-once, no plaintext
   dump), scopes explained with HelpPopovers, revoke behind a ConfirmDialog, teaching empty-state. Usage:

@@ -1,16 +1,24 @@
-// /[locale]/customer — self-serve overview (usage + audit + billing + activity).
+// /[locale]/customer — Home: onboarding checklist + live snapshot + ROI hero (W1).
 
 import React from "react";
 import CustomerGuard from "@/components/customer/CustomerGuard";
-import OverviewClient from "@/components/customer/OverviewClient";
+import HomeClient from "@/components/customer/HomeClient";
+import type { Locale } from "@/i18n/LocaleContext";
 
-export default function CustomerOverviewPage(): React.ReactElement {
+interface PageProps {
+  params: Promise<{ locale: Locale }>;
+}
+
+export default async function CustomerHomePage({
+  params,
+}: PageProps): Promise<React.ReactElement> {
+  const { locale } = await params;
   return (
     <CustomerGuard>
       <main aria-labelledby="customer-overview-heading">
         <h1 id="customer-overview-heading">Overview</h1>
         <p>Snapshot of your tenant: usage, billing, BYOK status, and recent activity.</p>
-        <OverviewClient />
+        <HomeClient locale={locale} />
       </main>
     </CustomerGuard>
   );
