@@ -128,7 +128,7 @@ aws-sdk-kms = { workspace = true }
 # GCP production deps — gated by `production-gcp` (or transitively
 # by the public `gcp` namespace feature). Without `production-gcp`,
 # `byok_gcp::real::*` falls back to the mock stub.
-jsonwebtoken = { version = "9.3", optional = true }
+jsonwebtoken = { version = "10.4", optional = true }
 
 # ── wasm32 enablement (R-prep BYOK unblock 2026-05-15) ────────────────────
 # `getrandom` 0.2 fails to compile on `wasm32-unknown-unknown` unless the
