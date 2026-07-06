@@ -17,7 +17,7 @@
 
 import React from "react";
 import { useAuth } from "@clerk/nextjs";
-import { CustomerClient, NotWiredError } from "@/lib/customer-client";
+import { CustomerClient } from "@/lib/customer-client";
 import type { CustomerUsage } from "@/lib/customer-types";
 import {
   Card,
@@ -63,22 +63,10 @@ export function UsageClient(): React.ReactElement {
     };
   }, [client, reloadKey]);
 
-  // $-ceiling is [not-wired] (BE-7). We probe defensively so the teaching state
-  // reflects reality; whatever happens we NEVER render a fabricated value.
-  const dollarCeilingWp = React.useMemo(() => {
-    try {
-      const probe = (client as { getDollarCeiling?: () => Promise<unknown> }).getDollarCeiling;
-      if (typeof probe === "function") {
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        probe.call(client).catch(() => {
-          /* NotWiredError expected — swallowed; the teaching state covers it */
-        });
-      }
-    } catch (e) {
-      if (e instanceof NotWiredError) return e.message;
-    }
-    return "BE-7 dollar-ceiling read/update";
-  }, [client]);
+  // $-ceiling is [not-wired] (BE-7): the client method throws NotWiredError by
+  // contract, so there is nothing to probe — we render the teaching state and
+  // NEVER a fabricated value. (Wire the real read here when BE-7 lands.)
+  const dollarCeilingWp = "BE-7 dollar-ceiling read/update";
 
   if (err) {
     return (
