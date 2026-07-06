@@ -142,6 +142,10 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Container-pin freshness gate: resolve the pinned SHA under CI's shallow clone (was fail-closing the deploy).**
+  The new gate diffs the pinned image SHA against HEAD, but cf-deploy-prod's deploy job checked out `fetch-depth: 1`,
+  so the pinned commit wasn't in history and the gate correctly fail-closed — blocking the (valid) rollout. Set the
+  deploy job to `fetch-depth: 0` and made the gate self-heal via a targeted `git fetch <sha>` before failing.
 - **Repin the prod container to current main + add a stale-pin deploy gate (2026-07-05 incident: container was 109 commits stale).**
   The `wrangler.toml` `[[env.*.containers]]` image sat pinned at `c1337115` (PR #594) for 109 commits while every
   `cf-deploy-prod` "converged" (running image == pinned image, both stale) and reported success — so the entire

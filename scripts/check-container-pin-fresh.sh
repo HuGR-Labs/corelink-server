@@ -35,7 +35,17 @@ fi
 HEAD_SHA="$(git rev-parse --short HEAD)"
 
 if ! git rev-parse -q --verify "${PIN}^{commit}" >/dev/null 2>&1; then
-    echo "::error::check-container-pin-fresh: pinned container SHA '${PIN}' is not a commit in this repo (shallow clone? unpushed pin?). Cannot verify freshness." >&2
+    # A shallow clone (CI default is depth-1) won't have the pinned commit even though
+    # it IS an ancestor of HEAD on the remote. Self-heal with a targeted fetch (the pin
+    # is reachable from a ref, so GitHub allows fetch-by-SHA), then fall back to
+    # unshallowing. Only if the commit is genuinely unresolvable do we fail-closed.
+    echo "check-container-pin-fresh: pin ${PIN} not in local history; fetching…" >&2
+    git fetch --quiet origin "${PIN}" 2>/dev/null \
+        || git fetch --quiet --unshallow origin 2>/dev/null \
+        || git fetch --quiet --deepen=200 origin 2>/dev/null || true
+fi
+if ! git rev-parse -q --verify "${PIN}^{commit}" >/dev/null 2>&1; then
+    echo "::error::check-container-pin-fresh: pinned container SHA '${PIN}' is not resolvable even after a fetch (garbage pin, or a pin pointing at an unpushed commit). Cannot verify freshness — failing closed." >&2
     exit 2
 fi
 
