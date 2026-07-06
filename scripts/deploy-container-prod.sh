@@ -135,6 +135,18 @@ log "  image tag:    $PINNED_TAG"
 log "Wrangler:       $WRANGLER"
 log "Convergence:    poll ${POLL_INTERVAL_S}s, grace ${GRACE_PER_DEPLOY_S}s/deploy, total ${TIMEOUT_S}s, max $MAX_REDEPLOYS deploy(s)"
 
+# ── Root-cause guard (2026-07-05 stale-pin incident) ──────────────────────────
+# A stale pin "converges" happily (running == pinned == stale) and silently ships
+# a container BEHIND main — that is exactly how the container sat at c1337115
+# (#594) for 109 commits. FAIL before deploying if the pinned SHA is behind
+# current container code. Override only for a deliberate rollback to an old image.
+if [ "${SKIP_PIN_FRESHNESS:-0}" != "1" ]; then
+    log "Container-pin freshness gate (set SKIP_PIN_FRESHNESS=1 to override for a rollback)…"
+    if ! bash "$(dirname "$0")/check-container-pin-fresh.sh"; then
+        die "container pin is STALE (see error above). Rebuild via container-build-push-prod.yml + repin wrangler.toml to HEAD before deploying."
+    fi
+fi
+
 # ── Query the running application image via the CF Containers applications API ─
 # GET /accounts/{acct}/containers/applications → result[] each has a
 # configuration.image. We match the application whose image NAME component equals
