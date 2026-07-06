@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-config-do/src/lib.rs"
   - "crates/corelink-config-do/src/types.rs"
   - "crates/corelink-container/src/storage/d1_http.rs"
-checkpoint_sha: "175a91320376cd80ada9797944e118ec1ff81c63"
+checkpoint_sha: "7029d1c3efc3a7f47a6e549a42d338046aacce83"
 provenance: "AUTHORED"
 tags: ["storage", "d1", "config-db", "control-plane", "tenant-isolation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -38,8 +38,9 @@ the [billing quota check](/flows/billing-quota-check.md).
 2. The client builds its query URL from the account id + database id and carries the CF API token as a
    bearer (`crates/corelink-container/src/storage/d1_http.rs:90-103`).
 3. `D1CustomerHandler` serves dashboard data from deployed tables (`tenant`, `tenant_storage_state`,
-   `tenant_billing`, `tier_selections`, `pat`, and `customer_audit_events` for the audit log — migration
-   0077) — real where a table exists, honest empty/501 where it does not
+   `tenant_billing`, `tier_selections`, `pat`, and `customer_audit_events` — migration 0077 — which now
+   backs BOTH the audit log AND the overview's `recent_activity` feed since BE-3) — real where a table
+   exists, honest empty/501 where it does not
    (`crates/corelink-container/src/customer_d1.rs:1-25`).
 4. Each sync handler call bridges to the async D1 client through `block_in_place` +
    `Handle::current().block_on`, valid because the native server is multi-thread `#[tokio::main]`
@@ -71,7 +72,7 @@ the [billing quota check](/flows/billing-quota-check.md).
   D1 surfaces; the former is per-region DO-transactional config, the latter is the tenant control-plane.
 
 # Citations
-1. `crates/corelink-container/src/customer_d1.rs:1-25` — D1-backed customer handler + deployed-table source-of-truth matrix.
+1. `crates/corelink-container/src/customer_d1.rs:1-25` — D1-backed customer handler + deployed-table source-of-truth matrix (incl. the BE-3 `recent_activity` = `customer_audit_events` overview row).
 2. `crates/corelink-container/src/customer_d1.rs:26-39` — the sync↔async `block_in_place` D1 bridge.
 3. `crates/corelink-container/src/customer_d1.rs:46-48` — fail-CLOSED on D1 transport error (→ 500, never fabricated data).
 4. `crates/corelink-container/src/customer_d1.rs:48-51` — parameterised, tenant-scoped SQL (`WHERE tenant_id = ?`).

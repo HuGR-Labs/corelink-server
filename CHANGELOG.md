@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Customer overview — `recent_activity` feed now real (BE-3).**
+  The `/v1/customer/overview` snapshot's `recent_activity` was an honest hard-coded empty (`[]`); it now
+  reads the newest 8 `customer_audit_events` (migration 0077) — the same tenant-scoped, newest-first
+  surface the audit endpoint serves (written best-effort by `keys create` → `pat.created` and
+  `team invite` → `team.invited`) — via a new `D1CustomerHandler::recent_activity` helper. Fail-closed on
+  transport, honestly empty for a brand-new tenant (never a fabricated row). Lights up the Home + Overview
+  activity feeds. First of the customer-dashboard backend backlog (BE-1..11) closing the honest v1 stubs.
 - **Customer dashboard — remaining 7 screens rebuilt on the Linear kit (W1/W2/W5/W7/W8/W9/W10).**
   Completes the dashboard rebuild: Home (activation checklist + ROI hero + snapshot), Connect-a-tool
   (per-surface copy-paste config via SnippetTabs, token always an env-var — never inline `--pat`),

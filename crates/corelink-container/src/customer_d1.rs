@@ -12,7 +12,7 @@
 //!
 //! | Endpoint            | Source of truth                                            |
 //! |---------------------|------------------------------------------------------------|
-//! | overview            | `tenant` (0023/0031/0056/0057) + `tenant_storage_state` (0008) `SUM(bytes_used)` / `MAX(bytes_quota)` + `tenant_billing` (0055) + `byok_envelope` (0030) existence; `tenant_name` = `tenant_id`; `recent_activity` = `[]` (no suitable table) |
+//! | overview            | `tenant` (0023/0031/0056/0057) + `tenant_storage_state` (0008) `SUM(bytes_used)` / `MAX(bytes_quota)` + `tenant_billing` (0055) + `byok_envelope` (0030) existence; `tenant_name` = `tenant_id`; `recent_activity` = newest 8 `customer_audit_events` (0077) via [`D1CustomerHandler::recent_activity`] (BE-3), honestly empty for a new tenant |
 //! | usage               | real `cas_bytes`/`quota_bytes` from `tenant_storage_state`; `reads`/`writes` = 0 + `daily` = `[]` (no per-day table) — only the CURRENT period is retained, an earlier period honestly reports 0 bytes |
 //! | audit               | `customer_audit_events` (migration 0077): newest-first, tenant-scoped, bounded; rows written best-effort by `keys create` (`pat.created`) + `team invite` (`team.invited`) |
 //! | billing             | `tenant_billing` (0055) + `tier_selections` (0039/0062); status map FROZEN (see [`map_billing_status`]); `invoices` = `[]` (no invoice-history surface yet) |
@@ -751,6 +751,41 @@ impl D1CustomerHandler {
             .unwrap_or_else(|| "active".to_owned());
         Ok(ByokStatus::new(status, None, None))
     }
+
+    /// Newest-first customer activity for the overview snapshot (dashboard-revival
+    /// BE-3). Reads the same `customer_audit_events` (0077) surface the audit
+    /// endpoint serves — written best-effort by the control-plane mutations
+    /// (`keys create` → `pat.created`, `team invite` → `team.invited`) — bounded
+    /// to `limit`, tenant-scoped, newest-first. Fail-CLOSED on transport (never a
+    /// fabricated row; an honestly-empty feed stays empty).
+    fn recent_activity(
+        &self,
+        tenant_id: &str,
+        limit: i64,
+    ) -> Result<Vec<CustomerAuditEventRow>, CustomerHandlerError> {
+        let rows = self.run(
+            "SELECT id, event_type, actor, target, ts_ms, detail \
+             FROM customer_audit_events WHERE tenant_id = ?1 \
+             ORDER BY ts_ms DESC LIMIT ?2",
+            vec![json!(tenant_id), json!(limit)],
+        )?;
+        Ok(rows
+            .iter()
+            .map(|row| {
+                CustomerAuditEventRow::new(
+                    col_opt_i64(row, "id")
+                        .map(|i| i.to_string())
+                        .unwrap_or_default(),
+                    col_opt_i64(row, "ts_ms").map(ms_to_iso8601).unwrap_or_default(),
+                    col_opt_str(row, "event_type").unwrap_or_default(),
+                    // No per-event severity column — informational activity only.
+                    "info",
+                    col_opt_str(row, "actor").unwrap_or_default(),
+                    col_opt_str(row, "detail").unwrap_or_default(),
+                )
+            })
+            .collect())
+    }
 }
 
 // ─── Trait impls ──────────────────────────────────────────────────────────────
@@ -771,6 +806,9 @@ impl CustomerOverviewHandler for D1CustomerHandler {
         let (cas_bytes, quota_bytes) = self.storage_usage(&req.caller_tenant)?;
         let billing = self.billing_row(&req.caller_tenant)?;
         let byok = self.byok_status(&req.caller_tenant, Some(&tenant))?;
+        // BE-3: the newest few control-plane events for the snapshot feed
+        // (honestly empty for a brand-new tenant — never a fabricated row).
+        let recent = self.recent_activity(&req.caller_tenant, 8)?;
 
         let plan = col_opt_str(&tenant, "tier").unwrap_or_else(|| "free".to_owned());
         let next_invoice_at = billing
@@ -802,8 +840,7 @@ impl CustomerOverviewHandler for D1CustomerHandler {
             // amount_due_cents is not materialized in D1: honest 0.
             OverviewBilling::new(billing_status, next_invoice_at, 0, "usd"),
             byok,
-            // No customer-facing activity table yet: honest empty.
-            Vec::<CustomerAuditEventRow>::new(),
+            recent,
         );
 
         self.emit_audit(
@@ -2062,7 +2099,7 @@ mod tests {
         assert_eq!(resp.byok.status, "none", "no envelope row → none");
         assert!(
             resp.recent_activity.is_empty(),
-            "no activity table: honest []"
+            "no seeded customer_audit_events → honestly empty feed (BE-3)"
         );
         // Audit ordering: Attempted then Served.
         let kinds: Vec<_> = f.audit.snapshot().unwrap().iter().map(|e| e.kind).collect();
@@ -2076,6 +2113,56 @@ mod tests {
         // SLI emitted, success.
         let obs = f.sli.snapshot().unwrap();
         assert!(obs.iter().any(|o| !o.is_error));
+    }
+
+    #[test]
+    fn overview_recent_activity_reads_seeded_audit_events() {
+        // BE-3: the overview snapshot feed reads the same `customer_audit_events`
+        // (0077) surface the audit endpoint serves — newest-first, mapped to
+        // `CustomerAuditEventRow`, `severity` = constant `info`. A seeded event
+        // surfaces on the snapshot; it is NOT fabricated and NOT hard-empty.
+        let f = fixture_with(
+            MockD1::with(vec![
+                ("FROM tenant WHERE", vec![tenant_row_fixture()]),
+                (
+                    "FROM tenant_storage_state",
+                    vec![row(&[
+                        ("bytes_used", json!(1_i64)),
+                        ("bytes_quota", json!(10_000_000_i64)),
+                    ])],
+                ),
+                (
+                    "FROM customer_audit_events",
+                    vec![row(&[
+                        ("id", json!(7)),
+                        ("event_type", json!("pat.created")),
+                        ("actor", json!("clpat_admin")),
+                        ("target", json!("pat-7")),
+                        ("ts_ms", json!(1_700_000_000_000_i64)),
+                        ("detail", json!("Created API key \"ci\" (read-only)")),
+                    ])],
+                ),
+            ]),
+            None,
+        );
+        let resp = f
+            .handler
+            .overview(OverviewRequest::new(TENANT, "clpat_x", 0))
+            .unwrap();
+        assert_eq!(
+            resp.recent_activity.len(),
+            1,
+            "seeded customer_audit_events row surfaces on the snapshot (BE-3)"
+        );
+        assert_eq!(resp.recent_activity[0].event_id, "7");
+        assert_eq!(resp.recent_activity[0].event_type, "pat.created");
+        assert_eq!(resp.recent_activity[0].severity, "info");
+        assert_eq!(resp.recent_activity[0].actor, "clpat_admin");
+        assert!(
+            resp.recent_activity[0].ts.ends_with('Z'),
+            "ISO-8601 ts: {}",
+            resp.recent_activity[0].ts
+        );
     }
 
     #[test]
