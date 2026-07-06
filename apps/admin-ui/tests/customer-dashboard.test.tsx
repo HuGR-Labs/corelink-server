@@ -473,7 +473,12 @@ describe("KeysClient", () => {
     render(<KeysClient />);
     await waitFor(() => expect(screen.getByTestId("keys-revoke-pat_001")).toBeInTheDocument());
 
+    // Revoke is behind a ConfirmDialog (destructive-action guard). Clicking the
+    // row button opens the dialog; the actual revoke fires from the confirm button.
     fireEvent.click(screen.getByTestId("keys-revoke-pat_001"));
+    const confirmBtn = await screen.findByRole("button", { name: "Revoke token" });
+    fireEvent.click(confirmBtn);
+
     await waitFor(() =>
       expect(screen.getByTestId("keys-status-pat_001")).toHaveTextContent("revoked"),
     );

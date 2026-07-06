@@ -8,8 +8,11 @@ export default function CustomerUsagePage(): React.ReactElement {
   return (
     <CustomerGuard>
       <main aria-labelledby="customer-usage-heading">
-        <h1 id="customer-usage-heading">Usage</h1>
-        <p>CAS storage consumption, request counts, and daily breakdown for this period.</p>
+        <h1 id="customer-usage-heading">Usage &amp; savings</h1>
+        <p>
+          Your storage cap, request usage, and the ROI your cache is earning — hit
+          rate, build time saved, and dollars saved as your cache warms up.
+        </p>
         <UsageClient />
       </main>
     </CustomerGuard>
