@@ -142,6 +142,11 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Re-roll the container (204c4832-r1) to boot with the re-bound canonical DSR anchor key.**
+  The 11045124 roll may have preceded the coordinator's re-bind of CORELINK_DSR_ANCHOR_AUTH_KEY, so the running
+  container held a pre-re-bind value (erase key authed, anchor 401'd). Container env is read at boot; 204c4832 is
+  byte-identical to 11045124 on the container surface, so this is the same audited binary under a forward tag that
+  forces a fresh post-re-bind boot.
 - **Roll the prod container to re-read the re-bound `CORELINK_DSR_ANCHOR_AUTH_KEY`.**
   After the b6775c4b rollout, the anchor route still 401'd the dedicated key while the erase key worked — isolating
   it to a stale anchor-key VALUE the container read at its 01:11 boot (the coordinator re-bound it from the canonical
