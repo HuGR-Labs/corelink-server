@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Customer dashboard — Linear design-system foundation (W0 scaffold).**
+  The self-serve customer dashboard is being rebuilt to the Linear design doctrine (monochrome,
+  a11y-validated tokens, glass cards, refined type). This W0 lands the frozen contract every screen
+  consumes: the token constitution + Linear primitive kit (`components/ui/linear/*` — Card, Stat,
+  Gauge, CopyField, SnippetTabs, HelpPopover, ConfirmDialog, EmptyState, Skeleton, InlineError,
+  CommandPalette ⌘K, AccountMenu, ThemeToggle, …), the grouped job-based navigation, the shell chrome,
+  extended `customer-types`/`customer-client` (incl. `removeTeamMember`, `deleteAccount`, and
+  `NotWiredError` stubs that make screens teach rather than fabricate a metric), and route stubs so the
+  nav resolves. Screen rebuilds (W1–W10) + the backend backlog closing the honest stubs (reads/writes,
+  hit-rate, invoices, …) follow. Plan: `docs/design/2026-07-06-customer-dashboard-{ux-plan,BUILD-WAVE}.md`.
 - **`POST /_internal/dsr/anchor` — per-user DSR legitimacy-anchor register seam (GDPR1 erasure path).**
   The CAS physical-erase seam (`/_internal/cas/:tenant/:hash/erase`) authorises a per-digest delete only if a
   `dsr_requested` legitimacy row exists for `(dsr_id, tenant)`. The two existing writers of that anchor are both
