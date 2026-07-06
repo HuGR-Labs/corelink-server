@@ -2,7 +2,21 @@
 
 import { useEffect, useState } from "react";
 
-const STORAGE_KEY = "corelink-theme";
+// Persisted via cookie, NOT web storage: admin-ui forbids client-side storage
+// writes app-wide (privacy posture, enforced by the onboarding source guard). A
+// cookie is also SSR-readable, so the server can set the initial `.light` class
+// and avoid a flash-of-wrong-theme later.
+const THEME_COOKIE = "corelink-theme";
+
+function readThemeCookie(): "light" | "dark" | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(/(?:^|;\s*)corelink-theme=(light|dark)/);
+  return m ? (m[1] as "light" | "dark") : null;
+}
+
+function writeThemeCookie(theme: "light" | "dark"): void {
+  document.cookie = `${THEME_COOKIE}=${theme}; path=/; max-age=31536000; SameSite=Lax`;
+}
 
 function SunIcon() {
   return (
@@ -45,8 +59,7 @@ export function ThemeToggle() {
   const [light, setLight] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    const isLight = stored === "light";
+    const isLight = readThemeCookie() === "light";
     setLight(isLight);
     document.documentElement.classList.toggle("light", isLight);
   }, []);
@@ -55,7 +68,7 @@ export function ThemeToggle() {
     setLight((prev) => {
       const next = !prev;
       document.documentElement.classList.toggle("light", next);
-      localStorage.setItem(STORAGE_KEY, next ? "light" : "dark");
+      writeThemeCookie(next ? "light" : "dark");
       return next;
     });
   };
