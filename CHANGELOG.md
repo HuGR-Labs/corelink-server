@@ -142,6 +142,15 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Repin the prod container to current main + add a stale-pin deploy gate (2026-07-05 incident: container was 109 commits stale).**
+  The `wrangler.toml` `[[env.*.containers]]` image sat pinned at `c1337115` (PR #594) for 109 commits while every
+  `cf-deploy-prod` "converged" (running image == pinned image, both stale) and reported success — so the entire
+  container-side cutover (runner purchase, the GDPR `/_internal/dsr/anchor` route, the Bazel/audit fixes) never
+  actually shipped (Worker/signup-worker deploys don't use the container pin, so only the container silently froze;
+  the `/_internal/*` `401`s that read as "route mounted" were a generic gate). Repinned all 5 envs to `b6775c4b`
+  and added `scripts/check-container-pin-fresh.sh`, wired into `deploy-container-prod.sh`, which FAILS the deploy if
+  container-affecting code (`crates/`, `Dockerfile`, `Cargo.lock`) changed since the pinned SHA — so a stale pin can
+  never silently ship again.
 - **Forward `CORELINK_DSR_ANCHOR_AUTH_KEY` from the DO to the container (fixes the #634 anchor route 401ing every call).**
   #634 added the `/_internal/dsr/anchor` route + its dedicated consumer key, but the Durable Object env bridge
   (`worker/src/durable_object.ts`) forwards each per-consumer key explicitly and never forwarded the new one — so the
