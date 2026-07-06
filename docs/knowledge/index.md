@@ -11,7 +11,7 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 157**
+**Concepts: 158**
 
 ## planes
 
@@ -208,4 +208,4 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [Money-path: checkout + billing ingest](/launch/money-path.md)
 - [Signup -> tenant onboarding flow](/launch/signup-onboarding.md)
 - [Stripe activation webhook — the money-path activation half](/launch/stripe-activation-webhook.md)
-- [The 6-tier model & DPA-first tier-select checkout](/launch/tier-model.md)
+- [The tier model (6 cache + 5 runner) & DPA-first tier-select checkout](/launch/tier-model.md)
