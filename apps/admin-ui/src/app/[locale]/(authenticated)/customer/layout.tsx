@@ -20,15 +20,22 @@ export default async function CustomerLayout({
 }: LayoutProps): Promise<React.ReactElement> {
   const { locale } = await params;
   return (
-    <div data-testid="customer-shell" className="customer-shell">
-      <header data-testid="customer-header">
-        <strong>CoreLink — Tenant dashboard</strong>
+    <div data-testid="customer-shell" className="cx-shell">
+      <header data-testid="customer-header" className="cx-topbar">
+        <div className="cx-brand">
+          <b>CoreLink</b>
+          <span className="sep">/</span>
+          <span className="muted">Dashboard</span>
+        </div>
+        <div className="cx-topbar-right">
+          <a href="https://humangr.com/">humangr.com</a>
+        </div>
       </header>
-      <div style={{ display: "flex", gap: "1.5rem" }}>
-        <aside style={{ minWidth: 200 }}>
+      <div className="cx-body">
+        <aside className="cx-sidebar">
           <CustomerNav locale={locale} />
         </aside>
-        <section style={{ flex: 1 }}>{children}</section>
+        <div className="cx-main">{children}</div>
       </div>
     </div>
   );

@@ -142,6 +142,13 @@ Each entry cross-references:
   tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
 
 ### Fixed
+- **Customer dashboard was rendering unstyled (raw text); reformulated it in the Linear design language.**
+  `apps/admin-ui/src/app/globals.css` only had `@import "tailwindcss"` and the customer pages used semantic markup
+  with undefined `customer-shell` classes / inline styles → the post-login dashboard showed loose text. Built a
+  dark, monochrome, glass-card design system (matching humangr.com) in globals.css and gave the shell a proper
+  top-bar + sticky sidebar (`layout.tsx`); the sidebar active state now resolves from `usePathname` (`CustomerNav`).
+  Cards, tables, buttons, inputs, pills and typography are styled generically so every customer page (overview,
+  usage, audit, billing, keys, team) is coherent.
 - **Re-roll the container (204c4832-r1) to boot with the re-bound canonical DSR anchor key.**
   The 11045124 roll may have preceded the coordinator's re-bind of CORELINK_DSR_ANCHOR_AUTH_KEY, so the running
   container held a pre-re-bind value (erase key authed, anchor 401'd). Container env is read at boot; 204c4832 is

@@ -5,6 +5,7 @@
 "use client";
 
 import React from "react";
+import { usePathname } from "next/navigation";
 
 export interface CustomerNavLink {
   href: string;
@@ -29,6 +30,8 @@ export interface CustomerNavProps {
 }
 
 export function CustomerNav({ locale, activeHref }: CustomerNavProps): React.ReactElement {
+  const pathname = usePathname();
+  const active = activeHref ?? pathname ?? "";
   const links = customerNavLinks(locale);
   return (
     <nav aria-label="Customer dashboard" data-testid="customer-nav">
@@ -38,7 +41,7 @@ export function CustomerNav({ locale, activeHref }: CustomerNavProps): React.Rea
             <a
               href={l.href}
               data-testid={l.testId}
-              data-active={activeHref === l.href ? "true" : "false"}
+              data-active={active === l.href ? "true" : "false"}
             >
               {l.label}
             </a>
