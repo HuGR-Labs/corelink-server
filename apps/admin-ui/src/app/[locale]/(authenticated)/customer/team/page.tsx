@@ -9,7 +9,10 @@ export default function CustomerTeamPage(): React.ReactElement {
     <CustomerGuard>
       <main aria-labelledby="customer-team-heading">
         <h1 id="customer-team-heading">Team</h1>
-        <p>Members of this tenant and their role assignments. RBAC enforced server-side.</p>
+        <p>
+          Invite teammates, see who has access, and understand what each role can do. Removing a
+          member also revokes their tokens. Roles are enforced server-side (RBAC).
+        </p>
         <TeamClient />
       </main>
     </CustomerGuard>

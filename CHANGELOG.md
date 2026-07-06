@@ -23,6 +23,12 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Customer dashboard — Tokens, Usage & Team screens rebuilt on the Linear kit (W3/W4/W6).**
+  First screen wave on the W0 foundation. Tokens: mint via `PatModal` (copy + shown-once, no plaintext
+  dump), scopes explained with HelpPopovers, revoke behind a ConfirmDialog, teaching empty-state. Usage:
+  quota gauges + honest teaching empty-states for every not-yet-metered field (reads/writes/daily/hit-rate/
+  $-ceiling) — never a fabricated `0`. Team: role permissions explained, member removal wired (backend
+  `removeTeamMember`) behind a "revokes N tokens" confirm, invite flow. Kit-only, a11y, typecheck + suite green.
 - **Customer dashboard — Linear design-system foundation (W0 scaffold).**
   The self-serve customer dashboard is being rebuilt to the Linear design doctrine (monochrome,
   a11y-validated tokens, glass cards, refined type). This W0 lands the frozen contract every screen
