@@ -366,11 +366,13 @@ describe("BillingClient", () => {
 
     render(<BillingClient />);
     await waitFor(() => expect(screen.getByTestId("billing-shell")).toBeInTheDocument());
-    expect(screen.getByTestId("billing-plan")).toHaveTextContent("team");
-    expect(screen.getByTestId("billing-status")).toHaveTextContent("active");
+    // Enums are humanized — never the raw wire value.
+    expect(screen.getByTestId("billing-plan")).toHaveTextContent("Team");
+    expect(screen.getByTestId("billing-status")).toHaveTextContent("Active");
     expect(screen.getByTestId("billing-amount-due")).toHaveTextContent("$199.00");
-    expect(screen.getByTestId("billing-brand")).toHaveTextContent("visa");
-    expect(screen.getByTestId("billing-last4")).toHaveTextContent("4242");
+    // Payment method is a [stub] field — surfaced as "managed in the Stripe
+    // portal", never a fabricated card (no brand/last4 emitted in prod).
+    expect(screen.getByTestId("billing-pm-managed")).toHaveTextContent(/Stripe portal/i);
   });
 
   it("renders invoice list", async () => {
@@ -380,12 +382,31 @@ describe("BillingClient", () => {
     await waitFor(() => expect(screen.getByTestId("billing-invoice-inv_001")).toBeInTheDocument());
   });
 
-  it("shows upgrade section for free plan", async () => {
+  it("shows the single upgrade path for free plan (and no portal button)", async () => {
     const freeBilling: CustomerBilling = { ...BILLING_FIXTURE, plan: "free", payment_method: undefined };
     customerClientMock.getBilling.mockResolvedValue(freeBilling);
 
     render(<BillingClient />);
     await waitFor(() => expect(screen.getByTestId("billing-upgrade-section")).toBeInTheDocument());
+    // Free tier: upgrade path present; portal button absent (nothing to manage).
+    expect(screen.queryByTestId("billing-portal-btn")).not.toBeInTheDocument();
+  });
+
+  it("renders exactly ONE portal button for a paying tenant (redundancy removed)", async () => {
+    customerClientMock.getBilling.mockResolvedValue(BILLING_FIXTURE);
+
+    render(<BillingClient />);
+    await waitFor(() => expect(screen.getByTestId("billing-shell")).toBeInTheDocument());
+    expect(screen.getAllByTestId("billing-portal-btn")).toHaveLength(1);
+  });
+
+  it("shows a teaching empty state when there are no invoices (never fabricated)", async () => {
+    const noInvoices: CustomerBilling = { ...BILLING_FIXTURE, invoices: [] };
+    customerClientMock.getBilling.mockResolvedValue(noInvoices);
+
+    render(<BillingClient />);
+    await waitFor(() => expect(screen.getByTestId("billing-invoices-empty")).toBeInTheDocument());
+    expect(screen.getByTestId("billing-invoices-empty")).toHaveTextContent(/after your first payment/i);
   });
 
   it("surfaces error on getBilling failure", async () => {
