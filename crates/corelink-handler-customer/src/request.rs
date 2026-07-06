@@ -290,6 +290,11 @@ pub struct UsageResponse {
     pub reads: u64,
     /// Total CAS writes this period.
     pub writes: u64,
+    /// Total billable requests this period, from `monthly_request_counts`
+    /// (migration 0071) — the running counter the quota gate already increments
+    /// per request. Compared against the tier's `requestsPerMonthMax` on the
+    /// client for a usage-vs-quota gauge. `0` when no counter row exists yet.
+    pub request_count: u64,
     /// Quota ceiling in bytes.
     pub quota_bytes: u64,
     /// Daily breakdown.
@@ -306,12 +311,14 @@ impl UsageResponse {
         writes: u64,
         quota_bytes: u64,
         daily: Vec<DailyUsageBucket>,
+        request_count: u64,
     ) -> Self {
         Self {
             period: period.into(),
             cas_bytes,
             reads,
             writes,
+            request_count,
             quota_bytes,
             daily,
         }

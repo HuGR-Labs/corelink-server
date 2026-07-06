@@ -502,11 +502,12 @@ async fn handle_usage(
     match state.usage.usage(req) {
         Ok(resp) => {
             let body: Value = json!({
-                "period":      resp.period,
-                "cas_bytes":   resp.cas_bytes,
-                "reads":       resp.reads,
-                "writes":      resp.writes,
-                "quota_bytes": resp.quota_bytes,
+                "period":        resp.period,
+                "cas_bytes":     resp.cas_bytes,
+                "reads":         resp.reads,
+                "writes":        resp.writes,
+                "request_count": resp.request_count,
+                "quota_bytes":   resp.quota_bytes,
                 "daily": resp.daily.iter().map(|d| json!({
                     "day":       d.day,
                     "reads":     d.reads,
@@ -1407,7 +1408,7 @@ mod tests {
     #[tokio::test]
     async fn usage_route_returns_200_with_period() {
         let (state, shared) = fixture();
-        let usage = UsageResponse::new("2026-05", 512, 100, 50, 1_000_000, vec![]);
+        let usage = UsageResponse::new("2026-05", 512, 100, 50, 1_000_000, vec![], 200);
         shared.seed_usage("t1", usage).expect("seed");
 
         let app = router(state);
@@ -1425,6 +1426,7 @@ mod tests {
         assert_eq!(v["period"], "2026-05");
         assert_eq!(v["reads"], 100u64);
         assert_eq!(v["writes"], 50u64);
+        assert_eq!(v["request_count"], 200u64);
     }
 
     // ── Billing routes ────────────────────────────────────────────────────────

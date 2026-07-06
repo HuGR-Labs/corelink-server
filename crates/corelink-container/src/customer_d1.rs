@@ -13,7 +13,7 @@
 //! | Endpoint            | Source of truth                                            |
 //! |---------------------|------------------------------------------------------------|
 //! | overview            | `tenant` (0023/0031/0056/0057) + `tenant_storage_state` (0008) `SUM(bytes_used)` / `MAX(bytes_quota)` + `tenant_billing` (0055) + `byok_envelope` (0030) existence; `tenant_name` = `tenant_id`; `recent_activity` = newest 8 `customer_audit_events` (0077) via [`D1CustomerHandler::recent_activity`] (BE-3), honestly empty for a new tenant |
-//! | usage               | real `cas_bytes`/`quota_bytes` from `tenant_storage_state`; `reads`/`writes` = 0 + `daily` = `[]` (no per-day table) — only the CURRENT period is retained, an earlier period honestly reports 0 bytes |
+//! | usage               | real `cas_bytes`/`quota_bytes` from `tenant_storage_state` + real `request_count` from `monthly_request_counts` (0071) via [`D1CustomerHandler::monthly_request_count`] (BE-1a); `reads`/`writes` = 0 + `daily` = `[]` (no per-op table) — only the CURRENT period retains bytes, an earlier period honestly reports 0 bytes |
 //! | audit               | `customer_audit_events` (migration 0077): newest-first, tenant-scoped, bounded; rows written best-effort by `keys create` (`pat.created`) + `team invite` (`team.invited`) |
 //! | billing             | `tenant_billing` (0055) + `tier_selections` (0039/0062); status map FROZEN (see [`map_billing_status`]); `invoices` = `[]` (no invoice-history surface yet) |
 //! | billing/portal      | `tenant_billing.stripe_customer_id` → Stripe billing-portal session; no customer id → 404 "no billing account" |
@@ -786,6 +786,29 @@ impl D1CustomerHandler {
             })
             .collect())
     }
+
+    /// The billable request count for `(tenant, year_month)` from
+    /// `monthly_request_counts` (migration 0071) — the running counter the quota
+    /// gate already increments per request. READ-ONLY (never writes the hot-path
+    /// counter); `0` when no row exists (a period with no requests yet). The
+    /// `year_month` key format (`YYYY-MM`, UTC) matches [`period_from_ms`] and
+    /// the writer's `request_count::year_month_utc`, so a period lookup aligns.
+    fn monthly_request_count(
+        &self,
+        tenant_id: &str,
+        year_month: &str,
+    ) -> Result<u64, CustomerHandlerError> {
+        let rows = self.run(
+            "SELECT request_count FROM monthly_request_counts \
+             WHERE tenant_id = ?1 AND year_month = ?2 LIMIT 1",
+            vec![json!(tenant_id), json!(year_month)],
+        )?;
+        Ok(rows
+            .first()
+            .and_then(|r| col_opt_i64(r, "request_count"))
+            .and_then(|c| u64::try_from(c).ok())
+            .unwrap_or(0))
+    }
 }
 
 // ─── Trait impls ──────────────────────────────────────────────────────────────
@@ -879,6 +902,11 @@ impl CustomerUsageHandler for D1CustomerHandler {
             0
         };
 
+        // Billable request count for the period (monthly_request_counts, 0071):
+        // a real usage-vs-quota signal. The quota gate already increments this
+        // per request, so surfacing it is a READ — no hot-path write added.
+        let request_count = self.monthly_request_count(&req.caller_tenant, &requested)?;
+
         let resp = UsageResponse::new(
             requested,
             period_bytes,
@@ -888,6 +916,7 @@ impl CustomerUsageHandler for D1CustomerHandler {
             quota_bytes,
             // No per-day rollup table yet: honest empty.
             Vec::<DailyUsageBucket>::new(),
+            request_count,
         );
 
         self.emit_audit(
@@ -2252,7 +2281,44 @@ mod tests {
         assert_eq!(resp.quota_bytes, 1_000_000);
         assert_eq!(resp.reads, 0);
         assert_eq!(resp.writes, 0);
+        assert_eq!(
+            resp.request_count, 0,
+            "no monthly_request_counts row → honest 0"
+        );
         assert!(resp.daily.is_empty(), "no per-day table: honest []");
+    }
+
+    #[test]
+    fn usage_request_count_reads_monthly_counter() {
+        // BE-1a: the running request counter the quota gate maintains
+        // (monthly_request_counts, 0071) surfaces as a real usage-vs-quota
+        // signal — a READ, never a hot-path write. Keyed on the same `YYYY-MM`
+        // period as the storage read.
+        let f = fixture_with(
+            MockD1::with(vec![
+                ("FROM tenant WHERE", vec![tenant_row_fixture()]),
+                (
+                    "FROM tenant_storage_state",
+                    vec![row(&[
+                        ("bytes_used", json!(512_i64)),
+                        ("bytes_quota", json!(1_000_000_i64)),
+                    ])],
+                ),
+                (
+                    "FROM monthly_request_counts",
+                    vec![row(&[("request_count", json!(4_211_i64))])],
+                ),
+            ]),
+            None,
+        );
+        let resp = f
+            .handler
+            .usage(UsageRequest::new(TENANT, "clpat_x", None, 0))
+            .unwrap();
+        assert_eq!(
+            resp.request_count, 4_211,
+            "seeded monthly_request_counts row surfaces (BE-1a)"
+        );
     }
 
     #[test]
