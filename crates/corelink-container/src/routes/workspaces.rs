@@ -422,3 +422,303 @@ fn internal(tenant: &str, op: &str, err: &str) -> axum::response::Response {
     tracing::error!(tenant = %tenant, op = %op, error = %err, "workspaces D1 error");
     (StatusCode::INTERNAL_SERVER_ERROR, "workspaces backend error").into_response()
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "tests are allowed to use these primitives"
+)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{self, Request};
+    use std::sync::Mutex;
+    use tower::ServiceExt;
+
+    /// Hermetic D1 mock: returns `list_rows` for the list query and
+    /// `readback_row` for the pin read-back (LIMIT 1); records every call so a
+    /// test can assert the tenant-scoping bind (`?1`).
+    #[derive(Debug, Default)]
+    struct MockWsD1 {
+        list_rows: Vec<crate::storage::d1_http::D1Row>,
+        readback_row: Vec<crate::storage::d1_http::D1Row>,
+        calls: Mutex<Vec<(String, Vec<Value>)>>,
+    }
+
+    impl CustomerD1 for MockWsD1 {
+        fn query(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+            self.calls.lock().unwrap().push((sql.to_owned(), binds));
+            if sql.contains("FROM workspaces") && sql.contains("LIMIT 1") {
+                return Ok(self.readback_row.clone());
+            }
+            if sql.contains("FROM workspaces") && sql.contains("ORDER BY") {
+                return Ok(self.list_rows.clone());
+            }
+            // INSERT / DELETE / UPDATE → affected-rows semantics, no rows back.
+            Ok(Vec::new())
+        }
+    }
+
+    fn d1row(pairs: &[(&str, Value)]) -> crate::storage::d1_http::D1Row {
+        pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect()
+    }
+
+    fn state_no_db() -> WorkspacesRouteState {
+        WorkspacesRouteState { db: None, pat_gate: None }
+    }
+
+    fn state_with(db: MockWsD1) -> (WorkspacesRouteState, Arc<MockWsD1>) {
+        let db = Arc::new(db);
+        (
+            WorkspacesRouteState {
+                db: Some(db.clone() as Arc<dyn CustomerD1>),
+                pat_gate: None,
+            },
+            db,
+        )
+    }
+
+    /// One request builder: method + uri + optional tenant + optional write
+    /// scope + optional JSON body.
+    async fn send(
+        state: WorkspacesRouteState,
+        method: http::Method,
+        uri: &str,
+        tenant: Option<&str>,
+        scope: Option<&str>,
+        body: Option<Value>,
+    ) -> (StatusCode, Value) {
+        let mut req = Request::builder().method(method).uri(uri);
+        if let Some(t) = tenant {
+            req = req.header("x-corelink-tenant-id", t);
+        }
+        if let Some(s) = scope {
+            req = req.header(crate::scope::SCOPE_HEADER, s);
+        }
+        let req = match body {
+            Some(v) => req
+                .header(http::header::CONTENT_TYPE, "application/json")
+                .body(Body::from(v.to_string()))
+                .unwrap(),
+            None => req.body(Body::empty()).unwrap(),
+        };
+        let resp = router(state).oneshot(req).await.unwrap();
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let parsed = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        (status, parsed)
+    }
+
+    /// Missing / sentinel tenant fails CLOSED (401) on every route — before any
+    /// storage access (and before the write-scope gate).
+    #[tokio::test]
+    async fn unauthenticated_is_401() {
+        let cases = [
+            (http::Method::GET, "/v1/customer/workspaces", None),
+            (http::Method::POST, "/v1/customer/workspaces", Some(json!({"name": "w"}))),
+            (http::Method::DELETE, "/v1/customer/workspaces/abc", None),
+            (http::Method::POST, "/v1/customer/workspaces/abc/pin", None),
+        ];
+        for (m, uri, b) in cases {
+            let (missing, _) =
+                send(state_no_db(), m.clone(), uri, None, Some("cas:rw"), b.clone()).await;
+            assert_eq!(missing, StatusCode::UNAUTHORIZED, "{m} {uri}: missing tenant");
+            let (sentinel, _) =
+                send(state_no_db(), m.clone(), uri, Some("_system"), Some("cas:rw"), b).await;
+            assert_eq!(sentinel, StatusCode::UNAUTHORIZED, "{m} {uri}: sentinel tenant");
+        }
+    }
+
+    /// A read-only (`cas:r`) or scope-less caller cannot mutate workspaces (403),
+    /// even with a valid tenant — the create/delete/pin write gate.
+    #[tokio::test]
+    async fn mutations_require_write_scope() {
+        let mutations = [
+            (http::Method::POST, "/v1/customer/workspaces", Some(json!({"name": "w"}))),
+            (http::Method::DELETE, "/v1/customer/workspaces/abc", None),
+            (http::Method::POST, "/v1/customer/workspaces/abc/pin", None),
+        ];
+        for (m, uri, b) in mutations {
+            // Read-only scope → 403.
+            let (ro, _) = send(state_no_db(), m.clone(), uri, Some("t1"), Some("cas:r"), b.clone()).await;
+            assert_eq!(ro, StatusCode::FORBIDDEN, "{m} {uri}: cas:r must not mutate");
+            // No scope header → 403.
+            let (none, _) = send(state_no_db(), m.clone(), uri, Some("t1"), None, b).await;
+            assert_eq!(none, StatusCode::FORBIDDEN, "{m} {uri}: no scope must not mutate");
+        }
+    }
+
+    /// Dev/CI (no D1): list is honest-empty (200); mutations fail CLOSED (503) —
+    /// never a silent success we cannot persist.
+    #[tokio::test]
+    async fn dev_no_db_read_empty_write_failclosed() {
+        let (s, list) =
+            send(state_no_db(), http::Method::GET, "/v1/customer/workspaces", Some("t1"), None, None).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(list["workspaces"], json!([]));
+
+        let (create, _) = send(
+            state_no_db(),
+            http::Method::POST,
+            "/v1/customer/workspaces",
+            Some("t1"),
+            Some("cas:rw"),
+            Some(json!({"name": "w"})),
+        )
+        .await;
+        assert_eq!(create, StatusCode::SERVICE_UNAVAILABLE);
+        let (del, _) = send(
+            state_no_db(),
+            http::Method::DELETE,
+            "/v1/customer/workspaces/abc",
+            Some("t1"),
+            Some("cas:rw"),
+            None,
+        )
+        .await;
+        assert_eq!(del, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    /// A create with a blank name is a 400 (before any storage write).
+    #[tokio::test]
+    async fn create_blank_name_is_400() {
+        let (state, _) = state_with(MockWsD1::default());
+        let (s, _) = send(
+            state,
+            http::Method::POST,
+            "/v1/customer/workspaces",
+            Some("t1"),
+            Some("cas:rw"),
+            Some(json!({"name": "   "})),
+        )
+        .await;
+        assert_eq!(s, StatusCode::BAD_REQUEST);
+    }
+
+    /// List projects each row into the FROZEN `CustomerWorkspace` shape and is
+    /// tenant-scoped on `?1`.
+    #[tokio::test]
+    async fn list_projects_rows_tenant_scoped() {
+        let (state, db) = state_with(MockWsD1 {
+            list_rows: vec![d1row(&[
+                ("workspace_id", json!("ws-1")),
+                ("name", json!("nightly")),
+                ("size_bytes", json!(2048)),
+                ("pinned", json!(1)),
+                ("created_at_ms", json!(1_700_000_000_000_i64)),
+            ])],
+            ..MockWsD1::default()
+        });
+        let (s, body) = send(
+            state,
+            http::Method::GET,
+            "/v1/customer/workspaces",
+            Some("tenant-xyz"),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        let ws = &body["workspaces"][0];
+        assert_eq!(ws["workspace_id"], json!("ws-1"));
+        assert_eq!(ws["name"], json!("nightly"));
+        assert_eq!(ws["size_bytes"], json!(2048));
+        assert_eq!(ws["pinned"], json!(true));
+        assert!(ws["created_at"].as_str().unwrap().starts_with("20"), "ISO-8601 created_at");
+
+        let calls = db.calls.lock().unwrap();
+        assert_eq!(calls[0].1.first(), Some(&json!("tenant-xyz")), "list is tenant-scoped");
+    }
+
+    /// Create mints a workspace, returns 201 + the frozen shape, and binds the
+    /// header tenant as `?1` on the INSERT.
+    #[tokio::test]
+    async fn create_returns_201_tenant_scoped() {
+        let (state, db) = state_with(MockWsD1::default());
+        let (s, body) = send(
+            state,
+            http::Method::POST,
+            "/v1/customer/workspaces",
+            Some("tenant-xyz"),
+            Some("cas:rw"),
+            Some(json!({"name": "  release  "})),
+        )
+        .await;
+        assert_eq!(s, StatusCode::CREATED);
+        assert_eq!(body["name"], json!("release"), "name is trimmed");
+        assert_eq!(body["size_bytes"], json!(0));
+        assert_eq!(body["pinned"], json!(false));
+        assert_eq!(body["workspace_id"].as_str().unwrap().len(), 36, "UUID id");
+
+        let calls = db.calls.lock().unwrap();
+        let insert = calls.iter().find(|(sql, _)| sql.contains("INSERT INTO workspaces")).unwrap();
+        assert_eq!(insert.1[0], json!("tenant-xyz"), "INSERT is tenant-scoped");
+    }
+
+    /// Delete is a tenant-scoped `{ ok: true }` (idempotent) with both binds.
+    #[tokio::test]
+    async fn delete_ok_tenant_scoped() {
+        let (state, db) = state_with(MockWsD1::default());
+        let (s, body) = send(
+            state,
+            http::Method::DELETE,
+            "/v1/customer/workspaces/ws-9",
+            Some("tenant-xyz"),
+            Some("cas:rw"),
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(body["ok"], json!(true));
+        let calls = db.calls.lock().unwrap();
+        let del = calls.iter().find(|(sql, _)| sql.contains("DELETE FROM workspaces")).unwrap();
+        assert_eq!(del.1[0], json!("tenant-xyz"));
+        assert_eq!(del.1[1], json!("ws-9"));
+    }
+
+    /// Pin toggles then reads the fresh row back; a present row is 200 + shape.
+    #[tokio::test]
+    async fn pin_toggles_and_reads_back() {
+        let (state, _) = state_with(MockWsD1 {
+            readback_row: vec![d1row(&[
+                ("workspace_id", json!("ws-1")),
+                ("name", json!("nightly")),
+                ("size_bytes", json!(0)),
+                ("pinned", json!(1)),
+                ("created_at_ms", json!(1_700_000_000_000_i64)),
+            ])],
+            ..MockWsD1::default()
+        });
+        let (s, body) = send(
+            state,
+            http::Method::POST,
+            "/v1/customer/workspaces/ws-1/pin",
+            Some("t1"),
+            Some("cas:rw"),
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(body["workspace_id"], json!("ws-1"));
+        assert_eq!(body["pinned"], json!(true));
+    }
+
+    /// Pin of a missing id ⇒ 404 (empty read-back).
+    #[tokio::test]
+    async fn pin_missing_is_404() {
+        let (state, _) = state_with(MockWsD1::default());
+        let (s, _) = send(
+            state,
+            http::Method::POST,
+            "/v1/customer/workspaces/nope/pin",
+            Some("t1"),
+            Some("cas:rw"),
+            None,
+        )
+        .await;
+        assert_eq!(s, StatusCode::NOT_FOUND);
+    }
+}

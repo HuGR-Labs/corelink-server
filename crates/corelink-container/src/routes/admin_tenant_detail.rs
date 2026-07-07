@@ -531,7 +531,7 @@ mod tests {
                 .header("x-corelink-internal-auth", "test-internal-auth-key-32-bytes-x")
                 .body(Body::empty())
                 .unwrap();
-            let resp = app.oneshot(req).await.unwrap();
+            let resp = app.clone().oneshot(req).await.unwrap();
             assert_eq!(
                 resp.status(),
                 StatusCode::SERVICE_UNAVAILABLE,

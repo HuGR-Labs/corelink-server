@@ -358,3 +358,164 @@ async fn handle_runs(
     }
     (StatusCode::OK, Json(json!({ "runs": [] }))).into_response()
 }
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::indexing_slicing,
+    reason = "tests are allowed to use these primitives"
+)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{self, Request};
+    use std::sync::Mutex;
+    use tower::ServiceExt;
+
+    /// Hermetic D1 mock: canned rows keyed by an SQL fragment; records every
+    /// (sql, binds) call so a test can assert the tenant-scoping bind (`?1`).
+    #[derive(Debug, Default)]
+    struct MockRunnersD1 {
+        entitlement_rows: Vec<D1Row>,
+        billing_rows: Vec<D1Row>,
+        allowlist_rows: Vec<D1Row>,
+        calls: Mutex<Vec<(String, Vec<Value>)>>,
+    }
+
+    impl CustomerD1 for MockRunnersD1 {
+        fn query(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<D1Row>, String> {
+            self.calls.lock().unwrap().push((sql.to_owned(), binds));
+            if sql.contains("FROM runners_entitlement") {
+                return Ok(self.entitlement_rows.clone());
+            }
+            if sql.contains("FROM runner_billing") {
+                return Ok(self.billing_rows.clone());
+            }
+            if sql.contains("FROM runner_repo_allowlist") {
+                return Ok(self.allowlist_rows.clone());
+            }
+            Ok(Vec::new())
+        }
+    }
+
+    fn d1row(pairs: &[(&str, Value)]) -> D1Row {
+        pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect()
+    }
+
+    fn state_no_db() -> CustomerRunnersRouteState {
+        CustomerRunnersRouteState { db: None, pat_gate: None }
+    }
+
+    fn state_with(db: MockRunnersD1) -> (CustomerRunnersRouteState, Arc<MockRunnersD1>) {
+        let db = Arc::new(db);
+        (
+            CustomerRunnersRouteState {
+                db: Some(db.clone() as Arc<dyn CustomerD1>),
+                pat_gate: None,
+            },
+            db,
+        )
+    }
+
+    async fn get(state: CustomerRunnersRouteState, uri: &str, tenant: Option<&str>) -> (StatusCode, Value) {
+        let mut req = Request::builder().method(http::Method::GET).uri(uri);
+        if let Some(t) = tenant {
+            req = req.header("x-corelink-tenant-id", t);
+        }
+        let resp = router(state)
+            .oneshot(req.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        (status, body)
+    }
+
+    /// Missing / sentinel tenant fails CLOSED (401) on every read — before any
+    /// storage access.
+    #[tokio::test]
+    async fn unauthenticated_is_401() {
+        for uri in [
+            "/v1/customer/runners/entitlement",
+            "/v1/customer/runners/allowlist",
+            "/v1/customer/runners/runs",
+        ] {
+            let (missing, _) = get(state_no_db(), uri, None).await;
+            assert_eq!(missing, StatusCode::UNAUTHORIZED, "{uri}: missing tenant");
+            let (sentinel, _) = get(state_no_db(), uri, Some("_anonymous")).await;
+            assert_eq!(sentinel, StatusCode::UNAUTHORIZED, "{uri}: sentinel tenant");
+        }
+    }
+
+    /// Dev/CI (no D1) → honest not-entitled entitlement + empty allowlist/runs
+    /// (200, never 500).
+    #[tokio::test]
+    async fn dev_no_db_is_honest_empty() {
+        let (s, ent) = get(state_no_db(), "/v1/customer/runners/entitlement", Some("t1")).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(ent["sku"], Value::Null);
+        assert_eq!(ent["max_concurrency"], json!(0));
+        assert_eq!(ent["install_status"], json!("not_installed"));
+        assert_eq!(ent["repo_allowlist"], json!([]));
+
+        let (s, al) = get(state_no_db(), "/v1/customer/runners/allowlist", Some("t1")).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(al["repos"], json!([]));
+
+        let (s, runs) = get(state_no_db(), "/v1/customer/runners/runs", Some("t1")).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(runs["runs"], json!([]));
+    }
+
+    /// A real entitlement row projects to the FROZEN FE shape, prefers the
+    /// Stripe billing SKU, and every query is tenant-scoped on `?1`.
+    #[tokio::test]
+    async fn entitlement_maps_rows_and_is_tenant_scoped() {
+        let (state, db) = state_with(MockRunnersD1 {
+            entitlement_rows: vec![d1row(&[
+                ("max_concurrency", json!(4)),
+                ("max_vcpu_h", json!(100)),
+                ("plan", json!("runners_entitlement_fallback")),
+            ])],
+            billing_rows: vec![d1row(&[("plan", json!("runner_pro"))])],
+            allowlist_rows: vec![
+                d1row(&[("repo_full_name", json!("acme/api"))]),
+                d1row(&[("repo_full_name", json!("acme/web"))]),
+            ],
+            ..MockRunnersD1::default()
+        });
+        let (s, ent) = get(state, "/v1/customer/runners/entitlement", Some("tenant-xyz")).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(ent["sku"], json!("runner_pro"), "prefers the Stripe billing SKU");
+        assert_eq!(ent["max_concurrency"], json!(4));
+        assert_eq!(ent["max_vcpu_h"], json!(100));
+        assert_eq!(ent["consumed_vcpu_h"], json!(0));
+        assert_eq!(ent["install_status"], json!("installed"));
+        assert_eq!(ent["repo_allowlist"], json!(["acme/api", "acme/web"]));
+
+        // INV-TENANT-ISOLATION: every statement binds the header tenant as ?1.
+        let calls = db.calls.lock().unwrap();
+        assert!(!calls.is_empty());
+        for (_, binds) in calls.iter() {
+            assert_eq!(binds.first(), Some(&json!("tenant-xyz")), "each query is tenant-scoped");
+        }
+    }
+
+    /// No entitlement row → honest not-entitled, but an independently-allowlisted
+    /// repo set is still surfaced.
+    #[tokio::test]
+    async fn no_entitlement_row_surfaces_allowlist() {
+        let (state, _) = state_with(MockRunnersD1 {
+            allowlist_rows: vec![d1row(&[("repo_full_name", json!("acme/api"))])],
+            ..MockRunnersD1::default()
+        });
+        let (s, ent) = get(state, "/v1/customer/runners/entitlement", Some("t1")).await;
+        assert_eq!(s, StatusCode::OK);
+        assert_eq!(ent["sku"], Value::Null);
+        assert_eq!(ent["install_status"], json!("not_installed"));
+        assert_eq!(ent["repo_allowlist"], json!(["acme/api"]));
+    }
+}
