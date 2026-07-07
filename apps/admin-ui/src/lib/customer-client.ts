@@ -17,6 +17,7 @@ import type {
   CustomerOverview,
   CustomerPat,
   CustomerRunnerEntitlement,
+  CustomerRunnerRun,
   CustomerTeamMember,
   CustomerUsage,
   CustomerWorkspace,
@@ -203,13 +204,42 @@ export class CustomerClient {
     throw new NotWiredError("BE-8 BYOK self-serve");
   }
 
-  /** [not-wired → BE-10] Runner entitlement + consumption + repo allowlist. */
+  /** [live] Runner entitlement + consumption + repo allowlist (BE-10). */
   async getRunnerEntitlement(): Promise<CustomerRunnerEntitlement> {
-    throw new NotWiredError("BE-10 runners entitlement read");
+    return this.request<CustomerRunnerEntitlement>("/v1/customer/runners/entitlement");
   }
 
-  /** [not-wired → BE-11] Workspace snapshots. */
+  /** [live] Recent runner runs (BE-10). Empty until a runs table exists server-side. */
+  async listRunnerRuns(): Promise<{ runs: CustomerRunnerRun[] }> {
+    return this.request<{ runs: CustomerRunnerRun[] }>("/v1/customer/runners/runs");
+  }
+
+  /** [live] Workspace snapshots (BE-11). */
   async listWorkspaces(): Promise<{ workspaces: CustomerWorkspace[] }> {
-    throw new NotWiredError("BE-11 workspaces surface");
+    return this.request<{ workspaces: CustomerWorkspace[] }>("/v1/customer/workspaces");
+  }
+
+  /** [live] Create a workspace snapshot (BE-11). */
+  async createWorkspace(input: { name: string }): Promise<CustomerWorkspace> {
+    return this.request<CustomerWorkspace>("/v1/customer/workspaces", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  /** [live] Delete a workspace snapshot (tenant-scoped, idempotent) (BE-11). */
+  async deleteWorkspace(workspaceId: string): Promise<{ ok: boolean }> {
+    return this.request<{ ok: boolean }>(
+      `/v1/customer/workspaces/${encodeURIComponent(workspaceId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** [live] Toggle pin on a workspace snapshot (BE-11). */
+  async pinWorkspace(workspaceId: string): Promise<CustomerWorkspace> {
+    return this.request<CustomerWorkspace>(
+      `/v1/customer/workspaces/${encodeURIComponent(workspaceId)}/pin`,
+      { method: "POST" },
+    );
   }
 }

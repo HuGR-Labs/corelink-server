@@ -34,6 +34,15 @@ Each entry cross-references:
   stepper + proper field spacing. This bug was LIVE in prod. Verified by screenshotting every screen.
 
 ### Added
+- **admin-ui — un-stubbed the Runners + Workspaces screens against the live customer surface.**
+  Replaced the placeholder `EmptyState`/prose walls with real data. Runners: fetches the entitlement
+  (plan/concurrency/vCPU-h) + repo allowlist + recent runs via `getRunnerEntitlement`/`listRunnerRuns`
+  (`/v1/customer/runners/*`); gauges consumption only against a real `max_vcpu_h` (never a fabricated
+  cap), renders the Install-GitHub-App CTA when not entitled, honest empty runs table. Workspaces:
+  real list (name/humanized-size/created/pinned) via `listWorkspaces` + create/pin/unpin/delete
+  (delete behind a `ConfirmDialog`); collapsed the duplicate two-explainer wall to one card. Both light
+  up in prod once the backend customer-runners/workspaces modules deploy; until then the client methods
+  hit the live endpoints (no `NotWiredError` fakery). Kit-only, honest empty states, visually reviewed.
 - **admin-ui — screen SOTA rebuild wave 1 batch 2 (tokens, billing, settings, team, admin-audit, admin-tenants, customer-audit).**
   Tokens: per-token rotate (revoke+recreate) + hide-revoked filter + honest last-used. Billing: real plan
   ladder from the pricing catalog (upgrade/downgrade CTAs, active-sub → portal to avoid double-billing) +
