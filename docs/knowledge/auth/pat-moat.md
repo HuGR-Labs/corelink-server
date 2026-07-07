@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/internal_auth.ts"
   - "worker/src/index.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "119df109abc91fa680bc66fb83c8a400a03e2935"
+checkpoint_sha: "3362d280f7c4703bca94c0ea56e9c091ebb3617e"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -86,14 +86,14 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - **Availability-vs-auth at the Worker edge: a transient D1 PAT-lookup FAULT now maps to a retryable
   503, NOT a 401.** `extractAuth` wraps the `SELECT … FROM pat` in a try/catch and on any D1 error
   (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
-  (`worker/src/index.ts:1081-1091`). The PAT-gate caller (H1 fix) now maps BOTH
+  (`worker/src/index.ts:1088-1098`). The PAT-gate caller (H1 fix) now maps BOTH
   `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
-  (`worker/src/index.ts:2324-2329`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
+  (`worker/src/index.ts:2331-2336`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
   surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
   chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
   still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
   COMPLETE for the worker edge — a transient D1 fault is NOT a cause of a 401 there; it is a 503. The
-  in-line `catch` comment at `worker/src/index.ts:1088-1090` now correctly states that the caller maps
+  in-line `catch` comment at `worker/src/index.ts:1095-1097` now correctly states that the caller maps
   `d1_lookup_error` to a 503 (it previously lied — "for now we 401 to fail-closed"); the cited line
   numbers shifted after the Artifact 1 `/v1/public/*`
   attestation-verifier route arm was added above this handler, again when the CF-6 audit-chain
@@ -101,7 +101,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   PII/secret scrubber import was added at the top of the module, when the
   `/internal/v1/auth/resolve-tenant` fabric route was added to `matchRoute`, and most recently when the
   multi-region "route to the LOCAL (this-region) container" DO-forward block was inserted above the
-  per-tenant DO forward (`worker/src/index.ts:1684-1686`)). Both the D1-fault and the
+  per-tenant DO forward (`worker/src/index.ts:1691-1693`)). Both the D1-fault and the
   `signing_key_not_configured` config-fault
   are retryable 503s; the edge still fails CLOSED (security > availability) for every credential-shaped
   failure.
