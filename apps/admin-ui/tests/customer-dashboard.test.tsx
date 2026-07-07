@@ -287,9 +287,12 @@ const USAGE_FIXTURE: CustomerUsage = {
   writes: 3000,
   request_count: 1_000_000, // BE-1a — billable requests this period
   quota_bytes: 10737418240, // 10 GiB
+  hit_rate: 0.86, // BE-2 — 86% of lookups served from cache
+  time_saved_seconds: 13320, // BE-2 → "3.7 h"
+  dollars_saved_cents: 6690, // BE-2 — modeled estimate → "$67"
   daily: [
-    { day: "2026-05-01", reads: 400, writes: 100, cas_bytes: 104857600 },
-    { day: "2026-05-02", reads: 600, writes: 200, cas_bytes: 209715200 },
+    { day: "2026-05-01", reads: 400, writes: 100, cas_bytes: 0 },
+    { day: "2026-05-02", reads: 600, writes: 200, cas_bytes: 0 },
   ],
 };
 

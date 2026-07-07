@@ -508,6 +508,10 @@ async fn handle_usage(
                 "writes":        resp.writes,
                 "request_count": resp.request_count,
                 "quota_bytes":   resp.quota_bytes,
+                // `hit_rate` serializes as JSON `null` when None (no cache reads).
+                "hit_rate":            resp.hit_rate,
+                "time_saved_seconds":  resp.time_saved_seconds,
+                "dollars_saved_cents": resp.dollars_saved_cents,
                 "daily": resp.daily.iter().map(|d| json!({
                     "day":       d.day,
                     "reads":     d.reads,
@@ -1408,7 +1412,8 @@ mod tests {
     #[tokio::test]
     async fn usage_route_returns_200_with_period() {
         let (state, shared) = fixture();
-        let usage = UsageResponse::new("2026-05", 512, 100, 50, 1_000_000, vec![], 200);
+        let usage =
+            UsageResponse::new("2026-05", 512, 100, 50, 1_000_000, vec![], 200, Some(0.75), 900, 1);
         shared.seed_usage("t1", usage).expect("seed");
 
         let app = router(state);
@@ -1427,6 +1432,9 @@ mod tests {
         assert_eq!(v["reads"], 100u64);
         assert_eq!(v["writes"], 50u64);
         assert_eq!(v["request_count"], 200u64);
+        assert_eq!(v["hit_rate"], 0.75);
+        assert_eq!(v["time_saved_seconds"], 900u64);
+        assert_eq!(v["dollars_saved_cents"], 1u64);
     }
 
     // ── Billing routes ────────────────────────────────────────────────────────

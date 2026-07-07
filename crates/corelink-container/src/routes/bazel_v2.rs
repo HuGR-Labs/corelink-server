@@ -113,6 +113,11 @@ pub struct BazelRouteState {
     /// [`BazelPutSlot`] releases on return. `Arc<Mutex<..>>` shared across the
     /// per-request state clones.
     pub(crate) put_inflight: Arc<Mutex<HashMap<String, usize>>>,
+    /// Display usage aggregator (usage-metering-roi). The REAPI CAS/AC read-HIT /
+    /// read-MISS / write decision points `record` fire-and-forget into this meter
+    /// — a cheap lock+increment, NEVER a DB call / `await` on the hot path. Inert
+    /// in dev/CI; `build_with_factory` sets the ONE shared, D1-backed meter.
+    pub usage_meter: Arc<crate::usage_meter::UsageMeter>,
 }
 
 /// Maximum concurrent in-flight Bazel CAS/AC writes for a single tenant. Excess
@@ -246,6 +251,8 @@ pub fn build_handlers_from(
         quota: None,
         pat_gate: None,
         put_inflight: Arc::new(Mutex::new(HashMap::new())),
+        // Inert placeholder; `build_with_factory` sets the shared, D1-backed meter.
+        usage_meter: Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }
 
@@ -515,13 +522,28 @@ async fn handle_cas_read(
         .adapter
         .cas_get(&instance, &digest, &p, &tenant, now_ms())
     {
-        Ok(bytes) => (
-            StatusCode::OK,
-            [("content-type", "application/octet-stream")],
-            bytes,
-        )
-            .into_response(),
-        Err(e) => map_bridge_err(e),
+        Ok(bytes) => {
+            // usage-metering-roi: CAS read HIT (fire-and-forget, no await/I/O).
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::ReadHit);
+            (
+                StatusCode::OK,
+                [("content-type", "application/octet-stream")],
+                bytes,
+            )
+                .into_response()
+        }
+        Err(e) => {
+            // usage-metering-roi: a genuine NotFound is a read MISS; other errors
+            // are faults, not classified ops.
+            if matches!(e, BazelBridgeError::NotFound { .. }) {
+                state
+                    .usage_meter
+                    .record(&tenant, crate::usage_meter::UsageEvent::ReadMiss);
+            }
+            map_bridge_err(e)
+        }
     }
 }
 
@@ -597,7 +619,13 @@ async fn handle_cas_write(
             },
         )
     {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => {
+            // usage-metering-roi: CAS write (fire-and-forget, no await/I/O).
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::Write);
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => map_bridge_err(e),
     }
 }
@@ -637,13 +665,27 @@ async fn handle_ac_read(
         .adapter
         .ac_get(&instance, &digest, &p, &tenant, now_ms())
     {
-        Ok(bytes) => (
-            StatusCode::OK,
-            [("content-type", "application/octet-stream")],
-            bytes,
-        )
-            .into_response(),
-        Err(e) => map_bridge_err(e),
+        Ok(bytes) => {
+            // usage-metering-roi: AC read HIT (fire-and-forget, no await/I/O).
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::ReadHit);
+            (
+                StatusCode::OK,
+                [("content-type", "application/octet-stream")],
+                bytes,
+            )
+                .into_response()
+        }
+        Err(e) => {
+            // usage-metering-roi: a genuine NotFound is a read MISS.
+            if matches!(e, BazelBridgeError::NotFound { .. }) {
+                state
+                    .usage_meter
+                    .record(&tenant, crate::usage_meter::UsageEvent::ReadMiss);
+            }
+            map_bridge_err(e)
+        }
     }
 }
 
@@ -710,7 +752,13 @@ async fn handle_ac_write(
             },
         )
     {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => {
+            // usage-metering-roi: AC write (fire-and-forget, no await/I/O).
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::Write);
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => map_bridge_err(e),
     }
 }

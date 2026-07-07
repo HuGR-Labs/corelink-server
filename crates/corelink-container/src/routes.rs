@@ -389,6 +389,20 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         );
     }
 
+    // Display usage aggregator (usage-metering-roi — the customer ROI surface):
+    // ONE in-process meter shared across the instrumented flagship cache surfaces
+    // (native CAS, Bazel REAPI, Turbo). Unlike the gates above, `record` is a
+    // cheap fire-and-forget lock+increment at each hit/miss/write decision — NEVER
+    // a D1 round-trip on the hot path — and a background flusher drains the
+    // accumulated deltas to `usage_daily` every ~30s. `from_env()` wires the
+    // D1-backed sink when StorageEnv is present; in dev/CI it is INERT (`record`
+    // is a no-op, `spawn_flusher` a no-op), mirroring the gates above. It is NEVER
+    // read on a request path and never bills anything (display telemetry only).
+    let usage_meter = crate::usage_meter::UsageMeter::from_env();
+    usage_meter
+        .clone()
+        .spawn_flusher(std::time::Duration::from_secs(30));
+
     // Native data-plane PAT possession gate (red-team #4) + per-tenant storage
     // byte accounting (#1). Built from env (PAT_SIGNING_KEY + StorageEnv / D1);
     // `None` in dev/CI ⇒ the native plane skips the Argon2id backstop and the
@@ -501,6 +515,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         pat_gate: native_pat_gate.clone(),
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        // usage-metering-roi: the ONE shared display meter (clone = cheap Arc).
+        usage_meter: usage_meter.clone(),
     };
     let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) = ac::build_handlers();
     // Storage byte accounting (cluster B+C) for the AC plane: same decorator
@@ -551,6 +567,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     let mut bazel_state = bazel_v2::build_handlers_from(cas_read, cas_write, ac_lookup, ac_update);
     bazel_state.quota = quota.clone();
     bazel_state.pat_gate = native_pat_gate.clone();
+    bazel_state.usage_meter = usage_meter.clone();
     // SECURITY (admin control-plane gate): the `/v1/admin/*` and
     // `/v1/admin/pilots/*` surfaces are OPERATOR-ONLY — they must NOT be
     // reachable by any authenticated tenant PAT. We gate them behind the
@@ -628,6 +645,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     turbo_state.quota = quota.clone();
     turbo_state.pat_gate = native_pat_gate.clone();
     turbo_state.bytes = byte_accountant.clone();
+    turbo_state.usage_meter = usage_meter.clone();
     let mut router = Router::new()
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
