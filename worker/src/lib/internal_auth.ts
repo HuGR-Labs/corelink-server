@@ -45,7 +45,11 @@ const MIN_INTERNAL_AUTH_KEY_LEN = 32;
  * FROZEN env names (identical to the Rust control-plane side):
  *   - pat_mint    → CORELINK_PAT_MINT_AUTH_KEY    (`/_internal/pat/mint` — signup + clw)
  *   - admin       → CORELINK_ADMIN_AUTH_KEY       (admin `/_internal/*`)
- *   - erase       → CORELINK_ERASE_AUTH_KEY       (erase `/_internal/*`)
+ *   - erase       → CORELINK_ERASE_AUTH_KEY       (erase `/_internal/dsr/*` cascade)
+ *   - dsr_anchor  → CORELINK_DSR_ANCHOR_AUTH_KEY  (`/_internal/dsr/anchor` — per-user
+ *                                                  DSR legitimacy anchor; held by
+ *                                                  githugr, DISTINCT from the eraser's
+ *                                                  ERASE key — a two-authority split)
  *   - runner_mint → CORELINK_RUNNER_MINT_AUTH_KEY (`/internal/v1/runner/{mint,revoke}`)
  *
  * `runner_mint` is WORKER-ONLY by design: the runner mint/revoke routes are
@@ -55,7 +59,7 @@ const MIN_INTERNAL_AUTH_KEY_LEN = 32;
  * `pat_mint`) means a leaked runner key can ONLY mint/revoke per-job runner PATs —
  * never the signup PAT-mint, erase, or admin surfaces (least privilege, A6).
  */
-export type InternalConsumer = "pat_mint" | "admin" | "erase" | "runner_mint";
+export type InternalConsumer = "pat_mint" | "admin" | "erase" | "dsr_anchor" | "runner_mint";
 
 /**
  * Resolve the internal-auth key to verify against for a given consumer.
@@ -78,7 +82,9 @@ export function resolveConsumerKey(env: Env, consumer: InternalConsumer): string
         ? env.CORELINK_ADMIN_AUTH_KEY
         : consumer === "erase"
           ? env.CORELINK_ERASE_AUTH_KEY
-          : env.CORELINK_RUNNER_MINT_AUTH_KEY;
+          : consumer === "dsr_anchor"
+            ? env.CORELINK_DSR_ANCHOR_AUTH_KEY
+            : env.CORELINK_RUNNER_MINT_AUTH_KEY;
   if (specific && specific.length >= MIN_INTERNAL_AUTH_KEY_LEN) {
     return specific;
   }
