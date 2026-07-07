@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { Locale } from "@/i18n/messages";
 import { loadLocalizedMarkdown } from "@/content/load";
+import { Callout } from "@/components/ui/linear";
 import { DpaStep } from "./DpaStep";
 
 /**
@@ -20,6 +21,10 @@ import { DpaStep } from "./DpaStep";
  *      Otherwise render `<DpaStep />` (this server component renders the
  *      DPA component for now; gating against tenant state happens in the
  *      action handler once the tenant-lookup adapter lands).
+ *
+ * UI: migrated to the Linear design language (frozen kit + globals.css
+ * tokens), matching the customer dashboard. The dark canvas comes from the
+ * page-scoped `.cx-shell` / `.cx-main` wrapper (no shared layout touched).
  */
 
 async function sha256Hex(text: string): Promise<string> {
@@ -43,19 +48,28 @@ export default async function TeamInvitePage(props: {
   const tenantId = ""; // resolved server-side via auth() in a follow-up.
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
-      <h1 className="text-xl font-semibold">Invite a team member</h1>
-      <p className="mt-2 text-sm text-gray-600">
-        Before adding a second member, accept the Data Processing Agreement —
-        you become the data controller for the people you invite.
-      </p>
-      <DpaStep
-        locale={locale}
-        tenantId={tenantId}
-        dpaText={text}
-        dpaVersion="1.0.0"
-        noticeTextHash={hash}
-      />
-    </main>
+    <div className="cx-shell lin">
+      <main className="cx-main" aria-labelledby="team-invite-heading">
+        <h1 id="team-invite-heading">Invite a team member</h1>
+        <p>
+          Before adding a second member, accept the Data Processing Agreement —
+          you become the data controller for the people you invite.
+        </p>
+        <Callout tone="info">
+          A solo tenant is its own data controller. Accepting the DPA now is the
+          legal prerequisite for processing another person&rsquo;s data on
+          CoreLink.
+        </Callout>
+        <div className="lin-mt-lg">
+          <DpaStep
+            locale={locale}
+            tenantId={tenantId}
+            dpaText={text}
+            dpaVersion="1.0.0"
+            noticeTextHash={hash}
+          />
+        </div>
+      </main>
+    </div>
   );
 }

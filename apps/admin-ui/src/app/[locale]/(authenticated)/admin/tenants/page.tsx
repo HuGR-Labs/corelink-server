@@ -7,11 +7,17 @@ import TenantSearchClient from "@/components/admin/TenantSearchClient";
 export default function AdminTenantsPage(): React.ReactElement {
   return (
     <RbacGuard>
-      <main aria-labelledby="tenants-heading">
-        <h1 id="tenants-heading">Tenants</h1>
-        <p>Search, filter, and inspect any tenant in operator scope.</p>
-        <TenantSearchClient />
-      </main>
+      <div className="cx-shell lin">
+        <div className="cx-main">
+          <main aria-labelledby="tenants-heading">
+            <h1 id="tenants-heading">Tenants</h1>
+            <p>Search, filter, and inspect any tenant in operator scope.</p>
+            <div className="lin-mt-lg">
+              <TenantSearchClient />
+            </div>
+          </main>
+        </div>
+      </div>
     </RbacGuard>
   );
 }

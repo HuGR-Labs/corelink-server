@@ -20,12 +20,17 @@
  *   - Acceptance produces an immutable `audit_event_id` from the server.
  *   - SHA-256 of the rendered notice text is bound into the acceptance record
  *     so the exact bytes the user saw are forensically anchored.
+ *
+ * UI: migrated to the Linear design language (frozen kit + globals.css tokens).
+ * The scroll-gate container is a bounded scroll region (functional, not
+ * decoration); its chrome comes from the kit. Testids preserved.
  */
 
 import * as React from "react";
 import { t, type Locale } from "@/i18n/messages";
 import { hasScrolledToEnd } from "@/lib/dpa-scroll";
 import { acceptDpaAction } from "@/app/[locale]/onboarding/actions";
+import { Button, Callout, InlineError } from "@/components/ui/linear";
 
 export interface DpaStepProps {
   locale: Locale;
@@ -76,36 +81,53 @@ export function DpaStep(props: DpaStepProps): React.ReactElement {
   }
 
   return (
-    <section data-testid="team-invite-dpa">
-      <h2>{t(props.locale, "onboarding.dpa.title")}</h2>
+    <section
+      data-testid="team-invite-dpa"
+      className="lin-checklist"
+      aria-labelledby="dpa-title"
+    >
+      <h2 id="dpa-title">{t(props.locale, "onboarding.dpa.title")}</h2>
+
+      {/* Scroll-gate region — bounded + scrollable is functional behaviour;
+          the accept button enables only once the reader reaches the end. */}
       <div
         data-testid="dpa-scroller"
         onScroll={onScroll}
-        style={{ maxHeight: "60vh", overflow: "auto" }}
+        className="lin-code max-h-96 overflow-y-auto"
       >
         <pre>{props.dpaText}</pre>
       </div>
+
       {!scrolled ? (
-        <p data-testid="dpa-scroll-hint">
+        <div className="lin-card__meta" data-testid="dpa-scroll-hint">
           {t(props.locale, "onboarding.dpa.scroll_hint")}
-        </p>
+        </div>
       ) : null}
+
       {error ? (
-        <p role="alert" data-testid="dpa-error">
-          {error}
-        </p>
+        <div role="alert" data-testid="dpa-error">
+          <InlineError error={error} />
+        </div>
       ) : null}
+
       {auditEventId ? (
-        <p data-testid="dpa-audit-id">audit: {auditEventId}</p>
+        <div data-testid="dpa-audit-id">
+          <Callout tone="info">
+            Accepted — audit reference <code>{auditEventId}</code>.
+          </Callout>
+        </div>
       ) : null}
-      <button
-        type="button"
-        disabled={!scrolled || submitting}
-        onClick={onAccept}
-        data-testid="dpa-accept"
-      >
-        {t(props.locale, "onboarding.dpa.accept")}
-      </button>
+
+      <div>
+        <Button
+          disabled={!scrolled || submitting}
+          loading={submitting}
+          onClick={onAccept}
+          data-testid="dpa-accept"
+        >
+          {t(props.locale, "onboarding.dpa.accept")}
+        </Button>
+      </div>
     </section>
   );
 }

@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { Button } from "@/components/ui/Button";
-import { Table, type TableColumn } from "@/components/ui/Table";
-import { formatDate } from "@/i18n/format";
+import { PublicShell } from "@/components/public/PublicShell";
+import { PublicPageHeader } from "@/components/public/PublicPageHeader";
+import { Button } from "@/components/ui/linear";
+import { SubProcessorsTable } from "./SubProcessorsTable";
 import type { Locale } from "@/i18n/LocaleContext";
 import type { SubProcessor } from "@/content/load";
 
@@ -70,23 +70,6 @@ function toCsv(items: SubProcessor[]): string {
 export function SubProcessorsPage({ locale, version, items }: SubProcessorsPageProps) {
   const headers = HEADERS[locale];
 
-  const columns: TableColumn<SubProcessor>[] = [
-    { key: "name", header: headers.name, sortable: true },
-    { key: "role", header: headers.role },
-    { key: "region", header: headers.region, sortable: true },
-    {
-      key: "certifications",
-      header: headers.certs,
-      render: (row) => row.certifications.join(", "),
-    },
-    {
-      key: "last_audit",
-      header: headers.audit,
-      sortable: true,
-      render: (row) => formatDate(row.last_audit, locale),
-    },
-  ];
-
   function handleDownload() {
     const csv = toCsv(items);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -102,18 +85,25 @@ export function SubProcessorsPage({ locale, version, items }: SubProcessorsPageP
   }
 
   return (
-    <article className="mx-auto max-w-4xl py-8">
-      <PageHeader
+    <PublicShell width="wide">
+      <PublicPageHeader
         title={TITLE[locale]}
         description={`v${version}`}
         actions={
-          <Button variant="secondary" onClick={handleDownload}>
+          <Button variant="ghost" onClick={handleDownload}>
             {headers.download}
           </Button>
         }
       />
-      <Table caption={TITLE[locale]} columns={columns} rows={items.map((i) => ({ ...i, id: i.id }))} />
-    </article>
+      <div className="lin-card lin-card--pad">
+        <SubProcessorsTable
+          locale={locale}
+          caption={TITLE[locale]}
+          headers={headers}
+          items={items}
+        />
+      </div>
+    </PublicShell>
   );
 }
 

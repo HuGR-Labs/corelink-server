@@ -5,6 +5,13 @@ import Link from "next/link";
 import type { ConsentRow } from "@/lib/consent-types";
 import type { ConsentApi } from "@/lib/consent-api";
 import { defaultConsentApi } from "@/lib/consent-api";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  InlineError,
+  Skeleton,
+} from "@/components/ui/linear";
 
 export interface ConsentDashboardProps {
   api?: ConsentApi;
@@ -33,46 +40,78 @@ export function ConsentDashboard({ api = defaultConsentApi }: ConsentDashboardPr
     };
   }, [api]);
 
-  if (loading) return <p data-testid="dashboard-loading">Loading consents...</p>;
-  if (error) return <p role="alert" data-testid="dashboard-error">{error}</p>;
-
   return (
-    <section aria-label="Active consents" data-testid="consent-dashboard">
-      <h1>Consents</h1>
-      {rows.length === 0 ? (
-        <p data-testid="dashboard-empty">No active consents.</p>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Purpose</th>
-              <th scope="col">Granted at</th>
-              <th scope="col">Status</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} data-testid={`row-${r.id}`}>
-                <td>{r.purpose}</td>
-                <td>{r.granted_at}</td>
-                <td>{r.status}</td>
-                <td>
-                  <a href={`/consent/${r.id}`} aria-label={`View consent ${r.id}`}>view</a>
-                  {" "}
-                  <a href={`/consent/withdraw/${r.id}`} aria-label={`Withdraw consent ${r.id}`}>
-                    withdraw
-                  </a>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      <p>
-        <Link href="/consent/new">Grant a new consent</Link> ·{" "}
-        <Link href="/consent/history">View history</Link>
-      </p>
-    </section>
+    <div className="cx-shell lin">
+      <div className="cx-main">
+        <main>
+          <h1>Consents</h1>
+          <section aria-label="Active consents" data-testid="consent-dashboard">
+            {loading ? (
+              <div
+                data-testid="dashboard-loading"
+                aria-busy="true"
+                aria-label="Loading consents"
+              >
+                <Skeleton rows={3} />
+              </div>
+            ) : error ? (
+              <div role="alert" data-testid="dashboard-error">
+                <InlineError error={error} />
+              </div>
+            ) : rows.length === 0 ? (
+              <div data-testid="dashboard-empty">
+                <EmptyState
+                  title="No active consents"
+                  body="You have not granted any consents yet."
+                  cta={<Button href="/consent/new">Grant a new consent</Button>}
+                />
+              </div>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Purpose</th>
+                    <th scope="col">Granted at</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.id} data-testid={`row-${r.id}`}>
+                      <td>{r.purpose}</td>
+                      <td>{r.granted_at}</td>
+                      <td>
+                        <Badge tone="success" dot>
+                          {r.status}
+                        </Badge>
+                      </td>
+                      <td>
+                        <a
+                          href={`/consent/${r.id}`}
+                          aria-label={`View consent ${r.id}`}
+                        >
+                          view
+                        </a>{" "}
+                        <a
+                          href={`/consent/withdraw/${r.id}`}
+                          aria-label={`Withdraw consent ${r.id}`}
+                        >
+                          withdraw
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+          <p>
+            <Link href="/consent/new">Grant a new consent</Link> ·{" "}
+            <Link href="/consent/history">View history</Link>
+          </p>
+        </main>
+      </div>
+    </div>
   );
 }

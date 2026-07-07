@@ -1,10 +1,15 @@
 // WI-S16-005 — tenant deep-dive: 5 configurable cards (usage, billing,
 // consents, DSR queue, active PATs). Read-only; sensitive actions route to
 // /admin/ops dual-approval queue.
+//
+// Linear kit: glass `lin-card` panels, BYOK Badge, EmptyState for missing data,
+// a Callout for the dual-approval note. Testids + last4 redaction preserved.
 
 import React from "react";
 import Link from "next/link";
 import type { Tenant } from "@/lib/types";
+import { Badge, Callout, EmptyState } from "@/components/ui/linear";
+import { byokTone } from "./tones";
 
 export interface TenantDeepDiveProps {
   tenant: Tenant;
@@ -30,102 +35,128 @@ export function TenantDeepDive({
 
   return (
     <section data-testid="tenant-deep-dive" aria-label={`Tenant ${tenant.tenant_id}`}>
-      <header>
-        <h2>{tenant.name}</h2>
-        <p>
-          <code>{tenant.tenant_id}</code> · {tenant.plan} · {tenant.region}
+      <div className="lin-card lin-card--pad">
+        <h2 className="lin-card__title">{tenant.name}</h2>
+        <p className="lin-card__meta">
+          <code>{tenant.tenant_id}</code> · {tenant.plan} · {tenant.region} ·{" "}
+          <Badge tone={byokTone(tenant.byok_status)} dot>
+            BYOK {tenant.byok_status}
+          </Badge>
         </p>
-      </header>
+      </div>
 
-      <div role="list" data-testid="tenant-cards">
-        <article role="listitem" data-testid="card-usage">
-          <h3>Usage</h3>
+      <div role="list" data-testid="tenant-cards" className="lin-mt">
+        <article
+          role="listitem"
+          data-testid="card-usage"
+          className="lin-card lin-card--pad"
+        >
+          <h3 className="lin-card__title">Usage</h3>
           {usage ? (
             <dl>
-              <dt>CAS hit ratio</dt>
+              <dt className="lin-card__meta">CAS hit ratio</dt>
               <dd>{(usage.cas_hit_ratio * 100).toFixed(2)}%</dd>
-              <dt>GB stored</dt>
+              <dt className="lin-card__meta">GB stored</dt>
               <dd>{usage.gb_stored.toFixed(2)}</dd>
-              <dt>GB egress</dt>
+              <dt className="lin-card__meta">GB egress</dt>
               <dd>{usage.gb_egress.toFixed(2)}</dd>
             </dl>
           ) : (
-            <p>No usage data.</p>
+            <EmptyState title="No usage data" />
           )}
         </article>
 
-        <article role="listitem" data-testid="card-billing">
-          <h3>Billing</h3>
+        <article
+          role="listitem"
+          data-testid="card-billing"
+          className="lin-card lin-card--pad lin-mt"
+        >
+          <h3 className="lin-card__title">Billing</h3>
           {billing ? (
             <dl>
-              <dt>Plan</dt>
+              <dt className="lin-card__meta">Plan</dt>
               <dd>{billing.plan}</dd>
-              <dt>MRR</dt>
+              <dt className="lin-card__meta">MRR</dt>
               <dd>${billing.mrr_usd.toFixed(2)}</dd>
-              <dt>Next invoice</dt>
+              <dt className="lin-card__meta">Next invoice</dt>
               <dd>{billing.next_invoice}</dd>
-              <dt>Payment method</dt>
+              <dt className="lin-card__meta">Payment method</dt>
               <dd data-testid="payment-method">{paymentDisplay}</dd>
             </dl>
           ) : (
-            <p>No billing data.</p>
+            <EmptyState title="No billing data" />
           )}
         </article>
 
-        <article role="listitem" data-testid="card-consents">
-          <h3>Consents</h3>
+        <article
+          role="listitem"
+          data-testid="card-consents"
+          className="lin-card lin-card--pad lin-mt"
+        >
+          <h3 className="lin-card__title">Consents</h3>
           {consents ? (
             <dl>
-              <dt>Granted</dt>
+              <dt className="lin-card__meta">Granted</dt>
               <dd>{consents.granted}</dd>
-              <dt>Revoked</dt>
+              <dt className="lin-card__meta">Revoked</dt>
               <dd>{consents.revoked}</dd>
-              <dt>Last capture</dt>
+              <dt className="lin-card__meta">Last capture</dt>
               <dd>{consents.last_capture}</dd>
             </dl>
           ) : (
-            <p>No consent data.</p>
+            <EmptyState title="No consent data" />
           )}
         </article>
 
-        <article role="listitem" data-testid="card-dsr">
-          <h3>DSR queue</h3>
+        <article
+          role="listitem"
+          data-testid="card-dsr"
+          className="lin-card lin-card--pad lin-mt"
+        >
+          <h3 className="lin-card__title">DSR queue</h3>
           {dsr ? (
             <dl>
-              <dt>Pending</dt>
+              <dt className="lin-card__meta">Pending</dt>
               <dd>{dsr.pending}</dd>
-              <dt>In progress</dt>
+              <dt className="lin-card__meta">In progress</dt>
               <dd>{dsr.in_progress}</dd>
-              <dt>Completed</dt>
+              <dt className="lin-card__meta">Completed</dt>
               <dd>{dsr.completed}</dd>
             </dl>
           ) : (
-            <p>No DSR data.</p>
+            <EmptyState title="No DSR data" />
           )}
         </article>
 
-        <article role="listitem" data-testid="card-pats">
-          <h3>Active PATs</h3>
+        <article
+          role="listitem"
+          data-testid="card-pats"
+          className="lin-card lin-card--pad lin-mt"
+        >
+          <h3 className="lin-card__title">Active PATs</h3>
           {pats && pats.length > 0 ? (
-            <ul>
+            <ul className="lin-checklist">
               {pats.map((p) => (
                 <li key={p.pat_id}>
-                  <code>{p.pat_id}</code> · {p.scope} · {p.created_at}
+                  <code>{p.pat_id}</code>{" "}
+                  <span className="lin-card__meta">
+                    {p.scope} · {p.created_at}
+                  </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p>No active PATs.</p>
+            <EmptyState title="No active PATs" />
           )}
         </article>
       </div>
 
-      <footer>
-        <p>
+      <div className="lin-mt">
+        <Callout tone="warn">
           Sensitive actions (delete, BYOK rotate, residency change) must be queued in{" "}
           <Link href="../ops">/admin/ops</Link> for dual approval.
-        </p>
-      </footer>
+        </Callout>
+      </div>
     </section>
   );
 }

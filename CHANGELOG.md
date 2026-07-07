@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **admin-ui — app-wide Linear design migration (admin, public, onboarding, DSR/consent) + FE follow-ups.**
+  Extends the customer-dashboard Linear rebuild to the rest of the app so the whole surface follows the
+  Linear doctrine (a11y-validated tokens, 4px spacing grid, fixed type scale, kit-only). Migrated: the
+  operator **admin** surface (audit/ops/tenants + 10 components), the **public/legal** pages
+  (pricing/privacy/security/legal via a new `PublicShell`+`LegalProse`), the **onboarding/activation**
+  flow (welcome/upgrade/team-invite/PatModal), and **DSR + consent**. Each surface opts into the dark
+  Linear canvas via the sanctioned per-page `.cx-shell` wrapper (no shared-layout/globals/kit edits).
+  FE follow-ups: the kit `Button` gains an `href`/`download` anchor variant (nav CTAs), and the Usage
+  screen now renders a real `request_count` gauge (consuming BE-1a). Strict Linear-compliance audited
+  (zero hex/off-grid/inline-style; type-scale enforced), a11y preserved (text on `--t1`/`--t2`), full
+  admin-ui suite green (440/440).
 - **Customer usage — real `request_count` surfaced (BE-1a).**
   `/v1/customer/usage` now returns a `request_count` for the period, read from `monthly_request_counts`
   (migration 0071) — the running counter the quota gate **already increments per request** — so this is a

@@ -12,10 +12,17 @@
  *   - CI runners (self-serve, separate product): Runner Starter …
  *     Runner Max (the `group: "runner"` tiers) — priced on concurrency +
  *     monthly vCPU-h, not storage.
+ *
+ * Linear-doctrine (dark) surface — matches the customer dashboard. Uses the
+ * frozen kit (Card / Badge / Button) + a11y-validated tokens (--t1/--t2 on
+ * --bg). No raw hex, no off-grid px, no inline styles.
  */
 
 import * as React from "react";
 import Link from "next/link";
+import { PublicShell } from "@/components/public/PublicShell";
+import { PublicPageHeader } from "@/components/public/PublicPageHeader";
+import { Badge } from "@/components/ui/linear";
 import type { Locale } from "@/i18n/LocaleContext";
 import { TIERS, type Tier } from "@/lib/pricing";
 
@@ -28,31 +35,36 @@ function TierCard(props: {
   locale: Locale;
 }): React.ReactElement {
   const { tier, locale } = props;
+  const cardClasses = [
+    "lin-card lin-card--pad lin-card--hover relative flex flex-col",
+    tier.highlight ? "border-[var(--line-2)] ring-1 ring-[var(--line-2)]" : "",
+  ].join(" ");
+
+  const ctaClasses = [
+    "lin-btn w-full",
+    tier.highlight ? "lin-btn--primary" : "lin-btn--ghost",
+  ].join(" ");
+
   return (
     <article
       role="listitem"
       data-testid={`tier-card-${tier.id}`}
       aria-label={`${tier.name} tier`}
-      className={[
-        "relative flex flex-col rounded-xl border p-6",
-        tier.highlight
-          ? "border-indigo-500 ring-2 ring-indigo-500 bg-indigo-50"
-          : "border-slate-200 bg-white",
-      ].join(" ")}
+      className={cardClasses}
     >
       {/* Most popular badge */}
       {tier.highlight && (
         <span
-          className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white"
+          className="absolute -top-3 left-1/2 -translate-x-1/2"
           data-testid={`most-popular-badge-${tier.id}`}
         >
-          Most popular
+          <Badge tone="neutral">Most popular</Badge>
         </span>
       )}
 
       {/* Tier name */}
       <h3
-        className="text-lg font-semibold text-slate-900"
+        className="text-base font-[560] text-[var(--t1)]"
         data-testid={`tier-name-${tier.id}`}
       >
         {tier.name}
@@ -65,15 +77,13 @@ function TierCard(props: {
       >
         {tier.price ? (
           <>
-            <span className="text-4xl font-bold text-slate-900">
+            <span className="text-[28px] font-[560] tracking-[-0.02em] text-[var(--t1)]">
               {tier.price}
             </span>
-            <span className="text-sm text-slate-500">{tier.cadence}</span>
+            <span className="text-sm text-[var(--t3)]">{tier.cadence}</span>
           </>
         ) : (
-          <span className="text-2xl font-semibold text-slate-700">
-            Talk to us
-          </span>
+          <span className="text-xl font-[560] text-[var(--t2)]">Talk to us</span>
         )}
       </div>
 
@@ -86,12 +96,12 @@ function TierCard(props: {
         {tier.features.map((feature) => (
           <li
             key={feature}
-            className="flex items-start gap-2 text-sm text-slate-700"
+            className="flex items-start gap-2 text-sm text-[var(--t2)]"
           >
             {/* Checkmark — inline SVG, no extra dependency */}
             <svg
               aria-hidden="true"
-              className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500"
+              className="mt-0.5 h-4 w-4 shrink-0 text-[var(--t3)]"
               viewBox="0 0 16 16"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -116,10 +126,7 @@ function TierCard(props: {
           <a
             href={tier.ctaHref}
             data-testid={`tier-cta-${tier.id}`}
-            className={[
-              "block w-full rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors",
-              "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
-            ].join(" ")}
+            className={ctaClasses}
           >
             {tier.cta}
           </a>
@@ -127,12 +134,7 @@ function TierCard(props: {
           <Link
             href={`/${locale}${tier.ctaHref}`}
             data-testid={`tier-cta-${tier.id}`}
-            className={[
-              "block w-full rounded-lg px-4 py-2.5 text-center text-sm font-semibold transition-colors",
-              tier.highlight
-                ? "bg-indigo-600 text-white hover:bg-indigo-700"
-                : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
-            ].join(" ")}
+            className={ctaClasses}
           >
             {tier.cta}
           </Link>
@@ -153,16 +155,13 @@ export default async function PricingPage(props: {
   const runnerTiers = TIERS.filter((t) => t.group === "runner");
 
   return (
-    <main
-      className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8"
-      data-testid="pricing-root"
-    >
+    <PublicShell width="wide" data-testid="pricing-root">
       {/* Header */}
       <div className="text-center" data-testid="pricing-header">
-        <h1 className="text-4xl font-bold tracking-tight text-slate-900">
+        <h1 className="text-[28px] font-[560] tracking-[-0.022em] text-[var(--t1)]">
           Simple, transparent pricing
         </h1>
-        <p className="mt-4 text-lg text-slate-600">
+        <p className="mx-auto mt-4 max-w-[60ch] text-base text-[var(--t2)]">
           R2 zero-egress means you pay for storage, not bandwidth.
           <br />
           No surprise bills when your CI cache hits.
@@ -173,7 +172,7 @@ export default async function PricingPage(props: {
       <section aria-labelledby="cache-tiers-heading" data-testid="pricing-cache-section">
         <h2
           id="cache-tiers-heading"
-          className="mt-16 text-center text-2xl font-bold tracking-tight text-slate-900"
+          className="mt-16 text-center text-2xl font-[560] tracking-[-0.012em] text-[var(--t1)]"
           data-testid="pricing-cache-heading"
         >
           Cache &amp; storage
@@ -196,13 +195,13 @@ export default async function PricingPage(props: {
       >
         <h2
           id="runner-tiers-heading"
-          className="mt-20 text-center text-2xl font-bold tracking-tight text-slate-900"
+          className="mt-20 text-center text-2xl font-[560] tracking-[-0.012em] text-[var(--t1)]"
           data-testid="pricing-runner-heading"
         >
           CI runners
         </h2>
         <p
-          className="mx-auto mt-3 max-w-2xl text-center text-slate-600"
+          className="mx-auto mt-3 max-w-[60ch] text-center text-[var(--t2)]"
           data-testid="pricing-runner-subtitle"
         >
           Ephemeral, cache-accelerated runners for your CI. Priced on
@@ -222,25 +221,25 @@ export default async function PricingPage(props: {
 
       {/* Footer note */}
       <p
-        className="mt-12 text-center text-sm text-slate-500"
+        className="mt-12 text-center text-sm text-[var(--t3)]"
         data-testid="pricing-footer-note"
       >
         All paid tiers include R2 zero-egress bandwidth. Prices in USD. Billed
         monthly.{" "}
         <Link
           href={`/${locale}/legal/terms`}
-          className="underline hover:text-slate-700"
+          className="text-[var(--t2)] underline decoration-[var(--line-2)] underline-offset-2 hover:text-[var(--t1)]"
         >
           Terms of Service
         </Link>
         {" · "}
         <Link
           href={`/${locale}/privacy`}
-          className="underline hover:text-slate-700"
+          className="text-[var(--t2)] underline decoration-[var(--line-2)] underline-offset-2 hover:text-[var(--t1)]"
         >
           Privacy
         </Link>
       </p>
-    </main>
+    </PublicShell>
   );
 }

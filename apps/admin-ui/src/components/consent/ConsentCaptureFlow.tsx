@@ -16,6 +16,7 @@ import {
   type ConsentSixFields,
   type ConsentSubmitPayload,
 } from "@/lib/consent-types";
+import { Button, Callout, Card } from "@/components/ui/linear";
 
 export interface ConsentCaptureFlowProps {
   /** Active locale resolved by Next.js [locale] segment. */
@@ -115,15 +116,22 @@ export function ConsentCaptureFlow({
 
   if (step === "done" && result) {
     return (
-      <main id="main">
-        <section aria-label="Consent receipt" data-testid="consent-success">
-          <h1>Consent recorded</h1>
-          <p>
-            Audit event: <code data-testid="audit-event-id">{result.audit_event_id}</code>
-          </p>
-          <JwtReceiptDisplay jwt={result.jwt_receipt} />
-        </section>
-      </main>
+      <div className="cx-shell lin">
+        <div className="cx-main">
+          <main id="main">
+            <h1>Consent recorded</h1>
+            <section aria-label="Consent receipt" data-testid="consent-success">
+              <Callout tone="info">
+                Audit event:{" "}
+                <code data-testid="audit-event-id">
+                  {result.audit_event_id}
+                </code>
+              </Callout>
+              <JwtReceiptDisplay jwt={result.jwt_receipt} />
+            </section>
+          </main>
+        </div>
+      </div>
     );
   }
 
@@ -132,76 +140,90 @@ export function ConsentCaptureFlow({
     // only `<h2>` step headings inside a bare `<section>`, so the page had no
     // main landmark (axe `landmark-one-main`) and no level-1 heading
     // (`page-has-heading-one`) — both dragged the Lighthouse a11y category
-    // below the 1.0 gate. Matches the landing page's `<main id="main">`.
-    <main id="main">
-      <section aria-label="Capture consent" data-testid="consent-capture">
-        <h1>Grant consent</h1>
-        <ol aria-label="Steps">
-        <li aria-current={step === "review" ? "step" : undefined}>1. Review</li>
-        <li aria-current={step === "scroll" ? "step" : undefined}>2. Read in full</li>
-        <li aria-current={step === "consent" ? "step" : undefined}>3. Consent</li>
-      </ol>
+    // below the 1.0 gate. The frozen customer-dashboard shell
+    // (`cx-shell lin` + `cx-main`) supplies the a11y-validated dark tokens and
+    // their validated backdrop; the single `<main id="main">` + `<h1>` are
+    // preserved.
+    <div className="cx-shell lin">
+      <div className="cx-main">
+        <main id="main">
+          <h1>Grant consent</h1>
+          <section aria-label="Capture consent" data-testid="consent-capture">
+            <ol aria-label="Steps">
+              <li aria-current={step === "review" ? "step" : undefined}>
+                1. Review
+              </li>
+              <li aria-current={step === "scroll" ? "step" : undefined}>
+                2. Read in full
+              </li>
+              <li aria-current={step === "consent" ? "step" : undefined}>
+                3. Consent
+              </li>
+            </ol>
 
-      {step === "review" && (
-        <div data-testid="step-review">
-          <h2>What we are requesting</h2>
-          <ConsentForm
-            ref={formRootRef}
-            value={fields}
-            onChange={setFields}
-            locale={locale}
-            capturedAtMs={capturedAtMs}
-          />
-          <button
-            type="button"
-            onClick={() => setStep("scroll")}
-            data-testid="to-scroll-step"
-            disabled={fields.purpose.trim().length === 0 || fields.data_categories.length === 0}
-          >
-            Continue
-          </button>
-        </div>
-      )}
+            {step === "review" && (
+              <div data-testid="step-review">
+                <h2>What we are requesting</h2>
+                <ConsentForm
+                  ref={formRootRef}
+                  value={fields}
+                  onChange={setFields}
+                  locale={locale}
+                  capturedAtMs={capturedAtMs}
+                />
+                <Button
+                  onClick={() => setStep("scroll")}
+                  data-testid="to-scroll-step"
+                  disabled={
+                    fields.purpose.trim().length === 0 ||
+                    fields.data_categories.length === 0
+                  }
+                >
+                  Continue
+                </Button>
+              </div>
+            )}
 
-      {step === "scroll" && (
-        <div data-testid="step-scroll">
-          <h2>Please read the notice</h2>
-          <ScrollToBottomGuard onReachBottom={onReachBottom}>
-            <pre data-testid="notice-body" style={{ whiteSpace: "pre-wrap" }}>
-              {noticeText}
-            </pre>
-          </ScrollToBottomGuard>
-        </div>
-      )}
+            {step === "scroll" && (
+              <div data-testid="step-scroll">
+                <h2>Please read the notice</h2>
+                <ScrollToBottomGuard onReachBottom={onReachBottom}>
+                  <Card>
+                    <div data-testid="notice-body">{noticeText}</div>
+                  </Card>
+                </ScrollToBottomGuard>
+              </div>
+            )}
 
-      {step === "consent" && (
-        <div data-testid="step-consent">
-          <h2>Confirm</h2>
-          <ConsentForm
-            ref={formRootRef}
-            value={fields}
-            onChange={setFields}
-            locale={locale}
-            capturedAtMs={capturedAtMs}
-            readOnly
-          />
-          {submitError && (
-            <p role="alert" data-testid="submit-error">
-              {submitError}
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            aria-disabled={!canSubmit}
-            data-testid="consent-submit"
-          >
-            I consent
-          </button>
-        </div>
-      )}
-      </section>
-    </main>
+            {step === "consent" && (
+              <div data-testid="step-consent">
+                <h2>Confirm</h2>
+                <ConsentForm
+                  ref={formRootRef}
+                  value={fields}
+                  onChange={setFields}
+                  locale={locale}
+                  capturedAtMs={capturedAtMs}
+                  readOnly
+                />
+                {submitError && (
+                  <div role="alert" data-testid="submit-error">
+                    <Callout tone="danger">{submitError}</Callout>
+                  </div>
+                )}
+                <Button
+                  onClick={handleSubmit}
+                  disabled={!canSubmit}
+                  aria-disabled={!canSubmit}
+                  data-testid="consent-submit"
+                >
+                  I consent
+                </Button>
+              </div>
+            )}
+          </section>
+        </main>
+      </div>
+    </div>
   );
 }

@@ -47,12 +47,6 @@ const INSTALL_HREF = "/api/install/github";
 const ENTITLEMENT_WP = "BE-10 runners entitlement read";
 
 export function RunnersClient(): React.ReactElement {
-  function startInstall(): void {
-    // Full navigation: follows the server-side signed-state redirect into
-    // GitHub's App-install flow (client-side routing cannot follow it).
-    window.location.assign(INSTALL_HREF);
-  }
-
   return (
     <div data-testid="runners-shell">
       {/* Value prop — the differentiator vs per-minute runner pricing. [copy] */}
@@ -80,9 +74,11 @@ export function RunnersClient(): React.ReactElement {
         meta="Install the CoreLink GitHub App to dispatch CI jobs to your runners against the shared cache."
       >
         <div data-testid="runners-install">
+          {/* Full-page navigation (302 → GitHub) via the kit anchor Button —
+              client-side routing cannot follow the cross-origin redirect. */}
           <Button
             variant="primary"
-            onClick={startInstall}
+            href={INSTALL_HREF}
             data-testid="runners-install-cta"
           >
             Install GitHub App

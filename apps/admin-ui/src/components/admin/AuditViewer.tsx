@@ -9,6 +9,7 @@ import type {
   AuditPage,
 } from "@/lib/types";
 import { AdminClient } from "@/lib/admin-client";
+import { Button, Card, InlineError, Skeleton } from "@/components/ui/linear";
 import AuditFilterBar from "./AuditFilterBar";
 import AuditTable from "./AuditTable";
 import AuditEventDrawer from "./AuditEventDrawer";
@@ -82,42 +83,60 @@ export function AuditViewer({
     }
   };
 
+  const exportAction = (
+    <Button
+      variant="ghost"
+      size="sm"
+      data-testid="export-btn"
+      onClick={() => void exportFilter()}
+      disabled={loading}
+    >
+      Export current filter
+    </Button>
+  );
+
   return (
     <div data-testid="audit-viewer">
-      <AuditFilterBar filter={filter} onChange={setFilter} />
+      <Card title="Filters">
+        <AuditFilterBar filter={filter} onChange={setFilter} />
+      </Card>
 
-      <div>
-        <button
-          type="button"
-          data-testid="export-btn"
-          onClick={() => void exportFilter()}
-          disabled={loading}
-        >
-          Export current filter
-        </button>
-      </div>
+      <Card title="Events" actions={exportAction} className="lin-mt">
+        {error && (
+          <div data-testid="audit-error">
+            <InlineError error={error} onRetry={() => void fetchPage(null)} />
+          </div>
+        )}
 
-      {error && (
-        <p role="alert" data-testid="audit-error">
-          {error}
-        </p>
-      )}
+        {loading ? (
+          <div aria-busy="true" aria-label="Loading audit events">
+            <Skeleton rows={5} />
+          </div>
+        ) : (
+          <>
+            <AuditTable rows={page.rows} onRowClick={(id) => void openEvent(id)} />
 
-      <AuditTable rows={page.rows} onRowClick={(id) => void openEvent(id)} />
-
-      <nav data-testid="audit-pagination" aria-label="Audit pagination">
-        <button
-          type="button"
-          data-testid="next-page"
-          disabled={!page.next_cursor || loading}
-          onClick={() => {
-            setFilter((f) => ({ ...f, cursor: page.next_cursor }));
-            void fetchPage(page.next_cursor);
-          }}
-        >
-          Next page
-        </button>
-      </nav>
+            <nav
+              className="lin-mt"
+              data-testid="audit-pagination"
+              aria-label="Audit pagination"
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="next-page"
+                disabled={!page.next_cursor || loading}
+                onClick={() => {
+                  setFilter((f) => ({ ...f, cursor: page.next_cursor }));
+                  void fetchPage(page.next_cursor);
+                }}
+              >
+                Next page
+              </Button>
+            </nav>
+          </>
+        )}
+      </Card>
 
       <AuditEventDrawer
         event={selected}

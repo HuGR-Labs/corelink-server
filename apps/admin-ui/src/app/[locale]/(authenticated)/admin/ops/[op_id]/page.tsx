@@ -6,6 +6,7 @@ import OpDetailViewClient from "@/components/admin/OpDetailViewClient";
 import { adminClient } from "@/lib/admin-client";
 import { getAuthContext, mfaFresh } from "@/lib/auth";
 import type { AdminOp } from "@/lib/types";
+import { Callout } from "@/components/ui/linear";
 
 export interface OpPageProps {
   params: Promise<{ locale: string; op_id: string }>;
@@ -28,17 +29,27 @@ export default async function AdminOpDetailPage({
 
   return (
     <RbacGuard>
-      <main aria-labelledby="op-heading">
-        <h1 id="op-heading">Op {op_id}</h1>
-        {!op && <p role="alert">Op not found.</p>}
-        {op && (
-          <OpDetailViewClient
-            initialOp={op}
-            currentUserId={auth.user_id}
-            mfaFresh={mfaFresh(auth)}
-          />
-        )}
-      </main>
+      <div className="cx-shell lin">
+        <div className="cx-main">
+          <main aria-labelledby="op-heading">
+            <h1 id="op-heading">Op {op_id}</h1>
+            {!op && (
+              <div role="alert" className="lin-mt">
+                <Callout tone="danger">Op not found.</Callout>
+              </div>
+            )}
+            {op && (
+              <div className="lin-mt-lg">
+                <OpDetailViewClient
+                  initialOp={op}
+                  currentUserId={auth.user_id}
+                  mfaFresh={mfaFresh(auth)}
+                />
+              </div>
+            )}
+          </main>
+        </div>
+      </div>
     </RbacGuard>
   );
 }
