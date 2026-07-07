@@ -22,6 +22,17 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **admin-ui — repaired the broken Linear render (legacy CSS overrode the kit).**
+  The app-wide Linear migration rendered visually broken — "flying white boxes" (HelpPopover triggers),
+  invisible/empty buttons, cramped forms — despite typecheck/lint/tests/token-audit all passing (none catch
+  layout). Root cause: the old dashboard's generic `.cx-main {button,input,section,table,a,…}` rules
+  (specificity 0,1,1) overrode the kit's `.lin-*` classes (0,1,0), and `.cx-shell a {color:inherit}` overrode
+  `.lin-btn--*` text color (light-on-white = invisible). Removed the obsolete `.cx-main` content rules (kept
+  only the raw `<h1>`+intro `<p>`) and scoped `.cx-shell a` to `:not([class*="lin-"])`. Plus per-page layout:
+  DSR landing rebuilt as real `.lin-card`s (was jammed inline), consent capture given a card + horizontal
+  stepper + proper field spacing. This bug was LIVE in prod. Verified by screenshotting every screen.
+
 ### Added
 - **admin-ui — app-wide Linear design migration (admin, public, onboarding, DSR/consent) + FE follow-ups.**
   Extends the customer-dashboard Linear rebuild to the rest of the app so the whole surface follows the
