@@ -242,14 +242,25 @@ export interface Env {
  * `pathSuffix` is the server-derived route path (NOT client-suppliable beyond
  * the URL itself, which already selected the `internal` routeKind).
  */
-function internalConsumerForPath(pathSuffix: string): InternalConsumer {
+export function internalConsumerForPath(pathSuffix: string): InternalConsumer {
   if (pathSuffix === "/_internal/pat/mint") {
     return "pat_mint";
   }
   if (pathSuffix.startsWith("/_internal/admin/")) {
     return "admin";
   }
-  // DSR/erase surface (`/_internal/dsr/*`) and any other internal data-plane
+  // The per-user DSR legitimacy ANCHOR (`/_internal/dsr/anchor`, #634) is a
+  // SEPARATE authority from the eraser: githugr holds `CORELINK_DSR_ANCHOR_AUTH_KEY`
+  // (distinct from the eraser's ERASE key — the anti-forge two-authority split that
+  // gates the irreversible physical-erase cascade). It MUST be matched before the
+  // `/_internal/dsr/*` erase catch-all below, or the anchor caller is gated on the
+  // wrong (erase) key and always 401s (the go-live blocker: the worker front-gate
+  // rejected githugr's anchor key before it ever reached the container's own anchor
+  // gate, so binding/forwarding the anchor key alone could never help).
+  if (pathSuffix === "/_internal/dsr/anchor") {
+    return "dsr_anchor";
+  }
+  // DSR erase surface (`/_internal/dsr/*`) and any other internal data-plane
   // route (`/_internal/cas/*`, …) gate on the erase consumer key.
   return "erase";
 }
