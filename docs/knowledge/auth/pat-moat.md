@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/internal_auth.ts"
   - "worker/src/index.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "ca1509f730063a7f2183569639466bb2bc83f567"
+checkpoint_sha: "119df109abc91fa680bc66fb83c8a400a03e2935"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -39,14 +39,22 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - The Worker-edge internal gate compares a presented secret against the expected one in constant time,
   copying into a fixed buffer so neither length nor content leaks via an early branch — one
   `timingSafeEqual` over equal-length buffers AND a single length-equality bit
-  (`worker/src/lib/internal_auth.ts:112-127`).
+  (`worker/src/lib/internal_auth.ts:118-133`).
 - That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (403),
   a missing/wrong header is 401, and only an exact match returns `null` to let the caller proceed
-  (`worker/src/lib/internal_auth.ts:152-164`).
+  (`worker/src/lib/internal_auth.ts:158-170`).
 - Per-consumer key resolution is `resolveConsumerKey`, which prefers a consumer's dedicated key but
   treats a too-short dedicated key as ABSENT and falls back to the shared secret — so a mis-set
   per-consumer key degrades to the shared gate rather than failing open
-  (`worker/src/lib/internal_auth.ts:73`).
+  (`worker/src/lib/internal_auth.ts:88-93`).
+- The internal consumers now split the DSR surface into TWO authorities. The irreversible physical-erase
+  cascade (`/_internal/dsr/*`) gates on the `erase` key, but the per-user DSR legitimacy ANCHOR
+  (`/_internal/dsr/anchor`) resolves its OWN dedicated `dsr_anchor` consumer key
+  (`CORELINK_DSR_ANCHOR_AUTH_KEY`, held by githugr and DISTINCT from the eraser's key): it is matched by
+  an exact-path special-case in `internalConsumerForPath` placed BEFORE the `/_internal/dsr/*` erase
+  catch-all (`worker/src/index.ts:260-262`) and resolved by the `dsr_anchor` branch of the
+  consumer-key ternary (`worker/src/lib/internal_auth.ts:85-87`). This is an anti-forge two-authority
+  split — a leaked erase key cannot pass the anchor gate and vice-versa (least privilege, A6).
 - In the container the **first** verification step is the HMAC fast-reject: the plaintext is parsed and
   a bad signature is rejected pre-D1, so a forged token drives no D1 cost and consumes no Argon2id
   permit (`crates/corelink-container/src/adapter_pat.rs:538-543`).
@@ -59,10 +67,10 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - A token that fails the cheap HMAC fast-reject NEVER reaches the Argon2id layer
   (`crates/corelink-container/src/adapter_pat.rs:538-543`).
 - Both layers are constant-time with no length or content oracle — the edge compare
-  (`worker/src/lib/internal_auth.ts:112-127`) and the uniform `InvalidPat` collapse in the container
+  (`worker/src/lib/internal_auth.ts:118-133`) and the uniform `InvalidPat` collapse in the container
   (`crates/corelink-container/src/adapter_pat.rs:43-47`).
 - The edge gate fails CLOSED: an unbound/short secret is unavailable, never an open gate
-  (`worker/src/lib/internal_auth.ts:152-158`).
+  (`worker/src/lib/internal_auth.ts:158-164`).
 
 # Gotchas
 
@@ -78,14 +86,14 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - **Availability-vs-auth at the Worker edge: a transient D1 PAT-lookup FAULT now maps to a retryable
   503, NOT a 401.** `extractAuth` wraps the `SELECT … FROM pat` in a try/catch and on any D1 error
   (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
-  (`worker/src/index.ts:1070-1080`). The PAT-gate caller (H1 fix) now maps BOTH
+  (`worker/src/index.ts:1081-1091`). The PAT-gate caller (H1 fix) now maps BOTH
   `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
-  (`worker/src/index.ts:2283-2291`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
+  (`worker/src/index.ts:2324-2329`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
   surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
   chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
   still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
   COMPLETE for the worker edge — a transient D1 fault is NOT a cause of a 401 there; it is a 503. The
-  in-line `catch` comment at `worker/src/index.ts:1051-1053` now correctly states that the caller maps
+  in-line `catch` comment at `worker/src/index.ts:1088-1090` now correctly states that the caller maps
   `d1_lookup_error` to a 503 (it previously lied — "for now we 401 to fail-closed"); the cited line
   numbers shifted after the Artifact 1 `/v1/public/*`
   attestation-verifier route arm was added above this handler, again when the CF-6 audit-chain
@@ -93,16 +101,18 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   PII/secret scrubber import was added at the top of the module, when the
   `/internal/v1/auth/resolve-tenant` fabric route was added to `matchRoute`, and most recently when the
   multi-region "route to the LOCAL (this-region) container" DO-forward block was inserted above the
-  per-tenant DO forward (`worker/src/index.ts:1644-1645`)). Both the D1-fault and the
+  per-tenant DO forward (`worker/src/index.ts:1684-1686`)). Both the D1-fault and the
   `signing_key_not_configured` config-fault
   are retryable 503s; the edge still fails CLOSED (security > availability) for every credential-shaped
   failure.
 
 # Citations
 
-1. `worker/src/lib/internal_auth.ts:112-127` — the edge constant-time secret compare with no length oracle.
-2. `worker/src/lib/internal_auth.ts:152-164` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
-2a. `worker/src/lib/internal_auth.ts:73` — `resolveConsumerKey`: dedicated-key preference with too-short→absent shared-key fallback.
+1. `worker/src/lib/internal_auth.ts:118-133` — the edge constant-time secret compare with no length oracle.
+2. `worker/src/lib/internal_auth.ts:158-170` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
+2a. `worker/src/lib/internal_auth.ts:88-93` — `resolveConsumerKey`: dedicated-key preference with too-short→absent shared-key fallback.
+2b. `worker/src/lib/internal_auth.ts:85-87` — the `dsr_anchor` branch of the consumer-key ternary (`CORELINK_DSR_ANCHOR_AUTH_KEY`).
+2c. `worker/src/index.ts:260-262` — `internalConsumerForPath` special-cases `/_internal/dsr/anchor` → `dsr_anchor` before the `/_internal/dsr/*` erase catch-all.
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
 4. `crates/corelink-container/src/adapter_pat.rs:43-47` — uniform `InvalidPat`: no on-the-wire oracle.
 5. `crates/corelink-container/src/adapter_pat.rs:538-543` — the HMAC fast-reject, pre-D1, no permit consumed.
