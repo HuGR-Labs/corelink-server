@@ -22,6 +22,23 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **container + worker — AC create-only (deny-overwrite) runner-job cred policy (anti AC-squat).**
+  Closes the runner-side "AC-squat" fast-follow: a runner-job credential may now CREATE a new
+  `(tenant, action_digest)` Action-Cache entry but may NOT OVERWRITE an existing one
+  (first-writer-wins → AC becomes append-only per tenant for these creds). This is the AC analog of
+  the existing deny-DELETE narrowing, at the SAME chokepoint — **key-agnostic** (every key) and
+  **tenant-scoped** (the tenant is the edge-injected id, never a caller param). New server-trusted
+  header `x-corelink-ac-create-only: 1`, which the Worker sets ONLY for a genuine runner-job cred
+  (alongside `x-corelink-runner-job` / `x-corelink-ac-key-allow`) and **strips** from every inbound
+  client request (added to `CLIENT_TRUST_HEADERS`) so it can never be forged. The container
+  (`scope.rs::RunnerJob::ac_create_only`) reads it fail-SAFE (only exact `"1"`, and never on a
+  non-runner-job) and the AC update route (`routes/ac.rs`) enforces it **atomically** off the store's
+  `durable` put-if-absent signal (no TOCTOU): a non-durable write by a create-only cred — or a
+  divergent-body overwrite — is rejected `409 {"error":"AC_CREATE_ONLY"}`. A first write, a normal
+  PAT, and a non-create-only runner-job cred are unchanged. Two-authority anti-poisoning posture:
+  INV-AC-RESULT-HASH-IMMUTABLE (divergent bytes) + create-only cred policy (any overwrite).
+
 ### Fixed
 - **worker — DSR legitimacy anchor (`/_internal/dsr/anchor`) was gated on the wrong key (GDPR go-live blocker).**
   The anchor is a two-authority split: githugr holds a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY`,

@@ -227,16 +227,36 @@ pub const RUNNER_JOB_HEADER: &str = "x-corelink-runner-job";
 /// - absent / empty → no key pinned (deny-DELETE only).
 pub const RUNNER_JOB_AC_KEY_ALLOW_HEADER: &str = "x-corelink-ac-key-allow";
 
+/// The SERVER-TRUSTED header the Worker sets alongside [`RUNNER_JOB_HEADER`] to
+/// mark a **create-only (deny-overwrite)** runner-job PAT — the anti AC-squat
+/// fast-follow. Present-and-equal-to-`"1"` (trimmed) ⇒ this runner-job cred's AC
+/// writes are FIRST-WRITER-WINS: it may CREATE a new `(tenant, action_digest)`
+/// entry but may NOT OVERWRITE an existing one (⇒ 409). It is **key-AGNOSTIC**
+/// (applies to every key — orthogonal to [`RUNNER_JOB_AC_KEY_ALLOW_HEADER`]'s
+/// exact-key pin) and tenant-scoped (the tenant is the edge-injected id). This is
+/// the AC analog of the existing deny-DELETE narrowing, at the SAME chokepoint.
+///
+/// The Worker strips any client-supplied copy and re-sets it ONLY for a genuine
+/// runner-job cred (parallel to [`RUNNER_JOB_HEADER`] / [`SCOPE_HEADER`]), so the
+/// container may trust it. Any other value / absent ⇒ OFF (fail-SAFE false), and
+/// a non-runner-job is NEVER create-only (see [`RunnerJob::ac_create_only`]).
+pub const RUNNER_JOB_AC_CREATE_ONLY_HEADER: &str = "x-corelink-ac-create-only";
+
 /// Server-trusted marker + AC-key restriction for a narrowed runner-job PAT.
 ///
 /// Construction is infallible: absent [`RUNNER_JOB_HEADER`] yields a
 /// non-runner-job value that is a NO-OP at every gate (fail-SAFE — a normal PAT
 /// is never accidentally narrowed). The narrowing is enforced at the route via
-/// [`RunnerJob::is_runner_job`] + [`RunnerJob::ac_key_allowed`].
+/// [`RunnerJob::is_runner_job`] + [`RunnerJob::ac_key_allowed`] +
+/// [`RunnerJob::ac_create_only`].
 #[derive(Debug, Clone)]
 pub struct RunnerJob {
     is_runner_job: bool,
     ac_key_allow: Option<String>,
+    /// Raw parse of [`RUNNER_JOB_AC_CREATE_ONLY_HEADER`] (`true` only on exact
+    /// `"1"`). Gated on [`Self::is_runner_job`] at the [`Self::ac_create_only`]
+    /// accessor so a stray header without the runner-job marker is a NO-OP.
+    ac_create_only: bool,
 }
 
 impl RunnerJob {
@@ -263,9 +283,19 @@ impl RunnerJob {
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_owned);
+        // Create-only (deny-overwrite): present-and-exactly-`"1"` (trimmed) ⇒ on;
+        // any other value / absent ⇒ off. Parsed EXACTLY like the runner-job
+        // marker (the `"1"` truth), then gated on `is_runner_job` at the accessor.
+        let ac_create_only = parts
+            .headers
+            .get(RUNNER_JOB_AC_CREATE_ONLY_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::trim)
+            == Some("1");
         Self {
             is_runner_job,
             ac_key_allow,
+            ac_create_only,
         }
     }
 
@@ -292,6 +322,22 @@ impl RunnerJob {
             None | Some("*") => true,
             Some(allowed) => allowed == key,
         }
+    }
+
+    /// Whether this request carries a **create-only (deny-overwrite)** runner-job
+    /// PAT — AC writes are first-writer-wins: a CREATE of a new
+    /// `(tenant, action_digest)` entry is allowed, but any OVERWRITE of an
+    /// existing entry is rejected (the route returns 409). Key-AGNOSTIC (applies
+    /// to every key, orthogonal to [`Self::ac_key_allowed`]).
+    ///
+    /// Fail-SAFE: `false` unless this is a genuine runner-job (marker == `"1"`)
+    /// AND [`RUNNER_JOB_AC_CREATE_ONLY_HEADER`] is present and exactly `"1"`. A
+    /// non-runner-job is NEVER create-only — a stray create-only header without
+    /// the runner-job marker is ignored (the Worker strips client copies and sets
+    /// it only for a real runner-job cred, so this is defense-in-depth).
+    #[must_use]
+    pub fn ac_create_only(&self) -> bool {
+        self.is_runner_job && self.ac_create_only
     }
 }
 
@@ -573,5 +619,60 @@ mod tests {
         let rj = extract_runner_job(parts_with_runner_job(None, Some(&"a".repeat(64)))).await;
         assert!(!rj.is_runner_job());
         assert!(rj.ac_key_allowed(&"b".repeat(64)));
+    }
+
+    // ---- ac_create_only (deny-overwrite / anti AC-squat) ----------------------
+
+    /// Build `Parts` carrying an optional runner-job marker + create-only header.
+    fn parts_with_create_only(marker: Option<&str>, create_only: Option<&str>) -> Parts {
+        let mut b = axum::http::Request::builder();
+        if let Some(m) = marker {
+            b = b.header(RUNNER_JOB_HEADER, m);
+        }
+        if let Some(c) = create_only {
+            b = b.header(RUNNER_JOB_AC_CREATE_ONLY_HEADER, c);
+        }
+        b.body(axum::body::Body::empty()).unwrap().into_parts().0
+    }
+
+    #[tokio::test]
+    async fn ac_create_only_true_only_on_exact_one_with_marker() {
+        // runner-job marker "1" + create-only "1" ⇒ create-only ON.
+        let rj = extract_runner_job(parts_with_create_only(Some("1"), Some("1"))).await;
+        assert!(rj.is_runner_job());
+        assert!(rj.ac_create_only());
+        // Surrounding whitespace is trimmed (like the marker / scope headers).
+        let rj = extract_runner_job(parts_with_create_only(Some("1"), Some("  1  "))).await;
+        assert!(rj.ac_create_only());
+    }
+
+    #[tokio::test]
+    async fn ac_create_only_fail_safe_false_on_non_one() {
+        // Present-but-non-"1" create-only value ⇒ OFF (fail-SAFE): the "1" marker
+        // is the ONLY truth, exactly like the runner-job marker.
+        for bad in ["", "0", "true", "yes", " 2 ", "01", "1 1"] {
+            let rj = extract_runner_job(parts_with_create_only(Some("1"), Some(bad))).await;
+            assert!(
+                !rj.ac_create_only(),
+                "create-only value {bad:?} must be OFF (only exact \"1\" is on)",
+            );
+        }
+        // Absent create-only header on a runner-job ⇒ OFF (unchanged behavior).
+        let rj = extract_runner_job(parts_with_create_only(Some("1"), None)).await;
+        assert!(rj.is_runner_job());
+        assert!(!rj.ac_create_only());
+    }
+
+    #[tokio::test]
+    async fn ac_create_only_false_when_not_runner_job() {
+        // A create-only header WITHOUT the runner-job marker ⇒ NOT create-only
+        // (defense-in-depth: only a genuine runner-job cred is create-only).
+        let rj = extract_runner_job(parts_with_create_only(None, Some("1"))).await;
+        assert!(!rj.is_runner_job());
+        assert!(!rj.ac_create_only());
+        // A non-"1" marker is not a runner-job, so create-only "1" is still OFF.
+        let rj = extract_runner_job(parts_with_create_only(Some("0"), Some("1"))).await;
+        assert!(!rj.is_runner_job());
+        assert!(!rj.ac_create_only());
     }
 }
