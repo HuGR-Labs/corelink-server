@@ -132,9 +132,18 @@ function TeamInner(): React.ReactElement {
     }
   }
 
+  // Active/suspended seats vs. still-pending invitations are visually distinct
+  // groups (the audit found invited members rendered inline with no management).
+  const activeMembers = members.filter((m) => m.status !== "invited");
+  const pendingInvites = members.filter((m) => m.status === "invited");
   const ownerCount = members.filter((m) => m.role === "Owner").length;
-  const singleOwnerOnly = members.length === 1 && ownerCount === 1;
-  const seatsLabel = `${members.length} ${members.length === 1 ? "member" : "members"}`;
+  const singleOwnerOnly =
+    activeMembers.length === 1 && ownerCount === 1 && pendingInvites.length === 0;
+  // Seat cap is NOT on the wire — listTeam returns only the member array (no
+  // plan/seat-limit field), so we honestly count members instead of faking an
+  // "X of Y seats". Close BE-6 to surface a real cap.
+  const seatsLabel = `${activeMembers.length} ${activeMembers.length === 1 ? "member" : "members"}`;
+  const pendingLabel = `${pendingInvites.length} ${pendingInvites.length === 1 ? "invitation" : "invitations"}`;
 
   return (
     <div data-testid="team-shell">
@@ -157,7 +166,7 @@ function TeamInner(): React.ReactElement {
           <Field
             label="Role"
             htmlFor="team-invite-role-select"
-            help="What this teammate can do. Each role's full permissions are explained on its badge in the members list below."
+            help="What this teammate can do. Each role's full permissions are explained on its badge in the members list below. Roles are set at invite time and can't be changed later — remove and re-invite to change a role."
           >
             <Select
               id="team-invite-role-select"
@@ -181,13 +190,13 @@ function TeamInner(): React.ReactElement {
           <Callout tone="info">
             <span data-testid="team-invite-success">
               Invited {lastInvited}. We&apos;ve emailed them an invitation — they&apos;ll show
-              below as &quot;Invited&quot; until they accept.
+              under &quot;Pending invitations&quot; until they accept.
             </span>
           </Callout>
         ) : null}
       </Card>
 
-      <Card title="Members" meta={seatsLabel} className="lin-mt">
+      <Card title="Members" meta={seatsLabel} className="lin-mt-lg">
         {loading ? (
           <div data-testid="team-loading" aria-busy="true" aria-label="Loading members">
             <Skeleton rows={3} />
@@ -220,7 +229,7 @@ function TeamInner(): React.ReactElement {
                 </tr>
               </thead>
               <tbody>
-                {members.map((m) => {
+                {activeMembers.map((m) => {
                   const isOwner = m.role === "Owner";
                   return (
                     <tr key={m.user_id} data-testid={`team-row-${m.user_id}`}>
@@ -254,9 +263,64 @@ function TeamInner(): React.ReactElement {
                 })}
               </tbody>
             </table>
+            <p className="lin-t3 lin-mt">
+              Roles are set when you invite someone and can&apos;t be changed here yet — to change a
+              role, remove the member and re-invite them.
+            </p>
           </>
         )}
       </Card>
+
+      {!loading && err == null && pendingInvites.length > 0 ? (
+        <Card title="Pending invitations" meta={pendingLabel} className="lin-mt">
+          <table className="lin-table" data-testid="team-pending-list">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Invited</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {pendingInvites.map((m) => (
+                <tr key={m.user_id} data-testid={`team-row-${m.user_id}`}>
+                  <td>{m.email}</td>
+                  <td>
+                    <Badge tone="neutral">{m.role}</Badge>{" "}
+                    <HelpPopover label={`What can a ${m.role} do?`}>
+                      {ROLE_HELP[m.role]}
+                    </HelpPopover>
+                  </td>
+                  <td>
+                    <Badge tone="warn" dot>
+                      {STATUS_LABEL.invited}
+                    </Badge>
+                  </td>
+                  <td>{formatJoined(m.joined_at)}</td>
+                  <td>
+                    {/* Resend/cancel-invite endpoints don't exist yet (BE-6). Shown
+                        clearly disabled rather than faked. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled
+                      title="Resend is coming soon — not yet available."
+                    >
+                      Resend
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="lin-t3 lin-mt">
+            These teammates have been emailed an invitation and will move to Members once they
+            accept. Resending and canceling invitations aren&apos;t available yet.
+          </p>
+        </Card>
+      ) : null}
 
       <ConfirmDialog
         open={removeTarget != null}

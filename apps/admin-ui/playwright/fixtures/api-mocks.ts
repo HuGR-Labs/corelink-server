@@ -90,10 +90,7 @@ export async function installApiMocks(page: Page): Promise<void> {
   await page.route(/\/v1\/.*/, async (route: Route) => {
     const req = route.request();
     const url = new URL(req.url());
-    // Normalize away the `/api` base-URL prefix the customer client prepends
-    // (customer-client resolveBaseUrl → "/api"), so both `/api/v1/*` and bare
-    // `/v1/*` requests match the same branches.
-    const path = url.pathname.replace(/^\/api/, "");
+    const path = url.pathname;
     const method = req.method();
 
     // ----- Tenants -----
@@ -324,61 +321,6 @@ export async function installApiMocks(page: Page): Promise<void> {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(op),
-      });
-    }
-
-    // ----- Customer dashboard reads (rich fixtures so the screens render with
-    // real data, not skeletons). Shapes mirror src/lib/customer-types.ts. -----
-    const json = (status: number, obj: unknown): Promise<void> =>
-      route.fulfill({
-        status,
-        contentType: "application/json",
-        body: JSON.stringify(obj),
-      });
-
-    if (path === "/v1/customer/overview" && method === "GET") {
-      return json(200, {
-        tenant_id: "tenant_acme",
-        tenant_name: "Acme Corp",
-        plan: "pro",
-        usage: { period: "2026-06", cas_bytes: 4_812_344_321, reads: 124_502, writes: 8_712, quota_bytes: 536_870_912_000 },
-        billing: { status: "active", next_invoice_at: "2026-07-01T00:00:00Z", amount_due_cents: 5000, currency: "usd" },
-        byok: { status: "customer_managed", cmk_id: "arn:aws:kms:us-east-1:…:key/acme-cmk", last_rotated_at: "2026-05-20T12:00:00Z" },
-        recent_activity: [
-          { event_id: "cevt_1", ts: "2026-06-28T14:22:00Z", event_type: "pat.created", severity: "info", actor: "you@acme.test", summary: "created PAT 'ci-github'" },
-          { event_id: "cevt_2", ts: "2026-06-27T09:10:00Z", event_type: "cache.write", severity: "info", actor: "ci-runner", summary: "48,201 objects written" },
-        ],
-      });
-    }
-    if (path === "/v1/customer/usage" && method === "GET") {
-      return json(200, {
-        period: url.searchParams.get("period") ?? "2026-06",
-        cas_bytes: 4_812_344_321, reads: 124_502, writes: 8_712, request_count: 133_214, quota_bytes: 536_870_912_000,
-        daily: Array.from({ length: 7 }, (_, i) => ({ day: `2026-06-${String(22 + i).padStart(2, "0")}`, reads: 14_000 + i * 1_200, writes: 800 + i * 90, cas_bytes: 600_000_000 + i * 30_000_000 })),
-      });
-    }
-    if (path === "/v1/customer/billing" && method === "GET") {
-      return json(200, {
-        plan: "pro", status: "active", current_period_start: "2026-06-01T00:00:00Z", current_period_end: "2026-07-01T00:00:00Z",
-        amount_due_cents: 5000, currency: "usd", cancel_at_period_end: false, invoices: [], payment_method: null,
-      });
-    }
-    if (path === "/v1/customer/keys" && method === "GET") {
-      return json(200, {
-        pats: [
-          { pat_id: "pat_001", name: "ci-github", scopes: ["cache:r", "cache:w"], created_at: "2026-06-28T14:22:00Z", last_used_at: "2026-06-30T08:00:00Z" },
-          { pat_id: "pat_002", name: "local-dev", scopes: ["cache:r"], created_at: "2026-06-10T10:00:00Z", revoked_at: "2026-06-20T10:00:00Z" },
-        ],
-        byok: { status: "customer_managed", cmk_id: "arn:aws:kms:us-east-1:…:key/acme-cmk", last_rotated_at: "2026-05-20T12:00:00Z" },
-      });
-    }
-    if (path === "/v1/customer/team" && method === "GET") {
-      return json(200, {
-        members: [
-          { user_id: "u_owner", email: "you@acme.test", role: "Owner", joined_at: "2026-04-01T00:00:00Z", status: "active" },
-          { user_id: "u_dev1", email: "dev@acme.test", role: "Developer", joined_at: "2026-05-12T00:00:00Z", status: "active" },
-          { user_id: "u_inv", email: "newhire@acme.test", role: "Developer", joined_at: "2026-06-25T00:00:00Z", status: "invited" },
-        ],
       });
     }
 

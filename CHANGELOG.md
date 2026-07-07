@@ -34,6 +34,17 @@ Each entry cross-references:
   stepper + proper field spacing. This bug was LIVE in prod. Verified by screenshotting every screen.
 
 ### Added
+- **admin-ui — screen SOTA rebuild wave 1 batch 2 (tokens, billing, settings, team, admin-audit, admin-tenants, customer-audit).**
+  Tokens: per-token rotate (revoke+recreate) + hide-revoked filter + honest last-used. Billing: real plan
+  ladder from the pricing catalog (upgrade/downgrade CTAs, active-sub → portal to avoid double-billing) +
+  runner-SKU ladder. Settings: real Account card (from the Clerk session, no new endpoint) + honest
+  coming-soon for the BE-gated controls + working danger zone. Team: pending-invites split out, read-only
+  roles with an honest note. Admin-audit: csv/json export toggle + event drawer → Modal overlay.
+  Admin-tenants: default recent-tenants list + plan/region/BYOK filters (the 5 deep-dive enrichment cards
+  are honestly BE-gated — no per-tenant enrichment endpoint exists yet). Customer-audit: **fixed a real
+  filter bug** — the client sent `since`/`event_types` but the backend parses `from`/`to`/`kind`, so date
+  + event-type filters were silently dropped server-side; aligned the client + mock to the canonical names.
+  Rebuilt the orphan audit-visualization page off raw HTML onto the kit.
 - **admin-ui — screen SOTA rebuild wave 1 (home, connect, trust, DSR-landing, DSR-status, consent-dashboard).**
   After a code-grounded, screen-by-screen audit against a frozen Linear design contract, rebuilt six screens
   to the standard: fixed the recurring cramped-card bug (`.lin-checklist` 4px misused as a card vstack →

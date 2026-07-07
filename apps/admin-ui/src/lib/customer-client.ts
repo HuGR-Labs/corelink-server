@@ -11,7 +11,6 @@
 
 import type {
   CustomerAuditEvent,
-  CustomerAuditFilter,
   CustomerBilling,
   CustomerByokConfig,
   CustomerDollarCeiling,
@@ -115,10 +114,23 @@ export class CustomerClient {
     return this.request<CustomerUsage>(`/v1/customer/usage${q}`);
   }
 
-  async listAudit(filter: CustomerAuditFilter = {}): Promise<{ rows: CustomerAuditEvent[] }> {
+  /**
+   * List tenant-scoped audit events. The wire params are the backend's
+   * CANONICAL names: `from` (ISO-8601 lower bound), `to` (ISO-8601 upper bound),
+   * and `kind` (comma-separated event-type codes) — see `AuditQuery` in
+   * `crates/corelink-container/src/routes/customer.rs`. The pre-2026-07 client
+   * sent `since` / `event_types`, which the backend silently DROPPED (the struct
+   * only deserializes `from`/`to`/`kind`), so date + event-type filters never
+   * reached D1. `to` is currently accepted-but-ignored server-side (parity with
+   * the Rust handler); callers still apply the upper bound client-side.
+   */
+  async listAudit(
+    filter: { from?: string; to?: string; kind?: string[] } = {},
+  ): Promise<{ rows: CustomerAuditEvent[] }> {
     const params = new URLSearchParams();
-    if (filter.since) params.set("since", filter.since);
-    if (filter.event_types?.length) params.set("event_types", filter.event_types.join(","));
+    if (filter.from) params.set("from", filter.from);
+    if (filter.to) params.set("to", filter.to);
+    if (filter.kind?.length) params.set("kind", filter.kind.join(","));
     const q = params.toString();
     return this.request<{ rows: CustomerAuditEvent[] }>(
       `/v1/customer/audit${q ? `?${q}` : ""}`,
