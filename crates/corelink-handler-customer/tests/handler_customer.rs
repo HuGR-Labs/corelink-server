@@ -68,6 +68,7 @@ fn sample_usage(_tenant_id: &str) -> UsageResponse {
         50_u64,
         10_000_000_u64,
         vec![DailyUsageBucket::new("2026-05-01", 10, 5, 128)],
+        200_u64,
     )
 }
 

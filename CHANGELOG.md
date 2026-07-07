@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **Customer usage — real `request_count` surfaced (BE-1a).**
+  `/v1/customer/usage` now returns a `request_count` for the period, read from `monthly_request_counts`
+  (migration 0071) — the running counter the quota gate **already increments per request** — so this is a
+  pure READ with **no new hot-path write**. Gives the Usage screen a real usage-vs-quota signal (vs the
+  tier's `requestsPerMonthMax`) beyond storage. `0` when no counter row exists (honest, never fabricated).
+  Additive field on `UsageResponse`; the FE gauge consumption lands as a follow-up. reads/writes/daily
+  remain honest stubs pending per-op metering (BE-1/BE-2). Next of the backend backlog after BE-3.
 - **Customer overview — `recent_activity` feed now real (BE-3).**
   The `/v1/customer/overview` snapshot's `recent_activity` was an honest hard-coded empty (`[]`); it now
   reads the newest 8 `customer_audit_events` (migration 0077) — the same tenant-scoped, newest-first
