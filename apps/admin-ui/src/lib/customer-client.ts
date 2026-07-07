@@ -82,7 +82,18 @@ export class CustomerClient {
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const token = this.getToken ? await this.getToken() : null;
+    // In E2E test mode the endpoints are served by the deterministic mock
+    // (no auth required) and there is NO real Clerk session, so calling the
+    // injected `useAuth().getToken()` can stall — leaving the fetch pending and
+    // the screen stuck on its loading Skeleton forever (the admin client sidesteps
+    // this by defaulting getToken to `async () => null`). Skip the token in E2E.
+    // Inert in production: NEXT_PUBLIC_E2E_TEST_MODE is never set there.
+    // Canonical Next form: bare `process.env.NEXT_PUBLIC_*` dot-access, which Next
+    // statically REPLACES with the literal in the client bundle. Do NOT guard with
+    // `typeof process` — Next does not define `process` as a runtime object in the
+    // browser, so that guard would short-circuit to false client-side.
+    const isE2E = process.env.NEXT_PUBLIC_E2E_TEST_MODE === "1";
+    const token = isE2E ? null : this.getToken ? await this.getToken() : null;
     const authHeaders: Record<string, string> =
       token != null ? { authorization: `Bearer ${token}` } : {};
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
