@@ -140,6 +140,10 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // `(tenant_id, repo_full_name)` (migr. 0085). Operational entitlement state
     // with no retention basis → ERASE.
     "runner_repo_allowlist",
+    // Per-tenant, per-day usage rollup for the dashboard ROI surface
+    // `(tenant_id, day)` (migr. 0089). Display telemetry — the tenant's own
+    // operational usage state, no retention basis → ERASE.
+    "usage_daily",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -276,6 +280,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "tenant_org_map",
     "tenant_gh_installation_map",
     "runner_repo_allowlist",
+    "usage_daily",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",

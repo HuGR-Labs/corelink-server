@@ -134,6 +134,11 @@ pub mod oci_cap;
 pub mod quota_error;
 pub mod request_count;
 pub mod routes;
+/// In-process **display** usage aggregator (BE-1 reads/writes/daily + BE-2 cache
+/// hit-rate / $-saved) feeding the `usage_daily` D1 table (migration 0089).
+/// `record` is a cheap in-memory increment (no hot-path D1 write); a background
+/// task flushes additive deltas every ~30s. DISPLAY telemetry, never billing.
+pub mod usage_meter;
 /// Cache-scope enforcement helper + extractor.
 ///
 /// Parses the Worker-set, server-trusted `x-corelink-scope` header (the
