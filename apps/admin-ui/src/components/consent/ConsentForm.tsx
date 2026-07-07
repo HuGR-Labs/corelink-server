@@ -133,11 +133,20 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
           <legend id="consent-categories-legend" className="lin-label">
             {t.data_categories}
           </legend>
-          <div role="group" aria-labelledby="consent-categories-legend" data-testid="field-data-categories">
+          <div
+            role="group"
+            aria-labelledby="consent-categories-legend"
+            data-testid="field-data-categories"
+            className="mt-2 flex flex-wrap gap-x-6 gap-y-3"
+          >
             {DATA_CATEGORY_OPTIONS.map((cat) => {
               const id = `consent-cat-${cat}`;
               return (
-                <label key={cat} htmlFor={id}>
+                <label
+                  key={cat}
+                  htmlFor={id}
+                  className="flex cursor-pointer items-center gap-2 text-[13.5px]"
+                >
                   <input
                     id={id}
                     type="checkbox"
@@ -145,7 +154,8 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
                     checked={value.data_categories.includes(cat)}
                     onChange={() => toggleCategory(cat)}
                     disabled={readOnly}
-                  />{" "}
+                    className="h-4 w-4 accent-white"
+                  />
                   {cat}
                 </label>
               );
