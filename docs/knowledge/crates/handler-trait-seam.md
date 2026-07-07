@@ -19,7 +19,7 @@ source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "7029d1c3efc3a7f47a6e549a42d338046aacce83"
+checkpoint_sha: "04dfdda6279d55fd9f6b5c25e42b406f84a1f86d"
 provenance: "AUTHORED"
 tags: ["handlers", "traits", "cas", "hot-path", "dependency-injection"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -51,7 +51,7 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 
 **Erasure-gating wraps read/write/delete.** `TombstoneGatedCasHandler` likewise impls `CasReadHandler` (`crates/corelink-container/src/routes/cas_erase.rs:983`) and `CasWriteHandler` (`:1015`), consulting a `TombstoneStore` trait (`:81`) so a tombstoned read 404s and a re-PUT of a tombstoned hash is refused — applied at the *same* chokepoint as accounting, so every surface inherits the GDPR gate. Note the pure-logic crate `corelink-handler-cas-erase` defines *no* trait object: it owns I/O-free decision functions (`prepare_erase` at `crates/corelink-handler-cas-erase/src/handler.rs:141`, `read_gate` at `:164`) that the container's `cas_erase.rs` wiring composes over D1/R2 transports. It is the seam's logic kernel, not part of the `Arc<dyn>` chain.
 
-**AC / admin / customer follow the same shape.** AC delegates `state.lookup.lookup(req)` / `update` / `delete` / `list` at `crates/corelink-container/src/routes/ac.rs:532`, `:596`, `:654`, `:701`. Admin delegates `state.read.read(req)` (`crates/corelink-container/src/routes/admin.rs:687`) and `state.mutate.mutate(req)` (`:747`) — the mutate contract additionally enforces dual-approval (reject `DualApprovalMissing`/self-approval) per the trait doc at `crates/corelink-handler-admin/src/handler.rs:204`. The customer control plane is six narrow traits (`CustomerOverviewHandler` at `crates/corelink-handler-customer/src/handler.rs:43`, plus usage/billing/keys/team/audit) whose **live production impl** is `D1CustomerHandler` in `crates/corelink-container/src/customer_d1.rs` — it impls all six (`:793`, `:857`, `:904`, `:1021`, `:1224`, `:1435`) over an inner `Arc<dyn CustomerD1>` D1-over-HTTP transport. `build_handlers_from_env` puts the *same* `D1CustomerHandler` `Arc` behind all six route-state slots when D1 creds are present (`crates/corelink-container/src/routes/customer.rs:114`), falling back to `InMemoryCustomerHandler` in dev/CI; the route then delegates `state.overview.overview(req)` (`:446`), `state.usage.usage(req)` (`:502`), `state.billing.billing(req)` (`:600`), etc.
+**AC / admin / customer follow the same shape.** AC delegates `state.lookup.lookup(req)` / `update` / `delete` / `list` at `crates/corelink-container/src/routes/ac.rs:532`, `:596`, `:654`, `:701`. Admin delegates `state.read.read(req)` (`crates/corelink-container/src/routes/admin.rs:687`) and `state.mutate.mutate(req)` (`:747`) — the mutate contract additionally enforces dual-approval (reject `DualApprovalMissing`/self-approval) per the trait doc at `crates/corelink-handler-admin/src/handler.rs:204`. The customer control plane is six narrow traits (`CustomerOverviewHandler` at `crates/corelink-handler-customer/src/handler.rs:43`, plus usage/billing/keys/team/audit) whose **live production impl** is `D1CustomerHandler` in `crates/corelink-container/src/customer_d1.rs` — it impls all six (`:816`, `:880`, `:933`, `:1050`, `:1253`, `:1464`) over an inner `Arc<dyn CustomerD1>` D1-over-HTTP transport. `build_handlers_from_env` puts the *same* `D1CustomerHandler` `Arc` behind all six route-state slots when D1 creds are present (`crates/corelink-container/src/routes/customer.rs:113`), falling back to `InMemoryCustomerHandler` in dev/CI; the route then delegates `state.overview.overview(req)` (`:446`), `state.usage.usage(req)` (`:502`), `state.billing.billing(req)` (`:601`), etc.
 
 # Invariants
 
@@ -65,7 +65,7 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 # Gotchas
 
 - **`corelink-handler-cas-erase` defines no trait object.** Unlike the other four crates, it is a pure-logic kernel (`prepare_erase`, `read_gate`, `validate_digest`) — the `TombstoneStore` trait and the `TombstoneGatedCasHandler` `CasReadHandler`/`CasWriteHandler` impls live in the container's `cas_erase.rs` (`crates/corelink-container/src/routes/cas_erase.rs:81`, `:983`), not in the handler crate. Don't look for an `Arc<dyn EraseHandler>`; there isn't one.
-- **The customer production impl lives in the container, not the handler crate.** `corelink-handler-customer` ships only the six traits + an in-memory fake; the live D1-backed `D1CustomerHandler` is in `crates/corelink-container/src/customer_d1.rs:793`. The handler crate is the *contract*, the container is the *impl* — a `customer_d1.rs:140 impl CustomerD1` is a *second* transport trait the handler delegates to, not the route-facing trait.
+- **The customer production impl lives in the container, not the handler crate.** `corelink-handler-customer` ships only the six traits + an in-memory fake; the live D1-backed `D1CustomerHandler` is in `crates/corelink-container/src/customer_d1.rs:816`. The handler crate is the *contract*, the container is the *impl* — a `customer_d1.rs:140 impl CustomerD1` is a *second* transport trait the handler delegates to, not the route-facing trait.
 - **`exists` HEAD-probe must be overridden by storage-backed impls.** The default `CasReadHandler::exists` (`crates/corelink-handler-cas/src/handler.rs:74`) falls back to a full `read` (download + rehash). A storage adapter that forgets to override it turns Bazel `findMissingBlobs` into tens of GiB of egress per request — correct but ruinously expensive.
 - **Byte accounting wraps write+delete only, not read/list.** `crates/corelink-container/src/routes.rs:424` leaves read/list unwrapped (they are not write surfaces). If a future read path needs accounting, it does *not* get it for free from this decorator.
 - **Decorator order matters: accounting is inner, erasure-gate is outer.** `routes.rs` wraps accounting first (`:425`) then the tombstone gate (`:475`) around the already-accounted handler, so a tombstoned re-PUT is refused by the outer gate *before* the inner accounting reserves bytes — reversing the order would reserve bytes for a write the erasure gate then rejects.
@@ -102,11 +102,11 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - `crates/corelink-container/src/routes/ac.rs:613` — `state.update.update(req)` delegation.
 - `crates/corelink-container/src/routes/admin.rs:687` — `state.read.read(req)` delegation.
 - `crates/corelink-container/src/routes/admin.rs:747` — `state.mutate.mutate(req)` delegation.
-- `crates/corelink-container/src/routes/customer.rs:114` — `build_handlers_from_env` wires the same `D1CustomerHandler` Arc behind all six slots.
+- `crates/corelink-container/src/routes/customer.rs:113` — `build_handlers_from_env` wires the same `D1CustomerHandler` Arc behind all six slots.
 - `crates/corelink-container/src/routes/customer.rs:446` — `state.overview.overview(req)` delegation.
-- `crates/corelink-container/src/routes/customer.rs:600` — `state.billing.billing(req)` delegation.
-- `crates/corelink-container/src/customer_d1.rs:793` — `impl CustomerOverviewHandler for D1CustomerHandler` (live production impl).
-- `crates/corelink-container/src/customer_d1.rs:904` — `impl CustomerBillingHandler for D1CustomerHandler`.
+- `crates/corelink-container/src/routes/customer.rs:601` — `state.billing.billing(req)` delegation.
+- `crates/corelink-container/src/customer_d1.rs:816` — `impl CustomerOverviewHandler for D1CustomerHandler` (live production impl).
+- `crates/corelink-container/src/customer_d1.rs:933` — `impl CustomerBillingHandler for D1CustomerHandler`.
 - `crates/corelink-container/src/routes/cas_erase.rs:81` — `pub trait TombstoneStore` (container-side).
 - `crates/corelink-container/src/routes/cas_erase.rs:983` — `impl CasReadHandler for TombstoneGatedCasHandler` (erasure-gate decorator).
 - `crates/corelink-container/src/routes/cas_erase.rs:1015` — `impl CasWriteHandler for TombstoneGatedCasHandler`.
