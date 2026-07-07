@@ -1,5 +1,6 @@
 // Customer-side Trust & compliance center — BYOK status, self-serve config,
-// data residency, DSR/erasure, and compliance status.
+// data residency, audit & evidence, DSR/erasure, DPA/sub-processors, and
+// compliance posture.
 //
 // W8 (customer-dashboard build wave). Kit-only: every surface is a
 // `@/components/ui/linear` primitive. Data-truth is honored strictly:
@@ -7,9 +8,16 @@
 //   · BYOK self-serve CONFIG is [not-wired → BE-8] — getByokConfig throws, so we
 //     render a teaching Callout, NEVER a fabricated config.
 //   · Region / residency is [not-wired] — teaching Callout only.
+//   · Audit & evidence is [live] at /[locale]/customer/audit — we LINK to it,
+//     we do NOT fetch the audit chain here.
 //   · DSR / erasure is [live] at the top-level /[locale]/dsr tree — we LINK to it,
 //     we do not rebuild it here.
-//   · Compliance status (SOC2 / ISO / DPA) is informational — a Callout.
+//   · DPA / sub-processors are [live] public pages — we LINK to them.
+//   · Compliance posture (SOC2 / ISO / DPA) is presented honestly — SOC 2 / ISO
+//     are shown as "in progress" (warn), never claimed as certified.
+//
+// Vertical rhythm: cards are stacked with `.lin-mt-lg` (24px between groups) —
+// NEVER `.lin-checklist` (4px, checklist rows only) as a card vstack.
 
 "use client";
 
@@ -78,8 +86,15 @@ function TrustInner(): React.ReactElement {
 
   const statusView = byok ? byokStatusView(byok.status) : null;
 
+  const auditHref = `/${locale}/customer/audit`;
+  const subProcessorsHref = `/${locale}/privacy/sub-processors`;
+  const termsHref = `/${locale}/legal/terms`;
+  const privacyHref = `/${locale}/privacy`;
+
   return (
-    <div data-testid="trust-shell" className="lin-checklist">
+    // Card stack — rhythm via `.lin-mt-lg` (24px) on every card after the first;
+    // `.lin-card` has zero margin by design.
+    <div data-testid="trust-shell">
       {/* ── BYOK status [live] ─────────────────────────────────── */}
       <Card
         title="Encryption — bring your own key (BYOK)"
@@ -145,6 +160,7 @@ function TrustInner(): React.ReactElement {
 
       {/* ── Region / residency [not-wired]: teaching Callout only. ── */}
       <Card
+        className="lin-mt-lg"
         title="Data residency"
         meta="Where your cached data physically lives."
         actions={
@@ -167,8 +183,41 @@ function TrustInner(): React.ReactElement {
         </div>
       </Card>
 
+      {/* ── Audit & evidence [live] — LINK to /[locale]/customer/audit. ─── */}
+      <Card
+        className="lin-mt-lg"
+        title="Audit & evidence"
+        meta="Your tamper-evident audit log and signed evidence exports."
+        actions={
+          <HelpPopover label="What is a tamper-evident audit log?">
+            Every privileged action on your tenant — sign-ins, token lifecycle,
+            encryption-key rotations, team changes — is written to a hash-chained
+            audit log. Because each entry commits to the one before it, any later
+            edit or deletion breaks the chain and is detectable — that is what makes
+            it tamper-evident. You can review the chain and export a signed evidence
+            bundle for auditors.
+          </HelpPopover>
+        }
+      >
+        <div data-testid="trust-audit">
+          <p>
+            Review the complete, hash-chained record of privileged actions on your
+            tenant, and export a signed evidence bundle for auditors and compliance
+            reviews.
+          </p>
+          <Link
+            href={auditHref}
+            data-testid="trust-audit-link"
+            className="lin-mt lin-btn lin-btn--primary"
+          >
+            View audit log
+          </Link>
+        </div>
+      </Card>
+
       {/* ── DSR / erasure [live] — LINK to the top-level /[locale]/dsr tree. ── */}
       <Card
+        className="lin-mt-lg"
         title="Data-subject requests & erasure"
         meta="Export or permanently erase the personal data held for your tenant."
         actions={
@@ -183,23 +232,88 @@ function TrustInner(): React.ReactElement {
           Request a full export of your data, or a permanent erasure. Each request is
           tracked and produces a signed completion attestation.
         </p>
-        <Link href={dsrHref} data-testid="trust-dsr-link" className="lin-btn lin-btn--primary">
+        <Link
+          href={dsrHref}
+          data-testid="trust-dsr-link"
+          className="lin-mt lin-btn lin-btn--primary"
+        >
           Request data export / erasure
         </Link>
       </Card>
 
-      {/* ── Compliance status (informational Callout). ─────────────── */}
+      {/* ── DPA & sub-processors [live public pages] — LINK out. ────── */}
       <Card
-        title="Compliance"
-        meta="Certifications, attestations, and agreements."
+        className="lin-mt-lg"
+        title="Data Processing Agreement & sub-processors"
+        meta="The contract we process your data under, and the third parties in the data path."
+        actions={
+          <HelpPopover label="What is a sub-processor?">
+            A sub-processor is a third party (for example an infrastructure or email
+            provider) that CoreLink uses to process your data on your behalf. The Data
+            Processing Agreement (DPA) is the contract governing that processing under
+            GDPR/CCPA. We publish the full, current list so you always know exactly who
+            is in your data path.
+          </HelpPopover>
+        }
+      >
+        <div data-testid="trust-dpa">
+          <p>
+            Review the terms your data is processed under, the current list of
+            sub-processors in the data path, and our privacy policy.
+          </p>
+          <div className="lin-mt lin-card__actions">
+            <Button href={subProcessorsHref} variant="ghost" size="sm">
+              Sub-processors
+            </Button>
+            <Button href={termsHref} variant="ghost" size="sm">
+              Terms of service
+            </Button>
+            <Button href={privacyHref} variant="ghost" size="sm">
+              Privacy policy
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Compliance posture — honest status, Badge tone=neutral/warn. ── */}
+      <Card
+        className="lin-mt-lg"
+        title="Compliance posture"
+        meta="Where our certifications and attestations stand today."
       >
         <div data-testid="trust-compliance">
-          <Callout tone="info">
-            CoreLink runs on isolated, per-tenant encrypted storage. A signed Data
-            Processing Agreement (DPA) is in force for every paid tenant. SOC 2 Type II
-            and ISO 27001 programs are in progress; reach out for our current attestation
-            package and the latest DPA version.
-          </Callout>
+          <p>
+            Per-tenant encrypted, isolated storage{" "}
+            <Badge tone="neutral" dot>
+              In force
+            </Badge>
+          </p>
+          <p>
+            Signed Data Processing Agreement (DPA){" "}
+            <Badge tone="neutral" dot>
+              Available for every paid tenant
+            </Badge>
+          </p>
+          <p>
+            SOC 2 Type II{" "}
+            <Badge tone="warn" dot>
+              In progress
+            </Badge>
+          </p>
+          <p>
+            ISO 27001{" "}
+            <Badge tone="warn" dot>
+              In progress
+            </Badge>
+          </p>
+          <p className="lin-mt">
+            SOC 2 and ISO are not yet certified — programs are underway. Reach out for
+            our current attestation package and the latest DPA version:{" "}
+            <a href="mailto:support@humangr.com?subject=Compliance%20package">
+              support@humangr.com
+            </a>
+            .
+          </p>
         </div>
       </Card>
     </div>

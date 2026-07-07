@@ -22,7 +22,7 @@ import {
   SnippetTabs,
 } from "@/components/ui/linear";
 import { CustomerClient } from "@/lib/customer-client";
-import type { ConnectSurface, CustomerOverview } from "@/lib/customer-types";
+import type { ConnectSurface, CustomerOverview, CustomerPat } from "@/lib/customer-types";
 
 // Prod API origin (NEXT_PUBLIC_CORELINK_API_URL is inlined at build time). We
 // keep a stable default so the snippets are copy-paste-ready even before the
@@ -164,6 +164,7 @@ export function ConnectClient(): React.ReactElement {
   const { getToken } = useAuth();
   const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
   const [overview, setOverview] = React.useState<CustomerOverview | null>(null);
+  const [pats, setPats] = React.useState<CustomerPat[] | null>(null);
   const [error, setError] = React.useState<unknown>(null);
   const [reloadKey, setReloadKey] = React.useState(0);
 
@@ -171,6 +172,7 @@ export function ConnectClient(): React.ReactElement {
     let alive = true;
     setError(null);
     setOverview(null);
+    setPats(null);
     client
       .getOverview()
       .then((d) => {
@@ -178,6 +180,17 @@ export function ConnectClient(): React.ReactElement {
       })
       .catch((e: unknown) => {
         if (alive) setError(e);
+      });
+    // Token-awareness (best-effort): a keys-list failure must NOT break Connect —
+    // it only decides whether the CTA nudges "mint a token first". Default to an
+    // empty list on error so the guide still renders.
+    client
+      .listKeys()
+      .then((r) => {
+        if (alive) setPats(r.pats);
+      })
+      .catch(() => {
+        if (alive) setPats([]);
       });
     return () => {
       alive = false;
@@ -203,25 +216,46 @@ export function ConnectClient(): React.ReactElement {
 
   const surfaces = buildSurfaces(API_ORIGIN, overview.tenant_id);
 
+  // pats === null → keys not yet known (still loading / errored to []); once known,
+  // an active PAT is any row without a revoked_at timestamp.
+  const keysKnown = pats != null;
+  const hasActivePat = pats != null && pats.some((p) => p.revoked_at == null);
+  const needsToken = keysKnown && !hasActivePat;
+
   return (
     <div data-testid="connect-root">
       <Callout tone="info">
-        Your snippets read the token from a{" "}
-        <code>${TOKEN_ENV}</code> environment variable. Mint one on{" "}
-        <a href="./keys">/customer/keys</a> and export it before you run a build — CoreLink
-        never asks you to paste a token inline (that would leak it into shell history and
-        config files).
+        Your snippets read the token from a <code>${TOKEN_ENV}</code> environment variable.
+        Mint one, then export it before you run a build — CoreLink never asks you to paste a
+        token inline (that would leak it into shell history and config files).
       </Callout>
 
+      <div className="lin-mt">
+        {needsToken ? (
+          <Callout tone="warn">
+            You don&apos;t have an active token yet — mint one before wiring a tool. Every
+            snippet below reads it from <code>${TOKEN_ENV}</code>.
+          </Callout>
+        ) : null}
+        <div className={needsToken ? "lin-mt" : undefined}>
+          <Button
+            href="./keys"
+            variant={needsToken ? "primary" : "ghost"}
+            size="sm"
+          >
+            {needsToken ? "Mint a token first" : "Manage tokens"}
+          </Button>
+        </div>
+      </div>
+
       <Card
+        className="lin-mt-lg"
         title="Point a build tool at your cache"
         meta={`Endpoint ${API_ORIGIN} · tenant ${overview.tenant_id}`}
         actions={
-          <a href={DOCS} target="_blank" rel="noopener noreferrer">
-            <Button variant="ghost" size="sm">
-              Docs
-            </Button>
-          </a>
+          <Button href={DOCS} variant="ghost" size="sm" target="_blank" rel="noopener noreferrer">
+            Docs
+          </Button>
         }
       >
         <SnippetTabs
@@ -234,28 +268,27 @@ export function ConnectClient(): React.ReactElement {
         />
       </Card>
 
-      <div data-testid="connect-guide">
-        {surfaces.map((s) => (
+      <div className="lin-mt-lg" data-testid="connect-guide">
+        {surfaces.map((s, i) => (
           <Card
             key={s.id}
+            className={i > 0 ? "lin-mt" : undefined}
             title={s.label}
             actions={
               <>
                 <HelpPopover label={`About ${s.label}`}>{s.help}</HelpPopover>
-                <a href={s.docsHref} target="_blank" rel="noopener noreferrer">
-                  <Button variant="ghost" size="sm">
-                    Docs
-                  </Button>
-                </a>
+                <Button href={s.docsHref} variant="ghost" size="sm" target="_blank" rel="noopener noreferrer">
+                  Docs
+                </Button>
               </>
             }
           >
-            <p>{s.what}</p>
+            <p className="lin-t2">{s.what}</p>
           </Card>
         ))}
       </div>
 
-      <Card title="Test connection">
+      <Card className="lin-mt-lg" title="Test connection">
         <Callout tone="info">
           There is no “test” button here on purpose — the real proof is a real hit. Run one of
           the snippets above (the CAS/curl tab is the quickest smoke test), then your first
@@ -267,11 +300,18 @@ export function ConnectClient(): React.ReactElement {
         />
       </Card>
 
-      <Callout tone="warn">
-        Keep <code>${TOKEN_ENV}</code> in your shell env or CI secrets — never commit it and
-        never pass a token as an inline <code>--pat</code> flag. Rotate or revoke it any time
-        from <a href="./keys">/customer/keys</a>.
-      </Callout>
+      <div className="lin-mt-lg">
+        <Callout tone="warn">
+          Keep <code>${TOKEN_ENV}</code> in your shell env or CI secrets — never commit it and
+          never pass a token as an inline <code>--pat</code> flag. Rotate or revoke it any time
+          from your keys page.
+          <div className="lin-mt">
+            <Button href="./keys" variant="ghost" size="sm">
+              Manage tokens
+            </Button>
+          </div>
+        </Callout>
+      </div>
     </div>
   );
 }

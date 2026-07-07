@@ -158,6 +158,13 @@ html:has(.cx-shell) { background: var(--bg); }
 .lin-mt { margin-top: var(--s4); }
 .lin-mt-lg { margin-top: var(--s6); }
 
+/* --- text-color utilities: the opacity ramp as classes (avoid inline style
+   color:var(--t*); use these on raw <p>/<span> body text inside kit surfaces) --- */
+.lin-t1 { color: var(--t1); }
+.lin-t2 { color: var(--t2); }
+.lin-t3 { color: var(--t3); }
+.lin-t4 { color: var(--t4); }
+
 /* --- Button --- */
 .lin-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);

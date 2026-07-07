@@ -34,7 +34,15 @@ Each entry cross-references:
   stepper + proper field spacing. This bug was LIVE in prod. Verified by screenshotting every screen.
 
 ### Added
-- **admin-ui — app-wide Linear design migration (admin, public, onboarding, DSR/consent) + FE follow-ups.**
+- **admin-ui — screen SOTA rebuild wave 1 (home, connect, trust, DSR-landing, DSR-status, consent-dashboard).**
+  After a code-grounded, screen-by-screen audit against a frozen Linear design contract, rebuilt six screens
+  to the standard: fixed the recurring cramped-card bug (`.lin-checklist` 4px misused as a card vstack →
+  `.lin-mt`/`.lin-mt-lg`), rendered Home's previously-dropped billing snapshot, gave Trust real audit/DPA/
+  sub-processor cards, enriched the DSR landing into a rights center (identity/SLA/DPO), and — the two
+  BROKEN ones — wired the DSR-status Clerk token (was a permanently-empty dead page) and fixed the
+  consent-dashboard locale-broken links (404s), both re-skinned off raw HTML tables onto the kit. Added
+  `.lin-t1..t4` text-color utilities and `target`/`rel` on the kit `Button` anchor form. Consent capture
+  screens cut from launch nav (already unlinked). Each screen visually reviewed via screenshot.
   Extends the customer-dashboard Linear rebuild to the rest of the app so the whole surface follows the
   Linear doctrine (a11y-validated tokens, 4px spacing grid, fixed type scale, kit-only). Migrated: the
   operator **admin** surface (audit/ops/tenants + 10 components), the **public/legal** pages
