@@ -34,6 +34,16 @@ Each entry cross-references:
   stepper + proper field spacing. This bug was LIVE in prod. Verified by screenshotting every screen.
 
 ### Added
+- **container — backend data surfaces to un-stub the dashboard (Runners + Workspaces + operator deep-dive).**
+  New tenant-scoped read/CRUD endpoints so the FE stops rendering NotWiredError EmptyStates:
+  `customer_runners` (`GET /v1/customer/runners/{entitlement,allowlist,runs}` — reads runners_entitlement /
+  runner_repo_allowlist / runner_billing; honest stubs where no D1 source exists), `workspaces`
+  (`GET/POST/DELETE /v1/customer/workspaces[/:id[/pin]]` + migration `0088_workspaces` — tenant-leftmost PK,
+  DSR-erasable), and `admin_tenant_detail` (operator per-tenant usage/billing/consents/dsr/pats reads). All
+  tenant-derived-from-session and fail-closed (adversarially audited: no cross-tenant read/write, PAT secrets
+  never selected); the two customer surfaces carry the native-PAT possession backstop. The operator deep-dive
+  is internal-auth gated (same posture as the rest of `admin`), so wiring the admin-ui operator console to it
+  is a separate follow-up. FE wiring (client methods + screen un-stub) also follows.
 - **admin-ui — app-wide Linear design migration (admin, public, onboarding, DSR/consent) + FE follow-ups.**
   Extends the customer-dashboard Linear rebuild to the rest of the app so the whole surface follows the
   Linear doctrine (a11y-validated tokens, 4px spacing grid, fixed type scale, kit-only). Migrated: the
