@@ -148,22 +148,40 @@ export function ConsentCaptureFlow({
       <div className="cx-main">
         <main id="main">
           <h1>Grant consent</h1>
-          <section aria-label="Capture consent" data-testid="consent-capture">
-            <ol aria-label="Steps">
-              <li aria-current={step === "review" ? "step" : undefined}>
+          <section
+            aria-label="Capture consent"
+            data-testid="consent-capture"
+            className="lin-card lin-card--pad mt-6"
+          >
+            <ol
+              aria-label="Steps"
+              className="mb-6 flex list-none flex-wrap gap-x-5 gap-y-1 p-0 text-[12.5px] text-[color:var(--t3)]"
+            >
+              <li
+                aria-current={step === "review" ? "step" : undefined}
+                className="aria-[current=step]:font-[560] aria-[current=step]:text-[color:var(--t1)]"
+              >
                 1. Review
               </li>
-              <li aria-current={step === "scroll" ? "step" : undefined}>
+              <li
+                aria-current={step === "scroll" ? "step" : undefined}
+                className="aria-[current=step]:font-[560] aria-[current=step]:text-[color:var(--t1)]"
+              >
                 2. Read in full
               </li>
-              <li aria-current={step === "consent" ? "step" : undefined}>
+              <li
+                aria-current={step === "consent" ? "step" : undefined}
+                className="aria-[current=step]:font-[560] aria-[current=step]:text-[color:var(--t1)]"
+              >
                 3. Consent
               </li>
             </ol>
 
             {step === "review" && (
               <div data-testid="step-review">
-                <h2>What we are requesting</h2>
+                <h2 className="mb-4 text-[16px] font-[560] text-[color:var(--t1)]">
+                  What we are requesting
+                </h2>
                 <ConsentForm
                   ref={formRootRef}
                   value={fields}

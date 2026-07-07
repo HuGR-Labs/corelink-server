@@ -95,7 +95,7 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
         ref={ref as React.RefObject<HTMLDivElement> | null | undefined}
         // CTRL-PRIV-001 / EVT-012 privacy guard: analytics + session-replay
         // tools MUST treat .privacy-no-capture as opt-out.
-        className="privacy-no-capture consent-form lin lin-checklist"
+        className="privacy-no-capture consent-form lin flex flex-col gap-5"
         data-testid="consent-form"
         role="form"
         aria-label="Consent six-field capture form"
