@@ -56,7 +56,11 @@ html:has(.cx-shell) { background: var(--bg); }
   font-family: var(--sans); font-size: 14px; line-height: 1.55; letter-spacing: -0.006em;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
-.cx-shell a { color: inherit; text-decoration: none; }
+/* Raw anchors inherit; kit-classed anchors (e.g. `<a class="lin-btn">`) must
+   keep their OWN color — else `.cx-shell a` (0,1,1) overrides `.lin-btn--*`
+   (0,1,0) and the button text goes light-on-white (invisible white box). */
+.cx-shell a:not([class*="lin-"]) { color: inherit; }
+.cx-shell a { text-decoration: none; }
 .cx-shell ::selection { background: rgba(255, 255, 255, 0.15); }
 .cx-shell code, .cx-shell kbd {
   font-family: var(--mono); font-size: 0.9em; color: var(--t1);
@@ -103,76 +107,18 @@ html:has(.cx-shell) { background: var(--bg); }
 [data-testid="customer-nav"] a[aria-current="page"] { background: var(--panel-2); color: var(--t1); }
 [data-testid="customer-nav"] a[data-active="true"] .cx-nav__ic { color: var(--t1); }
 
-/* ===== main content typography ===== */
+/* ===== page title + intro =====
+   ONLY the raw <h1> + first intro <p> that the page.tsx server wrappers render
+   are styled here. ALL other content is the Linear kit (.lin-*), whose classes
+   MUST win. The old generic .cx-main {button, section, input, table, a, h2, h3,
+   p, strong, …} rules were REMOVED: their 0,1,1 specificity overrode the kit's
+   0,1,0 classes, so kit buttons rendered as legacy white boxes, kit inputs got
+   the wrong border, raw <section>s double-carded, etc. (the "flying white boxes"
+   bug). Raw content links keep a scoped underline that does NOT touch kit anchors. */
 .cx-main h1 { font-size: 24px; font-weight: 560; color: var(--t1); letter-spacing: -0.022em; line-height: 1.1; margin: 0 0 7px; }
 .cx-main > main > p:first-of-type, .cx-main > p:first-of-type { color: var(--t3); font-size: 14px; margin: 0 0 30px; max-width: 64ch; }
-.cx-main h2 { font-size: 16px; font-weight: 560; color: var(--t1); letter-spacing: -0.012em; margin: 0 0 4px; }
-.cx-main h3 { font-size: 11.5px; font-weight: 560; color: var(--t3); text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 14px; }
-.cx-main p { color: var(--t2); line-height: 1.6; }
-.cx-main strong { color: var(--t1); font-weight: 560; }
-.cx-main a:not(.btn) { color: var(--t1); border-bottom: 1px solid var(--line-2); transition: border-color var(--ease); }
-.cx-main a:not(.btn):hover { border-color: var(--t2); }
-
-/* ===== cards (any <section> in the dashboard becomes a glass card) ===== */
-.cx-main section {
-  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
-  padding: 20px 22px; transition: border-color var(--ease), background var(--ease);
-}
-.cx-main section:hover { border-color: var(--line-2); }
-.cx-main section + section { margin-top: 14px; }
-.cx-main section ul { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-.cx-main section li { color: var(--t2); font-size: 13.5px; }
-.cx-main section span { color: var(--t1); }
-
-/* overview grid layout */
-[data-testid="overview-grid"] { display: grid !important; grid-template-columns: repeat(2, 1fr); gap: 14px !important; }
-[data-testid="overview-grid"] section + section { margin-top: 0; }
-[data-testid="overview-tenant-card"], [data-testid="overview-activity-card"] { grid-column: 1 / -1; }
-[data-testid="overview-tenant-card"] h2 { font-size: 18px; }
-[data-testid="overview-tenant-id"] { font-size: 12px; }
-
-/* ===== big metric numbers ===== */
-.cx-metric { font-size: 26px; font-weight: 560; color: var(--t1); letter-spacing: -0.02em; }
-
-/* ===== status pills ===== */
-.cx-shell .pill, .cx-shell [data-testid$="-status"] {
-  display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 500;
-  padding: 2px 9px; border-radius: 20px; letter-spacing: 0.01em;
-  background: rgba(255, 255, 255, 0.06); color: var(--t1); border: 1px solid var(--line);
-}
-
-/* ===== tables (usage / audit / team) ===== */
-.cx-main table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.cx-main thead th {
-  text-align: left; font-weight: 510; color: var(--t3); font-size: 11px;
-  text-transform: uppercase; letter-spacing: 0.05em; padding: 10px 14px;
-  border-bottom: 1px solid var(--line);
-}
-.cx-main tbody td { padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--t2); }
-.cx-main tbody tr:last-child td { border-bottom: 0; }
-.cx-main tbody tr:hover td { background: rgba(255, 255, 255, 0.015); }
-
-/* ===== buttons ===== */
-.cx-shell .btn, .cx-main button {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  height: 36px; padding: 0 15px; border-radius: 9px; font-family: var(--sans);
-  font-size: 13.5px; font-weight: 560; letter-spacing: 0; cursor: pointer;
-  background: #f7f8f8; color: #08090a; border: 1px solid transparent;
-  transition: background var(--ease), transform var(--ease), box-shadow var(--ease), border-color var(--ease);
-}
-.cx-shell .btn:hover, .cx-main button:hover { background: #fff; transform: translateY(-1px); }
-.cx-shell .btn-ghost, .cx-main button.ghost {
-  background: rgba(255, 255, 255, 0.05); color: var(--t1); border-color: var(--line-2);
-}
-.cx-shell .btn-ghost:hover, .cx-main button.ghost:hover { background: rgba(255, 255, 255, 0.09); }
-
-/* ===== inputs ===== */
-.cx-main input, .cx-main select, .cx-main textarea {
-  background: rgba(255, 255, 255, 0.03); border: 1px solid var(--line-2); border-radius: 8px;
-  color: var(--t1); font-family: var(--sans); font-size: 13.5px; padding: 9px 12px; outline: none;
-  transition: border-color var(--ease);
-}
-.cx-main input:focus, .cx-main select:focus, .cx-main textarea:focus { border-color: rgba(255, 255, 255, 0.3); }
+.cx-main a:not([class*="lin-"]) { color: var(--t1); border-bottom: 1px solid var(--line-2); transition: border-color var(--ease); }
+.cx-main a:not([class*="lin-"]):hover { border-color: var(--t2); }
 
 /* loading / error states */
 .cx-shell [data-testid$="-loading"] { color: var(--t3); font-family: var(--mono); font-size: 13px; }

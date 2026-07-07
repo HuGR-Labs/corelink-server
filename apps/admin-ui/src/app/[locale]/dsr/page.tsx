@@ -29,27 +29,40 @@ export default async function DsrLandingPage({ params }: PageProps) {
           <h1 id="dsr-landing-title">{t("dsr.landing.title")}</h1>
           <p>{t("dsr.landing.intro")}</p>
 
-          <section aria-labelledby="dsr-rights-title">
-            <h2 id="dsr-rights-title">
+          <section aria-labelledby="dsr-rights-title" className="mt-6">
+            <h2
+              id="dsr-rights-title"
+              className="mb-3 text-[15px] font-[560] text-[color:var(--t1)]"
+            >
               {t("dsr.landing.rights_section_title")}
             </h2>
-            <ul data-testid="dsr-rights-list">
+            <ul
+              data-testid="dsr-rights-list"
+              className="grid list-none grid-cols-1 gap-3 p-0 sm:grid-cols-2"
+            >
               {DSR_ACTIONS.map((action) => (
                 <li key={action}>
                   <Link
                     href={`/${locale}/dsr/${action}`}
                     data-testid={`dsr-action-button-${action}`}
+                    className="lin-card lin-card--pad lin-card--hover block h-full"
                   >
-                    <strong>{t(`dsr.rights.${action}.label`)}</strong>
-                    <span>{t(`dsr.rights.${action}.description`)}</span>{" "}
-                    <small>{t(`dsr.rights.${action}.legal_ref`)}</small>
+                    <span className="block font-[560] text-[color:var(--t1)]">
+                      {t(`dsr.rights.${action}.label`)}
+                    </span>
+                    <span className="mt-1 block text-[13px] leading-relaxed text-[color:var(--t2)]">
+                      {t(`dsr.rights.${action}.description`)}
+                    </span>
+                    <span className="mt-2 block text-[11.5px] text-[color:var(--t3)]">
+                      {t(`dsr.rights.${action}.legal_ref`)}
+                    </span>
                   </Link>
                 </li>
               ))}
             </ul>
           </section>
 
-          <p>
+          <p className="mt-6">
             <Link
               href={`/${locale}/dsr/status`}
               data-testid="dsr-status-link"
