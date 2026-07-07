@@ -159,9 +159,9 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
         ? "Create and copy an access token"
         : "Create and copy your first access token",
       cta: hasActivePat ? undefined : (
-        <a href={`${base}/keys`} className="lin-btn lin-btn--ghost lin-btn--sm">
+        <Button href={`${base}/keys`} variant="ghost" size="sm">
           Create a token
-        </a>
+        </Button>
       ),
     },
     {
@@ -180,9 +180,9 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
         </>
       ),
       cta: (
-        <a href={`${base}/connect`} className="lin-btn lin-btn--ghost lin-btn--sm">
+        <Button href={`${base}/connect`} variant="ghost" size="sm">
           Connect a tool
-        </a>
+        </Button>
       ),
     },
     {

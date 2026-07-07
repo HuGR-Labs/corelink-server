@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Callout, CodeBlock } from "@/components/ui/linear";
 import {
   ActivationStateBadge,
   type ActivationState,
@@ -22,6 +23,10 @@ import {
  * The stream is filtered server-side by the caller's `tenant_id` (resolved
  * from the Clerk session in the route handler), so this component does not
  * need to do any access control.
+ *
+ * Linear kit: the status chip is `ActivationStateBadge`, terminal blocks are
+ * the frozen `CodeBlock`, and the live status lines use kit `Callout`s — text
+ * uses `--t1`/`--t2` tokens only.
  */
 export function WelcomeStream(props: {
   streamUrl?: string;
@@ -66,49 +71,42 @@ export function WelcomeStream(props: {
   }, [url]);
 
   return (
-    <div data-testid="welcome-stream">
+    <div data-testid="welcome-stream" className="lin-checklist">
       <ActivationStateBadge state={state} />
 
       {state === "waiting" ? (
-        <div
-          className="mt-3 text-sm text-gray-600"
-          data-testid="welcome-stream-instructions"
-        >
-          <p className="font-medium">
-            Run this in your terminal to connect:
-          </p>
-          <pre className="mt-2 rounded bg-gray-100 p-3">
-            <code>$ corelink whoami</code>
-          </pre>
-          <p className="mt-2 text-xs text-gray-500">
+        <div data-testid="welcome-stream-instructions" className="lin-checklist">
+          <p>Run this in your terminal to connect:</p>
+          <CodeBlock code="corelink whoami" lang="bash" />
+          <p className="lin-card__meta">
             Waiting for the CLI to authenticate… this updates live.
           </p>
         </div>
       ) : null}
 
       {state === "cli-authed" ? (
-        <div
-          className="mt-3 text-sm text-green-700"
-          data-testid="welcome-stream-cli-authed"
-        >
-          <p>CLI authenticated. Now run your first build:</p>
-          <pre className="mt-2 rounded bg-gray-100 p-3">
-            <code>$ bazel build //...</code>
-          </pre>
+        <div data-testid="welcome-stream-cli-authed" className="lin-checklist">
+          <Callout tone="info">
+            <strong>CLI authenticated.</strong> Now run your first build.
+          </Callout>
+          <CodeBlock code="bazel build //..." lang="bash" />
         </div>
       ) : null}
 
       {state === "activated" ? (
-        <div
-          className="mt-3 text-sm text-green-700"
-          data-testid="welcome-stream-activated"
-        >
-          <p>Cache is active — your first cache hit was recorded.</p>
+        <div data-testid="welcome-stream-activated">
+          <Callout tone="info">
+            <strong>Cache is active</strong> — your first cache hit was recorded.
+          </Callout>
         </div>
       ) : null}
 
       {error ? (
-        <p role="status" data-testid="welcome-stream-error">
+        <p
+          role="status"
+          data-testid="welcome-stream-error"
+          className="lin-card__meta"
+        >
           {error}
         </p>
       ) : null}

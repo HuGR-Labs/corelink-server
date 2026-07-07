@@ -4,6 +4,16 @@ import { useEffect, useState } from "react";
 import type { ConsentApi, ConsentHistoryQuery } from "@/lib/consent-api";
 import { defaultConsentApi } from "@/lib/consent-api";
 import type { ConsentRow } from "@/lib/consent-types";
+import {
+  Badge,
+  Button,
+  Card,
+  Field,
+  InlineError,
+  Input,
+  Select,
+  Skeleton,
+} from "@/components/ui/linear";
 
 const PAGE_SIZE = 20;
 
@@ -70,92 +80,127 @@ export function ConsentHistory({ api = defaultConsentApi }: ConsentHistoryProps)
   const maxPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <section aria-label="Consent history" data-testid="consent-history">
-      <h1>History</h1>
-      <fieldset>
-        <legend>Filters</legend>
-        <label htmlFor="filter-status">Status</label>
-        <select
-          id="filter-status"
-          data-testid="filter-status"
-          value={filters.status}
-          onChange={(e) => updateFilter("status", e.target.value as Filters["status"])}
-        >
-          <option value="">all</option>
-          <option value="active">active</option>
-          <option value="withdrawn">withdrawn</option>
-        </select>
+    <div className="cx-shell lin">
+      <div className="cx-main">
+        <main>
+          <h1>History</h1>
+          <section aria-label="Consent history" data-testid="consent-history">
+            <Card title="Filters">
+              <fieldset className="lin-checklist">
+                <legend className="lin-label">Filters</legend>
+                <Field label="Status" htmlFor="filter-status">
+                  <Select
+                    id="filter-status"
+                    data-testid="filter-status"
+                    value={filters.status}
+                    onChange={(e) =>
+                      updateFilter("status", e.target.value as Filters["status"])
+                    }
+                  >
+                    <option value="">all</option>
+                    <option value="active">active</option>
+                    <option value="withdrawn">withdrawn</option>
+                  </Select>
+                </Field>
 
-        <label htmlFor="filter-purpose">Purpose</label>
-        <input
-          id="filter-purpose"
-          data-testid="filter-purpose"
-          value={filters.purpose}
-          onChange={(e) => updateFilter("purpose", e.target.value)}
-        />
+                <Field label="Purpose" htmlFor="filter-purpose">
+                  <Input
+                    id="filter-purpose"
+                    data-testid="filter-purpose"
+                    value={filters.purpose}
+                    onChange={(e) => updateFilter("purpose", e.target.value)}
+                  />
+                </Field>
 
-        <label htmlFor="filter-from">Date from</label>
-        <input
-          id="filter-from"
-          type="date"
-          data-testid="filter-from"
-          value={filters.date_from}
-          onChange={(e) => updateFilter("date_from", e.target.value)}
-        />
+                <Field label="Date from" htmlFor="filter-from">
+                  <Input
+                    id="filter-from"
+                    type="date"
+                    data-testid="filter-from"
+                    value={filters.date_from}
+                    onChange={(e) => updateFilter("date_from", e.target.value)}
+                  />
+                </Field>
 
-        <label htmlFor="filter-to">Date to</label>
-        <input
-          id="filter-to"
-          type="date"
-          data-testid="filter-to"
-          value={filters.date_to}
-          onChange={(e) => updateFilter("date_to", e.target.value)}
-        />
-      </fieldset>
+                <Field label="Date to" htmlFor="filter-to">
+                  <Input
+                    id="filter-to"
+                    type="date"
+                    data-testid="filter-to"
+                    value={filters.date_to}
+                    onChange={(e) => updateFilter("date_to", e.target.value)}
+                  />
+                </Field>
+              </fieldset>
+            </Card>
 
-      {loading && <p data-testid="history-loading">Loading...</p>}
-      {error && <p role="alert" data-testid="history-error">{error}</p>}
+            {loading && (
+              <div
+                data-testid="history-loading"
+                aria-busy="true"
+                aria-label="Loading"
+              >
+                <Skeleton rows={3} />
+              </div>
+            )}
+            {error && (
+              <div role="alert" data-testid="history-error">
+                <InlineError error={error} />
+              </div>
+            )}
 
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Purpose</th>
-            <th scope="col">Granted at</th>
-            <th scope="col">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} data-testid={`history-row-${r.id}`}>
-              <td>{r.purpose}</td>
-              <td>{r.granted_at}</td>
-              <td>{r.status}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Purpose</th>
+                  <th scope="col">Granted at</th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.id} data-testid={`history-row-${r.id}`}>
+                    <td>{r.purpose}</td>
+                    <td>{r.granted_at}</td>
+                    <td>
+                      <Badge
+                        tone={r.status === "active" ? "success" : "neutral"}
+                        dot
+                      >
+                        {r.status}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
-      <nav aria-label="Pagination">
-        <button
-          type="button"
-          onClick={() => setPage((p) => Math.max(1, p - 1))}
-          disabled={page <= 1}
-          data-testid="page-prev"
-        >
-          Previous
-        </button>
-        <span data-testid="page-indicator">
-          Page {page} / {maxPage}
-        </span>
-        <button
-          type="button"
-          onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
-          disabled={page >= maxPage}
-          data-testid="page-next"
-        >
-          Next
-        </button>
-      </nav>
-    </section>
+            <nav aria-label="Pagination">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                data-testid="page-prev"
+              >
+                Previous
+              </Button>
+              <span data-testid="page-indicator">
+                Page {page} / {maxPage}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(maxPage, p + 1))}
+                disabled={page >= maxPage}
+                data-testid="page-next"
+              >
+                Next
+              </Button>
+            </nav>
+          </section>
+        </main>
+      </div>
+    </div>
   );
 }

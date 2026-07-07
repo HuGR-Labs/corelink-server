@@ -4,6 +4,14 @@ import { useState } from "react";
 import type { ConsentApi } from "@/lib/consent-api";
 import { defaultConsentApi } from "@/lib/consent-api";
 import { JwtReceiptDisplay } from "@/components/consent/JwtReceiptDisplay";
+import {
+  Badge,
+  Button,
+  Callout,
+  Card,
+  Field,
+  Textarea,
+} from "@/components/ui/linear";
 
 export interface ClerkMfaClient {
   session: {
@@ -64,51 +72,96 @@ export function WithdrawForm({ consentId, api = defaultConsentApi, clerkClient }
 
   if (receipt) {
     return (
-      <section aria-label="Withdrawal receipt" data-testid="withdraw-success">
-        <h1>Consent withdrawn</h1>
-        <p>
-          Withdrawn at <time>{receipt.withdrawn_at}</time>
-        </p>
-        <JwtReceiptDisplay jwt={receipt.jwt_receipt} />
-      </section>
+      <div className="cx-shell lin">
+        <div className="cx-main">
+          <main>
+            <h1>Consent withdrawn</h1>
+            <section
+              aria-label="Withdrawal receipt"
+              data-testid="withdraw-success"
+            >
+              <p>
+                Withdrawn at <time>{receipt.withdrawn_at}</time>
+              </p>
+              <JwtReceiptDisplay jwt={receipt.jwt_receipt} />
+            </section>
+          </main>
+        </div>
+      </div>
     );
   }
 
   return (
-    <form onSubmit={submit} aria-label="Withdraw consent" data-testid="withdraw-form">
-      <h1>Withdraw consent {consentId}</h1>
-      <p>
-        <button type="button" onClick={runMfa} data-testid="mfa-button" disabled={mfaVerified}>
-          {mfaVerified ? "MFA verified" : "Re-authenticate (MFA)"}
-        </button>
-        {mfaError && (
-          <span role="alert" data-testid="mfa-error">
-            {mfaError}
-          </span>
-        )}
-      </p>
-      <div>
-        <label htmlFor="withdraw-reason">Reason (optional)</label>
-        <textarea
-          id="withdraw-reason"
-          data-testid="withdraw-reason"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-        />
+    <div className="cx-shell lin">
+      <div className="cx-main">
+        <main>
+          <h1>Withdraw consent</h1>
+          <p>
+            <code>{consentId}</code>
+          </p>
+          <form
+            onSubmit={submit}
+            aria-label="Withdraw consent"
+            data-testid="withdraw-form"
+            className="lin-checklist"
+          >
+            <Card
+              title="Re-authenticate"
+              meta="Withdrawing consent requires a fresh MFA check (LGPD Art. 18 IX · GDPR Art. 7§3)."
+            >
+              <div>
+                <Button
+                  variant="ghost"
+                  onClick={runMfa}
+                  data-testid="mfa-button"
+                  disabled={mfaVerified}
+                >
+                  {mfaVerified ? "MFA verified" : "Re-authenticate (MFA)"}
+                </Button>{" "}
+                {mfaVerified ? (
+                  <Badge tone="success" dot>
+                    Verified
+                  </Badge>
+                ) : null}
+              </div>
+              {mfaError && (
+                <div role="alert" data-testid="mfa-error">
+                  <Callout tone="danger">{mfaError}</Callout>
+                </div>
+              )}
+            </Card>
+
+            <div className="lin-card lin-card--pad">
+              <Field label="Reason (optional)" htmlFor="withdraw-reason">
+                <Textarea
+                  id="withdraw-reason"
+                  data-testid="withdraw-reason"
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                />
+              </Field>
+            </div>
+
+            {submitError && (
+              <div role="alert" data-testid="withdraw-error">
+                <Callout tone="danger">{submitError}</Callout>
+              </div>
+            )}
+            <div>
+              <Button
+                type="submit"
+                variant="danger"
+                loading={submitting}
+                disabled={!mfaVerified || submitting}
+                aria-disabled={!mfaVerified || submitting}
+                data-testid="withdraw-submit"
+              >
+                Withdraw
+              </Button>
+            </div>
+          </form>
+        </main>
       </div>
-      {submitError && (
-        <p role="alert" data-testid="withdraw-error">
-          {submitError}
-        </p>
-      )}
-      <button
-        type="submit"
-        disabled={!mfaVerified || submitting}
-        aria-disabled={!mfaVerified || submitting}
-        data-testid="withdraw-submit"
-      >
-        Withdraw
-      </button>
-    </form>
+    </div>
   );
 }

@@ -2,9 +2,13 @@
 //
 // DATA-TRUTH (mirrors customer_d1.rs / customer-types.ts):
 //   cas_bytes / quota_bytes ....... [live]  → the Storage gauge
+//   request_count ................. [live]  (BE-1a) → the Requests gauge vs the
+//                                             tier's requestsPerMonthMax (pricing.ts,
+//                                             plan from getOverview); if the plan is
+//                                             unknown the raw count renders as a Stat,
+//                                             never a gauge with a fabricated max
 //   reads / writes / daily ........ [stub]  → prod returns 0 / [] (BE-1) →
 //                                             teaching EmptyState, never a fake 0
-//   request-count ceiling ......... not a field on CustomerUsage → [stub] teaching hint
 //   $-ceiling ..................... [not-wired] (BE-7) → getDollarCeiling() throws
 //                                             NotWiredError → teaching Callout, never a value
 //   cache-hit-rate / $-saved / dedup [not-wired]/[stub] (BE-2/BE-7) → teaching hero EmptyState
@@ -18,7 +22,8 @@
 import React from "react";
 import { useAuth } from "@clerk/nextjs";
 import { CustomerClient } from "@/lib/customer-client";
-import type { CustomerUsage } from "@/lib/customer-types";
+import type { CustomerOverview, CustomerUsage } from "@/lib/customer-types";
+import { TIERS } from "@/lib/pricing";
 import {
   Card,
   Callout,
@@ -28,6 +33,7 @@ import {
   InlineError,
   Segmented,
   Skeleton,
+  Stat,
 } from "@/components/ui/linear";
 
 type RangeKey = "7d" | "30d" | "period";
@@ -42,10 +48,37 @@ function gib(bytes: number): number {
   return Math.round((bytes / 1024 ** 3) * 100) / 100;
 }
 
+// The monthly request ceiling per tier lives in the frozen rate card
+// (pricing.ts) as a feature string like "20M cache requests/mo" — the signed
+// source of truth. We read it from `TIERS` (no separate field to drift) and
+// parse the leading K/M/B-suffixed count into `requestsPerMonthMax`. Returns
+// null when the plan has no requests feature (e.g. Enterprise) or is unknown —
+// in which case the caller keeps the raw count as a Stat, never a fake gauge.
+const REQUESTS_FEATURE = /^([\d.]+)\s*([KMB]?)\s*cache requests\/mo/i;
+const SUFFIX_MULT: Record<string, number> = { "": 1, K: 1e3, M: 1e6, B: 1e9 };
+
+function requestsPerMonthMax(plan: CustomerOverview["plan"] | null): number | null {
+  if (plan == null) return null;
+  const tier = TIERS.find((t) => t.id === plan && (t.group ?? "cache") === "cache");
+  if (!tier) return null;
+  for (const feature of tier.features) {
+    const m = REQUESTS_FEATURE.exec(feature.trim());
+    if (m) {
+      const mult = SUFFIX_MULT[(m[2] ?? "").toUpperCase()] ?? 1;
+      return Number(m[1]) * mult;
+    }
+  }
+  return null;
+}
+
 export function UsageClient(): React.ReactElement {
   const { getToken } = useAuth();
   const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
   const [data, setData] = React.useState<CustomerUsage | null>(null);
+  // Plan drives the request-ceiling gauge. It is a cheap side read from the
+  // overview snapshot — a failure must NOT block Usage, so we degrade `plan` to
+  // null (→ the request count renders as a Stat, never a fabricated ceiling).
+  const [plan, setPlan] = React.useState<CustomerOverview["plan"] | null>(null);
   const [err, setErr] = React.useState<unknown>(null);
   const [range, setRange] = React.useState<RangeKey>("period");
   const [reloadKey, setReloadKey] = React.useState(0);
@@ -53,10 +86,23 @@ export function UsageClient(): React.ReactElement {
   React.useEffect(() => {
     let alive = true;
     setData(null);
+    setPlan(null);
     setErr(null);
-    client
-      .getUsage()
-      .then((d) => alive && setData(d))
+    // Usage is the load-bearing fetch; overview is a best-effort read purely for
+    // the plan (request ceiling). An overview failure degrades to a null plan,
+    // never blocks the screen.
+    Promise.all([
+      client.getUsage(),
+      client.getOverview().then(
+        (o) => o.plan,
+        () => null,
+      ),
+    ])
+      .then(([u, p]) => {
+        if (!alive) return;
+        setData(u);
+        setPlan(p);
+      })
       .catch((e: unknown) => alive && setErr(e));
     return () => {
       alive = false;
@@ -89,7 +135,15 @@ export function UsageClient(): React.ReactElement {
   const storagePct = data.quota_bytes > 0 ? data.cas_bytes / data.quota_bytes : 0;
   const casPctLabel = `${Math.round(storagePct * 100)}%`;
 
-  const hasRequestMetering = data.reads > 0 || data.writes > 0;
+  // Requests — [live] via BE-1a. request_count is real; the ceiling comes from
+  // the tier rate card. With a known ceiling we show a real gauge; otherwise
+  // (unknown/enterprise plan) we keep the raw count as a Stat — never a gauge
+  // with a fabricated max.
+  const requestMax = requestsPerMonthMax(plan);
+  const requestPctLabel =
+    requestMax != null && requestMax > 0
+      ? `${Math.round((data.request_count / requestMax) * 100)}%`
+      : null;
   const hasDaily = data.daily.length > 0;
 
   return (
@@ -128,36 +182,41 @@ export function UsageClient(): React.ReactElement {
           </span>
         </div>
 
-        {/* Requests — no request-count field on CustomerUsage → [stub].
-            Show the gauge track with a teaching hint, never a fake number. */}
+        {/* Requests — [live] request_count (BE-1a). With a known tier ceiling
+            we render a real gauge (count vs requestsPerMonthMax); when the plan
+            (hence ceiling) is unknown we keep the raw count as a Stat rather
+            than fabricating a max. */}
         <div data-testid="usage-requests">
-          {hasRequestMetering ? (
+          {requestMax != null ? (
             <>
               <Gauge
                 label="Requests"
-                value={data.reads + data.writes}
-                max={data.reads + data.writes}
-                unit="ops"
-                hint="Reads (cache hits served) + writes (artifacts stored) this period."
+                value={data.request_count}
+                max={requestMax}
+                unit="req"
+                hint={`${requestPctLabel} of your monthly request ceiling (billable cache requests this period, from usage metering).`}
               />
-              <p className="lin-card__meta">
-                Reads{" "}
-                <strong data-testid="usage-reads">{data.reads.toLocaleString()}</strong>
-                {" · "}Writes{" "}
-                <strong data-testid="usage-writes">{data.writes.toLocaleString()}</strong>{" "}
-                <HelpPopover label="What are reads and writes?">
-                  A read is a cache lookup (a hit serves you a prebuilt artifact); a
-                  write stores a new artifact. Both count against your monthly request
-                  ceiling.
-                </HelpPopover>
-              </p>
+              <span data-testid="usage-requests-pct" hidden>
+                {requestPctLabel} of ceiling
+              </span>
             </>
           ) : (
-            <EmptyState
-              title="Request usage vs. your plan ceiling lands with metering"
-              body="Per-request read/write counts (and your % of the monthly request ceiling) appear here once usage metering ships (BE-1). Until then we show storage — your live cap — rather than a fabricated 0."
-            />
+            <div data-testid="usage-requests-stat">
+              <Stat
+                label="Requests this period"
+                value={data.request_count.toLocaleString()}
+                sub="Billable cache requests. Your plan ceiling appears once your tier is known."
+              />
+            </div>
           )}
+          <p className="lin-card__meta">
+            <HelpPopover label="What counts as a request?">
+              A request is any billable cache operation this period — lookups
+              (hits that serve you a prebuilt artifact) and stores (new
+              artifacts). Every request counts against your monthly request
+              ceiling. Per-read/write and daily breakdowns land with BE-1.
+            </HelpPopover>
+          </p>
         </div>
 
         {/* $-ceiling — [not-wired] (BE-7). NEVER a value; teach instead. */}

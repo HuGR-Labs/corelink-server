@@ -238,6 +238,7 @@ vi.mock("@/lib/customer-client", async () => {
   const { vi: viInner } = await import("vitest");
   const sharedInstance = {
     getUsage: viInner.fn(),
+    getOverview: viInner.fn(),
     getBilling: viInner.fn(),
     listKeys: viInner.fn(),
     createPat: viInner.fn(),
@@ -264,11 +265,12 @@ vi.mock("@/lib/customer-client", async () => {
 });
 
 import * as customerClientModule from "@/lib/customer-client";
-import type { CustomerUsage, CustomerBilling, CustomerPat, CustomerTeamMember } from "@/lib/customer-types";
+import type { CustomerOverview, CustomerUsage, CustomerBilling, CustomerPat, CustomerTeamMember } from "@/lib/customer-types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const customerClientMock = (customerClientModule as any).__sharedInstance as {
   getUsage: ReturnType<typeof vi.fn>;
+  getOverview: ReturnType<typeof vi.fn>;
   getBilling: ReturnType<typeof vi.fn>;
   listKeys: ReturnType<typeof vi.fn>;
   createPat: ReturnType<typeof vi.fn>;
@@ -283,11 +285,33 @@ const USAGE_FIXTURE: CustomerUsage = {
   cas_bytes: 1073741824, // 1 GiB
   reads: 12000,
   writes: 3000,
+  request_count: 1_000_000, // BE-1a — billable requests this period
   quota_bytes: 10737418240, // 10 GiB
   daily: [
     { day: "2026-05-01", reads: 400, writes: 100, cas_bytes: 104857600 },
     { day: "2026-05-02", reads: 600, writes: 200, cas_bytes: 209715200 },
   ],
+};
+
+const OVERVIEW_FIXTURE: CustomerOverview = {
+  tenant_id: "t_1",
+  tenant_name: "Acme",
+  plan: "pro", // 20M cache requests/mo ceiling → the requests gauge renders
+  usage: {
+    period: "2026-05",
+    cas_bytes: 1073741824,
+    reads: 12000,
+    writes: 3000,
+    quota_bytes: 10737418240,
+  },
+  billing: {
+    status: "active",
+    next_invoice_at: "2026-06-01T00:00:00Z",
+    amount_due_cents: 5000,
+    currency: "usd",
+  },
+  byok: { status: "none" },
+  recent_activity: [],
 };
 
 describe("UsageClient", () => {
@@ -297,19 +321,41 @@ describe("UsageClient", () => {
 
   it("shows loading state initially then renders data", async () => {
     customerClientMock.getUsage.mockResolvedValue(USAGE_FIXTURE);
+    customerClientMock.getOverview.mockResolvedValue(OVERVIEW_FIXTURE);
 
     render(<UsageClient />);
     expect(screen.getByTestId("usage-loading")).toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByTestId("usage-shell")).toBeInTheDocument());
     expect(screen.getByTestId("usage-cas-pct")).toHaveTextContent("10%");
-    // toLocaleString output is locale-dependent — just verify the number is present
-    expect(screen.getByTestId("usage-reads").textContent).toMatch(/12[,.]?000/);
-    expect(screen.getByTestId("usage-writes").textContent).toMatch(/3[,.]?000/);
+  });
+
+  it("renders a real requests gauge (count vs the tier ceiling) when the plan is known", async () => {
+    customerClientMock.getUsage.mockResolvedValue(USAGE_FIXTURE);
+    customerClientMock.getOverview.mockResolvedValue(OVERVIEW_FIXTURE);
+
+    render(<UsageClient />);
+    await waitFor(() => expect(screen.getByTestId("usage-requests")).toBeInTheDocument());
+    // pro = 20M ceiling; 1M / 20M = 5%.
+    expect(screen.getByTestId("usage-requests-pct")).toHaveTextContent("5%");
+    expect(screen.queryByTestId("usage-requests-stat")).not.toBeInTheDocument();
+  });
+
+  it("falls back to a Stat of the count when the plan (hence ceiling) is unknown", async () => {
+    customerClientMock.getUsage.mockResolvedValue(USAGE_FIXTURE);
+    // Overview read fails → plan degrades to null → no fabricated ceiling.
+    customerClientMock.getOverview.mockRejectedValue(new Error("overview down"));
+
+    render(<UsageClient />);
+    await waitFor(() => expect(screen.getByTestId("usage-requests-stat")).toBeInTheDocument());
+    expect(screen.queryByTestId("usage-requests-pct")).not.toBeInTheDocument();
+    // The real count still shows (locale-independent digit check).
+    expect(screen.getByTestId("usage-requests-stat").textContent).toMatch(/1[,.]?000[,.]?000/);
   });
 
   it("renders daily breakdown rows", async () => {
     customerClientMock.getUsage.mockResolvedValue(USAGE_FIXTURE);
+    customerClientMock.getOverview.mockResolvedValue(OVERVIEW_FIXTURE);
 
     render(<UsageClient />);
     await waitFor(() => expect(screen.getByTestId("usage-daily-table")).toBeInTheDocument());
@@ -319,6 +365,7 @@ describe("UsageClient", () => {
 
   it("surfaces an error when getUsage rejects", async () => {
     customerClientMock.getUsage.mockRejectedValue(new Error("network failure"));
+    customerClientMock.getOverview.mockResolvedValue(OVERVIEW_FIXTURE);
 
     render(<UsageClient />);
     await waitFor(() => expect(screen.getByTestId("usage-error")).toBeInTheDocument());

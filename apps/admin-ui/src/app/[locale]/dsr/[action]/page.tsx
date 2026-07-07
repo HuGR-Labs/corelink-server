@@ -22,12 +22,14 @@ export default async function DsrActionPage({ params }: PageProps) {
   const t = (k: string) => tFor(locale, k);
 
   return (
-    <main aria-labelledby="dsr-action-title">
-      <h1 id="dsr-action-title">
-        {t(`dsr.rights.${action}.label`)}
-      </h1>
-      <p>{t(`dsr.rights.${action}.description`)}</p>
-      <DsrActionPageClient locale={locale} action={action} />
-    </main>
+    <div className="cx-shell lin">
+      <div className="cx-main">
+        <main aria-labelledby="dsr-action-title">
+          <h1 id="dsr-action-title">{t(`dsr.rights.${action}.label`)}</h1>
+          <p>{t(`dsr.rights.${action}.description`)}</p>
+          <DsrActionPageClient locale={locale} action={action} />
+        </main>
+      </div>
+    </div>
   );
 }

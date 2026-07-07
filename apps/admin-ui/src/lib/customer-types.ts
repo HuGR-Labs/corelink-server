@@ -43,6 +43,7 @@ export interface CustomerUsage {
   cas_bytes: number; // [live] tenant_storage_state
   reads: number; // [stub] prod=0 (no per-op table) → BE-1
   writes: number; // [stub] prod=0 → BE-1
+  request_count: number; // [live] monthly_request_counts (0071) via BE-1a — billable requests this period
   quota_bytes: number; // [live]
   daily: Array<{ day: string; reads: number; writes: number; cas_bytes: number }>; // [stub] prod=[] → BE-1
 }

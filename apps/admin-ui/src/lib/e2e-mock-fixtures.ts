@@ -577,6 +577,7 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
       cas_bytes: 4_812_344_321,
       reads: 124_502,
       writes: 8_712,
+      request_count: 133_214,
       quota_bytes: 10_737_418_240,
       daily: Array.from({ length: 7 }, (_, i) => ({
         day: `2026-05-${String(8 + i).padStart(2, "0")}`,

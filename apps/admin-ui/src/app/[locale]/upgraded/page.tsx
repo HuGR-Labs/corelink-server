@@ -22,13 +22,9 @@
  *     in a moment") and the link to Billing where the live plan state is
  *     fetched from `/v1/customer/billing` by `BillingClient`.
  *
- * Mirrors the conventions of the sibling public page
- * `[locale]/pricing/page.tsx`: a server component, `params` as a Promise
- * (Next 15), Tailwind styling, hardcoded English copy. We do NOT call a
- * translation function here (pricing/page.tsx renders literals the same
- * way); the corresponding `upgraded.*` message keys live in
- * `src/i18n/locales/en.json` alongside the existing `pricing.*` keys for
- * consistency / future wiring.
+ * UI: migrated to the Linear design language (frozen kit + globals.css
+ * tokens), matching the customer dashboard. The dark canvas comes from the
+ * page-scoped `.cx-shell` / `.cx-main` wrapper (no shared layout touched).
  *
  * PUBLIC w.r.t. middleware in the same sense as pricing — no Clerk import
  * and no backend call. (In practice the visitor is authenticated because
@@ -39,6 +35,7 @@
 import * as React from "react";
 import Link from "next/link";
 import type { Locale } from "@/i18n/LocaleContext";
+import { Badge, Card } from "@/components/ui/linear";
 
 export default async function UpgradedPage(props: {
   params: Promise<{ locale: Locale }>;
@@ -52,84 +49,68 @@ export default async function UpgradedPage(props: {
   const sessionId = Array.isArray(session_id) ? session_id[0] : session_id;
 
   return (
-    <main
-      className="mx-auto flex max-w-2xl flex-col items-center px-4 py-24 text-center sm:px-6 lg:px-8"
-      data-testid="upgraded-root"
-    >
-      {/* Success badge — inline SVG, no extra dependency (mirrors the
-          checkmark style used in pricing/page.tsx). */}
-      <span
-        className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-50 ring-2 ring-indigo-500"
-        data-testid="upgraded-badge"
-        aria-hidden="true"
+    <div className="cx-shell lin">
+      <main
+        className="cx-main"
+        data-testid="upgraded-root"
+        aria-labelledby="upgraded-heading"
       >
-        <svg
-          className="h-8 w-8 text-indigo-600"
-          viewBox="0 0 24 24"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path
-            d="M5 13l4 4L19 7"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </span>
+        <div data-testid="upgraded-badge">
+          <Badge tone="success" dot>
+            Payment received
+          </Badge>
+        </div>
 
-      <h1
-        className="mt-8 text-4xl font-bold tracking-tight text-slate-900"
-        data-testid="upgraded-heading"
-      >
-        Subscription started
-      </h1>
+        <h1 id="upgraded-heading" data-testid="upgraded-heading">
+          Subscription started
+        </h1>
 
-      <p className="mt-4 text-lg text-slate-600" data-testid="upgraded-subtitle">
-        Thank you — your payment went through. Your plan activates in a
-        moment. We&rsquo;re finishing the last step in the background; you
-        don&rsquo;t need to do anything.
-      </p>
+        <Card>
+          <p data-testid="upgraded-subtitle">
+            Thank you — your payment went through. Your plan activates in a
+            moment. We&rsquo;re finishing the last step in the background; you
+            don&rsquo;t need to do anything.
+          </p>
 
-      <p className="mt-4 text-sm text-slate-500" data-testid="upgraded-note">
-        Activation is confirmed by Stripe and can take a few seconds to
-        appear. If your plan still shows the old tier, refresh your billing
-        page shortly.
-      </p>
+          <p className="lin-mt lin-card__meta" data-testid="upgraded-note">
+            Activation is confirmed by Stripe and can take a few seconds to
+            appear. If your plan still shows the old tier, refresh your billing
+            page shortly.
+          </p>
 
-      {/* CTAs — back to the dashboard (primary) and billing (secondary).
-          Styling matches the pricing-page CTA buttons. */}
-      <div
-        className="mt-10 flex flex-col gap-3 sm:flex-row"
-        data-testid="upgraded-actions"
-      >
-        <Link
-          href={`/${locale}/customer`}
-          data-testid="upgraded-cta-dashboard"
-          className="block w-full rounded-lg bg-indigo-600 px-5 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-indigo-700 sm:w-auto"
-        >
-          Go to dashboard
-        </Link>
-        <Link
-          href={`/${locale}/customer/billing`}
-          data-testid="upgraded-cta-billing"
-          className="block w-full rounded-lg border border-slate-300 bg-white px-5 py-2.5 text-center text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 sm:w-auto"
-        >
-          View billing
-        </Link>
-      </div>
+          {/* CTAs — back to the dashboard (primary) and billing (ghost). */}
+          <div
+            className="lin-mt lin-card__actions"
+            data-testid="upgraded-actions"
+          >
+            <Link
+              href={`/${locale}/customer`}
+              data-testid="upgraded-cta-dashboard"
+              className="lin-btn lin-btn--primary lin-btn--sm"
+            >
+              Go to dashboard
+            </Link>
+            <Link
+              href={`/${locale}/customer/billing`}
+              data-testid="upgraded-cta-billing"
+              className="lin-btn lin-btn--ghost lin-btn--sm"
+            >
+              View billing
+            </Link>
+          </div>
+        </Card>
 
-      {/* Reference id — display-only, helps support correlate a query with
-          the Stripe Checkout session. Rendered only when present. */}
-      {sessionId ? (
-        <p
-          className="mt-12 break-all text-xs text-slate-400"
-          data-testid="upgraded-session-ref"
-        >
-          Reference: <code>{sessionId}</code>
-        </p>
-      ) : null}
-    </main>
+        {/* Reference id — display-only, helps support correlate a query with
+            the Stripe Checkout session. Rendered only when present. */}
+        {sessionId ? (
+          <p
+            className="lin-mt lin-card__meta"
+            data-testid="upgraded-session-ref"
+          >
+            Reference: <code>{sessionId}</code>
+          </p>
+        ) : null}
+      </main>
+    </div>
   );
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { PageHeader } from "@/components/layout/PageHeader";
+import { PublicShell } from "@/components/public/PublicShell";
+import { PublicPageHeader } from "@/components/public/PublicPageHeader";
+import { Card } from "@/components/ui/linear";
 import type { Locale } from "@/i18n/LocaleContext";
 
 interface Strings {
@@ -333,94 +335,130 @@ export interface SecurityPolicyPageProps {
   locale: Locale;
 }
 
+// Token-driven rich-text scope for the localized JSX bodies (report / safe
+// harbor / reward). `@tailwindcss/typography` is not installed, so descendant
+// selectors supply the reading styles: body on `--t2`, code/links on `--t1`
+// (both WCAG-AA on `--bg`). Tokens-only; no raw hex.
+const RICHTEXT = [
+  "text-sm leading-6 text-[var(--t2)]",
+  "[&_p]:my-2 [&_p]:text-[var(--t2)]",
+  "[&_a]:text-[var(--t1)] [&_a]:underline [&_a]:decoration-[var(--line-2)] [&_a]:underline-offset-2 hover:[&_a]:decoration-[var(--t2)]",
+  "[&_code]:rounded-[var(--r-chip)] [&_code]:bg-[rgba(255,255,255,0.06)] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-[var(--t1)]",
+].join(" ");
+
+const H2 = "text-base font-[560] tracking-[-0.012em] text-[var(--t1)]";
+const TABLE = "w-full border-collapse text-sm";
+const TH =
+  "border-b border-[var(--line)] px-3 py-2 text-left font-[510] text-[var(--t3)]";
+const TD = "border-b border-[var(--line)] px-3 py-2 text-[var(--t2)]";
+
 export function SecurityPolicyPage({ locale }: SecurityPolicyPageProps) {
   const t = COPY[locale];
   return (
-    <article className="mx-auto max-w-3xl py-8">
-      <PageHeader title={t.title} />
-      <p className="mb-6 text-sm text-gray-700">{t.intro}</p>
+    <PublicShell width="prose">
+      <PublicPageHeader title={t.title} />
+      <p className="mb-6 text-sm leading-6 text-[var(--t2)]">{t.intro}</p>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-xl font-semibold">{t.reportHeading}</h2>
-        <div className="space-y-2 text-sm">{t.reportBody}</div>
-      </section>
+      <div className="flex flex-col gap-4">
+        <Card>
+          <h2 className={`mb-2 ${H2}`}>{t.reportHeading}</h2>
+          <div className={RICHTEXT}>{t.reportBody}</div>
+        </Card>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-xl font-semibold">{t.slaHeading}</h2>
-        <p className="mb-3 text-sm text-gray-700">{t.slaIntro}</p>
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-gray-300 text-left">
-              <th className="py-2 pr-4">Stage</th>
-              <th className="py-2">Target</th>
-            </tr>
-          </thead>
-          <tbody>
-            {t.slaRows.map((r) => (
-              <tr key={r.stage} className="border-b border-gray-100">
-                <td className="py-2 pr-4">{r.stage}</td>
-                <td className="py-2">{r.target}</td>
+        <Card>
+          <h2 className={`mb-2 ${H2}`}>{t.slaHeading}</h2>
+          <p className="mb-3 text-sm text-[var(--t2)]">{t.slaIntro}</p>
+          <table className={TABLE}>
+            <thead>
+              <tr>
+                <th className={TH}>Stage</th>
+                <th className={TH}>Target</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody>
+              {t.slaRows.map((r) => (
+                <tr key={r.stage}>
+                  <td className={TD}>{r.stage}</td>
+                  <td className={TD}>{r.target}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-xl font-semibold">{t.severityHeading}</h2>
-        <p className="mb-3 text-sm text-gray-700">{t.severityIntro}</p>
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-gray-300 text-left">
-              <th className="py-2 pr-4">CVSS</th>
-              <th className="py-2 pr-4">Severity</th>
-              <th className="py-2">Patch SLA</th>
-            </tr>
-          </thead>
-          <tbody>
-            {t.severityRows.map((r) => (
-              <tr key={r.severity} className="border-b border-gray-100">
-                <td className="py-2 pr-4 font-mono">{r.cvss}</td>
-                <td className="py-2 pr-4 font-semibold">{r.severity}</td>
-                <td className="py-2">{r.patch}</td>
+        <Card>
+          <h2 className={`mb-2 ${H2}`}>{t.severityHeading}</h2>
+          <p className="mb-3 text-sm text-[var(--t2)]">{t.severityIntro}</p>
+          <table className={TABLE}>
+            <thead>
+              <tr>
+                <th className={TH}>CVSS</th>
+                <th className={TH}>Severity</th>
+                <th className={TH}>Patch SLA</th>
               </tr>
+            </thead>
+            <tbody>
+              {t.severityRows.map((r) => (
+                <tr key={r.severity}>
+                  <td className={`${TD} font-mono text-[var(--t1)]`}>{r.cvss}</td>
+                  <td className={`${TD} font-[560] text-[var(--t1)]`}>{r.severity}</td>
+                  <td className={TD}>{r.patch}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+
+        <Card>
+          <h2 className={`mb-2 ${H2}`}>{t.safeHarborHeading}</h2>
+          <div className={RICHTEXT}>{t.safeHarborBody}</div>
+        </Card>
+
+        <Card>
+          <h2 className={`mb-2 ${H2}`}>{t.outOfScopeHeading}</h2>
+          <ul className="list-disc pl-6 text-sm text-[var(--t2)] marker:text-[var(--t3)]">
+            {t.outOfScopeItems.map((item) => (
+              <li key={item} className="my-1">
+                {item}
+              </li>
             ))}
-          </tbody>
-        </table>
-      </section>
+          </ul>
+        </Card>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-xl font-semibold">{t.safeHarborHeading}</h2>
-        <div className="text-sm">{t.safeHarborBody}</div>
-      </section>
+        <Card>
+          <h2 className={`mb-2 ${H2}`}>{t.rewardHeading}</h2>
+          <div className={RICHTEXT}>{t.rewardBody}</div>
+        </Card>
+      </div>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-xl font-semibold">{t.outOfScopeHeading}</h2>
-        <ul className="list-disc pl-6 text-sm">
-          {t.outOfScopeItems.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="mb-8">
-        <h2 className="mb-2 text-xl font-semibold">{t.rewardHeading}</h2>
-        <div className="text-sm">{t.rewardBody}</div>
-      </section>
-
-      <nav className="mt-8 border-t border-gray-200 pt-4 text-sm">
-        <ul className="space-y-1">
+      <nav className="mt-8 border-t border-[var(--line)] pt-4 text-sm">
+        <ul className="flex flex-col gap-1">
           <li>
-            <a href={t.morePolicyHref}>{t.morePolicyLabel}</a>
+            <a
+              href={t.morePolicyHref}
+              className="text-[var(--t1)] underline decoration-[var(--line-2)] underline-offset-2 hover:decoration-[var(--t2)]"
+            >
+              {t.morePolicyLabel}
+            </a>
           </li>
           <li>
-            <a href={t.securityTxtHref}>{t.securityTxtLabel}</a>
+            <a
+              href={t.securityTxtHref}
+              className="text-[var(--t1)] underline decoration-[var(--line-2)] underline-offset-2 hover:decoration-[var(--t2)]"
+            >
+              {t.securityTxtLabel}
+            </a>
           </li>
           <li>
-            <a href={t.hallOfFameHref}>{t.hallOfFameLabel}</a>
+            <a
+              href={t.hallOfFameHref}
+              className="text-[var(--t1)] underline decoration-[var(--line-2)] underline-offset-2 hover:decoration-[var(--t2)]"
+            >
+              {t.hallOfFameLabel}
+            </a>
           </li>
         </ul>
       </nav>
-    </article>
+    </PublicShell>
   );
 }

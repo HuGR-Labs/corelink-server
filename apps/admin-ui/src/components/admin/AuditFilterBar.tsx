@@ -1,10 +1,13 @@
 // WI-S16-005 — audit filter bar. Filters: tenant_id (search), event_type
 // (multi-select), date range, severity, correlation_id.
+//
+// Linear kit: Field + Input for text/date, `lin-check` rows for the multi-selects.
 
 "use client";
 
 import React from "react";
 import type { AuditFilter, EventType, Severity } from "@/lib/types";
+import { Field, Input } from "@/components/ui/linear";
 
 const EVENT_TYPES: EventType[] = [
   "auth.login",
@@ -18,6 +21,12 @@ const EVENT_TYPES: EventType[] = [
   "admin.op_rejected",
 ];
 const SEVERITIES: Severity[] = ["info", "warn", "critical"];
+
+const SEVERITY_LABEL: Record<Severity, string> = {
+  info: "Info",
+  warn: "Warning",
+  critical: "Critical",
+};
 
 export interface AuditFilterBarProps {
   filter: AuditFilter;
@@ -45,76 +54,86 @@ export function AuditFilterBar({ filter, onChange }: AuditFilterBarProps): React
       onSubmit={(e) => e.preventDefault()}
       aria-label="Audit log filters"
     >
-      <label>
-        Tenant ID
-        <input
+      <Field label="Tenant ID" htmlFor="filter-tenant">
+        <Input
+          id="filter-tenant"
           type="search"
           data-testid="filter-tenant"
           value={filter.tenant_id ?? ""}
           onChange={(e) => onChange({ ...filter, tenant_id: e.target.value, cursor: null })}
         />
-      </label>
+      </Field>
 
-      <fieldset>
-        <legend>Event type</legend>
-        {EVENT_TYPES.map((et) => (
-          <label key={et}>
-            <input
-              type="checkbox"
-              data-testid={`filter-event-${et}`}
-              checked={(filter.event_types ?? []).includes(et)}
-              onChange={() => toggleEventType(et)}
-            />
-            {et}
-          </label>
-        ))}
+      <fieldset className="lin-mt">
+        <legend className="lin-label">Event type</legend>
+        <div className="lin-checklist">
+          {EVENT_TYPES.map((et) => (
+            <label key={et} className="lin-check">
+              <input
+                type="checkbox"
+                data-testid={`filter-event-${et}`}
+                checked={(filter.event_types ?? []).includes(et)}
+                onChange={() => toggleEventType(et)}
+              />
+              <span className="lin-check__label">{et}</span>
+            </label>
+          ))}
+        </div>
       </fieldset>
 
-      <label>
-        Since
-        <input
-          type="date"
-          data-testid="filter-since"
-          value={filter.since ?? ""}
-          onChange={(e) => onChange({ ...filter, since: e.target.value, cursor: null })}
-        />
-      </label>
-      <label>
-        Until
-        <input
-          type="date"
-          data-testid="filter-until"
-          value={filter.until ?? ""}
-          onChange={(e) => onChange({ ...filter, until: e.target.value, cursor: null })}
-        />
-      </label>
+      <div className="lin-mt">
+        <Field label="Since" htmlFor="filter-since">
+          <Input
+            id="filter-since"
+            type="date"
+            data-testid="filter-since"
+            value={filter.since ?? ""}
+            onChange={(e) => onChange({ ...filter, since: e.target.value, cursor: null })}
+          />
+        </Field>
+      </div>
+      <div className="lin-mt">
+        <Field label="Until" htmlFor="filter-until">
+          <Input
+            id="filter-until"
+            type="date"
+            data-testid="filter-until"
+            value={filter.until ?? ""}
+            onChange={(e) => onChange({ ...filter, until: e.target.value, cursor: null })}
+          />
+        </Field>
+      </div>
 
-      <fieldset>
-        <legend>Severity</legend>
-        {SEVERITIES.map((s) => (
-          <label key={s}>
-            <input
-              type="checkbox"
-              data-testid={`filter-sev-${s}`}
-              checked={(filter.severity ?? []).includes(s)}
-              onChange={() => toggleSeverity(s)}
-            />
-            {s}
-          </label>
-        ))}
+      <fieldset className="lin-mt">
+        <legend className="lin-label">Severity</legend>
+        <div className="lin-checklist">
+          {SEVERITIES.map((s) => (
+            <label key={s} className="lin-check">
+              <input
+                type="checkbox"
+                data-testid={`filter-sev-${s}`}
+                checked={(filter.severity ?? []).includes(s)}
+                onChange={() => toggleSeverity(s)}
+              />
+              <span className="lin-check__label">{SEVERITY_LABEL[s]}</span>
+            </label>
+          ))}
+        </div>
       </fieldset>
 
-      <label>
-        Correlation ID
-        <input
-          type="search"
-          data-testid="filter-correlation"
-          value={filter.correlation_id ?? ""}
-          onChange={(e) =>
-            onChange({ ...filter, correlation_id: e.target.value, cursor: null })
-          }
-        />
-      </label>
+      <div className="lin-mt">
+        <Field label="Correlation ID" htmlFor="filter-correlation">
+          <Input
+            id="filter-correlation"
+            type="search"
+            data-testid="filter-correlation"
+            value={filter.correlation_id ?? ""}
+            onChange={(e) =>
+              onChange({ ...filter, correlation_id: e.target.value, cursor: null })
+            }
+          />
+        </Field>
+      </div>
     </form>
   );
 }

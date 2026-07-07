@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { Badge } from "@/components/ui/linear";
 
 /**
  * ActivationStateBadge — three-state progress chip that the `/welcome` SSE
@@ -15,6 +16,11 @@ import * as React from "react";
  *
  * The badge is purely presentational; the parent `WelcomeStream` owns the
  * SSE subscription and re-renders this component with each state change.
+ *
+ * Linear kit: rendered with the frozen `Badge` (dot variant) so the status
+ * colour comes only from the a11y-validated semantic dot tokens, never hue
+ * decoration. The status wrapper keeps `role="status"`/`aria-live` + the
+ * testids the welcome-flow e2e specs assert on.
  */
 
 export type ActivationState = "waiting" | "cli-authed" | "activated";
@@ -31,26 +37,30 @@ const DEFAULT_LABELS: Record<ActivationState, string> = {
   activated: "Activated — first cache hit recorded",
 };
 
+const TONE: Record<ActivationState, "neutral" | "warn" | "success"> = {
+  waiting: "neutral",
+  "cli-authed": "warn",
+  activated: "success",
+};
+
 export function ActivationStateBadge(
   props: ActivationStateBadgeProps,
 ): React.ReactElement {
   const label = props.labels?.[props.state] ?? DEFAULT_LABELS[props.state];
   return (
-    <div
-      className={`activation-badge activation-badge--${props.state}`}
+    <span
       data-testid="activation-state-badge"
       data-state={props.state}
       role="status"
       aria-live="polite"
     >
-      <span
-        aria-hidden="true"
-        data-testid="activation-state-icon"
-        data-state={props.state}
-      >
-        {props.state === "activated" ? "✓" : props.state === "cli-authed" ? "•" : "…"}
+      <span data-testid="activation-state-label">
+        <Badge tone={TONE[props.state]} dot>
+          <span data-testid="activation-state-icon" data-state={props.state}>
+            {label}
+          </span>
+        </Badge>
       </span>
-      <span data-testid="activation-state-label">{label}</span>
-    </div>
+    </span>
   );
 }

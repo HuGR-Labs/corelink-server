@@ -17,6 +17,7 @@ import {
   type MeProfile,
 } from "@/lib/dsr-types";
 import type { Locale } from "@/i18n";
+import { Skeleton } from "@/components/ui/linear";
 
 interface Props {
   locale: Locale;
@@ -128,7 +129,11 @@ export function DsrActionPageClient(props: Props) {
   }, [token, props.testOverrides]);
 
   if (!profile) {
-    return <p data-testid="dsr-loading">Loading…</p>;
+    return (
+      <div data-testid="dsr-loading" aria-busy="true" aria-label="Loading">
+        <Skeleton rows={3} />
+      </div>
+    );
   }
 
   return (

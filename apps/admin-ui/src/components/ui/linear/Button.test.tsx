@@ -30,4 +30,17 @@ describe("Button (linear)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Go" }));
     expect(onClick).toHaveBeenCalledOnce();
   });
+
+  it("renders an anchor with the kit classes when href is given", () => {
+    renderWithProviders(
+      <Button href="/api/install/github" variant="ghost" size="sm">
+        Install
+      </Button>,
+    );
+    const link = screen.getByRole("link", { name: "Install" });
+    expect(link).toHaveAttribute("href", "/api/install/github");
+    expect(link).toHaveClass("lin-btn", "lin-btn--ghost", "lin-btn--sm");
+    // The anchor variant is a link, never a <button>.
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
 });

@@ -28,13 +28,14 @@
  *      `stripe_checkout_sessions` dedup row in
  *      `corelink-tier-selection/src/ledger.rs`).
  *
- * Error handling: any non-2xx surfaces inline (not silent). The
- * button re-enables so the user can retry. A 403 from the backend
- * means the DPA-first lock fired — surfacing the body text gives the
- * user the actionable signal ("you must accept the DPA first").
+ * Error handling: any non-2xx surfaces inline (not silent) via the kit
+ * `InlineError`, which preserves the full error text (status + body) so
+ * the DPA-first 403 signal remains actionable. The retry re-runs the same
+ * POST the click handler runs.
  */
 
 import * as React from "react";
+import { InlineError } from "@/components/ui/linear";
 import type { CheckoutTierId } from "@/lib/pricing";
 
 export interface UpgradeButtonProps {
@@ -132,19 +133,20 @@ export function UpgradeButton({
     label ?? `Upgrade to ${tier.charAt(0).toUpperCase() + tier.slice(1)}`;
 
   return (
-    <div data-testid="upgrade-button">
+    <div data-testid="upgrade-button" className="lin-checklist">
       <button
         type="button"
         onClick={startCheckout}
         disabled={busy}
         data-testid="upgrade-open-button"
+        className="lin-btn lin-btn--primary"
       >
         {busy ? "Opening Stripe Checkout…" : displayLabel}
       </button>
       {error ? (
-        <p role="alert" data-testid="upgrade-error">
-          {error}
-        </p>
+        <div role="alert" data-testid="upgrade-error">
+          <InlineError error={error} onRetry={() => void startCheckout()} />
+        </div>
       ) : null}
     </div>
   );

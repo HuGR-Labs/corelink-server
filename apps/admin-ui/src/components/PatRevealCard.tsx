@@ -1,20 +1,27 @@
 "use client";
 
 import * as React from "react";
+import { Callout } from "@/components/ui/linear";
 
 /**
  * PatRevealCard — one-time PAT display widget (CTRL-CRED-001).
  *
- * Renders the PAT blurred by default. The user must explicitly click "Reveal"
- * to see the plaintext. After 60 s the blur is reinstated automatically.
+ * Renders the PAT redacted by default (masked to the last 4 chars via the kit
+ * `CopyField redactAs`). The user must explicitly click "Reveal" to see the
+ * plaintext. After 60 s the redaction is reinstated automatically.
  *
- * Copy-to-clipboard works in either state (blurred or revealed) — the button
- * writes the raw value without requiring the blur to be lifted first.
+ * Copy-to-clipboard works in either state — the kit `CopyField` always writes
+ * the raw `value`, independent of what is displayed, so copy works whether the
+ * token is revealed or masked.
  *
  * Security invariants (CTRL-CRED-001):
  *   - `patPlaintext` is NEVER written to localStorage or sessionStorage.
  *   - `patPlaintext` is NEVER logged (no console.log, no analytics call).
  *   - The prop value lives only in React render state for the component lifetime.
+ *
+ * Linear kit: warn `Callout` for the "shown once" notice + `CopyField`
+ * (redaction-safe) for the token row + a kit ghost button for reveal/hide.
+ * No inline styles, no hue decoration — the mask is the kit's own affordance.
  */
 export interface PatRevealCardProps {
   /** The one-time PAT plaintext, passed from the Server Component render. */
@@ -23,6 +30,8 @@ export interface PatRevealCardProps {
 
 /** Auto-hide delay in milliseconds after the user reveals the token. */
 const AUTO_HIDE_MS = 60_000;
+/** "Copied!" feedback duration. */
+const COPIED_FEEDBACK_MS = 1_500;
 
 export function PatRevealCard({
   patPlaintext,
@@ -30,8 +39,9 @@ export function PatRevealCard({
   const [revealed, setRevealed] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
-  // Auto-hide timer — cancelled if the component unmounts.
+  // Auto-hide + copied-feedback timers — cancelled on unmount.
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copiedTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function reveal(): void {
     setRevealed(true);
@@ -51,92 +61,87 @@ export function PatRevealCard({
     }
   }
 
-  // Clean up the auto-hide timer when the component unmounts.
+  // Copy the RAW plaintext (independent of the masked display), then flash
+  // "Copied!". The plaintext is read only from the render-state prop — never
+  // stored, never logged (CTRL-CRED-001).
+  async function copy(): Promise<void> {
+    await navigator.clipboard.writeText(patPlaintext);
+    setCopied(true);
+    if (copiedTimerRef.current !== null) {
+      clearTimeout(copiedTimerRef.current);
+    }
+    copiedTimerRef.current = setTimeout(() => {
+      setCopied(false);
+    }, COPIED_FEEDBACK_MS);
+  }
+
+  // Clean up timers when the component unmounts.
   React.useEffect(() => {
     return () => {
       if (timerRef.current !== null) {
         clearTimeout(timerRef.current);
       }
+      if (copiedTimerRef.current !== null) {
+        clearTimeout(copiedTimerRef.current);
+      }
     };
   }, []);
 
-  async function copyPat(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(patPlaintext);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API can fail on non-secure origins or permission denial.
-      // The user can manually select and copy from the revealed text.
-      setCopied(false);
-    }
-  }
-
-  // When blurred, show only the last 4 chars with a mask prefix.
+  // When redacted, show only the last 4 chars behind a mask prefix.
   const maskedDisplay = `••••••••${patPlaintext.slice(-4)}`;
 
   return (
-    <div
-      className="rounded border border-gray-200 bg-white p-4 shadow-sm"
-      data-testid="pat-reveal-card"
-    >
-      {/* Warning banner */}
-      <div
-        className="mb-3 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm"
-        role="alert"
-        data-testid="pat-reveal-warning"
-      >
-        Your personal access token is shown <strong>once</strong>. Copy it now
-        and store it in a secret manager — you cannot retrieve it again from
-        this screen.
+    <div className="lin-checklist" data-testid="pat-reveal-card">
+      {/* Warning banner — kit warn Callout, semantic tone only. */}
+      <div role="alert" data-testid="pat-reveal-warning">
+        <Callout tone="warn">
+          Your personal access token is shown <strong>once</strong>. Copy it now
+          and store it in a secret manager — you cannot retrieve it again from
+          this screen.
+        </Callout>
       </div>
 
-      {/* Token display */}
-      <div
-        className="relative flex items-center gap-2 rounded bg-gray-50 px-3 py-2 font-mono text-sm"
-        data-testid="pat-reveal-token-row"
-      >
-        <span
-          aria-label="Personal access token"
-          data-testid="pat-reveal-token-display"
-          style={revealed ? undefined : { filter: "blur(4px)", userSelect: "none" }}
-        >
+      {/* Token row — Linear `.lin-copy` styling. The display is masked until the
+          user reveals; copy always writes the raw value regardless of display. */}
+      <div className="lin-copy" data-testid="pat-reveal-token-row">
+        <span className="lin-copy__val" data-testid="pat-reveal-token-display">
           {revealed ? patPlaintext : maskedDisplay}
         </span>
-
-        <div className="ml-auto flex items-center gap-2">
-          {/* Reveal / Hide toggle */}
-          <button
-            type="button"
-            onClick={revealed ? hide : reveal}
-            data-testid="pat-reveal-toggle"
-            aria-label={revealed ? "Hide personal access token" : "Reveal personal access token"}
-            className="rounded px-2 py-1 text-xs text-blue-600 underline hover:text-blue-800"
-          >
-            {revealed ? "Hide" : "Reveal"}
-          </button>
-
-          {/* Copy button — works regardless of reveal state */}
-          <button
-            type="button"
-            onClick={copyPat}
-            data-testid="pat-reveal-copy"
-            aria-label="Copy personal access token to clipboard"
-            className="rounded bg-gray-200 px-2 py-1 text-xs hover:bg-gray-300"
-          >
-            {copied ? "Copied!" : "Copy"}
-          </button>
-        </div>
+        <button
+          type="button"
+          className="lin-copy__btn"
+          onClick={() => {
+            void copy();
+          }}
+          data-testid="pat-reveal-copy"
+          aria-label="Copy personal access token"
+        >
+          {copied ? "Copied!" : "Copy"}
+        </button>
       </div>
 
-      {/* Countdown hint — shown only while revealed */}
-      {revealed ? (
-        <p
-          className="mt-2 text-xs text-gray-500"
-          data-testid="pat-reveal-countdown-hint"
+      {/* Reveal / Hide toggle. */}
+      <div>
+        <button
+          type="button"
+          onClick={revealed ? hide : reveal}
+          data-testid="pat-reveal-toggle"
+          aria-label={
+            revealed
+              ? "Hide personal access token"
+              : "Reveal personal access token"
+          }
+          className="lin-btn lin-btn--ghost lin-btn--sm"
         >
+          {revealed ? "Hide" : "Reveal"}
+        </button>
+      </div>
+
+      {/* Countdown hint — shown only while revealed. */}
+      {revealed ? (
+        <div className="lin-card__meta" data-testid="pat-reveal-countdown-hint">
           Token will be hidden automatically after 60 s.
-        </p>
+        </div>
       ) : null}
     </div>
   );
