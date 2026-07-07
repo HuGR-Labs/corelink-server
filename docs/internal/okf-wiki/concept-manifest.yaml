@@ -280,7 +280,7 @@ candidates:
     title: "Tenant governance: rate-limit, customer & user admin"
     status: "active"
     source_cluster: "tenancy"
-    seed_from: ["crates/corelink-container/src/routes/ratelimit_layer.rs", "crates/corelink-container/src/routes/customer.rs", "crates/corelink-container/src/routes/users.rs"]
+    seed_from: ["crates/corelink-container/src/routes/ratelimit_layer.rs", "crates/corelink-container/src/routes/customer.rs", "crates/corelink-container/src/routes/users.rs", "crates/corelink-container/src/usage_meter.rs"]
   - id: "flows/cas-write"
     type: "RequestFlow"
     title: "CAS write flow"
