@@ -78,7 +78,12 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
   // the mock session. Gating an enforce flag *inside* the handler (as before)
   // was too deep: the throw happens at clerkMiddleware construction, before
   // protect() is ever reached.
-  const isE2E = process.env["NEXT_PUBLIC_E2E_TEST_MODE"] === "1";
+  // Double-gate to match the data-layer (`auth.ts`) + mock-route guards: the
+  // auth-skip only applies in a genuine test build, NEVER in production — so a
+  // stray `NEXT_PUBLIC_E2E_TEST_MODE=1` in a prod deploy cannot disable auth here.
+  const isE2E =
+    process.env["NEXT_PUBLIC_E2E_TEST_MODE"] === "1" &&
+    process.env["NODE_ENV"] !== "production";
 
   // Protected path — defer to Clerk if configured; otherwise fall through
   // and let the route render (dev/test ergonomics).

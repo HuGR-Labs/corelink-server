@@ -154,7 +154,12 @@ function KeysInner(): React.ReactElement {
       // Stash the plaintext in the in-memory holder (the ONLY approved channel —
       // never React state, never storage) so PatModal can reveal + zero it.
       if (r.token) setPlaintextPat(r.token);
-      setMinted(r);
+      // Never retain the plaintext token in React state (it would surface in the
+      // fiber tree / devtools). The secret lives only in the shown-once holder
+      // above; `minted` just drives the modal open-state + metadata.
+      const { token: _discard, ...patOnly } = r;
+      void _discard;
+      setMinted(patOnly);
       setDraftName("");
       setDraftScopes([...DEFAULT_SCOPES]);
       toast({ title: `Token "${r.name}" created`, tone: "success" });
@@ -192,7 +197,12 @@ function KeysInner(): React.ReactElement {
       const r = await client.createPat({ name: target.name, scopes: target.scopes });
       if (r.token) setPlaintextPat(r.token);
       markSessionRevoked(target.pat_id);
-      setMinted(r);
+      // Never retain the plaintext token in React state (it would surface in the
+      // fiber tree / devtools). The secret lives only in the shown-once holder
+      // above; `minted` just drives the modal open-state + metadata.
+      const { token: _discard, ...patOnly } = r;
+      void _discard;
+      setMinted(patOnly);
       toast({ title: `Token "${target.name}" rotated`, tone: "success" });
       await reload();
     } catch (ex) {
