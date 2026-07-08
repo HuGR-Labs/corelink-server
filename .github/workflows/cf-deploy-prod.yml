@@ -36,6 +36,11 @@ on:
         required: false
         type: string
         default: ''
+      skip_pin_freshness:
+        description: 'RECYCLE the currently-pinned container image, bypassing the pin-freshness gate. Use ONLY to re-deploy the RUNNING bits (e.g. recycle instances to pick up a newly-forwarded secret/env, or a rollback) — deploy-container-prod.sh still deploys the pinned tag + poll-verifies the roll, so NO un-blessed code ships. NEVER set this to advance code onto prod (that path is: rebuild via container-build-push-prod.yml + repin to HEAD).'
+        required: false
+        type: boolean
+        default: false
   workflow_run:
     workflows: ["release-cli"]
     types: [completed]
@@ -292,6 +297,11 @@ jobs:
           # behavior). Use the globally-installed wrangler (no local node_modules
           # path on the ubuntu runner).
           WRANGLER: wrangler
+          # Recycle-only override: when the dispatch requested it, bypass the
+          # container-pin freshness gate so the RUNNING pinned image is re-deployed
+          # (deploy-container-prod.sh still poll-verifies the roll). Empty on the
+          # workflow_run/release path → gate stays ON (fail-closed default).
+          SKIP_PIN_FRESHNESS: ${{ github.event.inputs.skip_pin_freshness == 'true' && '1' || '' }}
         run: |
           bash scripts/deploy-container-prod.sh --apply --env "${WRANGLER_ENV}"
 

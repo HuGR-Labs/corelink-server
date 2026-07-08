@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **worker — DSR legitimacy anchor (`/_internal/dsr/anchor`) was gated on the wrong key (GDPR go-live blocker).**
+  The anchor is a two-authority split: githugr holds a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY`,
+  distinct from the eraser's `CORELINK_ERASE_AUTH_KEY`. But `internalConsumerForPath` had no
+  `dsr_anchor` case, so `/_internal/dsr/anchor` fell through to the `/_internal/dsr/*` → `erase`
+  catch-all: the worker front-gate compared githugr's anchor key against the ERASE key → **401**,
+  before the request ever reached the container's own (correctly-keyed) anchor gate. So binding +
+  forwarding the anchor key end to end could never unblock it — the worker wall rejected it first.
+  Added the `dsr_anchor` consumer (`resolveConsumerKey` → `CORELINK_DSR_ANCHOR_AUTH_KEY`, shared-key
+  fallback) and routed `/_internal/dsr/anchor` to it *before* the erase catch-all. The anchor
+  `dsr_id` is a HARD gate on physical erasure (the hugit executor refuses to erase without it), so
+  this was the sole code blocker on live Art.17 erasure. Regression tests pin anchor→anchor-key,
+  erase-paths→erase-key.
 - **admin-ui — repaired the broken Linear render (legacy CSS overrode the kit).**
   The app-wide Linear migration rendered visually broken — "flying white boxes" (HelpPopover triggers),
   invisible/empty buttons, cramped forms — despite typecheck/lint/tests/token-audit all passing (none catch
