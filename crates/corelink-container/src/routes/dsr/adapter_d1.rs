@@ -140,6 +140,12 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // `(tenant_id, repo_full_name)` (migr. 0085). Operational entitlement state
     // with no retention basis → ERASE.
     "runner_repo_allowlist",
+    // Per-tenant workspace snapshots, tenant-leftmost composite PK
+    // `(tenant_id, workspace_id)` (migr. 0088). A workspace is a named snapshot
+    // of the tenant's OWN cached state (name + size + snapshot ref) — the
+    // tenant's own content with no retention basis, removed when the tenant is
+    // erased (GDPR Art.17). ERASE.
+    "workspaces",
     // Per-tenant, per-day usage rollup for the dashboard ROI surface
     // `(tenant_id, day)` (migr. 0089). Display telemetry — the tenant's own
     // operational usage state, no retention basis → ERASE.
@@ -280,6 +286,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "tenant_org_map",
     "tenant_gh_installation_map",
     "runner_repo_allowlist",
+    "workspaces",
     "usage_daily",
     // erase-set (namespace)
     "adapter_cache_map",

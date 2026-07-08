@@ -280,7 +280,7 @@ candidates:
     title: "Tenant governance: rate-limit, customer & user admin"
     status: "active"
     source_cluster: "tenancy"
-    seed_from: ["crates/corelink-container/src/routes/ratelimit_layer.rs", "crates/corelink-container/src/routes/customer.rs", "crates/corelink-container/src/routes/users.rs", "crates/corelink-container/src/usage_meter.rs"]
+    seed_from: ["crates/corelink-container/src/routes/ratelimit_layer.rs", "crates/corelink-container/src/routes/customer.rs", "crates/corelink-container/src/routes/users.rs", "crates/corelink-container/src/routes/customer_runners.rs", "crates/corelink-container/src/routes/workspaces.rs", "crates/corelink-container/src/usage_meter.rs"]
   - id: "flows/cas-write"
     type: "RequestFlow"
     title: "CAS write flow"
@@ -1025,7 +1025,7 @@ candidates:
     title: "Admin plane operations"
     status: "active"
     source_cluster: "docs/internal"
-    seed_from: ["crates/corelink-container/src/routes/admin.rs", "crates/corelink-container/src/routes/admin_pilot.rs", "docs/internal/admin-plane.md"]
+    seed_from: ["crates/corelink-container/src/routes/admin.rs", "crates/corelink-container/src/routes/admin_pilot.rs", "crates/corelink-container/src/routes/admin_tenant_detail.rs", "docs/internal/admin-plane.md"]
   - id: "ops/audit-analytics-plane"
     type: "Runbook"
     title: "Audit/analytics export plane"

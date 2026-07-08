@@ -5,8 +5,9 @@ description: "How operators mutate runtime config with optimistic concurrency an
 source_files:
   - "crates/corelink-container/src/routes/admin.rs"
   - "crates/corelink-container/src/routes/admin_pilot.rs"
+  - "crates/corelink-container/src/routes/admin_tenant_detail.rs"
   - "docs/internal/admin-plane.md"
-checkpoint_sha: "a7c16588ead34ed6095e0aa9db67ddf77ac96688"
+checkpoint_sha: "0b7dc5e9ae0704f30e3e578ed75f30cf1d2b9474"
 provenance: "AUTHORED"
 tags: ["ops", "admin", "config", "dual-approval", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -18,7 +19,12 @@ The admin plane is the operator control surface. The **LIVE** container admin mu
 privileged tenant-scoped actions — granting a tenant tier (`set_tenant_tier`) and rotating the admin
 token (`rotate_admin_token`), the only two mutate ops it supports — each internal-auth-gated,
 dual-approval-bounded, MFA-bounded, and audit-logged; a missing gate key fails closed rather than
-running privileged logic (`crates/corelink-container/src/routes/admin.rs:573-586`).
+running privileged logic (`crates/corelink-container/src/routes/admin.rs:577-591`).
+Alongside the admin router sits the operator per-tenant deep-dive READ surface `admin_tenant_detail`
+(usage / billing / consents / dsr / pats) — an operator-scoped read enrichment for the admin console that
+reuses the SAME constant-time `internal_auth_ok` gate as `admin.rs` (now shared as a `pub(crate)` fn),
+so both surfaces share one operator-auth boundary; the Worker strips internal-auth on `/v1/*`, keeping the
+whole family operator-only (`crates/corelink-container/src/routes/admin_tenant_detail.rs:156`).
 The per-region Durable-Object config singleton (feature flags, rate-limit tunables, retention policies)
 mutated with compare-and-swap versioning — plus Queue propagation, rollback, and the monthly drill — is a
 **designed control** (implemented in `corelink-config-do`, consumed only by `corelink-ops`), **NOT yet
@@ -39,10 +45,11 @@ behind one fail-closed authorization gate.
 
 - Config mutation is a CAS PUT carrying `expected_version`; a version mismatch returns `409 VersionConflict`, per the architecture diagram `docs/internal/admin-plane.md:23-53`.
 - Clients follow a bounded CAS retry loop (GET version → modify → PUT → backoff on 409) `docs/internal/admin-plane.md:77-90`.
-- The container admin router exposes the read + mutate routes `crates/corelink-container/src/routes/admin.rs:464`.
-- Every privileged call is internal-auth-checked; an unconfigured key is treated as absent and rejects `crates/corelink-container/src/routes/admin.rs:79`.
-- The internal-auth key resolves via a specific-then-shared env lookup `crates/corelink-container/src/routes/admin.rs:401`.
-- A mutate body is parsed into a request that carries the dual-approval `(approval_id, approver)` pair `crates/corelink-container/src/routes/admin.rs:588`.
+- The container admin router exposes the read + mutate routes `crates/corelink-container/src/routes/admin.rs:469`.
+- Every privileged call is internal-auth-checked; an unconfigured key is treated as absent and rejects `crates/corelink-container/src/routes/admin.rs:86`.
+- The internal-auth key resolves via a specific-then-shared env lookup `crates/corelink-container/src/routes/admin.rs:406`.
+- A mutate body is parsed into a request that carries the dual-approval `(approval_id, approver)` pair `crates/corelink-container/src/routes/admin.rs:593`.
+- The operator per-tenant read surface reuses that SAME `internal_auth_ok` gate and returns `403` fail-CLOSED before any storage read `crates/corelink-container/src/routes/admin_tenant_detail.rs:162`, then binds the target `tenant_id` into every tenant-scoped `WHERE tenant_id = ?1` query (usage/billing/consents/dsr/pats) `crates/corelink-container/src/routes/admin_tenant_detail.rs:207`.
 - Pilot provisioning routes (create / grant-tier / checkin) are canonical path constants `crates/corelink-container/src/routes/admin_pilot.rs:110`.
 - Pilot persistence is abstracted behind a `PilotStore` trait `crates/corelink-container/src/routes/admin_pilot.rs:390`.
 - Config propagation is Queue-driven with a 60s safety-net poll, targeting ≤ 5s p99 `docs/internal/admin-plane.md:93-105`.
@@ -51,8 +58,8 @@ behind one fail-closed authorization gate.
 
 - A CAS write whose `expected_version` is stale must 409, never silently overwrite `docs/internal/admin-plane.md:80-86`.
 - Rollback requires fresh MFA AND a dual approver (`X-Dual-Approver`) `docs/internal/admin-plane.md:120-123`.
-- The admin plane never runs privileged logic without a configured gate key (unconfigured ⇒ reject) `crates/corelink-container/src/routes/admin.rs:79`.
-- A dual-approval pair must be set together: an **incomplete** pair (one of `approval_id`/`approver` present, the other absent) is rejected at request construction (`crates/corelink-container/src/routes/admin.rs:591`); a **fully-absent** pair yields `None` (no approval requested) and proceeds — the per-operation approval *requirement* is enforced in the handler, not at construction.
+- The admin plane never runs privileged logic without a configured gate key (unconfigured ⇒ reject) `crates/corelink-container/src/routes/admin.rs:86`.
+- A dual-approval pair must be set together: an **incomplete** pair (one of `approval_id`/`approver` present, the other absent) is rejected at request construction (`crates/corelink-container/src/routes/admin.rs:596`); a **fully-absent** pair yields `None` (no approval requested) and proceeds — the per-operation approval *requirement* is enforced in the handler, not at construction.
 - Pilot mutations emit a `corelink.admin.pilot_*` audit event on attempt and success `crates/corelink-container/src/routes/admin_pilot.rs:1141-1179`.
 
 # Gotchas
@@ -68,11 +75,13 @@ behind one fail-closed authorization gate.
 4. `docs/internal/admin-plane.md:93-105` — the ≤5s p99 propagation timing model.
 5. `docs/internal/admin-plane.md:120-123` — rollback dual-approval + fresh-MFA requirement.
 6. `docs/internal/admin-plane.md:140-142` — 410 VersionExpired for >90d targets.
-7. `crates/corelink-container/src/routes/admin.rs:79` — internal-auth fail-closed gate.
-8. `crates/corelink-container/src/routes/admin.rs:401` — specific-then-shared internal-auth key resolution.
-9. `crates/corelink-container/src/routes/admin.rs:464` — the admin read+mutate router.
-10. `crates/corelink-container/src/routes/admin.rs:591` — incomplete dual-approval pair rejected at request construction (the `_ => return Err(...)` arm).
-10b. `crates/corelink-container/src/routes/admin.rs:573-586` — the only two LIVE mutate ops: `set_tenant_tier` + `rotate_admin_token` (the config-singleton CAS is design-plane, not wired here).
+7. `crates/corelink-container/src/routes/admin.rs:86` — internal-auth fail-closed gate (absent/unconfigured key ⇒ `return false`).
+8. `crates/corelink-container/src/routes/admin.rs:406` — specific-then-shared internal-auth key resolution.
+9. `crates/corelink-container/src/routes/admin.rs:469` — the admin read+mutate router.
+10. `crates/corelink-container/src/routes/admin.rs:596` — incomplete dual-approval pair rejected at request construction (the `_ => return Err(...)` arm).
+10b. `crates/corelink-container/src/routes/admin.rs:577-591` — the only two LIVE mutate ops: `set_tenant_tier` + `rotate_admin_token` (`_ => return Err("unknown op_kind")`; the config-singleton CAS is design-plane, not wired here).
+10c. `crates/corelink-container/src/routes/admin_tenant_detail.rs:162` — the shared-`internal_auth_ok` operator gate returns `403` fail-CLOSED before any storage access (bad/absent internal-auth).
+10d. `crates/corelink-container/src/routes/admin_tenant_detail.rs:207` — binds the target `tenant_id` into a tenant-scoped `WHERE tenant_id = ?1` operator read (usage/`tenant_storage_state`).
 11. `crates/corelink-container/src/routes/admin_pilot.rs:110` — canonical grant-tier pilot route const.
 12. `crates/corelink-container/src/routes/admin_pilot.rs:1141-1179` — pilot create handler emits the `corelink.admin.pilot_*` audit on attempt + success.
 13. `crates/corelink-container/src/routes/admin_pilot.rs:1031-1032` — `build_handlers` returns the `InMemoryPilotStore::new()` baseline.
