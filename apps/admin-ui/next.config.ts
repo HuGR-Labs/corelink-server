@@ -77,8 +77,14 @@ const sentryBuildOptions = {
   silent: true,
   widenClientFileUpload: true,
   tunnelRoute: "/monitoring" as const,
-  disableLogger: true,
-  automaticVercelMonitors: false,
+  // Sentry v10: `disableLogger` and top-level `automaticVercelMonitors` were
+  // deprecated in favour of the nested `webpack.*` options (they only apply to
+  // the Webpack build path — under Next 16's default Turbopack build they are
+  // no-ops, but we keep them for the `--webpack` fallback).
+  webpack: {
+    treeshake: { removeDebugLogging: true }, // was: disableLogger: true
+    automaticVercelMonitors: false,
+  },
 };
 
 export default withSentryConfig(withNextIntl(nextConfig), sentryBuildOptions);
