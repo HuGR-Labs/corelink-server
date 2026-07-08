@@ -810,13 +810,13 @@ def render_index_mdx(endpoints: list[Endpoint]) -> str:
     parts.append("# REST API Reference\n\n")
     parts.append(
         "Auto-generated from "
-        "[`openapi/corelink-v1.yaml`](https://github.com/HumanGuardrail/corelink-server/blob/main/openapi/corelink-v1.yaml). "
+        "[`openapi/corelink-v1.yaml`](https://github.com/humangr-labs/corelink-server/blob/main/openapi/corelink-v1.yaml). "
         "One typed page per endpoint, with example invocations in "
         "**curl**, **Rust**, **Python**, **Go**, and **JavaScript**.\n\n"
     )
     parts.append(
         "Drift between this page set and the canonical YAML is gated by "
-        "[`api-reference-sync.yml`](https://github.com/HumanGuardrail/corelink-server/blob/main/.github/workflows/api-reference-sync.yml) "
+        "[`api-reference-sync.yml`](https://github.com/humangr-labs/corelink-server/blob/main/.github/workflows/api-reference-sync.yml) "
         "— every PR that edits the YAML must include the regenerated MDX.\n\n"
     )
     parts.append(
