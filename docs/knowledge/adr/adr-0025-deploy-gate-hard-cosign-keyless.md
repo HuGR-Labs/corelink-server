@@ -4,7 +4,7 @@ title: "ADR-0025 — Hard non-bypassable cosign keyless deploy gate"
 description: "Why a Cloudflare-Worker deploy verifier cryptographically gates every Worker rollout on a cosign keyless-OIDC signature with mandatory Rekor inclusion, with no soft-fail or override mode."
 source_files:
   - "specs/03_architecture/adrs/ADR-0025-deploy-gate-hard-cosign-keyless.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
+checkpoint_sha: "b5ce2bff384a09047f027082dcf4355136822242"
 provenance: "AUTHORED"
 tags: ["adr", "supply-chain", "cosign", "sigstore", "rekor", "deploy-gate", "s12"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -20,7 +20,7 @@ SLSA L3 provenance, CycloneDX SBOMs, and cargo-audit+deny each harden the build 
 
 # Decision
 
-`corelink-deploy-verifier` is a Cloudflare Worker that hard-gates rollout: GitHub Actions OIDC identity → Fulcio short-lived cert → cosign signs the OCI digest → signature published to Rekor; a HMAC-authenticated deploy webhook then runs a verify pipeline where *all* checks must pass — valid signature, fetched Rekor inclusion proof, TUF-pinned Fulcio chain, an exact SAN-URI regex binding the release workflow ref, and image-digest binding against TOCTOU — and on failure the deploy is rejected fail-CLOSED with an audit event, with no soft-fail and no emergency-override mode (rollback via a fresh signed release is the recovery path) (ADR-0025:52-82, ADR-0025:101-115).
+`corelink-deploy-verifier` is a Cloudflare Worker that hard-gates rollout: GitHub Actions OIDC identity → Fulcio short-lived cert → cosign signs the OCI digest → signature published to Rekor; a HMAC-authenticated deploy webhook then runs a verify pipeline where *all* checks must pass — valid signature, fetched Rekor inclusion proof, TUF-pinned Fulcio chain, an exact SAN-URI regex binding the release workflow ref (the `HumanGuardrail/corelink-server` release-slsa3 workflow), and image-digest binding against TOCTOU — and on failure the deploy is rejected fail-CLOSED with an audit event, with no soft-fail and no emergency-override mode (rollback via a fresh signed release is the recovery path) (ADR-0025:52-82, ADR-0025:101-115).
 
 # Consequences
 

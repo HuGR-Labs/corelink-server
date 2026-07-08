@@ -4,7 +4,7 @@ title: "ADR-S12-001 — SBOM CycloneDX 1.5+ NTIA strict + RFC 3161 TSA + Depende
 description: "Why CoreLink generates a CycloneDX 1.5 SBOM per release, gates it in NTIA strict mode, timestamps it via the Sigstore RFC 3161 TSA, and ingests it into self-hosted Dependency-Track."
 source_files:
   - "specs/03_architecture/adrs/ADR-S12-001-sbom-cyclonedx-ntia-tsa-dt.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
+checkpoint_sha: "b5ce2bff384a09047f027082dcf4355136822242"
 provenance: "AUTHORED"
 tags: ["adr", "s12", "sbom", "cyclonedx", "supply-chain", "ntia"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -20,7 +20,7 @@ CoreLink needs an SBOM per release to satisfy US EO 14028, the NTIA minimum elem
 
 # Decision
 
-Six binding choices: (1) **CycloneDX 1.5** over SPDX — `cargo-cyclonedx` is first-class Rust, Cosign attaches it natively, it is more expressive for deps/licenses; (2) **NTIA strict mode** as the CI gate (100% threshold per field, placeholder `"UNKNOWN"` rejected), auditor mode opt-in only; (3) **Sigstore TSA** (`tsa.sigstore.dev`) for RFC 3161 timestamps — public, free, replay-defeated by SHA-256 hash binding, self-hosted TSA rejected; (4) **PURL normalisation** with a `pkg:cargo/...` canonical + DT alias + workspace `vcs_url` qualifier against PURL-confusion attacks; (5) **self-hosted Dependency-Track v4.11+** over Snyk/GHAS — self-hostable, open-source, native ingestion, $0; (6) **SBOM regenerated every release** (not cached), since `Cargo.lock` drifts via Dependabot transitive updates (`specs/03_architecture/adrs/ADR-S12-001-sbom-cyclonedx-ntia-tsa-dt.md:37-83`). TSA and DT outages degrade gracefully (ship without TSR / fallback queue + SEV-3) rather than blocking the release.
+Six binding choices: (1) **CycloneDX 1.5** over SPDX — `cargo-cyclonedx` is first-class Rust, Cosign attaches it natively, it is more expressive for deps/licenses; (2) **NTIA strict mode** as the CI gate (100% threshold per field, placeholder `"UNKNOWN"` rejected), auditor mode opt-in only; (3) **Sigstore TSA** (`tsa.sigstore.dev`) for RFC 3161 timestamps — public, free, replay-defeated by SHA-256 hash binding, self-hosted TSA rejected; (4) **PURL normalisation** with a `pkg:cargo/...` canonical + DT alias + workspace `vcs_url` qualifier (`github.com/HumanGuardrail/corelink-server`) against PURL-confusion attacks; (5) **self-hosted Dependency-Track v4.11+** over Snyk/GHAS — self-hostable, open-source, native ingestion, $0; (6) **SBOM regenerated every release** (not cached), since `Cargo.lock` drifts via Dependabot transitive updates (`specs/03_architecture/adrs/ADR-S12-001-sbom-cyclonedx-ntia-tsa-dt.md:37-83`). TSA and DT outages degrade gracefully (ship without TSR / fallback queue + SEV-3) rather than blocking the release.
 
 # Consequences
 
