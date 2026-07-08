@@ -782,6 +782,14 @@ export async function handleTokenExchange(
   }
 
   // ── 7. Mint the short-TTL tenant-scoped PAT (REUSE the one container mint) ──
+  // Track-B: propagate the Clerk step-up freshness signal so the engine's erase
+  // step-up gate can require a recent reauth. Pass `fva_minutes` = the verified
+  // `fva[0]` from the session JWT (minutes since first-factor); the engine derives
+  // `fresh_auth = fva_minutes <= threshold`. OMITTED when the session carries no
+  // well-formed `fva` (fail-CLOSED — the engine treats an absent field as NOT
+  // fresh, i.e. today's behaviour, so the engine side is safe to ship first).
+  const freshness =
+    clerkAuth.fvaMinutes === undefined ? undefined : { fva_minutes: clerkAuth.fvaMinutes };
   return mintScopedPat(
     env,
     requestId,
@@ -790,5 +798,6 @@ export async function handleTokenExchange(
     TOKEN_EXCHANGE_PAT_TTL_SECONDS,
     scope,
     internalAuthKey,
+    freshness,
   );
 }

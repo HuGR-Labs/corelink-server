@@ -60,7 +60,19 @@ export const GITHUGR_AZP_ALLOWLIST = ["https://www.githugr.com"] as const;
 
 /** Result of the shared Clerk-session → tenant resolution pipeline. */
 export type ClerkAuthResult =
-  | { ok: true; tenantId: string; clerkUserId: string; role: string }
+  | {
+      ok: true;
+      tenantId: string;
+      clerkUserId: string;
+      role: string;
+      /**
+       * Track-B step-up freshness: `fva[0]` (minutes since the first factor was
+       * last verified) from the VERIFIED Clerk session JWT — `0` right after a
+       * reauth. `undefined` when the token carries no well-formed `fva` claim;
+       * consumers MUST treat `undefined` as NOT fresh (fail-closed), never `0`.
+       */
+      fvaMinutes?: number;
+    }
   | { ok: false; response: Response };
 
 /**
@@ -159,6 +171,10 @@ export async function verifyClerkSessionAndResolveTenant(
     ? env.CLERK_ISSUER_URL
     : undefined;
   let clerkUserId: string;
+  // Track-B: the Clerk step-up freshness signal, captured from the verified JWT
+  // below. Stays `undefined` (fail-closed = not fresh) unless a well-formed
+  // `fva[0]` is present.
+  let fvaMinutes: number | undefined;
   try {
     // Note: `verifyToken` has no `issuer` option (Clerk verifies the issuer
     // implicitly via the instance-scoped JWKS); the exact issuer pin is the
@@ -236,6 +252,20 @@ export async function verifyClerkSessionAndResolveTenant(
       };
     }
     clerkUserId = claims.sub;
+    // Track-B: capture the step-up freshness signal from the VERIFIED JWT. `fva`
+    // is a Clerk built-in top-level array claim `[first-factor-age, second-factor-age]`
+    // in minutes; `fva[0] = 0` means the user reauthed within the last minute.
+    // Fail-CLOSED: only a well-formed, non-negative integer `fva[0]` is captured —
+    // an absent/malformed claim leaves `fvaMinutes` undefined (⇒ NOT fresh), never 0.
+    const fva = (claims as Record<string, unknown>)["fva"];
+    if (
+      Array.isArray(fva) &&
+      typeof fva[0] === "number" &&
+      Number.isInteger(fva[0]) &&
+      fva[0] >= 0
+    ) {
+      fvaMinutes = fva[0];
+    }
   } catch {
     // Never surface the verification error detail to the client.
     return {
@@ -290,7 +320,15 @@ export async function verifyClerkSessionAndResolveTenant(
     };
   }
 
-  return { ok: true, tenantId, clerkUserId, role };
+  return {
+    ok: true,
+    tenantId,
+    clerkUserId,
+    role,
+    // Omit the key entirely when there is no fresh signal (exactOptionalPropertyTypes
+    // + fail-closed: absence ⇒ the consumer treats the session as NOT fresh).
+    ...(fvaMinutes !== undefined ? { fvaMinutes } : {}),
+  };
 }
 
 /**
