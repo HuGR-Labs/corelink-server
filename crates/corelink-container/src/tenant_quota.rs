@@ -115,9 +115,9 @@ pub fn quota_guard_from_env() -> Option<Arc<QuotaGuard>> {
         .ok()?;
     // WP-2a integration: front the durable D1 store with the in-process budget
     // lease so the hot path debits a chunk once and serves subsequent ops' ACCRUE
-    // from memory, removing the per-request D1-over-HTTP accrue-WRITE hop (the
-    // rolling-decision `get` read still hits D1 per op — see `LeasedQuotaStore`'s
-    // scope note; a warm-lease read is a tracked perf follow-up). The lease debits
+    // from memory, removing the per-request D1-over-HTTP accrue-WRITE hop AND —
+    // WP-2a step 2 — the rolling-decision READ hop when warm, via
+    // `try_serve_from_lease` (cold/drained ops fall through). The lease debits
     // up-front in `inner` (charge-never-lost), stays fail-CLOSED when drained +
     // inner-unreachable, and bounds overshoot to one lease chunk — see
     // `LeasedQuotaStore`. The guard's seed/cycle-roll bookkeeping is unchanged
@@ -425,7 +425,7 @@ pub trait QuotaStore: std::fmt::Debug + Send + Sync {
 /// (`5_000_000` micro-USD) tripwire — a `0.32 %` worst-case overshoot,
 /// negligible for a preventive cost cap, in exchange for amortising the
 /// per-request D1-over-HTTP accrue-WRITE hop 16:1 on the CAS hot path (the
-/// rolling-decision `get` read still runs per op — see [`LeasedQuotaStore`]).
+/// rolling-decision READ is also lease-served when warm — see [`LeasedQuotaStore`]).
 pub const DEFAULT_LEASE_OPS: i64 = 16;
 
 /// A per-`(tenant, cycle)` in-memory lease over an inner durable
@@ -434,26 +434,26 @@ pub const DEFAULT_LEASE_OPS: i64 = 16;
 /// fail-CLOSED `$`-ceiling (WP-2a; preserves the #318 paid-without-payment
 /// fail-closed gate and every CAA-360 invariant of the inner store).
 ///
-/// # Scope of the optimisation (do NOT overstate this)
+/// # Scope of the optimisation
 ///
-/// This lease removes ONE of the gate's TWO D1 hops, not both. The gate
-/// ([`QuotaGuard::check`]) does (a) a `get` to read the rolling-decision /
-/// cycle-anchor row, THEN (b) an atomic `check_and_accrue` write. This
-/// wrapper short-circuits only the WRITE hop (b): subsequent ops in a lease
-/// are served without an inner `check_and_accrue`. It does NOT override
-/// `get` (it passes straight through — see "What this wrapper is NOT"), so
-/// `QuotaGuard::check` still performs one synchronous D1-over-HTTP `get`
-/// read per billable op. A warm-lease read of the rolling decision (so the
-/// hot path skips D1 entirely while a lease is live) is a tracked perf
-/// follow-up, NOT yet implemented.
+/// This lease removes BOTH of the gate's per-op D1 hops on the WARM path.
+/// The gate ([`QuotaGuard::check`]) does (a) a `get` to read the
+/// rolling-decision / cycle-anchor row, THEN (b) an atomic `check_and_accrue`
+/// write. This wrapper short-circuits the WRITE hop (b) via the lease chunk
+/// (subsequent ops in a lease serve without an inner `check_and_accrue`), AND
+/// — WP-2a step 2 — short-circuits the READ hop (a) via
+/// [`Self::try_serve_from_lease`]: while a pre-paid, cycle-current lease is
+/// live the guard skips D1 ENTIRELY. Only a cold/drained/stale lease or a
+/// cycle-roll falls to the durable `get` + atomic-accrue authority;
+/// `get`/`put`/`accrue`/`roll_if_stale` still pass straight through, unleased.
 ///
 /// # The problem
 ///
 /// The hot path calls the `$`-ceiling gate on EVERY billable op. Against
 /// the production [`D1QuotaStore`] each hop is a synchronous D1-over-HTTP
 /// round-trip to `api.cloudflare.com` (~0.3–0.7 s) — a measured root cause
-/// of CAS latency. This wrapper amortises the accrue-WRITE hop; the
-/// rolling-decision `get` read remains per-op (see scope note above).
+/// of CAS latency. This wrapper amortises the accrue-WRITE hop AND the
+/// rolling-decision READ when warm (WP-2a step 2 — see scope note above).
 ///
 /// # The mechanism — budget LEASING
 ///
@@ -464,8 +464,8 @@ pub const DEFAULT_LEASE_OPS: i64 = 16;
 /// for `lease_ops * cost`), then serves subsequent ops **from the lease,
 /// in memory, without touching the inner store** until the lease is
 /// drained. When a lease drains it refills the same way. This amortises
-/// the D1 accrue-WRITE hop `lease_ops : 1` (the rolling-decision `get`
-/// read still runs per op — see the scope note above).
+/// the D1 accrue-WRITE hop `lease_ops : 1` AND (WP-2a step 2) the
+/// rolling-decision READ when warm — see the scope note above.
 ///
 /// # The five INVIOLABLE invariants (and how each is upheld)
 ///
