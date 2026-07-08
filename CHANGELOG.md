@@ -35,6 +35,17 @@ Each entry cross-references:
   `dsr_id` is a HARD gate on physical erasure (the hugit executor refuses to erase without it), so
   this was the sole code blocker on live Art.17 erasure. Regression tests pin anchor→anchor-key,
   erase-paths→erase-key.
+- **worker — the DSR legitimacy anchor was wrongly swept into the cross-residency erase fan-out (second GDPR blocker).**
+  After the key-gate fix (above), the anchor still 502'd: the erase fan-out was scoped by
+  `route.pathSuffix.startsWith("/_internal/dsr/")`, which matched `/_internal/dsr/anchor` and fanned it
+  out to all 4 regional workers (`PROD_{LHR,SAM,NRT,SYD}`), returning 502 unless the local **and** every
+  region 2xx'd — but the regions are unprovisioned for the anchor, so it always 502'd. The fan-out exists
+  only to erase/verify per-jurisdiction **R2 bytes** and returns the LOCAL body — so it is correct only for
+  byte side-effects confirmed by status, never for `/anchor` (a single global-D1 `INSERT OR IGNORE`), the
+  gather routes `/access` `/portability` (payload-body — regional bodies were discarded anyway), or the
+  global-D1 write `/rectification`. Replaced the broad `startsWith` with an explicit allowlist
+  (`isDsrEraseFanoutPath` → `/erase`, `/verify` only), fixing the anchor 502 and the latent over-fan of the
+  four gather/write routes in one scope-correct change. Regression tests pin the exact fan-out set.
 - **admin-ui — repaired the broken Linear render (legacy CSS overrode the kit).**
   The app-wide Linear migration rendered visually broken — "flying white boxes" (HelpPopover triggers),
   invisible/empty buttons, cramped forms — despite typecheck/lint/tests/token-audit all passing (none catch
