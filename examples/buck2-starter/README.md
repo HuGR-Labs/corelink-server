@@ -42,7 +42,7 @@ export CORELINK_PAT=corelink_pat_...   # never commit this
 ## Step 3 — Clone and enter the starter directory (~30 s)
 
 ```bash
-git clone https://github.com/humangr-labs/corelink-server.git
+git clone https://github.com/HumanGuardrail/corelink-server.git
 cd corelink-server/examples/buck2-starter
 ```
 

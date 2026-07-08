@@ -89,7 +89,7 @@ initial report so we can confirm coverage with our counsel.
 - All `*.corelink.humangr.com` subdomains (`app.`, `api.`, `docs.`, `status.`,
   `cdn.`).
 - All open-source crates published from
-  `github.com/humangr-labs/corelink-server` (CLI, SDKs, REAPI shim).
+  `github.com/HumanGuardrail/corelink-server` (CLI, SDKs, REAPI shim).
 - The `corelink-cli` distributable.
 - The CoreLink Cloudflare Worker entrypoints (Bazel / Buck2 / Pants
   remote-cache REAPI).

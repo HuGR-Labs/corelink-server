@@ -31,7 +31,7 @@ adds the CLI, Bazel wiring, and cache HITs.
 
 ```bash
 # 1. Install the CLI (macOS shown; Linux/Windows in the quickstart).
-brew install humangr-labs/tap/corelink
+brew install HumanGuardrail/tap/corelink
 
 # 2. Sign in to the sandbox (24h scratch tenant; no credit card).
 #    Visit https://app.corelink.humangr.com/sandbox, copy the PAT, then:
@@ -58,7 +58,7 @@ mismatch refuses the read and emits a P0 integrity event.
 
 The production data plane is wired and deployed. The Wave 32
 production-deploy campaign sealed 2026-05-22 (tag
-[`corelink-prod-deploy-v1`](https://github.com/humangr-labs/corelink-server/releases/tag/corelink-prod-deploy-v1)),
+[`corelink-prod-deploy-v1`](https://github.com/HumanGuardrail/corelink-server/releases/tag/corelink-prod-deploy-v1)),
 with all 5 customer endpoints live behind the canonical
 `corelink.humangr.com` domain. The Wave 33-36 reorg campaign
 (2026-05-22 → 2026-05-27) then consolidated the workspace from 149
@@ -118,7 +118,7 @@ takes you from install to a stored + retrieved + audited artifact.
 Sandbox tenants are free, 24h-TTL, and require no credit card.
 
 ```bash
-brew install humangr-labs/tap/corelink   # see quickstart for Linux/Windows
+brew install HumanGuardrail/tap/corelink   # see quickstart for Linux/Windows
 corelink doctor
 ```
 
@@ -197,7 +197,7 @@ Then:
 - Code of conduct: [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)
   (Contributor Covenant v2.1).
 - First-PR backlog: GitHub issues labeled
-  [`good first issue`](https://github.com/humangr-labs/corelink-server/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+  [`good first issue`](https://github.com/HumanGuardrail/corelink-server/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
   — each scoped to roughly half a day.
 - OSS vs closed boundary:
   [`docs/internal/OSS-VS-CLOSED-MATRIX.md`](./docs/internal/OSS-VS-CLOSED-MATRIX.md)

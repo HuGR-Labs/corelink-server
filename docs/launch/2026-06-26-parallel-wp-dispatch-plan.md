@@ -23,7 +23,7 @@ buckets (don't dispatch).
   the **corelink-runners** repo (`CoreLinkPlanStore`). Cross-repo conformance test
   belongs there — handoff already sent. Nothing to build here.
 - **bazel CLI round-trip**: the `corelink bazel-init` command lives in a SEPARATE
-  paused repo (`humangr-labs/corelink-cli`) awaiting an owner GH-org action, and
+  paused repo (`HumanGuardrail/corelink-cli`) awaiting an owner GH-org action, and
   two cold Bazel builds per run load the founder's Mac. Owner-gated + Mac-heavy.
 
 ---
@@ -36,7 +36,7 @@ buckets (don't dispatch).
 | OB-2 | Stripe **live** whsec + live price/sub IDs | webhook→tier against prod billing; write-only secret on the Stripe dashboard |
 | OB-3 | Alerting channel wiring | SendGrid/Slack creds (or ratify dashboard-only) for BYOK-revocation alerts |
 | OB-4 | DPA residency decision | docs sell WEUR/SAM but signup serves {wnam,enam} — legal/Phase-2 call |
-| OB-5 | `humangr-labs/corelink-cli` repo | GH-org creation to unpause the CLI (bazel) |
+| OB-5 | `HumanGuardrail/corelink-cli` repo | GH-org creation to unpause the CLI (bazel) |
 
 ---
 

@@ -57,7 +57,7 @@ instead.
 - **Security findings** → do NOT file a public issue. See
   [`SECURITY.md`](./SECURITY.md) or email `security@humangr.com`.
 - **Open-ended questions / design discussions** →
-  [GitHub Discussions](https://github.com/humangr-labs/corelink-server/discussions).
+  [GitHub Discussions](https://github.com/HumanGuardrail/corelink-server/discussions).
 - **Looking for something small to do?** Issues tagged
   `good first issue` are scoped to roughly half a day of work.
 

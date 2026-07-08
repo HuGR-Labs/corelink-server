@@ -304,7 +304,7 @@ Operator + code work to flip the 2 RED + 2 YELLOW gates. Order matters
 | 1.3 | Implement `corelink bazel-init` (stub `buck2-init`, `cargo-init` for later) | ~1 week | plg §5 |
 | 1.4 | Build `/welcome` SSE pane (replaces `/onboarding/done`) | ~3 days | plg §5 |
 | 1.5 | Define `first_cache_hit` event in CAS data plane, deduped per tenant | ~1 day | plg §3.2 |
-| 1.6 | Ship `humangr-labs/corelink-bazel-example` demo repo (200 LOC, pre-applied bazel-init) | ~2 days | plg §5 |
+| 1.6 | Ship `HumanGuardrail/corelink-bazel-example` demo repo (200 LOC, pre-applied bazel-init) | ~2 days | plg §5 |
 | 1.7 | File Stripe Atlas DE C-Corp ($500 one-time); open Mercury during Atlas flow | ~1 h founder | legal-ops §2.3 + §7.1 |
 | 1.8 | File **83(b) within 30 days** of incorporation | ~30 min founder | legal-ops §7.1 — single most expensive mistake to miss |
 | 1.9 | Buy Termageddon $119/yr; publish Privacy + ToS + Cookie + Disclaimer; adopt Common Paper DPA + CSA + SLA (free, CC BY 4.0); build `/sub-processors` page | ~3 h founder | legal-ops §1.3 + §7.3 |
