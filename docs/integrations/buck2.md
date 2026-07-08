@@ -187,7 +187,7 @@ examples/buck2-starter/
 
 ```bash
 export CORELINK_PAT=<your-token>
-git clone https://github.com/humangr-labs/corelink-server.git
+git clone https://github.com/HumanGuardrail/corelink-server.git
 cd corelink-server/examples/buck2-starter
 buck2 build :hello          # cold build — populates remote cache
 buck2 clean

@@ -3,7 +3,7 @@
 [![crates.io](https://img.shields.io/crates/v/corelink-rate-headers.svg)](https://crates.io/crates/corelink-rate-headers)
 [![docs.rs](https://docs.rs/corelink-rate-headers/badge.svg)](https://docs.rs/corelink-rate-headers)
 
-Client-side rate-limit header primitives for [CoreLink](https://github.com/humangr-labs/corelink).
+Client-side rate-limit header primitives for [CoreLink](https://github.com/HumanGuardrail/corelink).
 
 This crate is the **wire contract** an SDK or HTTP client needs to correctly
 handle CoreLink backpressure. It carries no server logic, no secrets, and no
@@ -28,7 +28,7 @@ CoreLink opens the primitives a developer must *trust* and *reproduce*, and
 closes the server that runs the service. A client cannot back off correctly
 against a black-box header format — so this contract is published. The
 abuse-prevention heuristics that decide *when* to emit a `429` stay in the
-closed server. See [`docs/OSS_STRATEGY.md`](https://github.com/humangr-labs/corelink-server/blob/main/docs/OSS_STRATEGY.md).
+closed server. See [`docs/OSS_STRATEGY.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/docs/OSS_STRATEGY.md).
 
 ## License
 

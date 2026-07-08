@@ -51,14 +51,14 @@
   "links": [
     {
       "title": "Dashboard spec (markdown)",
-      "url": "https://github.com/humangr-labs/corelink-server/blob/main/specs/_dashboards/DASH-CUSTOMER-TRAFFIC.md",
+      "url": "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_dashboards/DASH-CUSTOMER-TRAFFIC.md",
       "type": "link",
       "icon": "doc",
       "targetBlank": true
     },
     {
       "title": "DASH-INDEX (catalog)",
-      "url": "https://github.com/humangr-labs/corelink-server/blob/main/specs/_dashboards/INDEX.md",
+      "url": "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_dashboards/INDEX.md",
       "type": "link",
       "icon": "doc",
       "targetBlank": true
