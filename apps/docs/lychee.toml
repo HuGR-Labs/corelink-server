@@ -22,7 +22,7 @@ exclude = [
   "^https?://127\\.0\\.0\\.1",
   # GitHub edit links are constructed from EDIT_BASE + path; not all
   # paths exist in the source repo yet (placeholder docs).
-  "^https?://github\\.com/HumanGuardrail/corelink-server/edit/.+",
+  "^https?://github\\.com/humangr-labs/corelink-server/edit/.+",
   # Algolia stub URLs in the search modal.
   "stub_search_only_api_key_replace_at_dday",
 ]

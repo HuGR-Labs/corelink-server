@@ -47,7 +47,7 @@ last_updated: "2026-05-15"
 
 The full rationale (with cost / timeline numbers and trigger conditions) is
 in the internal companion document
-[`FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`](https://github.com/HumanGuardrail/corelink/blob/main/specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md).
+[`FEDRAMP-NOT-IN-SCOPE-RATIONALE.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md).
 Summary:
 
 | Reason | Detail |
@@ -73,7 +73,7 @@ For ~95% of commercial-regulated prospects who ask about FedRAMP **as a quality 
 ## Coverage estimate vs. FedRAMP Moderate
 
 The full crosswalk is in
-[`FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md`](https://github.com/HumanGuardrail/corelink/blob/main/specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md).
+[`FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/FEDRAMP-MODERATE-CROSSWALK-2026-05-15.md).
 Headline at the family level (18 of 20 NIST 800-53 Rev 5 families included
 — Program Management `PM` and Privacy `PT` are excluded from the Moderate
 baseline as program / privacy out-of-baseline):
@@ -108,20 +108,20 @@ baseline as program / privacy out-of-baseline):
 
 - **PS — Personnel Security:** FedRAMP Moderate requires US-citizen background-investigated personnel for privileged access. We do not implement OPM-style screening; we implement SOC 2 / ISO 27001 personnel-security controls (Owner attestation + advisor pool CV review + NDAs).
 - **IA-7 + SC-13 cryptographic-module FIPS 140-3 validation:** substance is in place across our BYOK matrix; AWS KMS is FIPS 140-3 L3 attested today (per
-  [BYOK FIPS attestation matrix](https://github.com/HumanGuardrail/corelink/blob/main/specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md));
+  [BYOK FIPS attestation matrix](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md));
   GCP CloudHSM, Azure Key Vault HSM Premium, and HashiCorp Vault Enterprise FIPS paths are mapped with RFIs in flight.
 - **IR-6 US-CERT reporting clause:** the FedRAMP-specific 1-hour reporting timeline to US-CERT is not part of our IR plan. We do commit to 72-hour breach notification under LGPD Art. 33 / GDPR Art. 33 to customers and supervisory authorities.
 - **PL-2 FedRAMP SSP template:** our security/privacy plan is documented exhaustively in
-  [`security_model.md`](https://github.com/HumanGuardrail/corelink/blob/main/specs/03_architecture/security_model.md)
+  [`security_model.md`](https://github.com/humangr-labs/corelink/blob/main/specs/03_architecture/security_model.md)
   and
-  [`privacy_model.md`](https://github.com/HumanGuardrail/corelink/blob/main/specs/03_architecture/privacy_model.md)
+  [`privacy_model.md`](https://github.com/humangr-labs/corelink/blob/main/specs/03_architecture/privacy_model.md)
   — not in the GSA SSP Word template.
 - **CA-6 ATO process:** by definition not in scope when we do not pursue authorization.
 
 ## When the FedRAMP decision would re-open
 
 We re-evaluate the not-in-scope decision under any of the following **hard trigger** conditions (full list in
-[`FEDRAMP-NOT-IN-SCOPE-RATIONALE.md §4`](https://github.com/HumanGuardrail/corelink/blob/main/specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md)):
+[`FEDRAMP-NOT-IN-SCOPE-RATIONALE.md §4`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/FEDRAMP-NOT-IN-SCOPE-RATIONALE.md)):
 
 1. **Named US federal customer with sponsorship.** A US federal agency, DoD component, or federal system integrator commits in writing to sponsor a FedRAMP authorization with one or more of: Agency ATO sponsorship, $1.5M+ ARR or $5M+ TCV contract, $400k+ co-funding of 3PAO + SSP costs, 12-18-month timeline acceptance.
 2. **Aggregate federal pipeline ≥ $5M ARR** across three or more opportunities each conditioned on FedRAMP authorization.

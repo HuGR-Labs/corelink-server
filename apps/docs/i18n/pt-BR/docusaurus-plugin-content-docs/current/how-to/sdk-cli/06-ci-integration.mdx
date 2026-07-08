@@ -30,14 +30,14 @@ jobs:
       CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
     steps:
       - uses: actions/checkout@v4
-      - uses: HumanGuardrail/setup-corelink@v1
+      - uses: humangr-labs/setup-corelink@v1
         with:
           version: "latest"
       - run: corelink doctor --json
       - run: corelink bench --read --output json
 ```
 
-`HumanGuardrail/setup-corelink` installs the signed binary, verifies its
+`humangr-labs/setup-corelink` installs the signed binary, verifies its
 SLSA attestation, and adds it to `$PATH`.
 
 ## GitLab CI

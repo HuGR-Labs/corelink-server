@@ -17,7 +17,7 @@ speaks the REAPI v2 protocol (Buck2, Pants, reclient).
 **Target:** CoreLink REAPI v2 endpoint at
 `grpc://reapi.corelink.humangr.com:443/<tenant-id>` (or `https://...` for
 HTTP/2). Surface is implemented by
-[`crates/corelink-reapi/`](https://github.com/HumanGuardrail/corelink-server/tree/main/crates/corelink-reapi)
+[`crates/corelink-reapi/`](https://github.com/humangr-labs/corelink-server/tree/main/crates/corelink-reapi)
 and exposes `ContentAddressableStorage`, `ActionCache`, `ByteStream`,
 and `Capabilities`.
 
@@ -138,7 +138,7 @@ corelink put $(find /var/lib/bazel-remote/cas -type f -newer /tmp/last-mirror) \
 `corelink put` is content-addressed and idempotent: re-uploading the
 same blob is a no-op (returns `exists=true` with a 200, no bytes
 transferred). The orchestrator in
-[`crates/corelink-reapi/src/orchestrator.rs`](https://github.com/HumanGuardrail/corelink-server/blob/main/crates/corelink-reapi/src/orchestrator.rs)
+[`crates/corelink-reapi/src/orchestrator.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-reapi/src/orchestrator.rs)
 enforces `INV-CAS-IMMUTABILITY` via `If-None-Match: *`.
 
 :::warning Do not point Bazel's `--remote_cache` at *two* URLs
@@ -342,4 +342,4 @@ gotchas you hit; future-you will thank you.
 - [From S3-only artifact storage](./from-s3-only) — for non-Bazel artifacts.
 - [10-minute quickstart](../../tutorials/quickstart-10min) — install + first put/get.
 - [REAPI v2 reference](../../reference/reapi/index) — the wire protocol Bazel speaks.
-- [Lighthouse Customer Playbook](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — escalate to white-glove if you need a dedicated engineer.
+- [Lighthouse Customer Playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — escalate to white-glove if you need a dedicated engineer.

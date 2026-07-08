@@ -41,7 +41,7 @@ const ENTRIES: readonly IncidentEntry[] = [
     summary:
       "Quarterly active failover drill. Simulated complete loss of BR primary region; traffic re-pinned to US within 7m12s (target ≤ 10m). No customer impact (drill executed in shadow plane).",
     postmortemHref:
-      "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/drill-evidence/2026-05-04-active-failover-drill.md",
+      "https://github.com/humangr-labs/corelink-server/blob/main/specs/_compliance/drill-evidence/2026-05-04-active-failover-drill.md",
   },
   {
     date: "2026-04-15",
@@ -51,7 +51,7 @@ const ENTRIES: readonly IncidentEntry[] = [
     summary:
       "Quarterly cold-restore drill. Restored full-region cache index from R2 cold storage + audit chain inclusion proofs. Recovery time 42m18s (target ≤ 60m); recovery point 0 (audit-chain replay).",
     postmortemHref:
-      "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/drill-evidence/2026-04-15-cold-restore-drill.md",
+      "https://github.com/humangr-labs/corelink-server/blob/main/specs/_compliance/drill-evidence/2026-04-15-cold-restore-drill.md",
   },
 ];
 

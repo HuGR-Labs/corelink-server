@@ -55,7 +55,7 @@ your runbook; the CoreLink config supports atomic key swap via the
 
 By default, CoreLink forwards **every top-level RED + USE metric** plus
 **every SLO-bound metric**. The full canonical inventory is in
-[`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md).
+[`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md).
 Per-metric label sets are PII-free by construction (`tenant_tier` /
 `region` / `result` / etc.; never the raw `tenant_id`).
 
@@ -137,7 +137,7 @@ If `corelink.observability.export_failed` shows up instead:
 ## Step 6 — Out-of-the-box Datadog dashboards
 
 CoreLink ships a Datadog dashboard JSON at
-[`apps/docs/static/datadog/corelink-overview.json`](https://github.com/HumanGuardrail/corelink-server/tree/main/apps/docs/static/datadog)
+[`apps/docs/static/datadog/corelink-overview.json`](https://github.com/humangr-labs/corelink-server/tree/main/apps/docs/static/datadog)
 (deferred; landing alongside the GA dashboard catalog). Import via
 **Datadog → Dashboards → New → Import JSON**.
 
@@ -160,7 +160,7 @@ Add APM trace ingest at ~$1.75 per million spans (sampled at 1%).
 - [Observability overview](./index)
 - [Trust → Data handling](../../trust/data-handling) — PII hygiene
   in telemetry; constant-time API-key comparison; fail-OPEN proof.
-- [`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md)
+- [`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md)
   — full inventory of what we export, per-metric data classification,
   PII-free verification.
 - [Datadog API docs — metrics submit](https://docs.datadoghq.com/api/latest/metrics/#submit-metrics).

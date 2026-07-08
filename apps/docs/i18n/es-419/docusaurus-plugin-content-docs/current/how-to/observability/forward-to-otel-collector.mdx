@@ -213,7 +213,7 @@ service:
 
 By default CoreLink samples request-scoped traces at **1% in production
 / 100% in staging** (per
-[`observability_model.md §6.3`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/03_architecture/observability_model.md#63-sampling)).
+[`observability_model.md §6.3`](https://github.com/humangr-labs/corelink-server/blob/main/specs/03_architecture/observability_model.md#63-sampling)).
 You can override via the Worker sampling config; lowering to 0.1%
 reduces APM cost by ~10×.
 
@@ -242,6 +242,6 @@ CoreLink Pro tenant:
   (alternative; Prom remote-write + Tempo OTLP HTTP).
 - [Trust → Data handling](../../trust/data-handling.mdx) — PII hygiene
   + egress IP ranges.
-- [`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md)
+- [`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md)
   — full inventory of what we export.
 - [OpenTelemetry Collector docs](https://opentelemetry.io/docs/collector/configuration/).
