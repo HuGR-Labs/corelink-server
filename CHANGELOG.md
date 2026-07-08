@@ -23,6 +23,21 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **container + worker — AC create-only (deny-overwrite) runner-job cred policy (anti AC-squat).**
+  Closes the runner-side "AC-squat" fast-follow: a runner-job credential may now CREATE a new
+  `(tenant, action_digest)` Action-Cache entry but may NOT OVERWRITE an existing one
+  (first-writer-wins → AC becomes append-only per tenant for these creds). This is the AC analog of
+  the existing deny-DELETE narrowing, at the SAME chokepoint — **key-agnostic** (every key) and
+  **tenant-scoped** (the tenant is the edge-injected id, never a caller param). New server-trusted
+  header `x-corelink-ac-create-only: 1`, which the Worker sets ONLY for a genuine runner-job cred
+  (alongside `x-corelink-runner-job` / `x-corelink-ac-key-allow`) and **strips** from every inbound
+  client request (added to `CLIENT_TRUST_HEADERS`) so it can never be forged. The container
+  (`scope.rs::RunnerJob::ac_create_only`) reads it fail-SAFE (only exact `"1"`, and never on a
+  non-runner-job) and the AC update route (`routes/ac.rs`) enforces it **atomically** off the store's
+  `durable` put-if-absent signal (no TOCTOU): a non-durable write by a create-only cred — or a
+  divergent-body overwrite — is rejected `409 {"error":"AC_CREATE_ONLY"}`. A first write, a normal
+  PAT, and a non-create-only runner-job cred are unchanged. Two-authority anti-poisoning posture:
+  INV-AC-RESULT-HASH-IMMUTABLE (divergent bytes) + create-only cred policy (any overwrite).
 - **container — usage metering for the customer ROI surface (BE-1/BE-2), hot-path-safe.**
   New in-process `usage_meter` aggregator: cache surfaces call a cheap in-memory
   `record(tenant, ReadHit|ReadMiss|Write)` (no `await`, no I/O — never a synchronous

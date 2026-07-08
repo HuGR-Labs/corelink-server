@@ -152,6 +152,8 @@ describe("WP5a — Worker forwards the narrowed runner-job headers", () => {
     expect(h).not.toBeNull();
     expect(h!.get("x-corelink-runner-job")).toBe("1");
     expect(h!.get("x-corelink-ac-key-allow")).toBe("*");
+    // anti AC-squat: every runner-job cred is create-only (deny-overwrite).
+    expect(h!.get("x-corelink-ac-create-only")).toBe("1");
   });
 
   it("runner-job PAT (BLAKE3 hex) → x-corelink-ac-key-allow = that hex", async () => {
@@ -170,22 +172,27 @@ describe("WP5a — Worker forwards the narrowed runner-job headers", () => {
     const h = captured();
     expect(h!.get("x-corelink-runner-job")).toBeNull();
     expect(h!.get("x-corelink-ac-key-allow")).toBeNull();
+    // A normal PAT is NOT create-only either (no regression).
+    expect(h!.get("x-corelink-ac-create-only")).toBeNull();
   });
 
   it("STRIPS a client-forged runner-job header on a NORMAL PAT (never survives)", async () => {
     const { env, captured } = makeCapturingEnv(null);
     const resp = await putCas(env, "e".repeat(64), {
       // A malicious client tries to smuggle a forged narrowing (or a forged
-      // widen — pointing enforcement at an attacker-chosen key).
+      // widen — pointing enforcement at an attacker-chosen key), plus a forged
+      // create-only marker.
       "x-corelink-runner-job": "1",
       "x-corelink-ac-key-allow": "attacker-controlled-key",
+      "x-corelink-ac-create-only": "1",
     });
     expect(resp.status).toBe(200);
     const h = captured();
-    // A normal PAT sets NEITHER header, and the client's forged copies were
-    // structurally stripped — so nothing reaches the container.
+    // A normal PAT sets NONE of the runner-job headers, and the client's forged
+    // copies were structurally stripped — so nothing reaches the container.
     expect(h!.get("x-corelink-runner-job")).toBeNull();
     expect(h!.get("x-corelink-ac-key-allow")).toBeNull();
+    expect(h!.get("x-corelink-ac-create-only")).toBeNull();
   });
 
   it("OVERWRITES a client-forged ac-key-allow with the server D1 value on a runner-job PAT", async () => {

@@ -612,12 +612,33 @@ async fn handle_update(
     // surfaces here as a sentinel-tagged `Internal` error mapped to 402 / 503.
     match state.update.update(req) {
         Ok(resp) => {
+            // AC create-only (deny-overwrite) — anti AC-squat, the AC analog of
+            // deny-DELETE. The store's `durable` flag is an ATOMIC put-if-absent
+            // signal: `true` = the row was FRESHLY INSERTED (the entry was
+            // absent); `false` = the `(tenant, action_digest)` entry ALREADY
+            // EXISTED and this was a byte-identical idempotent no-op (NOT a
+            // destructive overwrite — the store is content-immutable). A
+            // create-only cred may CREATE but never touch an existing entry, so a
+            // non-durable result is rejected 409. NO TOCTOU window: the decision
+            // rides the store's OWN conditional insert (the same atomic point
+            // that backs INV-AC-RESULT-HASH-IMMUTABLE), not a separate look-up.
+            if runner_job.ac_create_only() && !resp.durable {
+                return ac_create_only_conflict();
+            }
             let code = if resp.durable {
                 StatusCode::CREATED
             } else {
                 StatusCode::OK
             };
             (code, resp.action_digest).into_response()
+        }
+        // A create-only cred whose write hit an existing entry with DIVERGENT
+        // bytes: the store already refused the overwrite (DivergentBody, the
+        // INV-AC-RESULT-HASH-IMMUTABLE gate). Surface it with the consistent
+        // AC_CREATE_ONLY body rather than the generic divergent-body 409 — both
+        // are 409 rejections of the same overwrite attempt by this cred.
+        Err(AcHandlerError::DivergentBody { .. }) if runner_job.ac_create_only() => {
+            ac_create_only_conflict()
         }
         Err(e) => map_err(e),
     }
@@ -751,6 +772,22 @@ async fn handle_list_refs(
         }
         Err(e) => map_err(e),
     }
+}
+
+/// Canonical **409 CONFLICT** for a create-only (deny-overwrite) runner-job cred
+/// that tried to OVERWRITE an existing `(tenant, action_digest)` AC entry — the
+/// anti AC-squat rejection (see [`crate::scope::RunnerJob::ac_create_only`]). The
+/// FIRST write of a key proceeds; any later write by a create-only cred is
+/// refused, so the AC is append-only per tenant for these creds.
+fn ac_create_only_conflict() -> axum::response::Response {
+    (
+        StatusCode::CONFLICT,
+        Json(serde_json::json!({
+            "error": "AC_CREATE_ONLY",
+            "message": "create-only cred cannot overwrite an existing action-cache entry",
+        })),
+    )
+        .into_response()
 }
 
 /// Map an [`AcHandlerError`] to the canonical HTTP response.
@@ -1441,6 +1478,107 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(del).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::NO_CONTENT, "marker \"0\" ⇒ not narrowed");
+    }
+
+    // ── AC create-only (deny-overwrite / anti AC-squat) ──────────────────────
+
+    /// Seed an AC entry at `VALID_DIGEST` (tenant `TEST_TENANT`) via the store's
+    /// update trait directly (bypasses the route gates) with the given bytes.
+    fn seed_ac_entry(st: &AcRouteState, bytes: &[u8]) {
+        st.update
+            .update(AcUpdateRequest::new(
+                TEST_TENANT,
+                VALID_DIGEST,
+                bytes.to_vec(),
+                "anon@t1",
+                TEST_TENANT,
+                1,
+            ))
+            .expect("seed");
+    }
+
+    /// Build a create-only runner-job AC PUT to `VALID_DIGEST` with the given body.
+    fn create_only_put(body: &'static [u8]) -> Request<Body> {
+        Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_CREATE_ONLY_HEADER, "1")
+            .body(Body::from(body.to_vec()))
+            .expect("request")
+    }
+
+    /// create-only cred + an ALREADY-EXISTING entry (byte-identical) → 409
+    /// AC_CREATE_ONLY. This is the distinguishing behavior: even an idempotent
+    /// re-write (which a normal cred returns 200 for) is refused for create-only.
+    #[tokio::test]
+    async fn create_only_overwrite_existing_returns_409() {
+        let (_a, _s, st) = fixture();
+        seed_ac_entry(&st, b"result"); // first writer establishes the entry
+        let app = router(st);
+        let resp = app.oneshot(create_only_put(b"result")).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(v["error"], "AC_CREATE_ONLY");
+    }
+
+    /// create-only cred + a DIVERGENT overwrite of an existing entry → 409 with
+    /// the consistent AC_CREATE_ONLY body (not the generic "divergent body").
+    #[tokio::test]
+    async fn create_only_divergent_overwrite_returns_409_create_only() {
+        let (_a, _s, st) = fixture();
+        seed_ac_entry(&st, b"original");
+        let app = router(st);
+        let resp = app.oneshot(create_only_put(b"poisoned")).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(
+            v["error"], "AC_CREATE_ONLY",
+            "a create-only cred's overwrite must be AC_CREATE_ONLY, not divergent-body"
+        );
+    }
+
+    /// create-only cred + an ABSENT entry → the FIRST write proceeds normally
+    /// (201 CREATED). Create-only denies OVERWRITE, never the initial CREATE.
+    #[tokio::test]
+    async fn create_only_fresh_entry_succeeds() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let resp = app.oneshot(create_only_put(b"result")).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED, "the first write must succeed");
+    }
+
+    /// A NON-create-only runner-job cred (marker set, NO create-only header) may
+    /// still overwrite (idempotent re-write of an existing entry → 200 OK) — the
+    /// deny-DELETE / ac-key-allow behavior is UNCHANGED by this feature.
+    #[tokio::test]
+    async fn non_create_only_runner_job_overwrite_still_allowed() {
+        let (_a, _s, st) = fixture();
+        seed_ac_entry(&st, b"result");
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            // NO create-only header ⇒ overwrite (idempotent) still allowed.
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "a runner-job WITHOUT create-only re-writing an identical entry is an idempotent 200"
+        );
     }
 
     /// GET list returns the tenant's refs (read-only PAT is sufficient).

@@ -504,6 +504,13 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // so only the Worker's D1-derived values ever reach the container.
   "x-corelink-runner-job",
   "x-corelink-ac-key-allow",
+  // anti AC-squat (ac-create-only): the create-only (deny-overwrite) marker the
+  // Worker sets ONLY for a genuine runner-job cred (from the trusted D1 runner-job
+  // narrowing), never the client. A client MUST NOT be able to smuggle a forged
+  // `x-corelink-ac-create-only` (harmless if it self-narrows, but the invariant is
+  // that ONLY the Worker sets it). Strip it structurally on EVERY forward so only
+  // the Worker's runner-job-derived value ever reaches the container.
+  "x-corelink-ac-create-only",
 ];
 
 /**
@@ -2657,6 +2664,12 @@ const baseHandler: ExportedHandler<Env> = {
             if (auth.runnerJobAcKey !== null) {
               h.set("x-corelink-runner-job", "1");
               h.set("x-corelink-ac-key-allow", auth.runnerJobAcKey);
+              // anti AC-squat: EVERY runner-job cred is create-only (deny-overwrite)
+              // on the AC — the AC analog of the deny-DELETE narrowing at the SAME
+              // chokepoint. The container (scope.rs::RunnerJob::ac_create_only) reads
+              // this as first-writer-wins: CREATE ok, OVERWRITE of an existing entry
+              // ⇒ 409. Stripped above, so only the Worker's value reaches the container.
+              h.set("x-corelink-ac-create-only", "1");
             }
             // F1: forward CF's unforgeable client IP as x-corelink-client-ip
             // (the client-forgeable x-forwarded-for was stripped above) so the
@@ -2736,6 +2749,12 @@ const baseHandler: ExportedHandler<Env> = {
         if (auth.runnerJobAcKey !== null) {
           h.set("x-corelink-runner-job", "1");
           h.set("x-corelink-ac-key-allow", auth.runnerJobAcKey);
+          // anti AC-squat: EVERY runner-job cred is create-only (deny-overwrite) on
+          // the AC — the AC analog of the deny-DELETE narrowing at the SAME
+          // chokepoint. The container (scope.rs::RunnerJob::ac_create_only) reads this
+          // as first-writer-wins: CREATE ok, OVERWRITE of an existing entry ⇒ 409.
+          // Stripped above, so only the Worker's value reaches the container.
+          h.set("x-corelink-ac-create-only", "1");
         }
         // F1: forward Cloudflare's UNFORGEABLE client IP as the server-trusted
         // x-corelink-client-ip so the container's signup rate-limit keys off it
