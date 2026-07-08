@@ -34,6 +34,13 @@ Each entry cross-references:
   fail-OPEN posture is unchanged (an inner `Err` is never cached). 5 tests incl. a 24-op burst → 1 resolve.
 
 ### Added
+- **tooling — `scripts/admin/mint-dogfood-pat.sh`: mint + persist one tenant-scoped PAT for E2E/dogfood proofs.**
+  The corelink-runners fabricd consumes Bearer PATs (validates via CoreLink introspect) but does not mint them;
+  this produces one for a box-backend E2E proof. Mirrors `mintScopedPat` (`session_exchange.ts`): calls the
+  pure `/_internal/pat/mint` (HMAC + Argon2id, no persistence) then writes the D1 `pat` row via wrangler. No
+  hard-coded secrets (auth = `CORELINK_PAT_MINT_AUTH_KEY` from env); dry-run unless `--yes`; prints the token
+  plaintext once. Dev/ops utility only — no product-path change.
+
 - **container + worker — AC create-only (deny-overwrite) runner-job cred policy (anti AC-squat).**
   Closes the runner-side "AC-squat" fast-follow: a runner-job credential may now CREATE a new
   `(tenant, action_digest)` Action-Cache entry but may NOT OVERWRITE an existing one
