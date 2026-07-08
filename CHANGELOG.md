@@ -43,6 +43,16 @@ Each entry cross-references:
   fail-OPEN posture is unchanged (an inner `Err` is never cached). 5 tests incl. a 24-op burst → 1 resolve.
 
 ### Added
+- **worker — propagate Clerk step-up freshness (`fva`) through the token exchange (Track-B: real-user erase unblock).**
+  GDPR account-erase requires a recent re-auth (step-up), but the engine's `fresh_auth` had no source — the
+  session→engine-token exchange emitted nothing, so a real user hit `403 STEP_UP_REQUIRED`. Clerk emits the
+  signal natively: `fva[0]` (minutes since first-factor verification) is a top-level session-JWT claim.
+  `verifyClerkSessionAndResolveTenant` now captures `fva[0]` from the VERIFIED JWT (fail-CLOSED: only a
+  well-formed non-negative integer; absent/malformed ⇒ `undefined`), and `handleTokenExchange`
+  (`/internal/v1/auth/token-exchange`) propagates it as `fva_minutes` on the minted engine token. The engine
+  derives `fresh_auth = fva_minutes <= threshold` (hugit owns the policy, ≤5 min) — one enforcer, no split
+  policy; an absent field is treated as NOT fresh (safe for the engine to ship first). No trust surface added
+  (it's parsed from the same verified JWT the exchange already trusts for principal/tenant).
 - **tooling — `scripts/admin/mint-dogfood-pat.sh`: mint + persist one tenant-scoped PAT for E2E/dogfood proofs.**
   The corelink-runners fabricd consumes Bearer PATs (validates via CoreLink introspect) but does not mint them;
   this produces one for a box-backend E2E proof. Mirrors `mintScopedPat` (`session_exchange.ts`): calls the

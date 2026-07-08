@@ -232,4 +232,40 @@ describe("POST /internal/v1/auth/token-exchange — githugr authz #1", () => {
     expect(resp.status).toBe(405);
     expect(captured.req).toBeUndefined();
   });
+
+  // ── Track-B: propagate the Clerk step-up freshness signal `fva[0]` ──────────
+  function claimsWithFva(sub: string, fva: unknown) {
+    return { sub, azp: "https://corelink-admin.humangr.com", iss: "https://clerk.humangr.com", fva } as never;
+  }
+  // Each exchange uses a UNIQUE user+tenant so repeated calls don't trip the
+  // worker's per-tenant session-exchange throttle (429).
+  let fvaSeq = 0;
+  async function fvaMinutesInResponse(fvaClaim: unknown): Promise<unknown> {
+    const u = `user_fva_${fvaSeq}`;
+    const t = `tenant_fva_${fvaSeq}`;
+    fvaSeq += 1;
+    mockVerifyToken.mockResolvedValue(claimsWithFva(u, fvaClaim));
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map([[u, t]]) });
+    const resp = await exchangeFetch(env, { auth: INTERNAL_KEY, bearer: "clerk.jwt", body: { audience: t } });
+    expect(resp.status).toBe(200);
+    return ((await resp.json()) as Record<string, unknown>)["fva_minutes"];
+  }
+
+  it("propagates fva_minutes = fva[0] on a fresh session (the step-up unblock)", async () => {
+    expect(await fvaMinutesInResponse([0, -1])).toBe(0);
+    expect(await fvaMinutesInResponse([3, -1])).toBe(3);
+  });
+
+  it("OMITS fva_minutes when the session carries no fva claim (fail-closed = not fresh)", async () => {
+    expect(await fvaMinutesInResponse(undefined)).toBeUndefined();
+  });
+
+  it("OMITS fva_minutes on a malformed/negative fva (never defaults to 0)", async () => {
+    // negative first-factor age, non-array, non-integer, missing element → all omit
+    expect(await fvaMinutesInResponse([-1, -1])).toBeUndefined();
+    expect(await fvaMinutesInResponse("nope")).toBeUndefined();
+    expect(await fvaMinutesInResponse([1.5, -1])).toBeUndefined();
+    expect(await fvaMinutesInResponse([])).toBeUndefined();
+  });
 });
