@@ -38,6 +38,18 @@ Each entry cross-references:
   divergent-body overwrite — is rejected `409 {"error":"AC_CREATE_ONLY"}`. A first write, a normal
   PAT, and a non-create-only runner-job cred are unchanged. Two-authority anti-poisoning posture:
   INV-AC-RESULT-HASH-IMMUTABLE (divergent bytes) + create-only cred policy (any overwrite).
+- **container — usage metering for the customer ROI surface (BE-1/BE-2), hot-path-safe.**
+  New in-process `usage_meter` aggregator: cache surfaces call a cheap in-memory
+  `record(tenant, ReadHit|ReadMiss|Write)` (no `await`, no I/O — never a synchronous
+  D1 write on the read hot path), and a background task flushes additive deltas every
+  ~30s into the new `usage_daily` D1 table (migration 0089) with a `+=` UPSERT (so N
+  container instances sum without coordination). The customer `usage` handler reads
+  that table to serve real reads/writes/daily + cache **hit-rate** (hits/(hits+misses))
+  and an **estimated** build-time / $ saved, replacing the teaching EmptyStates on the
+  Home + Usage "cache ROI" cards. DISPLAY telemetry only — billing stays authoritative
+  on the synchronous `monthly_request_counts` / `tenant_quota` paths; an eviction drops
+  at most one un-flushed ~30s window (a transient D1 fault re-queues the delta, no loss).
+  `usage_daily` is tenant-keyed → classified ERASE in the DSR adapter (GDPR Art.17).
 
 ### Fixed
 - **worker — DSR legitimacy anchor (`/_internal/dsr/anchor`) was gated on the wrong key (GDPR go-live blocker).**
@@ -52,6 +64,17 @@ Each entry cross-references:
   `dsr_id` is a HARD gate on physical erasure (the hugit executor refuses to erase without it), so
   this was the sole code blocker on live Art.17 erasure. Regression tests pin anchor→anchor-key,
   erase-paths→erase-key.
+- **worker — the DSR legitimacy anchor was wrongly swept into the cross-residency erase fan-out (second GDPR blocker).**
+  After the key-gate fix (above), the anchor still 502'd: the erase fan-out was scoped by
+  `route.pathSuffix.startsWith("/_internal/dsr/")`, which matched `/_internal/dsr/anchor` and fanned it
+  out to all 4 regional workers (`PROD_{LHR,SAM,NRT,SYD}`), returning 502 unless the local **and** every
+  region 2xx'd — but the regions are unprovisioned for the anchor, so it always 502'd. The fan-out exists
+  only to erase/verify per-jurisdiction **R2 bytes** and returns the LOCAL body — so it is correct only for
+  byte side-effects confirmed by status, never for `/anchor` (a single global-D1 `INSERT OR IGNORE`), the
+  gather routes `/access` `/portability` (payload-body — regional bodies were discarded anyway), or the
+  global-D1 write `/rectification`. Replaced the broad `startsWith` with an explicit allowlist
+  (`isDsrEraseFanoutPath` → `/erase`, `/verify` only), fixing the anchor 502 and the latent over-fan of the
+  four gather/write routes in one scope-correct change. Regression tests pin the exact fan-out set.
 - **admin-ui — repaired the broken Linear render (legacy CSS overrode the kit).**
   The app-wide Linear migration rendered visually broken — "flying white boxes" (HelpPopover triggers),
   invisible/empty buttons, cramped forms — despite typecheck/lint/tests/token-audit all passing (none catch
@@ -63,6 +86,45 @@ Each entry cross-references:
   stepper + proper field spacing. This bug was LIVE in prod. Verified by screenshotting every screen.
 
 ### Added
+- **admin-ui — un-stubbed the Runners + Workspaces screens against the live customer surface.**
+  Replaced the placeholder `EmptyState`/prose walls with real data. Runners: fetches the entitlement
+  (plan/concurrency/vCPU-h) + repo allowlist + recent runs via `getRunnerEntitlement`/`listRunnerRuns`
+  (`/v1/customer/runners/*`); gauges consumption only against a real `max_vcpu_h` (never a fabricated
+  cap), renders the Install-GitHub-App CTA when not entitled, honest empty runs table. Workspaces:
+  real list (name/humanized-size/created/pinned) via `listWorkspaces` + create/pin/unpin/delete
+  (delete behind a `ConfirmDialog`); collapsed the duplicate two-explainer wall to one card. Both light
+  up in prod once the backend customer-runners/workspaces modules deploy; until then the client methods
+  hit the live endpoints (no `NotWiredError` fakery). Kit-only, honest empty states, visually reviewed.
+- **admin-ui — screen SOTA rebuild wave 1 batch 2 (tokens, billing, settings, team, admin-audit, admin-tenants, customer-audit).**
+  Tokens: per-token rotate (revoke+recreate) + hide-revoked filter + honest last-used. Billing: real plan
+  ladder from the pricing catalog (upgrade/downgrade CTAs, active-sub → portal to avoid double-billing) +
+  runner-SKU ladder. Settings: real Account card (from the Clerk session, no new endpoint) + honest
+  coming-soon for the BE-gated controls + working danger zone. Team: pending-invites split out, read-only
+  roles with an honest note. Admin-audit: csv/json export toggle + event drawer → Modal overlay.
+  Admin-tenants: default recent-tenants list + plan/region/BYOK filters (the 5 deep-dive enrichment cards
+  are honestly BE-gated — no per-tenant enrichment endpoint exists yet). Customer-audit: **fixed a real
+  filter bug** — the client sent `since`/`event_types` but the backend parses `from`/`to`/`kind`, so date
+  + event-type filters were silently dropped server-side; aligned the client + mock to the canonical names.
+  Rebuilt the orphan audit-visualization page off raw HTML onto the kit.
+- **admin-ui — screen SOTA rebuild wave 1 (home, connect, trust, DSR-landing, DSR-status, consent-dashboard).**
+  After a code-grounded, screen-by-screen audit against a frozen Linear design contract, rebuilt six screens
+  to the standard: fixed the recurring cramped-card bug (`.lin-checklist` 4px misused as a card vstack →
+  `.lin-mt`/`.lin-mt-lg`), rendered Home's previously-dropped billing snapshot, gave Trust real audit/DPA/
+  sub-processor cards, enriched the DSR landing into a rights center (identity/SLA/DPO), and — the two
+  BROKEN ones — wired the DSR-status Clerk token (was a permanently-empty dead page) and fixed the
+  consent-dashboard locale-broken links (404s), both re-skinned off raw HTML tables onto the kit. Added
+  `.lin-t1..t4` text-color utilities and `target`/`rel` on the kit `Button` anchor form. Consent capture
+  screens cut from launch nav (already unlinked). Each screen visually reviewed via screenshot.
+- **container — backend data surfaces to un-stub the dashboard (Runners + Workspaces + operator deep-dive).**
+  New tenant-scoped read/CRUD endpoints so the FE stops rendering NotWiredError EmptyStates:
+  `customer_runners` (`GET /v1/customer/runners/{entitlement,allowlist,runs}` — reads runners_entitlement /
+  runner_repo_allowlist / runner_billing; honest stubs where no D1 source exists), `workspaces`
+  (`GET/POST/DELETE /v1/customer/workspaces[/:id[/pin]]` + migration `0088_workspaces` — tenant-leftmost PK,
+  DSR-erasable), and `admin_tenant_detail` (operator per-tenant usage/billing/consents/dsr/pats reads). All
+  tenant-derived-from-session and fail-closed (adversarially audited: no cross-tenant read/write, PAT secrets
+  never selected); the two customer surfaces carry the native-PAT possession backstop. The operator deep-dive
+  is internal-auth gated (same posture as the rest of `admin`), so wiring the admin-ui operator console to it
+  is a separate follow-up. FE wiring (client methods + screen un-stub) also follows.
 - **admin-ui — app-wide Linear design migration (admin, public, onboarding, DSR/consent) + FE follow-ups.**
   Extends the customer-dashboard Linear rebuild to the rest of the app so the whole surface follows the
   Linear doctrine (a11y-validated tokens, 4px spacing grid, fixed type scale, kit-only). Migrated: the

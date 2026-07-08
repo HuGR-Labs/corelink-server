@@ -1,13 +1,14 @@
-// WI-S16-005 — slide-in drawer for an audit event with tabbed views.
+// WI-S16-005 — slide-in overlay for an audit event with tabbed views.
 //
-// Linear kit: rendered as a glass Card with `lin-seg` tabs and dark CodeBlock
-// panels (terminals stay dark per doctrine). Testids + tab roles preserved.
+// Linear kit: rendered as a kit `Modal` overlay (so the selected row stays in
+// view) with `lin-seg` tabs and dark CodeBlock panels (terminals stay dark per
+// doctrine). Testids + tab roles preserved.
 
 "use client";
 
 import React from "react";
 import type { AuditEventDetail } from "@/lib/types";
-import { Button, Card, CodeBlock } from "@/components/ui/linear";
+import { Button, CodeBlock, Modal } from "@/components/ui/linear";
 import MerkleProofViewer from "./MerkleProofViewer";
 
 export type DrawerTab = "envelope" | "payload" | "merkle" | "raw";
@@ -40,19 +41,20 @@ export function AuditEventDrawer({
   );
 
   return (
-    <aside
-      role="dialog"
-      aria-label={`Audit event ${event.event_id}`}
-      data-testid="audit-event-drawer"
-      data-open={open}
-      className="lin-mt"
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={event.event_type}
+      footer={closeBtn}
     >
-      <Card
-        title={event.event_type}
-        meta={`${event.event_id} · ${event.ts}`}
-        actions={closeBtn}
+      <div
+        data-testid="audit-event-drawer"
+        data-open={open}
+        aria-label={`Audit event ${event.event_id}`}
       >
-        <div className="lin-seg" role="tablist">
+        <div className="lin-card__meta">{`${event.event_id} · ${event.ts}`}</div>
+
+        <div className="lin-seg lin-mt" role="tablist">
           {(["envelope", "payload", "merkle", "raw"] as DrawerTab[]).map((t) => (
             <button
               key={t}
@@ -82,12 +84,18 @@ export function AuditEventDrawer({
 
         <p className="lin-card__meta lin-mt">
           R2 archive:{" "}
-          <a href={event.r2_url} rel="noreferrer">
+          <Button
+            href={event.r2_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            size="sm"
+            variant="ghost"
+          >
             {event.r2_url}
-          </a>
+          </Button>
         </p>
-      </Card>
-    </aside>
+      </div>
+    </Modal>
   );
 }
 

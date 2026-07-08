@@ -75,8 +75,13 @@ pub const ADMIN_INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 /// The compare pads the provided value to the expected length and runs a
 /// single `ct_eq` so the secret LENGTH is not leaked via early return
 /// (improves on the length-short-circuit nit in `internal_pat`).
+///
+/// Exposed `pub(crate)` so the sibling operator-scoped read module
+/// (`routes::admin_tenant_detail`) reuses the SAME constant-time gate
+/// rather than re-implementing the compare (single source of truth for
+/// the operator auth boundary).
 #[must_use]
-fn internal_auth_ok(expected: Option<&Arc<str>>, headers: &HeaderMap) -> bool {
+pub(crate) fn internal_auth_ok(expected: Option<&Arc<str>>, headers: &HeaderMap) -> bool {
     let Some(expected) = expected else {
         return false;
     };

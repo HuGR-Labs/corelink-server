@@ -1,25 +1,38 @@
-// wt/r-prep-audit-chain-viz — customer audit-chain visualization.
+// /[locale]/customer/audit/visualization — customer audit-chain verification.
 //
-// React skeleton implementing the five components described in
-// `specs/_audits/sealed/2026-05-15-audit-viz-spec.md`:
+// Migrated onto the Linear kit (2026-07-07). Was a raw-HTML page (inline hex,
+// bare <section>/<table>, unstyled after the #651 generic-CSS deletion). Now
+// every surface is a `@/components/ui/linear` primitive: Card, lin-table,
+// Button, Badge, Modal, Callout, EmptyState, InlineError.
 //
-//   A — chain head card
-//   B — leaf table
-//   C — proof modal
-//   D — chain integrity timeline sparkline
-//   E — export bundle button
+// DATA-HONESTY: the chain endpoints (`/v1/customer/audit/chain/*`,
+// `/events/:id/proof`) are served by the E2E mock today and are NOT yet wired to
+// a production backend. So this screen is framed as a "verification preview": the
+// inclusion proofs ARE verified in the browser (real BLAKE3/SHA-256 crypto over
+// whatever bytes the endpoint returns), but we never claim the sample chain is
+// the tenant's live, production audit trail. In production the endpoints 404 →
+// honest InlineError / EmptyState, never a fabricated "verified" head.
 //
-// All data is fetched from `/v1/customer/audit/*` which is currently served
-// by the e2e mock in `apps/admin-ui/src/lib/e2e-mock-fixtures.ts`. Real wire-
-// up lands with the customer audit handler crate (separate WI).
+// Components (spec `specs/_audits/sealed/2026-05-15-audit-viz-spec.md`):
+//   A — chain head card      B — leaf table       C — proof modal
+//   D — chain integrity timeline sparkline        E — export bundle
 //
-// Accessibility: WCAG 2.2 AA — semantic landmarks, aria-live status, focus
-// trap on modal (Radix Dialog), keyboard activation, no color-only signals.
+// Accessibility: WCAG 2.2 AA — aria-live status, focus-trapped kit Modal,
+// keyboard activation, no color-only signals.
 
 "use client";
 
 import React from "react";
 import { verifyAuditProof, type AuditProofResult } from "@/lib/audit/verify-proof";
+import {
+  Button,
+  Callout,
+  Card,
+  EmptyState,
+  InlineError,
+  Modal,
+  Skeleton,
+} from "@/components/ui/linear";
 
 interface ChainHead {
   head_digest: string;
@@ -89,64 +102,101 @@ function relativeTime(iso: string, now: number = Date.now()): string {
   return `${d}d ago`;
 }
 
+/** A stacked label/value row — the kit has no definition-list primitive, so this
+ *  renders the key-value pairs with the token text-ramp classes. */
+function KvRow({
+  label,
+  children,
+  first,
+}: {
+  label: string;
+  children: React.ReactNode;
+  first?: boolean;
+}): React.ReactElement {
+  return (
+    <div className={first ? undefined : "lin-mt"}>
+      <div className="lin-t3">{label}</div>
+      <div className="lin-t1">{children}</div>
+    </div>
+  );
+}
+
 // ---------- Component A: chain head card ----------
 
 function ChainHeadCard({
   head,
+  error,
   onVerifyHead,
   verifyState,
 }: {
   head: ChainHead | null;
+  error: string | null;
   onVerifyHead: () => void;
   verifyState: "idle" | "running" | "ok" | "fail";
 }): React.ReactElement {
   return (
-    <section
-      aria-labelledby="chain-head-heading"
-      data-testid="chain-head-card"
-      style={{ border: "1px solid #ddd", padding: "1rem", borderRadius: 8 }}
-    >
-      <h2 id="chain-head-heading">Audit chain head</h2>
-      {head ? (
-        <dl>
-          <dt>Total events</dt>
-          <dd data-testid="chain-head-total">{head.total_events.toLocaleString()}</dd>
-          <dt>Head digest</dt>
-          <dd>
-            <code data-testid="chain-head-digest" title={head.head_digest}>
-              {truncHex(head.head_digest, 12, 12)}
-            </code>
-          </dd>
-          <dt>Algorithm</dt>
-          <dd data-testid="chain-head-algorithm">{head.algorithm}</dd>
-          <dt>Last updated</dt>
-          <dd data-testid="chain-head-last-updated">
-            <time dateTime={head.last_updated}>{relativeTime(head.last_updated)}</time>
-          </dd>
-        </dl>
-      ) : (
-        <p data-testid="chain-head-loading">Loading chain head…</p>
-      )}
-      <button
-        type="button"
-        data-testid="verify-head-btn"
-        onClick={onVerifyHead}
-        disabled={!head || verifyState === "running"}
-      >
-        Verify head
-      </button>
-      <span
-        role="status"
-        aria-live="polite"
-        data-testid="verify-head-status"
-        data-state={verifyState}
-        style={{ marginLeft: "0.5rem" }}
-      >
-        {verifyState === "running" && "Verifying…"}
-        {verifyState === "ok" && "✓ Verified locally"}
-        {verifyState === "fail" && "✗ Mismatch — see trust-center incident page"}
-      </span>
-    </section>
+    <Card title="Audit chain head">
+      <div data-testid="chain-head-card">
+        {head ? (
+          <>
+            <KvRow label="Total events" first>
+              <span data-testid="chain-head-total">{head.total_events.toLocaleString()}</span>
+            </KvRow>
+            <KvRow label="Head digest">
+              <code data-testid="chain-head-digest" title={head.head_digest}>
+                {truncHex(head.head_digest, 12, 12)}
+              </code>
+            </KvRow>
+            <KvRow label="Algorithm">
+              <span data-testid="chain-head-algorithm">{head.algorithm}</span>
+            </KvRow>
+            <KvRow label="Last updated">
+              <time data-testid="chain-head-last-updated" dateTime={head.last_updated}>
+                {relativeTime(head.last_updated)}
+              </time>
+            </KvRow>
+
+            <div className="lin-mt-lg" data-testid="chain-head-verify">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="verify-head-btn"
+                onClick={onVerifyHead}
+                disabled={!head || verifyState === "running"}
+              >
+                Verify head
+              </Button>{" "}
+              <span
+                role="status"
+                aria-live="polite"
+                data-testid="verify-head-status"
+                data-state={verifyState}
+                className={
+                  verifyState === "ok"
+                    ? "lin-t1"
+                    : verifyState === "fail"
+                      ? "lin-t1"
+                      : "lin-t3"
+                }
+              >
+                {verifyState === "running" && "Verifying…"}
+                {verifyState === "ok" && "✓ Verified locally"}
+                {verifyState === "fail" && "✗ Mismatch — see the trust-center incident page"}
+              </span>
+            </div>
+          </>
+        ) : error ? (
+          <EmptyState
+            title="Chain verification preview unavailable"
+            body="The audit-chain endpoints aren't reachable from this environment yet. Verification lights up once your tenant's chain is wired to the backend."
+          />
+        ) : (
+          <div data-testid="chain-head-loading" aria-busy="true" aria-label="Loading chain head">
+            <Skeleton rows={4} />
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }
 
@@ -154,35 +204,45 @@ function ChainHeadCard({
 
 function LeafTable({
   leaves,
+  loading,
+  error,
   onShowProof,
 }: {
   leaves: AuditLeaf[];
+  loading: boolean;
+  error: string | null;
   onShowProof: (leaf: AuditLeaf) => void;
 }): React.ReactElement {
   return (
-    <section aria-labelledby="leaves-heading">
-      <h2 id="leaves-heading">My tenant&apos;s audit events</h2>
-      <table data-testid="audit-leaf-table">
-        <caption>My tenant&apos;s audit events, most recent first.</caption>
-        <thead>
-          <tr>
-            <th scope="col">Event ID</th>
-            <th scope="col">Timestamp</th>
-            <th scope="col">Type</th>
-            <th scope="col">Chain seq</th>
-            <th scope="col">Leaf digest</th>
-            <th scope="col">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {leaves.length === 0 ? (
+    <Card title="My tenant's audit events" className="lin-mt-lg">
+      {loading ? (
+        <div aria-busy="true" aria-label="Loading audit events">
+          <Skeleton rows={5} />
+        </div>
+      ) : error ? (
+        <EmptyState
+          title="No events to show"
+          body="Audit leaves will appear here once the chain endpoints are wired to your tenant."
+        />
+      ) : leaves.length === 0 ? (
+        <EmptyState title="No audit events yet" body="No leaves in the chain for this tenant." />
+      ) : (
+        <table className="lin-table" data-testid="audit-leaf-table">
+          <caption className="lin-t3 lin-caption">
+            My tenant&apos;s audit events, most recent first.
+          </caption>
+          <thead>
             <tr>
-              <td colSpan={6} data-testid="leaves-empty">
-                No audit events yet.
-              </td>
+              <th>Event ID</th>
+              <th>Timestamp</th>
+              <th>Type</th>
+              <th>Chain seq</th>
+              <th>Leaf digest</th>
+              <th>Proof</th>
             </tr>
-          ) : (
-            leaves.map((l) => (
+          </thead>
+          <tbody>
+            {leaves.map((l) => (
               <tr key={l.event_id} data-testid={`leaf-row-${l.event_id}`}>
                 <td>
                   <code>{l.event_id}</code>
@@ -196,20 +256,21 @@ function LeafTable({
                   <code title={l.leaf_digest}>{truncHex(l.leaf_digest)}</code>
                 </td>
                 <td>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     data-testid={`show-proof-${l.event_id}`}
                     onClick={() => onShowProof(l)}
                   >
                     Show proof
-                  </button>
+                  </Button>
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </section>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
   );
 }
 
@@ -228,123 +289,114 @@ function ProofModal({
   onClose: () => void;
   onDownload: () => void;
 }): React.ReactElement | null {
-  const dialogRef = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => {
-      window.removeEventListener("keydown", handler);
-    };
-  }, [open, onClose]);
-
-  if (!open || !proof) return null;
+  const footer = (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        data-testid="download-proof-btn"
+        onClick={onDownload}
+        disabled={!proof}
+      >
+        Download proof JSON
+      </Button>
+      <Button variant="primary" size="sm" data-testid="close-proof-modal" onClick={onClose}>
+        Close
+      </Button>
+    </>
+  );
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="proof-modal-heading"
-      data-testid="proof-modal"
-      ref={dialogRef}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-    >
-      <div
-        style={{
-          background: "white",
-          padding: "1.5rem",
-          borderRadius: 8,
-          maxWidth: 600,
-          width: "90%",
-          maxHeight: "80vh",
-          overflow: "auto",
-        }}
-      >
-        <h2 id="proof-modal-heading">Inclusion proof</h2>
-        <p>
-          Event <code data-testid="proof-event-id">{proof.event_id}</code> at chain seq{" "}
-          <strong data-testid="proof-chain-seq">{proof.chain_seq}</strong>
-        </p>
-        <dl>
-          <dt>Leaf hash</dt>
-          <dd>
-            <code data-testid="proof-leaf-hash">{truncHex(proof.leaf_hash, 12, 12)}</code>
-          </dd>
-          <dt>Expected root</dt>
-          <dd>
-            <code data-testid="proof-expected-root">
-              {truncHex(proof.expected_root, 12, 12)}
-            </code>
-          </dd>
-          <dt>Algorithm</dt>
-          <dd data-testid="proof-algorithm">{proof.algorithm}</dd>
-          <dt>Sibling steps</dt>
-          <dd data-testid="proof-sibling-count">{proof.siblings.length}</dd>
-        </dl>
+    <Modal open={open} onClose={onClose} title="Inclusion proof" footer={footer}>
+      <div data-testid="proof-modal">
+        {proof == null ? (
+          <p
+            role="status"
+            aria-live="polite"
+            data-testid="proof-result"
+            data-ok="false"
+            className="lin-t2"
+          >
+            Verifying proof…
+          </p>
+        ) : (
+          <>
+            <p className="lin-t2">
+              Event <code data-testid="proof-event-id">{proof.event_id}</code> at chain seq{" "}
+              <strong data-testid="proof-chain-seq" className="lin-t1">
+                {proof.chain_seq}
+              </strong>
+            </p>
 
-        <ol data-testid="proof-path">
-          {proof.siblings.map((s, i) => (
-            <li key={i} data-testid={`proof-step-${i}`}>
-              step {i + 1}: <em>{s.position}</em> sibling{" "}
-              <code title={s.hash}>{truncHex(s.hash)}</code>
-            </li>
-          ))}
-        </ol>
+            <KvRow label="Leaf hash" first>
+              <code data-testid="proof-leaf-hash">{truncHex(proof.leaf_hash, 12, 12)}</code>
+            </KvRow>
+            <KvRow label="Expected root">
+              <code data-testid="proof-expected-root">
+                {truncHex(proof.expected_root, 12, 12)}
+              </code>
+            </KvRow>
+            <KvRow label="Algorithm">
+              <span data-testid="proof-algorithm">{proof.algorithm}</span>
+            </KvRow>
+            <KvRow label="Sibling steps">
+              <span data-testid="proof-sibling-count">{proof.siblings.length}</span>
+            </KvRow>
 
-        <p
-          role="status"
-          aria-live="polite"
-          data-testid="proof-result"
-          data-ok={result?.ok ? "true" : "false"}
-          data-verifier={result && "verifier" in result ? result.verifier : undefined}
-          data-reason={result && !result.ok ? result.reason : undefined}
-        >
-          {result == null && "Verifying proof…"}
-          {result?.ok && (
-            <>
-              ✓ Proof verified ({result.verifier}); computed root{" "}
-              <code>{truncHex(result.computed_root)}</code>
-            </>
-          )}
-          {result && !result.ok && result.reason === "wasm_unavailable" && (
-            <>
-              ⚠ Browser verifier unavailable — use the{" "}
-              {/* Cross-app link to docs site — not a Next.js page */}
-              {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-              <a href="/docs/reference/cli/audit">corelink audit verify</a> CLI to verify
-              offline.
-            </>
-          )}
-          {result && !result.ok && result.reason === "mismatch" && (
-            <>✗ Mismatch — please contact your CoreLink support representative.</>
-          )}
-          {result && !result.ok && result.reason === "algorithm_unsupported" && (
-            <>⚠ Unsupported algorithm — use the CLI verifier.</>
-          )}
-          {result && !result.ok && result.reason === "invalid_hex" && (
-            <>✗ Invalid proof envelope (hex format).</>
-          )}
-        </p>
+            <ol data-testid="proof-path" className="lin-t2 lin-mt">
+              {proof.siblings.map((s, i) => (
+                <li key={i} data-testid={`proof-step-${i}`}>
+                  step {i + 1}: <em>{s.position}</em> sibling{" "}
+                  <code title={s.hash}>{truncHex(s.hash)}</code>
+                </li>
+              ))}
+            </ol>
 
-        <button type="button" data-testid="download-proof-btn" onClick={onDownload}>
-          Download proof JSON
-        </button>
-        <button type="button" data-testid="close-proof-modal" onClick={onClose}>
-          Close
-        </button>
+            <p
+              role="status"
+              aria-live="polite"
+              data-testid="proof-result"
+              data-ok={result?.ok ? "true" : "false"}
+              data-verifier={result && "verifier" in result ? result.verifier : undefined}
+              data-reason={result && !result.ok ? result.reason : undefined}
+              className="lin-mt lin-t2"
+            >
+              {result == null && "Verifying proof…"}
+              {result?.ok && (
+                <>
+                  ✓ Proof verified ({result.verifier}); computed root{" "}
+                  <code>{truncHex(result.computed_root)}</code>
+                </>
+              )}
+              {result && !result.ok && result.reason === "wasm_unavailable" && (
+                <>
+                  ⚠ Browser verifier unavailable — use the{" "}
+                  <Button
+                    href="/docs/reference/cli/audit"
+                    variant="ghost"
+                    size="sm"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    corelink audit verify
+                  </Button>{" "}
+                  CLI to verify offline.
+                </>
+              )}
+              {result && !result.ok && result.reason === "mismatch" && (
+                <>✗ Mismatch — please contact your CoreLink support representative.</>
+              )}
+              {result && !result.ok && result.reason === "algorithm_unsupported" && (
+                <>⚠ Unsupported algorithm — use the CLI verifier.</>
+              )}
+              {result && !result.ok && result.reason === "invalid_hex" && (
+                <>✗ Invalid proof envelope (hex format).</>
+              )}
+            </p>
+          </>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -357,10 +409,11 @@ function IntegrityTimeline({
 }): React.ReactElement {
   if (snapshots.length === 0) {
     return (
-      <section aria-labelledby="timeline-heading">
-        <h2 id="timeline-heading">Chain integrity timeline</h2>
-        <p data-testid="timeline-empty">Insufficient history — chain less than 24h old.</p>
-      </section>
+      <Card title="Chain integrity timeline" className="lin-mt-lg">
+        <p data-testid="timeline-empty" className="lin-t3">
+          Insufficient history — chain less than 24h old.
+        </p>
+      </Card>
     );
   }
 
@@ -377,19 +430,12 @@ function IntegrityTimeline({
   }
 
   return (
-    <section aria-labelledby="timeline-heading">
-      <h2 id="timeline-heading">Chain integrity timeline</h2>
+    <Card title="Chain integrity timeline" className="lin-mt-lg">
       <ul
         data-testid="timeline-sparkline"
         data-anomaly-count={anomalies.size}
-        style={{
-          display: "flex",
-          gap: 2,
-          alignItems: "flex-end",
-          height: 80,
-          listStyle: "none",
-          padding: 0,
-        }}
+        className="lin-spark"
+        style={{ display: "flex", gap: 2, alignItems: "flex-end", height: 80, listStyle: "none", padding: 0, margin: 0 }}
       >
         {snapshots.map((s, i) => {
           const h = Math.max(2, Math.round((s.total_events / max) * 78));
@@ -406,22 +452,25 @@ function IntegrityTimeline({
               style={{
                 width: 6,
                 height: h,
-                background: anomaly ? "#c00" : "#06c",
-                outline: anomaly ? "1px solid #c00" : undefined,
+                borderRadius: 2,
+                background: anomaly ? "var(--danger)" : "var(--line-2)",
               }}
             />
           );
         })}
       </ul>
       {anomalies.size > 0 && (
-        <p role="alert" data-testid="timeline-anomaly-alert">
-          ⚠ Chain rollback detected — see{" "}
-          {/* Cross-app link to trust center — not a Next.js page */}
-          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-          <a href="/trust/incident-response">trust-center incident response</a>.
-        </p>
+        <div role="alert" data-testid="timeline-anomaly-alert" className="lin-mt">
+          <Callout tone="danger">
+            Chain rollback detected — see{" "}
+            <Button href="/trust/incident-response" variant="ghost" size="sm">
+              trust-center incident response
+            </Button>
+            .
+          </Callout>
+        </div>
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -460,20 +509,33 @@ function ExportBundleButton({
   };
 
   return (
-    <div>
-      <button type="button" data-testid="export-bundle-btn" onClick={handleExport}>
-        Download audit bundle (JSON-LD)
-      </button>
-      {/* Cross-app link to docs site — not a Next.js page */}
-      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a
-        href="/docs/reference/cli/audit"
-        data-testid="cli-doc-link"
-        style={{ marginLeft: "1rem" }}
-      >
-        CLI docs →
-      </a>
-    </div>
+    <Card title="Export & offline verification" className="lin-mt-lg">
+      <p className="lin-t3">
+        Download a signed bundle and re-verify the whole chain offline with the CLI — no trust
+        in this browser required.
+      </p>
+      <div className="lin-mt">
+        <Button
+          variant="primary"
+          size="sm"
+          data-testid="export-bundle-btn"
+          onClick={handleExport}
+          disabled={!head}
+        >
+          Download audit bundle (JSON-LD)
+        </Button>{" "}
+        <Button
+          href="/docs/reference/cli/audit"
+          data-testid="cli-doc-link"
+          variant="ghost"
+          size="sm"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          CLI docs →
+        </Button>
+      </div>
+    </Card>
   );
 }
 
@@ -483,6 +545,7 @@ export default function CustomerAuditVisualizationPage(): React.ReactElement {
   const [head, setHead] = React.useState<ChainHead | null>(null);
   const [leaves, setLeaves] = React.useState<AuditLeaf[]>([]);
   const [snapshots, setSnapshots] = React.useState<ChainSnapshot[]>([]);
+  const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
 
   const [proofOpen, setProofOpen] = React.useState(false);
@@ -493,25 +556,30 @@ export default function CustomerAuditVisualizationPage(): React.ReactElement {
     "idle",
   );
 
-  React.useEffect(() => {
-    const load = async (): Promise<void> => {
-      try {
-        const [h, l, s] = await Promise.all([
-          fetchJson<ChainHead>("/v1/customer/audit/chain/head"),
-          fetchJson<LeavesPage>("/v1/customer/audit/events"),
-          fetchJson<{ snapshots: ChainSnapshot[] }>(
-            "/v1/customer/audit/chain/history?window=30d",
-          ),
-        ]);
-        setHead(h);
-        setLeaves(l.rows);
-        setSnapshots(s.snapshots);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    };
-    void load();
+  const load = React.useCallback(async (): Promise<void> => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [h, l, s] = await Promise.all([
+        fetchJson<ChainHead>("/v1/customer/audit/chain/head"),
+        fetchJson<LeavesPage>("/v1/customer/audit/events"),
+        fetchJson<{ snapshots: ChainSnapshot[] }>(
+          "/v1/customer/audit/chain/history?window=30d",
+        ),
+      ]);
+      setHead(h);
+      setLeaves(l.rows);
+      setSnapshots(s.snapshots);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  React.useEffect(() => {
+    void load();
+  }, [load]);
 
   const openProof = async (leaf: AuditLeaf): Promise<void> => {
     setProofOpen(true);
@@ -543,7 +611,6 @@ export default function CustomerAuditVisualizationPage(): React.ReactElement {
     setVerifyState("running");
     try {
       // Re-verify the most recent leaf as a proxy for head integrity.
-      // Real implementation pulls the recent N=8 leaves + sibling paths.
       const first = leaves[0];
       if (!first) {
         setVerifyState("fail");
@@ -566,28 +633,42 @@ export default function CustomerAuditVisualizationPage(): React.ReactElement {
 
   return (
     <main aria-labelledby="page-heading" data-testid="audit-viz-page">
-      <h1 id="page-heading">Audit chain visualization</h1>
+      <h1 id="page-heading">Audit chain verification</h1>
       <p>
-        Browser-native inclusion proofs over CoreLink&apos;s BLAKE3 + RFC 8785 JCS audit
-        chain. Every leaf is verifiable client-side via the WASM verifier; the offline
-        path stays via the <code>corelink audit verify</code> CLI.
+        Browser-native inclusion proofs over CoreLink&apos;s BLAKE3 + RFC 8785 JCS audit chain.
+        Each leaf is verified client-side; the offline path stays via the{" "}
+        <code>corelink audit verify</code> CLI.
       </p>
 
-      {error && (
-        <p role="alert" data-testid="page-error">
-          {error}
-        </p>
+      <Callout tone="info">
+        Verification preview — proofs are verified in your browser against the audit-chain
+        endpoints. Live per-tenant chain wiring is rolling out; nothing here is a fabricated
+        &ldquo;verified&rdquo; result.
+      </Callout>
+
+      {error && head && (
+        <div role="alert" data-testid="page-error" className="lin-mt">
+          <InlineError error={error} onRetry={() => void load()} />
+        </div>
       )}
 
-      <ChainHeadCard
-        head={head}
-        onVerifyHead={() => void verifyHead()}
-        verifyState={verifyState}
-      />
+      <div className="lin-mt-lg">
+        <ChainHeadCard
+          head={head}
+          error={error}
+          onVerifyHead={() => void verifyHead()}
+          verifyState={verifyState}
+        />
+      </div>
 
       <IntegrityTimeline snapshots={snapshots} />
 
-      <LeafTable leaves={leaves} onShowProof={(l) => void openProof(l)} />
+      <LeafTable
+        leaves={leaves}
+        loading={loading}
+        error={error}
+        onShowProof={(l) => void openProof(l)}
+      />
 
       <ExportBundleButton head={head} leaves={leaves} />
 

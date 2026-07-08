@@ -68,10 +68,27 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
     return res;
   }
 
+  // E2E test mode (never set in production) authenticates via the
+  // __corelink_e2e_session cookie at the DATA LAYER (lib/auth.ts), not via
+  // Clerk. We must skip the Clerk middleware entirely here: invoking
+  // clerkMiddleware without a CLERK_SECRET_KEY (absent in local/CI test envs)
+  // THROWS "Missing secretKey", which the catch below turns into a
+  // fail-closed /sign-in redirect — bouncing every authed page to a blank
+  // screen. Skipping the block lets the route render and its own guard read
+  // the mock session. Gating an enforce flag *inside* the handler (as before)
+  // was too deep: the throw happens at clerkMiddleware construction, before
+  // protect() is ever reached.
+  // Double-gate to match the data-layer (`auth.ts`) + mock-route guards: the
+  // auth-skip only applies in a genuine test build, NEVER in production — so a
+  // stray `NEXT_PUBLIC_E2E_TEST_MODE=1` in a prod deploy cannot disable auth here.
+  const isE2E =
+    process.env["NEXT_PUBLIC_E2E_TEST_MODE"] === "1" &&
+    process.env["NODE_ENV"] !== "production";
+
   // Protected path — defer to Clerk if configured; otherwise fall through
   // and let the route render (dev/test ergonomics).
   const publishableKey = process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"];
-  if (publishableKey) {
+  if (publishableKey && !isE2E) {
     try {
       // Dynamic import keeps the bundle slim for public paths.
       const mod = (await import("@clerk/nextjs/server").catch(() => null)) as
@@ -88,7 +105,8 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
       if (mod?.clerkMiddleware) {
         // Self-gated routes (e.g. /upgrade) need the Clerk request context
         // (server-side `auth()` must resolve) but own their signed-out
-        // redirect themselves — everything else is enforced here.
+        // redirect themselves — everything else is enforced here. (E2E test
+        // mode is handled earlier by skipping this whole block.)
         const enforce = !isSelfGatedPath(pathname);
         const handler = mod.clerkMiddleware(
           async (auth, _request) => {

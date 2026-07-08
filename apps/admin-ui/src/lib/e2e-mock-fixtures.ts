@@ -579,28 +579,35 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
       writes: 8_712,
       request_count: 133_214,
       quota_bytes: 10_737_418_240,
+      hit_rate: 0.86,
+      time_saved_seconds: 1_607_000,
+      dollars_saved_cents: 66_900,
       daily: Array.from({ length: 7 }, (_, i) => ({
         day: `2026-05-${String(8 + i).padStart(2, "0")}`,
         reads: 14_000 + i * 1_200,
         writes: 800 + i * 90,
-        cas_bytes: 600_000_000 + i * 30_000_000,
+        cas_bytes: 0, // no per-day byte history (frozen contract)
       })),
     };
     return { status: 200, body: usage };
   }
 
   if (path === "/v1/customer/audit" && method === "GET") {
+    // Canonical backend params (`AuditQuery` in routes/customer.rs): from / to /
+    // kind. `from` is the ISO lower bound, `kind` is a comma-separated event-type
+    // filter, and `to` is accepted-but-not-filtered server-side (parity with the
+    // Rust handler — the client narrows the upper bound locally).
     let rows = state.customer.audit;
-    const sinceParam = query["since"];
-    if (sinceParam) {
-      const since = Date.parse(sinceParam);
-      if (!Number.isNaN(since)) {
-        rows = rows.filter((r) => Date.parse(r.ts) >= since);
+    const fromParam = query["from"];
+    if (fromParam) {
+      const from = Date.parse(fromParam);
+      if (!Number.isNaN(from)) {
+        rows = rows.filter((r) => Date.parse(r.ts) >= from);
       }
     }
-    const eventTypes = query["event_types"];
-    if (eventTypes) {
-      const types = new Set(eventTypes.split(","));
+    const kind = query["kind"];
+    if (kind) {
+      const types = new Set(kind.split(","));
       rows = rows.filter((r) => types.has(r.event_type));
     }
     return { status: 200, body: { rows } };

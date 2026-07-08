@@ -1,19 +1,21 @@
-// WI-S16-005 — tenant search with debounced query. Linear kit: Card + Field +
-// Input, `lin-table`, BYOK Badge, proper Skeleton/InlineError/EmptyState states.
+// WI-S16-005 — tenant search with debounced query + client-side plan/region/
+// BYOK filters. Linear kit: Card + Field + Input/Select, `lin-table`, BYOK
+// Badge, kit Button for row nav, proper Skeleton/InlineError/EmptyState states.
 
 "use client";
 
 import React from "react";
-import Link from "next/link";
 import type { Tenant } from "@/lib/types";
 import type { AdminClient } from "@/lib/admin-client";
 import {
   Badge,
+  Button,
   Card,
   EmptyState,
   Field,
   InlineError,
   Input,
+  Select,
   Skeleton,
 } from "@/components/ui/linear";
 import { byokTone } from "./tones";
@@ -23,11 +25,37 @@ export interface TenantSearchProps {
   debounceMs?: number;
 }
 
+const PLAN_OPTIONS: ReadonlyArray<Tenant["plan"]> = [
+  "free",
+  "solo",
+  "starter",
+  "team",
+  "pro",
+  "max",
+  "enterprise",
+];
+
+const REGION_OPTIONS: ReadonlyArray<Tenant["region"]> = [
+  "us-east",
+  "us-west",
+  "eu-west",
+  "ap-south",
+];
+
+const BYOK_OPTIONS: ReadonlyArray<Tenant["byok_status"]> = [
+  "none",
+  "active",
+  "rotation_pending",
+];
+
 export function TenantSearch({
   client,
   debounceMs = 200,
 }: TenantSearchProps): React.ReactElement {
   const [query, setQuery] = React.useState("");
+  const [planFilter, setPlanFilter] = React.useState<"all" | Tenant["plan"]>("all");
+  const [regionFilter, setRegionFilter] = React.useState<"all" | Tenant["region"]>("all");
+  const [byokFilter, setByokFilter] = React.useState<"all" | Tenant["byok_status"]>("all");
   const [results, setResults] = React.useState<Tenant[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -57,9 +85,27 @@ export function TenantSearch({
     };
   }, [query, debounceMs, client, reloadKey]);
 
+  // Plan / region / BYOK filtering is client-side over the fetched page — the
+  // search endpoint only matches on id/name, so these narrow the returned set.
+  const filtered = React.useMemo(
+    () =>
+      results.filter(
+        (t) =>
+          (planFilter === "all" || t.plan === planFilter) &&
+          (regionFilter === "all" || t.region === regionFilter) &&
+          (byokFilter === "all" || t.byok_status === byokFilter),
+      ),
+    [results, planFilter, regionFilter, byokFilter],
+  );
+
+  const hasSearch = query.trim().length > 0;
+  const hasFilter = planFilter !== "all" || regionFilter !== "all" || byokFilter !== "all";
+  const listTitle = hasSearch || hasFilter ? "Results" : "Recent tenants";
+  const listMeta = !loading && !error ? `${filtered.length} shown` : undefined;
+
   return (
     <div data-testid="tenant-search">
-      <Card title="Search">
+      <Card title="Find a tenant">
         <Field label="Search tenants" htmlFor="tenant-search-input">
           <Input
             id="tenant-search-input"
@@ -70,9 +116,63 @@ export function TenantSearch({
             onChange={(e) => setQuery(e.target.value)}
           />
         </Field>
+
+        <div className="lin-mt">
+          <Field label="Plan" htmlFor="tenant-filter-plan">
+            <Select
+              id="tenant-filter-plan"
+              data-testid="tenant-filter-plan"
+              value={planFilter}
+              onChange={(e) => setPlanFilter(e.target.value as typeof planFilter)}
+            >
+              <option value="all">All plans</option>
+              {PLAN_OPTIONS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+
+        <div className="lin-mt">
+          <Field label="Region" htmlFor="tenant-filter-region">
+            <Select
+              id="tenant-filter-region"
+              data-testid="tenant-filter-region"
+              value={regionFilter}
+              onChange={(e) => setRegionFilter(e.target.value as typeof regionFilter)}
+            >
+              <option value="all">All regions</option>
+              {REGION_OPTIONS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+
+        <div className="lin-mt">
+          <Field label="BYOK state" htmlFor="tenant-filter-byok">
+            <Select
+              id="tenant-filter-byok"
+              data-testid="tenant-filter-byok"
+              value={byokFilter}
+              onChange={(e) => setByokFilter(e.target.value as typeof byokFilter)}
+            >
+              <option value="all">Any BYOK</option>
+              {BYOK_OPTIONS.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
       </Card>
 
-      <Card title="Tenants" className="lin-mt">
+      <Card title={listTitle} meta={listMeta} className="lin-mt">
         {error ? (
           <div data-testid="tenant-search-error">
             <InlineError error={error} onRetry={() => setReloadKey((k) => k + 1)} />
@@ -83,8 +183,17 @@ export function TenantSearch({
           </div>
         ) : results.length === 0 ? (
           <EmptyState
-            title="No tenants found"
-            body="Adjust your search to find a tenant in operator scope."
+            title={hasSearch ? "No tenants found" : "No tenants in scope"}
+            body={
+              hasSearch
+                ? "No tenant matches that ID or name. Check the value or your operator scope."
+                : "Search a tenant ID or name to begin, or check your operator scope."
+            }
+          />
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            title="No tenants match these filters"
+            body="Clear the plan, region, or BYOK filters to widen the list."
           />
         ) : (
           <table className="lin-table" data-testid="tenant-table" aria-busy={loading}>
@@ -100,7 +209,7 @@ export function TenantSearch({
               </tr>
             </thead>
             <tbody>
-              {results.map((t) => (
+              {filtered.map((t) => (
                 <tr key={t.tenant_id} data-testid={`tenant-row-${t.tenant_id}`}>
                   <td>
                     <code>{t.tenant_id}</code>
@@ -115,12 +224,9 @@ export function TenantSearch({
                   </td>
                   <td>{t.created_at}</td>
                   <td>
-                    <Link
-                      className="lin-btn lin-btn--ghost lin-btn--sm"
-                      href={`./tenants/${t.tenant_id}`}
-                    >
+                    <Button href={`./tenants/${t.tenant_id}`} size="sm" variant="ghost">
                       View
-                    </Link>
+                    </Button>
                   </td>
                 </tr>
               ))}

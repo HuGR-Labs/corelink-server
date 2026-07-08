@@ -279,7 +279,9 @@ impl DailyUsageBucket {
 }
 
 /// Usage response — period-level + daily time-series.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Not `Eq` because [`Self::hit_rate`] is a floating-point fraction.
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct UsageResponse {
     /// Billing period (e.g. `"2026-05"`).
@@ -297,6 +299,19 @@ pub struct UsageResponse {
     pub request_count: u64,
     /// Quota ceiling in bytes.
     pub quota_bytes: u64,
+    /// Cache hit-rate for the period as a fraction `0.0..=1.0`
+    /// (`hits / (hits + misses)`), sourced from `usage_daily` (migration 0089).
+    /// `None` when there were no cache reads at all (`hits + misses == 0`) — an
+    /// honest "no data" rather than a fabricated rate. Serializes as JSON `null`.
+    pub hit_rate: Option<f64>,
+    /// Estimated build-time saved this period, in seconds: `hits *
+    /// SECONDS_SAVED_PER_HIT` — a cache hit avoids re-executing ~one build
+    /// action. Displayed as an estimate.
+    pub time_saved_seconds: u64,
+    /// Estimated compute-cost saved this period, in USD cents:
+    /// `round(time_saved_seconds * USD_PER_COMPUTE_SECOND * 100)`. Conservative;
+    /// displayed as an estimate.
+    pub dollars_saved_cents: u64,
     /// Daily breakdown.
     pub daily: Vec<DailyUsageBucket>,
 }
@@ -304,6 +319,7 @@ pub struct UsageResponse {
 impl UsageResponse {
     /// Construct a [`UsageResponse`] from its fields.
     #[must_use]
+    #[allow(clippy::too_many_arguments, reason = "flat DTO constructor")]
     pub fn new(
         period: impl Into<String>,
         cas_bytes: u64,
@@ -312,6 +328,9 @@ impl UsageResponse {
         quota_bytes: u64,
         daily: Vec<DailyUsageBucket>,
         request_count: u64,
+        hit_rate: Option<f64>,
+        time_saved_seconds: u64,
+        dollars_saved_cents: u64,
     ) -> Self {
         Self {
             period: period.into(),
@@ -320,6 +339,9 @@ impl UsageResponse {
             writes,
             request_count,
             quota_bytes,
+            hit_rate,
+            time_saved_seconds,
+            dollars_saved_cents,
             daily,
         }
     }

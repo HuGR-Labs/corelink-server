@@ -7,11 +7,14 @@
 //                                             plan from getOverview); if the plan is
 //                                             unknown the raw count renders as a Stat,
 //                                             never a gauge with a fabricated max
-//   reads / writes / daily ........ [stub]  → prod returns 0 / [] (BE-1) →
-//                                             teaching EmptyState, never a fake 0
+//   reads / writes / daily ........ [live]  (BE-1) → real period totals + the
+//                                             Day/Reads/Writes table (daily.cas_bytes
+//                                             is always 0 → no per-day storage column)
+//   hit_rate / time_saved / $-saved [live]  (BE-2) → the ROI hero. hit_rate null =
+//                                             cold start → teaching state, never a fake %.
+//                                             $-saved is a MODELED estimate — labelled so.
 //   $-ceiling ..................... [not-wired] (BE-7) → getDollarCeiling() throws
 //                                             NotWiredError → teaching Callout, never a value
-//   cache-hit-rate / $-saved / dedup [not-wired]/[stub] (BE-2/BE-7) → teaching hero EmptyState
 //
 // The #1 rule for this screen: a stub / not-wired field NEVER renders as a real
 // number — it renders a teaching EmptyState/Callout that explains WHAT will
@@ -46,6 +49,22 @@ const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
 
 function gib(bytes: number): number {
   return Math.round((bytes / 1024 ** 3) * 100) / 100;
+}
+
+// Humanize a build-time-saved duration: seconds → "45 s" / "12 min" / "3.7 h".
+function humanizeSeconds(s: number): string {
+  if (s < 60) return `${Math.round(s)} s`;
+  if (s < 3600) return `${Math.round(s / 60)} min`;
+  return `${Math.round((s / 3600) * 10) / 10} h`;
+}
+
+// Render modeled dollar savings from cents as "$X" (whole dollars once ≥ $10,
+// otherwise 2dp so a small early-days figure isn't rounded to "$0").
+function dollarsSaved(cents: number): string {
+  const d = cents / 100;
+  return d >= 10
+    ? `$${Math.round(d).toLocaleString()}`
+    : `$${(Math.round(d * 100) / 100).toLocaleString()}`;
 }
 
 // The monthly request ceiling per tier lives in the frozen rate card
@@ -148,13 +167,50 @@ export function UsageClient(): React.ReactElement {
 
   return (
     <div data-testid="usage-shell">
-      {/* Hero ROI slot — cache-hit-rate / time-saved / moat dedup are all
-          [not-wired]/[stub] today (BE-2/BE-7). Teach, never fabricate. */}
+      {/* Hero ROI slot — [live] via BE-2. hit_rate == null means no reads yet
+          (cold start): teach, never fabricate a %. Otherwise show the real
+          hit-rate, humanized time saved, and the MODELED $ saved (labelled). */}
       <Card title="Your cache ROI">
-        <EmptyState
-          title="Your savings appear here after your first builds"
-          body="Cache-hit rate, build time saved, and dollars saved land once metering ships (BE-2). A cold start is normal — hits climb from D+1 to D+7 as your cache fills, and the shared _public mirror warms deterministic deps for free."
-        />
+        {data.hit_rate == null ? (
+          <div data-testid="usage-roi-coldstart">
+            <EmptyState
+              title="Your savings appear here after your first builds"
+              body="Cache-hit rate, build time saved, and dollars saved appear once your cache serves its first reads. A cold start is normal — hits climb from D+1 to D+7 as your cache fills, and the shared _public mirror warms deterministic deps for free."
+            />
+          </div>
+        ) : (
+          <div data-testid="usage-roi">
+            <div data-testid="usage-roi-hit-rate">
+              <Stat
+                label="Cache-hit rate"
+                value={`${Math.round(data.hit_rate * 100)}%`}
+                sub="Share of cache lookups served from the cache instead of rebuilt this period."
+              />
+            </div>
+            <div data-testid="usage-roi-time-saved">
+              <Stat
+                label="Build time saved"
+                value={humanizeSeconds(data.time_saved_seconds)}
+                sub="Wall-clock build time your cache hits avoided this period."
+              />
+            </div>
+            <div data-testid="usage-roi-dollars-saved">
+              <Stat
+                label="Saved (estimated)"
+                value={dollarsSaved(data.dollars_saved_cents)}
+                sub="A modeled estimate of compute cost avoided — not a billed figure."
+              />
+              <p className="lin-card__meta">
+                <HelpPopover label="How is this estimated?">
+                  This is a modeled estimate, not a billed amount: we credit
+                  roughly 15 seconds of compute saved per cache hit and price it
+                  at typical CI compute rates. Treat it as a directional savings
+                  signal, not an invoice line.
+                </HelpPopover>
+              </p>
+            </div>
+          </div>
+        )}
       </Card>
 
       <Card
@@ -229,7 +285,9 @@ export function UsageClient(): React.ReactElement {
         </div>
       </Card>
 
-      {/* Daily breakdown — [stub] prod=[] (BE-1). Teaching empty, not an empty table. */}
+      {/* Daily breakdown — [live] (BE-1). Day/Reads/Writes only: daily.cas_bytes
+          is always 0 (no per-day byte history) so we drop the storage column
+          rather than render a fake "0 B". */}
       <Card title="Daily breakdown">
         {hasDaily ? (
           <table data-testid="usage-daily-table" className="lin-table">
@@ -238,7 +296,6 @@ export function UsageClient(): React.ReactElement {
                 <th>Day</th>
                 <th>Reads</th>
                 <th>Writes</th>
-                <th>Storage</th>
               </tr>
             </thead>
             <tbody>
@@ -247,7 +304,6 @@ export function UsageClient(): React.ReactElement {
                   <td>{d.day}</td>
                   <td>{d.reads.toLocaleString()}</td>
                   <td>{d.writes.toLocaleString()}</td>
-                  <td>{gib(d.cas_bytes)} GiB</td>
                 </tr>
               ))}
             </tbody>
@@ -255,8 +311,8 @@ export function UsageClient(): React.ReactElement {
         ) : (
           <div data-testid="usage-daily-empty">
             <EmptyState
-              title="Per-day usage lands once metering ships"
-              body="A day-by-day breakdown of reads, writes, and storage growth appears here after usage metering ships (BE-1)."
+              title="Per-day usage lands as your cache is used"
+              body="A day-by-day breakdown of reads and writes appears here once your cache starts serving traffic."
             />
           </div>
         )}

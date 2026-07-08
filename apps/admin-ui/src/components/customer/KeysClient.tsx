@@ -1,10 +1,16 @@
-// Customer-side Tokens (PATs) — Linear-styled list + create + revoke + BYOK status.
+// Customer-side Tokens (PATs) — Linear-styled list + create + rotate + revoke + BYOK status.
 //
 // W3 (customer-dashboard build wave). Kit-only: every surface is a `@/components/ui/linear`
 // primitive; the minted PAT is revealed through the shared `PatModal` (copy + shown-once +
-// confirm), never dumped as plain text; revoke is gated behind a `ConfirmDialog`; every
-// mutation fires a Toast. Data-truth: PAT CRUD is [live]; `last_used_at` is [stub] (BE-5 will
-// stamp it on auth) so absent values render an honest "Never", never a fabricated date.
+// confirm), never dumped as plain text; revoke AND rotate are gated behind a `ConfirmDialog`;
+// every mutation fires a Toast. Data-truth: PAT CRUD is [live]; `last_used_at` is [stub]
+// (BE-5 will stamp it on auth) so it is rendered as an honest "—", never a fabricated date
+// nor a misleading "Never".
+//
+// Rotate is composed from the existing client primitives (revokePat + createPat with the same
+// name+scopes) — no new client method. Revoked tokens are pruned from the default view via a
+// "Show" filter (Active | All); tokens revoked in THIS session stay visible so the user sees
+// the row flip to "revoked" before it is tidied away on the next load.
 
 "use client";
 
@@ -25,6 +31,7 @@ import {
   HelpPopover,
   InlineError,
   Input,
+  Segmented,
   Skeleton,
   ToastProvider,
   useToast,
@@ -78,6 +85,8 @@ const PAT_MODAL_LABELS = {
   finish: "Done",
 } as const;
 
+type RevokedFilter = "active" | "all";
+
 function KeysInner(): React.ReactElement {
   const { getToken } = useAuth();
   const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
@@ -94,6 +103,24 @@ function KeysInner(): React.ReactElement {
   const [minted, setMinted] = React.useState<CustomerPat | null>(null);
 
   const [revokeTarget, setRevokeTarget] = React.useState<CustomerPat | null>(null);
+  const [rotateTarget, setRotateTarget] = React.useState<CustomerPat | null>(null);
+
+  // Which view: hide historically-revoked tokens by default (prune the clutter).
+  const [revokedFilter, setRevokedFilter] = React.useState<RevokedFilter>("active");
+  // Tokens revoked in THIS session stay visible even in the "active" view, so the
+  // user gets immediate confirmation that the row flipped to revoked. They are
+  // tidied away on the next full load.
+  const [sessionRevoked, setSessionRevoked] = React.useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+
+  const markSessionRevoked = React.useCallback((id: string) => {
+    setSessionRevoked((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }, []);
 
   const reload = React.useCallback(async () => {
     setLoading(true);
@@ -127,7 +154,12 @@ function KeysInner(): React.ReactElement {
       // Stash the plaintext in the in-memory holder (the ONLY approved channel —
       // never React state, never storage) so PatModal can reveal + zero it.
       if (r.token) setPlaintextPat(r.token);
-      setMinted(r);
+      // Never retain the plaintext token in React state (it would surface in the
+      // fiber tree / devtools). The secret lives only in the shown-once holder
+      // above; `minted` just drives the modal open-state + metadata.
+      const { token: _discard, ...patOnly } = r;
+      void _discard;
+      setMinted(patOnly);
       setDraftName("");
       setDraftScopes([...DEFAULT_SCOPES]);
       toast({ title: `Token "${r.name}" created`, tone: "success" });
@@ -145,6 +177,7 @@ function KeysInner(): React.ReactElement {
     if (!target) return;
     try {
       await client.revokePat(target.pat_id);
+      markSessionRevoked(target.pat_id);
       toast({ title: `Token "${target.name}" revoked`, tone: "success" });
       await reload();
     } catch (ex) {
@@ -153,7 +186,36 @@ function KeysInner(): React.ReactElement {
     }
   }
 
+  // Rotate = revoke the old secret + mint a fresh one with the SAME name + scopes,
+  // composed from the existing client primitives (no dedicated rotate endpoint). The
+  // new secret is revealed once through the shared PatModal, exactly like create.
+  async function onConfirmRotate(): Promise<void> {
+    const target = rotateTarget;
+    if (!target) return;
+    try {
+      await client.revokePat(target.pat_id);
+      const r = await client.createPat({ name: target.name, scopes: target.scopes });
+      if (r.token) setPlaintextPat(r.token);
+      markSessionRevoked(target.pat_id);
+      // Never retain the plaintext token in React state (it would surface in the
+      // fiber tree / devtools). The secret lives only in the shown-once holder
+      // above; `minted` just drives the modal open-state + metadata.
+      const { token: _discard, ...patOnly } = r;
+      void _discard;
+      setMinted(patOnly);
+      toast({ title: `Token "${target.name}" rotated`, tone: "success" });
+      await reload();
+    } catch (ex) {
+      setError(ex);
+      toast({ title: "Couldn't rotate token", tone: "danger" });
+    }
+  }
+
   const activeCount = pats.filter((p) => !p.revoked_at).length;
+  const hasRevoked = pats.some((p) => Boolean(p.revoked_at));
+  const visiblePats = pats.filter(
+    (p) => revokedFilter === "all" || !p.revoked_at || sessionRevoked.has(p.pat_id),
+  );
 
   return (
     <div data-testid="keys-shell" className="lin-checklist">
@@ -182,7 +244,7 @@ function KeysInner(): React.ReactElement {
             />
           </Field>
 
-          <fieldset>
+          <fieldset className="lin-mt">
             <legend className="lin-label">Scopes</legend>
             <div className="lin-checklist">
               {SCOPE_SPECS.map((s) => (
@@ -204,14 +266,16 @@ function KeysInner(): React.ReactElement {
             </div>
           </fieldset>
 
-          <Button
-            type="submit"
-            data-testid="keys-create-submit"
-            loading={creating}
-            disabled={draftScopes.length === 0}
-          >
-            Create token
-          </Button>
+          <div className="lin-mt">
+            <Button
+              type="submit"
+              data-testid="keys-create-submit"
+              loading={creating}
+              disabled={draftScopes.length === 0}
+            >
+              Create token
+            </Button>
+          </div>
         </form>
 
         {/* ── List ───────────────────────────────────────────────── */}
@@ -237,64 +301,92 @@ function KeysInner(): React.ReactElement {
               }
             />
           ) : (
-            <table className="lin-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Scopes</th>
-                  <th>Created</th>
-                  <th>
-                    Last used{" "}
-                    <HelpPopover label="What does last used mean?">
-                      When this token was last presented to authenticate a request.
-                      &quot;Never&quot; means it hasn&apos;t been used yet.
-                    </HelpPopover>
-                  </th>
-                  <th>Status</th>
-                  <th aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {pats.map((p) => {
-                  const revoked = Boolean(p.revoked_at);
-                  return (
-                    <tr key={p.pat_id} data-testid={`keys-row-${p.pat_id}`}>
-                      <td>{p.name}</td>
-                      <td>
-                        {p.scopes.map((sc) => (
-                          <Badge key={sc}>{sc}</Badge>
-                        ))}
-                      </td>
-                      <td>{p.created_at.slice(0, 10)}</td>
-                      <td>{p.last_used_at ? p.last_used_at.slice(0, 10) : "Never"}</td>
-                      <td data-testid={`keys-status-${p.pat_id}`}>
-                        {revoked ? (
-                          <Badge tone="danger" dot>
-                            revoked
-                          </Badge>
-                        ) : (
-                          <Badge tone="success" dot>
-                            active
-                          </Badge>
-                        )}
-                      </td>
-                      <td>
-                        {revoked ? null : (
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            data-testid={`keys-revoke-${p.pat_id}`}
-                            onClick={() => setRevokeTarget(p)}
-                          >
-                            Revoke
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <>
+              {hasRevoked ? (
+                <div data-testid="keys-revoked-filter" className="lin-card__head">
+                  <span className="lin-label">Show</span>
+                  <Segmented<RevokedFilter>
+                    options={[
+                      { value: "active", label: "Active" },
+                      { value: "all", label: "All" },
+                    ]}
+                    value={revokedFilter}
+                    onChange={setRevokedFilter}
+                  />
+                </div>
+              ) : null}
+              <table className="lin-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Scopes</th>
+                    <th>Created</th>
+                    <th>
+                      Last used{" "}
+                      <HelpPopover label="What does last used mean?">
+                        When this token was last presented to authenticate a request.
+                        Last-used tracking isn&apos;t wired up yet, so this currently
+                        shows &quot;—&quot; for every token.
+                      </HelpPopover>
+                    </th>
+                    <th>Status</th>
+                    <th aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {visiblePats.map((p) => {
+                    const revoked = Boolean(p.revoked_at);
+                    return (
+                      <tr key={p.pat_id} data-testid={`keys-row-${p.pat_id}`}>
+                        <td>{p.name}</td>
+                        <td>
+                          {p.scopes.map((sc) => (
+                            <Badge key={sc}>{sc}</Badge>
+                          ))}
+                        </td>
+                        <td>{p.created_at.slice(0, 10)}</td>
+                        {/* last_used_at is a BE-5 stub: render an honest em-dash, never
+                            a misleading "Never" nor a fabricated timestamp. */}
+                        <td>{p.last_used_at ? p.last_used_at.slice(0, 10) : "—"}</td>
+                        <td data-testid={`keys-status-${p.pat_id}`}>
+                          {revoked ? (
+                            <Badge tone="danger" dot>
+                              revoked
+                            </Badge>
+                          ) : (
+                            <Badge tone="success" dot>
+                              active
+                            </Badge>
+                          )}
+                        </td>
+                        <td>
+                          {revoked ? null : (
+                            <div className="lin-card__actions">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                data-testid={`keys-rotate-${p.pat_id}`}
+                                onClick={() => setRotateTarget(p)}
+                              >
+                                Rotate
+                              </Button>
+                              <Button
+                                variant="danger"
+                                size="sm"
+                                data-testid={`keys-revoke-${p.pat_id}`}
+                                onClick={() => setRevokeTarget(p)}
+                              >
+                                Revoke
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
       </Card>
@@ -353,6 +445,25 @@ function KeysInner(): React.ReactElement {
         }
         onClose={() => setRevokeTarget(null)}
         onConfirm={onConfirmRevoke}
+      />
+
+      {/* ── Rotate confirmation ────────────────────────────────── */}
+      <ConfirmDialog
+        open={rotateTarget != null}
+        title="Rotate this token?"
+        confirmLabel="Rotate token"
+        body={
+          rotateTarget ? (
+            <Callout tone="warn">
+              Rotate <strong>{rotateTarget.name}</strong>? We&apos;ll revoke the current
+              secret and issue a new one with the same name and the same scopes. The old
+              secret stops working immediately — update wherever it&apos;s stored. The new
+              secret is shown only once.
+            </Callout>
+          ) : null
+        }
+        onClose={() => setRotateTarget(null)}
+        onConfirm={onConfirmRotate}
       />
 
       {activeCount === 0 && pats.length > 0 && !loading && error == null ? (

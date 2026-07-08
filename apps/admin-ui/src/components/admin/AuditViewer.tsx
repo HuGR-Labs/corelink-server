@@ -9,7 +9,7 @@ import type {
   AuditPage,
 } from "@/lib/types";
 import { AdminClient } from "@/lib/admin-client";
-import { Button, Card, InlineError, Skeleton } from "@/components/ui/linear";
+import { Button, Card, InlineError, Segmented, Skeleton } from "@/components/ui/linear";
 import AuditFilterBar from "./AuditFilterBar";
 import AuditTable from "./AuditTable";
 import AuditEventDrawer from "./AuditEventDrawer";
@@ -29,6 +29,7 @@ export function AuditViewer({
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [exportFormat, setExportFormat] = React.useState<"csv" | "json">("csv");
 
   // Capture every filter version we have rendered, so pagination preserves the
   // *applied* filter even if user edits inputs while results are loading.
@@ -73,7 +74,7 @@ export function AuditViewer({
 
   const exportFilter = async () => {
     try {
-      const res = await client.exportAudit(filterRef.current, "csv");
+      const res = await client.exportAudit(filterRef.current, exportFormat);
       // Signed URL TTL 24h is server-enforced; we surface it but never store.
       if (typeof window !== "undefined") {
         window.open(res.signed_url, "_blank", "noopener,noreferrer");
@@ -84,15 +85,27 @@ export function AuditViewer({
   };
 
   const exportAction = (
-    <Button
-      variant="ghost"
-      size="sm"
-      data-testid="export-btn"
-      onClick={() => void exportFilter()}
-      disabled={loading}
-    >
-      Export current filter
-    </Button>
+    <>
+      <span data-testid="export-format">
+        <Segmented<"csv" | "json">
+          options={[
+            { value: "csv", label: "CSV" },
+            { value: "json", label: "JSON" },
+          ]}
+          value={exportFormat}
+          onChange={setExportFormat}
+        />
+      </span>
+      <Button
+        variant="ghost"
+        size="sm"
+        data-testid="export-btn"
+        onClick={() => void exportFilter()}
+        disabled={loading}
+      >
+        Export current filter
+      </Button>
+    </>
   );
 
   return (

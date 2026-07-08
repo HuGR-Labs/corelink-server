@@ -1720,7 +1720,7 @@ const baseHandler: ExportedHandler<Env> = {
       // CLOSED (502) so the queue consumer retries and NO false VerifiedComplete is
       // ever signed. Fail-closed by construction: a missing binding, transport
       // error, or non-2xx from any region → not complete → retry.
-      const isDsrErase = route.pathSuffix.startsWith("/_internal/dsr/");
+      const isDsrErase = isDsrEraseFanoutPath(route.pathSuffix); // allowlist, NOT startsWith — see fn doc
       const isFanoutTarget = request.headers.has("x-corelink-fanout-from");
       let internalResp: Response;
       if (isDsrErase && !isFanoutTarget) {
@@ -2862,3 +2862,25 @@ const handler = Sentry.withSentry(
 
 export default handler;
 export { CoreLinkServer, RolloutController, EventLogDO };
+
+/**
+ * Whether an internal route participates in the GDPR cross-residency erase
+ * FAN-OUT (see the "erasure completeness across residency" block in `fetch`).
+ * The fan-out replays a per-jurisdiction BYTE side-effect to every regional
+ * worker and treats the local 2xx as "complete" only when every region confirms
+ * — so it is correct ONLY for routes whose cross-region work is a side-effect
+ * confirmed by STATUS, never for routes whose response BODY is the payload or
+ * that write the single global D1. Hence an explicit allowlist, NOT
+ * `startsWith("/_internal/dsr/")`:
+ *   • `/erase`  — deletes the region's R2 CAS/AC bytes           → fan out
+ *   • `/verify` — re-confirms deletion + signs VerifiedComplete  → fan out
+ * Everything else under `/_internal/dsr/*` takes the single-local path:
+ * `/access`, `/portability` return a gathered export from the ONE global D1 (the
+ * caller returns the LOCAL body, so fanning them out is useless and only adds
+ * spurious 502s); `/rectification`, `/anchor` are single global-D1 writes.
+ * Fanning `/anchor` was the live GDPR 502 — it 502'd unless all 4
+ * (anchor-unprovisioned) regions also 2xx'd. (Hoisted; used in `fetch` above.)
+ */
+export function isDsrEraseFanoutPath(pathSuffix: string): boolean {
+  return pathSuffix === "/_internal/dsr/erase" || pathSuffix === "/_internal/dsr/verify";
+}
