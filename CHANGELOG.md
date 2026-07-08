@@ -56,6 +56,16 @@ Each entry cross-references:
   fail-OPEN posture is unchanged (an inner `Err` is never cached). 5 tests incl. a 24-op burst → 1 resolve.
 
 ### Added
+- **worker — runner-mint `installation_id` is now OPTIONAL; the fabricd/native path derives tenant from the acquiring PAT.**
+  Model B required `installation_id` → `tenant_gh_installation_map`, which is structurally unmeetable for a
+  native repo (no GitHub App installation exists). `handleRunnerMint` now derives the tenant from one of two
+  unforgeable server-side sources — never a body field: `installation_id` present → the installation map
+  (CF-worker/webhook path, unchanged); absent → introspect the acquiring PAT presented as
+  `Authorization: Bearer` through the container's full `PatVerifier` → its tenant (fabricd/native path). The
+  latter is *stronger* than model B: minting for a tenant requires a valid PAT for it, not just the shared
+  mint key + a known installation_id. `repo_full_name` stays required; the offboarding/allowlist/entitlement
+  gates still apply to the resolved tenant. 7 adversarial tests (named-tenant ignored, PAT-for-A can't mint
+  for B, invalid-PAT/introspect-down → 403, no-source → 401, installation path unchanged).
 - **worker — propagate Clerk step-up freshness (`fva`) through the token exchange (Track-B: real-user erase unblock).**
   GDPR account-erase requires a recent re-auth (step-up), but the engine's `fresh_auth` had no source — the
   session→engine-token exchange emitted nothing, so a real user hit `403 STEP_UP_REQUIRED`. Clerk emits the
