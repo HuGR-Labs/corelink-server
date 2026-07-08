@@ -14,7 +14,7 @@
 # ~/Library/Logs/corelink-full-ci.log via the crontab redirection.
 set -euo pipefail
 
-REPO="humangr-labs/corelink-server"
+REPO="HumanGuardrail/corelink-server"
 echo "=== full-ci dispatch @ $(date -u +%FT%TZ) on main ==="
 
 # Every workflow that declares workflow_dispatch. Disabled workflows and

@@ -80,7 +80,7 @@ that cardholder data never crosses our network boundary.
 
 The detailed boundary diagram (Mermaid + ASCII + Stripe-vs-CoreLink
 responsibility matrix + storage map) lives in
-[`specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md).
+[`specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md`](https://github.com/HumanGuardrail/corelink/blob/main/specs/_compliance/PCI-DSS-BOUNDARY-DIAGRAM.md).
 Procurement teams can request the signed PDF via `trust@humangr.com`.
 
 ## What you can verify yourself
@@ -161,7 +161,7 @@ ever POSTs a PAN to a wrong endpoint. It pattern-matches PANs, redacts
 them with a salted-hash placeholder, and counts the redactions so we know
 if a leak happened upstream. It never stores the original value. Property
 test (100k synthetic PANs, zero leaks):
-[`crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs`](https://github.com/humangr-labs/corelink/blob/main/crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs).
+[`crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs`](https://github.com/HumanGuardrail/corelink/blob/main/crates/corelink-logpush/tests/pii_redaction_100k_synthetic.rs).
 
 ## Related
 

@@ -197,7 +197,7 @@ For each: source, decision, concrete CoreLink action.
 | **Live activation pane on `/welcome`** | Vercel deployment-progress pane, Supabase project-ready toast | Server-Sent Events stream from `corelink-app` polling `cas_events` for the tenant. Switch state on `first_cli_authed`, `first_cas_write`, `first_cache_hit`. ~3 days. |
 | **In-product analytics (PostHog OSS, self-hostable)** | PostHog tutorial cited in search results; cookie consent already has the `analytics` category wired | Add PostHog client behind the existing cookie-consent `analytics` gate. EU-region PostHog Cloud or self-hosted on Cloudflare. ~1 day to wire, plus event taxonomy from §7. |
 | **Reverse-funnel pricing CTA (Stripe Checkout Session)** | Stripe's own onboarding, Linear, Cal.com | Replace the `BillingStep.tsx` scaffold with **no in-app billing step at all**. When user upgrades, redirect to Stripe Checkout Session, success-URL flips plan via webhook. Kills launch-readiness §3 Stripe blocker. ~2 days. |
-| **Sample project / clone-and-go demo repo** | `vercel/next.js-examples`, `supabase/examples`, `bazelbuild/examples` | Ship `humangr-labs/corelink-bazel-example` — a 200-LOC Bazel project that already has `bazel-init` applied, scripted to demo a cache-miss-then-hit. Linked from `/welcome` as "Don't have a Bazel project handy? Try this one." ~2 days. |
+| **Sample project / clone-and-go demo repo** | `vercel/next.js-examples`, `supabase/examples`, `bazelbuild/examples` | Ship `HumanGuardrail/corelink-bazel-example` — a 200-LOC Bazel project that already has `bazel-init` applied, scripted to demo a cache-miss-then-hit. Linked from `/welcome` as "Don't have a Bazel project handy? Try this one." ~2 days. |
 | **Free tier with real headroom** | Lenny / Wes Bush "freemium = magnet, paid = scale" | Lock launch quota at **5 GB cache, 50 GB egress/month, single region, unlimited PATs, 1 seat**. Generous enough to validate; small enough that real adopters upgrade within ~4 weeks. |
 
 ---
@@ -213,7 +213,7 @@ For each: source, decision, concrete CoreLink action.
 | **"5 stars on GitHub" in-product prompt** | Folklore is mixed for B2B; works for OSS devtools (Cal.com, Plausible), feels desperate from a paid product. Skip until OSS components exist (e.g. `corelink-cli` is open-source — *that* repo can ask). |
 | **Long-form interactive product tour (Pendo / Userpilot style)** | Wrong shape for devs — they want the terminal, not click-through tooltips. The one-line install + live `/welcome` pane *is* the tour. |
 | **Email drip campaign before activation** | Reverse signal: if the wizard didn't activate them, an email won't. Spend the dev-budget on shortening TTFV instead. Re-evaluate after baseline activation rate is known. |
-| **Forum / community at launch** | Slack/Discord/Discourse all need ≥ daily attention from the founder. GitHub Discussions on `humangr-labs/corelink` is enough for the first 50 users — async, public, indexable. |
+| **Forum / community at launch** | Slack/Discord/Discourse all need ≥ daily attention from the founder. GitHub Discussions on `HumanGuardrail/corelink` is enough for the first 50 users — async, public, indexable. |
 | **Custom in-product onboarding builder (Appcues, Userflow)** | Adds a dependency and a recurring SaaS bill for a problem solved by 200 LOC of React on `/welcome`. Build, don't buy, at this stage. |
 | **Gamification (badges, streaks)** | Wrong audience. Devs respond to "your build was 8× faster", not "you earned the Cache Champion badge". |
 
@@ -315,7 +315,7 @@ Ordered so each step unblocks the next. Bracketed numbers reference the steps al
 6. **(code, ~3 days)** Build the live `/welcome` SSE pane. Replace `/onboarding/done` route. Wire `welcome_view`, `welcome_activation_shown`.
 7. **(code, ~1 day)** Define `first_cache_hit` event in the CAS data plane (CF Worker), with dedupe per tenant. The single most important line of code in the funnel.
 8. **(code, ~2 days)** Replace `BillingStep.tsx` scaffold with **deletion** + Stripe Checkout Session redirect from settings page on upgrade click. Wire `checkout_started`, `paid_subscription_started` (webhook).
-9. **(code, ~2 days)** Author `humangr-labs/corelink-bazel-example` demo repo. Linked from `/welcome`.
+9. **(code, ~2 days)** Author `HumanGuardrail/corelink-bazel-example` demo repo. Linked from `/welcome`.
 10. **(code, ~1 day)** Ship the Monday-three-numbers dashboard (Metabase or a single static HTML page rendered by a CF Worker hitting D1).
 11. **(verification, ~2 h)** End-to-end smoke: fresh GitHub account → signup → run install one-liner → run `corelink bazel-init` on the example repo → `bazel build //...` twice → confirm `first_cache_hit` event lands within 10 min. Stopwatch the median.
 12. **(ongoing, weekly)** Read the three numbers, audit whichever regressed.

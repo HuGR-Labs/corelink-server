@@ -150,11 +150,11 @@ with the customer within 48h.
 Each "drift watch" + each top-5 free-text theme yields 3-5 action
 items, filed as GitHub issues under the appropriate org repo:
 
-- **Engineering** issues: `humangr-labs/corelink-server` with label
+- **Engineering** issues: `HumanGuardrail/corelink-server` with label
   `customer-feedback`.
-- **Docs** issues: `humangr-labs/corelink-docs` with label
+- **Docs** issues: `HumanGuardrail/corelink-docs` with label
   `cs-week-<YYYY-WW>`.
-- **Marketing / positioning** issues: `humangr-labs/corelink-website`
+- **Marketing / positioning** issues: `HumanGuardrail/corelink-website`
   with label `cs-feedback`.
 
 Each issue carries the source rows (with tenant_id redacted to

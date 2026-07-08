@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-27
 **Agent task:** agent-aff39221bcb642a4d
-**Repo:** https://github.com/humangr-labs/corelink-bazel-example
+**Repo:** https://github.com/HumanGuardrail/corelink-bazel-example
 
 ---
 
@@ -19,7 +19,7 @@ SEALED. Demo Bazel workspace published and pushed to main.
 | 1 | `bazel build //...` succeeds locally (or CI-verified) | CI-only — Bazel not installed in agent env; structure + syntax verified |
 | 2 | Repo has MODULE.bazel + .bazelrc + ≥ 3 BUILD.bazel + README | ✅ — 5 BUILD.bazel files |
 | 3 | CI workflow exists with SHA-pinned actions | ✅ — both `uses:` lines carry 40-char commit SHAs |
-| 4 | Repo pushed to `humangr-labs/corelink-bazel-example` main | ✅ |
+| 4 | Repo pushed to `HumanGuardrail/corelink-bazel-example` main | ✅ |
 | 5 | README ≤ 100 LOC, scannable, copy-pasteable | ✅ — 99 LOC |
 | 6 | Audit doc committed in monorepo worktree | ✅ (this file) |
 

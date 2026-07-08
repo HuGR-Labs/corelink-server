@@ -51,7 +51,7 @@ Estrutura emitida (top-level):
   "version": 1,
   "metadata": {
     "timestamp": "<iso8601>",
-    "tools": [{ "vendor": "humangr-labs", "name": "corelink-sbom-aggregate", "version": "<git-describe>" }],
+    "tools": [{ "vendor": "HumanGuardrail", "name": "corelink-sbom-aggregate", "version": "<git-describe>" }],
     "component": {
       "bom-ref": "pkg:cargo/corelink-workspace@<git-describe>",
       "type": "application",

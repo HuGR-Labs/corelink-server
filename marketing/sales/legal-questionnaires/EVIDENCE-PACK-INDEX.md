@@ -19,11 +19,11 @@ tags: ["sales", "legal", "questionnaire", "evidence-pack", "procurement", "audit
 
 > **Audience:** auditor or procurement reviewer with countersigned NDA on file via `trust@humangr.com`. This is the one-page wayfinder for the evidence bundle attached to any CoreLink SIG / CAIQ / custom-form response.
 >
-> **Source of truth:** `humangr-labs/corelink-server` at commit `<SHA>` (cited per response). All paths below are repo-relative unless they start with `https://`.
+> **Source of truth:** `HumanGuardrail/corelink-server` at commit `<SHA>` (cited per response). All paths below are repo-relative unless they start with `https://`.
 >
 > **Access model:**
 > - **PUBLIC** = visible on `apps/docs/docs/` or on `https://docs.corelink.humangr.com/`.
-> - **OPEN-SOURCE** = visible in the public `humangr-labs/corelink` repo.
+> - **OPEN-SOURCE** = visible in the public `HumanGuardrail/corelink` repo.
 > - **NDA** = shareable with countersigned NDA on file via `trust@humangr.com`. Turnaround: 1 business day.
 > - **AUDITOR-ONLY** = shared with engaged 3PAO / external auditor only; not distributed even with NDA.
 
@@ -113,7 +113,7 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 67 | Vuln — triage runbook | `specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md` | NDA |
 | 68 | Vuln — cargo-fuzz summary | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` | NDA |
 | 69 | Vuln — Dependency-Track | ADR-0024 (`specs/03_architecture/adrs/`) | OPEN-SOURCE |
-| 70 | **Supply chain — SBOM** | Release artifacts `https://github.com/humangr-labs/corelink/releases` | OPEN-SOURCE |
+| 70 | **Supply chain — SBOM** | Release artifacts `https://github.com/HumanGuardrail/corelink/releases` | OPEN-SOURCE |
 | 71 | Supply chain — Rekor / Sigstore | Per release (Cosign signatures) | OPEN-SOURCE |
 | 72 | Supply chain — license allowlist | `LICENSE-APACHE-2.0` + `LICENSE-MIT` + OSS matrix commit `44cdf15` + `.github/workflows/license-policy.yml` + `scripts/license-audit.sh` | OPEN-SOURCE |
 | 73 | **Secrets management** | `docs/internal/secrets-checklist.md` (108-row matrix) | NDA |
@@ -213,7 +213,7 @@ Every artifact in a customer-bound pack **must** be watermarked:
 ```
 CONFIDENTIAL — <Prospect Org> — <YYYY-MM-DD> — CoreLink (HuGR Labs)
 Pursuant to NDA dated <NDA date>. Not for redistribution.
-Source commit: <SHA> · `humangr-labs/corelink-server`
+Source commit: <SHA> · `HumanGuardrail/corelink-server`
 ```
 
 Bundle naming:

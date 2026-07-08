@@ -75,7 +75,7 @@
 > **Sobre HuGR Labs / CoreLink:**
 >
 > - HuGR Labs es una corporación de Delaware; CoreLink es nuestro producto principal (cache multi-tenant direccionable por contenido para flujos de build / package / Docker / ML).
-> - GitHub Org: `humangr-labs`. Arquitectura es Cloudflare-Workers-first con D1 / R2 / KV / DO / Queues; ~210k LOC de Rust + WASM.
+> - GitHub Org: `HumanGuardrail`. Arquitectura es Cloudflare-Workers-first con D1 / R2 / KV / DO / Queues; ~210k LOC de Rust + WASM.
 > - Postura de cumplimiento objetivo: SOC 2 Type II (en preparación, Drata), GDPR + LGPD + LFPDPPP MX + CCPA, OWASP ASVS L2/L3 auto-asertado, SLSA L3 supply chain.
 > - Esta revisión legal es uno de los últimos pasos previos a la entrada en GA; la opinión legal firmada + los 3 PDFs EVT-044 son un hard-gate en `legal/privacy-notice/REVIEW_PROCESS.md §2.3`.
 >

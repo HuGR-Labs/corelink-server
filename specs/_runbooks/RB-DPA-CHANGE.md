@@ -43,13 +43,13 @@ that touches `legal/dpa/**` and:
 2. Posts a sticky PR comment with the per-locale checklist.
 
 CODEOWNERS in `.github/CODEOWNERS` requires
-`@humangr-labs/legal` + `@humangr-labs/privacy` review on
+`@HumanGuardrail/legal` + `@HumanGuardrail/privacy` review on
 `/legal/dpa/`.
 
 Branch protection on `main` enforces:
 
 - `legal-review-required` review approval from
-  `@humangr-labs/legal`.
+  `@HumanGuardrail/legal`.
 - All required status checks green.
 
 ## 3. PR author checklist

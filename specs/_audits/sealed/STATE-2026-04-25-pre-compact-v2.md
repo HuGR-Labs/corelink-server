@@ -113,7 +113,7 @@ Combined verdict: high-power test failed to reject + small effect size + CI cons
 - Workspace `/Users/gustavoschneiter/Documents/HuGR/corelink-server`
 - Sprint S-03 specs em `specs/04_sprints/S03/work_items/WI-S03-{001..008}-*.md`
 - Validator `scripts/validate_references.py` agora tem 38+ INVs whitelisted como "Forward-looking INVs" + 14 ADRs (0021-0034) + 5 RBs forward
-- Org GitHub: humangr-labs (Forge customer zero)
+- Org GitHub: HumanGuardrail (Forge customer zero)
 
 ## TODO list status
 

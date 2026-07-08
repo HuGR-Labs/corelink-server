@@ -17,7 +17,7 @@ name: dependabot-auto-merge (R-PREP scoped — SECURITY-patch only)
 #   MANUAL REVIEW REQUIRED for everything else:
 #     - semver-minor, semver-major (even if security): may carry API breaks.
 #     - non-security patch updates: batched weekly, reviewed in bulk by
-#       humangr-labs/security per dep-policy.md §5.
+#       HumanGuardrail/security per dep-policy.md §5.
 #
 # Why "security-patch only" vs the prior "all minor/patch":
 #   - HIGH_RISK supply-chain lane (FF-HR-005): the cheapest review labor

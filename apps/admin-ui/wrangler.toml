@@ -1,6 +1,6 @@
 # Cloudflare Worker config for the CoreLink Admin UI.
 #
-# Project name: corelink-admin-ui  (humangr-labs org)
+# Project name: corelink-admin-ui  (HumanGuardrail org)
 # Custom domain: corelink-admin.humangr.com  (manual: Worker dashboard → Custom domains)
 #
 # Build: pnpm cf:build  (opennextjs-cloudflare build)

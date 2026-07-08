@@ -38,7 +38,7 @@ references:
 | **E** | `PRICING-UNSTUB-CHECKOUT-WIRE` | Remove `provisional: true` from every tier in `apps/docs/src/lib/pricing.ts`; collapse 5-tier → 3-tier (Free 10 GB + Pro $25/mo + Enterprise contact) per pricing-research consensus; rewrite CTAs: Free → `/sign-up`, Pro → Stripe Checkout Session redirect, Enterprise → `/contact` (mailto fallback). | agent | 3 h | 0 | A, B, C, D, F, G, H | nothing |
 | **F** | `ONBOARDING-WIZARD-2STEP` | Collapse wizard `tenant → region-plan → dpa → pat → billing → done` → `signup → /welcome`. Add `auto-provision` server-side webhook handler in `corelink-signup.humangr.com` that creates tenant + nearest region (Geo-IP) + free plan + first PAT on Clerk `user.created`. Build `/welcome` SSE pane that polls for `first_cli_authed` + `first_cache_hit`. Defer DPA to first team-invite, defer billing to upgrade-click. | agent | 8 h | 0 | A, B, C, D, E, G, H | nothing |
 | **G** | `METRICS-INSTRUMENT` | Create `analytics_events` D1 table + ingest Worker `corelink-analytics` POST `/v1/event`; wire 12 events from PLG §7.1 taxonomy; create 7 saved views (signup funnel, TTFV cohort, D1/D7/D30 activation, MRR, plan mix, regional latency); add nightly cron Worker emailing Gustavo the Monday-three-numbers; add Plausible `<script>` to `apps/docs/` + `apps/admin-ui/` landing/pricing/sign-up pages behind cookie-consent `analytics` gate. | agent | 6 h | 0 | A, B, C, D, E, F, H | nothing |
-| **H** | `CORELINK-CLI-INSTALL-SCRIPT` | Bootstrap `humangr-labs/corelink-cli` repo (Rust workspace, `cargo new corelink`); ship `corelink ping`, `corelink bazel-init` (idempotent `.bazelrc` append), `corelink config show`; ship `get.corelink.io` CF Worker serving signed install script `curl -fsSL https://get.corelink.io \| sh -s -- --token=… --region=…` that downloads OS+arch binary, writes `~/.corelink/config.toml`, runs `corelink ping`. | agent | 8 h | 0 | A, B, C, D, E, F, G | nothing (but **F's `/welcome` SSE expects this CLI**; ship in parallel, contract is `POST /v1/ping` returning 200 with `tenant_id` claim from PAT) |
+| **H** | `CORELINK-CLI-INSTALL-SCRIPT` | Bootstrap `HumanGuardrail/corelink-cli` repo (Rust workspace, `cargo new corelink`); ship `corelink ping`, `corelink bazel-init` (idempotent `.bazelrc` append), `corelink config show`; ship `get.corelink.io` CF Worker serving signed install script `curl -fsSL https://get.corelink.io \| sh -s -- --token=… --region=…` that downloads OS+arch binary, writes `~/.corelink/config.toml`, runs `corelink ping`. | agent | 8 h | 0 | A, B, C, D, E, F, G | nothing (but **F's `/welcome` SSE expects this CLI**; ship in parallel, contract is `POST /v1/ping` returning 200 with `tenant_id` claim from PAT) |
 
 **Totals.**
 - Agent effort if dispatched **serial**: ~39 h ≈ 5 days wall-clock.
@@ -261,7 +261,7 @@ Secondary:    "Read the docs"          →  /tutorial/01-installation
 **Mandate.** Ship the CLI binary + install one-liner that F's `/welcome` pane expects. Without this, F's SSE pane never flips to "Connected" because there is no CLI to call `/v1/ping`.
 
 **Files to write (new repo).**
-- New repo: `humangr-labs/corelink-cli`. Rust workspace. `cargo new corelink` at root.
+- New repo: `HumanGuardrail/corelink-cli`. Rust workspace. `cargo new corelink` at root.
 - `crates/corelink/src/main.rs` — clap-based CLI with `ping`, `bazel-init`, `buck2-init` (stub), `cargo-init` (stub), `config show` subcommands.
 - `crates/corelink/src/commands/ping.rs` — reads `~/.corelink/config.toml`, HTTP GET to `${endpoint}/v1/ping` with `Authorization: Bearer ${token}`, prints "Cache reachable in {ms} ms" on 200, exits 0; non-zero on failure.
 - `crates/corelink/src/commands/bazel_init.rs` — detects `WORKSPACE` or `MODULE.bazel` in CWD, appends idempotently to `.bazelrc`:
@@ -291,7 +291,7 @@ Secondary:    "Read the docs"          →  /tutorial/01-installation
   [ -z "$TOKEN" ] && { echo "FATAL: --token required"; exit 2; }
   OS=$(uname -s | tr '[:upper:]' '[:lower:]')
   ARCH=$(uname -m)
-  URL="https://github.com/humangr-labs/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}"
+  URL="https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}"
   curl -fsSL "$URL" -o /tmp/corelink
   chmod +x /tmp/corelink
   sudo mv /tmp/corelink /usr/local/bin/corelink
@@ -313,7 +313,7 @@ Secondary:    "Read the docs"          →  /tutorial/01-installation
 4. `curl -fsSL https://get.corelink.io | sh -s -- --token=$TEST_TOKEN --region=ord` end-to-end succeeds on Linux x86_64 + Darwin aarch64 (Gustavo manual test).
 5. SEAL: codex ≥ 8.5/10; commits `chore(corelink-cli): bootstrap repo with ping + bazel-init + cross-compile CI` (new repo) and `feat(get-corelink-worker): install-script serving Worker on get.corelink.io` (this repo).
 
-**Hard-pause triggers.** (a) `humangr-labs/corelink-cli` repo creation requires Gustavo GitHub-org-admin click → emit script for Gustavo + pause if not pre-created; (b) `get.corelink.io` DNS / CF custom-domain setup needs Gustavo CF-dashboard action → emit one-page runbook; (c) PAT scope `cas:rw` not yet defined in existing PAT issuance → coordinate with F before shipping CLI.
+**Hard-pause triggers.** (a) `HumanGuardrail/corelink-cli` repo creation requires Gustavo GitHub-org-admin click → emit script for Gustavo + pause if not pre-created; (b) `get.corelink.io` DNS / CF custom-domain setup needs Gustavo CF-dashboard action → emit one-page runbook; (c) PAT scope `cas:rw` not yet defined in existing PAT issuance → coordinate with F before shipping CLI.
 
 ---
 
@@ -347,7 +347,7 @@ Dispatch in parallel (8 worktrees simultaneously, each on its own branch `worktr
 | 5 | E `PRICING-UNSTUB-CHECKOUT-WIRE` | Touches only `apps/docs/src/{lib,pages}/pricing*`. |
 | 6 | F `ONBOARDING-WIZARD-2STEP` | Touches `apps/admin-ui/[locale]/onboarding/`, `apps/admin-ui/[locale]/welcome/`, `apps/signup-worker/webhooks/clerk.ts`, `apps/cas-worker/middleware/analytics.ts`. **Coordinate with C** on `onboarding/` parent layout (merge order: C first since it only removes one subdir; F second). |
 | 7 | G `METRICS-INSTRUMENT` | New worker `apps/analytics-worker/`. Adds Plausible tags in `apps/docs/docusaurus.config.ts` (D edits same file — merge order: G after D or hand-merge). Adds ingest calls F + C also touch — merge after F + C. |
-| 8 | H `CORELINK-CLI-INSTALL-SCRIPT` | New repo (`humangr-labs/corelink-cli`) + new worker (`apps/get-corelink-worker/`). Zero overlap with anything else in this repo. |
+| 8 | H `CORELINK-CLI-INSTALL-SCRIPT` | New repo (`HumanGuardrail/corelink-cli`) + new worker (`apps/get-corelink-worker/`). Zero overlap with anything else in this repo. |
 
 **Day 0 — afternoon (T = +4h).**
 
@@ -407,7 +407,7 @@ If any of (1)–(5) fail, the failing item dispatches a **delta agent** to close
 |---|---|---|---|
 | C + F merge conflict in `apps/admin-ui/[locale]/onboarding/layout.tsx` (step-graph definition) | M | L | Per §3 merge order, C lands first; F rebases. |
 | D + E + G all touch `apps/docs/docusaurus.config.ts` | M | L | Per §3 merge order; hand-merge headTags + redirects + footer in one pass. |
-| H's `humangr-labs/corelink-cli` repo creation needs Gustavo GitHub-org-admin permission | H | M | H ships ready-to-bootstrap commit; if repo absent, agent emits script + pauses (hard-pause trigger). |
+| H's `HumanGuardrail/corelink-cli` repo creation needs Gustavo GitHub-org-admin permission | H | M | H ships ready-to-bootstrap commit; if repo absent, agent emits script + pauses (hard-pause trigger). |
 | F's CAS-data-plane emitter overlaps with Wave-33 Stream B (`crates/cas-worker/` refactor) | M | M | F edits `apps/cas-worker/middleware/analytics.ts` (current location); coordinate with Wave-33 orchestrator before touching. If Wave-33 already moved the file, rebase to new location. |
 | B-execute delayed (Gustavo away) → L2 still 500s on Day 1 smoke | M | H | Phase 0 ships partial: §4 criterion #1 fails on L2 until B-execute lands; Phase 0 sign-off blocked but other agents not blocked. |
 | Stripe `STRIPE_PRICE_PRO_MONTHLY` not provisioned → C upgrade flow returns 400 | M | M | C hard-pauses on missing env var; Gustavo creates product + price in ~10 min via Stripe dashboard. |

@@ -63,7 +63,7 @@ shared content-addressable cache for bazel, sccache, docker, and ml. byok-encryp
 **Fallback bio (alternative, 138 chars):**
 
 ```
-content-addressable cache for bazel/sccache/docker/ml builds. byok encryption. solo-founder build-in-public. github: humangr-labs/corelink
+content-addressable cache for bazel/sccache/docker/ml builds. byok encryption. solo-founder build-in-public. github: HumanGuardrail/corelink
 ```
 
 Use the fallback if `@humangr` mention can't be linked (account doesn't exist yet on X).
@@ -88,7 +88,7 @@ client sdk.
 writing here about what i'm learning from ~30 platform-lead
 interviews + what's actually shipping.
 
-repo: github.com/humangr-labs/corelink
+repo: github.com/HumanGuardrail/corelink
 ```
 
 **Why this works:**

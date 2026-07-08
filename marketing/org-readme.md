@@ -7,8 +7,8 @@ tools that default to BYOK, residency honesty, and verifiable audit logs.
 
 ### CoreLink — content-addressable cache
 
-[corelink-server](https://github.com/humangr-labs/corelink-server) |
-[corelink-cli](https://github.com/humangr-labs/corelink-cli)
+[corelink-server](https://github.com/HumanGuardrail/corelink-server) |
+[corelink-cli](https://github.com/HumanGuardrail/corelink-cli)
 
 REAPI v2 compatible cache for Bazel, Buck2, Cargo, npm, pip, OCI Docker
 layers, and ML model registries. Multi-tenant. Per-tenant BYOK across four
@@ -47,7 +47,7 @@ workspace.
 
 CoreLink is in active pilot. Pilot milestone requires three active tenants
 before GA gate opens. See
-[ROADMAP-TO-LAUNCH.md](https://github.com/humangr-labs/corelink-server/blob/main/ROADMAP-TO-LAUNCH.md)
+[ROADMAP-TO-LAUNCH.md](https://github.com/HumanGuardrail/corelink-server/blob/main/ROADMAP-TO-LAUNCH.md)
 for the full 8-phase plan.
 
 ## Community

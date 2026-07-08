@@ -227,7 +227,7 @@ def render_dashboard(spec_path: Path, registry: set[str], strict: bool) -> tuple
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     spec_rel = spec_path.relative_to(REPO_ROOT).as_posix()
-    spec_url = f"https://github.com/humangr-labs/corelink-server/blob/main/{spec_rel}"
+    spec_url = f"https://github.com/HumanGuardrail/corelink-server/blob/main/{spec_rel}"
 
     rendered = (
         template

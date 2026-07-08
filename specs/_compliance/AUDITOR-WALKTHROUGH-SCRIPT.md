@@ -192,7 +192,7 @@ Captured + uploaded to Drata Evidence Library; auditor can replay async without 
 | Resource | Access type | Expiry | Ticket |
 |---|---|---|---|
 | Drata Trust Center | Read-only via auditor email | 60d post-fieldwork | DRATA-AUDIT-{date} |
-| GitHub `humangr-labs/corelink-server` | Audit-org read membership | 60d post-fieldwork | GH-AUDIT-{date} |
+| GitHub `HumanGuardrail/corelink-server` | Audit-org read membership | 60d post-fieldwork | GH-AUDIT-{date} |
 | Grafana Cloud (read-only dashboards) | SSO with auditor email | 30d | GRAF-AUDIT-{date} |
 | Cloudflare logs export (audit_logs stream) | Time-bounded R2 presigned URL | 7d rolling | CF-AUDIT-{date} |
 | PagerDuty incident export | Read-only via auditor email | 30d | PD-AUDIT-{date} |

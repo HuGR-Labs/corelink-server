@@ -6,7 +6,7 @@ edition.workspace = true
 rust-version.workspace = true
 license = "MIT OR Apache-2.0"
 publish = true
-repository = "https://github.com/humangr-labs/corelink"
+repository = "https://github.com/HumanGuardrail/corelink"
 
 [lib]
 # `rlib` for direct Rust consumers (corelink-server, corelink-cli).

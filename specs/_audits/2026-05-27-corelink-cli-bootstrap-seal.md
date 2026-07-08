@@ -2,14 +2,14 @@
 
 **Date:** 2026-05-27
 **Agent task ID:** agent-a816e36f94b7dd648
-**Repo:** https://github.com/humangr-labs/corelink-cli
+**Repo:** https://github.com/HumanGuardrail/corelink-cli
 **HEAD SHA:** `71d7f6a930a58092fa7deddee04ad5229cd88445`
 
 ---
 
 ## Result
 
-**MVP bootstrapped and pushed to `humangr-labs/corelink-cli` main.**
+**MVP bootstrapped and pushed to `HumanGuardrail/corelink-cli` main.**
 
 ---
 
@@ -25,7 +25,7 @@ a single new commit.
 
 ## Files Created / Modified
 
-### In `humangr-labs/corelink-cli` (cloned to `/tmp/corelink-cli-bootstrap-agent-a816e36f94b7dd648/`)
+### In `HumanGuardrail/corelink-cli` (cloned to `/tmp/corelink-cli-bootstrap-agent-a816e36f94b7dd648/`)
 
 | File | Action | Notes |
 |---|---|---|
@@ -56,7 +56,7 @@ a single new commit.
 | 3 | `./target/release/corelink ping --help` prints reasonable help | PASS — shows endpoint/token flags |
 | 4 | All `uses:` SHA-pinned (40-char SHA) | PASS — grep check empty |
 | 5 | README has Install + Usage + License sections | PASS |
-| 6 | Repo pushed to `humangr-labs/corelink-cli` main | PASS — `71d7f6a` |
+| 6 | Repo pushed to `HumanGuardrail/corelink-cli` main | PASS — `71d7f6a` |
 | 7 | This SEAL audit doc | PASS |
 | 8 | Worktree commit pushed | PENDING (after this doc commit) |
 
@@ -131,7 +131,7 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured
 4. **Install script naming for musl**: `install.ts` does not currently distinguish
    glibc vs musl. A future `--musl` flag or auto-detection could select the right asset.
 5. **Workflow dry-run**: First real release can be triggered by pushing tag `v0.1.0`
-   to `humangr-labs/corelink-cli`. No tag has been pushed yet (MVP is source-only).
+   to `HumanGuardrail/corelink-cli`. No tag has been pushed yet (MVP is source-only).
 
 ---
 

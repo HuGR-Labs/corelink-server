@@ -5,23 +5,23 @@ teams that need BYOK, residency honesty, and a re-derivable audit log.
 
 ## Featured
 
-**[corelink-server](https://github.com/humangr-labs/corelink-server)**
+**[corelink-server](https://github.com/HumanGuardrail/corelink-server)**
 Multi-tenant content-addressable cache — Bazel, Cargo, npm, pip, OCI.
 REAPI v2 compatible. Per-tenant BYOK (4 KMS). RFC-6962-style audit chain
 (BLAKE3 + Ed25519). TLA+-proved cross-tenant isolation. Cloudflare Workers
 + R2 + D1 + Neon Postgres. Free tier: 10 GB / 500k req/mo.
 
-**[corelink-cli](https://github.com/humangr-labs/corelink-cli)**
+**[corelink-cli](https://github.com/HumanGuardrail/corelink-cli)**
 Install in one line; drop into any Bazel, Buck2, Cargo, Docker, or ML
 pipeline. Cross-compiled binaries for Linux x64/arm64, macOS arm64/x64,
 and Alpine. Zero config after `corelink init`.
 
-**[humangr-labs](https://github.com/humangr-labs/humangr-labs)**
+**[HumanGuardrail](https://github.com/HumanGuardrail/HumanGuardrail)**
 This profile — maintained as a source-of-truth index of what ships and
 what is still in progress. Pre-GA honesty policy: nothing is listed as
 shipped unless CI turns green.
 
-**[.github](https://github.com/humangr-labs/.github)**
+**[.github](https://github.com/HumanGuardrail/.github)**
 Org-wide community health: CODE_OF_CONDUCT, CONTRIBUTING, SECURITY, and
 the engineering philosophy that governs every repo in the org.
 

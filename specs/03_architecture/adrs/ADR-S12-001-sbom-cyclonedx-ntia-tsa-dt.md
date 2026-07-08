@@ -65,7 +65,7 @@ Strict mode enforces 100 % threshold per NTIA field:
 
 - Primary PURL: `pkg:cargo/<name>@<version>` (canonical).
 - DT alias: `pkg:crates/<name>@<version>` (stored as `dt:purl_alias` property for DT compatibility).
-- Workspace members: `?vcs_url=https://github.com/humangr-labs/corelink-server` qualifier to prevent PURL confusion attacks.
+- Workspace members: `?vcs_url=https://github.com/HumanGuardrail/corelink-server` qualifier to prevent PURL confusion attacks.
 - Patched crates (`[patch.crates-io]`): `cdx:patched_locally=true` annotation + auditor mode warning.
 
 ### 5. Dependency-Track: self-hosted v4.11+ (not Snyk / GitHub Advanced Security)

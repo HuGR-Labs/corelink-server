@@ -435,13 +435,13 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 
 ### WP-2.1 — corelink-cli: cargo-init + npm-init + docker-init + doctor (EXPANDED)
 
-**CONTEXT:** External repo `humangr-labs/corelink-cli @ 71d7f6a9` ships
+**CONTEXT:** External repo `HumanGuardrail/corelink-cli @ 71d7f6a9` ships
 MVP (`ping` + `bazel-init`). This WP adds 4 new commands. The new
 `doctor` command (per R1 user decision) replaces the placeholder
 quickstart step referenced in WP-7.3.
 
 **SCOPE (external repo only):**
-- Clone `humangr-labs/corelink-cli` to `/tmp/corelink-cli-wp21-<task-id>/`
+- Clone `HumanGuardrail/corelink-cli` to `/tmp/corelink-cli-wp21-<task-id>/`
 - Add `src/commands/cargo_init.rs`
 - Add `src/commands/npm_init.rs`
 - Add `src/commands/docker_init.rs`
@@ -597,7 +597,7 @@ doctor added to corelink-cli (4 new subcommands).
 All commands idempotent (re-run = noisy noop). 12 new tests.
 doctor pairs with the new WP-7.3 quickstart Step 1.
 
-External repo: humangr-labs/corelink-cli @ <new-SHA>.
+External repo: HumanGuardrail/corelink-cli @ <new-SHA>.
 
 Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 ```

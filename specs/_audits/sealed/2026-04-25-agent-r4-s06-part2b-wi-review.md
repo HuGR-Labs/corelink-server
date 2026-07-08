@@ -151,7 +151,7 @@ Without a pinned mechanism, "override discipline" is aspirational. Worst-case de
 **Fix** (Lote 10.6bis):
 
 (a) Pin one mechanism. Recommended: CODEOWNERS rule + signed git-trailer + workflow validator:
-- `.github/CODEOWNERS` — `crates/corelink-gc/** @humangr-labs/architect-team @humangr-labs/crypto-sme-team`.
+- `.github/CODEOWNERS` — `crates/corelink-gc/** @HumanGuardrail/architect-team @HumanGuardrail/crypto-sme-team`.
 - `gc_correctness.tla` modifications require **2 approving reviews** (1 architect + 1 crypto-sme group).
 - Override workflow `tla-override-validate.yml` parses PR body / commit trailers for `Tla-Override-ADR: ADR-XXXX`; asserts the ADR file exists at canonical path with `doc_status: ACCEPTED` AND has Architect + Crypto SME approvals in ADR sign-off block; only then posts a synthetic green status check that satisfies the required `tla-ci-gate` check.
 - **Disable admin-bypass on `main`** branch protection (`enforce_admins: true`).

@@ -25,7 +25,7 @@ connect to R2 buckets. **No real secret values appear anywhere in this repo.**
 
 ## Pre-requisites
 
-- [ ] Cloudflare dashboard access with R2 permissions on the `humangr-labs`
+- [ ] Cloudflare dashboard access with R2 permissions on the `HumanGuardrail`
   account (same account that holds the CoreLink R2 buckets)
 - [ ] `wrangler` CLI authenticated (`wrangler whoami` confirms account)
 - [ ] Account ID available (`wrangler whoami` prints it, or CF dashboard →

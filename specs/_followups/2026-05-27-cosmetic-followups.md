@@ -24,10 +24,10 @@ tags: ["followup", "cosmetic", "manual-action", "launch-polish"]
 
 | Item | Where | Why | Effort |
 |---|---|---|---|
-| 1.1 Pin 4 repos on `humangr-labs` profile | https://github.com/humangr-labs → "Customize your profile" → "Edit pinned repositories" | Show HN traffic sees clean profile; pinning order: `corelink-server`, `corelink-cli`, `humangr-labs`, `.github` | 1 min |
-| 1.2 Upload OG image to `corelink-server` | https://github.com/humangr-labs/corelink-server/settings → "Social preview" → Edit | Link previews on Twitter/HN/Slack | 30 sec |
-| 1.3 Upload OG image to `corelink-cli` | https://github.com/humangr-labs/corelink-cli/settings → "Social preview" → Edit | Same as 1.2 | 30 sec |
-| 1.4 Upload OG image to `corelink-bazel-example` | https://github.com/humangr-labs/corelink-bazel-example/settings → "Social preview" → Edit | Same as 1.2 | 30 sec |
+| 1.1 Pin 4 repos on `HumanGuardrail` profile | https://github.com/HumanGuardrail → "Customize your profile" → "Edit pinned repositories" | Show HN traffic sees clean profile; pinning order: `corelink-server`, `corelink-cli`, `HumanGuardrail`, `.github` | 1 min |
+| 1.2 Upload OG image to `corelink-server` | https://github.com/HumanGuardrail/corelink-server/settings → "Social preview" → Edit | Link previews on Twitter/HN/Slack | 30 sec |
+| 1.3 Upload OG image to `corelink-cli` | https://github.com/HumanGuardrail/corelink-cli/settings → "Social preview" → Edit | Same as 1.2 | 30 sec |
+| 1.4 Upload OG image to `corelink-bazel-example` | https://github.com/HumanGuardrail/corelink-bazel-example/settings → "Social preview" → Edit | Same as 1.2 | 30 sec |
 
 OG image sources at `marketing/og/{corelink-server,corelink-cli,corelink-bazel-example}.png` (1280×640).
 
@@ -43,7 +43,7 @@ OG image sources at `marketing/og/{corelink-server,corelink-cli,corelink-bazel-e
 | 2.6 Cal.com event type | https://cal.com free | Create "Discovery / Sandbox Tour" 30-min event; link from docs footer + landing CTA | 10 min | Interviews go via raw email/calendar instead of self-serve booking link. |
 | 2.7 HubSpot Free CRM | https://hubspot.com free | Import 47 ICP accounts from `2026-05-27-icp-target-list.md` | 30 min | Outreach tracking done in spreadsheet instead of CRM. |
 | 2.8 Twitter `@corelinkdev` | https://twitter.com signup | Create account; set bio + 20-account follow list from `2026-05-27-twitter-starter-pack.md` | 15 min | No Twitter handle to drive HN traffic to. |
-| 2.9 GHA secret `CORELINK_TEST_TOKEN_CI` | https://github.com/humangr-labs/corelink-bazel-example/settings/secrets | Production PAT for the bazel-example smoke workflow | 1 min | bazel-example CI exits 0 in `disk-cache` mode (no remote auth); skipped remote-cache assertion. |
+| 2.9 GHA secret `CORELINK_TEST_TOKEN_CI` | https://github.com/HumanGuardrail/corelink-bazel-example/settings/secrets | Production PAT for the bazel-example smoke workflow | 1 min | bazel-example CI exits 0 in `disk-cache` mode (no remote auth); skipped remote-cache assertion. |
 
 ## §3 Legal/Ops (NOT cosmetic — bloqueia receber dinheiro)
 

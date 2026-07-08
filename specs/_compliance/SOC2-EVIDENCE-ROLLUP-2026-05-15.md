@@ -53,7 +53,7 @@ Format key:
 
 - **CTRL ID** — internal control reference (`compliance_matrix.md` §2.2 + `security_model.md` CTRL catalog + `privacy_model.md` CTRL-PRIV catalog).
 - **Evidence type** — Drata `EvidenceStream` variant (`audit_logs`, `access_reviews`, `credential_management`, `change_management`, `incident_response`, `vulnerability_management`) OR `MANUAL_UPLOAD` / `OOS_INHERITED`.
-- **Artifact location** — primary canonical source path. All paths are repo-relative under `humangr-labs/corelink-server`. Commit hash is `f18acdc` (rollup cut) unless noted.
+- **Artifact location** — primary canonical source path. All paths are repo-relative under `HumanGuardrail/corelink-server`. Commit hash is `f18acdc` (rollup cut) unless noted.
 - **Cadence** — AUTO (continuous / event-driven), DAILY (Drata daily tick 03:00 UTC), QUARTERLY, ANNUAL, ONE-TIME, PER-RELEASE.
 - **Status** — Implemented (I) / Partial (P) / Gap (G) / N/A (—).
 

@@ -28,7 +28,7 @@ version: 2
 #   Non-security updates of any size, and security minor/major, require manual
 #   review per §7 anti-scope + §9.8 design decision.
 #
-# Reviewers: humangr-labs/security team (INV-SUPPLY-LICENSE-ALLOWLIST enforcement).
+# Reviewers: HumanGuardrail/security team (INV-SUPPLY-LICENSE-ALLOWLIST enforcement).
 # Labels: ["dependencies", "<ecosystem>"] — consumed by dependabot-auto-merge.yml
 # and dependabot-policy.yml gates.
 
@@ -62,7 +62,7 @@ updates:
       prefix: "deps"
       include: scope
     reviewers:
-      - "humangr-labs/security"
+      - "HumanGuardrail/security"
     rebase-strategy: disabled
 
   # ---------------------------------------------------------------------------
@@ -91,7 +91,7 @@ updates:
       prefix: "ci"
       include: scope
     reviewers:
-      - "humangr-labs/security"
+      - "HumanGuardrail/security"
     rebase-strategy: disabled
 
   # ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ updates:
       prefix: "deps"
       include: scope
     reviewers:
-      - "humangr-labs/security"
+      - "HumanGuardrail/security"
     rebase-strategy: disabled
     versioning-strategy: increase
 
@@ -150,7 +150,7 @@ updates:
       prefix: "deps"
       include: scope
     reviewers:
-      - "humangr-labs/security"
+      - "HumanGuardrail/security"
     rebase-strategy: disabled
     versioning-strategy: increase
 
@@ -180,7 +180,7 @@ updates:
       prefix: "deps"
       include: scope
     reviewers:
-      - "humangr-labs/security"
+      - "HumanGuardrail/security"
     rebase-strategy: disabled
     versioning-strategy: increase
 
@@ -212,7 +212,7 @@ updates:
       prefix: "deps"
       include: scope
     reviewers:
-      - "humangr-labs/security"
+      - "HumanGuardrail/security"
     rebase-strategy: disabled
     versioning-strategy: increase
 
@@ -242,7 +242,7 @@ updates:
       prefix: "deps"
       include: scope
     reviewers:
-      - "humangr-labs/security"
+      - "HumanGuardrail/security"
     rebase-strategy: disabled
 
   # ---------------------------------------------------------------------------
@@ -271,5 +271,5 @@ updates:
       prefix: "deps"
       include: scope
     reviewers:
-      - "humangr-labs/security"
+      - "HumanGuardrail/security"
     rebase-strategy: disabled

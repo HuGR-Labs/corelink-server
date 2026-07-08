@@ -181,7 +181,7 @@ Script provisions exactly 12 resources (1 D1 + 5 KV + 6 R2). Chunk/manifest R2 b
 
 ### Current state (verified by file read)
 
-CLI repo: `humangr-labs/corelink-cli` cloned to `/tmp/cli-prep-a65f63c3de5006e00/`.
+CLI repo: `HumanGuardrail/corelink-cli` cloned to `/tmp/cli-prep-a65f63c3de5006e00/`.
 
 | File | LOC |
 |------|-----|

@@ -118,7 +118,7 @@ The gate is **not yet failed** — the token bump has not been attempted. The ga
 ```
 CF Dashboard → My Profile → API Tokens → [edit existing corelink token]
 → Add permission: Account | Cloudflare Pages | Edit
-→ Account Resources: Include → Specific account → humangr-labs
+→ Account Resources: Include → Specific account → HumanGuardrail
 ```
 
 **Option B (separate token — narrow scope):** Mint a dedicated `corelink-pages-deploy` token:
@@ -126,7 +126,7 @@ CF Dashboard → My Profile → API Tokens → [edit existing corelink token]
 ```
 CF Dashboard → My Profile → API Tokens → Create Token
 → Permissions: Account | Cloudflare Pages | Edit
-→ Account Resources: Specific account → humangr-labs
+→ Account Resources: Specific account → HumanGuardrail
 → Export as CLOUDFLARE_API_TOKEN before running --apply
 ```
 

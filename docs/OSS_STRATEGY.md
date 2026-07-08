@@ -37,8 +37,8 @@ Five bullets. Commit these to memory before any public launch action.
    the BLAKE3 verifier, trust its PAT signature, and ports the audit
    proof to their own tooling is a developer who trusts CoreLink. Trust
    converts to paying customers.
-5. **Post-GA, codebase splits into two repos.** `humangr-labs/corelink`
-   (public, OSS crates) and `humangr-labs/corelink-server` (private,
+5. **Post-GA, codebase splits into two repos.** `HumanGuardrail/corelink`
+   (public, OSS crates) and `HumanGuardrail/corelink-server` (private,
    server). Until then: one monorepo, per-crate license tags.
 
 ---
@@ -97,7 +97,7 @@ point for "BLAKE3 Rust artifact verification."
 
 ## What Is Proprietary (and Why)
 
-Proprietary means: source stays in `humangr-labs/corelink-server`
+Proprietary means: source stays in `HumanGuardrail/corelink-server`
 (private). No `crates.io` publish. No `git clone` access for
 customers.
 
@@ -140,7 +140,7 @@ the `-materializer` / `-coordinator` counterparts stay closed.
 
 ### Today (pre-GA)
 
-One monorepo: `humangr-labs/corelink-server` (private). All crates,
+One monorepo: `HumanGuardrail/corelink-server` (private). All crates,
 open and closed, live together. OSS-flagged crates carry
 `license = "MIT OR Apache-2.0"` in `Cargo.toml` and are independently
 publishable to crates.io with `cargo publish -p <crate>`.
@@ -152,8 +152,8 @@ during early iteration.
 
 | Repo | Visibility | Contents |
 |---|---|---|
-| `humangr-labs/corelink` | **PUBLIC** | OSS crates + client SDK + CLI + OpenAPI + customer-facing docs + contribution guide |
-| `humangr-labs/corelink-server` | **PRIVATE** | Closed server crates + deployment scripts + compliance docs + internal runbooks |
+| `HumanGuardrail/corelink` | **PUBLIC** | OSS crates + client SDK + CLI + OpenAPI + customer-facing docs + contribution guide |
+| `HumanGuardrail/corelink-server` | **PRIVATE** | Closed server crates + deployment scripts + compliance docs + internal runbooks |
 
 The public repo will vendor-copy or path-dep the few open crates that
 the server also depends on. No circular dependency. Migration tracked as
@@ -169,7 +169,7 @@ overhead with zero user-facing benefit.
 | Phase | When | What ships |
 |---|---|---|
 | **Pre-launch** (now) | Before first public HN/Twitter post | `corelink-hash`, `corelink-client-verify`, `corelink-rate-headers`, `tenant-path` published to crates.io. README links point to live crates. |
-| **At-launch** | Same day as public announcement | `corelink-pat` (verify half), `corelink-wasm`, OpenAPI YAML published to `humangr-labs/corelink` public repo. CLI `brew` tap + binaries. |
+| **At-launch** | Same day as public announcement | `corelink-pat` (verify half), `corelink-wasm`, OpenAPI YAML published to `HumanGuardrail/corelink` public repo. CLI `brew` tap + binaries. |
 | **Post-launch T+30d** | After first lighthouse customers | TypeScript SDK open-sourced (extracted from internal monorepo). `bazel-remote-compat` shim released. Bazel/Turbo bridge traits open. |
 | **GA Full (R-8)** | Per ROADMAP-TO-GA.md wave schedule | Monorepo split into public + private repos. Go + Python FFI wrappers open. Full CONTRIBUTING.md + `good-first-issue` backlog live. |
 

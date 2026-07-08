@@ -117,7 +117,7 @@ Content WI; LOW_RISK lane.
    - **Examples sanitized**: PAT placeholder `corelink_dev_t_xxx.xxx.xxx`; tenant_id placeholder `acme-corp`; never real customer data.
 
 2. **Go SDK guide** em `apps/docs/docs/sdk/go.mdx`:
-   - **Install**: `go get github.com/humangr-labs/corelink-go` (pkg.go.dev; S-15 SEALED reuse).
+   - **Install**: `go get github.com/HumanGuardrail/corelink-go` (pkg.go.dev; S-15 SEALED reuse).
    - **First cache hit**: `corelink.NewClient(pat, tenantID)` context-based; `client.Put(ctx, data)` + `client.Get(ctx, digest)`.
    - **Advanced BYOK**: BYOK setup análogo Python.
    - **Advanced DSR**: DSR Erasure análogo Python.

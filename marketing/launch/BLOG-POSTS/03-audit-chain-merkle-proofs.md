@@ -99,7 +99,7 @@ A customer wishing to verify a window — typically what an external auditor wan
 
 The arithmetic is logarithmic; the verification is mechanical; the trust is in the math, not in CoreLink.
 
-We publish an open-source verification toolkit (`github.com/humangr-labs/corelink-audit-verify`, placeholder repository pending GA-day open) so customers do not have to write the proof-verification routines themselves.
+We publish an open-source verification toolkit (`github.com/HumanGuardrail/corelink-audit-verify`, placeholder repository pending GA-day open) so customers do not have to write the proof-verification routines themselves.
 
 ## Performance numbers
 
@@ -145,7 +145,7 @@ Three things on the roadmap that are explicitly out of GA scope:
 
 - **Trust center:** `corelink.humangr.com/trust`
 - **Audit chain spec:** `docs.corelink.humangr.com/trust/audit-chain`
-- **Verification toolkit (open source):** `github.com/humangr-labs/corelink-audit-verify` (placeholder pending GA repo open)
+- **Verification toolkit (open source):** `github.com/HumanGuardrail/corelink-audit-verify` (placeholder pending GA repo open)
 - **Daily proof bundle format:** `docs.corelink.humangr.com/trust/proof-bundle`
 
 — Trust Engineering at CoreLink

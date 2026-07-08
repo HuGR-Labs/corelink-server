@@ -209,7 +209,7 @@ jobs:
             --body-file "$BODY_FILE" || true
           # Best-effort assign to legal team; ignore failure when the team
           # slug is unavailable in fork-context runs.
-          gh pr edit "$BRANCH" --add-reviewer "humangr-labs/legal" || true
+          gh pr edit "$BRANCH" --add-reviewer "HumanGuardrail/legal" || true
 
       - name: Summary
         run: |

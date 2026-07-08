@@ -323,7 +323,7 @@ BODY (max 90 words; plain text only)
   Worth a chat?
 
   — Gustavo
-  corelink.humangr.com  |  github.com/humangr-labs/corelink
+  corelink.humangr.com  |  github.com/HumanGuardrail/corelink
 
 SIGNATURE
   Real name. Real URL. No corporate logo. No "Sent from my iPhone".

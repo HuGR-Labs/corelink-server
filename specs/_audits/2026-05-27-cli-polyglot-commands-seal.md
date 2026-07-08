@@ -15,7 +15,7 @@ tags: ["cli", "wave32", "polyglot", "cargo-init", "npm-init", "docker-init", "do
 references:
   - "specs/_audits/2026-05-27-15-agent-dispatch-matrix.md §2 WP-2.1"
   - "specs/_audits/2026-05-27-deep-prep-inputs.md §3"
-  - "humangr-labs/corelink-cli @ e4f80dc834f1f8fce6c18002afc3213eceb968c4"
+  - "HumanGuardrail/corelink-cli @ e4f80dc834f1f8fce6c18002afc3213eceb968c4"
 ---
 
 # SEAL audit: corelink-cli polyglot commands + doctor
@@ -39,7 +39,7 @@ Ends with `agent-a284293445f9352e2` — pre-flight PASS.
 
 | Field | Before | After |
 |---|---|---|
-| Repo | humangr-labs/corelink-cli | humangr-labs/corelink-cli |
+| Repo | HumanGuardrail/corelink-cli | HumanGuardrail/corelink-cli |
 | Base SHA | `71d7f6a9` | `e4f80dc834f1f8fce6c18002afc3213eceb968c4` |
 | Subcommands | ping, bazel-init, config show | **+cargo-init, npm-init, docker-init, doctor** |
 | Cargo deps | clap, reqwest, serde, toml, thiserror, anyhow, dirs | +serde_json |
@@ -189,7 +189,7 @@ $ grep -E "uses:" .github/workflows/*.yml | grep -vE "[a-f0-9]{40}"
 
 # git push
 $ git push origin main 2>&1 | tail -3
-To https://github.com/humangr-labs/corelink-cli.git
+To https://github.com/HumanGuardrail/corelink-cli.git
    71d7f6a..e4f80dc  main -> main
 EXIT: 0
 ```

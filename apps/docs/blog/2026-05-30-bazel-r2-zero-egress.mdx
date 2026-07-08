@@ -133,11 +133,11 @@ oversized batches, consistent with REAPI v2.3.0 §5.3.
 
 CoreLink's REAPI bridge lives in two crates:
 
-- [`corelink-bazel-bridge`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-bazel-bridge/src/lib.rs) —
+- [`corelink-bazel-bridge`](https://github.com/HumanGuardrail/corelink-server/blob/main/crates/corelink-bazel-bridge/src/lib.rs) —
   pure protocol translation: digest parsing, URI parsing, the
   `findMissingBlobs` handler, and the `BazelAdapter` that wraps the
   CAS/AC trait objects.
-- [`corelink-container/src/routes/bazel_v2.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-container/src/routes/bazel_v2.rs) —
+- [`corelink-container/src/routes/bazel_v2.rs`](https://github.com/HumanGuardrail/corelink-server/blob/main/crates/corelink-container/src/routes/bazel_v2.rs) —
   Axum route wiring: extracts path params, builds `Digest` structs,
   calls the adapter, maps errors to HTTP status codes.
 
@@ -375,9 +375,9 @@ CoreLink has a free tier. The quickstart is at
 [corelink-docs.humangr.com/quickstart](/quickstart).
 
 The source for the REAPI bridge is in
-[`crates/corelink-bazel-bridge/`](https://github.com/humangr-labs/corelink-server/tree/main/crates/corelink-bazel-bridge)
+[`crates/corelink-bazel-bridge/`](https://github.com/HumanGuardrail/corelink-server/tree/main/crates/corelink-bazel-bridge)
 and the route wiring is in
-[`crates/corelink-container/src/routes/bazel_v2.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-container/src/routes/bazel_v2.rs).
+[`crates/corelink-container/src/routes/bazel_v2.rs`](https://github.com/HumanGuardrail/corelink-server/blob/main/crates/corelink-container/src/routes/bazel_v2.rs).
 
 If you hit a bug or want to compare notes on REAPI implementation
 choices, open an issue on GitHub.

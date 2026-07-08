@@ -208,7 +208,7 @@ jobs:
           echo "  corelink-supply-verify verify \\"
           echo "    --bundle provenance.intoto.bundle \\"
           echo "    --release ${TAG} \\"
-          echo "    --expected-builder humangr-labs/corelink-server"
+          echo "    --expected-builder HumanGuardrail/corelink-server"
 
       - name: Emit SLSA attestation metric (success)
         # Structured log event for Prometheus scrape (OTel collector parses)

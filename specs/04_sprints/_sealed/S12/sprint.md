@@ -70,7 +70,7 @@ Endurecer **toda a cadeia build-attest-sign-deploy** ao nível **SLSA Level 3** 
 **CAPs entregues:** CAP-SUPPLY-001..007 (SLSA L3 build provenance + SBOM CycloneDX 1.5+ + Cosign+CF deploy verify + cargo-audit/deny/Dependabot + reproducible builds + Dependency-Track + vendored deps audit).
 
 **Persona 1 — SecOps lead avaliando CoreLink em RFP**:
-- Evidence pack inclui Rekor inclusion proof URLs (publicly verifiable), SBOM CycloneDX 1.5+ download, Cosign verify command (`cosign verify --certificate-identity-regexp ... ghcr.io/humangr-labs/corelink-worker:v0.X.Y`).
+- Evidence pack inclui Rekor inclusion proof URLs (publicly verifiable), SBOM CycloneDX 1.5+ download, Cosign verify command (`cosign verify --certificate-identity-regexp ... ghcr.io/HumanGuardrail/corelink-worker:v0.X.Y`).
 - Diferenciador competitivo: 95%+ OSS Rust SaaS opera SLSA L1; CoreLink em L3 = sinal forte para procurement/legal.
 
 **Persona 2 — Auditor SOC 2 / ISO 27001**:

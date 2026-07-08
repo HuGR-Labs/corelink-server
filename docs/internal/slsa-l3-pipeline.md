@@ -81,14 +81,14 @@ Customer runs:
   corelink-supply-verify verify \
     --bundle provenance.intoto.bundle \
     --release v0.X.Y \
-    --expected-builder humangr-labs/corelink-server
+    --expected-builder HumanGuardrail/corelink-server
 
 CLI performs:
   1. Parse DSSE envelope → reject if alg=none or no signatures
   2. Decode payload → parse in-toto v1.0 Statement
   3. Validate predicateType == "https://slsa.dev/provenance/v1"
   4. Extract Fulcio cert → validate PEM format + SAN URI extraction
-  5. Match builder identity → reject if not "humangr-labs/corelink-server"
+  5. Match builder identity → reject if not "HumanGuardrail/corelink-server"
   6. Validate Rekor inclusion proof (MANDATORY; no bypass)
      → Merkle root hash 64-char hex
      → log_index < tree_size
@@ -97,7 +97,7 @@ CLI performs:
 
 Output (success):
   SLSA L3 provenance verification PASSED for release v0.X.Y
-    builder_id:    https://github.com/humangr-labs/corelink-server/...
+    builder_id:    https://github.com/HumanGuardrail/corelink-server/...
     commit_sha:    <40-char SHA>
     workflow_ref:  refs/tags/v0.X.Y
     rekor_index:   <log index>
@@ -141,7 +141,7 @@ for TAG in $RELEASES; do
     corelink-supply-verify verify \
         --bundle "/tmp/provenance-$TAG.bundle" \
         --release "$TAG" \
-        --expected-builder "humangr-labs/corelink-server" \
+        --expected-builder "HumanGuardrail/corelink-server" \
         --format json
 done
 ```

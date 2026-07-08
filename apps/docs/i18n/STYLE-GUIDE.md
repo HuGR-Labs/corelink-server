@@ -53,7 +53,7 @@ nouns**. Keep them verbatim in every translation:
 ### Product and brand
 
 - CoreLink
-- HuGR, HumanGR, humangr-labs
+- HuGR, HumanGR, HumanGuardrail
 - Forge (when used as the customer-zero product name)
 - Stripe, Cloudflare, GitHub, Linear, ProZ.com
 - Smartling, Transifex, Smartcat, memoQ, Trados

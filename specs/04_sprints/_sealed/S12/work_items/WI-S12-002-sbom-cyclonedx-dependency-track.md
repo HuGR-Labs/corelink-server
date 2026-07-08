@@ -158,7 +158,7 @@ SBOM (Software Bill of Materials) é **regulatory baseline** moderno: Executive 
 ## 3. Customer Impact & Journey
 
 **Persona 1 — Procurement officer em prospect enterprise (RFP)**:
-- Customer download `https://github.com/humangr-labs/corelink-server/releases/v0.X.Y/sbom.cdx.json` + `sbom.cdx.json.tsr`.
+- Customer download `https://github.com/HumanGuardrail/corelink-server/releases/v0.X.Y/sbom.cdx.json` + `sbom.cdx.json.tsr`.
 - Customer runs `cyclonedx-cli validate --input-file sbom.cdx.json --minimum-required-fields ntia` → "✅ NTIA compliant".
 - Customer runs `openssl ts -verify -in sbom.cdx.json.tsr -data sbom.cdx.json -CAfile sigstore-tsa-root.pem` → timestamp validated.
 - Diferenciador: CycloneDX 1.5+ + RFC 3161 TSA + Dependency-Track integration = enterprise-grade vs OSS competitors com SBOM "best-effort".
@@ -222,7 +222,7 @@ Build pipeline + compliance evidence; HIGH_RISK; FF-HR-005.
 4. **PURL normalization**:
    - cargo-cyclonedx default: `pkg:cargo/<name>@<version>`.
    - Post-process: emit dual `purl` field — primary `pkg:cargo/<name>@<version>` + alias `pkg:crates/<name>@<version>` (DT compatibility).
-   - Workspace members: append `?vcs_url=https://github.com/humangr-labs/corelink-server` discriminator.
+   - Workspace members: append `?vcs_url=https://github.com/HumanGuardrail/corelink-server` discriminator.
 5. **RFC 3161 TSA timestamp** via Sigstore TSA (`tsa.sigstore.dev/api/v1/timestamp`):
    - Compute SHA-256 hash de SBOM JSON.
    - Build TimeStampReq (DER-encoded): nonce + hash + algorithm OID.
@@ -338,7 +338,7 @@ Feature: SBOM CycloneDX 1.5+ generation + NTIA + TSA + DT ingestion
   Scenario: PURL normalization workspace members
     Given workspace member "corelink-worker" version 0.X.Y
     When SBOM generated
-    Then component PURL = "pkg:cargo/corelink-worker@0.X.Y?vcs_url=https://github.com/humangr-labs/corelink-server"
+    Then component PURL = "pkg:cargo/corelink-worker@0.X.Y?vcs_url=https://github.com/HumanGuardrail/corelink-server"
     And aliased PURL = "pkg:crates/corelink-worker@0.X.Y" for DT compatibility
 
   Scenario: Vendored dep with [patch.crates-io] flagged

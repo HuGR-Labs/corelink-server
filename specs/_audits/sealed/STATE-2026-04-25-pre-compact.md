@@ -86,7 +86,7 @@ ADRs whitelisted (forward-looking):
 - **Stack**: Cloudflare Workers + Rust/WASM + R2 + D1 + KV + Durable Objects
 - **API**: REAPI v2 (Bazel Remote Execution API)
 - **Customer zero**: Forge
-- **Org GitHub**: humangr-labs
+- **Org GitHub**: HumanGuardrail
 - **Naming**: decidido 2026-04-23
 
 ## Próxima ação ao retomar
