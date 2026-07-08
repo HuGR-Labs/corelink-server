@@ -35,6 +35,7 @@ import {
   STORAGE_QUOTA_HEADER,
 } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
+import { isTenantSuspended } from "./lib/tenant_suspend_gate.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
@@ -1111,6 +1112,21 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   // like a forged token). Guard the sentinel.
   if (row.expires_ms !== 0 && row.expires_ms <= Date.now()) {
     return { ok: false, reason: "pat_expired" };
+  }
+
+  // ── Step 6: Tenant fast-suspend gate (go-live GAP G4) ─────────────────────
+  // A valid, unexpired PAT is NOT sufficient if its tenant has been suspended
+  // or erased (tenant_offboarding_state.state ∈ {suspended, erased}, migration
+  // 0046). Without this gate a suspended/abusive tenant keeps full CAS/AC read
+  // + write access until every one of its PATs is individually revoked. The
+  // check is a single-flight + ~30s-TTL cached D1 read (mirrors #667's
+  // CachedTierResolver — see lib/tenant_suspend_gate.ts), so it adds no
+  // uncached per-request D1 round-trip to the hot path. Fail-OPEN on a D1
+  // fault (availability), but a KNOWN-suspended cached value still denies. The
+  // caller maps `tenant_suspended` to 403 (fail-closed, distinct from the 401
+  // bad-credential arms and the 503 transient-infra arms).
+  if (await isTenantSuspended(env.CONFIG_DB, row.tenant_id)) {
+    return { ok: false, reason: "tenant_suspended" };
   }
 
   // Resolved tenant_id + scope from D1. The Worker forwards `scope` to the
@@ -2334,6 +2350,18 @@ const baseHandler: ExportedHandler<Env> = {
         ) {
           return applyCors(
             reapiError("SERVICE_UNAVAILABLE", "authentication service unavailable", 503, requestId),
+            request,
+          );
+        }
+        // G4: the PAT is valid but its tenant is suspended/erased
+        // (tenant_offboarding_state.state ∈ {suspended, erased}). This is an
+        // authorization denial, NOT a bad credential — map to 403 fail-closed
+        // (distinct from the 401 unknown/expired/malformed-PAT arms), so a
+        // suspended tenant is fast-denied on the customer CAS/AC hot path
+        // without waiting for every PAT to be individually revoked.
+        if (result.reason === "tenant_suspended") {
+          return applyCors(
+            reapiError("FORBIDDEN", "tenant suspended", 403, requestId),
             request,
           );
         }
