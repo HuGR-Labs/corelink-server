@@ -6,7 +6,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "119df109abc91fa680bc66fb83c8a400a03e2935"
+checkpoint_sha: "8d4057785cb39450deec826ec7261a32c42fdd26"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -55,10 +55,10 @@ semantics in the container.
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
    DO→container hop (`worker/src/durable_object.ts:251-264`).
 7. The container's composed router (built by `build_with_factory`) receives the request and routes it to
-   the matching handler (`crates/corelink-container/src/routes.rs:338-346`).
+   the matching handler (`crates/corelink-container/src/routes.rs:348-356`).
 8. The shared CAS/AC handler objects — wrapped once with byte-accounting, the erasure tombstone gate,
    and the native PAT possession backstop — execute the actual cache operation
-   (`crates/corelink-container/src/routes.rs:393-497`).
+   (`crates/corelink-container/src/routes.rs:403-507`).
 
 # Invariants
 - The DO is always selected from the PAT-resolved tenant, never the URL tenant — isolation is
@@ -68,7 +68,7 @@ semantics in the container.
 - The DO→container hop always targets port 50051 via the `getTcpPort` fetcher
   (`worker/src/durable_object.ts:251-264`).
 - The container re-verifies possession at the shared handler chokepoint rather than trusting the hop
-  blindly (`crates/corelink-container/src/routes.rs:393-497`).
+  blindly (`crates/corelink-container/src/routes.rs:403-507`).
 - The DO will not proxy until the container is confirmed running (or it returns 503/500)
   (`worker/src/durable_object.ts:343-372`).
 
@@ -89,5 +89,5 @@ semantics in the container.
 7. `worker/src/durable_object.ts:251-264` — the DO→container proxy via `getTcpPort(50051)`.
 8. `worker/src/durable_object.ts:314-381` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:343-372` — the ensure-running gate before proxying (503/500 otherwise).
-10. `crates/corelink-container/src/routes.rs:338-346` — the container's composed router receiving the request.
-11. `crates/corelink-container/src/routes.rs:393-497` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
+10. `crates/corelink-container/src/routes.rs:348-356` — the container's composed router receiving the request.
+11. `crates/corelink-container/src/routes.rs:403-507` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
