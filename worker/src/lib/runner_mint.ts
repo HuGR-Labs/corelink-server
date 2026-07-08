@@ -105,6 +105,79 @@ function reapiError(error: string, message: string, status: number, requestId: s
 }
 
 /**
+ * Resolve the tenant of an ACQUIRING PAT by introspecting it through the
+ * container (the sole PAT auth authority) — the fabricd / native-repo tenant
+ * source when the mint carries no `installation_id` (frozen 2026-07-08).
+ *
+ * The container's `/internal/v1/auth/introspect` runs the FULL {@link
+ * PatVerifier} check (HMAC fast-reject → D1 row → Argon2id), so a caller cannot
+ * name a tenant: it can only prove possession of a VALID PAT whose D1 row names
+ * the tenant. This is strictly stronger than the installation-map path (which
+ * only needs the shared mint key + a known `installation_id`) — minting for a
+ * tenant here requires a valid PAT for that tenant.
+ *
+ * Returns the `tenant_id` on a valid PAT, else `null` — the caller fails CLOSED
+ * (uniform 403). `null` covers: introspect key unbound, upstream/DO error, a
+ * non-200 (e.g. 503 store-down), a malformed body, or `valid:false` (which
+ * carries NO `tenant_id` — no oracle). The PAT is NEVER logged.
+ */
+async function resolveTenantFromAcquiringPat(
+  env: Env,
+  requestId: string,
+  patToken: string,
+): Promise<string | null> {
+  const introspectKey = env.FABRIC_INTROSPECT_AUTH_KEY;
+  if (typeof introspectKey !== "string" || introspectKey.length === 0) {
+    console.error(
+      `[${requestId}] runner mint: FABRIC_INTROSPECT_AUTH_KEY unbound — cannot resolve acquiring-PAT tenant`,
+    );
+    return null;
+  }
+  const namespace = env.CORELINK_SERVER;
+  const stub = namespace.get(namespace.idFromName("_system"));
+  // Fresh server-to-server introspect (never forward the inbound request). The
+  // container introspect gate is the sole authority; we present the FABRIC key.
+  const introspectRequest = new Request("https://do/internal/v1/auth/introspect", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-request-id": requestId,
+      "x-corelink-route-kind": "fabric_introspect",
+      "x-corelink-tenant-id": "_system",
+      "x-corelink-internal-auth": introspectKey,
+    },
+    body: JSON.stringify({ token: patToken }),
+  });
+  let resp: Response;
+  try {
+    resp = await stub.fetch(introspectRequest);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    console.error(`[${requestId}] runner mint introspect fetch failed: ${message.slice(0, 80)}`);
+    return null;
+  }
+  if (resp.status !== 200) {
+    // 503 (store/clock unavailable) or any non-200 → fail-CLOSED (never serve a
+    // tenant we could not authoritatively resolve).
+    return null;
+  }
+  let parsed: { valid?: unknown; tenant_id?: unknown };
+  try {
+    parsed = (await resp.json()) as { valid?: unknown; tenant_id?: unknown };
+  } catch {
+    return null;
+  }
+  if (
+    parsed.valid !== true ||
+    typeof parsed.tenant_id !== "string" ||
+    parsed.tenant_id.length === 0
+  ) {
+    return null;
+  }
+  return parsed.tenant_id;
+}
+
+/**
  * Handle `POST /internal/v1/runner/mint` → mint a per-job, short-TTL,
  * tenant-scoped PAT for a disposable runner.
  *
@@ -116,18 +189,26 @@ function reapiError(error: string, message: string, status: number, requestId: s
  *   3. Secrets: a properly sized internal-auth key must be bound to AUTHORIZE
  *      the mint to the container (the mint is server-to-server). The runner-mint
  *      surface needs NO Clerk secret (no session is verified).
- *   4. Parse body `{ job_id, repo_full_name, installation_id, scope?,
- *      ttl_seconds? }`. Missing/empty job_id/repo_full_name/installation_id →
- *      400; admin/owner/unknown scope → 400; a non-positive/non-integer
+ *   4. Parse body `{ job_id, repo_full_name, installation_id?, scope?,
+ *      ttl_seconds? }`. Missing/empty job_id/repo_full_name → 400; `installation_id`
+ *      is OPTIONAL (frozen 2026-07-08 — see step 5a) but, when present, must be a
+ *      non-empty string; admin/owner/unknown scope → 400; a non-positive/non-integer
  *      ttl_seconds → 400 (a caller may only SHORTEN the TTL toward its lease
- *      deadline; it is clamped down to the 90-min cap). The tenant is NO LONGER
- *      taken from the body — it is DERIVED server-side (step 5a).
+ *      deadline; it is clamped down to the 90-min cap). The tenant is NEVER taken
+ *      from the body — it is DERIVED server-side (step 5a).
  *   5. Server-side tenant DERIVATION + AUTHORIZATION chokepoint (cf-multitenant
  *      WP2). Every check reads CONFIG_DB, is fail-CLOSED, and every miss returns
  *      the SAME generic 403 (no oracle distinguishing which check failed):
- *        a. Derive tenant: `tenant_gh_installation_map WHERE installation_id`.
- *           No row → 403. Capture `tenantId` (the DERIVED tenant — never a body
- *           value).
+ *        a. Derive tenant from ONE of two unforgeable server-side sources — never
+ *           a body value:
+ *             • `installation_id` PRESENT → `tenant_gh_installation_map WHERE
+ *               installation_id` (CF-worker / webhook path). No row → 403.
+ *             • `installation_id` ABSENT → introspect the acquiring PAT presented
+ *               as `Authorization: Bearer` (fabricd / native path); the container's
+ *               full PatVerifier resolves the tenant. No bearer → 401; invalid PAT
+ *               / introspect unavailable → 403. A native repo has no GitHub App
+ *               installation, so this is the ONLY tenant source for that path.
+ *           Capture `tenantId` (the DERIVED tenant — never a body value).
  *        b. Suspend: `tenant_offboarding_state WHERE tenant_id` — a row EXISTS
  *           (the tenant is offboarding/suspended) → 403 (an active tenant has NO
  *           offboarding row).
@@ -206,9 +287,21 @@ export async function handleRunnerMint(
   if (typeof repoFullName !== "string" || repoFullName.length === 0) {
     return reapiError("BAD_REQUEST", "repo_full_name required", 400, requestId);
   }
+  // installation_id is OPTIONAL (frozen 2026-07-08): present ⇒ CF-worker/webhook
+  // path (tenant via the installation map, step 5a); absent ⇒ fabricd/native path
+  // (tenant via acquiring-PAT introspection, step 5a). When present it MUST be a
+  // non-empty string; an empty string is a malformed request (400).
   const installationId = body.installation_id;
-  if (typeof installationId !== "string" || installationId.length === 0) {
-    return reapiError("BAD_REQUEST", "installation_id required", 400, requestId);
+  if (
+    installationId !== undefined &&
+    (typeof installationId !== "string" || installationId.length === 0)
+  ) {
+    return reapiError(
+      "BAD_REQUEST",
+      "installation_id, when present, must be a non-empty string",
+      400,
+      requestId,
+    );
   }
   let scope = RUNNER_MINT_DEFAULT_SCOPE;
   if (typeof body.scope === "string" && body.scope.length > 0) {
@@ -267,16 +360,46 @@ export async function handleRunnerMint(
   let tenantId: string;
   let maxConcurrency: number;
   try {
-    // 5a. Derive the tenant from the GitHub installation (never a body value).
-    const mapRow = await env.CONFIG_DB.prepare(
-      "SELECT tenant_id FROM tenant_gh_installation_map WHERE installation_id = ?1",
-    )
-      .bind(installationId)
-      .first<{ tenant_id: string }>();
-    if (mapRow === null || typeof mapRow.tenant_id !== "string" || mapRow.tenant_id.length === 0) {
-      return forbidden();
+    // 5a. Derive the tenant SERVER-SIDE — NEVER a body value. Two unforgeable
+    // sources (frozen 2026-07-08); the single-tenant hole stays closed on both.
+    if (typeof installationId === "string") {
+      // CF-worker / webhook path: the GitHub installation → tenant map. The
+      // caller names installation_id, not the tenant; the map is server-side.
+      const mapRow = await env.CONFIG_DB.prepare(
+        "SELECT tenant_id FROM tenant_gh_installation_map WHERE installation_id = ?1",
+      )
+        .bind(installationId)
+        .first<{ tenant_id: string }>();
+      if (
+        mapRow === null ||
+        typeof mapRow.tenant_id !== "string" ||
+        mapRow.tenant_id.length === 0
+      ) {
+        return forbidden();
+      }
+      tenantId = mapRow.tenant_id;
+    } else {
+      // fabricd / native path: introspect the acquiring PAT presented as
+      // `Authorization: Bearer`. The container's full PatVerifier resolves the
+      // tenant from the PAT's D1 row — the caller proves possession, never names
+      // a tenant. A native repo has no GitHub App installation, so this is the
+      // only viable source. No bearer → 401; invalid PAT / introspect down → 403.
+      const authz = request.headers.get("authorization") ?? "";
+      const bearer = /^Bearer\s+(.+)$/i.exec(authz)?.[1];
+      if (bearer === undefined) {
+        return reapiError(
+          "UNAUTHORIZED",
+          "acquiring PAT (Authorization: Bearer) required when installation_id is absent",
+          401,
+          requestId,
+        );
+      }
+      const patTenant = await resolveTenantFromAcquiringPat(env, requestId, bearer);
+      if (patTenant === null) {
+        return forbidden();
+      }
+      tenantId = patTenant;
     }
-    tenantId = mapRow.tenant_id;
 
     // 5b. Suspend gate: an ACTIVE tenant has NO offboarding row; a row EXISTS ⇒
     // the tenant is offboarding/suspended ⇒ deny.
