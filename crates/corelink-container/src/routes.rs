@@ -796,6 +796,17 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                         // the sole carrier of the cap for the OCI plane.
                         let oci_cap_resolver: Arc<dyn crate::oci_cap::TenantCapResolver> =
                             Arc::new(crate::oci_cap::D1TenantCapResolver::new(d1.clone()));
+                        // G4b: tenant-suspend gate over the SAME D1 client. A
+                        // suspended/erased tenant is denied the token mint AND
+                        // every `/v2` op (the Worker forwards OCI RAW, so the
+                        // worker-side suspend gate never sees it). Single-flight +
+                        // 30 s TTL, fail-CLOSED for a known-suspended tenant.
+                        let oci_suspend_resolver: Arc<dyn crate::oci_suspend::SuspendResolver> =
+                            Arc::new(crate::oci_suspend::CachedSuspendResolver::new(
+                                Arc::new(crate::oci_suspend::D1SuspendResolver::new(d1.clone())),
+                                Arc::new(crate::wall_clock::SystemWallClock::new()),
+                                crate::oci_suspend::DEFAULT_SUSPEND_CACHE_TTL_MS,
+                            ));
                         router = router.merge(oci::router(
                             oci_cas_read,
                             oci_cas_write,
@@ -806,6 +817,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
                             quota.clone(),
                             request_count.clone(),
                             Some(oci_cap_resolver),
+                            Some(oci_suspend_resolver),
                         ));
                     }
                     _ => {

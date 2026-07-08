@@ -121,6 +121,13 @@ pub mod neon_shadow_factory;
 /// against the resolved cap (the Worker forwards OCI RAW and never sets the
 /// native `STORAGE_QUOTA_HEADER`). Fail-CLOSED on an unconfirmable tier.
 pub mod oci_cap;
+/// Container-side **tenant-suspend gate** for the OCI plane (go-live gap G4b):
+/// a tenant whose `tenant_offboarding_state.state ∈ {suspended, erased}` is
+/// DENIED push AND pull on `/v2/*` + `/token`. The worker-side suspend gate
+/// (PR #677) does NOT cover OCI (the Worker forwards it RAW), so this closes the
+/// bypass container-side at both the token mint and the residual `/v2` legs.
+/// Fail-CLOSED (a known-suspended tenant stays denied through a D1 read fault).
+pub mod oci_suspend;
 /// Per-tenant monthly **request-count** middleware primitive (rt-nuclear #8):
 /// the container-side mirror of `worker/src/lib/quota.ts::checkRequestQuota`,
 /// backed by the `monthly_request_counts` D1 table (migration 0071). Wired into
