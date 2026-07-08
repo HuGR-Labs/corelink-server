@@ -8,10 +8,11 @@ export default function CustomerAuditPage(): React.ReactElement {
   return (
     <CustomerGuard>
       <main aria-labelledby="customer-audit-heading">
-        <h1 id="customer-audit-heading">Audit trail</h1>
+        <h1 id="customer-audit-heading">Audit log</h1>
         <p>
-          Events for your tenant: sign-ins, PAT lifecycle, BYOK rotations, team changes.
-          For Merkle proof verification, contact your operator.
+          A tenant-scoped record of who did what: sign-ins, token lifecycle, encryption-key
+          rotations, and team changes. Filter by date, event type, or severity — cryptographic
+          chain verification (export + offline proof) is on the way.
         </p>
         <AuditClient />
       </main>

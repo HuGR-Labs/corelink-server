@@ -186,6 +186,29 @@ CREATE TABLE IF NOT EXISTS stripe_webhook_events_processed (
         CHECK (outcome IN ('dispatched','acknowledged_unknown')),
     correlation_id  TEXT    NOT NULL
 );
+
+-- Runner-billing map + entitlement (migrations 0087 / 0070+0072). The
+-- customer.subscription.deleted handler ALWAYS runs the runner-entitlement
+-- revoke (a no-op for a cache-only subscription: 0 runner_billing rows map it),
+-- so these tables MUST exist or the revoke throws and the whole webhook 500s
+-- AFTER the state writes land (found by this harness 2026-07-06). Mirror prod.
+CREATE TABLE IF NOT EXISTS runner_billing (
+    runner_subscription_id TEXT PRIMARY KEY,
+    tenant_id              TEXT NOT NULL,
+    plan                   TEXT NOT NULL,
+    status                 TEXT NOT NULL,
+    stripe_customer_id     TEXT,
+    created_at_ms          INTEGER NOT NULL,
+    updated_at_ms          INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS runners_entitlement (
+    tenant_id       TEXT    PRIMARY KEY,
+    max_concurrency INTEGER NOT NULL CHECK (max_concurrency > 0),
+    plan            TEXT,
+    created_at_ms   INTEGER NOT NULL,
+    max_vcpu_h      INTEGER
+);
 SQL
 
 # Clear any stale process holding the port (a prior aborted run can leave a

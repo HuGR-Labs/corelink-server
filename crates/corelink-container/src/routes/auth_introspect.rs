@@ -810,6 +810,135 @@ async fn handle_resolve_tenant(
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Tenant-per-installation resolution + repo allowlist (cf-multitenant WP3)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// SQL: the isolated tenant for a GitHub App installation from the
+/// `tenant_gh_installation_map` table (migration 0084). The table is written
+/// ONLY by the provisioning authority; this read is LOOKUP-ONLY (never
+/// auto-creates a mapping). A missing row is a non-fault miss (the installation
+/// is not yet mapped to a tenant).
+///
+/// # Ordering contract (mirrors [`RESOLVE_TENANT_SQL`])
+///
+/// Provisioning is the SOLE `tenant_gh_installation_map` writer — the fabric
+/// resolver stays lookup-only ON PURPOSE. The fabric plane resolves a GitHub App
+/// installation id → isolated tenant against the SAME D1 table the Worker mint
+/// reads (single source of truth, no divergent copy). Because the mapping write
+/// happens out-of-band, a resolve read may race AHEAD of provisioning: the row is
+/// simply not there yet. That miss (`Ok(None)` → 404 `installation_not_mapped`)
+/// is TRANSIENT during the provisioning window, NOT a permanent "no such tenant"
+/// (analogous to the org resolver's `org_not_mapped`). See
+/// [`resolve_tenant_for_installation`].
+const RESOLVE_TENANT_FOR_INSTALLATION_SQL: &str =
+    "SELECT tenant_id FROM tenant_gh_installation_map WHERE installation_id = ?1 LIMIT 1";
+
+/// SQL: whether a repo is on a tenant's runner allowlist
+/// (`runner_repo_allowlist`, migration 0085). A present row (`SELECT 1`) means
+/// the `repo_full_name` is explicitly allowed for `tenant_id`; the absence of a
+/// row means NOT allowed. This is the fabric-plane's allowlist check, reading the
+/// SAME table the Worker mint reads (single source of truth). See
+/// [`repo_on_tenant_allowlist`].
+const REPO_ON_TENANT_ALLOWLIST_SQL: &str =
+    "SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2 LIMIT 1";
+
+/// Resolve a GitHub App installation id to its isolated CoreLink tenant via
+/// `tenant_gh_installation_map` (migration 0084).
+///
+/// - Row present → `Ok(Some(tenant_id))` (the installation is mapped).
+/// - No row → `Ok(None)` (the installation is NOT mapped — the caller falls back
+///   to its own unmapped behaviour; this NEVER auto-provisions).
+///
+/// # Fail-CLOSED
+///
+/// A genuine D1 backend fault surfaces as `Err(String)` so the caller maps it to
+/// **503** rather than guessing a tenant — the fabric must never be handed a
+/// WRONG tenant (which would break tenant isolation). A non-fault "no row" is
+/// `Ok(None)`, not an error. Mirrors [`resolve_tenant_for_org`].
+///
+/// # Errors
+///
+/// Returns `Err(String)` only on a D1 backend fault (so the caller can 503).
+pub async fn resolve_tenant_for_installation(
+    d1: &D1HttpClient,
+    installation_id: &str,
+) -> Result<Option<String>, String> {
+    let rows = d1
+        .query(
+            RESOLVE_TENANT_FOR_INSTALLATION_SQL,
+            &[serde_json::Value::String(installation_id.to_owned())],
+        )
+        .await?;
+    Ok(decode_resolved_installation_tenant(&rows))
+}
+
+/// Pure decode of the `tenant_gh_installation_map` query result into the
+/// resolved tenant.
+///
+/// Split from [`resolve_tenant_for_installation`] so the row→tenant mapping is
+/// unit-testable without a network (mirrors [`decode_resolved_tenant`]): the I/O
+/// wrapper does the keyed query, this maps rows → `Option<tenant_id>`.
+///
+/// - A row carrying a non-empty `tenant_id` string → `Some(tenant_id)`.
+/// - No row (the installation is not mapped) → `None` (the caller maps this to a
+///   404 `installation_not_mapped` — never an auto-provision).
+/// - A row whose `tenant_id` is missing / non-string / empty → `None` (treated
+///   as "no mapping": a malformed row must never resolve to a wrong/blank tenant
+///   — fail to a clean 404, never serve a bad isolation boundary).
+fn decode_resolved_installation_tenant(rows: &[crate::storage::d1_http::D1Row]) -> Option<String> {
+    rows.first()
+        .and_then(|row| row.get("tenant_id"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
+/// Whether `repo_full_name` is on `tenant_id`'s runner allowlist
+/// (`runner_repo_allowlist`, migration 0085) — the fabric-plane's allowlist
+/// check, reading the SAME table the Worker mint reads.
+///
+/// - A row present → `Ok(true)` (the repo is explicitly allowed for the tenant).
+/// - No row → `Ok(false)` (NOT allowed — the caller denies the mint).
+///
+/// # Fail-CLOSED
+///
+/// A genuine D1 backend fault surfaces as `Err(String)` so the caller denies the
+/// mint (never grants on a backend fault). This is a lookup-only read; it NEVER
+/// writes the allowlist.
+///
+/// # Errors
+///
+/// Returns `Err(String)` only on a D1 backend fault (so the caller can deny /
+/// 503 fail-CLOSED).
+pub async fn repo_on_tenant_allowlist(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    repo_full_name: &str,
+) -> Result<bool, String> {
+    let rows = d1
+        .query(
+            REPO_ON_TENANT_ALLOWLIST_SQL,
+            &[
+                serde_json::Value::String(tenant_id.to_owned()),
+                serde_json::Value::String(repo_full_name.to_owned()),
+            ],
+        )
+        .await?;
+    Ok(decode_repo_on_allowlist(&rows))
+}
+
+/// Pure decode of the `runner_repo_allowlist` existence query into a bool.
+///
+/// Split from [`repo_on_tenant_allowlist`] so the row→bool mapping is
+/// unit-testable without a network (mirrors [`decode_resolved_tenant`]): the I/O
+/// wrapper does the keyed query, this maps rows → presence. The `SELECT 1`
+/// projection means a row's mere PRESENCE is the answer — `true` iff at least one
+/// row came back.
+fn decode_repo_on_allowlist(rows: &[crate::storage::d1_http::D1Row]) -> bool {
+    !rows.is_empty()
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // State builder
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -1617,6 +1746,108 @@ mod tests {
         assert_eq!(
             v,
             serde_json::json!({ "tenant_id": "11111111-1111-4111-8111-111111111111" })
+        );
+    }
+
+    // ── cf-multitenant WP3: tenant-per-installation resolve + repo allowlist ──
+
+    /// Build a `runner_repo_allowlist` `SELECT 1` result row (the column name is
+    /// irrelevant — the decode keys off row PRESENCE, not a value).
+    fn allowlist_hit_rows() -> Vec<crate::storage::d1_http::D1Row> {
+        let mut row = serde_json::Map::new();
+        row.insert("1".to_owned(), serde_json::json!(1));
+        vec![row]
+    }
+
+    #[test]
+    fn decode_resolved_installation_tenant_mapped_yields_some() {
+        // A `tenant_gh_installation_map` row carrying the installation's tenant →
+        // Some(tenant_id): the resolution that backs the fabric-plane runner mint.
+        let mut row = serde_json::Map::new();
+        row.insert(
+            "tenant_id".to_owned(),
+            serde_json::json!("22222222-2222-4222-8222-222222222222"),
+        );
+        assert_eq!(
+            decode_resolved_installation_tenant(&[row]),
+            Some("22222222-2222-4222-8222-222222222222".to_owned()),
+            "a mapped installation row must resolve to its tenant"
+        );
+    }
+
+    #[test]
+    fn decode_resolved_installation_tenant_unmapped_yields_none() {
+        // Empty result set (no row until provisioning) → None → the caller
+        // returns 404 installation_not_mapped (never auto-provisions).
+        assert_eq!(
+            decode_resolved_installation_tenant(&[]),
+            None,
+            "an unmapped installation must yield None (→ 404 installation_not_mapped)"
+        );
+    }
+
+    #[test]
+    fn decode_resolved_installation_tenant_malformed_row_yields_none() {
+        // A row whose tenant_id is missing / non-string / empty must NOT resolve
+        // to a wrong/blank tenant — it falls to None (clean 404), never a bad
+        // isolation boundary (mirrors decode_resolved_tenant).
+        let mut missing = serde_json::Map::new();
+        missing.insert("other".to_owned(), serde_json::json!("x"));
+        assert_eq!(decode_resolved_installation_tenant(&[missing]), None);
+
+        let mut non_str = serde_json::Map::new();
+        non_str.insert("tenant_id".to_owned(), serde_json::json!(42));
+        assert_eq!(decode_resolved_installation_tenant(&[non_str]), None);
+
+        let mut empty = serde_json::Map::new();
+        empty.insert("tenant_id".to_owned(), serde_json::json!(""));
+        assert_eq!(decode_resolved_installation_tenant(&[empty]), None);
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_for_installation_errors_on_d1_fault() {
+        // The I/O wrapper surfaces a D1 fault as Err (→ caller 503), mirroring
+        // resolve_tenant_for_org's fail-CLOSED contract.
+        let d1 = unreachable_d1();
+        let err = resolve_tenant_for_installation(&d1, "12345678").await;
+        assert!(
+            err.is_err(),
+            "a D1 fault must surface as Err (fail-CLOSED → 503)"
+        );
+    }
+
+    #[test]
+    fn decode_repo_on_allowlist_hit_yields_true() {
+        // A present `SELECT 1` row means the repo is explicitly allowed.
+        assert!(
+            decode_repo_on_allowlist(&allowlist_hit_rows()),
+            "an allowlist hit (row present) must yield true"
+        );
+    }
+
+    #[test]
+    fn decode_repo_on_allowlist_miss_yields_false() {
+        // No row → the repo is NOT allowlisted for the tenant → deny.
+        assert!(
+            !decode_repo_on_allowlist(&[]),
+            "an allowlist miss (no row) must yield false"
+        );
+    }
+
+    #[tokio::test]
+    async fn repo_on_tenant_allowlist_errors_on_d1_fault() {
+        // The I/O wrapper surfaces a D1 fault as Err so the caller denies the
+        // mint fail-CLOSED (never grants on a backend fault).
+        let d1 = unreachable_d1();
+        let err = repo_on_tenant_allowlist(
+            &d1,
+            "22222222-2222-4222-8222-222222222222",
+            "octocat/hello-world",
+        )
+        .await;
+        assert!(
+            err.is_err(),
+            "a D1 fault on the allowlist read must surface as Err (fail-CLOSED)"
         );
     }
 }

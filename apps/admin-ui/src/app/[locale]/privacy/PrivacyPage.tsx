@@ -2,8 +2,10 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { MarkdownView } from "@/components/content/MarkdownView";
+import { PublicShell } from "@/components/public/PublicShell";
+import { PublicPageHeader } from "@/components/public/PublicPageHeader";
+import { LegalProse } from "@/components/public/LegalProse";
+import { Callout } from "@/components/ui/linear";
 import type { Locale } from "@/i18n/LocaleContext";
 
 // R-prep i18n-de — `de` joined as the fourth canonical locale.
@@ -44,34 +46,37 @@ export interface PrivacyPageProps {
 
 export function PrivacyPage({ locale, content, version, lastUpdated }: PrivacyPageProps) {
   return (
-    // `<main id="main">` (not `<article>`): `<article>`'s implicit role is not
-    // a landmark, so the page had zero main landmarks — axe `landmark-one-main`
-    // + `region` (page content not contained by a landmark) both failed. A
-    // single top-level `<main>` wrapping all content satisfies both and matches
-    // the landing page's `<main id="main">` pattern.
-    <main id="main" className="mx-auto max-w-3xl py-8">
-      <PageHeader title={TITLE[locale]} />
-      <div
-        role="note"
-        className="mb-6 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
-      >
-        {version && (
-          <span className="mr-3">
-            <strong>{VERSION_LABEL[locale]}:</strong> {version}
-          </span>
-        )}
-        {lastUpdated && (
-          <span>
-            <strong>{LAST_UPDATED_LABEL[locale]}:</strong> {lastUpdated}
-          </span>
-        )}
-      </div>
-      <MarkdownView content={content} />
-      <p className="mt-6">
-        <Link href={`/${locale}/privacy/sub-processors`} className="underline">
+    // `<main id="main">` landmark is provided by PublicShell (satisfies axe
+    // landmark-one-main + region, matching the landing page's pattern).
+    <PublicShell width="prose">
+      <PublicPageHeader title={TITLE[locale]} />
+      {(version || lastUpdated) && (
+        <div role="note" className="mb-6">
+          <Callout tone="info">
+            {version && (
+              <span className="mr-3">
+                <strong className="font-[560] text-[var(--t1)]">{VERSION_LABEL[locale]}:</strong>{" "}
+                {version}
+              </span>
+            )}
+            {lastUpdated && (
+              <span>
+                <strong className="font-[560] text-[var(--t1)]">{LAST_UPDATED_LABEL[locale]}:</strong>{" "}
+                {lastUpdated}
+              </span>
+            )}
+          </Callout>
+        </div>
+      )}
+      <LegalProse content={content} />
+      <p className="mt-8">
+        <Link
+          href={`/${locale}/privacy/sub-processors`}
+          className="text-[var(--t1)] underline decoration-[var(--line-2)] underline-offset-2 hover:decoration-[var(--t2)]"
+        >
           {SUBPROC_LABEL[locale]} →
         </Link>
       </p>
-    </main>
+    </PublicShell>
   );
 }

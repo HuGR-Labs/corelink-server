@@ -1,11 +1,22 @@
 "use client";
 
 import * as React from "react";
+import { Button, Callout } from "@/components/ui/linear";
 import {
   clearPlaintextPat,
   getPlaintextPat,
 } from "@/lib/onboarding-state";
 
+/**
+ * PatModal — one-time minted-PAT reveal dialog (copy + shown-once + confirm).
+ *
+ * UI migrated to the Linear design language (frozen kit + globals.css tokens),
+ * matching the customer dashboard it is embedded in (KeysClient). Behaviour +
+ * contract are preserved exactly: the PAT is read from the in-memory holder on
+ * each render (never React state, never storage), the finish button stays
+ * disabled until the token is both copied AND the "saved" box is checked, and
+ * the injectable `copyImpl` is honoured for tests. All testids are unchanged.
+ */
 export interface PatModalProps {
   open: boolean;
   /** Called once user confirms they've stored the PAT safely. */
@@ -41,36 +52,65 @@ export function PatModal(props: PatModalProps): React.ReactElement | null {
   if (!props.open) return null;
 
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="pat-modal-title">
-      <h2 id="pat-modal-title">{props.labels.title}</h2>
-      <p data-testid="pat-warning">{props.labels.warning}</p>
-      <pre data-testid="pat-value" aria-label="personal access token">
-        {pat ?? ""}
-      </pre>
-      <button type="button" onClick={handleCopy} data-testid="pat-copy">
-        {props.labels.copy}
-      </button>
-      <label>
-        <input
-          type="checkbox"
-          checked={confirmed}
-          onChange={(e) => setConfirmed(e.target.checked)}
-          data-testid="pat-confirm-checkbox"
-        />
-        {props.labels.confirmSaved}
-      </label>
-      <button
-        type="button"
-        disabled={!confirmed || !copied}
-        onClick={() => {
-          // Zero the in-memory PAT before navigating away.
-          clearPlaintextPat();
-          props.onConfirm();
-        }}
-        data-testid="pat-finish"
+    <div className="lin-scrim">
+      <div
+        className="lin-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pat-modal-title"
       >
-        {props.labels.finish}
-      </button>
+        <h2 id="pat-modal-title" className="lin-modal__title">
+          {props.labels.title}
+        </h2>
+
+        <div className="lin-modal__body lin-checklist">
+          <div data-testid="pat-warning">
+            <Callout tone="warn">{props.labels.warning}</Callout>
+          </div>
+
+          <div className="lin-copy">
+            <span
+              className="lin-copy__val"
+              data-testid="pat-value"
+              aria-label="personal access token"
+            >
+              {pat ?? ""}
+            </span>
+            <button
+              type="button"
+              className="lin-copy__btn"
+              onClick={handleCopy}
+              data-testid="pat-copy"
+            >
+              {props.labels.copy}
+            </button>
+          </div>
+
+          <label className="lin-label">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+              data-testid="pat-confirm-checkbox"
+            />{" "}
+            {props.labels.confirmSaved}
+          </label>
+        </div>
+
+        <div className="lin-modal__actions">
+          <Button
+            disabled={!confirmed || !copied}
+            onClick={() => {
+              // Zero the in-memory PAT before navigating away.
+              clearPlaintextPat();
+              props.onConfirm();
+            }}
+            data-testid="pat-finish"
+          >
+            {props.labels.finish}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

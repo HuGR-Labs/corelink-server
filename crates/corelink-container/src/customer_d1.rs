@@ -12,8 +12,8 @@
 //!
 //! | Endpoint            | Source of truth                                            |
 //! |---------------------|------------------------------------------------------------|
-//! | overview            | `tenant` (0023/0031/0056/0057) + `tenant_storage_state` (0008) `SUM(bytes_used)` / `MAX(bytes_quota)` + `tenant_billing` (0055) + `byok_envelope` (0030) existence; `tenant_name` = `tenant_id`; `recent_activity` = `[]` (no suitable table) |
-//! | usage               | real `cas_bytes`/`quota_bytes` from `tenant_storage_state`; `reads`/`writes` = 0 + `daily` = `[]` (no per-day table) — only the CURRENT period is retained, an earlier period honestly reports 0 bytes |
+//! | overview            | `tenant` (0023/0031/0056/0057) + `tenant_storage_state` (0008) `SUM(bytes_used)` / `MAX(bytes_quota)` + `tenant_billing` (0055) + `byok_envelope` (0030) existence; `tenant_name` = `tenant_id`; `recent_activity` = newest 8 `customer_audit_events` (0077) via [`D1CustomerHandler::recent_activity`] (BE-3), honestly empty for a new tenant |
+//! | usage               | real `cas_bytes`/`quota_bytes` from `tenant_storage_state` + real `request_count` from `monthly_request_counts` (0071) via [`D1CustomerHandler::monthly_request_count`] (BE-1a); `reads`/`writes` = 0 + `daily` = `[]` (no per-op table) — only the CURRENT period retains bytes, an earlier period honestly reports 0 bytes |
 //! | audit               | `customer_audit_events` (migration 0077): newest-first, tenant-scoped, bounded; rows written best-effort by `keys create` (`pat.created`) + `team invite` (`team.invited`) |
 //! | billing             | `tenant_billing` (0055) + `tier_selections` (0039/0062); status map FROZEN (see [`map_billing_status`]); `invoices` = `[]` (no invoice-history surface yet) |
 //! | billing/portal      | `tenant_billing.stripe_customer_id` → Stripe billing-portal session; no customer id → 404 "no billing account" |
@@ -464,6 +464,14 @@ fn col_opt_i64(row: &D1Row, key: &str) -> Option<i64> {
     row.get(key).and_then(Value::as_i64)
 }
 
+/// Extract a monotonic counter column as `u64` (`0` for NULL / absent /
+/// negative — the `usage_daily` CHECK constraints keep these non-negative).
+fn col_u64(row: &D1Row, key: &str) -> u64 {
+    col_opt_i64(row, key)
+        .and_then(|c| u64::try_from(c).ok())
+        .unwrap_or(0)
+}
+
 // ─── D1CustomerHandler ────────────────────────────────────────────────────────
 
 /// Self-serve PAT TTL: 90 days (the canonical rotation cadence from
@@ -474,6 +482,33 @@ const SELF_SERVE_PAT_TTL: Duration = Duration::from_secs(90 * 86_400);
 /// (newest-first). Bounds the row source (migration 0077) so a long-lived
 /// tenant's activity log can never return an unbounded page.
 const AUDIT_QUERY_LIMIT: i64 = 100;
+
+/// Estimated wall-clock seconds a single cache hit saves — a hit avoids
+/// re-executing ~one build action. Feeds the DISPLAYED build-time-saved
+/// estimate on the customer usage surface; NEVER used to bill or gate.
+const SECONDS_SAVED_PER_HIT: f64 = 15.0;
+
+/// Estimated USD per compute-second (~$0.04/vCPU-hour) — deliberately
+/// conservative. Feeds the DISPLAYED $-saved estimate; NEVER used to bill.
+const USD_PER_COMPUTE_SECOND: f64 = 0.000_011_1;
+
+/// Aggregate of one period's `usage_daily` rows (migration 0089): the summed
+/// counters plus the per-day `{day, reads, writes}` buckets. DISPLAY telemetry
+/// only.
+#[derive(Debug, Default)]
+struct UsageRollup {
+    /// Summed cache reads across the period.
+    reads: u64,
+    /// Summed cache writes across the period.
+    writes: u64,
+    /// Summed cache read HITS across the period.
+    hits: u64,
+    /// Summed cache read MISSES across the period.
+    misses: u64,
+    /// Per-day buckets, oldest-first (`cas_bytes` always 0 — no per-day byte
+    /// history exists).
+    daily: Vec<DailyUsageBucket>,
+}
 
 /// Production D1-backed customer handler. Implements all 6
 /// `corelink-handler-customer` traits over the [`CustomerD1`] seam.
@@ -751,6 +786,99 @@ impl D1CustomerHandler {
             .unwrap_or_else(|| "active".to_owned());
         Ok(ByokStatus::new(status, None, None))
     }
+
+    /// Newest-first customer activity for the overview snapshot (dashboard-revival
+    /// BE-3). Reads the same `customer_audit_events` (0077) surface the audit
+    /// endpoint serves — written best-effort by the control-plane mutations
+    /// (`keys create` → `pat.created`, `team invite` → `team.invited`) — bounded
+    /// to `limit`, tenant-scoped, newest-first. Fail-CLOSED on transport (never a
+    /// fabricated row; an honestly-empty feed stays empty).
+    fn recent_activity(
+        &self,
+        tenant_id: &str,
+        limit: i64,
+    ) -> Result<Vec<CustomerAuditEventRow>, CustomerHandlerError> {
+        let rows = self.run(
+            "SELECT id, event_type, actor, target, ts_ms, detail \
+             FROM customer_audit_events WHERE tenant_id = ?1 \
+             ORDER BY ts_ms DESC LIMIT ?2",
+            vec![json!(tenant_id), json!(limit)],
+        )?;
+        Ok(rows
+            .iter()
+            .map(|row| {
+                CustomerAuditEventRow::new(
+                    col_opt_i64(row, "id")
+                        .map(|i| i.to_string())
+                        .unwrap_or_default(),
+                    col_opt_i64(row, "ts_ms").map(ms_to_iso8601).unwrap_or_default(),
+                    col_opt_str(row, "event_type").unwrap_or_default(),
+                    // No per-event severity column — informational activity only.
+                    "info",
+                    col_opt_str(row, "actor").unwrap_or_default(),
+                    col_opt_str(row, "detail").unwrap_or_default(),
+                )
+            })
+            .collect())
+    }
+
+    /// The billable request count for `(tenant, year_month)` from
+    /// `monthly_request_counts` (migration 0071) — the running counter the quota
+    /// gate already increments per request. READ-ONLY (never writes the hot-path
+    /// counter); `0` when no row exists (a period with no requests yet). The
+    /// `year_month` key format (`YYYY-MM`, UTC) matches [`period_from_ms`] and
+    /// the writer's `request_count::year_month_utc`, so a period lookup aligns.
+    fn monthly_request_count(
+        &self,
+        tenant_id: &str,
+        year_month: &str,
+    ) -> Result<u64, CustomerHandlerError> {
+        let rows = self.run(
+            "SELECT request_count FROM monthly_request_counts \
+             WHERE tenant_id = ?1 AND year_month = ?2 LIMIT 1",
+            vec![json!(tenant_id), json!(year_month)],
+        )?;
+        Ok(rows
+            .first()
+            .and_then(|r| col_opt_i64(r, "request_count"))
+            .and_then(|c| u64::try_from(c).ok())
+            .unwrap_or(0))
+    }
+
+    /// Per-period usage rollup for `(tenant, year_month)` from `usage_daily`
+    /// (migration 0089) — the DISPLAY telemetry feeding the dashboard ROI
+    /// surface (BE-1 reads/writes/daily + BE-2 hit-rate / $-saved). A READ-ONLY
+    /// period scan (`day LIKE 'YYYY-MM-%'`, `ORDER BY day`); it NEVER writes the
+    /// hot-path counters. Fail-CLOSED on transport like
+    /// [`Self::monthly_request_count`]: a transport/decode error propagates
+    /// (→ 500) rather than degrading to a fabricated empty rollup. An honestly
+    /// empty result set (no rows for the period) is a zeroed rollup with an
+    /// empty daily series. `cas_bytes` is 0 in every bucket — no per-day byte
+    /// history exists.
+    fn usage_daily_rollup(
+        &self,
+        tenant_id: &str,
+        year_month: &str,
+    ) -> Result<UsageRollup, CustomerHandlerError> {
+        let rows = self.run(
+            "SELECT day, reads, writes, hits, misses FROM usage_daily \
+             WHERE tenant_id = ?1 AND day LIKE ?2 ORDER BY day",
+            vec![json!(tenant_id), json!(format!("{year_month}-%"))],
+        )?;
+        let mut roll = UsageRollup::default();
+        for row in &rows {
+            let reads = col_u64(row, "reads");
+            let writes = col_u64(row, "writes");
+            roll.reads = roll.reads.saturating_add(reads);
+            roll.writes = roll.writes.saturating_add(writes);
+            roll.hits = roll.hits.saturating_add(col_u64(row, "hits"));
+            roll.misses = roll.misses.saturating_add(col_u64(row, "misses"));
+            let day = col_opt_str(row, "day").unwrap_or_default();
+            // cas_bytes = 0: no per-day byte history exists (0089 has no byte col).
+            roll.daily.push(DailyUsageBucket::new(day, reads, writes, 0));
+        }
+        Ok(roll)
+    }
 }
 
 // ─── Trait impls ──────────────────────────────────────────────────────────────
@@ -771,6 +899,9 @@ impl CustomerOverviewHandler for D1CustomerHandler {
         let (cas_bytes, quota_bytes) = self.storage_usage(&req.caller_tenant)?;
         let billing = self.billing_row(&req.caller_tenant)?;
         let byok = self.byok_status(&req.caller_tenant, Some(&tenant))?;
+        // BE-3: the newest few control-plane events for the snapshot feed
+        // (honestly empty for a brand-new tenant — never a fabricated row).
+        let recent = self.recent_activity(&req.caller_tenant, 8)?;
 
         let plan = col_opt_str(&tenant, "tier").unwrap_or_else(|| "free".to_owned());
         let next_invoice_at = billing
@@ -802,8 +933,7 @@ impl CustomerOverviewHandler for D1CustomerHandler {
             // amount_due_cents is not materialized in D1: honest 0.
             OverviewBilling::new(billing_status, next_invoice_at, 0, "usd"),
             byok,
-            // No customer-facing activity table yet: honest empty.
-            Vec::<CustomerAuditEventRow>::new(),
+            recent,
         );
 
         self.emit_audit(
@@ -842,15 +972,43 @@ impl CustomerUsageHandler for D1CustomerHandler {
             0
         };
 
+        // Billable request count for the period (monthly_request_counts, 0071):
+        // a real usage-vs-quota signal. The quota gate already increments this
+        // per request, so surfacing it is a READ — no hot-path write added.
+        let request_count = self.monthly_request_count(&req.caller_tenant, &requested)?;
+
+        // BE-1 + BE-2: real reads/writes/daily + cache hit-rate + estimated
+        // build-time / $ saved from usage_daily (0089). DISPLAY telemetry — a
+        // READ-ONLY period scan, never a hot-path write, fail-CLOSED on transport.
+        let rollup = self.usage_daily_rollup(&req.caller_tenant, &requested)?;
+
+        // hit_rate: fraction 0.0..=1.0; None when there were no cache reads at
+        // all (hits + misses == 0) — an honest "no data", NEVER a fabricated rate.
+        let cache_reads = rollup.hits.saturating_add(rollup.misses);
+        let hit_rate = if cache_reads == 0 {
+            None
+        } else {
+            Some(rollup.hits as f64 / cache_reads as f64)
+        };
+
+        // Estimated build-time / compute-cost saved (DISPLAYED AS AN ESTIMATE):
+        //   time_saved_seconds   = hits * SECONDS_SAVED_PER_HIT
+        //   dollars_saved_cents  = round(time_saved_seconds * USD_PER_COMPUTE_SECOND * 100)
+        let seconds_saved = rollup.hits as f64 * SECONDS_SAVED_PER_HIT;
+        let time_saved_seconds = seconds_saved as u64;
+        let dollars_saved_cents = (seconds_saved * USD_PER_COMPUTE_SECOND * 100.0).round() as u64;
+
         let resp = UsageResponse::new(
             requested,
             period_bytes,
-            // reads/writes are not tracked per-tenant yet: honest 0.
-            0,
-            0,
+            rollup.reads,
+            rollup.writes,
             quota_bytes,
-            // No per-day rollup table yet: honest empty.
-            Vec::<DailyUsageBucket>::new(),
+            rollup.daily,
+            request_count,
+            hit_rate,
+            time_saved_seconds,
+            dollars_saved_cents,
         );
 
         self.emit_audit(
@@ -2062,7 +2220,7 @@ mod tests {
         assert_eq!(resp.byok.status, "none", "no envelope row → none");
         assert!(
             resp.recent_activity.is_empty(),
-            "no activity table: honest []"
+            "no seeded customer_audit_events → honestly empty feed (BE-3)"
         );
         // Audit ordering: Attempted then Served.
         let kinds: Vec<_> = f.audit.snapshot().unwrap().iter().map(|e| e.kind).collect();
@@ -2076,6 +2234,56 @@ mod tests {
         // SLI emitted, success.
         let obs = f.sli.snapshot().unwrap();
         assert!(obs.iter().any(|o| !o.is_error));
+    }
+
+    #[test]
+    fn overview_recent_activity_reads_seeded_audit_events() {
+        // BE-3: the overview snapshot feed reads the same `customer_audit_events`
+        // (0077) surface the audit endpoint serves — newest-first, mapped to
+        // `CustomerAuditEventRow`, `severity` = constant `info`. A seeded event
+        // surfaces on the snapshot; it is NOT fabricated and NOT hard-empty.
+        let f = fixture_with(
+            MockD1::with(vec![
+                ("FROM tenant WHERE", vec![tenant_row_fixture()]),
+                (
+                    "FROM tenant_storage_state",
+                    vec![row(&[
+                        ("bytes_used", json!(1_i64)),
+                        ("bytes_quota", json!(10_000_000_i64)),
+                    ])],
+                ),
+                (
+                    "FROM customer_audit_events",
+                    vec![row(&[
+                        ("id", json!(7)),
+                        ("event_type", json!("pat.created")),
+                        ("actor", json!("clpat_admin")),
+                        ("target", json!("pat-7")),
+                        ("ts_ms", json!(1_700_000_000_000_i64)),
+                        ("detail", json!("Created API key \"ci\" (read-only)")),
+                    ])],
+                ),
+            ]),
+            None,
+        );
+        let resp = f
+            .handler
+            .overview(OverviewRequest::new(TENANT, "clpat_x", 0))
+            .unwrap();
+        assert_eq!(
+            resp.recent_activity.len(),
+            1,
+            "seeded customer_audit_events row surfaces on the snapshot (BE-3)"
+        );
+        assert_eq!(resp.recent_activity[0].event_id, "7");
+        assert_eq!(resp.recent_activity[0].event_type, "pat.created");
+        assert_eq!(resp.recent_activity[0].severity, "info");
+        assert_eq!(resp.recent_activity[0].actor, "clpat_admin");
+        assert!(
+            resp.recent_activity[0].ts.ends_with('Z'),
+            "ISO-8601 ts: {}",
+            resp.recent_activity[0].ts
+        );
     }
 
     #[test]
@@ -2165,7 +2373,44 @@ mod tests {
         assert_eq!(resp.quota_bytes, 1_000_000);
         assert_eq!(resp.reads, 0);
         assert_eq!(resp.writes, 0);
+        assert_eq!(
+            resp.request_count, 0,
+            "no monthly_request_counts row → honest 0"
+        );
         assert!(resp.daily.is_empty(), "no per-day table: honest []");
+    }
+
+    #[test]
+    fn usage_request_count_reads_monthly_counter() {
+        // BE-1a: the running request counter the quota gate maintains
+        // (monthly_request_counts, 0071) surfaces as a real usage-vs-quota
+        // signal — a READ, never a hot-path write. Keyed on the same `YYYY-MM`
+        // period as the storage read.
+        let f = fixture_with(
+            MockD1::with(vec![
+                ("FROM tenant WHERE", vec![tenant_row_fixture()]),
+                (
+                    "FROM tenant_storage_state",
+                    vec![row(&[
+                        ("bytes_used", json!(512_i64)),
+                        ("bytes_quota", json!(1_000_000_i64)),
+                    ])],
+                ),
+                (
+                    "FROM monthly_request_counts",
+                    vec![row(&[("request_count", json!(4_211_i64))])],
+                ),
+            ]),
+            None,
+        );
+        let resp = f
+            .handler
+            .usage(UsageRequest::new(TENANT, "clpat_x", None, 0))
+            .unwrap();
+        assert_eq!(
+            resp.request_count, 4_211,
+            "seeded monthly_request_counts row surfaces (BE-1a)"
+        );
     }
 
     #[test]
@@ -2201,6 +2446,134 @@ mod tests {
             resp.quota_bytes, 1_000_000,
             "the quota ceiling is still real"
         );
+    }
+
+    /// BE-1 + BE-2: `usage_daily` (0089) rollup — reads/writes/daily are the
+    /// real period sums, hit_rate = hits/(hits+misses), and the time/$ estimates
+    /// follow the frozen formulas.
+    #[test]
+    fn usage_daily_rollup_sums_days_and_computes_roi() {
+        let f = fixture_with(
+            MockD1::with(vec![
+                ("FROM tenant WHERE", vec![tenant_row_fixture()]),
+                (
+                    "FROM tenant_storage_state",
+                    vec![row(&[
+                        ("bytes_used", json!(512_i64)),
+                        ("bytes_quota", json!(1_000_000_i64)),
+                    ])],
+                ),
+                (
+                    "FROM usage_daily",
+                    vec![
+                        row(&[
+                            ("day", json!("2023-11-01")),
+                            ("reads", json!(5_000_i64)),
+                            ("writes", json!(1_000_i64)),
+                            ("hits", json!(4_000_i64)),
+                            ("misses", json!(1_000_i64)),
+                        ]),
+                        row(&[
+                            ("day", json!("2023-11-02")),
+                            ("reads", json!(3_000_i64)),
+                            ("writes", json!(500_i64)),
+                            ("hits", json!(2_000_i64)),
+                            ("misses", json!(1_000_i64)),
+                        ]),
+                    ],
+                ),
+            ]),
+            None,
+        );
+        let resp = f
+            .handler
+            .usage(UsageRequest::new(TENANT, "clpat_x", None, 0))
+            .unwrap();
+        // Real period sums (were hardcoded 0).
+        assert_eq!(resp.reads, 8_000, "reads summed across days");
+        assert_eq!(resp.writes, 1_500, "writes summed across days");
+        // Daily series, oldest-first, cas_bytes always 0 (no per-day byte history).
+        assert_eq!(resp.daily.len(), 2);
+        assert_eq!(resp.daily[0], DailyUsageBucket::new("2023-11-01", 5_000, 1_000, 0));
+        assert_eq!(resp.daily[1], DailyUsageBucket::new("2023-11-02", 3_000, 500, 0));
+        // hit_rate = hits/(hits+misses) = 6000/8000 = 0.75.
+        assert_eq!(resp.hit_rate, Some(0.75));
+        // time_saved_seconds = hits * 15 = 6000 * 15 = 90_000.
+        assert_eq!(resp.time_saved_seconds, 90_000);
+        // dollars_saved_cents = round(90_000 * 0.0000111 * 100) = round(99.9) = 100.
+        assert_eq!(resp.dollars_saved_cents, 100);
+    }
+
+    /// hit_rate is `None` (not a fabricated 0.0/1.0) when there were no cache
+    /// reads at all (hits + misses == 0) — even if writes happened. With no
+    /// hits, the time/$ estimates are honest 0.
+    #[test]
+    fn usage_hit_rate_none_when_no_cache_reads() {
+        let f = fixture_with(
+            MockD1::with(vec![
+                ("FROM tenant WHERE", vec![tenant_row_fixture()]),
+                (
+                    "FROM tenant_storage_state",
+                    vec![row(&[
+                        ("bytes_used", json!(512_i64)),
+                        ("bytes_quota", json!(1_000_000_i64)),
+                    ])],
+                ),
+                (
+                    "FROM usage_daily",
+                    vec![row(&[
+                        ("day", json!("2023-11-01")),
+                        ("reads", json!(0_i64)),
+                        ("writes", json!(42_i64)),
+                        ("hits", json!(0_i64)),
+                        ("misses", json!(0_i64)),
+                    ])],
+                ),
+            ]),
+            None,
+        );
+        let resp = f
+            .handler
+            .usage(UsageRequest::new(TENANT, "clpat_x", None, 0))
+            .unwrap();
+        assert_eq!(resp.writes, 42, "writes still surface");
+        assert_eq!(resp.hit_rate, None, "no cache reads → honest null, never a fabricated rate");
+        assert_eq!(resp.time_saved_seconds, 0);
+        assert_eq!(resp.dollars_saved_cents, 0);
+    }
+
+    /// The rollup is a READ-ONLY period `SELECT` bound to the tenant + period
+    /// (`day LIKE 'YYYY-MM-%'`) — never a hot-path write.
+    #[test]
+    fn usage_daily_rollup_is_read_only_and_period_scoped() {
+        let f = fixture_with(
+            MockD1::with(vec![
+                ("FROM tenant WHERE", vec![tenant_row_fixture()]),
+                (
+                    "FROM tenant_storage_state",
+                    vec![row(&[
+                        ("bytes_used", json!(512_i64)),
+                        ("bytes_quota", json!(1_000_000_i64)),
+                    ])],
+                ),
+            ]),
+            None,
+        );
+        f.handler
+            .usage(UsageRequest::new(TENANT, "clpat_x", None, 0))
+            .unwrap();
+        let rollup_call = f
+            .db
+            .calls()
+            .into_iter()
+            .find(|(sql, _)| sql.contains("FROM usage_daily"))
+            .expect("usage_daily rollup query issued");
+        let (sql, binds) = rollup_call;
+        assert!(sql.trim_start().starts_with("SELECT"), "READ-ONLY select");
+        assert!(!sql.contains("INSERT") && !sql.contains("UPDATE"));
+        assert!(sql.contains("day LIKE ?2"));
+        assert_eq!(binds[0], json!(TENANT), "bound to the caller tenant");
+        assert_eq!(binds[1], json!("2023-11-%"), "period-scoped LIKE for the current period");
     }
 
     // ── Billing ──────────────────────────────────────────────────────────────

@@ -42,6 +42,12 @@ use crate::routes::audit_analytics::ShadowSinkFactory;
 pub mod ac;
 /// Admin HTTP routes (R-prep wire-up; wave-11).
 pub mod admin;
+/// Operator per-tenant deep-dive reads (usage/billing/consents/dsr/pats).
+/// Operator posture: internal-auth gated, same as `admin` — reached via the
+/// operator path, NOT the customer Worker (which strips internal-auth on
+/// `/v1/*`). Wiring the admin-ui operator console to this surface is a separate
+/// follow-up that applies to the whole operator plane, not just this module.
+pub mod admin_tenant_detail;
 /// Pilot-admin HTTP routes (Wave-29 stream-3): replaces the wave-27
 /// placeholder scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`,
 /// `pilot-24h-checkin.sh`) with proper endpoints + audit-emit
@@ -123,6 +129,10 @@ pub mod cas_erase;
 /// forwards these paths to the container; this module is the final link
 /// that makes them return real responses instead of 404.
 pub mod customer;
+/// Customer Runners read surface (BE-10): tenant-scoped entitlement/allowlist/runs.
+pub mod customer_runners;
+/// Customer Workspaces surface (BE-11): tenant-scoped snapshot CRUD + pin.
+pub mod workspaces;
 /// Internal DSR erasure route (WI-S11-008): `POST /_internal/dsr/erase`.
 /// Reachable only from the Cloudflare DO; gated by the same
 /// `X-Corelink-Internal-Auth` shared secret. Drives the 12-backend erasure
@@ -389,6 +399,20 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         );
     }
 
+    // Display usage aggregator (usage-metering-roi — the customer ROI surface):
+    // ONE in-process meter shared across the instrumented flagship cache surfaces
+    // (native CAS, Bazel REAPI, Turbo). Unlike the gates above, `record` is a
+    // cheap fire-and-forget lock+increment at each hit/miss/write decision — NEVER
+    // a D1 round-trip on the hot path — and a background flusher drains the
+    // accumulated deltas to `usage_daily` every ~30s. `from_env()` wires the
+    // D1-backed sink when StorageEnv is present; in dev/CI it is INERT (`record`
+    // is a no-op, `spawn_flusher` a no-op), mirroring the gates above. It is NEVER
+    // read on a request path and never bills anything (display telemetry only).
+    let usage_meter = crate::usage_meter::UsageMeter::from_env();
+    usage_meter
+        .clone()
+        .spawn_flusher(std::time::Duration::from_secs(30));
+
     // Native data-plane PAT possession gate (red-team #4) + per-tenant storage
     // byte accounting (#1). Built from env (PAT_SIGNING_KEY + StorageEnv / D1);
     // `None` in dev/CI ⇒ the native plane skips the Argon2id backstop and the
@@ -501,6 +525,8 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         pat_gate: native_pat_gate.clone(),
         put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        // usage-metering-roi: the ONE shared display meter (clone = cheap Arc).
+        usage_meter: usage_meter.clone(),
     };
     let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) = ac::build_handlers();
     // Storage byte accounting (cluster B+C) for the AC plane: same decorator
@@ -551,6 +577,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     let mut bazel_state = bazel_v2::build_handlers_from(cas_read, cas_write, ac_lookup, ac_update);
     bazel_state.quota = quota.clone();
     bazel_state.pat_gate = native_pat_gate.clone();
+    bazel_state.usage_meter = usage_meter.clone();
     // SECURITY (admin control-plane gate): the `/v1/admin/*` and
     // `/v1/admin/pilots/*` surfaces are OPERATOR-ONLY — they must NOT be
     // reachable by any authenticated tenant PAT. We gate them behind the
@@ -619,6 +646,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // `POST /v1/customer/account/delete` route fails CLOSED (503). Mirrors the
     // `pat_gate` wiring above (a cross-module collaborator composed at the root).
     customer_state.account_deletion = customer::account_deletion_from_env();
+    // Customer Runners (BE-10) + Workspaces (BE-11): tenant-scoped, own-tenant
+    // only (tenant derived from the session header, never a client param). Wire
+    // the SAME native-PAT possession backstop the customer/CAS states carry — a
+    // leaked PAT_SIGNING_KEY must not forge access to these surfaces either.
+    let mut customer_runners_state = customer_runners::build_state_from_env();
+    customer_runners_state.pat_gate = native_pat_gate.clone();
+    let mut workspaces_state = workspaces::build_handlers_from_env();
+    workspaces_state.pat_gate = native_pat_gate.clone();
     // `/v1/users/me` gets the identical backstop (it reflected a forged PAT's
     // claimed identity un-gated).
     let users_state = users::UsersRouteState {
@@ -628,15 +663,21 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     turbo_state.quota = quota.clone();
     turbo_state.pat_gate = native_pat_gate.clone();
     turbo_state.bytes = byte_accountant.clone();
+    turbo_state.usage_meter = usage_meter.clone();
     let mut router = Router::new()
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
         .merge(admin::router(admin_state))
+        .merge(admin_tenant_detail::router(
+            admin_tenant_detail::AdminTenantDetailState::from_env(),
+        ))
         .merge(admin_pilot::router(pilot_admin_state))
         .merge(audit_export::router(audit_export_state))
         .merge(audit_analytics::router(audit_analytics_state))
         .merge(users::router(users_state))
         .merge(customer::router(customer_state))
+        .merge(customer_runners::router(customer_runners_state))
+        .merge(workspaces::router(workspaces_state))
         .merge(bazel_v2::router(bazel_state))
         .merge(turbo_v8::router(turbo_state));
 
@@ -853,6 +894,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
 
     router
 }
+
+/// Internal DSR legitimacy-anchor register route (GDPR1, per-user erasure):
+/// `POST /_internal/dsr/anchor`. Lets the erasure-REQUEST authority register a
+/// `dsr_requested` anchor for `(dsr_id, tenant)` so the per-digest CAS erase can
+/// authorize a per-user (not whole-account) erasure. Dedicated key, held by a
+/// DIFFERENT authority than the eraser (anti-forge). See `routes/dsr_anchor.rs`.
+/// (Declared here, after the OKF-cited items above, to keep line-anchors stable.)
+pub mod dsr_anchor;
 
 #[cfg(test)]
 #[allow(

@@ -12,6 +12,7 @@ import {
   LEGAL_BASIS_OPTIONS,
   RETENTION_OPTIONS,
 } from "@/lib/consent-types";
+import { Field, Select, Textarea } from "@/components/ui/linear";
 
 export interface ConsentFormProps {
   value: ConsentSixFields;
@@ -30,8 +31,18 @@ export interface ConsentFormProps {
   ref?: { current: HTMLDivElement | null } | null;
 }
 
+interface ConsentLabels {
+  purpose: string;
+  legal_basis: string;
+  data_categories: string;
+  retention_period: string;
+  third_parties: string;
+  withdrawal_method: string;
+  captured_at: string;
+}
+
 // English fallback labels. Real i18n strings ship via WI-S16-006.
-const LABELS: Record<string, Record<string, string>> = {
+const LABELS: Record<string, ConsentLabels> = {
   "en-US": {
     purpose: "1. Purpose (what data + why)",
     legal_basis: "2. Legal basis",
@@ -61,7 +72,7 @@ const LABELS: Record<string, Record<string, string>> = {
   },
 };
 
-function labelsFor(locale: string): Record<string, string> {
+function labelsFor(locale: string): ConsentLabels {
   return LABELS[locale] ?? LABELS["en-US"]!;
 }
 
@@ -84,14 +95,13 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
         ref={ref as React.RefObject<HTMLDivElement> | null | undefined}
         // CTRL-PRIV-001 / EVT-012 privacy guard: analytics + session-replay
         // tools MUST treat .privacy-no-capture as opt-out.
-        className="privacy-no-capture consent-form"
+        className="privacy-no-capture consent-form lin flex flex-col gap-5"
         data-testid="consent-form"
         role="form"
         aria-label="Consent six-field capture form"
       >
-        <div>
-          <label htmlFor="consent-purpose">{t.purpose}</label>
-          <textarea
+        <Field label={t.purpose} htmlFor="consent-purpose">
+          <Textarea
             id="consent-purpose"
             data-testid="field-purpose"
             value={value.purpose}
@@ -100,11 +110,10 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
             required
             aria-required="true"
           />
-        </div>
+        </Field>
 
-        <div>
-          <label htmlFor="consent-legal-basis">{t.legal_basis}</label>
-          <select
+        <Field label={t.legal_basis} htmlFor="consent-legal-basis">
+          <Select
             id="consent-legal-basis"
             data-testid="field-legal-basis"
             value={value.legal_basis}
@@ -117,16 +126,27 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
                 {o}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </Field>
 
         <fieldset>
-          <legend id="consent-categories-legend">{t.data_categories}</legend>
-          <div role="group" aria-labelledby="consent-categories-legend" data-testid="field-data-categories">
+          <legend id="consent-categories-legend" className="lin-label">
+            {t.data_categories}
+          </legend>
+          <div
+            role="group"
+            aria-labelledby="consent-categories-legend"
+            data-testid="field-data-categories"
+            className="mt-2 flex flex-wrap gap-x-6 gap-y-3"
+          >
             {DATA_CATEGORY_OPTIONS.map((cat) => {
               const id = `consent-cat-${cat}`;
               return (
-                <label key={cat} htmlFor={id}>
+                <label
+                  key={cat}
+                  htmlFor={id}
+                  className="flex cursor-pointer items-center gap-2 text-[13.5px]"
+                >
                   <input
                     id={id}
                     type="checkbox"
@@ -134,6 +154,7 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
                     checked={value.data_categories.includes(cat)}
                     onChange={() => toggleCategory(cat)}
                     disabled={readOnly}
+                    className="h-4 w-4 accent-white"
                   />
                   {cat}
                 </label>
@@ -142,9 +163,8 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
           </div>
         </fieldset>
 
-        <div>
-          <label htmlFor="consent-retention">{t.retention_period}</label>
-          <select
+        <Field label={t.retention_period} htmlFor="consent-retention">
+          <Select
             id="consent-retention"
             data-testid="field-retention"
             value={value.retention_period}
@@ -157,11 +177,13 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
                 {o}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </Field>
 
         <div>
-          <span id="consent-third-parties-label">{t.third_parties}</span>
+          <span id="consent-third-parties-label" className="lin-label">
+            {t.third_parties}
+          </span>
           <ul
             aria-labelledby="consent-third-parties-label"
             data-testid="field-third-parties"
@@ -175,7 +197,9 @@ export function ConsentForm({ value, onChange, locale, capturedAtMs, readOnly, r
         </div>
 
         <div>
-          <span id="consent-withdrawal-label">{t.withdrawal_method}</span>
+          <span id="consent-withdrawal-label" className="lin-label">
+            {t.withdrawal_method}
+          </span>
           {/* Static disclosure text. `aria-readonly` is NOT a valid ARIA
               attribute on a paragraph (it only applies to widget roles like
               textbox/checkbox/grid), so it tripped axe `aria-allowed-attr`

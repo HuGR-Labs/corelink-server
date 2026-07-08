@@ -7,6 +7,24 @@ import {
   type CountdownState,
 } from "@/lib/sla-countdown";
 import { interpolate, tFor, type Locale } from "@/i18n";
+import { StatusDot } from "@/components/ui/linear";
+
+/** Map the server-derived countdown color to a Linear status tone. */
+function toneFor(
+  color: CountdownColor,
+): "neutral" | "success" | "warn" | "danger" {
+  switch (color) {
+    case "green":
+      return "success";
+    case "yellow":
+      return "warn";
+    case "red":
+    case "overdue":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
 
 export interface SlaCountdownProps {
   locale: Locale;
@@ -59,7 +77,9 @@ export function SlaCountdown(props: SlaCountdownProps) {
       data-color={state.color}
       role="timer"
       aria-live="polite"
+      className="lin-badge"
     >
+      <StatusDot tone={toneFor(state.color)} />
       {text}
     </span>
   );

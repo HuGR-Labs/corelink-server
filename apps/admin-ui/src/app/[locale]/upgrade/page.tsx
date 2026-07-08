@@ -38,12 +38,9 @@
  * middleware already runs `clerkMiddleware` for it, which is what makes
  * the server-side `auth()` probe above resolvable.
  *
- * Mirrors the conventions of the sibling `[locale]/upgraded/page.tsx`:
- * a server component, `params`/`searchParams` as Promises (Next 15),
- * Tailwind styling, hardcoded English copy with the corresponding
- * `upgrade.*` message keys parked in `src/i18n/locales/en.json` for
- * future wiring. Works for all locales — locale only feeds the checkout
- * body (post-Checkout redirect URLs) and the in-page links.
+ * UI: migrated to the Linear design language (frozen kit + globals.css
+ * tokens), matching the customer dashboard. The dark canvas comes from the
+ * page-scoped `.cx-shell` / `.cx-main` wrapper (no shared layout touched).
  */
 
 import * as React from "react";
@@ -52,6 +49,7 @@ import { redirect } from "next/navigation";
 import type { Locale } from "@/i18n/LocaleContext";
 import { TIERS, normalizeCheckoutTier } from "@/lib/pricing";
 import { UpgradeButton } from "@/components/UpgradeButton";
+import { Callout, Card } from "@/components/ui/linear";
 
 /**
  * Resolve the Clerk session token at the server boundary. Verbatim
@@ -99,60 +97,55 @@ export default async function UpgradePage(props: {
   const tierName = card?.name ?? tier.charAt(0).toUpperCase() + tier.slice(1);
 
   return (
-    <main
-      className="mx-auto flex max-w-2xl flex-col items-center px-4 py-24 text-center sm:px-6 lg:px-8"
-      data-testid="upgrade-root"
-    >
-      <h1
-        className="text-4xl font-bold tracking-tight text-slate-900"
-        data-testid="upgrade-heading"
+    <div className="cx-shell lin">
+      <main
+        className="cx-main"
+        data-testid="upgrade-root"
+        aria-labelledby="upgrade-heading"
       >
-        Upgrade to {tierName}
-      </h1>
+        <h1 id="upgrade-heading" data-testid="upgrade-heading">
+          Upgrade to {tierName}
+        </h1>
 
-      {card?.price ? (
-        <p
-          className="mt-4 flex items-baseline gap-1"
-          data-testid="upgrade-price"
-        >
-          <span className="text-4xl font-bold text-slate-900">
-            {card.price}
-          </span>
-          <span className="text-sm text-slate-500">{card.cadence}</span>
+        <Card>
+          {card?.price ? (
+            <div className="lin-stat__value" data-testid="upgrade-price">
+              {card.price}{" "}
+              <span className="lin-card__meta">{card.cadence}</span>
+            </div>
+          ) : null}
+
+          {/* Redirect status — announced to screen readers while the
+              auto-started checkout POST mints the Stripe session and the
+              browser hands off. */}
+          <div
+            className="lin-mt"
+            role="status"
+            aria-live="polite"
+            data-testid="upgrade-redirect-status"
+          >
+            <Callout tone="info">
+              Taking you to secure Stripe Checkout&hellip; CoreLink never sees
+              your card number — Stripe handles all payment data.
+            </Callout>
+          </div>
+
+          {/* Auto-start + manual fallback in one control: the POST fires on
+              mount; if it fails (e.g. the DPA-first 403) the error surfaces
+              inline and this same button retries. */}
+          <div className="lin-mt" data-testid="upgrade-action">
+            <UpgradeButton locale={locale} tier={tier} autoStart />
+          </div>
+        </Card>
+
+        <p className="lin-mt lin-card__meta" data-testid="upgrade-note">
+          Not redirected automatically? Use the button above, or{" "}
+          <Link href={`/${locale}/pricing`} data-testid="upgrade-pricing-link">
+            compare all plans
+          </Link>
+          .
         </p>
-      ) : null}
-
-      {/* Redirect status — announced to screen readers while the
-          auto-started checkout POST mints the Stripe session and the
-          browser hands off. */}
-      <p
-        className="mt-6 text-lg text-slate-600"
-        role="status"
-        aria-live="polite"
-        data-testid="upgrade-redirect-status"
-      >
-        Taking you to secure Stripe Checkout&hellip; CoreLink never sees
-        your card number — Stripe handles all payment data.
-      </p>
-
-      {/* Auto-start + manual fallback in one control: the POST fires on
-          mount; if it fails (e.g. the DPA-first 403) the error surfaces
-          inline and this same button retries. */}
-      <div className="mt-8" data-testid="upgrade-action">
-        <UpgradeButton locale={locale} tier={tier} autoStart />
-      </div>
-
-      <p className="mt-10 text-sm text-slate-500" data-testid="upgrade-note">
-        Not redirected automatically? Use the button above, or{" "}
-        <Link
-          href={`/${locale}/pricing`}
-          className="underline hover:text-slate-700"
-          data-testid="upgrade-pricing-link"
-        >
-          compare all plans
-        </Link>
-        .
-      </p>
-    </main>
+      </main>
+    </div>
   );
 }

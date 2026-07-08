@@ -432,6 +432,21 @@ export async function handleSessionExchange(
  * runners-entitlement) BEFORE calling this — it performs no authentication of
  * its own beyond the per-principal mint throttle.
  *
+ * `extraFields` (optional) is a small, JSON-serialisable bag merged verbatim
+ * into the 200 response body AFTER the standard mint envelope — the D-9
+ * runner-mint caller uses it to thread its `max_concurrency` (the derived
+ * tenant's runner ceiling) through this single mint authority without a second
+ * response shape. It NEVER carries token material (that stays in the standard
+ * fields) and is absent for the session/token-exchange callers.
+ *
+ * `runnerJobAcKey` (optional, cf-multitenant WP5a) marks the minted PAT as a
+ * NARROWED runner-job PAT: when provided, the persisted `pat` row also writes
+ * `runner_job_ac_key = <value>` (`"*"` = deny-DELETE only; a BLAKE3 hex = also
+ * exact-key AC restricted). The container (WP5b) reads it back via the Worker's
+ * forwarded server-trust headers and ENFORCES the narrowing. When OMITTED (the
+ * session/token-exchange/rotate callers) the column stays NULL and those PATs
+ * are UNCHANGED — a normal PAT with no narrowing.
+ *
  * @returns the public {@link SessionExchangeResponse} (200) or a fail-CLOSED
  *   `reapiError` Response (429 throttle, 500 upstream/malformed).
  */
@@ -443,6 +458,8 @@ export async function mintScopedPat(
   ttlSeconds: number,
   scope: string,
   internalAuthKey: string,
+  extraFields?: Readonly<Record<string, string | number | boolean>>,
+  runnerJobAcKey?: string,
 ): Promise<Response> {
   // Route to the _system DO which fronts the container, then call the audited
   // /_internal/pat/mint route with the SERVER-trusted internal-auth header.
@@ -572,24 +589,47 @@ export async function mintScopedPat(
     return reapiError("INTERNAL_ERROR", "session exchange mint malformed", 500, requestId);
   }
   try {
-    const insertResult = await env.CONFIG_DB.prepare(
-      "INSERT INTO pat " +
-        "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
-        " shown_once_token, shown_once_consumed, created_ms) " +
-        "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
-    )
-      .bind(
-        minted.pat_id,
-        tenantId,
-        minted.hash,
-        canonicalScope,
-        minted.expires_ms,
-        minted.token_id,
-        // shown_once_token: the unique, non-secret token_id (NEVER the plaintext).
-        minted.token_id,
-        Date.now(),
-      )
-      .run();
+    // WP5a: when the caller marks this a NARROWED runner-job PAT, ALSO write
+    // `runner_job_ac_key`. When omitted the column is not written at all → it
+    // stays NULL (a normal PAT), so the session/token-exchange/rotate callers'
+    // persisted row is UNCHANGED. The two INSERT variants differ only by that
+    // one column+bind; everything else is byte-identical.
+    const stmt =
+      runnerJobAcKey === undefined
+        ? env.CONFIG_DB.prepare(
+            "INSERT INTO pat " +
+              "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
+              " shown_once_token, shown_once_consumed, created_ms) " +
+              "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8)",
+          ).bind(
+            minted.pat_id,
+            tenantId,
+            minted.hash,
+            canonicalScope,
+            minted.expires_ms,
+            minted.token_id,
+            // shown_once_token: the unique, non-secret token_id (NEVER the plaintext).
+            minted.token_id,
+            Date.now(),
+          )
+        : env.CONFIG_DB.prepare(
+            "INSERT INTO pat " +
+              "(pat_id, tenant_id, pat_hash, scope, expires_ms, token_id, " +
+              " shown_once_token, shown_once_consumed, created_ms, runner_job_ac_key) " +
+              "VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 1, ?8, ?9)",
+          ).bind(
+            minted.pat_id,
+            tenantId,
+            minted.hash,
+            canonicalScope,
+            minted.expires_ms,
+            minted.token_id,
+            // shown_once_token: the unique, non-secret token_id (NEVER the plaintext).
+            minted.token_id,
+            Date.now(),
+            runnerJobAcKey,
+          );
+    const insertResult = await stmt.run();
     // A plain INSERT (not OR IGNORE) surfaces FK / UNIQUE / CHECK violations as a
     // throw (the primary signal, caught below). As a belt-and-braces guard against
     // a silent no-op, fail CLOSED if D1 explicitly reports zero rows changed — a
@@ -622,7 +662,10 @@ export async function mintScopedPat(
     tenant: tenantId,
     expires_ms: minted.expires_ms,
   };
-  return new Response(JSON.stringify(out), {
+  // Merge any caller-supplied extra fields (e.g. runner-mint's max_concurrency)
+  // AFTER the standard envelope. The spread is over a small, non-secret bag.
+  const outBody = extraFields === undefined ? out : { ...out, ...extraFields };
+  return new Response(JSON.stringify(outBody), {
     status: 200,
     headers: {
       "Content-Type": "application/json",

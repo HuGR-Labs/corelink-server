@@ -171,6 +171,26 @@ pub const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_i
 /// active). Binds `?1..?4` = (tenant_id, tier, subscription_started_at_ms,
 /// correlation_id). Already schema-correct (the #172 fix).
 pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'active', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'active', subscription_started_at_ms = excluded.subscription_started_at_ms, correlation_id = excluded.correlation_id";
+/// DOWNGRADE a tenant's tier → `subscription_state='inactive'` (the
+/// `customer.subscription.deleted` cancel path). Binds `?1..?4` =
+/// (tenant_id, tier, subscription_started_at_ms, correlation_id).
+///
+/// The **signup-worker** (`apps/signup-worker/src/webhooks/stripe.ts`) is the
+/// PRIMARY, authoritative downgrade authority on cancel — it is the writer that
+/// flips the canonical `tier_selections.subscription_state` access gate off.
+/// This statement is the container materializer's DEFENSE-IN-DEPTH convergent
+/// write: as a SECOND writer of that gate, on cancel it must never write the
+/// contradictory `subscription_state='active'` that [`SQL_UPSERT_TIER`] hard-codes
+/// — it writes `'inactive'` so a canceled tenant converges to an access-OFF row
+/// regardless of which writer wins the race.
+///
+/// The `subscription_state` CHECK admits `('inactive','pending_checkout',
+/// 'active')` and the `subscription_started_when_active` CHECK only requires
+/// `subscription_started_at_ms` NOT NULL when state=`active` — so an `'inactive'`
+/// row needs no started_at, and the DO UPDATE **deliberately does NOT reset**
+/// `subscription_started_at_ms` (a downgrade must preserve the ORIGINAL
+/// subscription start; only [`SQL_UPSERT_TIER`]'s grant path refreshes it).
+pub const SQL_DOWNGRADE_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'inactive', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'inactive', correlation_id = excluded.correlation_id";
 
 /// UPSERT a tenant's Runners entitlement (`runners_entitlement`, migrations
 /// 0070 `max_concurrency` + 0072 `max_vcpu_h`). A SEPARATE axis from the cache
@@ -180,6 +200,17 @@ pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier,
 /// caller only seeds known tiers, all > 0). On re-purchase/upgrade the cap +
 /// ceiling are overwritten; `created_at_ms` is preserved on conflict.
 pub const SQL_UPSERT_RUNNERS_ENTITLEMENT: &str = "INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h) VALUES (?, ?, 'runners', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency = excluded.max_concurrency, max_vcpu_h = excluded.max_vcpu_h";
+
+/// REVOKE a tenant's Runners entitlement (`runners_entitlement`). The symmetric
+/// twin of [`SQL_UPSERT_RUNNERS_ENTITLEMENT`] — deletes the tenant's row when a
+/// Runners-tier Stripe subscription reaches a NON-granting status (`past_due`,
+/// `unpaid`, `paused`, `canceled`, …) or is `customer.subscription.deleted`, so
+/// the container materializer never leaves a stale entitlement granted. Binds
+/// `?1` = `tenant_id`. Idempotent (a DELETE of a non-existent row is a no-op).
+/// The **signup-worker** is the PRIMARY authority; this is the container's
+/// defense-in-depth convergent revoke (symmetric to how it seeds).
+pub const SQL_DELETE_RUNNERS_ENTITLEMENT: &str =
+    "DELETE FROM runners_entitlement WHERE tenant_id = ?";
 
 /// Canonical billing-D1 writer trait.
 ///
@@ -241,6 +272,23 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
         correlation_id: &str,
     ) -> Result<(), BillingD1Error>;
 
+    /// DOWNGRADE the tier for `tenant_id` on cancel. Production writes
+    /// `tier_selections.(tier, subscription_state='inactive', correlation_id)`
+    /// via [`SQL_DOWNGRADE_TIER`] — the container's defense-in-depth convergent
+    /// write for `customer.subscription.deleted` (the signup-worker is the
+    /// primary downgrade authority). UNLIKE [`Self::upsert_tier`], this writes
+    /// `subscription_state='inactive'` (the access gate OFF) and does NOT reset
+    /// `subscription_started_at_ms` on conflict (the original start is
+    /// preserved). `now_ms` is threaded for the INSERT (new-row) started_at bind
+    /// + trait parity; the native mirror keeps its `(tier, correlation_id)` shape.
+    fn downgrade_tier(
+        &self,
+        tenant_id: &str,
+        tier_wire: &str,
+        now_ms: i64,
+        correlation_id: &str,
+    ) -> Result<(), BillingD1Error>;
+
     /// UPSERT a tenant's Runners entitlement (`runners_entitlement`; the
     /// SEPARATE axis from `tier_selections`). Seeded when a Runners-tier Stripe
     /// subscription activates. Binds (tenant_id, max_concurrency, now_ms as
@@ -254,6 +302,15 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
         max_vcpu_h: u32,
         now_ms: i64,
     ) -> Result<(), BillingD1Error>;
+
+    /// REVOKE a tenant's Runners entitlement (`runners_entitlement`; the SEPARATE
+    /// axis from `tier_selections`). The symmetric twin of
+    /// [`Self::upsert_runners_entitlement`]: deletes the tenant's row via
+    /// [`SQL_DELETE_RUNNERS_ENTITLEMENT`] (bind `?1` = `tenant_id`) when a
+    /// Runners-tier subscription reaches a NON-granting status or is
+    /// `customer.subscription.deleted`, so a canceled/lapsed tenant never keeps a
+    /// stale entitlement. Idempotent (revoking an absent entitlement is a no-op).
+    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error>;
 }
 
 /// Native in-memory mirror. Stores every materialized row + every
@@ -445,6 +502,28 @@ impl BillingD1Writer for InMemoryBillingD1 {
         Ok(())
     }
 
+    fn downgrade_tier(
+        &self,
+        tenant_id: &str,
+        tier_wire: &str,
+        // Bound to `subscription_started_at_ms` on the INSERT (new-row) path in
+        // the production statement; the DO UPDATE does NOT touch it. The native
+        // mirror keeps its `(tier, correlation_id)` shape (parity is enough).
+        _now_ms: i64,
+        correlation_id: &str,
+    ) -> Result<(), BillingD1Error> {
+        self.check_armed()?;
+        let mut g = self
+            .tiers
+            .lock()
+            .map_err(|e| BillingD1Error::Transient(format!("tiers mutex poisoned: {e}")))?;
+        g.insert(
+            tenant_id.to_string(),
+            (tier_wire.to_string(), correlation_id.to_string()),
+        );
+        Ok(())
+    }
+
     fn upsert_runners_entitlement(
         &self,
         tenant_id: &str,
@@ -458,6 +537,18 @@ impl BillingD1Writer for InMemoryBillingD1 {
             .lock()
             .map_err(|e| BillingD1Error::Transient(format!("runners mutex poisoned: {e}")))?;
         g.insert(tenant_id.to_string(), (max_concurrency, max_vcpu_h));
+        Ok(())
+    }
+
+    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
+        self.check_armed()?;
+        let mut g = self
+            .runners
+            .lock()
+            .map_err(|e| BillingD1Error::Transient(format!("runners mutex poisoned: {e}")))?;
+        // Idempotent revoke: removing an absent entry is a no-op, mirroring the
+        // production `DELETE … WHERE tenant_id = ?` semantics (0 rows affected).
+        g.remove(tenant_id);
         Ok(())
     }
 }
@@ -524,6 +615,36 @@ mod tests {
         d1.clear_failure();
         d1.upsert_customer(row("stripe_customers")).unwrap();
         assert_eq!(d1.count_table("stripe_customers"), 1);
+    }
+
+    #[test]
+    fn runners_entitlement_seed_then_revoke_then_idempotent() {
+        let d1 = InMemoryBillingD1::new();
+        assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+        d1.upsert_runners_entitlement("ten_1", 80, 600, 1_700_000_000_000)
+            .unwrap();
+        assert_eq!(d1.runners_entitlement_of("ten_1"), Some((80, 600)));
+        // Revoke removes the entry.
+        d1.delete_runners_entitlement("ten_1").unwrap();
+        assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+        // Revoking an absent entitlement is an idempotent no-op.
+        d1.delete_runners_entitlement("ten_1").unwrap();
+        assert_eq!(d1.runners_entitlement_of("ten_1"), None);
+    }
+
+    #[test]
+    fn delete_runners_entitlement_sql_shape() {
+        let sql = SQL_DELETE_RUNNERS_ENTITLEMENT;
+        assert!(
+            sql.trim_start().to_ascii_lowercase().starts_with("delete"),
+            "{sql}"
+        );
+        assert!(sql.contains("FROM runners_entitlement"), "{sql}");
+        assert!(
+            sql.contains("WHERE tenant_id = ?"),
+            "must be tenant-scoped by a single bind: {sql}"
+        );
+        assert_eq!(sql.matches('?').count(), 1, "single tenant_id bind: {sql}");
     }
 
     #[test]
@@ -709,6 +830,40 @@ mod tests {
         assert!(
             SQL_READ_TIER.contains("WHERE tenant_id = ?"),
             "{SQL_READ_TIER}"
+        );
+    }
+
+    #[test]
+    fn downgrade_tier_sql_writes_inactive_not_active_and_preserves_start_0039() {
+        // CAA-360 MEDIUM fix: the cancel/downgrade path MUST write
+        // subscription_state='inactive' (access gate OFF), NEVER 'active'
+        // (which would leave a contradictory active-free row), and MUST NOT
+        // reset subscription_started_at_ms in the DO UPDATE (a downgrade
+        // preserves the original subscription start).
+        let sql = SQL_DOWNGRADE_TIER;
+        assert_eq!(sql.matches('?').count(), 4, "4 binds: {sql}");
+        assert!(sql.contains("INTO tier_selections"), "wrong table: {sql}");
+        assert!(sql.contains("ON CONFLICT(tenant_id)"), "wrong key: {sql}");
+        // Writes 'inactive' on BOTH the INSERT VALUES and the DO UPDATE.
+        assert!(
+            sql.contains("'inactive'"),
+            "must write the 'inactive' state: {sql}"
+        );
+        assert!(
+            sql.contains("subscription_state = 'inactive'"),
+            "DO UPDATE must set subscription_state='inactive': {sql}"
+        );
+        // MUST NOT write 'active' anywhere (the contradictory-row bug).
+        assert!(
+            !sql.contains("'active'"),
+            "cancel path must NEVER write subscription_state='active': {sql}"
+        );
+        // The DO UPDATE must NOT reset the original subscription start — the
+        // downgrade preserves it (only the grant path refreshes it). No
+        // `subscription_started_at_ms = excluded.` clause may appear.
+        assert!(
+            !sql.contains("subscription_started_at_ms = excluded"),
+            "downgrade must NOT reset subscription_started_at_ms on conflict: {sql}"
         );
     }
 }

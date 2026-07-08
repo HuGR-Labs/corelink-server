@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { MarkdownView } from "@/components/content/MarkdownView";
+import { PublicShell } from "@/components/public/PublicShell";
+import { PublicPageHeader } from "@/components/public/PublicPageHeader";
+import { LegalProse } from "@/components/public/LegalProse";
+import { Callout } from "@/components/ui/linear";
 import { formatDate } from "@/i18n/format";
 import type { Locale } from "@/i18n/LocaleContext";
 
@@ -32,24 +34,27 @@ export interface LegalDocPageProps {
 
 export function LegalDocPage({ locale, title, content, version, acceptedAt }: LegalDocPageProps) {
   return (
-    <article className="mx-auto max-w-3xl py-8">
-      <PageHeader title={title} />
-      <div
-        role="note"
-        className="mb-6 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900"
-      >
-        {version && (
-          <span className="mr-3">
-            <strong>{VERSION_LABEL[locale]}:</strong> {version}
-          </span>
-        )}
-        {acceptedAt && (
-          <span>
-            <strong>{ACCEPTED_LABEL[locale]}:</strong> {formatDate(acceptedAt, locale)}
-          </span>
-        )}
-      </div>
-      <MarkdownView content={content} />
-    </article>
+    <PublicShell width="prose">
+      <PublicPageHeader title={title} />
+      {(version || acceptedAt) && (
+        <div role="note" className="mb-6">
+          <Callout tone="info">
+            {version && (
+              <span className="mr-3">
+                <strong className="font-[560] text-[var(--t1)]">{VERSION_LABEL[locale]}:</strong>{" "}
+                {version}
+              </span>
+            )}
+            {acceptedAt && (
+              <span>
+                <strong className="font-[560] text-[var(--t1)]">{ACCEPTED_LABEL[locale]}:</strong>{" "}
+                {formatDate(acceptedAt, locale)}
+              </span>
+            )}
+          </Callout>
+        </div>
+      )}
+      <LegalProse content={content} />
+    </PublicShell>
   );
 }

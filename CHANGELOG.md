@@ -23,6 +23,395 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **container — cold-hydrate D1 thundering-herd: single-flight + TTL cache the per-op tier read.**
+  `RequestCountGate::check_and_increment` resolved the tenant's tier from D1 (`tenant.tier` +
+  `tier_selections`) on EVERY billable op with no cache. During the 2026-07-08 668 MB cold hydrate this
+  was ~135 of the D1 read-queries that saturated D1-over-HTTP and fail-closed the fabric's
+  introspect/billing path (transient, recovered). Fronted the D1 tier resolver with `CachedTierResolver`
+  — a warm tenant resolves in memory (zero D1); a cold PARALLEL burst coalesces into ONE inner resolve
+  via a per-tenant single-flight lock. The tier only selects the cap (durable `monthly_request_counts`
+  stays the sole authority), so a bounded ≤30 s-stale selector is an accepted approximation; the
+  fail-OPEN posture is unchanged (an inner `Err` is never cached). 5 tests incl. a 24-op burst → 1 resolve.
+
+### Added
+- **tooling — `scripts/admin/mint-dogfood-pat.sh`: mint + persist one tenant-scoped PAT for E2E/dogfood proofs.**
+  The corelink-runners fabricd consumes Bearer PATs (validates via CoreLink introspect) but does not mint them;
+  this produces one for a box-backend E2E proof. Mirrors `mintScopedPat` (`session_exchange.ts`): calls the
+  pure `/_internal/pat/mint` (HMAC + Argon2id, no persistence) then writes the D1 `pat` row via wrangler. No
+  hard-coded secrets (auth = `CORELINK_PAT_MINT_AUTH_KEY` from env); dry-run unless `--yes`; prints the token
+  plaintext once. Dev/ops utility only — no product-path change.
+
+- **container + worker — AC create-only (deny-overwrite) runner-job cred policy (anti AC-squat).**
+  Closes the runner-side "AC-squat" fast-follow: a runner-job credential may now CREATE a new
+  `(tenant, action_digest)` Action-Cache entry but may NOT OVERWRITE an existing one
+  (first-writer-wins → AC becomes append-only per tenant for these creds). This is the AC analog of
+  the existing deny-DELETE narrowing, at the SAME chokepoint — **key-agnostic** (every key) and
+  **tenant-scoped** (the tenant is the edge-injected id, never a caller param). New server-trusted
+  header `x-corelink-ac-create-only: 1`, which the Worker sets ONLY for a genuine runner-job cred
+  (alongside `x-corelink-runner-job` / `x-corelink-ac-key-allow`) and **strips** from every inbound
+  client request (added to `CLIENT_TRUST_HEADERS`) so it can never be forged. The container
+  (`scope.rs::RunnerJob::ac_create_only`) reads it fail-SAFE (only exact `"1"`, and never on a
+  non-runner-job) and the AC update route (`routes/ac.rs`) enforces it **atomically** off the store's
+  `durable` put-if-absent signal (no TOCTOU): a non-durable write by a create-only cred — or a
+  divergent-body overwrite — is rejected `409 {"error":"AC_CREATE_ONLY"}`. A first write, a normal
+  PAT, and a non-create-only runner-job cred are unchanged. Two-authority anti-poisoning posture:
+  INV-AC-RESULT-HASH-IMMUTABLE (divergent bytes) + create-only cred policy (any overwrite).
+- **container — usage metering for the customer ROI surface (BE-1/BE-2), hot-path-safe.**
+  New in-process `usage_meter` aggregator: cache surfaces call a cheap in-memory
+  `record(tenant, ReadHit|ReadMiss|Write)` (no `await`, no I/O — never a synchronous
+  D1 write on the read hot path), and a background task flushes additive deltas every
+  ~30s into the new `usage_daily` D1 table (migration 0089) with a `+=` UPSERT (so N
+  container instances sum without coordination). The customer `usage` handler reads
+  that table to serve real reads/writes/daily + cache **hit-rate** (hits/(hits+misses))
+  and an **estimated** build-time / $ saved, replacing the teaching EmptyStates on the
+  Home + Usage "cache ROI" cards. DISPLAY telemetry only — billing stays authoritative
+  on the synchronous `monthly_request_counts` / `tenant_quota` paths; an eviction drops
+  at most one un-flushed ~30s window (a transient D1 fault re-queues the delta, no loss).
+  `usage_daily` is tenant-keyed → classified ERASE in the DSR adapter (GDPR Art.17).
+
+### Fixed
+- **worker — DSR legitimacy anchor (`/_internal/dsr/anchor`) was gated on the wrong key (GDPR go-live blocker).**
+  The anchor is a two-authority split: githugr holds a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY`,
+  distinct from the eraser's `CORELINK_ERASE_AUTH_KEY`. But `internalConsumerForPath` had no
+  `dsr_anchor` case, so `/_internal/dsr/anchor` fell through to the `/_internal/dsr/*` → `erase`
+  catch-all: the worker front-gate compared githugr's anchor key against the ERASE key → **401**,
+  before the request ever reached the container's own (correctly-keyed) anchor gate. So binding +
+  forwarding the anchor key end to end could never unblock it — the worker wall rejected it first.
+  Added the `dsr_anchor` consumer (`resolveConsumerKey` → `CORELINK_DSR_ANCHOR_AUTH_KEY`, shared-key
+  fallback) and routed `/_internal/dsr/anchor` to it *before* the erase catch-all. The anchor
+  `dsr_id` is a HARD gate on physical erasure (the hugit executor refuses to erase without it), so
+  this was the sole code blocker on live Art.17 erasure. Regression tests pin anchor→anchor-key,
+  erase-paths→erase-key.
+- **worker — the DSR legitimacy anchor was wrongly swept into the cross-residency erase fan-out (second GDPR blocker).**
+  After the key-gate fix (above), the anchor still 502'd: the erase fan-out was scoped by
+  `route.pathSuffix.startsWith("/_internal/dsr/")`, which matched `/_internal/dsr/anchor` and fanned it
+  out to all 4 regional workers (`PROD_{LHR,SAM,NRT,SYD}`), returning 502 unless the local **and** every
+  region 2xx'd — but the regions are unprovisioned for the anchor, so it always 502'd. The fan-out exists
+  only to erase/verify per-jurisdiction **R2 bytes** and returns the LOCAL body — so it is correct only for
+  byte side-effects confirmed by status, never for `/anchor` (a single global-D1 `INSERT OR IGNORE`), the
+  gather routes `/access` `/portability` (payload-body — regional bodies were discarded anyway), or the
+  global-D1 write `/rectification`. Replaced the broad `startsWith` with an explicit allowlist
+  (`isDsrEraseFanoutPath` → `/erase`, `/verify` only), fixing the anchor 502 and the latent over-fan of the
+  four gather/write routes in one scope-correct change. Regression tests pin the exact fan-out set.
+- **admin-ui — repaired the broken Linear render (legacy CSS overrode the kit).**
+  The app-wide Linear migration rendered visually broken — "flying white boxes" (HelpPopover triggers),
+  invisible/empty buttons, cramped forms — despite typecheck/lint/tests/token-audit all passing (none catch
+  layout). Root cause: the old dashboard's generic `.cx-main {button,input,section,table,a,…}` rules
+  (specificity 0,1,1) overrode the kit's `.lin-*` classes (0,1,0), and `.cx-shell a {color:inherit}` overrode
+  `.lin-btn--*` text color (light-on-white = invisible). Removed the obsolete `.cx-main` content rules (kept
+  only the raw `<h1>`+intro `<p>`) and scoped `.cx-shell a` to `:not([class*="lin-"])`. Plus per-page layout:
+  DSR landing rebuilt as real `.lin-card`s (was jammed inline), consent capture given a card + horizontal
+  stepper + proper field spacing. This bug was LIVE in prod. Verified by screenshotting every screen.
+
+### Added
+- **admin-ui — un-stubbed the Runners + Workspaces screens against the live customer surface.**
+  Replaced the placeholder `EmptyState`/prose walls with real data. Runners: fetches the entitlement
+  (plan/concurrency/vCPU-h) + repo allowlist + recent runs via `getRunnerEntitlement`/`listRunnerRuns`
+  (`/v1/customer/runners/*`); gauges consumption only against a real `max_vcpu_h` (never a fabricated
+  cap), renders the Install-GitHub-App CTA when not entitled, honest empty runs table. Workspaces:
+  real list (name/humanized-size/created/pinned) via `listWorkspaces` + create/pin/unpin/delete
+  (delete behind a `ConfirmDialog`); collapsed the duplicate two-explainer wall to one card. Both light
+  up in prod once the backend customer-runners/workspaces modules deploy; until then the client methods
+  hit the live endpoints (no `NotWiredError` fakery). Kit-only, honest empty states, visually reviewed.
+- **admin-ui — screen SOTA rebuild wave 1 batch 2 (tokens, billing, settings, team, admin-audit, admin-tenants, customer-audit).**
+  Tokens: per-token rotate (revoke+recreate) + hide-revoked filter + honest last-used. Billing: real plan
+  ladder from the pricing catalog (upgrade/downgrade CTAs, active-sub → portal to avoid double-billing) +
+  runner-SKU ladder. Settings: real Account card (from the Clerk session, no new endpoint) + honest
+  coming-soon for the BE-gated controls + working danger zone. Team: pending-invites split out, read-only
+  roles with an honest note. Admin-audit: csv/json export toggle + event drawer → Modal overlay.
+  Admin-tenants: default recent-tenants list + plan/region/BYOK filters (the 5 deep-dive enrichment cards
+  are honestly BE-gated — no per-tenant enrichment endpoint exists yet). Customer-audit: **fixed a real
+  filter bug** — the client sent `since`/`event_types` but the backend parses `from`/`to`/`kind`, so date
+  + event-type filters were silently dropped server-side; aligned the client + mock to the canonical names.
+  Rebuilt the orphan audit-visualization page off raw HTML onto the kit.
+- **admin-ui — screen SOTA rebuild wave 1 (home, connect, trust, DSR-landing, DSR-status, consent-dashboard).**
+  After a code-grounded, screen-by-screen audit against a frozen Linear design contract, rebuilt six screens
+  to the standard: fixed the recurring cramped-card bug (`.lin-checklist` 4px misused as a card vstack →
+  `.lin-mt`/`.lin-mt-lg`), rendered Home's previously-dropped billing snapshot, gave Trust real audit/DPA/
+  sub-processor cards, enriched the DSR landing into a rights center (identity/SLA/DPO), and — the two
+  BROKEN ones — wired the DSR-status Clerk token (was a permanently-empty dead page) and fixed the
+  consent-dashboard locale-broken links (404s), both re-skinned off raw HTML tables onto the kit. Added
+  `.lin-t1..t4` text-color utilities and `target`/`rel` on the kit `Button` anchor form. Consent capture
+  screens cut from launch nav (already unlinked). Each screen visually reviewed via screenshot.
+- **container — backend data surfaces to un-stub the dashboard (Runners + Workspaces + operator deep-dive).**
+  New tenant-scoped read/CRUD endpoints so the FE stops rendering NotWiredError EmptyStates:
+  `customer_runners` (`GET /v1/customer/runners/{entitlement,allowlist,runs}` — reads runners_entitlement /
+  runner_repo_allowlist / runner_billing; honest stubs where no D1 source exists), `workspaces`
+  (`GET/POST/DELETE /v1/customer/workspaces[/:id[/pin]]` + migration `0088_workspaces` — tenant-leftmost PK,
+  DSR-erasable), and `admin_tenant_detail` (operator per-tenant usage/billing/consents/dsr/pats reads). All
+  tenant-derived-from-session and fail-closed (adversarially audited: no cross-tenant read/write, PAT secrets
+  never selected); the two customer surfaces carry the native-PAT possession backstop. The operator deep-dive
+  is internal-auth gated (same posture as the rest of `admin`), so wiring the admin-ui operator console to it
+  is a separate follow-up. FE wiring (client methods + screen un-stub) also follows.
+- **admin-ui — app-wide Linear design migration (admin, public, onboarding, DSR/consent) + FE follow-ups.**
+  Extends the customer-dashboard Linear rebuild to the rest of the app so the whole surface follows the
+  Linear doctrine (a11y-validated tokens, 4px spacing grid, fixed type scale, kit-only). Migrated: the
+  operator **admin** surface (audit/ops/tenants + 10 components), the **public/legal** pages
+  (pricing/privacy/security/legal via a new `PublicShell`+`LegalProse`), the **onboarding/activation**
+  flow (welcome/upgrade/team-invite/PatModal), and **DSR + consent**. Each surface opts into the dark
+  Linear canvas via the sanctioned per-page `.cx-shell` wrapper (no shared-layout/globals/kit edits).
+  FE follow-ups: the kit `Button` gains an `href`/`download` anchor variant (nav CTAs), and the Usage
+  screen now renders a real `request_count` gauge (consuming BE-1a). Strict Linear-compliance audited
+  (zero hex/off-grid/inline-style; type-scale enforced), a11y preserved (text on `--t1`/`--t2`), full
+  admin-ui suite green (440/440).
+- **Customer usage — real `request_count` surfaced (BE-1a).**
+  `/v1/customer/usage` now returns a `request_count` for the period, read from `monthly_request_counts`
+  (migration 0071) — the running counter the quota gate **already increments per request** — so this is a
+  pure READ with **no new hot-path write**. Gives the Usage screen a real usage-vs-quota signal (vs the
+  tier's `requestsPerMonthMax`) beyond storage. `0` when no counter row exists (honest, never fabricated).
+  Additive field on `UsageResponse`; the FE gauge consumption lands as a follow-up. reads/writes/daily
+  remain honest stubs pending per-op metering (BE-1/BE-2). Next of the backend backlog after BE-3.
+- **Customer overview — `recent_activity` feed now real (BE-3).**
+  The `/v1/customer/overview` snapshot's `recent_activity` was an honest hard-coded empty (`[]`); it now
+  reads the newest 8 `customer_audit_events` (migration 0077) — the same tenant-scoped, newest-first
+  surface the audit endpoint serves (written best-effort by `keys create` → `pat.created` and
+  `team invite` → `team.invited`) — via a new `D1CustomerHandler::recent_activity` helper. Fail-closed on
+  transport, honestly empty for a brand-new tenant (never a fabricated row). Lights up the Home + Overview
+  activity feeds. First of the customer-dashboard backend backlog (BE-1..11) closing the honest v1 stubs.
+- **Customer dashboard — remaining 7 screens rebuilt on the Linear kit (W1/W2/W5/W7/W8/W9/W10).**
+  Completes the dashboard rebuild: Home (activation checklist + ROI hero + snapshot), Connect-a-tool
+  (per-surface copy-paste config via SnippetTabs, token always an env-var — never inline `--pat`),
+  Audit (filters + pagination + human event labels + a real error state + a teaching callout for the
+  cryptographic chain verifier), Plan & billing (two-axis plan card, ONE portal + ONE upgrade — the
+  redundant controls removed, enums humanized), Trust & compliance (BYOK status + DSR link + teaching
+  BYOK/residency states), Settings (spend-cap teaching state + danger-zone account deletion behind a
+  confirm), Runners (value-prop + wired GitHub-App install + teaching entitlement), Workspaces (value-
+  prop + teaching snapshot state). Every not-yet-wired field renders a teaching empty-state, never a
+  fabricated number. Kit-only, a11y; typecheck + lint + build + suite (437/437) green. Also adds the
+  `.lin-mt` spacing utility to the kit.
+- **Customer dashboard — Tokens, Usage & Team screens rebuilt on the Linear kit (W3/W4/W6).**
+  First screen wave on the W0 foundation. Tokens: mint via `PatModal` (copy + shown-once, no plaintext
+  dump), scopes explained with HelpPopovers, revoke behind a ConfirmDialog, teaching empty-state. Usage:
+  quota gauges + honest teaching empty-states for every not-yet-metered field (reads/writes/daily/hit-rate/
+  $-ceiling) — never a fabricated `0`. Team: role permissions explained, member removal wired (backend
+  `removeTeamMember`) behind a "revokes N tokens" confirm, invite flow. Kit-only, a11y, typecheck + suite green.
+- **Customer dashboard — Linear design-system foundation (W0 scaffold).**
+  The self-serve customer dashboard is being rebuilt to the Linear design doctrine (monochrome,
+  a11y-validated tokens, glass cards, refined type). This W0 lands the frozen contract every screen
+  consumes: the token constitution + Linear primitive kit (`components/ui/linear/*` — Card, Stat,
+  Gauge, CopyField, SnippetTabs, HelpPopover, ConfirmDialog, EmptyState, Skeleton, InlineError,
+  CommandPalette ⌘K, AccountMenu, ThemeToggle, …), the grouped job-based navigation, the shell chrome,
+  extended `customer-types`/`customer-client` (incl. `removeTeamMember`, `deleteAccount`, and
+  `NotWiredError` stubs that make screens teach rather than fabricate a metric), and route stubs so the
+  nav resolves. Screen rebuilds (W1–W10) + the backend backlog closing the honest stubs (reads/writes,
+  hit-rate, invoices, …) follow. Plan: `docs/design/2026-07-06-customer-dashboard-{ux-plan,BUILD-WAVE}.md`.
+- **`POST /_internal/dsr/anchor` — per-user DSR legitimacy-anchor register seam (GDPR1 erasure path).**
+  The CAS physical-erase seam (`/_internal/cas/:tenant/:hash/erase`) authorises a per-digest delete only if a
+  `dsr_requested` legitimacy row exists for `(dsr_id, tenant)`. The two existing writers of that anchor are both
+  whole-account (Clerk `user.deleted`; self-serve `/v1/customer/account/delete`), so a per-USER erasure inside a
+  shared multi-user tenant (e.g. hugit's git-CAS `d863fafb`, where a githugr user isn't a Clerk user of the tenant)
+  had no way to register the anchor. This new internal-auth route lets the erasure-REQUEST authority register the
+  anchor — deriving the deterministic `dsr_id` from a stable subject key and `INSERT OR IGNORE`-ing the row — so the
+  downstream per-digest erase can authorise it. Gated by a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY` (shared-key
+  fallback), held by a DIFFERENT authority than the eraser (anti-forge, mirroring the Clerk model). Fail-closed
+  (401/400/500), idempotent. Unmounted unless the key + D1 are present.
+- **Runner GitHub-App install flow — identity-gated tenant-map provisioning (signup-worker).**
+  The runner *consumption* path: a runner job resolves its tenant via
+  `tenant_gh_installation_map` / `runner_repo_allowlist`, populated from an
+  AUTHENTICATED install (never off the raw installation id — that lazy-provision
+  is forbidden). A Clerk-authed tenant clicks Install → CoreLink mints an
+  HMAC-signed `state = tenant_id` (10m TTL, constant-time verify) → GitHub App
+  install → the App's `setup_url` callback verifies the state, mints a short
+  RS256 App JWT → installation access token → lists repos → persists via the
+  shared idempotent `writeInstallationProvision`. Includes the app-manifest
+  one-click App-creation flow (GitHub has no create-App REST API): a
+  setup-token-gated auto-submit form + a conversion callback that one-time
+  displays the created App's id/private-key/webhook-secret. The App is private
+  (org-only, dogfood), flippable to public later. **Inert (503) until
+  `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` (PKCS#8) / `INSTALL_STATE_SIGNING_KEY`
+  are bound** — zero behavior change on deploy. New concept
+  `flows/runner-github-install`. The admin-ui entry point (the "Install GitHub
+  App" button + `GET /api/install/github`) mints the signed state SERVER-SIDE
+  from the canonical Clerk `tenant_id` claim (never `org_id`/`user_id`) and
+  redirects into GitHub's install page; it fails closed (503) until
+  `INSTALL_STATE_SIGNING_KEY` + `GITHUB_APP_SLUG` are bound. A cross-deployable
+  test pins the admin-ui mint ↔ signup-worker verify HMAC contract.
+- **Self-serve Runner purchase — the full flow (tier → checkout → billing → entitlement lifecycle).**
+  Runners become a self-serve purchasable product (5 flat monthly SKUs: Starter $16 / Pro $40 / Team $100 /
+  Scale $200 / Max $400, each granting a fixed `max_concurrency` + monthly `max_vcpu_h` bundle) — a SEPARATE
+  entitlement axis from the cache tier.
+  - **Tier + checkout surface:** 5 `TierKind::Runner*` variants (canonical `runner_*` wire strings that
+    auto-resolve to the deployed `STRIPE_PRICE_ID_RUNNER_*` prices), the mirrored `RequestedTier` allowlist,
+    and admin-ui pricing cards in a distinct "CI runners" section (ids byte-identical backend↔UI).
+  - **Runner-aware checkout (the axis-separation guard):** a runner checkout NEVER writes the cache
+    `tier_selections` / `stripe_checkout_sessions` tables — they are one-row-per-tenant with a cache-only
+    `tier` CHECK, so a runner write would clobber the tenant's cache tier and violate the CHECK. The
+    `AlreadyActive` guard is per-axis (`has_active_runner_subscription`), so a cache-active tenant can still
+    buy runner and a runner-active tenant can still buy cache; a second runner sub is blocked.
+  - **Billing persistence:** new `runner_billing` table (migration `0087_runner_billing.sql`, additive —
+    INV-AUTH-MIGRATION-ADDITIVE) mapping the runner Stripe subscription id → tenant. Keyed by the
+    subscription id (not tenant) so it coexists with the one-row-per-tenant `tenant_billing` AND
+    disambiguates a runner-sub from a cache-sub on price-less events (`invoice.payment_failed`).
+  - **Entitlement lifecycle on the LIVE path (signup-worker webhook):** SEED `runners_entitlement` on a
+    granting runner subscription (created/updated), REVOKE (delete) on cancel / terminal payment-failure /
+    non-granting status — closing the prior "seeds but never revokes" hole (a canceled tenant no longer
+    keeps runner access forever). The container Stripe materializer gained the symmetric revoke
+    (`delete_runners_entitlement` + `runners_entitlement_revoked.v1` audit) for defense-in-depth parity.
+- **cf-multitenant WP5a: mark + forward the NARROWED runner-job PAT scope (Worker + migration side).**
+  A runner-minted PAT is now MARKED narrowed in D1 and that marker is forwarded to the container as
+  server-trusted headers so the container (WP5b, paired branch) can ENFORCE a tighter scope (deny-DELETE
+  on the native plane). New nullable column `pat.runner_job_ac_key` (migration
+  `0086_pat_runner_job_ac_key.sql`, additive — INV-AUTH-MIGRATION-ADDITIVE): NULL = normal PAT (unchanged);
+  `"*"` = deny-DELETE only; a BLAKE3 hex = additionally exact-key AC restricted. `handleRunnerMint`
+  (`worker/src/lib/runner_mint.ts`) accepts an optional `ac_output_name` (non-empty string else 400) and
+  computes the narrowing value — every runner mint is narrowed to at least `"*"`; with a name it is
+  `blake3("clw/ref/runner/v1/" + name)` (a self-contained, dependency-free `worker/src/lib/blake3.ts`
+  pinned to the official BLAKE3 test vectors, since the name path is dormant at launch). The single mint
+  authority `mintScopedPat` (`worker/src/lib/session_exchange.ts`) persists the column when given the
+  value; the session/token-exchange/rotate callers pass nothing so the column stays NULL (no regression).
+  The Worker's PAT auth-resolve now SELECTs `runner_job_ac_key` and, when non-NULL, forwards
+  `x-corelink-runner-job: 1` + `x-corelink-ac-key-allow: <value>` (strip-then-set, mirroring
+  `x-corelink-scope`); both headers are added to the client-trust strip-list so a client can never smuggle
+  or redirect the enforcement. Paired with WP5b (container enforcement).
+- **cf-multitenant WP5b: container gate enforces deny-DELETE + exact-key for a runner-job PAT.** The
+  container CAS/AC gate now fails CLOSED on a narrowed per-job credential the Worker marks with the
+  server-trusted headers `x-corelink-runner-job: 1` and `x-corelink-ac-key-allow: <*|blake3-hex>` (WP5a
+  forwards them; the Worker strips any client copy, exactly like `x-corelink-scope`). A new infallible
+  `scope::RunnerJob` extractor (mirroring `CacheScope`) reads them — a request is narrowed ONLY when the
+  marker is present and equal to `"1"` (any other/absent value ⇒ normal PAT, no behavior change). Enforcement:
+  (a) `cas.rs`/`ac.rs` `handle_delete` deny DELETE with `403 "delete not permitted for a runner-job
+  credential"` BEFORE the write-scope gate (a stolen per-job PAT must not evict the tenant's cache); (b)
+  `ac.rs` `handle_update` requires `action_digest == <ac-key-allow>` when a concrete key is pinned, else
+  `403 "ac write outside the job's allowed key"` — a `"*"` pin (launch default) or no pin ⇒ no key
+  restriction (create at any key; overwrite still 409 by INV-AC-RESULT-HASH-IMMUTABLE). No `worker/` or
+  migration changes (that is the paired WP5a branch); the header contract is frozen.
+- **cf-multitenant WP4: identity-gated installation provisioning primitive in the signup-worker
+  (`apps/signup-worker`).** New internal-auth-gated endpoint
+  `POST /internal/v1/runner/provision-installation` (handler `webhooks/github_provision.ts`) that WRITES the
+  two control-plane read models the WP2/WP3 readers consume: `tenant_gh_installation_map` (0084,
+  `installation_id → tenant_id`) and `runner_repo_allowlist` (0085, per-tenant `owner/repo`). Fail-CLOSED +
+  idempotent: non-POST → 405; missing/mismatched `Authorization: Bearer` (constant-time compare) or unbound
+  `CORELINK_INTERNAL_AUTH_KEY` → 403; missing `installation_id`/`tenant_id` → 400; any D1 fault → 500 (never a
+  partial-success claim); both writes are `INSERT OR IGNORE` under a transactional D1 `batch`. NOT lazy-provision:
+  the primitive trusts the caller-supplied `tenant_id` (DP3 — the install-flow callback owns the authenticated
+  identity → tenant binding) and NEVER auto-creates a tenant. Endpoint-only; the TRIGGER (who calls it) is
+  pending the coordinator's Option-A/B lane decision.
+- **cf-multitenant fabric-plane resolvers: `resolve_tenant_for_installation` + `repo_on_tenant_allowlist`
+  (WP3).** The Rust fabric can now resolve a GitHub App `installation_id → tenant_id` and check the per-tenant
+  repo allowlist against the SAME D1 tables the Worker mint reads (single source, no divergent copy). Both are
+  lookup-only reads in `routes/auth_introspect.rs`, mirroring `resolve_tenant_for_org`'s structure exactly:
+  `resolve_tenant_for_installation` reads `tenant_gh_installation_map` (0084) — a miss is a transient
+  `Ok(None)` → 404 `installation_not_mapped` (never auto-provisions); `repo_on_tenant_allowlist` reads
+  `runner_repo_allowlist` (0085) → bool, fail-CLOSED on D1 fault. Each I/O wrapper splits its row-decode into a
+  pure, unit-tested helper (`decode_resolved_installation_tenant` / `decode_repo_on_allowlist`). No new endpoint
+  surface — the org resolver's endpoint pairs a handler with these pure fns; the fabric consumes them directly.
+- **cf-multitenant WP2: server-side tenant derivation + authz chokepoint in `handleRunnerMint`
+  (`worker/src/lib/runner_mint.ts`).** The runner-mint endpoint no longer trusts an `owner_tenant`
+  body field (the single-tenant hole). The new body is
+  `{ job_id, repo_full_name, installation_id, scope?, ttl_seconds? }` (all three ids required → 400),
+  and the tenant is DERIVED + AUTHORIZED server-side via a four-check, fail-CLOSED CONFIG_DB chokepoint:
+  (a) derive tenant from `tenant_gh_installation_map[installation_id]`; (b) reject if a
+  `tenant_offboarding_state` row exists (suspended); (c) require a `runner_repo_allowlist(tenant, repo)`
+  row; (d) require a `runners_entitlement` row and capture `max_concurrency`. EVERY miss returns the SAME
+  generic `403 {error:"FORBIDDEN", message:"runner mint unauthorized"}` (no oracle); any D1 error → 500.
+  The PAT is minted for the DERIVED tenant and the response gains `max_concurrency` (threaded through
+  `mintScopedPat` via a new optional `extraFields` bag).
+- **cf-multitenant runner-mint identity read models (D1 migrations 0084, 0085).** Two additive, GATED-INERT
+  tables for the multi-tenant runner-CI path: `tenant_gh_installation_map` (GitHub App `installation_id → tenant_id`
+  resolution, DP2) and `runner_repo_allowlist` (per-tenant `(tenant_id, repo_full_name)` allowlist read by BOTH the
+  Rust fabric and the CF mint — one source, DP5). Both are `CREATE TABLE IF NOT EXISTS` only (additive,
+  INV-AUTH-MIGRATION-ADDITIVE), created empty (lookup-only resolvers, no auto-provision), and classified
+  tenant-keyed in `routes/dsr/adapter_d1.rs` so the GDPR Art.17 erasure sweep (`WHERE tenant_id = ?`) covers them.
+
+### Fixed
+- **Customer dashboard was rendering unstyled (raw text); reformulated it in the Linear design language.**
+  `apps/admin-ui/src/app/globals.css` only had `@import "tailwindcss"` and the customer pages used semantic markup
+  with undefined `customer-shell` classes / inline styles → the post-login dashboard showed loose text. Built a
+  dark, monochrome, glass-card design system (matching humangr.com) in globals.css and gave the shell a proper
+  top-bar + sticky sidebar (`layout.tsx`); the sidebar active state now resolves from `usePathname` (`CustomerNav`).
+  Cards, tables, buttons, inputs, pills and typography are styled generically so every customer page (overview,
+  usage, audit, billing, keys, team) is coherent.
+- **Re-roll the container (204c4832-r1) to boot with the re-bound canonical DSR anchor key.**
+  The 11045124 roll may have preceded the coordinator's re-bind of CORELINK_DSR_ANCHOR_AUTH_KEY, so the running
+  container held a pre-re-bind value (erase key authed, anchor 401'd). Container env is read at boot; 204c4832 is
+  byte-identical to 11045124 on the container surface, so this is the same audited binary under a forward tag that
+  forces a fresh post-re-bind boot.
+- **Roll the prod container to re-read the re-bound `CORELINK_DSR_ANCHOR_AUTH_KEY`.**
+  After the b6775c4b rollout, the anchor route still 401'd the dedicated key while the erase key worked — isolating
+  it to a stale anchor-key VALUE the container read at its 01:11 boot (the coordinator re-bound it from the canonical
+  value). Container secrets are read at boot, so a fresh roll is needed. HEAD (11045124) is byte-identical to
+  b6775c4b on the container surface (crates/, Dockerfile, Cargo.lock unchanged — only deploy scripts moved), so
+  building it gives the SAME audited binary under a NEW tag that forces the reboot. Repin all 5 envs to 11045124-r1.
+- **Container-pin freshness gate: resolve the pinned SHA under CI's shallow clone (was fail-closing the deploy).**
+  The new gate diffs the pinned image SHA against HEAD, but cf-deploy-prod's deploy job checked out `fetch-depth: 1`,
+  so the pinned commit wasn't in history and the gate correctly fail-closed — blocking the (valid) rollout. Set the
+  deploy job to `fetch-depth: 0` and made the gate self-heal via a targeted `git fetch <sha>` before failing.
+- **Repin the prod container to current main + add a stale-pin deploy gate (2026-07-05 incident: container was 109 commits stale).**
+  The `wrangler.toml` `[[env.*.containers]]` image sat pinned at `c1337115` (PR #594) for 109 commits while every
+  `cf-deploy-prod` "converged" (running image == pinned image, both stale) and reported success — so the entire
+  container-side cutover (runner purchase, the GDPR `/_internal/dsr/anchor` route, the Bazel/audit fixes) never
+  actually shipped (Worker/signup-worker deploys don't use the container pin, so only the container silently froze;
+  the `/_internal/*` `401`s that read as "route mounted" were a generic gate). Repinned all 5 envs to `b6775c4b`
+  and added `scripts/check-container-pin-fresh.sh`, wired into `deploy-container-prod.sh`, which FAILS the deploy if
+  container-affecting code (`crates/`, `Dockerfile`, `Cargo.lock`) changed since the pinned SHA — so a stale pin can
+  never silently ship again.
+- **Forward `CORELINK_DSR_ANCHOR_AUTH_KEY` from the DO to the container (fixes the #634 anchor route 401ing every call).**
+  #634 added the `/_internal/dsr/anchor` route + its dedicated consumer key, but the Durable Object env bridge
+  (`worker/src/durable_object.ts`) forwards each per-consumer key explicitly and never forwarded the new one — so the
+  container's anchor route 401'd every request the moment the dedicated key was bound (the exact CP-1 self-inflicted
+  outage the forwarding block guards against). Added the one forwarding line + the `Env` type field. Empty-when-unset,
+  so shared-key fallback is unchanged.
+- **Runner entitlement revoke is now status-aware — a cancelled sub no longer nukes a still-paying tenant (launch-audit finding).**
+  `runners_entitlement` is one row per tenant while `runner_billing` is per-subscription, so the blind tenant-keyed
+  `DELETE` on `subscription.deleted` / terminal `invoice.payment_failed` / non-granting `subscription.updated` would
+  over-revoke a tenant that still holds another active runner subscription. The revoke now DELETEs only when no other
+  `active`/`trialing` runner sub remains for the tenant (self-excluding the cancelled sub by id, so a single-sub cancel
+  — the common case — still revokes fail-closed). Normally prevented upstream by the checkout `AlreadyActive` guard;
+  this is the defense-in-depth backstop. Never grants free runners (the flaw was over-revoke, not over-grant).
+- **Runner install callback now detects a cross-tenant installation-binding conflict (launch-audit HIGH — detection half).**
+  The `tenant_gh_installation_map.installation_id` is a PK written `INSERT OR IGNORE` (first-writer-wins); the signed
+  install `state` proves the tenant but NOT that the tenant controls the presented `installation_id`. The callback now
+  re-reads the bound row after the write and refuses to report success if the installation is already owned by a
+  DIFFERENT tenant — surfacing a hijacked/mismatched binding instead of silently accepting it (best-effort: only a
+  confirmed cross-tenant row fails; a read fault never blocks a legitimate provision). **FULL prevention — verifying
+  the state-tenant owns the installation's GitHub account — requires a tenant↔GitHub-account link and remains a HARD
+  GATE on flipping the runner App public** (the App ships `public:false`/org-only, so this is not externally
+  exploitable at launch).
+- **Bazel REAPI v2 AC-write now enforces the runner-job AC-key pin (WP5b parity, launch-audit finding).** The native
+  `/v1/ac` write gate restricts a narrowed runner-job PAT to its pinned AC key, but the Bazel AC surface
+  (`PUT /bazel/v2/:instance/blobs/ac/:hash`) never extracted `RunnerJob`, so a per-job credential could have escaped
+  its narrowing by routing an arbitrary AC write through the Bazel path. Wired the same `ac_key_allowed` gate into
+  `bazel_v2::handle_ac_write`. NO-OP on the launch config (every runner PAT mints with the `"*"` wildcard = no key
+  pin); becomes load-bearing the moment the `ac_output_name` pin is enabled. CAS is content-addressed so it needs no
+  such gate. Dormant-vulnerability closure — no live behavior change.
+- **Runner GitHub-App manifest callback no longer 403s GitHub's own redirect.** `handleAppManifestCallback`
+  (the manifest `redirect_url`) was gated on `GITHUB_APP_SETUP_TOKEN`, but GitHub controls that redirect and
+  appends ONLY `?code=…` — never our setup token — so every legitimate return 403'd ("forbidden") before the
+  code→credentials conversion. Re-gated on possession of the single-use, unguessable, ~1h-TTL manifest `code`
+  (400 if absent), which is GitHub's designed manifest-flow auth boundary; the operator gate stays on the
+  step-1 form. Also tightened a pre-existing `string | undefined` in the App-JWT test (zero-debt).
+- **Runner GitHub-App manifest no longer lists un-subscribable events (GitHub rejected the registration).**
+  The `buildManifest` `default_events` declared `installation` + `installation_repositories`, which are
+  App-lifecycle events GitHub always delivers regardless of subscription and refuses in a manifest ("Default
+  events are not supported by permissions") since no permission grants them. Narrowed `default_events` to the
+  only subscribable one we need — `workflow_job` (granted by `actions:read`); the installation events still
+  arrive on the webhook automatically. Unblocks the one-click App creation.
+- **`EMAIL_HASH_SALT` is now REQUIRED in prod, enforced by a boot fail-fast (CAA-360 MEDIUM).** The
+  CTRL-PRIV-001 `email_hash::hash_email` helper HMAC-SHA256s the email under `EMAIL_HASH_SALT` when set, but
+  silently falls back to a rainbow-table-reversible plain `SHA-256(email)` when it is unset/empty. The salt is
+  now SET on all 6 prod targets, so the container's positive prod-arming assertion
+  (`crates/corelink-container/src/main.rs`, the same block that guards `ERASURE_SALT_KEY` / `PAT_SIGNING_KEY`)
+  now refuses to boot when a prod signal is present and `EMAIL_HASH_SALT` is unset/empty (new pure predicate
+  `email_hash_salt_missing_in_prod`, unit-tested) — a future deploy that dropped the salt can no longer silently
+  regress every new pseudonym to the unsalted scheme with no alarm. `hash_email`'s dual-path logic (salted write
+  + legacy-unsalted lookup candidate) is unchanged; the gate lives at BOOT, not per-call, so non-prod/tests are
+  unaffected. Secrets-matrix row #171 flipped to REQUIRED.
+- **Container billing materializer wrote a contradictory `active`+`free` row on `subscription.deleted`
+  (CAA-360 MEDIUM).** On a cancel, the materializer called `persist_tier_change(Free)` → `upsert_tier`, whose
+  `SQL_UPSERT_TIER` UNCONDITIONALLY writes `subscription_state='active'` — so a canceled tenant got
+  `tier='free'` **with `subscription_state='active'`**, i.e. the container (a second writer of the canonical
+  access gate) left the gate open. Fixed: added `SQL_DOWNGRADE_TIER` (`subscription_state='inactive'`, and it
+  does NOT reset `subscription_started_at_ms`) + a `downgrade_tier` writer method, and the cancel arm now calls a
+  new `persist_tier_downgrade` (same audit-before-write as the grant path, but the inactive statement). The
+  grant path (`SQL_UPSERT_TIER`/`upsert_tier`) is byte-identical. The container is now a convergent
+  defense-in-depth downgrade writer (agrees with the signup-worker authority on `inactive`), never a re-grant.
+  Tests assert cancel drives `downgrade_tier` and NEVER an `active`-writing statement (41 lib + 43 cf-billing-real).
+- **Restored the native container build after the `downgrade_tier` trait method landed.** Adding
+  `downgrade_tier` as a required `BillingD1Writer` method updated the wasm32 binder + in-memory mirror but MISSED
+  the container's HTTP writer `D1HttpBillingWriter` (`billing_d1_http.rs`), so `cargo check -p corelink-server`
+  broke with `E0046`. Implemented `downgrade_tier` there (mirrors `upsert_tier`, forwards `SQL_DOWNGRADE_TIER`);
+  the container native crate compiles + clippy-clean again. (The native `cargo check` is a nightly gate, not
+  per-PR, which is why it slipped past the materializer-crate tests.)
 - **GDPR Art.17 erasure never swept EU-resident tenants' CAS/AC bytes, yet the Ed25519 attestation signed
   `VerifiedComplete` (CAA-360 CRITICAL).** The DSR erase (Clerk `user.deleted` / account-delete) forwards to
   `${CORELINK_API_BASE}/_internal/dsr/erase`, which resolves to the IAD (US) container — its R2 client only

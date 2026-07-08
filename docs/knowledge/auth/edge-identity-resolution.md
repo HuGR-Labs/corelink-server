@@ -7,7 +7,7 @@ source_files:
   - "worker/src/lib/githugr_provision.ts"
   - "worker/src/lib/tenant_lookup.ts"
   - "migrations/d1/0074_team_member.sql"
-checkpoint_sha: "1a242becd5033f73d353472b8706bff7a4eb6ce1"
+checkpoint_sha: "f62b1fede0d5c1db4ce0f8cc8f9a4dd5b7117fc7"
 provenance: "AUTHORED"
 tags: ["auth", "clerk", "tenant-resolution", "edge"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -61,30 +61,39 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
 - Tenant resolution has **two ordered arms** in the dashboard pipeline. **(1) Owner arm:**
   `SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1` resolves the verified user to the tenant it
   itself provisioned (the owner row written by the signup-worker at provision)
-  (`worker/src/lib/clerk_auth.ts:252`). **(2) Team-member fallback** — ONLY when the owner arm returns no
-  row, an additive lookup `SELECT tenant_id FROM team_member WHERE user_id = ?1 AND status = 'active'`
+  (`worker/src/lib/clerk_auth.ts:255`); a hit maps to the `owner` role
+  (`worker/src/lib/clerk_auth.ts:261`). **(2) Team-member fallback** — ONLY when the owner arm returns no
+  row, an additive lookup `SELECT tenant_id, role FROM team_member WHERE user_id = ?1 AND status = 'active'`
   resolves the user to **another tenant's id** — the team-OWNING tenant of an ACTIVE seat (migration
-  0074, `migrations/d1/0074_team_member.sql`). The `status = 'active'` predicate is MANDATORY and
-  load-bearing: an `invited` or `removed` seat does NOT resolve, so a revoked seat is denied
-  (`worker/src/lib/clerk_auth.ts:265-268`). So a verified Clerk user resolves to the tenant it OWNS, or
-  failing that to the team-owning tenant of an active `team_member` row — not strictly to a single
-  owner-keyed row.
+  0074, `migrations/d1/0074_team_member.sql`) — and carries that seat's stored `role` forward. The
+  `status = 'active'` predicate is MANDATORY and load-bearing: an `invited` or `removed` seat does NOT
+  resolve, so a revoked seat is denied (`worker/src/lib/clerk_auth.ts:269-272`). So a verified Clerk user
+  resolves to the tenant it OWNS, or failing that to the team-owning tenant of an active `team_member`
+  row — not strictly to a single owner-keyed row.
+- **RBAC role derivation:** the resolver now returns a `role` alongside the tenant on `ClerkAuthResult`.
+  The default is the LEAST-privilege `viewer` (`worker/src/lib/clerk_auth.ts:252`); the owner arm sets
+  `owner` (`worker/src/lib/clerk_auth.ts:261`); the team-member arm carries the seat's `role`, failing
+  safe to `viewer` when the column is missing/unexpected (`worker/src/lib/clerk_auth.ts:282`). This role
+  is what the downstream PAT-mint consumers use to cap a `viewer` seat to a read-only scope — see
+  [the edge PAT-mint lifecycle](/auth/edge-pat-mint-lifecycle.md).
 - The server-to-server endpoint runs only the owner-arm parameterized lookup
   (`worker/src/lib/tenant_lookup.ts:114`) — it does NOT consult `team_member`. A D1 fault on either path
-  is a fail-CLOSED 500, never fail-open (`worker/src/lib/clerk_auth.ts:277-283`).
+  is a fail-CLOSED 500, never fail-open (`worker/src/lib/clerk_auth.ts:284-291`).
 - **Owner-only ASYMMETRY:** because the lookup endpoint omits the `team_member` arm, the two surfaces are
   NOT interchangeable for a team-seat user. A verified user who owns no `tenant` row but holds an active
   `team_member` seat resolves successfully in the dashboard pipeline (to the team-owning tenant) yet gets
   a fail-CLOSED 404 from `POST /internal/v1/auth/tenant/lookup` — the endpoint's contract is deliberately
   owner-only (`role: "owner"`, 1:1 at provision), so githugr's `owner_tenant` mapping never silently
   inherits a second-seat membership (`worker/src/lib/tenant_lookup.ts:66-71`,
-  `worker/src/lib/tenant_lookup.ts:125-126`).
+  `worker/src/lib/tenant_lookup.ts:125-126`). (Distinct from the DASHBOARD `role` above: the
+  `team_member`-derived RBAC role gates scope, whereas the lookup endpoint's `role: "owner"` is the
+  fixed contract of an owner-only surface.)
 - The lookup endpoint's success envelope coerces an unset/empty `tier` column to the most-restrictive
   `"free"` plan rather than emitting a null — a fail-safe default mirroring `getTierForTenant`, so a
   half-provisioned tenant can never be read back as more privileged than it is
   (`worker/src/lib/tenant_lookup.ts:130-137`).
 - A subject that matches NEITHER the owner row NOR an active team_member row is a hard denial: the
-  team-member-MISS branch returns 403 in the dashboard pipeline (`worker/src/lib/clerk_auth.ts:269-273`),
+  team-member-MISS branch returns 403 in the dashboard pipeline (`worker/src/lib/clerk_auth.ts:273-278`),
   and the server-to-server endpoint returns 404 when no owner row exists
   (`worker/src/lib/tenant_lookup.ts:125-126`).
 - **DORMANT githugr arm — per-`sub` provision-or-lookup (NOT a fixed tenant):** a separate-instance
@@ -93,12 +102,13 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
   peeked issuer matches (`worker/src/lib/clerk_auth.ts:125`). The routing gate no longer requires a
   `GITHUGR_TENANT_ID` — that legacy shared-tenant secret is removed. Inside the arm, `verifyToken` runs
   networkless against githugr's PUBLIC `jwtKey`, then `iss` is exact-pinned to the githugr issuer
-  authoritatively (`worker/src/lib/clerk_auth.ts:365`). On success the verified `sub` becomes the
-  `clerkUserId` (`worker/src/lib/clerk_auth.ts:378`), and the tenant is derived NOT from a fixed
+  authoritatively (`worker/src/lib/clerk_auth.ts:372`). On success the verified `sub` becomes the
+  `clerkUserId` (`worker/src/lib/clerk_auth.ts:385`), and the tenant is derived NOT from a fixed
   configured value but by **provision-or-lookup**: `provisionOrLookupGithugrTenant(env.CONFIG_DB, sub)`
-  returns a deterministic per-`sub` isolated tenant, and ANY D1 fault there is a fail-CLOSED **500** —
-  never a fall-back to a shared tenant (`worker/src/lib/clerk_auth.ts:395`,
-  `worker/src/lib/clerk_auth.ts:397-403`). With the secrets unset the whole routing `if` is false, so
+  returns a deterministic per-`sub` isolated tenant, mapped to the `owner` role (a federated-login owner
+  of its own isolated tenant, not a seat), and ANY D1 fault there is a fail-CLOSED **500** —
+  never a fall-back to a shared tenant (`worker/src/lib/clerk_auth.ts:405`,
+  `worker/src/lib/clerk_auth.ts:406-412`). With the secrets unset the whole routing `if` is false, so
   this arm never executes today.
 - **githugr per-`sub` tenant derivation + LOOKUP-FIRST, transactional provisioning:** `deriveGithugrTenantId(sub)`
   computes a v5-shaped UUID from `SHA-256("corelink-githugr-tenant-v1:" + sub)` — so two distinct subs
@@ -130,14 +140,17 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
   subjectless session (`worker/src/lib/clerk_auth.ts:232`).
 - Tenant resolution is always keyed on the verified `clerk_user_id` via parameterized D1 queries (no
   injection surface), but it is NOT a single owner-row lookup in the dashboard pipeline: the owner arm
-  (`worker/src/lib/tenant_lookup.ts:114`, `worker/src/lib/clerk_auth.ts:252`) is tried first, then an
+  (`worker/src/lib/tenant_lookup.ts:114`, `worker/src/lib/clerk_auth.ts:255`) is tried first, then an
   additive `team_member` fallback resolves the user to the team-OWNING tenant when no owner row matches
-  (`worker/src/lib/clerk_auth.ts:265-268`).
+  (`worker/src/lib/clerk_auth.ts:269-272`).
+- The resolved `role` fails safe to the LEAST privilege: it defaults to `viewer` and only a matched
+  owner row (`worker/src/lib/clerk_auth.ts:261`) or a `team_member` seat's stored role
+  (`worker/src/lib/clerk_auth.ts:282`) raises it — a missing/unexpected role stays `viewer` (read-only).
 - The `team_member` fallback resolves ONLY an `status = 'active'` seat — an `invited` or `removed`
   member never resolves, so a revoked seat is denied rather than silently retaining cross-tenant access
-  (`worker/src/lib/clerk_auth.ts:265-268`).
+  (`worker/src/lib/clerk_auth.ts:269-272`).
 - A verified subject matching neither the owner row nor an active `team_member` row is fail-CLOSED — the
-  team-member-MISS branch returns 403 in the dashboard pipeline (`worker/src/lib/clerk_auth.ts:269-273`),
+  team-member-MISS branch returns 403 in the dashboard pipeline (`worker/src/lib/clerk_auth.ts:273-278`),
   404 on the server-to-server endpoint (`worker/src/lib/tenant_lookup.ts:125-126`).
 - The githugr multi-issuer arm cannot run unless BOTH real `GITHUGR_*` settings (issuer + public jwtKey)
   are present — the routing gate AND-conjoins them, so the dormant arm is closed by default. The former
@@ -152,7 +165,7 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
   `worker/src/lib/githugr_provision.ts:198-201`).
 - The githugr provision/lookup is fail-CLOSED: any D1 fault (or an absent read-back) throws / returns a
   500 — the arm NEVER falls back to a shared tenant (that fall-back is the exact isolation break this
-  fixes) (`worker/src/lib/clerk_auth.ts:397-403`, `worker/src/lib/githugr_provision.ts:202-204`).
+  fixes) (`worker/src/lib/clerk_auth.ts:406-412`, `worker/src/lib/githugr_provision.ts:202-204`).
 
 # Gotchas
 
@@ -165,7 +178,7 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
   CoreLink signup-worker's `user.created` auto-provision never fires for them). It now provisions-or-looks-up
   a per-`sub` tenant via `provisionOrLookupGithugrTenant` (`worker/src/lib/githugr_provision.ts:124`), and
   fails CLOSED (500) on a D1 fault rather than ever resolving to a shared tenant
-  (`worker/src/lib/clerk_auth.ts:397-403`).
+  (`worker/src/lib/clerk_auth.ts:406-412`).
 - The `peekUnverifiedIssuer` step is ROUTING-ONLY — it parses an UNVERIFIED payload to decide which
   instance minted the token; the signature is verified afterward inside the chosen arm
   (`worker/src/lib/clerk_auth.ts:125`). Never trust a peeked claim.
@@ -191,15 +204,16 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
 6. `worker/src/lib/clerk_auth.ts:195` — M2 exact issuer pin (`iss !== clerkIssuerUrl` → 401).
 7. `worker/src/lib/clerk_auth.ts:201-215` — production fails CLOSED when `CLERK_ISSUER_URL` is unset.
 8. `worker/src/lib/clerk_auth.ts:232` — verified token without `sub` → 401.
-9. `worker/src/lib/clerk_auth.ts:269-273` — the **team-member-MISS** branch: a subject with no owner row AND no active `team_member` row → 403 (dashboard pipeline). NOT a plain no-row branch — it is reached only after the owner arm misses and the `team_member` fallback also misses.
-10. `worker/src/lib/clerk_auth.ts:252` — owner arm: `SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1`.
-11. `worker/src/lib/clerk_auth.ts:265-268` — additive team-member fallback: `SELECT tenant_id FROM team_member WHERE user_id = ?1 AND status = 'active'` resolves to the team-owning tenant (migration 0074).
+9. `worker/src/lib/clerk_auth.ts:273-278` — the **team-member-MISS** branch: a subject with no owner row AND no active `team_member` row → 403 (dashboard pipeline). NOT a plain no-row branch — it is reached only after the owner arm misses and the `team_member` fallback also misses.
+10. `worker/src/lib/clerk_auth.ts:255` — owner arm: `SELECT tenant_id FROM tenant WHERE clerk_user_id = ?1` (a hit sets `role = "owner"` at `:261`).
+11. `worker/src/lib/clerk_auth.ts:269-272` — additive team-member fallback: `SELECT tenant_id, role FROM team_member WHERE user_id = ?1 AND status = 'active'` resolves to the team-owning tenant and carries the seat's RBAC role (migration 0074); the role fails safe to `viewer` at `:282`.
+11a. `worker/src/lib/clerk_auth.ts:252` — RBAC role default: `role` initialized to the least-privilege `viewer` before either resolution arm runs.
 12. `migrations/d1/0074_team_member.sql:65-66` — the `(user_id, status)` index backing the team-member resolution arm (the `team_member` table is defined at `:28-57`).
-13. `worker/src/lib/clerk_auth.ts:277-283` — D1 fault → 500 fail-CLOSED, never fail-open.
+13. `worker/src/lib/clerk_auth.ts:284-291` — D1 fault → 500 fail-CLOSED, never fail-open.
 14. `worker/src/lib/clerk_auth.ts:125` — DORMANT githugr routing gate (BOTH real `GITHUGR_*` settings — issuer + public jwtKey — AND opt-in AND peeked issuer match; the old `GITHUGR_TENANT_ID` gate is removed).
-15. `worker/src/lib/clerk_auth.ts:365` — githugr arm authoritative issuer exact-pin (only reached when the dormant gate opens).
-16. `worker/src/lib/clerk_auth.ts:395` — githugr arm resolves the tenant via `provisionOrLookupGithugrTenant(env.CONFIG_DB, sub)` — a per-`sub` isolated tenant, NOT a fixed configured id.
-17. `worker/src/lib/clerk_auth.ts:397-403` — githugr provision/lookup fail-CLOSED: a D1 fault is a 500, never a fall-back to a shared tenant.
+15. `worker/src/lib/clerk_auth.ts:372` — githugr arm authoritative issuer exact-pin (only reached when the dormant gate opens).
+16. `worker/src/lib/clerk_auth.ts:405` — githugr arm resolves the tenant via `provisionOrLookupGithugrTenant(env.CONFIG_DB, sub)` — a per-`sub` isolated tenant, NOT a fixed configured id — and maps it to the `owner` role.
+17. `worker/src/lib/clerk_auth.ts:406-412` — githugr provision/lookup fail-CLOSED: a D1 fault is a 500, never a fall-back to a shared tenant.
 18. `worker/src/lib/githugr_provision.ts:91` — `deriveGithugrTenantId`, the deterministic per-`sub` tenant_id.
 19. `worker/src/lib/githugr_provision.ts:92-101` — the derivation body: v5-shaped UUID from `SHA-256("corelink-githugr-tenant-v1:" + sub)` (distinct subs → distinct tenants; same sub → same tenant).
 20. `worker/src/lib/githugr_provision.ts:124` — `provisionOrLookupGithugrTenant`, the LOOKUP-FIRST provision-or-lookup entrypoint.

@@ -57,6 +57,8 @@ excludes:
     reason: "Cloudflare deployment manifest — declarative config, not a narrative subsystem."
   - surface: "worker/src/region-map.ts"
     reason: "Pure colo->region lookup data table (static map) — data, no architecture narrative."
+  - surface: "worker/src/lib/blake3.ts"
+    reason: "Pure BLAKE3-256 hash primitive (self-contained, dependency-free) used only by the dormant runner-job exact-key narrowing (cf-multitenant WP5a) — a stateless crypto helper pinned to the official test vectors, no cross-crate architecture narrative; same class as region-map.ts. The narrowing SEMANTICS live in auth/edge-pat-mint-lifecycle."
   - surface: "apps/*/src/types/**"
     reason: "Per-app shared type/binding declarations — types, no runtime behavior."
   - surface: "apps/analytics-worker/src/types.ts"
@@ -278,7 +280,7 @@ candidates:
     title: "Tenant governance: rate-limit, customer & user admin"
     status: "active"
     source_cluster: "tenancy"
-    seed_from: ["crates/corelink-container/src/routes/ratelimit_layer.rs", "crates/corelink-container/src/routes/customer.rs", "crates/corelink-container/src/routes/users.rs"]
+    seed_from: ["crates/corelink-container/src/routes/ratelimit_layer.rs", "crates/corelink-container/src/routes/customer.rs", "crates/corelink-container/src/routes/users.rs", "crates/corelink-container/src/routes/customer_runners.rs", "crates/corelink-container/src/routes/workspaces.rs", "crates/corelink-container/src/usage_meter.rs"]
   - id: "flows/cas-write"
     type: "RequestFlow"
     title: "CAS write flow"
@@ -421,7 +423,13 @@ candidates:
     title: "Signup auto-provision + account-deletion erasure (Clerk webhook)"
     status: "active"
     source_cluster: "flows"
-    seed_from: ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/index.ts", "apps/signup-worker/src/lib/clerk-metadata.ts", "apps/signup-worker/src/lib/corelink-internal.ts", "apps/signup-worker/src/lib/d1.ts", "apps/signup-worker/src/sentry-scrub.ts"]
+    seed_from: ["apps/signup-worker/src/webhooks/clerk.ts", "apps/signup-worker/src/webhooks/github_provision.ts", "apps/signup-worker/src/index.ts", "apps/signup-worker/src/lib/clerk-metadata.ts", "apps/signup-worker/src/lib/corelink-internal.ts", "apps/signup-worker/src/lib/d1.ts", "apps/signup-worker/src/sentry-scrub.ts"]
+  - id: "flows/runner-github-install"
+    type: "Flow"
+    title: "Runner GitHub-App install → tenant-map provisioning flow"
+    status: "active"
+    source_cluster: "flows"
+    seed_from: ["apps/signup-worker/src/webhooks/github_install_state.ts", "apps/signup-worker/src/webhooks/github_install_callback.ts", "apps/signup-worker/src/webhooks/github_app_manifest.ts", "apps/signup-worker/src/webhooks/github_provision.ts", "apps/signup-worker/src/index.ts"]
   # ---- ADR re-index (76) ----
   - id: "adr/adr-0012-ff-hr-011-gc-reachability"
     type: "ADR"
@@ -921,7 +929,7 @@ candidates:
     title: "DSR / right-to-erasure pipeline"
     status: "active"
     source_cluster: "docs/compliance"
-    seed_from: ["crates/corelink-container/src/routes/dsr.rs", "crates/corelink-container/src/routes/cas_erase.rs", "crates/corelink-dsr", "docs/security/2026-06-23-secreview-gdpr-residency.md", "crates/corelink-container/src/routes/dsr/adapter_d1.rs", "crates/corelink-container/src/routes/dsr/access.rs", "crates/corelink-container/src/email_hash.rs", "crates/corelink-container/src/routes/dsr/adapter_not_applicable.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_cas.rs", "crates/corelink-container/src/routes/dsr/adapter_stripe.rs", "crates/corelink-container/src/routes/dsr/attestation.rs", "crates/corelink-container/src/routes/dsr/audit.rs", "crates/corelink-container/src/routes/dsr/d1util.rs", "crates/corelink-container/src/routes/dsr/ledger.rs", "crates/corelink-container/src/routes/dsr/legitimacy.rs"]
+    seed_from: ["crates/corelink-container/src/routes/dsr.rs", "crates/corelink-container/src/routes/cas_erase.rs", "crates/corelink-container/src/routes/dsr_anchor.rs", "crates/corelink-dsr", "docs/security/2026-06-23-secreview-gdpr-residency.md", "crates/corelink-container/src/routes/dsr/adapter_d1.rs", "crates/corelink-container/src/routes/dsr/access.rs", "crates/corelink-container/src/email_hash.rs", "crates/corelink-container/src/routes/dsr/adapter_not_applicable.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_cas.rs", "crates/corelink-container/src/routes/dsr/adapter_stripe.rs", "crates/corelink-container/src/routes/dsr/attestation.rs", "crates/corelink-container/src/routes/dsr/audit.rs", "crates/corelink-container/src/routes/dsr/d1util.rs", "crates/corelink-container/src/routes/dsr/ledger.rs", "crates/corelink-container/src/routes/dsr/legitimacy.rs"]
   - id: "compliance/data-residency"
     type: "ComplianceControl"
     title: "Data residency posture"
@@ -1017,7 +1025,7 @@ candidates:
     title: "Admin plane operations"
     status: "active"
     source_cluster: "docs/internal"
-    seed_from: ["crates/corelink-container/src/routes/admin.rs", "crates/corelink-container/src/routes/admin_pilot.rs", "docs/internal/admin-plane.md"]
+    seed_from: ["crates/corelink-container/src/routes/admin.rs", "crates/corelink-container/src/routes/admin_pilot.rs", "crates/corelink-container/src/routes/admin_tenant_detail.rs", "docs/internal/admin-plane.md"]
   - id: "ops/audit-analytics-plane"
     type: "Runbook"
     title: "Audit/analytics export plane"

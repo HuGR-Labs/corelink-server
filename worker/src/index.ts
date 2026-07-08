@@ -138,6 +138,7 @@ export interface Env {
   CORELINK_PAT_MINT_AUTH_KEY?: string; // gate for `/_internal/pat/mint`
   CORELINK_ADMIN_AUTH_KEY?: string;    // gate for admin `/_internal/*` routes
   CORELINK_ERASE_AUTH_KEY?: string;    // gate for erase `/_internal/*` routes
+  CORELINK_DSR_ANCHOR_AUTH_KEY?: string; // gate for `/_internal/dsr/anchor` (per-user DSR legitimacy anchor; held by githugr, distinct from the eraser's ERASE key)
   CORELINK_RUNNER_MINT_AUTH_KEY?: string; // gate for `/internal/v1/runner/{mint,revoke}` (runner dispatcher; scoped away from signup's pat_mint)
   // Per-tier quota enforcement (worker/src/lib/quota.ts).
   // Storage quota is always enforced for finite-quota tiers.
@@ -241,14 +242,25 @@ export interface Env {
  * `pathSuffix` is the server-derived route path (NOT client-suppliable beyond
  * the URL itself, which already selected the `internal` routeKind).
  */
-function internalConsumerForPath(pathSuffix: string): InternalConsumer {
+export function internalConsumerForPath(pathSuffix: string): InternalConsumer {
   if (pathSuffix === "/_internal/pat/mint") {
     return "pat_mint";
   }
   if (pathSuffix.startsWith("/_internal/admin/")) {
     return "admin";
   }
-  // DSR/erase surface (`/_internal/dsr/*`) and any other internal data-plane
+  // The per-user DSR legitimacy ANCHOR (`/_internal/dsr/anchor`, #634) is a
+  // SEPARATE authority from the eraser: githugr holds `CORELINK_DSR_ANCHOR_AUTH_KEY`
+  // (distinct from the eraser's ERASE key — the anti-forge two-authority split that
+  // gates the irreversible physical-erase cascade). It MUST be matched before the
+  // `/_internal/dsr/*` erase catch-all below, or the anchor caller is gated on the
+  // wrong (erase) key and always 401s (the go-live blocker: the worker front-gate
+  // rejected githugr's anchor key before it ever reached the container's own anchor
+  // gate, so binding/forwarding the anchor key alone could never help).
+  if (pathSuffix === "/_internal/dsr/anchor") {
+    return "dsr_anchor";
+  }
+  // DSR erase surface (`/_internal/dsr/*`) and any other internal data-plane
   // route (`/_internal/cas/*`, …) gate on the erase consumer key.
   return "erase";
 }
@@ -305,6 +317,16 @@ type AuthResult =
        * Defaults to `""` for older rows whose `scope` is NULL/absent.
        */
       readonly scope: string;
+      /**
+       * cf-multitenant WP5a: the D1-resolved `pat.runner_job_ac_key` marking a
+       * NARROWED runner-job PAT. `null` = a normal PAT (no narrowing → no extra
+       * headers forwarded). A non-null value (`"*"` = deny-DELETE only, or a
+       * BLAKE3 hex = also exact-key AC restricted) causes the Worker to forward
+       * `x-corelink-runner-job: 1` + `x-corelink-ac-key-allow: <value>` as
+       * server-trust headers the container (WP5b) enforces. Read from the trusted
+       * D1 `pat` mirror only — never the client.
+       */
+      readonly runnerJobAcKey: string | null;
     }
   | { readonly ok: false; readonly reason: string };
 
@@ -472,6 +494,23 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // without re-setting it, so a client could smuggle a forged prefix there. Strip
   // on every forward — same posture as x-corelink-tenant-id.
   "x-corelink-token-prefix",
+  // cf-multitenant WP5a: the NARROWED runner-job PAT markers. The Worker is the
+  // SOLE setter of both — it sets them ONLY when the D1-resolved PAT row carries
+  // a non-NULL `runner_job_ac_key`, from that trusted value, never the client.
+  // A client MUST NOT be able to smuggle a forged `x-corelink-runner-job` (which
+  // would falsely mark its request narrowed — harmless) NOR, more importantly, a
+  // forged `x-corelink-ac-key-allow` (which could try to widen/redirect the
+  // container's exact-key enforcement). Strip both structurally on EVERY forward
+  // so only the Worker's D1-derived values ever reach the container.
+  "x-corelink-runner-job",
+  "x-corelink-ac-key-allow",
+  // anti AC-squat (ac-create-only): the create-only (deny-overwrite) marker the
+  // Worker sets ONLY for a genuine runner-job cred (from the trusted D1 runner-job
+  // narrowing), never the client. A client MUST NOT be able to smuggle a forged
+  // `x-corelink-ac-create-only` (harmless if it self-narrows, but the invariant is
+  // that ONLY the Worker sets it). Strip it structurally on EVERY forward so only
+  // the Worker's runner-job-derived value ever reaches the container.
+  "x-corelink-ac-create-only",
 ];
 
 /**
@@ -1040,11 +1079,16 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
     // Prod values are `cas:rw` (post back-fill) / historically `admin`. May be
     // NULL on older rows — normalised to "" at the return site below.
     scope: string | null;
+    // WP5a: the NARROWED runner-job marker (D1 `pat.runner_job_ac_key`). NULL on
+    // every normal PAT (session/token-exchange/rotate/customer); non-NULL only
+    // for runner-minted PATs. Forwarded (when non-NULL) as the server-trust
+    // runner-job headers so the container enforces the narrowing.
+    runner_job_ac_key: string | null;
   }
   let row: PatRow | null;
   try {
     row = await env.CONFIG_DB
-      .prepare("SELECT tenant_id, expires_ms, scope FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1")
+      .prepare("SELECT tenant_id, expires_ms, scope, runner_job_ac_key FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1")
       .bind(parsed.tokenId)
       .first<PatRow>();
   } catch (_err: unknown) {
@@ -1079,6 +1123,9 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
     tenantId: row.tenant_id,
     tokenPrefix,
     scope: row.scope ?? "",
+    // WP5a: carry the narrowed runner-job marker (NULL on normal PATs). The
+    // forward sites set the runner-job headers only when this is non-NULL.
+    runnerJobAcKey: row.runner_job_ac_key ?? null,
   };
 }
 
@@ -1673,7 +1720,7 @@ const baseHandler: ExportedHandler<Env> = {
       // CLOSED (502) so the queue consumer retries and NO false VerifiedComplete is
       // ever signed. Fail-closed by construction: a missing binding, transport
       // error, or non-2xx from any region → not complete → retry.
-      const isDsrErase = route.pathSuffix.startsWith("/_internal/dsr/");
+      const isDsrErase = isDsrEraseFanoutPath(route.pathSuffix); // allowlist, NOT startsWith — see fn doc
       const isFanoutTarget = request.headers.has("x-corelink-fanout-from");
       let internalResp: Response;
       if (isDsrErase && !isFanoutTarget) {
@@ -2261,7 +2308,8 @@ const baseHandler: ExportedHandler<Env> = {
     if (route.routeKind === "signup") {
       // Signup is pre-tenant: the path :token IS the auth artifact, not a PAT,
       // so there is no D1-resolved scope — forward an empty scope (H1).
-      auth = { ok: true, tenantId: "_anonymous", tokenPrefix: "signup", scope: "" };
+      // WP5a: signup is pre-tenant and never a runner-job PAT → runnerJobAcKey null.
+      auth = { ok: true, tenantId: "_anonymous", tokenPrefix: "signup", scope: "", runnerJobAcKey: null };
     } else {
       const result = await extractAuth(request, env);
       if (!result.ok) {
@@ -2608,6 +2656,21 @@ const baseHandler: ExportedHandler<Env> = {
             // H1: forward the D1-resolved PAT scope as a server-trust header.
             // stripClientTrustHeaders above already deleted any client value.
             h.set("x-corelink-scope", auth.scope);
+            // WP5a: forward the NARROWED runner-job markers when the resolved PAT
+            // carries a non-NULL runner_job_ac_key. Same posture as x-corelink-scope:
+            // stripClientTrustHeaders above already deleted any client-supplied copies
+            // of both headers (the Worker is the sole setter, from trusted D1). A
+            // normal PAT (null) sets NEITHER header.
+            if (auth.runnerJobAcKey !== null) {
+              h.set("x-corelink-runner-job", "1");
+              h.set("x-corelink-ac-key-allow", auth.runnerJobAcKey);
+              // anti AC-squat: EVERY runner-job cred is create-only (deny-overwrite)
+              // on the AC — the AC analog of the deny-DELETE narrowing at the SAME
+              // chokepoint. The container (scope.rs::RunnerJob::ac_create_only) reads
+              // this as first-writer-wins: CREATE ok, OVERWRITE of an existing entry
+              // ⇒ 409. Stripped above, so only the Worker's value reaches the container.
+              h.set("x-corelink-ac-create-only", "1");
+            }
             // F1: forward CF's unforgeable client IP as x-corelink-client-ip
             // (the client-forgeable x-forwarded-for was stripped above) so the
             // regional Worker/container rate-limits signup off a trusted IP.
@@ -2677,6 +2740,22 @@ const baseHandler: ExportedHandler<Env> = {
         // container can ENFORCE it. stripClientTrustHeaders above already deleted
         // any client-supplied x-corelink-scope (the Worker is the sole setter).
         h.set("x-corelink-scope", auth.scope);
+        // WP5a: forward the NARROWED runner-job markers when the resolved PAT
+        // carries a non-NULL runner_job_ac_key so the container (WP5b) enforces
+        // deny-DELETE (+ optional exact-key). Same posture as x-corelink-scope:
+        // stripClientTrustHeaders above already deleted any client-supplied copies
+        // of both headers (the Worker is the sole setter, from trusted D1). A
+        // normal PAT (null) sets NEITHER header.
+        if (auth.runnerJobAcKey !== null) {
+          h.set("x-corelink-runner-job", "1");
+          h.set("x-corelink-ac-key-allow", auth.runnerJobAcKey);
+          // anti AC-squat: EVERY runner-job cred is create-only (deny-overwrite) on
+          // the AC — the AC analog of the deny-DELETE narrowing at the SAME
+          // chokepoint. The container (scope.rs::RunnerJob::ac_create_only) reads this
+          // as first-writer-wins: CREATE ok, OVERWRITE of an existing entry ⇒ 409.
+          // Stripped above, so only the Worker's value reaches the container.
+          h.set("x-corelink-ac-create-only", "1");
+        }
         // F1: forward Cloudflare's UNFORGEABLE client IP as the server-trusted
         // x-corelink-client-ip so the container's signup rate-limit keys off it
         // (NOT the client-forgeable x-forwarded-for, which stripClientTrustHeaders
@@ -2783,3 +2862,25 @@ const handler = Sentry.withSentry(
 
 export default handler;
 export { CoreLinkServer, RolloutController, EventLogDO };
+
+/**
+ * Whether an internal route participates in the GDPR cross-residency erase
+ * FAN-OUT (see the "erasure completeness across residency" block in `fetch`).
+ * The fan-out replays a per-jurisdiction BYTE side-effect to every regional
+ * worker and treats the local 2xx as "complete" only when every region confirms
+ * — so it is correct ONLY for routes whose cross-region work is a side-effect
+ * confirmed by STATUS, never for routes whose response BODY is the payload or
+ * that write the single global D1. Hence an explicit allowlist, NOT
+ * `startsWith("/_internal/dsr/")`:
+ *   • `/erase`  — deletes the region's R2 CAS/AC bytes           → fan out
+ *   • `/verify` — re-confirms deletion + signs VerifiedComplete  → fan out
+ * Everything else under `/_internal/dsr/*` takes the single-local path:
+ * `/access`, `/portability` return a gathered export from the ONE global D1 (the
+ * caller returns the LOCAL body, so fanning them out is useless and only adds
+ * spurious 502s); `/rectification`, `/anchor` are single global-D1 writes.
+ * Fanning `/anchor` was the live GDPR 502 — it 502'd unless all 4
+ * (anchor-unprovisioned) regions also 2xx'd. (Hoisted; used in `fetch` above.)
+ */
+export function isDsrEraseFanoutPath(pathSuffix: string): boolean {
+  return pathSuffix === "/_internal/dsr/erase" || pathSuffix === "/_internal/dsr/verify";
+}

@@ -5,7 +5,7 @@ description: "The container-side mirror of the Worker's monthly request-count ca
 source_files:
   - "crates/corelink-container/src/request_count.rs"
   - "crates/corelink-eviction/src/tier.rs"
-checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
+checkpoint_sha: "e1ef20379e55a165acb45a8541eb4ebbc452377a"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "request-count", "oci", "fail-open"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -34,12 +34,12 @@ the Worker's `QUOTAS[tier].requestsPerMonthMax` byte-for-byte so the two enforce
 # How it works
 
 - Per-tier caps mirror the Worker's rate card — free 500K up to max 80M requests/month
-  (`crates/corelink-container/src/request_count.rs:67-77`).
+  (`crates/corelink-container/src/request_count.rs:69-79`).
 - `cap_for_tier` resolves the cap from a tier SLUG (string), and — unlike the eviction `Tier` enum — it
   DOES cover the full sold paid ladder: `solo`/`starter`/`pro`(=`org`)/`max` each map to their distinct
   monthly cap; `team`/`enterprise` return `None` (uncapped → skip the counter write entirely) and any
   unknown slug maps to the most-restrictive `free` floor
-  (`crates/corelink-container/src/request_count.rs:89-100`). Note the taxonomy seam: `team` is RETAINED
+  (`crates/corelink-container/src/request_count.rs:91-102`). Note the taxonomy seam: `team` is RETAINED
   here as an uncapped legacy slug even though ADR-S19-001 removed it from the sold ladder (and `business`
   never shipped, so it is absent → falls to the `free` floor). So the count axis covers Starter/Pro/Max
   cleanly — and eviction's legacy 5-arm `Tier` enum (see `ops/gc-eviction`) is no longer an open
@@ -47,15 +47,15 @@ the Worker's `QUOTAS[tier].requestsPerMonthMax` byte-for-byte so the two enforce
   it (`crates/corelink-eviction/src/tier.rs:114-136`).
 - `check_and_increment` fail-OPENs (returns `None`, no count) when the wall clock is unavailable
   (`now_ms == 0`) — this is an availability limiter, not a cost cap
-  (`crates/corelink-container/src/request_count.rs:253-259`).
+  (`crates/corelink-container/src/request_count.rs:264-270`).
 - A tier-resolution D1 fault also fail-OPENs, because counting against a fallback `free` cap would
   false-positive a paid tenant during an outage
-  (`crates/corelink-container/src/request_count.rs:262-270`).
+  (`crates/corelink-container/src/request_count.rs:273-281`).
 - The counter is an atomic monthly `increment` keyed on a `YYYY-MM` UTC bucket; the op landing exactly ON
   the cap is still served (reject only `count > cap`)
-  (`crates/corelink-container/src/request_count.rs:272-285`).
+  (`crates/corelink-container/src/request_count.rs:283-296`).
 - Over the cap returns `429 Too Many Requests` with `Retry-After` = seconds until the next UTC month start
-  (`crates/corelink-container/src/request_count.rs:287-296`).
+  (`crates/corelink-container/src/request_count.rs:298-307`).
 
 # Invariants
 
@@ -64,26 +64,26 @@ the Worker's `QUOTAS[tier].requestsPerMonthMax` byte-for-byte so the two enforce
 - Every uncertain path fail-OPENs (allow, no count) — the opposite of the $-ceiling's fail-CLOSED posture,
   and intentional (`crates/corelink-container/src/request_count.rs:31-48`).
 - An uncapped tier skips the counter write entirely, so there is no D1 cost for tenants with nothing to
-  enforce (`crates/corelink-container/src/request_count.rs:268-270`).
+  enforce (`crates/corelink-container/src/request_count.rs:279-281`).
 
 # Gotchas
 
 - The unknown-slug → `free` branch is defence-in-depth and unreachable in practice, because the tier
   strings come from the introspection tier resolver which already filters to the canonical set
-  (`crates/corelink-container/src/request_count.rs:79-99`).
+  (`crates/corelink-container/src/request_count.rs:81-101`).
 - The month bucket is computed to match the Worker's `new Date().toISOString().slice(0, 7)` exactly, so
   the two enforcement points roll their cycles on the same UTC boundary
-  (`crates/corelink-container/src/request_count.rs:102-111`).
+  (`crates/corelink-container/src/request_count.rs:104-113`).
 
 # Citations
 
 1. `crates/corelink-container/src/request_count.rs:31-48` — the fail-OPEN rationale (allowance limiter, not cost cap).
 2. `crates/corelink-container/src/request_count.rs:50-56` — keyed on the verified-bearer tenant, not a header.
-3. `crates/corelink-container/src/request_count.rs:67-77` — the per-tier monthly cap constants.
-4. `crates/corelink-container/src/request_count.rs:79-99` — `cap_for_tier` defence-in-depth unknown-slug branch.
-5. `crates/corelink-container/src/request_count.rs:89-100` — `cap_for_tier` (uncapped tiers → `None`).
-6. `crates/corelink-container/src/request_count.rs:102-111` — `YYYY-MM` UTC bucket matching the Worker.
-7. `crates/corelink-container/src/request_count.rs:253-259` — clock-unavailable fail-OPEN.
-8. `crates/corelink-container/src/request_count.rs:262-270` — tier-fault fail-OPEN + uncapped-tier skip.
-9. `crates/corelink-container/src/request_count.rs:272-285` — atomic increment + `count <= cap` allow.
-10. `crates/corelink-container/src/request_count.rs:287-296` — over-cap `429` + `Retry-After`.
+3. `crates/corelink-container/src/request_count.rs:69-79` — the per-tier monthly cap constants.
+4. `crates/corelink-container/src/request_count.rs:81-101` — `cap_for_tier` defence-in-depth unknown-slug branch.
+5. `crates/corelink-container/src/request_count.rs:91-102` — `cap_for_tier` (uncapped tiers → `None`).
+6. `crates/corelink-container/src/request_count.rs:104-113` — `YYYY-MM` UTC bucket matching the Worker.
+7. `crates/corelink-container/src/request_count.rs:264-270` — clock-unavailable fail-OPEN.
+8. `crates/corelink-container/src/request_count.rs:273-281` — tier-fault fail-OPEN + uncapped-tier skip.
+9. `crates/corelink-container/src/request_count.rs:283-296` — atomic increment + `count <= cap` allow.
+10. `crates/corelink-container/src/request_count.rs:298-307` — over-cap `429` + `Retry-After`.

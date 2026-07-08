@@ -54,8 +54,18 @@ use crate::storage::d1_http::D1HttpClient;
 /// CHECK (`expires_at_ms - acquired_at_ms <= 60000`) and WI §6.4.
 const LOCK_TTL_MS: i64 = 60_000;
 
-/// Map `RequestedTier` → the exact lower-case label the D1 `tier` CHECK
+/// Map `RequestedTier` → the exact snake_case label the D1 `tier` CHECK
 /// constraints accept (`tier_selections` / `stripe_checkout_sessions`).
+///
+/// Kept in lockstep with `corelink_tier_selection::tier::TierKind::as_str`.
+/// The match is exhaustive over `RequestedTier`, so the runner arms exist for
+/// completeness — but they are UNREACHABLE at runtime: the orchestration
+/// (`orchestrate_locked`) skips `persist_pending_checkout` entirely for a
+/// runner tier (`RequestedTier::is_runner`), because runner is a separate
+/// entitlement axis persisted to `runner_billing` / `runners_entitlement` via
+/// the Stripe webhook, NEVER to these cache tables (whose one-row-per-tenant
+/// shape + cache-only `tier` CHECK a runner write would clobber/violate). So
+/// no CHECK-widening migration is needed for runner.
 const fn tier_column(tier: RequestedTier) -> &'static str {
     match tier {
         RequestedTier::Free => "free",
@@ -63,6 +73,11 @@ const fn tier_column(tier: RequestedTier) -> &'static str {
         RequestedTier::Starter => "starter",
         RequestedTier::Pro => "pro",
         RequestedTier::Max => "max",
+        RequestedTier::RunnerStarter => "runner_starter",
+        RequestedTier::RunnerPro => "runner_pro",
+        RequestedTier::RunnerTeam => "runner_team",
+        RequestedTier::RunnerScale => "runner_scale",
+        RequestedTier::RunnerMax => "runner_max",
     }
 }
 
@@ -191,6 +206,23 @@ impl TierSelectStore for D1HttpTierSelectStore {
             .d1
             .query(
                 "SELECT 1 FROM tier_selections WHERE tenant_id = ?1 AND subscription_state = 'active' LIMIT 1",
+                &[json!(tenant_id)],
+            )
+            .await?;
+        Ok(!rows.is_empty())
+    }
+
+    async fn has_active_runner_subscription(&self, tenant_id: &str) -> Result<bool, String> {
+        // The runner axis lives in `runner_billing` (migration 0087), keyed by
+        // the runner Stripe subscription id → tenant, with the subscription
+        // status mirrored. A row in an entitled state (`active`/`trialing`)
+        // means the tenant already holds a runner subscription; guard a second
+        // one. SEPARATE from `has_active_subscription` (cache axis) so a cache
+        // subscription never blocks a runner purchase. Fail-CLOSED on error.
+        let rows = self
+            .d1
+            .query(
+                "SELECT 1 FROM runner_billing WHERE tenant_id = ?1 AND status IN ('active', 'trialing') LIMIT 1",
                 &[json!(tenant_id)],
             )
             .await?;

@@ -79,9 +79,10 @@ use corelink_cf_bindings::{CfD1DatabaseReal, D1Error, TenantId};
 
 use crate::audit::{BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::d1::{
-    BillingD1Error, BillingD1Writer, MaterializedRow, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
-    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE,
-    SQL_UPSERT_RUNNERS_ENTITLEMENT, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    BillingD1Error, BillingD1Writer, MaterializedRow, SQL_DELETE_RUNNERS_ENTITLEMENT,
+    SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND, SQL_MARK_SUBSCRIPTION_CANCELED,
+    SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT,
+    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 
 // ---------------------------------------------------------------------------
@@ -298,6 +299,43 @@ impl BillingD1Writer for CfD1BillingWriter {
         ))
     }
 
+    fn downgrade_tier(
+        &self,
+        tenant_id: &str,
+        tier_wire: &str,
+        // Bound to `subscription_started_at_ms` (positional bind #3) on the
+        // INSERT (new-row) path; the DO UPDATE does NOT touch it (an `'inactive'`
+        // row needs no started_at — the `subscription_started_when_active` CHECK
+        // only requires it when state=`active`). See
+        // `migrations/d1/0039_tier_selection.sql`.
+        _now_ms: i64,
+        _correlation_id: &str,
+    ) -> Result<(), BillingD1Error> {
+        if !self.tenant.ct_eq_str(tenant_id) {
+            return Err(BillingD1Error::InvalidPayload(format!(
+                "cf-d1-binder: downgrade_tier tenant `{tenant_id}` does not match anchored tenant"
+            )));
+        }
+        if tier_wire.is_empty() {
+            return Err(BillingD1Error::InvalidPayload(
+                "cf-d1-binder: empty tier_wire rejected".to_owned(),
+            ));
+        }
+        self.d1
+            .scoped_query(SQL_DOWNGRADE_TIER)
+            .map_err(map_d1_error_transient)?;
+        // First positional bind is `tenant_id` (bind #1); the ct-eq probe
+        // anchors the tenant. Binds #2..#4 are
+        // (tier_wire, subscription_started_at_ms = now_ms, correlation_id).
+        self.d1
+            .verify_first_bind(tenant_id)
+            .map_err(map_d1_error_transient)?;
+        Err(BillingD1Error::Transient(
+            "wasm32_async_dispatch_pending: downgrade_tier staged; dispatch via worker::send::SendFuture layer"
+                .to_owned(),
+        ))
+    }
+
     fn upsert_runners_entitlement(
         &self,
         tenant_id: &str,
@@ -328,6 +366,26 @@ impl BillingD1Writer for CfD1BillingWriter {
             .map_err(map_d1_error_transient)?;
         Err(BillingD1Error::Transient(
             "wasm32_async_dispatch_pending: upsert_runners_entitlement staged; dispatch via worker::send::SendFuture layer"
+                .to_owned(),
+        ))
+    }
+
+    fn delete_runners_entitlement(&self, tenant_id: &str) -> Result<(), BillingD1Error> {
+        if !self.tenant.ct_eq_str(tenant_id) {
+            return Err(BillingD1Error::InvalidPayload(format!(
+                "cf-d1-binder: delete_runners_entitlement tenant `{tenant_id}` does not match anchored tenant"
+            )));
+        }
+        self.d1
+            .scoped_query(SQL_DELETE_RUNNERS_ENTITLEMENT)
+            .map_err(map_d1_error_transient)?;
+        // First (and only) positional bind is `tenant_id` (bind #1); the ct-eq
+        // probe anchors the tenant, mirroring the upsert's tenant guard.
+        self.d1
+            .verify_first_bind(tenant_id)
+            .map_err(map_d1_error_transient)?;
+        Err(BillingD1Error::Transient(
+            "wasm32_async_dispatch_pending: delete_runners_entitlement staged; dispatch via worker::send::SendFuture layer"
                 .to_owned(),
         ))
     }
@@ -468,7 +526,7 @@ impl<T: ArchiveSink + ?Sized> ProductionArchiveSink for T {}
 
 #[cfg(test)]
 mod sql_tests {
-    use super::SQL_UPSERT_TIER;
+    use super::{SQL_DOWNGRADE_TIER, SQL_UPSERT_TIER};
 
     /// Pin the production tier UPSERT statement shape against the real
     /// schema (`migrations/d1/0039_tier_selection.sql`). It MUST:
@@ -501,6 +559,38 @@ mod sql_tests {
         assert!(
             !sql.contains("materialized_at_ms"),
             "must NOT reference materialized_at_ms (column does not exist): {sql}"
+        );
+        assert!(sql.contains("tier_selections"), "wrong table: {sql}");
+        assert!(
+            sql.contains("ON CONFLICT(tenant_id)"),
+            "wrong conflict key: {sql}"
+        );
+    }
+
+    /// Pin the production tier DOWNGRADE statement (the cancel path). It MUST
+    /// write `subscription_state = 'inactive'` (the access gate OFF), NEVER
+    /// `'active'` (the CAA-360 MEDIUM contradictory-active-free-row bug), and
+    /// MUST NOT reset `subscription_started_at_ms` in the DO UPDATE (a
+    /// downgrade preserves the original subscription start).
+    #[test]
+    fn downgrade_tier_writes_inactive_never_active_and_preserves_start() {
+        let sql = SQL_DOWNGRADE_TIER;
+        assert_eq!(
+            sql.matches('?').count(),
+            4,
+            "must bind exactly four positional params: {sql}"
+        );
+        assert!(
+            sql.contains("subscription_state = 'inactive'"),
+            "DO UPDATE must set subscription_state='inactive': {sql}"
+        );
+        assert!(
+            !sql.contains("'active'"),
+            "cancel path must NEVER write 'active': {sql}"
+        );
+        assert!(
+            !sql.contains("subscription_started_at_ms = excluded"),
+            "downgrade must NOT reset subscription_started_at_ms on conflict: {sql}"
         );
         assert!(sql.contains("tier_selections"), "wrong table: {sql}");
         assert!(

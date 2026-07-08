@@ -38,6 +38,26 @@
 import type { Env } from "../index.js";
 import { requireConsumerAuth } from "./internal_auth.js";
 import { mintScopedPat } from "./session_exchange.js";
+import { blake3Hex } from "./blake3.js";
+
+/**
+ * Domain-separation prefix for the exact-AC-key narrowing of a runner-job PAT
+ * (cf-multitenant WP5a). When a runner mint carries an `ac_output_name`, the
+ * narrowing value written to `pat.runner_job_ac_key` is
+ * `blake3(RUNNER_AC_KEY_PREFIX + ac_output_name)` (hex). This MUST match the
+ * key the container derives for the output workspace's AC entry (WP5b + clw).
+ */
+const RUNNER_AC_KEY_PREFIX = "clw/ref/runner/v1/";
+
+/**
+ * Sentinel narrowing value = "deny-DELETE only, no exact-key restriction". This
+ * is what EVERY runner mint gets when no `ac_output_name` is supplied (the
+ * launch path): the output-workspace name is not available at mint time today,
+ * so the PAT is narrowed to at least deny-DELETE. A `"*"` in
+ * `pat.runner_job_ac_key` (and forwarded as `x-corelink-ac-key-allow: *`) tells
+ * the container "narrowed, but no key restriction".
+ */
+const RUNNER_AC_KEY_DENY_DELETE_ONLY = "*";
 
 /**
  * Lifetime of a runner-minted PAT, in seconds (5400s = 90 minutes).
@@ -96,18 +116,32 @@ function reapiError(error: string, message: string, status: number, requestId: s
  *   3. Secrets: a properly sized internal-auth key must be bound to AUTHORIZE
  *      the mint to the container (the mint is server-to-server). The runner-mint
  *      surface needs NO Clerk secret (no session is verified).
- *   4. Parse body `{ owner_tenant, job_id, scope?, ttl_seconds? }`. Missing/empty
- *      owner_tenant or job_id → 400; admin/owner/unknown scope → 400; a
- *      non-positive/non-integer ttl_seconds → 400 (a caller may only SHORTEN the
- *      TTL toward its lease deadline; it is clamped down to the 90-min cap).
- *   5. Runners-entitlement check: `runners_entitlement WHERE tenant_id =
- *      owner_tenant`. No row → 403 (not entitled to Runners — the runner-axis
- *      authorization, separate from cache tier).
- *   6. Mint via the SINGLE authority {@link mintScopedPat}, passing `job_id` as
- *      the principal-source string (SHA-256 → stable per-job principal UUID for
- *      audit correlation) and the clamped lease-bound TTL (≤ {@link RUNNER_PAT_TTL_SECONDS}).
+ *   4. Parse body `{ job_id, repo_full_name, installation_id, scope?,
+ *      ttl_seconds? }`. Missing/empty job_id/repo_full_name/installation_id →
+ *      400; admin/owner/unknown scope → 400; a non-positive/non-integer
+ *      ttl_seconds → 400 (a caller may only SHORTEN the TTL toward its lease
+ *      deadline; it is clamped down to the 90-min cap). The tenant is NO LONGER
+ *      taken from the body — it is DERIVED server-side (step 5a).
+ *   5. Server-side tenant DERIVATION + AUTHORIZATION chokepoint (cf-multitenant
+ *      WP2). Every check reads CONFIG_DB, is fail-CLOSED, and every miss returns
+ *      the SAME generic 403 (no oracle distinguishing which check failed):
+ *        a. Derive tenant: `tenant_gh_installation_map WHERE installation_id`.
+ *           No row → 403. Capture `tenantId` (the DERIVED tenant — never a body
+ *           value).
+ *        b. Suspend: `tenant_offboarding_state WHERE tenant_id` — a row EXISTS
+ *           (the tenant is offboarding/suspended) → 403 (an active tenant has NO
+ *           offboarding row).
+ *        c. Allowlist: `runner_repo_allowlist WHERE tenant_id AND
+ *           repo_full_name`. No row → 403.
+ *        d. Entitlement + ceiling: `runners_entitlement WHERE tenant_id`. No row
+ *           → 403; capture `max_concurrency` (the runner ceiling).
+ *      Any D1 exception in a/b/c/d → 500 "runner mint unavailable".
+ *   6. Mint via the SINGLE authority {@link mintScopedPat}, using the DERIVED
+ *      `tenantId` and passing `job_id` as the principal-source string (SHA-256 →
+ *      stable per-job principal UUID for audit correlation) and the clamped
+ *      lease-bound TTL (≤ {@link RUNNER_PAT_TTL_SECONDS}).
  *   7. Return the standard mint envelope `{ token_plaintext, pat_id, token_id,
- *      expires_ms }`.
+ *      expires_ms, tenant, max_concurrency }` (tenant = the derived tenant).
  */
 export async function handleRunnerMint(
   request: Request,
@@ -141,12 +175,22 @@ export async function handleRunnerMint(
     return reapiError("FORBIDDEN", "runner mint unavailable", 403, requestId);
   }
 
-  // ── 4. Parse the body (owner_tenant + job_id required; scope optional) ─────
+  // ── 4. Parse the body (job_id + repo_full_name + installation_id required) ──
+  // The tenant is NO LONGER a body field: it is DERIVED server-side (step 5a).
+  // A caller can no longer name the tenant it mints for (the single-tenant hole
+  // this WP closes).
   interface RunnerMintRequest {
-    readonly owner_tenant?: unknown;
     readonly job_id?: unknown;
+    readonly repo_full_name?: unknown;
+    readonly installation_id?: unknown;
     readonly scope?: unknown;
     readonly ttl_seconds?: unknown;
+    // WP5a: OPTIONAL exact-key narrowing. When present, the runner-job PAT is
+    // additionally restricted to the single AC key of that output workspace
+    // (blake3(RUNNER_AC_KEY_PREFIX + name)). Dormant at launch — the dispatcher
+    // does not yet know the output workspace name at mint time — so today every
+    // runner mint takes the sentinel ("*" = deny-DELETE only) path.
+    readonly ac_output_name?: unknown;
   }
   let body: RunnerMintRequest;
   try {
@@ -154,13 +198,17 @@ export async function handleRunnerMint(
   } catch {
     return reapiError("BAD_REQUEST", "invalid request body", 400, requestId);
   }
-  const ownerTenant = body.owner_tenant;
-  if (typeof ownerTenant !== "string" || ownerTenant.length === 0) {
-    return reapiError("BAD_REQUEST", "owner_tenant required", 400, requestId);
-  }
   const jobId = body.job_id;
   if (typeof jobId !== "string" || jobId.length === 0) {
     return reapiError("BAD_REQUEST", "job_id required", 400, requestId);
+  }
+  const repoFullName = body.repo_full_name;
+  if (typeof repoFullName !== "string" || repoFullName.length === 0) {
+    return reapiError("BAD_REQUEST", "repo_full_name required", 400, requestId);
+  }
+  const installationId = body.installation_id;
+  if (typeof installationId !== "string" || installationId.length === 0) {
+    return reapiError("BAD_REQUEST", "installation_id required", 400, requestId);
   }
   let scope = RUNNER_MINT_DEFAULT_SCOPE;
   if (typeof body.scope === "string" && body.scope.length > 0) {
@@ -188,38 +236,103 @@ export async function handleRunnerMint(
     ttlSeconds = Math.min(t, RUNNER_PAT_TTL_SECONDS);
   }
 
-  // ── 5. Runners-entitlement check (the runner-axis authorization) ───────────
-  // A single keyed lookup on the dedicated entitlement table (migration 0070).
-  // NO row ⇒ the tenant is not entitled to Runners ⇒ 403 (fail-CLOSED). This is
-  // SEPARATE from the cache tier — a cache-only tenant gets no runner credential.
-  interface EntitlementRow {
-    tenant_id: string;
-  }
-  let entRow: EntitlementRow | null;
-  try {
-    entRow = await env.CONFIG_DB.prepare(
-      "SELECT tenant_id FROM runners_entitlement WHERE tenant_id = ?1",
-    )
-      .bind(ownerTenant)
-      .first<EntitlementRow>();
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    console.error(`[${requestId}] runner mint entitlement lookup failed: ${message.slice(0, 80)}`);
-    return reapiError("INTERNAL_ERROR", "runner mint unavailable", 500, requestId);
-  }
-  if (entRow === null) {
-    return reapiError("FORBIDDEN", "tenant not entitled to runners", 403, requestId);
+  // ── 4c. Narrowed runner-job PAT marker (WP5a) ──────────────────────────────
+  // EVERY runner mint is narrowed: the resulting PAT is marked in D1 so the
+  // container (WP5b) enforces a tighter scope than a normal PAT (deny-DELETE on
+  // the native plane). The marker value:
+  //   - no `ac_output_name`  → the sentinel "*" = deny-DELETE ONLY. This is the
+  //     LAUNCH path (the output-workspace name is unavailable at mint today).
+  //   - an `ac_output_name`  → blake3(RUNNER_AC_KEY_PREFIX + name) hex = additionally
+  //     restrict the token to that exact AC key (dormant, forward-wired path).
+  // `ac_output_name`, if present, MUST be a non-empty string (else 400).
+  let runnerJobAcKey: string;
+  if (body.ac_output_name === undefined) {
+    runnerJobAcKey = RUNNER_AC_KEY_DENY_DELETE_ONLY;
+  } else {
+    const name = body.ac_output_name;
+    if (typeof name !== "string" || name.length === 0) {
+      return reapiError("BAD_REQUEST", "ac_output_name must be a non-empty string", 400, requestId);
+    }
+    runnerJobAcKey = await blake3Hex(RUNNER_AC_KEY_PREFIX + name);
   }
 
-  // ── 6+7. Mint via the SINGLE authority (job_id → per-job principal UUID) ────
+  // ── 5. Server-side tenant DERIVATION + AUTHORIZATION chokepoint (WP2) ───────
+  // Four fail-CLOSED CONFIG_DB reads. EVERY miss returns the SAME generic 403 —
+  // NO oracle tells the caller which check failed (an unmapped installation, a
+  // suspended tenant, a non-allowlisted repo, and a non-entitled tenant are
+  // byte-identical responses). Any D1 exception → 500 "runner mint unavailable".
+  const forbidden = (): Response =>
+    reapiError("FORBIDDEN", "runner mint unauthorized", 403, requestId);
+
+  let tenantId: string;
+  let maxConcurrency: number;
+  try {
+    // 5a. Derive the tenant from the GitHub installation (never a body value).
+    const mapRow = await env.CONFIG_DB.prepare(
+      "SELECT tenant_id FROM tenant_gh_installation_map WHERE installation_id = ?1",
+    )
+      .bind(installationId)
+      .first<{ tenant_id: string }>();
+    if (mapRow === null || typeof mapRow.tenant_id !== "string" || mapRow.tenant_id.length === 0) {
+      return forbidden();
+    }
+    tenantId = mapRow.tenant_id;
+
+    // 5b. Suspend gate: an ACTIVE tenant has NO offboarding row; a row EXISTS ⇒
+    // the tenant is offboarding/suspended ⇒ deny.
+    const offRow = await env.CONFIG_DB.prepare(
+      "SELECT 1 FROM tenant_offboarding_state WHERE tenant_id = ?1 LIMIT 1",
+    )
+      .bind(tenantId)
+      .first<{ 1: number }>();
+    if (offRow !== null) {
+      return forbidden();
+    }
+
+    // 5c. Allowlist gate: the (tenant, repo) pair must be explicitly allowlisted.
+    const allowRow = await env.CONFIG_DB.prepare(
+      "SELECT 1 FROM runner_repo_allowlist WHERE tenant_id = ?1 AND repo_full_name = ?2 LIMIT 1",
+    )
+      .bind(tenantId, repoFullName)
+      .first<{ 1: number }>();
+    if (allowRow === null) {
+      return forbidden();
+    }
+
+    // 5d. Entitlement + ceiling: the tenant must be entitled to Runners; capture
+    // its max_concurrency (the runner ceiling threaded into the response).
+    const entRow = await env.CONFIG_DB.prepare(
+      "SELECT max_concurrency FROM runners_entitlement WHERE tenant_id = ?1",
+    )
+      .bind(tenantId)
+      .first<{ max_concurrency: number }>();
+    if (entRow === null || typeof entRow.max_concurrency !== "number") {
+      return forbidden();
+    }
+    maxConcurrency = entRow.max_concurrency;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown error";
+    console.error(`[${requestId}] runner mint authz lookup failed: ${message.slice(0, 80)}`);
+    return reapiError("INTERNAL_ERROR", "runner mint unavailable", 500, requestId);
+  }
+
+  // ── 6+7. Mint via the SINGLE authority with the DERIVED tenant ─────────────
+  // `max_concurrency` is threaded through mintScopedPat's extraFields bag so it
+  // appears in the returned JSON alongside the standard envelope; `tenant` in
+  // the response is the DERIVED tenantId (mintScopedPat sets it from its
+  // tenantId argument).
   return mintScopedPat(
     env,
     requestId,
-    ownerTenant,
+    tenantId,
     jobId,
     ttlSeconds,
     scope,
     internalAuthKey,
+    { max_concurrency: maxConcurrency },
+    // WP5a: persist the narrowed runner-job marker on the `pat` row so the
+    // Worker's auth-resolve can forward it to the container for enforcement.
+    runnerJobAcKey,
   );
 }
 

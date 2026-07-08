@@ -7,6 +7,7 @@ import React from "react";
 import type { AuthContext, AuthProvider } from "@/lib/auth";
 import { getAuthContext, hasAdminRole } from "@/lib/auth";
 import type { ClerkOrgRole } from "@/lib/types";
+import { Callout, Card } from "@/components/ui/linear";
 
 export interface RbacGuardProps {
   children: React.ReactNode;
@@ -21,13 +22,14 @@ export interface RbacGuardProps {
 
 export function Forbidden({ reason }: { reason: string }): React.ReactElement {
   return (
-    <div role="alert" data-testid="rbac-forbidden" className="rbac-forbidden">
-      <h1>403 — forbidden</h1>
-      <p>{reason}</p>
-      <p>
-        Operator role <code>corelink-admin</code> is required to access this
-        page. Contact your security lead if you believe this is wrong.
-      </p>
+    <div role="alert" data-testid="rbac-forbidden">
+      <Card title="403 — forbidden">
+        <Callout tone="danger">{reason}</Callout>
+        <p className="lin-mt">
+          Operator role <code>corelink-admin</code> is required to access this
+          page. Contact your security lead if you believe this is wrong.
+        </p>
+      </Card>
     </div>
   );
 }

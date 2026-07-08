@@ -75,8 +75,13 @@ pub const ADMIN_INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 /// The compare pads the provided value to the expected length and runs a
 /// single `ct_eq` so the secret LENGTH is not leaked via early return
 /// (improves on the length-short-circuit nit in `internal_pat`).
+///
+/// Exposed `pub(crate)` so the sibling operator-scoped read module
+/// (`routes::admin_tenant_detail`) reuses the SAME constant-time gate
+/// rather than re-implementing the compare (single source of truth for
+/// the operator auth boundary).
 #[must_use]
-fn internal_auth_ok(expected: Option<&Arc<str>>, headers: &HeaderMap) -> bool {
+pub(crate) fn internal_auth_ok(expected: Option<&Arc<str>>, headers: &HeaderMap) -> bool {
     let Some(expected) = expected else {
         return false;
     };
@@ -769,6 +774,18 @@ fn map_err(e: AdminHandlerError) -> axum::response::Response {
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
+}
+
+/// Resolve the DSR legitimacy-anchor register key (`POST /_internal/dsr/anchor`),
+/// preferring the dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY` with the shared
+/// `CORELINK_INTERNAL_AUTH_KEY` as fallback. This key MUST be held by the
+/// erasure-REQUEST authority (e.g. githugr), a DIFFERENT party than the eraser
+/// holding `CORELINK_ERASE_AUTH_KEY` — the anti-forge basis of the legitimacy
+/// gate. See [`crate::routes::dsr_anchor`]. (Placed at the end of the module,
+/// after the OKF-cited items above, to keep anti-drift line-anchors stable.)
+#[must_use]
+pub fn dsr_anchor_auth_key_from_env() -> Option<Arc<str>> {
+    resolve_internal_auth_key("CORELINK_DSR_ANCHOR_AUTH_KEY")
 }
 
 #[cfg(test)]

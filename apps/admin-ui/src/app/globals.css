@@ -1,18 +1,313 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   CoreLink customer dashboard — Linear-doctrine design system
+   Dark, monochrome, glass cards, refined type. Matches humangr.com.
+   ============================================================================ */
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
+  --bg: #08090a;
+  --bg-2: #0d0e10;
+  --panel: rgba(255, 255, 255, 0.024);
+  --panel-2: rgba(255, 255, 255, 0.045);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.12);
+  --t1: #f7f8f8;
+  --t2: rgba(247, 248, 248, 0.62);
+  --t3: rgba(247, 248, 248, 0.54);
+  --t4: rgba(247, 248, 248, 0.3);
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", ui-monospace, "Menlo", monospace;
+  /* radii */
+  --r-chip: 6px;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  /* spacing grid (4px) — the ONLY step values */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px;
+  --s8: 32px; --s10: 40px; --s12: 48px; --s16: 64px;
+  /* motion */
+  --ease: 0.16s cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-slow: 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+  /* elevation */
+  --sh-card: 0 1px 1px rgba(0, 0, 0, 0.24), 0 10px 30px -14px rgba(0, 0, 0, 0.5);
+  --sh-pop: 0 1px 1px rgba(0, 0, 0, 0.24), 0 12px 32px -12px rgba(0, 0, 0, 0.55), 0 24px 56px -20px rgba(0, 0, 0, 0.65);
+  /* semantic — used ONLY on status dots / destructive confirms, never decoration.
+     a11y-validated on --bg (verified): --ok 11.2:1, --warn 11.6:1, --danger 7.3:1,
+     --danger-solid 5.1:1 — all >= AA text (4.5) and >= UI (3.0).
+     Danger CONFIRM buttons use dark ink (#08090a on --danger-solid = 5.1:1), not white
+     (white-on-solid is 3.7:1 = large-text only). */
+  --ok: #5bd8a6;
+  --warn: #e6c07b;
+  --danger: #f0787a;
+  --danger-solid: #e5484d;
 }
 
-html,
-body {
-  margin: 0;
-  padding: 0;
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+/* The dark Linear theme is SCOPED to the customer dashboard (.cx-shell) so the
+   public pages (/, /en/privacy, /en/consent/new, /en/admin/*) keep their own
+   styling and pass Lighthouse a11y contrast. */
+/* ===== shell ===== */
+html:has(.cx-shell) { background: var(--bg); }
+.cx-shell {
+  min-height: 100vh; display: flex; flex-direction: column;
+  background: var(--bg); color: var(--t2);
+  font-family: var(--sans); font-size: 14px; line-height: 1.55; letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
+/* Raw anchors inherit; kit-classed anchors (e.g. `<a class="lin-btn">`) must
+   keep their OWN color — else `.cx-shell a` (0,1,1) overrides `.lin-btn--*`
+   (0,1,0) and the button text goes light-on-white (invisible white box). */
+.cx-shell a:not([class*="lin-"]) { color: inherit; }
+.cx-shell a { text-decoration: none; }
+.cx-shell ::selection { background: rgba(255, 255, 255, 0.15); }
+.cx-shell code, .cx-shell kbd {
+  font-family: var(--mono); font-size: 0.9em; color: var(--t1);
+  background: rgba(255, 255, 255, 0.05); padding: 2px 6px; border-radius: 6px;
+}
+.cx-topbar {
+  position: sticky; top: 0; z-index: 30; height: 52px;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+  background: rgba(8, 9, 10, 0.72); backdrop-filter: blur(18px) saturate(1.6);
+  border-bottom: 1px solid var(--line);
+}
+.cx-brand { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 560; color: var(--t1); letter-spacing: -0.01em; }
+.cx-brand .sep { color: var(--t4); font-weight: 400; }
+.cx-brand .muted { color: var(--t3); font-weight: 450; }
+.cx-topbar-right { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--t3); }
+.cx-topbar-right a { color: var(--t3); transition: color var(--ease); }
+.cx-topbar-right a:hover { color: var(--t1); }
+.cx-kbd { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px 0 11px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255,255,255,.02); color: var(--t3); font-family: var(--sans); font-size: 12.5px; cursor: pointer; transition: border-color var(--ease), color var(--ease); }
+.cx-kbd:hover { color: var(--t1); border-color: var(--line-2); }
+.cx-kbd kbd { font-family: var(--mono); font-size: 10.5px; color: var(--t4); background: rgba(255,255,255,.05); border-radius: 5px; padding: 2px 5px; }
+.cx-acct { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line-2); background: rgba(255,255,255,.03); color: var(--t2); cursor: pointer; transition: color var(--ease), border-color var(--ease); }
+.cx-acct:hover { color: var(--t1); border-color: var(--t3); }
+
+.cx-body { flex: 1; display: grid; grid-template-columns: 220px 1fr; align-items: start; }
+.cx-sidebar {
+  position: sticky; top: 52px; align-self: start; height: calc(100vh - 52px);
+  padding: 16px 12px; border-right: 1px solid var(--line);
+}
+.cx-main { padding: 40px 44px 96px; max-width: 1040px; width: 100%; }
+
+/* ===== sidebar nav (grouped, W0.e) ===== */
+.cx-nav__group + .cx-nav__group { margin-top: 16px; }
+.cx-nav__heading { font-size: 10.5px; font-weight: 560; color: var(--t4); text-transform: uppercase; letter-spacing: 0.07em; padding: 0 11px; margin-bottom: 6px; }
+[data-testid="customer-nav"] ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+[data-testid="customer-nav"] a {
+  display: flex; align-items: center; gap: 9px; padding: 7px 11px; border-radius: 8px;
+  font-size: 13.5px; font-weight: 500; color: var(--t3);
+  transition: background var(--ease), color var(--ease);
+}
+.cx-nav__ic { display: inline-flex; color: var(--t4); transition: color var(--ease); }
+[data-testid="customer-nav"] a:hover { background: var(--panel); color: var(--t1); }
+[data-testid="customer-nav"] a:hover .cx-nav__ic { color: var(--t2); }
+[data-testid="customer-nav"] a[data-active="true"],
+[data-testid="customer-nav"] a[aria-current="page"] { background: var(--panel-2); color: var(--t1); }
+[data-testid="customer-nav"] a[data-active="true"] .cx-nav__ic { color: var(--t1); }
+
+/* ===== page title + intro =====
+   ONLY the raw <h1> + first intro <p> that the page.tsx server wrappers render
+   are styled here. ALL other content is the Linear kit (.lin-*), whose classes
+   MUST win. The old generic .cx-main {button, section, input, table, a, h2, h3,
+   p, strong, …} rules were REMOVED: their 0,1,1 specificity overrode the kit's
+   0,1,0 classes, so kit buttons rendered as legacy white boxes, kit inputs got
+   the wrong border, raw <section>s double-carded, etc. (the "flying white boxes"
+   bug). Raw content links keep a scoped underline that does NOT touch kit anchors. */
+.cx-main h1 { font-size: 24px; font-weight: 560; color: var(--t1); letter-spacing: -0.022em; line-height: 1.1; margin: 0 0 7px; }
+.cx-main > main > p:first-of-type, .cx-main > p:first-of-type { color: var(--t3); font-size: 14px; margin: 0 0 30px; max-width: 64ch; }
+.cx-main a:not([class*="lin-"]) { color: var(--t1); border-bottom: 1px solid var(--line-2); transition: border-color var(--ease); }
+.cx-main a:not([class*="lin-"]):hover { border-color: var(--t2); }
+
+/* loading / error states */
+.cx-shell [data-testid$="-loading"] { color: var(--t3); font-family: var(--mono); font-size: 13px; }
+.cx-shell [data-testid$="-error"] { color: #e06c6c; font-size: 13.5px; }
+
+@media (max-width: 720px) {
+  .cx-body { grid-template-columns: 1fr; }
+  .cx-sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  [data-testid="customer-nav"] ul { flex-direction: row; flex-wrap: wrap; }
+  [data-testid="overview-grid"] { grid-template-columns: 1fr !important; }
+  .cx-main { padding: 28px 20px 64px; }
+}
+
+/* ============================================================================
+   LINEAR KIT (W0.b) — the frozen primitive styles. Tokens-only; no raw hex,
+   no off-grid spacing, no font-weight > 560. TSX components in
+   components/ui/linear/* apply these classes 1:1. Consumed by every dashboard
+   screen (W1–W10). Do not restyle per-screen.
+   ============================================================================ */
+.lin :where(*) { box-sizing: border-box; }
+.lin { font-family: var(--sans); color: var(--t2); letter-spacing: -0.006em; }
+.lin :focus-visible { outline: 2px solid var(--line-2); outline-offset: 2px; border-radius: var(--r-sm); }
+
+/* --- Card --- */
+.lin-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: var(--sh-card); transition: border-color var(--ease), background var(--ease);
+}
+.lin-card--pad { padding: var(--s5) var(--s5); }
+.lin-card--hover:hover { border-color: var(--line-2); }
+.lin-card__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); margin-bottom: var(--s3); }
+.lin-card__title { font-size: 15px; font-weight: 560; color: var(--t1); letter-spacing: -0.012em; margin: 0; }
+.lin-card__meta { font-size: 12px; color: var(--t3); margin-top: 2px; }
+.lin-card__actions { display: flex; align-items: center; gap: var(--s2); flex-shrink: 0; }
+
+/* --- spacing: vertical rhythm between stacked kit blocks (cards/sections) --- */
+.lin-mt { margin-top: var(--s4); }
+.lin-mt-lg { margin-top: var(--s6); }
+
+/* --- text-color utilities: the opacity ramp as classes (avoid inline style
+   color:var(--t*); use these on raw <p>/<span> body text inside kit surfaces) --- */
+.lin-t1 { color: var(--t1); }
+.lin-t2 { color: var(--t2); }
+.lin-t3 { color: var(--t3); }
+.lin-t4 { color: var(--t4); }
+
+/* --- Button --- */
+.lin-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--s2);
+  height: 34px; padding: 0 var(--s4); border-radius: var(--r-sm); border: 1px solid transparent;
+  font-family: var(--sans); font-size: 13.5px; font-weight: 560; letter-spacing: 0; line-height: 1;
+  cursor: pointer; white-space: nowrap; user-select: none;
+  transition: background var(--ease), transform var(--ease), border-color var(--ease), opacity var(--ease);
+}
+.lin-btn:active { transform: translateY(0); }
+.lin-btn[disabled], .lin-btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+.lin-btn--sm { height: 28px; padding: 0 var(--s3); font-size: 12.5px; }
+.lin-btn--primary { background: var(--t1); color: var(--bg); }
+.lin-btn--primary:hover { background: #fff; transform: translateY(-1px); }
+.lin-btn--ghost { background: rgba(255,255,255,.05); color: var(--t1); border-color: var(--line-2); }
+.lin-btn--ghost:hover { background: rgba(255,255,255,.09); }
+.lin-btn--danger { background: var(--danger-solid); color: #08090a; }
+.lin-btn--danger:hover { background: #ef5a5f; transform: translateY(-1px); }
+.lin-btn__spin { width: 13px; height: 13px; border-radius: 50%; border: 2px solid currentColor; border-top-color: transparent; animation: lin-spin .6s linear infinite; }
+@keyframes lin-spin { to { transform: rotate(360deg); } }
+
+/* --- Stat (big metric) --- */
+.lin-stat__label { font-size: 11.5px; font-weight: 510; color: var(--t3); text-transform: uppercase; letter-spacing: 0.05em; }
+.lin-stat__value { font-size: 26px; font-weight: 560; color: var(--t1); letter-spacing: -0.02em; line-height: 1.1; margin-top: var(--s2); }
+.lin-stat__sub { font-size: 12.5px; color: var(--t3); margin-top: var(--s1); }
+.lin-stat__trend--up { color: var(--ok); } .lin-stat__trend--down { color: var(--danger); }
+
+/* --- Gauge (quota bar) --- */
+.lin-gauge__top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: var(--s2); }
+.lin-gauge__label { font-size: 13px; color: var(--t2); }
+.lin-gauge__pct { font-size: 12.5px; font-weight: 560; color: var(--t1); font-variant-numeric: tabular-nums; }
+.lin-gauge__track { height: 6px; border-radius: 20px; background: rgba(255,255,255,.07); overflow: hidden; }
+.lin-gauge__fill { height: 100%; border-radius: 20px; background: var(--t2); transition: width var(--ease-slow); }
+.lin-gauge__fill--warn { background: var(--warn); } .lin-gauge__fill--danger { background: var(--danger); }
+.lin-gauge__hint { font-size: 12px; color: var(--t3); margin-top: var(--s2); }
+
+/* --- Badge / StatusDot --- */
+.lin-badge {
+  display: inline-flex; align-items: center; gap: var(--s2); height: 22px; padding: 0 var(--s2);
+  border-radius: var(--r-chip); font-size: 11.5px; font-weight: 510;
+  background: rgba(255,255,255,.06); color: var(--t1); border: 1px solid var(--line);
+}
+.lin-badge--success { color: var(--ok); } .lin-badge--warn { color: var(--warn); } .lin-badge--danger { color: var(--danger); }
+.lin-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--t3); display: inline-block; }
+.lin-dot--success { background: var(--ok); } .lin-dot--warn { background: var(--warn); } .lin-dot--danger { background: var(--danger); }
+
+/* --- Pill (mono status) --- */
+.lin-pill { display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 500; padding: 2px 9px; border-radius: 20px; letter-spacing: .01em; background: rgba(255,255,255,.06); color: var(--t1); border: 1px solid var(--line); }
+
+/* --- CopyField --- */
+.lin-copy { display: flex; align-items: center; gap: var(--s2); background: rgba(255,255,255,.03); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 0 0 0 var(--s3); }
+.lin-copy__val { font-family: var(--mono); font-size: 12.5px; color: var(--t1); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: var(--s2) 0; }
+.lin-copy__btn { height: 34px; padding: 0 var(--s3); border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--t2); font-size: 12px; font-weight: 560; cursor: pointer; border-radius: 0 var(--r-sm) var(--r-sm) 0; transition: color var(--ease), background var(--ease); }
+.lin-copy__btn:hover { color: var(--t1); background: rgba(255,255,255,.04); }
+
+/* --- SnippetTabs / CodeBlock (terminals stay dark in both themes) --- */
+.lin-snippet__tabs { display: flex; gap: var(--s1); margin-bottom: var(--s2); flex-wrap: wrap; }
+.lin-snippet__tab { padding: var(--s1) var(--s3); border-radius: var(--r-chip); font-size: 12.5px; font-weight: 510; color: var(--t3); background: transparent; border: 0; cursor: pointer; transition: color var(--ease), background var(--ease); }
+.lin-snippet__tab:hover { color: var(--t1); }
+.lin-snippet__tab[data-active="true"] { color: var(--t1); background: var(--panel-2); }
+.lin-code { position: relative; background: #0b0c0d; border: 1px solid var(--line); border-radius: var(--r-sm); padding: var(--s3) var(--s4); overflow-x: auto; }
+.lin-code pre, .lin-code code { font-family: var(--mono); font-size: 12.5px; line-height: 1.6; color: #e8e9ea; margin: 0; white-space: pre; }
+.lin-code__copy { position: absolute; top: var(--s2); right: var(--s2); }
+
+/* --- HelpPopover / Tooltip --- */
+.lin-help { display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--line-2); color: var(--t3); font-size: 10px; font-weight: 560; cursor: help; background: transparent; vertical-align: middle; margin-left: var(--s1); }
+.lin-help:hover { color: var(--t1); border-color: var(--t3); }
+.lin-pop { z-index: 60; max-width: 280px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r-sm); box-shadow: var(--sh-pop); padding: var(--s3) var(--s3); font-size: 12.5px; line-height: 1.5; color: var(--t2); }
+
+/* --- Callout --- */
+.lin-callout { display: flex; gap: var(--s3); border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--panel); padding: var(--s3) var(--s4); font-size: 13px; line-height: 1.55; color: var(--t2); }
+.lin-callout--warn { border-color: rgba(230,192,123,.25); } .lin-callout--danger { border-color: rgba(240,120,122,.28); }
+.lin-callout__ic { flex-shrink: 0; margin-top: 1px; }
+
+/* --- EmptyState (teaches — the anti-fake-number surface) --- */
+.lin-empty { text-align: center; padding: var(--s10) var(--s6); display: flex; flex-direction: column; align-items: center; gap: var(--s2); }
+.lin-empty__ic { color: var(--t4); margin-bottom: var(--s1); }
+.lin-empty__title { font-size: 15px; font-weight: 560; color: var(--t1); }
+.lin-empty__body { font-size: 13px; color: var(--t3); max-width: 42ch; line-height: 1.55; }
+.lin-empty__cta { margin-top: var(--s3); }
+
+/* --- Skeleton --- */
+.lin-skel { border-radius: var(--r-sm); background: linear-gradient(90deg, rgba(255,255,255,.04) 25%, rgba(255,255,255,.08) 37%, rgba(255,255,255,.04) 63%); background-size: 400% 100%; animation: lin-shimmer 1.4s ease infinite; height: 14px; }
+@keyframes lin-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+.lin-skel + .lin-skel { margin-top: var(--s2); }
+
+/* --- InlineError --- */
+.lin-err { display: flex; align-items: center; gap: var(--s3); border: 1px solid rgba(240,120,122,.28); background: rgba(240,120,122,.05); border-radius: var(--r-sm); padding: var(--s3) var(--s4); font-size: 13px; color: var(--t2); }
+.lin-err__msg { flex: 1; } .lin-err strong { color: var(--danger); font-weight: 560; }
+
+/* --- Checklist --- */
+.lin-checklist { display: flex; flex-direction: column; gap: var(--s1); }
+.lin-check { display: flex; align-items: center; gap: var(--s3); padding: var(--s3); border-radius: var(--r-sm); border: 1px solid var(--line); transition: border-color var(--ease); }
+.lin-check[data-done="true"] { border-color: transparent; }
+.lin-check__mark { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--line-2); display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--bg); }
+.lin-check[data-done="true"] .lin-check__mark { background: var(--ok); border-color: var(--ok); }
+.lin-check__label { flex: 1; font-size: 13.5px; color: var(--t1); }
+.lin-check[data-done="true"] .lin-check__label { color: var(--t3); text-decoration: line-through; }
+
+/* --- Segmented --- */
+.lin-seg { display: inline-flex; padding: 2px; gap: 2px; background: rgba(255,255,255,.04); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.lin-seg__opt { padding: var(--s1) var(--s3); border-radius: var(--r-chip); border: 0; background: transparent; color: var(--t3); font-size: 12.5px; font-weight: 510; cursor: pointer; transition: color var(--ease), background var(--ease); }
+.lin-seg__opt[data-active="true"] { color: var(--t1); background: var(--panel-2); }
+
+/* --- Modal / Sheet / Confirm --- */
+.lin-scrim { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.55); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; padding: var(--s6); animation: lin-fade var(--ease); }
+@keyframes lin-fade { from { opacity: 0; } }
+.lin-modal { width: 100%; max-width: 460px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r-lg); box-shadow: var(--sh-pop); padding: var(--s6); animation: lin-pop var(--ease-slow); }
+@keyframes lin-pop { from { opacity: 0; transform: translateY(6px) scale(.99); } }
+.lin-modal__title { font-size: 17px; font-weight: 560; color: var(--t1); margin: 0 0 var(--s2); letter-spacing: -0.012em; }
+.lin-modal__body { font-size: 13.5px; color: var(--t2); line-height: 1.6; }
+.lin-modal__actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s6); }
+
+/* --- Toast --- */
+.lin-toasts { position: fixed; bottom: var(--s5); right: var(--s5); z-index: 70; display: flex; flex-direction: column; gap: var(--s2); }
+.lin-toast { display: flex; align-items: center; gap: var(--s3); min-width: 260px; max-width: 380px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r-sm); box-shadow: var(--sh-pop); padding: var(--s3) var(--s4); font-size: 13px; color: var(--t1); animation: lin-slide var(--ease-slow); }
+@keyframes lin-slide { from { opacity: 0; transform: translateX(8px); } }
+
+/* --- Command palette (⌘K) --- */
+.lin-cmdk { width: 100%; max-width: 560px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r-lg); box-shadow: var(--sh-pop); overflow: hidden; align-self: flex-start; margin-top: 12vh; }
+.lin-cmdk__input { width: 100%; height: 52px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--t1); font-size: 15px; padding: 0 var(--s5); outline: none; }
+.lin-cmdk__list { max-height: 340px; overflow-y: auto; padding: var(--s2); }
+.lin-cmdk__opt { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r-sm); font-size: 13.5px; color: var(--t2); cursor: pointer; }
+.lin-cmdk__opt[data-active="true"] { background: var(--panel-2); color: var(--t1); }
+
+/* --- Menu (account) --- */
+.lin-menu { min-width: 220px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r-sm); box-shadow: var(--sh-pop); padding: var(--s2); z-index: 60; }
+.lin-menu__item { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r-chip); font-size: 13px; color: var(--t2); cursor: pointer; }
+.lin-menu__item:hover { background: var(--panel-2); color: var(--t1); }
+.lin-menu__sep { height: 1px; background: var(--line); margin: var(--s1) 0; }
+
+/* --- Inputs (Linear-scoped) --- */
+.lin-input, .lin-select, .lin-textarea { width: 100%; background: rgba(255,255,255,.03); border: 1px solid var(--line-2); border-radius: var(--r-sm); color: var(--t1); font-family: var(--sans); font-size: 13.5px; padding: var(--s2) var(--s3); outline: none; transition: border-color var(--ease); }
+.lin-input:focus, .lin-select:focus, .lin-textarea:focus { border-color: rgba(255,255,255,.3); }
+.lin-label { display: block; font-size: 12.5px; font-weight: 510; color: var(--t3); margin-bottom: var(--s2); }
+
+/* --- Table (Linear) --- */
+.lin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.lin-table thead th { text-align: left; font-weight: 510; color: var(--t3); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: var(--s2) var(--s3); border-bottom: 1px solid var(--line); }
+.lin-table tbody td { padding: var(--s3) var(--s3); border-bottom: 1px solid var(--line); color: var(--t2); }
+.lin-table tbody tr:last-child td { border-bottom: 0; }
+.lin-table tbody tr:hover td { background: rgba(255,255,255,.015); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lin-skel, .lin-btn__spin, .lin-scrim, .lin-modal, .lin-toast { animation: none; }
+  .lin-btn, .lin-card, .lin-gauge__fill { transition: none; }
 }

@@ -502,11 +502,16 @@ async fn handle_usage(
     match state.usage.usage(req) {
         Ok(resp) => {
             let body: Value = json!({
-                "period":      resp.period,
-                "cas_bytes":   resp.cas_bytes,
-                "reads":       resp.reads,
-                "writes":      resp.writes,
-                "quota_bytes": resp.quota_bytes,
+                "period":        resp.period,
+                "cas_bytes":     resp.cas_bytes,
+                "reads":         resp.reads,
+                "writes":        resp.writes,
+                "request_count": resp.request_count,
+                "quota_bytes":   resp.quota_bytes,
+                // `hit_rate` serializes as JSON `null` when None (no cache reads).
+                "hit_rate":            resp.hit_rate,
+                "time_saved_seconds":  resp.time_saved_seconds,
+                "dollars_saved_cents": resp.dollars_saved_cents,
                 "daily": resp.daily.iter().map(|d| json!({
                     "day":       d.day,
                     "reads":     d.reads,
@@ -1057,7 +1062,7 @@ const DSR_QUEUED_SCHEMA: &str = "dev.hugr.corelink.dsr.queued.v1";
 /// user id gives the SAME `dsr_id` as the webhook path, so a dashboard-initiated
 /// delete and a Clerk `user.deleted` for the same account are idempotency-compatible.
 #[must_use]
-fn deterministic_dsr_id(subject_key: &str) -> String {
+pub(crate) fn deterministic_dsr_id(subject_key: &str) -> String {
     let digest = Sha256::digest(format!("corelink-dsr-v1:{subject_key}").as_bytes());
     let mut b = [0u8; 16];
     // First 16 bytes of the SHA-256 digest (the digest is 32 bytes — never short).
@@ -1407,7 +1412,8 @@ mod tests {
     #[tokio::test]
     async fn usage_route_returns_200_with_period() {
         let (state, shared) = fixture();
-        let usage = UsageResponse::new("2026-05", 512, 100, 50, 1_000_000, vec![]);
+        let usage =
+            UsageResponse::new("2026-05", 512, 100, 50, 1_000_000, vec![], 200, Some(0.75), 900, 1);
         shared.seed_usage("t1", usage).expect("seed");
 
         let app = router(state);
@@ -1425,6 +1431,10 @@ mod tests {
         assert_eq!(v["period"], "2026-05");
         assert_eq!(v["reads"], 100u64);
         assert_eq!(v["writes"], 50u64);
+        assert_eq!(v["request_count"], 200u64);
+        assert_eq!(v["hit_rate"], 0.75);
+        assert_eq!(v["time_saved_seconds"], 900u64);
+        assert_eq!(v["dollars_saved_cents"], 1u64);
     }
 
     // ── Billing routes ────────────────────────────────────────────────────────

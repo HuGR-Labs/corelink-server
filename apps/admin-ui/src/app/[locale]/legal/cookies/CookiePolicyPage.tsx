@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { Switch } from "@/components/ui/Switch";
-import { Button } from "@/components/ui/Button";
+import { PublicShell } from "@/components/public/PublicShell";
+import { PublicPageHeader } from "@/components/public/PublicPageHeader";
+import { ConsentToggle } from "./ConsentToggle";
+import { Button } from "@/components/ui/linear";
 import { postConsent, DEFAULT_CONSENT, type ConsentState } from "@/lib/consent";
 import type { Locale } from "@/i18n/LocaleContext";
 
@@ -102,45 +103,45 @@ export function CookiePolicyPage({ locale, initial = DEFAULT_CONSENT, fetchImpl 
   }
 
   return (
-    <article className="mx-auto max-w-3xl py-8">
-      <PageHeader title={t.title} description={t.intro} />
+    <PublicShell width="prose">
+      <PublicPageHeader title={t.title} description={t.intro} />
       <fieldset className="flex flex-col gap-6">
         <legend className="sr-only">{t.title}</legend>
         <div>
-          <Switch label={t.functional} checked disabled />
-          <p className="ml-12 text-sm text-slate-600">{t.functionalHint}</p>
+          <ConsentToggle label={t.functional} checked disabled />
+          <p className="ml-12 mt-1.5 text-sm text-[var(--t2)]">{t.functionalHint}</p>
         </div>
         <div>
-          <Switch
+          <ConsentToggle
             label={t.analytics}
             checked={state.analytics}
             onCheckedChange={(v) => setState((s) => ({ ...s, analytics: v }))}
           />
-          <p className="ml-12 text-sm text-slate-600">{t.analyticsHint}</p>
+          <p className="ml-12 mt-1.5 text-sm text-[var(--t2)]">{t.analyticsHint}</p>
         </div>
         <div>
-          <Switch
+          <ConsentToggle
             label={t.marketing}
             checked={state.marketing}
             onCheckedChange={(v) => setState((s) => ({ ...s, marketing: v }))}
           />
-          <p className="ml-12 text-sm text-slate-600">{t.marketingHint}</p>
+          <p className="ml-12 mt-1.5 text-sm text-[var(--t2)]">{t.marketingHint}</p>
         </div>
       </fieldset>
       <div className="mt-6 flex items-center gap-3">
-        <Button onClick={onSave} disabled={submitting}>
+        <Button onClick={onSave} disabled={submitting} loading={submitting}>
           {t.save}
         </Button>
         {message && (
           <p
             role="status"
             aria-live="polite"
-            className={message.kind === "ok" ? "text-green-700" : "text-red-700"}
+            className={message.kind === "ok" ? "text-[var(--ok)]" : "text-[var(--danger)]"}
           >
             {message.text}
           </p>
         )}
       </div>
-    </article>
+    </PublicShell>
   );
 }

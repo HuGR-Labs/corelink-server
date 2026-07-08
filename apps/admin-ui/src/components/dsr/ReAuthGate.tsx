@@ -3,6 +3,7 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { tFor, type Locale } from "@/i18n";
 import { isMfaFresh } from "@/lib/dsr-client";
+import { Badge, Button, Callout, Card } from "@/components/ui/linear";
 
 /**
  * Identity re-auth gate (CTRL-AUTH-010).
@@ -60,30 +61,48 @@ export function ReAuthGate(props: ReAuthGateProps) {
   const fresh = isMfaFresh(verifiedAt);
   if (!fresh) {
     return (
-      <section aria-labelledby="dsr-reauth-title" data-testid="dsr-reauth-gate">
-        <h2 id="dsr-reauth-title">{t("dsr.reauth.title")}</h2>
-        <p>{t("dsr.reauth.description")}</p>
-        <p role="note">{t("dsr.reauth.blocked_notice")}</p>
-        <button
-          type="button"
-          onClick={startVerify}
-          disabled={pending}
-          data-testid="dsr-reauth-start"
-        >
-          {pending ? t("dsr.reauth.verifying") : t("dsr.reauth.start_button")}
-        </button>
-        {error ? (
-          <p role="alert" data-testid="dsr-reauth-error">
-            {error}
-          </p>
-        ) : null}
+      <section
+        aria-labelledby="dsr-reauth-title"
+        data-testid="dsr-reauth-gate"
+        className="lin-checklist"
+      >
+        <Card>
+          <h2 id="dsr-reauth-title" className="lin-card__title">
+            {t("dsr.reauth.title")}
+          </h2>
+          <p className="lin-card__meta">{t("dsr.reauth.description")}</p>
+          <Callout tone="warn">
+            <span role="note">{t("dsr.reauth.blocked_notice")}</span>
+          </Callout>
+          <div>
+            <Button
+              onClick={startVerify}
+              loading={pending}
+              disabled={pending}
+              data-testid="dsr-reauth-start"
+            >
+              {pending
+                ? t("dsr.reauth.verifying")
+                : t("dsr.reauth.start_button")}
+            </Button>
+          </div>
+          {error ? (
+            <div role="alert" data-testid="dsr-reauth-error">
+              <Callout tone="danger">{error}</Callout>
+            </div>
+          ) : null}
+        </Card>
       </section>
     );
   }
 
   return (
-    <div data-testid="dsr-reauth-verified">
-      <p role="status">{t("dsr.reauth.verified")}</p>
+    <div data-testid="dsr-reauth-verified" className="lin-checklist">
+      <p role="status">
+        <Badge tone="success" dot>
+          {t("dsr.reauth.verified")}
+        </Badge>
+      </p>
       {props.children({ verifiedAt: verifiedAt as number })}
     </div>
   );

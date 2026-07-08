@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { Locale } from "@/i18n/messages";
 import { InstallOneLiner } from "@/components/InstallOneLiner";
 import { PatRevealCard } from "@/components/PatRevealCard";
+import { Callout, Card, CodeBlock } from "@/components/ui/linear";
 import { WelcomeStream } from "./WelcomeStream";
 
 /**
@@ -24,11 +25,16 @@ import { WelcomeStream } from "./WelcomeStream";
  *
  * Three rendering branches:
  *  1. `pat_plaintext` present: one-time reveal panel (PAT + install one-liner
- *     + PatRevealCard for blurred/reveal UX + next-step CTA cards)
+ *     + PatRevealCard for reveal/redact UX + next-step CTA cards)
  *  2. `tenant_id` present but no `pat_plaintext`: "already retrieved" panel
  *     with link to /customer/keys for rotation
  *  3. Neither present: redirect to /sign-up (webhook still running or session
  *     expired — user must re-authenticate)
+ *
+ * UI: migrated to the Linear design language (frozen kit + globals.css tokens),
+ * matching the customer dashboard. The dark canvas is provided by wrapping the
+ * page in `.cx-shell` / `.cx-main` (the same scope the customer surfaces use);
+ * no shared layout is touched.
  *
  * CTRL-CRED-001: PAT plaintext is NEVER logged, NEVER passed to client-side
  * state beyond this render, NEVER stored in localStorage/sessionStorage/cookie.
@@ -121,42 +127,41 @@ export default async function WelcomePage(props: {
   // was cleared after first visit by clearPatPlaintext server action).
   if (!patPlaintext) {
     return (
-      <main
-        className="mx-auto max-w-2xl p-8"
-        data-testid="welcome-already-retrieved"
-      >
-        <h1 className="text-2xl font-semibold">Welcome to CoreLink</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Your tenant: <code>{claims.tenant_id}</code> | region:{" "}
-          <code>{region}</code>
-        </p>
-        <div
-          className="mt-6 rounded border border-yellow-300 bg-yellow-50 p-4"
-          role="status"
-          data-testid="already-retrieved-notice"
+      <div className="cx-shell lin">
+        <main
+          className="cx-main"
+          data-testid="welcome-already-retrieved"
+          aria-labelledby="welcome-heading"
         >
-          <p className="text-sm">
-            Your token was already retrieved. Rotate it from{" "}
-            <Link
-              href="/customer/keys"
-              className="underline"
-              data-testid="rotate-keys-link"
-            >
-              /customer/keys
-            </Link>{" "}
-            if you need a new one.
+          <h1 id="welcome-heading">Welcome to CoreLink</h1>
+          <p>
+            Your tenant <code>{claims.tenant_id}</code> · region{" "}
+            <code>{region}</code>
           </p>
-        </div>
-        <div className="mt-4">
-          <Link
-            href="/customer"
-            className="text-sm underline"
-            data-testid="go-to-customer-link"
-          >
-            Go to dashboard
-          </Link>
-        </div>
-      </main>
+
+          <Card title="Access token">
+            <div role="status" data-testid="already-retrieved-notice">
+              <Callout tone="warn">
+                Your token was already retrieved. Tokens are shown once — rotate
+                it from{" "}
+                <Link href="/customer/keys" data-testid="rotate-keys-link">
+                  your tokens page
+                </Link>{" "}
+                if you need a new one.
+              </Callout>
+            </div>
+            <div className="lin-mt">
+              <Link
+                href="/customer"
+                className="lin-btn lin-btn--primary lin-btn--sm"
+                data-testid="go-to-customer-link"
+              >
+                Go to dashboard
+              </Link>
+            </div>
+          </Card>
+        </main>
+      </div>
     );
   }
 
@@ -164,94 +169,123 @@ export default async function WelcomePage(props: {
   const pat = patPlaintext;
 
   return (
-    <main className="mx-auto max-w-2xl p-8" data-testid="welcome-root">
-      <h1 className="text-2xl font-semibold">Welcome to CoreLink</h1>
-      <p className="mt-2 text-sm text-gray-600">
-        Your tenant: <code>{claims.tenant_id}</code> | region:{" "}
-        <code>{region}</code>
-      </p>
-
-      {/* One-time PAT reveal */}
-      <section className="mt-6" data-testid="pat-reveal-section">
-        <PatRevealCard patPlaintext={pat} />
-      </section>
-
-      {/* Install one-liner */}
-      <section className="mt-8" data-testid="install-section">
-        <h2 className="text-lg font-medium">Install the CLI</h2>
-        <div className="mt-2">
-          <InstallOneLiner token={pat} region={region} />
-        </div>
-      </section>
-
-      {/* Verify step */}
-      <section className="mt-8" data-testid="verify-section">
-        <h2 className="text-lg font-medium">Then verify</h2>
-        <pre className="mt-2 rounded bg-gray-100 p-3 text-sm">
-          <code>$ corelink whoami</code>
-        </pre>
-      </section>
-
-      {/* Activation status stream */}
-      <section className="mt-8" data-testid="activation-section">
-        <h2 className="text-lg font-medium">Activation status</h2>
-        <WelcomeStream />
-        <p className="mt-2 text-xs text-gray-500">
-          After the CLI authenticates, run{" "}
-          <code>corelink bazel-init</code> in your repo, then{" "}
-          <code>bazel build //...</code> twice — the second build should
-          report cache hits.
+    <div className="cx-shell lin">
+      <main
+        className="cx-main"
+        data-testid="welcome-root"
+        aria-labelledby="welcome-heading"
+      >
+        <h1 id="welcome-heading">Welcome to CoreLink</h1>
+        <p>
+          Your tenant <code>{claims.tenant_id}</code> · region{" "}
+          <code>{region}</code>
         </p>
-      </section>
 
-      {/* Next-step CTA cards */}
-      <section className="mt-10" data-testid="next-steps-section">
-        <h2 className="text-lg font-medium">Next steps</h2>
-        <div
-          className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3"
-          data-testid="next-steps-cards"
+        {/* One-time PAT reveal */}
+        <section
+          data-testid="pat-reveal-section"
+          aria-labelledby="welcome-token-h"
         >
-          <Link
-            href="https://docs.humangr.com/corelink/quickstart"
-            className="flex flex-col rounded border border-gray-200 p-4 hover:border-blue-400 hover:shadow-sm"
-            data-testid="next-step-quickstart"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className="font-medium">Try the quickstart</span>
-            <span className="mt-1 text-sm text-gray-500">
-              Authenticate the CLI and run your first cached build.
-            </span>
-          </Link>
+          <h2 id="welcome-token-h">Your access token</h2>
+          <p>
+            Copy it now — it&rsquo;s shown once and can&rsquo;t be retrieved
+            later.
+          </p>
+          <div className="lin-mt">
+            <PatRevealCard patPlaintext={pat} />
+          </div>
+        </section>
 
-          <Link
-            href="https://docs.humangr.com/corelink/bazel"
-            className="flex flex-col rounded border border-gray-200 p-4 hover:border-blue-400 hover:shadow-sm"
-            data-testid="next-step-bazel"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className="font-medium">Configure Bazel</span>
-            <span className="mt-1 text-sm text-gray-500">
-              Point your <code>.bazelrc</code> at the CoreLink remote cache.
-            </span>
-          </Link>
+        {/* Install one-liner */}
+        <section
+          data-testid="install-section"
+          aria-labelledby="welcome-install-h"
+        >
+          <h2 id="welcome-install-h">Install the CLI</h2>
+          <p>Run this one-liner to install and authenticate the CoreLink CLI.</p>
+          <div className="lin-mt">
+            <InstallOneLiner token={pat} region={region} />
+          </div>
+        </section>
 
-          <Link
-            href="https://docs.humangr.com/corelink/turborepo"
-            className="flex flex-col rounded border border-gray-200 p-4 hover:border-blue-400 hover:shadow-sm"
-            data-testid="next-step-turbo"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className="font-medium">Configure Turborepo</span>
-            <span className="mt-1 text-sm text-gray-500">
-              Enable remote cache in your <code>turbo.json</code> with one
-              flag.
-            </span>
-          </Link>
-        </div>
-      </section>
-    </main>
+        {/* Verify step */}
+        <section data-testid="verify-section" aria-labelledby="welcome-verify-h">
+          <h2 id="welcome-verify-h">Then verify</h2>
+          <div className="lin-mt">
+            <CodeBlock code="corelink whoami" lang="bash" />
+          </div>
+        </section>
+
+        {/* Activation status stream */}
+        <section
+          data-testid="activation-section"
+          aria-labelledby="welcome-activation-h"
+        >
+          <h2 id="welcome-activation-h">Activation status</h2>
+          <div className="lin-mt">
+            <WelcomeStream />
+          </div>
+          <div className="lin-mt">
+            <Callout tone="info">
+              After the CLI authenticates, run <code>corelink bazel-init</code>{" "}
+              in your repo, then <code>bazel build //...</code> twice — the
+              second build should report cache hits.
+            </Callout>
+          </div>
+        </section>
+
+        {/* Next-step CTA cards */}
+        <section
+          data-testid="next-steps-section"
+          aria-labelledby="welcome-next-h"
+        >
+          <h2 id="welcome-next-h">Next steps</h2>
+          <div className="lin-mt lin-checklist" data-testid="next-steps-cards">
+            <Link
+              href="https://docs.humangr.com/corelink/quickstart"
+              data-testid="next-step-quickstart"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Card hover>
+                <strong>Try the quickstart</strong>
+                <div className="lin-card__meta">
+                  Authenticate the CLI and run your first cached build.
+                </div>
+              </Card>
+            </Link>
+
+            <Link
+              href="https://docs.humangr.com/corelink/bazel"
+              data-testid="next-step-bazel"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Card hover>
+                <strong>Configure Bazel</strong>
+                <div className="lin-card__meta">
+                  Point your <code>.bazelrc</code> at the CoreLink remote cache.
+                </div>
+              </Card>
+            </Link>
+
+            <Link
+              href="https://docs.humangr.com/corelink/turborepo"
+              data-testid="next-step-turbo"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Card hover>
+                <strong>Configure Turborepo</strong>
+                <div className="lin-card__meta">
+                  Enable remote cache in your <code>turbo.json</code> with one
+                  flag.
+                </div>
+              </Card>
+            </Link>
+          </div>
+        </section>
+      </main>
+    </div>
   );
 }

@@ -6,6 +6,9 @@
  *   POST /webhooks/stripe → Stripe subscription lifecycle webhook handler
  *                           (checkout.session.completed → tenant_billing paid;
  *                            customer.subscription.updated / deleted — Stream 2.10)
+ *   POST /internal/v1/runner/provision-installation
+ *                         → cf-multitenant WP4 identity-gated provisioning
+ *                           primitive (installation→tenant map + repo allowlist)
  */
 
 import * as Sentry from "@sentry/cloudflare";
@@ -14,6 +17,15 @@ import { handleClerkWebhook, defaultApiClient } from "./webhooks/clerk.js";
 import type { AutoProvisionEnv, DsrQueuedV1 } from "./webhooks/clerk.js";
 import { handleStripeWebhook } from "./webhooks/stripe.js";
 import type { StripeWebhookEnv } from "./webhooks/stripe.js";
+import { handleInstallationProvision } from "./webhooks/github_provision.js";
+import type { InstallationProvisionEnv } from "./webhooks/github_provision.js";
+import {
+  handleAppManifestForm,
+  handleAppManifestCallback,
+} from "./webhooks/github_app_manifest.js";
+import type { GithubAppManifestEnv } from "./webhooks/github_app_manifest.js";
+import { handleInstallGithubCallback } from "./webhooks/github_install_callback.js";
+import type { InstallCallbackEnv } from "./webhooks/github_install_callback.js";
 import { handleErasureQueueBatch, handleErasureDlqBatch } from "./webhooks/dsr_consumer.js";
 import type { QueueMessageBatch, DsrDlqBody } from "./webhooks/dsr_consumer.js";
 import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
@@ -21,7 +33,11 @@ import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
 import { runAuditDrainSweep } from "./webhooks/audit_drain_cron.js";
 import { withSecurityHeaders } from "./security-headers.js";
 
-type WorkerEnv = AutoProvisionEnv & StripeWebhookEnv;
+type WorkerEnv = AutoProvisionEnv &
+  StripeWebhookEnv &
+  InstallationProvisionEnv &
+  GithubAppManifestEnv &
+  InstallCallbackEnv;
 
 async function route(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
   const url = new URL(request.url);
@@ -30,6 +46,18 @@ async function route(request: Request, env: WorkerEnv, ctx: ExecutionContext): P
   }
   if (url.pathname === "/webhooks/stripe") {
     return handleStripeWebhook(request, env, ctx);
+  }
+  if (url.pathname === "/internal/v1/runner/provision-installation") {
+    return handleInstallationProvision(request, env);
+  }
+  if (url.pathname === "/install/github/app/new" && request.method === "GET") {
+    return handleAppManifestForm(request, env);
+  }
+  if (url.pathname === "/install/github/app/created" && request.method === "GET") {
+    return handleAppManifestCallback(request, env);
+  }
+  if (url.pathname === "/install/github/callback" && request.method === "GET") {
+    return handleInstallGithubCallback(request, env);
   }
   if (url.pathname === "/health") {
     return Response.json({ ok: true, worker: "signup-worker" });

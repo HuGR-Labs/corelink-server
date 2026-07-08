@@ -123,9 +123,11 @@ describe("CustomerNav", () => {
 
   it("generates locale-prefixed hrefs", () => {
     const links = customerNavLinks("pt");
-    expect(links[0]!.href).toBe("/pt/customer");
-    expect(links[1]!.href).toBe("/pt/customer/usage");
-    expect(links[3]!.href).toBe("/pt/customer/billing");
+    const href = (testId: string): string | undefined =>
+      links.find((l) => l.testId === testId)?.href;
+    expect(href("nav-overview")).toBe("/pt/customer");
+    expect(href("nav-usage")).toBe("/pt/customer/usage");
+    expect(href("nav-billing")).toBe("/pt/customer/billing");
   });
 
   it("sets data-active=true on the active link", () => {
@@ -236,6 +238,7 @@ vi.mock("@/lib/customer-client", async () => {
   const { vi: viInner } = await import("vitest");
   const sharedInstance = {
     getUsage: viInner.fn(),
+    getOverview: viInner.fn(),
     getBilling: viInner.fn(),
     listKeys: viInner.fn(),
     createPat: viInner.fn(),
@@ -262,11 +265,12 @@ vi.mock("@/lib/customer-client", async () => {
 });
 
 import * as customerClientModule from "@/lib/customer-client";
-import type { CustomerUsage, CustomerBilling, CustomerPat, CustomerTeamMember } from "@/lib/customer-types";
+import type { CustomerOverview, CustomerUsage, CustomerBilling, CustomerPat, CustomerTeamMember } from "@/lib/customer-types";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const customerClientMock = (customerClientModule as any).__sharedInstance as {
   getUsage: ReturnType<typeof vi.fn>;
+  getOverview: ReturnType<typeof vi.fn>;
   getBilling: ReturnType<typeof vi.fn>;
   listKeys: ReturnType<typeof vi.fn>;
   createPat: ReturnType<typeof vi.fn>;
@@ -281,11 +285,36 @@ const USAGE_FIXTURE: CustomerUsage = {
   cas_bytes: 1073741824, // 1 GiB
   reads: 12000,
   writes: 3000,
+  request_count: 1_000_000, // BE-1a — billable requests this period
   quota_bytes: 10737418240, // 10 GiB
+  hit_rate: 0.86, // BE-2 — 86% of lookups served from cache
+  time_saved_seconds: 13320, // BE-2 → "3.7 h"
+  dollars_saved_cents: 6690, // BE-2 — modeled estimate → "$67"
   daily: [
-    { day: "2026-05-01", reads: 400, writes: 100, cas_bytes: 104857600 },
-    { day: "2026-05-02", reads: 600, writes: 200, cas_bytes: 209715200 },
+    { day: "2026-05-01", reads: 400, writes: 100, cas_bytes: 0 },
+    { day: "2026-05-02", reads: 600, writes: 200, cas_bytes: 0 },
   ],
+};
+
+const OVERVIEW_FIXTURE: CustomerOverview = {
+  tenant_id: "t_1",
+  tenant_name: "Acme",
+  plan: "pro", // 20M cache requests/mo ceiling → the requests gauge renders
+  usage: {
+    period: "2026-05",
+    cas_bytes: 1073741824,
+    reads: 12000,
+    writes: 3000,
+    quota_bytes: 10737418240,
+  },
+  billing: {
+    status: "active",
+    next_invoice_at: "2026-06-01T00:00:00Z",
+    amount_due_cents: 5000,
+    currency: "usd",
+  },
+  byok: { status: "none" },
+  recent_activity: [],
 };
 
 describe("UsageClient", () => {
@@ -295,19 +324,41 @@ describe("UsageClient", () => {
 
   it("shows loading state initially then renders data", async () => {
     customerClientMock.getUsage.mockResolvedValue(USAGE_FIXTURE);
+    customerClientMock.getOverview.mockResolvedValue(OVERVIEW_FIXTURE);
 
     render(<UsageClient />);
     expect(screen.getByTestId("usage-loading")).toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByTestId("usage-shell")).toBeInTheDocument());
     expect(screen.getByTestId("usage-cas-pct")).toHaveTextContent("10%");
-    // toLocaleString output is locale-dependent — just verify the number is present
-    expect(screen.getByTestId("usage-reads").textContent).toMatch(/12[,.]?000/);
-    expect(screen.getByTestId("usage-writes").textContent).toMatch(/3[,.]?000/);
+  });
+
+  it("renders a real requests gauge (count vs the tier ceiling) when the plan is known", async () => {
+    customerClientMock.getUsage.mockResolvedValue(USAGE_FIXTURE);
+    customerClientMock.getOverview.mockResolvedValue(OVERVIEW_FIXTURE);
+
+    render(<UsageClient />);
+    await waitFor(() => expect(screen.getByTestId("usage-requests")).toBeInTheDocument());
+    // pro = 20M ceiling; 1M / 20M = 5%.
+    expect(screen.getByTestId("usage-requests-pct")).toHaveTextContent("5%");
+    expect(screen.queryByTestId("usage-requests-stat")).not.toBeInTheDocument();
+  });
+
+  it("falls back to a Stat of the count when the plan (hence ceiling) is unknown", async () => {
+    customerClientMock.getUsage.mockResolvedValue(USAGE_FIXTURE);
+    // Overview read fails → plan degrades to null → no fabricated ceiling.
+    customerClientMock.getOverview.mockRejectedValue(new Error("overview down"));
+
+    render(<UsageClient />);
+    await waitFor(() => expect(screen.getByTestId("usage-requests-stat")).toBeInTheDocument());
+    expect(screen.queryByTestId("usage-requests-pct")).not.toBeInTheDocument();
+    // The real count still shows (locale-independent digit check).
+    expect(screen.getByTestId("usage-requests-stat").textContent).toMatch(/1[,.]?000[,.]?000/);
   });
 
   it("renders daily breakdown rows", async () => {
     customerClientMock.getUsage.mockResolvedValue(USAGE_FIXTURE);
+    customerClientMock.getOverview.mockResolvedValue(OVERVIEW_FIXTURE);
 
     render(<UsageClient />);
     await waitFor(() => expect(screen.getByTestId("usage-daily-table")).toBeInTheDocument());
@@ -317,6 +368,7 @@ describe("UsageClient", () => {
 
   it("surfaces an error when getUsage rejects", async () => {
     customerClientMock.getUsage.mockRejectedValue(new Error("network failure"));
+    customerClientMock.getOverview.mockResolvedValue(OVERVIEW_FIXTURE);
 
     render(<UsageClient />);
     await waitFor(() => expect(screen.getByTestId("usage-error")).toBeInTheDocument());
@@ -364,11 +416,13 @@ describe("BillingClient", () => {
 
     render(<BillingClient />);
     await waitFor(() => expect(screen.getByTestId("billing-shell")).toBeInTheDocument());
-    expect(screen.getByTestId("billing-plan")).toHaveTextContent("team");
-    expect(screen.getByTestId("billing-status")).toHaveTextContent("active");
+    // Enums are humanized — never the raw wire value.
+    expect(screen.getByTestId("billing-plan")).toHaveTextContent("Team");
+    expect(screen.getByTestId("billing-status")).toHaveTextContent("Active");
     expect(screen.getByTestId("billing-amount-due")).toHaveTextContent("$199.00");
-    expect(screen.getByTestId("billing-brand")).toHaveTextContent("visa");
-    expect(screen.getByTestId("billing-last4")).toHaveTextContent("4242");
+    // Payment method is a [stub] field — surfaced as "managed in the Stripe
+    // portal", never a fabricated card (no brand/last4 emitted in prod).
+    expect(screen.getByTestId("billing-pm-managed")).toHaveTextContent(/Stripe portal/i);
   });
 
   it("renders invoice list", async () => {
@@ -378,12 +432,31 @@ describe("BillingClient", () => {
     await waitFor(() => expect(screen.getByTestId("billing-invoice-inv_001")).toBeInTheDocument());
   });
 
-  it("shows upgrade section for free plan", async () => {
+  it("shows the single upgrade path for free plan (and no portal button)", async () => {
     const freeBilling: CustomerBilling = { ...BILLING_FIXTURE, plan: "free", payment_method: undefined };
     customerClientMock.getBilling.mockResolvedValue(freeBilling);
 
     render(<BillingClient />);
     await waitFor(() => expect(screen.getByTestId("billing-upgrade-section")).toBeInTheDocument());
+    // Free tier: upgrade path present; portal button absent (nothing to manage).
+    expect(screen.queryByTestId("billing-portal-btn")).not.toBeInTheDocument();
+  });
+
+  it("renders exactly ONE portal button for a paying tenant (redundancy removed)", async () => {
+    customerClientMock.getBilling.mockResolvedValue(BILLING_FIXTURE);
+
+    render(<BillingClient />);
+    await waitFor(() => expect(screen.getByTestId("billing-shell")).toBeInTheDocument());
+    expect(screen.getAllByTestId("billing-portal-btn")).toHaveLength(1);
+  });
+
+  it("shows a teaching empty state when there are no invoices (never fabricated)", async () => {
+    const noInvoices: CustomerBilling = { ...BILLING_FIXTURE, invoices: [] };
+    customerClientMock.getBilling.mockResolvedValue(noInvoices);
+
+    render(<BillingClient />);
+    await waitFor(() => expect(screen.getByTestId("billing-invoices-empty")).toBeInTheDocument());
+    expect(screen.getByTestId("billing-invoices-empty")).toHaveTextContent(/after your first payment/i);
   });
 
   it("surfaces error on getBilling failure", async () => {
@@ -471,7 +544,12 @@ describe("KeysClient", () => {
     render(<KeysClient />);
     await waitFor(() => expect(screen.getByTestId("keys-revoke-pat_001")).toBeInTheDocument());
 
+    // Revoke is behind a ConfirmDialog (destructive-action guard). Clicking the
+    // row button opens the dialog; the actual revoke fires from the confirm button.
     fireEvent.click(screen.getByTestId("keys-revoke-pat_001"));
+    const confirmBtn = await screen.findByRole("button", { name: "Revoke token" });
+    fireEvent.click(confirmBtn);
+
     await waitFor(() =>
       expect(screen.getByTestId("keys-status-pat_001")).toHaveTextContent("revoked"),
     );

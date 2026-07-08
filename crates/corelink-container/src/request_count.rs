@@ -57,10 +57,12 @@
 
 #![forbid(unsafe_code)]
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::wall_clock::WallClock;
 
@@ -238,8 +240,17 @@ impl RequestCountGate {
         );
         let store: Arc<dyn RequestCountStore> =
             Arc::new(D1RequestCountStore::new(Arc::clone(&client)));
-        let tiers: Arc<dyn TierResolver> = Arc::new(D1TierResolver::new(client));
         let clock: Arc<dyn WallClock> = Arc::new(crate::wall_clock::SystemWallClock::new());
+        // Front the per-op D1 tier read (`tenant.tier` + `tier_selections`) with a
+        // single-flight + short-TTL cache: a warm tenant resolves in memory, and a
+        // cold PARALLEL burst coalesces into ONE inner resolve instead of the
+        // thundering herd that D1-saturated introspect/billing during the
+        // 2026-07-08 668 MB cold hydrate. See [`CachedTierResolver`].
+        let tiers: Arc<dyn TierResolver> = Arc::new(CachedTierResolver::new(
+            Arc::new(D1TierResolver::new(client)),
+            Arc::clone(&clock),
+            DEFAULT_TIER_CACHE_TTL_MS,
+        ));
         Some(Self::new(store, tiers, clock))
     }
 
@@ -369,6 +380,137 @@ impl D1TierResolver {
 impl TierResolver for D1TierResolver {
     async fn tier(&self, tenant_id: &str) -> Result<String, String> {
         crate::routes::auth_introspect::tier_for_tenant(&self.client, tenant_id).await
+    }
+}
+
+/// Default TTL for a cached tier entry, in milliseconds.
+///
+/// The tier is the cap SELECTOR only — the durable `monthly_request_counts`
+/// table stays the sole count authority — so a bounded `≤ TTL` staleness on the
+/// selector is an accepted approximation (a just-upgraded/downgraded tenant sees
+/// its new cap within one TTL). `30 s` amortises a cold burst's per-op tier
+/// reads while keeping a cap change near-immediate; it mirrors the bounded
+/// staleness the `$`-ceiling lease already accepts ([`crate::tenant_quota`]).
+pub const DEFAULT_TIER_CACHE_TTL_MS: i64 = 30_000;
+
+/// Upper bound on distinct tenants held in the tier cache / single-flight map,
+/// so neither grows without bound under tenant churn (~64 B per entry → MB-scale
+/// at the cap). Over the cap, expired entries are pruned first, then the oldest.
+const TIER_CACHE_CAP: usize = 50_000;
+
+/// One cached tier decision: the resolved slug plus when it was fetched.
+#[derive(Debug, Clone)]
+struct CachedTier {
+    tier: String,
+    fetched_at_ms: i64,
+}
+
+/// A single-flight + short-TTL cache in front of an inner [`TierResolver`].
+///
+/// `RequestCountGate::check_and_increment` resolves the tenant's tier on EVERY
+/// billable op; against [`D1TierResolver`] that is two synchronous D1-over-HTTP
+/// reads (`tenant.tier` + `tier_selections`) per op. A **cold PARALLEL burst**
+/// — the 2026-07-08 668 MB cold hydrate, where ~135 of the D1 read-queries that
+/// saturated introspect/billing were exactly these per-op tier reads — has every
+/// concurrent op miss at once and thunder the herd onto D1.
+///
+/// This wrapper collapses that: a warm tenant resolves in memory (zero D1), and
+/// a cold burst is COALESCED into ONE inner resolve via a per-tenant
+/// single-flight lock (the rest wait, then read the now-warm entry).
+///
+/// **Correctness.** The tier only SELECTS which cap applies; the durable counter
+/// remains the sole authority, so a `≤ TTL`-stale selector is a bounded, accepted
+/// approximation (like the `$`-ceiling lease). The **fail-OPEN** posture is
+/// preserved unchanged: an inner `Err` is returned to the caller (which fail-OPENs
+/// per F21) and is NEVER cached, so a transient D1 fault self-heals on the next op.
+#[derive(Debug)]
+pub struct CachedTierResolver {
+    inner: Arc<dyn TierResolver>,
+    clock: Arc<dyn WallClock>,
+    ttl_ms: i64,
+    /// `tenant -> (tier, fetched_at_ms)`. Sync mutex; no `.await` is held across it.
+    cache: Mutex<HashMap<String, CachedTier>>,
+    /// `tenant -> per-tenant single-flight lock`. The async mutex is held across
+    /// the inner resolve so concurrent cold ops for one tenant do exactly one D1 read.
+    inflight: AsyncMutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+}
+
+impl CachedTierResolver {
+    /// Wrap `inner` with a `ttl_ms`-TTL single-flight cache.
+    #[must_use]
+    pub fn new(inner: Arc<dyn TierResolver>, clock: Arc<dyn WallClock>, ttl_ms: i64) -> Self {
+        Self {
+            inner,
+            clock,
+            ttl_ms,
+            cache: Mutex::new(HashMap::new()),
+            inflight: AsyncMutex::new(HashMap::new()),
+        }
+    }
+
+    /// The tenant's cached tier if present AND fresh at `now_ms`, else `None`.
+    fn cached_fresh(&self, tenant_id: &str, now_ms: i64) -> Option<String> {
+        let cache = self.cache.lock().ok()?;
+        let entry = cache.get(tenant_id)?;
+        (now_ms.saturating_sub(entry.fetched_at_ms) < self.ttl_ms).then(|| entry.tier.clone())
+    }
+
+    /// Store a freshly-resolved tier, evicting (expired-then-oldest) at the cap.
+    fn store(&self, tenant_id: &str, tier: String, now_ms: i64) {
+        let Ok(mut cache) = self.cache.lock() else {
+            return;
+        };
+        if cache.len() >= TIER_CACHE_CAP && !cache.contains_key(tenant_id) {
+            cache.retain(|_, e| now_ms.saturating_sub(e.fetched_at_ms) < self.ttl_ms);
+            if cache.len() >= TIER_CACHE_CAP {
+                if let Some(oldest) = cache
+                    .iter()
+                    .min_by_key(|(_, e)| e.fetched_at_ms)
+                    .map(|(k, _)| k.clone())
+                {
+                    let _ = cache.remove(&oldest);
+                }
+            }
+        }
+        let _ = cache.insert(tenant_id.to_owned(), CachedTier { tier, fetched_at_ms: now_ms });
+    }
+
+    /// The per-tenant single-flight lock, created on demand (bounded).
+    async fn inflight_lock(&self, tenant_id: &str) -> Arc<AsyncMutex<()>> {
+        let mut map = self.inflight.lock().await;
+        if map.len() >= TIER_CACHE_CAP && !map.contains_key(tenant_id) {
+            // Drop only UNCONTENDED locks (no waiter besides the map's own Arc).
+            map.retain(|_, l| Arc::strong_count(l) > 1);
+        }
+        Arc::clone(
+            map.entry(tenant_id.to_owned())
+                .or_insert_with(|| Arc::new(AsyncMutex::new(()))),
+        )
+    }
+}
+
+#[axum::async_trait]
+impl TierResolver for CachedTierResolver {
+    async fn tier(&self, tenant_id: &str) -> Result<String, String> {
+        let now_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
+        // Warm fast path — fresh cache entry, zero D1.
+        if let Some(tier) = self.cached_fresh(tenant_id, now_ms) {
+            return Ok(tier);
+        }
+        // Cold: serialise per tenant so a burst does ONE inner resolve, not N.
+        let lock = self.inflight_lock(tenant_id).await;
+        let _guard = lock.lock().await;
+        // Re-read the clock and re-check: a peer holding the lock just before us
+        // may already have warmed the entry.
+        let now_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
+        if let Some(tier) = self.cached_fresh(tenant_id, now_ms) {
+            return Ok(tier);
+        }
+        // Still cold — do the ONE inner resolve. Fail-OPEN: propagate any `Err`
+        // and never cache it, so a transient D1 fault self-heals next op.
+        let tier = self.inner.tier(tenant_id).await?;
+        self.store(tenant_id, tier.clone(), now_ms);
+        Ok(tier)
     }
 }
 
@@ -552,5 +694,130 @@ mod tests {
             Arc::new(InMemoryFakeWallClock::at_unix_ms(0)),
         );
         assert!(g.check_and_increment("tenant-f").await.is_none());
+    }
+
+    // ── CachedTierResolver (WP: cold-hydrate D1 thundering-herd hardening) ──────
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    /// A [`TierResolver`] fake that counts inner resolves (to prove the cache/
+    /// single-flight coalesces them) and can inject a delay so a burst overlaps.
+    #[derive(Debug)]
+    struct CountingTier {
+        tier: &'static str,
+        calls: Arc<AtomicUsize>,
+        delay_ms: u64,
+    }
+    #[axum::async_trait]
+    impl TierResolver for CountingTier {
+        async fn tier(&self, _tenant_id: &str) -> Result<String, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.delay_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
+            }
+            Ok(self.tier.to_owned())
+        }
+    }
+
+    /// A counting [`TierResolver`] that always errors (fail-OPEN path).
+    #[derive(Debug)]
+    struct CountingErroringTier(Arc<AtomicUsize>);
+    #[axum::async_trait]
+    impl TierResolver for CountingErroringTier {
+        async fn tier(&self, _tenant_id: &str) -> Result<String, String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Err("D1 down".to_owned())
+        }
+    }
+
+    fn cached(
+        inner: Arc<dyn TierResolver>,
+        clock: &Arc<InMemoryFakeWallClock>,
+    ) -> CachedTierResolver {
+        CachedTierResolver::new(inner, Arc::clone(clock) as Arc<dyn WallClock>, DEFAULT_TIER_CACHE_TTL_MS)
+    }
+
+    #[tokio::test]
+    async fn cached_tier_warm_hit_serves_from_memory() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let r = cached(
+            Arc::new(CountingTier { tier: "free", calls: Arc::clone(&calls), delay_ms: 0 }),
+            &clock,
+        );
+        assert_eq!(r.tier("t1").await.unwrap(), "free");
+        assert_eq!(r.tier("t1").await.unwrap(), "free");
+        assert_eq!(r.tier("t1").await.unwrap(), "free");
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "warm ops must not re-read D1");
+    }
+
+    #[tokio::test]
+    async fn cached_tier_cold_parallel_burst_coalesces_to_one_resolve() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let r = Arc::new(cached(
+            // A delay makes the burst genuinely overlap on the single-flight lock.
+            Arc::new(CountingTier { tier: "pro", calls: Arc::clone(&calls), delay_ms: 30 }),
+            &clock,
+        ));
+        let mut set = tokio::task::JoinSet::new();
+        for _ in 0..24 {
+            let rr = Arc::clone(&r);
+            set.spawn(async move { rr.tier("hot-tenant").await.unwrap() });
+        }
+        while let Some(res) = set.join_next().await {
+            assert_eq!(res.unwrap(), "pro");
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "a cold parallel burst must coalesce into ONE inner D1 resolve"
+        );
+    }
+
+    #[tokio::test]
+    async fn cached_tier_ttl_expiry_re_resolves() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let r = cached(
+            Arc::new(CountingTier { tier: "free", calls: Arc::clone(&calls), delay_ms: 0 }),
+            &clock,
+        );
+        let _ = r.tier("t1").await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        // Still within TTL → cached.
+        clock.advance(Duration::from_millis(u64::try_from(DEFAULT_TIER_CACHE_TTL_MS).unwrap() - 1));
+        let _ = r.tier("t1").await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "pre-TTL op is still cached");
+        // Cross the TTL → re-resolve.
+        clock.advance(Duration::from_millis(2));
+        let _ = r.tier("t1").await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "post-TTL op re-reads D1");
+    }
+
+    #[tokio::test]
+    async fn cached_tier_inner_error_is_not_cached_fail_open() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let r = cached(Arc::new(CountingErroringTier(Arc::clone(&calls))), &clock);
+        assert!(r.tier("t1").await.is_err());
+        assert!(r.tier("t1").await.is_err());
+        // Each op re-tried the inner (nothing cached) → a transient fault self-heals.
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "errors must NOT be cached (fail-open)");
+    }
+
+    #[tokio::test]
+    async fn cached_tier_distinct_tenants_resolve_independently() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
+        let r = cached(
+            Arc::new(CountingTier { tier: "free", calls: Arc::clone(&calls), delay_ms: 0 }),
+            &clock,
+        );
+        let _ = r.tier("t1").await.unwrap();
+        let _ = r.tier("t2").await.unwrap();
+        let _ = r.tier("t1").await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "one resolve per distinct tenant");
     }
 }

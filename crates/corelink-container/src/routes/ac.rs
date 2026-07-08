@@ -536,11 +536,16 @@ async fn handle_lookup(
 }
 
 /// `PUT /v1/ac/:tenant/:action_digest` handler — update.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "axum extractors are one-arg-each by design; a config struct would defeat FromRequestParts"
+)]
 async fn handle_update(
     State(state): State<AcRouteState>,
     Path((tenant, action_digest)): Path<(String, String)>,
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
+    runner_job: crate::scope::RunnerJob,
     headers: axum::http::HeaderMap,
     // cluster F: pre-body per-tenant concurrency reservation (declared AHEAD of
     // `body: Bytes`, so axum runs it BEFORE the body is buffered). 429 on over-cap;
@@ -563,6 +568,18 @@ async fn handle_update(
     // current `cas:rw` traffic.
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    // cf-multitenant WP5b (fail-CLOSED): a narrowed runner-job PAT with a pinned
+    // AC key may write ONLY that exact key — a stolen per-job credential must not
+    // write results outside the job it was minted for. A `"*"` pin (the launch
+    // default) or no pin ⇒ no key restriction (create allowed at any key; overwrite
+    // still 409 by INV-AC-RESULT-HASH-IMMUTABLE; delete still denied separately).
+    if !runner_job.ac_key_allowed(&action_digest) {
+        return (
+            StatusCode::FORBIDDEN,
+            "ac write outside the job's allowed key",
+        )
+            .into_response();
     }
     // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
     if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
@@ -595,12 +612,33 @@ async fn handle_update(
     // surfaces here as a sentinel-tagged `Internal` error mapped to 402 / 503.
     match state.update.update(req) {
         Ok(resp) => {
+            // AC create-only (deny-overwrite) — anti AC-squat, the AC analog of
+            // deny-DELETE. The store's `durable` flag is an ATOMIC put-if-absent
+            // signal: `true` = the row was FRESHLY INSERTED (the entry was
+            // absent); `false` = the `(tenant, action_digest)` entry ALREADY
+            // EXISTED and this was a byte-identical idempotent no-op (NOT a
+            // destructive overwrite — the store is content-immutable). A
+            // create-only cred may CREATE but never touch an existing entry, so a
+            // non-durable result is rejected 409. NO TOCTOU window: the decision
+            // rides the store's OWN conditional insert (the same atomic point
+            // that backs INV-AC-RESULT-HASH-IMMUTABLE), not a separate look-up.
+            if runner_job.ac_create_only() && !resp.durable {
+                return ac_create_only_conflict();
+            }
             let code = if resp.durable {
                 StatusCode::CREATED
             } else {
                 StatusCode::OK
             };
             (code, resp.action_digest).into_response()
+        }
+        // A create-only cred whose write hit an existing entry with DIVERGENT
+        // bytes: the store already refused the overwrite (DivergentBody, the
+        // INV-AC-RESULT-HASH-IMMUTABLE gate). Surface it with the consistent
+        // AC_CREATE_ONLY body rather than the generic divergent-body 409 — both
+        // are 409 rejections of the same overwrite attempt by this cred.
+        Err(AcHandlerError::DivergentBody { .. }) if runner_job.ac_create_only() => {
+            ac_create_only_conflict()
         }
         Err(e) => map_err(e),
     }
@@ -615,6 +653,7 @@ async fn handle_delete(
     Path((tenant, action_digest)): Path<(String, String)>,
     auth: crate::auth_tenant::AuthTenant,
     scope: crate::scope::CacheScope,
+    runner_job: crate::scope::RunnerJob,
     headers: axum::http::HeaderMap,
 ) -> impl IntoResponse {
     // Cross-tenant: deny 403 BEFORE any storage access (mirrors lookup).
@@ -624,6 +663,17 @@ async fn handle_delete(
     // CAA-360 #9: reject a malformed action_digest BEFORE it derives an R2 key.
     if !is_canonical_digest(&action_digest) {
         return (StatusCode::BAD_REQUEST, "malformed action_digest").into_response();
+    }
+    // cf-multitenant WP5b (fail-CLOSED): a narrowed runner-job PAT may NEVER
+    // delete an AC ref — a stolen per-job credential must not be able to EVICT
+    // the tenant's action cache. Denied BEFORE the scope gate (the Worker
+    // forwards the job's write scope, so the write bit alone would let it through).
+    if runner_job.is_runner_job() {
+        return (
+            StatusCode::FORBIDDEN,
+            "delete not permitted for a runner-job credential",
+        )
+            .into_response();
     }
     // Scope gate (fail-CLOSED): delete is a cache WRITE — require `cas:rw`.
     if !scope.can_write() {
@@ -722,6 +772,22 @@ async fn handle_list_refs(
         }
         Err(e) => map_err(e),
     }
+}
+
+/// Canonical **409 CONFLICT** for a create-only (deny-overwrite) runner-job cred
+/// that tried to OVERWRITE an existing `(tenant, action_digest)` AC entry — the
+/// anti AC-squat rejection (see [`crate::scope::RunnerJob::ac_create_only`]). The
+/// FIRST write of a key proceeds; any later write by a create-only cred is
+/// refused, so the AC is append-only per tenant for these creds.
+fn ac_create_only_conflict() -> axum::response::Response {
+    (
+        StatusCode::CONFLICT,
+        Json(serde_json::json!({
+            "error": "AC_CREATE_ONLY",
+            "message": "create-only cred cannot overwrite an existing action-cache entry",
+        })),
+    )
+        .into_response()
 }
 
 /// Map an [`AcHandlerError`] to the canonical HTTP response.
@@ -1259,6 +1325,260 @@ mod tests {
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    // ── cf-multitenant WP5b: runner-job PAT narrowing ────────────────────────
+
+    /// A second canonical digest, distinct from `VALID_DIGEST`, for the
+    /// exact-key restriction tests.
+    const OTHER_DIGEST: &str =
+        "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+    /// runner-job marker present ⇒ AC DELETE is denied 403 even with a
+    /// write-capable scope (a per-job credential must not evict the cache).
+    #[tokio::test]
+    async fn runner_job_ac_delete_returns_403() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert_eq!(body.as_ref(), b"delete not permitted for a runner-job credential");
+    }
+
+    /// runner-job + exact-key pin: an AC update to the pinned key passes the
+    /// gate (201/200), to a DIFFERENT key is denied 403.
+    #[tokio::test]
+    async fn runner_job_ac_update_exact_key_enforced() {
+        // Allowed key == the request path digest ⇒ passes.
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, VALID_DIGEST)
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED, "pinned key must pass");
+
+        // Allowed key != the request path digest ⇒ 403.
+        let (_a2, _s2, st2) = fixture();
+        let app2 = router(st2);
+        let req2 = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, OTHER_DIGEST)
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp2 = app2.oneshot(req2).await.expect("oneshot");
+        assert_eq!(resp2.status(), StatusCode::FORBIDDEN, "off-key write must 403");
+        let body = axum::body::to_bytes(resp2.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        assert_eq!(body.as_ref(), b"ac write outside the job's allowed key");
+    }
+
+    /// runner-job + wildcard key (`*`, the launch default): an AC update to ANY
+    /// key passes the gate; DELETE is still denied.
+    #[tokio::test]
+    async fn runner_job_ac_wildcard_allows_write_but_denies_delete() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let put = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, "*")
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(put).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED, "wildcard write must pass");
+
+        let (_a2, _s2, st2) = fixture();
+        let app2 = router(st2);
+        let del = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, "*")
+            .body(Body::empty())
+            .expect("request");
+        let resp2 = app2.oneshot(del).await.expect("oneshot");
+        assert_eq!(resp2.status(), StatusCode::FORBIDDEN, "wildcard delete still denied");
+    }
+
+    /// NO runner-job marker (normal PAT): AC update + delete behave EXACTLY as
+    /// before — the WP5b checks are no-ops (even if a stray key-allow header
+    /// with the WRONG key is present without the marker).
+    #[tokio::test]
+    async fn no_runner_job_marker_is_no_op() {
+        // Update to VALID_DIGEST with an OTHER_DIGEST key-allow but NO marker →
+        // still succeeds (the pin is ignored without the marker).
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let put = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, OTHER_DIGEST)
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(put).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED, "no marker ⇒ pin ignored");
+
+        // Delete with a write scope and no marker → 204 (unchanged).
+        let (_a2, _s2, st2) = fixture();
+        let app2 = router(st2);
+        let del = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .expect("request");
+        let resp2 = app2.oneshot(del).await.expect("oneshot");
+        assert_eq!(resp2.status(), StatusCode::NO_CONTENT, "normal delete unchanged");
+    }
+
+    /// A present-but-non-`"1"` marker is NOT a runner-job: delete behaves as a
+    /// normal write (204), proving the exact-`"1"` rule at the route.
+    #[tokio::test]
+    async fn runner_job_marker_non_one_is_not_narrowed_at_route() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let del = Request::builder()
+            .method(Method::DELETE)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "0")
+            .body(Body::empty())
+            .expect("request");
+        let resp = app.oneshot(del).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT, "marker \"0\" ⇒ not narrowed");
+    }
+
+    // ── AC create-only (deny-overwrite / anti AC-squat) ──────────────────────
+
+    /// Seed an AC entry at `VALID_DIGEST` (tenant `TEST_TENANT`) via the store's
+    /// update trait directly (bypasses the route gates) with the given bytes.
+    fn seed_ac_entry(st: &AcRouteState, bytes: &[u8]) {
+        st.update
+            .update(AcUpdateRequest::new(
+                TEST_TENANT,
+                VALID_DIGEST,
+                bytes.to_vec(),
+                "anon@t1",
+                TEST_TENANT,
+                1,
+            ))
+            .expect("seed");
+    }
+
+    /// Build a create-only runner-job AC PUT to `VALID_DIGEST` with the given body.
+    fn create_only_put(body: &'static [u8]) -> Request<Body> {
+        Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_CREATE_ONLY_HEADER, "1")
+            .body(Body::from(body.to_vec()))
+            .expect("request")
+    }
+
+    /// create-only cred + an ALREADY-EXISTING entry (byte-identical) → 409
+    /// AC_CREATE_ONLY. This is the distinguishing behavior: even an idempotent
+    /// re-write (which a normal cred returns 200 for) is refused for create-only.
+    #[tokio::test]
+    async fn create_only_overwrite_existing_returns_409() {
+        let (_a, _s, st) = fixture();
+        seed_ac_entry(&st, b"result"); // first writer establishes the entry
+        let app = router(st);
+        let resp = app.oneshot(create_only_put(b"result")).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(v["error"], "AC_CREATE_ONLY");
+    }
+
+    /// create-only cred + a DIVERGENT overwrite of an existing entry → 409 with
+    /// the consistent AC_CREATE_ONLY body (not the generic "divergent body").
+    #[tokio::test]
+    async fn create_only_divergent_overwrite_returns_409_create_only() {
+        let (_a, _s, st) = fixture();
+        seed_ac_entry(&st, b"original");
+        let app = router(st);
+        let resp = app.oneshot(create_only_put(b"poisoned")).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(
+            v["error"], "AC_CREATE_ONLY",
+            "a create-only cred's overwrite must be AC_CREATE_ONLY, not divergent-body"
+        );
+    }
+
+    /// create-only cred + an ABSENT entry → the FIRST write proceeds normally
+    /// (201 CREATED). Create-only denies OVERWRITE, never the initial CREATE.
+    #[tokio::test]
+    async fn create_only_fresh_entry_succeeds() {
+        let (_a, _s, st) = fixture();
+        let app = router(st);
+        let resp = app.oneshot(create_only_put(b"result")).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::CREATED, "the first write must succeed");
+    }
+
+    /// A NON-create-only runner-job cred (marker set, NO create-only header) may
+    /// still overwrite (idempotent re-write of an existing entry → 200 OK) — the
+    /// deny-DELETE / ac-key-allow behavior is UNCHANGED by this feature.
+    #[tokio::test]
+    async fn non_create_only_runner_job_overwrite_still_allowed() {
+        let (_a, _s, st) = fixture();
+        seed_ac_entry(&st, b"result");
+        let app = router(st);
+        let req = Request::builder()
+            .method(Method::PUT)
+            .uri(format!("/v1/ac/{TEST_TENANT}/{VALID_DIGEST}"))
+            .header("x-corelink-tenant-id", TEST_TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            // NO create-only header ⇒ overwrite (idempotent) still allowed.
+            .body(Body::from(b"result".to_vec()))
+            .expect("request");
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "a runner-job WITHOUT create-only re-writing an identical entry is an idempotent 200"
+        );
     }
 
     /// GET list returns the tenant's refs (read-only PAT is sufficient).

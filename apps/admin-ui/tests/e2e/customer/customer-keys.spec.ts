@@ -39,12 +39,14 @@ test.describe("customer keys", () => {
     await expect(page.getByTestId(`keys-row-${newId}`)).toBeVisible();
     await expect(page.getByTestId(`keys-status-${newId}`)).toContainText("active");
 
-    // Revoke it.
+    // Revoke it. The revoke button opens a ConfirmDialog (destructive-action
+    // guard); the actual revoke fires from the dialog's confirm button.
+    await page.getByTestId(`keys-revoke-${newId}`).click();
     const revokeResp = page.waitForResponse(
       (r) => r.url().endsWith(`/v1/customer/keys/${newId}/revoke`),
       { timeout: 10_000 },
     );
-    await page.getByTestId(`keys-revoke-${newId}`).click();
+    await page.getByRole("button", { name: "Revoke token" }).click();
     await revokeResp;
 
     await expect(page.getByTestId(`keys-status-${newId}`)).toContainText("revoked");

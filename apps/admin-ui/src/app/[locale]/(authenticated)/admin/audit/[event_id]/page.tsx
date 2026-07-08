@@ -6,6 +6,7 @@ import RbacGuard from "@/components/admin/RbacGuard";
 import MerkleProofViewer from "@/components/admin/MerkleProofViewer";
 import { adminClient } from "@/lib/admin-client";
 import type { AuditEventDetail } from "@/lib/types";
+import { Callout, Card, CodeBlock } from "@/components/ui/linear";
 
 export interface AuditEventPageProps {
   params: Promise<{ locale: string; event_id: string }>;
@@ -27,34 +28,47 @@ export default async function AuditEventPage({
 
   return (
     <RbacGuard>
-      <main aria-labelledby="event-heading">
-        <h1 id="event-heading">Audit event {event_id}</h1>
-        {!event && <p role="alert">Event not found.</p>}
-        {event && (
-          <>
-            <section aria-label="CloudEvent envelope">
-              <h2>CloudEvent envelope</h2>
-              <pre>{JSON.stringify(event.cloudevent, null, 2)}</pre>
-            </section>
+      <div className="cx-shell lin">
+        <div className="cx-main">
+          <main aria-labelledby="event-heading">
+            <h1 id="event-heading">Audit event {event_id}</h1>
+            {!event && (
+              <div role="alert" className="lin-mt">
+                <Callout tone="danger">Event not found.</Callout>
+              </div>
+            )}
+            {event && (
+              <>
+                <div className="lin-mt-lg">
+                  <Card title="CloudEvent envelope">
+                    <CodeBlock code={JSON.stringify(event.cloudevent, null, 2)} lang="json" />
+                  </Card>
+                </div>
 
-            <section aria-label="Payload">
-              <h2>Payload</h2>
-              <pre>{JSON.stringify(event.payload, null, 2)}</pre>
-            </section>
+                <div className="lin-mt">
+                  <Card title="Payload">
+                    <CodeBlock code={JSON.stringify(event.payload, null, 2)} lang="json" />
+                  </Card>
+                </div>
 
-            <MerkleProofViewer proof={event.merkle_proof} />
+                <div className="lin-mt">
+                  <MerkleProofViewer proof={event.merkle_proof} />
+                </div>
 
-            <section aria-label="R2 storage">
-              <h2>R2 storage</h2>
-              <p>
-                <a href={event.r2_url} rel="noreferrer">
-                  {event.r2_url}
-                </a>
-              </p>
-            </section>
-          </>
-        )}
-      </main>
+                <div className="lin-mt">
+                  <Card title="R2 storage">
+                    <p className="lin-card__meta">
+                      <a href={event.r2_url} rel="noreferrer">
+                        {event.r2_url}
+                      </a>
+                    </p>
+                  </Card>
+                </div>
+              </>
+            )}
+          </main>
+        </div>
+      </div>
     </RbacGuard>
   );
 }
