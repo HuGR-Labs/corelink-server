@@ -138,6 +138,11 @@ ALLOWLIST_REGEX = re.compile(
     #   Consumer: apps/admin-ui/next.config.ts (withSentryConfig org/project)
     r"|SENTRY_ORG$"
     r"|SENTRY_PROJECT$"
+    # Next.js FRAMEWORK-provided runtime discriminant ("nodejs" | "edge"), set by
+    # Next itself — NOT a secret/credential. Surfaced by the Sentry v10 migration
+    # (#36): instrumentation.ts branches register() on `process.env.NEXT_RUNTIME`.
+    #   Consumer: apps/admin-ui/instrumentation.ts
+    r"|NEXT_RUNTIME$"
     # Admin-ui analytics endpoint override — public URL; default is hardcoded
     # in source. No credential material.
     #   Consumer: apps/admin-ui/src/lib/analytics.ts
