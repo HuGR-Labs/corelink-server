@@ -23,6 +23,12 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **worker — Track-B `fva_minutes` must ride `/v1/session/exchange`, not only the internal token-exchange.**
+  The initial wiring emitted `fva_minutes` on `handleTokenExchange` (`/internal/v1/auth/token-exchange`,
+  githugr #1) — but hugit's erase engine reads `HUGIT_SESSION_EXCHANGE_URL = /v1/session/exchange`
+  (`handleSessionExchange`, seam C), so the freshness signal never reached the step-up gate. Emit
+  `fva_minutes` on the `/v1/session/exchange` response too (still fail-closed: omitted when the session has no
+  well-formed `fva`). Both exchange endpoints now carry it. 2 tests on the session-exchange path.
 - **container — cold-hydrate D1 thundering-herd (part 2): single-flight the per-op PAT lookup.**
   `PatVerifier` did a D1 `pat` read on every op; the 2026-07-08 cold hydrate made ~57 of these land as a
   parallel herd (a burst of the SAME runner PAT). Fronted `PatRowLookup` with `SingleFlightPatLookup`: a
