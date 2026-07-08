@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **container — cold-hydrate D1 thundering-herd (part 2): single-flight the per-op PAT lookup.**
+  `PatVerifier` did a D1 `pat` read on every op; the 2026-07-08 cold hydrate made ~57 of these land as a
+  parallel herd (a burst of the SAME runner PAT). Fronted `PatRowLookup` with `SingleFlightPatLookup`: a
+  burst of concurrent same-`token_id` lookups shares ONE inner D1 read (a `futures::Shared` flight). It is
+  NOT a cache — the flight is dropped on resolve and a late joiner refuses an already-resolved flight, so
+  every returned row is fresh and revocation stays immediate (`INV-PAT-REVOKE-PROPAGATION`; the SQL-side
+  `revoked_at_ms IS NULL`/expiry filters run on every real read). Coalescing keys on the non-secret
+  `token_id`; the per-request Argon2id verify + timing-parity + OOM-permit machinery are untouched (no auth
+  decision changes, no new timing oracle). Completes the tier-cache fix above. 5 concurrency/freshness tests.
 - **container — cold-hydrate D1 thundering-herd: single-flight + TTL cache the per-op tier read.**
   `RequestCountGate::check_and_increment` resolved the tenant's tier from D1 (`tenant.tier` +
   `tier_selections`) on EVERY billable op with no cache. During the 2026-07-08 668 MB cold hydrate this
