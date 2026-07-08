@@ -23,6 +23,29 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **worker — DSR legitimacy anchor (`/_internal/dsr/anchor`) was gated on the wrong key (GDPR go-live blocker).**
+  The anchor is a two-authority split: githugr holds a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY`,
+  distinct from the eraser's `CORELINK_ERASE_AUTH_KEY`. But `internalConsumerForPath` had no
+  `dsr_anchor` case, so `/_internal/dsr/anchor` fell through to the `/_internal/dsr/*` → `erase`
+  catch-all: the worker front-gate compared githugr's anchor key against the ERASE key → **401**,
+  before the request ever reached the container's own (correctly-keyed) anchor gate. So binding +
+  forwarding the anchor key end to end could never unblock it — the worker wall rejected it first.
+  Added the `dsr_anchor` consumer (`resolveConsumerKey` → `CORELINK_DSR_ANCHOR_AUTH_KEY`, shared-key
+  fallback) and routed `/_internal/dsr/anchor` to it *before* the erase catch-all. The anchor
+  `dsr_id` is a HARD gate on physical erasure (the hugit executor refuses to erase without it), so
+  this was the sole code blocker on live Art.17 erasure. Regression tests pin anchor→anchor-key,
+  erase-paths→erase-key.
+- **worker — the DSR legitimacy anchor was wrongly swept into the cross-residency erase fan-out (second GDPR blocker).**
+  After the key-gate fix (above), the anchor still 502'd: the erase fan-out was scoped by
+  `route.pathSuffix.startsWith("/_internal/dsr/")`, which matched `/_internal/dsr/anchor` and fanned it
+  out to all 4 regional workers (`PROD_{LHR,SAM,NRT,SYD}`), returning 502 unless the local **and** every
+  region 2xx'd — but the regions are unprovisioned for the anchor, so it always 502'd. The fan-out exists
+  only to erase/verify per-jurisdiction **R2 bytes** and returns the LOCAL body — so it is correct only for
+  byte side-effects confirmed by status, never for `/anchor` (a single global-D1 `INSERT OR IGNORE`), the
+  gather routes `/access` `/portability` (payload-body — regional bodies were discarded anyway), or the
+  global-D1 write `/rectification`. Replaced the broad `startsWith` with an explicit allowlist
+  (`isDsrEraseFanoutPath` → `/erase`, `/verify` only), fixing the anchor 502 and the latent over-fan of the
+  four gather/write routes in one scope-correct change. Regression tests pin the exact fan-out set.
 - **admin-ui — repaired the broken Linear render (legacy CSS overrode the kit).**
   The app-wide Linear migration rendered visually broken — "flying white boxes" (HelpPopover triggers),
   invisible/empty buttons, cramped forms — despite typecheck/lint/tests/token-audit all passing (none catch
@@ -63,6 +86,17 @@ Each entry cross-references:
   consent-dashboard locale-broken links (404s), both re-skinned off raw HTML tables onto the kit. Added
   `.lin-t1..t4` text-color utilities and `target`/`rel` on the kit `Button` anchor form. Consent capture
   screens cut from launch nav (already unlinked). Each screen visually reviewed via screenshot.
+- **container — backend data surfaces to un-stub the dashboard (Runners + Workspaces + operator deep-dive).**
+  New tenant-scoped read/CRUD endpoints so the FE stops rendering NotWiredError EmptyStates:
+  `customer_runners` (`GET /v1/customer/runners/{entitlement,allowlist,runs}` — reads runners_entitlement /
+  runner_repo_allowlist / runner_billing; honest stubs where no D1 source exists), `workspaces`
+  (`GET/POST/DELETE /v1/customer/workspaces[/:id[/pin]]` + migration `0088_workspaces` — tenant-leftmost PK,
+  DSR-erasable), and `admin_tenant_detail` (operator per-tenant usage/billing/consents/dsr/pats reads). All
+  tenant-derived-from-session and fail-closed (adversarially audited: no cross-tenant read/write, PAT secrets
+  never selected); the two customer surfaces carry the native-PAT possession backstop. The operator deep-dive
+  is internal-auth gated (same posture as the rest of `admin`), so wiring the admin-ui operator console to it
+  is a separate follow-up. FE wiring (client methods + screen un-stub) also follows.
+- **admin-ui — app-wide Linear design migration (admin, public, onboarding, DSR/consent) + FE follow-ups.**
   Extends the customer-dashboard Linear rebuild to the rest of the app so the whole surface follows the
   Linear doctrine (a11y-validated tokens, 4px spacing grid, fixed type scale, kit-only). Migrated: the
   operator **admin** surface (audit/ops/tenants + 10 components), the **public/legal** pages

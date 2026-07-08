@@ -42,6 +42,12 @@ use crate::routes::audit_analytics::ShadowSinkFactory;
 pub mod ac;
 /// Admin HTTP routes (R-prep wire-up; wave-11).
 pub mod admin;
+/// Operator per-tenant deep-dive reads (usage/billing/consents/dsr/pats).
+/// Operator posture: internal-auth gated, same as `admin` — reached via the
+/// operator path, NOT the customer Worker (which strips internal-auth on
+/// `/v1/*`). Wiring the admin-ui operator console to this surface is a separate
+/// follow-up that applies to the whole operator plane, not just this module.
+pub mod admin_tenant_detail;
 /// Pilot-admin HTTP routes (Wave-29 stream-3): replaces the wave-27
 /// placeholder scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`,
 /// `pilot-24h-checkin.sh`) with proper endpoints + audit-emit
@@ -123,6 +129,10 @@ pub mod cas_erase;
 /// forwards these paths to the container; this module is the final link
 /// that makes them return real responses instead of 404.
 pub mod customer;
+/// Customer Runners read surface (BE-10): tenant-scoped entitlement/allowlist/runs.
+pub mod customer_runners;
+/// Customer Workspaces surface (BE-11): tenant-scoped snapshot CRUD + pin.
+pub mod workspaces;
 /// Internal DSR erasure route (WI-S11-008): `POST /_internal/dsr/erase`.
 /// Reachable only from the Cloudflare DO; gated by the same
 /// `X-Corelink-Internal-Auth` shared secret. Drives the 12-backend erasure
@@ -619,6 +629,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // `POST /v1/customer/account/delete` route fails CLOSED (503). Mirrors the
     // `pat_gate` wiring above (a cross-module collaborator composed at the root).
     customer_state.account_deletion = customer::account_deletion_from_env();
+    // Customer Runners (BE-10) + Workspaces (BE-11): tenant-scoped, own-tenant
+    // only (tenant derived from the session header, never a client param). Wire
+    // the SAME native-PAT possession backstop the customer/CAS states carry — a
+    // leaked PAT_SIGNING_KEY must not forge access to these surfaces either.
+    let mut customer_runners_state = customer_runners::build_state_from_env();
+    customer_runners_state.pat_gate = native_pat_gate.clone();
+    let mut workspaces_state = workspaces::build_handlers_from_env();
+    workspaces_state.pat_gate = native_pat_gate.clone();
     // `/v1/users/me` gets the identical backstop (it reflected a forged PAT's
     // claimed identity un-gated).
     let users_state = users::UsersRouteState {
@@ -632,11 +650,16 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(cas::router(cas_state))
         .merge(ac::router(ac_state))
         .merge(admin::router(admin_state))
+        .merge(admin_tenant_detail::router(
+            admin_tenant_detail::AdminTenantDetailState::from_env(),
+        ))
         .merge(admin_pilot::router(pilot_admin_state))
         .merge(audit_export::router(audit_export_state))
         .merge(audit_analytics::router(audit_analytics_state))
         .merge(users::router(users_state))
         .merge(customer::router(customer_state))
+        .merge(customer_runners::router(customer_runners_state))
+        .merge(workspaces::router(workspaces_state))
         .merge(bazel_v2::router(bazel_state))
         .merge(turbo_v8::router(turbo_state));
 
