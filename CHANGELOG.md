@@ -22,6 +22,17 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **container — cold-hydrate D1 thundering-herd: single-flight + TTL cache the per-op tier read.**
+  `RequestCountGate::check_and_increment` resolved the tenant's tier from D1 (`tenant.tier` +
+  `tier_selections`) on EVERY billable op with no cache. During the 2026-07-08 668 MB cold hydrate this
+  was ~135 of the D1 read-queries that saturated D1-over-HTTP and fail-closed the fabric's
+  introspect/billing path (transient, recovered). Fronted the D1 tier resolver with `CachedTierResolver`
+  — a warm tenant resolves in memory (zero D1); a cold PARALLEL burst coalesces into ONE inner resolve
+  via a per-tenant single-flight lock. The tier only selects the cap (durable `monthly_request_counts`
+  stays the sole authority), so a bounded ≤30 s-stale selector is an accepted approximation; the
+  fail-OPEN posture is unchanged (an inner `Err` is never cached). 5 tests incl. a 24-op burst → 1 resolve.
+
 ### Added
 - **container + worker — AC create-only (deny-overwrite) runner-job cred policy (anti AC-squat).**
   Closes the runner-side "AC-squat" fast-follow: a runner-job credential may now CREATE a new
