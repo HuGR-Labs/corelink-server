@@ -685,4 +685,38 @@ describe("POST /v1/session/exchange — githugr multi-issuer (per-user isolated 
     expect(await fvaMinutesInResponse("nope")).toBeUndefined();
     expect(await fvaMinutesInResponse([2.5, -1])).toBeUndefined();
   });
+
+  // The GITHUGR-issuer path (clerk.githugr.com → verifyGithugrSession) is the one
+  // the real-user erase flow authenticates through — fva_minutes MUST flow here too,
+  // not only on the CoreLink-issuer path.
+  it("propagates fva_minutes on a githugr-issuer session (the erase flow's path)", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_gfva_fresh",
+      azp: GITHUGR_AZP,
+      iss: GITHUGR_ISSUER,
+      fva: [0, -1],
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true, orgMap: new Map() });
+    const resp = await exchangeFetch(env, {
+      Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_gfva_fresh")}`,
+    });
+    expect(resp.status).toBe(200);
+    expect((await resp.json() as Record<string, unknown>)["fva_minutes"]).toBe(0);
+  });
+
+  it("OMITS fva_minutes on a githugr-issuer session with no fva (fail-closed)", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_gfva_none",
+      azp: GITHUGR_AZP,
+      iss: GITHUGR_ISSUER,
+    } as never);
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), withGithugr: true, orgMap: new Map() });
+    const resp = await exchangeFetch(env, {
+      Authorization: `Bearer ${bearerWithIssuer(GITHUGR_ISSUER, "user_gfva_none")}`,
+    });
+    expect(resp.status).toBe(200);
+    expect((await resp.json() as Record<string, unknown>)["fva_minutes"]).toBeUndefined();
+  });
 });
