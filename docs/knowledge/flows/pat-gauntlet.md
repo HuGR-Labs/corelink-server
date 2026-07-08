@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/native_pat_gate.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "41d84e271568cb47df664806fa3dc9798c134249"
+checkpoint_sha: "3ee5dc2df2e4d741837efcacccb66465980d99c9"
 provenance: "AUTHORED"
 tags: ["flows", "auth", "pat", "argon2id", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -25,20 +25,20 @@ This is the data-plane possession gate and the second of CoreLink's 2-level PAT 
 1. Entry: `NativePatGate::verify(tenant, bearer)` strips the `Bearer ` prefix, rejects an empty token 401, and computes a SHA-256 fingerprint used as the cache key (never the plaintext) (`crates/corelink-container/src/native_pat_gate.rs:156-165`).
 2. Verify-cache fast path: a non-expired cached entry returns immediately, skipping Argon2id — but the cached tenant must still equal the claimed tenant or it is rejected like a miss (`crates/corelink-container/src/native_pat_gate.rs:167-176`).
 3. Single-flight on miss: concurrent misses for the same fingerprint coalesce onto ONE verification via a fixed shard array, with a double-checked cache read after the lock, so a same-PAT burst cannot stampede D1 / the Argon2id pool into 503s (`crates/corelink-container/src/native_pat_gate.rs:182-192`).
-4. The full pipeline runs through `PatVerifier::verify` -> `verify_capability` (`crates/corelink-container/src/native_pat_gate.rs:196-196`; `crates/corelink-container/src/adapter_pat.rs:731-735`; `crates/corelink-container/src/adapter_pat.rs:534-537`).
-5. Stage 1 — HMAC fast-reject (pre-D1): the plaintext is HMAC-checked against the signing-key overlap set; a forged token is rejected as `InvalidPat` with NO D1 round-trip (`crates/corelink-container/src/adapter_pat.rs:538-543`).
-6. Stage 2 — D1 lookup by the non-secret `token_id`, expiry-filtered in SQL; an unknown/expired/revoked id runs a bounded dummy Argon2id burn for timing parity, then returns `InvalidPat` (`crates/corelink-container/src/adapter_pat.rs:545-599`).
-7. Stage 3 — Argon2id: the secret segment is verified against the stored PHC hash on a blocking thread, gated by a global concurrency permit AND a per-tenant sub-permit (consistent global->per-tenant order); an acquire-timeout fails closed as `Backend` (`crates/corelink-container/src/adapter_pat.rs:602-650`).
-8. Stage 4 — scope gate (fail-closed): no cache-read capability -> `InvalidPat`; otherwise the read/write split is surfaced (`crates/corelink-container/src/adapter_pat.rs:652-660`; `crates/corelink-container/src/scope.rs:73-73`; `crates/corelink-container/src/scope.rs:93-93`).
+4. The full pipeline runs through `PatVerifier::verify` -> `verify_capability` (`crates/corelink-container/src/native_pat_gate.rs:196-196`; `crates/corelink-container/src/adapter_pat.rs:835-839`; `crates/corelink-container/src/adapter_pat.rs:638-641`).
+5. Stage 1 — HMAC fast-reject (pre-D1): the plaintext is HMAC-checked against the signing-key overlap set; a forged token is rejected as `InvalidPat` with NO D1 round-trip (`crates/corelink-container/src/adapter_pat.rs:642-647`).
+6. Stage 2 — D1 lookup by the non-secret `token_id`, expiry-filtered in SQL; an unknown/expired/revoked id runs a bounded dummy Argon2id burn for timing parity, then returns `InvalidPat` (`crates/corelink-container/src/adapter_pat.rs:649-703`).
+7. Stage 3 — Argon2id: the secret segment is verified against the stored PHC hash on a blocking thread, gated by a global concurrency permit AND a per-tenant sub-permit (consistent global->per-tenant order); an acquire-timeout fails closed as `Backend` (`crates/corelink-container/src/adapter_pat.rs:706-754`).
+8. Stage 4 — scope gate (fail-closed): no cache-read capability -> `InvalidPat`; otherwise the read/write split is surfaced (`crates/corelink-container/src/adapter_pat.rs:756-764`; `crates/corelink-container/src/scope.rs:73-73`; `crates/corelink-container/src/scope.rs:93-93`).
 9. Tenant binding: on a genuine PAT the gate caches `fp -> tenant`, then returns Ok ONLY if the resolved tenant equals the claimed tenant; a real PAT for tenant A against tenant B's path is a uniform 401 (`crates/corelink-container/src/native_pat_gate.rs:196-205`).
 10. Cache write: a verified entry is inserted with a short TTL so the next request in the burst skips Argon2id, and expired entries are evicted on read to bound the map (`crates/corelink-container/src/native_pat_gate.rs:218-244`).
 
 # Invariants
 
-- A token that fails the HMAC layer NEVER reaches Argon2id — the fast-reject is pre-D1 and pre-permit (`crates/corelink-container/src/adapter_pat.rs:538-543`).
-- The D1 row lookup runs BEFORE the expensive Argon2id, so a valid-HMAC token for a nonexistent/expired/revoked `token_id` is decided cheaply and only hits the bounded dummy burn (`crates/corelink-container/src/adapter_pat.rs:545-599`).
-- Argon2id concurrency is double-bounded (global permit + per-tenant sub-permit) so neither a global flood nor one tenant flooding distinct PATs can drain the pool; saturation fails closed 503, never serves (`crates/corelink-container/src/adapter_pat.rs:602-650`).
-- The scope gate is fail-closed: an empty/absent scope grants nothing (`crates/corelink-container/src/adapter_pat.rs:652-660`; `crates/corelink-container/src/scope.rs:73-73`).
+- A token that fails the HMAC layer NEVER reaches Argon2id — the fast-reject is pre-D1 and pre-permit (`crates/corelink-container/src/adapter_pat.rs:642-647`).
+- The D1 row lookup runs BEFORE the expensive Argon2id, so a valid-HMAC token for a nonexistent/expired/revoked `token_id` is decided cheaply and only hits the bounded dummy burn (`crates/corelink-container/src/adapter_pat.rs:649-703`).
+- Argon2id concurrency is double-bounded (global permit + per-tenant sub-permit) so neither a global flood nor one tenant flooding distinct PATs can drain the pool; saturation fails closed 503, never serves (`crates/corelink-container/src/adapter_pat.rs:706-754`).
+- The scope gate is fail-closed: an empty/absent scope grants nothing (`crates/corelink-container/src/adapter_pat.rs:756-764`; `crates/corelink-container/src/scope.rs:73-73`).
 - Possession is bound to the CLAIMED tenant — a genuine PAT for a different tenant is rejected with the SAME uniform 401 as a forgery (no oracle) (`crates/corelink-container/src/native_pat_gate.rs:196-205`; `crates/corelink-container/src/native_pat_gate.rs:247-251`).
 - The cache key is a SHA-256 fingerprint, never the plaintext, so the in-memory map cannot leak a usable secret (`crates/corelink-container/src/native_pat_gate.rs:253-257`).
 
@@ -54,8 +54,8 @@ This is the data-plane possession gate and the second of CoreLink's 2-level PAT 
 2. `crates/corelink-container/src/native_pat_gate.rs:156-205` — `verify`: Bearer-strip, fingerprint, cache fast path, single-flight, full pipeline, tenant binding.
 3. `crates/corelink-container/src/native_pat_gate.rs:218-257` — cache get/put eviction and the SHA-256 fingerprint helper.
 4. `crates/corelink-container/src/native_pat_gate.rs:247-251` — uniform 401 for every PAT-rejection condition (no oracle).
-5. `crates/corelink-container/src/adapter_pat.rs:534-660` — `verify_capability`: HMAC fast-reject -> D1 lookup (+ bounded dummy burn) -> bounded Argon2id -> scope gate.
-6. `crates/corelink-container/src/adapter_pat.rs:731-735` — `verify`: thin wrapper returning the owning tenant id.
+5. `crates/corelink-container/src/adapter_pat.rs:638-764` — `verify_capability`: HMAC fast-reject -> D1 lookup (+ bounded dummy burn) -> bounded Argon2id -> scope gate.
+6. `crates/corelink-container/src/adapter_pat.rs:835-839` — `verify`: thin wrapper returning the owning tenant id.
 7. `crates/corelink-container/src/scope.rs:73-73` — `requires_cache_read` (fail-closed read capability).
 8. `crates/corelink-container/src/scope.rs:93-93` — `requires_cache_write` (the write-capability split).
 </content>
