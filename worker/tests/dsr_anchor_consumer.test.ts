@@ -11,7 +11,7 @@
  * tests pin the two-authority split: anchor path → anchor key; erase paths → erase key.
  */
 import { describe, it, expect } from "vitest";
-import { internalConsumerForPath } from "../src/index.js";
+import { internalConsumerForPath, isDsrEraseFanoutPath } from "../src/index.js";
 import { resolveConsumerKey } from "../src/lib/internal_auth.js";
 import type { Env } from "../src/index.js";
 
@@ -29,6 +29,43 @@ describe("internalConsumerForPath — DSR anchor is a distinct consumer", () => 
   it("keeps the other consumers unchanged", () => {
     expect(internalConsumerForPath("/_internal/pat/mint")).toBe("pat_mint");
     expect(internalConsumerForPath("/_internal/admin/tenants")).toBe("admin");
+  });
+});
+
+/**
+ * Regression: the GDPR cross-residency erase FAN-OUT must be scoped to the
+ * byte-erase surface only. The prior `startsWith("/_internal/dsr/")` swept the
+ * global-D1 legitimacy anchor (`/_internal/dsr/anchor`) into the fan-out, which
+ * fans out to all 4 regional workers and returns 502 unless every (anchor-
+ * unprovisioned) region also 2xx's — the live GDPR-close blocker. `/access` and
+ * `/portability` return a gathered export (the caller returns the LOCAL body, so
+ * fanning them out is useless + only adds 502s); `/rectification` is a single
+ * global-D1 write. Only `/erase` (deletes regional R2 bytes) and `/verify`
+ * (re-confirms deletion, signs VerifiedComplete) are per-jurisdiction side
+ * effects that MUST fan out. Under-fanning an erase is catastrophic (silent
+ * residual bytes), so this test pins the exact set.
+ */
+describe("isDsrEraseFanoutPath — fan-out is scoped to the byte-erase surface", () => {
+  it("fans out ONLY the byte-erase side-effect routes", () => {
+    expect(isDsrEraseFanoutPath("/_internal/dsr/erase")).toBe(true);
+    expect(isDsrEraseFanoutPath("/_internal/dsr/verify")).toBe(true);
+  });
+
+  it("does NOT fan out the global-D1 anchor (the live GDPR 502)", () => {
+    expect(isDsrEraseFanoutPath("/_internal/dsr/anchor")).toBe(false);
+  });
+
+  it("does NOT fan out the gather/write routes (payload-body or global-D1 write)", () => {
+    expect(isDsrEraseFanoutPath("/_internal/dsr/access")).toBe(false);
+    expect(isDsrEraseFanoutPath("/_internal/dsr/portability")).toBe(false);
+    expect(isDsrEraseFanoutPath("/_internal/dsr/rectification")).toBe(false);
+  });
+
+  it("does NOT fan out non-DSR internal or unknown routes", () => {
+    expect(isDsrEraseFanoutPath("/_internal/cas/x/y/erase")).toBe(false);
+    expect(isDsrEraseFanoutPath("/_internal/pat/mint")).toBe(false);
+    expect(isDsrEraseFanoutPath("/_internal/dsr/")).toBe(false);
+    expect(isDsrEraseFanoutPath("/_internal/dsr/erase/execute")).toBe(false);
   });
 });
 
