@@ -7,7 +7,7 @@ source_files:
   - "worker/src/lib/githugr_provision.ts"
   - "worker/src/lib/tenant_lookup.ts"
   - "migrations/d1/0074_team_member.sql"
-checkpoint_sha: "de89d3a0935f6ed9b595cf38c54607aa799122d8"
+checkpoint_sha: "15f3f085538288eee3261eb86aa27a781fe568e7"
 provenance: "AUTHORED"
 tags: ["auth", "clerk", "tenant-resolution", "edge"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -102,13 +102,13 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
   peeked issuer matches (`worker/src/lib/clerk_auth.ts:137`). The routing gate no longer requires a
   `GITHUGR_TENANT_ID` — that legacy shared-tenant secret is removed. Inside the arm, `verifyToken` runs
   networkless against githugr's PUBLIC `jwtKey`, then `iss` is exact-pinned to the githugr issuer
-  authoritatively (`worker/src/lib/clerk_auth.ts:410`). On success the verified `sub` becomes the
-  `clerkUserId` (`worker/src/lib/clerk_auth.ts:423`), and the tenant is derived NOT from a fixed
+  authoritatively (`worker/src/lib/clerk_auth.ts:415`). On success the verified `sub` becomes the
+  `clerkUserId` (`worker/src/lib/clerk_auth.ts:428`), and the tenant is derived NOT from a fixed
   configured value but by **provision-or-lookup**: `provisionOrLookupGithugrTenant(env.CONFIG_DB, sub)`
   returns a deterministic per-`sub` isolated tenant, mapped to the `owner` role (a federated-login owner
   of its own isolated tenant, not a seat), and ANY D1 fault there is a fail-CLOSED **500** —
-  never a fall-back to a shared tenant (`worker/src/lib/clerk_auth.ts:443`,
-  `worker/src/lib/clerk_auth.ts:444-450`). With the secrets unset the whole routing `if` is false, so
+  never a fall-back to a shared tenant (`worker/src/lib/clerk_auth.ts:458`,
+  `worker/src/lib/clerk_auth.ts:468-475`). With the secrets unset the whole routing `if` is false, so
   this arm never executes today.
 - **githugr per-`sub` tenant derivation + LOOKUP-FIRST, transactional provisioning:** `deriveGithugrTenantId(sub)`
   computes a v5-shaped UUID from `SHA-256("corelink-githugr-tenant-v1:" + sub)` — so two distinct subs
@@ -165,7 +165,7 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
   `worker/src/lib/githugr_provision.ts:198-201`).
 - The githugr provision/lookup is fail-CLOSED: any D1 fault (or an absent read-back) throws / returns a
   500 — the arm NEVER falls back to a shared tenant (that fall-back is the exact isolation break this
-  fixes) (`worker/src/lib/clerk_auth.ts:444-450`, `worker/src/lib/githugr_provision.ts:202-204`).
+  fixes) (`worker/src/lib/clerk_auth.ts:468-475`, `worker/src/lib/githugr_provision.ts:202-204`).
 
 # Gotchas
 
@@ -178,7 +178,7 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
   CoreLink signup-worker's `user.created` auto-provision never fires for them). It now provisions-or-looks-up
   a per-`sub` tenant via `provisionOrLookupGithugrTenant` (`worker/src/lib/githugr_provision.ts:124`), and
   fails CLOSED (500) on a D1 fault rather than ever resolving to a shared tenant
-  (`worker/src/lib/clerk_auth.ts:444-450`).
+  (`worker/src/lib/clerk_auth.ts:468-475`).
 - The `peekUnverifiedIssuer` step is ROUTING-ONLY — it parses an UNVERIFIED payload to decide which
   instance minted the token; the signature is verified afterward inside the chosen arm
   (`worker/src/lib/clerk_auth.ts:137`). Never trust a peeked claim.
@@ -211,9 +211,9 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
 12. `migrations/d1/0074_team_member.sql:65-66` — the `(user_id, status)` index backing the team-member resolution arm (the `team_member` table is defined at `:28-57`).
 13. `worker/src/lib/clerk_auth.ts:314-321` — D1 fault → 500 fail-CLOSED, never fail-open.
 14. `worker/src/lib/clerk_auth.ts:137` — DORMANT githugr routing gate (BOTH real `GITHUGR_*` settings — issuer + public jwtKey — AND opt-in AND peeked issuer match; the old `GITHUGR_TENANT_ID` gate is removed).
-15. `worker/src/lib/clerk_auth.ts:410` — githugr arm authoritative issuer exact-pin (only reached when the dormant gate opens).
-16. `worker/src/lib/clerk_auth.ts:443` — githugr arm resolves the tenant via `provisionOrLookupGithugrTenant(env.CONFIG_DB, sub)` — a per-`sub` isolated tenant, NOT a fixed configured id — and maps it to the `owner` role.
-17. `worker/src/lib/clerk_auth.ts:444-450` — githugr provision/lookup fail-CLOSED: a D1 fault is a 500, never a fall-back to a shared tenant.
+15. `worker/src/lib/clerk_auth.ts:415` — githugr arm authoritative issuer exact-pin (only reached when the dormant gate opens).
+16. `worker/src/lib/clerk_auth.ts:458` — githugr arm resolves the tenant via `provisionOrLookupGithugrTenant(env.CONFIG_DB, sub)` — a per-`sub` isolated tenant, NOT a fixed configured id — and maps it to the `owner` role.
+17. `worker/src/lib/clerk_auth.ts:468-475` — githugr provision/lookup fail-CLOSED: a D1 fault is a 500, never a fall-back to a shared tenant.
 18. `worker/src/lib/githugr_provision.ts:91` — `deriveGithugrTenantId`, the deterministic per-`sub` tenant_id.
 19. `worker/src/lib/githugr_provision.ts:92-101` — the derivation body: v5-shaped UUID from `SHA-256("corelink-githugr-tenant-v1:" + sub)` (distinct subs → distinct tenants; same sub → same tenant).
 20. `worker/src/lib/githugr_provision.ts:124` — `provisionOrLookupGithugrTenant`, the LOOKUP-FIRST provision-or-lookup entrypoint.
