@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **container — cold-hydrate D1 thundering-herd (part 2): single-flight the per-op PAT lookup.**
+  `PatVerifier` did a D1 `pat` read on every op; the 2026-07-08 cold hydrate made ~57 of these land as a
+  parallel herd (a burst of the SAME runner PAT). Fronted `PatRowLookup` with `SingleFlightPatLookup`: a
+  burst of concurrent same-`token_id` lookups shares ONE inner D1 read (a `futures::Shared` flight). It is
+  NOT a cache — the flight is dropped on resolve and a late joiner refuses an already-resolved flight, so
+  every returned row is fresh and revocation stays immediate (`INV-PAT-REVOKE-PROPAGATION`; the SQL-side
+  `revoked_at_ms IS NULL`/expiry filters run on every real read). Coalescing keys on the non-secret
+  `token_id`; the per-request Argon2id verify + timing-parity + OOM-permit machinery are untouched (no auth
+  decision changes, no new timing oracle). Completes the tier-cache fix above. 5 concurrency/freshness tests.
 - **container — cold-hydrate D1 thundering-herd: single-flight + TTL cache the per-op tier read.**
   `RequestCountGate::check_and_increment` resolved the tenant's tier from D1 (`tenant.tier` +
   `tier_selections`) on EVERY billable op with no cache. During the 2026-07-08 668 MB cold hydrate this
@@ -44,6 +53,12 @@ Each entry cross-references:
   derives `fresh_auth = fva_minutes <= threshold` (hugit owns the policy, ≤5 min) — one enforcer, no split
   policy; an absent field is treated as NOT fresh (safe for the engine to ship first). No trust surface added
   (it's parsed from the same verified JWT the exchange already trusts for principal/tenant).
+- **tooling — `scripts/admin/mint-dogfood-pat.sh`: mint + persist one tenant-scoped PAT for E2E/dogfood proofs.**
+  The corelink-runners fabricd consumes Bearer PATs (validates via CoreLink introspect) but does not mint them;
+  this produces one for a box-backend E2E proof. Mirrors `mintScopedPat` (`session_exchange.ts`): calls the
+  pure `/_internal/pat/mint` (HMAC + Argon2id, no persistence) then writes the D1 `pat` row via wrangler. No
+  hard-coded secrets (auth = `CORELINK_PAT_MINT_AUTH_KEY` from env); dry-run unless `--yes`; prints the token
+  plaintext once. Dev/ops utility only — no product-path change.
 
 - **container + worker — AC create-only (deny-overwrite) runner-job cred policy (anti AC-squat).**
   Closes the runner-side "AC-squat" fast-follow: a runner-job credential may now CREATE a new

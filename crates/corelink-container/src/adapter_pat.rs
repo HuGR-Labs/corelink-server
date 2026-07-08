@@ -53,6 +53,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use corelink_pat::{verify_hmac_only_multi, verify_with_hash_multi, PatHash, PatSigningKey};
+use futures::future::{BoxFuture, FutureExt, Shared};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::scope::{requires_cache_read, requires_cache_write};
@@ -79,7 +80,7 @@ pub enum VerifyError {
 ///
 /// `token_id` is the non-secret lookup key; the secret material is the
 /// caller-supplied plaintext, verified against `pat_hash`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PatRow {
     /// Tenant UUID (text) that owns the PAT.
     pub tenant_id: String,
@@ -154,6 +155,104 @@ impl PatRowLookup for D1HttpClient {
             pat_hash,
             scope,
         }))
+    }
+}
+
+/// The shared, cloneable in-flight lookup future used by [`SingleFlightPatLookup`].
+/// `Arc<..>` so every joiner clones one heap result; `Shared` so one poll drives
+/// the single inner D1 read for all joiners.
+type SharedLookup = Shared<BoxFuture<'static, Arc<Result<Option<PatRow>, String>>>>;
+
+/// A **no-cache single-flight** wrapper over an inner [`PatRowLookup`].
+///
+/// The cold-hydrate PAT read-herd (2026-07-08: ~57 D1 `pat` reads during a
+/// 668 MB pull) is a burst of the SAME runner PAT arriving in parallel — every
+/// op re-reads the same `token_id` row. This coalesces a burst of concurrent
+/// lookups for one `token_id` into ONE inner D1 read: the first caller leads the
+/// read, the rest join its [`Shared`] future.
+///
+/// # It is NOT a cache — revocation stays immediate
+///
+/// The shared flight is dropped the instant it resolves, and a late joiner that
+/// finds an already-RESOLVED flight (`peek().is_some()`) REFUSES to reuse it and
+/// leads a fresh read instead. So there is no window where a resolved result is
+/// served to a request that started after it: every returned row is FRESH, and
+/// the SQL-side `revoked_at_ms IS NULL` / expiry filters run on every real read
+/// — `INV-PAT-REVOKE-PROPAGATION` is preserved (a revoked token surfaces as
+/// `None` on the very next non-in-flight lookup). Coalescing is keyed on the
+/// **non-secret** `token_id`; the per-request Argon2id verify in
+/// [`PatVerifier::verify_capability`] is UNTOUCHED (it still runs once per
+/// request and is the sole possession check), so this changes no auth decision,
+/// adds no timing oracle (the D1 hop is dwarfed by Argon2id), and leaves the
+/// dummy-burn / OOM-permit machinery exactly as is.
+pub struct SingleFlightPatLookup {
+    inner: Arc<dyn PatRowLookup>,
+    /// `token_id -> in-flight shared read`. Sync mutex; the guard is NEVER held
+    /// across an `.await` (we clone the `Shared` out, then drop the guard).
+    inflight: Mutex<HashMap<String, SharedLookup>>,
+}
+
+impl std::fmt::Debug for SingleFlightPatLookup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SingleFlightPatLookup")
+            .field("inner", &"Arc<dyn PatRowLookup>")
+            .finish()
+    }
+}
+
+impl SingleFlightPatLookup {
+    /// Wrap an inner lookup with per-`token_id` single-flight coalescing.
+    #[must_use]
+    pub fn new(inner: Arc<dyn PatRowLookup>) -> Self {
+        Self {
+            inner,
+            inflight: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl PatRowLookup for SingleFlightPatLookup {
+    async fn lookup(&self, token_id: &str) -> Result<Option<PatRow>, String> {
+        // Join an UNRESOLVED in-flight read for this token_id, or lead a fresh
+        // one. A poisoned lock falls back to a direct read (fail-safe: correct,
+        // just uncoalesced).
+        let (shared, is_leader) = {
+            let Ok(mut map) = self.inflight.lock() else {
+                return self.inner.lookup(token_id).await;
+            };
+            match map.get(token_id) {
+                // Only JOIN a flight that has NOT resolved — never reuse a
+                // completed read (freshness / revocation immediacy).
+                Some(existing) if existing.peek().is_none() => (existing.clone(), false),
+                _ => {
+                    let inner = Arc::clone(&self.inner);
+                    let tid = token_id.to_owned();
+                    let fut: SharedLookup =
+                        async move { Arc::new(inner.lookup(&tid).await) }.boxed().shared();
+                    // `insert` REPLACES any resolved-stale entry for this key.
+                    let _ = map.insert(token_id.to_owned(), fut.clone());
+                    (fut, true)
+                }
+            }
+        };
+
+        let result = shared.await;
+
+        // The leader evicts the now-resolved flight so the NEXT lookup is fresh.
+        // Guard: remove ONLY if the current entry is resolved (a fresh leader may
+        // have already replaced it with a new unresolved flight — leave that).
+        if is_leader {
+            if let Ok(mut map) = self.inflight.lock() {
+                if let Some(cur) = map.get(token_id) {
+                    if cur.peek().is_some() {
+                        let _ = map.remove(token_id);
+                    }
+                }
+            }
+        }
+
+        (*result).clone()
     }
 }
 
@@ -379,7 +478,12 @@ impl PatVerifier {
             }
         }
 
-        Some(Self::with_key_set(Arc::new(d1), signing_keys))
+        // Front the per-op D1 `pat` read with single-flight coalescing so a cold
+        // parallel burst of the SAME runner PAT (a hydrate) collapses to one D1
+        // read instead of a thundering herd — no cache, so revocation stays
+        // immediate. See [`SingleFlightPatLookup`].
+        let lookup: Arc<dyn PatRowLookup> = Arc::new(SingleFlightPatLookup::new(Arc::new(d1)));
+        Some(Self::with_key_set(lookup, signing_keys))
     }
 
     /// Decode one hex `PatSigningKey` from the named env var.
@@ -1388,5 +1492,99 @@ mod tests {
             dummy_ptr,
             "UNKNOWN_TOKEN_BUCKET must never be evicted (same Arc)"
         );
+    }
+
+    // ── SingleFlightPatLookup (cold-hydrate PAT read-herd) ─────────────────────
+
+    /// A lookup fake that counts inner calls, delays (to force burst overlap),
+    /// and whose returned result is SWAPPABLE (to simulate revocation between
+    /// reads — proving the single-flight is NOT a cache).
+    struct SwitchableLookup {
+        calls: Arc<AtomicUsize>,
+        delay_ms: u64,
+        result: Mutex<Result<Option<PatRow>, String>>,
+    }
+    impl SwitchableLookup {
+        fn new(result: Result<Option<PatRow>, String>, delay_ms: u64) -> Self {
+            Self { calls: Arc::new(AtomicUsize::new(0)), delay_ms, result: Mutex::new(result) }
+        }
+        fn set(&self, r: Result<Option<PatRow>, String>) {
+            *self.result.lock().unwrap() = r;
+        }
+    }
+    #[async_trait]
+    impl PatRowLookup for SwitchableLookup {
+        async fn lookup(&self, _token_id: &str) -> Result<Option<PatRow>, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if self.delay_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
+            }
+            self.result.lock().unwrap().clone()
+        }
+    }
+
+    #[tokio::test]
+    async fn single_flight_coalesces_a_concurrent_burst_to_one_read() {
+        let inner = Arc::new(SwitchableLookup::new(Ok(Some(row("h", "t", "cas:rw"))), 30));
+        let calls = Arc::clone(&inner.calls);
+        let sf = Arc::new(SingleFlightPatLookup::new(inner));
+        let mut set = tokio::task::JoinSet::new();
+        for _ in 0..24 {
+            let s = Arc::clone(&sf);
+            set.spawn(async move { s.lookup("tok-hot").await.unwrap() });
+        }
+        while let Some(r) = set.join_next().await {
+            assert_eq!(r.unwrap(), Some(row("h", "t", "cas:rw")));
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "a parallel burst does ONE inner D1 read");
+    }
+
+    #[tokio::test]
+    async fn single_flight_is_not_a_cache_sequential_reads_are_fresh() {
+        let inner = Arc::new(SwitchableLookup::new(Ok(Some(row("h", "t", "cas:rw"))), 0));
+        let calls = Arc::clone(&inner.calls);
+        let sf = SingleFlightPatLookup::new(inner);
+        let _ = sf.lookup("tok").await.unwrap();
+        let _ = sf.lookup("tok").await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "sequential reads are NOT cached");
+    }
+
+    #[tokio::test]
+    async fn single_flight_revocation_is_immediate() {
+        // A resolved flight is never reused: after a row is returned, swapping the
+        // inner to None (revocation) is visible on the very next read.
+        let inner = Arc::new(SwitchableLookup::new(Ok(Some(row("h", "t", "cas:rw"))), 0));
+        let calls = Arc::clone(&inner.calls);
+        let inner_for_swap = Arc::clone(&inner);
+        let sf = SingleFlightPatLookup::new(inner);
+        assert_eq!(sf.lookup("tok").await.unwrap(), Some(row("h", "t", "cas:rw")));
+        inner_for_swap.set(Ok(None)); // revoke
+        assert_eq!(sf.lookup("tok").await.unwrap(), None, "revocation is immediate (no cache)");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn single_flight_distinct_token_ids_do_not_coalesce() {
+        let inner = Arc::new(SwitchableLookup::new(Ok(Some(row("h", "t", "cas:rw"))), 20));
+        let calls = Arc::clone(&inner.calls);
+        let sf = Arc::new(SingleFlightPatLookup::new(inner));
+        let (a, b) = (Arc::clone(&sf), Arc::clone(&sf));
+        let h1 = tokio::spawn(async move { a.lookup("tok-A").await.unwrap() });
+        let h2 = tokio::spawn(async move { b.lookup("tok-B").await.unwrap() });
+        let _ = h1.await.unwrap();
+        let _ = h2.await.unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2, "different token_ids each read");
+    }
+
+    #[tokio::test]
+    async fn single_flight_backend_error_is_not_cached() {
+        let inner = Arc::new(SwitchableLookup::new(Err("D1 down".to_owned()), 0));
+        let calls = Arc::clone(&inner.calls);
+        let inner_for_swap = Arc::clone(&inner);
+        let sf = SingleFlightPatLookup::new(inner);
+        assert!(sf.lookup("tok").await.is_err());
+        inner_for_swap.set(Ok(Some(row("h", "t", "cas:rw"))));
+        assert_eq!(sf.lookup("tok").await.unwrap(), Some(row("h", "t", "cas:rw")), "error not cached");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }
