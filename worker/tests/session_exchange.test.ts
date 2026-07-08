@@ -654,4 +654,35 @@ describe("POST /v1/session/exchange — githugr multi-issuer (per-user isolated 
     const body = (await resp.json()) as Record<string, unknown>;
     expect(body["tenant"]).toBe("acme-default");
   });
+
+  // ── Track-B: fva_minutes on THIS endpoint (hugit's HUGIT_SESSION_EXCHANGE_URL) ──
+  // hugit's erase engine reads fresh_auth from the /v1/session/exchange response,
+  // so fva_minutes MUST ride this body (not only the githugr token-exchange one).
+  function claimsWithFva(sub: string, fva: unknown) {
+    return { sub, azp: "https://corelink-admin.humangr.com", iss: "https://clerk.humangr.com", fva } as never;
+  }
+  let sfvaSeq = 0;
+  async function fvaMinutesInResponse(fvaClaim: unknown): Promise<unknown> {
+    const u = `user_sfva_${sfvaSeq}`;
+    const t = `tenant_sfva_${sfvaSeq}`;
+    sfvaSeq += 1;
+    mockVerifyToken.mockResolvedValue(claimsWithFva(u, fvaClaim));
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map([[u, t]]) });
+    const resp = await exchangeFetch(env, { Authorization: "Bearer clerk.jwt" });
+    expect(resp.status).toBe(200);
+    return ((await resp.json()) as Record<string, unknown>)["fva_minutes"];
+  }
+
+  it("propagates fva_minutes on a fresh session (hugit reads it for fresh_auth)", async () => {
+    expect(await fvaMinutesInResponse([0, -1])).toBe(0);
+    expect(await fvaMinutesInResponse([4, -1])).toBe(4);
+  });
+
+  it("OMITS fva_minutes on absent/malformed/negative fva (fail-closed = not fresh)", async () => {
+    expect(await fvaMinutesInResponse(undefined)).toBeUndefined();
+    expect(await fvaMinutesInResponse([-1, -1])).toBeUndefined();
+    expect(await fvaMinutesInResponse("nope")).toBeUndefined();
+    expect(await fvaMinutesInResponse([2.5, -1])).toBeUndefined();
+  });
 });

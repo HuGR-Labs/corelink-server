@@ -406,6 +406,14 @@ export async function handleSessionExchange(
   const mintScope = clerkAuth.role === "viewer" ? "read-only" : EXCHANGE_PAT_SCOPE;
 
   // ── 4. Mint a short-lived PAT (REUSE the one container mint), scoped by role ─
+  // Track-B: propagate the Clerk step-up freshness signal `fva_minutes` (verified
+  // `fva[0]`) so the engine's erase step-up can require a recent reauth. THIS is
+  // the endpoint hugit's engine reads (HUGIT_SESSION_EXCHANGE_URL = /v1/session/
+  // exchange). OMITTED when the session has no well-formed `fva` (fail-CLOSED —
+  // the engine treats an absent field as NOT fresh). See handleTokenExchange for
+  // the same signal on the githugr #1 path.
+  const freshness =
+    clerkAuth.fvaMinutes === undefined ? undefined : { fva_minutes: clerkAuth.fvaMinutes };
   return mintScopedPat(
     env,
     requestId,
@@ -414,6 +422,7 @@ export async function handleSessionExchange(
     EXCHANGE_PAT_TTL_SECONDS,
     mintScope,
     internalAuthKey,
+    freshness,
   );
 }
 
