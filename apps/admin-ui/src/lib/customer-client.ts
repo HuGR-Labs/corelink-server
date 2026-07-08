@@ -88,8 +88,8 @@ export class CustomerClient {
     // the screen stuck on its loading Skeleton forever (the admin client sidesteps
     // this by defaulting getToken to `async () => null`). Skip the token in E2E.
     // Inert in production: NEXT_PUBLIC_E2E_TEST_MODE is never set there.
-    // Canonical Next form: bare `process.env.NEXT_PUBLIC_*` dot-access, which Next
-    // statically REPLACES with the literal in the client bundle. Do NOT guard with
+    // Canonical Next form: a bare `NEXT_PUBLIC_*` dot-access on `process.env`, which
+    // Next statically REPLACES with the literal in the client bundle. Do NOT guard with
     // `typeof process` — Next does not define `process` as a runtime object in the
     // browser, so that guard would short-circuit to false client-side.
     const isE2E = process.env.NEXT_PUBLIC_E2E_TEST_MODE === "1";
