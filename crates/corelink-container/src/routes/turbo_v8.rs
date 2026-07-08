@@ -350,6 +350,11 @@ pub struct TurboRouteState {
     /// (~1/1024) and a collision only adds a little serialization, never a
     /// correctness defect.
     pub(crate) write_locks: Arc<Vec<AsyncMutex<()>>>,
+    /// Display usage aggregator (usage-metering-roi). The Turbo artifact GET-HIT /
+    /// GET-MISS / PUT decision points `record` fire-and-forget into this meter — a
+    /// cheap lock+increment, NEVER a DB call / `await` on the hot path. Inert in
+    /// dev/CI; `build_with_factory` sets the ONE shared, D1-backed meter.
+    pub usage_meter: Arc<crate::usage_meter::UsageMeter>,
 }
 
 /// Process-wide Turbo-PUT byte/concurrency budget (C5). A single
@@ -979,6 +984,7 @@ pub fn build_handlers() -> TurboRouteState {
                         get_inflight: Arc::new(Mutex::new(HashMap::new())),
                         events_inflight: Arc::new(Mutex::new(HashMap::new())),
                         write_locks: new_write_locks(),
+                        usage_meter: Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
                     };
                 }
                 Some(Err(e)) => {
@@ -997,6 +1003,7 @@ pub fn build_handlers() -> TurboRouteState {
                         get_inflight: Arc::new(Mutex::new(HashMap::new())),
                         events_inflight: Arc::new(Mutex::new(HashMap::new())),
                         write_locks: new_write_locks(),
+                        usage_meter: Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
                     };
                 }
                 None => {}
@@ -1017,6 +1024,8 @@ pub fn build_handlers() -> TurboRouteState {
         get_inflight: Arc::new(Mutex::new(HashMap::new())),
         events_inflight: Arc::new(Mutex::new(HashMap::new())),
         write_locks: new_write_locks(),
+        // Inert placeholder; `build_with_factory` sets the shared, D1-backed meter.
+        usage_meter: Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
     }
 }
 
@@ -1128,6 +1137,9 @@ async fn handle_get(
         }
     }
     let now_ms = SystemWallClock.now_ms();
+    // usage-metering-roi: keep the tenant for the fire-and-forget meter record
+    // below — `caller_tenant` is moved into the request constructor.
+    let meter_tenant = caller_tenant.clone();
     let req = TurboGetRequest::new(
         hash,
         params.team_id,
@@ -1139,8 +1151,23 @@ async fn handle_get(
         now_ms,
     );
     match state.handler.get(req) {
-        Ok(resp) => (StatusCode::OK, resp.bytes).into_response(),
-        Err(e) => map_err(e),
+        Ok(resp) => {
+            // usage-metering-roi: artifact GET HIT (fire-and-forget, no await/I/O).
+            state
+                .usage_meter
+                .record(&meter_tenant, crate::usage_meter::UsageEvent::ReadHit);
+            (StatusCode::OK, resp.bytes).into_response()
+        }
+        Err(e) => {
+            // usage-metering-roi: a genuine NotFound is a GET MISS; other errors
+            // are faults, not classified ops.
+            if matches!(e, corelink_turbo_bridge::TurboBridgeError::NotFound { .. }) {
+                state
+                    .usage_meter
+                    .record(&meter_tenant, crate::usage_meter::UsageEvent::ReadMiss);
+            }
+            map_err(e)
+        }
     }
 }
 
@@ -1283,6 +1310,11 @@ async fn handle_put(
     );
     match state.handler.put(req) {
         Ok(resp) => {
+            // usage-metering-roi: artifact PUT is a WRITE op (fire-and-forget, no
+            // await/I/O on the hot path).
+            state
+                .usage_meter
+                .record(&caller_tenant, crate::usage_meter::UsageEvent::Write);
             // rt34 finding #3/#4/#5/#6: Turbo keys are OPAQUE/client-chosen (NOT
             // content-addressed), so an overwrite can change the stored SIZE. We
             // already accrued the full new body length (`byte_len`) above —

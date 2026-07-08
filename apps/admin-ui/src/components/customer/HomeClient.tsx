@@ -12,8 +12,9 @@
 //   connect-a-tool ................ no client signal → step pending + link (honest)
 //   first cache hit ............... no metering signal today (BE-1/BE-2) → step pending
 //                                   + teaching hint (never fabricated as done)
-//   cache-hit-rate / $-saved / dedup [not-wired]/[stub] (BE-2/BE-7) → teaching ROI
-//                                   EmptyState/Callout, NEVER a zero
+//   hit_rate / $-saved ............ [live]  (BE-2, from getUsage — best-effort) → the
+//                                   ROI hero. hit_rate null / usage unavailable = cold
+//                                   start → teaching EmptyState, NEVER a fabricated %.
 //
 // The #1 rule for this screen: derive "done" ONLY from a real available signal.
 // Every other step renders pending with a teaching hint — we never fake a green
@@ -24,7 +25,7 @@
 import React from "react";
 import { useAuth } from "@clerk/nextjs";
 import { CustomerClient } from "@/lib/customer-client";
-import type { CustomerOverview, CustomerPat } from "@/lib/customer-types";
+import type { CustomerOverview, CustomerPat, CustomerUsage } from "@/lib/customer-types";
 import {
   Badge,
   Button,
@@ -46,6 +47,15 @@ export interface HomeClientProps {
 
 function gib(bytes: number): number {
   return Math.round((bytes / 1024 ** 3) * 100) / 100;
+}
+
+// Modeled dollar savings from cents → "$X" (whole dollars once ≥ $10, else 2dp
+// so an early-days figure isn't rounded to "$0"). Kept local, like `gib`.
+function dollarsSaved(cents: number): string {
+  const d = cents / 100;
+  return d >= 10
+    ? `$${Math.round(d).toLocaleString()}`
+    : `$${(Math.round(d * 100) / 100).toLocaleString()}`;
 }
 
 function isActivePat(p: CustomerPat): boolean {
@@ -110,6 +120,10 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
   const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
   const [overview, setOverview] = React.useState<CustomerOverview | null>(null);
   const [pats, setPats] = React.useState<CustomerPat[] | null>(null);
+  // Usage powers the ROI hero (hit-rate + $ saved). It is a best-effort side
+  // read — a failure degrades the hero to its cold-start teaching state, never
+  // blocks Home and never fabricates a metric.
+  const [usage, setUsage] = React.useState<CustomerUsage | null>(null);
   const [err, setErr] = React.useState<unknown>(null);
   const [reloadKey, setReloadKey] = React.useState(0);
 
@@ -117,21 +131,28 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
     let alive = true;
     setOverview(null);
     setPats(null);
+    setUsage(null);
     setErr(null);
     // Overview is the load-bearing fetch; listKeys is a cheap [live] read that
-    // lets us honestly mark step ② "create a token" done when a PAT exists.
-    // A keys failure must NOT block Home — degrade the token step to pending.
+    // lets us honestly mark step ② "create a token" done when a PAT exists, and
+    // getUsage feeds the ROI hero. Both side reads degrade to null on failure —
+    // a keys/usage failure must NOT block Home.
     Promise.all([
       client.getOverview(),
       client.listKeys().then(
         (k) => k.pats,
         () => null,
       ),
+      client.getUsage().then(
+        (u) => u,
+        () => null,
+      ),
     ])
-      .then(([o, p]) => {
+      .then(([o, p, u]) => {
         if (!alive) return;
         setOverview(o);
         setPats(p);
+        setUsage(u);
       })
       .catch((e: unknown) => alive && setErr(e));
     return () => {
@@ -356,14 +377,44 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
         </div>
       </Card>
 
-      {/* ROI hero — cache-hit rate / $-saved / dedup are all [not-wired]/[stub]
-          today (BE-2/BE-7). Teach what will appear and WHEN; NEVER a zero. */}
+      {/* ROI hero — [live] via BE-2 (getUsage). Show the real hit-rate + modeled
+          $ saved once reads exist; when usage is unavailable or hit_rate is null
+          (cold start) teach what will appear and WHEN — NEVER a fabricated zero. */}
       <Card title="Your cache ROI" className="lin-mt-lg">
         <div data-testid="home-roi">
-          <EmptyState
-            title="Your savings appear here after your first builds"
-            body="Cache-hit rate, build time saved, and dollars saved land once usage metering ships (BE-2). A cold start is normal — hits climb from D+1 to D+7 as your cache fills."
-          />
+          {usage != null && usage.hit_rate != null ? (
+            <div data-testid="home-roi-metrics" className="lin-checklist">
+              <div data-testid="home-roi-hit-rate">
+                <Stat
+                  label="Cache-hit rate"
+                  value={`${Math.round(usage.hit_rate * 100)}%`}
+                  sub="Share of cache lookups served from the cache instead of rebuilt this period."
+                />
+              </div>
+              <div data-testid="home-roi-dollars-saved">
+                <Stat
+                  label="Saved (estimated)"
+                  value={dollarsSaved(usage.dollars_saved_cents)}
+                  sub="A modeled estimate of compute cost avoided — not a billed figure."
+                />
+                <span className="lin-card__meta">
+                  <HelpPopover label="How is this estimated?">
+                    A modeled estimate, not a billed amount: we credit roughly 15
+                    seconds of compute saved per cache hit, priced at typical CI
+                    compute rates. A directional savings signal, not an invoice
+                    line. See Usage for the full breakdown.
+                  </HelpPopover>
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div data-testid="home-roi-coldstart">
+              <EmptyState
+                title="Your savings appear here after your first builds"
+                body="Cache-hit rate, build time saved, and dollars saved appear here once your cache serves its first reads. A cold start is normal — hits climb from D+1 to D+7 as your cache fills."
+              />
+            </div>
+          )}
           <Callout tone="info">
             <strong>The shared moat works for you.</strong> Deterministic public
             dependencies are warmed for free from the shared <code>_public</code>{" "}

@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/routes/public_attestation.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "0b7dc5e9ae0704f30e3e578ed75f30cf1d2b9474"
+checkpoint_sha: "3717d15bc3b20ad17558a00ed0ff2b992eae5573"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -32,7 +32,7 @@ surface.
 - The router composer: `build_with_factory` assembles every data-plane sub-router with shared state via
   one `Router::new().merge(...)` chain — now also mounting the operator `admin_tenant_detail` read surface
   and the tenant-scoped `customer_runners` / `workspaces` surfaces
-  (`crates/corelink-container/src/routes.rs:649-664`).
+  (`crates/corelink-container/src/routes.rs:667-682`).
 
 # How it works
 1. `main` selects the storage backing (`"r2"` vs `"inmemory"`) once at boot and surfaces it on
@@ -125,7 +125,7 @@ surface.
 8. `crates/corelink-container/src/main.rs:575-870` — the full set of env-gated privileged route mounts, including the S-09 `POST /_internal/audit/drain` audit-chain drain (BLAKE3 tamper-evident seal of `audit_outbox`; internal-auth gated, env-gated on D1) alongside the `/_internal/dsr/*` family — the single `dsr::router` now mounts ALL five data-subject-rights legs (`erase` Art.17 + `verify`, plus `access` Art.15 / `portability` Art.20 / `rectification` Art.16 added by the DSAR-completion work), sharing one internal-auth gate.
 8b. `crates/corelink-container/src/main.rs:728-870` — the LIVE Stripe-webhook materializer mount: signature-verified `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to `tier_selections` over D1-HTTP (one of two activation writers; the Worker routes `/v1/billing/stripe-webhook` to this `_system` DO as the sole signature-verifier — see `WebhookState::new` + `STRIPE_WEBHOOK_ROUTE` at the mount).
 9. `crates/corelink-container/src/main.rs:875-878` — binding the composed router to the PORT listener.
-10. `crates/corelink-container/src/routes.rs:649-664` — the `Router::new().merge(...)` composition chain (now incl. `admin_tenant_detail`, `customer_runners`, `workspaces`).
+10. `crates/corelink-container/src/routes.rs:667-682` — the `Router::new().merge(...)` composition chain (now incl. `admin_tenant_detail`, `customer_runners`, `workspaces`).
 11. `crates/corelink-container/src/routes.rs:369-423` — shared gates resolved from env (quota, OCI-scoped request-count, PAT, accountant); the request-count gate is OCI-only, not cloned into native states (would double-count vs the Worker edge).
 12. `crates/corelink-container/src/routes.rs:425-513` — shared CAS handler objects + accounting/tombstone wrap (incl. `put_inflight`/`read_inflight` pools in the `CasRouteState` ctor).
 13. `crates/corelink-container/src/routes.rs:484-503` — centralized 410-Gone erasure gate at the CAS chokepoint.

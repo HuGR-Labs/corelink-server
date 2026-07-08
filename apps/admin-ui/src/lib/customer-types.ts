@@ -41,11 +41,14 @@ export interface CustomerOverview {
 export interface CustomerUsage {
   period: string;
   cas_bytes: number; // [live] tenant_storage_state
-  reads: number; // [stub] prod=0 (no per-op table) → BE-1
-  writes: number; // [stub] prod=0 → BE-1
+  reads: number; // [live] period read total (BE-1)
+  writes: number; // [live] period write total (BE-1)
   request_count: number; // [live] monthly_request_counts (0071) via BE-1a — billable requests this period
   quota_bytes: number; // [live]
-  daily: Array<{ day: string; reads: number; writes: number; cas_bytes: number }>; // [stub] prod=[] → BE-1
+  hit_rate: number | null; // [live] BE-2 — fraction 0..1; null = no reads yet (cold start → teaching state, NEVER a fake %)
+  time_saved_seconds: number; // [live] BE-2 — build time saved (render humanized)
+  dollars_saved_cents: number; // [live] BE-2 — MODELED estimate (~15s compute saved per hit); render "$X" + label "estimated"
+  daily: Array<{ day: string; reads: number; writes: number; cas_bytes: number }>; // [live] BE-1 — per-day reads/writes; cas_bytes always 0 (no per-day byte history)
 }
 
 export interface CustomerAuditEvent {

@@ -579,11 +579,14 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
       writes: 8_712,
       request_count: 133_214,
       quota_bytes: 10_737_418_240,
+      hit_rate: 0.86,
+      time_saved_seconds: 1_607_000,
+      dollars_saved_cents: 66_900,
       daily: Array.from({ length: 7 }, (_, i) => ({
         day: `2026-05-${String(8 + i).padStart(2, "0")}`,
         reads: 14_000 + i * 1_200,
         writes: 800 + i * 90,
-        cas_bytes: 600_000_000 + i * 30_000_000,
+        cas_bytes: 0, // no per-day byte history (frozen contract)
       })),
     };
     return { status: 200, body: usage };

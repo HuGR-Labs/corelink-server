@@ -186,6 +186,13 @@ pub struct CasRouteState {
     /// writes do not contend on one counter (sharing would over-throttle a tenant
     /// that legitimately reads and writes concurrently).
     pub(crate) read_inflight: Arc<Mutex<HashMap<String, usize>>>,
+    /// Display usage aggregator (usage-metering-roi). The read-HIT / read-MISS /
+    /// write decision points `record` fire-and-forget into this meter — a cheap
+    /// lock+increment, NEVER a DB call / `await` on the hot path. Inert (`record`
+    /// is a no-op) in dev/CI; `build_with_factory` sets the ONE process-wide
+    /// meter shared across the instrumented cache surfaces. See
+    /// [`crate::usage_meter`].
+    pub usage_meter: Arc<crate::usage_meter::UsageMeter>,
     // Storage byte accounting (red-team finding #1 / cluster B+C) is NOT a route
     // field: it is enforced INSIDE the `write`/`delete` trait objects above by
     // the [`crate::byte_accounting::AccountingCasHandler`] decorator (wired in
@@ -220,6 +227,9 @@ impl CasRouteState {
             pat_gate,
             put_inflight: Arc::new(Mutex::new(HashMap::new())),
             read_inflight: Arc::new(Mutex::new(HashMap::new())),
+            // Inert placeholder for external callers; the production wiring in
+            // `build_with_factory` sets the shared, D1-backed meter.
+            usage_meter: Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
 }
@@ -818,8 +828,23 @@ async fn handle_read(
         now_ms,
     );
     match state.read.read(req) {
-        Ok(resp) => (StatusCode::OK, resp.bytes).into_response(),
-        Err(e) => map_err(e),
+        Ok(resp) => {
+            // usage-metering-roi: read HIT (fire-and-forget, no await/I/O).
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::ReadHit);
+            (StatusCode::OK, resp.bytes).into_response()
+        }
+        Err(e) => {
+            // usage-metering-roi: a genuine "not found" is a read MISS; every
+            // other error is a fault, not a classified cache op — don't count it.
+            if matches!(e, CasHandlerError::NotFound { .. }) {
+                state
+                    .usage_meter
+                    .record(&tenant, crate::usage_meter::UsageEvent::ReadMiss);
+            }
+            map_err(e)
+        }
     }
 }
 
@@ -893,6 +918,11 @@ async fn handle_write(
     // accrues (that would double-count through the decorated handler).
     match state.write.write(req) {
         Ok(resp) => {
+            // usage-metering-roi: write (both fresh 201 and idempotent 200 are a
+            // WRITE op) — fire-and-forget, no await/I/O on the hot path.
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::Write);
             let code = if resp.durable {
                 StatusCode::CREATED
             } else {
@@ -1682,6 +1712,7 @@ mod tests {
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
 
@@ -1708,6 +1739,7 @@ mod tests {
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
 
@@ -1730,6 +1762,7 @@ mod tests {
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
 
@@ -2232,6 +2265,7 @@ mod tests {
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
 
@@ -2295,6 +2329,7 @@ mod tests {
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
 
@@ -2345,6 +2380,7 @@ mod tests {
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         };
         let app = router(st);
         let req = Request::builder()
@@ -2397,6 +2433,7 @@ mod tests {
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
 
@@ -2457,6 +2494,7 @@ mod tests {
             pat_gate: None,
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         };
         let app = router(st);
         let body = b"hello-cas".to_vec();
@@ -2521,6 +2559,7 @@ mod tests {
             pat_gate: Some(Arc::new(NativePatGate::new_for_test(verifier))),
             put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         };
         let app = router(st);
         let req = Request::builder()

@@ -22,6 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **container — usage metering for the customer ROI surface (BE-1/BE-2), hot-path-safe.**
+  New in-process `usage_meter` aggregator: cache surfaces call a cheap in-memory
+  `record(tenant, ReadHit|ReadMiss|Write)` (no `await`, no I/O — never a synchronous
+  D1 write on the read hot path), and a background task flushes additive deltas every
+  ~30s into the new `usage_daily` D1 table (migration 0089) with a `+=` UPSERT (so N
+  container instances sum without coordination). The customer `usage` handler reads
+  that table to serve real reads/writes/daily + cache **hit-rate** (hits/(hits+misses))
+  and an **estimated** build-time / $ saved, replacing the teaching EmptyStates on the
+  Home + Usage "cache ROI" cards. DISPLAY telemetry only — billing stays authoritative
+  on the synchronous `monthly_request_counts` / `tenant_quota` paths; an eviction drops
+  at most one un-flushed ~30s window (a transient D1 fault re-queues the delta, no loss).
+  `usage_daily` is tenant-keyed → classified ERASE in the DSR adapter (GDPR Art.17).
+
 ### Fixed
 - **worker — DSR legitimacy anchor (`/_internal/dsr/anchor`) was gated on the wrong key (GDPR go-live blocker).**
   The anchor is a two-authority split: githugr holds a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY`,

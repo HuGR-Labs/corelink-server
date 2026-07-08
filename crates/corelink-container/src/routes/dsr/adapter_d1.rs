@@ -146,6 +146,10 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // tenant's own content with no retention basis, removed when the tenant is
     // erased (GDPR Art.17). ERASE.
     "workspaces",
+    // Per-tenant, per-day usage rollup for the dashboard ROI surface
+    // `(tenant_id, day)` (migr. 0089). Display telemetry — the tenant's own
+    // operational usage state, no retention basis → ERASE.
+    "usage_daily",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -283,6 +287,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "tenant_gh_installation_map",
     "runner_repo_allowlist",
     "workspaces",
+    "usage_daily",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",
