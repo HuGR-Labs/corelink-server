@@ -43,7 +43,7 @@ fn valid_payload_b64() -> String {
                 }
             },
             "runDetails": {
-                "builder": {"id": "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"}
+                "builder": {"id": "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"}
             }
         }
     });
@@ -72,7 +72,7 @@ fn valid_attestation() -> SlsaAttestation {
         valid_payload_b64(),
         vec![DsseSignature::new(
             "dGVzdHNpZ25hdHVyZQ==".to_string(), // base64 of "testsignature"
-            "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
+            "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
             "-----BEGIN CERTIFICATE-----\nMIIBtest\n-----END CERTIFICATE-----\n".to_string(),
             Some(valid_rekor_bundle()),
         )],
@@ -81,7 +81,7 @@ fn valid_attestation() -> SlsaAttestation {
 
 /// Helper: expected builder identity.
 fn expected_builder() -> BuilderIdentity {
-    BuilderIdentity::from_org_pattern("humangr-labs/corelink-server")
+    BuilderIdentity::from_org_pattern("HumanGuardrail/corelink-server")
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +195,7 @@ proptest! {
         random_builder_id in prop::string::string_regex("[a-z0-9/:.@_-]{1,200}").unwrap()
     ) {
         // Skip if the random string accidentally contains the expected pattern
-        prop_assume!(!random_builder_id.contains("humangr-labs/corelink-server"));
+        prop_assume!(!random_builder_id.contains("HumanGuardrail/corelink-server"));
 
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -211,7 +211,7 @@ proptest! {
             match result {
                 Err(VerifyError::BuilderMismatch { got, expected }) => {
                     assert_eq!(got, random_builder_id, "got should match injected key_id");
-                    assert!(expected.contains("humangr-labs/corelink-server"),
+                    assert!(expected.contains("HumanGuardrail/corelink-server"),
                         "expected should contain org pattern, got: {}", expected);
                 }
                 Err(e) => panic!("Expected BuilderMismatch, got: {:?}", e),
@@ -326,7 +326,7 @@ proptest! {
                         "externalParameters": {}
                     },
                     "runDetails": {
-                        "builder": {"id": "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"}
+                        "builder": {"id": "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"}
                     }
                 }
             });

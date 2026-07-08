@@ -21,7 +21,7 @@ import handler, { type Env } from "../src/index.ts";
 /** Minimal Env stub — mirrors wrangler.toml `[vars]`. */
 const TEST_ENV: Env = {
   ENVIRONMENT: "test",
-  RELEASE_ORIGIN: "https://github.com/humangr-labs/corelink-cli/releases/latest/download",
+  RELEASE_ORIGIN: "https://github.com/HumanGuardrail/corelink-cli/releases/latest/download",
   DEFAULT_API_ENDPOINT: "https://corelink-api.humangr.com",
 };
 

@@ -35,10 +35,10 @@
 //!     DeployTarget::new("corelink-worker", "a".repeat(32), "api.corelink.humangr.com/*"),
 //!     GitHubActor::new(
 //!         "github-actions[bot]",
-//!         "humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0",
+//!         "HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0",
 //!     ),
 //! );
-//! let image_ref = OciImageRef::from_tag("ghcr.io/humangr-labs/corelink-worker:v0.1.0");
+//! let image_ref = OciImageRef::from_tag("ghcr.io/HumanGuardrail/corelink-worker:v0.1.0");
 //! let identity = CosignIdentityPattern::corelink_release();
 //!
 //! // Validate types compile correctly; in real usage call verify_and_propagate.

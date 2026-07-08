@@ -40,7 +40,7 @@ fn valid_payload_b64() -> String {
             },
             "runDetails": {
                 "builder": {
-                    "id": "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
+                    "id": "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
                 }
             }
         }
@@ -56,7 +56,7 @@ fn valid_attestation() -> SlsaAttestation {
         valid_payload_b64(),
         vec![DsseSignature::new(
             "dGVzdHNpZ25hdHVyZQ==".to_string(),
-            "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
+            "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
             "-----BEGIN CERTIFICATE-----\nMIIBtest\n-----END CERTIFICATE-----\n".to_string(),
             Some(RekorBundle::new(
                 99_000_000,
@@ -72,9 +72,9 @@ fn valid_attestation() -> SlsaAttestation {
     )
 }
 
-/// Helper: expected builder identity for `humangr-labs/corelink-server`.
+/// Helper: expected builder identity for `HumanGuardrail/corelink-server`.
 fn expected_builder() -> BuilderIdentity {
-    BuilderIdentity::from_org_pattern("humangr-labs/corelink-server")
+    BuilderIdentity::from_org_pattern("HumanGuardrail/corelink-server")
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ async fn adversarial_01_attestation_forge_fork_builder_mismatch() {
         Err(VerifyError::BuilderMismatch { got, expected }) => {
             assert_eq!(got, attacker_san, "got must be the attacker SAN URI");
             assert!(
-                expected.contains("humangr-labs/corelink-server"),
+                expected.contains("HumanGuardrail/corelink-server"),
                 "expected must contain the org pattern, got: {}",
                 expected
             );
@@ -202,7 +202,7 @@ async fn adversarial_04_intoto_schema_v001_rejected() {
                 "externalParameters": {}
             },
             "runDetails": {
-                "builder": {"id": "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"}
+                "builder": {"id": "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"}
             }
         }
     });
@@ -300,7 +300,7 @@ async fn valid_attestation_accepted() {
     match result {
         Ok(prov) => {
             assert!(
-                prov.builder_id.contains("humangr-labs/corelink-server"),
+                prov.builder_id.contains("HumanGuardrail/corelink-server"),
                 "builder_id should contain the org pattern"
             );
             assert_eq!(prov.rekor_log_index, 99_000_000);

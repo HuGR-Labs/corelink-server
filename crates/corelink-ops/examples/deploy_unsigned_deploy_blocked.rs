@@ -45,7 +45,7 @@ fn main() {
             "attacker/corelink-server/.github/workflows/evil.yml@refs/tags/malicious",
         ),
     );
-    let image_ref = OciImageRef::from_tag("ghcr.io/humangr-labs/corelink-worker:malicious");
+    let image_ref = OciImageRef::from_tag("ghcr.io/HumanGuardrail/corelink-worker:malicious");
     let identity = CosignIdentityPattern::corelink_release();
 
     println!("Simulating unsigned deploy attempt ...");

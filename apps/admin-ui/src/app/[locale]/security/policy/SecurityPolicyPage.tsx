@@ -101,7 +101,7 @@ const COPY: Record<Locale, Strings> = {
       </p>
     ),
     morePolicyHref:
-      "https://github.com/humangr-labs/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md",
+      "https://github.com/HumanGuardrail/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md",
     morePolicyLabel: "Read the full policy (VDP-001)",
     securityTxtHref: "/.well-known/security.txt",
     securityTxtLabel: "security.txt (RFC 9116)",
@@ -173,7 +173,7 @@ const COPY: Record<Locale, Strings> = {
       </p>
     ),
     morePolicyHref:
-      "https://github.com/humangr-labs/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md",
+      "https://github.com/HumanGuardrail/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md",
     morePolicyLabel: "Leia a política completa (VDP-001)",
     securityTxtHref: "/.well-known/security.txt",
     securityTxtLabel: "security.txt (RFC 9116)",
@@ -246,7 +246,7 @@ const COPY: Record<Locale, Strings> = {
       </p>
     ),
     morePolicyHref:
-      "https://github.com/humangr-labs/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md",
+      "https://github.com/HumanGuardrail/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md",
     morePolicyLabel: "Leer la política completa (VDP-001)",
     securityTxtHref: "/.well-known/security.txt",
     securityTxtLabel: "security.txt (RFC 9116)",
@@ -322,7 +322,7 @@ const COPY: Record<Locale, Strings> = {
       </p>
     ),
     morePolicyHref:
-      "https://github.com/humangr-labs/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md",
+      "https://github.com/HumanGuardrail/corelink/blob/main/specs/_security/vulnerability-disclosure-policy.md",
     morePolicyLabel: "Vollständige Richtlinie lesen (VDP-001)",
     securityTxtHref: "/.well-known/security.txt",
     securityTxtLabel: "security.txt (RFC 9116)",

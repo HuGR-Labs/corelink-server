@@ -493,7 +493,7 @@ pub fn signed_artifact() -> DeployArtifact {
     DeployArtifact {
         sha256_hex: "a".repeat(64),
         cosign_signature_url: Some(
-            "https://ghcr.io/humangr-labs/corelink@sha256:aaaa::sig".to_string(),
+            "https://ghcr.io/HumanGuardrail/corelink@sha256:aaaa::sig".to_string(),
         ),
         rekor_log_index: Some(12345),
         description: "test artifact".to_string(),
@@ -516,7 +516,7 @@ pub fn unsigned_artifact() -> DeployArtifact {
 pub fn fresh_actor(now_ms: u64) -> AdminActor {
     AdminActor {
         user_id: Uuid::now_v7(),
-        email: "admin@humangr-labs.io".to_string(),
+        email: "admin@humanguardrail.io".to_string(),
         mfa_verified_at_ms: now_ms,
     }
 }

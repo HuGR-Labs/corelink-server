@@ -34,7 +34,7 @@
 //!   spec.
 //!
 //! [jcs]: https://www.rfc-editor.org/rfc/rfc8785
-//! [audit_immutability.tla]: https://github.com/humangr-labs/corelink-server/blob/main/specs/tla/audit_immutability.tla
+//! [audit_immutability.tla]: https://github.com/HumanGuardrail/corelink-server/blob/main/specs/tla/audit_immutability.tla
 //!
 //! ## Determinism property (INV-AUDIT-CHAIN-HASH-DETERMINISTIC)
 //!

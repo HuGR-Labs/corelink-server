@@ -25,7 +25,7 @@ import type { ReactElement } from "react";
 
 const LAST_REFRESHED = "2026-05-15";
 const SOURCE_OF_TRUTH =
-  "https://github.com/humangr-labs/corelink-server/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md";
+  "https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md";
 
 interface SubProcessor {
   readonly num: number;

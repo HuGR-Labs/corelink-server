@@ -179,7 +179,7 @@ pub fn canonical_rollout_audit_event_strings() -> Vec<&'static str> {
 pub fn test_actor(mfa_age_ms: u64, now_ms: u64) -> AdminActor {
     AdminActor {
         user_id: Uuid::now_v7(),
-        email: "test-admin@humangr-labs.io".to_string(),
+        email: "test-admin@humanguardrail.io".to_string(),
         mfa_verified_at_ms: now_ms.saturating_sub(mfa_age_ms),
     }
 }

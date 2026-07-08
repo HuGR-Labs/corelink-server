@@ -30,7 +30,7 @@
 //! async fn main() {
 //!     let bundle_json = std::fs::read_to_string("provenance.intoto.bundle").unwrap();
 //!     let attestation: SlsaAttestation = serde_json::from_str(&bundle_json).unwrap();
-//!     let expected = BuilderIdentity::from_org_pattern("humangr-labs/corelink-server");
+//!     let expected = BuilderIdentity::from_org_pattern("HumanGuardrail/corelink-server");
 //!     let verifier = DefaultSlsaVerifier::new();
 //!     match verifier.verify(&attestation, &expected).await {
 //!         Ok(prov) => println!("Verified! Rekor index: {}", prov.rekor_log_index),

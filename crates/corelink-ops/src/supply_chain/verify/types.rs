@@ -168,9 +168,9 @@ impl MerkleInclusionProof {
 ///
 /// The `id` must be the full Fulcio certificate SAN URI matching the expected GitHub Actions
 /// workflow ref, e.g.:
-/// `https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.X.Y`
+/// `https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.X.Y`
 ///
-/// The `org_pattern` is a simpler org-scoped pattern (e.g., `humangr-labs/corelink-server`)
+/// The `org_pattern` is a simpler org-scoped pattern (e.g., `HumanGuardrail/corelink-server`)
 /// used when the caller does not know the exact release tag at verify time.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -179,7 +179,7 @@ pub struct BuilderIdentity {
     pub id: Option<String>,
 
     /// Org-scoped pattern (substring match within Fulcio SAN URI).
-    /// Must include org + repo, e.g., `humangr-labs/corelink-server`.
+    /// Must include org + repo, e.g., `HumanGuardrail/corelink-server`.
     pub org_pattern: String,
 }
 

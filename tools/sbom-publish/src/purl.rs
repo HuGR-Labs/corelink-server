@@ -10,14 +10,14 @@
 //!    - primary PURL: `pkg:cargo/<name>@<version>` (canonical)
 //!    - DT alias: `pkg:crates/<name>@<version>`
 //! 3. **Workspace member discriminator**: components whose name matches a workspace-local crate
-//!    receive a `?vcs_url=https://github.com/humangr-labs/corelink-server` qualifier on the
+//!    receive a `?vcs_url=https://github.com/HumanGuardrail/corelink-server` qualifier on the
 //!    primary PURL to prevent confusion with a hypothetical malicious crate published on
 //!    crates.io with the same name.
 //! 4. **Patched deps** (`[patch.crates-io]`): a `cdx:patched_locally` property is injected
 //!    when the component name appears in the supplied patch list.
 
 /// Canonical VCS URL for workspace member discriminator.
-pub const WORKSPACE_VCS_URL: &str = "https://github.com/humangr-labs/corelink-server";
+pub const WORKSPACE_VCS_URL: &str = "https://github.com/HumanGuardrail/corelink-server";
 
 /// Normalise a single PURL string from cargo-cyclonedx output.
 ///

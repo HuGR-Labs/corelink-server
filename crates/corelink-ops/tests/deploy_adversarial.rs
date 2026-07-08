@@ -40,14 +40,14 @@ fn make_webhook(tag: &str) -> CfDeployWebhook {
         GitHubActor::new(
             "github-actions[bot]",
             format!(
-                "humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"
+                "HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"
             ),
         ),
     )
 }
 
 fn make_image_ref(tag: &str) -> OciImageRef {
-    OciImageRef::from_tag(format!("ghcr.io/humangr-labs/corelink-worker:{tag}"))
+    OciImageRef::from_tag(format!("ghcr.io/HumanGuardrail/corelink-worker:{tag}"))
 }
 
 // ── CVE-1: Unsigned deploy attempt ────────────────────────────────────────
@@ -146,7 +146,7 @@ fn adversarial_fork_identity_mismatch_blocked() {
             "got should contain attacker org: {got}"
         );
         assert!(
-            expected.contains("humangr-labs"),
+            expected.contains("HumanGuardrail"),
             "expected should contain canonical org: {expected}"
         );
     }
@@ -205,7 +205,7 @@ fn adversarial_audit_emit_failure_blocks_deploy_fail_closed() {
     let verifier = InMemoryDeployVerifier::with_mode(
         VerificationMode::Signed {
             rekor_log_index: 42,
-            fulcio_san: "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
+            fulcio_san: "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
             resolved_digest: "sha256:cafecafe".to_string(),
         },
         failing_sink,

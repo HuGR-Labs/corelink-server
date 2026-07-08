@@ -103,10 +103,10 @@ pub enum VerificationMode {
 ///     DeployTarget::new("corelink-worker", "a".repeat(32), "api.corelink.humangr.com/*"),
 ///     GitHubActor::new(
 ///         "github-actions[bot]",
-///         "humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0",
+///         "HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0",
 ///     ),
 /// );
-/// let image_ref = OciImageRef::from_tag("ghcr.io/humangr-labs/corelink-worker:v0.1.0");
+/// let image_ref = OciImageRef::from_tag("ghcr.io/HumanGuardrail/corelink-worker:v0.1.0");
 /// let identity = CosignIdentityPattern::corelink_release();
 ///
 /// let result = verifier.verify_and_propagate(&webhook, &image_ref, &identity);
@@ -134,7 +134,7 @@ impl InMemoryDeployVerifier {
         Self {
             mode: VerificationMode::Signed {
                 rekor_log_index: 123_456_789,
-                fulcio_san: "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
+                fulcio_san: "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
                 resolved_digest: "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
             },
             audit_sink,
@@ -554,13 +554,13 @@ mod tests {
             DeployTarget::new("corelink-worker", "a".repeat(32), "api.corelink.humangr.com/*"),
             GitHubActor::new(
                 "github-actions[bot]",
-                format!("humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"),
+                format!("HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"),
             ),
         )
     }
 
     fn make_image_ref(tag: &str) -> OciImageRef {
-        OciImageRef::from_tag(format!("ghcr.io/humangr-labs/corelink-worker:{tag}"))
+        OciImageRef::from_tag(format!("ghcr.io/HumanGuardrail/corelink-worker:{tag}"))
     }
 
     #[test]
