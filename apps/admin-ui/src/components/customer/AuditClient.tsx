@@ -5,8 +5,9 @@
 // a kit table with HUMAN event labels (raw `event_type` codes are machine noise
 // — the audit found raw codes were dumped at users), a severity StatusDot/Badge,
 // and a legend HelpPopover mapping labels back to their raw codes. Filters wire
-// the client's `event_types` param (the old UI never exposed it) plus a severity
-// filter and a from/to date range. The API returns a bounded set, so pagination
+// the backend's CANONICAL query params `from` / `to` / `kind` (the pre-2026-07
+// UI sent `since`/`event_types`, which the backend silently DROPPED) plus a
+// client-side severity filter. The API returns a bounded set, so pagination
 // is client-side. States are proper: Skeleton while loading, InlineError with a
 // retry on failure (the old page had NONE), and a teaching EmptyState for no
 // results. The cryptographic chain verifier (Merkle/Ed25519) routes are
@@ -97,8 +98,8 @@ function formatTs(iso: string): string {
   });
 }
 
-/** Local date `YYYY-MM-DD` → an ISO instant at the START of that day (for the
- *  server-side `since` param, which the client forwards as `since`). */
+/** Local date `YYYY-MM-DD` → an ISO instant at the START of that day, for the
+ *  server-side `from` (lower-bound) param. */
 function startOfDayIso(dateStr: string): string | undefined {
   if (!dateStr) return undefined;
   const d = new Date(`${dateStr}T00:00:00`);
@@ -106,8 +107,18 @@ function startOfDayIso(dateStr: string): string | undefined {
   return d.toISOString();
 }
 
+/** Local date `YYYY-MM-DD` → an ISO instant at the END of that day, for the
+ *  server-side `to` (upper-bound) param. */
+function endOfDayIso(dateStr: string): string | undefined {
+  if (!dateStr) return undefined;
+  const d = new Date(`${dateStr}T23:59:59.999`);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toISOString();
+}
+
 /** Local date `YYYY-MM-DD` → epoch millis at the END of that day, for the
- *  client-side "to" upper bound (there is no server `to` param). */
+ *  client-side `to` upper bound (the backend accepts `to` but does not yet
+ *  filter by it, so the client narrows the bounded set locally). */
 function endOfDayMs(dateStr: string): number | undefined {
   if (!dateStr) return undefined;
   const d = new Date(`${dateStr}T23:59:59.999`);
@@ -123,9 +134,9 @@ export function AuditClient(): React.ReactElement {
   const [loading, setLoading] = React.useState(true);
   const [err, setErr] = React.useState<unknown | null>(null);
 
-  // Filters. `from` maps to the server `since` param + the `event_types` param
-  // (both round-tripped by the client); `to` and `severity` are applied
-  // client-side over the bounded result set.
+  // Filters. `from`/`to`/`eventType` are sent to the server as the canonical
+  // `from` / `to` / `kind` params; `to` (server-ignored today) and `severity`
+  // are also applied client-side over the bounded result set.
   const [from, setFrom] = React.useState("");
   const [to, setTo] = React.useState("");
   const [eventType, setEventType] = React.useState<string>("");
@@ -136,10 +147,12 @@ export function AuditClient(): React.ReactElement {
     setLoading(true);
     setErr(null);
     try {
-      const since = startOfDayIso(from);
+      const fromIso = startOfDayIso(from);
+      const toIso = endOfDayIso(to);
       const res = await client.listAudit({
-        ...(since ? { since } : {}),
-        ...(eventType ? { event_types: [eventType] } : {}),
+        ...(fromIso ? { from: fromIso } : {}),
+        ...(toIso ? { to: toIso } : {}),
+        ...(eventType ? { kind: [eventType] } : {}),
       });
       setRows(res.rows);
     } catch (e) {
@@ -147,7 +160,7 @@ export function AuditClient(): React.ReactElement {
     } finally {
       setLoading(false);
     }
-  }, [client, from, eventType]);
+  }, [client, from, to, eventType]);
 
   React.useEffect(() => {
     void reload();

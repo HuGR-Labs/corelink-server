@@ -1,7 +1,7 @@
 /**
  * E2E — customer audit trail (r-prep).
  *
- * The tenant-scoped audit table loads and the `since` filter narrows the
+ * The tenant-scoped audit table loads and the `from` filter narrows the
  * rows. No Merkle proof tab (operator-only surface).
  */
 import { test, expect } from "@playwright/test";
@@ -13,7 +13,7 @@ test.describe("customer audit", () => {
     await login.signInAs("admin");
   });
 
-  test("table loads and since-filter narrows rows", async ({ page }) => {
+  test("table loads and from-filter narrows rows", async ({ page }) => {
     await page.goto("/en/customer/audit");
     await expect(page.locator("h1#customer-audit-heading")).toBeVisible({ timeout: 30_000 });
 
@@ -25,10 +25,10 @@ test.describe("customer audit", () => {
       })
       .toBeGreaterThanOrEqual(3);
 
-    // cevt_001 is 2026-05-10 → since=2026-05-12 should drop it.
+    // cevt_001 is 2026-05-10 → from=2026-05-12 should drop it.
     const since = page.getByTestId("customer-audit-since");
     const fetchPromise = page.waitForResponse(
-      (r) => r.url().includes("/v1/customer/audit") && r.url().includes("since="),
+      (r) => r.url().includes("/v1/customer/audit") && r.url().includes("from="),
       { timeout: 10_000 },
     );
     await since.fill("2026-05-12");

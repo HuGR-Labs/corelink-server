@@ -24,6 +24,17 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
    * download (e.g. a signed receipt) without hand-rolling `<a download>`.
    */
   download?: AnchorHTMLAttributes<HTMLAnchorElement>["download"];
+  /**
+   * Anchor-only `target` — meaningful only alongside `href`. Use `"_blank"` for
+   * EXTERNAL links (docs, dashboards) so they open in a new tab. Ignored by the
+   * `<button>` form. When set to `"_blank"`, also pass `rel="noopener noreferrer"`.
+   */
+  target?: AnchorHTMLAttributes<HTMLAnchorElement>["target"];
+  /**
+   * Anchor-only `rel` — meaningful only alongside `href` (e.g.
+   * `"noopener noreferrer"` for `target="_blank"`). Ignored by the `<button>` form.
+   */
+  rel?: AnchorHTMLAttributes<HTMLAnchorElement>["rel"];
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -38,6 +49,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     type,
     href,
     download,
+    target,
+    rel,
     ...rest
   },
   ref,
@@ -64,6 +77,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       <a
         href={href}
         download={download}
+        target={target}
+        rel={rel}
         className={classes.join(" ")}
         {...(rest as AnchorHTMLAttributes<HTMLAnchorElement>)}
       >
