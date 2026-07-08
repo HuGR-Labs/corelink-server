@@ -11,13 +11,13 @@
 
 import type {
   CustomerAuditEvent,
-  CustomerAuditFilter,
   CustomerBilling,
   CustomerByokConfig,
   CustomerDollarCeiling,
   CustomerOverview,
   CustomerPat,
   CustomerRunnerEntitlement,
+  CustomerRunnerRun,
   CustomerTeamMember,
   CustomerUsage,
   CustomerWorkspace,
@@ -82,7 +82,18 @@ export class CustomerClient {
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const token = this.getToken ? await this.getToken() : null;
+    // In E2E test mode the endpoints are served by the deterministic mock
+    // (no auth required) and there is NO real Clerk session, so calling the
+    // injected `useAuth().getToken()` can stall — leaving the fetch pending and
+    // the screen stuck on its loading Skeleton forever (the admin client sidesteps
+    // this by defaulting getToken to `async () => null`). Skip the token in E2E.
+    // Inert in production: NEXT_PUBLIC_E2E_TEST_MODE is never set there.
+    // Canonical Next form: bare `process.env.NEXT_PUBLIC_*` dot-access, which Next
+    // statically REPLACES with the literal in the client bundle. Do NOT guard with
+    // `typeof process` — Next does not define `process` as a runtime object in the
+    // browser, so that guard would short-circuit to false client-side.
+    const isE2E = process.env.NEXT_PUBLIC_E2E_TEST_MODE === "1";
+    const token = isE2E ? null : this.getToken ? await this.getToken() : null;
     const authHeaders: Record<string, string> =
       token != null ? { authorization: `Bearer ${token}` } : {};
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
@@ -104,10 +115,23 @@ export class CustomerClient {
     return this.request<CustomerUsage>(`/v1/customer/usage${q}`);
   }
 
-  async listAudit(filter: CustomerAuditFilter = {}): Promise<{ rows: CustomerAuditEvent[] }> {
+  /**
+   * List tenant-scoped audit events. The wire params are the backend's
+   * CANONICAL names: `from` (ISO-8601 lower bound), `to` (ISO-8601 upper bound),
+   * and `kind` (comma-separated event-type codes) — see `AuditQuery` in
+   * `crates/corelink-container/src/routes/customer.rs`. The pre-2026-07 client
+   * sent `since` / `event_types`, which the backend silently DROPPED (the struct
+   * only deserializes `from`/`to`/`kind`), so date + event-type filters never
+   * reached D1. `to` is currently accepted-but-ignored server-side (parity with
+   * the Rust handler); callers still apply the upper bound client-side.
+   */
+  async listAudit(
+    filter: { from?: string; to?: string; kind?: string[] } = {},
+  ): Promise<{ rows: CustomerAuditEvent[] }> {
     const params = new URLSearchParams();
-    if (filter.since) params.set("since", filter.since);
-    if (filter.event_types?.length) params.set("event_types", filter.event_types.join(","));
+    if (filter.from) params.set("from", filter.from);
+    if (filter.to) params.set("to", filter.to);
+    if (filter.kind?.length) params.set("kind", filter.kind.join(","));
     const q = params.toString();
     return this.request<{ rows: CustomerAuditEvent[] }>(
       `/v1/customer/audit${q ? `?${q}` : ""}`,
@@ -180,13 +204,42 @@ export class CustomerClient {
     throw new NotWiredError("BE-8 BYOK self-serve");
   }
 
-  /** [not-wired → BE-10] Runner entitlement + consumption + repo allowlist. */
+  /** [live] Runner entitlement + consumption + repo allowlist (BE-10). */
   async getRunnerEntitlement(): Promise<CustomerRunnerEntitlement> {
-    throw new NotWiredError("BE-10 runners entitlement read");
+    return this.request<CustomerRunnerEntitlement>("/v1/customer/runners/entitlement");
   }
 
-  /** [not-wired → BE-11] Workspace snapshots. */
+  /** [live] Recent runner runs (BE-10). Empty until a runs table exists server-side. */
+  async listRunnerRuns(): Promise<{ runs: CustomerRunnerRun[] }> {
+    return this.request<{ runs: CustomerRunnerRun[] }>("/v1/customer/runners/runs");
+  }
+
+  /** [live] Workspace snapshots (BE-11). */
   async listWorkspaces(): Promise<{ workspaces: CustomerWorkspace[] }> {
-    throw new NotWiredError("BE-11 workspaces surface");
+    return this.request<{ workspaces: CustomerWorkspace[] }>("/v1/customer/workspaces");
+  }
+
+  /** [live] Create a workspace snapshot (BE-11). */
+  async createWorkspace(input: { name: string }): Promise<CustomerWorkspace> {
+    return this.request<CustomerWorkspace>("/v1/customer/workspaces", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  /** [live] Delete a workspace snapshot (tenant-scoped, idempotent) (BE-11). */
+  async deleteWorkspace(workspaceId: string): Promise<{ ok: boolean }> {
+    return this.request<{ ok: boolean }>(
+      `/v1/customer/workspaces/${encodeURIComponent(workspaceId)}`,
+      { method: "DELETE" },
+    );
+  }
+
+  /** [live] Toggle pin on a workspace snapshot (BE-11). */
+  async pinWorkspace(workspaceId: string): Promise<CustomerWorkspace> {
+    return this.request<CustomerWorkspace>(
+      `/v1/customer/workspaces/${encodeURIComponent(workspaceId)}/pin`,
+      { method: "POST" },
+    );
   }
 }

@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { DSR_ACTIONS } from "@/lib/dsr-types";
 import { isLocale, tFor, type Locale } from "@/i18n";
+import { Callout } from "@/components/ui/linear";
+
+/**
+ * Data Protection Officer contact — the same privacy inbox the consent
+ * surface uses (see `lib/consent-types.ts`). A mailto, not a fabricated
+ * endpoint.
+ */
+const DPO_CONTACT_EMAIL = "privacy@humangr.com";
 
 interface PageProps {
   params: Promise<{ locale: string }>;
@@ -29,7 +37,12 @@ export default async function DsrLandingPage({ params }: PageProps) {
           <h1 id="dsr-landing-title">{t("dsr.landing.title")}</h1>
           <p>{t("dsr.landing.intro")}</p>
 
-          <section aria-labelledby="dsr-rights-title" className="mt-6">
+          <Callout tone="info">
+            Identity verification is required when you start a request. The
+            statutory response window is 30 days under LGPD and GDPR.
+          </Callout>
+
+          <section aria-labelledby="dsr-rights-title" className="lin-mt-lg">
             <h2
               id="dsr-rights-title"
               className="mb-3 text-[15px] font-[560] text-[color:var(--t1)]"
@@ -47,13 +60,13 @@ export default async function DsrLandingPage({ params }: PageProps) {
                     data-testid={`dsr-action-button-${action}`}
                     className="lin-card lin-card--pad lin-card--hover block h-full"
                   >
-                    <span className="block font-[560] text-[color:var(--t1)]">
+                    <span className="lin-card__title block">
                       {t(`dsr.rights.${action}.label`)}
                     </span>
                     <span className="mt-1 block text-[13px] leading-relaxed text-[color:var(--t2)]">
                       {t(`dsr.rights.${action}.description`)}
                     </span>
-                    <span className="mt-2 block text-[11.5px] text-[color:var(--t3)]">
+                    <span className="mt-2 block text-[12px] text-[color:var(--t3)]">
                       {t(`dsr.rights.${action}.legal_ref`)}
                     </span>
                   </Link>
@@ -62,7 +75,7 @@ export default async function DsrLandingPage({ params }: PageProps) {
             </ul>
           </section>
 
-          <p className="mt-6">
+          <p className="lin-mt-lg">
             <Link
               href={`/${locale}/dsr/status`}
               data-testid="dsr-status-link"
@@ -71,6 +84,25 @@ export default async function DsrLandingPage({ params }: PageProps) {
               {t("dsr.landing.status_link")}
             </Link>
           </p>
+
+          <section
+            aria-labelledby="dsr-contact-title"
+            className="lin-mt-lg"
+          >
+            <h2
+              id="dsr-contact-title"
+              className="mb-3 text-[15px] font-[560] text-[color:var(--t1)]"
+            >
+              Questions or help
+            </h2>
+            <p className="text-[13px] leading-relaxed text-[color:var(--t2)]">
+              Read our{" "}
+              <Link href={`/${locale}/privacy`}>privacy notice</Link> to see
+              how we handle your personal data, or reach our Data Protection
+              Officer at{" "}
+              <a href={`mailto:${DPO_CONTACT_EMAIL}`}>{DPO_CONTACT_EMAIL}</a>.
+            </p>
+          </section>
         </main>
       </div>
     </div>

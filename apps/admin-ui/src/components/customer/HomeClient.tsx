@@ -62,6 +62,44 @@ function isActivePat(p: CustomerPat): boolean {
   return p.revoked_at == null;
 }
 
+/** Human label for a cache tier id — no raw enum reaches the screen. */
+const PLAN_LABELS: Record<CustomerOverview["plan"], string> = {
+  free: "Free",
+  solo: "Solo",
+  starter: "Starter",
+  team: "Team",
+  pro: "Pro",
+  max: "Max",
+  enterprise: "Enterprise",
+};
+
+/** Human label + Badge tone for a subscription status (mirrors BillingClient). */
+const BILLING_STATUS_META: Record<
+  CustomerOverview["billing"]["status"],
+  { label: string; tone: "neutral" | "success" | "warn" | "danger" }
+> = {
+  trialing: { label: "Trialing", tone: "success" },
+  active: { label: "Active", tone: "success" },
+  past_due: { label: "Past due", tone: "danger" },
+  canceled: { label: "Canceled", tone: "warn" },
+  inactive: { label: "No subscription", tone: "neutral" },
+};
+
+function money(cents: number, currency: CustomerOverview["billing"]["currency"]): string {
+  const sign = currency === "usd" ? "$" : currency === "eur" ? "€" : "R$";
+  return sign + (cents / 100).toFixed(2);
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 const BYOK_TONE: Record<
   CustomerOverview["byok"]["status"],
   "neutral" | "success" | "warn"
@@ -136,7 +174,7 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
         <Card title="Get set up">
           <Skeleton rows={4} />
         </Card>
-        <Card title="Your tenant at a glance">
+        <Card title="Your tenant at a glance" className="lin-mt-lg">
           <Skeleton rows={3} />
         </Card>
       </div>
@@ -151,6 +189,19 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
       : 0;
   const storagePctLabel = `${Math.round(storagePct * 100)}%`;
   const activity = overview.recent_activity;
+
+  // Billing snapshot — all [live] from getOverview().billing. An upcoming
+  // invoice only exists for a billing subscription; for inactive/canceled
+  // tenants there is no next invoice, so we show an honest note rather than a
+  // fabricated $0.00 line (data-honesty is locked).
+  const billing = overview.billing;
+  const billingMeta = BILLING_STATUS_META[billing.status];
+  const invoiceDate = new Date(billing.next_invoice_at);
+  const hasUpcomingInvoice =
+    (billing.status === "active" ||
+      billing.status === "trialing" ||
+      billing.status === "past_due") &&
+    !Number.isNaN(invoiceDate.getTime());
 
   // Checklist — "done" derived ONLY from real signals; everything else is an
   // honest pending step with a teaching hint. We NEVER fake a completed step.
@@ -227,7 +278,7 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
   ];
 
   return (
-    <div data-testid="home-shell" className="lin-checklist">
+    <div data-testid="home-shell">
       {/* Onboarding funnel — DPA → token → connect → first hit. */}
       <Card title="Get set up" meta="Four steps to your first faster build">
         <div data-testid="home-checklist">
@@ -235,17 +286,27 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
         </div>
       </Card>
 
-      {/* Snapshot — plan / storage / BYOK, all [live] from getOverview. */}
-      <Card title="Your tenant at a glance" meta={overview.tenant_name}>
-        <div data-testid="home-snapshot" className="lin-checklist">
+      {/* Snapshot — plan / storage / BYOK, all [live] from getOverview.
+          Deep-links out to the full usage breakdown. */}
+      <Card
+        title="Your tenant at a glance"
+        meta={overview.tenant_name}
+        className="lin-mt-lg"
+        actions={
+          <Button href={`${base}/usage`} variant="ghost" size="sm">
+            View usage
+          </Button>
+        }
+      >
+        <div data-testid="home-snapshot">
           <div data-testid="home-plan">
             <span className="lin-card__meta">Plan</span>{" "}
             <span data-testid="overview-plan">
-              <Badge tone="neutral">{overview.plan}</Badge>
+              <Badge tone="neutral">{PLAN_LABELS[overview.plan]}</Badge>
             </span>
           </div>
 
-          <div data-testid="home-storage-gauge">
+          <div data-testid="home-storage-gauge" className="lin-mt">
             <Gauge
               label="Storage"
               value={gib(overview.usage.cas_bytes)}
@@ -258,7 +319,7 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
             </span>
           </div>
 
-          <div data-testid="home-byok">
+          <div data-testid="home-byok" className="lin-mt">
             <span className="lin-card__meta">
               BYOK{" "}
               <HelpPopover label="What is BYOK?">
@@ -277,10 +338,49 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
         </div>
       </Card>
 
+      {/* Billing snapshot — [live] plan status + next invoice from
+          getOverview().billing. Deep-links to the full billing screen. */}
+      <Card
+        title="Billing"
+        meta="Your subscription and next invoice"
+        className="lin-mt-lg"
+        actions={
+          <Button href={`${base}/billing`} variant="ghost" size="sm">
+            Manage plan
+          </Button>
+        }
+      >
+        <div data-testid="home-billing">
+          <div data-testid="home-billing-status">
+            <span className="lin-card__meta">Subscription</span>{" "}
+            <Badge tone={billingMeta.tone} dot>
+              {billingMeta.label}
+            </Badge>
+          </div>
+
+          {hasUpcomingInvoice ? (
+            <div className="lin-mt" data-testid="home-next-invoice">
+              <Stat
+                label="Next invoice"
+                value={money(billing.amount_due_cents, billing.currency)}
+                sub={`Due ${formatDate(billing.next_invoice_at)}`}
+              />
+            </div>
+          ) : (
+            <div className="lin-mt" data-testid="home-no-invoice">
+              <span className="lin-card__meta">
+                No upcoming invoice on file — manage or start a plan from the
+                billing screen.
+              </span>
+            </div>
+          )}
+        </div>
+      </Card>
+
       {/* ROI hero — [live] via BE-2 (getUsage). Show the real hit-rate + modeled
           $ saved once reads exist; when usage is unavailable or hit_rate is null
           (cold start) teach what will appear and WHEN — NEVER a fabricated zero. */}
-      <Card title="Your cache ROI">
+      <Card title="Your cache ROI" className="lin-mt-lg">
         <div data-testid="home-roi">
           {usage != null && usage.hit_rate != null ? (
             <div data-testid="home-roi-metrics" className="lin-checklist">
@@ -325,11 +425,15 @@ export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
       </Card>
 
       {/* Recent activity — [stub] prod=[] (BE-3). Teaching empty, not a blank list. */}
-      <Card title="Recent activity">
+      <Card title="Recent activity" className="lin-mt-lg">
         {activity.length > 0 ? (
-          <ul data-testid="overview-activity-list" className="lin-checklist">
-            {activity.map((e) => (
-              <li key={e.event_id} data-testid={`overview-activity-${e.event_id}`}>
+          <ul data-testid="overview-activity-list">
+            {activity.map((e, i) => (
+              <li
+                key={e.event_id}
+                data-testid={`overview-activity-${e.event_id}`}
+                className={i > 0 ? "lin-mt" : undefined}
+              >
                 <span className="lin-card__meta">{e.ts.slice(0, 10)}</span>{" "}
                 <strong>{e.event_type}</strong> — {e.summary}
               </li>

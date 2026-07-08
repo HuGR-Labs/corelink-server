@@ -11,7 +11,12 @@ export default function AdminTenantsPage(): React.ReactElement {
         <div className="cx-main">
           <main aria-labelledby="tenants-heading">
             <h1 id="tenants-heading">Tenants</h1>
-            <p>Search, filter, and inspect any tenant in operator scope.</p>
+            <p>
+              Look up any tenant in operator scope to inspect its plan, region, and BYOK
+              status, then open the deep-dive. Filter the list by plan, region, or BYOK
+              state. Sensitive actions (suspend, offboard, entitlement changes) are queued
+              for dual approval in <code>/admin/ops</code>.
+            </p>
             <div className="lin-mt-lg">
               <TenantSearchClient />
             </div>

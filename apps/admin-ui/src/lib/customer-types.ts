@@ -151,3 +151,16 @@ export interface CustomerWorkspace {
   created_at: string;
   pinned: boolean;
 }
+
+/**
+ * A recent runner run. The server surface exists (BE-10) but returns an empty
+ * list until a runner-runs history table lands, so this list is honestly empty
+ * today (never fabricated).
+ */
+export interface CustomerRunnerRun {
+  run_id: string;
+  repo_full_name: string;
+  status: "queued" | "running" | "success" | "failed" | "cancelled";
+  started_at: string;
+  duration_s: number | null;
+}
