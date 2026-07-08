@@ -384,6 +384,11 @@ async function verifyGithugrSession(
   requestId: string,
 ): Promise<ClerkAuthResult> {
   let clerkUserId: string;
+  // Track-B: capture the step-up freshness signal from the VERIFIED githugr JWT.
+  // The githugr erase flow authenticates through THIS path (clerk.githugr.com),
+  // so `fva_minutes` must be captured here too — not only in the CoreLink path.
+  // Fail-closed: stays undefined unless a well-formed non-negative `fva[0]`.
+  let fvaMinutes: number | undefined;
   try {
     const claims = await verifyToken(sessionToken, {
       jwtKey: env.GITHUGR_CLERK_JWT_KEY,
@@ -421,6 +426,19 @@ async function verifyGithugrSession(
       };
     }
     clerkUserId = claims.sub;
+    // Track-B freshness (same fail-closed rule as the CoreLink path): `fva` is a
+    // Clerk built-in top-level array `[first-factor-age, second-factor-age]` (min);
+    // capture `fva[0]` only when a well-formed non-negative integer, else leave
+    // undefined ⇒ the engine treats the session as NOT fresh (never defaults to 0).
+    const fva = (claims as Record<string, unknown>)["fva"];
+    if (
+      Array.isArray(fva) &&
+      typeof fva[0] === "number" &&
+      Number.isInteger(fva[0]) &&
+      fva[0] >= 0
+    ) {
+      fvaMinutes = fva[0];
+    }
   } catch {
     // A verification failure (bad signature / expired / wrong azp / wrong issuer)
     // is a 401 — never surface the detail.
@@ -440,7 +458,13 @@ async function verifyGithugrSession(
     const tenantId = await provisionOrLookupGithugrTenant(env.CONFIG_DB, clerkUserId);
     // githugr is a federated-login owner of its own per-user isolated tenant (not a
     // team_member seat), so it maps to the 'owner' role → read-write (unchanged).
-    return { ok: true, tenantId, clerkUserId, role: "owner" };
+    return {
+      ok: true,
+      tenantId,
+      clerkUserId,
+      role: "owner",
+      ...(fvaMinutes !== undefined ? { fvaMinutes } : {}),
+    };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] githugr tenant provision/lookup failed: ${message.slice(0, 80)}`);

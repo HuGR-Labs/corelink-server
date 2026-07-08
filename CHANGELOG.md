@@ -23,6 +23,13 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **worker — Track-B `fva_minutes` was never emitted for githugr-issuer sessions (the erase flow's actual path).**
+  `verifyClerkSessionAndResolveTenant` early-returns to `verifyGithugrSession` for `clerk.githugr.com`
+  sessions (the multi-issuer path) *before* the CoreLink-path fva capture ran — so the real-user erase flow,
+  which authenticates through githugr, got NO `fva_minutes` on `/v1/session/exchange` → engine `fresh_auth:false`
+  → persistent `403 STEP_UP_REQUIRED` even after the field was wired on the CoreLink path. `verifyGithugrSession`
+  now captures `fva[0]` from the verified githugr JWT with the same fail-closed rule and returns `fvaMinutes`.
+  Both issuer paths now propagate it. 2 githugr-path tests (fresh → `fva_minutes`; absent → omit).
 - **worker — Track-B `fva_minutes` must ride `/v1/session/exchange`, not only the internal token-exchange.**
   The initial wiring emitted `fva_minutes` on `handleTokenExchange` (`/internal/v1/auth/token-exchange`,
   githugr #1) — but hugit's erase engine reads `HUGIT_SESSION_EXCHANGE_URL = /v1/session/exchange`
