@@ -27,8 +27,17 @@ test.describe("dsr approve", () => {
     // Initial state is "pending".
     await expect(page.getByTestId("approval-state")).toHaveText("pending");
 
-    await page.getByTestId("approval-reason").fill("DSR-30d SLA review per S-11 R-S11-7");
-    await page.getByTestId("approve-btn").click();
+    // Enter the approval reason, then wait for the card to settle before
+    // approving: the op detail hydrates async, and DualApprovalCard keeps the
+    // reason in local state — click too eagerly and a late re-render drops the
+    // value, leaving `approve-btn` disabled (reason.trim() empty). Mirror the
+    // byok-rotate flow: confirm the value stuck AND the button is enabled first.
+    const reason = page.getByTestId("approval-reason");
+    await reason.fill("DSR-30d SLA review per S-11 R-S11-7");
+    await expect(reason).toHaveValue("DSR-30d SLA review per S-11 R-S11-7");
+    const approveBtn = page.getByTestId("approve-btn");
+    await expect(approveBtn).toBeEnabled();
+    await approveBtn.click();
 
     // Status flips: state advances out of "pending".
     await expect(page.getByTestId("approval-state")).toHaveText("one-of-two");
