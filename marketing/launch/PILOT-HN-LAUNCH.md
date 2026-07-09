@@ -32,7 +32,7 @@
 >
 > What's NOT shipped yet — important context, not buried:
 >
-> - **BYOK across 4 KMS providers — not in pilot. Ships at GA.**
+> - **BYOK — not in pilot. AWS KMS ships at GA; GCP / Azure / Vault on the roadmap.**
 > - **SOC 2 Type II — not yet. Gap analysis only; Type II observation window starts at GA.**
 > - **Production SLA contract — not yet. Pilot runs best-effort against published target SLOs.**
 > - **Signed DPA / SCC — template only.**

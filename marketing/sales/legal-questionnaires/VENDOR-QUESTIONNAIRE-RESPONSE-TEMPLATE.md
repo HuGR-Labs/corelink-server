@@ -151,7 +151,7 @@ These are the 12 highest-frequency answer blocks. Lift them verbatim when the pr
 
 #### 8. Encryption at rest + in transit
 
-> **A:** At rest: AES-256-GCM on Cloudflare R2 / D1 / KV / DO. Optional BYOK envelope encryption per blob (4 KMS providers: AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault). In transit: TLS 1.3 mandatory; HSTS `max-age=63072000; includeSubDomains; preload`; AEAD-only ciphers (AES-256-GCM, ChaCha20-Poly1305); mTLS edge-to-origin. FIPS endpoint posture per `compliance/byok-fips-matrix.md`.
+> **A:** At rest: AES-256-GCM on Cloudflare R2 / D1 / KV / DO. Optional BYOK envelope encryption per blob (KMS providers: AWS KMS at GA; GCP Cloud KMS, Azure Key Vault, HashiCorp Vault on the roadmap). In transit: TLS 1.3 mandatory; HSTS `max-age=63072000; includeSubDomains; preload`; AEAD-only ciphers (AES-256-GCM, ChaCha20-Poly1305); mTLS edge-to-origin. FIPS endpoint posture per `compliance/byok-fips-matrix.md`.
 
 #### 9. Tenant isolation
 

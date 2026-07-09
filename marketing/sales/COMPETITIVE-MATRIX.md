@@ -42,7 +42,7 @@ Reference posts: `marketing/launch/BLOG-POSTS/01-introducing-corelink.md#the-bui
 | **Deployment model** | Managed SaaS | Self-hosted | Hosted + self-hosted | Self-hosted | Self-hosted | Self-hosted |
 | **Multi-tenant by construction** | Yes | No (single-tenant by design) | Yes (hosted) | Operator-built | Operator-built | Operator-built |
 | **Tenant-isolation invariant (TLA+)** | Yes (`tenant_isolation.tla` in CI) | N/A | Not published | N/A | N/A | N/A |
-| **BYOK with kill switch < 5 min** | Yes (4 providers) | No | Limited | Operator-built | Operator-built | Operator-built |
+| **BYOK with kill switch < 5 min** | AWS KMS at GA (GCP/Azure/Vault roadmap) | No | Limited | Operator-built | Operator-built | Operator-built |
 | **Audit chain (Merkle / RFC 6962)** | Yes (RFC 6962 + RFC 8785 JCS) | No | Logging-style | Operator-built | Operator-built | Operator-built |
 | **Multi-region residency invariant** | Yes (4 regions + 3 on-request, `INV-REGION-NO-CROSS-LEAK`) | Per deployment | Single primary region per customer | Operator-built | Operator-built | Operator-built |
 | **REAPI v2 conformant** | Yes (CAS + AC) | Yes | Yes (CAS + AC + RBE) | Yes | Yes | Operator-built |
@@ -87,7 +87,7 @@ Reference posts: `marketing/launch/BLOG-POSTS/01-introducing-corelink.md#the-bui
 
 **Where CoreLink wins:**
 - **Multi-region residency invariant.** BuildBuddy's hosted plane runs in a single primary region per customer. CoreLink has 4 GA regions (3 more on request) with `INV-REGION-NO-CROSS-LEAK` as a CRITICAL invariant — region pinning is structural, not configuration.
-- **BYOK at the envelope-encryption layer** across 4 KMS providers with a 5-minute structural kill switch. This is not currently part of BuildBuddy's shipped scope.
+- **BYOK at the envelope-encryption layer** — AWS KMS at GA (GCP / Azure / Vault on the roadmap) with a 5-minute structural DEK-cache kill switch. This is not currently part of BuildBuddy's shipped scope.
 - **TLA+-modeled tenant isolation** checked in CI.
 - **Audit chain as a primary artifact** (RFC 6962 + RFC 8785 JCS, independently re-derivable) — not logging-style retention.
 

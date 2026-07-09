@@ -16,7 +16,7 @@ Some technical decisions I am proud of, in the order I am proud of them:
 
 **2. Tenant isolation is a TLA+ invariant.** We maintain four formal specifications in CI. CI fails if the safety property regresses. We did this because the difference between marketing-language multi-tenant and actually-multi-tenant is exactly the kind of gap formal verification was invented to close.
 
-**3. BYOK is real.** Four KMS providers — AWS, GCP, Azure, HashiCorp Vault. Customer-managed kill switch. Ed25519-signed erasure attestation, replayable. The DEK cache is hard-capped at five minutes by code path, not configuration. The vendor cannot read your bytes unilaterally. We took the procurement-team question seriously.
+**3. BYOK is real.** AWS KMS at GA — GCP, Azure, and HashiCorp Vault on the roadmap. Customer-managed kill switch. Verifiable crypto-erasure (a replayable Ed25519-signed attestation is on the roadmap). The DEK cache is hard-capped at five minutes by code path, not configuration. The vendor cannot read your bytes unilaterally. We took the procurement-team question seriously.
 
 **4. The audit chain is primary, not side-effect.** RFC 6962 Merkle construction over RFC 8785 JCS-canonicalized leaves. Customers re-derive the chain head from their own copy of the events. Trust the math, not the vendor.
 
