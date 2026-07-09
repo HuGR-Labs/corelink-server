@@ -3,12 +3,12 @@
 //! DEBT-029 closure on `ac.rs` + `admin.rs`).
 //!
 //! Pin: the route constant in `apps/server/src/routes/cas.rs` MUST
-//! be wired with the matchit-0.7 (= axum-0.7) `:name` syntax — *not*
-//! the matchit-0.8 `{name}` form. DEBT-029-cas was a latent bug in
-//! which `CAS_READ_ROUTE` used the `{tenant}/{hash}` literals:
-//! matchit-0.7 accepted them as LITERAL path segments at
-//! `Router::new()` time (no panic), so every request with a real
-//! tenant + hash value would have returned a router-level
+//! be wired with the matchit-0.8 (= axum-0.8) `{name}` syntax — *not*
+//! the legacy matchit-0.7 `:name` form. Post the axum-0.8 migration
+//! the grammar INVERTED: matchit-0.8 accepts a `:name` segment as a
+//! LITERAL path segment at `Router::new()` time (no panic), so wiring
+//! `CAS_READ_ROUTE` with the old `:tenant/:hash` form would make every
+//! request with a real tenant + hash value return a router-level
 //! `404 Not Found` (handler never fired; `SLO-AVAIL-CAS-GET` +
 //! `SLO-LAT-CAS-GET-P99` would have flat-lined at 100% miss).
 //!
@@ -19,8 +19,9 @@
 //!
 //! * CAS read with a fresh `tenant` + `hash` → 404 with the
 //!   handler-emitted `not found` body (NOT a router-miss empty body).
-//! * Route constant has no curly braces and contains `:tenant` +
-//!   `:hash` (negative-regression pin against future drift).
+//! * Route constant uses the `{name}` capture form — contains
+//!   `{tenant}` + `{hash}` and no `:` (negative-regression pin
+//!   against future drift back to the legacy `:name` syntax).
 //! * Construction smoke: `cas::router(state)` composes without
 //!   panic under the workspace-pinned matchit grammar.
 //!
@@ -99,12 +100,12 @@ async fn cas_read_route_reaches_handler_and_returns_handler_not_found_404() {
     );
 }
 
-/// Negative pin: a request against the literal pre-fix path
-/// `/v1/cas/{tenant}/{hash}` (percent-encoded curly braces in the
-/// URI) MUST still reach the handler with the literal segments as
-/// the path params and emit the handler's 404 — i.e. the route
-/// constant does NOT contain literal braces post-fix, so a curly
-/// URI no longer collides with a "matching" literal route.
+/// Behavioural pin: a request whose path segments are the literal
+/// `{tenant}`/`{hash}` (percent-encoded curly braces in the URI) MUST
+/// still reach the handler with those literal segments as the path
+/// params and emit the handler's 404 — the matchit-0.8 `{tenant}` /
+/// `{hash}` captures match any single non-slash segment, including
+/// one that happens to be literal braces.
 #[tokio::test]
 async fn cas_read_route_does_not_match_literal_braces_uri() {
     let app = cas::router(fresh_state());
@@ -139,17 +140,17 @@ async fn cas_read_route_does_not_match_literal_braces_uri() {
     // Pin the public route constant — guards against future regression
     // of the constant itself.
     assert!(
-        !CAS_READ_ROUTE.contains('{'),
-        "CAS_READ_ROUTE must use matchit-0.7 `:name` syntax, not `{{name}}`"
+        !CAS_READ_ROUTE.contains(':'),
+        "CAS_READ_ROUTE must use matchit-0.8 `{{name}}` syntax, not `:name`"
     );
-    assert!(CAS_READ_ROUTE.contains(":tenant"));
-    assert!(CAS_READ_ROUTE.contains(":hash"));
+    assert!(CAS_READ_ROUTE.contains("{tenant}"));
+    assert!(CAS_READ_ROUTE.contains("{hash}"));
 }
 
 /// Construction smoke: the CAS route constant must compose into a
 /// functional axum `Router` on the native target — pins the
 /// `Router::new().route(CAS_READ_ROUTE, …)` call path against the
-/// live matchit 0.7 grammar.
+/// live matchit 0.8 grammar.
 #[tokio::test]
 async fn cas_route_state_constructs_without_panic_on_native() {
     let _router = cas::router(fresh_state());
