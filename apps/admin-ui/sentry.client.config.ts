@@ -62,8 +62,3 @@ if (DSN) {
     },
   });
 }
-
-// Sentry v10: client-side navigation instrumentation hook. Next.js calls this
-// on each App Router transition start; exporting it here (from the renamed
-// instrumentation-client.ts) captures navigation spans.
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
