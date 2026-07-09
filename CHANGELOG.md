@@ -22,6 +22,22 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(container): tenant bulk-export endpoint — `POST /v1/customer/account/export` (SEAM).**
+  Streams the full tenant portability bundle the CLI `corelink tenant export` (PR #708) needs — it
+  was PARTIAL because no server endpoint assembled the WHOLE bundle. The new endpoint streams a
+  **content-addressed NDJSON** bundle: the tenant's CAS **and** AC blob **bytes** (base64, one blob
+  per line, fetched lazily so peak memory is bounded by a single blob) + the D1 governance records
+  (RBAC/team, DPA/consent, bounded customer-audit slice) + a trailing manifest. Reuses the SAME
+  CAS/AC read+list handlers the cache routes use (one R2 connection, no forked store) via the new
+  `routes::customer_export::TenantExportSource` seam + the existing `CustomerD1` row source.
+  Owner/admin only (write-capable scope, mirroring the billing/keys/team gates), behind the native
+  PAT-possession backstop, per-tenant rate-limited (burst 2 / 1 per 300s), and audited (a durable
+  `account.export` row is written BEFORE any bytes are disclosed). Fail-CLOSED: unwired source (no D1
+  env, dev/CI) → 503; a gather/audit fault → 5xx — never a partial 200. Tenant-scoped strictly to
+  the Worker-authenticated tenant (cross-tenant isolation tested). CLI (#708) should POST to
+  `/v1/customer/account/export`. Thin follow-up: `.tar.zst` packaging of the NDJSON stream.
+
 ### Changed
 - **deps(js) — JS-majors frontier assessed (supersedes dependabot #697); net adoption: none.**
   The 15 already-on-`main` targets from the prior batch-majors merge (#693) remain the current
