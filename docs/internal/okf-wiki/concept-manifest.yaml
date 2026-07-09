@@ -190,7 +190,7 @@ candidates:
     title: "2-level PAT moat (PatVerifier)"
     status: "active"
     source_cluster: "auth"
-    seed_from: ["crates/corelink-container/src/adapter_pat.rs", "worker/src/lib/internal_auth.ts"]
+    seed_from: ["crates/corelink-container/src/adapter_pat.rs", "worker/src/lib/internal_auth.ts", "worker/src/lib/tenant_suspend_gate.ts"]
   - id: "auth/hmac-fast-reject"
     type: "AuthMechanism"
     title: "Native HMAC fast-reject PAT gate"

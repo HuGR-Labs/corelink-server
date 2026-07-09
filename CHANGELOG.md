@@ -56,6 +56,15 @@ Each entry cross-references:
   fail-OPEN posture is unchanged (an inner `Err` is never cached). 5 tests incl. a 24-op burst → 1 resolve.
 
 ### Added
+- **worker — tenant fast-suspend gate on the customer CAS/AC path (go-live G4).**
+  A valid, unexpired PAT is no longer sufficient: `extractAuth` now runs a final arm that denies any request
+  whose tenant is suspended or erased (`tenant_offboarding_state.state ∈ {suspended, erased}`, migration 0046),
+  so an abusive/offboarded tenant is fast-denied on the hot path without waiting for every one of its PATs to be
+  individually revoked. The check is a single-flight, ~30s-TTL cached D1 read (`isTenantSuspended`,
+  `worker/src/lib/tenant_suspend_gate.ts`) so it adds no uncached per-request D1 round-trip; it fails **OPEN** on
+  a transient D1 fault (availability) but a KNOWN-suspended cached value still denies, and the caller maps the
+  distinct `tenant_suspended` reason to **403** (authorization denial, separate from the 401 bad-credential and
+  503 transient-infra arms). Tests cover suspended→403, erased→403, active→pass, and D1-fault→fail-open.
 - **worker — runner-mint `installation_id` is now OPTIONAL; the fabricd/native path derives tenant from the acquiring PAT.**
   Model B required `installation_id` → `tenant_gh_installation_map`, which is structurally unmeetable for a
   native repo (no GitHub App installation exists). `handleRunnerMint` now derives the tenant from one of two
