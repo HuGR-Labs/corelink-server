@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "3ee5dc2df2e4d741837efcacccb66465980d99c9"
+checkpoint_sha: "a51f71a708dd0ce941b337c8b80cdc88df1c5ca9"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -53,11 +53,11 @@ written.
   remediation (`crates/corelink-container/src/routes/internal_pat.rs:1-22`).
 - That mint route is a PURE function — it NEVER persists the row itself; the caller (signup-worker)
   writes the returned `hash` to the D1 `pat` row and discards the plaintext after one use
-  (`crates/corelink-container/src/routes/internal_pat.rs:502-659`).
+  (`crates/corelink-container/src/routes/internal_pat.rs:530-690`).
 - A mint failure returns an OPAQUE 503 body (`{"error":"mint_failed"}`): the real `PatError` detail
   (e.g. `SigningKeyTooShort`, entropy/hash-corruption internals) is logged SERVER-SIDE only and never
   disclosed in the response — even to a holder of the mint auth key
-  (`crates/corelink-container/src/routes/internal_pat.rs:608-620`).
+  (`crates/corelink-container/src/routes/internal_pat.rs:639-651`).
 
 # Invariants
 
@@ -89,6 +89,6 @@ written.
 6. `crates/corelink-container/src/routes/internal_pat.rs:1-22` — the `/_internal/pat/mint` route + the DEDICATED-key-only auth gate (no shared-key fallback; fail-CLOSED — DD-HIGH remediation).
 7. `crates/corelink-container/src/routes/internal_pat.rs:73-75` — plaintext never persisted; caller's responsibility.
 8. `crates/corelink-container/src/routes/internal_pat.rs:88-92` — M7: signup-worker writes the hash to the D1 row.
-9. `crates/corelink-container/src/routes/internal_pat.rs:502-659` — `handle_mint`: mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:608-620`).
+9. `crates/corelink-container/src/routes/internal_pat.rs:530-690` — `handle_mint`: mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:639-651`).
 10. `crates/corelink-container/src/adapter_pat.rs:145-151` — the verifier's D1 row reader mapping a NULL `scope` to `""`.
 11. `crates/corelink-container/src/scope.rs:73-95` — the fail-CLOSED scope gate (`""` grants nothing).
