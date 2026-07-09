@@ -242,6 +242,18 @@ class Git:
             return None
         return cp.stdout.strip() or None
 
+    def is_ancestor(self, sha: str, ref: str) -> bool:
+        """True iff `sha` is an ancestor of `ref` (reachable on that history).
+        False when it is not — INCLUDING when `sha` is not a resolvable commit
+        in this checkout (an ORPHANED pointer: a pre-merge branch tip that was
+        rewritten/replayed at merge and never landed on the mainline). git's
+        `merge-base --is-ancestor` exits 0 for ancestor, 1 for non-ancestor,
+        and 128 when a commit is unknown — all non-zero cases are `not an
+        ancestor` for our purposes (a shallow CI clone simply lacks the orphan)."""
+        if not sha:
+            return False
+        return self.run(["merge-base", "--is-ancestor", sha, ref]).returncode == 0
+
     def show_file(self, rev: str, repo_rel: str):
         cp = self.run(["show", f"{rev}:{repo_rel}"])
         if cp.returncode != 0:
@@ -1239,6 +1251,18 @@ def _check_c5b(args, git: Git, bundle_root: Path, concepts: list[Concept], fails
         prev_sha = prev_fm.get("checkpoint_sha")
         if not prev_sha or prev_sha == c.checkpoint_sha:
             continue  # not advanced
+        # ORPHANED-CHECKPOINT REPAIR EXEMPTION. If the PREVIOUS checkpoint_sha is
+        # not an ancestor of the base ref, it never landed on the mainline — it is
+        # an orphaned pointer (classic case: a PR's pre-merge branch tip that git
+        # rewrote/replayed at merge, so the checkpoint the PR wrote points at a
+        # commit `main` cannot reach; e.g. #677's G4 commit `73419d59`). Repointing
+        # such a checkpoint to its real main-history landing SHA is a MANDATORY C4
+        # repair, not a reconcile: the cited source is byte-identical (nothing to
+        # re-read), so demanding a body edit would force exactly the phantom edit
+        # C5b exists to reject. A genuine phantom advance always has an on-main
+        # prev_sha and therefore stays fully gated below.
+        if not git.is_ancestor(str(prev_sha), args.base_ref):
+            continue
         # SHA changed: require a real body edit. Compare both texts with the
         # checkpoint_sha line stripped — if identical, only the SHA moved.
         if _strip_ckpt_line(prev_text) == _strip_ckpt_line(c.text):

@@ -334,6 +334,89 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C5b orphaned-checkpoint REPAIR exemption ---------------------------------
+# When the PREVIOUS checkpoint_sha (the base-ref version) is not an ancestor of
+# the base ref, it is an ORPHANED pointer (a pre-merge branch tip git rewrote at
+# merge; e.g. #677's G4 commit). Repointing it to the real main-history landing
+# SHA is a mandatory C4 repair with byte-identical source — demanding a body
+# edit would force the exact phantom edit C5b rejects. So: SHA bump w/o body edit
+# MUST NOT fire [C5b] when the prev checkpoint is orphaned. The regular phantom
+# case above (prev IS an on-base ancestor) still fires — this is the narrow carve.
+assert_c5b_orphan_exempt() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  # A 40-hex that is NOT a resolvable commit in the throwaway repo -> git
+  # `merge-base --is-ancestor` errors (128) -> treated as "not an ancestor"
+  # (an orphan), exactly as a shallow CI clone lacks the real orphan object.
+  local orphan="dead0000dead0000dead0000dead0000dead0000"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'alpha\nbeta\ngamma\n' > src.txt
+    git add src.txt
+    git commit -q -m base
+
+    mkdir -p docs/knowledge/auth
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/auth/x.md)
+EOF
+    # Commit A (the base-ref version) pins an ORPHANED checkpoint_sha.
+    cat > docs/knowledge/auth/x.md <<EOF
+---
+type: "AuthMechanism"
+title: "Orphan-checkpoint repair (git harness)"
+description: "prev checkpoint is orphaned; body identical across the repair."
+source_files:
+  - "src.txt"
+checkpoint_sha: "$orphan"
+provenance: "AUTHORED"
+---
+
+# Orphan-checkpoint repair (git harness)
+
+Lead paragraph held byte-identical across the checkpoint repair.
+
+# How it works
+- the source anchor line (\`src.txt:1\`).
+
+# Invariants
+- the anchor stays present (\`src.txt:1\`).
+
+# Citations
+1. \`src.txt:1\` — the anchor.
+EOF
+    git add -A
+    git commit -q -m A
+    sha_a="$(git rev-parse HEAD)"
+
+    # PR commit B: repoint the ORPHAN -> a real, reachable SHA (sha_a). Body
+    # byte-identical. Because prev (orphan) is not an ancestor of base-ref,
+    # [C5b] must be EXEMPT.
+    sed -i.bak "s/$orphan/$sha_a/" docs/knowledge/auth/x.md && rm -f docs/knowledge/auth/x.md.bak
+    git add -A
+    git commit -q -m B
+
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha_a" > "$tmp/.orphan_out" 2>&1 || true
+  )
+  total=$((total + 1))
+  if grep -q '^\[C5b\]' "$tmp/.orphan_out" 2>/dev/null; then
+    miss "C5b orphan-repair exemption: fired [C5b] on an orphaned-prev repair" "C5b-orphan"
+  else
+    ok "C5b git-harness: orphaned-prev checkpoint repair does NOT fire [C5b] (exemption)"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- C5: real git two-revision freshness harness ------------------------------
 # C5 freshness is also a two-tree diff (checkpoint_sha..HEAD), so a static bundle
 # would have to hardcode a host-repo commit SHA — exactly the non-portable trap
@@ -2428,6 +2511,7 @@ assert_c5_shift
 assert_c5_below
 assert_c5_added_file
 assert_c5b
+assert_c5b_orphan_exempt
 assert_bad C6  C6  --bundle "$FIX/bad/C6"  --manifest "$NONE"
 assert_bad C6b C6b --bundle "$FIX/bad/C6b" --manifest "$NONE"
 assert_bad C6c C6c --bundle "$FIX/bad/C6c" --manifest "$NONE"
