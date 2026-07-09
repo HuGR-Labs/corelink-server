@@ -14,7 +14,7 @@
 //! |---------------------|------------------------------------------------------------|
 //! | overview            | `tenant` (0023/0031/0056/0057) + `tenant_storage_state` (0008) `SUM(bytes_used)` / `MAX(bytes_quota)` + `tenant_billing` (0055) + `byok_envelope` (0030) existence; `tenant_name` = `tenant_id`; `recent_activity` = newest 8 `customer_audit_events` (0077) via [`D1CustomerHandler::recent_activity`] (BE-3), honestly empty for a new tenant |
 //! | usage               | real `cas_bytes`/`quota_bytes` from `tenant_storage_state` + real `request_count` from `monthly_request_counts` (0071) via [`D1CustomerHandler::monthly_request_count`] (BE-1a); `reads`/`writes` = 0 + `daily` = `[]` (no per-op table) — only the CURRENT period retains bytes, an earlier period honestly reports 0 bytes |
-//! | audit               | `customer_audit_events` (migration 0077): newest-first, tenant-scoped, bounded; rows written best-effort by `keys create` (`pat.created`) + `team invite` (`team.invited`) |
+//! | audit               | `customer_audit_events` (migration 0077): newest-first, tenant-scoped, bounded; rows written UNSKIPPABLE / fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER) by `keys create` (`pat.created`) + `team invite` (`team.invited`) |
 //! | billing             | `tenant_billing` (0055) + `tier_selections` (0039/0062); status map FROZEN (see [`map_billing_status`]); `invoices` = `[]` (no invoice-history surface yet) |
 //! | billing/portal      | `tenant_billing.stripe_customer_id` → Stripe billing-portal session; no customer id → 404 "no billing account" |
 //! | keys list           | `pat` (0037/0054 + WP-2 columns `name`, `revoked_at_ms` — migration 0063, parallel PR); `last_used_at` = `None` (not tracked) |
@@ -687,31 +687,59 @@ impl D1CustomerHandler {
         })
     }
 
-    /// Best-effort write of one customer-facing audit row (migration 0077) —
-    /// the WRITE half of `GET /v1/customer/audit`. Fail-OPEN by design: a failed
-    /// audit insert is logged and SWALLOWED so it can NEVER block the primary
-    /// control-plane op (key create / team invite), and it does NOT mark the
-    /// primary op's SLI as errored. Tenant-scoped + fully parameterised
-    /// (INV-TENANT-ISOLATION). `target` / `detail` MUST be PII-free (e.g. a PAT
-    /// id / invitation id + role, never a raw email — CTRL-PRIV-001).
-    fn insert_audit_event(&self, tenant_id: &str, event_type: &str, actor: &str, target: &str, detail: &str) {
+    /// Write one customer-facing audit row (migration 0077) — the WRITE half of
+    /// `GET /v1/customer/audit`. **Fail-CLOSED / unskippable** (INV-AUDIT-EMIT-
+    /// ATOMIC-WITH-HANDLER): a failed insert propagates as
+    /// [`CustomerHandlerError::AuditFailed`] (→ 503 "audit closed") so the
+    /// customer-visible control-plane audit trail can NEVER be silently skipped.
+    ///
+    /// Callers MUST invoke this BEFORE the primary state mutation (emit-before-
+    /// mutate, the canonical audit-fail-CLOSED ordering the DSR endpoint + the
+    /// audit-chain sink use): if the audit row cannot be persisted the mutation
+    /// never happens, so a committed op is never left without its audit row (and
+    /// the non-idempotent mints/invites are never double-applied by a client that
+    /// retries a committed-then-500 response). The row is wall-clock timestamped,
+    /// tenant-scoped + fully parameterised (INV-TENANT-ISOLATION). `target` /
+    /// `detail` MUST be PII-free (e.g. a PAT id / invitation id + role, never a
+    /// raw email — CTRL-PRIV-001).
+    ///
+    /// # Errors
+    ///
+    /// [`CustomerHandlerError::AuditFailed`] on any D1 transport/decode failure
+    /// (the caller MUST propagate it — never `.ok()`/`let _ =`).
+    fn insert_audit_event(
+        &self,
+        tenant_id: &str,
+        event_type: &str,
+        actor: &str,
+        target: &str,
+        detail: &str,
+    ) -> Result<(), CustomerHandlerError> {
         let ts_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
-        if let Err(e) = self.db.query(
-            "INSERT INTO customer_audit_events \
-             (tenant_id, event_type, actor, target, ts_ms, detail) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            vec![
-                json!(tenant_id),
-                json!(event_type),
-                json!(actor),
-                json!(target),
-                json!(ts_ms),
-                json!(detail),
-            ],
-        ) {
-            // Fail-OPEN: log and continue; the primary op already succeeded.
-            tracing::warn!(error = %e, event_type, "customer_d1: best-effort audit insert failed");
-        }
+        self.db
+            .query(
+                "INSERT INTO customer_audit_events \
+                 (tenant_id, event_type, actor, target, ts_ms, detail) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                vec![
+                    json!(tenant_id),
+                    json!(event_type),
+                    json!(actor),
+                    json!(target),
+                    json!(ts_ms),
+                    json!(detail),
+                ],
+            )
+            .map(|_rows| ())
+            .map_err(|e| {
+                // Fail-CLOSED: mark the op errored + surface AuditFailed so the
+                // caller aborts BEFORE the primary mutation. Never a silent drop.
+                self.emit_sli(true);
+                tracing::error!(error = %e, event_type, "customer_d1: unskippable audit insert failed (fail-CLOSED)");
+                CustomerHandlerError::AuditFailed(format!(
+                    "customer audit row insert failed for {event_type}: {e}"
+                ))
+            })
     }
 
     /// Fetch the tenant row (`tier` / `clerk_user_id` / `byok_status` /
@@ -789,8 +817,8 @@ impl D1CustomerHandler {
 
     /// Newest-first customer activity for the overview snapshot (dashboard-revival
     /// BE-3). Reads the same `customer_audit_events` (0077) surface the audit
-    /// endpoint serves — written best-effort by the control-plane mutations
-    /// (`keys create` → `pat.created`, `team invite` → `team.invited`) — bounded
+    /// endpoint serves — written UNSKIPPABLE / fail-CLOSED by the control-plane
+    /// mutations (`keys create` → `pat.created`, `team invite` → `team.invited`) — bounded
     /// to `limit`, tenant-scoped, newest-first. Fail-CLOSED on transport (never a
     /// fabricated row; an honestly-empty feed stays empty).
     fn recent_activity(
@@ -1230,6 +1258,20 @@ impl CustomerKeysHandler for D1CustomerHandler {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
 
+        // Customer-facing audit row (migration 0077, write half). UNSKIPPABLE /
+        // fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER): emitted BEFORE the pat
+        // INSERT so a self-serve key mint can NEVER commit without its customer-
+        // visible audit row. `target` is the PAT id (no PII, minted above); the
+        // summary names the key + granted scope. A failed insert → 503 and the
+        // key is never created (the non-idempotent mint is not left half-applied).
+        self.insert_audit_event(
+            &req.caller_tenant,
+            "pat.created",
+            &req.principal,
+            &pat.id.to_string(),
+            &format!("Created API key {:?} ({scope})", req.name),
+        )?;
+
         // Durable INSERT. `shown_once_token` (NOT NULL UNIQUE, 0037) is
         // a fresh UUID immediately marked consumed: the dashboard
         // returns the plaintext in THIS response (shown once) and the
@@ -1259,17 +1301,6 @@ impl CustomerKeysHandler for D1CustomerHandler {
             ms_to_iso8601(i64::try_from(now_ms).unwrap_or(i64::MAX)),
             None,
             None,
-        );
-
-        // Customer-facing audit row (migration 0077, write half). Best-effort /
-        // fail-OPEN: never blocks the just-committed mint. `target` is the PAT id
-        // (no PII); the summary names the key + granted scope.
-        self.insert_audit_event(
-            &req.caller_tenant,
-            "pat.created",
-            &req.principal,
-            &pat.id.to_string(),
-            &format!("Created API key {:?} ({scope})", req.name),
         );
 
         self.emit_audit(
@@ -1428,6 +1459,21 @@ impl CustomerTeamHandler for D1CustomerHandler {
         let invitation_id = Uuid::now_v7().to_string();
         let invited_at_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
 
+        // Customer-facing audit row (migration 0077, write half). UNSKIPPABLE /
+        // fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER): emitted BEFORE the
+        // team_member INSERT so an invite can NEVER commit without its customer-
+        // visible audit row. PII-safe — `target` is the invitation id and the
+        // summary names only the role, NEVER the raw invitee email (CTRL-PRIV-001;
+        // only `email_hash` is persisted below). A failed insert → 503 and no seat
+        // is written.
+        self.insert_audit_event(
+            &req.caller_tenant,
+            "team.invited",
+            &req.principal,
+            &invitation_id,
+            &format!("Invited a team member with role {role}"),
+        )?;
+
         // `joined_at_ms` is left NULL until acceptance flips the seat to `active`.
         self.run(
             "INSERT INTO team_member \
@@ -1442,18 +1488,6 @@ impl CustomerTeamHandler for D1CustomerHandler {
                 json!(invited_at_ms),
             ],
         )?;
-
-        // Customer-facing audit row (migration 0077, write half). Best-effort /
-        // fail-OPEN: never blocks the just-committed invite. PII-safe — `target`
-        // is the invitation id and the summary names only the role, NEVER the raw
-        // invitee email (CTRL-PRIV-001; only `email_hash` is persisted above).
-        self.insert_audit_event(
-            &req.caller_tenant,
-            "team.invited",
-            &req.principal,
-            &invitation_id,
-            &format!("Invited a team member with role {role}"),
-        );
 
         self.emit_audit(
             AuditEventKind::TeamInviteCommitted,
@@ -1563,8 +1597,8 @@ impl CustomerAuditHandler for D1CustomerHandler {
         )?;
 
         // Real customer-facing activity log (migration 0077): newest-first,
-        // tenant-scoped, bounded. Written best-effort by the control-plane
-        // mutations (`create` / `invite`). Fail-CLOSED on transport error
+        // tenant-scoped, bounded. Written UNSKIPPABLE / fail-CLOSED by the
+        // control-plane mutations (`create` / `invite`). Fail-CLOSED on transport error
         // (`self.run`), never degraded to fabricated empty data.
         //
         // Contract: honor the `?from=`/`?kind=` filters (`req.since` /
@@ -1954,6 +1988,11 @@ mod tests {
         canned: Vec<(&'static str, Vec<D1Row>)>,
         calls: Mutex<Vec<(String, Vec<Value>)>>,
         fail: bool,
+        /// When `Some(fragment)`, ONLY the queries whose SQL contains
+        /// `fragment` fail (every other query behaves normally). Lets a test
+        /// fault a specific statement — e.g. the `customer_audit_events`
+        /// insert — to prove the audit-fail-CLOSED / emit-before-mutate ordering.
+        fail_on: Option<&'static str>,
     }
 
     impl MockD1 {
@@ -1962,6 +2001,7 @@ mod tests {
                 canned,
                 calls: Mutex::new(Vec::new()),
                 fail: false,
+                fail_on: None,
             }
         }
 
@@ -1969,6 +2009,16 @@ mod tests {
             Self {
                 fail: true,
                 ..Self::default()
+            }
+        }
+
+        /// A mock that faults ONLY on queries whose SQL contains `fragment`.
+        fn failing_on(fragment: &'static str, canned: Vec<(&'static str, Vec<D1Row>)>) -> Self {
+            Self {
+                canned,
+                calls: Mutex::new(Vec::new()),
+                fail: false,
+                fail_on: Some(fragment),
             }
         }
 
@@ -1982,6 +2032,11 @@ mod tests {
             self.calls.lock().unwrap().push((sql.to_owned(), binds));
             if self.fail {
                 return Err("D1 HTTP 500: transport down".to_owned());
+            }
+            if let Some(fragment) = self.fail_on {
+                if sql.contains(fragment) {
+                    return Err(format!("D1 HTTP 500: induced failure on {fragment}"));
+                }
             }
             for (fragment, rows) in &self.canned {
                 if sql.contains(fragment) {
@@ -2857,6 +2912,78 @@ mod tests {
                 AuditEventKind::KeyCreateAttempted,
                 AuditEventKind::KeyCreateCommitted
             ]
+        );
+    }
+
+    /// Item-4 fail-CLOSED: when the UNSKIPPABLE `customer_audit_events` insert
+    /// faults, `create` MUST surface `AuditFailed` (→ 503) AND must NOT have run
+    /// the `INSERT INTO pat` mutation (emit-before-mutate: the key is never
+    /// minted without its customer-visible audit row). This is the marketing
+    /// "unskippable audit trail" made true for the key-create control-plane op.
+    #[test]
+    fn keys_create_fails_closed_when_customer_audit_insert_faults() {
+        let f = fixture_with(
+            MockD1::failing_on(
+                "customer_audit_events",
+                vec![("FROM tenant WHERE", vec![tenant_row_fixture()])],
+            ),
+            None,
+        );
+        let err = f
+            .handler
+            .create(KeyCreateRequest::new(
+                TENANT,
+                "clpat_x",
+                "deploy-key",
+                vec!["cache:read".to_owned()],
+                0,
+            ))
+            .expect_err("audit-insert fault must fail the create CLOSED");
+        assert!(
+            matches!(err, CustomerHandlerError::AuditFailed(_)),
+            "expected AuditFailed, got {err:?}"
+        );
+        // Emit-before-mutate: the pat INSERT must NEVER have run.
+        let calls = f.db.calls();
+        assert!(
+            !calls.iter().any(|(sql, _)| sql.contains("INSERT INTO pat")),
+            "the pat mint must not commit when the unskippable audit row fails"
+        );
+        // The audit row WAS attempted (proving it is on the fail-CLOSED path).
+        assert!(
+            calls
+                .iter()
+                .any(|(sql, _)| sql.contains("customer_audit_events")),
+            "the customer audit insert must be attempted before the mutation"
+        );
+    }
+
+    /// Item-4 fail-CLOSED sibling for team invite: an audit-insert fault must
+    /// surface `AuditFailed` and leave NO `team_member` seat behind.
+    #[test]
+    fn team_invite_fails_closed_when_customer_audit_insert_faults() {
+        let _env = crate::email_hash::EnvGuard::acquire();
+        let f = fixture_with(MockD1::failing_on("customer_audit_events", vec![]), None);
+        let err = f
+            .handler
+            .invite(TeamInviteRequest::new(
+                TENANT,
+                "clpat_x",
+                "Alice@Example.com",
+                "Developer",
+                0,
+            ))
+            .expect_err("audit-insert fault must fail the invite CLOSED");
+        assert!(
+            matches!(err, CustomerHandlerError::AuditFailed(_)),
+            "expected AuditFailed, got {err:?}"
+        );
+        let calls = f.db.calls();
+        assert!(
+            !calls
+                .iter()
+                .any(|(sql, _)| sql.contains("INSERT INTO team_member")),
+            "no seat may be written when the unskippable audit row fails"
         );
     }
 

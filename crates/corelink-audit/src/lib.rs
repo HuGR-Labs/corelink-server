@@ -117,6 +117,10 @@ pub mod error;
 pub mod events;
 pub mod link_hash;
 pub mod metrics;
+// Production durable emitter (WI item 3): the `OutboxEmitter` +
+// `AuditOutboxWriter` port that persists auth-plane audit events fail-CLOSED,
+// replacing the drop-on-restart `InMemoryEmitter` test sink in production.
+pub mod outbox;
 pub mod redact;
 pub mod retention;
 
@@ -135,6 +139,10 @@ pub mod analytics;
 pub mod chain;
 
 pub use emitter::{Emitter, EmitterError, InMemoryEmitter};
+pub use outbox::{
+    AuditOutboxRow, AuditOutboxWriter, FailingAuditOutboxWriter, InMemoryAuditOutboxWriter,
+    OutboxEmitter,
+};
 pub use error::AuditError;
 pub use events::{
     AuthEvent, AuthEventData, AuthEventType, ClerkSubject, DenyReason, MembershipRole, RegionTag,
