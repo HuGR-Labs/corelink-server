@@ -22,6 +22,10 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **deploy — repinned all 5 prod container images from the 53-commit-stale `d86b1417-r1` to the live `20a0c323-r1`.**
+  `wrangler.toml`'s `[[env.*.containers]].image` lines lagged the actually-running image (CF Containers API confirms prod + syd/nrt/lhr/sam all on `20a0c323-r1`, the #690 go-live merge). A `wrangler deploy`/recycle would have rolled prod BACK to the pre-go-live build. Pins now match reality.
+
 ### Added
 - **container — fail-closed boot guard on the cache-tier Stripe price map (revenue-path must-arm).**
   The four `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env vars now join the prod must-arm boot set
