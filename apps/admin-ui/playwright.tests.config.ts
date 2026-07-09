@@ -43,17 +43,25 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   use: {
     baseURL: BASE_URL,
-    // The shown-once PAT reveal modal copies the token via
-    // navigator.clipboard.writeText; grant clipboard access so the copy path
-    // (which gates the modal's "Done" button) succeeds under test.
-    permissions: ["clipboard-read", "clipboard-write"],
     trace: "on-first-retry",
     video: "retain-on-failure",
     screenshot: "only-on-failure",
     actionTimeout: 10_000,
     navigationTimeout: 30_000,
   },
-  projects: allProjects.filter((p) => PROJECTS_ENV.includes(p.name)),
+  // The shown-once PAT reveal modal copies the token via
+  // navigator.clipboard.writeText. The `clipboard-read`/`clipboard-write`
+  // permissions are a CHROMIUM-only concept — passing them to WebKit/Firefox
+  // throws `Unknown permission: clipboard-write` on newPage and fails the whole
+  // project. Grant them ONLY to chromium; on webkit/firefox the copy path is
+  // exercised without an explicit grant (the modal tolerates a rejected write).
+  projects: allProjects
+    .filter((p) => PROJECTS_ENV.includes(p.name))
+    .map((p) =>
+      p.name === "chromium"
+        ? { ...p, use: { ...p.use, permissions: ["clipboard-read", "clipboard-write"] } }
+        : p,
+    ),
   webServer: process.env["E2E_BASE_URL"]
     ? undefined
     : {
