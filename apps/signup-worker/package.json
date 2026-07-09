@@ -17,12 +17,12 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^8.45.0"
+    "@sentry/cloudflare": "^10.64.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260619.1",
-    "typescript": "5.7.3",
-    "vitest": "3.0.7",
+    "@cloudflare/workers-types": "^5.20260708.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10",
     "wrangler": "^4.103.0"
   }
 }

@@ -19,16 +19,16 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@clerk/backend": "2.33.3",
-    "@sentry/cloudflare": "^8.45.0"
+    "@clerk/backend": "3.11.2",
+    "@sentry/cloudflare": "^10.64.0"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.16.18",
-    "@cloudflare/workers-types": "^4.20260619.1",
+    "@cloudflare/workers-types": "^5.20260708.1",
     "@vitest/coverage-istanbul": "^4.1.9",
     "miniflare": "^4.20260617.1",
-    "typescript": "^5.7.2",
-    "vitest": "^4.1.8",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
     "wrangler": "^4.103.0"
   }
 }
