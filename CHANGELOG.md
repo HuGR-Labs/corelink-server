@@ -43,6 +43,20 @@ Each entry cross-references:
   `wrangler.toml`'s `[[env.*.containers]].image` lines lagged the actually-running image (CF Containers API confirms prod + syd/nrt/lhr/sam all on `20a0c323-r1`, the #690 go-live merge). A `wrangler deploy`/recycle would have rolled prod BACK to the pre-go-live build. Pins now match reality.
 
 ### Added
+- **ci — docs-reality gate: customer-facing doc/marketing drift from code is now structurally blocked.**
+  New stdlib-only validator `scripts/validate_docs_reality.py` + workflow `.github/workflows/docs-reality.yml`
+  close the coverage hole the OKF wiki never had (`apps/docs/`, `marketing/`, `tools/cli/`). Three checks:
+  **cli-existence** — every `corelink <subcommand>` referenced in a *code context* under the doc roots is
+  validated against the live `enum Commands` in `tools/cli/src/main.rs` (two-level actions included);
+  **okf-deferred-coherence** — curated, OKF/CLI-grounded rules flag text that sells a deferred/unbuilt
+  capability as live or contradicts a canonical code fact; **endpoint-existence** (best-effort) — onboarding
+  HTTP paths are resolved against the wired route table. Reads claims ONLY from shell fences / inline-code /
+  `<code>` so prose is never a false positive, and skips non-shell fences so `from corelink import …` is not
+  mistaken for a `corelink import` verb. A curated allowlist (`scripts/docs_reality_allowlist.json`) separates
+  intentional `roadmap_allow` refs from `tracked_drift` (known in-flight fixes — non-fatal now, `--strict` to
+  fail), so the gate is **green on the current tree** yet fails any NEW drift. Would have caught, and does
+  under `--strict`: `corelink bazel-init` (documented, never in the enum), the SHA-256-vs-BLAKE3 quickstart
+  hashing instruction, and the BYOK-4-providers-GA overclaim. See `scripts/README-docs-reality.md`.
 - **container — fail-closed boot guard on the cache-tier Stripe price map (revenue-path must-arm).**
   The four `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env vars now join the prod must-arm boot set
   (alongside `PAT_SIGNING_KEY` / `ERASURE_SALT_KEY` / `EMAIL_HASH_SALT`): when prod is detected (via the

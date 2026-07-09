@@ -1,0 +1,74 @@
+{
+  "_README": "Curated allowlist for scripts/validate_docs_reality.py. Two CLI buckets: roadmap_allow (intentional forward-looking / other-product / internal-tool references — NEVER a failure) and tracked_drift (KNOWN drift in customer docs/marketing being removed/reconciled by in-flight docs PRs — non-fatal in the normal gate so a green tree stays green, but FAILS under --strict; this is the punch-list). Any `corelink <cmd>` that is neither valid, roadmap-allowed, nor tracked FAILS the gate — that is how NEW drift is caught. Shrink tracked_drift as the fix PRs land; a stale entry is harmless (it simply stops matching).",
+
+  "cli": {
+    "roadmap_allow": {
+      "ci":         "Build-acceleration / CI expansion campaign #1 (post-launch phase 3) — a roadmap surface, not the launch CLI. See marketing/expansion/ci-build-acceleration.md.",
+      "lighthouse": "Internal marketing 'lighthouse-kit' case-study tooling, not the customer product CLI.",
+      "kms":        "BYOK CMK attach — ships at GA per the BYOK roadmap (byok concept still gated-inert).",
+      "workspace":  "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary.",
+      "workspaces": "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary.",
+      "runners":    "Runners metered add-on — roadmap surface, not a shipped `corelink` verb."
+    },
+    "tracked_drift": {
+      "bazel-init":  { "reason": "Tutorials + a launch plan document `corelink bazel-init`, but it is NOT in the CLI enum (also referenced in e2e). Docs-fix PR to remove/rename, or the CLI adds the init helper." },
+      "buck2-init":  { "reason": "Installation tutorial documents `corelink buck2-init`; absent from the CLI enum. Same reconciliation as bazel-init." },
+      "cargo-init":  { "reason": "A comparison page documents `corelink cargo-init`; absent from the CLI enum." },
+      "cas":         { "reason": "Docs/marketing reference `corelink cas {put,get,export,import}`; the shipped CAS verbs are top-level `corelink put` / `corelink get`. Docs-fix PR reconciling the verb names." },
+      "ping":        { "reason": "Installation tutorial references `corelink ping`; the shipped health/connectivity check is `corelink doctor`." },
+      "tenant":      { "reason": "The leave-corelink recipe documents `corelink tenant export` / `corelink tenant verify-export`; neither is in the CLI enum (bulk export is an admin-plane operation today)." },
+      "import":      { "reason": "A migration recipe documents `corelink import s3://...`; not in the CLI enum. (Distinct from the Python SDK `from corelink import ...`, which the gate correctly ignores.)" },
+      "init":        { "reason": "An onboarding step references `corelink init`; not in the CLI enum (`corelink login` is the setup verb)." },
+      "gc":          { "reason": "The error taxonomy references `corelink gc`; GC is a server-side scheduled worker, there is no client verb." },
+      "billing":     { "reason": "A retention health-score doc references `corelink billing`; billing is admin/console-plane, not a CLI verb." },
+      "admin":       { "reason": "RBAC how-tos document `corelink admin {audit,members,pat}`; admin operations are console/API today, there is no shipped `admin` CLI verb." },
+      "dsr":         { "reason": "Support templates document `corelink dsr request`; DSR is an admin-plane operation, not a CLI verb." },
+      "auth":        { "reason": "A playbook documents `corelink auth login`; the shipped verb is top-level `corelink login`." },
+      "audit tail":  { "reason": "Observability recipes document `corelink audit tail --filter ...`; there is no streaming `tail` action (valid audit actions: export / verify / verify-ndjson)." },
+      "audit list":  { "reason": "Marketing/retention docs document `corelink audit list`; there is no `list` action." },
+      "audit prove": { "reason": "An audit-chain explainer documents `corelink audit prove`; proof verification is `corelink audit verify` / `verify-ndjson`." },
+      "config apply":{ "reason": "Observability recipes document `corelink config apply`; config actions are set / get / list / rotate." }
+    }
+  },
+
+  "deferred_coherence": [
+    {
+      "id": "byok-multiprovider-available-now",
+      "tracked": true,
+      "grounding": { "okf_concept": "docs/knowledge/storage/byok-envelope-encryption.md", "marker": "gated-inert" },
+      "scope_globs": ["marketing/", "apps/docs/"],
+      "forbidden": [
+        "customer-managed encryption keys.{0,40}\\bY\\b",
+        "Yes\\s*[—-].{0,40}4 providers",
+        "Yes \\(4 providers\\)"
+      ],
+      "allow": [
+        "ships at GA", "not in pilot", "pre-GA", "no BYOK", "at GA",
+        "GA per", "roadmap", "will ship", "planned", "gap"
+      ],
+      "reason": "BYOK across 4 KMS providers is asserted as an AVAILABLE capability, but the OKF byok concept records the prod KmsProvider wiring as DEFERRED / still gated-inert (zero active tenants). State it as a GA/roadmap item, not present-tense available."
+    },
+    {
+      "id": "cas-digest-is-blake3-not-sha256",
+      "tracked": true,
+      "grounding": { "cli_source": "tools/cli/src/main.rs", "marker": "BLAKE3" },
+      "scope_globs": ["apps/docs/"],
+      "forbidden": [
+        "\"hash\":\\s*\"sha256:",
+        "corelink (stat|get) sha256:",
+        "DIGEST=\\$\\(sha256sum"
+      ],
+      "allow": [
+        "HMAC-SHA256", "salted SHA-256", "content_hash", "shasum -a 256",
+        "hash of the token", "deterministic HMAC"
+      ],
+      "reason": "The CAS plane addresses + client-verifies blobs by BLAKE3 (CTRL-CAS-002; see the CLI Get/Put docstrings). A quickstart that computes the digest with `sha256sum` and uploads `sha256:<digest>` instructs users to produce a digest the server will reject. Use BLAKE3 (`corelink put` computes it)."
+    }
+  ],
+
+  "endpoint": {
+    "_comment": "Best-effort HTTP-path check. Unresolved paths WARN (non-fatal). Add a doc file to flagship_files to escalate its unresolved paths to a hard FAIL once its recipe is verified end-to-end. ignore_path_prefixes drops noisy non-route matches (illustrative/placeholder paths).",
+    "flagship_files": [],
+    "ignore_path_prefixes": []
+  }
+}
