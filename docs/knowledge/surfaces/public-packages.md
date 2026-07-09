@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-container/src/routes/brew.rs"
   - "crates/corelink-container/src/routes/oci.rs"
   - "crates/corelink-container/src/oci_cap.rs"
-checkpoint_sha: "b04438caa3b3a94d8a83b050305d7ce9d0aa9f80"
+checkpoint_sha: "f60432f83c18768ebdb4e08334e326185905a1e8"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
