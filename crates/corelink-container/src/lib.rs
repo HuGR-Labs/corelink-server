@@ -14,9 +14,11 @@
 //!   end-to-end as the example wire-up for the R-prep handler-crate
 //!   skeleton (see
 //!   `specs/_audits/sealed/2026-05-14-slo-instrumentation-gaps.md §6`).
-//! - `byok` — feature-gated AWS-only BYOK provider factory (built
-//!   when `--features byok-aws-real`). Preserved as a thin convenience
-//!   wrapper; new code should use [`byok_orchestrator`].
+//! - `byok` — feature-gated per-provider BYOK factory (built when ANY
+//!   `byok-*-real` flag is set). Exposes a thin convenience constructor
+//!   per provider (`make_{aws,gcp,azure,vault}_kms_provider`) plus
+//!   `make_active_provider`, which delegates to [`byok_orchestrator`];
+//!   new code should prefer the orchestrator directly.
 //! - [`byok_orchestrator`] — singleton trait-object dispatch over the
 //!   four production BYOK providers (AWS / GCP / Azure / Vault),
 //!   feature-flag-selected at compile time. Default (no flag) returns
@@ -58,7 +60,12 @@
 #![deny(missing_docs)]
 #![deny(missing_debug_implementations)]
 
-#[cfg(feature = "byok-aws-real")]
+#[cfg(any(
+    feature = "byok-aws-real",
+    feature = "byok-gcp-real",
+    feature = "byok-azure-real",
+    feature = "byok-vault-real"
+))]
 pub mod byok;
 
 /// 2-level content-dedup MOAT store shared by the cache adapters: bytes
