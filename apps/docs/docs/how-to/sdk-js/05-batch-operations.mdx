@@ -13,7 +13,7 @@ tags: [sdk, javascript, typescript, performance, how-to]
 You have many blobs to push or pull and want to saturate available
 bandwidth without exceeding the server-side per-PAT limit (256 concurrent).
 
-## Pattern: bounded `Promise.all`
+## Pattern: Bounded `Promise.all`
 
 ```typescript
 import pLimit from "p-limit";
@@ -49,7 +49,7 @@ const client = new CoreLinkClient({
 
 When attempts are exhausted, drain pending work and stop submitting.
 
-## Pattern: digest-keyed dedupe
+## Pattern: Digest-keyed dedupe
 
 ```typescript
 import { blake3Hex } from "@corelink/client";
