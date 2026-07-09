@@ -37,8 +37,8 @@ async function uploadMany(
 
 ## Rate-limit handling
 
-`RateLimitError` is auto-retried with exponential backoff + jitter
-(3 attempts, capped at 30 s total). Customize:
+`RateLimitError` (429) and 503 are auto-retried with exponential backoff +
+jitter (3 attempts by default, each backoff capped at `maxDelayMs`). Customize:
 
 ```typescript
 const client = new CoreLinkClient({
@@ -52,7 +52,7 @@ When attempts are exhausted, drain pending work and stop submitting.
 ## Pattern: digest-keyed dedupe
 
 ```typescript
-import { blake3 } from "@noble/hashes/blake3";
+import { blake3Hex } from "@corelink/client";
 
 async function uploadDedup(
   paths: string[],
@@ -60,7 +60,7 @@ async function uploadDedup(
   const seen: Record<string, string> = {};
   for (const p of paths) {
     const data = await readFile(p);
-    const hex = Buffer.from(blake3(data)).toString("hex");
+    const hex = blake3Hex(data); // same digest the server addresses the blob by
     if (hex in seen) continue;
     seen[hex] = await client.put(data, { expectedDigest: hex });
   }

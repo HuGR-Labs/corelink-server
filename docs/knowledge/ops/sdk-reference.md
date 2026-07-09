@@ -1,7 +1,7 @@
 ---
 type: "Runbook"
 title: "SDK reference (python/go/javascript)"
-description: "The three first-party CoreLink SDKs (PyO3 Python, cgo Go, wasm-bindgen JS/TS): a shared API shape (put/get/stat), client-side BLAKE3 verify default-on per CTRL-CAS-002 via a single Rust truth, the canonical COR_CAS_DIGEST_MISMATCH error, and the explicit opt-out semantics."
+description: "The three first-party CoreLink SDKs (PyO3 Python, cgo Go, pure-JS @noble/hashes JS/TS): a shared API shape (put/get/stat), client-side BLAKE3 verify default-on per CTRL-CAS-002 (Python/Go via a single Rust truth, JS via @noble/hashes), the canonical COR_CAS_DIGEST_MISMATCH error, and the explicit opt-out semantics."
 source_files:
   - "docs/sdk/python.md"
   - "docs/sdk/go.md"
@@ -15,21 +15,24 @@ timestamp: "2026-06-26T00:00:00Z"
 # SDK reference (python/go/javascript)
 
 CoreLink defines three first-party client SDKs over the [native CAS surface](/surfaces/native-cas.md) —
-Python (PyO3), Go (cgo cdylib), and JavaScript/TypeScript (wasm-bindgen WASM) — that share one API shape
-(`put`/`get`/`stat`) and one load-bearing safety default: **client-side BLAKE3 verification on every
-`get`, on by default per control CTRL-CAS-002**, implemented through the single Rust truth
-(`corelink-client-verify`) so all three languages cannot disagree about what a valid digest is. The
-content-addressing guarantee is therefore enforced at the edge of the customer's process, not just on the
-server. This runbook is the cross-language contract an integrator reads before wiring a client.
+Python (PyO3), Go (cgo cdylib), and JavaScript/TypeScript (pure-JS, `@noble/hashes`) — that share one API
+shape (`put`/`get`/`stat`) and one load-bearing safety default: **client-side BLAKE3 verification on every
+`get`, on by default per control CTRL-CAS-002**. Python and Go verify through the single Rust truth
+(`corelink-client-verify`); the JS/TS SDK verifies with the pure-JS `@noble/hashes` BLAKE3 — the same
+digest, no shared binary in the browser/Worker target. The content-addressing guarantee is therefore
+enforced at the edge of the customer's process, not just on the server. This runbook is the cross-language
+contract an integrator reads before wiring a client.
 
-> **Status vs shipped code (2026-06-28):** what SHIPS today in these SDK crates is the client-side
-> BLAKE3 compute + verify layer — NOT a live CAS network surface. The `put`/`get`/`stat` network layer
-> is a STUB: `get` simulates a cache miss and returns empty bytes (it only succeeds for the empty-blob
-> digest), `put` computes the local BLAKE3 digest but uploads nothing, and `stat` returns a placeholder
+> **Status vs shipped code (2026-07-09):** the **JS/TS SDK (`sdks/js/`) is now a real, wired HTTP
+> client** — its `put`/`get`/`stat` + Action Cache methods hit the live `/v1/cas` and `/v1/ac` container
+> routes over `fetch` (not a stub, not FFI). The **Python and Go** FFI crates still ship only the
+> client-side BLAKE3 compute + verify layer — their `put`/`get`/`stat` network layer is a STUB: `get`
+> simulates a cache miss and returns empty bytes (it only succeeds for the empty-blob digest), `put`
+> computes the local BLAKE3 digest but uploads nothing, and `stat` returns a placeholder
 > (`exists: false`) — see the Python crate (tools/sdks/python/src/lib.rs, the `get`/`put`/`stat` bodies
 > around lines 106-114, 146 and 155-164, each documented as a stub awaiting the production HTTP/gRPC
-> wiring). Treat the `put`/`get`/`stat` "live CAS surface" framing below as the intended FFI contract;
-> only the client-side BLAKE3/verify truth is actually exercised end-to-end today.
+> wiring). Treat the Python/Go `put`/`get`/`stat` "live CAS surface" framing below as the intended FFI
+> contract; for those two only the client-side BLAKE3/verify truth is exercised end-to-end today.
 
 # Role
 - The integration surface: the supported, first-party way a customer talks to CAS in three ecosystems.
@@ -45,10 +48,12 @@ server. This runbook is the cross-language contract an integrator reads before w
    per CTRL-CAS-002 (`docs/sdk/go.md:61-72`).
 4. Go opt-out requires BOTH `ClientVerify:false` AND `ClientVerifyExplicitFalse:true`, so a zero-value
    Config can never silently disable verification (`docs/sdk/go.md:106-118`).
-5. The JS/TS SDK is a wasm-bindgen WASM wrapper with a Promise API; `clientVerify` defaults true and
-   `get` throws `Error(COR_CAS_DIGEST_MISMATCH)` on mismatch (`docs/sdk/javascript.md:38-66`).
-6. All three SDKs compute the digest through the single Rust truth (`corelink-client-verify`), so the
-   verify result is byte-identical across languages (`docs/sdk/python.md:123-127`).
+5. The JS/TS SDK is a pure-JS Promise-API HTTP client (BLAKE3 via `@noble/hashes`); `clientVerify`
+   defaults true and `get` throws `DigestMismatchError` (`COR_CAS_DIGEST_MISMATCH`) on mismatch
+   (`docs/sdk/javascript.md:47-90`).
+6. The Python and Go SDKs compute the digest through the single Rust truth (`corelink-client-verify`);
+   the JS/TS SDK computes it with `@noble/hashes` — all produce the byte-identical BLAKE3 digest
+   (`docs/sdk/python.md:123-127`).
 
 # Invariants
 - Client-verify is ON by default in every SDK and disabling it MUST be explicit + warned — accidental
@@ -56,9 +61,9 @@ server. This runbook is the cross-language contract an integrator reads before w
 - The Go zero-value Config does NOT opt out: the `ClientVerifyExplicitFalse` guard makes a quiet disable
   via an uninitialized struct impossible (`docs/sdk/go.md:69-70`).
 - A `get` that fails the BLAKE3 check raises the canonical `COR_CAS_DIGEST_MISMATCH` error in every
-  language, never returning corrupt bytes (`docs/sdk/javascript.md:106-113`).
-- The JS bundle is gated at ≤1MB (1,048,576 bytes) after `wasm-opt -O3` as a CI assertion
-  (`docs/sdk/javascript.md:113-127`).
+  language (JS: `DigestMismatchError`), never returning corrupt bytes (`docs/sdk/javascript.md:147-160`).
+- The JS/TS SDK is pure JavaScript (BLAKE3 via `@noble/hashes`) with no WASM or native build step — it
+  runs anywhere the platform provides `fetch` (`docs/sdk/javascript.md:1-10`).
 
 # Gotchas
 - The Python wrapper is valgrind-checked for 0 leaks / 0 invalid reads on every CI build — an FFI memory
@@ -66,8 +71,9 @@ server. This runbook is the cross-language contract an integrator reads before w
   (`docs/sdk/python.md:99-107`).
 - The Go SDK is run under the race detector in CI; a data race in the cgo boundary is a gate failure
   (`docs/sdk/go.md:121-129`).
-- The FFI-vs-native-HTTP choice per language is a deliberate trade-off recorded in ADR-0016 — the SDKs are
-  FFI over a shared Rust core, not independent HTTP reimplementations (`docs/sdk/python.md:123-127`).
+- The FFI-vs-native-HTTP choice per language is a deliberate trade-off recorded in ADR-0016: Python and Go
+  are FFI over the shared Rust core, while the JS/TS SDK is a native-HTTP client (no shared binary in the
+  browser/Worker target) (`docs/sdk/python.md:123-127`).
 
 # Citations
 1. `docs/sdk/python.md:33-59` — Python API (`put`/`get`/`stat`), 64-hex digest, mismatch error.
@@ -78,6 +84,6 @@ server. This runbook is the cross-language contract an integrator reads before w
 6. `docs/sdk/go.md:69-70` — `ClientVerifyExplicitFalse` zero-value guard.
 7. `docs/sdk/go.md:106-118` — Go two-field explicit opt-out.
 8. `docs/sdk/go.md:121-129` — Go race-detector CI.
-9. `docs/sdk/javascript.md:38-66` — JS/TS API + `clientVerify` default + mismatch throw.
-10. `docs/sdk/javascript.md:106-113` — JS error reference (`COR_CAS_DIGEST_MISMATCH`).
-11. `docs/sdk/javascript.md:113-127` — ≤1MB bundle-size CI gate.
+9. `docs/sdk/javascript.md:47-90` — JS/TS API (`put`/`get`/`stat`), `clientVerify` default, `DigestMismatchError` throw.
+10. `docs/sdk/javascript.md:147-160` — JS error reference (`DigestMismatchError` / `COR_CAS_DIGEST_MISMATCH`).
+11. `docs/sdk/javascript.md:1-10` — pure-JS (`@noble/hashes`), no WASM/native build step.
