@@ -54,9 +54,9 @@
 //!    transition → checkpoint → Sweep delegation [WI-S06-002 onwards]
 //!    → Completed) honoring the degrade-mode probe at every
 //!    transition (≤100 ms next-batch propagation gate).
-//! 10. The [`admin`] module ships the [`AdminTriggerOutcome`] +
-//!     [`admin_trigger`] helper that surfaces the canonical
-//!     `403 / 200 / 501` envelope the S-13 admin plane will satisfy.
+//! 10. The [`admin`] module ships the [`admin_trigger`] staging-stub
+//!     (`403 / 200 / 501`) AND [`admin_trigger_scheduled`], the REAL
+//!     scheduler-driven trigger that runs a genuine single-tenant GC pass.
 //! 11. The [`error`] module ships the canonical [`GcError`] taxonomy
 //!     every fallible API surfaces.
 //!
@@ -96,7 +96,9 @@ pub mod sweep;
 pub mod sweep_runner;
 pub mod worker;
 
-pub use admin::{admin_trigger, AdminTriggerOutcome};
+pub use admin::{
+    admin_trigger, admin_trigger_scheduled, AdminTriggerOutcome, ScheduledTriggerOutcome,
+};
 pub use audit::{
     canonical_audit_event_strings, GcAuditRecord, GcAuditSink, GcAuditSinkError, GcEventType,
     InMemoryGcAuditSink,

@@ -31,6 +31,7 @@ pub mod config;
 pub mod error;
 pub mod metadata;
 pub mod ports;
+pub mod search;
 pub mod server;
 pub mod tarball;
 pub mod upstream;

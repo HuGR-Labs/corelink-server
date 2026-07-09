@@ -50,13 +50,16 @@ impl std::fmt::Debug for AdapterState {
     }
 }
 
-/// Query params for the search endpoint (not implemented, returns 501).
+/// Query params for `GET /-/v1/search` (the npm registry search wire shape).
 #[derive(Debug, Deserialize)]
 #[non_exhaustive]
 pub struct SearchQuery {
-    /// Search text (ignored; endpoint returns 501).
-    #[allow(dead_code)]
+    /// Free-text search query (`npm search <text>`). Absent → empty search.
     pub text: Option<String>,
+    /// Requested page size; clamped by [`crate::npm::search::clamp_size`].
+    pub size: Option<u32>,
+    /// Paging offset into the result set (default 0).
+    pub from: Option<u32>,
 }
 
 /// Build the `axum` router. Public so integration tests can mount
@@ -64,7 +67,7 @@ pub struct SearchQuery {
 pub fn build_router(state: AdapterState) -> Router {
     Router::new()
         .route("/-/ping", get(handle_ping))
-        .route("/-/v1/search", get(handle_search_not_implemented))
+        .route("/-/v1/search", get(handle_search))
         .route("/{pkg}", get(handle_metadata))
         // Tarball: /<pkg>/-/<tarball>.tgz  — axum wildcard captures
         // the full suffix after the package name.
@@ -77,13 +80,45 @@ async fn handle_ping() -> Response {
     (StatusCode::OK, "{}").into_response()
 }
 
-/// `GET /-/v1/search` — not implemented (spec §1 out of scope).
-async fn handle_search_not_implemented(_query: Query<SearchQuery>) -> Response {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        "search is not implemented in this CoreLink adapter",
+/// `GET /-/v1/search` — registry search (SSRF-guarded upstream proxy).
+///
+/// PAT-authenticated (tenant-scoped) exactly like the metadata surface, then
+/// delegated to [`crate::npm::search::serve_search`], which proxies to the
+/// configured registry and returns the canonical `{ objects, total, time }`
+/// JSON. See that module for why search is a read-through rather than a local
+/// index.
+async fn handle_search(
+    State(state): State<AdapterState>,
+    Query(query): Query<SearchQuery>,
+    headers: HeaderMap,
+) -> Response {
+    let cfg = state.config.clone();
+    let tenant =
+        match crate::npm::auth::authenticate(&headers, &cfg.tenant_resolver, &cfg.auditor).await {
+            Ok(t) => t,
+            Err(e) => return error_response(&e),
+        };
+
+    match crate::npm::search::serve_search(
+        query.text.as_deref().unwrap_or(""),
+        query.size,
+        query.from.unwrap_or(0),
+        &tenant,
+        &state.upstream,
+        &cfg.auditor,
     )
-        .into_response()
+    .await
+    {
+        Ok(resp) => {
+            let mut headers_out = HeaderMap::new();
+            headers_out.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            );
+            (StatusCode::OK, headers_out, resp.body).into_response()
+        }
+        Err(e) => error_response(&e),
+    }
 }
 
 /// `GET /<pkg>` — package metadata (JSON).
