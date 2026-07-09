@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **OKF wiki — repaired 6 concepts whose `checkpoint_sha` was orphaned when #677 (G4 tenant fast-suspend) merged.**
+  #677 pinned its 6 touched concepts (`auth/pat-moat`, `launch/money-path`, `planes/{durable-object,request-flow,worker-edge}`,
+  `tenancy/isolation`) to its **pre-merge branch tip** `73419d59`, which git rewrote/replayed at merge to the
+  main-history commit `cdef7363` — leaving the checkpoints pointing at a commit `main` cannot reach, so the
+  `okf-wiki-validation` C4 gate went (and stayed) red on every PR. Repointed all six to `cdef7363` (cited source
+  byte-identical, C5 stability preserved). Also hardened **C5b**: an orphaned-prev checkpoint repair (prev SHA not
+  an ancestor of the base ref) is now exempt from the phantom-reconcile body-edit requirement — repointing an
+  orphan is a mandatory C4 repair with nothing to re-read, not a reconcile. Genuine phantom advances (on-main
+  prev) stay fully gated; proven by a new `assert_c5b_orphan_exempt` git-harness fixture (62/62).
 - **worker — Track-B `fva_minutes` was never emitted for githugr-issuer sessions (the erase flow's actual path).**
   `verifyClerkSessionAndResolveTenant` early-returns to `verifyGithugrSession` for `clerk.githugr.com`
   sessions (the multi-issuer path) *before* the CoreLink-path fva capture ran — so the real-user erase flow,

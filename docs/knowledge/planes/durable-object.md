@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/event_log_do.ts"
   - "worker/src/rollout_controller.ts"
-checkpoint_sha: "73419d59e430ef15c50479217f32aaece988b5f9"
+checkpoint_sha: "cdef736395b514a8940966ce2e823a717d396a9d"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"

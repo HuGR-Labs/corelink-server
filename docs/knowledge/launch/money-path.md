@@ -8,7 +8,7 @@ source_files:
   - crates/corelink-container/src/main.rs
   - worker/src/index.ts
   - docs/operator/stripe-checkout-e2e-2026-05-29.md
-checkpoint_sha: "73419d59e430ef15c50479217f32aaece988b5f9"
+checkpoint_sha: "cdef736395b514a8940966ce2e823a717d396a9d"
 provenance: "AUTHORED"
 tags: [launch, billing, stripe, checkout, usage, money-path]
 timestamp: "2026-06-26T00:00:00Z"
