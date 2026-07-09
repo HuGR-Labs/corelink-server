@@ -521,6 +521,83 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C4 orphan with NO reachable base anchor -> FAIL CLOSED --------------------
+# The squash-orphan tolerance re-anchors C5 freshness to the base ref. If the base
+# ref is UNRESOLVABLE (or shares no common ancestor with HEAD), `base_rev_for_c5`
+# is None and there is NO reachable anchor — freshness is UNVERIFIABLE. A gate whose
+# job is to be unbypassable must FAIL CLOSED there, never silently skip C5. This
+# harness drives an orphaned concept with an unresolvable --base-ref and asserts the
+# gate FAILS with a freshness-unverifiable [C5]. (Latent in CI, which always
+# resolves origin/<base_ref>; guards against the fail-open footgun regardless.)
+assert_c4_orphan_no_base_fail_closed() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  local orphan="beef0000beef0000beef0000beef0000beef0000"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'alpha\nbeta\ngamma\n' > src.txt
+    git add src.txt
+    git commit -q -m base
+
+    mkdir -p docs/knowledge/auth
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/auth/x.md)
+EOF
+    # Orphaned checkpoint, cited content intact — would be TOLERATED if a base
+    # anchor existed. Here the base ref is unresolvable, so it must fail closed.
+    cat > docs/knowledge/auth/x.md <<EOF
+---
+type: "AuthMechanism"
+title: "Orphan, no base anchor (git harness)"
+description: "orphaned checkpoint with no resolvable base ref -> fail closed."
+source_files:
+  - "src.txt"
+checkpoint_sha: "$orphan"
+provenance: "AUTHORED"
+---
+
+# Orphan, no base anchor (git harness)
+
+Lead paragraph grounding the anchor line the concept rests on.
+
+# How it works
+- the source anchor line (\`src.txt:1\`).
+
+# Invariants
+- the anchor stays present (\`src.txt:1\`).
+
+# Citations
+1. \`src.txt:1\` — the anchor.
+EOF
+    git add -A
+    git commit -q -m A
+
+    # An UNRESOLVABLE base ref -> resolve_base() None -> merge_base() None ->
+    # base_rev_for_c5 None. Orphaned checkpoint + no anchor MUST fail closed.
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" \
+      --base-ref "no-such-base-ref-zzzz" > "$tmp/.nobase_out" 2>&1 || true
+  )
+  total=$((total + 1))
+  if grep -q '^\[C5\]' "$tmp/.nobase_out" 2>/dev/null \
+     && grep -qi 'unverifiable' "$tmp/.nobase_out" 2>/dev/null; then
+    ok "C4 git-harness: orphaned checkpoint w/ NO reachable base anchor FAILS CLOSED ([C5] unverifiable)"
+  else
+    miss "C4 fail-open: orphan + unresolvable base did NOT fail closed: $(tail -1 "$tmp/.nobase_out" 2>/dev/null)" "C4-orphan-failclosed"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- C5: real git two-revision freshness harness ------------------------------
 # C5 freshness is also a two-tree diff (checkpoint_sha..HEAD), so a static bundle
 # would have to hardcode a host-repo commit SHA — exactly the non-portable trap
@@ -2617,6 +2694,7 @@ assert_c5_added_file
 assert_c5b
 assert_c5b_orphan_exempt
 assert_c4_squash_orphan_tolerant
+assert_c4_orphan_no_base_fail_closed
 assert_bad C6  C6  --bundle "$FIX/bad/C6"  --manifest "$NONE"
 assert_bad C6b C6b --bundle "$FIX/bad/C6b" --manifest "$NONE"
 assert_bad C6c C6c --bundle "$FIX/bad/C6c" --manifest "$NONE"

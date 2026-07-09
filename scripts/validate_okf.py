@@ -1140,6 +1140,19 @@ def run_checks(args, git: Git, fails: Failures):
         # typo — is accepted: content is still gated against the base ref either way,
         # and a fat-fingered SHA is caught in that concept's own PR review; only the
         # 40-hex FORMAT violation remains a hard C4 failure.)
+        #
+        # KNOWN TRADE-OFF (accepted, human-review-guarded — cold-review noted): a
+        # FORGED well-formed-hex checkpoint is indistinguishable from a genuine
+        # squash-orphan, so an author could in principle write a bogus unreachable
+        # SHA to launder an ALREADY-LANDED drift past C5's reconcile-nag (the
+        # re-anchor compares to the base ref, which already contains that landed
+        # drift, so it reads "fresh"). This is NARROW: NEW drift a PR introduces
+        # still fails C5 (working tree ≠ base ref), and freshness-when-base-resolves
+        # + the fail-closed no-base path are both enforced below. It is the same
+        # freshness ≠ authoring-correctness residual the contract already assigns to
+        # human/panel review (a hand-picked unreachable SHA is review-visible), so
+        # no code change is warranted — logged here so it is never mistaken for a
+        # silently-closed hole.
         ckpt_ok = False
         ckpt_orphaned = False
         if c.checkpoint_sha:
@@ -1252,12 +1265,33 @@ def run_checks(args, git: Git, fails: Failures):
         # (`base_rev_for_c5`), whose cited content is byte-identical to the dead
         # checkpoint's — so freshness is enforced against a REACHABLE equivalent and
         # a genuinely drifted cite still fails, without the orphan false-positive.
-        c5_baseline = (
-            c.checkpoint_sha if ckpt_ok
-            else (base_rev_for_c5 if ckpt_orphaned else None)
-        )
+        # FAIL-CLOSED (cold-review MUST-FIX): a gate whose job is to be
+        # unbypassable must never let its freshness check silently VANISH. When a
+        # checkpoint is orphaned we re-anchor to `base_rev_for_c5`; but if that is
+        # None (the base ref is unresolvable OR shares no common ancestor with
+        # HEAD), there is NO reachable anchor to compare against — freshness is
+        # UNVERIFIABLE, so we HARD-FAIL rather than skip. (Latent in practice: CI
+        # always resolves `origin/<base_ref>` with a common ancestor. But a missing
+        # anchor is a fail-open footgun, so it errors, never passes.)
+        c5_baseline = None
+        anchor_kind = "checkpoint"
+        if ckpt_ok:
+            c5_baseline = c.checkpoint_sha
+            anchor_kind = "checkpoint"
+        elif ckpt_orphaned:
+            if base_rev_for_c5 is None:
+                fails.add(
+                    "C5",
+                    loc,
+                    f"orphaned checkpoint `{c.checkpoint_sha[:12]}` and NO reachable "
+                    f"base anchor (base ref `{args.base_ref}` unresolvable / no common "
+                    "ancestor with HEAD) — freshness UNVERIFIABLE (fail-closed; "
+                    "re-anchor impossible)",
+                )
+            else:
+                c5_baseline = base_rev_for_c5
+                anchor_kind = "base-ref anchor"
         if c5_baseline:
-            anchor_kind = "checkpoint" if ckpt_ok else "base-ref anchor"
             for sf in c.source_files:
                 if sf in missing_sources:
                     continue
