@@ -1,8 +1,13 @@
 # CoreLink JavaScript/TypeScript SDK (`@corelink/client`)
 
-> wasm-bindgen WASM wrapper with Promise-based API and TypeScript declarations.
-> Client-verify default-on per CTRL-CAS-002 via single Rust truth.
-> Bundle size: ≤ 1MB (tree-shaken + wasm-opt -O3).
+> Thin, dependency-light HTTP client for the wired CoreLink cache surface
+> (CAS + Action Cache). BLAKE3 digests are computed and verified in **pure
+> JavaScript** via [`@noble/hashes`](https://github.com/paulmillr/noble-hashes)
+> — no WASM toolchain, no native addon.
+> Client-verify is default-on per CTRL-CAS-002.
+>
+> Source: [`sdks/js/`](../../sdks/js). Ships ESM + `.d.ts` (TypeScript
+> declarations), targets Node.js 18+, modern bundlers, and Cloudflare Workers.
 
 ## Installation
 
@@ -16,7 +21,7 @@ npm install @corelink/client
 import { CoreLinkClient } from "@corelink/client";
 
 const client = new CoreLinkClient({
-  pat: process.env.CORELINK_PAT!,
+  pat: process.env.CORELINK_PAT!, // or omit to read CORELINK_PAT from the env
   tenantId: "acme-corp",
   // clientVerify: true  // default per CTRL-CAS-002
 });
@@ -26,13 +31,15 @@ const data = new TextEncoder().encode("hello world");
 const digest = await client.put(data);
 console.log(`Uploaded: blake3:${digest}`);
 
-// Get (client-verify via Rust WASM single truth)
+// Get (BLAKE3 client-verify default-on)
 const downloaded = await client.get(digest);
 console.log(`Downloaded: ${downloaded.length} bytes`);
 
 // Stat
 const stat = await client.stat(digest);
 console.log(`size=${stat.sizeBytes} exists=${stat.exists}`);
+
+await client.close();
 ```
 
 ## API Reference
@@ -41,35 +48,46 @@ console.log(`size=${stat.sizeBytes} exists=${stat.exists}`);
 
 ```typescript
 interface ClientConfig {
-  pat: string;
-  tenantId: string;
-  clientVerify?: boolean;  // default: true
+  pat?: string;           // falls back to CORELINK_PAT env var
+  tenantId: string;       // required
+  baseUrl?: string;       // default: https://corelink-api.humangr.com
+  clientVerify?: boolean; // default: true
+  timeoutMs?: number;     // default: 30000
+  retry?: Partial<RetryConfig>;
+  fetch?: typeof fetch;   // inject a custom fetch (tests / custom runtime)
 }
 ```
 
 | Field | Default | Description |
 |---|---|---|
-| `pat` | required | Personal Access Token (`CORELINK_PAT` env var). |
-| `tenantId` | required | Tenant scope. |
+| `pat` | `CORELINK_PAT` env | Personal Access Token. Required via arg or env. |
+| `tenantId` | required | Tenant scope — the sole isolation key server-side. |
+| `baseUrl` | `https://corelink-api.humangr.com` | Override for staging / local dev. |
 | `clientVerify` | `true` | BLAKE3 verify after `get()`. Opt-out logs a warning. |
+| `timeoutMs` | `30000` | Per-request timeout. |
+| `retry` | `{ maxAttempts: 3, baseDelayMs: 200, maxDelayMs: 10000 }` | 429/503 + transport retry (exp backoff + jitter). |
+| `fetch` | global `fetch` | Injectable `fetch` implementation. |
 
-### `client.put(data: Uint8Array): Promise<string>`
+### `client.put(data: Uint8Array, opts?: PutOptions): Promise<string>`
 
-Upload bytes; returns 64-char BLAKE3 hex digest (single Rust truth).
+Upload bytes; returns the 64-char BLAKE3 hex digest computed locally (the
+address the blob lives at). Idempotent server-side.
 
 ```typescript
 const digest = await client.put(buffer);
+const same = await client.put(buffer, { expectedDigest: digest }); // asserts locally
 ```
 
-### `client.get(digest: string): Promise<Uint8Array>`
+### `client.get(digest: string, opts?: { verify?: boolean }): Promise<Uint8Array>`
 
-Download blob. Throws `Error` (`COR_CAS_DIGEST_MISMATCH`) on integrity failure.
+Download a blob. Throws `DigestMismatchError` (`COR_CAS_DIGEST_MISMATCH`) if the
+returned bytes fail the BLAKE3 verify.
 
 ```typescript
 try {
   const data = await client.get("6b86b273ff34fc...");
 } catch (err) {
-  // err.message contains COR_CAS_DIGEST_MISMATCH
+  // DigestMismatchError.message contains COR_CAS_DIGEST_MISMATCH
 }
 ```
 
@@ -82,6 +100,24 @@ interface StatResult {
   exists: boolean;
 }
 ```
+
+`stat` performs a `GET` (the container exposes no lighter single-object probe),
+so `sizeBytes` is the exact byte length; a 404/410 resolves to
+`{ exists: false, sizeBytes: 0 }`.
+
+### `client.actionCache`
+
+Action Cache (AC) sub-API over `/v1/ac/{tenant}/{action_digest}`. CoreLink
+stores an **opaque `ActionResult` byte payload** keyed by a 64-hex action
+digest — see [how-to: Action Cache](../../apps/docs/docs/how-to/sdk-js/04-action-cache.mdx).
+
+- `actionCache.get(actionDigest): Promise<Uint8Array>` — miss throws `ActionCacheMiss`.
+- `actionCache.put(actionDigest, result: Uint8Array): Promise<string>` — content-immutable; a divergent overwrite throws `ConflictError`.
+
+### `client.close(): Promise<void>`
+
+No-op today (the SDK uses the platform `fetch` and holds no persistent pool);
+provided for lifecycle symmetry and forward-compatibility.
 
 ### `client._clientVerifyEnabled: boolean`
 
@@ -98,69 +134,60 @@ const client = new CoreLinkClient({
 expect(client._clientVerifyEnabled).toBe(false);
 ```
 
+Per-call override: `await client.get(digest, { verify: false })`.
+
 ## TypeScript Declarations
 
-The package ships `.d.ts` declarations auto-generated by wasm-bindgen.
-Full IDE intellisense is available out of the box (VS Code, WebStorm).
+The package ships `.d.ts` declarations (emitted by `tsc`). Full IDE intellisense
+is available out of the box (VS Code, WebStorm). Exported types: `ClientConfig`,
+`PutOptions`, `GetOptions`, `StatResult`, `RetryConfig`, `BlobDigest`,
+`TenantId`, the full error hierarchy, and the `blake3Hex` / `isCanonicalDigest`
+digest helpers.
 
 ## Error Reference
 
-| Error message prefix | Meaning |
-|---|---|
-| `COR_CAS_DIGEST_MISMATCH` | Downloaded bytes did not match requested digest. |
-| `COR_CAS_VERIFY_DISABLED` | Verify was disabled. |
+All errors extend `CoreLinkError`, each mapped to a wired HTTP status:
 
-## Performance — Bundle Size
-
-| Build | Size |
-|---|---|
-| Raw wasm-pack output | ~800KB |
-| After `wasm-opt -O3` | ≤ 1MB (CI gate) |
-
-CI asserts the `.wasm` file is ≤ 1MB (1,048,576 bytes) after optimization:
-
-```sh
-wasm-pack build --target web --release
-wasm-opt -O3 pkg/corelink_wasm_bg.wasm -o pkg/corelink_wasm_bg.wasm
-stat -f%z pkg/corelink_wasm_bg.wasm   # macOS
-stat --format=%s pkg/corelink_wasm_bg.wasm  # Linux
-# must be ≤ 1048576
-```
-
-## Build from Source
-
-```sh
-# Build WASM package
-cd crates/corelink-wasm
-wasm-pack build --target web --release
-
-# Optimize bundle
-wasm-opt -O3 pkg/corelink_wasm_bg.wasm -o pkg/corelink_wasm_bg.wasm
-
-# Run wasm-bindgen tests in Node.js
-wasm-pack test --node
-
-# Run Rust unit tests (non-WASM)
-cargo test -p corelink-wasm
-```
+| Class | Status | Meaning |
+|---|---|---|
+| `AuthError` | 401 | PAT missing / revoked / wrong tenant. |
+| `QuotaError` | 402 | Over storage cap or spend ceiling. |
+| `ForbiddenError` | 403 | Cross-tenant or insufficient scope. |
+| `NotFoundError` | 404 | Digest not in tenant CAS. |
+| `ActionCacheMiss` | 404 | No `ActionResult` for the action (subclass of `NotFoundError`). |
+| `ConflictError` | 409 | Immutable entry already exists. |
+| `GoneError` | 410 | Artifact erased (GDPR/DSR); do not resurrect. |
+| `DigestMismatchError` | 422 / verify fail | Bytes did not match the digest; discard them. |
+| `RateLimitError` | 429 | Rate/concurrency limit (auto-retried). |
+| `ServerError` | 5xx | Server or storage/audit backend unavailable. |
+| `ConnectError` | — | Transport failure (no HTTP response). |
 
 ## Cross-Runtime Support
 
 | Runtime | Status |
 |---|---|
-| Node.js 18 | **Unsupported** (EOL 2025-04-30; see migration note below) |
-| Node.js 20 | Best-effort (maintenance LTS until 2026-04-30; migrate to 22) |
-| Node.js 22 | **Supported (current LTS, EOL 2027-04-30)** — recommended |
-| Browser (ESM) | Supported |
-| Cloudflare Workers | Supported (wasm32 target) |
+| Node.js 18–22 | Supported (uses global `fetch`; Node 18+ ships it). |
+| Browser (ESM) | Supported (never embed a PAT — proxy via your backend). |
+| Cloudflare Workers | Supported (global `fetch`). |
+| Bundlers (Vite, webpack, esbuild) | Supported (ESM). |
 
-> **ESM-by-default.** All canonical examples use `import` syntax. The
-> `@corelink/client` package exports ESM only; CommonJS `require()` is not
-> supported. Tenants on Node 20 should plan migration to Node 22 LTS — see
-> [`docs/internal/node22-migration.md`](../internal/node22-migration.md).
+> **ESM-by-default.** The `@corelink/client` package exports ESM only; CommonJS
+> `require()` is not supported. All canonical examples use `import` syntax.
+
+## Build from Source
+
+```sh
+cd sdks/js
+npm install
+npm test        # vitest — fetch is stubbed, no network
+npm run build   # tsc -> dist/ (ESM + .d.ts)
+npm run typecheck
+```
 
 ## Design
 
-Client-verify uses the single Rust truth (`corelink-client-verify`, S-02 SEALED)
-compiled to WASM via wasm-bindgen. No per-language drift possible.
-See `specs/_decisions/ADR-0016-ffi-vs-native-http.md`.
+Digests are a single pure-JS truth: `blake3` from `@noble/hashes` computes the
+address on `put` and re-verifies it on `get`. No WASM build step and no native
+dependency, so the package installs and runs anywhere the platform provides
+`fetch`. See `specs/_decisions/ADR-0016-ffi-vs-native-http.md` for the
+native-HTTP vs FFI decision context.

@@ -10,57 +10,54 @@ tags: [sdk, javascript, typescript, debug, how-to]
 
 ## When to use this guide
 
-A `@corelink/client` call is throwing, hanging, or returning the wrong
-region. Use the table below to map errors to canonical fixes in
-`docs/reference/error-taxonomy`.
+A `@corelink/client` call is throwing or hanging. Every error extends
+`CoreLinkError` and carries a `status` (HTTP status, when server-originated)
+and a short `code` (the server's reason string). Inspect them:
 
 ## Diagnostic flow
 
 ```typescript
-const rep = await client.doctor();
-for (const check of rep.checks) {
-  console.log(check.name, check.status, check.nextActionDoc);
+import { CoreLinkError } from "@corelink/client";
+
+try {
+  await client.get(digest);
+} catch (e) {
+  if (e instanceof CoreLinkError) {
+    console.error(`${e.name} status=${e.status} code=${e.code}: ${e.message}`);
+  }
+  throw e;
 }
 ```
 
-Same 8 checks as `corelink doctor --json`.
-
 ## Common errors
 
-| Error code | Class | First action |
+Map the thrown class to its cause and fix:
+
+| Class | Status | First action |
 |---|---|---|
-| `COR_AUTH_001` | `AuthError` | Re-export `CORELINK_PAT`; check `client.whoami()` |
-| `COR_AUTH_002` | `AuthError` | PAT revoked; mint a new one |
-| `COR_QUOTA_001` | `QuotaError` | Tenant over storage cap |
-| `COR_REGION_001` | `RegionError` | Use regional endpoint |
-| `COR_VERIFY_001` | `DigestMismatchError` | Discard bytes; retry |
-| `COR_NET_001` | `ConnectError` | `corelink doctor network` |
+| `AuthError` | 401 | Re-export `CORELINK_PAT`; if revoked, mint a new PAT. |
+| `ForbiddenError` | 403 | Wrong tenant, or the PAT lacks the required cache scope. |
+| `QuotaError` | 402 | Tenant over its storage cap / spend ceiling. |
+| `NotFoundError` / `ActionCacheMiss` | 404 | Digest / action not stored for this tenant. |
+| `GoneError` | 410 | Artifact was erased (GDPR/DSR); it will not return. |
+| `DigestMismatchError` | 422 / verify | Discard the bytes; re-fetch or re-upload. |
+| `RateLimitError` | 429 | Auto-retried; if it still surfaces, lower concurrency. |
+| `ServerError` | 5xx | Transient backend fault; retry with backoff. |
+| `ConnectError` | — | Transport failure; check network / `baseUrl`. |
 
-## WASM init failure
+## No native or WASM build step
 
-If you see `Error: failed to instantiate corelink-verify.wasm`, your bundler
-is stripping the WASM artifact. Add an explicit asset rule:
+`@corelink/client` is pure JavaScript (BLAKE3 via `@noble/hashes`). There is no
+`.wasm` artifact to bundle and no bundler asset rule to configure — if you hit a
+resolution error, it is an ordinary ESM package resolution issue, not a WASM one.
 
-```javascript
-// vite.config.js
-export default {
-  optimizeDeps: { exclude: ["@corelink/client/wasm"] },
-  assetsInclude: ["**/*.wasm"],
-};
-```
+## Lifecycle
 
-For webpack 5, set `experiments.asyncWebAssembly = true`.
-
-## Promise leaks
-
-Every client must be closed:
+`close()` is a no-op today (the SDK uses the platform `fetch` and holds no
+persistent pool), but call it anyway so your code stays correct if a future
+release adds pooling:
 
 ```typescript
-// WRONG — leaks the HTTP/2 session
-const client = new CoreLinkClient({ tenantId: "acme-corp" });
-await client.get(digest);
-
-// RIGHT
 const client = new CoreLinkClient({ tenantId: "acme-corp" });
 try {
   await client.get(digest);
