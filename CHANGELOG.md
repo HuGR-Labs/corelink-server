@@ -74,6 +74,15 @@ Each entry cross-references:
   a transient D1 fault (availability) but a KNOWN-suspended cached value still denies, and the caller maps the
   distinct `tenant_suspended` reason to **403** (authorization denial, separate from the 401 bad-credential and
   503 transient-infra arms). Tests cover suspended→403, erased→403, active→pass, and D1-fault→fail-open.
+- **container — tenant-suspend gate on the OCI registry plane (go-live G4b).**
+  The worker-side suspend gate (G4) denies a suspended/erased tenant at the edge, but the OCI plane is reached
+  via a bearer minted from a short-lived token exchange, so a suspend could leak for the token's lifetime. The
+  container now re-checks `tenant_offboarding_state.state ∈ {suspended, erased}` on every OCI op and returns
+  **403** before the request runs (`crates/corelink-container/src/oci_suspend.rs`). The verdict is fail-CLOSED
+  **sticky** — a tenant already known suspended stays denied through a transient D1 read fault (the error is
+  never cached, so a later successful read can flip it back), and only an UNKNOWN tenant fails OPEN; the check
+  is single-flight + TTL-cached so it adds no uncached per-op D1 round-trip. Only the terminal `suspended`/
+  `erased` states deny — the earlier grace/export windows keep access by design.
 - **worker — runner-mint `installation_id` is now OPTIONAL; the fabricd/native path derives tenant from the acquiring PAT.**
   Model B required `installation_id` → `tenant_gh_installation_map`, which is structurally unmeetable for a
   native repo (no GitHub App installation exists). `handleRunnerMint` now derives the tenant from one of two
