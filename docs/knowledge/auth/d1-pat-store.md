@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "c484858294cf33191f240d15f6377a82e11b6ea3"
+checkpoint_sha: "52e29ead10476745c69beb1de2f001f93421db02"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -35,15 +35,15 @@ written.
 - Self-serve key create mints a PAT then writes the row with `INSERT INTO pat (pat_id, tenant_id,
   pat_hash, scope, expires_ms, …, token_id, name)` — the hash and the non-secret `token_id` are
   persisted, the plaintext is returned once and never stored
-  (`crates/corelink-container/src/customer_d1.rs:1238-1253`).
+  (`crates/corelink-container/src/customer_d1.rs:1280-1295`).
 - The requested-scope → stored-scope map is FROZEN and fail-CLOSED: `admin` is NEVER grantable
   self-serve, anything-with-write → `read-write`, else `read-only`
   (`crates/corelink-container/src/customer_d1.rs:306-328`).
 - Revoke is an idempotent, tenant-scoped soft delete: `UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id =
   ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL` — a PAT owned by another tenant is simply not found
-  (`crates/corelink-container/src/customer_d1.rs:1316-1318`).
+  (`crates/corelink-container/src/customer_d1.rs:1347-1349`).
 - Listing is read-only and always self-tenant-scoped, mapping the stored `scope` back to a dashboard
-  scopes list (`crates/corelink-container/src/customer_d1.rs:1149-1150`).
+  scopes list (`crates/corelink-container/src/customer_d1.rs:1177-1178`).
 - The internal mint route is the SECOND writer's mint half: `POST /_internal/pat/mint` mints the PAT
   and returns plaintext + Argon2id hash, gated by a constant-time compare against the DEDICATED
   `CORELINK_PAT_MINT_AUTH_KEY` ONLY — with NO fallback to the shared `CORELINK_INTERNAL_AUTH_KEY`. Because
@@ -66,7 +66,7 @@ written.
 - The `admin` scope is never grantable via self-serve key creation; unrecognized tokens fail CLOSED
   (`crates/corelink-container/src/customer_d1.rs:306-328`).
 - Revoke is tenant-scoped: a cross-tenant `pat_id` cannot be revoked (or even observed)
-  (`crates/corelink-container/src/customer_d1.rs:1316-1318`).
+  (`crates/corelink-container/src/customer_d1.rs:1347-1349`).
 
 # Gotchas
 
@@ -83,9 +83,9 @@ written.
 
 1. `crates/corelink-container/src/customer_d1.rs:18-22` — the PAT-store overview: tables, create, revoke.
 2. `crates/corelink-container/src/customer_d1.rs:306-328` — `map_requested_scopes`: the FROZEN requested-scope → `pat.scope` map (admin never grantable, unrecognized tokens fail CLOSED).
-3. `crates/corelink-container/src/customer_d1.rs:1149-1150` — tenant-scoped key listing SELECT.
-4. `crates/corelink-container/src/customer_d1.rs:1238-1253` — `INSERT INTO pat` (hash + token_id persisted, plaintext not).
-5. `crates/corelink-container/src/customer_d1.rs:1316-1318` — idempotent tenant-scoped revoke UPDATE.
+3. `crates/corelink-container/src/customer_d1.rs:1177-1178` — tenant-scoped key listing SELECT.
+4. `crates/corelink-container/src/customer_d1.rs:1280-1295` — `INSERT INTO pat` (hash + token_id persisted, plaintext not).
+5. `crates/corelink-container/src/customer_d1.rs:1347-1349` — idempotent tenant-scoped revoke UPDATE.
 6. `crates/corelink-container/src/routes/internal_pat.rs:1-22` — the `/_internal/pat/mint` route + the DEDICATED-key-only auth gate (no shared-key fallback; fail-CLOSED — DD-HIGH remediation).
 7. `crates/corelink-container/src/routes/internal_pat.rs:73-75` — plaintext never persisted; caller's responsibility.
 8. `crates/corelink-container/src/routes/internal_pat.rs:88-92` — M7: signup-worker writes the hash to the D1 row.
