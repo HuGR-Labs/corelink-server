@@ -254,7 +254,7 @@ def shorten_data_sharing(ds: str) -> str:
 
 def render_active_table(rows: Iterable[VendorRow]) -> str:
     out = [
-        "| # | Vendor | Service to CoreLink | Customer-data class | Region(s) | DPA |",
+        "| # | Vendor | Service to CoreLink | Customer-data class | Regions | DPA |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
     n = 0
