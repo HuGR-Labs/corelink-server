@@ -4,7 +4,7 @@ title: "Per-tenant monthly $-ceiling"
 description: "The fail-CLOSED cumulative-dollar spend cap that bounds each tenant's monthly cost blast-radius, orthogonal to the rate limit and the request quota."
 source_files:
   - "crates/corelink-container/src/tenant_quota.rs"
-checkpoint_sha: "6ab7281855fd05984cf3d224a7585bbb954c52a6"
+checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "billing", "dollar-ceiling", "adr-0068", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -91,5 +91,5 @@ never floating point.
 12. `crates/corelink-container/src/tenant_quota.rs:260-277` — the `QuotaStore` trait DEFAULT `check_and_accrue`: CF-4 made it FAIL CLOSED (`Err`→503, no non-atomic generic fallback); every backend MUST provide its own atomic check-and-increment. In-memory atomic override at `crates/corelink-container/src/tenant_quota.rs:1121-1144`.
 13. `crates/corelink-container/src/tenant_quota.rs:1214-1242` — `D1QuotaStore::check_and_accrue`: the single atomic `UPDATE … WHERE accrued + ?delta <= budget RETURNING …` — the SOLE durable ceiling authority.
 14. `crates/corelink-container/src/tenant_quota.rs:116-128` — `quota_guard_from_env` fronts `D1QuotaStore` with `LeasedQuotaStore` (the live production wiring).
-15. `crates/corelink-container/src/tenant_quota.rs:415-841` — `LeasedQuotaStore`: the in-memory 16-op budget lease (amortised D1 round-trip, bounded ~0.32% overshoot, over-charge-not-over-serve, fail-CLOSED on drained+unreachable).
+15. `crates/corelink-container/src/tenant_quota.rs:415-841` — `LeasedQuotaStore`: the in-memory 16-op budget lease (amortised D1 round-trip, bounded ~0.32% overshoot, over-charge-not-over-serve, fail-CLOSED on drained+unreachable). Its `QuotaStore` impl is annotated `#[async_trait::async_trait]` (explicit crate path post the axum-0.8 bump, which dropped the re-exported `axum::async_trait`).
 16. `crates/corelink-container/src/tenant_quota.rs:405-412` (trait method) + `crates/corelink-container/src/tenant_quota.rs:798-841` (`LeasedQuotaStore` override) + `crates/corelink-container/src/tenant_quota.rs:914-936` (`check` call site) — `try_serve_from_lease`: the WP-2a warm-lease READ short-circuit; the last per-op D1 read is served from the lease when warm, the durable atomic accrue remains the sole ceiling authority so the over-serve bound is unchanged.

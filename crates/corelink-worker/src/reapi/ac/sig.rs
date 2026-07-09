@@ -246,7 +246,7 @@ impl InMemoryFakeSigner {
         sig_key_id: u32,
         canonical_bytes: &[u8],
     ) -> [u8; AC_ENVELOPE_SIG_LEN] {
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         type HmacSha256 = Hmac<sha2::Sha256>;
         let key = Self::derive_key(tenant_id, sig_key_id);
         let mut mac = match HmacSha256::new_from_slice(&key) {

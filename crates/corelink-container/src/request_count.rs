@@ -167,7 +167,7 @@ fn civil_from_days(z: i64) -> (i64, u32) {
 /// $-ceiling, there is no roll/seed/absolute-write shape to drive: a new
 /// calendar month is implicitly a fresh row (the `year_month` key changes), so
 /// a single `INSERT … ON CONFLICT … DO UPDATE … RETURNING` covers every case.
-#[axum::async_trait]
+#[async_trait::async_trait]
 pub trait RequestCountStore: std::fmt::Debug + Send + Sync {
     /// Atomically increment the `(tenant_id, year_month)` counter by one and
     /// return the POST-increment count. Seeds a fresh row at `1` when none
@@ -193,7 +193,7 @@ pub trait RequestCountStore: std::fmt::Debug + Send + Sync {
 /// Resolves a tenant's effective tier (the cap selector). The production impl
 /// wraps [`crate::routes::auth_introspect::tier_for_tenant`] over D1; tests
 /// inject a fixed-tier fake.
-#[axum::async_trait]
+#[async_trait::async_trait]
 pub trait TierResolver: std::fmt::Debug + Send + Sync {
     /// Resolve the tenant's tier slug. `Err` ⇒ a genuine D1 fault; the gate
     /// fail-OPENs (cannot know which cap applies — F21 symmetry).
@@ -327,7 +327,7 @@ impl D1RequestCountStore {
     }
 }
 
-#[axum::async_trait]
+#[async_trait::async_trait]
 impl RequestCountStore for D1RequestCountStore {
     async fn increment(
         &self,
@@ -376,7 +376,7 @@ impl D1TierResolver {
     }
 }
 
-#[axum::async_trait]
+#[async_trait::async_trait]
 impl TierResolver for D1TierResolver {
     async fn tier(&self, tenant_id: &str) -> Result<String, String> {
         crate::routes::auth_introspect::tier_for_tenant(&self.client, tenant_id).await
@@ -489,7 +489,7 @@ impl CachedTierResolver {
     }
 }
 
-#[axum::async_trait]
+#[async_trait::async_trait]
 impl TierResolver for CachedTierResolver {
     async fn tier(&self, tenant_id: &str) -> Result<String, String> {
         let now_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
@@ -539,7 +539,7 @@ mod tests {
     /// In-memory counter keyed by `(tenant, year_month)`.
     #[derive(Debug, Default)]
     struct FakeCounter(Mutex<HashMap<(String, String), i64>>);
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl RequestCountStore for FakeCounter {
         async fn increment(
             &self,
@@ -559,7 +559,7 @@ mod tests {
     /// A store that always errors (drives the fail-OPEN path).
     #[derive(Debug)]
     struct ErroringCounter;
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl RequestCountStore for ErroringCounter {
         async fn increment(&self, _t: &str, _ym: &str, _n: i64) -> Result<i64, String> {
             Err("boom".to_owned())
@@ -569,7 +569,7 @@ mod tests {
     /// Fixed-tier resolver.
     #[derive(Debug)]
     struct FixedTier(&'static str);
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl TierResolver for FixedTier {
         async fn tier(&self, _tenant_id: &str) -> Result<String, String> {
             Ok(self.0.to_owned())
@@ -579,7 +579,7 @@ mod tests {
     /// A tier resolver that always errors (drives the fail-OPEN path).
     #[derive(Debug)]
     struct ErroringTier;
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl TierResolver for ErroringTier {
         async fn tier(&self, _tenant_id: &str) -> Result<String, String> {
             Err("d1 down".to_owned())
@@ -709,7 +709,7 @@ mod tests {
         calls: Arc<AtomicUsize>,
         delay_ms: u64,
     }
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl TierResolver for CountingTier {
         async fn tier(&self, _tenant_id: &str) -> Result<String, String> {
             self.calls.fetch_add(1, Ordering::SeqCst);
@@ -723,7 +723,7 @@ mod tests {
     /// A counting [`TierResolver`] that always errors (fail-OPEN path).
     #[derive(Debug)]
     struct CountingErroringTier(Arc<AtomicUsize>);
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl TierResolver for CountingErroringTier {
         async fn tier(&self, _tenant_id: &str) -> Result<String, String> {
             self.0.fetch_add(1, Ordering::SeqCst);

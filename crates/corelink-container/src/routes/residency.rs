@@ -210,7 +210,7 @@ mod tests {
     fn flag_router(reached: Arc<AtomicBool>) -> Router {
         Router::new()
             .route(
-                "/v1/cas/:tenant/:hash",
+                "/v1/cas/{tenant}/{hash}",
                 get(move || {
                     let r = reached.clone();
                     async move {

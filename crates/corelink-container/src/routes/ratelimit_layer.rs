@@ -639,7 +639,7 @@ mod tests {
     fn app(state: RateLimitLayerState, hits: Arc<AtomicUsize>) -> Router {
         Router::new()
             .route(
-                "/v1/cas/:tenant/:hash",
+                "/v1/cas/{tenant}/{hash}",
                 get(move || {
                     let h = hits.clone();
                     async move {
@@ -667,7 +667,7 @@ mod tests {
     fn oci_app(state: RateLimitLayerState, hits: Arc<AtomicUsize>) -> Router {
         Router::new()
             .route(
-                "/v2/*rest",
+                "/v2/{*rest}",
                 get(move || {
                     let h = hits.clone();
                     async move {

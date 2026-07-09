@@ -9,7 +9,7 @@
 //! No new abstractions are introduced — production callers continue to
 //! use `hmac::Hmac::<Sha256>::new_from_slice(key)?` exactly as before.
 
-pub use ::hmac::{Hmac, Mac};
+pub use ::hmac::{Hmac, KeyInit, Mac};
 pub use ::sha2::Sha256;
 
 /// Canonical HMAC-SHA-256 type alias used across CoreLink (signup

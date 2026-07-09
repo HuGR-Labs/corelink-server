@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-container/src/auth_tenant.rs"
   - "crates/tenant-path/src/lib.rs"
   - "crates/tenant-path/src/prefix.rs"
-checkpoint_sha: "cdef736395b514a8940966ce2e823a717d396a9d"
+checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -42,7 +42,7 @@ keyed on the same trusted tenant id this control establishes.
 - Non-tenant system traffic uses reserved sentinel DO names (e.g. `_system`, `_oci`) that are deliberately
   distinct from any real tenant id — `worker/src/index.ts:582`.
 - Inside the container the ONLY trustworthy tenant source is the DO-injected `x-corelink-tenant-id` header;
-  the `AuthTenant` extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:60-66`.
+  the `AuthTenant` extractor reads it and trims it — `crates/corelink-container/src/auth_tenant.rs:59-65`.
 - The reserved-sentinel rejection is now a SHARED source-of-truth `pub fn is_reserved_sentinel`, reused
   verbatim by every cache surface (the `AuthTenant` extractor here AND the Bazel REAPI
   `caller_tenant`/`BazelPutGuard`) so the reserved set (`_oci`, `_public`,
@@ -63,7 +63,7 @@ keyed on the same trusted tenant id this control establishes.
   Durable-Object id) and `_public` (`PUBLIC_NAMESPACE`, the cross-tenant dedup namespace) alongside
   `_anonymous`/`_unknown`/`_system`/`_pending`/`""`, so a request masquerading as a shared-namespace
   prefix is rejected, never treated as a tenant (`crates/corelink-container/src/auth_tenant.rs:35-43`;
-  `crates/corelink-container/src/auth_tenant.rs:67-70`).
+  `crates/corelink-container/src/auth_tenant.rs:66-69`).
 - The `TenantPrefix` newtype cannot be built from raw bytes outside its crate (its tuple field is private),
   so `derive_prefix` is the single trust boundary for namespacing (`crates/tenant-path/src/prefix.rs:91-92`;
   `crates/tenant-path/src/prefix.rs:148-166`; crate-doc rule `crates/tenant-path/src/lib.rs:27`).
@@ -85,8 +85,8 @@ keyed on the same trusted tenant id this control establishes.
 4. `crates/corelink-worker/src/tenant.rs:55-63` — `TenantCtx::new` derives the prefix from `(tdk, tenant_id)`.
 5. `crates/corelink-container/src/auth_tenant.rs:1-3` — the only trustworthy tenant source is the DO-injected header.
 6. `crates/corelink-container/src/auth_tenant.rs:35-43` — the sentinel set (incl. `_oci`, `_public`/`PUBLIC_NAMESPACE`, and the empty string).
-7. `crates/corelink-container/src/auth_tenant.rs:60-66` — the `AuthTenant` extractor reads + trims the header.
-8. `crates/corelink-container/src/auth_tenant.rs:67-70` — fail-CLOSED `401` on empty/sentinel tenant.
+7. `crates/corelink-container/src/auth_tenant.rs:59-65` — the `AuthTenant` extractor reads + trims the header.
+8. `crates/corelink-container/src/auth_tenant.rs:66-69` — fail-CLOSED `401` on empty/sentinel tenant.
 8b. `crates/corelink-container/src/auth_tenant.rs:53-55` — shared `is_reserved_sentinel` source-of-truth reused across surfaces.
 9. `crates/tenant-path/src/prefix.rs:148-166` — `derive_prefix`: HMAC-SHA256 derivation + 16-char truncation.
 9b. `crates/tenant-path/src/prefix.rs:15` — `TENANT_PREFIX_LEN = 16`.

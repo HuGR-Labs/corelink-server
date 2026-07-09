@@ -240,9 +240,6 @@ deny = [
 # version is preferred. Removing an entry should be done concurrently with
 # the upstream bump that resolves it.
 skip = [
-    # tonic 0.12 still depends on tower 0.4; axum 0.7 + corelink-reapi pull
-    # tower 0.5. Resolves on tonic 0.13 (currently RC).
-    { crate = "tower@0.4.13", reason = "transitive via tonic 0.12; resolves on tonic 0.13" },
     # RustCrypto upgraded the digest/block-buffer/cpufeatures/crypto-common
     # quartet from 0.10/0.10/0.2/0.1 to 0.11/0.10/0.3/0.2; older line still
     # pinned via tonic + tracing dep tree.
@@ -253,11 +250,6 @@ skip = [
     # rand 0.9 ships getrandom 0.3; older crates still ship 0.2.
     { crate = "getrandom@0.2.17", reason = "transitive via uuid v7" },
     { crate = "getrandom@0.4.2", reason = "transitive via newer dev-dep" },
-    # hashbrown/indexmap 0.12/1.x lingering via prost-build / older async stack.
-    { crate = "hashbrown@0.12.3", reason = "transitive via prost-build / older async stack" },
-    { crate = "indexmap@1.9.3", reason = "transitive via prost-build" },
-    # socket2 0.5 + 0.6 from tokio + newer hyper-util.
-    { crate = "socket2@0.5.10", reason = "transitive via tokio 1.40 stack; resolves with tokio 1.42+" },
     # ----- 2026-05-27 Wave 36 close-out batch (post tag wave-36-final-sealed) -----
     # Pre-existing transitive dupes inherited from upstream crates that
     # ship overlapping major lines. Each older version is the OLDER duplicate;
@@ -275,7 +267,6 @@ skip = [
     { crate = "rand_core@0.9.5", reason = "transitive via rand 0.9 (0.10.1 newest); transient until ecosystem stabilizes on 0.10" },
     { crate = "sha2@0.10.9", reason = "transitive via RustCrypto 0.10 line (0.11.0 newer); resolves with RustCrypto 0.11 migration" },
     { crate = "wasm-streams@0.4.2", reason = "transitive via older wasm-bindgen-futures (0.5.0 newer); resolves with wasm-bindgen ecosystem bump" },
-    { crate = "webpki-roots@0.26.11", reason = "transitive via rustls 0.23 stack (1.0.7 newer via rustls 0.24+); resolves with rustls major bump" },
     # ----- 2026-05-28 WP-S1 Phase 1 — aws-sdk-s3 v1 transitive dupes -----
     # aws-sdk-s3 v1.133.0 pulls lru 0.16.4 (workspace was already on
     # lru 0.18.0 from corelink-byok), which in turn pulls hashbrown 0.16.1
@@ -288,6 +279,16 @@ skip = [
     { crate = "lru@0.16.4", reason = "transitive via aws-sdk-s3 v1.133 (0.18.0 newer in workspace via corelink-byok); resolves with aws-sdk-s3 v1 lru bump" },
     { crate = "sha1@0.10.6", reason = "transitive via aws-config v1 (0.11.0 newer via aws-sdk-s3 checksums); resolves with aws-config v2" },
     { crate = "spin@0.9.8", reason = "transitive via lazy_static (0.10.0 newer via crc-fast→aws-smithy-checksums); resolves with lazy_static 2.x / std OnceLock migration" },
+    # ----- 2026-07-09 dependency-majors wave (axum 0.8 / aws-sdk / RustCrypto) -----
+    # New OLDER-duplicate transitive pins introduced by the 5 dependabot major
+    # groups. Each newer line is workspace-preferred; the older is upstream-locked
+    # until the named crate bumps. (The wave also RESOLVED tower@0.4.13,
+    # hashbrown@0.12.3, indexmap@1.9.3, socket2@0.5.10, webpki-roots@0.26.11 —
+    # their skips were removed above per this file's remove-on-resolve policy.)
+    { crate = "matchit@0.7.3", reason = "transitive via worker 0.8.3 (Cloudflare workers-rs router); matchit 0.8.4 preferred via axum 0.8. Resolves when workers-rs bumps to matchit 0.8." },
+    { crate = "hkdf@0.12.4", reason = "transitive via jsonwebtoken 10 → p256/ecdsa/elliptic-curve (RustCrypto 0.12 line); hkdf 0.13.0 preferred by corelink-ac/cas. Resolves when the jsonwebtoken RustCrypto stack reaches 0.13." },
+    { crate = "hashbrown@0.15.5", reason = "transitive via petgraph 0.8 → prost-build 0.14 → tonic-prost-build (build-dep); 0.17.1 preferred by workspace/aws-sdk. Resolves when petgraph/prost-build bump hashbrown." },
+    { crate = "foldhash@0.1.5", reason = "transitive via hashbrown 0.15 (prost-build/petgraph build-dep); foldhash 0.2.0 preferred via hashbrown 0.16/0.17. Resolves with the prost-build/petgraph hashbrown bump." },
 ]
 skip-tree = []
 

@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn hmac_sha256_alias_works() {
-        use crate::hmac::{HmacSha256, Mac};
+        use crate::hmac::{HmacSha256, KeyInit, Mac};
         let mut mac = HmacSha256::new_from_slice(b"key").unwrap();
         mac.update(b"data");
         let out = mac.finalize().into_bytes();

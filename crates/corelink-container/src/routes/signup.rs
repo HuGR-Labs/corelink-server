@@ -110,7 +110,7 @@ use corelink_ratelimit::{
     BucketKey, InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics,
     InMemoryTokenBucketRateLimiter, RateLimitConfig, RateLimitDecision, RateLimiter,
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
@@ -127,7 +127,7 @@ use crate::wall_clock::{default_wall_clock, WallClock};
 /// matchit 0.8 switch to `{name}`). The audit-doc cross-reference
 /// uses `{token}` in prose but the wire path is `:token` in the
 /// matchit registration above.
-pub const SIGNUP_PILOT_ROUTE: &str = "/v1/signup/pilot/:token";
+pub const SIGNUP_PILOT_ROUTE: &str = "/v1/signup/pilot/{token}";
 
 /// Canonical CloudEvents-1.0 `type` literal for the pilot-reserved
 /// audit emit.
@@ -280,7 +280,7 @@ pub fn parse_and_verify_pilot_token(
     let sig_bytes = hex::decode(sig_hex).map_err(|_| TokenError::BadSignatureEncoding)?;
     // 4) compute the expected HMAC over the body.
     let mut mac =
-        <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| TokenError::SignatureMismatch)?;
+        <Hmac<Sha256> as KeyInit>::new_from_slice(key).map_err(|_| TokenError::SignatureMismatch)?;
     mac.update(body.as_bytes());
     let expected = mac.finalize().into_bytes();
     // 5) constant-time compare. Bail on length mismatch first
@@ -325,7 +325,7 @@ pub fn mint_pilot_token(
         return Err("rand_hex16 must be 16 lower-case ASCII hex chars");
     }
     let body = format!("pilot_{}_{}_{}", env.as_str(), minted_at_ms, rand_hex16);
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| "hmac key invalid")?;
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key).map_err(|_| "hmac key invalid")?;
     mac.update(body.as_bytes());
     let sig = mac.finalize().into_bytes();
     Ok(format!("{body}.{}", hex::encode(sig)))
@@ -1010,7 +1010,7 @@ mod tests {
         );
         // Bad env.
         let body = format!("pilot_dev_{}_aaaaaaaaaaaaaaaa", now);
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).unwrap();
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key).unwrap();
         mac.update(body.as_bytes());
         let sig = hex::encode(mac.finalize().into_bytes());
         let tok = format!("{body}.{sig}");
@@ -1020,7 +1020,7 @@ mod tests {
         );
         // Not pilot.
         let body = format!("admin_prod_{}_aaaaaaaaaaaaaaaa", now);
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).unwrap();
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key).unwrap();
         mac.update(body.as_bytes());
         let sig = hex::encode(mac.finalize().into_bytes());
         let tok = format!("{body}.{sig}");
@@ -1030,7 +1030,7 @@ mod tests {
         );
         // Bad random (not hex).
         let body = format!("pilot_prod_{}_zzzzzzzzzzzzzzzz", now);
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).unwrap();
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key).unwrap();
         mac.update(body.as_bytes());
         let sig = hex::encode(mac.finalize().into_bytes());
         let tok = format!("{body}.{sig}");

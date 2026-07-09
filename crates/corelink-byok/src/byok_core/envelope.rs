@@ -18,7 +18,7 @@
 
 use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
-    Aes256Gcm, Key, Nonce,
+    Aes256Gcm,
 };
 use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
@@ -96,12 +96,12 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
 
         // Step 2: AES-256-GCM encrypt body, binding aad = JCS(ctx) [H-2].
         let nonce_bytes = generate_nonce()?;
-        let nonce = Nonce::from_slice(&nonce_bytes);
+        let nonce = &nonce_bytes;
         let aad = ctx.to_jcs_bytes()?;
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek.bytes));
+        let cipher = Aes256Gcm::new((&dek.bytes).into());
         let ciphertext = cipher
             .encrypt(
-                nonce,
+                nonce.into(),
                 Payload {
                     msg: plaintext,
                     aad: &aad,
@@ -175,12 +175,12 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
         let dek = self.unwrap_validated(&blob.wrapped_dek, ctx).await?;
 
         // [H-2]: AES-256-GCM decrypt with aad = JCS(ctx).
-        let nonce = Nonce::from_slice(&blob.nonce);
+        let nonce = &blob.nonce;
         let aad = ctx.to_jcs_bytes()?;
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek.bytes));
+        let cipher = Aes256Gcm::new((&dek.bytes).into());
         let plaintext = cipher
             .decrypt(
-                nonce,
+                nonce.into(),
                 Payload {
                     msg: blob.ciphertext.as_ref(),
                     aad: &aad,
@@ -278,10 +278,10 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
     ) -> Result<Vec<u8>, BYOKError> {
         let dek = self.unwrap_validated(wrapped, ctx).await?;
         let aad = ctx.to_jcs_bytes()?;
-        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek.bytes));
+        let cipher = Aes256Gcm::new((&dek.bytes).into());
         cipher
             .encrypt(
-                Nonce::from_slice(nonce),
+                nonce.into(),
                 Payload {
                     msg: plaintext,
                     aad: &aad,

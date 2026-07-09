@@ -166,7 +166,7 @@ impl PyCorelinkClient {
 }
 
 /// Metadata returned by `CoreLinkClient.stat()`.
-#[pyclass(name = "StatResult")]
+#[pyclass(name = "StatResult", skip_from_py_object)]
 #[derive(Debug, Clone)]
 pub struct StatResult {
     /// BLAKE3 hex digest.
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn default_on_client_verify_enabled() {
-        pyo3::prepare_freethreaded_python();
+        pyo3::Python::initialize();
         let client = PyCorelinkClient::new("test-pat".to_string(), "acme-corp".to_string(), true)
             .expect("constructor");
         assert!(
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn explicit_disable_sets_flag_false() {
-        pyo3::prepare_freethreaded_python();
+        pyo3::Python::initialize();
         let before = corelink_client_verify::opt_out_total();
         let client = PyCorelinkClient::new("test-pat".to_string(), "acme-corp".to_string(), false)
             .expect("constructor");
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn put_returns_blake3_hex() {
-        pyo3::prepare_freethreaded_python();
+        pyo3::Python::initialize();
         let client =
             PyCorelinkClient::new("pat".to_string(), "t1".to_string(), true).expect("ctor");
         let digest = client.put(b"hello").expect("put");
@@ -251,10 +251,10 @@ mod tests {
 
     #[test]
     fn get_verifies_empty_blob() {
-        pyo3::prepare_freethreaded_python();
+        pyo3::Python::initialize();
         let client = PyCorelinkClient::new("p".to_string(), "t".to_string(), true).expect("ctor");
         let empty_digest = Digest::compute(b"").to_hex();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = client.get(py, empty_digest);
             assert!(result.is_ok(), "empty-blob round trip must pass verify");
         });
@@ -262,11 +262,11 @@ mod tests {
 
     #[test]
     fn get_mismatch_raises_runtime_error() {
-        pyo3::prepare_freethreaded_python();
+        pyo3::Python::initialize();
         let client = PyCorelinkClient::new("p".to_string(), "t".to_string(), true).expect("ctor");
         // Digest of "hello" != BLAKE3("") → mismatch
         let wrong_digest = Digest::compute(b"hello").to_hex();
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = client.get(py, wrong_digest);
             assert!(result.is_err(), "hash mismatch must raise error");
         });
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn stat_returns_stat_result() {
-        pyo3::prepare_freethreaded_python();
+        pyo3::Python::initialize();
         let client = PyCorelinkClient::new("p".to_string(), "t".to_string(), true).expect("ctor");
         let d = Digest::compute(b"data").to_hex();
         let stat = client.stat(d.clone()).expect("stat");
@@ -283,9 +283,9 @@ mod tests {
 
     #[test]
     fn invalid_digest_returns_value_error() {
-        pyo3::prepare_freethreaded_python();
+        pyo3::Python::initialize();
         let client = PyCorelinkClient::new("p".to_string(), "t".to_string(), true).expect("ctor");
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let result = client.get(py, "not-a-hex-digest".to_string());
             assert!(result.is_err(), "invalid digest must raise");
         });
@@ -299,7 +299,7 @@ mod tests {
         // production builds will use a custom Debug that redacts it.
         // This test documents the intent as a regression guard.
         let secret = "super-secret-pat-value";
-        pyo3::prepare_freethreaded_python();
+        pyo3::Python::initialize();
         let client =
             PyCorelinkClient::new(secret.to_string(), "tenant".to_string(), true).expect("ctor");
         // The PAT IS currently in Debug — this is tracked as a

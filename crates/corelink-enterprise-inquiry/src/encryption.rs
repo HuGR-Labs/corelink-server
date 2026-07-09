@@ -347,7 +347,7 @@ pub fn payload_hash_hex(pii: &UnsealedInquiryPii) -> String {
 /// (annual; see `RB-SYSTEM-CMK-ROTATION.md` companion guidance).
 #[must_use]
 pub fn company_hash_hex(company: &str, search_domain_key: &[u8]) -> String {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
     let mut mac = match <Hmac<Sha256>>::new_from_slice(search_domain_key) {
         Ok(m) => m,

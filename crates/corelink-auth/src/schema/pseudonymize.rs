@@ -19,7 +19,7 @@
 //! exercise the cascade-vs-pseudonymisation invariant in property
 //! tests today.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use uuid::Uuid;
 
@@ -46,7 +46,7 @@ fn pseudonymize(key: &[u8], domain: &[u8], id: &Uuid) -> String {
         reason = "Hmac<Sha256>::new_from_slice never returns Err for any byte slice"
     )]
     let mut mac =
-        <Hmac<Sha256> as Mac>::new_from_slice(key).expect("HMAC-SHA256 accepts any key length");
+        <Hmac<Sha256> as KeyInit>::new_from_slice(key).expect("HMAC-SHA256 accepts any key length");
     mac.update(domain);
     mac.update(id.as_bytes());
     let tag = mac.finalize().into_bytes();

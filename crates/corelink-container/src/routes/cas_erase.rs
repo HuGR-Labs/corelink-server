@@ -67,7 +67,7 @@ const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
 /// Canonical erase route path (matchit-0.7 `:name` captures — see the DEBT-029
 /// note in [`crate::routes::cas`]).
-pub const CAS_ERASE_ROUTE: &str = "/_internal/cas/:tenant/:hash/erase";
+pub const CAS_ERASE_ROUTE: &str = "/_internal/cas/{tenant}/{hash}/erase";
 
 /// Max accepted audit reason length (bounds the D1 row; never PII).
 const MAX_REASON_LEN: usize = 256;

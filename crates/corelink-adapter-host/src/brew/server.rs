@@ -79,7 +79,7 @@ pub fn build_router(config: BrewAdapterConfig) -> Result<Router, BrewAdapterErro
     };
     Ok(Router::new()
         .route("/", get(handle_bottle_request))
-        .route("/*path", get(handle_bottle_request))
+        .route("/{*path}", get(handle_bottle_request))
         .with_state(state))
 }
 

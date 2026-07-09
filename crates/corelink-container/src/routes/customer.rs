@@ -47,7 +47,7 @@ use corelink_handler_customer::{
     KeyCreateRequest, KeyRevokeRequest, KeysListRequest, OverviewRequest, PortalRequest,
     TeamInviteRequest, TeamListRequest, TeamRemoveRequest, UsageRequest,
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
@@ -191,10 +191,10 @@ pub fn router(state: CustomerRouteState) -> Router {
             "/v1/customer/keys",
             get(handle_keys_list).post(handle_keys_create),
         )
-        .route("/v1/customer/keys/:pat_id/revoke", post(handle_keys_revoke))
+        .route("/v1/customer/keys/{pat_id}/revoke", post(handle_keys_revoke))
         .route("/v1/customer/team", get(handle_team_list))
         .route("/v1/customer/team/invite", post(handle_team_invite))
-        .route("/v1/customer/team/:user_id", delete(handle_team_remove))
+        .route("/v1/customer/team/{user_id}", delete(handle_team_remove))
         .route("/v1/customer/account/delete", post(handle_account_delete))
         .with_state(state)
 }
@@ -1129,7 +1129,7 @@ impl D1AccountDeletionRequester {
                         .to_owned(),
                 )
             })?;
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key.as_bytes())
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key.as_bytes())
             .map_err(|e| AccountDeletionError::Internal(format!("erasure salt key invalid: {e}")))?;
         mac.update(dsr_id.as_bytes());
         Ok(hex::encode(mac.finalize().into_bytes()))

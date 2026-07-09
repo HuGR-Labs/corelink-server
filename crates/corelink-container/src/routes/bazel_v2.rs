@@ -160,7 +160,6 @@ pub(crate) struct BazelPutGuard {
     _slot: BazelPutSlot,
 }
 
-#[axum::async_trait]
 impl FromRequestParts<BazelRouteState> for BazelPutGuard {
     type Rejection = axum::response::Response;
 
@@ -292,7 +291,7 @@ pub fn router(state: BazelRouteState) -> Router {
     Router::new()
         // CAS read:  GET  /bazel/v2/:instance/blobs/:hash/:size
         .route(
-            "/bazel/v2/:instance/blobs/:hash/:size",
+            "/bazel/v2/{instance}/blobs/{hash}/{size}",
             get(handle_cas_read),
         )
         // AC read:   GET  /bazel/v2/:instance/blobs/ac/:hash/:size
@@ -301,17 +300,17 @@ pub fn router(state: BazelRouteState) -> Router {
         // We mount the AC read/write on the same path, differentiated by
         // HTTP method.
         .route(
-            "/bazel/v2/:instance/blobs/ac/:hash/:size",
+            "/bazel/v2/{instance}/blobs/ac/{hash}/{size}",
             get(handle_ac_read).put(handle_ac_write),
         )
         // CAS write: PUT  /bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size
         .route(
-            "/bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size",
+            "/bazel/v2/{instance}/uploads/{uuid}/blobs/{hash}/{size}",
             put(handle_cas_write),
         )
         // Find missing: POST /bazel/v2/:instance/findMissingBlobs
         .route(
-            "/bazel/v2/:instance/findMissingBlobs",
+            "/bazel/v2/{instance}/findMissingBlobs",
             post(handle_find_missing),
         )
         .with_state(state)
@@ -1367,18 +1366,19 @@ mod tests {
     // ── Route constants use matchit-0.7 colon syntax ──────────────────────────
 
     #[test]
-    fn route_paths_use_colon_syntax_not_curly_braces() {
-        // Regression net per DEBT-029: `{name}` is a LITERAL in matchit 0.7.
+    fn route_paths_use_brace_syntax_not_colon() {
+        // Regression net per DEBT-029 (post axum-0.8): `:name` is a LITERAL in
+        // matchit 0.8; `{name}` is the capture.
         let paths = [
-            "/bazel/v2/:instance/blobs/:hash/:size",
-            "/bazel/v2/:instance/blobs/ac/:hash/:size",
-            "/bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size",
-            "/bazel/v2/:instance/findMissingBlobs",
+            "/bazel/v2/{instance}/blobs/{hash}/{size}",
+            "/bazel/v2/{instance}/blobs/ac/{hash}/{size}",
+            "/bazel/v2/{instance}/uploads/{uuid}/blobs/{hash}/{size}",
+            "/bazel/v2/{instance}/findMissingBlobs",
         ];
         for p in paths {
             assert!(
-                !p.contains('{'),
-                "path {p:?} must use :name syntax, not {{name}}"
+                !p.contains(':'),
+                "path {p:?} must use {{name}} syntax, not :name"
             );
         }
     }

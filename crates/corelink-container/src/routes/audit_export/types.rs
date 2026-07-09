@@ -17,7 +17,7 @@ use uuid::Uuid;
 /// tenant from the path, routes the DO, and forwards the full path to
 /// the container — so the container MUST declare `:tenant` here or
 /// every `/v1/audit/<tenant>/export` request returns 404.
-pub const AUDIT_EXPORT_ROUTE: &str = "/v1/audit/:tenant/export";
+pub const AUDIT_EXPORT_ROUTE: &str = "/v1/audit/{tenant}/export";
 
 /// Header name production wiring uses to inject the
 /// JWT-validated tenant id (see module-level docs §Auth model).

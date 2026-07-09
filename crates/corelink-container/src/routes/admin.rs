@@ -116,7 +116,7 @@ pub(crate) fn internal_auth_ok(expected: Option<&Arc<str>>, headers: &HeaderMap)
 /// the workspace-pinned axum 0.7 / matchit 0.7. Fixed by replacing the
 /// brace placeholder with the `:name` form used by every other live
 /// route (see `admin_pilot.rs`, `signup.rs`).
-pub const ADMIN_READ_ROUTE: &str = "/v1/admin/read/:resource";
+pub const ADMIN_READ_ROUTE: &str = "/v1/admin/read/{resource}";
 
 /// Canonical admin mutate route path.
 pub const ADMIN_MUTATE_ROUTE: &str = "/v1/admin/mutate";
@@ -828,7 +828,7 @@ mod tests {
 
     #[test]
     fn route_constants_match_canonical_paths() {
-        assert_eq!(ADMIN_READ_ROUTE, "/v1/admin/read/:resource");
+        assert_eq!(ADMIN_READ_ROUTE, "/v1/admin/read/{resource}");
         assert_eq!(ADMIN_MUTATE_ROUTE, "/v1/admin/mutate");
     }
 

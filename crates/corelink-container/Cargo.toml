@@ -119,6 +119,9 @@ corelink-tenant-path = { workspace = true }
 # zeroize for TDK bytes handling.
 zeroize = { workspace = true }
 tonic = { workspace = true }
+# tonic-prost: prost codec runtime referenced as `tonic_prost::…` by the
+# `tonic-prost-build`-generated health stub (split out of tonic in 0.14).
+tonic-prost = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
@@ -301,3 +304,4 @@ tempfile = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }
+tonic-prost-build = { workspace = true }

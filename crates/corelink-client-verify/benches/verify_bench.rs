@@ -11,7 +11,8 @@
 )]
 
 use corelink_client_verify::{ClientVerifier, Digest};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 fn bench_verify_sync(c: &mut Criterion) {
     let mut group = c.benchmark_group("ClientVerifier::verify");

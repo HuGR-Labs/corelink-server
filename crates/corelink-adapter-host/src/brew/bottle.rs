@@ -83,8 +83,11 @@ pub fn canonical_bottle_path(raw_path: &str) -> String {
 pub fn cas_key_for(canonical_path: &str) -> String {
     let mut hasher = Hasher::new();
     hasher.update(canonical_path.as_bytes());
+    // digest 0.11: `Digest::finalize` (in scope via `sha2::Digest`) yields a
+    // `digest::Output` (hybrid-array `Array`) rather than a `blake3::Hash`, so
+    // hex-encode the array directly (both impl `AsRef<[u8]>`).
     let digest = hasher.finalize();
-    hex::encode(digest.as_bytes())
+    hex::encode(digest)
 }
 
 /// Extract the upstream-declared sha256 digest from a canonical bottle

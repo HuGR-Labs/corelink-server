@@ -156,7 +156,7 @@ pub async fn request_tsa_timestamp(
 /// use sha2::{Digest, Sha256};
 ///
 /// let sbom = b"{\"specVersion\":\"1.5\"}";
-/// let sha = format!("{:x}", Sha256::digest(sbom));
+/// let sha = hex::encode(Sha256::digest(sbom));
 /// let token = TsrToken { der_bytes: vec![0u8], sbom_sha256_hex: sha, nonce_hex: "aa".to_owned() };
 /// assert!(verify_tsr_binding(sbom, &token).is_ok());
 ///

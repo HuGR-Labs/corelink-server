@@ -113,7 +113,9 @@ async-trait = "0.1"
 corelink-clerk = { workspace = true, features = ["jwt-adapter", "test-utils"] }
 corelink-audit = { workspace = true }
 corelink-pat = { workspace = true }
-jsonwebtoken = "9.3"
+# jsonwebtoken 10 requires an explicit crypto provider feature (`rust_crypto`
+# or `aws_lc_rs`); pick pure-Rust `rust_crypto` for wasm/portability.
+jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
 serde_json = { workspace = true }
 serde = { workspace = true }
 rsa = "0.9"

@@ -41,7 +41,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v2", get(handlers::api_version))
         .route("/v2/_catalog", get(handlers::catalog))
         .route("/token", get(handlers::token).post(handlers::token_post))
-        .route("/v2/*rest", any(handlers::dispatch_v2))
+        .route("/v2/{*rest}", any(handlers::dispatch_v2))
         .with_state(state)
         .layer(middleware::from_fn(log_request))
 }

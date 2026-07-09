@@ -198,7 +198,7 @@ pub fn resolve_fips_host(vault_url: &str) -> Result<(String, &'static str), BYOK
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use super::{aad_fingerprint, canonicalize_aad_to_string_map, resolve_fips_host};
-    use aes_gcm::aead::{generic_array::GenericArray, Aead, KeyInit};
+    use aes_gcm::aead::{Aead, KeyInit, Nonce};
     use aes_gcm::Aes256Gcm;
     use async_trait::async_trait;
     use base64::Engine as _;
@@ -442,8 +442,8 @@ mod native {
             plaintext: &[u8],
             aad: &[u8],
         ) -> Result<Vec<u8>, BYOKError> {
-            let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
-            let nonce_ga = GenericArray::from_slice(nonce);
+            let cipher = Aes256Gcm::new(key.into());
+            let nonce_ga: &Nonce<Aes256Gcm> = nonce.into();
             let payload = aes_gcm::aead::Payload {
                 msg: plaintext,
                 aad,
@@ -465,8 +465,10 @@ mod native {
                 return Err(BYOKError::AesGcm("inner ciphertext too short".to_string()));
             }
             let (nonce_bytes, ct) = nonce_and_ct.split_at(NONCE_LEN);
-            let nonce = GenericArray::from_slice(nonce_bytes);
-            let cipher = Aes256Gcm::new(GenericArray::from_slice(key));
+            let nonce: &Nonce<Aes256Gcm> = nonce_bytes
+                .try_into()
+                .map_err(|_| BYOKError::AesGcm("azure inner nonce length".to_string()))?;
+            let cipher = Aes256Gcm::new(key.into());
             let payload = aes_gcm::aead::Payload { msg: ct, aad };
             cipher.decrypt(nonce, payload).map_err(|_| {
                 // Tag mismatch ⇒ AAD or ciphertext tampered. Surface as

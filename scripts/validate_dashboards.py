@@ -83,6 +83,13 @@ LEGACY = [
     # team; not referenced from `observability_model.md §10 Nível-3`.
     "DASH-ONCALL-24-7",
     "DASH-ONCALL-FATIGUE",
+    # Granular SLO detail dashboards shipped by WP-6.1 (feat commit b82a1c3c),
+    # supplementary to the canonical DASH-SLO-CATALOG. They live on disk for
+    # the SRE/SLO surface but are outside the canonical-12 customer set — the
+    # allowlist was never updated when they landed, so the count-discipline
+    # check flagged them "unexpected" the next time this gate ran.
+    "DASH-SLO-API",
+    "DASH-SLO-AUDIT",
 ]
 
 # Per-dashboard required template variables.

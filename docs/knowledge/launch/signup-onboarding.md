@@ -5,7 +5,7 @@ description: "How a new customer becomes a provisioned tenant: the Clerk signup 
 source_files:
   - crates/corelink-container/src/routes/signup.rs
   - docs/operator/e2e-signup-sealed-2026-05-30.md
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
 provenance: "AUTHORED"
 tags:
   - launch
@@ -30,7 +30,7 @@ The signup surfaces turn an authenticated identity (Clerk) or a signed operator-
 - PAT issuance calls a Service Binding to the main worker `/_internal/pat/mint`, which returns `token_plaintext` plus an Argon2id `hash`, then D1-inserts the `pat` row (`docs/operator/e2e-signup-sealed-2026-05-30.md:63-65`).
 - `publishUserMetadata` PATCHes the Clerk Backend API `/v1/users/{id}` to set `publicMetadata.{tenant_id, region, pat_plaintext}`, returns HTTP 200, and marks `metadata_published=true` (`docs/operator/e2e-signup-sealed-2026-05-30.md:65-67`).
 - The chain is validated by using the resulting PAT against `/v1/users/me` -> HTTP 200 with a resolved `tenant_id` that matches the freshly created row (`docs/operator/e2e-signup-sealed-2026-05-30.md:68-69`).
-- The container's pilot route is registered at `/v1/signup/pilot/:token` (axum 0.7 `:token` capture) and dispatches `POST` to `handle_pilot_signup` (`crates/corelink-container/src/routes/signup.rs:130`, `crates/corelink-container/src/routes/signup.rs:742-746`).
+- The container's pilot route is registered at `/v1/signup/pilot/{token}` (axum 0.8 `{token}` capture) and dispatches `POST` to `handle_pilot_signup` (`crates/corelink-container/src/routes/signup.rs:130`, `crates/corelink-container/src/routes/signup.rs:742-746`).
 - The pilot token format is `pilot_<env>_<unix_ms>_<16-hex-random>.<hmac-hex>`, where `env` segregates `staging` from `prod` so a staging mint never opens a prod slot (`crates/corelink-container/src/routes/signup.rs:13-28`).
 - `parse_and_verify_pilot_token` splits body/signature on a single `.`, requires exactly 4 underscore fields via `splitn(4)`, checks the `pilot` literal, the env allowlist, a `u64` timestamp, and a 16-char hex random (`crates/corelink-container/src/routes/signup.rs:255-278`).
 - Signature verify computes `HMAC-SHA256(SIGNUP_TOKEN_KEY, body)` and compares constant-time via `subtle::ConstantTimeEq`, bailing on length mismatch first (`crates/corelink-container/src/routes/signup.rs:280-293`).
@@ -55,7 +55,7 @@ The signup surfaces turn an authenticated identity (Clerk) or a signed operator-
 - The Clerk webhook secret is the silent killer: orchestrator sessions overwrote `CLERK_WEBHOOK_SECRET` with fake `whsec_` keys, and the canonical secret character is `/` (a Mac-Finder `:` substitution masked it) — set it with `printf '%s'`, never `echo` (`docs/operator/e2e-signup-sealed-2026-05-30.md:30-37`).
 - Two latent e2e-script bugs masked a working chain: the D1 name must be `corelink-prod-d1` (CF returns empty `[]` for a wrong name rather than erroring), and the lookup must prefer wrangler v4.95 over v3.114 which silently errors on the `[[containers]]` schema (`docs/operator/e2e-signup-sealed-2026-05-30.md:39-51`).
 - `DEV_TOKEN_KEY` lives in the open repo and is forgeable — production MUST mount via `build_state_from_env`; never the hardcoded dev key (`crates/corelink-container/src/routes/signup.rs:699-708`).
-- The wire path uses axum 0.7 `:token` capture even though the audit-doc cross-reference writes `{token}` in prose — they describe the same segment (`crates/corelink-container/src/routes/signup.rs:121-130`).
+- The wire path uses axum 0.8 `{token}` capture, matching the `{token}` the audit-doc cross-reference writes in prose — they describe the same segment (`crates/corelink-container/src/routes/signup.rs:121-130`).
 
 # Citations
 

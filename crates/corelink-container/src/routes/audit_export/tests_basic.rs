@@ -33,7 +33,7 @@ use super::parse::parse_timestamp;
 #[test]
 fn route_constant_matches_canonical_path() {
     // Wave-37 fix: tenant moved into path following /v1/cas/:tenant/:hash pattern.
-    assert_eq!(AUDIT_EXPORT_ROUTE, "/v1/audit/:tenant/export");
+    assert_eq!(AUDIT_EXPORT_ROUTE, "/v1/audit/{tenant}/export");
 }
 
 #[test]

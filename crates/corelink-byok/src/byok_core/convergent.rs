@@ -34,7 +34,7 @@
 
 use aes_gcm::{
     aead::{Aead, KeyInit, Payload},
-    Aes256Gcm, Key, Nonce,
+    Aes256Gcm,
 };
 use hkdf::Hkdf;
 use serde::{Deserialize, Serialize};
@@ -140,10 +140,10 @@ pub fn encrypt_convergent(
     let dek = derive_dek_convergent(tcs, ctx)?;
     let nonce_bytes = derive_nonce_convergent(tcs, ctx)?;
     let aad = ctx.to_jcs_bytes()?;
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek.bytes));
+    let cipher = Aes256Gcm::new((&dek.bytes).into());
     let ciphertext = cipher
         .encrypt(
-            Nonce::from_slice(&nonce_bytes),
+            (&nonce_bytes).into(),
             Payload {
                 msg: plaintext,
                 aad: &aad,
@@ -179,10 +179,10 @@ pub fn decrypt_convergent(
     guard_single_shot(ctx)?;
     let dek = derive_dek_convergent(tcs, ctx)?;
     let aad = ctx.to_jcs_bytes()?;
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&dek.bytes));
+    let cipher = Aes256Gcm::new((&dek.bytes).into());
     cipher
         .decrypt(
-            Nonce::from_slice(&blob.nonce),
+            (&blob.nonce).into(),
             Payload {
                 msg: blob.ciphertext.as_ref(),
                 aad: &aad,

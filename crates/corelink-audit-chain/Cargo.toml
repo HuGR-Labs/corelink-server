@@ -82,11 +82,11 @@ parking_lot = { workspace = true }
 # surface minimal — we explicitly enable only the features we need.
 deadpool-postgres = { version = "0.14", default-features = false, features = ["rt_tokio_1"], optional = true }
 tokio-postgres = { version = "0.7", default-features = false, features = ["with-uuid-1"], optional = true }
-tokio-postgres-rustls = { version = "0.13", default-features = false, optional = true }
+tokio-postgres-rustls = { version = "0.14", default-features = false, optional = true }
 tokio = { workspace = true, optional = true }
 rustls = { version = "0.23", default-features = false, features = ["std", "ring"], optional = true }
 rustls-native-certs = { version = "0.8", optional = true }
-webpki-roots = { version = "0.26", optional = true }
+webpki-roots = { version = "1.0", optional = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -99,8 +99,8 @@ criterion = { workspace = true }
 # that exercise `RealNeonShadowSink` against a `postgres:16-alpine`
 # testcontainer. Docker is required at run-time; `cargo build` without
 # the feature does NOT require Docker.
-testcontainers = "0.21"
-testcontainers-modules = { version = "0.9", features = ["postgres"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tokio = { workspace = true }
 tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-serde_json-1"] }
 

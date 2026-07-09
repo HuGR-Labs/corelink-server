@@ -107,20 +107,20 @@ use crate::storage::d1_http::{D1HttpClient, D1Row};
 pub const PILOTS_LIST_ROUTE: &str = "/v1/admin/pilots";
 
 /// Canonical grant-tier route path (axum 0.7 `:name` capture).
-pub const PILOTS_GRANT_TIER_ROUTE: &str = "/v1/admin/pilots/:tenant_id/grant-tier";
+pub const PILOTS_GRANT_TIER_ROUTE: &str = "/v1/admin/pilots/{tenant_id}/grant-tier";
 
 /// Canonical checkin route path (axum 0.7 `:name` capture).
-pub const PILOTS_CHECKIN_ROUTE: &str = "/v1/admin/pilots/:tenant_id/checkin";
+pub const PILOTS_CHECKIN_ROUTE: &str = "/v1/admin/pilots/{tenant_id}/checkin";
 
 /// Internal-edge alias for the list route (#218 §2.1, ratified Q3):
 /// same handler, reachable through the Worker's `/_internal/*` channel.
 pub const INTERNAL_PILOTS_LIST_ROUTE: &str = "/_internal/admin/pilots";
 
 /// Internal-edge alias for the grant-tier route (#218 §2.1).
-pub const INTERNAL_PILOTS_GRANT_TIER_ROUTE: &str = "/_internal/admin/pilots/:tenant_id/grant-tier";
+pub const INTERNAL_PILOTS_GRANT_TIER_ROUTE: &str = "/_internal/admin/pilots/{tenant_id}/grant-tier";
 
 /// Internal-edge alias for the checkin route (#218 §2.1).
-pub const INTERNAL_PILOTS_CHECKIN_ROUTE: &str = "/_internal/admin/pilots/:tenant_id/checkin";
+pub const INTERNAL_PILOTS_CHECKIN_ROUTE: &str = "/_internal/admin/pilots/{tenant_id}/checkin";
 
 /// HTTP header carrying the operator-validated admin scope claim
 /// (production: set by the JWT-validating tower middleware).
@@ -1606,19 +1606,19 @@ mod tests {
         assert_eq!(PILOTS_LIST_ROUTE, "/v1/admin/pilots");
         assert_eq!(
             PILOTS_GRANT_TIER_ROUTE,
-            "/v1/admin/pilots/:tenant_id/grant-tier"
+            "/v1/admin/pilots/{tenant_id}/grant-tier"
         );
-        assert_eq!(PILOTS_CHECKIN_ROUTE, "/v1/admin/pilots/:tenant_id/checkin");
+        assert_eq!(PILOTS_CHECKIN_ROUTE, "/v1/admin/pilots/{tenant_id}/checkin");
         // #218 §2.1 aliases — the same handlers behind the Worker's
         // `/_internal/*` forwarding channel.
         assert_eq!(INTERNAL_PILOTS_LIST_ROUTE, "/_internal/admin/pilots");
         assert_eq!(
             INTERNAL_PILOTS_GRANT_TIER_ROUTE,
-            "/_internal/admin/pilots/:tenant_id/grant-tier"
+            "/_internal/admin/pilots/{tenant_id}/grant-tier"
         );
         assert_eq!(
             INTERNAL_PILOTS_CHECKIN_ROUTE,
-            "/_internal/admin/pilots/:tenant_id/checkin"
+            "/_internal/admin/pilots/{tenant_id}/checkin"
         );
     }
 

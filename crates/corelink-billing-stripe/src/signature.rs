@@ -42,7 +42,7 @@
 //! pins the canonical `300_000` ms (5 min × 60 s × 1000 ms/s) boundary
 //! per the sprint contract §15 R-007 mitigation row.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
