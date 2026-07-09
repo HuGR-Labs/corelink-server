@@ -10,7 +10,7 @@
  *   - the in-browser verifier completes and surfaces `data-ok="true"`
  *   - the modal closes cleanly on Escape
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { LoginPage } from "../pages/LoginPage";
 
 test.describe("customer audit-chain visualization — proof modal", () => {

@@ -23,10 +23,27 @@
 import * as React from "react";
 import { ClerkProvider } from "@clerk/nextjs";
 
+// E2E test mode has no reachable Clerk backend (auth is mocked at the data
+// layer via the `__corelink_e2e_session` cookie — see src/lib/auth.ts). With
+// NO publishable key, `<ClerkProvider>` falls into dev *keyless* mode, which
+// polls Clerk's API to provision a throwaway dev instance and, while retrying
+// against the unreachable FAPI, REMOUNTS this whole authenticated subtree in a
+// loop — destroying in-flight React state (the minted-PAT reveal modal, a
+// mid-approval op view, …) and making the E2E specs flaky. Passing a
+// syntactically-valid dummy key pins the provider into a stable "has-key" mode
+// (no keyless polling, no remount loop). Gated on NEXT_PUBLIC_E2E_TEST_MODE
+// (never set in production) and scoped to THIS layout only, so the /sign-in
+// route still sees no key and renders its keyless fallback. The key merely
+// encodes the dummy FAPI host `example.clerk.accounts.dev`; it never talks to a
+// real Clerk backend.
+const E2E_DUMMY_CLERK_PK = "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk";
+
 export default function AuthenticatedLayout({
   children,
 }: {
   children: React.ReactNode;
 }): React.ReactElement {
-  return <ClerkProvider>{children}</ClerkProvider>;
+  const isE2E = process.env["NEXT_PUBLIC_E2E_TEST_MODE"] === "1";
+  const clerkProps = isE2E ? { publishableKey: E2E_DUMMY_CLERK_PK } : {};
+  return <ClerkProvider {...clerkProps}>{children}</ClerkProvider>;
 }

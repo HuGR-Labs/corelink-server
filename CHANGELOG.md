@@ -48,6 +48,54 @@ Each entry cross-references:
   label OUTSIDE the canonical `read-only`/`read-write`/`admin` set is still refused fail-CLOSED (422).
   OKF: `edge-pat-mint-lifecycle` `auth_rotate.ts` cites remapped for the +1/+2 line shift and
   `checkpoint_sha` advanced to the branch tip (squash-orphan tolerated per #692).
+- **admin-ui E2E — `critical-flows` now deterministically green with retries=0 (removed the
+  `dsr-approve` `test.fixme`, killed the `byok-rotate` / `customer-keys` flakiness).** Three real
+  root causes, all fixed canonically: (1) the E2E `<ClerkProvider>` had NO publishable key, so it
+  entered dev **keyless mode**, which polls Clerk's (unreachable-in-E2E) API to provision a throwaway
+  instance and, while retrying, **remounts the whole authenticated subtree in a loop** — destroying
+  in-flight React state (the minted-PAT reveal modal, a mid-approval op view) → fixed by pinning a
+  syntactically-valid **dummy publishable key** in the `(authenticated)` layout **only under
+  `NEXT_PUBLIC_E2E_TEST_MODE`** (auth stays mocked at the data layer; `/sign-in` still renders its
+  keyless fallback). (2) The mock's module-level `let state` was **reset whenever Next dev compiled a
+  newly-visited route** (e.g. first nav to `/admin/audit` after an approve), wiping the mutation the
+  next assertion needed → re-anchored on a **`globalThis` singleton** (survives module re-eval) with a
+  test-only `POST /v1/_e2e/reset` wired into a shared Playwright fixture for per-test isolation. (3)
+  Clerk's dev SDK + Next HMR use `eval`, which the strict CSP forbade → a storm of `/api/csp-report`
+  429s; `'unsafe-eval'` is now allowed on `script-src` **only outside production** (prod stays
+  eval-free, verified by `tests/csp.test.ts`). Also: `customer-keys` now dismisses the shown-once
+  reveal modal (copy → confirm → Done) before revoking, since its scrim overlays the row actions.
+  (4) **`DualApprovalCard` pre-hydration input race (the residual CI-only `byok-rotate` flake).** The
+  op-detail page is server-rendered, so the approval-reason textarea is *typeable* before React
+  hydrates and wires its `onChange`; on a slow/contended CI runner (and on WebKit's event timing) the
+  approver's reason could land in that window — the DOM value updated but `reason` state stayed `""`,
+  so `approve-btn` was `disabled` forever while the field *looked* filled (exactly the reported
+  `toBeEnabled → Received: disabled`). Fixed at the component root: the reason field and approve/reject
+  controls are now gated on a post-mount `interactive` flag (`useState(false)` → `useEffect`, so it is
+  hydration-stable and identical on the server and first client render). The field is `disabled` until
+  the client mounts, so no input can be typed — or `.fill()`-ed — before `onChange` is live; the fix
+  is deterministic regardless of hydration timing (no test sleeps/retries). Verified green across
+  `byok-rotate` + `dsr-approve` at `--repeat-each=8 --workers=1`.
+  (5) **Toast layer intercepted clicks (the residual CI-only `customer-keys` revoke flake).** The
+  `.lin-toasts` layer is `position: fixed` bottom-right at `z-index:70` — directly over a table's
+  right-hand actions column. After creating a PAT, the "token created" success toast (up for 3.5s)
+  physically overlapped the row's Revoke button, so the click hit-tested to the toast
+  (`elementFromPoint` → `div.lin-toast`) and Playwright reported the target as pointer-intercepted
+  until timeout. These toasts are passive, auto-dismissing status messages (`role="status"`, no
+  buttons), so the fix is `pointer-events: none` on the toast layer — clicks pass through to the UI
+  behind; an interactive toast, if ever added, opts back in with `pointer-events: auto`. Also
+  hardened the shared reset fixture: its `POST /v1/_e2e/reset` (the first hit to the catch-all
+  `/api/v1/[...path]` route, a one-time cold Next-dev compile on a fresh CI server) now gets a
+  generous 60s timeout instead of inheriting the 10s `actionTimeout`, so the suite can't flake on its
+  very first test. `customer-keys` verified green at `--repeat-each=8 --workers=1` (twice).
+  (6) **`tenant-overview` cold-compile navigation flake (the last one — retires the reliance on CI's
+  `retries:2` mask, per the zero-flaky mandate).** The "View" link is an `<a>`, so the click triggers
+  a navigation to the tenant deep-dive route, which the dev server compiles ON DEMAND the first time
+  it is visited; that one-time cold compile can exceed the default 10s `actionTimeout`, so the click's
+  built-in "wait for navigation to finish" timed out even though the navigation itself succeeded (the
+  deep-dive page rendered). Same dev-server infra cost as the reset route (NOT a product issue — prod
+  is pre-built): the deep-dive click now gets a wide 60s navigation budget (returns as soon as the
+  nav settles; not a blanket sleep). Full critical-flows suite now green at retries=0 from a cold
+  `.next` across two consecutive runs; `tenant-overview` green at `--repeat-each=8 --workers=1`.
 - **OKF wiki — checkpoint validation is now SQUASH-MERGE RESILIENT (durable fix for the recurring
   #688/#690 orphaned-checkpoint trap).** Root cause: when a feature PR whose OKF concept pins
   `checkpoint_sha` at its OWN pre-merge branch tip is squash/rebase-merged, git rewrites that tip; the

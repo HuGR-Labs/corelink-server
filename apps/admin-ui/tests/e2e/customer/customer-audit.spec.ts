@@ -4,7 +4,7 @@
  * The tenant-scoped audit table loads and the `from` filter narrows the
  * rows. No Merkle proof tab (operator-only surface).
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { LoginPage } from "../pages/LoginPage";
 
 test.describe("customer audit", () => {

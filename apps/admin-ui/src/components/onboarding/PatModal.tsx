@@ -45,7 +45,16 @@ export function PatModal(props: PatModalProps): React.ReactElement | null {
     const impl =
       props.copyImpl ??
       ((text: string) => navigator.clipboard.writeText(text));
-    await impl(pat);
+    try {
+      await impl(pat);
+    } catch {
+      // The clipboard write can be blocked — WebKit/Firefox reject the
+      // chromium-only clipboard permission, and any engine can deny the write
+      // outside a trusted gesture. The token is shown on screen for manual
+      // copy, so a blocked write must NOT trap the user in the shown-once
+      // modal: the click of "Copy" is itself the acknowledgement that (with the
+      // saved-checkbox) gates "Done". Best-effort copy, guaranteed progress.
+    }
     setCopied(true);
   }, [pat, props.copyImpl]);
 

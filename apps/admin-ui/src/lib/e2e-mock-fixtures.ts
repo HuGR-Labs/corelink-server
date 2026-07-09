@@ -9,8 +9,13 @@
  *   - Fixed timestamps for list endpoints so date filters can be asserted.
  *   - Mutations DO update the in-memory state so a request like
  *     "approve op" causes a subsequent "list audit" to reflect the audit row.
- *   - State is module-level — a single Node process per playwright run; each
- *     spec file resets via `__resetMockState()` in beforeEach.
+ *   - State is a `globalThis`-backed singleton (see `mockGlobals()` below) — a
+ *     single Node process per playwright run, and the global anchor keeps the
+ *     state alive across Next.js dev route recompiles (a plain module-level
+ *     `let` gets reset when the dev server first compiles a newly-visited
+ *     route). Each test resets to a pristine fixture via `POST /v1/_e2e/reset`
+ *     (→ `__resetMockState()`), wired in the shared Playwright `test` fixture's
+ *     beforeEach (`tests/e2e/fixtures/test.ts`).
  *
  * Production safety: this module is imported only by the catch-all route
  * (which itself is gated on NEXT_PUBLIC_E2E_TEST_MODE=1) and by the
@@ -130,7 +135,7 @@ function makeAuditEvents(): MockState["auditEvents"] {
   ];
 }
 
-function makeAuditDetail(id: string): AuditEventDetail {
+function makeAuditDetail(id: string, state: MockState): AuditEventDetail {
   const summary = state.auditEvents.find((e) => e.event_id === id) ?? state.auditEvents[0]!;
   return {
     ...summary,
@@ -319,14 +324,55 @@ function freshState(): MockState {
   };
 }
 
-let state: MockState = freshState();
+// ─── Persistent mock state (globalThis-backed singleton) ─────────────────────
+//
+// The mock's mutable state MUST survive across sequential HTTP requests within a
+// Playwright run. A plain module-level `let state` does NOT: the Next.js dev
+// server re-evaluates shared lib modules when it compiles a not-yet-visited
+// route (e.g. the first navigation to /admin/audit after an approve), which
+// re-runs the module top-level and silently resets `state` — wiping the very
+// mutation the next assertion depends on. The symptom was "audit row never
+// appears / approve-btn state lost", flaky-green only on retry (retry = warm
+// server, no recompile). Anchoring the state on `globalThis` (the standard
+// Next.js dev-singleton pattern) makes it a true per-process singleton that
+// survives module re-evaluation, so a mutation is observed by every later
+// request until an explicit reset. `portalSessionSeq` lives here too so its
+// monotonic uniqueness also survives a recompile.
+interface E2EMockGlobals {
+  state: MockState;
+  portalSessionSeq: number;
+}
+
+const GLOBAL_KEY = "__corelinkE2EMock__" as const;
+const globalRef = globalThis as typeof globalThis & {
+  [GLOBAL_KEY]?: E2EMockGlobals;
+};
+
+function mockGlobals(): E2EMockGlobals {
+  if (!globalRef[GLOBAL_KEY]) {
+    globalRef[GLOBAL_KEY] = { state: freshState(), portalSessionSeq: 0 };
+  }
+  return globalRef[GLOBAL_KEY];
+}
 
 export function __resetMockState(): void {
-  state = freshState();
+  globalRef[GLOBAL_KEY] = { state: freshState(), portalSessionSeq: 0 };
 }
 
 export function getFixtureResponse(req: MockRequest): MockResponse {
   const { method, path, query, body } = req;
+  const g = mockGlobals();
+  const state = g.state;
+
+  // ----- test-only state reset (per-test isolation) -----
+  // Gated behind the same NEXT_PUBLIC_E2E_TEST_MODE=1 catch-all that mounts
+  // this mock; the Playwright fixture hits it in a beforeEach so each test
+  // starts from a pristine deterministic fixture (no cross-test leakage now
+  // that state is a persistent singleton).
+  if (path === "/v1/_e2e/reset" && method === "POST") {
+    __resetMockState();
+    return { status: 200, body: { ok: true } };
+  }
 
   // ----- tenants -----
   if (path === "/v1/admin/tenants" && method === "GET") {
@@ -375,7 +421,7 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
   }
   if (path.startsWith("/v1/admin/audit/") && method === "GET") {
     const id = path.split("/").pop()!;
-    if (!state.auditDetails.has(id)) state.auditDetails.set(id, makeAuditDetail(id));
+    if (!state.auditDetails.has(id)) state.auditDetails.set(id, makeAuditDetail(id, state));
     return { status: 200, body: state.auditDetails.get(id) };
   }
 
@@ -710,8 +756,8 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
       return rfc7807(400, "Bad Request", "tenant_id required");
     }
     // Monotonic counter so the URL changes per call.
-    portalSessionSeq += 1;
-    const id = `bps_e2e_${portalSessionSeq.toString(16).padStart(8, "0")}`;
+    g.portalSessionSeq += 1;
+    const id = `bps_e2e_${g.portalSessionSeq.toString(16).padStart(8, "0")}`;
     return {
       status: 200,
       body: {
@@ -725,7 +771,3 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
 
   return rfc7807(404, "Not Found", `unmocked ${method} ${path}`);
 }
-
-// Module-level counter so each portal-session call returns a unique
-// URL — Stripe's portal URLs are single-use, the fake mirrors that.
-let portalSessionSeq = 0;

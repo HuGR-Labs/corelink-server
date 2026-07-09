@@ -43,7 +43,17 @@ export class TenantPage {
   async clickTenant(tenantId: string): Promise<void> {
     const row = this.page.getByTestId(`tenant-row-${tenantId}`);
     await expect(row).toBeVisible();
-    await row.getByRole("link", { name: /view/i }).click();
+    // The "View" link is an <a> → clicking triggers a navigation to the tenant
+    // deep-dive route, which the dev server compiles ON DEMAND the first time
+    // it is visited. That one-time cold compile can exceed the default 10s
+    // `actionTimeout`, so the click's built-in "wait for navigation to finish"
+    // times out even though the navigation itself succeeds — a dev-server infra
+    // cost, NOT a product issue (prod is pre-built). Give this first navigation
+    // a wide budget (same rationale as the reset fixture's 60s), not a blanket
+    // sleep: it returns as soon as the navigation settles.
+    await row
+      .getByRole("link", { name: /view/i })
+      .click({ timeout: 60_000 });
   }
 
   async expectDeepDive(tenantId: string): Promise<void> {

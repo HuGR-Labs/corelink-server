@@ -12,7 +12,7 @@
  *      is no toast component in this UI surface).
  *   4. The audit log records the approval as `admin.op_approved`.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test";
 import { LoginPage } from "./pages/LoginPage";
 import { AuditPage } from "./pages/AuditPage";
 

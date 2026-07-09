@@ -1,29 +1,41 @@
 /**
- * E2E — Stripe Customer Portal redirect flow (wt/r-prep-stripe-portal).
+ * E2E — Stripe Customer Portal redirect flow (Linear BillingClient).
  *
  * Strategy: the real Stripe API is exercised by `corelink-stripe-real`'s
- * `--features live-integration` suite. Here we verify the **boundary
- * contract** — that the customer billing page POSTs to the right
- * endpoint with `{ return_url, tenant_id }`, that the server response
- * is treated as a one-shot redirect, and that the portal URL is
- * NEVER cached (a second click MUST trigger a second POST).
+ * `--features live-integration` suite. Here we verify the **boundary contract**
+ * of the live billing page — that clicking "Manage subscription"
+ * (`billing-portal-btn`) POSTs to `/v1/customer/billing/portal`, treats the
+ * response as a one-shot redirect (`window.location.assign`), and is NEVER
+ * cached: a second click MUST trigger a second POST + redirect.
  *
- * We intercept the Stripe-portal URL itself via `page.route()` so the
- * browser doesn't actually navigate to billing.stripe.com — that would
- * be flaky AND would burn real Stripe quota on test traffic.
+ * We intercept the portal URL via `page.route()` so the browser doesn't
+ * actually navigate offsite.
+ *
+ * Reconciliation notes (pre-Linear → current):
+ *   - The page control is `billing-portal-btn` ("Manage subscription"), not the
+ *     removed `PortalLauncher`'s `portal-open-button`.
+ *   - The client (`startBillingPortal`) POSTs to `/v1/customer/billing/portal`
+ *     with NO body — the old `{ return_url, tenant_id }` body contract belonged
+ *     to the removed PortalLauncher/`/portal-session` path, so those assertions
+ *     are dropped.
+ *   - The E2E mock returns a FIXED portal URL, so per-click URL *uniqueness*
+ *     cannot be asserted; we assert the no-cache invariant via the second POST
+ *     firing (a fresh session is minted server-side on each real call).
  */
 
-import { test, expect, type Request as PWRequest } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
+import { type Request as PWRequest } from "@playwright/test";
 import { LoginPage } from "../pages/LoginPage";
 
-const PORTAL_URL_RE = /^https:\/\/billing\.stripe\.com\/p\/session\//;
+// The E2E mock's portal URL host (fixed). Intercept so we don't navigate offsite.
+const PORTAL_URL_RE = /^https:\/\/billing\.example\.invalid\/portal\//;
 
 test.describe("customer billing portal redirect", () => {
   test.beforeEach(async ({ page, context, baseURL }) => {
     const login = new LoginPage(page, context, baseURL!);
     await login.signInAs("admin");
-    // Intercept the eventual Stripe redirect so we don't actually
-    // navigate offsite. We mark the request as captured for assertions.
+    // Intercept the eventual portal redirect so we don't actually navigate
+    // offsite (the mock host is non-routable by design).
     await page.route(PORTAL_URL_RE, async (route) => {
       await route.fulfill({
         status: 200,
@@ -33,50 +45,42 @@ test.describe("customer billing portal redirect", () => {
     });
   });
 
-  test("clicking Open Stripe Portal POSTs return_url+tenant_id then redirects to a fresh portal URL each time", async ({
+  test("clicking Manage subscription POSTs to the portal endpoint then redirects — re-POSTs on every click (no cache)", async ({
     page,
   }) => {
-    // Collect the POSTs we send to the session endpoint.
+    // Collect the POSTs we send to the portal endpoint.
     const sessionPosts: PWRequest[] = [];
     page.on("request", (req) => {
       if (
         req.method() === "POST" &&
-        req.url().endsWith("/api/v1/customer/billing/portal-session")
+        req.url().endsWith("/v1/customer/billing/portal")
       ) {
         sessionPosts.push(req);
       }
     });
 
     await page.goto("/en/customer/billing");
-    await expect(page.locator("h1#customer-billing-heading")).toBeVisible();
-    await expect(page.getByTestId("portal-open-button")).toBeEnabled();
+    await expect(page.locator("h1#customer-billing-heading")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("billing-portal-btn")).toBeEnabled();
 
-    // --- First click: triggers POST + redirect to Stripe-stub. -------
-    await page.getByTestId("portal-open-button").click();
+    // --- First click: triggers POST + redirect to the portal stub. ---------
+    await page.getByTestId("billing-portal-btn").click();
     await expect(page.getByTestId("stripe-portal-stub")).toBeVisible();
     expect(sessionPosts.length).toBe(1);
 
-    // Validate the POST body contract.
-    const firstBody = JSON.parse(sessionPosts[0]!.postData() ?? "{}") as {
-      return_url?: string;
-      tenant_id?: string;
-    };
-    expect(firstBody.return_url).toMatch(/^https?:\/\/.+\/en\/customer\/billing$/);
-    expect(firstBody.tenant_id).toBeTruthy();
+    const firstPortalUrl = page.url();
+    expect(firstPortalUrl).toMatch(PORTAL_URL_RE);
 
-    // The browser is now on the stub URL — capture it for uniqueness check.
-    const firstStripeUrl = page.url();
-    expect(firstStripeUrl).toMatch(PORTAL_URL_RE);
-
-    // --- Second click: navigate back, click again — MUST re-fetch. ---
+    // --- Second click: navigate back, click again — MUST re-fetch. ---------
     await page.goto("/en/customer/billing");
-    await expect(page.getByTestId("portal-open-button")).toBeEnabled();
-    await page.getByTestId("portal-open-button").click();
+    await expect(page.getByTestId("billing-portal-btn")).toBeEnabled();
+    await page.getByTestId("billing-portal-btn").click();
     await expect(page.getByTestId("stripe-portal-stub")).toBeVisible();
 
+    // No-cache invariant: the second click issued a fresh POST (the server mints
+    // a new single-use session on each call; the E2E mock's URL is fixed, so we
+    // assert the re-POST rather than URL uniqueness here).
     expect(sessionPosts.length).toBe(2);
-    const secondStripeUrl = page.url();
-    expect(secondStripeUrl).toMatch(PORTAL_URL_RE);
-    expect(secondStripeUrl).not.toEqual(firstStripeUrl);
+    expect(page.url()).toMatch(PORTAL_URL_RE);
   });
 });
