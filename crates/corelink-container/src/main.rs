@@ -95,6 +95,37 @@ const fn email_hash_salt_missing_in_prod(prod: bool, salt_present: bool) -> bool
     prod && !salt_present
 }
 
+/// The REVENUE path's must-arm control. Each of the four cache-tier
+/// `STRIPE_PRICE_ID_*` env vars ([`TIER_PRICE_ENV_TABLE`]) must resolve to a real
+/// Stripe price id in prod. When one is unset/empty, [`build_tier_selector_from`]
+/// silently registers the literal `plan_{tier}` placeholder (F-001 back-compat)
+/// — which a real Stripe `price_live_…` event can NEVER match, so the container
+/// webhook materializer resolves `UnknownPlan` → 422, Stripe stops retrying, and
+/// a PAYING customer is stranded on the free serving path with NO alarm. Solo
+/// ($30/mo) is the primary self-serve SMB tier, so this is launch-critical.
+/// Returns the env-var names still unset/empty in prod (empty ⇒ armed). Pure and
+/// injectable so the policy is unit-tested without the process environment
+/// (mirrors [`email_hash_salt_missing_in_prod`]). Keep the container's map
+/// identical to the signup-worker's reverse map (`apps/signup-worker/src/webhooks/
+/// stripe.ts`) — divergence re-opens the same `UnknownPlan` → 422 seam.
+fn cache_tier_price_ids_missing_in_prod<F>(prod: bool, lookup: F) -> Vec<&'static str>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    if !prod {
+        return Vec::new();
+    }
+    TIER_PRICE_ENV_TABLE
+        .iter()
+        .filter(|(env_name, _fallback, _tier)| {
+            // MSRV 1.80 — `Option::is_none_or` is 1.82; `map_or(true, …)` is the
+            // MSRV-safe equivalent (unset OR whitespace-only ⇒ "missing").
+            lookup(env_name).map_or(true, |v| v.trim().is_empty())
+        })
+        .map(|(env_name, _, _)| *env_name)
+        .collect()
+}
+
 /// Canonical `(env-var-name, literal-fallback-key, tier)` table for the
 /// container Stripe-webhook tier reconciliation (F-001).
 ///
@@ -392,6 +423,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .unwrap_or(false);
             if email_hash_salt_missing_in_prod(prod_by_independent_signal, email_hash_salt_present) {
                 missing.push("EMAIL_HASH_SALT (CTRL-PRIV-001 email_hash pseudonym salt)");
+            }
+            // STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}: the revenue path. The
+            // container is a live Stripe activation writer; an unset cache-tier
+            // price id silently maps a real `price_live_…` to the un-matchable
+            // `plan_{tier}` placeholder → `UnknownPlan` → 422 on a paying customer
+            // (see cache_tier_price_ids_missing_in_prod). Must-arm in prod, and
+            // kept identical to the signup-worker's reverse map.
+            for env_name in
+                cache_tier_price_ids_missing_in_prod(prod_by_independent_signal, |n| {
+                    std::env::var(n).ok()
+                })
+            {
+                missing.push(env_name);
             }
             if !missing.is_empty() {
                 tracing::error!(
@@ -942,8 +986,8 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
     use super::{
-        build_runners_resolver_from, build_tier_selector_from, email_hash_salt_missing_in_prod,
-        should_fatal_on_missing_gate,
+        build_runners_resolver_from, build_tier_selector_from, cache_tier_price_ids_missing_in_prod,
+        email_hash_salt_missing_in_prod, should_fatal_on_missing_gate,
     };
     use corelink_billing_stripe_materializer::{
         RunnersEntitlement, RunnersEntitlementResolver, TierSelectError, TierSelector,
@@ -965,6 +1009,57 @@ mod tests {
         assert!(!should_fatal_on_missing_gate(false, false));
         // dev/CI + gate present → OK.
         assert!(!should_fatal_on_missing_gate(false, true));
+    }
+
+    /// Revenue-path truth table: in prod the boot guard names EXACTLY the
+    /// cache-tier `STRIPE_PRICE_ID_*` env vars that are unset/empty (the case
+    /// where a real `price_live_…` would fall back to the un-matchable
+    /// `plan_{tier}` placeholder → `UnknownPlan` → 422 on a paying customer).
+    /// Non-prod is never gated (dev/CI + fixture deployments keep the literal
+    /// fallbacks). A fully-configured prod map arms clean (empty result).
+    #[test]
+    fn cache_tier_price_ids_missing_names_exactly_the_unset_tiers_in_prod() {
+        fn map_of(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect()
+        }
+
+        // prod + all four set → armed (empty).
+        let full = map_of(&[
+            ("STRIPE_PRICE_ID_SOLO", "price_live_solo"),
+            ("STRIPE_PRICE_ID_STARTER", "price_live_starter"),
+            ("STRIPE_PRICE_ID_PRO", "price_live_pro"),
+            ("STRIPE_PRICE_ID_MAX", "price_live_max"),
+        ]);
+        assert!(cache_tier_price_ids_missing_in_prod(true, |n| full.get(n).cloned()).is_empty());
+
+        // prod + Solo unset → names EXACTLY Solo (the primary-tier-unsellable case).
+        let no_solo = map_of(&[
+            ("STRIPE_PRICE_ID_STARTER", "price_live_starter"),
+            ("STRIPE_PRICE_ID_PRO", "price_live_pro"),
+            ("STRIPE_PRICE_ID_MAX", "price_live_max"),
+        ]);
+        assert_eq!(
+            cache_tier_price_ids_missing_in_prod(true, |n| no_solo.get(n).cloned()),
+            vec!["STRIPE_PRICE_ID_SOLO"]
+        );
+
+        // prod + a whitespace-only value counts as unset (trim → empty).
+        let blank_pro = map_of(&[
+            ("STRIPE_PRICE_ID_SOLO", "price_live_solo"),
+            ("STRIPE_PRICE_ID_STARTER", "price_live_starter"),
+            ("STRIPE_PRICE_ID_PRO", "   "),
+            ("STRIPE_PRICE_ID_MAX", "price_live_max"),
+        ]);
+        assert_eq!(
+            cache_tier_price_ids_missing_in_prod(true, |n| blank_pro.get(n).cloned()),
+            vec!["STRIPE_PRICE_ID_PRO"]
+        );
+
+        // NON-prod is never gated, even with every price id unset.
+        assert!(cache_tier_price_ids_missing_in_prod(false, |_| None).is_empty());
     }
 
     /// CAA-360 MEDIUM truth table: the boot guard refuses to boot ONLY when prod
