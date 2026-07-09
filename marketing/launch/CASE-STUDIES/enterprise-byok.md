@@ -33,7 +33,7 @@ The customer's existing build infrastructure was a hybrid of self-hosted caches 
 The customer selected CoreLink as their enterprise BYOK lighthouse based on:
 
 - **Customer-managed kill switch** semantics as a structural property (`INV-BYOK-CRYPTO-SOVEREIGNTY`), not a configurable opt-in.
-- **Ed25519 erasure attestation** with NIST SP 800-88 Rev. 1 crypto-erase classification (`INV-ERASURE-ATTESTATION-SIGNED`).
+- **Verifiable crypto-erasure** with NIST SP 800-88 Rev. 1 crypto-erase classification (`INV-ERASURE-ATTESTATION-SIGNED`); a customer-served **Ed25519 erasure attestation** is on the near-term roadmap.
 - **`INV-REGION-NO-CROSS-LEAK`** as a TLA+-verified property in the tenant isolation specification.
 - **External pentest report** with retest, available under NDA pre-purchase.
 - **DPA + SCC modules** Legal-reviewed by external EU privacy counsel (per WI-S20-005) before signature.

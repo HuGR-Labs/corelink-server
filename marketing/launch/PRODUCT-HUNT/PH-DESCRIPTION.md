@@ -7,15 +7,15 @@
 
 ## Recommended description
 
-> CoreLink is a multi-tenant, content-addressable remote cache for Bazel, Buck2, and RBE workloads. Built on Cloudflare's edge. TLA+ verified tenant isolation. BYOK across AWS, GCP, Azure, Vault. Customer-managed kill switch. Four regions. SOC 2 roadmap.
+> CoreLink is a multi-tenant, content-addressable remote cache for Bazel, Buck2, and RBE workloads. Built on Cloudflare's edge. TLA+ verified tenant isolation. BYOK on AWS KMS (more providers on the roadmap). Kill switch. Four regions. SOC 2 roadmap.
 
-**Character count: 258 / 260.**
+**Character count: 248 / 260.**
 
 ## Alternative — compliance-forward
 
-> Multi-tenant Bazel/Buck2/RBE remote cache built on Cloudflare. TLA+ verified isolation, Ed25519 erasure attestation, customer-managed kill switch, 4 regions, BYOK across 4 KMS providers, RFC 6962 audit chain. SOC 2 Type I roadmap. Three lighthouse customers.
+> Multi-tenant Bazel/Buck2/RBE remote cache built on Cloudflare. TLA+ verified isolation, customer-managed kill switch, 4 regions, BYOK on AWS KMS (more providers roadmap), RFC 6962 audit chain. SOC 2 Type I roadmap. Three lighthouse customers.
 
-**Character count: 259 / 260.**
+**Character count: 242 / 260.**
 
 ## Alternative — speed-forward
 

@@ -36,7 +36,7 @@ First, **tenant isolation is a TLA+ invariant, not a marketing word.** We mainta
 
 Second, **the audit chain is a primary artifact, not a logging side-effect.** Every state-changing operation lands in an append-only chain (RFC 6962 Merkle tree construction, RFC 8785 JCS-canonicalized leaves), with daily proof publication. Customers and their auditors can independently re-derive the chain head from raw events. The trust is in the math, not in our word.
 
-Third, **BYOK is real.** Across four KMS providers — AWS KMS, GCP Cloud KMS, Azure Key Vault, and HashiCorp Vault Transit — customers hold the keys, customers wield the kill switch, and erasure produces a signed Ed25519 attestation. The 5-minute hard cap on the DEK cache is bounded by code path, not by configuration. When a customer disables their KEK, every in-flight DEK expires within that window, and after that, CoreLink simply cannot read the tenant's data.
+Third, **BYOK is real.** AWS KMS is available at GA (GCP Cloud KMS, Azure Key Vault, and HashiCorp Vault Transit are on the roadmap): customers hold the keys, customers wield the kill switch, and erasure makes the tenant's data cryptographically unrecoverable — a customer-served signed Ed25519 erasure attestation is on the near-term roadmap. The 5-minute hard cap on the DEK cache is bounded by code path, not by configuration. When a customer disables their KEK, every in-flight DEK expires within that window, and after that, CoreLink simply cannot read the tenant's data.
 
 ## Who CoreLink is for
 
@@ -65,7 +65,7 @@ CoreLink's design treats each of those as non-negotiable. The product is what fa
 
 **Audit chain.** Every operation lands in an append-only, Merkle-rooted audit log. Daily proofs are published. Customers re-derive the root from raw events as a routine integrity exercise.
 
-**BYOK.** Four KMS providers. Envelope encryption with bounded DEK cache. Customer-managed kill switch. Signed Ed25519 erasure attestation.
+**BYOK.** AWS KMS at GA (GCP / Azure / Vault providers on the roadmap). Envelope encryption with bounded DEK cache. Customer-managed kill switch. Verifiable crypto-erasure (customer-served Ed25519 attestation on the roadmap).
 
 **Residency.** Four enumerated regions: WNAM, ENAM, WEUR, SAM. No cross-region leak is a structural invariant.
 

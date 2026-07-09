@@ -11,9 +11,9 @@ tools that default to BYOK, residency honesty, and verifiable audit logs.
 [corelink-cli](https://github.com/HumanGuardrail/corelink-cli)
 
 REAPI v2 compatible cache for Bazel, Buck2, Cargo, npm, pip, OCI Docker
-layers, and ML model registries. Multi-tenant. Per-tenant BYOK across four
-KMS providers (AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault)
-ships at GA, not in pilot. An RFC-6962-style append-only audit chain —
+layers, and ML model registries. Multi-tenant. Per-tenant BYOK ships at GA
+with AWS KMS first (GCP Cloud KMS, Azure Key Vault, and HashiCorp Vault on
+the roadmap), not in pilot. An RFC-6962-style append-only audit chain —
 BLAKE3-addressed, with tenant-replayable verification and Ed25519-signed,
 Object-Lock-immutable heads — is on the roadmap for GA.
 

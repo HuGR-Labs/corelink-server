@@ -59,7 +59,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 | --- | --- | --- |
 | 2.1 | Tenant isolation modeled in `tenant_isolation.tla`, gated in CI | `INV-TenantIsolation`; `apps/docs/docs/trust/index.mdx` |
 | 2.2 | 0 cross-tenant leaks ever | Adversarial E2E + audit-chain reconciliation; pentest tenant-isolation scenario clean + retest clean |
-| 2.3 | BYOK across 4 KMS providers (AWS / GCP / Azure / Vault) | `BLOG-POSTS/02-byok-deep-dive.md#the-four-providers` |
+| 2.3 | BYOK envelope encryption; AWS KMS provider at GA (GCP / Azure / Vault on the roadmap) | `BLOG-POSTS/02-byok-deep-dive.md#the-four-providers`; `apps/docs/docs/explanation/security/byok.mdx` (provider status) |
 | 2.4 | DEK cache TTL hard-capped at 5 minutes (code path, not config) | `crates/corelink-crypto-envelope/src/dek_cache.rs`; ADR-S14-004 |
 | 2.5 | AAD binding: `tenant_id \|\| blob_hash \|\| cache_id` enforced on every wrap | `BLOG-POSTS/02-byok-deep-dive.md#aad-binding-cryptographic-locality` |
 | 2.6 | AEAD primitives: AES-256-GCM, ChaCha20-Poly1305 per provider matrix | `BLOG-POSTS/02-byok-deep-dive.md#the-four-providers` |
@@ -67,7 +67,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 | 2.8 | mTLS edge-to-origin (CTRL-NET-002) | `apps/docs/docs/trust/data-handling.mdx#in-flight` |
 | 2.9 | Client-side BLAKE3 re-hash default-on (CTRL-CAS-002); mismatch raises `COR_CAS_DIGEST_MISMATCH` | `apps/docs/docs/tutorials/quickstart-faq.mdx#12` |
 | 2.10 | `--pat` CLI flag rejected by design (CTRL-CRED-001) | `apps/docs/docs/tutorials/quickstart-faq.mdx#11` |
-| 2.11 | Ed25519-signed erasure attestation; NIST SP 800-88 Rev. 1 crypto-erase classification | `BLOG-POSTS/02-byok-deep-dive.md#erasure-attestation`; `INV-ERASURE-ATTESTATION-SIGNED` |
+| 2.11 | Crypto-erasure live (NIST SP 800-88 Rev. 1 classification); customer-served Ed25519-signed erasure attestation on the roadmap | `BLOG-POSTS/02-byok-deep-dive.md#erasure-attestation`; `INV-ERASURE-ATTESTATION-SIGNED` |
 | 2.12 | External pentest (Pentest-1 firm) clean with post-remediation retest pre-GA | `BLOG-POSTS/01-introducing-corelink.md`; spec contract S-20 §6.1 |
 | 2.13 | Weekly synthetic BYOK chaos drill on lighthouse tenants | `CUSTOMER-PLAYBOOK.md#what-to-look-for-what-to-escalate` |
 | 2.14 | Dual-approval gate on 5 destructive admin ops (`ConfigRollback`, `RetentionPolicyReduce`, `FeatureFlagDisable`, `SecretRotationStart`, `TenantTombstone`) | `CUSTOMER-PLAYBOOK.md#within-48h-of-the-call`; `PAT-DUAL-APPROVAL-001` |
@@ -129,7 +129,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 | 5.7 | Lighthouse program cap: never more than 3 concurrent customers | `CUSTOMER-PLAYBOOK.md#welcome` |
 | 5.8 | 4 enumerated GA regions (WNAM / ENAM / WEUR / SAM); 3 on request (`oce` / `apc` / `mea`) | `BLOG-POSTS/04-multi-region-residency.md`; `apps/docs/docs/trust/data-handling.mdx#residency` |
 | 5.9 | `INV-REGION-NO-CROSS-LEAK` CRITICAL invariant | spec contract registry; `BLOG-POSTS/04` |
-| 5.10 | 4 KMS providers at GA (AWS / GCP / Azure / Vault) | `BLOG-POSTS/02-byok-deep-dive.md` |
+| 5.10 | AWS KMS provider at GA; GCP / Azure / Vault on the roadmap | `BLOG-POSTS/02-byok-deep-dive.md`; `apps/docs/docs/explanation/security/byok.mdx` (provider status) |
 | 5.11 | 4 canonical SDKs at GA (Rust / Python / Go / JS-TS-Browser) all wrapping `corelink-client-verify` | `apps/docs/docs/tutorials/quickstart-faq.mdx#6` |
 | 5.12 | Roadmap-post-GA: Java/Kotlin Q3, Ruby Q4, C#/.NET Q4, Swift community-driven | `apps/docs/docs/tutorials/quickstart-faq.mdx#7` |
 
