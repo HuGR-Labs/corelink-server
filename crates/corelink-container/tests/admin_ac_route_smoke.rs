@@ -3,12 +3,14 @@
 //!
 //! Pin: the route constants in `apps/server/src/routes/ac.rs` +
 //! `apps/server/src/routes/admin.rs` MUST be wired with the
-//! matchit-0.7 (= axum-0.7) `:name` syntax — *not* the matchit-0.8
-//! `{name}` form. DEBT-029 was a latent bug in which the route
-//! constants used `{name}` literals: matchit-0.7 accepted them as
-//! LITERAL path segments at `Router::new()` time (no panic), so
-//! every request with a real `tenant` / `action_digest` / `resource`
-//! value would have returned a router-level `404 Not Found` (the
+//! matchit-0.8 (= axum-0.8) `{name}` syntax — *not* the legacy
+//! matchit-0.7 `:name` form. Post the axum-0.8 migration the grammar
+//! INVERTED: matchit-0.8 treats `:name` as a LITERAL path segment
+//! (the mirror image of the original DEBT-029 bug, where `{name}` was
+//! the literal under matchit-0.7). Wiring a `:name` constant would
+//! therefore accept it as a literal at `Router::new()` time (no
+//! panic), so every request with a real `tenant` / `action_digest` /
+//! `resource` value would return a router-level `404 Not Found` (the
 //! handler never fired).
 //!
 //! These tests defend that behaviour by sending real path-param
@@ -222,18 +224,19 @@ async fn admin_read_route_reaches_handler_and_returns_handler_not_found_404() {
     );
 }
 
-/// Negative pin: requests against the literal pre-fix path
-/// `/v1/admin/read/{resource}` (curly braces in the URI) MUST NOT
-/// match the route after the DEBT-029 fix. This guards against
-/// regression where someone re-introduces the `{name}` form and
-/// the literal-braces request would spuriously match.
+/// Behavioural pin: a request whose path segment is the literal
+/// `{resource}` (percent-encoded curly braces in the URI) still
+/// reaches the handler via the matchit-0.8 `{resource}` CAPTURE — a
+/// capture matches any single non-slash segment, including one that
+/// happens to be literal braces. Paired with the syntax pins below
+/// this guards against regression back to the legacy `:name` form.
 #[tokio::test]
 async fn admin_read_route_does_not_match_literal_braces_uri() {
     let app = admin::router(admin_state_with_gate());
 
     // The encoded form `%7Bresource%7D` is what a buggy client would
-    // send if it didn't substitute the path param. Post-fix the
-    // route only matches `:resource` captures, so a request that
+    // send if it didn't substitute the path param. Under matchit-0.8
+    // the route matches on the `{resource}` capture, so a request that
     // happens to URL-encode `{resource}` still resolves to the
     // handler with the literal string — i.e. the handler receives
     // `{resource}` (after percent-decoding) as the resource name and
@@ -257,26 +260,27 @@ async fn admin_read_route_does_not_match_literal_braces_uri() {
          not-found path"
     );
 
-    // Pin the public route constant has no curly braces — guards
-    // against future regression of the constant itself.
+    // Pin the public route constant uses the matchit-0.8 `{name}`
+    // capture (and NOT the legacy `:name` literal) — guards against
+    // future regression of the constant itself.
     assert!(
-        !admin::ADMIN_READ_ROUTE.contains('{'),
-        "ADMIN_READ_ROUTE must use matchit-0.7 `:name` syntax, not `{{name}}`"
+        !admin::ADMIN_READ_ROUTE.contains(':') && admin::ADMIN_READ_ROUTE.contains("{resource}"),
+        "ADMIN_READ_ROUTE must use matchit-0.8 `{{name}}` syntax, not `:name`"
     );
     assert!(
-        !ac::AC_LOOKUP_ROUTE.contains('{'),
-        "AC_LOOKUP_ROUTE must use matchit-0.7 `:name` syntax, not `{{name}}`"
+        !ac::AC_LOOKUP_ROUTE.contains(':') && ac::AC_LOOKUP_ROUTE.contains("{action_digest}"),
+        "AC_LOOKUP_ROUTE must use matchit-0.8 `{{name}}` syntax, not `:name`"
     );
     assert!(
-        !ac::AC_UPDATE_ROUTE.contains('{'),
-        "AC_UPDATE_ROUTE must use matchit-0.7 `:name` syntax, not `{{name}}`"
+        !ac::AC_UPDATE_ROUTE.contains(':') && ac::AC_UPDATE_ROUTE.contains("{action_digest}"),
+        "AC_UPDATE_ROUTE must use matchit-0.8 `{{name}}` syntax, not `:name`"
     );
 }
 
 /// Construction smoke: every route constant must compose into a
 /// functional axum `Router` on the native target — pins the
 /// `Router::new().route(ROUTE, …)` call path against the live
-/// matchit 0.7 grammar.
+/// matchit 0.8 grammar.
 #[tokio::test]
 async fn route_state_constructs_without_panic_on_native() {
     let (lookup, update, delete, list) = ac::build_handlers();
