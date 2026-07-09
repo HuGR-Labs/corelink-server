@@ -185,6 +185,28 @@ family in one PR. Either is a source change beyond a Cargo-only bump.
   drops `baseUrl`, and `@typescript-eslint` ships a TS-7-compatible release (peer widened
   past `<6.1.0`).
 
+## @cloudflare/workers-types 4 → 5  — HELD (2026-07-09)
+
+- **Packages:** `worker`, `apps/analytics-worker`, `apps/get-corelink-worker`,
+  `apps/signup-worker` (kept on a single version across all 4 workers for consistency).
+- **Blocking error** — `worker/` vitest gate runs `npm install` (the lockfile is
+  gitignored there, and npm — unlike pnpm — is strict about peer resolution):
+
+  ```
+  npm error While resolving: @sentry/cloudflare@10.64.0
+  npm error   peerOptional @cloudflare/workers-types@"^4.x" from @sentry/cloudflare@10.64.0
+  npm error Found: @cloudflare/workers-types@5.20260708.1
+  ```
+
+- **Root cause:** `@sentry/cloudflare@10.64.0` declares
+  `peerOptional @cloudflare/workers-types@"^4.x"`. `npm install` (the actual worker
+  vitest gate) refuses to resolve `^5` against that `^4.x` peer and fails with `ERESOLVE`.
+  `pnpm` tolerates the `peerOptional` mismatch (which is why a local pnpm-only test
+  passed), but **npm is the gate** — so `^5` is not cleanly adoptable. Per policy a break
+  is a hold, not a bypass: no `--legacy-peer-deps`, no `overrides`, no split-version.
+- **Unblocks when:** `@sentry/cloudflare` ships a release widening its
+  `@cloudflare/workers-types` peer to `^5` (or drops the peer).
+
 ---
 
 _Last reviewed: 2026-07-09 (branches `deps/rust-majors-frontier` + `deps/js-majors-frontier`)._
