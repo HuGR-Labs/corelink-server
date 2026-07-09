@@ -22,6 +22,22 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Changed
+- **deps(js) — JS-majors frontier assessed (supersedes dependabot #697); net adoption: none.**
+  The 15 already-on-`main` targets from the prior batch-majors merge (#693) remain the current
+  state (next 16, react-markdown 10, uuid 14, @types/node 26, @types/uuid 11, @vitejs/plugin-react 6,
+  @vitest/coverage-v8 4, eslint-config-next 16, jest-axe 10, jsdom 29, vitest 4, @sentry/cloudflare 10,
+  @clerk/backend 3). The remaining 3 majors are **all held** as genuine upstream breaks — evidence
+  in `docs/operator/dependency-holds.md`: **eslint 10 + @eslint/js 10** (`eslint-plugin-react` has no
+  ESLint-10-compatible release — peer caps at `^9.7`), **typescript 7** (native Go compiler exposes no
+  classic Compiler API → `next build`, docusaurus `tsc`, and `@typescript-eslint` all break), and
+  **@cloudflare/workers-types 5** (`@sentry/cloudflare@10.64.0` pins `peerOptional workers-types ^4.x`;
+  the `worker/` vitest gate installs with strict `npm`, which `ERESOLVE`-fails on `^5` — pnpm masks it).
+  This PR is therefore a documentation change recording the 3 JS/TS holds and superseding #697.
+  Verified along the way: admin-ui lint clean at the preserved bar (rules-of-hooks=error,
+  exhaustive-deps=warn, Compiler suite off), zero suppressions introduced; @sentry/cloudflare/nextjs 10
+  boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
+
 ### Fixed
 - **deploy — repinned all 5 prod container images from the 53-commit-stale `d86b1417-r1` to the live `20a0c323-r1`.**
   `wrangler.toml`'s `[[env.*.containers]].image` lines lagged the actually-running image (CF Containers API confirms prod + syd/nrt/lhr/sam all on `20a0c323-r1`, the #690 go-live merge). A `wrangler deploy`/recycle would have rolled prod BACK to the pre-go-live build. Pins now match reality.

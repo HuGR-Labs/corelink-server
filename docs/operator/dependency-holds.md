@@ -1,13 +1,17 @@
-# Rust dependency holds
+# Dependency holds
 
-Honest, evidenced record of Rust dependency majors that are **intentionally held
-back** — each one was actually attempted (bump → resolve → compile), broke for a
-specific, captured reason, and was reverted rather than force-adopted with a hack
-(no `#[allow]`, no `[patch]`, no pin-around). This file is **documentation, not a
-gate**: it converts vague "we're behind on deps" into a tracked, reproducible hold
-with the exact upstream condition that unblocks each one.
+Honest, evidenced record of dependency majors (Rust and JS/TS) that are
+**intentionally held back** — each one was actually attempted (bump → resolve →
+compile/lint/build), broke for a specific, captured reason, and was reverted
+rather than force-adopted with a hack. This file is **documentation, not a gate**:
+it converts vague "we're behind on deps" into a tracked, reproducible hold with the
+exact upstream condition that unblocks each one.
 
-Toolchain of record for these attempts: **rustc/cargo 1.91.1**
+Do **not** force any of these green with `#[allow]` / `[patch]` / pin-around /
+blanket `eslint-disable` / `@ts-ignore` / skipped tests — a break is a hold, not a
+bypass. Revisit each when its named upstream ships.
+
+Rust toolchain of record for these attempts: **rustc/cargo 1.91.1**
 (`1.91.1-x86_64-apple-darwin`).
 
 ---
@@ -118,4 +122,91 @@ family in one PR. Either is a source change beyond a Cargo-only bump.
 
 ---
 
-_Last reviewed: 2026-07-09 (branch `deps/rust-majors-frontier`)._
+## eslint 9.39.4 → 10.6.0  (+ @eslint/js 9.39.4 → 10.0.1)  — HELD (2026-07-09)
+
+- **Packages:** `apps/admin-ui`, `apps/docs`
+- **Blocking error** (both `admin-ui` and `docs` lint, identical):
+
+  ```
+  ESLint: 10.6.0
+  TypeError: Error while loading rule 'react/display-name': contextOrFilename.getFilename is not a function
+      at resolveBasedir (.../eslint-plugin-react@7.37.5/lib/util/version.js:31)
+  ```
+
+- **Root cause:** ESLint 10 removed the deprecated `context.getFilename()` method.
+  `eslint-plugin-react@7.37.5` (the latest release, pulled transitively via
+  `eslint-config-next@16.2.10` → `eslint-plugin-react: ^7.37.0`, and directly in docs)
+  still calls it. `eslint-plugin-react@latest` declares `peerDependencies.eslint`
+  `^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9.7` — **no published version supports ESLint 10.**
+- **Unblocks when:** `eslint-plugin-react` ships a release that drops the
+  `context.getFilename()` call and widens its ESLint peer to `^10`, and
+  `eslint-config-next` picks it up.
+
+---
+
+## typescript 6.0.3 → 7.0.2  — HELD (2026-07-09)
+
+- **Packages:** all 6 (`admin-ui`, `docs`, `analytics-worker`, `get-corelink-worker`,
+  `signup-worker`, `worker`)
+- **Blocking errors** (TS 7.0.2 is the native Go compiler — it ships the `tsc` CLI but
+  not the classic in-process JS Compiler API that the toolchain consumes):
+
+  1. `apps/admin-ui` — `next build`:
+
+     ```
+     Running TypeScript ...
+     It looks like you're trying to use TypeScript but do not have the required package(s) installed.
+     ...
+     The "id" argument must be of type string. Received undefined
+     Next.js build worker exited with code: 1 and signal: null
+     ```
+     (Next 16's type-check step cannot load the TS 7 Compiler API, decides TS is "not
+     installed", tries to auto-install, and the build worker crashes.)
+
+  2. `apps/docs` — `tsc --noEmit`:
+
+     ```
+     tsconfig.json(4,5): error TS5102: Option 'baseUrl' has been removed. Please remove it from your configuration.
+     ```
+     (`@docusaurus/tsconfig` sets `baseUrl`; TS 7 removed the option.)
+
+  3. `apps/docs` — `eslint`:
+
+     ```
+     @typescript-eslint/typescript-estree@8.61.1 ... getWatchProgramsForProjects.js:45
+     ```
+     (`@typescript-eslint` 8.61 peer is `typescript >=4.8.4 <6.1.0`; it crashes loading
+     the removed watch-program API under TS 7.)
+
+- **Note:** the 4 worker packages typecheck clean under TS 7 (they use the `tsc` CLI
+  only), but TS 7 is held as a single unit rather than split-braining the monorepo's
+  TypeScript major across packages for marginal benefit.
+- **Unblocks when:** Next.js ships TS-7-native Compiler-API support, `@docusaurus/tsconfig`
+  drops `baseUrl`, and `@typescript-eslint` ships a TS-7-compatible release (peer widened
+  past `<6.1.0`).
+
+## @cloudflare/workers-types 4 → 5  — HELD (2026-07-09)
+
+- **Packages:** `worker`, `apps/analytics-worker`, `apps/get-corelink-worker`,
+  `apps/signup-worker` (kept on a single version across all 4 workers for consistency).
+- **Blocking error** — `worker/` vitest gate runs `npm install` (the lockfile is
+  gitignored there, and npm — unlike pnpm — is strict about peer resolution):
+
+  ```
+  npm error While resolving: @sentry/cloudflare@10.64.0
+  npm error   peerOptional @cloudflare/workers-types@"^4.x" from @sentry/cloudflare@10.64.0
+  npm error Found: @cloudflare/workers-types@5.20260708.1
+  ```
+
+- **Root cause:** `@sentry/cloudflare@10.64.0` declares
+  `peerOptional @cloudflare/workers-types@"^4.x"`. `npm install` (the actual worker
+  vitest gate) refuses to resolve `^5` against that `^4.x` peer and fails with `ERESOLVE`.
+  `pnpm` tolerates the `peerOptional` mismatch (which is why a local pnpm-only test
+  passed), but **npm is the gate** — so `^5` is not cleanly adoptable. Per policy a break
+  is a hold, not a bypass: no `--legacy-peer-deps`, no `overrides`, no split-version.
+- **Unblocks when:** `@sentry/cloudflare` ships a release widening its
+  `@cloudflare/workers-types` peer to `^5` (or drops the peer).
+
+---
+
+_Last reviewed: 2026-07-09 (branches `deps/rust-majors-frontier` + `deps/js-majors-frontier`)._
