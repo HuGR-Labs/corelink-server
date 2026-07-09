@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "a51f71a708dd0ce941b337c8b80cdc88df1c5ca9"
+checkpoint_sha: "c484858294cf33191f240d15f6377a82e11b6ea3"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-06-26T00:00:00Z"

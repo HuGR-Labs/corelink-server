@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/routes/public_attestation.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "b04438caa3b3a94d8a83b050305d7ce9d0aa9f80"
+checkpoint_sha: "f60432f83c18768ebdb4e08334e326185905a1e8"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"

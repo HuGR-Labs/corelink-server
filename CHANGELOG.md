@@ -23,6 +23,12 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **OKF wiki — swept the go-live wave's remaining orphaned checkpoints (main C4 gate was red again).**
+  Two more concepts' `checkpoint_sha` were orphaned the same way as #677 when their PRs merged:
+  `b04438ca` (planes/container, tenancy/governance, surfaces/public-packages — #680 G4b OCI-suspend) and
+  `a51f71a` (auth/d1-pat-store — the PAT-scope-label reconcile). Repointed each to its main-history landing
+  commit; the #688 orphan-repair C5b exemption keeps them clean (0 stale, 0 drift). Unblocks the OKF gate on
+  all open PRs. (Root cause is squash/rebase-merging OKF-touching PRs — tracked for a durable process fix.)
 - **OKF wiki — repaired 6 concepts whose `checkpoint_sha` was orphaned when #677 (G4 tenant fast-suspend) merged.**
   #677 pinned its 6 touched concepts (`auth/pat-moat`, `launch/money-path`, `planes/{durable-object,request-flow,worker-edge}`,
   `tenancy/isolation`) to its **pre-merge branch tip** `73419d59`, which git rewrote/replayed at merge to the
