@@ -1,0 +1,99 @@
+name: Docs Reality Gate
+
+# Makes customer-facing doc/marketing drift from code STRUCTURALLY impossible.
+#
+# `docs/knowledge/` (the OKF wiki) is anti-drift-gated against code, but nothing
+# gated `apps/docs/` (product docs), `marketing/`, or `tools/cli/` — so claims
+# drifted silently (a documented `corelink bazel-init` that never existed; a
+# quickstart telling users to hash SHA-256 while the server verifies BLAKE3;
+# marketing selling BYOK-4-providers-GA with the prod KMS wiring still deferred).
+#
+# This gate FAILS a PR when a `corelink <subcommand>` referenced in a code block
+# under those roots is not in the CLI `enum Commands`, when a curated claim rule
+# contradicts an OKF-deferred capability or a canonical code fact, or (best-effort)
+# when a flagship onboarding recipe names an HTTP path that resolves to no wired
+# route. Known in-flight drift is tracked in scripts/docs_reality_allowlist.json
+# (non-fatal here, `--strict` to fail) so the gate is green today yet catches any
+# NEW drift immediately.
+#
+# Fires on PRs that touch the surfaces a claim can drift against:
+#   - the product docs / marketing corpus
+#   - the CLI source (the command truth)
+#   - the OKF concepts a deferred-coherence rule grounds against
+#   - the route tables the endpoint check resolves against
+#   - the validator + allowlist themselves
+#
+# Pin policy: third-party actions pinned to 40-char SHA + version comment.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/docs/**'
+      - 'marketing/**'
+      - 'docs/**'
+      - 'tools/cli/src/**'
+      - 'docs/knowledge/**'
+      - 'crates/**/src/**'
+      - 'worker/src/**'
+      - 'scripts/validate_docs_reality.py'
+      - 'scripts/docs_reality_allowlist.json'
+      - '.github/workflows/docs-reality.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/docs/**'
+      - 'marketing/**'
+      - 'tools/cli/src/**'
+      - 'scripts/validate_docs_reality.py'
+      - 'scripts/docs_reality_allowlist.json'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs-reality:
+    name: Validate customer-facing claims against shipped reality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      # stdlib-only validator: needs only `python3` (ships on every runner).
+      # No actions/setup-python (the self-hosted mac fleet can't provision it).
+      - name: Run docs-reality validator
+        id: validator
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p target/docs-reality
+          python3 scripts/validate_docs_reality.py | tee target/docs-reality/report.txt
+
+      - name: Summarize results in PR
+        if: always()
+        shell: bash
+        run: |
+          if [ -f target/docs-reality/report.txt ]; then
+            {
+              echo "## Docs Reality Gate"
+              echo ""
+              echo '```'
+              tail -30 target/docs-reality/report.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload report (30-day retention)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: docs-reality-report
+          path: target/docs-reality/
+          retention-days: 30
+          if-no-files-found: warn
