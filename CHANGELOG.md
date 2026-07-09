@@ -22,6 +22,19 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **container — fail-closed boot guard on the cache-tier Stripe price map (revenue-path must-arm).**
+  The four `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env vars now join the prod must-arm boot set
+  (alongside `PAT_SIGNING_KEY` / `ERASURE_SALT_KEY` / `EMAIL_HASH_SALT`): when prod is detected (via the
+  independent R2-region/bucket signal) and any is unset/empty, the container refuses to boot (`FATAL`
+  `std::process::exit(1)`) naming the missing tier(s). Previously a missing id let `build_tier_selector`
+  silently fall back to the un-matchable `plan_{tier}` placeholder → a real `price_live_…` event resolved
+  `UnknownPlan` → **422** on a paying customer (Stripe stops retrying, tenant stranded on free serving)
+  with no alarm. Solo ($30/mo) is the primary SMB tier, so this is launch-critical. Non-prod keeps the
+  literal fallbacks (dev/CI/fixtures unchanged). Truth-table unit test added. **Operator note:** merging
+  this makes a complete cache-tier price map a hard prod-deploy requirement — set all four ids on the
+  container prod env (identical to the signup-worker reverse map) before deploying.
+
 ### Fixed
 - **OKF wiki — swept the go-live wave's remaining orphaned checkpoints (main C4 gate was red again).**
   Two more concepts' `checkpoint_sha` were orphaned the same way as #677 when their PRs merged:
