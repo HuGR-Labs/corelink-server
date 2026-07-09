@@ -47,6 +47,25 @@ export function DualApprovalCard({
   onReject,
 }: DualApprovalCardProps): React.ReactElement {
   const [reason, setReason] = React.useState("");
+
+  // Interactivity gate (hydration-safe). The approve/reject controls are
+  // meaningless until React has hydrated: their behaviour lives entirely in the
+  // `onChange`/`onClick` handlers. This page is server-rendered, so the reason
+  // textarea exists in the SSR HTML — and is thus *typeable* — before hydration
+  // wires those handlers. If input lands in that window, the DOM value updates
+  // but `setReason` never fires, so `reason` state stays "" and `approve-btn`
+  // stays permanently disabled while the field LOOKS filled (a CI-only race on
+  // slower/contended runners and on WebKit's event timing; the reported
+  // `toBeEnabled → Received: disabled` failure). Gating interactivity on a
+  // post-mount flag makes it impossible: the field is `disabled` until the
+  // client mounts, so no input can be typed (or `.fill()`ed) before `onChange`
+  // is live. `useState(false)` is identical on the server and the first client
+  // render (no hydration mismatch); the effect flips it right after mount.
+  const [interactive, setInteractive] = React.useState(false);
+  React.useEffect(() => {
+    setInteractive(true);
+  }, []);
+
   const state = dualApprovalState(op);
 
   const isRequestor = currentUserId !== null && currentUserId === op.requestor;
@@ -55,8 +74,13 @@ export function DualApprovalCard({
     op.approvals.some((a) => a.approver === currentUserId);
   const isTerminal = state === "two-of-two" || state === "rejected";
   const approveDisabled =
-    isRequestor || alreadyApproved || isTerminal || reason.trim().length === 0;
-  const rejectDisabled = isTerminal || reason.trim().length === 0;
+    !interactive ||
+    isRequestor ||
+    alreadyApproved ||
+    isTerminal ||
+    reason.trim().length === 0;
+  const rejectDisabled =
+    !interactive || isTerminal || reason.trim().length === 0;
 
   return (
     <section
@@ -109,6 +133,7 @@ export function DualApprovalCard({
               id="reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
+              disabled={!interactive}
               data-testid="approval-reason"
             />
           </Field>

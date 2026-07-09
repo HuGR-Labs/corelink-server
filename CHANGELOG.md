@@ -64,6 +64,17 @@ Each entry cross-references:
   429s; `'unsafe-eval'` is now allowed on `script-src` **only outside production** (prod stays
   eval-free, verified by `tests/csp.test.ts`). Also: `customer-keys` now dismisses the shown-once
   reveal modal (copy → confirm → Done) before revoking, since its scrim overlays the row actions.
+  (4) **`DualApprovalCard` pre-hydration input race (the residual CI-only `byok-rotate` flake).** The
+  op-detail page is server-rendered, so the approval-reason textarea is *typeable* before React
+  hydrates and wires its `onChange`; on a slow/contended CI runner (and on WebKit's event timing) the
+  approver's reason could land in that window — the DOM value updated but `reason` state stayed `""`,
+  so `approve-btn` was `disabled` forever while the field *looked* filled (exactly the reported
+  `toBeEnabled → Received: disabled`). Fixed at the component root: the reason field and approve/reject
+  controls are now gated on a post-mount `interactive` flag (`useState(false)` → `useEffect`, so it is
+  hydration-stable and identical on the server and first client render). The field is `disabled` until
+  the client mounts, so no input can be typed — or `.fill()`-ed — before `onChange` is live; the fix
+  is deterministic regardless of hydration timing (no test sleeps/retries). Verified green across
+  `byok-rotate` + `dsr-approve` at `--repeat-each=8 --workers=1`.
 - **OKF wiki — checkpoint validation is now SQUASH-MERGE RESILIENT (durable fix for the recurring
   #688/#690 orphaned-checkpoint trap).** Root cause: when a feature PR whose OKF concept pins
   `checkpoint_sha` at its OWN pre-merge branch tip is squash/rebase-merged, git rewrites that tip; the
