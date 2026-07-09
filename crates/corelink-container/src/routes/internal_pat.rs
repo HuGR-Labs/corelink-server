@@ -111,7 +111,7 @@ use uuid::Uuid;
 use corelink_pat::{
     mint::mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_ADMIN_AUDIT,
     SCOPE_ADMIN_BILLING, SCOPE_ADMIN_TENANT_R, SCOPE_ADMIN_TENANT_W, SCOPE_ADMIN_TOKENS,
-    SCOPE_ADMIN_USERS, SCOPE_CACHE_RW,
+    SCOPE_ADMIN_USERS, SCOPE_CACHE_R, SCOPE_CACHE_RW,
 };
 
 /// Full admin scope: all admin + cache bits.
@@ -122,6 +122,34 @@ const SCOPE_ADMIN_ALL: u64 = SCOPE_CACHE_RW
     | SCOPE_ADMIN_BILLING
     | SCOPE_ADMIN_AUDIT
     | SCOPE_ADMIN_USERS;
+
+/// Map a mint-request scope LABEL to its canonical PAT bitset.
+///
+/// **Canonical label set** = the persisted `pat.scope` CHECK domain
+/// (`read-only` / `read-write` / `admin`, D1 migration
+/// `0037_signup_orchestration.sql`). This route, the D1 CHECK, and the
+/// persist paths (`worker/src/lib/session_exchange.ts::canonicalizePatScope`,
+/// `scripts/admin/mint-dogfood-pat.sh`) must all agree on this set.
+///
+/// - `read-only`  → [`SCOPE_CACHE_R`]   (cache READ only — a witness /
+///   read-only credential; MUST NOT carry write or admin bits).
+/// - `read-write` → [`SCOPE_CACHE_RW`]  (cache read+write, no admin).
+/// - `admin`      → [`SCOPE_ADMIN_ALL`].
+/// - `cas:rw`     → **back-compat ALIAS** of `read-write` (existing callers —
+///   the token-exchange path sends `cas:rw`). It maps to the SAME bitset as
+///   `read-write`; any D1 persist writes the canonical `read-write` (never
+///   `cas:rw`, which would violate the CHECK).
+///
+/// Returns `None` for an unrecognized label so the route fails CLOSED (400).
+fn scope_label_to_bits(label: &str) -> Option<PatScopes> {
+    match label {
+        "admin" => Some(PatScopes::from_u64(SCOPE_ADMIN_ALL)),
+        // `cas:rw` is a back-compat alias of the canonical `read-write`.
+        "cas:rw" | "read-write" => Some(PatScopes::from_u64(SCOPE_CACHE_RW)),
+        "read-only" => Some(PatScopes::from_u64(SCOPE_CACHE_R)),
+        _ => None,
+    }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Mint concurrency backstop (red-team #7)
@@ -570,10 +598,13 @@ async fn handle_mint(
     };
 
     // ── 2. Map scope label to PatScopes bitset ─────────────────────────────────
-    let scopes = match req.scopes.as_str() {
-        "admin" => PatScopes::from_u64(SCOPE_ADMIN_ALL),
-        "cas:rw" | "read-write" => PatScopes::from_u64(SCOPE_CACHE_RW),
-        other => {
+    // Canonical label set = the persisted `pat.scope` CHECK domain
+    // (`read-only`/`read-write`/`admin`); `cas:rw` is a back-compat alias of
+    // `read-write`. See [`scope_label_to_bits`].
+    let scopes = match scope_label_to_bits(req.scopes.as_str()) {
+        Some(s) => s,
+        None => {
+            let other = req.scopes.as_str();
             tracing::warn!(scope = other, "internal_pat: unknown scope label");
             return (
                 StatusCode::BAD_REQUEST,
@@ -930,6 +961,129 @@ mod tests {
         );
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── scope-label reconciliation (mint ⇄ persist CHECK ⇄ bitset) ────────────
+
+    /// The canonical `pat.scope` CHECK domain (D1 migration 0037). Every label
+    /// this route accepts MUST canonicalize into this set, or its persisted row
+    /// violates the CHECK and the token never authenticates.
+    const PERSIST_CHECK_DOMAIN: [&str; 3] = ["read-only", "read-write", "admin"];
+
+    /// The CHECK-valid `pat.scope` a given mint label persists as — mirrors
+    /// `worker/src/lib/session_exchange.ts::canonicalizePatScope` and
+    /// `scripts/admin/mint-dogfood-pat.sh`'s CANON map. `cas:rw` MUST collapse
+    /// to `read-write` (never the raw `cas:rw`, which fails the CHECK).
+    fn canonical_persist_label(label: &str) -> &'static str {
+        match label {
+            "admin" => "admin",
+            "cas:rw" | "read-write" => "read-write",
+            "read-only" => "read-only",
+            other => panic!("label {other:?} has no canonical persist mapping"),
+        }
+    }
+
+    #[test]
+    fn scope_labels_reconcile_bits_and_persist_check() {
+        use corelink_pat::{SCOPE_ADMIN_TOKENS, SCOPE_CACHE_W};
+
+        // (label, expects_read, expects_write, expects_admin)
+        let cases = [
+            ("read-only", true, false, false),
+            ("read-write", true, true, false),
+            ("cas:rw", true, true, false), // back-compat alias of read-write
+            ("admin", true, true, true),
+        ];
+
+        for (label, want_read, want_write, want_admin) in cases {
+            // 1. Mint route ACCEPTS the label (no 400).
+            let bits = scope_label_to_bits(label)
+                .unwrap_or_else(|| panic!("mint route must accept label {label:?}"));
+
+            // 2. The resulting bitset is correct — read-only carries cache-READ
+            //    but NOT write (and never an admin bit).
+            assert_eq!(
+                bits.has(SCOPE_CACHE_R),
+                want_read,
+                "{label}: cache-READ bit"
+            );
+            assert_eq!(
+                bits.has(SCOPE_CACHE_W),
+                want_write,
+                "{label}: cache-WRITE bit"
+            );
+            assert_eq!(
+                bits.has(SCOPE_ADMIN_TOKENS),
+                want_admin,
+                "{label}: admin bit"
+            );
+
+            // 3. It canonicalizes into the persisted CHECK domain (a
+            //    CHECK-valid row) — and `cas:rw` persists as `read-write`.
+            let persist = canonical_persist_label(label);
+            assert!(
+                PERSIST_CHECK_DOMAIN.contains(&persist),
+                "{label} → {persist:?} must be in the pat.scope CHECK domain"
+            );
+            assert_ne!(persist, "cas:rw", "cas:rw must never persist verbatim");
+        }
+    }
+
+    #[test]
+    fn read_only_bits_are_read_not_write() {
+        // A witness / read-only credential must NOT require or carry write.
+        use corelink_pat::SCOPE_CACHE_W;
+        let bits = scope_label_to_bits("read-only").expect("read-only is mintable");
+        assert!(bits.has(SCOPE_CACHE_R), "read-only must grant cache READ");
+        assert!(
+            !bits.has(SCOPE_CACHE_W),
+            "read-only must NOT grant cache WRITE"
+        );
+    }
+
+    #[test]
+    fn cas_rw_alias_matches_read_write_bits() {
+        assert_eq!(
+            scope_label_to_bits("cas:rw").map(PatScopes::to_u64),
+            scope_label_to_bits("read-write").map(PatScopes::to_u64),
+            "cas:rw must be a pure back-compat alias of read-write"
+        );
+    }
+
+    #[tokio::test]
+    async fn mints_read_only_pat() {
+        // read-only was previously REJECTED by the mint route (400); it must now
+        // mint end-to-end so a witness/read-only cred needs no admin.
+        let state = test_state();
+        let app = router(state.clone());
+        let req = make_mint_request(
+            &state.internal_auth_key,
+            serde_json::json!({
+                "tenant_id": Uuid::now_v7(),
+                "principal_id": Uuid::now_v7(),
+                "scopes": "read-only",
+                "ttl_seconds": 86400
+            }),
+        );
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn mints_read_write_pat() {
+        let state = test_state();
+        let app = router(state.clone());
+        let req = make_mint_request(
+            &state.internal_auth_key,
+            serde_json::json!({
+                "tenant_id": Uuid::now_v7(),
+                "principal_id": Uuid::now_v7(),
+                "scopes": "read-write",
+                "ttl_seconds": 86400
+            }),
+        );
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     // ── #7: mint concurrency backstop (in-flight limiter) ─────────────────────

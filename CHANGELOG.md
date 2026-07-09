@@ -32,6 +32,20 @@ Each entry cross-references:
   an ancestor of the base ref) is now exempt from the phantom-reconcile body-edit requirement — repointing an
   orphan is a mandatory C4 repair with nothing to re-read, not a reconcile. Genuine phantom advances (on-main
   prev) stay fully gated; proven by a new `assert_c5b_orphan_exempt` git-harness fixture (62/62).
+- **container — PAT scope labels reconciled across the mint route, the persisted `pat.scope` CHECK, and the dogfood script (a `read-only` credential now mints end-to-end).**
+  Three layers disagreed on the accepted PAT scope vocabulary: the mint route (`routes/internal_pat.rs`) accepted
+  `admin | cas:rw | read-write` but REJECTED `read-only` with `400 invalid_scope`; the persisted `pat.scope` CHECK
+  (D1 migration 0037) is `IN ('read-write','read-only','admin')`, so `cas:rw` would VIOLATE it; and
+  `mint-dogfood-pat.sh` advertised `cas:rw|read-only|admin`. Net: only `admin`/`read-write` worked end-to-end and a
+  witness/`read-only` credential could not be minted at all (it should NOT require `admin`). Reconciled on the
+  persisted CHECK domain `{read-only, read-write, admin}` as canonical: the mint route now ACCEPTS `read-only` →
+  `SCOPE_CACHE_R` (cache READ, no write/admin), `read-write` → `SCOPE_CACHE_RW`, `admin` → `SCOPE_ADMIN_ALL`, with
+  `cas:rw` kept as a back-compat ALIAS of `read-write` (same bits); the mapping is extracted into the testable
+  `scope_label_to_bits()` helper. `mint-dogfood-pat.sh` sends the canonical label to BOTH the mint route and the
+  D1 INSERT so the minted bits and persisted label can never disagree. `signup-worker`'s `canonicalizePatScope`
+  already maps `cas:rw` → `read-write` (unchanged, confirmed). Tests mint each of
+  `{read-only, read-write, admin, cas:rw-alias}` and assert the bitset is correct (`read-only` has cache-READ but
+  NOT write) and each canonicalizes into the `pat.scope` CHECK domain (`cas:rw` never persists verbatim).
 - **worker — Track-B `fva_minutes` was never emitted for githugr-issuer sessions (the erase flow's actual path).**
   `verifyClerkSessionAndResolveTenant` early-returns to `verifyGithugrSession` for `clerk.githugr.com`
   sessions (the multi-issuer path) *before* the CoreLink-path fva capture ran — so the real-user erase flow,
