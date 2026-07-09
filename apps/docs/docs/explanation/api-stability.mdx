@@ -24,7 +24,7 @@ confidence. This page is the **single source of truth** for what that contract
 is — what we promise, what we don't, and what changes look like in practice.
 
 For the per-endpoint tier matrix, see
-[`specs/_audits/sealed/2026-05-15-api-stability-baseline.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-api-stability-baseline.md).
+[`specs/_audits/sealed/2026-05-15-api-stability-baseline.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-api-stability-baseline.md).
 
 ---
 
@@ -100,7 +100,7 @@ the latest; clients that need determinism pin.
 
 | Change                                    | SDK semver bump   | API change required?      |
 |-------------------------------------------|-------------------|---------------------------|
-| New optional argument                      | Minor (e.g. 1.4 → 1.5) | No                        |
+| New optional argument                      | Minor (for example, 1.4 → 1.5) | No                        |
 | New method                                 | Minor              | No                        |
 | Bug fix preserving signature               | Patch              | No                        |
 | Removed/renamed method                     | **Major**          | **Yes** (deprecation cycle) |
@@ -139,7 +139,7 @@ deprecated: true
 x-sunset-date: "2028-05-15"        # ISO-8601; ≥ 730d future for GA, ≥ 90d for Preview
 x-deprecated-since: "2026-05-15"
 x-replaced-by: "/v2/pats"          # canonical successor, or "" if no successor
-x-deprecation-issue: "https://github.com/humangr-labs/corelink-server/issues/4321"
+x-deprecation-issue: "https://github.com/HumanGuardrail/corelink-server/issues/4321"
 ```
 
 The CI gate (`.github/workflows/api-deprecation-check.yml`) **fails the PR**
@@ -169,7 +169,7 @@ Link: </v2/pats>; rel="successor-version"
   "detail": "POST /v1/pats was sunset on 2028-05-15. Use POST /v2/pats.",
   "sunset_date": "2028-05-15",
   "replaced_by": "/v2/pats",
-  "deprecation_issue": "https://github.com/humangr-labs/corelink-server/issues/4321"
+  "deprecation_issue": "https://github.com/HumanGuardrail/corelink-server/issues/4321"
 }
 ```
 
@@ -270,12 +270,12 @@ report uploaded to `specs/_audits/api-deprecations.json`.
 
 ## 7. Cross-references
 
-- [Trust Center](/trust) — overall trust posture; this page links from "API contract".
-- [Roadmap §7 R-7 — Evidence Gate](https://github.com/humangr-labs/corelink-server/blob/main/ROADMAP-TO-GA.md#7-wave-r-7--evidence-gate-depends-on-r-5--r-6-sustained-7-days-2-agents) — promotes the GA tier as part of the GA gate.
-- [Per-endpoint stability baseline](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-api-stability-baseline.md) — current tier of every endpoint.
+- [Trust Center](/trust) — overall trust posture; this page links from "API contract."
+- [Roadmap §7 R-7 — Evidence Gate](https://github.com/HumanGuardrail/corelink-server/blob/main/ROADMAP-TO-GA.md#7-wave-r-7--evidence-gate-depends-on-r-5--r-6-sustained-7-days-2-agents) — promotes the GA tier as part of the GA gate.
+- [Per-endpoint stability baseline](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-api-stability-baseline.md) — current tier of every endpoint.
 - [API reference (REST)](/reference/api/).
 - [API reference (REAPI gRPC)](/reference/reapi/).
-- [Sales FAQ — API stability](https://github.com/humangr-labs/corelink-server/blob/main/marketing/sales/API-STABILITY-FAQ.md).
+- [Sales FAQ — API stability](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/sales/API-STABILITY-FAQ.md).
 
 ---
 

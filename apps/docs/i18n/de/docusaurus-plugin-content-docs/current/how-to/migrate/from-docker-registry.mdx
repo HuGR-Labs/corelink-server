@@ -41,7 +41,7 @@ registry, not the registry itself. Your `docker push` still hits
 Harbor/Quay; Harbor/Quay's storage driver then writes blobs to
 CoreLink CAS instead of S3 or local disk. Full OCI distribution
 endpoints (`/v2/`) are on the post-GA roadmap; track
-[`RFC-OCI-DIST-001`](https://github.com/humangr-labs/corelink-server/issues?q=RFC-OCI-DIST-001).
+[`RFC-OCI-DIST-001`](https://github.com/HumanGuardrail/corelink-server/issues?q=RFC-OCI-DIST-001).
 :::
 
 ---
@@ -190,7 +190,7 @@ storage:
 ```
 
 The driver is published as
-[`humangr-labs/corelink-registry-driver`](https://github.com/humangr-labs/corelink-server/tree/main/crates/corelink-registry-driver)
+[`HumanGuardrail/corelink-registry-driver`](https://github.com/HumanGuardrail/corelink-server/tree/main/crates/corelink-registry-driver)
 and ships with the registry image at
 `humangr/registry-with-corelink:2.8.x`.
 
@@ -360,4 +360,4 @@ When all five rows pass, the migration is done.
 - [From S3-only artifact storage](./from-s3-only.mdx) — if your "registry" is actually just an S3 bucket of tarballs.
 - [From a Bazel remote cache](./from-bazel-remote-cache.mdx) — if you also build images via Bazel `rules_oci`.
 - [10-minute quickstart](../../tutorials/quickstart-10min.mdx) — install the CLI.
-- [Lighthouse Customer Playbook](https://github.com/humangr-labs/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — if you want a dedicated engineer for a complex multi-cluster cutover.
+- [Lighthouse Customer Playbook](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — if you want a dedicated engineer for a complex multi-cluster cutover.

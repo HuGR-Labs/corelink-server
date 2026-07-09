@@ -16,7 +16,7 @@ sources:
 
 The four canonical CoreLink roles and what each one is for. The role enum is
 defined in
-[`corelink-auth-schema/src/sim.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-auth-schema/src/sim.rs)
+[`corelink-auth-schema/src/sim.rs`](https://github.com/HumanGuardrail/corelink-server/blob/main/crates/corelink-auth-schema/src/sim.rs)
 and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 §4.1 line 174.
 
@@ -49,7 +49,7 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 3. BYOK setup — Owner configures customer-managed KMS root key for
    Enterprise tenants.
 
-### Example workflow: roll back a config change
+### Example workflow: Roll back a config change
 
 ```
 1. Owner-A: clicks "Rollback to version 17" in admin UI
@@ -98,7 +98,7 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 3. Co-signing a config rollback or feature-flag disable initiated by
    another Admin.
 
-### Example workflow: revoke a leaked PAT
+### Example workflow: Revoke a leaked PAT
 
 ```
 1. Admin: receives alert "PAT tok_abc...XYZ used from unusual region".
@@ -144,7 +144,7 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
    `issued_to_user = <their UUID>` for forensics.
 3. ML training pipeline writing intermediate artifacts to CAS.
 
-### Example workflow: mint a CI PAT for yourself
+### Example workflow: Mint a CI PAT for yourself
 
 ```
 1. Developer: opens admin UI → "My tokens" → "Mint new token"
@@ -185,7 +185,7 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 3. Read-only dashboard consumer — internal metrics dashboard wired to a
    `Viewer` PAT.
 
-### Example workflow: hand a SOC 2 auditor temporary access
+### Example workflow: Hand a SOC 2 auditor temporary access
 
 ```
 1. Owner or Admin: invites auditor@firm.com with role=Viewer.

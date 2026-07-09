@@ -40,6 +40,7 @@ Each entry cross-references:
   container prod env (identical to the signup-worker reverse map) before deploying.
 
 ### Changed
+- docs(org-rename): complete humangr-labs→HumanGuardrail in docs site + generator scripts
 - **admin-ui — preserved the prior ESLint bar across the `eslint-config-next` 16 / `react-hooks` 7
   bump.** react-hooks 7 adds the React-Compiler enforcement rule suite (all "error" in `recommended`)
   and now treats a bare `use(...)` call as a React hook. The app has not adopted the React Compiler,

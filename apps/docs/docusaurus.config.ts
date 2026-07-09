@@ -16,7 +16,7 @@ import { getStatuspageUrl } from "./src/statuspage-url";
  * `ALGOLIA_SEARCH_API_KEY`, `ALGOLIA_INDEX_NAME`).
  */
 const SITE_URL = "https://corelink-docs.humangr.com";
-const ORG = "humangr-labs";
+const ORG = "HumanGuardrail";
 const REPO = "corelink-server";
 const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
 
