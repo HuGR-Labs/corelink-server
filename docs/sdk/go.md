@@ -6,7 +6,7 @@
 ## Installation
 
 ```sh
-go get github.com/humangr-labs/corelink-go/v1
+go get github.com/HumanGuardrail/corelink-go/v1
 ```
 
 Requires `libcorelink_go.{so,dylib,a}` compiled from `crates/corelink-go`:
@@ -31,7 +31,7 @@ import (
     "fmt"
     "os"
 
-    corelink "github.com/humangr-labs/corelink-go/v1"
+    corelink "github.com/HumanGuardrail/corelink-go/v1"
 )
 
 func main() {

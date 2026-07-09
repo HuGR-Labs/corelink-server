@@ -121,7 +121,7 @@ Proxy-Authorization, svix-* headers stripped).
   - `coverage.yml`
   - `perf-nightly.yml`
   - `sbom-consolidated.yml`
-- Remote origin: `https://github.com/humangr-labs/corelink-server.git`
+- Remote origin: `https://github.com/HumanGuardrail/corelink-server.git`
 
 **Verdict:** CONFIRMED. Code + issues + CI artifact logs processed.  
 **DPA:** https://docs.github.com/en/site-policy/privacy-policies/github-data-protection-agreement

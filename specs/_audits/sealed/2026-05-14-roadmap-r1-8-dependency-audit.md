@@ -142,7 +142,7 @@ All classed **P2** (post-GA) unless prototype pollution in `next-intl` has an ex
 
 ## 5. Dependabot backlog
 
-**Status: UNABLE TO RETRIEVE.** `gh pr list` failed with `dial tcp 4.228.31.149:443: i/o timeout` to `api.github.com` from the audit sandbox. Both authenticated accounts (`humangr-labs`, `gustavomhss`) hit keyring lookup timeouts followed by network timeouts.
+**Status: UNABLE TO RETRIEVE.** `gh pr list` failed with `dial tcp 4.228.31.149:443: i/o timeout` to `api.github.com` from the audit sandbox. Both authenticated accounts (`HumanGuardrail`, `gustavomhss`) hit keyring lookup timeouts followed by network timeouts.
 
 **Action item:** rerun `gh pr list --label dependencies --json number,title,labels,createdAt --limit 100 > /tmp/r1-8-dependabot.json` from an environment with GitHub network access. Append the parsed table to this audit as §5b.
 

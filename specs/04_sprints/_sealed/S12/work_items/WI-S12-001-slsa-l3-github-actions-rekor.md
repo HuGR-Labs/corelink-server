@@ -60,7 +60,7 @@ pub trait SlsaProvenanceVerifier: Send + Sync {
     async fn verify(
         &self,
         attestation: &SlsaAttestation,           // in-toto v1.0 envelope
-        expected_builder: &BuilderIdentity,      // e.g., "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.X.Y"
+        expected_builder: &BuilderIdentity,      // e.g., "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.X.Y"
     ) -> Result<VerifiedProvenance, VerifyError>;
 }
 
@@ -102,7 +102,7 @@ SLSA L3 attestation é boundary cripto-load-bearing: vulnerabilidades classe Sol
 
 2. **Rekor inclusion proof missing**: attestation assinada mas não publicada em Rekor; offline tampering trivial (cliente não pode detect). Mitigação: INV-SUPPLY-PROVENANCE-IN-REKOR (CRITICAL); deploy webhook (WI-S12-003) checks Rekor inclusion antes rollout; CLI default mode = strict (Rekor missing = error).
 
-3. **Builder identity confusion**: attacker stages malicious workflow em fork; gera attestation; cliente não valida `builder_id` matches expected. Mitigação: `expected_builder` arg obrigatório no CLI (não default); workflow ref pinned em release process; SAN URI Fulcio cert match exato vs expected pattern (`https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/vX.Y.Z`).
+3. **Builder identity confusion**: attacker stages malicious workflow em fork; gera attestation; cliente não valida `builder_id` matches expected. Mitigação: `expected_builder` arg obrigatório no CLI (não default); workflow ref pinned em release process; SAN URI Fulcio cert match exato vs expected pattern (`https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/vX.Y.Z`).
 
 4. **Workflow tampering pré-trigger**: attacker com PR write modifica workflow yaml + triggers release; provenance gerada com workflow malicioso. Mitigação: required code review + CODEOWNERS para `.github/workflows/`; release tag protection; Fulcio cert SAN includes workflow file SHA1 (verifiable post-facto).
 
@@ -116,7 +116,7 @@ SLSA L3 attestation é boundary cripto-load-bearing: vulnerabilidades classe Sol
 
 **Atacante adversarial scenarios**:
 
-- **Attestation forge attempt**: attacker stages release tag em fork; generates valid Fulcio cert (OIDC bound to fork's workflow); publishes em Rekor (public log). Mitigação: customer-side verify enforces `builder_id` matches `humangr-labs/corelink-server` org + workflow ref pinned; fork attestation = `BuilderMismatch` error.
+- **Attestation forge attempt**: attacker stages release tag em fork; generates valid Fulcio cert (OIDC bound to fork's workflow); publishes em Rekor (public log). Mitigação: customer-side verify enforces `builder_id` matches `HumanGuardrail/corelink-server` org + workflow ref pinned; fork attestation = `BuilderMismatch` error.
 
 - **TOCTOU em release pipeline**: attacker amends release commit pós-tag; provenance generated com novo SHA; cliente verifica antiga SHA → false reject. Mitigação: tag protection + signed commits required; release SHA pinned em release notes (immutable Git ref).
 
@@ -132,8 +132,8 @@ SLSA L3 attestation é boundary cripto-load-bearing: vulnerabilidades classe Sol
 ## 3. Customer Impact & Journey
 
 **Persona 1 — SecOps lead em prospect enterprise (RFP evaluation)**:
-- Customer acessa `https://github.com/humangr-labs/corelink-server/releases/v0.X.Y` → download `provenance.intoto.bundle`.
-- Run `corelink-supply-verify verify --bundle provenance.intoto.bundle --release v0.X.Y --expected-builder "humangr-labs/corelink-server"` → output: `VerifiedProvenance { builder_id: "...", rekor_log_index: 12345678, fulcio_cert_chain_valid: true, ... }`.
+- Customer acessa `https://github.com/HumanGuardrail/corelink-server/releases/v0.X.Y` → download `provenance.intoto.bundle`.
+- Run `corelink-supply-verify verify --bundle provenance.intoto.bundle --release v0.X.Y --expected-builder "HumanGuardrail/corelink-server"` → output: `VerifiedProvenance { builder_id: "...", rekor_log_index: 12345678, fulcio_cert_chain_valid: true, ... }`.
 - Customer-visible diferenciador: 95%+ OSS Rust SaaS opera SLSA L1; CoreLink em L3 = sinal forte para procurement/legal/compliance.
 
 **Persona 2 — Auditor SOC 2 / ISO 27001**:
@@ -253,7 +253,7 @@ Feature: SLSA L3 build provenance + Rekor inclusion + customer-side verify
     Given .github/workflows/release-slsa3.yml configured
     And SLSA generator pinned at v1.10.0
     And Fulcio root cert pinned via TUF
-    And expected_builder = "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.X.Y"
+    And expected_builder = "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.X.Y"
 
   Scenario: Release triggers SLSA L3 attestation
     Given a release tag v0.X.Y published
@@ -266,14 +266,14 @@ Feature: SLSA L3 build provenance + Rekor inclusion + customer-side verify
 
   Scenario: Customer verifies attestation successfully
     Given customer downloads provenance.intoto.bundle
-    When customer runs `corelink-supply-verify verify --bundle provenance.intoto.bundle --release v0.X.Y --expected-builder humangr-labs/corelink-server`
+    When customer runs `corelink-supply-verify verify --bundle provenance.intoto.bundle --release v0.X.Y --expected-builder HumanGuardrail/corelink-server`
     Then output: VerifiedProvenance { builder_id, commit_sha, workflow_ref, rekor_log_index, ... }
     And exit code 0
     And metric corelink_supply_rekor_inclusion_proof_verify_total{outcome="ok"} incremented
 
   Scenario: Forge attempt rejected (builder_id mismatch)
     Given attacker generates attestation em fork "attacker/corelink-server"
-    When customer runs verify with --expected-builder humangr-labs/corelink-server
+    When customer runs verify with --expected-builder HumanGuardrail/corelink-server
     Then VerifyError::BuilderMismatch returned
     And exit code != 0
     And metric corelink_supply_slsa_attestations_total{outcome="builder_mismatch"} incremented
@@ -469,7 +469,7 @@ TLA+ alignment: não-aplicável (build-time controle, não runtime state machine
 
 2. **Fulcio root cert rotation**: simulate sigstore TUF rotation; verify CLI auto-fetches new metadata + verify succeeds. Hypothesis: TUF refresh handles rotation transparently. Procedure: reset local TUF metadata cache; run CLI verify; observe TUF fetch + success. Abort: not applicable (synthetic).
 
-3. **Attestation forge from fork**: red team stages release em `attacker/corelink-server` fork; generates valid Fulcio cert (OIDC bound to fork's workflow); publishes em Rekor (public log); customer-side CLI rejects via builder_id mismatch. Hypothesis: 100% rejection (BuilderMismatch error). Procedure: stage fork release; CLI verify with --expected-builder humangr-labs; observe rejection. Abort: not applicable.
+3. **Attestation forge from fork**: red team stages release em `attacker/corelink-server` fork; generates valid Fulcio cert (OIDC bound to fork's workflow); publishes em Rekor (public log); customer-side CLI rejects via builder_id mismatch. Hypothesis: 100% rejection (BuilderMismatch error). Procedure: stage fork release; CLI verify with --expected-builder HumanGuardrail; observe rejection. Abort: not applicable.
 
 4. **In-toto schema drift attack**: attacker generates attestation com `predicateType: "https://slsa.dev/provenance/v0.0.1"` (old format). Hypothesis: rejected via InTotoSchemaInvalid. Procedure: synthesize old-schema envelope; CLI verify; observe rejection.
 
@@ -522,7 +522,7 @@ PRR HIGH_RISK 11 sign-offs canonical (S-12 ship gate é WI-S12-007; este WI pass
 
 ### Hard blockers
 
-- GitHub Actions OIDC enabled em org `humangr-labs` (operations team task; not blocker para spec).
+- GitHub Actions OIDC enabled em org `HumanGuardrail` (operations team task; not blocker para spec).
 - Sigstore Fulcio + Rekor public instances available (sigstore.dev SLA 99.9%+).
 
 ### Soft blockers

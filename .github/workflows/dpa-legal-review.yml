@@ -12,7 +12,7 @@ name: dpa-legal-review
 # The merge block itself is enforced via:
 #   - the `legal-review-required` branch protection rule on `main`
 #     (configured outside the repo), AND
-#   - `.github/CODEOWNERS` requiring `@humangr-labs/legal` review for
+#   - `.github/CODEOWNERS` requiring `@HumanGuardrail/legal` review for
 #     `legal/dpa/` (see CODEOWNERS update in this WI).
 
 on:
@@ -67,7 +67,7 @@ jobs:
               "- [ ] `legal_review_status` frontmatter advanced to `approved`",
               "- [ ] `specs/_audits/YYYY-MM-DD-legal-review-dpa-vX.Y.Z.md` committed",
               "",
-              "CODEOWNERS automatically requires `@humangr-labs/legal` ",
+              "CODEOWNERS automatically requires `@HumanGuardrail/legal` ",
               "review. Do **not** bypass.",
             ].join("\n");
             const comments = await github.rest.issues.listComments({

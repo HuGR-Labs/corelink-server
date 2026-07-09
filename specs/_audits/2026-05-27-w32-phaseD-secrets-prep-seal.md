@@ -342,7 +342,7 @@ cf-wrangler copy. The GHA copy requires a separate rotation:
 # Generate a fresh value for GHA (separate from the CF value if they differ):
 openssl rand -hex 32
 # Copy the output, then:
-gh secret set DEPLOY_WEBHOOK_SECRET --repo humangr-labs/corelink-server
+gh secret set DEPLOY_WEBHOOK_SECRET --repo HumanGuardrail/corelink-server
 # (GitHub CLI prompts for value)
 ```
 

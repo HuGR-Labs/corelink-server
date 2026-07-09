@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	corelink "github.com/humangr-labs/corelink-go/v1"
+	corelink "github.com/HumanGuardrail/corelink-go/v1"
 )
 
 // TestClientVerifyDefaultOn verifies CTRL-CAS-002: IsClientVerifyEnabled()

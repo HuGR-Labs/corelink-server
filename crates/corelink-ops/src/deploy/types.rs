@@ -53,7 +53,7 @@ pub struct GitHubActor {
     /// GitHub login of the actor.
     pub login: String,
     /// OIDC workflow ref, e.g.
-    /// `"humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"`.
+    /// `"HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"`.
     pub workflow_ref: String,
 }
 
@@ -119,7 +119,7 @@ impl CfDeployWebhook {
 #[non_exhaustive]
 pub struct OciImageRef {
     /// Registry + repository + tag, e.g.
-    /// `"ghcr.io/humangr-labs/corelink-worker:v0.1.0"`.
+    /// `"ghcr.io/HumanGuardrail/corelink-worker:v0.1.0"`.
     pub image: String,
     /// SHA-256 digest of the image manifest, e.g. `"sha256:abc123…"`.
     /// Set after OCI fetch; empty string means "not yet resolved".
@@ -155,7 +155,7 @@ impl OciImageRef {
 ///
 /// The canonical pattern for CoreLink is:
 /// ```text
-/// ^https://github\.com/humangr-labs/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$
+/// ^https://github\.com/HumanGuardrail/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$
 /// ```
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -168,7 +168,7 @@ impl CosignIdentityPattern {
     /// Canonical identity pattern for CoreLink release pipeline.
     pub fn corelink_release() -> Self {
         Self {
-            pattern: r"^https://github\.com/humangr-labs/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$".to_string(),
+            pattern: r"^https://github\.com/HumanGuardrail/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$".to_string(),
         }
     }
 
@@ -187,9 +187,9 @@ impl CosignIdentityPattern {
     pub fn matches_simple(&self, san_uri: &str) -> bool {
         // Structural match: must start with the expected GitHub OIDC prefix
         // and contain the org/repo/workflow path.
-        san_uri.starts_with("https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v")
+        san_uri.starts_with("https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v")
             && san_uri
-                .trim_start_matches("https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v")
+                .trim_start_matches("https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v")
                 .chars()
                 .all(|c| c.is_ascii_digit() || c == '.')
     }
@@ -371,10 +371,10 @@ mod tests {
     fn cosign_identity_pattern_corelink_release_matches() {
         let p = CosignIdentityPattern::corelink_release();
         assert!(p.matches_simple(
-            "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
+            "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0"
         ));
         assert!(p.matches_simple(
-            "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v1.23.456"
+            "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v1.23.456"
         ));
     }
 
@@ -387,16 +387,16 @@ mod tests {
         ));
         // Different workflow
         assert!(!p.matches_simple(
-            "https://github.com/humangr-labs/corelink-server/.github/workflows/build.yml@refs/tags/v0.1.0"
+            "https://github.com/HumanGuardrail/corelink-server/.github/workflows/build.yml@refs/tags/v0.1.0"
         ));
     }
 
     #[test]
     fn oci_image_ref_digest_detection() {
-        let r = OciImageRef::from_tag("ghcr.io/humangr-labs/corelink-worker:v0.1.0");
+        let r = OciImageRef::from_tag("ghcr.io/HumanGuardrail/corelink-worker:v0.1.0");
         assert!(!r.has_digest());
         let r2 = OciImageRef::from_digest(
-            "ghcr.io/humangr-labs/corelink-worker:v0.1.0",
+            "ghcr.io/HumanGuardrail/corelink-worker:v0.1.0",
             "sha256:abc123",
         );
         assert!(r2.has_digest());

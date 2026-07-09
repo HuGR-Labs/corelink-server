@@ -7,7 +7,7 @@ name: Cosign Sign Release Artifacts (WI-S12-003)
 # Workflow contract (WI-S12-003 §6.1.1):
 #
 #   1. Build OCI image from Dockerfile.
-#   2. Push to ghcr.io/humangr-labs/corelink-worker:<tag>.
+#   2. Push to ghcr.io/HumanGuardrail/corelink-worker:<tag>.
 #   3. Cosign sign keyless OIDC → Fulcio short-lived cert (SAN = workflow ref)
 #      → Rekor inclusion proof published.
 #   4. Cosign attest SLSA provenance (from WI-S12-001) + SBOM (from WI-S12-002).
@@ -49,7 +49,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: humangr-labs/corelink-worker
+  IMAGE_NAME: HumanGuardrail/corelink-worker
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────

@@ -11,8 +11,8 @@ name: legal-changes-review
 # The merge block is enforced via:
 #   - the `legal-review-required` branch-protection rule on `main`
 #     (configured outside the repo); AND
-#   - `.github/CODEOWNERS` requiring `@humangr-labs/legal` and
-#     `@humangr-labs/privacy` (DPO) review for `/legal/**`.
+#   - `.github/CODEOWNERS` requiring `@HumanGuardrail/legal` and
+#     `@HumanGuardrail/privacy` (DPO) review for `/legal/**`.
 #
 # Note: This workflow extends, but does NOT replace, `dpa-legal-review.yml`
 # (legacy WI-S19-002 hook, DPA-specific). The two coexist; legal/dpa
@@ -71,8 +71,8 @@ jobs:
               "- [ ] Canonical compliance matrix linked: `specs/03_architecture/compliance_matrix.md`",
               "- [ ] Audit evidence committed under `specs/_audits/YYYY-MM-DD-legal-review-<doc>.md`",
               "",
-              "CODEOWNERS automatically requires `@humangr-labs/legal` ",
-              "and `@humangr-labs/privacy` review. Do **not** bypass.",
+              "CODEOWNERS automatically requires `@HumanGuardrail/legal` ",
+              "and `@HumanGuardrail/privacy` review. Do **not** bypass.",
             ].join("\n");
             const comments = await github.rest.issues.listComments({
               owner, repo, issue_number, per_page: 100,

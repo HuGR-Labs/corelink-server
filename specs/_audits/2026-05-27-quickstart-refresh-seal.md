@@ -184,8 +184,8 @@ UX without breaking users running the current binary.
 | `https://corelink-app.humangr.com` | 200 | WP-7.1 probe target confirmed live |
 | `https://corelink-get.humangr.com` | 200 | WP-7.1 probe target confirmed live |
 | `https://releases.corelink.humangr.com/cli/latest/…` | 200 | Air-gapped fallback (inside `<details>`) |
-| `https://github.com/humangr-labs/corelink-cli/commit/71d7f6a9` | 200 | External GitHub commit |
-| `https://github.com/humangr-labs/corelink-bazel-example` | 200 | External GitHub repo (sealed per INDEX §5) |
+| `https://github.com/HumanGuardrail/corelink-cli/commit/71d7f6a9` | 200 | External GitHub commit |
+| `https://github.com/HumanGuardrail/corelink-bazel-example` | 200 | External GitHub repo (sealed per INDEX §5) |
 | Internal doc links (`../tutorial/04-buck2-quickstart`, etc.) | Docusaurus resolve | Verified paths exist in repo |
 
 **Note on DoD 1 (pnpm build):** agent environment does not have npm/pnpm available;

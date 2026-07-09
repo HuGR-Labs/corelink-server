@@ -95,7 +95,7 @@ jq -s \
         version: 1,
         metadata: {
             timestamp: $ts,
-            tools: [{ vendor: "humangr-labs", name: "corelink-sbom-aggregate", version: $ref }],
+            tools: [{ vendor: "HumanGuardrail", name: "corelink-sbom-aggregate", version: $ref }],
             component: {
                 "bom-ref": ("pkg:cargo/corelink-workspace@" + $ref),
                 type: "application",

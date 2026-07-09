@@ -180,7 +180,7 @@ async fn execute_gc_scenario(scenario: Scenario) -> ScenarioResult {
 1. **TLA+ `gc_correctness.tla` already verified** (Lote 5.13 + 7.1 fixes). This WI integrates CI gate enforcement.
 
 2. **PR fail logic**: TLC red → CI fails → merge blocked; reviewer can override only via **pinned GitHub mechanism** (Lote 10.6bis P0-W6-3 fix):
-   - **CODEOWNERS rule**: `crates/corelink-gc/** specs/tla/gc_correctness.tla @humangr-labs/architect-team @humangr-labs/crypto-sme-team` — modifications to TLA+ spec OR GC code require **2 approving reviews** (1 Architect + 1 Crypto SME group; non-overlapping).
+   - **CODEOWNERS rule**: `crates/corelink-gc/** specs/tla/gc_correctness.tla @HumanGuardrail/architect-team @HumanGuardrail/crypto-sme-team` — modifications to TLA+ spec OR GC code require **2 approving reviews** (1 Architect + 1 Crypto SME group; non-overlapping).
    - **Override workflow** `tla_override_validate.yml`: parses PR body / commit trailers for `Tla-Override-ADR: ADR-XXXX`; asserts (a) ADR file exists at `specs/03_architecture/adrs/ADR-XXXX-*.md`; (b) `doc_status: ACCEPTED`; (c) Architect + Crypto SME approvals in ADR sign-off block. Only on success posts a synthetic green status check that satisfies the required `tla_check` check (canonical workflow filename pós Lote 10.6 cycle 4).
    - **Branch protection** on `main`: `enforce_admins: true` (Lote 10.4bis governance — disables admin-bypass; closes the rubber-stamp regression default).
    - **Without ADR + 2 approvals**: NO override path. Force-push blocked.

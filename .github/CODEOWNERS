@@ -5,7 +5,7 @@
 #
 # Conventions:
 # - Last matching pattern wins per GitHub's CODEOWNERS rules — order matters.
-# - Placeholder team handles (humangr-labs/*) — replace with concrete reviewer
+# - Placeholder team handles (HumanGuardrail/*) — replace with concrete reviewer
 #   names per team once the GitHub org has the teams provisioned.
 # - Cross-link: docs/internal/CODE-REVIEW-CHECKLIST.md (reviewer-side process).
 # - Cross-link: docs/internal/AUTHOR-PRE-PR-CHECKLIST.md (author-side process).
@@ -16,87 +16,87 @@
 # ============================================================================
 # Default owner — catch-all so nothing merges unreviewed.
 # ============================================================================
-*                                 @humangr-labs/engineering
+*                                 @HumanGuardrail/engineering
 
 # ============================================================================
 # Core Rust crates — engineering owns; domain leads listed where applicable.
 # ============================================================================
 
 # Workspace manifest / lock — Architect must review (dep + version policy).
-/Cargo.toml                       @humangr-labs/architects
-/Cargo.lock                       @humangr-labs/architects
+/Cargo.toml                       @HumanGuardrail/architects
+/Cargo.lock                       @HumanGuardrail/architects
 
 # Tooling crates and shared test utils — engineering + architects.
-/crates/corelink-test-utils/      @humangr-labs/engineering @humangr-labs/architects
+/crates/corelink-test-utils/      @HumanGuardrail/engineering @HumanGuardrail/architects
 
 # BYOK / crypto family — AppSec + Architect mandatory.
-/crates/corelink-byok/            @humangr-labs/appsec @humangr-labs/architects
-/crates/corelink-byok-aws/        @humangr-labs/appsec @humangr-labs/architects
-/crates/corelink-byok-azure/      @humangr-labs/appsec @humangr-labs/architects
-/crates/corelink-byok-gcp/        @humangr-labs/appsec @humangr-labs/architects
-/crates/corelink-byok-matrix-test/ @humangr-labs/appsec @humangr-labs/architects
-/crates/corelink-crypto-*/        @humangr-labs/appsec @humangr-labs/architects
+/crates/corelink-byok/            @HumanGuardrail/appsec @HumanGuardrail/architects
+/crates/corelink-byok-aws/        @HumanGuardrail/appsec @HumanGuardrail/architects
+/crates/corelink-byok-azure/      @HumanGuardrail/appsec @HumanGuardrail/architects
+/crates/corelink-byok-gcp/        @HumanGuardrail/appsec @HumanGuardrail/architects
+/crates/corelink-byok-matrix-test/ @HumanGuardrail/appsec @HumanGuardrail/architects
+/crates/corelink-crypto-*/        @HumanGuardrail/appsec @HumanGuardrail/architects
 
 # Audit chain — Privacy + AppSec sign-off (RFC 6962 / RFC 8785 invariants).
-/crates/corelink-audit/           @humangr-labs/appsec @humangr-labs/privacy
-/crates/corelink-audit-chain/     @humangr-labs/appsec @humangr-labs/privacy
+/crates/corelink-audit/           @HumanGuardrail/appsec @HumanGuardrail/privacy
+/crates/corelink-audit-chain/     @HumanGuardrail/appsec @HumanGuardrail/privacy
 
 # Auth / Clerk integration — AppSec required.
-/crates/corelink-auth-schema/     @humangr-labs/appsec
-/crates/corelink-clerk*/          @humangr-labs/appsec
+/crates/corelink-auth-schema/     @HumanGuardrail/appsec
+/crates/corelink-clerk*/          @HumanGuardrail/appsec
 
 # Billing / Stripe — Architect + Finance liaison (replace with team handle).
-/crates/corelink-billing-*/       @humangr-labs/architects @humangr-labs/finance
+/crates/corelink-billing-*/       @HumanGuardrail/architects @HumanGuardrail/finance
 
 # Admin plane — Architect + AppSec (privileged surface).
-/crates/corelink-admin-*/         @humangr-labs/architects @humangr-labs/appsec
+/crates/corelink-admin-*/         @HumanGuardrail/architects @HumanGuardrail/appsec
 
 # Privacy / DSR — Privacy + Legal.
-/crates/corelink-privacy*/        @humangr-labs/privacy @humangr-labs/legal
-/crates/corelink-dsr*/            @humangr-labs/privacy @humangr-labs/legal
+/crates/corelink-privacy*/        @HumanGuardrail/privacy @HumanGuardrail/legal
+/crates/corelink-dsr*/            @HumanGuardrail/privacy @HumanGuardrail/legal
 
 # Rate-limit / abuse — AppSec.
-/crates/corelink-abuse/           @humangr-labs/appsec
-/crates/corelink-rate-limit*/     @humangr-labs/appsec
+/crates/corelink-abuse/           @HumanGuardrail/appsec
+/crates/corelink-rate-limit*/     @HumanGuardrail/appsec
 
 # Server / gRPC entrypoint — Architect (cross-cutting).
-/apps/server/                     @humangr-labs/architects @humangr-labs/engineering
+/apps/server/                     @HumanGuardrail/architects @HumanGuardrail/engineering
 
 # ============================================================================
 # Infra / Terraform / IaC — Architect + AppSec (WI-S13-004 §6.1).
 # ============================================================================
 
 # Terraform IaC — requires Architect + AppSec review
-/infra/terraform/                 @humangr-labs/architects @humangr-labs/appsec
+/infra/terraform/                 @HumanGuardrail/architects @HumanGuardrail/appsec
 
 # Drift detection workflow — AppSec must review (auto-apply forbidden enforcement)
-/.github/workflows/terraform-drift.yml  @humangr-labs/appsec @humangr-labs/sre-leads
+/.github/workflows/terraform-drift.yml  @HumanGuardrail/appsec @HumanGuardrail/sre-leads
 
 # CI lint gate — AppSec owns the no-apply lint
-/scripts/lint_no_terraform_apply.py  @humangr-labs/appsec
+/scripts/lint_no_terraform_apply.py  @HumanGuardrail/appsec
 
 # D1 schema migrations — Architect required (additive-only invariant)
-/migrations/d1/                   @humangr-labs/architects
+/migrations/d1/                   @HumanGuardrail/architects
 
 # RB-FM-206 runbook — SRE Lead owns
-/specs/05_quality/runbooks/RB-FM-206-terraform-drift.md  @humangr-labs/sre-leads
+/specs/05_quality/runbooks/RB-FM-206-terraform-drift.md  @HumanGuardrail/sre-leads
 
 # Slack alert templates — SRE Lead + AppSec
-/infra/slack/                     @humangr-labs/sre-leads @humangr-labs/appsec
+/infra/slack/                     @HumanGuardrail/sre-leads @HumanGuardrail/appsec
 
 # DPA templates (WI-S19-002) — Legal Counsel sign-off mandatory per
 # locale; see specs/_runbooks/RB-DPA-CHANGE.md.
-/legal/dpa/                       @humangr-labs/legal @humangr-labs/privacy
-/.github/workflows/dpa-legal-review.yml  @humangr-labs/legal @humangr-labs/appsec
+/legal/dpa/                       @HumanGuardrail/legal @HumanGuardrail/privacy
+/.github/workflows/dpa-legal-review.yml  @HumanGuardrail/legal @HumanGuardrail/appsec
 
 # All other legal/** artifacts (WI-S20-005) — SLA, sub-processor commitments,
 # SCC reference, breach-notification, DPIA, LIA, residency amendments, etc.
 # Legal Counsel + DPO (privacy) sign-off required.
-/legal/                           @humangr-labs/legal @humangr-labs/privacy
-/.github/workflows/legal-changes-review.yml  @humangr-labs/legal @humangr-labs/privacy @humangr-labs/appsec
+/legal/                           @HumanGuardrail/legal @HumanGuardrail/privacy
+/.github/workflows/legal-changes-review.yml  @HumanGuardrail/legal @HumanGuardrail/privacy @HumanGuardrail/appsec
 
 # Lighthouse legal review tracker — Legal Counsel + DPO own
-/specs/_legal/                    @humangr-labs/legal @humangr-labs/privacy
+/specs/_legal/                    @HumanGuardrail/legal @HumanGuardrail/privacy
 
 # ============================================================================
 # Specs corpus — Architect for architecture; SRE for runbooks; specialists
@@ -104,68 +104,68 @@
 # ============================================================================
 
 # Architecture canon — Architects.
-/specs/03_architecture/           @humangr-labs/architects
+/specs/03_architecture/           @HumanGuardrail/architects
 
 # ADRs — Architects (cross-functional; expand reviewers as needed).
-/specs/03_architecture/adrs/      @humangr-labs/architects
+/specs/03_architecture/adrs/      @HumanGuardrail/architects
 
 # Runbooks — SRE Leads own; AppSec for security-class FMs.
-/specs/_runbooks/                 @humangr-labs/sre-leads
-/specs/05_quality/runbooks/       @humangr-labs/sre-leads
+/specs/_runbooks/                 @HumanGuardrail/sre-leads
+/specs/05_quality/runbooks/       @HumanGuardrail/sre-leads
 
 # Sprint contracts — Architects + Engineering.
-/specs/04_sprints/                @humangr-labs/architects @humangr-labs/engineering
+/specs/04_sprints/                @HumanGuardrail/architects @HumanGuardrail/engineering
 
 # TLA+ specifications — Architects (formal-methods rotation).
-/specs/tla/                       @humangr-labs/architects
+/specs/tla/                       @HumanGuardrail/architects
 
 # ============================================================================
 # .github / CI / workflows — AppSec must review (supply-chain surface).
 # ============================================================================
 
-/.github/                         @humangr-labs/appsec @humangr-labs/sre-leads
-/.github/workflows/               @humangr-labs/appsec @humangr-labs/sre-leads
-/.github/CODEOWNERS               @humangr-labs/architects @humangr-labs/appsec
-/.github/PULL_REQUEST_TEMPLATE.md @humangr-labs/architects @humangr-labs/engineering
-/.github/dependabot.yml           @humangr-labs/appsec
-/.github/SECURITY                 @humangr-labs/appsec
+/.github/                         @HumanGuardrail/appsec @HumanGuardrail/sre-leads
+/.github/workflows/               @HumanGuardrail/appsec @HumanGuardrail/sre-leads
+/.github/CODEOWNERS               @HumanGuardrail/architects @HumanGuardrail/appsec
+/.github/PULL_REQUEST_TEMPLATE.md @HumanGuardrail/architects @HumanGuardrail/engineering
+/.github/dependabot.yml           @HumanGuardrail/appsec
+/.github/SECURITY                 @HumanGuardrail/appsec
 
 # ============================================================================
 # Validation scripts — AppSec + Architects (these gates protect the codebase).
 # ============================================================================
 
-/scripts/                         @humangr-labs/engineering
-/scripts/validate_specs.py        @humangr-labs/architects
-/scripts/validate_references.py   @humangr-labs/architects
-/scripts/check_migrations_additive.py @humangr-labs/architects @humangr-labs/appsec
+/scripts/                         @HumanGuardrail/engineering
+/scripts/validate_specs.py        @HumanGuardrail/architects
+/scripts/validate_references.py   @HumanGuardrail/architects
+/scripts/check_migrations_additive.py @HumanGuardrail/architects @HumanGuardrail/appsec
 
 # ============================================================================
 # Internal engineering docs — process owners.
 # ============================================================================
 
-/docs/internal/                   @humangr-labs/architects @humangr-labs/engineering
-/docs/internal/TECHLEAD-CHECKLIST.md          @humangr-labs/architects
-/docs/internal/CODE-REVIEW-CHECKLIST.md       @humangr-labs/architects
-/docs/internal/AUTHOR-PRE-PR-CHECKLIST.md     @humangr-labs/architects
-/docs/internal/ENGINEERING-ONBOARDING.md      @humangr-labs/architects
-/docs/internal/PERFORMANCE-PLAYBOOK.md        @humangr-labs/architects
-/docs/internal/dep-policy.md                  @humangr-labs/architects @humangr-labs/appsec
-/docs/internal/secrets-*.md                   @humangr-labs/appsec
-/docs/internal/side-channel-defense.md        @humangr-labs/appsec
-/docs/internal/slsa-l3-pipeline.md            @humangr-labs/appsec
-/docs/internal/legal-review-process.md        @humangr-labs/legal
-/docs/internal/dt-dr-runbook.md               @humangr-labs/sre-leads
-/docs/internal/admin-plane.md                 @humangr-labs/appsec @humangr-labs/architects
-/docs/internal/onboarding/                    @humangr-labs/engineering
+/docs/internal/                   @HumanGuardrail/architects @HumanGuardrail/engineering
+/docs/internal/TECHLEAD-CHECKLIST.md          @HumanGuardrail/architects
+/docs/internal/CODE-REVIEW-CHECKLIST.md       @HumanGuardrail/architects
+/docs/internal/AUTHOR-PRE-PR-CHECKLIST.md     @HumanGuardrail/architects
+/docs/internal/ENGINEERING-ONBOARDING.md      @HumanGuardrail/architects
+/docs/internal/PERFORMANCE-PLAYBOOK.md        @HumanGuardrail/architects
+/docs/internal/dep-policy.md                  @HumanGuardrail/architects @HumanGuardrail/appsec
+/docs/internal/secrets-*.md                   @HumanGuardrail/appsec
+/docs/internal/side-channel-defense.md        @HumanGuardrail/appsec
+/docs/internal/slsa-l3-pipeline.md            @HumanGuardrail/appsec
+/docs/internal/legal-review-process.md        @HumanGuardrail/legal
+/docs/internal/dt-dr-runbook.md               @HumanGuardrail/sre-leads
+/docs/internal/admin-plane.md                 @HumanGuardrail/appsec @HumanGuardrail/architects
+/docs/internal/onboarding/                    @HumanGuardrail/engineering
 
 # Customer-facing docs — DocOps + Architects.
-/docs/customer/                   @humangr-labs/architects @humangr-labs/docops
+/docs/customer/                   @HumanGuardrail/architects @HumanGuardrail/docops
 
 # Marketing — Marketing + Legal.
-/marketing/                       @humangr-labs/marketing @humangr-labs/legal
+/marketing/                       @HumanGuardrail/marketing @HumanGuardrail/legal
 
 # Roadmap — final approver only.
-/ROADMAP-TO-GA.md                 @humangr-labs/architects @humangr-labs/founders
+/ROADMAP-TO-GA.md                 @HumanGuardrail/architects @HumanGuardrail/founders
 
 # README / repo-root — Architects.
-/README.md                        @humangr-labs/architects
+/README.md                        @HumanGuardrail/architects

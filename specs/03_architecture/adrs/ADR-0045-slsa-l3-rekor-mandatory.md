@@ -99,7 +99,7 @@ independently without trusting vendor infrastructure:
 
 ### T1: Attestation forge via fork
 Attacker stages release from `attacker/corelink-server`; generates valid Fulcio cert
-(OIDC bound to fork workflow). Mitigated: customer CLI enforces `--expected-builder humangr-labs/corelink-server`.
+(OIDC bound to fork workflow). Mitigated: customer CLI enforces `--expected-builder HumanGuardrail/corelink-server`.
 
 ### T2: Rekor inclusion absent (offline tampering)
 Attacker replaces `provenance.intoto.bundle` in release asset after generation.

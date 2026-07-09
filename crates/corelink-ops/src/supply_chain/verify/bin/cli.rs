@@ -93,8 +93,8 @@ struct VerifyArgs {
 
     /// Expected builder pattern. Must match the Fulcio certificate SAN URI.
     ///
-    /// Can be an org/repo pattern (e.g., `humangr-labs/corelink-server`) or a full
-    /// SAN URI (e.g., `https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0`).
+    /// Can be an org/repo pattern (e.g., `HumanGuardrail/corelink-server`) or a full
+    /// SAN URI (e.g., `https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0`).
     #[arg(long, value_name = "PATTERN")]
     expected_builder: String,
 
@@ -250,7 +250,7 @@ async fn run_verify(args: VerifyArgs) -> i32 {
                 eprintln!(
                     "note: This is a security-critical failure. \
                     Do NOT use this release artifact. \
-                    See https://github.com/humangr-labs/corelink-server/security for reporting."
+                    See https://github.com/HumanGuardrail/corelink-server/security for reporting."
                 );
             }
             exit_code

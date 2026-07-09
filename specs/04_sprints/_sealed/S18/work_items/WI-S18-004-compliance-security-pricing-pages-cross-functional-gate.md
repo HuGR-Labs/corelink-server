@@ -84,7 +84,7 @@ Download CoreLink Server SBOM (CycloneDX 1.5+ per S-12 SEALED):
 cosign verify-blob \
   --signature sbom.cdx.json.sig \
   --certificate sbom.cdx.json.cert \
-  --certificate-identity-regexp "^https://github.com/humangr-labs/corelink-server" \
+  --certificate-identity-regexp "^https://github.com/HumanGuardrail/corelink-server" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   sbom.cdx.json
 ```

@@ -248,7 +248,7 @@ fn render_json_ld(result: &ExportResult, include_proofs: bool) -> Result<Vec<u8>
     let env = JsonLdEnvelope {
         context: vec![
             "https://cloudevents.io/jsonld/context",
-            "https://humangr-labs.github.io/corelink-specs/jsonld/audit-export-v1.jsonld",
+            "https://humanguardrail.github.io/corelink-specs/jsonld/audit-export-v1.jsonld",
         ],
         type_: "CoreLinkAuditExport",
         manifest: &result.manifest,

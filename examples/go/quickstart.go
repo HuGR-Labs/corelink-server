@@ -2,7 +2,7 @@
 //
 // Requires:
 //
-//	go get github.com/humangr-labs/corelink-go/v1
+//	go get github.com/HumanGuardrail/corelink-go/v1
 //	export CORELINK_PAT=<your-pat>
 //	cargo build --release -p corelink-go
 //	CGO_LDFLAGS="-L../../target/release -lcorelink_go" go run quickstart.go
@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"os"
 
-	corelink "github.com/humangr-labs/corelink-go/v1"
+	corelink "github.com/HumanGuardrail/corelink-go/v1"
 )
 
 func main() {

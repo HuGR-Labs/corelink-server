@@ -45,7 +45,7 @@ curl https://www.cloudflarestatus.com/api/v2/status.json | jq '.status.indicator
 
 # 2. Check rollout state via admin API
 curl -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "https://api.corelink.humangr-labs.io/v1/admin/rollout/state?env=staging"
+  "https://api.corelink.HumanGuardrail.io/v1/admin/rollout/state?env=staging"
 
 # 3. Check CF gradual deploy API
 curl -H "Authorization: Bearer $CF_API_TOKEN" \
@@ -70,7 +70,7 @@ wrangler rollback \
 curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "X-Dual-Approver: $APPROVER_USER_ID" \
   -H "X-Approver-Signature: $HMAC_SIG" \
-  "https://api.corelink.humangr-labs.io/v1/admin/ops" \
+  "https://api.corelink.HumanGuardrail.io/v1/admin/ops" \
   -d '{"op_type": "RolloutAbort", "handle_id": "'$HANDLE_ID'"}'
 ```
 
@@ -78,7 +78,7 @@ curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
 ```bash
 # Manually trigger probe via admin API (force re-evaluate gate criteria)
 curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
-  "https://api.corelink.humangr-labs.io/v1/admin/rollout/probe?handle_id=$HANDLE_ID"
+  "https://api.corelink.HumanGuardrail.io/v1/admin/rollout/probe?handle_id=$HANDLE_ID"
 ```
 
 ## SLO-ADMIN-ROLLBACK-RECOVERY breach handling (≤ 60s p99)

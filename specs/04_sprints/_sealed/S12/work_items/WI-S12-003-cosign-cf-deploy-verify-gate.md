@@ -37,14 +37,14 @@ tags: ["wi", "s12", "supply-chain", "cosign", "sigstore", "fulcio", "rekor", "cl
 | Campo | Valor |
 |---|---|
 | ID | WI-S12-003 |
-| Título | Cosign sign release artifacts (Worker WASM bundle + side artifacts) keyless via OIDC (GitHub Actions identity); signature publicada em Rekor + OCI registry attached (`ghcr.io/humangr-labs/corelink-worker:vX.Y.Z`); Cloudflare deploy webhook handler `corelink-deploy-verifier` verifica signature + Rekor inclusion proof + Fulcio chain antes de rollout; binário não-assinado OR sem Rekor inclusion OR com Fulcio chain inválida = rollout blocked + alert SEV-2; INV-SUPPLY-SIGNED-DEPLOY enforced; chaos test "deploy unsigned artifact" + "deploy with Rekor missing" verified |
+| Título | Cosign sign release artifacts (Worker WASM bundle + side artifacts) keyless via OIDC (GitHub Actions identity); signature publicada em Rekor + OCI registry attached (`ghcr.io/HumanGuardrail/corelink-worker:vX.Y.Z`); Cloudflare deploy webhook handler `corelink-deploy-verifier` verifica signature + Rekor inclusion proof + Fulcio chain antes de rollout; binário não-assinado OR sem Rekor inclusion OR com Fulcio chain inválida = rollout blocked + alert SEV-2; INV-SUPPLY-SIGNED-DEPLOY enforced; chaos test "deploy unsigned artifact" + "deploy with Rekor missing" verified |
 | Sprint | S-12 |
 | Lane | HIGH_RISK |
 | Forcing factors | FF-HR-005 (controles supply chain — bypass = blast radius global; cripto-load-bearing) |
 
 ## 1. Intent
 
-Implementar `corelink-deploy-verifier` (Cloudflare Worker) que serve como **hard gate non-bypassable** entre release pipeline e Cloudflare Workers deploy: recebe deploy webhook → busca Cosign signature em OCI registry (`ghcr.io/humangr-labs/corelink-worker:vX.Y.Z` annotated com Cosign sig) → valida signature via Fulcio chain + Rekor inclusion proof → se válido, propaga deploy via Cloudflare API; se inválido, **rejeita deploy + emite alert SEV-2 + persiste audit event**. Foundation que **enforces INV-SUPPLY-SIGNED-DEPLOY** (CRITICAL). Consume provenance attestation de WI-S12-001 (Rekor lookup) + assina via Cosign keyless OIDC (zero long-lived secrets).
+Implementar `corelink-deploy-verifier` (Cloudflare Worker) que serve como **hard gate non-bypassable** entre release pipeline e Cloudflare Workers deploy: recebe deploy webhook → busca Cosign signature em OCI registry (`ghcr.io/HumanGuardrail/corelink-worker:vX.Y.Z` annotated com Cosign sig) → valida signature via Fulcio chain + Rekor inclusion proof → se válido, propaga deploy via Cloudflare API; se inválido, **rejeita deploy + emite alert SEV-2 + persiste audit event**. Foundation que **enforces INV-SUPPLY-SIGNED-DEPLOY** (CRITICAL). Consume provenance attestation de WI-S12-001 (Rekor lookup) + assina via Cosign keyless OIDC (zero long-lived secrets).
 
 ```rust
 // File: crates/corelink-deploy-verifier/src/lib.rs
@@ -60,7 +60,7 @@ pub trait DeployVerifier: Send + Sync {
     async fn verify_and_propagate(
         &self,
         webhook: &CfDeployWebhook,
-        cosign_image_ref: &OciImageRef,        // ghcr.io/humangr-labs/corelink-worker:vX.Y.Z
+        cosign_image_ref: &OciImageRef,        // ghcr.io/HumanGuardrail/corelink-worker:vX.Y.Z
         expected_identity: &CosignIdentityPattern, // expected SAN URI regex
     ) -> Result<DeployPropagated, DeployVerifyError>;
 
@@ -118,7 +118,7 @@ pub struct DeployAuditEvent {
 }
 ```
 
-Workflow: GitHub Actions release-slsa3.yml (WI-S12-001) → `cosign sign --identity-token=$OIDC_TOKEN ghcr.io/humangr-labs/corelink-worker:v0.X.Y` (signs image; publishes em Rekor) → triggers Cloudflare deploy webhook → `corelink-deploy-verifier` Worker validates → if pass, propagate to `wrangler deploy --version-id <X>`; if fail, reject + alert + audit.
+Workflow: GitHub Actions release-slsa3.yml (WI-S12-001) → `cosign sign --identity-token=$OIDC_TOKEN ghcr.io/HumanGuardrail/corelink-worker:v0.X.Y` (signs image; publishes em Rekor) → triggers Cloudflare deploy webhook → `corelink-deploy-verifier` Worker validates → if pass, propagate to `wrangler deploy --version-id <X>`; if fail, reject + alert + audit.
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + risk justification)
 
@@ -134,7 +134,7 @@ Cloudflare Workers deploy é a **last mile** entre release pipeline e production
 
 3. **Fulcio chain invalid**: signature usando attacker's CA (não sigstore Fulcio). Mitigação: Fulcio root cert pinned via TUF; rotation handled automatically.
 
-4. **Identity mismatch**: Cosign signature OK mas SAN URI = `attacker/corelink-server` fork. Mitigação: `expected_identity` regex `^https://github\.com/humangr-labs/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$`.
+4. **Identity mismatch**: Cosign signature OK mas SAN URI = `attacker/corelink-server` fork. Mitigação: `expected_identity` regex `^https://github\.com/HumanGuardrail/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$`.
 
 5. **Replay attack**: attacker captures valid signature de v0.X.Y; deploys em v0.X.(Y+1). Mitigação: signature binds image digest (SHA-256 do bundle); novo bundle = novo digest = novo signature required.
 
@@ -200,9 +200,9 @@ Cripto verifier + deploy gate; HIGH_RISK; FF-HR-005.
 
 1. **`.github/workflows/cosign-sign.yml`** workflow novo (extends release-slsa3.yml):
    - Trigger: post-build job no release-slsa3.yml.
-   - Step 1: build Docker/OCI image bundle do Worker WASM (`docker build -t ghcr.io/humangr-labs/corelink-worker:v0.X.Y .`).
-   - Step 2: push image → `docker push ghcr.io/humangr-labs/corelink-worker:v0.X.Y`.
-   - Step 3: Cosign sign keyless OIDC: `cosign sign --identity-token=$ACTIONS_ID_TOKEN_REQUEST_TOKEN ghcr.io/humangr-labs/corelink-worker:v0.X.Y`.
+   - Step 1: build Docker/OCI image bundle do Worker WASM (`docker build -t ghcr.io/HumanGuardrail/corelink-worker:v0.X.Y .`).
+   - Step 2: push image → `docker push ghcr.io/HumanGuardrail/corelink-worker:v0.X.Y`.
+   - Step 3: Cosign sign keyless OIDC: `cosign sign --identity-token=$ACTIONS_ID_TOKEN_REQUEST_TOKEN ghcr.io/HumanGuardrail/corelink-worker:v0.X.Y`.
    - Step 4: Cosign attest com SLSA provenance + SBOM: `cosign attest --predicate provenance.intoto.jsonl --type slsaprovenance ghcr.io/...`.
    - Permissions: `id-token: write` (OIDC) + `packages: write` (ghcr.io push).
 2. **`crates/corelink-deploy-verifier/`** Cloudflare Worker:
@@ -299,13 +299,13 @@ Feature: Cosign sign + Cloudflare deploy webhook verify hard gate
   Background:
     Given .github/workflows/cosign-sign.yml configured
     And corelink-deploy-verifier Worker deployed em CF
-    And expected_identity = "^https://github\\.com/humangr-labs/corelink-server/\\.github/workflows/release-slsa3\\.yml@refs/tags/v\\d+\\.\\d+\\.\\d+$"
+    And expected_identity = "^https://github\\.com/HumanGuardrail/corelink-server/\\.github/workflows/release-slsa3\\.yml@refs/tags/v\\d+\\.\\d+\\.\\d+$"
     And CF API token IAM scoped to verifier only
 
   Scenario: Successful sign + deploy flow
     Given a release tag v0.X.Y published
     When release-slsa3.yml workflow runs
-    Then Worker WASM bundle built + pushed to ghcr.io/humangr-labs/corelink-worker:v0.X.Y
+    Then Worker WASM bundle built + pushed to ghcr.io/HumanGuardrail/corelink-worker:v0.X.Y
     And Cosign sign keyless OIDC produces signature attached to OCI
     And signature published em Rekor (inclusion proof)
     Given CF deploy webhook triggered with v0.X.Y payload
@@ -320,7 +320,7 @@ Feature: Cosign sign + Cloudflare deploy webhook verify hard gate
     And audit event dev.hugr.corelink.deploy.verified.v1 emitted
 
   Scenario: Unsigned deploy blocked (chaos test)
-    Given attacker stages unsigned image em ghcr.io/humangr-labs/corelink-worker:malicious
+    Given attacker stages unsigned image em ghcr.io/HumanGuardrail/corelink-worker:malicious
     When deploy webhook triggered with malicious payload
     Then verifier returns SignatureInvalid
     And CF API NOT invoked

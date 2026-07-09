@@ -81,7 +81,7 @@ Choose your build system:
 export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"  # placeholder; obtain real PAT via https://app.corelink.humangr.com/tokens
 
 # 2. Clone starter
-git clone https://github.com/humangr-labs/corelink-server.git
+git clone https://github.com/HumanGuardrail/corelink-server.git
 cd corelink-server/examples/bazel-starter
 
 # 3. Build with cache

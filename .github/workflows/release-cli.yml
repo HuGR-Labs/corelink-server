@@ -2,10 +2,10 @@ name: release-cli
 
 # CoreLink CLI cross-platform release pipeline (Stream 2.8).
 #
-# Triggers on version tags cli-v* in humangr-labs/corelink-server.
+# Triggers on version tags cli-v* in HumanGuardrail/corelink-server.
 # Builds 5 platform binaries via cargo-zigbuild (Option A: single
 # ubuntu-22.04 runner, zig cross-compile toolchain), then creates a
-# GitHub Release in the SEPARATE repo humangr-labs/corelink-cli.
+# GitHub Release in the SEPARATE repo HumanGuardrail/corelink-cli.
 #
 # Binary names match the install script contract:
 #   URL="${RELEASE_ORIGIN}/corelink-${OS}-${ARCH}"
@@ -20,7 +20,7 @@ name: release-cli
 #
 # Required GH Secret (set MANUALLY by operator):
 #   CORELINK_CLI_RELEASE_TOKEN  PAT with `repo` scope on
-#                               humangr-labs/corelink-cli
+#                               HumanGuardrail/corelink-cli
 #
 # TODO (v2): cosign keyless signing via GH OIDC.
 #   Wired as a placeholder below; un-stub when ready.
@@ -260,7 +260,7 @@ jobs:
   # release — collect artifacts, create GH Release in THIS repo
   #
   # Same-repo release simplification (2026-05-29):
-  # - Original design used a separate humangr-labs/corelink-cli repo +
+  # - Original design used a separate HumanGuardrail/corelink-cli repo +
   #   CORELINK_CLI_RELEASE_TOKEN PAT for cross-repo upload. That required
   #   a manual operator step (PAT creation + secret config) per the
   #   release-procedure runbook.
@@ -268,10 +268,10 @@ jobs:
   #   GITHUB_TOKEN (with contents:write below) handles upload. Zero
   #   secret config. corelink-cli repo can be archived / repurposed.
   # - The install script (apps/get-corelink-worker) is updated in lock-
-  #   step to point at humangr-labs/corelink-server/releases/latest.
+  #   step to point at HumanGuardrail/corelink-server/releases/latest.
   # -------------------------------------------------------------------
   release:
-    name: create release (humangr-labs/corelink-cli)
+    name: create release (HumanGuardrail/corelink-cli)
     needs: build
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 15
@@ -332,14 +332,14 @@ jobs:
           NOTES_EOF
           # Dynamic line: GITHUB_REF_NAME expands at runtime.
           # shellcheck disable=SC2016
-          echo "Built from \`humangr-labs/corelink-server\` tag \`${GITHUB_REF_NAME}\`." \
+          echo "Built from \`HumanGuardrail/corelink-server\` tag \`${GITHUB_REF_NAME}\`." \
             >> /tmp/release-notes.md
 
       - name: Create GitHub Release in this repo
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --repo humangr-labs/corelink-cli \
+          gh release create "${GITHUB_REF_NAME}" --repo HumanGuardrail/corelink-cli \
             --title "CoreLink CLI ${GITHUB_REF_NAME#cli-}" \
             --notes-file /tmp/release-notes.md
 
@@ -347,4 +347,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.CORELINK_CLI_RELEASE_TOKEN }}
         run: |
-          gh release upload "${GITHUB_REF_NAME}" dist/* --repo humangr-labs/corelink-cli --clobber
+          gh release upload "${GITHUB_REF_NAME}" dist/* --repo HumanGuardrail/corelink-cli --clobber

@@ -65,7 +65,7 @@ Cloudflare Workers rollout:
    a. Cosign signature present and cryptographically valid.
    b. Rekor inclusion proof fetched and validated (Merkle root verified).
    c. Fulcio certificate chain valid (TUF-pinned root; auto-rotation via sigstore-rs).
-   d. SAN URI matches `^https://github\.com/humangr-labs/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$`.
+   d. SAN URI matches `^https://github\.com/HumanGuardrail/corelink-server/\.github/workflows/release-slsa3\.yml@refs/tags/v\d+\.\d+\.\d+$`.
    e. Image digest binding verified (signature binds SHA-256; prevents TOCTOU).
 
 4. **On pass**: verifier calls CF API with pinned digest (not floating tag) →
@@ -174,7 +174,7 @@ security for this trust boundary.
   (per WI-S12-003 §14.s12.003.8).
 - `POST /webhook/deploy` endpoint: wire schema versioned as `webhook-v1.json`
   in `specs/_schemas/`; backward-compatible additions only in v1.
-- Cosign image tag format: `ghcr.io/humangr-labs/corelink-worker:vX.Y.Z`
+- Cosign image tag format: `ghcr.io/HumanGuardrail/corelink-worker:vX.Y.Z`
   (semver tag mandatory; no `latest` or mutable tags).
 
 ## 9. Reusability

@@ -44,14 +44,14 @@ fn make_webhook(tag: &str) -> CfDeployWebhook {
         GitHubActor::new(
             "github-actions[bot]",
             format!(
-                "humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"
+                "HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"
             ),
         ),
     )
 }
 
 fn make_image_ref(tag: &str) -> OciImageRef {
-    OciImageRef::from_tag(format!("ghcr.io/humangr-labs/corelink-worker:{tag}"))
+    OciImageRef::from_tag(format!("ghcr.io/HumanGuardrail/corelink-worker:{tag}"))
 }
 
 fn cases() -> u32 {
@@ -119,7 +119,7 @@ proptest! {
         attacker_san in "https://github\\.com/[a-z]{4,12}/corelink-server/\\.github/workflows/release-slsa3\\.yml@refs/tags/v[0-9]\\.[0-9]\\.[0-9]"
     ) {
         // Only reject if it's not the legitimate org
-        let is_legit = attacker_san.contains("humangr-labs");
+        let is_legit = attacker_san.contains("HumanGuardrail");
         let sink = Arc::new(InMemoryDeployAuditSink::new());
         let verifier = InMemoryDeployVerifier::new_identity_mismatch_from(
             Arc::clone(&sink),
@@ -195,7 +195,7 @@ proptest! {
         let verifier = InMemoryDeployVerifier::with_mode(
             VerificationMode::Signed {
                 rekor_log_index: 999,
-                fulcio_san: "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
+                fulcio_san: "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
                 resolved_digest: "sha256:deadbeef".to_string(),
             },
             failing_sink,

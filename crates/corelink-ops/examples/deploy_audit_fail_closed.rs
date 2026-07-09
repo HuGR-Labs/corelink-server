@@ -38,7 +38,7 @@ fn main() {
     let verifier = InMemoryDeployVerifier::with_mode(
         VerificationMode::Signed {
             rekor_log_index: 987_654_321,
-            fulcio_san: "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
+            fulcio_san: "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
             resolved_digest: "sha256:a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2".to_string(),
         },
         failing_sink,
@@ -55,10 +55,10 @@ fn main() {
         ),
         GitHubActor::new(
             "github-actions[bot]",
-            "humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0",
+            "HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0",
         ),
     );
-    let image_ref = OciImageRef::from_tag("ghcr.io/humangr-labs/corelink-worker:v0.1.0");
+    let image_ref = OciImageRef::from_tag("ghcr.io/HumanGuardrail/corelink-worker:v0.1.0");
     let identity = CosignIdentityPattern::corelink_release();
 
     println!("Simulating audit chain outage (S-09 503) during otherwise valid deploy ...");

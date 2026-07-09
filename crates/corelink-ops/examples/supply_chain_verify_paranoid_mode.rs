@@ -57,7 +57,7 @@ async fn main() {
     // PARANOID MODE: exact SAN URI including the specific release tag
     // This rejects any attestation not pinned to this exact release tag + workflow ref.
     let exact_san = format!(
-        "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{}",
+        "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{}",
         release_tag
     );
     let expected = BuilderIdentity::from_exact(&exact_san);
@@ -97,7 +97,7 @@ async fn main() {
             if e.is_security_failure() {
                 eprintln!();
                 eprintln!("SECURITY ALERT: Do NOT use this artifact.");
-                eprintln!("Report to: https://github.com/humangr-labs/corelink-server/security");
+                eprintln!("Report to: https://github.com/HumanGuardrail/corelink-server/security");
             }
             std::process::exit(e.exit_code());
         }

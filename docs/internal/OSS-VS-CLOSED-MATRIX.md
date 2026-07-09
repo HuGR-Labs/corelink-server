@@ -83,13 +83,13 @@ worker, replica orchestration) stays **closed**.
 
 ## Repo split (post-GA)
 
-Today everything lives in `humangr-labs/corelink-server` (closed).
+Today everything lives in `HumanGuardrail/corelink-server` (closed).
 Post-GA we **split**:
 
 | Repo | Visibility | Contents |
 |---|---|---|
-| `humangr-labs/corelink` | **PUBLIC** | OSS crates (above) + customer-facing docs + SDK examples. |
-| `humangr-labs/corelink-server` | **PRIVATE** | Closed crates + server deployment + compliance docs + internal runbooks. |
+| `HumanGuardrail/corelink` | **PUBLIC** | OSS crates (above) + customer-facing docs + SDK examples. |
+| `HumanGuardrail/corelink-server` | **PRIVATE** | Closed crates + server deployment + compliance docs + internal runbooks. |
 
 Migration WI: `WI-OSS-SPLIT-2026` — scheduled R-8 launch (T-7d). Until then, OSS-flagged crates carry `license = "MIT OR Apache-2.0"` in their `Cargo.toml` so any one-off publish-to-crates.io step is unblocked.
 

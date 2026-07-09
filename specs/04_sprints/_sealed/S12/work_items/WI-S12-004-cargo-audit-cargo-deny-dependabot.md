@@ -132,7 +132,7 @@ updates:
       prefix: "deps"
       include: scope
     reviewers:
-      - "humangr-labs/security"
+      - "HumanGuardrail/security"
 ```
 
 ## 2. Narrative (HIGH_RISK ≥ 300 palavras + risk justification)
@@ -235,7 +235,7 @@ CI gate + dep hygiene; HIGH_RISK; FF-HR-005.
 4. **`.github/dependabot.yml`** config (canonical em §1):
    - Weekly grouped PRs: security-updates + non-security-minor-patch + non-security-major.
    - Schedule: Monday 8am BRT.
-   - Reviewers: `humangr-labs/security` team.
+   - Reviewers: `HumanGuardrail/security` team.
 5. **`.github/workflows/dependabot-auto-merge.yml`** auto-merge workflow:
    - Trigger: Dependabot PR opened.
    - Conditions: PR labeled `dependencies` + update-type `minor` OR `patch` + all CI checks green (cargo-audit + cargo-deny + cargo-test + clippy + clippy `-D warnings`).

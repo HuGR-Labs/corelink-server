@@ -1,4 +1,4 @@
-module github.com/humangr-labs/corelink-go/v1
+module github.com/HumanGuardrail/corelink-go/v1
 
 go 1.21
 

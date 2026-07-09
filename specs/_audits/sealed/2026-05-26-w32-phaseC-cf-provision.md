@@ -28,7 +28,7 @@ references:
 
 Wave 32 Phase C provisions the Cloudflare production infrastructure required for CoreLink deployment, as specified in `specs/_audits/sealed/2026-05-22-wave32-prod-deploy-spec.md §3 Phase C`. Runs in parallel with Phase B (Worker shim). All operations are API-level; no Rust crates or Worker files were touched.
 
-Resources provisioned on Cloudflare account `6a1fc1c6...` (humangr-labs primary):
+Resources provisioned on Cloudflare account `6a1fc1c6...` (HumanGuardrail primary):
 
 - 1 D1 database
 - 5 KV namespaces

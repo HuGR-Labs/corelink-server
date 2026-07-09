@@ -189,7 +189,7 @@ fn scenario_05_purl_confusion_workspace_discriminator() {
     // With workspace flag: gets discriminator → distinguishable
     let (primary_workspace, _) = normalise_purl(malicious_purl, true);
     assert!(
-        primary_workspace.contains("?vcs_url=https://github.com/humangr-labs/corelink-server"),
+        primary_workspace.contains("?vcs_url=https://github.com/HumanGuardrail/corelink-server"),
         "Workspace member PURL must carry vcs_url discriminator"
     );
 

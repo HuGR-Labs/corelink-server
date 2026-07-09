@@ -5,7 +5,7 @@ description: "The post-GA new-engineer ramp — offer to first-PR in ≤5 days, 
 source_files:
   - "docs/internal/ENGINEERING-ONBOARDING.md"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "b5ce2bff384a09047f027082dcf4355136822242"
 provenance: "AUTHORED"
 tags: ["ops", "onboarding", "buddy", "process", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -29,7 +29,7 @@ ad hoc.
 # How it works
 
 - The goal is explicit: first PR merged ≤ 5 days, independent productivity ≤ 30 days `docs/internal/ENGINEERING-ONBOARDING.md:6-6`.
-- Day 0 (manager-owned) provisions laptop, access requests, and ≤ 3 pre-reads `docs/internal/ENGINEERING-ONBOARDING.md:51-98`.
+- Day 0 (manager-owned) provisions laptop, access requests (GitHub org `HumanGuardrail`), and ≤ 3 pre-reads `docs/internal/ENGINEERING-ONBOARDING.md:51-98`.
 - Day 1 runs the first workspace build + spec-validator smoke `docs/internal/ENGINEERING-ONBOARDING.md:114-141`.
 - Day 2 walks the four canonical architecture docs in a fixed order `docs/internal/ENGINEERING-ONBOARDING.md:145-185`.
 - Day 3 traces one request end-to-end crate-by-crate (signup → tier-select → Stripe → audit) `docs/internal/ENGINEERING-ONBOARDING.md:219-237`.

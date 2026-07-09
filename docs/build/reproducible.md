@@ -256,7 +256,7 @@ for any release:
 ```bash
 # 1. Download the reproducible-build-report artifact from the GitHub Actions
 #    run associated with the release tag.
-gh run download --name reproducible-build-report --repo humangr-labs/corelink-server
+gh run download --name reproducible-build-report --repo HumanGuardrail/corelink-server
 
 # 2. Inspect the step summary (printed to GITHUB_STEP_SUMMARY in CI).
 #    The report table includes: outcome, bit_identical, diff_bytes, diff_percentage.

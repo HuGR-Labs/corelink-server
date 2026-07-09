@@ -6,7 +6,7 @@ source_files:
   - "docs/build/reproducible.md"
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md"
   - "rust-toolchain.toml"
-checkpoint_sha: "03c2ae27deb7094fea4009927b90959533dae21e"
+checkpoint_sha: "b5ce2bff384a09047f027082dcf4355136822242"
 provenance: "AUTHORED"
 tags: ["ops", "reproducible-build", "supply-chain", "tamper-detection", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -44,7 +44,8 @@ GA tag's signed freeze in the [release process](/ops/release-process.md); the de
 6. The 5% value was chosen because the hermetic flags reduce diff to <2% in practice while a real backdoor
    typically changes >10% of bytes — 5% catches it with margin
    (`specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md:118-128`).
-7. A customer re-verifies by downloading the `reproducible-build-report` artifact and re-running the same
+7. A customer re-verifies by downloading the `reproducible-build-report` artifact
+   (`gh run download --repo HumanGuardrail/corelink-server`) and re-running the same
    toolchain pin + flags locally to compare the hash (`docs/build/reproducible.md:251-273`).
 
 # Invariants

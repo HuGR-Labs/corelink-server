@@ -15,7 +15,7 @@
 #   3. cp .env.example .env   and paste the token into RUNNER_TOKEN.
 #   4. docker compose up -d
 #   5. Confirm it shows up idle under Settings → Actions → Runners,
-#      or:  gh api repos/humangr-labs/corelink-server/actions/runners \
+#      or:  gh api repos/HumanGuardrail/corelink-server/actions/runners \
 #             --jq '.runners[] | {name, os, status}'
 #
 # Scale to 2+ runners (reproducible-build wants 2) by copying the service block
@@ -33,7 +33,7 @@ services:
     mem_reservation: 512m
     cpus: 2.5
     environment:
-      REPO_URL: https://github.com/humangr-labs/corelink-server
+      REPO_URL: https://github.com/HumanGuardrail/corelink-server
       RUNNER_NAME: corelink-linux-1
       RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env (repo Settings > Actions > Runners > New)}
       RUNNER_SCOPE: repo

@@ -329,7 +329,7 @@ breaking changes that require a `1`-yr deprecation per WI §23.
 
 [jcs]: https://www.rfc-editor.org/rfc/rfc8785
 [cloudevents]: https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md
-[audit_immutability.tla]: https://github.com/humangr-labs/corelink-server/blob/main/specs/tla/audit_immutability.tla
+[audit_immutability.tla]: https://github.com/HumanGuardrail/corelink-server/blob/main/specs/tla/audit_immutability.tla
 [lgpd-18]: https://www.gov.br/anpd/pt-br/canais_atendimento/agente-de-tratamento/lgpd
 [lgpd-38]: https://www.gov.br/anpd/pt-br/canais_atendimento/agente-de-tratamento/lgpd
 [gdpr-30]: https://gdpr-info.eu/art-30-gdpr/

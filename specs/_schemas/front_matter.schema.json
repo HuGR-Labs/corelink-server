@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://humangr-labs.github.io/corelink-specs/schemas/front_matter.schema.json",
+  "$id": "https://humanguardrail.github.io/corelink-specs/schemas/front_matter.schema.json",
   "title": "CoreLink Spec — Front Matter Schema",
   "description": "Valida o YAML front matter obrigatório de todos os documentos de spec do CoreLink. Referência normativa: 00_framework.md §7.11.",
   "type": "object",

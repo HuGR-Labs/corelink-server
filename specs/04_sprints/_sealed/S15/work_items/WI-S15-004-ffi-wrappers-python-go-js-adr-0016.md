@@ -70,7 +70,7 @@ package main
 import (
     "context"
     "os"
-    "github.com/humangr-labs/corelink-go/v1"
+    "github.com/HumanGuardrail/corelink-go/v1"
 )
 
 func main() {
@@ -126,7 +126,7 @@ ADR-0016 trade-off é load-bearing decision em S-15 segurança model. Native HTT
 - Sample em `examples/python/`.
 
 **Persona 2 — Go backend engineer**:
-- `go get github.com/humangr-labs/corelink-go/v1` → `client.Get(ctx, digest)` context-based.
+- `go get github.com/HumanGuardrail/corelink-go/v1` → `client.Get(ctx, digest)` context-based.
 - pkg.go.dev docs auto-generated.
 - Sample em `examples/go/`.
 
@@ -252,7 +252,7 @@ Feature: FFI wrappers 3 languages com client-verify default-on
     Given crate corelink-go em workspace + Go wrapper module
     When `go test ./...` runs
     Then tests pass
-    And module published as github.com/humangr-labs/corelink-go/v1
+    And module published as github.com/HumanGuardrail/corelink-go/v1
     And pkg.go.dev docs auto-generated
 
   Scenario: JS/TS WASM publishes para npm

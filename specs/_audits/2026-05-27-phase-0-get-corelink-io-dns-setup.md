@@ -51,7 +51,7 @@ Gustavo completes §3.
 The `wrangler.toml` `[env.prod.routes]` block assumes `corelink.io` is
 either:
 
-- (a) already owned by humangr-labs and delegated to CF nameservers, OR
+- (a) already owned by HumanGuardrail and delegated to CF nameservers, OR
 - (b) ownable today (not held by a third party).
 
 Verify with:
@@ -97,7 +97,7 @@ Once the zone is Active in CF:
    pnpm deploy:prod
    ```
    (This requires `wrangler login` having been run once for the
-   humangr-labs CF account.)
+   HumanGuardrail CF account.)
 2. The `wrangler.toml` `[env.prod.routes]` block configures the
    `get.corelink.io/*` route automatically on deploy.
 3. Verify in https://dash.cloudflare.com/?to=/:account/workers/services/view/corelink-get-cli-prod/production
@@ -131,7 +131,7 @@ curl -fsSL https://get.corelink.io | head -5
 # Expected output (first 5 lines):
 #   #!/bin/sh
 #   # CoreLink CLI installer — served from https://get.corelink.io.
-#   # Source: github.com/humangr-labs/corelink-server :: apps/get-corelink-worker.
+#   # Source: github.com/HumanGuardrail/corelink-server :: apps/get-corelink-worker.
 #   # Re-run is safe: writes to /usr/local/bin/corelink and ~/.corelink/config.toml.
 #   set -eu
 
@@ -143,7 +143,7 @@ curl -fsSL https://get.corelink.io/healthz
 # → ok
 
 # Bot scans should NOT find the Worker on workers.dev (security posture check):
-curl -I https://corelink-get-cli-prod.humangr-labs.workers.dev/ 2>&1 | head -1
+curl -I https://corelink-get-cli-prod.HumanGuardrail.workers.dev/ 2>&1 | head -1
 # → expected: connection error / 404 (workers_dev = false)
 ```
 
@@ -155,9 +155,9 @@ satisfiable — pending §3.6 below.
 
 The end-to-end `curl -fsSL https://get.corelink.io | sh -s -- --token=$T`
 flow downloads
-`https://github.com/humangr-labs/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`
+`https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`
 in step 4 of the install script. That URL only resolves once the
-`humangr-labs/corelink-cli` repo exists AND has cut a release with
+`HumanGuardrail/corelink-cli` repo exists AND has cut a release with
 binaries for all 5 target triples.
 
 See sibling runbook

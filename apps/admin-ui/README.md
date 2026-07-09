@@ -112,7 +112,7 @@ Next build. SHA-pinned actions per repo policy.
 ### Architecture
 
 `apps/admin-ui` deploys to the Cloudflare **Worker** named **`corelink-admin-ui`**
-(humangr-labs org) via `@opennextjs/cloudflare`. The GH Action
+(HumanGuardrail org) via `@opennextjs/cloudflare`. The GH Action
 `.github/workflows/admin-ui-deploy.yml` builds and deploys automatically on every
 push to `main` that touches `apps/admin-ui/**`.
 

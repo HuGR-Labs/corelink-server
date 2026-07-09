@@ -51,7 +51,7 @@ const config: Config = {
   tagline: 'Multi-tenant content-addressable cache on Cloudflare',
   url: 'https://docs.corelink.humangr.com',
   baseUrl: '/',
-  organizationName: 'humangr-labs',
+  organizationName: 'HumanGuardrail',
   projectName: 'corelink-server',
   i18n: {
     defaultLocale: 'en-US',
@@ -84,7 +84,7 @@ const config: Config = {
       'classic',
       {
         docs: {
-          editUrl: 'https://github.com/humangr-labs/corelink-server/edit/main/apps/docs/',
+          editUrl: 'https://github.com/HumanGuardrail/corelink-server/edit/main/apps/docs/',
           versions: { current: { label: 'Latest' } },
         },
       },
@@ -164,7 +164,7 @@ Foundation WI; LOW_RISK lane.
    - Navbar `docsVersionDropdown` para switcher.
 
 6. **Edit on GitHub link per page**:
-   - `editUrl: 'https://github.com/humangr-labs/corelink-server/edit/main/apps/docs/'` em preset config.
+   - `editUrl: 'https://github.com/HumanGuardrail/corelink-server/edit/main/apps/docs/'` em preset config.
    - "Edit this page" footer link automated.
 
 7. **i18n config 3 locales**:

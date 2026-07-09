@@ -13,7 +13,7 @@ The script:
 2. Detects the host OS (`linux` / `darwin` / `windows`) and architecture
    (`x86_64` / `aarch64`).
 3. Downloads the matching CoreLink CLI binary from
-   `https://github.com/humangr-labs/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`.
+   `https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`.
 4. Writes `~/.corelink/config.toml` with `token`, `region`, and the
    default `endpoint = "https://corelink-api.humangr.com"`.
 5. Runs `corelink ping` to verify connectivity. On success, the
@@ -50,19 +50,19 @@ testing the install flow.
 ## CLI Release Procedure
 
 The install Worker at `https://corelink-get.humangr.com` serves binaries
-from `https://github.com/humangr-labs/corelink-cli/releases/latest/download`.
+from `https://github.com/HumanGuardrail/corelink-cli/releases/latest/download`.
 Releases in that repo are created automatically by
-`.github/workflows/release-cli.yml` in `humangr-labs/corelink-server`
+`.github/workflows/release-cli.yml` in `HumanGuardrail/corelink-server`
 whenever a `cli-v*` tag is pushed.
 
 ### One-time operator setup (do this once, before the first release)
 
 1. **Create a GitHub PAT** with `repo` scope scoped to
-   `humangr-labs/corelink-cli` (or a fine-grained token with
+   `HumanGuardrail/corelink-cli` (or a fine-grained token with
    "Contents: write" on that repo).
 
 2. **Store the PAT as a repository secret** in
-   `humangr-labs/corelink-server`:
+   `HumanGuardrail/corelink-server`:
    - Name: `CORELINK_CLI_RELEASE_TOKEN`
    - Value: the PAT from step 1
 
@@ -87,7 +87,7 @@ git push origin cli-v0.1.0
 The workflow will:
 1. Build 5 binaries via `cargo-zigbuild` on ubuntu-22.04
 2. Compute SHA-256 checksums
-3. Create a release in `humangr-labs/corelink-cli` tagged `v0.1.0`
+3. Create a release in `HumanGuardrail/corelink-cli` tagged `v0.1.0`
 4. Upload 11 files: 5 binaries + 5 `.sha256` files + `checksums.txt`
 
 ### Expected artifact list (per release)
@@ -133,7 +133,7 @@ The workflow will:
 3. `curl -fsSL https://corelink-get.humangr.com | sh -s --` (no `--token`) exits
    non-zero with `FATAL: --token required` on stderr.
 4. The served script's `URL=` line points at the
-   `humangr-labs/corelink-cli` Releases path verbatim — the GitHub
+   `HumanGuardrail/corelink-cli` Releases path verbatim — the GitHub
    Releases CI in that repo (separate runbook,
    `2026-05-27-phase-0-corelink-cli-repo-bootstrap.md`) must be green
    before end-to-end works for real customers.

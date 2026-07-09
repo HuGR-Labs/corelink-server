@@ -70,7 +70,7 @@ Source of truth before this audit: `WI-S12-004 §6.1.4 / §6.1.5`,
   too slow (CVE → exploit window can be <24h post-disclosure).
 
 **Trade-off accepted:** routine patch/minor upgrades take longer to
-land. Mitigated by Monday weekly cadence + `humangr-labs/security`
+land. Mitigated by Monday weekly cadence + `HumanGuardrail/security`
 reviewers + grouped PRs (one PR per ecosystem per week).
 
 ### 2.2 Per-ecosystem coverage (DECISION-DPD-2026-05-15-02)

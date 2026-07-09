@@ -341,7 +341,7 @@ Two static-equivalence cases were not eliminated:
 
   **Manual fire attempted 2026-05-15:** `gh workflow run
   mutation-nightly.yml --ref main` →
-  [run 25940986253](https://github.com/humangr-labs/corelink-server/actions/runs/25940986253)
+  [run 25940986253](https://github.com/HumanGuardrail/corelink-server/actions/runs/25940986253)
   — workflow plumbing verified end-to-end (all 8 matrix legs
   enumerated + queued correctly). All 8 matrix jobs failed with
   *"The job was not started because recent account payments have

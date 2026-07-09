@@ -1,4 +1,4 @@
-# Phase 0.H — `humangr-labs/corelink-cli` Repo Bootstrap Runbook
+# Phase 0.H — `HumanGuardrail/corelink-cli` Repo Bootstrap Runbook
 
 **Date.** 2026-05-27
 **Owner.** Gustavo (GitHub org admin)
@@ -12,7 +12,7 @@
 
 The Phase 0.H mandate calls for shipping two artifacts in parallel:
 
-1. **`humangr-labs/corelink-cli`** — new Rust workspace repo containing the
+1. **`HumanGuardrail/corelink-cli`** — new Rust workspace repo containing the
    `corelink` CLI binary (`ping`, `bazel-init`, `buck2-init` stub,
    `cargo-init` stub, `config show`). Cross-compiled for 5 target triples
    via GitHub Actions, published to GitHub Releases.
@@ -21,13 +21,13 @@ The Phase 0.H mandate calls for shipping two artifacts in parallel:
    the GitHub Releases URL in artifact (1).
 
 Phase 0.H pre-flight discovered that **artifact (1) cannot be created by
-the agent** — `gh repo view humangr-labs/corelink-cli` returns:
+the agent** — `gh repo view HumanGuardrail/corelink-cli` returns:
 
 ```
-GraphQL: Could not resolve to a Repository with the name 'humangr-labs/corelink-cli'.
+GraphQL: Could not resolve to a Repository with the name 'HumanGuardrail/corelink-cli'.
 ```
 
-The `humangr-labs` org requires **admin-tier** GitHub permissions to
+The `HumanGuardrail` org requires **admin-tier** GitHub permissions to
 create new repositories. The agent is running with a personal Gustavo
 PAT but the PAT scope does NOT include `admin:org` write. Even if it did,
 charter §8 forbids the agent from creating new org-level resources
@@ -58,7 +58,7 @@ Per Phase 0.H §6 (Hard-pause triggers) the agent has therefore:
 
 ### §2.2 Deferred (pending this runbook)
 
-- `humangr-labs/corelink-cli` repo creation.
+- `HumanGuardrail/corelink-cli` repo creation.
 - `crates/corelink/{main.rs, commands/{ping,bazel_init,buck2_init,cargo_init}.rs, config.rs}` —
   the actual CLI source.
 - `.github/workflows/release.yml` — cross-compile + publish to GitHub
@@ -76,8 +76,8 @@ Each item is a single click or single command. Do them in order.
 
 ### §3.1 Create the empty org repo (1 minute)
 
-1. Open https://github.com/organizations/humangr-labs/repositories/new
-2. **Owner.** `humangr-labs`
+1. Open https://github.com/organizations/HumanGuardrail/repositories/new
+2. **Owner.** `HumanGuardrail`
 3. **Repository name.** `corelink-cli`
 4. **Description.** `CoreLink CLI — Bazel/Buck2/Cargo remote cache bootstrapper.`
 5. **Visibility.** **Public** (CLI install one-liner is public-facing).
@@ -90,9 +90,9 @@ Each item is a single click or single command. Do them in order.
 ### §3.2 Grant the bot account write access (1 minute)
 
 The follow-up agent will push using the same PAT that drives all other
-`humangr-labs/*` commits today.
+`HumanGuardrail/*` commits today.
 
-1. https://github.com/humangr-labs/corelink-cli/settings/access
+1. https://github.com/HumanGuardrail/corelink-cli/settings/access
 2. Click **Add people** (or the existing CI bot group, if you have one).
 3. Add the user / team that owns the PAT used by this orchestrator.
 4. Permission: **Write**.
@@ -100,11 +100,11 @@ The follow-up agent will push using the same PAT that drives all other
 (If you already have a Personal-PAT-as-org-member pattern documented in
 `/Users/gustavoschneiter/.claude/projects/-Users-gustavoschneiter-Documents-HuGR/`,
 this step is already covered — skip and tell the agent "PAT already
-has write to humangr-labs/*".)
+has write to HumanGuardrail/*".)
 
 ### §3.3 Configure repo Settings (2 minutes)
 
-In https://github.com/humangr-labs/corelink-cli/settings:
+In https://github.com/HumanGuardrail/corelink-cli/settings:
 
 - **General → Default branch.** `main`.
 - **General → Features.** Disable Wikis, Discussions, Projects (we don't
@@ -122,7 +122,7 @@ In https://github.com/humangr-labs/corelink-cli/settings:
 
 Reply to the orchestrator with:
 
-> `humangr-labs/corelink-cli` is created and PAT has write access.
+> `HumanGuardrail/corelink-cli` is created and PAT has write access.
 > Dispatch `CORELINK-CLI-IMPLEMENT`.
 
 The orchestrator will then dispatch the follow-up agent which executes
@@ -134,24 +134,24 @@ commit per the original Phase 0.H §7 commit message.
 
 ## §4 Why we did NOT just push to a personal repo
 
-The Phase 0 plan §2.H mandates `humangr-labs/corelink-cli` specifically
+The Phase 0 plan §2.H mandates `HumanGuardrail/corelink-cli` specifically
 because:
 
 1. **Install URL stability.** `get.corelink.io` shell-script template
    hard-codes
-   `https://github.com/humangr-labs/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`.
+   `https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`.
    If we ship under `gustavoschneiter/corelink-cli` and later migrate to
-   `humangr-labs/`, the install URL breaks for existing customers between
+   `HumanGuardrail/`, the install URL breaks for existing customers between
    migrations (GitHub does redirect `/owner-rename/repo` for ~1 year, but
    not for `/old-owner/repo` after a transfer-then-rename pattern).
 2. **Brand surface area.** The CLI repo is a customer-facing surface
    (every install one-liner Gustavo sends to a prospect links here). It
    needs to live under the company org, not under a personal account, to
-   match the rest of `humangr-labs/*` (corelink-server, corelink-docs,
+   match the rest of `HumanGuardrail/*` (corelink-server, corelink-docs,
    admin-ui).
 3. **License + DPA chain of title.** Sub-processor lists in
    `apps/admin-ui/src/content/sub-processors.json` reference
-   "humangr-labs as data controller of record". Source under a personal
+   "HumanGuardrail as data controller of record". Source under a personal
    account would create a chain-of-title gap that breaks the DPA story
    on first enterprise legal review.
 
@@ -161,7 +161,7 @@ because:
 
 This runbook is **closed** when:
 
-1. `gh repo view humangr-labs/corelink-cli` returns 200 (repo exists).
+1. `gh repo view HumanGuardrail/corelink-cli` returns 200 (repo exists).
 2. The orchestrator has dispatched (or is ready to dispatch) the
    `CORELINK-CLI-IMPLEMENT` follow-up agent.
 
@@ -178,7 +178,7 @@ ship-gate for the F-pane "Connected" badge demo. Acceptance items 4-5
 - Phase 0 plan: `specs/_audits/2026-05-27-phase-0-execution-plan.md` §2.H.
 - Hard-pause charter: see Gustavo's
   `corelink_autonomous_execution_charter.md` §inflection-points
-  (humangr-labs org-admin clicks always require human-in-the-loop).
+  (HumanGuardrail org-admin clicks always require human-in-the-loop).
 - Follow-up agent mandate: TBD `CORELINK-CLI-IMPLEMENT`, will pick up
   the §2.2 deferred work list verbatim from Phase 0 plan §2.H "Files to
   write (new repo)".

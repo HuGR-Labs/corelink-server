@@ -17,7 +17,7 @@ import { describe, expect, it } from "vitest";
 import { renderInstallScript } from "../src/install.ts";
 
 const FIXTURE = {
-  releaseOrigin: "https://github.com/humangr-labs/corelink-cli/releases/latest/download",
+  releaseOrigin: "https://github.com/HumanGuardrail/corelink-cli/releases/latest/download",
   defaultApiEndpoint: "https://corelink-api.humangr.com",
 } as const;
 
@@ -76,7 +76,7 @@ describe("renderInstallScript", () => {
   it("substitutes RELEASE_ORIGIN into the download URL", () => {
     const script = renderInstallScript(FIXTURE);
     expect(script).toContain(
-      'URL="https://github.com/humangr-labs/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}"',
+      'URL="https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}"',
     );
   });
 

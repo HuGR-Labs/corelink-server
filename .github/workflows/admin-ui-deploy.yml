@@ -12,7 +12,7 @@ name: admin-ui — CF Worker deploy
 #
 # Required GH Secrets:
 #   CF_API_TOKEN          — Cloudflare API token with "Workers Scripts: Edit" permission
-#   CF_ACCOUNT_ID         — Cloudflare account ID (humangr-labs)
+#   CF_ACCOUNT_ID         — Cloudflare account ID (HumanGuardrail)
 #
 # Required GH Variables (non-secret, set in repo Settings → Variables):
 #   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY

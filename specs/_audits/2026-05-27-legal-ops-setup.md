@@ -145,7 +145,7 @@ At sub-$10k MRR the difference is dollars — **the operational simplicity of Mo
 | Inbound support (first 6 months) | `support@corelink.humangr.com` → Gmail or Fastmail | $6/mo (Fastmail) or $0 (Gmail+Cloudflare Email Routing) | Plain email scales to ~20 active users / day |
 | Inbound support (post-launch, 5+ paying) | **Plain Foundation** | $35/seat/mo (solo = $35/mo) | Best B2B fit; Ari AI included; clean threading; integrates with Slack / Linear. [Plain pricing](https://www.plain.com/pricing) |
 | Status page | **Better Stack Free** | $0 (3 GB logs, 1 status page, 10 monitors) | Already in stack per memory; status page is `/status.corelink.humangr.com` style |
-| Issue tracker (public bug reports) | **GitHub Issues** in `humangr-labs/corelink-server` | $0 | Already exists |
+| Issue tracker (public bug reports) | **GitHub Issues** in `HumanGuardrail/corelink-server` | $0 | Already exists |
 | Roadmap (public) | Same GitHub Issues + a labeled view | $0 | Don't pay for Productboard / Canny pre-revenue |
 | Docs / help center | **Docusaurus** at `corelink-docs.humangr.com` | $0 | Already deployed per Wave-32 |
 

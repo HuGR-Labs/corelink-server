@@ -49,14 +49,14 @@ fn make_webhook(tag: &str) -> CfDeployWebhook {
         GitHubActor::new(
             "github-actions[bot]",
             format!(
-                "humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"
+                "HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/{tag}"
             ),
         ),
     )
 }
 
 fn make_image_ref(tag: &str) -> OciImageRef {
-    OciImageRef::from_tag(format!("ghcr.io/humangr-labs/corelink-worker:{tag}"))
+    OciImageRef::from_tag(format!("ghcr.io/HumanGuardrail/corelink-worker:{tag}"))
 }
 
 // ── Chaos 1: Deploy unsigned artifact (INV-SUPPLY-SIGNED-DEPLOY) ─────────
@@ -138,12 +138,12 @@ fn chaos_identity_confusion_100_variants_all_blocked() {
         "evil-corp",
         "supply-chain-attack",
         "fake-hugr",
-        "not-humangr",
-        "humangr-fake",
-        "humangr_labs",
-        "humangr-lab",
-        "humangrlabs",
-        "xn--humangr-labs",
+        "not-humanguardrail",
+        "humanguardrail-fake",
+        "humanguardrail_labs",
+        "humanguardrai1",
+        "humanguardrails",
+        "xn--humanguardrail",
     ];
     let attacker_repos = [
         "corelink-server",
@@ -242,7 +242,7 @@ fn chaos_audit_emit_failure_100_iterations_zero_false_deploys() {
         let verifier = InMemoryDeployVerifier::with_mode(
             VerificationMode::Signed {
                 rekor_log_index: i as u64,
-                fulcio_san: "https://github.com/humangr-labs/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
+                fulcio_san: "https://github.com/HumanGuardrail/corelink-server/.github/workflows/release-slsa3.yml@refs/tags/v0.1.0".to_string(),
                 resolved_digest: format!("sha256:{i:064x}"),
             },
             failing_sink,

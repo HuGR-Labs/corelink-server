@@ -2,7 +2,7 @@
 
 **Owner:** Gustavo Schneiter
 **Created:** 2026-05-27
-**Context:** GH-ORG-MARKETING agent set up `humangr-labs/humangr-labs/README.md` (renders on https://github.com/humangr-labs) and created the `.github` repo for default community health files. Two manual steps remain that require **owner UI access** (not exposed via the `repo`/`read:org` scoped token the agent uses).
+**Context:** GH-ORG-MARKETING agent set up `HumanGuardrail/HumanGuardrail/README.md` (renders on https://github.com/HumanGuardrail) and created the `.github` repo for default community health files. Two manual steps remain that require **owner UI access** (not exposed via the `repo`/`read:org` scoped token the agent uses).
 
 ---
 
@@ -15,9 +15,9 @@ Both steps take ~5 minutes total.
 
 ---
 
-## Step 1 — Pin repos to `humangr-labs` profile (1 min)
+## Step 1 — Pin repos to `HumanGuardrail` profile (1 min)
 
-1. Visit https://github.com/humangr-labs
+1. Visit https://github.com/HumanGuardrail
 2. Click **Customize your pins** (top-right of the profile, near "Popular repositories")
 3. Select **exactly these two**:
    - `corelink-server`
@@ -53,24 +53,24 @@ Rationale: deep-slate + indigo reads "infrastructure / compliance / serious" rat
 
 ### Text content per repo
 
-**`corelink-server`** (https://github.com/humangr-labs/corelink-server/settings)
+**`corelink-server`** (https://github.com/HumanGuardrail/corelink-server/settings)
 
 ```
 Title:    CoreLink
 Subtitle: Content-addressable build cache for
           compliance-aware teams
 Footer:   REAPI v2 · BYOK · Audit chain · 5 GB free
-Brand:    humangr-labs
+Brand:    HumanGuardrail
 ```
 
-**`corelink-cli`** (https://github.com/humangr-labs/corelink-cli/settings)
+**`corelink-cli`** (https://github.com/HumanGuardrail/corelink-cli/settings)
 
 ```
 Title:    corelink
 Subtitle: Bazel · Buck2 · Cargo · Docker
           cache client
 Footer:   curl -fsSL corelink-get.humangr.com | sh
-Brand:    humangr-labs
+Brand:    HumanGuardrail
 ```
 
 ### Tooling — fastest path
@@ -92,7 +92,7 @@ Recommendation: **Figma** if you plan to define brand assets across docs/site/HN
 
 ### Upload steps (per repo)
 
-1. https://github.com/humangr-labs/corelink-server/settings (scroll to **Social preview**)
+1. https://github.com/HumanGuardrail/corelink-server/settings (scroll to **Social preview**)
 2. Click **Edit** → **Upload an image**
 3. Repeat for `corelink-cli`
 
@@ -100,8 +100,8 @@ Recommendation: **Figma** if you plan to define brand assets across docs/site/HN
 
 ## What is already done (by GH-ORG-MARKETING agent)
 
-- Created `humangr-labs/humangr-labs` (self-named profile repo, renders on https://github.com/humangr-labs). Commit `d1827c2`.
-- Created `humangr-labs/.github` (for future default community health files: issue templates, default contributing guide, default code of conduct). Commit `84eea02`.
+- Created `HumanGuardrail/HumanGuardrail` (self-named profile repo, renders on https://github.com/HumanGuardrail). Commit `d1827c2`.
+- Created `HumanGuardrail/.github` (for future default community health files: issue templates, default contributing guide, default code of conduct). Commit `84eea02`.
 - Both repos contain the same `README.md` (org-level profile copy) with:
   - CoreLink + corelink-cli surfaced
   - Trust block (forbid(unsafe_code), TLA+, BLAKE3 audit chain, cargo-deny, DPA)
@@ -110,13 +110,13 @@ Recommendation: **Figma** if you plan to define brand assets across docs/site/HN
 
 ## Verification checklist (after Gustavo finishes the two manual steps)
 
-- [ ] https://github.com/humangr-labs renders the profile README correctly
+- [ ] https://github.com/HumanGuardrail renders the profile README correctly
 - [ ] Top-of-profile shows `corelink-server` + `corelink-cli` pinned (in that order)
-- [ ] Share https://github.com/humangr-labs/corelink-server in Slack / Twitter and confirm OG card renders
+- [ ] Share https://github.com/HumanGuardrail/corelink-server in Slack / Twitter and confirm OG card renders
 - [ ] Repeat for corelink-cli
 
 ## Future work (not in scope here)
 
 - Define `brand.json` (or `tokens/brand.css`) committed to repo so docs site + OG images + future launch assets share one source of truth
-- Add issue templates + PR template to `humangr-labs/.github` once we have actual community
-- Consider migrating `humangr-labs` from User -> Organization account (gives access to org-level settings, SSO, audit log) — but only after first paying customer to avoid premature GitHub Org billing
+- Add issue templates + PR template to `HumanGuardrail/.github` once we have actual community
+- Consider migrating `HumanGuardrail` from User -> Organization account (gives access to org-level settings, SSO, audit log) — but only after first paying customer to avoid premature GitHub Org billing
