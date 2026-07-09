@@ -40,6 +40,12 @@ Each entry cross-references:
   container prod env (identical to the signup-worker reverse map) before deploying.
 
 ### Changed
+- **admin-ui — preserved the prior ESLint bar across the `eslint-config-next` 16 / `react-hooks` 7
+  bump.** react-hooks 7 adds the React-Compiler enforcement rule suite (all "error" in `recommended`)
+  and now treats a bare `use(...)` call as a React hook. The app has not adopted the React Compiler,
+  so the 12 Compiler-suite rules are turned OFF (`rules-of-hooks` stays error, `exhaustive-deps` stays
+  warn — exactly as before); and the Playwright e2e tree (`tests/e2e/**`), whose fixtures take a `use`
+  callback that is not React's `use` hook, is scoped out of the react-hooks rules. `pnpm lint` → 0 errors.
 - **deps — adapted the non-security-major dependency wave (PR #556, 22 crates) to compile + pass
   cleanly.** Landed the bumps and applied the canonical upstream migrations: `hmac` 0.12→0.13 /
   `sha2` 0.10→0.11 / `hkdf` 0.12→0.13 (RustCrypto digest-0.11 generation — `KeyInit` now carries
