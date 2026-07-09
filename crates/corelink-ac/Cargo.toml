@@ -38,7 +38,7 @@ corelink-handler-ac = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
-rand_chacha = "0.10"
+rand_chacha = "0.9"
 
 # Absorbed `corelink-ac-core` integration tests (`<mod>_` prefixed in
 # `tests/` to disambiguate from absorbed `corelink-ac-schema`).

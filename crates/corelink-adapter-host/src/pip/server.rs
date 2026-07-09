@@ -45,8 +45,8 @@ impl std::fmt::Debug for AdapterState {
 /// the same routes without running the full TCP listener.
 pub fn build_router(state: AdapterState) -> Router {
     Router::new()
-        .route("/simple/:project/", get(handle_index))
-        .route("/pkg/:sha256/:filename", get(handle_wheel))
+        .route("/simple/{project}/", get(handle_index))
+        .route("/pkg/{sha256}/{filename}", get(handle_wheel))
         .route("/healthz", get(handle_health))
         .with_state(state)
 }

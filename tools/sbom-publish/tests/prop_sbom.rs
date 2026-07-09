@@ -225,7 +225,7 @@ proptest! {
 
         // Build a fake TsrToken bound to `original`
         let sha = Sha256::digest(original_bytes);
-        let sha_hex = format!("{sha:x}");
+        let sha_hex = hex::encode(sha);
         let token = TsrToken {
             der_bytes: vec![0xCA, 0xFE],
             sbom_sha256_hex: sha_hex,

@@ -13,7 +13,6 @@
 //! §374 inheritance). Key rotation deferred to S-19.
 
 use hkdf::Hkdf;
-use hmac::Hmac;
 use sha2::Sha256;
 
 use super::event::HKDF_INFO_DKIM_BROADCAST;
@@ -46,7 +45,10 @@ pub fn derive_dkim_key(
     master_secret: &[u8],
     tenant_id: &str,
 ) -> Result<[u8; 32], DkimDerivationError> {
-    let hk = Hkdf::<Sha256, Hmac<Sha256>>::new(
+    // hkdf 0.13 collapsed `Hkdf<H, I = Hmac<H>>` to a single-parameter
+    // `Hkdf<H>` (the HMAC impl is now fixed internally), so drop the explicit
+    // `Hmac<Sha256>` argument.
+    let hk = Hkdf::<Sha256>::new(
         Some(tenant_id.as_bytes()), // salt = tenant_id for scoping
         master_secret,
     );

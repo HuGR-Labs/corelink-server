@@ -81,12 +81,12 @@ use corelink_turbo_bridge::{
 /// `GET /v8/artifacts/:hash` — retrieve a Turborepo build artifact.
 ///
 /// MUST use matchit-0.7 `:name` syntax (not `{name}`).
-pub const TURBO_GET_ROUTE: &str = "/v8/artifacts/:hash";
+pub const TURBO_GET_ROUTE: &str = "/v8/artifacts/{hash}";
 
 /// `PUT /v8/artifacts/:hash` — store a Turborepo build artifact.
 ///
 /// Same template as GET; axum disambiguates by HTTP method.
-pub const TURBO_PUT_ROUTE: &str = "/v8/artifacts/:hash";
+pub const TURBO_PUT_ROUTE: &str = "/v8/artifacts/{hash}";
 
 /// `POST /v8/artifacts/events` — accept-and-drop Turborepo telemetry.
 pub const TURBO_EVENTS_ROUTE: &str = "/v8/artifacts/events";
@@ -481,7 +481,6 @@ pub(crate) struct PutConcurrencyGuard {
     _slot: PutSlot,
 }
 
-#[axum::async_trait]
 impl axum::extract::FromRequestParts<TurboRouteState> for PutConcurrencyGuard {
     type Rejection = axum::response::Response;
 
@@ -574,7 +573,6 @@ pub(crate) struct GlobalPutBudgetGuard {
     _permit: OwnedSemaphorePermit,
 }
 
-#[axum::async_trait]
 impl axum::extract::FromRequestParts<TurboRouteState> for GlobalPutBudgetGuard {
     type Rejection = axum::response::Response;
 
@@ -659,7 +657,6 @@ pub(crate) struct GetConcurrencyGuard {
     _slot: GetSlot,
 }
 
-#[axum::async_trait]
 impl axum::extract::FromRequestParts<TurboRouteState> for GetConcurrencyGuard {
     type Rejection = axum::response::Response;
 
@@ -749,7 +746,6 @@ pub(crate) struct GlobalGetBudgetGuard {
     _permit: OwnedSemaphorePermit,
 }
 
-#[axum::async_trait]
 impl axum::extract::FromRequestParts<TurboRouteState> for GlobalGetBudgetGuard {
     type Rejection = axum::response::Response;
 
@@ -794,7 +790,6 @@ pub(crate) struct EventsBudgetGuard {
     _permit: OwnedSemaphorePermit,
 }
 
-#[axum::async_trait]
 impl axum::extract::FromRequestParts<TurboRouteState> for EventsBudgetGuard {
     type Rejection = axum::response::Response;
 
@@ -871,7 +866,6 @@ pub(crate) struct EventsConcurrencyGuard {
     _slot: EventsSlot,
 }
 
-#[axum::async_trait]
 impl axum::extract::FromRequestParts<TurboRouteState> for EventsConcurrencyGuard {
     type Rejection = axum::response::Response;
 
@@ -1584,15 +1578,15 @@ mod tests {
     // ── Route constant sanity ─────────────────────────────────────────────────
 
     #[test]
-    fn route_constants_use_colon_syntax_not_curly_braces() {
-        // Regression net for DEBT-029 — matchit 0.7.3 treats `{name}` as a
-        // literal path segment rather than a capture variable.
+    fn route_constants_use_brace_syntax_not_colon() {
+        // Regression net for DEBT-029 (post axum-0.8) — matchit 0.8 treats the
+        // legacy `:name` form as a literal path segment; `{name}` is the capture.
         assert!(
-            !TURBO_GET_ROUTE.contains('{'),
-            "TURBO_GET_ROUTE must use matchit-0.7 `:name` syntax, not `{{name}}`"
+            !TURBO_GET_ROUTE.contains(':'),
+            "TURBO_GET_ROUTE must use matchit-0.8 `{{name}}` syntax, not `:name`"
         );
-        assert!(TURBO_GET_ROUTE.contains(":hash"));
-        assert!(TURBO_PUT_ROUTE.contains(":hash"));
+        assert!(TURBO_GET_ROUTE.contains("{hash}"));
+        assert!(TURBO_PUT_ROUTE.contains("{hash}"));
         assert_eq!(TURBO_EVENTS_ROUTE, "/v8/artifacts/events");
         assert_eq!(TURBO_STATUS_ROUTE, "/v8/artifacts/status");
     }

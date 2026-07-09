@@ -119,6 +119,9 @@ corelink-tenant-path = { workspace = true }
 # zeroize for TDK bytes handling.
 zeroize = { workspace = true }
 tonic = { workspace = true }
+# tonic-prost: prost codec runtime referenced as `tonic_prost::…` by the
+# `tonic-prost-build`-generated health stub (split out of tonic in 0.14).
+tonic-prost = { workspace = true }
 prost = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
@@ -296,8 +299,9 @@ serde_json = { workspace = true }
 # same `rusqlite 0.32 + bundled` pin. `tempfile` gives us a
 # per-test on-disk database file so the harness exercises the
 # transaction + WAL surface a real D1 would.
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 tempfile = { workspace = true }
 
 [build-dependencies]
 tonic-build = { workspace = true }
+tonic-prost-build = { workspace = true }

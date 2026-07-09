@@ -9,7 +9,7 @@
 //! header. Any payload without a valid signature MUST be rejected with HTTP 401
 //! and `DtWebhookError::HmacInvalid`.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 

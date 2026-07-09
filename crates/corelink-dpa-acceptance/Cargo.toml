@@ -18,7 +18,7 @@ sha2 = { workspace = true }
 hex = { workspace = true }
 subtle = { workspace = true }
 uuid = { workspace = true, features = ["serde"] }
-jsonwebtoken = "10.4"
+jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
 base64 = { workspace = true }
 
 [dev-dependencies]

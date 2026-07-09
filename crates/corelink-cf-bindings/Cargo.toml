@@ -97,7 +97,7 @@ serde = { workspace = true }
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
-rand_chacha = "0.10"
+rand_chacha = "0.9"
 bytes = { workspace = true }
 tokio = { workspace = true }
 corelink-worker = { workspace = true }

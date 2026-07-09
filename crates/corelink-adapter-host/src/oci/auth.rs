@@ -51,7 +51,7 @@
 //! parser rejects any malformed token (wrong field count) as before.
 
 use base64::Engine as _;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use secrecy::ExposeSecret as _;
 use sha2::Sha256;
 use subtle::ConstantTimeEq;

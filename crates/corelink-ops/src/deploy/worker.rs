@@ -23,7 +23,7 @@
 //! See `specs/_schemas/webhook-v1.json` for the JSON schema.  The CF Worker
 //! receives `CfDeployWebhook` deserialized from the request body.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 use tracing::warn;
@@ -55,7 +55,7 @@ type HmacSha256 = Hmac<Sha256>;
 /// let body = b"{\"release_tag\":\"v0.1.0\"}";
 ///
 /// // Compute expected signature with the same key
-/// use hmac::{Hmac, Mac};
+/// use hmac::{Hmac, KeyInit, Mac};
 /// use sha2::Sha256;
 ///
 /// type HmacSha256 = Hmac<Sha256>;

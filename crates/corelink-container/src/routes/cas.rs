@@ -46,7 +46,7 @@ use corelink_handler_cas::{
 };
 
 /// Canonical CAS list route path — `GET /v1/cas/:tenant` (D-8).
-pub const CAS_LIST_ROUTE: &str = "/v1/cas/:tenant";
+pub const CAS_LIST_ROUTE: &str = "/v1/cas/{tenant}";
 
 /// Default page size for the CAS list route when `?limit` is absent.
 const DEFAULT_LIST_LIMIT: u32 = 200;
@@ -84,11 +84,11 @@ fn clamp_limit(requested: Option<u32>) -> u32 {
 /// rather than a capture, which would silently route every real request
 /// to a router-level 404. This was DEBT-029 (closed wave-30 stream-1)
 /// on `ac.rs` + `admin.rs`; DEBT-029-cas closes the same surface here.
-pub const CAS_READ_ROUTE: &str = "/v1/cas/:tenant/:hash";
+pub const CAS_READ_ROUTE: &str = "/v1/cas/{tenant}/{hash}";
 
 /// Canonical CAS write route path. The write path reuses the same
 /// template; axum disambiguates by HTTP method (GET vs PUT).
-pub const CAS_WRITE_ROUTE: &str = "/v1/cas/:tenant/:hash";
+pub const CAS_WRITE_ROUTE: &str = "/v1/cas/{tenant}/{hash}";
 
 /// `POST /v1/cas/:tenant/batch` — bulk write (length-framed upload).
 ///
@@ -97,13 +97,13 @@ pub const CAS_WRITE_ROUTE: &str = "/v1/cas/:tenant/:hash";
 /// git ingest (thousands of tiny loose objects). This route collapses N objects
 /// into ONE request: ONE auth + ONE scope check + ONE pat-gate + ONE quota
 /// charge + a batched storage commit.
-pub const CAS_BATCH_ROUTE: &str = "/v1/cas/:tenant/batch";
+pub const CAS_BATCH_ROUTE: &str = "/v1/cas/{tenant}/batch";
 
 /// `POST /v1/cas/:tenant/batch-read` — bulk read (length-framed download).
-pub const CAS_BATCH_READ_ROUTE: &str = "/v1/cas/:tenant/batch-read";
+pub const CAS_BATCH_READ_ROUTE: &str = "/v1/cas/{tenant}/batch-read";
 
 /// `POST /v1/cas/:tenant/batch-exists` — bulk HEAD-class existence probe.
-pub const CAS_BATCH_EXISTS_ROUTE: &str = "/v1/cas/:tenant/batch-exists";
+pub const CAS_BATCH_EXISTS_ROUTE: &str = "/v1/cas/{tenant}/batch-exists";
 
 /// FROZEN upload content-type for all three batch routes (the manifest+bytes
 /// wire format). A request that does not declare it is rejected 415 — the
@@ -285,7 +285,6 @@ pub(crate) struct CasPutGuard {
     _slot: CasPutSlot,
 }
 
-#[axum::async_trait]
 impl FromRequestParts<CasRouteState> for CasPutGuard {
     type Rejection = axum::response::Response;
 
@@ -377,7 +376,6 @@ pub(crate) struct CasReadConcurrencyGuard {
     _slot: CasReadSlot,
 }
 
-#[axum::async_trait]
 impl FromRequestParts<CasRouteState> for CasReadConcurrencyGuard {
     type Rejection = axum::response::Response;
 
@@ -1768,8 +1766,8 @@ mod tests {
 
     #[test]
     fn route_constants_match_canonical_path() {
-        assert_eq!(CAS_READ_ROUTE, "/v1/cas/:tenant/:hash");
-        assert_eq!(CAS_WRITE_ROUTE, "/v1/cas/:tenant/:hash");
+        assert_eq!(CAS_READ_ROUTE, "/v1/cas/{tenant}/{hash}");
+        assert_eq!(CAS_WRITE_ROUTE, "/v1/cas/{tenant}/{hash}");
     }
 
     /// F1 (CAA-360) fail-CLOSED: the `UnavailableCasHandler`'s error maps to
@@ -1786,18 +1784,18 @@ mod tests {
     }
 
     #[test]
-    fn route_constant_uses_matchit_0_7_colon_syntax_not_curly_braces() {
-        // DEBT-029-cas regression net: matchit 0.7.3 parses `{name}`
-        // as LITERAL path bytes, not a capture. Any reintroduction of
-        // the `{name}` form would silently route every real request
-        // to a router-level 404. Pin both the absence of `{` and the
-        // presence of `:tenant` + `:hash` so renames don't drift.
+    fn route_constant_uses_matchit_0_8_brace_syntax_not_colon() {
+        // DEBT-029-cas regression net (post axum-0.8): matchit 0.8 parses
+        // `{name}` as the capture and treats the legacy `:name` form as
+        // LITERAL path bytes. Any reintroduction of `:name` would silently
+        // route every real request to a router-level 404. Pin both the
+        // absence of `:` and the presence of `{tenant}` + `{hash}`.
         assert!(
-            !CAS_READ_ROUTE.contains('{'),
-            "CAS_READ_ROUTE must use matchit-0.7 `:name` syntax, not `{{name}}`"
+            !CAS_READ_ROUTE.contains(':'),
+            "CAS_READ_ROUTE must use matchit-0.8 `{{name}}` syntax, not `:name`"
         );
-        assert!(CAS_READ_ROUTE.contains(":tenant"));
-        assert!(CAS_READ_ROUTE.contains(":hash"));
+        assert!(CAS_READ_ROUTE.contains("{tenant}"));
+        assert!(CAS_READ_ROUTE.contains("{hash}"));
     }
 
     /// F7 (2026-06-13 CAA-360 audit) — CAS data-residency invariant.
@@ -2225,7 +2223,7 @@ mod tests {
     /// transient D1 transport fault on the read gate.
     #[derive(Debug, Default)]
     struct ErroringTombstoneStore;
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl crate::routes::cas_erase::TombstoneStore for ErroringTombstoneStore {
         async fn is_tombstoned(&self, _tenant: &str, _digest: &str) -> Result<bool, String> {
             Err("d1 transport fault".to_owned())

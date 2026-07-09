@@ -17,7 +17,7 @@ serde = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
-rand_chacha = "0.10"
+rand_chacha = "0.9"
 
 [[test]]
 name = "prop_rotation_invariants"

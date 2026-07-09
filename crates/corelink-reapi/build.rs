@@ -27,7 +27,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("cargo:rerun-if-changed={p}");
     }
 
-    tonic_build::configure()
+    // tonic-build 0.14 moved the prost-based proto codegen into the separate
+    // `tonic-prost-build` crate; `tonic_build::configure()` no longer compiles
+    // protos. The builder surface (`build_server` / `build_client` /
+    // `compile_protos`) is otherwise unchanged.
+    tonic_prost_build::configure()
         .build_server(true)
         .build_client(true)
         .compile_protos(&protos, &[proto_root])?;

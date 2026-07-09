@@ -26,6 +26,7 @@ workspace = true
 default = ["host-server"]
 host-server = [
     "dep:tonic",
+    "dep:tonic-prost",
     "dep:prost",
     "dep:prost-types",
     "dep:tokio",
@@ -82,6 +83,9 @@ futures = { workspace = true }
 
 # Host-server runtime (gated behind feature).
 tonic = { workspace = true, optional = true }
+# tonic-prost: the prost codec runtime the `tonic-prost-build`-generated
+# stubs reference as `tonic_prost::…` (split out of tonic in 0.14).
+tonic-prost = { workspace = true, optional = true }
 prost = { workspace = true, optional = true }
 prost-types = { version = "0.14", optional = true }
 tokio = { workspace = true, optional = true }
@@ -115,6 +119,7 @@ http = "1"
 
 [build-dependencies]
 tonic-build = { workspace = true }
+tonic-prost-build = { workspace = true }
 
 [[test]]
 name = "canonical_vectors"

@@ -125,14 +125,14 @@ impl AdminTenantDetailState {
 /// routes. Mounted by `routes.rs` alongside [`super::admin::router`].
 pub fn router(state: AdminTenantDetailState) -> Router {
     Router::new()
-        .route("/v1/admin/tenants/:tenant_id/usage", get(handle_usage))
-        .route("/v1/admin/tenants/:tenant_id/billing", get(handle_billing))
+        .route("/v1/admin/tenants/{tenant_id}/usage", get(handle_usage))
+        .route("/v1/admin/tenants/{tenant_id}/billing", get(handle_billing))
         .route(
-            "/v1/admin/tenants/:tenant_id/consents",
+            "/v1/admin/tenants/{tenant_id}/consents",
             get(handle_consents),
         )
-        .route("/v1/admin/tenants/:tenant_id/dsr", get(handle_dsr))
-        .route("/v1/admin/tenants/:tenant_id/pats", get(handle_pats))
+        .route("/v1/admin/tenants/{tenant_id}/dsr", get(handle_dsr))
+        .route("/v1/admin/tenants/{tenant_id}/pats", get(handle_pats))
         .with_state(state)
 }
 

@@ -27,7 +27,8 @@ use corelink_dpa_acceptance::{
     InMemoryDpaAuditSink, InMemoryNotificationSink, Jurisdiction, LocaleBcp47,
     LocaleNoticeRegistry, RsaPrivateKeyPem, RsaPublicKeyPem, SignupId, TenantCtx, TenantId,
 };
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, Criterion};
 use rsa::{
     pkcs1::{EncodeRsaPrivateKey, LineEnding},
     pkcs8::EncodePublicKey,

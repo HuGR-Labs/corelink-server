@@ -14,7 +14,8 @@
 
 use bytes::Bytes;
 use corelink_hash::{Digest, VerifiedBody};
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 fn bench_digest_compute(c: &mut Criterion) {
     let mut group = c.benchmark_group("Digest::compute");

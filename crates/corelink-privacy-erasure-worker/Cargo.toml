@@ -28,7 +28,7 @@ corelink-privacy-pseudonymize = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
-rand_chacha = "0.10"
+rand_chacha = "0.9"
 # corelink-dsr only available in tests (it pulls uuid v7 which is
 # wasm32-incompatible without rng-getrandom features). The integration
 # test exercises the real `dsr.queued.v1` shape; the trait surface

@@ -33,7 +33,7 @@
 //! invites will never bind. That cross-language parity is an integration
 //! follow-up (this module covers only the Rust container sites).
 
-use hmac::{Hmac, Mac as _};
+use hmac::{Hmac, KeyInit, Mac as _};
 use sha2::{Digest as _, Sha256};
 
 /// Canonical pseudonymized email hash (CTRL-PRIV-001). See module docs.

@@ -433,9 +433,14 @@ dashmap = "6"
 parking_lot = "0.12"
 
 # gRPC stack
+# tonic-build 0.14 split the prost-based codegen into the separate
+# `tonic-prost-build` crate (the plain `tonic-build` now only ships the
+# transport-agnostic `CodeGenBuilder`); proto compilation moves there.
 tonic = "0.14"
+tonic-prost = "0.14"
 prost = "0.14"
 tonic-build = "0.14"
+tonic-prost-build = "0.14"
 
 # HTTP server stack (R2-12: Stripe webhook route in apps/server)
 # axum 0.7 + tower + http 1.x align with tonic 0.12 (hyper 1 underneath).

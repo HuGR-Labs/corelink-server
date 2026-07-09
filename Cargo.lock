@@ -38,6 +38,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ahash"
+version = "0.8.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a15f179cd60c4584b8a8c596927aadc462e27f2ca70c04e0071964a73ba7a75"
+dependencies = [
+ "cfg-if",
+ "once_cell",
+ "version_check",
+ "zerocopy",
+]
+
+[[package]]
 name = "aho-corasick"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -150,7 +162,7 @@ dependencies = [
  "base64ct",
  "blake2",
  "cpufeatures 0.2.17",
- "password-hash 0.5.0",
+ "password-hash",
 ]
 
 [[package]]
@@ -361,7 +373,7 @@ dependencies = [
  "bytes",
  "fastrand",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "http 0.2.12",
  "http 1.4.2",
  "http-body 1.0.1",
@@ -460,7 +472,7 @@ dependencies = [
  "bytes",
  "form_urlencoded",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "http 0.2.12",
  "http 1.4.2",
  "percent-encoding",
@@ -753,6 +765,12 @@ dependencies = [
  "tower-layer",
  "tower-service",
 ]
+
+[[package]]
+name = "base16ct"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 
 [[package]]
 name = "base64"
@@ -1165,10 +1183,10 @@ dependencies = [
  "corelink-handler-ac",
  "corelink-hash",
  "hex",
- "hkdf",
+ "hkdf 0.13.0",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1195,7 +1213,7 @@ dependencies = [
  "corelink-worker",
  "futures",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "http 1.4.2",
  "http-body-util",
  "parking_lot",
@@ -1251,7 +1269,7 @@ dependencies = [
  "corelink-analytics",
  "corelink-audit-chain",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "proptest",
  "serde",
  "serde_jcs",
@@ -1275,7 +1293,7 @@ dependencies = [
  "parking_lot",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "rustls",
  "rustls-native-certs 0.8.4",
  "serde",
@@ -1305,8 +1323,8 @@ dependencies = [
  "corelink-tenant-path",
  "corelink-worker",
  "hex",
- "hmac",
- "password-hash 0.6.1",
+ "hmac 0.13.0",
+ "password-hash",
  "proptest",
  "rand_core 0.6.4",
  "serde",
@@ -1349,7 +1367,7 @@ dependencies = [
  "corelink-tier-selection",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1366,7 +1384,7 @@ dependencies = [
  "hex",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_jcs",
  "serde_json",
@@ -1383,7 +1401,7 @@ dependencies = [
  "hex",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_jcs",
  "serde_json",
@@ -1400,7 +1418,7 @@ dependencies = [
  "corelink-billing-stripe",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1416,10 +1434,10 @@ dependencies = [
  "corelink-billing-aggregator",
  "corelink-billing-emit",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_jcs",
  "serde_json",
@@ -1470,7 +1488,7 @@ dependencies = [
  "criterion",
  "futures",
  "getrandom 0.2.17",
- "hkdf",
+ "hkdf 0.13.0",
  "jsonwebtoken",
  "lru 0.18.0",
  "proptest",
@@ -1505,10 +1523,10 @@ dependencies = [
  "corelink-r2-multipart",
  "corelink-worker",
  "hex",
- "hkdf",
+ "hkdf 0.13.0",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "sha2 0.11.0",
  "subtle",
  "thiserror 2.0.18",
@@ -1526,7 +1544,7 @@ dependencies = [
  "getrandom 0.4.2",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "subtle",
  "thiserror 2.0.18",
@@ -1550,7 +1568,7 @@ dependencies = [
  "corelink-clerk",
  "criterion",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "jsonwebtoken",
  "proptest",
  "rand 0.8.6",
@@ -1684,7 +1702,7 @@ dependencies = [
  "corelink-client-verify",
  "corelink-erasure-attestation",
  "corelink-hash",
- "hmac",
+ "hmac 0.13.0",
  "sha2 0.11.0",
  "subtle",
 ]
@@ -1714,7 +1732,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1772,7 +1790,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "proptest",
  "serde",
  "serde_json",
@@ -1789,10 +1807,10 @@ name = "corelink-dual-approval"
 version = "0.1.0"
 dependencies = [
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_jcs",
  "serde_json",
@@ -1808,7 +1826,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "blake3",
- "hmac",
+ "hmac 0.13.0",
  "proptest",
  "sha2 0.11.0",
  "thiserror 2.0.18",
@@ -1857,7 +1875,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "thiserror 2.0.18",
  "uuid",
 ]
@@ -1975,11 +1993,11 @@ dependencies = [
  "corelink-statuspage-real",
  "corelink-terraform-drift-consumer",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "mockito",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "reqwest",
  "rusqlite",
  "serde",
@@ -2003,8 +2021,8 @@ dependencies = [
  "argon2",
  "base64",
  "hex",
- "hmac",
- "password-hash 0.6.1",
+ "hmac 0.13.0",
+ "password-hash",
  "proptest",
  "rand_core 0.6.4",
  "serde",
@@ -2027,11 +2045,11 @@ dependencies = [
  "corelink-privacy-erasure-worker",
  "corelink-privacy-pseudonymize",
  "hex",
- "hkdf",
- "hmac",
+ "hkdf 0.13.0",
+ "hmac 0.13.0",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2051,7 +2069,7 @@ dependencies = [
  "hex",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_jcs",
  "serde_json",
@@ -2149,6 +2167,8 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
+ "tonic-prost",
+ "tonic-prost-build",
  "tower",
  "tower-layer",
  "tracing",
@@ -2163,7 +2183,7 @@ dependencies = [
  "corelink-slo",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2213,7 +2233,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "thiserror 2.0.18",
 ]
@@ -2269,7 +2289,7 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "http 1.4.2",
  "http-body 1.0.1",
  "http-body-util",
@@ -2288,6 +2308,8 @@ dependencies = [
  "tokio-stream",
  "tonic",
  "tonic-build",
+ "tonic-prost",
+ "tonic-prost-build",
  "tower",
  "tracing",
  "tracing-subscriber",
@@ -2312,7 +2334,7 @@ dependencies = [
  "corelink-enterprise-inquiry",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "reqwest",
  "serde",
  "serde_json",
@@ -2327,7 +2349,7 @@ version = "0.1.0"
 dependencies = [
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "thiserror 2.0.18",
 ]
 
@@ -2358,7 +2380,7 @@ dependencies = [
  "corelink-tier-selection",
  "criterion",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "js-sys",
  "proptest",
  "reqwest",
@@ -2382,7 +2404,7 @@ dependencies = [
  "corelink-tracing",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "subtle",
@@ -2397,7 +2419,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "criterion",
- "hmac",
+ "hmac 0.13.0",
  "proptest",
  "sha2 0.11.0",
  "thiserror 2.0.18",
@@ -2422,7 +2444,7 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "hex",
- "hmac",
+ "hmac 0.13.0",
  "proptest",
  "sha2 0.11.0",
  "subtle",
@@ -2436,7 +2458,7 @@ dependencies = [
  "corelink-analytics",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -2501,16 +2523,16 @@ dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.3.4",
  "getrandom 0.4.2",
- "hmac",
+ "hmac 0.13.0",
  "http 1.4.2",
  "http-body-util",
  "jsonwebtoken",
  "parking_lot",
- "password-hash 0.6.1",
+ "password-hash",
  "pin-project-lite",
  "proptest",
  "rand 0.9.4",
- "rand_chacha 0.10.0",
+ "rand_chacha 0.9.0",
  "rsa",
  "serde",
  "serde_json",
@@ -2634,6 +2656,18 @@ name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
+
+[[package]]
+name = "crypto-bigint"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0dc92fb57ca44df6db8059111ab3af99a63d5d0f8375d9972e319a379c6bab76"
+dependencies = [
+ "generic-array",
+ "rand_core 0.6.4",
+ "subtle",
+ "zeroize",
+]
 
 [[package]]
 name = "crypto-common"
@@ -3020,6 +3054,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ecdsa"
+version = "0.16.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee27f32b5c5292967d2d4a9d7f1e0b0aed2c15daded5a60300e4abb9d8020bca"
+dependencies = [
+ "der",
+ "digest 0.10.7",
+ "elliptic-curve",
+ "rfc6979",
+ "signature",
+ "spki",
+]
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3049,6 +3097,27 @@ name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91622ff5e7162018101f2fea40d6ebf4a78bbe5a49736a2020649edf9693679e"
+
+[[package]]
+name = "elliptic-curve"
+version = "0.13.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5e6043086bf7973472e0c7dff2142ea0b680d30e18d9cc40f267efbf222bd47"
+dependencies = [
+ "base16ct",
+ "crypto-bigint",
+ "digest 0.10.7",
+ "ff",
+ "generic-array",
+ "group",
+ "hkdf 0.12.4",
+ "pem-rfc7468",
+ "pkcs8",
+ "rand_core 0.6.4",
+ "sec1",
+ "subtle",
+ "zeroize",
+]
 
 [[package]]
 name = "encode_unicode"
@@ -3108,6 +3177,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
 
 [[package]]
+name = "ff"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0b50bfb653653f9ca9095b427bed08ab8d75a137839d9ad64eb11810d5b6393"
+dependencies = [
+ "rand_core 0.6.4",
+ "subtle",
+]
+
+[[package]]
 name = "fiat-crypto"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3128,6 +3207,12 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "fixedbitset"
+version = "0.5.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "flagset"
@@ -3264,6 +3349,7 @@ checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
 dependencies = [
  "typenum",
  "version_check",
+ "zeroize",
 ]
 
 [[package]]
@@ -3319,6 +3405,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "group"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0f9ef7462f7c099f518d754361858f86d8a07af53ba9af0fe635bbccb151a63"
+dependencies = [
+ "ff",
+ "rand_core 0.6.4",
+ "subtle",
+]
+
+[[package]]
 name = "h2"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3356,6 +3453,15 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+dependencies = [
+ "ahash",
+]
+
+[[package]]
+name = "hashbrown"
 version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
@@ -3387,11 +3493,11 @@ dependencies = [
 
 [[package]]
 name = "hashlink"
-version = "0.12.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5081f264ed7adee96ea4b4778b6bb9da0a7228b084587aa3bd3ff05da7c5a3b"
+checksum = "6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af"
 dependencies = [
- "hashbrown 0.17.1",
+ "hashbrown 0.14.5",
 ]
 
 [[package]]
@@ -3414,11 +3520,29 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hkdf"
+version = "0.12.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b5f8eb2ad728638ea2c7d47a21db23b7b58a72ed6a38256b8a1849f15fbbdf7"
+dependencies = [
+ "hmac 0.12.1",
+]
+
+[[package]]
+name = "hkdf"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4aaa26c720c68b866f2c96ef5c1264b3e6f473fe5d4ce61cd44bbe913e553018"
 dependencies = [
- "hmac",
+ "hmac 0.13.0",
+]
+
+[[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest 0.10.7",
 ]
 
 [[package]]
@@ -3868,11 +3992,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eba32bfb4ffdeaca3e34431072faf01745c9b26d25504aa7a6cf5684334fc4fc"
 dependencies = [
  "base64",
+ "ed25519-dalek",
  "getrandom 0.2.17",
+ "hmac 0.12.1",
  "js-sys",
+ "p256",
+ "p384",
  "pem",
+ "rand 0.8.6",
+ "rsa",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "signature",
  "simple_asn1",
  "zeroize",
@@ -3916,9 +4047,9 @@ dependencies = [
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.38.1"
+version = "0.30.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6c19a05435c21ac299d71b6a9c13db3e3f47c520517d58990a462a1397a61db"
+checksum = "2e99fb7a497b1e3339bc746195567ed8d3e24945ecd636e3619d20b9de9e9149"
 dependencies = [
  "cc",
  "pkg-config",
@@ -4090,6 +4221,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "multimap"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d87ecb2933e8aeadb3e3a02b828fed80a7528047e68b4f424523a0981a3a084"
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4231,6 +4368,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 
 [[package]]
+name = "p256"
+version = "0.13.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9863ad85fa8f4460f9c48cb909d38a0d689dba1f6f6988a5e3e0d31071bcd4b"
+dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "primeorder",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "p384"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe42f1670a52a47d448f14b6a5c61dd78fce51856e68edaa38f7ae3a46b8d6b6"
+dependencies = [
+ "ecdsa",
+ "elliptic-curve",
+ "primeorder",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "page_size"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4300,16 +4461,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "password-hash"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aab41826031698d6ffcd9cff78ef56ef998e39dc7e5067cdfebe373842d4723b"
-dependencies = [
- "phc",
- "rand_core 0.10.1",
-]
-
-[[package]]
 name = "pem"
 version = "3.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4335,14 +4486,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
-name = "phc"
-version = "0.6.1"
+name = "petgraph"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44dc769b75f93afdddd8c7fa12d685292ddeff1e66f7f0f3a234cf1818afe892"
+checksum = "8701b58ea97060d5e5b155d383a69952a60943f0e6dfe30b04c287beb0b27455"
 dependencies = [
- "base64ct",
- "ctutils",
- "rand_core 0.10.1",
+ "fixedbitset",
+ "hashbrown 0.15.5",
+ "indexmap 2.14.0",
 ]
 
 [[package]]
@@ -4478,7 +4629,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "fallible-iterator 0.2.0",
- "hmac",
+ "hmac 0.13.0",
  "md-5",
  "memchr",
  "rand 0.10.1",
@@ -4535,6 +4686,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "primeorder"
+version = "0.13.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "353e1ca18966c16d9deb1c69278edbc5f194139612772bd9537af60ac231e1e6"
+dependencies = [
+ "elliptic-curve",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4573,6 +4733,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-build"
+version = "0.14.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "03da047801ff44bb6a4d407d4860c05fd70bb81714e6b2f3812603d5b145b042"
+dependencies = [
+ "heck",
+ "itertools 0.14.0",
+ "log",
+ "multimap",
+ "petgraph",
+ "prettyplease",
+ "prost",
+ "prost-types",
+ "pulldown-cmark",
+ "pulldown-cmark-to-cmark",
+ "regex",
+ "syn",
+ "tempfile",
+]
+
+[[package]]
 name = "prost-derive"
 version = "0.14.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4592,6 +4773,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f94967dc7688f3054c7fac87473ffae4cc4c3904800e2d9f5b857246d8963b0a"
 dependencies = [
  "prost",
+]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9f068eba8e7071c5f9511831b44f32c740d5adf574e990f946ddb53db2f314e"
+dependencies = [
+ "bitflags 2.11.1",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
+name = "pulldown-cmark-to-cmark"
+version = "22.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50793def1b900256624a709439404384204a5dc3a6ec580281bfaac35e882e90"
+dependencies = [
+ "pulldown-cmark",
 ]
 
 [[package]]
@@ -4786,16 +4987,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rand_chacha"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e6af7f3e25ded52c41df4e0b1af2d047e45896c2f3281792ed68a1c243daedb"
-dependencies = [
- "ppv-lite86",
- "rand_core 0.10.1",
-]
-
-[[package]]
 name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4976,6 +5167,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rfc6979"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8dd2a808d456c4a54e300a23e9f5a67e122c3024119acbfd73e3bf664491cb2"
+dependencies = [
+ "hmac 0.12.1",
+ "subtle",
+]
+
+[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5011,20 +5212,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "rsqlite-vfs"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c51c9ae4df8a7fba42103df5c621fa3c37eccf3a3c650879e90fc48b11cc192c"
-dependencies = [
- "hashbrown 0.16.1",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "rusqlite"
-version = "0.40.1"
+version = "0.32.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11438310b19e3109b6446c33d1ed5e889428cf2e278407bc7896bc4aaea43323"
+checksum = "7753b721174eb8ff87a9a0e799e2d7bc3749323e773db92e0984debb00019d6e"
 dependencies = [
  "bitflags 2.11.1",
  "fallible-iterator 0.3.0",
@@ -5032,7 +5223,6 @@ dependencies = [
  "hashlink",
  "libsqlite3-sys",
  "smallvec",
- "sqlite-wasm-rs",
 ]
 
 [[package]]
@@ -5231,6 +5421,20 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "sec1"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3e97a565f76233a6003f9f5c54be1d9c5bdfa3eccfb189469f11ec4901c47dc"
+dependencies = [
+ "base16ct",
+ "der",
+ "generic-array",
+ "pkcs8",
+ "subtle",
+ "zeroize",
+]
 
 [[package]]
 name = "secrecy"
@@ -5574,18 +5778,6 @@ checksum = "d91ed6c858b01f942cd56b37a94b3e0a1798290327d1236e4d9cf4eaca44d29d"
 dependencies = [
  "base64ct",
  "der",
-]
-
-[[package]]
-name = "sqlite-wasm-rs"
-version = "0.5.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc3efc0da82635d7e1ced0053bbbfa8c7ab9645d0bf36ceb4f7127bb85315d75"
-dependencies = [
- "cc",
- "js-sys",
- "rsqlite-vfs",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -6091,6 +6283,33 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "tonic-prost"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50849f68853be452acf590cde0b146665b8d507b3b8af17261df47e02c209ea0"
+dependencies = [
+ "bytes",
+ "prost",
+ "tonic",
+]
+
+[[package]]
+name = "tonic-prost-build"
+version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "654e5643eff75d7f8c99197ce1440ed19a3474eada74c12bbac488b2cafdae27"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "prost-build",
+ "prost-types",
+ "quote",
+ "syn",
+ "tempfile",
+ "tonic-build",
 ]
 
 [[package]]

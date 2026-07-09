@@ -193,7 +193,7 @@ impl QuotaState {
 /// `InMemoryQuotaStore` under its in-process `Mutex`); the trait-level default
 /// fails CLOSED (returns `Err`) rather than silently over-admitting via a
 /// non-atomic two-step.
-#[axum::async_trait]
+#[async_trait::async_trait]
 pub trait QuotaStore: std::fmt::Debug + Send + Sync {
     /// Read a tenant's quota row. `Ok(None)` ⇒ no row yet (treated as a
     /// fresh default-tripwire tenant by the guard). `Err` ⇒ transport /
@@ -720,7 +720,7 @@ impl LeasedQuotaStore {
     }
 }
 
-#[axum::async_trait]
+#[async_trait::async_trait]
 impl QuotaStore for LeasedQuotaStore {
     // Read / absolute-write / unconditional-accrue / roll pass straight
     // through: the guard uses these for exact bookkeeping (seed, cycle
@@ -1066,7 +1066,7 @@ impl InMemoryQuotaStore {
     }
 }
 
-#[axum::async_trait]
+#[async_trait::async_trait]
 impl QuotaStore for InMemoryQuotaStore {
     async fn get(&self, tenant_id: &str) -> Result<Option<QuotaState>, String> {
         let rows = self
@@ -1162,7 +1162,7 @@ impl D1QuotaStore {
     }
 }
 
-#[axum::async_trait]
+#[async_trait::async_trait]
 impl QuotaStore for D1QuotaStore {
     async fn get(&self, tenant_id: &str) -> Result<Option<QuotaState>, String> {
         self.client.tenant_quota_lookup(tenant_id).await
@@ -1546,7 +1546,7 @@ mod tests {
     #[derive(Debug)]
     struct ErroringStore;
 
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl QuotaStore for ErroringStore {
         async fn get(&self, _tenant_id: &str) -> Result<Option<QuotaState>, String> {
             Err("simulated D1 transport error".to_owned())
@@ -1606,7 +1606,7 @@ mod tests {
         }
     }
 
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl QuotaStore for CountingStore {
         async fn get(&self, tenant_id: &str) -> Result<Option<QuotaState>, String> {
             self.inner.get(tenant_id).await
@@ -1732,7 +1732,7 @@ mod tests {
         seen_first_refill: AtomicUsize,
     }
 
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl QuotaStore for ErrorAfterFirstLease {
         async fn get(&self, tenant_id: &str) -> Result<Option<QuotaState>, String> {
             self.inner.get(tenant_id).await
@@ -1983,7 +1983,7 @@ mod tests {
         }
     }
 
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl QuotaStore for GetCountingStore {
         async fn get(&self, tenant_id: &str) -> Result<Option<QuotaState>, String> {
             let _ = self.get_calls.fetch_add(1, Ordering::SeqCst);
@@ -2167,7 +2167,7 @@ mod tests {
     /// fail-open. Driven by a fake whose warm path returns `Err`.
     #[derive(Debug)]
     struct WarmErrStore;
-    #[axum::async_trait]
+    #[async_trait::async_trait]
     impl QuotaStore for WarmErrStore {
         async fn get(&self, _t: &str) -> Result<Option<QuotaState>, String> {
             Ok(None)

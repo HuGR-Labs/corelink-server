@@ -20,7 +20,7 @@
 //!   16-byte truncated MAC; lengths are byte-equal by construction
 //!   so there is no length-based oracle.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 

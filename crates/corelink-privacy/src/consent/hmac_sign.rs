@@ -25,7 +25,7 @@
 use std::sync::{Arc, Mutex};
 
 use hkdf::Hkdf;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 
 use super::error::ConsentLedgerError;

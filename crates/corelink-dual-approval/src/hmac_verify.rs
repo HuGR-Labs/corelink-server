@@ -7,7 +7,7 @@
 //! The HMAC covers: `op_payload_canonical_bytes || nonce_16bytes || ts_ms_8be`
 //! (big-endian u64 for ts_ms).
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 

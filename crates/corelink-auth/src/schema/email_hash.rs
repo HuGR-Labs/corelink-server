@@ -27,7 +27,7 @@
 //! version — every property test that asserts cross-language equivalence
 //! lives in `tests/prop_email_hash.rs`.
 
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use zeroize::ZeroizeOnDrop;
 
@@ -97,7 +97,7 @@ pub fn derive_email_hash_key(master_key: &[u8; 32]) -> EmailHashKey {
         clippy::expect_used,
         reason = "Hmac<Sha256>::new_from_slice never returns Err for any byte slice"
     )]
-    let mut extract = <Hmac<Sha256> as Mac>::new_from_slice(HKDF_SALT)
+    let mut extract = <Hmac<Sha256> as KeyInit>::new_from_slice(HKDF_SALT)
         .expect("HMAC-SHA256 accepts any salt length");
     extract.update(master_key);
     let prk = extract.finalize().into_bytes();
@@ -108,7 +108,7 @@ pub fn derive_email_hash_key(master_key: &[u8; 32]) -> EmailHashKey {
         clippy::expect_used,
         reason = "Hmac<Sha256>::new_from_slice on a 32-byte SHA-256 output is infallible"
     )]
-    let mut expand = <Hmac<Sha256> as Mac>::new_from_slice(&prk)
+    let mut expand = <Hmac<Sha256> as KeyInit>::new_from_slice(&prk)
         .expect("PRK is the 32-byte SHA-256 output; never errors");
     expand.update(HKDF_INFO);
     expand.update(&[0x01]);
@@ -136,7 +136,7 @@ pub fn compute_email_hash(key: &EmailHashKey, email: &str) -> [u8; EMAIL_HASH_LE
         clippy::expect_used,
         reason = "Hmac<Sha256>::new_from_slice never returns Err for any byte slice"
     )]
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key.as_bytes())
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key.as_bytes())
         .expect("HMAC-SHA256 accepts any key length");
     mac.update(normalised.as_bytes());
     let tag = mac.finalize().into_bytes();

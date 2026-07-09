@@ -16,7 +16,7 @@ workspace = true
 # to keep PHC + Algorithm::Argon2id surface stable; bumps gated by cargo-deny.
 argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash"] }
 # Argon2's `Salt` / `SaltString` types are surfaced via `password-hash`.
-password-hash = { version = "0.6", default-features = false, features = ["alloc", "rand_core"] }
+password-hash = { version = "0.5", default-features = false, features = ["alloc", "rand_core"] }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 subtle = { workspace = true }

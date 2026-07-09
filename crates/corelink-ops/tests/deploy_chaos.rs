@@ -284,7 +284,7 @@ fn chaos_rate_limit_returns_429() {
 /// Tampered request body must fail HMAC authentication.
 #[test]
 fn chaos_webhook_hmac_tampered_body_rejected() {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
 
     type HmacSha256 = Hmac<Sha256>;

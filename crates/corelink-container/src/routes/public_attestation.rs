@@ -68,8 +68,8 @@ pub fn build_state_from_env() -> Option<PublicAttestationState> {
 /// Mount the two public verifier routes.
 pub fn router(state: PublicAttestationState) -> Router {
     Router::new()
-        .route("/v1/public/attestation/:request_id", get(handle_attestation))
-        .route("/v1/public/keys/erasure/:region_pub", get(handle_region_key))
+        .route("/v1/public/attestation/{request_id}", get(handle_attestation))
+        .route("/v1/public/keys/erasure/{region_pub}", get(handle_region_key))
         .with_state(state)
 }
 

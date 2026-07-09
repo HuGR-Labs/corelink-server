@@ -21,7 +21,8 @@
     reason = "bench harness; criterion macros generate items we do not own"
 )]
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, Criterion};
 
 use corelink_clerk::principal::test_principal_helpers::{
     make_org_id, make_session_id, make_user_id,

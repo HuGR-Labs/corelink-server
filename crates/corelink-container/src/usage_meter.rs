@@ -31,7 +31,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::async_trait;
+use async_trait::async_trait;
 
 /// One classified cache op, recorded fire-and-forget by a surface handler.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

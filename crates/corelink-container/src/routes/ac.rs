@@ -56,7 +56,7 @@ use corelink_handler_ac::{
 };
 
 /// Canonical AC list route path — `GET /v1/ac/:tenant` (D-7).
-pub const AC_LIST_ROUTE: &str = "/v1/ac/:tenant";
+pub const AC_LIST_ROUTE: &str = "/v1/ac/{tenant}";
 
 /// Default page size for the AC list route when `?limit` is absent.
 const DEFAULT_LIST_LIMIT: u32 = 200;
@@ -88,11 +88,11 @@ fn clamp_limit(requested: Option<u32>) -> u32 {
 /// against the workspace-pinned axum 0.7 / matchit 0.7. Fixed by replacing
 /// brace placeholders with the `:name` form used by every other live
 /// route (see `admin_pilot.rs`, `signup.rs`).
-pub const AC_LOOKUP_ROUTE: &str = "/v1/ac/:tenant/:action_digest";
+pub const AC_LOOKUP_ROUTE: &str = "/v1/ac/{tenant}/{action_digest}";
 
 /// Canonical AC update route path. The update path reuses the
 /// same template; axum disambiguates by HTTP method.
-pub const AC_UPDATE_ROUTE: &str = "/v1/ac/:tenant/:action_digest";
+pub const AC_UPDATE_ROUTE: &str = "/v1/ac/{tenant}/{action_digest}";
 
 /// Shared route state — distinct trait objects for read and update.
 #[derive(Clone)]
@@ -207,7 +207,6 @@ pub(crate) struct AcPutGuard {
     _slot: AcPutSlot,
 }
 
-#[axum::async_trait]
 impl FromRequestParts<AcRouteState> for AcPutGuard {
     type Rejection = axum::response::Response;
 
@@ -942,8 +941,8 @@ mod tests {
 
     #[test]
     fn route_constants_match_canonical_path() {
-        assert_eq!(AC_LOOKUP_ROUTE, "/v1/ac/:tenant/:action_digest");
-        assert_eq!(AC_UPDATE_ROUTE, "/v1/ac/:tenant/:action_digest");
+        assert_eq!(AC_LOOKUP_ROUTE, "/v1/ac/{tenant}/{action_digest}");
+        assert_eq!(AC_UPDATE_ROUTE, "/v1/ac/{tenant}/{action_digest}");
     }
 
     /// F1 (CAA-360) fail-CLOSED: the `UnavailableAcHandler`'s error maps to
@@ -1249,9 +1248,13 @@ mod tests {
     // ── D-1 delete + D-7 list ────────────────────────────────────────────────
 
     #[test]
-    fn list_route_constant_uses_colon_syntax() {
-        assert_eq!(AC_LIST_ROUTE, "/v1/ac/:tenant");
-        assert!(!AC_LIST_ROUTE.contains('{'));
+    fn list_route_constant_uses_axum_0_8_brace_syntax() {
+        // axum 0.8 / matchit 0.8 use `{name}` captures; the legacy `:name`
+        // form is now a literal path segment, so pin brace-presence + colon
+        // absence to prevent drift back to the pre-0.8 syntax.
+        assert_eq!(AC_LIST_ROUTE, "/v1/ac/{tenant}");
+        assert!(AC_LIST_ROUTE.contains("{tenant}"));
+        assert!(!AC_LIST_ROUTE.contains(':'));
     }
 
     #[test]

@@ -39,6 +39,28 @@ Each entry cross-references:
   this makes a complete cache-tier price map a hard prod-deploy requirement — set all four ids on the
   container prod env (identical to the signup-worker reverse map) before deploying.
 
+### Changed
+- **deps — adapted the non-security-major dependency wave (PR #556, 22 crates) to compile + pass
+  cleanly.** Landed the bumps and applied the canonical upstream migrations: `hmac` 0.12→0.13 /
+  `sha2` 0.10→0.11 / `hkdf` 0.12→0.13 (RustCrypto digest-0.11 generation — `KeyInit` now carries
+  `new_from_slice`, so it is brought into scope at every HMAC call site; `Hkdf<H, I>` collapsed to
+  `Hkdf<H>`; digest `finalize()`/`Output` is a `hybrid_array::Array` — hex via `hex::encode`/`AsRef`,
+  not `{:x}`); `aes-gcm` 0.10→0.11 (`GenericArray::from_slice` → `.into()`/`TryFrom` on the BYOK
+  envelope/convergent/Azure paths); `axum` 0.7→0.8 (route params `:name`→`{name}`, wildcard
+  `*rest`→`{*rest}` across every REST/cache surface; `FromRequestParts` impls are native-async, and
+  `axum::async_trait` on the store traits moved to the `async-trait` crate); `tonic`/`prost`
+  0.12/0.13→0.14 (prost codegen split into `tonic-prost-build` + the `tonic-prost` runtime for the
+  REAPI + health protos); `pyo3` 0.24→0.29 (`prepare_freethreaded_python`→`Python::initialize`,
+  `Python::with_gil`→`Python::attach`, `#[pyclass(skip_from_py_object)]`); `jsonwebtoken` 9→10 (now
+  requires an explicit crypto-provider feature — pinned pure-Rust `rust_crypto` for wasm/portability);
+  plus `criterion` 0.5→0.8 (`black_box` → `std::hint::black_box`), `toml`/`dirs`/`indicatif`/
+  `rusqlite`*/`testcontainers`/`webpki-roots`/`tokio-postgres-rustls`. **Held back (out of the
+  wave, reported):** `password-hash` kept at 0.5 (0.6 has no stable `argon2` — only `0.6.0-rc.*` —
+  and the Argon2id PAT path must stay on a stable crypto crate); `rand_chacha` kept at 0.9 (0.10 is
+  trait-coupled to `rand` 0.10 via `rand_core` 0.10, which the wave did not bump); `rusqlite` kept at
+  0.32 (0.40 pulls `libsqlite3-sys` 0.38.1 whose build script uses `cfg_select`, stable only on
+  Rust ≥1.92 — the repo pins 1.91.1 via `rust-toolchain.toml`, an ADR-0015-gated reproducibility pin).
+
 ### Fixed
 - **worker `auth_rotate` — a `read-only` PAT is now ROTATABLE (was wrongly refused `422 pat scope is
   not rotatable`).** `ROTATABLE_SCOPES` excluded `read-only` on the stale premise that the single mint

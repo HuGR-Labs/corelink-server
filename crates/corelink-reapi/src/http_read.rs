@@ -162,7 +162,7 @@ where
     // `MissMarker` extension that `handle_cas_get` inserts on every
     // miss path.
     Router::new()
-        .route("/v1/cas/:digest", get(handle_cas_get::<V, B, M, R, C>))
+        .route("/v1/cas/{digest}", get(handle_cas_get::<V, B, M, R, C>))
         .layer(padding_layer)
         .with_state(state)
 }

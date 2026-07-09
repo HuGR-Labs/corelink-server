@@ -123,7 +123,7 @@ pub fn build_router(config: CargoAdapterConfig) -> Router {
     // takes the LAST path segment. In standalone sccache mode the client hits
     // `/<key>` (a single segment), which the catch-all matches identically.
     Router::new()
-        .route("/*path", get(handle_get).put(handle_put).head(handle_head))
+        .route("/{*path}", get(handle_get).put(handle_put).head(handle_head))
         .with_state(state)
 }
 

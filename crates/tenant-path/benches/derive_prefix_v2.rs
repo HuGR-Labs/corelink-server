@@ -19,7 +19,8 @@
 )]
 
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 

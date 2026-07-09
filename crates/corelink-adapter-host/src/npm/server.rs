@@ -65,10 +65,10 @@ pub fn build_router(state: AdapterState) -> Router {
     Router::new()
         .route("/-/ping", get(handle_ping))
         .route("/-/v1/search", get(handle_search_not_implemented))
-        .route("/:pkg", get(handle_metadata))
+        .route("/{pkg}", get(handle_metadata))
         // Tarball: /<pkg>/-/<tarball>.tgz  — axum wildcard captures
         // the full suffix after the package name.
-        .route("/:pkg/-/:tarball", get(handle_tarball))
+        .route("/{pkg}/-/{tarball}", get(handle_tarball))
         .with_state(state)
 }
 

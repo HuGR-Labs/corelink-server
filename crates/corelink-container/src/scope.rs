@@ -197,7 +197,6 @@ impl CacheScope {
     }
 }
 
-#[axum::async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for CacheScope {
     // Infallible: the capability is enforced at the route, not at extraction,
     // so a scope-less request still constructs a (grant-nothing) CacheScope.
@@ -341,7 +340,6 @@ impl RunnerJob {
     }
 }
 
-#[axum::async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for RunnerJob {
     // Infallible: the narrowing is enforced at the route (like `CacheScope`),
     // so a non-runner-job request still constructs a (NO-OP) `RunnerJob`.

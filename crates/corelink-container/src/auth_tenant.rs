@@ -54,7 +54,6 @@ pub fn is_reserved_sentinel(raw: &str) -> bool {
     SENTINELS.contains(&raw)
 }
 
-#[axum::async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for AuthTenant {
     type Rejection = Response;
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {

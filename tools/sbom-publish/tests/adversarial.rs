@@ -25,7 +25,7 @@ use sbom_publish::tsa::{verify_tsr_binding, TsrToken};
 fn scenario_01_sbom_tamper_detected_via_tsr_hash_mismatch() {
     let original_sbom = b"{\"specVersion\":\"1.5\",\"components\":[]}";
     let sha = Sha256::digest(original_sbom);
-    let sha_hex = format!("{sha:x}");
+    let sha_hex = hex::encode(sha);
 
     let token = TsrToken {
         der_bytes: vec![0u8, 1u8, 2u8],
@@ -152,7 +152,7 @@ fn scenario_04_tsa_replay_with_different_hash_rejected() {
     let sha_v1 = Sha256::digest(sbom_v1);
     let token_v1 = TsrToken {
         der_bytes: vec![0xDE, 0xAD, 0xBE, 0xEF],
-        sbom_sha256_hex: format!("{sha_v1:x}"),
+        sbom_sha256_hex: hex::encode(sha_v1),
         nonce_hex: "cafebabe".to_owned(),
     };
 

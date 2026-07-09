@@ -57,7 +57,7 @@ use corelink_byok::{
     Tcs, WrappedDek,
 };
 use corelink_handler_cas::DigestAlgo;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use serde_json::{json, Value};
 use zeroize::Zeroizing;

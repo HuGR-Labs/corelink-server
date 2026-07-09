@@ -115,8 +115,8 @@ pub fn router(state: WorkspacesRouteState) -> Router {
             "/v1/customer/workspaces",
             get(handle_list).post(handle_create),
         )
-        .route("/v1/customer/workspaces/:workspace_id", delete(handle_delete))
-        .route("/v1/customer/workspaces/:workspace_id/pin", post(handle_pin))
+        .route("/v1/customer/workspaces/{workspace_id}", delete(handle_delete))
+        .route("/v1/customer/workspaces/{workspace_id}/pin", post(handle_pin))
         .with_state(state)
 }
 
