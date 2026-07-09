@@ -2297,6 +2297,7 @@ dependencies = [
  "corelink-cf-bindings",
  "corelink-core",
  "corelink-erasure-attestation",
+ "corelink-failover-router",
  "corelink-handler-ac",
  "corelink-handler-admin",
  "corelink-handler-cas",

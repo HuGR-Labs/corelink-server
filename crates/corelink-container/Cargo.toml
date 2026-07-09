@@ -270,6 +270,12 @@ corelink-analytics = { workspace = true }
 # `validate_billing_period` for the `YYYY-MM` shape so the ingest endpoint
 # never reinvents the billing-emit surface contract.
 corelink-billing-emit = { workspace = true }
+# WI-MULTI-REGION-V1 (failover prod-wiring) — the read-side failover router +
+# `HealthProbe` trait consumed by the container's `routes::failover` Tower
+# layer. The container drives the crate's `FailoverRouter` decision core with a
+# REAL rolling-metrics probe over live traffic (not the crate's InMemory probe
+# fixture), fail-CLOSED blocking writes to a degraded region.
+corelink-failover-router = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
