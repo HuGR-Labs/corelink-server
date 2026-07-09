@@ -43,8 +43,8 @@ deduplicates to one stored blob in CoreLink.
 
 - [ ] **Identify the access pattern.** Three common cases:
   - **Write-once, read-many** (release binaries, ML training datasets, golden images) — *ideal CAS fit*.
-  - **Append-only with versioned keys** (e.g. `artifacts/v1.2.3/...`) — *good fit; the version in the key is redundant once you have content digests*.
-  - **Mutable keys** (e.g. `latest.tar.gz` is overwritten on each release) — *don't migrate the mutable key directly; migrate the immutable artifact and add a digest-pointer file*. See [the `latest` pointer pattern](#the-latest-pointer-pattern) below.
+  - **Append-only with versioned keys** (for example, `artifacts/v1.2.3/...`) — *good fit; the version in the key is redundant once you have content digests*.
+  - **Mutable keys** (for example, `latest.tar.gz` is overwritten on each release) — *don't migrate the mutable key directly; migrate the immutable artifact and add a digest-pointer file*. See [the `latest` pointer pattern](#the-latest-pointer-pattern) below.
 
 - [ ] **List producers + consumers.** Every script that does
   `aws s3 cp` / `aws s3 sync` against this bucket. They all need a

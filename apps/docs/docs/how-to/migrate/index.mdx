@@ -37,7 +37,7 @@ it's a hard prerequisite.
 | S3 bucket holding build artifacts, ML datasets, or release binaries (no CAS semantics) | Content-addressable storage with audit trail and BLAKE3 integrity | [From S3-only artifact storage](./from-s3-only) |
 | Self-hosted Harbor, Quay, or generic Docker registry holding image layers | CoreLink CAS as the layer backend (registry stays in front) | [From a Docker registry](./from-docker-registry) |
 | Pants, Buck2, or custom REAPI cache | Read the [Bazel guide](./from-bazel-remote-cache) — the REAPI v2 wire protocol is identical; just swap `.bazelrc` flags for your build tool's equivalent. | — |
-| **Mixed** (e.g. S3 + Docker registry, or bazel-remote + S3) | Run all three migrations in sequence, lowest-blast-radius first (S3 → Docker → Bazel). | — |
+| **Mixed** (for example, S3 + Docker registry, or bazel-remote + S3) | Run all three migrations in sequence, lowest-blast-radius first (S3 → Docker → Bazel). | — |
 
 If your situation doesn't fit any row above, file an issue against
 [`HumanGuardrail/corelink-server`](https://github.com/HumanGuardrail/corelink-server/issues)
