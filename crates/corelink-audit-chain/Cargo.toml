@@ -99,8 +99,8 @@ criterion = { workspace = true }
 # that exercise `RealNeonShadowSink` against a `postgres:16-alpine`
 # testcontainer. Docker is required at run-time; `cargo build` without
 # the feature does NOT require Docker.
-testcontainers = "0.23"
-testcontainers-modules = { version = "0.11", features = ["postgres"] }
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["postgres"] }
 tokio = { workspace = true }
 tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-serde_json-1"] }
 
