@@ -91,6 +91,18 @@ pub struct CustomerRouteState {
     /// CLOSED (503) rather than silently acknowledging a GDPR erasure it cannot
     /// honor. See [`AccountDeletionRequester`].
     pub account_deletion: Option<Arc<dyn AccountDeletionRequester>>,
+    /// Self-serve tenant bulk-export source (SEAM): backs
+    /// `POST /v1/customer/account/export` — the full portability bundle (CAS+AC
+    /// blob bytes + RBAC/DPA/audit records) the CLI `corelink tenant export`
+    /// needs. `Some` in production once the CAS/AC handlers + D1 row source are
+    /// wired (by `routes.rs`, mirroring `account_deletion`); `None` in dev/CI —
+    /// the export route then fails CLOSED (503) rather than serve an empty bundle.
+    /// See [`crate::routes::customer_export::TenantExportSource`].
+    pub export: Option<Arc<dyn crate::routes::customer_export::TenantExportSource>>,
+    /// Per-tenant rate limiter for the heavy export route (always present — a
+    /// cheap in-process token bucket, burst 2 / 1 per 300s). Mirrors how
+    /// `audit_export` self-rate-limits its export in the container.
+    pub export_rate_limiter: Arc<dyn corelink_ratelimit::RateLimiter>,
 }
 
 impl core::fmt::Debug for CustomerRouteState {
@@ -127,6 +139,10 @@ pub fn build_handlers_from_env() -> CustomerRouteState {
             // built alongside the DSR worker); `None` here keeps the factory
             // env-pure — the account-delete route then fails CLOSED (503).
             account_deletion: None,
+            // Wired by `routes.rs` from the CAS/AC handlers + D1; `None` here keeps
+            // the factory env-pure — the export route then fails CLOSED (503).
+            export: None,
+            export_rate_limiter: crate::routes::customer_export::build_export_rate_limiter(),
         },
         None => {
             tracing::warn!(
@@ -159,6 +175,9 @@ pub fn build_handlers() -> CustomerRouteState {
         pat_gate: None,
         // Dev/CI default = unwired; the account-delete route fails CLOSED (503).
         account_deletion: None,
+        // Dev/CI default = unwired; the export route fails CLOSED (503).
+        export: None,
+        export_rate_limiter: crate::routes::customer_export::build_export_rate_limiter(),
     }
 }
 
@@ -196,6 +215,7 @@ pub fn router(state: CustomerRouteState) -> Router {
         .route("/v1/customer/team/invite", post(handle_team_invite))
         .route("/v1/customer/team/{user_id}", delete(handle_team_remove))
         .route("/v1/customer/account/delete", post(handle_account_delete))
+        .route("/v1/customer/account/export", post(handle_account_export))
         .with_state(state)
 }
 
@@ -1006,6 +1026,145 @@ async fn handle_account_delete(
     }
 }
 
+/// `POST /v1/customer/account/export` — self-serve tenant bulk export (SEAM).
+///
+/// Streams the full portability bundle (content-addressed NDJSON): the tenant's
+/// CAS + AC blob BYTES + the D1 governance records (RBAC/team, DPA/consent, audit
+/// slice). Unblocks the CLI `corelink tenant export` (PR #708) and serves GDPR
+/// Art.20 data portability for the whole tenant.
+///
+/// Auth: owner/admin only. Accepts EITHER a dashboard Clerk session OR a
+/// write-capable (`cas:rw`) PAT — the bundle exposes the tenant's team PII, DPA
+/// records, audit log AND every blob, so a read-only (`cas:r`) cache token is NOT
+/// sufficient (gated on `requires_cache_write`, exactly like the billing/keys/team
+/// surfaces). The native PAT-possession backstop runs first (a leaked
+/// `PAT_SIGNING_KEY` cannot forge a bearer for a victim tenant). Rate-limited
+/// per-tenant. Audited: a durable `account.export` row is written BEFORE any bytes
+/// are disclosed. Fail-CLOSED: unwired source → 503; a gather/audit fault → 5xx —
+/// never a partial 200.
+async fn handle_account_export(
+    State(state): State<CustomerRouteState>,
+    headers: HeaderMap,
+) -> axum::response::Response {
+    use crate::routes::customer_export::TenantExportError;
+    use crate::wall_clock::WallClock as _;
+
+    // 1. Fail-CLOSED tenant resolution (401 on missing/sentinel).
+    let t = match tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
+    // 2. Native PAT possession backstop (forged / wrong-tenant PAT → 401/503).
+    if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
+        return resp;
+    }
+    // 3. Owner/admin + PII gate: the bundle carries team PII / DPA / audit / all
+    //    blobs — a read-only cache token must not export it (F-018 sibling).
+    if let Some(resp) = billing_pii_gate_reject(&headers) {
+        return resp;
+    }
+    // 4. Require the export source (fail-CLOSED 503 when unwired — dev/CI).
+    let Some(source) = state.export.clone() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "tenant export not configured",
+        )
+            .into_response();
+    };
+    // 5. Per-tenant rate limit (heavy full-tenant read). The tenant may be a
+    //    non-UUID fixture id, so bucket on a deterministic v5 UUID derived from it.
+    let now_ms = crate::wall_clock::default_wall_clock().now_ms();
+    let bucket_tenant = uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, t.as_bytes());
+    let bucket_key = corelink_ratelimit::BucketKey::per_tenant_per_endpoint(
+        bucket_tenant,
+        crate::routes::customer_export::EXPORT_ENDPOINT_ID,
+    );
+    match state
+        .export_rate_limiter
+        .try_acquire(bucket_tenant, bucket_key, 1, now_ms)
+    {
+        Ok(outcome) => match outcome.decision {
+            corelink_ratelimit::RateLimitDecision::Allow { .. } => {}
+            corelink_ratelimit::RateLimitDecision::Deny429 {
+                retry_after_secs, ..
+            } => {
+                let body = format!("rate-limited; retry after {retry_after_secs}s");
+                let mut resp = (StatusCode::TOO_MANY_REQUESTS, body).into_response();
+                if let Ok(val) = format!("{retry_after_secs}").parse() {
+                    resp.headers_mut()
+                        .insert(axum::http::header::RETRY_AFTER, val);
+                }
+                return resp;
+            }
+            // The decision enum is `#[non_exhaustive]`; any future non-Allow arm
+            // is treated as a deny so the route never streams under an unknown
+            // decision shape.
+            _ => return (StatusCode::TOO_MANY_REQUESTS, "rate-limited").into_response(),
+        },
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "rate-limit pipeline failed",
+            )
+                .into_response();
+        }
+    }
+    // 6. Gather governance + the blob index UP FRONT (fail-CLOSED — never a
+    //    partial-looking 200). Small: D1 rows + a (digest,size) index.
+    let metadata = match source.metadata_records(&t) {
+        Ok(m) => m,
+        Err(TenantExportError::Unavailable(e)) => {
+            tracing::warn!(error = %e, tenant = %t, "tenant export: source unavailable");
+            return (StatusCode::SERVICE_UNAVAILABLE, "export source unavailable").into_response();
+        }
+        Err(TenantExportError::Internal(e)) => {
+            tracing::error!(error = %e, tenant = %t, "tenant export: metadata gather failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "export gather failed").into_response();
+        }
+    };
+    let blobs = match source.blob_index(&t) {
+        Ok(b) => b,
+        Err(TenantExportError::Unavailable(e)) => {
+            tracing::warn!(error = %e, tenant = %t, "tenant export: blob index unavailable");
+            return (StatusCode::SERVICE_UNAVAILABLE, "export storage unavailable").into_response();
+        }
+        Err(TenantExportError::Internal(e)) => {
+            tracing::error!(error = %e, tenant = %t, "tenant export: blob index failed");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "export enumerate failed").into_response();
+        }
+    };
+    // 7. Audit BEFORE disclosure (durable `account.export` row). A fault here
+    //    aborts fail-CLOSED so a disclosure is never unlogged.
+    if let Err(e) = source.record_export_audit(&t, blobs.len(), metadata.len()) {
+        tracing::error!(error = %e, tenant = %t, "tenant export: audit write failed");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "export audit failed").into_response();
+    }
+    tracing::info!(
+        event = "customer.account.export",
+        tenant = %t,
+        blob_count = blobs.len(),
+        metadata_count = metadata.len(),
+        "tenant export streaming"
+    );
+    // 8. Stream the content-addressed NDJSON bundle. Blob bytes are fetched
+    //    lazily one at a time (memory-bounded).
+    let body_stream =
+        crate::routes::customer_export::build_export_stream(source, t, now_ms, metadata, blobs);
+    let body = axum::body::Body::new(http_body_util::StreamBody::new(body_stream));
+    let mut resp = (StatusCode::OK, body).into_response();
+    if let Ok(val) = axum::http::HeaderValue::from_str("application/x-ndjson") {
+        resp.headers_mut()
+            .insert(axum::http::header::CONTENT_TYPE, val);
+    }
+    if let (Ok(name), Ok(val)) = (
+        axum::http::HeaderName::from_bytes(b"x-corelink-export-schema"),
+        axum::http::HeaderValue::from_str(crate::routes::customer_export::EXPORT_SCHEMA),
+    ) {
+        resp.headers_mut().insert(name, val);
+    }
+    resp
+}
+
 // ─── Account-deletion (DSR erasure) collaborators (C-ACCTDEL) ──────────────────
 
 /// Failure modes of a self-serve account-deletion request.
@@ -1293,6 +1452,8 @@ mod tests {
             audit: shared.clone(),
             pat_gate: None,
             account_deletion: None,
+            export: None,
+            export_rate_limiter: crate::routes::customer_export::build_export_rate_limiter(),
         };
         (state, shared)
     }
@@ -2509,5 +2670,187 @@ mod tests {
             sink3.last.lock().unwrap().is_none(),
             "no enqueue when the salt key is unset (fail-CLOSED)"
         );
+    }
+
+    // ── Tenant bulk export (SEAM): POST /v1/customer/account/export ────────────
+
+    use crate::routes::customer_export::{
+        BlobKind, ExportBlobRef, TenantExportError, TenantExportSource,
+    };
+    use base64::Engine as _;
+
+    /// In-memory export source keyed by tenant — the isolation boundary under
+    /// test (a request for A can NEVER surface B's blobs).
+    #[derive(Debug, Default)]
+    struct FakeExportSource {
+        blobs: std::collections::HashMap<String, Vec<(ExportBlobRef, Vec<u8>)>>,
+    }
+
+    impl FakeExportSource {
+        fn with_blob(mut self, tenant: &str, kind: BlobKind, digest: &str, bytes: &[u8]) -> Self {
+            self.blobs.entry(tenant.to_owned()).or_default().push((
+                ExportBlobRef {
+                    kind,
+                    digest: digest.to_owned(),
+                    size: bytes.len() as u64,
+                },
+                bytes.to_vec(),
+            ));
+            self
+        }
+    }
+
+    impl TenantExportSource for FakeExportSource {
+        fn metadata_records(&self, tenant: &str) -> Result<Vec<Value>, TenantExportError> {
+            Ok(vec![json!({
+                "kind": "rbac",
+                "table": "team_member",
+                "record": { "tenant_id": tenant, "role": "owner" },
+            })])
+        }
+        fn blob_index(&self, tenant: &str) -> Result<Vec<ExportBlobRef>, TenantExportError> {
+            Ok(self
+                .blobs
+                .get(tenant)
+                .map(|v| v.iter().map(|(r, _)| r.clone()).collect())
+                .unwrap_or_default())
+        }
+        fn fetch_blob(
+            &self,
+            tenant: &str,
+            kind: BlobKind,
+            digest: &str,
+        ) -> Result<Option<Vec<u8>>, TenantExportError> {
+            Ok(self.blobs.get(tenant).and_then(|v| {
+                v.iter()
+                    .find(|(r, _)| r.kind == kind && r.digest == digest)
+                    .map(|(_, b)| b.clone())
+            }))
+        }
+        fn record_export_audit(
+            &self,
+            _tenant: &str,
+            _blob_count: usize,
+            _metadata_count: usize,
+        ) -> Result<(), TenantExportError> {
+            Ok(())
+        }
+    }
+
+    fn export_state(source: Option<Arc<dyn TenantExportSource>>) -> CustomerRouteState {
+        let (mut state, _) = fixture();
+        state.export = source;
+        state
+    }
+
+    #[tokio::test]
+    async fn export_streams_bundle_with_blobs_and_records() {
+        let src = FakeExportSource::default()
+            .with_blob("tenant-a", BlobKind::Cas, "cafe", b"blob-A")
+            .with_blob("tenant-a", BlobKind::Ac, "beef", b"ac-A");
+        let app = router(export_state(Some(Arc::new(src))));
+        let req = Request::builder()
+            .uri("/v1/customer/account/export")
+            .method("POST")
+            .header("x-corelink-scope", "read-write")
+            .header("x-corelink-tenant-id", "tenant-a")
+            .header("x-corelink-token-prefix", "clerk")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        let lines: Vec<Value> = text
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(lines[0]["kind"], "header");
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let cas = lines
+            .iter()
+            .find(|l| l["kind"] == "blob" && l["blob_kind"] == "cas")
+            .expect("cas blob line");
+        assert_eq!(b64.decode(cas["bytes"].as_str().unwrap()).unwrap(), b"blob-A");
+        let ac = lines
+            .iter()
+            .find(|l| l["kind"] == "blob" && l["blob_kind"] == "ac")
+            .expect("ac blob line");
+        assert_eq!(b64.decode(ac["bytes"].as_str().unwrap()).unwrap(), b"ac-A");
+        assert!(lines.iter().any(|l| l["kind"] == "rbac"));
+        assert_eq!(lines.last().unwrap()["kind"], "manifest");
+    }
+
+    #[tokio::test]
+    async fn export_cross_tenant_isolation() {
+        let src = FakeExportSource::default()
+            .with_blob("tenant-a", BlobKind::Cas, "aaaa", b"A-secret")
+            .with_blob("tenant-b", BlobKind::Cas, "bbbb", b"B-secret");
+        let app = router(export_state(Some(Arc::new(src))));
+        let req = Request::builder()
+            .uri("/v1/customer/account/export")
+            .method("POST")
+            .header("x-corelink-scope", "read-write")
+            .header("x-corelink-tenant-id", "tenant-a")
+            .header("x-corelink-token-prefix", "clerk")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = to_bytes(resp.into_body(), 1 << 20).await.expect("body");
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        let b64 = base64::engine::general_purpose::STANDARD;
+        assert!(text.contains(&b64.encode(b"A-secret")));
+        assert!(
+            !text.contains(&b64.encode(b"B-secret")),
+            "must not leak tenant-b bytes"
+        );
+        assert!(!text.contains("bbbb"), "must not leak tenant-b digest");
+    }
+
+    #[tokio::test]
+    async fn export_unauthenticated_tenant_401() {
+        let app = router(export_state(Some(Arc::new(FakeExportSource::default()))));
+        // No x-corelink-tenant-id header → fail-CLOSED 401.
+        let req = Request::builder()
+            .uri("/v1/customer/account/export")
+            .method("POST")
+            .header("x-corelink-scope", "read-write")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn export_readonly_scope_forbidden() {
+        let app = router(export_state(Some(Arc::new(FakeExportSource::default()))));
+        // A read-only cache token must not export team PII / DPA / audit / blobs.
+        let req = Request::builder()
+            .uri("/v1/customer/account/export")
+            .method("POST")
+            .header("x-corelink-scope", "read-only")
+            .header("x-corelink-tenant-id", "tenant-a")
+            .header("x-corelink-token-prefix", "clpat_ro")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn export_unwired_source_fails_closed_503() {
+        let app = router(export_state(None));
+        let req = Request::builder()
+            .uri("/v1/customer/account/export")
+            .method("POST")
+            .header("x-corelink-scope", "read-write")
+            .header("x-corelink-tenant-id", "tenant-a")
+            .header("x-corelink-token-prefix", "clerk")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }
