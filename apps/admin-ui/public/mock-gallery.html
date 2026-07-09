@@ -1,0 +1,84 @@
+<!doctype html>
+<!-- DEV-ONLY mock gallery. Seeds the __corelink_e2e_session cookie (E2E test mode)
+     so the auth-gated screens render with mock auth + mocked /api data, then links
+     every migrated screen for visual review. NOT shipped to prod. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>CoreLink — Mock Screen Gallery</title>
+<style>
+  :root{--bg:#08090a;--panel:rgba(255,255,255,.03);--line:rgba(255,255,255,.09);--t1:#f7f8f8;--t2:rgba(247,248,248,.62);--t3:rgba(247,248,248,.54)}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--t2);font:14px/1.5 Inter,system-ui,sans-serif;padding:40px 44px 80px;max-width:1040px;margin:0 auto;-webkit-font-smoothing:antialiased}
+  h1{font-size:24px;font-weight:560;color:var(--t1);letter-spacing:-.02em;margin:0 0 6px}
+  .sub{color:var(--t3);font-size:13px;margin:0 0 24px}
+  .who{display:flex;gap:8px;align-items:center;margin:0 0 28px;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+  .who b{color:var(--t1)}
+  button{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--t1);font:inherit;font-weight:560;cursor:pointer}
+  button[data-on="true"]{background:var(--t1);color:var(--bg)}
+  h2{font-size:12px;font-weight:560;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin:28px 0 12px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  a.card{display:block;padding:13px 15px;background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--t1);text-decoration:none;font-weight:500;transition:border-color .15s,background .15s}
+  a.card:hover{border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.05)}
+  a.card small{display:block;color:var(--t3);font-weight:400;font-size:12px;margin-top:3px}
+</style>
+</head>
+<body>
+  <h1>CoreLink — Mock Screen Gallery</h1>
+  <p class="sub">Auth + API are mocked (E2E test mode). Click any screen to review. Toggle the role for admin vs customer screens. Screens open in a new tab.</p>
+
+  <div class="who">
+    <span>Mock session: <b id="who">customer (user@acme.example)</b></span>
+    <span style="flex:1"></span>
+    <button id="asUser" data-on="true" onclick="setUser(false)">Customer</button>
+    <button id="asAdmin" data-on="false" onclick="setUser(true)">Admin</button>
+  </div>
+
+  <div id="groups"></div>
+
+<script>
+  function seed(admin){
+    var user = admin
+      ? {sub:"user_e2e_admin",email:"admin@acme.example",role:"admin",tenant_id:"tenant_acme",mfaAt:Math.floor(Date.now()/1000)}
+      : {sub:"user_e2e_tenant",email:"user@acme.example",role:"user",tenant_id:"tenant_acme",mfaAt:Math.floor(Date.now()/1000)};
+    document.cookie = "__corelink_e2e_session=" + encodeURIComponent(JSON.stringify(user)) + "; path=/; SameSite=Lax";
+    document.getElementById("who").textContent = admin ? "admin (admin@acme.example)" : "customer (user@acme.example)";
+    document.getElementById("asUser").dataset.on = String(!admin);
+    document.getElementById("asAdmin").dataset.on = String(admin);
+  }
+  function setUser(admin){ seed(admin); }
+  seed(false); // default: customer session
+
+  var GROUPS = {
+    "Customer dashboard": [
+      ["/en/customer","Home / onboarding checklist"],["/en/customer/connect","Connect a tool"],
+      ["/en/customer/keys","Tokens"],["/en/customer/usage","Usage & savings"],
+      ["/en/customer/audit","Audit log"],["/en/customer/runners","Runners"],
+      ["/en/customer/workspaces","Workspaces"],["/en/customer/trust","Trust & compliance"],
+      ["/en/customer/team","Team"],["/en/customer/billing","Plan & billing"],
+      ["/en/customer/settings","Settings"]
+    ],
+    "Admin / operator (set role → Admin)": [
+      ["/en/admin/audit","Audit"],["/en/admin/ops","Ops"],["/en/admin/tenants","Tenants"]
+    ],
+    "Onboarding / activation": [
+      ["/en/welcome","Welcome (PAT reveal)"],["/en/upgrade","Upgrade"],["/en/upgraded","Upgraded"],["/en/team/invite","Team invite (DPA)"]
+    ],
+    "DSR / consent": [
+      ["/en/dsr","DSR landing"],["/en/dsr/status","DSR status"],["/en/consent/new","Consent (new)"],["/en/consent","Consent dashboard"]
+    ],
+    "Public / legal": [
+      ["/en/pricing","Pricing"],["/en/privacy","Privacy"],["/en/privacy/sub-processors","Sub-processors"],
+      ["/en/security/policy","Security policy"],["/en/legal/terms","Terms"],["/en/legal/cookies","Cookies"],["/en/403","403"]
+    ]
+  };
+  var out = "";
+  for (var g in GROUPS){
+    out += "<h2>"+g+"</h2><div class='grid'>";
+    GROUPS[g].forEach(function(s){ out += "<a class='card' target='_blank' href='"+s[0]+"'>"+s[1]+"<small>"+s[0]+"</small></a>"; });
+    out += "</div>";
+  }
+  document.getElementById("groups").innerHTML = out;
+</script>
+</body>
+</html>
