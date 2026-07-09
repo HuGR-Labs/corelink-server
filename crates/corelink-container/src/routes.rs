@@ -183,6 +183,16 @@ pub mod public_attestation;
 /// landing an EU tenant's bytes in a US container. Disjoint from cas.rs/ac.rs
 /// (no handler-body edits); wired as one `.layer(...)` line in [`build_with_factory`].
 pub mod residency;
+/// Read-side FAILOVER Tower layer + a REAL `HealthProbe` (WI-MULTI-REGION-V1
+/// prod-wiring). A router `layer` — mirror of `residency_guard` — that drives
+/// `corelink-failover-router`'s decision core with a live-traffic
+/// [`failover::RollingMetricsHealthProbe`]. When THIS container's region is
+/// degraded (sustained multi-signal outage) it fail-CLOSED blocks writes (503
+/// `failover_readonly`) and stamps a sibling read-region hint header so the edge
+/// Worker re-routes reads. Inert (pass-through) in a healthy region, in dev/CI,
+/// and on APAC colos with no sibling in the 4-macro graph. Wired as one
+/// `.layer(...)` line in [`build_with_factory`].
+pub mod failover;
 /// Per-tenant request-rate token-bucket middleware (audit #14/#16). A router
 /// `layer` wrapping the already-built `corelink-ratelimit` engine: it charges
 /// one token per request against the DO-injected `x-corelink-tenant-id`
@@ -861,6 +871,22 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // R2_CAS_REGION colo. Defence-in-depth backstop for a mis-bound regional
     // Worker; zero storage I/O on the reject path. Disjoint from cas.rs/ac.rs.
     router = router.layer(axum::middleware::from_fn(residency::residency_guard));
+
+    // WI-MULTI-REGION-V1 (failover prod-wiring): read-side failover Tower layer.
+    // Mirrors the residency layer above — one `.layer(...)` line, disjoint from
+    // the handler bodies. Drives `corelink-failover-router`'s decision core with
+    // a REAL `RollingMetricsHealthProbe` over THIS container's live traffic. In a
+    // healthy region it is fully inert (the multi-signal AND rule never trips on
+    // transient slowness); under a sustained region outage it fail-CLOSED blocks
+    // writes (503 `failover_readonly`) and stamps a sibling read-region hint so
+    // the edge Worker re-routes reads via its cross-region Service Binding. Inert
+    // on nrt/syd (no sibling in the 4-macro graph) + dev/CI. Primary region is
+    // resolved from `R2_CAS_REGION` (same env as residency + cas.rs).
+    let failover_state = failover::FailoverLayerState::from_env();
+    router = router.layer(axum::middleware::from_fn_with_state(
+        failover_state,
+        failover::failover_guard,
+    ));
 
     // audit #14/#16 (request-rate limiting): per-tenant token-bucket gate over
     // the metered data plane. Charges one token per request against the
