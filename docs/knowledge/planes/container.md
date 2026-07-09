@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/routes/public_attestation.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "3717d15bc3b20ad17558a00ed0ff2b992eae5573"
+checkpoint_sha: "b04438caa3b3a94d8a83b050305d7ce9d0aa9f80"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -82,9 +82,9 @@ surface.
    here with both a `put_inflight` and a `read_inflight` per-tenant concurrency pool
    (`crates/corelink-container/src/routes.rs:425-513`).
 7. Cache-adapter surfaces (cargo/brew/npm/pip/oci) mount only when the shared `adapter_pat::PatVerifier`
-   and the D1 moat map build from env (`crates/corelink-container/src/routes.rs:679-826`).
+   and the D1 moat map build from env (`crates/corelink-container/src/routes.rs:679-838`).
 8. The residency guard and the per-tenant rate-limit token-bucket are applied as outer layers over the
-   composed data plane (`crates/corelink-container/src/routes.rs:828-875`).
+   composed data plane (`crates/corelink-container/src/routes.rs:840-887`).
 9. The Turbo/sccache surface gets its durable backing from the container's R2 KV store: `R2KvStore`
    derives each object key as `<hmac_prefix16>/<opaque_key>` and fails CLOSED (`TurboBridgeError::Internal`)
    on the production path when the TDK is absent or the tenant is not a UUID, rather than degrade to a
@@ -101,7 +101,7 @@ surface.
 - The 410-Gone erasure gate and byte-accounting are centralized at the shared CAS chokepoint, so every
   surface inherits them by construction (`crates/corelink-container/src/routes.rs:484-503`).
 - The rate-limit + residency layers wrap exactly the data plane, never `/_health` or `/_internal/*`
-  (which mount later in `main`) (`crates/corelink-container/src/routes.rs:833-875`).
+  (which mount later in `main`) (`crates/corelink-container/src/routes.rs:845-887`).
 
 # Gotchas
 - The native CAS/AC/Bazel/Turbo plane trusts the Worker-injected `x-corelink-tenant-id`, with the
@@ -129,8 +129,8 @@ surface.
 11. `crates/corelink-container/src/routes.rs:369-423` — shared gates resolved from env (quota, OCI-scoped request-count, PAT, accountant); the request-count gate is OCI-only, not cloned into native states (would double-count vs the Worker edge).
 12. `crates/corelink-container/src/routes.rs:425-513` — shared CAS handler objects + accounting/tombstone wrap (incl. `put_inflight`/`read_inflight` pools in the `CasRouteState` ctor).
 13. `crates/corelink-container/src/routes.rs:484-503` — centralized 410-Gone erasure gate at the CAS chokepoint.
-14. `crates/corelink-container/src/routes.rs:679-826` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
-15. `crates/corelink-container/src/routes.rs:828-875` — residency guard + per-tenant rate-limit outer layers.
-16. `crates/corelink-container/src/routes.rs:833-875` — the rate-limit layer scoped to the data plane only.
+14. `crates/corelink-container/src/routes.rs:679-838` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
+15. `crates/corelink-container/src/routes.rs:840-887` — residency guard + per-tenant rate-limit outer layers.
+16. `crates/corelink-container/src/routes.rs:845-887` — the rate-limit layer scoped to the data plane only.
 17. `crates/corelink-container/src/main.rs:298-376` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one as the OCI op-cap, plus `ERASURE_SALT_KEY` at `crates/corelink-container/src/main.rs:346-358`), else a FATAL boot refusal (no half-armed prod).
 18. `crates/corelink-container/src/storage/r2_kv.rs:122-143` — `R2KvStore::object_key`: per-tenant `derive_prefix` HMAC key layout, fail-CLOSED on a non-derivable tenant rather than a public predictable prefix.

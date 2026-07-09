@@ -3,6 +3,7 @@ type: "TenancyControl"
 title: "Tenant governance: rate-limit, customer & user admin"
 description: "The per-tenant request-rate bulkhead plus the self-serve customer and user-identity surfaces, all keyed fail-CLOSED on the edge-injected tenant id."
 source_files:
+  - "crates/corelink-container/src/oci_suspend.rs"
   - "crates/corelink-container/src/routes/ratelimit_layer.rs"
   - "crates/corelink-container/src/routes/customer.rs"
   - "crates/corelink-container/src/routes/customer_runners.rs"
@@ -12,7 +13,7 @@ source_files:
   - "crates/corelink-container/src/usage_meter.rs"
   - "crates/corelink-ratelimit/src/audit.rs"
   - "crates/corelink-ratelimit/src/metrics.rs"
-checkpoint_sha: "3717d15bc3b20ad17558a00ed0ff2b992eae5573"
+checkpoint_sha: "b04438caa3b3a94d8a83b050305d7ce9d0aa9f80"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -39,8 +40,19 @@ self-service plane. It rests on the same trusted tenant id established by
 
 # How it works
 
+- **Container-side tenant-suspend gate on the OCI registry plane (go-live G4b).** The worker-side suspend
+  gate denies a suspended/erased tenant at the edge, but the OCI plane is reached by a bearer minted from a
+  short-lived token exchange, so a suspend could leak for the token's lifetime. `oci_suspend.rs` re-checks
+  `tenant_offboarding_state.state ∈ {suspended, erased}` on every OCI op and 403s a suspended tenant before
+  the request runs (`crates/corelink-container/src/oci_suspend.rs:85-86` — the `state_denies` predicate:
+  only the terminal `suspended`/`erased` states deny; the earlier grace/export windows keep access by
+  design). Unlike the fail-OPEN request-count cap, the suspend verdict is fail-CLOSED **sticky**: a tenant
+  already known suspended stays denied through a transient D1 read fault (the error is never cached, so a
+  later successful read can flip it back), and only an UNKNOWN tenant fails OPEN
+  (`crates/corelink-container/src/oci_suspend.rs:250-283` — `CachedSuspendResolver::suspended_state`,
+  single-flight + TTL cache with the sticky read-error fold).
 - The rate limiter is wired as ONE `.layer(...)` line at the end of `build_with_factory`
-  (`crates/corelink-container/src/routes.rs:890-893`), so it covers exactly the composed data-plane router;
+  (`crates/corelink-container/src/routes.rs:902-905`), so it covers exactly the composed data-plane router;
   `/_health` and `/_internal/*` are merged in `main.rs` AFTER `build_with_factory` returns and are therefore
   outside this layer by construction (the executed enforcer is `rate_limit_layer`,
   `crates/corelink-container/src/routes/ratelimit_layer.rs:437-463`).
@@ -85,7 +97,7 @@ self-service plane. It rests on the same trusted tenant id established by
 - The data-plane rate limiter never covers the DO readiness probe or the internal shared-secret surfaces:
   the layer wraps only the router returned by `build_with_factory`, and `/_health` + `/_internal/*` are
   merged AFTER it in `main.rs` — so exclusion is structural, not a path check inside `rate_limit_layer`
-  (`crates/corelink-container/src/routes.rs:890-893`; the executed enforcer is
+  (`crates/corelink-container/src/routes.rs:902-905`; the executed enforcer is
   `crates/corelink-container/src/routes/ratelimit_layer.rs:437-463`).
 - Every customer surface rejects a missing/sentinel tenant with `401` before touching that tenant's
   billing/keys/team data (`crates/corelink-container/src/routes/customer.rs:225-235`).
@@ -97,7 +109,7 @@ self-service plane. It rests on the same trusted tenant id established by
 # Gotchas
 
 - The limiter is wired with bounded NoOp sinks in production — `RateLimitLayerState::new` /
-  `with_tier_resolver` construct them (`crates/corelink-container/src/routes.rs:853-871`); the crate's
+  `with_tier_resolver` construct them (`crates/corelink-container/src/routes.rs:865-883`); the crate's
   `InMemoryRateLimitAuditSink` / `InMemoryRateLimitMetrics` capture sinks
   (`crates/corelink-ratelimit/src/audit.rs:147`, `crates/corelink-ratelimit/src/metrics.rs:177`) push every
   decision onto unbounded `Vec`/`HashMap`s and would self-OOM the container if wired here by mistake (the
@@ -110,9 +122,9 @@ self-service plane. It rests on the same trusted tenant id established by
 # Citations
 
 1. `crates/corelink-container/src/routes/ratelimit_layer.rs:437-463` — the EXECUTED `rate_limit_layer` enforcer (the `:15-49` ranges are the module `//!` doc-comments describing it).
-2. `crates/corelink-container/src/routes.rs:890-893` — the single `.layer(...)` wiring; `/_health` + `/_internal/*` are merged AFTER it in `main.rs`, so exclusion is structural (not a path check inside the layer).
+2. `crates/corelink-container/src/routes.rs:902-905` — the single `.layer(...)` wiring; `/_health` + `/_internal/*` are merged AFTER it in `main.rs`, so exclusion is structural (not a path check inside the layer).
 3. `crates/corelink-container/src/routes/ratelimit_layer.rs:442-447` — the executed keying: read of the edge-injected `TENANT_HEADER` (`x-corelink-tenant-id`).
-4. `crates/corelink-ratelimit/src/audit.rs:147`, `crates/corelink-ratelimit/src/metrics.rs:177` — the `InMemoryRateLimit*` capture sinks (unbounded `Vec`/`HashMap`); the prod NoOp sinks are constructed at `crates/corelink-container/src/routes.rs:853-871`.
+4. `crates/corelink-ratelimit/src/audit.rs:147`, `crates/corelink-ratelimit/src/metrics.rs:177` — the `InMemoryRateLimit*` capture sinks (unbounded `Vec`/`HashMap`); the prod NoOp sinks are constructed at `crates/corelink-container/src/routes.rs:865-883`.
 5. `crates/corelink-container/src/routes/ratelimit_layer.rs:415` — `tenant_key_uuid` stable 128-bit bucket key.
 6. `crates/corelink-container/src/routes/customer.rs:184` — the `/v1/customer/*` router (overview/usage/audit/billing/keys/team).
 7. `crates/corelink-container/src/routes/customer.rs:225-235` — `tenant()`: fail-CLOSED resolution returning `Err` on missing/sentinel before storage access (handler maps to `401`).
@@ -120,7 +132,7 @@ self-service plane. It rests on the same trusted tenant id established by
 10. `crates/corelink-container/src/routes/customer.rs:768-796` — `handle_keys_revoke`: revoke requires cache-write scope; read-only → `403`.
 11. `crates/corelink-container/src/routes/users.rs:18-27` — `/v1/users/me` security model (fail-CLOSED, never reflects the PAT).
 12. `crates/corelink-container/src/routes/users.rs:106-110` — the `handle_me` handler signature using the `AuthTenant` extractor.
-13. `crates/corelink-container/src/routes.rs:890-893` — the single `.layer(...)` wiring of the rate limiter in `build_with_factory`.
+13. `crates/corelink-container/src/routes.rs:902-905` — the single `.layer(...)` wiring of the rate limiter in `build_with_factory`.
 14. `crates/corelink-container/src/routes/customer_runners.rs:139` — `tenant()`: fail-CLOSED resolution (missing/empty/sentinel `x-corelink-tenant-id` ⇒ `Err(())` → 401) before any storage access.
 15. `crates/corelink-container/src/routes/customer_runners.rs:244` — a tenant-scoped `WHERE tenant_id = ?1` read (runners entitlement).
 16. `crates/corelink-container/src/routes/workspaces.rs:152` — `tenant()`: same fail-CLOSED missing/sentinel ⇒ 401 resolution.
@@ -128,3 +140,5 @@ self-service plane. It rests on the same trusted tenant id established by
 18. `crates/corelink-container/src/routes/workspaces.rs:267` — a tenant-scoped `WHERE tenant_id = ?1` list read (every workspaces statement is tenant-bound).
 19. `crates/corelink-container/src/usage_meter.rs:157-169` — `UsageMeter::record`: the hot-path-safe in-memory counter increment behind a lock (DISPLAY telemetry, never a gate).
 20. `crates/corelink-container/src/usage_meter.rs:240-260` — the `usage_daily` D1 sink: the background flusher's additive `INSERT … ON CONFLICT DO UPDATE` UPSERT of accumulated deltas (migration 0089).
+21. `crates/corelink-container/src/oci_suspend.rs:85-86` — `state_denies`: only the terminal `suspended`/`erased` offboarding states deny on the OCI plane (grace/export windows keep access).
+22. `crates/corelink-container/src/oci_suspend.rs:250-283` — `CachedSuspendResolver::suspended_state`: single-flight + TTL cache with the fail-CLOSED sticky read-error fold (known-suspended stays denied through a D1 fault; unknown fails OPEN).
