@@ -417,6 +417,110 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C4 SQUASH-ORPHAN tolerance + preserved freshness -------------------------
+# A concept's checkpoint_sha is ORPHANED when its PR is squash/rebase-merged: git
+# rewrites the pre-merge branch tip, so the SHA the PR wrote names a commit `main`
+# cannot reach (and a fetch-depth:0 CI clone never fetched it). This is NOT drift —
+# the squash landing preserves the cited source byte-for-byte. The old C4 hard-
+# failed "checkpoint_sha not found in git history" on EVERY downstream PR until a
+# manual #688/#690 repoint. This harness proves the durable fix:
+#   (1) an orphaned 40-hex checkpoint with INTACT cited content must NOT fire [C4]
+#       and the bundle must PASS (the false-positive is gone); and
+#   (2) FRESHNESS CONTROL — with the SAME orphaned checkpoint, if the cited content
+#       DRIFTS relative to the base ref, [C5] MUST still fire. The squash-orphan
+#       tolerance must not blunt the anti-drift guarantee.
+assert_c4_squash_orphan_tolerant() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  # A well-formed 40-hex that is NOT a resolvable commit in the throwaway repo ->
+  # unreachable, exactly as a fetch-depth:0 CI clone lacks the squashed pre-merge tip.
+  local orphan="beef0000beef0000beef0000beef0000beef0000"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'alpha\nbeta\ngamma\n' > src.txt
+    git add src.txt
+    git commit -q -m base
+
+    mkdir -p docs/knowledge/auth
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/auth/x.md)
+EOF
+    # Concept pins an ORPHANED checkpoint_sha; cited source (src.txt:1) is intact.
+    cat > docs/knowledge/auth/x.md <<EOF
+---
+type: "AuthMechanism"
+title: "Squash-orphan checkpoint (git harness)"
+description: "checkpoint is orphaned but the cited source is intact."
+source_files:
+  - "src.txt"
+checkpoint_sha: "$orphan"
+provenance: "AUTHORED"
+---
+
+# Squash-orphan checkpoint (git harness)
+
+Lead paragraph grounding the anchor line the concept rests on.
+
+# How it works
+- the source anchor line (\`src.txt:1\`).
+
+# Invariants
+- the anchor stays present (\`src.txt:1\`).
+
+# Citations
+1. \`src.txt:1\` — the anchor.
+EOF
+    git add -A
+    git commit -q -m A
+    sha_a="$(git rev-parse HEAD)"
+
+    # Downstream PR commit B: an UNRELATED change (does not touch src.txt). The
+    # concept keeps its orphaned checkpoint — the recurring trap every later PR hit.
+    printf 'note\n' > other.txt
+    git add -A
+    git commit -q -m B
+
+    # base ref = sha_a (the fork point); cited src.txt:1 is intact there.
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha_a" > "$tmp/.intact_out" 2>&1 || true
+
+    # FRESHNESS CONTROL commit C: DRIFT src.txt:1 without reconciling the concept
+    # (checkpoint stays orphaned). C5 must still catch it against the base ref.
+    printf 'ALPHA-DRIFTED\nbeta\ngamma\n' > src.txt
+    git add -A
+    git commit -q -m C
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$sha_a" > "$tmp/.drift_out" 2>&1 || true
+  )
+
+  # (1) orphan tolerated: no [C4] failure AND the intact-content run PASSED.
+  total=$((total + 1))
+  if ! grep -q '^\[C4\]' "$tmp/.intact_out" 2>/dev/null \
+     && grep -q 'OKF-CoreLink profile valid' "$tmp/.intact_out" 2>/dev/null; then
+    ok "C4 git-harness: squash-orphaned checkpoint w/ intact content does NOT fire [C4] (tolerated + passes)"
+  else
+    miss "C4 squash-orphan tolerance broken: $(tail -1 "$tmp/.intact_out" 2>/dev/null)" "C4-orphan-tol"
+  fi
+
+  # (2) freshness preserved: drift under the SAME orphaned checkpoint fires [C5].
+  total=$((total + 1))
+  if grep -q '^\[C5\]' "$tmp/.drift_out" 2>/dev/null; then
+    ok "C4 git-harness: drift under an orphaned checkpoint STILL fires [C5] (freshness preserved)"
+  else
+    miss "C4 squash-orphan freshness broken (no [C5] on drift): $(tail -1 "$tmp/.drift_out" 2>/dev/null)" "C4-orphan-fresh"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- C5: real git two-revision freshness harness ------------------------------
 # C5 freshness is also a two-tree diff (checkpoint_sha..HEAD), so a static bundle
 # would have to hardcode a host-repo commit SHA — exactly the non-portable trap
@@ -2512,6 +2616,7 @@ assert_c5_below
 assert_c5_added_file
 assert_c5b
 assert_c5b_orphan_exempt
+assert_c4_squash_orphan_tolerant
 assert_bad C6  C6  --bundle "$FIX/bad/C6"  --manifest "$NONE"
 assert_bad C6b C6b --bundle "$FIX/bad/C6b" --manifest "$NONE"
 assert_bad C6c C6c --bundle "$FIX/bad/C6c" --manifest "$NONE"

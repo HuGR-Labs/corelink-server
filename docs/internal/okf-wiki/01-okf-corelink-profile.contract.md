@@ -64,7 +64,7 @@ this table via a contract revision so the taxonomy stays curated.
 | `type` | string | Non-empty. From the taxonomy table §1.1 (or a contract-revised addition). |
 | `title` | string | Non-empty. (We tighten OKF's optional → required.) |
 | `source_files` | list[string] | **≥1.** Each = a repo-relative path that MUST resolve to an existing file. The code/docs this concept is grounded in. **Extension key.** |
-| `checkpoint_sha` | string | 40-hex. The commit this concept was last reconciled against; MUST exist in git history. **Extension key.** |
+| `checkpoint_sha` | string | 40-hex. The commit this concept was last reconciled against. SHOULD be a reachable commit; a SQUASH-ORPHANED checkpoint (a rewritten pre-merge tip, unreachable in a `fetch-depth: 0` clone) is TOLERATED — C4 warns and C5 re-anchors freshness to the base ref (see §4 C4). **Extension key.** |
 
 ### 2.2 OPTIONAL
 | Key | Type | Use |
@@ -144,7 +144,7 @@ freshness.
 | **C1** Conformance | Every non-reserved `.md` has parseable YAML frontmatter with non-empty `type`. | Missing/empty `type`, unparseable frontmatter. |
 | **C2** Required fields | `title`, `source_files` (≥1), `checkpoint_sha` present (unless `deferred`). | Any required field absent on a non-deferred concept. |
 | **C3** Source resolves | Every `source_files` path exists **verbatim** at HEAD. Renames do NOT auto-follow — a renamed-away declared path FAILS, forcing the author to correct `source_files` (accuracy of the dependency set is the point). | A declared path does not exist verbatim at HEAD. |
-| **C4** Checkpoint valid | `checkpoint_sha` is 40-hex and exists in git history. | Malformed or unknown SHA. |
+| **C4** Checkpoint valid (squash-merge resilient) | `checkpoint_sha` is 40-hex. Its commit SHOULD be resolvable; a 40-hex whose commit is UNREACHABLE (squash/rebase orphaned its pre-merge tip — the recurring #688/#690 trap) is TOLERATED as a non-blocking warning and C5 re-anchors freshness to the base ref (the fork point), whose cited content equals the dead checkpoint's. | **Malformed** (not 40-hex) SHA. An unreachable-but-well-formed SHA does NOT fail C4 — it is a squash-orphan, not drift; freshness is still gated by C5 against the base ref, so a drifted cite still fails. |
 | **C5** Freshness (anti-drift, declared+line-scoped) | For each `source_files` path: **two-tree `git diff <checkpoint_sha> HEAD -- <path>`** over the WHOLE file (merge-safe), **then post-filter to the diff hunks that intersect the concept's cited line ranges** for that file. **Implementation MUST NOT use `git log -L`/blame** (line-history reintroduces the merge-simplification B2 removed). No intersecting hunk ⇒ fresh. | A cited line-range's content changed since the checkpoint → concept STALE → FAIL (the bound). Edits OUTSIDE all cited ranges do NOT trigger (anti-churn). |
 | **C5b** No phantom reconcile | If a PR advances a concept's `checkpoint_sha`, that concept's body MUST also change in the same PR. | SHA bumped without a body edit (reconcile-without-reconciling). |
 | **C6** Citation resolves | Every inline `path:line[-line]` cite: file exists at HEAD, line(s) in bounds; every `source_files` path appears ≥1× under `# Citations`. | Dangling cite, out-of-range line, or an ungrounded declared source. |

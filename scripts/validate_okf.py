@@ -11,6 +11,14 @@ schema), §3 (body conventions), §4 (checks C1-C10b + secondary C-AGE/C-REV),
 All STRUCTURAL checks validate the working tree at HEAD (the thing being gated);
 `checkpoint_sha` is used ONLY as the content baseline for the C5 freshness check.
 
+SQUASH-MERGE RESILIENCE (C4/C5): a concept may pin `checkpoint_sha` at a PR's
+pre-merge branch tip that git rewrites at squash/rebase merge, ORPHANING the
+commit — unreachable from `main` and absent from the `fetch-depth: 0` CI clone.
+That is not drift (the squash landing preserves the cited source byte-for-byte)
+and no longer hard-fails C4; instead C4 warns and C5 re-anchors freshness to the
+reachable base ref (the fork point), so a genuinely drifted cite STILL fails but
+the recurring "checkpoint not found in git history" false-positive is gone.
+
 C5 freshness mechanism (CONTENT-ANCHOR): for each cited `path:Lx-Ly`, compare the
 CONTENT of lines Lx..Ly of `path` between the concept's `checkpoint_sha` and the
 on-disk WORKING TREE (each line trailing-whitespace-stripped, internal whitespace
@@ -253,6 +261,22 @@ class Git:
         if not sha:
             return False
         return self.run(["merge-base", "--is-ancestor", sha, ref]).returncode == 0
+
+    def resolve_base(self, ref: str):
+        """Resolve the PR's base ref to a concrete commit id, tolerating the CI
+        checkout layout (`actions/checkout` at `fetch-depth: 0`, detached HEAD)
+        where the base branch exists ONLY as a remote-tracking ref
+        `origin/<ref>` and NOT as a local branch — so a bare `main` would not
+        resolve. Tries the ref verbatim first, then `origin/<ref>`. Returns the
+        40-hex commit id, or None when neither resolves. Used to anchor the C5
+        squash-orphan content fallback (below) to a REACHABLE base commit even
+        when the checkout never materialised a local base branch."""
+        for cand in (ref, f"origin/{ref}"):
+            cp = self.run(["rev-parse", "--verify", "--quiet", f"{cand}^{{commit}}"])
+            sha = cp.stdout.strip()
+            if cp.returncode == 0 and sha:
+                return sha
+        return None
 
     def show_file(self, rev: str, repo_rel: str):
         cp = self.run(["show", f"{rev}:{repo_rel}"])
@@ -1039,6 +1063,17 @@ def run_checks(args, git: Git, fails: Failures):
                     "reserved file used as a concept (declares source_files/checkpoint_sha)",
                 )
 
+    # C5 SQUASH-ORPHAN fallback anchor: the merge-base of HEAD with the PR's base
+    # ref (the fork point). When a concept's `checkpoint_sha` is squash-orphaned
+    # (its commit was rewritten at merge and is unreachable in this clone — see C4
+    # below), C5 re-anchors freshness to THIS reachable commit instead of the dead
+    # checkpoint. Computed once here (not per-concept). None when no base ref is
+    # resolvable (a degenerate detached checkout) — an orphaned concept then has no
+    # anchor and C5 is skipped for it (warned under C4), which only happens where
+    # the checkpoint object is also present anyway (local full clone ⇒ ckpt_ok).
+    _resolved_base = git.resolve_base(args.base_ref) or args.base_ref
+    base_rev_for_c5 = git.merge_base(_resolved_base)
+
     # Per-concept structural checks.
     for c in concepts:
         loc = f"{bundle_root.name}/{c.rel}" if not _under(c.path, repo_root) else c.path.relative_to(repo_root).as_posix()
@@ -1079,15 +1114,50 @@ def run_checks(args, git: Git, fails: Failures):
                 missing_sources.add(sf)
                 fails.add("C3", loc, f"source_files path does not exist at HEAD: `{sf}`")
 
-        # C4: checkpoint_sha 40-hex and exists in git history
+        # C4: checkpoint_sha is 40-hex and its commit is resolvable in this clone.
+        #
+        # SQUASH-MERGE RESILIENCE (content-reachability, not commit-reachability).
+        # When a feature PR whose concept pins `checkpoint_sha` at its OWN pre-merge
+        # branch tip is SQUASH- or rebase-merged, git rewrites that tip into a new
+        # commit; the original tip becomes ORPHANED — unreachable from `main` and,
+        # in the gate's `fetch-depth: 0` CI clone, never fetched at all. The old C4
+        # then hard-failed "checkpoint_sha not found in git history" on EVERY
+        # subsequent PR (it passed LOCALLY, where the loose object still lingers in
+        # the author's clone, but RED in CI) until a manual #688/#690 repoint. That
+        # recurring false-positive is the trap this closes.
+        #
+        # An orphaned checkpoint is NOT drift and NOT a code bug: the squash LANDING
+        # preserves the concept's cited source BYTE-FOR-BYTE, so the content the
+        # author cited is intact — only the commit *name* (the id) died. So instead
+        # of red-failing, we TOLERATE the orphan (a non-blocking C4 warning) and
+        # re-anchor C5 freshness to the base ref (`base_rev_for_c5`, the reachable
+        # fork point whose cited content equals the dead checkpoint's). Freshness is
+        # still fully enforced against that reachable equivalent, so a genuinely
+        # DRIFTED citation STILL fails C5 — only the dead-commit-name alarm is gone.
+        # (This mirrors the C5b orphan-repair carve-out, which already treats a
+        # non-ancestor checkpoint as an orphaned pointer rather than an error. The
+        # residual — an orphaned SHA is now indistinguishable from a never-existed
+        # typo — is accepted: content is still gated against the base ref either way,
+        # and a fat-fingered SHA is caught in that concept's own PR review; only the
+        # 40-hex FORMAT violation remains a hard C4 failure.)
         ckpt_ok = False
+        ckpt_orphaned = False
         if c.checkpoint_sha:
             if not isinstance(c.checkpoint_sha, str) or not HEX40_RE.match(c.checkpoint_sha):
                 fails.add("C4", loc, f"checkpoint_sha is not 40-hex: `{c.checkpoint_sha}`")
-            elif not git.sha_exists(c.checkpoint_sha):
-                fails.add("C4", loc, f"checkpoint_sha not found in git history: `{c.checkpoint_sha}`")
-            else:
+            elif git.sha_exists(c.checkpoint_sha):
                 ckpt_ok = True
+            else:
+                # Object absent from this (full-history) clone ⇒ unreachable ⇒
+                # squash-orphaned. Warn, don't fail; C5 re-anchors to the base ref.
+                ckpt_orphaned = True
+                fails.warn(
+                    "C4", loc,
+                    f"checkpoint_sha `{c.checkpoint_sha[:12]}` is orphaned "
+                    "(squash/rebase rewrote its commit; unreachable in this clone) — "
+                    f"C5 freshness re-anchored to base ref `{args.base_ref}`; "
+                    "cited content still gated",
+                )
 
         # Build cited-line ranges per file (HEAD coordinates).
         ranges_by_file: dict[str, list[tuple[int, int]]] = {}
@@ -1175,10 +1245,19 @@ def run_checks(args, git: Git, fails: Failures):
                             )
 
         # C5: freshness — CONTENT-ANCHOR. For each cited range compare the
-        # CONTENT of those exact lines between checkpoint and the working tree;
-        # drift fires
-        # whether the cause is an in-range edit OR a pure position-shift.
-        if ckpt_ok:
+        # CONTENT of those exact lines between the baseline and the working tree;
+        # drift fires whether the cause is an in-range edit OR a pure position-shift.
+        # Baseline = the `checkpoint_sha` when it is resolvable (ckpt_ok); for a
+        # squash-ORPHANED checkpoint (C4 above), the reachable base ref
+        # (`base_rev_for_c5`), whose cited content is byte-identical to the dead
+        # checkpoint's — so freshness is enforced against a REACHABLE equivalent and
+        # a genuinely drifted cite still fails, without the orphan false-positive.
+        c5_baseline = (
+            c.checkpoint_sha if ckpt_ok
+            else (base_rev_for_c5 if ckpt_orphaned else None)
+        )
+        if c5_baseline:
+            anchor_kind = "checkpoint" if ckpt_ok else "base-ref anchor"
             for sf in c.source_files:
                 if sf in missing_sources:
                     continue
@@ -1190,12 +1269,12 @@ def run_checks(args, git: Git, fails: Failures):
                 if not cranges:
                     continue
                 for (l1, l2) in cranges:
-                    if cited_range_drifted(git, c.checkpoint_sha, sf, l1, l2):
+                    if cited_range_drifted(git, c5_baseline, sf, l1, l2):
                         fails.add(
                             "C5",
                             loc,
                             f"STALE: cited content `{sf}:{l1}-{l2}` no longer matches "
-                            f"checkpoint {c.checkpoint_sha[:12]} "
+                            f"{anchor_kind} {c5_baseline[:12]} "
                             "(in-range edit or position-shift)",
                         )
                         break

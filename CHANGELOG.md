@@ -36,6 +36,21 @@ Each entry cross-references:
   container prod env (identical to the signup-worker reverse map) before deploying.
 
 ### Fixed
+- **OKF wiki — checkpoint validation is now SQUASH-MERGE RESILIENT (durable fix for the recurring
+  #688/#690 orphaned-checkpoint trap).** Root cause: when a feature PR whose OKF concept pins
+  `checkpoint_sha` at its OWN pre-merge branch tip is squash/rebase-merged, git rewrites that tip; the
+  original commit becomes ORPHANED — unreachable from `main` and never fetched into the `fetch-depth: 0`
+  CI clone. The old **C4** then hard-failed `checkpoint_sha not found in git history` on EVERY subsequent
+  PR (green locally, where the loose object lingers; RED in CI) until a manual repoint. It bit ~6 concepts
+  twice during the go-live wave. Fix (`scripts/validate_okf.py`): an unreachable-but-well-formed 40-hex
+  checkpoint is recognized as a squash-orphan — C4 emits a non-blocking WARNING instead of failing, and
+  **C5 re-anchors freshness to the base ref** (the reachable fork point, whose cited content is
+  byte-identical to the dead checkpoint's landing). Freshness is preserved: a genuinely DRIFTED citation
+  still fails C5 against the base ref — only the dead-commit-name false-positive is removed. A new
+  `resolve_base` helper makes the base ref resolve in the CI detached-HEAD checkout (via `origin/<ref>`).
+  The 40-hex FORMAT check remains a hard C4 failure. New `assert_c4_squash_orphan_tolerant` git-harness
+  fixture proves both arms (orphan tolerated + drift-under-orphan still fires C5); `bad/C4` fixture
+  repurposed to the surviving format failure. Contract §2/§4 amended. (64/64 fixtures green.)
 - **OKF wiki — swept the go-live wave's remaining orphaned checkpoints (main C4 gate was red again).**
   Two more concepts' `checkpoint_sha` were orphaned the same way as #677 when their PRs merged:
   `b04438ca` (planes/container, tenancy/governance, surfaces/public-packages — #680 G4b OCI-suspend) and
