@@ -22,6 +22,34 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **CLI — built the documented-but-missing subcommands (`tools/cli`).** Eight surfaces that
+  the docs / e2e references promised but clap rejected are now real, each with unit tests:
+  - **`corelink bazel-init [--force]`** — appends a marker-delimited managed block to `.bazelrc`
+    and writes `.corelink/credentials` (mode 0600), idempotent (re-run exits 0; `--force` rewrites
+    without duplicating). Endpoint + tenant + PAT are derived from `config.rs` (never hardcoded).
+    **It writes the config that actually works** — the REAPI ByteStream scheme
+    (`--remote_cache=<endpoint>/bazel/v2` + `--remote_instance_name=<tenant>`, per
+    `routes/bazel_v2.rs`) — NOT the stale `grpcs://cas.corelink.humangr.com` host the tutorial docs
+    still show (that host is dead; stock `--remote_cache=http` 404s on the REAPI surface).
+  - **`corelink audit tail`** + **production `corelink audit export`** — wired to the live
+    `GET /v1/audit/:tenant/export` route (previously returned "not yet wired; use --fixture").
+    `export` persists the NDJSON window content-addressed (+ chain-head anchor for `verify-ndjson`);
+    `tail` is a windowed pull (default trailing hour) with a client-side `--filter key=value`.
+  - **`corelink config apply --file <toml>`** + **`config set/get observability.*`** — the config
+    model now accepts the open-ended `[observability.export.*]` sub-tree (Datadog / OTel Collector /
+    Grafana Cloud) documented in the observability how-tos; `apply` validates every leaf like `set`.
+  - **`corelink cas get`** / **`cas export`** (bulk-download to a local dir), **`corelink import`**
+    (bulk pre-warm the CAS from a local dir), **`corelink ci mirror`** (one-shot local-cache →
+    CoreLink mirror) — the sales-FAQ escape-hatch / migration commands. `s3://` sources/destinations
+    and the live-sidecar mirror bridge are flagged gaps (need an object-store client / server feature)
+    rather than faked.
+  - **`corelink tenant export`** / **`tenant verify-export`** — data-portability / GDPR-exit. Assembles
+    a content-addressed bundle (audit-chain slice + CAS index) from the real audit-export + CAS-list
+    routes; `verify-export` re-checks every component + bundle hash offline (no PAT). The single-file
+    `.tar.zst` with all blob bytes + RBAC roster + DPA receipt remains gated on a server bulk-export
+    endpoint that does not exist yet (blobs are individually retrievable via `cas get`).
+
 ### Changed
 - **deps(js) — JS-majors frontier assessed (supersedes dependabot #697); net adoption: none.**
   The 15 already-on-`main` targets from the prior batch-majors merge (#693) remain the current
