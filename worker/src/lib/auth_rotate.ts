@@ -72,16 +72,17 @@ const ROTATE_MIN_TTL_SECONDS = ROTATE_DEFAULT_TTL_SECONDS;
 /**
  * D1 `pat.scope` labels we can faithfully reproduce via the SINGLE mint authority.
  *
- * The container's `/_internal/pat/mint` maps only `"read-write"`/`"cas:rw"` (→
- * SCOPE_CACHE_RW) and `"admin"` (→ full admin). The D1 `pat.scope` CHECK also
- * allows `"read-only"`, but the mint authority has no `read-only` mapping — so we
- * CANNOT mint an equivalent `read-only` PAT without either escalating (→
- * read-write) or weakening the single mint authority. Rotation must preserve
- * scope EXACTLY, so a `read-only` (or otherwise unmappable) old scope is refused
- * fail-CLOSED (422) rather than silently escalated. `read-write` and `admin`
- * round-trip verbatim.
+ * The container's `/_internal/pat/mint` (`scope_label_to_bits`) maps all three
+ * canonical `pat.scope` CHECK labels verbatim: `"read-write"`/`"cas:rw"` (→
+ * SCOPE_CACHE_RW), `"admin"` (→ full admin), and — since PR #681 made read-only
+ * mintable end-to-end — `"read-only"` (→ SCOPE_CACHE_R, cache-READ only, no write
+ * or admin bits). Rotation must preserve scope EXACTLY, and the mint authority now
+ * reproduces read-only faithfully (no escalation, no weakening), so a `read-only`
+ * old scope ROUND-TRIPS just like read-write and admin. Only a genuinely unmappable
+ * label (outside this canonical set) is still refused fail-CLOSED (422) rather than
+ * silently escalated.
  */
-const ROTATABLE_SCOPES = new Set(["read-write", "admin"]);
+const ROTATABLE_SCOPES = new Set(["read-write", "admin", "read-only"]);
 
 /**
  * REAPI error envelope builder — local mirror (avoids the index.ts ⇄ lib import
@@ -262,9 +263,10 @@ export async function handleAuthRotate(
     return reapiError("FORBIDDEN", "pat does not belong to the specified tenant", 403, requestId);
   }
   if (!ROTATABLE_SCOPES.has(oldRow.scope)) {
-    // The single mint authority cannot reproduce this scope (e.g. `read-only`)
-    // without escalating or weakening it. Refuse rather than silently change the
-    // scope — rotation must preserve privilege EXACTLY.
+    // The single mint authority cannot reproduce this scope (a label outside the
+    // canonical `read-only`/`read-write`/`admin` set) without escalating or weakening
+    // it. Refuse rather than silently change the scope — rotation must preserve
+    // privilege EXACTLY. (read-only IS rotatable since PR #681 made it mintable.)
     return reapiError("UNPROCESSABLE_ENTITY", "pat scope is not rotatable", 422, requestId);
   }
 

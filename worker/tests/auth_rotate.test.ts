@@ -332,12 +332,37 @@ describe("POST /internal/v1/auth/rotate — clw auth rotate", () => {
     expect(body.revoke_pending).toBe(false);
   });
 
-  // ── unmappable scope → 422 (preserve scope exactly; never escalate) ───────
-  it("422 when the old scope is read-only (single mint authority cannot reproduce it)", async () => {
+  // ── read-only rotates verbatim (PR #681 made read-only mintable end-to-end) ──
+  it("(b) rotates a read-only PAT, preserving read-only scope verbatim", async () => {
     const captured: { req?: Request } = {};
     const revokeCapture: { binds?: unknown[]; called?: boolean } = {};
     const env = makeEnv({ captured, oldRow: activeRow("read-only"), revokeCapture });
-    const resp = await rotateFetch(env, { auth: INTERNAL_KEY });
+    // Unique pat_id ⇒ a fresh per-principal mint-throttle counter (the in-memory
+    // burst backstop is module-scoped across this file).
+    const uniqueId = "aaaaaaaa-1111-2222-3333-555555555555";
+    const resp = await rotateFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { pat_id: uniqueId, owner_tenant: TENANT },
+    });
+    expect(resp.status).toBe(200);
+    // The mint authority now faithfully reproduces read-only → SCOPE_CACHE_R, so
+    // rotation mints an EQUIVALENT read-only PAT (no escalation to read-write).
+    const mintBody = (await captured.req!.json()) as Record<string, unknown>;
+    expect(mintBody["scopes"]).toBe("read-only");
+    // The old read-only PAT is soft-revoked like any other rotated scope.
+    expect(revokeCapture.called).toBe(true);
+    expect(revokeCapture.binds![1]).toBe(uniqueId);
+  });
+
+  // ── a genuinely unmappable scope → 422 (preserve scope exactly; never escalate) ──
+  it("422 when the old scope is outside the canonical set (mint authority cannot reproduce it)", async () => {
+    const captured: { req?: Request } = {};
+    const revokeCapture: { binds?: unknown[]; called?: boolean } = {};
+    const env = makeEnv({ captured, oldRow: activeRow("cas:custom-unmappable"), revokeCapture });
+    const resp = await rotateFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { pat_id: "cccccccc-1111-2222-3333-777777777777", owner_tenant: TENANT },
+    });
     expect(resp.status).toBe(422);
     expect(captured.req).toBeUndefined(); // never minted (no escalation)
     expect(revokeCapture.called).toBeUndefined();
