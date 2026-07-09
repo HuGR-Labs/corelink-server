@@ -22,7 +22,31 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **npm adapter: real `GET /-/v1/search`** (`corelink-adapter-host`). The endpoint
+  was an honest 501 stub; it is now a PAT-gated, tenant-scoped, SSRF-guarded
+  read-through proxy to the configured upstream registry that returns the
+  canonical `{ objects, total, time }` envelope. `size` is clamped to `[1,250]`,
+  `text`/`size`/`from` are bound as URL-encoded query pairs (no param injection),
+  malformed upstream fails CLOSED (502), and every served search emits
+  `corelink.npm.search.served.v1` (audit-fail-CLOSED). Covered by pure-logic unit
+  tests (`npm::search`) + a wiremock end-to-end proxy test.
+- **GC manual admin-trigger: real scheduler-driven path** (`corelink-gc`). Added
+  `admin_trigger_scheduled` + `ScheduledTriggerOutcome` alongside the retained
+  staging-stub `admin_trigger`. Given a live `GcScheduler` it drives a genuine
+  single-tenant GC pass (`cron_tick` → insert_pending → acquire_running →
+  worker.execute_run) in ANY environment — removing the prod-only 501 — with the
+  `gc:trigger` PAT-scope check preserved and degrade-`gc-pause` honored. Tested
+  against the in-memory scheduler (forbidden / real-run / degrade-pause). The
+  remaining S-13 work is only the HTTP mount + prod-scheduler (D1 run store)
+  instantiation, not the trigger logic.
+
 ### Changed
+- **Customer team-invite 501 copy de-staled** (`corelink-container`). Team invites
+  are fully implemented end-to-end (D1 create/list/remove + signup-worker accept,
+  ADR-S33-001 / migration 0074), so the generic `NotImplemented` fallback no
+  longer claims "team invites are coming soon"; it now returns the honest generic
+  "this endpoint is not yet implemented" for any future unimplemented surface.
 - **deps(js) — JS-majors frontier assessed (supersedes dependabot #697); net adoption: none.**
   The 15 already-on-`main` targets from the prior batch-majors merge (#693) remain the current
   state (next 16, react-markdown 10, uuid 14, @types/node 26, @types/uuid 11, @vitejs/plugin-react 6,

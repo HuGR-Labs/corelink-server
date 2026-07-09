@@ -1246,10 +1246,14 @@ fn map_err(e: CustomerHandlerError) -> axum::response::Response {
             (StatusCode::SERVICE_UNAVAILABLE, "audit closed").into_response()
         }
         // HONEST v1 (dashboard revival WP-3): an endpoint the concrete
-        // handler does not implement yet is an explicit 501 with UI
-        // copy — never fabricated data, never a misleading 404/500.
+        // handler does not implement yet is an explicit 501 — never
+        // fabricated data, never a misleading 404/500. Team invites are
+        // now fully implemented (D1 create/list/remove + signup-worker
+        // accept, ADR-S33-001 / migration 0074), so this generic arm is a
+        // defensive fallback for any future NotImplemented surface, NOT a
+        // team-invite stub. The message stays generic + honest accordingly.
         CustomerHandlerError::NotImplemented(_) => {
-            (StatusCode::NOT_IMPLEMENTED, "team invites are coming soon").into_response()
+            (StatusCode::NOT_IMPLEMENTED, "this endpoint is not yet implemented").into_response()
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
@@ -1877,10 +1881,12 @@ mod tests {
 
     #[test]
     fn map_err_not_implemented_is_501() {
-        // WP-3 (HONEST v1): the D1 handler's team-invite returns
-        // NotImplemented; the route maps it to an explicit 501.
+        // The generic NotImplemented arm maps to an explicit 501. Team
+        // invites are now fully implemented (D1 + signup-worker accept);
+        // this arm is the defensive fallback for any future unimplemented
+        // customer surface, so the copy is generic (not team-specific).
         let resp = map_err(CustomerHandlerError::NotImplemented(
-            "team invites are not yet implemented".into(),
+            "some future endpoint".into(),
         ));
         assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
     }
