@@ -11,7 +11,7 @@ source_files:
   - crates/corelink-erasure-attestation/src/evidence.rs
   - crates/corelink-container/src/routes/dsr/attestation.rs
   - crates/corelink-container/src/routes/public_attestation.rs
-checkpoint_sha: "aa017e11c7ae579b5565f444d21fcefe0612068b"
+checkpoint_sha: "86e439a821d3c407cc94f4b30ba2b7a7c563d958"
 provenance: "AUTHORED"
 tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", "gdpr-art-17", "byok", "dsr"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -81,4 +81,4 @@ This crate is the pure-logic signing and verification surface for erasure attest
 - `crates/corelink-erasure-attestation/src/evidence.rs:68-85` — fail-closed bundle validation.
 - `crates/corelink-container/src/routes/dsr/attestation.rs:1-9` — container-side signed + served attestation is LIVE: real Ed25519 certificate, served by the `/v1/public/*` verifier.
 - `crates/corelink-container/src/routes/dsr/attestation.rs:55-79` — the STRICT all-or-nothing ordering (R2 PUT → pubkey → signed index row) that makes the served cert non-forgeable (anti-theater invariant).
-- `crates/corelink-container/src/routes/public_attestation.rs:69-73` — the unauth public verifier router: `GET /v1/public/attestation/{request_id}` + `GET /v1/public/keys/erasure/{region}.pub`.
+- `crates/corelink-container/src/routes/public_attestation.rs:69-73` — the unauth public verifier router: `GET /v1/public/attestation/{request_id}` + `GET /v1/public/keys/erasure/{region}.pub` (registered with axum-0.8 `{param}` capture syntax).

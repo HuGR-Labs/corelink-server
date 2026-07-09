@@ -27,7 +27,7 @@ source_files:
   - crates/corelink-dsr/src/receipt.rs
   - crates/corelink-dsr/src/event.rs
   - crates/corelink-dsr/src/lib.rs
-checkpoint_sha: "3717d15bc3b20ad17558a00ed0ff2b992eae5573"
+checkpoint_sha: "86e439a821d3c407cc94f4b30ba2b7a7c563d958"
 provenance: "AUTHORED"
 tags: ["dsr", "gdpr", "lgpd", "erasure", "right-to-erasure", "compliance", "mfa", "attestation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -81,7 +81,7 @@ The 4 live effective/pseudonymize adapters, the not-applicable reconciler, and t
 - **Erasure intake is legitimacy-gated (anti mass-erase).** Every erase binds to a D1-authenticated `dsr_requested` row; a forged body-asserted `tenant_id` with the shared internal key lands as `Rejected` → HTTP 422, no fan-out, no bytes deleted; a D1 fault also fails CLOSED (`crates/corelink-container/src/routes/dsr.rs:668-675`, `crates/corelink-container/src/routes/dsr.rs:189-193`).
 - **The destructive route is mounted only with a ≥32-char dedicated key.** `build_state_from_env` prefers `CORELINK_ERASE_AUTH_KEY`, falls back to the shared internal key, and refuses to mount below the 32-char floor (`crates/corelink-container/src/routes/dsr.rs:369-378`); the check itself is constant-time, length-folded (`crates/corelink-container/src/routes/dsr.rs:136-152`).
 - **The signature is only ever emitted when no subject data survives.** `sign_and_persist` runs only on the `VerifiedComplete` arm, and even then `verified_evidence_segments` re-checks every backend's verification hash against the canonical-empty sentinel before signing — surviving CAS/AC bytes yield a non-canonical hash → no `VerifiedComplete` and no certificate (the gate also fail-CLOSES on incomplete evidence) (`crates/corelink-container/src/routes/dsr.rs:722-734`, `crates/corelink-container/src/routes/dsr/attestation.rs:187-247`, `docs/security/2026-06-23-secreview-gdpr-residency.md:75-85`). The proof binds the ACTUAL per-backend evidence hashes, so a signed attestation provably means every backend re-verified empty.
-- **A tombstoned hash never resurrects.** A read of a tombstoned digest returns 410 on the native CAS route — the read-side enforcer short-circuits `Ok(true) => return (StatusCode::GONE, "erased")` BEFORE the R2 GET (`crates/corelink-container/src/routes/cas.rs:803-815`, tombstone-WRITE side `crates/corelink-container/src/routes/cas_erase.rs:1-8`), a re-PUT is refused, and a gate transport fault fails CLOSED 503; the bloom is re-seeded from D1 on every reload to close the cross-writer false-negative window (`crates/corelink-container/src/routes/cas_erase.rs:797-825`).
+- **A tombstoned hash never resurrects.** A read of a tombstoned digest returns 410 on the native CAS route — the read-side enforcer short-circuits `Ok(true) => return (StatusCode::GONE, "erased")` BEFORE the R2 GET (`crates/corelink-container/src/routes/cas.rs:801-813`, tombstone-WRITE side `crates/corelink-container/src/routes/cas_erase.rs:1-8`), a re-PUT is refused, and a gate transport fault fails CLOSED 503; the bloom is re-seeded from D1 on every reload to close the cross-writer false-negative window (`crates/corelink-container/src/routes/cas_erase.rs:797-825`).
 - **The receipt caps customer-side replay at 90 days.** `DsrReceipt::is_expired` enforces the `submitted + 90d` cap independent of DB state (`crates/corelink-dsr/src/receipt.rs:153-154`).
 
 # Gotchas
@@ -104,7 +104,7 @@ The 4 live effective/pseudonymize adapters, the not-applicable reconciler, and t
 - MFA verifier fail-CLOSED contract: `crates/corelink-dsr/src/mfa.rs:80-102`, `crates/corelink-dsr/src/mfa.rs:146-154`.
 - Idempotency + divergent-payload SEV-1: `crates/corelink-dsr/src/store.rs:133-158`; store keyed `(tenant,request)`: `crates/corelink-dsr/src/store.rs:45`.
 - Receipt 90d cap + SLA per jurisdiction (enforcer `sla_for`; GDPR = calendar-month add, not flat 30d): `crates/corelink-dsr/src/receipt.rs:136-149`, `crates/corelink-dsr/src/event.rs:410-427`, `crates/corelink-dsr/src/lib.rs:116-119`.
-- CAS per-hash erase module + tombstone-WRITE side: `crates/corelink-container/src/routes/cas_erase.rs:1-8`, `crates/corelink-container/src/routes/cas_erase.rs:70`, `crates/corelink-container/src/routes/cas_erase.rs:830-850`; read-side 410 enforcer: `crates/corelink-container/src/routes/cas.rs:803-815`.
+- CAS per-hash erase module + tombstone-WRITE side: `crates/corelink-container/src/routes/cas_erase.rs:1-8`, `crates/corelink-container/src/routes/cas_erase.rs:70`, `crates/corelink-container/src/routes/cas_erase.rs:830-850`; read-side 410 enforcer: `crates/corelink-container/src/routes/cas.rs:801-813`.
 - D1 control-plane ordered erase (child rows → root `tenant` LAST; legal-hold preserve; CF-1 runtime drift `debug_assert!`): `crates/corelink-container/src/routes/dsr/adapter_d1.rs:447-492`.
 - D1 erase-set / retain-set const partition (injection-safe constant tables): erase-set `crates/corelink-container/src/routes/dsr/adapter_d1.rs:63-149`, retain-set `crates/corelink-container/src/routes/dsr/adapter_d1.rs:159-209`.
 - Runner self-serve billing mirror `runner_billing` (migr. 0087) classified into the `tenant_id`-keyed ERASE set (operational subscription-state mirror, runner analog of `tenant_billing`; the fiscal Stripe rows stay retained): `crates/corelink-container/src/routes/dsr/adapter_d1.rs:113-119`, `crates/corelink-container/src/routes/dsr/adapter_d1.rs:277`.

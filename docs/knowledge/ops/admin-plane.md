@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/admin_pilot.rs"
   - "crates/corelink-container/src/routes/admin_tenant_detail.rs"
   - "docs/internal/admin-plane.md"
-checkpoint_sha: "0b7dc5e9ae0704f30e3e578ed75f30cf1d2b9474"
+checkpoint_sha: "86e439a821d3c407cc94f4b30ba2b7a7c563d958"
 provenance: "AUTHORED"
 tags: ["ops", "admin", "config", "dual-approval", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -50,7 +50,7 @@ behind one fail-closed authorization gate.
 - The internal-auth key resolves via a specific-then-shared env lookup `crates/corelink-container/src/routes/admin.rs:406`.
 - A mutate body is parsed into a request that carries the dual-approval `(approval_id, approver)` pair `crates/corelink-container/src/routes/admin.rs:593`.
 - The operator per-tenant read surface reuses that SAME `internal_auth_ok` gate and returns `403` fail-CLOSED before any storage read `crates/corelink-container/src/routes/admin_tenant_detail.rs:162`, then binds the target `tenant_id` into every tenant-scoped `WHERE tenant_id = ?1` query (usage/billing/consents/dsr/pats) `crates/corelink-container/src/routes/admin_tenant_detail.rs:207`.
-- Pilot provisioning routes (create / grant-tier / checkin) are canonical path constants `crates/corelink-container/src/routes/admin_pilot.rs:110`.
+- Pilot provisioning routes (create / grant-tier / checkin) are canonical path constants using axum-0.8 `{tenant_id}` capture syntax `crates/corelink-container/src/routes/admin_pilot.rs:110`.
 - Pilot persistence is abstracted behind a `PilotStore` trait `crates/corelink-container/src/routes/admin_pilot.rs:390`.
 - Config propagation is Queue-driven with a 60s safety-net poll, targeting ≤ 5s p99 `docs/internal/admin-plane.md:93-105`.
 

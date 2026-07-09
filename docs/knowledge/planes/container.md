@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/routes/public_attestation.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "14310503c3b1582b9f3f305062084ea3739d4e1d"
+checkpoint_sha: "86e439a821d3c407cc94f4b30ba2b7a7c563d958"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -71,7 +71,7 @@ surface.
    the ratelimit/residency/auth layers (same placement as the `/_health` + `/_internal/*` family) and with
    NO internal-auth gate, because an erasure proof is publicly verifiable. The container is the SOLE
    authority; the Worker forwards `/v1/public/*` to it as a pure `_anonymous` pass-through with NO PAT
-   (`crates/corelink-container/src/main.rs:709-727`, router `crates/corelink-container/src/routes/public_attestation.rs:69-73`).
+   (`crates/corelink-container/src/main.rs:709-727`, router `crates/corelink-container/src/routes/public_attestation.rs:69-73` — axum-0.8 `{param}` capture syntax).
 5. `build_with_factory` resolves the shared gates from env — the $-ceiling `QuotaGate`, the OCI-scoped
    request-count gate, the native PAT gate, and the byte-accountant — warning (not failing) when absent.
    The request-count gate is DELIBERATELY consumed only by the OCI router (not cloned into the native
