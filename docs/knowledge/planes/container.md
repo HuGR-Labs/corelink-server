@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/routes/public_attestation.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "f60432f83c18768ebdb4e08334e326185905a1e8"
+checkpoint_sha: "14310503c3b1582b9f3f305062084ea3739d4e1d"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -36,10 +36,10 @@ surface.
 
 # How it works
 1. `main` selects the storage backing (`"r2"` vs `"inmemory"`) once at boot and surfaces it on
-   `/_health` (`crates/corelink-container/src/main.rs:235-248`).
+   `/_health` (`crates/corelink-container/src/main.rs:266-279`).
 2. A fail-CLOSED boot guard refuses to start in prod if the native PAT verifier did not build — a
    PRESENT-but-malformed signing-key sibling is FATAL, not a silent downgrade
-   (`crates/corelink-container/src/main.rs:233-267`). A companion POSITIVE prod-arming assertion then
+   (`crates/corelink-container/src/main.rs:264-298`). A companion POSITIVE prod-arming assertion then
    refuses to boot a HALF-ARMED prod: when an INDEPENDENT R2-region signal says prod, the StorageEnv, PAT
    verifier, $-ceiling, byte-cap and request-count controls must ALL be armed or it FATAL-exits naming the
    missing one. The request-count control it asserts is specifically the OCI-scoped monthly op-cap (the one
@@ -47,31 +47,31 @@ surface.
    cargo/brew/npm/pip are op-count-metered at the WORKER edge, NOT by this container gate. The must-arm set
    also includes `ERASURE_SALT_KEY` (the GDPR DSR account-delete/erasure HMAC salt) — absent it, a prod boot
    looks healthy while every erasure call silently 500s, so it is asserted alongside the PAT/quota/byte-cap
-   controls (`crates/corelink-container/src/main.rs:298-376`; `crates/corelink-container/src/main.rs:346-358`).
+   controls (`crates/corelink-container/src/main.rs:329-407`; `crates/corelink-container/src/main.rs:377-389`).
 3. The composed router is built and given a global 10 MiB body limit + the `/_health` route, then bound
-   to the listener on PORT (`crates/corelink-container/src/main.rs:568-573`,
-   `crates/corelink-container/src/main.rs:875-878`).
+   to the listener on PORT (`crates/corelink-container/src/main.rs:612-617`,
+   `crates/corelink-container/src/main.rs:919-922`).
 4. Privileged routes are env-gated mounts: `/_internal/pat/mint`, `/internal/v1/auth/introspect`,
    `/internal/v1/billing/usage`, `/_internal/dsr/erase`, the S-09 `POST /_internal/audit/drain`
    audit-chain drain (seals the `audit_outbox` trail into the BLAKE3 tamper-evident chain — internal-auth
    gated, env-gated on D1; sits alongside the `/_internal/dsr/*` routes), CAS-erase, tier-select, and the
    Stripe webhook each mount only when their secrets are present
-   (`crates/corelink-container/src/main.rs:575-870`). The Stripe-webhook mount here is NOT a stub:
+   (`crates/corelink-container/src/main.rs:619-914`). The Stripe-webhook mount here is NOT a stub:
    gated on `STRIPE_WEBHOOK_SECRET`, it is a LIVE, signature-verified billing materializer —
    `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to
    `tier_selections` over D1-HTTP, and the Worker routes `/v1/billing/stripe-webhook` to THIS container
    (the shared `_system` DO) as the sole signature-verifier
-   (`crates/corelink-container/src/main.rs:728-870`). It is one of TWO live activation writers (the other
+   (`crates/corelink-container/src/main.rs:772-914`). It is one of TWO live activation writers (the other
    is the signup-worker), so go-live-readiness flags a divergent-tier-map risk: both must key the same
    `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env map or a real `customer.subscription.updated` resolves to
-   `UnknownPlan` → 422 (`crates/corelink-container/src/main.rs:807-822`). See `launch/money-path`.
+   `UnknownPlan` → 422 (`crates/corelink-container/src/main.rs:851-866`). See `launch/money-path`.
 4b. UNAUTHENTICATED public-verifier mount (Artifact 1): when the D1 `StorageEnv` is present, `main`
    merges the `public_attestation` router (`GET /v1/public/attestation/{request_id}` +
    `GET /v1/public/keys/erasure/{region}.pub`) directly onto the data-plane app — deliberately OUTSIDE
    the ratelimit/residency/auth layers (same placement as the `/_health` + `/_internal/*` family) and with
    NO internal-auth gate, because an erasure proof is publicly verifiable. The container is the SOLE
    authority; the Worker forwards `/v1/public/*` to it as a pure `_anonymous` pass-through with NO PAT
-   (`crates/corelink-container/src/main.rs:665-683`, router `crates/corelink-container/src/routes/public_attestation.rs:69-73`).
+   (`crates/corelink-container/src/main.rs:709-727`, router `crates/corelink-container/src/routes/public_attestation.rs:69-73`).
 5. `build_with_factory` resolves the shared gates from env — the $-ceiling `QuotaGate`, the OCI-scoped
    request-count gate, the native PAT gate, and the byte-accountant — warning (not failing) when absent.
    The request-count gate is DELIBERATELY consumed only by the OCI router (not cloned into the native
@@ -93,11 +93,11 @@ surface.
 
 # Invariants
 - A single HTTP listener on PORT (default 50051) serves the whole data plane — the DO's only target
-  (`crates/corelink-container/src/main.rs:378-381`).
+  (`crates/corelink-container/src/main.rs:409-412`).
 - In prod a missing native PAT gate is FATAL — the binary refuses to boot the data plane without its
-  Argon2id possession backstop (`crates/corelink-container/src/main.rs:270-283`).
+  Argon2id possession backstop (`crates/corelink-container/src/main.rs:301-314`).
 - Privileged routes fail CLOSED: absent secrets ⇒ the route is simply not mounted (404), never an open
-  proxy (`crates/corelink-container/src/main.rs:575-588`).
+  proxy (`crates/corelink-container/src/main.rs:619-632`).
 - The 410-Gone erasure gate and byte-accounting are centralized at the shared CAS chokepoint, so every
   surface inherits them by construction (`crates/corelink-container/src/routes.rs:484-503`).
 - The rate-limit + residency layers wrap exactly the data plane, never `/_health` or `/_internal/*`
@@ -116,15 +116,15 @@ surface.
 
 # Citations
 1. `crates/corelink-container/src/main.rs:1-17` — the binary's role + the 50051 HTTP listener doc.
-2. `crates/corelink-container/src/main.rs:235-248` — boot-time storage-backing selection for `/_health`.
-3. `crates/corelink-container/src/main.rs:233-267` — the fail-CLOSED native-PAT-gate boot guard.
-4. `crates/corelink-container/src/main.rs:270-283` — the FATAL `std::process::exit(1)` on a missing prod gate.
-5. `crates/corelink-container/src/main.rs:378-381` — PORT resolution (default 50051).
-6. `crates/corelink-container/src/main.rs:568-573` — the 10 MiB global body limit + `/_health` route.
-7. `crates/corelink-container/src/main.rs:575-588` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
-8. `crates/corelink-container/src/main.rs:575-870` — the full set of env-gated privileged route mounts, including the S-09 `POST /_internal/audit/drain` audit-chain drain (BLAKE3 tamper-evident seal of `audit_outbox`; internal-auth gated, env-gated on D1) alongside the `/_internal/dsr/*` family — the single `dsr::router` now mounts ALL five data-subject-rights legs (`erase` Art.17 + `verify`, plus `access` Art.15 / `portability` Art.20 / `rectification` Art.16 added by the DSAR-completion work), sharing one internal-auth gate.
-8b. `crates/corelink-container/src/main.rs:728-870` — the LIVE Stripe-webhook materializer mount: signature-verified `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to `tier_selections` over D1-HTTP (one of two activation writers; the Worker routes `/v1/billing/stripe-webhook` to this `_system` DO as the sole signature-verifier — see `WebhookState::new` + `STRIPE_WEBHOOK_ROUTE` at the mount).
-9. `crates/corelink-container/src/main.rs:875-878` — binding the composed router to the PORT listener.
+2. `crates/corelink-container/src/main.rs:266-279` — boot-time storage-backing selection for `/_health`.
+3. `crates/corelink-container/src/main.rs:264-298` — the fail-CLOSED native-PAT-gate boot guard.
+4. `crates/corelink-container/src/main.rs:301-314` — the FATAL `std::process::exit(1)` on a missing prod gate.
+5. `crates/corelink-container/src/main.rs:409-412` — PORT resolution (default 50051).
+6. `crates/corelink-container/src/main.rs:612-617` — the 10 MiB global body limit + `/_health` route.
+7. `crates/corelink-container/src/main.rs:619-632` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
+8. `crates/corelink-container/src/main.rs:619-914` — the full set of env-gated privileged route mounts, including the S-09 `POST /_internal/audit/drain` audit-chain drain (BLAKE3 tamper-evident seal of `audit_outbox`; internal-auth gated, env-gated on D1) alongside the `/_internal/dsr/*` family — the single `dsr::router` now mounts ALL five data-subject-rights legs (`erase` Art.17 + `verify`, plus `access` Art.15 / `portability` Art.20 / `rectification` Art.16 added by the DSAR-completion work), sharing one internal-auth gate.
+8b. `crates/corelink-container/src/main.rs:772-914` — the LIVE Stripe-webhook materializer mount: signature-verified `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to `tier_selections` over D1-HTTP (one of two activation writers; the Worker routes `/v1/billing/stripe-webhook` to this `_system` DO as the sole signature-verifier — see `WebhookState::new` + `STRIPE_WEBHOOK_ROUTE` at the mount).
+9. `crates/corelink-container/src/main.rs:919-922` — binding the composed router to the PORT listener.
 10. `crates/corelink-container/src/routes.rs:667-682` — the `Router::new().merge(...)` composition chain (now incl. `admin_tenant_detail`, `customer_runners`, `workspaces`).
 11. `crates/corelink-container/src/routes.rs:369-423` — shared gates resolved from env (quota, OCI-scoped request-count, PAT, accountant); the request-count gate is OCI-only, not cloned into native states (would double-count vs the Worker edge).
 12. `crates/corelink-container/src/routes.rs:425-513` — shared CAS handler objects + accounting/tombstone wrap (incl. `put_inflight`/`read_inflight` pools in the `CasRouteState` ctor).
@@ -132,5 +132,5 @@ surface.
 14. `crates/corelink-container/src/routes.rs:679-838` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
 15. `crates/corelink-container/src/routes.rs:840-887` — residency guard + per-tenant rate-limit outer layers.
 16. `crates/corelink-container/src/routes.rs:845-887` — the rate-limit layer scoped to the data plane only.
-17. `crates/corelink-container/src/main.rs:298-376` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one as the OCI op-cap, plus `ERASURE_SALT_KEY` at `crates/corelink-container/src/main.rs:346-358`), else a FATAL boot refusal (no half-armed prod).
+17. `crates/corelink-container/src/main.rs:329-407` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one as the OCI op-cap, plus `ERASURE_SALT_KEY` at `crates/corelink-container/src/main.rs:377-389`), else a FATAL boot refusal (no half-armed prod).
 18. `crates/corelink-container/src/storage/r2_kv.rs:122-143` — `R2KvStore::object_key`: per-tenant `derive_prefix` HMAC key layout, fail-CLOSED on a non-derivable tenant rather than a public predictable prefix.

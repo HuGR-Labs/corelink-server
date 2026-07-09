@@ -6,7 +6,7 @@ source_files:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt"
   - "crates/corelink-container/src/routes/audit_drain.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "488155ba24dabea3d17a2cc0c02c7c9880b433ad"
+checkpoint_sha: "14310503c3b1582b9f3f305062084ea3739d4e1d"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -44,7 +44,7 @@ proves the artifact, and to the GA staffing waiver in
    drain): the `POST /_internal/audit/drain` route is mounted and actually seals the live `audit_outbox`
    into the BLAKE3 tamper-evident chain — now with an Ed25519-SIGNED chain head (CF-6, migration 0080) —
    when the erase/internal auth key + D1 are bound
-   (`crates/corelink-container/src/main.rs:690`, now mounted directly alongside the
+   (`crates/corelink-container/src/main.rs:734`, now mounted directly alongside the
    `/_internal/dsr/{erase,verify,access,portability,rectification}` family that the DSAR-completion work
    expanded; seal logic at
    `crates/corelink-container/src/routes/audit_drain.rs:394`/`:738`/`:851`), and stays mounted-inert
