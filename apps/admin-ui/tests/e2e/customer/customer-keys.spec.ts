@@ -4,7 +4,7 @@
  * Create a PAT, verify the once-shown token surfaces, then revoke it and
  * confirm the row flips to `revoked`.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { LoginPage } from "../pages/LoginPage";
 
 test.describe("customer keys", () => {
@@ -38,6 +38,15 @@ test.describe("customer keys", () => {
     // The newly created row appears.
     await expect(page.getByTestId(`keys-row-${newId}`)).toBeVisible();
     await expect(page.getByTestId(`keys-status-${newId}`)).toContainText("active");
+
+    // Dismiss the shown-once reveal modal the real-user way (copy → confirm →
+    // Done). Its full-screen scrim overlays the page, so it MUST be closed
+    // before interacting with the row actions underneath. "Done" stays disabled
+    // until the token is both copied AND the "stored it safely" box is checked.
+    await page.getByTestId("pat-copy").click();
+    await page.getByTestId("pat-confirm-checkbox").check();
+    await page.getByTestId("pat-finish").click();
+    await expect(page.getByTestId("pat-value")).toHaveCount(0);
 
     // Revoke it. The revoke button opens a ConfirmDialog (destructive-action
     // guard); the actual revoke fires from the dialog's confirm button.

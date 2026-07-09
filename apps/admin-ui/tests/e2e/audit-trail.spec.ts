@@ -2,7 +2,7 @@
  * E2E 3/5 — audit trail: table renders, filter narrows, row → detail drawer
  * (wt-r3-7).
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test";
 import { LoginPage } from "./pages/LoginPage";
 import { AuditPage } from "./pages/AuditPage";
 

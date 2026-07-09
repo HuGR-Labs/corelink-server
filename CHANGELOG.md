@@ -48,6 +48,22 @@ Each entry cross-references:
   label OUTSIDE the canonical `read-only`/`read-write`/`admin` set is still refused fail-CLOSED (422).
   OKF: `edge-pat-mint-lifecycle` `auth_rotate.ts` cites remapped for the +1/+2 line shift and
   `checkpoint_sha` advanced to the branch tip (squash-orphan tolerated per #692).
+- **admin-ui E2E — `critical-flows` now deterministically green with retries=0 (removed the
+  `dsr-approve` `test.fixme`, killed the `byok-rotate` / `customer-keys` flakiness).** Three real
+  root causes, all fixed canonically: (1) the E2E `<ClerkProvider>` had NO publishable key, so it
+  entered dev **keyless mode**, which polls Clerk's (unreachable-in-E2E) API to provision a throwaway
+  instance and, while retrying, **remounts the whole authenticated subtree in a loop** — destroying
+  in-flight React state (the minted-PAT reveal modal, a mid-approval op view) → fixed by pinning a
+  syntactically-valid **dummy publishable key** in the `(authenticated)` layout **only under
+  `NEXT_PUBLIC_E2E_TEST_MODE`** (auth stays mocked at the data layer; `/sign-in` still renders its
+  keyless fallback). (2) The mock's module-level `let state` was **reset whenever Next dev compiled a
+  newly-visited route** (e.g. first nav to `/admin/audit` after an approve), wiping the mutation the
+  next assertion needed → re-anchored on a **`globalThis` singleton** (survives module re-eval) with a
+  test-only `POST /v1/_e2e/reset` wired into a shared Playwright fixture for per-test isolation. (3)
+  Clerk's dev SDK + Next HMR use `eval`, which the strict CSP forbade → a storm of `/api/csp-report`
+  429s; `'unsafe-eval'` is now allowed on `script-src` **only outside production** (prod stays
+  eval-free, verified by `tests/csp.test.ts`). Also: `customer-keys` now dismisses the shown-once
+  reveal modal (copy → confirm → Done) before revoking, since its scrim overlays the row actions.
 - **OKF wiki — checkpoint validation is now SQUASH-MERGE RESILIENT (durable fix for the recurring
   #688/#690 orphaned-checkpoint trap).** Root cause: when a feature PR whose OKF concept pins
   `checkpoint_sha` at its OWN pre-merge branch tip is squash/rebase-merged, git rewrites that tip; the

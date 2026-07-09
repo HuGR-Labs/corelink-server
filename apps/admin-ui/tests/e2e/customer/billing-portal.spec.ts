@@ -23,7 +23,8 @@
  *     firing (a fresh session is minted server-side on each real call).
  */
 
-import { test, expect, type Request as PWRequest } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
+import { type Request as PWRequest } from "@playwright/test";
 import { LoginPage } from "../pages/LoginPage";
 
 // The E2E mock's portal URL host (fixed). Intercept so we don't navigate offsite.

@@ -4,7 +4,7 @@
  * Existing members render. Submit an invite → the new row appears with
  * status `invited`.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { LoginPage } from "../pages/LoginPage";
 
 test.describe("customer team", () => {

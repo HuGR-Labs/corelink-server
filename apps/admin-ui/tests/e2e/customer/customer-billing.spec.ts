@@ -14,7 +14,7 @@
  *     the returned URL — it no longer prints the raw URL in a `billing-portal-url`
  *     node. We intercept the offsite redirect to assert it happened.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { LoginPage } from "../pages/LoginPage";
 
 // The E2E mock returns this fixed portal URL; intercept it so the browser

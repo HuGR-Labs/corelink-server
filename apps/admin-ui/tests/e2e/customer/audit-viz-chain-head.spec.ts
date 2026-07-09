@@ -10,7 +10,7 @@
  *     and surfaces the OK status (mocked single-leaf proof verifies
  *     trivially without requiring the WASM bundle in CI).
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { LoginPage } from "../pages/LoginPage";
 
 test.describe("customer audit-chain visualization — chain head", () => {

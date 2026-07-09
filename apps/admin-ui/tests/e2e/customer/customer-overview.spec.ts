@@ -10,7 +10,7 @@
  * storage gauge (+ a hidden `overview-cas-bytes` probe); the per-request
  * reads/writes counters live on the dedicated Usage screen, not here.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { LoginPage } from "../pages/LoginPage";
 
 test.describe("customer overview", () => {

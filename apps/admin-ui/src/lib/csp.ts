@@ -47,16 +47,32 @@ export interface CspOptions {
   nonce: string;
   /** When true emit Content-Security-Policy-Report-Only header instead of enforce. */
   reportOnly?: boolean;
+  /**
+   * When true, add `'unsafe-eval'` to `script-src`. This is required ONLY by
+   * the local `next dev` server: React Fast Refresh / the webpack HMR runtime
+   * and Clerk's dev build evaluate code via `eval`/`new Function`, which the
+   * production-strict CSP forbids — producing a continuous stream of CSP
+   * violation reports (each hammering `/api/csp-report`) that destabilises the
+   * dev server and makes E2E timing flaky. The middleware sets this ONLY when
+   * `NODE_ENV !== "production"`, so production output is unchanged and stays
+   * `eval`-free. NEVER pass this in production. Default (unset) = strict.
+   */
+  allowUnsafeEval?: boolean;
 }
 
 /**
  * Build the directive list. Exported separately so tests can assert each
  * directive without parsing a single concatenated header value.
+ *
+ * `allowUnsafeEval` is a dev-only escape hatch (see {@link CspOptions}); it is
+ * off by default so the strict production output is the value every caller gets
+ * unless it explicitly opts in.
  */
-export function buildCspDirectives(nonce: string): string[] {
+export function buildCspDirectives(nonce: string, allowUnsafeEval = false): string[] {
+  const evalSrc = allowUnsafeEval ? " 'unsafe-eval'" : "";
   return [
     "default-src 'self'",
-    `script-src 'self' 'nonce-${nonce}' https://clerk.corelink-app.humangr.com https://challenges.cloudflare.com https://plausible.io https://js.stripe.com`,
+    `script-src 'self' 'nonce-${nonce}'${evalSrc} https://clerk.corelink-app.humangr.com https://challenges.cloudflare.com https://plausible.io https://js.stripe.com`,
     // style-src uses 'unsafe-inline' (NO nonce) — required by Tailwind's inline
     // <style> + Clerk's runtime-injected widget styles. CRITICAL: a nonce MUST
     // NOT appear here. Per CSP3, when a nonce (or hash) is present the browser
@@ -98,13 +114,13 @@ export function buildCspDirectives(nonce: string): string[] {
 }
 
 /** Serialize directives into a single header value. */
-export function buildCspHeaderValue(nonce: string): string {
-  return buildCspDirectives(nonce).join("; ");
+export function buildCspHeaderValue(nonce: string, allowUnsafeEval = false): string {
+  return buildCspDirectives(nonce, allowUnsafeEval).join("; ");
 }
 
 /** Header name + value pair, honoring report-only mode for staging. */
 export function buildCspHeader(opts: CspOptions): { name: string; value: string } {
-  const value = buildCspHeaderValue(opts.nonce);
+  const value = buildCspHeaderValue(opts.nonce, opts.allowUnsafeEval ?? false);
   const name = opts.reportOnly
     ? "Content-Security-Policy-Report-Only"
     : "Content-Security-Policy";

@@ -1,7 +1,7 @@
 /**
  * E2E 2/5 — tenant overview: list, search, click → deep-dive (wt-r3-7).
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test";
 import { LoginPage } from "./pages/LoginPage";
 import { TenantPage } from "./pages/TenantPage";
 

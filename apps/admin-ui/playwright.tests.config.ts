@@ -43,6 +43,10 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   use: {
     baseURL: BASE_URL,
+    // The shown-once PAT reveal modal copies the token via
+    // navigator.clipboard.writeText; grant clipboard access so the copy path
+    // (which gates the modal's "Done" button) succeeds under test.
+    permissions: ["clipboard-read", "clipboard-write"],
     trace: "on-first-retry",
     video: "retain-on-failure",
     screenshot: "only-on-failure",

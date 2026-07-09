@@ -29,8 +29,24 @@ function isReportOnly(): boolean {
   return process.env["NODE_ENV"] !== "production";
 }
 
+// `next dev` (React Fast Refresh + webpack HMR) and Clerk's dev SDK evaluate
+// code via `eval`/`new Function`, which the production-strict CSP forbids. Under
+// the enforced dev CSP that produced an unbounded storm of CSP-violation reports
+// to `/api/csp-report` (rate-limited to 429s) that saturated the connection pool
+// and made timing-sensitive E2E specs flaky. Allow `'unsafe-eval'` ONLY outside
+// production so dev/E2E are stable; production output is unchanged and stays
+// eval-free (verified by tests/csp.test.ts, which call the builders with the
+// strict default).
+function devAllowUnsafeEval(): boolean {
+  return process.env["NODE_ENV"] !== "production";
+}
+
 function applySecurityHeaders(res: NextResponse, nonce: string): void {
-  const csp = buildCspHeader({ nonce, reportOnly: isReportOnly() });
+  const csp = buildCspHeader({
+    nonce,
+    reportOnly: isReportOnly(),
+    allowUnsafeEval: devAllowUnsafeEval(),
+  });
   res.headers.set(csp.name, csp.value);
   res.headers.set("x-nonce", nonce);
   for (const h of STATIC_SECURITY_HEADERS) {
@@ -55,7 +71,7 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
   // response header still honors report-only mode via applySecurityHeaders().
   requestHeaders.set(
     "content-security-policy",
-    buildCspHeaderValue(nonce),
+    buildCspHeaderValue(nonce, devAllowUnsafeEval()),
   );
 
   // For public paths or auth UI we never invoke Clerk middleware.

@@ -6,7 +6,7 @@
  * unauthenticated browser, that a synthetic Clerk session cookie unlocks
  * them, and that clearing the cookie restores the 403 panel.
  */
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures/test";
 import { LoginPage } from "./pages/LoginPage";
 
 test.describe("auth: SSO + session cookie + logout", () => {
