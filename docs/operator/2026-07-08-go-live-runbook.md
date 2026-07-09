@@ -24,6 +24,8 @@ Go-live is gated on a handful of **owner-only** live-key / Stripe-config switche
 - **Tier→price code complete on BOTH writers**: container `crates/corelink-container/src/main.rs:111`
   (create session) + signup-worker `apps/signup-worker/src/webhooks/stripe.ts:104-108` (reverse-map
   price→tier on downgrade).
+- **`apps/docs` org-rename complete**: docs site + generator scripts now reference
+  `github.com/HumanGuardrail` (was `humangr-labs`). — was task #45.
 
 ## Prod surface names (corrected — my old `corelink-worker.humangr.com` note was stale)
 - Main worker: **`corelink-prod`** (+ regional `-lhr/-nrt/-sam/-syd`).
@@ -81,6 +83,5 @@ printf '%s' "$VALUE" | worker/node_modules/.bin/wrangler secret put NAME --env p
 ## Engineering follow-ups (tracked; none block taking money)
 - e2e critical-flows: Clerk 7 `useAuth()` vs the synthetic e2e session (test-harness debt; prod unaffected). — task #47
 - Next 15→16 (isolated OpenNext monorepo standalone-path fix). — task #36 tail
-- `apps/docs` org-rename `humangr-labs→HumanGuardrail`. — task #45
 - Optional hardening: make the tier→price map **fail-loud at boot** (assert all 4 paid tiers resolve) so
   a #2-style misconfig can never silently 422. Recommended pre-launch; ~1 PR.

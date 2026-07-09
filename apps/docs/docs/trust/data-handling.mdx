@@ -91,7 +91,7 @@ What `primary_region` controls:
 - **DO placement.** Durable Object instance colocated with D1.
 - **Failover semantics.** During a region outage, the failover path is always
   within the tenant's residency boundary and is documented per region in
-  [`specs/_runbooks/RB-DR-DRILL.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_runbooks/RB-DR-DRILL.md).
+  [`specs/_runbooks/RB-DR-DRILL.md`](https://github.com/HumanGuardrail/corelink/blob/main/specs/_runbooks/RB-DR-DRILL.md).
   For Brazil specifically, see
   [Brazil residency & LGPD](/residency/lgpd-brazil) — Art. 33 §1º allows
   out-of-region temporary processing during a documented emergency.
@@ -170,7 +170,7 @@ CoreLink supports GDPR Art. 17 and LGPD Art. 18 erasure requests:
   within 35 days (the backup window); a tombstone is recorded on day 0
   so a Type II auditor can trace the chain.
 
-See the [DSR runbooks](https://github.com/humangr-labs/corelink/tree/main/specs/_runbooks)
+See the [DSR runbooks](https://github.com/HumanGuardrail/corelink/tree/main/specs/_runbooks)
 (`RB-DSR-INTAKE-FAILURE`, `RB-DSR-ERASURE-INCOMPLETE`) for the operational
 side.
 
@@ -208,7 +208,7 @@ side.
 You don't have to take our word for any of the above. Three options:
 
 1. **Read the code.** The repo is
-   [`humangr-labs/corelink`](https://github.com/humangr-labs/corelink).
+   [`HumanGuardrail/corelink`](https://github.com/HumanGuardrail/corelink).
    The residency enforcement, BYOK envelope, and audit chain are
    all open. (Note: US/ENAM and physically-EU/WEUR residency are live;
    Brazil/`sam` and APAC physical residency are roadmap, not GA.)

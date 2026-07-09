@@ -320,7 +320,7 @@ last_updated: "{last_updated}"
 CoreLink uses a small set of carefully selected sub-processors to operate
 the service. This page is the **public list** maintained per GDPR Art. 28
 §2 and LGPD Art. 39 + Art. 27 §4º. It is a subset of our internal
-[Vendor Risk Register](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md)
+[Vendor Risk Register](https://github.com/HumanGuardrail/corelink/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md)
 (19 vendors total) — only those who *process customer personal data on
 CoreLink's behalf* appear in the **Active sub-processors** table.
 
@@ -393,14 +393,14 @@ sub-processors:
 
 The internal sub-processor file (with the full DPA matrix and termination
 clauses) is at
-[`legal/sub-processors.md`](https://github.com/humangr-labs/corelink/blob/main/legal/sub-processors.md).
+[`legal/sub-processors.md`](https://github.com/HumanGuardrail/corelink/blob/main/legal/sub-processors.md).
 The full vendor risk register (19 vendors with inherent risk scoring,
 control-effectiveness factors, and quarterly review cadence) is at
-[`specs/_compliance/VENDOR-RISK-REGISTER.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md).
+[`specs/_compliance/VENDOR-RISK-REGISTER.md`](https://github.com/HumanGuardrail/corelink/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md).
 
 ## Change management
 
-Operational runbook: [`specs/_runbooks/RB-SUBPROCESSOR-CHANGE.md`](https://github.com/humangr-labs/corelink/blob/main/specs/_runbooks/RB-SUBPROCESSOR-CHANGE.md).
+Operational runbook: [`specs/_runbooks/RB-SUBPROCESSOR-CHANGE.md`](https://github.com/HumanGuardrail/corelink/blob/main/specs/_runbooks/RB-SUBPROCESSOR-CHANGE.md).
 The 30-day customer-broadcast pipeline is implemented by
 `scripts/subprocessor-change-notify.py` and the
 `corelink-privacy-sub-processor-emit` crate (CloudEvents

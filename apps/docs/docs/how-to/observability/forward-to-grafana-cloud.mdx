@@ -137,7 +137,7 @@ If `corelink.observability.export_failed` shows up instead:
 ## Step 5 — Pre-built Grafana dashboards
 
 CoreLink ships a Grafana dashboard JSON at
-[`apps/docs/static/grafana/corelink-overview.json`](https://github.com/humangr-labs/corelink-server/tree/main/apps/docs/static/grafana)
+[`apps/docs/static/grafana/corelink-overview.json`](https://github.com/HumanGuardrail/corelink-server/tree/main/apps/docs/static/grafana)
 (deferred; lands alongside the GA dashboard catalog). Import via
 **Dashboards → New → Import → Upload JSON file**.
 
@@ -173,7 +173,7 @@ within the Pro tier baseline for most multi-region Pro tenants.
   (most flexible; routes to Grafana Cloud + others simultaneously).
 - [Trust → Data handling](../../trust/data-handling) — PII hygiene
   + constant-time API-key validation + fail-OPEN proof.
-- [`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/humangr-labs/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md)
+- [`specs/_audits/sealed/2026-05-15-otel-export-spec.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-otel-export-spec.md)
   — full inventory of what we export.
 - [Prometheus remote-write spec](https://prometheus.io/docs/concepts/remote_write_spec/).
 - [Grafana Tempo OTLP ingest](https://grafana.com/docs/tempo/latest/api_docs/pushing-spans-with-http/).

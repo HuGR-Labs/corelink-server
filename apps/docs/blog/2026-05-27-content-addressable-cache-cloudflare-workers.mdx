@@ -134,7 +134,7 @@ A piece of the actual `ARCHITECTURE.md` makes the split explicit:
 > the hot loop (chunk → hash → R2 PUT/GET → verify) and stays
 > in-region with R2 so the bandwidth-heavy phase never traverses the
 > public Internet.
-> — [`ARCHITECTURE.md`](https://github.com/humangr-labs/corelink-server/blob/main/ARCHITECTURE.md) §2
+> — [`ARCHITECTURE.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/ARCHITECTURE.md) §2
 
 If you only walk away with one idea from this post, walk away with
 that one. The "edge" pitch breaks the moment your loop crosses the
@@ -157,7 +157,7 @@ skips the verify function on one code path. So we did it with the
 type system instead.
 
 The full type lives in
-[`crates/corelink-hash/src/digest.rs`](https://github.com/humangr-labs/corelink-server/blob/main/crates/corelink-hash/src/digest.rs).
+[`crates/corelink-hash/src/digest.rs`](https://github.com/HumanGuardrail/corelink-server/blob/main/crates/corelink-hash/src/digest.rs).
 Trimmed to the load-bearing parts:
 
 ```rust
@@ -389,7 +389,7 @@ failure mode is silent and unbounded: a single missed check is a
 cross-tenant data leak.
 
 We took the time to model it in TLA+. The file is
-[`specs/tla/tenant_isolation.tla`](https://github.com/humangr-labs/corelink-server/blob/main/specs/tla/tenant_isolation.tla),
+[`specs/tla/tenant_isolation.tla`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/tla/tenant_isolation.tla),
 and the version we ship is v3 — v1 had an abstraction error TLC
 found for us.
 
@@ -626,7 +626,7 @@ would love to be wrong about any of them.
 These are the things that should keep a serious CAS implementer
 honest. If you have answers, write us — `engineering@humangr.com`,
 or open an issue on
-[`humangr-labs/corelink-server`](https://github.com/humangr-labs/corelink-server).
+[`HumanGuardrail/corelink-server`](https://github.com/HumanGuardrail/corelink-server).
 
 ## What's next
 
@@ -638,13 +638,13 @@ with the 149 → 87 crate consolidation and the cargo-deny boundary
 lockdown. The remaining path to GA is the human-driven
 external-engagement work (pentest, SOC 2, legal, lighthouse
 customers, 30-day staging burn-in) tracked in our public
-[`ROADMAP-TO-GA.md`](https://github.com/humangr-labs/corelink-server/blob/main/ROADMAP-TO-GA.md).
+[`ROADMAP-TO-GA.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/ROADMAP-TO-GA.md).
 
 If you want to try it, the 60-second demo is:
 
 ```bash
 # Install the CLI (macOS shown; Linux/Windows in the quickstart).
-brew install humangr-labs/tap/corelink
+brew install HumanGuardrail/tap/corelink
 
 # Sign in to the sandbox. 24h scratch tenant, no credit card.
 # Visit https://app.corelink.humangr.com/sandbox to grab a PAT.
@@ -662,14 +662,14 @@ corelink ls --limit 5
 The full
 [10-minute quickstart](/tutorial/) walks each step in detail.
 Source is on
-[GitHub](https://github.com/humangr-labs/corelink-server)
+[GitHub](https://github.com/HumanGuardrail/corelink-server)
 under MIT OR Apache-2.0 for the dual-licensed crates;
-[`ARCHITECTURE.md`](https://github.com/humangr-labs/corelink-server/blob/main/ARCHITECTURE.md)
+[`ARCHITECTURE.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/ARCHITECTURE.md)
 is the canonical entry point if you want to read code instead of
 prose.
 
 If you have feedback on this post, the place to drop it is the
-[discussion on this repo](https://github.com/humangr-labs/corelink-server/discussions)
+[discussion on this repo](https://github.com/HumanGuardrail/corelink-server/discussions)
 or the [HN thread when this lands there](https://news.ycombinator.com).
 We read every comment.
 
