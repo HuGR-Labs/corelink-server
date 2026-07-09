@@ -11,7 +11,7 @@ source_files:
   - crates/corelink-erasure-attestation/src/evidence.rs
   - crates/corelink-container/src/routes/dsr/attestation.rs
   - crates/corelink-container/src/routes/public_attestation.rs
-checkpoint_sha: "86e439a821d3c407cc94f4b30ba2b7a7c563d958"
+checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
 provenance: "AUTHORED"
 tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", "gdpr-art-17", "byok", "dsr"]
 timestamp: "2026-06-26T00:00:00Z"

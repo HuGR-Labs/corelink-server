@@ -4,7 +4,7 @@ title: "Turborepo v8 remote-cache surface"
 description: "The Vercel Turborepo /v8/artifacts remote-cache protocol wired onto CoreLink, with teamId-as-sub-namespace isolation and per-route body caps."
 source_files:
   - "crates/corelink-container/src/routes/turbo_v8.rs"
-checkpoint_sha: "86e439a821d3c407cc94f4b30ba2b7a7c563d958"
+checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
 provenance: "AUTHORED"
 tags: ["surfaces", "turborepo", "vercel", "cache"]
 timestamp: "2026-06-26T00:00:00Z"

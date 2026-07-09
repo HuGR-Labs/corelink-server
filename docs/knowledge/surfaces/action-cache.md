@@ -4,7 +4,7 @@ title: "Action Cache (AC) surface"
 description: "The first-party Action Cache routes mapping an action digest to its cached result, with cross-tenant denial and a canonical-digest gate shared with native CAS."
 source_files:
   - "crates/corelink-container/src/routes/ac.rs"
-checkpoint_sha: "86e439a821d3c407cc94f4b30ba2b7a7c563d958"
+checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
 provenance: "AUTHORED"
 tags: ["surfaces", "action-cache", "cache", "reapi"]
 timestamp: "2026-06-26T00:00:00Z"

@@ -5,7 +5,7 @@ description: "How a new customer becomes a provisioned tenant: the Clerk signup 
 source_files:
   - crates/corelink-container/src/routes/signup.rs
   - docs/operator/e2e-signup-sealed-2026-05-30.md
-checkpoint_sha: "86e439a821d3c407cc94f4b30ba2b7a7c563d958"
+checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
 provenance: "AUTHORED"
 tags:
   - launch

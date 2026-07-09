@@ -5,7 +5,7 @@ description: "End-to-end path of a native CAS blob write: the tenant/scope/PAT/$
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
   - "crates/corelink-container/src/storage.rs"
-checkpoint_sha: "86e439a821d3c407cc94f4b30ba2b7a7c563d958"
+checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
 provenance: "AUTHORED"
 tags: ["flows", "cas", "hot-path", "storage", "request-flow"]
 timestamp: "2026-06-28T00:00:00Z"
