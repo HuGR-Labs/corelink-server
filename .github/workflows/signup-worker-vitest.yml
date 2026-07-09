@@ -33,7 +33,14 @@ jobs:
       - name: Install dependencies
         # package-lock.json is gitignored (.gitignore **/package-lock.json), so
         # `npm ci` cannot run — use `npm install` like worker-vitest.yml.
-        run: npm install
+        # --legacy-peer-deps: wrangler ≥4.108 declares a peerOPTIONAL on
+        # @cloudflare/workers-types@^5, but this worker pins workers-types 4.x (for
+        # @sentry/cloudflare compat, which peers workers-types ^4). Since the
+        # lockfile is gitignored here, a fresh npm install floats wrangler and
+        # strict peer resolution ERESOLVEs on that OPTIONAL peer. --legacy-peer-deps
+        # skips the optional-peer check (it does not weaken anything real) so the
+        # node vitest can install+run. Mirrors worker-vitest.yml.
+        run: npm install --legacy-peer-deps
 
       - name: Run vitest
         run: npx vitest run
