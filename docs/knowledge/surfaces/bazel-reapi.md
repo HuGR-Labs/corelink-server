@@ -1,10 +1,10 @@
 ---
 type: "CacheSurface"
 title: "Bazel REAPI v2 surface"
-description: "The five REAPI v2 REST cache endpoints — the CoreLink REAPI ByteStream scheme (not stock --remote_cache=http) — that let a REAPI client hit the same R2 blobs as native CAS/AC."
+description: "The Bazel cache surface: the CoreLink REAPI ByteStream REST scheme AND the stock-Bazel HTTP cache alias (`/bazel/cache/{cas,ac}/:hash`), both onto the same R2 blobs as native CAS/AC."
 source_files:
   - "crates/corelink-container/src/routes/bazel_v2.rs"
-checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
+checkpoint_sha: "3b7a66d65371999f41ea0146ca80c746e60e025a"
 provenance: "AUTHORED"
 tags: ["surfaces", "bazel", "reapi", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -12,59 +12,81 @@ timestamp: "2026-06-26T00:00:00Z"
 
 # Bazel REAPI v2 surface
 
-This surface speaks the Bazel Remote Execution API (REAPI) v2 REST cache protocol. It requires the
-CoreLink REAPI ByteStream scheme (`/bazel/v2/:instance/blobs/:hash/:size`) and a compatible
-REAPI/ByteStream client — it is NOT stock Bazel's plain HTTP cache: a vanilla
-`--remote_cache=http(s)://…` sends `/cas/<hash>` and `/ac/<hash>` (no `:instance`, no `:size`), which
-does not match these routes and 404s. A stock-Bazel-HTTP `/cas|/ac` alias is a tracked enhancement
-(DEFERRED), not a current capability. It is a protocol adapter, not a new store: every blob it serves is backed by the same
-R2 blobs the [native CAS](/surfaces/native-cas.md) and [Action Cache](/surfaces/action-cache.md)
-surfaces use, so a result cached by one front-door is visible to the others. It lives in the container
-plane and translates REAPI paths/digests into `BazelAdapter`/`FindMissingHandler` calls, mapping
-bridge errors to canonical HTTP status codes.
+This surface speaks the Bazel Remote Execution API (REAPI) v2 cache protocol and serves TWO wire
+schemes onto the SAME `BazelAdapter`/handlers and the same per-tenant R2 store:
+
+1. The CoreLink **REAPI ByteStream REST scheme** (`/bazel/v2/:instance/blobs/:hash/:size`) — for a
+   REAPI/ByteStream client (or `bazel` configured against this scheme). The tenant is the `:instance`
+   path segment.
+2. The **stock-Bazel HTTP cache alias** (`/bazel/cache/{cas,ac}/:hash`) — what vanilla
+   `bazel --remote_cache=https://host/bazel/cache` (and Buck2 used as a REAPI HTTP cache) actually
+   sends: `GET`/`PUT` on `/cas/<hash>` and `/ac/<hash>` with **no `:instance` segment and no `:size`**.
+   Here the tenant (== REAPI `instance`) is derived from the Worker-injected `x-corelink-tenant-id`
+   header, so a missing/sentinel tenant → 401 and isolation is by the per-tenant namespace (a
+   cross-tenant hash is a uniform 404, never another tenant's bytes). This alias was previously
+   DEFERRED (stock `--remote_cache=http` 404'd here); it is now BUILT.
+
+It is a protocol adapter, not a new store: every blob it serves is backed by the same R2 blobs the
+[native CAS](/surfaces/native-cas.md) and [Action Cache](/surfaces/action-cache.md) surfaces use, so
+a result cached by one front-door is visible to the others. It lives in the container plane and
+translates REAPI paths/digests into `BazelAdapter`/`FindMissingHandler` calls, mapping bridge errors
+to canonical HTTP status codes.
 
 # Role
-It mounts the five REAPI v2 cache endpoints (CAS read/write, AC read/write, and `findMissingBlobs`)
-under `/bazel/v2/:instance/...`, where `:instance` is the tenant boundary. The route layer extracts
-path params, builds the REAPI digest, reads Worker-injected caller metadata, and dispatches.
+It mounts the five REAPI v2 REST cache endpoints (CAS read/write, AC read/write, and
+`findMissingBlobs`) under `/bazel/v2/:instance/...`, where `:instance` is the tenant boundary, PLUS
+four stock-Bazel HTTP alias endpoints under `/bazel/cache/{cas,ac}/:hash` where the tenant is the
+header. The route layer extracts path params, builds the REAPI digest, reads Worker-injected caller
+metadata, and dispatches.
 
 # How it works
-1. The router registers exactly five REAPI routes under `/bazel/v2/:instance/...` (`crates/corelink-container/src/routes/bazel_v2.rs:290-316`).
-2. CAS read is `GET /bazel/v2/:instance/blobs/:hash/:size` → `handle_cas_read` (`crates/corelink-container/src/routes/bazel_v2.rs:293-296`).
-3. AC read/write share `GET`/`PUT /bazel/v2/:instance/blobs/ac/:hash/:size`, differentiated by method (`crates/corelink-container/src/routes/bazel_v2.rs:302-305`).
-4. CAS write is `PUT /bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size` (`crates/corelink-container/src/routes/bazel_v2.rs:307-310`).
-5. Batch find-missing is `POST /bazel/v2/:instance/findMissingBlobs` (`crates/corelink-container/src/routes/bazel_v2.rs:312-315`).
-6. Caller metadata is read from Worker-injected headers via `header_str`, defaulting when absent (`crates/corelink-container/src/routes/bazel_v2.rs:322-329`).
-7. The authenticated tenant is extracted fail-CLOSED by `caller_tenant`, which routes its missing/empty/reserved-sentinel rejection through the SHARED `crate::auth_tenant::is_reserved_sentinel` — so this REAPI surface (which has no `AuthTenant` extractor) rejects the full reserved set including `_oci` and `_public` (`PUBLIC_NAMESPACE`), and `BazelPutGuard` reserves a write slot only for a non-sentinel tenant via the same check (`crates/corelink-container/src/routes/bazel_v2.rs:346-356`; `crates/corelink-container/src/routes/bazel_v2.rs:179`).
-8. Each CAS/AC read and write records a fire-and-forget usage-metering event into the in-process display aggregator [`crate::usage_meter`] — a `ReadHit` / `ReadMiss` on reads and a `Write` on writes — off the hot path (no await/I/O), DISPLAY telemetry only, never gating the response (`crates/corelink-container/src/routes/bazel_v2.rs:527-528`; `crates/corelink-container/src/routes/bazel_v2.rs:624-625`; `crates/corelink-container/src/routes/bazel_v2.rs:757-758`).
+1. The router registers the five REAPI REST routes under `/bazel/v2/:instance/...` plus the four stock-alias routes under `/bazel/cache/...` (`crates/corelink-container/src/routes/bazel_v2.rs:305-346`).
+2. CAS read is `GET /bazel/v2/:instance/blobs/:hash/:size` → `handle_cas_read` (`crates/corelink-container/src/routes/bazel_v2.rs:306-309`).
+3. AC read/write share `GET`/`PUT /bazel/v2/:instance/blobs/ac/:hash/:size`, differentiated by method (`crates/corelink-container/src/routes/bazel_v2.rs:315-318`).
+4. CAS write is `PUT /bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size` (`crates/corelink-container/src/routes/bazel_v2.rs:320-323`).
+5. Batch find-missing is `POST /bazel/v2/:instance/findMissingBlobs` (`crates/corelink-container/src/routes/bazel_v2.rs:325-328`).
+6. The stock-Bazel HTTP alias mounts `GET/PUT /bazel/cache/cas/:hash` and `GET/PUT /bazel/cache/ac/:hash` onto the SAME adapter/handlers (`crates/corelink-container/src/routes/bazel_v2.rs:338-345`); the alias handlers derive the REAPI `instance` from the `x-corelink-tenant-id` header (not a path segment) and run the IDENTICAL gate sequence as the REST handlers (`crates/corelink-container/src/routes/bazel_v2.rs:885-1105`).
+7. Caller metadata is read from Worker-injected headers via `header_str`, defaulting when absent (`crates/corelink-container/src/routes/bazel_v2.rs:352-359`).
+8. The authenticated tenant is extracted fail-CLOSED by `caller_tenant`, which routes its missing/empty/reserved-sentinel rejection through the SHARED `crate::auth_tenant::is_reserved_sentinel` — so this REAPI surface (which has no `AuthTenant` extractor) rejects the full reserved set including `_oci` and `_public` (`PUBLIC_NAMESPACE`), and `BazelPutGuard` reserves a write slot only for a non-sentinel tenant via the same check (`crates/corelink-container/src/routes/bazel_v2.rs:376-386`; `crates/corelink-container/src/routes/bazel_v2.rs:192`).
+9. Each CAS/AC read and write records a fire-and-forget usage-metering event into the in-process display aggregator [`crate::usage_meter`] — a `ReadHit` / `ReadMiss` on reads and a `Write` on writes — off the hot path (no await/I/O), DISPLAY telemetry only, never gating the response (`crates/corelink-container/src/routes/bazel_v2.rs:557-558`; `crates/corelink-container/src/routes/bazel_v2.rs:654-655`; `crates/corelink-container/src/routes/bazel_v2.rs:787-788`).
 
 # Invariants
-- The `:instance` path segment MUST equal the Worker-injected `x-corelink-tenant-id`; a mismatch is 403 with an audit row — the executed enforcer maps the bridge's `BazelBridgeError::CrossTenantDenied` to `StatusCode::FORBIDDEN` (`crates/corelink-container/src/routes/bazel_v2.rs:465`). The documented rule lives in the module doc (`crates/corelink-container/src/routes/bazel_v2.rs:31-34`).
-- All routes use the matchit `:name` capture form, never `{name}`, per the DEBT-029 rule (`crates/corelink-container/src/routes/bazel_v2.rs:47-50`).
-- Per-tenant concurrent writes are bounded by `BAZEL_WRITE_CONCURRENCY_LIMIT` (`crates/corelink-container/src/routes/bazel_v2.rs:126`).
-- The bytes served are the same R2 blobs as the native CAS/AC endpoints (a shared store, not a copy) (`crates/corelink-container/src/routes/bazel_v2.rs:5-7`).
-- The surface requires the CoreLink REAPI ByteStream scheme (`/bazel/v2/:instance/blobs/:hash/:size`); stock `--remote_cache=http` Bazel hits `/cas`,`/ac` and 404s — a stock-client `/cas|/ac` alias is DEFERRED, not built (`crates/corelink-container/src/routes/bazel_v2.rs:9-17`).
-- A missing/empty/reserved-sentinel `x-corelink-tenant-id` is rejected `401` through the shared `is_reserved_sentinel`, so a `_oci`/`_public` masquerade can never reach the cross-tenant dedup namespace via this surface (`crates/corelink-container/src/routes/bazel_v2.rs:346-356`).
+- REST scheme: the `:instance` path segment MUST equal the Worker-injected `x-corelink-tenant-id`; a mismatch is 403 with an audit row — the executed enforcer maps the bridge's `BazelBridgeError::CrossTenantDenied` to `StatusCode::FORBIDDEN` (`crates/corelink-container/src/routes/bazel_v2.rs:495`). The documented rule lives in the module doc (`crates/corelink-container/src/routes/bazel_v2.rs:44-47`).
+- Stock alias: there is NO `:instance` to mismatch — the tenant is the header alone, so isolation is by the per-tenant namespace and a cross-tenant hash is a UNIFORM 404 (never another tenant's bytes), while a missing/sentinel tenant is 401. Both schemes run the same `scope → tenant → PAT → quota` gate order; the alias CAS write keeps the SHA-256 content-addressing boundary check (`crates/corelink-container/src/routes/bazel_v2.rs:967`) and the alias AC write keeps the WP5b runner-job AC-key pin (`crates/corelink-container/src/routes/bazel_v2.rs:1065`).
+- All routes use the matchit `{name}` capture form, never `:name` (post axum-0.8), per the DEBT-029 rule (`crates/corelink-container/src/routes/bazel_v2.rs:58-63`).
+- Per-tenant concurrent writes are bounded by `BAZEL_WRITE_CONCURRENCY_LIMIT` (`crates/corelink-container/src/routes/bazel_v2.rs:139`) on both schemes.
+- The bytes served are the same R2 blobs as the native CAS/AC endpoints (a shared store, not a copy) (`crates/corelink-container/src/routes/bazel_v2.rs:5-7`); the stock alias reads/writes that same store.
+- A missing/empty/reserved-sentinel `x-corelink-tenant-id` is rejected `401` through the shared `is_reserved_sentinel`, so a `_oci`/`_public` masquerade can never reach the cross-tenant dedup namespace via either scheme (`crates/corelink-container/src/routes/bazel_v2.rs:376-386`).
 
 # Gotchas
 - `/blobs/ac/:hash/:size` resolves AHEAD of `/blobs/:hash/:size` because axum/matchit ranks the literal
   `ac` segment above the `:hash` wildcard — AC and CAS read share a path prefix and only differ by that
   literal, so route ordering, not method, disambiguates them.
-- Tenant isolation is enforced inside the adapter (which emits the audit row), not duplicated in the
-  route layer, so the 403 path is the bridge's, not a route-local check.
+- Tenant isolation on the REST scheme is enforced inside the adapter (which emits the audit row), not
+  duplicated in the route layer, so the 403 path is the bridge's, not a route-local check. On the stock
+  alias the adapter's cross-tenant guard is a tautology (`instance == caller_tenant` by construction),
+  so isolation rests entirely on the per-tenant namespace (a uniform 404, not a 403).
+- The stock alias carries no `:size`; reads use a `0` placeholder size (the read addresses purely by
+  hash) and writes use the actual body length (making the adapter's size-match check a tautology, so
+  the SHA-256 boundary check is the sole CAS integrity gate). Buck2 remote-EXECUTION (gRPC) is out of
+  scope — CoreLink is cache-only.
 
 # Citations
-1. `crates/corelink-container/src/routes/bazel_v2.rs:290-316` — the REAPI v2 router (five endpoints).
-2. `crates/corelink-container/src/routes/bazel_v2.rs:293-296` — CAS read route.
-3. `crates/corelink-container/src/routes/bazel_v2.rs:302-305` — AC read/write route (method-differentiated).
-4. `crates/corelink-container/src/routes/bazel_v2.rs:307-310` — CAS write (uploads/:uuid) route.
-5. `crates/corelink-container/src/routes/bazel_v2.rs:312-315` — `findMissingBlobs` batch route.
-6. `crates/corelink-container/src/routes/bazel_v2.rs:322-329` — `header_str` Worker-metadata reader.
-7. `crates/corelink-container/src/routes/bazel_v2.rs:465` — `CrossTenantDenied → 403`: the executed enforcer of the `:instance` == `x-corelink-tenant-id` isolation rule (the documented rule is in the module doc at `:31-34`).
-8. `crates/corelink-container/src/routes/bazel_v2.rs:47-50` — matchit `:name` capture-form rule (DEBT-029).
-9. `crates/corelink-container/src/routes/bazel_v2.rs:126` — `BAZEL_WRITE_CONCURRENCY_LIMIT`.
-10. `crates/corelink-container/src/routes/bazel_v2.rs:5-7` — same R2 blobs as native CAS/AC.
-11. `crates/corelink-container/src/routes/bazel_v2.rs:346-356` — `caller_tenant` fail-CLOSED via the shared `is_reserved_sentinel` (rejects `_oci`/`_public`).
-12. `crates/corelink-container/src/routes/bazel_v2.rs:179` — `BazelPutGuard` reserves only for a non-sentinel tenant (same shared check).
-13. `crates/corelink-container/src/routes/bazel_v2.rs:9-17` — client contract: requires the REAPI ByteStream scheme; stock `--remote_cache=http` (`/cas`,`/ac`) 404s, alias DEFERRED.
-14. `crates/corelink-container/src/routes/bazel_v2.rs:527-528` (CAS read HIT), `crates/corelink-container/src/routes/bazel_v2.rs:624-625` (CAS write), `crates/corelink-container/src/routes/bazel_v2.rs:757-758` (AC write) — fire-and-forget usage-metering `record` calls (DISPLAY telemetry, off the hot path).
+1. `crates/corelink-container/src/routes/bazel_v2.rs:305-346` — the router (five REAPI REST endpoints + four stock-alias endpoints).
+2. `crates/corelink-container/src/routes/bazel_v2.rs:306-309` — CAS read route (REST).
+3. `crates/corelink-container/src/routes/bazel_v2.rs:315-318` — AC read/write route (method-differentiated).
+4. `crates/corelink-container/src/routes/bazel_v2.rs:320-323` — CAS write (uploads/:uuid) route.
+5. `crates/corelink-container/src/routes/bazel_v2.rs:325-328` — `findMissingBlobs` batch route.
+6. `crates/corelink-container/src/routes/bazel_v2.rs:338-345` — stock-Bazel HTTP alias route registration (`/bazel/cache/{cas,ac}/:hash`).
+7. `crates/corelink-container/src/routes/bazel_v2.rs:885-1105` — the four stock-alias handlers (tenant from header; same gate sequence + integrity checks as the REST handlers).
+8. `crates/corelink-container/src/routes/bazel_v2.rs:352-359` — `header_str` Worker-metadata reader.
+9. `crates/corelink-container/src/routes/bazel_v2.rs:495` — `CrossTenantDenied → 403`: the executed enforcer of the REST `:instance` == `x-corelink-tenant-id` isolation rule (the documented rule is in the module doc at `:44-47`).
+10. `crates/corelink-container/src/routes/bazel_v2.rs:967` — stock-alias CAS-write SHA-256 content-addressing boundary check.
+11. `crates/corelink-container/src/routes/bazel_v2.rs:1065` — stock-alias AC-write WP5b runner-job AC-key pin.
+12. `crates/corelink-container/src/routes/bazel_v2.rs:58-63` — matchit `{name}` capture-form rule (DEBT-029, post axum-0.8).
+13. `crates/corelink-container/src/routes/bazel_v2.rs:139` — `BAZEL_WRITE_CONCURRENCY_LIMIT`.
+14. `crates/corelink-container/src/routes/bazel_v2.rs:5-7` — same R2 blobs as native CAS/AC.
+15. `crates/corelink-container/src/routes/bazel_v2.rs:376-386` — `caller_tenant` fail-CLOSED via the shared `is_reserved_sentinel` (rejects `_oci`/`_public`).
+16. `crates/corelink-container/src/routes/bazel_v2.rs:192` — `BazelPutGuard` reserves only for a non-sentinel tenant (same shared check).
+17. `crates/corelink-container/src/routes/bazel_v2.rs:9-26` — client contract: two schemes (REAPI REST + stock HTTP alias), one store.
+18. `crates/corelink-container/src/routes/bazel_v2.rs:557-558` (CAS read HIT), `crates/corelink-container/src/routes/bazel_v2.rs:654-655` (CAS write), `crates/corelink-container/src/routes/bazel_v2.rs:787-788` (AC write) — fire-and-forget usage-metering `record` calls (DISPLAY telemetry, off the hot path).
