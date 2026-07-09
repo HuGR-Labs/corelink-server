@@ -9,10 +9,13 @@
 // react-hooks 7 (bundled by eslint-config-next 16) ships the React Compiler
 // enforcement rule suite in `recommended`, all at "error". This app has NOT
 // adopted the React Compiler (no babel-plugin-react-compiler / reactCompiler in
-// next.config.ts), so those rules are surfaced as "warn" here — visible for a
-// future React-Compiler adoption pass, without falsely gating the build on
-// compiler discipline the runtime does not yet apply. The long-standing hooks
-// rules stay at full strength: rules-of-hooks = error, exhaustive-deps = warn.
+// next.config.ts), so those advisory-for-a-compiler-we-don't-run rules are
+// turned OFF here. The standing project decision is to PRESERVE THE PRIOR LINT
+// BAR across the eslint-config-next 16 bump — not to adopt React-Compiler
+// discipline the runtime does not apply. The two long-standing hooks rules that
+// predate react-hooks 7 stay exactly as before: rules-of-hooks = error,
+// exhaustive-deps = warn. (Re-enable the suite in a dedicated Compiler-adoption
+// PR if/when next.config wires reactCompiler.)
 import nextCoreWebVitals from 'eslint-config-next/core-web-vitals';
 
 const projectRules = {
@@ -23,20 +26,20 @@ const projectRules = {
   // Keep the two original, always-enforced hooks rules explicit.
   'react-hooks/rules-of-hooks': 'error',
   'react-hooks/exhaustive-deps': 'warn',
-  // React Compiler enforcement suite (react-hooks 7) — warn until the compiler
-  // is adopted. Not disabled: violations remain visible in lint output.
-  'react-hooks/static-components': 'warn',
-  'react-hooks/use-memo': 'warn',
-  'react-hooks/preserve-manual-memoization': 'warn',
-  'react-hooks/immutability': 'warn',
-  'react-hooks/globals': 'warn',
-  'react-hooks/refs': 'warn',
-  'react-hooks/set-state-in-effect': 'warn',
-  'react-hooks/set-state-in-render': 'warn',
-  'react-hooks/error-boundaries': 'warn',
-  'react-hooks/purity': 'warn',
-  'react-hooks/config': 'warn',
-  'react-hooks/gating': 'warn',
+  // React Compiler enforcement suite (new in react-hooks 7) — OFF: the app has
+  // not adopted the compiler, so these do not describe a bar the runtime holds.
+  'react-hooks/static-components': 'off',
+  'react-hooks/use-memo': 'off',
+  'react-hooks/preserve-manual-memoization': 'off',
+  'react-hooks/immutability': 'off',
+  'react-hooks/globals': 'off',
+  'react-hooks/refs': 'off',
+  'react-hooks/set-state-in-effect': 'off',
+  'react-hooks/set-state-in-render': 'off',
+  'react-hooks/error-boundaries': 'off',
+  'react-hooks/purity': 'off',
+  'react-hooks/config': 'off',
+  'react-hooks/gating': 'off',
 };
 
 const config = [
@@ -60,6 +63,20 @@ const config = [
     // Node build/tooling scripts and config files legitimately use console.
     files: ['scripts/**', 'eslint.config.mjs', '*.config.{js,cjs,mjs,ts,mts}'],
     rules: { 'no-console': 'off' },
+  },
+  {
+    // Playwright e2e suite. Its fixtures take a `use` callback
+    // (`async ({ page }, use) => { … await use(page); }`) — that `use` is
+    // Playwright's fixture setter, NOT React's `use` hook, but react-hooks 7's
+    // rules-of-hooks now recognizes a bare `use(...)` call as a React hook and
+    // false-positives on it. These files are Playwright test infra, not React
+    // render code, so the react-hooks rule set does not apply to them. (The
+    // sibling legacy `playwright/` dir is already fully ignored above.)
+    files: ['tests/e2e/**'],
+    rules: {
+      'react-hooks/rules-of-hooks': 'off',
+      'react-hooks/exhaustive-deps': 'off',
+    },
   },
 ];
 
