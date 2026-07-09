@@ -21,7 +21,7 @@
 #   set -a; source .env.local; set +a
 #   scripts/admin/mint-dogfood-pat.sh \
 #     [--tenant <uuid>]        (default: ee30f7ba-fc25-4d71-939e-ebe130b4c6a3 — spawn-worker CLW_TENANT)
-#     [--scope cas:rw|read-only|admin]  (default: cas:rw)
+#     [--scope cas:rw|read-write|read-only|admin]  (default: cas:rw; read-only now mintable end-to-end)
 #     [--ttl-seconds <N>]      (default: 86400 = 24h)
 #     [--principal <uuid>]     (default: a fresh random dogfood UUID)
 #     [--api-base <url>]       (default: https://corelink-api.humangr.com)
@@ -56,7 +56,13 @@ command -v python3 >/dev/null || { echo "python3 required" >&2; exit 127; }
 command -v curl >/dev/null || { echo "curl required" >&2; exit 127; }
 [[ -n "${CORELINK_PAT_MINT_AUTH_KEY:-}" ]] || { echo "ERROR: CORELINK_PAT_MINT_AUTH_KEY unset (source .env.local)" >&2; exit 2; }
 
-# canonical D1 scope (pat.scope CHECK ('read-write','read-only','admin'))
+# Canonical D1 `pat.scope` label — the CHECK domain is exactly
+# ('read-write','read-only','admin') (migration 0037). This is the SINGLE
+# source of truth: we send $CANON to BOTH the mint route AND the D1 INSERT, so
+# the minted scope bits and the persisted label can never disagree. The mint
+# route accepts this canonical set (plus `cas:rw` as a back-compat alias of
+# `read-write`), so `cas:rw`→`read-write` is mapped EXPLICITLY here rather than
+# relying on the route's alias, and `read-only` mints end-to-end.
 case "$SCOPE" in
   cas:rw|read-write) CANON="read-write" ;;
   cas:r|read-only)   CANON="read-only" ;;
@@ -66,7 +72,7 @@ esac
 [[ -n "$PRINCIPAL" ]] || PRINCIPAL="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 NOW_MS="$(python3 -c 'import time;print(int(time.time()*1000))')"
 
-echo "[mint-dogfood-pat] tenant=$TENANT scope=$SCOPE(->$CANON) ttl=${TTL}s principal=$PRINCIPAL" >&2
+echo "[mint-dogfood-pat] tenant=$TENANT scope=$SCOPE(->canonical $CANON; minted+persisted) ttl=${TTL}s principal=$PRINCIPAL" >&2
 if ! $CONFIRMED; then
   echo "[mint-dogfood-pat] DRY-RUN (no --yes): would POST $API_BASE/_internal/pat/mint then INSERT the pat row. Re-run with --yes." >&2
   exit 0
@@ -76,7 +82,7 @@ fi
 RESP="$(curl -fsS -X POST "$API_BASE/_internal/pat/mint" \
   -H "x-corelink-internal-auth: $CORELINK_PAT_MINT_AUTH_KEY" \
   -H "content-type: application/json" \
-  -d "$(python3 -c "import json,sys;print(json.dumps({'tenant_id':sys.argv[1],'principal_id':sys.argv[2],'scopes':sys.argv[3],'ttl_seconds':int(sys.argv[4])}))" "$TENANT" "$PRINCIPAL" "$SCOPE" "$TTL")")" \
+  -d "$(python3 -c "import json,sys;print(json.dumps({'tenant_id':sys.argv[1],'principal_id':sys.argv[2],'scopes':sys.argv[3],'ttl_seconds':int(sys.argv[4])}))" "$TENANT" "$PRINCIPAL" "$CANON" "$TTL")")" \
   || { echo "ERROR: mint call failed (auth? host? key?)" >&2; exit 1; }
 
 # parse the mint response
