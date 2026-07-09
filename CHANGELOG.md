@@ -22,6 +22,29 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(dsr): customer-facing DSR self-service portal mounted at `/v1/privacy/dsr/*`.**
+  Closes the last DSR seam — the customer intake surface the admin-ui `dsr-client.ts`
+  already posts to. Mounts the six data-subject rights (`access`, `portability`,
+  `rectification`, `erasure`, `restriction`, `objection`) plus `/{request_id}/status`,
+  `GET /v1/privacy/dsr` (list), and `/{request_id}/verify-mfa`, matching the
+  `dsr-types.ts` request/response shapes. It **drives the existing live Wave-1 D1
+  pipeline** — `access::run_access`/`run_portability`/`run_rectification` and the
+  in-process erasure worker (via the `AccountDeletionRequester` anchor+sink seam) —
+  and is **not** a second engine. Auth mirrors `routes/customer.rs`: Clerk-session
+  only (tenant derived exclusively from the Worker-injected `x-corelink-tenant-id`;
+  a cache-PAT caller → 403; missing/sentinel tenant → 401), with the native-PAT
+  possession backstop. Destructive arms (erasure/rectification) are gated on the
+  Worker-trusted, un-forgeable `x-corelink-mfa-verified` freshness marker (fail-CLOSED;
+  the WebAuthn step-up binding remains the deferred edge hardening). Adds an additive,
+  tenant-leftmost D1 ticket store (`migrations/d1/0090_dsr_tickets.sql`) for status
+  tracking + a 10/day per-tenant rate limit (LGPD Art.20); the table is classified into
+  the DSR **RETAIN_SET** (compliance-evidence, survives an Art.17 erasure). SLA deadlines
+  single-source the `corelink-dsr` `sla_for` (calendar-month GDPR). The Worker forwards
+  `/v1/privacy/dsr/*` via the audited `customer_v1` Clerk arm. Fail-closed, tenant-scoped,
+  rate-limited, audited; unit-tested (each right drives the pipeline; cross-tenant status
+  denied; unauth/PAT denied; rate-limit; MFA gate).
+
 ### Changed
 - **deps(js) — JS-majors frontier assessed (supersedes dependabot #697); net adoption: none.**
   The 15 already-on-`main` targets from the prior batch-majors merge (#693) remain the current
