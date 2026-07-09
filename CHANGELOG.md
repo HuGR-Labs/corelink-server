@@ -75,6 +75,18 @@ Each entry cross-references:
   the client mounts, so no input can be typed — or `.fill()`-ed — before `onChange` is live; the fix
   is deterministic regardless of hydration timing (no test sleeps/retries). Verified green across
   `byok-rotate` + `dsr-approve` at `--repeat-each=8 --workers=1`.
+  (5) **Toast layer intercepted clicks (the residual CI-only `customer-keys` revoke flake).** The
+  `.lin-toasts` layer is `position: fixed` bottom-right at `z-index:70` — directly over a table's
+  right-hand actions column. After creating a PAT, the "token created" success toast (up for 3.5s)
+  physically overlapped the row's Revoke button, so the click hit-tested to the toast
+  (`elementFromPoint` → `div.lin-toast`) and Playwright reported the target as pointer-intercepted
+  until timeout. These toasts are passive, auto-dismissing status messages (`role="status"`, no
+  buttons), so the fix is `pointer-events: none` on the toast layer — clicks pass through to the UI
+  behind; an interactive toast, if ever added, opts back in with `pointer-events: auto`. Also
+  hardened the shared reset fixture: its `POST /v1/_e2e/reset` (the first hit to the catch-all
+  `/api/v1/[...path]` route, a one-time cold Next-dev compile on a fresh CI server) now gets a
+  generous 60s timeout instead of inheriting the 10s `actionTimeout`, so the suite can't flake on its
+  very first test. `customer-keys` verified green at `--repeat-each=8 --workers=1` (twice).
 - **OKF wiki — checkpoint validation is now SQUASH-MERGE RESILIENT (durable fix for the recurring
   #688/#690 orphaned-checkpoint trap).** Root cause: when a feature PR whose OKF concept pins
   `checkpoint_sha` at its OWN pre-merge branch tip is squash/rebase-merged, git rewrites that tip; the

@@ -278,7 +278,15 @@ html:has(.cx-shell) { background: var(--bg); }
 .lin-modal__actions { display: flex; justify-content: flex-end; gap: var(--s2); margin-top: var(--s6); }
 
 /* --- Toast --- */
-.lin-toasts { position: fixed; bottom: var(--s5); right: var(--s5); z-index: 70; display: flex; flex-direction: column; gap: var(--s2); }
+/* The toast layer is fixed bottom-right at z-index 70 — directly over where
+   page content (e.g. a table's right-hand actions column) can sit. Toasts here
+   are PASSIVE, auto-dismissing status messages (role="status", no buttons), so
+   the layer must never capture pointer events: without this, a transient toast
+   silently intercepts clicks on the button it happens to overlap (it made the
+   customer-keys revoke button unclickable while the "created" toast was up).
+   pointer-events:none lets clicks pass through to the UI behind. If an
+   interactive toast is ever added, give that specific toast pointer-events:auto. */
+.lin-toasts { position: fixed; bottom: var(--s5); right: var(--s5); z-index: 70; display: flex; flex-direction: column; gap: var(--s2); pointer-events: none; }
 .lin-toast { display: flex; align-items: center; gap: var(--s3); min-width: 260px; max-width: 380px; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r-sm); box-shadow: var(--sh-pop); padding: var(--s3) var(--s4); font-size: 13px; color: var(--t1); animation: lin-slide var(--ease-slow); }
 @keyframes lin-slide { from { opacity: 0; transform: translateX(8px); } }
 

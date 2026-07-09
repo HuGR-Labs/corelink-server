@@ -16,8 +16,15 @@ import { test as base, expect } from "@playwright/test";
 export const test = base.extend({
   // Override the `page` fixture so the reset runs during fixture setup, i.e.
   // before the test's own `beforeEach` hooks (which sign the user in).
+  //
+  // Explicit generous timeout (NOT the 10s `actionTimeout`): this setup POST is
+  // the FIRST hit to the catch-all `/api/v1/[...path]` route on a cold/contended
+  // dev server (fresh every CI run), where Next compiles the route on-demand —
+  // that first compile can exceed 10s and would otherwise flake every suite at
+  // its very first test. Route compilation is a one-time cost, so a wide setup
+  // budget is correct here; steady-state resets return in single-digit ms.
   page: async ({ page, baseURL }, use) => {
-    await page.request.post(`${baseURL}/api/v1/_e2e/reset`);
+    await page.request.post(`${baseURL}/api/v1/_e2e/reset`, { timeout: 60_000 });
     await use(page);
   },
 });
