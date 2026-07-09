@@ -10,7 +10,7 @@ tags: [sdk, javascript, typescript, ac, reapi, how-to]
 
 ## When to use this guide
 
-You wrap a JS-driven test runner (e.g. Jest, Vitest, Playwright) with a
+You wrap a JS-driven test runner (for example, Jest, Vitest, Playwright) with a
 build-cache layer and want hit/miss semantics keyed by an Action digest.
 
 If you only need raw CAS, see
@@ -21,7 +21,7 @@ If you only need raw CAS, see
 
 CoreLink stores an **opaque `ActionResult` byte payload** keyed by a 64-hex
 action digest (`routes/ac.rs`). The SDK moves those bytes verbatim — you own
-the encoding (e.g. a serialized REAPI `ActionResult` protobuf, or your own JSON
+the encoding (for example, a serialized REAPI `ActionResult` message, or your own JSON
 manifest referencing CAS blobs by digest). `actionCache.get` returns a
 `Uint8Array`; `actionCache.put` takes one.
 
