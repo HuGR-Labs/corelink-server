@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-config-do/src/lib.rs"
   - "crates/corelink-config-do/src/types.rs"
   - "crates/corelink-container/src/storage/d1_http.rs"
-checkpoint_sha: "04dfdda6279d55fd9f6b5c25e42b406f84a1f86d"
+checkpoint_sha: "52e29ead10476745c69beb1de2f001f93421db02"
 provenance: "AUTHORED"
 tags: ["storage", "d1", "config-db", "control-plane", "tenant-isolation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -43,6 +43,9 @@ the [billing quota check](/flows/billing-quota-check.md).
    `monthly_request_counts` — migration 0071 — which the usage endpoint reads for its real
    `request_count` since BE-1a) — real where a table
    exists, honest empty/501 where it does not
+   (`crates/corelink-container/src/customer_d1.rs:1-25`). The `customer_audit_events` rows are written
+   UNSKIPPABLE / fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER), not best-effort: a failed insert now
+   surfaces as `AuditFailed` → 503 and the control-plane mutation never commits
    (`crates/corelink-container/src/customer_d1.rs:1-25`).
 4. Each sync handler call bridges to the async D1 client through `block_in_place` +
    `Handle::current().block_on`, valid because the native server is multi-thread `#[tokio::main]`
