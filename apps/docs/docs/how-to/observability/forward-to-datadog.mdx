@@ -92,6 +92,18 @@ time. Real auth is verified on first export attempt (Datadog returns
 break CoreLink's request path** (fail-OPEN per
 `INV-OBS-EXPORT-FAIL-OPEN`).
 
+**Container env mapping.** The data-plane container reads this surface
+as environment variables (DO-forwarded from `[env.*.vars]`):
+`CORELINK_OBSERVABILITY_EXPORT_VARIANT=datadog`,
+`CORELINK_DATADOG_API_KEY`, `CORELINK_DATADOG_SITE`
+(`us1`…`gov1`, default `us1`). The container constructs the Datadog
+exporter and emits real request-path metrics/spans through it; the
+Datadog HTTP **intake egress is the remaining operator/follow-up step**
+(deferred-real in `corelink-telemetry`). If you already run an
+OpenTelemetry Collector, routing Datadog **through** the Collector
+(`otel_collector` variant) is the recommended, fully-wired path — see
+[Forward to OTel Collector](./forward-to-otel-collector).
+
 ## Step 4 — Per-region scoping (multi-region tenants)
 
 If your tenant is multi-region, declare one export config per

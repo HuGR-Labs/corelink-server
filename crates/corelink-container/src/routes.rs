@@ -904,6 +904,23 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         ratelimit_layer::rate_limit_layer,
     ));
 
+    // OTel-export seam: stream a canonical `MetricPoint` + `TraceSpan` per
+    // data-plane request through the configured exporter's fail-OPEN boundary.
+    // Wired as the OUTERMOST data-plane layer (added last ⇒ observes the FINAL
+    // response status, including a rate-limit 429 / residency 409). Mounted ONLY
+    // when `CORELINK_OBSERVABILITY_EXPORT_VARIANT` selects a configured vendor
+    // (`otel_collector` / `datadog` / `grafana_cloud`); unset / `disabled` /
+    // malformed ⇒ NOT mounted (dev/CI: zero overhead, behaviour unchanged; a bad
+    // observability config must never brick the data plane). See
+    // `routes/otel_layer.rs` for the full env surface + the deferred-real egress
+    // residual (the collector endpoint is an operator step).
+    if let Some(otel_state) = otel_layer::OtelExportState::from_env() {
+        router = router.layer(axum::middleware::from_fn_with_state(
+            otel_state,
+            otel_layer::otel_export_layer,
+        ));
+    }
+
     router
 }
 
@@ -914,6 +931,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
 /// DIFFERENT authority than the eraser (anti-forge). See `routes/dsr_anchor.rs`.
 /// (Declared here, after the OKF-cited items above, to keep line-anchors stable.)
 pub mod dsr_anchor;
+
+/// OTel-export request-path layer (observability SEAM closure): constructs the
+/// configured `corelink-telemetry` exporter from the `[observability.export.*]`
+/// env surface and streams a canonical `MetricPoint` + `TraceSpan` per data-plane
+/// request through the fail-OPEN boundary. Wired with ONE `.layer(...)` line at
+/// the end of [`build_with_factory`]. (Declared here, after the OKF-cited blocks
+/// above, to keep the anti-drift line-anchors stable.)
+pub mod otel_layer;
 
 #[cfg(test)]
 #[allow(
