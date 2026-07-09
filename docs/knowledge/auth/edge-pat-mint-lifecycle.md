@@ -6,7 +6,7 @@ source_files:
   - "worker/src/lib/session_exchange.ts"
   - "worker/src/lib/runner_mint.ts"
   - "worker/src/lib/auth_rotate.ts"
-checkpoint_sha: "0eed249865ed97a5e3c3d425991c557b295239f5"
+checkpoint_sha: "784682482c4cb3255cde36658c108897f9b568a4"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "mint", "worker-edge", "tenancy"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -24,13 +24,13 @@ D1 `pat` row. The three public handlers above it are thin, fail-CLOSED *authoriz
 each proves the caller may mint (a verified session, an internal-auth key plus a
 runners entitlement, or ownership of the old PAT), then delegates the privileged work to
 the shared chokepoint (`worker/src/lib/session_exchange.ts:417-426`,
-`worker/src/lib/runner_mint.ts:447-457`, `worker/src/lib/auth_rotate.ts:278-289`). Each
+`worker/src/lib/runner_mint.ts:447-457`, `worker/src/lib/auth_rotate.ts:280-291`). Each
 consumer now presents the **DEDICATED** `CORELINK_PAT_MINT_AUTH_KEY` to that chokepoint
 — falling back to the shared `CORELINK_INTERNAL_AUTH_KEY` ONLY when the dedicated key is
 unset — because the container's `/_internal/pat/mint` gate now REQUIRES the dedicated
 mint key (DD-HIGH): once the dedicated key is provisioned the shared internal-auth key
 alone no longer authorizes a mint (`worker/src/lib/session_exchange.ts:378-379`,
-`worker/src/lib/runner_mint.ts:233-234`, `worker/src/lib/auth_rotate.ts:178-179`). The
+`worker/src/lib/runner_mint.ts:233-234`, `worker/src/lib/auth_rotate.ts:179-180`). The
 payoff is one signing key, one audit emit, and one revocation surface for
 INV-PAT-REVOKE-PROPAGATION — there is no second mint path to drift, leak, or forget to
 throttle (`worker/src/lib/session_exchange.ts:11-17`).

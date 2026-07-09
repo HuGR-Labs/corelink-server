@@ -40,6 +40,14 @@ Each entry cross-references:
   container prod env (identical to the signup-worker reverse map) before deploying.
 
 ### Fixed
+- **worker `auth_rotate` — a `read-only` PAT is now ROTATABLE (was wrongly refused `422 pat scope is
+  not rotatable`).** `ROTATABLE_SCOPES` excluded `read-only` on the stale premise that the single mint
+  authority had no read-only mapping — FALSE since #681 made read-only mintable end-to-end
+  (`internal_pat.rs` `scope_label_to_bits` maps `read-only → SCOPE_CACHE_R`). Rotation mints with
+  `oldRow.scope` verbatim, so read-only now round-trips faithfully (no escalation, no weakening); only a
+  label OUTSIDE the canonical `read-only`/`read-write`/`admin` set is still refused fail-CLOSED (422).
+  OKF: `edge-pat-mint-lifecycle` `auth_rotate.ts` cites remapped for the +1/+2 line shift and
+  `checkpoint_sha` advanced to the branch tip (squash-orphan tolerated per #692).
 - **OKF wiki — checkpoint validation is now SQUASH-MERGE RESILIENT (durable fix for the recurring
   #688/#690 orphaned-checkpoint trap).** Root cause: when a feature PR whose OKF concept pins
   `checkpoint_sha` at its OWN pre-merge branch tip is squash/rebase-merged, git rewrites that tip; the
