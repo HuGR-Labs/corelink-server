@@ -42,7 +42,26 @@ Each entry cross-references:
 - **deploy — repinned all 5 prod container images from the 53-commit-stale `d86b1417-r1` to the live `20a0c323-r1`.**
   `wrangler.toml`'s `[[env.*.containers]].image` lines lagged the actually-running image (CF Containers API confirms prod + syd/nrt/lhr/sam all on `20a0c323-r1`, the #690 go-live merge). A `wrangler deploy`/recycle would have rolled prod BACK to the pre-go-live build. Pins now match reality.
 
+### Changed
+- **container — the customer-facing control-plane audit trail is now UNSKIPPABLE (fail-CLOSED), not best-effort.**
+  `customer_d1.rs`'s `insert_audit_event` (the write half of `GET /v1/customer/audit`, migration 0077)
+  previously SWALLOWED a failed `customer_audit_events` insert and continued, so a key mint / team invite
+  could commit with **no** customer-visible audit row — directly contradicting the "unskippable audit trail"
+  claim. It now returns `Result` and is emitted **before** the primary mutation (emit-before-mutate, the
+  canonical INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER ordering the DSR endpoint + audit-chain sink use): a failed
+  insert surfaces as `CustomerHandlerError::AuditFailed` → **503** and the mutation never runs, so a
+  non-idempotent `pat.created` / `team.invited` op is never left committed-without-audit (nor double-applied
+  by a client retrying a committed-then-500). Two fail-CLOSED tests added (audit-insert fault ⇒ 503 + no
+  `INSERT INTO pat` / `INTO team_member`).
+
 ### Added
+- **corelink-audit — production `OutboxEmitter` + `AuditOutboxWriter` port (durable auth-plane audit, fail-CLOSED).**
+  The auth audit `Emitter` had only the drop-on-restart `InMemoryEmitter` test sink in production. `OutboxEmitter`
+  canonicalizes each `AuthEvent` (RFC 8785 JCS → SHA-256 content hash), serializes the CloudEvents 1.0 line, and
+  appends an idempotency-keyed `AuditOutboxRow` through an injected `AuditOutboxWriter`, propagating any failure as
+  `EmitterError::Store` (no swallow arm — INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). The storage-free sync port keeps the
+  crate `wasm32`-clean; the container-side D1-batch `AuditOutboxWriter` + the `audit_outbox`→R2 drain are the
+  deployment-layer follow-up (flagged partial). Unit-tested (persist, fail-CLOSED, determinism, dyn-safety).
 - **container — fail-closed boot guard on the cache-tier Stripe price map (revenue-path must-arm).**
   The four `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env vars now join the prod must-arm boot set
   (alongside `PAT_SIGNING_KEY` / `ERASURE_SALT_KEY` / `EMAIL_HASH_SALT`): when prod is detected (via the
