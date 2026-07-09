@@ -2307,6 +2307,7 @@ dependencies = [
  "corelink-privacy-erasure-worker",
  "corelink-ratelimit",
  "corelink-stripe-real",
+ "corelink-telemetry",
  "corelink-tenant-path",
  "corelink-tier-selection",
  "corelink-turbo-bridge",
