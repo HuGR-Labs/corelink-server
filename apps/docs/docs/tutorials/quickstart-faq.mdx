@@ -19,7 +19,7 @@ isn't here, jump to [Support](#15--how-do-i-get-help-if-i-am-stuck).
 PAT minted against it, and every audit event are garbage-collected
 **hard** at TTL — there is no extension. You can spin up a new sandbox
 tenant any time by minting a fresh sandbox PAT at
-[app.corelink.humangr.com/sandbox](https://app.corelink.humangr.com/sandbox); each is a
+[corelink-app.humangr.com/sandbox](https://corelink-app.humangr.com/sandbox); each is a
 fresh namespace, not a renewal of the prior one.
 
 ## 2 — Does sandbox usage trigger billing?
@@ -35,7 +35,7 @@ never enter a credit card.
 There is no automatic conversion. Sandbox and production tenants are
 distinct namespaces with different IDs. To "promote" you:
 
-1. Sign up for a paid plan at [app.corelink.humangr.com/billing](https://app.corelink.humangr.com/billing) (Stripe checkout, ~2 min).
+1. Sign up for a paid plan at [corelink-app.humangr.com/billing](https://corelink-app.humangr.com/billing) (Stripe checkout, ~2 min).
 2. Create a fresh production tenant — pick a slug + region.
 3. Mint a production PAT (`corelink_prod_t_xxx.xxx.xxx`).
 4. Re-run your `corelink put` commands against the new tenant — the
@@ -71,7 +71,7 @@ Four canonical SDKs ship at GA, all wrapping the single Rust
 | --- | --- | --- |
 | **Rust** | `corelink-client-verify` (crates.io) | native |
 | **Python** | `corelink-py` (PyPI) | PyO3 |
-| **Go** | `go.corelink.humangr.com/corelink-go` | cgo |
+| **Go** | `corelink-api.humangr.com/corelink-go` | cgo |
 | **JS / TS / Browser** | `@corelink/client` (npm) | wasm-bindgen |
 
 ## 7 — Language SDK roadmap beyond GA?

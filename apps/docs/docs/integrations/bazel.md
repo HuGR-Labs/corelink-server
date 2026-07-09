@@ -7,60 +7,57 @@ description: Configure Bazel to use CoreLink as its remote cache via .bazelrc.
 
 # Bazel integration
 
-:::note Bazel bridge coming soon
-The Bazel bridge (REAPI v2 gRPC endpoint) is under development in stream 1.3. The `.bazelrc` lines shown below use the placeholder URL
-`https://corelink-api.humangr.com/bazel/v2`. This page will be updated with the final URL once the bridge ships. The REST CAS endpoint
-(`https://corelink-api.humangr.com/v1/cas/...`) is live today.
+CoreLink implements the **Bazel Remote Execution API v2 (REAPI v2)** cache as a
+ByteStream REST scheme:
+
+```text
+https://corelink-api.humangr.com/bazel/v2/<your-tenant-id>/blobs/<hash>/<size>
+```
+
+The `<instance>` path segment is your tenant UUID.
+
+:::warning Native `bazel --remote_cache` support: in progress
+Stock Bazel's plain-HTTP remote cache emits `/cas/<hash>` and `/ac/<hash>`
+requests, which do **not** match CoreLink's ByteStream scheme and currently
+return **404**. A stock-HTTP alias is being built and is not yet live. Until it
+ships, use a **REAPI/ByteStream-compatible client** against the
+`/bazel/v2/<tenant>` endpoint above. The REST native CAS endpoint
+(`https://corelink-api.humangr.com/v1/cas/...`) is live today for direct HTTP
+use — see [Raw HTTP (curl)](./raw-curl).
 :::
 
 ## Prerequisites
 
-- Bazel 6.0 or later (supports `--remote_header` natively).
-- A CoreLink PAT with `cas:read cas:write ac:read ac:write` scopes. See [PAT creation](../concepts/tenancy.md).
+- A REAPI/ByteStream-compatible Bazel client.
+- A CoreLink PAT (`corelink_pat_...`) with cache read + write scope. See [PAT creation](../concepts/tenancy.md).
 
 ## Configure `.bazelrc`
 
-Add these lines to your project's `.bazelrc`:
+The repo ships a committed reference config at
+[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
+It points Bazel's REAPI instance at your tenant:
 
-```text
-# CoreLink remote cache
+```ini
+# Point at the CoreLink REAPI v2 endpoint (the /bazel/v2 prefix is required).
 build --remote_cache=https://corelink-api.humangr.com/bazel/v2
-build --remote_header=x-corelink-tenant=<YOUR_TENANT_ID>
-build --remote_header=authorization=Bearer <YOUR_PAT>
+
+# Your tenant UUID becomes the REAPI :instance path segment.
+build --remote_instance_name=${CORELINK_TENANT}
+
+# Authenticate with your PAT.
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+
 build --remote_upload_local_results=true
 build --remote_timeout=60
 ```
 
-Replace `<YOUR_TENANT_ID>` with your tenant ID (e.g. `acme-prod`) and `<YOUR_PAT>` with a PAT. In CI, pass the PAT via an environment variable:
+Export both values before building; in CI pass the PAT from a secret so it never
+appears literally:
 
-```text
-# .bazelrc — CI-safe variant (no literal secrets)
-build --remote_cache=https://corelink-api.humangr.com/bazel/v2
-build --remote_header=x-corelink-tenant=acme-prod
-build --remote_header=authorization=Bearer ${CORELINK_PAT}
-build --remote_upload_local_results=true
-build --remote_timeout=60
+```bash
+export CORELINK_PAT="corelink_pat_XXXXXXXXXXXX"   # ${{ secrets.CORELINK_PAT }} in CI
+export CORELINK_TENANT="acme-prod"
 ```
-
-## Optional: separate upload vs. download PATs
-
-If your security model requires separate credentials for read-only (dev machines) and read-write (CI), create two PATs:
-
-```text
-# Developer machines — read-only
-build:dev --remote_cache=https://corelink-api.humangr.com/bazel/v2
-build:dev --remote_header=x-corelink-tenant=acme-prod
-build:dev --remote_header=authorization=Bearer ${CORELINK_PAT_DEV}
-build:dev --remote_upload_local_results=false
-
-# CI — read + write
-build:ci --remote_cache=https://corelink-api.humangr.com/bazel/v2
-build:ci --remote_header=x-corelink-tenant=acme-prod
-build:ci --remote_header=authorization=Bearer ${CORELINK_PAT_CI}
-build:ci --remote_upload_local_results=true
-```
-
-Invoke with `bazel build --config=ci //...` in CI and `--config=dev` on developer machines.
 
 ## Verify it worked
 
@@ -69,24 +66,20 @@ After running a build, verify the PAT and tenant are recognized:
 ```bash
 curl -s -H "Authorization: Bearer $CORELINK_PAT" \
   https://corelink-api.humangr.com/v1/users/me
-# {"tenant_id":"acme-prod","token_prefix":"clk_live","route_kind":"cas"}
+# {"tenant_id":"acme-prod","token_prefix":"corelink","route_kind":"reapi_v1"}
 ```
 
-For a cache-hit check, run the same build twice. The second run should report cache hits in Bazel's output:
-
-```text
-INFO: Build completed successfully, 42 total actions, 42 remote-cache-hit actions.
-```
-
-Once the Bazel bridge ships, you will also see CoreLink-side hit logs in the admin dashboard under **Audit** → **Cache events**.
+For a cache-hit check, run the same build twice. Inspect Bazel's execution log
+(`--execution_log_json_file`) for `remoteCacheHit: true` entries on the second
+run.
 
 ## Troubleshooting Bazel-specific issues
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `Error: remote_cache: UNAUTHENTICATED` | Missing or wrong `authorization` header | Verify `CORELINK_PAT` is exported in your shell / CI env |
-| `Error: remote_cache: PERMISSION_DENIED` | Tenant mismatch | Check `x-corelink-tenant` matches your PAT's tenant |
+| Every request 404s | Using stock plain-HTTP `--remote_cache` | Native `--remote_cache` is not yet live; use a REAPI/ByteStream client against `/bazel/v2/<tenant>` |
+| `UNAUTHENTICATED` | Missing or wrong `Authorization` header | Verify `CORELINK_PAT` is exported in your shell / CI env |
+| `PERMISSION_DENIED` / 403 | Instance name is not your tenant | Set `--remote_instance_name` to your tenant UUID |
 | Cache miss on every build | `--remote_upload_local_results=false` | Set to `true` in at least one CI job |
-| TLS handshake failure | Bazel version < 6 | Upgrade to Bazel 6+ for `--remote_header` support |
 
 Full error reference: [Troubleshooting](../troubleshooting.md).

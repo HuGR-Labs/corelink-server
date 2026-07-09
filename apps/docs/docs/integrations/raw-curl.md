@@ -16,16 +16,21 @@ This page covers using the CoreLink API directly with `curl`. It is useful for:
 ## Authentication setup
 
 ```bash
-export CORELINK_PAT="clk_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export CORELINK_PAT="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 export CORELINK_TENANT="acme-prod"
 export CORELINK_BASE="https://corelink-api.humangr.com"
 ```
 
 ## Upload a file
 
+The native CAS content-addresses every blob by its **BLAKE3** digest (lowercase
+hex), so compute the digest with `b3sum` — not `sha256sum`. Install it with
+`brew install b3sum` (macOS) or `cargo install b3sum` / your distribution's package
+(Linux).
+
 ```bash
-# 1. Compute the SHA-256 digest
-DIGEST=$(sha256sum ./artifact.tar.gz | awk '{print $1}')
+# 1. Compute the BLAKE3 digest
+DIGEST=$(b3sum ./artifact.tar.gz | awk '{print $1}')
 echo "Digest: $DIGEST"
 
 # 2. Upload
@@ -36,16 +41,12 @@ curl -s -X PUT \
   "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$DIGEST"
 ```
 
-Expected output:
+On success the server returns **201 Created** (or **200 OK** if the blob already
+existed) and the response body is the stored BLAKE3 hex — the same value you
+sent in the URL:
 
-```json
-{"hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
-```
-
-On macOS, use `shasum -a 256` instead of `sha256sum`:
-
-```bash
-DIGEST=$(shasum -a 256 ./artifact.tar.gz | awk '{print $1}')
+```text
+af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
 ```
 
 ## Download a file
@@ -57,7 +58,7 @@ curl -s \
   -o ./artifact-downloaded.tar.gz
 
 # Verify integrity
-sha256sum ./artifact-downloaded.tar.gz
+b3sum ./artifact-downloaded.tar.gz
 # should match $DIGEST
 ```
 
@@ -79,14 +80,14 @@ Useful for caching build output directories:
 ```bash
 # Archive, compute digest, upload in one pipeline
 tar -czf - ./dist/ \
-  | tee >(sha256sum | awk '{print $1}' > /tmp/digest.txt) \
+  | tee >(b3sum | awk '{print $1}' > /tmp/digest.txt) \
   | curl -s -X PUT \
       -H "Authorization: Bearer $CORELINK_PAT" \
       -H "Content-Type: application/octet-stream" \
       --data-binary @- \
       "$CORELINK_BASE/v1/cas/$CORELINK_TENANT/$(cat /tmp/digest.txt)"
 
-echo "Uploaded as sha256:$(cat /tmp/digest.txt)"
+echo "Uploaded as $(cat /tmp/digest.txt)"
 ```
 
 ## Scripted push + pull in GitHub Actions
@@ -106,7 +107,7 @@ jobs:
 
       - name: Push artifact to CoreLink
         run: |
-          DIGEST=$(sha256sum ./dist/app.bin | awk '{print $1}')
+          DIGEST=$(b3sum ./dist/app.bin | awk '{print $1}')
           curl -fsSL -X PUT \
             -H "Authorization: Bearer $CORELINK_PAT" \
             -H "Content-Type: application/octet-stream" \
@@ -136,7 +137,7 @@ jobs:
 ```bash
 curl -s -H "Authorization: Bearer $CORELINK_PAT" \
   https://corelink-api.humangr.com/v1/users/me
-# {"tenant_id":"acme-prod","token_prefix":"clk_live","route_kind":"cas"}
+# {"tenant_id":"acme-prod","token_prefix":"corelink","route_kind":"reapi_v1"}
 ```
 
 If `tenant_id` matches your tenant and there are no errors, you are fully authenticated.
@@ -145,7 +146,7 @@ If `tenant_id` matches your tenant and there are no errors, you are fully authen
 
 | Issue | Cause | Fix |
 |---|---|---|
-| `422 Unprocessable Entity` | Digest in URL was computed before gzip, but body is raw bytes (or vice versa) | Compute the digest from the exact bytes being uploaded |
+| `422 Unprocessable Entity` | BLAKE3 digest in URL does not match the uploaded bytes (for example, computed before gzip) | Compute the digest with `b3sum` from the exact bytes being uploaded |
 | `curl: (22) The requested URL returned error: 401` | PAT not exported or wrong | `echo $CORELINK_PAT` to verify |
 | Corrupt downloaded file | Used `--output -` (stdout) piped to a file while curl also wrote progress to stdout | Always use `-o <filename>` or `-s` flag |
 | Large file times out | Default curl timeout hit | Add `--max-time 300` for large artifacts |
