@@ -203,6 +203,14 @@ impl CorelinkClient {
         self.get_bytes(&path).await
     }
 
+    /// Cached tenant id, if resolved from config. Public accessor for
+    /// commands (`audit`, `tenant`, `cas`) that build tenant-scoped
+    /// paths themselves.
+    #[must_use]
+    pub fn tenant_id(&self) -> Option<&str> {
+        self.inner.tenant_id.as_deref()
+    }
+
     /// Require tenant_id or return an informative error.
     fn require_tenant(&self) -> Result<&str, CliError> {
         self.inner.tenant_id.as_deref().ok_or_else(|| {
@@ -250,6 +258,58 @@ impl CorelinkClient {
                     let backoff = backoff_ms(attempt);
                     warn!(attempt, backoff_ms = backoff, error = %e, "network error, retrying");
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
+                }
+                Err(e) => return Err(CliError::Network(e)),
+            }
+        }
+    }
+
+    /// GET raw bytes plus one named response header value, with bearer
+    /// auth + retry. Used by `audit export` / `audit tail` /
+    /// `tenant export` to capture the `X-CoreLink-Audit-Export-Chain-Head-Anchor`
+    /// header alongside the NDJSON body.
+    pub async fn get_bytes_with_header(
+        &self,
+        path: &str,
+        header_name: &str,
+    ) -> Result<(Bytes, Option<String>), CliError> {
+        let url = format!("{}{}", self.inner.base_url, path);
+        let mut attempt = 0u32;
+        loop {
+            let resp = self
+                .inner
+                .http
+                .get(&url)
+                .bearer_auth(&self.inner.pat)
+                .send()
+                .await;
+            match resp {
+                Ok(r) if r.status().is_success() => {
+                    let header_val = r
+                        .headers()
+                        .get(header_name)
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.trim().to_owned());
+                    let bytes = r.bytes().await?;
+                    return Ok((bytes, header_val));
+                }
+                Ok(r) if is_transient(r.status()) => {
+                    attempt += 1;
+                    if attempt > MAX_RETRIES {
+                        return Err(CliError::Other(format!(
+                            "HTTP {} after {MAX_RETRIES} retries",
+                            r.status()
+                        )));
+                    }
+                    tokio::time::sleep(Duration::from_millis(backoff_ms(attempt))).await;
+                }
+                Ok(r) => {
+                    return Err(CliError::Other(format!("HTTP error {}", r.status())));
+                }
+                Err(e) if attempt < MAX_RETRIES => {
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_millis(backoff_ms(attempt))).await;
+                    let _ = e;
                 }
                 Err(e) => return Err(CliError::Network(e)),
             }
