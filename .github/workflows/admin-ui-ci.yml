@@ -44,7 +44,13 @@ jobs:
       fail-fast: false
       max-parallel: 2
       matrix:
-        task: [typecheck, lint, test, build]
+        # `cf:build` (OpenNext → CF Worker bundle) is the REAL prod-deploy path;
+        # stock `next build` passing does NOT prove it deploys (a Next-major bump
+        # can break OpenNext's traced-files/standalone step while `next build`
+        # stays green — #679 shipped that way and only broke post-merge in
+        # admin-ui-deploy). Gating `cf:build` here verifies the deploy path on
+        # every admin-ui PR. Build-only (no wrangler deploy) → needs no CF creds.
+        task: [typecheck, lint, test, build, cf:build]
     name: ${{ matrix.task }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
