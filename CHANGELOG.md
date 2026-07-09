@@ -43,6 +43,22 @@ Each entry cross-references:
   `wrangler.toml`'s `[[env.*.containers]].image` lines lagged the actually-running image (CF Containers API confirms prod + syd/nrt/lhr/sam all on `20a0c323-r1`, the #690 go-live merge). A `wrangler deploy`/recycle would have rolled prod BACK to the pre-go-live build. Pins now match reality.
 
 ### Added
+- **sdk(python) — real BLAKE3-keyed CAS surface (put/get/stat + async + streaming), closing the docs↔SDK gap.**
+  The pure-python `corelink` SDK previously shipped only the sync control plane (health/issue_pat/signup),
+  while the how-to guides (`apps/docs/docs/how-to/sdk-python/02-upload-blob`, `03-download-blob`) documented
+  `await client.put(...)`, `put_stream(...)`, `expected_digest=`, and client-side verify against a wired
+  route that had no SDK binding. Added, grounded in the native routes
+  (`crates/corelink-container/src/routes/cas.rs`): `CoreLinkClient.put/put_stream/get/stat` (sync,
+  tenant-scoped, `Authorization: Bearer <PAT>`), a new `AsyncCoreLinkClient` (`async with` / `await`,
+  plus `get_stream` chunked-and-incrementally-verified download), a `StatResult`, and CAS exceptions
+  (`CoreLinkNotFoundError` 404/410, `CoreLinkDigestMismatchError` server-422/client-verify,
+  `CoreLinkQuotaError` 402). Blobs are keyed by **BLAKE3** (`blake3(body)`, 64-hex, no prefix — the exact
+  key the server recomputes and enforces), never SHA-256. `stat` uses HEAD (axum serves it for the GET
+  route). 23 new mocked-HTTP unit tests. The default base URL is corrected to the canonical flat host
+  `https://corelink-api.humangr.com` (the prior `api.corelink.humangr.com` sat on the dead dotted
+  `*.corelink.humangr.com` pattern). The two CAS how-tos were aligned to the real class names + exception
+  taxonomy (dropped the unbacked `RegionError`); `01-authenticate`'s `whoami()`/config-file surface remains
+  a separate, pre-existing doc gap.
 - **container — fail-closed boot guard on the cache-tier Stripe price map (revenue-path must-arm).**
   The four `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env vars now join the prod must-arm boot set
   (alongside `PAT_SIGNING_KEY` / `ERASURE_SALT_KEY` / `EMAIL_HASH_SALT`): when prod is detected (via the
