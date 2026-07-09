@@ -87,6 +87,15 @@ Each entry cross-references:
   `/api/v1/[...path]` route, a one-time cold Next-dev compile on a fresh CI server) now gets a
   generous 60s timeout instead of inheriting the 10s `actionTimeout`, so the suite can't flake on its
   very first test. `customer-keys` verified green at `--repeat-each=8 --workers=1` (twice).
+  (6) **`tenant-overview` cold-compile navigation flake (the last one — retires the reliance on CI's
+  `retries:2` mask, per the zero-flaky mandate).** The "View" link is an `<a>`, so the click triggers
+  a navigation to the tenant deep-dive route, which the dev server compiles ON DEMAND the first time
+  it is visited; that one-time cold compile can exceed the default 10s `actionTimeout`, so the click's
+  built-in "wait for navigation to finish" timed out even though the navigation itself succeeded (the
+  deep-dive page rendered). Same dev-server infra cost as the reset route (NOT a product issue — prod
+  is pre-built): the deep-dive click now gets a wide 60s navigation budget (returns as soon as the
+  nav settles; not a blanket sleep). Full critical-flows suite now green at retries=0 from a cold
+  `.next` across two consecutive runs; `tenant-overview` green at `--repeat-each=8 --workers=1`.
 - **OKF wiki — checkpoint validation is now SQUASH-MERGE RESILIENT (durable fix for the recurring
   #688/#690 orphaned-checkpoint trap).** Root cause: when a feature PR whose OKF concept pins
   `checkpoint_sha` at its OWN pre-merge branch tip is squash/rebase-merged, git rewrites that tip; the
