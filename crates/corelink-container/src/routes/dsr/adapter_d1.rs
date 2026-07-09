@@ -172,6 +172,12 @@ pub(super) const NAMESPACE_TABLES: &[&str] =
 pub(super) const RETAIN_SET: &[&str] = &[
     "dsr_erasure_log",
     "dsr_requested",
+    // Customer-facing DSR ticket store (migr. 0090). The durable record that
+    // CoreLink RECEIVED + honoured a data-subject-rights request — Art.5(2)
+    // accountability evidence, the intake sibling of `dsr_requested`. Stores no
+    // raw PII (subject == tenant_id; rectified values are hashed by the live
+    // pipeline before D1), so it SURVIVES an Art.17 erasure (RETAIN).
+    "dsr_tickets",
     "dpa_acceptances",
     "erasure_attestation",
     "erasure_attestations",
@@ -295,6 +301,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     // retain-set
     "dsr_erasure_log",
     "dsr_requested",
+    "dsr_tickets",
     "dpa_acceptances",
     "erasure_attestations",
     "audit_outbox",
