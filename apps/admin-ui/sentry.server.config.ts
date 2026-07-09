@@ -15,9 +15,17 @@
 import * as Sentry from "@sentry/nextjs";
 import { scrubObject, scrubSentryEvent } from "@/lib/sentry-scrub";
 
-const DSN = process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN;
-
-if (DSN) {
+/**
+ * Initialise Sentry for the Node server runtime.
+ *
+ * Exported as a function (rather than running on import) so `instrumentation.ts`
+ * can call it via a STATIC import. Dynamic `await import()` here breaks OpenNext's
+ * Next 16 standalone tracing (`server/instrumentation.js` is not emitted where the
+ * adapter expects it → copyTracedFiles throws). See instrumentation.ts.
+ */
+export function initSentryServer(): void {
+  const DSN = process.env.SENTRY_DSN ?? process.env.NEXT_PUBLIC_SENTRY_DSN;
+  if (!DSN) return;
   Sentry.init({
     dsn: DSN,
     environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,

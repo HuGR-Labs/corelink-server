@@ -12,13 +12,20 @@
  * See: https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
  */
 import * as Sentry from "@sentry/nextjs";
+import { initSentryServer } from "./sentry.server.config";
+import { initSentryEdge } from "./sentry.edge.config";
 
-export async function register() {
+// NOTE: STATIC imports (not `await import(...)`) are deliberate. With Next 16's
+// standalone output, dynamic imports here make OpenNext's copyTracedFiles fail
+// ("File server/instrumentation.js does not exist"). Static imports + callable
+// init functions are the OpenNext-recommended pattern.
+// https://opennext.js.org/aws/common_issues
+export function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    await import("./sentry.server.config");
+    initSentryServer();
   }
   if (process.env.NEXT_RUNTIME === "edge") {
-    await import("./sentry.edge.config");
+    initSentryEdge();
   }
 }
 

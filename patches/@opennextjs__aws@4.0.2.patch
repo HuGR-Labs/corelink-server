@@ -1,0 +1,17 @@
+diff --git a/dist/build/copyTracedFiles.js b/dist/build/copyTracedFiles.js
+index 9701b0401e987ee7cd696873af9d15b751580c52..536cccfee5d79444adf6b67fe868a9de91b13557 100644
+--- a/dist/build/copyTracedFiles.js
++++ b/dist/build/copyTracedFiles.js
+@@ -159,7 +159,11 @@ File ${serverPath} does not exist
+     if (existsSync(path.join(dotNextDir, INSTRUMENTATION_TRACE_FILE))) {
+         // We still need to copy the nft.json file so that computeCopyFilesForPage doesn't throw
+         copyFileAndMakeOwnerWritable(path.join(dotNextDir, INSTRUMENTATION_TRACE_FILE), path.join(standaloneNextDir, INSTRUMENTATION_TRACE_FILE));
+-        computeCopyFilesForPage("instrumentation");
++        // Next 16 standalone no longer emits `server/instrumentation.js` into the
++        // standalone dir (its .nft.json trace remains). `computeCopyFilesForPage`
++        // throws when the entrypoint file is absent; the `safe` variant tolerates
++        // it (the traced dependency files are still copied by processNftFile).
++        safeComputeCopyFilesForPage("instrumentation");
+         logger.debug("Adding instrumentation trace files");
+     }
+     if (existsSync(path.join(dotNextDir, MIDDLEWARE_TRACE_FILE))) {
