@@ -353,7 +353,7 @@ corelink stat "$RECENT" --output json | jq '.size_bytes'
 wc -c < /tmp/recent.bin   # should match size_bytes
 
 # 3. Audit trail visible:
-# https://app.corelink.humangr.com/tenants/$CORELINK_TENANT_ID/audit
+# https://corelink-app.humangr.com/tenants/$CORELINK_TENANT_ID/audit
 # Filter: event_type=cas.read, last 1h. One event per consumer fetch.
 
 # 4. No S3 PUT/GET on the old bucket in the last 24h (CloudTrail).

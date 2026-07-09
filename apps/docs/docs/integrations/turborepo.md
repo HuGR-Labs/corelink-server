@@ -7,45 +7,49 @@ description: Configure Turborepo to use CoreLink as its remote cache via TURBO_A
 
 # Turborepo integration
 
-:::note Turborepo bridge coming soon
-The Turborepo-compatible remote cache endpoint is under development in stream 1.4. The configuration shown here describes the expected
-setup once it ships. The placeholder URL is `https://corelink-api.humangr.com/turbo/v8`. This page will be updated when the endpoint goes live.
-:::
+CoreLink implements the Vercel Remote Cache `/v8/artifacts` protocol, so
+Turborepo can use CoreLink as a drop-in replacement for Vercel's remote cache.
 
 ## How it works
 
 Turborepo supports custom remote caches via two environment variables:
 
-- `TURBO_API` — the base URL of the remote cache server.
-- `TURBO_TOKEN` — a bearer token passed as `Authorization: Bearer`.
+- `TURBO_API` — the **bare origin** of the remote cache server. Turborepo
+  appends its own `/v8/artifacts/...` path — do **not** add any path or tenant
+  segment yourself.
+- `TURBO_TOKEN` — your CoreLink PAT, passed as `Authorization: Bearer`.
 
-CoreLink exposes a Turborepo-compatible API at `/turbo/v8`. Your tenant ID is encoded in the URL so no separate header is needed.
+Your tenant is resolved from the PAT, **not** from the URL. The `teamId`
+Turborepo sends is treated as a logical sub-namespace *within* your
+authenticated tenant (teams under one tenant stay partitioned) — it is not a
+security boundary and does not appear in the base URL.
 
 ## Configuration
 
-### Option A: environment variables (recommended for CI)
+### Option A: Environment variables (recommended for CI)
 
 ```bash
-export TURBO_API="https://corelink-api.humangr.com/turbo/v8/acme-prod"
-export TURBO_TOKEN="clk_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export TURBO_API="https://corelink-api.humangr.com"
+export TURBO_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 ```
 
-Then run Turborepo normally:
+Then run Turborepo normally (pass a `--team` label so Turborepo enables remote
+caching):
 
 ```bash
-npx turbo run build
+npx turbo run build --team=acme --token="$TURBO_TOKEN"
 ```
 
 ### Option B: `.turbo/config.json` (per-repo)
 
 ```json
 {
-  "teamId": "acme-prod",
-  "apiUrl": "https://corelink-api.humangr.com/turbo/v8"
+  "teamId": "acme",
+  "apiUrl": "https://corelink-api.humangr.com"
 }
 ```
 
-With this file in your repo root, Turborepo reads the team ID and API URL automatically. Still set `TURBO_TOKEN` as an environment variable — do not commit the token.
+With this file in your repo root, Turborepo reads the team label and API URL automatically. Still set `TURBO_TOKEN` as an environment variable — do not commit the token.
 
 ### Option C: `turbo.json` remote config
 
@@ -65,9 +69,9 @@ This enables remote caching; the URL and token come from environment variables.
 ```yaml
 - name: Build with Turborepo + CoreLink cache
   env:
-    TURBO_API: https://corelink-api.humangr.com/turbo/v8/acme-prod
+    TURBO_API: https://corelink-api.humangr.com
     TURBO_TOKEN: ${{ secrets.CORELINK_PAT }}
-  run: npx turbo run build test
+  run: npx turbo run build test --team=acme --token="$TURBO_TOKEN"
 ```
 
 Store the PAT in `Settings → Secrets and variables → Actions` as `CORELINK_PAT`.
@@ -92,7 +96,7 @@ You can also confirm the token is valid:
 curl -s \
   -H "Authorization: Bearer $CORELINK_PAT" \
   https://corelink-api.humangr.com/v1/users/me
-# {"tenant_id":"acme-prod","token_prefix":"clk_live","route_kind":"cas"}
+# {"tenant_id":"acme-prod","token_prefix":"corelink","route_kind":"reapi_v1"}
 ```
 
 ## Troubleshooting
@@ -101,7 +105,7 @@ curl -s \
 |---|---|---|
 | `Remote caching disabled` | `TURBO_TOKEN` not set | Export `TURBO_TOKEN` in your shell or CI env |
 | `401` errors in Turborepo output | Wrong or expired PAT | Regenerate PAT from admin dashboard |
-| Cache misses on every run | API URL wrong | Verify `TURBO_API` includes `/acme-prod` suffix |
-| `teamId` conflict | `.turbo/config.json` teamId differs from URL segment | Keep them in sync |
+| Cache misses on every run | `TURBO_API` has an extra path segment | `TURBO_API` must be the **bare origin** `https://corelink-api.humangr.com` — no `/turbo`, `/v8`, or tenant suffix |
+| `400 Bad Request` on artifact PUT/GET | Missing team label | Pass `--team=<label>` (or set `teamId` in `.turbo/config.json`) |
 
 Full error reference: [Troubleshooting](../troubleshooting.md).

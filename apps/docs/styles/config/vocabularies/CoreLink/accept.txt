@@ -282,3 +282,11 @@ walkthrough
 walkthroughs
 webpack
 zstd
+BLAKE3
+b3sum
+WebDAV
+Homebrew
+npmrc
+Podman
+uv
+pdm

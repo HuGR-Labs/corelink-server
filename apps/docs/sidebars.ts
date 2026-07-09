@@ -59,6 +59,11 @@ const sidebars: SidebarsConfig = {
       items: [
         "integrations/bazel",
         "integrations/turborepo",
+        "integrations/sccache-cargo",
+        "integrations/oci-registry",
+        "integrations/npm",
+        "integrations/pip",
+        "integrations/homebrew",
         "integrations/raw-curl",
       ],
     },
