@@ -33,6 +33,17 @@ pub struct CorelinkConfig {
     /// Telemetry section (opt-in default-off; WI-S15-005).
     #[serde(default)]
     pub telemetry: TelemetryConfig,
+
+    /// Observability export section (RED/USE metric forwarding to
+    /// Datadog / an OTel Collector / Grafana Cloud).
+    ///
+    /// Held as a free-form TOML table so the full nested vendor schema
+    /// documented in `how-to/observability/*` (e.g.
+    /// `[observability.export.datadog]`, per-region blocks) round-trips
+    /// verbatim through `corelink config apply --file` and
+    /// `corelink config set observability.*`. `None` when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observability: Option<toml::Value>,
 }
 
 /// `[auth]` section.
@@ -236,6 +247,13 @@ pub fn rotate_telemetry_id() -> Result<(), ConfigError> {
 // ---------------------------------------------------------------------------
 
 fn apply_key(cfg: &mut CorelinkConfig, key: &str, value: &str) -> Result<(), ConfigError> {
+    // Dynamic observability sub-tree — any `observability.*` dotted key is
+    // accepted (the vendor schema is open-ended). `config set` supplies a
+    // string; we infer bool / integer / string so `timeout_ms = 2000` and
+    // `opt_out_low_value_metrics = true` land as their natural TOML types.
+    if let Some(rest) = key.strip_prefix("observability.") {
+        return set_observability_value(cfg, rest, infer_toml_value(value), key);
+    }
     match key {
         "auth.pat" => {
             cfg.auth.pat = Some(value.to_owned());
@@ -268,6 +286,9 @@ fn apply_key(cfg: &mut CorelinkConfig, key: &str, value: &str) -> Result<(), Con
 }
 
 fn read_key(cfg: &CorelinkConfig, key: &str) -> Result<String, ConfigError> {
+    if let Some(rest) = key.strip_prefix("observability.") {
+        return Ok(read_observability_value(cfg, rest));
+    }
     match key {
         "auth.pat" => Ok(cfg
             .auth
@@ -293,6 +314,173 @@ fn read_key(cfg: &CorelinkConfig, key: &str) -> Result<String, ConfigError> {
         "telemetry.anonymized_id" => Ok(cfg.telemetry.anonymized_id.to_string()),
         _ => Err(ConfigError::UnknownKey(key.to_owned())),
     }
+}
+
+/// Canonical observability export variants accepted for
+/// `observability.export.variant`.
+const OBSERVABILITY_VARIANTS: [&str; 3] = ["datadog", "otel_collector", "grafana_cloud"];
+
+/// Infer a natural TOML scalar type from a `config set` string value:
+/// `true`/`false` → boolean, a bare integer → integer, else string.
+fn infer_toml_value(value: &str) -> toml::Value {
+    match value.to_lowercase().as_str() {
+        "true" => return toml::Value::Boolean(true),
+        "false" => return toml::Value::Boolean(false),
+        _ => {}
+    }
+    if let Ok(i) = value.parse::<i64>() {
+        return toml::Value::Integer(i);
+    }
+    toml::Value::String(value.to_owned())
+}
+
+/// Collapse a TOML scalar to the string form the fixed-key dispatch table
+/// (`auth.*`, `defaults.*`, `telemetry.*`) expects. Rejects composite
+/// (table / array) values for those fixed keys.
+fn toml_scalar_to_string(key: &str, val: &toml::Value) -> Result<String, ConfigError> {
+    match val {
+        toml::Value::String(s) => Ok(s.clone()),
+        toml::Value::Integer(i) => Ok(i.to_string()),
+        toml::Value::Boolean(b) => Ok(b.to_string()),
+        toml::Value::Float(f) => Ok(f.to_string()),
+        _ => Err(ConfigError::UnknownKey(format!(
+            "config apply: key '{key}' expects a scalar value, got a table/array"
+        ))),
+    }
+}
+
+/// Set a value under the `observability` sub-tree at `dotted_rest`
+/// (the portion after the `observability.` prefix), creating
+/// intermediate tables as needed. Validates the known-constrained
+/// `observability.export.variant` enum.
+fn set_observability_value(
+    cfg: &mut CorelinkConfig,
+    dotted_rest: &str,
+    val: toml::Value,
+    full_key: &str,
+) -> Result<(), ConfigError> {
+    if full_key == "observability.export.variant" {
+        let variant = val.as_str().ok_or_else(|| {
+            ConfigError::UnknownKey("observability.export.variant must be a string".to_owned())
+        })?;
+        if !OBSERVABILITY_VARIANTS.contains(&variant) {
+            return Err(ConfigError::UnknownKey(format!(
+                "observability.export.variant must be one of {}, got '{variant}'",
+                OBSERVABILITY_VARIANTS.join("|")
+            )));
+        }
+    }
+
+    let segments: Vec<&str> = dotted_rest.split('.').collect();
+    let (last, parents) = segments.split_last().ok_or_else(|| {
+        ConfigError::UnknownKey(format!("invalid observability key '{full_key}'"))
+    })?;
+    if last.is_empty() || parents.iter().any(|s| s.is_empty()) {
+        return Err(ConfigError::UnknownKey(format!(
+            "invalid observability key '{full_key}' (empty path segment)"
+        )));
+    }
+
+    let root = cfg
+        .observability
+        .get_or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+    let mut cur = root.as_table_mut().ok_or_else(|| {
+        ConfigError::UnknownKey("observability root is not a table".to_owned())
+    })?;
+    for seg in parents {
+        let entry = cur
+            .entry((*seg).to_owned())
+            .or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
+        cur = entry.as_table_mut().ok_or_else(|| {
+            ConfigError::UnknownKey(format!(
+                "observability path conflict at '{seg}' in '{full_key}' (existing non-table value)"
+            ))
+        })?;
+    }
+    cur.insert((*last).to_owned(), val);
+    Ok(())
+}
+
+/// Read a value under the `observability` sub-tree, returning `(unset)`
+/// when the path is absent.
+fn read_observability_value(cfg: &CorelinkConfig, dotted_rest: &str) -> String {
+    let Some(root) = cfg.observability.as_ref() else {
+        return "(unset)".to_owned();
+    };
+    let mut cur = root;
+    for seg in dotted_rest.split('.') {
+        match cur.as_table().and_then(|t| t.get(seg)) {
+            Some(next) => cur = next,
+            None => return "(unset)".to_owned(),
+        }
+    }
+    match cur {
+        toml::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+/// Apply a single TOML leaf (from `config apply --file`) to `cfg`,
+/// preserving its native type for the `observability` sub-tree and
+/// stringifying for the fixed-key dispatch table.
+fn apply_toml_leaf(
+    cfg: &mut CorelinkConfig,
+    key: &str,
+    val: toml::Value,
+) -> Result<(), ConfigError> {
+    if let Some(rest) = key.strip_prefix("observability.") {
+        set_observability_value(cfg, rest, val, key)
+    } else {
+        let s = toml_scalar_to_string(key, &val)?;
+        apply_key(cfg, key, &s)
+    }
+}
+
+/// Flatten a nested TOML table into `(dotted_key, leaf_value)` pairs.
+/// Tables are recursed; every non-table value (scalar or array) is a leaf.
+fn flatten_toml(table: &toml::Table, prefix: &str, out: &mut Vec<(String, toml::Value)>) {
+    for (k, v) in table {
+        let full = if prefix.is_empty() {
+            k.clone()
+        } else {
+            format!("{prefix}.{k}")
+        };
+        match v {
+            toml::Value::Table(t) => flatten_toml(t, &full, out),
+            other => out.push((full, other.clone())),
+        }
+    }
+}
+
+/// Apply an entire TOML config document (`corelink config apply --file
+/// <path>`). Every leaf key is applied through the same validation the
+/// `config set` path uses. Returns the number of keys applied.
+pub fn apply_file(path: &Path) -> Result<usize, ConfigError> {
+    let raw = std::fs::read_to_string(path).map_err(ConfigError::Read)?;
+    let table: toml::Table = toml::from_str(&raw)?;
+    let mut leaves: Vec<(String, toml::Value)> = Vec::new();
+    flatten_toml(&table, "", &mut leaves);
+    let count = leaves.len();
+    let mut cfg = load()?;
+    for (k, v) in leaves {
+        apply_toml_leaf(&mut cfg, &k, v)?;
+    }
+    save(&cfg)?;
+    Ok(count)
+}
+
+/// Apply a TOML document into an in-memory config (test/lib helper;
+/// filesystem-free). Returns the number of leaf keys applied.
+#[allow(dead_code)]
+pub fn apply_document_to_cfg(cfg: &mut CorelinkConfig, doc: &str) -> Result<usize, ConfigError> {
+    let table: toml::Table = toml::from_str(doc)?;
+    let mut leaves: Vec<(String, toml::Value)> = Vec::new();
+    flatten_toml(&table, "", &mut leaves);
+    let count = leaves.len();
+    for (k, v) in leaves {
+        apply_toml_leaf(cfg, &k, v)?;
+    }
+    Ok(count)
 }
 
 fn parse_bool(value: &str, key: &str) -> Result<bool, ConfigError> {
@@ -330,4 +518,105 @@ fn check_permissions(path: &Path) -> Result<(), ConfigError> {
         return Err(ConfigError::InsecurePermissions);
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod observability_tests {
+    use super::*;
+
+    #[test]
+    fn infer_toml_value_types() {
+        assert_eq!(infer_toml_value("true"), toml::Value::Boolean(true));
+        assert_eq!(infer_toml_value("false"), toml::Value::Boolean(false));
+        assert_eq!(infer_toml_value("2000"), toml::Value::Integer(2000));
+        assert_eq!(
+            infer_toml_value("us1"),
+            toml::Value::String("us1".to_owned())
+        );
+    }
+
+    #[test]
+    fn set_and_read_nested_observability_key() {
+        let mut cfg = CorelinkConfig::default();
+        apply_key(&mut cfg, "observability.export.variant", "datadog").unwrap();
+        apply_key(&mut cfg, "observability.export.datadog.timeout_ms", "2000").unwrap();
+        apply_key(
+            &mut cfg,
+            "observability.export.datadog.opt_out_low_value_metrics",
+            "true",
+        )
+        .unwrap();
+
+        assert_eq!(
+            read_key(&cfg, "observability.export.variant").unwrap(),
+            "datadog"
+        );
+        assert_eq!(
+            read_key(&cfg, "observability.export.datadog.timeout_ms").unwrap(),
+            "2000"
+        );
+        assert_eq!(
+            read_key(&cfg, "observability.export.datadog.opt_out_low_value_metrics").unwrap(),
+            "true"
+        );
+        // Absent path reads as (unset), never an error.
+        assert_eq!(
+            read_key(&cfg, "observability.export.datadog.nope").unwrap(),
+            "(unset)"
+        );
+    }
+
+    #[test]
+    fn invalid_variant_rejected() {
+        let mut cfg = CorelinkConfig::default();
+        let err = apply_key(&mut cfg, "observability.export.variant", "splunk");
+        assert!(err.is_err(), "unknown variant must be rejected");
+    }
+
+    #[test]
+    fn apply_document_populates_nested_tables_with_types() {
+        // Mirrors the documented `corelink config apply --file` shape.
+        let doc = r#"
+[defaults]
+tenant_id = "acme-prod"
+
+[observability.export]
+variant = "otel_collector"
+
+[observability.export.otel_collector]
+endpoint = "https://collector.example.com:4318"
+protocol = "http"
+timeout_ms = 2000
+opt_out_low_value_metrics = false
+"#;
+        let mut cfg = CorelinkConfig::default();
+        let n = apply_document_to_cfg(&mut cfg, doc).unwrap();
+        assert_eq!(n, 6, "6 leaf keys expected");
+        assert_eq!(cfg.defaults.tenant_id.as_deref(), Some("acme-prod"));
+        assert_eq!(
+            read_key(&cfg, "observability.export.variant").unwrap(),
+            "otel_collector"
+        );
+        // Integer type preserved from the file (not stringified).
+        let obs = cfg.observability.as_ref().unwrap();
+        let timeout = obs
+            .get("export")
+            .and_then(|e| e.get("otel_collector"))
+            .and_then(|c| c.get("timeout_ms"))
+            .cloned();
+        assert_eq!(timeout, Some(toml::Value::Integer(2000)));
+    }
+
+    #[test]
+    fn observability_survives_toml_roundtrip() {
+        let mut cfg = CorelinkConfig::default();
+        apply_key(&mut cfg, "observability.export.variant", "grafana_cloud").unwrap();
+        let serialized = toml::to_string_pretty(&cfg).unwrap();
+        let reparsed: CorelinkConfig = toml::from_str(&serialized).unwrap();
+        assert_eq!(
+            read_key(&reparsed, "observability.export.variant").unwrap(),
+            "grafana_cloud"
+        );
+    }
 }

@@ -27,6 +27,22 @@ pub fn run_list(_format: OutputFormat) -> Result<(), CliError> {
     Ok(())
 }
 
+/// Run `corelink config apply --file <path>`.
+///
+/// Loads a whole TOML document (e.g. the `corelink.toml` from the
+/// observability how-tos) and applies every leaf key through the same
+/// validation the `config set` path uses. Writes the merged result back
+/// to `~/.corelink/config.toml`.
+pub fn run_apply(file: &std::path::Path, _format: OutputFormat) -> Result<(), CliError> {
+    let count = config::apply_file(file)?;
+    println!(
+        "Config applied: {count} key(s) from {} → {}",
+        file.display(),
+        config::config_path().display()
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(
     clippy::uninlined_format_args,
