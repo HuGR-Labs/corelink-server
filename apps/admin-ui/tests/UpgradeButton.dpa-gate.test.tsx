@@ -19,15 +19,24 @@ import * as React from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
+// The exact shape DpaStep passes to acceptDpaAction on accept.
+interface DpaAcceptInput {
+  tenantId: string;
+  dpaVersion: string;
+  dpaLocale: string;
+  noticeTextHash: string;
+  uiCaptureTs: number;
+}
+
 // Mock the server action DpaStep calls on accept — return an immutable audit id.
-const acceptDpaAction = vi.fn(async () => ({
+const acceptDpaAction = vi.fn(async (_input: DpaAcceptInput) => ({
   audit_event_id: "evt_test_dpa",
   dpa_version: "1.0.0",
   dpa_locale: "en",
   dpa_accepted_at: "2026-07-10T00:00:00.000Z",
 }));
 vi.mock("@/app/[locale]/onboarding/actions", () => ({
-  acceptDpaAction: (input: unknown) => acceptDpaAction(input as never),
+  acceptDpaAction: (input: DpaAcceptInput) => acceptDpaAction(input),
 }));
 
 import { UpgradeButton } from "@/components/UpgradeButton";
@@ -98,11 +107,7 @@ describe("<UpgradeButton /> DPA-first gate", () => {
     // The acceptance carried the canonical version + the hash of the notice the
     // user actually saw (64-hex SHA-256), for the en locale.
     expect(acceptDpaAction).toHaveBeenCalledTimes(1);
-    const arg = acceptDpaAction.mock.calls[0]![0] as {
-      dpaVersion: string;
-      dpaLocale: string;
-      noticeTextHash: string;
-    };
+    const arg = acceptDpaAction.mock.calls[0]![0];
     expect(arg.dpaVersion).toBe("1.0.0");
     expect(arg.dpaLocale).toBe("en");
     expect(arg.noticeTextHash).toMatch(/^[0-9a-f]{64}$/);
