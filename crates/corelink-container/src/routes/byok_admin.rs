@@ -125,7 +125,6 @@ fn build_writer_from_env() -> Option<Arc<D1ByokConfigWriter>> {
 }
 
 /// Build the axum `Router` exposing the two BYOK activation routes.
-#[must_use]
 pub fn router(state: ByokAdminRouteState) -> Router {
     Router::new()
         .route(BYOK_ACTIVATE_ROUTE, post(handle_activate))

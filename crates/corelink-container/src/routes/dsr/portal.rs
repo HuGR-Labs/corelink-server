@@ -1075,9 +1075,7 @@ async fn authed_tenant(
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-        if let Err(resp) = gate.verify(&tenant, bearer).await {
-            return Err(resp);
-        }
+        gate.verify(&tenant, bearer).await?;
     }
     Ok(tenant)
 }
@@ -1262,7 +1260,12 @@ fn clamp_i64(ms: u64) -> i64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, reason = "tests")]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "tests are allowed to use these primitives"
+)]
 mod tests {
     use super::*;
 

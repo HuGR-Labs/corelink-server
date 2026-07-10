@@ -258,13 +258,16 @@ export function planPromote(
   if (roles[primary] === undefined) return { ok: false, error: { kind: "unknown_region", message: primary } };
   if (roles[replica] === undefined) return { ok: false, error: { kind: "unknown_region", message: replica } };
 
-  // INV-FAILOVER-NO-SPLIT-BRAIN: the current primary must be `primary` (or none).
-  const current = primaryIn(roles);
-  if (current !== null && current !== primary) {
-    return {
-      ok: false,
-      error: { kind: "split_brain_rejected", message: `existing primary ${current}` },
-    };
+  // INV-FAILOVER-NO-SPLIT-BRAIN: no region OTHER than `primary` may hold primary.
+  // Scan ALL regions, not just the first (`primaryIn`) — a 2nd concurrent primary
+  // is split-brain even when `primary` itself is (one of) the current primary(ies).
+  for (const r of REGIONS) {
+    if (r !== primary && roles[r]?.role === "primary") {
+      return {
+        ok: false,
+        error: { kind: "split_brain_rejected", message: `existing primary ${r}` },
+      };
+    }
   }
 
   // Anti-flap: refuse if the old primary is still eligible.

@@ -2359,7 +2359,7 @@ const baseHandler: ExportedHandler<Env> = {
             // fail-CLOSED on this trusted marker, so tightening it to require a
             // real WebAuthn step-up assertion later is a header-condition change
             // here, not a container rewire. Only stamped for the privacy plane.
-            if (path.startsWith("/v1/privacy/")) {
+            if (route.pathSuffix.startsWith("/v1/privacy/")) {
               h.set("x-corelink-mfa-verified", "1");
             }
             // Deliberately NOT set: x-corelink-internal-auth (least privilege —
