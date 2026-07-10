@@ -37,9 +37,14 @@ import { CoreLinkClient } from "@corelink/client";
 
 const client = new CoreLinkClient({ tenantId: process.env.CORELINK_TENANT });
 try {
-  const report = await client.bench({ read: true, samples: 10 });
-  console.log(`p50=${report.p50Ms}ms p99=${report.p99Ms}ms`);
-  if (report.p99Ms > 500) process.exit(1);
+  // A tiny put/get round-trip proves connectivity + auth before the build runs.
+  const probe = new TextEncoder().encode(`warm ${Date.now()}`);
+  const t0 = performance.now();
+  const digest = await client.put(probe);
+  await client.get(digest); // BLAKE3-verified
+  const ms = performance.now() - t0;
+  console.log(`cache reachable; round-trip=${ms.toFixed(1)}ms digest=${digest}`);
+  if (ms > 500) console.warn("cache round-trip slower than 500ms");
 } finally {
   await client.close();
 }

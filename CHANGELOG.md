@@ -146,6 +146,21 @@ Each entry cross-references:
   (Cloudflare-infra, not faked): deploy the DO (`wrangler deploy` runs migration `v4`) + provision the
   R2 Cross-Region-Replication bindings + feed real per-region replication-lag heartbeats to
   `/_internal/replication/heartbeat`.
+- **feat(sdk): real `@corelink/client` JS/TS SDK under `sdks/js/` (was documented but did not exist).**
+  The docs (`docs/sdk/javascript.md` + the 7 `apps/docs/docs/how-to/sdk-js/*` guides) advertised
+  `npm install @corelink/client` against a package that had never been built — pure vapor. This ships
+  a real, tested, buildable TypeScript package grounded 1:1 on the wired container routes: CAS
+  `put`/`get`/`stat` over `GET`/`PUT /v1/cas/{tenant}/{hash}` (**BLAKE3-keyed**, verified in pure JS
+  via `@noble/hashes` — no WASM/native step), an Action Cache sub-API over
+  `GET`/`PUT /v1/ac/{tenant}/{action_digest}` (opaque `ActionResult` bytes), PAT-bearer auth with
+  `CORELINK_PAT` env fallback, default-on BLAKE3 client-verify (CTRL-CAS-002), a status-mapped error
+  hierarchy (`AuthError`/`QuotaError`/`ForbiddenError`/`NotFoundError`/`ActionCacheMiss`/`ConflictError`/
+  `GoneError`/`DigestMismatchError`/`RateLimitError`/`ServerError`/`ConnectError`), and 429/503 retry with
+  exponential backoff + jitter. 23 vitest unit tests (stubbed `fetch`, no network); `npm install`,
+  `npm test`, `npm run build` (ESM + `.d.ts`), and `npm run typecheck` all pass. The SDK reference and
+  all 7 how-tos were **re-aligned to exactly the shipped surface** — every previously-documented method
+  that does not exist (`whoami`, `putStream`/`getStream`, `bench`, `doctor`, AC TTL, wasm-bindgen build)
+  was removed or replaced with a real equivalent, so no vapor remains.
 
 ### Changed
 - **Customer team-invite 501 copy de-staled** (`corelink-container`). Team invites
