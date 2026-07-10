@@ -137,6 +137,11 @@ pub mod cas_erase;
 /// forwards these paths to the container; this module is the final link
 /// that makes them return real responses instead of 404.
 pub mod customer;
+/// Customer self-serve tenant bulk export (SEAM): `POST /v1/customer/account/export`
+/// streams the full portability bundle (CAS+AC blob bytes + RBAC/DPA/audit records)
+/// the CLI `corelink tenant export` needs. Owns the `TenantExportSource` seam +
+/// the streaming NDJSON assembler; the handler lives in `customer`.
+pub mod customer_export;
 /// Customer Runners read surface (BE-10): tenant-scoped entitlement/allowlist/runs.
 pub mod customer_runners;
 /// Customer Workspaces surface (BE-11): tenant-scoped snapshot CRUD + pin.
@@ -455,6 +460,11 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     }
 
     let (cas_read_raw, cas_write_raw, cas_delete_raw, cas_list) = cas::build_handlers();
+    // Tenant bulk-export (SEAM): the export source reads blobs through the SAME
+    // CAS read/list handlers (one R2 connection, no forked store) — capture the
+    // `Arc`s BEFORE they are moved into `cas_state` / the Bazel bridge below.
+    let export_cas_read = cas_read_raw.clone();
+    let export_cas_list = cas_list.clone();
     // Storage byte accounting (red-team #1 / cluster B+C): wrap the CAS write +
     // delete trait objects in the reserve→commit→release decorator at the SINGLE
     // chokepoint every CAS write surface flows through (native CAS, Bazel REAPI,
@@ -547,6 +557,11 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         usage_meter: usage_meter.clone(),
     };
     let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) = ac::build_handlers();
+    // Tenant bulk-export (SEAM): reuse the SAME AC lookup/list handlers for the
+    // AC half of the bundle — capture BEFORE they are moved into `ac_state` /
+    // the Bazel bridge.
+    let export_ac_lookup = ac_lookup.clone();
+    let export_ac_list = ac_list.clone();
     // Storage byte accounting (cluster B+C) for the AC plane: same decorator
     // chokepoint over the AC update + delete trait objects, shared with the
     // Bazel REAPI AC write surface. `None` (dev/CI) ⇒ raw handlers pass through.
@@ -667,6 +682,16 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // `POST /v1/customer/account/delete` route fails CLOSED (503). Mirrors the
     // `pat_gate` wiring above (a cross-module collaborator composed at the root).
     customer_state.account_deletion = customer::account_deletion_from_env();
+    // Tenant bulk-export (SEAM): wire the portability-bundle source over the SAME
+    // CAS/AC read+list handlers (blob bytes) + a D1 row source (RBAC/DPA/audit).
+    // Env-gated: `None` in dev/CI (no D1) → `POST /v1/customer/account/export`
+    // fails CLOSED (503). Mirrors the `account_deletion` wiring above.
+    customer_state.export = customer_export::from_handlers_and_env(
+        export_cas_read,
+        export_cas_list,
+        export_ac_lookup,
+        export_ac_list,
+    );
     // Customer Runners (BE-10) + Workspaces (BE-11): tenant-scoped, own-tenant
     // only (tenant derived from the session header, never a client param). Wire
     // the SAME native-PAT possession backstop the customer/CAS states carry — a
