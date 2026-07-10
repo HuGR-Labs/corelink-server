@@ -6,25 +6,38 @@
 //! `/bazel/v2/:instance/blobs/:hash/:size` scheme — see the mapping
 //! below) backed by the same R2 blobs the native CAS/AC endpoints serve.
 //!
-//! # Client contract (read before assuming `--remote_cache` works)
+//! # Client contract (two schemes, one store)
 //!
-//! This surface implements the CoreLink REAPI scheme and requires a
-//! compatible client (a REAPI/ByteStream client, or `bazel` configured
-//! against this scheme). It is NOT stock Bazel's plain HTTP cache: vanilla
-//! `--remote_cache=http(s)://…` sends `/<cache>/<hash>` (e.g. `/cas/<hash>`,
-//! `/ac/<hash>` — no `:instance` segment, no `:size`), which does NOT match
-//! the routes below and 404s here. A stock-Bazel-HTTP `/cas|/ac` alias is a
-//! tracked enhancement (TODO/DEFERRED), not a current capability.
+//! This module serves TWO wire schemes onto the SAME [`BazelAdapter`]/handlers
+//! and the same per-tenant R2 store:
+//!
+//! 1. The CoreLink **REAPI ByteStream REST scheme**
+//!    (`/bazel/v2/:instance/blobs/:hash/:size`) — for a REAPI/ByteStream client
+//!    (or `bazel` configured against this scheme). The tenant is the `:instance`
+//!    path segment.
+//! 2. The **stock-Bazel HTTP cache alias** (`/bazel/cache/{cas,ac}/:hash`) — what
+//!    vanilla `bazel --remote_cache=https://host/bazel/cache` (and Buck2 used as a
+//!    REAPI HTTP cache) actually sends: `GET`/`PUT` on `/cas/<hash>` and
+//!    `/ac/<hash>` with **no `:instance` segment and no `:size`**. Here the tenant
+//!    (== REAPI `instance`) is derived from the Worker-injected
+//!    `x-corelink-tenant-id` header, so a missing/sentinel tenant → 401 and
+//!    isolation is by the per-tenant namespace (a cross-tenant hash is a uniform
+//!    404, never another tenant's bytes). Previously this alias was DEFERRED and
+//!    stock `--remote_cache=http` 404'd; it is now BUILT.
 //!
 //! # Endpoint mapping
 //!
 //! | HTTP | Route | Operation |
 //! |------|-------|-----------|
-//! | `GET`  | `/bazel/v2/:instance/blobs/:hash/:size` | CAS read |
-//! | `PUT`  | `/bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size` | CAS write |
-//! | `GET`  | `/bazel/v2/:instance/blobs/ac/:hash/:size` | AC read |
-//! | `PUT`  | `/bazel/v2/:instance/blobs/ac/:hash/:size` | AC write |
+//! | `GET`  | `/bazel/v2/:instance/blobs/:hash/:size` | CAS read (REST) |
+//! | `PUT`  | `/bazel/v2/:instance/uploads/:uuid/blobs/:hash/:size` | CAS write (REST) |
+//! | `GET`  | `/bazel/v2/:instance/blobs/ac/:hash/:size` | AC read (REST) |
+//! | `PUT`  | `/bazel/v2/:instance/blobs/ac/:hash/:size` | AC write (REST) |
 //! | `POST` | `/bazel/v2/:instance/findMissingBlobs` | batch find-missing |
+//! | `GET`  | `/bazel/cache/cas/:hash` | CAS read (stock-Bazel HTTP alias) |
+//! | `PUT`  | `/bazel/cache/cas/:hash` | CAS write (stock-Bazel HTTP alias) |
+//! | `GET`  | `/bazel/cache/ac/:hash` | AC read (stock-Bazel HTTP alias) |
+//! | `PUT`  | `/bazel/cache/ac/:hash` | AC write (stock-Bazel HTTP alias) |
 //!
 //! # Tenant isolation
 //!
@@ -312,6 +325,23 @@ pub fn router(state: BazelRouteState) -> Router {
         .route(
             "/bazel/v2/{instance}/findMissingBlobs",
             post(handle_find_missing),
+        )
+        // ── Stock-Bazel HTTP cache alias ─────────────────────────────────────
+        // Stock `bazel --remote_cache=https://host/bazel/cache` (and Buck2 used
+        // as a REAPI HTTP cache) speak the plain HTTP-cache scheme: GET/PUT on
+        // `/{cas,ac}/<hash>` with NO `:instance` segment and NO `:size`. These
+        // routes map that shape onto the SAME adapter/handlers/store as the REST
+        // scheme above; the tenant (== REAPI `instance`) is derived from the
+        // Worker-injected `x-corelink-tenant-id` header (fail-CLOSED via
+        // `caller_tenant`), so isolation is by the per-tenant namespace. `cas`
+        // and `ac` are literal segments (no conflict with each other).
+        .route(
+            "/bazel/cache/cas/{hash}",
+            get(handle_http_cas_read).put(handle_http_cas_write),
+        )
+        .route(
+            "/bazel/cache/ac/{hash}",
+            get(handle_http_ac_read).put(handle_http_ac_write),
         )
         .with_state(state)
 }
@@ -827,6 +857,250 @@ async fn handle_find_missing(
     // Serialise the response.
     match build_find_missing_response(missing) {
         Ok(json) => (StatusCode::OK, [("content-type", "application/json")], json).into_response(),
+        Err(e) => map_bridge_err(e),
+    }
+}
+
+// ─── Stock-Bazel HTTP cache alias handlers ─────────────────────────────────────
+//
+// These four handlers implement the plain HTTP-cache scheme stock `bazel
+// --remote_cache=https://host/bazel/cache` (and Buck2 as a REAPI HTTP cache)
+// actually speaks: `GET`/`PUT` on `/cas/<hash>` and `/ac/<hash>` — no `:instance`
+// segment, no `:size`. They map onto the SAME `BazelAdapter`/store as the REST
+// handlers above and run the IDENTICAL gate sequence (scope → tenant → PAT →
+// quota; AC-write also the runner-job key pin), preserving every security
+// invariant. The one difference vs the REST handlers is where the REAPI
+// `instance`/tenant comes from: NOT a path segment (there is none) but the
+// Worker-injected `x-corelink-tenant-id` header, extracted fail-CLOSED by
+// `caller_tenant`. Because `instance == caller_tenant` by construction, the
+// adapter's cross-tenant guard is a tautology here and isolation rests entirely
+// on the per-tenant namespace: a cross-tenant hash is a uniform 404 (never
+// another tenant's bytes), and a missing/sentinel tenant is 401.
+
+/// `GET /bazel/cache/cas/{hash}` — stock-Bazel HTTP-cache CAS read.
+///
+/// Stock alias for [`handle_cas_read`]. No `:size` in the URL; the read path
+/// addresses purely by hash, so a `0` placeholder size is used to build the
+/// [`Digest`] (which still enforces the 64-lowercase-hex hash rule).
+async fn handle_http_cas_read(
+    State(state): State<BazelRouteState>,
+    Path(hash): Path<String>,
+    scope: crate::scope::CacheScope,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    let tenant = match caller_tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
+    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+        return resp;
+    }
+    if let Some(resp) = quota_reject(&state, &tenant).await {
+        return resp;
+    }
+    let p = principal(&headers);
+    let digest = match Digest::new(hash, 0) {
+        Ok(d) => d,
+        Err(e) => return map_bridge_err(e),
+    };
+    match state.adapter.cas_get(&tenant, &digest, &p, &tenant, now_ms()) {
+        Ok(bytes) => {
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::ReadHit);
+            (
+                StatusCode::OK,
+                [("content-type", "application/octet-stream")],
+                bytes,
+            )
+                .into_response()
+        }
+        Err(e) => {
+            if matches!(e, BazelBridgeError::NotFound { .. }) {
+                state
+                    .usage_meter
+                    .record(&tenant, crate::usage_meter::UsageEvent::ReadMiss);
+            }
+            map_bridge_err(e)
+        }
+    }
+}
+
+/// `PUT /bazel/cache/cas/{hash}` — stock-Bazel HTTP-cache CAS write.
+///
+/// Stock alias for [`handle_cas_write`]. The stock client sends no declared
+/// size, so the [`Digest`] size is the actual body length (making the adapter's
+/// size-match check a tautology); the SHA-256 content-addressing boundary check
+/// below is the real integrity gate — poisoned bytes never enter the
+/// `bazel/sha256/` keyspace.
+async fn handle_http_cas_write(
+    State(state): State<BazelRouteState>,
+    Path(hash): Path<String>,
+    scope: crate::scope::CacheScope,
+    headers: HeaderMap,
+    // cluster F: pre-body per-tenant concurrency reservation (declared AHEAD of
+    // `body: Bytes` so axum runs it BEFORE the body is buffered).
+    _concurrency: BazelPutGuard,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    if !scope.can_write() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    let tenant = match caller_tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
+    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+        return resp;
+    }
+    if let Some(resp) = quota_reject(&state, &tenant).await {
+        return resp;
+    }
+    let p = principal(&headers);
+    let digest = match Digest::new(hash, body.len() as u64) {
+        Ok(d) => d,
+        Err(e) => return map_bridge_err(e),
+    };
+    if let Err(e) = corelink_bazel_bridge::digest::verify_sha256(&digest.hash, &body) {
+        return map_bridge_err(e);
+    }
+    match state.adapter.cas_put(
+        &tenant,
+        &digest,
+        body.to_vec(),
+        corelink_bazel_bridge::adapter::WriteCtx {
+            principal: &p,
+            caller_tenant: &tenant,
+            at_unix_ms: now_ms(),
+            storage_quota_bytes: crate::byte_accounting::storage_quota_from_headers(&headers),
+        },
+    ) {
+        Ok(()) => {
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::Write);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(e) => map_bridge_err(e),
+    }
+}
+
+/// `GET /bazel/cache/ac/{hash}` — stock-Bazel HTTP-cache AC read.
+///
+/// Stock alias for [`handle_ac_read`]. `0` placeholder size (AC read addresses
+/// by the action-digest hash).
+async fn handle_http_ac_read(
+    State(state): State<BazelRouteState>,
+    Path(hash): Path<String>,
+    scope: crate::scope::CacheScope,
+    headers: HeaderMap,
+) -> impl IntoResponse {
+    if !scope.can_read() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    let tenant = match caller_tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
+    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+        return resp;
+    }
+    if let Some(resp) = quota_reject(&state, &tenant).await {
+        return resp;
+    }
+    let p = principal(&headers);
+    let digest = match Digest::new(hash, 0) {
+        Ok(d) => d,
+        Err(e) => return map_bridge_err(e),
+    };
+    match state.adapter.ac_get(&tenant, &digest, &p, &tenant, now_ms()) {
+        Ok(bytes) => {
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::ReadHit);
+            (
+                StatusCode::OK,
+                [("content-type", "application/octet-stream")],
+                bytes,
+            )
+                .into_response()
+        }
+        Err(e) => {
+            if matches!(e, BazelBridgeError::NotFound { .. }) {
+                state
+                    .usage_meter
+                    .record(&tenant, crate::usage_meter::UsageEvent::ReadMiss);
+            }
+            map_bridge_err(e)
+        }
+    }
+}
+
+/// `PUT /bazel/cache/ac/{hash}` — stock-Bazel HTTP-cache AC write.
+///
+/// Stock alias for [`handle_ac_write`]. Mirrors the REST AC-write gate exactly,
+/// INCLUDING the WP5b runner-job AC-key pin (`ac_key_allowed`) so a narrowed
+/// per-job PAT cannot escape its key narrowing through this alias. The AC payload
+/// is the ActionResult (addressed by the action digest, NOT its own content
+/// hash), so — like the REST AC write — no `verify_sha256` is applied; the size
+/// is the actual body length (AC has no size-match check).
+async fn handle_http_ac_write(
+    State(state): State<BazelRouteState>,
+    Path(hash): Path<String>,
+    scope: crate::scope::CacheScope,
+    runner_job: crate::scope::RunnerJob,
+    headers: HeaderMap,
+    // cluster F: pre-body per-tenant concurrency reservation (see handle_cas_write).
+    _concurrency: BazelPutGuard,
+    body: axum::body::Bytes,
+) -> impl IntoResponse {
+    if !scope.can_write() {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+    // WP5b parity with `handle_ac_write`: a narrowed runner-job PAT with a pinned
+    // AC key may write ONLY that key; `"*"`/no pin ⇒ NO-OP.
+    if !runner_job.ac_key_allowed(&hash) {
+        return (
+            StatusCode::FORBIDDEN,
+            "ac write outside the job's allowed key",
+        )
+            .into_response();
+    }
+    let tenant = match caller_tenant(&headers) {
+        Ok(t) => t,
+        Err(()) => return unauthenticated_tenant(),
+    };
+    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+        return resp;
+    }
+    if let Some(resp) = quota_reject(&state, &tenant).await {
+        return resp;
+    }
+    let p = principal(&headers);
+    let digest = match Digest::new(hash, body.len() as u64) {
+        Ok(d) => d,
+        Err(e) => return map_bridge_err(e),
+    };
+    match state.adapter.ac_put(
+        &tenant,
+        &digest,
+        body.to_vec(),
+        corelink_bazel_bridge::adapter::WriteCtx {
+            principal: &p,
+            caller_tenant: &tenant,
+            at_unix_ms: now_ms(),
+            storage_quota_bytes: crate::byte_accounting::storage_quota_from_headers(&headers),
+        },
+    ) {
+        Ok(()) => {
+            state
+                .usage_meter
+                .record(&tenant, crate::usage_meter::UsageEvent::Write);
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => map_bridge_err(e),
     }
 }
@@ -1737,5 +2011,269 @@ mod tests {
             None,
             "the concurrency slot must be released after the write completes"
         );
+    }
+
+    // ── Stock-Bazel HTTP cache alias (/bazel/cache/{cas,ac}/:hash) ─────────────
+    //
+    // These mirror the REST-scheme tests above but against the stock alias shape
+    // (no :instance, no :size). Isolation here is by the per-tenant namespace
+    // (uniform 404 cross-tenant), not the adapter's :instance!=tenant 403.
+
+    /// Seed a blob via the stock CAS-write alias, returning nothing (the caller
+    /// already knows the hash). 204 on success.
+    async fn seed_http_cas(app: &axum::Router, tenant: &str, hash: &str, payload: &[u8]) {
+        let uri = format!("/bazel/cache/cas/{hash}");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", tenant)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(payload.to_vec()))
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT, "seed PUT should 204");
+    }
+
+    /// Happy path: stock CAS write then read round-trips the exact bytes — proves
+    /// `bazel --remote_cache=https://host/bazel/cache` works end to end.
+    #[tokio::test]
+    async fn http_cas_write_then_read_round_trip() {
+        let app = router(make_state());
+        let payload = b"stock bazel http cache".to_vec();
+        let hash = sha256_hex(&payload);
+        seed_http_cas(&app, TENANT, &hash, &payload).await;
+
+        let req = Request::builder()
+            .uri(format!("/bazel/cache/cas/{hash}"))
+            .method("GET")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let got = to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        assert_eq!(got.as_ref(), payload.as_slice());
+    }
+
+    /// The stock alias shares the SAME store as the REST scheme: a blob written
+    /// via the REST CAS-write route is readable via the stock CAS-read alias
+    /// (one store, two front doors).
+    #[tokio::test]
+    async fn http_cas_read_sees_rest_written_blob() {
+        let app = router(make_state());
+        let payload = b"written via REST, read via stock".to_vec();
+        let hash = sha256_hex(&payload);
+        // Seed through the REST scheme.
+        seed_cas_via_route(&app, TENANT, &hash, &payload).await;
+
+        let req = Request::builder()
+            .uri(format!("/bazel/cache/cas/{hash}"))
+            .method("GET")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let got = to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        assert_eq!(got.as_ref(), payload.as_slice());
+    }
+
+    /// Happy path: stock AC write then read round-trips the payload.
+    #[tokio::test]
+    async fn http_ac_write_then_read_round_trip() {
+        let app = router(make_state());
+        let hash = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let payload = b"stock_action_result".to_vec();
+        let uri = format!("/bazel/cache/ac/{hash}");
+
+        let put = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(payload.clone()))
+            .unwrap();
+        let put_resp = app.clone().oneshot(put).await.expect("PUT oneshot");
+        assert_eq!(put_resp.status(), StatusCode::NO_CONTENT);
+
+        let get = Request::builder()
+            .uri(&uri)
+            .method("GET")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let get_resp = app.oneshot(get).await.expect("GET oneshot");
+        assert_eq!(get_resp.status(), StatusCode::OK);
+        let got = to_bytes(get_resp.into_body(), 1 << 20).await.unwrap();
+        assert_eq!(got.as_ref(), payload.as_slice());
+    }
+
+    /// Read miss → 404.
+    #[tokio::test]
+    async fn http_cas_read_miss_returns_404() {
+        let app = router(make_state());
+        let req = Request::builder()
+            .uri(format!("/bazel/cache/cas/{HASH_A}"))
+            .method("GET")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Tenant isolation (uniform 404): tenant A writes a blob; a DIFFERENT
+    /// tenant B reading the SAME hash gets a 404 — B never sees A's bytes and
+    /// cannot even distinguish presence. This is the alias's isolation invariant
+    /// (the REST scheme's :instance!=tenant 403 has no analog here because there
+    /// is no :instance to mismatch — the tenant is the header alone).
+    #[tokio::test]
+    async fn http_cross_tenant_read_returns_404_not_bytes() {
+        let app = router(make_state());
+        let payload = b"tenant A private blob".to_vec();
+        let hash = sha256_hex(&payload);
+        seed_http_cas(&app, "tenant-a", &hash, &payload).await;
+
+        // tenant-b asks for the same hash → miss (namespace-isolated).
+        let req = Request::builder()
+            .uri(format!("/bazel/cache/cas/{hash}"))
+            .method("GET")
+            .header("x-corelink-tenant-id", "tenant-b")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "a cross-tenant hash must be a uniform 404, never another tenant's bytes"
+        );
+    }
+
+    /// Fail-CLOSED: a stock CAS read with NO `x-corelink-tenant-id` header → 401
+    /// (even with a valid scope) BEFORE any storage access.
+    #[tokio::test]
+    async fn http_cas_read_missing_tenant_returns_401() {
+        let app = router(make_state());
+        let req = Request::builder()
+            .uri(format!("/bazel/cache/cas/{HASH_A}"))
+            .method("GET")
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// A sentinel tenant (`_public`, the shared dedup namespace) is rejected 401
+    /// on the alias too — a masquerade can never reach the shared namespace.
+    #[tokio::test]
+    async fn http_cas_read_public_sentinel_returns_401() {
+        let app = router(make_state());
+        let req = Request::builder()
+            .uri(format!("/bazel/cache/cas/{HASH_A}"))
+            .method("GET")
+            .header("x-corelink-tenant-id", crate::adapter_cache::PUBLIC_NAMESPACE)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Fail-CLOSED scope: a read-only (`cas:r`) token on a stock CAS write is
+    /// rejected 403 BEFORE the adapter — the privilege-escalation the gate stops.
+    #[tokio::test]
+    async fn http_cas_write_read_only_scope_returns_403() {
+        let app = router(make_state());
+        let payload = b"read-only-cannot-write".to_vec();
+        let hash = sha256_hex(&payload);
+        let req = Request::builder()
+            .uri(format!("/bazel/cache/cas/{hash}"))
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::from(payload))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert_eq!(body_bytes(resp).await, b"insufficient scope");
+    }
+
+    /// Content-addressing boundary: a stock CAS write whose body does NOT hash to
+    /// the URL `:hash` is rejected 422 — poisoned bytes never enter the keyspace.
+    #[tokio::test]
+    async fn http_cas_write_sha256_mismatch_returns_422() {
+        let app = router(make_state());
+        let payload = b"honest bytes".to_vec();
+        let wrong_hash = "0".repeat(64);
+        let req = Request::builder()
+            .uri(format!("/bazel/cache/cas/{wrong_hash}"))
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .body(Body::from(payload))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    }
+
+    /// WP5b parity on the alias: a narrowed runner-job PAT pinned to a DIFFERENT
+    /// AC key may not write another key through the stock AC alias (403 before
+    /// storage); `"*"` (launch default) is a NO-OP that still writes.
+    #[tokio::test]
+    async fn http_ac_write_runner_job_pin_denies_other_key() {
+        let write_hash = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let pinned_key = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let payload = b"result".to_vec();
+        let uri = format!("/bazel/cache/ac/{write_hash}");
+
+        let app = router(make_state());
+        let put = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, pinned_key)
+            .body(Body::from(payload.clone()))
+            .unwrap();
+        let resp = app.oneshot(put).await.expect("PUT oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "pinned-key mismatch must 403");
+
+        let app2 = router(make_state());
+        let put2 = Request::builder()
+            .uri(&uri)
+            .method("PUT")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:rw")
+            .header(crate::scope::RUNNER_JOB_HEADER, "1")
+            .header(crate::scope::RUNNER_JOB_AC_KEY_ALLOW_HEADER, "*")
+            .body(Body::from(payload))
+            .unwrap();
+        let resp2 = app2.oneshot(put2).await.expect("PUT oneshot");
+        assert_eq!(resp2.status(), StatusCode::NO_CONTENT, "wildcard write must pass");
+    }
+
+    /// A read-only (`cas:r`) token PASSES the read gate on a stock CAS read: the
+    /// blob is absent so the route returns 404 — proving the gate let the read
+    /// through (a denied scope would 403 before storage).
+    #[tokio::test]
+    async fn http_cas_read_read_only_scope_passes_gate_then_404() {
+        let app = router(make_state());
+        let req = Request::builder()
+            .uri(format!("/bazel/cache/cas/{HASH_A}"))
+            .method("GET")
+            .header("x-corelink-tenant-id", TENANT)
+            .header(crate::scope::SCOPE_HEADER, "cas:r")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }

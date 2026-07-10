@@ -22,6 +22,23 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(bazel): stock-Bazel HTTP remote-cache alias — `bazel --remote_cache=https://host/bazel/cache` now works.**
+  The Bazel REAPI surface previously wired ONLY the CoreLink REAPI ByteStream REST scheme
+  (`/bazel/v2/:instance/blobs/:hash/:size`); vanilla `bazel`/Buck2-as-REAPI-cache send the plain
+  HTTP-cache shape `GET/PUT /<base>/{cas,ac}/<hash>` (no `:instance`, no `:size`), which 404'd — so
+  every documented stock config failed. Added four alias routes `GET/PUT /bazel/cache/cas/:hash` and
+  `GET/PUT /bazel/cache/ac/:hash` (`crates/corelink-container/src/routes/bazel_v2.rs`) that map onto
+  the SAME `BazelAdapter`/handlers and per-tenant R2 store as the REST scheme — no second store. The
+  tenant (== REAPI `instance`) is derived from the Worker-injected `x-corelink-tenant-id` header
+  (fail-CLOSED via `caller_tenant`), so a missing/sentinel tenant → 401 and isolation is by the
+  per-tenant namespace (a cross-tenant hash is a uniform 404, never another tenant's bytes). Every
+  security invariant of the REST scheme is preserved: the `scope → tenant → PAT → quota` gate
+  sequence, the SHA-256 content-addressing boundary check on CAS write, the WP5b runner-job AC-key
+  pin on AC write, and the per-tenant pre-body write-concurrency cap. The Worker forwards the new
+  `/bazel/cache/` prefix (tenant-from-PAT, reusing the `bazel_v2` routeKind). Buck2 remote-EXECUTION
+  (gRPC engine) remains OUT OF SCOPE — CoreLink is cache-only.
+
 ### Changed
 - **deps(js) — JS-majors frontier assessed (supersedes dependabot #697); net adoption: none.**
   The 15 already-on-`main` targets from the prior batch-majors merge (#693) remain the current
