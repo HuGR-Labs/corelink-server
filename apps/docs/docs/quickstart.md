@@ -53,11 +53,13 @@ If you get `401 Unauthorized`, the PAT is wrong or expired — generate a new on
 
 ## Step 3 — Push a blob
 
-Compute the SHA-256 of a local file and upload it:
+The native CAS content-addresses every blob by its **BLAKE3** digest (lowercase
+hex) — compute it with `b3sum`, **not** `sha256sum` (`brew install b3sum`, or
+`cargo install b3sum`). Then upload:
 
 ```bash
-# Compute digest
-DIGEST=$(sha256sum ./my-artifact.bin | awk '{print $1}')
+# Compute the BLAKE3 digest
+DIGEST=$(b3sum ./my-artifact.bin | awk '{print $1}')
 
 # Upload
 curl -s -X PUT \
@@ -67,11 +69,15 @@ curl -s -X PUT \
   "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
 ```
 
-Expected response (HTTP 201):
+Expected response (HTTP 201) — the body echoes the stored BLAKE3 hex:
 
 ```json
-{"hash": "sha256:<digest>"}
+{"hash": "<blake3-hex>"}
 ```
+
+> If you compute the digest with `sha256sum`, the upload fails **422 content hash
+> mismatch** — the server re-hashes the body with BLAKE3 and it won't match a
+> SHA-256 URL digest.
 
 ## Step 4 — Pull the blob back
 
