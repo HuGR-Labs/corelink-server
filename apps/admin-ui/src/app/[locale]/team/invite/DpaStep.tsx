@@ -71,6 +71,8 @@ export function DpaStep(props: DpaStepProps): React.ReactElement {
         dpaVersion: props.dpaVersion,
         dpaLocale: props.locale,
         noticeTextHash: props.noticeTextHash,
+        // Real consent field: the moment the controller clicked "accept".
+        uiCaptureTs: Date.now(),
       });
       setAuditEventId(res.audit_event_id);
       props.onAccepted?.(res.audit_event_id);

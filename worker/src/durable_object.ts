@@ -573,6 +573,13 @@ export class CoreLinkServer implements DurableObject {
           // bound CF secret silently no-ops and the portal falls back to a weak
           // default (the F8/ERASURE_SALT class of self-inflicted bug).
           DSR_RECEIPT_SIGNING_KEY: this.env.DSR_RECEIPT_SIGNING_KEY ?? "",
+          // DPA click-through acceptance (money-path unblock): the container's
+          // `/v1/onboarding/dpa-accept` route (`dpa_accept::build_state_from_env`)
+          // reads `DPA_RECEIPT_SIGNING_KEY` (RSA PKCS#8/PKCS#1 PEM) from its OWN
+          // process env to RS256-sign the acceptance receipt. It MUST be forwarded
+          // or the route stays UNMOUNTED (fail-CLOSED) and every paid checkout
+          // 403s `dpa_required` (the DPA row never gets written).
+          DPA_RECEIPT_SIGNING_KEY: this.env.DPA_RECEIPT_SIGNING_KEY ?? "",
           PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? "",
           // L3 money path: `POST /v1/onboarding/tier-select` runs INSIDE the
           // container and reads these from its OWN process env
