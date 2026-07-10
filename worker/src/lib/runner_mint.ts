@@ -504,7 +504,7 @@ export async function handleRunnerRevoke(
     return authErr;
   }
 
-  // ── 3. Parse the body (pat_id + owner_tenant required) ─────────────────────
+  // ── 3. Parse the body (pat_id required; owner_tenant OPTIONAL, 2026-07-08) ──
   interface RunnerRevokeRequest {
     readonly pat_id?: unknown;
     readonly owner_tenant?: unknown;
@@ -519,31 +519,48 @@ export async function handleRunnerRevoke(
   if (typeof patId !== "string" || patId.length === 0) {
     return reapiError("BAD_REQUEST", "pat_id required", 400, requestId);
   }
-  // REV-S2 (now MANDATORY): owner_tenant scopes EVERY revoke. The runners
-  // dispatcher's PR-B is deployed + proven to send owner_tenant on every call
-  // (green-lit 2026-06-21, no lockstep required), so the backward-compat un-scoped
-  // path is CLOSED: a compromised runner_mint key can no longer revoke another
-  // tenant's PAT by guessing a pat_id — an absent/empty owner_tenant is a hard 400.
+  // owner_tenant is OPTIONAL (2026-07-08 runners contract SUPERSEDES the
+  // 2026-06-21 REV-S2 mandatory requirement). The runners dispatcher's frozen
+  // revoke body is `{pat_id}` only — naming the tenant client-side was itself the
+  // single-tenant shape that the 2026-07-08 (owner-ratified) contract removed, and
+  // the dispatcher's tests now ASSERT owner_tenant is not on the wire. When PRESENT
+  // (legacy callers / opt-in defense-in-depth) it MUST be a non-empty string and
+  // STILL scopes the UPDATE (below); when ABSENT, revoke by pat_id alone — the
+  // pat_id IS the capability (possessing it already permits the revoke), so the
+  // tenant predicate was weak scoping, not a real isolation boundary.
   const ownerTenant = body.owner_tenant;
-  if (typeof ownerTenant !== "string" || ownerTenant.length === 0) {
-    return reapiError("BAD_REQUEST", "owner_tenant required", 400, requestId);
+  if (
+    ownerTenant !== undefined &&
+    (typeof ownerTenant !== "string" || ownerTenant.length === 0)
+  ) {
+    return reapiError(
+      "BAD_REQUEST",
+      "owner_tenant, when present, must be a non-empty string",
+      400,
+      requestId,
+    );
   }
 
-  // ── 4. Revoke via the EXISTING surface (idempotent, TENANT-SCOPED) ─────────
-  // REV-S2: scope the revoke to (pat_id, owner_tenant). The container's customer
-  // revoke is tenant-scoped so a customer can only revoke their own PATs; this
-  // internal surface is gated by the pat_mint key instead of a customer PAT, so we
-  // add the SAME tenant predicate to bound a compromised mint key's blast radius —
-  // it can only revoke PATs of the tenant it names, not any PAT in the system. The
-  // dispatcher already supplies owner_tenant at mint time and knows it at teardown.
-  // The `revoked_at_ms IS NULL` guard keeps a re-revoke idempotent; a (pat_id,
-  // owner_tenant) mismatch matches zero rows → a no-op 200 (no cross-tenant write).
+  // ── 4. Revoke via the EXISTING surface (idempotent) ────────────────────────
+  // The `revoked_at_ms IS NULL` guard keeps a re-revoke idempotent (no-op 200).
+  // owner_tenant PRESENT → keep the tenant predicate (defense-in-depth for a
+  // caller that opts in; a (pat_id, owner_tenant) mismatch matches zero rows → a
+  // no-op 200, no cross-tenant write). owner_tenant ABSENT (2026-07-08 contract)
+  // → revoke by pat_id alone; the pat_id already uniquely identifies the row.
   try {
-    await env.CONFIG_DB.prepare(
-      "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL",
-    )
-      .bind(Date.now(), patId, ownerTenant)
-      .run();
+    if (typeof ownerTenant === "string") {
+      await env.CONFIG_DB.prepare(
+        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL",
+      )
+        .bind(Date.now(), patId, ownerTenant)
+        .run();
+    } else {
+      await env.CONFIG_DB.prepare(
+        "UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id = ?2 AND revoked_at_ms IS NULL",
+      )
+        .bind(Date.now(), patId)
+        .run();
+    }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] runner revoke update failed: ${message.slice(0, 80)}`);
