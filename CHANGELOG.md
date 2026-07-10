@@ -248,6 +248,13 @@ Each entry cross-references:
   (native CAS/AC, REAPI, npm, cargo/sccache, browser) still rejects non-Bearer with `invalid_scheme`.
   Malformed Basic (not base64, no `:`, empty password) → 401. Covered by 13 new worker vitest cases
   (`worker/tests/index.test.ts`), including cross-surface scope-guard assertions.
+- **docs+ci(pente-fino) — three real drift defects found by a live real-client sweep.**
+  (1) `api/http.md` still documented the native CAS with `sha256sum` → every customer PUT 422s
+  (server is BLAKE3, `r2_s3.rs:968`); switched to `b3sum` + the real response shape (second copy
+  of the quickstart bug #727). (2) `integrations/bazel.md` said the stock-HTTP `/bazel/cache`
+  alias "returns 404 / not yet live" — it is LIVE (PR #709; `PUT 204/GET 200` verified); documented
+  both live recipes. (3) `smoke-install.yml` asserted `corelink ping` — a **non-existent** subcommand
+  (the real verb is `corelink doctor`, `tools/cli/src/main.rs:121`); the smoke was a latent false-negative.
 - **admin-ui — signed-out `/welcome` (and every protected path) now 307s to `/sign-in` instead of returning 404.**
   A signed-out visit to a protected page (`/welcome`, `/en/welcome`, `/dashboard`, `/customer`, …) returned a
   bare **404** in production instead of bouncing to sign-in. Root cause: the edge middleware
