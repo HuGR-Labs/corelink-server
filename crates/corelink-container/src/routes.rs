@@ -692,6 +692,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         export_ac_lookup,
         export_ac_list,
     );
+    // Customer-facing DSR self-service portal (`/v1/privacy/dsr/*`): the intake
+    // surface the admin-ui `dsr-client.ts` posts to. It DRIVES the live Wave-1
+    // DSR pipeline (access/portability/rectification + the erasure worker) and
+    // persists a tenant-scoped ticket store (D1). Env-gated: the data rights
+    // fail CLOSED (503) until storage is configured. Wire the SAME native-PAT
+    // possession backstop the customer plane carries.
+    let mut privacy_dsr_state = dsr::portal::build_state_from_env();
+    privacy_dsr_state.pat_gate = native_pat_gate.clone();
     // Customer Runners (BE-10) + Workspaces (BE-11): tenant-scoped, own-tenant
     // only (tenant derived from the session header, never a client param). Wire
     // the SAME native-PAT possession backstop the customer/CAS states carry — a
@@ -723,6 +731,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         .merge(audit_analytics::router(audit_analytics_state))
         .merge(users::router(users_state))
         .merge(customer::router(customer_state))
+        .merge(dsr::portal::router(privacy_dsr_state))
         .merge(customer_runners::router(customer_runners_state))
         .merge(workspaces::router(workspaces_state))
         .merge(bazel_v2::router(bazel_state))

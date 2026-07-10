@@ -523,6 +523,12 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // that ONLY the Worker sets it). Strip it structurally on EVERY forward so only
   // the Worker's runner-job-derived value ever reaches the container.
   "x-corelink-ac-create-only",
+  // DSR portal MFA step-up freshness marker: the Worker is the SOLE setter (it
+  // stamps `1` on the /v1/privacy/* plane for an edge-verified Clerk session).
+  // A client MUST NOT be able to smuggle a forged `x-corelink-mfa-verified` to
+  // bypass the destructive-arm (erasure/rectification) step-up gate in
+  // routes/dsr/portal.rs — strip it structurally on EVERY forward.
+  "x-corelink-mfa-verified",
 ];
 
 /**
@@ -711,6 +717,17 @@ function matchRoute(url: URL): RouteMatch {
   // JWT, tenant from clerk_user_id). Customer routes are NOT pre-tenant
   // (unlike signup).
   if (path.startsWith("/v1/customer/") || path === "/v1/customer") {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "customer_v1" };
+  }
+
+  // DSR self-service portal — /v1/privacy/dsr/* (access, portability,
+  // rectification, erasure, restriction, objection, status, verify-mfa). This is
+  // a Clerk-session dashboard surface (the browser holds a Clerk session, not a
+  // PAT), so it REUSES the customer_v1 forward: same edge Clerk-verify + tenant
+  // resolution + `x-corelink-tenant-id`/`x-corelink-token-prefix: clerk` stamp.
+  // The container routes it to routes/dsr/portal.rs by path. Checked BEFORE the
+  // generic /v1/* arm so it never falls into the PAT-required reapi_v1 bucket.
+  if (path.startsWith("/v1/privacy/") || path === "/v1/privacy") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "customer_v1" };
   }
 
@@ -2334,6 +2351,17 @@ const baseHandler: ExportedHandler<Env> = {
               "x-corelink-scope",
               custClerkAuth.role === "viewer" ? "read-only" : "read-write",
             );
+            // DSR portal (/v1/privacy/*) destructive-arm MFA step-up: the Worker
+            // is the SOLE setter of x-corelink-mfa-verified (stripped above). An
+            // edge-verified Clerk session is the destructive-arm authority today
+            // (consistent with /v1/customer/account/delete, which erases on a
+            // Clerk session alone); the container gate (routes/dsr/portal.rs) is
+            // fail-CLOSED on this trusted marker, so tightening it to require a
+            // real WebAuthn step-up assertion later is a header-condition change
+            // here, not a container rewire. Only stamped for the privacy plane.
+            if (path.startsWith("/v1/privacy/")) {
+              h.set("x-corelink-mfa-verified", "1");
+            }
             // Deliberately NOT set: x-corelink-internal-auth (least privilege —
             // customer routes don't need the operator-grade credential).
             return h;

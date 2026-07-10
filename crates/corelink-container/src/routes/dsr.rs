@@ -76,6 +76,9 @@ mod audit;
 mod d1util;
 mod ledger;
 pub(crate) mod legitimacy;
+/// Customer-facing DSR self-service portal (`/v1/privacy/dsr/*`) — the intake
+/// surface that drives THIS live pipeline.
+pub mod portal;
 
 const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 

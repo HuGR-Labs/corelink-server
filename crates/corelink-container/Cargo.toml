@@ -201,6 +201,12 @@ url = "2"
 # `apps/server::routes::customer` (`/v1/customer/*` endpoints).
 corelink-handler-customer = { workspace = true }
 
+# DSR self-service intake half — the `/v1/privacy/dsr/*` customer portal
+# (`routes/dsr/portal.rs`) reuses the canonical DSR taxonomy + the legally
+# load-bearing per-jurisdiction SLA (`sla_for`, calendar-month GDPR) as the
+# single source of truth rather than re-deriving it in the container.
+corelink-dsr = { workspace = true }
+
 # Wave-15.3 — customer-facing `GET /v1/audit/export` route
 # (WI-S09-008 wiring). The route ships in
 # `apps/server/src/routes/audit_export.rs`; the trait-object surface
