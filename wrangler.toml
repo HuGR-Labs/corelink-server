@@ -216,6 +216,20 @@ class_name = "EventLogDO"
 tag = "v3"
 new_sqlite_classes = ["EventLogDO"]
 
+# WI-MULTI-REGION-V1 — ReplicationCoordinatorDO: the SINGLE global multi-region
+# replication coordinator (idFromName("replication-coordinator-singleton")). Its
+# single-instance guarantee IS the split-brain-safe promotion lock; its `alarm()`
+# is the scheduled evaluate→promote driver. SQLite-backed (durable role map +
+# heartbeats). Reached via `/_internal/replication/*` (internal-auth gated) in
+# worker/src/index.ts; ported from crates/corelink-replication-coordinator.
+[[durable_objects.bindings]]
+name = "REPLICATION_COORDINATOR_DO"
+class_name = "ReplicationCoordinatorDO"
+
+[[migrations]]
+tag = "v4"
+new_sqlite_classes = ["ReplicationCoordinatorDO"]
+
 # Vars não-secretas
 [vars]
 ENVIRONMENT = "dev"
@@ -456,6 +470,10 @@ class_name = "RolloutController"
 name = "EVENT_LOG_DO"
 class_name = "EventLogDO"
 
+[[env.prod.durable_objects.bindings]]
+name = "REPLICATION_COORDINATOR_DO"
+class_name = "ReplicationCoordinatorDO"
+
 # ============================================================================
 # R2-10 — Staging environment (`wrangler deploy --env staging`).
 #
@@ -567,6 +585,10 @@ class_name = "RolloutController"
 [[env.staging.durable_objects.bindings]]
 name = "EVENT_LOG_DO"
 class_name = "EventLogDO"
+
+[[env.staging.durable_objects.bindings]]
+name = "REPLICATION_COORDINATOR_DO"
+class_name = "ReplicationCoordinatorDO"
 
 [[env.staging.containers]]
 class_name = "CoreLinkServer"
@@ -735,6 +757,10 @@ class_name = "RolloutController"
 name = "EVENT_LOG_DO"
 class_name = "EventLogDO"
 
+[[env.prod-sam.durable_objects.bindings]]
+name = "REPLICATION_COORDINATOR_DO"
+class_name = "ReplicationCoordinatorDO"
+
 [[env.prod-sam.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:499fa130-r1"
@@ -872,6 +898,10 @@ class_name = "RolloutController"
 name = "EVENT_LOG_DO"
 class_name = "EventLogDO"
 
+[[env.prod-lhr.durable_objects.bindings]]
+name = "REPLICATION_COORDINATOR_DO"
+class_name = "ReplicationCoordinatorDO"
+
 [[env.prod-lhr.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:499fa130-r1"
@@ -999,6 +1029,10 @@ class_name = "RolloutController"
 name = "EVENT_LOG_DO"
 class_name = "EventLogDO"
 
+[[env.prod-nrt.durable_objects.bindings]]
+name = "REPLICATION_COORDINATOR_DO"
+class_name = "ReplicationCoordinatorDO"
+
 [[env.prod-nrt.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:499fa130-r1"
@@ -1125,6 +1159,10 @@ class_name = "RolloutController"
 [[env.prod-syd.durable_objects.bindings]]
 name = "EVENT_LOG_DO"
 class_name = "EventLogDO"
+
+[[env.prod-syd.durable_objects.bindings]]
+name = "REPLICATION_COORDINATOR_DO"
+class_name = "ReplicationCoordinatorDO"
 
 [[env.prod-syd.containers]]
 class_name = "CoreLinkServer"

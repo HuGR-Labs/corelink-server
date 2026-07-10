@@ -280,6 +280,12 @@ corelink-billing-emit = { workspace = true }
 # deferred-real follow-up in `corelink-telemetry`; the operator supplies the
 # collector endpoint (see `routes/otel_layer.rs` module docs).
 corelink-telemetry = { workspace = true }
+# WI-MULTI-REGION-V1 (failover prod-wiring) — the read-side failover router +
+# `HealthProbe` trait consumed by the container's `routes::failover` Tower
+# layer. The container drives the crate's `FailoverRouter` decision core with a
+# REAL rolling-metrics probe over live traffic (not the crate's InMemory probe
+# fixture), fail-CLOSED blocking writes to a degraded region.
+corelink-failover-router = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -46,6 +46,10 @@ import {
   type InternalConsumer,
 } from "./lib/internal_auth.js";
 import { coloForMacro } from "./region-map.js";
+import {
+  ReplicationCoordinatorDO,
+  REPLICATION_COORDINATOR_SINGLETON,
+} from "./replication_coordinator_do.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -59,6 +63,13 @@ export interface Env {
   // `[[durable_objects.bindings]]` (name = "EVENT_LOG_DO"). Optional in the
   // type so existing test envs that omit it still typecheck.
   EVENT_LOG_DO?: DurableObjectNamespace;
+  // WI-MULTI-REGION-V1 — the SINGLE global replication-coordinator DO
+  // (idFromName(REPLICATION_COORDINATOR_SINGLETON)). Its single-instance
+  // guarantee IS the split-brain-safe promotion lock; its `alarm()` is the
+  // scheduled evaluate→promote driver. Bound in wrangler.toml
+  // `[[durable_objects.bindings]]` (name = "REPLICATION_COORDINATOR_DO").
+  // Optional so existing test envs that omit it still typecheck.
+  REPLICATION_COORDINATOR_DO?: DurableObjectNamespace;
   ENVIRONMENT: string;
   // D1 CONFIG_DB — control-plane database. Holds the `pat` table queried
   // during PAT validation (WP-A1). Bound in wrangler.toml `[[d1_databases]]`.
@@ -1716,6 +1727,39 @@ const baseHandler: ExportedHandler<Env> = {
           request,
         );
       }
+
+      // WI-MULTI-REGION-V1 — the replication-coordinator singleton DO.
+      // `/_internal/replication/*` is served by ReplicationCoordinatorDO (NOT the
+      // container): the SINGLE global instance
+      // (idFromName(REPLICATION_COORDINATOR_SINGLETON)) whose single-writer
+      // guarantee IS the split-brain-safe promotion lock. We intercept it here —
+      // AFTER the shared internal-auth gate above, BEFORE the generic container
+      // forward — mapping `/_internal/replication/<op>` → the DO's `/_repl/<op>`.
+      if (route.pathSuffix.startsWith("/_internal/replication/")) {
+        if (!env.REPLICATION_COORDINATOR_DO) {
+          return applyCors(
+            reapiError("NOT_IMPLEMENTED", "replication coordinator DO not bound", 501, requestId),
+            request,
+          );
+        }
+        const coordId = env.REPLICATION_COORDINATOR_DO.idFromName(REPLICATION_COORDINATOR_SINGLETON);
+        const coordStub = env.REPLICATION_COORDINATOR_DO.get(coordId);
+        const coordUrl = new URL(request.url);
+        coordUrl.pathname = route.pathSuffix.replace("/_internal/replication", "/_repl");
+        const coordHeaders = new Headers(request.headers);
+        stripClientTrustHeaders(coordHeaders);
+        coordHeaders.set("x-request-id", requestId);
+        const coordReq = new Request(coordUrl.toString(), {
+          method: request.method,
+          headers: coordHeaders,
+          body:
+            request.method === "GET" || request.method === "HEAD"
+              ? undefined
+              : await request.clone().arrayBuffer(),
+        });
+        return applyCors(await coordStub.fetch(coordReq), request);
+      }
+
       // Route to the _system DO which hosts the LOCAL (this-region) container.
       const systemDoId = env.CORELINK_SERVER.idFromName("_system");
       const systemStub = env.CORELINK_SERVER.get(systemDoId);
@@ -2901,7 +2945,7 @@ const handler = Sentry.withSentry(
 ) as ExportedHandler<Env>;
 
 export default handler;
-export { CoreLinkServer, RolloutController, EventLogDO };
+export { CoreLinkServer, RolloutController, EventLogDO, ReplicationCoordinatorDO };
 
 /**
  * Whether an internal route participates in the GDPR cross-residency erase

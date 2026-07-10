@@ -124,6 +124,28 @@ Each entry cross-references:
   end-to-end via `byok_orchestrator::build_active`; mutual exclusion of two real providers stays a
   hard compile error (ADR-S30-001). Provisioning live KMS credentials + choosing the build feature
   remains an operator step.
+- **feat(multi-region) — production replication coordinator (DO singleton) + failover Tower layer (WI-MULTI-REGION-V1).**
+  Closes the two "designed-not-wired" seams in the multi-region plane. (1) A production
+  `ReplicationCoordinator` — `worker/src/replication_coordinator_do.ts` (`ReplicationCoordinatorDO`) —
+  ports the Rust decision tree from `crates/corelink-replication-coordinator` faithfully (evaluate /
+  promote / failback / status, split-brain reject, anti-flap, **audit-emit-BEFORE-mutation fail-CLOSED**,
+  24 h hot-standby cool-down). The DO's single-instance guarantee
+  (`idFromName("replication-coordinator-singleton")`) IS the split-brain-safe promotion lock the Rust
+  `Mutex` only modelled; role map + heartbeats persist in DO SQLite storage. A DO **`alarm()`** is the
+  scheduled evaluate→promote **driver** (self-arms on first wake, re-arms every 30 s). Bound in
+  `wrangler.toml` across all envs (`REPLICATION_COORDINATOR_DO`, migration `v4`); reached via
+  internal-auth-gated `/_internal/replication/*` in `worker/src/index.ts`. (2) A production read-side
+  **failover Tower layer** — `crates/corelink-container/src/routes/failover.rs` — layered in the
+  container router exactly like `residency_guard`, driving `corelink-failover-router`'s decision core
+  with a **REAL `RollingMetricsHealthProbe`** over the container's live 5xx/latency/consecutive-failure
+  signals (not the crate's injected fixture). On a sustained multi-signal region outage it
+  **fail-CLOSED blocks writes (503 `failover_readonly`)** and stamps a sibling read-region hint so the
+  edge Worker re-routes reads; inert in a healthy region, dev/CI, and on APAC colos with no sibling in
+  the 4-macro graph. Unit + integration tests added on both sides
+  (`worker/tests/replication_coordinator_do.test.ts`, `routes::failover` tests). **Operator residual**
+  (Cloudflare-infra, not faked): deploy the DO (`wrangler deploy` runs migration `v4`) + provision the
+  R2 Cross-Region-Replication bindings + feed real per-region replication-lag heartbeats to
+  `/_internal/replication/heartbeat`.
 
 ### Changed
 - **Customer team-invite 501 copy de-staled** (`corelink-container`). Team invites
