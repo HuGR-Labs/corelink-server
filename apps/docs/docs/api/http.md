@@ -216,7 +216,7 @@ curl -s -X DELETE \
 | `403 Forbidden` | `forbidden` | PAT does not have the required scope, or tenant mismatch | Check PAT scopes and tenant in URL path |
 | `404 Not Found` | `not_found` | Blob does not exist in the tenant's CAS | Push before pulling |
 | `409 Conflict` | `conflict` | Blob already exists (PUT) | Idempotent — safe to ignore |
-| `422 Unprocessable Entity` | `content hash mismatch` | BLAKE3 in URL does not match body (e.g. you used `sha256sum`) | Recompute with `b3sum` |
+| `422 Unprocessable Entity` | `content hash mismatch` | BLAKE3 in URL does not match body (for example, you used `sha256sum`) | Recompute with `b3sum` |
 | `429 Too Many Requests` | `rate_limited` | Request rate exceeded | Back off and retry; see `Retry-After` header |
 | `503 Service Unavailable` | `audit_closed` | Tenant's audit period is closed — writes temporarily suspended | Contact support; reads still work |
 
