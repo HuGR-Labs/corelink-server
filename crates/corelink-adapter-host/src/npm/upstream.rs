@@ -25,6 +25,18 @@ const NPM_UPSTREAM_MAX_REDIRECTS: usize = 5;
 /// `Accept` header value for npm JSON metadata responses.
 pub const NPM_ACCEPT: &str = "application/json";
 
+/// npm registry search endpoint path (relative to the registry origin).
+pub const NPM_SEARCH_PATH: &str = "-/v1/search";
+
+/// Default search page size when the npm client omits `size` (matches the
+/// npm CLI default).
+pub const NPM_SEARCH_DEFAULT_SIZE: u32 = 20;
+
+/// Upper bound the adapter requests upstream for a single search page (the
+/// npm registry caps `size` at 250; clamp so a hostile `size` can never
+/// amplify one client call into an unbounded upstream fetch).
+pub const NPM_SEARCH_MAX_SIZE: u32 = 250;
+
 /// User-Agent the adapter sends upstream.
 pub const ADAPTER_USER_AGENT: &str = "corelink-adapter-npm/0.1 (+https://humangr.com)";
 
@@ -92,6 +104,64 @@ impl UpstreamClient {
         if !status.is_success() {
             return Err(NpmAdapterError::Upstream(format!(
                 "non-success status {status} from upstream metadata"
+            )));
+        }
+        let body = resp
+            .bytes()
+            .await
+            .map_err(|e| NpmAdapterError::Upstream(format!("read body: {e}")))?;
+        Ok(body.to_vec())
+    }
+
+    /// Proxy an npm registry search (`GET {registry}/-/v1/search`).
+    ///
+    /// npm search is a registry-WIDE fuzzy search over the full npm corpus,
+    /// which the adapter cannot compute locally (it only caches the individual
+    /// packages a tenant has fetched). The honest implementation is therefore a
+    /// same-origin, SSRF-guarded read-through to the configured registry, which
+    /// returns the canonical `{ objects, total, time }` JSON. `size` is clamped
+    /// upstream by [`crate::npm::search`]; this method binds `text`/`size`/`from`
+    /// as query pairs so `text` is URL-encoded (a raw `&`/`=` in the query can
+    /// never inject extra params).
+    ///
+    /// Returns the raw JSON bytes (validation happens in
+    /// [`crate::npm::search`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NpmAdapterError::Upstream`] on any transport failure, non-2xx
+    /// status, or if the resolved URL escapes the configured registry origin.
+    pub async fn fetch_search(
+        &self,
+        text: &str,
+        size: u32,
+        from: u32,
+    ) -> Result<Vec<u8>, NpmAdapterError> {
+        // SSRF-guarded join: pin the search URL to the configured registry
+        // origin BEFORE appending the (URL-encoded) query pairs. Query pairs
+        // never change scheme/host/port, so the origin stays pinned.
+        let mut url = join_within_upstream(&self.base, NPM_SEARCH_PATH)?;
+        url.query_pairs_mut()
+            .append_pair("text", text)
+            .append_pair("size", &size.to_string())
+            .append_pair("from", &from.to_string());
+
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static(NPM_ACCEPT));
+        headers.insert(USER_AGENT, HeaderValue::from_static(ADAPTER_USER_AGENT));
+
+        let resp = self
+            .client
+            .get(url)
+            .headers(headers)
+            .send()
+            .await
+            .map_err(|e| NpmAdapterError::Upstream(format!("send: {e}")))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            return Err(NpmAdapterError::Upstream(format!(
+                "non-success status {status} from upstream search"
             )));
         }
         let body = resp

@@ -29,6 +29,8 @@ pub mod event_types {
     pub const METADATA_REFRESHED: &str = "corelink.npm.metadata.refreshed.v1";
     /// Package metadata served from KV cache (no upstream call).
     pub const METADATA_CACHE_HIT: &str = "corelink.npm.metadata.cache_hit.v1";
+    /// Registry search proxied to upstream + served (read, no mutation).
+    pub const SEARCH_SERVED: &str = "corelink.npm.search.served.v1";
     /// Forged / malformed / unscoped PAT rejected at the auth layer.
     pub const AUTH_REJECTED: &str = "corelink.npm.auth.rejected.v1";
 }
@@ -87,6 +89,7 @@ mod tests {
             event_types::TARBALL_OVERSIZED,
             event_types::METADATA_REFRESHED,
             event_types::METADATA_CACHE_HIT,
+            event_types::SEARCH_SERVED,
             event_types::AUTH_REJECTED,
         ] {
             assert!(et.starts_with("corelink.npm."));
