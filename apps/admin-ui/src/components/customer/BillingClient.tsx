@@ -22,8 +22,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type { CustomerBilling } from "@/lib/customer-types";
 import { UpgradeButton } from "@/components/UpgradeButton";
 import { TIERS, isCheckoutTierId, type Tier } from "@/lib/pricing";
@@ -105,8 +104,7 @@ const ENTERPRISE_TIER: Tier | undefined = CACHE_TIERS.find((t) => t.id === "ente
 const CONTACT_SALES_HREF = "mailto:gustavo@humangr.com";
 
 export function BillingClient(): React.ReactElement {
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
   const [data, setData] = React.useState<CustomerBilling | null>(null);
   const [err, setErr] = React.useState<unknown>(null);
   const [portalBusy, setPortalBusy] = React.useState(false);

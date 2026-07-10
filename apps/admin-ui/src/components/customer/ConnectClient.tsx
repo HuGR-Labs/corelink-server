@@ -10,7 +10,6 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@clerk/nextjs";
 import {
   Button,
   Callout,
@@ -21,7 +20,7 @@ import {
   Skeleton,
   SnippetTabs,
 } from "@/components/ui/linear";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type { ConnectSurface, CustomerOverview, CustomerPat } from "@/lib/customer-types";
 
 // Prod API origin (NEXT_PUBLIC_CORELINK_API_URL is inlined at build time). We
@@ -161,8 +160,7 @@ function API_HOST(origin: string): string {
 }
 
 export function ConnectClient(): React.ReactElement {
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
   const [overview, setOverview] = React.useState<CustomerOverview | null>(null);
   const [pats, setPats] = React.useState<CustomerPat[] | null>(null);
   const [error, setError] = React.useState<unknown>(null);

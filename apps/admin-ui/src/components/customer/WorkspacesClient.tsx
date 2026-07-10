@@ -12,8 +12,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type { CustomerWorkspace } from "@/lib/customer-types";
 import {
   Badge,
@@ -45,8 +44,7 @@ function humanizeBytes(bytes: number): string {
 }
 
 function WorkspacesInner(): React.ReactElement {
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
   const { toast } = useToast();
 
   const [workspaces, setWorkspaces] = React.useState<CustomerWorkspace[]>([]);

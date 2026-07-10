@@ -24,8 +24,7 @@
 import React from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type { CustomerOverview } from "@/lib/customer-types";
 import {
   Badge,
@@ -60,8 +59,7 @@ function TrustInner(): React.ReactElement {
   const locale = Array.isArray(localeParam) ? localeParam[0] : localeParam ?? "en";
   const dsrHref = `/${locale}/dsr`;
 
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
 
   const [byok, setByok] = React.useState<CustomerOverview["byok"] | null>(null);
   const [loading, setLoading] = React.useState(true);

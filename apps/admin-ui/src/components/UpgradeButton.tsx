@@ -28,15 +28,35 @@
  *      `stripe_checkout_sessions` dedup row in
  *      `corelink-tier-selection/src/ledger.rs`).
  *
- * Error handling: any non-2xx surfaces inline (not silent) via the kit
- * `InlineError`, which preserves the full error text (status + body) so
- * the DPA-first 403 signal remains actionable. The retry re-runs the same
- * POST the click handler runs.
+ * DPA-first gate (INV-ONBOARD-DPA-FIRST): the backend
+ * `POST /v1/onboarding/tier-select` returns `403` with a `dpa_required`
+ * body until the tenant has accepted the current Data Processing Agreement.
+ * When the checkout POST surfaces that exact signal, this component renders
+ * the shared `<DpaStep />` click-through (the SAME component + legal text the
+ * team-invite gate uses), requires the scroll-to-end + explicit accept it
+ * enforces, records the acceptance via `acceptDpaAction`, and then
+ * AUTOMATICALLY retries the checkout POST — so a signed-in user who has not
+ * yet accepted the DPA can accept it and proceed to Stripe without leaving
+ * the page. Any OTHER non-2xx surfaces inline (not silent) via the kit
+ * `InlineError`, which preserves the full error text (status + body). The
+ * retry re-runs the same POST the click handler runs.
  */
 
 import * as React from "react";
-import { InlineError } from "@/components/ui/linear";
+import { InlineError, Callout } from "@/components/ui/linear";
 import type { CheckoutTierId } from "@/lib/pricing";
+import { DpaStep } from "@/components/DpaStep";
+import type { DpaNotice } from "@/lib/dpa-notice";
+import type { Locale } from "@/i18n/messages";
+
+const SUPPORTED_LOCALES: readonly Locale[] = ["en", "pt", "es", "de"];
+
+/** Coerce the free-form `locale` prop to a supported `Locale` (default en). */
+function coerceLocale(loc: string): Locale {
+  return (SUPPORTED_LOCALES as readonly string[]).includes(loc)
+    ? (loc as Locale)
+    : "en";
+}
 
 export interface UpgradeButtonProps {
   /** Locale slug for the post-Checkout redirect — falls back to "en". */
@@ -84,9 +104,14 @@ export function UpgradeButton({
 }: UpgradeButtonProps): React.ReactElement {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // When the checkout POST 403s with `dpa_required`, we load the localized DPA
+  // notice and render the shared click-through gate below the button. Cleared
+  // once the user accepts (which auto-retries the checkout).
+  const [dpaNotice, setDpaNotice] = React.useState<DpaNotice | null>(null);
 
   const startCheckout = React.useCallback(async (): Promise<void> => {
     setError(null);
+    setDpaNotice(null);
     setBusy(true);
     try {
       const f = fetchImpl ?? fetch;
@@ -100,6 +125,16 @@ export function UpgradeButton({
       });
       if (!res.ok) {
         const text = await res.text();
+        // DPA-first lock (INV-ONBOARD-DPA-FIRST): render the accept gate rather
+        // than a dead-end error. The route maps the backend 403 through
+        // verbatim with a `dpa_required` marker in the body.
+        if (res.status === 403 && text.includes("dpa_required")) {
+          const { loadDpaNotice } = await import("@/lib/dpa-notice");
+          const notice = await loadDpaNotice(coerceLocale(locale));
+          setDpaNotice(notice);
+          setBusy(false);
+          return;
+        }
         throw new Error(`upgrade failed: ${res.status} ${text.slice(0, 200)}`);
       }
       const body = (await res.json()) as CheckoutSessionJson;
@@ -146,6 +181,32 @@ export function UpgradeButton({
       {error ? (
         <div role="alert" data-testid="upgrade-error">
           <InlineError error={error} onRetry={() => void startCheckout()} />
+        </div>
+      ) : null}
+      {dpaNotice ? (
+        <div className="lin-mt" data-testid="upgrade-dpa-gate">
+          <Callout tone="info">
+            Before your first paid plan, accept the Data Processing Agreement —
+            it governs how CoreLink processes your data. We&rsquo;ll take you
+            straight to Stripe Checkout once you accept.
+          </Callout>
+          <div className="lin-mt">
+            <DpaStep
+              locale={dpaNotice.locale}
+              // The tier-select / dpa-accept backend resolves the tenant from
+              // the verified session header, never the body — so no tenant id
+              // travels here (same contract as the team-invite gate).
+              tenantId=""
+              dpaText={dpaNotice.dpaText}
+              dpaVersion={dpaNotice.dpaVersion}
+              noticeTextHash={dpaNotice.noticeTextHash}
+              // Acceptance recorded → auto-retry the checkout POST.
+              onAccepted={() => {
+                setDpaNotice(null);
+                void startCheckout();
+              }}
+            />
+          </div>
         </div>
       ) : null}
     </div>

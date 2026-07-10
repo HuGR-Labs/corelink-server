@@ -1,8 +1,8 @@
 import * as React from "react";
 import type { Locale } from "@/i18n/messages";
-import { loadLocalizedMarkdown } from "@/content/load";
+import { loadDpaNotice } from "@/lib/dpa-notice";
 import { Callout } from "@/components/ui/linear";
-import { DpaStep } from "./DpaStep";
+import { DpaStep } from "@/components/DpaStep";
 
 /**
  * Team invite — DPA-gated entry point.
@@ -27,20 +27,12 @@ import { DpaStep } from "./DpaStep";
  * page-scoped `.cx-shell` / `.cx-main` wrapper (no shared layout touched).
  */
 
-async function sha256Hex(text: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const hashBuf = await crypto.subtle.digest("SHA-256", encoder.encode(text));
-  return Array.from(new Uint8Array(hashBuf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
 export default async function TeamInvitePage(props: {
   params: Promise<{ locale: Locale }>;
 }): Promise<React.ReactElement> {
   const { locale } = await props.params;
-  const text = loadLocalizedMarkdown("dpa", locale);
-  const hash = await sha256Hex(text);
+  // Single-sourced notice: same text + hash + version the upgrade gate uses.
+  const notice = await loadDpaNotice(locale);
 
   // Tenant id is read from the Clerk session in production. In Phase 0 this
   // page renders the DPA-acceptance gate; the actual invite form lives in
@@ -64,9 +56,9 @@ export default async function TeamInvitePage(props: {
           <DpaStep
             locale={locale}
             tenantId={tenantId}
-            dpaText={text}
-            dpaVersion="1.0.0"
-            noticeTextHash={hash}
+            dpaText={notice.dpaText}
+            dpaVersion={notice.dpaVersion}
+            noticeTextHash={notice.noticeTextHash}
           />
         </div>
       </main>

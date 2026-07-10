@@ -23,8 +23,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type { CustomerOverview, CustomerPat, CustomerUsage } from "@/lib/customer-types";
 import {
   Badge,
@@ -116,8 +115,7 @@ const BYOK_LABEL: Record<CustomerOverview["byok"]["status"], string> = {
 };
 
 export function HomeClient({ locale }: HomeClientProps): React.ReactElement {
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
   const [overview, setOverview] = React.useState<CustomerOverview | null>(null);
   const [pats, setPats] = React.useState<CustomerPat[] | null>(null);
   // Usage powers the ROI hero (hit-rate + $ saved). It is a best-effort side

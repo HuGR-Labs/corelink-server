@@ -23,8 +23,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type { CustomerOverview, CustomerUsage } from "@/lib/customer-types";
 import { TIERS } from "@/lib/pricing";
 import {
@@ -91,8 +90,7 @@ function requestsPerMonthMax(plan: CustomerOverview["plan"] | null): number | nu
 }
 
 export function UsageClient(): React.ReactElement {
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
   const [data, setData] = React.useState<CustomerUsage | null>(null);
   // Plan drives the request-ceiling gauge. It is a cheap side read from the
   // overview snapshot — a failure must NOT block Usage, so we degrade `plan` to

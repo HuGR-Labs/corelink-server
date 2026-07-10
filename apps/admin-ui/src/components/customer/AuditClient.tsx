@@ -16,8 +16,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type { CustomerAuditEvent } from "@/lib/customer-types";
 import {
   Badge,
@@ -127,8 +126,7 @@ function endOfDayMs(dateStr: string): number | undefined {
 }
 
 export function AuditClient(): React.ReactElement {
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
 
   const [rows, setRows] = React.useState<CustomerAuditEvent[]>([]);
   const [loading, setLoading] = React.useState(true);

@@ -1,35 +1,35 @@
 "use client";
 
 /**
- * DpaStep — moved out of the signup onboarding wizard (was at
- * `app/[locale]/onboarding/dpa/DpaStep.tsx`) per Phase-0 PLG framework §4:
- * a single-user tenant is its own data controller and subject; DPA only
- * becomes legally necessary when a tenant **invites a second member**,
- * because at that point the tenant begins processing personal data of
- * another natural person.
+ * DpaStep — the shared DPA click-through gate.
  *
- * Gating logic (called by `app/[locale]/team/invite/page.tsx`):
- *   1. Before the invite email is sent, check `tenant.dpa_accepted_at`.
- *   2. If absent, render this component to block the invite action until
- *      the controller has scrolled + clicked accept.
- *   3. On accept, POST `/v1/tenants/{id}/dpa-accept`, then re-enter the
- *      invite flow with the captured audit_event_id stamped on the invite.
+ * Originally lived at `app/[locale]/team/invite/DpaStep.tsx` (moved here so the
+ * upgrade/checkout flow can reuse the SAME component + legal text — the DPA
+ * click-through must never be forked/duplicated). Two callers today:
+ *   - `app/[locale]/team/invite/page.tsx` — the invite-a-second-member gate.
+ *   - `components/UpgradeButton.tsx` — the paid-upgrade gate (the backend
+ *     `POST /v1/onboarding/tier-select` 403s with `dpa_required` until the
+ *     tenant has accepted the current DPA; INV-ONBOARD-DPA-FIRST).
  *
- * Behaviour preserved from the original wizard step:
+ * Behaviour (unchanged from the original wizard step):
  *   - Scroll-to-end gate (`hasScrolledToEnd`) before the accept button enables.
  *   - Acceptance produces an immutable `audit_event_id` from the server.
- *   - SHA-256 of the rendered notice text is bound into the acceptance record
- *     so the exact bytes the user saw are forensically anchored.
+ *   - SHA-256 of the rendered notice text (`noticeTextHash`) is bound into the
+ *     acceptance record so the exact bytes the user saw are forensically
+ *     anchored. The hash MUST be computed from the same `dpaText` this
+ *     component renders (both callers derive it from `lib/dpa-notice.ts`).
  *
- * UI: migrated to the Linear design language (frozen kit + globals.css tokens).
- * The scroll-gate container is a bounded scroll region (functional, not
- * decoration); its chrome comes from the kit. Testids preserved.
+ * UI: Linear design language (frozen kit + globals.css tokens). Testids
+ * preserved so the existing team-invite tests keep passing.
  */
 
 import * as React from "react";
 import { t, type Locale } from "@/i18n/messages";
 import { hasScrolledToEnd } from "@/lib/dpa-scroll";
-import { acceptDpaAction } from "@/app/[locale]/onboarding/actions";
+import {
+  acceptDpaAction,
+  type DpaAccepted,
+} from "@/app/[locale]/onboarding/actions";
 import { Button, Callout, InlineError } from "@/components/ui/linear";
 
 export interface DpaStepProps {
@@ -39,6 +39,18 @@ export interface DpaStepProps {
   dpaVersion: string;
   noticeTextHash: string;
   onAccepted?: (auditEventId: string) => void;
+  /**
+   * Injected accept impl (test-only). Production leaves this unset and the
+   * component calls the canonical `acceptDpaAction` server action — mirrors
+   * `UpgradeButton`'s `fetchImpl` seam.
+   */
+  acceptImpl?: (input: {
+    tenantId: string;
+    dpaVersion: string;
+    dpaLocale: Locale;
+    noticeTextHash: string;
+    uiCaptureTs: number;
+  }) => Promise<DpaAccepted>;
 }
 
 export function DpaStep(props: DpaStepProps): React.ReactElement {
@@ -66,7 +78,8 @@ export function DpaStep(props: DpaStepProps): React.ReactElement {
   async function onAccept(): Promise<void> {
     setSubmitting(true);
     try {
-      const res = await acceptDpaAction({
+      const accept = props.acceptImpl ?? acceptDpaAction;
+      const res = await accept({
         tenantId: props.tenantId,
         dpaVersion: props.dpaVersion,
         dpaLocale: props.locale,

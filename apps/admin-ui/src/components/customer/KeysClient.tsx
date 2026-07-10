@@ -15,8 +15,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type { CustomerOverview, CustomerPat } from "@/lib/customer-types";
 import { setPlaintextPat } from "@/lib/onboarding-state";
 import { PatModal } from "@/components/onboarding/PatModal";
@@ -88,8 +87,7 @@ const PAT_MODAL_LABELS = {
 type RevokedFilter = "active" | "all";
 
 function KeysInner(): React.ReactElement {
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
   const { toast } = useToast();
 
   const [pats, setPats] = React.useState<CustomerPat[]>([]);
