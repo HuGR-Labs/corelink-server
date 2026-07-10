@@ -133,6 +133,40 @@ HTTP/1.1 + HTTP/2 than with bidirectional gRPC streaming. If your
 Collector is reachable on the same private network with gRPC, prefer
 `protocol = "grpc"`; otherwise stick with HTTP.
 
+### How the `[observability.export]` surface is wired in the container
+
+The Rust data-plane container reads the `[observability.export.*]`
+surface as **environment variables** (the Durable Object forwards them
+from `wrangler.toml`'s `[env.*.vars]`). The container constructs the
+selected exporter at router-build time and streams a canonical
+`MetricPoint` + `TraceSpan` per data-plane request through the
+fail-OPEN boundary. The env mapping for the OTel-Collector variant:
+
+| TOML key | Container env var |
+|---|---|
+| `variant = "otel_collector"` | `CORELINK_OBSERVABILITY_EXPORT_VARIANT=otel_collector` |
+| `otel_collector.endpoint` | `CORELINK_OTEL_COLLECTOR_ENDPOINT` |
+| `otel_collector.protocol` | `CORELINK_OTEL_COLLECTOR_PROTOCOL` (`http` default \| `grpc`) |
+| `otel_collector.bearer_token` | `CORELINK_OTEL_COLLECTOR_BEARER_TOKEN` (optional) |
+
+When `CORELINK_OBSERVABILITY_EXPORT_VARIANT` is unset / `disabled`, or
+the selected variant's config is missing/malformed, the export layer is
+**not mounted** — the data plane serves exactly as before (fail-SAFE: a
+bad observability config never bricks CoreLink). The chosen `region`
+label is taken from `R2_CAS_REGION`.
+
+:::note Operator step — the collector endpoint + network egress
+The container **constructs the exporter and emits real request-path
+metrics/spans through it today** (visible in the container logs under
+`target: "corelink_otel_export"`). The exporter's actual OTLP/HTTP
+**network egress to your collector is the remaining operator step**: you
+provide the reachable `CORELINK_OTEL_COLLECTOR_ENDPOINT` (+ bearer), and
+the wire transport itself lands behind its own chaos test as a
+deferred-real follow-up in `corelink-telemetry`. Until egress ships, the
+per-request emit is observable in logs and via the
+`corelink.observability.export_*` audit events.
+:::
+
 Apply:
 
 ```bash

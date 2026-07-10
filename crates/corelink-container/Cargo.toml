@@ -270,6 +270,16 @@ corelink-analytics = { workspace = true }
 # `validate_billing_period` for the `YYYY-MM` shape so the ingest endpoint
 # never reinvents the billing-emit surface contract.
 corelink-billing-emit = { workspace = true }
+# OTel-export seam (`routes/otel_layer.rs`) — the container constructs the
+# configured `MetricsExporter` (OtelCollector / Datadog / GrafanaCloud) from the
+# `[observability.export.*]` env surface and streams a canonical `MetricPoint` +
+# `TraceSpan` per data-plane request through the crate's fail-OPEN boundary.
+# Previously the container's telemetry was `tracing_subscriber::fmt()` stdout
+# only — the OTel exporters (already library-complete + tested in this crate)
+# were never constructed. The exporters' real OTLP/HTTP egress is a documented
+# deferred-real follow-up in `corelink-telemetry`; the operator supplies the
+# collector endpoint (see `routes/otel_layer.rs` module docs).
+corelink-telemetry = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

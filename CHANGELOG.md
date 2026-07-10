@@ -81,6 +81,25 @@ Each entry cross-references:
     routes; `verify-export` re-checks every component + bundle hash offline (no PAT). The single-file
     `.tar.zst` with all blob bytes + RBAC roster + DPA receipt remains gated on a server bulk-export
     endpoint that does not exist yet (blobs are individually retrievable via `cas get`).
+- **feat(container): wire the OTel-export seam — the container now constructs the configured
+  observability exporter and emits real request-path metrics/spans.** `corelink-telemetry`
+  (with its library-complete, tested `DatadogExporter` / `OtelCollectorExporter` /
+  `GrafanaCloudExporter`) is now a dependency of `corelink-container`, closing the seam where
+  the container's telemetry was `tracing_subscriber::fmt()` stdout only and the OTel exporters
+  were never constructed. New `routes/otel_layer.rs` reads the `[observability.export.*]`
+  surface as environment variables (`CORELINK_OBSERVABILITY_EXPORT_VARIANT` +
+  per-vendor `CORELINK_OTEL_COLLECTOR_*` / `CORELINK_DATADOG_*` / `CORELINK_GRAFANA_*`),
+  builds the selected `MetricsExporter`, and streams a canonical `MetricPoint` (RED counter +
+  CAS-PUT duration histogram) and W3C `TraceSpan` per data-plane request through the crate's
+  fail-OPEN boundary — wired as the outermost `.layer(...)` in `routes::build_with_factory`.
+  Unset / `disabled` / malformed config ⇒ layer not mounted (dev/CI zero-overhead, fail-SAFE).
+  Labels are PII-free per `INV-OBS-NO-PII` (`region` / `op_type` / `result`, never `tenant_id`),
+  and the export-failure audit sink is a bounded `TracingExportFailedAuditSink` (avoids the
+  F-022 unbounded-`Vec` heap-leak trap). The `apps/docs` observability how-tos are aligned to
+  the wired env surface. **Operator residual:** the exporters' real OTLP/HTTP network egress is
+  a documented deferred-real follow-up in `corelink-telemetry`; the operator supplies the
+  reachable collector/vendor endpoint (`CORELINK_OTEL_COLLECTOR_ENDPOINT`, etc.). The
+  OtelCollector variant is the recommended, solidly-wired path.
 
 ### Changed
 - **Customer team-invite 501 copy de-staled** (`corelink-container`). Team invites
