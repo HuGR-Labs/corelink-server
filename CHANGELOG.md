@@ -244,6 +244,11 @@ Each entry cross-references:
   unaffected (the post-signup flow targets the locale-prefixed `/en/welcome`, which resolves and renders once
   `protect()` passes); this was a signed-out-only redirect regression that the prod `/welcome` route-exists
   canary (`e2e/signup-welcome.spec.ts`) catches. Reproduced locally and verified 404→307.
+- **docs(quickstart) — CAS push recipe used `sha256sum`; the native CAS is BLAKE3-keyed, so every
+  Step-3 PUT returned 422 "content hash mismatch".** Corrected to `b3sum` + the real
+  `{"hash":"<blake3-hex>"}` response, with a note on the 422 trap. Verified live on prod
+  (`b3sum` digest → PUT 201 → GET 200 → bytes identical). The `integrations/raw-curl.md` recipe
+  was already correct; the wave-#706 recipe pass missed this quickstart copy.
 - **integration(go-live-wave) — closed the union-merge lint + test regressions across the 15-branch integration.**
   Rust `clippy -D warnings` (crate-scoped PR gate + workspace gc-tests gate): removed a redundant `#[must_use]`
   on `byok_admin::router` (return type already `#[must_use]`), rewrote the DSR portal PAT-backstop block with the
