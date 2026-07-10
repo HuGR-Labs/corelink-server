@@ -24,8 +24,8 @@
 "use client";
 
 import React from "react";
-import { useAuth, useOrganization, useUser } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useOrganization, useUser } from "@clerk/nextjs";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import {
   Button,
   Callout,
@@ -102,8 +102,7 @@ function AccountCard(): React.ReactElement {
 }
 
 function SettingsInner(): React.ReactElement {
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
   const { toast } = useToast();
 
   const [confirmDelete, setConfirmDelete] = React.useState(false);

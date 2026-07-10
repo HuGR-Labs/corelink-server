@@ -11,8 +11,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type { CustomerTeamMember } from "@/lib/customer-types";
 import {
   Badge,
@@ -64,9 +63,8 @@ function formatJoined(iso: string): string {
 }
 
 function TeamInner(): React.ReactElement {
-  const { getToken } = useAuth();
   const { toast } = useToast();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
 
   const [members, setMembers] = React.useState<CustomerTeamMember[]>([]);
   const [email, setEmail] = React.useState("");

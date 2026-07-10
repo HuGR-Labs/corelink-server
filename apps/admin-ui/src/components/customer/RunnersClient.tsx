@@ -28,8 +28,7 @@
 "use client";
 
 import React from "react";
-import { useAuth } from "@clerk/nextjs";
-import { CustomerClient } from "@/lib/customer-client";
+import { useCustomerClient } from "@/lib/use-customer-client";
 import type {
   CustomerRunnerEntitlement,
   CustomerRunnerRun,
@@ -102,8 +101,7 @@ function formatDuration(seconds: number | null): string {
 }
 
 export function RunnersClient(): React.ReactElement {
-  const { getToken } = useAuth();
-  const client = React.useMemo(() => new CustomerClient({ getToken }), [getToken]);
+  const client = useCustomerClient();
   const [entitlement, setEntitlement] =
     React.useState<CustomerRunnerEntitlement | null>(null);
   const [runs, setRuns] = React.useState<CustomerRunnerRun[] | null>(null);

@@ -40,6 +40,28 @@ Each entry cross-references:
   server copy byte-identical to the admin-ui-rendered notice to re-derive against — the admin-ui content
   `apps/admin-ui/src/content/dpa.*.md` diverges from the legal `legal/dpa/v1.0.0.*.md` artifact; a
   follow-up should unify the canonical notice source to re-enable server-side hash recompute).
+- **feat(admin-ui): wire the DPA-first gate into the paid-upgrade flow + kill the customer-screen render loop.**
+  Two fixes in `apps/admin-ui`.
+  (1) **DPA-first upgrade gate (INV-ONBOARD-DPA-FIRST).** The paid-checkout path
+  (`<UpgradeButton />` → `POST /api/checkout/session` → `/v1/onboarding/tier-select`) 403s with a
+  `dpa_required` body until the tenant has accepted the current Data Processing Agreement, but nothing
+  in the upgrade/pricing flow ever called the DPA click-through — a real user clicking "Upgrade" hit a
+  dead-end 403. `<UpgradeButton />` now detects the `403 dpa_required` signal, renders the SHARED
+  `<DpaStep />` click-through (moved from `app/[locale]/team/invite/DpaStep.tsx` to
+  `src/components/DpaStep.tsx` so the invite gate and the upgrade gate use ONE component + ONE copy of
+  the legal text — no fork), enforces its scroll-to-end + explicit accept, records the acceptance via
+  `acceptDpaAction` (canonical version `1.0.0` + the SHA-256 of the exact notice bytes the user saw,
+  both single-sourced through the new `src/lib/dpa-notice.ts`), and then AUTOMATICALLY retries the
+  checkout POST → Stripe. i18n (en/pt/es/de) preserved; any non-`dpa_required` 403 still surfaces
+  inline. (2) **Render-loop fix.** All 11 customer client screens (Billing/Runners/Keys/Usage/Home/
+  Trust/Team/Workspaces/Connect/Audit/Settings) shared a pattern
+  (`useMemo(() => new CustomerClient({ getToken }), [getToken])`) that looped when Clerk's `getToken`
+  identity churned on an unprovisioned/thrashing session (the "cursor blinking madly" repro): client
+  re-created → fetch effect re-fired → re-render → churn again. Factored a shared
+  `useCustomerClient()` hook (`src/lib/use-customer-client.ts`) that holds `getToken` in a ref and
+  memoizes the client with an empty dep list, so the client identity is stable for the component
+  lifetime and the fetch effect runs once per mount. Adds DPA-gate flow tests
+  (403 → gate → scroll → accept → retry → Stripe) and a render-stability test for the hook.
 - **feat(bazel): stock-Bazel HTTP remote-cache alias — `bazel --remote_cache=https://host/bazel/cache` now works.**
   The Bazel REAPI surface previously wired ONLY the CoreLink REAPI ByteStream REST scheme
   (`/bazel/v2/:instance/blobs/:hash/:size`); vanilla `bazel`/Buck2-as-REAPI-cache send the plain
