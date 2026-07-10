@@ -1,0 +1,62 @@
+name: cas-datacenter-canary
+# Real-client drift canary: asserts the CAS API answers an AUTHENTICATED BLAKE3
+# round-trip 2xx from a GitHub-hosted (datacenter) IP — the customer's CI
+# environment. Catches the class of drift that is invisible to every existing
+# gate + the unauthenticated /health probes: Cloudflare edge policy (Bot Fight
+# Mode / WAF rate-limit) blocking datacenter IPs, a digest-algo regression, or a
+# route break. If this goes red, real customer CI cannot use the cache.
+#   See docs/operator/edge-security-per-plane-sota.md + memory edge-security-blocked-datacenter-ci.
+on:
+  schedule:
+    - cron: "17 * * * *"   # hourly (economical); staggered off :00
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cas-canary
+  cancel-in-progress: false
+jobs:
+  roundtrip:
+    runs-on: ubuntu-latest          # datacenter IP = the customer's CI
+    timeout-minutes: 5
+    steps:
+      - name: Authenticated CAS BLAKE3 round-trip against prod
+        env:
+          PAT: ${{ secrets.CORELINK_CANARY_PAT }}
+          API: https://corelink-api.humangr.com
+          TEN: d863fafb-17c3-4ec3-92f6-b5a85c27d7bd   # dogfood cache tenant (non-paying)
+        run: |
+          set -uo pipefail
+          if [ -z "${PAT:-}" ]; then echo "::error::CORELINK_CANARY_PAT not set"; exit 1; fi
+          curl -fsSL https://github.com/BLAKE3-team/BLAKE3/releases/download/1.5.4/b3sum_linux_x64_bin -o /usr/local/bin/b3sum && chmod +x /usr/local/bin/b3sum
+          echo "runner public IP: $(curl -s https://api.ipify.org)"
+          printf 'cas-canary %s-%s' "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" > blob.bin
+          DIGEST=$(b3sum blob.bin | awk '{print $1}')
+
+          echo "== PUT =="
+          put=$(curl -s -o put.out -D put.hdr -w '%{http_code}' -X PUT \
+            -H "Authorization: Bearer $PAT" -H "Content-Type: application/octet-stream" \
+            --data-binary @blob.bin --max-time 20 "$API/v1/cas/$TEN/$DIGEST")
+          echo "PUT http=$put"
+          echo "== GET =="
+          get=$(curl -s -o got.bin -D get.hdr -w '%{http_code}' \
+            -H "Authorization: Bearer $PAT" --max-time 20 "$API/v1/cas/$TEN/$DIGEST")
+          echo "GET http=$get bytes=$(wc -c < got.bin)"
+
+          fail=0
+          case "$put" in 201|409) ;; *) echo "::error::CAS PUT expected 201/409, got $put"; fail=1;; esac
+          [ "$get" = "200" ] || { echo "::error::CAS GET expected 200, got $get"; fail=1; }
+          cmp -s blob.bin got.bin || { echo "::error::CAS round-trip byte mismatch"; fail=1; }
+
+          if [ "$fail" = "1" ]; then
+            echo "== response headers (edge-challenge / rate-limit markers) =="
+            grep -iE 'cf-ray|cf-mitigated|server:|retry-after|cf-cache' put.hdr get.hdr || true
+            if grep -qi 'cf-mitigated: *challenge' put.hdr get.hdr; then
+              echo "::error::Cloudflare CHALLENGE on the cache API — Bot Fight Mode / WAF re-enabled for corelink-api? See docs/operator/edge-security-per-plane-sota.md"
+            fi
+            if [ "$put" = "429" ] || [ "$get" = "429" ]; then
+              echo "::error::429 rate-limited — is corelink-api back in the Wave-32 rate-limit rule scope?"
+            fi
+            exit 1
+          fi
+          echo "✅ CAS datacenter round-trip OK (PUT $put / GET $get / bytes identical)"
