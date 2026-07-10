@@ -30,9 +30,37 @@ use http_body_util::BodyExt;
 use tower::ServiceExt;
 use url::Url;
 
+use wiremock::matchers::{method, path, query_param};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
 use common::{FixedTenant, InMemCas, InMemKv};
 
 const TEST_PAT: &str = "corelink_npm_test";
+
+/// Build adapter state whose upstream client points at `upstream_base`
+/// (a wiremock mock) so the search proxy can be exercised end-to-end
+/// without touching the real registry.
+fn make_state_with_upstream(upstream_base: &str) -> AdapterState {
+    let cas: Arc<dyn corelink_adapter_host::npm::ports::CasStore> = Arc::new(InMemCas::default());
+    let kv: Arc<dyn corelink_adapter_host::npm::ports::KvStore> = Arc::new(InMemKv::default());
+    let resolver = FixedTenant::new(TEST_PAT);
+    let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::default());
+    let base = Url::parse(upstream_base).expect("upstream url");
+    let config = NpmAdapterConfig::new(
+        "127.0.0.1:0".parse().expect("bind"),
+        base.clone(),
+        300,
+        256 * 1024 * 1024,
+        cas,
+        kv,
+        resolver,
+        auditor,
+    );
+    AdapterState::new(
+        Arc::new(config),
+        Arc::new(UpstreamClient::new(base).expect("client")),
+    )
+}
 
 fn make_state() -> AdapterState {
     let cas: Arc<dyn corelink_adapter_host::npm::ports::CasStore> = Arc::new(InMemCas::default());
@@ -75,7 +103,12 @@ async fn ping_returns_200() {
 }
 
 #[tokio::test]
-async fn search_returns_501() {
+async fn search_requires_auth() {
+    // Search is now a real, PAT-gated upstream proxy (no longer a 501 stub).
+    // An UNauthenticated request is rejected at the auth layer (401) BEFORE any
+    // upstream network call — a hermetic proof the endpoint is wired + gated.
+    // The proxy/validation/clamp logic itself is covered by the pure-logic unit
+    // tests in `npm::search` + the SSRF join tests in `npm::upstream`.
     let state = make_state();
     let app = build_router(state);
     let resp = app
@@ -87,7 +120,50 @@ async fn search_returns_501() {
         )
         .await
         .expect("response");
-    assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn authenticated_search_proxies_upstream() {
+    // End-to-end: an authenticated search reaches the SSRF-guarded upstream
+    // proxy, which forwards `text`/`size`/`from` and returns the canonical
+    // `{ objects, total, time }` envelope verbatim to the client.
+    let upstream = MockServer::start().await;
+    let body = serde_json::json!({
+        "objects": [{ "package": { "name": "lodash", "version": "4.17.21" } }],
+        "total": 1,
+        "time": "Wed"
+    });
+    Mock::given(method("GET"))
+        .and(path("/-/v1/search"))
+        .and(query_param("text", "lodash"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .expect(1)
+        .mount(&upstream)
+        .await;
+
+    let state = make_state_with_upstream(&upstream.uri());
+    let app = build_router(state);
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/-/v1/search?text=lodash&size=5")
+                .header(header::AUTHORIZATION, format!("Bearer {TEST_PAT}"))
+                .body(Body::empty())
+                .expect("req"),
+        )
+        .await
+        .expect("response");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("collect")
+        .to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+    assert_eq!(json["objects"][0]["package"]["name"], "lodash");
+    assert_eq!(json["total"], 1);
 }
 
 #[tokio::test]

@@ -113,6 +113,18 @@ Real auth is verified on first export attempt; a failure becomes a
 `corelink.observability.export_failed` audit event but does not break
 CoreLink's request path.
 
+**Container env mapping.** The data-plane container reads this surface
+as environment variables (DO-forwarded from `[env.*.vars]`):
+`CORELINK_OBSERVABILITY_EXPORT_VARIANT=grafana_cloud`,
+`CORELINK_GRAFANA_PROM_REMOTE_WRITE_URL`,
+`CORELINK_GRAFANA_TEMPO_OTLP_URL`, `CORELINK_GRAFANA_INSTANCE_ID`,
+`CORELINK_GRAFANA_API_KEY`. The container constructs the Grafana Cloud
+exporter and emits real request-path metrics/spans through it; the
+Prometheus remote-write + Tempo OTLP **network egress is the remaining
+operator/follow-up step** (deferred-real in `corelink-telemetry`).
+Prefer routing through an [OTel Collector](./forward-to-otel-collector)
+(the fully-wired variant) if you already operate one.
+
 ## Step 4 — Verify the wire
 
 ```bash

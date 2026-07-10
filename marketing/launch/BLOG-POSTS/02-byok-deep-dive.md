@@ -8,7 +8,7 @@
 
 ---
 
-Bring-Your-Own-Key is the most over-claimed term in vendor security. In its weakest form it means "we will allow you to bring an opaque token we still hold the keys to." In its strongest form it means "the vendor's operators cannot read your bytes, the vendor's incident response cannot bypass your revocation, and erasure produces an artifact your auditor can replay." CoreLink ships the strong form across four KMS providers, and this post explains how — and where the seams are.
+Bring-Your-Own-Key is the most over-claimed term in vendor security. In its weakest form it means "we will allow you to bring an opaque token we still hold the keys to." In its strongest form it means "the vendor's operators cannot read your bytes, the vendor's incident response cannot bypass your revocation, and erasure produces an artifact your auditor can replay." CoreLink ships the strong form on AWS KMS today — with GCP, Azure, and Vault providers on the roadmap — and this post explains how, and where the seams are (including the roadmap ones).
 
 ## Why customer-managed keys matter
 
@@ -56,7 +56,7 @@ The kill switch under load is the part we are proudest of. The cache does not sl
 
 ## The four providers
 
-CoreLink supports four KMS backends at GA. Each integration is built around the same envelope-encryption substrate but pinned to provider-specific minimum-privilege bindings and module-validation references.
+CoreLink's BYOK substrate targets four KMS backends around one common envelope-encryption core, each pinned to provider-specific minimum-privilege bindings and module-validation references. **AWS KMS is available at GA; GCP Cloud KMS, Azure Key Vault, and HashiCorp Vault are on the roadmap (rollout in progress — see the provider-status table in the docs).**
 
 | Provider | Module verification | Notes |
 |---|---|---|
@@ -117,7 +117,7 @@ Several things some vendors do, and we explicitly do not:
 
 ## Erasure attestation
 
-When a customer initiates erasure under DSR / DSAR / right-to-erasure, CoreLink produces a signed **Ed25519 erasure attestation** containing:
+When a customer initiates erasure under DSR / DSAR / right-to-erasure, CoreLink performs a verifiable crypto-erasure. A customer-served signed **Ed25519 erasure attestation** — on the near-term roadmap — will contain:
 
 - Tenant identifier and scope of erasure.
 - Audit-chain leaf hashes for the erased objects (so the chain remains verifiable after the underlying bytes are gone).

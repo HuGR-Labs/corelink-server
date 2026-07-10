@@ -157,9 +157,9 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 20px;bor
           <div class="cd">Counts how much content is reused versus newly stored, producing a concrete measure of the savings the system delivers.</div>
           <div class="cs"><span class="sl">Solves</span>Turns the cost-savings story into something measured and provable rather than asserted, and flags when efficiency is slipping.</div>
         </div><div class="cap">
-          <div class="ct">Complete, unskippable audit trail</div>
-          <div class="cd">Records an audit event for every change to stored content and refuses to make the change if the record can&#x27;t be written.</div>
-          <div class="cs"><span class="sl">Solves</span>Guarantees there is no untracked activity in a shared system, which is essential for compliance, due diligence, and detecting suspicious behavior.</div>
+          <div class="ct">Tamper-evident, replayable audit chain</div>
+          <div class="cd">Records billing and usage events into a signed, hash-linked chain that customers and auditors can independently replay to detect tampering or gaps. (The customer activity log is best-effort; the signed chain is the tamper-evident record.)</div>
+          <div class="cs"><span class="sl">Solves</span>Provides a cryptographically verifiable record that can be re-derived from first principles for compliance and due diligence, rather than a log that must be taken on trust.</div>
         </div><div class="cap">
           <div class="ct">Shared commons for public code (planned)</div>
           <div class="cd">Envisions storing widely-used public, open-source dependencies a single time and sharing them safely across all customers while keeping private content isolated.</div>
@@ -473,9 +473,9 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 20px;bor
           <div class="cd">Drives any data-breach notification through a defined, timed, multi-language, fully-logged process aligned to legal reporting clocks.</div>
           <div class="cs"><span class="sl">Solves</span>Turns a high-stakes, deadline-driven breach response from a panicked scramble into a measurable, defensible procedure.</div>
         </div><div class="cap">
-          <div class="ct">Self-service privacy rights portal</div>
-          <div class="cd">Lets customers exercise all of their data rights (access, portability, correction, deletion, restriction, and objection) themselves, with deadlines tracked per jurisdiction.</div>
-          <div class="cs"><span class="sl">Solves</span>Lets a small team meet every statutory rights deadline without hiring dedicated privacy operations staff.</div>
+          <div class="ct">Privacy rights fulfillment (operator-assisted; self-service portal planned)</div>
+          <div class="cd">Handles data-rights requests (access, portability, correction, deletion, restriction, and objection) as an operator-assisted workflow with deadlines tracked per jurisdiction; verifiable erasure is live today. A self-service customer portal is on the roadmap.</div>
+          <div class="cs"><span class="sl">Solves</span>Lets a small team meet every statutory rights deadline — verifiable erasure now, with self-service exercise of the remaining rights on the roadmap.</div>
         </div><div class="cap">
           <div class="ct">Re-authentication for destructive requests</div>
           <div class="cd">Requires a customer to re-verify their identity before any request that would delete or alter their data.</div>
@@ -486,8 +486,8 @@ footer{text-align:center;color:var(--muted);font-size:13px;padding:40px 20px;bor
           <div class="cs"><span class="sl">Solves</span>Delivers the strongest possible non-repudiation story for the most demanding security and partner reviews.</div>
         </div></div>
     </section><section id="s6">
-      <h2>CoreLink Runners (Build Acceleration)</h2>
-      <p class="blurb">CoreLink Runners is an on-demand build-and-test compute service that makes software teams&#x27; build pipelines dramatically faster and cheaper by reusing CoreLink&#x27;s shared cache of already-built components.</p>
+      <h2>CoreLink Runners (Build Acceleration) — planned / post-GA roadmap</h2>
+      <p class="blurb"><strong>Roadmap (post-GA, phase 3 — not yet shipped).</strong> CoreLink Runners will be an on-demand build-and-test compute service that makes software teams&#x27; build pipelines dramatically faster and cheaper by reusing CoreLink&#x27;s shared cache of already-built components. The capabilities below describe the planned design, not shipped functionality.</p>
       <div class="caps"><div class="cap">
           <div class="ct">Speed-and-savings flywheel</div>
           <div class="cd">By reusing work already done and stored in the shared cache, it cuts the time and computing power a typical build needs by roughly five to ten times.</div>

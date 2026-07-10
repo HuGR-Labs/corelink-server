@@ -60,7 +60,7 @@ You are **not** a fit if you need any of the following before GA:
 
 1. **Direct engineering Slack channel** for the duration of the pilot.
 2. **4-hour business-hours response SLO** for any pilot-tagged ticket.
-3. **No surprise data deletion.** If you opt to terminate, you get 14 days to export under tenant-scoped credentials, and we deliver a signed erasure attestation.
+3. **No surprise data deletion.** If you opt to terminate, you get 14 days to export under tenant-scoped credentials, and we perform a verifiable crypto-erasure (a customer-served signed erasure attestation is on the near-term roadmap).
 4. **No use of your data for marketing without written consent.** Logos and quotes only with your prior approval.
 
 ## Apply
@@ -81,7 +81,7 @@ Slots are limited to the **first 10 qualified applicants** (DEBT-027 minimum to 
 | Multi-region replication (4 regions) | yes | yes |
 | REAPI compatibility (Bazel / Buck2) | yes | yes |
 | Generic S3-style API (Docker / Nix / ML) | yes | yes |
-| **BYOK across 4 KMS providers** | **no** | yes |
+| **BYOK (AWS KMS at GA; GCP/Azure/Vault roadmap)** | **no** | yes (AWS KMS) |
 | **SOC 2 Type II report** | **no — gap analysis only** | yes (observation window begins at GA) |
 | **Production-tier SLA contract** | **no — best-effort target SLOs** | yes |
 | **Signed DPA / SCC** | **template only** | yes |

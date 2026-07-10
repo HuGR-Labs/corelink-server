@@ -136,13 +136,13 @@ candidates:
     title: "Durable Object lifecycle (CoreLinkServer)"
     status: "active"
     source_cluster: "planes"
-    seed_from: ["worker/src/durable_object.ts", "worker/src/event_log_do.ts", "worker/src/rollout_controller.ts"]
+    seed_from: ["worker/src/durable_object.ts", "worker/src/event_log_do.ts", "worker/src/rollout_controller.ts", "worker/src/replication_coordinator_do.ts"]
   - id: "planes/container"
     type: "Plane"
     title: "Rust container compute plane"
     status: "active"
     source_cluster: "planes"
-    seed_from: ["crates/corelink-container/src/main.rs", "crates/corelink-container/src/routes.rs", "crates/corelink-container/src/lib.rs", "crates/corelink-container/src/storage/r2_kv.rs"]
+    seed_from: ["crates/corelink-container/src/main.rs", "crates/corelink-container/src/routes.rs", "crates/corelink-container/src/lib.rs", "crates/corelink-container/src/storage/r2_kv.rs", "crates/corelink-container/src/routes/failover.rs", "crates/corelink-container/src/routes/otel_layer.rs"]
   - id: "planes/request-flow"
     type: "Plane"
     title: "Worker -> DO -> Container request flow"
@@ -250,7 +250,7 @@ candidates:
     title: "BYOK envelope encryption at rest"
     status: "active"
     source_cluster: "storage"
-    seed_from: ["crates/corelink-container/src/byok.rs", "crates/corelink-byok", "crates/corelink-container/src/byok_orchestrator.rs", "crates/corelink-container/src/storage/byok_cas.rs"]
+    seed_from: ["crates/corelink-container/src/byok.rs", "crates/corelink-byok", "crates/corelink-container/src/byok_orchestrator.rs", "crates/corelink-container/src/storage/byok_cas.rs", "crates/corelink-container/src/routes/byok_admin.rs"]
   - id: "tenancy/isolation"
     type: "TenancyControl"
     title: "Tenant isolation via idFromName(tenant_id)"
@@ -280,7 +280,7 @@ candidates:
     title: "Tenant governance: rate-limit, customer & user admin"
     status: "active"
     source_cluster: "tenancy"
-    seed_from: ["crates/corelink-container/src/oci_suspend.rs", "crates/corelink-container/src/routes/ratelimit_layer.rs", "crates/corelink-container/src/routes/customer.rs", "crates/corelink-container/src/routes/users.rs", "crates/corelink-container/src/routes/customer_runners.rs", "crates/corelink-container/src/routes/workspaces.rs", "crates/corelink-container/src/usage_meter.rs"]
+    seed_from: ["crates/corelink-container/src/oci_suspend.rs", "crates/corelink-container/src/routes/ratelimit_layer.rs", "crates/corelink-container/src/routes/customer.rs", "crates/corelink-container/src/routes/customer_export.rs", "crates/corelink-container/src/routes/users.rs", "crates/corelink-container/src/routes/customer_runners.rs", "crates/corelink-container/src/routes/workspaces.rs", "crates/corelink-container/src/usage_meter.rs"]
   - id: "flows/cas-write"
     type: "RequestFlow"
     title: "CAS write flow"
@@ -929,7 +929,7 @@ candidates:
     title: "DSR / right-to-erasure pipeline"
     status: "active"
     source_cluster: "docs/compliance"
-    seed_from: ["crates/corelink-container/src/routes/dsr.rs", "crates/corelink-container/src/routes/cas_erase.rs", "crates/corelink-container/src/routes/dsr_anchor.rs", "crates/corelink-dsr", "docs/security/2026-06-23-secreview-gdpr-residency.md", "crates/corelink-container/src/routes/dsr/adapter_d1.rs", "crates/corelink-container/src/routes/dsr/access.rs", "crates/corelink-container/src/email_hash.rs", "crates/corelink-container/src/routes/dsr/adapter_not_applicable.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_cas.rs", "crates/corelink-container/src/routes/dsr/adapter_stripe.rs", "crates/corelink-container/src/routes/dsr/attestation.rs", "crates/corelink-container/src/routes/dsr/audit.rs", "crates/corelink-container/src/routes/dsr/d1util.rs", "crates/corelink-container/src/routes/dsr/ledger.rs", "crates/corelink-container/src/routes/dsr/legitimacy.rs"]
+    seed_from: ["crates/corelink-container/src/routes/dsr.rs", "crates/corelink-container/src/routes/dsr/portal.rs", "crates/corelink-container/src/routes/cas_erase.rs", "crates/corelink-container/src/routes/dsr_anchor.rs", "crates/corelink-dsr", "docs/security/2026-06-23-secreview-gdpr-residency.md", "crates/corelink-container/src/routes/dsr/adapter_d1.rs", "crates/corelink-container/src/routes/dsr/access.rs", "crates/corelink-container/src/email_hash.rs", "crates/corelink-container/src/routes/dsr/adapter_not_applicable.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs", "crates/corelink-container/src/routes/dsr/adapter_r2_cas.rs", "crates/corelink-container/src/routes/dsr/adapter_stripe.rs", "crates/corelink-container/src/routes/dsr/attestation.rs", "crates/corelink-container/src/routes/dsr/audit.rs", "crates/corelink-container/src/routes/dsr/d1util.rs", "crates/corelink-container/src/routes/dsr/ledger.rs", "crates/corelink-container/src/routes/dsr/legitimacy.rs"]
   - id: "compliance/data-residency"
     type: "ComplianceControl"
     title: "Data residency posture"

@@ -58,16 +58,16 @@ if ! command -v curl &>/dev/null; then
 fi
 
 # ─────────────────────────────────────────
-# SHA-256 helper (portable: macOS + Linux)
+# BLAKE3 helper — the native CAS content-addresses by BLAKE3, so the
+# digest in the URL MUST be the blake3 hex (a SHA-256 digest 422s).
 # ─────────────────────────────────────────
-sha256_file() {
+blake3_file() {
   local file="$1"
-  if command -v sha256sum &>/dev/null; then
-    sha256sum "$file" | awk '{print $1}'
-  elif command -v shasum &>/dev/null; then
-    shasum -a 256 "$file" | awk '{print $1}'
+  if command -v b3sum &>/dev/null; then
+    b3sum "$file" | awk '{print $1}'
   else
-    echo "ERROR: neither sha256sum nor shasum found in PATH." >&2
+    echo "ERROR: b3sum not found in PATH. Install it with 'brew install b3sum'" >&2
+    echo "       (macOS) or 'cargo install b3sum' / your distribution's package (Linux)." >&2
     exit 2
   fi
 }
@@ -89,10 +89,10 @@ PAYLOAD_FILE="$(mktemp /tmp/cl-quickstart-XXXXXX.txt)"
 # Unique payload so each run creates a distinct blob
 printf 'hello corelink quickstart — %s\n' "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$PAYLOAD_FILE"
 PAYLOAD_SIZE=$(wc -c < "$PAYLOAD_FILE" | tr -d ' ')
-DIGEST=$(sha256_file "$PAYLOAD_FILE")
+DIGEST=$(blake3_file "$PAYLOAD_FILE")
 
 info "Payload:  $PAYLOAD_FILE ($PAYLOAD_SIZE bytes)"
-info "SHA-256:  $DIGEST"
+info "BLAKE3:   $DIGEST"
 echo ""
 
 # ─────────────────────────────────────────
@@ -153,10 +153,10 @@ pass "GET → 200 OK"
 # ─────────────────────────────────────────
 # Step 4 — byte-exact roundtrip check
 # ─────────────────────────────────────────
-DOWNLOAD_DIGEST=$(sha256_file "$DOWNLOAD_FILE")
+DOWNLOAD_DIGEST=$(blake3_file "$DOWNLOAD_FILE")
 echo ""
 if [[ "$DOWNLOAD_DIGEST" == "$DIGEST" ]]; then
-  pass "Roundtrip — SHA-256 matches: $DIGEST"
+  pass "Roundtrip — BLAKE3 matches: $DIGEST"
 else
   fail "Roundtrip — digest mismatch!"
   info "  uploaded:   $DIGEST"

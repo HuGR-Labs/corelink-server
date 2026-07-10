@@ -14,7 +14,7 @@
 //! |---------------------|------------------------------------------------------------|
 //! | overview            | `tenant` (0023/0031/0056/0057) + `tenant_storage_state` (0008) `SUM(bytes_used)` / `MAX(bytes_quota)` + `tenant_billing` (0055) + `byok_envelope` (0030) existence; `tenant_name` = `tenant_id`; `recent_activity` = newest 8 `customer_audit_events` (0077) via [`D1CustomerHandler::recent_activity`] (BE-3), honestly empty for a new tenant |
 //! | usage               | real `cas_bytes`/`quota_bytes` from `tenant_storage_state` + real `request_count` from `monthly_request_counts` (0071) via [`D1CustomerHandler::monthly_request_count`] (BE-1a); `reads`/`writes` = 0 + `daily` = `[]` (no per-op table) — only the CURRENT period retains bytes, an earlier period honestly reports 0 bytes |
-//! | audit               | `customer_audit_events` (migration 0077): newest-first, tenant-scoped, bounded; rows written best-effort by `keys create` (`pat.created`) + `team invite` (`team.invited`) |
+//! | audit               | `customer_audit_events` (migration 0077): newest-first, tenant-scoped, bounded; rows written UNSKIPPABLE / fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER) by `keys create` (`pat.created`) + `team invite` (`team.invited`) |
 //! | billing             | `tenant_billing` (0055) + `tier_selections` (0039/0062); status map FROZEN (see [`map_billing_status`]); `invoices` = `[]` (no invoice-history surface yet) |
 //! | billing/portal      | `tenant_billing.stripe_customer_id` → Stripe billing-portal session; no customer id → 404 "no billing account" |
 //! | keys list           | `pat` (0037/0054 + WP-2 columns `name`, `revoked_at_ms` — migration 0063, parallel PR); `last_used_at` = `None` (not tracked) |
@@ -687,31 +687,59 @@ impl D1CustomerHandler {
         })
     }
 
-    /// Best-effort write of one customer-facing audit row (migration 0077) —
-    /// the WRITE half of `GET /v1/customer/audit`. Fail-OPEN by design: a failed
-    /// audit insert is logged and SWALLOWED so it can NEVER block the primary
-    /// control-plane op (key create / team invite), and it does NOT mark the
-    /// primary op's SLI as errored. Tenant-scoped + fully parameterised
-    /// (INV-TENANT-ISOLATION). `target` / `detail` MUST be PII-free (e.g. a PAT
-    /// id / invitation id + role, never a raw email — CTRL-PRIV-001).
-    fn insert_audit_event(&self, tenant_id: &str, event_type: &str, actor: &str, target: &str, detail: &str) {
+    /// Write one customer-facing audit row (migration 0077) — the WRITE half of
+    /// `GET /v1/customer/audit`. **Fail-CLOSED / unskippable** (INV-AUDIT-EMIT-
+    /// ATOMIC-WITH-HANDLER): a failed insert propagates as
+    /// [`CustomerHandlerError::AuditFailed`] (→ 503 "audit closed") so the
+    /// customer-visible control-plane audit trail can NEVER be silently skipped.
+    ///
+    /// Callers MUST invoke this BEFORE the primary state mutation (emit-before-
+    /// mutate, the canonical audit-fail-CLOSED ordering the DSR endpoint + the
+    /// audit-chain sink use): if the audit row cannot be persisted the mutation
+    /// never happens, so a committed op is never left without its audit row (and
+    /// the non-idempotent mints/invites are never double-applied by a client that
+    /// retries a committed-then-500 response). The row is wall-clock timestamped,
+    /// tenant-scoped + fully parameterised (INV-TENANT-ISOLATION). `target` /
+    /// `detail` MUST be PII-free (e.g. a PAT id / invitation id + role, never a
+    /// raw email — CTRL-PRIV-001).
+    ///
+    /// # Errors
+    ///
+    /// [`CustomerHandlerError::AuditFailed`] on any D1 transport/decode failure
+    /// (the caller MUST propagate it — never `.ok()`/`let _ =`).
+    fn insert_audit_event(
+        &self,
+        tenant_id: &str,
+        event_type: &str,
+        actor: &str,
+        target: &str,
+        detail: &str,
+    ) -> Result<(), CustomerHandlerError> {
         let ts_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
-        if let Err(e) = self.db.query(
-            "INSERT INTO customer_audit_events \
-             (tenant_id, event_type, actor, target, ts_ms, detail) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            vec![
-                json!(tenant_id),
-                json!(event_type),
-                json!(actor),
-                json!(target),
-                json!(ts_ms),
-                json!(detail),
-            ],
-        ) {
-            // Fail-OPEN: log and continue; the primary op already succeeded.
-            tracing::warn!(error = %e, event_type, "customer_d1: best-effort audit insert failed");
-        }
+        self.db
+            .query(
+                "INSERT INTO customer_audit_events \
+                 (tenant_id, event_type, actor, target, ts_ms, detail) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                vec![
+                    json!(tenant_id),
+                    json!(event_type),
+                    json!(actor),
+                    json!(target),
+                    json!(ts_ms),
+                    json!(detail),
+                ],
+            )
+            .map(|_rows| ())
+            .map_err(|e| {
+                // Fail-CLOSED: mark the op errored + surface AuditFailed so the
+                // caller aborts BEFORE the primary mutation. Never a silent drop.
+                self.emit_sli(true);
+                tracing::error!(error = %e, event_type, "customer_d1: unskippable audit insert failed (fail-CLOSED)");
+                CustomerHandlerError::AuditFailed(format!(
+                    "customer audit row insert failed for {event_type}: {e}"
+                ))
+            })
     }
 
     /// Fetch the tenant row (`tier` / `clerk_user_id` / `byok_status` /
@@ -789,8 +817,8 @@ impl D1CustomerHandler {
 
     /// Newest-first customer activity for the overview snapshot (dashboard-revival
     /// BE-3). Reads the same `customer_audit_events` (0077) surface the audit
-    /// endpoint serves — written best-effort by the control-plane mutations
-    /// (`keys create` → `pat.created`, `team invite` → `team.invited`) — bounded
+    /// endpoint serves — written UNSKIPPABLE / fail-CLOSED by the control-plane
+    /// mutations (`keys create` → `pat.created`, `team invite` → `team.invited`) — bounded
     /// to `limit`, tenant-scoped, newest-first. Fail-CLOSED on transport (never a
     /// fabricated row; an honestly-empty feed stays empty).
     fn recent_activity(
@@ -1230,6 +1258,20 @@ impl CustomerKeysHandler for D1CustomerHandler {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
 
+        // Customer-facing audit row (migration 0077, write half). UNSKIPPABLE /
+        // fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER): emitted BEFORE the pat
+        // INSERT so a self-serve key mint can NEVER commit without its customer-
+        // visible audit row. `target` is the PAT id (no PII, minted above); the
+        // summary names the key + granted scope. A failed insert → 503 and the
+        // key is never created (the non-idempotent mint is not left half-applied).
+        self.insert_audit_event(
+            &req.caller_tenant,
+            "pat.created",
+            &req.principal,
+            &pat.id.to_string(),
+            &format!("Created API key {:?} ({scope})", req.name),
+        )?;
+
         // Durable INSERT. `shown_once_token` (NOT NULL UNIQUE, 0037) is
         // a fresh UUID immediately marked consumed: the dashboard
         // returns the plaintext in THIS response (shown once) and the
@@ -1259,17 +1301,6 @@ impl CustomerKeysHandler for D1CustomerHandler {
             ms_to_iso8601(i64::try_from(now_ms).unwrap_or(i64::MAX)),
             None,
             None,
-        );
-
-        // Customer-facing audit row (migration 0077, write half). Best-effort /
-        // fail-OPEN: never blocks the just-committed mint. `target` is the PAT id
-        // (no PII); the summary names the key + granted scope.
-        self.insert_audit_event(
-            &req.caller_tenant,
-            "pat.created",
-            &req.principal,
-            &pat.id.to_string(),
-            &format!("Created API key {:?} ({scope})", req.name),
         );
 
         self.emit_audit(
@@ -1428,6 +1459,21 @@ impl CustomerTeamHandler for D1CustomerHandler {
         let invitation_id = Uuid::now_v7().to_string();
         let invited_at_ms = i64::try_from(self.clock.now_ms()).unwrap_or(i64::MAX);
 
+        // Customer-facing audit row (migration 0077, write half). UNSKIPPABLE /
+        // fail-CLOSED (INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER): emitted BEFORE the
+        // team_member INSERT so an invite can NEVER commit without its customer-
+        // visible audit row. PII-safe — `target` is the invitation id and the
+        // summary names only the role, NEVER the raw invitee email (CTRL-PRIV-001;
+        // only `email_hash` is persisted below). A failed insert → 503 and no seat
+        // is written.
+        self.insert_audit_event(
+            &req.caller_tenant,
+            "team.invited",
+            &req.principal,
+            &invitation_id,
+            &format!("Invited a team member with role {role}"),
+        )?;
+
         // `joined_at_ms` is left NULL until acceptance flips the seat to `active`.
         self.run(
             "INSERT INTO team_member \
@@ -1442,18 +1488,6 @@ impl CustomerTeamHandler for D1CustomerHandler {
                 json!(invited_at_ms),
             ],
         )?;
-
-        // Customer-facing audit row (migration 0077, write half). Best-effort /
-        // fail-OPEN: never blocks the just-committed invite. PII-safe — `target`
-        // is the invitation id and the summary names only the role, NEVER the raw
-        // invitee email (CTRL-PRIV-001; only `email_hash` is persisted above).
-        self.insert_audit_event(
-            &req.caller_tenant,
-            "team.invited",
-            &req.principal,
-            &invitation_id,
-            &format!("Invited a team member with role {role}"),
-        );
 
         self.emit_audit(
             AuditEventKind::TeamInviteCommitted,
@@ -1563,8 +1597,8 @@ impl CustomerAuditHandler for D1CustomerHandler {
         )?;
 
         // Real customer-facing activity log (migration 0077): newest-first,
-        // tenant-scoped, bounded. Written best-effort by the control-plane
-        // mutations (`create` / `invite`). Fail-CLOSED on transport error
+        // tenant-scoped, bounded. Written UNSKIPPABLE / fail-CLOSED by the
+        // control-plane mutations (`create` / `invite`). Fail-CLOSED on transport error
         // (`self.run`), never degraded to fabricated empty data.
         //
         // Contract: honor the `?from=`/`?kind=` filters (`req.since` /
@@ -1921,6 +1955,325 @@ impl<R: ByokConfigRows> D1ByokConfigReader<R> {
     }
 }
 
+// ─── BYOK config WRITER (activation seam — control-plane authority) ───────────
+//
+// The activation WRITE path over migration 0081, closing the H5 gap: the read
+// model above + the r2_s3 CAS engagement gate are inert until SOMETHING flips a
+// tenant's `tenant_byok_config.state` to `active` AND persists its CMK-wrapped
+// Tcs in `tenant_byok_secret`. This writer is that authority. It is operator-
+// gated at the route boundary (`routes::byok_admin`, mirrors `/v1/admin/*`);
+// nothing tenant-reachable calls it.
+//
+// SECURITY / fail-CLOSED discipline:
+//   * The plaintext Tcs is NEVER handled here — only the CMK-WRAPPED ciphertext
+//     (`tcs_wrapped`), mirroring 0081's INV-BYOK-CRYPTO-SOVEREIGNTY note. No
+//     key material is ever logged (the audit event records tenant + provider +
+//     CMK *identity* + state, never secret bytes).
+//   * Parameterised SQL only; every statement is tenant-scoped by PK
+//     (INV-TENANT-ISOLATION).
+//   * Write ORDER is Tcs-secret FIRST, then flip config→active — so the read
+//     path never observes `state=='active'` pointing at a missing Tcs (the
+//     r2_s3 resolve fails CLOSED on that combination; the ordering keeps the
+//     activation atomic-enough that a crash between the two writes leaves the
+//     tenant NON-active, i.e. plaintext, never a half-active fail-closed brick).
+//   * Invalid activation parameters are rejected BEFORE any D1 write; the
+//     monotonic state machine refuses to re-activate a crypto-shredded tenant.
+
+/// CMK providers accepted for a BYOK activation. A subset of migration 0081's
+/// `cmk_provider` CHECK — `corelink_managed` is excluded because activation
+/// implies a customer-held CMK (the whole point of BYOK).
+const BYOK_ACTIVATION_PROVIDERS: [&str; 4] = ["aws", "gcp", "azure", "vault"];
+
+/// A failure writing the BYOK activation / deactivation state. Fail-CLOSED:
+/// the caller MUST surface any variant as an error — a partial or unvalidated
+/// custody record is never persisted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ByokWriteError {
+    /// Caller-supplied activation parameters are invalid (rejected BEFORE any
+    /// D1 write — never persist a half-valid custody record).
+    Invalid(String),
+    /// The requested transition is not permitted by the monotonic state
+    /// machine (e.g. re-activating a crypto-shredded tenant, or deactivating a
+    /// tenant that was never active).
+    IllegalTransition {
+        /// Current persisted state.
+        from: ByokState,
+        /// Requested target state.
+        to: ByokState,
+    },
+    /// D1 transport / write failure.
+    Transport(String),
+}
+
+impl core::fmt::Display for ByokWriteError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Invalid(e) => write!(f, "byok activation invalid: {e}"),
+            Self::IllegalTransition { from, to } => write!(
+                f,
+                "byok illegal state transition: {} → {}",
+                from.as_str(),
+                to.as_str()
+            ),
+            Self::Transport(e) => write!(f, "byok write transport error: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for ByokWriteError {}
+
+/// The activation parameters that flip a tenant to BYOK `active` with its CMK
+/// identity + CMK-wrapped Tenant Convergence Secret.
+#[derive(Debug, Clone)]
+pub struct ByokActivation {
+    /// Tenant id (PK of both `tenant_byok_config` and `tenant_byok_secret`).
+    pub tenant_id: String,
+    /// Key-custody rung — MUST be `byok` or `hyok` (not `managed`).
+    pub mode: ByokMode,
+    /// Convergent (Mode A) vs random (Mode B).
+    pub crypto_mode: ByokCryptoMode,
+    /// CMK provider — one of [`BYOK_ACTIVATION_PROVIDERS`].
+    pub cmk_provider: String,
+    /// CMK identity: ARN / GCP resource name / Azure URI / Vault path. Public
+    /// key IDENTITY, not secret material.
+    pub cmk_key_id: String,
+    /// CMK region (bound for the latency SLO; optional).
+    pub cmk_region: Option<String>,
+    /// CMK-WRAPPED Tenant Convergence Secret ciphertext. The plaintext Tcs is
+    /// NEVER carried here — only the provider-opaque wrapped bytes.
+    pub tcs_wrapped: Vec<u8>,
+}
+
+impl ByokActivation {
+    /// Validate fail-CLOSED. Rejects `managed` custody, unknown providers,
+    /// empty CMK identity, and an empty wrapped-Tcs BEFORE any D1 write.
+    fn validate(&self) -> Result<(), ByokWriteError> {
+        if self.tenant_id.trim().is_empty() {
+            return Err(ByokWriteError::Invalid("tenant_id is empty".to_owned()));
+        }
+        if !matches!(self.mode, ByokMode::Byok | ByokMode::Hyok) {
+            return Err(ByokWriteError::Invalid(format!(
+                "mode must be byok or hyok for an activation, got {}",
+                self.mode.as_str()
+            )));
+        }
+        if !BYOK_ACTIVATION_PROVIDERS.contains(&self.cmk_provider.as_str()) {
+            return Err(ByokWriteError::Invalid(format!(
+                "cmk_provider must be one of {BYOK_ACTIVATION_PROVIDERS:?}, got {:?}",
+                self.cmk_provider
+            )));
+        }
+        if self.cmk_key_id.trim().is_empty() {
+            return Err(ByokWriteError::Invalid("cmk_key_id is empty".to_owned()));
+        }
+        if self.tcs_wrapped.is_empty() {
+            return Err(ByokWriteError::Invalid(
+                "tcs_wrapped is empty (refusing to activate without a wrapped Tcs)".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Control-plane WRITER for the per-tenant BYOK configuration (migration 0081).
+///
+/// The counterpart of [`D1ByokConfigReader`] — the sole authority that flips a
+/// tenant to BYOK `active` (engaging the r2_s3 encryption gate) and the
+/// crypto-shred kill switch that flips it back off. Generic over the same
+/// [`ByokConfigRows`] async seam so unit tests drive it hermetically.
+#[derive(Debug)]
+pub struct D1ByokConfigWriter<R = D1HttpClient> {
+    /// Async row source (production: [`D1HttpClient`]). `query_rows` carries
+    /// both reads and writes (a write returns an empty result set).
+    rows: Arc<R>,
+}
+
+impl<R: ByokConfigRows> D1ByokConfigWriter<R> {
+    /// Wire the writer over an async row source.
+    #[must_use]
+    pub fn new(rows: Arc<R>) -> Self {
+        Self { rows }
+    }
+
+    /// Read the tenant's current `state` (fail-CLOSED on an unparseable value).
+    /// `Ok(None)` ⇒ no config row yet.
+    async fn current_state(&self, tenant_id: &str) -> Result<Option<ByokState>, ByokWriteError> {
+        let rows = self
+            .rows
+            .query_rows(
+                "SELECT state FROM tenant_byok_config WHERE tenant_id = ?1 LIMIT 1",
+                vec![json!(tenant_id)],
+            )
+            .await
+            .map_err(ByokWriteError::Transport)?;
+        match rows.first() {
+            None => Ok(None),
+            Some(row) => {
+                let s = col_opt_str(row, "state")
+                    .ok_or_else(|| {
+                        ByokWriteError::Transport("tenant_byok_config.state missing".to_owned())
+                    })?
+                    .parse::<ByokState>()
+                    .map_err(|e| ByokWriteError::Transport(e.to_string()))?;
+                Ok(Some(s))
+            }
+        }
+    }
+
+    /// Flip a tenant to BYOK `active` with its CMK identity + wrapped Tcs.
+    ///
+    /// Idempotent + safe to call on an already-active tenant (a re-activation
+    /// re-wraps the Tcs and bumps `tcs_version`). Refuses to re-activate a
+    /// crypto-shredded tenant (the monotonic terminal state).
+    ///
+    /// # Errors
+    ///
+    /// - [`ByokWriteError::Invalid`] when the parameters fail validation.
+    /// - [`ByokWriteError::IllegalTransition`] when the tenant is `shredded`.
+    /// - [`ByokWriteError::Transport`] on any D1 write failure.
+    pub async fn activate(
+        &self,
+        act: &ByokActivation,
+        now_ms: i64,
+    ) -> Result<(), ByokWriteError> {
+        act.validate()?;
+        // Monotonic guard: crypto-shred is terminal — a shredded tenant's
+        // ciphertext is unrecoverable, so re-activation would be a lie.
+        if let Some(ByokState::Shredded) = self.current_state(&act.tenant_id).await? {
+            return Err(ByokWriteError::IllegalTransition {
+                from: ByokState::Shredded,
+                to: ByokState::Active,
+            });
+        }
+
+        // BLOB over D1-HTTP: the wrapped Tcs is written as a base64 STRING; the
+        // read seam (`storage::byok_cas::decode_blob`) accepts both a base64
+        // string and a byte-array, so this round-trips to the exact bytes.
+        let tcs_b64 = {
+            use base64::Engine as _;
+            base64::engine::general_purpose::STANDARD.encode(&act.tcs_wrapped)
+        };
+
+        // 1) Persist the wrapped Tcs FIRST (so an active config never dangles
+        //    over a missing secret). UPSERT: a re-activation bumps tcs_version.
+        self.rows
+            .query_rows(
+                "INSERT INTO tenant_byok_secret \
+                   (tenant_id, tcs_wrapped, cmk_key_id, tcs_version, wrapped_at_ms) \
+                 VALUES (?1, ?2, ?3, 1, ?4) \
+                 ON CONFLICT(tenant_id) DO UPDATE SET \
+                   tcs_wrapped   = excluded.tcs_wrapped, \
+                   cmk_key_id    = excluded.cmk_key_id, \
+                   tcs_version   = tenant_byok_secret.tcs_version + 1, \
+                   wrapped_at_ms = excluded.wrapped_at_ms",
+                vec![
+                    json!(act.tenant_id),
+                    json!(tcs_b64),
+                    json!(act.cmk_key_id),
+                    json!(now_ms),
+                ],
+            )
+            .await
+            .map_err(ByokWriteError::Transport)?;
+
+        // 2) Flip the config row to `active`. UPSERT preserves created_at_ms on
+        //    conflict (only set on first insert).
+        self.rows
+            .query_rows(
+                "INSERT INTO tenant_byok_config \
+                   (tenant_id, mode, crypto_mode, cmk_provider, cmk_key_id, \
+                    cmk_region, state, created_at_ms, updated_at_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'active', ?7, ?7) \
+                 ON CONFLICT(tenant_id) DO UPDATE SET \
+                   mode          = excluded.mode, \
+                   crypto_mode   = excluded.crypto_mode, \
+                   cmk_provider  = excluded.cmk_provider, \
+                   cmk_key_id    = excluded.cmk_key_id, \
+                   cmk_region    = excluded.cmk_region, \
+                   state         = 'active', \
+                   updated_at_ms = excluded.updated_at_ms",
+                vec![
+                    json!(act.tenant_id),
+                    json!(act.mode.as_str()),
+                    json!(act.crypto_mode.as_str()),
+                    json!(act.cmk_provider),
+                    json!(act.cmk_key_id),
+                    json!(act.cmk_region),
+                    json!(now_ms),
+                ],
+            )
+            .await
+            .map_err(ByokWriteError::Transport)?;
+
+        // Audit: identity + provider + state only — NEVER key/secret material.
+        tracing::info!(
+            target: "corelink.byok.activation.audit",
+            audit = true,
+            op = "activate",
+            tenant = %act.tenant_id,
+            provider = %act.cmk_provider,
+            cmk_key_id = %act.cmk_key_id,
+            crypto_mode = act.crypto_mode.as_str(),
+            state = "active",
+            "BYOK activation: tenant flipped to active"
+        );
+        Ok(())
+    }
+
+    /// Crypto-shred KILL SWITCH — flip an active/partial tenant to `shredded`.
+    ///
+    /// The deliberate control-plane complement of the always-on CMK-revocation
+    /// detector (`corelink_byok::revocation`): an operator (or a downstream
+    /// erasure flow) can hard-stop BYOK for a tenant. Monotonic + idempotent:
+    /// `shredded` is terminal (a second call is a no-op `Ok`); a tenant that
+    /// was never active has nothing to shred and is rejected fail-CLOSED.
+    ///
+    /// # Errors
+    ///
+    /// - [`ByokWriteError::IllegalTransition`] when the tenant is not
+    ///   active/partial/shredded (i.e. no active BYOK config to kill).
+    /// - [`ByokWriteError::Transport`] on any D1 read/write failure.
+    pub async fn deactivate(
+        &self,
+        tenant_id: &str,
+        now_ms: i64,
+    ) -> Result<(), ByokWriteError> {
+        match self.current_state(tenant_id).await? {
+            // Nothing active to kill — refuse rather than write a spurious
+            // shredded record over a fresh/managed tenant.
+            None | Some(ByokState::Inactive) | Some(ByokState::Pending) => {
+                return Err(ByokWriteError::IllegalTransition {
+                    from: ByokState::Inactive,
+                    to: ByokState::Shredded,
+                })
+            }
+            // Already shredded — idempotent success.
+            Some(ByokState::Shredded) => return Ok(()),
+            Some(ByokState::Active | ByokState::Partial) => {}
+        }
+
+        self.rows
+            .query_rows(
+                "UPDATE tenant_byok_config \
+                 SET state = 'shredded', updated_at_ms = ?1 \
+                 WHERE tenant_id = ?2 AND state IN ('active', 'partial')",
+                vec![json!(now_ms), json!(tenant_id)],
+            )
+            .await
+            .map_err(ByokWriteError::Transport)?;
+
+        tracing::warn!(
+            target: "corelink.byok.activation.audit",
+            audit = true,
+            op = "deactivate",
+            tenant = %tenant_id,
+            state = "shredded",
+            "BYOK kill switch: tenant crypto-shredded (state → shredded)"
+        );
+        Ok(())
+    }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1954,6 +2307,11 @@ mod tests {
         canned: Vec<(&'static str, Vec<D1Row>)>,
         calls: Mutex<Vec<(String, Vec<Value>)>>,
         fail: bool,
+        /// When `Some(fragment)`, ONLY the queries whose SQL contains
+        /// `fragment` fail (every other query behaves normally). Lets a test
+        /// fault a specific statement — e.g. the `customer_audit_events`
+        /// insert — to prove the audit-fail-CLOSED / emit-before-mutate ordering.
+        fail_on: Option<&'static str>,
     }
 
     impl MockD1 {
@@ -1962,6 +2320,7 @@ mod tests {
                 canned,
                 calls: Mutex::new(Vec::new()),
                 fail: false,
+                fail_on: None,
             }
         }
 
@@ -1969,6 +2328,16 @@ mod tests {
             Self {
                 fail: true,
                 ..Self::default()
+            }
+        }
+
+        /// A mock that faults ONLY on queries whose SQL contains `fragment`.
+        fn failing_on(fragment: &'static str, canned: Vec<(&'static str, Vec<D1Row>)>) -> Self {
+            Self {
+                canned,
+                calls: Mutex::new(Vec::new()),
+                fail: false,
+                fail_on: Some(fragment),
             }
         }
 
@@ -1982,6 +2351,11 @@ mod tests {
             self.calls.lock().unwrap().push((sql.to_owned(), binds));
             if self.fail {
                 return Err("D1 HTTP 500: transport down".to_owned());
+            }
+            if let Some(fragment) = self.fail_on {
+                if sql.contains(fragment) {
+                    return Err(format!("D1 HTTP 500: induced failure on {fragment}"));
+                }
             }
             for (fragment, rows) in &self.canned {
                 if sql.contains(fragment) {
@@ -2860,6 +3234,78 @@ mod tests {
         );
     }
 
+    /// Item-4 fail-CLOSED: when the UNSKIPPABLE `customer_audit_events` insert
+    /// faults, `create` MUST surface `AuditFailed` (→ 503) AND must NOT have run
+    /// the `INSERT INTO pat` mutation (emit-before-mutate: the key is never
+    /// minted without its customer-visible audit row). This is the marketing
+    /// "unskippable audit trail" made true for the key-create control-plane op.
+    #[test]
+    fn keys_create_fails_closed_when_customer_audit_insert_faults() {
+        let f = fixture_with(
+            MockD1::failing_on(
+                "customer_audit_events",
+                vec![("FROM tenant WHERE", vec![tenant_row_fixture()])],
+            ),
+            None,
+        );
+        let err = f
+            .handler
+            .create(KeyCreateRequest::new(
+                TENANT,
+                "clpat_x",
+                "deploy-key",
+                vec!["cache:read".to_owned()],
+                0,
+            ))
+            .expect_err("audit-insert fault must fail the create CLOSED");
+        assert!(
+            matches!(err, CustomerHandlerError::AuditFailed(_)),
+            "expected AuditFailed, got {err:?}"
+        );
+        // Emit-before-mutate: the pat INSERT must NEVER have run.
+        let calls = f.db.calls();
+        assert!(
+            !calls.iter().any(|(sql, _)| sql.contains("INSERT INTO pat")),
+            "the pat mint must not commit when the unskippable audit row fails"
+        );
+        // The audit row WAS attempted (proving it is on the fail-CLOSED path).
+        assert!(
+            calls
+                .iter()
+                .any(|(sql, _)| sql.contains("customer_audit_events")),
+            "the customer audit insert must be attempted before the mutation"
+        );
+    }
+
+    /// Item-4 fail-CLOSED sibling for team invite: an audit-insert fault must
+    /// surface `AuditFailed` and leave NO `team_member` seat behind.
+    #[test]
+    fn team_invite_fails_closed_when_customer_audit_insert_faults() {
+        let _env = crate::email_hash::EnvGuard::acquire();
+        let f = fixture_with(MockD1::failing_on("customer_audit_events", vec![]), None);
+        let err = f
+            .handler
+            .invite(TeamInviteRequest::new(
+                TENANT,
+                "clpat_x",
+                "Alice@Example.com",
+                "Developer",
+                0,
+            ))
+            .expect_err("audit-insert fault must fail the invite CLOSED");
+        assert!(
+            matches!(err, CustomerHandlerError::AuditFailed(_)),
+            "expected AuditFailed, got {err:?}"
+        );
+        let calls = f.db.calls();
+        assert!(
+            !calls
+                .iter()
+                .any(|(sql, _)| sql.contains("INSERT INTO team_member")),
+            "no seat may be written when the unskippable audit row fails"
+        );
+    }
+
     #[test]
     fn keys_create_read_only_scope_for_cache_read() {
         let f = fixture_with(MockD1::with(vec![]), None);
@@ -3648,6 +4094,289 @@ mod tests {
         assert!(matches!(
             reader.get_byok_config(TENANT).await,
             Err(ByokConfigError::Transport(_))
+        ));
+    }
+
+    // ── BYOK config WRITER (activation seam) ───────────────────────────────────
+
+    /// A STATEFUL hermetic mock of the two 0081 tables over the async
+    /// [`ByokConfigRows`] seam. It interprets the exact SQL the writer + readers
+    /// emit so a WRITE is observable by a later READ (proving read-after-write).
+    #[derive(Debug, Default)]
+    struct StatefulByokDb {
+        config: Mutex<std::collections::HashMap<String, D1Row>>,
+        secret: Mutex<std::collections::HashMap<String, D1Row>>,
+        fail: Option<String>,
+    }
+
+    impl StatefulByokDb {
+        fn tenant_of(binds: &[Value], idx: usize) -> String {
+            binds
+                .get(idx)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        }
+    }
+
+    impl ByokConfigRows for StatefulByokDb {
+        async fn query_rows(
+            &self,
+            sql: &str,
+            binds: Vec<Value>,
+        ) -> Result<Vec<D1Row>, String> {
+            if let Some(e) = &self.fail {
+                return Err(e.clone());
+            }
+            if sql.contains("INSERT INTO tenant_byok_secret") {
+                let tenant = Self::tenant_of(&binds, 0);
+                self.secret.lock().unwrap().insert(
+                    tenant.clone(),
+                    row(&[
+                        ("tenant_id", json!(tenant)),
+                        ("tcs_wrapped", binds[1].clone()),
+                        ("cmk_key_id", binds[2].clone()),
+                        ("tcs_version", json!(1)),
+                    ]),
+                );
+                return Ok(Vec::new());
+            }
+            if sql.contains("INSERT INTO tenant_byok_config") {
+                let tenant = Self::tenant_of(&binds, 0);
+                self.config.lock().unwrap().insert(
+                    tenant.clone(),
+                    row(&[
+                        ("tenant_id", json!(tenant)),
+                        ("mode", binds[1].clone()),
+                        ("crypto_mode", binds[2].clone()),
+                        ("cmk_provider", binds[3].clone()),
+                        ("cmk_key_id", binds[4].clone()),
+                        ("cmk_region", binds[5].clone()),
+                        ("state", json!("active")),
+                    ]),
+                );
+                return Ok(Vec::new());
+            }
+            if sql.contains("UPDATE tenant_byok_config") {
+                // deactivate: binds = [now_ms, tenant]
+                let tenant = Self::tenant_of(&binds, 1);
+                if let Some(r) = self.config.lock().unwrap().get_mut(&tenant) {
+                    r.insert("state".to_owned(), json!("shredded"));
+                }
+                return Ok(Vec::new());
+            }
+            if sql.contains("FROM tenant_byok_secret") {
+                let tenant = Self::tenant_of(&binds, 0);
+                return Ok(self
+                    .secret
+                    .lock()
+                    .unwrap()
+                    .get(&tenant)
+                    .cloned()
+                    .into_iter()
+                    .collect());
+            }
+            if sql.contains("FROM tenant_byok_config") {
+                let tenant = Self::tenant_of(&binds, 0);
+                return Ok(self
+                    .config
+                    .lock()
+                    .unwrap()
+                    .get(&tenant)
+                    .cloned()
+                    .into_iter()
+                    .collect());
+            }
+            Ok(Vec::new())
+        }
+    }
+
+    const NOW_ACT_MS: i64 = 1_700_000_000_000;
+
+    fn activation_fixture() -> ByokActivation {
+        ByokActivation {
+            tenant_id: TENANT.to_owned(),
+            mode: ByokMode::Byok,
+            crypto_mode: ByokCryptoMode::Convergent,
+            cmk_provider: "aws".to_owned(),
+            cmk_key_id: "arn:aws:kms:us-east-1:1:key/abc".to_owned(),
+            cmk_region: Some("us-east-1".to_owned()),
+            tcs_wrapped: vec![0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03],
+        }
+    }
+
+    /// Read-after-write: activate() flips the tenant to `active`, and a
+    /// subsequent read observes encryption ENGAGED (engagement_for → Encrypt)
+    /// with the wrapped Tcs round-tripping to the exact bytes.
+    #[tokio::test]
+    async fn activate_then_read_engages_encryption() {
+        use crate::storage::byok_cas::{engagement_for, ByokEngagement, ByokSecretSource,
+            D1ByokSecretReader};
+
+        let db = Arc::new(StatefulByokDb::default());
+        let writer = D1ByokConfigWriter::new(db.clone());
+        let reader = D1ByokConfigReader::new(db.clone());
+
+        let act = activation_fixture();
+        writer.activate(&act, NOW_ACT_MS).await.expect("activate");
+
+        // Config read observes the active state → encryption engaged.
+        let cfg = reader
+            .get_byok_config(TENANT)
+            .await
+            .expect("read")
+            .expect("row present after activation");
+        assert_eq!(cfg.state, ByokState::Active);
+        assert_eq!(cfg.mode, ByokMode::Byok);
+        assert_eq!(cfg.crypto_mode, ByokCryptoMode::Convergent);
+        assert_eq!(cfg.cmk_provider.as_deref(), Some("aws"));
+        assert!(is_encryption_active(&cfg));
+        assert!(
+            matches!(
+                engagement_for(&cfg),
+                ByokEngagement::Encrypt(ByokCryptoMode::Convergent)
+            ),
+            "an active tenant must ENGAGE convergent encryption on the CAS path"
+        );
+
+        // The wrapped Tcs round-trips through the base64 BLOB encoding to the
+        // EXACT bytes the caller supplied — so the Tcs is resolvable (a missing
+        // Tcs under an active state would fail CLOSED on the read path).
+        let secret_reader = D1ByokSecretReader::new(db.clone());
+        let wrapped = secret_reader
+            .get_wrapped_tcs(TENANT)
+            .await
+            .expect("secret read")
+            .expect("wrapped Tcs present after activation");
+        assert_eq!(wrapped.tcs_wrapped, act.tcs_wrapped);
+        assert_eq!(
+            wrapped.cmk_key_id.as_deref(),
+            Some("arn:aws:kms:us-east-1:1:key/abc")
+        );
+    }
+
+    /// Kill switch: deactivate() flips active → shredded, and a subsequent read
+    /// observes encryption DISENGAGED (engagement_for → Plaintext,
+    /// is_encryption_active false).
+    #[tokio::test]
+    async fn deactivate_kill_switch_disengages_encryption() {
+        use crate::storage::byok_cas::{engagement_for, ByokEngagement};
+
+        let db = Arc::new(StatefulByokDb::default());
+        let writer = D1ByokConfigWriter::new(db.clone());
+        let reader = D1ByokConfigReader::new(db.clone());
+
+        writer
+            .activate(&activation_fixture(), NOW_ACT_MS)
+            .await
+            .expect("activate");
+        writer
+            .deactivate(TENANT, NOW_ACT_MS + 1)
+            .await
+            .expect("deactivate");
+
+        let cfg = reader
+            .get_byok_config(TENANT)
+            .await
+            .expect("read")
+            .expect("row still present");
+        assert_eq!(cfg.state, ByokState::Shredded);
+        assert!(!is_encryption_active(&cfg));
+        assert!(matches!(engagement_for(&cfg), ByokEngagement::Plaintext));
+
+        // Idempotent: a second kill switch on an already-shredded tenant is Ok.
+        writer
+            .deactivate(TENANT, NOW_ACT_MS + 2)
+            .await
+            .expect("idempotent shred");
+    }
+
+    /// Re-activating a crypto-shredded tenant is refused (monotonic terminal).
+    #[tokio::test]
+    async fn activate_refuses_reactivation_of_shredded() {
+        let db = Arc::new(StatefulByokDb::default());
+        let writer = D1ByokConfigWriter::new(db.clone());
+        writer
+            .activate(&activation_fixture(), NOW_ACT_MS)
+            .await
+            .expect("activate");
+        writer.deactivate(TENANT, NOW_ACT_MS + 1).await.expect("shred");
+        let err = writer
+            .activate(&activation_fixture(), NOW_ACT_MS + 2)
+            .await
+            .expect_err("re-activation of a shredded tenant must fail");
+        assert!(matches!(
+            err,
+            ByokWriteError::IllegalTransition {
+                from: ByokState::Shredded,
+                to: ByokState::Active
+            }
+        ));
+    }
+
+    /// Deactivating a tenant that was never active is refused fail-CLOSED.
+    #[tokio::test]
+    async fn deactivate_fresh_tenant_is_illegal() {
+        let db = Arc::new(StatefulByokDb::default());
+        let writer = D1ByokConfigWriter::new(db);
+        let err = writer
+            .deactivate(TENANT, NOW_ACT_MS)
+            .await
+            .expect_err("nothing to shred");
+        assert!(matches!(err, ByokWriteError::IllegalTransition { .. }));
+    }
+
+    /// Validation fail-CLOSED: managed custody, unknown provider, empty CMK
+    /// identity, and an empty wrapped-Tcs are all rejected BEFORE any D1 write.
+    #[tokio::test]
+    async fn activate_validation_rejects_bad_params() {
+        let db = Arc::new(StatefulByokDb::default());
+        let writer = D1ByokConfigWriter::new(db.clone());
+
+        let mut managed = activation_fixture();
+        managed.mode = ByokMode::Managed;
+        assert!(matches!(
+            writer.activate(&managed, NOW_ACT_MS).await,
+            Err(ByokWriteError::Invalid(_))
+        ));
+
+        let mut bad_provider = activation_fixture();
+        bad_provider.cmk_provider = "corelink_managed".to_owned();
+        assert!(matches!(
+            writer.activate(&bad_provider, NOW_ACT_MS).await,
+            Err(ByokWriteError::Invalid(_))
+        ));
+
+        let mut empty_key = activation_fixture();
+        empty_key.cmk_key_id = "  ".to_owned();
+        assert!(matches!(
+            writer.activate(&empty_key, NOW_ACT_MS).await,
+            Err(ByokWriteError::Invalid(_))
+        ));
+
+        let mut empty_tcs = activation_fixture();
+        empty_tcs.tcs_wrapped = Vec::new();
+        assert!(matches!(
+            writer.activate(&empty_tcs, NOW_ACT_MS).await,
+            Err(ByokWriteError::Invalid(_))
+        ));
+
+        // Nothing was persisted — a rejected activation is invisible to a read.
+        assert!(db.config.lock().unwrap().is_empty());
+        assert!(db.secret.lock().unwrap().is_empty());
+    }
+
+    /// A D1 transport failure surfaces as `Transport`, never a silent success.
+    #[tokio::test]
+    async fn activate_fails_closed_on_transport_error() {
+        let db = Arc::new(StatefulByokDb {
+            fail: Some("D1 HTTP 500: transport down".to_owned()),
+            ..StatefulByokDb::default()
+        });
+        let writer = D1ByokConfigWriter::new(db);
+        assert!(matches!(
+            writer.activate(&activation_fixture(), NOW_ACT_MS).await,
+            Err(ByokWriteError::Transport(_))
         ));
     }
 }

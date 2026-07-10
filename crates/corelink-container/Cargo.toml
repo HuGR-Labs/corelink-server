@@ -201,6 +201,12 @@ url = "2"
 # `apps/server::routes::customer` (`/v1/customer/*` endpoints).
 corelink-handler-customer = { workspace = true }
 
+# DSR self-service intake half — the `/v1/privacy/dsr/*` customer portal
+# (`routes/dsr/portal.rs`) reuses the canonical DSR taxonomy + the legally
+# load-bearing per-jurisdiction SLA (`sla_for`, calendar-month GDPR) as the
+# single source of truth rather than re-deriving it in the container.
+corelink-dsr = { workspace = true }
+
 # Wave-15.3 — customer-facing `GET /v1/audit/export` route
 # (WI-S09-008 wiring). The route ships in
 # `apps/server/src/routes/audit_export.rs`; the trait-object surface
@@ -235,7 +241,7 @@ base64 = { workspace = true }
 # (InMemoryAuditEmitter) when mounting `/cargo/*` (see `routes/cargo.rs`).
 corelink-audit = { workspace = true }
 subtle = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v5"] }
 
 # Wave-29 stream-1 — pilot signup HMAC-SHA256 token verify (route
 # `apps/server/src/routes/signup.rs`). Promoted from dev-deps so the
@@ -270,6 +276,22 @@ corelink-analytics = { workspace = true }
 # `validate_billing_period` for the `YYYY-MM` shape so the ingest endpoint
 # never reinvents the billing-emit surface contract.
 corelink-billing-emit = { workspace = true }
+# OTel-export seam (`routes/otel_layer.rs`) — the container constructs the
+# configured `MetricsExporter` (OtelCollector / Datadog / GrafanaCloud) from the
+# `[observability.export.*]` env surface and streams a canonical `MetricPoint` +
+# `TraceSpan` per data-plane request through the crate's fail-OPEN boundary.
+# Previously the container's telemetry was `tracing_subscriber::fmt()` stdout
+# only — the OTel exporters (already library-complete + tested in this crate)
+# were never constructed. The exporters' real OTLP/HTTP egress is a documented
+# deferred-real follow-up in `corelink-telemetry`; the operator supplies the
+# collector endpoint (see `routes/otel_layer.rs` module docs).
+corelink-telemetry = { workspace = true }
+# WI-MULTI-REGION-V1 (failover prod-wiring) — the read-side failover router +
+# `HealthProbe` trait consumed by the container's `routes::failover` Tower
+# layer. The container drives the crate's `FailoverRouter` decision core with a
+# REAL rolling-metrics probe over live traffic (not the crate's InMemory probe
+# fixture), fail-CLOSED blocking writes to a degraded region.
+corelink-failover-router = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }

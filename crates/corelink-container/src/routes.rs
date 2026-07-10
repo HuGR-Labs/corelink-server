@@ -53,6 +53,14 @@ pub mod admin_tenant_detail;
 /// `pilot-24h-checkin.sh`) with proper endpoints + audit-emit
 /// fail-CLOSED ordering + 5-Layer Defense scope gating.
 pub mod admin_pilot;
+/// Operator-gated BYOK **activation** control plane
+/// (`POST /v1/admin/byok/{activate,deactivate}`): the WRITE authority that flips
+/// a tenant's `tenant_byok_config.state` to `active` (engaging the r2_s3
+/// at-rest encryption gate) + persists its CMK-wrapped Tcs, plus the crypto-shred
+/// kill switch. Internal-auth gated exactly like `admin`. Closes the H5 gap
+/// left by migration 0081 (the read model + engagement gate were inert with no
+/// writer).
+pub mod byok_admin;
 /// Customer-facing audit-analytics routes (Wave-18 wiring of the
 /// Neon analytics shadow sync): `GET /v1/audit/analytics/event-count`
 /// + `GET /v1/audit/analytics/timeline` over the per-tenant
@@ -129,6 +137,11 @@ pub mod cas_erase;
 /// forwards these paths to the container; this module is the final link
 /// that makes them return real responses instead of 404.
 pub mod customer;
+/// Customer self-serve tenant bulk export (SEAM): `POST /v1/customer/account/export`
+/// streams the full portability bundle (CAS+AC blob bytes + RBAC/DPA/audit records)
+/// the CLI `corelink tenant export` needs. Owns the `TenantExportSource` seam +
+/// the streaming NDJSON assembler; the handler lives in `customer`.
+pub mod customer_export;
 /// Customer Runners read surface (BE-10): tenant-scoped entitlement/allowlist/runs.
 pub mod customer_runners;
 /// Customer Workspaces surface (BE-11): tenant-scoped snapshot CRUD + pin.
@@ -183,6 +196,16 @@ pub mod public_attestation;
 /// landing an EU tenant's bytes in a US container. Disjoint from cas.rs/ac.rs
 /// (no handler-body edits); wired as one `.layer(...)` line in [`build_with_factory`].
 pub mod residency;
+/// Read-side FAILOVER Tower layer + a REAL `HealthProbe` (WI-MULTI-REGION-V1
+/// prod-wiring). A router `layer` — mirror of `residency_guard` — that drives
+/// `corelink-failover-router`'s decision core with a live-traffic
+/// [`failover::RollingMetricsHealthProbe`]. When THIS container's region is
+/// degraded (sustained multi-signal outage) it fail-CLOSED blocks writes (503
+/// `failover_readonly`) and stamps a sibling read-region hint header so the edge
+/// Worker re-routes reads. Inert (pass-through) in a healthy region, in dev/CI,
+/// and on APAC colos with no sibling in the 4-macro graph. Wired as one
+/// `.layer(...)` line in [`build_with_factory`].
+pub mod failover;
 /// Per-tenant request-rate token-bucket middleware (audit #14/#16). A router
 /// `layer` wrapping the already-built `corelink-ratelimit` engine: it charges
 /// one token per request against the DO-injected `x-corelink-tenant-id`
@@ -437,6 +460,11 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     }
 
     let (cas_read_raw, cas_write_raw, cas_delete_raw, cas_list) = cas::build_handlers();
+    // Tenant bulk-export (SEAM): the export source reads blobs through the SAME
+    // CAS read/list handlers (one R2 connection, no forked store) — capture the
+    // `Arc`s BEFORE they are moved into `cas_state` / the Bazel bridge below.
+    let export_cas_read = cas_read_raw.clone();
+    let export_cas_list = cas_list.clone();
     // Storage byte accounting (red-team #1 / cluster B+C): wrap the CAS write +
     // delete trait objects in the reserve→commit→release decorator at the SINGLE
     // chokepoint every CAS write surface flows through (native CAS, Bazel REAPI,
@@ -529,6 +557,11 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         usage_meter: usage_meter.clone(),
     };
     let (ac_lookup, ac_update_raw, ac_delete_raw, ac_list) = ac::build_handlers();
+    // Tenant bulk-export (SEAM): reuse the SAME AC lookup/list handlers for the
+    // AC half of the bundle — capture BEFORE they are moved into `ac_state` /
+    // the Bazel bridge.
+    let export_ac_lookup = ac_lookup.clone();
+    let export_ac_list = ac_list.clone();
     // Storage byte accounting (cluster B+C) for the AC plane: same decorator
     // chokepoint over the AC update + delete trait objects, shared with the
     // Bazel REAPI AC write surface. `None` (dev/CI) ⇒ raw handlers pass through.
@@ -622,6 +655,9 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         wall_clock: crate::wall_clock::default_wall_clock(),
         internal_auth_key: admin_internal_auth_key,
     };
+    // BYOK activation control plane (operator-gated, same secret as `/v1/admin/*`).
+    // Writer is `None` in dev/CI (no D1 creds) → routes fail CLOSED (503).
+    let byok_admin_state = byok_admin::ByokAdminRouteState::from_env();
     let mut audit_export_state = audit_export::build_state();
     // Native PAT possession backstop (rt-nuclear #17): the audit-export +
     // analytics surfaces were UN-gated, so a leaked PAT_SIGNING_KEY could forge a
@@ -646,6 +682,24 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // `POST /v1/customer/account/delete` route fails CLOSED (503). Mirrors the
     // `pat_gate` wiring above (a cross-module collaborator composed at the root).
     customer_state.account_deletion = customer::account_deletion_from_env();
+    // Tenant bulk-export (SEAM): wire the portability-bundle source over the SAME
+    // CAS/AC read+list handlers (blob bytes) + a D1 row source (RBAC/DPA/audit).
+    // Env-gated: `None` in dev/CI (no D1) → `POST /v1/customer/account/export`
+    // fails CLOSED (503). Mirrors the `account_deletion` wiring above.
+    customer_state.export = customer_export::from_handlers_and_env(
+        export_cas_read,
+        export_cas_list,
+        export_ac_lookup,
+        export_ac_list,
+    );
+    // Customer-facing DSR self-service portal (`/v1/privacy/dsr/*`): the intake
+    // surface the admin-ui `dsr-client.ts` posts to. It DRIVES the live Wave-1
+    // DSR pipeline (access/portability/rectification + the erasure worker) and
+    // persists a tenant-scoped ticket store (D1). Env-gated: the data rights
+    // fail CLOSED (503) until storage is configured. Wire the SAME native-PAT
+    // possession backstop the customer plane carries.
+    let mut privacy_dsr_state = dsr::portal::build_state_from_env();
+    privacy_dsr_state.pat_gate = native_pat_gate.clone();
     // Customer Runners (BE-10) + Workspaces (BE-11): tenant-scoped, own-tenant
     // only (tenant derived from the session header, never a client param). Wire
     // the SAME native-PAT possession backstop the customer/CAS states carry — a
@@ -672,10 +726,12 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
             admin_tenant_detail::AdminTenantDetailState::from_env(),
         ))
         .merge(admin_pilot::router(pilot_admin_state))
+        .merge(byok_admin::router(byok_admin_state))
         .merge(audit_export::router(audit_export_state))
         .merge(audit_analytics::router(audit_analytics_state))
         .merge(users::router(users_state))
         .merge(customer::router(customer_state))
+        .merge(dsr::portal::router(privacy_dsr_state))
         .merge(customer_runners::router(customer_runners_state))
         .merge(workspaces::router(workspaces_state))
         .merge(bazel_v2::router(bazel_state))
@@ -862,6 +918,22 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
     // Worker; zero storage I/O on the reject path. Disjoint from cas.rs/ac.rs.
     router = router.layer(axum::middleware::from_fn(residency::residency_guard));
 
+    // WI-MULTI-REGION-V1 (failover prod-wiring): read-side failover Tower layer.
+    // Mirrors the residency layer above — one `.layer(...)` line, disjoint from
+    // the handler bodies. Drives `corelink-failover-router`'s decision core with
+    // a REAL `RollingMetricsHealthProbe` over THIS container's live traffic. In a
+    // healthy region it is fully inert (the multi-signal AND rule never trips on
+    // transient slowness); under a sustained region outage it fail-CLOSED blocks
+    // writes (503 `failover_readonly`) and stamps a sibling read-region hint so
+    // the edge Worker re-routes reads via its cross-region Service Binding. Inert
+    // on nrt/syd (no sibling in the 4-macro graph) + dev/CI. Primary region is
+    // resolved from `R2_CAS_REGION` (same env as residency + cas.rs).
+    let failover_state = failover::FailoverLayerState::from_env();
+    router = router.layer(axum::middleware::from_fn_with_state(
+        failover_state,
+        failover::failover_guard,
+    ));
+
     // audit #14/#16 (request-rate limiting): per-tenant token-bucket gate over
     // the metered data plane. Charges one token per request against the
     // DO-injected `x-corelink-tenant-id` tenant's bucket (100 req/s sustained,
@@ -904,6 +976,23 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         ratelimit_layer::rate_limit_layer,
     ));
 
+    // OTel-export seam: stream a canonical `MetricPoint` + `TraceSpan` per
+    // data-plane request through the configured exporter's fail-OPEN boundary.
+    // Wired as the OUTERMOST data-plane layer (added last ⇒ observes the FINAL
+    // response status, including a rate-limit 429 / residency 409). Mounted ONLY
+    // when `CORELINK_OBSERVABILITY_EXPORT_VARIANT` selects a configured vendor
+    // (`otel_collector` / `datadog` / `grafana_cloud`); unset / `disabled` /
+    // malformed ⇒ NOT mounted (dev/CI: zero overhead, behaviour unchanged; a bad
+    // observability config must never brick the data plane). See
+    // `routes/otel_layer.rs` for the full env surface + the deferred-real egress
+    // residual (the collector endpoint is an operator step).
+    if let Some(otel_state) = otel_layer::OtelExportState::from_env() {
+        router = router.layer(axum::middleware::from_fn_with_state(
+            otel_state,
+            otel_layer::otel_export_layer,
+        ));
+    }
+
     router
 }
 
@@ -914,6 +1003,14 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
 /// DIFFERENT authority than the eraser (anti-forge). See `routes/dsr_anchor.rs`.
 /// (Declared here, after the OKF-cited items above, to keep line-anchors stable.)
 pub mod dsr_anchor;
+
+/// OTel-export request-path layer (observability SEAM closure): constructs the
+/// configured `corelink-telemetry` exporter from the `[observability.export.*]`
+/// env surface and streams a canonical `MetricPoint` + `TraceSpan` per data-plane
+/// request through the fail-OPEN boundary. Wired with ONE `.layer(...)` line at
+/// the end of [`build_with_factory`]. (Declared here, after the OKF-cited blocks
+/// above, to keep the anti-drift line-anchors stable.)
+pub mod otel_layer;
 
 #[cfg(test)]
 #[allow(

@@ -22,7 +22,200 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(bazel): stock-Bazel HTTP remote-cache alias — `bazel --remote_cache=https://host/bazel/cache` now works.**
+  The Bazel REAPI surface previously wired ONLY the CoreLink REAPI ByteStream REST scheme
+  (`/bazel/v2/:instance/blobs/:hash/:size`); vanilla `bazel`/Buck2-as-REAPI-cache send the plain
+  HTTP-cache shape `GET/PUT /<base>/{cas,ac}/<hash>` (no `:instance`, no `:size`), which 404'd — so
+  every documented stock config failed. Added four alias routes `GET/PUT /bazel/cache/cas/:hash` and
+  `GET/PUT /bazel/cache/ac/:hash` (`crates/corelink-container/src/routes/bazel_v2.rs`) that map onto
+  the SAME `BazelAdapter`/handlers and per-tenant R2 store as the REST scheme — no second store. The
+  tenant (== REAPI `instance`) is derived from the Worker-injected `x-corelink-tenant-id` header
+  (fail-CLOSED via `caller_tenant`), so a missing/sentinel tenant → 401 and isolation is by the
+  per-tenant namespace (a cross-tenant hash is a uniform 404, never another tenant's bytes). Every
+  security invariant of the REST scheme is preserved: the `scope → tenant → PAT → quota` gate
+  sequence, the SHA-256 content-addressing boundary check on CAS write, the WP5b runner-job AC-key
+  pin on AC write, and the per-tenant pre-body write-concurrency cap. The Worker forwards the new
+  `/bazel/cache/` prefix (tenant-from-PAT, reusing the `bazel_v2` routeKind). Buck2 remote-EXECUTION
+  (gRPC engine) remains OUT OF SCOPE — CoreLink is cache-only.
+- **npm adapter: real `GET /-/v1/search`** (`corelink-adapter-host`). The endpoint
+  was an honest 501 stub; it is now a PAT-gated, tenant-scoped, SSRF-guarded
+  read-through proxy to the configured upstream registry that returns the
+  canonical `{ objects, total, time }` envelope. `size` is clamped to `[1,250]`,
+  `text`/`size`/`from` are bound as URL-encoded query pairs (no param injection),
+  malformed upstream fails CLOSED (502), and every served search emits
+  `corelink.npm.search.served.v1` (audit-fail-CLOSED). Covered by pure-logic unit
+  tests (`npm::search`) + a wiremock end-to-end proxy test.
+- **GC manual admin-trigger: real scheduler-driven path** (`corelink-gc`). Added
+  `admin_trigger_scheduled` + `ScheduledTriggerOutcome` alongside the retained
+  staging-stub `admin_trigger`. Given a live `GcScheduler` it drives a genuine
+  single-tenant GC pass (`cron_tick` → insert_pending → acquire_running →
+  worker.execute_run) in ANY environment — removing the prod-only 501 — with the
+  `gc:trigger` PAT-scope check preserved and degrade-`gc-pause` honored. Tested
+  against the in-memory scheduler (forbidden / real-run / degrade-pause). The
+  remaining S-13 work is only the HTTP mount + prod-scheduler (D1 run store)
+  instantiation, not the trigger logic.
+- **CLI — built the documented-but-missing subcommands (`tools/cli`).** Eight surfaces that
+  the docs / e2e references promised but clap rejected are now real, each with unit tests:
+  - **`corelink bazel-init [--force]`** — appends a marker-delimited managed block to `.bazelrc`
+    and writes `.corelink/credentials` (mode 0600), idempotent (re-run exits 0; `--force` rewrites
+    without duplicating). Endpoint + tenant + PAT are derived from `config.rs` (never hardcoded).
+    **It writes the config that actually works** — the REAPI ByteStream scheme
+    (`--remote_cache=<endpoint>/bazel/v2` + `--remote_instance_name=<tenant>`, per
+    `routes/bazel_v2.rs`) — NOT the stale `grpcs://cas.corelink.humangr.com` host the tutorial docs
+    still show (that host is dead; stock `--remote_cache=http` 404s on the REAPI surface).
+  - **`corelink audit tail`** + **production `corelink audit export`** — wired to the live
+    `GET /v1/audit/:tenant/export` route (previously returned "not yet wired; use --fixture").
+    `export` persists the NDJSON window content-addressed (+ chain-head anchor for `verify-ndjson`);
+    `tail` is a windowed pull (default trailing hour) with a client-side `--filter key=value`.
+  - **`corelink config apply --file <toml>`** + **`config set/get observability.*`** — the config
+    model now accepts the open-ended `[observability.export.*]` sub-tree (Datadog / OTel Collector /
+    Grafana Cloud) documented in the observability how-tos; `apply` validates every leaf like `set`.
+  - **`corelink cas get`** / **`cas export`** (bulk-download to a local dir), **`corelink import`**
+    (bulk pre-warm the CAS from a local dir), **`corelink ci mirror`** (one-shot local-cache →
+    CoreLink mirror) — the sales-FAQ escape-hatch / migration commands. `s3://` sources/destinations
+    and the live-sidecar mirror bridge are flagged gaps (need an object-store client / server feature)
+    rather than faked.
+  - **`corelink tenant export`** / **`tenant verify-export`** — data-portability / GDPR-exit. Assembles
+    a content-addressed bundle (audit-chain slice + CAS index) from the real audit-export + CAS-list
+    routes; `verify-export` re-checks every component + bundle hash offline (no PAT). The single-file
+    `.tar.zst` with all blob bytes + RBAC roster + DPA receipt remains gated on a server bulk-export
+    endpoint that does not exist yet (blobs are individually retrievable via `cas get`).
+- **feat(container): wire the OTel-export seam — the container now constructs the configured
+  observability exporter and emits real request-path metrics/spans.** `corelink-telemetry`
+  (with its library-complete, tested `DatadogExporter` / `OtelCollectorExporter` /
+  `GrafanaCloudExporter`) is now a dependency of `corelink-container`, closing the seam where
+  the container's telemetry was `tracing_subscriber::fmt()` stdout only and the OTel exporters
+  were never constructed. New `routes/otel_layer.rs` reads the `[observability.export.*]`
+  surface as environment variables (`CORELINK_OBSERVABILITY_EXPORT_VARIANT` +
+  per-vendor `CORELINK_OTEL_COLLECTOR_*` / `CORELINK_DATADOG_*` / `CORELINK_GRAFANA_*`),
+  builds the selected `MetricsExporter`, and streams a canonical `MetricPoint` (RED counter +
+  CAS-PUT duration histogram) and W3C `TraceSpan` per data-plane request through the crate's
+  fail-OPEN boundary — wired as the outermost `.layer(...)` in `routes::build_with_factory`.
+  Unset / `disabled` / malformed config ⇒ layer not mounted (dev/CI zero-overhead, fail-SAFE).
+  Labels are PII-free per `INV-OBS-NO-PII` (`region` / `op_type` / `result`, never `tenant_id`),
+  and the export-failure audit sink is a bounded `TracingExportFailedAuditSink` (avoids the
+  F-022 unbounded-`Vec` heap-leak trap). The `apps/docs` observability how-tos are aligned to
+  the wired env surface. **Operator residual:** the exporters' real OTLP/HTTP network egress is
+  a documented deferred-real follow-up in `corelink-telemetry`; the operator supplies the
+  reachable collector/vendor endpoint (`CORELINK_OTEL_COLLECTOR_ENDPOINT`, etc.). The
+  OtelCollector variant is the recommended, solidly-wired path.
+- **feat(byok): activation WRITE path — the seam that flips a tenant to BYOK `active`.**
+  Migration `0081` created `tenant_byok_config` + `tenant_byok_secret` and the r2_s3 CAS store
+  already encrypts at rest when `tenant_byok_config.state == 'active'`, but nothing wrote those
+  tables (the H5 onboarding writer was deferred) so the gate could never engage. This closes
+  the gap: a fail-CLOSED, tenant-scoped, audited `D1ByokConfigWriter`
+  (`crates/corelink-container/src/customer_d1.rs`) that (a) `activate`s a tenant — UPSERTs its
+  CMK identity (`mode`/`crypto_mode`/`cmk_provider`/`cmk_key_id`/`cmk_region`) + the CMK-wrapped
+  Tcs (`tenant_byok_secret`, secret-FIRST ordering so an active config never dangles over a
+  missing Tcs), and (b) `deactivate`s it — the crypto-shred kill switch (`active`/`partial` →
+  `shredded`, monotonic + idempotent), the control-plane complement of the always-on
+  `corelink_byok::revocation` detector. Exposed over two operator-gated routes
+  (`POST /v1/admin/byok/{activate,deactivate}`, `crates/corelink-container/src/routes/byok_admin.rs`)
+  behind the same `x-corelink-internal-auth` secret as `/v1/admin/*` (auth-before-parse; writer
+  `None` in dev/CI → 503 fail-CLOSED). Additive only — no new migration (0081 already has every
+  column). Plaintext Tcs is never handled or logged; the audit trail records tenant + provider +
+  CMK identity + state only. Enforces INV-BYOK-CRYPTO-SOVEREIGNTY + INV-TENANT-ISOLATION.
+- **feat(byok): all four real-KMS providers constructable from the container factory.**
+  `crates/corelink-container/src/byok.rs` grew per-provider constructors
+  (`make_{aws,gcp,azure,vault}_kms_provider`) + `make_active_provider` (delegates to the
+  `byok_orchestrator` compile-time cfg dispatch), and now compiles under ANY `byok-*-real`
+  flag (was AWS-only). Selecting a `byok-<p>-real` cargo feature wires the matching real provider
+  end-to-end via `byok_orchestrator::build_active`; mutual exclusion of two real providers stays a
+  hard compile error (ADR-S30-001). Provisioning live KMS credentials + choosing the build feature
+  remains an operator step.
+- **feat(multi-region) — production replication coordinator (DO singleton) + failover Tower layer (WI-MULTI-REGION-V1).**
+  Closes the two "designed-not-wired" seams in the multi-region plane. (1) A production
+  `ReplicationCoordinator` — `worker/src/replication_coordinator_do.ts` (`ReplicationCoordinatorDO`) —
+  ports the Rust decision tree from `crates/corelink-replication-coordinator` faithfully (evaluate /
+  promote / failback / status, split-brain reject, anti-flap, **audit-emit-BEFORE-mutation fail-CLOSED**,
+  24 h hot-standby cool-down). The DO's single-instance guarantee
+  (`idFromName("replication-coordinator-singleton")`) IS the split-brain-safe promotion lock the Rust
+  `Mutex` only modelled; role map + heartbeats persist in DO SQLite storage. A DO **`alarm()`** is the
+  scheduled evaluate→promote **driver** (self-arms on first wake, re-arms every 30 s). Bound in
+  `wrangler.toml` across all envs (`REPLICATION_COORDINATOR_DO`, migration `v4`); reached via
+  internal-auth-gated `/_internal/replication/*` in `worker/src/index.ts`. (2) A production read-side
+  **failover Tower layer** — `crates/corelink-container/src/routes/failover.rs` — layered in the
+  container router exactly like `residency_guard`, driving `corelink-failover-router`'s decision core
+  with a **REAL `RollingMetricsHealthProbe`** over the container's live 5xx/latency/consecutive-failure
+  signals (not the crate's injected fixture). On a sustained multi-signal region outage it
+  **fail-CLOSED blocks writes (503 `failover_readonly`)** and stamps a sibling read-region hint so the
+  edge Worker re-routes reads; inert in a healthy region, dev/CI, and on APAC colos with no sibling in
+  the 4-macro graph. Unit + integration tests added on both sides
+  (`worker/tests/replication_coordinator_do.test.ts`, `routes::failover` tests). **Operator residual**
+  (Cloudflare-infra, not faked): deploy the DO (`wrangler deploy` runs migration `v4`) + provision the
+  R2 Cross-Region-Replication bindings + feed real per-region replication-lag heartbeats to
+  `/_internal/replication/heartbeat`.
+- **feat(sdk): real `@corelink/client` JS/TS SDK under `sdks/js/` (was documented but did not exist).**
+  The docs (`docs/sdk/javascript.md` + the 7 `apps/docs/docs/how-to/sdk-js/*` guides) advertised
+  `npm install @corelink/client` against a package that had never been built — pure vapor. This ships
+  a real, tested, buildable TypeScript package grounded 1:1 on the wired container routes: CAS
+  `put`/`get`/`stat` over `GET`/`PUT /v1/cas/{tenant}/{hash}` (**BLAKE3-keyed**, verified in pure JS
+  via `@noble/hashes` — no WASM/native step), an Action Cache sub-API over
+  `GET`/`PUT /v1/ac/{tenant}/{action_digest}` (opaque `ActionResult` bytes), PAT-bearer auth with
+  `CORELINK_PAT` env fallback, default-on BLAKE3 client-verify (CTRL-CAS-002), a status-mapped error
+  hierarchy (`AuthError`/`QuotaError`/`ForbiddenError`/`NotFoundError`/`ActionCacheMiss`/`ConflictError`/
+  `GoneError`/`DigestMismatchError`/`RateLimitError`/`ServerError`/`ConnectError`), and 429/503 retry with
+  exponential backoff + jitter. 23 vitest unit tests (stubbed `fetch`, no network); `npm install`,
+  `npm test`, `npm run build` (ESM + `.d.ts`), and `npm run typecheck` all pass. The SDK reference and
+  all 7 how-tos were **re-aligned to exactly the shipped surface** — every previously-documented method
+  that does not exist (`whoami`, `putStream`/`getStream`, `bench`, `doctor`, AC TTL, wasm-bindgen build)
+  was removed or replaced with a real equivalent, so no vapor remains.
+- **feat(container): tenant bulk-export endpoint — `POST /v1/customer/account/export` (SEAM).**
+  Streams the full tenant portability bundle the CLI `corelink tenant export` (PR #708) needs — it
+  was PARTIAL because no server endpoint assembled the WHOLE bundle. The new endpoint streams a
+  **content-addressed NDJSON** bundle: the tenant's CAS **and** AC blob **bytes** (base64, one blob
+  per line, fetched lazily so peak memory is bounded by a single blob) + the D1 governance records
+  (RBAC/team, DPA/consent, bounded customer-audit slice) + a trailing manifest. Reuses the SAME
+  CAS/AC read+list handlers the cache routes use (one R2 connection, no forked store) via the new
+  `routes::customer_export::TenantExportSource` seam + the existing `CustomerD1` row source.
+  Owner/admin only (write-capable scope, mirroring the billing/keys/team gates), behind the native
+  PAT-possession backstop, per-tenant rate-limited (burst 2 / 1 per 300s), and audited (a durable
+  `account.export` row is written BEFORE any bytes are disclosed). Fail-CLOSED: unwired source (no D1
+  env, dev/CI) → 503; a gather/audit fault → 5xx — never a partial 200. Tenant-scoped strictly to
+  the Worker-authenticated tenant (cross-tenant isolation tested). CLI (#708) should POST to
+  `/v1/customer/account/export`. Thin follow-up: `.tar.zst` packaging of the NDJSON stream.
+- **feat(dsr): customer-facing DSR self-service portal mounted at `/v1/privacy/dsr/*`.**
+  Closes the last DSR seam — the customer intake surface the admin-ui `dsr-client.ts`
+  already posts to. Mounts the six data-subject rights (`access`, `portability`,
+  `rectification`, `erasure`, `restriction`, `objection`) plus `/{request_id}/status`,
+  `GET /v1/privacy/dsr` (list), and `/{request_id}/verify-mfa`, matching the
+  `dsr-types.ts` request/response shapes. It **drives the existing live Wave-1 D1
+  pipeline** — `access::run_access`/`run_portability`/`run_rectification` and the
+  in-process erasure worker (via the `AccountDeletionRequester` anchor+sink seam) —
+  and is **not** a second engine. Auth mirrors `routes/customer.rs`: Clerk-session
+  only (tenant derived exclusively from the Worker-injected `x-corelink-tenant-id`;
+  a cache-PAT caller → 403; missing/sentinel tenant → 401), with the native-PAT
+  possession backstop. Destructive arms (erasure/rectification) are gated on the
+  Worker-trusted, un-forgeable `x-corelink-mfa-verified` freshness marker (fail-CLOSED;
+  the WebAuthn step-up binding remains the deferred edge hardening). Adds an additive,
+  tenant-leftmost D1 ticket store (`migrations/d1/0090_dsr_tickets.sql`) for status
+  tracking + a 10/day per-tenant rate limit (LGPD Art.20); the table is classified into
+  the DSR **RETAIN_SET** (compliance-evidence, survives an Art.17 erasure). SLA deadlines
+  single-source the `corelink-dsr` `sla_for` (calendar-month GDPR). The Worker forwards
+  `/v1/privacy/dsr/*` via the audited `customer_v1` Clerk arm. Fail-closed, tenant-scoped,
+  rate-limited, audited; unit-tested (each right drives the pipeline; cross-tenant status
+  denied; unauth/PAT denied; rate-limit; MFA gate).
+
 ### Changed
+- **Customer team-invite 501 copy de-staled** (`corelink-container`). Team invites
+  are fully implemented end-to-end (D1 create/list/remove + signup-worker accept,
+  ADR-S33-001 / migration 0074), so the generic `NotImplemented` fallback no
+  longer claims "team invites are coming soon"; it now returns the honest generic
+  "this endpoint is not yet implemented" for any future unimplemented surface.
+- **fix(quota) — per-tenant `$`-ceiling default recalibrated to effectively-unlimited (ADR-0068 reconciliation).**
+  The ADR-0068 per-tenant monthly `$`-ceiling defaulted to `$5/mo` at a placeholder `$0.001/op`, which
+  tripped `402` at ~5,000 ops/month — ~100× BELOW the free tier's own request quota (`quota.ts` free =
+  500,000 req/mo) and ~1000× above real CF COGS, silently walling every self-serve tenant far below what
+  they bought. The default (both the Rust `DEFAULT_MONTHLY_BUDGET_USD_MICROS` — the value a normal tenant
+  is actually governed by, via the no-row read default and the `seed_checked_accrue` fresh-row write — and
+  the migration `0066` column default) is now `1_000_000_000_000` micro-USD (`$1,000,000/mo`), a large
+  finite value (no `0 = unlimited` sentinel; the `>= 0` CHECK is preserved). The real cost protection —
+  the per-tier storage cap (`402`), request/mo cap (`429`), and the per-second rate limit — is untouched.
+  The per-tenant `monthly_budget_usd_micros` override is retained as the deliberate operator backstop,
+  primarily for the unbounded team/enterprise (contract-priced) tiers; the go-live runbook now carries an
+  onboarding checklist line to set it per contract. Tests added: a default tenant is not walled well past
+  the old ~5,000-op wall; a low per-tenant override still `402`s when exceeded.
 - **deps(js) — JS-majors frontier assessed (supersedes dependabot #697); net adoption: none.**
   The 15 already-on-`main` targets from the prior batch-majors merge (#693) remain the current
   state (next 16, react-markdown 10, uuid 14, @types/node 26, @types/uuid 11, @vitejs/plugin-react 6,
@@ -39,8 +232,33 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **integration(go-live-wave) — closed the union-merge lint + test regressions across the 15-branch integration.**
+  Rust `clippy -D warnings` (crate-scoped PR gate + workspace gc-tests gate): removed a redundant `#[must_use]`
+  on `byok_admin::router` (return type already `#[must_use]`), rewrote the DSR portal PAT-backstop block with the
+  `?` operator (`routes/dsr/portal.rs::authed_tenant`), and brought the `dsr::portal` test module's `#[allow]` in
+  line with the crate convention (add `clippy::indexing_slicing`, matching ~20 sibling `routes/*.rs` test modules)
+  so the 9 test-only `[i]` accesses no longer trip the workspace `indexing_slicing = "deny"`. Worker vitest:
+  fixed a `ReferenceError: path is not defined` in the `/v1/customer/*` Clerk bridge (`worker/src/index.ts` —
+  the privacy-plane MFA stamp referenced a `path` that is `route.pathSuffix` in the fetch scope), corrected the
+  replication coordinator's split-brain guard to scan ALL regions rather than only the first
+  (`planPromote`/`replication_coordinator_do.ts` — a 2nd concurrent primary alongside the demote-target now
+  yields `split_brain_rejected`), and re-aligned a stale runner-revoke test to the owner-ratified 2026-07-08
+  contract where `owner_tenant` is OPTIONAL (revoke by `pat_id` alone; the source had already superseded REV-S2).
+- **docs(onboarding) — corrected every cache-surface onboarding recipe to the config that reaches the WIRED routes.** Each recipe was verified against the handler/route it targets. **Native CAS**: quickstart/raw-curl told users to SHA-256-hash their blobs, but the server verifies **BLAKE3** (`corelink-handler-cas` `request.rs:52,160`, `handler.rs:310,433`) — every PUT 422'd; switched to `b3sum` (docs + the companion `scripts/quickstart.sh`, which likewise 422'd), fixed the response-shape claim (plain BLAKE3 hex body, not `{"hash":"sha256:…"}`) and the 422 mapping (`routes/cas.rs:1601`). **Turborepo**: `TURBO_API` corrected from the 404ing `…/turbo/v8/<tenant>` to the bare origin `https://corelink-api.humangr.com` (tenant is PAT-resolved, `teamId` is a label — `routes/turbo_v8.rs:12`, worker `index.ts:634`); removed the stale "coming soon" note. **New onboarding docs** for the sold-but-undocumented surfaces: **sccache/cargo** (`SCCACHE_WEBDAV_ENDPOINT=…/cargo/<tenant>` + bearer PAT), **OCI/Docker** (`docker login corelink-api.humangr.com`, two-leg token), **npm** (`.npmrc` → `/npm/<tenant>/`), **pip** (`index-url` basic-auth `hugr:<pat>` → `/pip/<tenant>/simple/`), **Homebrew** (`HOMEBREW_ARTIFACT_DOMAIN` + `HOMEBREW_DOCKER_REGISTRY_TOKEN`, not `brew tap`) — each derived from `corelink-adapter-host/src/{cargo,oci,npm,pip,brew}.rs` + worker `index.ts:617-663`. **Bazel/Buck2 (honest stopgap)**: replaced the contradictory `<tenant>.corelink.humangr.com/v1/cache` and `grpcs://` configs with the wired REAPI v2 ByteStream endpoint `/bazel/v2/<tenant>` (`routes/bazel_v2.rs:9-27`, per `apps/examples/bazel/.bazelrc`) plus a clearly-marked "native `bazel --remote_cache`: in progress" note; documented that Buck2 gRPC remote execution is not offered (cache-only, HTTP). Also swept dead `*.corelink.humangr.com` hostnames to the flat `corelink-*.humangr.com` scheme across the tutorials/how-tos.
 - **deploy — repinned all 5 prod container images from the 53-commit-stale `d86b1417-r1` to the live `20a0c323-r1`.**
   `wrangler.toml`'s `[[env.*.containers]].image` lines lagged the actually-running image (CF Containers API confirms prod + syd/nrt/lhr/sam all on `20a0c323-r1`, the #690 go-live merge). A `wrangler deploy`/recycle would have rolled prod BACK to the pre-go-live build. Pins now match reality.
+
+### Changed
+- **container — the customer-facing control-plane audit trail is now UNSKIPPABLE (fail-CLOSED), not best-effort.**
+  `customer_d1.rs`'s `insert_audit_event` (the write half of `GET /v1/customer/audit`, migration 0077)
+  previously SWALLOWED a failed `customer_audit_events` insert and continued, so a key mint / team invite
+  could commit with **no** customer-visible audit row — directly contradicting the "unskippable audit trail"
+  claim. It now returns `Result` and is emitted **before** the primary mutation (emit-before-mutate, the
+  canonical INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER ordering the DSR endpoint + audit-chain sink use): a failed
+  insert surfaces as `CustomerHandlerError::AuditFailed` → **503** and the mutation never runs, so a
+  non-idempotent `pat.created` / `team.invited` op is never left committed-without-audit (nor double-applied
+  by a client retrying a committed-then-500). Two fail-CLOSED tests added (audit-insert fault ⇒ 503 + no
+  `INSERT INTO pat` / `INTO team_member`).
 
 ### Added
 - **ci — docs-reality gate: customer-facing doc/marketing drift from code is now structurally blocked.**
@@ -57,6 +275,29 @@ Each entry cross-references:
   fail), so the gate is **green on the current tree** yet fails any NEW drift. Would have caught, and does
   under `--strict`: `corelink bazel-init` (documented, never in the enum), the SHA-256-vs-BLAKE3 quickstart
   hashing instruction, and the BYOK-4-providers-GA overclaim. See `scripts/README-docs-reality.md`.
+- **corelink-audit — production `OutboxEmitter` + `AuditOutboxWriter` port (durable auth-plane audit, fail-CLOSED).**
+  The auth audit `Emitter` had only the drop-on-restart `InMemoryEmitter` test sink in production. `OutboxEmitter`
+  canonicalizes each `AuthEvent` (RFC 8785 JCS → SHA-256 content hash), serializes the CloudEvents 1.0 line, and
+  appends an idempotency-keyed `AuditOutboxRow` through an injected `AuditOutboxWriter`, propagating any failure as
+  `EmitterError::Store` (no swallow arm — INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER). The storage-free sync port keeps the
+  crate `wasm32`-clean; the container-side D1-batch `AuditOutboxWriter` + the `audit_outbox`→R2 drain are the
+  deployment-layer follow-up (flagged partial). Unit-tested (persist, fail-CLOSED, determinism, dyn-safety).
+- **sdk(python) — real BLAKE3-keyed CAS surface (put/get/stat + async + streaming), closing the docs↔SDK gap.**
+  The pure-python `corelink` SDK previously shipped only the sync control plane (health/issue_pat/signup),
+  while the how-to guides (`apps/docs/docs/how-to/sdk-python/02-upload-blob`, `03-download-blob`) documented
+  `await client.put(...)`, `put_stream(...)`, `expected_digest=`, and client-side verify against a wired
+  route that had no SDK binding. Added, grounded in the native routes
+  (`crates/corelink-container/src/routes/cas.rs`): `CoreLinkClient.put/put_stream/get/stat` (sync,
+  tenant-scoped, `Authorization: Bearer <PAT>`), a new `AsyncCoreLinkClient` (`async with` / `await`,
+  plus `get_stream` chunked-and-incrementally-verified download), a `StatResult`, and CAS exceptions
+  (`CoreLinkNotFoundError` 404/410, `CoreLinkDigestMismatchError` server-422/client-verify,
+  `CoreLinkQuotaError` 402). Blobs are keyed by **BLAKE3** (`blake3(body)`, 64-hex, no prefix — the exact
+  key the server recomputes and enforces), never SHA-256. `stat` uses HEAD (axum serves it for the GET
+  route). 23 new mocked-HTTP unit tests. The default base URL is corrected to the canonical flat host
+  `https://corelink-api.humangr.com` (the prior `api.corelink.humangr.com` sat on the dead dotted
+  `*.corelink.humangr.com` pattern). The two CAS how-tos were aligned to the real class names + exception
+  taxonomy (dropped the unbacked `RegionError`); `01-authenticate`'s `whoami()`/config-file surface remains
+  a separate, pre-existing doc gap.
 - **container — fail-closed boot guard on the cache-tier Stripe price map (revenue-path must-arm).**
   The four `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env vars now join the prod must-arm boot set
   (alongside `PAT_SIGNING_KEY` / `ERASURE_SALT_KEY` / `EMAIL_HASH_SALT`): when prod is detected (via the

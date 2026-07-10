@@ -2,7 +2,7 @@
 id: quickstart-10min
 title: Quickstart — sign up to first cache hit in 10 minutes
 sidebar_label: 10-minute quickstart
-description: From zero to a Bazel cache hit in under 10 minutes. Sign up, install corelink, run doctor, init Bazel, build twice — done.
+description: From zero to a Bazel cache hit in under 10 minutes. Sign up, install corelink, run doctor, wire .bazelrc, build twice — done.
 ---
 
 import Tabs from "@theme/Tabs";
@@ -14,10 +14,10 @@ import TabItem from "@theme/TabItem";
 wire your Bazel repo, and watch cache HITs land on the second build.
 **Total budget: ≤ 10 minutes for an experienced engineer.**
 
-Every command is canonical and verified against the `corelink-cli` MVP
-(commit [`71d7f6a9`](https://github.com/HumanGuardrail/corelink-cli/commit/71d7f6a9),
-subcommands: `ping`, `bazel-init`; `doctor` ships in the next CLI release — docs
-reflect the planned UX ahead of the binary).
+Some `corelink` CLI subcommands shown here (`doctor`, and the config helpers)
+ship in an upcoming CLI release — the docs reflect the planned UX ahead of the
+binary. The `.bazelrc` remote-cache configuration in Step 4 works today against
+the live REAPI v2 endpoint and needs no CLI.
 
 :::tip No credit card required
 A starter account is free up to 10 GB. The sign-up wizard provisions
@@ -41,7 +41,7 @@ your tenant, region, and a starter PAT server-side — no billing step.
    US-Central and a safe default for most teams).
 3. The wizard drops you on the **`/welcome`** page where your starter PAT
    is displayed **exactly once**. Copy it now before closing the tab.
-   It looks like: `ct_live_xxx…xxx`
+   It looks like: `corelink_pat_xxx…xxx`
 
 :::warning Copy your PAT from /welcome — it is shown once
 If you close the tab without copying, regenerate via **Settings → Access
@@ -59,7 +59,7 @@ your chosen region.
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=ct_live_xxx…xxx \
+  --token=corelink_pat_xxx…xxx \
   --region=ord
 ```
 
@@ -91,7 +91,7 @@ If you can't run curl-pipe-sh, download a release archive directly:
 <TabItem value="macos" label="macOS" default>
 
 ```bash
-curl -fsSL https://releases.corelink.humangr.com/cli/latest/corelink-darwin-arm64.tar.gz \
+curl -fsSL https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-darwin-arm64.tar.gz \
   | tar -xz -C /usr/local/bin
 ```
 
@@ -99,7 +99,7 @@ curl -fsSL https://releases.corelink.humangr.com/cli/latest/corelink-darwin-arm6
 <TabItem value="linux" label="Linux">
 
 ```bash
-curl -fsSL https://releases.corelink.humangr.com/cli/latest/corelink-linux-amd64.tar.gz \
+curl -fsSL https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-linux-amd64.tar.gz \
   | sudo tar -xz -C /usr/local/bin
 ```
 
@@ -116,7 +116,7 @@ winget install HumanGuardrail.corelink
 After a manual install, write your PAT to the config manually:
 
 ```bash
-corelink config set auth.pat "ct_live_xxx…xxx"
+corelink config set auth.pat "corelink_pat_xxx…xxx"
 corelink config set defaults.region ord
 ```
 
@@ -137,9 +137,9 @@ Healthy output:
 
 ```text
 [1/8] config file found              ✓  ~/.config/corelink/config.toml
-[2/8] PAT format valid               ✓  prefix=ct_live, length=ok
+[2/8] PAT format valid               ✓  prefix=corelink_pat, length=ok
 [3/8] PAT not expired                ✓  ttl=365d (tenant=acme-prod)
-[4/8] DNS resolution                 ✓  cas.corelink.humangr.com → <IP>
+[4/8] DNS resolution                 ✓  corelink-api.humangr.com → <IP>
 [5/8] TLS handshake                  ✓  TLSv1.3, 0-RTT=off
 [6/8] API ping (HTTP/2)              ✓  200 OK (rtt=18ms, region=cf-ord)
 [7/8] gRPC channel (REAPI v2)        ✓  capabilities handshake ok
@@ -159,36 +159,37 @@ substitute (checks items 4–6 only).
 
 ---
 
-## Step 4 — `corelink bazel-init` <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
+## Step 4 — Wire your `.bazelrc` <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
 
-`cd` into the root of your Bazel repository, then run:
+`cd` into the root of your Bazel repository and add the CoreLink REAPI v2
+remote-cache lines to your `.bazelrc` (see the committed reference config at
+[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc)):
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+build --remote_instance_name=${CORELINK_TENANT}
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_upload_local_results=true
+```
+
+Export your PAT and tenant UUID in the same shell (or your CI secret store):
 
 ```bash
-cd /path/to/your-bazel-repo
-corelink bazel-init
+export CORELINK_PAT="corelink_pat_XXXXXXXXXXXX"
+export CORELINK_TENANT="acme-prod"
 ```
 
-`corelink bazel-init` appends the remote-cache lines to your `.bazelrc`
-and writes a `.corelink/credentials` file (mode `0600`) scoped to the
-repo root:
+:::warning Native `bazel --remote_cache` support: in progress
+CoreLink's wired Bazel surface is the **REAPI v2 ByteStream** scheme at
+`/bazel/v2/<tenant>` and requires a REAPI/ByteStream-compatible client. A stock
+plain-HTTP `--remote_cache` alias (`/cas/<hash>`) is being built and is not yet
+live — it currently returns 404. See the
+[Bazel integration guide](../integrations/bazel) for details.
+:::
 
-```text
-corelink bazel-init: appended to .bazelrc:
-  build --remote_cache=grpcs://cas.corelink.humangr.com:443
-  build --remote_header=x-corelink-tenant=acme-prod
-  build --remote_header=authorization=Bearer ${CORELINK_PAT}
-  build --remote_upload_local_results=true
-corelink bazel-init: wrote .corelink/credentials (mode 0600)
-```
-
-`bazel-init` is **idempotent**: running it a second time detects the
-existing marker line in `.bazelrc` and exits `0` without writing
-duplicate entries.
-
-:::tip Commit .bazelrc, not .corelink/credentials
-Add `.bazelrc` to git so teammates share the config. Add
-`.corelink/credentials` to `.gitignore` — the file contains a
-per-developer PAT.
+:::tip Commit .bazelrc, keep the PAT out of git
+Add `.bazelrc` to git so teammates share the config. Keep `CORELINK_PAT` in your
+environment or a secret manager — never commit it.
 :::
 
 ---
@@ -248,8 +249,6 @@ Common failure modes and their fixes:
 
 ```bash
 corelink config set defaults.region <correct-region>
-# re-run bazel-init to rewrite .bazelrc with the correct endpoint
-corelink bazel-init --force
 ```
 
 Available regions: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
@@ -263,7 +262,7 @@ Available regions: `ord` (US-Central), `iad` (US-East), `lhr` (EU-West),
 
 ```bash
 echo $CORELINK_PAT
-# should print: ct_live_xxx…xxx
+# should print: corelink_pat_xxx…xxx
 ```
 
 If empty, either re-export it or ensure it is written to
@@ -271,7 +270,7 @@ If empty, either re-export it or ensure it is written to
 automatically):
 
 ```bash
-corelink config set auth.pat "ct_live_xxx…xxx"
+corelink config set auth.pat "corelink_pat_xxx…xxx"
 ```
 
 ### `.bazelrc` duplicate-line warning

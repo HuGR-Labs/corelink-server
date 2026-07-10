@@ -5,7 +5,7 @@ doc_status: "ACTIVE"
 audit_status: "ACTIVE"
 version: "1.0.0"
 created: "2026-06-12"
-updated: "2026-06-12"
+updated: "2026-07-09"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -37,8 +37,10 @@ Enforce a **per-tenant monthly $-ceiling** at the metering/quota layer, **fail-c
   anchor). A quota middleware checks `accrued + cost(op) <= monthly_budget` **before**
   serving a billable operation; over-ceiling → reject (`402 Payment Required` /
   `429`) until the cycle resets or the owner raises the cap.
-- Launch default: a **symbolic $5/mo tripwire** (deliberately conservative — bounds
-  day-1 cost while real usage calibrates the number).
+- Default ceiling: **effectively-unlimited** (`$1,000,000/mo`) — see the 2026-07-09
+  reconciliation below. (The original launch default was a symbolic `$5/mo` tripwire;
+  it was retired as a default wall because it was redundant with, and far tighter than,
+  the tier request-cap.)
 
 ## Rationale
 
@@ -61,6 +63,40 @@ Enforce a **per-tenant monthly $-ceiling** at the metering/quota layer, **fail-c
 - Needs a per-op `cost(op)` estimate (the metering already tracks usage; map to $).
 - The ceiling is owner-tunable per tenant; the $5 default is a tripwire, not a product tier.
 - Pairs with the existing rate limit (velocity) — the two together bound both axes.
+
+## Reconciliation (2026-07-09) — default is now effectively-unlimited
+
+The `$5/mo` launch default was an **uncalibrated tripwire**, and reconciling it against
+the real pricing/quota model showed it was both redundant and miscalibrated:
+
+- At the placeholder `$0.001/op` cost (`DEFAULT_COST_PER_OP_MICROS`), the `$5` default
+  tripped at **~5,000 ops/month** — **~100× BELOW** the free tier's own product quota
+  (`worker/src/lib/quota.ts`: free = 500,000 requests/mo, enforced `429`) and ~1000× above
+  real Cloudflare COGS. It silently `402`'d every self-serve tenant far below what they
+  bought.
+- The **real** cost protection is the per-tier **storage cap** (`402`) + **request/mo cap**
+  (`429`) in `worker/src/lib/quota.ts` plus the per-second **rate limit**
+  (`ratelimit_layer.rs`). Those are pricing-consistent (flat, hard-capped tiers per
+  `marketing/sales/PRICING-WORKSHEET.md`) and are untouched by this reconciliation. The
+  `$`-ceiling was a redundant second wall on the count axis, mis-set 100× too tight.
+
+**Decision (amendment):** the default `monthly_budget_usd_micros` is now an
+**effectively-unlimited `$1,000,000/mo`** (`1_000_000_000_000` micro-USD) in BOTH the Rust
+constant `DEFAULT_MONTHLY_BUDGET_USD_MICROS` (the value a normal tenant is governed by —
+it is the no-row read default AND the value `seed_checked_accrue` writes into a fresh
+tenant's row) AND the migration `0066` column default (the DB-level fallback for
+column-omitting INSERTs). A large finite value is used deliberately — there is **no
+`0 = unlimited` sentinel** (a `0` budget would wall everything), and the `>= 0` CHECK is
+preserved. The gate itself, its fail-CLOSED posture, the atomic check-and-accrue, and the
+lease are all unchanged.
+
+**The per-tenant override is retained as the deliberate backstop.** The
+`monthly_budget_usd_micros` column stays owner-tunable: an operator `UPDATE` sets a real
+ceiling per tenant. This is primarily for the **team/enterprise** tiers, whose product
+request quota is unbounded (`MAX_SAFE_INTEGER`) and which are **contract-priced** — their
+cost blast-radius is bounded by a per-contract `$`-ceiling the operator sets at onboarding
+(see the go-live runbook onboarding checklist). Pre-launch tenant rows already seeded at
+the old `$5` default can be raised by the same operator `UPDATE` if desired.
 
 ## References
 

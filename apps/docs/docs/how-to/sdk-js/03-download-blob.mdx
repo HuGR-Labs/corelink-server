@@ -11,7 +11,7 @@ tags: [sdk, javascript, typescript, cas, how-to]
 ## When to use this guide
 
 You hold a BLAKE3 digest and need the bytes. The SDK verifies the digest
-client-side via WASM by default (CTRL-CAS-002).
+client-side (pure-JS `@noble/hashes`) by default (CTRL-CAS-002).
 
 ## Prerequisites
 
@@ -25,29 +25,26 @@ const data: Uint8Array = await client.get(digest);
 // Already BLAKE3-verified; if verify failed, get() threw.
 ```
 
-## Streaming download
+## Download to a file
+
+`get` returns the whole verified `Uint8Array`; write it out:
 
 ```typescript
 import { writeFile } from "node:fs/promises";
 
-async function streamToFile(digest: string, dest: string): Promise<void> {
-  const stream = await client.getStream(digest);
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of stream) chunks.push(chunk);
-  // stream completion validates the BLAKE3 root; an iteration error means
-  // the bytes are corrupt and must not be persisted.
-  await writeFile(dest, Buffer.concat(chunks));
+async function getToFile(digest: string, dest: string): Promise<void> {
+  const data = await client.get(digest); // throws DigestMismatchError if corrupt
+  await writeFile(dest, data);
 }
 ```
 
-In a browser, pipe directly to a `FileSystemWritableFileStream` or to a
-`Blob` constructor.
+A chunked/streaming download API is not part of this release.
 
 ## Opting out of verification
 
 **Strongly discouraged**. The opt-out exists only for transport benchmarks.
-The SDK emits `console.warn("corelink.client.verify_disabled")` per
-CTRL-CAS-002.
+Disable globally at construction (`clientVerify: false` — logs
+`corelink.client.verify_disabled` per CTRL-CAS-002), or per call:
 
 ```typescript
 const data = await client.get(digest, { verify: false });
@@ -57,9 +54,9 @@ const data = await client.get(digest, { verify: false });
 
 | Class | Meaning |
 |---|---|
-| `NotFoundError` | Digest not in tenant CAS |
+| `NotFoundError` | Digest not in tenant CAS (404) |
+| `GoneError` | Artifact erased (410); do not resurrect |
 | `DigestMismatchError` | Bytes corrupted; do not use |
-| `RegionError` | Blob in another region; check `corelink stat` |
 
 ## Next steps
 

@@ -10,9 +10,9 @@ tags: [sdk, javascript, typescript, cas, how-to]
 
 ## When to use this guide
 
-You have a `Uint8Array`, a Node `Buffer`, or a `ReadableStream` and want it
-persisted in the CoreLink CAS. The SDK computes the BLAKE3 digest unless you
-supply one explicitly.
+You have a `Uint8Array` or a Node `Buffer` (which is a `Uint8Array`) and want it
+persisted in the CoreLink CAS. The SDK computes the BLAKE3 digest for you; you
+may optionally pass an `expectedDigest` to assert it matches locally.
 
 ## Prerequisites
 
@@ -33,19 +33,22 @@ await client.close();
 
 `digest` is the 64-character BLAKE3 hex string.
 
-## Streaming upload (large blobs)
+## Large blobs
+
+`put` takes the full byte array (a content-addressable store must hash the
+whole object to know its address, so the digest is computed over the complete
+buffer). Read the file into memory, then upload:
 
 ```typescript
-import { createReadStream } from "node:fs";
+import { readFile } from "node:fs/promises";
 
 async function uploadLarge(path: string): Promise<string> {
-  const stream = createReadStream(path, { highWaterMark: 4 * 1024 * 1024 });
-  return client.putStream(stream);
+  const data = await readFile(path); // Buffer is a Uint8Array
+  return client.put(data);
 }
 ```
 
-In a browser the same API accepts a `ReadableStream<Uint8Array>` (e.g. the
-body of a `Response`).
+A chunked/streaming upload API is not part of this release.
 
 ## Idempotency
 

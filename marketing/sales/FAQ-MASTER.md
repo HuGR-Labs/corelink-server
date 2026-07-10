@@ -402,7 +402,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** How long do you keep audit events?
 
-**A:** **7 years.** Customer-controlled? No — compliance-driven minimum. Audit chain is append-only, Merkle-linked, with RFC 6962 inclusion proofs and JCS-canonicalized leaves. Backup snapshots of the chain follow the same 35-day rolling window with tombstones recorded on day 0 so a Type II auditor can trace the chain. Right-to-erasure under GDPR Art. 17 / LGPD Art. 18: tenant-initiated via `DELETE /v1/tenant/me` triggers verifiable erasure with cryptographic attestation; the audit record itself remains for integrity, but PII-bearing claims are made cryptographically unrecoverable via the salt-rotation pattern (`ADR-S11-003`).
+**A:** **7 years.** Customer-controlled? No — compliance-driven minimum. Audit chain is append-only, Merkle-linked, with RFC 6962 inclusion proofs and JCS-canonicalized leaves. Backup snapshots of the chain follow the same 35-day rolling window with tombstones recorded on day 0 so a Type II auditor can trace the chain. Right-to-erasure under GDPR Art. 17 / LGPD Art. 18: erasure is fulfilled today via an operator-assisted request (the erasure pipeline is live); PII-bearing claims are made cryptographically unrecoverable via the salt-rotation pattern (`ADR-S11-003`) while the audit record itself remains for integrity. A customer-served signed Ed25519 erasure attestation is on the near-term roadmap.
 
 **Sources:** `apps/docs/docs/trust/data-handling.mdx#retention`; `marketing/launch/BLOG-POSTS/03-audit-chain-merkle-proofs.md`.
 
@@ -422,7 +422,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** We rolled our own on S3 + a custom HTTP shim. How does that move?
 
-**A:** Three components to migrate: (1) **The cache surface** — point your build tool at CoreLink's HTTP/REAPI endpoint; we support any client that does PUT/GET against a content-addressable backend. (2) **Existing blobs** — optional; you can either let CoreLink warm naturally (recommended; cold-start is < 1 week to steady state — see PF6) or pre-warm via the bulk-upload CLI (`corelink import s3://your-bucket/...` — content-addressed, so dedup happens for free). (3) **Egress economics** — the migration *itself* costs you one final S3 egress charge if you pre-warm; ongoing reads then run on R2 with zero egress (see PF1 / `BLOG-POSTS/05`). Migration guide: `apps/docs/docs/how-to/migrate/from-s3/`.
+**A:** Three components to migrate: (1) **The cache surface** — point your build tool at CoreLink's HTTP/REAPI endpoint; we support any client that does PUT/GET against a content-addressable backend. (2) **Existing blobs** — optional; you can either let CoreLink warm naturally (recommended; cold-start is < 1 week to steady state — see PF6) or bulk-pre-warm via an operator-assisted import from your bucket (content-addressed, so dedup happens for free). A self-serve `corelink import` bulk-load CLI is on the roadmap. (3) **Egress economics** — the migration *itself* costs you one final S3 egress charge if you pre-warm; ongoing reads then run on R2 with zero egress (see PF1 / `BLOG-POSTS/05`). Migration guide: `apps/docs/docs/how-to/migrate/from-s3/`.
 
 **Sources:** `apps/docs/docs/how-to/migrate/from-s3/`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`.
 
@@ -438,7 +438,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** If we leave you for another vendor, what do we pay to extract our data?
 
-**A:** **Zero, structurally.** Two ways out: (1) Your data is content-addressed by BLAKE3 / SHA-256 — every blob can be downloaded by digest with `corelink cas get blake3:{digest}` against the standard tier-included egress allowance. (2) For a full bulk extraction, `corelink cas export --tenant me --output s3://your-bucket/` ships every blob, every audit event, every action-cache record to a destination you control, billed at the same R2-zero-egress economics that govern read traffic — no surcharge for departure. Audit-chain export is always free. We mean it: the content-addressed nature of CAS is *itself* the escape hatch (see P34 in objection handling).
+**A:** **Zero, structurally.** Two ways out: (1) Your data is content-addressed by BLAKE3 / SHA-256 — every blob can be fetched by digest over the standard REAPI/HTTP GET-by-digest surface against your tier-included egress allowance. (2) For a full bulk extraction we run an operator-assisted export today — every blob, every audit event, every action-cache record shipped to a destination you control, billed at the same R2-zero-egress economics that govern read traffic (no surcharge for departure). A self-serve `corelink cas export` CLI is on the roadmap. Audit-chain export is always free. We mean it: the content-addressed nature of CAS is *itself* the escape hatch (see P34 in objection handling).
 
 **Sources:** `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`; `marketing/sales/OBJECTION-HANDLING.md` Obj-22.
 
@@ -446,7 +446,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** How do we run CoreLink alongside our existing cache for a while?
 
-**A:** Recommended pattern: **mirror, not cut-over.** Your existing cache (bazel-remote, BuildBuddy, your S3 thing) stays primary. CoreLink runs as secondary destination: writes go to both, reads come from existing cache. If CoreLink misbehaves, your builds don't break. Two practical patterns: (i) **Sidecar mirror** — `corelink ci mirror --from bazel-remote --to corelink` runs as a sidecar process on CI runners. (ii) **BES consumer** — point Bazel's `--bes_backend` at our endpoint; we ingest cache references asynchronously without touching the build's critical path. **Duration:** 1–2 weeks for typical customers; lighthouse customers do 14 days of mirror (Phase 1) before optional cutover.
+**A:** Recommended pattern: **mirror, not cut-over.** Your existing cache (bazel-remote, BuildBuddy, your S3 thing) stays primary. CoreLink runs as secondary destination: writes go to both, reads come from existing cache. If CoreLink misbehaves, your builds don't break. The practical pattern today is a **dual `--remote_cache` write** — configure your build to write cache entries to both your existing cache and CoreLink (Bazel/Buck2 support multiple cache backends), read from the incumbent, and compare hit ratios before cutover. A turnkey sidecar-mirror helper and a BES-consumer ingest path are on the roadmap. **Duration:** 1–2 weeks for typical customers; lighthouse customers do 14 days of mirror (Phase 1) before optional cutover.
 
 **Sources:** `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#phase-1-days-1-7-mirror-your-ci`; `apps/docs/docs/how-to/migrate/`.
 

@@ -178,6 +178,104 @@ enum Commands {
         #[command(subcommand)]
         action: AcAction,
     },
+
+    /// Wire a Bazel repo to the CoreLink remote cache.
+    ///
+    /// Appends a managed remote-cache block to `.bazelrc` + writes
+    /// `.corelink/credentials` (mode 0600). Idempotent; `--force`
+    /// rewrites. Endpoint + tenant are derived from your config.
+    BazelInit {
+        /// Rewrite an existing managed `.bazelrc` block + credentials.
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Tenant data-portability / offboarding (GDPR exit).
+    Tenant {
+        #[command(subcommand)]
+        action: TenantAction,
+    },
+
+    /// Content-addressable store access (escape-hatch / migration).
+    Cas {
+        #[command(subcommand)]
+        action: CasAction,
+    },
+
+    /// Bulk pre-warm the tenant CAS from a local directory.
+    ///
+    /// Content-addressed, so re-imports dedup for free. `s3://` sources
+    /// are a flagged gap (sync locally first).
+    Import {
+        /// Source: a local directory (or an `s3://…` URI — flagged).
+        source: String,
+    },
+
+    /// CI cache migration helpers.
+    Ci {
+        #[command(subcommand)]
+        action: CiAction,
+    },
+}
+
+/// Subcommands for `corelink tenant`.
+#[derive(Debug, Subcommand)]
+#[non_exhaustive]
+enum TenantAction {
+    /// Export a content-addressed portability bundle (audit slice + CAS
+    /// index) for `--tenant-id` to `--output`.
+    Export {
+        /// Tenant id (defaults to your cached tenant).
+        #[arg(long = "tenant-id", value_name = "TENANT_ID")]
+        tenant_id: Option<String>,
+        /// Destination file for the bundle.
+        #[arg(long, value_name = "FILE")]
+        output: PathBuf,
+    },
+    /// Re-verify every content hash in a previously exported bundle.
+    VerifyExport {
+        /// Path to the export bundle produced by `tenant export`.
+        #[arg(long, value_name = "FILE")]
+        archive: PathBuf,
+    },
+}
+
+/// Subcommands for `corelink cas`.
+#[derive(Debug, Subcommand)]
+#[non_exhaustive]
+enum CasAction {
+    /// Download one blob by digest (`sha256:`/`blake3:` prefix ok).
+    Get {
+        /// Digest of the blob to download.
+        digest: String,
+        /// Output file path. Defaults to stdout if not specified.
+        #[arg(short = 'o', long, value_name = "FILE")]
+        output: Option<PathBuf>,
+    },
+    /// Bulk-download every blob in the tenant CAS to a local directory.
+    Export {
+        /// Tenant to export (`me` = your own; cross-tenant is impossible).
+        #[arg(long, value_name = "TENANT_ID", default_value = "me")]
+        tenant: String,
+        /// Destination directory (an `s3://…` URI is a flagged gap).
+        #[arg(long, value_name = "DEST")]
+        output: String,
+    },
+}
+
+/// Subcommands for `corelink ci`.
+#[derive(Debug, Subcommand)]
+#[non_exhaustive]
+enum CiAction {
+    /// One-shot mirror of a local cache directory into CoreLink CAS.
+    Mirror {
+        /// Source cache (a local directory; service names are flagged).
+        #[arg(long, value_name = "SRC")]
+        from: String,
+        /// Sink — only `corelink` is wired.
+        #[arg(long, value_name = "SINK")]
+        to: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -222,6 +320,27 @@ enum AuditAction {
     Verify {
         /// Path to the JSON-LD export file.
         path: PathBuf,
+    },
+
+    /// Print recent audit events for a tenant (windowed pull from the
+    /// live export route; not a live follow).
+    ///
+    /// Default window is the trailing hour. Filter with
+    /// `--filter event_type=corelink.observability.export_ready`.
+    Tail {
+        /// Tenant id (defaults to your cached tenant).
+        #[arg(long, value_name = "TENANT_ID")]
+        tenant: Option<String>,
+        /// `key=value` predicate (keys: event_type, subject, source,
+        /// region, tenant_id, sequence_number, id).
+        #[arg(long, value_name = "key=value")]
+        filter: Option<String>,
+        /// Window lower bound (Unix epoch ms; default now-1h).
+        #[arg(long, value_name = "MS")]
+        since: Option<u64>,
+        /// Max events to print (default 50).
+        #[arg(long, value_name = "N")]
+        limit: Option<usize>,
     },
 
     /// Re-verify a streaming NDJSON envelope produced by
@@ -352,6 +471,16 @@ enum ConfigAction {
     },
     /// List all config (PAT is redacted).
     List,
+    /// Apply a whole TOML config document (`--file corelink.toml`).
+    ///
+    /// Every leaf key is validated as if set individually — the path
+    /// used by the observability how-tos to push
+    /// `[observability.export.*]` blocks.
+    Apply {
+        /// Path to a TOML config document.
+        #[arg(long, value_name = "FILE")]
+        file: PathBuf,
+    },
     /// Rotate the anonymised telemetry ID (generates a fresh UUID v4).
     Rotate {
         /// Field to rotate. Currently only `telemetry-id` is supported.
@@ -444,6 +573,13 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         Commands::Login { token } => {
             return (label, commands::login::run(token, format).await);
         }
+        // Offline: verifying a previously exported bundle must NOT require
+        // a live PAT (a departed customer may have revoked all tokens).
+        Commands::Tenant {
+            action: TenantAction::VerifyExport { archive },
+        } => {
+            return (label, commands::tenant::run_verify_export(archive, format));
+        }
         _ => {}
     }
 
@@ -452,6 +588,13 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         Ok(p) => p,
         Err(e) => return (label, Err(e)),
     };
+
+    // `bazel-init` needs the PAT value (to write scoped credentials) but
+    // performs no network I/O, so it runs before the HTTP client is built.
+    if let Commands::BazelInit { force } = &cli.command {
+        return (label, commands::bazel_init::run(&pat, *force, format));
+    }
+
     let client = match CorelinkClient::new(pat) {
         Ok(c) => c,
         Err(e) => return (label, Err(e)),
@@ -488,12 +631,18 @@ async fn run() -> (&'static str, Result<(), CliError>) {
         // Stream-1 additions.
         Commands::Whoami => commands::whoami::run(&client, format).await,
         Commands::Ac { action } => run_ac(&client, &action, format).await,
-        // Version + Config + RunbookDrill + Audit + Login already handled above; unreachable.
+        // Missing-commands wave.
+        Commands::Tenant { action } => run_tenant(&client, &action, format).await,
+        Commands::Cas { action } => run_cas(&client, &action, format).await,
+        Commands::Import { source } => commands::import_cmd::run(&client, &source, format).await,
+        Commands::Ci { action } => run_ci(&client, &action, format).await,
+        // Handled above; unreachable here.
         Commands::Version
         | Commands::Config { .. }
         | Commands::RunbookDrill { .. }
         | Commands::Audit { .. }
-        | Commands::Login { .. } => unreachable!(),
+        | Commands::Login { .. }
+        | Commands::BazelInit { .. } => unreachable!(),
     };
     (label, res)
 }
@@ -513,6 +662,62 @@ fn subcommand_label(cmd: &Commands) -> &'static str {
         Commands::Whoami => "whoami",
         Commands::Login { .. } => "login",
         Commands::Ac { .. } => "ac",
+        Commands::BazelInit { .. } => "bazel-init",
+        Commands::Tenant { .. } => "tenant",
+        Commands::Cas { .. } => "cas",
+        Commands::Import { .. } => "import",
+        Commands::Ci { .. } => "ci",
+    }
+}
+
+async fn run_tenant(
+    client: &CorelinkClient,
+    action: &TenantAction,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    match action {
+        TenantAction::Export { tenant_id, output } => {
+            let tenant = tenant_id
+                .clone()
+                .or_else(|| client.tenant_id().map(str::to_owned))
+                .ok_or_else(|| {
+                    CliError::Other(
+                        "tenant export: no --tenant-id and no cached tenant — run \
+                         `corelink login`/`corelink whoami` or pass --tenant-id."
+                            .to_owned(),
+                    )
+                })?;
+            commands::tenant::run_export(client, &tenant, output, format).await
+        }
+        // Also handled in the no-PAT block; kept for exhaustiveness.
+        TenantAction::VerifyExport { archive } => {
+            commands::tenant::run_verify_export(archive, format)
+        }
+    }
+}
+
+async fn run_cas(
+    client: &CorelinkClient,
+    action: &CasAction,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    match action {
+        CasAction::Get { digest, output } => {
+            commands::cas::run_get(client, digest, output.clone(), format).await
+        }
+        CasAction::Export { tenant, output } => {
+            commands::cas::run_export(client, tenant, output, format).await
+        }
+    }
+}
+
+async fn run_ci(
+    client: &CorelinkClient,
+    action: &CiAction,
+    format: OutputFormat,
+) -> Result<(), CliError> {
+    match action {
+        CiAction::Mirror { from, to } => commands::ci::run(client, from, to, format).await,
     }
 }
 
@@ -556,17 +761,37 @@ async fn run_audit(action: &AuditAction, format: OutputFormat) -> Result<(), Cli
                 )?;
                 Ok(())
             } else {
-                // Production wiring deferred: the CF Worker
-                // `GET /v1/audit/export/window` impl + the
-                // `CorelinkClient`-backed `AuditExporter` adapter land
-                // alongside the audit-export-worker. Today the CLI
-                // returns a clear pointer to `--fixture` for offline use.
-                Err(CliError::Other(
-                    "audit export: production server-side endpoint not yet wired; \
-                     use --fixture for offline/regression testing"
-                        .into(),
-                ))
+                // Production: stream the NDJSON window from the live
+                // `GET /v1/audit/:tenant/export` route and persist it
+                // content-addressed (re-verify with `audit verify-ndjson`).
+                let pat = resolve_pat()?;
+                let client = CorelinkClient::new(pat)?;
+                commands::audit_net::run_export_production(
+                    &client, tenant, *since, *until, &out_dir, format,
+                )
+                .await
             }
+        }
+        AuditAction::Tail {
+            tenant,
+            filter,
+            since,
+            limit,
+        } => {
+            let pat = resolve_pat()?;
+            let client = CorelinkClient::new(pat)?;
+            let t = tenant
+                .clone()
+                .or_else(|| client.tenant_id().map(str::to_owned))
+                .ok_or_else(|| {
+                    CliError::Other(
+                        "audit tail: no --tenant and no cached tenant — run \
+                         `corelink login`/`corelink whoami` or pass --tenant."
+                            .to_owned(),
+                    )
+                })?;
+            commands::audit_net::run_tail(&client, &t, filter.as_deref(), *since, *limit, format)
+                .await
         }
         AuditAction::Verify { path } => {
             commands::audit::run_verify(path, format)?;
@@ -670,6 +895,7 @@ fn run_config(action: &ConfigAction, format: OutputFormat) -> Result<(), CliErro
         ConfigAction::Set { key, value } => commands::config_cmd::run_set(key, value, format),
         ConfigAction::Get { key } => commands::config_cmd::run_get(key, format),
         ConfigAction::List => commands::config_cmd::run_list(format),
+        ConfigAction::Apply { file } => commands::config_cmd::run_apply(file, format),
         ConfigAction::Rotate { field } => {
             if field == "telemetry-id" {
                 config::rotate_telemetry_id()?;

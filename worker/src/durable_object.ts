@@ -568,6 +568,11 @@ export class CoreLinkServer implements DurableObject {
           // container 401s every anchor call the moment the dedicated key is bound
           // (the exact CP-1 self-inflicted-outage this block guards against).
           CORELINK_DSR_ANCHOR_AUTH_KEY: this.env.CORELINK_DSR_ANCHOR_AUTH_KEY ?? "",
+          // DSR customer portal (union #717): the receipt-JWT signer
+          // (`dsr/portal.rs:659`) reads `DSR_RECEIPT_SIGNING_KEY`; forward it or a
+          // bound CF secret silently no-ops and the portal falls back to a weak
+          // default (the F8/ERASURE_SALT class of self-inflicted bug).
+          DSR_RECEIPT_SIGNING_KEY: this.env.DSR_RECEIPT_SIGNING_KEY ?? "",
           PAT_SIGNING_KEY: this.env.PAT_SIGNING_KEY ?? "",
           // L3 money path: `POST /v1/onboarding/tier-select` runs INSIDE the
           // container and reads these from its OWN process env

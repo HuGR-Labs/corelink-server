@@ -1,8 +1,22 @@
 //! CLI subcommand handlers for `corelink-cli` (WI-S15-001).
 
 pub mod audit;
+/// Networked audit surface (`audit export` production + `audit tail`),
+/// wired to `GET /v1/audit/:tenant/export`. Binary-only (depends on
+/// `crate::client`), unlike the lib-mirrored `audit` module.
+pub mod audit_net;
+/// `corelink bazel-init` — wire a Bazel repo to the CoreLink remote cache.
+pub mod bazel_init;
 pub mod bench;
+/// `corelink cas get/export` + shared local-dir → CAS uploader.
+pub mod cas;
+/// `corelink ci mirror` — one-shot local-cache → CoreLink mirror.
+pub mod ci;
 pub mod config_cmd;
+/// `corelink import` — bulk pre-warm the CAS from a local directory.
+pub mod import_cmd;
+/// `corelink tenant export/verify-export` — data-portability / offboarding.
+pub mod tenant;
 pub mod doctor_cmd;
 pub mod get;
 pub mod ls;

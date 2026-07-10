@@ -4,7 +4,7 @@ title: "Per-tenant monthly $-ceiling"
 description: "The fail-CLOSED cumulative-dollar spend cap that bounds each tenant's monthly cost blast-radius, orthogonal to the rate limit and the request quota."
 source_files:
   - "crates/corelink-container/src/tenant_quota.rs"
-checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
+checkpoint_sha: "15b5eb35b68b5f682508be6df263b7ab7b1d4628"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "billing", "dollar-ceiling", "adr-0068", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -31,8 +31,11 @@ never floating point.
 
 # How it works
 
-- The launch tripwire is `$5/mo` expressed as `5_000_000` micro-dollars; it is owner-tunable per tenant
-  via the `tenant_quota` row, not a product tier (`crates/corelink-container/src/tenant_quota.rs:58-63`).
+- The default ceiling is **effectively-unlimited** (`$1,000,000/mo` = `1_000_000_000_000` micro-dollars);
+  it is owner-tunable per tenant via the `tenant_quota` row, not a product tier. ADR-0068 reconciliation
+  (2026-07-09): the prior `$5` default was an uncalibrated tripwire that tripped ~100× BELOW the tier's
+  own request-cap, so it was removed as a default wall and the ceiling is now a per-tenant operator
+  backstop (primarily for the unbounded team/enterprise tiers) (`crates/corelink-container/src/tenant_quota.rs:58-63`).
 - `QuotaGuard::check` reads the wall clock first and fail-CLOSES with `503` when it is unavailable
   (`now_ms == 0`), because without a trustworthy clock the cycle boundary is unknowable
   (`crates/corelink-container/src/tenant_quota.rs:898-906`).
@@ -68,9 +71,10 @@ never floating point.
 
 # Gotchas
 
-- The per-op cost is a deliberately coarse FLAT charge (default `$0.001/op`, ~5000 ops to the `$5`
-  tripwire) — it is a preventive tripwire, NOT precise per-byte metering; that is a separate post-launch
-  concern (`crates/corelink-container/src/tenant_quota.rs:75-89`).
+- The per-op cost is a deliberately coarse FLAT charge (default `$0.001/op`) — a preventive backstop,
+  NOT precise per-byte metering (that is a separate post-launch concern). Post the ADR-0068
+  reconciliation the effectively-unlimited `$1,000,000/mo` default is no normal-usage wall
+  (`crates/corelink-container/src/tenant_quota.rs:75-89`).
 - The guard is `None` (so billable routes run WITHOUT the gate) when the storage env is unset, so a
   credential-less local/CI run is unaffected — the cap only arms in a real deployment
   (`crates/corelink-container/src/tenant_quota.rs:105-116`).
@@ -79,7 +83,7 @@ never floating point.
 
 1. `crates/corelink-container/src/tenant_quota.rs:18-30` — the fail-CLOSED posture (`402`/`503`/Allow).
 2. `crates/corelink-container/src/tenant_quota.rs:32-37` — integer micro-dollar units, no floating point.
-3. `crates/corelink-container/src/tenant_quota.rs:58-63` — the `$5/mo` launch tripwire constant.
+3. `crates/corelink-container/src/tenant_quota.rs:58-63` — the effectively-unlimited (`$1,000,000/mo`) default-ceiling constant (ADR-0068 reconciliation).
 4. `crates/corelink-container/src/tenant_quota.rs:75-89` — the coarse flat per-op cost model.
 5. `crates/corelink-container/src/tenant_quota.rs:105-116` — `None` guard when the storage env is unset (dev/CI).
 6. `crates/corelink-container/src/tenant_quota.rs:155-161` — cycle-elapsed test against `CYCLE_LENGTH_MS`.

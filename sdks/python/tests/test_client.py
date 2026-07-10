@@ -28,7 +28,9 @@ from corelink import (
 # ---------------------------------------------------------------------------
 
 _TEST_PAT = "ct_test_00000000000000000000000000000000"
-_BASE_URL = "https://api.corelink.humangr.com"
+# Canonical flat prod host — the SDK default (the dotted
+# `api.corelink.humangr.com` never resolved; `*.corelink.humangr.com` is dead).
+_BASE_URL = "https://corelink-api.humangr.com"
 
 _HEALTH_OK = {"status": "SERVING", "version": "0.1.0", "commit": "abc1234"}
 

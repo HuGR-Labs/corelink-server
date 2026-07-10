@@ -46,6 +46,10 @@ import {
   type InternalConsumer,
 } from "./lib/internal_auth.js";
 import { coloForMacro } from "./region-map.js";
+import {
+  ReplicationCoordinatorDO,
+  REPLICATION_COORDINATOR_SINGLETON,
+} from "./replication_coordinator_do.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Types
@@ -59,6 +63,13 @@ export interface Env {
   // `[[durable_objects.bindings]]` (name = "EVENT_LOG_DO"). Optional in the
   // type so existing test envs that omit it still typecheck.
   EVENT_LOG_DO?: DurableObjectNamespace;
+  // WI-MULTI-REGION-V1 — the SINGLE global replication-coordinator DO
+  // (idFromName(REPLICATION_COORDINATOR_SINGLETON)). Its single-instance
+  // guarantee IS the split-brain-safe promotion lock; its `alarm()` is the
+  // scheduled evaluate→promote driver. Bound in wrangler.toml
+  // `[[durable_objects.bindings]]` (name = "REPLICATION_COORDINATOR_DO").
+  // Optional so existing test envs that omit it still typecheck.
+  REPLICATION_COORDINATOR_DO?: DurableObjectNamespace;
   ENVIRONMENT: string;
   // D1 CONFIG_DB — control-plane database. Holds the `pat` table queried
   // during PAT validation (WP-A1). Bound in wrangler.toml `[[d1_databases]]`.
@@ -140,6 +151,7 @@ export interface Env {
   CORELINK_ADMIN_AUTH_KEY?: string;    // gate for admin `/_internal/*` routes
   CORELINK_ERASE_AUTH_KEY?: string;    // gate for erase `/_internal/*` routes
   CORELINK_DSR_ANCHOR_AUTH_KEY?: string; // gate for `/_internal/dsr/anchor` (per-user DSR legitimacy anchor; held by githugr, distinct from the eraser's ERASE key)
+  DSR_RECEIPT_SIGNING_KEY?: string; // HMAC signer for DSR customer-portal receipt JWTs (union #717; read by dsr/portal.rs, forwarded to the container)
   CORELINK_RUNNER_MINT_AUTH_KEY?: string; // gate for `/internal/v1/runner/{mint,revoke}` (runner dispatcher; scoped away from signup's pat_mint)
   // Per-tier quota enforcement (worker/src/lib/quota.ts).
   // Storage quota is always enforced for finite-quota tiers.
@@ -512,6 +524,12 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // that ONLY the Worker sets it). Strip it structurally on EVERY forward so only
   // the Worker's runner-job-derived value ever reaches the container.
   "x-corelink-ac-create-only",
+  // DSR portal MFA step-up freshness marker: the Worker is the SOLE setter (it
+  // stamps `1` on the /v1/privacy/* plane for an edge-verified Clerk session).
+  // A client MUST NOT be able to smuggle a forged `x-corelink-mfa-verified` to
+  // bypass the destructive-arm (erasure/rectification) step-up gate in
+  // routes/dsr/portal.rs — strip it structurally on EVERY forward.
+  "x-corelink-mfa-verified",
 ];
 
 /**
@@ -628,6 +646,18 @@ function matchRoute(url: URL): RouteMatch {
     return { tenantId: tenant, pathSuffix: path, routeKind: "bazel_v2" };
   }
 
+  // Stock-Bazel HTTP cache alias — /bazel/cache/{cas,ac}/<hash>
+  // What vanilla `bazel --remote_cache=https://host/bazel/cache` (and Buck2 as a
+  // REAPI HTTP cache) actually sends: GET/PUT on /cas/<hash> and /ac/<hash> with
+  // NO tenant segment in the URL. Unlike /bazel/v2/<instance>/…, the tenant is
+  // NOT in the path — it is resolved from the PAT and injected as
+  // x-corelink-tenant-id (tenantId="_anonymous" defers to the PAT, exactly like
+  // turbo_v8 / reapi_v1, and skips the URL-vs-PAT spoof check). Reuses the
+  // bazel_v2 routeKind: same container router, same PAT gate + metering + DO.
+  if (path.startsWith("/bazel/cache/")) {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "bazel_v2" };
+  }
+
   // Vercel /v8/artifacts (Turborepo remote cache).
   // Hash is the URL leaf; tenant comes from `?teamId=...` query string,
   // resolved by the container handler against caller_tenant.
@@ -688,6 +718,17 @@ function matchRoute(url: URL): RouteMatch {
   // JWT, tenant from clerk_user_id). Customer routes are NOT pre-tenant
   // (unlike signup).
   if (path.startsWith("/v1/customer/") || path === "/v1/customer") {
+    return { tenantId: "_anonymous", pathSuffix: path, routeKind: "customer_v1" };
+  }
+
+  // DSR self-service portal — /v1/privacy/dsr/* (access, portability,
+  // rectification, erasure, restriction, objection, status, verify-mfa). This is
+  // a Clerk-session dashboard surface (the browser holds a Clerk session, not a
+  // PAT), so it REUSES the customer_v1 forward: same edge Clerk-verify + tenant
+  // resolution + `x-corelink-tenant-id`/`x-corelink-token-prefix: clerk` stamp.
+  // The container routes it to routes/dsr/portal.rs by path. Checked BEFORE the
+  // generic /v1/* arm so it never falls into the PAT-required reapi_v1 bucket.
+  if (path.startsWith("/v1/privacy/") || path === "/v1/privacy") {
     return { tenantId: "_anonymous", pathSuffix: path, routeKind: "customer_v1" };
   }
 
@@ -1704,6 +1745,39 @@ const baseHandler: ExportedHandler<Env> = {
           request,
         );
       }
+
+      // WI-MULTI-REGION-V1 — the replication-coordinator singleton DO.
+      // `/_internal/replication/*` is served by ReplicationCoordinatorDO (NOT the
+      // container): the SINGLE global instance
+      // (idFromName(REPLICATION_COORDINATOR_SINGLETON)) whose single-writer
+      // guarantee IS the split-brain-safe promotion lock. We intercept it here —
+      // AFTER the shared internal-auth gate above, BEFORE the generic container
+      // forward — mapping `/_internal/replication/<op>` → the DO's `/_repl/<op>`.
+      if (route.pathSuffix.startsWith("/_internal/replication/")) {
+        if (!env.REPLICATION_COORDINATOR_DO) {
+          return applyCors(
+            reapiError("NOT_IMPLEMENTED", "replication coordinator DO not bound", 501, requestId),
+            request,
+          );
+        }
+        const coordId = env.REPLICATION_COORDINATOR_DO.idFromName(REPLICATION_COORDINATOR_SINGLETON);
+        const coordStub = env.REPLICATION_COORDINATOR_DO.get(coordId);
+        const coordUrl = new URL(request.url);
+        coordUrl.pathname = route.pathSuffix.replace("/_internal/replication", "/_repl");
+        const coordHeaders = new Headers(request.headers);
+        stripClientTrustHeaders(coordHeaders);
+        coordHeaders.set("x-request-id", requestId);
+        const coordReq = new Request(coordUrl.toString(), {
+          method: request.method,
+          headers: coordHeaders,
+          body:
+            request.method === "GET" || request.method === "HEAD"
+              ? undefined
+              : await request.clone().arrayBuffer(),
+        });
+        return applyCors(await coordStub.fetch(coordReq), request);
+      }
+
       // Route to the _system DO which hosts the LOCAL (this-region) container.
       const systemDoId = env.CORELINK_SERVER.idFromName("_system");
       const systemStub = env.CORELINK_SERVER.get(systemDoId);
@@ -2278,6 +2352,17 @@ const baseHandler: ExportedHandler<Env> = {
               "x-corelink-scope",
               custClerkAuth.role === "viewer" ? "read-only" : "read-write",
             );
+            // DSR portal (/v1/privacy/*) destructive-arm MFA step-up: the Worker
+            // is the SOLE setter of x-corelink-mfa-verified (stripped above). An
+            // edge-verified Clerk session is the destructive-arm authority today
+            // (consistent with /v1/customer/account/delete, which erases on a
+            // Clerk session alone); the container gate (routes/dsr/portal.rs) is
+            // fail-CLOSED on this trusted marker, so tightening it to require a
+            // real WebAuthn step-up assertion later is a header-condition change
+            // here, not a container rewire. Only stamped for the privacy plane.
+            if (route.pathSuffix.startsWith("/v1/privacy/")) {
+              h.set("x-corelink-mfa-verified", "1");
+            }
             // Deliberately NOT set: x-corelink-internal-auth (least privilege —
             // customer routes don't need the operator-grade credential).
             return h;
@@ -2889,7 +2974,7 @@ const handler = Sentry.withSentry(
 ) as ExportedHandler<Env>;
 
 export default handler;
-export { CoreLinkServer, RolloutController, EventLogDO };
+export { CoreLinkServer, RolloutController, EventLogDO, ReplicationCoordinatorDO };
 
 /**
  * Whether an internal route participates in the GDPR cross-residency erase

@@ -26,23 +26,27 @@ If you already have a digest and want to skip recomputation, supply it via
 ```python
 import asyncio
 from pathlib import Path
-from corelink import CoreLinkClient
+from corelink import AsyncCoreLinkClient
 
 async def main() -> None:
-    async with CoreLinkClient(tenant_id="acme-corp") as client:
+    async with AsyncCoreLinkClient(tenant_id="acme-corp") as client:
         data = Path("./build/output.tar").read_bytes()
         digest = await client.put(data)
         print(f"stored: {digest}")  # 64-char BLAKE3 hex
 ```
 
+> The synchronous twin is `corelink.CoreLinkClient` — same methods without
+> `async`/`await` (`digest = client.put(data)`), used with a plain `with` block.
+
 ## Streaming upload (large blobs)
 
-For files larger than 16 MiB use the streaming overload to avoid loading the
-file fully into memory:
+For large files use the streaming overload to avoid loading the file fully into
+memory — the BLAKE3 digest is computed in one rewound pass over the open file
+handle, then the same handle is streamed to the server:
 
 ```python
 async def upload_large(path: str) -> str:
-    async with CoreLinkClient(tenant_id="acme-corp") as client:
+    async with AsyncCoreLinkClient(tenant_id="acme-corp") as client:
         with open(path, "rb") as f:
             return await client.put_stream(f, chunk_size=4 * 1024 * 1024)
 ```
@@ -56,9 +60,12 @@ the same digest with no extra storage cost (CTRL-CAS-001 dedupe).
 
 | Exception | Cause | Action |
 |---|---|---|
-| `AuthError` | PAT missing or revoked | Re-run [01-authenticate](./01-authenticate) |
-| `QuotaError` | Tenant over quota | Inspect `corelink stat`; see [troubleshooting](./07-troubleshooting) |
-| `DigestMismatchError` | `expected_digest` did not match | Recompute locally; do not retry blindly |
+| `CoreLinkAuthError` | PAT missing or revoked (HTTP 401) | Re-run [01-authenticate](./01-authenticate) |
+| `CoreLinkQuotaError` | Tenant over quota (HTTP 402) | Inspect `corelink stat`; see [troubleshooting](./07-troubleshooting) |
+| `CoreLinkDigestMismatchError` | `expected_digest` did not match `blake3(body)` (HTTP 422) | Recompute locally; do not retry blindly |
+
+All import from `corelink.exceptions` (or the top-level `corelink` package) and
+subclass `CoreLinkError`.
 
 ## Next steps
 

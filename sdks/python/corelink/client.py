@@ -1,6 +1,6 @@
 """CoreLink synchronous HTTP client.
 
-Implements the 3 MVP operations derived from openapi-corelink-v1.yaml:
+Control-plane operations (derived from openapi-corelink-v1.yaml):
 
   Operation      | operationId | Method | Path
   -------------- | ----------- | ------ | ---------------------
@@ -8,20 +8,39 @@ Implements the 3 MVP operations derived from openapi-corelink-v1.yaml:
   Issue PAT      | patIssue    | POST   | /v1/pats
   Tenant signup  | signup      | POST   | /v1/signup
 
+CAS data-plane operations (native BLAKE3-keyed routes, tenant-scoped):
+
+  Operation      | Method | Path
+  -------------- | ------ | ---------------------------
+  Put blob       | PUT    | /v1/cas/{tenant}/{digest}
+  Get blob       | GET    | /v1/cas/{tenant}/{digest}
+  Stat blob      | HEAD   | /v1/cas/{tenant}/{digest}
+
 Auth: Bearer PAT via ``Authorization: Bearer <token>`` header
       (BearerPAT security scheme).
 
-This client is sync-only (MVP scope). Async support is a future WP.
+This client is synchronous. The async surface documented in the how-to guides
+(``async with`` / ``await client.put(...)``) lives in
+:class:`corelink.aio.AsyncCoreLinkClient`.
 """
 
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import IO
 
 import httpx
 
-from .exceptions import CoreLinkAuthError, CoreLinkRequestError, CoreLinkServerError
+from ._errors import raise_for_cas_status, raise_for_control_status
+from .cas import (
+    DEFAULT_CHUNK_SIZE,
+    StatResult,
+    hash_stream,
+    iter_file,
+    resolve_put_digest,
+    validate_digest,
+    verify_bytes,
+)
 from .types import (
     HealthResponse,
     PatIssueRequest,
@@ -30,7 +49,10 @@ from .types import (
     SignupResponse,
 )
 
-_DEFAULT_BASE_URL = "https://api.corelink.humangr.com"
+# Canonical flat prod host (`corelink-*.humangr.com`). NOTE: the dotted
+# `*.corelink.humangr.com` pattern is DEAD — the previous default
+# `api.corelink.humangr.com` never resolved.
+_DEFAULT_BASE_URL = "https://corelink-api.humangr.com"
 _DEFAULT_TIMEOUT = 30.0
 
 
@@ -43,9 +65,14 @@ class CoreLinkClient:
         Personal Access Token.  If *None*, the value of the
         ``CORELINK_PAT`` environment variable is used.  Raises
         :class:`ValueError` if neither is provided.
+    tenant_id:
+        Tenant scope for all CAS data-plane operations (``put`` / ``get`` /
+        ``stat``).  Optional — control-plane calls (health / issue_pat /
+        signup) do not need it, but a CAS call without a tenant raises
+        :class:`ValueError`.
     base_url:
         Override the server base URL (useful for staging / local dev).
-        Defaults to ``https://api.corelink.humangr.com``.
+        Defaults to ``https://corelink-api.humangr.com``.
     timeout:
         Request timeout in seconds.  Defaults to 30.
 
@@ -55,12 +82,15 @@ class CoreLinkClient:
     >>> health = client.get_health()
     >>> health.status.value
     'SERVING'
+    >>> cas = CoreLinkClient(pat="ct_xxx", tenant_id="acme-corp")
+    >>> digest = cas.put(b"hello world")  # 64-char BLAKE3 hex
     """
 
     def __init__(
         self,
         pat: str | None = None,
         *,
+        tenant_id: str | None = None,
         base_url: str = _DEFAULT_BASE_URL,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
@@ -71,6 +101,7 @@ class CoreLinkClient:
                 "the CORELINK_PAT environment variable."
             )
         self._pat: str = resolved_pat
+        self._tenant_id: str | None = tenant_id
         self._base_url: str = base_url.rstrip("/")
         self._http: httpx.Client = httpx.Client(
             base_url=self._base_url,
@@ -97,33 +128,130 @@ class CoreLinkClient:
     # ------------------------------------------------------------------
 
     def _raise_for_status(self, response: httpx.Response) -> None:
-        """Raise an appropriate SDK exception based on HTTP status.
+        """Raise an appropriate SDK exception for a control-plane response.
 
         Does nothing for 2xx responses.
         """
-        if response.is_success:
-            return
+        raise_for_control_status(response)
 
-        error_code: str | None = None
-        try:
-            body: dict[str, Any] = response.json()
-            error_code = body.get("error", {}).get("code")
-            message: str = body.get("error", {}).get("message", response.text)
-        except Exception:
-            message = response.text or f"HTTP {response.status_code}"
+    def _raise_for_cas_status(self, response: httpx.Response) -> None:
+        """Raise an appropriate SDK exception for a CAS data-plane response.
 
-        if response.status_code == 401:
-            raise CoreLinkAuthError(message)
-        if 400 <= response.status_code < 500:
-            raise CoreLinkRequestError(
-                message,
-                status_code=response.status_code,
-                error_code=error_code,
+        Does nothing for 2xx responses.
+        """
+        raise_for_cas_status(response)
+
+    def _cas_url(self, digest: str) -> str:
+        """Build the tenant-scoped CAS object URL, failing fast on a missing
+        tenant or a malformed digest."""
+        if not self._tenant_id:
+            raise ValueError(
+                "CAS operations require a tenant; construct the client with "
+                "`tenant_id=`."
             )
-        raise CoreLinkServerError(message, status_code=response.status_code)
+        return f"/v1/cas/{self._tenant_id}/{validate_digest(digest)}"
 
     # ------------------------------------------------------------------
-    # MVP operations
+    # CAS data-plane operations (BLAKE3-keyed)
+    # ------------------------------------------------------------------
+
+    def put(self, data: bytes, *, expected_digest: str | None = None) -> str:
+        """Store *data* in the CAS and return its 64-char BLAKE3 hex digest.
+
+        ``PUT /v1/cas/{tenant}/{digest}`` — idempotent on the digest (a second
+        put of identical bytes returns the same digest, no extra storage).
+
+        Parameters
+        ----------
+        data:
+            Raw bytes to store.
+        expected_digest:
+            A precomputed BLAKE3 digest to key the blob under, skipping local
+            recomputation. Format-validated locally; a value that does not
+            match the bytes is rejected by the server (422 →
+            :class:`CoreLinkDigestMismatchError`).
+
+        Raises
+        ------
+        CoreLinkDigestMismatchError, CoreLinkQuotaError, CoreLinkAuthError,
+        CoreLinkRequestError, CoreLinkServerError
+        """
+        digest = resolve_put_digest(data, expected_digest)
+        response = self._http.put(self._cas_url(digest), content=data)
+        self._raise_for_cas_status(response)
+        return digest
+
+    def put_stream(
+        self,
+        fileobj: IO[bytes],
+        *,
+        chunk_size: int = DEFAULT_CHUNK_SIZE,
+        expected_digest: str | None = None,
+    ) -> str:
+        """Stream a (large) blob from a binary file without buffering it whole.
+
+        The BLAKE3 digest is computed in one seek-rewind pass over *fileobj*
+        (unless *expected_digest* is supplied), then the same handle is streamed
+        to ``PUT /v1/cas/{tenant}/{digest}`` in ``chunk_size`` chunks.
+
+        Parameters
+        ----------
+        fileobj:
+            A seekable binary file (``open(path, "rb")``).
+        chunk_size:
+            Read / upload chunk size in bytes (default 4 MiB).
+        expected_digest:
+            Skip the hashing pass and key the blob under this precomputed
+            digest (format-validated locally; verified server-side).
+        """
+        if expected_digest is not None:
+            digest = validate_digest(expected_digest)
+        else:
+            digest = hash_stream(fileobj, chunk_size)
+        response = self._http.put(
+            self._cas_url(digest), content=iter_file(fileobj, chunk_size)
+        )
+        self._raise_for_cas_status(response)
+        return digest
+
+    def get(self, digest: str, *, verify: bool = True) -> bytes:
+        """Download a blob by BLAKE3 hex digest.
+
+        ``GET /v1/cas/{tenant}/{digest}``. With *verify* (default) the returned
+        bytes are re-hashed client-side (CTRL-CAS-002) and a mismatch raises
+        :class:`CoreLinkDigestMismatchError` — corrupted bytes never reach the
+        caller as valid data.
+
+        Raises
+        ------
+        CoreLinkNotFoundError, CoreLinkDigestMismatchError, CoreLinkAuthError,
+        CoreLinkRequestError, CoreLinkServerError
+        """
+        url = self._cas_url(digest)
+        response = self._http.get(url)
+        self._raise_for_cas_status(response)
+        data = response.content
+        if verify:
+            verify_bytes(digest, data)
+        return data
+
+    def stat(self, digest: str) -> StatResult:
+        """Return metadata for a blob without downloading it.
+
+        ``HEAD /v1/cas/{tenant}/{digest}`` (axum serves HEAD for the GET route):
+        200 → present (``size_bytes`` from ``Content-Length``); 404 / 410 →
+        absent. Any other status raises.
+        """
+        url = self._cas_url(digest)
+        response = self._http.head(url)
+        if response.status_code in (404, 410):
+            return StatResult(digest=digest, size_bytes=0, exists=False)
+        self._raise_for_cas_status(response)
+        size = int(response.headers.get("content-length", "0") or "0")
+        return StatResult(digest=digest, size_bytes=size, exists=True)
+
+    # ------------------------------------------------------------------
+    # Control-plane operations
     # ------------------------------------------------------------------
 
     def get_health(self) -> HealthResponse:

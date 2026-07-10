@@ -8,7 +8,8 @@ source_files:
   - "crates/corelink-byok/src/lib.rs"
   - "crates/corelink-byok/src/byok_aws/real.rs"
   - "crates/corelink-container/src/storage/byok_cas.rs"
-checkpoint_sha: "f1b9f77277635e6ff38d06a9ceb8ce87a2025614"
+  - "crates/corelink-container/src/routes/byok_admin.rs"
+checkpoint_sha: "8cb1d90f5df279e6e77995a39894ed9830301e5a"
 provenance: "AUTHORED"
 tags: ["storage", "byok", "encryption", "kms", "envelope"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -59,8 +60,10 @@ surface-qualified (`"cas:<digest>"` / `"ac:<digest>"`) so a CAS blob and an AC e
 string never collide on one row (`crates/corelink-container/src/storage/byok_cas.rs:673-683`).
 
 **Still deferred (documented, never silently skipped):** the `partial`/backfill dual-read state (audit
-H7) — fail-CLOSED here, NOT plaintext (Wave 4); onboarding / CMK provisioning (the sole writer of
-`active` rows); the production `KmsProvider` factory wiring into a real KMS (`byok.rs` /
+H7) — fail-CLOSED here, NOT plaintext (Wave 4); SELF-SERVE onboarding / CMK provisioning (the operator
+activation route `routes/byok_admin.rs` — `POST /v1/admin/byok/{activate,deactivate}` — is the wired
+writer of `active`/`shredded` rows, but the customer-facing self-serve onboarding UI is deferred); the
+production `KmsProvider` factory wiring into a real KMS (`byok.rs` /
 `byok_orchestrator.rs` still construct a provider behind an `Arc<dyn KmsProvider>` but the default
 binary links the in-memory fake); and broader crypto-shred (bulk shred on `state='shredded'`). NOTE:
 reclaim of the Mode-B `byok_envelope` row on blob delete is now DONE (Wave 4a) — `CasDeleteHandler`/
@@ -73,7 +76,7 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
   that `R2CasHandler`/`R2AcHandler` call on the write/read path
   (`crates/corelink-container/src/storage/byok_cas.rs:1-9`).
 - The feature-gated production factory that constructs the live KMS provider as an `Arc<dyn KmsProvider>`
-  (`crates/corelink-container/src/byok.rs:1-29`).
+  (`crates/corelink-container/src/byok.rs:80-96`).
 - The BYOK umbrella crate: the single import target re-exporting the core trait + types and gating the
   four providers (`crates/corelink-byok/src/lib.rs:1-21`).
 
@@ -118,7 +121,7 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
     build, with no provider as the default test/CI build
     (`crates/corelink-byok/src/lib.rs:34-43`).
 12. The container CAN construct the production provider behind an `Arc<dyn KmsProvider>` via a feature-gated
-    async factory (`crates/corelink-container/src/byok.rs:1-29`); the orchestrator's `make_provider` is the
+    async factory (`crates/corelink-container/src/byok.rs:80-96`); the orchestrator's `make_provider` is the
     singleton dispatch that builds exactly ONE provider for the binary and emits a boot-time audit event
     (`crates/corelink-container/src/byok_orchestrator.rs:208-219`), and `build_active` is the compile-time
     `cfg`-gated dispatch over the four `byok-*-real` providers with an `InMemoryFake` fallback
@@ -126,6 +129,10 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 13. The real AWS enforcer `AwsKmsRealProvider::new` unconditionally enables `use_fips(true)` and resolves
     EXPLICIT static credentials + an explicit FIPS endpoint instead of the CF-cold-start-hanging AWS SDK
     chain (`crates/corelink-byok/src/byok_aws/real.rs:176-256`).
+14. The operator activation surface is `byok_admin::router`, exposing `POST /v1/admin/byok/activate`
+    (writes the `active` `tenant_byok_config` row from an operator-asserted CMK provider/identity + the
+    CMK-WRAPPED Tcs — never the plaintext Tcs) and `POST /v1/admin/byok/deactivate` (the crypto-shred kill
+    switch) (`crates/corelink-container/src/routes/byok_admin.rs:128-133`).
 
 # Invariants
 - **Encrypt at rest ONLY for an `active` tenant, in its configured mode.** `partial` is active-but-deferred
@@ -150,7 +157,7 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 - AT MOST ONE KMS provider may be linked in any build; a multi-provider build is rejected at compile time
   by the `compile_error!` guards (`crates/corelink-byok/src/lib.rs:105-139`).
 - `#![forbid(unsafe_code)]` holds on both the container factory and the umbrella crate's surface
-  (`crates/corelink-container/src/byok.rs:10`, `crates/corelink-byok/src/lib.rs:93`).
+  (`crates/corelink-container/src/byok.rs:17`, `crates/corelink-byok/src/lib.rs:93`).
 
 # Gotchas
 - The wiring is gated-inert, not dormant code: the encrypt/decrypt branches ARE on the live CAS/AC path,
@@ -183,8 +190,8 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 13. `crates/corelink-container/src/storage/byok_cas.rs:757-904` — `ByokEnvelopeStore` trait + `D1ByokEnvelopeStore`: idempotent `INSERT … ON CONFLICT DO NOTHING` + `SELECT` over the D1 row seam (audit C2).
 14. `crates/corelink-container/src/storage/byok_cas.rs:919-1029` — `ModeBEncryptor`: random per-blob DEK wrapped in `byok_envelope`, deterministic `CLB2` ciphertext, no dedup but idempotent/no-orphan.
 15. `crates/corelink-container/src/storage/byok_cas.rs:1136-1147` — `engagement_for`: the state → `Encrypt(mode)` / fail-closed / plaintext truth table.
-16. `crates/corelink-container/src/byok.rs:1-29` — feature-gated factory returning an `Arc<dyn KmsProvider>`.
-17. `crates/corelink-container/src/byok.rs:10` — `#![forbid(unsafe_code)]` on the factory.
+16. `crates/corelink-container/src/byok.rs:80-96` — feature-gated factory returning an `Arc<dyn KmsProvider>`.
+17. `crates/corelink-container/src/byok.rs:17` — `#![forbid(unsafe_code)]` on the factory.
 18. `crates/corelink-byok/src/byok_aws/real.rs:176-256` — `AwsKmsRealProvider::new`/`with_fips`: unconditional `use_fips(true)` + EXPLICIT static creds + explicit FIPS endpoint (no CF-cold-start-hanging AWS SDK chain).
 19. `crates/corelink-byok/src/lib.rs:1-21` — umbrella re-export of the core trait/types + microkernel mutual-exclusion intro.
 20. `crates/corelink-byok/src/lib.rs:34-43` — cargo feature reference (`aws`/`gcp`/`azure`/`vault`), default no provider.
@@ -192,3 +199,4 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 22. `crates/corelink-byok/src/lib.rs:105-139` — compile-time at-most-one-provider `compile_error!` guards.
 23. `crates/corelink-container/src/byok_orchestrator.rs:208-219` — `make_provider`: builds the singleton `Arc<dyn KmsProvider>` + boot audit event.
 24. `crates/corelink-container/src/byok_orchestrator.rs:223-272` — `build_active`: compile-time `cfg` dispatch over the four `byok-*-real` providers, `InMemoryFake` fallback when none set.
+25. `crates/corelink-container/src/routes/byok_admin.rs:128-133` — `byok_admin::router`: the operator `POST /v1/admin/byok/{activate,deactivate}` surface — the wired writer of `active`/`shredded` `tenant_byok_config` rows (activation takes the CMK-wrapped Tcs, never the plaintext).
