@@ -7,7 +7,8 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/event_log_do.ts"
   - "worker/src/rollout_controller.ts"
-checkpoint_sha: "3b7a66d65371999f41ea0146ca80c746e60e025a"
+  - "worker/src/replication_coordinator_do.ts"
+checkpoint_sha: "8cb1d90f5df279e6e77995a39894ed9830301e5a"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -65,20 +66,28 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
    (`worker/src/durable_object.ts:80-93`, `worker/src/durable_object.ts:919-936`).
 9. A periodic `alarm` re-probes health and marks the container `degraded` after `MAX_HEALTH_FAILURES`
    (`worker/src/durable_object.ts:958-1012`).
-10. The Worker exports two SIBLING DO classes alongside `CoreLinkServer`
-    (`worker/src/index.ts:2904`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
+10. The Worker exports three SIBLING DO classes alongside `CoreLinkServer`
+    (`worker/src/index.ts:2976`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
     primitive — it adopts the first `x-corelink-tenant-id` it sees, persists that pin, and refuses any
     other tenant's request with a `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`). Its
     `append` monotonically assigns `seq` under `blockConcurrencyWhile` (persist the entry, THEN advance
     the head, so a crash orphans rather than gaps), dispatched from `/_eventlog/append`
     (`worker/src/event_log_do.ts:220-225`, `worker/src/event_log_do.ts:266-277`). It is bound in
     `wrangler.toml` and exported, but NO edge route dispatches to it — the `EVENT_LOG_DO` binding is
-    referenced only as an OPTIONAL field of `Env` (`worker/src/index.ts:56-61`); it is a ready primitive
+    referenced only as an OPTIONAL field of `Env` (`worker/src/index.ts:60-65`); it is a ready primitive
     awaiting its hugit-P2 seam-D consumer.
 11. `RolloutController` is an UNWIRED stub: bound in `wrangler.toml` and exported, it answers
     `/_do/health` with 200 but returns `501 NOT_IMPLEMENTED` ("RolloutController WASM bridge not yet
     wired (Phase C)") for every other request — the real rollout logic lives in Rust/WASM and is not yet
     bridged (`worker/src/rollout_controller.ts:34-56`).
+12. `ReplicationCoordinatorDO` (WI-MULTI-REGION-V1) is the SINGLE global replication-coordinator DO —
+    addressed by a FIXED name (`idFromName(REPLICATION_COORDINATOR_SINGLETON)`), so its single-instance /
+    single-writer guarantee IS the split-brain-safe promotion lock. It persists the region role-map +
+    heartbeats under `blockConcurrencyWhile` and self-arms a periodic `alarm()` that runs the
+    evaluate→promote tick and always re-arms itself (`worker/src/replication_coordinator_do.ts:419-476`).
+    The Worker intercepts `/_internal/replication/*` (after the shared internal-auth gate, before the
+    generic container forward) and maps it to the DO's `/_repl/<op>` (`arm`/`status`/`tick`)
+    (`worker/src/replication_coordinator_do.ts:525-547`).
 
 # Invariants
 - One DO instance per tenant — the DO ID is tenant-derived, never cross-tenant
@@ -95,19 +104,26 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`),
   and `seq` is strictly monotonic + gap-free under `blockConcurrencyWhile` (persist-entry-then-advance-
   head) (`worker/src/event_log_do.ts:266-277`).
-- Honest wiring: of the three exported DO classes, only `CoreLinkServer` is a live serving path.
-  `EventLogDO` is implemented + bound + exported but has NO live edge caller yet (`EVENT_LOG_DO` is an
-  OPTIONAL `Env` field, `worker/src/index.ts:56-61`), and `RolloutController` is a bound+exported STUB
-  returning `501 NOT_IMPLEMENTED` for everything but health (`worker/src/rollout_controller.ts:34-56`).
+- Honest wiring: of the four exported DO classes, `CoreLinkServer` serves every tenant's data plane and
+  `ReplicationCoordinatorDO` serves the single-instance `/_internal/replication/*` control plane
+  (`worker/src/replication_coordinator_do.ts:419-476`). `EventLogDO` is implemented + bound + exported but
+  has NO live edge caller yet (`EVENT_LOG_DO` is an OPTIONAL `Env` field, `worker/src/index.ts:60-65`), and
+  `RolloutController` is a bound+exported STUB returning `501 NOT_IMPLEMENTED` for everything but health
+  (`worker/src/rollout_controller.ts:34-56`).
+- The replication coordinator is a TRUE singleton: because the Worker always addresses it by the fixed
+  `REPLICATION_COORDINATOR_SINGLETON` name, at most one instance can promote a replica at a time — that
+  name-addressed single-writer property IS the split-brain-safe lock (never auto-promotes into a
+  partition) (`worker/src/replication_coordinator_do.ts:525-547`).
 
 # Gotchas
 - DOs are single-threaded but ASYNC-concurrent: every `await` is a yield point where another queued
   `fetch` can run — which is exactly why the concurrent-start guard flips the status synchronously.
 - The container env forward is a silent-failure trap: a secret the container reads via `env::var` but
   the DO never forwards will appear "set" to the operator yet never reach the container.
-- Two of the Worker's three exported DO classes are NOT live request paths: `EventLogDO` is a wired-but-
+- Two of the Worker's four exported DO classes are NOT live request paths: `EventLogDO` is a wired-but-
   unconsumed primitive (no edge dispatcher reads the optional `EVENT_LOG_DO` binding) and
   `RolloutController` is a Phase-C stub (501) — don't cite either as an active serving plane.
+  (`CoreLinkServer` and `ReplicationCoordinatorDO` ARE live.)
 
 # Citations
 1. `worker/src/durable_object.ts:1-26` — the DO's responsibilities + per-tenant pinning doc.
@@ -123,9 +139,11 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 11. `worker/src/durable_object.ts:801-831` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:779-790` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
 12. `worker/src/durable_object.ts:919-936` — `onIdleTimeout`: death event emitted, then the idle-timeout destroy.
 13. `worker/src/durable_object.ts:958-1012` — the periodic `alarm` health re-probe + degrade.
-14. `worker/src/index.ts:2904` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
+14. `worker/src/index.ts:2976` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO`, `ReplicationCoordinatorDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
 15. `worker/src/event_log_do.ts:207-218` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).
 16. `worker/src/event_log_do.ts:220-225` — the `/_eventlog/append` + `/_eventlog/read` route dispatch.
 17. `worker/src/event_log_do.ts:266-277` — `handleAppend`: monotonic gap-free `seq` under `blockConcurrencyWhile` (persist-entry-then-advance-head).
-18. `worker/src/index.ts:56-61` — the `EVENT_LOG_DO` binding declared OPTIONAL on `Env` (the only `worker/src` reference; no edge route dispatches to it yet).
+18. `worker/src/index.ts:60-65` — the `EVENT_LOG_DO` binding declared OPTIONAL on `Env` (the only `worker/src` reference; no edge route dispatches to it yet).
 19. `worker/src/rollout_controller.ts:34-56` — `RolloutController` UNWIRED stub: `/_do/health` 200 but `501 NOT_IMPLEMENTED` "WASM bridge not yet wired (Phase C)" for all other requests.
+20. `worker/src/replication_coordinator_do.ts:419-476` — `ReplicationCoordinatorDO`: the single global coordinator DO — persists role-map + heartbeats under `blockConcurrencyWhile` and self-arms the periodic `alarm()` evaluate→promote driver (always re-arms, even on a throwing tick).
+21. `worker/src/replication_coordinator_do.ts:525-547` — the DO `fetch` router for the `/_repl/<op>` control plane (`arm`/`status`/`tick`), which the Worker reaches by mapping `/_internal/replication/*` onto it; the fixed `REPLICATION_COORDINATOR_SINGLETON` name is the split-brain-safe single-writer promotion lock.
