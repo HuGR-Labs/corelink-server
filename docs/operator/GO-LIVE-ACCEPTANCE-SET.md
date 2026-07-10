@@ -1,8 +1,10 @@
 # CoreLink — Go-Live Acceptance Set (BOUNDED · FINAL)
 
 **Date:** 2026-07-10 · **Owner:** stakeholder · **TL:** corelink-server
-**Status:** the launch surface is CODE-COMPLETE and in `main` (integration wave #720).
-The residual is a **finite operator switch**, not engineering.
+**Status:** 🚀 **LAUNCHED (2026-07-10).** The launch surface is code-complete and in
+`main` (integration wave #720), and **deployed to prod** — image `3ba152f5-r1` serving,
+live Clerk+Stripe bound. The operator switch (section B) is executed; only non-blocking
+polish remains.
 
 > **This document is the closed list.** It is deliberately bounded. New "findings"
 > do not reopen it — they are triaged against the launch line below and default to
@@ -48,18 +50,25 @@ explicitly OUT of the go-live acceptance set — including runners self-serve
 
 **Full per-capability BUILT/PARTIAL/ABSENT proof:** `docs/operator/CAPABILITY-INVENTORY.md`.
 
-## B. LAUNCH — operator switch (owner-only; NOT code, cannot be automated by TL)
+## B. LAUNCH — operator switch — ✅ DONE (2026-07-10)
 
-These are the **entire** remaining launch actions. They are owner-only because CF
-secrets are write-only and the live keys live in the owner's Clerk/Stripe dashboards.
+The switch that was owner-only (CF secrets are write-only; live keys live in the
+owner's dashboards) is **executed**:
 
-1. **Flip Clerk test→live keys** (owner's Clerk dashboard) → bind live `CLERK_*`.
-2. **Flip Stripe test→live keys + confirm the live webhook endpoint** points at the
-   signup-worker (downgrade authority) → bind live `STRIPE_*` + `whsec`.
-3. Deploy container+worker via the CI-driven path (`gh workflow`, tag `<sha>-r1`),
-   repin the 5 container pins, run `cf-deploy-prod`.
+1. ✅ **Clerk live keys** — bound on prod (`CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SECRET`
+   verified present via CF API; owner-confirmed the values are live).
+2. ✅ **Stripe live keys + webhook** — `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`
+   bound; the live "Corelink prd" webhook points at the signup-worker (downgrade
+   authority). Owner-confirmed live. (See `LAUNCH-KEYS-CLERK-STRIPE.md`.)
+3. ✅ **Wave deployed to prod** — image `3ba152f5-r1` built + pushed to all 5 CF
+   Containers registries, 5 pins repinned (PR #723), `cf-deploy-prod` migrated D1
+   (additive) + rolled the primary `prod` region; running image confirmed via the CF
+   Containers API = `corelink-prod-corelinkserver-prod:3ba152f5-r1`; product health
+   200 on api/signup/app. Fan-out to the 4 regional envs (sam/lhr/nrt/syd) follows.
 
-That is the whole go-live. **B1–B3 = launch. Nothing else is a launch blocker.**
+**Go-live executed. B1–B3 done.** Residual operator polish (non-blocking): enable
+SSL for the BetterStack status page (`status.humangr.com`) in the BetterStack console
+(the one smoke [FAIL], a status page — not the product/money path).
 
 ---
 
