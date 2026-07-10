@@ -271,6 +271,16 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(stripe): Stripe env config is now whitespace-robust — a trailing newline no longer 502s EVERY checkout.**
+  `StripeClientConfig::from_env()` (`crates/corelink-stripe-real/src/client.rs`) read `STRIPE_AUTH_MODE`
+  and matched it with an exact `== "direct"` (no `.trim()`). Secrets bound via a shell here-string
+  (`… <<< "$V"`) or an API `text:` field append a trailing `\n`, so `STRIPE_AUTH_MODE="direct\n"` fell
+  through to the `other =>` arm → `from_env()` returned an Authentication error → the container's Stripe
+  client never initialised → `tier_select` returned `stripe_unavailable` (502) on **every tier** (cache
+  AND runner), silently blocking the entire paid money-path. This is the same newline class that already
+  bit `CORELINK_DPA_VERSION` in prod this cycle. Now `.trim()`s `STRIPE_AUTH_MODE`, `STRIPE_SECRET_KEY`,
+  and `STRIPE_API_BASE` before use, so config is robust regardless of how the secret was bound. Adds
+  regression tests: `"direct\n"` → Direct mode, and whitespace-padded mode/key/base all parse clean.
 - **pip/uv mirror — the documented HTTP Basic recipe now authenticates (was a hard 401).**
   `apps/docs/docs/integrations/pip.md` tells pip/uv users to auth via URL-embedded Basic
   (`https://hugr:<PAT>@corelink-api.humangr.com/pip/<tenant>/simple/`), but the edge Worker
