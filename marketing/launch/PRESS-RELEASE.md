@@ -13,7 +13,7 @@
 
 ## Sub-headline
 
-CoreLink delivers TLA+ formally verified multi-tenant isolation, BYOK enterprise tier across four KMS providers, customer-managed kill switch, and Schrems-II-compliant residency across four regions — backed by 30 days of sustained staging, external pentest with retest, and three lighthouse customer attestations.
+CoreLink delivers TLA+ formally verified multi-tenant isolation, a BYOK enterprise tier on AWS KMS (GCP / Azure / Vault providers on the roadmap), customer-managed kill switch, and Schrems-II-compliant residency across four regions — backed by 30 days of sustained staging, external pentest with retest, and three lighthouse customer attestations.
 
 ## Dateline
 
@@ -30,9 +30,9 @@ For build-heavy engineering organizations, the cache is the single most leverage
 Every claim below traces to a canonical CoreLink spec source, an external letter, or a published audit artifact:
 
 - **Multi-tenant architecture, TLA+ verified.** Four formal specifications (`tenant_isolation.tla`, `cas_integrity.tla`, `audit_immutability.tla`, `gc_correctness.tla`) maintained green in continuous integration per pattern PAT-FORMAL-VERIFICATION-001 (sprint S-15; spec contract S-20 §9).
-- **BYOK across four KMS providers.** AWS KMS, GCP KMS, Azure Key Vault, and HashiCorp Vault, with envelope encryption and bounded DEK cache (≤ 5 minutes) per sprint S-14.
+- **BYOK on AWS KMS.** Envelope encryption with a bounded DEK cache (≤ 5 minutes) per sprint S-14; GCP KMS, Azure Key Vault, and HashiCorp Vault providers are on the roadmap.
 - **Customer-managed kill switch.** Hard-fail crypto sovereignty without operator override (INV-BYOK-CRYPTO-SOVEREIGNTY).
-- **Ed25519 erasure attestation.** NIST SP 800-88 Rev. 1 crypto-erase semantics, 7-year retention of attestation records (INV-ERASURE-ATTESTATION-SIGNED).
+- **Crypto-erasure (NIST SP 800-88 Rev. 1 semantics).** PII-bearing claims made cryptographically unrecoverable; a customer-served Ed25519 erasure attestation is on the near-term roadmap (INV-ERASURE-ATTESTATION-SIGNED).
 - **Four enumerated regions** — WNAM, ENAM, WEUR, SAM — with no-cross-region-leak invariant (INV-REGION-NO-CROSS-LEAK) and Schrems-II Transfer Impact Assessment on file.
 - **Append-only audit chain.** RFC 6962 Merkle tree construction, JCS-canonicalized leaves (RFC 8785), daily proof publication (INV-AUDIT-APPEND-ONLY).
 - **SBOM published, signed.** CycloneDX 1.5+ format, signed and published per sprint S-12.

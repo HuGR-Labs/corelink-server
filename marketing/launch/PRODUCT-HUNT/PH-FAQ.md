@@ -9,7 +9,7 @@
 ## General
 
 **Q: How is CoreLink different from `[existing remote cache]`?**
-A: CoreLink is multi-tenant with TLA+-verified tenant isolation, BYOK across four KMS providers with customer-managed kill switch, and four enumerated regions with a structural no-cross-region-leak invariant. The relevant differentiators are listed in the launch post; we will not characterize competitors directly.
+A: CoreLink is multi-tenant with TLA+-verified tenant isolation, BYOK on AWS KMS (GCP / Azure / Vault on the roadmap) with customer-managed kill switch, and four enumerated regions with a structural no-cross-region-leak invariant. The relevant differentiators are listed in the launch post; we will not characterize competitors directly.
 Source: `corelink.humangr.com/blog/01-introducing-corelink`.
 
 **Q: Is CoreLink open source?**
@@ -65,7 +65,7 @@ A: No. Cross-region replication of customer data is structurally not permitted (
 Source: `corelink.humangr.com/blog/04-multi-region-residency`.
 
 **Q: How does erasure work?**
-A: NIST SP 800-88 Rev. 1 crypto-erase semantics. Erasure produces an Ed25519-signed attestation the customer can replay against CoreLink's published signing key. 7-year attestation retention.
+A: NIST SP 800-88 Rev. 1 crypto-erase semantics. Erasure is verifiable today; a customer-served Ed25519-signed attestation (replayable against CoreLink's published signing key) is on the near-term roadmap. 7-year attestation retention.
 Source: INV-ERASURE-ATTESTATION-SIGNED + INV-DATA-ERASURE-COMPLETE.
 
 ## Pricing

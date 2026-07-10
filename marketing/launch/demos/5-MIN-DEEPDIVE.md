@@ -300,7 +300,7 @@ let data = client.get("af1c3e9b…").await?;
 
 **Voiceover (~13s):**
 
-> "Four KMS providers supported. AWS, GCP, Azure, and HashiCorp Vault. The cryptographic boundary is real — CoreLink uses envelope encryption where the data-encryption key is wrapped by your customer-managed key. Our operators cannot read your bytes without your KMS authorising every unwrap."
+> "AWS KMS is supported at GA, with GCP, Azure, and HashiCorp Vault on the roadmap. The cryptographic boundary is real — CoreLink uses envelope encryption where the data-encryption key is wrapped by your customer-managed key. Our operators cannot read your bytes without your KMS authorising every unwrap."
 
 ### 5.3 — Configure AWS KMS (4:05 → 4:25)
 

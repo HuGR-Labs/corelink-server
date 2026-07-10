@@ -7,7 +7,8 @@ teams that need BYOK, residency honesty, and a re-derivable audit log.
 
 **[corelink-server](https://github.com/HumanGuardrail/corelink-server)**
 Multi-tenant content-addressable cache — Bazel, Cargo, npm, pip, OCI.
-REAPI v2 compatible. Per-tenant BYOK (4 KMS). RFC-6962-style audit chain
+REAPI v2 compatible. Per-tenant BYOK (AWS KMS; GCP/Azure/Vault on the
+roadmap). RFC-6962-style audit chain
 (BLAKE3 + Ed25519). TLA+-proved cross-tenant isolation. Cloudflare Workers
 + R2 + D1 + Neon Postgres. Free tier: 10 GB / 500k req/mo.
 
@@ -46,7 +47,7 @@ What is verifiable today:
 
 What is not shipped yet (important — not buried):
 
-- BYOK across 4 KMS providers ships at GA, not in pilot
+- BYOK: AWS KMS ships at GA; GCP / Azure / Vault providers on the roadmap (not in pilot)
 - SOC 2 Type II: gap analysis complete; Type II observation window opens at GA
 - Production SLA contract: pilot is best-effort against published target SLOs
 - Signed DPA / SCC: Common Paper template only

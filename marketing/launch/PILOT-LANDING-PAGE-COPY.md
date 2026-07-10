@@ -99,7 +99,7 @@
 
 > We will not sell you a pilot that doesn't meet your procurement bar. If any of the following are deal-breakers for you **before** GA, wait for GA and we'll re-engage:
 >
-> - **BYOK across 4 KMS providers** — ships at GA. Pilot uses CoreLink-managed envelope encryption.
+> - **BYOK** — AWS KMS ships at GA (GCP / Azure / Vault on the roadmap). Pilot uses CoreLink-managed envelope encryption.
 > - **SOC 2 Type II report** — gap analysis delivered pre-GA; the Type II observation window begins at GA.
 > - **Production-tier SLA contract** — pilot is best-effort against published target SLOs.
 > - **Signed DPA / SCC** — template available; signed DPA is conditional on legal review timeline.
@@ -153,7 +153,7 @@ Only **you** and a tightly-scoped on-call rotation under documented break-glass 
 
 ### 5. What if I want to leave?
 
-You can terminate at any point during the pilot. You get **14 days** to export under tenant-scoped credentials, and we deliver a signed Ed25519 erasure attestation referencing the audit-chain anchor of the deletion. No clawbacks. No retention. No "we already deleted it" hand-waving.
+You can terminate at any point during the pilot. You get **14 days** to export under tenant-scoped credentials, and we perform a verifiable crypto-erasure anchored in the audit chain — the erasure pipeline is live today. A signed Ed25519 erasure attestation delivered to you (referencing the audit-chain anchor of the deletion) is on the near-term roadmap. No clawbacks. No retention. No "we already deleted it" hand-waving.
 
 ---
 
