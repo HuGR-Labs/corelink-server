@@ -5,7 +5,7 @@ description: "The HTTPS entry point: route table, PAT auth, server-trust header 
 source_files:
   - "worker/src/index.ts"
   - "worker/src/sentry-scrub.ts"
-checkpoint_sha: "c3eba43d93770b250c1da726ff412b4b5fcc8438"
+checkpoint_sha: "938c5f269aa63029239f9102195c214ac2d7bd29"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -37,16 +37,16 @@ keeps forged tokens cheap to reject before any expensive work.
 
 # How it works
 1. The exported handler is `baseHandler.fetch`, which resolves a request-id, handles CORS preflight,
-   and matches the route before doing anything else (`worker/src/index.ts:1570-1583`).
+   and matches the route before doing anything else (`worker/src/index.ts:1631-1644`).
 2. `matchRoute` is an ordered first-match table mapping each URL to a `RouteKind` + tenant, with
    specificity ordering (signup/customer/onboarding before the generic `/v1/*` arm)
    (`worker/src/index.ts:570-881`).
-3. Health routes short-circuit with no auth and no DO forward (`worker/src/index.ts:1588-1601`).
+3. Health routes short-circuit with no auth and no DO forward (`worker/src/index.ts:1649-1662`).
    The Artifact 1 `/v1/public/*` arm (the erasure-attestation verifier, `routeKind="public_attestation"`)
    is matched BEFORE the generic `/v1/*` PAT bucket and forwarded to the `_anonymous` DO → container as a
    pure pass-through with NO PAT gate and NO internal-auth (an erasure proof is publicly verifiable;
    client-forged `x-corelink-*` trust headers are still stripped) — matchRoute arm
-   (`worker/src/index.ts:885-886`), forward arm (`worker/src/index.ts:2185-2207`).
+   (`worker/src/index.ts:885-886`), forward arm (`worker/src/index.ts:2246-2268`).
 3b. Three EXACT-path fabric/ingest carve-outs are matched BEFORE the generic `/v1/*` PAT arm and are pure
    pass-throughs to the `_system` DO → container (the container is the SOLE auth authority; the Worker
    applies NO edge PAT gate and forwards the caller's `x-corelink-internal-auth` unchanged):
@@ -57,20 +57,20 @@ keeps forged tokens cheap to reject before any expensive work.
    billing usage-push (`/internal/v1/billing/usage`, `routeKind="billing_ingest"`, `worker/src/index.ts:788`)
    is the same shape but gated by its own DEDICATED `BILLING_INGEST_AUTH_KEY`.
 4. `extractAuth` fails CLOSED (503) when `PAT_SIGNING_KEY` is absent or decodes to < 32 bytes — the
-   signing key is the sole possession gate for the native plane (`worker/src/index.ts:943-970`).
+   signing key is the sole possession gate for the native plane (`worker/src/index.ts:1000-1039`).
 5. PAT validation is HMAC-SHA256 fast-reject (with rotation siblings) BEFORE any D1 round-trip, then a
-   D1 lookup by `token_id` and an application-side expiry check (`worker/src/index.ts:1008-1155`). The
+   D1 lookup by `token_id` and an application-side expiry check (`worker/src/index.ts:1069-1216`). The
    expiry check honors the `expires_ms === 0` "never expires" sentinel
    (`row.expires_ms !== 0 && row.expires_ms <= now`), matching the container's `adapter_pat` SQL
    (`expires_ms = 0 OR expires_ms > now`) — so a no-TTL PAT is no longer a split-brain edge-reject that
    would pass in the container but die at the Worker (looking like a forged token). The D1 lookup is
    wrapped in try/catch: a TRANSIENT D1 fault (network partition / DB unavailable) returns the distinct
-   reason `d1_lookup_error` (`worker/src/index.ts:1131-1140`). The caller maps BOTH the config fault
+   reason `d1_lookup_error` (`worker/src/index.ts:1192-1201`). The caller maps BOTH the config fault
    `signing_key_not_configured` (absent/short `PAT_SIGNING_KEY`) AND `d1_lookup_error` to a retryable
    `503` — a D1 infra hiccup is treated as "auth service unavailable", NOT a bad credential, so a
    transient outage can't masquerade as a 401 (which would trigger spurious CI failures, PAT rotation,
    and on-call chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` /
-   `invalid_*`) still fall through to `401` (`worker/src/index.ts:2426-2455`). NOTE: the inline
+   `invalid_*`) still fall through to `401` (`worker/src/index.ts:2491-2520`). NOTE: the inline
    `extractAuth` `catch` comment at `:1088-1090` now MATCHES that behaviour — it states the caller maps
    `d1_lookup_error` to a 503 (transient, retryable; still fail-closed); it previously lied ("for now we
    401 to fail-closed"), a stale posture left over from before the H1 caller-mapping fix landed.
@@ -78,32 +78,32 @@ keeps forged tokens cheap to reject before any expensive work.
    Worker re-sets its own verified values (`worker/src/index.ts:505-509`).
 7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
    request-count fail-CLOSED; storage verb-aware (reads fail-open for availability, byte-adding writes
-   fail-closed) (`worker/src/index.ts:2460-2481`).
+   fail-closed) (`worker/src/index.ts:2525-2546`).
 8. The request is routed to the per-tenant DO via `idFromName(resolvedTenantId)`
-   (`worker/src/index.ts:2774-2776`) and dispatched with `stub.fetch` (`worker/src/index.ts:2847`). A
+   (`worker/src/index.ts:2839-2841`) and dispatched with `stub.fetch` (`worker/src/index.ts:2912`). A
    multi-region tenant may first take the LOCAL (this-region) `_system` container branch above this
-   forward (`worker/src/index.ts:1781-1783`); a non-resident tenant falls through to the per-tenant DO
+   forward (`worker/src/index.ts:1842-1844`); a non-resident tenant falls through to the per-tenant DO
    derivation here.
 9. The forwarded request is augmented: strip-then-set the trusted tenant-id, scope, token-prefix, and
-   client-ip headers (`worker/src/index.ts:2786-2822`).
+   client-ip headers (`worker/src/index.ts:2851-2887`).
 10. The whole handler is wrapped by `Sentry.withSentry`, inert until `SENTRY_DSN` is set and with
-    `sendDefaultPii=false` (`worker/src/index.ts:2906-2925`); its `beforeSend`/`beforeSendTransaction`
+    `sendDefaultPii=false` (`worker/src/index.ts:2971-2990`); its `beforeSend`/`beforeSendTransaction`
     run `scrubSentryEvent` (`worker/src/sentry-scrub.ts`) over EVERY event before it leaves the Worker —
     not just sensitive header KEYS but message/exception bodies, breadcrumbs, and `extra`/`contexts`
     VALUES (CoreLink PATs, bearer/basic auth, Stripe `sk_`/`pk_`/`whsec_` keys, emails are
-    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:2915-2920`).
+    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:2980-2985`).
 
 # Invariants
 - Tenant isolation is structural: the DO id is derived solely from the PAT-resolved tenant, never the
-  URL path segment (`worker/src/index.ts:2774-2776`).
+  URL path segment (`worker/src/index.ts:2839-2841`).
 - A client can never smuggle a server-trust header: the strip list is applied on every forward path
   before the Worker sets its own values (`worker/src/index.ts:459-498`).
 - The signing-key gate is mandatory — a missing/short `PAT_SIGNING_KEY` is a 503, never a silent skip
-  (`worker/src/index.ts:943-970`).
+  (`worker/src/index.ts:1000-1039`).
 - The Worker forwards the D1-resolved `scope` as `x-corelink-scope` and is its sole setter
-  (`worker/src/index.ts:2816`).
+  (`worker/src/index.ts:2881`).
 - A 404 from the DO is timing-padded to defeat cross-tenant enumeration
-  (`worker/src/index.ts:2861-2874`).
+  (`worker/src/index.ts:2926-2939`).
 
 # Gotchas
 - Argon2id is NOT run in the Worker (cpu_ms budget) — possession on the native CAS/AC/Bazel/Turbo plane
@@ -121,16 +121,16 @@ keeps forged tokens cheap to reject before any expensive work.
 4. `worker/src/index.ts:505-509` — `stripClientTrustHeaders` (delete-then-set discipline).
 5. `worker/src/index.ts:570-881` — the `matchRoute` ordered route table.
 5b. `worker/src/index.ts:764` / `worker/src/index.ts:776` / `worker/src/index.ts:788` — the three exact-path pure-pass-through carve-outs: `/internal/v1/auth/introspect` + `/internal/v1/auth/resolve-tenant` (both `fabric_introspect`, `FABRIC_INTROSPECT_AUTH_KEY`) and `/internal/v1/billing/usage` (`billing_ingest`, `BILLING_INGEST_AUTH_KEY`).
-6. `worker/src/index.ts:943-970` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
-7. `worker/src/index.ts:1008-1155` — HMAC fast-reject + D1 lookup + expiry check (incl. the `expires_ms === 0` never-expires sentinel guard at `:1105`, and the try/catch that turns a transient D1 fault into `d1_lookup_error` at `:1082-1091`).
-7b. `worker/src/index.ts:2426-2455` — caller reason→status mapping: BOTH `signing_key_not_configured` (config fault) AND `d1_lookup_error` (transient D1 fault) → retryable `503`; every other reason (`pat_not_found` / `pat_expired` / `invalid_*`) → `401`.
-8. `worker/src/index.ts:1570-1583` — the `baseHandler.fetch` entry, request-id, CORS, route match.
-9. `worker/src/index.ts:1588-1601` — health short-circuit (no auth, no DO).
-10. `worker/src/index.ts:2460-2481` — per-tier quota enforcement after auth, before forward.
-11. `worker/src/index.ts:2774-2776` — `idFromName(resolvedTenantId)` per-tenant DO routing.
-12. `worker/src/index.ts:2786-2822` — the augmented forward (strip-then-set trust headers).
-13. `worker/src/index.ts:2816` — forwarding the D1-resolved scope as `x-corelink-scope`.
-14. `worker/src/index.ts:2847` — `stub.fetch` dispatch to the DO.
-15. `worker/src/index.ts:2861-2874` — 404 timing-pad.
-16. `worker/src/index.ts:2906-2925` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
-17. `worker/src/index.ts:2915-2920` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.
+6. `worker/src/index.ts:1000-1039` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
+7. `worker/src/index.ts:1069-1216` — HMAC fast-reject + D1 lookup + expiry check (incl. the `expires_ms === 0` never-expires sentinel guard at `:1166`, and the try/catch that turns a transient D1 fault into `d1_lookup_error` at `:1143-1152`).
+7b. `worker/src/index.ts:2491-2520` — caller reason→status mapping: BOTH `signing_key_not_configured` (config fault) AND `d1_lookup_error` (transient D1 fault) → retryable `503`; every other reason (`pat_not_found` / `pat_expired` / `invalid_*`) → `401`.
+8. `worker/src/index.ts:1631-1644` — the `baseHandler.fetch` entry, request-id, CORS, route match.
+9. `worker/src/index.ts:1649-1662` — health short-circuit (no auth, no DO).
+10. `worker/src/index.ts:2525-2546` — per-tier quota enforcement after auth, before forward.
+11. `worker/src/index.ts:2839-2841` — `idFromName(resolvedTenantId)` per-tenant DO routing.
+12. `worker/src/index.ts:2851-2887` — the augmented forward (strip-then-set trust headers).
+13. `worker/src/index.ts:2881` — forwarding the D1-resolved scope as `x-corelink-scope`.
+14. `worker/src/index.ts:2912` — `stub.fetch` dispatch to the DO.
+15. `worker/src/index.ts:2926-2939` — 404 timing-pad.
+16. `worker/src/index.ts:2971-2990` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
+17. `worker/src/index.ts:2980-2985` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.

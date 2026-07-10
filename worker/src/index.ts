@@ -962,7 +962,55 @@ function extractFirstSegment(path: string): string | null {
  * INV-NO-PII-IN-LOGS: tenant ID is NOT logged at this layer; only the DO
  * writes hashed-form tenant IDs to audit events.
  */
-async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
+
+/**
+ * Decode an HTTP Basic credential (the text AFTER `Basic `) and return the
+ * PASSWORD, which on the pip adapter surface IS the PAT: pip/uv emit
+ * `https://hugr:<PAT>@host/…` → `Authorization: Basic base64("hugr:<PAT>")`.
+ * The username (`hugr`) is a label and is deliberately ignored — possession
+ * rests SOLELY on the password being a valid PAT, verified downstream by the
+ * exact same HMAC + D1 gate as a Bearer PAT (this function performs NO auth).
+ *
+ * Returns `null` on any malformed input (not standard base64, non-UTF8 payload,
+ * missing `:` separator, or empty password) so the caller rejects with a 401 —
+ * there is no path here that yields a usable token from a malformed credential.
+ */
+function extractBasicAuthPassword(b64: string): string | null {
+  let decoded: string;
+  try {
+    // `atob` yields a binary (latin1) string; a canonical PAT is pure ASCII so
+    // this is a faithful round-trip. `atob` throws on non-base64 input → null.
+    // Any non-ASCII byte that slips through is caught downstream by extractAuth's
+    // printable-ASCII (0x21–0x7e) scan, which rejects the token — no bypass.
+    decoded = atob(b64);
+  } catch {
+    return null;
+  }
+  const colon = decoded.indexOf(":");
+  if (colon < 0) {
+    return null;
+  }
+  const password = decoded.slice(colon + 1);
+  if (password.length === 0) {
+    return null;
+  }
+  return password;
+}
+
+async function extractAuth(
+  request: Request,
+  env: Env,
+  // pip/uv natively emit ONLY URL-embedded HTTP Basic (`https://hugr:<PAT>@host/…`
+  // → `Authorization: Basic base64("hugr:<PAT>")`) and NEVER `Authorization:
+  // Bearer` — so the pip adapter surface is unusable unless the Worker accepts
+  // Basic. When `allowBasicAuth` is true (set ONLY for the `pip` adapter route by
+  // the sole caller), a Basic credential is decoded and its PASSWORD is taken as
+  // the PAT, then verified through the EXACT same HMAC + D1 path as a Bearer PAT
+  // (username is an ignored label — `hugr`). Defaults to false so every other
+  // route keeps rejecting non-Bearer schemes with `invalid_scheme` (no bypass:
+  // native CAS/AC, browser, and all other adapters are unchanged).
+  allowBasicAuth = false,
+): Promise<AuthResult> {
   // F18: PAT_SIGNING_KEY is the SOLE possession gate for the native plane (F3/F17).
   // Fail CLOSED and LOUD when it is absent or too short — never silently skip the
   // HMAC check. The 32-byte minimum mirrors the NIST 128-bit floor for symmetric
@@ -997,11 +1045,24 @@ async function extractAuth(request: Request, env: Env): Promise<AuthResult> {
   }
 
   const bearerPrefix = "Bearer ";
-  if (!authHeader.startsWith(bearerPrefix)) {
+  const basicPrefix = "Basic ";
+  let token: string;
+  if (authHeader.startsWith(bearerPrefix)) {
+    token = authHeader.slice(bearerPrefix.length).trim();
+  } else if (allowBasicAuth && authHeader.startsWith(basicPrefix)) {
+    // pip-only Basic path (see `allowBasicAuth` doc above). Decode the credential
+    // and take the PASSWORD as the PAT. Malformed Basic (not base64, non-UTF8, no
+    // `:`, or empty password) is rejected with the SAME 401 shape as an
+    // unsupported scheme — never a bypass. From here the token flows through the
+    // identical length/char/format/HMAC/D1 checks as a Bearer PAT.
+    const basicPat = extractBasicAuthPassword(authHeader.slice(basicPrefix.length).trim());
+    if (basicPat === null) {
+      return { ok: false, reason: "invalid_scheme" };
+    }
+    token = basicPat;
+  } else {
     return { ok: false, reason: "invalid_scheme" };
   }
-
-  const token = authHeader.slice(bearerPrefix.length).trim();
   if (token.length < 32 || token.length > 256) {
     return { ok: false, reason: "invalid_token_length" };
   }
@@ -2412,7 +2473,11 @@ const baseHandler: ExportedHandler<Env> = {
       // WP5a: signup is pre-tenant and never a runner-job PAT → runnerJobAcKey null.
       auth = { ok: true, tenantId: "_anonymous", tokenPrefix: "signup", scope: "", runnerJobAcKey: null };
     } else {
-      const result = await extractAuth(request, env);
+      // Scope guard (security): Basic auth is accepted ONLY on the `pip` adapter
+      // route. pip/uv can emit nothing but URL-embedded Basic; every other
+      // surface (native CAS/AC, npm `_authToken` Bearer, cargo/sccache Bearer,
+      // browser) still rejects non-Bearer schemes with `invalid_scheme`.
+      const result = await extractAuth(request, env, route.routeKind === "pip");
       if (!result.ok) {
         // OCI (oci_v2 / oci_token) never reaches here — it is handled by the
         // dedicated pass-through branch ABOVE (which forwards to the container

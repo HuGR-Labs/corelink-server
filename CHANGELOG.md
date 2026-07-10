@@ -232,6 +232,22 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **pip/uv mirror — the documented HTTP Basic recipe now authenticates (was a hard 401).**
+  `apps/docs/docs/integrations/pip.md` tells pip/uv users to auth via URL-embedded Basic
+  (`https://hugr:<PAT>@corelink-api.humangr.com/pip/<tenant>/simple/`), but the edge Worker
+  rejected every non-`Bearer` scheme with `401 invalid_scheme` in `extractAuth`
+  (`worker/src/index.ts`) BEFORE the adapter ran — and pip/uv natively emit ONLY URL-embedded
+  Basic, never `Authorization: Bearer`. So the documented recipe was unusable on every path
+  (verified live: Basic → 401, Bearer of the same PAT → 200); the container adapter's basic-auth
+  support (`crates/corelink-adapter-host/src/pip/auth.rs`) was dead code the Worker never reached.
+  `extractAuth` now accepts `Authorization: Basic base64(<user>:<PAT>)` on the `pip` adapter route
+  ONLY, taking the **password** as the PAT (the username is an ignored label — `hugr`) and verifying
+  it through the IDENTICAL HMAC + D1 gate as a Bearer PAT — same 401 failure modes for a bad/unknown
+  PAT, same tenant resolution, same forward. **Scope guard:** Basic is gated by a new
+  `allowBasicAuth` parameter set solely from `route.routeKind === "pip"`; every other surface
+  (native CAS/AC, REAPI, npm, cargo/sccache, browser) still rejects non-Bearer with `invalid_scheme`.
+  Malformed Basic (not base64, no `:`, empty password) → 401. Covered by 13 new worker vitest cases
+  (`worker/tests/index.test.ts`), including cross-surface scope-guard assertions.
 - **admin-ui — signed-out `/welcome` (and every protected path) now 307s to `/sign-in` instead of returning 404.**
   A signed-out visit to a protected page (`/welcome`, `/en/welcome`, `/dashboard`, `/customer`, …) returned a
   bare **404** in production instead of bouncing to sign-in. Root cause: the edge middleware

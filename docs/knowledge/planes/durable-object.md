@@ -8,7 +8,7 @@ source_files:
   - "worker/src/event_log_do.ts"
   - "worker/src/rollout_controller.ts"
   - "worker/src/replication_coordinator_do.ts"
-checkpoint_sha: "c3eba43d93770b250c1da726ff412b4b5fcc8438"
+checkpoint_sha: "938c5f269aa63029239f9102195c214ac2d7bd29"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -67,7 +67,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 9. A periodic `alarm` re-probes health and marks the container `degraded` after `MAX_HEALTH_FAILURES`
    (`worker/src/durable_object.ts:963-1017`).
 10. The Worker exports three SIBLING DO classes alongside `CoreLinkServer`
-    (`worker/src/index.ts:2977`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
+    (`worker/src/index.ts:3042`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
     primitive — it adopts the first `x-corelink-tenant-id` it sees, persists that pin, and refuses any
     other tenant's request with a `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`). Its
     `append` monotonically assigns `seq` under `blockConcurrencyWhile` (persist the entry, THEN advance
@@ -139,7 +139,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 11. `worker/src/durable_object.ts:806-836` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:784-795` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
 12. `worker/src/durable_object.ts:924-941` — `onIdleTimeout`: death event emitted, then the idle-timeout destroy.
 13. `worker/src/durable_object.ts:963-1017` — the periodic `alarm` health re-probe + degrade.
-14. `worker/src/index.ts:2977` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO`, `ReplicationCoordinatorDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
+14. `worker/src/index.ts:3042` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO`, `ReplicationCoordinatorDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
 15. `worker/src/event_log_do.ts:207-218` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).
 16. `worker/src/event_log_do.ts:220-225` — the `/_eventlog/append` + `/_eventlog/read` route dispatch.
 17. `worker/src/event_log_do.ts:266-277` — `handleAppend`: monotonic gap-free `seq` under `blockConcurrencyWhile` (persist-entry-then-advance-head).
