@@ -18,16 +18,16 @@ Linux, and Windows) and need to run any command except `version`.
 - `corelink` binary on `$PATH`. Install via your package manager or
   download from the GitHub releases page. Verify the SLSA attestation
   before first use.
-- A PAT minted at `https://app.corelink.humangr.com/tokens`.
+- A PAT minted at `https://corelink-app.humangr.com/tokens`.
 
-## Recommended: env var
+## Recommended: Env var
 
 ```bash
 export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
 corelink ls --tenant acme-corp
 ```
 
-## Alternative: config file
+## Alternative: Config file
 
 ```bash
 corelink config set auth.pat corelink_dev_t_xxx.xxx.xxx

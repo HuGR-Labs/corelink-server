@@ -44,7 +44,7 @@ without opening the portal.
 ## Open the portal
 
 1. Sign in to CoreLink admin UI at
-   `https://app.corelink.humangr.com`.
+   `https://corelink-app.humangr.com`.
 2. Navigate to **Customer → Billing**
    (`/en/customer/billing`).
 3. Click **Open Stripe Portal**.
@@ -115,13 +115,13 @@ date. To fully delete your tenant + all customer data, see
 ## When you return to CoreLink
 
 When you click **Return to CoreLink** in the portal (or close the
-portal tab and reopen `https://app.corelink.humangr.com`), you land back on
+portal tab and reopen `https://corelink-app.humangr.com`), you land back on
 `/en/customer/billing`. Any changes you made in the portal —
 plan changes, card updates, cancellations — are already reflected
 because Stripe pushes them to us as webhook events the moment they
 happen.
 
-If you see stale data on the CoreLink side (e.g. you upgraded but
+If you see stale data on the CoreLink side (for example, you upgraded but
 the dashboard still shows the old tier), wait 30 seconds and
 refresh. If the discrepancy persists past 5 minutes, file a ticket
 — it likely means a webhook delivery failed and our DLQ replay
@@ -167,7 +167,7 @@ and the Stripe-side reauth are independent, by design.
 
 ### Cancellation showed but my tenant is still on the paid tier
 
-Cancellations default to "at period end". You'll stay on your paid
+Cancellations default to "at period end." You'll stay on your paid
 tier until the period ends, then drop to Free automatically. If you
 need to leave the paid tier immediately, choose **Cancel
 immediately** in the portal — Stripe will refund the prorated unused

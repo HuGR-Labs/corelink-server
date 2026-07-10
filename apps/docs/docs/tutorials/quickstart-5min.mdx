@@ -13,9 +13,15 @@ import TabItem from "@theme/TabItem";
 **Goal:** sign up, get a PAT, push a blob to the CoreLink CAS, pull it back,
 and verify the bytes are identical — all in under 5 minutes wall-clock.
 
-No CLI to install. No Bazel required. Just `curl`, `shasum`/`sha256sum`, and a
+No CLI to install. No Bazel required. Just `curl`, `b3sum`, and a
 shell. The [10-minute quickstart](./quickstart-10min) adds the full CLI, Bazel
 wiring, and cache HITs once you have the basics down.
+
+:::info CoreLink content-addresses with BLAKE3
+The native CAS keys every blob by its **BLAKE3** digest (lowercase hex) — not
+SHA-256. Install `b3sum` first: `brew install b3sum` (macOS) or
+`cargo install b3sum` / your distribution's `b3sum` package (Linux).
+:::
 
 :::tip No credit card required
 A starter account is free up to 10 GB. Sign-up provisions your tenant and a
@@ -89,17 +95,15 @@ secret ever appears in a command literal.
 
 ## Step 4 — PUT a blob <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
 
-Create a small test payload, compute its SHA-256, and upload it.
-
-<Tabs groupId="os">
-<TabItem value="macos" label="macOS" default>
+Create a small test payload, compute its BLAKE3 digest, and upload it. The
+command is identical on macOS and Linux once `b3sum` is installed:
 
 ```bash
 # Create a test payload
 echo "hello corelink $(date)" > /tmp/cl-test.txt
 
-# Compute the SHA-256 digest (macOS uses shasum -a 256)
-DIGEST=$(shasum -a 256 /tmp/cl-test.txt | awk '{print $1}')
+# Compute the BLAKE3 digest (lowercase hex) — this IS the storage key
+DIGEST=$(b3sum /tmp/cl-test.txt | awk '{print $1}')
 echo "digest: $DIGEST"
 
 # Upload — 201 Created means success
@@ -110,40 +114,21 @@ curl -sSf -X PUT \
   "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
 ```
 
-</TabItem>
-<TabItem value="linux" label="Linux">
+On success the server returns **HTTP 201 Created** (or **200 OK** if the blob
+already existed) and the response body is the stored blob's BLAKE3 hex — the
+same value you sent in the URL:
 
-```bash
-# Create a test payload
-echo "hello corelink $(date)" > /tmp/cl-test.txt
-
-# Compute the SHA-256 digest (Linux uses sha256sum)
-DIGEST=$(sha256sum /tmp/cl-test.txt | awk '{print $1}')
-echo "digest: $DIGEST"
-
-# Upload — 201 Created means success
-curl -sSf -X PUT \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  -H "Content-Type: application/octet-stream" \
-  --data-binary @/tmp/cl-test.txt \
-  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
-```
-
-</TabItem>
-</Tabs>
-
-Expected response (HTTP 201):
-
-```json
-{"hash":"sha256:<your-digest-here>"}
+```text
+<your-blake3-digest-here>
 ```
 
 If you see `401 Unauthorized`, double-check that `CORELINK_PAT` is exported
 correctly in your current shell session (`echo $CORELINK_PAT`).
 
-:::note SHA-256 matches the URL
-CoreLink is a content-addressable store — the sha256 digest **is** the storage
-key. The server verifies the body hash matches the URL; a mismatch returns 422.
+:::note The BLAKE3 digest IS the URL key
+CoreLink is a content-addressable store — the BLAKE3 digest **is** the storage
+key. The server recomputes BLAKE3 over the uploaded bytes and verifies it
+matches the digest in the URL; a mismatch returns `422 Unprocessable Entity`.
 :::
 
 ---
@@ -189,15 +174,20 @@ You have a working PAT and a verified roundtrip. Where to go next:
 <Tabs groupId="build-tool">
 <TabItem value="bazel" label="Bazel" default>
 
-Add these three lines to your `.bazelrc`:
+CoreLink exposes a **Bazel REAPI v2** cache at
+`https://corelink-api.humangr.com/bazel/v2/<your-tenant-id>` (the ByteStream
+scheme `/bazel/v2/<tenant>/blobs/<hash>/<size>`). Point a REAPI/ByteStream
+client at it, using your tenant UUID as the REAPI instance name — see the
+committed reference config at
+[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
 
-```bash
-build --remote_cache=https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT
-build --remote_header=authorization=Bearer\ $CORELINK_PAT
-build --remote_upload_local_results=true
-```
+:::note Native `bazel --remote_cache` support: in progress
+A stock-Bazel plain-HTTP alias (`--remote_cache=https://…` sending
+`/cas/<hash>` and `/ac/<hash>`) is being built and is **not yet live** — it
+currently returns 404. Until it lands, use a REAPI/ByteStream-compatible client
+against the `/bazel/v2/<tenant>` endpoint above.
+:::
 
-Run `bazel build //...` twice — the second run fetches from CoreLink.
 Full guide: [Bazel integration](../integrations/bazel).
 
 </TabItem>
@@ -223,7 +213,7 @@ Full guide: [Turborepo integration](../integrations/turborepo).
 ### Go deeper
 
 - **[10-minute quickstart](./quickstart-10min)** — CLI install, `corelink doctor`,
-  `corelink bazel-init`, and first cache HITs end-to-end.
+  and first cache HITs end-to-end.
 - **[What is CoreLink?](../intro)** — architecture, tenancy model, invariant
   guarantees.
 - **[Concepts: CAS vs AC](../concepts/cas-vs-ac)** — when to use the
@@ -239,7 +229,7 @@ Full guide: [Turborepo integration](../integrations/turborepo).
 | `401 Unauthorized` | PAT not exported or expired | `echo $CORELINK_PAT` — re-export if empty; regenerate from **Settings → Access tokens** |
 | `403 Forbidden` | PAT scoped to a different tenant | Confirm `$CORELINK_TENANT` matches your PAT's tenant (shown on the welcome page) |
 | `404 Not Found` on GET | Blob not uploaded yet, or wrong tenant | PUT first; double-check `$CORELINK_TENANT` |
-| `422 Unprocessable Entity` | SHA-256 in URL does not match body | Recompute: `shasum -a 256 /tmp/cl-test.txt` and re-export `DIGEST` |
+| `422 Unprocessable Entity` | BLAKE3 digest in URL does not match body | Recompute: `b3sum /tmp/cl-test.txt` and re-export `DIGEST` |
 | `curl: (22)` / non-2xx | General request failure with `-sSf` | Remove `-f`, re-run, read the full JSON error body |
 
 Full error reference: [Troubleshooting](../troubleshooting).

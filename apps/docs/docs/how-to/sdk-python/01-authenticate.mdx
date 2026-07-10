@@ -20,9 +20,9 @@ If you only need to read the current SDK version, see
 
 - Python 3.10+ (`asyncio` is used by every example in this section).
 - `pip install corelink-py` (wheels published on PyPI; pyO3 bindings).
-- A CoreLink tenant. Issue a PAT at `https://app.corelink.humangr.com/tokens`.
+- A CoreLink tenant. Issue a PAT at `https://corelink-app.humangr.com/tokens`.
 
-## Recommended: env var
+## Recommended: Env var
 
 The SDK reads `CORELINK_PAT` automatically:
 
@@ -44,7 +44,7 @@ asyncio.run(main())
 
 The `with` block ensures the underlying HTTP/2 pool is closed cleanly.
 
-## Alternative: config file
+## Alternative: Config file
 
 For local development, write `~/.corelink/config.toml`:
 
