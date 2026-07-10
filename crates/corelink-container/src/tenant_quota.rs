@@ -33,8 +33,8 @@
 //!
 //! All amounts are signed `i64` **micro-dollars** (USD * 1_000_000), to
 //! match the `tenant_quota` D1 table (migration 0066). Floating point is
-//! never used for money. The launch tripwire is [`DEFAULT_MONTHLY_BUDGET_USD_MICROS`]
-//! (= `5_000_000`, i.e. $5).
+//! never used for money. The default ceiling is [`DEFAULT_MONTHLY_BUDGET_USD_MICROS`]
+//! (effectively-unlimited `$1,000,000/mo`; ADR-0068 reconciliation — see the const).
 //!
 //! # Wiring (the seam the lead registers)
 //!
@@ -55,12 +55,12 @@ use axum::response::Response;
 
 use crate::wall_clock::WallClock;
 
-/// The symbolic launch tripwire: **$5/mo**, in micro-dollars (ADR-0068).
-///
-/// Deliberately conservative — it bounds day-1 cost blast radius while
-/// real usage calibrates the number. It is a TRIPWIRE, not a product
-/// tier; the ceiling is owner-tunable per tenant in `tenant_quota`.
-pub const DEFAULT_MONTHLY_BUDGET_USD_MICROS: i64 = 5_000_000;
+/// The default per-tenant monthly ceiling: **effectively-unlimited**
+/// (`$1,000,000/mo` in micro-dollars). ADR-0068 reconciliation (2026-07-09):
+/// the prior `$5` tripwire tripped ~100× BELOW the tier request-cap and is
+/// removed as a default wall; the ceiling stays an owner-tunable per-tenant
+/// backstop — set it per contract for the unbounded team/enterprise tiers.
+pub const DEFAULT_MONTHLY_BUDGET_USD_MICROS: i64 = 1_000_000_000_000;
 
 /// Cycle length: ~30 days, in milliseconds. When the wall clock has
 /// advanced at least this far past a tenant's `cycle_anchor_ms`, the
@@ -79,8 +79,8 @@ pub const COST_PER_OP_MICROS_ENV: &str = "QUOTA_COST_PER_OP_MICROS";
 /// Every billable data-plane op (CAS/AC read+write, Bazel REAPI, Turbo,
 /// sccache) is charged the SAME flat cost regardless of byte size. It is
 /// a **preventive tripwire, NOT precise metering**: at the default
-/// `$0.001/op` the ADR-0068 `$5/mo` ceiling (`5_000_000` micro-USD) trips
-/// at ≈ `5000` ops/month. The point is to bound day-1 cost blast radius,
+/// `$0.001/op` the effectively-unlimited `$1,000,000/mo` default (post
+/// ADR-0068 reconciliation) is no normal-usage wall — bound blast radius,
 /// not to bill exactly — precise per-byte metering is a separate,
 /// post-launch concern. Operators tune the per-op cost via
 /// [`COST_PER_OP_MICROS_ENV`] and the per-tenant ceiling via the
@@ -1365,14 +1365,15 @@ mod tests {
     #[tokio::test]
     async fn brand_new_tenant_first_op_over_ceiling_rejects_402() {
         // Red-team #6: a brand-new tenant (NO row) whose VERY FIRST billable op
-        // exceeds the default $5 tripwire must be rejected 402 — the prior
-        // fresh-row path called `accrue` unconditionally and would have
-        // admitted (and persisted) this over-cap op. A $6 op (> $5 default)
-        // must trip the ceiling on the first op.
+        // exceeds the DEFAULT ceiling must still be rejected 402 — the
+        // fresh-row seed-and-check path (`seed_checked_accrue`) never persists an
+        // over-default row. Constant-relative (default + $1) so this survives the
+        // ADR-0068 reconciliation that raised the default to effectively-unlimited.
         let store = InMemoryQuotaStore::new(); // empty → brand-new tenant
         let (guard, _clock) = guard_with(store, T0);
+        let fat_op = DEFAULT_MONTHLY_BUDGET_USD_MICROS.saturating_add(1_000_000);
         let resp = guard
-            .check("tenant-new-fat", 6_000_000)
+            .check("tenant-new-fat", fat_op)
             .await
             .expect("first op over ceiling must be rejected");
         assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
@@ -1382,16 +1383,63 @@ mod tests {
     async fn brand_new_tenant_first_op_under_ceiling_seeds_and_allows() {
         // Red-team #6 control: a fresh tenant's first op UNDER the ceiling is
         // still admitted and seeds the row (accrual carried to the next op).
+        // Constant-relative so it survives the default change: a first op $1
+        // under the default seeds, then a $2 op projects just over the default
+        // and trips — proving the first op's spend was persisted, not bypassed.
         let store = InMemoryQuotaStore::new();
         let (guard, _clock) = guard_with(store, T0);
-        // First op: $4 (< $5) — allowed, seeds accrued = $4.
-        assert!(guard.check("tenant-new-ok", 4_000_000).await.is_none());
-        // Second op: $2 would project to $6 > $5 — now rejected (proves the
-        // first op's spend was actually persisted, not bypassed).
+        let first = DEFAULT_MONTHLY_BUDGET_USD_MICROS.saturating_sub(1_000_000);
+        assert!(guard.check("tenant-new-ok", first).await.is_none());
+        // Second op: $2 projects to (default + $1) > default — now rejected.
         let resp = guard
             .check("tenant-new-ok", 2_000_000)
             .await
             .expect("second op trips the cap");
+        assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
+    }
+
+    #[tokio::test]
+    async fn default_tenant_not_walled_far_past_prior_5000_op_tripwire() {
+        // ADR-0068 reconciliation: the default ceiling is now effectively-
+        // unlimited, so a normal self-serve tenant on the DEFAULT (no operator
+        // override) must NOT 402 at normal op volumes. The prior `$5` default at
+        // `$0.001/op` walled every tenant at ~5000 ops — 100× BELOW the free
+        // tier's own request quota. Drive 6000 ops (well past that old wall) at
+        // the default per-op cost on a fresh, un-overridden tenant: all allowed.
+        let store = InMemoryQuotaStore::new(); // fresh → new effectively-unlimited default
+        let (guard, _clock) = guard_with(store, T0);
+        let cost = DEFAULT_COST_PER_OP_MICROS;
+        for i in 0..6_000 {
+            assert!(
+                guard.check("tenant-default", cost).await.is_none(),
+                "op {i} on the new default must not be walled (old $5 wall was ~5000 ops)"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn per_tenant_override_low_value_still_402s_when_exceeded() {
+        // The owner-tunable per-tenant override is preserved as the deliberate
+        // backstop (primarily for the unbounded team/enterprise tiers). A tenant
+        // whose `monthly_budget_usd_micros` is set to a LOW value STILL trips 402
+        // once its accrued spend would exceed that override — the backstop works.
+        let store = InMemoryQuotaStore::new();
+        store.seed(
+            "tenant-override",
+            QuotaState {
+                monthly_budget_usd_micros: 1_000_000, // operator-set $1 ceiling
+                accrued_usd_micros: 0,
+                cycle_anchor_ms: i64::try_from(T0).unwrap(),
+            },
+        );
+        let (guard, _clock) = guard_with(store, T0);
+        // First $1 op hits exactly the $1 override — allowed (`>` test).
+        assert!(guard.check("tenant-override", 1_000_000).await.is_none());
+        // Any further spend projects over the $1 override — rejected 402.
+        let resp = guard
+            .check("tenant-override", 1)
+            .await
+            .expect("override exceeded must 402");
         assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
     }
 

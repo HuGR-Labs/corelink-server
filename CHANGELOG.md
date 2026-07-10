@@ -168,6 +168,19 @@ Each entry cross-references:
   ADR-S33-001 / migration 0074), so the generic `NotImplemented` fallback no
   longer claims "team invites are coming soon"; it now returns the honest generic
   "this endpoint is not yet implemented" for any future unimplemented surface.
+- **fix(quota) — per-tenant `$`-ceiling default recalibrated to effectively-unlimited (ADR-0068 reconciliation).**
+  The ADR-0068 per-tenant monthly `$`-ceiling defaulted to `$5/mo` at a placeholder `$0.001/op`, which
+  tripped `402` at ~5,000 ops/month — ~100× BELOW the free tier's own request quota (`quota.ts` free =
+  500,000 req/mo) and ~1000× above real CF COGS, silently walling every self-serve tenant far below what
+  they bought. The default (both the Rust `DEFAULT_MONTHLY_BUDGET_USD_MICROS` — the value a normal tenant
+  is actually governed by, via the no-row read default and the `seed_checked_accrue` fresh-row write — and
+  the migration `0066` column default) is now `1_000_000_000_000` micro-USD (`$1,000,000/mo`), a large
+  finite value (no `0 = unlimited` sentinel; the `>= 0` CHECK is preserved). The real cost protection —
+  the per-tier storage cap (`402`), request/mo cap (`429`), and the per-second rate limit — is untouched.
+  The per-tenant `monthly_budget_usd_micros` override is retained as the deliberate operator backstop,
+  primarily for the unbounded team/enterprise (contract-priced) tiers; the go-live runbook now carries an
+  onboarding checklist line to set it per contract. Tests added: a default tenant is not walled well past
+  the old ~5,000-op wall; a low per-tenant override still `402`s when exceeded.
 - **deps(js) — JS-majors frontier assessed (supersedes dependabot #697); net adoption: none.**
   The 15 already-on-`main` targets from the prior batch-majors merge (#693) remain the current
   state (next 16, react-markdown 10, uuid 14, @types/node 26, @types/uuid 11, @vitejs/plugin-react 6,
