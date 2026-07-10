@@ -208,6 +208,10 @@ ALLOWLIST_REGEX = re.compile(
     # SMOKE_* smoke-harness vars above.
     r"|BASE_URL$"
     r"|PW_EXECUTABLE_PATH$"
+    # 2026-07-09 — client SDK log-level toggle (`CORELINK_LOG=debug` enables
+    # verbose logging), NOT a credential. Same class as RUST_LOG / NODE_ENV.
+    #   Consumer: sdks/js/src/client.ts (process.env.CORELINK_LOG === "debug")
+    r"|CORELINK_LOG$"
     r")"
 )
 
