@@ -11,23 +11,19 @@
       "runners":    "Runners metered add-on — roadmap surface, not a shipped `corelink` verb."
     },
     "tracked_drift": {
-      "bazel-init":  { "reason": "Tutorials + a launch plan document `corelink bazel-init`, but it is NOT in the CLI enum (also referenced in e2e). Docs-fix PR to remove/rename, or the CLI adds the init helper." },
-      "buck2-init":  { "reason": "Installation tutorial documents `corelink buck2-init`; absent from the CLI enum. Same reconciliation as bazel-init." },
+      "buck2-init":  { "reason": "Installation tutorial documents `corelink buck2-init`; absent from the CLI enum. (Sibling `bazel-init` now shipped in the CLI via #708 and auto-passes; buck2-init is still the docs-fix punch-list.)" },
       "cargo-init":  { "reason": "A comparison page documents `corelink cargo-init`; absent from the CLI enum." },
-      "cas":         { "reason": "Docs/marketing reference `corelink cas {put,get,export,import}`; the shipped CAS verbs are top-level `corelink put` / `corelink get`. Docs-fix PR reconciling the verb names." },
+      "cas import":  { "reason": "A migration/objection doc references `corelink cas import`; the shipped CAS actions are `export` / `get` (bulk ingest is `corelink import`, a top-level verb). Docs-fix PR reconciling the verb name." },
+      "cas put":     { "reason": "Docs/marketing reference `corelink cas put`; the shipped CAS action set is `export` / `get` and the write verb is top-level `corelink put`. Docs-fix PR reconciling the verb name." },
       "ping":        { "reason": "Installation tutorial references `corelink ping`; the shipped health/connectivity check is `corelink doctor`." },
-      "tenant":      { "reason": "The leave-corelink recipe documents `corelink tenant export` / `corelink tenant verify-export`; neither is in the CLI enum (bulk export is an admin-plane operation today)." },
-      "import":      { "reason": "A migration recipe documents `corelink import s3://...`; not in the CLI enum. (Distinct from the Python SDK `from corelink import ...`, which the gate correctly ignores.)" },
       "init":        { "reason": "An onboarding step references `corelink init`; not in the CLI enum (`corelink login` is the setup verb)." },
       "gc":          { "reason": "The error taxonomy references `corelink gc`; GC is a server-side scheduled worker, there is no client verb." },
       "billing":     { "reason": "A retention health-score doc references `corelink billing`; billing is admin/console-plane, not a CLI verb." },
       "admin":       { "reason": "RBAC how-tos document `corelink admin {audit,members,pat}`; admin operations are console/API today, there is no shipped `admin` CLI verb." },
       "dsr":         { "reason": "Support templates document `corelink dsr request`; DSR is an admin-plane operation, not a CLI verb." },
       "auth":        { "reason": "A playbook documents `corelink auth login`; the shipped verb is top-level `corelink login`." },
-      "audit tail":  { "reason": "Observability recipes document `corelink audit tail --filter ...`; there is no streaming `tail` action (valid audit actions: export / verify / verify-ndjson)." },
-      "audit list":  { "reason": "Marketing/retention docs document `corelink audit list`; there is no `list` action." },
-      "audit prove": { "reason": "An audit-chain explainer documents `corelink audit prove`; proof verification is `corelink audit verify` / `verify-ndjson`." },
-      "config apply":{ "reason": "Observability recipes document `corelink config apply`; config actions are set / get / list / rotate." }
+      "audit list":  { "reason": "Marketing/retention docs document `corelink audit list`; there is no `list` action (valid: export / tail / verify / verify-ndjson)." },
+      "audit prove": { "reason": "An audit-chain explainer documents `corelink audit prove`; proof verification is `corelink audit verify` / `verify-ndjson`." }
     }
   },
 
