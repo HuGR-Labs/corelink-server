@@ -521,6 +521,166 @@ describe("auth middleware", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// pip adapter HTTP Basic auth (fix/worker-pip-basic-auth)
+//
+// pip/uv natively emit ONLY URL-embedded HTTP Basic
+// (`https://hugr:<PAT>@host/pip/<tenant>/simple/` → `Authorization: Basic
+// base64("hugr:<PAT>")`) and never `Authorization: Bearer`. The documented pip
+// recipe (apps/docs/docs/integrations/pip.md) was unusable because the edge
+// Worker rejected every non-Bearer scheme with 401 `invalid_scheme` BEFORE the
+// adapter ran. The Worker now accepts Basic on the `pip` route ONLY, taking the
+// password as the PAT and verifying it through the identical HMAC + D1 gate.
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("pip adapter Basic auth", () => {
+  // `hugr` is the documented (ignored) username; the password IS the PAT.
+  const basic = (user: string, pass: string): string =>
+    `Basic ${btoa(`${user}:${pass}`)}`;
+
+  it("forwards a Basic credential whose password is a valid PAT (pip route → non-401)", async () => {
+    // urlTenant must equal the PAT-resolved tenant or the spoof gate 403s;
+    // TEST_PAT_TOKEN resolves to TEST_TENANT_ID via the default D1 mock.
+    const resp = await workerFetch(
+      `http://localhost/pip/${TEST_TENANT_ID}/simple/requests/`,
+      { headers: { Authorization: basic("hugr", TEST_PAT_TOKEN) } },
+    );
+    expect(resp.status).not.toBe(401);
+    expect(resp.status).toBe(503); // DO stub — auth passed, forwarded downstream
+  });
+
+  it("forwards the PAT (password) to the DO exactly as a Bearer PAT would (same tenant header)", async () => {
+    let capturedTenantId: string | null = null;
+    let capturedAuth: string | null = null;
+    const capturingDO: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (_n: string) => ({ toString: () => "stub-id" }),
+        get: () => ({
+          fetch: async (req: Request): Promise<Response> => {
+            capturedTenantId = req.headers.get("x-corelink-tenant-id");
+            capturedAuth = req.headers.get("authorization");
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-unique-id" }),
+        jurisdiction: (_j: string) => capturingDO.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+
+    const resp = await workerFetch(
+      `http://localhost/pip/${TEST_TENANT_ID}/simple/flask/`,
+      { headers: { Authorization: basic("hugr", TEST_PAT_TOKEN) } },
+      capturingDO,
+    );
+    expect(resp.status).toBe(200);
+    // Tenant resolved from the PAT (the Basic password), not the URL blindly.
+    expect(capturedTenantId).toBe(TEST_TENANT_ID);
+    // The container re-derives auth from x-corelink-tenant-id, but the original
+    // Basic header is forwarded verbatim (adapter also supports basic auth).
+    expect(capturedAuth).toBe(basic("hugr", TEST_PAT_TOKEN));
+  });
+
+  it("ignores the username label (any username, valid PAT password → non-401)", async () => {
+    const resp = await workerFetch(
+      `http://localhost/pip/${TEST_TENANT_ID}/simple/numpy/`,
+      { headers: { Authorization: basic("anything", TEST_PAT_TOKEN) } },
+    );
+    expect(resp.status).not.toBe(401);
+    expect(resp.status).toBe(503);
+  });
+
+  it("returns 401 for Basic whose password is a valid-format PAT not in D1", async () => {
+    const unknownTokenId = "BBBBBBBBBBBBBBBB"; // not in the default D1 mock
+    const patNotInD1 =
+      "corelink_pat_" + unknownTokenId + "." +
+      "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" + "." +
+      "AAAAAAAAAAAAAAAAAAAAAA";
+    const resp = await workerFetch(
+      `http://localhost/pip/${TEST_TENANT_ID}/simple/requests/`,
+      { headers: { Authorization: basic("hugr", patNotInD1) } },
+    );
+    expect(resp.status).toBe(401);
+  });
+
+  it("returns 401 for Basic whose password is not a canonical PAT (junk)", async () => {
+    const resp = await workerFetch(
+      `http://localhost/pip/${TEST_TENANT_ID}/simple/requests/`,
+      { headers: { Authorization: basic("hugr", "x".repeat(64)) } },
+    );
+    expect(resp.status).toBe(401);
+  });
+
+  it("returns 401 for malformed Basic — payload has no `:` separator", async () => {
+    // base64("nocolonhere") — decodes but lacks the user:pass separator.
+    const resp = await workerFetch(
+      `http://localhost/pip/${TEST_TENANT_ID}/simple/requests/`,
+      { headers: { Authorization: `Basic ${btoa("nocolonhere")}` } },
+    );
+    expect(resp.status).toBe(401);
+  });
+
+  it("returns 401 for malformed Basic — payload is not valid base64", async () => {
+    const resp = await workerFetch(
+      `http://localhost/pip/${TEST_TENANT_ID}/simple/requests/`,
+      { headers: { Authorization: "Basic !!!not-base64!!!" } },
+    );
+    expect(resp.status).toBe(401);
+  });
+
+  it("returns 401 for Basic with an empty password (`hugr:`)", async () => {
+    const resp = await workerFetch(
+      `http://localhost/pip/${TEST_TENANT_ID}/simple/requests/`,
+      { headers: { Authorization: `Basic ${btoa("hugr:")}` } },
+    );
+    expect(resp.status).toBe(401);
+  });
+
+  it("still accepts Bearer of the same PAT on the pip route (unchanged)", async () => {
+    const resp = await workerFetch(
+      `http://localhost/pip/${TEST_TENANT_ID}/simple/requests/`,
+      { headers: { Authorization: `Bearer ${TEST_PAT_TOKEN}` } },
+    );
+    expect(resp.status).not.toBe(401);
+    expect(resp.status).toBe(503);
+  });
+
+  // ── Scope guard: Basic is accepted ONLY on the pip route ────────────────────
+
+  it("SCOPE GUARD: Basic with a VALID PAT password on /v1/cas → still 401 invalid_scheme", async () => {
+    // The native CAS/AC API must NEVER accept Basic — even when the password is a
+    // cryptographically valid, D1-known PAT. This is the anti-broadening guard.
+    const resp = await workerFetch("http://localhost/v1/cas/somehash", {
+      headers: { Authorization: basic("hugr", TEST_PAT_TOKEN) },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("SCOPE GUARD: Basic with a valid PAT password on /api/v2 (REAPI) → still 401", async () => {
+    const resp = await workerFetch(`http://localhost/api/v2/${TEST_TENANT_ID}/path`, {
+      headers: { Authorization: basic("hugr", TEST_PAT_TOKEN) },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("SCOPE GUARD: Basic with a valid PAT password on /npm (npm route) → still 401", async () => {
+    const resp = await workerFetch(`http://localhost/npm/${TEST_TENANT_ID}/some-pkg`, {
+      headers: { Authorization: basic("hugr", TEST_PAT_TOKEN) },
+    });
+    expect(resp.status).toBe(401);
+  });
+
+  it("SCOPE GUARD: Basic with a valid PAT password on /cargo → still 401", async () => {
+    const resp = await workerFetch(`http://localhost/cargo/${TEST_TENANT_ID}/api/v1/crates/serde`, {
+      headers: { Authorization: basic("hugr", TEST_PAT_TOKEN) },
+    });
+    expect(resp.status).toBe(401);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // CORS
 // ──────────────────────────────────────────────────────────────────────────────
 
