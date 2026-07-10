@@ -1,7 +1,7 @@
 # smoke-install — end-to-end smoke test of the `corelink` install one-liner.
 # -----------------------------------------------------------------------------
 # Builds a clean Debian container, runs the public install script, and asserts
-# `corelink --version` / `corelink ping`. This is a Docker-DAEMON workflow (plain
+# `corelink --version` / `corelink doctor`. This is a Docker-DAEMON workflow (plain
 # `docker build`/`docker run` `run:` steps — NOT a container action), so it does
 # NOT hit the "Container action is only supported on Linux" failure. It instead
 # requires a working Docker daemon on the macOS self-hosted runner.
@@ -99,13 +99,15 @@ jobs:
             -e CORELINK_TEST_TOKEN="$CORELINK_TEST_TOKEN" \
             corelink-smoke
 
-      - name: Verify corelink ping returns 200
+      - name: Verify corelink doctor reaches the server
         if: steps.preflight.outputs.run == 'true'
         env:
           CORELINK_TEST_TOKEN: ${{ secrets.CORELINK_TEST_TOKEN_CI }}
         run: |
-          # Additional verification beyond just --version
+          # Additional verification beyond just --version — `doctor` runs the
+          # canonical connectivity + auth diagnostic checks (there is no `ping`
+          # subcommand; the real verb is `doctor`, tools/cli/src/main.rs).
           docker run --rm \
             -e CORELINK_TEST_TOKEN="$CORELINK_TEST_TOKEN" \
             corelink-smoke \
-            sh -c "curl -fsSL \$CORELINK_GET_URL | sh -s -- --token=\$CORELINK_TEST_TOKEN && corelink ping"
+            sh -c "curl -fsSL \$CORELINK_GET_URL | sh -s -- --token=\$CORELINK_TEST_TOKEN && corelink doctor"

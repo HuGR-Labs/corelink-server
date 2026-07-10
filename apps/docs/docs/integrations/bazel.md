@@ -16,14 +16,17 @@ https://corelink-api.humangr.com/bazel/v2/<your-tenant-id>/blobs/<hash>/<size>
 
 The `<instance>` path segment is your tenant UUID.
 
-:::warning Native `bazel --remote_cache` support: in progress
-Stock Bazel's plain-HTTP remote cache emits `/cas/<hash>` and `/ac/<hash>`
-requests, which do **not** match CoreLink's ByteStream scheme and currently
-return **404**. A stock-HTTP alias is being built and is not yet live. Until it
-ships, use a **REAPI/ByteStream-compatible client** against the
-`/bazel/v2/<tenant>` endpoint above. The REST native CAS endpoint
-(`https://corelink-api.humangr.com/v1/cas/...`) is live today for direct HTTP
-use — see [Raw HTTP (curl)](./raw-curl).
+:::tip Two ways to point Bazel at CoreLink — both live
+- **Stock plain-HTTP remote cache (simplest):** point `--remote_cache` at the
+  **stock-HTTP alias** `https://corelink-api.humangr.com/bazel/cache` — it serves the
+  `/cas/<sha256>` and `/ac/<sha256>` paths stock Bazel emits (`PUT`→`204`, `GET`→`200`).
+  No REAPI client needed.
+- **REAPI v2 / ByteStream:** point `--remote_cache` at `/bazel/v2` (this doc's config)
+  for a ByteStream-compatible client.
+
+Both are Bearer-PAT authenticated. (Bazel content-addresses by SHA-256, which the
+`/bazel/*` routes accept; the *native* REST CAS at `/v1/cas/...` is BLAKE3-keyed — see
+[Raw HTTP (curl)](./raw-curl).)
 :::
 
 ## Prerequisites
@@ -77,7 +80,7 @@ run.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Every request 404s | Using stock plain-HTTP `--remote_cache` | Native `--remote_cache` is not yet live; use a REAPI/ByteStream client against `/bazel/v2/<tenant>` |
+| Every request 404s | `--remote_cache` points at the wrong prefix | Use `/bazel/cache` (stock plain-HTTP) or `/bazel/v2` (REAPI/ByteStream) — both live; a bare host or `/v1/cas` will 404 for Bazel's paths |
 | `UNAUTHENTICATED` | Missing or wrong `Authorization` header | Verify `CORELINK_PAT` is exported in your shell / CI env |
 | `PERMISSION_DENIED` / 403 | Instance name is not your tenant | Set `--remote_instance_name` to your tenant UUID |
 | Cache miss on every build | `--remote_upload_local_results=false` | Set to `true` in at least one CI job |

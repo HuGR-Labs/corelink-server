@@ -53,16 +53,16 @@ curl -s -H "Authorization: Bearer $CORELINK_PAT" \
 
 ---
 
-### `PUT /v1/cas/<tenant_id>/<sha256>`
+### `PUT /v1/cas/<tenant_id>/<blake3>`
 
-Upload a blob. The SHA-256 in the URL path must match the SHA-256 of the request body. If it does not match, the server returns `422`.
+Upload a blob. The native CAS is **BLAKE3**-keyed: the BLAKE3 digest in the URL path must match the BLAKE3 of the request body. If it does not match, the server returns `422 content hash mismatch`. (Compute it with `b3sum` — **not** `sha256sum`.)
 
 **Parameters**
 
 | Name | In | Required | Description |
 |---|---|---|---|
 | `tenant_id` | path | yes | Your tenant identifier. Must match the PAT's tenant. |
-| `sha256` | path | yes | Lowercase hex SHA-256 of the blob bytes (64 characters). |
+| `blake3` | path | yes | Lowercase hex BLAKE3 of the blob bytes (64 characters). |
 
 **Headers**
 
@@ -75,7 +75,7 @@ Upload a blob. The SHA-256 in the URL path must match the SHA-256 of the request
 **Request**
 
 ```bash
-DIGEST=$(sha256sum ./output.tar.gz | awk '{print $1}')
+DIGEST=$(b3sum ./output.tar.gz | awk '{print $1}')   # BLAKE3, not sha256
 
 curl -s -X PUT \
   -H "Authorization: Bearer $CORELINK_PAT" \
@@ -84,10 +84,10 @@ curl -s -X PUT \
   "https://corelink-api.humangr.com/v1/cas/acme-prod/$DIGEST"
 ```
 
-**Response 201**
+**Response 201** — the body echoes the stored BLAKE3 hex:
 
 ```json
-{"hash": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}
+{"hash": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"}
 ```
 
 **Response 409** — blob already exists (idempotent; safe to ignore)
@@ -98,7 +98,7 @@ curl -s -X PUT \
 
 ---
 
-### `GET /v1/cas/<tenant_id>/<sha256>`
+### `GET /v1/cas/<tenant_id>/<blake3>`
 
 Download a blob by digest.
 
@@ -107,7 +107,7 @@ Download a blob by digest.
 | Name | In | Required | Description |
 |---|---|---|---|
 | `tenant_id` | path | yes | Your tenant identifier. |
-| `sha256` | path | yes | Lowercase hex SHA-256. |
+| `blake3` | path | yes | Lowercase hex BLAKE3. |
 
 **Request**
 
@@ -216,7 +216,7 @@ curl -s -X DELETE \
 | `403 Forbidden` | `forbidden` | PAT does not have the required scope, or tenant mismatch | Check PAT scopes and tenant in URL path |
 | `404 Not Found` | `not_found` | Blob does not exist in the tenant's CAS | Push before pulling |
 | `409 Conflict` | `conflict` | Blob already exists (PUT) | Idempotent — safe to ignore |
-| `422 Unprocessable Entity` | `hash_mismatch` | SHA-256 in URL does not match body | Recompute the digest |
+| `422 Unprocessable Entity` | `content hash mismatch` | BLAKE3 in URL does not match body (e.g. you used `sha256sum`) | Recompute with `b3sum` |
 | `429 Too Many Requests` | `rate_limited` | Request rate exceeded | Back off and retry; see `Retry-After` header |
 | `503 Service Unavailable` | `audit_closed` | Tenant's audit period is closed — writes temporarily suspended | Contact support; reads still work |
 
@@ -225,7 +225,7 @@ All error responses share this shape:
 ```json
 {
   "error": "not_found",
-  "message": "blob sha256:abc123... not found in tenant acme-prod"
+  "message": "blob af1349b9... not found in tenant acme-prod"
 }
 ```
 
