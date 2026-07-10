@@ -232,6 +232,18 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **admin-ui — signed-out `/welcome` (and every protected path) now 307s to `/sign-in` instead of returning 404.**
+  A signed-out visit to a protected page (`/welcome`, `/en/welcome`, `/dashboard`, `/customer`, …) returned a
+  bare **404** in production instead of bouncing to sign-in. Root cause: the edge middleware
+  (`apps/admin-ui/src/middleware.ts`) enforced auth with a no-arg `await auth.protect()`. Although
+  `@clerk/nextjs`'s own `protect.d.ts` documents "protect() in middleware redirects to signInUrl if signed out,"
+  in `@clerk/nextjs` 7.5.14 a bare `protect()` instead throws a Next `notFound()` for signed-out middleware
+  requests — so the request 404'd *before* the route (which exists at `/[locale]/(authenticated)/welcome`) could
+  render or redirect. Passing an explicit `unauthenticatedUrl` to `protect()` forces the intended 307 to
+  `/sign-in` and preserves the originally-requested path via `?redirect_url=`. Authenticated users were
+  unaffected (the post-signup flow targets the locale-prefixed `/en/welcome`, which resolves and renders once
+  `protect()` passes); this was a signed-out-only redirect regression that the prod `/welcome` route-exists
+  canary (`e2e/signup-welcome.spec.ts`) catches. Reproduced locally and verified 404→307.
 - **integration(go-live-wave) — closed the union-merge lint + test regressions across the 15-branch integration.**
   Rust `clippy -D warnings` (crate-scoped PR gate + workspace gc-tests gate): removed a redundant `#[must_use]`
   on `byok_admin::router` (return type already `#[must_use]`), rewrote the DSR portal PAT-backstop block with the

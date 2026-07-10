@@ -111,7 +111,12 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
         | {
             clerkMiddleware?: (
               handler: (
-                auth: { protect: () => Promise<unknown> },
+                auth: {
+                  protect: (options?: {
+                    unauthenticatedUrl?: string;
+                    unauthorizedUrl?: string;
+                  }) => Promise<unknown>;
+                },
                 request: NextRequest,
               ) => Promise<Response> | Response,
               options?: { signInUrl?: string },
@@ -129,7 +134,25 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
             if (enforce) {
               // Real enforcement: unauthenticated requests to protected paths
               // are redirected to sign-in by Clerk (return URL preserved).
-              await auth.protect();
+              //
+              // NOTE (fix/admin-ui-welcome-signed-out-redirect): a bare
+              // `auth.protect()` is DOCUMENTED to redirect to signInUrl from
+              // middleware (see @clerk/nextjs protect.d.ts), but in
+              // @clerk/nextjs 7.x it instead throws a Next `notFound()` for
+              // signed-out requests — which surfaced in prod as `/welcome`
+              // and `/en/welcome` returning **404 instead of a 307 to
+              // /sign-in** (the route exists; protect 404s before it renders).
+              // Passing an explicit `unauthenticatedUrl` forces the intended
+              // redirect and preserves the return URL so the user lands back on
+              // the originally-requested page after signing in.
+              await auth.protect({
+                unauthenticatedUrl: new URL(
+                  `/sign-in?redirect_url=${encodeURIComponent(
+                    req.nextUrl.pathname + req.nextUrl.search,
+                  )}`,
+                  req.url,
+                ).toString(),
+              });
             }
             const res = NextResponse.next({ request: { headers: requestHeaders } });
             applySecurityHeaders(res, nonce);
