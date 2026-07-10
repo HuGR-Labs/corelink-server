@@ -64,14 +64,22 @@ export async function acceptDpaAction(input: {
   dpaVersion: string;
   dpaLocale: string;
   noticeTextHash: string;
+  /** Client-captured click timestamp (ms since epoch, `Date.now()` at accept). */
+  uiCaptureTs: number;
 }): Promise<DpaAccepted> {
   const token = await getSessionToken();
+  // Routed via `/v1/onboarding/*` so the Worker edge Clerk-verifies the session
+  // and injects the internal-auth + verified-tenant headers the container's
+  // dpa-accept route requires (SAME contract as tier-select). The tenant is
+  // taken from the verified header server-side, NOT from the body — so no
+  // tenant id travels in this request.
   return apiPost<DpaAccepted>(
-    `/v1/tenants/${encodeURIComponent(input.tenantId)}/dpa-accept`,
+    "/v1/onboarding/dpa-accept",
     {
       dpa_version: input.dpaVersion,
       dpa_locale: input.dpaLocale,
       notice_text_hash: input.noticeTextHash,
+      ui_capture_ts: input.uiCaptureTs,
     },
     { token },
   );

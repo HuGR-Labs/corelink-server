@@ -989,7 +989,7 @@ candidates:
     title: "Tier taxonomy & tier-select backend"
     status: "active"
     source_cluster: "docs/launch"
-    seed_from: ["crates/corelink-container/src/routes/tier_select.rs", "crates/corelink-container/src/routes/tier_select_store.rs", "crates/corelink-container/src/routes/tier_select_audit.rs", "specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md"]
+    seed_from: ["crates/corelink-container/src/routes/tier_select.rs", "crates/corelink-container/src/routes/tier_select_store.rs", "crates/corelink-container/src/routes/tier_select_audit.rs", "crates/corelink-container/src/routes/dpa_accept.rs", "crates/corelink-container/src/routes/dpa_accept_store.rs", "specs/03_architecture/adrs/ADR-S19-001-tier-taxonomy-amendment-5-to-6.md"]
   - id: "launch/signup-onboarding"
     type: "LaunchControl"
     title: "Signup -> tenant onboarding flow"

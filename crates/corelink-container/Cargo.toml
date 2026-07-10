@@ -156,6 +156,10 @@ corelink-stripe-real = { workspace = true }
 # (replaces direct `corelink_stripe_real::*` imports in main.rs / webhook.rs).
 corelink-billing = { workspace = true }
 corelink-tier-selection = { workspace = true }
+# DPA click-through acceptance engine: real RS256 receipt + 6-field consent
+# schema + 3-locale enum + IP-hash primitives, driven by the
+# `/v1/onboarding/dpa-accept` route (routes/dpa_accept.rs).
+corelink-dpa-acceptance = { workspace = true }
 # Wave-17: production materializer + D1 idempotency + tier reconciliation
 # (replaces the Recording* / InMemory* placeholders from wave 16).
 corelink-billing-stripe-materializer = { workspace = true }
@@ -323,6 +327,11 @@ serde_json = { workspace = true }
 # transaction + WAL surface a real D1 would.
 rusqlite = { version = "0.32", features = ["bundled"] }
 tempfile = { workspace = true }
+# DPA-accept route tests generate an ephemeral RSA key at runtime to trial-sign
+# the RS256 receipt (never a committed private key — keeps gitleaks green).
+# Mirrors the `corelink-dpa-acceptance` crate's own test keygen.
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
 
 [build-dependencies]
 tonic-build = { workspace = true }

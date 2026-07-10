@@ -806,6 +806,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // Launch money-path unblock: `POST /v1/onboarding/dpa-accept` — writes the
+    // durable `dpa_acceptances` row the tier-select gate (`is_dpa_accepted`)
+    // reads (INV-ONBOARD-DPA-FIRST). Same onboarding proxy contract as
+    // tier-select (worker sets x-corelink-internal-auth + x-corelink-tenant-id).
+    // Mounted only when the internal-auth secret + D1 + DPA version + the RS256
+    // receipt signing key (DPA_RECEIPT_SIGNING_KEY) are ALL present — fail-CLOSED
+    // (unmounted, logged) rather than 500 when the key is unset/invalid.
+    if let Some(dpa_accept_state) = corelink_server::routes::dpa_accept::build_state_from_env() {
+        info!(
+            "routes: /v1/onboarding/dpa-accept mounted (internal auth + D1 + DPA version + DPA_RECEIPT_SIGNING_KEY present)"
+        );
+        app = app.merge(corelink_server::routes::dpa_accept::router(
+            dpa_accept_state,
+        ));
+    } else {
+        warn!(
+            "dpa-accept config incomplete (CORELINK_INTERNAL_AUTH_KEY / CORELINK_DPA_VERSION / \
+             DPA_RECEIPT_SIGNING_KEY / D1); /v1/onboarding/dpa-accept NOT mounted (fail-CLOSED)"
+        );
+    }
+
     // R2-12: the Stripe webhook route is MERGED onto the same listener when
     // STRIPE_WEBHOOK_SECRET is present; absent → skip (dev/CI without billing
     // config stays green). Either way the data plane above is always served.

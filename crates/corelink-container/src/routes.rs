@@ -227,6 +227,16 @@ pub mod signup;
 /// INV-ONBOARD-DPA-FIRST + durable 60s lock + hosted Stripe Checkout.
 /// WI-S19-004 production wiring.
 pub mod tier_select;
+/// DPA click-through acceptance route: `POST /v1/onboarding/dpa-accept`.
+/// Writes the durable `dpa_acceptances` row (migration `0038`) that the
+/// tier-select money-path gate (`is_dpa_accepted`) reads — same internal-auth +
+/// verified-tenant contract as `tier_select`. Drives the real
+/// `corelink-dpa-acceptance` crypto/schema primitives (RS256 receipt, IP hash,
+/// locale enum) + a real RS256 receipt; gated on `DPA_RECEIPT_SIGNING_KEY`.
+pub mod dpa_accept;
+/// Production D1-over-HTTP [`dpa_accept::DpaAcceptStore`] adapter: the durable
+/// `dpa_acceptances` reader/writer (mirrors `tier_select_store`).
+pub mod dpa_accept_store;
 /// Production [`tier_select::TierSelectAudit`] adapter (WP-C scaffold):
 /// fail-CLOSED audit-chain emit (mirrors `internal_pat` tracing-audit).
 pub mod tier_select_audit;

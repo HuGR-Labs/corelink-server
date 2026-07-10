@@ -23,6 +23,23 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(onboarding): DPA-acceptance backend — `POST /v1/onboarding/dpa-accept` unblocks the paid-checkout money-path.**
+  The tier-select checkout gate `is_dpa_accepted(tenant, version)` (`SELECT 1 FROM dpa_acceptances …`)
+  always returned false because NO endpoint wrote `dpa_acceptances` — so every paid checkout 403'd
+  `dpa_required` (INV-ONBOARD-DPA-FIRST). Added a real container route
+  (`crates/corelink-container/src/routes/dpa_accept.rs` + `dpa_accept_store.rs`) that authenticates via
+  the SAME onboarding proxy contract as tier-select (worker-injected `x-corelink-internal-auth` +
+  verified `x-corelink-tenant-id`), drives the real `corelink-dpa-acceptance` primitives (RS256 receipt
+  via `sign_receipt`, closed 3-locale enum, `sha256(ip‖salt)` IP hash, deterministic `wording_id`), and
+  writes a durable `dpa_acceptances` row (migration `0038`) over D1-HTTP — idempotent per
+  `dpa:{tenant}:{version}` (re-accept is a no-op success). The route is gated on a new RS256 signing key
+  `DPA_RECEIPT_SIGNING_KEY` (RSA PKCS#8/PKCS#1 PEM; forwarded via the DO env, matrix row #181) and
+  fail-CLOSES (unmounted, logged) when the key is unset/invalid rather than 500-ing. The admin-ui
+  `acceptDpaAction` now posts to `/v1/onboarding/dpa-accept` and captures the real click timestamp
+  (`ui_capture_ts`). Notes: the client-attested notice hash is stored as-is (there is no co-located
+  server copy byte-identical to the admin-ui-rendered notice to re-derive against — the admin-ui content
+  `apps/admin-ui/src/content/dpa.*.md` diverges from the legal `legal/dpa/v1.0.0.*.md` artifact; a
+  follow-up should unify the canonical notice source to re-enable server-side hash recompute).
 - **feat(bazel): stock-Bazel HTTP remote-cache alias — `bazel --remote_cache=https://host/bazel/cache` now works.**
   The Bazel REAPI surface previously wired ONLY the CoreLink REAPI ByteStream REST scheme
   (`/bazel/v2/:instance/blobs/:hash/:size`); vanilla `bazel`/Buck2-as-REAPI-cache send the plain
