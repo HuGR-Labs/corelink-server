@@ -1047,7 +1047,6 @@ async fn handle_account_export(
     headers: HeaderMap,
 ) -> axum::response::Response {
     use crate::routes::customer_export::TenantExportError;
-    use crate::wall_clock::WallClock as _;
 
     // 1. Fail-CLOSED tenant resolution (401 on missing/sentinel).
     let t = match tenant(&headers) {

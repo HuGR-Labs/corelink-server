@@ -241,7 +241,7 @@ base64 = { workspace = true }
 # (InMemoryAuditEmitter) when mounting `/cargo/*` (see `routes/cargo.rs`).
 corelink-audit = { workspace = true }
 subtle = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["v5"] }
 
 # Wave-29 stream-1 — pilot signup HMAC-SHA256 token verify (route
 # `apps/server/src/routes/signup.rs`). Promoted from dev-deps so the

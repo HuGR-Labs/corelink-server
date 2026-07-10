@@ -64,7 +64,7 @@ use axum::{
     Json, Router,
 };
 use base64::Engine as _;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
@@ -1236,7 +1236,7 @@ fn issue_receipt(
     let c = b64.encode(serde_json::to_vec(&claims).unwrap_or_default());
     let signing_input = format!("{h}.{c}");
     // HMAC accepts any key length, so `new_from_slice` never errs here.
-    let mut mac = match <Hmac<Sha256> as Mac>::new_from_slice(key) {
+    let mut mac = match <Hmac<Sha256> as KeyInit>::new_from_slice(key) {
         Ok(m) => m,
         Err(_) => return String::new(),
     };
