@@ -100,6 +100,30 @@ Each entry cross-references:
   a documented deferred-real follow-up in `corelink-telemetry`; the operator supplies the
   reachable collector/vendor endpoint (`CORELINK_OTEL_COLLECTOR_ENDPOINT`, etc.). The
   OtelCollector variant is the recommended, solidly-wired path.
+- **feat(byok): activation WRITE path — the seam that flips a tenant to BYOK `active`.**
+  Migration `0081` created `tenant_byok_config` + `tenant_byok_secret` and the r2_s3 CAS store
+  already encrypts at rest when `tenant_byok_config.state == 'active'`, but nothing wrote those
+  tables (the H5 onboarding writer was deferred) so the gate could never engage. This closes
+  the gap: a fail-CLOSED, tenant-scoped, audited `D1ByokConfigWriter`
+  (`crates/corelink-container/src/customer_d1.rs`) that (a) `activate`s a tenant — UPSERTs its
+  CMK identity (`mode`/`crypto_mode`/`cmk_provider`/`cmk_key_id`/`cmk_region`) + the CMK-wrapped
+  Tcs (`tenant_byok_secret`, secret-FIRST ordering so an active config never dangles over a
+  missing Tcs), and (b) `deactivate`s it — the crypto-shred kill switch (`active`/`partial` →
+  `shredded`, monotonic + idempotent), the control-plane complement of the always-on
+  `corelink_byok::revocation` detector. Exposed over two operator-gated routes
+  (`POST /v1/admin/byok/{activate,deactivate}`, `crates/corelink-container/src/routes/byok_admin.rs`)
+  behind the same `x-corelink-internal-auth` secret as `/v1/admin/*` (auth-before-parse; writer
+  `None` in dev/CI → 503 fail-CLOSED). Additive only — no new migration (0081 already has every
+  column). Plaintext Tcs is never handled or logged; the audit trail records tenant + provider +
+  CMK identity + state only. Enforces INV-BYOK-CRYPTO-SOVEREIGNTY + INV-TENANT-ISOLATION.
+- **feat(byok): all four real-KMS providers constructable from the container factory.**
+  `crates/corelink-container/src/byok.rs` grew per-provider constructors
+  (`make_{aws,gcp,azure,vault}_kms_provider`) + `make_active_provider` (delegates to the
+  `byok_orchestrator` compile-time cfg dispatch), and now compiles under ANY `byok-*-real`
+  flag (was AWS-only). Selecting a `byok-<p>-real` cargo feature wires the matching real provider
+  end-to-end via `byok_orchestrator::build_active`; mutual exclusion of two real providers stays a
+  hard compile error (ADR-S30-001). Provisioning live KMS credentials + choosing the build feature
+  remains an operator step.
 
 ### Changed
 - **Customer team-invite 501 copy de-staled** (`corelink-container`). Team invites

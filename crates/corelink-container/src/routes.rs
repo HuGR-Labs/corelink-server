@@ -53,6 +53,14 @@ pub mod admin_tenant_detail;
 /// `pilot-24h-checkin.sh`) with proper endpoints + audit-emit
 /// fail-CLOSED ordering + 5-Layer Defense scope gating.
 pub mod admin_pilot;
+/// Operator-gated BYOK **activation** control plane
+/// (`POST /v1/admin/byok/{activate,deactivate}`): the WRITE authority that flips
+/// a tenant's `tenant_byok_config.state` to `active` (engaging the r2_s3
+/// at-rest encryption gate) + persists its CMK-wrapped Tcs, plus the crypto-shred
+/// kill switch. Internal-auth gated exactly like `admin`. Closes the H5 gap
+/// left by migration 0081 (the read model + engagement gate were inert with no
+/// writer).
+pub mod byok_admin;
 /// Customer-facing audit-analytics routes (Wave-18 wiring of the
 /// Neon analytics shadow sync): `GET /v1/audit/analytics/event-count`
 /// + `GET /v1/audit/analytics/timeline` over the per-tenant
@@ -622,6 +630,9 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         wall_clock: crate::wall_clock::default_wall_clock(),
         internal_auth_key: admin_internal_auth_key,
     };
+    // BYOK activation control plane (operator-gated, same secret as `/v1/admin/*`).
+    // Writer is `None` in dev/CI (no D1 creds) → routes fail CLOSED (503).
+    let byok_admin_state = byok_admin::ByokAdminRouteState::from_env();
     let mut audit_export_state = audit_export::build_state();
     // Native PAT possession backstop (rt-nuclear #17): the audit-export +
     // analytics surfaces were UN-gated, so a leaked PAT_SIGNING_KEY could forge a
@@ -672,6 +683,7 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
             admin_tenant_detail::AdminTenantDetailState::from_env(),
         ))
         .merge(admin_pilot::router(pilot_admin_state))
+        .merge(byok_admin::router(byok_admin_state))
         .merge(audit_export::router(audit_export_state))
         .merge(audit_analytics::router(audit_analytics_state))
         .merge(users::router(users_state))
