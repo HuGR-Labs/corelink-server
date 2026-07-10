@@ -20,7 +20,7 @@ source_files:
   - "crates/corelink-analytics/src/lib.rs"
   - "crates/corelink-analytics/src/validator.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "33681473948d573e8dddac9f12c3c37ae09ef7a4"
+checkpoint_sha: "ab7b77acd970937ef9f38160ef66bfcb8b51a816"
 provenance: "AUTHORED"
 tags: ["billing", "stripe", "usage-metering", "reconciliation", "money-path"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -51,7 +51,7 @@ The crates split into a **deferred pure-logic front** and a **live egress + mate
 - **Runner entitlement SYMMETRIC seed/revoke (live).** `reconcile_runners` mirrors `reconcile_tier`'s status gate: a granting status (`active`/`trialing`) SEEDS `runners_entitlement` (audit `corelink.tenant.runners_entitlement_seeded.v1`), while a NON-granting status (`past_due`/`unpaid`/`paused`/`canceled` — including `customer.subscription.deleted`, whose status is `canceled`) now REVOKES it via `delete_runners_entitlement` + the `corelink.tenant.runners_entitlement_revoked.v1` audit, rather than leaving a permanently-granted stale row. Audit fires BEFORE the state mutation on both the seed and the revoke branch (fail-CLOSED). The signup-worker is the primary authority; this is the container's defense-in-depth convergent write (`crates/corelink-billing-stripe-materializer/src/handler.rs:413-481`).
 - **Downgrade → D1 write (live).** The cache-tier cancel/downgrade twin `persist_tier_downgrade` reuses the same read-tier/changed short-circuit + audit-BEFORE-write ordering but drives `downgrade_tier` (which writes `subscription_state='inactive'` — the access gate OFF) instead of `upsert_tier`; it runs ONLY on `customer.subscription.deleted` AND only when `reconcile_runners` did NOT already handle the event as a runner price, so a canceled cache tenant converges to an access-OFF row rather than the contradictory active-free row the grant path would leave (`crates/corelink-billing-stripe-materializer/src/handler.rs:579-617`).
 - **Container wiring (live).** When `STRIPE_WEBHOOK_SECRET` is set, the container mounts the dispatcher on the data-plane listener, wiring the durable `D1HttpBillingWriter` (CF D1 REST API) so webhook state survives restarts; without the D1 env it falls back to the in-memory mirror (`crates/corelink-container/src/main.rs:879-907`, `crates/corelink-container/src/main.rs:919-935`).
-- **Outbound egress (live).** `StripeRealClient::post_form` is the real HTTPS POST: `bearer_auth` with the secret-wrapped key, an `Idempotency-Key` header for retry safety, the pinned `Stripe-Version`, and exponential backoff on `5xx`/`429` with no silent cross-mode fallback (`crates/corelink-stripe-real/src/client.rs:452-501`).
+- **Outbound egress (live).** `StripeRealClient::post_form` is the real HTTPS POST: `bearer_auth` with the secret-wrapped key, an `Idempotency-Key` header for retry safety, the pinned `Stripe-Version`, and exponential backoff on `5xx`/`429` with no silent cross-mode fallback (`crates/corelink-stripe-real/src/client.rs:465-514`).
 - **Analytics validator (skeleton).** `CardinalityValidator::validate_and_register` rejects an emit that would push a metric over its per-metric or global budget BEFORE registering the tuple — the runtime half of INV-OBS-CARDINALITY-BUDGET (`crates/corelink-analytics/src/validator.rs:195-237`).
 
 # Invariants
@@ -60,7 +60,7 @@ The crates split into a **deferred pure-logic front** and a **live egress + mate
 - **The container materializer is GRANT-ONLY for the CACHE tier on `updated`.** `subscription_status_grants_access` admits only `active`/`trialing`; a recognized cache plan carrying a non-granting status (`past_due`/`unpaid`/`paused`/…) is NOT downgraded here — the cache entitlement upsert is simply skipped, because actively flipping the cache gate OFF via an `updated` is the signup-worker's authority (`crates/corelink-billing-stripe-materializer/src/handler.rs:141-143`, `crates/corelink-billing-stripe-materializer/src/handler.rs:522`). Explicit `customer.subscription.deleted` DOES downgrade the cache tier — `persist_tier_downgrade` writes `subscription_state='inactive'` via `downgrade_tier` (`crates/corelink-billing-stripe-materializer/src/handler.rs:579-617`). The RUNNER axis is deliberately NOT grant-only: `reconcile_runners` REVOKES `runners_entitlement` (`delete_runners_entitlement`) on any non-granting status on BOTH the `updated` and `deleted` arms — symmetric to how it seeds — so a lapsed runner subscription cannot leave a stale grant (`crates/corelink-billing-stripe-materializer/src/handler.rs:413-481`).
 - **Audit fires BEFORE state mutation on every arm (fail-CLOSED).** Across emit, aggregate, reconcile, and materialize, an audit failure aborts the mutation and propagates the typed error (`crates/corelink-billing-stripe-materializer/src/handler.rs:329-355`, `crates/corelink-billing-aggregator/src/aggregator.rs:321-328`).
 - **Idempotency is keyed on the Stripe `event_id` and committed BEFORE materialize.** A redelivery hits `AlreadyProcessed` and returns `200` without re-mutating (`crates/corelink-stripe-real/src/webhook_dispatch.rs:601-622`). Because the dedup row commits first, a TRANSIENT materialize failure is quarantined to the DLQ instead of silently lost (`crates/corelink-stripe-real/src/webhook_dispatch.rs:714-738`).
-- **Every outbound POST carries an `Idempotency-Key`** so a retry after a transport failure cannot double-charge (`crates/corelink-stripe-real/src/client.rs:465`).
+- **Every outbound POST carries an `Idempotency-Key`** so a retry after a transport failure cannot double-charge (`crates/corelink-stripe-real/src/client.rs:478`).
 - **`tenant_id` is forbidden as an analytics label** (cardinality + tenant isolation); only the canonical `Tier` enum appears (`crates/corelink-analytics/src/lib.rs:98-103`).
 
 # Gotchas
@@ -83,7 +83,7 @@ The crates split into a **deferred pure-logic front** and a **live egress + mate
 7. `crates/corelink-stripe-real/src/webhook.rs:41-78` — `verify_webhook_signature`: ±5-min window, HMAC over exact bytes, constant-time multi-`v1` compare.
 8. `crates/corelink-stripe-real/src/webhook_dispatch.rs:530-622` — `process`: header→verify→parse→dedup ordering; `AlreadyProcessed`→200, bad sig→401.
 9. `crates/corelink-stripe-real/src/webhook_dispatch.rs:648-738` — dispatch routing + transient→500 + DLQ quarantine (dedup row committed before materialize).
-10. `crates/corelink-stripe-real/src/client.rs:452-501` — `post_form`: real bearer-authed HTTPS egress + `Idempotency-Key` + retry on 5xx/429.
+10. `crates/corelink-stripe-real/src/client.rs:465-514` — `post_form`: real bearer-authed HTTPS egress + `Idempotency-Key` + retry on 5xx/429.
 11. `crates/corelink-stripe-real/src/lib.rs:18-41` — dual auth mode (`direct`/`wallet-broker`), credentials secret-wrapped, no silent fallback.
 12. `crates/corelink-billing-stripe-materializer/src/handler.rs:124-143` — `subscription_status_grants_access` + the "SECOND writer of subscription_state" grant-only rationale.
 13. `crates/corelink-billing-stripe-materializer/src/handler.rs:329-355` — audit-before-D1-write on the subscription upsert arm.

@@ -196,8 +196,15 @@ impl StripeClientConfig {
     /// - the required credential for the selected mode is
     ///   missing/empty.
     pub fn from_env() -> Result<Self, StripeError> {
+        // `.trim()` is load-bearing: secrets are frequently bound via a shell
+        // here-string (`... <<< "$V"`) or an API `text:` field that appends a
+        // trailing newline. Without trimming, `STRIPE_AUTH_MODE="direct\n"`
+        // falls through the exact-match arm below to `other =>` and the entire
+        // Stripe client fails to initialise (`stripe_unavailable` 502 on EVERY
+        // tier). This exact class already bit `CORELINK_DPA_VERSION` in prod.
         let mode_raw = env::var("STRIPE_AUTH_MODE")
             .ok()
+            .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "direct".to_string());
         match mode_raw.as_str() {
@@ -210,12 +217,18 @@ impl StripeClientConfig {
     }
 
     fn from_env_direct() -> Result<Self, StripeError> {
+        // Trim for the same reason as `STRIPE_AUTH_MODE` above: a stray newline
+        // on the key produces a 401 from Stripe (also surfaced as a generic
+        // `stripe_unavailable` 502), and a newline on the base URL breaks the
+        // request URL. Env-derived Stripe config must be whitespace-robust.
         let api_base = env::var("STRIPE_API_BASE")
             .ok()
+            .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| DEFAULT_STRIPE_API_BASE.to_string());
         let api_key = env::var("STRIPE_SECRET_KEY")
             .ok()
+            .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .ok_or_else(|| {
                 StripeError::Authentication(
@@ -1131,6 +1144,45 @@ mod tests {
                 assert_eq!(api_key.expose_secret(), "sk_test_explicit");
             }
             other => panic!("expected Direct mode, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_env_direct_tolerates_trailing_newline_on_mode() {
+        // Regression: a secret bound via a shell here-string or an API `text:`
+        // field appends a trailing "\n". Before trimming, `"direct\n"` fell to
+        // the `other =>` arm and `from_env()` returned an Authentication error,
+        // taking down Stripe checkout for EVERY tier (stripe_unavailable 502).
+        let _g = EnvGuard::new(ENV_KEYS);
+        env::set_var("STRIPE_AUTH_MODE", "direct\n");
+        env::set_var("STRIPE_SECRET_KEY", "sk_test_newline");
+        let cfg = StripeClientConfig::from_env()
+            .expect("STRIPE_AUTH_MODE=\"direct\\n\" must parse as Direct mode");
+        match cfg.mode {
+            StripeAuthMode::Direct { ref api_key, .. } => {
+                assert_eq!(api_key.expose_secret(), "sk_test_newline");
+            }
+            other => panic!("expected Direct mode for \"direct\\n\", got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn from_env_direct_trims_whitespace_on_mode_key_and_base() {
+        // Whitespace on any of the three env inputs must not corrupt config.
+        let _g = EnvGuard::new(ENV_KEYS);
+        env::set_var("STRIPE_AUTH_MODE", "  direct  ");
+        env::set_var("STRIPE_SECRET_KEY", "  sk_test_padded\n");
+        env::set_var("STRIPE_API_BASE", " https://api.stripe.local \n");
+        let cfg = StripeClientConfig::from_env().unwrap();
+        match cfg.mode {
+            StripeAuthMode::Direct {
+                ref api_base,
+                ref api_key,
+            } => {
+                assert_eq!(api_base, "https://api.stripe.local");
+                assert_eq!(api_key.expose_secret(), "sk_test_padded");
+            }
+            other => panic!("expected trimmed Direct mode, got {other:?}"),
         }
     }
 
