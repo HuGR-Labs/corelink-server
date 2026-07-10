@@ -25,15 +25,19 @@
 -- All dollar amounts are stored as signed `INTEGER` **micro-dollars**
 -- (USD * 1_000_000). D1/SQLite has no exact decimal type and floating
 -- point is unsafe for money; micro-dollars give exact arithmetic with
--- ample headroom (i64 spans ~9.2e12 USD). The $5 launch tripwire is
--- therefore `5_000_000`.
+-- ample headroom (i64 spans ~9.2e12 USD). The effectively-unlimited
+-- `$1,000,000/mo` default is therefore `1_000_000_000_000`.
 --
--- ## Launch default — a symbolic $5/mo tripwire
+-- ## Default — effectively-unlimited (ADR-0068 reconciliation, 2026-07-09)
 --
--- ADR-0068 §Decision sets a deliberately conservative $5/mo default
--- (5_000_000 micro-USD). It is a TRIPWIRE that bounds day-1 blast radius
--- while real usage calibrates the number — NOT a product tier. The
--- ceiling is owner-tunable per tenant by UPDATEing `monthly_budget_usd_micros`.
+-- The original ADR-0068 default was a symbolic `$5/mo` tripwire. That was an
+-- uncalibrated placeholder: at the default `$0.001/op` it tripped at ~5000
+-- ops/month — ~100× BELOW the free tier's own request quota — so it silently
+-- 402'd self-serve tenants far below what they bought, while the REAL cost
+-- protection is the per-tier request/storage caps + the per-second rate limit.
+-- The default is therefore now effectively-unlimited (`$1,000,000/mo`); the
+-- ceiling stays an owner-tunable per-tenant BACKSTOP (primarily for the
+-- unbounded team/enterprise tiers) via UPDATEing `monthly_budget_usd_micros`.
 --
 -- ## Idempotency / additive-only
 --
@@ -48,10 +52,12 @@ CREATE TABLE IF NOT EXISTS tenant_quota (
     tenant_id TEXT PRIMARY KEY,
 
     -- Owner-tunable monthly ceiling, in micro-dollars (USD * 1e6).
-    -- Default = the symbolic $5 tripwire (ADR-0068). The middleware
-    -- rejects a billable op when `accrued_usd_micros + cost(op)` would
-    -- exceed this value.
-    monthly_budget_usd_micros INTEGER NOT NULL DEFAULT 5000000
+    -- Default = effectively-unlimited $1,000,000/mo (ADR-0068 reconciliation
+    -- 2026-07-09; kept in lockstep with the Rust
+    -- `DEFAULT_MONTHLY_BUDGET_USD_MICROS`). The middleware rejects a billable
+    -- op when `accrued_usd_micros + cost(op)` would exceed this value; the
+    -- default is not a normal-usage wall, it is a per-tenant operator backstop.
+    monthly_budget_usd_micros INTEGER NOT NULL DEFAULT 1000000000000
         CHECK (monthly_budget_usd_micros >= 0),
 
     -- Cumulative cost ACCRUED in the current cycle, in micro-dollars.

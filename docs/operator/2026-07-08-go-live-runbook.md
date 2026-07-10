@@ -80,6 +80,24 @@ printf '%s' "$VALUE" | worker/node_modules/.bin/wrangler secret put NAME --env p
 
 ---
 
+## Team/Enterprise onboarding checklist (contract tiers)
+The per-tenant monthly `$`-ceiling (ADR-0068) now defaults to **effectively-unlimited**
+(`$1,000,000/mo`), so it is no longer a wall for self-serve SMB tenants — the cache tiers
+are already bounded by their request/storage caps + rate limit. **But** the **team/enterprise**
+tiers have an **unbounded** product request quota (`MAX_SAFE_INTEGER`) and are contract-priced,
+so their cost blast-radius has no automatic bound. Therefore, when onboarding a team/enterprise
+tenant you **MUST** set that tenant's `$`-ceiling per the signed contract:
+```
+-- CONFIG_DB (prod), per-tenant contract ceiling in micro-dollars (USD * 1e6)
+UPDATE tenant_quota SET monthly_budget_usd_micros = <contract_usd * 1000000>,
+       updated_at_ms = <now_ms> WHERE tenant_id = '<tenant_id>';
+-- if no row exists yet: INSERT INTO tenant_quota (tenant_id, monthly_budget_usd_micros)
+--   VALUES ('<tenant_id>', <contract_usd * 1000000>);
+```
+This is the deliberate operator backstop — the `$`-ceiling is a per-tenant contract cap, not
+a default tripwire. (Never set it to `0` — that walls the tenant entirely; there is no
+`0 = unlimited` sentinel.)
+
 ## Engineering follow-ups (tracked; none block taking money)
 - e2e critical-flows: Clerk 7 `useAuth()` vs the synthetic e2e session (test-harness debt; prod unaffected). — task #47
 - Next 15→16 (isolated OpenNext monorepo standalone-path fix). — task #36 tail
