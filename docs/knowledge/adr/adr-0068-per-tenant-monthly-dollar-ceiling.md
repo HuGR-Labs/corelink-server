@@ -4,7 +4,7 @@ title: "ADR-0068 — Per-tenant monthly $-ceiling: a fail-closed spend cap (G1)"
 description: "Why CoreLink enforces a cumulative per-tenant monthly dollar ceiling, fail-closed, on top of the existing velocity rate limit."
 source_files:
   - "specs/03_architecture/adrs/ADR-0068-per-tenant-monthly-dollar-ceiling.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
+checkpoint_sha: "15b5eb35b68b5f682508be6df263b7ab7b1d4628"
 provenance: "AUTHORED"
 tags: ["adr", "quota", "cost-ceiling", "fail-closed", "abuse", "hugit-p2"]
 timestamp: "2026-06-26T00:00:00Z"

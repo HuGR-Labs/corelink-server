@@ -4,7 +4,7 @@ title: "Per-tenant monthly $-ceiling"
 description: "The fail-CLOSED cumulative-dollar spend cap that bounds each tenant's monthly cost blast-radius, orthogonal to the rate limit and the request quota."
 source_files:
   - "crates/corelink-container/src/tenant_quota.rs"
-checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
+checkpoint_sha: "15b5eb35b68b5f682508be6df263b7ab7b1d4628"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "billing", "dollar-ceiling", "adr-0068", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
