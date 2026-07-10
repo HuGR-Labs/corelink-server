@@ -1070,7 +1070,7 @@ async fn handle_verify_mfa(
         reason: ticket.reason.clone(),
         rectification: None,
     };
-    let resp = run_destructive(
+    let outcome = run_destructive(
         pipeline.as_ref(),
         ticket.action,
         &tenant,
@@ -1079,15 +1079,17 @@ async fn handle_verify_mfa(
         &mut ticket,
         now,
     );
-    // Persist the transition regardless of the op outcome (durable evidence).
+    // Persist the transition regardless of the op outcome (durable evidence): the
+    // ticket already exists (Pending), so this is an UPDATE — a Rejected or faulted
+    // disposition is recorded either way.
     if let Err(e) = state.tickets.update(&ticket) {
         tracing::error!(error = %e, request_id = %request_id, "dsr/verify-mfa: ticket update failed");
         return (StatusCode::INTERNAL_SERVER_ERROR, "ticket persist failed").into_response();
     }
-    if let Some(err_resp) = resp {
-        return err_resp;
+    match outcome {
+        Destructive::Continue => (StatusCode::OK, Json(ticket.detail_json())).into_response(),
+        Destructive::RejectPersist(err_resp) | Destructive::Abort(err_resp) => err_resp,
     }
-    (StatusCode::OK, Json(ticket.detail_json())).into_response()
 }
 
 // ─── Auth + helpers ────────────────────────────────────────────────────────────
