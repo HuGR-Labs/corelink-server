@@ -47,7 +47,31 @@ on **Pro+**. Free BFM is on/off-only. Pro is trivial for a $30/mo SaaS and unloc
      PUT → 201, GET → 200, bytes identical. And confirm an HTML host still challenges a
      scripted bot request.
 
-## Bridge (only if the product must be unblocked BEFORE the Pro upgrade)
-Turning free BFM off alone is a **bandaid** (removes protection, replaces nothing) — do it
-ONLY paired with the API Rate Limiting rule, and re-protect HTML with SBFM the moment Pro
-lands. Prefer: upgrade Pro first, flip everything at once, zero-compromise.
+## EXECUTED 2026-07-10 — the free posture (Pro deferred, no cash)
+
+Owner had no budget for Pro, so we applied the **defensible free posture** — turning the
+blunt zone-wide tool off and replacing it with the *right-shaped* controls per plane
+(NOT a bare "BFM off"):
+
+1. **Found a SECOND API blocker:** the Wave-32 rate-limit rule
+   (`http_ratelimit` ruleset `c13b37aa…`, rule `260d907f…`) capped **all** corelink hosts
+   incl. `corelink-api` at **50 req / 10 s / IP → block** — that alone would 429 legit CI
+   cache bursts (a build does far more than 5 req/s). **Fixed:** removed `corelink-api`
+   from the rule's host set (v4). HTML hosts (app/admin/signup/docs) stay protected;
+   the machine API is no longer edge-throttled (its control is per-tenant app-layer).
+2. **Turned OFF free Bot Fight Mode** (`fight_mode: false`).
+3. **Kept the skip rule** (`securityLevel` exemption on the API host) — handles any
+   Security-Level (medium) IP-reputation challenge on the API plane.
+4. **API-plane defense now:** PAT/HMAC auth + per-tenant quota + `$`-ceiling + container
+   `ratelimit_layer` + Cloudflare always-on L3/4 DDoS. No browser challenge.
+5. **Human-plane defense now:** Clerk's built-in bot/abuse protection on signup/login +
+   the Wave-32 rate-limit still guarding the HTML hosts. **Owner follow-up (free, 1 click):**
+   enable Turnstile / Smart CAPTCHA in the **Clerk dashboard** for signup/login.
+
+**Verified from a datacenter IP** (GitHub Actions, the customer's environment): CAS
+`PUT → 201`, `GET → 200`, bytes identical (was 403 challenge before). HTML hosts still
+`200` + rate-limited.
+
+**When cash allows → upgrade to Pro** for Super Bot Fight Mode (adds bot-scoring on general
+HTML browsing + WAF managed rules); the skip rule already created makes it surgical then.
+Free posture above is sound for launch; Pro is strictly-better polish, not a blocker.
