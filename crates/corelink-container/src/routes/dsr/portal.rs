@@ -862,10 +862,37 @@ async fn submit(
             if !mfa_fresh(&headers) {
                 ticket.mfa_required = true;
                 transition(&mut ticket, now, TicketStatus::Pending, "awaiting MFA step-up");
-            } else if let Some(resp) =
-                run_destructive(pipeline.as_ref(), action, &tenant, &request_id, &body, &mut ticket, now)
-            {
-                return resp;
+            } else {
+                match run_destructive(
+                    pipeline.as_ref(),
+                    action,
+                    &tenant,
+                    &request_id,
+                    &body,
+                    &mut ticket,
+                    now,
+                ) {
+                    // Ticket mutated in place (completed / no-op) → fall through to
+                    // the shared insert + 200 OK below.
+                    Destructive::Continue => {}
+                    // Rejected: the ticket carries a durable Rejected disposition
+                    // that MUST be persisted (compliance record) BEFORE the 4xx is
+                    // surfaced — the shared insert below is skipped on this return.
+                    Destructive::RejectPersist(resp) => {
+                        if let Err(e) = state.tickets.insert(&ticket) {
+                            tracing::error!(
+                                error = %e,
+                                request_id = %request_id,
+                                "dsr/submit: rejected ticket insert failed",
+                            );
+                            return (StatusCode::INTERNAL_SERVER_ERROR, "ticket persist failed")
+                                .into_response();
+                        }
+                        return resp;
+                    }
+                    // Pipeline fault → fail-CLOSED: return the error WITHOUT persisting.
+                    Destructive::Abort(resp) => return resp,
+                }
             }
         }
         DsrRequestKind::Restriction | DsrRequestKind::Objection => {
@@ -894,8 +921,19 @@ async fn submit(
         .into_response()
 }
 
-/// Execute a destructive arm inline (MFA already fresh). `Some(resp)` ⇒ return
-/// that error response; `None` ⇒ ticket mutated in place (completed / rejected).
+/// Outcome of an inline destructive arm (the ticket is mutated in place).
+enum Destructive {
+    /// Completed / no-op — the caller persists the ticket and returns 200 OK.
+    Continue,
+    /// Rejected — the caller PERSISTS the (Rejected) ticket, then returns this 4xx.
+    RejectPersist(Response),
+    /// Pipeline fault — the caller returns this WITHOUT persisting (fail-CLOSED).
+    Abort(Response),
+}
+
+/// Execute a destructive arm inline (MFA already fresh). The returned
+/// [`Destructive`] tells the caller whether to persist the mutated ticket and
+/// which response to surface.
 fn run_destructive(
     pipeline: &dyn DsrPipeline,
     action: DsrRequestKind,
@@ -904,15 +942,15 @@ fn run_destructive(
     body: &DsrSubmitBody,
     ticket: &mut DsrTicket,
     now: u64,
-) -> Option<Response> {
+) -> Destructive {
     transition(ticket, now, TicketStatus::InProgress, "executing");
     match action {
         DsrRequestKind::Erasure => match pipeline.erasure(tenant) {
             Ok(()) => {
                 complete(ticket, now, None, "erasure requested");
-                None
+                Destructive::Continue
             }
-            Err(e) => Some(pipeline_error(&e, "erasure")),
+            Err(e) => Destructive::Abort(pipeline_error(&e, "erasure")),
         },
         DsrRequestKind::Rectification => {
             let email = body
@@ -925,22 +963,25 @@ fn run_destructive(
                 // No live-rectifiable field supplied → record as completed no-op
                 // (only the contact email is correctable in the live pipeline).
                 complete(ticket, now, None, "no live-rectifiable field supplied");
-                return None;
+                return Destructive::Continue;
             };
             match pipeline.rectification(tenant, request_id, email, now) {
                 Ok(Ok(())) => {
                     complete(ticket, now, None, "rectification applied");
-                    None
+                    Destructive::Continue
                 }
                 Ok(Err(reject)) => {
                     reject_ticket(ticket, now, &reject);
-                    // Persist the rejected ticket, then surface the 4xx.
-                    Some((StatusCode::UNPROCESSABLE_ENTITY, reject).into_response())
+                    // Rejected ticket must be persisted (durable disposition) by the
+                    // caller BEFORE the 4xx is surfaced.
+                    Destructive::RejectPersist(
+                        (StatusCode::UNPROCESSABLE_ENTITY, reject).into_response(),
+                    )
                 }
-                Err(e) => Some(pipeline_error(&e, "rectification")),
+                Err(e) => Destructive::Abort(pipeline_error(&e, "rectification")),
             }
         }
-        _ => Some((StatusCode::BAD_REQUEST, "not a destructive arm").into_response()),
+        _ => Destructive::Abort((StatusCode::BAD_REQUEST, "not a destructive arm").into_response()),
     }
 }
 
