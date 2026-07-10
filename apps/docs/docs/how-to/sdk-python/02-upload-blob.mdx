@@ -41,7 +41,7 @@ async def main() -> None:
 ## Streaming upload (large blobs)
 
 For large files use the streaming overload to avoid loading the file fully into
-memory — the BLAKE3 digest is computed in one rewound pass over the (seekable)
+memory — the BLAKE3 digest is computed in one rewound pass over the open file
 handle, then the same handle is streamed to the server:
 
 ```python
