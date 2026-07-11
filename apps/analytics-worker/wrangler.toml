@@ -11,6 +11,9 @@
 name = "corelink-analytics"
 main = "src/index.ts"
 compatibility_date = "2026-04-01"
+# Sentry (@sentry/cloudflare) pulls in `node:async_hooks` for async-context
+# propagation; nodejs_compat provides it. Inherited by the named envs below.
+compatibility_flags = ["nodejs_compat"]
 
 # Same security hardening posture as the control-plane worker:
 # never exposed on workers.dev — only via humangr.com custom route.
@@ -76,14 +79,17 @@ vars = { ENVIRONMENT = "prod", ALLOWED_ORIGINS = "https://corelink-docs.humangr.
 enabled = true
 head_sampling_rate = 1
 
+# Workers Custom Domain — Cloudflare auto-manages the DNS record (read-only,
+# tagged with the worker id) + the edge TLS cert for this hostname, matching the
+# other corelink-* prod hostnames (a bare proxied route record is NOT served).
 [[env.prod.routes]]
-pattern = "corelink-analytics.humangr.com/*"
-zone_name = "humangr.com"
+pattern = "corelink-analytics.humangr.com"
+custom_domain = true
 
 [[env.prod.d1_databases]]
 binding = "ANALYTICS_DB"
 database_name = "corelink-analytics-prod"
-database_id = "PLACEHOLDER_ANALYTICS_DB_PROD_ID"
+database_id = "d7fe391f-9fe0-4544-a1fb-64747bcd2639"
 migrations_dir = "migrations"
 
 [env.prod.triggers]
