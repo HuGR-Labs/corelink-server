@@ -284,6 +284,16 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(worker): a SET-but-sub-floor internal-auth consumer key now fails LOUD + fail-CLOSED instead of silently falling back to the shared key (deep-audit C/sub-floor).**
+  `resolveConsumerKey` (`worker/src/lib/internal_auth.ts`) used a consumer-specific key iff it was set AND
+  ≥32 chars, else it silently fell back to the shared `CORELINK_INTERNAL_AUTH_KEY`. That silent fallback is a
+  footgun: an operator who sets a dedicated key (e.g. `CORELINK_PAT_MINT_AUTH_KEY`) to isolate a consumer's
+  blast radius, but fat-fingers it below 32 chars, would unknowingly authenticate that consumer with the broad
+  shared key — "the isolation you think you have, you don't." Now a dedicated key that is *explicitly set but
+  sub-floor* is a configuration error: it logs a loud `console.error` and returns `null` (fail-CLOSED — that
+  consumer's gate rejects until the key is fixed or unset), rather than silently widening the blast radius. A
+  genuinely UNSET dedicated key still falls back to the shared key as before. Updated the test that encoded the
+  old silent-fallback behaviour to assert fail-closed.
 - **fix(audit): close the CF-6 chain-head laundering hole — an insider with D1 write could strip the signature and let the honest drain re-sign a forged head (backend-audit §3).**
   The Ed25519-signed `audit_chain_head`, whose stated purpose is to make audit history un-forgeable against
   "an insider with D1 write", was defeated by exactly that adversary: `check_head_on_resume`
