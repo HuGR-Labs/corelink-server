@@ -46,14 +46,22 @@
 //! [`canonical_head_bytes`] — and persists `head_signature` (base64) +
 //! `head_signed_at_ms` + `signing_key_id` (migration 0080).
 //!
-//! On RESUME ([`check_head_on_resume`]) a checkpoint carrying a NON-NULL signature
-//! signed under the CURRENT key id is re-verified against the canonical tuple +
-//! the seed-derived public key; a signature that does NOT verify (or a signed head
-//! with no seed configured to verify it) is TAMPER → the drain refuses to extend
-//! the chain from a forged head (fail-CLOSED, SEV-1). A NULL signature (pre-0080
-//! legacy head) is tolerated and re-signed on the next advance; a head signed
-//! under a DIFFERENT key id (seed/key rotation) cannot be verified with the
-//! current seed, so it is tolerated and re-signed too.
+//! On RESUME ([`check_head_on_resume`]), once a seed is configured (the signing
+//! regime is ACTIVE), the resumed head MUST carry a signature that verifies under
+//! the CURRENT key id against the canonical tuple + the seed-derived public key.
+//! Anything else is TAMPER → the drain refuses to extend the chain (fail-CLOSED,
+//! SEV-1): a verify failure, a NULL signature, a foreign `signing_key_id`, or a
+//! signed head with no seed to verify it. This closes the laundering hole where an
+//! insider with D1 write (but no seed) STRIPS the signature — they cannot re-sign,
+//! and the honest drain no longer re-signs an unverifiable head for them.
+//!
+//! Legitimate pre-0080 legacy heads and coordinated seed/key ROTATIONS are handled
+//! by an EXPLICIT, loudly-logged operator migration window
+//! (`AUDIT_CHAIN_TRUST_UNSIGNED_RESUME=1`, default OFF) that temporarily tolerates
+//! NULL / foreign-key-id heads while the fleet is re-signed — never a silent
+//! tolerance. (Full D1-write-insider resistance additionally needs an external
+//! anchor — Rekor / R2 Object-Lock — and signed key-rotation records; both remain
+//! roadmap.)
 //!
 //! ### Key source (REUSED — no new secret)
 //!
@@ -118,6 +126,14 @@ pub struct AuditDrainState {
     signing_seed: Option<Arc<Zeroizing<[u8; 32]>>>,
     /// The Ed25519 key id stamped into `audit_chain_head.signing_key_id`.
     signing_key_id: u64,
+    /// SECURE DEFAULT `false`: with a seed configured, a resumed head carrying a
+    /// NULL signature or a foreign `signing_key_id` is UNVERIFIABLE and treated as
+    /// TAMPER (fail-CLOSED) — an insider with D1 write (but no seed) cannot strip
+    /// the signature to launder a chain rewrite. Set `AUDIT_CHAIN_TRUST_UNSIGNED_RESUME=1`
+    /// ONLY as an explicit, loudly-logged operator migration window (bootstrapping
+    /// pre-0080 legacy heads, or a coordinated seed/key rotation) — it re-opens the
+    /// legacy tolerance and MUST be turned back off once the fleet is re-signed.
+    trust_unsigned_resume: bool,
 }
 
 impl std::fmt::Debug for AuditDrainState {
@@ -129,6 +145,7 @@ impl std::fmt::Debug for AuditDrainState {
             .field("d1", &"[D1HttpClient]")
             .field("signing_seed", &self.signing_seed.as_ref().map(|_| "<redacted>"))
             .field("signing_key_id", &self.signing_key_id)
+            .field("trust_unsigned_resume", &self.trust_unsigned_resume)
             .finish()
     }
 }
@@ -308,11 +325,26 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
              seed to make the per-partition chain head tamper-evident (CF-6)"
         );
     }
+    // SECURE DEFAULT: with a seed present, an unverifiable resumed head (NULL sig
+    // or foreign key id) is TAMPER. The escape is an explicit operator opt-in for a
+    // legacy/rotation migration window only.
+    let trust_unsigned_resume = std::env::var("AUDIT_CHAIN_TRUST_UNSIGNED_RESUME")
+        .ok()
+        .is_some_and(|v| matches!(v.trim(), "1" | "true" | "TRUE"));
+    if trust_unsigned_resume {
+        tracing::warn!(
+            "audit/drain: AUDIT_CHAIN_TRUST_UNSIGNED_RESUME is ON — resumed heads with a NULL \
+             signature or a foreign signing_key_id are TOLERATED (legacy/rotation migration \
+             window). This re-opens the CF-6 tamper tolerance; turn it OFF once the fleet is \
+             re-signed under the current key."
+        );
+    }
     Some(AuditDrainState {
         internal_auth_key,
         d1,
         signing_seed,
         signing_key_id,
+        trust_unsigned_resume,
     })
 }
 
@@ -442,9 +474,10 @@ fn resolve_resume(
 /// Outcome of the CF-6 head-signature check on resume.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HeadResumeCheck {
-    /// No checkpoint, or a NULL signature (pre-0080 legacy), or a signature
-    /// produced under a DIFFERENT key id (seed/key rotation — un-verifiable with
-    /// the current seed): proceed, the head is re-signed on the next advance.
+    /// Safe to resume + (re-)sign on advance: genesis (no checkpoint); no signing
+    /// regime configured and the head was never signed (dev/CI); or an explicit
+    /// operator migration window (`trust_unsigned_resume`) is tolerating a NULL /
+    /// foreign-key-id head during a legacy-bootstrap or seed-rotation re-sign.
     Proceed,
     /// A signature signed under the CURRENT key id verified OK.
     Verified,
@@ -468,38 +501,57 @@ fn check_head_on_resume(
     current_key_id: u64,
     tenant_id: &str,
     region: &str,
+    trust_unsigned_resume: bool,
 ) -> HeadResumeCheck {
     let Some(cp) = checkpoint else {
+        // Genesis — no prior head to verify.
         return HeadResumeCheck::Proceed;
     };
+    let Some(seed) = signing_seed else {
+        // No signing regime configured (dev/CI). Nothing to verify against: a
+        // never-signed (NULL) head is tolerated; a head that CLAIMS a signature we
+        // cannot check is still fail-CLOSED (can't prove integrity).
+        return if cp.head_signature.is_none() {
+            HeadResumeCheck::Proceed
+        } else {
+            HeadResumeCheck::FailClosed
+        };
+    };
+    // Signing regime ACTIVE. Every legit advance signs the head under the current
+    // key, so a NULL signature or a foreign `signing_key_id` is UNVERIFIABLE. An
+    // insider with D1 write (but no seed) strips/rotates the signature to launder a
+    // chain rewrite — so by default that is TAMPER (fail-CLOSED). A genuine
+    // legacy/rotation migration is an EXPLICIT, logged operator opt-in
+    // (`trust_unsigned_resume`), never a silent tolerance.
     let Some(sig) = cp.head_signature.as_deref() else {
-        // Pre-0080 legacy head — tolerated, re-signed on advance.
-        return HeadResumeCheck::Proceed;
+        return if trust_unsigned_resume {
+            HeadResumeCheck::Proceed
+        } else {
+            HeadResumeCheck::FailClosed
+        };
     };
-    // A signature produced under a different key id (a seed/key rotation) cannot
-    // be verified with the current seed: tolerate + re-sign on advance.
     if cp.signing_key_id != Some(current_key_id) {
-        return HeadResumeCheck::Proceed;
+        return if trust_unsigned_resume {
+            HeadResumeCheck::Proceed
+        } else {
+            HeadResumeCheck::FailClosed
+        };
     }
-    // Signed under the current key id ⇒ MUST be verifiable, else tamper.
-    match signing_seed {
-        Some(seed) => {
-            if verify_head(
-                seed,
-                current_key_id,
-                tenant_id,
-                region,
-                &cp.head_hex,
-                cp.next_sequence,
-                sig,
-            ) {
-                HeadResumeCheck::Verified
-            } else {
-                HeadResumeCheck::FailClosed
-            }
-        }
-        // A signed head but no seed to verify it: cannot prove integrity.
-        None => HeadResumeCheck::FailClosed,
+    // Signed under the current key id ⇒ MUST verify. A failure here is an active
+    // forgery (head rewritten while keeping a current-key signature) and is ALWAYS
+    // tamper — never softened by the migration escape.
+    if verify_head(
+        seed,
+        current_key_id,
+        tenant_id,
+        region,
+        &cp.head_hex,
+        cp.next_sequence,
+        sig,
+    ) {
+        HeadResumeCheck::Verified
+    } else {
+        HeadResumeCheck::FailClosed
     }
 }
 
@@ -742,6 +794,7 @@ async fn drain_partition(
     now: i64,
     signing_seed: Option<&[u8; 32]>,
     signing_key_id: u64,
+    trust_unsigned_resume: bool,
 ) -> Result<PartitionOutcome, String> {
     let checkpoint = read_checkpoint(d1, tenant_id, region).await?;
 
@@ -755,6 +808,7 @@ async fn drain_partition(
         signing_key_id,
         tenant_id,
         region,
+        trust_unsigned_resume,
     ) {
         HeadResumeCheck::FailClosed => {
             tracing::error!(
@@ -874,6 +928,7 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
             now,
             signing_seed,
             state.signing_key_id,
+            state.trust_unsigned_resume,
         )
         .await
         {
@@ -1187,13 +1242,14 @@ mod tests {
     fn resume_verifies_genuine_signed_head() {
         let cp = signed_checkpoint(&SEED_A, KID, &head_hex(), 9);
         assert_eq!(
-            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION),
+            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION, false),
             HeadResumeCheck::Verified
         );
     }
 
     /// Resume catches tampering: a checkpoint whose head_hex was rewritten after
-    /// signing → FailClosed (the drain refuses to extend).
+    /// signing → FailClosed (the drain refuses to extend). This is ALWAYS tamper —
+    /// the migration escape never softens a verify failure under the current key.
     #[test]
     fn resume_fails_closed_on_tampered_head() {
         let mut cp = signed_checkpoint(&SEED_A, KID, &head_hex(), 9);
@@ -1201,14 +1257,23 @@ mod tests {
         cp.head_hex = "cd".repeat(32);
         cp.head = chain_hash_from_hex(&cp.head_hex).unwrap();
         assert_eq!(
-            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION),
+            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION, false),
+            HeadResumeCheck::FailClosed
+        );
+        // Even with the migration escape ON, a current-key verify failure is tamper.
+        assert_eq!(
+            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION, true),
             HeadResumeCheck::FailClosed
         );
     }
 
-    /// A NULL-signature legacy head (pre-0080) is tolerated on resume.
+    /// THE LAUNDERING EXPLOIT (backend-audit §3), now CLOSED: an insider with D1
+    /// write rewrites the sealed rows + head and STRIPS the signature to NULL (they
+    /// lack the write-only seed, so they cannot re-sign). With the signing regime
+    /// active, a NULL signature is UNVERIFIABLE → FailClosed by default (was
+    /// silently `Proceed`, which let the honest drain re-sign the forged head).
     #[test]
-    fn resume_tolerates_legacy_null_signature() {
+    fn resume_fails_closed_on_stripped_signature() {
         let cp = HeadCheckpoint {
             head: chain_hash_from_hex(&head_hex()).unwrap(),
             head_hex: head_hex(),
@@ -1217,7 +1282,32 @@ mod tests {
             signing_key_id: None,
         };
         assert_eq!(
-            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION),
+            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION, false),
+            HeadResumeCheck::FailClosed,
+            "a NULL signature under an active signing regime must be tamper (fail-CLOSED)"
+        );
+    }
+
+    /// A NULL / foreign-key-id head is tolerated ONLY under the explicit operator
+    /// migration escape (`trust_unsigned_resume = true`) — the pre-0080 legacy
+    /// bootstrap + coordinated seed-rotation re-sign path.
+    #[test]
+    fn resume_tolerates_unsigned_only_under_migration_escape() {
+        let legacy = HeadCheckpoint {
+            head: chain_hash_from_hex(&head_hex()).unwrap(),
+            head_hex: head_hex(),
+            next_sequence: 9,
+            head_signature: None,
+            signing_key_id: None,
+        };
+        assert_eq!(
+            check_head_on_resume(Some(&legacy), Some(&SEED_A), KID, TENANT, REGION, true),
+            HeadResumeCheck::Proceed
+        );
+        // Foreign key id (rotation) also tolerated only under the escape.
+        let rotated = signed_checkpoint(&SEED_A, 1, &head_hex(), 9);
+        assert_eq!(
+            check_head_on_resume(Some(&rotated), Some(&SEED_B), 2, TENANT, REGION, true),
             HeadResumeCheck::Proceed
         );
     }
@@ -1232,20 +1322,22 @@ mod tests {
         // And a checkpoint carrying that fresh signature now Verifies on resume.
         let cp = signed_checkpoint(&SEED_A, KID, &head_hex(), 10);
         assert_eq!(
-            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION),
+            check_head_on_resume(Some(&cp), Some(&SEED_A), KID, TENANT, REGION, false),
             HeadResumeCheck::Verified
         );
     }
 
-    /// A head signed under a DIFFERENT key id (seed/key rotation) is tolerated
-    /// (re-signed on advance), not a false tamper alarm.
+    /// A head signed under a DIFFERENT key id (seed/key rotation) is TAMPER by
+    /// default — it cannot be verified with the current seed, so a foreign key id is
+    /// as much a laundering vector as a stripped signature. Legit rotation is the
+    /// explicit migration escape (see `resume_tolerates_unsigned_only_under_migration_escape`).
     #[test]
-    fn resume_tolerates_rotated_key_id() {
+    fn resume_fails_closed_on_foreign_key_id() {
         let cp = signed_checkpoint(&SEED_A, 1, &head_hex(), 9);
-        // Current deployment uses key id 2 + a (possibly) different seed.
+        // Current deployment uses key id 2 + a different seed — cannot verify.
         assert_eq!(
-            check_head_on_resume(Some(&cp), Some(&SEED_B), 2, TENANT, REGION),
-            HeadResumeCheck::Proceed
+            check_head_on_resume(Some(&cp), Some(&SEED_B), 2, TENANT, REGION, false),
+            HeadResumeCheck::FailClosed
         );
     }
 
@@ -1255,8 +1347,24 @@ mod tests {
     fn resume_fails_closed_when_signed_but_no_seed() {
         let cp = signed_checkpoint(&SEED_A, KID, &head_hex(), 9);
         assert_eq!(
-            check_head_on_resume(Some(&cp), None, KID, TENANT, REGION),
+            check_head_on_resume(Some(&cp), None, KID, TENANT, REGION, false),
             HeadResumeCheck::FailClosed
+        );
+    }
+
+    /// No signing regime (no seed) + a never-signed head → Proceed (dev/CI).
+    #[test]
+    fn resume_proceeds_unsigned_head_no_seed() {
+        let cp = HeadCheckpoint {
+            head: chain_hash_from_hex(&head_hex()).unwrap(),
+            head_hex: head_hex(),
+            next_sequence: 9,
+            head_signature: None,
+            signing_key_id: None,
+        };
+        assert_eq!(
+            check_head_on_resume(Some(&cp), None, KID, TENANT, REGION, false),
+            HeadResumeCheck::Proceed
         );
     }
 
@@ -1264,7 +1372,7 @@ mod tests {
     #[test]
     fn resume_proceeds_with_no_checkpoint() {
         assert_eq!(
-            check_head_on_resume(None, Some(&SEED_A), KID, TENANT, REGION),
+            check_head_on_resume(None, Some(&SEED_A), KID, TENANT, REGION, false),
             HeadResumeCheck::Proceed
         );
     }
