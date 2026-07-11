@@ -9,6 +9,10 @@
  *   1. VERIFIES the signed state → the authenticated `tenant_id` (403 if bad —
  *      NEVER binds a tenant off the raw installation id alone; that is the
  *      lazy-provision DP3 forbids).
+ *   1b. PROVES installation ownership when OAuth creds are bound: exchanges the
+ *      install-time OAuth `code` for a user token and requires the presented
+ *      `installation_id` to be in the caller's `GET /user/installations` (403 if
+ *      not) — the airtight isolation gate that makes flipping the App public safe.
  *   2. Mints a short-lived App JWT (RS256) and exchanges it for an installation
  *      access token, then lists the installation's repositories.
  *   3. Persists `tenant_gh_installation_map` + `runner_repo_allowlist` via the
@@ -29,6 +33,16 @@ export interface InstallCallbackEnv {
   GITHUB_APP_PRIVATE_KEY?: string;
   /** HMAC key for the signed install `state` (shared with the admin-ui mint). */
   INSTALL_STATE_SIGNING_KEY?: string;
+  /**
+   * GitHub App OAuth **client id** (public identifier, e.g. `Iv23li…`). When this
+   * AND {@link GITHUB_APP_CLIENT_SECRET} are bound, the callback REQUIRES an OAuth
+   * `code` (from "Request user authorization (OAuth) during installation") and
+   * PROVES the caller controls the installation before binding it — the airtight
+   * isolation gate that lets the App be flipped **public** for real self-serve.
+   */
+  GITHUB_APP_CLIENT_ID?: string;
+  /** GitHub App OAuth **client secret** (paired with {@link GITHUB_APP_CLIENT_ID}). */
+  GITHUB_APP_CLIENT_SECRET?: string;
   /** D1 binding holding the installation map + repo allowlist (0084/0085). */
   CONFIG_DB?: D1Database;
   /** admin-ui base to redirect back to after provisioning (optional). */
@@ -128,6 +142,66 @@ async function installationRepos(token: string): Promise<string[]> {
   return out;
 }
 
+const GH_OAUTH_TOKEN_URL = "https://github.com/login/oauth/access_token";
+
+/**
+ * Exchange the install-time OAuth `code` for a **user**-access-token. This is the
+ * token that speaks for the human who performed the install (NOT the App), so it
+ * is what lets us prove installation ownership. Returns null on any failure
+ * (fail-CLOSED: an un-exchangeable code proves nothing → the caller denies).
+ */
+export async function exchangeOAuthCode(
+  clientId: string,
+  clientSecret: string,
+  code: string,
+): Promise<string | null> {
+  const resp = await fetch(GH_OAUTH_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+      "user-agent": "corelink-signup-worker",
+    },
+    body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
+  });
+  if (!resp.ok) return null;
+  const body = (await resp.json().catch(() => null)) as { access_token?: string } | null;
+  return typeof body?.access_token === "string" && body.access_token.length > 0
+    ? body.access_token
+    : null;
+}
+
+/**
+ * PROVE the OAuth'd user controls `installationId`: an installation appears in
+ * `GET /user/installations` ONLY for a user who can administer it (GitHub gates
+ * app installation on repo/org admin). So requiring the presented `installation_id`
+ * to be in the caller's own installation list closes the cross-tenant hijack — a
+ * tenant can no longer bind an installation they do not administer. Fail-CLOSED:
+ * a non-OK response (revoked/insufficient token) returns false (deny), never a
+ * silent pass.
+ */
+export async function userControlsInstallation(
+  userToken: string,
+  installationId: string,
+): Promise<boolean> {
+  const target = String(installationId);
+  for (let page = 1; page <= 10; page++) {
+    const resp = await fetch(`${GH_API}/user/installations?per_page=100&page=${page}`, {
+      headers: { ...GH_HEADERS, authorization: `Bearer ${userToken}` },
+    });
+    if (!resp.ok) return false; // fail-CLOSED: cannot prove ownership → deny
+    const body = (await resp.json().catch(() => null)) as {
+      installations?: Array<{ id?: number }>;
+    } | null;
+    const list = body?.installations ?? [];
+    for (const inst of list) {
+      if (inst && String(inst.id) === target) return true;
+    }
+    if (list.length < 100) break; // last page
+  }
+  return false;
+}
+
 /** Redirect the browser back to the admin-ui (or a plain 200) with a result. */
 function done(env: InstallCallbackEnv, ok: boolean, detail: string): Response {
   const base = env.ADMIN_UI_PUBLIC_URL?.replace(/\/+$/, "");
@@ -170,6 +244,42 @@ export async function handleInstallGithubCallback(
     return new Response("invalid or expired install state", { status: 403 });
   }
   const tenantId = verified.tenantId;
+
+  // 1b. OWNERSHIP PROOF (PREVENTION — the public-flip gate). The signed state
+  //     proves the TENANT but NOT that this tenant performed THIS installation.
+  //     When the App's OAuth credentials are bound, the caller MUST also present a
+  //     valid install-time OAuth `code` ("Request user authorization during
+  //     installation"): we exchange it for a USER token and require the presented
+  //     `installation_id` to appear in that user's own `GET /user/installations`.
+  //     A user can only list an installation they administer, so a tenant can no
+  //     longer bind another party's installation to themselves (turns the #633
+  //     DETECTION into real PREVENTION, and is what makes flipping the App public
+  //     safe). Fail-CLOSED: creds bound but no code / bad exchange / not-controlled
+  //     ⇒ 403, before any App-JWT mint or D1 write. When the creds are UNBOUND the
+  //     check is skipped — that path is the `public:false` org-only dogfood, where
+  //     only org members can install in the first place.
+  const clientId = env.GITHUB_APP_CLIENT_ID;
+  const clientSecret = env.GITHUB_APP_CLIENT_SECRET;
+  if (clientId && clientSecret) {
+    const code = url.searchParams.get("code");
+    if (!code) {
+      return new Response("install ownership proof required: missing oauth code", { status: 403 });
+    }
+    try {
+      const userToken = await exchangeOAuthCode(clientId, clientSecret, code);
+      if (!userToken) {
+        return new Response("install ownership proof failed: oauth exchange", { status: 403 });
+      }
+      if (!(await userControlsInstallation(userToken, installationId))) {
+        return new Response(
+          "install ownership proof failed: caller does not control this installation",
+          { status: 403 },
+        );
+      }
+    } catch (e) {
+      return done(env, false, `ownership check error: ${(e as Error).message}`);
+    }
+  }
 
   // 2. Mint the App JWT → installation token → repos.
   let repos: string[];
