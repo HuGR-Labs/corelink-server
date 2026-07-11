@@ -19,10 +19,13 @@
 
 import { ClerkProvider, SignIn } from "@clerk/nextjs";
 
+import { clerkLocalization } from "@/lib/clerk-localization";
+
 export default function ClerkSignIn(): React.ReactElement {
   return (
     <ClerkProvider
       publishableKey={process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]}
+      localization={clerkLocalization}
     >
       {/*
        * forceRedirectUrl: after sign-in, land on the authenticated dashboard —

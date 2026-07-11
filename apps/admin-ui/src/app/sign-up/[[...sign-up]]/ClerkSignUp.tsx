@@ -12,10 +12,13 @@
 
 import { ClerkProvider, SignUp } from "@clerk/nextjs";
 
+import { clerkLocalization } from "@/lib/clerk-localization";
+
 export default function ClerkSignUp(): React.ReactElement {
   return (
     <ClerkProvider
       publishableKey={process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]}
+      localization={clerkLocalization}
     >
       {/*
        * forceRedirectUrl: always land on /en/welcome after Clerk completes

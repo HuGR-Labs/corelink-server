@@ -271,6 +271,16 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(admin-ui): the Clerk auth screens said "Sign in to My Application" — pin the product name to "CoreLink".**
+  The Clerk *application* name (Dashboard-level, above the instance) is unset, so every prebuilt widget fell
+  back to Clerk's placeholder — the single most visible thing a customer hits at launch. That field is not
+  settable through the Backend API (`PATCH /v1/instance` accepts but ignores it — verified: `application_name`
+  unchanged after a `204`), so the fix pins the product name in source via Clerk's first-class `localization`
+  prop (`apps/admin-ui/src/lib/clerk-localization.ts`, wired into both the `/sign-in` and `/sign-up`
+  `ClerkProvider` wrappers): `signIn.start.title` → "Sign in to CoreLink", `signUp.start.title` → "Create your
+  CoreLink account". Version-controlled + CI-shipped rather than an out-of-band Dashboard toggle that can
+  drift. The Dashboard field, if ever set, still additionally governs surfaces this can't reach (e.g.
+  transactional-email sender name).
 - **fix(quota): complete the ADR-0068 $5→unlimited neuter — two inserters still produced $5-capped tenants.**
   The 2026-07-09 reconciliation set the container `DEFAULT_MONTHLY_BUDGET_USD_MICROS` to $1M but MISSED two
   writers that still yielded the retired $5 tripwire: (1) `worker/src/lib/githugr_provision.ts` hard-coded
