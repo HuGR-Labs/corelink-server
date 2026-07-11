@@ -1,11 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   INSTALL_STATE_TTL_MS,
   signInstallState,
   verifyInstallState,
 } from "../src/webhooks/github_install_state.js";
-import { mintAppJwt } from "../src/webhooks/github_install_callback.js";
+import {
+  exchangeOAuthCode,
+  mintAppJwt,
+  userControlsInstallation,
+} from "../src/webhooks/github_install_callback.js";
 
 const KEY = "test-install-state-signing-key-0123456789";
 const TENANT = "11111111-1111-4111-8111-111111111111";
@@ -105,5 +109,77 @@ describe("App JWT (RS256)", () => {
     expect(payload.iat).toBeLessThan(nowS); // backdated for clock skew
     expect(payload.exp - payload.iat).toBeLessThanOrEqual(10 * 60); // <= GitHub cap
     expect(payload.exp).toBeGreaterThan(nowS);
+  });
+});
+
+/** Build a minimal `Response`-like stub for the mocked fetch. */
+function jsonResp(status: number, body: unknown): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  } as unknown as Response;
+}
+
+describe("install ownership proof (OAuth) — the public-flip isolation gate", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("exchangeOAuthCode returns the user access token on success", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        expect(url).toBe("https://github.com/login/oauth/access_token");
+        return jsonResp(200, { access_token: "ghu_usertoken123" });
+      }),
+    );
+    expect(await exchangeOAuthCode("Iv23liXXX", "secret", "code123")).toBe("ghu_usertoken123");
+  });
+
+  it("exchangeOAuthCode fails CLOSED (null) on a non-ok response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResp(401, { error: "bad_verification_code" })));
+    expect(await exchangeOAuthCode("Iv23liXXX", "secret", "bad")).toBeNull();
+  });
+
+  it("exchangeOAuthCode fails CLOSED (null) when no access_token is returned", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResp(200, { error: "no_token" })));
+    expect(await exchangeOAuthCode("Iv23liXXX", "secret", "code")).toBeNull();
+  });
+
+  it("userControlsInstallation is TRUE when the installation is in the user's list", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResp(200, { installations: [{ id: 999 }, { id: 144561227 }] })),
+    );
+    expect(await userControlsInstallation("ghu_tok", "144561227")).toBe(true);
+  });
+
+  it("userControlsInstallation is FALSE (hijack blocked) when the installation is NOT the caller's", async () => {
+    // The attacker presents a victim's installation id they do not administer.
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResp(200, { installations: [{ id: 999 }] })));
+    expect(await userControlsInstallation("ghu_attacker", "144561227")).toBe(false);
+  });
+
+  it("userControlsInstallation fails CLOSED (false) on a non-ok response", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResp(403, {})));
+    expect(await userControlsInstallation("ghu_revoked", "144561227")).toBe(false);
+  });
+
+  it("userControlsInstallation paginates and finds an installation on a later page", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        // page 2 holds the target; page 1 is a full page of 100 non-matching ids
+        // (a full page forces the loop to fetch the next). NB: match "&page=2"
+        // precisely — "per_page=100" contains the substring "page=1".
+        if (url.includes("&page=2")) {
+          return jsonResp(200, { installations: [{ id: 144561227 }] });
+        }
+        return jsonResp(200, { installations: Array.from({ length: 100 }, (_, i) => ({ id: i })) });
+      }),
+    );
+    expect(await userControlsInstallation("ghu_tok", "144561227")).toBe(true);
+    expect(calls.some((u) => u.includes("page=2"))).toBe(true);
   });
 });

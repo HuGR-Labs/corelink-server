@@ -79,10 +79,20 @@ function buildManifest(baseUrl: string): Record<string, unknown> {
     setup_on_update: true,
     // Where GitHub POSTs the temporary manifest `code` (step 3).
     redirect_url: `${base}/install/github/app/created`,
+    // Request user authorization (OAuth) DURING installation, so GitHub appends a
+    // one-time `code` to the setup redirect. The callback exchanges it for a user
+    // token and PROVES the installer controls the installation before binding it —
+    // the isolation gate that makes `public: true` safe (see github_install_callback).
+    request_oauth_on_install: true,
+    // OAuth callback target = the same identity-gated install→map callback.
+    callback_urls: [`${base}/install/github/callback`],
     hook_attributes: {
       url: `${base}/webhooks/github`,
       active: true,
     },
+    // `public: false` for the dogfood; flipping to `true` for real self-serve is a
+    // deliberate business toggle that is now SAFE — the OAuth ownership proof above
+    // prevents cross-tenant installation binding (was the hard gate).
     public: false,
     default_permissions: {
       // Read workflow-job state (the runner fabric needs the job signal).

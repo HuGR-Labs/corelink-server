@@ -22,6 +22,25 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **feat(signup-worker): prove GitHub App installation ownership before binding — closes the runner install cross-tenant hijack (the public-flip HARD GATE).**
+  The runner install callback (`github_install_callback.ts`) bound `installation_id → tenant_id` off the signed
+  `state` alone, which proves the TENANT but NOT that the tenant performed that installation — so a tenant could
+  bind another party's `installation_id` to themselves (first-writer-wins); `#633` only DETECTED an already-bound
+  cross-tenant conflict, it could not PREVENT the initial mis-binding. This was the documented HARD GATE on flipping
+  the App **public** for real self-serve customers. Fix: when the App's OAuth credentials (`GITHUB_APP_CLIENT_ID` +
+  `GITHUB_APP_CLIENT_SECRET`, from "Request user authorization (OAuth) during installation") are bound, the callback
+  now REQUIRES the install-time OAuth `code`, exchanges it for a **user** access token (`exchangeOAuthCode`), and
+  requires the presented `installation_id` to appear in that user's own `GET /user/installations`
+  (`userControlsInstallation`) — a user can only list an installation they administer, so a tenant can no longer bind
+  an installation they don't control. Ordered fail-CLOSED (no code / bad exchange / not-controlled ⇒ **403**, before
+  any App-JWT mint or D1 write). Additive: when the OAuth creds are UNBOUND the check is skipped (the `public:false`
+  org-only dogfood path, unchanged), so this deploys before the secret exists and the airtight gate auto-activates the
+  moment the creds are bound. The manifest now sets `request_oauth_on_install: true` + `callback_urls` so a freshly
+  created App is correctly wired. 7 new unit tests (exchange success/fail-closed, ownership true/false/hijack-blocked/
+  fail-closed/pagination). **Remaining owner step to go public:** enable OAuth-during-install + generate the client
+  secret in the App settings, bind `GITHUB_APP_CLIENT_ID`/`_SECRET` on the signup-worker, then toggle the App public.
+
 ### Added
 - **feat(container): read-only internal tenant-quota endpoint `GET /_internal/tenant/{tenant_id}/quota`.**
   A low-privilege read surface that projects the persisted `tenant_quota` row —
