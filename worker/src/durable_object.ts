@@ -621,6 +621,7 @@ export class CoreLinkServer implements DurableObject {
           // reusing the erasure-attestation seed/key above when unset).
           AUDIT_CHAIN_SIGNING_SEED_HEX: this.env.AUDIT_CHAIN_SIGNING_SEED_HEX ?? "",
           AUDIT_CHAIN_SIGNING_KEY_ID: this.env.AUDIT_CHAIN_SIGNING_KEY_ID ?? "",
+          AUDIT_CHAIN_TRUST_UNSIGNED_RESUME: this.env.AUDIT_CHAIN_TRUST_UNSIGNED_RESUME ?? "",
           // CTRL-PRIV-001: server-held salt for the email_hash pseudonym. Unset →
           // legacy unsalted SHA-256 (zero regression); set → HMAC-SHA256. MUST be
           // forwarded or the container can't see it when the owner registers it.
