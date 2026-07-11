@@ -109,18 +109,36 @@ async function getSessionToken(): Promise<string | null> {
   }
 }
 
+// The canonical app host, used when the request's (client-suppliable) host
+// headers don't pass the allow-list. `corelink-*.humangr.com` all serve this
+// same app; localhost covers dev.
+const CANONICAL_APP_HOST = "corelink-admin.humangr.com";
+
+export function isAllowedRedirectHost(host: string): boolean {
+  const h = host.toLowerCase();
+  if (h === "localhost" || h.startsWith("localhost:") || h.startsWith("127.0.0.1")) {
+    return true;
+  }
+  return /^corelink-[a-z0-9-]+\.humangr\.com$/.test(h);
+}
+
 function originFromRequest(req: NextRequest): string {
-  // Trust the forwarded host/proto if behind Cloudflare; else use the
-  // request URL as parsed by Next.js. Never trust user-supplied origin
-  // from the JSON body — that would let an attacker direct Stripe's
-  // post-checkout redirect anywhere.
-  const proto =
-    req.headers.get("x-forwarded-proto") ??
-    new URL(req.url).protocol.replace(":", "");
-  const host =
+  // This origin becomes Stripe's post-checkout `success_url`/`cancel_url` host,
+  // so it must never be an attacker-supplied value. `x-forwarded-host` /`host`
+  // are client-suppliable (Cloudflare sets the real one, but a direct caller
+  // can spoof them), so validate against the `corelink-*.humangr.com` allow-list
+  // and fall back to the canonical host otherwise. (The body origin is likewise
+  // never trusted; the tier-select backend host-allow-lists these URLs too.)
+  const rawHost =
     req.headers.get("x-forwarded-host") ??
     req.headers.get("host") ??
     new URL(req.url).host;
+  const allowed = isAllowedRedirectHost(rawHost);
+  const host = allowed ? rawHost : CANONICAL_APP_HOST;
+  const proto = allowed
+    ? (req.headers.get("x-forwarded-proto") ??
+       new URL(req.url).protocol.replace(":", ""))
+    : "https";
   return `${proto}://${host}`;
 }
 
