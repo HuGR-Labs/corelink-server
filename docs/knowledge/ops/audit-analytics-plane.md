@@ -21,7 +21,7 @@ source_files:
   - "apps/analytics-worker/src/ingest.ts"
   - "apps/signup-worker/src/webhooks/audit_drain_cron.ts"
   - "docs/cli/audit-export.md"
-checkpoint_sha: "1c9daedc0a8e96301cae7b640e4da7fd0507be97"
+checkpoint_sha: "442aa48e5cacdbafbcd00e1d8e5c388bc55599ad"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -96,8 +96,9 @@ another tenant's rows.
 - `resolve_shadow_via_prelude` prefers the wave-26 `RequestPrelude` region (hot path skips the per-request region round-trip) and, when the prelude is absent or bound to a different tenant, emits a `request_prelude_missing` marker row + WARN and falls back to `shadow_factory.for_tenant` rather than failing the route `crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs:121-156`.
 - The export handler treats the client-controllable `:tenant` path segment as an untrusted echo: it is parsed and constant-time-compared against the `AuthTenant` header tenant, and a mismatch emits a SEV-1 cross-tenant audit row and returns 403 (fail-CLOSED: 503 on sink failure) BEFORE any data access `crates/corelink-container/src/routes/audit_export/handler.rs:83-99`.
 - The export window timestamps are parsed by `parse_timestamp`, which accepts a raw Unix-epoch-ms integer or a deliberately minimal RFC 3339 `YYYY-MM-DDTHH:MM:SSZ` subset (UTC-only, no fractional seconds, no offsets) to keep the security-sensitive window grammar small `crates/corelink-container/src/routes/audit_export/parse.rs:25-32`.
-- The product-analytics EDGE collector (`POST /v1/event` on the standalone analytics-worker) is the ingest tap that feeds the analytics D1 store; it authenticates each request two ways — a CORS `Origin` allow-list for browsers, or a constant-time-compared `X-Corelink-Ingest-Key` for trusted servers — and rejects anything matching neither with 403 before any write (`apps/analytics-worker/src/ingest.ts:114-136`, `apps/analytics-worker/src/ingest.ts:127-136`), the compare being length-checked + XOR-folded so a wrong key cannot be timing-probed (`apps/analytics-worker/src/ingest.ts:71-78`).
-- The ingest validator enforces a HARD privacy gate at the edge so no PII reaches the analytics store: a forbidden `email`/`ip`/`ip_address`/`remote_addr` key anywhere in an event's `properties` is rejected and the `event_name` must be in a closed allow-list (`apps/analytics-worker/src/ingest.ts:85-112`, `apps/analytics-worker/src/ingest.ts:104-107`).
+- The product-analytics EDGE collector (`POST /v1/event` on the standalone analytics-worker) is the ingest tap that feeds the analytics D1 store; it authenticates each request two ways — a CORS `Origin` allow-list for browsers, or a constant-time-compared `X-Corelink-Ingest-Key` for trusted servers — and rejects anything matching neither with 403 before any write (`apps/analytics-worker/src/ingest.ts:143-168`, `apps/analytics-worker/src/ingest.ts:159-167`), the compare being length-checked + XOR-folded so a wrong key cannot be timing-probed (`apps/analytics-worker/src/ingest.ts:95-102`).
+- Because the browser `Origin` header is attacker-controllable outside a real browser, only the keyed path is TRUSTED: revenue/provisioning-truth events (`SERVER_ONLY_EVENT_NAMES` — `paid_subscription_started`, `plan_downgraded`, `tenant_created`, …) are accepted ONLY with the ingest key and rejected as `server_only_event` on the anonymous Origin path (`apps/analytics-worker/src/ingest.ts:47-61`, `apps/analytics-worker/src/ingest.ts:118-122`), and that anonymous path is capped at 1 event/request (batching stays a keyed-server affordance) so a spoofed `Origin` cannot amplify D1 writes (`apps/analytics-worker/src/ingest.ts:188-193`).
+- The ingest validator enforces a HARD privacy gate at the edge so no PII reaches the analytics store: a forbidden `email`/`ip`/`ip_address`/`remote_addr` key anywhere in an event's `properties` is rejected and the `event_name` must be in a closed allow-list (`apps/analytics-worker/src/ingest.ts:109-141`, `apps/analytics-worker/src/ingest.ts:132-136`).
 
 # Invariants
 
