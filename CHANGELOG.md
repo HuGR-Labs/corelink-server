@@ -271,6 +271,17 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(signup-worker): Stripe webhook signature verification used the WRONG HMAC key — every real Stripe webhook was rejected (paid customer → no entitlement).**
+  `decodeWebhookSecret` stripped the `whsec_` prefix and **base64-decoded the remainder** for the
+  HMAC-SHA256 key. Stripe uses the **entire `whsec_…` secret string** (prefix included, never
+  base64-decoded) as the key — verified empirically against stripe-node's
+  `Stripe.webhooks.generateTestHeaderString` (only the full-string key reproduces Stripe's signature).
+  So `verifyStripeSignature` returned `false` for every genuine `checkout.session.completed`/subscription
+  event → the handler 400'd `invalid_signature` → `tenant_billing` / `tier_selections.subscription_state`
+  / `runners_entitlement` were never materialised: **a customer who paid was charged and got nothing.**
+  CI could not catch it — the unit test's `buildStripeSignature` signed with the SAME wrong derivation.
+  Fixed the key to `new TextEncoder().encode(secret)`, fixed the test signer to the real scheme, and
+  added a **known-answer test** from a real stripe-node vector (which the old code rejects). 80/80 green.
 - **fix(stripe): Stripe env config is now whitespace-robust — a trailing newline no longer 502s EVERY checkout.**
   `StripeClientConfig::from_env()` (`crates/corelink-stripe-real/src/client.rs`) read `STRIPE_AUTH_MODE`
   and matched it with an exact `== "direct"` (no `.trim()`). Secrets bound via a shell here-string

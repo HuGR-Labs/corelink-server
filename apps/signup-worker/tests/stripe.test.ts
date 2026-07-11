@@ -32,8 +32,11 @@ async function buildStripeSignature(
     timestampSec?: number,
 ): Promise<string> {
     const ts = timestampSec ?? Math.floor(Date.now() / 1000);
-    const rawSecret = secret.startsWith("whsec_") ? secret.slice("whsec_".length) : secret;
-    const secretBytes = Uint8Array.from(atob(rawSecret), (c) => c.charCodeAt(0));
+    // Real Stripe scheme: the HMAC key is the FULL `whsec_…` secret string's
+    // UTF-8 bytes (prefix included, never base64-decoded). Must mirror the
+    // production `decodeWebhookSecret`, else the test signs with a scheme that
+    // Stripe never uses and cannot catch a broken verifier (this happened).
+    const secretBytes = new TextEncoder().encode(secret);
     const key = await crypto.subtle.importKey(
         "raw",
         secretBytes,
@@ -63,6 +66,22 @@ describe("verifyStripeSignature", () => {
         const tsSec = Math.floor(nowMs / 1000);
         const sig = await buildStripeSignature(TEST_SECRET, body, tsSec);
         const result = await verifyStripeSignature(body, sig, TEST_SECRET, nowMs);
+        expect(result).toBe(true);
+    });
+
+    it("accepts a real Stripe-generated signature (KAT) — guards the whsec key derivation", async () => {
+        // Ground-truth vector from stripe-node's
+        // `Stripe.webhooks.generateTestHeaderString({ payload, secret, timestamp })`.
+        // Stripe's HMAC key is the ENTIRE `whsec_…` string (never base64-decoded).
+        // The previous base64-decode-the-remainder derivation produced
+        // 7e4ef99…653d647 for this exact vector — i.e. it would REJECT every real
+        // Stripe webhook, so a paying customer would receive no entitlement.
+        const secret = "whsec_Y29yZWxpbmsta2F0LXNlY3JldC1tYXRlcmlhbA==";
+        const payload = '{"id":"evt_kat","type":"checkout.session.completed"}';
+        const timestamp = 1_700_000_000;
+        const header =
+            `t=${timestamp},v1=0d59e9692961c0dd6d7912b8a3e3fa09d15bb0077167a3f113b09cc7d963c27d`;
+        const result = await verifyStripeSignature(payload, header, secret, timestamp * 1000);
         expect(result).toBe(true);
     });
 
