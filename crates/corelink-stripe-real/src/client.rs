@@ -563,10 +563,14 @@ impl StripeRealClient {
         tenant_id: &str,
         idempotency_key: &str,
     ) -> Result<CustomerObject, StripeError> {
-        let form = vec![
-            ("email", email.to_string()),
-            ("metadata[tenant_id]", tenant_id.to_string()),
-        ];
+        // Omit `email` when empty — Stripe rejects a literal empty string
+        // (`Invalid email address: `). A customer with no email is valid; the
+        // hosted Checkout page collects + saves the buyer's email onto it.
+        let mut form = vec![("metadata[tenant_id]", tenant_id.to_string())];
+        let email = email.trim();
+        if !email.is_empty() {
+            form.push(("email", email.to_string()));
+        }
         self.post_form::<CustomerObject>("/v1/customers", &form, idempotency_key)
     }
 
@@ -693,8 +697,9 @@ impl StripeRealClient {
         idempotency_key: &str,
         price_id: &str,
         promo: &CheckoutPromo,
+        customer_id: &str,
     ) -> Result<CheckoutSessionObject, StripeError> {
-        let form = build_checkout_form(req, price_id, promo);
+        let form = build_checkout_form(req, price_id, promo, customer_id);
         self.post_form::<CheckoutSessionObject>("/v1/checkout/sessions", &form, idempotency_key)
     }
 }
@@ -742,9 +747,20 @@ fn build_checkout_form(
     req: &CheckoutSessionRequest,
     price_id: &str,
     promo: &CheckoutPromo,
+    customer_id: &str,
 ) -> Vec<(&'static str, String)> {
     let mut form = vec![
         ("mode", "subscription".to_string()),
+        // Attach the pre-created Customer. A `mode=subscription` session created
+        // WITHOUT a customer leaves `session.customer` NULL until the buyer
+        // completes checkout (Stripe creates it then) — which the caller rejects
+        // as `missing customer on checkout session`. Attaching a customer
+        // (created with no email) up-front makes `session.customer` present at
+        // creation; Stripe's hosted page still collects + saves the buyer email
+        // onto this customer. We therefore NEVER send `customer_email` (an empty
+        // one is rejected `Invalid email address: `, and it's redundant with
+        // `customer`).
+        ("customer", customer_id.to_string()),
         ("success_url", req.success_url.clone()),
         ("cancel_url", req.cancel_url.clone()),
         ("line_items[0][price]", price_id.to_string()),
@@ -752,17 +768,6 @@ fn build_checkout_form(
         ("metadata[tenant_id]", req.tenant_id.as_str().to_string()),
         ("metadata[tier]", req.tier.as_str().to_string()),
     ];
-    // `customer_email` MUST be OMITTED when empty, never sent as "". The
-    // container deliberately does not thread the buyer's PII email (privacy) and
-    // passes an empty `customer_email` so Stripe's hosted Checkout page collects
-    // it — but Stripe rejects a literal empty string with
-    // `Invalid request: Invalid email address: ` (a 400 → `stripe_unavailable`
-    // 502 on EVERY checkout, all tiers). For `mode=subscription` Stripe creates
-    // the Customer and collects the email on the hosted page when it is omitted.
-    let customer_email = req.customer_email.trim();
-    if !customer_email.is_empty() {
-        form.push(("customer_email", customer_email.to_string()));
-    }
     match promo {
         // Hosted promo-code field (mutually exclusive with `discounts`).
         CheckoutPromo::AllowCodes => {
@@ -798,13 +803,25 @@ impl StripeClient for StripeRealClient {
         // Mutually exclusive by construction — Stripe rejects both together.
         let promo = CheckoutPromo::from_env();
 
-        let raw = self
-            .create_checkout_session_raw(req, &idem, &price_id, &promo)
+        // Pre-create the Customer (no email — Stripe's hosted Checkout page
+        // collects + saves the buyer's email onto it). A `mode=subscription`
+        // Checkout Session created WITHOUT a customer leaves `session.customer`
+        // null until completion, which we treat as an error below; attaching a
+        // customer up-front gives a stable id for the pending-checkout row + the
+        // `checkout.session.completed` webhook. Idempotent per tenant so a retry
+        // within the lock window reuses the same customer (no orphan spam).
+        let customer_idem = format!("customer:{}", req.tenant_id.as_str());
+        let created_customer = self
+            .create_customer("", req.tenant_id.as_str(), &customer_idem)
             .map_err(|e| TierError::Stripe(e.to_string()))?;
 
-        let customer = raw
-            .customer
-            .ok_or_else(|| TierError::Stripe("missing customer on checkout session".to_string()))?;
+        let raw = self
+            .create_checkout_session_raw(req, &idem, &price_id, &promo, &created_customer.id)
+            .map_err(|e| TierError::Stripe(e.to_string()))?;
+
+        // Stripe echoes the attached customer; fall back to the one we created
+        // (belt-and-suspenders — the field is present because we passed it).
+        let customer = raw.customer.unwrap_or(created_customer.id);
 
         let url = raw
             .url
@@ -1429,7 +1446,8 @@ mod tests {
     fn checkout_form_default_enables_promo_code_field() {
         // Absent a configured coupon, the hosted page must show the promo-code
         // field so a user can enter a code mapped to a 100%-off coupon.
-        let form = build_checkout_form(&checkout_req(), "price_123", &CheckoutPromo::AllowCodes);
+        let form =
+            build_checkout_form(&checkout_req(), "price_123", &CheckoutPromo::AllowCodes, "cus_ABC");
         assert_eq!(
             form_get(&form, "allow_promotion_codes"),
             Some("true"),
@@ -1447,29 +1465,25 @@ mod tests {
     }
 
     #[test]
-    fn checkout_form_omits_empty_customer_email() {
-        // The container passes an EMPTY customer_email by design (privacy: the
-        // buyer's email is collected by Stripe's hosted page, not threaded
-        // through the container). Stripe rejects a LITERAL empty string with
-        // `Invalid request: Invalid email address: ` → 502 `stripe_unavailable`
-        // on EVERY checkout, all tiers. The form MUST omit the field when empty.
-        // Regression: the prior `checkout_req()` helper used a non-empty email,
-        // so no unit test ever exercised production's real empty-email path.
-        let req = CheckoutSessionRequest::new(
-            corelink_tier_selection::tenant::TenantId::new("tenant_x"),
-            corelink_tier_selection::tier::TierKind::Starter,
-            "",
-            "https://app/ok",
-            "https://app/cancel",
+    fn checkout_form_attaches_customer_and_never_sends_customer_email() {
+        // The flow pre-creates a Customer (no email) and ATTACHES it so
+        // `session.customer` is present at creation (a subscription session
+        // created without one leaves it null → `missing customer on checkout
+        // session`). The buyer's email is collected by Stripe's hosted page, so
+        // the form MUST carry `customer` and MUST NOT carry `customer_email`
+        // (Stripe rejects an empty one with `Invalid email address: ` — the
+        // money-path outage — and it is redundant with `customer`).
+        let form =
+            build_checkout_form(&checkout_req(), "price_123", &CheckoutPromo::AllowCodes, "cus_ABC");
+        assert_eq!(
+            form_get(&form, "customer"),
+            Some("cus_ABC"),
+            "checkout must attach the pre-created customer: {form:?}"
         );
-        let form = build_checkout_form(&req, "price_123", &CheckoutPromo::AllowCodes);
         assert!(
             form.iter().all(|(k, _)| *k != "customer_email"),
-            "empty customer_email must be OMITTED, never sent as \"\": {form:?}"
+            "customer_email must NEVER be sent (empty is rejected; redundant with customer): {form:?}"
         );
-        // A non-empty email is still threaded (prefill path).
-        let form2 = build_checkout_form(&checkout_req(), "price_123", &CheckoutPromo::AllowCodes);
-        assert_eq!(form_get(&form2, "customer_email"), Some("buyer@example.test"));
     }
 
     #[test]
@@ -1480,6 +1494,7 @@ mod tests {
             &checkout_req(),
             "price_123",
             &CheckoutPromo::Coupon("coupon_LAUNCH100".to_string()),
+            "cus_ABC",
         );
         assert_eq!(
             form_get(&form, "discounts[0][coupon]"),

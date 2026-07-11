@@ -271,6 +271,12 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(stripe): pre-create the Stripe Customer so subscription Checkout no longer 502s `missing customer`.**
+  A `mode=subscription` Checkout Session created without a customer leaves `session.customer` null until the
+  buyer completes checkout, and the client required it (`missing customer on checkout session` → 502). Now
+  the flow pre-creates a Customer (no email — Stripe's hosted page collects + saves the buyer email onto it),
+  attaches it via `customer=<id>` (idempotent per tenant), and never sends `customer_email`. This + the
+  empty-email omit unblock the paid checkout end-to-end.
 - **fix(stripe): omit an empty `customer_email` on Checkout — it was 502'ing EVERY checkout (all tiers).**
   `build_checkout_form` always emitted `("customer_email", req.customer_email)`; the container passes an
   EMPTY email by design (privacy — Stripe's hosted page collects it), but Stripe rejects a literal empty
