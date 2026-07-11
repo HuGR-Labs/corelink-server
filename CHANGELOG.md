@@ -296,6 +296,20 @@ Each entry cross-references:
   (`signup_started` etc.) is unaffected. Proven against live prod (forged revenue event → rejected ×5; 50-event
   spoofed batch → 400; real `signup_started` → 200) + 8 new vitest cases. Edge rate-limiting for raw request
   floods stays a CF WAF rule (owner/edge, consistent with the other `corelink-*` hosts), not in-worker.
+- **fix(admin-ui): frontend-audit hardening — allow-list the checkout redirect host + double-gate the last E2E hook.**
+  Two findings from the go-live frontend audit: (1) `app/api/checkout/session/route.ts` `originFromRequest`
+  built Stripe's `success_url`/`cancel_url` host from the client-suppliable `x-forwarded-host`/`host` headers,
+  so a direct caller could steer the post-checkout redirect off-domain (self-redirect only — not injectable
+  into a victim's browser — but still a client-header-trusted redirect target). It now validates the host
+  against the `corelink-*.humangr.com` allow-list (+ localhost dev) and falls back to the canonical host
+  otherwise (defense-in-depth: the tier-select backend host-allow-lists these URLs too). (2) The
+  `[locale]/(authenticated)/layout.tsx` E2E hook gated only on `NEXT_PUBLIC_E2E_TEST_MODE` without the
+  `NODE_ENV !== "production"` half every other E2E gate carries (fail-closed already — a dummy Clerk key
+  breaks auth, doesn't open it — but now consistent). Also corrected the checkout-route test's stale dotted
+  hostnames (`app.corelink.humangr.com`) to the real flat prod hosts. +4 new redirect-host allow-list tests
+  and a fallback-behavior test. (Deferred, non-blocking: the customer audit-proof WASM verifier is dead under
+  the prod CSP's no-`unsafe-eval`, and `isPublicPath` uses an unbounded prefix match — neither on the
+  money/auth/isolation path.)
 - **fix(admin-ui): the Clerk auth screens said "Sign in to My Application" — pin the product name to "CoreLink".**
   The Clerk *application* name (Dashboard-level, above the instance) is unset, so every prebuilt widget fell
   back to Clerk's placeholder — the single most visible thing a customer hits at launch. That field is not

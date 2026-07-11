@@ -43,7 +43,12 @@ export default function AuthenticatedLayout({
 }: {
   children: React.ReactNode;
 }): React.ReactElement {
-  const isE2E = process.env["NEXT_PUBLIC_E2E_TEST_MODE"] === "1";
+  // Double-gated like every other E2E hook (lib/auth.ts, middleware.ts,
+  // api/v1/[...path]) — the test flag is honoured only outside a prod build so
+  // it can never engage in production, even if the env var leaks in.
+  const isE2E =
+    process.env["NEXT_PUBLIC_E2E_TEST_MODE"] === "1" &&
+    process.env.NODE_ENV !== "production";
   const clerkProps = isE2E ? { publishableKey: E2E_DUMMY_CLERK_PK } : {};
   return <ClerkProvider {...clerkProps}>{children}</ClerkProvider>;
 }

@@ -102,10 +102,10 @@ describe("POST /api/checkout/session", () => {
     expect(path).toBe("/v1/onboarding/tier-select");
     expect((payload as { tier: string }).tier).toBe("pro");
     expect((payload as { success_url: string }).success_url).toMatch(
-      /^https:\/\/app\.corelink\.humangr\.com\/en\/upgraded\?session_id=\{CHECKOUT_SESSION_ID\}$/,
+      /^https:\/\/corelink-admin\.humangr\.com\/en\/upgraded\?session_id=\{CHECKOUT_SESSION_ID\}$/,
     );
     expect((payload as { cancel_url: string }).cancel_url).toMatch(
-      /^https:\/\/app\.corelink\.humangr\.com\/en\/pricing$/,
+      /^https:\/\/corelink-admin\.humangr\.com\/en\/pricing$/,
     );
     expect((opts as { token: string }).token).toBe("clerk_test_jwt_xxx");
   });
@@ -162,7 +162,7 @@ describe("POST /api/checkout/session", () => {
       body: "",
     };
     const req = new Request(
-      "https://app.corelink.humangr.com/api/checkout/session",
+      "https://corelink-admin.humangr.com/api/checkout/session",
       init,
     ) as unknown as import("next/server").NextRequest;
     const res = await POST(req);
@@ -170,7 +170,7 @@ describe("POST /api/checkout/session", () => {
     expect((mockApiPost.mock.calls[0]![1] as { tier: string }).tier).toBe("pro");
   });
 
-  it("derives origin from x-forwarded-host (never trusts body)", async () => {
+  it("derives origin from an ALLOW-LISTED x-forwarded-host (never trusts body)", async () => {
     mockApiPost.mockResolvedValue({
       checkout_url: "https://checkout.stripe.com/c/pay/cs_origin",
       session_id: "cs_origin",
@@ -180,7 +180,7 @@ describe("POST /api/checkout/session", () => {
         { tier: "pro", locale: "de" },
         {
           accept: "application/json",
-          "x-forwarded-host": "admin.staging.corelink.humangr.com",
+          "x-forwarded-host": "corelink-app.humangr.com",
           "x-forwarded-proto": "https",
         },
       ),
@@ -191,10 +191,36 @@ describe("POST /api/checkout/session", () => {
       cancel_url: string;
     };
     expect(payload.success_url).toContain(
-      "https://admin.staging.corelink.humangr.com/de/upgraded",
+      "https://corelink-app.humangr.com/de/upgraded",
     );
     expect(payload.cancel_url).toContain(
-      "https://admin.staging.corelink.humangr.com/de/pricing",
+      "https://corelink-app.humangr.com/de/pricing",
     );
+  });
+
+  it("FALLS BACK to the canonical host when x-forwarded-host is off-domain (redirect can't be steered)", async () => {
+    mockApiPost.mockResolvedValue({
+      checkout_url: "https://checkout.stripe.com/c/pay/cs_evil",
+      session_id: "cs_evil",
+    });
+    const res = await POST(
+      makeRequest(
+        { tier: "pro", locale: "en" },
+        {
+          accept: "application/json",
+          "x-forwarded-host": "evil.com",
+          "x-forwarded-proto": "https",
+        },
+      ),
+    );
+    expect(res.status).toBe(200);
+    const payload = mockApiPost.mock.calls[0]![1] as {
+      success_url: string;
+      cancel_url: string;
+    };
+    // Attacker host is dropped; Stripe redirect stays on the canonical host.
+    expect(payload.success_url).toContain("https://corelink-admin.humangr.com/en/upgraded");
+    expect(payload.success_url).not.toContain("evil.com");
+    expect(payload.cancel_url).toContain("https://corelink-admin.humangr.com/en/pricing");
   });
 });
