@@ -271,6 +271,15 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(quota): complete the ADR-0068 \$5→unlimited neuter — two inserters still produced \$5-capped tenants.**
+  The 2026-07-09 reconciliation set the container `DEFAULT_MONTHLY_BUDGET_USD_MICROS` to \$1M but MISSED two
+  writers that still yielded the retired \$5 tripwire: (1) `worker/src/lib/githugr_provision.ts` hard-coded
+  `FREE_MONTHLY_BUDGET_USD_MICROS = 5_000_000` (every githugr-provisioned tenant capped at \$5); (2)
+  `d1_http.rs::tenant_quota_accrue`'s INSERT OMITTED `monthly_budget_usd_micros`, so a fresh tenant's first
+  accrual fell to the table's stale `DEFAULT 5000000`. Both now use the effectively-unlimited \$1M backstop
+  (the free tier is bounded by its request/storage quota, not this cumulative-\$ cap — ADR-0068). Also
+  backfilled the 202 legacy \$5 rows in prod D1 → \$1M. (Table DEFAULT itself left at \$5 — now unreachable
+  from code; a rebuild-migration to flip it is a low-risk defense-in-depth follow-up.)
 - **fix(stripe): pre-create the Stripe Customer so subscription Checkout no longer 502s `missing customer`.**
   A `mode=subscription` Checkout Session created without a customer leaves `session.customer` null until the
   buyer completes checkout, and the client required it (`missing customer on checkout session` → 502). Now

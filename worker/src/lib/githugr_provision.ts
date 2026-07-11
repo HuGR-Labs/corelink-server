@@ -67,8 +67,17 @@ const GITHUGR_TENANT_NS = "corelink-githugr-tenant-v1:";
 
 /** The default global CAS region (matches `family-e2e-tier-seed.sql`). */
 const DEFAULT_REGION = "wnam";
-/** Free-tier monthly $-ceiling in micro-dollars ($5 tripwire — 0066 default). */
-const FREE_MONTHLY_BUDGET_USD_MICROS = 5000000;
+/**
+ * Per-tenant monthly $-ceiling BACKSTOP for a githugr-provisioned tenant, in
+ * micro-dollars. Per ADR-0068 (2026-07-09 reconciliation) this ceiling is an
+ * effectively-unlimited operator backstop ($1,000,000/mo), NOT the free-tier
+ * usage wall — the free tier is bounded by its request/storage quota, not this
+ * cumulative-$ cap. The old $5 was a miscalibrated placeholder ~100× BELOW the
+ * free tier's own request quota; this aligns githugr provisioning with the
+ * container's `DEFAULT_MONTHLY_BUDGET_USD_MICROS` (closing the drift the
+ * reconciliation left in this worker-side inserter).
+ */
+const FREE_MONTHLY_BUDGET_USD_MICROS = 1_000_000_000_000;
 /** Free-tier runner concurrency (family-e2e free row). */
 const FREE_RUNNER_MAX_CONCURRENCY = 1;
 
