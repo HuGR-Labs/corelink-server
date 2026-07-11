@@ -5,7 +5,7 @@ description: "The container-side defense-in-depth gate that re-proves PAT posses
 source_files:
   - "crates/corelink-container/src/native_pat_gate.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "14310503c3b1582b9f3f305062084ea3739d4e1d"
+checkpoint_sha: "54186776cd91f2b6d4d2cfe894a799a4e83ddb5c"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path", "native-plane"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -32,8 +32,13 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 
 # How it works
 
-- `verify(tenant, bearer)` strips an optional `Bearer ` prefix, rejects an empty token, then computes a
-  SHA-256 fingerprint used as the cache key (`crates/corelink-container/src/native_pat_gate.rs:156-165`).
+- `verify(tenant, bearer)` and its write-gate sibling `verify_write(tenant, bearer)` are thin wrappers
+  over the shared `verify_inner` flow, which strips an optional `Bearer ` prefix, rejects an empty token,
+  then computes a SHA-256 fingerprint used as the cache key
+  (`crates/corelink-container/src/native_pat_gate.rs:159-231`). `verify_write` additionally requires the
+  PAT's D1-derived `can_write` bit (403 on a read-only PAT), so a `cas:r` token cannot write via Bazel/Turbo
+  even if the Worker scope header were wrong (deep-audit B/F-1); the verify cache carries `can_write` and
+  `verify` routes through `verify_capability` (behaviour-identical for reads).
 - A non-expired cache hit skips Argon2id but still requires the cached tenant to equal the claimed
   tenant, else uniform 401 (`crates/corelink-container/src/native_pat_gate.rs:167-176`).
 - A miss takes a per-fingerprint single-flight lock so a concurrent burst of the SAME PAT coalesces onto

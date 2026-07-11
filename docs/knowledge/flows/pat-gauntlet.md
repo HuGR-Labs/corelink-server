@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/native_pat_gate.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "3ee5dc2df2e4d741837efcacccb66465980d99c9"
+checkpoint_sha: "54186776cd91f2b6d4d2cfe894a799a4e83ddb5c"
 provenance: "AUTHORED"
 tags: ["flows", "auth", "pat", "argon2id", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -19,6 +19,8 @@ The Worker edge proves PAT possession with a cheap HMAC only — fast, but a lea
 # Role
 
 This is the data-plane possession gate and the second of CoreLink's 2-level PAT moat. Layer 1 is the Worker's HMAC fast-reject; layer 2 is this gauntlet, which adds the Argon2id secret proof + tenant-binding the HMAC layer skips — so a forged or cross-tenant token is rejected at the container even if it satisfied the edge.
+
+The public `verify(tenant, bearer)` and `verify_write(tenant, bearer)` are thin wrappers over the shared `verify_inner` flow (`crates/corelink-container/src/native_pat_gate.rs:159-231`); `verify_write` additionally requires the PAT's D1-derived `can_write` capability (`decide` returns `403` on a genuine read-only PAT), so a `cas:r` token cannot write via Bazel/Turbo even if the Worker-set scope header were wrong — the two-layer enforcement cargo/OCI already do (deep-audit B/F-1). The verify cache carries the `can_write` bit alongside the tenant, and `verify` routes through `verify_capability` (behaviour-identical for reads, since `verify` was `verify_capability(..).map(|(t,_)| t)`).
 
 # How it works
 
