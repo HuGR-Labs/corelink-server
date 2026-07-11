@@ -7,7 +7,7 @@ source_files:
   - "worker/src/lib/githugr_provision.ts"
   - "worker/src/lib/tenant_lookup.ts"
   - "migrations/d1/0074_team_member.sql"
-checkpoint_sha: "15f3f085538288eee3261eb86aa27a781fe568e7"
+checkpoint_sha: "59cd94f2812f74e699176190422002da83241a3d"
 provenance: "AUTHORED"
 tags: ["auth", "clerk", "tenant-resolution", "edge"]
 timestamp: "2026-06-27T00:00:00Z"
@@ -113,19 +113,19 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
 - **githugr per-`sub` tenant derivation + LOOKUP-FIRST, transactional provisioning:** `deriveGithugrTenantId(sub)`
   computes a v5-shaped UUID from `SHA-256("corelink-githugr-tenant-v1:" + sub)` — so two distinct subs
   yield distinct tenants (ISOLATION) and the same sub always lands on the same tenant (IDEMPOTENT)
-  (`worker/src/lib/githugr_provision.ts:91`, `worker/src/lib/githugr_provision.ts:92-101`).
+  (`worker/src/lib/githugr_provision.ts:100`, `worker/src/lib/githugr_provision.ts:101-110`).
   `provisionOrLookupGithugrTenant` is **LOOKUP-FIRST**: the common case is a repeat login, so it SELECTs
   the `tenant_org_map` identity row FIRST and, on a hit, returns that tenant_id immediately with **ZERO
-  writes** (`worker/src/lib/githugr_provision.ts:134-140`). ONLY on the first-ever login for a `sub` (no
+  writes** (`worker/src/lib/githugr_provision.ts:143-149`). ONLY on the first-ever login for a `sub` (no
   row) does it provision — and the full 5-row family is written as a SINGLE transactional D1
   `batch([...])` (all-or-nothing, so a mid-provision D1 fault can never leave a partial row-set), with FK
-  order preserved by statement order: `tenant` first (`worker/src/lib/githugr_provision.ts:148-154`), then
+  order preserved by statement order: `tenant` first (`worker/src/lib/githugr_provision.ts:157-163`), then
   `tier_selections` (free/active), `runners_entitlement`, `tenant_quota`, and the `tenant_org_map`
   identity row keyed on `clerk_org_id = sub`, each `INSERT OR IGNORE`
-  (`worker/src/lib/githugr_provision.ts:156-190`). AFTER the batch it READS BACK the authoritative
-  `tenant_org_map` row so a concurrent/prior login's row wins (`worker/src/lib/githugr_provision.ts:198-201`); an
+  (`worker/src/lib/githugr_provision.ts:165-199`). AFTER the batch it READS BACK the authoritative
+  `tenant_org_map` row so a concurrent/prior login's row wins (`worker/src/lib/githugr_provision.ts:207-210`); an
   absent read-back THROWS, which the caller treats as fail-CLOSED
-  (`worker/src/lib/githugr_provision.ts:202-204`).
+  (`worker/src/lib/githugr_provision.ts:211-213`).
 
 # Invariants
 
@@ -157,15 +157,15 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
   `GITHUGR_TENANT_ID` gate condition is REMOVED (`worker/src/lib/clerk_auth.ts:137`).
 - A githugr session resolves to a **per-`sub` isolated tenant**, NOT one fixed shared tenant: the
   tenant_id is a deterministic function of the verified `sub`, so distinct subs are distinct tenants and
-  the same sub is idempotent (`worker/src/lib/githugr_provision.ts:91`,
-  `worker/src/lib/githugr_provision.ts:92-101`). Provisioning is LOOKUP-FIRST (existing `sub` → single
+  the same sub is idempotent (`worker/src/lib/githugr_provision.ts:100`,
+  `worker/src/lib/githugr_provision.ts:101-110`). Provisioning is LOOKUP-FIRST (existing `sub` → single
   SELECT, ZERO writes) and, on a first-ever login, a SINGLE transactional `INSERT OR IGNORE`
   `batch([...])` across the full 5-row family — atomic (no partial row-set) — with an authoritative
-  read-back (`worker/src/lib/githugr_provision.ts:124`,
-  `worker/src/lib/githugr_provision.ts:198-201`).
+  read-back (`worker/src/lib/githugr_provision.ts:133`,
+  `worker/src/lib/githugr_provision.ts:207-210`).
 - The githugr provision/lookup is fail-CLOSED: any D1 fault (or an absent read-back) throws / returns a
   500 — the arm NEVER falls back to a shared tenant (that fall-back is the exact isolation break this
-  fixes) (`worker/src/lib/clerk_auth.ts:468-475`, `worker/src/lib/githugr_provision.ts:202-204`).
+  fixes) (`worker/src/lib/clerk_auth.ts:468-475`, `worker/src/lib/githugr_provision.ts:211-213`).
 
 # Gotchas
 
@@ -176,7 +176,7 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
 - **No more fixed githugr tenant:** the arm used to map EVERY githugr user to one configured
   `GITHUGR_TENANT_ID`, which gave NO isolation between githugr users (githugr runs its own Clerk, so the
   CoreLink signup-worker's `user.created` auto-provision never fires for them). It now provisions-or-looks-up
-  a per-`sub` tenant via `provisionOrLookupGithugrTenant` (`worker/src/lib/githugr_provision.ts:124`), and
+  a per-`sub` tenant via `provisionOrLookupGithugrTenant` (`worker/src/lib/githugr_provision.ts:133`), and
   fails CLOSED (500) on a D1 fault rather than ever resolving to a shared tenant
   (`worker/src/lib/clerk_auth.ts:468-475`).
 - The `peekUnverifiedIssuer` step is ROUTING-ONLY — it parses an UNVERIFIED payload to decide which
@@ -214,14 +214,14 @@ isolation fix), fail-CLOSED 500 on any D1 fault (never a shared tenant).
 15. `worker/src/lib/clerk_auth.ts:415` — githugr arm authoritative issuer exact-pin (only reached when the dormant gate opens).
 16. `worker/src/lib/clerk_auth.ts:458` — githugr arm resolves the tenant via `provisionOrLookupGithugrTenant(env.CONFIG_DB, sub)` — a per-`sub` isolated tenant, NOT a fixed configured id — and maps it to the `owner` role.
 17. `worker/src/lib/clerk_auth.ts:468-475` — githugr provision/lookup fail-CLOSED: a D1 fault is a 500, never a fall-back to a shared tenant.
-18. `worker/src/lib/githugr_provision.ts:91` — `deriveGithugrTenantId`, the deterministic per-`sub` tenant_id.
-19. `worker/src/lib/githugr_provision.ts:92-101` — the derivation body: v5-shaped UUID from `SHA-256("corelink-githugr-tenant-v1:" + sub)` (distinct subs → distinct tenants; same sub → same tenant).
-20. `worker/src/lib/githugr_provision.ts:124` — `provisionOrLookupGithugrTenant`, the LOOKUP-FIRST provision-or-lookup entrypoint.
-20a. `worker/src/lib/githugr_provision.ts:134-140` — LOOKUP-FIRST `SELECT tenant_org_map`: on a repeat-login hit, return the tenant_id with ZERO writes.
-21. `worker/src/lib/githugr_provision.ts:148-154` — `tenant` row written FIRST (FK target) via `INSERT OR IGNORE`, inside the transactional `batch([...])`.
-22. `worker/src/lib/githugr_provision.ts:156-190` — the child + identity rows inside the same `batch([...])`: `tier_selections` (free/active), `runners_entitlement`, `tenant_quota`, and the `tenant_org_map` row keyed on `clerk_org_id = sub`, all `INSERT OR IGNORE` (transactional / all-or-nothing).
-23. `worker/src/lib/githugr_provision.ts:198-201` — authoritative read-back of `tenant_org_map` AFTER the batch (a concurrent/prior login's row wins).
-24. `worker/src/lib/githugr_provision.ts:202-204` — absent read-back THROWS → caller fails CLOSED (500).
+18. `worker/src/lib/githugr_provision.ts:100` — `deriveGithugrTenantId`, the deterministic per-`sub` tenant_id.
+19. `worker/src/lib/githugr_provision.ts:101-110` — the derivation body: v5-shaped UUID from `SHA-256("corelink-githugr-tenant-v1:" + sub)` (distinct subs → distinct tenants; same sub → same tenant).
+20. `worker/src/lib/githugr_provision.ts:133` — `provisionOrLookupGithugrTenant`, the LOOKUP-FIRST provision-or-lookup entrypoint.
+20a. `worker/src/lib/githugr_provision.ts:143-149` — LOOKUP-FIRST `SELECT tenant_org_map`: on a repeat-login hit, return the tenant_id with ZERO writes.
+21. `worker/src/lib/githugr_provision.ts:157-163` — `tenant` row written FIRST (FK target) via `INSERT OR IGNORE`, inside the transactional `batch([...])`.
+22. `worker/src/lib/githugr_provision.ts:165-199` — the child + identity rows inside the same `batch([...])`: `tier_selections` (free/active), `runners_entitlement`, `tenant_quota`, and the `tenant_org_map` row keyed on `clerk_org_id = sub`, all `INSERT OR IGNORE` (transactional / all-or-nothing).
+23. `worker/src/lib/githugr_provision.ts:207-210` — authoritative read-back of `tenant_org_map` AFTER the batch (a concurrent/prior login's row wins).
+24. `worker/src/lib/githugr_provision.ts:211-213` — absent read-back THROWS → caller fails CLOSED (500).
 16. `worker/src/lib/tenant_lookup.ts:79` — `handleTenantLookup`, the internal-auth-gated server-to-server endpoint.
 17. `worker/src/lib/tenant_lookup.ts:103-108` — `sub` required; email fallback is N/A (email_hash is a clerk-id surrogate).
 18. `worker/src/lib/tenant_lookup.ts:114` — parameterized `SELECT ... FROM tenant WHERE clerk_user_id = ?1`.
