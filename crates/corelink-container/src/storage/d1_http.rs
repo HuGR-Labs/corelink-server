@@ -460,15 +460,23 @@ impl D1HttpClient {
     ) -> Result<(), String> {
         let _ = self
             .query(
+                // Explicitly seed `monthly_budget_usd_micros` with the
+                // effectively-unlimited default (ADR-0068 2026-07-09) on the
+                // INSERT path. Omitting it made a fresh tenant's first accrual
+                // fall to the table's stale `DEFAULT 5000000` ($5) — the
+                // miscalibrated placeholder the reconciliation retired. ON
+                // CONFLICT never touches the budget, so an existing tenant's
+                // operator-set ceiling is preserved.
                 "INSERT INTO tenant_quota \
-                   (tenant_id, accrued_usd_micros, cycle_anchor_ms, updated_at_ms) \
-                 VALUES (?1, ?2, ?3, ?4) \
+                   (tenant_id, monthly_budget_usd_micros, accrued_usd_micros, cycle_anchor_ms, updated_at_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) \
                  ON CONFLICT(tenant_id) DO UPDATE SET \
                    accrued_usd_micros = tenant_quota.accrued_usd_micros \
                                         + excluded.accrued_usd_micros, \
                    updated_at_ms      = excluded.updated_at_ms",
                 &[
                     serde_json::Value::String(tenant_id.to_owned()),
+                    serde_json::Value::from(crate::tenant_quota::DEFAULT_MONTHLY_BUDGET_USD_MICROS),
                     serde_json::Value::from(delta_micros),
                     serde_json::Value::from(seed_anchor_ms),
                     serde_json::Value::from(updated_at_ms),
