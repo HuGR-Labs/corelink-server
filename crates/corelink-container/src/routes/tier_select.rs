@@ -869,7 +869,21 @@ where
         let created = checkout
             .create(tenant_id, tier, success_url, cancel_url)
             .await
-            .map_err(|_| TierSelectHttpError::StripeUnavailable)?;
+            .map_err(|e| {
+                // `checkout.create()` returns the real Stripe/transport error as a
+                // String; without this it was discarded (`|_|`) and every failure
+                // collapsed to an opaque `stripe_unavailable` 502 with no way to
+                // tell an auth error (bad/rotated key) from a bad price id or a
+                // transport fault. Log it (secret-free: `e` is Stripe's error
+                // message, never the key) so prod checkout failures are diagnosable.
+                tracing::error!(
+                    tenant_id = %tenant_id,
+                    correlation_id = %correlation_id,
+                    stripe_error = %e,
+                    "tier-select checkout create failed → 502 stripe_unavailable"
+                );
+                TierSelectHttpError::StripeUnavailable
+            })?;
         // Defense-in-depth: never hand back a non-TLS Checkout URL.
         if !created.checkout_url.starts_with("https://") {
             return Err(TierSelectHttpError::StripeUnavailable);
