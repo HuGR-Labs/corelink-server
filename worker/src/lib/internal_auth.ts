@@ -85,9 +85,27 @@ export function resolveConsumerKey(env: Env, consumer: InternalConsumer): string
           : consumer === "dsr_anchor"
             ? env.CORELINK_DSR_ANCHOR_AUTH_KEY
             : env.CORELINK_RUNNER_MINT_AUTH_KEY;
-  if (specific && specific.length >= MIN_INTERNAL_AUTH_KEY_LEN) {
-    return specific;
+  if (specific && specific.length > 0) {
+    // A dedicated key was EXPLICITLY provided for this consumer.
+    if (specific.length >= MIN_INTERNAL_AUTH_KEY_LEN) {
+      return specific;
+    }
+    // Set but below the floor: a misconfiguration. Do NOT silently fall back to
+    // the broad shared key — that would give this consumer a WIDER blast radius
+    // than the operator intended (the whole point of a dedicated key is to
+    // ISOLATE it). Fail LOUD + fail-CLOSED: this consumer's gate rejects
+    // everything until the key is fixed or unset (deep-audit C/sub-floor).
+    console.error(
+      `[internal-auth] dedicated key for consumer "${consumer}" is set but ` +
+        `< ${MIN_INTERNAL_AUTH_KEY_LEN} chars — REFUSING to fall back to the shared ` +
+        `CORELINK_INTERNAL_AUTH_KEY (that would silently widen the blast radius). ` +
+        `Fix the dedicated key to >= ${MIN_INTERNAL_AUTH_KEY_LEN} chars, or unset it ` +
+        `to intentionally use the shared key.`,
+    );
+    return null;
   }
+  // No dedicated key configured (the common case) → the shared key IS the
+  // intended credential for this consumer.
   const shared = env.CORELINK_INTERNAL_AUTH_KEY;
   if (shared && shared.length >= MIN_INTERNAL_AUTH_KEY_LEN) {
     return shared;

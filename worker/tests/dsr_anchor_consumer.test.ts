@@ -91,8 +91,14 @@ describe("resolveConsumerKey — dsr_anchor key selection", () => {
     expect(resolveConsumerKey(env({}), "dsr_anchor")).toBe(SHARED);
   });
 
-  it("treats a sub-floor dedicated anchor key as absent (falls back to shared)", () => {
-    expect(resolveConsumerKey(env({ CORELINK_DSR_ANCHOR_AUTH_KEY: "short" }), "dsr_anchor")).toBe(SHARED);
+  it("fails CLOSED (null) on a SET-but-sub-floor dedicated key — never silently widens to the shared key", () => {
+    // deep-audit C/sub-floor: a dedicated key that is explicitly set but < 32
+    // chars is a misconfiguration. Silently falling back to the broad shared key
+    // would give this consumer a WIDER blast radius than the operator intended,
+    // so the resolver fails LOUD + fail-CLOSED instead.
+    expect(
+      resolveConsumerKey(env({ CORELINK_DSR_ANCHOR_AUTH_KEY: "short" }), "dsr_anchor"),
+    ).toBeNull();
   });
 
   it("fails CLOSED (null) when neither the dedicated nor the shared key qualifies", () => {
