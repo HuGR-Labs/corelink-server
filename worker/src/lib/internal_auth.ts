@@ -59,7 +59,13 @@ const MIN_INTERNAL_AUTH_KEY_LEN = 32;
  * `pat_mint`) means a leaked runner key can ONLY mint/revoke per-job runner PATs —
  * never the signup PAT-mint, erase, or admin surfaces (least privilege, A6).
  */
-export type InternalConsumer = "pat_mint" | "admin" | "erase" | "dsr_anchor" | "runner_mint";
+export type InternalConsumer =
+  | "pat_mint"
+  | "admin"
+  | "erase"
+  | "dsr_anchor"
+  | "runner_mint"
+  | "quota_read";
 
 /**
  * Resolve the internal-auth key to verify against for a given consumer.
@@ -84,7 +90,9 @@ export function resolveConsumerKey(env: Env, consumer: InternalConsumer): string
           ? env.CORELINK_ERASE_AUTH_KEY
           : consumer === "dsr_anchor"
             ? env.CORELINK_DSR_ANCHOR_AUTH_KEY
-            : env.CORELINK_RUNNER_MINT_AUTH_KEY;
+            : consumer === "quota_read"
+              ? env.CORELINK_QUOTA_READ_AUTH_KEY
+              : env.CORELINK_RUNNER_MINT_AUTH_KEY;
   if (specific && specific.length > 0) {
     // A dedicated key was EXPLICITLY provided for this consumer.
     if (specific.length >= MIN_INTERNAL_AUTH_KEY_LEN) {

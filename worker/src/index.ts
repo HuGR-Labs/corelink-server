@@ -154,6 +154,7 @@ export interface Env {
   DSR_RECEIPT_SIGNING_KEY?: string; // HMAC signer for DSR customer-portal receipt JWTs (union #717; read by dsr/portal.rs, forwarded to the container)
   DPA_RECEIPT_SIGNING_KEY?: string; // RS256 (RSA PKCS#8/PKCS#1 PEM) signer for DPA-acceptance receipt JWTs (read by routes/dpa_accept.rs, forwarded to the container; route unmounts fail-CLOSED when absent)
   CORELINK_RUNNER_MINT_AUTH_KEY?: string; // gate for `/internal/v1/runner/{mint,revoke}` (runner dispatcher; scoped away from signup's pat_mint)
+  CORELINK_QUOTA_READ_AUTH_KEY?: string; // gate for `/_internal/tenant/{tenant_id}/quota` (read-only tenant-quota lookup; low-privilege read consumer, distinct from mint/erase/admin)
   // Per-tier quota enforcement (worker/src/lib/quota.ts).
   // Storage quota is always enforced for finite-quota tiers.
   // Monthly request-count quota is backed by the monthly_request_counts table
@@ -274,6 +275,13 @@ export function internalConsumerForPath(pathSuffix: string): InternalConsumer {
   // gate, so binding/forwarding the anchor key alone could never help).
   if (pathSuffix === "/_internal/dsr/anchor") {
     return "dsr_anchor";
+  }
+  // Read-only tenant-quota lookup (`/_internal/tenant/{tenant_id}/quota`, #quota-read):
+  // a DEDICATED read consumer (`CORELINK_QUOTA_READ_AUTH_KEY`, shared-key fallback)
+  // so a leak of this low-privilege read secret cannot mint, erase, or admin. Matched
+  // BEFORE the erase catch-all below.
+  if (pathSuffix.startsWith("/_internal/tenant/") && pathSuffix.endsWith("/quota")) {
+    return "quota_read";
   }
   // DSR erase surface (`/_internal/dsr/*`) and any other internal data-plane
   // route (`/_internal/cas/*`, …) gate on the erase consumer key.
