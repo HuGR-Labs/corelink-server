@@ -431,6 +431,24 @@ async fn pat_gate_reject(
     gate.verify(tenant, bearer).await.err()
 }
 
+/// Like [`pat_gate_reject`] but for WRITE handlers: additionally enforces the
+/// PAT's D1-derived `can_write` capability (not just the Worker-set
+/// `x-corelink-scope` header), matching the two-layer enforcement cargo/OCI
+/// already do (deep-audit B/F-1). A read-only PAT presented on a write path is
+/// rejected `403` even if the scope header claimed write.
+async fn pat_gate_reject_write(
+    state: &BazelRouteState,
+    tenant: &str,
+    headers: &HeaderMap,
+) -> Option<axum::response::Response> {
+    let gate = state.pat_gate.as_ref()?;
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    gate.verify_write(tenant, bearer).await.err()
+}
+
 /// Batch variant of [`quota_reject`] for `findMissingBlobs` (F12 fix —
 /// quota-bypass-by-batching; closed completely by CAA-360 #14/#18).
 ///
@@ -606,7 +624,7 @@ async fn handle_cas_write(
         Err(()) => return unauthenticated_tenant(),
     };
     // Native PAT possession gate (finding #4) — AFTER scope+tenant, BEFORE storage.
-    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+    if let Some(resp) = pat_gate_reject_write(&state, &tenant, &headers).await {
         return resp;
     }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
@@ -755,7 +773,7 @@ async fn handle_ac_write(
         Err(()) => return unauthenticated_tenant(),
     };
     // Native PAT possession gate (finding #4) — AFTER scope+tenant, BEFORE storage.
-    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+    if let Some(resp) = pat_gate_reject_write(&state, &tenant, &headers).await {
         return resp;
     }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1).
@@ -953,7 +971,7 @@ async fn handle_http_cas_write(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
-    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+    if let Some(resp) = pat_gate_reject_write(&state, &tenant, &headers).await {
         return resp;
     }
     if let Some(resp) = quota_reject(&state, &tenant).await {
@@ -1073,7 +1091,7 @@ async fn handle_http_ac_write(
         Ok(t) => t,
         Err(()) => return unauthenticated_tenant(),
     };
-    if let Some(resp) = pat_gate_reject(&state, &tenant, &headers).await {
+    if let Some(resp) = pat_gate_reject_write(&state, &tenant, &headers).await {
         return resp;
     }
     if let Some(resp) = quota_reject(&state, &tenant).await {

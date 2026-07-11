@@ -294,6 +294,19 @@ Each entry cross-references:
   consumer's gate rejects until the key is fixed or unset), rather than silently widening the blast radius. A
   genuinely UNSET dedicated key still falls back to the shared key as before. Updated the test that encoded the
   old silent-fallback behaviour to assert fail-closed.
+- **fix(container): Bazel/Turbo write gates now enforce the PAT-derived `can_write` bit, not just the Worker scope header (deep-audit B/F-1, defense-in-depth).**
+  The Bazel REAPI + stock-HTTP write handlers and the Turbo `PUT` handler decided read-vs-write solely on the
+  Worker-set `x-corelink-scope` header (`CacheScope`), while `native_pat_gate` re-verified only PAT possession
+  + tenant — discarding the `can_write` capability. cargo/OCI already enforce it two-layer from the PAT. Not
+  reachable through today's Worker (which strips + re-derives scope from D1), but a defense-in-depth gap vs the
+  repo's own "don't trust Worker headers" posture. Fix: `NativePatGate::verify_write` additionally requires the
+  D1-derived `can_write` bit (the verify cache now carries it; `verify` is routed through `verify_capability`,
+  which is behaviour-identical for reads — `verify` was already `verify_capability(..).map(|(t,_)| t)`). Wired
+  into the 4 Bazel write handlers + Turbo `PUT`; a read-only (`cas:r`) PAT on a write path → `403` even if the
+  scope header were wrong. +2 gate tests; Bazel/Turbo/native-gate suites green (45/45/8). (Deep-audit E —
+  `MoatCache::put` "digest choke-point" — needs no change: `put` derives `content_hash = hasher(bytes)` so it
+  is content-addressed by construction, the read path re-verifies bytes==hash, `_public` is unreachable by
+  tenants, and the invariant is already locked by `served_bytes_failing_content_hash_check_are_refused`.)
 - **fix(audit): close the CF-6 chain-head laundering hole — an insider with D1 write could strip the signature and let the honest drain re-sign a forged head (backend-audit §3).**
   The Ed25519-signed `audit_chain_head`, whose stated purpose is to make audit history un-forgeable against
   "an insider with D1 write", was defeated by exactly that adversary: `check_head_on_resume`
