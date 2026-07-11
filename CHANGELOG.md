@@ -282,6 +282,13 @@ Each entry cross-references:
   CI could not catch it — the unit test's `buildStripeSignature` signed with the SAME wrong derivation.
   Fixed the key to `new TextEncoder().encode(secret)`, fixed the test signer to the real scheme, and
   added a **known-answer test** from a real stripe-node vector (which the old code rejects). 80/80 green.
+- **fix(tier-select): log the real Stripe error behind a `stripe_unavailable` 502 (was discarded).**
+  `orchestrate_locked` mapped `checkout.create()`'s error with `.map_err(|_| StripeUnavailable)`,
+  throwing away the `String` the checkout creator already returns — so a bad/rotated `STRIPE_SECRET_KEY`
+  (Stripe `authentication_error`), a test-mode/wrong price id (`invalid_request_error: No such price`),
+  and a transport fault all collapsed to one opaque 502, making prod checkout failures undiagnosable
+  from outside the container. Now `tracing::error!(stripe_error = %e, tenant_id, correlation_id, …)`
+  the real message (secret-free — `e` is Stripe's error text, never the key) before returning the 502.
 - **fix(stripe): Stripe env config is now whitespace-robust — a trailing newline no longer 502s EVERY checkout.**
   `StripeClientConfig::from_env()` (`crates/corelink-stripe-real/src/client.rs`) read `STRIPE_AUTH_MODE`
   and matched it with an exact `== "direct"` (no `.trim()`). Secrets bound via a shell here-string
