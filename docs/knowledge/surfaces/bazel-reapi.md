@@ -4,7 +4,7 @@ title: "Bazel REAPI v2 surface"
 description: "The Bazel cache surface: the CoreLink REAPI ByteStream REST scheme AND the stock-Bazel HTTP cache alias (`/bazel/cache/{cas,ac}/:hash`), both onto the same R2 blobs as native CAS/AC."
 source_files:
   - "crates/corelink-container/src/routes/bazel_v2.rs"
-checkpoint_sha: "3b7a66d65371999f41ea0146ca80c746e60e025a"
+checkpoint_sha: "54186776cd91f2b6d4d2cfe894a799a4e83ddb5c"
 provenance: "AUTHORED"
 tags: ["surfaces", "bazel", "reapi", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -52,7 +52,7 @@ metadata, and dispatches.
 
 # Invariants
 - REST scheme: the `:instance` path segment MUST equal the Worker-injected `x-corelink-tenant-id`; a mismatch is 403 with an audit row — the executed enforcer maps the bridge's `BazelBridgeError::CrossTenantDenied` to `StatusCode::FORBIDDEN` (`crates/corelink-container/src/routes/bazel_v2.rs:495`). The documented rule lives in the module doc (`crates/corelink-container/src/routes/bazel_v2.rs:44-47`).
-- Stock alias: there is NO `:instance` to mismatch — the tenant is the header alone, so isolation is by the per-tenant namespace and a cross-tenant hash is a UNIFORM 404 (never another tenant's bytes), while a missing/sentinel tenant is 401. Both schemes run the same `scope → tenant → PAT → quota` gate order; the alias CAS write keeps the SHA-256 content-addressing boundary check (`crates/corelink-container/src/routes/bazel_v2.rs:967`) and the alias AC write keeps the WP5b runner-job AC-key pin (`crates/corelink-container/src/routes/bazel_v2.rs:1065`).
+- Stock alias: there is NO `:instance` to mismatch — the tenant is the header alone, so isolation is by the per-tenant namespace and a cross-tenant hash is a UNIFORM 404 (never another tenant's bytes), while a missing/sentinel tenant is 401. Both schemes run the same `scope → tenant → PAT → quota` gate order; the alias CAS write keeps the SHA-256 content-addressing boundary check (`crates/corelink-container/src/routes/bazel_v2.rs:985`) and the alias AC write keeps the WP5b runner-job AC-key pin (`crates/corelink-container/src/routes/bazel_v2.rs:1083`). The four WRITE handlers use `pat_gate_reject_write` (not `pat_gate_reject`), which enforces the PAT's D1-derived `can_write` capability on top of the Worker scope header — so a read-only PAT is rejected `403` on a write path even if the header were wrong (deep-audit B/F-1, matching cargo/OCI).
 - All routes use the matchit `{name}` capture form, never `:name` (post axum-0.8), per the DEBT-029 rule (`crates/corelink-container/src/routes/bazel_v2.rs:58-63`).
 - Per-tenant concurrent writes are bounded by `BAZEL_WRITE_CONCURRENCY_LIMIT` (`crates/corelink-container/src/routes/bazel_v2.rs:139`) on both schemes.
 - The bytes served are the same R2 blobs as the native CAS/AC endpoints (a shared store, not a copy) (`crates/corelink-container/src/routes/bazel_v2.rs:5-7`); the stock alias reads/writes that same store.

@@ -1213,7 +1213,7 @@ async fn handle_put(
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
-        if let Err(resp) = gate.verify(&caller_tenant, bearer).await {
+        if let Err(resp) = gate.verify_write(&caller_tenant, bearer).await {
             return resp;
         }
     }

@@ -80,6 +80,9 @@ const VERIFY_LOCK_SHARDS: usize = 256;
 #[derive(Debug, Clone)]
 struct CacheEntry {
     tenant: String,
+    /// The PAT's D1-derived write capability — cached alongside the tenant so a
+    /// write gate can enforce it without a fresh Argon2id per write.
+    can_write: bool,
     expires_at: Instant,
 }
 
@@ -154,6 +157,52 @@ impl NativePatGate {
     /// Returns the rejection [`Response`] in the `Err` arm (so handlers can
     /// `return resp;` directly).
     pub async fn verify(&self, tenant: &str, bearer_or_token: &str) -> Result<(), Response> {
+        self.verify_inner(tenant, bearer_or_token, false).await
+    }
+
+    /// Like [`Self::verify`], but ALSO requires the PAT's D1-derived `can_write`
+    /// capability. Use this on WRITE handlers so a read-only (`cas:r`) PAT cannot
+    /// write even if the Worker-set `x-corelink-scope` header claimed otherwise —
+    /// the two-layer enforcement cargo/OCI already do (deep-audit B/F-1). A genuine
+    /// PAT that lacks write capability is rejected `403` (`insufficient scope`),
+    /// distinct from the `401` a forged/cross-tenant PAT gets.
+    ///
+    /// # Errors
+    ///
+    /// Returns the rejection [`Response`] in the `Err` arm (401 / 403 / 503).
+    pub async fn verify_write(&self, tenant: &str, bearer_or_token: &str) -> Result<(), Response> {
+        self.verify_inner(tenant, bearer_or_token, true).await
+    }
+
+    /// Turn a resolved `(tenant, can_write)` into the gate decision. Tenant
+    /// mismatch → uniform 401 (no cross-tenant oracle); a genuine PAT lacking the
+    /// required write capability → 403.
+    // The gate returns the rejection `Response` in the Err arm by design (so
+    // handlers `return resp;` directly) — the same shape the pub `verify`/
+    // `verify_write` API uses; boxing it here would just churn the hot path.
+    #[allow(clippy::result_large_err)]
+    fn decide(
+        resolved_tenant: &str,
+        can_write: bool,
+        claimed_tenant: &str,
+        require_write: bool,
+    ) -> Result<(), Response> {
+        if resolved_tenant != claimed_tenant {
+            return Err(unauthorized());
+        }
+        if require_write && !can_write {
+            return Err((StatusCode::FORBIDDEN, "insufficient scope").into_response());
+        }
+        Ok(())
+    }
+
+    #[allow(clippy::result_large_err)]
+    async fn verify_inner(
+        &self,
+        tenant: &str,
+        bearer_or_token: &str,
+        require_write: bool,
+    ) -> Result<(), Response> {
         let token = bearer_or_token
             .strip_prefix("Bearer ")
             .unwrap_or(bearer_or_token)
@@ -165,14 +214,11 @@ impl NativePatGate {
         let fp = fingerprint(token);
 
         // Cache hit (non-expired) → skip Argon2id. The cached tenant MUST still
-        // match the claimed tenant (a cached PAT for tenant A presented against
-        // tenant B's path is rejected the same as a miss would be).
-        if let Some(cached_tenant) = self.cache_get(&fp) {
-            return if cached_tenant == tenant {
-                Ok(())
-            } else {
-                Err(unauthorized())
-            };
+        // match the claimed tenant, and (for a write gate) the cached `can_write`
+        // bit is enforced — a cached read-only PAT presented on a write path is
+        // rejected the same as a miss would be.
+        if let Some((cached_tenant, cached_write)) = self.cache_get(&fp) {
+            return Self::decide(&cached_tenant, cached_write, tenant, require_write);
         }
 
         // Miss → SINGLE-FLIGHT the full verification. Acquire the fingerprint's
@@ -183,26 +229,19 @@ impl NativePatGate {
         let _flight = fp_lock.lock().await;
         // Double-checked: the holder we waited behind may have just populated the
         // cache — take the fast path and skip a redundant D1/Argon2id round.
-        if let Some(cached_tenant) = self.cache_get(&fp) {
-            return if cached_tenant == tenant {
-                Ok(())
-            } else {
-                Err(unauthorized())
-            };
+        if let Some((cached_tenant, cached_write)) = self.cache_get(&fp) {
+            return Self::decide(&cached_tenant, cached_write, tenant, require_write);
         }
 
-        // HMAC fast-reject → D1 lookup → Argon2id → scope gate. On success cache
-        // `fp → (resolved_tenant, now + TTL)`.
-        match self.verifier.verify(token).await {
-            Ok(resolved_tenant) => {
-                self.cache_put(fp, resolved_tenant.clone());
-                if resolved_tenant == tenant {
-                    Ok(())
-                } else {
-                    // Genuine PAT, but for a DIFFERENT tenant than claimed — a
-                    // cross-tenant forgery attempt. Uniform 401.
-                    Err(unauthorized())
-                }
+        // HMAC fast-reject → D1 lookup → Argon2id → scope gate. `verify_capability`
+        // is the SAME work as `verify` plus the D1-derived `can_write` bit
+        // (`verify` is literally `verify_capability(..).map(|(t, _)| t)`), so
+        // routing reads through it is behaviour-identical. Cache
+        // `fp → (resolved_tenant, can_write, now + TTL)`.
+        match self.verifier.verify_capability(token).await {
+            Ok((resolved_tenant, can_write)) => {
+                self.cache_put(fp, resolved_tenant.clone(), can_write);
+                Self::decide(&resolved_tenant, can_write, tenant, require_write)
             }
             // Forged / unknown / expired / wrong-secret / no-cache-scope.
             Err(VerifyError::InvalidPat) => Err(unauthorized()),
@@ -216,10 +255,12 @@ impl NativePatGate {
     }
 
     /// Read a non-expired cache entry's tenant, evicting it if expired.
-    fn cache_get(&self, fp: &str) -> Option<String> {
+    fn cache_get(&self, fp: &str) -> Option<(String, bool)> {
         let mut cache = self.cache.lock().ok()?;
         match cache.get(fp) {
-            Some(entry) if entry.expires_at > Instant::now() => Some(entry.tenant.clone()),
+            Some(entry) if entry.expires_at > Instant::now() => {
+                Some((entry.tenant.clone(), entry.can_write))
+            }
             Some(_) => {
                 // Expired — evict so the map cannot grow unbounded with stale
                 // entries for a recurring token.
@@ -231,12 +272,13 @@ impl NativePatGate {
     }
 
     /// Insert a verified entry with a fresh TTL.
-    fn cache_put(&self, fp: String, tenant: String) {
+    fn cache_put(&self, fp: String, tenant: String, can_write: bool) {
         if let Ok(mut cache) = self.cache.lock() {
             let _ = cache.insert(
                 fp,
                 CacheEntry {
                     tenant,
+                    can_write,
                     expires_at: Instant::now() + VERIFY_CACHE_TTL,
                 },
             );
@@ -395,6 +437,16 @@ mod tests {
         }
     }
 
+    /// A READ-ONLY (`cas:r`) PAT row — `requires_cache_write` is false, so its
+    /// D1-derived `can_write` bit is false.
+    fn row_ro(pat_hash: &str, tenant: &str) -> PatRow {
+        PatRow {
+            tenant_id: tenant.to_owned(),
+            pat_hash: pat_hash.to_owned(),
+            scope: "cas:r".to_owned(),
+        }
+    }
+
     #[tokio::test]
     async fn genuine_pat_for_its_own_tenant_is_accepted() {
         let key = test_key();
@@ -404,6 +456,33 @@ mod tests {
         assert!(gate.verify(&tenant, &pt).await.is_ok());
         // `Bearer ` prefix is stripped too.
         assert!(gate.verify(&tenant, &format!("Bearer {pt}")).await.is_ok());
+    }
+
+    /// B/F-1: `verify_write` accepts a write-capable (`cas:rw`) PAT.
+    #[tokio::test]
+    async fn verify_write_accepts_write_capable_pat() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 20);
+        let verifier = verifier_with_row(tid, row(&hash, &tenant), key);
+        let gate = NativePatGate::new_for_test(verifier);
+        assert!(gate.verify_write(&tenant, &pt).await.is_ok());
+    }
+
+    /// B/F-1 (the fix): a READ-ONLY PAT can READ (`verify` ok) but is rejected
+    /// `403` on a WRITE gate (`verify_write`) — the PAT-derived `can_write` bit is
+    /// enforced independently of the Worker scope header, so a `cas:r` token can no
+    /// longer write via Bazel/Turbo even if the header were wrong.
+    #[tokio::test]
+    async fn verify_write_rejects_read_only_pat_403() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 21);
+        let verifier = verifier_with_row(tid, row_ro(&hash, &tenant), key);
+        let gate = NativePatGate::new_for_test(verifier);
+        // Read is fine.
+        assert!(gate.verify(&tenant, &pt).await.is_ok());
+        // Write is refused with 403 (insufficient scope), NOT 401.
+        let err = gate.verify_write(&tenant, &pt).await.unwrap_err();
+        assert_eq!(err.status(), StatusCode::FORBIDDEN);
     }
 
     /// The KILLING finding-#4 test: a forged token (HMAC-only attacker without
