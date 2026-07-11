@@ -271,6 +271,13 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(stripe): omit an empty `customer_email` on Checkout — it was 502'ing EVERY checkout (all tiers).**
+  `build_checkout_form` always emitted `("customer_email", req.customer_email)`; the container passes an
+  EMPTY email by design (privacy — Stripe's hosted page collects it), but Stripe rejects a literal empty
+  string with `Invalid request: Invalid email address: ` → `stripe_unavailable` 502 on every paid checkout,
+  so NO checkout session was ever created. Now omit the field when empty (for `mode=subscription` Stripe
+  creates the Customer + collects the email on the hosted page). CI missed it because the test helper used a
+  non-empty `buyer@example.test` while prod sends empty — added a regression test for the empty-email path.
 - **fix(tier-select): surface the real Stripe error in the `stripe_unavailable` 502 body (`detail`).**
   The 502 now carries Stripe's own error text (a masked `authentication_error`, a `No such price`
   `invalid_request_error`, or a transport/DNS error — never the secret key) so a prod checkout failure
