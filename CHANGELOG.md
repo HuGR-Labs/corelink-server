@@ -23,6 +23,19 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(analytics): deploy the `corelink-analytics` ingest worker to prod — the PLG beacon host was NXDOMAIN.**
+  `apps/analytics-worker` existed in-repo but was never deployed, so the admin-ui default ingest endpoint
+  `https://corelink-analytics.humangr.com/v1/event` (`src/lib/analytics.ts:13`) resolved to NXDOMAIN and the
+  entire PLG funnel (`signup_started`, conversions, usage) emitted zero data at launch (fire-and-forget +
+  swallowed, so no page broke — the funnel was just silently blind). Wired to prod: created the
+  `corelink-analytics-prod` D1 database, applied migration `0001_create_analytics_events.sql`, bound the
+  hostname as a **Workers Custom Domain** (matches the other `corelink-*` prod hosts — a bare proxied
+  route-record is NOT served; the working hosts carry a worker-managed read-only DNS record), added the
+  `nodejs_compat` flag (`@sentry/cloudflare` needs `node:async_hooks`), and set the `INGEST_KEY` +
+  `RESEND_API_KEY` secrets. Proven live: `/healthz` 200; browser-origin `POST /v1/event` →
+  `200 {"accepted":1}` with the row landing in D1; a disallowed `Origin` → `403` (CORS allow-list holds).
+  No admin-ui change needed — the CSP `connect-src` already allow-lists the host. `wrangler.toml` now carries
+  the real prod `database_id` + custom-domain binding so the repo matches deployed reality.
 - **feat(onboarding): DPA-acceptance backend — `POST /v1/onboarding/dpa-accept` unblocks the paid-checkout money-path.**
   The tier-select checkout gate `is_dpa_accepted(tenant, version)` (`SELECT 1 FROM dpa_acceptances …`)
   always returned false because NO endpoint wrote `dpa_acceptances` — so every paid checkout 403'd
