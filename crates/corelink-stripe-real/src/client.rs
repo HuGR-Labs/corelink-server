@@ -745,7 +745,6 @@ fn build_checkout_form(
 ) -> Vec<(&'static str, String)> {
     let mut form = vec![
         ("mode", "subscription".to_string()),
-        ("customer_email", req.customer_email.clone()),
         ("success_url", req.success_url.clone()),
         ("cancel_url", req.cancel_url.clone()),
         ("line_items[0][price]", price_id.to_string()),
@@ -753,6 +752,17 @@ fn build_checkout_form(
         ("metadata[tenant_id]", req.tenant_id.as_str().to_string()),
         ("metadata[tier]", req.tier.as_str().to_string()),
     ];
+    // `customer_email` MUST be OMITTED when empty, never sent as "". The
+    // container deliberately does not thread the buyer's PII email (privacy) and
+    // passes an empty `customer_email` so Stripe's hosted Checkout page collects
+    // it — but Stripe rejects a literal empty string with
+    // `Invalid request: Invalid email address: ` (a 400 → `stripe_unavailable`
+    // 502 on EVERY checkout, all tiers). For `mode=subscription` Stripe creates
+    // the Customer and collects the email on the hosted page when it is omitted.
+    let customer_email = req.customer_email.trim();
+    if !customer_email.is_empty() {
+        form.push(("customer_email", customer_email.to_string()));
+    }
     match promo {
         // Hosted promo-code field (mutually exclusive with `discounts`).
         CheckoutPromo::AllowCodes => {
@@ -1434,6 +1444,32 @@ mod tests {
         assert_eq!(form_get(&form, "mode"), Some("subscription"));
         assert_eq!(form_get(&form, "line_items[0][price]"), Some("price_123"));
         assert_eq!(form_get(&form, "metadata[tenant_id]"), Some("tenant_promo"));
+    }
+
+    #[test]
+    fn checkout_form_omits_empty_customer_email() {
+        // The container passes an EMPTY customer_email by design (privacy: the
+        // buyer's email is collected by Stripe's hosted page, not threaded
+        // through the container). Stripe rejects a LITERAL empty string with
+        // `Invalid request: Invalid email address: ` → 502 `stripe_unavailable`
+        // on EVERY checkout, all tiers. The form MUST omit the field when empty.
+        // Regression: the prior `checkout_req()` helper used a non-empty email,
+        // so no unit test ever exercised production's real empty-email path.
+        let req = CheckoutSessionRequest::new(
+            corelink_tier_selection::tenant::TenantId::new("tenant_x"),
+            corelink_tier_selection::tier::TierKind::Starter,
+            "",
+            "https://app/ok",
+            "https://app/cancel",
+        );
+        let form = build_checkout_form(&req, "price_123", &CheckoutPromo::AllowCodes);
+        assert!(
+            form.iter().all(|(k, _)| *k != "customer_email"),
+            "empty customer_email must be OMITTED, never sent as \"\": {form:?}"
+        );
+        // A non-empty email is still threaded (prefill path).
+        let form2 = build_checkout_form(&checkout_req(), "price_123", &CheckoutPromo::AllowCodes);
+        assert_eq!(form_get(&form2, "customer_email"), Some("buyer@example.test"));
     }
 
     #[test]
