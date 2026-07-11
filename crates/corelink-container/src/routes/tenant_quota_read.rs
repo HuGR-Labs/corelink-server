@@ -281,6 +281,7 @@ pub fn build_state_from_env() -> Option<TenantQuotaReadState> {
     clippy::unwrap_used,
     clippy::expect_used,
     clippy::panic,
+    clippy::indexing_slicing,
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
