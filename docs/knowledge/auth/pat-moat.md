@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "4e90956f02542ba0a7f70f17878c7a7ba4ebd679"
+checkpoint_sha: "444ce44563a4eb10cb6f8d46cdfbaf0dcaaf0c64"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -40,14 +40,16 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - The Worker-edge internal gate compares a presented secret against the expected one in constant time,
   copying into a fixed buffer so neither length nor content leaks via an early branch — one
   `timingSafeEqual` over equal-length buffers AND a single length-equality bit
-  (`worker/src/lib/internal_auth.ts:118-133`).
+  (`worker/src/lib/internal_auth.ts:136-151`).
 - That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (403),
   a missing/wrong header is 401, and only an exact match returns `null` to let the caller proceed
   (`worker/src/lib/internal_auth.ts:158-170`).
-- Per-consumer key resolution is `resolveConsumerKey`, which prefers a consumer's dedicated key but
-  treats a too-short dedicated key as ABSENT and falls back to the shared secret — so a mis-set
-  per-consumer key degrades to the shared gate rather than failing open
-  (`worker/src/lib/internal_auth.ts:88-93`).
+- Per-consumer key resolution is `resolveConsumerKey`, which prefers a consumer's dedicated key. A
+  genuinely UNSET dedicated key falls back to the shared secret (the common case). A dedicated key that is
+  EXPLICITLY SET but sub-floor (<32 chars) is a misconfiguration: it fails LOUD (`console.error`) +
+  fail-CLOSED (`null`, so that consumer's gate rejects until fixed) rather than silently widening the
+  consumer's blast radius to the shared key (deep-audit C/sub-floor)
+  (`worker/src/lib/internal_auth.ts:88-113`).
 - The internal consumers now split the DSR surface into TWO authorities. The irreversible physical-erase
   cascade (`/_internal/dsr/*`) gates on the `erase` key, but the per-user DSR legitimacy ANCHOR
   (`/_internal/dsr/anchor`) resolves its OWN dedicated `dsr_anchor` consumer key
@@ -68,7 +70,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - A token that fails the cheap HMAC fast-reject NEVER reaches the Argon2id layer
   (`crates/corelink-container/src/adapter_pat.rs:642-647`).
 - Both layers are constant-time with no length or content oracle — the edge compare
-  (`worker/src/lib/internal_auth.ts:118-133`) and the uniform `InvalidPat` collapse in the container
+  (`worker/src/lib/internal_auth.ts:136-151`) and the uniform `InvalidPat` collapse in the container
   (`crates/corelink-container/src/adapter_pat.rs:43-47`).
 - The edge gate fails CLOSED: an unbound/short secret is unavailable, never an open gate
   (`worker/src/lib/internal_auth.ts:158-164`).
@@ -120,9 +122,9 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 
 # Citations
 
-1. `worker/src/lib/internal_auth.ts:118-133` — the edge constant-time secret compare with no length oracle.
+1. `worker/src/lib/internal_auth.ts:136-151` — the edge constant-time secret compare with no length oracle.
 2. `worker/src/lib/internal_auth.ts:158-170` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
-2a. `worker/src/lib/internal_auth.ts:88-93` — `resolveConsumerKey`: dedicated-key preference with too-short→absent shared-key fallback.
+2a. `worker/src/lib/internal_auth.ts:88-113` — `resolveConsumerKey`: prefers a consumer's dedicated key; a SET-but-sub-floor (<32-char) dedicated key fails LOUD + fail-CLOSED (null) instead of silently widening to the shared key (deep-audit C/sub-floor); a genuinely UNSET dedicated key still falls back to shared.
 2b. `worker/src/lib/internal_auth.ts:85-87` — the `dsr_anchor` branch of the consumer-key ternary (`CORELINK_DSR_ANCHOR_AUTH_KEY`).
 2c. `worker/src/index.ts:275-277` — `internalConsumerForPath` special-cases `/_internal/dsr/anchor` → `dsr_anchor` before the `/_internal/dsr/*` erase catch-all.
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
