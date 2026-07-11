@@ -284,6 +284,22 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(audit): close the CF-6 chain-head laundering hole — an insider with D1 write could strip the signature and let the honest drain re-sign a forged head (backend-audit §3).**
+  The Ed25519-signed `audit_chain_head`, whose stated purpose is to make audit history un-forgeable against
+  "an insider with D1 write", was defeated by exactly that adversary: `check_head_on_resume`
+  (`crates/corelink-container/src/routes/audit_drain.rs`) returned `Proceed` (not `FailClosed`) whenever the
+  stored head signature was **NULL** or carried a **foreign `signing_key_id`**. So an attacker with D1 write
+  (which the `CLOUDFLARE_API_TOKEN` has) could rewrite the sealed rows + head, set `head_signature = NULL`
+  (they lack the write-only seed, so they cannot re-sign), and the next drain would adopt the forged head and
+  **re-sign it with the real key** — laundering the forgery. Fixed: once a signing seed is configured (the
+  signing regime is ACTIVE), a NULL signature, a foreign key id, or a verify failure is TAMPER → fail-CLOSED,
+  SEV-1. Legitimate pre-0080 legacy heads + coordinated seed/key rotations are handled by an EXPLICIT,
+  default-OFF, loudly-logged operator migration window (`AUDIT_CHAIN_TRUST_UNSIGNED_RESUME=1`) — never a silent
+  tolerance. Two tests that encoded the vulnerable "tolerate NULL / rotated key" behaviour as intended are
+  flipped to assert fail-closed; +3 tests including the explicit laundering-exploit repro. (The COMPLETE
+  D1-write-insider resistance additionally needs an external anchor — Rekor / R2 Object-Lock — and signed
+  key-rotation records; both remain tracked roadmap. The drain is inert in prod today, so this is a
+  pre-activation hardening, not a live-incident fix.)
 - **fix(analytics): trust-split the ingest endpoint — the browser (Origin) path could forge revenue/provisioning events (backend-audit finding).**
   The public ingest `POST /v1/event` authenticates browsers by the `Origin` header, which is attacker-
   controllable outside a browser — so anyone could `curl -H 'Origin: https://corelink-app.humangr.com'` a
