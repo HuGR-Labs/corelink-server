@@ -36,6 +36,30 @@ const ALLOWED_EVENT_NAMES: ReadonlySet<EventName> = new Set<EventName>([
     "subscription_canceled",
 ]);
 
+// Events that assert a business/revenue/provisioning TRUTH the browser has no
+// authority over. The public ingest endpoint authenticates browsers only by the
+// (spoofable) `Origin` header — so a non-browser attacker can forge any allowed
+// event. To stop forged revenue/churn/provisioning rows from poisoning the
+// funnel + MRR dashboards + the weekly digest, these names are accepted ONLY on
+// the trusted key path (`X-Corelink-Ingest-Key`); on the Origin (browser) path
+// they are rejected. The browser legitimately fires only intent/view signals
+// (e.g. `signup_started`, `pricing_view`) — never these.
+const SERVER_ONLY_EVENT_NAMES: ReadonlySet<EventName> = new Set<EventName>([
+    "signup_completed",
+    "tenant_created",
+    "pat_issued",
+    "first_cli_authed",
+    "first_cas_write",
+    "first_cache_hit",
+    "cache_hits_10",
+    "cache_hits_100",
+    "cache_hits_1k",
+    "team_member_invited",
+    "paid_subscription_started",
+    "plan_downgraded",
+    "subscription_canceled",
+]);
+
 interface IngestResult {
     accepted: number;
     rejected: number;
@@ -82,7 +106,7 @@ function constantTimeEqual(a: string, b: string): boolean {
  * failure. Keeps the rules narrow + explicit so privacy rules (no email, no IP)
  * are enforced at the gate rather than relying on every caller to be careful.
  */
-function validate(evt: unknown): string | null {
+function validate(evt: unknown, trusted: boolean): string | null {
     if (!evt || typeof evt !== "object") return "not_an_object";
     const e = evt as Record<string, unknown>;
     if (typeof e["id"] !== "string" || e["id"].length === 0 || e["id"].length > 64) {
@@ -90,6 +114,11 @@ function validate(evt: unknown): string | null {
     }
     if (typeof e["event_name"] !== "string" || !ALLOWED_EVENT_NAMES.has(e["event_name"] as EventName)) {
         return "unknown_event_name";
+    }
+    // Revenue/provisioning-truth events are only trustworthy from a keyed
+    // server caller; the spoofable-Origin browser path may not assert them.
+    if (!trusted && SERVER_ONLY_EVENT_NAMES.has(e["event_name"] as EventName)) {
+        return "server_only_event";
     }
     for (const field of ["tenant_id", "user_id", "session_id"] as const) {
         const v = e[field];
@@ -124,7 +153,9 @@ export async function handleIngest(request: Request, env: Env): Promise<Response
         return new Response("Method Not Allowed", { status: 405 });
     }
 
-    // 2. Authn: either CORS origin allow-list OR shared ingest key.
+    // 2. Authn: either CORS origin allow-list OR shared ingest key. Only the
+    // keyed path is TRUSTED — the `Origin` header is attacker-controllable
+    // outside a browser, so the Origin path is anonymous (untrusted) ingest.
     const origin = allowedOrigin(request, env);
     const providedKey = request.headers.get("X-Corelink-Ingest-Key") ?? "";
     const keyOk = env.INGEST_KEY ? constantTimeEqual(providedKey, env.INGEST_KEY) : false;
@@ -134,6 +165,7 @@ export async function handleIngest(request: Request, env: Env): Promise<Response
             headers: { "Content-Type": "application/json" },
         });
     }
+    const trusted = keyOk;
 
     // 3. Parse body.
     let body: unknown;
@@ -153,7 +185,11 @@ export async function handleIngest(request: Request, env: Env): Promise<Response
         ? ((body as { events: EventPayload[] }).events)
         : [body as EventPayload];
 
-    if (events.length === 0 || events.length > 100) {
+    // Batching (up to 100/request) is a trusted-server affordance. The anonymous
+    // Origin path (a real browser fires one event per `track()`) is capped at 1
+    // so a spoofed-Origin attacker can't amplify D1 writes 100× per request.
+    const maxBatch = trusted ? 100 : 1;
+    if (events.length === 0 || events.length > maxBatch) {
         return new Response(JSON.stringify({ error: "invalid_batch_size" }), {
             status: 400,
             headers: {
@@ -174,7 +210,7 @@ export async function handleIngest(request: Request, env: Env): Promise<Response
     );
 
     for (const evt of events) {
-        const reason = validate(evt);
+        const reason = validate(evt, trusted);
         if (reason) {
             result.rejected++;
             const id = (evt as { id?: unknown })?.id;

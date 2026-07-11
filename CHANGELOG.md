@@ -284,6 +284,18 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(analytics): trust-split the ingest endpoint — the browser (Origin) path could forge revenue/provisioning events (backend-audit finding).**
+  The public ingest `POST /v1/event` authenticates browsers by the `Origin` header, which is attacker-
+  controllable outside a browser — so anyone could `curl -H 'Origin: https://corelink-app.humangr.com'` a
+  forged `paid_subscription_started`/`plan_downgraded`/`tenant_created` for an arbitrary `tenant_id`, poisoning
+  the funnel + MRR dashboards + the weekly digest, and amplify D1 writes 100×/request. Fix (`apps/analytics-
+  worker/src/ingest.ts`): revenue/provisioning-truth events (`SERVER_ONLY_EVENT_NAMES`) are now accepted ONLY
+  on the trusted `X-Corelink-Ingest-Key` server path; on the anonymous Origin path they are rejected
+  (`server_only_event`), and that path is capped at 1 event/request (a real browser fires one per `track()`;
+  batching stays a keyed-server affordance) to kill write amplification. The legit browser beacon
+  (`signup_started` etc.) is unaffected. Proven against live prod (forged revenue event → rejected ×5; 50-event
+  spoofed batch → 400; real `signup_started` → 200) + 8 new vitest cases. Edge rate-limiting for raw request
+  floods stays a CF WAF rule (owner/edge, consistent with the other `corelink-*` hosts), not in-worker.
 - **fix(admin-ui): the Clerk auth screens said "Sign in to My Application" — pin the product name to "CoreLink".**
   The Clerk *application* name (Dashboard-level, above the instance) is unset, so every prebuilt widget fell
   back to Clerk's placeholder — the single most visible thing a customer hits at launch. That field is not
