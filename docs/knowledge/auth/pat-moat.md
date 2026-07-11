@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "33681473948d573e8dddac9f12c3c37ae09ef7a4"
+checkpoint_sha: "4e90956f02542ba0a7f70f17878c7a7ba4ebd679"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -53,7 +53,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   (`/_internal/dsr/anchor`) resolves its OWN dedicated `dsr_anchor` consumer key
   (`CORELINK_DSR_ANCHOR_AUTH_KEY`, held by githugr and DISTINCT from the eraser's key): it is matched by
   an exact-path special-case in `internalConsumerForPath` placed BEFORE the `/_internal/dsr/*` erase
-  catch-all (`worker/src/index.ts:274-276`) and resolved by the `dsr_anchor` branch of the
+  catch-all (`worker/src/index.ts:275-277`) and resolved by the `dsr_anchor` branch of the
   consumer-key ternary (`worker/src/lib/internal_auth.ts:85-87`). This is an anti-forge two-authority
   split — a leaked erase key cannot pass the anchor gate and vice-versa (least privilege, A6).
 - In the container the **first** verification step is the HMAC fast-reject: the plaintext is parsed and
@@ -124,7 +124,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 2. `worker/src/lib/internal_auth.ts:158-170` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
 2a. `worker/src/lib/internal_auth.ts:88-93` — `resolveConsumerKey`: dedicated-key preference with too-short→absent shared-key fallback.
 2b. `worker/src/lib/internal_auth.ts:85-87` — the `dsr_anchor` branch of the consumer-key ternary (`CORELINK_DSR_ANCHOR_AUTH_KEY`).
-2c. `worker/src/index.ts:274-276` — `internalConsumerForPath` special-cases `/_internal/dsr/anchor` → `dsr_anchor` before the `/_internal/dsr/*` erase catch-all.
+2c. `worker/src/index.ts:275-277` — `internalConsumerForPath` special-cases `/_internal/dsr/anchor` → `dsr_anchor` before the `/_internal/dsr/*` erase catch-all.
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
 4. `crates/corelink-container/src/adapter_pat.rs:43-47` — uniform `InvalidPat`: no on-the-wire oracle.
 5. `crates/corelink-container/src/adapter_pat.rs:642-647` — the HMAC fast-reject, pre-D1, no permit consumed.

@@ -5,7 +5,7 @@ description: "The HTTPS entry point: route table, PAT auth, server-trust header 
 source_files:
   - "worker/src/index.ts"
   - "worker/src/sentry-scrub.ts"
-checkpoint_sha: "33681473948d573e8dddac9f12c3c37ae09ef7a4"
+checkpoint_sha: "4e90956f02542ba0a7f70f17878c7a7ba4ebd679"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -26,7 +26,7 @@ keeps forged tokens cheap to reject before any expensive work.
 - The sole HTTPS ingress and route dispatcher: the architecture header documents the
   `Internet → Worker → DO → container` topology (`worker/src/index.ts:1-20`).
 - The auth authority for the native plane: it is the only layer that reads the D1 `pat.scope` and
-  forwards it as a server-trust header (`worker/src/index.ts:319-344`).
+  forwards it as a server-trust header (`worker/src/index.ts:320-345`).
 - The declarer of the container's env contract: every operator secret the container reads is first a
   field on the Worker `Env` interface here (`worker/src/index.ts:206`), then materialized onto the
   container by the per-tenant DO's `container.start({ env })` forward — owned by
@@ -116,7 +116,7 @@ keeps forged tokens cheap to reject before any expensive work.
 
 # Citations
 1. `worker/src/index.ts:1-20` — the architecture header documenting the Worker → DO → container topology.
-2. `worker/src/index.ts:319-344` — the `AuthResult` carrying the D1-resolved scope (the Worker is its sole authority).
+2. `worker/src/index.ts:320-345` — the `AuthResult` carrying the D1-resolved scope (the Worker is its sole authority).
 3. `worker/src/index.ts:460-499` — the `CLIENT_TRUST_HEADERS` strip list.
 4. `worker/src/index.ts:506-510` — `stripClientTrustHeaders` (delete-then-set discipline).
 5. `worker/src/index.ts:571-882` — the `matchRoute` ordered route table.
