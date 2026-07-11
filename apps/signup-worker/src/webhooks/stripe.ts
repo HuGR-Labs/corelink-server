@@ -157,17 +157,20 @@ interface StripeEvent {
 const MAX_TIMESTAMP_AGE_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
- * Decode a Stripe webhook secret. Stripe secrets are `whsec_<base64>`;
- * we return the raw bytes for HMAC.
+ * Derive the HMAC-SHA256 key from a Stripe webhook signing secret.
+ *
+ * Stripe uses the **entire `whsec_…` secret string** (prefix included) as the
+ * raw HMAC key — it does NOT strip the `whsec_` prefix and does NOT base64-decode
+ * the remainder. Verified empirically against stripe-node's
+ * `Stripe.webhooks.generateTestHeaderString` (see the KAT in the unit tests).
+ *
+ * The previous implementation base64-decoded the post-prefix remainder, which
+ * yields a WRONG key, so every real Stripe signature failed verification (400
+ * `invalid_signature`) and no paid customer's entitlement was ever materialised.
  */
 function decodeWebhookSecret(secret: string): Uint8Array | null {
     if (!secret.startsWith("whsec_")) return null;
-    try {
-        const b64 = secret.slice("whsec_".length);
-        return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    } catch {
-        return null;
-    }
+    return new TextEncoder().encode(secret);
 }
 
 /**
