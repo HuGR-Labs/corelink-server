@@ -743,6 +743,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // Read-only internal tenant-quota lookup: `GET /_internal/tenant/{tenant_id}/quota`.
+    // Returns the persisted `tenant_quota` row + a derived `unmetered` bit for a
+    // trusted internal caller (signup-worker / operator plane) WITHOUT a billable
+    // op. Gated by the dedicated `CORELINK_QUOTA_READ_AUTH_KEY` (falls back to
+    // CORELINK_INTERNAL_AUTH_KEY), same resolver as the DSR/erase surfaces; mounts
+    // only when that key (≥32 chars) + the D1 `StorageEnv` are present. Without D1
+    // there is nothing to read → unmounted (fail-CLOSED), mirroring audit/drain.
+    if let Some(quota_read_state) =
+        corelink_server::routes::tenant_quota_read::build_state_from_env()
+    {
+        info!("routes: /_internal/tenant/{{tenant_id}}/quota route mounted (quota-read/internal auth key + D1 present)");
+        app = app.merge(corelink_server::routes::tenant_quota_read::router(
+            quota_read_state,
+        ));
+    } else {
+        warn!(
+            "CORELINK_QUOTA_READ_AUTH_KEY/CORELINK_INTERNAL_AUTH_KEY (<32) or D1 absent; \
+             /_internal/tenant/{{tenant_id}}/quota route NOT mounted (fail-CLOSED)"
+        );
+    }
+
     // Artifact 1 (WP-C1): PUBLIC erasure-attestation verifier routes —
     // `GET /v1/public/attestation/{request_id}` + `GET /v1/public/keys/erasure/{region}.pub`.
     // UNAUTHENTICATED by design (an erasure proof is publicly verifiable): merged

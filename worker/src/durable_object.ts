@@ -568,6 +568,12 @@ export class CoreLinkServer implements DurableObject {
           // container 401s every anchor call the moment the dedicated key is bound
           // (the exact CP-1 self-inflicted-outage this block guards against).
           CORELINK_DSR_ANCHOR_AUTH_KEY: this.env.CORELINK_DSR_ANCHOR_AUTH_KEY ?? "",
+          // Read-only tenant-quota lookup (`/_internal/tenant/{tenant_id}/quota`):
+          // the container's `tenant_quota_read::build_state_from_env` reads a
+          // dedicated `CORELINK_QUOTA_READ_AUTH_KEY` (shared-key fallback). Forward
+          // it or the container 401s every quota-read call the moment the dedicated
+          // key is bound (the CP-1 self-inflicted-outage this block guards against).
+          CORELINK_QUOTA_READ_AUTH_KEY: this.env.CORELINK_QUOTA_READ_AUTH_KEY ?? "",
           // DSR customer portal (union #717): the receipt-JWT signer
           // (`dsr/portal.rs:659`) reads `DSR_RECEIPT_SIGNING_KEY`; forward it or a
           // bound CF secret silently no-ops and the portal falls back to a weak

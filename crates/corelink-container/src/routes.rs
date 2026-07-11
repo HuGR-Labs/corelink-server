@@ -158,6 +158,15 @@ pub mod dsr;
 /// `corelink_pat::mint::mint(...)` and returns the hash + plaintext
 /// for the signup-worker to write to D1 and Clerk session metadata.
 pub mod internal_pat;
+/// Read-only internal tenant-quota lookup:
+/// `GET /_internal/tenant/{tenant_id}/quota`. Returns the persisted
+/// `tenant_quota` row (monthly `$`-ceiling / accrued / cycle anchor) plus a
+/// derived `unmetered` bit. Internal-auth gated (constant-time; dedicated
+/// `CORELINK_QUOTA_READ_AUTH_KEY` → shared-key fallback via
+/// [`admin::resolve_internal_auth_key`]); 404 `no_quota_row` when the tenant
+/// has no row, 503 fail-CLOSED on a D1 fault. Env-gated mount in [`crate::main`]
+/// (unmounted when the key or D1 is absent) — mirrors [`audit_drain`].
+pub mod tenant_quota_read;
 /// npm registry cache surface (Phase B): `/npm/<tenant>/<rest>` nests the
 /// `corelink_adapter_host::npm` read-through `registry.npmjs.org` mirror.
 /// Option-B PAT re-verify via the shared [`crate::adapter_pat`] verifier;

@@ -298,7 +298,7 @@ candidates:
     title: "Billing quota check flow"
     status: "active"
     source_cluster: "flows"
-    seed_from: ["crates/corelink-container/src/tenant_quota.rs", "crates/corelink-container/src/quota_error.rs", "crates/corelink-container/src/routes/billing_ingest.rs"]
+    seed_from: ["crates/corelink-container/src/tenant_quota.rs", "crates/corelink-container/src/quota_error.rs", "crates/corelink-container/src/routes/billing_ingest.rs", "crates/corelink-container/src/routes/tenant_quota_read.rs"]
   - id: "flows/introspection-fabric"
     type: "RequestFlow"
     title: "Introspection flow (runners fabric)"

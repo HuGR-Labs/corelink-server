@@ -23,6 +23,20 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(container): read-only internal tenant-quota endpoint `GET /_internal/tenant/{tenant_id}/quota`.**
+  A low-privilege read surface that projects the persisted `tenant_quota` row —
+  `{monthly_budget_usd_micros, accrued_usd_micros, cycle_anchor_ms, unmetered}` — so an out-of-band caller
+  (e.g. the clw release-preflight) can assert a CI tenant is unmetered WITHOUT touching the accrual path.
+  Gated by the SAME constant-time padded `ct_eq` internal-auth gate as `/_internal/pat/mint` +
+  `/_internal/audit/drain`, on a dedicated `CORELINK_QUOTA_READ_AUTH_KEY` that falls back to the shared
+  `CORELINK_INTERNAL_AUTH_KEY` only when unset (a set-but-<32-char key fails CLOSED). Ordered fail-closed:
+  constant-time gate FIRST (401 before any D1) → UUID validation (400) → a single parameterized
+  `SELECT … WHERE tenant_id = ?1` (no injection); a missing row is 404 `no_quota_row` (caller inherits the
+  `$1M` default ⇒ unmetered), a D1 transport/decode fault is 503 (never a fabricated answer). Env-gated
+  mount (unmounted when the key or D1 is absent) mirroring `audit_drain`. `unmetered` is derived, not stored
+  (`monthly_budget_usd_micros >= DEFAULT_MONTHLY_BUDGET_USD_MICROS`). 11 Rust tests + clippy;
+  secrets-matrix row #183; forwarded to the container via the DO env. New Worker `quota_read` internal
+  consumer routes `/_internal/tenant/*/quota` to the dedicated key.
 - **feat(analytics): deploy the `corelink-analytics` ingest worker to prod — the PLG beacon host was NXDOMAIN.**
   `apps/analytics-worker` existed in-repo but was never deployed, so the admin-ui default ingest endpoint
   `https://corelink-analytics.humangr.com/v1/event` (`src/lib/analytics.ts:13`) resolved to NXDOMAIN and the
