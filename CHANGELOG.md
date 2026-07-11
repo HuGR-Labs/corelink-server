@@ -271,6 +271,11 @@ Each entry cross-references:
   boots clean at runtime (the `_optionalChain` pattern is structurally absent in v10).
 
 ### Fixed
+- **fix(tier-select): surface the real Stripe error in the `stripe_unavailable` 502 body (`detail`).**
+  The 502 now carries Stripe's own error text (a masked `authentication_error`, a `No such price`
+  `invalid_request_error`, or a transport/DNS error — never the secret key) so a prod checkout failure
+  is diagnosable without container-log access. `TierSelectHttpError::StripeUnavailable` now holds an
+  `Option<String>` detail, included in the JSON response.
 - **fix(signup-worker): Stripe webhook signature verification used the WRONG HMAC key — every real Stripe webhook was rejected (paid customer → no entitlement).**
   `decodeWebhookSecret` stripped the `whsec_` prefix and **base64-decoded the remainder** for the
   HMAC-SHA256 key. Stripe uses the **entire `whsec_…` secret string** (prefix included, never
