@@ -296,7 +296,7 @@ pub struct TierSelectResponse {
 
 /// Typed error → HTTP status mapping for this route. Kept in lockstep
 /// with `corelink_tier_selection::error::TierError`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TierSelectHttpError {
     /// Missing/invalid internal-auth header → 401.
     Unauthenticated,
@@ -312,8 +312,12 @@ pub enum TierSelectHttpError {
     LockHeld,
     /// Tenant already has an active subscription → 409.
     AlreadyActive,
-    /// Stripe transport / config failure → 502.
-    StripeUnavailable,
+    /// Stripe transport / config failure → 502. Carries a sanitized `detail`
+    /// (Stripe's own error text — a masked `authentication_error`, a
+    /// `No such price` `invalid_request_error`, or a transport/DNS error;
+    /// never the secret key), surfaced in the response body so a prod checkout
+    /// failure is diagnosable without container-log access.
+    StripeUnavailable(Option<String>),
     /// Audit-sink failure (fail-CLOSED) or other internal fault → 500.
     Internal,
 }
@@ -321,7 +325,7 @@ pub enum TierSelectHttpError {
 impl TierSelectHttpError {
     /// The wire status + machine-readable error code.
     #[must_use]
-    pub const fn parts(self) -> (StatusCode, &'static str) {
+    pub fn parts(&self) -> (StatusCode, &'static str) {
         match self {
             Self::Unauthenticated => (StatusCode::UNAUTHORIZED, "unauthenticated"),
             Self::NoVerifiedTenant => (StatusCode::UNAUTHORIZED, "no_verified_tenant"),
@@ -330,7 +334,7 @@ impl TierSelectHttpError {
             Self::DpaRequired => (StatusCode::FORBIDDEN, "dpa_required"),
             Self::LockHeld => (StatusCode::CONFLICT, "lock_held"),
             Self::AlreadyActive => (StatusCode::CONFLICT, "already_active"),
-            Self::StripeUnavailable => (StatusCode::BAD_GATEWAY, "stripe_unavailable"),
+            Self::StripeUnavailable(_) => (StatusCode::BAD_GATEWAY, "stripe_unavailable"),
             Self::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }
     }
@@ -339,7 +343,13 @@ impl TierSelectHttpError {
 impl IntoResponse for TierSelectHttpError {
     fn into_response(self) -> Response {
         let (status, code) = self.parts();
-        (status, Json(serde_json::json!({ "error": code }))).into_response()
+        let body = match self {
+            Self::StripeUnavailable(Some(detail)) => {
+                serde_json::json!({ "error": code, "detail": detail })
+            }
+            _ => serde_json::json!({ "error": code }),
+        };
+        (status, Json(body)).into_response()
     }
 }
 
@@ -882,11 +892,13 @@ where
                     stripe_error = %e,
                     "tier-select checkout create failed → 502 stripe_unavailable"
                 );
-                TierSelectHttpError::StripeUnavailable
+                TierSelectHttpError::StripeUnavailable(Some(e))
             })?;
         // Defense-in-depth: never hand back a non-TLS Checkout URL.
         if !created.checkout_url.starts_with("https://") {
-            return Err(TierSelectHttpError::StripeUnavailable);
+            return Err(TierSelectHttpError::StripeUnavailable(Some(
+                "checkout url was not https".to_string(),
+            )));
         }
         // Audit BEFORE the mirror mutation.
         audit
@@ -1540,7 +1552,10 @@ mod tests {
         };
         let (r, store, _c, _a) =
             run(store, checkout, SpyAudit::default(), RequestedTier::Starter).await;
-        assert_eq!(r.unwrap_err(), TierSelectHttpError::StripeUnavailable);
+        assert!(matches!(
+            r.unwrap_err(),
+            TierSelectHttpError::StripeUnavailable(_)
+        ));
         assert!(store.persisted.lock().unwrap().is_empty());
         assert!(
             store.locks.lock().unwrap().is_empty(),
