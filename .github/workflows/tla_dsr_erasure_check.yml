@@ -57,7 +57,7 @@ jobs:
       - name: Install pinned TLC v1.8.0 (SHA-256 verified — ADR-0042 §A1)
         env:
           TLC_VERSION: '1.8.0'
-          TLC_SHA256_PINNED: '237332bdcc79a35c7d26efa7b82c77c85c2744591c5598673a8a45085ff2a4fb'
+          TLC_SHA256_PINNED: '33de7da9ce1b7fffb9d1c184021178dbb051747be48504e65c584c423721a32e'
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/tla"

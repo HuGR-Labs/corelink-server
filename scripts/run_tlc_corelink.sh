@@ -13,7 +13,7 @@
 # basename to run the nightly extended bounds (per WI-S01-007 §6.1.7).
 #
 # Reuses ADR-0042 §A1 TLC v1.8.0 SHA-256 pinned bootstrap ceremony.
-# Expected pinned SHA-256: 237332bdcc79a35c7d26efa7b82c77c85c2744591c5598673a8a45085ff2a4fb
+# Expected pinned SHA-256: 33de7da9ce1b7fffb9d1c184021178dbb051747be48504e65c584c423721a32e
 
 set -euo pipefail
 
@@ -21,7 +21,7 @@ SPEC_NAME="${1:?Usage: $0 <spec_basename> [cfg_basename]}"
 CFG_NAME="${2:-${SPEC_NAME}}"
 SPEC_DIR="$(git rev-parse --show-toplevel)/specs/tla"
 TLC_VERSION_REQUIRED="1.8.0"
-TLC_SHA256_PINNED="237332bdcc79a35c7d26efa7b82c77c85c2744591c5598673a8a45085ff2a4fb"
+TLC_SHA256_PINNED="33de7da9ce1b7fffb9d1c184021178dbb051747be48504e65c584c423721a32e"
 
 if [[ ! -f "${SPEC_DIR}/${SPEC_NAME}.tla" ]]; then
   echo "ERROR: spec ${SPEC_DIR}/${SPEC_NAME}.tla not found" >&2
