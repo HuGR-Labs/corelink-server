@@ -4,7 +4,7 @@
 #
 # Drives a host-side simulated walkthrough of the RB-FM-153 runbook
 # (specs/05_quality/runbooks/RB-FM-153-grafana-cloud-outage.md)
-# against the in-memory observability stack (corelink-canary 3-region
+# against the in-memory observability stack (corelink-telemetry, formerly corelink-canary; 3-region
 # probe + corelink-analytics cardinality budget + corelink-logpush PII
 # redaction + corelink-tracing OTLP exporter + corelink-audit-chain
 # CloudEvents emit + corelink-slo multi-burn-rate alerts). Per WI
@@ -77,8 +77,8 @@ emit "  + internal probe synthetic_grafana_query_test 5+ consecutive failures."
 emit "  Host-side equivalent: corelink-canary observability health probe arm fires"
 emit "  ObservabilityUnhealthy decision when Mimir / Loki / Tempo / Dashboard breach"
 emit "  canonical SLO ceilings (30s / 5s / 30s / 3s respectively per WI-S09-007 §1.3)."
-emit "  Driving: cargo test -p corelink-canary --test prop_canary"
-if cargo test -p corelink-canary --test prop_canary -- --quiet \
+emit "  Driving: cargo test -p corelink-telemetry --test prop_canary"
+if cargo test -p corelink-telemetry --test prop_canary -- --quiet \
     >/tmp/rb_fm_153_step1.log 2>&1; then
     emit "  -> PASS: canary observability health probe arm correctly maps Grafana"
     emit "          stack outage → SEV-3 alert source via FailedRegion decision arm."
