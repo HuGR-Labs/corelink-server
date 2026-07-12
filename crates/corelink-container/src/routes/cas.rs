@@ -742,6 +742,27 @@ async fn pat_gate_reject(
     gate.verify(tenant, bearer).await.err()
 }
 
+/// Write-path variant of [`pat_gate_reject`]: independently re-derives the
+/// PAT's D1-stored `can_write` capability at the container (via
+/// `NativePatGate::verify_write`), not just tenant possession. This upholds the
+/// Option-B invariant — "a compromised or misconfigured Worker cannot grant
+/// write on its own" — on the CAS write path, matching the sibling build
+/// surfaces (Bazel `pat_gate_reject_write`, Turbo/cargo/OCI `verify_write`).
+/// A read-only PAT presented on a write path is rejected `403` even if the
+/// Worker-set scope header claimed write (deep-audit money/auth F-1).
+async fn pat_gate_reject_write(
+    state: &CasRouteState,
+    tenant: &str,
+    headers: &axum::http::HeaderMap,
+) -> Option<axum::response::Response> {
+    let gate = state.pat_gate.as_ref()?;
+    let bearer = headers
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    gate.verify_write(tenant, bearer).await.err()
+}
+
 /// `GET /v1/cas/:tenant/:hash` handler.
 ///
 /// The authenticated tenant (DO-injected `x-corelink-tenant-id`,
@@ -880,8 +901,11 @@ async fn handle_write(
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
-    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
-    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+    // Native PAT write-capability gate (deep-audit money/auth F-1): re-derive
+    // the PAT's D1 `can_write` at the container, not just tenant possession —
+    // AFTER scope, BEFORE storage. A read-only PAT on a write path ⇒ 403 even
+    // if the Worker-set scope header claimed write.
+    if let Some(resp) = pat_gate_reject_write(&state, &auth.0, &headers).await {
         return resp;
     }
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1) — see
@@ -1005,8 +1029,10 @@ async fn handle_batch_write(
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
-    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
-    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+    // Native PAT write-capability gate (deep-audit money/auth F-1): re-derive
+    // the PAT's D1 `can_write` at the container — AFTER scope, BEFORE storage.
+    // A read-only PAT on a write path ⇒ 403 even if the scope header claimed write.
+    if let Some(resp) = pat_gate_reject_write(&state, &auth.0, &headers).await {
         return resp;
     }
 
@@ -1489,8 +1515,10 @@ async fn handle_delete(
     if !scope.can_write() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
-    // Native PAT possession gate (finding #4) — AFTER scope, BEFORE storage.
-    if let Some(resp) = pat_gate_reject(&state, &auth.0, &headers).await {
+    // Native PAT write-capability gate (deep-audit money/auth F-1): a delete is
+    // a mutation — re-derive the PAT's D1 `can_write` at the container, not just
+    // possession. Read-only PAT on this write path ⇒ 403.
+    if let Some(resp) = pat_gate_reject_write(&state, &auth.0, &headers).await {
         return resp;
     }
     if let Some(gate) = state.quota.as_ref() {
