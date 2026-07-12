@@ -176,7 +176,11 @@ impl fmt::Display for TailEvents {
         if self.0.is_empty() {
             return write!(f, "(no matching audit events in window)");
         }
-        writeln!(f, "{:>8}  {:>14}  {:<44}  SUBJECT", "SEQ", "TIME_MS", "EVENT_TYPE")?;
+        writeln!(
+            f,
+            "{:>8}  {:>14}  {:<44}  SUBJECT",
+            "SEQ", "TIME_MS", "EVENT_TYPE"
+        )?;
         for (i, e) in self.0.iter().enumerate() {
             if i > 0 {
                 writeln!(f)?;

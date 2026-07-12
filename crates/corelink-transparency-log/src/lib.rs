@@ -88,7 +88,7 @@ pub mod witness;
 
 pub use entry::{RekorHashedRekord, SignedEntry};
 pub use error::TransparencyLogError;
-pub use submit::{InMemoryRekor, RekorSubmitter, WitnessOutcome, witness_or_degrade};
+pub use submit::{witness_or_degrade, InMemoryRekor, RekorSubmitter, WitnessOutcome};
 pub use witness::{InclusionProof, RekorWitnessRecord};
 
 /// Crate schema version (bump on breaking witness-record changes).

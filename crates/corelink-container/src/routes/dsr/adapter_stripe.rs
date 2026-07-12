@@ -162,8 +162,9 @@ impl BackendErasureAdapter for StripePseudonymizeAdapter {
 
         // No Stripe key ⇒ fail CLOSED (cannot redact the external PII ⇒ must
         // not claim success).
-        let stripe = StripeRealClient::from_env()
-            .map_err(|e| ErasureBackendError::Transport(format!("Stripe client init failed: {e}")))?;
+        let stripe = StripeRealClient::from_env().map_err(|e| {
+            ErasureBackendError::Transport(format!("Stripe client init failed: {e}"))
+        })?;
         let (pseudo_email, pseudo_name, marker_hex) = redaction_values(subject_id, erasure_salt);
 
         let mut redacted = 0u64;
@@ -192,10 +193,7 @@ impl BackendErasureAdapter for StripePseudonymizeAdapter {
         })
     }
 
-    fn verification_hash(
-        &self,
-        ctx: VerificationContext,
-    ) -> Result<[u8; 32], ErasureBackendError> {
+    fn verification_hash(&self, ctx: VerificationContext) -> Result<[u8; 32], ErasureBackendError> {
         // HONEST re-fingerprint (finding #1, option a): drive the result from a
         // LIVE Stripe GET, NOT a hardcoded "assume redacted" sentinel.
         let tid = ctx.tenant_id.to_string();
@@ -249,7 +247,10 @@ mod tests {
         assert_eq!(email1, email2, "deterministic email");
         assert_eq!(marker1, marker2, "deterministic marker");
         assert!(email1.ends_with("@deleted.invalid"));
-        assert!(!email1.contains(&sid.to_string()), "must not embed the raw subject id");
+        assert!(
+            !email1.contains(&sid.to_string()),
+            "must not embed the raw subject id"
+        );
         assert_eq!(name1, "Erased Subject (GDPR DSR)");
         assert_eq!(marker1.len(), 64, "sha256 hex");
     }
@@ -268,14 +269,23 @@ mod tests {
         // (the verification re-fingerprint asserts this SHAPE on the live object).
         let sid = Uuid::from_u128(0xdead_beef);
         let (email, _, _) = redaction_values(sid, &[5u8; 32]);
-        assert!(email_is_redacted(Some(&email)), "writer output must verify: {email}");
+        assert!(
+            email_is_redacted(Some(&email)),
+            "writer output must verify: {email}"
+        );
     }
 
     #[test]
     fn redacted_email_rejects_original_pii_and_garbage() {
         assert!(!email_is_redacted(None), "missing email is NOT redacted");
-        assert!(!email_is_redacted(Some("alice@example.com")), "real PII not redacted");
-        assert!(!email_is_redacted(Some("erased-short@deleted.invalid")), "non-16-hex");
+        assert!(
+            !email_is_redacted(Some("alice@example.com")),
+            "real PII not redacted"
+        );
+        assert!(
+            !email_is_redacted(Some("erased-short@deleted.invalid")),
+            "non-16-hex"
+        );
         assert!(
             !email_is_redacted(Some("erased-zzzzzzzzzzzzzzzz@deleted.invalid")),
             "non-hex middle"
@@ -321,7 +331,11 @@ mod tests {
         for ids in [
             Vec::<String>::new(),
             vec!["cus_1".to_string()],
-            vec!["cus_1".to_string(), "cus_2".to_string(), "cus_3".to_string()],
+            vec![
+                "cus_1".to_string(),
+                "cus_2".to_string(),
+                "cus_3".to_string(),
+            ],
         ] {
             assert_ne!(
                 reverify_mismatch_hash(&ids),
@@ -341,8 +355,14 @@ mod tests {
         let a = reverify_mismatch_hash(&["cus_a".to_string()]);
         let b = reverify_mismatch_hash(&["cus_b".to_string()]);
         let ab = reverify_mismatch_hash(&["cus_a".to_string(), "cus_b".to_string()]);
-        assert_ne!(a, b, "different single customer ⇒ different fingerprint (keyed)");
-        assert_ne!(a, ab, "more customers ⇒ different fingerprint (keyed to the set)");
+        assert_ne!(
+            a, b,
+            "different single customer ⇒ different fingerprint (keyed)"
+        );
+        assert_ne!(
+            a, ab,
+            "more customers ⇒ different fingerprint (keyed to the set)"
+        );
         assert_ne!(b, ab);
         assert_eq!(
             ab,

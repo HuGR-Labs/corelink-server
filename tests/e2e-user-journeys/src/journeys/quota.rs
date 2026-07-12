@@ -38,12 +38,7 @@ const MAX_PUT_ATTEMPTS: usize = 8;
 ///                   non-transient 5xx (crash-on-cap), etc. — the caller decides.
 ///   `Err(reason)` — a PERSISTENT transient fault after the budget; the caller
 ///                   GATES (a prod outage is not a quota-cap result → never a FAIL).
-fn put_blob_tolerant(
-    client: &Client,
-    url: &str,
-    token: &str,
-    blob: &[u8],
-) -> Result<u16, String> {
+fn put_blob_tolerant(client: &Client, url: &str, token: &str, blob: &[u8]) -> Result<u16, String> {
     let mut last = String::new();
     for attempt in 0..MAX_PUT_ATTEMPTS {
         match client
@@ -97,12 +92,7 @@ const WARMUP_READ_ATTEMPTS: usize = 6;
 /// 503/504/timeout are retried with a generous exponential budget; only a
 /// PERSISTENT fault after the whole budget is an `Err` (the caller GATES — a cold
 /// or outaged plane is not a cap result, never a FAIL).
-fn warm_up_plane(
-    client: &Client,
-    cfg: &Config,
-    tenant: &str,
-    token: &str,
-) -> Result<(), String> {
+fn warm_up_plane(client: &Client, cfg: &Config, tenant: &str, token: &str) -> Result<(), String> {
     for p in 0..WARMUP_PRIMING_READS {
         // Random unknown content-address → a pure read: warms the container + the
         // quota/tombstone D1 hops, mutates nothing.
@@ -173,10 +163,7 @@ const QUOTA_TEST_ENV: &str = "CORELINK_E2E_QUOTA_TEST";
 
 /// True iff the destructive cap drive is enabled (either flag).
 fn quota_drive_enabled(cfg: &Config) -> bool {
-    cfg.run_slow
-        || env::var(QUOTA_TEST_ENV)
-            .map(|v| v == "1")
-            .unwrap_or(false)
+    cfg.run_slow || env::var(QUOTA_TEST_ENV).map(|v| v == "1").unwrap_or(false)
 }
 
 /// Number of bounded blobs the aggressive cap-drive will write at most before
@@ -302,9 +289,7 @@ fn quota_hard_cap(cfg: &Config, client: &Client) -> JourneyResult {
             Ok(s) => s,
             // Persistent transient fault (cold plane / slow-prod) — not a quota
             // result; GATE rather than flaky-FAIL on a prod blip.
-            Err(reason) => {
-                return JourneyResult::gated(name, format!("PUT #{i}: {reason}"))
-            }
+            Err(reason) => return JourneyResult::gated(name, format!("PUT #{i}: {reason}")),
         };
         // Hard cap = 402 (ADR-0068 monthly $-ceiling) or 429 (rate cap). Either
         // proves the cap is enforced, not silently overaged.

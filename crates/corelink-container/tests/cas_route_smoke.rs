@@ -116,7 +116,9 @@ async fn cas_read_route_does_not_match_literal_braces_uri() {
         // handler — not a literal-route collision). The hash is a valid 64-hex
         // digest so the CAA-360 #9 malformed-hash guard passes and the request
         // still lands on the handler's not-found 404.
-        .uri("/v1/cas/%7Btenant%7D/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        .uri(
+            "/v1/cas/%7Btenant%7D/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
         .method("GET")
         // The `:tenant` path segment decodes to the literal `{tenant}`;
         // `AuthTenant` reads `x-corelink-tenant-id` and the handler 403s

@@ -296,8 +296,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             .map(|v| !v.trim().is_empty())
             .unwrap_or(false);
         let prod = storage_present && signing_key_present;
-        let gate_present =
-            corelink_server::adapter_pat::PatVerifier::from_env().is_some();
+        let gate_present = corelink_server::adapter_pat::PatVerifier::from_env().is_some();
         if should_fatal_on_missing_gate(prod, gate_present) {
             tracing::error!(
                 event = "native_pat_gate_missing_in_prod",
@@ -421,7 +420,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let email_hash_salt_present = std::env::var("EMAIL_HASH_SALT")
                 .map(|v| !v.trim().is_empty())
                 .unwrap_or(false);
-            if email_hash_salt_missing_in_prod(prod_by_independent_signal, email_hash_salt_present) {
+            if email_hash_salt_missing_in_prod(prod_by_independent_signal, email_hash_salt_present)
+            {
                 missing.push("EMAIL_HASH_SALT (CTRL-PRIV-001 email_hash pseudonym salt)");
             }
             // STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}: the revenue path. The
@@ -430,11 +430,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // `plan_{tier}` placeholder → `UnknownPlan` → 422 on a paying customer
             // (see cache_tier_price_ids_missing_in_prod). Must-arm in prod, and
             // kept identical to the signup-worker's reverse map.
-            for env_name in
-                cache_tier_price_ids_missing_in_prod(prod_by_independent_signal, |n| {
-                    std::env::var(n).ok()
-                })
-            {
+            for env_name in cache_tier_price_ids_missing_in_prod(prod_by_independent_signal, |n| {
+                std::env::var(n).ok()
+            }) {
                 missing.push(env_name);
             }
             if !missing.is_empty() {
@@ -673,8 +671,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // mint secret — tight blast radius). Mounted only when that secret (≥32
     // chars) + the PAT signing key + the D1 `StorageEnv` are ALL present
     // (fail-CLOSED: unmounted in dev/CI).
-    if let Some(introspect_state) =
-        corelink_server::routes::auth_introspect::build_state_from_env()
+    if let Some(introspect_state) = corelink_server::routes::auth_introspect::build_state_from_env()
     {
         info!(
             "routes: /internal/v1/auth/introspect mounted (FABRIC_INTROSPECT_AUTH_KEY + PAT signing key + D1 present)"
@@ -699,9 +696,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(billing_ingest_state) =
         corelink_server::routes::billing_ingest::build_state_from_env()
     {
-        info!(
-            "routes: /internal/v1/billing/usage mounted (BILLING_INGEST_AUTH_KEY + D1 present)"
-        );
+        info!("routes: /internal/v1/billing/usage mounted (BILLING_INGEST_AUTH_KEY + D1 present)");
         app = app.merge(corelink_server::routes::billing_ingest::router(
             billing_ingest_state,
         ));
@@ -732,7 +727,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // surface; mounts only when that key (≥32 chars) + the D1 `StorageEnv` are
     // present. Without D1 there is nothing to seal → unmounted (fail-CLOSED).
     if let Some(audit_drain_state) = corelink_server::routes::audit_drain::build_state_from_env() {
-        info!("routes: /_internal/audit/drain route mounted (erase/internal auth key + D1 present)");
+        info!(
+            "routes: /_internal/audit/drain route mounted (erase/internal auth key + D1 present)"
+        );
         app = app.merge(corelink_server::routes::audit_drain::router(
             audit_drain_state,
         ));
@@ -944,8 +941,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // fallback (test fixtures / pre-price-id deployments) ONLY when
         // the corresponding env var is unset/empty.
         let tier_selector = Arc::new(build_tier_selector());
-        let mut sub_handler =
-            D1SubscriptionStateHandler::new(billing_d1.clone(), billing_audit.clone(), tier_selector);
+        let mut sub_handler = D1SubscriptionStateHandler::new(
+            billing_d1.clone(),
+            billing_audit.clone(),
+            tier_selector,
+        );
         // Runners entitlement seed (env-gated): when STRIPE_PRICE_ID_RUNNER_* are
         // set, a Runners-tier subscription seeds `runners_entitlement` instead of
         // `tier_selections`. Dormant (no-op) until those prices exist.
@@ -956,9 +956,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             );
             sub_handler = sub_handler.with_runners_resolver(Arc::new(runners_resolver));
         } else {
-            tracing::info!(
-                "Runners entitlement seed dormant (no STRIPE_PRICE_ID_RUNNER_* set)"
-            );
+            tracing::info!("Runners entitlement seed dormant (no STRIPE_PRICE_ID_RUNNER_* set)");
         }
         let materializer: Arc<dyn StateMaterializer> = Arc::new(sub_handler);
         let dispatcher_audit = Arc::new(RealStripeAuditEmitter::new(billing_audit.clone()));
@@ -1007,7 +1005,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         corelink_server::routes::dsr_anchor::build_state_from_env(dsr_anchor_auth_key)
     {
         info!("routes: /_internal/dsr/anchor route mounted (auth key + D1 present)");
-        app = app.merge(corelink_server::routes::dsr_anchor::router(dsr_anchor_state));
+        app = app.merge(corelink_server::routes::dsr_anchor::router(
+            dsr_anchor_state,
+        ));
     } else {
         warn!(
             "CORELINK_DSR_ANCHOR_AUTH_KEY / D1 incomplete; \
@@ -1028,8 +1028,9 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::expect_used)]
 
     use super::{
-        build_runners_resolver_from, build_tier_selector_from, cache_tier_price_ids_missing_in_prod,
-        email_hash_salt_missing_in_prod, should_fatal_on_missing_gate,
+        build_runners_resolver_from, build_tier_selector_from,
+        cache_tier_price_ids_missing_in_prod, email_hash_salt_missing_in_prod,
+        should_fatal_on_missing_gate,
     };
     use corelink_billing_stripe_materializer::{
         RunnersEntitlement, RunnersEntitlementResolver, TierSelectError, TierSelector,

@@ -298,7 +298,10 @@ mod tests {
         let json = serde_json::to_string(&env).unwrap();
         assert!(json.contains("\"errors\""), "envelope shape must survive");
         assert!(json.contains("UNAUTHORIZED"), "code preserved");
-        assert!(!json.contains("D1"), "scrubbed body must not leak D1: {json}");
+        assert!(
+            !json.contains("D1"),
+            "scrubbed body must not leak D1: {json}"
+        );
         assert!(json.contains(RID), "ref present: {json}");
     }
 }

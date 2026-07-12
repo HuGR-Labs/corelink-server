@@ -110,7 +110,10 @@ async fn post_token(state: &AppState, form: &str) -> (StatusCode, serde_json::Va
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(Body::from(form.to_string()))
         .unwrap();
-    let resp = router(state.clone()).oneshot(req).await.expect("post token");
+    let resp = router(state.clone())
+        .oneshot(req)
+        .await
+        .expect("post token");
     let status = resp.status();
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     let json = if body.is_empty() {
@@ -267,7 +270,10 @@ async fn full_docker_push_flow_via_post_token() {
         .header("Content-Type", "application/vnd.oci.image.manifest.v1+json")
         .body(Body::from(mbody))
         .unwrap();
-    let resp = router(state.clone()).oneshot(req).await.expect("put manifest");
+    let resp = router(state.clone())
+        .oneshot(req)
+        .await
+        .expect("put manifest");
     assert_eq!(resp.status(), StatusCode::CREATED);
 
     // Audit row for the blob push was emitted.

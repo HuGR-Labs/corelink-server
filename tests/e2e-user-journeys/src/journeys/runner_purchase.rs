@@ -85,7 +85,10 @@ fn checkout_surface_rejects_unauthenticated(cfg: &Config, client: &Client) -> Jo
         }
     };
 
-    match expect_gate_denied("POST /v1/onboarding/tier-select (no auth)", resp.status().as_u16()) {
+    match expect_gate_denied(
+        "POST /v1/onboarding/tier-select (no auth)",
+        resp.status().as_u16(),
+    ) {
         Ok(()) => JourneyResult::pass(name, ms(start)),
         Err(m) => JourneyResult::fail(name, ms(start), m),
     }

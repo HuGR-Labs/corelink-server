@@ -58,12 +58,13 @@ use corelink_byok::{
 };
 use corelink_handler_cas::DigestAlgo;
 use hmac::{Hmac, KeyInit, Mac};
-use sha2::Sha256;
 use serde_json::{json, Value};
+use sha2::Sha256;
 use zeroize::Zeroizing;
 
 use crate::customer_d1::{
-    ByokConfigError, ByokConfigRows, ByokCryptoMode, ByokState, D1ByokConfigReader, TenantByokConfig,
+    ByokConfigError, ByokConfigRows, ByokCryptoMode, ByokState, D1ByokConfigReader,
+    TenantByokConfig,
 };
 use crate::storage::d1_http::D1HttpClient;
 
@@ -293,7 +294,10 @@ impl<R: ByokConfigRows + core::fmt::Debug + 'static> ByokSecretSource for D1Byok
             return Ok(None);
         }
         let tcs_wrapped = decode_blob(wrapped_val)?;
-        let cmk_key_id = row.get("cmk_key_id").and_then(Value::as_str).map(str::to_owned);
+        let cmk_key_id = row
+            .get("cmk_key_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         let tcs_version = row.get("tcs_version").and_then(Value::as_i64).unwrap_or(1);
         Ok(Some(WrappedTcsRow {
             tcs_wrapped,
@@ -460,13 +464,9 @@ impl TcsResolver {
         // the wrapped-DEK envelope (the cfg.cmk_provider string was validated at
         // onboarding; the provider matches it by construction).
         let provider = self.kms.provider_kind();
-        let key_arn = cfg
-            .cmk_key_id
-            .clone()
-            .or(row.cmk_key_id)
-            .ok_or_else(|| {
-                BYOKError::Provider(format!("no CMK key id for active tenant {}", cfg.tenant_id))
-            })?;
+        let key_arn = cfg.cmk_key_id.clone().or(row.cmk_key_id).ok_or_else(|| {
+            BYOKError::Provider(format!("no CMK key id for active tenant {}", cfg.tenant_id))
+        })?;
         let key_id = KmsKeyId {
             provider,
             key_arn_or_id: key_arn,
@@ -712,7 +712,9 @@ fn parse_provider_kind(s: &str) -> Result<KmsProviderKind, String> {
         "gcp_kms" => Ok(KmsProviderKind::GcpKms),
         "azure_key_vault" => Ok(KmsProviderKind::AzureKeyVault),
         "hashicorp_vault" => Ok(KmsProviderKind::HashicorpVault),
-        other => Err(format!("byok_envelope.kms_provider: unknown value {other:?}")),
+        other => Err(format!(
+            "byok_envelope.kms_provider: unknown value {other:?}"
+        )),
     }
 }
 
@@ -1139,9 +1141,9 @@ pub fn engagement_for(cfg: &TenantByokConfig) -> ByokEngagement {
         // tenant; the caller dispatches on the carried mode.
         ByokState::Active => ByokEngagement::Encrypt(cfg.crypto_mode),
         // Backfill dual-read (audit H7) deferred to Wave 4 — never plaintext.
-        ByokState::Partial => {
-            ByokEngagement::FailClosed("BYOK partial/backfill dual-read not wired (deferred to Wave 4)")
-        }
+        ByokState::Partial => ByokEngagement::FailClosed(
+            "BYOK partial/backfill dual-read not wired (deferred to Wave 4)",
+        ),
         ByokState::Inactive | ByokState::Pending | ByokState::Shredded => ByokEngagement::Plaintext,
     }
 }
@@ -1183,10 +1185,18 @@ mod tests {
     }
     impl MockConfigSource {
         fn ok(cfg: Option<TenantByokConfig>) -> Self {
-            Self { cfg, calls: Mutex::new(0), fail: false }
+            Self {
+                cfg,
+                calls: Mutex::new(0),
+                fail: false,
+            }
         }
         fn failing() -> Self {
-            Self { cfg: None, calls: Mutex::new(0), fail: true }
+            Self {
+                cfg: None,
+                calls: Mutex::new(0),
+                fail: true,
+            }
         }
         fn call_count(&self) -> usize {
             *lock(&self.calls)
@@ -1228,10 +1238,16 @@ mod tests {
     }
     impl MockKms {
         fn ok() -> Self {
-            Self { fail: false, calls: Mutex::new(0) }
+            Self {
+                fail: false,
+                calls: Mutex::new(0),
+            }
         }
         fn failing() -> Self {
-            Self { fail: true, calls: Mutex::new(0) }
+            Self {
+                fail: true,
+                calls: Mutex::new(0),
+            }
         }
         fn unwrap_count(&self) -> usize {
             *lock(&self.calls)
@@ -1267,7 +1283,9 @@ mod tests {
                 return Err(BYOKError::Provider("mock kms down".to_owned()));
             }
             if wrapped.ciphertext.len() != 32 {
-                return Err(BYOKError::DekLengthInvalid { got: wrapped.ciphertext.len() });
+                return Err(BYOKError::DekLengthInvalid {
+                    got: wrapped.ciphertext.len(),
+                });
             }
             let mut bytes = [0u8; 32];
             bytes.copy_from_slice(&wrapped.ciphertext);
@@ -1309,7 +1327,11 @@ mod tests {
         let cache = ByokConfigCache::new(src.clone(), 60);
         assert!(cache.get(TENANT).await.unwrap().is_none());
         assert!(cache.get(TENANT).await.unwrap().is_none());
-        assert_eq!(src.call_count(), 1, "the not-configured answer must be cached");
+        assert_eq!(
+            src.call_count(),
+            1,
+            "the not-configured answer must be cached"
+        );
     }
 
     #[tokio::test]
@@ -1337,7 +1359,9 @@ mod tests {
     async fn tcs_resolver_unwraps_then_caches() {
         let kms = Arc::new(MockKms::ok());
         let resolver = TcsResolver::new(
-            Arc::new(MockSecretSource { row: Some(wrapped_tcs()) }),
+            Arc::new(MockSecretSource {
+                row: Some(wrapped_tcs()),
+            }),
             kms.clone(),
             300,
         )
@@ -1347,7 +1371,11 @@ mod tests {
         let t2 = resolver.resolve(&cfg).await.unwrap();
         assert_eq!(t1.bytes, [7u8; 32]);
         assert_eq!(t1.bytes, t2.bytes);
-        assert_eq!(kms.unwrap_count(), 1, "the unwrapped Tcs must be cached (≤300s)");
+        assert_eq!(
+            kms.unwrap_count(),
+            1,
+            "the unwrapped Tcs must be cached (≤300s)"
+        );
     }
 
     #[tokio::test]
@@ -1365,7 +1393,9 @@ mod tests {
     #[tokio::test]
     async fn tcs_resolver_fail_closed_when_kms_down() {
         let resolver = TcsResolver::new(
-            Arc::new(MockSecretSource { row: Some(wrapped_tcs()) }),
+            Arc::new(MockSecretSource {
+                row: Some(wrapped_tcs()),
+            }),
             Arc::new(MockKms::failing()),
             300,
         )
@@ -1420,7 +1450,10 @@ mod tests {
         let h1 = harden_digest(&tcs, &digest);
         let h2 = harden_digest(&tcs, &digest);
         assert_ne!(h1, digest, "hardened key must not reveal the raw digest");
-        assert_eq!(h1, h2, "deterministic per (TCS, digest) ⇒ intra-tenant dedup hits");
+        assert_eq!(
+            h1, h2,
+            "deterministic per (TCS, digest) ⇒ intra-tenant dedup hits"
+        );
         // HMAC-SHA256 ⇒ 32 bytes ⇒ 64 hex chars (same shape as a digest slot).
         assert_eq!(h1.len(), 64);
         assert!(h1.chars().all(|c| c.is_ascii_hexdigit()));
@@ -1432,7 +1465,10 @@ mod tests {
         let other = "b".repeat(64);
         let a = harden_digest(&Tcs::from_bytes([1u8; 32]), &digest);
         let b = harden_digest(&Tcs::from_bytes([2u8; 32]), &digest);
-        assert_ne!(a, b, "different TCS ⇒ different hardened key (no cross-tenant correlation)");
+        assert_ne!(
+            a, b,
+            "different TCS ⇒ different hardened key (no cross-tenant correlation)"
+        );
         let c = harden_digest(&Tcs::from_bytes([1u8; 32]), &other);
         assert_ne!(a, c, "different digest ⇒ different hardened key");
     }
@@ -1446,8 +1482,14 @@ mod tests {
         let digest = "c".repeat(64);
         let hardened = harden_digest(&tcs, &digest);
         let ctx = cas_crypto_context(TENANT, &digest, DigestAlgo::Blake3, "arn:cmk");
-        assert_eq!(ctx.plaintext_digest, digest, "ctx must bind the REAL digest");
-        assert_ne!(ctx.plaintext_digest, hardened, "ctx digest is NOT the storage key");
+        assert_eq!(
+            ctx.plaintext_digest, digest,
+            "ctx must bind the REAL digest"
+        );
+        assert_ne!(
+            ctx.plaintext_digest, hardened,
+            "ctx digest is NOT the storage key"
+        );
         // Round-trip still works with the real-digest context.
         let pt = b"payload".to_vec();
         let stored = encrypt_cas_blob(&pt, &tcs, &ctx).unwrap();
@@ -1481,7 +1523,10 @@ mod tests {
         let pt = b"identical content".to_vec();
         let a = encrypt_cas_blob(&pt, &tcs, &ctx()).unwrap();
         let b = encrypt_cas_blob(&pt, &tcs, &ctx()).unwrap();
-        assert_eq!(a, b, "convergent ⇒ identical stored bytes (dedup-idempotent)");
+        assert_eq!(
+            a, b,
+            "convergent ⇒ identical stored bytes (dedup-idempotent)"
+        );
     }
 
     #[test]
@@ -1541,8 +1586,14 @@ mod tests {
         // Different surface ⇒ different ciphertext for identical input.
         assert_ne!(ac_blob, cas_blob, "surface must perturb the derivation");
         // Cross-surface decrypt must fail (never returns plaintext).
-        assert!(decrypt_cas_blob(&ac_blob, &tcs, &ctx()).is_err(), "AC blob must not decrypt as CAS");
-        assert!(decrypt_cas_blob(&cas_blob, &tcs, &ac_ctx()).is_err(), "CAS blob must not decrypt as AC");
+        assert!(
+            decrypt_cas_blob(&ac_blob, &tcs, &ctx()).is_err(),
+            "AC blob must not decrypt as CAS"
+        );
+        assert!(
+            decrypt_cas_blob(&cas_blob, &tcs, &ac_ctx()).is_err(),
+            "CAS blob must not decrypt as AC"
+        );
     }
 
     #[test]
@@ -1624,7 +1675,11 @@ mod tests {
         let ctx = mode_b_ctx();
         let pt = b"mode b secret payload".to_vec();
         let stored = me.encrypt(&pt, &ctx).await.unwrap();
-        assert_eq!(&stored[..4], MODE_B_MAGIC, "Mode-B blob carries the CLB2 magic");
+        assert_eq!(
+            &stored[..4],
+            MODE_B_MAGIC,
+            "Mode-B blob carries the CLB2 magic"
+        );
         assert_ne!(stored[4..].to_vec(), pt, "stored bytes must be ciphertext");
         assert_eq!(me.decrypt(&stored, &ctx).await.unwrap(), pt, "round-trip");
     }
@@ -1659,8 +1714,16 @@ mod tests {
         let first = me.encrypt(&pt, &ctx).await.unwrap();
         let second = me.encrypt(&pt, &ctx).await.unwrap();
         assert_eq!(first, second, "re-PUT reuses the persisted DEK (no orphan)");
-        assert_eq!(me.decrypt(&first, &ctx).await.unwrap(), pt, "original still decrypts");
-        assert_eq!(lock(&store.inner).len(), 1, "exactly one envelope row per blob");
+        assert_eq!(
+            me.decrypt(&first, &ctx).await.unwrap(),
+            pt,
+            "original still decrypts"
+        );
+        assert_eq!(
+            lock(&store.inner).len(),
+            1,
+            "exactly one envelope row per blob"
+        );
     }
 
     #[tokio::test]
@@ -1677,7 +1740,11 @@ mod tests {
             "row stored under the surface-qualified key"
         );
         me.reclaim(&ctx).await.unwrap();
-        assert_eq!(lock(&store.inner).len(), 0, "reclaim deletes the envelope row");
+        assert_eq!(
+            lock(&store.inner).len(),
+            0,
+            "reclaim deletes the envelope row"
+        );
     }
 
     #[tokio::test]
@@ -1695,7 +1762,10 @@ mod tests {
         let dek_before = lock(&store.inner).get(&key).unwrap().wrapped_dek.clone();
         let nonce_before = lock(&store.inner).get(&key).unwrap().nonce;
         me.reclaim(&ctx).await.unwrap();
-        assert!(lock(&store.inner).get(&key).is_none(), "row gone after reclaim");
+        assert!(
+            lock(&store.inner).get(&key).is_none(),
+            "row gone after reclaim"
+        );
         // Re-PUT mints a brand-new random DEK + nonce (no stale reuse).
         me.encrypt(b"fresh-dek", &ctx).await.unwrap();
         let row_after = lock(&store.inner).get(&key).unwrap().clone();

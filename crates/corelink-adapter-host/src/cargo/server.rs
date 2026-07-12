@@ -123,7 +123,10 @@ pub fn build_router(config: CargoAdapterConfig) -> Router {
     // takes the LAST path segment. In standalone sccache mode the client hits
     // `/<key>` (a single segment), which the catch-all matches identically.
     Router::new()
-        .route("/{*path}", get(handle_get).put(handle_put).head(handle_head))
+        .route(
+            "/{*path}",
+            get(handle_get).put(handle_put).head(handle_head),
+        )
         .with_state(state)
 }
 
@@ -396,9 +399,7 @@ mod tests {
 
     use std::sync::Mutex as StdMutex;
 
-    use crate::cargo::ports::{
-        CasError, CasStore, TenantResolveError, TenantResolver,
-    };
+    use crate::cargo::ports::{CasError, CasStore, TenantResolveError, TenantResolver};
     use axum::body::Body;
     use http::Request as HttpRequest;
     use tower::ServiceExt as _; // for `oneshot`
@@ -507,7 +508,11 @@ mod tests {
 
         let resp = router.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-        assert_eq!(cas.puts.lock().unwrap().len(), 0, "no write on auth failure");
+        assert_eq!(
+            cas.puts.lock().unwrap().len(),
+            0,
+            "no write on auth failure"
+        );
     }
 
     // --- M7 (COGS): sccache HEAD must use the metadata-only `exists` probe,

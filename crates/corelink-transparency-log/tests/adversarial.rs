@@ -10,8 +10,8 @@
 )]
 
 use corelink_transparency_log::{
-    InMemoryRekor, RekorWitnessRecord, SignedEntry, TransparencyLogError, WitnessOutcome,
-    witness_or_degrade,
+    witness_or_degrade, InMemoryRekor, RekorWitnessRecord, SignedEntry, TransparencyLogError,
+    WitnessOutcome,
 };
 
 fn entry() -> SignedEntry {
@@ -34,7 +34,9 @@ async fn rekor_outage_never_errors_the_caller() {
 async fn deterministic_rejection_is_decoupled_from_durability() {
     let rekor = InMemoryRekor::new();
     rekor
-        .arm_fault(TransparencyLogError::Rejected("unsupported algorithm".into()))
+        .arm_fault(TransparencyLogError::Rejected(
+            "unsupported algorithm".into(),
+        ))
         .unwrap();
     let out = witness_or_degrade(&rekor, &entry()).await;
     // Degraded (not witnessed) — but crucially never an Err that the write

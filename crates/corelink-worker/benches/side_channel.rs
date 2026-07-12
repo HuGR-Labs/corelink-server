@@ -40,10 +40,10 @@
 
 use std::time::Duration;
 
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use std::hint::black_box;
 
 use corelink_worker::middleware::timing_padding::{
     bootstrap_median_ci, canonical_pad_target, mann_whitney_u_p_value, JitterPolicy,

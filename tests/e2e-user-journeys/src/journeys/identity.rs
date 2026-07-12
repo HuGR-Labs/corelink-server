@@ -51,7 +51,9 @@ fn onboarding_ping(cfg: &Config, client: &Client) -> JourneyResult {
                 format!("/api/health status field not SERVING: {body}"),
             )
         }
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("/api/health not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("/api/health not JSON: {e}"))
+        }
     }
 
     // Step 2 — a valid PAT must reach an authenticated endpoint.
@@ -117,7 +119,11 @@ fn auth_rejection(cfg: &Config, client: &Client) -> JourneyResult {
     }
 
     // 2b — malformed (too short) token.
-    match client.get(&me).header(AUTHORIZATION, "Bearer tooshort123").send() {
+    match client
+        .get(&me)
+        .header(AUTHORIZATION, "Bearer tooshort123")
+        .send()
+    {
         Ok(r) => {
             if let Err(m) = expect_status("malformed-token", r.status().as_u16(), 401) {
                 return JourneyResult::fail(name, ms(start), m);

@@ -124,12 +124,7 @@ fn www_auth(resp: &reqwest::blocking::Response) -> Option<String> {
 /// Mint an OCI bearer from P1's PAT for `scope` (empty string ⇒ docker-login
 /// credential-check token). Uses the GET `/token` leg. Returns the bearer or a
 /// human error.
-fn mint_bearer(
-    client: &Client,
-    base: &str,
-    pat: &str,
-    scope: &str,
-) -> Result<String, String> {
+fn mint_bearer(client: &Client, base: &str, pat: &str, scope: &str) -> Result<String, String> {
     let url = if scope.is_empty() {
         format!("{base}/token?service={OCI_SERVICE}")
     } else {
@@ -145,7 +140,9 @@ fn mint_bearer(
         .map_err(|e| format!("GET {url}: {e}"))?;
     let code = resp.status().as_u16();
     if code != 200 {
-        return Err(format!("GET /token got {code} (expected 200) for scope={scope:?}"));
+        return Err(format!(
+            "GET /token got {code} (expected 200) for scope={scope:?}"
+        ));
     }
     let body: Value = resp.json().map_err(|e| format!("/token not JSON: {e}"))?;
     body["token"]
@@ -282,7 +279,9 @@ fn j1_v2_challenge(cfg: &Config, client: &Client) -> JourneyResult {
 
     let resp = match client.get(format!("{base}/v2/")).send() {
         Ok(r) => r,
-        Err(e) => return JourneyResult::gated(name, format!("OCI endpoint unreachable ({base}): {e}")),
+        Err(e) => {
+            return JourneyResult::gated(name, format!("OCI endpoint unreachable ({base}): {e}"))
+        }
     };
     let code = resp.status().as_u16();
     if code != 401 {
@@ -345,7 +344,11 @@ fn j2_token_get(cfg: &Config, client: &Client) -> JourneyResult {
     let scope = format!("repository:{repo}:pull");
     match mint_bearer(client, &base, pat, &scope) {
         Ok(tok) if !tok.is_empty() => JourneyResult::pass(name, ms(start)),
-        Ok(_) => JourneyResult::fail(name, ms(start), "GET /token returned an empty token".to_string()),
+        Ok(_) => JourneyResult::fail(
+            name,
+            ms(start),
+            "GET /token returned an empty token".to_string(),
+        ),
         Err(e) => JourneyResult::fail(name, ms(start), e),
     }
 }
@@ -381,14 +384,17 @@ fn j3_token_post(cfg: &Config, client: &Client) -> JourneyResult {
         .send()
     {
         Ok(r) => r,
-        Err(e) => return JourneyResult::gated(name, format!("OCI endpoint unreachable ({base}): {e}")),
+        Err(e) => {
+            return JourneyResult::gated(name, format!("OCI endpoint unreachable ({base}): {e}"))
+        }
     };
     let code = resp.status().as_u16();
     if code == 405 {
         return JourneyResult::fail(
             name,
             ms(start),
-            "POST /token got 405 — docker push's OAuth2 token leg is rejected (regression)".to_string(),
+            "POST /token got 405 — docker push's OAuth2 token leg is rejected (regression)"
+                .to_string(),
         );
     }
     if code != 200 {
@@ -400,7 +406,9 @@ fn j3_token_post(cfg: &Config, client: &Client) -> JourneyResult {
     }
     let body: Value = match resp.json() {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST /token not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("POST /token not JSON: {e}"))
+        }
     };
     match body["token"].as_str() {
         Some(t) if !t.is_empty() => JourneyResult::pass(name, ms(start)),
@@ -438,7 +446,9 @@ fn j4_token_empty_scope(cfg: &Config, client: &Client) -> JourneyResult {
         .send()
     {
         Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET /v2/ with login bearer: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("GET /v2/ with login bearer: {e}"))
+        }
     };
     let code = resp.status().as_u16();
     if code != 200 {
@@ -520,7 +530,9 @@ fn j6_blob_head_specific_challenge(cfg: &Config, client: &Client) -> JourneyResu
     let url = format!("{base}/v2/{repo}/blobs/{digest}");
     let resp = match client.head(&url).send() {
         Ok(r) => r,
-        Err(e) => return JourneyResult::gated(name, format!("OCI endpoint unreachable ({base}): {e}")),
+        Err(e) => {
+            return JourneyResult::gated(name, format!("OCI endpoint unreachable ({base}): {e}"))
+        }
     };
     let code = resp.status().as_u16();
     if code != 401 {
@@ -602,7 +614,9 @@ fn j7_push_scoped_bearer_pulls(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("push-scoped bearer was REJECTED on a pull op (got {code}) — push⇏pull regression"),
+            format!(
+                "push-scoped bearer was REJECTED on a pull op (got {code}) — push⇏pull regression"
+            ),
         );
     }
     if code != 404 {
@@ -720,7 +734,14 @@ fn j9_manifest_head_content_length(cfg: &Config, client: &Client) -> JourneyResu
     .into_bytes();
     let config_digest = oci_digest(&config_blob);
 
-    if let Err(m) = push_blob(client, &base, &auth, &repo, &config_digest, config_blob.clone()) {
+    if let Err(m) = push_blob(
+        client,
+        &base,
+        &auth,
+        &repo,
+        &config_digest,
+        config_blob.clone(),
+    ) {
         return JourneyResult::fail(name, ms(start), m);
     }
 
@@ -745,7 +766,9 @@ fn j9_manifest_head_content_length(cfg: &Config, client: &Client) -> JourneyResu
         .send()
     {
         Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT manifest {put_url}: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("PUT manifest {put_url}: {e}"))
+        }
     };
     let pc = put.status().as_u16();
     if !matches!(pc, 200 | 201) {
@@ -765,7 +788,9 @@ fn j9_manifest_head_content_length(cfg: &Config, client: &Client) -> JourneyResu
         .send()
     {
         Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("HEAD manifest {head_url}: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("HEAD manifest {head_url}: {e}"))
+        }
     };
     let hc = head.status().as_u16();
     if hc != 200 {
@@ -787,7 +812,8 @@ fn j9_manifest_head_content_length(cfg: &Config, client: &Client) -> JourneyResu
             return JourneyResult::fail(
                 name,
                 ms(start),
-                "HEAD manifest Content-Length is 0 — docker rejects the descriptor (regression)".to_string(),
+                "HEAD manifest Content-Length is 0 — docker rejects the descriptor (regression)"
+                    .to_string(),
             )
         }
         Some(n) => {
@@ -909,11 +935,7 @@ fn j10_chunked_patch_upload(cfg: &Config, client: &Client) -> JourneyResult {
     {
         Ok(r) => r,
         Err(e) => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("PATCH chunk1 {session_url}: {e}"),
-            )
+            return JourneyResult::fail(name, ms(start), format!("PATCH chunk1 {session_url}: {e}"))
         }
     };
     let p1c = patch1.status().as_u16();
@@ -936,9 +958,7 @@ fn j10_chunked_patch_upload(cfg: &Config, client: &Client) -> JourneyResult {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!(
-                    "PATCH chunk1 Range={r:?} does not match expected {expected_range1:?}"
-                ),
+                format!("PATCH chunk1 Range={r:?} does not match expected {expected_range1:?}"),
             );
         }
     }
@@ -953,11 +973,7 @@ fn j10_chunked_patch_upload(cfg: &Config, client: &Client) -> JourneyResult {
     {
         Ok(r) => r,
         Err(e) => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("PATCH chunk2 {session_url}: {e}"),
-            )
+            return JourneyResult::fail(name, ms(start), format!("PATCH chunk2 {session_url}: {e}"))
         }
     };
     let p2c = patch2.status().as_u16();
@@ -979,9 +995,7 @@ fn j10_chunked_patch_upload(cfg: &Config, client: &Client) -> JourneyResult {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!(
-                    "PATCH chunk2 Range={r:?} does not match expected {expected_range2:?}"
-                ),
+                format!("PATCH chunk2 Range={r:?} does not match expected {expected_range2:?}"),
             );
         }
     }
@@ -1018,9 +1032,7 @@ fn j10_chunked_patch_upload(cfg: &Config, client: &Client) -> JourneyResult {
 
     // 5) GET the blob and assert byte + Content-Length equality.
     let get_url = match blob_location {
-        Some(ref loc) if loc.starts_with("http://") || loc.starts_with("https://") => {
-            loc.clone()
-        }
+        Some(ref loc) if loc.starts_with("http://") || loc.starts_with("https://") => loc.clone(),
         Some(ref loc) => format!("{base}{loc}"),
         None => format!("{base}/v2/{repo}/blobs/{digest}"),
     };
@@ -1076,13 +1088,7 @@ fn j10_chunked_patch_upload(cfg: &Config, client: &Client) -> JourneyResult {
     // Byte equality — the body round-trip is the ground-truth assertion.
     let body_bytes = match get.bytes() {
         Ok(b) => b,
-        Err(e) => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("GET blob body drain: {e}"),
-            )
-        }
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET blob body drain: {e}")),
     };
     if body_bytes.as_ref() != full_bytes.as_slice() {
         return JourneyResult::fail(
@@ -1142,7 +1148,14 @@ fn j11_tags_list_after_push(cfg: &Config, client: &Client) -> JourneyResult {
     .into_bytes();
     let config_digest = oci_digest(&config_blob);
 
-    if let Err(m) = push_blob(client, &base, &auth, &repo, &config_digest, config_blob.clone()) {
+    if let Err(m) = push_blob(
+        client,
+        &base,
+        &auth,
+        &repo,
+        &config_digest,
+        config_blob.clone(),
+    ) {
         return JourneyResult::fail(name, ms(start), format!("push config blob: {m}"));
     }
 
@@ -1195,9 +1208,7 @@ fn j11_tags_list_after_push(cfg: &Config, client: &Client) -> JourneyResult {
         .send()
     {
         Ok(r) => r,
-        Err(e) => {
-            return JourneyResult::fail(name, ms(start), format!("GET {list_url}: {e}"))
-        }
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {list_url}: {e}")),
     };
     let lc = list.status().as_u16();
     if lc != 200 {
@@ -1294,10 +1305,7 @@ fn j12_catalog_always_401(cfg: &Config, client: &Client) -> JourneyResult {
     let anon = match client.get(&anon_url).send() {
         Ok(r) => r,
         Err(e) => {
-            return JourneyResult::gated(
-                name,
-                format!("OCI endpoint unreachable ({base}): {e}"),
-            )
+            return JourneyResult::gated(name, format!("OCI endpoint unreachable ({base}): {e}"))
         }
     };
     let ac = anon.status().as_u16();
@@ -1365,11 +1373,7 @@ fn j12_catalog_always_401(cfg: &Config, client: &Client) -> JourneyResult {
     {
         Ok(r) => r,
         Err(e) => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("GET /v2/_catalog (authed): {e}"),
-            )
+            return JourneyResult::fail(name, ms(start), format!("GET /v2/_catalog (authed): {e}"))
         }
     };
     let bc = authed.status().as_u16();
@@ -1447,13 +1451,7 @@ fn j13_ro_push_denied(cfg: &Config, client: &Client) -> JourneyResult {
         .send()
     {
         Ok(r) => r,
-        Err(e) => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("POST {open_url}: {e}"),
-            )
-        }
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {open_url}: {e}")),
     };
     let oc = open.status().as_u16();
     if oc == 202 || oc == 201 {
@@ -1519,10 +1517,7 @@ fn j14_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
     let a_bearer = match mint_bearer(client, &base, p1_pat, &a_scope) {
         Ok(t) => t,
         Err(e) => {
-            return JourneyResult::gated(
-                name,
-                format!("could not mint tenant A push bearer: {e}"),
-            )
+            return JourneyResult::gated(name, format!("could not mint tenant A push bearer: {e}"))
         }
     };
     if let Err(m) = push_blob(
@@ -1542,10 +1537,7 @@ fn j14_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
     let b_bearer = match mint_bearer(client, &base, p6_pat, &b_scope) {
         Ok(t) => t,
         Err(e) => {
-            return JourneyResult::gated(
-                name,
-                format!("could not mint tenant B pull bearer: {e}"),
-            )
+            return JourneyResult::gated(name, format!("could not mint tenant B pull bearer: {e}"))
         }
     };
     let blob_url = format!("{base}/v2/{repo}/blobs/{digest}");
@@ -1609,7 +1601,9 @@ fn push_blob(
         .map_err(|e| format!("POST {open_url}: {e}"))?;
     let oc = open.status().as_u16();
     if !matches!(oc, 202 | 201) {
-        return Err(format!("open upload got {oc} (expected 202). url={open_url}"));
+        return Err(format!(
+            "open upload got {oc} (expected 202). url={open_url}"
+        ));
     }
     let location = open
         .headers()
@@ -1638,7 +1632,9 @@ fn push_blob(
         .map_err(|e| format!("PUT {put_url}: {e}"))?;
     let pc = put.status().as_u16();
     if !matches!(pc, 201 | 200) {
-        return Err(format!("finalize blob PUT got {pc} (expected 201). url={put_url}"));
+        return Err(format!(
+            "finalize blob PUT got {pc} (expected 201). url={put_url}"
+        ));
     }
     Ok(())
 }

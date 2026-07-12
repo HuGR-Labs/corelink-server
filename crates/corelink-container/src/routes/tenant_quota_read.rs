@@ -140,10 +140,7 @@ struct QuotaReadResponse {
 /// Mount `GET /_internal/tenant/{tenant_id}/quota`.
 pub fn router(state: TenantQuotaReadState) -> Router {
     Router::new()
-        .route(
-            "/_internal/tenant/{tenant_id}/quota",
-            get(handle_get_quota),
-        )
+        .route("/_internal/tenant/{tenant_id}/quota", get(handle_get_quota))
         .with_state(state)
 }
 
@@ -212,11 +209,7 @@ async fn handle_get_quota(
 
     // A malformed row (missing / non-integer money column) is fail-CLOSED 503:
     // the row exists but we cannot trust the value, so we do not guess.
-    let (
-        Some(monthly_budget_usd_micros),
-        Some(accrued_usd_micros),
-        Some(cycle_anchor_ms),
-    ) = (
+    let (Some(monthly_budget_usd_micros), Some(accrued_usd_micros), Some(cycle_anchor_ms)) = (
         row.get("monthly_budget_usd_micros")
             .and_then(serde_json::Value::as_i64),
         row.get("accrued_usd_micros")
@@ -224,9 +217,7 @@ async fn handle_get_quota(
         row.get("cycle_anchor_ms")
             .and_then(serde_json::Value::as_i64),
     ) else {
-        tracing::error!(
-            "tenant_quota_read: tenant_quota row missing/non-integer money column"
-        );
+        tracing::error!("tenant_quota_read: tenant_quota row missing/non-integer money column");
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({ "error": "quota_store_unavailable" })),
@@ -258,16 +249,16 @@ async fn handle_get_quota(
 /// route is simply not mounted.
 #[must_use]
 pub fn build_state_from_env() -> Option<TenantQuotaReadState> {
-    let internal_auth_key =
-        crate::routes::admin::resolve_internal_auth_key("CORELINK_QUOTA_READ_AUTH_KEY").or_else(
-            || {
-                tracing::warn!(
-                    "no usable CORELINK_QUOTA_READ_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY \
+    let internal_auth_key = crate::routes::admin::resolve_internal_auth_key(
+        "CORELINK_QUOTA_READ_AUTH_KEY",
+    )
+    .or_else(|| {
+        tracing::warn!(
+            "no usable CORELINK_QUOTA_READ_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY \
                      (< 32 chars); /_internal/tenant/{{tenant_id}}/quota NOT mounted (fail-CLOSED)"
-                );
-                None
-            },
-        )?;
+        );
+        None
+    })?;
     let storage_env = crate::storage::StorageEnv::from_env()?;
     let d1 = Arc::new(crate::storage::d1_http::D1HttpClient::new(&storage_env).ok()?);
     Some(TenantQuotaReadState {

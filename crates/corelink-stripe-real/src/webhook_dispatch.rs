@@ -1043,18 +1043,23 @@ mod tests {
             .with_dlq(dlq.clone()),
         );
 
-        let (body, hdr) =
-            signed_envelope("evt_drop", "customer.subscription.deleted", FIXED_TS);
+        let (body, hdr) = signed_envelope("evt_drop", "customer.subscription.deleted", FIXED_TS);
 
         // 1st delivery: materialize transiently fails → 500 + quarantine.
-        mat.arm_error(MaterializerError::Transient("d1 over-http blip".to_string()));
+        mat.arm_error(MaterializerError::Transient(
+            "d1 over-http blip".to_string(),
+        ));
         let r1 = d.process(&body, Some(&hdr));
         assert_eq!(r1, DispatchResponse::InternalError500);
         // Dedup row IS committed (the F-008 root cause).
         assert_eq!(idem.len(), 1);
         // The event is now quarantined (NOT lost).
         let now_ms = FIXED_TS.saturating_mul(1_000);
-        assert_eq!(dlq.depth(now_ms).unwrap(), 1, "event quarantined on transient");
+        assert_eq!(
+            dlq.depth(now_ms).unwrap(),
+            1,
+            "event quarantined on transient"
+        );
         let row = dlq.get("evt_drop").unwrap().expect("dlq row present");
         assert_eq!(row.event_type, "customer.subscription.deleted");
         assert_eq!(row.attempt_count, 1);

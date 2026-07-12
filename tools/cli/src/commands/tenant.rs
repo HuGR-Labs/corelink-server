@@ -83,7 +83,11 @@ impl fmt::Display for TenantExportBundle {
         writeln!(f, "  Tenant:        {}", self.tenant_id)?;
         writeln!(f, "  Generated at:  {} Unix ms", self.generated_at_ms)?;
         for (name, c) in &self.components {
-            writeln!(f, "  Component:     {name} ({} bytes, sha256={})", c.size_bytes, c.sha256)?;
+            writeln!(
+                f,
+                "  Component:     {name} ({} bytes, sha256={})",
+                c.size_bytes, c.sha256
+            )?;
         }
         write!(f, "  Bundle sha256: {}", self.bundle_sha256)
     }
@@ -102,7 +106,8 @@ fn bundle_summary(
     generated_at_ms: u64,
     components: &std::collections::BTreeMap<String, Component>,
 ) -> String {
-    let mut s = format!("schema:{BUNDLE_SCHEMA}\ntenant:{tenant_id}\ngenerated_at:{generated_at_ms}\n");
+    let mut s =
+        format!("schema:{BUNDLE_SCHEMA}\ntenant:{tenant_id}\ngenerated_at:{generated_at_ms}\n");
     for (name, c) in components {
         s.push_str(&format!("component:{name}:{}:{}\n", c.sha256, c.size_bytes));
     }
@@ -203,14 +208,21 @@ pub fn verify_bundle(bundle: &TenantExportBundle, archive_label: &str) -> Verify
     }
     if let Some(c) = bundle.components.get("cas_index") {
         if c.sha256 != cas_actual {
-            mismatches.push(format!("cas_index sha256 {} != recomputed {cas_actual}", c.sha256));
+            mismatches.push(format!(
+                "cas_index sha256 {} != recomputed {cas_actual}",
+                c.sha256
+            ));
         }
     } else {
         mismatches.push("missing component descriptor: cas_index".to_owned());
     }
 
     // Recompute bundle hash.
-    let summary = bundle_summary(&bundle.tenant_id, bundle.generated_at_ms, &bundle.components);
+    let summary = bundle_summary(
+        &bundle.tenant_id,
+        bundle.generated_at_ms,
+        &bundle.components,
+    );
     let bundle_actual = sha256_hex(summary.as_bytes());
     if bundle_actual != bundle.bundle_sha256 {
         mismatches.push(format!(
@@ -317,7 +329,11 @@ mod tests {
     fn build_then_verify_roundtrips_ok() {
         let b = sample_bundle();
         let report = verify_bundle(&b, "mem");
-        assert!(report.ok, "fresh bundle must verify: {:?}", report.mismatches);
+        assert!(
+            report.ok,
+            "fresh bundle must verify: {:?}",
+            report.mismatches
+        );
         assert!(report.mismatches.is_empty());
     }
 
@@ -336,7 +352,10 @@ mod tests {
         b.audit_chain_ndjson.push_str("tampered\n");
         let report = verify_bundle(&b, "mem");
         assert!(!report.ok, "tampered payload must fail verify");
-        assert!(report.mismatches.iter().any(|m| m.contains("audit_chain_ndjson")));
+        assert!(report
+            .mismatches
+            .iter()
+            .any(|m| m.contains("audit_chain_ndjson")));
     }
 
     #[test]
@@ -345,7 +364,10 @@ mod tests {
         b.bundle_sha256 = "00".repeat(32);
         let report = verify_bundle(&b, "mem");
         assert!(!report.ok);
-        assert!(report.mismatches.iter().any(|m| m.contains("bundle_sha256")));
+        assert!(report
+            .mismatches
+            .iter()
+            .any(|m| m.contains("bundle_sha256")));
     }
 
     #[test]

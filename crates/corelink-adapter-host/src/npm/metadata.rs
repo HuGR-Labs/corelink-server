@@ -170,7 +170,12 @@ fn require_metadata_name_matches(
     parsed: &serde_json::Value,
     pkg: &str,
 ) -> Result<(), NpmAdapterError> {
-    let fetched = normalise_pkg_name(parsed.get("name").and_then(|n| n.as_str()).unwrap_or_default());
+    let fetched = normalise_pkg_name(
+        parsed
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or_default(),
+    );
     let requested = normalise_pkg_name(pkg);
     if fetched != requested {
         return Err(NpmAdapterError::MetadataNameMismatch { requested, fetched });
@@ -225,7 +230,10 @@ mod tests {
         // the requested (normalized) key → REJECTED (would otherwise poison the
         // shared `_public` key with another package's metadata).
         let err = require_metadata_name_matches(&json("evil-pkg"), "lodash").unwrap_err();
-        assert!(matches!(err, NpmAdapterError::MetadataNameMismatch { .. }), "{err:?}");
+        assert!(
+            matches!(err, NpmAdapterError::MetadataNameMismatch { .. }),
+            "{err:?}"
+        );
         assert_eq!(err.status_code(), 502);
         // Missing / blank `name` is fail-CLOSED.
         assert!(require_metadata_name_matches(&serde_json::json!({}), "lodash").is_err());

@@ -100,10 +100,7 @@ pub fn build_handlers_from_env() -> WorkspacesRouteState {
              writes fail-CLOSED (dev/CI mode)"
         );
     }
-    WorkspacesRouteState {
-        db,
-        pat_gate: None,
-    }
+    WorkspacesRouteState { db, pat_gate: None }
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -115,8 +112,14 @@ pub fn router(state: WorkspacesRouteState) -> Router {
             "/v1/customer/workspaces",
             get(handle_list).post(handle_create),
         )
-        .route("/v1/customer/workspaces/{workspace_id}", delete(handle_delete))
-        .route("/v1/customer/workspaces/{workspace_id}/pin", post(handle_pin))
+        .route(
+            "/v1/customer/workspaces/{workspace_id}",
+            delete(handle_delete),
+        )
+        .route(
+            "/v1/customer/workspaces/{workspace_id}/pin",
+            post(handle_pin),
+        )
         .with_state(state)
 }
 
@@ -231,7 +234,10 @@ pub struct CreateWorkspaceBody {
 /// `size_bytes`, `created_at` (ISO-8601, derived from `created_at_ms`),
 /// `pinned` (bool from the `INTEGER` column).
 fn row_to_workspace(row: &crate::storage::d1_http::D1Row) -> Value {
-    let created_at_ms = row.get("created_at_ms").and_then(Value::as_i64).unwrap_or(0);
+    let created_at_ms = row
+        .get("created_at_ms")
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
     json!({
         "workspace_id": row.get("workspace_id").and_then(Value::as_str).unwrap_or_default(),
         "name":         row.get("name").and_then(Value::as_str).unwrap_or_default(),
@@ -420,7 +426,11 @@ fn workspaces_unconfigured() -> axum::response::Response {
 /// Fail-CLOSED 500 on any D1 transport/decode fault (never fabricated data).
 fn internal(tenant: &str, op: &str, err: &str) -> axum::response::Response {
     tracing::error!(tenant = %tenant, op = %op, error = %err, "workspaces D1 error");
-    (StatusCode::INTERNAL_SERVER_ERROR, "workspaces backend error").into_response()
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "workspaces backend error",
+    )
+        .into_response()
 }
 
 #[cfg(test)]
@@ -449,7 +459,11 @@ mod tests {
     }
 
     impl CustomerD1 for MockWsD1 {
-        fn query(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
+        fn query(
+            &self,
+            sql: &str,
+            binds: Vec<Value>,
+        ) -> Result<Vec<crate::storage::d1_http::D1Row>, String> {
             self.calls.lock().unwrap().push((sql.to_owned(), binds));
             if sql.contains("FROM workspaces") && sql.contains("LIMIT 1") {
                 return Ok(self.readback_row.clone());
@@ -463,11 +477,17 @@ mod tests {
     }
 
     fn d1row(pairs: &[(&str, Value)]) -> crate::storage::d1_http::D1Row {
-        pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect()
     }
 
     fn state_no_db() -> WorkspacesRouteState {
-        WorkspacesRouteState { db: None, pat_gate: None }
+        WorkspacesRouteState {
+            db: None,
+            pat_gate: None,
+        }
     }
 
     fn state_with(db: MockWsD1) -> (WorkspacesRouteState, Arc<MockWsD1>) {
@@ -507,7 +527,9 @@ mod tests {
         };
         let resp = router(state).oneshot(req).await.unwrap();
         let status = resp.status();
-        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let parsed = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         (status, parsed)
     }
@@ -518,17 +540,43 @@ mod tests {
     async fn unauthenticated_is_401() {
         let cases = [
             (http::Method::GET, "/v1/customer/workspaces", None),
-            (http::Method::POST, "/v1/customer/workspaces", Some(json!({"name": "w"}))),
+            (
+                http::Method::POST,
+                "/v1/customer/workspaces",
+                Some(json!({"name": "w"})),
+            ),
             (http::Method::DELETE, "/v1/customer/workspaces/abc", None),
             (http::Method::POST, "/v1/customer/workspaces/abc/pin", None),
         ];
         for (m, uri, b) in cases {
-            let (missing, _) =
-                send(state_no_db(), m.clone(), uri, None, Some("cas:rw"), b.clone()).await;
-            assert_eq!(missing, StatusCode::UNAUTHORIZED, "{m} {uri}: missing tenant");
-            let (sentinel, _) =
-                send(state_no_db(), m.clone(), uri, Some("_system"), Some("cas:rw"), b).await;
-            assert_eq!(sentinel, StatusCode::UNAUTHORIZED, "{m} {uri}: sentinel tenant");
+            let (missing, _) = send(
+                state_no_db(),
+                m.clone(),
+                uri,
+                None,
+                Some("cas:rw"),
+                b.clone(),
+            )
+            .await;
+            assert_eq!(
+                missing,
+                StatusCode::UNAUTHORIZED,
+                "{m} {uri}: missing tenant"
+            );
+            let (sentinel, _) = send(
+                state_no_db(),
+                m.clone(),
+                uri,
+                Some("_system"),
+                Some("cas:rw"),
+                b,
+            )
+            .await;
+            assert_eq!(
+                sentinel,
+                StatusCode::UNAUTHORIZED,
+                "{m} {uri}: sentinel tenant"
+            );
         }
     }
 
@@ -537,17 +585,37 @@ mod tests {
     #[tokio::test]
     async fn mutations_require_write_scope() {
         let mutations = [
-            (http::Method::POST, "/v1/customer/workspaces", Some(json!({"name": "w"}))),
+            (
+                http::Method::POST,
+                "/v1/customer/workspaces",
+                Some(json!({"name": "w"})),
+            ),
             (http::Method::DELETE, "/v1/customer/workspaces/abc", None),
             (http::Method::POST, "/v1/customer/workspaces/abc/pin", None),
         ];
         for (m, uri, b) in mutations {
             // Read-only scope → 403.
-            let (ro, _) = send(state_no_db(), m.clone(), uri, Some("t1"), Some("cas:r"), b.clone()).await;
-            assert_eq!(ro, StatusCode::FORBIDDEN, "{m} {uri}: cas:r must not mutate");
+            let (ro, _) = send(
+                state_no_db(),
+                m.clone(),
+                uri,
+                Some("t1"),
+                Some("cas:r"),
+                b.clone(),
+            )
+            .await;
+            assert_eq!(
+                ro,
+                StatusCode::FORBIDDEN,
+                "{m} {uri}: cas:r must not mutate"
+            );
             // No scope header → 403.
             let (none, _) = send(state_no_db(), m.clone(), uri, Some("t1"), None, b).await;
-            assert_eq!(none, StatusCode::FORBIDDEN, "{m} {uri}: no scope must not mutate");
+            assert_eq!(
+                none,
+                StatusCode::FORBIDDEN,
+                "{m} {uri}: no scope must not mutate"
+            );
         }
     }
 
@@ -555,8 +623,15 @@ mod tests {
     /// never a silent success we cannot persist.
     #[tokio::test]
     async fn dev_no_db_read_empty_write_failclosed() {
-        let (s, list) =
-            send(state_no_db(), http::Method::GET, "/v1/customer/workspaces", Some("t1"), None, None).await;
+        let (s, list) = send(
+            state_no_db(),
+            http::Method::GET,
+            "/v1/customer/workspaces",
+            Some("t1"),
+            None,
+            None,
+        )
+        .await;
         assert_eq!(s, StatusCode::OK);
         assert_eq!(list["workspaces"], json!([]));
 
@@ -627,10 +702,17 @@ mod tests {
         assert_eq!(ws["name"], json!("nightly"));
         assert_eq!(ws["size_bytes"], json!(2048));
         assert_eq!(ws["pinned"], json!(true));
-        assert!(ws["created_at"].as_str().unwrap().starts_with("20"), "ISO-8601 created_at");
+        assert!(
+            ws["created_at"].as_str().unwrap().starts_with("20"),
+            "ISO-8601 created_at"
+        );
 
         let calls = db.calls.lock().unwrap();
-        assert_eq!(calls[0].1.first(), Some(&json!("tenant-xyz")), "list is tenant-scoped");
+        assert_eq!(
+            calls[0].1.first(),
+            Some(&json!("tenant-xyz")),
+            "list is tenant-scoped"
+        );
     }
 
     /// Create mints a workspace, returns 201 + the frozen shape, and binds the
@@ -654,7 +736,10 @@ mod tests {
         assert_eq!(body["workspace_id"].as_str().unwrap().len(), 36, "UUID id");
 
         let calls = db.calls.lock().unwrap();
-        let insert = calls.iter().find(|(sql, _)| sql.contains("INSERT INTO workspaces")).unwrap();
+        let insert = calls
+            .iter()
+            .find(|(sql, _)| sql.contains("INSERT INTO workspaces"))
+            .unwrap();
         assert_eq!(insert.1[0], json!("tenant-xyz"), "INSERT is tenant-scoped");
     }
 
@@ -674,7 +759,10 @@ mod tests {
         assert_eq!(s, StatusCode::OK);
         assert_eq!(body["ok"], json!(true));
         let calls = db.calls.lock().unwrap();
-        let del = calls.iter().find(|(sql, _)| sql.contains("DELETE FROM workspaces")).unwrap();
+        let del = calls
+            .iter()
+            .find(|(sql, _)| sql.contains("DELETE FROM workspaces"))
+            .unwrap();
         assert_eq!(del.1[0], json!("tenant-xyz"));
         assert_eq!(del.1[1], json!("ws-9"));
     }

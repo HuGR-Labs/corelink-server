@@ -49,7 +49,10 @@ impl CargoAdapterError {
     /// opaque, reference-only string; the real detail is logged server-side.
     #[must_use]
     pub const fn leaks_internal_detail(&self) -> bool {
-        matches!(self, Self::Bind(_) | Self::Auth(_) | Self::Cas(_) | Self::Audit(_))
+        matches!(
+            self,
+            Self::Bind(_) | Self::Auth(_) | Self::Cas(_) | Self::Audit(_)
+        )
     }
 
     /// The CLIENT-FACING response body for this error (Cluster E).

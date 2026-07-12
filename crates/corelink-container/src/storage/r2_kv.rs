@@ -260,7 +260,7 @@ pub async fn build_r2_kv_from_env() -> Option<Result<R2KvStore, String>> {
              refusing to build the R2 Turbo KV store (fail-closed, INV-TENANT-ISOLATION)"
         );
         return Some(Err(
-            "R2_TDK_HEX required for production tenant prefixing".to_owned(),
+            "R2_TDK_HEX required for production tenant prefixing".to_owned()
         ));
     };
     let client = match R2S3Client::new(&env, &bucket).await {
@@ -464,7 +464,11 @@ mod tests {
     async fn rt_write_reports_prior_len_for_byte_delta() {
         let s = store_with(FakeBackend::new());
         // Fresh insert: no prior ⇒ route keeps the full new charge.
-        assert_eq!(s.write("t", "k", b"x".to_vec()).unwrap(), None, "fresh ⇒ None");
+        assert_eq!(
+            s.write("t", "k", b"x".to_vec()).unwrap(),
+            None,
+            "fresh ⇒ None"
+        );
         // Same-size overwrite (1→1): prior = 1 ⇒ release 1, net 0.
         assert_eq!(
             s.write("t", "k", b"y".to_vec()).unwrap(),

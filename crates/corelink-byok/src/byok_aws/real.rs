@@ -217,15 +217,17 @@ mod native {
                                 .to_string(),
                         )
                     })?;
-            let secret_key =
-                read_env_fallback("CORELINK_BYOK_KMS_SECRET_ACCESS_KEY", "AWS_SECRET_ACCESS_KEY")
-                    .ok_or_else(|| {
-                        BYOKError::Provider(
-                            "BYOK KMS credentials missing: set \
+            let secret_key = read_env_fallback(
+                "CORELINK_BYOK_KMS_SECRET_ACCESS_KEY",
+                "AWS_SECRET_ACCESS_KEY",
+            )
+            .ok_or_else(|| {
+                BYOKError::Provider(
+                    "BYOK KMS credentials missing: set \
                              CORELINK_BYOK_KMS_SECRET_ACCESS_KEY (or AWS_SECRET_ACCESS_KEY)"
-                                .to_string(),
-                        )
-                    })?;
+                        .to_string(),
+                )
+            })?;
             let session_token =
                 read_env_fallback("CORELINK_BYOK_KMS_SESSION_TOKEN", "AWS_SESSION_TOKEN");
 
@@ -777,7 +779,9 @@ mod native {
 
         #[test]
         fn read_env_fallback_prefers_non_empty_primary() {
-            let _g = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _g = ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             clear_test_vars();
             std::env::set_var(P, "primary-val");
             std::env::set_var(F, "fallback-val");
@@ -788,7 +792,9 @@ mod native {
 
         #[test]
         fn read_env_fallback_uses_fallback_when_primary_unset() {
-            let _g = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _g = ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             clear_test_vars();
             std::env::set_var(F, "fallback-val");
             assert_eq!(read_env_fallback(P, F), Some("fallback-val".to_string()));
@@ -799,7 +805,9 @@ mod native {
         fn read_env_fallback_skips_empty_primary() {
             // Kills the `!`-deletion in `if !v.is_empty()`: an EMPTY primary
             // must be skipped so the (non-empty) fallback is returned.
-            let _g = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _g = ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             clear_test_vars();
             std::env::set_var(P, "");
             std::env::set_var(F, "fallback-val");
@@ -809,7 +817,9 @@ mod native {
 
         #[test]
         fn read_env_fallback_none_when_both_unset() {
-            let _g = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _g = ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             clear_test_vars();
             assert_eq!(read_env_fallback(P, F), None);
         }
@@ -821,7 +831,9 @@ mod native {
             // an `Ok(Default::default())` / unconditional-Ok mutant.
             // Driven with `block_on` (not `#[tokio::test]`) so no `.await`
             // happens while the env lock is held (`with_fips` is synchronous).
-            let _g = ENV_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _g = ENV_LOCK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             for v in [
                 "CORELINK_BYOK_KMS_ACCESS_KEY_ID",
                 "AWS_ACCESS_KEY_ID",

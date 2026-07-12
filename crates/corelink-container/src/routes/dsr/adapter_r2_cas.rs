@@ -50,7 +50,12 @@ const CAS_REGIONS: &[&str] = &["sam", "iad", "lhr", "nrt", "syd"];
 /// `tenant_id`-keyed and (per the cold-verify) un-written in prod today — the
 /// DELETE is a defensive no-op now and future-proofs the multipart path. NOT
 /// in the `adapter_d1` control-plane erase-set (this adapter owns them).
-const CAS_D1_TABLES: &[&str] = &["chunks", "manifest_chunks", "multipart_sessions", "blob_meta"];
+const CAS_D1_TABLES: &[&str] = &[
+    "chunks",
+    "manifest_chunks",
+    "multipart_sessions",
+    "blob_meta",
+];
 
 /// Default single CAS bucket; overridable via `R2_CAS_BUCKET` (non-prod).
 const DEFAULT_CAS_BUCKET: &str = "corelink-cas-prod";
@@ -132,7 +137,9 @@ fn count_cas_remaining(cas_bucket: &str, tenant_prefix: &str) -> Result<u64, Era
     tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
             let env = StorageEnv::from_env().ok_or_else(|| {
-                ErasureBackendError::Transport("StorageEnv unavailable for R2 CAS verify".to_owned())
+                ErasureBackendError::Transport(
+                    "StorageEnv unavailable for R2 CAS verify".to_owned(),
+                )
             })?;
             let client = R2S3Client::new(&env, cas_bucket.to_owned())
                 .await
@@ -193,10 +200,7 @@ impl BackendErasureAdapter for R2CasEraseAdapter {
         })
     }
 
-    fn verification_hash(
-        &self,
-        ctx: VerificationContext,
-    ) -> Result<[u8; 32], ErasureBackendError> {
+    fn verification_hash(&self, ctx: VerificationContext) -> Result<[u8; 32], ErasureBackendError> {
         let tdk = load_tdk().ok_or_else(|| {
             ErasureBackendError::Transport(
                 "R2_TDK_HEX unavailable — cannot derive CAS tenant prefix".to_owned(),

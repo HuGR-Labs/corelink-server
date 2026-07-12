@@ -248,10 +248,9 @@ impl InMemoryGcSweepReportSink {
 
 impl GcSweepReportSink for InMemoryGcSweepReportSink {
     fn emit_report(&self, report: &SweepReport) -> Result<(), GcSweepReportError> {
-        let mut g = self
-            .inner
-            .lock()
-            .map_err(|_| GcSweepReportError::Store("sweep report sink mutex poisoned".to_owned()))?;
+        let mut g = self.inner.lock().map_err(|_| {
+            GcSweepReportError::Store("sweep report sink mutex poisoned".to_owned())
+        })?;
         g.push(report.clone());
         Ok(())
     }
@@ -783,15 +782,43 @@ mod tests {
         let cfg = PhysicalDeleteConfig::new(50, 50, 600_000).unwrap();
 
         seed_swept_candidate(
-            &candidates, &blob_meta, &r2, tenant, region, rid, d_reclaim.clone(), 300, 1_000, 0, 0,
+            &candidates,
+            &blob_meta,
+            &r2,
+            tenant,
+            region,
+            rid,
+            d_reclaim.clone(),
+            300,
+            1_000,
+            0,
+            0,
         );
         seed_swept_candidate(
-            &candidates, &blob_meta, &r2, tenant, region, rid, d_live.clone(), 300, 2_000, 0,
+            &candidates,
+            &blob_meta,
+            &r2,
+            tenant,
+            region,
+            rid,
+            d_live.clone(),
+            300,
+            2_000,
+            0,
             3, // live re-reference: refcount 3
         );
         // grace-pending: soft-deleted at ~1_050 (clock will be ~1_05x).
         seed_swept_candidate(
-            &candidates, &blob_meta, &r2, tenant, region, rid, d_grace.clone(), 300, 3_000, 1_050,
+            &candidates,
+            &blob_meta,
+            &r2,
+            tenant,
+            region,
+            rid,
+            d_grace.clone(),
+            300,
+            3_000,
+            1_050,
             0,
         );
 
@@ -848,7 +875,9 @@ mod tests {
                 _tenant_id: Uuid,
                 _digest: &BlobDigest,
             ) -> Result<Option<PurgeState>, PhysicalDeleteError> {
-                Err(PhysicalDeleteError::Backend("injected source error".to_owned()))
+                Err(PhysicalDeleteError::Backend(
+                    "injected source error".to_owned(),
+                ))
             }
             fn conditional_purge(
                 &self,
@@ -857,7 +886,9 @@ mod tests {
                 _now_ms: u64,
                 _grace_period_ms: u64,
             ) -> Result<bool, PhysicalDeleteError> {
-                Err(PhysicalDeleteError::Backend("injected source error".to_owned()))
+                Err(PhysicalDeleteError::Backend(
+                    "injected source error".to_owned(),
+                ))
             }
         }
 

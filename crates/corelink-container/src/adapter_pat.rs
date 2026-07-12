@@ -228,8 +228,9 @@ impl PatRowLookup for SingleFlightPatLookup {
                 _ => {
                     let inner = Arc::clone(&self.inner);
                     let tid = token_id.to_owned();
-                    let fut: SharedLookup =
-                        async move { Arc::new(inner.lookup(&tid).await) }.boxed().shared();
+                    let fut: SharedLookup = async move { Arc::new(inner.lookup(&tid).await) }
+                        .boxed()
+                        .shared();
                     // `insert` REPLACES any resolved-stale entry for this key.
                     let _ = map.insert(token_id.to_owned(), fut.clone());
                     (fut, true)
@@ -403,7 +404,10 @@ impl std::fmt::Debug for PatVerifier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PatVerifier")
             .field("lookup", &"Arc<dyn PatRowLookup>")
-            .field("signing_keys", &format_args!("[{} REDACTED]", self.signing_keys.len()))
+            .field(
+                "signing_keys",
+                &format_args!("[{} REDACTED]", self.signing_keys.len()),
+            )
             .field(
                 "argon2_permits_available",
                 &self.argon2_permits.available_permits(),
@@ -609,10 +613,7 @@ impl PatVerifier {
     ///
     /// MUST be called AFTER the global permit is held (consistent acquire order
     /// global→per-tenant ⇒ deadlock-free).
-    async fn acquire_per_tenant(
-        &self,
-        tenant: &str,
-    ) -> Result<Option<OwnedSemaphorePermit>, ()> {
+    async fn acquire_per_tenant(&self, tenant: &str) -> Result<Option<OwnedSemaphorePermit>, ()> {
         let Some(sem) = self.per_tenant_semaphore(tenant) else {
             // Fail-safe: no per-tenant bookkeeping ⇒ global-only.
             return Ok(None);
@@ -724,12 +725,8 @@ impl PatVerifier {
         .await
         {
             Ok(Ok(permit)) => permit,
-            Ok(Err(_closed)) => {
-                return Err(VerifyError::Backend("pat verifier overloaded".into()))
-            }
-            Err(_timeout) => {
-                return Err(VerifyError::Backend("pat verifier overloaded".into()))
-            }
+            Ok(Err(_closed)) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
+            Err(_timeout) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
         };
         // Finding #1: per-tenant fairness. With the GLOBAL permit already held,
         // acquire this tenant's sub-permit (consistent order global→per-tenant
@@ -988,10 +985,8 @@ mod tests {
         let (pt, tid, hash, tenant) = mint_pat(&old_key, 60, SCOPE_CACHE_RW);
         let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
         // Overlap set = [new (current), old (prev)].
-        let verifier = PatVerifier::with_key_set(
-            lookup.clone(),
-            vec![(*new_key).clone(), (*old_key).clone()],
-        );
+        let verifier =
+            PatVerifier::with_key_set(lookup.clone(), vec![(*new_key).clone(), (*old_key).clone()]);
         assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
     }
 
@@ -1179,8 +1174,7 @@ mod tests {
         let key = test_key();
         let (pt, tid, hash, tenant) = mint_pat(&key, 71, SCOPE_CACHE_RW);
         let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
-        let verifier =
-            PatVerifier::with_key_set_and_permits(lookup, vec![(*key).clone()], 2);
+        let verifier = PatVerifier::with_key_set_and_permits(lookup, vec![(*key).clone()], 2);
         assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
     }
 
@@ -1288,7 +1282,11 @@ mod tests {
             }
             other => panic!("expected Backend(overloaded), got {other:?}"),
         }
-        assert_eq!(lookup.call_count(), 1, "global gate sits after the D1 lookup");
+        assert_eq!(
+            lookup.call_count(),
+            1,
+            "global gate sits after the D1 lookup"
+        );
     }
 
     /// FAIL-SAFE: a poisoned per-tenant map must fall back to GLOBAL-only
@@ -1363,16 +1361,14 @@ mod tests {
         });
 
         // Per-tenant cap 1 so a single held permit saturates the tenant.
-        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
-            lookup,
-            vec![(*key).clone()],
-            8,
-            1,
-        );
+        let verifier =
+            PatVerifier::with_key_set_and_permits_per_tenant(lookup, vec![(*key).clone()], 8, 1);
 
         // Hold the tenant's single per-tenant permit (model PAT #1 in-flight).
         let sem = verifier.per_tenant_semaphore(&tenant).expect("tenant sem");
-        let _hold = Arc::clone(&sem).try_acquire_owned().expect("hold the only permit");
+        let _hold = Arc::clone(&sem)
+            .try_acquire_owned()
+            .expect("hold the only permit");
 
         // A verify for PAT #2 (same tenant, different token_id) is denied at the
         // shared per-tenant bucket — the flood is contained per tenant.
@@ -1402,13 +1398,9 @@ mod tests {
         let lookup = Arc::new(FakeLookup::empty());
         // Map cap 4; per-tenant cap 2; global plenty (irrelevant here — we
         // exercise per_tenant_semaphore directly).
-        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
-            lookup,
-            vec![(*key).clone()],
-            8,
-            2,
-        )
-        .with_map_cap(4);
+        let verifier =
+            PatVerifier::with_key_set_and_permits_per_tenant(lookup, vec![(*key).clone()], 8, 2)
+                .with_map_cap(4);
 
         // Pin an actively-contended tenant: create its bucket and HOLD one of
         // its permits, so it is NOT fully idle (available < per_tenant_cap) and
@@ -1461,13 +1453,9 @@ mod tests {
     async fn unknown_token_bucket_is_never_evicted() {
         let key = test_key();
         let lookup = Arc::new(FakeLookup::empty());
-        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
-            lookup,
-            vec![(*key).clone()],
-            8,
-            2,
-        )
-        .with_map_cap(3);
+        let verifier =
+            PatVerifier::with_key_set_and_permits_per_tenant(lookup, vec![(*key).clone()], 8, 2)
+                .with_map_cap(3);
 
         // Create the synthetic bucket (idle — no in-flight burn), exactly as the
         // None-row dummy-burn path does, then leave it untouched (LRU-stale).
@@ -1506,7 +1494,11 @@ mod tests {
     }
     impl SwitchableLookup {
         fn new(result: Result<Option<PatRow>, String>, delay_ms: u64) -> Self {
-            Self { calls: Arc::new(AtomicUsize::new(0)), delay_ms, result: Mutex::new(result) }
+            Self {
+                calls: Arc::new(AtomicUsize::new(0)),
+                delay_ms,
+                result: Mutex::new(result),
+            }
         }
         fn set(&self, r: Result<Option<PatRow>, String>) {
             *self.result.lock().unwrap() = r;
@@ -1536,7 +1528,11 @@ mod tests {
         while let Some(r) = set.join_next().await {
             assert_eq!(r.unwrap(), Some(row("h", "t", "cas:rw")));
         }
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "a parallel burst does ONE inner D1 read");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "a parallel burst does ONE inner D1 read"
+        );
     }
 
     #[tokio::test]
@@ -1546,7 +1542,11 @@ mod tests {
         let sf = SingleFlightPatLookup::new(inner);
         let _ = sf.lookup("tok").await.unwrap();
         let _ = sf.lookup("tok").await.unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 2, "sequential reads are NOT cached");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "sequential reads are NOT cached"
+        );
     }
 
     #[tokio::test]
@@ -1557,9 +1557,16 @@ mod tests {
         let calls = Arc::clone(&inner.calls);
         let inner_for_swap = Arc::clone(&inner);
         let sf = SingleFlightPatLookup::new(inner);
-        assert_eq!(sf.lookup("tok").await.unwrap(), Some(row("h", "t", "cas:rw")));
+        assert_eq!(
+            sf.lookup("tok").await.unwrap(),
+            Some(row("h", "t", "cas:rw"))
+        );
         inner_for_swap.set(Ok(None)); // revoke
-        assert_eq!(sf.lookup("tok").await.unwrap(), None, "revocation is immediate (no cache)");
+        assert_eq!(
+            sf.lookup("tok").await.unwrap(),
+            None,
+            "revocation is immediate (no cache)"
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
@@ -1573,7 +1580,11 @@ mod tests {
         let h2 = tokio::spawn(async move { b.lookup("tok-B").await.unwrap() });
         let _ = h1.await.unwrap();
         let _ = h2.await.unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 2, "different token_ids each read");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "different token_ids each read"
+        );
     }
 
     #[tokio::test]
@@ -1584,7 +1595,11 @@ mod tests {
         let sf = SingleFlightPatLookup::new(inner);
         assert!(sf.lookup("tok").await.is_err());
         inner_for_swap.set(Ok(Some(row("h", "t", "cas:rw"))));
-        assert_eq!(sf.lookup("tok").await.unwrap(), Some(row("h", "t", "cas:rw")), "error not cached");
+        assert_eq!(
+            sf.lookup("tok").await.unwrap(),
+            Some(row("h", "t", "cas:rw")),
+            "error not cached"
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }

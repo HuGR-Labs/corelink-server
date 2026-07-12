@@ -401,11 +401,17 @@ mod tests {
     }
 
     fn d1row(pairs: &[(&str, Value)]) -> D1Row {
-        pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect()
     }
 
     fn state_no_db() -> CustomerRunnersRouteState {
-        CustomerRunnersRouteState { db: None, pat_gate: None }
+        CustomerRunnersRouteState {
+            db: None,
+            pat_gate: None,
+        }
     }
 
     fn state_with(db: MockRunnersD1) -> (CustomerRunnersRouteState, Arc<MockRunnersD1>) {
@@ -419,7 +425,11 @@ mod tests {
         )
     }
 
-    async fn get(state: CustomerRunnersRouteState, uri: &str, tenant: Option<&str>) -> (StatusCode, Value) {
+    async fn get(
+        state: CustomerRunnersRouteState,
+        uri: &str,
+        tenant: Option<&str>,
+    ) -> (StatusCode, Value) {
         let mut req = Request::builder().method(http::Method::GET).uri(uri);
         if let Some(t) = tenant {
             req = req.header("x-corelink-tenant-id", t);
@@ -429,7 +439,9 @@ mod tests {
             .await
             .unwrap();
         let status = resp.status();
-        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
         let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         (status, body)
     }
@@ -454,7 +466,12 @@ mod tests {
     /// (200, never 500).
     #[tokio::test]
     async fn dev_no_db_is_honest_empty() {
-        let (s, ent) = get(state_no_db(), "/v1/customer/runners/entitlement", Some("t1")).await;
+        let (s, ent) = get(
+            state_no_db(),
+            "/v1/customer/runners/entitlement",
+            Some("t1"),
+        )
+        .await;
         assert_eq!(s, StatusCode::OK);
         assert_eq!(ent["sku"], Value::Null);
         assert_eq!(ent["max_concurrency"], json!(0));
@@ -487,9 +504,18 @@ mod tests {
             ],
             ..MockRunnersD1::default()
         });
-        let (s, ent) = get(state, "/v1/customer/runners/entitlement", Some("tenant-xyz")).await;
+        let (s, ent) = get(
+            state,
+            "/v1/customer/runners/entitlement",
+            Some("tenant-xyz"),
+        )
+        .await;
         assert_eq!(s, StatusCode::OK);
-        assert_eq!(ent["sku"], json!("runner_pro"), "prefers the Stripe billing SKU");
+        assert_eq!(
+            ent["sku"],
+            json!("runner_pro"),
+            "prefers the Stripe billing SKU"
+        );
         assert_eq!(ent["max_concurrency"], json!(4));
         assert_eq!(ent["max_vcpu_h"], json!(100));
         assert_eq!(ent["consumed_vcpu_h"], json!(0));
@@ -500,7 +526,11 @@ mod tests {
         let calls = db.calls.lock().unwrap();
         assert!(!calls.is_empty());
         for (_, binds) in calls.iter() {
-            assert_eq!(binds.first(), Some(&json!("tenant-xyz")), "each query is tenant-scoped");
+            assert_eq!(
+                binds.first(),
+                Some(&json!("tenant-xyz")),
+                "each query is tenant-scoped"
+            );
         }
     }
 

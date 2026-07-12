@@ -35,8 +35,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use crate::harness::{
     bearer, expect_denied, expect_gate_denied, expect_status, sha256_hex, unique_blob,
-    url_turbo_artifact,
-    url_turbo_events, url_turbo_status, Config, JourneyResult,
+    url_turbo_artifact, url_turbo_events, url_turbo_status, Config, JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -384,20 +383,25 @@ fn cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!(
-                "A PUT got {put_status} — cannot verify isolation without a successful write"
-            ),
+            format!("A PUT got {put_status} — cannot verify isolation without a successful write"),
         );
     }
 
     // Tenant B GETs the SAME teamId+hash with B's PAT — must be denied, no leak.
-    let get = match client.get(&url).header(AUTHORIZATION, bearer(token_b)).send() {
+    let get = match client
+        .get(&url)
+        .header(AUTHORIZATION, bearer(token_b))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("B GET {url}: {e}")),
     };
     let status = get.status().as_u16();
     if status == 200 {
-        let leaked = get.bytes().map(|b| b.as_ref() == blob.as_slice()).unwrap_or(false);
+        let leaked = get
+            .bytes()
+            .map(|b| b.as_ref() == blob.as_slice())
+            .unwrap_or(false);
         if leaked {
             return JourneyResult::fail(
                 name,

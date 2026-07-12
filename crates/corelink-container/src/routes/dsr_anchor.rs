@@ -166,11 +166,7 @@ async fn handle_anchor(
     let now = i64::try_from(now_ms()).unwrap_or(i64::MAX);
     let sql = "INSERT OR IGNORE INTO dsr_requested (dsr_id, tenant_id, requested_at, status) \
                VALUES (?1, ?2, ?3, 'requested')";
-    let params = [
-        json!(dsr_id),
-        json!(tenant_uuid.to_string()),
-        json!(now),
-    ];
+    let params = [json!(dsr_id), json!(tenant_uuid.to_string()), json!(now)];
     match state.d1.query(sql, &params).await {
         Ok(_) => (StatusCode::OK, Json(json!({ "dsr_id": dsr_id }))).into_response(),
         Err(e) => {
@@ -216,7 +212,9 @@ mod tests {
     }
 
     fn req(auth: Option<&str>, body: &str) -> Request<Body> {
-        let mut b = Request::builder().method(Method::POST).uri(DSR_ANCHOR_ROUTE);
+        let mut b = Request::builder()
+            .method(Method::POST)
+            .uri(DSR_ANCHOR_ROUTE);
         if let Some(a) = auth {
             b = b.header(INTERNAL_AUTH_HEADER, a);
         }
@@ -244,7 +242,10 @@ mod tests {
     #[tokio::test]
     async fn non_uuid_tenant_is_400() {
         let resp = router(state())
-            .oneshot(req(Some(TEST_KEY), r#"{"tenant":"not-a-uuid","subject_key":"u1"}"#))
+            .oneshot(req(
+                Some(TEST_KEY),
+                r#"{"tenant":"not-a-uuid","subject_key":"u1"}"#,
+            ))
             .await
             .expect("resp");
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);

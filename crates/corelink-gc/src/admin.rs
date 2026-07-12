@@ -379,7 +379,14 @@ mod tests {
         let trigger_audit = InMemoryGcAuditSink::new();
         let tenant = Uuid::from_u128(0xa11ce);
         let out = admin_trigger_scheduled(
-            false, "pat_bbbb", tenant, GcRegion::Sam, &trigger_audit, 1_000, 0xbbbb, &sched,
+            false,
+            "pat_bbbb",
+            tenant,
+            GcRegion::Sam,
+            &trigger_audit,
+            1_000,
+            0xbbbb,
+            &sched,
         )
         .unwrap();
         assert!(matches!(out, ScheduledTriggerOutcome::Forbidden { .. }));
@@ -397,7 +404,14 @@ mod tests {
         let trigger_audit = InMemoryGcAuditSink::new();
         let tenant = Uuid::from_u128(0xf00d);
         let out = admin_trigger_scheduled(
-            true, "pat_cccc", tenant, GcRegion::Iad, &trigger_audit, 2_000, 0xcccc, &sched,
+            true,
+            "pat_cccc",
+            tenant,
+            GcRegion::Iad,
+            &trigger_audit,
+            2_000,
+            0xcccc,
+            &sched,
         )
         .unwrap();
         // The real scheduler only increments `admitted` AFTER insert_pending →
@@ -428,7 +442,14 @@ mod tests {
         let trigger_audit = InMemoryGcAuditSink::new();
         let tenant = Uuid::from_u128(0xdead);
         let out = admin_trigger_scheduled(
-            true, "pat_dddd", tenant, GcRegion::Lhr, &trigger_audit, 3_000, 0xdddd, &sched,
+            true,
+            "pat_dddd",
+            tenant,
+            GcRegion::Lhr,
+            &trigger_audit,
+            3_000,
+            0xdddd,
+            &sched,
         )
         .unwrap();
         match out {

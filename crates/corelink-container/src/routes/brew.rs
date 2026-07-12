@@ -129,11 +129,17 @@ impl TenantResolver for BrewPatResolver {
         pat_plaintext: &str,
     ) -> Result<ResolvedTenant, TenantResolveError> {
         let (tenant_id, can_write) =
-            self.0.verify_capability(pat_plaintext).await.map_err(|e| match e {
-                VerifyError::InvalidPat => TenantResolveError::InvalidPat,
-                VerifyError::Backend(m) => TenantResolveError::Backend(m),
-            })?;
-        Ok(ResolvedTenant { tenant_id, can_write })
+            self.0
+                .verify_capability(pat_plaintext)
+                .await
+                .map_err(|e| match e {
+                    VerifyError::InvalidPat => TenantResolveError::InvalidPat,
+                    VerifyError::Backend(m) => TenantResolveError::Backend(m),
+                })?;
+        Ok(ResolvedTenant {
+            tenant_id,
+            can_write,
+        })
     }
 }
 
@@ -270,13 +276,8 @@ async fn brew_gate(
                         // PAT grants write — both layers pass; continue.
                     }
                     Ok(_no_write) => {
-                        tracing::warn!(
-                            "brew: PUT denied — PAT scope lacks write capability (F27)"
-                        );
-                        return (
-                            StatusCode::FORBIDDEN,
-                            "PAT does not grant write capability",
-                        )
+                        tracing::warn!("brew: PUT denied — PAT scope lacks write capability (F27)");
+                        return (StatusCode::FORBIDDEN, "PAT does not grant write capability")
                             .into_response();
                     }
                     Err(TenantResolveError::Backend(m)) => {

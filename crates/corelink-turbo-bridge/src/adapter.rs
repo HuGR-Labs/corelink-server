@@ -366,11 +366,21 @@ mod tests {
         let (_, _, h) = fixture();
         let mk = |bytes: &[u8]| {
             TurboPutRequest::new(
-                "hash_dup", "team_x", "my-repo", bytes.to_vec(), None, "ci_runner", "team_x", 1,
+                "hash_dup",
+                "team_x",
+                "my-repo",
+                bytes.to_vec(),
+                None,
+                "ci_runner",
+                "team_x",
+                1,
             )
         };
         let first = h.put(mk(b"same-bytes")).expect("first put"); // 10 bytes
-        assert!(first.durable, "first PUT of a fresh key must be durable=true");
+        assert!(
+            first.durable,
+            "first PUT of a fresh key must be durable=true"
+        );
         assert_eq!(first.prior_len, None, "fresh insert has no prior");
         // Overwrite with a DIFFERENT size to prove prior_len reports the OLD len.
         let second = h.put(mk(b"longer-bytes-here")).expect("second put");

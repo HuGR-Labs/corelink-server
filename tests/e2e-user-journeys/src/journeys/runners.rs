@@ -202,26 +202,24 @@ fn admit_under_cap_reject_over_cap(cfg: &Config, client: &Client) -> JourneyResu
 /// the gate is absent/renamed rather than actively rejecting, leaving the
 /// security property unproven (harness M3 rule).
 fn introspect_gate_denies_customer_pat(cfg: &Config, client: &Client) -> JourneyResult {
-    let name =
-        "Runners: no-entitlement tenant denied the runner surface (introspect gate) — M8";
+    let name = "Runners: no-entitlement tenant denied the runner surface (introspect gate) — M8";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
     // Prefer the dedicated read-write PAT (cache-only tenant = no runners_entitlement
     // row); fall back to any present token. If none, gate.
-    let token = match cfg
-        .token(TokenKind::ReadWrite)
-        .or_else(|| cfg.token(TokenKind::Runner))
-    {
-        Some(t) => t,
-        None => {
-            return JourneyResult::gated(
+    let token =
+        match cfg
+            .token(TokenKind::ReadWrite)
+            .or_else(|| cfg.token(TokenKind::Runner))
+        {
+            Some(t) => t,
+            None => return JourneyResult::gated(
                 name,
                 "neither CORELINK_E2E_PAT_RW nor CORELINK_E2E_PAT_RUNNER set — no PAT to present \
                  to the runner surface",
-            )
-        }
-    };
+            ),
+        };
 
     let url = url_introspect(cfg);
     let body = format!(r#"{{"token":"{token}"}}"#);

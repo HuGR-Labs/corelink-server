@@ -24,8 +24,8 @@ use corelink_signup::{
     Bcp47Locale, CorrelationId, IdempotencyKey, InMemoryAtomicSignupStore, InMemoryBillingClient,
     InMemorySignupAuditSink, SignupOrchestrator, SignupRequest, UserEmailHash,
 };
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 
 fn build_request(idem: &str) -> SignupRequest {
     SignupRequest::new(

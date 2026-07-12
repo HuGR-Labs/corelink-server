@@ -81,10 +81,7 @@ fn i64_col(row: &crate::storage::d1_http::D1Row, key: &str) -> Result<i64, Strin
 }
 
 impl DpaAcceptStore for D1HttpDpaAcceptStore {
-    async fn find_by_signup_id(
-        &self,
-        signup_id: &str,
-    ) -> Result<Option<StoredAcceptance>, String> {
+    async fn find_by_signup_id(&self, signup_id: &str) -> Result<Option<StoredAcceptance>, String> {
         let rows = self
             .d1
             .query(

@@ -384,9 +384,9 @@ fn set_observability_value(
     let root = cfg
         .observability
         .get_or_insert_with(|| toml::Value::Table(toml::map::Map::new()));
-    let mut cur = root.as_table_mut().ok_or_else(|| {
-        ConfigError::UnknownKey("observability root is not a table".to_owned())
-    })?;
+    let mut cur = root
+        .as_table_mut()
+        .ok_or_else(|| ConfigError::UnknownKey("observability root is not a table".to_owned()))?;
     for seg in parents {
         let entry = cur
             .entry((*seg).to_owned())
@@ -557,7 +557,11 @@ mod observability_tests {
             "2000"
         );
         assert_eq!(
-            read_key(&cfg, "observability.export.datadog.opt_out_low_value_metrics").unwrap(),
+            read_key(
+                &cfg,
+                "observability.export.datadog.opt_out_low_value_metrics"
+            )
+            .unwrap(),
             "true"
         );
         // Absent path reads as (unset), never an error.

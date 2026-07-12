@@ -40,6 +40,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::wall_clock::{SystemWallClock, WallClock};
 use axum::{
     extract::{FromRequestParts, Path, Query, State},
     http::{request::Parts, StatusCode},
@@ -47,7 +48,6 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use crate::wall_clock::{SystemWallClock, WallClock};
 use corelink_handler_ac::{
     AcDeleteHandler, AcDeleteRequest, AcDeleteResponse, AcHandlerError, AcListHandler,
     AcListRequest, AcListResponse, AcLookupHandler, AcLookupRequest, AcLookupResponse,
@@ -457,7 +457,9 @@ pub fn router(state: AcRouteState) -> Router {
 /// route, which already prevents `/`-based path traversal). Lowercase-only keeps
 /// the content-addressing key canonical (no case-variant key collisions).
 pub(crate) fn is_canonical_digest(d: &str) -> bool {
-    d.len() == 64 && d.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
+    d.len() == 64
+        && d.bytes()
+            .all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f'))
 }
 
 /// Run the native PAT possession gate (finding #4) when it is wired.
@@ -825,7 +827,11 @@ fn map_err(e: AcHandlerError) -> axum::response::Response {
         AcHandlerError::Internal(ref msg)
             if msg.starts_with(crate::byte_accounting::ACCT_UNAVAILABLE_SENTINEL) =>
         {
-            (StatusCode::SERVICE_UNAVAILABLE, "storage accounting unavailable").into_response()
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "storage accounting unavailable",
+            )
+                .into_response()
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
@@ -847,8 +853,7 @@ mod tests {
     /// HTTP handlers now reject non-canonical digests with 400 (CAA-360 #9), so
     /// router tests must use a realistic digest. (Store-level tests call the
     /// handler trait directly, bypass the route gate, and keep their short stubs.)
-    const VALID_DIGEST: &str =
-        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const VALID_DIGEST: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     #[test]
     fn is_canonical_digest_accepts_only_64_lowercase_hex() {
@@ -858,9 +863,15 @@ mod tests {
         assert!(is_canonical_digest(&"a".repeat(64)));
         assert!(!is_canonical_digest(&"a".repeat(63)), "too short");
         assert!(!is_canonical_digest(&"a".repeat(65)), "too long");
-        assert!(!is_canonical_digest(&"A".repeat(64)), "uppercase not canonical");
+        assert!(
+            !is_canonical_digest(&"A".repeat(64)),
+            "uppercase not canonical"
+        );
         assert!(!is_canonical_digest(&"g".repeat(64)), "non-hex char");
-        assert!(!is_canonical_digest("../../../etc/passwd"), "path traversal");
+        assert!(
+            !is_canonical_digest("../../../etc/passwd"),
+            "path traversal"
+        );
         assert!(!is_canonical_digest(""), "empty");
     }
 
@@ -1334,8 +1345,7 @@ mod tests {
 
     /// A second canonical digest, distinct from `VALID_DIGEST`, for the
     /// exact-key restriction tests.
-    const OTHER_DIGEST: &str =
-        "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+    const OTHER_DIGEST: &str = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
 
     /// runner-job marker present ⇒ AC DELETE is denied 403 even with a
     /// write-capable scope (a per-job credential must not evict the cache).
@@ -1356,7 +1366,10 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .expect("body");
-        assert_eq!(body.as_ref(), b"delete not permitted for a runner-job credential");
+        assert_eq!(
+            body.as_ref(),
+            b"delete not permitted for a runner-job credential"
+        );
     }
 
     /// runner-job + exact-key pin: an AC update to the pinned key passes the
@@ -1391,7 +1404,11 @@ mod tests {
             .body(Body::from(b"result".to_vec()))
             .expect("request");
         let resp2 = app2.oneshot(req2).await.expect("oneshot");
-        assert_eq!(resp2.status(), StatusCode::FORBIDDEN, "off-key write must 403");
+        assert_eq!(
+            resp2.status(),
+            StatusCode::FORBIDDEN,
+            "off-key write must 403"
+        );
         let body = axum::body::to_bytes(resp2.into_body(), usize::MAX)
             .await
             .expect("body");
@@ -1414,7 +1431,11 @@ mod tests {
             .body(Body::from(b"result".to_vec()))
             .expect("request");
         let resp = app.oneshot(put).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::CREATED, "wildcard write must pass");
+        assert_eq!(
+            resp.status(),
+            StatusCode::CREATED,
+            "wildcard write must pass"
+        );
 
         let (_a2, _s2, st2) = fixture();
         let app2 = router(st2);
@@ -1428,7 +1449,11 @@ mod tests {
             .body(Body::empty())
             .expect("request");
         let resp2 = app2.oneshot(del).await.expect("oneshot");
-        assert_eq!(resp2.status(), StatusCode::FORBIDDEN, "wildcard delete still denied");
+        assert_eq!(
+            resp2.status(),
+            StatusCode::FORBIDDEN,
+            "wildcard delete still denied"
+        );
     }
 
     /// NO runner-job marker (normal PAT): AC update + delete behave EXACTLY as
@@ -1449,7 +1474,11 @@ mod tests {
             .body(Body::from(b"result".to_vec()))
             .expect("request");
         let resp = app.oneshot(put).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::CREATED, "no marker ⇒ pin ignored");
+        assert_eq!(
+            resp.status(),
+            StatusCode::CREATED,
+            "no marker ⇒ pin ignored"
+        );
 
         // Delete with a write scope and no marker → 204 (unchanged).
         let (_a2, _s2, st2) = fixture();
@@ -1462,7 +1491,11 @@ mod tests {
             .body(Body::empty())
             .expect("request");
         let resp2 = app2.oneshot(del).await.expect("oneshot");
-        assert_eq!(resp2.status(), StatusCode::NO_CONTENT, "normal delete unchanged");
+        assert_eq!(
+            resp2.status(),
+            StatusCode::NO_CONTENT,
+            "normal delete unchanged"
+        );
     }
 
     /// A present-but-non-`"1"` marker is NOT a runner-job: delete behaves as a
@@ -1480,7 +1513,11 @@ mod tests {
             .body(Body::empty())
             .expect("request");
         let resp = app.oneshot(del).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::NO_CONTENT, "marker \"0\" ⇒ not narrowed");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NO_CONTENT,
+            "marker \"0\" ⇒ not narrowed"
+        );
     }
 
     // ── AC create-only (deny-overwrite / anti AC-squat) ──────────────────────
@@ -1521,7 +1558,10 @@ mod tests {
         let (_a, _s, st) = fixture();
         seed_ac_entry(&st, b"result"); // first writer establishes the entry
         let app = router(st);
-        let resp = app.oneshot(create_only_put(b"result")).await.expect("oneshot");
+        let resp = app
+            .oneshot(create_only_put(b"result"))
+            .await
+            .expect("oneshot");
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
@@ -1537,7 +1577,10 @@ mod tests {
         let (_a, _s, st) = fixture();
         seed_ac_entry(&st, b"original");
         let app = router(st);
-        let resp = app.oneshot(create_only_put(b"poisoned")).await.expect("oneshot");
+        let resp = app
+            .oneshot(create_only_put(b"poisoned"))
+            .await
+            .expect("oneshot");
         assert_eq!(resp.status(), StatusCode::CONFLICT);
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
@@ -1555,8 +1598,15 @@ mod tests {
     async fn create_only_fresh_entry_succeeds() {
         let (_a, _s, st) = fixture();
         let app = router(st);
-        let resp = app.oneshot(create_only_put(b"result")).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::CREATED, "the first write must succeed");
+        let resp = app
+            .oneshot(create_only_put(b"result"))
+            .await
+            .expect("oneshot");
+        assert_eq!(
+            resp.status(),
+            StatusCode::CREATED,
+            "the first write must succeed"
+        );
     }
 
     /// A NON-create-only runner-job cred (marker set, NO create-only header) may
@@ -1650,7 +1700,10 @@ mod tests {
             .expect("body");
         let v: serde_json::Value = serde_json::from_slice(&body).expect("json");
         assert_eq!(v["refs"].as_array().expect("refs").len(), 1);
-        let cursor = v["next_cursor"].as_str().expect("cursor present").to_owned();
+        let cursor = v["next_cursor"]
+            .as_str()
+            .expect("cursor present")
+            .to_owned();
         let page2 = Request::builder()
             .method(Method::GET)
             .uri(format!("/v1/ac/{TEST_TENANT}?limit=1&cursor={cursor}"))
@@ -1695,7 +1748,8 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn update_over_storage_cap_returns_402() {
         use crate::byte_accounting::{
-            testing::InMemoryByteStore, testing::Row, AccountingAcHandler, ByteAccountant, ByteStore,
+            testing::InMemoryByteStore, testing::Row, AccountingAcHandler, ByteAccountant,
+            ByteStore,
         };
 
         let (_a, _s, mut st) = fixture();

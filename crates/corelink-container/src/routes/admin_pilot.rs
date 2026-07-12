@@ -582,8 +582,7 @@ impl PilotStore for InMemoryPilotStore {
 /// every column the [`PilotTenant`] shape needs, in a fixed order.
 /// Table + column names are compile-time constants (injection-safe);
 /// only values are ever bound as `?n` params.
-const PILOT_SELECT_COLS: &str =
-    "tenant_id, slug, tier, cap_bytes, pilot_state, signup_at_ms, \
+const PILOT_SELECT_COLS: &str = "tenant_id, slug, tier, cap_bytes, pilot_state, signup_at_ms, \
      tier_granted_at_ms, first_blob_at_ms";
 
 /// Sync row-source seam over D1 — the sync↔async bridge point.
@@ -766,9 +765,8 @@ impl PilotStore for D1PilotStore {
     }
 
     fn get(&self, tenant_id: Uuid) -> Result<Option<PilotTenant>, &'static str> {
-        let sql = format!(
-            "SELECT {PILOT_SELECT_COLS} FROM pilot_tenants WHERE tenant_id = ?1 LIMIT 1"
-        );
+        let sql =
+            format!("SELECT {PILOT_SELECT_COLS} FROM pilot_tenants WHERE tenant_id = ?1 LIMIT 1");
         let rows = self
             .db
             .query(&sql, vec![json!(tenant_id.to_string())])
@@ -1914,9 +1912,7 @@ mod tests {
     fn in_memory_store_create_inserts_new_tenant_in_new_state() {
         let (_st, store, _au, _c) = fixture();
         let id = Uuid::now_v7();
-        let created = store
-            .create(id, "acme-builds", 0, 1_000)
-            .expect("create");
+        let created = store.create(id, "acme-builds", 0, 1_000).expect("create");
         assert_eq!(created.tenant_id, id);
         assert_eq!(created.slug, "acme-builds");
         assert_eq!(created.tier, "free");
@@ -2173,10 +2169,7 @@ mod tests {
         let calls = db.calls();
         assert_eq!(calls.len(), 1);
         assert!(calls[0].0.contains("ORDER BY signup_at_ms ASC"));
-        assert_eq!(
-            calls[0].1,
-            vec![json!("NEW"), json!(25_i64), json!(7_i64)]
-        );
+        assert_eq!(calls[0].1, vec![json!("NEW"), json!(25_i64), json!(7_i64)]);
     }
 
     #[test]

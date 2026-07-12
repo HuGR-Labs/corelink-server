@@ -89,16 +89,6 @@ pub mod adapter_oci_kv;
 /// here once (replaces the cargo-only `cargo_pat_resolver`). See module docs.
 pub mod adapter_pat;
 pub mod auth_tenant;
-/// Per-tenant **storage byte accounting** (red-team finding #1): the
-/// [`byte_accounting::ByteAccountant`] that atomically check-and-accrues
-/// `tenant_storage_state.bytes_used` after a store write (closing the
-/// structurally-inert storage cap) and saturating-releases it on delete.
-pub mod byte_accounting;
-/// Native data-plane **PAT possession gate** (red-team finding #4): the
-/// [`native_pat_gate::NativePatGate`] that re-runs the full Argon2id Option-B
-/// verification (via [`adapter_pat::PatVerifier`]) at the container, so a leaked
-/// `PAT_SIGNING_KEY` (HMAC-only forgery) cannot serve a forged tenant's PAT.
-pub mod native_pat_gate;
 /// Durable native [`corelink_billing_stripe_materializer::BillingD1Writer`]
 /// over the CF D1 REST API (`billing_d1_http::D1HttpBillingWriter`). Bridges
 /// the SYNC billing-writer trait (shared with the wasm32 Worker) to the
@@ -107,6 +97,11 @@ pub mod native_pat_gate;
 /// in-memory mirror. See module docs.
 pub mod billing_d1_http;
 pub mod byok_orchestrator;
+/// Per-tenant **storage byte accounting** (red-team finding #1): the
+/// [`byte_accounting::ByteAccountant`] that atomically check-and-accrues
+/// `tenant_storage_state.bytes_used` after a store write (closing the
+/// structurally-inert storage cap) and saturating-releases it on delete.
+pub mod byte_accounting;
 /// Production D1-backed customer-dashboard handler (dashboard revival
 /// WP-3): [`customer_d1::D1CustomerHandler`] implements all 6
 /// `corelink-handler-customer` traits over the CF D1 REST API
@@ -120,6 +115,11 @@ pub mod customer_d1;
 /// rectification stay byte-identical (HMAC-SHA256 under `EMAIL_HASH_SALT`, with
 /// a no-regression unsalted SHA-256 fallback).
 pub mod email_hash;
+/// Native data-plane **PAT possession gate** (red-team finding #4): the
+/// [`native_pat_gate::NativePatGate`] that re-runs the full Argon2id Option-B
+/// verification (via [`adapter_pat::PatVerifier`]) at the container, so a leaked
+/// `PAT_SIGNING_KEY` (HMAC-only forgery) cannot serve a forged tenant's PAT.
+pub mod native_pat_gate;
 #[cfg(feature = "neon-real")]
 pub mod neon_shadow_factory;
 /// Container-side resolution of a tenant's resolved per-tier storage cap for the
@@ -148,11 +148,6 @@ pub mod oci_suspend;
 pub mod quota_error;
 pub mod request_count;
 pub mod routes;
-/// In-process **display** usage aggregator (BE-1 reads/writes/daily + BE-2 cache
-/// hit-rate / $-saved) feeding the `usage_daily` D1 table (migration 0089).
-/// `record` is a cheap in-memory increment (no hot-path D1 write); a background
-/// task flushes additive deltas every ~30s. DISPLAY telemetry, never billing.
-pub mod usage_meter;
 /// Cache-scope enforcement helper + extractor.
 ///
 /// Parses the Worker-set, server-trusted `x-corelink-scope` header (the
@@ -174,5 +169,10 @@ pub mod storage;
 /// per-tenant rate limit. Backed by the `tenant_quota` D1 table
 /// (migration 0066).
 pub mod tenant_quota;
+/// In-process **display** usage aggregator (BE-1 reads/writes/daily + BE-2 cache
+/// hit-rate / $-saved) feeding the `usage_daily` D1 table (migration 0089).
+/// `record` is a cheap in-memory increment (no hot-path D1 write); a background
+/// task flushes additive deltas every ~30s. DISPLAY telemetry, never billing.
+pub mod usage_meter;
 pub mod wall_clock;
 pub mod webhook;

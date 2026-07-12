@@ -148,9 +148,7 @@ fn cache_miss_then_hit(cfg: &Config, client: &Client) -> JourneyResult {
     }
     match get2.bytes() {
         Ok(b) if b.as_ref() == blob.as_slice() => {}
-        Ok(_) => {
-            return JourneyResult::fail(name, ms(start), "GET#2 bytes mismatch".to_string())
-        }
+        Ok(_) => return JourneyResult::fail(name, ms(start), "GET#2 bytes mismatch".to_string()),
         Err(e) => return JourneyResult::fail(name, ms(start), format!("GET#2 body: {e}")),
     }
 
@@ -207,7 +205,11 @@ fn tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
 
     // Tenant B GETs the SAME content address under tenant B's path — must deny.
     let url_b = url_cas(cfg, &b.tenant, &hash);
-    let get = match client.get(&url_b).header(AUTHORIZATION, bearer(token_b)).send() {
+    let get = match client
+        .get(&url_b)
+        .header(AUTHORIZATION, bearer(token_b))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("B GET {url_b}: {e}")),
     };
@@ -246,7 +248,10 @@ fn batch_write_then_get(cfg: &Config, client: &Client) -> JourneyResult {
         Err(reason) => return JourneyResult::gated(name, reason),
     };
     if cfg.tenant.is_none() {
-        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set — batch path requires tenant segment");
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_TENANT not set — batch path requires tenant segment",
+        );
     }
     let token = p.token.expect("P1 always has a token");
 
@@ -292,17 +297,29 @@ fn batch_write_then_get(cfg: &Config, client: &Client) -> JourneyResult {
     };
     let results: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("batch response not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("batch response not JSON: {e}"))
+        }
     };
     let arr = match results.as_array() {
         Some(a) => a,
-        None => return JourneyResult::fail(name, ms(start), "batch response is not a JSON array".to_string()),
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "batch response is not a JSON array".to_string(),
+            )
+        }
     };
     if arr.len() != hashes.len() {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("batch response has {} entries, expected {}", arr.len(), hashes.len()),
+            format!(
+                "batch response has {} entries, expected {}",
+                arr.len(),
+                hashes.len()
+            ),
         );
     }
     for (i, entry) in arr.iter().enumerate() {
@@ -311,7 +328,10 @@ fn batch_write_then_get(cfg: &Config, client: &Client) -> JourneyResult {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("batch result[{i}] hash mismatch: got {got_hash:?} want {:?}", hashes[i]),
+                format!(
+                    "batch result[{i}] hash mismatch: got {got_hash:?} want {:?}",
+                    hashes[i]
+                ),
             );
         }
         let st = entry.get("status").and_then(Value::as_str).unwrap_or("");
@@ -327,7 +347,11 @@ fn batch_write_then_get(cfg: &Config, client: &Client) -> JourneyResult {
     // Now GET each blob back and assert bytes match exactly.
     for (hash, blob) in hashes.iter().zip(blobs.iter()) {
         let get_url = url_cas(cfg, &p.tenant, hash);
-        let get = match client.get(&get_url).header(AUTHORIZATION, bearer(token)).send() {
+        let get = match client
+            .get(&get_url)
+            .header(AUTHORIZATION, bearer(token))
+            .send()
+        {
             Ok(r) => r,
             Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {get_url}: {e}")),
         };
@@ -335,7 +359,10 @@ fn batch_write_then_get(cfg: &Config, client: &Client) -> JourneyResult {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("GET blob after batch write got {} (expected 200). url={get_url}", get.status()),
+                format!(
+                    "GET blob after batch write got {} (expected 200). url={get_url}",
+                    get.status()
+                ),
             );
         }
         match get.bytes() {
@@ -344,7 +371,11 @@ fn batch_write_then_get(cfg: &Config, client: &Client) -> JourneyResult {
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("GET {hash} bytes mismatch after batch write (put {} bytes, got {} bytes)", blob.len(), b.len()),
+                    format!(
+                        "GET {hash} bytes mismatch after batch write (put {} bytes, got {} bytes)",
+                        blob.len(),
+                        b.len()
+                    ),
                 )
             }
             Err(e) => return JourneyResult::fail(name, ms(start), format!("GET body {hash}: {e}")),
@@ -390,7 +421,10 @@ fn batch_exists_present_and_missing(cfg: &Config, client: &Client) -> JourneyRes
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("PUT blob for exists probe got {} (expected 200/201)", put.status()),
+            format!(
+                "PUT blob for exists probe got {} (expected 200/201)",
+                put.status()
+            ),
         );
     }
 
@@ -400,9 +434,7 @@ fn batch_exists_present_and_missing(cfg: &Config, client: &Client) -> JourneyRes
     let absent_hash = blake3_hex(&absent_blob);
 
     // Build NDJSON request: present hash first, absent second.
-    let ndjson = format!(
-        "{{\"hash\":\"{present_hash}\"}}\n{{\"hash\":\"{absent_hash}\"}}\n"
-    );
+    let ndjson = format!("{{\"hash\":\"{present_hash}\"}}\n{{\"hash\":\"{absent_hash}\"}}\n");
 
     let exists_url = url_cas_batch_exists(cfg, &p.tenant);
     let resp = match client
@@ -413,26 +445,49 @@ fn batch_exists_present_and_missing(cfg: &Config, client: &Client) -> JourneyRes
         .send()
     {
         Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST batch-exists {exists_url}: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("POST batch-exists {exists_url}: {e}"),
+            )
+        }
     };
     if resp.status().as_u16() != 200 {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("POST /batch-exists got {} (expected 200). url={exists_url}", resp.status()),
+            format!(
+                "POST /batch-exists got {} (expected 200). url={exists_url}",
+                resp.status()
+            ),
         );
     }
     let body_bytes = match resp.bytes() {
         Ok(b) => b,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("batch-exists response body: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("batch-exists response body: {e}"))
+        }
     };
     let results: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("batch-exists response not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("batch-exists response not JSON: {e}"),
+            )
+        }
     };
     let arr = match results.as_array() {
         Some(a) => a,
-        None => return JourneyResult::fail(name, ms(start), "batch-exists response is not a JSON array".to_string()),
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "batch-exists response is not a JSON array".to_string(),
+            )
+        }
     };
     if arr.len() != 2 {
         return JourneyResult::fail(
@@ -446,24 +501,60 @@ fn batch_exists_present_and_missing(cfg: &Config, client: &Client) -> JourneyRes
     let e0 = &arr[0];
     let h0 = e0.get("hash").and_then(Value::as_str).unwrap_or("");
     if h0 != present_hash {
-        return JourneyResult::fail(name, ms(start), format!("batch-exists result[0] hash={h0:?} want {present_hash:?} (order mismatch)"));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("batch-exists result[0] hash={h0:?} want {present_hash:?} (order mismatch)"),
+        );
     }
     match e0.get("present").and_then(Value::as_bool) {
         Some(true) => {}
-        Some(false) => return JourneyResult::fail(name, ms(start), format!("batch-exists result[0] present=false for a blob we just PUT ({present_hash})")),
-        None => return JourneyResult::fail(name, ms(start), "batch-exists result[0] missing \"present\" field".to_string()),
+        Some(false) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!(
+                    "batch-exists result[0] present=false for a blob we just PUT ({present_hash})"
+                ),
+            )
+        }
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "batch-exists result[0] missing \"present\" field".to_string(),
+            )
+        }
     }
 
     // Entry 1: the never-PUT hash — must be present:false.
     let e1 = &arr[1];
     let h1 = e1.get("hash").and_then(Value::as_str).unwrap_or("");
     if h1 != absent_hash {
-        return JourneyResult::fail(name, ms(start), format!("batch-exists result[1] hash={h1:?} want {absent_hash:?} (order mismatch)"));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("batch-exists result[1] hash={h1:?} want {absent_hash:?} (order mismatch)"),
+        );
     }
     match e1.get("present").and_then(Value::as_bool) {
         Some(false) => {}
-        Some(true) => return JourneyResult::fail(name, ms(start), format!("batch-exists result[1] present=true for a hash that was never PUT ({absent_hash})")),
-        None => return JourneyResult::fail(name, ms(start), "batch-exists result[1] missing \"present\" field".to_string()),
+        Some(true) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!(
+                "batch-exists result[1] present=true for a hash that was never PUT ({absent_hash})"
+            ),
+            )
+        }
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "batch-exists result[1] missing \"present\" field".to_string(),
+            )
+        }
     }
 
     JourneyResult::pass(name, ms(start))
@@ -475,7 +566,8 @@ fn batch_exists_present_and_missing(cfg: &Config, client: &Client) -> JourneyRes
 /// (`{"hash":"…","len":<u64>,"status":"ok"}`) terminated by a blank line,
 /// followed by the raw bytes of each `ok` object in manifest order.
 fn batch_read_bytes_match(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "CAS M9c: batch-read (POST /batch-read) - manifest correct, bytes match PUT contents";
+    let name =
+        "CAS M9c: batch-read (POST /batch-read) - manifest correct, bytes match PUT contents";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
@@ -529,48 +621,79 @@ fn batch_read_bytes_match(cfg: &Config, client: &Client) -> JourneyResult {
         .send()
     {
         Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST batch-read {read_url}: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("POST batch-read {read_url}: {e}"))
+        }
     };
     if resp.status().as_u16() != 200 {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("POST /batch-read got {} (expected 200). url={read_url}", resp.status()),
+            format!(
+                "POST /batch-read got {} (expected 200). url={read_url}",
+                resp.status()
+            ),
         );
     }
     let raw = match resp.bytes() {
         Ok(b) => b.to_vec(),
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("batch-read response body: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("batch-read response body: {e}"))
+        }
     };
 
     // Split at the first `\n\n`: manifest is before it, payload is after.
     let sep = raw.windows(2).position(|w| w == b"\n\n");
     let sep = match sep {
         Some(s) => s,
-        None => return JourneyResult::fail(name, ms(start), "batch-read response missing \\n\\n manifest terminator".to_string()),
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                "batch-read response missing \\n\\n manifest terminator".to_string(),
+            )
+        }
     };
     let manifest_bytes = &raw[..sep + 1];
     let payload = raw.get(sep + 2..).unwrap_or(&[]);
     let manifest_text = match std::str::from_utf8(manifest_bytes) {
         Ok(s) => s,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("batch-read manifest not UTF-8: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("batch-read manifest not UTF-8: {e}"),
+            )
+        }
     };
 
     // Parse each NDJSON manifest line as a serde_json::Value to avoid a
     // local derive — this crate only has serde_json, not serde+derive.
     let mut entries: Vec<Value> = Vec::new();
     for line in manifest_text.lines() {
-        if line.trim().is_empty() { continue; }
+        if line.trim().is_empty() {
+            continue;
+        }
         match serde_json::from_str::<Value>(line) {
             Ok(v) => entries.push(v),
-            Err(e) => return JourneyResult::fail(name, ms(start), format!("malformed manifest line {line:?}: {e}")),
+            Err(e) => {
+                return JourneyResult::fail(
+                    name,
+                    ms(start),
+                    format!("malformed manifest line {line:?}: {e}"),
+                )
+            }
         }
     }
     if entries.len() != hashes.len() {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("batch-read manifest has {} entries, expected {}", entries.len(), hashes.len()),
+            format!(
+                "batch-read manifest has {} entries, expected {}",
+                entries.len(),
+                hashes.len()
+            ),
         );
     }
 
@@ -579,16 +702,31 @@ fn batch_read_bytes_match(cfg: &Config, client: &Client) -> JourneyResult {
     for (i, (entry, expected)) in entries.iter().zip(blobs.iter()).enumerate() {
         let got_hash = entry.get("hash").and_then(Value::as_str).unwrap_or("");
         if got_hash != hashes[i] {
-            return JourneyResult::fail(name, ms(start), format!("manifest[{i}] hash={got_hash:?} want {:?}", hashes[i]));
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("manifest[{i}] hash={got_hash:?} want {:?}", hashes[i]),
+            );
         }
         let status = entry.get("status").and_then(Value::as_str).unwrap_or("");
         if status != "ok" {
-            return JourneyResult::fail(name, ms(start), format!("manifest[{i}] status={status:?} (expected \"ok\")"));
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("manifest[{i}] status={status:?} (expected \"ok\")"),
+            );
         }
         let len = entry.get("len").and_then(Value::as_u64).unwrap_or(0) as usize;
         let end = offset + len;
         if end > payload.len() {
-            return JourneyResult::fail(name, ms(start), format!("manifest[{i}] claims {len} bytes but payload only has {} remaining", payload.len() - offset));
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!(
+                    "manifest[{i}] claims {len} bytes but payload only has {} remaining",
+                    payload.len() - offset
+                ),
+            );
         }
         let got = &payload[offset..end];
         if got != expected.as_slice() {
@@ -604,7 +742,10 @@ fn batch_read_bytes_match(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("batch-read payload has {} trailing bytes beyond the manifest entries", payload.len() - offset),
+            format!(
+                "batch-read payload has {} trailing bytes beyond the manifest entries",
+                payload.len() - offset
+            ),
         );
     }
 
@@ -617,7 +758,8 @@ fn batch_read_bytes_match(cfg: &Config, client: &Client) -> JourneyResult {
 /// `GET /v1/cas/{tenant}` and assert both hashes appear in the `blobs` array.
 /// Response shape: `{"blobs":[{"hash","size","created_at"}…],"next_cursor":<null>}`.
 fn list_enumerates_uploaded_blobs(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "CAS D-8: GET /v1/cas/{tenant} - list enumerates PUTted blobs (hash present, size correct)";
+    let name =
+        "CAS D-8: GET /v1/cas/{tenant} - list enumerates PUTted blobs (hash present, size correct)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
@@ -648,18 +790,33 @@ fn list_enumerates_uploaded_blobs(cfg: &Config, client: &Client) -> JourneyResul
             Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT {put_url}: {e}")),
         };
         if !matches!(put.status().as_u16(), 200 | 201) {
-            return JourneyResult::fail(name, ms(start), format!("PUT blob {hash} got {} (expected 200/201)", put.status()));
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("PUT blob {hash} got {} (expected 200/201)", put.status()),
+            );
         }
     }
 
     // GET the list. Use a generous limit so fresh blobs are visible on a shared tenant.
     let list_url = format!("{}?limit=1000", url_cas_list(cfg, &p.tenant));
-    let resp = match client.get(&list_url).header(AUTHORIZATION, bearer(token)).send() {
+    let resp = match client
+        .get(&list_url)
+        .header(AUTHORIZATION, bearer(token))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {list_url}: {e}")),
     };
     if resp.status().as_u16() != 200 {
-        return JourneyResult::fail(name, ms(start), format!("GET /cas list got {} (expected 200). url={list_url}", resp.status()));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "GET /cas list got {} (expected 200). url={list_url}",
+                resp.status()
+            ),
+        );
     }
     let body_bytes = match resp.bytes() {
         Ok(b) => b,
@@ -667,27 +824,51 @@ fn list_enumerates_uploaded_blobs(cfg: &Config, client: &Client) -> JourneyResul
     };
     let parsed: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("list response not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("list response not JSON: {e}"))
+        }
     };
     let blobs_arr = match parsed.get("blobs").and_then(Value::as_array) {
         Some(a) => a,
-        None => return JourneyResult::fail(name, ms(start), format!("list response missing \"blobs\" array; got: {parsed}")),
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("list response missing \"blobs\" array; got: {parsed}"),
+            )
+        }
     };
 
     // Assert each hash appears in the list.
     for (i, hash) in hashes.iter().enumerate() {
-        let found = blobs_arr.iter().any(|entry| {
-            entry.get("hash").and_then(Value::as_str) == Some(hash.as_str())
-        });
+        let found = blobs_arr
+            .iter()
+            .any(|entry| entry.get("hash").and_then(Value::as_str) == Some(hash.as_str()));
         if !found {
-            return JourneyResult::fail(name, ms(start), format!("PUT blob[{i}] hash {hash} not found in /cas list ({} entries)", blobs_arr.len()));
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!(
+                    "PUT blob[{i}] hash {hash} not found in /cas list ({} entries)",
+                    blobs_arr.len()
+                ),
+            );
         }
         // Also assert the size is correct for each entry we can find.
-        if let Some(entry) = blobs_arr.iter().find(|e| e.get("hash").and_then(Value::as_str) == Some(hash.as_str())) {
+        if let Some(entry) = blobs_arr
+            .iter()
+            .find(|e| e.get("hash").and_then(Value::as_str) == Some(hash.as_str()))
+        {
             let size = entry.get("size").and_then(Value::as_u64).unwrap_or(0);
             let expected_size = blobs[i].len() as u64;
             if size != expected_size {
-                return JourneyResult::fail(name, ms(start), format!("list entry for {hash}: size={size} but blob was {expected_size} bytes"));
+                return JourneyResult::fail(
+                    name,
+                    ms(start),
+                    format!(
+                        "list entry for {hash}: size={size} but blob was {expected_size} bytes"
+                    ),
+                );
             }
         }
     }
@@ -732,12 +913,20 @@ fn list_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => return JourneyResult::fail(name, ms(start), format!("A PUT {put_url}: {e}")),
     };
     if !matches!(put.status().as_u16(), 200 | 201) {
-        return JourneyResult::fail(name, ms(start), format!("A PUT got {} — cannot verify list isolation", put.status()));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("A PUT got {} — cannot verify list isolation", put.status()),
+        );
     }
 
     // B lists their own namespace — must not see A's hash.
     let list_url_b = format!("{}?limit=1000", url_cas_list(cfg, &b.tenant));
-    let resp = match client.get(&list_url_b).header(AUTHORIZATION, bearer(token_b)).send() {
+    let resp = match client
+        .get(&list_url_b)
+        .header(AUTHORIZATION, bearer(token_b))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("B GET {list_url_b}: {e}")),
     };
@@ -747,21 +936,38 @@ fn list_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::pass(name, ms(start));
     }
     if status != 200 {
-        return JourneyResult::fail(name, ms(start), format!("B GET list got {status} (expected 200 or deny). url={list_url_b}"));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("B GET list got {status} (expected 200 or deny). url={list_url_b}"),
+        );
     }
     let body_bytes = match resp.bytes() {
         Ok(b) => b,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("B list response body: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("B list response body: {e}"))
+        }
     };
     let parsed: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("B list response not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("B list response not JSON: {e}"))
+        }
     };
     let blobs_arr = match parsed.get("blobs").and_then(Value::as_array) {
         Some(a) => a,
-        None => return JourneyResult::fail(name, ms(start), format!("B list response missing \"blobs\" array; got: {parsed}")),
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("B list response missing \"blobs\" array; got: {parsed}"),
+            )
+        }
     };
-    if blobs_arr.iter().any(|e| e.get("hash").and_then(Value::as_str) == Some(hash_a.as_str())) {
+    if blobs_arr
+        .iter()
+        .any(|e| e.get("hash").and_then(Value::as_str) == Some(hash_a.as_str()))
+    {
         return JourneyResult::fail(
             name,
             ms(start),

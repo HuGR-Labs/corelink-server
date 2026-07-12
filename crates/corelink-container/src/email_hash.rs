@@ -147,8 +147,11 @@ mod tests {
     #[test]
     fn unset_salt_is_byte_identical_to_legacy_sha256() {
         let _g = EnvGuard::acquire(); // salt UNSET
-        // No-regression proof: the helper with no salt == the old inline scheme.
-        assert_eq!(hash_email("user@example.com"), legacy_unsalted("user@example.com"));
+                                      // No-regression proof: the helper with no salt == the old inline scheme.
+        assert_eq!(
+            hash_email("user@example.com"),
+            legacy_unsalted("user@example.com")
+        );
         assert_eq!(
             hash_email("  Alice@Example.com  "),
             legacy_unsalted("alice@example.com")
@@ -186,7 +189,10 @@ mod tests {
     fn empty_salt_falls_back_to_unsalted() {
         let g = EnvGuard::acquire();
         g.set_salt(""); // set-but-empty must behave as UNSET (no empty-key HMAC)
-        assert_eq!(hash_email("user@example.com"), legacy_unsalted("user@example.com"));
+        assert_eq!(
+            hash_email("user@example.com"),
+            legacy_unsalted("user@example.com")
+        );
     }
 
     // ── Dual-read candidate helper (safe EMAIL_HASH_SALT activation) ─────────
@@ -195,10 +201,16 @@ mod tests {
     fn legacy_helper_is_always_unsalted_regardless_of_salt() {
         let g = EnvGuard::acquire();
         // Legacy helper == the pre-salt inline scheme with salt UNSET…
-        assert_eq!(hash_email_legacy("user@example.com"), legacy_unsalted("user@example.com"));
+        assert_eq!(
+            hash_email_legacy("user@example.com"),
+            legacy_unsalted("user@example.com")
+        );
         // …and STAYS unsalted even after the salt is set (it never reads the env).
         g.set_salt("server-secret-salt");
-        assert_eq!(hash_email_legacy("user@example.com"), legacy_unsalted("user@example.com"));
+        assert_eq!(
+            hash_email_legacy("user@example.com"),
+            legacy_unsalted("user@example.com")
+        );
         // Normalizes identically (trim + lowercase).
         assert_eq!(
             hash_email_legacy("  Alice@Example.com  "),
@@ -242,7 +254,10 @@ mod tests {
         let a = email_hash_candidates("alice@example.com");
         let b = email_hash_candidates("bob@example.com");
         for x in &a {
-            assert!(!b.contains(x), "candidate {x} collided across distinct emails");
+            assert!(
+                !b.contains(x),
+                "candidate {x} collided across distinct emails"
+            );
         }
     }
 
@@ -264,10 +279,16 @@ mod tests {
     fn normalization_is_consistent_in_both_modes() {
         let g = EnvGuard::acquire();
         // Unsalted: trim + case fold to the same value.
-        assert_eq!(hash_email("  USER@Example.COM  "), hash_email("user@example.com"));
+        assert_eq!(
+            hash_email("  USER@Example.COM  "),
+            hash_email("user@example.com")
+        );
         // Salted: the same normalization holds.
         g.set_salt("salt-X");
-        assert_eq!(hash_email("  USER@Example.COM  "), hash_email("user@example.com"));
+        assert_eq!(
+            hash_email("  USER@Example.COM  "),
+            hash_email("user@example.com")
+        );
     }
 }
 // The MATCHING INVARIANT (invite-write hash == rectification hash for the same

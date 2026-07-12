@@ -144,8 +144,7 @@ impl<P: KmsProvider> EnvelopeEncryptor<P> {
         tenant_id: &str,
         blob_hash: &str,
     ) -> Result<Vec<u8>, BYOKError> {
-        let ctx =
-            CryptoContext::legacy(tenant_id, blob_hash, blob.wrapped_dek.key_id.as_str());
+        let ctx = CryptoContext::legacy(tenant_id, blob_hash, blob.wrapped_dek.key_id.as_str());
         self.decrypt_with_ctx(blob, &ctx).await
     }
 
@@ -576,7 +575,10 @@ mod tests {
         let key_id = make_key_id();
         let ctx = make_ctx("tenant_cache", "sha256:hit");
 
-        let blob = enc.encrypt_with_ctx(b"cache me", &key_id, &ctx).await.unwrap();
+        let blob = enc
+            .encrypt_with_ctx(b"cache me", &key_id, &ctx)
+            .await
+            .unwrap();
 
         let first = enc.decrypt_with_ctx(&blob, &ctx).await.unwrap();
         assert_eq!(unwraps.load(std::sync::atomic::Ordering::SeqCst), 1, "miss");

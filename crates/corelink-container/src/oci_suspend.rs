@@ -348,7 +348,10 @@ mod tests {
         }
     }
 
-    fn cached(inner: Arc<dyn SuspendResolver>, clock: &Arc<InMemoryFakeWallClock>) -> CachedSuspendResolver {
+    fn cached(
+        inner: Arc<dyn SuspendResolver>,
+        clock: &Arc<InMemoryFakeWallClock>,
+    ) -> CachedSuspendResolver {
         CachedSuspendResolver::new(
             inner,
             Arc::clone(clock) as Arc<dyn WallClock>,
@@ -361,7 +364,11 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let r = cached(
-            Arc::new(FixedSuspend { suspended: false, calls: Arc::clone(&calls), delay_ms: 0 }),
+            Arc::new(FixedSuspend {
+                suspended: false,
+                calls: Arc::clone(&calls),
+                delay_ms: 0,
+            }),
             &clock,
         );
         assert!(!r.suspended_state("t1").await.unwrap());
@@ -372,7 +379,11 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let r = cached(
-            Arc::new(FixedSuspend { suspended: true, calls: Arc::clone(&calls), delay_ms: 0 }),
+            Arc::new(FixedSuspend {
+                suspended: true,
+                calls: Arc::clone(&calls),
+                delay_ms: 0,
+            }),
             &clock,
         );
         assert!(r.suspended_state("t1").await.unwrap());
@@ -383,13 +394,21 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let r = cached(
-            Arc::new(FixedSuspend { suspended: false, calls: Arc::clone(&calls), delay_ms: 0 }),
+            Arc::new(FixedSuspend {
+                suspended: false,
+                calls: Arc::clone(&calls),
+                delay_ms: 0,
+            }),
             &clock,
         );
         let _ = r.suspended_state("t1").await.unwrap();
         let _ = r.suspended_state("t1").await.unwrap();
         let _ = r.suspended_state("t1").await.unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "warm ops must not re-read D1");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "warm ops must not re-read D1"
+        );
     }
 
     #[tokio::test]
@@ -397,7 +416,11 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let r = Arc::new(cached(
-            Arc::new(FixedSuspend { suspended: true, calls: Arc::clone(&calls), delay_ms: 30 }),
+            Arc::new(FixedSuspend {
+                suspended: true,
+                calls: Arc::clone(&calls),
+                delay_ms: 30,
+            }),
             &clock,
         ));
         let mut set = tokio::task::JoinSet::new();
@@ -408,7 +431,11 @@ mod tests {
         while let Some(res) = set.join_next().await {
             assert!(res.unwrap());
         }
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "a cold burst must coalesce into ONE read");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "a cold burst must coalesce into ONE read"
+        );
     }
 
     #[tokio::test]
@@ -424,12 +451,20 @@ mod tests {
         assert!(!r.suspended_state("t1").await.unwrap());
         // Suspend mid-session; still within TTL → serves the STALE `active` verdict.
         inner.suspended.store(true, Ordering::SeqCst);
-        clock.advance(Duration::from_millis(u64::try_from(DEFAULT_SUSPEND_CACHE_TTL_MS).unwrap() - 1));
-        assert!(!r.suspended_state("t1").await.unwrap(), "pre-TTL op still cached");
+        clock.advance(Duration::from_millis(
+            u64::try_from(DEFAULT_SUSPEND_CACHE_TTL_MS).unwrap() - 1,
+        ));
+        assert!(
+            !r.suspended_state("t1").await.unwrap(),
+            "pre-TTL op still cached"
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         // Cross the TTL → re-read picks up the suspension.
         clock.advance(Duration::from_millis(2));
-        assert!(r.suspended_state("t1").await.unwrap(), "post-TTL op re-reads → denied");
+        assert!(
+            r.suspended_state("t1").await.unwrap(),
+            "post-TTL op re-reads → denied"
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
@@ -447,7 +482,9 @@ mod tests {
         assert!(r.suspended_state("t1").await.unwrap());
         // Now D1 errors AND the TTL has expired → the sticky verdict keeps denying.
         inner.error.store(true, Ordering::SeqCst);
-        clock.advance(Duration::from_millis(u64::try_from(DEFAULT_SUSPEND_CACHE_TTL_MS).unwrap() + 1));
+        clock.advance(Duration::from_millis(
+            u64::try_from(DEFAULT_SUSPEND_CACHE_TTL_MS).unwrap() + 1,
+        ));
         assert!(
             r.suspended_state("t1").await.unwrap(),
             "a known-suspended tenant STAYS denied through a read error (fail-closed)"
@@ -467,6 +504,10 @@ mod tests {
         // Never seen this tenant + D1 errors → Err (caller fails OPEN); nothing cached.
         assert!(r.suspended_state("t-unknown").await.is_err());
         assert!(r.suspended_state("t-unknown").await.is_err());
-        assert_eq!(calls.load(Ordering::SeqCst), 2, "errors are NOT cached → each op retries");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "errors are NOT cached → each op retries"
+        );
     }
 }

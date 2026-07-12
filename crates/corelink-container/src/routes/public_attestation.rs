@@ -68,8 +68,14 @@ pub fn build_state_from_env() -> Option<PublicAttestationState> {
 /// Mount the two public verifier routes.
 pub fn router(state: PublicAttestationState) -> Router {
     Router::new()
-        .route("/v1/public/attestation/{request_id}", get(handle_attestation))
-        .route("/v1/public/keys/erasure/{region_pub}", get(handle_region_key))
+        .route(
+            "/v1/public/attestation/{request_id}",
+            get(handle_attestation),
+        )
+        .route(
+            "/v1/public/keys/erasure/{region_pub}",
+            get(handle_region_key),
+        )
         .with_state(state)
 }
 
@@ -298,7 +304,10 @@ mod tests {
         let bundle = first_attestation_response("req-1", vec![r]).expect("signed row → bundle");
         assert_eq!(bundle["request_id"], json!("req-1"));
         assert_eq!(bundle["signature_ed25519"], json!("c2lnbmF0dXJl"));
-        assert_eq!(bundle["canonical_payload_jcs"], json!("{\"request_id\":\"req-1\"}"));
+        assert_eq!(
+            bundle["canonical_payload_jcs"],
+            json!("{\"request_id\":\"req-1\"}")
+        );
         assert_eq!(bundle["attestation_key_id"], json!(7));
         assert_eq!(bundle["region"], json!("weur"));
         assert_eq!(bundle["evidence_hash"], json!("cd".repeat(32)));

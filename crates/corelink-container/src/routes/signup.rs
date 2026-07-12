@@ -279,8 +279,8 @@ pub fn parse_and_verify_pilot_token(
     // 3) decode the signature hex.
     let sig_bytes = hex::decode(sig_hex).map_err(|_| TokenError::BadSignatureEncoding)?;
     // 4) compute the expected HMAC over the body.
-    let mut mac =
-        <Hmac<Sha256> as KeyInit>::new_from_slice(key).map_err(|_| TokenError::SignatureMismatch)?;
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key)
+        .map_err(|_| TokenError::SignatureMismatch)?;
     mac.update(body.as_bytes());
     let expected = mac.finalize().into_bytes();
     // 5) constant-time compare. Bail on length mismatch first

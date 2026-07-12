@@ -312,7 +312,9 @@ mod tests {
 
     #[test]
     fn dek_debug_redacts_secret() {
-        let dek = Dek { bytes: [0xCDu8; 32] };
+        let dek = Dek {
+            bytes: [0xCDu8; 32],
+        };
         let rendered = format!("{dek:?}");
         assert!(rendered.contains("REDACTED"), "got {rendered:?}");
     }

@@ -166,11 +166,17 @@ impl TenantResolver for CargoPatResolver {
         pat_plaintext: &str,
     ) -> Result<ResolvedTenant, TenantResolveError> {
         let (tenant_id, can_write) =
-            self.0.verify_capability(pat_plaintext).await.map_err(|e| match e {
-                VerifyError::InvalidPat => TenantResolveError::InvalidPat,
-                VerifyError::Backend(m) => TenantResolveError::Backend(m),
-            })?;
-        Ok(ResolvedTenant { tenant_id, can_write })
+            self.0
+                .verify_capability(pat_plaintext)
+                .await
+                .map_err(|e| match e {
+                    VerifyError::InvalidPat => TenantResolveError::InvalidPat,
+                    VerifyError::Backend(m) => TenantResolveError::Backend(m),
+                })?;
+        Ok(ResolvedTenant {
+            tenant_id,
+            can_write,
+        })
     }
 }
 
@@ -241,8 +247,8 @@ pub fn router(
     // scope header check AND the PAT-derived `can_write` bit from the resolver's
     // single verification (no redundant second PAT verify).
     let gate_state = CargoGateState { quota, resolver };
-    let adapter = server::build_router(config)
-        .layer(middleware::from_fn_with_state(gate_state, cargo_gate));
+    let adapter =
+        server::build_router(config).layer(middleware::from_fn_with_state(gate_state, cargo_gate));
     Router::new().nest_service("/cargo", adapter)
 }
 
@@ -329,18 +335,14 @@ async fn cargo_gate(
                         // second time. Server-internal typed storage — not
                         // client-settable — so this is not a trust downgrade.
                         resolved_tenant_for_quota = Some(resolved.tenant_id.clone());
-                        req.extensions_mut().insert(
-                            server::GateResolvedTenant(resolved.tenant_id),
-                        );
+                        req.extensions_mut()
+                            .insert(server::GateResolvedTenant(resolved.tenant_id));
                     }
                     Ok(_no_write) => {
                         tracing::warn!(
                             "cargo: PUT denied — PAT scope lacks write capability (F27)"
                         );
-                        return (
-                            StatusCode::FORBIDDEN,
-                            "PAT does not grant write capability",
-                        )
+                        return (StatusCode::FORBIDDEN, "PAT does not grant write capability")
                             .into_response();
                     }
                     Err(TenantResolveError::Backend(m)) => {
@@ -446,10 +448,10 @@ mod tests {
             content_hash: &str,
             _len: u64,
         ) -> Result<(), String> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert((ns.to_owned(), url_hash.to_owned()), content_hash.to_owned());
+            self.0.lock().unwrap().insert(
+                (ns.to_owned(), url_hash.to_owned()),
+                content_hash.to_owned(),
+            );
             Ok(())
         }
     }
@@ -543,7 +545,10 @@ mod tests {
             .await
             .expect("put must succeed");
         let recorded = rec.last_cap.lock().unwrap().expect("a write happened");
-        assert_eq!(recorded, None, "no resolver ⇒ None cap (fail-closed posture)");
+        assert_eq!(
+            recorded, None,
+            "no resolver ⇒ None cap (fail-closed posture)"
+        );
     }
 
     /// An INDETERMINATE cap from the resolver (D1 error → `None`) is threaded as

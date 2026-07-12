@@ -208,11 +208,9 @@ impl FromRequestParts<BazelRouteState> for BazelPutGuard {
             let count = inflight.entry(tenant_key.clone()).or_insert(0);
             if *count >= BAZEL_WRITE_CONCURRENCY_LIMIT {
                 tracing::warn!(tenant_id = %tenant_key, in_flight = *count, limit = BAZEL_WRITE_CONCURRENCY_LIMIT, "bazel write concurrency limit reached; 429 BEFORE body buffering");
-                return Err((
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "too many concurrent uploads",
-                )
-                    .into_response());
+                return Err(
+                    (StatusCode::TOO_MANY_REQUESTS, "too many concurrent uploads").into_response(),
+                );
             }
             *count += 1;
         }
@@ -401,10 +399,7 @@ fn principal(headers: &HeaderMap) -> String {
 /// REJECT (402 over-ceiling / 503 fail-CLOSED); `None` ⇒ proceed (and `None`
 /// when the gate is absent in dev/CI). Called at the TOP of each billable
 /// handler, AFTER the scope gate + tenant resolve, BEFORE storage.
-async fn quota_reject(
-    state: &BazelRouteState,
-    tenant: &str,
-) -> Option<axum::response::Response> {
+async fn quota_reject(state: &BazelRouteState, tenant: &str) -> Option<axum::response::Response> {
     match state.quota.as_ref() {
         Some(gate) => gate.check(tenant).await,
         None => None,
@@ -652,20 +647,17 @@ async fn handle_cas_write(
         hash = %hash,
         "bazel CAS write"
     );
-    match state
-        .adapter
-        .cas_put(
-            &instance,
-            &digest,
-            body.to_vec(),
-            corelink_bazel_bridge::adapter::WriteCtx {
-                principal: &p,
-                caller_tenant: &tenant,
-                at_unix_ms: now_ms(),
-                storage_quota_bytes: crate::byte_accounting::storage_quota_from_headers(&headers),
-            },
-        )
-    {
+    match state.adapter.cas_put(
+        &instance,
+        &digest,
+        body.to_vec(),
+        corelink_bazel_bridge::adapter::WriteCtx {
+            principal: &p,
+            caller_tenant: &tenant,
+            at_unix_ms: now_ms(),
+            storage_quota_bytes: crate::byte_accounting::storage_quota_from_headers(&headers),
+        },
+    ) {
         Ok(()) => {
             // usage-metering-roi: CAS write (fire-and-forget, no await/I/O).
             state
@@ -785,20 +777,17 @@ async fn handle_ac_write(
         Ok(d) => d,
         Err(e) => return map_bridge_err(e),
     };
-    match state
-        .adapter
-        .ac_put(
-            &instance,
-            &digest,
-            body.to_vec(),
-            corelink_bazel_bridge::adapter::WriteCtx {
-                principal: &p,
-                caller_tenant: &tenant,
-                at_unix_ms: now_ms(),
-                storage_quota_bytes: crate::byte_accounting::storage_quota_from_headers(&headers),
-            },
-        )
-    {
+    match state.adapter.ac_put(
+        &instance,
+        &digest,
+        body.to_vec(),
+        corelink_bazel_bridge::adapter::WriteCtx {
+            principal: &p,
+            caller_tenant: &tenant,
+            at_unix_ms: now_ms(),
+            storage_quota_bytes: crate::byte_accounting::storage_quota_from_headers(&headers),
+        },
+    ) {
         Ok(()) => {
             // usage-metering-roi: AC write (fire-and-forget, no await/I/O).
             state
@@ -924,7 +913,10 @@ async fn handle_http_cas_read(
         Ok(d) => d,
         Err(e) => return map_bridge_err(e),
     };
-    match state.adapter.cas_get(&tenant, &digest, &p, &tenant, now_ms()) {
+    match state
+        .adapter
+        .cas_get(&tenant, &digest, &p, &tenant, now_ms())
+    {
         Ok(bytes) => {
             state
                 .usage_meter
@@ -1034,7 +1026,10 @@ async fn handle_http_ac_read(
         Ok(d) => d,
         Err(e) => return map_bridge_err(e),
     };
-    match state.adapter.ac_get(&tenant, &digest, &p, &tenant, now_ms()) {
+    match state
+        .adapter
+        .ac_get(&tenant, &digest, &p, &tenant, now_ms())
+    {
         Ok(bytes) => {
             state
                 .usage_meter
@@ -1350,7 +1345,11 @@ mod tests {
             .body(Body::from(payload.clone()))
             .unwrap();
         let resp = app.oneshot(put).await.expect("PUT oneshot");
-        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "pinned key mismatch must 403");
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "pinned key mismatch must 403"
+        );
         let body = to_bytes(resp.into_body(), 1 << 20).await.unwrap();
         assert_eq!(body.as_ref(), b"ac write outside the job's allowed key");
 
@@ -1366,7 +1365,11 @@ mod tests {
             .body(Body::from(payload))
             .unwrap();
         let resp2 = app2.oneshot(put2).await.expect("PUT oneshot");
-        assert_eq!(resp2.status(), StatusCode::NO_CONTENT, "wildcard write must pass");
+        assert_eq!(
+            resp2.status(),
+            StatusCode::NO_CONTENT,
+            "wildcard write must pass"
+        );
     }
 
     // ── findMissingBlobs — all absent ────────────────────────────────────────
@@ -2196,7 +2199,10 @@ mod tests {
         let req = Request::builder()
             .uri(format!("/bazel/cache/cas/{HASH_A}"))
             .method("GET")
-            .header("x-corelink-tenant-id", crate::adapter_cache::PUBLIC_NAMESPACE)
+            .header(
+                "x-corelink-tenant-id",
+                crate::adapter_cache::PUBLIC_NAMESPACE,
+            )
             .header(crate::scope::SCOPE_HEADER, "cas:rw")
             .body(Body::empty())
             .unwrap();
@@ -2262,7 +2268,11 @@ mod tests {
             .body(Body::from(payload.clone()))
             .unwrap();
         let resp = app.oneshot(put).await.expect("PUT oneshot");
-        assert_eq!(resp.status(), StatusCode::FORBIDDEN, "pinned-key mismatch must 403");
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "pinned-key mismatch must 403"
+        );
 
         let app2 = router(make_state());
         let put2 = Request::builder()
@@ -2275,7 +2285,11 @@ mod tests {
             .body(Body::from(payload))
             .unwrap();
         let resp2 = app2.oneshot(put2).await.expect("PUT oneshot");
-        assert_eq!(resp2.status(), StatusCode::NO_CONTENT, "wildcard write must pass");
+        assert_eq!(
+            resp2.status(),
+            StatusCode::NO_CONTENT,
+            "wildcard write must pass"
+        );
     }
 
     /// A read-only (`cas:r`) token PASSES the read gate on a stock CAS read: the

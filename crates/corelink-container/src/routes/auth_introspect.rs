@@ -1153,8 +1153,10 @@ mod tests {
 
     #[tokio::test]
     async fn wrong_service_secret_returns_401() {
-        let verifier =
-            Arc::new(PatVerifier::new(Arc::new(FakeLookup::backend("unused")), test_key()));
+        let verifier = Arc::new(PatVerifier::new(
+            Arc::new(FakeLookup::backend("unused")),
+            test_key(),
+        ));
         let app = router(state_with(verifier, unreachable_d1()));
         let req = introspect_request(
             Some("wrong-secret-which-is-also-32-chars!!"),
@@ -1384,8 +1386,10 @@ mod tests {
             "negative cap is out-of-contract → Err"
         );
         assert!(
-            decode_runner_cap(&entitlement_rows(serde_json::json!(u64::from(u32::MAX) + 1)))
-                .is_err(),
+            decode_runner_cap(&entitlement_rows(serde_json::json!(
+                u64::from(u32::MAX) + 1
+            )))
+            .is_err(),
             "cap beyond u32 range is out-of-contract → Err"
         );
         assert!(
@@ -1518,8 +1522,10 @@ mod tests {
     #[tokio::test]
     async fn invalid_pat_returns_valid_false_no_tenant() {
         // Forged token (bad HMAC) → InvalidPat → 200 { valid:false }, no oracle.
-        let verifier =
-            Arc::new(PatVerifier::new(Arc::new(FakeLookup::backend("unused")), test_key()));
+        let verifier = Arc::new(PatVerifier::new(
+            Arc::new(FakeLookup::backend("unused")),
+            test_key(),
+        ));
         let app = router(state_with(verifier, unreachable_d1()));
         let req = introspect_request(
             Some(TEST_AUTH_KEY),
@@ -1530,7 +1536,10 @@ mod tests {
         let v = body_json(resp).await;
         assert_eq!(v["valid"], serde_json::json!(false));
         let obj = v.as_object().unwrap();
-        assert!(!obj.contains_key("tenant_id"), "no tenant_id on valid:false");
+        assert!(
+            !obj.contains_key("tenant_id"),
+            "no tenant_id on valid:false"
+        );
         assert!(!obj.contains_key("plan"), "no plan on valid:false");
     }
 
@@ -1584,7 +1593,14 @@ mod tests {
     #[test]
     fn is_valid_tier_matches_canonical_set() {
         for t in [
-            "free", "solo", "starter", "team", "pro", "org", "max", "enterprise",
+            "free",
+            "solo",
+            "starter",
+            "team",
+            "pro",
+            "org",
+            "max",
+            "enterprise",
         ] {
             assert!(is_valid_tier(t), "{t} should be valid");
         }

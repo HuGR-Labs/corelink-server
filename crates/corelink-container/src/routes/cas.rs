@@ -30,6 +30,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+use crate::wall_clock::{SystemWallClock, WallClock};
 use axum::{
     extract::{FromRequestParts, Path, Query, State},
     http::{request::Parts, StatusCode},
@@ -37,7 +38,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use crate::wall_clock::{SystemWallClock, WallClock};
 use corelink_handler_cas::{
     CasDeleteHandler, CasDeleteRequest, CasDeleteResponse, CasHandlerError, CasListHandler,
     CasListRequest, CasListResponse, CasReadHandler, CasReadRequest, CasReadResponse,
@@ -412,7 +412,7 @@ impl FromRequestParts<CasRouteState> for CasReadConcurrencyGuard {
             if *count >= CAS_READ_CONCURRENCY_LIMIT {
                 tracing::warn!(tenant_id = %tenant_key, in_flight = *count, limit = CAS_READ_CONCURRENCY_LIMIT, "cas bulk-read concurrency limit reached; 429 BEFORE body buffering");
                 return Err(
-                    (StatusCode::TOO_MANY_REQUESTS, "too many concurrent reads").into_response(),
+                    (StatusCode::TOO_MANY_REQUESTS, "too many concurrent reads").into_response()
                 );
             }
             *count += 1;
@@ -1439,8 +1439,8 @@ async fn handle_batch_exists(
 /// `Result` stays cheap (clippy `result_large_err`); the caller turns it into a
 /// response with `.into_response()`.
 fn parse_ndjson_hashes(body: &[u8]) -> Result<Vec<String>, (StatusCode, &'static str)> {
-    let text = std::str::from_utf8(body)
-        .map_err(|_| (StatusCode::BAD_REQUEST, "request not utf-8"))?;
+    let text =
+        std::str::from_utf8(body).map_err(|_| (StatusCode::BAD_REQUEST, "request not utf-8"))?;
     let mut hashes = Vec::new();
     for line in text.lines() {
         if line.trim().is_empty() {
@@ -1547,7 +1547,10 @@ async fn handle_list(
     }
     // Length-cap the opaque continuation cursor: a clean 400 reject rather than
     // letting an over-length value ride the edge query limit into the backend.
-    if q.cursor.as_deref().is_some_and(|c| c.len() > MAX_CURSOR_LEN) {
+    if q.cursor
+        .as_deref()
+        .is_some_and(|c| c.len() > MAX_CURSOR_LEN)
+    {
         return (StatusCode::BAD_REQUEST, "cursor too long").into_response();
     }
     if let Some(gate) = state.quota.as_ref() {
@@ -1630,7 +1633,11 @@ fn map_err(e: CasHandlerError) -> axum::response::Response {
         CasHandlerError::Internal(ref msg)
             if msg.starts_with(crate::byte_accounting::ACCT_UNAVAILABLE_SENTINEL) =>
         {
-            (StatusCode::SERVICE_UNAVAILABLE, "storage accounting unavailable").into_response()
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "storage accounting unavailable",
+            )
+                .into_response()
         }
         // F-004 — the shared tombstone gate (`TombstoneGatedCasHandler`): a
         // write that re-PUTs an erased `(tenant, hash)` is refused 410 Gone (an
@@ -1647,7 +1654,11 @@ fn map_err(e: CasHandlerError) -> axum::response::Response {
         CasHandlerError::Internal(ref msg)
             if msg.starts_with(crate::routes::cas_erase::TOMBSTONE_UNAVAILABLE_SENTINEL) =>
         {
-            (StatusCode::SERVICE_UNAVAILABLE, "tombstone gate unavailable").into_response()
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "tombstone gate unavailable",
+            )
+                .into_response()
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
@@ -1708,8 +1719,12 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
-            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
@@ -1735,8 +1750,12 @@ mod tests {
             tombstones: Some(tombstones),
             quota: None,
             pat_gate: None,
-            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
@@ -1758,8 +1777,12 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
-            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
@@ -1945,8 +1968,7 @@ mod tests {
     // ── cf-multitenant WP5b: runner-job PAT deny-DELETE ──────────────────────
 
     /// A canonical 64-lowercase-hex CAS hash for the runner-job DELETE tests.
-    const WP5B_HASH: &str =
-        "1111111111111111111111111111111111111111111111111111111111111111";
+    const WP5B_HASH: &str = "1111111111111111111111111111111111111111111111111111111111111111";
 
     /// runner-job marker present ⇒ CAS DELETE is denied 403 even with a
     /// write-capable scope (a per-job credential must not evict the cache).
@@ -1966,7 +1988,10 @@ mod tests {
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .expect("body");
-        assert_eq!(body.as_ref(), b"delete not permitted for a runner-job credential");
+        assert_eq!(
+            body.as_ref(),
+            b"delete not permitted for a runner-job credential"
+        );
     }
 
     /// runner-job + wildcard key (`*`) ⇒ CAS DELETE still denied (deny-DELETE is
@@ -2000,7 +2025,11 @@ mod tests {
             .body(Body::empty())
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::NO_CONTENT, "normal delete unchanged");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NO_CONTENT,
+            "normal delete unchanged"
+        );
     }
 
     /// A present-but-non-`"1"` marker is NOT a runner-job: CAS DELETE behaves as
@@ -2017,7 +2046,11 @@ mod tests {
             .body(Body::empty())
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::NO_CONTENT, "marker \"true\" ⇒ not narrowed");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NO_CONTENT,
+            "marker \"true\" ⇒ not narrowed"
+        );
     }
 
     /// cluster F: with the tenant AT `CAS_WRITE_CONCURRENCY_LIMIT` in-flight
@@ -2261,8 +2294,12 @@ mod tests {
             tombstones: Some(tombstones),
             quota: None,
             pat_gate: None,
-            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
@@ -2325,8 +2362,12 @@ mod tests {
             tombstones: None,
             quota: Some(gate),
             pat_gate: None,
-            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
@@ -2376,8 +2417,12 @@ mod tests {
             tombstones: None,
             quota: Some(crate::routes::QuotaGate::new_for_test(guard, 1_000)),
             pat_gate: None,
-            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         };
         let app = router(st);
@@ -2429,8 +2474,12 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
-            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         }
     }
@@ -2490,8 +2539,12 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: None,
-            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         };
         let app = router(st);
@@ -2525,9 +2578,9 @@ mod tests {
     /// the Worker-set tenant header is present (defense-in-depth).
     #[tokio::test]
     async fn pat_gate_missing_bearer_returns_401() {
+        use crate::adapter_pat::PatRow;
         use crate::native_pat_gate::testing::verifier_with_row;
         use crate::native_pat_gate::NativePatGate;
-        use crate::adapter_pat::PatRow;
         use corelink_pat::PatSigningKey;
 
         let audit = Arc::new(InMemoryAuditSink::new());
@@ -2555,8 +2608,12 @@ mod tests {
             tombstones: None,
             quota: None,
             pat_gate: Some(Arc::new(NativePatGate::new_for_test(verifier))),
-            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
-            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            put_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            read_inflight: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             usage_meter: std::sync::Arc::new(crate::usage_meter::UsageMeter::new(None, || 0)),
         };
         let app = router(st);
@@ -2581,7 +2638,11 @@ mod tests {
         let mut out = Vec::new();
         for (hash, bytes) in objs {
             out.extend_from_slice(
-                format!("{}\n", serde_json::json!({"hash": hash, "len": bytes.len()})).as_bytes(),
+                format!(
+                    "{}\n",
+                    serde_json::json!({"hash": hash, "len": bytes.len()})
+                )
+                .as_bytes(),
             );
         }
         out.push(b'\n'); // blank-line terminator
@@ -2865,7 +2926,11 @@ mod tests {
             .body(Body::from(body))
             .expect("request");
         let resp = app.oneshot(req).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::OK, "one bad object must NOT 4xx the whole batch");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "one bad object must NOT 4xx the whole batch"
+        );
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .expect("body");
@@ -2964,10 +3029,14 @@ mod tests {
     async fn batch_upload_framing_mismatch_returns_400() {
         let app = router(fixture());
         let bytes = b"five!".to_vec(); // 5 bytes
-        // Declare len=4 (one short) ⇒ sum(len) != payload.len().
+                                       // Declare len=4 (one short) ⇒ sum(len) != payload.len().
         let mut body = Vec::new();
         body.extend_from_slice(
-            format!("{}\n", serde_json::json!({"hash": fake_hash(&bytes), "len": 4})).as_bytes(),
+            format!(
+                "{}\n",
+                serde_json::json!({"hash": fake_hash(&bytes), "len": 4})
+            )
+            .as_bytes(),
         );
         body.push(b'\n');
         body.extend_from_slice(&bytes);
@@ -3342,7 +3411,11 @@ mod tests {
             .oneshot(req_ok)
             .await
             .expect("oneshot");
-        assert_eq!(r_ok.status(), StatusCode::OK, "budget for n=3 must admit the batch");
+        assert_eq!(
+            r_ok.status(),
+            StatusCode::OK,
+            "budget for n=3 must admit the batch"
+        );
 
         // Budget for only 2 ⇒ a single check_batch(_,3) over-projects ⇒ 402.
         let req_402 = Request::builder()

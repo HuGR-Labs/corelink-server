@@ -186,7 +186,9 @@ mod tests {
         let e = sample();
         let h = e.content_sha256_hex();
         assert_eq!(h.len(), 64);
-        assert!(h.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(h
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         // Cross-check against an independent SHA-256.
         let expect = hex::encode(Sha256::digest(&e.payload));
         assert_eq!(h, expect);

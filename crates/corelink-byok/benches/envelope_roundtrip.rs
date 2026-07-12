@@ -26,9 +26,9 @@ use corelink_byok::{
     types::{BYOKError, Dek, FipsLevel, KmsAccessStatus, KmsKeyId, KmsProviderKind, WrappedDek},
     KmsProvider,
 };
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion};
 use serde_json::Value;
+use std::hint::black_box;
 
 #[derive(Debug)]
 struct InMemoryKmsProvider;

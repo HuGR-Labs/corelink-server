@@ -43,8 +43,7 @@ use serde_json::Value;
 
 use crate::harness::{
     bearer, expect_denied, expect_gate_denied, expect_status, sha256_hex, unique_blob, url_ac,
-    url_ac_list, Config,
-    JourneyResult,
+    url_ac_list, Config, JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -188,7 +187,13 @@ fn divergent_body_integrity_guard(cfg: &Config, client: &Client) -> JourneyResul
     // First write — must succeed (fresh entry).
     match do_put(&body_one) {
         Ok(200 | 201) => {}
-        Ok(s) => return JourneyResult::fail(name, ms(start), format!("first PUT got {s} (want 200/201)")),
+        Ok(s) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("first PUT got {s} (want 200/201)"),
+            )
+        }
         Err(m) => return JourneyResult::fail(name, ms(start), m),
     }
 
@@ -204,14 +209,17 @@ fn divergent_body_integrity_guard(cfg: &Config, client: &Client) -> JourneyResul
                 "divergent re-PUT returned 200/201 (last-write-wins) — \
                  the 409 integrity guard is ABSENT; this is a SECURITY regression \
                  (action-result cache-poisoning: a different result can replace a \
-                 proven result for the same action digest)".to_string(),
+                 proven result for the same action digest)"
+                    .to_string(),
             )
         }
         Ok(s) => {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("divergent re-PUT got {s} (expected 409 Conflict from the integrity guard)"),
+                format!(
+                    "divergent re-PUT got {s} (expected 409 Conflict from the integrity guard)"
+                ),
             )
         }
         Err(m) => return JourneyResult::fail(name, ms(start), m),
@@ -222,7 +230,11 @@ fn divergent_body_integrity_guard(cfg: &Config, client: &Client) -> JourneyResul
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
     };
-    if let Err(m) = expect_status("AC lookup after rejected re-PUT", get.status().as_u16(), 200) {
+    if let Err(m) = expect_status(
+        "AC lookup after rejected re-PUT",
+        get.status().as_u16(),
+        200,
+    ) {
         return JourneyResult::fail(name, ms(start), m);
     }
     match get.bytes() {
@@ -232,12 +244,16 @@ fn divergent_body_integrity_guard(cfg: &Config, client: &Client) -> JourneyResul
             ms(start),
             "GET returned body_two even though the 409 fired — original body was REPLACED \
              (integrity guard is present at the HTTP layer but the handler committed the divergent \
-             bytes anyway)".to_string(),
+             bytes anyway)"
+                .to_string(),
         ),
         Ok(b) => JourneyResult::fail(
             name,
             ms(start),
-            format!("GET returned {} bytes that match neither body_one nor body_two — corrupt state", b.len()),
+            format!(
+                "GET returned {} bytes that match neither body_one nor body_two — corrupt state",
+                b.len()
+            ),
         ),
         Err(e) => JourneyResult::fail(name, ms(start), format!("GET body: {e}")),
     }
@@ -340,7 +356,11 @@ fn cross_tenant_read_denied(cfg: &Config, client: &Client) -> JourneyResult {
     // Tenant B requests the SAME digest under tenant B's path — must be denied
     // and must NEVER return tenant A's bytes.
     let url_b = url_ac(cfg, &b.tenant, &digest);
-    let get = match client.get(&url_b).header(AUTHORIZATION, bearer(token_b)).send() {
+    let get = match client
+        .get(&url_b)
+        .header(AUTHORIZATION, bearer(token_b))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("B GET {url_b}: {e}")),
     };
@@ -381,7 +401,8 @@ fn cross_tenant_read_denied(cfg: &Config, client: &Client) -> JourneyResult {
 ///
 /// `ref_key` is the opaque action digest used as the PUT path segment.
 fn list_enumerates_ac_entries(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "AC D-7: GET /v1/ac/{tenant} - list enumerates PUT entries (ref_key present, size correct)";
+    let name =
+        "AC D-7: GET /v1/ac/{tenant} - list enumerates PUT entries (ref_key present, size correct)";
     let start = Instant::now();
 
     let p = match Persona::P1ReadWrite.resolve(cfg) {
@@ -408,45 +429,85 @@ fn list_enumerates_ac_entries(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => return JourneyResult::fail(name, ms(start), format!("PUT {put_url}: {e}")),
     };
     if !matches!(put.status().as_u16(), 200 | 201) {
-        return JourneyResult::fail(name, ms(start), format!("PUT AC entry got {} (expected 200/201)", put.status()));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("PUT AC entry got {} (expected 200/201)", put.status()),
+        );
     }
 
     // GET the list. Use a generous limit so the fresh entry is visible.
     let list_url = format!("{}?limit=1000", url_ac_list(cfg, &p.tenant));
-    let resp = match client.get(&list_url).header(AUTHORIZATION, bearer(token)).send() {
+    let resp = match client
+        .get(&list_url)
+        .header(AUTHORIZATION, bearer(token))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {list_url}: {e}")),
     };
     if resp.status().as_u16() != 200 {
-        return JourneyResult::fail(name, ms(start), format!("GET /ac list got {} (expected 200). url={list_url}", resp.status()));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "GET /ac list got {} (expected 200). url={list_url}",
+                resp.status()
+            ),
+        );
     }
     let body_bytes = match resp.bytes() {
         Ok(b) => b,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("AC list response body: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("AC list response body: {e}"))
+        }
     };
     let parsed: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("AC list response not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("AC list response not JSON: {e}"))
+        }
     };
     let refs_arr = match parsed.get("refs").and_then(Value::as_array) {
         Some(a) => a,
-        None => return JourneyResult::fail(name, ms(start), format!("AC list response missing \"refs\" array; got: {parsed}")),
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("AC list response missing \"refs\" array; got: {parsed}"),
+            )
+        }
     };
 
     // The entry we PUT must appear in the list.
-    let entry = refs_arr.iter().find(|e| {
-        e.get("ref_key").and_then(Value::as_str) == Some(digest.as_str())
-    });
+    let entry = refs_arr
+        .iter()
+        .find(|e| e.get("ref_key").and_then(Value::as_str) == Some(digest.as_str()));
     let entry = match entry {
         Some(e) => e,
-        None => return JourneyResult::fail(name, ms(start), format!("PUT AC digest {digest} not found in /ac list ({} entries)", refs_arr.len())),
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!(
+                    "PUT AC digest {digest} not found in /ac list ({} entries)",
+                    refs_arr.len()
+                ),
+            )
+        }
     };
 
     // The `size` field must match the payload length.
     let size = entry.get("size").and_then(Value::as_u64).unwrap_or(0);
     let expected_size = payload.len() as u64;
     if size != expected_size {
-        return JourneyResult::fail(name, ms(start), format!("AC list entry for {digest}: size={size} but payload was {expected_size} bytes"));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "AC list entry for {digest}: size={size} but payload was {expected_size} bytes"
+            ),
+        );
     }
 
     JourneyResult::pass(name, ms(start))
@@ -488,12 +549,23 @@ fn list_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
         Err(e) => return JourneyResult::fail(name, ms(start), format!("A PUT {put_url}: {e}")),
     };
     if !matches!(put.status().as_u16(), 200 | 201) {
-        return JourneyResult::fail(name, ms(start), format!("A PUT got {} — cannot verify AC list isolation", put.status()));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!(
+                "A PUT got {} — cannot verify AC list isolation",
+                put.status()
+            ),
+        );
     }
 
     // B lists their own namespace — must not see A's digest.
     let list_url_b = format!("{}?limit=1000", url_ac_list(cfg, &b.tenant));
-    let resp = match client.get(&list_url_b).header(AUTHORIZATION, bearer(token_b)).send() {
+    let resp = match client
+        .get(&list_url_b)
+        .header(AUTHORIZATION, bearer(token_b))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("B GET {list_url_b}: {e}")),
     };
@@ -503,21 +575,42 @@ fn list_cross_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::pass(name, ms(start));
     }
     if status != 200 {
-        return JourneyResult::fail(name, ms(start), format!("B GET AC list got {status} (expected 200 or deny). url={list_url_b}"));
+        return JourneyResult::fail(
+            name,
+            ms(start),
+            format!("B GET AC list got {status} (expected 200 or deny). url={list_url_b}"),
+        );
     }
     let body_bytes = match resp.bytes() {
         Ok(b) => b,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("B AC list response body: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("B AC list response body: {e}"))
+        }
     };
     let parsed: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("B AC list response not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("B AC list response not JSON: {e}"),
+            )
+        }
     };
     let refs_arr = match parsed.get("refs").and_then(Value::as_array) {
         Some(a) => a,
-        None => return JourneyResult::fail(name, ms(start), format!("B AC list response missing \"refs\" array; got: {parsed}")),
+        None => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("B AC list response missing \"refs\" array; got: {parsed}"),
+            )
+        }
     };
-    if refs_arr.iter().any(|e| e.get("ref_key").and_then(Value::as_str) == Some(digest_a.as_str())) {
+    if refs_arr
+        .iter()
+        .any(|e| e.get("ref_key").and_then(Value::as_str) == Some(digest_a.as_str()))
+    {
         return JourneyResult::fail(
             name,
             ms(start),

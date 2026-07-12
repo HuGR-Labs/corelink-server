@@ -300,7 +300,10 @@ pub(super) fn sign_and_persist(
 /// Core sign + STRICT-ordered persist, generic over [`AttestationSinks`] so the
 /// R2-FIRST → pubkey → index ordering and its fail-CLOSED behaviour are covered
 /// by in-memory tests. See the module-level "STRICT all-or-nothing ordering".
-#[allow(clippy::too_many_arguments, reason = "explicit, no shared config struct")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "explicit, no shared config struct"
+)]
 fn persist_signed_attestation<S: AttestationSinks>(
     sinks: &S,
     region: Region,
@@ -629,7 +632,9 @@ mod tests {
                 let outcome = if k.is_effective() {
                     BackendErasureOutcome::Erased { records_deleted: 0 }
                 } else {
-                    BackendErasureOutcome::Pseudonymized { records_redacted: 0 }
+                    BackendErasureOutcome::Pseudonymized {
+                        records_redacted: 0,
+                    }
                 };
                 completion(*k, outcome, CANONICAL_EMPTY_TENANT_HASH)
             })
@@ -656,7 +661,9 @@ mod tests {
                 if *k == BackendKind::Stripe {
                     completion(
                         BackendKind::Stripe,
-                        BackendErasureOutcome::Pseudonymized { records_redacted: 1 },
+                        BackendErasureOutcome::Pseudonymized {
+                            records_redacted: 1,
+                        },
                         [0x11; 32],
                     )
                 } else {
@@ -683,7 +690,9 @@ mod tests {
                 if *k == first {
                     completion(
                         *k,
-                        BackendErasureOutcome::Failed { retry_after_seconds: 60 },
+                        BackendErasureOutcome::Failed {
+                            retry_after_seconds: 60,
+                        },
                         CANONICAL_EMPTY_TENANT_HASH,
                     )
                 } else {
@@ -815,7 +824,10 @@ mod tests {
             1_700_000_000_000,
             &all_verified_completions(),
         );
-        assert!(sinks.puts.borrow().is_empty(), "no object recorded on R2 failure");
+        assert!(
+            sinks.puts.borrow().is_empty(),
+            "no object recorded on R2 failure"
+        );
         assert!(
             sinks.execs.borrow().is_empty(),
             "R2 failure must persist NOTHING to D1 (fail-CLOSED, no dangling r2_key)"

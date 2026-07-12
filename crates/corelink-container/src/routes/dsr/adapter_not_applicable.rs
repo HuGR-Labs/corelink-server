@@ -83,7 +83,9 @@ mod tests {
         assert_eq!(a.kind(), BackendKind::Kv);
         let salt = [0u8; 32];
         for legal_hold in [false, true] {
-            let out = a.erase(Uuid::nil(), Uuid::nil(), &salt, legal_hold).unwrap();
+            let out = a
+                .erase(Uuid::nil(), Uuid::nil(), &salt, legal_hold)
+                .unwrap();
             assert_eq!(out.as_str(), "not_applicable");
         }
     }

@@ -404,7 +404,16 @@ mod tests {
     #[test]
     fn fromstr_and_tryfrom_agree_with_from_slug() {
         use core::str::FromStr;
-        for slug in ["free", "solo", "starter", "team", "pro", "org", "max", "enterprise"] {
+        for slug in [
+            "free",
+            "solo",
+            "starter",
+            "team",
+            "pro",
+            "org",
+            "max",
+            "enterprise",
+        ] {
             let via_slug = Tier::from_slug(slug).unwrap();
             assert_eq!(Tier::from_str(slug).unwrap(), via_slug);
             assert_eq!(Tier::try_from(slug).unwrap(), via_slug);

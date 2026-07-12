@@ -37,13 +37,13 @@ use std::sync::Arc;
 use aws_config::BehaviorVersion;
 use aws_sdk_s3::config::{Credentials, Region};
 use aws_sdk_s3::Client;
+use corelink_byok::{CryptoContext, CryptoMode, Tcs};
 use corelink_handler_cas::{
     AuditEvent, AuditEventKind, AuditSink, CasDeleteHandler, CasHandlerError, CasListHandler,
     CasReadHandler, CasReadRequest, CasReadResponse, CasWriteHandler, CasWriteRequest,
     CasWriteResponse, DigestAlgo, InMemoryAuditSink, InMemorySliObserver, SliObservation,
     SliObserver,
 };
-use corelink_byok::{CryptoContext, CryptoMode, Tcs};
 use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 use sha2::{Digest as _, Sha256};
@@ -57,8 +57,8 @@ use super::byok_cas::{
     decrypt_cas_blob, encrypt_cas_blob, engagement_for, harden_digest, ByokConfigCache,
     ByokEngagement, ModeBEncryptor, TcsResolver,
 };
-use crate::customer_d1::ByokCryptoMode;
 use super::StorageEnv;
+use crate::customer_d1::ByokCryptoMode;
 
 /// Low-level async R2/S3 client.
 ///
@@ -80,7 +80,8 @@ pub struct R2S3Client {
     /// `Some(size)`) and removes it; every other racer HEADs absent AFTER the
     /// delete and returns `None` (releases 0). The map is pruned on release so it
     /// does not grow without bound.
-    delete_locks: std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+    delete_locks:
+        std::sync::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl R2S3Client {
@@ -221,7 +222,9 @@ impl R2S3Client {
             .send()
             .await;
         match result {
-            Ok(output) => Ok(Some(u64::try_from(output.content_length().unwrap_or(0)).unwrap_or(0))),
+            Ok(output) => Ok(Some(
+                u64::try_from(output.content_length().unwrap_or(0)).unwrap_or(0),
+            )),
             Err(sdk_err) => {
                 // A HeadObject on an absent key surfaces as a NotFound service
                 // error (R2 returns 404). Treat it as "no object" (release
@@ -422,7 +425,10 @@ impl R2S3Client {
             // fallback rather than a panic / skipped row).
             let last_modified = obj
                 .last_modified()
-                .and_then(|dt| dt.fmt(aws_sdk_s3::primitives::DateTimeFormat::DateTime).ok())
+                .and_then(|dt| {
+                    dt.fmt(aws_sdk_s3::primitives::DateTimeFormat::DateTime)
+                        .ok()
+                })
                 .unwrap_or_else(|| "1970-01-01T00:00:00Z".to_owned());
             out.push((key.to_owned(), size, last_modified));
         }
@@ -798,7 +804,12 @@ impl R2CasHandler {
     /// `#[cfg(test)]` and is unreachable in production (F1/F2).
     fn r2_key(&self, tenant: &str, digest: &str, algo: DigestAlgo) -> Result<String, String> {
         let prefix = tenant_prefix(self.tdk.as_ref(), tenant)?;
-        Ok(R2S3Client::blob_key(&self.cas_region, &prefix, digest, algo))
+        Ok(R2S3Client::blob_key(
+            &self.cas_region,
+            &prefix,
+            digest,
+            algo,
+        ))
     }
 
     /// Emit both SLI observations (availability + latency).
@@ -1689,7 +1700,7 @@ pub async fn build_r2_cas_handler_from_env(
              refusing to mount the R2 CAS handler (fail-closed, INV-TENANT-ISOLATION)"
         );
         return Some(Err(
-            "R2_TDK_HEX required for production tenant prefixing".to_owned(),
+            "R2_TDK_HEX required for production tenant prefixing".to_owned()
         ));
     };
     let client = match R2S3Client::new(&env, bucket).await {
@@ -1921,9 +1932,10 @@ impl R2AcHandler {
                 let mode_b = self.byok_mode_b.as_ref().ok_or_else(|| {
                     AcHandlerError::Internal("byok mode-b encryptor missing".to_owned())
                 })?;
-                mode_b.decrypt(&stored, ctx).await.map_err(|e| {
-                    AcHandlerError::Internal(format!("byok ac mode-b decrypt: {e}"))
-                })
+                mode_b
+                    .decrypt(&stored, ctx)
+                    .await
+                    .map_err(|e| AcHandlerError::Internal(format!("byok ac mode-b decrypt: {e}")))
             }
         }
     }
@@ -2252,9 +2264,10 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         //   - absent                  → PUT (`durable=true`).
         //   - ambiguous GET error     → fail CLOSED (`Internal`); never
         //     blind-overwrite on an unknown prior state.
-        let stored_view: &[u8] = encrypted.as_deref().unwrap_or(req.result_payload.as_slice());
-        let existing =
-            tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
+        let stored_view: &[u8] = encrypted
+            .as_deref()
+            .unwrap_or(req.result_payload.as_slice());
+        let existing = tokio::task::block_in_place(|| handle.block_on(self.client.get(&key)));
         match existing {
             Ok(Some(prior)) if prior.as_slice() != stored_view => {
                 warn!(
@@ -2287,9 +2300,8 @@ impl corelink_handler_ac::AcUpdateHandler for R2AcHandler {
         // Store the ciphertext (active) or the plaintext payload (non-BYOK) —
         // the same bytes the compare above proved are non-divergent.
         let payload = encrypted.unwrap_or(req.result_payload);
-        let result = tokio::task::block_in_place(|| {
-            handle.block_on(self.client.put(&key, payload))
-        });
+        let result =
+            tokio::task::block_in_place(|| handle.block_on(self.client.put(&key, payload)));
 
         match result {
             Ok(()) => {
@@ -2546,7 +2558,7 @@ pub async fn build_r2_ac_handler_from_env(
              refusing to mount the R2 AC handler (fail-closed, INV-TENANT-ISOLATION)"
         );
         return Some(Err(
-            "R2_TDK_HEX required for production tenant prefixing".to_owned(),
+            "R2_TDK_HEX required for production tenant prefixing".to_owned()
         ));
     };
     let client = match R2S3Client::new(&env, bucket).await {
@@ -2915,7 +2927,10 @@ mod tests {
                 1,
             ))
             .expect("first write");
-        assert!(first.durable, "first write of a fresh hash must be durable=true");
+        assert!(
+            first.durable,
+            "first write of a fresh hash must be durable=true"
+        );
 
         let second = handler
             .write(CasWriteRequest::new(
@@ -2958,11 +2973,18 @@ mod tests {
 
         // First delete observes-and-removes → Some(size).
         let first = client.delete_if_present(&key).await.expect("first delete");
-        assert_eq!(first, Some(size), "the first delete must credit the reclaimed size");
+        assert_eq!(
+            first,
+            Some(size),
+            "the first delete must credit the reclaimed size"
+        );
 
         // Second delete sees the key already gone → None (releases 0).
         let second = client.delete_if_present(&key).await.expect("second delete");
-        assert_eq!(second, None, "a second delete must credit 0 (no double-release)");
+        assert_eq!(
+            second, None,
+            "a second delete must credit 0 (no double-release)"
+        );
     }
 
     // ---------------------------------------------------------------
@@ -3136,7 +3158,10 @@ mod tests {
         );
         // Reserved: it never collides with a real (UUID) tenant's prefix.
         let real = tenant_prefix(Some(&tdk), "0190abcd-1234-75ab-8def-0123456789ab").unwrap();
-        assert_ne!(p, real, "_public must not collide with a real tenant prefix");
+        assert_ne!(
+            p, real,
+            "_public must not collide with a real tenant prefix"
+        );
     }
 
     // ---------------------------------------------------------------
@@ -3237,7 +3262,10 @@ mod tests {
     }
     impl MemEnvStore {
         fn failing_delete() -> Self {
-            Self { inner: StdMutex::default(), fail_delete: true }
+            Self {
+                inner: StdMutex::default(),
+                fail_delete: true,
+            }
         }
         fn len(&self) -> usize {
             self.inner
@@ -3394,8 +3422,9 @@ mod tests {
     async fn handler_with_byok_random(cfg: Option<TenantByokConfig>) -> R2CasHandler {
         let base = make_test_handler_with_tdk("iad").await;
         let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
-        let resolver =
-            Arc::new(TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap());
+        let resolver = Arc::new(
+            TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap(),
+        );
         let kms: Arc<dyn KmsProvider> = Arc::new(Kms { fail: false });
         let store: Arc<dyn ByokEnvelopeStore> = Arc::new(MemEnvStore::default());
         let mode_b = Arc::new(ModeBEncryptor::new(kms, store, 300).unwrap());
@@ -3411,8 +3440,9 @@ mod tests {
     ) -> R2CasHandler {
         let base = make_test_handler_with_tdk("iad").await;
         let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
-        let resolver =
-            Arc::new(TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap());
+        let resolver = Arc::new(
+            TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap(),
+        );
         let kms: Arc<dyn KmsProvider> = Arc::new(Kms { fail: false });
         let store_dyn: Arc<dyn ByokEnvelopeStore> = store;
         let mode_b = Arc::new(ModeBEncryptor::new(kms, store_dyn, 300).unwrap());
@@ -3491,7 +3521,10 @@ mod tests {
         .await;
         let req = write_req(BYOK_TENANT, b"secret".to_vec());
         assert!(
-            matches!(h.byok_encrypt_for_write(&req).await, Err(CasHandlerError::Internal(_))),
+            matches!(
+                h.byok_encrypt_for_write(&req).await,
+                Err(CasHandlerError::Internal(_))
+            ),
             "active tenant + failing KMS must fail closed on write (never plaintext)"
         );
     }
@@ -3534,8 +3567,8 @@ mod tests {
     async fn byok_mode_b_wired_round_trips_via_envelope() {
         // Mode B (random) wired: encrypt → CLB2 ciphertext (+ a byok_envelope row),
         // read back → plaintext.
-        let h =
-            handler_with_byok_random(Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active))).await;
+        let h = handler_with_byok_random(Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active)))
+            .await;
         let plaintext = b"mode-b artifact bytes".to_vec();
         let req = write_req(BYOK_TENANT, plaintext.clone());
         let stored = h
@@ -3554,8 +3587,8 @@ mod tests {
     async fn byok_mode_b_re_put_is_idempotent_no_orphan() {
         // Re-encrypt of the same blob reuses the persisted envelope ⇒ byte-identical
         // ciphertext (no orphan; audit C2), and the original still decrypts.
-        let h =
-            handler_with_byok_random(Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active))).await;
+        let h = handler_with_byok_random(Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active)))
+            .await;
         let req = write_req(BYOK_TENANT, b"idempotent mode-b".to_vec());
         let a = h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
         let b = h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
@@ -3582,12 +3615,21 @@ mod tests {
         let req = write_req(BYOK_TENANT, b"delete-me mode-b".to_vec());
         h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
         let key = format!("cas:{}", req.claimed_hash);
-        assert!(store.contains(BYOK_TENANT, &key), "write minted the cas: envelope row");
-        assert!(!store.contains(BYOK_TENANT, &format!("ac:{}", req.claimed_hash)), "no ac: row");
+        assert!(
+            store.contains(BYOK_TENANT, &key),
+            "write minted the cas: envelope row"
+        );
+        assert!(
+            !store.contains(BYOK_TENANT, &format!("ac:{}", req.claimed_hash)),
+            "no ac: row"
+        );
         h.byok_reclaim_for_delete(BYOK_TENANT, &req.claimed_hash, DigestAlgo::Blake3)
             .await
             .unwrap();
-        assert!(!store.contains(BYOK_TENANT, &key), "delete reclaimed the envelope row");
+        assert!(
+            !store.contains(BYOK_TENANT, &key),
+            "delete reclaimed the envelope row"
+        );
         assert_eq!(store.len(), 0, "no orphan row lingers");
     }
 
@@ -3630,7 +3672,11 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(store.len(), 0, "_public never writes/reclaims an envelope row");
+        assert_eq!(
+            store.len(),
+            0,
+            "_public never writes/reclaims an envelope row"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3653,9 +3699,15 @@ mod tests {
         assert_eq!(store.len(), 0, "row gone after reclaim");
         // Re-PUT: a brand-new envelope row (fresh random DEK), not the deleted one.
         h.byok_encrypt_for_write(&req).await.unwrap().unwrap();
-        assert!(store.contains(BYOK_TENANT, &key), "re-PUT minted a fresh envelope row");
+        assert!(
+            store.contains(BYOK_TENANT, &key),
+            "re-PUT minted a fresh envelope row"
+        );
         let dek_after = store.wrapped_dek(BYOK_TENANT, &key).unwrap();
-        assert_ne!(dek_before, dek_after, "re-PUT after delete uses a FRESH DEK, not the reclaimed one");
+        assert_ne!(
+            dek_before, dek_after,
+            "re-PUT after delete uses a FRESH DEK, not the reclaimed one"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3674,7 +3726,10 @@ mod tests {
         let res = h
             .byok_reclaim_for_delete(BYOK_TENANT, &req.claimed_hash, DigestAlgo::Blake3)
             .await;
-        assert!(res.is_err(), "reclaim failure surfaces as Err (production warns, never fails the delete)");
+        assert!(
+            res.is_err(),
+            "reclaim failure surfaces as Err (production warns, never fails the delete)"
+        );
         // The row lingers (the failed delete left it) — an orphan that wraps the
         // already-deleted ciphertext (the safe direction); the blob delete itself
         // is unaffected (R2 delete is not rolled back).
@@ -3687,8 +3742,9 @@ mod tests {
         let base = make_test_handler_with_tdk("iad").await;
         let cfg = Some(byok_cfg(ByokCryptoMode::Random, ByokState::Active));
         let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
-        let resolver =
-            Arc::new(TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap());
+        let resolver = Arc::new(
+            TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap(),
+        );
         let kms: Arc<dyn KmsProvider> = Arc::new(Kms { fail: true });
         let store: Arc<dyn ByokEnvelopeStore> = Arc::new(MemEnvStore::default());
         let mode_b = Arc::new(ModeBEncryptor::new(kms, store, 300).unwrap());
@@ -3729,7 +3785,10 @@ mod tests {
             false,
         )
         .await;
-        let req = write_req(crate::adapter_cache::PUBLIC_NAMESPACE, b"public bottle".to_vec());
+        let req = write_req(
+            crate::adapter_cache::PUBLIC_NAMESPACE,
+            b"public bottle".to_vec(),
+        );
         assert!(
             h.byok_encrypt_for_write(&req).await.unwrap().is_none(),
             "_public must never be encrypted"
@@ -3762,8 +3821,9 @@ mod tests {
     ) -> R2AcHandler {
         let base = make_test_ac_handler("iad").await;
         let cache = Arc::new(ByokConfigCache::new(Arc::new(CfgSrc(cfg)), 60));
-        let resolver =
-            Arc::new(TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap());
+        let resolver = Arc::new(
+            TcsResolver::new(Arc::new(SecSrc), Arc::new(Kms { fail: false }), 300).unwrap(),
+        );
         let kms: Arc<dyn KmsProvider> = Arc::new(Kms { fail: false });
         let store_dyn: Arc<dyn ByokEnvelopeStore> = store;
         let mode_b = Arc::new(ModeBEncryptor::new(kms, store_dyn, 300).unwrap());
@@ -3787,10 +3847,21 @@ mod tests {
         let req = ac_update_req(BYOK_TENANT, b"ac mode-b payload".to_vec());
         h.byok_encrypt_for_update(&req).await.unwrap().unwrap();
         let ac_key = format!("ac:{}", req.action_digest);
-        assert!(store.contains(BYOK_TENANT, &ac_key), "write minted the ac: envelope row");
-        assert!(!store.contains(BYOK_TENANT, &format!("cas:{}", req.action_digest)), "no cas: row");
-        h.byok_reclaim_for_delete(BYOK_TENANT, &req.action_digest).await.unwrap();
-        assert!(!store.contains(BYOK_TENANT, &ac_key), "AC delete reclaimed the ac: row");
+        assert!(
+            store.contains(BYOK_TENANT, &ac_key),
+            "write minted the ac: envelope row"
+        );
+        assert!(
+            !store.contains(BYOK_TENANT, &format!("cas:{}", req.action_digest)),
+            "no cas: row"
+        );
+        h.byok_reclaim_for_delete(BYOK_TENANT, &req.action_digest)
+            .await
+            .unwrap();
+        assert!(
+            !store.contains(BYOK_TENANT, &ac_key),
+            "AC delete reclaimed the ac: row"
+        );
         assert_eq!(store.len(), 0, "no orphan AC envelope row lingers");
     }
 
@@ -3806,7 +3877,9 @@ mod tests {
         let req = ac_update_req(BYOK_TENANT, b"ac convergent".to_vec());
         h.byok_encrypt_for_update(&req).await.unwrap().unwrap();
         assert_eq!(store.len(), 0, "Mode A writes no AC envelope row");
-        h.byok_reclaim_for_delete(BYOK_TENANT, &req.action_digest).await.unwrap();
+        h.byok_reclaim_for_delete(BYOK_TENANT, &req.action_digest)
+            .await
+            .unwrap();
         assert_eq!(store.len(), 0, "Mode-A AC delete touches no envelope row");
     }
 
@@ -3823,7 +3896,10 @@ mod tests {
             .byok_decrypt_for_lookup(BYOK_TENANT, &req.action_digest, b"ac-result".to_vec())
             .await
             .unwrap();
-        assert_eq!(out, b"ac-result", "lookup must return the stored bytes unchanged");
+        assert_eq!(
+            out, b"ac-result",
+            "lookup must return the stored bytes unchanged"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3956,7 +4032,11 @@ mod tests {
 
         let cas_wreq =
             CasWriteRequest::new(BYOK_TENANT, digest.clone(), payload, "p", BYOK_TENANT, 1);
-        let cas_blob = cas.byok_encrypt_for_write(&cas_wreq).await.unwrap().unwrap();
+        let cas_blob = cas
+            .byok_encrypt_for_write(&cas_wreq)
+            .await
+            .unwrap()
+            .unwrap();
         assert!(
             ac.byok_decrypt_for_lookup(BYOK_TENANT, &digest, cas_blob)
                 .await

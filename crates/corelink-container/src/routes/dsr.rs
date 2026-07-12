@@ -57,9 +57,7 @@ use corelink_privacy_erasure_worker::event::{
 use corelink_privacy_erasure_worker::idempotency::{
     ErasureIdempotencyLedger, InMemoryErasureIdempotencyLedger,
 };
-use corelink_privacy_erasure_worker::legitimacy::{
-    DsrLegitimacyStore, InMemoryDsrLegitimacyStore,
-};
+use corelink_privacy_erasure_worker::legitimacy::{DsrLegitimacyStore, InMemoryDsrLegitimacyStore};
 use corelink_privacy_erasure_worker::orchestrator::{ErasureWorker, InMemoryErasureWorker};
 
 // WI-S11-008 Wave 1 real transports. The 4 effective/pseudonymize backends
@@ -182,11 +180,15 @@ pub fn build_placeholder_worker() -> Result<InMemoryErasureWorker, String> {
 /// still in-memory placeholders (increments 3-4). `None` when `StorageEnv`
 /// is not configured (so the route falls back to the all-placeholder
 /// worker — e.g. in tests / unconfigured envs).
-fn build_d1_worker() -> Option<(InMemoryErasureWorker, Arc<crate::storage::d1_http::D1HttpClient>)> {
+fn build_d1_worker() -> Option<(
+    InMemoryErasureWorker,
+    Arc<crate::storage::d1_http::D1HttpClient>,
+)> {
     let storage_env = crate::storage::StorageEnv::from_env()?;
     let d1 = Arc::new(crate::storage::d1_http::D1HttpClient::new(&storage_env).ok()?);
 
-    let audit: Arc<dyn ErasureAuditSink> = Arc::new(audit::D1ErasureAuditSink::new(Arc::clone(&d1)));
+    let audit: Arc<dyn ErasureAuditSink> =
+        Arc::new(audit::D1ErasureAuditSink::new(Arc::clone(&d1)));
     let ledger: Arc<dyn ErasureIdempotencyLedger> =
         Arc::new(ledger::D1ErasureIdempotencyLedger::new(Arc::clone(&d1)));
     // rt-nuclear #18/#19: bind every erase to a D1-authenticated
@@ -196,7 +198,9 @@ fn build_d1_worker() -> Option<(InMemoryErasureWorker, Arc<crate::storage::d1_ht
         Arc::new(legitimacy::D1DsrLegitimacyStore::new(Arc::clone(&d1)));
     // Helper: a not-shipped backend reconciled to NotApplicable (ADR-S11-013).
     let na = |kind: BackendKind, reason: &'static str| -> Arc<dyn BackendErasureAdapter> {
-        Arc::new(adapter_not_applicable::NotApplicableAdapter::new(kind, reason))
+        Arc::new(adapter_not_applicable::NotApplicableAdapter::new(
+            kind, reason,
+        ))
     };
     let adapters: Vec<Arc<dyn BackendErasureAdapter>> = canonical_backend_kinds()
         .iter()
@@ -518,7 +522,11 @@ async fn handle_portability(
             .into_response(),
         Err(e) => {
             tracing::error!(error = %e, dsr_id = %msg.dsr_id, "dsr/portability: gather failed");
-            (StatusCode::INTERNAL_SERVER_ERROR, "portability export failed").into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "portability export failed",
+            )
+                .into_response()
         }
     }
 }
@@ -787,8 +795,15 @@ mod tests {
             queued_at_ms: 1_700_000_000_000,
         };
         let req = parse_verify_request(&msg).unwrap();
-        assert_eq!(req.subject_id, req.tenant_id, "subject == tenant for verify");
-        assert_eq!(req.erasure_salt.as_bytes(), &[0u8; 32], "salt unused → zeroed");
+        assert_eq!(
+            req.subject_id, req.tenant_id,
+            "subject == tenant for verify"
+        );
+        assert_eq!(
+            req.erasure_salt.as_bytes(),
+            &[0u8; 32],
+            "salt unused → zeroed"
+        );
         assert_eq!(req.queued_at_ms, 1_700_000_000_000);
     }
 
@@ -840,7 +855,10 @@ mod tests {
             "source": "customer.account.delete",
         });
         let err = sink.enqueue(&msg).unwrap_err();
-        assert!(err.contains("rejected"), "unlegitimate erase must Err (got: {err})");
+        assert!(
+            err.contains("rejected"),
+            "unlegitimate erase must Err (got: {err})"
+        );
     }
 
     #[test]
@@ -850,6 +868,9 @@ mod tests {
         // deserialize/parse — never a silent Ok that drops the erasure.
         let sink = InProcessErasureSink::new(Arc::new(build_placeholder_worker().unwrap()));
         let bad = serde_json::json!({ "dsr_id": "not-a-uuid", "tenant_id": "x" });
-        assert!(sink.enqueue(&bad).is_err(), "malformed dsr.queued.v1 must Err");
+        assert!(
+            sink.enqueue(&bad).is_err(),
+            "malformed dsr.queued.v1 must Err"
+        );
     }
 }

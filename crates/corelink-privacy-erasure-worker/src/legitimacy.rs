@@ -51,11 +51,7 @@ pub trait DsrLegitimacyStore: Send + Sync + core::fmt::Debug {
     ///
     /// - [`DsrLegitimacyError::Backend`] for transport failures. The
     ///   orchestrator treats an error as fail-CLOSED (REJECT).
-    fn is_requested(
-        &self,
-        dsr_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<bool, DsrLegitimacyError>;
+    fn is_requested(&self, dsr_id: Uuid, tenant_id: Uuid) -> Result<bool, DsrLegitimacyError>;
 }
 
 /// In-memory legitimacy store keyed by `(dsr_id, tenant_id)`. Cloning
@@ -85,11 +81,7 @@ impl InMemoryDsrLegitimacyStore {
 }
 
 impl DsrLegitimacyStore for InMemoryDsrLegitimacyStore {
-    fn is_requested(
-        &self,
-        dsr_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<bool, DsrLegitimacyError> {
+    fn is_requested(&self, dsr_id: Uuid, tenant_id: Uuid) -> Result<bool, DsrLegitimacyError> {
         let g = self.inner.lock().map_err(|_| {
             DsrLegitimacyError::Backend("legitimacy store mutex poisoned".to_string())
         })?;
@@ -119,11 +111,7 @@ impl AllowAllDsrLegitimacyStore {
 }
 
 impl DsrLegitimacyStore for AllowAllDsrLegitimacyStore {
-    fn is_requested(
-        &self,
-        _dsr_id: Uuid,
-        _tenant_id: Uuid,
-    ) -> Result<bool, DsrLegitimacyError> {
+    fn is_requested(&self, _dsr_id: Uuid, _tenant_id: Uuid) -> Result<bool, DsrLegitimacyError> {
         Ok(true)
     }
 }
@@ -142,11 +130,7 @@ impl FailingDsrLegitimacyStore {
 }
 
 impl DsrLegitimacyStore for FailingDsrLegitimacyStore {
-    fn is_requested(
-        &self,
-        _dsr_id: Uuid,
-        _tenant_id: Uuid,
-    ) -> Result<bool, DsrLegitimacyError> {
+    fn is_requested(&self, _dsr_id: Uuid, _tenant_id: Uuid) -> Result<bool, DsrLegitimacyError> {
         Err(DsrLegitimacyError::Backend(
             "induced legitimacy store failure (test fixture)".to_string(),
         ))

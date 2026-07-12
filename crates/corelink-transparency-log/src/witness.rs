@@ -68,9 +68,9 @@ impl RekorWitnessRecord {
     ) -> Result<Self, TransparencyLogError> {
         let value: serde_json::Value = serde_json::from_str(body)
             .map_err(|e| TransparencyLogError::ResponseParse(e.to_string()))?;
-        let entries = value
-            .as_object()
-            .ok_or_else(|| TransparencyLogError::ResponseParse("response is not an object".into()))?;
+        let entries = value.as_object().ok_or_else(|| {
+            TransparencyLogError::ResponseParse("response is not an object".into())
+        })?;
         let (uuid, entry) = entries.iter().next().ok_or_else(|| {
             TransparencyLogError::ResponseParse("response contains zero log entries".into())
         })?;
@@ -111,9 +111,7 @@ impl InclusionProof {
     /// Returns [`TransparencyLogError::ResponseParse`] when required proof
     /// fields (`logIndex`, `treeSize`, `rootHash`, `hashes`, `checkpoint`) are
     /// absent or malformed.
-    pub fn from_rekor_value(
-        value: &serde_json::Value,
-    ) -> Result<Self, TransparencyLogError> {
+    pub fn from_rekor_value(value: &serde_json::Value) -> Result<Self, TransparencyLogError> {
         let checkpoint_log_index = value
             .get("logIndex")
             .and_then(serde_json::Value::as_u64)
@@ -195,7 +193,8 @@ mod tests {
 
     #[test]
     fn parses_well_formed_response() {
-        let rec = RekorWitnessRecord::from_rekor_response_json(&sample_response(42), 1_700_000).unwrap();
+        let rec =
+            RekorWitnessRecord::from_rekor_response_json(&sample_response(42), 1_700_000).unwrap();
         assert_eq!(rec.log_index, 42);
         assert_eq!(rec.entry_uuid, "uuid-abc");
         assert_eq!(rec.witnessed_at_ms, 1_700_000);

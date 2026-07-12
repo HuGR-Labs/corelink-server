@@ -13,16 +13,16 @@ pub mod cas;
 /// `corelink ci mirror` — one-shot local-cache → CoreLink mirror.
 pub mod ci;
 pub mod config_cmd;
-/// `corelink import` — bulk pre-warm the CAS from a local directory.
-pub mod import_cmd;
-/// `corelink tenant export/verify-export` — data-portability / offboarding.
-pub mod tenant;
 pub mod doctor_cmd;
 pub mod get;
+/// `corelink import` — bulk pre-warm the CAS from a local directory.
+pub mod import_cmd;
 pub mod ls;
 pub mod put;
 pub mod runbook_drill;
 pub mod stat;
+/// `corelink tenant export/verify-export` — data-portability / offboarding.
+pub mod tenant;
 pub mod verify_ndjson;
 // Wave-19 HTTP-aware sibling of `verify_ndjson` — adds
 // `verify-ndjson --url <export-url>` (streams the response, reads the

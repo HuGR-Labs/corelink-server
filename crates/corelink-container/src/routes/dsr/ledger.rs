@@ -94,9 +94,8 @@ impl ErasureIdempotencyLedger for D1ErasureIdempotencyLedger {
         &self,
         completion: BackendCompletion,
     ) -> Result<LedgerOutcome, ErasureIdempotencyError> {
-        let sel = format!(
-            "SELECT {SELECT_COLS} FROM dsr_erasure_log WHERE dsr_id = ?1 AND backend = ?2"
-        );
+        let sel =
+            format!("SELECT {SELECT_COLS} FROM dsr_erasure_log WHERE dsr_id = ?1 AND backend = ?2");
         let rows = d1_query_blocking(
             &self.d1,
             &sel,
@@ -131,7 +130,11 @@ impl ErasureIdempotencyLedger for D1ErasureIdempotencyLedger {
         // Deterministic log_id per (dsr_id, backend) → re-run replays onto
         // the same PK; `INSERT OR IGNORE` makes the cross-instance race a
         // no-op under the UNIQUE (dsr_id, backend) constraint.
-        let log_id = format!("{}-{}", completion.dsr_id.simple(), completion.backend.as_str());
+        let log_id = format!(
+            "{}-{}",
+            completion.dsr_id.simple(),
+            completion.backend.as_str()
+        );
         let ins = "INSERT OR IGNORE INTO dsr_erasure_log \
              (log_id, dsr_id, tenant_id, subject_id_hash, backend, outcome, \
               records_affected, error_classes, retry_count, idempotency_key, \
@@ -159,9 +162,8 @@ impl ErasureIdempotencyLedger for D1ErasureIdempotencyLedger {
         dsr_id: Uuid,
         backend: BackendKind,
     ) -> Result<Option<BackendCompletion>, ErasureIdempotencyError> {
-        let sel = format!(
-            "SELECT {SELECT_COLS} FROM dsr_erasure_log WHERE dsr_id = ?1 AND backend = ?2"
-        );
+        let sel =
+            format!("SELECT {SELECT_COLS} FROM dsr_erasure_log WHERE dsr_id = ?1 AND backend = ?2");
         let rows = d1_query_blocking(
             &self.d1,
             &sel,
@@ -288,8 +290,12 @@ mod tests {
     fn outcome_str_roundtrips() {
         let cases = [
             BackendErasureOutcome::Erased { records_deleted: 7 },
-            BackendErasureOutcome::Pseudonymized { records_redacted: 3 },
-            BackendErasureOutcome::Failed { retry_after_seconds: 60 },
+            BackendErasureOutcome::Pseudonymized {
+                records_redacted: 3,
+            },
+            BackendErasureOutcome::Failed {
+                retry_after_seconds: 60,
+            },
             BackendErasureOutcome::NotApplicable,
         ];
         for o in cases {
@@ -305,10 +311,7 @@ mod tests {
             records_affected(&BackendErasureOutcome::Erased { records_deleted: 9 }),
             9
         );
-        assert_eq!(
-            records_affected(&BackendErasureOutcome::NotApplicable),
-            0
-        );
+        assert_eq!(records_affected(&BackendErasureOutcome::NotApplicable), 0);
     }
 
     #[test]

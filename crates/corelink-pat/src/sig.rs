@@ -150,7 +150,9 @@ mod fold_tests {
         let good = key(0x11);
         let preimage = b"abc.def";
         let sig = compute_hmac_sig(&good, preimage);
-        assert!(verify_hmac_sig_multi(&[key(0x22), good.clone(), key(0x33)], preimage, &sig).is_ok());
+        assert!(
+            verify_hmac_sig_multi(&[key(0x22), good.clone(), key(0x33)], preimage, &sig).is_ok()
+        );
         assert!(verify_hmac_sig_multi(&[key(0x22), key(0x33)], preimage, &sig).is_err());
     }
 }

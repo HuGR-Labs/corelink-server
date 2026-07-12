@@ -60,7 +60,10 @@ pub(super) struct R2AcEraseAdapter {
     // Retained for interface symmetry with the other DSR adapters (they all take
     // a shared D1 client); the AC erase itself is now purely R2 LIST-by-prefix
     // (no `ac_meta` index read — see the module doc / F-003).
-    #[allow(dead_code, reason = "kept for adapter-construction symmetry with the sibling DSR adapters")]
+    #[allow(
+        dead_code,
+        reason = "kept for adapter-construction symmetry with the sibling DSR adapters"
+    )]
     d1: Arc<D1HttpClient>,
     bucket_prefix: String,
 }
@@ -204,10 +207,7 @@ impl BackendErasureAdapter for R2AcEraseAdapter {
         })
     }
 
-    fn verification_hash(
-        &self,
-        ctx: VerificationContext,
-    ) -> Result<[u8; 32], ErasureBackendError> {
+    fn verification_hash(&self, ctx: VerificationContext) -> Result<[u8; 32], ErasureBackendError> {
         // Verify against ACTUAL R2 objects (NOT the `ac_meta` D1 index, which the
         // live write path never populates — F-003): count everything still under
         // the tenant's `<region>/<prefix>/` across the regional buckets.
@@ -246,8 +246,14 @@ mod tests {
 
     #[test]
     fn bucket_name_is_per_region() {
-        assert_eq!(ac_bucket_name(DEFAULT_AC_BUCKET_PREFIX, "iad"), "corelink-ac-iad");
-        assert_eq!(ac_bucket_name(DEFAULT_AC_BUCKET_PREFIX, "syd"), "corelink-ac-syd");
+        assert_eq!(
+            ac_bucket_name(DEFAULT_AC_BUCKET_PREFIX, "iad"),
+            "corelink-ac-iad"
+        );
+        assert_eq!(
+            ac_bucket_name(DEFAULT_AC_BUCKET_PREFIX, "syd"),
+            "corelink-ac-syd"
+        );
     }
 
     #[test]

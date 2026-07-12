@@ -80,10 +80,7 @@ use uuid::Uuid;
 /// `cancel_url`.  Must be kept in sync with the deployed admin-ui and app
 /// origins.  Case-insensitive comparison (`.to_ascii_lowercase()` on the
 /// parsed host).
-const ALLOWED_REDIRECT_HOSTS: &[&str] = &[
-    "corelink-admin.humangr.com",
-    "corelink-app.humangr.com",
-];
+const ALLOWED_REDIRECT_HOSTS: &[&str] = &["corelink-admin.humangr.com", "corelink-app.humangr.com"];
 
 /// Validate a single redirect URL (success or cancel).  Fail-CLOSED: any
 /// parse failure, wrong scheme, disallowed host, present userinfo, or
@@ -146,7 +143,10 @@ fn validate_redirect_url(raw: &str, field: &str) -> Result<(), TierSelectHttpErr
         .host_str()
         .map(|h| h.to_ascii_lowercase())
         .unwrap_or_default();
-    if !ALLOWED_REDIRECT_HOSTS.iter().any(|&allowed| allowed == host) {
+    if !ALLOWED_REDIRECT_HOSTS
+        .iter()
+        .any(|&allowed| allowed == host)
+    {
         tracing::warn!(
             field,
             host = %host,
@@ -1107,8 +1107,7 @@ mod tests {
         // must be rejected by the new allowlist gate (F6/F10 fix).
         let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
         let mut bad = req("pro");
-        bad.success_url =
-            "https://attacker.example/steal?s={CHECKOUT_SESSION_ID}".to_owned();
+        bad.success_url = "https://attacker.example/steal?s={CHECKOUT_SESSION_ID}".to_owned();
         let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
         assert_eq!(e, TierSelectHttpError::BadRequest);
     }
@@ -1117,8 +1116,7 @@ mod tests {
     fn f6_rejects_success_url_with_userinfo() {
         let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
         let mut bad = req("pro");
-        bad.success_url =
-            "https://user:pass@corelink-admin.humangr.com/upgraded".to_owned();
+        bad.success_url = "https://user:pass@corelink-admin.humangr.com/upgraded".to_owned();
         let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
         assert_eq!(e, TierSelectHttpError::BadRequest);
     }
@@ -1127,8 +1125,7 @@ mod tests {
     fn f6_rejects_success_url_with_explicit_port() {
         let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
         let mut bad = req("pro");
-        bad.success_url =
-            "https://corelink-admin.humangr.com:8443/upgraded".to_owned();
+        bad.success_url = "https://corelink-admin.humangr.com:8443/upgraded".to_owned();
         let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
         assert_eq!(e, TierSelectHttpError::BadRequest);
     }
@@ -1230,8 +1227,7 @@ mod tests {
         // A full request carrying `runner_pro` passes auth/validation, is
         // recognized as the RunnerPro tier, and is NOT 400-rejected.
         let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
-        let (tenant, tier) =
-            authorize_and_validate(&state(), &h, &req("runner_pro")).unwrap();
+        let (tenant, tier) = authorize_and_validate(&state(), &h, &req("runner_pro")).unwrap();
         assert_eq!(tenant, "tenant-abc");
         assert_eq!(tier, RequestedTier::RunnerPro);
         assert!(tier.is_paid());
@@ -1467,7 +1463,10 @@ mod tests {
             Some("https://checkout.stripe.com/c/pay/cs_test_123"),
             "runner checkout still returns a Stripe Checkout URL"
         );
-        assert!(*checkout.called.lock().unwrap(), "Stripe IS called for runner");
+        assert!(
+            *checkout.called.lock().unwrap(),
+            "Stripe IS called for runner"
+        );
         assert!(
             store.persisted.lock().unwrap().is_empty(),
             "runner checkout must NOT write the cache tier_selections / \
@@ -1533,7 +1532,10 @@ mod tests {
             RequestedTier::Pro,
         )
         .await;
-        assert!(r.is_ok(), "a runner-active tenant can still buy a cache tier");
+        assert!(
+            r.is_ok(),
+            "a runner-active tenant can still buy a cache tier"
+        );
         assert!(*checkout.called.lock().unwrap());
         assert_eq!(
             *store.persisted.lock().unwrap(),

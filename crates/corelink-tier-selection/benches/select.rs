@@ -25,8 +25,8 @@ use corelink_tier_selection::{
     InMemoryDpaGate, InMemoryStripeClient, InMemoryTierSelectionAuditSink, TenantCtx, TenantId,
     TierKind, TierSelectionLedger,
 };
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 
 fn fresh_ledger() -> TierSelectionLedger {
     let dpa = InMemoryDpaGate::new();

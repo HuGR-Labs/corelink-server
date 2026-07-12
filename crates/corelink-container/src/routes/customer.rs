@@ -193,7 +193,10 @@ pub fn build_handlers() -> CustomerRouteState {
 pub fn account_deletion_from_env() -> Option<Arc<dyn AccountDeletionRequester>> {
     let db = crate::customer_d1::D1HttpCustomerDb::from_env()?;
     let sink = crate::routes::dsr::build_in_process_erasure_sink()?;
-    Some(Arc::new(D1AccountDeletionRequester::new(Arc::new(db), sink)))
+    Some(Arc::new(D1AccountDeletionRequester::new(
+        Arc::new(db),
+        sink,
+    )))
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -210,7 +213,10 @@ pub fn router(state: CustomerRouteState) -> Router {
             "/v1/customer/keys",
             get(handle_keys_list).post(handle_keys_create),
         )
-        .route("/v1/customer/keys/{pat_id}/revoke", post(handle_keys_revoke))
+        .route(
+            "/v1/customer/keys/{pat_id}/revoke",
+            post(handle_keys_revoke),
+        )
         .route("/v1/customer/team", get(handle_team_list))
         .route("/v1/customer/team/invite", post(handle_team_invite))
         .route("/v1/customer/team/{user_id}", delete(handle_team_remove))
@@ -1125,7 +1131,11 @@ async fn handle_account_export(
         Ok(b) => b,
         Err(TenantExportError::Unavailable(e)) => {
             tracing::warn!(error = %e, tenant = %t, "tenant export: blob index unavailable");
-            return (StatusCode::SERVICE_UNAVAILABLE, "export storage unavailable").into_response();
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "export storage unavailable",
+            )
+                .into_response();
         }
         Err(TenantExportError::Internal(e)) => {
             tracing::error!(error = %e, tenant = %t, "tenant export: blob index failed");
@@ -1227,8 +1237,8 @@ pub(crate) fn deterministic_dsr_id(subject_key: &str) -> String {
     b.copy_from_slice(digest.get(..16).unwrap_or(&[0u8; 16]));
     b[6] = (b[6] & 0x0f) | 0x50; // version 5 (name-based)
     b[8] = (b[8] & 0x3f) | 0x80; // RFC 4122 variant
-    // Render via the uuid crate (lowercase, hyphenated 8-4-4-4-12) — no manual
-    // slicing; the version/variant bits set above survive verbatim.
+                                 // Render via the uuid crate (lowercase, hyphenated 8-4-4-4-12) — no manual
+                                 // slicing; the version/variant bits set above survive verbatim.
     uuid::Uuid::from_bytes(b).to_string()
 }
 
@@ -1287,8 +1297,9 @@ impl D1AccountDeletionRequester {
                         .to_owned(),
                 )
             })?;
-        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key.as_bytes())
-            .map_err(|e| AccountDeletionError::Internal(format!("erasure salt key invalid: {e}")))?;
+        let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(key.as_bytes()).map_err(|e| {
+            AccountDeletionError::Internal(format!("erasure salt key invalid: {e}"))
+        })?;
         mac.update(dsr_id.as_bytes());
         Ok(hex::encode(mac.finalize().into_bytes()))
     }
@@ -1410,9 +1421,11 @@ fn map_err(e: CustomerHandlerError) -> axum::response::Response {
         // accept, ADR-S33-001 / migration 0074), so this generic arm is a
         // defensive fallback for any future NotImplemented surface, NOT a
         // team-invite stub. The message stays generic + honest accordingly.
-        CustomerHandlerError::NotImplemented(_) => {
-            (StatusCode::NOT_IMPLEMENTED, "this endpoint is not yet implemented").into_response()
-        }
+        CustomerHandlerError::NotImplemented(_) => (
+            StatusCode::NOT_IMPLEMENTED,
+            "this endpoint is not yet implemented",
+        )
+            .into_response(),
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
     }
 }
@@ -1576,8 +1589,18 @@ mod tests {
     #[tokio::test]
     async fn usage_route_returns_200_with_period() {
         let (state, shared) = fixture();
-        let usage =
-            UsageResponse::new("2026-05", 512, 100, 50, 1_000_000, vec![], 200, Some(0.75), 900, 1);
+        let usage = UsageResponse::new(
+            "2026-05",
+            512,
+            100,
+            50,
+            1_000_000,
+            vec![],
+            200,
+            Some(0.75),
+            900,
+            1,
+        );
         shared.seed_usage("t1", usage).expect("seed");
 
         let app = router(state);
@@ -1784,8 +1807,15 @@ mod tests {
     #[tokio::test]
     async fn write_capable_caller_can_open_billing_portal() {
         let (state, shared) = fixture();
-        let billing =
-            BillingResponse::new("active", "pro", "2026-05-01", "2026-06-01", 5000, "usd", vec![]);
+        let billing = BillingResponse::new(
+            "active",
+            "pro",
+            "2026-05-01",
+            "2026-06-01",
+            5000,
+            "usd",
+            vec![],
+        );
         shared.seed_billing("rw-tenant", billing).expect("seed");
         let app = router(state);
         let req = Request::builder()
@@ -1963,7 +1993,10 @@ mod tests {
         assert_eq!(iresp.status(), StatusCode::CREATED);
         let ibytes = to_bytes(iresp.into_body(), 1 << 20).await.expect("body");
         let iv: serde_json::Value = serde_json::from_slice(&ibytes).expect("json");
-        let user_id = iv["member"]["user_id"].as_str().expect("user_id").to_owned();
+        let user_id = iv["member"]["user_id"]
+            .as_str()
+            .expect("user_id")
+            .to_owned();
 
         let remove = Request::builder()
             .uri(format!("/v1/customer/team/{user_id}"))
@@ -2399,7 +2432,10 @@ mod tests {
             );
         }
         // A list containing ANY write token flags.
-        assert!(mint_requests_write(&["cache:read".into(), "cache:write".into()]));
+        assert!(mint_requests_write(&[
+            "cache:read".into(),
+            "cache:write".into()
+        ]));
     }
 
     /// A read-only caller cannot invite a privileged role; a non-privileged
@@ -2574,9 +2610,15 @@ mod tests {
         // Canonical UUID shape, version nibble = 5, RFC-4122 variant (8/9/a/b).
         assert_eq!(id.len(), 36);
         let parts: Vec<&str> = id.split('-').collect();
-        assert_eq!(parts.iter().map(|p| p.len()).collect::<Vec<_>>(), vec![8, 4, 4, 4, 12]);
+        assert_eq!(
+            parts.iter().map(|p| p.len()).collect::<Vec<_>>(),
+            vec![8, 4, 4, 4, 12]
+        );
         assert_eq!(&parts[2][0..1], "5", "version 5 nibble");
-        assert!(matches!(&parts[3][0..1], "8" | "9" | "a" | "b"), "RFC-4122 variant");
+        assert!(
+            matches!(&parts[3][0..1], "8" | "9" | "a" | "b"),
+            "RFC-4122 variant"
+        );
         // Deterministic.
         assert_eq!(id, deterministic_dsr_id("user_2abc"));
         assert_ne!(id, deterministic_dsr_id("user_other"));
@@ -2612,7 +2654,10 @@ mod tests {
     }
 
     fn d1row(pairs: &[(&str, Value)]) -> D1Row {
-        pairs.iter().map(|(k, v)| ((*k).to_owned(), v.clone())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), v.clone()))
+            .collect()
     }
 
     // The requester reads the process-global `ERASURE_SALT_KEY`; all three
@@ -2640,14 +2685,21 @@ mod tests {
         assert_eq!(insert.1[0], json!(expected_dsr));
         assert_eq!(insert.1[1], json!("t-acct"));
 
-        let msg = sink.last.lock().unwrap().clone().expect("a message was enqueued");
+        let msg = sink
+            .last
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("a message was enqueued");
         assert_eq!(msg["schema"], DSR_QUEUED_SCHEMA);
         assert_eq!(msg["dsr_id"], json!(expected_dsr));
         assert_eq!(msg["tenant_id"], "t-acct");
         assert_eq!(msg["subject_id"], "t-acct");
         assert_eq!(msg["source"], "customer.account.delete");
         assert_eq!(msg["legal_hold"], json!(false));
-        assert!(msg["erasure_salt_hex"].as_str().is_some_and(|s| s.len() == 64));
+        assert!(msg["erasure_salt_hex"]
+            .as_str()
+            .is_some_and(|s| s.len() == 64));
 
         // Phase B: no tenant row → NotFound, no enqueue.
         let db2 = Arc::new(MockReqD1::default());
@@ -2657,7 +2709,10 @@ mod tests {
             r2.request_erasure("ghost"),
             Err(AccountDeletionError::NotFound)
         ));
-        assert!(sink2.last.lock().unwrap().is_none(), "no enqueue on NotFound");
+        assert!(
+            sink2.last.lock().unwrap().is_none(),
+            "no enqueue on NotFound"
+        );
 
         // Phase C: salt key UNSET → fail-CLOSED (Internal), no enqueue.
         std::env::remove_var("ERASURE_SALT_KEY");
@@ -2777,7 +2832,10 @@ mod tests {
             .iter()
             .find(|l| l["kind"] == "blob" && l["blob_kind"] == "cas")
             .expect("cas blob line");
-        assert_eq!(b64.decode(cas["bytes"].as_str().unwrap()).unwrap(), b"blob-A");
+        assert_eq!(
+            b64.decode(cas["bytes"].as_str().unwrap()).unwrap(),
+            b"blob-A"
+        );
         let ac = lines
             .iter()
             .find(|l| l["kind"] == "blob" && l["blob_kind"] == "ac")

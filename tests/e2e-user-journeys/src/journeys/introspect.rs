@@ -244,11 +244,7 @@ fn adversarial_no_service_key(cfg: &Config, client: &Client) -> JourneyResult {
     let probe_body = json!({ "token": "corelink_pat_probe" });
 
     // 3a — NO service-auth header at all.
-    match client
-        .post(url_introspect(cfg))
-        .json(&probe_body)
-        .send()
-    {
+    match client.post(url_introspect(cfg)).json(&probe_body).send() {
         Ok(r) => {
             let code = r.status().as_u16();
             if code == 200 {

@@ -255,12 +255,15 @@ impl TenantResolver for PipPatResolver {
         pat_plaintext: &str,
     ) -> Result<ResolvedTenant, PipAdapterError> {
         let (tenant_text, can_write) =
-            self.0.verify_capability(pat_plaintext).await.map_err(|e| match e {
-                VerifyError::InvalidPat => PipAdapterError::Auth("invalid PAT".to_owned()),
-                VerifyError::Backend(m) => {
-                    PipAdapterError::Cas(format!("verifier backend: {m}"))
-                }
-            })?;
+            self.0
+                .verify_capability(pat_plaintext)
+                .await
+                .map_err(|e| match e {
+                    VerifyError::InvalidPat => PipAdapterError::Auth("invalid PAT".to_owned()),
+                    VerifyError::Backend(m) => {
+                        PipAdapterError::Cas(format!("verifier backend: {m}"))
+                    }
+                })?;
         let uuid = uuid::Uuid::parse_str(&tenant_text).map_err(|e| {
             PipAdapterError::Cas(format!(
                 "verifier returned non-uuid tenant `{tenant_text}`: {e}"
@@ -451,13 +454,8 @@ async fn pip_gate(
                         resolved_tenant_for_quota = Some(resolved.tenant_id.to_string());
                     }
                     Ok(_no_write) => {
-                        tracing::warn!(
-                            "pip: PUT denied — PAT scope lacks write capability (F27)"
-                        );
-                        return (
-                            StatusCode::FORBIDDEN,
-                            "PAT does not grant write capability",
-                        )
+                        tracing::warn!("pip: PUT denied — PAT scope lacks write capability (F27)");
+                        return (StatusCode::FORBIDDEN, "PAT does not grant write capability")
                             .into_response();
                     }
                     Err(e) => {

@@ -25,9 +25,9 @@
     reason = "integration tests are allowed these primitives; failures should panic loudly."
 )]
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::io::Write;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Absolute path to the compiled bin (cargo provides this to integration
@@ -81,7 +81,8 @@ fn drift_input_json() -> String {
 fn unique_dir() -> PathBuf {
     static COUNTER: AtomicU32 = AtomicU32::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("brr-{}-{n}", std::process::id()));
+    let dir =
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("brr-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("create scratch dir");
     dir
 }
@@ -255,7 +256,6 @@ fn empty_stdin_input_exits_two() {
         "empty input must print the error marker; stderr={stderr}"
     );
 }
-
 
 /// CLEAN input piped via STDIN with `--input -` → exit 0 + the clean
 /// marker. The bin must route `-` to the stdin read branch.

@@ -158,9 +158,7 @@ where
         let row = Self::build_row(&event)?;
         // Fail-CLOSED: any append failure is the operation's error. No `.ok()`,
         // no `let _ =` — the `?` propagates so the handler surfaces 503-class.
-        self.writer
-            .append(row)
-            .map_err(EmitterError::Store)
+        self.writer.append(row).map_err(EmitterError::Store)
     }
 }
 
@@ -313,16 +311,12 @@ mod tests {
     #[test]
     fn distinct_events_differ_in_hash() {
         let tenant = Uuid::now_v7();
-        let a = OutboxEmitter::<InMemoryAuditOutboxWriter>::build_row(&sample(
-            Uuid::now_v7(),
-            tenant,
-        ))
-        .unwrap();
-        let b = OutboxEmitter::<InMemoryAuditOutboxWriter>::build_row(&sample(
-            Uuid::now_v7(),
-            tenant,
-        ))
-        .unwrap();
+        let a =
+            OutboxEmitter::<InMemoryAuditOutboxWriter>::build_row(&sample(Uuid::now_v7(), tenant))
+                .unwrap();
+        let b =
+            OutboxEmitter::<InMemoryAuditOutboxWriter>::build_row(&sample(Uuid::now_v7(), tenant))
+                .unwrap();
         // Different CloudEvents id ⇒ different canonical bytes ⇒ different hash.
         assert_ne!(a.content_hash, b.content_hash);
     }
@@ -330,8 +324,11 @@ mod tests {
     #[test]
     fn emitter_is_dyn_object_safe() {
         // The production wiring stores it as `Arc<dyn Emitter>`.
-        let emitter: Arc<dyn Emitter> =
-            Arc::new(OutboxEmitter::new(Arc::new(InMemoryAuditOutboxWriter::new())));
-        emitter.emit(sample(Uuid::now_v7(), Uuid::now_v7())).unwrap();
+        let emitter: Arc<dyn Emitter> = Arc::new(OutboxEmitter::new(Arc::new(
+            InMemoryAuditOutboxWriter::new(),
+        )));
+        emitter
+            .emit(sample(Uuid::now_v7(), Uuid::now_v7()))
+            .unwrap();
     }
 }

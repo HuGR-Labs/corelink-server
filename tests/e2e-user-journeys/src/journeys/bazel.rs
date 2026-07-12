@@ -108,7 +108,12 @@ fn bazel_find_missing_blobs(cfg: &Config, client: &Client) -> JourneyResult {
 
     let instance = match resolve_instance(cfg) {
         Some(i) => i,
-        None => return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set (needed as REAPI instance)"),
+        None => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_TENANT not set (needed as REAPI instance)",
+            )
+        }
     };
 
     // Step 1: PUT a known blob (so we can prove it is NOT reported missing).
@@ -152,7 +157,9 @@ fn bazel_find_missing_blobs(cfg: &Config, client: &Client) -> JourneyResult {
         .send()
     {
         Ok(r) => r,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST findMissingBlobs: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("POST findMissingBlobs: {e}"))
+        }
     };
 
     let status = resp.status().as_u16();
@@ -163,11 +170,19 @@ fn bazel_find_missing_blobs(cfg: &Config, client: &Client) -> JourneyResult {
     // Step 3: Assert only the unknown digest is listed as missing.
     let body_bytes = match resp.bytes() {
         Ok(b) => b,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("findMissingBlobs body read: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("findMissingBlobs body read: {e}"))
+        }
     };
     let json: Value = match serde_json::from_slice(&body_bytes) {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("findMissingBlobs JSON parse: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("findMissingBlobs JSON parse: {e}"),
+            )
+        }
     };
 
     let missing_arr = match json.get("missingBlobDigests").and_then(|v| v.as_array()) {
@@ -176,7 +191,9 @@ fn bazel_find_missing_blobs(cfg: &Config, client: &Client) -> JourneyResult {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("findMissingBlobs: response missing 'missingBlobDigests' array — got: {json}"),
+                format!(
+                    "findMissingBlobs: response missing 'missingBlobDigests' array — got: {json}"
+                ),
             )
         }
     };
@@ -399,7 +416,10 @@ fn bazel_instance_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResu
 
     // Gate: we need a known tenant to prove it ISN'T the wrong instance.
     if cfg.tenant.is_none() {
-        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set (needed to craft a mismatched instance)");
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_TENANT not set (needed to craft a mismatched instance)",
+        );
     }
 
     // Deliberately wrong instance — must not match the authenticated tenant.
@@ -423,7 +443,8 @@ fn bazel_instance_tenant_isolation(cfg: &Config, client: &Client) -> JourneyResu
         return JourneyResult::fail(
             name,
             ms(start),
-            "SECURITY: wrong-instance request returned 200 — cross-tenant gate is NOT active".to_string(),
+            "SECURITY: wrong-instance request returned 200 — cross-tenant gate is NOT active"
+                .to_string(),
         );
     }
     // 403 is the expected active-gate reject; 401 is also acceptable (no tenant

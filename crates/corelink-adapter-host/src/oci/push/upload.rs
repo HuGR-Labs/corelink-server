@@ -75,25 +75,22 @@ pub async fn open(
     repo: &str,
 ) -> Result<axum::response::Response, OciAdapterError> {
     check_repo_push(repo, scope)?;
-    let uuid = cas
-        .open_upload(tenant)
-        .await
-        .map_err(|e| {
-            if e.starts_with("too many open upload sessions") {
-                // Parse the limit from the error message if present so the
-                // response is self-consistent; fall back to a sentinel.
-                let limit = parse_session_limit(&e);
-                OciAdapterError::TooManyOpenSessions {
-                    limit,
-                    // 60 s is a conservative advisory back-off: long enough
-                    // to let a stalled push time out, short enough to not
-                    // strand legitimate retries.
-                    retry_after_secs: 60,
-                }
-            } else {
-                OciAdapterError::Cas(e)
+    let uuid = cas.open_upload(tenant).await.map_err(|e| {
+        if e.starts_with("too many open upload sessions") {
+            // Parse the limit from the error message if present so the
+            // response is self-consistent; fall back to a sentinel.
+            let limit = parse_session_limit(&e);
+            OciAdapterError::TooManyOpenSessions {
+                limit,
+                // 60 s is a conservative advisory back-off: long enough
+                // to let a stalled push time out, short enough to not
+                // strand legitimate retries.
+                retry_after_secs: 60,
             }
-        })?;
+        } else {
+            OciAdapterError::Cas(e)
+        }
+    })?;
     let location = format!("/v2/{repo}/blobs/uploads/{uuid}");
     let mut headers = HeaderMap::new();
     headers.insert(

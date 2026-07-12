@@ -166,7 +166,9 @@ pub async fn run_export(
         blobs_written,
         bytes_written,
     };
-    Formatter::new(format).emit(&summary).map_err(CliError::Json)?;
+    Formatter::new(format)
+        .emit(&summary)
+        .map_err(CliError::Json)?;
     Ok(())
 }
 

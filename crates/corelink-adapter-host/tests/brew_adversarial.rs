@@ -58,7 +58,10 @@ async fn oversize_bottle_returns_413() {
     .await;
 
     let resp = reqwest::Client::new()
-        .get(format!("http://{addr}/v2/homebrew/core/big/blobs/sha256:{}", "a".repeat(64)))
+        .get(format!(
+            "http://{addr}/v2/homebrew/core/big/blobs/sha256:{}",
+            "a".repeat(64)
+        ))
         .header("Authorization", format!("Bearer {PAT_A}"))
         .send()
         .await
@@ -249,7 +252,9 @@ async fn upstream_5xx_returns_502_with_no_half_store() {
     .await;
 
     let resp = reqwest::Client::new()
-        .get(format!("http://{addr}/v2/homebrew/core/curl/manifests/8.5.0"))
+        .get(format!(
+            "http://{addr}/v2/homebrew/core/curl/manifests/8.5.0"
+        ))
         .header("Authorization", format!("Bearer {PAT_A}"))
         .send()
         .await
@@ -352,7 +357,11 @@ async fn forbidden_repo_path_is_refused_before_any_fetch_or_store() {
         assert_eq!(resp.status(), 403, "off-allowlist path {path} must be 403");
     }
 
-    assert_eq!(cas.len(), 0, "off-allowlist paths must NEVER reach the store");
+    assert_eq!(
+        cas.len(),
+        0,
+        "off-allowlist paths must NEVER reach the store"
+    );
     assert_eq!(
         audit.snapshot().len(),
         0,
@@ -402,7 +411,10 @@ async fn tag_addressed_manifest_is_served_but_not_cached_into_public() {
         .await
         .unwrap();
     assert_eq!(r1.status(), 200, "tag-addressed manifest is still served");
-    assert_eq!(r1.bytes().await.unwrap().as_ref(), b"mutable-manifest-bytes");
+    assert_eq!(
+        r1.bytes().await.unwrap().as_ref(),
+        b"mutable-manifest-bytes"
+    );
 
     let r2 = client
         .get(&url)

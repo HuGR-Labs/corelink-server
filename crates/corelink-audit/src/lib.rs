@@ -139,10 +139,6 @@ pub mod analytics;
 pub mod chain;
 
 pub use emitter::{Emitter, EmitterError, InMemoryEmitter};
-pub use outbox::{
-    AuditOutboxRow, AuditOutboxWriter, FailingAuditOutboxWriter, InMemoryAuditOutboxWriter,
-    OutboxEmitter,
-};
 pub use error::AuditError;
 pub use events::{
     AuthEvent, AuthEventData, AuthEventType, ClerkSubject, DenyReason, MembershipRole, RegionTag,
@@ -152,6 +148,10 @@ pub use link_hash::{
     compute_content_hash, link_chain_hash, ChainHash, ContentHash, CONTENT_HASH_HEX_LEN,
 };
 pub use metrics::{InMemoryMetrics, MetricsObserver, NoopMetrics};
+pub use outbox::{
+    AuditOutboxRow, AuditOutboxWriter, FailingAuditOutboxWriter, InMemoryAuditOutboxWriter,
+    OutboxEmitter,
+};
 pub use redact::{redact_pat_str, EmailHash, PatIdHash, PrincipalIdHash, REDACTED_PAT_PLACEHOLDER};
 pub use retention::{RetentionHint, TenantTier};
 

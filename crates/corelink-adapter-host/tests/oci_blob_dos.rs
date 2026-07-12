@@ -140,7 +140,10 @@ async fn patch_body_within_cap_succeeds() {
 fn blob_cap_is_finite_and_sane() {
     let cap = defaults::BLOB_SIZE_LIMIT_BYTES;
     assert_eq!(cap, 5 * 1024 * 1024 * 1024, "default cap is 5 GiB");
-    assert!(cap > 1024 * 1024, "cap must allow a realistic layer (>1 MiB)");
+    assert!(
+        cap > 1024 * 1024,
+        "cap must allow a realistic layer (>1 MiB)"
+    );
     assert!(
         cap <= 64 * 1024 * 1024 * 1024,
         "cap must stay finite + bounded (<=64 GiB)"

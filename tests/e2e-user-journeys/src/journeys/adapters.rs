@@ -42,8 +42,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use crate::harness::{
     bearer, expect_denied, expect_gate_denied, sha256_hex, unique_blob, url_brew, url_cargo,
-    url_npm, url_oci_token,
-    url_oci_v2, url_pip, Config, JourneyResult, TokenKind,
+    url_npm, url_oci_token, url_oci_v2, url_pip, Config, JourneyResult, TokenKind,
 };
 use crate::personas::Persona;
 
@@ -167,7 +166,11 @@ fn cargo_store_fetch_round_trip(cfg: &Config, client: &Client) -> JourneyResult 
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("cargo GET bytes mismatch (put {} got {})", blob.len(), b.len()),
+                format!(
+                    "cargo GET bytes mismatch (put {} got {})",
+                    blob.len(),
+                    b.len()
+                ),
             )
         }
         Err(e) => return JourneyResult::fail(name, ms(start), format!("cargo GET body: {e}")),
@@ -261,7 +264,8 @@ fn cargo_fresh_tenant_first_write(cfg: &Config, client: &Client) -> JourneyResul
     // run and exposes them as CORELINK_E2E_FRESH_TENANT / CORELINK_E2E_PAT_FRESH.
     // Absent that pairing we GATE with the precise reason (the fix stays
     // unit-covered server-side: cargo.rs::put_threads_resolved_cap_into_cas_write).
-    let (Some(tenant), Some(token)) = (cfg.fresh_tenant.clone(), cfg.token(TokenKind::Fresh)) else {
+    let (Some(tenant), Some(token)) = (cfg.fresh_tenant.clone(), cfg.token(TokenKind::Fresh))
+    else {
         return JourneyResult::gated(
             name,
             "CORELINK_E2E_FRESH_TENANT / CORELINK_E2E_PAT_FRESH not set — needs a \
@@ -300,7 +304,9 @@ fn cargo_fresh_tenant_first_write(cfg: &Config, client: &Client) -> JourneyResul
         other => JourneyResult::fail(
             name,
             ms(start),
-            format!("fresh-tenant first cargo PUT got {other} (expected a 200/201 serve, never 502)"),
+            format!(
+                "fresh-tenant first cargo PUT got {other} (expected a 200/201 serve, never 502)"
+            ),
         ),
     }
 }
@@ -368,7 +374,10 @@ fn cargo_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
         // Connection error ⇒ endpoint not under test (e.g. no env) → gate.
         Ok(r) => r,
         Err(e) => {
-            return JourneyResult::gated(name, format!("endpoint unreachable ({}): {e}", cfg.endpoint))
+            return JourneyResult::gated(
+                name,
+                format!("endpoint unreachable ({}): {e}", cfg.endpoint),
+            )
         }
     };
     let status = get.status().as_u16();
@@ -537,7 +546,9 @@ fn oci_token_two_leg(cfg: &Config, client: &Client) -> JourneyResult {
     }
     let body: serde_json::Value = match leg1.json() {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("/token body not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("/token body not JSON: {e}"))
+        }
     };
     let bearer_token = match body.get("token").and_then(|t| t.as_str()) {
         Some(t) if !t.is_empty() => t.to_owned(),
@@ -596,7 +607,10 @@ fn oci_token_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
     let t = match client.get(&token_url).send() {
         Ok(r) => r,
         Err(e) => {
-            return JourneyResult::gated(name, format!("endpoint unreachable ({}): {e}", cfg.endpoint))
+            return JourneyResult::gated(
+                name,
+                format!("endpoint unreachable ({}): {e}", cfg.endpoint),
+            )
         }
     };
     let tstatus = t.status().as_u16();
@@ -646,8 +660,7 @@ fn oci_basic_header(pat: &str) -> String {
 /// Standard-alphabet base64 (no padding tricks) — tiny inline encoder so we do
 /// NOT add a dependency (the harness dep set is frozen).
 fn base64_standard(input: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
     for chunk in input.chunks(3) {
         let b0 = chunk[0] as u32;
@@ -689,7 +702,10 @@ fn npm_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
     let get = match client.get(&url).send() {
         Ok(r) => r,
         Err(e) => {
-            return JourneyResult::gated(name, format!("endpoint unreachable ({}): {e}", cfg.endpoint))
+            return JourneyResult::gated(
+                name,
+                format!("endpoint unreachable ({}): {e}", cfg.endpoint),
+            )
         }
     };
     let status = get.status().as_u16();
@@ -756,7 +772,10 @@ fn pip_anonymous_denied(cfg: &Config, client: &Client) -> JourneyResult {
     let get = match client.get(&url).send() {
         Ok(r) => r,
         Err(e) => {
-            return JourneyResult::gated(name, format!("endpoint unreachable ({}): {e}", cfg.endpoint))
+            return JourneyResult::gated(
+                name,
+                format!("endpoint unreachable ({}): {e}", cfg.endpoint),
+            )
         }
     };
     let status = get.status().as_u16();
@@ -945,7 +964,9 @@ fn public_fetch_assert(
     if matches!(status, 503 | 504) {
         return JourneyResult::gated(
             name,
-            format!("{surface} upstream/edge transient ({status}) — not the _public regression; retry"),
+            format!(
+                "{surface} upstream/edge transient ({status}) — not the _public regression; retry"
+            ),
         );
     }
     if status != 200 {
@@ -962,7 +983,11 @@ fn public_fetch_assert(
     let body = match get.text() {
         Ok(b) => b,
         Err(e) => {
-            return JourneyResult::fail(name, ms(start), format!("{surface} 200 but body read failed: {e}"))
+            return JourneyResult::fail(
+                name,
+                ms(start),
+                format!("{surface} 200 but body read failed: {e}"),
+            )
         }
     };
     let marker = match surface {

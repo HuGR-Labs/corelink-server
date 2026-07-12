@@ -26,9 +26,9 @@ use corelink_audit_chain::{
     chain::HashChainBuilder,
     event::{AuditEvent, AuditEventKind, ChainHash},
 };
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use serde_json::json;
+use std::hint::black_box;
 use uuid::Uuid;
 
 fn make_event(seq: u64, prev: ChainHash, tenant: Uuid) -> AuditEvent {
