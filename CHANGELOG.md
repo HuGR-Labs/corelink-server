@@ -22,6 +22,15 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **fix(canary): repoint the CAS drift-canary to a dedicated tenant after the githugr/hugit pause revoked its PAT.**
+  The hourly authenticated CAS BLAKE3 round-trip canary (`cas-canary.yml`) used a `cas:rw` PAT on the `d863fafb`
+  dogfood tenant, whose PATs were revoked by the 2026-07-11 owner-authorized githugr/hugit pause — so the canary
+  401'd every run since ~07-11 15:25. The prod cache itself was healthy throughout (a fresh-PAT PUT/GET round-trips
+  201/200); only the canary credential died as pause collateral. Fixed by decoupling the canary onto a fresh
+  DEDICATED unmetered canary tenant (`93da3f7a-…`) with its own round-trip-verified `cas:rw` PAT, updating the
+  `CORELINK_CANARY_PAT` GHA secret + secrets-matrix row #166. No githugr/hugit product surface is re-enabled.
+
 ### Security
 - **feat(signup-worker): prove GitHub App installation ownership before binding — closes the runner install cross-tenant hijack (the public-flip HARD GATE).**
   The runner install callback (`github_install_callback.ts`) bound `installation_id → tenant_id` off the signed
