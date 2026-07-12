@@ -4,7 +4,7 @@ title: "Turborepo v8 remote-cache surface"
 description: "The Vercel Turborepo /v8/artifacts remote-cache protocol wired onto CoreLink, with teamId-as-sub-namespace isolation and per-route body caps."
 source_files:
   - "crates/corelink-container/src/routes/turbo_v8.rs"
-checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["surfaces", "turborepo", "vercel", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -30,11 +30,11 @@ cross-tenant access is impossible.
 1. The router registers the static `events`/`status` routes BEFORE the `:hash` artifact routes so
    matchit prefers the literals over the capture (`crates/corelink-container/src/routes/turbo_v8.rs:1036-1065`).
 2. `handle_get` serves an artifact read and requires a cache-read scope (`cas:rw` or `cas:r`) before
-   any storage (`crates/corelink-container/src/routes/turbo_v8.rs:1078`; `crates/corelink-container/src/routes/turbo_v8.rs:1102-1103`).
+   any storage (`crates/corelink-container/src/routes/turbo_v8.rs:1079`; `crates/corelink-container/src/routes/turbo_v8.rs:1103-1104`).
 3. The `events` route is accept-and-drop telemetry carrying its own innermost 64 KiB body limit so it
    does NOT inherit the 100 MiB artifact cap (`crates/corelink-container/src/routes/turbo_v8.rs:1050-1053`; `crates/corelink-container/src/routes/turbo_v8.rs:140`).
 4. The artifact routes get a per-route 100 MiB `DefaultBodyLimit` overriding the 10 MiB global default
-   while still bounding the body (`crates/corelink-container/src/routes/turbo_v8.rs:1056-1064`; `crates/corelink-container/src/routes/turbo_v8.rs:103`).
+   while still bounding the body (`crates/corelink-container/src/routes/turbo_v8.rs:1057-1065`; `crates/corelink-container/src/routes/turbo_v8.rs:103`).
 5. The isolation tenant is the PAT-resolved authenticated tenant; `teamId` is demoted to a sub-namespace
    within it (`crates/corelink-container/src/routes/turbo_v8.rs:28-37`).
 6. Turbo GET is concurrency-bounded mirroring PUT: `handle_get` declares two `FromRequestParts` guards
@@ -42,15 +42,15 @@ cross-tenant access is impossible.
    over-cap) and a process-wide `GlobalGetBudgetGuard` (cap `GLOBAL_TURBO_GET_PERMITS` = 16, 503 on
    saturation) — so an over-cap read is rejected BEFORE the up-to-100 MiB artifact is read into the heap,
    bounding per-tenant and aggregate read-path memory on a pool SEPARATE from writes
-   (`crates/corelink-container/src/routes/turbo_v8.rs:1091-1098`; `crates/corelink-container/src/routes/turbo_v8.rs:654-724`; `crates/corelink-container/src/routes/turbo_v8.rs:744-780`).
+   (`crates/corelink-container/src/routes/turbo_v8.rs:1092-1099`; `crates/corelink-container/src/routes/turbo_v8.rs:654-724`; `crates/corelink-container/src/routes/turbo_v8.rs:744-780`).
 7. Each artifact read and write records a fire-and-forget usage-metering event into the in-process
    display aggregator [`crate::usage_meter`] — a `ReadHit` / `ReadMiss` on GET and a `Write` on PUT —
    off the hot path (no await/I/O), DISPLAY telemetry only, never gating the response
-   (`crates/corelink-container/src/routes/turbo_v8.rs:1151-1152`; `crates/corelink-container/src/routes/turbo_v8.rs:1310-1311`).
+   (`crates/corelink-container/src/routes/turbo_v8.rs:1152-1153`; `crates/corelink-container/src/routes/turbo_v8.rs:1311-1312`).
 
 # Invariants
 - `teamId` is required on GET/PUT but is NOT a security boundary; the authenticated tenant is the sole isolation key (`crates/corelink-container/src/routes/turbo_v8.rs:28-37`).
-- An artifact GET requires read capability; an insufficient scope is rejected 403 before storage (`crates/corelink-container/src/routes/turbo_v8.rs:1102-1103`).
+- An artifact GET requires read capability; an insufficient scope is rejected 403 before storage (`crates/corelink-container/src/routes/turbo_v8.rs:1103-1104`).
 - The telemetry `events` route is capped at `EVENTS_BODY_LIMIT_BYTES` (64 KiB), not the artifact cap (`crates/corelink-container/src/routes/turbo_v8.rs:140`; `crates/corelink-container/src/routes/turbo_v8.rs:1050-1053`).
 - Artifact bodies are bounded at `TURBO_BODY_LIMIT_BYTES` (100 MiB) so a PAT cannot OOM the shared container (`crates/corelink-container/src/routes/turbo_v8.rs:103`).
 - The GET read path is concurrency-bounded like PUT: per-tenant cap 4 + global cap 16, both reserved before the artifact is buffered, so neither one tenant nor an aggregate read burst can OOM the container (`crates/corelink-container/src/routes/turbo_v8.rs:128`; `crates/corelink-container/src/routes/turbo_v8.rs:183`).
@@ -68,15 +68,15 @@ cross-tenant access is impossible.
 
 # Citations
 1. `crates/corelink-container/src/routes/turbo_v8.rs:1036-1065` — the router with static-before-wildcard ordering + body-limit layers.
-2. `crates/corelink-container/src/routes/turbo_v8.rs:1078` — `handle_get` artifact read handler.
-3. `crates/corelink-container/src/routes/turbo_v8.rs:1102-1103` — the read-scope gate (fail-closed).
+2. `crates/corelink-container/src/routes/turbo_v8.rs:1079` — `handle_get` artifact read handler.
+3. `crates/corelink-container/src/routes/turbo_v8.rs:1103-1104` — the read-scope gate (fail-closed).
 4. `crates/corelink-container/src/routes/turbo_v8.rs:1050-1053` — `events` route's own innermost body limit.
 5. `crates/corelink-container/src/routes/turbo_v8.rs:140` — `EVENTS_BODY_LIMIT_BYTES` (64 KiB).
-6. `crates/corelink-container/src/routes/turbo_v8.rs:1056-1064` — per-route 100 MiB artifact limit override.
+6. `crates/corelink-container/src/routes/turbo_v8.rs:1057-1065` — per-route 100 MiB artifact limit override.
 7. `crates/corelink-container/src/routes/turbo_v8.rs:103` — `TURBO_BODY_LIMIT_BYTES` (100 MiB).
 8. `crates/corelink-container/src/routes/turbo_v8.rs:28-37` — `teamId` sub-namespace vs authenticated-tenant isolation.
 9. `crates/corelink-container/src/routes/turbo_v8.rs:654-724` — `GetConcurrencyGuard`: per-tenant GET concurrency cap (429 before buffering), the read twin of `PutConcurrencyGuard`.
 10. `crates/corelink-container/src/routes/turbo_v8.rs:744-780` — `GlobalGetBudgetGuard`: process-wide GET budget (503 on saturation), separate pool from the PUT budget.
 11. `crates/corelink-container/src/routes/turbo_v8.rs:128` — `TURBO_GET_CONCURRENCY_LIMIT` (4); `crates/corelink-container/src/routes/turbo_v8.rs:183` — `GLOBAL_TURBO_GET_PERMITS` (16).
 12. `crates/corelink-container/src/routes/turbo_v8.rs:951-1029` — `build_handlers` store selection: durable `R2KvStore` when `StorageEnv::from_env()` is present (persists across restarts), in-RAM `InMemoryKvStore` only in the no-creds dev/CI fallback, fail-CLOSED handler when creds are present but R2 refuses to build.
-13. `crates/corelink-container/src/routes/turbo_v8.rs:1151-1152` (GET read HIT), `crates/corelink-container/src/routes/turbo_v8.rs:1310-1311` (PUT write) — fire-and-forget usage-metering `record` calls (DISPLAY telemetry, off the hot path).
+13. `crates/corelink-container/src/routes/turbo_v8.rs:1152-1153` (GET read HIT), `crates/corelink-container/src/routes/turbo_v8.rs:1311-1312` (PUT write) — fire-and-forget usage-metering `record` calls (DISPLAY telemetry, off the hot path).

@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "c660e68d9c35134b6ef603eed338d85f6fe6d59e"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -60,7 +60,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   split — a leaked erase key cannot pass the anchor gate and vice-versa (least privilege, A6).
 - In the container the **first** verification step is the HMAC fast-reject: the plaintext is parsed and
   a bad signature is rejected pre-D1, so a forged token drives no D1 cost and consumes no Argon2id
-  permit (`crates/corelink-container/src/adapter_pat.rs:642-647`).
+  permit (`crates/corelink-container/src/adapter_pat.rs:643-648`).
 - Only a token that passes HMAC and resolves to a live D1 row reaches the expensive layer: an Argon2id
   verify of the secret segment against the stored PHC hash, run on a blocking thread under a bounded
   permit (`crates/corelink-container/src/adapter_pat.rs:706-754`).
@@ -68,7 +68,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 # Invariants
 
 - A token that fails the cheap HMAC fast-reject NEVER reaches the Argon2id layer
-  (`crates/corelink-container/src/adapter_pat.rs:642-647`).
+  (`crates/corelink-container/src/adapter_pat.rs:643-648`).
 - Both layers are constant-time with no length or content oracle — the edge compare
   (`worker/src/lib/internal_auth.ts:144-159`) and the uniform `InvalidPat` collapse in the container
   (`crates/corelink-container/src/adapter_pat.rs:43-47`).
@@ -129,7 +129,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 2c. `worker/src/index.ts:276-278` — `internalConsumerForPath` special-cases `/_internal/dsr/anchor` → `dsr_anchor` before the `/_internal/dsr/*` erase catch-all.
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
 4. `crates/corelink-container/src/adapter_pat.rs:43-47` — uniform `InvalidPat`: no on-the-wire oracle.
-5. `crates/corelink-container/src/adapter_pat.rs:642-647` — the HMAC fast-reject, pre-D1, no permit consumed.
+5. `crates/corelink-container/src/adapter_pat.rs:643-648` — the HMAC fast-reject, pre-D1, no permit consumed.
 6. `crates/corelink-container/src/adapter_pat.rs:706-754` — the deep Argon2id possession proof on a blocking thread.
 7. `worker/src/lib/tenant_suspend_gate.ts:129-159` — `isTenantSuspended`: the single-flight, ~30s-TTL cached `tenant_offboarding_state` D1 read that fails OPEN on a D1 fault but denies on a KNOWN-suspended cached value.
 8. `worker/src/index.ts:1239-1240` — the `extractAuth` fast-suspend arm: a valid PAT whose tenant is suspended/erased returns `tenant_suspended` (G4).

@@ -5,7 +5,7 @@ description: "How a new customer becomes a provisioned tenant: the Clerk signup 
 source_files:
   - crates/corelink-container/src/routes/signup.rs
   - docs/operator/e2e-signup-sealed-2026-05-30.md
-checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags:
   - launch
@@ -33,7 +33,7 @@ The signup surfaces turn an authenticated identity (Clerk) or a signed operator-
 - The container's pilot route is registered at `/v1/signup/pilot/{token}` (axum 0.8 `{token}` capture) and dispatches `POST` to `handle_pilot_signup` (`crates/corelink-container/src/routes/signup.rs:130`, `crates/corelink-container/src/routes/signup.rs:742-746`).
 - The pilot token format is `pilot_<env>_<unix_ms>_<16-hex-random>.<hmac-hex>`, where `env` segregates `staging` from `prod` so a staging mint never opens a prod slot (`crates/corelink-container/src/routes/signup.rs:13-28`).
 - `parse_and_verify_pilot_token` splits body/signature on a single `.`, requires exactly 4 underscore fields via `splitn(4)`, checks the `pilot` literal, the env allowlist, a `u64` timestamp, and a 16-char hex random (`crates/corelink-container/src/routes/signup.rs:255-278`).
-- Signature verify computes `HMAC-SHA256(SIGNUP_TOKEN_KEY, body)` and compares constant-time via `subtle::ConstantTimeEq`, bailing on length mismatch first (`crates/corelink-container/src/routes/signup.rs:280-293`).
+- Signature verify computes `HMAC-SHA256(SIGNUP_TOKEN_KEY, body)` and compares constant-time via `subtle::ConstantTimeEq`, bailing on length mismatch first (`crates/corelink-container/src/routes/signup.rs:280-290`).
 - TTL is enforced last: a token is `Expired` once `now_ms >= minted_at_ms + PILOT_TOKEN_TTL_MS` (14 days); future-minted tokens are accepted as a clock-skew tolerance (`crates/corelink-container/src/routes/signup.rs:148`, `crates/corelink-container/src/routes/signup.rs:294-301`).
 - The handler runs the per-IP rate-limit gate BEFORE token verify so an adversary cannot probe the HMAC space at high QPS (`crates/corelink-container/src/routes/signup.rs:787-794`).
 - On success the handler mints a UUID v7 `tenant_id`, reserves a `PilotSignupRecord` with state `"RESERVED"` via `insert_or_existing` (idempotent on email/token_id), emits the `pilot_reserved.v1` audit row, then returns `201` with `tenant_id`, `activation_url`, and `state` (`crates/corelink-container/src/routes/signup.rs:865-912`).
