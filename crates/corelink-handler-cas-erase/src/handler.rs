@@ -66,7 +66,11 @@ pub struct TombstoneMarker {
 impl TombstoneMarker {
     /// Build the tombstone marker for a validated erase request.
     #[must_use]
-    pub fn new(tenant: impl Into<String>, digest: impl Into<String>, reason: impl Into<String>) -> Self {
+    pub fn new(
+        tenant: impl Into<String>,
+        digest: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
         Self {
             tenant: tenant.into(),
             digest: digest.into(),

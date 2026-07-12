@@ -871,12 +871,26 @@ mod tests {
         let (_audit, _sli, h) = fixture();
         // First PUT stores "v1".
         let r1 = h
-            .update(AcUpdateRequest::new("t1", "d1", b"v1".to_vec(), "p1", "t1", 1))
+            .update(AcUpdateRequest::new(
+                "t1",
+                "d1",
+                b"v1".to_vec(),
+                "p1",
+                "t1",
+                1,
+            ))
             .expect("first");
         assert!(r1.durable, "fresh insert is durable");
         // Byte-identical re-PUT → idempotent no-op (Ok, durable=false).
         let r2 = h
-            .update(AcUpdateRequest::new("t1", "d1", b"v1".to_vec(), "p1", "t1", 2))
+            .update(AcUpdateRequest::new(
+                "t1",
+                "d1",
+                b"v1".to_vec(),
+                "p1",
+                "t1",
+                2,
+            ))
             .expect("identical replay is Ok");
         assert!(!r2.durable, "identical re-PUT is an idempotent no-op");
         // Divergent body for the SAME key → 409 conflict.
@@ -895,6 +909,10 @@ mod tests {
         let hit = h
             .lookup(AcLookupRequest::new("t1", "d1", "p1", "t1", 4))
             .expect("original still present");
-        assert_eq!(hit.result_payload, b"v1".to_vec(), "original not overwritten");
+        assert_eq!(
+            hit.result_payload,
+            b"v1".to_vec(),
+            "original not overwritten"
+        );
     }
 }

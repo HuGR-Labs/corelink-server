@@ -21,9 +21,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
-use corelink_adapter_host::cargo::ports::{
-    ResolvedTenant, TenantResolveError, TenantResolver,
-};
+use corelink_adapter_host::cargo::ports::{ResolvedTenant, TenantResolveError, TenantResolver};
 use corelink_handler_cas::{
     handler::fake_hash, CasHandlerError, CasReadHandler, CasReadRequest, CasReadResponse,
     CasWriteHandler, CasWriteRequest, CasWriteResponse,
@@ -93,10 +91,10 @@ impl UrlMapStore for FakeUrlMap {
         content_hash: &str,
         _len: u64,
     ) -> Result<(), String> {
-        self.0
-            .lock()
-            .unwrap()
-            .insert((ns.to_owned(), url_hash.to_owned()), content_hash.to_owned());
+        self.0.lock().unwrap().insert(
+            (ns.to_owned(), url_hash.to_owned()),
+            content_hash.to_owned(),
+        );
         Ok(())
     }
 }
@@ -112,7 +110,12 @@ impl UrlMapStore for FakeUrlMap {
 struct StubCas(Mutex<HashMap<(String, String), Vec<u8>>>);
 impl CasReadHandler for StubCas {
     fn read(&self, req: CasReadRequest) -> Result<CasReadResponse, CasHandlerError> {
-        match self.0.lock().unwrap().get(&(req.tenant.clone(), req.hash.clone())) {
+        match self
+            .0
+            .lock()
+            .unwrap()
+            .get(&(req.tenant.clone(), req.hash.clone()))
+        {
             Some(b) => Ok(CasReadResponse::new(b.clone(), req.hash.clone())),
             None => Err(CasHandlerError::NotFound {
                 tenant: req.tenant,

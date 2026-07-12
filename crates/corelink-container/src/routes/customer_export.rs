@@ -306,7 +306,8 @@ pub struct CasD1TenantExportSource {
 
 impl core::fmt::Debug for CasD1TenantExportSource {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("CasD1TenantExportSource").finish_non_exhaustive()
+        f.debug_struct("CasD1TenantExportSource")
+            .finish_non_exhaustive()
     }
 }
 
@@ -569,7 +570,10 @@ mod tests {
             ));
         }
         fn seed_metadata(&mut self, tenant: &str, rec: Value) {
-            self.metadata.entry(tenant.to_owned()).or_default().push(rec);
+            self.metadata
+                .entry(tenant.to_owned())
+                .or_default()
+                .push(rec);
         }
     }
 
@@ -663,13 +667,19 @@ mod tests {
             .expect("cas blob line");
         assert_eq!(cas["digest"], "cafebabe");
         let decoded = b64.decode(cas["bytes"].as_str().unwrap()).unwrap();
-        assert_eq!(decoded, b"hello-blob", "bundle carries the actual blob bytes");
+        assert_eq!(
+            decoded, b"hello-blob",
+            "bundle carries the actual blob bytes"
+        );
 
         let ac = lines
             .iter()
             .find(|l| l["kind"] == "blob" && l["blob_kind"] == "ac")
             .expect("ac blob line");
-        assert_eq!(b64.decode(ac["bytes"].as_str().unwrap()).unwrap(), b"ac-result");
+        assert_eq!(
+            b64.decode(ac["bytes"].as_str().unwrap()).unwrap(),
+            b"ac-result"
+        );
 
         assert!(lines.iter().any(|l| l["kind"] == "rbac"));
         assert!(lines.iter().any(|l| l["kind"] == "dpa"));
@@ -698,7 +708,10 @@ mod tests {
 
         let body = serde_json::to_string(&lines).unwrap();
         assert!(body.contains(&base64_of(b"A-secret")));
-        assert!(!body.contains(&base64_of(b"B-secret")), "must not leak tenant-b bytes");
+        assert!(
+            !body.contains(&base64_of(b"B-secret")),
+            "must not leak tenant-b bytes"
+        );
         assert!(!body.contains("bbbb"), "must not leak tenant-b digest");
     }
 

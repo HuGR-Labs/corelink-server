@@ -56,7 +56,11 @@ fn main() -> ExitCode {
     println!("==============================================================");
     println!(" corelink-gc :: gc_sweep");
     println!(" mode               = {}", mode.as_str());
-    println!(" {} = {:?}", GcSweepMode::ENV_VAR, std::env::var(GcSweepMode::ENV_VAR).ok());
+    println!(
+        " {} = {:?}",
+        GcSweepMode::ENV_VAR,
+        std::env::var(GcSweepMode::ENV_VAR).ok()
+    );
     if mode.is_live() {
         println!(" !! LIVE DELETE ENABLED — destructive path is armed.");
         println!(" !! (against the in-memory fixture in this build; prod requires");
@@ -108,11 +112,43 @@ fn run_one_sweep(mode: GcSweepMode) -> Result<(), String> {
         .map_err(|e| format!("transition PhysicalDelete: {e}"))?;
 
     // Representative fixture: 1 reclaimable, 1 grace-pending, 1 live.
-    let cfg = PhysicalDeleteConfig::new(50, 50, 600_000)
-        .map_err(|e| format!("config: {e}"))?;
-    seed_swept(&candidates, &blob_meta, &r2, tenant, region, rid, digest(1), 4_096, 0, 0)?; // reclaimable
-    seed_swept(&candidates, &blob_meta, &r2, tenant, region, rid, digest(2), 8_192, 1_500, 0)?; // grace pending
-    seed_swept(&candidates, &blob_meta, &r2, tenant, region, rid, digest(3), 2_048, 0, 5)?; // live ref
+    let cfg = PhysicalDeleteConfig::new(50, 50, 600_000).map_err(|e| format!("config: {e}"))?;
+    seed_swept(
+        &candidates,
+        &blob_meta,
+        &r2,
+        tenant,
+        region,
+        rid,
+        digest(1),
+        4_096,
+        0,
+        0,
+    )?; // reclaimable
+    seed_swept(
+        &candidates,
+        &blob_meta,
+        &r2,
+        tenant,
+        region,
+        rid,
+        digest(2),
+        8_192,
+        1_500,
+        0,
+    )?; // grace pending
+    seed_swept(
+        &candidates,
+        &blob_meta,
+        &r2,
+        tenant,
+        region,
+        rid,
+        digest(3),
+        2_048,
+        0,
+        5,
+    )?; // live ref
 
     let reclaim_key = r2_key_for(tenant, &digest(1));
 
@@ -219,7 +255,10 @@ fn print_report(r: &SweepReport) {
     println!(" deleted_count             = {}", r.deleted_count);
     println!(" deleted_bytes             = {}", r.deleted_bytes);
     println!(" skipped_grace_pending     = {}", r.skipped_grace_pending);
-    println!(" skipped_refcount_non_zero = {}", r.skipped_refcount_non_zero);
+    println!(
+        " skipped_refcount_non_zero = {}",
+        r.skipped_refcount_non_zero
+    );
     println!(" already_resolved          = {}", r.already_resolved);
     println!(" reclaimable_keys          = {:?}", r.reclaimable_keys);
     println!("--------------------");

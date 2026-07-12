@@ -108,8 +108,8 @@ fn read_input_bytes(path: &Option<String>) -> Result<Vec<u8>, String> {
 }
 
 fn write_report(report: &ReconcileReport, path: &Option<String>) -> Result<(), String> {
-    let json = serde_json::to_string_pretty(report)
-        .map_err(|e| format!("serialize report: {e}"))?;
+    let json =
+        serde_json::to_string_pretty(report).map_err(|e| format!("serialize report: {e}"))?;
     match path {
         Some(p) => std::fs::write(p, json.as_bytes()).map_err(|e| format!("write {p}: {e}")),
         None => {
@@ -123,7 +123,8 @@ fn run(argv: &[String]) -> Result<ExitCode, String> {
     let args = parse_args(argv)?;
     let bytes = read_input_bytes(&args.input)?;
     let input = parse_input(&bytes).map_err(|e| e.to_string())?;
-    let report = run_reconcile_pass(&input, ReconcileConfig::default()).map_err(|e| e.to_string())?;
+    let report =
+        run_reconcile_pass(&input, ReconcileConfig::default()).map_err(|e| e.to_string())?;
 
     // Always emit the report artifact first (forensic evidence trail).
     write_report(&report, &args.report)?;

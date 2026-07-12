@@ -759,7 +759,10 @@ mod tests {
         let jan31_2023 = 19_388_u64 * 86_400_000;
         let feb28_2023 = 19_416_u64 * 86_400_000;
         let deadline = sla_for(DsrJurisdiction::Gdpr, jan31_2023);
-        assert_eq!(deadline, feb28_2023, "Jan-31 GDPR must land Feb-28, not Mar-2");
+        assert_eq!(
+            deadline, feb28_2023,
+            "Jan-31 GDPR must land Feb-28, not Mar-2"
+        );
         // It must be STRICTLY before the buggy 30-day computation.
         assert!(deadline < jan31_2023 + 30 * 86_400_000);
 

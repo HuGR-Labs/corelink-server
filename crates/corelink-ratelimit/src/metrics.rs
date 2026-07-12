@@ -638,7 +638,8 @@ mod tests {
                 .unwrap();
             m.observe_tokens_remaining(t, KeyDimension::PerTenant, 1)
                 .unwrap();
-            m.observe_refill_rate(t, KeyDimension::PerTenant, 1).unwrap();
+            m.observe_refill_rate(t, KeyDimension::PerTenant, 1)
+                .unwrap();
             m.record_middleware_duration_us(RateLimitResultLabel::Allowed, 1)
                 .unwrap();
             m.record_cross_tenant_violation().unwrap();

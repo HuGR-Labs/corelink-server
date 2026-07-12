@@ -203,8 +203,12 @@ pub trait QuotaStore: std::fmt::Debug + Send + Sync {
     /// **Absolute** write of a tenant's quota row (upsert). Used to seed
     /// a fresh row and to roll the cycle (the guard supplies the new
     /// accrued / anchor). `updated_at_ms` is the wall-clock of the write.
-    async fn put(&self, tenant_id: &str, state: QuotaState, updated_at_ms: i64)
-        -> Result<(), String>;
+    async fn put(
+        &self,
+        tenant_id: &str,
+        state: QuotaState,
+        updated_at_ms: i64,
+    ) -> Result<(), String>;
 
     /// **Atomic increment** of the accrued counter by `delta_micros`
     /// (`accrued_usd_micros = accrued_usd_micros + delta_micros`),
@@ -761,8 +765,14 @@ impl QuotaStore for LeasedQuotaStore {
         seed_anchor_ms: i64,
         updated_at_ms: i64,
     ) -> Result<bool, String> {
-        self.charge(tenant_id, delta_micros, seed_anchor_ms, updated_at_ms, false)
-            .await
+        self.charge(
+            tenant_id,
+            delta_micros,
+            seed_anchor_ms,
+            updated_at_ms,
+            false,
+        )
+        .await
     }
 
     /// Leased brand-new-tenant first-op path: identical leasing, but a
@@ -867,7 +877,12 @@ impl QuotaGuard {
     /// Delegates to [`Self::check`] with the scaled cost.
     ///
     /// `n = 0` charges nothing and returns `None` (allow).
-    pub async fn check_batch(&self, tenant: &str, n: usize, cost_micros_each: i64) -> Option<Response> {
+    pub async fn check_batch(
+        &self,
+        tenant: &str,
+        n: usize,
+        cost_micros_each: i64,
+    ) -> Option<Response> {
         if n == 0 {
             return None;
         }
@@ -969,7 +984,11 @@ impl QuotaGuard {
                 // … then the SAME atomic check-and-accrue as the steady path, so
                 // concurrent post-roll ops each accrue under one serialized
                 // budget check (no over-admission).
-                match self.store.check_and_accrue(tenant, cost, now_ms, now_ms).await {
+                match self
+                    .store
+                    .check_and_accrue(tenant, cost, now_ms, now_ms)
+                    .await
+                {
                     Ok(true) => {}
                     Ok(false) => {
                         return Some(crate::quota_error::quota_exceeded_response());
@@ -989,7 +1008,11 @@ impl QuotaGuard {
                 // `cost <= budget`, and races a concurrent first-op through the
                 // same atomic ceiling-guarded increment (no lost-update, no
                 // over-admission).
-                match self.store.seed_checked_accrue(tenant, cost, now_ms, now_ms).await {
+                match self
+                    .store
+                    .seed_checked_accrue(tenant, cost, now_ms, now_ms)
+                    .await
+                {
                     Ok(true) => {}
                     Ok(false) => {
                         return Some(crate::quota_error::quota_exceeded_response());
@@ -1475,7 +1498,10 @@ mod tests {
             },
         );
         let (guard, _clock) = guard_with(store, T0);
-        let resp = guard.check("tenant-json", 1_000_000).await.expect("rejected");
+        let resp = guard
+            .check("tenant-json", 1_000_000)
+            .await
+            .expect("rejected");
         assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
         assert_eq!(
             resp.headers()
@@ -1485,7 +1511,10 @@ mod tests {
         );
         let bytes = to_bytes(resp.into_body(), 4096).await.expect("body");
         let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
-        assert_eq!(json.get("error").and_then(|v| v.as_str()), Some("quota_exceeded"));
+        assert_eq!(
+            json.get("error").and_then(|v| v.as_str()),
+            Some("quota_exceeded")
+        );
         assert_eq!(json.get("retriable").and_then(|v| v.as_bool()), Some(false));
         assert!(json.get("docs_url").and_then(|v| v.as_str()).is_some());
     }
@@ -1583,7 +1612,10 @@ mod tests {
         );
         let bytes = to_bytes(resp.into_body(), 4096).await.expect("body");
         let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
-        assert_eq!(json.get("error").and_then(|v| v.as_str()), Some("quota_unavailable"));
+        assert_eq!(
+            json.get("error").and_then(|v| v.as_str()),
+            Some("quota_unavailable")
+        );
         assert_eq!(
             json.get("reason").and_then(|v| v.as_str()),
             Some("wall clock unavailable"),
@@ -1720,8 +1752,11 @@ mod tests {
                 cycle_anchor_ms: i64::try_from(T0).unwrap(),
             },
         );
-        let leased: Arc<dyn QuotaStore> =
-            Arc::new(LeasedQuotaStore::with_config(counting.clone(), LEASE_OPS, COST));
+        let leased: Arc<dyn QuotaStore> = Arc::new(LeasedQuotaStore::with_config(
+            counting.clone(),
+            LEASE_OPS,
+            COST,
+        ));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let guard = QuotaGuard::new(leased, clock);
 
@@ -1836,8 +1871,11 @@ mod tests {
                 cycle_anchor_ms: i64::try_from(T0).unwrap(),
             },
         );
-        let leased: Arc<dyn QuotaStore> =
-            Arc::new(LeasedQuotaStore::with_config(Arc::new(store), LEASE_OPS, COST));
+        let leased: Arc<dyn QuotaStore> = Arc::new(LeasedQuotaStore::with_config(
+            Arc::new(store),
+            LEASE_OPS,
+            COST,
+        ));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let guard = QuotaGuard::new(leased, clock);
 
@@ -1845,7 +1883,10 @@ mod tests {
         assert!(guard.check("t-503", COST).await.is_none());
         assert!(guard.check("t-503", COST).await.is_none());
         // 3rd op: lease drained → refill → inner errors → 503 (fail-CLOSED).
-        let resp = guard.check("t-503", COST).await.expect("refill error → 503");
+        let resp = guard
+            .check("t-503", COST)
+            .await
+            .expect("refill error → 503");
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
@@ -1866,8 +1907,11 @@ mod tests {
                 cycle_anchor_ms: i64::try_from(T0).unwrap(),
             },
         );
-        let leased: Arc<dyn QuotaStore> =
-            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+        let leased: Arc<dyn QuotaStore> = Arc::new(LeasedQuotaStore::with_config(
+            inner.clone(),
+            LEASE_OPS,
+            COST,
+        ));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let guard = QuotaGuard::new(leased, clock);
 
@@ -1910,8 +1954,11 @@ mod tests {
                 cycle_anchor_ms: i64::try_from(T0).unwrap(),
             },
         );
-        let leased: Arc<dyn QuotaStore> =
-            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+        let leased: Arc<dyn QuotaStore> = Arc::new(LeasedQuotaStore::with_config(
+            inner.clone(),
+            LEASE_OPS,
+            COST,
+        ));
         // Cycle 1 at T0: one op pre-buys a lease. The full 8-op chunk ($8)
         // exceeds the $5 ceiling, so the partial-lease fallback halves to a
         // 4-op chunk ($4, fits under $5) and debits exactly that up front.
@@ -1925,7 +1972,10 @@ mod tests {
             .unwrap()
             .unwrap()
             .accrued_usd_micros;
-        assert_eq!(cycle1_debit, 4_000_000, "partial lease debited a 4-op chunk");
+        assert_eq!(
+            cycle1_debit, 4_000_000,
+            "partial lease debited a 4-op chunk"
+        );
 
         // Advance one full cycle: the inner cycle rolls (accrued→0, anchor
         // advances). The old-cycle lease (anchored at T0) must be discarded.
@@ -1968,8 +2018,11 @@ mod tests {
                 cycle_anchor_ms: i64::try_from(T0).unwrap(),
             },
         );
-        let leased: Arc<dyn QuotaStore> =
-            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+        let leased: Arc<dyn QuotaStore> = Arc::new(LeasedQuotaStore::with_config(
+            inner.clone(),
+            LEASE_OPS,
+            COST,
+        ));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let guard = Arc::new(QuotaGuard::new(leased, clock));
 
@@ -1986,7 +2039,10 @@ mod tests {
                 served += 1;
             }
         }
-        assert_eq!(served, N as i64, "all ops under the high ceiling are served");
+        assert_eq!(
+            served, N as i64,
+            "all ops under the high ceiling are served"
+        );
         // charge-never-lost under concurrency: inner debited ≥ served.
         let debited = inner
             .get("t-conc")
@@ -2162,10 +2218,13 @@ mod tests {
         assert!(guard.check("t-cap2", COST).await.is_none()); // op1: refill (get)
         assert!(guard.check("t-cap2", COST).await.is_none()); // op2: warm (no get)
         assert!(guard.check("t-cap2", COST).await.is_none()); // op3: refill (get)
-        // 4th op: durable row now at the $3 ceiling → the warm path cannot cover
-        // it → durable path → atomic ceiling refuses → 402. The read served from
-        // memory did NOT let an over-ceiling op slip through.
-        let resp = guard.check("t-cap2", COST).await.expect("4th op over ceiling");
+                                                              // 4th op: durable row now at the $3 ceiling → the warm path cannot cover
+                                                              // it → durable path → atomic ceiling refuses → 402. The read served from
+                                                              // memory did NOT let an over-ceiling op slip through.
+        let resp = guard
+            .check("t-cap2", COST)
+            .await
+            .expect("4th op over ceiling");
         assert_eq!(resp.status(), StatusCode::PAYMENT_REQUIRED);
         // Fewer gets than ops (4 ops, 3 gets): op2 was served warm from memory —
         // proving the read is served from the lease, WITHOUT ever admitting the
@@ -2197,8 +2256,11 @@ mod tests {
                 cycle_anchor_ms: i64::try_from(T0).unwrap(),
             },
         );
-        let leased: Arc<dyn QuotaStore> =
-            Arc::new(LeasedQuotaStore::with_config(Arc::new(store), LEASE_OPS, COST));
+        let leased: Arc<dyn QuotaStore> = Arc::new(LeasedQuotaStore::with_config(
+            Arc::new(store),
+            LEASE_OPS,
+            COST,
+        ));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let guard = QuotaGuard::new(leased, clock);
 
@@ -2206,7 +2268,10 @@ mod tests {
         // call, so no error). Op3: lease drained → refill → inner errors → 503.
         assert!(guard.check("t-503b", COST).await.is_none());
         assert!(guard.check("t-503b", COST).await.is_none()); // warm, in-memory
-        let resp = guard.check("t-503b", COST).await.expect("refill error → 503");
+        let resp = guard
+            .check("t-503b", COST)
+            .await
+            .expect("refill error → 503");
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
@@ -2240,7 +2305,10 @@ mod tests {
     async fn warm_read_lease_lock_error_fail_closed_503() {
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let guard = QuotaGuard::new(Arc::new(WarmErrStore), clock);
-        let resp = guard.check("t-warmerr", 1_000).await.expect("warm err → 503");
+        let resp = guard
+            .check("t-warmerr", 1_000)
+            .await
+            .expect("warm err → 503");
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
@@ -2260,8 +2328,11 @@ mod tests {
                 cycle_anchor_ms: i64::try_from(T0).unwrap(),
             },
         );
-        let leased: Arc<dyn QuotaStore> =
-            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+        let leased: Arc<dyn QuotaStore> = Arc::new(LeasedQuotaStore::with_config(
+            inner.clone(),
+            LEASE_OPS,
+            COST,
+        ));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let guard = QuotaGuard::new(leased, clock);
 
@@ -2269,7 +2340,12 @@ mod tests {
         for _ in 0..ops {
             assert!(guard.check("t-bound", COST).await.is_none());
         }
-        let debited = inner.get("t-bound").await.unwrap().unwrap().accrued_usd_micros;
+        let debited = inner
+            .get("t-bound")
+            .await
+            .unwrap()
+            .unwrap()
+            .accrued_usd_micros;
         let served = ops * COST;
         assert!(debited >= served, "charge-never-lost: debited ≥ served");
         assert!(
@@ -2297,8 +2373,11 @@ mod tests {
                 cycle_anchor_ms: i64::try_from(T0).unwrap(),
             },
         );
-        let leased: Arc<dyn QuotaStore> =
-            Arc::new(LeasedQuotaStore::with_config(inner.clone(), LEASE_OPS, COST));
+        let leased: Arc<dyn QuotaStore> = Arc::new(LeasedQuotaStore::with_config(
+            inner.clone(),
+            LEASE_OPS,
+            COST,
+        ));
 
         // Cycle 1: one op pre-buys a lease (8-op chunk $8 > $5 → partial 4-op
         // $4 chunk fits). The lease has remaining budget banked (3 ops).
@@ -2306,7 +2385,12 @@ mod tests {
         let guard1 = QuotaGuard::new(leased.clone(), clock1);
         assert!(guard1.check("t-cycle", COST).await.is_none());
         assert_eq!(
-            inner.get("t-cycle").await.unwrap().unwrap().accrued_usd_micros,
+            inner
+                .get("t-cycle")
+                .await
+                .unwrap()
+                .unwrap()
+                .accrued_usd_micros,
             4_000_000,
             "cycle-1 partial lease debited a 4-op chunk (banked remainder exists)"
         );

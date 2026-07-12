@@ -243,8 +243,9 @@ pub fn dummy_verify_for_constant_time(plaintext: &str) -> Result<(), PatError> {
                 return PatHash::from_phc_string("$argon2id$v=19$m=65536,t=3,p=4$".to_string());
             }
         };
-        hash_random_secret_with_salt(dummy_pt, salt)
-            .unwrap_or_else(|_| PatHash::from_phc_string("$argon2id$v=19$m=65536,t=3,p=4$".to_string()))
+        hash_random_secret_with_salt(dummy_pt, salt).unwrap_or_else(|_| {
+            PatHash::from_phc_string("$argon2id$v=19$m=65536,t=3,p=4$".to_string())
+        })
     });
     let phc = if stored.as_str().is_empty() {
         fallback

@@ -61,7 +61,10 @@ async fn default_checkout_sends_allow_promotion_codes() {
         .mount(&server)
         .await;
 
-    let cfg = StripeClientConfig::direct(server.uri(), SecretString::from("sk_test_promo".to_string()));
+    let cfg = StripeClientConfig::direct(
+        server.uri(),
+        SecretString::from("sk_test_promo".to_string()),
+    );
     let uri = server.uri();
     // The env mutation + client call live entirely inside the blocking
     // closure, and the process-wide ENV_LOCK is acquired + released THERE
@@ -72,7 +75,10 @@ async fn default_checkout_sends_allow_promotion_codes() {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::env::set_var("STRIPE_PRICE_ID_STARTER", "price_starter_test");
         std::env::remove_var("STRIPE_LAUNCH_COUPON");
-        let client = StripeRealClient::builder().config(cfg).build().expect("build");
+        let client = StripeRealClient::builder()
+            .config(cfg)
+            .build()
+            .expect("build");
         assert_eq!(client.effective_base_url(), uri);
         client.create_checkout_session(&checkout_req())
     })
@@ -103,7 +109,10 @@ async fn configured_coupon_preapplies_discount() {
         .mount(&server)
         .await;
 
-    let cfg = StripeClientConfig::direct(server.uri(), SecretString::from("sk_test_promo".to_string()));
+    let cfg = StripeClientConfig::direct(
+        server.uri(),
+        SecretString::from("sk_test_promo".to_string()),
+    );
     // ENV_LOCK is acquired + released inside the blocking closure so it is
     // never held across an `.await` (clippy `await_holding_lock`).
     let resp = tokio::task::spawn_blocking(move || {
@@ -112,7 +121,10 @@ async fn configured_coupon_preapplies_discount() {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::env::set_var("STRIPE_PRICE_ID_STARTER", "price_starter_test");
         std::env::set_var("STRIPE_LAUNCH_COUPON", "coupon_LAUNCH100");
-        let client = StripeRealClient::builder().config(cfg).build().expect("build");
+        let client = StripeRealClient::builder()
+            .config(cfg)
+            .build()
+            .expect("build");
         let r = client.create_checkout_session(&checkout_req());
         // Restore so a later test in this binary is not polluted.
         std::env::remove_var("STRIPE_LAUNCH_COUPON");

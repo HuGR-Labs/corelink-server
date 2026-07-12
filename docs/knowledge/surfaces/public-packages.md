@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-container/src/routes/brew.rs"
   - "crates/corelink-container/src/routes/oci.rs"
   - "crates/corelink-container/src/oci_cap.rs"
-checkpoint_sha: "f60432f83c18768ebdb4e08334e326185905a1e8"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -39,20 +39,20 @@ hold.
 1. npm dedups tarball BYTES through the moat and splits package METADATA: unscoped (public) metadata
    goes to `PUBLIC_NAMESPACE`, `@scoped` (private) metadata stays per-tenant (`crates/corelink-container/src/routes/npm.rs:35-44`; `crates/corelink-container/src/routes/npm.rs:97-106`).
 2. npm mounts via `nest_service("/npm", …)` with the scope/F27 gate as an OUTER layer that rewrites
-   `/npm/<tenant>/<rest>` → `/npm/<rest>` before routing (`crates/corelink-container/src/routes/npm.rs:288-352`; `crates/corelink-container/src/routes/npm.rs:350`).
+   `/npm/<tenant>/<rest>` → `/npm/<rest>` before routing (`crates/corelink-container/src/routes/npm.rs:290-354`; `crates/corelink-container/src/routes/npm.rs:352`).
 3. pip stores immutable public wheels/sdists under `PUBLIC_NAMESPACE` via the moat and mounts through
-   `nest_service("/pip", …)` (`crates/corelink-container/src/routes/pip.rs:32-40`; `crates/corelink-container/src/routes/pip.rs:116-118`; `crates/corelink-container/src/routes/pip.rs:303-372`).
+   `nest_service("/pip", …)` (`crates/corelink-container/src/routes/pip.rs:32-40`; `crates/corelink-container/src/routes/pip.rs:116-118`; `crates/corelink-container/src/routes/pip.rs:306-375`).
 4. brew stores public bottles under `PUBLIC_NAMESPACE` keyed by `blake3(canonical-URL)` and mounts via
-   `nest_service("/brew", …)` with an inner gate (its inner route is a catch-all) (`crates/corelink-container/src/routes/brew.rs:84-93`; `crates/corelink-container/src/routes/brew.rs:157-206`).
+   `nest_service("/brew", …)` with an inner gate (its inner route is a catch-all) (`crates/corelink-container/src/routes/brew.rs:84-93`; `crates/corelink-container/src/routes/brew.rs:163-212`).
 5. OCI mounts with `.merge` (NOT `nest_service`) because it has NO tenant path segment — the tenant
    rides inside the HMAC bearer minted at `/token`, so the gate does pure scope enforcement and no
-   path surgery (`crates/corelink-container/src/routes/oci.rs:10-30`; `crates/corelink-container/src/routes/oci.rs:34-45`; `crates/corelink-container/src/routes/oci.rs:710-775`).
+   path surgery (`crates/corelink-container/src/routes/oci.rs:10-30`; `crates/corelink-container/src/routes/oci.rs:34-45`; `crates/corelink-container/src/routes/oci.rs:709-774`).
 6. OCI also layers a $-ceiling + monthly request-count gate that attributes cost to the tenant
    recovered from the VERIFIED HMAC bearer, never a request header — and both axes charge EVERY method
    including reads (`docker pull` GETs do real R2-GET work): the `$`-ceiling is fail-CLOSED (`402`), the
    request-count axis fail-OPEN (`429`). CF-2 corrected the gate's source comments so they now state this
    accurately — the doc + body of `oci_quota_gate` both say the `$`-ceiling is charged on reads too
-   (`crates/corelink-container/src/routes/oci.rs:861-926`).
+   (`crates/corelink-container/src/routes/oci.rs:865-930`).
 7. Because the Worker forwards `/v2/*` + `/token` RAW (it never sets the storage-cap header for OCI), the
    container resolves the tenant's per-tier storage cap itself at the `/token` mint: `tier_to_cap_bytes`
    ports the Worker's `QUOTAS` table (finite caps per tier, `Some(0)` only for `enterprise`, unknown tier →
@@ -60,11 +60,11 @@ hold.
    (`crates/corelink-container/src/oci_cap.rs:63-82`).
 
 # Invariants
-- Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted. The executed enforcers: `PipPatResolver::resolve` / `BrewPatResolver::resolve` derive the tenant by calling `verify(pat_plaintext)` (`crates/corelink-container/src/routes/pip.rs:236-237`; `crates/corelink-container/src/routes/brew.rs:118-119`), and the gate REWRITES the wire path to strip the leading `<tenant>` segment before the adapter sees it (`crates/corelink-container/src/routes/pip.rs:518-523`; `crates/corelink-container/src/routes/brew.rs:335`) (`crates/corelink-container/src/routes/npm.rs:30-32`).
+- Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted. The executed enforcers: `PipPatResolver::resolve` / `BrewPatResolver::resolve` derive the tenant by calling `verify(pat_plaintext)` (`crates/corelink-container/src/routes/pip.rs:236-237`; `crates/corelink-container/src/routes/brew.rs:118-119`), and the gate REWRITES the wire path to strip the leading `<tenant>` segment before the adapter sees it (`crates/corelink-container/src/routes/pip.rs:516-521`; `crates/corelink-container/src/routes/brew.rs:336`) (`crates/corelink-container/src/routes/npm.rs:30-32`).
 - Public upstream bytes are deduped cross-tenant under `PUBLIC_NAMESPACE`; the PAT gates access, the public content is shared (`crates/corelink-container/src/routes/pip.rs:32-37`; `crates/corelink-container/src/routes/brew.rs:27-30`).
 - npm `@scoped` (private) packages stay in the per-tenant namespace, never `PUBLIC_NAMESPACE` (`crates/corelink-container/src/routes/npm.rs:97-106`).
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
-- OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci.rs:849-859`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci.rs:907-911`).
+- OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci.rs:849-859`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci.rs:911-915`).
 
 # Gotchas
 - `_public` writes need BOTH a `tenant_storage_state` row AND a sentinel R2 prefix for byte accounting;
@@ -80,36 +80,36 @@ hold.
   reads":** the `$`-ceiling is charged on EVERY method INCLUDING reads and is fail-CLOSED (`402` over
   ceiling) — `docker pull` GET/HEAD of manifests/blobs is real billable R2-GET work, so the old
   read-path carve-out (PR #318) that let an authenticated tenant pull unlimited blobs without hitting
-  their ceiling is CLOSED (rt-nuclear cycle-2 #3) (`crates/corelink-container/src/routes/oci.rs:899-911`).
+  their ceiling is CLOSED (rt-nuclear cycle-2 #3) (`crates/corelink-container/src/routes/oci.rs:903-915`).
   Only the monthly **request-count** axis is fail-OPEN (it is an availability/SLO limiter, `429` over),
-  and it too now counts reads (`crates/corelink-container/src/routes/oci.rs:912-923`). CF-2 also CORRECTED
+  and it too now counts reads (`crates/corelink-container/src/routes/oci.rs:916-927`). CF-2 also CORRECTED
   the gate's source comments: the old `SECURITY-REVIEW` comment that read "the quota gate is fail-OPEN on
   reads" (a pre-cycle-2 carry-over) is gone — the comment now states the `$`-ceiling is charged fail-CLOSED
   on reads too and only the request-count axis is fail-OPEN, so the doc no longer contradicts the code
-  (`crates/corelink-container/src/routes/oci.rs:842-848`).
+  (`crates/corelink-container/src/routes/oci.rs:844-850`).
 
 # Citations
 1. `crates/corelink-container/src/routes/npm.rs:35-44` — npm public/private metadata split.
 2. `crates/corelink-container/src/routes/npm.rs:97-106` — `namespace_for_meta_key` (`@scoped`→per-tenant, else `PUBLIC_NAMESPACE`).
-3. `crates/corelink-container/src/routes/npm.rs:288-352` — npm router (`nest_service` + outer gate rewrite).
-4. `crates/corelink-container/src/routes/npm.rs:350` — `nest_service("/npm", …)` mount.
+3. `crates/corelink-container/src/routes/npm.rs:290-354` — npm router (`nest_service` + outer gate rewrite).
+4. `crates/corelink-container/src/routes/npm.rs:352` — `nest_service("/npm", …)` mount.
 5. `crates/corelink-container/src/routes/npm.rs:30-32` — npm tenant-from-PAT, path never trusted.
 6. `crates/corelink-container/src/routes/pip.rs:32-40` — pip wheels/sdists immutable public → `PUBLIC_NAMESPACE`.
 7. `crates/corelink-container/src/routes/pip.rs:116-118` — pip moat get under `PUBLIC_NAMESPACE`.
-8. `crates/corelink-container/src/routes/pip.rs:303-372` — pip router + gate.
-9. `crates/corelink-container/src/routes/pip.rs:236-237` — `PipPatResolver::resolve` derives the tenant from the verified PAT (executed); the wire `<tenant>` is path-stripped at `crates/corelink-container/src/routes/pip.rs:518-523`.
+8. `crates/corelink-container/src/routes/pip.rs:306-375` — pip router + gate.
+9. `crates/corelink-container/src/routes/pip.rs:236-237` — `PipPatResolver::resolve` derives the tenant from the verified PAT (executed); the wire `<tenant>` is path-stripped at `crates/corelink-container/src/routes/pip.rs:516-521`.
 10. `crates/corelink-container/src/routes/pip.rs:32-37` — pip access-gated, content-shared model.
 11. `crates/corelink-container/src/routes/brew.rs:84-93` — brew moat get under `PUBLIC_NAMESPACE`.
-12. `crates/corelink-container/src/routes/brew.rs:157-206` — brew router (`nest_service` + inner gate).
-13. `crates/corelink-container/src/routes/brew.rs:118-119` — `BrewPatResolver::resolve` derives the tenant from the verified PAT (executed); the wire `<tenant>` is path-stripped at `crates/corelink-container/src/routes/brew.rs:335`.
+12. `crates/corelink-container/src/routes/brew.rs:163-212` — brew router (`nest_service` + inner gate).
+13. `crates/corelink-container/src/routes/brew.rs:118-119` — `BrewPatResolver::resolve` derives the tenant from the verified PAT (executed); the wire `<tenant>` is path-stripped at `crates/corelink-container/src/routes/brew.rs:336`.
 14. `crates/corelink-container/src/routes/brew.rs:27-30` — brew public-bottle cross-tenant dedup.
 15. `crates/corelink-container/src/routes/brew.rs:99-104` — fresh-row `None`-cap posture.
 16. `crates/corelink-container/src/routes/oci.rs:10-30` — OCI `.merge` (no tenant path segment) rationale.
 17. `crates/corelink-container/src/routes/oci.rs:34-45` — OCI two-leg `/token` HMAC bearer auth.
-18. `crates/corelink-container/src/routes/oci.rs:710-775` — OCI router (`.merge` mount).
+18. `crates/corelink-container/src/routes/oci.rs:709-774` — OCI router (`.merge` mount).
 19. `crates/corelink-container/src/routes/oci.rs:19-30` — why stripping the first segment would corrupt the repo.
-20. `crates/corelink-container/src/routes/oci.rs:861-926` — `oci_quota_gate`: the `$`-ceiling charged on EVERY method incl. reads (fail-CLOSED `402`) + the request-count axis (fail-OPEN `429`); both count GET/HEAD pulls. The previous write-only `$`-ceiling carve-out (PR #318) is closed (rt-nuclear cycle-2 #3); CF-2 corrected the doc/body comments to match.
-21. `crates/corelink-container/src/routes/oci.rs:849-859` — `oci_bearer_tenant` (verify HMAC bearer → recover tenant); used by `oci_quota_gate` at `crates/corelink-container/src/routes/oci.rs:907-911` — cost attribution keyed on the verified bearer, not a header.
+20. `crates/corelink-container/src/routes/oci.rs:865-930` — `oci_quota_gate`: the `$`-ceiling charged on EVERY method incl. reads (fail-CLOSED `402`) + the request-count axis (fail-OPEN `429`); both count GET/HEAD pulls. The previous write-only `$`-ceiling carve-out (PR #318) is closed (rt-nuclear cycle-2 #3); CF-2 corrected the doc/body comments to match.
+21. `crates/corelink-container/src/routes/oci.rs:849-859` — `oci_bearer_tenant` (verify HMAC bearer → recover tenant); used by `oci_quota_gate` at `crates/corelink-container/src/routes/oci.rs:911-915` — cost attribution keyed on the verified bearer, not a header.
 22. `crates/corelink-container/src/routes/pip.rs:115-118` — pip wheels dedup cross-tenant under `PUBLIC_NAMESPACE`.
 23. `crates/corelink-container/src/routes/brew.rs:85-95` — brew bottles dedup cross-tenant under `PUBLIC_NAMESPACE`.
 24. `crates/corelink-container/src/routes/npm.rs:149-177` — `NpmMoatStore` get/put namespace npm tarball BYTES per-tenant (cross-tenant dedup is a tracked enhancement).

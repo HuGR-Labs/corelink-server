@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-container/src/routes/failover.rs"
   - "crates/corelink-container/src/routes/otel_layer.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "c660e68d9c35134b6ef603eed338d85f6fe6d59e"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -49,9 +49,9 @@ surface.
    cargo/brew/npm/pip are op-count-metered at the WORKER edge, NOT by this container gate. The must-arm set
    also includes `ERASURE_SALT_KEY` (the GDPR DSR account-delete/erasure HMAC salt) — absent it, a prod boot
    looks healthy while every erasure call silently 500s, so it is asserted alongside the PAT/quota/byte-cap
-   controls (`crates/corelink-container/src/main.rs:329-407`; `crates/corelink-container/src/main.rs:377-389`).
+   controls (`crates/corelink-container/src/main.rs:328-406`; `crates/corelink-container/src/main.rs:376-388`).
 3. The composed router is built and given a global 10 MiB body limit + the `/_health` route, then bound
-   to the listener on PORT (`crates/corelink-container/src/main.rs:612-617`,
+   to the listener on PORT (`crates/corelink-container/src/main.rs:610-615`,
    `crates/corelink-container/src/main.rs:961-964`).
 4. Privileged routes are env-gated mounts: `/_internal/pat/mint`, `/internal/v1/auth/introspect`,
    `/internal/v1/billing/usage`, `/_internal/dsr/erase`, the S-09 `POST /_internal/audit/drain`
@@ -66,14 +66,14 @@ surface.
    (`crates/corelink-container/src/main.rs:793-956`). It is one of TWO live activation writers (the other
    is the signup-worker), so go-live-readiness flags a divergent-tier-map risk: both must key the same
    `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env map or a real `customer.subscription.updated` resolves to
-   `UnknownPlan` → 422 (`crates/corelink-container/src/main.rs:893-908`). See `launch/money-path`.
+   `UnknownPlan` → 422 (`crates/corelink-container/src/main.rs:890-905`). See `launch/money-path`.
 4b. UNAUTHENTICATED public-verifier mount (Artifact 1): when the D1 `StorageEnv` is present, `main`
    merges the `public_attestation` router (`GET /v1/public/attestation/{request_id}` +
    `GET /v1/public/keys/erasure/{region}.pub`) directly onto the data-plane app — deliberately OUTSIDE
    the ratelimit/residency/auth layers (same placement as the `/_health` + `/_internal/*` family) and with
    NO internal-auth gate, because an erasure proof is publicly verifiable. The container is the SOLE
    authority; the Worker forwards `/v1/public/*` to it as a pure `_anonymous` pass-through with NO PAT
-   (`crates/corelink-container/src/main.rs:709-727`, router `crates/corelink-container/src/routes/public_attestation.rs:69-73` — axum-0.8 `{param}` capture syntax).
+   (`crates/corelink-container/src/main.rs:704-722`, router `crates/corelink-container/src/routes/public_attestation.rs:69-73` — axum-0.8 `{param}` capture syntax).
 5. `build_with_factory` resolves the shared gates from env — the $-ceiling `QuotaGate`, the OCI-scoped
    request-count gate, the native PAT gate, and the byte-accountant — warning (not failing) when absent.
    The request-count gate is DELIBERATELY consumed only by the OCI router (not cloned into the native
@@ -87,10 +87,10 @@ surface.
    and the D1 moat map build from env (`crates/corelink-container/src/routes.rs:754-913`).
 8. Four Tower layers wrap the composed data plane (NOT `/_health` or `/_internal/*`, which mount later in
    `main`): the residency guard, the WI-MULTI-REGION-V1 read-side failover guard
-   (`crates/corelink-container/src/routes/failover.rs:327-360`), the per-tenant rate-limit token-bucket,
+   (`crates/corelink-container/src/routes/failover.rs:333-366`), the per-tenant rate-limit token-bucket,
    and — outermost, so it observes the final status — the OTel-export seam, mounted only when
    `CORELINK_OBSERVABILITY_EXPORT_VARIANT` selects a configured vendor
-   (`crates/corelink-container/src/routes/otel_layer.rs:414-440`,
+   (`crates/corelink-container/src/routes/otel_layer.rs:413-439`,
    `crates/corelink-container/src/routes.rs:915-978`).
 9. The Turbo/sccache surface gets its durable backing from the container's R2 KV store: `R2KvStore`
    derives each object key as `<hmac_prefix16>/<opaque_key>` and fails CLOSED (`TurboBridgeError::Internal`)
@@ -100,11 +100,11 @@ surface.
 
 # Invariants
 - A single HTTP listener on PORT (default 50051) serves the whole data plane — the DO's only target
-  (`crates/corelink-container/src/main.rs:409-412`).
+  (`crates/corelink-container/src/main.rs:408-411`).
 - In prod a missing native PAT gate is FATAL — the binary refuses to boot the data plane without its
-  Argon2id possession backstop (`crates/corelink-container/src/main.rs:301-314`).
+  Argon2id possession backstop (`crates/corelink-container/src/main.rs:300-313`).
 - Privileged routes fail CLOSED: absent secrets ⇒ the route is simply not mounted (404), never an open
-  proxy (`crates/corelink-container/src/main.rs:619-632`).
+  proxy (`crates/corelink-container/src/main.rs:617-630`).
 - The 410-Gone erasure gate and byte-accounting are centralized at the shared CAS chokepoint, so every
   surface inherits them by construction (`crates/corelink-container/src/routes.rs:531-550`).
 - The rate-limit + residency layers wrap exactly the data plane, never `/_health` or `/_internal/*`
@@ -125,10 +125,10 @@ surface.
 1. `crates/corelink-container/src/main.rs:1-17` — the binary's role + the 50051 HTTP listener doc.
 2. `crates/corelink-container/src/main.rs:266-279` — boot-time storage-backing selection for `/_health`.
 3. `crates/corelink-container/src/main.rs:264-298` — the fail-CLOSED native-PAT-gate boot guard.
-4. `crates/corelink-container/src/main.rs:301-314` — the FATAL `std::process::exit(1)` on a missing prod gate.
-5. `crates/corelink-container/src/main.rs:409-412` — PORT resolution (default 50051).
-6. `crates/corelink-container/src/main.rs:612-617` — the 10 MiB global body limit + `/_health` route.
-7. `crates/corelink-container/src/main.rs:619-632` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
+4. `crates/corelink-container/src/main.rs:300-313` — the FATAL `std::process::exit(1)` on a missing prod gate.
+5. `crates/corelink-container/src/main.rs:408-411` — PORT resolution (default 50051).
+6. `crates/corelink-container/src/main.rs:610-615` — the 10 MiB global body limit + `/_health` route.
+7. `crates/corelink-container/src/main.rs:617-630` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
 8. `crates/corelink-container/src/main.rs:619-956` — the full set of env-gated privileged route mounts, including the S-09 `POST /_internal/audit/drain` audit-chain drain (BLAKE3 tamper-evident seal of `audit_outbox`; internal-auth gated, env-gated on D1) alongside the `/_internal/dsr/*` family — the single `dsr::router` now mounts ALL five data-subject-rights legs (`erase` Art.17 + `verify`, plus `access` Art.15 / `portability` Art.20 / `rectification` Art.16 added by the DSAR-completion work), sharing one internal-auth gate.
 8b. `crates/corelink-container/src/main.rs:793-956` — the LIVE Stripe-webhook materializer mount: signature-verified `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to `tier_selections` over D1-HTTP (one of two activation writers; the Worker routes `/v1/billing/stripe-webhook` to this `_system` DO as the sole signature-verifier — see `WebhookState::new` + `STRIPE_WEBHOOK_ROUTE` at the mount).
 9. `crates/corelink-container/src/main.rs:961-964` — binding the composed router to the PORT listener.
@@ -139,7 +139,7 @@ surface.
 14. `crates/corelink-container/src/routes.rs:754-913` — env-gated cache-adapter (cargo/brew/npm/pip/oci) mounts.
 15. `crates/corelink-container/src/routes.rs:915-978` — residency guard + per-tenant rate-limit outer layers.
 16. `crates/corelink-container/src/routes.rs:920-978` — the rate-limit layer scoped to the data plane only.
-17. `crates/corelink-container/src/main.rs:329-407` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one as the OCI op-cap, plus `ERASURE_SALT_KEY` at `crates/corelink-container/src/main.rs:377-389`), else a FATAL boot refusal (no half-armed prod).
+17. `crates/corelink-container/src/main.rs:328-406` — positive prod-arming assertion: an independent R2-region signal ⇒ ALL launch controls must be armed (the request-count one as the OCI op-cap, plus `ERASURE_SALT_KEY` at `crates/corelink-container/src/main.rs:376-388`), else a FATAL boot refusal (no half-armed prod).
 18. `crates/corelink-container/src/storage/r2_kv.rs:122-143` — `R2KvStore::object_key`: per-tenant `derive_prefix` HMAC key layout, fail-CLOSED on a non-derivable tenant rather than a public predictable prefix.
-19. `crates/corelink-container/src/routes/failover.rs:327-360` — `failover_guard`: the WI-MULTI-REGION-V1 read-side failover Tower layer — inert in a healthy region, fail-CLOSED blocks writes (503 `failover_readonly`) + stamps a sibling read-region hint under a sustained region outage.
-20. `crates/corelink-container/src/routes/otel_layer.rs:414-440` — `otel_export_layer`: the OUTERMOST data-plane layer, streaming a canonical `MetricPoint` + `TraceSpan` per request through the configured exporter's fail-OPEN boundary; mounted only when `CORELINK_OBSERVABILITY_EXPORT_VARIANT` selects a vendor.
+19. `crates/corelink-container/src/routes/failover.rs:333-366` — `failover_guard`: the WI-MULTI-REGION-V1 read-side failover Tower layer — inert in a healthy region, fail-CLOSED blocks writes (503 `failover_readonly`) + stamps a sibling read-region hint under a sustained region outage.
+20. `crates/corelink-container/src/routes/otel_layer.rs:413-439` — `otel_export_layer`: the OUTERMOST data-plane layer, streaming a canonical `MetricPoint` + `TraceSpan` per request through the configured exporter's fail-OPEN boundary; mounted only when `CORELINK_OBSERVABILITY_EXPORT_VARIANT` selects a vendor.

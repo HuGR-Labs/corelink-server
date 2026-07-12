@@ -25,9 +25,9 @@ use corelink_audit_chain::{
     chain::compute_canonical_bytes,
     event::{AuditEvent, AuditEventKind, ChainHash},
 };
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use serde_json::json;
+use std::hint::black_box;
 use uuid::Uuid;
 
 /// Build a synthetic `data` payload of approximately `target_bytes` size.

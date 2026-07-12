@@ -77,9 +77,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use axum::{extract::State, middleware::Next, response::Response};
 use corelink_analytics::RedMetricKind;
-use corelink_telemetry::otel::audit::{
-    AuditEmitError, ExportFailedAuditSink, ExportFailedEvent,
-};
+use corelink_telemetry::otel::audit::{AuditEmitError, ExportFailedAuditSink, ExportFailedEvent};
 use corelink_telemetry::otel::config::{
     DatadogConfig, DatadogSite, GrafanaCloudConfig, OtelCollectorConfig, OtlpProtocol,
 };
@@ -399,9 +397,10 @@ pub(crate) fn emit(state: &OtelExportState, obs: &RequestObservation<'_>) {
         },
         end_u64,
     );
-    let _ = state
-        .exporter
-        .export_trace_fail_open(&span, state.audit_sink.as_ref(), obs.now_unix_ms);
+    let _ =
+        state
+            .exporter
+            .export_trace_fail_open(&span, state.audit_sink.as_ref(), obs.now_unix_ms);
 }
 
 /// Axum middleware: export a canonical [`MetricPoint`] + [`TraceSpan`] for every
@@ -511,7 +510,10 @@ mod tests {
     fn from_env_otel_collector_arms() {
         let s = OtelExportState::from_lookup(env(&[
             (VARIANT_ENV, "otel_collector"),
-            ("CORELINK_OTEL_COLLECTOR_ENDPOINT", "https://c.example.com:4318"),
+            (
+                "CORELINK_OTEL_COLLECTOR_ENDPOINT",
+                "https://c.example.com:4318",
+            ),
             ("CORELINK_OTEL_COLLECTOR_PROTOCOL", "http"),
             (REGION_ENV, "fra"),
         ]));
@@ -522,9 +524,7 @@ mod tests {
 
     #[test]
     fn from_env_otel_collector_missing_endpoint_returns_none() {
-        assert!(
-            OtelExportState::from_lookup(env(&[(VARIANT_ENV, "otel_collector")])).is_none()
-        );
+        assert!(OtelExportState::from_lookup(env(&[(VARIANT_ENV, "otel_collector")])).is_none());
     }
 
     #[test]
@@ -552,7 +552,10 @@ mod tests {
     fn from_env_grafana_arms() {
         let s = OtelExportState::from_lookup(env(&[
             (VARIANT_ENV, "grafana_cloud"),
-            ("CORELINK_GRAFANA_PROM_REMOTE_WRITE_URL", "https://prom/push"),
+            (
+                "CORELINK_GRAFANA_PROM_REMOTE_WRITE_URL",
+                "https://prom/push",
+            ),
             ("CORELINK_GRAFANA_TEMPO_OTLP_URL", "https://tempo/push"),
             ("CORELINK_GRAFANA_INSTANCE_ID", "12345"),
             ("CORELINK_GRAFANA_API_KEY", &"g".repeat(32)),
@@ -608,7 +611,10 @@ mod tests {
     #[test]
     fn emit_cas_put_records_counter_duration_and_span() {
         let (state, fake) = fake_state(ExporterVariant::OtelCollector);
-        emit(&state, &obs(&Method::POST, "/v1/cas/t/abc", StatusCode::OK, 0.005));
+        emit(
+            &state,
+            &obs(&Method::POST, "/v1/cas/t/abc", StatusCode::OK, 0.005),
+        );
         // one counter + one duration histogram
         let metrics = fake.snapshot_metrics();
         assert_eq!(metrics.len(), 2);
@@ -627,7 +633,10 @@ mod tests {
     #[test]
     fn emit_ac_lookup_records_single_counter_and_span() {
         let (state, fake) = fake_state(ExporterVariant::Datadog);
-        emit(&state, &obs(&Method::GET, "/v1/ac/t/abc", StatusCode::OK, 0.001));
+        emit(
+            &state,
+            &obs(&Method::GET, "/v1/ac/t/abc", StatusCode::OK, 0.001),
+        );
         assert_eq!(fake.snapshot_metrics().len(), 1);
         assert_eq!(fake.snapshot_spans().len(), 1);
     }

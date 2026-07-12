@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/admin_pilot.rs"
   - "crates/corelink-container/src/routes/admin_tenant_detail.rs"
   - "docs/internal/admin-plane.md"
-checkpoint_sha: "11947e0423eb06b58ae2e63600804d23bf18a48a"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["ops", "admin", "config", "dual-approval", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -60,11 +60,11 @@ behind one fail-closed authorization gate.
 - Rollback requires fresh MFA AND a dual approver (`X-Dual-Approver`) `docs/internal/admin-plane.md:120-123`.
 - The admin plane never runs privileged logic without a configured gate key (unconfigured ⇒ reject) `crates/corelink-container/src/routes/admin.rs:86`.
 - A dual-approval pair must be set together: an **incomplete** pair (one of `approval_id`/`approver` present, the other absent) is rejected at request construction (`crates/corelink-container/src/routes/admin.rs:596`); a **fully-absent** pair yields `None` (no approval requested) and proceeds — the per-operation approval *requirement* is enforced in the handler, not at construction.
-- Pilot mutations emit a `corelink.admin.pilot_*` audit event on attempt and success `crates/corelink-container/src/routes/admin_pilot.rs:1141-1179`.
+- Pilot mutations emit a `corelink.admin.pilot_*` audit event on attempt and success `crates/corelink-container/src/routes/admin_pilot.rs:1139-1177`.
 
 # Gotchas
 
-- The pilot store baseline is `InMemoryPilotStore` (non-durable) — pilot ops do not survive a restart until a D1-durable store is wired; `build_handlers` returns `InMemoryPilotStore::new()` `crates/corelink-container/src/routes/admin_pilot.rs:1031-1032`.
+- The pilot store baseline is `InMemoryPilotStore` (non-durable) — pilot ops do not survive a restart until a D1-durable store is wired; `build_handlers` returns `InMemoryPilotStore::new()` `crates/corelink-container/src/routes/admin_pilot.rs:1029-1030`.
 - A rollback target older than 90 days returns `410 VersionExpired`; older versions live only in the R2 long-term archive `docs/internal/admin-plane.md:140-142`.
 
 # Citations
@@ -83,5 +83,5 @@ behind one fail-closed authorization gate.
 10c. `crates/corelink-container/src/routes/admin_tenant_detail.rs:162` — the shared-`internal_auth_ok` operator gate returns `403` fail-CLOSED before any storage access (bad/absent internal-auth).
 10d. `crates/corelink-container/src/routes/admin_tenant_detail.rs:207` — binds the target `tenant_id` into a tenant-scoped `WHERE tenant_id = ?1` operator read (usage/`tenant_storage_state`).
 11. `crates/corelink-container/src/routes/admin_pilot.rs:110` — canonical grant-tier pilot route const.
-12. `crates/corelink-container/src/routes/admin_pilot.rs:1141-1179` — pilot create handler emits the `corelink.admin.pilot_*` audit on attempt + success.
-13. `crates/corelink-container/src/routes/admin_pilot.rs:1031-1032` — `build_handlers` returns the `InMemoryPilotStore::new()` baseline.
+12. `crates/corelink-container/src/routes/admin_pilot.rs:1139-1177` — pilot create handler emits the `corelink.admin.pilot_*` audit on attempt + success.
+13. `crates/corelink-container/src/routes/admin_pilot.rs:1029-1030` — `build_handlers` returns the `InMemoryPilotStore::new()` baseline.

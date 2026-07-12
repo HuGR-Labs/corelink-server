@@ -127,7 +127,10 @@ pub fn err_response(
         }
     }
     // F25: surface the advisory back-off delay to compliant clients.
-    if let OciAdapterError::TooManyOpenSessions { retry_after_secs, .. } = err {
+    if let OciAdapterError::TooManyOpenSessions {
+        retry_after_secs, ..
+    } = err
+    {
         if let Ok(v) = retry_after_secs.to_string().parse() {
             headers.insert("Retry-After", v);
         }

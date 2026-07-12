@@ -96,7 +96,8 @@ fn assert_dry_run(env: Option<&str>) {
         r.stdout
     );
     assert!(
-        r.stdout.contains("dry-run: classify + report only; ZERO deletes."),
+        r.stdout
+            .contains("dry-run: classify + report only; ZERO deletes."),
         "missing dry-run banner line; stdout:\n{}",
         r.stdout
     );
@@ -253,11 +254,16 @@ fn live_delete_when_env_one() {
 #[test]
 fn non_destructive_fold_trips_when_either_count_or_bytes_nonzero() {
     // Same predicate the bin matches on, over (deleted_count, deleted_bytes).
-    let is_non_destructive = |deleted_count: u64, deleted_bytes: u64| {
-        matches!((deleted_count, deleted_bytes), (0, 0))
-    };
-    assert!(is_non_destructive(0, 0), "(0,0) is the only non-destructive state");
+    let is_non_destructive =
+        |deleted_count: u64, deleted_bytes: u64| matches!((deleted_count, deleted_bytes), (0, 0));
+    assert!(
+        is_non_destructive(0, 0),
+        "(0,0) is the only non-destructive state"
+    );
     assert!(!is_non_destructive(1, 0), "count-only must trip the gate");
     assert!(!is_non_destructive(0, 1), "bytes-only must trip the gate");
-    assert!(!is_non_destructive(2, 4096), "both non-zero must trip the gate");
+    assert!(
+        !is_non_destructive(2, 4096),
+        "both non-zero must trip the gate"
+    );
 }

@@ -243,7 +243,11 @@ fn internal_erase_not_customer_reachable(cfg: &Config, client: &Client) -> Journ
         cfg.endpoint, p1.tenant, fake_hash
     );
 
-    let resp = match client.post(&url).header(AUTHORIZATION, bearer(token)).send() {
+    let resp = match client
+        .post(&url)
+        .header(AUTHORIZATION, bearer(token))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {url}: {e}")),
     };
@@ -289,27 +293,25 @@ fn dsr_request_then_content_gone(cfg: &Config, client: &Client) -> JourneyResult
         Err(reason) => return JourneyResult::gated(name, reason),
     };
     let session = env::var(DSR_SESSION_ENV).ok().filter(|v| !v.is_empty());
-    let session = match session {
-        Some(s) => s,
-        None => {
-            return JourneyResult::gated(
+    let session =
+        match session {
+            Some(s) => s,
+            None => return JourneyResult::gated(
                 name,
                 "CORELINK_E2E_DSR_SESSION not set — the erasure-request surface is Clerk-session \
                  authenticated (a customer erases their OWN data); supply a DSR session bearer \
                  out-of-band to drive request->gone (0069 dsr_requested must exist on the env)",
-            )
-        }
-    };
-    let hash = match tombstoned_hash() {
-        Some(h) => h,
-        None => {
-            return JourneyResult::gated(
+            ),
+        };
+    let hash =
+        match tombstoned_hash() {
+            Some(h) => h,
+            None => return JourneyResult::gated(
                 name,
                 "CORELINK_E2E_TOMBSTONED_HASH not set — supply an already-erased hash to prove \
                  the post-erasure GONE end-state",
-            )
-        }
-    };
+            ),
+        };
     let token = p1.token.expect("P1 always has a token");
 
     // (a) The DSR request must be ACCEPTED (queued). The customer-facing request
@@ -393,16 +395,15 @@ fn dsr_full_flow_self_driven(cfg: &Config, client: &Client) -> JourneyResult {
 
     // GATE 3: a DEDICATED test tenant that is NOT the primary tenant. Refuse to
     // erase under the primary tenant — that could destroy real customer content.
-    let test_tenant = match env::var(DSR_TEST_TENANT_ENV).ok().filter(|v| !v.is_empty()) {
-        Some(t) => t,
-        None => {
-            return JourneyResult::gated(
+    let test_tenant =
+        match env::var(DSR_TEST_TENANT_ENV).ok().filter(|v| !v.is_empty()) {
+            Some(t) => t,
+            None => return JourneyResult::gated(
                 name,
                 "CORELINK_E2E_DSR_TEST_TENANT not set — the full-flow needs a DEDICATED throwaway \
                  tenant to erase (never the primary tenant)",
-            )
-        }
-    };
+            ),
+        };
     if let Some(primary) = cfg.tenant.as_deref() {
         if test_tenant == primary {
             return JourneyResult::gated(
@@ -414,7 +415,10 @@ fn dsr_full_flow_self_driven(cfg: &Config, client: &Client) -> JourneyResult {
     }
 
     // GATE 4: a session bearer scoped to the test tenant for the request surface.
-    let session = match env::var(DSR_TEST_SESSION_ENV).ok().filter(|v| !v.is_empty()) {
+    let session = match env::var(DSR_TEST_SESSION_ENV)
+        .ok()
+        .filter(|v| !v.is_empty())
+    {
         Some(s) => s,
         None => {
             return JourneyResult::gated(
@@ -487,7 +491,9 @@ fn dsr_full_flow_self_driven(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("DSR erasure request got {req_status} (a 5xx, not the 0069 gap) — server fault"),
+            format!(
+                "DSR erasure request got {req_status} (a 5xx, not the 0069 gap) — server fault"
+            ),
         );
     }
     if !matches!(req_status, 200 | 202) {
@@ -522,7 +528,9 @@ fn dsr_full_flow_self_driven(cfg: &Config, client: &Client) -> JourneyResult {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("erased-content read got {other} after DSR request (expected 410/404 gone)"),
+                format!(
+                    "erased-content read got {other} after DSR request (expected 410/404 gone)"
+                ),
             )
         }
     }

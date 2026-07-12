@@ -457,8 +457,8 @@ mod tests {
             "v2/homebrew/evil/manifests/latest", // wrong sub-repo
             "v2/library/ubuntu/manifests/latest",
             "v2/homebrew/coreextra/x", // prefix-confusion: needs the trailing `/`
-            "v2/homebrew", // too short
-            "homebrew/core/curl", // missing the v2/ segment
+            "v2/homebrew",             // too short
+            "homebrew/core/curl",      // missing the v2/ segment
             "",
         ] {
             assert!(!is_allowed_repo_path(p), "{p} must be rejected");

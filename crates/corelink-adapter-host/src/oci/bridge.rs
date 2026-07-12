@@ -405,7 +405,10 @@ mod tests {
             .append_chunk(&t, &uuid, Bytes::from(data.clone()))
             .await
             .unwrap();
-        bridge.finalize_upload(&t, &uuid, &hash, None).await.unwrap();
+        bridge
+            .finalize_upload(&t, &uuid, &hash, None)
+            .await
+            .unwrap();
         let got = bridge.get_blob(&t, &hash).await.unwrap();
         assert_eq!(got, Some(Bytes::from(data)));
     }
@@ -443,7 +446,10 @@ mod tests {
             .append_chunk(&t, &uuid, Bytes::from(data.clone()))
             .await
             .unwrap();
-        bridge.finalize_upload(&t, &uuid, &hash, None).await.unwrap();
+        bridge
+            .finalize_upload(&t, &uuid, &hash, None)
+            .await
+            .unwrap();
 
         let size = bridge.blob_size(&t, &hash).await.unwrap();
         assert_eq!(size, Some(data.len() as u64));

@@ -190,12 +190,12 @@ pub(super) const RETAIN_SET: &[&str] = &[
     "audit_outbox",
     // ── CF-1: tenant-keyed tables with a lawful retention basis (ADR-S11-013
     // RETAIN policy: fiscal / billing-reconciliation / audit-evidence). ─────
-    "billing_replay_audit",          // billing replay audit trail (migr. 0021)
-    "stripe_idempotency_keys",       // fiscal idempotency ledger (migr. 0018)
-    "billing_reconciliation_drift",  // billing reconciliation evidence (migr. 0019)
-    "stripe_submission_state",       // billing submission state (migr. 0019)
-    "customer_audit_events",         // per-tenant audit evidence (migr. 0077)
-    "audit_chain_head",              // audit-chain seal head — integrity (migr. 0078)
+    "billing_replay_audit",         // billing replay audit trail (migr. 0021)
+    "stripe_idempotency_keys",      // fiscal idempotency ledger (migr. 0018)
+    "billing_reconciliation_drift", // billing reconciliation evidence (migr. 0019)
+    "stripe_submission_state",      // billing submission state (migr. 0019)
+    "customer_audit_events",        // per-tenant audit evidence (migr. 0077)
+    "audit_chain_head",             // audit-chain seal head — integrity (migr. 0078)
     // Legal-hold control record (migr. 0076): the durable signal that gates
     // erasure itself. A row = "destructive erasure refused"; it is a
     // legal-process / audit anchor (`placed_at`), `reason` is operator-internal
@@ -440,7 +440,8 @@ impl D1EraseAdapter {
             remaining = remaining.saturating_add(self.count(t, "namespace", tid)?);
         }
         remaining = remaining.saturating_add(self.count_signup_attempts(tid)?);
-        remaining = remaining.saturating_add(self.count("signup_orchestration", "tenant_id", tid)?);
+        remaining =
+            remaining.saturating_add(self.count("signup_orchestration", "tenant_id", tid)?);
         remaining = remaining.saturating_add(self.count("tenant", "tenant_id", tid)?);
         Ok(remaining)
     }
@@ -487,7 +488,11 @@ impl BackendErasureAdapter for D1EraseAdapter {
         }
         // Group C — signup_attempts BEFORE signup_orchestration.
         total = total.saturating_add(self.delete_signup_attempts(&tid)?);
-        total = total.saturating_add(self.count_then_delete("signup_orchestration", "tenant_id", &tid)?);
+        total = total.saturating_add(self.count_then_delete(
+            "signup_orchestration",
+            "tenant_id",
+            &tid,
+        )?);
         // Group D — the root identity row LAST (covers the ALTER columns
         // primary_region / byok_status / clerk_user_id / email_hash /
         // stripe_customer_id on `tenant`).
@@ -498,10 +503,7 @@ impl BackendErasureAdapter for D1EraseAdapter {
         })
     }
 
-    fn verification_hash(
-        &self,
-        ctx: VerificationContext,
-    ) -> Result<[u8; 32], ErasureBackendError> {
+    fn verification_hash(&self, ctx: VerificationContext) -> Result<[u8; 32], ErasureBackendError> {
         let remaining = self.remaining_rows(&ctx.tenant_id.to_string())?;
         if remaining == 0 {
             // Canonical "no rows for tenant" sentinel (effective backend).

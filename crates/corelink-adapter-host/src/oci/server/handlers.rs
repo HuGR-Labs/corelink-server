@@ -387,7 +387,16 @@ pub async fn dispatch_v2(
     let storage_cap_bytes = verified.storage_cap_bytes;
     let now_ms = (state.clock_unix_ms)();
     let result = route_dispatch(
-        parsed, method, uri, headers, body, &state, &tenant, scope, storage_cap_bytes, now_ms,
+        parsed,
+        method,
+        uri,
+        headers,
+        body,
+        &state,
+        &tenant,
+        scope,
+        storage_cap_bytes,
+        now_ms,
     )
     .await;
     match result {
@@ -452,7 +461,16 @@ async fn route_dispatch(
         },
         V2Path::BlobUploadsSession { repo, uuid } => {
             dispatch_blob_upload_session(
-                state, tenant, scope, storage_cap_bytes, &repo, &uuid, method, uri, body, now_ms,
+                state,
+                tenant,
+                scope,
+                storage_cap_bytes,
+                &repo,
+                &uuid,
+                method,
+                uri,
+                body,
+                now_ms,
             )
             .await
         }

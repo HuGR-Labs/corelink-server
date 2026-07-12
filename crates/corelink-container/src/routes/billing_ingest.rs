@@ -508,7 +508,10 @@ async fn handle_ingest(
         match validate_record(wire) {
             Ok(rec) => staged.push(rec),
             Err(e) => {
-                tracing::warn!(reason = e.code(), "billing_ingest: record validation failed");
+                tracing::warn!(
+                    reason = e.code(),
+                    "billing_ingest: record validation failed"
+                );
                 return bad_request(e.code());
             }
         }
@@ -689,7 +692,9 @@ mod tests {
     }
 
     async fn body_json(resp: Response) -> serde_json::Value {
-        let bytes = axum::body::to_bytes(resp.into_body(), 16_384).await.unwrap();
+        let bytes = axum::body::to_bytes(resp.into_body(), 16_384)
+            .await
+            .unwrap();
         if bytes.is_empty() {
             return serde_json::Value::Null;
         }
@@ -701,7 +706,10 @@ mod tests {
     #[tokio::test]
     async fn missing_service_secret_returns_401() {
         let app = router(state_with(Arc::new(FakeStore::new())));
-        let req = ingest_request(None, serde_json::json!([record_json(&tenant_a(), &hex64(0xAB))]));
+        let req = ingest_request(
+            None,
+            serde_json::json!([record_json(&tenant_a(), &hex64(0xAB))]),
+        );
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
@@ -727,7 +735,10 @@ mod tests {
             record_json(&tenant_a(), &hex64(0x01)),
             record_json(&tenant_a(), &hex64(0x02)),
         ]);
-        let resp = app.oneshot(ingest_request(Some(TEST_AUTH_KEY), body)).await.unwrap();
+        let resp = app
+            .oneshot(ingest_request(Some(TEST_AUTH_KEY), body))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::ACCEPTED);
         let v = body_json(resp).await;
         assert_eq!(v["accepted"], serde_json::json!(2));
@@ -764,7 +775,11 @@ mod tests {
             .unwrap();
         assert_eq!(resp2.status(), StatusCode::ACCEPTED);
         let v = body_json(resp2).await;
-        assert_eq!(v["accepted"], serde_json::json!(0), "re-push must not insert again");
+        assert_eq!(
+            v["accepted"],
+            serde_json::json!(0),
+            "re-push must not insert again"
+        );
         assert_eq!(v["deduped"], serde_json::json!(1), "re-push must dedup");
     }
 
@@ -779,7 +794,10 @@ mod tests {
             record_json(&tenant_a(), &idem),
             record_json(&tenant_a(), &idem),
         ]);
-        let resp = app.oneshot(ingest_request(Some(TEST_AUTH_KEY), body)).await.unwrap();
+        let resp = app
+            .oneshot(ingest_request(Some(TEST_AUTH_KEY), body))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::ACCEPTED);
         let v = body_json(resp).await;
         assert_eq!(v["accepted"], serde_json::json!(1));
@@ -818,7 +836,10 @@ mod tests {
         rec["event_kind"] = serde_json::json!("not_a_real_kind");
         let app = router(state_with(Arc::new(FakeStore::new())));
         let resp = app
-            .oneshot(ingest_request(Some(TEST_AUTH_KEY), serde_json::json!([rec])))
+            .oneshot(ingest_request(
+                Some(TEST_AUTH_KEY),
+                serde_json::json!([rec]),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -843,7 +864,10 @@ mod tests {
         rec["billing_period"] = serde_json::json!("2026-13");
         let app = router(state_with(Arc::new(FakeStore::new())));
         let resp = app
-            .oneshot(ingest_request(Some(TEST_AUTH_KEY), serde_json::json!([rec])))
+            .oneshot(ingest_request(
+                Some(TEST_AUTH_KEY),
+                serde_json::json!([rec]),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -855,7 +879,10 @@ mod tests {
         rec["region"] = serde_json::json!("IAD"); // uppercase / not canonical
         let app = router(state_with(Arc::new(FakeStore::new())));
         let resp = app
-            .oneshot(ingest_request(Some(TEST_AUTH_KEY), serde_json::json!([rec])))
+            .oneshot(ingest_request(
+                Some(TEST_AUTH_KEY),
+                serde_json::json!([rec]),
+            ))
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
@@ -883,7 +910,10 @@ mod tests {
         let mut bad = record_json(&tenant_a(), &hex64(0x15));
         bad["billing_period"] = serde_json::json!("nope");
         let body = serde_json::json!([record_json(&tenant_a(), &hex64(0x16)), bad]);
-        let resp = app.oneshot(ingest_request(Some(TEST_AUTH_KEY), body)).await.unwrap();
+        let resp = app
+            .oneshot(ingest_request(Some(TEST_AUTH_KEY), body))
+            .await
+            .unwrap();
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         assert!(
             store.seen.lock().unwrap().is_empty(),
@@ -980,7 +1010,10 @@ mod tests {
         let h2 = D1UsageStagingStore::payload_hash(&rec);
         assert_eq!(h1.len(), 64, "BLAKE3-256 hex must be 64 chars");
         assert!(h1.bytes().all(|b| b.is_ascii_hexdigit()));
-        assert_eq!(h1, h2, "the same record must reproduce the same payload hash");
+        assert_eq!(
+            h1, h2,
+            "the same record must reproduce the same payload hash"
+        );
     }
 
     #[test]

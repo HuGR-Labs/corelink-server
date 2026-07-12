@@ -226,7 +226,11 @@ impl MintInflightLimiter {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_) => return Some(MintSlot { limiter: self.clone() }),
+                Ok(_) => {
+                    return Some(MintSlot {
+                        limiter: self.clone(),
+                    })
+                }
                 Err(actual) => cur = actual,
             }
         }
@@ -772,18 +776,17 @@ pub fn build_state_from_env() -> Option<InternalPatRouteState> {
     // `CORELINK_INTERNAL_AUTH_KEY`. Unset/blank/< 32 chars ⇒ fail CLOSED
     // (route NOT mounted, endpoint unavailable — never silently widened to
     // the broad shared secret).
-    let auth_key = resolve_mint_auth_key(
-        std::env::var("CORELINK_PAT_MINT_AUTH_KEY").ok().as_deref(),
-    )
-    .or_else(|| {
-        tracing::warn!(
-            "CORELINK_PAT_MINT_AUTH_KEY unset/blank/< 32 chars; \
+    let auth_key =
+        resolve_mint_auth_key(std::env::var("CORELINK_PAT_MINT_AUTH_KEY").ok().as_deref())
+            .or_else(|| {
+                tracing::warn!(
+                    "CORELINK_PAT_MINT_AUTH_KEY unset/blank/< 32 chars; \
              /_internal/pat/mint route NOT mounted (fail-CLOSED — NO fallback to \
              the shared CORELINK_INTERNAL_AUTH_KEY; DD HIGH remediation; \
              use `openssl rand -hex 32`)"
-        );
-        None
-    })?;
+                );
+                None
+            })?;
 
     let signing_key_hex = std::env::var("PAT_SIGNING_KEY").ok()?;
     let key_bytes = hex_decode(&signing_key_hex)?;
@@ -1094,7 +1097,10 @@ mod tests {
         let s1 = lim.try_acquire().expect("first slot");
         let s2 = lim.try_acquire().expect("second slot");
         // Ceiling reached → third acquire is shed.
-        assert!(lim.try_acquire().is_none(), "over-ceiling acquire must shed");
+        assert!(
+            lim.try_acquire().is_none(),
+            "over-ceiling acquire must shed"
+        );
         // Releasing one slot (drop) frees capacity again.
         drop(s1);
         let s3 = lim.try_acquire().expect("slot freed after drop");
@@ -1178,7 +1184,10 @@ mod tests {
                 "ttl_seconds": 86400
             }),
         );
-        assert_eq!(app.oneshot(bad).await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            app.oneshot(bad).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
         // A subsequent AUTHED mint still has its slot available → 200.
         let app2 = router(state.clone());
         let good = make_mint_request(
@@ -1579,8 +1588,7 @@ mod tests {
     #[tokio::test]
     async fn handler_mints_with_dedicated_key_and_rejects_wrong() {
         let dedicated = "d".repeat(40);
-        let resolved =
-            resolve_mint_auth_key(Some(&dedicated)).expect("dedicated key must resolve");
+        let resolved = resolve_mint_auth_key(Some(&dedicated)).expect("dedicated key must resolve");
         let signing = PatSigningKey::from_bytes(vec![0x42u8; 32]).unwrap();
         let state = InternalPatRouteState {
             internal_auth_key: resolved,

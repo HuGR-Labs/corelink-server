@@ -315,9 +315,7 @@ impl JourneyResult {
     pub fn stub(name: &'static str, surface: &str) -> Self {
         JourneyResult {
             name,
-            status: JourneyStatus::Gated(format!(
-                "TODO: {surface} journeys not yet implemented"
-            )),
+            status: JourneyStatus::Gated(format!("TODO: {surface} journeys not yet implemented")),
             duration_ms: 0,
         }
     }
@@ -421,9 +419,7 @@ pub fn expect_denied(label: &str, got: u16) -> Result<(), String> {
     if matches!(got, 401 | 403 | 404) {
         Ok(())
     } else {
-        Err(format!(
-            "{label}: got {got}, expected a deny (401/403/404)"
-        ))
+        Err(format!("{label}: got {got}, expected a deny (401/403/404)"))
     }
 }
 
@@ -508,7 +504,10 @@ pub fn url_bazel_cas_read(cfg: &Config, instance: &str, hash: &str, size: usize)
 
 /// Bazel REAPI v2 AC read/write: `/bazel/v2/{instance}/blobs/ac/{hash}/{size}`.
 pub fn url_bazel_ac(cfg: &Config, instance: &str, hash: &str, size: usize) -> String {
-    format!("{}/bazel/v2/{instance}/blobs/ac/{hash}/{size}", cfg.endpoint)
+    format!(
+        "{}/bazel/v2/{instance}/blobs/ac/{hash}/{size}",
+        cfg.endpoint
+    )
 }
 
 /// Bazel REAPI v2 CAS write:

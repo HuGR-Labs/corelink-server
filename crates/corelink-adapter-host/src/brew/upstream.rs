@@ -167,10 +167,7 @@ impl UpstreamFetcher {
         &self,
         challenged: &reqwest::Response,
     ) -> Result<Option<String>, BrewAdapterError> {
-        let header = match challenged
-            .headers()
-            .get(reqwest::header::WWW_AUTHENTICATE)
-        {
+        let header = match challenged.headers().get(reqwest::header::WWW_AUTHENTICATE) {
             Some(h) => h
                 .to_str()
                 .map_err(|_| BrewAdapterError::Upstream("non-ascii WWW-Authenticate".to_owned()))?,
@@ -181,8 +178,7 @@ impl UpstreamFetcher {
         };
         let realm_url = Url::parse(&realm)
             .map_err(|err| BrewAdapterError::Upstream(format!("token realm parse: {err}")))?;
-        if realm_url.scheme() != "https"
-            || realm_url.host_str() != self.upstream_domain.host_str()
+        if realm_url.scheme() != "https" || realm_url.host_str() != self.upstream_domain.host_str()
         {
             return Err(BrewAdapterError::Upstream(
                 "SSRF guard: token realm escapes the configured upstream host".to_owned(),
@@ -420,7 +416,8 @@ mod tests {
     #[test]
     fn parse_non_bearer_challenge_is_none() {
         assert!(parse_bearer_challenge(r#"Basic realm="x""#).is_none());
-        assert!(parse_bearer_challenge("Bearer service=\"ghcr.io\"").is_none()); // no realm
+        assert!(parse_bearer_challenge("Bearer service=\"ghcr.io\"").is_none());
+        // no realm
     }
 
     #[tokio::test]

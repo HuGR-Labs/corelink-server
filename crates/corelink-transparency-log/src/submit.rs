@@ -319,8 +319,12 @@ mod tests {
         rekor
             .arm_fault(TransparencyLogError::Transport("offline".into()))
             .unwrap();
-        assert!(!witness_or_degrade(&rekor, &sample_entry("a")).await.is_witnessed());
+        assert!(!witness_or_degrade(&rekor, &sample_entry("a"))
+            .await
+            .is_witnessed());
         rekor.clear_fault().unwrap();
-        assert!(witness_or_degrade(&rekor, &sample_entry("a")).await.is_witnessed());
+        assert!(witness_or_degrade(&rekor, &sample_entry("a"))
+            .await
+            .is_witnessed());
     }
 }

@@ -63,7 +63,9 @@ use reqwest::blocking::Client;
 use reqwest::header::AUTHORIZATION;
 use sha2::{Digest, Sha256};
 
-use crate::harness::{bearer, expect_denied, blake3_hex, unique_blob, url_brew, url_cas, Config, JourneyResult};
+use crate::harness::{
+    bearer, blake3_hex, expect_denied, unique_blob, url_brew, url_cas, Config, JourneyResult,
+};
 use crate::personas::Persona;
 
 /// Env var carrying the deterministic public Homebrew bottle path used to prove
@@ -262,11 +264,7 @@ fn public_dedup_hit(cfg: &Config, client: &Client) -> JourneyResult {
     let b_bytes = match b_resp.bytes() {
         Ok(b) => b.to_vec(),
         Err(e) => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("B GET {b_url} body read: {e}"),
-            )
+            return JourneyResult::fail(name, ms(start), format!("B GET {b_url} body read: {e}"))
         }
     };
     let b_serve_ms = b_started.elapsed().as_millis() as u64;
@@ -365,7 +363,8 @@ fn public_dedup_hit(cfg: &Config, client: &Client) -> JourneyResult {
 /// proving the shared dedup layer does not bleed into private isolation. Mirrors
 /// [`crate::journeys::cas`] isolation, scoped to the moat module's contract.
 fn public_private_boundary(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "Shared cache: public/private boundary — A's PRIVATE native-CAS bytes stay isolated from B";
+    let name =
+        "Shared cache: public/private boundary — A's PRIVATE native-CAS bytes stay isolated from B";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 

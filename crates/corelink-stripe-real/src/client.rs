@@ -1261,10 +1261,17 @@ mod tests {
             "erased_ab12cd34",
             "0190a1b2-c3d4-7890-abcd-ef0123456789",
         );
-        let get = |k: &str| form.iter().find(|(key, _)| *key == k).map(|(_, v)| v.clone());
+        let get = |k: &str| {
+            form.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| v.clone())
+        };
 
         // PII fields overwritten with the pseudonyms.
-        assert_eq!(get("email").as_deref(), Some("erased+cus_x@redacted.invalid"));
+        assert_eq!(
+            get("email").as_deref(),
+            Some("erased+cus_x@redacted.invalid")
+        );
         assert_eq!(get("name").as_deref(), Some("erased_ab12cd34"));
         // Optional PII fields cleared (Stripe unsets on empty value).
         assert_eq!(get("phone").as_deref(), Some(""));
@@ -1280,7 +1287,8 @@ mod tests {
         // to /v1/customers/:id/delete or a DELETE verb, never a form field —
         // but assert no key hints at deletion as a defensive tripwire.
         assert!(
-            form.iter().all(|(k, _)| !k.contains("delete") && !k.contains("deleted")),
+            form.iter()
+                .all(|(k, _)| !k.contains("delete") && !k.contains("deleted")),
             "erasure form must never carry a delete primitive: {form:?}"
         );
     }
@@ -1439,15 +1447,21 @@ mod tests {
     }
 
     fn form_get<'a>(form: &'a [(&'static str, String)], key: &str) -> Option<&'a str> {
-        form.iter().find(|(k, _)| *k == key).map(|(_, v)| v.as_str())
+        form.iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     #[test]
     fn checkout_form_default_enables_promo_code_field() {
         // Absent a configured coupon, the hosted page must show the promo-code
         // field so a user can enter a code mapped to a 100%-off coupon.
-        let form =
-            build_checkout_form(&checkout_req(), "price_123", &CheckoutPromo::AllowCodes, "cus_ABC");
+        let form = build_checkout_form(
+            &checkout_req(),
+            "price_123",
+            &CheckoutPromo::AllowCodes,
+            "cus_ABC",
+        );
         assert_eq!(
             form_get(&form, "allow_promotion_codes"),
             Some("true"),
@@ -1473,8 +1487,12 @@ mod tests {
         // the form MUST carry `customer` and MUST NOT carry `customer_email`
         // (Stripe rejects an empty one with `Invalid email address: ` — the
         // money-path outage — and it is redundant with `customer`).
-        let form =
-            build_checkout_form(&checkout_req(), "price_123", &CheckoutPromo::AllowCodes, "cus_ABC");
+        let form = build_checkout_form(
+            &checkout_req(),
+            "price_123",
+            &CheckoutPromo::AllowCodes,
+            "cus_ABC",
+        );
         assert_eq!(
             form_get(&form, "customer"),
             Some("cus_ABC"),

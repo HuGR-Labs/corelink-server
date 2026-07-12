@@ -311,11 +311,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_bytes(BOTTLE_BYTES.to_vec()))
             .mount(&upstream)
             .await;
-        let addr = spin(
-            Arc::new(EmptyCas),
-            Url::parse(&upstream.uri()).unwrap(),
-        )
-        .await;
+        let addr = spin(Arc::new(EmptyCas), Url::parse(&upstream.uri()).unwrap()).await;
         let resp = reqwest::Client::new()
             .get(format!("http://{addr}{}", digest_path()))
             .header("Authorization", format!("Bearer {PAT}"))

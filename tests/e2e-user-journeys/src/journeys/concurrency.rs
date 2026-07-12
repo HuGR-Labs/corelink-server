@@ -71,11 +71,7 @@ type PutOutcome = Result<u16, String>;
 /// Fire `n` concurrent PUTs of `(url, body)` pairs with `token`, returning each
 /// worker's outcome in submission order. Uses scoped threads so the borrowed
 /// `client`/`token`/`cfg` need no `'static` bound and nothing is leaked.
-fn concurrent_puts(
-    client: &Client,
-    token: &str,
-    jobs: &[(String, Vec<u8>)],
-) -> Vec<PutOutcome> {
+fn concurrent_puts(client: &Client, token: &str, jobs: &[(String, Vec<u8>)]) -> Vec<PutOutcome> {
     let results: Vec<Mutex<Option<PutOutcome>>> =
         (0..jobs.len()).map(|_| Mutex::new(None)).collect();
 
@@ -98,7 +94,11 @@ fn concurrent_puts(
 
     results
         .into_iter()
-        .map(|m| m.into_inner().expect("put slot poisoned").expect("worker set slot"))
+        .map(|m| {
+            m.into_inner()
+                .expect("put slot poisoned")
+                .expect("worker set slot")
+        })
         .collect()
 }
 
@@ -194,7 +194,9 @@ fn distinct_blobs_fan_out(cfg: &Config, client: &Client) -> JourneyResult {
     let token = p1.token.expect("P1 always has a token");
 
     // N distinct blobs, each at its own content address.
-    let blobs: Vec<Vec<u8>> = (0..N).map(|i| unique_blob(&format!("conc-distinct-{i}"))).collect();
+    let blobs: Vec<Vec<u8>> = (0..N)
+        .map(|i| unique_blob(&format!("conc-distinct-{i}")))
+        .collect();
     let jobs: Vec<(String, Vec<u8>)> = blobs
         .iter()
         .map(|b| (url_cas(cfg, &p1.tenant, &blake3_hex(b)), b.clone()))
@@ -226,7 +228,10 @@ fn distinct_blobs_fan_out(cfg: &Config, client: &Client) -> JourneyResult {
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("GET of distinct blob #{i} got {} (expected 200)", get.status()),
+                format!(
+                    "GET of distinct blob #{i} got {} (expected 200)",
+                    get.status()
+                ),
             );
         }
         match get.bytes() {
@@ -301,24 +306,21 @@ fn read_during_write(cfg: &Config, client: &Client) -> JourneyResult {
         for slot in reads.iter() {
             let url = &url;
             scope.spawn(move || {
-                let outcome: ReadOutcome = match client
-                    .get(url)
-                    .header(AUTHORIZATION, bearer(token))
-                    .send()
-                {
-                    Ok(r) => {
-                        let st = r.status().as_u16();
-                        if st == 200 {
-                            match r.bytes() {
-                                Ok(b) => Ok((st, Some(b.to_vec()))),
-                                Err(e) => Err(format!("GET body: {e}")),
+                let outcome: ReadOutcome =
+                    match client.get(url).header(AUTHORIZATION, bearer(token)).send() {
+                        Ok(r) => {
+                            let st = r.status().as_u16();
+                            if st == 200 {
+                                match r.bytes() {
+                                    Ok(b) => Ok((st, Some(b.to_vec()))),
+                                    Err(e) => Err(format!("GET body: {e}")),
+                                }
+                            } else {
+                                Ok((st, None))
                             }
-                        } else {
-                            Ok((st, None))
                         }
-                    }
-                    Err(e) => Err(format!("GET {url}: {e}")),
-                };
+                        Err(e) => Err(format!("GET {url}: {e}")),
+                    };
                 *slot.lock().expect("read slot poisoned") = Some(outcome);
             });
         }
@@ -335,7 +337,9 @@ fn read_during_write(cfg: &Config, client: &Client) -> JourneyResult {
             )
         }
         Some(Err(m)) => return JourneyResult::fail(name, ms(start), m),
-        None => return JourneyResult::fail(name, ms(start), "writer thread set no result".to_string()),
+        None => {
+            return JourneyResult::fail(name, ms(start), "writer thread set no result".to_string())
+        }
     }
 
     // Every reader that observed a 200 must have observed the FULL exact bytes.
@@ -402,24 +406,24 @@ fn byte_accounting_under_concurrency(cfg: &Config, client: &Client) -> JourneyRe
     // the dedicated tenant we fall back to the shared primary tenant, where a
     // concurrent writer can inflate the delta — there we can only GATE (record),
     // never assert (the prior always-gated behavior).
-    let (tenant, token, dedicated) =
-        match (cfg.acct_tenant.as_deref(), cfg.token(TokenKind::Acct)) {
-            (Some(t), Some(tok)) => (t.to_string(), tok, true),
-            _ => {
-                let p1 = match Persona::P1ReadWrite.resolve(cfg) {
-                    Ok(p) => p,
-                    Err(reason) => return JourneyResult::gated(name, reason),
-                };
-                if cfg.tenant.is_none() {
-                    return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
-                }
-                (
-                    cfg.tenant_or_anon().to_string(),
-                    p1.token.expect("P1 always has a token"),
-                    false,
-                )
+    let (tenant, token, dedicated) = match (cfg.acct_tenant.as_deref(), cfg.token(TokenKind::Acct))
+    {
+        (Some(t), Some(tok)) => (t.to_string(), tok, true),
+        _ => {
+            let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+                Ok(p) => p,
+                Err(reason) => return JourneyResult::gated(name, reason),
+            };
+            if cfg.tenant.is_none() {
+                return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set");
             }
-        };
+            (
+                cfg.tenant_or_anon().to_string(),
+                p1.token.expect("P1 always has a token"),
+                false,
+            )
+        }
+    };
 
     // Probe the usage surface (scoped to `token`'s tenant); GATE if not observable.
     let before = match read_bytes_used(client, cfg, token) {
@@ -434,7 +438,9 @@ fn byte_accounting_under_concurrency(cfg: &Config, client: &Client) -> JourneyRe
     };
 
     // N distinct fresh blobs of a known total size.
-    let blobs: Vec<Vec<u8>> = (0..N).map(|i| unique_blob(&format!("conc-acct-{i}"))).collect();
+    let blobs: Vec<Vec<u8>> = (0..N)
+        .map(|i| unique_blob(&format!("conc-acct-{i}")))
+        .collect();
     let written_total: u64 = blobs.iter().map(|b| b.len() as u64).sum();
     let single_blob_len = blobs.first().map(|b| b.len() as u64).unwrap_or(0);
     let jobs: Vec<(String, Vec<u8>)> = blobs
@@ -470,12 +476,10 @@ fn byte_accounting_under_concurrency(cfg: &Config, client: &Client) -> JourneyRe
                 }
                 prev = v;
             }
-            Ok(None) => {
-                return JourneyResult::gated(
-                    name,
-                    "usage surface stopped reporting bytes-stored after the writes — not observable",
-                )
-            }
+            Ok(None) => return JourneyResult::gated(
+                name,
+                "usage surface stopped reporting bytes-stored after the writes — not observable",
+            ),
             Err(reason) => return JourneyResult::gated(name, reason),
         }
         std::thread::sleep(std::time::Duration::from_secs(1));

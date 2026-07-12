@@ -42,25 +42,17 @@ use crate::routes::audit_analytics::ShadowSinkFactory;
 pub mod ac;
 /// Admin HTTP routes (R-prep wire-up; wave-11).
 pub mod admin;
+/// Pilot-admin HTTP routes (Wave-29 stream-3): replaces the wave-27
+/// placeholder scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`,
+/// `pilot-24h-checkin.sh`) with proper endpoints + audit-emit
+/// fail-CLOSED ordering + 5-Layer Defense scope gating.
+pub mod admin_pilot;
 /// Operator per-tenant deep-dive reads (usage/billing/consents/dsr/pats).
 /// Operator posture: internal-auth gated, same as `admin` — reached via the
 /// operator path, NOT the customer Worker (which strips internal-auth on
 /// `/v1/*`). Wiring the admin-ui operator console to this surface is a separate
 /// follow-up that applies to the whole operator plane, not just this module.
 pub mod admin_tenant_detail;
-/// Pilot-admin HTTP routes (Wave-29 stream-3): replaces the wave-27
-/// placeholder scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`,
-/// `pilot-24h-checkin.sh`) with proper endpoints + audit-emit
-/// fail-CLOSED ordering + 5-Layer Defense scope gating.
-pub mod admin_pilot;
-/// Operator-gated BYOK **activation** control plane
-/// (`POST /v1/admin/byok/{activate,deactivate}`): the WRITE authority that flips
-/// a tenant's `tenant_byok_config.state` to `active` (engaging the r2_s3
-/// at-rest encryption gate) + persists its CMK-wrapped Tcs, plus the crypto-shred
-/// kill switch. Internal-auth gated exactly like `admin`. Closes the H5 gap
-/// left by migration 0081 (the read model + engagement gate were inert with no
-/// writer).
-pub mod byok_admin;
 /// Customer-facing audit-analytics routes (Wave-18 wiring of the
 /// Neon analytics shadow sync): `GET /v1/audit/analytics/event-count`
 /// + `GET /v1/audit/analytics/timeline` over the per-tenant
@@ -115,6 +107,14 @@ pub mod billing_ingest;
 /// bytes dedup cross-tenant through the 2-level [`crate::adapter_cache`] moat.
 /// Env-gated mount in [`build_with_factory`].
 pub mod brew;
+/// Operator-gated BYOK **activation** control plane
+/// (`POST /v1/admin/byok/{activate,deactivate}`): the WRITE authority that flips
+/// a tenant's `tenant_byok_config.state` to `active` (engaging the r2_s3
+/// at-rest encryption gate) + persists its CMK-wrapped Tcs, plus the crypto-shred
+/// kill switch. Internal-auth gated exactly like `admin`. Closes the H5 gap
+/// left by migration 0081 (the read model + engagement gate were inert with no
+/// writer).
+pub mod byok_admin;
 /// sccache HTTP build-cache surface: `/cargo/<tenant>/<key>` (FINDING
 /// Gap 1). Mounts `corelink_adapter_host::cargo` with a D1-backed PAT
 /// resolver (Option B) + per-operation scope gate. Mounted only when
@@ -144,13 +144,31 @@ pub mod customer;
 pub mod customer_export;
 /// Customer Runners read surface (BE-10): tenant-scoped entitlement/allowlist/runs.
 pub mod customer_runners;
-/// Customer Workspaces surface (BE-11): tenant-scoped snapshot CRUD + pin.
-pub mod workspaces;
+/// DPA click-through acceptance route: `POST /v1/onboarding/dpa-accept`.
+/// Writes the durable `dpa_acceptances` row (migration `0038`) that the
+/// tier-select money-path gate (`is_dpa_accepted`) reads — same internal-auth +
+/// verified-tenant contract as `tier_select`. Drives the real
+/// `corelink-dpa-acceptance` crypto/schema primitives (RS256 receipt, IP hash,
+/// locale enum) + a real RS256 receipt; gated on `DPA_RECEIPT_SIGNING_KEY`.
+pub mod dpa_accept;
+/// Production D1-over-HTTP [`dpa_accept::DpaAcceptStore`] adapter: the durable
+/// `dpa_acceptances` reader/writer (mirrors `tier_select_store`).
+pub mod dpa_accept_store;
 /// Internal DSR erasure route (WI-S11-008): `POST /_internal/dsr/erase`.
 /// Reachable only from the Cloudflare DO; gated by the same
 /// `X-Corelink-Internal-Auth` shared secret. Drives the 12-backend erasure
 /// orchestrator (Wave 0: in-memory no-op adapters; Wave 1 wires real transports).
 pub mod dsr;
+/// Read-side FAILOVER Tower layer + a REAL `HealthProbe` (WI-MULTI-REGION-V1
+/// prod-wiring). A router `layer` — mirror of `residency_guard` — that drives
+/// `corelink-failover-router`'s decision core with a live-traffic
+/// [`failover::RollingMetricsHealthProbe`]. When THIS container's region is
+/// degraded (sustained multi-signal outage) it fail-CLOSED blocks writes (503
+/// `failover_readonly`) and stamps a sibling read-region hint header so the edge
+/// Worker re-routes reads. Inert (pass-through) in a healthy region, in dev/CI,
+/// and on APAC colos with no sibling in the 4-macro graph. Wired as one
+/// `.layer(...)` line in [`build_with_factory`].
+pub mod failover;
 /// Internal PAT mint route (Stream-5): `POST /_internal/pat/mint`.
 /// Only reachable from the Cloudflare Durable Object via
 /// `container.getTcpPort(50051)`. Gated by the `X-Corelink-Internal-Auth`
@@ -158,15 +176,6 @@ pub mod dsr;
 /// `corelink_pat::mint::mint(...)` and returns the hash + plaintext
 /// for the signup-worker to write to D1 and Clerk session metadata.
 pub mod internal_pat;
-/// Read-only internal tenant-quota lookup:
-/// `GET /_internal/tenant/{tenant_id}/quota`. Returns the persisted
-/// `tenant_quota` row (monthly `$`-ceiling / accrued / cycle anchor) plus a
-/// derived `unmetered` bit. Internal-auth gated (constant-time; dedicated
-/// `CORELINK_QUOTA_READ_AUTH_KEY` → shared-key fallback via
-/// [`admin::resolve_internal_auth_key`]); 404 `no_quota_row` when the tenant
-/// has no row, 503 fail-CLOSED on a D1 fault. Env-gated mount in [`crate::main`]
-/// (unmounted when the key or D1 is absent) — mirrors [`audit_drain`].
-pub mod tenant_quota_read;
 /// npm registry cache surface (Phase B): `/npm/<tenant>/<rest>` nests the
 /// `corelink_adapter_host::npm` read-through `registry.npmjs.org` mirror.
 /// Option-B PAT re-verify via the shared [`crate::adapter_pat`] verifier;
@@ -196,25 +205,6 @@ pub mod pip;
 /// UNAUTHENTICATED by design (an erasure proof is publicly verifiable) — D1-read
 /// only, mounted OUTSIDE the ratelimit/residency/auth layers in [`crate::main`].
 pub mod public_attestation;
-/// Data-residency guard middleware (backlog #29 — Schrems II leak). A router
-/// `layer` that runs BEFORE any handler: it reads the trusted
-/// `x-corelink-primary-region` macro (set by the edge Worker), maps it to a colo
-/// via the FROZEN [`crate::storage::region_map`], and rejects with 409
-/// `residency_violation` if it does not match THIS container's own
-/// `R2_CAS_REGION` — defence-in-depth against a mis-bound regional Worker
-/// landing an EU tenant's bytes in a US container. Disjoint from cas.rs/ac.rs
-/// (no handler-body edits); wired as one `.layer(...)` line in [`build_with_factory`].
-pub mod residency;
-/// Read-side FAILOVER Tower layer + a REAL `HealthProbe` (WI-MULTI-REGION-V1
-/// prod-wiring). A router `layer` — mirror of `residency_guard` — that drives
-/// `corelink-failover-router`'s decision core with a live-traffic
-/// [`failover::RollingMetricsHealthProbe`]. When THIS container's region is
-/// degraded (sustained multi-signal outage) it fail-CLOSED blocks writes (503
-/// `failover_readonly`) and stamps a sibling read-region hint header so the edge
-/// Worker re-routes reads. Inert (pass-through) in a healthy region, in dev/CI,
-/// and on APAC colos with no sibling in the 4-macro graph. Wired as one
-/// `.layer(...)` line in [`build_with_factory`].
-pub mod failover;
 /// Per-tenant request-rate token-bucket middleware (audit #14/#16). A router
 /// `layer` wrapping the already-built `corelink-ratelimit` engine: it charges
 /// one token per request against the DO-injected `x-corelink-tenant-id`
@@ -225,27 +215,35 @@ pub mod failover;
 /// AFTER `build_with_factory` returns). Fail-OPEN on absent tenant + on the
 /// limiter's own internal fault (logged); see module docs.
 pub mod ratelimit_layer;
+/// Data-residency guard middleware (backlog #29 — Schrems II leak). A router
+/// `layer` that runs BEFORE any handler: it reads the trusted
+/// `x-corelink-primary-region` macro (set by the edge Worker), maps it to a colo
+/// via the FROZEN [`crate::storage::region_map`], and rejects with 409
+/// `residency_violation` if it does not match THIS container's own
+/// `R2_CAS_REGION` — defence-in-depth against a mis-bound regional Worker
+/// landing an EU tenant's bytes in a US container. Disjoint from cas.rs/ac.rs
+/// (no handler-body edits); wired as one `.layer(...)` line in [`build_with_factory`].
+pub mod residency;
 /// Pilot signup route (wave-29 stream-1; closes DEBT-027 engineering-side).
 /// Surfaces `POST /v1/signup/pilot/{token}` over an HMAC-SHA256
 /// signed token + per-IP rate-limit + fail-CLOSED audit emit. See
 /// `specs/_audits/sealed/2026-05-16-signup-corelink-dev-backend.md`.
 pub mod signup;
+/// Read-only internal tenant-quota lookup:
+/// `GET /_internal/tenant/{tenant_id}/quota`. Returns the persisted
+/// `tenant_quota` row (monthly `$`-ceiling / accrued / cycle anchor) plus a
+/// derived `unmetered` bit. Internal-auth gated (constant-time; dedicated
+/// `CORELINK_QUOTA_READ_AUTH_KEY` → shared-key fallback via
+/// [`admin::resolve_internal_auth_key`]); 404 `no_quota_row` when the tenant
+/// has no row, 503 fail-CLOSED on a D1 fault. Env-gated mount in [`crate::main`]
+/// (unmounted when the key or D1 is absent) — mirrors [`audit_drain`].
+pub mod tenant_quota_read;
 /// `POST /v1/onboarding/tier-select` — server-side Stripe Checkout
 /// Session creation for self-serve tier upgrades. Internal-auth gated
 /// (constant-time) + edge-verified `x-corelink-tenant-id` (fail-CLOSED);
 /// INV-ONBOARD-DPA-FIRST + durable 60s lock + hosted Stripe Checkout.
 /// WI-S19-004 production wiring.
 pub mod tier_select;
-/// DPA click-through acceptance route: `POST /v1/onboarding/dpa-accept`.
-/// Writes the durable `dpa_acceptances` row (migration `0038`) that the
-/// tier-select money-path gate (`is_dpa_accepted`) reads — same internal-auth +
-/// verified-tenant contract as `tier_select`. Drives the real
-/// `corelink-dpa-acceptance` crypto/schema primitives (RS256 receipt, IP hash,
-/// locale enum) + a real RS256 receipt; gated on `DPA_RECEIPT_SIGNING_KEY`.
-pub mod dpa_accept;
-/// Production D1-over-HTTP [`dpa_accept::DpaAcceptStore`] adapter: the durable
-/// `dpa_acceptances` reader/writer (mirrors `tier_select_store`).
-pub mod dpa_accept_store;
 /// Production [`tier_select::TierSelectAudit`] adapter (WP-C scaffold):
 /// fail-CLOSED audit-chain emit (mirrors `internal_pat` tracing-audit).
 pub mod tier_select_audit;
@@ -273,6 +271,8 @@ pub mod turbo_v8;
 /// `-route-kind` headers and echoes them as JSON. Lets clients verify
 /// PAT wiring without exercising any data-plane (CAS/AC) surface.
 pub mod users;
+/// Customer Workspaces surface (BE-11): tenant-scoped snapshot CRUD + pin.
+pub mod workspaces;
 
 /// Per-route handle to the per-tenant monthly $-ceiling gate (ADR-0068;
 /// hugit-P2 WP-G1). Bundles the shared [`crate::tenant_quota::QuotaGuard`]

@@ -118,13 +118,7 @@ fn invite_accepted_or_not_implemented(cfg: &Config, client: &Client) -> JourneyR
         .send()
     {
         Ok(r) => r,
-        Err(e) => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("POST {url}: {e}"),
-            )
-        }
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {url}: {e}")),
     };
 
     let status = resp.status().as_u16();
@@ -230,8 +224,7 @@ fn invite_accepted_or_not_implemented(cfg: &Config, client: &Client) -> JourneyR
 /// 404 would mean the route is absent, not that the gate fired). The gate is
 /// on the Worker-trusted `x-corelink-scope` header, not on the PAT kind itself.
 fn non_admin_scope_cannot_invite_privileged_role(cfg: &Config, client: &Client) -> JourneyResult {
-    let name =
-        "Team: read-only PAT (cas:r scope) inviting 'Admin' role → 403 gate-denied";
+    let name = "Team: read-only PAT (cas:r scope) inviting 'Admin' role → 403 gate-denied";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
@@ -256,13 +249,7 @@ fn non_admin_scope_cannot_invite_privileged_role(cfg: &Config, client: &Client) 
         .send()
     {
         Ok(r) => r,
-        Err(e) => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                format!("POST {url}: {e}"),
-            )
-        }
+        Err(e) => return JourneyResult::fail(name, ms(start), format!("POST {url}: {e}")),
     };
 
     let status = resp.status().as_u16();
@@ -295,11 +282,7 @@ fn team_list_responds(cfg: &Config, client: &Client) -> JourneyResult {
     };
 
     let url = url_customer(cfg, "team");
-    let resp = match client
-        .get(&url)
-        .header(AUTHORIZATION, bearer(token))
-        .send()
-    {
+    let resp = match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
     };
@@ -396,12 +379,19 @@ fn second_seat_scoped_access_gated_oob(cfg: &Config, client: &Client) -> Journey
         );
     };
     let Some(admin) = cfg.token(TokenKind::Admin) else {
-        return JourneyResult::gated(name, "CORELINK_E2E_PAT_ADMIN not set — needed to list the team");
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_PAT_ADMIN not set — needed to list the team",
+        );
     };
 
     // (1) The member appears in the admin's team list (the seat is registered).
     let list_url = url_customer(cfg, "team");
-    let listed = match client.get(&list_url).header(AUTHORIZATION, bearer(admin)).send() {
+    let listed = match client
+        .get(&list_url)
+        .header(AUTHORIZATION, bearer(admin))
+        .send()
+    {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {list_url}: {e}")),
     };
@@ -409,7 +399,10 @@ fn second_seat_scoped_access_gated_oob(cfg: &Config, client: &Client) -> Journey
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("GET team got {} (expected 200 to verify the seat)", listed.status()),
+            format!(
+                "GET team got {} (expected 200 to verify the seat)",
+                listed.status()
+            ),
         );
     }
     let body: serde_json::Value = match listed.bytes() {
@@ -418,7 +411,10 @@ fn second_seat_scoped_access_gated_oob(cfg: &Config, client: &Client) -> Journey
     };
     let member_listed = body["members"]
         .as_array()
-        .map(|ms_| ms_.iter().any(|m| m["user_id"].as_str() == Some(member_uid)))
+        .map(|ms_| {
+            ms_.iter()
+                .any(|m| m["user_id"].as_str() == Some(member_uid))
+        })
         .unwrap_or(false);
     if !member_listed {
         return JourneyResult::fail(
@@ -447,7 +443,9 @@ fn second_seat_scoped_access_gated_oob(cfg: &Config, client: &Client) -> Journey
         other => JourneyResult::fail(
             name,
             ms(start),
-            format!("second-seat member PAT CAS write got {other} (expected 200/201 scoped access)"),
+            format!(
+                "second-seat member PAT CAS write got {other} (expected 200/201 scoped access)"
+            ),
         ),
     }
 }
@@ -480,7 +478,10 @@ fn seat_removal_gated_no_route(cfg: &Config, client: &Client) -> JourneyResult {
         );
     };
     let Some(admin) = cfg.token(TokenKind::Admin) else {
-        return JourneyResult::gated(name, "CORELINK_E2E_PAT_ADMIN not set — needed to remove a seat");
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_PAT_ADMIN not set — needed to remove a seat",
+        );
     };
 
     // Precondition: the member currently HAS data-plane access (so a later deny
@@ -496,7 +497,9 @@ fn seat_removal_gated_no_route(cfg: &Config, client: &Client) -> JourneyResult {
         .send()
     {
         Ok(r) => r.status().as_u16(),
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("pre-probe {probe_url}: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("pre-probe {probe_url}: {e}"))
+        }
     };
     if !matches!(pre, 200 | 201) {
         return JourneyResult::gated(
@@ -520,7 +523,9 @@ fn seat_removal_gated_no_route(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("seat-removal DELETE got {dstatus} (expected 200; 403 ⇒ admin lacked write scope)"),
+            format!(
+                "seat-removal DELETE got {dstatus} (expected 200; 403 ⇒ admin lacked write scope)"
+            ),
         );
     }
 
@@ -539,7 +544,9 @@ fn seat_removal_gated_no_route(cfg: &Config, client: &Client) -> JourneyResult {
             .send()
         {
             Ok(r) => r.status().as_u16(),
-            Err(e) => return JourneyResult::fail(name, ms(start), format!("post-probe {url}: {e}")),
+            Err(e) => {
+                return JourneyResult::fail(name, ms(start), format!("post-probe {url}: {e}"))
+            }
         };
         if expect_denied("removed-member CAS write", status).is_ok() {
             return JourneyResult::pass(name, ms(start));

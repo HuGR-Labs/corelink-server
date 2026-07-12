@@ -265,7 +265,11 @@ async fn invalid_key_format_returns_400() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 400, "over-length (malformed) key must return 400");
+    assert_eq!(
+        resp.status(),
+        400,
+        "over-length (malformed) key must return 400"
+    );
 
     // Lock in the sccache-compat contract: a non-hex CONTROL key (the
     // `.sccache_check` startup probe) is ACCEPTED — 404 on a miss, NEVER 400. A

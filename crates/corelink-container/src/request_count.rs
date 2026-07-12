@@ -472,7 +472,13 @@ impl CachedTierResolver {
                 }
             }
         }
-        let _ = cache.insert(tenant_id.to_owned(), CachedTier { tier, fetched_at_ms: now_ms });
+        let _ = cache.insert(
+            tenant_id.to_owned(),
+            CachedTier {
+                tier,
+                fetched_at_ms: now_ms,
+            },
+        );
     }
 
     /// The per-tenant single-flight lock, created on demand (bounded).
@@ -735,7 +741,11 @@ mod tests {
         inner: Arc<dyn TierResolver>,
         clock: &Arc<InMemoryFakeWallClock>,
     ) -> CachedTierResolver {
-        CachedTierResolver::new(inner, Arc::clone(clock) as Arc<dyn WallClock>, DEFAULT_TIER_CACHE_TTL_MS)
+        CachedTierResolver::new(
+            inner,
+            Arc::clone(clock) as Arc<dyn WallClock>,
+            DEFAULT_TIER_CACHE_TTL_MS,
+        )
     }
 
     #[tokio::test]
@@ -743,13 +753,21 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let r = cached(
-            Arc::new(CountingTier { tier: "free", calls: Arc::clone(&calls), delay_ms: 0 }),
+            Arc::new(CountingTier {
+                tier: "free",
+                calls: Arc::clone(&calls),
+                delay_ms: 0,
+            }),
             &clock,
         );
         assert_eq!(r.tier("t1").await.unwrap(), "free");
         assert_eq!(r.tier("t1").await.unwrap(), "free");
         assert_eq!(r.tier("t1").await.unwrap(), "free");
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "warm ops must not re-read D1");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "warm ops must not re-read D1"
+        );
     }
 
     #[tokio::test]
@@ -758,7 +776,11 @@ mod tests {
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let r = Arc::new(cached(
             // A delay makes the burst genuinely overlap on the single-flight lock.
-            Arc::new(CountingTier { tier: "pro", calls: Arc::clone(&calls), delay_ms: 30 }),
+            Arc::new(CountingTier {
+                tier: "pro",
+                calls: Arc::clone(&calls),
+                delay_ms: 30,
+            }),
             &clock,
         ));
         let mut set = tokio::task::JoinSet::new();
@@ -781,15 +803,25 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let r = cached(
-            Arc::new(CountingTier { tier: "free", calls: Arc::clone(&calls), delay_ms: 0 }),
+            Arc::new(CountingTier {
+                tier: "free",
+                calls: Arc::clone(&calls),
+                delay_ms: 0,
+            }),
             &clock,
         );
         let _ = r.tier("t1").await.unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         // Still within TTL → cached.
-        clock.advance(Duration::from_millis(u64::try_from(DEFAULT_TIER_CACHE_TTL_MS).unwrap() - 1));
+        clock.advance(Duration::from_millis(
+            u64::try_from(DEFAULT_TIER_CACHE_TTL_MS).unwrap() - 1,
+        ));
         let _ = r.tier("t1").await.unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 1, "pre-TTL op is still cached");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "pre-TTL op is still cached"
+        );
         // Cross the TTL → re-resolve.
         clock.advance(Duration::from_millis(2));
         let _ = r.tier("t1").await.unwrap();
@@ -804,7 +836,11 @@ mod tests {
         assert!(r.tier("t1").await.is_err());
         assert!(r.tier("t1").await.is_err());
         // Each op re-tried the inner (nothing cached) → a transient fault self-heals.
-        assert_eq!(calls.load(Ordering::SeqCst), 2, "errors must NOT be cached (fail-open)");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "errors must NOT be cached (fail-open)"
+        );
     }
 
     #[tokio::test]
@@ -812,12 +848,20 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let clock = Arc::new(InMemoryFakeWallClock::at_unix_ms(T0));
         let r = cached(
-            Arc::new(CountingTier { tier: "free", calls: Arc::clone(&calls), delay_ms: 0 }),
+            Arc::new(CountingTier {
+                tier: "free",
+                calls: Arc::clone(&calls),
+                delay_ms: 0,
+            }),
             &clock,
         );
         let _ = r.tier("t1").await.unwrap();
         let _ = r.tier("t2").await.unwrap();
         let _ = r.tier("t1").await.unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 2, "one resolve per distinct tenant");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "one resolve per distinct tenant"
+        );
     }
 }

@@ -92,7 +92,13 @@ impl Delta {
 pub trait UsageDailySink: Send + Sync + std::fmt::Debug {
     /// Additively apply one `(tenant, day)` delta. `now_ms` stamps
     /// `updated_at_ms`.
-    async fn upsert(&self, tenant: &str, day: &str, delta: Delta, now_ms: i64) -> Result<(), String>;
+    async fn upsert(
+        &self,
+        tenant: &str,
+        day: &str,
+        delta: Delta,
+        now_ms: i64,
+    ) -> Result<(), String>;
 }
 
 /// The in-process meter. Cheap to `record`; flushed in the background.
@@ -135,9 +141,13 @@ impl UsageMeter {
                     .map_err(|e| tracing::warn!(error = %e, "usage-meter: D1 client init failed"))
                     .ok()
             })
-            .map(|client| Arc::new(D1UsageDailySink::new(Arc::new(client))) as Arc<dyn UsageDailySink>);
+            .map(|client| {
+                Arc::new(D1UsageDailySink::new(Arc::new(client))) as Arc<dyn UsageDailySink>
+            });
         if sink.is_none() {
-            tracing::warn!("StorageEnv unset/invalid; usage-meter INERT (dev/CI — record is a no-op)");
+            tracing::warn!(
+                "StorageEnv unset/invalid; usage-meter INERT (dev/CI — record is a no-op)"
+            );
         }
         Arc::new(Self::new(sink, || {
             i64::try_from(
@@ -234,7 +244,13 @@ impl D1UsageDailySink {
 
 #[async_trait]
 impl UsageDailySink for D1UsageDailySink {
-    async fn upsert(&self, tenant: &str, day: &str, delta: Delta, now_ms: i64) -> Result<(), String> {
+    async fn upsert(
+        &self,
+        tenant: &str,
+        day: &str,
+        delta: Delta,
+        now_ms: i64,
+    ) -> Result<(), String> {
         // Saturating i64 casts: the counters are display telemetry and can never
         // realistically overflow i64, but never panic on the request-adjacent path.
         let reads = i64::try_from(delta.reads).unwrap_or(i64::MAX);
@@ -311,7 +327,13 @@ mod tests {
 
     #[async_trait]
     impl UsageDailySink for RecordingSink {
-        async fn upsert(&self, tenant: &str, day: &str, delta: Delta, _now_ms: i64) -> Result<(), String> {
+        async fn upsert(
+            &self,
+            tenant: &str,
+            day: &str,
+            delta: Delta,
+            _now_ms: i64,
+        ) -> Result<(), String> {
             {
                 let mut f = self.fail_next.lock().unwrap();
                 if *f > 0 {
@@ -319,7 +341,10 @@ mod tests {
                     return Err("transient D1 fault".to_owned());
                 }
             }
-            self.calls.lock().unwrap().push((tenant.to_owned(), day.to_owned(), delta));
+            self.calls
+                .lock()
+                .unwrap()
+                .push((tenant.to_owned(), day.to_owned(), delta));
             Ok(())
         }
     }
@@ -378,7 +403,11 @@ mod tests {
         meter.record("t1", UsageEvent::ReadHit);
         meter.flush().await;
         meter.flush().await;
-        assert_eq!(sink.calls.lock().unwrap().len(), 1, "drained — second flush upserts nothing");
+        assert_eq!(
+            sink.calls.lock().unwrap().len(),
+            1,
+            "drained — second flush upserts nothing"
+        );
     }
 
     #[tokio::test]
@@ -401,8 +430,8 @@ mod tests {
         let meter = UsageMeter::new(None, fixed_clock);
         meter.record("t1", UsageEvent::ReadHit); // no-op
         meter.flush().await; // no-op (no sink)
-        // Nothing to assert beyond "does not panic / does not accumulate": a
-        // record on an inert meter must not grow the map.
+                             // Nothing to assert beyond "does not panic / does not accumulate": a
+                             // record on an inert meter must not grow the map.
         assert!(meter.buckets.lock().unwrap().is_empty());
     }
 

@@ -72,7 +72,8 @@ pub struct ByokAdminRouteState {
 
 impl core::fmt::Debug for ByokAdminRouteState {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("ByokAdminRouteState").finish_non_exhaustive()
+        f.debug_struct("ByokAdminRouteState")
+            .finish_non_exhaustive()
     }
 }
 
@@ -193,7 +194,9 @@ impl ByokActivateBody {
 /// Map a [`ByokWriteError`] to the canonical HTTP response.
 fn map_write_err(e: &ByokWriteError) -> axum::response::Response {
     match e {
-        ByokWriteError::Invalid(_) => (StatusCode::BAD_REQUEST, "invalid_activation").into_response(),
+        ByokWriteError::Invalid(_) => {
+            (StatusCode::BAD_REQUEST, "invalid_activation").into_response()
+        }
         ByokWriteError::IllegalTransition { .. } => {
             (StatusCode::CONFLICT, "illegal_transition").into_response()
         }
@@ -394,7 +397,9 @@ mod tests {
         };
         // Good base64 for the enum-error cases so the enum is what trips.
         assert_eq!(
-            base("nonsense", None, "AQID").into_activation().unwrap_err(),
+            base("nonsense", None, "AQID")
+                .into_activation()
+                .unwrap_err(),
             "invalid_mode"
         );
         assert_eq!(

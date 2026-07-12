@@ -202,7 +202,11 @@ async fn manifest_digest_reference_confusion_rejected() {
     let real = OciDigest::compute(OciDigestAlgo::Sha256, &body).expect("compute");
     // A digest-form reference that is well-formed but does NOT match the body.
     let wrong = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
-    assert_ne!(wrong, real.to_wire(), "test fixture must use a mismatching digest");
+    assert_ne!(
+        wrong,
+        real.to_wire(),
+        "test fixture must use a mismatching digest"
+    );
 
     let req = Request::builder()
         .method(Method::PUT)

@@ -14,9 +14,7 @@
     reason = "example binary prints to stdout"
 )]
 
-use corelink_transparency_log::{
-    InMemoryRekor, SignedEntry, WitnessOutcome, witness_or_degrade,
-};
+use corelink_transparency_log::{witness_or_degrade, InMemoryRekor, SignedEntry, WitnessOutcome};
 
 #[tokio::main]
 async fn main() {

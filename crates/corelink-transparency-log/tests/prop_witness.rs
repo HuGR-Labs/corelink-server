@@ -7,9 +7,7 @@
     reason = "property tests may use unwrap/expect/panic"
 )]
 
-use corelink_transparency_log::{
-    InMemoryRekor, SignedEntry, WitnessOutcome, witness_or_degrade,
-};
+use corelink_transparency_log::{witness_or_degrade, InMemoryRekor, SignedEntry, WitnessOutcome};
 use proptest::prelude::*;
 
 fn entry_strategy() -> impl Strategy<Value = SignedEntry> {
@@ -18,9 +16,7 @@ fn entry_strategy() -> impl Strategy<Value = SignedEntry> {
         prop::collection::vec(any::<u8>(), 1..128),
         prop::collection::vec(any::<u8>(), 1..64),
     )
-        .prop_map(|(payload, pubkey, sig)| {
-            SignedEntry::new(payload, "ed25519", pubkey, sig)
-        })
+        .prop_map(|(payload, pubkey, sig)| SignedEntry::new(payload, "ed25519", pubkey, sig))
 }
 
 proptest! {

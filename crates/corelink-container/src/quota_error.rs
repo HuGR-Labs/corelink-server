@@ -107,9 +107,15 @@ mod tests {
             Some("application/json"),
         );
         let json = body_json(resp).await;
-        assert_eq!(json.get("error").and_then(|v| v.as_str()), Some("quota_exceeded"));
+        assert_eq!(
+            json.get("error").and_then(|v| v.as_str()),
+            Some("quota_exceeded")
+        );
         assert_eq!(json.get("retriable").and_then(|v| v.as_bool()), Some(false));
-        assert_eq!(json.get("docs_url").and_then(|v| v.as_str()), Some(DOCS_URL));
+        assert_eq!(
+            json.get("docs_url").and_then(|v| v.as_str()),
+            Some(DOCS_URL)
+        );
         assert!(
             json.get("message")
                 .and_then(|v| v.as_str())
@@ -129,7 +135,10 @@ mod tests {
             Some("application/json"),
         );
         let json = body_json(resp).await;
-        assert_eq!(json.get("error").and_then(|v| v.as_str()), Some("quota_unavailable"));
+        assert_eq!(
+            json.get("error").and_then(|v| v.as_str()),
+            Some("quota_unavailable")
+        );
         assert_eq!(
             json.get("reason").and_then(|v| v.as_str()),
             Some("quota store unavailable"),

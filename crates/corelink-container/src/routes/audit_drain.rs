@@ -143,7 +143,10 @@ impl std::fmt::Debug for AuditDrainState {
         f.debug_struct("AuditDrainState")
             .field("internal_auth_key", &"<redacted>")
             .field("d1", &"[D1HttpClient]")
-            .field("signing_seed", &self.signing_seed.as_ref().map(|_| "<redacted>"))
+            .field(
+                "signing_seed",
+                &self.signing_seed.as_ref().map(|_| "<redacted>"),
+            )
             .field("signing_key_id", &self.signing_key_id)
             .field("trust_unsigned_resume", &self.trust_unsigned_resume)
             .finish()
@@ -267,7 +270,8 @@ fn verify_head(
     let Ok(sig_arr): Result<[u8; 64], _> = sig_bytes.try_into() else {
         return false;
     };
-    vk.verify(&canonical, &Signature::from_bytes(&sig_arr)).is_ok()
+    vk.verify(&canonical, &Signature::from_bytes(&sig_arr))
+        .is_ok()
 }
 
 /// Constant-time internal-auth check. Mirrors
@@ -432,8 +436,8 @@ fn seal_rows(
     let mut seq = start_seq;
     let mut out = Vec::with_capacity(rows.len());
     for (id, payload) in rows {
-        let jcs = serde_jcs::to_vec(payload)
-            .map_err(|e| format!("JCS canonicalize row {id}: {e}"))?;
+        let jcs =
+            serde_jcs::to_vec(payload).map_err(|e| format!("JCS canonicalize row {id}: {e}"))?;
         // `chain_hash = BLAKE3(prev_hash || canonical_jcs)` over the EXACT bytes
         // we persist as `canonical_jcs` — the verifier re-hashes these.
         let chain = link_chain_hash_from_canonical(&prev, &jcs);
@@ -713,7 +717,10 @@ async fn write_seal(d1: &D1HttpClient, row: &SealedRow, now: i64) -> Result<(), 
 /// Uses `RETURNING` to detect whether the guarded write actually matched: a
 /// guarded `UPDATE` (or an `INSERT OR IGNORE`) that hits no row / a conflict
 /// returns zero rows ⇒ drift.
-#[allow(clippy::too_many_arguments, reason = "explicit, no shared config struct")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "explicit, no shared config struct"
+)]
 async fn advance_head_cas(
     d1: &D1HttpClient,
     tenant_id: &str,
@@ -734,7 +741,8 @@ async fn advance_head_cas(
         .transpose()?;
     let rows = match expected {
         Some(cp) => {
-            let exp_seq = i64::try_from(cp.next_sequence).map_err(|_| "next_sequence exceeds i64")?;
+            let exp_seq =
+                i64::try_from(cp.next_sequence).map_err(|_| "next_sequence exceeds i64")?;
             d1.query(
                 "UPDATE audit_chain_head \
                  SET head_hash = ?1, next_sequence = ?2, updated_at = ?3, \
@@ -786,7 +794,10 @@ async fn advance_head_cas(
 }
 
 /// Drain a single `(tenant_id, region)` partition.
-#[allow(clippy::too_many_arguments, reason = "explicit, no shared config struct")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "explicit, no shared config struct"
+)]
 async fn drain_partition(
     d1: &D1HttpClient,
     tenant_id: &str,
@@ -868,7 +879,14 @@ async fn drain_partition(
     let new_head_hex = new_head.to_hex();
     let (signature, signed_at_ms, key_id_col) = match signing_seed {
         Some(seed) => {
-            let sig = sign_head(seed, signing_key_id, tenant_id, region, &new_head_hex, new_seq)?;
+            let sig = sign_head(
+                seed,
+                signing_key_id,
+                tenant_id,
+                region,
+                &new_head_hex,
+                new_seq,
+            )?;
             (Some(sig), Some(now), Some(signing_key_id))
         }
         None => (None, None, None),
@@ -985,8 +1003,7 @@ mod tests {
     #[test]
     fn fresh_partition_seals_from_genesis_monotonic_and_linked() {
         let input = rows(&[json!({"a": 1}), json!({"b": 2}), json!({"c": 3})]);
-        let (sealed, head, next_seq) =
-            seal_rows(ChainHash::genesis(), 0, &input).unwrap();
+        let (sealed, head, next_seq) = seal_rows(ChainHash::genesis(), 0, &input).unwrap();
 
         assert_eq!(sealed.len(), 3);
         // Monotonic sequence from genesis.
@@ -1046,7 +1063,8 @@ mod tests {
         let r1 = json!({"n": 1});
 
         // Single drain over both.
-        let combined = seal_rows(ChainHash::genesis(), 0, &rows(&[r0.clone(), r1.clone()])).unwrap();
+        let combined =
+            seal_rows(ChainHash::genesis(), 0, &rows(&[r0.clone(), r1.clone()])).unwrap();
 
         // Drain A: just r0 from genesis.
         let a = seal_rows(ChainHash::genesis(), 0, &rows(std::slice::from_ref(&r0))).unwrap();
@@ -1205,9 +1223,25 @@ mod tests {
     fn tampered_tuple_fields_fail_verification() {
         let sig = sign_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42).unwrap();
         // Rewound sequence.
-        assert!(!verify_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 41, &sig));
+        assert!(!verify_head(
+            &SEED_A,
+            KID,
+            TENANT,
+            REGION,
+            &head_hex(),
+            41,
+            &sig
+        ));
         // Different region.
-        assert!(!verify_head(&SEED_A, KID, TENANT, "enam", &head_hex(), 42, &sig));
+        assert!(!verify_head(
+            &SEED_A,
+            KID,
+            TENANT,
+            "enam",
+            &head_hex(),
+            42,
+            &sig
+        ));
         // Different tenant.
         assert!(!verify_head(
             &SEED_A,
@@ -1225,15 +1259,39 @@ mod tests {
     #[test]
     fn wrong_seed_fails_verification() {
         let sig = sign_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42).unwrap();
-        assert!(!verify_head(&SEED_B, KID, TENANT, REGION, &head_hex(), 42, &sig));
+        assert!(!verify_head(
+            &SEED_B,
+            KID,
+            TENANT,
+            REGION,
+            &head_hex(),
+            42,
+            &sig
+        ));
     }
 
     /// Malformed signature material is rejected (treated as tamper / fail-CLOSED).
     #[test]
     fn malformed_signature_fails_verification() {
-        assert!(!verify_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42, "not-base64!!!"));
+        assert!(!verify_head(
+            &SEED_A,
+            KID,
+            TENANT,
+            REGION,
+            &head_hex(),
+            42,
+            "not-base64!!!"
+        ));
         let short = base64::engine::general_purpose::STANDARD.encode([0u8; 32]);
-        assert!(!verify_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 42, &short));
+        assert!(!verify_head(
+            &SEED_A,
+            KID,
+            TENANT,
+            REGION,
+            &head_hex(),
+            42,
+            &short
+        ));
     }
 
     /// Resume re-verifies: a genuine signed checkpoint under the current key id →
@@ -1318,7 +1376,15 @@ mod tests {
     fn legacy_head_gets_signed_on_next_advance() {
         // Simulate the advance signing the new head computed from the legacy state.
         let sig = sign_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 10).unwrap();
-        assert!(verify_head(&SEED_A, KID, TENANT, REGION, &head_hex(), 10, &sig));
+        assert!(verify_head(
+            &SEED_A,
+            KID,
+            TENANT,
+            REGION,
+            &head_hex(),
+            10,
+            &sig
+        ));
         // And a checkpoint carrying that fresh signature now Verifies on resume.
         let cp = signed_checkpoint(&SEED_A, KID, &head_hex(), 10);
         assert_eq!(
@@ -1383,8 +1449,24 @@ mod tests {
     #[test]
     fn macro_region_still_signs_and_verifies() {
         let sig = sign_head(&SEED_A, KID, TENANT, "apac", &head_hex(), 5).unwrap();
-        assert!(verify_head(&SEED_A, KID, TENANT, "apac", &head_hex(), 5, &sig));
+        assert!(verify_head(
+            &SEED_A,
+            KID,
+            TENANT,
+            "apac",
+            &head_hex(),
+            5,
+            &sig
+        ));
         // But it is region-bound: a different region must fail.
-        assert!(!verify_head(&SEED_A, KID, TENANT, "afr", &head_hex(), 5, &sig));
+        assert!(!verify_head(
+            &SEED_A,
+            KID,
+            TENANT,
+            "afr",
+            &head_hex(),
+            5,
+            &sig
+        ));
     }
 }

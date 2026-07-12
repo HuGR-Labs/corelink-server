@@ -55,7 +55,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-use super::admin::{internal_auth_ok, internal_auth_key_from_env};
+use super::admin::{internal_auth_key_from_env, internal_auth_ok};
 use crate::customer_d1::ms_to_iso8601;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -528,7 +528,10 @@ mod tests {
             let req = Request::builder()
                 .method(http::Method::GET)
                 .uri(format!("/v1/admin/tenants/t1/{card}"))
-                .header("x-corelink-internal-auth", "test-internal-auth-key-32-bytes-x")
+                .header(
+                    "x-corelink-internal-auth",
+                    "test-internal-auth-key-32-bytes-x",
+                )
                 .body(Body::empty())
                 .unwrap();
             let resp = app.clone().oneshot(req).await.unwrap();

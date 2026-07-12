@@ -360,14 +360,20 @@ mod tests {
         let one = |s: &str| vec![s.to_owned()];
         // Canonical self-serve inputs.
         assert_eq!(classify_requested_scopes(&one("cache:read")), Ok(ReadOnly));
-        assert_eq!(classify_requested_scopes(&one("cache:write")), Ok(ReadWrite));
+        assert_eq!(
+            classify_requested_scopes(&one("cache:write")),
+            Ok(ReadWrite)
+        );
         assert_eq!(classify_requested_scopes(&one("cas:rw")), Ok(ReadWrite));
         assert_eq!(classify_requested_scopes(&one("read-write")), Ok(ReadWrite));
         assert_eq!(classify_requested_scopes(&[]), Ok(ReadOnly)); // least privilege
         assert_eq!(classify_requested_scopes(&one("admin")), Ok(Admin));
         assert_eq!(classify_requested_scopes(&one("owner")), Ok(Admin));
         // Case-insensitive.
-        assert_eq!(classify_requested_scopes(&one("CACHE:WRITE")), Ok(ReadWrite));
+        assert_eq!(
+            classify_requested_scopes(&one("CACHE:WRITE")),
+            Ok(ReadWrite)
+        );
         // rt-nuclear #15 REGRESSION: substring-y tokens that the old persister
         // mapped to read-write via `s.contains("write")` must NOT silently become
         // a privilege — they are unrecognized ⇒ Err (fail-CLOSED), never ReadWrite.
@@ -584,8 +590,7 @@ mod tests {
     async fn runner_job_exact_key_restriction() {
         let key_a = "a".repeat(64);
         let key_b = "b".repeat(64);
-        let rj =
-            extract_runner_job(parts_with_runner_job(Some("1"), Some(&key_a))).await;
+        let rj = extract_runner_job(parts_with_runner_job(Some("1"), Some(&key_a))).await;
         assert!(rj.is_runner_job());
         assert!(rj.ac_key_allowed(&key_a), "the pinned key is allowed");
         assert!(!rj.ac_key_allowed(&key_b), "a different key is denied");

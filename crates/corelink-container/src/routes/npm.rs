@@ -253,13 +253,15 @@ impl TenantResolver for NpmPatResolver {
         pat_plaintext: &str,
     ) -> Result<ResolvedTenant, NpmAdapterError> {
         let (tenant_text, can_write) =
-            self.0.verify_capability(pat_plaintext).await.map_err(|e| match e {
-                VerifyError::InvalidPat => NpmAdapterError::Auth("invalid PAT".to_owned()),
-                VerifyError::Backend(m) => NpmAdapterError::Auth(format!("backend: {m}")),
-            })?;
-        let uuid = uuid::Uuid::parse_str(&tenant_text).map_err(|e| {
-            NpmAdapterError::Auth(format!("backend: tenant id not a UUID: {e}"))
-        })?;
+            self.0
+                .verify_capability(pat_plaintext)
+                .await
+                .map_err(|e| match e {
+                    VerifyError::InvalidPat => NpmAdapterError::Auth("invalid PAT".to_owned()),
+                    VerifyError::Backend(m) => NpmAdapterError::Auth(format!("backend: {m}")),
+                })?;
+        let uuid = uuid::Uuid::parse_str(&tenant_text)
+            .map_err(|e| NpmAdapterError::Auth(format!("backend: tenant id not a UUID: {e}")))?;
         Ok(ResolvedTenant {
             tenant_id: TenantId::from_uuid(uuid),
             can_write,
@@ -435,10 +437,7 @@ async fn npm_gate(
                         tracing::warn!(
                             "npm: write denied — PAT scope lacks write capability (F27)"
                         );
-                        return (
-                            StatusCode::FORBIDDEN,
-                            "PAT does not grant write capability",
-                        )
+                        return (StatusCode::FORBIDDEN, "PAT does not grant write capability")
                             .into_response();
                     }
                     Err(e) => {
@@ -800,7 +799,11 @@ mod tests {
         // charge (fail-OPEN), an unmetered $-ceiling bypass.
         let app = router_with_quota();
         let resp = app
-            .oneshot(get("/npm/t/lodash", Some("corelink_whatever"), Some(SCOPE_RW)))
+            .oneshot(get(
+                "/npm/t/lodash",
+                Some("corelink_whatever"),
+                Some(SCOPE_RW),
+            ))
             .await
             .unwrap();
         assert_eq!(

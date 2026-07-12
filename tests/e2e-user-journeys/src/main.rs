@@ -105,7 +105,9 @@ fn main() {
             }
             JourneyStatus::Pass => {}
         }
-        println!("├──────────────────────────────────────────────────────────────────────────────┤");
+        println!(
+            "├──────────────────────────────────────────────────────────────────────────────┤"
+        );
     }
 
     println!(
@@ -177,7 +179,8 @@ fn main() {
 fn print_header(cfg: &Config) {
     let set = |b: bool| if b { "SET" } else { "—" };
     use personas::Persona::*;
-    let tok = |p: personas::Persona| set(p.resolve(cfg).map(|r| r.token.is_some()).unwrap_or(false));
+    let tok =
+        |p: personas::Persona| set(p.resolve(cfg).map(|r| r.token.is_some()).unwrap_or(false));
 
     println!("╔══════════════════════════════════════════════════════════════════╗");
     println!("║       CoreLink E2E User-Journey Suite — Black-Box Ship Gate       ║");
@@ -189,8 +192,15 @@ fn print_header(cfg: &Config) {
     println!("║  PAT_RW:   {:<54} ║", tok(P1ReadWrite));
     println!("║  PAT_RO:   {:<54} ║", tok(P2ReadOnly));
     println!("║  PAT_ADMIN:{:<54} ║", tok(P3Admin));
-    println!("║  PAT_TenB: {:<54} ║", set(cfg.token(harness::TokenKind::TenantB).is_some()));
-    let slow = if cfg.run_slow { "ENABLED" } else { "GATED (CORELINK_E2E_RUN_SLOW=1)" };
+    println!(
+        "║  PAT_TenB: {:<54} ║",
+        set(cfg.token(harness::TokenKind::TenantB).is_some())
+    );
+    let slow = if cfg.run_slow {
+        "ENABLED"
+    } else {
+        "GATED (CORELINK_E2E_RUN_SLOW=1)"
+    };
     println!("║  Slow:     {slow:<54} ║");
     println!("╚══════════════════════════════════════════════════════════════════╝");
 }

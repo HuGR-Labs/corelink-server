@@ -5,7 +5,7 @@ description: "The Worker-trusted storage-cap header and the atomic byte-accounti
 source_files:
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-rate-headers/src/headers.rs"
-checkpoint_sha: "a5575900faa8c3b1684b2f822ef384f291c13c7a"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["tenancy", "quota", "storage", "byte-accounting", "rfc-9331", "fail-closed"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -55,7 +55,7 @@ crate is the customer-facing signal that an over-plan boundary (not a bug) cause
   the same (`reserve == release`, so `bytes_used` cannot drift once encryption engages). A non-BYOK /
   inactive tenant reserves the plaintext length, byte-identical to before; a config-read error fails
   CLOSED. The sizing decision is `byok_committed_len`
-  (`crates/corelink-container/src/byte_accounting.rs:601-630`).
+  (`crates/corelink-container/src/byte_accounting.rs:601-632`).
 - The over-quota rejection carries the `over_quota` arm of the RFC 9331 `X-Rate-Limit-Type` taxonomy
   (storage/bandwidth 100% boundary) (`crates/corelink-rate-headers/src/headers.rs:30-37`).
 - `counts_against_sli` classifies `over_quota` as legitimate over-plan (NOT counted against the SLO),

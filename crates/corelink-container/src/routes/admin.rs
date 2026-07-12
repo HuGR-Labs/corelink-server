@@ -1309,9 +1309,12 @@ mod tests {
         clear_key_env();
         std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
         std::env::set_var("CORELINK_ADMIN_AUTH_KEY", KEY_B);
-        let resolved = resolve_internal_auth_key("CORELINK_ADMIN_AUTH_KEY")
-            .expect("specific key present");
-        assert_eq!(&*resolved, KEY_B, "the specific key must win over the shared key");
+        let resolved =
+            resolve_internal_auth_key("CORELINK_ADMIN_AUTH_KEY").expect("specific key present");
+        assert_eq!(
+            &*resolved, KEY_B,
+            "the specific key must win over the shared key"
+        );
         clear_key_env();
     }
 
@@ -1323,8 +1326,8 @@ mod tests {
         clear_key_env();
         std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
         // No CORELINK_ERASE_AUTH_KEY set.
-        let resolved = resolve_internal_auth_key("CORELINK_ERASE_AUTH_KEY")
-            .expect("falls back to shared");
+        let resolved =
+            resolve_internal_auth_key("CORELINK_ERASE_AUTH_KEY").expect("falls back to shared");
         assert_eq!(&*resolved, KEY_A);
         clear_key_env();
     }
@@ -1378,7 +1381,10 @@ mod tests {
         let admin = internal_auth_key_from_env().expect("admin key");
         let erase = erase_auth_key_from_env().expect("erase key");
         assert_eq!(&*admin, KEY_B, "admin reads CORELINK_ADMIN_AUTH_KEY");
-        assert_eq!(&*erase, KEY_A, "erase falls back to shared (no specific set)");
+        assert_eq!(
+            &*erase, KEY_A,
+            "erase falls back to shared (no specific set)"
+        );
         // Now give erase its own key — the two diverge.
         std::env::set_var("CORELINK_ERASE_AUTH_KEY", KEY_A);
         std::env::set_var("CORELINK_ADMIN_AUTH_KEY", KEY_B);

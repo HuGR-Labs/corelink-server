@@ -143,7 +143,9 @@ fn cas_malformed_digest(cfg: &Config, client: &Client) -> JourneyResult {
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("HARDENING: GET malformed digest [{why}] → {st} (5xx on bad input). url={url}"),
+                    format!(
+                    "HARDENING: GET malformed digest [{why}] → {st} (5xx on bad input). url={url}"
+                ),
                 )
             }
             Ok(st) if !is_4xx(st) => {
@@ -255,7 +257,9 @@ fn cas_hash_mismatch_not_stored(cfg: &Config, client: &Client) -> JourneyResult 
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("SILENT-ACCEPT: hash-mismatch PUT → {put_status} (expected 400/422). url={url}"),
+            format!(
+                "SILENT-ACCEPT: hash-mismatch PUT → {put_status} (expected 400/422). url={url}"
+            ),
         );
     }
     // Expect specifically the hash-mismatch family: 400 or 422 (a deny like 403
@@ -286,7 +290,9 @@ fn cas_hash_mismatch_not_stored(cfg: &Config, client: &Client) -> JourneyResult 
                     return JourneyResult::fail(
                         name,
                         ms(start),
-                        format!("INTEGRITY: rejected mismatch bytes are nonetheless served. url={url}"),
+                        format!(
+                            "INTEGRITY: rejected mismatch bytes are nonetheless served. url={url}"
+                        ),
                     );
                 }
             }
@@ -392,7 +398,10 @@ fn cas_oversized_body(cfg: &Config, client: &Client) -> JourneyResult {
         // An 11 MiB body was ACCEPTED — the 10 MiB global `DefaultBodyLimit`
         // (main.rs:459) failed to reject a request over its cap. That is a real
         // regression, not a gate. (Best-effort cleanup: a DELETE of what we wrote.)
-        let _ = client.delete(&url).header(AUTHORIZATION, bearer(token)).send();
+        let _ = client
+            .delete(&url)
+            .header(AUTHORIZATION, bearer(token))
+            .send();
         return JourneyResult::fail(
             name,
             ms(start),
@@ -456,17 +465,24 @@ fn cas_wrong_content_type(cfg: &Config, client: &Client) -> JourneyResult {
                     return JourneyResult::fail(
                         name,
                         ms(start),
-                        "wrong-content-type PUT accepted but round-trip bytes differ (corruption)".to_string(),
+                        "wrong-content-type PUT accepted but round-trip bytes differ (corruption)"
+                            .to_string(),
                     );
                 }
-                let _ = client.delete(&url).header(AUTHORIZATION, bearer(token)).send();
+                let _ = client
+                    .delete(&url)
+                    .header(AUTHORIZATION, bearer(token))
+                    .send();
                 return JourneyResult::pass(name, ms(start));
             }
             Ok(r) => {
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("wrong-content-type PUT accepted ({st}) but GET → {}", r.status()),
+                    format!(
+                        "wrong-content-type PUT accepted ({st}) but GET → {}",
+                        r.status()
+                    ),
                 )
             }
             Err(e) => return JourneyResult::fail(name, ms(start), format!("GET {url}: {e}")),
@@ -587,7 +603,9 @@ fn bazel_bad_size_segment(cfg: &Config, client: &Client) -> JourneyResult {
         Ok(200) => JourneyResult::fail(
             name,
             ms(start),
-            format!("SILENT-ACCEPT: Bazel bad-size GET → 200 (served on a malformed path). url={url}"),
+            format!(
+                "SILENT-ACCEPT: Bazel bad-size GET → 200 (served on a malformed path). url={url}"
+            ),
         ),
         Ok(st) if is_4xx(st) => JourneyResult::pass(name, ms(start)),
         Ok(st) => JourneyResult::fail(
@@ -621,7 +639,9 @@ fn bazel_wrong_sha256(cfg: &Config, client: &Client) -> JourneyResult {
         Ok(200) => JourneyResult::fail(
             name,
             ms(start),
-            format!("SILENT-ACCEPT: Bazel bad-sha GET → 200 (served on a malformed hash). url={url}"),
+            format!(
+                "SILENT-ACCEPT: Bazel bad-sha GET → 200 (served on a malformed hash). url={url}"
+            ),
         ),
         Ok(st) if is_4xx(st) => JourneyResult::pass(name, ms(start)),
         Ok(st) => JourneyResult::fail(
@@ -722,7 +742,10 @@ fn http_malformed_authorization(cfg: &Config, client: &Client) -> JourneyResult 
         ("scheme + empty token", "Bearer "),
         ("garbage scheme", "Garbage zzz"),
         ("not a header at all", "????"),
-        ("Bearer + obviously-invalid token", "Bearer not-a-real-pat-xxxxxxxxxxxxx"),
+        (
+            "Bearer + obviously-invalid token",
+            "Bearer not-a-real-pat-xxxxxxxxxxxxx",
+        ),
     ];
 
     for (why, val) in bad_headers.iter() {
@@ -734,7 +757,9 @@ fn http_malformed_authorization(cfg: &Config, client: &Client) -> JourneyResult 
                     return JourneyResult::fail(
                         name,
                         ms(start),
-                        format!("HARDENING: malformed Authorization [{why}] → {st} (5xx). url={url}"),
+                        format!(
+                            "HARDENING: malformed Authorization [{why}] → {st} (5xx). url={url}"
+                        ),
                     );
                 }
                 if st == 200 {

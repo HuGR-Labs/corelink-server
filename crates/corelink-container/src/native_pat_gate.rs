@@ -249,7 +249,11 @@ impl NativePatGate {
             // we could not possession-check).
             Err(VerifyError::Backend(m)) => {
                 tracing::error!(error = %m, "native PAT gate: verifier backend error");
-                Err((StatusCode::SERVICE_UNAVAILABLE, "PAT verifier backend error").into_response())
+                Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "PAT verifier backend error",
+                )
+                    .into_response())
             }
         }
     }
@@ -381,7 +385,10 @@ pub(crate) mod testing {
         row: PatRow,
         key: Arc<PatSigningKey>,
     ) -> Arc<PatVerifier> {
-        Arc::new(PatVerifier::new(Arc::new(OneRowLookup::new(token_id, row)), key))
+        Arc::new(PatVerifier::new(
+            Arc::new(OneRowLookup::new(token_id, row)),
+            key,
+        ))
     }
 }
 
@@ -512,10 +519,7 @@ mod tests {
         let (pt, tid, hash, tenant_a) = mint_pat(&key, 10);
         let verifier = verifier_with_row(tid, row(&hash, &tenant_a), key);
         let gate = NativePatGate::new_for_test(verifier);
-        let err = gate
-            .verify("some-other-tenant", &pt)
-            .await
-            .unwrap_err();
+        let err = gate.verify("some-other-tenant", &pt).await.unwrap_err();
         assert_eq!(err.status(), StatusCode::UNAUTHORIZED);
     }
 

@@ -44,9 +44,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
-use uuid::Uuid;
-use zeroize::Zeroizing;
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
@@ -54,7 +51,10 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
 use subtle::ConstantTimeEq;
+use uuid::Uuid;
+use zeroize::Zeroizing;
 
 use corelink_handler_cas_erase::{erase_outcome, prepare_erase, EraseOutcome};
 use corelink_privacy_erasure_worker::legitimacy::DsrLegitimacyStore;
@@ -281,7 +281,9 @@ async fn handle_erase(
             // A non-UUID tenant can never match a `dsr_requested` row (the
             // table stores canonical UUID tenant ids written by the
             // D1-authenticated Clerk path) → DENY rather than bypass the gate.
-            tracing::warn!("cas_erase: non-UUID tenant on erase — denying (no legitimacy possible)");
+            tracing::warn!(
+                "cas_erase: non-UUID tenant on erase — denying (no legitimacy possible)"
+            );
             return (
                 StatusCode::FORBIDDEN,
                 Json(serde_json::json!({ "error": "forbidden" })),
@@ -619,7 +621,6 @@ impl Bloom {
         }
         true
     }
-
 }
 
 /// Per-tenant bloom + the instant it was last (re)loaded from the inner store.
@@ -867,7 +868,9 @@ impl TombstoneStore for BloomTombstoneStore {
             None => self.reload_tenant_bloom(tenant).await.0,
         };
         tb.bloom.insert(&Self::bloom_key(tenant, digest));
-        self.inner.upsert(tenant, digest, reason, erased_at_ms).await
+        self.inner
+            .upsert(tenant, digest, reason, erased_at_ms)
+            .await
     }
 
     async fn list_tenant_tombstones(&self, tenant: &str) -> Result<Vec<String>, String> {
@@ -1036,7 +1039,8 @@ impl corelink_handler_cas::CasDeleteHandler for TombstoneGatedCasHandler {
     fn delete(
         &self,
         req: corelink_handler_cas::CasDeleteRequest,
-    ) -> Result<corelink_handler_cas::CasDeleteResponse, corelink_handler_cas::CasHandlerError> {
+    ) -> Result<corelink_handler_cas::CasDeleteResponse, corelink_handler_cas::CasHandlerError>
+    {
         // Pass-through: deleting an already-tombstoned blob is an idempotent
         // no-op, and DSR/erase deletes must never be gated.
         self.delete.delete(req)
@@ -1237,8 +1241,7 @@ impl CasBlobEraser for R2CasBlobEraser {
         let prefix = self.tenant_prefix(tenant)?;
         let env = crate::storage::StorageEnv::from_env()
             .ok_or_else(|| "StorageEnv unavailable for R2 CAS erase".to_owned())?;
-        let client =
-            crate::storage::r2_s3::R2S3Client::new(&env, self.cas_bucket.clone()).await?;
+        let client = crate::storage::r2_s3::R2S3Client::new(&env, self.cas_bucket.clone()).await?;
         for region in CAS_REGIONS {
             // The LIST prefix is the EXACT whole-blob key for this digest:
             // `<region>/<tenant_prefix>/<digest>` (per `R2S3Client::blob_key`).
@@ -1297,12 +1300,10 @@ pub fn build_state_from_env(internal_auth_key: Option<Arc<str>>) -> Option<CasEr
     // route is NOT mounted — same posture as the erase-key/TDK gate above. We
     // MUST NOT mount the irreversible erase route without a legitimacy anchor,
     // or a leaked internal key would be sufficient to erase arbitrary blobs.
-    let legitimacy: Arc<dyn DsrLegitimacyStore> =
-        Arc::new(D1DsrLegitimacyStore::from_env()?);
+    let legitimacy: Arc<dyn DsrLegitimacyStore> = Arc::new(D1DsrLegitimacyStore::from_env()?);
 
     let cas_bucket = crate::storage::env_or("R2_CAS_BUCKET", DEFAULT_CAS_BUCKET);
-    let eraser: Arc<dyn CasBlobEraser> =
-        Arc::new(R2CasBlobEraser::new(Arc::new(tdk), cas_bucket));
+    let eraser: Arc<dyn CasBlobEraser> = Arc::new(R2CasBlobEraser::new(Arc::new(tdk), cas_bucket));
 
     Some(CasEraseRouteState {
         tombstones,
@@ -1331,7 +1332,9 @@ fn load_tdk_from_env() -> Option<TenantDerivationKey> {
     }
     let mut bytes = Zeroizing::new([0u8; 32]);
     if hex::decode_to_slice(hex_str, bytes.as_mut()).is_err() {
-        tracing::warn!("cas_erase: R2_TDK_HEX is not valid hex; eraser NOT built (route unmounted)");
+        tracing::warn!(
+            "cas_erase: R2_TDK_HEX is not valid hex; eraser NOT built (route unmounted)"
+        );
         return None;
     }
     Some(TenantDerivationKey::from_bytes(bytes))
@@ -1368,7 +1371,11 @@ mod tests {
     /// Build a route state with an in-memory legitimacy store pre-seeded so
     /// `(DSR_ID, TENANT)` is legitimate. Returns the eraser + tombstone fakes
     /// for assertions.
-    fn state() -> (CasEraseRouteState, Arc<InMemoryBlobEraser>, Arc<InMemoryTombstoneStore>) {
+    fn state() -> (
+        CasEraseRouteState,
+        Arc<InMemoryBlobEraser>,
+        Arc<InMemoryTombstoneStore>,
+    ) {
         let legit = InMemoryDsrLegitimacyStore::new();
         legit.insert_requested(
             Uuid::try_parse(DSR_ID).expect("dsr uuid"),
@@ -1380,7 +1387,11 @@ mod tests {
     /// Build a route state with an explicit legitimacy store.
     fn build_state(
         legitimacy: Arc<dyn DsrLegitimacyStore>,
-    ) -> (CasEraseRouteState, Arc<InMemoryBlobEraser>, Arc<InMemoryTombstoneStore>) {
+    ) -> (
+        CasEraseRouteState,
+        Arc<InMemoryBlobEraser>,
+        Arc<InMemoryTombstoneStore>,
+    ) {
         let tombstones = Arc::new(InMemoryTombstoneStore::new());
         let eraser = Arc::new(InMemoryBlobEraser::new());
         let st = CasEraseRouteState {
@@ -1434,7 +1445,10 @@ mod tests {
             .await
             .expect("oneshot");
         assert_eq!(resp.status(), StatusCode::OK);
-        assert!(eraser.was_erased(TENANT, DIGEST), "R2 bytes must be deleted");
+        assert!(
+            eraser.was_erased(TENANT, DIGEST),
+            "R2 bytes must be deleted"
+        );
         assert!(
             tombstones.is_tombstoned(TENANT, DIGEST).await.expect("q"),
             "tombstone must be written"
@@ -1522,7 +1536,10 @@ mod tests {
             .await
             .expect("oneshot");
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-        assert!(!eraser.was_erased(TENANT, DIGEST), "no delete without a legit row");
+        assert!(
+            !eraser.was_erased(TENANT, DIGEST),
+            "no delete without a legit row"
+        );
         assert!(!tombstones.is_tombstoned(TENANT, DIGEST).await.expect("q"));
     }
 
@@ -1536,7 +1553,10 @@ mod tests {
             .await
             .expect("oneshot");
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
-        assert!(!eraser.was_erased(TENANT, DIGEST), "no delete on legitimacy fault");
+        assert!(
+            !eraser.was_erased(TENANT, DIGEST),
+            "no delete on legitimacy fault"
+        );
         assert!(!tombstones.is_tombstoned(TENANT, DIGEST).await.expect("q"));
     }
 
@@ -1580,7 +1600,10 @@ mod tests {
             .await
             .expect("oneshot");
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-        assert!(!eraser.was_erased(TENANT_B, DIGEST), "no cross-tenant erase via foreign dsr_id");
+        assert!(
+            !eraser.was_erased(TENANT_B, DIGEST),
+            "no cross-tenant erase via foreign dsr_id"
+        );
         assert!(!tombstones.is_tombstoned(TENANT_B, DIGEST).await.expect("q"));
     }
 
@@ -1700,7 +1723,10 @@ mod tests {
     }
     impl CountingInner {
         fn new() -> Self {
-            Self { inner: InMemoryTombstoneStore::new(), reads: AtomicUsize::new(0) }
+            Self {
+                inner: InMemoryTombstoneStore::new(),
+                reads: AtomicUsize::new(0),
+            }
         }
         fn reads(&self) -> usize {
             self.reads.load(std::sync::atomic::Ordering::SeqCst)
@@ -1723,7 +1749,9 @@ mod tests {
             reason: &str,
             erased_at_ms: i64,
         ) -> Result<bool, String> {
-            self.inner.upsert(tenant, digest, reason, erased_at_ms).await
+            self.inner
+                .upsert(tenant, digest, reason, erased_at_ms)
+                .await
         }
         async fn list_tenant_tombstones(&self, tenant: &str) -> Result<Vec<String>, String> {
             // NOT counted in `reads` (which counts `is_tombstoned` probes only):
@@ -1770,24 +1798,44 @@ mod tests {
     #[tokio::test]
     async fn bloom_fast_path_skips_inner_for_absent_digest() {
         let inner = Arc::new(CountingInner::new());
-        let store = BloomTombstoneStore::with_params(inner.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        let store = BloomTombstoneStore::with_params(
+            inner.clone(),
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
+        );
         warm(&store, TENANT).await; // first touch falls through (1 inner read)
         let before = inner.reads();
         let r = store.is_tombstoned(TENANT, DIGEST).await.expect("q");
         assert!(!r, "absent digest ⇒ Ok(false)");
-        assert_eq!(inner.reads(), before, "fast path must NOT touch the inner store");
+        assert_eq!(
+            inner.reads(),
+            before,
+            "fast path must NOT touch the inner store"
+        );
     }
 
     /// (b) A digest tombstoned THROUGH the wrapper → `Ok(true)` and stays true.
     #[tokio::test]
     async fn bloom_through_write_is_true_and_stays_true() {
         let inner = Arc::new(CountingInner::new());
-        let store = BloomTombstoneStore::with_params(inner.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        let store = BloomTombstoneStore::with_params(
+            inner.clone(),
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
+        );
         warm(&store, TENANT).await;
         assert!(store.upsert(TENANT, DIGEST, "dsr", 1).await.is_ok());
         // Bloom hit (we wrote it) ⇒ falls through to inner, which is authoritative.
-        assert!(store.is_tombstoned(TENANT, DIGEST).await.expect("q"), "tombstoned ⇒ true");
-        assert!(store.is_tombstoned(TENANT, DIGEST).await.expect("q"), "stays true");
+        assert!(
+            store.is_tombstoned(TENANT, DIGEST).await.expect("q"),
+            "tombstoned ⇒ true"
+        );
+        assert!(
+            store.is_tombstoned(TENANT, DIGEST).await.expect("q"),
+            "stays true"
+        );
     }
 
     /// (c) NO FALSE NEGATIVE: a digest tombstoned DIRECTLY in the inner store
@@ -1801,11 +1849,19 @@ mod tests {
         // ⇒ every lookup falls through to the authoritative inner store. This
         // is the worst case (window→0 = the wrapper is a pass-through, never a
         // false negative) and the boundary the bound is measured against.
-        let store = BloomTombstoneStore::with_params(inner.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, Duration::ZERO);
+        let store = BloomTombstoneStore::with_params(
+            inner.clone(),
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            Duration::ZERO,
+        );
         // Another instance writes the tombstone directly to D1 (not via bloom).
         inner.seed_inner(TENANT, DIGEST);
         // The wrapper must NEVER report this absent.
-        assert!(store.is_tombstoned(TENANT, DIGEST).await.expect("q"), "cross-instance tombstone must read true after refresh");
+        assert!(
+            store.is_tombstoned(TENANT, DIGEST).await.expect("q"),
+            "cross-instance tombstone must read true after refresh"
+        );
 
         // And the WITHIN-window staleness bound: with a long window, the FIRST
         // touch of a tenant falls through (catches the cross-instance write);
@@ -1814,9 +1870,17 @@ mod tests {
         // guaranteed visible after the window elapses (next reload). Assert the
         // first-touch catch:
         let inner2 = Arc::new(CountingInner::new());
-        let store2 = BloomTombstoneStore::with_params(inner2.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        let store2 = BloomTombstoneStore::with_params(
+            inner2.clone(),
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
+        );
         inner2.seed_inner(TENANT, DIGEST); // present before first touch
-        assert!(store2.is_tombstoned(TENANT, DIGEST).await.expect("q"), "first-touch reload catches the cross-instance tombstone");
+        assert!(
+            store2.is_tombstoned(TENANT, DIGEST).await.expect("q"),
+            "first-touch reload catches the cross-instance tombstone"
+        );
     }
 
     /// (c2) F-010 REGRESSION — WITHIN-WINDOW false-negative is closed by the D1
@@ -1866,10 +1930,7 @@ mod tests {
         // A genuinely-absent OTHER digest still fast-paths to false (the seed did
         // not over-set membership for unrelated digests).
         assert!(
-            !store
-                .is_tombstoned(TENANT, "00absent00")
-                .await
-                .expect("q4"),
+            !store.is_tombstoned(TENANT, "00absent00").await.expect("q4"),
             "an un-tombstoned digest still reads absent"
         );
     }
@@ -1884,15 +1945,30 @@ mod tests {
     #[tokio::test]
     async fn bloom_false_positive_falls_through_to_authoritative_inner() {
         let inner = Arc::new(CountingInner::new());
-        let store = BloomTombstoneStore::with_params(inner.clone(), DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        let store = BloomTombstoneStore::with_params(
+            inner.clone(),
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
+        );
         warm(&store, TENANT).await;
         // Set the bloom bit directly (a "false positive": bit set, no inner row).
-        let tb = store.fresh_tenant_bloom(TENANT).expect("warmed bloom is fresh");
-        tb.bloom.insert(&BloomTombstoneStore::bloom_key(TENANT, DIGEST));
+        let tb = store
+            .fresh_tenant_bloom(TENANT)
+            .expect("warmed bloom is fresh");
+        tb.bloom
+            .insert(&BloomTombstoneStore::bloom_key(TENANT, DIGEST));
         let before = inner.reads();
         let r = store.is_tombstoned(TENANT, DIGEST).await.expect("q");
-        assert!(!r, "bloom false-positive must defer to the authoritative inner Ok(false)");
-        assert_eq!(inner.reads(), before + 1, "maybe-present must consult the inner store exactly once");
+        assert!(
+            !r,
+            "bloom false-positive must defer to the authoritative inner Ok(false)"
+        );
+        assert_eq!(
+            inner.reads(),
+            before + 1,
+            "maybe-present must consult the inner store exactly once"
+        );
     }
 
     /// (e) Inner error propagates UNCHANGED on the maybe-present path
@@ -1900,12 +1976,21 @@ mod tests {
     #[tokio::test]
     async fn bloom_inner_error_propagates_on_maybe_path() {
         let inner: Arc<dyn TombstoneStore> = Arc::new(ErroringInner);
-        let store = BloomTombstoneStore::with_params(inner, DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW);
+        let store = BloomTombstoneStore::with_params(
+            inner,
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
+        );
         warm(&store, TENANT).await; // first touch also errors, fine
-        // Write through to set a bloom bit → guarantees a maybe-present probe.
+                                    // Write through to set a bloom bit → guarantees a maybe-present probe.
         let _ = store.upsert(TENANT, DIGEST, "r", 1).await;
         let err = store.is_tombstoned(TENANT, DIGEST).await;
-        assert_eq!(err, Err("d1 fault".to_owned()), "inner Err must propagate unchanged");
+        assert_eq!(
+            err,
+            Err("d1 fault".to_owned()),
+            "inner Err must propagate unchanged"
+        );
     }
 
     /// (f) Concurrency: many tasks read + write concurrently; no panic, no torn
@@ -1914,7 +1999,10 @@ mod tests {
     async fn bloom_concurrent_reads_and_writes() {
         let inner = Arc::new(CountingInner::new());
         let store = Arc::new(BloomTombstoneStore::with_params(
-            inner, DEFAULT_BLOOM_BITS, DEFAULT_BLOOM_HASHES, LONG_WINDOW,
+            inner,
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
         ));
         let mut handles = Vec::new();
         for i in 0..64u32 {
@@ -1934,7 +2022,10 @@ mod tests {
         // Every even digest was written THROUGH the wrapper ⇒ must read true.
         for i in (0..64u32).step_by(2) {
             let d = format!("digest-{i:04}");
-            assert!(store.is_tombstoned(TENANT, &d).await.expect("q"), "written digest {d} must be tombstoned");
+            assert!(
+                store.is_tombstoned(TENANT, &d).await.expect("q"),
+                "written digest {d} must be tombstoned"
+            );
         }
     }
 
@@ -1946,7 +2037,10 @@ mod tests {
             b.insert(&format!("k{i}"));
         }
         for i in 0..1000 {
-            assert!(b.contains(&format!("k{i}")), "inserted key must always be present");
+            assert!(
+                b.contains(&format!("k{i}")),
+                "inserted key must always be present"
+            );
         }
         // Bounded: the bit-array size is fixed regardless of element count.
         assert_eq!(b.words.len(), DEFAULT_BLOOM_BITS / 64);
@@ -2067,7 +2161,10 @@ mod tests {
             other => panic!("re-PUT of erased blob must be refused, got {other:?}"),
         }
         // The backing handler was NEVER reached — no resurrection.
-        assert!(lock_or_recover(&backing.wrote).is_empty(), "no bytes were written");
+        assert!(
+            lock_or_recover(&backing.wrote).is_empty(),
+            "no bytes were written"
+        );
     }
 
     /// A write to a LIVE (non-tombstoned) hash delegates and commits normally.
@@ -2089,17 +2186,26 @@ mod tests {
         let (gated, backing) = gated_with(ts);
         match gated.read(read_req()) {
             Err(CasHandlerError::Internal(msg)) => {
-                assert!(msg.starts_with(TOMBSTONE_UNAVAILABLE_SENTINEL), "read fail-closed, got {msg}");
+                assert!(
+                    msg.starts_with(TOMBSTONE_UNAVAILABLE_SENTINEL),
+                    "read fail-closed, got {msg}"
+                );
             }
             other => panic!("read must fail closed on gate fault, got {other:?}"),
         }
         match gated.write(write_req()) {
             Err(CasHandlerError::Internal(msg)) => {
-                assert!(msg.starts_with(TOMBSTONE_UNAVAILABLE_SENTINEL), "write fail-closed, got {msg}");
+                assert!(
+                    msg.starts_with(TOMBSTONE_UNAVAILABLE_SENTINEL),
+                    "write fail-closed, got {msg}"
+                );
             }
             other => panic!("write must fail closed on gate fault, got {other:?}"),
         }
-        assert!(lock_or_recover(&backing.wrote).is_empty(), "no write on gate fault");
+        assert!(
+            lock_or_recover(&backing.wrote).is_empty(),
+            "no write on gate fault"
+        );
     }
 
     /// DELETE is a pass-through even for a tombstoned blob (idempotent erase

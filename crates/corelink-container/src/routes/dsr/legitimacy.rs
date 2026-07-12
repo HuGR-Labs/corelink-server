@@ -67,11 +67,7 @@ impl D1DsrLegitimacyStore {
 }
 
 impl DsrLegitimacyStore for D1DsrLegitimacyStore {
-    fn is_requested(
-        &self,
-        dsr_id: Uuid,
-        tenant_id: Uuid,
-    ) -> Result<bool, DsrLegitimacyError> {
+    fn is_requested(&self, dsr_id: Uuid, tenant_id: Uuid) -> Result<bool, DsrLegitimacyError> {
         // A legitimate erasure has a `dsr_requested` row for THIS tenant
         // with a live status. Bind on BOTH dsr_id AND tenant_id so a
         // forged tenant_id (same dsr_id) cannot satisfy the gate.

@@ -230,7 +230,10 @@ impl IntoResponse for DpaAcceptHttpError {
 
 /// Constant-time internal-auth check. Neither the secret length nor its content
 /// leaks via an early return (mirrors `tier_select::verify_internal_auth`).
-fn verify_internal_auth(headers: &HeaderMap, expected_secret: &str) -> Result<(), DpaAcceptHttpError> {
+fn verify_internal_auth(
+    headers: &HeaderMap,
+    expected_secret: &str,
+) -> Result<(), DpaAcceptHttpError> {
     let presented = headers
         .get(INTERNAL_AUTH_HEADER)
         .and_then(|v| v.to_str().ok())
@@ -271,7 +274,10 @@ fn extract_verified_tenant(headers: &HeaderMap) -> Result<String, DpaAcceptHttpE
 /// `cf-connecting-ip`, then the first `x-forwarded-for` hop; falls back to a
 /// stable sentinel (still hashed — an unobserved IP is honestly recorded).
 fn extract_client_ip(headers: &HeaderMap) -> String {
-    if let Some(ip) = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+    if let Some(ip) = headers
+        .get("cf-connecting-ip")
+        .and_then(|v| v.to_str().ok())
+    {
         let ip = ip.trim();
         if !ip.is_empty() {
             return ip.to_owned();
@@ -318,7 +324,9 @@ fn jurisdiction_for(locale: LocaleBcp47) -> Jurisdiction {
 
 /// `true` iff `s` is exactly 64 lowercase hex chars (a well-formed SHA-256).
 fn is_sha256_hex64(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Deterministic `wording_id`: UUIDv5 over the DPA version (stable identity of
@@ -552,7 +560,13 @@ fn parse_signing_key(pem: &str) -> Option<RsaPrivateKeyPem> {
         return None;
     }
     let key = RsaPrivateKeyPem(pem.to_owned());
-    let probe = JwtReceiptClaims::new(&TenantId("_probe".to_owned()), "0.0.0", 0, Jurisdiction::Us, "_probe");
+    let probe = JwtReceiptClaims::new(
+        &TenantId("_probe".to_owned()),
+        "0.0.0",
+        0,
+        Jurisdiction::Us,
+        "_probe",
+    );
     match sign_receipt(&key, RECEIPT_KID, &probe) {
         Ok(_) => Some(key),
         Err(e) => {
@@ -575,7 +589,9 @@ pub fn build_state_from_env() -> Option<DpaAcceptRouteState> {
         );
         return None;
     }
-    let Some(dpa_version) = std::env::var("CORELINK_DPA_VERSION").ok().filter(|v| !v.is_empty())
+    let Some(dpa_version) = std::env::var("CORELINK_DPA_VERSION")
+        .ok()
+        .filter(|v| !v.is_empty())
     else {
         tracing::warn!("CORELINK_DPA_VERSION unset; /v1/onboarding/dpa-accept NOT mounted");
         return None;
@@ -602,7 +618,9 @@ pub fn build_state_from_env() -> Option<DpaAcceptRouteState> {
 
     Some(DpaAcceptRouteState {
         internal_auth_key: Arc::from(auth_key),
-        store: Arc::new(super::dpa_accept_store::D1HttpDpaAcceptStore::new(Arc::new(d1))),
+        store: Arc::new(super::dpa_accept_store::D1HttpDpaAcceptStore::new(
+            Arc::new(d1),
+        )),
         signing_key: Arc::new(signing_key),
         kid: Arc::from(RECEIPT_KID),
         current_dpa_version: Arc::from(dpa_version),
@@ -667,12 +685,17 @@ mod tests {
             &self,
             signup_id: &str,
         ) -> Result<Option<StoredAcceptance>, String> {
-            Ok(self.rows.lock().unwrap().get(signup_id).map(|r| StoredAcceptance {
-                jwt_receipt_jti: r.jwt_receipt_jti.clone(),
-                dpa_version: r.dpa_version.clone(),
-                locale: r.locale.clone(),
-                accepted_at: r.accepted_at,
-            }))
+            Ok(self
+                .rows
+                .lock()
+                .unwrap()
+                .get(signup_id)
+                .map(|r| StoredAcceptance {
+                    jwt_receipt_jti: r.jwt_receipt_jti.clone(),
+                    dpa_version: r.dpa_version.clone(),
+                    locale: r.locale.clone(),
+                    accepted_at: r.accepted_at,
+                }))
         }
         async fn insert_acceptance(&self, row: &AcceptanceRow) -> Result<bool, String> {
             let mut g = self.rows.lock().unwrap();
@@ -687,7 +710,11 @@ mod tests {
     fn test_signing_key() -> RsaPrivateKeyPem {
         let mut rng = rand::thread_rng();
         let key = RsaPrivateKey::new(&mut rng, 2048).expect("rsa keygen");
-        RsaPrivateKeyPem(key.to_pkcs8_pem(LineEnding::LF).expect("pkcs8 pem").to_string())
+        RsaPrivateKeyPem(
+            key.to_pkcs8_pem(LineEnding::LF)
+                .expect("pkcs8 pem")
+                .to_string(),
+        )
     }
 
     fn valid_req(locale: LocaleBcp47) -> ValidatedDpaRequest {
@@ -746,21 +773,34 @@ mod tests {
         let tenant = "tenant-idem";
 
         let first = orchestrate_dpa_accept(
-            &store, &key, RECEIPT_KID, DEFAULT_IP_HASH_SALT, tenant,
-            &valid_req(LocaleBcp47::PtBr), 1_700_000_000_000,
+            &store,
+            &key,
+            RECEIPT_KID,
+            DEFAULT_IP_HASH_SALT,
+            tenant,
+            &valid_req(LocaleBcp47::PtBr),
+            1_700_000_000_000,
         )
         .await
         .expect("first accept");
 
         let second = orchestrate_dpa_accept(
-            &store, &key, RECEIPT_KID, DEFAULT_IP_HASH_SALT, tenant,
-            &valid_req(LocaleBcp47::PtBr), 1_700_000_999_000,
+            &store,
+            &key,
+            RECEIPT_KID,
+            DEFAULT_IP_HASH_SALT,
+            tenant,
+            &valid_req(LocaleBcp47::PtBr),
+            1_700_000_999_000,
         )
         .await
         .expect("re-accept");
 
         assert_eq!(store.len(), 1, "re-accept must NOT write a second row");
-        assert_eq!(first.audit_event_id, second.audit_event_id, "same original receipt");
+        assert_eq!(
+            first.audit_event_id, second.audit_event_id,
+            "same original receipt"
+        );
         assert_eq!(second.dpa_accepted_at, first.dpa_accepted_at);
     }
 
@@ -837,7 +877,10 @@ mod tests {
         assert!(parse_signing_key("").is_none());
         assert!(parse_signing_key("   ").is_none());
         assert!(parse_signing_key("not-a-pem").is_none());
-        assert!(parse_signing_key("-----BEGIN PRIVATE KEY-----\nbm90YWtleQ==\n-----END PRIVATE KEY-----\n").is_none());
+        assert!(parse_signing_key(
+            "-----BEGIN PRIVATE KEY-----\nbm90YWtleQ==\n-----END PRIVATE KEY-----\n"
+        )
+        .is_none());
         // A real generated key ⇒ Some ⇒ mountable.
         let pem = {
             let mut rng = rand::thread_rng();
@@ -865,7 +908,10 @@ mod tests {
             DpaAcceptHttpError::Unauthenticated,
         );
         // Correct secret → Ok.
-        h.insert(INTERNAL_AUTH_HEADER, "the-secret-value-1234".parse().unwrap());
+        h.insert(
+            INTERNAL_AUTH_HEADER,
+            "the-secret-value-1234".parse().unwrap(),
+        );
         assert!(verify_internal_auth(&h, "the-secret-value-1234").is_ok());
     }
 

@@ -300,10 +300,10 @@ fn map_ac_error(e: AcHandlerError, tenant: &str, hash: &str) -> BazelBridgeError
 )]
 mod tests {
     use super::*;
+    use crate::digest::sha256_hex;
     use corelink_handler_ac::{
         InMemoryAcHandler, InMemoryAuditSink as AcAuditSink, InMemorySliObserver as AcSliObserver,
     };
-    use crate::digest::sha256_hex;
     use corelink_handler_cas::handler::fake_hash;
     use corelink_handler_cas::{InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver};
 
@@ -333,7 +333,17 @@ mod tests {
         let hash = sha256_hex(bytes);
         let digest = Digest::new(&hash, bytes.len() as u64).expect("digest");
         adapter
-            .cas_put(tenant, &digest, bytes.to_vec(), WriteCtx { principal: "p1", caller_tenant: tenant, at_unix_ms: 0, storage_quota_bytes: Some(0) })
+            .cas_put(
+                tenant,
+                &digest,
+                bytes.to_vec(),
+                WriteCtx {
+                    principal: "p1",
+                    caller_tenant: tenant,
+                    at_unix_ms: 0,
+                    storage_quota_bytes: Some(0),
+                },
+            )
             .expect("seed cas");
         digest
     }
@@ -368,7 +378,17 @@ mod tests {
         // Claim size_bytes = 10 but actual len = 5.
         let digest = Digest::new(&hash, 10).expect("digest");
         let err = adapter
-            .cas_put(TENANT, &digest, bytes, WriteCtx { principal: "p1", caller_tenant: TENANT, at_unix_ms: 0, storage_quota_bytes: Some(0) })
+            .cas_put(
+                TENANT,
+                &digest,
+                bytes,
+                WriteCtx {
+                    principal: "p1",
+                    caller_tenant: TENANT,
+                    at_unix_ms: 0,
+                    storage_quota_bytes: Some(0),
+                },
+            )
             .expect_err("size mismatch");
         assert!(matches!(err, BazelBridgeError::SizeMismatch { .. }));
     }
@@ -391,7 +411,17 @@ mod tests {
         let digest = Digest::new(&hash, 8).expect("digest");
         let payload = b"action_result_bytes".to_vec();
         adapter
-            .ac_put(TENANT, &digest, payload.clone(), WriteCtx { principal: "p1", caller_tenant: TENANT, at_unix_ms: 0, storage_quota_bytes: Some(0) })
+            .ac_put(
+                TENANT,
+                &digest,
+                payload.clone(),
+                WriteCtx {
+                    principal: "p1",
+                    caller_tenant: TENANT,
+                    at_unix_ms: 0,
+                    storage_quota_bytes: Some(0),
+                },
+            )
             .expect("ac put");
         let got = adapter
             .ac_get(TENANT, &digest, "p1", TENANT, 0)
@@ -416,7 +446,17 @@ mod tests {
         let hash = "e".repeat(64);
         let digest = Digest::new(&hash, 0).expect("digest");
         let err = adapter
-            .ac_put("victim", &digest, vec![], WriteCtx { principal: "p1", caller_tenant: "attacker", at_unix_ms: 0, storage_quota_bytes: Some(0) })
+            .ac_put(
+                "victim",
+                &digest,
+                vec![],
+                WriteCtx {
+                    principal: "p1",
+                    caller_tenant: "attacker",
+                    at_unix_ms: 0,
+                    storage_quota_bytes: Some(0),
+                },
+            )
             .expect_err("denied");
         assert!(matches!(err, BazelBridgeError::CrossTenantDenied { .. }));
     }
@@ -440,7 +480,17 @@ mod tests {
         let hash = fake_hash(&bytes);
         let digest = Digest::new(&hash, 1).expect("digest");
         let err = adapter
-            .cas_put(TENANT, &digest, bytes, WriteCtx { principal: "p1", caller_tenant: TENANT, at_unix_ms: 0, storage_quota_bytes: Some(0) })
+            .cas_put(
+                TENANT,
+                &digest,
+                bytes,
+                WriteCtx {
+                    principal: "p1",
+                    caller_tenant: TENANT,
+                    at_unix_ms: 0,
+                    storage_quota_bytes: Some(0),
+                },
+            )
             .expect_err("audit fail");
         assert!(matches!(err, BazelBridgeError::AuditFailed(_)));
     }

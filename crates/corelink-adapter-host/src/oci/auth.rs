@@ -499,8 +499,7 @@ mod tests {
             panic!("expected tenant.scope.cap.expiry.sig");
         };
         // Rebuild with cap bumped 100 → 999999999 but the ORIGINAL sig.
-        let forged =
-            format!("{TOKEN_PREFIX}{tenant_text}.{scope_b64}.999999999.{expiry}.{sig}");
+        let forged = format!("{TOKEN_PREFIX}{tenant_text}.{scope_b64}.999999999.{expiry}.{sig}");
         let err = verify(&key(), &forged, 1500).expect_err("forged cap must reject");
         assert!(matches!(err, OciAdapterError::InvalidToken));
     }

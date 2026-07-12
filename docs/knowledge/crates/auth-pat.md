@@ -11,7 +11,7 @@ source_files:
   - "crates/corelink-pat/src/types.rs"
   - "crates/corelink-clerk/src/lib.rs"
   - "crates/corelink-clerk/src/adapter.rs"
-checkpoint_sha: "04a7eccfdbe5733a9059ab12518f6ee571db0248"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["crates", "auth", "pat", "clerk", "jwt", "security"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -28,7 +28,7 @@ The cluster is the trust spine feeding the [2-level PAT moat](/auth/pat-moat.md)
 # How it works
 
 - `corelink-pat` defines the canonical PAT plaintext `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` and a four-step verify pipeline: parse → constant-time `token_id` match → `verify_hmac_sig_multi` (rejects unsigned spam in ≤100µs) → `verify_argon2id` possession proof — the executed orchestrator (`crates/corelink-pat/src/verify.rs:70-105`), the HMAC fast-fail step (`crates/corelink-pat/src/sig.rs:93-110`).
-- The cold path (parse fail / sig mismatch / row absent) must call `dummy_verify_for_constant_time` — which runs a real Argon2id verify against a fixed dummy PHC — so end-to-end latency cannot be used as an existence oracle (`crates/corelink-pat/src/argon.rs:217-256`, with `verify_argon2id` at `crates/corelink-pat/src/argon.rs:127-134`).
+- The cold path (parse fail / sig mismatch / row absent) must call `dummy_verify_for_constant_time` — which runs a real Argon2id verify against a fixed dummy PHC — so end-to-end latency cannot be used as an existence oracle (`crates/corelink-pat/src/argon.rs:217-257`, with `verify_argon2id` at `crates/corelink-pat/src/argon.rs:127-134`).
 - `corelink-clerk` validates a Clerk JWT by decoding the header for `kid`, KV-cached JWKS lookup with a single lazy refresh on miss, then explicit `Validation::new(Algorithm::RS256)` so `alg=none`/HS-confusion is rejected at the decoder boundary (`crates/corelink-clerk/src/adapter.rs:299`, `crates/corelink-clerk/src/adapter.rs:350`), then exact `iss`/`aud` allowlist match (`crates/corelink-clerk/src/adapter.rs:406-414`).
 - `corelink-auth` is an Option-A aggregator re-exporting the 6 auth primitives (`clerk`, `clerk_cf`, `pat`, `schema`, `webauthn`, `tenant_path`) at canonical `corelink_auth::*` submodule paths with behaviour preserved 1:1 (`crates/corelink-auth/src/lib.rs:1-15`, `crates/corelink-auth/src/lib.rs:136-141`).
 
@@ -54,7 +54,7 @@ The cluster is the trust spine feeding the [2-level PAT moat](/auth/pat-moat.md)
 3c. `crates/corelink-clerk/src/lib.rs:114-133` — the `corelink-clerk` crate `pub mod` map (adapter/config/jwks/principal).
 4. `crates/corelink-pat/src/verify.rs:70-105` — `verify_with_hash_multi`: the executed 4-step verify pipeline (parse → constant-time token_id → HMAC fast-fail → Argon2id).
 5. `crates/corelink-pat/src/sig.rs:93-110` — `verify_hmac_sig_multi`: the constant-time HMAC fast-fail rejecting unsigned spam pre-Argon2id.
-6. `crates/corelink-pat/src/argon.rs:217-256` — `dummy_verify_for_constant_time`: the constant-time pad (real Argon2id over a fixed dummy PHC) against the existence oracle.
+6. `crates/corelink-pat/src/argon.rs:217-257` — `dummy_verify_for_constant_time`: the constant-time pad (real Argon2id over a fixed dummy PHC) against the existence oracle.
 7. `crates/corelink-pat/src/types.rs:41-89` — `PatPlaintext` secret-handling newtype (no Display/Serialize/Debug; zeroize on drop).
 8. `crates/corelink-pat/src/types.rs:219-241` — `PatSigningKey`: `ZeroizeOnDrop`, `Debug`-redacted, rejects keys < 32 bytes (`SigningKeyTooShort`).
 9. `crates/corelink-pat/src/argon.rs:127-134` — `verify_argon2id`: the Argon2id PHC possession proof.

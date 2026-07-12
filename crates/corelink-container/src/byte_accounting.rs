@@ -621,10 +621,12 @@ fn byok_committed_len(
         // Mode A (convergent) stores `CLB1` (+32 B); Mode B (random) stores `CLB2`
         // (+20 B — the nonce lives in `byok_envelope`, not inline). Account the
         // committed CIPHERTEXT size so the reservation matches the real R2 object.
-        ByokEngagement::Encrypt(ByokCryptoMode::Convergent) => Ok(plaintext_len
-            .saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX))),
-        ByokEngagement::Encrypt(ByokCryptoMode::Random) => Ok(plaintext_len
-            .saturating_add(i64::try_from(BYOK_CLB2_OVERHEAD).unwrap_or(i64::MAX))),
+        ByokEngagement::Encrypt(ByokCryptoMode::Convergent) => {
+            Ok(plaintext_len.saturating_add(i64::try_from(BYOK_CLB1_OVERHEAD).unwrap_or(i64::MAX)))
+        }
+        ByokEngagement::Encrypt(ByokCryptoMode::Random) => {
+            Ok(plaintext_len.saturating_add(i64::try_from(BYOK_CLB2_OVERHEAD).unwrap_or(i64::MAX)))
+        }
         ByokEngagement::Plaintext | ByokEngagement::FailClosed(_) => Ok(plaintext_len),
     }
 }
@@ -795,11 +797,17 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         // releases the real R2 object size) → reserve == release, no drift. A
         // config read error fails CLOSED (503). `None` cache / non-BYOK tenant ⇒
         // `byte_len == plaintext_len`, byte-identical to today.
-        let byte_len = match byok_committed_len(self.byok_config_cache.as_ref(), &tenant, plaintext_len) {
+        let byte_len = match byok_committed_len(
+            self.byok_config_cache.as_ref(),
+            &tenant,
+            plaintext_len,
+        ) {
             Ok(n) => n,
             Err(e) => {
                 tracing::error!(error = %e, "cas: byok committed-size lookup failed; failing closed");
-                return Err(CasHandlerError::Internal(format!("{ACCT_UNAVAILABLE_SENTINEL}{e}")));
+                return Err(CasHandlerError::Internal(format!(
+                    "{ACCT_UNAVAILABLE_SENTINEL}{e}"
+                )));
             }
         };
         // RESERVE before the R2 PUT (cluster-C): an over-cap / indeterminate
@@ -854,7 +862,8 @@ impl corelink_handler_cas::CasDeleteHandler for AccountingCasHandler {
     fn delete(
         &self,
         req: corelink_handler_cas::CasDeleteRequest,
-    ) -> Result<corelink_handler_cas::CasDeleteResponse, corelink_handler_cas::CasHandlerError> {
+    ) -> Result<corelink_handler_cas::CasDeleteResponse, corelink_handler_cas::CasHandlerError>
+    {
         let tenant = req.tenant.clone();
         // rt-nuclear C2: hold the SAME per-`(tenant, hash)` serialization guard the
         // write path uses, across the WHOLE inner-delete→release below, so a
@@ -999,11 +1008,17 @@ impl corelink_handler_ac::AcUpdateHandler for AccountingAcHandler {
         // BYOK_CLB1_OVERHEAD); reserve THAT so it matches the real R2 object the
         // delete path releases → no drift. Config error ⇒ fail CLOSED (503).
         // `None` cache / non-BYOK ⇒ `byte_len == plaintext_len` (unchanged).
-        let byte_len = match byok_committed_len(self.byok_config_cache.as_ref(), &tenant, plaintext_len) {
+        let byte_len = match byok_committed_len(
+            self.byok_config_cache.as_ref(),
+            &tenant,
+            plaintext_len,
+        ) {
             Ok(n) => n,
             Err(e) => {
                 tracing::error!(error = %e, "ac: byok committed-size lookup failed; failing closed");
-                return Err(AcHandlerError::Internal(format!("{ACCT_UNAVAILABLE_SENTINEL}{e}")));
+                return Err(AcHandlerError::Internal(format!(
+                    "{ACCT_UNAVAILABLE_SENTINEL}{e}"
+                )));
             }
         };
         match block_on_accrue(&self.accountant, &tenant, byte_len, quota_seed) {
@@ -1123,7 +1138,10 @@ pub(crate) mod testing {
             self.rows
                 .lock()
                 .ok()
-                .and_then(|r| r.get(&(tenant.to_owned(), region.to_owned())).map(|row| row.used))
+                .and_then(|r| {
+                    r.get(&(tenant.to_owned(), region.to_owned()))
+                        .map(|row| row.used)
+                })
                 .unwrap_or(0)
         }
 
@@ -1133,7 +1151,10 @@ pub(crate) mod testing {
             self.rows
                 .lock()
                 .ok()
-                .and_then(|r| r.get(&(tenant.to_owned(), region.to_owned())).map(|row| row.quota))
+                .and_then(|r| {
+                    r.get(&(tenant.to_owned(), region.to_owned()))
+                        .map(|row| row.quota)
+                })
                 .unwrap_or(0)
         }
     }
@@ -1180,9 +1201,7 @@ pub(crate) mod testing {
                         Some(seed) if seed != 0 => seed,
                         _ => row.quota,
                     };
-                    if effective_quota != 0
-                        && row.used.saturating_add(bytes) > effective_quota
-                    {
+                    if effective_quota != 0 && row.used.saturating_add(bytes) > effective_quota {
                         return Ok(AccrueOutcome::OverCap);
                     }
                     row.used = row.used.saturating_add(bytes);
@@ -1198,7 +1217,13 @@ pub(crate) mod testing {
                     // Seed the fresh row with the real cap (`0` = genuine
                     // unlimited) and apply the first write.
                     Some(seed) => {
-                        rows.insert(key, Row { used: bytes, quota: seed });
+                        rows.insert(
+                            key,
+                            Row {
+                                used: bytes,
+                                quota: seed,
+                            },
+                        );
                         Ok(AccrueOutcome::Accrued)
                     }
                 },
@@ -1278,9 +1303,19 @@ mod tests {
         // unlimited tier seeds the fresh row with the `0` sentinel deliberately.
         let store = Arc::new(InMemoryByteStore::new());
         let acc = accountant(store.clone());
-        assert_eq!(acc.accrue("t1", 1_000, UNLIMITED).await.unwrap(), AccrueOutcome::Accrued);
-        assert_eq!(acc.accrue("t1", 500, UNLIMITED).await.unwrap(), AccrueOutcome::Accrued);
-        assert_eq!(store.used("t1", REGION), 1_500, "concurrent accruals must sum");
+        assert_eq!(
+            acc.accrue("t1", 1_000, UNLIMITED).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
+        assert_eq!(
+            acc.accrue("t1", 500, UNLIMITED).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
+        assert_eq!(
+            store.used("t1", REGION),
+            1_500,
+            "concurrent accruals must sum"
+        );
     }
 
     #[tokio::test]
@@ -1292,14 +1327,27 @@ mod tests {
         let store = Arc::new(InMemoryByteStore::new());
         let acc = accountant(store.clone());
         // First write 600 under a 1000-byte cap → accrues, seeds quota=1000.
-        assert_eq!(acc.accrue("t-fresh", 600, Some(1_000)).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(
+            acc.accrue("t-fresh", 600, Some(1_000)).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
         assert_eq!(store.used("t-fresh", REGION), 600);
         // The seeded cap is REAL: a follow-up that would exceed 1000 is refused
         // even with `None` (the existing row's stored cap governs).
-        assert_eq!(acc.accrue("t-fresh", 500, None).await.unwrap(), AccrueOutcome::OverCap);
-        assert_eq!(store.used("t-fresh", REGION), 600, "over-cap must not move the counter");
+        assert_eq!(
+            acc.accrue("t-fresh", 500, None).await.unwrap(),
+            AccrueOutcome::OverCap
+        );
+        assert_eq!(
+            store.used("t-fresh", REGION),
+            600,
+            "over-cap must not move the counter"
+        );
         // And exactly filling the remaining headroom is allowed.
-        assert_eq!(acc.accrue("t-fresh", 400, None).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(
+            acc.accrue("t-fresh", 400, None).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
         assert_eq!(store.used("t-fresh", REGION), 1_000);
     }
 
@@ -1310,20 +1358,48 @@ mod tests {
         // takes effect (previously the ON CONFLICT never updated bytes_quota, so
         // the tenant kept the old higher cap forever).
         let store = Arc::new(InMemoryByteStore::new());
-        store.seed("t-down", REGION, Row { used: 300, quota: 10_000 });
+        store.seed(
+            "t-down",
+            REGION,
+            Row {
+                used: 300,
+                quota: 10_000,
+            },
+        );
         let acc = accountant(store.clone());
         // A 100-byte write carrying the NEW lower cap (500) reconciles the stored
         // cap down to 500 and accrues (300 + 100 = 400 <= 500).
-        assert_eq!(acc.accrue("t-down", 100, Some(500)).await.unwrap(), AccrueOutcome::Accrued);
-        assert_eq!(store.quota("t-down", REGION), 500, "stored cap must be reseeded to the lower tier cap");
+        assert_eq!(
+            acc.accrue("t-down", 100, Some(500)).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
+        assert_eq!(
+            store.quota("t-down", REGION),
+            500,
+            "stored cap must be reseeded to the lower tier cap"
+        );
         assert_eq!(store.used("t-down", REGION), 400);
         // The new lower cap is now enforced: a write that fits the OLD cap but
         // exceeds the NEW one is refused.
-        assert_eq!(acc.accrue("t-down", 200, Some(500)).await.unwrap(), AccrueOutcome::OverCap);
-        assert_eq!(store.used("t-down", REGION), 400, "an over-(new)-cap write must not move the counter");
+        assert_eq!(
+            acc.accrue("t-down", 200, Some(500)).await.unwrap(),
+            AccrueOutcome::OverCap
+        );
+        assert_eq!(
+            store.used("t-down", REGION),
+            400,
+            "an over-(new)-cap write must not move the counter"
+        );
         // An unlimited / absent incoming cap must NOT clobber the finite stored cap.
-        assert_eq!(acc.accrue("t-down", 1, UNLIMITED).await.unwrap(), AccrueOutcome::Accrued);
-        assert_eq!(store.quota("t-down", REGION), 500, "an unlimited carrier must not lower/raise the stored finite cap");
+        assert_eq!(
+            acc.accrue("t-down", 1, UNLIMITED).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
+        assert_eq!(
+            store.quota("t-down", REGION),
+            500,
+            "an unlimited carrier must not lower/raise the stored finite cap"
+        );
     }
 
     #[tokio::test]
@@ -1341,7 +1417,14 @@ mod tests {
         let store = Arc::new(InMemoryByteStore::new());
         // Seeded HIGH cap (10_000), already at 800 used. New tier cap = 500 ⇒ the
         // tenant is over the new cap from the outset.
-        store.seed("t-dead", REGION, Row { used: 800, quota: 10_000 });
+        store.seed(
+            "t-dead",
+            REGION,
+            Row {
+                used: 800,
+                quota: 10_000,
+            },
+        );
         let acc = accountant(store.clone());
 
         // (1) A NATIVE write carrying the new lower cap (500): 800 + 10 = 810 > 500
@@ -1351,7 +1434,11 @@ mod tests {
             acc.accrue("t-dead", 10, Some(500)).await.unwrap(),
             AccrueOutcome::OverCap
         );
-        assert_eq!(store.used("t-dead", REGION), 800, "a rejected write must not move the counter");
+        assert_eq!(
+            store.used("t-dead", REGION),
+            800,
+            "a rejected write must not move the counter"
+        );
         assert_eq!(
             store.quota("t-dead", REGION),
             500,
@@ -1379,7 +1466,11 @@ mod tests {
             acc.accrue("t-dead", 50, None).await.unwrap(),
             AccrueOutcome::Accrued
         );
-        assert_eq!(store.used("t-dead", REGION), 450, "writes within the lowered cap still accrue");
+        assert_eq!(
+            store.used("t-dead", REGION),
+            450,
+            "writes within the lowered cap still accrue"
+        );
     }
 
     #[tokio::test]
@@ -1389,8 +1480,15 @@ mod tests {
         // uncapped. (The pre-fix bug seeded quota=0 and let it through unbounded.)
         let store = Arc::new(InMemoryByteStore::new());
         let acc = accountant(store.clone());
-        assert_eq!(acc.accrue("t-big", 5_000, Some(1_000)).await.unwrap(), AccrueOutcome::OverCap);
-        assert_eq!(store.used("t-big", REGION), 0, "a refused first write must create no row");
+        assert_eq!(
+            acc.accrue("t-big", 5_000, Some(1_000)).await.unwrap(),
+            AccrueOutcome::OverCap
+        );
+        assert_eq!(
+            store.used("t-big", REGION),
+            0,
+            "a refused first write must create no row"
+        );
     }
 
     #[tokio::test]
@@ -1403,7 +1501,11 @@ mod tests {
             acc.accrue("t-unknown", 100, None).await.unwrap(),
             AccrueOutcome::Indeterminate
         );
-        assert_eq!(store.used("t-unknown", REGION), 0, "fail-closed must create no row");
+        assert_eq!(
+            store.used("t-unknown", REGION),
+            0,
+            "fail-closed must create no row"
+        );
     }
 
     #[tokio::test]
@@ -1411,25 +1513,48 @@ mod tests {
         // A tenant at 900/1000 bytes; a 200-byte write would hit 1100 > 1000 ⇒
         // OverCap, and the counter must NOT move (atomic check-and-accrue).
         let store = Arc::new(InMemoryByteStore::new());
-        store.seed("t-cap", REGION, Row { used: 900, quota: 1_000 });
+        store.seed(
+            "t-cap",
+            REGION,
+            Row {
+                used: 900,
+                quota: 1_000,
+            },
+        );
         let acc = accountant(store.clone());
-        assert_eq!(acc.accrue("t-cap", 200, None).await.unwrap(), AccrueOutcome::OverCap);
+        assert_eq!(
+            acc.accrue("t-cap", 200, None).await.unwrap(),
+            AccrueOutcome::OverCap
+        );
         assert_eq!(
             store.used("t-cap", REGION),
             900,
             "an over-cap accrual must not move the counter"
         );
         // A write that exactly fills the cap is allowed (`<=` predicate).
-        assert_eq!(acc.accrue("t-cap", 100, None).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(
+            acc.accrue("t-cap", 100, None).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
         assert_eq!(store.used("t-cap", REGION), 1_000);
         // Now AT the cap; one more byte trips it.
-        assert_eq!(acc.accrue("t-cap", 1, None).await.unwrap(), AccrueOutcome::OverCap);
+        assert_eq!(
+            acc.accrue("t-cap", 1, None).await.unwrap(),
+            AccrueOutcome::OverCap
+        );
     }
 
     #[tokio::test]
     async fn release_saturates_at_zero() {
         let store = Arc::new(InMemoryByteStore::new());
-        store.seed("t-del", REGION, Row { used: 300, quota: 0 });
+        store.seed(
+            "t-del",
+            REGION,
+            Row {
+                used: 300,
+                quota: 0,
+            },
+        );
         let acc = accountant(store.clone());
         acc.release("t-del", 100).await.unwrap();
         assert_eq!(store.used("t-del", REGION), 200);
@@ -1444,8 +1569,14 @@ mod tests {
         let acc = accountant(store.clone());
         // A no-new-bytes write (idempotent re-write) accrues nothing — and never
         // reaches the store, so even a `None` cap is a safe no-op (no fresh row).
-        assert_eq!(acc.accrue("t0", 0, None).await.unwrap(), AccrueOutcome::Accrued);
-        assert_eq!(acc.accrue("t0", -5, None).await.unwrap(), AccrueOutcome::Accrued);
+        assert_eq!(
+            acc.accrue("t0", 0, None).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
+        assert_eq!(
+            acc.accrue("t0", -5, None).await.unwrap(),
+            AccrueOutcome::Accrued
+        );
         acc.release("t0", 0).await.unwrap();
         assert_eq!(store.used("t0", REGION), 0);
     }
@@ -1639,7 +1770,9 @@ mod decorator_tests {
                 )
             });
             let td =
-                tokio::spawn(async move { dd.delete(AcDeleteRequest::new("t", dig_b, "p", "t", 3)) });
+                tokio::spawn(
+                    async move { dd.delete(AcDeleteRequest::new("t", dig_b, "p", "t", 3)) },
+                );
             tu.await.unwrap().expect("update A");
             td.await.unwrap().expect("delete B");
 
@@ -1704,18 +1837,28 @@ mod decorator_tests {
             .expect_err("over-cap write must be refused");
         match err {
             corelink_handler_cas::CasHandlerError::Internal(ref m) => {
-                assert!(m.starts_with(OVER_CAP_SENTINEL), "must carry the over-cap sentinel: {m}");
+                assert!(
+                    m.starts_with(OVER_CAP_SENTINEL),
+                    "must carry the over-cap sentinel: {m}"
+                );
             }
             other => panic!("expected over-cap Internal, got {other:?}"),
         }
         // The reservation was refused, so the inner store never ran: NO blob.
         let read = inner.read(CasReadRequest::new("t-cap", hash, "p", "t-cap", 2));
         assert!(
-            matches!(read, Err(corelink_handler_cas::CasHandlerError::NotFound { .. })),
+            matches!(
+                read,
+                Err(corelink_handler_cas::CasHandlerError::NotFound { .. })
+            ),
             "an over-cap write must leave NO blob in storage (reserve-before-commit)"
         );
         // Counter unchanged (the atomic reservation did not move it).
-        assert_eq!(store.used("t-cap", REGION), 4, "over-cap reservation must not move the counter");
+        assert_eq!(
+            store.used("t-cap", REGION),
+            4,
+            "over-cap reservation must not move the counter"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1730,7 +1873,11 @@ mod decorator_tests {
                 .with_storage_quota_bytes(Some(1_000_000)),
         )
         .expect("write");
-        assert_eq!(store.used("t1", REGION), n, "a durable write must accrue its bytes");
+        assert_eq!(
+            store.used("t1", REGION),
+            n,
+            "a durable write must accrue its bytes"
+        );
         // DELETE must RELEASE the reclaimed bytes so the counter drops to 0.
         dec.delete(CasDeleteRequest::new("t1", hash, "p", "t1", 2))
             .expect("delete");
@@ -1755,7 +1902,11 @@ mod decorator_tests {
                 .with_storage_quota_bytes(Some(0)),
         )
         .expect("unlimited write must succeed");
-        assert_eq!(store.used("t-unl", REGION), n, "unlimited tenant still accrues bytes_used");
+        assert_eq!(
+            store.used("t-unl", REGION),
+            n,
+            "unlimited tenant still accrues bytes_used"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1767,7 +1918,14 @@ mod decorator_tests {
         let body = b"no-cap-known".to_vec();
         let hash = hash_for(&body);
         let err = dec
-            .write(CasWriteRequest::new("t-nocap", hash.clone(), body, "p", "t-nocap", 1))
+            .write(CasWriteRequest::new(
+                "t-nocap",
+                hash.clone(),
+                body,
+                "p",
+                "t-nocap",
+                1,
+            ))
             .expect_err("indeterminate-cap write must be refused");
         match err {
             corelink_handler_cas::CasHandlerError::Internal(ref m) => {
@@ -1780,10 +1938,17 @@ mod decorator_tests {
         }
         let read = inner.read(CasReadRequest::new("t-nocap", hash, "p", "t-nocap", 2));
         assert!(
-            matches!(read, Err(corelink_handler_cas::CasHandlerError::NotFound { .. })),
+            matches!(
+                read,
+                Err(corelink_handler_cas::CasHandlerError::NotFound { .. })
+            ),
             "an indeterminate-cap write must leave NO blob (fail-closed before commit)"
         );
-        assert_eq!(store.used("t-nocap", REGION), 0, "fail-closed must create no row");
+        assert_eq!(
+            store.used("t-nocap", REGION),
+            0,
+            "fail-closed must create no row"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1959,11 +2124,11 @@ mod decorator_tests {
         let dd = dec.clone();
         let tw = tokio::spawn(async move {
             dw.write(
-                CasWriteRequest::new("t", ha, ba, "p", "t", 2)
-                    .with_storage_quota_bytes(Some(0)),
+                CasWriteRequest::new("t", ha, ba, "p", "t", 2).with_storage_quota_bytes(Some(0)),
             )
         });
-        let td = tokio::spawn(async move { dd.delete(CasDeleteRequest::new("t", hb, "p", "t", 3)) });
+        let td =
+            tokio::spawn(async move { dd.delete(CasDeleteRequest::new("t", hb, "p", "t", 3)) });
         tw.await.unwrap().expect("write A");
         td.await.unwrap().expect("delete B");
 
@@ -2048,7 +2213,10 @@ mod byok_accounting_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn committed_len_adds_overhead_only_for_active_convergent() {
-        let active = cache(Some(cfg(ByokCryptoMode::Convergent, ByokState::Active)), false);
+        let active = cache(
+            Some(cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            false,
+        );
         assert_eq!(
             byok_committed_len(Some(&active), TENANT, 1000).unwrap(),
             1000 + BYOK_CLB1_OVERHEAD as i64,
@@ -2058,18 +2226,31 @@ mod byok_accounting_tests {
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn committed_len_is_plaintext_for_inactive_and_unconfigured() {
-        let inactive = cache(Some(cfg(ByokCryptoMode::Convergent, ByokState::Inactive)), false);
-        assert_eq!(byok_committed_len(Some(&inactive), TENANT, 1000).unwrap(), 1000);
+        let inactive = cache(
+            Some(cfg(ByokCryptoMode::Convergent, ByokState::Inactive)),
+            false,
+        );
+        assert_eq!(
+            byok_committed_len(Some(&inactive), TENANT, 1000).unwrap(),
+            1000
+        );
         let unconfigured = cache(None, false);
-        assert_eq!(byok_committed_len(Some(&unconfigured), TENANT, 1000).unwrap(), 1000);
+        assert_eq!(
+            byok_committed_len(Some(&unconfigured), TENANT, 1000).unwrap(),
+            1000
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn committed_len_is_plaintext_for_public_namespace() {
         // `_public` stays plaintext (dedup) even under an active config.
-        let active = cache(Some(cfg(ByokCryptoMode::Convergent, ByokState::Active)), false);
+        let active = cache(
+            Some(cfg(ByokCryptoMode::Convergent, ByokState::Active)),
+            false,
+        );
         assert_eq!(
-            byok_committed_len(Some(&active), crate::adapter_cache::PUBLIC_NAMESPACE, 1000).unwrap(),
+            byok_committed_len(Some(&active), crate::adapter_cache::PUBLIC_NAMESPACE, 1000)
+                .unwrap(),
             1000,
             "_public is never encrypted ⇒ plaintext-size accounting"
         );
@@ -2093,10 +2274,19 @@ mod byok_accounting_tests {
         // `partial` (backfill dual-read) still engages `FailClosed` (Wave 4): the
         // inner write stores NOTHING (fails closed), so the reservation rolls back
         // net-zero ⇒ plaintext size.
-        let partial = cache(Some(cfg(ByokCryptoMode::Convergent, ByokState::Partial)), false);
-        assert_eq!(byok_committed_len(Some(&partial), TENANT, 1000).unwrap(), 1000);
+        let partial = cache(
+            Some(cfg(ByokCryptoMode::Convergent, ByokState::Partial)),
+            false,
+        );
+        assert_eq!(
+            byok_committed_len(Some(&partial), TENANT, 1000).unwrap(),
+            1000
+        );
         let partial_random = cache(Some(cfg(ByokCryptoMode::Random, ByokState::Partial)), false);
-        assert_eq!(byok_committed_len(Some(&partial_random), TENANT, 1000).unwrap(), 1000);
+        assert_eq!(
+            byok_committed_len(Some(&partial_random), TENANT, 1000).unwrap(),
+            1000
+        );
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2130,7 +2320,9 @@ mod byok_accounting_tests {
     impl CasDeleteHandler for EncryptingCasInner {
         fn delete(&self, req: CasDeleteRequest) -> Result<CasDeleteResponse, CasHandlerError> {
             let mut m = self.stored.lock().unwrap();
-            let reclaimed = m.remove(&(req.tenant.clone(), req.hash.clone())).unwrap_or(0);
+            let reclaimed = m
+                .remove(&(req.tenant.clone(), req.hash.clone()))
+                .unwrap_or(0);
             Ok(CasDeleteResponse::with_reclaimed(reclaimed > 0, reclaimed))
         }
     }

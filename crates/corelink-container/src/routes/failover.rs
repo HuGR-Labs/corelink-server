@@ -198,7 +198,13 @@ impl HealthProbe for RollingMetricsHealthProbe {
         let total = guard.len();
         if total == 0 {
             // No observed traffic in the window → healthy (nothing to fail over).
-            return Ok(RegionHealthSnapshot::evaluate(region, 0.0, 0, 0, timestamp_ms));
+            return Ok(RegionHealthSnapshot::evaluate(
+                region,
+                0.0,
+                0,
+                0,
+                timestamp_ms,
+            ));
         }
 
         let err_count = guard.iter().filter(|s| s.is_5xx).count();
@@ -568,10 +574,7 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
         assert!(reached.load(Ordering::SeqCst));
-        assert_eq!(
-            resp.headers().get(FAILOVER_ACTIVE_HEADER).unwrap(),
-            "1"
-        );
+        assert_eq!(resp.headers().get(FAILOVER_ACTIVE_HEADER).unwrap(), "1");
         // Enam's failover sibling is Wnam (WNAM↔ENAM).
         assert_eq!(
             resp.headers().get(FAILOVER_READ_REGION_HEADER).unwrap(),

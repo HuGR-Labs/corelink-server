@@ -282,7 +282,10 @@ impl InMemoryDsrTicketStore {
 
 impl DsrTicketStore for InMemoryDsrTicketStore {
     fn insert(&self, ticket: &DsrTicket) -> Result<(), String> {
-        let mut rows = self.rows.lock().map_err(|_| "ticket store poisoned".to_owned())?;
+        let mut rows = self
+            .rows
+            .lock()
+            .map_err(|_| "ticket store poisoned".to_owned())?;
         // INSERT OR IGNORE semantics: a duplicate (tenant, request_id) is a no-op.
         if rows
             .iter()
@@ -295,7 +298,10 @@ impl DsrTicketStore for InMemoryDsrTicketStore {
     }
 
     fn get(&self, tenant_id: &str, request_id: &str) -> Result<Option<DsrTicket>, String> {
-        let rows = self.rows.lock().map_err(|_| "ticket store poisoned".to_owned())?;
+        let rows = self
+            .rows
+            .lock()
+            .map_err(|_| "ticket store poisoned".to_owned())?;
         Ok(rows
             .iter()
             .find(|r| r.tenant_id == tenant_id && r.request_id == request_id)
@@ -303,7 +309,10 @@ impl DsrTicketStore for InMemoryDsrTicketStore {
     }
 
     fn list(&self, tenant_id: &str, limit: usize) -> Result<Vec<DsrTicket>, String> {
-        let rows = self.rows.lock().map_err(|_| "ticket store poisoned".to_owned())?;
+        let rows = self
+            .rows
+            .lock()
+            .map_err(|_| "ticket store poisoned".to_owned())?;
         let mut mine: Vec<DsrTicket> = rows
             .iter()
             .filter(|r| r.tenant_id == tenant_id)
@@ -315,7 +324,10 @@ impl DsrTicketStore for InMemoryDsrTicketStore {
     }
 
     fn update(&self, ticket: &DsrTicket) -> Result<(), String> {
-        let mut rows = self.rows.lock().map_err(|_| "ticket store poisoned".to_owned())?;
+        let mut rows = self
+            .rows
+            .lock()
+            .map_err(|_| "ticket store poisoned".to_owned())?;
         if let Some(slot) = rows
             .iter_mut()
             .find(|r| r.tenant_id == ticket.tenant_id && r.request_id == ticket.request_id)
@@ -326,7 +338,10 @@ impl DsrTicketStore for InMemoryDsrTicketStore {
     }
 
     fn count_since(&self, tenant_id: &str, since_ms: u64) -> Result<u64, String> {
-        let rows = self.rows.lock().map_err(|_| "ticket store poisoned".to_owned())?;
+        let rows = self
+            .rows
+            .lock()
+            .map_err(|_| "ticket store poisoned".to_owned())?;
         Ok(rows
             .iter()
             .filter(|r| r.tenant_id == tenant_id && r.submitted_at_ms >= since_ms)
@@ -342,7 +357,9 @@ pub struct D1DsrTicketStore {
 
 impl core::fmt::Debug for D1DsrTicketStore {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("D1DsrTicketStore").field("d1", &"[D1HttpClient]").finish()
+        f.debug_struct("D1DsrTicketStore")
+            .field("d1", &"[D1HttpClient]")
+            .finish()
     }
 }
 
@@ -357,7 +374,10 @@ impl D1DsrTicketStore {
         let get_str = |k: &str| row.get(k).and_then(Value::as_str).map(str::to_owned);
         let get_ms = |k: &str| {
             row.get(k)
-                .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                .and_then(|v| {
+                    v.as_i64()
+                        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                })
                 .map(|n| u64::try_from(n).unwrap_or(0))
         };
         let tenant_id = get_str("tenant_id")?;
@@ -458,7 +478,10 @@ impl DsrTicketStore for D1DsrTicketStore {
         Ok(rows
             .first()
             .and_then(|r| r.get("n"))
-            .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+            .and_then(|v| {
+                v.as_i64()
+                    .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+            })
             .map(|n| u64::try_from(n).unwrap_or(0))
             .unwrap_or(0))
     }
@@ -542,9 +565,18 @@ impl DsrPipeline for LivePipeline {
         dsr_id: &str,
         now_ms: u64,
     ) -> Result<(Value, Option<String>), String> {
-        let (export, receipt) =
-            super::access::run_portability(&self.d1, self.r2_audit.as_ref(), dsr_id, tenant_id, now_ms)?;
-        let handle = if receipt.persisted { receipt.r2_key } else { None };
+        let (export, receipt) = super::access::run_portability(
+            &self.d1,
+            self.r2_audit.as_ref(),
+            dsr_id,
+            tenant_id,
+            now_ms,
+        )?;
+        let handle = if receipt.persisted {
+            receipt.r2_key
+        } else {
+            None
+        };
         let value = serde_json::to_value(export).map_err(|e| format!("export serialize: {e}"))?;
         Ok((value, handle))
     }
@@ -559,7 +591,13 @@ impl DsrPipeline for LivePipeline {
         // The only live-rectifiable subject field is the account contact email
         // (`tenant.email_hash`), corrected + hashed by the live pipeline.
         match super::access::run_rectification(
-            &self.d1, dsr_id, tenant_id, "tenant", "email_hash", email, now_ms,
+            &self.d1,
+            dsr_id,
+            tenant_id,
+            "tenant",
+            "email_hash",
+            email,
+            now_ms,
         )? {
             Ok(_result) => Ok(Ok(())),
             Err(reject) => Ok(Err(reject.message().to_owned())),
@@ -614,7 +652,7 @@ impl core::fmt::Debug for PrivacyDsrRouteState {
 #[must_use]
 pub fn build_state_from_env() -> PrivacyDsrRouteState {
     let (pipeline, tickets): (Option<Arc<dyn DsrPipeline>>, Arc<dyn DsrTicketStore>) =
-        match build_live(){
+        match build_live() {
             Some((pipe, store)) => (Some(pipe), store),
             None => {
                 tracing::warn!(
@@ -743,7 +781,13 @@ async fn handle_portability(
     headers: HeaderMap,
     body: Option<Json<DsrSubmitBody>>,
 ) -> Response {
-    submit(state, headers, DsrRequestKind::Portability, unwrap_body(body)).await
+    submit(
+        state,
+        headers,
+        DsrRequestKind::Portability,
+        unwrap_body(body),
+    )
+    .await
 }
 
 async fn handle_rectification(
@@ -751,7 +795,13 @@ async fn handle_rectification(
     headers: HeaderMap,
     body: Option<Json<DsrSubmitBody>>,
 ) -> Response {
-    submit(state, headers, DsrRequestKind::Rectification, unwrap_body(body)).await
+    submit(
+        state,
+        headers,
+        DsrRequestKind::Rectification,
+        unwrap_body(body),
+    )
+    .await
 }
 
 async fn handle_erasure(
@@ -767,7 +817,13 @@ async fn handle_restriction(
     headers: HeaderMap,
     body: Option<Json<DsrSubmitBody>>,
 ) -> Response {
-    submit(state, headers, DsrRequestKind::Restriction, unwrap_body(body)).await
+    submit(
+        state,
+        headers,
+        DsrRequestKind::Restriction,
+        unwrap_body(body),
+    )
+    .await
 }
 
 async fn handle_objection(
@@ -796,9 +852,16 @@ async fn submit(
     let now = now_ms();
 
     // Rate limit (LGPD Art.20 humane cap) — fail-CLOSED on a store fault.
-    match state.tickets.count_since(&tenant, now.saturating_sub(DAY_MS)) {
+    match state
+        .tickets
+        .count_since(&tenant, now.saturating_sub(DAY_MS))
+    {
         Ok(n) if n >= DSR_DAILY_LIMIT => {
-            return (StatusCode::TOO_MANY_REQUESTS, "daily DSR request limit reached").into_response()
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                "daily DSR request limit reached",
+            )
+                .into_response()
         }
         Ok(_) => {}
         Err(e) => {
@@ -822,7 +885,11 @@ async fn submit(
 
     let Some(pipeline) = state.pipeline.as_ref() else {
         // Fail-CLOSED: the live pipeline is not wired (dev/CI / unconfigured).
-        return (StatusCode::SERVICE_UNAVAILABLE, "DSR pipeline not configured").into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "DSR pipeline not configured",
+        )
+            .into_response();
     };
 
     let mut ticket = DsrTicket {
@@ -847,12 +914,10 @@ async fn submit(
     };
 
     match action {
-        DsrRequestKind::Access => {
-            match pipeline.access(&tenant, &request_id, now) {
-                Ok(_export) => complete(&mut ticket, now, None, "access gathered"),
-                Err(e) => return pipeline_error(&e, "access"),
-            }
-        }
+        DsrRequestKind::Access => match pipeline.access(&tenant, &request_id, now) {
+            Ok(_export) => complete(&mut ticket, now, None, "access gathered"),
+            Err(e) => return pipeline_error(&e, "access"),
+        },
         DsrRequestKind::Portability => match pipeline.portability(&tenant, &request_id, now) {
             Ok((_export, handle)) => complete(&mut ticket, now, handle, "portability export ready"),
             Err(e) => return pipeline_error(&e, "portability"),
@@ -861,7 +926,12 @@ async fn submit(
             // Destructive arms: gate on the Worker-trusted MFA freshness header.
             if !mfa_fresh(&headers) {
                 ticket.mfa_required = true;
-                transition(&mut ticket, now, TicketStatus::Pending, "awaiting MFA step-up");
+                transition(
+                    &mut ticket,
+                    now,
+                    TicketStatus::Pending,
+                    "awaiting MFA step-up",
+                );
             } else {
                 match run_destructive(
                     pipeline.as_ref(),
@@ -897,7 +967,12 @@ async fn submit(
         }
         DsrRequestKind::Restriction | DsrRequestKind::Objection => {
             // Policy-only: durably recorded for operator disposition (no auto op).
-            transition(&mut ticket, now, TicketStatus::Pending, "recorded for operator review");
+            transition(
+                &mut ticket,
+                now,
+                TicketStatus::Pending,
+                "recorded for operator review",
+            );
         }
         // `DsrRequestKind` is `#[non_exhaustive]`.
         _ => return (StatusCode::BAD_REQUEST, "unsupported DSR action").into_response(),
@@ -1053,7 +1128,10 @@ async fn handle_verify_mfa(
         }
     };
     // Already terminal → idempotent detail (a repeat verify is a no-op).
-    if matches!(ticket.status, TicketStatus::Completed | TicketStatus::Rejected) {
+    if matches!(
+        ticket.status,
+        TicketStatus::Completed | TicketStatus::Rejected
+    ) {
         return (StatusCode::OK, Json(ticket.detail_json())).into_response();
     }
     // Fail-CLOSED: the destructive op runs only under a fresh Worker-trusted
@@ -1062,7 +1140,11 @@ async fn handle_verify_mfa(
         return (StatusCode::UNAUTHORIZED, "MFA step-up required").into_response();
     }
     let Some(pipeline) = state.pipeline.as_ref() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, "DSR pipeline not configured").into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "DSR pipeline not configured",
+        )
+            .into_response();
     };
     let now = now_ms();
     ticket.mfa_required = false;
@@ -1195,10 +1277,7 @@ fn parse_timeline_event(v: &Value) -> Option<TimelineEvent> {
         // The persisted `at` is ISO; the in-memory `at_ms` is only used for
         // re-serialization, so a parse miss falls back to 0 (display-only).
         at_ms: 0,
-        from: v
-            .get("from")
-            .and_then(Value::as_str)
-            .map(str_to_status),
+        from: v.get("from").and_then(Value::as_str).map(str_to_status),
         to: str_to_status(to),
         note: v.get("note").and_then(Value::as_str).map(str::to_owned),
     })
@@ -1337,8 +1416,14 @@ mod tests {
             _dsr: &str,
             _now: u64,
         ) -> Result<(Value, Option<String>), String> {
-            self.calls.lock().unwrap().push(format!("portability:{tenant}"));
-            Ok((json!({ "tenant": tenant }), Some("dsr_exports/x.json".to_owned())))
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("portability:{tenant}"));
+            Ok((
+                json!({ "tenant": tenant }),
+                Some("dsr_exports/x.json".to_owned()),
+            ))
         }
         fn rectification(
             &self,
@@ -1542,12 +1627,7 @@ mod tests {
         )
         .await;
         let rid = tickets.list(TENANT_A, 10).unwrap()[0].request_id.clone();
-        let resp = handle_status(
-            State(state),
-            clerk_headers(TENANT_B),
-            Path(rid),
-        )
-        .await;
+        let resp = handle_status(State(state), clerk_headers(TENANT_B), Path(rid)).await;
         assert_eq!(status_of(&resp), StatusCode::NOT_FOUND);
     }
 

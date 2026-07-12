@@ -98,7 +98,9 @@ fn happy_create_list_revoke_deny(cfg: &Config, client: &Client) -> JourneyResult
     }
     let created: Value = match create.json() {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("create body not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("create body not JSON: {e}"))
+        }
     };
     let pat_id = match created["pat"]["pat_id"].as_str() {
         Some(s) if !s.is_empty() => s.to_string(),
@@ -184,7 +186,9 @@ fn happy_create_list_revoke_deny(cfg: &Config, client: &Client) -> JourneyResult
     }
     let revoked: Value = match revoke.json() {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("revoke body not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("revoke body not JSON: {e}"))
+        }
     };
     if revoked["pat"]["revoked_at"].is_null() {
         return JourneyResult::fail(
@@ -230,7 +234,8 @@ fn happy_create_list_revoke_deny(cfg: &Config, client: &Client) -> JourneyResult
 /// manager holds. The minted PAT must carry exactly the requested (subset)
 /// scopes — never silently widened to the caller's full capability.
 fn edge_scope_subset(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "PAT lifecycle (edge): scope subset — request cache:read only → minted scopes == request";
+    let name =
+        "PAT lifecycle (edge): scope subset — request cache:read only → minted scopes == request";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
@@ -251,12 +256,18 @@ fn edge_scope_subset(cfg: &Config, client: &Client) -> JourneyResult {
         Ok(r) => r,
         Err(e) => return JourneyResult::fail(name, ms(start), format!("POST keys: {e}")),
     };
-    if let Err(m) = expect_status("POST /v1/customer/keys (subset)", create.status().as_u16(), 201) {
+    if let Err(m) = expect_status(
+        "POST /v1/customer/keys (subset)",
+        create.status().as_u16(),
+        201,
+    ) {
         return JourneyResult::fail(name, ms(start), m);
     }
     let body: Value = match create.json() {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("create body not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("create body not JSON: {e}"))
+        }
     };
 
     let minted = match body["pat"]["scopes"].as_array() {
@@ -410,17 +421,13 @@ fn adversarial_readonly_and_isolation(cfg: &Config, client: &Client) -> JourneyR
     }
     let victim: Value = match mint.json() {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("victim body not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("victim body not JSON: {e}"))
+        }
     };
     let victim_id = match victim["pat"]["pat_id"].as_str() {
         Some(s) if !s.is_empty() => s.to_string(),
-        _ => {
-            return JourneyResult::fail(
-                name,
-                ms(start),
-                "victim mint missing pat_id".to_string(),
-            )
-        }
+        _ => return JourneyResult::fail(name, ms(start), "victim mint missing pat_id".to_string()),
     };
 
     // Tenant B tries to revoke tenant A's pat_id. The route is tenant-scoped:

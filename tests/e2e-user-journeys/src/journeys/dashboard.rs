@@ -92,7 +92,11 @@ fn overview_usage_billing_shape(cfg: &Config, client: &Client) -> JourneyResult 
         Err(e) => return JourneyResult::fail(name, dur(), format!("overview not JSON: {e}")),
     };
     if body["tenant_id"].is_null() || body["plan"].is_null() {
-        return JourneyResult::fail(name, dur(), format!("overview missing tenant_id/plan: {body}"));
+        return JourneyResult::fail(
+            name,
+            dur(),
+            format!("overview missing tenant_id/plan: {body}"),
+        );
     }
     for field in ["period", "cas_bytes", "quota_bytes", "reads", "writes"] {
         if body["usage"][field].is_null() {
@@ -152,7 +156,11 @@ fn overview_usage_billing_shape(cfg: &Config, client: &Client) -> JourneyResult 
         }
     }
     if !body["invoices"].is_array() {
-        return JourneyResult::fail(name, dur(), format!("billing.invoices not an array: {body}"));
+        return JourneyResult::fail(
+            name,
+            dur(),
+            format!("billing.invoices not an array: {body}"),
+        );
     }
 
     JourneyResult::pass(name, dur())
@@ -273,7 +281,10 @@ fn tenant_scoping(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::fail(
             name,
             dur(),
-            format!("A overview got {} (expected 200) — cannot establish A's identity", a_resp.status()),
+            format!(
+                "A overview got {} (expected 200) — cannot establish A's identity",
+                a_resp.status()
+            ),
         );
     }
     let a_body: Value = match a_resp.json() {
@@ -283,7 +294,11 @@ fn tenant_scoping(cfg: &Config, client: &Client) -> JourneyResult {
     let a_tenant = match a_body["tenant_id"].as_str() {
         Some(t) => t.to_string(),
         None => {
-            return JourneyResult::fail(name, dur(), format!("A overview missing tenant_id: {a_body}"))
+            return JourneyResult::fail(
+                name,
+                dur(),
+                format!("A overview missing tenant_id: {a_body}"),
+            )
         }
     };
 
@@ -310,7 +325,11 @@ fn tenant_scoping(cfg: &Config, client: &Client) -> JourneyResult {
     let b_tenant = match b_body["tenant_id"].as_str() {
         Some(t) => t.to_string(),
         None => {
-            return JourneyResult::fail(name, dur(), format!("B overview missing tenant_id: {b_body}"))
+            return JourneyResult::fail(
+                name,
+                dur(),
+                format!("B overview missing tenant_id: {b_body}"),
+            )
         }
     };
 

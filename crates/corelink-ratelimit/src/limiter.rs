@@ -465,12 +465,10 @@ where
         Self::evict_if_at_cap(&mut guard, &bucket_key, self.bucket_cap);
 
         // Lazy materialise the bucket (and mark it freshly accessed for LRU).
-        let entry = guard
-            .entry(bucket_key.clone())
-            .or_insert_with(|| Bucket {
-                state: self.fresh_bucket(now_ms),
-                last_access: tick,
-            });
+        let entry = guard.entry(bucket_key.clone()).or_insert_with(|| Bucket {
+            state: self.fresh_bucket(now_ms),
+            last_access: tick,
+        });
         entry.last_access = tick;
         let state = entry.state;
 
@@ -987,7 +985,10 @@ mod tests {
             "next_tick must be strictly increasing (LRU recency); got {t0}, {t1}, {t2}"
         );
         // Distinctness too (a constant body fails this as well).
-        assert!(t0 != t1 && t1 != t2, "next_tick values must be unique per call");
+        assert!(
+            t0 != t1 && t1 != t2,
+            "next_tick values must be unique per call"
+        );
     }
 
     /// F2 algorithmic-complexity DoS closure: eviction must be `O(1)` — it
@@ -1010,7 +1011,10 @@ mod tests {
         // (Const relation — documents the invariant; clippy would const-fold any
         // assert over consts, so the allow is the idiomatic way to keep the
         // documenting check.)
-        #[allow(clippy::assertions_on_constants, reason = "documents the const sample-bound invariant")]
+        #[allow(
+            clippy::assertions_on_constants,
+            reason = "documents the const sample-bound invariant"
+        )]
         {
             assert!(LIMITER_EVICTION_SAMPLE_K >= 1);
         }

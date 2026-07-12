@@ -27,7 +27,7 @@ pub use audit::{AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink};
 pub use error::AcHandlerError;
 pub use handler::{
     AcDeleteHandler, AcDeleteRequest, AcDeleteResponse, AcListHandler, AcListRequest,
-    AcListResponse, AcLookupHandler, AcLookupRequest, AcLookupResponse, AcRefEntry, AcUpdateHandler,
-    AcUpdateRequest, AcUpdateResponse, InMemoryAcHandler,
+    AcListResponse, AcLookupHandler, AcLookupRequest, AcLookupResponse, AcRefEntry,
+    AcUpdateHandler, AcUpdateRequest, AcUpdateResponse, InMemoryAcHandler,
 };
 pub use observer::{InMemorySliObserver, Sli, SliObservation, SliObserver};

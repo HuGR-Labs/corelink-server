@@ -251,7 +251,10 @@ impl ErasureWorker for InMemoryErasureWorker {
         // SEV-1 signal is the `Rejected` decision arm itself
         // (`ErasureDecision::is_sev1() == true`), surfaced to the caller
         // with NO fan-out and NO state mutation.
-        match self.legitimacy.is_requested(request.dsr_id, request.tenant_id) {
+        match self
+            .legitimacy
+            .is_requested(request.dsr_id, request.tenant_id)
+        {
             Ok(true) => {}
             Ok(false) => {
                 return Ok(ErasureDecision::Rejected {
@@ -570,9 +573,7 @@ mod tests {
     use crate::backends::canonical_in_memory_adapters;
     use crate::event::ErasureSalt;
     use crate::idempotency::InMemoryErasureIdempotencyLedger;
-    use crate::legitimacy::{
-        FailingDsrLegitimacyStore, InMemoryDsrLegitimacyStore,
-    };
+    use crate::legitimacy::{FailingDsrLegitimacyStore, InMemoryDsrLegitimacyStore};
     use uuid::Uuid;
 
     fn fixed_uuid(seed: u8) -> Uuid {
@@ -748,8 +749,7 @@ mod tests {
         let legit = Arc::new(InMemoryDsrLegitimacyStore::new());
         let req = fresh_request();
         legit.insert_requested(req.dsr_id, req.tenant_id);
-        let (worker, audit, ledger) =
-            worker_with_legitimacy(legit as Arc<dyn DsrLegitimacyStore>);
+        let (worker, audit, ledger) = worker_with_legitimacy(legit as Arc<dyn DsrLegitimacyStore>);
         let d = worker.process_erasure(&req, 1_000).unwrap();
         let started = matches!(d, ErasureDecision::Started { .. });
         assert!(started);
@@ -764,8 +764,7 @@ mod tests {
         // fan-out: zero audit envelopes (not even `started`) and zero
         // ledger tombstones prove no backend was ever called.
         let legit = Arc::new(InMemoryDsrLegitimacyStore::new()); // empty
-        let (worker, audit, ledger) =
-            worker_with_legitimacy(legit as Arc<dyn DsrLegitimacyStore>);
+        let (worker, audit, ledger) = worker_with_legitimacy(legit as Arc<dyn DsrLegitimacyStore>);
         let req = fresh_request();
         let d = worker.process_erasure(&req, 1_000).unwrap();
         let rejected = matches!(d, ErasureDecision::Rejected { .. });
@@ -783,8 +782,7 @@ mod tests {
         // A legitimacy store ERROR (D1 fault) → fail-CLOSED Reject; an
         // ambiguous legitimacy check on an IRREVERSIBLE op must DENY.
         let legit = Arc::new(FailingDsrLegitimacyStore::new());
-        let (worker, audit, ledger) =
-            worker_with_legitimacy(legit as Arc<dyn DsrLegitimacyStore>);
+        let (worker, audit, ledger) = worker_with_legitimacy(legit as Arc<dyn DsrLegitimacyStore>);
         let req = fresh_request();
         let d = worker.process_erasure(&req, 1_000).unwrap();
         let rejected = matches!(d, ErasureDecision::Rejected { .. });

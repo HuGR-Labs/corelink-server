@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-byok/src/byok_aws/real.rs"
   - "crates/corelink-container/src/storage/byok_cas.rs"
   - "crates/corelink-container/src/routes/byok_admin.rs"
-checkpoint_sha: "8cb1d90f5df279e6e77995a39894ed9830301e5a"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["storage", "byok", "encryption", "kms", "envelope"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -51,11 +51,11 @@ Crucially this is the STORAGE-KEY digest ONLY — the convergent `CryptoContext`
 **Wave 3c — Mode B (`crypto_mode='random'`, max-isolation) is now IMPLEMENTED.** A Mode-B write mints a
 RANDOM per-blob DEK + nonce, wraps the DEK under the customer CMK, persists the wrapped DEK + nonce in a
 `byok_envelope` D1 row, then stores `MODE_B_MAGIC ‖ ciphertext` (`CLB2`, distinct from the convergent
-`CLB1`) in R2 (`crates/corelink-container/src/storage/byok_cas.rs:919-1029`). Mode B has NO dedup (each
+`CLB1`) in R2 (`crates/corelink-container/src/storage/byok_cas.rs:921-1031`). Mode B has NO dedup (each
 blob a unique DEK), but it is idempotent and orphan-free: the authoritative `(DEK, nonce)` is the
 PERSISTED envelope row written `INSERT … ON CONFLICT DO NOTHING` then re-read, and AES-GCM is
 deterministic given `(key, nonce, plaintext, aad)`, so every racer / re-PUT produces byte-identical
-ciphertext (`crates/corelink-container/src/storage/byok_cas.rs:757-904`). The envelope PK is
+ciphertext (`crates/corelink-container/src/storage/byok_cas.rs:759-906`). The envelope PK is
 surface-qualified (`"cas:<digest>"` / `"ac:<digest>"`) so a CAS blob and an AC entry that share a digest
 string never collide on one row (`crates/corelink-container/src/storage/byok_cas.rs:673-683`).
 
@@ -87,7 +87,7 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
    (`crates/corelink-container/src/storage/byok_cas.rs:1136-1147`).
 2. `ByokConfigCache::get` resolves the tenant's BYOK config with at most ONE D1 read on a miss and
    caches even the "not configured / inactive" answer, fail-closed on a source error
-   (`crates/corelink-container/src/storage/byok_cas.rs:202-230`).
+   (`crates/corelink-container/src/storage/byok_cas.rs:203-231`).
 3. For an `active` tenant, `TcsResolver::resolve` reads the CMK-wrapped Tenant Convergence Secret,
    unwraps it via the customer CMK through the injected `KmsProvider`, and caches the plaintext Tcs in a
    ≤300 s window (`crates/corelink-container/src/storage/byok_cas.rs:443-485`).
@@ -105,13 +105,13 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
    `byok_envelope` row (random DEK + nonce, CMK-wrapped, `INSERT … ON CONFLICT DO NOTHING` then re-read),
    then derives a deterministic `MODE_B_MAGIC ‖ ciphertext` (`CLB2`) from the persisted `(DEK, nonce)`;
    decrypt fetches the row, unwraps the DEK, and AES-GCM-decrypts — no dedup, but idempotent and
-   orphan-free (`crates/corelink-container/src/storage/byok_cas.rs:919-1029`).
+   orphan-free (`crates/corelink-container/src/storage/byok_cas.rs:921-1031`).
 8. The Mode-B `byok_envelope` rows live behind the async `ByokEnvelopeStore` trait, whose production impl
    `D1ByokEnvelopeStore` runs the `SELECT` + idempotent `INSERT` over the D1 row seam; the row carries the
    wrapped DEK + KMS identity + AAD + 12-byte nonce
-   (`crates/corelink-container/src/storage/byok_cas.rs:757-904`).
+   (`crates/corelink-container/src/storage/byok_cas.rs:759-906`).
 9. On-disk overheads are single-sourced so quota accounting (audit C3) cannot drift: `CLB1` = 32 B
-   (4 magic + 12 nonce + 16 GCM tag) (`crates/corelink-container/src/storage/byok_cas.rs:103`); `CLB2` =
+   (4 magic + 12 nonce + 16 GCM tag) (`crates/corelink-container/src/storage/byok_cas.rs:104`); `CLB2` =
    20 B (4 magic + 16 GCM tag — the nonce lives in the `byok_envelope` row, not inline)
    (`crates/corelink-container/src/storage/byok_cas.rs:664-671`).
 10. The AC surface mirrors CAS under `ac_crypto_context_for`, binding `AC_SURFACE` (`"ac"`) so the derived
@@ -132,7 +132,7 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 14. The operator activation surface is `byok_admin::router`, exposing `POST /v1/admin/byok/activate`
     (writes the `active` `tenant_byok_config` row from an operator-asserted CMK provider/identity + the
     CMK-WRAPPED Tcs — never the plaintext Tcs) and `POST /v1/admin/byok/deactivate` (the crypto-shred kill
-    switch) (`crates/corelink-container/src/routes/byok_admin.rs:128-133`).
+    switch) (`crates/corelink-container/src/routes/byok_admin.rs:129-134`).
 
 # Invariants
 - **Encrypt at rest ONLY for an `active` tenant, in its configured mode.** `partial` is active-but-deferred
@@ -144,16 +144,16 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 - **A Mode-B write never overwrites an existing envelope row.** `put_envelope_if_absent` is
   `INSERT … ON CONFLICT DO NOTHING`; a fresh random DEK over an existing row would orphan the stored
   ciphertext, so the caller re-reads and converges on the persisted winner, making every re-PUT idempotent
-  (`crates/corelink-container/src/storage/byok_cas.rs:757-904`).
+  (`crates/corelink-container/src/storage/byok_cas.rs:759-906`).
 - **Fail-CLOSED on undetermined state.** For an active tenant an unavailable config/KMS/Tcs surfaces as an
   `Err` (5xx), never a downgrade to plaintext: the config cache propagates the source error
-  (`crates/corelink-container/src/storage/byok_cas.rs:202-230`) and the Tcs resolver propagates a
+  (`crates/corelink-container/src/storage/byok_cas.rs:203-231`) and the Tcs resolver propagates a
   missing-secret / KMS-unwrap failure (`crates/corelink-container/src/storage/byok_cas.rs:443-485`).
 - **Read refuses non-ciphertext for an active tenant.** A stored object lacking the BYOK magic, or any
   AEAD failure, is an error — the raw stored bytes are never returned
   (`crates/corelink-container/src/storage/byok_cas.rs:634-653`).
 - **The unwrapped Tcs lives only inside a bounded ≤300 s window** (INV-BYOK-CRYPTO-SOVEREIGNTY): the Tcs
-  cache rejects a TTL over 300 s (`crates/corelink-container/src/storage/byok_cas.rs:342-354`).
+  cache rejects a TTL over 300 s (`crates/corelink-container/src/storage/byok_cas.rs:346-358`).
 - AT MOST ONE KMS provider may be linked in any build; a multi-provider build is rejected at compile time
   by the `compile_error!` guards (`crates/corelink-byok/src/lib.rs:105-139`).
 - `#![forbid(unsafe_code)]` holds on both the container factory and the umbrella crate's surface
@@ -169,7 +169,7 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
   "deferred to Wave 3b/3c" are OBSOLETE.
 - Mode B (random) deliberately has NO dedup — each blob gets a unique DEK. The caller MUST NOT apply the
   convergent HEAD-skip to a Mode-B write; idempotency comes from the persisted envelope row, not from
-  content-addressing (`crates/corelink-container/src/storage/byok_cas.rs:919-1029`).
+  content-addressing (`crates/corelink-container/src/storage/byok_cas.rs:921-1031`).
 - Provider selection is a build-time decision, not runtime config: switching a tenant's KMS provider is a
   rebuild + redeploy, not a flag flip. Even with a `byok-*-real` feature enabled, a tenant only encrypts
   once its config row is `active`.
@@ -177,18 +177,18 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 # Citations
 1. `crates/corelink-container/src/storage/byok_cas.rs:1-9` — module charter: the glue between the Wave-1 crypto primitives and the Wave-2 config read model, consumed by `R2CasHandler`/`R2AcHandler`.
 2. `crates/corelink-container/src/storage/byok_cas.rs:11-46` — GATED-INERT + FAIL-CLOSED safety envelope and the wave scope/deferrals.
-3. `crates/corelink-container/src/storage/byok_cas.rs:202-230` — `ByokConfigCache::get`: one D1 read on miss, caches the not-configured/inactive answer, fail-closed on source error.
-4. `crates/corelink-container/src/storage/byok_cas.rs:342-354` — `TcsCache::new`: rejects a Tcs TTL over 300 s (INV-BYOK-CRYPTO-SOVEREIGNTY).
+3. `crates/corelink-container/src/storage/byok_cas.rs:203-231` — `ByokConfigCache::get`: one D1 read on miss, caches the not-configured/inactive answer, fail-closed on source error.
+4. `crates/corelink-container/src/storage/byok_cas.rs:346-358` — `TcsCache::new`: rejects a Tcs TTL over 300 s (INV-BYOK-CRYPTO-SOVEREIGNTY).
 5. `crates/corelink-container/src/storage/byok_cas.rs:443-485` — `TcsResolver::resolve`: wrapped-Tcs read → CMK unwrap → ≤300 s cache, fail-closed.
 6. `crates/corelink-container/src/storage/byok_cas.rs:530-536` — `harden_digest`: §4 `hex(HMAC-SHA256(TCS, plaintext_digest))` storage key (on-the-fly, never persisted, deterministic per `(TCS, digest)`).
 7. `crates/corelink-container/src/storage/byok_cas.rs:582-605` — `ac_crypto_context_for`/`ac_crypto_context`: AC surface (`"ac"`) domain separation (audit H1).
 8. `crates/corelink-container/src/storage/byok_cas.rs:615-626` — `encrypt_cas_blob`: convergent envelope `MAGIC ‖ nonce ‖ ciphertext` (`CLB1`), dedup-preserving.
 9. `crates/corelink-container/src/storage/byok_cas.rs:634-653` — `decrypt_cas_blob`: magic check + AEAD decrypt, fail-closed (no raw bytes served).
-10. `crates/corelink-container/src/storage/byok_cas.rs:103` — `BYOK_CLB1_OVERHEAD` = 32 B (4 magic + 12 nonce + 16 tag), single-sourced.
+10. `crates/corelink-container/src/storage/byok_cas.rs:104` — `BYOK_CLB1_OVERHEAD` = 32 B (4 magic + 12 nonce + 16 tag), single-sourced.
 11. `crates/corelink-container/src/storage/byok_cas.rs:664-671` — `BYOK_CLB2_OVERHEAD` = 20 B (4 magic + 16 tag; Mode-B nonce lives in the `byok_envelope` row).
 12. `crates/corelink-container/src/storage/byok_cas.rs:673-683` — `envelope_blob_key`: surface-qualified PK (`"cas:"/"ac:"`) so a digest collision can't orphan a ciphertext.
-13. `crates/corelink-container/src/storage/byok_cas.rs:757-904` — `ByokEnvelopeStore` trait + `D1ByokEnvelopeStore`: idempotent `INSERT … ON CONFLICT DO NOTHING` + `SELECT` over the D1 row seam (audit C2).
-14. `crates/corelink-container/src/storage/byok_cas.rs:919-1029` — `ModeBEncryptor`: random per-blob DEK wrapped in `byok_envelope`, deterministic `CLB2` ciphertext, no dedup but idempotent/no-orphan.
+13. `crates/corelink-container/src/storage/byok_cas.rs:759-906` — `ByokEnvelopeStore` trait + `D1ByokEnvelopeStore`: idempotent `INSERT … ON CONFLICT DO NOTHING` + `SELECT` over the D1 row seam (audit C2).
+14. `crates/corelink-container/src/storage/byok_cas.rs:921-1031` — `ModeBEncryptor`: random per-blob DEK wrapped in `byok_envelope`, deterministic `CLB2` ciphertext, no dedup but idempotent/no-orphan.
 15. `crates/corelink-container/src/storage/byok_cas.rs:1136-1147` — `engagement_for`: the state → `Encrypt(mode)` / fail-closed / plaintext truth table.
 16. `crates/corelink-container/src/byok.rs:80-96` — feature-gated factory returning an `Arc<dyn KmsProvider>`.
 17. `crates/corelink-container/src/byok.rs:17` — `#![forbid(unsafe_code)]` on the factory.
@@ -199,4 +199,4 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 22. `crates/corelink-byok/src/lib.rs:105-139` — compile-time at-most-one-provider `compile_error!` guards.
 23. `crates/corelink-container/src/byok_orchestrator.rs:208-219` — `make_provider`: builds the singleton `Arc<dyn KmsProvider>` + boot audit event.
 24. `crates/corelink-container/src/byok_orchestrator.rs:223-272` — `build_active`: compile-time `cfg` dispatch over the four `byok-*-real` providers, `InMemoryFake` fallback when none set.
-25. `crates/corelink-container/src/routes/byok_admin.rs:128-133` — `byok_admin::router`: the operator `POST /v1/admin/byok/{activate,deactivate}` surface — the wired writer of `active`/`shredded` `tenant_byok_config` rows (activation takes the CMK-wrapped Tcs, never the plaintext).
+25. `crates/corelink-container/src/routes/byok_admin.rs:129-134` — `byok_admin::router`: the operator `POST /v1/admin/byok/{activate,deactivate}` surface — the wired writer of `active`/`shredded` `tenant_byok_config` rows (activation takes the CMK-wrapped Tcs, never the plaintext).

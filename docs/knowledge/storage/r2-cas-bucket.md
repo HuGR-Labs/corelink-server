@@ -6,7 +6,7 @@ source_files:
   - "crates/corelink-container/src/storage.rs"
   - "crates/corelink-container/src/storage/r2_s3.rs"
   - "crates/corelink-region/src/region.rs"
-checkpoint_sha: "a5575900faa8c3b1684b2f822ef384f291c13c7a"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "cas", "s3", "tenant-isolation"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -45,7 +45,7 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
 2. All S3/D1 config is sourced from env all-or-nothing — `from_env` returns `Some` only if every
    required variable is present and non-empty (`crates/corelink-container/src/storage.rs:98-114`).
 3. The S3 config is built directly from explicit static R2 credentials, deliberately bypassing the AWS
-   credential-provider chain (`crates/corelink-container/src/storage/r2_s3.rs:95-122`).
+   credential-provider chain (`crates/corelink-container/src/storage/r2_s3.rs:96-123`).
 4. CAS is a single bucket; the tenant and region are encoded in the object KEY
    `<region>/<tenant_prefix_16>/<digest>`, not in the bucket name
    (`crates/corelink-container/src/storage/r2_s3.rs:1-19`).
@@ -66,7 +66,7 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
   (`crates/corelink-container/src/storage/r2_s3.rs:1-19`).
 - The S3 config MUST be built from explicit static credentials; calling `aws_config::defaults` would
   trigger IMDS probes that have no endpoint in CF Containers and burn 60-90s of cold-start
-  (`crates/corelink-container/src/storage/r2_s3.rs:95-122`).
+  (`crates/corelink-container/src/storage/r2_s3.rs:96-123`).
 
 # Gotchas
 - Empty-string env is the trap, not just absent env: the DO forwards container env as `this.env.X ?? ""`,
@@ -82,5 +82,5 @@ unchanged — only the `<digest>` component is hardened for an active tenant.
 4. `crates/corelink-container/src/storage.rs:128-140` — `env_or` (absent OR empty → default; AC-500 incident).
 5. `crates/corelink-container/src/storage/r2_s3.rs:1-19` — CAS key scheme `<region>/<tenant_prefix_16>/<digest>` + tenant isolation.
 6. `crates/corelink-container/src/storage/r2_s3.rs:69-83` — `R2S3Client` bucket field + per-key delete-serialization locks.
-7. `crates/corelink-container/src/storage/r2_s3.rs:95-122` — direct static-credential S3 config; IMDS-bypass cold-start fix.
+7. `crates/corelink-container/src/storage/r2_s3.rs:96-123` — direct static-credential S3 config; IMDS-bypass cold-start fix.
 8. `crates/corelink-region/src/region.rs:66-70` — `Region::r2_bucket_name()` → per-region `corelink-cas-{region}` (the regional-bucket topology this native adapter does not use).

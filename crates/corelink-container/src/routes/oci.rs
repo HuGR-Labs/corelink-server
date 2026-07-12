@@ -337,10 +337,7 @@ impl BlobStore for OciMoatStore {
             }
         }
 
-        let open_count = g
-            .keys()
-            .filter(|k| k.starts_with(&session_prefix))
-            .count();
+        let open_count = g.keys().filter(|k| k.starts_with(&session_prefix)).count();
         if open_count >= OCI_MAX_OPEN_SESSIONS_PER_TENANT {
             tracing::warn!(
                 tenant_id = %tenant_text,
@@ -371,8 +368,8 @@ impl BlobStore for OciMoatStore {
         if !upload_uuid_belongs_to(tenant, upload_uuid) {
             return Err(format!("upload session not found: {upload_uuid}"));
         }
-        let chunk_len = u64::try_from(chunk.len())
-            .map_err(|e| format!("oci chunk len overflow: {e}"))?;
+        let chunk_len =
+            u64::try_from(chunk.len()).map_err(|e| format!("oci chunk len overflow: {e}"))?;
         // Global in-flight byte ceiling check (audit #6 / WP-OCI-DOS).
         // Perform the check BEFORE acquiring the session mutex so a
         // ceiling violation doesn't block other tenants for the lock
@@ -523,7 +520,9 @@ impl BlobStore for OciMoatStore {
         // rollback needed).
         OciDigest::parse(blob_key)
             .and_then(|d| d.verify_against_bytes(&session.buf))
-            .map_err(|e| format!("oci finalize: content does not match declared digest {blob_key}: {e:?}"))?;
+            .map_err(|e| {
+                format!("oci finalize: content does not match declared digest {blob_key}: {e:?}")
+            })?;
         // Persist content-addressed under the per-tenant namespace,
         // mapping the OCI digest (`blob_key`) → blake3 content hash. Thread the
         // RESOLVED per-tier storage cap (from the verified bearer) so the
@@ -640,14 +639,14 @@ impl TenantResolver for OciPatResolver {
         // lookup → Argon2id → scope) and surfaces the write-capability bit
         // so the `/token` exchange downscopes the registry grant — a
         // read-only PAT cannot mint a `push` bearer.
-        let (tenant_text, can_write) =
-            self.verifier
-                .verify_capability(pat.expose())
-                .await
-                .map_err(|e| match e {
-                    VerifyError::InvalidPat => "invalid PAT".to_owned(),
-                    VerifyError::Backend(m) => format!("backend: {m}"),
-                })?;
+        let (tenant_text, can_write) = self
+            .verifier
+            .verify_capability(pat.expose())
+            .await
+            .map_err(|e| match e {
+                VerifyError::InvalidPat => "invalid PAT".to_owned(),
+                VerifyError::Backend(m) => format!("backend: {m}"),
+            })?;
         let uuid = Uuid::parse_str(&tenant_text)
             .map_err(|e| format!("backend: malformed tenant uuid: {e}"))?;
         // G4b PRIMARY suspend gate: a tenant whose offboarding state ∈
@@ -808,7 +807,10 @@ pub fn router(
             suspend_resolver,
             realm_key: Arc::new(gate_realm_key),
         };
-        router = router.layer(axum::middleware::from_fn_with_state(gate_state, oci_quota_gate));
+        router = router.layer(axum::middleware::from_fn_with_state(
+            gate_state,
+            oci_quota_gate,
+        ));
     }
     router
 }
@@ -847,12 +849,14 @@ struct OciCostGate {
 // fail-CLOSED on reads too (402 over); only the request-count axis is fail-OPEN
 // (429). See the findings doc (#7) — the actual trust-path review is a separate task.
 fn oci_bearer_tenant(realm_key: &SecretWrap, headers: &axum::http::HeaderMap) -> Option<String> {
-    let raw = headers.get(axum::http::header::AUTHORIZATION)?.to_str().ok()?;
-    let token = raw.strip_prefix("Bearer ").or_else(|| raw.strip_prefix("bearer "))?;
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()?
-        .as_secs();
+    let raw = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?;
+    let token = raw
+        .strip_prefix("Bearer ")
+        .or_else(|| raw.strip_prefix("bearer "))?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
     corelink_adapter_host::oci::auth::verify(realm_key, token, now)
         .ok()
         .map(|vt| vt.tenant.to_canonical_text())
@@ -1441,7 +1445,10 @@ mod tests {
         // A lying digest (64 hex zeros) — NOT sha256("real-content").
         let lie = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
         assert!(
-            store.finalize_upload(&tenant, &uuid, lie, None).await.is_err(),
+            store
+                .finalize_upload(&tenant, &uuid, lie, None)
+                .await
+                .is_err(),
             "a digest-lie finalize must be rejected"
         );
         // And NOTHING was persisted under the lying key (no poisoned slot).
@@ -1525,8 +1532,12 @@ mod tests {
     }
 
     /// Push a blob of `len` bytes through open→append→finalize under `cap`.
-    async fn push_blob(store: &OciMoatStore, tenant: &TenantId, len: usize, cap: Option<i64>)
-        -> Result<(), String> {
+    async fn push_blob(
+        store: &OciMoatStore,
+        tenant: &TenantId,
+        len: usize,
+        cap: Option<i64>,
+    ) -> Result<(), String> {
         let bytes = vec![0xABu8; len];
         let digest = corelink_adapter_host::oci::digest::OciDigest::compute(
             corelink_adapter_host::oci::digest::OciDigestAlgo::Sha256,
@@ -1635,10 +1646,7 @@ mod tests {
         );
 
         // After cancelling one of A's sessions the cap is relaxed.
-        store
-            .cancel_upload(&tenant_a, &sessions[0])
-            .await
-            .unwrap();
+        store.cancel_upload(&tenant_a, &sessions[0]).await.unwrap();
         let new_session = store.open_upload(&tenant_a).await;
         assert!(
             new_session.is_ok(),
@@ -1873,7 +1881,10 @@ mod tests {
         let recovered = store
             .append_chunk(&hog, &hog_uuid2, Bytes::from_static(b"again"))
             .await;
-        assert!(recovered.is_ok(), "tenant must recover after its budget is released");
+        assert!(
+            recovered.is_ok(),
+            "tenant must recover after its budget is released"
+        );
     }
 
     /// Audit #6 / WP-OCI-DOS — lazy abandoned-session reaper.
@@ -1912,9 +1923,10 @@ mod tests {
                 );
             }
             // Reflect the fake bytes in the global counter.
-            store
-                .inflight_bytes
-                .store((OCI_MAX_OPEN_SESSIONS_PER_TENANT as u64) * 1024, Ordering::Relaxed);
+            store.inflight_bytes.store(
+                (OCI_MAX_OPEN_SESSIONS_PER_TENANT as u64) * 1024,
+                Ordering::Relaxed,
+            );
         }
 
         // The cap is now full (OCI_MAX_OPEN_SESSIONS_PER_TENANT stale
@@ -2414,9 +2426,8 @@ mod tests {
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let bearer = json["token"].as_str().expect("token field").to_owned();
 
-        let count = |b: &(String, String)| -> i64 {
-            store.0.lock().unwrap().get(b).copied().unwrap_or(0)
-        };
+        let count =
+            |b: &(String, String)| -> i64 { store.0.lock().unwrap().get(b).copied().unwrap_or(0) };
         assert_eq!(count(&bucket), 0, "no countable op yet");
 
         // A READ (GET blob) with the valid bearer → reaches the adapter (404 for
@@ -2598,7 +2609,10 @@ mod tests {
             .ok()
             .and_then(|j| j.get("token").and_then(|t| t.as_str().map(str::to_owned)))
             .is_some();
-        assert!(!has_token, "no bearer token must be minted for a suspended tenant");
+        assert!(
+            !has_token,
+            "no bearer token must be minted for a suspended tenant"
+        );
     }
 
     #[tokio::test]
@@ -2650,7 +2664,11 @@ mod tests {
         let bearer = mint_bearer(&app, &pt).await;
         // Active: the bearer pulls fine (404 absent blob).
         let resp = app.clone().oneshot(v2_get(&bearer)).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND, "active pull reaches adapter");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "active pull reaches adapter"
+        );
         // Suspend MID-SESSION (no re-mint) → the same bearer is now 403'd.
         suspend.suspended.store(true, Ordering::SeqCst);
         let resp = app.oneshot(v2_get(&bearer)).await.unwrap();

@@ -61,23 +61,20 @@ impl std::fmt::Debug for AuthSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Token(_) => f.write_str("AuthSource::Token(<redacted>)"),
-            Self::AppRole { role_id, .. } => {
-                f.debug_struct("AuthSource::AppRole")
-                    .field("role_id", role_id)
-                    .field("secret_id", &"<redacted>")
-                    .finish()
-            }
-            Self::Kubernetes { role, .. } => {
-                f.debug_struct("AuthSource::Kubernetes")
-                    .field("role", role)
-                    .field("sa_jwt", &"<redacted>")
-                    .finish()
-            }
-            Self::AwsIam { role } => {
-                f.debug_struct("AuthSource::AwsIam")
-                    .field("role", role)
-                    .finish()
-            }
+            Self::AppRole { role_id, .. } => f
+                .debug_struct("AuthSource::AppRole")
+                .field("role_id", role_id)
+                .field("secret_id", &"<redacted>")
+                .finish(),
+            Self::Kubernetes { role, .. } => f
+                .debug_struct("AuthSource::Kubernetes")
+                .field("role", role)
+                .field("sa_jwt", &"<redacted>")
+                .finish(),
+            Self::AwsIam { role } => f
+                .debug_struct("AuthSource::AwsIam")
+                .field("role", role)
+                .finish(),
             Self::Static(_) => f.write_str("AuthSource::Static(<redacted>)"),
         }
     }

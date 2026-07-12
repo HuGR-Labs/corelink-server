@@ -36,8 +36,7 @@ use serde_json::{json, Value};
 
 use crate::harness::{
     bearer, expect_denied, expect_gate_denied, sha256_hex, stripe_signature_header, unique_blob,
-    url_cas, url_customer,
-    url_stripe_webhook, url_tier_select, Config, JourneyResult,
+    url_cas, url_customer, url_stripe_webhook, url_tier_select, Config, JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -188,12 +187,16 @@ fn billing_portal(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("POST /v1/customer/billing/portal got {status} (expected 200 or 404). url={url}"),
+            format!(
+                "POST /v1/customer/billing/portal got {status} (expected 200 or 404). url={url}"
+            ),
         );
     }
     let body: Value = match resp.json() {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("portal body not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("portal body not JSON: {e}"))
+        }
     };
     // Contract (routes/customer.rs handle_billing_portal): {"portal_url": "..."}.
     match body.get("portal_url").and_then(Value::as_str) {
@@ -330,8 +333,10 @@ fn checkout_unauthed_denied(cfg: &Config, client: &Client) -> JourneyResult {
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("MONEY-PATH: unauthed tier-select got {status} — a checkout session was \
-                     reachable without a Clerk session"),
+            format!(
+                "MONEY-PATH: unauthed tier-select got {status} — a checkout session was \
+                     reachable without a Clerk session"
+            ),
         );
     }
     match expect_gate_denied("unauthed tier-select", status) {
@@ -360,7 +365,8 @@ fn checkout_unauthed_denied(cfg: &Config, client: &Client) -> JourneyResult {
 /// Checkout hand-off) or `url`; we assert a 2xx carrying a non-empty checkout
 /// URL string. Any 5xx is a real failure.
 fn checkout_session_authed(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "Billing: authed checkout-session creation -> 200 {checkout_url} (Stripe-test-gated)";
+    let name =
+        "Billing: authed checkout-session creation -> 200 {checkout_url} (Stripe-test-gated)";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
@@ -371,23 +377,20 @@ fn checkout_session_authed(cfg: &Config, client: &Client) -> JourneyResult {
         .ok()
         .filter(|v| !v.is_empty());
 
-    let session = match (stripe_test, session) {
-        (true, Some(s)) => s,
-        (false, _) => {
-            return JourneyResult::gated(
+    let session =
+        match (stripe_test, session) {
+            (true, Some(s)) => s,
+            (false, _) => return JourneyResult::gated(
                 name,
                 "CORELINK_E2E_STRIPE_TEST=1 not set — the authed checkout-session creation drives \
                  Stripe-test + a Clerk session; run only against a Stripe-test-backed env",
-            )
-        }
-        (true, None) => {
-            return JourneyResult::gated(
+            ),
+            (true, None) => return JourneyResult::gated(
                 name,
                 "CORELINK_E2E_CLERK_SESSION not set — tier-select is Clerk-session authenticated \
                  (not a PAT); supply a Clerk session bearer out-of-band to exercise the happy path",
-            )
-        }
-    };
+            ),
+        };
 
     let url = url_tier_select(cfg);
     let body = json!({ "tier": "solo", "interval": "month" }).to_string();
@@ -523,19 +526,18 @@ fn webhook_unsigned_rejected(_cfg: &Config, client: &Client) -> JourneyResult {
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
-    let base = match env::var("CORELINK_E2E_SIGNUP_WORKER_ENDPOINT")
-        .ok()
-        .filter(|v| !v.is_empty())
-    {
-        Some(b) => b,
-        None => {
-            return JourneyResult::gated(
+    let base =
+        match env::var("CORELINK_E2E_SIGNUP_WORKER_ENDPOINT")
+            .ok()
+            .filter(|v| !v.is_empty())
+        {
+            Some(b) => b,
+            None => return JourneyResult::gated(
                 name,
                 "CORELINK_E2E_SIGNUP_WORKER_ENDPOINT not set — no signup-worker host to probe the \
                  unsigned-webhook deny",
-            )
-        }
-    };
+            ),
+        };
 
     let url = url_stripe_webhook(&base);
     // A well-formed subscription.updated body, but NO Stripe-Signature header.
@@ -737,7 +739,9 @@ fn webhook_tier_upgrade_simulation(cfg: &Config, client: &Client) -> JourneyResu
     }
     let body: Value = match bresp.json() {
         Ok(v) => v,
-        Err(e) => return JourneyResult::fail(name, ms(start), format!("billing body not JSON: {e}")),
+        Err(e) => {
+            return JourneyResult::fail(name, ms(start), format!("billing body not JSON: {e}"))
+        }
     };
     let status_str = body.get("status").and_then(Value::as_str).unwrap_or("");
     // The active/paid lexicon the contract exposes (routes/customer.rs maps the

@@ -420,7 +420,9 @@ pub fn ms_to_iso8601(unix_ms: i64) -> String {
 fn iso8601_to_ms(s: &str) -> Option<i64> {
     let s = s.trim();
     // Split date from the optional time component on 'T' or ' '.
-    let (date, time) = s.split_once(['T', ' ']).map_or((s, None), |(d, t)| (d, Some(t)));
+    let (date, time) = s
+        .split_once(['T', ' '])
+        .map_or((s, None), |(d, t)| (d, Some(t)));
     let mut dp = date.split('-');
     let y: i64 = dp.next()?.parse().ok()?;
     let m: u32 = dp.next()?.parse().ok()?;
@@ -839,7 +841,9 @@ impl D1CustomerHandler {
                     col_opt_i64(row, "id")
                         .map(|i| i.to_string())
                         .unwrap_or_default(),
-                    col_opt_i64(row, "ts_ms").map(ms_to_iso8601).unwrap_or_default(),
+                    col_opt_i64(row, "ts_ms")
+                        .map(ms_to_iso8601)
+                        .unwrap_or_default(),
                     col_opt_str(row, "event_type").unwrap_or_default(),
                     // No per-event severity column — informational activity only.
                     "info",
@@ -903,7 +907,8 @@ impl D1CustomerHandler {
             roll.misses = roll.misses.saturating_add(col_u64(row, "misses"));
             let day = col_opt_str(row, "day").unwrap_or_default();
             // cas_bytes = 0: no per-day byte history exists (0089 has no byte col).
-            roll.daily.push(DailyUsageBucket::new(day, reads, writes, 0));
+            roll.daily
+                .push(DailyUsageBucket::new(day, reads, writes, 0));
         }
         Ok(roll)
     }
@@ -1578,7 +1583,11 @@ impl CustomerTeamHandler for D1CustomerHandler {
         let member = TeamMemberRow::new(
             req.target_user_id.clone(),
             "—",
-            if role.is_empty() { "member".to_owned() } else { role },
+            if role.is_empty() {
+                "member".to_owned()
+            } else {
+                role
+            },
             String::new(),
             "removed",
         );
@@ -1647,7 +1656,9 @@ impl CustomerAuditHandler for D1CustomerHandler {
                     col_opt_i64(row, "id")
                         .map(|i| i.to_string())
                         .unwrap_or_default(),
-                    col_opt_i64(row, "ts_ms").map(ms_to_iso8601).unwrap_or_default(),
+                    col_opt_i64(row, "ts_ms")
+                        .map(ms_to_iso8601)
+                        .unwrap_or_default(),
                     col_opt_str(row, "event_type").unwrap_or_default(),
                     // No per-event severity column; the customer-facing surface
                     // carries only informational activity rows.
@@ -1738,7 +1749,9 @@ impl core::str::FromStr for ByokMode {
             "managed" => Ok(Self::Managed),
             "byok" => Ok(Self::Byok),
             "hyok" => Ok(Self::Hyok),
-            other => Err(ByokConfigError::Parse(format!("unknown byok mode: {other:?}"))),
+            other => Err(ByokConfigError::Parse(format!(
+                "unknown byok mode: {other:?}"
+            ))),
         }
     }
 }
@@ -1865,9 +1878,7 @@ fn parse_byok_config_row(row: &D1Row) -> Result<TenantByokConfig, ByokConfigErro
         .ok_or_else(|| ByokConfigError::Parse("tenant_byok_config.mode missing".to_owned()))?
         .parse::<ByokMode>()?;
     let crypto_mode = col_opt_str(row, "crypto_mode")
-        .ok_or_else(|| {
-            ByokConfigError::Parse("tenant_byok_config.crypto_mode missing".to_owned())
-        })?
+        .ok_or_else(|| ByokConfigError::Parse("tenant_byok_config.crypto_mode missing".to_owned()))?
         .parse::<ByokCryptoMode>()?;
     let state = col_opt_str(row, "state")
         .ok_or_else(|| ByokConfigError::Parse("tenant_byok_config.state missing".to_owned()))?
@@ -2131,11 +2142,7 @@ impl<R: ByokConfigRows> D1ByokConfigWriter<R> {
     /// - [`ByokWriteError::Invalid`] when the parameters fail validation.
     /// - [`ByokWriteError::IllegalTransition`] when the tenant is `shredded`.
     /// - [`ByokWriteError::Transport`] on any D1 write failure.
-    pub async fn activate(
-        &self,
-        act: &ByokActivation,
-        now_ms: i64,
-    ) -> Result<(), ByokWriteError> {
+    pub async fn activate(&self, act: &ByokActivation, now_ms: i64) -> Result<(), ByokWriteError> {
         act.validate()?;
         // Monotonic guard: crypto-shred is terminal — a shredded tenant's
         // ciphertext is unrecoverable, so re-activation would be a lie.
@@ -2233,11 +2240,7 @@ impl<R: ByokConfigRows> D1ByokConfigWriter<R> {
     /// - [`ByokWriteError::IllegalTransition`] when the tenant is not
     ///   active/partial/shredded (i.e. no active BYOK config to kill).
     /// - [`ByokWriteError::Transport`] on any D1 read/write failure.
-    pub async fn deactivate(
-        &self,
-        tenant_id: &str,
-        now_ms: i64,
-    ) -> Result<(), ByokWriteError> {
+    pub async fn deactivate(&self, tenant_id: &str, now_ms: i64) -> Result<(), ByokWriteError> {
         match self.current_state(tenant_id).await? {
             // Nothing active to kill — refuse rather than write a spurious
             // shredded record over a fresh/managed tenant.
@@ -2868,8 +2871,14 @@ mod tests {
         assert_eq!(resp.writes, 1_500, "writes summed across days");
         // Daily series, oldest-first, cas_bytes always 0 (no per-day byte history).
         assert_eq!(resp.daily.len(), 2);
-        assert_eq!(resp.daily[0], DailyUsageBucket::new("2023-11-01", 5_000, 1_000, 0));
-        assert_eq!(resp.daily[1], DailyUsageBucket::new("2023-11-02", 3_000, 500, 0));
+        assert_eq!(
+            resp.daily[0],
+            DailyUsageBucket::new("2023-11-01", 5_000, 1_000, 0)
+        );
+        assert_eq!(
+            resp.daily[1],
+            DailyUsageBucket::new("2023-11-02", 3_000, 500, 0)
+        );
         // hit_rate = hits/(hits+misses) = 6000/8000 = 0.75.
         assert_eq!(resp.hit_rate, Some(0.75));
         // time_saved_seconds = hits * 15 = 6000 * 15 = 90_000.
@@ -2911,7 +2920,10 @@ mod tests {
             .usage(UsageRequest::new(TENANT, "clpat_x", None, 0))
             .unwrap();
         assert_eq!(resp.writes, 42, "writes still surface");
-        assert_eq!(resp.hit_rate, None, "no cache reads → honest null, never a fabricated rate");
+        assert_eq!(
+            resp.hit_rate, None,
+            "no cache reads → honest null, never a fabricated rate"
+        );
         assert_eq!(resp.time_saved_seconds, 0);
         assert_eq!(resp.dollars_saved_cents, 0);
     }
@@ -2936,18 +2948,21 @@ mod tests {
         f.handler
             .usage(UsageRequest::new(TENANT, "clpat_x", None, 0))
             .unwrap();
-        let rollup_call = f
-            .db
-            .calls()
-            .into_iter()
-            .find(|(sql, _)| sql.contains("FROM usage_daily"))
-            .expect("usage_daily rollup query issued");
+        let rollup_call =
+            f.db.calls()
+                .into_iter()
+                .find(|(sql, _)| sql.contains("FROM usage_daily"))
+                .expect("usage_daily rollup query issued");
         let (sql, binds) = rollup_call;
         assert!(sql.trim_start().starts_with("SELECT"), "READ-ONLY select");
         assert!(!sql.contains("INSERT") && !sql.contains("UPDATE"));
         assert!(sql.contains("day LIKE ?2"));
         assert_eq!(binds[0], json!(TENANT), "bound to the caller tenant");
-        assert_eq!(binds[1], json!("2023-11-%"), "period-scoped LIKE for the current period");
+        assert_eq!(
+            binds[1],
+            json!("2023-11-%"),
+            "period-scoped LIKE for the current period"
+        );
     }
 
     // ── Billing ──────────────────────────────────────────────────────────────
@@ -3566,7 +3581,11 @@ mod tests {
         }
         // `Developer` collapses onto the CHECK domain → `member`.
         assert_eq!(insert.1[3], json!("member"));
-        assert_eq!(insert.1[4], json!("clpat_x"), "invited_by = caller principal");
+        assert_eq!(
+            insert.1[4],
+            json!("clpat_x"),
+            "invited_by = caller principal"
+        );
 
         // Audit: Attempted BEFORE the write, Committed AFTER.
         let kinds: Vec<_> = f.audit.snapshot().unwrap().iter().map(|e| e.kind).collect();
@@ -3622,7 +3641,10 @@ mod tests {
             MockD1::with(vec![
                 (
                     "role, status FROM team_member",
-                    vec![row(&[("role", json!("member")), ("status", json!("active"))])],
+                    vec![row(&[
+                        ("role", json!("member")),
+                        ("status", json!("active")),
+                    ])],
                 ),
                 (
                     "pat_id FROM pat",
@@ -3636,15 +3658,24 @@ mod tests {
         );
         let resp = f
             .handler
-            .remove(TeamRemoveRequest::new(TENANT, "clpat_owner", "user_member1", 0))
+            .remove(TeamRemoveRequest::new(
+                TENANT,
+                "clpat_owner",
+                "user_member1",
+                0,
+            ))
             .unwrap();
-        assert_eq!(resp.revoked_pats, 2, "both of the member's live PATs revoked");
+        assert_eq!(
+            resp.revoked_pats, 2,
+            "both of the member's live PATs revoked"
+        );
         assert_eq!(resp.member.status, "removed");
 
         // The load-bearing effects must both have been issued to D1.
         let sqls: Vec<String> = f.db.calls().into_iter().map(|(s, _)| s).collect();
         assert!(
-            sqls.iter().any(|s| s.contains("UPDATE pat SET revoked_at_ms")),
+            sqls.iter()
+                .any(|s| s.contains("UPDATE pat SET revoked_at_ms")),
             "must revoke the member's PATs"
         );
         assert!(
@@ -3667,7 +3698,10 @@ mod tests {
         let f = fixture_with(
             MockD1::with(vec![(
                 "role, status FROM team_member",
-                vec![row(&[("role", json!("owner")), ("status", json!("active"))])],
+                vec![row(&[
+                    ("role", json!("owner")),
+                    ("status", json!("active")),
+                ])],
             )]),
             None,
         );
@@ -3675,7 +3709,10 @@ mod tests {
             .handler
             .remove(TeamRemoveRequest::new(TENANT, "clpat_x", "user_owner", 0))
             .unwrap_err();
-        assert!(matches!(err, CustomerHandlerError::Unauthorized(_)), "{err:?}");
+        assert!(
+            matches!(err, CustomerHandlerError::Unauthorized(_)),
+            "{err:?}"
+        );
         // No PAT revocation must have been attempted for an owner-removal reject.
         let sqls: Vec<String> = f.db.calls().into_iter().map(|(s, _)| s).collect();
         assert!(!sqls.iter().any(|s| s.contains("UPDATE pat")));
@@ -3689,7 +3726,10 @@ mod tests {
             .handler
             .remove(TeamRemoveRequest::new(TENANT, "clpat_x", "user_ghost", 0))
             .unwrap_err();
-        assert!(matches!(err, CustomerHandlerError::NotFound { .. }), "{err:?}");
+        assert!(
+            matches!(err, CustomerHandlerError::NotFound { .. }),
+            "{err:?}"
+        );
     }
 
     // ── Audit query ──────────────────────────────────────────────────────────
@@ -3766,8 +3806,11 @@ mod tests {
             iso8601_to_ms("2023-11-14T22:13:20.999Z"), // fractional dropped
             Some(1_700_000_000_000)
         );
-        assert_eq!(iso8601_to_ms("2023-11-14 22:13:20"), Some(1_700_000_000_000)); // space sep, no Z
-        // Garbage → None (caller then applies no filter).
+        assert_eq!(
+            iso8601_to_ms("2023-11-14 22:13:20"),
+            Some(1_700_000_000_000)
+        ); // space sep, no Z
+           // Garbage → None (caller then applies no filter).
         assert_eq!(iso8601_to_ms("not-a-date"), None);
         assert_eq!(iso8601_to_ms("2023-13-01"), None); // month out of range
         assert_eq!(iso8601_to_ms("2023-11-14T25:00:00Z"), None); // hour out of range
@@ -3892,7 +3935,10 @@ mod tests {
             .iter()
             .find(|(s, _)| s.contains("FROM customer_audit_events"))
             .expect("the audit SELECT must have run");
-        assert!(!sql.contains("ts_ms >="), "bad since must not filter: {sql}");
+        assert!(
+            !sql.contains("ts_ms >="),
+            "bad since must not filter: {sql}"
+        );
         assert_eq!(binds.len(), 2, "tenant + LIMIT only: {binds:?}");
         assert!(sql.ends_with("ORDER BY ts_ms DESC LIMIT ?2"), "{sql}");
     }
@@ -3952,11 +3998,7 @@ mod tests {
     }
 
     impl ByokConfigRows for MockByokRows {
-        async fn query_rows(
-            &self,
-            _sql: &str,
-            _binds: Vec<Value>,
-        ) -> Result<Vec<D1Row>, String> {
+        async fn query_rows(&self, _sql: &str, _binds: Vec<Value>) -> Result<Vec<D1Row>, String> {
             match &self.fail {
                 Some(e) => Err(e.clone()),
                 None => Ok(self.rows.clone()),
@@ -4052,7 +4094,10 @@ mod tests {
     async fn get_byok_config_none_when_absent() {
         let reader = D1ByokConfigReader::new(Arc::new(MockByokRows::default()));
         let got = reader.get_byok_config(TENANT).await.unwrap();
-        assert!(got.is_none(), "no row = BYOK not configured = today's behaviour");
+        assert!(
+            got.is_none(),
+            "no row = BYOK not configured = today's behaviour"
+        );
     }
 
     #[tokio::test]
@@ -4120,11 +4165,7 @@ mod tests {
     }
 
     impl ByokConfigRows for StatefulByokDb {
-        async fn query_rows(
-            &self,
-            sql: &str,
-            binds: Vec<Value>,
-        ) -> Result<Vec<D1Row>, String> {
+        async fn query_rows(&self, sql: &str, binds: Vec<Value>) -> Result<Vec<D1Row>, String> {
             if let Some(e) = &self.fail {
                 return Err(e.clone());
             }
@@ -4210,8 +4251,9 @@ mod tests {
     /// with the wrapped Tcs round-tripping to the exact bytes.
     #[tokio::test]
     async fn activate_then_read_engages_encryption() {
-        use crate::storage::byok_cas::{engagement_for, ByokEngagement, ByokSecretSource,
-            D1ByokSecretReader};
+        use crate::storage::byok_cas::{
+            engagement_for, ByokEngagement, ByokSecretSource, D1ByokSecretReader,
+        };
 
         let db = Arc::new(StatefulByokDb::default());
         let writer = D1ByokConfigWriter::new(db.clone());
@@ -4300,7 +4342,10 @@ mod tests {
             .activate(&activation_fixture(), NOW_ACT_MS)
             .await
             .expect("activate");
-        writer.deactivate(TENANT, NOW_ACT_MS + 1).await.expect("shred");
+        writer
+            .deactivate(TENANT, NOW_ACT_MS + 1)
+            .await
+            .expect("shred");
         let err = writer
             .activate(&activation_fixture(), NOW_ACT_MS + 2)
             .await

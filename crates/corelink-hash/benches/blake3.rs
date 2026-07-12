@@ -19,8 +19,8 @@
 )]
 
 use corelink_hash::Digest;
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
 
 fn bench_blake3_sizes(c: &mut Criterion) {
     // Each tuple: (label, byte size). Use small sample size for the 100 MiB

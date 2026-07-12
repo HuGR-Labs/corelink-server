@@ -1049,8 +1049,9 @@ pub fn router(state: TurboRouteState) -> Router {
         // `status` route keep the 100 MiB limit.
         .route(
             TURBO_EVENTS_ROUTE,
-            post(handle_events)
-                .layer(axum::extract::DefaultBodyLimit::max(EVENTS_BODY_LIMIT_BYTES)),
+            post(handle_events).layer(axum::extract::DefaultBodyLimit::max(
+                EVENTS_BODY_LIMIT_BYTES,
+            )),
         )
         .route(TURBO_STATUS_ROUTE, post(handle_status))
         .route(TURBO_GET_ROUTE, get(handle_get).put(handle_put))
@@ -1430,11 +1431,7 @@ async fn handle_events(
                 "turbo /events body read timed out (slow body); returning 408 and \
                  releasing the held events permit + slot"
             );
-            return (
-                StatusCode::REQUEST_TIMEOUT,
-                "events body read timed out",
-            )
-                .into_response();
+            return (StatusCode::REQUEST_TIMEOUT, "events body read timed out").into_response();
         }
     };
     let principal = format!("anon@{}", auth.0);
@@ -2076,10 +2073,7 @@ mod tests {
         let state = fixture();
         {
             let mut g = state.put_inflight.lock().unwrap();
-            g.insert(
-                TEST_AUTH_TENANT.to_owned(),
-                TURBO_PUT_CONCURRENCY_LIMIT,
-            );
+            g.insert(TEST_AUTH_TENANT.to_owned(), TURBO_PUT_CONCURRENCY_LIMIT);
         }
         let app = router(state);
         let req = Request::builder()
@@ -2275,7 +2269,11 @@ mod tests {
         assert_eq!(used(), 35, "two fresh keys sum (no spurious release)");
         // Overwrite k1 same size: net 0 → total unchanged.
         put_artifact(&app, "k1", vec![1u8; 10]).await;
-        assert_eq!(used(), 35, "same-size overwrite of one key leaves the total");
+        assert_eq!(
+            used(),
+            35,
+            "same-size overwrite of one key leaves the total"
+        );
     }
 
     // ── finding #2: the cap is enforced PRE-BUFFER (FromRequestParts) ─────────

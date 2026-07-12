@@ -38,8 +38,8 @@ use reqwest::blocking::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 
 use crate::harness::{
-    bearer, blake3_hex, expect_denied, expect_gate_denied, sha256_hex, unique_blob, url_cas,
-    url_cas_list, url_ac, url_ac_list, Config, JourneyResult,
+    bearer, blake3_hex, expect_denied, expect_gate_denied, sha256_hex, unique_blob, url_ac,
+    url_ac_list, url_cas, url_cas_list, Config, JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -226,7 +226,10 @@ fn read_only_write_denied(cfg: &Config, client: &Client, s: Surface) -> JourneyR
         return JourneyResult::fail(
             name,
             ms(start),
-            format!("SECURITY: read-only PAT WROTE (got {st}) — scope bypass on {}", s.label()),
+            format!(
+                "SECURITY: read-only PAT WROTE (got {st}) — scope bypass on {}",
+                s.label()
+            ),
         );
     }
     if let Err(m) = expect_denied("RO write", st) {
@@ -336,7 +339,10 @@ fn every_op_denied(
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("SECURITY: denied-persona DELETE accepted (got {st}) on {}", s.label()),
+                    format!(
+                        "SECURITY: denied-persona DELETE accepted (got {st}) on {}",
+                        s.label()
+                    ),
                 );
             }
             if let Err(m) = expect_denied("denied DELETE", st) {
@@ -353,7 +359,10 @@ fn every_op_denied(
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("SECURITY: denied-persona LIST returned 200 on {}", s.label()),
+                    format!(
+                        "SECURITY: denied-persona LIST returned 200 on {}",
+                        s.label()
+                    ),
                 );
             }
             if let Err(m) = expect_denied("denied LIST", st) {
@@ -412,7 +421,11 @@ fn cross_tenant_isolation(cfg: &Config, client: &Client, s: Surface) -> JourneyR
     // P1 attacks P6's object path with P1's (different-tenant) PAT.
     // READ — must be denied and must NEVER return P6's secret bytes.
     {
-        let resp = match client.get(&url_b).header(AUTHORIZATION, bearer(token_1)).send() {
+        let resp = match client
+            .get(&url_b)
+            .header(AUTHORIZATION, bearer(token_1))
+            .send()
+        {
             Ok(r) => r,
             Err(e) => return JourneyResult::fail(name, ms(start), format!("P1 GET {url_b}: {e}")),
         };
@@ -433,7 +446,10 @@ fn cross_tenant_isolation(cfg: &Config, client: &Client, s: Surface) -> JourneyR
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("SECURITY: P1 got 200 on P6's {} path — must be denied", s.label()),
+                format!(
+                    "SECURITY: P1 got 200 on P6's {} path — must be denied",
+                    s.label()
+                ),
             );
         }
         if let Err(m) = expect_denied("P1 cross-read", st) {
@@ -451,7 +467,10 @@ fn cross_tenant_isolation(cfg: &Config, client: &Client, s: Surface) -> JourneyR
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("SECURITY: P1 WROTE under P6's {} path (got {st}) — poisoning", s.label()),
+                    format!(
+                        "SECURITY: P1 WROTE under P6's {} path (got {st}) — poisoning",
+                        s.label()
+                    ),
                 );
             }
             if let Err(m) = expect_denied("P1 cross-write", st) {
@@ -468,7 +487,10 @@ fn cross_tenant_isolation(cfg: &Config, client: &Client, s: Surface) -> JourneyR
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("SECURITY: P1 DELETED under P6's {} path (got {st})", s.label()),
+                    format!(
+                        "SECURITY: P1 DELETED under P6's {} path (got {st})",
+                        s.label()
+                    ),
                 );
             }
             if let Err(m) = expect_denied("P1 cross-delete", st) {
@@ -486,7 +508,10 @@ fn cross_tenant_isolation(cfg: &Config, client: &Client, s: Surface) -> JourneyR
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("SECURITY: P1 LISTED P6's {} tenant (got 200) — enumeration", s.label()),
+                    format!(
+                        "SECURITY: P1 LISTED P6's {} tenant (got 200) — enumeration",
+                        s.label()
+                    ),
                 );
             }
             if let Err(m) = expect_denied("P1 cross-list", st) {
@@ -608,7 +633,10 @@ fn scope_no_escalation(cfg: &Config, client: &Client, s: Surface) -> JourneyResu
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("SECURITY: RO PAT escalated to WRITE (got {st}) on {}", s.label()),
+                    format!(
+                        "SECURITY: RO PAT escalated to WRITE (got {st}) on {}",
+                        s.label()
+                    ),
                 );
             }
             if let Err(m) = expect_denied("RO escalation PUT", st) {
@@ -626,7 +654,10 @@ fn scope_no_escalation(cfg: &Config, client: &Client, s: Surface) -> JourneyResu
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("SECURITY: RO PAT escalated to DELETE (got {st}) on {}", s.label()),
+                    format!(
+                        "SECURITY: RO PAT escalated to DELETE (got {st}) on {}",
+                        s.label()
+                    ),
                 );
             }
             if let Err(m) = expect_denied("RO escalation DELETE", st) {
@@ -777,9 +808,7 @@ fn forged_tenant_header_ignored(cfg: &Config, client: &Client) -> JourneyResult 
         return JourneyResult::fail(
             name,
             ms(start),
-            format!(
-                "header-injection GET got {read_st} 5xx — must deny cleanly, not crash"
-            ),
+            format!("header-injection GET got {read_st} 5xx — must deny cleanly, not crash"),
         );
     }
     if let Err(m) = expect_denied("forged-header GET of B's path", read_st) {

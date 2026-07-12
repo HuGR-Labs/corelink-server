@@ -176,7 +176,10 @@ fn audit_seed_then_rederive(cfg: &Config, client: &Client) -> JourneyResult {
                     return JourneyResult::fail(
                         name,
                         ms(start),
-                        format!("row {i} 'ts' is not an ISO-8601 string (got {}): {row}", row["ts"]),
+                        format!(
+                            "row {i} 'ts' is not an ISO-8601 string (got {}): {row}",
+                            row["ts"]
+                        ),
                     );
                 }
             };

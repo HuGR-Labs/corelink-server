@@ -216,10 +216,7 @@ impl D1SubscriptionStateHandler {
     /// seeds `runners_entitlement` instead of `tier_selections`. Without it,
     /// the Runners path is dormant (every subscription → cache-tier path).
     #[must_use]
-    pub fn with_runners_resolver(
-        mut self,
-        resolver: Arc<dyn RunnersEntitlementResolver>,
-    ) -> Self {
+    pub fn with_runners_resolver(mut self, resolver: Arc<dyn RunnersEntitlementResolver>) -> Self {
         self.runners_resolver = Some(resolver);
         self
     }
@@ -1392,8 +1389,9 @@ mod tests {
             "plan_pro",
             TierKind::Pro,
         )]));
-        let handler = D1SubscriptionStateHandler::new(rec.clone(), audit.clone(), sel)
-            .with_clock(Arc::new(InMemoryFakeMatClock::at_unix_ms(1_700_000_000_000)));
+        let handler = D1SubscriptionStateHandler::new(rec.clone(), audit.clone(), sel).with_clock(
+            Arc::new(InMemoryFakeMatClock::at_unix_ms(1_700_000_000_000)),
+        );
 
         let e = env(
             "evt_sd2",

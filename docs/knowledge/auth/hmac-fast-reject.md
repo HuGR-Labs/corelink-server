@@ -5,7 +5,7 @@ description: "The container-side defense-in-depth gate that re-proves PAT posses
 source_files:
   - "crates/corelink-container/src/native_pat_gate.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "54186776cd91f2b6d4d2cfe894a799a4e83ddb5c"
+checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path", "native-plane"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -28,7 +28,7 @@ This gate is the data-plane half of the 2-level PAT moat — see [the 2-level PA
 It wraps the shared [`PatVerifier`](/auth/argon2id-verify.md) with a short-TTL verification cache so
 Argon2id (tens of ms) runs at most once per token per window, keeping the billable hot path fast while
 still possession-checking. It is constructed from the same env as the verifier and is `Option`-gated:
-absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_gate.rs:277-279`).
+absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_gate.rs:281-283`).
 
 # How it works
 
@@ -59,7 +59,7 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 - A verifier backend (D1) fault fails CLOSED with 503, never serving an un-possession-checked billable op
   (`crates/corelink-container/src/native_pat_gate.rs:208-214`).
 - The cache key is a SHA-256 fingerprint, never the plaintext, so the in-memory map cannot leak a usable
-  secret (`crates/corelink-container/src/native_pat_gate.rs:253-257`).
+  secret (`crates/corelink-container/src/native_pat_gate.rs:257-261`).
 - The cache is tenant-bound: a cached entry for tenant A is rejected when presented for tenant B
   (`crates/corelink-container/src/native_pat_gate.rs:167-176`).
 
@@ -70,9 +70,9 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
   lookup remain the authoritative revocation surfaces.
 - In prod a `None` from the builder is a SILENT security downgrade; the container's boot path treats it
   as FATAL when prod is detected — the teeth live in `main.rs`, not this builder
-  (`crates/corelink-container/src/native_pat_gate.rs:264-279`; the prod-fatal backstop is
+  (`crates/corelink-container/src/native_pat_gate.rs:268-283`; the prod-fatal backstop is
   `should_fatal_on_missing_gate` at `crates/corelink-container/src/main.rs:77` wired at
-  `crates/corelink-container/src/main.rs:301`).
+  `crates/corelink-container/src/main.rs:300`).
 - The single-flight shards are a FIXED 256-entry array, not a per-token map — bounded memory by
   construction (`crates/corelink-container/src/native_pat_gate.rs:72-77`).
 
@@ -83,7 +83,7 @@ absent in dev/CI, mandatory in prod (`crates/corelink-container/src/native_pat_g
 3. `crates/corelink-container/src/native_pat_gate.rs:72-77` — fixed 256 single-flight shards (bounded memory).
 4. `crates/corelink-container/src/native_pat_gate.rs:156-216` — `verify`: fingerprint, cache, single-flight, tenant bind.
 5. `crates/corelink-container/src/native_pat_gate.rs:247-251` — the uniform 401 (no rejection oracle).
-6. `crates/corelink-container/src/native_pat_gate.rs:253-257` — SHA-256 fingerprint cache key, never the plaintext.
-7. `crates/corelink-container/src/native_pat_gate.rs:264-279` — env-gated builder; prod-fatal on a missing gate.
+6. `crates/corelink-container/src/native_pat_gate.rs:257-261` — SHA-256 fingerprint cache key, never the plaintext.
+7. `crates/corelink-container/src/native_pat_gate.rs:268-283` — env-gated builder; prod-fatal on a missing gate.
 8. `crates/corelink-container/src/main.rs:77` — `should_fatal_on_missing_gate` (prod && !gate_present).
-9. `crates/corelink-container/src/main.rs:301` — boot-path call site enforcing the prod-fatal backstop.
+9. `crates/corelink-container/src/main.rs:300` — boot-path call site enforcing the prod-fatal backstop.

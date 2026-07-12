@@ -440,9 +440,8 @@ fn persist_export(
 
     let object_key = format!("dsr_exports/{dsr_id}.json");
     let handle = tokio::runtime::Handle::current();
-    let put_ok = tokio::task::block_in_place(|| {
-        handle.block_on(r2.put(&object_key, bundle_bytes.clone()))
-    });
+    let put_ok =
+        tokio::task::block_in_place(|| handle.block_on(r2.put(&object_key, bundle_bytes.clone())));
     if let Err(e) = put_ok {
         tracing::warn!(dsr_id = %dsr_id, error = %e, "dsr/portability: export bundle R2 PUT failed (inline bundle still returned)");
         return ExportReceipt {
@@ -462,10 +461,13 @@ fn persist_export(
     {
         if let Ok(sig_bytes) = serde_json::to_vec(&attestation) {
             let sig_key = format!("dsr_exports/{dsr_id}.sig.json");
-            let sig_ok = tokio::task::block_in_place(|| handle.block_on(r2.put(&sig_key, sig_bytes)));
+            let sig_ok =
+                tokio::task::block_in_place(|| handle.block_on(r2.put(&sig_key, sig_bytes)));
             match sig_ok {
                 Ok(()) => signed = true,
-                Err(e) => tracing::warn!(dsr_id = %dsr_id, error = %e, "dsr/portability: export signature PUT failed"),
+                Err(e) => {
+                    tracing::warn!(dsr_id = %dsr_id, error = %e, "dsr/portability: export signature PUT failed")
+                }
             }
         }
     }
@@ -622,7 +624,11 @@ mod tests {
         let mut erase_set: HashSet<&str> = HashSet::new();
         erase_set.extend(super::super::adapter_d1::TENANT_ID_TABLES.iter().copied());
         erase_set.extend(super::super::adapter_d1::NAMESPACE_TABLES.iter().copied());
-        erase_set.extend(super::super::adapter_d1::SPECIAL_ERASE_TABLES.iter().copied());
+        erase_set.extend(
+            super::super::adapter_d1::SPECIAL_ERASE_TABLES
+                .iter()
+                .copied(),
+        );
         assert_eq!(
             gathered, erase_set,
             "access gather (erasable) must equal the D1 erase-set exactly"
@@ -634,14 +640,21 @@ mod tests {
     /// touching it on an erasure).
     #[test]
     fn retain_disclosable_is_subset_and_disjoint_from_erase_set() {
-        let retain: HashSet<&str> = super::super::adapter_d1::RETAIN_SET.iter().copied().collect();
+        let retain: HashSet<&str> = super::super::adapter_d1::RETAIN_SET
+            .iter()
+            .copied()
+            .collect();
         for t in RETAIN_DISCLOSABLE_TABLES {
             assert!(retain.contains(t), "{t} must be in RETAIN_SET");
         }
         let mut erase_set: HashSet<&str> = HashSet::new();
         erase_set.extend(super::super::adapter_d1::TENANT_ID_TABLES.iter().copied());
         erase_set.extend(super::super::adapter_d1::NAMESPACE_TABLES.iter().copied());
-        erase_set.extend(super::super::adapter_d1::SPECIAL_ERASE_TABLES.iter().copied());
+        erase_set.extend(
+            super::super::adapter_d1::SPECIAL_ERASE_TABLES
+                .iter()
+                .copied(),
+        );
         for t in RETAIN_DISCLOSABLE_TABLES {
             assert!(
                 !erase_set.contains(t),
@@ -763,9 +776,14 @@ mod tests {
 
         // The allowlisted email field is accepted + hashed (raw email never stored).
         let plan = classify_rectify("tenant", "email_hash", "  New.User@Example.COM ").unwrap();
-        assert!(plan.sql.starts_with("UPDATE tenant SET email_hash = ?2 WHERE tenant_id = ?1"));
+        assert!(plan
+            .sql
+            .starts_with("UPDATE tenant SET email_hash = ?2 WHERE tenant_id = ?1"));
         assert_eq!(plan.stored_value, email_hash("new.user@example.com"));
-        assert_ne!(plan.stored_value, "new.user@example.com", "raw email never stored");
+        assert_ne!(
+            plan.stored_value, "new.user@example.com",
+            "raw email never stored"
+        );
     }
 
     #[test]
@@ -794,16 +812,22 @@ mod tests {
     #[test]
     fn email_hash_matches_canonical_scheme() {
         let env = crate::email_hash::EnvGuard::acquire(); // salt UNSET
-        // Unsalted: equals hex(sha256(trim+lowercase)) — pre-salt parity.
+                                                          // Unsalted: equals hex(sha256(trim+lowercase)) — pre-salt parity.
         let want = hex::encode(Sha256::digest(b"user@example.com"));
         assert_eq!(email_hash("  USER@Example.com  "), want);
 
         // Matching invariant: this rectification site routes through the ONE
         // shared helper, so it equals it in BOTH modes (hence equals the
         // customer_d1 write site, which also delegates to the helper).
-        assert_eq!(email_hash("user@example.com"), crate::email_hash::hash_email("user@example.com"));
+        assert_eq!(
+            email_hash("user@example.com"),
+            crate::email_hash::hash_email("user@example.com")
+        );
         env.set_salt("the-server-salt");
-        assert_eq!(email_hash("user@example.com"), crate::email_hash::hash_email("user@example.com"));
+        assert_eq!(
+            email_hash("user@example.com"),
+            crate::email_hash::hash_email("user@example.com")
+        );
         // Under a salt the pseudonym is no longer the rainbow-attackable SHA-256.
         assert_ne!(email_hash("user@example.com"), want);
     }

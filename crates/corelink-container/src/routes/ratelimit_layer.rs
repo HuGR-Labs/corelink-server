@@ -98,8 +98,8 @@ use axum::{
 };
 use corelink_ratelimit::{
     refill_rate_for_tier, tier_for_billing_label, BucketKey, InMemoryTokenBucketRateLimiter,
-    KeyDimension, NoOpRateLimitAuditSink, NoOpRateLimitMetrics, RateLimitConfig,
-    RateLimitDecision, RateLimiter,
+    KeyDimension, NoOpRateLimitAuditSink, NoOpRateLimitMetrics, RateLimitConfig, RateLimitDecision,
+    RateLimiter,
 };
 use uuid::Uuid;
 
@@ -265,7 +265,10 @@ impl RateLimitLayerState {
         Self::build(clock, Some(tier_resolver))
     }
 
-    fn build(clock: Arc<dyn WallClock>, tier_resolver: Option<Arc<dyn TenantTierResolver>>) -> Self {
+    fn build(
+        clock: Arc<dyn WallClock>,
+        tier_resolver: Option<Arc<dyn TenantTierResolver>>,
+    ) -> Self {
         // `with_overrides` only returns `None` on a self-inconsistent config
         // (zero burst, inverted Retry-After bounds); our constants are
         // statically valid, so fall back to the crate's canonical config if a
@@ -373,14 +376,10 @@ impl RateLimitLayerState {
         // tokens down on a shrink; a freshly-materialised bucket starts at the
         // new (tier) burst. Failure (mutex poison) is logged, not fatal — the
         // request proceeds on whatever bucket exists.
-        if let Err(err) = self.limiter.update_plan(
-            tenant,
-            KeyDimension::PerTenant,
-            "",
-            rps,
-            burst,
-            now_ms,
-        ) {
+        if let Err(err) =
+            self.limiter
+                .update_plan(tenant, KeyDimension::PerTenant, "", rps, burst, now_ms)
+        {
             tracing::warn!(error = %err, "rate_limit: tier update_plan failed; bucket left on default");
             return;
         }
@@ -618,13 +617,13 @@ fn too_many_requests(retry_after_secs: u64) -> Response {
 )]
 mod tests {
     use super::*;
+    use crate::wall_clock::InMemoryFakeWallClock;
     use axum::{
         body::Body,
         http::{Request as HttpRequest, StatusCode},
         routing::get,
         Router,
     };
-    use crate::wall_clock::InMemoryFakeWallClock;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tower::ServiceExt; // for `.oneshot()`
 
@@ -676,16 +675,16 @@ mod tests {
                     }
                 }),
             )
-            .layer(axum::middleware::from_fn_with_state(state, rate_limit_layer))
+            .layer(axum::middleware::from_fn_with_state(
+                state,
+                rate_limit_layer,
+            ))
     }
 
     /// An OCI request carries NO tenant header (the Worker deletes it) — exactly
     /// the F-016 condition that fail-OPENED the per-tenant gate.
     fn oci_req(uri: &str) -> HttpRequest<Body> {
-        HttpRequest::builder()
-            .uri(uri)
-            .body(Body::empty())
-            .unwrap()
+        HttpRequest::builder().uri(uri).body(Body::empty()).unwrap()
     }
 
     /// A fake tier resolver returning a fixed label (F-017 wiring test).
@@ -947,8 +946,7 @@ mod tests {
         // An unresolvable tier (None) leaves the bucket on the team default —
         // fail-SAFE on availability (never over-throttle an unclassified tenant).
         let clock = fixed_clock(7_000_000);
-        let resolver: Arc<dyn TenantTierResolver> =
-            Arc::new(FakeTierResolver { label: None });
+        let resolver: Arc<dyn TenantTierResolver> = Arc::new(FakeTierResolver { label: None });
         let state = RateLimitLayerState::with_tier_resolver(clock, resolver);
         let hits = Arc::new(AtomicUsize::new(0));
         for _ in 0..DEFAULT_TENANT_BURST {

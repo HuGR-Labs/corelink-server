@@ -27,13 +27,13 @@ use corelink_dpa_acceptance::{
     InMemoryDpaAuditSink, InMemoryNotificationSink, Jurisdiction, LocaleBcp47,
     LocaleNoticeRegistry, RsaPrivateKeyPem, RsaPublicKeyPem, SignupId, TenantCtx, TenantId,
 };
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion};
 use rsa::{
     pkcs1::{EncodeRsaPrivateKey, LineEnding},
     pkcs8::EncodePublicKey,
     RsaPrivateKey, RsaPublicKey,
 };
+use std::hint::black_box;
 
 #[derive(Debug)]
 struct FixedClock(i64);

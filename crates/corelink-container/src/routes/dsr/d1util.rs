@@ -31,8 +31,7 @@ pub(super) fn d1_query_blocking(
     let client = Arc::clone(client);
     let sql = sql.to_owned();
     tokio::task::block_in_place(move || {
-        tokio::runtime::Handle::current()
-            .block_on(async move { client.query(&sql, &params).await })
+        tokio::runtime::Handle::current().block_on(async move { client.query(&sql, &params).await })
     })
 }
 
@@ -143,7 +142,11 @@ mod tests {
         for ms in [0i64, 1_000, 1_700_000_000_000, 1_699_999_999_000] {
             let sec_ms = (ms / 1000) * 1000;
             let iso = ms_to_iso8601(sec_ms);
-            assert_eq!(iso8601_to_ms(&iso), Some(u64::try_from(sec_ms).unwrap()), "iso={iso}");
+            assert_eq!(
+                iso8601_to_ms(&iso),
+                Some(u64::try_from(sec_ms).unwrap()),
+                "iso={iso}"
+            );
         }
     }
 

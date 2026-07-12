@@ -61,8 +61,8 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, RETRY_AFTER};
 use serde_json::json;
 
 use crate::harness::{
-    bearer, blake3_hex, expect_gate_denied, unique_blob, url_cas, url_introspect,
-    Config, JourneyResult,
+    bearer, blake3_hex, expect_gate_denied, unique_blob, url_cas, url_introspect, Config,
+    JourneyResult,
 };
 use crate::personas::Persona;
 
@@ -107,10 +107,9 @@ pub fn run(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
 /// `Ok(secs)` on a valid header; `Err(msg)` describing the violation otherwise.
 /// This is what makes the 429 branch NON-vacuous: a 429 alone is not enough.
 fn assert_retry_after(resp: &reqwest::blocking::Response) -> Result<u64, String> {
-    let val = resp
-        .headers()
-        .get(RETRY_AFTER)
-        .ok_or_else(|| "429 returned WITHOUT a Retry-After header (RFC 6585 §4 violation)".to_string())?;
+    let val = resp.headers().get(RETRY_AFTER).ok_or_else(|| {
+        "429 returned WITHOUT a Retry-After header (RFC 6585 §4 violation)".to_string()
+    })?;
     let s = val
         .to_str()
         .map_err(|_| "429 Retry-After header is not valid ASCII".to_string())?;
@@ -151,7 +150,10 @@ fn rate_limit_present(cfg: &Config, client: &Client) -> JourneyResult {
         Err(reason) => return JourneyResult::gated(name, reason),
     };
     if cfg.tenant.is_none() {
-        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set — CAS path needs a tenant");
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_TENANT not set — CAS path needs a tenant",
+        );
     }
     let token = p1.token.expect("P1 always has a token");
 
@@ -231,7 +233,10 @@ fn rate_limit_enforcement_hard(cfg: &Config, client: &Client) -> JourneyResult {
         Err(reason) => return JourneyResult::gated(name, reason),
     };
     if cfg.tenant.is_none() {
-        return JourneyResult::gated(name, "CORELINK_E2E_TENANT not set — CAS path needs a tenant");
+        return JourneyResult::gated(
+            name,
+            "CORELINK_E2E_TENANT not set — CAS path needs a tenant",
+        );
     }
     let token = p1.token.expect("P1 always has a token");
 
@@ -648,7 +653,9 @@ fn mint_internal_auth_required(cfg: &Config, client: &Client) -> JourneyResult {
                 return JourneyResult::fail(
                     name,
                     ms(start),
-                    format!("internal route got {st} 5xx with no key — must deny cleanly, not crash"),
+                    format!(
+                        "internal route got {st} 5xx with no key — must deny cleanly, not crash"
+                    ),
                 );
             }
             // The introspect route is always-mounted when the secret is set.
