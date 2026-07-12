@@ -42,7 +42,7 @@ permissions:
 jobs:
   dr-drill:
     name: DR Drill (staging-only)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 60
 
     env:

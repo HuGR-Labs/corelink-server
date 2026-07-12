@@ -42,7 +42,7 @@ permissions:
 jobs:
   tla-dsr-erasure-check:
     name: TLC dsr_erasure_atomicity (WI-S11-008 INV-DATA-ERASURE-COMPLETE)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
       - name: Checkout

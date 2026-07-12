@@ -43,7 +43,7 @@ jobs:
     # (off GitHub billing). The OS matrix dim was dropped — both runners land on
     # the same self-hosted Linux env, which is internally consistent for the
     # 2-runner byte-diff. Re-baseline the reproducibility check on first run.
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout (full history for SOURCE_DATE_EPOCH)
@@ -112,7 +112,7 @@ jobs:
   diff-check:
     name: Diff check (2-runner compare)
     needs: build
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
 
     outputs:
       bit_identical:   ${{ steps.diff.outputs.BIT_IDENTICAL }}

@@ -30,7 +30,7 @@ jobs:
   # ── Rust unit tests (all 3 FFI crates) ────────────────────────────────────
   rust-unit:
     name: Rust unit tests (FFI crates)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     # corelink-py pulls pyo3 with abi3-py310, which needs an interpreter
     # >= 3.10. This job has no setup-python step, so pyo3 auto-detected a
     # stale 3.8 on the fleet PATH and failed ("cannot set a minimum Python
@@ -79,7 +79,7 @@ jobs:
   # ── Python × maturin × multiple Python versions ───────────────────────────
   python-matrix:
     name: Python ${{ matrix.python-version }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -157,7 +157,7 @@ jobs:
   # ── Go × cgo × multiple Go versions ──────────────────────────────────────
   go-matrix:
     name: Go ${{ matrix.go-version }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -207,7 +207,7 @@ jobs:
   # ── JS/TS × WASM × multiple Node.js versions ──────────────────────────────
   js-matrix:
     name: Node.js ${{ matrix.node-version }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -278,7 +278,7 @@ jobs:
   # ── Client-verify same hash across 3 languages (single Rust truth) ────────
   cross-language-verify:
     name: Cross-language BLAKE3 verify (single Rust truth)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     needs: [python-matrix, go-matrix, js-matrix]
     # Same pyo3 abi3-py310 build as rust-unit (cargo test -p corelink-py
     # below). The setup-python 3.12 step is unreliable on this fleet

@@ -38,7 +38,7 @@ permissions:
 jobs:
   tla-region-residency-check:
     name: TLC region_residency (WI-S14-009 INV-DATA-RESIDENCY + INV-REGION-NO-CROSS-LEAK)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-latest
     timeout-minutes: 10   # hard ceiling; CI runtime target ≤ 60s; 10 min is generous guard
     steps:
       - name: Checkout
