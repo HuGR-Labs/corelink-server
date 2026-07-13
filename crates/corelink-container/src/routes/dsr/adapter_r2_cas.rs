@@ -42,9 +42,11 @@ use crate::storage::d1_http::D1HttpClient;
 use crate::storage::r2_s3::R2S3Client;
 use crate::storage::StorageEnv;
 
-/// Canonical CAS storage regions (the `<region>/` key prefix; per
-/// `migrations/d1/0003` chunks `region` CHECK + WI-S04-002 §1).
-const CAS_REGIONS: &[&str] = &["sam", "iad", "lhr", "nrt", "syd"];
+// Canonical CAS storage regions (the `<region>/` key prefix; per
+// `migrations/d1/0003` chunks `region` CHECK + WI-S04-002 §1). SINGLE SOURCE
+// OF TRUTH: `crate::storage::region_map::CAS_REGIONS` (superset-gated so an
+// Art.17 erase never skips a colo).
+use crate::storage::region_map::CAS_REGIONS;
 
 /// CAS storage-layer D1 tables to clean alongside the R2 objects. All are
 /// `tenant_id`-keyed and (per the cold-verify) un-written in prod today — the

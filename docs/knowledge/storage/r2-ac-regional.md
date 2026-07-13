@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-region/src/r2_crr.rs"
   - "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs"
   - "crates/corelink-container/src/routes/ac.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "bf4e1ac33c4e57161af601c0045a7bac8d0e59dd"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "action-cache", "region", "residency"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -36,9 +36,11 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
 2. AC is stored as five per-region R2 buckets `corelink-ac-{sam,iad,lhr,nrt,syd}` — region in the bucket
    NAME, the opposite of CAS (region in the key)
    (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:1-10`).
-3. The fixed AC region set is a five-element constant; a once-per-account erase sweeps all five buckets
-   so it is robust to a write region that changed over time
-   (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:50-56`).
+3. The AC region set is no longer a local constant — the adapter now RE-EXPORTS the single source of
+   truth `crate::storage::region_map::CAS_REGIONS` (aliased `AC_REGIONS`), so the CAS and AC sweeps can
+   never drift a colo apart; a once-per-account erase sweeps every bucket in that superset-gated set so it
+   is robust to a write region that changed over time
+   (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:57`).
 4. The live AC route resolves its bucket + region from env, defaulting to `corelink-ac-iad` / `iad`
    (`crates/corelink-container/src/routes/ac.rs:359-360`).
 5. The region's uppercase R2 `locationHint` (`crates/corelink-region/src/region.rs:44-53`) requests
@@ -55,8 +57,11 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
 - WEUR MUST use the EU DO jurisdiction (Schrems II + GDPR Art. 46); any other jurisdiction for WEUR is a
   CRITICAL compliance gap (`crates/corelink-region/src/region.rs:112-127`,
   `crates/corelink-region/src/region.rs:140-158`).
-- The five AC regions are a fixed set and the AC bucket prefix defaults to `corelink-ac-`, overridable
-  only via env in non-prod (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:87-93`).
+- The AC regions are the single-source-of-truth `region_map::CAS_REGIONS` re-export (no independent AC
+  copy to drift), and the AC bucket prefix defaults to `corelink-ac-`, overridable only via env in
+  non-prod (`crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:57`,
+  `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:48`,
+  `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:88`).
 - AC bucket + region are read through `env_or` defaults, so an absent/empty env never yields an empty
   bucket name (`crates/corelink-container/src/routes/ac.rs:359-360`).
 - CRR lag has a 24h p99 ceiling, and a synthetic object still missing past 24h is a hard SEV-2 incident
@@ -76,6 +81,6 @@ durable tier behind the [Action Cache surface](/surfaces/action-cache.md).
 5. `crates/corelink-region/src/r2_crr.rs:1-34` — indirect CRR lag SLI via per-region synthetic probe objects.
 6. `crates/corelink-region/src/r2_crr.rs:41-58` — CRR 24h p99 ceiling + missing-object SEV-2 threshold.
 7. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:1-10` — AC stored as per-region buckets `corelink-ac-{sam,iad,lhr,nrt,syd}`.
-8. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:50-56` — the fixed five-region AC sweep set.
-9. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:87-93` — AC bucket-prefix default + `R2_AC_BUCKET_PREFIX` override.
+8. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:57` — the AC sweep set is the single-source-of-truth `region_map::CAS_REGIONS` re-export (aliased `AC_REGIONS`), not a local const.
+9. `crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs:48`, `:88` — AC bucket-prefix default (`corelink-ac-`) + `R2_AC_BUCKET_PREFIX` env override.
 10. `crates/corelink-container/src/routes/ac.rs:359-360` — live AC route bucket/region env resolution (`corelink-ac-iad`/`iad`).
