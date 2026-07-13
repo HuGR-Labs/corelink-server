@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+
+- **Backup Daily pipeline brought online.** The daily encrypted backup had never
+  produced a snapshot (stale D1 names `corelink_core/audit/billing` vs the real
+  consolidated `corelink-prod-d1`; a FATAL optional R2 cold-tier; KV addressed by
+  `--binding` instead of `--namespace-id`), and the verifier used a
+  `wrangler r2 object list` subcommand that does not exist in wrangler 4.x — so it
+  filed a SEV-2 issue every day. Fixed all four, provisioned the GPG recipient +
+  bucket, and proved a live encrypted D1+KV snapshot to `corelink-backups-production`
+  with the verifier green.
 - **fix(ci): three under-enforcing rigor gates that silently passed drift (gap-hunt).**
   (1) `audit_proptest_density.sh` counted `#[test]` with an awk `in_block` flag set on
   the first `proptest!` and NEVER reset — every later plain unit test counted as a
