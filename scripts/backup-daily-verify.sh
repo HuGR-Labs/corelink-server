@@ -243,8 +243,18 @@ if [[ "${DRY_RUN}" != "true" ]]; then
     fi
 
     log_emit info "live_bucket_list_begin" "bucket=${BACKUP_R2_BUCKET}"
+    # wrangler 4.x has NO `r2 object list` subcommand (only get/put/delete), so
+    # list via the CF R2 REST API (CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
+    # are already in env for the bucket auth). Normalize to the
+    # `{ objects: [ {key, uploaded, size} ] }` shape the tier checks below expect.
     R2_TMP="$(mktemp -t corelink-verify-r2-XXXXXX)"
-    if ! wrangler r2 object list "${BACKUP_R2_BUCKET}" --remote --json >"${R2_TMP}" 2>/dev/null; then
+    if ! curl -sf \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${BACKUP_R2_BUCKET}/objects?per_page=1000" \
+            2>/dev/null \
+        | jq '{objects: [ (.result // [])[] | {key: .key, uploaded: .last_modified, size: .size} ]}' \
+            > "${R2_TMP}" 2>/dev/null \
+        || ! jq -e '.objects' "${R2_TMP}" >/dev/null 2>&1; then
         # Could not even list the bucket — treat as a hard verification failure
         # for every tier (the backups may be inaccessible / the bucket gone).
         log_emit error "live_bucket_list_failed" "bucket=${BACKUP_R2_BUCKET}"
@@ -294,6 +304,24 @@ newest_artifact_for_segment() {
 for tier in "${TIER_LIST[@]}"; do
     rpo="${TIER_RPO[${tier}]}"
     log_emit info "tier_begin" "tier=${tier}" "rpo_seconds=${rpo}"
+
+    # 0) Optional-tier tolerance. The R2 cold-tier snapshot is belt-and-suspenders
+    #    (CAS blobs are multi-region replicated: corelink-cas-{iad,lhr,nrt,sam,
+    #    syd}). When the backup writer could not run it (rclone / cold bucket
+    #    unprovisioned) it records the r2_inventory manifest entry as
+    #    SKIPPED_UNCONFIGURED. That is a deliberate skip, NOT a stale/missing
+    #    backup — record OK and move on instead of raising a false SEV-2.
+    if [[ "${tier}" == "r2" && "${DRY_RUN}" != "true" && -n "${MANIFEST_JSON}" ]]; then
+        r2_ref="$(printf '%s' "${MANIFEST_JSON}" | jq -r \
+            '[.artifacts[]? | select(.kind == "r2_inventory")] | last | .path // ""' \
+            2>/dev/null || echo "")"
+        if [[ "${r2_ref}" == "SKIPPED_UNCONFIGURED" ]]; then
+            log_emit info "tier_skipped_optional" "tier=r2" \
+                "reason=cold_tier_unconfigured_cas_multiregion_replicated"
+            emit_metric "r2" "ok"
+            continue
+        fi
+    fi
 
     # 1) Freshness + existence + non-empty check (REAL in live mode).
     if [[ "${DRY_RUN}" == "true" ]]; then
