@@ -239,9 +239,19 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Install wasm-opt (binaryen)
+      - name: Install wasm-opt (recent binaryen)
+        # Ubuntu's apt `binaryen` is too old to validate the reference-types /
+        # multivalue wasm that rust 1.91 + wasm-bindgen now emit by default
+        # ("Fatal: error validating input" → wasm-pack build fails). Install the
+        # latest official binaryen release into /usr/local (ahead of /usr/bin).
         run: |
-          sudo apt-get install -y binaryen
+          set -euo pipefail
+          TAG=$(curl -fsSL https://api.github.com/repos/WebAssembly/binaryen/releases/latest \
+            | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+          echo "binaryen ${TAG}"
+          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/${TAG}/binaryen-${TAG}-x86_64-linux.tar.gz" \
+            | sudo tar xz -C /usr/local --strip-components=1
+          wasm-opt --version
 
       - name: wasm-pack build (release)
         working-directory: crates/corelink-wasm
