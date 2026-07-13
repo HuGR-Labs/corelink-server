@@ -19,7 +19,7 @@ source_files:
   - "crates/corelink-failover-router/src/failback.rs"
   - "crates/corelink-reapi/src/read.rs"
   - "tests/e2e-replication-failover/Cargo.toml"
-checkpoint_sha: "0c44977b9ee49e2a67556377c1f973aa92d5f5b2"
+checkpoint_sha: "bf4e1ac33c4e57161af601c0045a7bac8d0e59dd"
 provenance: "AUTHORED"
 tags: ["replication", "failover", "multi-region", "availability"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -58,7 +58,7 @@ but a region outage in production does not currently flow through this code.
   (`crates/corelink-replication-coordinator/src/coordinator.rs:103-163`).
 - **Replica-worker** — the per-blob apply lane: residency-gate, copy primary→sibling R2, hash-verify,
   retry up to 5, emit audits, mark `Replicated`
-  (`crates/corelink-replica-worker/src/replication.rs:140-270`).
+  (`crates/corelink-replica-worker/src/replication.rs:153-287`).
 - **Failover-router** — read-side routing decision: healthy → read primary; degraded → read the sibling
   + block writes (`crates/corelink-failover-router/src/router.rs:158-216`).
 - **Aggregator façade** — `corelink-replication` re-exports all four (plus rollout-controller) at
@@ -70,11 +70,13 @@ but a region outage in production does not currently flow through this code.
 1. **Write fan-out (designed).** A blob deemed "hot" by the offline aggregator becomes a batch the
    replica-worker processes. Per blob it FIRST residency-checks (`replica_region` must be the static
    acyclic sibling of `primary_region`), then emits a `replication.started` audit BEFORE any copy
-   (fail-CLOSED), simulates an R2 GET(primary)→PUT(sibling), and verifies `actual_hash == expected_hash`
-   (`crates/corelink-replica-worker/src/replication.rs:140-206`).
+   (fail-CLOSED), simulates an R2 GET(primary)→PUT(sibling) — keying the simulated store by
+   `(tenant_id, region, blob_hash)` so two tenants' identical blobs never collide — and verifies
+   `actual_hash == expected_hash`
+   (`crates/corelink-replica-worker/src/replication.rs:153-191`).
 2. **Hash-verify + retry.** A mismatch retries up to `MAX_REPLICATION_RETRIES` (5); persistent failure
    emits `replication.failed` and returns `RetryExhausted`
-   (`crates/corelink-replica-worker/src/replication.rs:181-270`).
+   (`crates/corelink-replica-worker/src/replication.rs:193-286`).
 3. **Coordinator role decision.** `evaluate(primary, now)` returns `KeepPrimary` when the primary's
    heartbeat is fresh AND lag is within SLO; otherwise it scans replicas in deterministic `Region::ALL`
    order for one that is fresh+within-SLO (`PromoteReplica`), else `NoEligibleReplica` (escalate to
@@ -113,13 +115,13 @@ but a region outage in production does not currently flow through this code.
 - **Audit-emit-BEFORE-mutation, fail-CLOSED** — role flips, replications, and route decisions all emit
   their audit record before mutating state; an audit-sink error aborts with `Audit(..)` and leaves state
   untouched (`crates/corelink-replication-coordinator/src/coordinator.rs:417-465`;
-  `crates/corelink-replica-worker/src/replication.rs:149-160`).
+  `crates/corelink-replica-worker/src/replication.rs:163-174`).
 - **INV-REGION-NO-CROSS-LEAK (residency)** — replication is allowed ONLY to the static acyclic sibling
   (WNAM↔ENAM, WEUR↔SAM); any other target is a `ResidencyViolation`
   (`crates/corelink-replica-worker/src/region.rs:254-265`).
 - **INV-CAS-INTEGRITY (hash verify post-copy)** — a replicated blob is only marked done when the copied
   bytes re-hash to the expected value; else retry, then `RetryExhausted`
-  (`crates/corelink-replica-worker/src/replication.rs:206-269`).
+  (`crates/corelink-replica-worker/src/replication.rs:210-286`).
 - **24h hot-standby cool-down** — a demoted primary cannot fail back for `HOT_STANDBY_COOLDOWN_SECONDS`
   = 86 400 (`crates/corelink-replication-coordinator/src/state.rs:27`).
 - **Anti-flap** — `promote` refuses if the old primary is still fresh+within-SLO
@@ -133,9 +135,14 @@ but a region outage in production does not currently flow through this code.
 - **The "singleton DO lock" is a `std::sync::Mutex`.** Split-brain safety is proven only for concurrent
   callers against ONE in-process coordinator instance; the real cross-isolate Durable Object singleton
   is deferred (`crates/corelink-replication-coordinator/src/coordinator.rs:170-173`).
-- **R2 GET/PUT is a `HashMap`, hashes are FNV not SHA/ETag.** The replica-worker simulates the object
-  store and uses FNV-1a for both the blob hash and the `tenant_id_hash`; production swaps in real R2
-  bindings + the R2 ETag (`crates/corelink-replica-worker/src/replication.rs:66-107`).
+- **R2 GET/PUT is a `HashMap` keyed by `(tenant_id, region, blob_hash)`, hashes are FNV not SHA/ETag.**
+  The replica-worker simulates the object store as an `Arc<Mutex<HashMap<(String,String,String),Vec<u8>>>>`
+  — the leading `tenant_id` component is load-bearing even in simulation, so two tenants storing the same
+  `blob_hash` in the same region do NOT collide (in production the leading key segment is the derived
+  `tenant_prefix`, from that same `tenant_id`); it uses FNV-1a for both the blob hash and the
+  `tenant_id_hash`, and production swaps in real R2 bindings + the R2 ETag
+  (`crates/corelink-replica-worker/src/replication.rs:65-74`,
+  `crates/corelink-replica-worker/src/replication.rs:393-407`).
 - **`corelink-replication` is just a re-export façade.** Importing it does not pull in behaviour you can
   call on the live path — its `region_resolver` submodule is a type alias over `corelink_worker`, which
   is the only part anything live actually uses (`crates/corelink-replication/src/lib.rs:92-99`).
@@ -167,12 +174,13 @@ but a region outage in production does not currently flow through this code.
 12. `crates/corelink-replication-coordinator/src/heartbeat.rs:57` — `Heartbeat::is_fresh(now_ms)`.
 13. `crates/corelink-replica-worker/src/lib.rs:5-11` — module doc: "**pure-logic skeleton** … the
     production CF Workers cron-trigger will satisfy".
-14. `crates/corelink-replica-worker/src/replication.rs:140-160` — `replicate_one`: residency check
+14. `crates/corelink-replica-worker/src/replication.rs:153-174` — `replicate_one`: residency check
     FIRST, then `replication.started` audit BEFORE the copy.
-15. `crates/corelink-replica-worker/src/replication.rs:178-269` — R2 PUT + post-copy hash verify, retry
+15. `crates/corelink-replica-worker/src/replication.rs:193-286` — R2 PUT + post-copy hash verify, retry
     to `MAX_REPLICATION_RETRIES` (5), then `replication.failed` + `RetryExhausted`.
-16. `crates/corelink-replica-worker/src/replication.rs:66-107` — the simulated R2 store (`HashMap`) and
-    the in-memory worker construction ("production = real R2 bindings, deferred").
+16. `crates/corelink-replica-worker/src/replication.rs:65-115` — the tenant-keyed simulated R2 store
+    (`HashMap<(tenant_id, region, blob_hash), bytes>`) and the in-memory worker construction
+    ("production = real R2 bindings, deferred").
 17. `crates/corelink-replica-worker/src/region.rs:254-265` — `ResidencyGraph::is_allowed` (sibling-only;
     else `ResidencyViolationInfo`).
 18. `crates/corelink-replica-worker/src/region.rs:229-237` — `ResidencyGraph::sibling` (WNAM↔ENAM,

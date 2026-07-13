@@ -47,13 +47,14 @@ use crate::storage::StorageEnv;
 /// `wrangler.toml`. Overridable via `R2_AC_BUCKET_PREFIX` (non-prod envs).
 const DEFAULT_AC_BUCKET_PREFIX: &str = "corelink-ac-";
 
-/// Canonical AC storage regions — the per-region bucket SUFFIX (`corelink-ac-<r>`)
-/// AND the leading `<region>/` key segment. Byte-for-byte the same five-region
-/// sweep the DSR Wave 1 CAS adapter uses (`adapter_r2_cas::CAS_REGIONS`). The
-/// container writes AC through a single global region, but a once-per-account
-/// erase sweeps all five buckets so it is robust to a write region that changed
-/// over time (cheap — a once-per-erase LIST per bucket).
-const AC_REGIONS: &[&str] = &["sam", "iad", "lhr", "nrt", "syd"];
+// Canonical AC storage regions — the per-region bucket SUFFIX (`corelink-ac-<r>`)
+// AND the leading `<region>/` key segment. Byte-for-byte the same region sweep
+// the CAS erase uses — so it shares the SINGLE SOURCE OF TRUTH
+// (`crate::storage::region_map::CAS_REGIONS`, superset-gated so an Art.17 erase
+// never skips a colo). The container writes AC through a single global region,
+// but a once-per-account erase sweeps all buckets so it is robust to a write
+// region that changed over time (cheap — a once-per-erase LIST per bucket).
+use crate::storage::region_map::CAS_REGIONS as AC_REGIONS;
 
 /// Real R2 Action-Cache erase adapter.
 pub(super) struct R2AcEraseAdapter {

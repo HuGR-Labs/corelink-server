@@ -53,6 +53,26 @@ Each entry cross-references:
   `GITHUB_APP_PUBLIC` env flag: when the App is public and the OAuth creds are unbound the callback now
   returns `403` before any App-JWT mint or D1 write. Non-public (dogfood) keeps the current skip.
   Coverage extended in `apps/signup-worker/tests/github_install.test.ts`.
+- **fix(container): persist native CAS/AC data-plane audit events to a DURABLE D1 `audit_outbox` sink (F1 / CAA-360).**
+  The deployed builders (`storage::r2_s3::build_r2_cas_handler_from_env` / `build_r2_ac_handler_from_env`)
+  hardcoded a volatile `InMemoryAuditSink`, so every CAS/AC audit event (`ReadAttempted`, `ReadDenied`,
+  write-committed, `CorrectnessViolation`, …) was written only to RAM and lost on container restart — the
+  "durable audit row before mutation" guarantee was unwired — and the route's fail-CLOSED `AuditFailed → 503`
+  guard was dead code (in-memory `emit` only errors under a test-injected failure). New `storage::d1_audit_sink`
+  wires a durable sink that appends each event to the D1 `audit_outbox` intake table (the same trail the S-09
+  drain seals; mirrors the DSR erasure sink), wired into BOTH builders. Fail-CLOSED: if the durable sink cannot
+  be constructed while storage creds are present, the builder refuses to mount the handler (route serves 503),
+  never a silent in-memory fallback. Rows are plain/unchanged/`emitted_at=NULL` (sealing remains the S-09 drain).
+- **fix(container): pin the GDPR-erase CAS/AC region sweep to a single superset-gated source of truth.**
+  Three hand-maintained copies of the erase-sweep region list (`routes::cas_erase`, `routes::dsr::adapter_r2_cas`,
+  `routes::dsr::adapter_r2_ac`) were independent of `storage::region_map::colo_for_macro`. A future colo added to
+  the map without updating every copy would silently skip that region in an Art.17 full-tenant erase, leaving
+  surviving erased bytes. Consolidated all three to `storage::region_map::CAS_REGIONS` and added
+  `cas_regions_superset_of_all_colos` asserting `CAS_REGIONS ⊇ { colo_for_macro(m) : all macros }`.
+- **fix(replica-worker): key the simulated R2 store by `(tenant_id, region, blob_hash)` to prevent cross-tenant collapse.**
+  The in-memory replication store keyed by `(region, blob_hash)` with no tenant component — harmless in simulation
+  but a cross-tenant blob collision once wired to real per-tenant-prefixed R2. Added the tenant identity to the key
+  now, with a `simulated_store_is_tenant_isolated` regression test.
 - **fix(canary): repoint the CAS drift-canary to a dedicated tenant after the githugr/hugit pause revoked its PAT.**
   The hourly authenticated CAS BLAKE3 round-trip canary (`cas-canary.yml`) used a `cas:rw` PAT on the `d863fafb`
   dogfood tenant, whose PATs were revoked by the 2026-07-11 owner-authorized githugr/hugit pause — so the canary
@@ -62,6 +82,18 @@ Each entry cross-references:
   `CORELINK_CANARY_PAT` GHA secret + secrets-matrix row #166. No githugr/hugit product surface is re-enabled.
 
 ### Security
+- **fix(cas,ac): enforce the PAT-derived `can_write` capability at the container on the native CAS + AC write paths (deep-audit money/auth F-1).**
+  The native CAS (`handle_write`, `handle_batch_write`, `handle_delete`) and AC (`handle_update`, `handle_delete`)
+  write handlers gated only on `NativePatGate::verify` (tenant possession) plus the Worker-set `x-corelink-scope`
+  header — trusting the Worker to have set the scope correctly. The sibling build surfaces (Bazel `verify_write`,
+  Turbo/cargo/OCI two-layer) already re-derive the PAT's D1-stored `can_write` bit at the container, so that a
+  compromised or regressed Worker cannot grant write on its own (the Option-B invariant). CAS/AC — the primary
+  billable write surface, and AC is not content-addressed so a forged action→result mapping is real poisoning —
+  were the remaining outliers. Two independent attacker-grade hunters flagged this as the sole write-authorization
+  asymmetry. Fix: route the five write/delete handlers through a new `pat_gate_reject_write` (`verify_write`), which
+  resolves `can_write` in the same D1 lookup (≈free); reads keep `verify`. A read-only PAT on a write path is now
+  rejected `403` even if the scope header claimed write. Not externally exploitable while the Worker header-strip is
+  intact (verified), but closes the defense-in-depth gap on the highest-value surface.
 - **feat(signup-worker): prove GitHub App installation ownership before binding — closes the runner install cross-tenant hijack (the public-flip HARD GATE).**
   The runner install callback (`github_install_callback.ts`) bound `installation_id → tenant_id` off the signed
   `state` alone, which proves the TENANT but NOT that the tenant performed that installation — so a tenant could

@@ -947,7 +947,7 @@ candidates:
     title: "RFC-6962 audit / transparency chain"
     status: "active"
     source_cluster: "docs/compliance"
-    seed_from: ["crates/corelink-audit-chain", "crates/corelink-transparency-log", "docs/internal/auth-event-taxonomy.md"]
+    seed_from: ["crates/corelink-audit-chain", "crates/corelink-transparency-log", "docs/internal/auth-event-taxonomy.md", "crates/corelink-container/src/storage/d1_audit_sink.rs"]
   - id: "compliance/erasure-attestation"
     type: "ComplianceControl"
     title: "Ed25519/JCS erasure attestation"
