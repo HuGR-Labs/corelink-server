@@ -3,9 +3,9 @@ id: "ADR-0030"
 type: "adr"
 doc_status: "FROZEN"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.0.1"
 created: "2026-04-30"
-updated: "2026-04-30"
+updated: "2026-07-12"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -86,6 +86,12 @@ Per INV-AUTH-MASS-REVOKE-ATOMIC: Phase 1 is a single atomic Postgres UPDATE boun
 - Tiered alerts + RB-FM-REVOKE-LAG runbook.
 - Local revocation effective immediately (D1 commit ≤ 100 ms regional) — cross-region lag never compromises the origin region.
 
+## Reconciliation vs shipped code (2026-07-12)
+
+> ⚠️ **The Decision above is DESIGN-INTENT (DEFERRED / roadmap), not the deployed path.** The Neon-Postgres `pat.revoked_at` SoT + `RevocationDo` broadcast + CF-Queue cross-region fan-out backbone is NOT wired in production. The Rust surface (`crates/corelink-worker/src/auth/revocation.rs`) is feature-gated behind `tower-middleware` and is not in the verify hot path; its only callers today are the in-memory fakes (see the Implementation-seam note below).
+>
+> **The LIVE PAT-revocation source-of-truth is D1.** The container verifier checks `revoked_at_ms IS NULL` against the D1 `pat` table (migration `0063_pat_customer_keys`) on every verify — see `crates/corelink-container/src/adapter_pat.rs` — enforced under **INV-PAT-REVOKE-PROPAGATION** (`invariant_registry.md §3.28`) and TLA-verified by `specs/tla/auth_pat_revoke.tla` (which models the D1 `revoked_at IS NULL` verify path, no edge-cache lookahead). Revocation IS enforced in production today (via D1); everything in the Decision/Consequences above — the Neon SoT, the DO broadcast, the CF-Queue fan-out, the three-axis ≤ 60 s p99 SLA, and `INV-AUTH-NEON-IS-SOT` — describes the target architecture, not the running system. The deferred Neon queue-side propagation design is modelled (spec-only) by `specs/tla/auth_revocation.tla`.
+
 ## Cross-references
 
 - `auth_model.md §5` — revocation lifecycle canonical narrative.
@@ -104,3 +110,4 @@ The Rust surface lives in `crates/corelink-worker/src/auth/revocation.rs` behind
 | Versão | Data | Autor | Mudança |
 |---|---|---|---|
 | 1.0.0 | 2026-04-30 | Gustavo (via Claude Opus 4.7) | First publication alongside WI-S03-004 SEAL. |
+| 1.0.1 | 2026-07-12 | Gustavo (via Claude Opus 4.8) | Reconciliation note (non-normative): Neon-SoT / DO / CF-Queue backbone marked DEFERRED (feature-gated, not deployed); LIVE revocation SoT is D1 (`adapter_pat.rs`, migration 0063) under INV-PAT-REVOKE-PROPAGATION. Decision body unchanged (design-intent record). |

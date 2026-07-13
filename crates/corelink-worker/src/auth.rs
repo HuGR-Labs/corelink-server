@@ -32,5 +32,18 @@
 //! storage upsert immediately after; KV invalidate best-effort).
 //! The DO `is_revoked` query exists for the admin / audit query
 //! plane (S-13 forward); the verify middleware never calls it.
+//!
+//! ## ⚠️ Deployment status (2026-07-12) — DEFERRED, not the live path
+//!
+//! This entire module (behind `tower-middleware`) is DESIGN-INTENT and is
+//! NOT wired into the production verify hot path — its only callers today
+//! are the in-memory fakes used by the host-side property tests. The claim
+//! above that "the verify hot path consults Neon" describes the DEFERRED
+//! Neon-SoT design (ADR-0030 / `INV-AUTH-NEON-IS-SOT`), not the running
+//! system. The LIVE PAT-revocation source-of-truth is **D1**: the container
+//! verifier checks `revoked_at_ms IS NULL` against the D1 `pat` table
+//! (migration `0063_pat_customer_keys`) on every verify
+//! (`corelink-container::adapter_pat`), enforced under
+//! `INV-PAT-REVOKE-PROPAGATION` and TLA-verified by `auth_pat_revoke.tla`.
 
 pub mod revocation;
