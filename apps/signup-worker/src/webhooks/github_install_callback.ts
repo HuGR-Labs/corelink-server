@@ -43,6 +43,16 @@ export interface InstallCallbackEnv {
   GITHUB_APP_CLIENT_ID?: string;
   /** GitHub App OAuth **client secret** (paired with {@link GITHUB_APP_CLIENT_ID}). */
   GITHUB_APP_CLIENT_SECRET?: string;
+  /**
+   * "The App is (or is being) flipped **public**" signal (`"true"`/`"1"`). When
+   * set, the callback REQUIRES the OAuth ownership proof and returns `403` if
+   * {@link GITHUB_APP_CLIENT_ID}/{@link GITHUB_APP_CLIENT_SECRET} are unbound —
+   * so "App public" and "ownership proof enforced" can NEVER diverge (a public
+   * App with unbound OAuth creds is a cross-tenant install-hijack window). Unset
+   * / falsey ⇒ the `public:false` org-only dogfood path, where the proof is
+   * skipped when the creds are unbound (only org members can install).
+   */
+  GITHUB_APP_PUBLIC?: string;
   /** D1 binding holding the installation map + repo allowlist (0084/0085). */
   CONFIG_DB?: D1Database;
   /** admin-ui base to redirect back to after provisioning (optional). */
@@ -260,6 +270,25 @@ export async function handleInstallGithubCallback(
   //     only org members can install in the first place.
   const clientId = env.GITHUB_APP_CLIENT_ID;
   const clientSecret = env.GITHUB_APP_CLIENT_SECRET;
+
+  // STRUCTURAL GUARD (fail-CLOSED): if the App is public, the ownership proof is
+  // MANDATORY. Skipping the proof is only safe on the `public:false` org-only
+  // dogfood path (where GitHub itself limits who can install). If the App has
+  // been flipped public but the OAuth creds are not yet bound, the proof below
+  // would be silently skipped — reopening the cross-tenant install-hijack the
+  // proof exists to close (binding rests only on a signed state + an enumerable
+  // query-string installation_id). So "App public" and "proof enforced" are tied
+  // together here: public + unbound creds ⇒ 403, before any App-JWT mint or D1
+  // write. This makes it impossible to ship a public App without the gate.
+  const appIsPublic =
+    env.GITHUB_APP_PUBLIC === "true" || env.GITHUB_APP_PUBLIC === "1";
+  if (appIsPublic && !(clientId && clientSecret)) {
+    return new Response(
+      "install ownership proof required: app is public but oauth creds are unbound",
+      { status: 403 },
+    );
+  }
+
   if (clientId && clientSecret) {
     const code = url.searchParams.get("code");
     if (!code) {

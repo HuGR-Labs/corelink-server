@@ -36,6 +36,23 @@ Each entry cross-references:
   `migrations/**`. (3) `secrets-drift.yml` PR-triggered only on the container crate, so
   a new `env::var()` secret read in any other crate/app escaped the PR gate — broadened
   to `crates/**/*.rs`, `apps/**/*.ts(x)`, `worker/**/*.ts`.
+- **fix(admin-ui): fail CLOSED when `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is absent in production.**
+  The root edge middleware (`apps/admin-ui/src/middleware.ts`) gated Clerk enforcement on
+  `if (publishableKey && !isE2E)`; with the key unset it fell through to `NextResponse.next()`,
+  rendering PROTECTED pages with NO middleware auth gate (a fail-OPEN). Added a structural guard:
+  in production (not E2E, not the non-production dev/test ergonomics path) an absent publishable
+  key on a protected path now 307-redirects to `/sign-in`, mirroring the catch-branch — never a
+  pass-through. Self-gated paths (`/upgrade`) still own their own gating. Regression test:
+  `apps/admin-ui/tests/middleware-failclosed.test.ts`.
+- **fix(signup-worker): tie "App public" to "OAuth ownership proof enforced" so they cannot diverge.**
+  The runner install callback (`apps/signup-worker/src/webhooks/github_install_callback.ts`) skipped
+  the OAuth installation-ownership proof whenever `GITHUB_APP_CLIENT_ID`/`_SECRET` were unbound —
+  deliberate for the `public:false` org-only dogfood, but a cross-tenant install-hijack window if the
+  App were ever flipped public with creds not yet bound (binding then rests only on a signed `state` +
+  an enumerable query-string `installation_id`). Added a structural fail-CLOSED guard keyed on a new
+  `GITHUB_APP_PUBLIC` env flag: when the App is public and the OAuth creds are unbound the callback now
+  returns `403` before any App-JWT mint or D1 write. Non-public (dogfood) keeps the current skip.
+  Coverage extended in `apps/signup-worker/tests/github_install.test.ts`.
 - **fix(canary): repoint the CAS drift-canary to a dedicated tenant after the githugr/hugit pause revoked its PAT.**
   The hourly authenticated CAS BLAKE3 round-trip canary (`cas-canary.yml`) used a `cas:rw` PAT on the `d863fafb`
   dogfood tenant, whose PATs were revoked by the 2026-07-11 owner-authorized githugr/hugit pause — so the canary
