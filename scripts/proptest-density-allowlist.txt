@@ -67,3 +67,16 @@ corelink-bazel-bridge        # Bazel REAPI v2 bridge; INV refs pinned at the
                              # `routes/bazel_v2` boundary + corelink-cas proptests
 corelink-handler-customer    # customer handler; INV refs pinned in the owning
                              # data crates (same as corelink-handler-cas above)
+
+# Surfaced 2026-07-12 by the audit_proptest_density.sh counting fix: the awk
+# set `in_block=1` on the first `proptest!` and NEVER reset it, so every plain
+# #[test] later in the file counted as a proptest (~4x over-count). Fixing it to
+# only count inside a balanced `proptest!{ }` span dropped these crates below
+# 1.0 — the gate had been hiding these pre-existing gaps, not enforcing them.
+# NOT new debt; INV refs are pinned at these crates' boundaries and the
+# multi-region/replication ones are pre-wiring simulations. Follow-up: real
+# per-crate proptests → WI-PROPTEST-FU-W37-001.
+corelink-failover-router     # failover Tower layer; INV-REGION-* pinned at boundary
+corelink-replica-worker      # multi-region replica sim (pre real-R2 wiring)
+corelink-replication         # residency-graph replication driver; INVs pinned at boundary
+corelink-slo                 # SLO/observability leaf; INV refs in doc comments

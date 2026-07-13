@@ -19,7 +19,7 @@ name: d1-migration-validate (R2-13)
 on:
   pull_request:
     paths:
-      - 'migrations/d1/**'
+      - 'migrations/**'
       - 'scripts/d1-migration-runner.sh'
       - 'scripts/d1-migration-verify.py'
       - 'scripts/check_migrations_additive.py'
@@ -29,7 +29,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'migrations/d1/**'
+      - 'migrations/**'
       - 'crates/corelink-ops/**'
 
 permissions:
