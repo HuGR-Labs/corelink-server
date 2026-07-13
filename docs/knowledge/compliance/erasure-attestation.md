@@ -11,7 +11,7 @@ source_files:
   - crates/corelink-erasure-attestation/src/evidence.rs
   - crates/corelink-container/src/routes/dsr/attestation.rs
   - crates/corelink-container/src/routes/public_attestation.rs
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "a3a894c1e0881cdba24f890bd6ca6657f78153e9"
 provenance: "AUTHORED"
 tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", "gdpr-art-17", "byok", "dsr"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -34,8 +34,8 @@ This crate is the pure-logic signing and verification surface for erasure attest
 - The resulting `ErasureAttestation` stores the payload, the base64 signature, and the exact JCS byte string that was signed, which a verifier MUST verify against `crates/corelink-erasure-attestation/src/attestation.rs:52-63`.
 - `evidence_hash` is a SHA-256 over the JCS-canonical serialization of an `EvidenceBundle` binding audit-chain segment IDs + KMS destroy timestamp + KMS key id + tenant id `crates/corelink-erasure-attestation/src/evidence.rs:52-61`.
 - The bundle is validated before hashing — empty segment list, KMS key id, or tenant id are rejected so an incomplete evidence bundle cannot be attested `crates/corelink-erasure-attestation/src/evidence.rs:68-85`.
-- Per-region signing keys are generated from the OS CSPRNG (`OsRng`) `crates/corelink-erasure-attestation/src/key.rs:72`, or reconstructed deterministically from a 32-byte secret seed so the served public key stays stable across Workers/container restarts `crates/corelink-erasure-attestation/src/key.rs:95-110`.
-- `public_key()` derives the verifying key and a PEM SubjectPublicKeyInfo (RFC 8410 Ed25519 OID prefix) served at `GET /v1/public/keys/erasure/{region}.pub` `crates/corelink-erasure-attestation/src/key.rs:114-125`.
+- Per-region signing keys are generated from the OS CSPRNG (`getrandom::SysRng`, wrapped in `rand_core`'s `UnwrapErr` to satisfy ed25519-dalek 3's `rand_core 0.10` `CryptoRng` bound) `crates/corelink-erasure-attestation/src/key.rs:77`, or reconstructed deterministically from a 32-byte secret seed so the served public key stays stable across Workers/container restarts `crates/corelink-erasure-attestation/src/key.rs:100-115`.
+- `public_key()` derives the verifying key and a PEM SubjectPublicKeyInfo (RFC 8410 Ed25519 OID prefix) served at `GET /v1/public/keys/erasure/{region}.pub` `crates/corelink-erasure-attestation/src/key.rs:119-130`.
 - Offline verification FIRST binds the typed `payload` to the signed bytes — it re-canonicalizes `attestation.payload` with the SAME canonicalizer the signer uses (`serde_jcs`, RFC 8785 JCS) and requires BYTE-EQUALITY with `canonical_payload_jcs`, so an attacker who keeps a validly-signed canonical+signature but mutates `payload.tenant_id`/`request_id`/`region` is rejected (the H2 payload-substitution fix) — then decodes the base64 signature, enforces exactly 64 bytes, and verifies against the canonical JCS bytes using the public key `crates/corelink-erasure-attestation/src/verify.rs:50-82`.
 - Ed25519 was chosen over RSA-2048/ECDSA P-256: 64-byte signatures (cheap for 7y R2 retention), FIPS 186-5 approved, constant-time verify `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:39-50`.
 - Keys rotate every 30 days with a 30d overlap window during which both Active and Overlap public keys are served, so a verifier holding a pre-rotation key still verifies post-rotation attestations `crates/corelink-erasure-attestation/src/lib.rs:27-33`.
@@ -56,7 +56,7 @@ This crate is the pure-logic signing and verification surface for erasure attest
 - Verifiers must select the correct public key from the endpoint list using `attestation_key_id` — `verify_attestation_signature` does not auto-select; passing the wrong key yields a verify error, not a silent pass `crates/corelink-erasure-attestation/src/verify.rs:22-24`.
 - RFC 8785 JCS includes Unicode NFC normalization, which is what prevents canonicalization-bypass attacks; a custom canonicalizer was explicitly rejected `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:52-63`.
 - `EvidenceBundle::compute_hash` falls back to `serde_json` if `serde_jcs` fails, but that branch is treated as unreachable (a property test guards JCS); rely on `validated_hash` for the fail-closed checks `crates/corelink-erasure-attestation/src/evidence.rs:52-61`.
-- `from_seed` reproduces the same keypair on every process start; the seed is the raw 32-byte Ed25519 secret scalar and MUST stay out of logs/Debug/errors — only `generate` is random/ephemeral `crates/corelink-erasure-attestation/src/key.rs:82-110`.
+- `from_seed` reproduces the same keypair on every process start; the seed is the raw 32-byte Ed25519 secret scalar and MUST stay out of logs/Debug/errors — only `generate` is random/ephemeral `crates/corelink-erasure-attestation/src/key.rs:87-115`.
 - Old public keys remain served for the 30d overlap but accept no new signatures; emergency rotation zeroizes the old key and publishes a security notice `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:93-96`.
 
 # Citations
@@ -73,9 +73,9 @@ This crate is the pure-logic signing and verification surface for erasure attest
 - `crates/corelink-erasure-attestation/src/attestation.rs:52-63` — `ErasureAttestation` (canonical bytes + signature).
 - `crates/corelink-erasure-attestation/src/attestation.rs:98-104` — JCS canonicalize + Ed25519 sign + base64.
 - `crates/corelink-erasure-attestation/src/key.rs:41-52` — Debug redaction.
-- `crates/corelink-erasure-attestation/src/key.rs:72` — OsRng key generation.
-- `crates/corelink-erasure-attestation/src/key.rs:82-110` — deterministic `from_seed`.
-- `crates/corelink-erasure-attestation/src/key.rs:114-125` — public key / PEM derivation.
+- `crates/corelink-erasure-attestation/src/key.rs:77` — OS-CSPRNG key generation (getrandom `SysRng` via ed25519-dalek 3 `rand_core` `UnwrapErr`).
+- `crates/corelink-erasure-attestation/src/key.rs:87-115` — deterministic `from_seed`.
+- `crates/corelink-erasure-attestation/src/key.rs:119-130` — public key / PEM derivation.
 - `crates/corelink-erasure-attestation/src/verify.rs:46-82` — offline verify path (payload-binding + base64/64-byte + Ed25519).
 - `crates/corelink-erasure-attestation/src/evidence.rs:52-61` — evidence SHA-256 over JCS.
 - `crates/corelink-erasure-attestation/src/evidence.rs:68-85` — fail-closed bundle validation.

@@ -13,8 +13,11 @@ workspace = true
 [dependencies]
 # Ed25519 FIPS 186-5 EdDSA signing (rand_core feature for key generation)
 ed25519-dalek = { workspace = true }
-# Random number generation for Ed25519 key material (CSPRNG)
-rand = "0.8"
+# OS CSPRNG for Ed25519 key material. `sys_rng` exposes `SysRng` +
+# re-exports the SAME `rand_core 0.10` ed25519-dalek 3.0 requires, so
+# `UnwrapErr(SysRng)` satisfies its `CryptoRng` bound. Native-only crate
+# (NOT wasm32 — see package description), so the default libc backend is used.
+getrandom = { version = "0.4", features = ["sys_rng"] }
 # JCS canonicalization RFC 8785 (deterministic JSON for signature stability)
 serde_jcs = "0.2"
 # Base64 encoding for signature + PEM

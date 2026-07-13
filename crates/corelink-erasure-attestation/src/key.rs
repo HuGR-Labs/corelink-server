@@ -3,7 +3,7 @@
 use crate::region::Region;
 use base64::Engine as _;
 use ed25519_dalek::{SigningKey, VerifyingKey};
-use rand::rngs::OsRng;
+use getrandom::{rand_core::UnwrapErr, SysRng};
 use serde::{Deserialize, Serialize};
 use zeroize::ZeroizeOnDrop;
 
@@ -69,7 +69,12 @@ impl ErasureSigningKey {
         created_at_ms: u64,
         overlap_until_ms: u64,
     ) -> Self {
-        let signing_key = SigningKey::generate(&mut OsRng);
+        // ed25519-dalek 3.0's `generate` takes a `rand_core 0.10` `CryptoRng`.
+        // `getrandom::SysRng` is the OS CSPRNG (a fallible `TryCryptoRng`);
+        // `UnwrapErr` adapts it to the infallible `CryptoRng` the API expects
+        // (identical semantics to the former `rand::rngs::OsRng`: an OS-entropy
+        // failure is unrecoverable and aborts, exactly as before).
+        let signing_key = SigningKey::generate(&mut UnwrapErr(SysRng));
         Self {
             key_id,
             region,

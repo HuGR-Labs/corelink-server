@@ -378,6 +378,42 @@ Each entry cross-references:
   denied; unauth/PAT denied; rate-limit; MFA gate).
 
 ### Changed
+- **deps(majors): adopt ed25519-dalek 3 (prove-or-adopt #779); hold the three coupled majors.**
+  Of the four Dependabot MAJOR bumps grouped in #779, only **ed25519-dalek**
+  is cleanly adoptable on the ADR-0015-pinned 1.91.1 toolchain — the other
+  three each require a companion major bump that #779 does **not** include, so
+  they are held back (reverted to their prior pins) rather than hacked in.
+  - **ADOPTED — ed25519-dalek 2 → 3** (the headline, and the only member that
+    was actually red on a code break): 3.0 moved `SigningKey::generate` onto a
+    `rand_core 0.10` `CryptoRng`. `corelink-erasure-attestation`'s random
+    key-generation path now feeds `getrandom::SysRng` (the OS CSPRNG) wrapped in
+    `rand_core`'s `UnwrapErr` — the same `rand_core 0.10` that ed25519-dalek 3
+    re-exports, so no cross-version adapter is needed and OS-entropy-failure
+    semantics are identical to the former `rand::rngs::OsRng`. The deterministic
+    `from_seed`, `Signature::from_bytes`/`to_bytes`, `VerifyingKey::from_bytes`,
+    and the `Signer`/`Verifier` container audit-drain paths are unchanged
+    (signature 3.0 kept those signatures). Ed25519 erasure-attestation +
+    audit-chain-head signing/verify semantics are byte-for-byte identical.
+    `corelink-erasure-attestation` swaps its `rand 0.8` dep for
+    `getrandom 0.4` (`sys_rng` feature; native-only crate, libc backend).
+  - **HELD — rand_chacha 0.9 → 0.10.** Needs `rand 0.10` too: rand_chacha 0.10
+    is on `rand_core 0.10`, but the workspace pins `rand 0.9` (`rand_core 0.9`),
+    and ~10 crates (incl. the **prod** worker timing-padding side-channel
+    mitigation) call `rand 0.9`'s `Rng::random_range`/`SeedableRng` on a
+    `ChaCha*Rng` — trait impls that a rand_core-0.10 generator does not satisfy.
+  - **HELD — password-hash 0.5 → 0.6.** Needs `argon2 0.6` too: stable
+    `argon2 0.5` hard-requires `password-hash 0.5`, and the Argon2id PAT
+    (`corelink-pat`) + WebAuthn-recovery (`corelink-auth`) paths feed a
+    `password-hash` `Salt` into argon2's `PasswordHasher`, crossing the two
+    incompatible majors. The only argon2 paired with password-hash 0.6 is a
+    **pre-release** (`argon2 0.6.0-rc.8`) — an RC crypto crate in the launched
+    auth path, out of scope for a dep-hygiene bump.
+  - **HELD — rusqlite 0.32 → 0.40.** Needs a newer toolchain: rusqlite 0.40
+    hard-pins `libsqlite3-sys 0.38.1`, whose `build.rs` uses the `cfg_select!`
+    macro that is **unstable on rustc 1.91.1** (E0658). Bumping the pinned
+    toolchain is ADR-0015-gated (reproducible-build re-validation).
+  - Each held bump is its own follow-up lane (rand 0.10 / argon2 0.6-stable /
+    toolchain bump), to be reviewed on its own merits rather than smuggled in.
 - **Customer team-invite 501 copy de-staled** (`corelink-container`). Team invites
   are fully implemented end-to-end (D1 create/list/remove + signup-worker accept,
   ADR-S33-001 / migration 0074), so the generic `NotImplemented` fallback no
