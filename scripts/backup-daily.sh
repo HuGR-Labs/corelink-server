@@ -19,8 +19,12 @@
 #                          Default: corelink-prod-d1 (the real consolidated
 #                          prod D1; the old corelink_core/audit/billing names
 #                          never existed in the account).
-#   KV_NAMESPACES          Space-separated KV namespace bindings.
-#                          Default: CORELINK_KV CORELINK_FEATURE_FLAGS.
+#   KV_NAMESPACES          Space-separated KV namespace IDs (not bindings — the
+#                          backup runs without the app wrangler.toml, so it must
+#                          address KV by --namespace-id). Default: the durable
+#                          CoreLink prod namespaces (jwks / idempotency /
+#                          pilot-signup). Ephemeral KV (cache / rate-limit /
+#                          session) is intentionally omitted — it regenerates.
 #   R2_COLD_BUCKET         Source cold-tier R2 bucket.
 #                          Default: corelink-cold-${CORELINK_ENV}.
 #   AUDIT_OUTBOX_URL       Endpoint that ingests corelink.* audit events.
@@ -61,7 +65,7 @@ BACKUP_GPG_RECIPIENT="${BACKUP_GPG_RECIPIENT:-}"
 BACKUP_R2_BUCKET="${BACKUP_R2_BUCKET:-corelink-backups-${CORELINK_ENV}}"
 R2_COLD_BUCKET="${R2_COLD_BUCKET:-corelink-cold-${CORELINK_ENV}}"
 D1_DATABASES="${D1_DATABASES:-corelink-prod-d1}"
-KV_NAMESPACES="${KV_NAMESPACES:-CORELINK_KV CORELINK_FEATURE_FLAGS}"
+KV_NAMESPACES="${KV_NAMESPACES:-924c6c0f9ee4439f96ec3a75a98eef8b 0e4fbd39e30c4610a9b7b66f1f4847e1 13005d94c4404387b21c46960ea05380}"
 AUDIT_OUTBOX_URL="${AUDIT_OUTBOX_URL:-}"
 
 # ---------------------------------------------------------------------------
@@ -243,7 +247,7 @@ for ns in ${KV_NAMESPACES}; do
     if [[ "${DRY_RUN}" == "true" ]]; then
         printf '{"dry_run":true,"namespace":"%s"}\n' "${ns}" > "${plain}"
     else
-        wrangler kv key list --binding "${ns}" --remote > "${keys_tmp}" \
+        wrangler kv key list --namespace-id "${ns}" --remote > "${keys_tmp}" \
             || fail "wrangler kv key list failed for ${ns}"
         : > "${plain}"
         # Iterate keys and emit JSONL {"k":"...","v":"..."}. We use jq
@@ -253,7 +257,7 @@ for ns in ${KV_NAMESPACES}; do
         fi
         while IFS= read -r key; do
             [[ -z "${key}" ]] && continue
-            value="$(wrangler kv key get --binding "${ns}" --remote "${key}" \
+            value="$(wrangler kv key get --namespace-id "${ns}" --remote "${key}" \
                 || echo "")"
             jq -cn --arg k "${key}" --arg v "${value}" \
                 '{k:$k, v:$v}' >> "${plain}"

@@ -137,6 +137,10 @@ jobs:
           # consolidated DB `corelink-prod-d1`. Set via repo var so wrangler
           # d1 export resolves a real DB (else "Couldn't find DB with name").
           D1_DATABASES: ${{ vars.D1_DATABASES }}
+          # KV namespace IDs (durable: jwks / idempotency / pilot-signup). The
+          # backup runs without the app wrangler.toml, so KV is addressed by
+          # --namespace-id, not --binding.
+          KV_NAMESPACES: ${{ vars.KV_NAMESPACES }}
           AUDIT_OUTBOX_URL: ${{ secrets.AUDIT_OUTBOX_URL }}
           # Use the globally-installed wrangler (no local node_modules on the
           # ubuntu runner).
