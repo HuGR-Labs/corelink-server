@@ -192,7 +192,9 @@ func TestRaceDetector(t *testing.T) {
 
 	ctx := context.Background()
 	done := make(chan struct{})
-	for i := range 10 {
+	// NB: classic counted loops, not Go 1.22 `range <int>` — the ffi-matrix
+	// gate builds this test under Go 1.21 too (range-over-int is 1.22+).
+	for i := 0; i < 10; i++ {
 		go func(n int) {
 			data := []byte(strings.Repeat("x", n+1))
 			_, err := client.Put(ctx, data)
@@ -202,7 +204,7 @@ func TestRaceDetector(t *testing.T) {
 			done <- struct{}{}
 		}(i)
 	}
-	for range 10 {
+	for i := 0; i < 10; i++ {
 		<-done
 	}
 }
