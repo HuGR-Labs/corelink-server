@@ -4,7 +4,7 @@
  *
  * Defect: when NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is ABSENT the middleware skipped
  * the Clerk enforcement block and fell through to NextResponse.next(), rendering a
- * PROTECTED page with NO middleware auth gate. In production that is a fail-OPEN.
+ * PROTECTED page with NO middleware auth gate (a fail-OPEN in production).
  *
  * Contract asserted here:
  *   (a) production + no publishable key + protected path → 307 redirect to /sign-in
@@ -15,29 +15,22 @@
  *       through (self-gated paths own their own gating).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import middleware from "@/middleware";
 
 const KEY_ENV = "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY";
 
-// Snapshot the two env vars this suite mutates so it never leaks into siblings.
-let savedNodeEnv: string | undefined;
-let savedKey: string | undefined;
-
 beforeEach(() => {
-  savedNodeEnv = process.env["NODE_ENV"];
-  savedKey = process.env[KEY_ENV];
-  delete process.env[KEY_ENV];
-  delete process.env["NEXT_PUBLIC_E2E_TEST_MODE"];
+  // No publishable key + no E2E bypass is the defect precondition. `vi.stubEnv`
+  // keeps the (read-only-typed) NODE_ENV mutations scoped + auto-restorable.
+  vi.stubEnv(KEY_ENV, undefined);
+  vi.stubEnv("NEXT_PUBLIC_E2E_TEST_MODE", undefined);
 });
 
 afterEach(() => {
-  if (savedNodeEnv === undefined) delete process.env["NODE_ENV"];
-  else process.env["NODE_ENV"] = savedNodeEnv;
-  if (savedKey === undefined) delete process.env[KEY_ENV];
-  else process.env[KEY_ENV] = savedKey;
+  vi.unstubAllEnvs();
 });
 
 function reqFor(path: string): NextRequest {
@@ -46,7 +39,7 @@ function reqFor(path: string): NextRequest {
 
 describe("middleware fail-CLOSED on absent publishable key", () => {
   it("(a) production + no key + protected path → 307 redirect to /sign-in", async () => {
-    process.env["NODE_ENV"] = "production";
+    vi.stubEnv("NODE_ENV", "production");
     const res = await middleware(reqFor("/admin/tenants"));
     expect(res.status).toBe(307);
     const location = res.headers.get("location") ?? "";
@@ -56,7 +49,7 @@ describe("middleware fail-CLOSED on absent publishable key", () => {
   });
 
   it("(b) non-production + no key → falls through (dev/test ergonomics)", async () => {
-    process.env["NODE_ENV"] = "development";
+    vi.stubEnv("NODE_ENV", "development");
     const res = await middleware(reqFor("/admin/tenants"));
     // A pass-through response is NOT a redirect (no /sign-in location).
     expect(res.status).not.toBe(307);
@@ -64,7 +57,7 @@ describe("middleware fail-CLOSED on absent publishable key", () => {
   });
 
   it("(c) production + no key + self-gated path (/upgrade) → falls through", async () => {
-    process.env["NODE_ENV"] = "production";
+    vi.stubEnv("NODE_ENV", "production");
     const res = await middleware(reqFor("/upgrade"));
     // Self-gated routes own their own signed-out handling → not force-redirected.
     expect(res.status).not.toBe(307);
