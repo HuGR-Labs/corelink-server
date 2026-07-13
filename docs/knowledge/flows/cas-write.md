@@ -5,7 +5,7 @@ description: "End-to-end path of a native CAS blob write: the tenant/scope/PAT/$
 source_files:
   - "crates/corelink-container/src/routes/cas.rs"
   - "crates/corelink-container/src/storage.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "304547f6b48b067aa668068036f1ec2d7cf7e6b2"
 provenance: "AUTHORED"
 tags: ["flows", "cas", "hot-path", "storage", "request-flow"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -29,7 +29,7 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 6. Monthly $-ceiling gate: when wired, `state.quota.check(&auth.0)` runs the [billing quota check](/flows/billing-quota-check.md) and rejects 402/503 before storage (`crates/corelink-container/src/routes/cas.rs:889-893`).
 7. Storage-cap threading: the Worker-resolved per-tier storage cap header is threaded into the write request so the accounting decorator seeds a real cap, never treating an unseeded tenant as unlimited (`crates/corelink-container/src/routes/cas.rs:903-907`).
 8. Commit: `state.write.write(req)` goes through the byte-accounting decorator — the single chokepoint every CAS surface shares — which reserves/commits the cap atomically before the R2 PUT (`crates/corelink-container/src/routes/cas.rs:917-929`).
-9. The production write target is the native R2 S3 adapter (`R2CasHandler`), built from S3 credentials only when they are present in env (`crates/corelink-container/src/routes/cas.rs:526-638`); the adapter module and its credential loader live in storage (`crates/corelink-container/src/storage.rs:35`, `crates/corelink-container/src/storage.rs:98-114`).
+9. The production write target is the native R2 S3 adapter (`R2CasHandler`), built from S3 credentials only when they are present in env (`crates/corelink-container/src/routes/cas.rs:526-638`); the adapter module and its credential loader live in storage (`crates/corelink-container/src/storage.rs:36`, `crates/corelink-container/src/storage.rs:99-116`).
 10. Result: a fresh durable write returns 201 CREATED, an idempotent already-present write returns 200 OK (`crates/corelink-container/src/routes/cas.rs:917-929`).
 11. Bulk reads are symmetrically capped: a `CasReadConcurrencyGuard` extractor — declared AHEAD of the body on `handle_batch_read`/`handle_batch_exists`, like `CasPutGuard` on writes — reserves one per-tenant in-flight READ slot from a SEPARATE `read_inflight` pool (cap 8) and rejects over-cap bulk reads 429 before any payload is buffered (`crates/corelink-container/src/routes/cas.rs:382-426`).
 12. After a successful commit, the handler records a fire-and-forget `Write` usage-metering event into the in-process display aggregator [`crate::usage_meter`] (both a fresh 201 and an idempotent 200 count as a write) — no await / no I/O on the hot path, DISPLAY telemetry only, never gating the commit (`crates/corelink-container/src/routes/cas.rs:919-923`).
@@ -41,7 +41,7 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 - The per-tenant write-concurrency cap is checked before the body is buffered, bounding peak per-tenant memory (`crates/corelink-container/src/routes/cas.rs:284-336`); the bulk-read path mirrors this on a SEPARATE per-tenant cap (`crates/corelink-container/src/routes/cas.rs:382-426`).
 - The byte-cap is enforced atomically at the shared write trait object, not in the route, so every surface accounts identically and the route never double-counts (`crates/corelink-container/src/routes/cas.rs:917-929`).
 - Usage metering is off the commit path: the `Write` `record(...)` runs only AFTER a successful `state.write.write` and never gates or fails the write — DISPLAY telemetry, not billing (`crates/corelink-container/src/routes/cas.rs:919-923`).
-- R2 S3 credentials are env-sourced only and the real adapter is constructed solely when all creds are present; absent creds fall back to the dev/in-memory path (`crates/corelink-container/src/storage.rs:98-114`; `crates/corelink-container/src/routes/cas.rs:516-626`).
+- R2 S3 credentials are env-sourced only and the real adapter is constructed solely when all creds are present; absent creds fall back to the dev/in-memory path (`crates/corelink-container/src/storage.rs:99-116`; `crates/corelink-container/src/routes/cas.rs:516-626`).
 
 # Gotchas
 
@@ -60,7 +60,7 @@ The handler is the trust boundary between the Worker/DO edge (which injects the 
 6. `crates/corelink-container/src/routes/cas.rs:874-893` — hash, write-scope, PAT-possession, and $-ceiling gates, all before storage.
 7. `crates/corelink-container/src/routes/cas.rs:903-929` — storage-cap header threading and the byte-accounted commit chokepoint.
 8. `crates/corelink-container/src/routes/cas.rs:382-426` — `CasReadConcurrencyGuard`: per-tenant bulk-READ concurrency cap (separate `read_inflight` pool), 429 before buffering — the read twin of `CasPutGuard`.
-9. `crates/corelink-container/src/storage.rs:35` — the native `r2_s3` adapter module (R2 over the S3-compatible API).
-10. `crates/corelink-container/src/storage.rs:98-114` — `StorageEnv::from_env`: env-only R2/D1 credential loading.
+9. `crates/corelink-container/src/storage.rs:36` — the native `r2_s3` adapter module (R2 over the S3-compatible API).
+10. `crates/corelink-container/src/storage.rs:99-116` — `StorageEnv::from_env`: env-only R2/D1 credential loading.
 11. `crates/corelink-container/src/routes/cas.rs:919-923` — the fire-and-forget `Write` usage-metering `record` (DISPLAY telemetry, off the commit path).
 </content>
