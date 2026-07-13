@@ -51,7 +51,7 @@
 )]
 
 use corelink_telemetry::logpush::{InMemoryPiiRedactor, PiiRedactor};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 /// Deterministic seed pinned for the 100k synthetic fixture. Changing

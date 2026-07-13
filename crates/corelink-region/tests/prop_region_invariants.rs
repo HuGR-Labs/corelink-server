@@ -43,7 +43,7 @@ use corelink_region::{
 };
 use proptest::prelude::*;
 use proptest::test_runner::Config;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 fn proptest_cases() -> u32 {

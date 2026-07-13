@@ -66,7 +66,7 @@ use corelink_billing_stripe::{
     SubscriptionItemId, WebhookEvent, WebhookEventKind, WebhookHandleRequest, REPLAY_WINDOW_MS,
 };
 use proptest::prelude::*;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use uuid::Uuid;
 

@@ -190,13 +190,13 @@ fn fresh_endpoint() -> (
 }
 
 fn pick_kind(rng: &mut ChaCha20Rng) -> DsrRequestKind {
-    use rand::RngCore;
+    use rand::Rng;
     let idx = (rng.next_u32() as usize) % ALL_KINDS.len();
     ALL_KINDS[idx]
 }
 
 fn pick_jur(rng: &mut ChaCha20Rng) -> DsrJurisdiction {
-    use rand::RngCore;
+    use rand::Rng;
     let idx = (rng.next_u32() as usize) % ALL_JURISDICTIONS.len();
     ALL_JURISDICTIONS[idx]
 }

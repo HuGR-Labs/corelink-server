@@ -37,7 +37,7 @@ use std::path::PathBuf;
 use corelink_ops::migrations::{list_migration_files, locate_migrations_dir};
 use proptest::prelude::*;
 use proptest::test_runner::Config;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 // =====================================================================
@@ -143,6 +143,47 @@ fn normalize_for_scan(sql: &str) -> String {
     out
 }
 
+/// Line-local suppression, mirroring the canonical gate
+/// `scripts/check_migrations_additive.py` (`ALLOW_PATTERN =
+/// r"--\s*additive-allowed\s*:\s*ADR-\d{4}\b"`). A physical line carrying
+/// `-- additive-allowed: ADR-NNNN <reason>` is exempt: the gate treats a
+/// documented, ADR-anchored destructive step (e.g. the SQLite 12-step table
+/// rebuild that widens an inline CHECK — additive in EFFECT, destructive only
+/// in MECHANISM) as allowed. This scanner must agree with the authoritative
+/// Python gate or it produces false positives on legitimately-annotated
+/// migrations (0062, 0064). Dependency-free (no `regex` in this crate).
+fn line_is_additive_allowed(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    let Some(dash) = lower.find("--") else {
+        return false;
+    };
+    let rest = lower[dash + 2..].trim_start();
+    let Some(rest) = rest.strip_prefix("additive-allowed") else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let Some(rest) = rest.strip_prefix(':') else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let Some(rest) = rest.strip_prefix("adr-") else {
+        return false;
+    };
+    // `\d{4}\b`: exactly four leading digits (ADR ids are 4-digit).
+    rest.chars().take_while(|c| c.is_ascii_digit()).count() == 4
+}
+
+/// Drop physical lines carrying the `additive-allowed` annotation before the
+/// destructive-statement scan (the canonical gate skips such lines). Each
+/// annotated destructive statement is self-contained on its own `;`-terminated
+/// line, so removing the whole line leaves neighbouring statements intact.
+fn strip_additive_allowed_lines(sql: &str) -> String {
+    sql.lines()
+        .filter(|line| !line_is_additive_allowed(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Scan canonicalized SQL for the appearance of any forbidden prefix as
 /// a standalone statement start. We split on `;` and check each statement's
 /// leading tokens. Returns the list of violating statements (truncated to
@@ -209,7 +250,10 @@ proptest! {
         let idx = rng.random_range(0..corpus.len());
         let (name, raw) = &corpus[idx];
 
-        let canonical = normalize_for_scan(raw);
+        // Honour the same line-local `-- additive-allowed: ADR-NNNN`
+        // suppression as the canonical gate before scanning.
+        let suppressed = strip_additive_allowed_lines(raw);
+        let canonical = normalize_for_scan(&suppressed);
         let violations = find_violations(&canonical);
         prop_assert!(
             violations.is_empty(),

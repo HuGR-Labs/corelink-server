@@ -58,7 +58,7 @@ use corelink_billing_emit::{
     compute_canonical_bytes_for_idem, derive_idem_key_from_canonical, UsageEvent, UsageEventKind,
 };
 use proptest::prelude::*;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use uuid::Uuid;
 

@@ -8,7 +8,7 @@ use core::time::Duration;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use http::Request;
-use rand::{rngs::OsRng, Rng, SeedableRng, TryRngCore};
+use rand::{rngs::SysRng, RngExt, SeedableRng, TryRng};
 use rand_chacha::ChaCha20Rng;
 
 use super::config::TimingPaddingConfig;
@@ -68,7 +68,7 @@ pub fn canonical_pad_target(
 
 /// Compute the per-request seed by mixing:
 /// - The `x-request-id` header hash (when present).
-/// - The per-layer server-side secret (`OsRng`-generated at layer
+/// - The per-layer server-side secret (`SysRng`-generated at layer
 ///   construction; opaque to the caller).
 /// - A monotonic per-call counter (cross-request independence).
 ///
@@ -94,13 +94,13 @@ pub(super) fn compute_request_seed<B>(
     splitmix_u64(server_secret ^ counter ^ header_seed)
 }
 
-/// Generate a per-layer server-side secret via `OsRng`. Falls back to
-/// a deterministic seed mixed with the system epoch when `OsRng`
+/// Generate a per-layer server-side secret via `SysRng`. Falls back to
+/// a deterministic seed mixed with the system epoch when `SysRng`
 /// itself fails (treated as non-fatal because the per-call counter
 /// still provides cross-request independence).
 pub(super) fn generate_server_secret() -> u64 {
     let mut buf = [0u8; 8];
-    if OsRng.try_fill_bytes(&mut buf).is_ok() {
+    if SysRng.try_fill_bytes(&mut buf).is_ok() {
         u64::from_le_bytes(buf)
     } else {
         let now = std::time::SystemTime::now()

@@ -155,7 +155,7 @@ fn fresh_engine() -> (
 }
 
 fn pick_reason(rng: &mut ChaCha20Rng) -> ReplayReason {
-    use rand::RngCore;
+    use rand::Rng;
     let idx = (rng.next_u32() as usize) % ALL_REASONS.len();
     ALL_REASONS[idx]
 }

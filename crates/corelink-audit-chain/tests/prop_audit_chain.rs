@@ -41,7 +41,7 @@ use corelink_audit_chain::{
     NeonShadowSink, ShadowEventRow, GENESIS_PREV_HASH, GENESIS_SEQUENCE_NUMBER,
 };
 use proptest::prelude::*;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use uuid::Uuid;
 

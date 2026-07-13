@@ -44,7 +44,7 @@ use corelink_tracing::{
     TRACESTATE_HEADER, TRACE_FLAGS_SAMPLED, W3C_TRACE_CONTEXT_VERSION,
 };
 use proptest::prelude::*;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 /// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k

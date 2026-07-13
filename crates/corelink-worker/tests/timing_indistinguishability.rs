@@ -62,7 +62,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use http::{Request, Response, StatusCode};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use tower::{Service, ServiceExt};
 use tower_layer::Layer;

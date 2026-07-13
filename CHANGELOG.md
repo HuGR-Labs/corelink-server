@@ -22,6 +22,11 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Changed
+
+- **deps(majors): adopt `rand_chacha` 0.9 → 0.10 + `rand` 0.9 → 0.10 companion (finishes the #779/#793 held group).** The Dependabot #779 group bundled `rand_chacha` 0.10 without its `rand` 0.10 companion; #793 held it. This adopts both together across the ~22 crates that pin them (property-test RNGs plus the one prod site — the `corelink-worker` timing-padding side-channel mitigation). API migration for the `rand` 0.9 → 0.10 trait/rename churn: the extension trait `Rng` → `RngExt` (upstream `rand_core` renamed `RngCore` → `Rng`), so `RngCore` → `Rng`, `TryRngCore` → `TryRng`, `rngs::OsRng` → `rngs::SysRng` (getrandom 0.4 `SysRng`, already in the lock from #793's ed25519-dalek 3 / getrandom 0.4 adoption), and the removed `gen_range` → `random_range`. `rand` 0.9 / `rand_chacha` 0.9 remain in the lock for the `bollard`/`testcontainers` dev-dependency, which still pins `^0.9`; both majors coexist. No prod crypto behavior change — the timing-padding jitter is unpredictable-per-seed, not output-stable across versions; the held auth crates are untouched.
+- **Held (each needs a companion #779 omits — unchanged from #793):** `password-hash` 0.6 is NOT adopted because its only argon2 pairing is the pre-release `argon2 0.6.0-rc.8` (stable `argon2` 0.5 hard-requires `password-hash` 0.5) — an RC crypto crate in the launched PAT Argon2id path is out of scope; `corelink-auth`/`corelink-pat`/`corelink-worker` stay on `argon2` 0.5 + `password-hash` 0.5 (waiting on a stable `argon2` 0.6). `rusqlite` 0.40 is NOT adopted because it forces `libsqlite3-sys` 0.38.1, whose `build.rs` uses `cfg_select!` (unstable on the ADR-0015-pinned rustc 1.91.1, E0658) — needs a toolchain-bump lane (owner decision); `corelink-ops` + sibling stay on `rusqlite` 0.32.
+
 ### Fixed
 
 - **DR drill cycle-1 unblocked.** The drill's preflight ran `cargo check/test -p corelink-dr-drill`, a crate physically absorbed into `corelink-ops` (W35-P2); scheduled dry-runs masked it, a real run FATALed (filed SEV-1 #640). Retargeted to `corelink-ops` + its `dr_drill_prop_dr_drill` test.

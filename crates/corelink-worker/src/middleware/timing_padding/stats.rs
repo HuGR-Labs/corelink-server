@@ -4,7 +4,7 @@
 //! Split from monolith `middleware/timing_padding.rs` (wave-33 stage
 //! 2.PRE-A.3).
 
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 /// Two-sided Mann-Whitney U p-value via the canonical normal

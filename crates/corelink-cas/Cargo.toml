@@ -49,5 +49,5 @@ corelink-worker = { workspace = true }
 [dev-dependencies]
 # Wave 35 Phase 2 — union of dev-deps from the 6 absorbed crates.
 proptest = { workspace = true }
-rand = "0.9"
-rand_chacha = "0.9"
+rand = "0.10"
+rand_chacha = "0.10"

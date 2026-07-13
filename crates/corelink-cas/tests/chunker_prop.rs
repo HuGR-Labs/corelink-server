@@ -27,7 +27,7 @@ use corelink_cas::chunker::{
     bounds, Chunk, Chunker, ChunkerAlgorithm, ChunkerConfig, ChunkerKind, ChunkerStep, OwnedChunk,
 };
 use proptest::prelude::*;
-use rand::{Rng, RngCore, SeedableRng};
+use rand::{RngExt, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 /// Drive a chunker to completion on `payload`, returning every emitted chunk

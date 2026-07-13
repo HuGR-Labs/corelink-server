@@ -48,7 +48,7 @@ use bytes::Bytes;
 use corelink_cas::r2_storage::{BackendPutOutcome, InMemoryR2, R2Backend};
 use proptest::prelude::*;
 use proptest::test_runner::Config;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 // =====================================================================

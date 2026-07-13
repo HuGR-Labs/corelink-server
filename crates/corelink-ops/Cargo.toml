@@ -80,8 +80,8 @@ production = []
 proptest = { workspace = true }
 mockito = "1"
 wiremock = "0.6"
-rand = "0.9"
-rand_chacha = "0.9"
+rand = "0.10"
+rand_chacha = "0.10"
 # Cross-crate SLI binding tests (DR-16 wave-14, dr_backup_verify_sli_binding.rs):
 corelink-slo = { workspace = true }
 

@@ -65,7 +65,7 @@
 //!    request-level entropy.
 //! 2. A **per-layer server-side secret** generated once at
 //!    [`TimingPaddingLayer::canonical`] / [`TimingPaddingLayer::new`]
-//!    construction via `OsRng` — defeats client-controlled-seed
+//!    construction via `SysRng` — defeats client-controlled-seed
 //!    attacks where the attacker reuses or chooses
 //!    `x-request-id` values to predict the jitter window
 //!    (codex round-1 P1 fix; without this mix an attacker with
@@ -82,7 +82,7 @@
 //! - **Do not** pad responses other than miss-classified ones.
 //!   Padding 200 / 403 / 413 / 503 is latency tax with no security
 //!   benefit (per ADR-0023 §"Trade-offs rejected").
-//! - **Do not** swap the seeded jitter for an unseeded `OsRng` —
+//! - **Do not** swap the seeded jitter for an unseeded `SysRng` —
 //!   correlation analysis attacker-side breaks the window.
 //! - **Do not** seed exclusively from the client-controlled
 //!   `x-request-id` — the seed must mix in the per-layer

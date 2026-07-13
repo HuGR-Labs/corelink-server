@@ -22,9 +22,9 @@ pub struct TimingPaddingLayer {
     pub(super) config: TimingPaddingConfig,
     pub(super) policy: JitterPolicy,
     /// Per-layer server-side secret mixed into every request seed —
-    /// generated once via OsRng at layer construction so the same
+    /// generated once via SysRng at layer construction so the same
     /// `x-request-id` does NOT yield a deterministic seed across
-    /// deploys / processes (codex round-1 P1 fix). When OsRng fails
+    /// deploys / processes (codex round-1 P1 fix). When SysRng fails
     /// (pathological host), the fallback is `0` and the layer
     /// degrades to id-only seeding — this is documented + still
     /// correlation-resistant via the per-call counter.

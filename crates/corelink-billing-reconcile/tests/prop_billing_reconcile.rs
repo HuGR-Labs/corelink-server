@@ -54,7 +54,7 @@ use corelink_billing_reconcile::{
     SEV3_TO_SEV2_THRESHOLD,
 };
 use proptest::prelude::*;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use uuid::Uuid;
 

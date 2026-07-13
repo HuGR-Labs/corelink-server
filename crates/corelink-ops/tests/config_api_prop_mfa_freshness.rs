@@ -51,7 +51,7 @@ use corelink_ops::config::api::middleware::mfa_freshness::{
 };
 use proptest::prelude::*;
 use proptest::test_runner::Config;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 fn proptest_cases() -> u32 {

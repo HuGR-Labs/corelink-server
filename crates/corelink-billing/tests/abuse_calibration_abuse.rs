@@ -69,7 +69,7 @@ use corelink_eviction::Tier;
 use corelink_ratelimit::{
     InMemoryRateLimitAuditSink, InMemoryRateLimitMetrics, InMemoryTokenBucketRateLimiter,
 };
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use uuid::Uuid;
 

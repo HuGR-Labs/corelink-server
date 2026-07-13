@@ -96,8 +96,8 @@ serde = { workspace = true }
 # CAS contract that the production adapter MUST also satisfy.
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 proptest = { workspace = true }
-rand = "0.9"
-rand_chacha = "0.9"
+rand = "0.10"
+rand_chacha = "0.10"
 bytes = { workspace = true }
 tokio = { workspace = true }
 corelink-worker = { workspace = true }

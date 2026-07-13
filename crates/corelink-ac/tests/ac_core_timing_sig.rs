@@ -222,7 +222,7 @@ fn bootstrap_trimmed_mean_ci(
     iterations: usize,
     seed: u64,
 ) -> Option<BootstrapTrimmedCi> {
-    use rand::Rng as _;
+    use rand::RngExt as _;
     if xs.is_empty() || ys.is_empty() || iterations == 0 {
         return None;
     }

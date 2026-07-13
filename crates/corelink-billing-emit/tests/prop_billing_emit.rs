@@ -46,7 +46,7 @@ use corelink_billing_emit::{
     UsageEvent, UsageEventEmitter, UsageEventKind,
 };
 use proptest::prelude::*;
-use rand::{RngCore, SeedableRng};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use uuid::Uuid;
 

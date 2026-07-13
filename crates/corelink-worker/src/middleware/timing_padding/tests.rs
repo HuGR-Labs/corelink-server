@@ -16,7 +16,7 @@ use core::time::Duration;
 use std::sync::atomic::AtomicU64;
 
 use http::{HeaderValue, Request, Response, StatusCode};
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 use super::config::{

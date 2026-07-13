@@ -29,8 +29,7 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::float_cmp,
-    deprecated,
-    reason = "test code: panics surface as test failures by design; rand 0.9 deprecated `gen_range` retained for symmetry with sibling crate prop suites"
+    reason = "test code: panics surface as test failures by design"
 )]
 
 use std::sync::Arc;
@@ -43,7 +42,7 @@ use corelink_slo::{
     SloDefinition,
 };
 use proptest::prelude::*;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 /// Read `PROPTEST_CASES` at runtime (per S-07 P1-2 fix). Default 10k
@@ -303,8 +302,8 @@ fn prop_tenant_isolation() {
             PagerDutyServiceKey::ProdUs,
         );
         let slo = SloDefinition::new(Sli::AvailCasGet, 0.999).unwrap();
-        let count_a: u32 = rng.gen_range(1u32..10);
-        let count_b: u32 = rng.gen_range(1u32..10);
+        let count_a: u32 = rng.random_range(1u32..10);
+        let count_b: u32 = rng.random_range(1u32..10);
         // Sample at 5 % > 1.44 % threshold → PageSev0.
         let s = BurnRateSample::new(50, 1_000);
         for _ in 0..count_a {
@@ -347,7 +346,7 @@ fn prop_audit_emit_per_decision_arm() {
             Arc::clone(&dispatcher),
             PagerDutyServiceKey::ProdUs,
         );
-        let target: f64 = 0.99 + rng.gen_range(0.0f64..0.0099f64);
+        let target: f64 = 0.99 + rng.random_range(0.0f64..0.0099f64);
         let slo = SloDefinition::new(Sli::AvailCasGet, target).unwrap();
         let outcome = alert
             .evaluate(slo, window, "tenant", s, 1)
@@ -408,7 +407,7 @@ fn prop_pagerduty_dispatch_idempotent_dedup_key() {
         let slo = SloDefinition::new(Sli::AvailCasGet, 0.999).unwrap();
         // Sample chosen well above the Fast1h × 14.4 × 0.001 = 1.44%
         // threshold to keep every iteration in the PageSev0 arm.
-        let denom: u64 = 1_000 + (rng.gen_range(0u64..100));
+        let denom: u64 = 1_000 + (rng.random_range(0u64..100));
         let numerator: u64 = denom * 5 / 100;
         let s = BurnRateSample::new(numerator, denom);
         for _ in 0..repeats {

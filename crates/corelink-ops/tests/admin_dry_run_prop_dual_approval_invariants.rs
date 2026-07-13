@@ -38,7 +38,7 @@ use corelink_ops::admin::dry_run::{
 };
 use proptest::prelude::*;
 use proptest::test_runner::Config;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use uuid::Uuid;
 
