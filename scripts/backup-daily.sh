@@ -193,9 +193,20 @@ done
 # ---------------------------------------------------------------------------
 log "Phase 2: R2 cold-tier snapshot (source=${R2_COLD_BUCKET})"
 r2_inventory="${WORK_DIR}/r2-cold-inventory-${DATE_UTC}.json"
+# The R2 cold-tier snapshot is an OPTIONAL belt-and-suspenders copy of the CAS
+# blobs, which are ALREADY multi-region replicated (corelink-cas-{iad,lhr,nrt,
+# sam,syd}). It requires rclone + RCLONE_CONF_BASE64 + a cold bucket. When those
+# are not provisioned, SKIP it (warning, manifest note) rather than FATAL — a
+# fatal here would also abort the CRITICAL D1 (done above) + KV (Phase 3) backup.
 if [[ "${DRY_RUN}" == "true" ]]; then
     printf '{"dry_run":true,"bucket":"%s","date":"%s"}\n' \
         "${R2_COLD_BUCKET}" "${DATE_UTC}" > "${r2_inventory}"
+elif ! command -v rclone >/dev/null 2>&1 \
+        || [[ ! -f "${HOME}/.config/rclone/rclone.conf" ]]; then
+    echo "::warning ::Phase 2 SKIPPED — R2 cold-tier not configured (rclone / RCLONE_CONF_BASE64 / ${R2_COLD_BUCKET} absent). CAS is multi-region replicated; provision to enable the cold snapshot." >&2
+    log "Phase 2 SKIPPED: cold-tier unconfigured (CAS is multi-region replicated)"
+    append_manifest "r2_inventory" "${R2_COLD_BUCKET}" "SKIPPED_UNCONFIGURED" "" "0"
+    r2_inventory=""
 else
     wrangler r2 object list "${R2_COLD_BUCKET}" --remote --json \
         > "${r2_inventory}" \
@@ -203,9 +214,6 @@ else
 
     # rclone sync for full byte-for-byte snapshot. The R2 backup remote
     # MUST be configured as 'corelink-r2-backup' in ${HOME}/.config/rclone.
-    if ! command -v rclone >/dev/null 2>&1; then
-        fail "rclone is required for R2 cold-tier snapshot but not installed"
-    fi
     rclone sync \
         "corelink-r2-source:${R2_COLD_BUCKET}" \
         "corelink-r2-backup:${BACKUP_R2_BUCKET}/${DATE_UTC}/r2-cold/" \
@@ -214,13 +222,15 @@ else
         --immutable \
         || fail "rclone sync failed for cold-tier"
 fi
-inv_checksum="$(sha256_of "${r2_inventory}")"
-inv_size="$(bytes_of "${r2_inventory}")"
-inv_cipher="$(encrypt_artifact "${r2_inventory}")"
-inv_key="${DATE_UTC}/r2/$(basename "${inv_cipher}")"
-upload_artifact "${inv_cipher}" "${inv_key}"
-append_manifest "r2_inventory" "${R2_COLD_BUCKET}" "${inv_key}" \
-    "${inv_checksum}" "${inv_size}"
+if [[ -n "${r2_inventory}" ]]; then
+    inv_checksum="$(sha256_of "${r2_inventory}")"
+    inv_size="$(bytes_of "${r2_inventory}")"
+    inv_cipher="$(encrypt_artifact "${r2_inventory}")"
+    inv_key="${DATE_UTC}/r2/$(basename "${inv_cipher}")"
+    upload_artifact "${inv_cipher}" "${inv_key}"
+    append_manifest "r2_inventory" "${R2_COLD_BUCKET}" "${inv_key}" \
+        "${inv_checksum}" "${inv_size}"
+fi
 
 # ---------------------------------------------------------------------------
 # Phase 3 — KV namespace dumps.
