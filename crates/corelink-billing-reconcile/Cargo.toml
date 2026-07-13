@@ -22,7 +22,7 @@ corelink-billing-stripe = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 rand = "0.9"
-rand_chacha = "0.9"
+rand_chacha = "0.10"
 
 [[bin]]
 # Scheduled prod billing-reconciliation runner (WI-S10-007 closure):
