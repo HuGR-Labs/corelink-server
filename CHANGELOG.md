@@ -23,6 +23,19 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(ci): three under-enforcing rigor gates that silently passed drift (gap-hunt).**
+  (1) `audit_proptest_density.sh` counted `#[test]` with an awk `in_block` flag set on
+  the first `proptest!` and NEVER reset — every later plain unit test counted as a
+  proptest (~4x over-count), so a crate with one token proptest scored well above the
+  1.0/INV threshold. Fixed to only count inside a balanced `proptest!{ }` span; this
+  exposed 4 pre-existing gaps (failover-router, replica-worker, replication, slo) now
+  documented in the allowlist (follow-up WI-PROPTEST-FU-W37-001). (2) the additive-
+  migrations HIGH gate (`d1-migration-validate.yml`) only PR-triggered on
+  `migrations/d1/**`, so a destructive top-level or `migrations/neon/**` auth migration
+  bypassed `INV-AUTH-MIGRATION-ADDITIVE` until the nightly ship-gate — broadened to
+  `migrations/**`. (3) `secrets-drift.yml` PR-triggered only on the container crate, so
+  a new `env::var()` secret read in any other crate/app escaped the PR gate — broadened
+  to `crates/**/*.rs`, `apps/**/*.ts(x)`, `worker/**/*.ts`.
 - **fix(canary): repoint the CAS drift-canary to a dedicated tenant after the githugr/hugit pause revoked its PAT.**
   The hourly authenticated CAS BLAKE3 round-trip canary (`cas-canary.yml`) used a `cas:rw` PAT on the `d863fafb`
   dogfood tenant, whose PATs were revoked by the 2026-07-11 owner-authorized githugr/hugit pause — so the canary
