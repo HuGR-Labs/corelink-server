@@ -62,8 +62,16 @@ pub trait ReplicationWorker: std::fmt::Debug + Send + Sync {
     fn replicate_batch(&self, blobs: &[HotBlob]) -> Result<u32, ReplicaError>;
 }
 
-/// Simulated R2 object store type alias.
-type R2Store = Arc<Mutex<HashMap<(String, String), Vec<u8>>>>;
+/// Simulated R2 object store type alias, keyed by `(tenant_id, region,
+/// blob_hash)`.
+///
+/// The `tenant_id` component is load-bearing even in simulation: without it,
+/// two tenants that store the same `blob_hash` in the same region collapse onto
+/// one entry — which, once wired to real per-tenant-prefixed R2 keys, would be a
+/// cross-tenant blob-collision. In production the leading key segment is the
+/// derived `tenant_prefix`; here we key by the raw `tenant_id` (the identity the
+/// prefix is derived from) so the isolation is preserved by construction.
+type R2Store = Arc<Mutex<HashMap<(String, String, String), Vec<u8>>>>;
 
 /// In-memory replication worker for tests and local orchestration.
 ///
@@ -73,7 +81,7 @@ type R2Store = Arc<Mutex<HashMap<(String, String), Vec<u8>>>>;
 /// Thread-safe via `Arc<Mutex<>>` per-instance (F-001 closure).
 #[derive(Debug)]
 pub struct InMemoryReplicationWorker {
-    /// Simulated R2 object store: `(region, blob_hash) → bytes`.
+    /// Simulated R2 object store: `(tenant_id, region, blob_hash) → bytes`.
     r2: R2Store,
     audit: Arc<dyn ReplicaAuditSink>,
     residency: ResidencyGraph,
@@ -129,10 +137,16 @@ impl InMemoryReplicationWorker {
         Arc::clone(&self.sli)
     }
 
-    /// Seed a blob into the simulated primary R2 store.
-    pub fn seed_r2(&self, region: &str, blob_hash: &str, data: Vec<u8>) {
+    /// Seed a blob into the simulated primary R2 store for a given tenant.
+    ///
+    /// `tenant_id` is part of the store key (see [`R2Store`]) so seeded blobs
+    /// are tenant-isolated exactly as the replicate path keys them.
+    pub fn seed_r2(&self, tenant_id: &str, region: &str, blob_hash: &str, data: Vec<u8>) {
         if let Ok(mut r2) = self.r2.lock() {
-            r2.insert((region.to_owned(), blob_hash.to_owned()), data);
+            r2.insert(
+                (tenant_id.to_owned(), region.to_owned(), blob_hash.to_owned()),
+                data,
+            );
         }
     }
 
@@ -166,6 +180,7 @@ impl InMemoryReplicationWorker {
                 .lock()
                 .map_err(|e| ReplicaError::R2Copy(e.to_string()))?;
             let key = (
+                blob.tenant_id.clone(),
                 blob.primary_region.as_str().to_owned(),
                 blob.blob_hash.clone(),
             );
@@ -186,6 +201,7 @@ impl InMemoryReplicationWorker {
                     .lock()
                     .map_err(|e| ReplicaError::R2Copy(e.to_string()))?;
                 let key = (
+                    blob.tenant_id.clone(),
                     blob.replica_region.as_str().to_owned(),
                     blob.blob_hash.clone(),
                 );
@@ -198,6 +214,7 @@ impl InMemoryReplicationWorker {
                     .lock()
                     .map_err(|e| ReplicaError::R2Copy(e.to_string()))?;
                 let key = (
+                    blob.tenant_id.clone(),
                     blob.replica_region.as_str().to_owned(),
                     blob.blob_hash.clone(),
                 );
@@ -419,4 +436,45 @@ fn u64(b: u8) -> u64 {
 fn compute_lag_seconds(completed_ms: u64, last_access_ms: u64) -> f64 {
     let delta_ms = completed_ms.saturating_sub(last_access_ms);
     (delta_ms as f64) / 1000.0
+}
+
+#[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "tests are allowed to use these primitives"
+)]
+mod tenant_key_tests {
+    use super::*;
+    use crate::audit::InMemoryReplicaAuditSink;
+
+    /// The simulated R2 store is keyed by `(tenant_id, region, blob_hash)`: two
+    /// tenants that store the SAME blob_hash in the SAME region must NOT
+    /// collide. Without the tenant component this would be a single overwritten
+    /// entry — a cross-tenant collapse once wired to real R2.
+    #[test]
+    fn simulated_store_is_tenant_isolated() {
+        let sink: Arc<dyn ReplicaAuditSink> = Arc::new(InMemoryReplicaAuditSink::new());
+        let worker = InMemoryReplicationWorker::new(sink);
+
+        worker.seed_r2("tenant-a", "iad", "deadbeef", b"tenant-a-bytes".to_vec());
+        worker.seed_r2("tenant-b", "iad", "deadbeef", b"tenant-b-bytes".to_vec());
+
+        let r2 = worker.r2.lock().expect("r2 lock");
+        assert_eq!(
+            r2.len(),
+            2,
+            "same (region, blob_hash) for two tenants must not collide"
+        );
+        assert_eq!(
+            r2.get(&("tenant-a".to_owned(), "iad".to_owned(), "deadbeef".to_owned()))
+                .map(Vec::as_slice),
+            Some(b"tenant-a-bytes".as_slice())
+        );
+        assert_eq!(
+            r2.get(&("tenant-b".to_owned(), "iad".to_owned(), "deadbeef".to_owned()))
+                .map(Vec::as_slice),
+            Some(b"tenant-b-bytes".as_slice())
+        );
+    }
 }

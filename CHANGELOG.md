@@ -52,6 +52,10 @@ Each entry cross-references:
   the map without updating every copy would silently skip that region in an Art.17 full-tenant erase, leaving
   surviving erased bytes. Consolidated all three to `storage::region_map::CAS_REGIONS` and added
   `cas_regions_superset_of_all_colos` asserting `CAS_REGIONS ⊇ { colo_for_macro(m) : all macros }`.
+- **fix(replica-worker): key the simulated R2 store by `(tenant_id, region, blob_hash)` to prevent cross-tenant collapse.**
+  The in-memory replication store keyed by `(region, blob_hash)` with no tenant component — harmless in simulation
+  but a cross-tenant blob collision once wired to real per-tenant-prefixed R2. Added the tenant identity to the key
+  now, with a `simulated_store_is_tenant_isolated` regression test.
 - **fix(canary): repoint the CAS drift-canary to a dedicated tenant after the githugr/hugit pause revoked its PAT.**
   The hourly authenticated CAS BLAKE3 round-trip canary (`cas-canary.yml`) used a `cas:rw` PAT on the `d863fafb`
   dogfood tenant, whose PATs were revoked by the 2026-07-11 owner-authorized githugr/hugit pause — so the canary
