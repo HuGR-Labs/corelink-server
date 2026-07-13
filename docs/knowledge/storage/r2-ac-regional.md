@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-region/src/r2_crr.rs"
   - "crates/corelink-container/src/routes/dsr/adapter_r2_ac.rs"
   - "crates/corelink-container/src/routes/ac.rs"
-checkpoint_sha: "304547f6b48b067aa668068036f1ec2d7cf7e6b2"
+checkpoint_sha: "bf4e1ac33c4e57161af601c0045a7bac8d0e59dd"
 provenance: "AUTHORED"
 tags: ["storage", "r2", "action-cache", "region", "residency"]
 timestamp: "2026-06-26T00:00:00Z"

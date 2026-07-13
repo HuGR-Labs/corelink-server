@@ -7,7 +7,7 @@ source_files:
   - docs/security/2026-06-23-secreview-gdpr-residency.md
   - crates/corelink-container/src/routes/residency.rs
   - crates/corelink-container/src/storage/region_map.rs
-checkpoint_sha: "304547f6b48b067aa668068036f1ec2d7cf7e6b2"
+checkpoint_sha: "bf4e1ac33c4e57161af601c0045a7bac8d0e59dd"
 provenance: "AUTHORED"
 tags: ["compliance", "residency", "gdpr", "lgpd", "schrems-ii", "cas", "r2", "launch-posture"]
 timestamp: "2026-06-26T00:00:00Z"
