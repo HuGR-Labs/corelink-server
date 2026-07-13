@@ -46,6 +46,21 @@ pub const MACRO_REGIONS: [&str; 6] = ["wnam", "enam", "weur", "sam", "apac", "af
 /// real SAM-jurisdiction bucket (else its data mis-lands in US R2 — LGPD).
 pub const PROVISIONED_MACROS: [&str; 3] = ["wnam", "enam", "weur"];
 
+/// Canonical CAS/AC storage regions — the `<region>/` key-prefix segment swept
+/// by a tenant-wide erase (`<region>/<tenant_prefix>/<digest>`).
+///
+/// SINGLE SOURCE OF TRUTH: the DSR CAS/AC erase adapters
+/// (`routes::dsr::adapter_r2_cas`, `routes::dsr::adapter_r2_ac`) and the
+/// per-hash CAS eraser (`routes::cas_erase::R2CasBlobEraser`) all reference
+/// THIS const so a colo can never be added in one copy and missed in another —
+/// which would silently leave surviving bytes after an Art.17 full-tenant
+/// erase. The erase sweep is region-superset-safe: it must contain EVERY colo
+/// [`colo_for_macro`] can emit (asserted by
+/// `tests::cas_regions_superset_of_all_colos`). `syd` is intentionally retained
+/// beyond the current colo map to stay robust to a deployment whose write
+/// region changed over time.
+pub const CAS_REGIONS: &[&str] = &["sam", "iad", "lhr", "nrt", "syd"];
+
 /// Map a MACRO region code to its serving Cloudflare colo, or `None` when the
 /// macro is `afr` (no provisioned colo) or the input is not a recognised macro
 /// code.
@@ -137,6 +152,25 @@ mod tests {
                 colo_for_macro(m).is_some(),
                 "provisioned macro {m} must map to a colo"
             );
+        }
+    }
+
+    /// The erase-sweep superset invariant (FIX 2 / GDPR Art.17 completeness):
+    /// `CAS_REGIONS` MUST contain EVERY colo any macro can resolve to. If a
+    /// future colo is added to `colo_for_macro` without extending `CAS_REGIONS`,
+    /// a tenant-wide erase would silently skip that colo's key prefix and leave
+    /// surviving erased bytes. Because all erase adapters now reference the
+    /// single `region_map::CAS_REGIONS`, this one assertion covers every copy.
+    #[test]
+    fn cas_regions_superset_of_all_colos() {
+        for m in MACRO_REGIONS {
+            if let Some(colo) = colo_for_macro(m) {
+                assert!(
+                    CAS_REGIONS.contains(&colo),
+                    "CAS_REGIONS must contain colo {colo} for macro {m}; \
+                     a tenant-wide erase would otherwise skip that region"
+                );
+            }
         }
     }
 }

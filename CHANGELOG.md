@@ -46,6 +46,12 @@ Each entry cross-references:
   drain seals; mirrors the DSR erasure sink), wired into BOTH builders. Fail-CLOSED: if the durable sink cannot
   be constructed while storage creds are present, the builder refuses to mount the handler (route serves 503),
   never a silent in-memory fallback. Rows are plain/unchanged/`emitted_at=NULL` (sealing remains the S-09 drain).
+- **fix(container): pin the GDPR-erase CAS/AC region sweep to a single superset-gated source of truth.**
+  Three hand-maintained copies of the erase-sweep region list (`routes::cas_erase`, `routes::dsr::adapter_r2_cas`,
+  `routes::dsr::adapter_r2_ac`) were independent of `storage::region_map::colo_for_macro`. A future colo added to
+  the map without updating every copy would silently skip that region in an Art.17 full-tenant erase, leaving
+  surviving erased bytes. Consolidated all three to `storage::region_map::CAS_REGIONS` and added
+  `cas_regions_superset_of_all_colos` asserting `CAS_REGIONS ⊇ { colo_for_macro(m) : all macros }`.
 - **fix(canary): repoint the CAS drift-canary to a dedicated tenant after the githugr/hugit pause revoked its PAT.**
   The hourly authenticated CAS BLAKE3 round-trip canary (`cas-canary.yml`) used a `cas:rw` PAT on the `d863fafb`
   dogfood tenant, whose PATs were revoked by the 2026-07-11 owner-authorized githugr/hugit pause — so the canary
