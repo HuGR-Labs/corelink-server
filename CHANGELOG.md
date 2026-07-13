@@ -24,6 +24,8 @@ Each entry cross-references:
 
 ### Fixed
 
+- **DR drill cycle-1 unblocked.** The drill's preflight ran `cargo check/test -p corelink-dr-drill`, a crate physically absorbed into `corelink-ops` (W35-P2); scheduled dry-runs masked it, a real run FATALed (filed SEV-1 #640). Retargeted to `corelink-ops` + its `dr_drill_prop_dr_drill` test.
+
 - **ffi-matrix gate advanced** (build + wasm-compile now pass; still red on
   valgrind-suppression + one wasm-bindgen test, tracked for a dedicated pass):
   drop proptest `fork`/`timeout` in `corelink-wasm` (Unix-only `wait-timeout`
