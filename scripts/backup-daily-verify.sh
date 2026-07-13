@@ -252,7 +252,7 @@ if [[ "${DRY_RUN}" != "true" ]]; then
             -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${BACKUP_R2_BUCKET}/objects?per_page=1000" \
             2>/dev/null \
-        | jq '{objects: [ (.result // [])[] | {key: .key, uploaded: .last_modified, size: .size} ]}' \
+        | jq '{objects: [ (.result // [])[] | {key: .key, uploaded: (.last_modified | sub("\\.[0-9]+Z$"; "Z")), size: .size} ]}' \
             > "${R2_TMP}" 2>/dev/null \
         || ! jq -e '.objects' "${R2_TMP}" >/dev/null 2>&1; then
         # Could not even list the bucket — treat as a hard verification failure
