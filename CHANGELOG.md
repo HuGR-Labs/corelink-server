@@ -24,6 +24,12 @@ Each entry cross-references:
 
 ### Fixed
 
+- **ffi-matrix gate advanced** (build + wasm-compile now pass; still red on
+  valgrind-suppression + one wasm-bindgen test, tracked for a dedicated pass):
+  drop proptest `fork`/`timeout` in `corelink-wasm` (Unix-only `wait-timeout`
+  broke the wasm32 test build), and remove the maturin `python-source` for the
+  pure-Rust `corelink-py` extension (it looked for a nonexistent Python package).
+
 - **fix(ci): advance the ffi-matrix gate + reconcile the OKF fmt drift it surfaced.**
   Added the missing Python SDK `README`, pinned the `getrandom` 0.3 `wasm_js` feature for
   the wasm32 test graph, and restored Go 1.21 range-over-int compat — bringing the
