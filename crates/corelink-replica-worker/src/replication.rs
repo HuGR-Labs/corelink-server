@@ -144,7 +144,11 @@ impl InMemoryReplicationWorker {
     pub fn seed_r2(&self, tenant_id: &str, region: &str, blob_hash: &str, data: Vec<u8>) {
         if let Ok(mut r2) = self.r2.lock() {
             r2.insert(
-                (tenant_id.to_owned(), region.to_owned(), blob_hash.to_owned()),
+                (
+                    tenant_id.to_owned(),
+                    region.to_owned(),
+                    blob_hash.to_owned(),
+                ),
                 data,
             );
         }
@@ -467,13 +471,21 @@ mod tenant_key_tests {
             "same (region, blob_hash) for two tenants must not collide"
         );
         assert_eq!(
-            r2.get(&("tenant-a".to_owned(), "iad".to_owned(), "deadbeef".to_owned()))
-                .map(Vec::as_slice),
+            r2.get(&(
+                "tenant-a".to_owned(),
+                "iad".to_owned(),
+                "deadbeef".to_owned()
+            ))
+            .map(Vec::as_slice),
             Some(b"tenant-a-bytes".as_slice())
         );
         assert_eq!(
-            r2.get(&("tenant-b".to_owned(), "iad".to_owned(), "deadbeef".to_owned()))
-                .map(Vec::as_slice),
+            r2.get(&(
+                "tenant-b".to_owned(),
+                "iad".to_owned(),
+                "deadbeef".to_owned()
+            ))
+            .map(Vec::as_slice),
             Some(b"tenant-b-bytes".as_slice())
         );
     }
