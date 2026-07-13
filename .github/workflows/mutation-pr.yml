@@ -74,11 +74,11 @@ jobs:
       # `cargo install` compile race (os error 2 / aws-lc-sys) that flakes on
       # the contended self-hosted Mac, and is faster than compiling.
       - name: Install cargo-mutants (prebuilt)
-        uses: taiki-e/install-action@9e1e5806d4a4822de933115878265be9aaa786d9 # v2.82.2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
         with:
           tool: cargo-mutants@25.0.1
       - name: Install cargo-nextest (prebuilt)
-        uses: taiki-e/install-action@9e1e5806d4a4822de933115878265be9aaa786d9 # v2.82.2
+        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
         with:
           tool: cargo-nextest
 
