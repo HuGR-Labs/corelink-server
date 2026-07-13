@@ -65,6 +65,18 @@ Each entry cross-references:
   `CORELINK_CANARY_PAT` GHA secret + secrets-matrix row #166. No githugr/hugit product surface is re-enabled.
 
 ### Security
+- **fix(cas,ac): enforce the PAT-derived `can_write` capability at the container on the native CAS + AC write paths (deep-audit money/auth F-1).**
+  The native CAS (`handle_write`, `handle_batch_write`, `handle_delete`) and AC (`handle_update`, `handle_delete`)
+  write handlers gated only on `NativePatGate::verify` (tenant possession) plus the Worker-set `x-corelink-scope`
+  header — trusting the Worker to have set the scope correctly. The sibling build surfaces (Bazel `verify_write`,
+  Turbo/cargo/OCI two-layer) already re-derive the PAT's D1-stored `can_write` bit at the container, so that a
+  compromised or regressed Worker cannot grant write on its own (the Option-B invariant). CAS/AC — the primary
+  billable write surface, and AC is not content-addressed so a forged action→result mapping is real poisoning —
+  were the remaining outliers. Two independent attacker-grade hunters flagged this as the sole write-authorization
+  asymmetry. Fix: route the five write/delete handlers through a new `pat_gate_reject_write` (`verify_write`), which
+  resolves `can_write` in the same D1 lookup (≈free); reads keep `verify`. A read-only PAT on a write path is now
+  rejected `403` even if the scope header claimed write. Not externally exploitable while the Worker header-strip is
+  intact (verified), but closes the defense-in-depth gap on the highest-value surface.
 - **feat(signup-worker): prove GitHub App installation ownership before binding — closes the runner install cross-tenant hijack (the public-flip HARD GATE).**
   The runner install callback (`github_install_callback.ts`) bound `installation_id → tenant_id` off the signed
   `state` alone, which proves the TENANT but NOT that the tenant performed that installation — so a tenant could
