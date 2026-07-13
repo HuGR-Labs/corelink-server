@@ -104,6 +104,28 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
   // Protected path — defer to Clerk if configured; otherwise fall through
   // and let the route render (dev/test ergonomics).
   const publishableKey = process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"];
+
+  // Fail CLOSED on a MISSING publishable key in PRODUCTION. Without this guard an
+  // absent NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY skips the Clerk block below and falls
+  // through to the terminal NextResponse.next() — rendering a protected page with
+  // NO middleware auth gate. The ONLY legitimate skips are (a) non-production
+  // dev/test ergonomics (a missing key must not break local boot — see the public
+  // stub above) and (b) the E2E bypass (which is itself already NODE_ENV-gated off
+  // in production). So in production, a protected path with no publishable key is a
+  // misconfiguration that must bounce to sign-in exactly like the catch-branch —
+  // never serve the page anonymously. Self-gated paths own their own gating, so
+  // they fall through to render as before.
+  if (
+    !publishableKey &&
+    !isE2E &&
+    process.env["NODE_ENV"] === "production" &&
+    !isSelfGatedPath(pathname)
+  ) {
+    const redirectRes = NextResponse.redirect(new URL("/sign-in", req.url));
+    applySecurityHeaders(redirectRes, nonce);
+    return redirectRes;
+  }
+
   if (publishableKey && !isE2E) {
     try {
       // Dynamic import keeps the bundle slim for public paths.

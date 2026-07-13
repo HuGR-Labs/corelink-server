@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import {
   INSTALL_STATE_TTL_MS,
@@ -7,8 +7,10 @@ import {
 } from "../src/webhooks/github_install_state.js";
 import {
   exchangeOAuthCode,
+  handleInstallGithubCallback,
   mintAppJwt,
   userControlsInstallation,
+  type InstallCallbackEnv,
 } from "../src/webhooks/github_install_callback.js";
 
 const KEY = "test-install-state-signing-key-0123456789";
@@ -181,5 +183,166 @@ describe("install ownership proof (OAuth) — the public-flip isolation gate", (
     );
     expect(await userControlsInstallation("ghu_tok", "144561227")).toBe(true);
     expect(calls.some((u) => u.includes("page=2"))).toBe(true);
+  });
+});
+
+/**
+ * The STRUCTURAL public-flip gate (fix/ts-failclosed-middleware-and-oauth-public-gate):
+ * "App public" and "OAuth ownership proof enforced" can never diverge. When
+ * GITHUB_APP_PUBLIC is set, the callback REQUIRES the OAuth proof — so a public App
+ * with unbound OAuth creds is a hard 403 (fail-CLOSED), never a silent skip that
+ * would reopen the cross-tenant install-hijack. When NOT public (org-only dogfood),
+ * the current skip-when-unbound is preserved.
+ *
+ * NB: each test uses a DISTINCT installation_id + tenant so the (stubbed) writes
+ * never cross-pollinate between cases.
+ */
+describe("handleInstallGithubCallback — public-flip structural gate", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** A D1 stub that records writes and reports NO prior conflicting row. */
+  function makeDbStub(): { db: D1Database; writes: Array<{ sql: string; args: unknown[] }> } {
+    const writes: Array<{ sql: string; args: unknown[] }> = [];
+    const db = {
+      prepare(sql: string) {
+        return {
+          bind(...args: unknown[]) {
+            return {
+              async run() {
+                writes.push({ sql, args });
+                return { success: true };
+              },
+              // Conflict-guard read-back: no prior row → null (no conflict).
+              async first<T>(): Promise<T | null> {
+                return null;
+              },
+            };
+          },
+        };
+      },
+      // No `batch` → writeInstallationProvision uses the sequential `.run()` path.
+    } as unknown as D1Database;
+    return { db, writes };
+  }
+
+  /** Route the GitHub API + OAuth calls the callback makes to canned responses. */
+  function stubGithubFetch(installationId: string): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url === "https://github.com/login/oauth/access_token") {
+          return jsonResp(200, { access_token: "ghu_ownertoken" });
+        }
+        if (url.startsWith("https://api.github.com/user/installations")) {
+          return jsonResp(200, { installations: [{ id: Number(installationId) }] });
+        }
+        if (url.includes("/access_tokens")) {
+          return jsonResp(200, { token: "ghs_installtoken" });
+        }
+        if (url.startsWith("https://api.github.com/installation/repositories")) {
+          return jsonResp(200, { repositories: [{ full_name: "octo/repo" }] });
+        }
+        return jsonResp(404, {});
+      }),
+    );
+  }
+
+  // One RSA key/PEM shared by the "binds" cases (App-JWT mint needs a real PKCS#8).
+  let pem = "";
+  beforeAll(async () => {
+    const kp = (await crypto.subtle.generateKey(
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["sign", "verify"],
+    )) as CryptoKeyPair;
+    pem = pkcs8Pem(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
+  });
+
+  async function callbackUrl(
+    installationId: string,
+    tenantId: string,
+    extra: Record<string, string> = {},
+  ): Promise<string> {
+    const state = await signInstallState(tenantId, KEY, NOW);
+    const params = new URLSearchParams({ installation_id: installationId, state, ...extra });
+    return `https://signup.example/install/github/callback?${params.toString()}`;
+  }
+
+  function baseEnv(db: D1Database): InstallCallbackEnv {
+    return {
+      GITHUB_APP_ID: "424242",
+      GITHUB_APP_PRIVATE_KEY: pem,
+      INSTALL_STATE_SIGNING_KEY: KEY,
+      CONFIG_DB: db,
+    };
+  }
+
+  it("(a) public + OAuth creds UNBOUND → 403 (fail-CLOSED, no bind)", async () => {
+    const installationId = "500000001";
+    const tenantId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const { db, writes } = makeDbStub();
+    // Fetch must never be reached — the structural guard returns first.
+    const fetchSpy = vi.fn(async () => jsonResp(500, {}));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const env: InstallCallbackEnv = { ...baseEnv(db), GITHUB_APP_PUBLIC: "true" };
+    const res = await handleInstallGithubCallback(
+      new Request(await callbackUrl(installationId, tenantId)),
+      env,
+    );
+
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain("app is public but oauth creds are unbound");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(writes).toHaveLength(0);
+  });
+
+  it("(b) public + creds BOUND + valid ownership proof → binds", async () => {
+    const installationId = "500000002";
+    const tenantId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const { db, writes } = makeDbStub();
+    stubGithubFetch(installationId);
+
+    const env: InstallCallbackEnv = {
+      ...baseEnv(db),
+      GITHUB_APP_PUBLIC: "true",
+      GITHUB_APP_CLIENT_ID: "Iv23liXXX",
+      GITHUB_APP_CLIENT_SECRET: "shhh",
+    };
+    const res = await handleInstallGithubCallback(
+      new Request(await callbackUrl(installationId, tenantId, { code: "oauthcode123" })),
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    // The installation→tenant map row was written under the state-authenticated tenant.
+    const mapWrite = writes.find((w) => w.sql.includes("tenant_gh_installation_map"));
+    expect(mapWrite).toBeDefined();
+    expect(mapWrite?.args).toContain(tenantId);
+    expect(mapWrite?.args).toContain(installationId);
+  });
+
+  it("(c) NON-public + creds UNBOUND → still binds (org-only dogfood skip preserved)", async () => {
+    const installationId = "500000003";
+    const tenantId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    const { db, writes } = makeDbStub();
+    stubGithubFetch(installationId);
+
+    // GITHUB_APP_PUBLIC unset, no client id/secret → the proof is skipped.
+    const env = baseEnv(db);
+    const res = await handleInstallGithubCallback(
+      new Request(await callbackUrl(installationId, tenantId)),
+      env,
+    );
+
+    expect(res.status).toBe(200);
+    const mapWrite = writes.find((w) => w.sql.includes("tenant_gh_installation_map"));
+    expect(mapWrite).toBeDefined();
+    expect(mapWrite?.args).toContain(tenantId);
   });
 });
