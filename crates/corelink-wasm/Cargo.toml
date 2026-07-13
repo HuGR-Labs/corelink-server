@@ -53,6 +53,19 @@ tracing = { workspace = true }
 wasm-bindgen-test = { workspace = true }
 proptest = { workspace = true }
 
+# getrandom 0.3 enters the wasm32 TEST graph transitively via
+# proptest -> rand 0.9 -> rand_core 0.9 -> getrandom 0.3.x. The workspace
+# `.cargo/config.toml` sets `--cfg=getrandom_backend="wasm_js"` for EVERY
+# getrandom version on wasm32, but that cfg REQUIRES the matching `wasm_js`
+# cargo feature to be enabled per MAJOR (the cfg selects the backend module,
+# the feature pulls the wasm-bindgen/js-sys deps it uses). The Wave-26 fix
+# enabled it only for getrandom 0.4 (corelink-cf-bindings); without the 0.3
+# pin here, `wasm-pack test --node` fails E0425 (fill_inner/inner_u32/inner_u64
+# not found in `getrandom::backends`). Mirrors the cf-bindings 0.4 pin for the
+# 0.3 major so the wasm-bindgen test graph compiles.
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+getrandom_v03 = { package = "getrandom", version = "0.3", default-features = false, features = ["wasm_js"] }
+
 [package.metadata.wasm-pack.profile.release]
 # wasm-bindgen (rust 1.91) emits reference-types / bulk-memory / mutable-globals
 # etc. wasm-opt's validator REJECTS those unless all features are enabled

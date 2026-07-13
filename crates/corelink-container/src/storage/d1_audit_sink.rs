@@ -115,8 +115,8 @@ impl D1AuditOutboxSink {
                 "principal": principal,
             }
         });
-        let payload_json = serde_json::to_string(&payload)
-            .map_err(|e| format!("audit payload serialize: {e}"))?;
+        let payload_json =
+            serde_json::to_string(&payload).map_err(|e| format!("audit payload serialize: {e}"))?;
 
         // NOTE: `region` deliberately omitted → DEFAULT 'wnam' (see module docs;
         // mirrors `routes/dsr/audit.rs`).
@@ -147,8 +147,7 @@ impl D1AuditOutboxSink {
         let d1 = Arc::clone(&self.d1);
         let sql = sql.to_owned();
         tokio::task::block_in_place(move || {
-            tokio::runtime::Handle::current()
-                .block_on(async move { d1.query(&sql, &params).await })
+            tokio::runtime::Handle::current().block_on(async move { d1.query(&sql, &params).await })
         })
         .map(|_| ())
     }

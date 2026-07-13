@@ -24,6 +24,13 @@ Each entry cross-references:
 
 ### Fixed
 
+- **fix(ci): advance the ffi-matrix gate + reconcile the OKF fmt drift it surfaced.**
+  Added the missing Python SDK `README`, pinned the `getrandom` 0.3 `wasm_js` feature for
+  the wasm32 test graph, and restored Go 1.21 range-over-int compat — bringing the
+  ffi-matrix gate green. Reconciled the #775 `cargo fmt` line-number drift (no semantic
+  change) in `crates/corelink-container/src/storage/d1_audit_sink.rs` and
+  `crates/corelink-replica-worker/src/replication.rs` back into the `compliance/audit-chain`
+  and `planes/replication-failover` OKF concepts.
 - **Backup Daily pipeline brought online.** The daily encrypted backup had never
   produced a snapshot (stale D1 names `corelink_core/audit/billing` vs the real
   consolidated `corelink-prod-d1`; a FATAL optional R2 cold-tier; KV addressed by

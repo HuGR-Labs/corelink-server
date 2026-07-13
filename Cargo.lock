@@ -2524,6 +2524,7 @@ name = "corelink-wasm"
 version = "0.1.0"
 dependencies = [
  "corelink-client-verify",
+ "getrandom 0.3.4",
  "js-sys",
  "proptest",
  "serde",
