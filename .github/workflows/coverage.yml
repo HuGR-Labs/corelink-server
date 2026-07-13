@@ -32,14 +32,10 @@ permissions:
 # `cancel-in-progress: false` queues the second run (no lost coverage); these
 # are nightly crons hours apart so the queue is effectively never >1 deep.
 # Keep this group name in lockstep with cas_foundation.yml.
-concurrency:
-  group: corelink-mac-heavy-cargo-build
-  cancel-in-progress: false
-
 jobs:
   coverage:
     name: cargo-llvm-cov (workspace HTML + summary)
-    runs-on: [self-hosted, mac, corelink-builder]
+    runs-on: ubuntu-x64-4core  # 4-core hosted: cargo-llvm-cov instruments the whole workspace (heavy link); 2-core OOMs (ld Bus error, signal 7)
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -54,6 +50,11 @@ jobs:
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           shared-key: coverage
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@f4d5893b897028ff5739576ea0409746887fa536 # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@9e1e5806d4a4822de933115878265be9aaa786d9 # v2.82.2

@@ -52,3 +52,10 @@ tracing = { workspace = true }
 [dev-dependencies]
 wasm-bindgen-test = { workspace = true }
 proptest = { workspace = true }
+
+[package.metadata.wasm-pack.profile.release]
+# wasm-bindgen (rust 1.91) emits reference-types / bulk-memory / mutable-globals
+# etc. wasm-opt's validator REJECTS those unless all features are enabled
+# ("Fatal: error validating input" → wasm-pack build fails). Run its internal
+# wasm-opt with `-all` so it accepts current wasm-bindgen output.
+wasm-opt = ['-O3', '-all']

@@ -30,7 +30,7 @@ jobs:
   # ── Rust unit tests (all 3 FFI crates) ────────────────────────────────────
   rust-unit:
     name: Rust unit tests (FFI crates)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     # corelink-py pulls pyo3 with abi3-py310, which needs an interpreter
     # >= 3.10. This job has no setup-python step, so pyo3 auto-detected a
     # stale 3.8 on the fleet PATH and failed ("cannot set a minimum Python
@@ -79,7 +79,7 @@ jobs:
   # ── Python × maturin × multiple Python versions ───────────────────────────
   python-matrix:
     name: Python ${{ matrix.python-version }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -157,7 +157,7 @@ jobs:
   # ── Go × cgo × multiple Go versions ──────────────────────────────────────
   go-matrix:
     name: Go ${{ matrix.go-version }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -207,7 +207,7 @@ jobs:
   # ── JS/TS × WASM × multiple Node.js versions ──────────────────────────────
   js-matrix:
     name: Node.js ${{ matrix.node-version }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -239,9 +239,19 @@ jobs:
       - name: Install wasm-pack
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
-      - name: Install wasm-opt (binaryen)
+      - name: Install wasm-opt (recent binaryen)
+        # Ubuntu's apt `binaryen` is too old to validate the reference-types /
+        # multivalue wasm that rust 1.91 + wasm-bindgen now emit by default
+        # ("Fatal: error validating input" → wasm-pack build fails). Install the
+        # latest official binaryen release into /usr/local (ahead of /usr/bin).
         run: |
-          sudo apt-get install -y binaryen
+          set -euo pipefail
+          TAG=$(curl -fsSL https://api.github.com/repos/WebAssembly/binaryen/releases/latest \
+            | grep -oE '"tag_name":[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"([^"]+)"$/\1/')
+          echo "binaryen ${TAG}"
+          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/${TAG}/binaryen-${TAG}-x86_64-linux.tar.gz" \
+            | sudo tar xz -C /usr/local --strip-components=1
+          wasm-opt --version
 
       - name: wasm-pack build (release)
         working-directory: crates/corelink-wasm
@@ -249,7 +259,7 @@ jobs:
 
       - name: wasm-opt -O3 (bundle size optimization)
         working-directory: crates/corelink-wasm/pkg
-        run: wasm-opt -O3 corelink_wasm_bg.wasm -o corelink_wasm_bg.wasm
+        run: wasm-opt -O3 -all corelink_wasm_bg.wasm -o corelink_wasm_bg.wasm  # -all: accept wasm-bindgen reference-types/bulk-memory features
 
       - name: Bundle size gate (≤ 1MB)
         working-directory: crates/corelink-wasm/pkg
@@ -278,7 +288,7 @@ jobs:
   # ── Client-verify same hash across 3 languages (single Rust truth) ────────
   cross-language-verify:
     name: Cross-language BLAKE3 verify (single Rust truth)
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     needs: [python-matrix, go-matrix, js-matrix]
     # Same pyo3 abi3-py310 build as rust-unit (cargo test -p corelink-py
     # below). The setup-python 3.12 step is unreliable on this fleet

@@ -55,8 +55,17 @@ name: neon-shadow-reconcile-daily (Wave 19)
 #            §5 reconciliation contract.
 
 on:
-  schedule:
-    - cron: "0 3 * * *"  # 03:00 UTC daily
+  # DISABLED 2026-07-12: the nightly schedule is commented out because the
+  # Neon analytics shadow it reconciles against was never provisioned — the
+  # `NEON_DB_URL_<REGION>` secrets do not exist in Actions/org/env, so every
+  # run fails fast (empty DSN) and enforces nothing. CoreLink's canonical
+  # store is D1 + R2; the PRIMARY audit-chain integrity gate
+  # (`audit-chain-daily-verify.yml`, CF-secret-backed) + the TLA specs cover
+  # INV-OBS-AUDIT-CHAIN-INTEGRITY / INV-DATA-RESIDENCY. Re-enable by
+  # uncommenting the cron AFTER provisioning the per-region Neon projects and
+  # binding NEON_DB_URL_<REGION>. `workflow_dispatch` stays for ad-hoc reconcile.
+  # schedule:
+  #   - cron: "0 3 * * *"  # 03:00 UTC daily
   workflow_dispatch:
     inputs:
       target_date:
