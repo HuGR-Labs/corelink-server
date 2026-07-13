@@ -259,7 +259,7 @@ jobs:
 
       - name: wasm-opt -O3 (bundle size optimization)
         working-directory: crates/corelink-wasm/pkg
-        run: wasm-opt -O3 corelink_wasm_bg.wasm -o corelink_wasm_bg.wasm
+        run: wasm-opt -O3 -all corelink_wasm_bg.wasm -o corelink_wasm_bg.wasm  # -all: accept wasm-bindgen reference-types/bulk-memory features
 
       - name: Bundle size gate (≤ 1MB)
         working-directory: crates/corelink-wasm/pkg
