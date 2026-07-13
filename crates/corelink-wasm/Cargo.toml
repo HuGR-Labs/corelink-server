@@ -51,7 +51,13 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 wasm-bindgen-test = { workspace = true }
-proptest = { workspace = true }
+# proptest WITHOUT `fork`/`timeout` (the workspace default enables them). Those
+# features pull `rusty-fork -> wait-timeout`, which is Unix-only and fails to
+# compile for wasm32 (`wasm-pack test --node` E0433: unresolved module `imp`).
+# corelink-wasm's proptests use `..ProptestConfig::default()` (no `fork: true`),
+# so fork/timeout are unused here — dropping them keeps the wasm test graph
+# clean while native proptests are unaffected.
+proptest = { version = "1.5", default-features = false, features = ["std", "bit-set"] }
 
 # getrandom 0.3 enters the wasm32 TEST graph transitively via
 # proptest -> rand 0.9 -> rand_core 0.9 -> getrandom 0.3.x. The workspace
