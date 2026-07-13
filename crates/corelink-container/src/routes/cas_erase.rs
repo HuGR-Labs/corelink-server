@@ -1145,15 +1145,17 @@ impl CasBlobEraser for InMemoryBlobEraser {
 // Production R2 blob eraser (the #254 seam, now filled)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Canonical CAS storage regions — the `<region>/` key-prefix segment.
-///
-/// Byte-for-byte the same list the DSR Wave 1 tenant-wide CAS adapter uses
-/// (`routes::dsr::adapter_r2_cas::CAS_REGIONS`). CAS is **one bucket**; the
-/// storage region lives in the key prefix `<region>/<tenant_prefix>/<digest>`.
-/// The container writes through a single global `R2_CAS_REGION`, but a
-/// per-hash erase sweeps all five regions so it is robust to a deployment
-/// whose write region changed over time (cheap — a once-per-erase LIST).
-const CAS_REGIONS: &[&str] = &["sam", "iad", "lhr", "nrt", "syd"];
+// Canonical CAS storage regions — the `<region>/` key-prefix segment.
+//
+// Re-used from the SINGLE SOURCE OF TRUTH (`crate::storage::region_map::CAS_REGIONS`)
+// so the per-hash erase sweep, the DSR CAS adapter, and the DSR AC adapter can
+// never drift. CAS is **one bucket**; the storage region lives in the key prefix
+// `<region>/<tenant_prefix>/<digest>`. The container writes through a single
+// global `R2_CAS_REGION`, but a per-hash erase sweeps all regions so it is
+// robust to a deployment whose write region changed over time (cheap — a
+// once-per-erase LIST). Superset-safety vs the colo map is gated by
+// `region_map::tests::cas_regions_superset_of_all_colos`.
+use crate::storage::region_map::CAS_REGIONS;
 
 /// Default single CAS bucket; overridable via `R2_CAS_BUCKET` (non-prod).
 /// Mirrors `routes::dsr::adapter_r2_cas::DEFAULT_CAS_BUCKET`.

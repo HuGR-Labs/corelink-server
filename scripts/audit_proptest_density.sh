@@ -32,7 +32,21 @@ for c in crates/*/; do
   pt=0
   for f in $(find "$c"tests "$c"src -name "*.rs" 2>/dev/null); do
     if grep -qE "^[[:space:]]*proptest!" "$f" 2>/dev/null; then
-      n=$(awk '/proptest!/ { in_block=1 } in_block && /#\[test\]/ { c++ } END { print c+0 }' "$f")
+      # Count #[test] fns ONLY while inside a balanced `proptest! { ... }` span.
+      # (Previously `in_block` was set on the first `proptest!` and NEVER reset,
+      #  so every plain #[test] later in the file counted as a proptest → ~4x
+      #  over-count. Track brace depth and clear the flag when the block closes.)
+      n=$(awk '
+        { line=$0
+          if (!inb && line ~ /proptest!/) { inb=1; depth=0 }
+          if (inb) {
+            if (line ~ /#\[test\]/) c++
+            ob=gsub(/{/,"{",line); cb=gsub(/}/,"}",line)
+            depth += ob - cb
+            if (depth <= 0 && ob+cb > 0) inb=0
+          }
+        }
+        END { print c+0 }' "$f")
       pt=$((pt + n))
     fi
   done

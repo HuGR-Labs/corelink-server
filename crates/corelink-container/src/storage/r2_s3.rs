@@ -41,11 +41,17 @@ use corelink_byok::{CryptoContext, CryptoMode, Tcs};
 use corelink_handler_cas::{
     AuditEvent, AuditEventKind, AuditSink, CasDeleteHandler, CasHandlerError, CasListHandler,
     CasReadHandler, CasReadRequest, CasReadResponse, CasWriteHandler, CasWriteRequest,
-    CasWriteResponse, DigestAlgo, InMemoryAuditSink, InMemorySliObserver, SliObservation,
-    SliObserver,
+    CasWriteResponse, DigestAlgo, InMemorySliObserver, SliObservation, SliObserver,
 };
+// `InMemoryAuditSink` is now used only by tests (the deployed builder wires the
+// durable D1 sink); gate the import so the non-test build stays warning-clean.
+#[cfg(test)]
+use corelink_handler_cas::InMemoryAuditSink;
 use corelink_hash::Digest;
 use corelink_tenant_path::{derive_prefix, TenantDerivationKey};
+
+use crate::storage::d1_audit_sink::{ac_audit_sink_from_d1, cas_audit_sink_from_d1};
+use crate::storage::d1_http::D1HttpClient;
 use sha2::{Digest as _, Sha256};
 use subtle::ConstantTimeEq;
 use tracing::{debug, warn};
@@ -1707,7 +1713,26 @@ pub async fn build_r2_cas_handler_from_env(
         Ok(c) => c,
         Err(e) => return Some(Err(e)),
     };
-    let audit = Arc::new(InMemoryAuditSink::new());
+    // F1 (CAA-360) fail-CLOSED: storage creds ARE present, so this is the
+    // production data plane. The audit trail MUST be DURABLE — a volatile
+    // `InMemoryAuditSink` here loses every CAS audit event on restart AND makes
+    // the route's `AuditFailed → 503` guard dead code (in-memory emit only
+    // errors under a test-injected failure). Wire the D1 `audit_outbox` sink
+    // (the same trail the S-09 drain seals); if it cannot be constructed,
+    // REFUSE to build the handler — the route mounts the fail-CLOSED 503
+    // handler, never a silent in-memory fallback (mirrors the `R2_TDK_HEX`
+    // refusal above).
+    let audit = match cas_audit_sink_from_d1(D1HttpClient::new(&env)) {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::error!(
+                error = %e,
+                "durable CAS audit sink unavailable with storage creds present; \
+                 refusing to mount the R2 CAS handler (fail-closed, F1)"
+            );
+            return Some(Err(e));
+        }
+    };
     let sli = Arc::new(InMemorySliObserver::new());
     Some(Ok(R2CasHandler::new(
         client,
@@ -2565,7 +2590,22 @@ pub async fn build_r2_ac_handler_from_env(
         Ok(c) => c,
         Err(e) => return Some(Err(e)),
     };
-    let audit = Arc::new(corelink_handler_ac::InMemoryAuditSink::new());
+    // F1 (CAA-360) fail-CLOSED: DURABLE audit trail is mandatory on the
+    // production data plane — see `build_r2_cas_handler_from_env`. The AC key
+    // space is not content-addressed, so a lost/forged audit row is even more
+    // dangerous. Wire the D1 `audit_outbox` sink or REFUSE (route mounts the
+    // fail-CLOSED handler, never a volatile in-memory fallback).
+    let audit = match ac_audit_sink_from_d1(D1HttpClient::new(&env)) {
+        Ok(a) => a,
+        Err(e) => {
+            tracing::error!(
+                error = %e,
+                "durable AC audit sink unavailable with storage creds present; \
+                 refusing to mount the R2 AC handler (fail-closed, F1)"
+            );
+            return Some(Err(e));
+        }
+    };
     let sli = Arc::new(corelink_handler_ac::InMemorySliObserver::new());
     Some(Ok(R2AcHandler::new(
         client,

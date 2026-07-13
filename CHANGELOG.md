@@ -23,6 +23,39 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(ci): three under-enforcing rigor gates that silently passed drift (gap-hunt).**
+  (1) `audit_proptest_density.sh` counted `#[test]` with an awk `in_block` flag set on
+  the first `proptest!` and NEVER reset — every later plain unit test counted as a
+  proptest (~4x over-count), so a crate with one token proptest scored well above the
+  1.0/INV threshold. Fixed to only count inside a balanced `proptest!{ }` span; this
+  exposed 4 pre-existing gaps (failover-router, replica-worker, replication, slo) now
+  documented in the allowlist (follow-up WI-PROPTEST-FU-W37-001). (2) the additive-
+  migrations HIGH gate (`d1-migration-validate.yml`) only PR-triggered on
+  `migrations/d1/**`, so a destructive top-level or `migrations/neon/**` auth migration
+  bypassed `INV-AUTH-MIGRATION-ADDITIVE` until the nightly ship-gate — broadened to
+  `migrations/**`. (3) `secrets-drift.yml` PR-triggered only on the container crate, so
+  a new `env::var()` secret read in any other crate/app escaped the PR gate — broadened
+  to `crates/**/*.rs`, `apps/**/*.ts(x)`, `worker/**/*.ts`.
+- **fix(container): persist native CAS/AC data-plane audit events to a DURABLE D1 `audit_outbox` sink (F1 / CAA-360).**
+  The deployed builders (`storage::r2_s3::build_r2_cas_handler_from_env` / `build_r2_ac_handler_from_env`)
+  hardcoded a volatile `InMemoryAuditSink`, so every CAS/AC audit event (`ReadAttempted`, `ReadDenied`,
+  write-committed, `CorrectnessViolation`, …) was written only to RAM and lost on container restart — the
+  "durable audit row before mutation" guarantee was unwired — and the route's fail-CLOSED `AuditFailed → 503`
+  guard was dead code (in-memory `emit` only errors under a test-injected failure). New `storage::d1_audit_sink`
+  wires a durable sink that appends each event to the D1 `audit_outbox` intake table (the same trail the S-09
+  drain seals; mirrors the DSR erasure sink), wired into BOTH builders. Fail-CLOSED: if the durable sink cannot
+  be constructed while storage creds are present, the builder refuses to mount the handler (route serves 503),
+  never a silent in-memory fallback. Rows are plain/unchanged/`emitted_at=NULL` (sealing remains the S-09 drain).
+- **fix(container): pin the GDPR-erase CAS/AC region sweep to a single superset-gated source of truth.**
+  Three hand-maintained copies of the erase-sweep region list (`routes::cas_erase`, `routes::dsr::adapter_r2_cas`,
+  `routes::dsr::adapter_r2_ac`) were independent of `storage::region_map::colo_for_macro`. A future colo added to
+  the map without updating every copy would silently skip that region in an Art.17 full-tenant erase, leaving
+  surviving erased bytes. Consolidated all three to `storage::region_map::CAS_REGIONS` and added
+  `cas_regions_superset_of_all_colos` asserting `CAS_REGIONS ⊇ { colo_for_macro(m) : all macros }`.
+- **fix(replica-worker): key the simulated R2 store by `(tenant_id, region, blob_hash)` to prevent cross-tenant collapse.**
+  The in-memory replication store keyed by `(region, blob_hash)` with no tenant component — harmless in simulation
+  but a cross-tenant blob collision once wired to real per-tenant-prefixed R2. Added the tenant identity to the key
+  now, with a `simulated_store_is_tenant_isolated` regression test.
 - **fix(canary): repoint the CAS drift-canary to a dedicated tenant after the githugr/hugit pause revoked its PAT.**
   The hourly authenticated CAS BLAKE3 round-trip canary (`cas-canary.yml`) used a `cas:rw` PAT on the `d863fafb`
   dogfood tenant, whose PATs were revoked by the 2026-07-11 owner-authorized githugr/hugit pause — so the canary

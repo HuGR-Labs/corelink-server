@@ -13,17 +13,17 @@
 //! TURBO_TOKEN=<their CoreLink PAT>
 //! ```
 //!
-//! # Backing store (Phase 0 / v1)
+//! # Backing store
 //!
-//! The route state is backed by [`corelink_turbo_bridge::adapter::InMemoryKvStore`]
-//! which stores artifacts in RAM and does NOT persist across container restarts.
-//! This is the correct starting point — the backing store is a swappable port
-//! trait ([`CasReadStore`] / [`CasWriteStore`]).
-//!
-//! **TODO(v2):** Replace `InMemoryKvStore` with a thin `R2KvStore` impl backed
-//! by R2 directly (separate bucket / prefix — e.g. `corelink-turbo-cache-prod`).
-//! See `specs/TODO-turbo-r2-backing-store.md` for the migration plan.
-//! The route handlers and audit surface are unchanged by the swap.
+//! The route state is backed by the **durable**, per-tenant R2-backed
+//! [`R2KvStore`](crate::storage::r2_kv::R2KvStore) whenever storage
+//! credentials are configured (`StorageEnv::from_env()`), so artifacts
+//! persist across container restarts. Only the no-creds dev / CI path
+//! falls back to the in-RAM [`InMemoryKvStore`]; if creds ARE present but
+//! `R2KvStore` refuses to build, the handler fails CLOSED (503s every verb)
+//! rather than silently losing durability. The backing store is a swappable
+//! port trait ([`CasReadStore`] / [`CasWriteStore`]); the route handlers and
+//! audit surface are identical across both backings. See `build_handlers`.
 //!
 //! # Tenant isolation
 //!
