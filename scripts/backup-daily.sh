@@ -16,7 +16,9 @@
 #
 # Optional env:
 #   D1_DATABASES           Space-separated list of D1 db names.
-#                          Default: corelink_core corelink_audit corelink_billing.
+#                          Default: corelink-prod-d1 (the real consolidated
+#                          prod D1; the old corelink_core/audit/billing names
+#                          never existed in the account).
 #   KV_NAMESPACES          Space-separated KV namespace bindings.
 #                          Default: CORELINK_KV CORELINK_FEATURE_FLAGS.
 #   R2_COLD_BUCKET         Source cold-tier R2 bucket.
@@ -58,7 +60,7 @@ CORELINK_ENV="${ENV_OVERRIDE:-${CORELINK_ENV:-staging}}"
 BACKUP_GPG_RECIPIENT="${BACKUP_GPG_RECIPIENT:-}"
 BACKUP_R2_BUCKET="${BACKUP_R2_BUCKET:-corelink-backups-${CORELINK_ENV}}"
 R2_COLD_BUCKET="${R2_COLD_BUCKET:-corelink-cold-${CORELINK_ENV}}"
-D1_DATABASES="${D1_DATABASES:-corelink_core corelink_audit corelink_billing}"
+D1_DATABASES="${D1_DATABASES:-corelink-prod-d1}"
 KV_NAMESPACES="${KV_NAMESPACES:-CORELINK_KV CORELINK_FEATURE_FLAGS}"
 AUDIT_OUTBOX_URL="${AUDIT_OUTBOX_URL:-}"
 
