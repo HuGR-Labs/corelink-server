@@ -1,8 +1,8 @@
 ---
 id: sdk-js-troubleshooting
-title: Troubleshooting (JS/TS)
-sidebar_label: Troubleshooting
-description: Diagnose common @corelink/client errors with reproducible recipes.
+title: Fehlerbehebung (JS/TS)
+sidebar_label: Fehlerbehebung
+description: Diagnostizieren Sie häufige @corelink/client-Fehler mit reproduzierbaren Rezepten.
 tags: [sdk, javascript, typescript, debug, how-to]
 ---
 
@@ -12,62 +12,58 @@ tags: [sdk, javascript, typescript, debug, how-to]
 >
 > Canonical EN source: `docs/how-to/sdk-js/07-troubleshooting.mdx`
 
+# Fehlerbehebung
 
-# Troubleshooting
+## Wann Sie diese Anleitung verwenden
 
-## When to use this guide
+Ein `@corelink/client`-Aufruf wirft eine Ausnahme oder hängt. Jeder Fehler erweitert
+`CoreLinkError` und trägt einen `status` (HTTP-Status, sofern serverseitig entstanden)
+und einen kurzen `code` (die Begründungszeichenkette des Servers). Untersuchen Sie sie:
 
-A `@corelink/client` call is throwing, hanging, or returning the wrong
-region. Use the table below to map errors to canonical fixes in
-`docs/reference/error-taxonomy`.
-
-## Diagnostic flow
+## Diagnoseablauf
 
 ```typescript
-const rep = await client.doctor();
-for (const check of rep.checks) {
-  console.log(check.name, check.status, check.nextActionDoc);
+import { CoreLinkError } from "@corelink/client";
+
+try {
+  await client.get(digest);
+} catch (e) {
+  if (e instanceof CoreLinkError) {
+    console.error(`${e.name} status=${e.status} code=${e.code}: ${e.message}`);
+  }
+  throw e;
 }
 ```
 
-Same 8 checks as `corelink doctor --json`.
+## Häufige Fehler
 
-## Common errors
+Ordnen Sie die geworfene Klasse ihrer Ursache und Behebung zu:
 
-| Error code | Class | First action |
+| Klasse | Status | Erste Maßnahme |
 |---|---|---|
-| `COR_AUTH_001` | `AuthError` | Re-export `CORELINK_PAT`; check `client.whoami()` |
-| `COR_AUTH_002` | `AuthError` | PAT revoked; mint a new one |
-| `COR_QUOTA_001` | `QuotaError` | Tenant over storage cap |
-| `COR_REGION_001` | `RegionError` | Use regional endpoint |
-| `COR_VERIFY_001` | `DigestMismatchError` | Discard bytes; retry |
-| `COR_NET_001` | `ConnectError` | `corelink doctor network` |
+| `AuthError` | 401 | Exportieren Sie `CORELINK_PAT` erneut; falls widerrufen, erzeugen Sie ein neues PAT. |
+| `ForbiddenError` | 403 | Falscher Tenant, oder dem PAT fehlt die erforderliche Cache-Berechtigung. |
+| `QuotaError` | 402 | Tenant über seiner Speichergrenze / Ausgabenobergrenze. |
+| `NotFoundError` / `ActionCacheMiss` | 404 | Digest / Action für diesen Tenant nicht gespeichert. |
+| `GoneError` | 410 | Artefakt wurde gelöscht (GDPR/DSR); es kehrt nicht zurück. |
+| `DigestMismatchError` | 422 / verify | Verwerfen Sie die Bytes; erneut herunter- oder hochladen. |
+| `RateLimitError` | 429 | Automatisch erneut versucht; falls es weiterhin auftritt, verringern Sie die Nebenläufigkeit. |
+| `ServerError` | 5xx | Vorübergehender Backend-Fehler; mit Backoff erneut versuchen. |
+| `ConnectError` | — | Transportfehler; Netzwerk / `baseUrl` prüfen. |
 
-## WASM init failure
+## Kein nativer oder WASM-Build-Schritt
 
-If you see `Error: failed to instantiate corelink-verify.wasm`, your bundler
-is stripping the WASM artifact. Add an explicit asset rule:
+`@corelink/client` ist reines JavaScript (BLAKE3 über `@noble/hashes`). Es gibt kein
+`.wasm`-Artefakt zum Bündeln und keine Bundler-Asset-Regel zu konfigurieren — falls ein
+Auflösungsfehler auftritt, handelt es sich um ein gewöhnliches ESM-Paketauflösungsproblem, nicht um ein WASM-Problem.
 
-```javascript
-// vite.config.js
-export default {
-  optimizeDeps: { exclude: ["@corelink/client/wasm"] },
-  assetsInclude: ["**/*.wasm"],
-};
-```
+## Lebenszyklus
 
-For webpack 5, set `experiments.asyncWebAssembly = true`.
-
-## Promise leaks
-
-Every client must be closed:
+`close()` ist heute eine No-Op (das SDK verwendet das Plattform-`fetch` und hält keinen
+dauerhaften Pool), aber rufen Sie es dennoch auf, damit Ihr Code korrekt bleibt, falls eine
+künftige Version Pooling hinzufügt:
 
 ```typescript
-// WRONG — leaks the HTTP/2 session
-const client = new CoreLinkClient({ tenantId: "acme-corp" });
-await client.get(digest);
-
-// RIGHT
 const client = new CoreLinkClient({ tenantId: "acme-corp" });
 try {
   await client.get(digest);
@@ -76,18 +72,18 @@ try {
 }
 ```
 
-## Verbose logging
+## Ausführliche Protokollierung
 
 ```bash
 export CORELINK_LOG=debug
 ```
 
-Structured JSON logs go to `stderr`. Pipe through `jq`:
+Strukturierte JSON-Protokolle gehen an `stderr`. Leiten Sie sie über `jq`:
 
 ```bash
 node ./script.mjs 2>&1 | jq 'select(.level=="error")'
 ```
 
-## Filing a bug
+## Einen Fehler melden
 
-Include `corelink doctor --json` output. Never include your PAT.
+Fügen Sie die Ausgabe von `corelink doctor --json` bei. Fügen Sie niemals Ihr PAT bei.

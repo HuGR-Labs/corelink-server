@@ -1,8 +1,8 @@
 ---
 id: sdk-js-download-blob
-title: Download a blob (JS/TS)
-sidebar_label: Download a blob
-description: Fetch a blob by digest with default-on BLAKE3 client-side verify.
+title: Descargar un blob (JS/TS)
+sidebar_label: Descargar un blob
+description: Obtenga un blob por digest con la verificación BLAKE3 del lado del cliente activada por defecto.
 tags: [sdk, javascript, typescript, cas, how-to]
 ---
 
@@ -10,64 +10,61 @@ tags: [sdk, javascript, typescript, cas, how-to]
 
 > MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
 >
-> Canonical EN source: `sdk-js/03-download-blob.mdx`
+> Canonical EN source: `docs/how-to/sdk-js/03-download-blob.mdx`
 
-# Download a blob
+# Descargar un blob
 
-## When to use this guide
+## Cuándo usar esta guía
 
-You hold a BLAKE3 digest and need the bytes. The SDK verifies the digest
-client-side via WASM by default (CTRL-CAS-002).
+Usted tiene un digest BLAKE3 y necesita los bytes. El SDK verifica el digest
+del lado del cliente (`@noble/hashes`, en JS puro) de forma predeterminada (CTRL-CAS-002).
 
-## Prerequisites
+## Requisitos previos
 
-- A known BLAKE3 digest.
-- Authentication configured.
+- Un digest BLAKE3 conocido.
+- Autenticación configurada.
 
-## Minimal example
+## Ejemplo mínimo
 
 ```typescript
 const data: Uint8Array = await client.get(digest);
 // Already BLAKE3-verified; if verify failed, get() threw.
 ```
 
-## Streaming download
+## Descargar a un archivo
+
+`get` devuelve todo el `Uint8Array` verificado; escríbalo:
 
 ```typescript
 import { writeFile } from "node:fs/promises";
 
-async function streamToFile(digest: string, dest: string): Promise<void> {
-  const stream = await client.getStream(digest);
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of stream) chunks.push(chunk);
-  // stream completion validates the BLAKE3 root; an iteration error means
-  // the bytes are corrupt and must not be persisted.
-  await writeFile(dest, Buffer.concat(chunks));
+async function getToFile(digest: string, dest: string): Promise<void> {
+  const data = await client.get(digest); // throws DigestMismatchError if corrupt
+  await writeFile(dest, data);
 }
 ```
 
-In a browser, pipe directly to a `FileSystemWritableFileStream` or to a
-`Blob` constructor.
+Una API de descarga por fragmentos/streaming no forma parte de esta versión.
 
-## Opting out of verification
+## Desactivar la verificación
 
-**Strongly discouraged**. The opt-out exists only for transport benchmarks.
-The SDK emits `console.warn("corelink.client.verify_disabled")` per
-CTRL-CAS-002.
+**Muy desaconsejado**. La desactivación existe solo para benchmarks de transporte.
+Desactívela globalmente en la construcción (`clientVerify: false` — registra
+`corelink.client.verify_disabled` según CTRL-CAS-002), o por llamada:
 
 ```typescript
 const data = await client.get(digest, { verify: false });
 ```
 
-## Errors
+## Errores
 
-| Class | Meaning |
+| Clase | Significado |
 |---|---|
-| `NotFoundError` | Digest not in tenant CAS |
-| `DigestMismatchError` | Bytes corrupted; do not use |
-| `RegionError` | Blob in another region; check `corelink stat` |
+| `NotFoundError` | El digest no está en el CAS del tenant (404) |
+| `GoneError` | Artefacto borrado (410); no lo resucite |
+| `DigestMismatchError` | Bytes corruptos; no los use |
 
-## Next steps
+## Próximos pasos
 
-- [Action Cache](./04-action-cache.mdx)
-- [Troubleshooting](./07-troubleshooting.mdx)
+- [Action Cache](./04-action-cache)
+- [Solución de problemas](./07-troubleshooting)

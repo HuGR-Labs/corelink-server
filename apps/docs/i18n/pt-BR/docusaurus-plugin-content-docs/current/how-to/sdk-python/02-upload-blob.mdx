@@ -1,8 +1,8 @@
 ---
 id: sdk-python-upload-blob
-title: Upload a blob (Python)
-sidebar_label: Upload a blob
-description: Store a content-addressable blob using the corelink-py SDK.
+title: Enviar um blob (Python)
+sidebar_label: Enviar um blob
+description: Armazene um blob endereçável por conteúdo usando o SDK corelink-py.
 tags: [sdk, python, cas, how-to]
 ---
 
@@ -10,63 +10,71 @@ tags: [sdk, python, cas, how-to]
 
 > MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
 >
-> Canonical EN source: `sdk-python/02-upload-blob.mdx`
+> Canonical EN source: `docs/how-to/sdk-python/02-upload-blob.mdx`
 
-# Upload a blob
+# Enviar um blob
 
-## When to use this guide
+## Quando usar este guia
 
-Use this when you need to persist arbitrary bytes (a build output, a model
-weight, a packaged tarball) into the CoreLink CAS, and you want the SDK to
-compute the BLAKE3 digest for you.
+Use isto quando precisar persistir bytes arbitrários (uma saída de build, um peso
+de modelo, um tarball empacotado) no CAS do CoreLink e quiser que o SDK calcule o
+digest BLAKE3 para você.
 
-If you already have a digest and want to skip recomputation, supply it via
+Se você já tem um digest e quer pular o recálculo, forneça-o via
 `expected_digest=`.
 
-## Prerequisites
+## Pré-requisitos
 
-- Authentication configured (see [01-authenticate](./01-authenticate.mdx)).
+- Autenticação configurada (consulte [01-authenticate](./01-authenticate)).
 
-## Minimal example
+## Exemplo mínimo
 
 ```python
 import asyncio
 from pathlib import Path
-from corelink import CoreLinkClient
+from corelink import AsyncCoreLinkClient
 
 async def main() -> None:
-    async with CoreLinkClient(tenant_id="acme-corp") as client:
+    async with AsyncCoreLinkClient(tenant_id="acme-corp") as client:
         data = Path("./build/output.tar").read_bytes()
         digest = await client.put(data)
         print(f"stored: {digest}")  # 64-char BLAKE3 hex
 ```
 
-## Streaming upload (large blobs)
+> O gêmeo síncrono é `corelink.CoreLinkClient` — os mesmos métodos sem
+> `async`/`await` (`digest = client.put(data)`), usados com um bloco `with` simples.
 
-For files larger than 16 MiB use the streaming overload to avoid loading the
-file fully into memory:
+## Upload em streaming (blobs grandes)
+
+Para arquivos grandes, use a sobrecarga de streaming para evitar carregar o
+arquivo inteiro na memória — o digest BLAKE3 é calculado em uma única passagem
+rebobinada sobre o handle de arquivo aberto, e então o mesmo handle é transmitido
+ao servidor:
 
 ```python
 async def upload_large(path: str) -> str:
-    async with CoreLinkClient(tenant_id="acme-corp") as client:
+    async with AsyncCoreLinkClient(tenant_id="acme-corp") as client:
         with open(path, "rb") as f:
             return await client.put_stream(f, chunk_size=4 * 1024 * 1024)
 ```
 
-## Idempotency
+## Idempotência
 
-`put` is idempotent on the digest. A second upload of identical bytes returns
-the same digest with no extra storage cost (CTRL-CAS-001 dedupe).
+`put` é idempotente em relação ao digest. Um segundo upload de bytes idênticos
+retorna o mesmo digest sem custo adicional de armazenamento (dedupe CTRL-CAS-001).
 
-## Errors
+## Erros
 
-| Exception | Cause | Action |
+| Exceção | Causa | Ação |
 |---|---|---|
-| `AuthError` | PAT missing or revoked | Re-run [01-authenticate](./01-authenticate.mdx) |
-| `QuotaError` | Tenant over quota | Inspect `corelink stat`; see [troubleshooting](./07-troubleshooting.mdx) |
-| `DigestMismatchError` | `expected_digest` did not match | Recompute locally; do not retry blindly |
+| `CoreLinkAuthError` | PAT ausente ou revogado (HTTP 401) | Execute novamente [01-authenticate](./01-authenticate) |
+| `CoreLinkQuotaError` | Tenant acima da cota (HTTP 402) | Inspecione `corelink stat`; consulte [solução de problemas](./07-troubleshooting) |
+| `CoreLinkDigestMismatchError` | `expected_digest` não correspondeu a `blake3(body)` (HTTP 422) | Recalcule localmente; não repita cegamente |
 
-## Next steps
+Todas são importadas de `corelink.exceptions` (ou do pacote de nível superior
+`corelink`) e são subclasses de `CoreLinkError`.
 
-- [Download the blob](./03-download-blob.mdx)
-- [Batch many uploads](./05-batch-operations.mdx)
+## Próximos passos
+
+- [Baixar o blob](./03-download-blob)
+- [Agrupar vários uploads em lote](./05-batch-operations)

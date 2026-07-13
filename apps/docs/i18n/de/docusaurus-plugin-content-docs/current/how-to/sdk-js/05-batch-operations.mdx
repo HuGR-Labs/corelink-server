@@ -1,8 +1,8 @@
 ---
 id: sdk-js-batch-operations
-title: Batch operations (JS/TS)
-sidebar_label: Batch operations
-description: Drive concurrent uploads with p-limit and rate-limit backoff.
+title: Stapelverarbeitung (JS/TS)
+sidebar_label: Stapelverarbeitung
+description: Steuern Sie gleichzeitige Uploads mit p-limit und Rate-Limit-Backoff.
 tags: [sdk, javascript, typescript, performance, how-to]
 ---
 
@@ -12,15 +12,14 @@ tags: [sdk, javascript, typescript, performance, how-to]
 >
 > Canonical EN source: `docs/how-to/sdk-js/05-batch-operations.mdx`
 
+# Stapelverarbeitung
 
-# Batch operations
+## Wann Sie diese Anleitung verwenden
 
-## When to use this guide
+Sie haben viele Blobs zu senden oder abzurufen und möchten die verfügbare Bandbreite
+ausschöpfen, ohne das serverseitige Limit pro PAT (256 gleichzeitig) zu überschreiten.
 
-You have many blobs to push or pull and want to saturate available
-bandwidth without exceeding the server-side per-PAT limit (256 concurrent).
-
-## Pattern: bounded `Promise.all`
+## Muster: Begrenztes `Promise.all`
 
 ```typescript
 import pLimit from "p-limit";
@@ -42,10 +41,10 @@ async function uploadMany(
 }
 ```
 
-## Rate-limit handling
+## Umgang mit dem Rate-Limit
 
-`RateLimitError` is auto-retried with exponential backoff + jitter
-(3 attempts, capped at 30 s total). Customize:
+`RateLimitError` (429) und 503 werden automatisch mit exponentiellem Backoff +
+Jitter erneut versucht (standardmäßig 3 Versuche, jeder Backoff auf `maxDelayMs` begrenzt). Anpassen:
 
 ```typescript
 const client = new CoreLinkClient({
@@ -54,12 +53,12 @@ const client = new CoreLinkClient({
 });
 ```
 
-When attempts are exhausted, drain pending work and stop submitting.
+Wenn die Versuche erschöpft sind, arbeiten Sie die ausstehenden Aufgaben ab und senden Sie nichts mehr.
 
-## Pattern: digest-keyed dedupe
+## Muster: Digest-indizierte Deduplizierung
 
 ```typescript
-import { blake3 } from "@noble/hashes/blake3";
+import { blake3Hex } from "@corelink/client";
 
 async function uploadDedup(
   paths: string[],
@@ -67,7 +66,7 @@ async function uploadDedup(
   const seen: Record<string, string> = {};
   for (const p of paths) {
     const data = await readFile(p);
-    const hex = Buffer.from(blake3(data)).toString("hex");
+    const hex = blake3Hex(data); // same digest the server addresses the blob by
     if (hex in seen) continue;
     seen[hex] = await client.put(data, { expectedDigest: hex });
   }
@@ -75,9 +74,9 @@ async function uploadDedup(
 }
 ```
 
-Cuts upload count by 60-90% on typical build outputs.
+Reduziert die Upload-Anzahl bei typischen Build-Ausgaben um 60-90%.
 
-## Next steps
+## Nächste Schritte
 
-- [CI integration](./06-ci-integration.mdx)
-- [Troubleshooting](./07-troubleshooting.mdx)
+- [CI-Integration](./06-ci-integration)
+- [Fehlerbehebung](./07-troubleshooting)

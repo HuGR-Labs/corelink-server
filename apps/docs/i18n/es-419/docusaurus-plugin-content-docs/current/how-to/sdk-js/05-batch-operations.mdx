@@ -1,8 +1,8 @@
 ---
 id: sdk-js-batch-operations
-title: Batch operations (JS/TS)
-sidebar_label: Batch operations
-description: Drive concurrent uploads with p-limit and rate-limit backoff.
+title: Operaciones por lotes (JS/TS)
+sidebar_label: Operaciones por lotes
+description: Ejecute subidas concurrentes con p-limit y retroceso ante el límite de tasa.
 tags: [sdk, javascript, typescript, performance, how-to]
 ---
 
@@ -10,16 +10,16 @@ tags: [sdk, javascript, typescript, performance, how-to]
 
 > MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
 >
-> Canonical EN source: `sdk-js/05-batch-operations.mdx`
+> Canonical EN source: `docs/how-to/sdk-js/05-batch-operations.mdx`
 
-# Batch operations
+# Operaciones por lotes
 
-## When to use this guide
+## Cuándo usar esta guía
 
-You have many blobs to push or pull and want to saturate available
-bandwidth without exceeding the server-side per-PAT limit (256 concurrent).
+Usted tiene muchos blobs para enviar o descargar y quiere saturar el ancho de banda
+disponible sin exceder el límite por PAT del lado del servidor (256 concurrentes).
 
-## Pattern: bounded `Promise.all`
+## Patrón: `Promise.all` acotado
 
 ```typescript
 import pLimit from "p-limit";
@@ -41,10 +41,10 @@ async function uploadMany(
 }
 ```
 
-## Rate-limit handling
+## Manejo del límite de tasa
 
-`RateLimitError` is auto-retried with exponential backoff + jitter
-(3 attempts, capped at 30 s total). Customize:
+`RateLimitError` (429) y 503 se reintentan automáticamente con retroceso exponencial +
+jitter (3 intentos de forma predeterminada, cada retroceso limitado a `maxDelayMs`). Personalice:
 
 ```typescript
 const client = new CoreLinkClient({
@@ -53,12 +53,12 @@ const client = new CoreLinkClient({
 });
 ```
 
-When attempts are exhausted, drain pending work and stop submitting.
+Cuando se agotan los intentos, drene el trabajo pendiente y deje de enviar.
 
-## Pattern: digest-keyed dedupe
+## Patrón: deduplicación indexada por digest
 
 ```typescript
-import { blake3 } from "@noble/hashes/blake3";
+import { blake3Hex } from "@corelink/client";
 
 async function uploadDedup(
   paths: string[],
@@ -66,7 +66,7 @@ async function uploadDedup(
   const seen: Record<string, string> = {};
   for (const p of paths) {
     const data = await readFile(p);
-    const hex = Buffer.from(blake3(data)).toString("hex");
+    const hex = blake3Hex(data); // same digest the server addresses the blob by
     if (hex in seen) continue;
     seen[hex] = await client.put(data, { expectedDigest: hex });
   }
@@ -74,9 +74,9 @@ async function uploadDedup(
 }
 ```
 
-Cuts upload count by 60-90% on typical build outputs.
+Reduce la cantidad de subidas en un 60-90% en salidas de compilación típicas.
 
-## Next steps
+## Próximos pasos
 
-- [CI integration](./06-ci-integration.mdx)
-- [Troubleshooting](./07-troubleshooting.mdx)
+- [Integración con CI](./06-ci-integration)
+- [Solución de problemas](./07-troubleshooting)

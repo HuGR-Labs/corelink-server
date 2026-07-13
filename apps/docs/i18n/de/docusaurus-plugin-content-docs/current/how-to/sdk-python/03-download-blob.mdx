@@ -1,8 +1,8 @@
 ---
 id: sdk-python-download-blob
-title: Download a blob (Python)
-sidebar_label: Download a blob
-description: Fetch a blob by digest with default-on BLAKE3 client-side verify.
+title: Blob herunterladen (Python)
+sidebar_label: Blob herunterladen
+description: Rufen Sie einen Blob per Digest ab, mit standardmäßig aktivierter clientseitiger BLAKE3-Prüfung.
 tags: [sdk, python, cas, how-to]
 ---
 
@@ -12,28 +12,27 @@ tags: [sdk, python, cas, how-to]
 >
 > Canonical EN source: `docs/how-to/sdk-python/03-download-blob.mdx`
 
+# Blob herunterladen
 
-# Download a blob
+## Wann Sie diese Anleitung verwenden
 
-## When to use this guide
+Sie haben einen BLAKE3-Digest (aus einem vorherigen `put`, aus einem
+Action-Cache-Ergebnis oder aus Peer-Metadaten) und müssen die Bytes lokal
+materialisieren. Das SDK prüft den Hash standardmäßig clientseitig (CTRL-CAS-002).
 
-You have a BLAKE3 digest (from a previous `put`, an Action Cache result, or
-peer metadata) and need to materialize the bytes locally. The SDK verifies the
-hash on the client side by default (CTRL-CAS-002).
+## Voraussetzungen
 
-## Prerequisites
+- Ein bekannter BLAKE3-Digest.
+- Authentifizierung konfiguriert.
 
-- A known BLAKE3 digest.
-- Authentication configured.
-
-## Minimal example
+## Minimalbeispiel
 
 ```python
 import asyncio
-from corelink import CoreLinkClient
+from corelink import AsyncCoreLinkClient
 
 async def main() -> None:
-    async with CoreLinkClient(tenant_id="acme-corp") as client:
+    async with AsyncCoreLinkClient(tenant_id="acme-corp") as client:
         digest = "0123456789abcdef" * 4
         data = await client.get(digest)
         # data is already BLAKE3-verified; if verify failed, get() raises.
@@ -41,11 +40,14 @@ async def main() -> None:
             f.write(data)
 ```
 
-## Streaming download
+> Der synchrone Zwilling ist `corelink.CoreLinkClient` — `data = client.get(digest)`
+> unter einem einfachen `with`-Block.
+
+## Streaming-Download
 
 ```python
 async def stream_to_file(digest: str, dest: str) -> None:
-    async with CoreLinkClient(tenant_id="acme-corp") as client:
+    async with AsyncCoreLinkClient(tenant_id="acme-corp") as client:
         async with client.get_stream(digest) as stream:
             with open(dest, "wb") as f:
                 async for chunk in stream:
@@ -53,32 +55,35 @@ async def stream_to_file(digest: str, dest: str) -> None:
         # stream.__aexit__ raises if final verify fails.
 ```
 
-The streaming verifier hashes incrementally and validates the BLAKE3 root once
-the last chunk arrives. If the root does not match, the SDK raises
-`DigestMismatchError` and deletes the partial file is the caller's
-responsibility (verify before swapping into place).
+Der Streaming-Prüfer berechnet den Hash inkrementell und validiert die
+BLAKE3-Wurzel, sobald der letzte Chunk eintrifft. Stimmt die Wurzel nicht überein,
+löst `stream.__aexit__` `CoreLinkDigestMismatchError` aus; das SDK verschiebt die
+Datei niemals an ihren endgültigen Platz, sodass das Löschen der teilweisen
+Ausgabe in der Verantwortung des Aufrufers liegt.
 
-## Opting out of verification
+## Verzicht auf die Prüfung
 
-**Strongly discouraged**. The opt-out exists only for benchmarks that need to
-measure raw transport latency. Setting `verify=False` emits a `WARNING` log
-line `corelink.client.verify_disabled` per CTRL-CAS-002.
+**Dringend abgeraten**. Der Verzicht existiert nur für Benchmarks, die die reine
+Transportlatenz messen müssen. Das Setzen von `verify=False` gibt eine
+`WARNING`-Logzeile `corelink.client.verify_disabled` aus, gemäß CTRL-CAS-002.
 
 ```python
 data = await client.get(digest, verify=False)
 ```
 
-If you find yourself reaching for this flag, file an issue first.
+Wenn Sie versucht sind, zu diesem Flag zu greifen, melden Sie zuerst ein Issue.
 
-## Errors
+## Fehler
 
-| Exception | Meaning |
+| Ausnahme | Bedeutung |
 |---|---|
-| `NotFoundError` | Digest does not exist in tenant CAS |
-| `DigestMismatchError` | Bytes corrupted on the wire; do not use the data |
-| `RegionError` | Blob lives in another region; check `corelink stat <digest>` |
+| `CoreLinkNotFoundError` | Der Digest existiert nicht im Tenant-CAS (HTTP 404) oder wurde gelöscht (HTTP 410) |
+| `CoreLinkDigestMismatchError` | Bytes wurden während der Übertragung beschädigt; verwenden Sie die Daten nicht |
 
-## Next steps
+Alle werden aus `corelink.exceptions` (oder dem übergeordneten Paket `corelink`)
+importiert und sind Unterklassen von `CoreLinkError`.
 
-- [Action Cache lookup](./04-action-cache.mdx)
-- [Troubleshooting](./07-troubleshooting.mdx)
+## Nächste Schritte
+
+- [Action-Cache-Abfrage](./04-action-cache)
+- [Fehlerbehebung](./07-troubleshooting)

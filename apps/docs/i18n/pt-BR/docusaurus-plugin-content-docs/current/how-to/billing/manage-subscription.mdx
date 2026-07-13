@@ -1,189 +1,182 @@
 ---
 id: billing-manage-subscription
-title: "Manage your subscription"
+title: "Gerencie sua assinatura"
 slug: "/how-to/billing/manage-subscription"
-sidebar_label: "Manage subscription"
-description: "Open the Stripe Customer Portal from CoreLink admin UI to update payment methods, download invoices, change plan, or cancel."
+sidebar_label: "Gerenciar assinatura"
+description: "Abra o Stripe Customer Portal a partir da UI de administração do CoreLink para atualizar formas de pagamento, baixar faturas, mudar de plano ou cancelar."
 tags: [billing, stripe, how-to, customer]
 last_updated: "2026-05-15"
 ---
 
-<!-- i18n:MT (pt-BR) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+<!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
 > MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
 >
 > Canonical EN source: `docs/how-to/billing/manage-subscription.mdx`
 
+# Gerencie sua assinatura
 
-# Manage your subscription
+O CoreLink usa o **Stripe** para processar pagamentos. Para atualizar sua forma
+de pagamento, baixar faturas anteriores, mudar de plano ou cancelar, você
+trabalhará dentro do seguro **Stripe Customer Portal** — uma UI hospedada que
+abrimos de dentro da UI de administração do CoreLink.
 
-CoreLink uses **Stripe** to process payments. To update your payment
-method, download past invoices, change your plan, or cancel, you'll
-work inside the secure **Stripe Customer Portal** — a hosted UI we
-launch from inside the CoreLink admin UI.
+## Quando usar este guia
 
-## When to use this guide
+Você é um `Owner` em um tenant CoreLink com uma assinatura paga ativa e precisa:
 
-You're an `Owner` on a CoreLink tenant with an active paid
-subscription, and you need to:
+- Atualizar ou substituir o cartão de crédito cadastrado (cartão expirado,
+  alerta de fraude, troca de cartão).
+- Baixar uma cópia em PDF de uma fatura para financeiro / contas a pagar.
+- Mudar entre os planos Free, Starter, Team e Enterprise.
+- Alternar entre cobrança mensal e anual.
+- Atualizar seu endereço de cobrança ou número de identificação fiscal para
+  conformidade da fatura.
+- Cancelar sua assinatura.
 
-- Update or replace the credit card on file (card expired, fraud
-  alert, switching cards).
-- Download a PDF copy of an invoice for finance / accounts payable.
-- Move between Free, Starter, Team, and Enterprise tiers.
-- Switch between monthly and annual billing.
-- Update your billing address or tax ID for invoice compliance.
-- Cancel your subscription.
+Se você só precisa **visualizar** seu plano atual ou metadados de fatura somente
+leitura, o painel do cliente (`/en/customer/dashboard`) mostra isso sem abrir o
+portal.
 
-If you only need to **view** your current plan or read-only invoice
-metadata, the customer dashboard (`/en/customer/dashboard`) shows it
-without opening the portal.
+## Pré-requisitos
 
-## Prerequisites
+- Você está conectado como `Owner` no tenant. (Admins podem ver a página de
+  cobrança, mas não podem abrir o portal — o portal do Stripe concede ações
+  destrutivas, como o cancelamento, que somente o Owner pode aprovar.)
+- Seu tenant concluiu o Checkout pelo menos uma vez. Novos tenants no plano
+  gratuito não verão o botão do portal até fazerem upgrade.
 
-- You are signed in as `Owner` on the tenant. (Admins can see the
-  billing page but cannot open the portal — Stripe's portal grants
-  destructive actions like cancellation, which only Owner can
-  approve.)
-- Your tenant has completed Checkout at least once. New tenants on
-  the free tier won't see the portal button until they upgrade.
+## Abra o portal
 
-## Open the portal
-
-1. Sign in to CoreLink admin UI at
-   `https://app.corelink.humangr.com`.
-2. Navigate to **Customer → Billing**
+1. Faça login na UI de administração do CoreLink em
+   `https://corelink-app.humangr.com`.
+2. Navegue até **Customer → Billing**
    (`/en/customer/billing`).
-3. Click **Open Stripe Portal**.
+3. Clique em **Open Stripe Portal**.
 
-You'll be redirected to `billing.stripe.com` in the same browser
-window. The redirect is one-shot and signed — the URL is valid for
-about five minutes after you click. If you wait too long and the
-URL expires, just come back to the billing page and click the
-button again.
+Você será redirecionado para `billing.stripe.com` na mesma janela do navegador. O
+redirecionamento é de uso único e assinado — a URL é válida por cerca de cinco
+minutos após você clicar. Se demorar demais e a URL expirar, basta voltar à
+página de cobrança e clicar no botão novamente.
 
-## What you can do in the portal
+## O que você pode fazer no portal
 
-Inside `billing.stripe.com` you'll see four panels:
+Dentro de `billing.stripe.com` você verá quatro painéis:
 
-### Invoices
+### Faturas
 
-Past 24 months of invoices, sorted newest-first. Click any row to
-download the PDF. The PDF carries your billing address, our tax
-information, and a unique invoice number suitable for accounts
-payable.
+Os últimos 24 meses de faturas, ordenadas da mais recente para a mais antiga.
+Clique em qualquer linha para baixar o PDF. O PDF traz seu endereço de cobrança,
+nossas informações fiscais e um número de fatura único adequado para contas a
+pagar.
 
-### Payment methods
+### Formas de pagamento
 
-Add, remove, or update credit cards. Setting a new default takes
-effect on your next renewal automatically — there's no separate
-"save" step you need to make in CoreLink.
+Adicione, remova ou atualize cartões de crédito. Definir um novo padrão entra em
+vigor automaticamente na sua próxima renovação — não há uma etapa de "salvar"
+separada que você precise fazer no CoreLink.
 
-> **Card data note.** Card numbers, CVCs, and expiry dates are
-> entered directly into Stripe's hosted form; CoreLink never sees
-> them. This keeps us inside **PCI-DSS SAQ-A** scope, which is one of
-> the reasons we use Stripe instead of building our own card form.
+> **Observação sobre dados do cartão.** Números de cartão, CVCs e datas de
+> validade são inseridos diretamente no formulário hospedado do Stripe; o
+> CoreLink nunca os vê. Isso nos mantém dentro do escopo **PCI-DSS SAQ-A**, que é
+> uma das razões pelas quais usamos o Stripe em vez de construir nosso próprio
+> formulário de cartão.
 
-### Subscription
+### Assinatura
 
-Switch tiers (Free ↔ Starter ↔ Team ↔ Enterprise) and switch
-between monthly and annual billing.
+Troque de plano (Free ↔ Starter ↔ Team ↔ Enterprise) e alterne entre cobrança
+mensal e anual.
 
-- **Upgrades** take effect immediately and prorate the current
-  period.
-- **Downgrades** schedule at the end of the current billing period
-  (so you don't lose paid-for capacity early).
-- **Annual ↔ monthly switches** trigger a proration that Stripe
-  computes and shows you before you confirm.
+- **Upgrades** entram em vigor imediatamente e são rateados no período atual.
+- **Downgrades** são agendados para o fim do período de cobrança atual (para que
+  você não perca antecipadamente a capacidade já paga).
+- **Trocas anual ↔ mensal** disparam um rateio que o Stripe calcula e mostra a
+  você antes de confirmar.
 
-**Enterprise customers:** self-service downgrade out of Enterprise
-is disabled in the portal because Enterprise plans carry a paper
-contract + DPA. Click the **Contact sales** link in the portal
-instead — that opens an email to `sales@humangr.com` so we can
-handle the contract amendment together.
+**Clientes Enterprise:** o downgrade self-service para sair do Enterprise está
+desativado no portal porque os planos Enterprise têm um contrato em papel + DPA.
+Em vez disso, clique no link **Contact sales** no portal — isso abre um e-mail
+para `sales@humangr.com` para que possamos tratar o aditivo contratual juntos.
 
-### Cancellation
+### Cancelamento
 
-Click **Cancel subscription** to schedule a cancellation. Two
-options:
+Clique em **Cancel subscription** para agendar um cancelamento. Duas opções:
 
-- **Cancel at period end** (default). Your subscription stays
-  active through the end of the current billing period; no refund
-  for the unused portion of that period; auto-renew is OFF.
-- **Cancel immediately.** Subscription ends today. Stripe will
-  prorate the unused portion and refund automatically.
+- **Cancel at period end** (padrão). Sua assinatura permanece ativa até o fim do
+  período de cobrança atual; sem reembolso pela parte não utilizada desse
+  período; a renovação automática fica DESLIGADA.
+- **Cancel immediately.** A assinatura termina hoje. O Stripe irá ratear a parte
+  não utilizada e reembolsar automaticamente.
 
-Cancellation does NOT delete your tenant or your cached data.
-Your tenant drops to the **Free tier** at the cancellation effective
-date. To fully delete your tenant + all customer data, see
-[Submit a deletion request](/how-to/dsr/submit-deletion-request)
-(GDPR / LGPD compliant).
+O cancelamento NÃO exclui seu tenant nem seus dados em cache. Seu tenant cai para
+o **plano Free** na data de vigência do cancelamento. Para excluir totalmente seu
+tenant + todos os dados do cliente, consulte
+[Enviar uma solicitação de exclusão](/how-to/dsr/submit-deletion-request)
+(compatível com GDPR / LGPD).
 
-## When you return to CoreLink
+## Quando você retorna ao CoreLink
 
-When you click **Return to CoreLink** in the portal (or close the
-portal tab and reopen `https://app.corelink.humangr.com`), you land back on
-`/en/customer/billing`. Any changes you made in the portal —
-plan changes, card updates, cancellations — are already reflected
-because Stripe pushes them to us as webhook events the moment they
-happen.
+Quando você clica em **Return to CoreLink** no portal (ou fecha a aba do portal e
+reabre `https://corelink-app.humangr.com`), você volta para
+`/en/customer/billing`. Quaisquer alterações que você fez no portal —
+mudanças de plano, atualizações de cartão, cancelamentos — já estão refletidas
+porque o Stripe as envia para nós como eventos de webhook no momento em que
+acontecem.
 
-If you see stale data on the CoreLink side (e.g. you upgraded but
-the dashboard still shows the old tier), wait 30 seconds and
-refresh. If the discrepancy persists past 5 minutes, file a ticket
-— it likely means a webhook delivery failed and our DLQ replay
-runbook needs to run (we'll handle it on our side).
+Se você vir dados desatualizados no lado do CoreLink (por exemplo, você fez
+upgrade, mas o painel ainda mostra o plano antigo), aguarde 30 segundos e
+atualize. Se a discrepância persistir por mais de 5 minutos, abra um chamado
+— provavelmente significa que a entrega de um webhook falhou e nosso runbook de
+replay da DLQ precisa ser executado (cuidaremos disso do nosso lado).
 
-## What's separate from the CoreLink admin UI
+## O que é separado da UI de administração do CoreLink
 
-The Stripe Customer Portal is **only** for the billing surface.
-Everything below stays inside CoreLink admin UI and is NOT manageable
-in the Stripe Portal:
+O Stripe Customer Portal é **apenas** para a superfície de cobrança. Tudo abaixo
+permanece dentro da UI de administração do CoreLink e NÃO é gerenciável no Stripe
+Portal:
 
-| Topic                                | Where it lives                                    |
+| Tópico                                | Onde fica                                         |
 |--------------------------------------|---------------------------------------------------|
-| Usage metering (bytes stored, hits)  | `/en/customer/dashboard`                          |
-| BYOK encryption key management       | `/en/customer/byok`                               |
-| Team / role / PAT management         | `/en/customer/team`                               |
-| API tokens (PAT issuance + revoke)   | `/en/customer/tokens`                             |
-| Region selection + DPA addendum      | `/en/customer/region` and `/en/legal/dpa`         |
-| Audit log of admin actions           | `/en/admin/audit` (Admins / Owners only)          |
+| Medição de uso (bytes armazenados, hits) | `/en/customer/dashboard`                          |
+| Gerenciamento de chaves de criptografia BYOK | `/en/customer/byok`                               |
+| Gerenciamento de equipe / função / PAT   | `/en/customer/team`                               |
+| Tokens de API (emissão + revogação de PAT) | `/en/customer/tokens`                             |
+| Seleção de região + adendo de DPA        | `/en/customer/region` e `/en/legal/dpa`           |
+| Log de auditoria de ações de admin       | `/en/admin/audit` (somente Admins / Owners)       |
 
-## Troubleshooting
+## Solução de problemas
 
-### "Open Stripe Portal" button does nothing
+### O botão "Open Stripe Portal" não faz nada
 
-Open your browser's developer console. If you see a 5xx response on
-`/api/v1/customer/billing/portal-session`, our portal endpoint is
-having trouble. Try again in a minute. If the failure persists,
-check our [status page](https://status.corelink.humangr.com) and file a
-ticket.
+Abra o console de desenvolvedor do seu navegador. Se você vir uma resposta 5xx em
+`/api/v1/customer/billing/portal-session`, nosso endpoint do portal está com
+problemas. Tente novamente em um minuto. Se a falha persistir, verifique nossa
+[página de status](https://status.corelink.humangr.com) e abra um chamado.
 
-### Portal opens but shows "You haven't configured a customer portal yet"
+### O portal abre, mas mostra "You haven't configured a customer portal yet"
 
-This is a CoreLink-side misconfiguration. File a ticket immediately
-with a screenshot — our on-call follows
-`RB-STRIPE-PORTAL-INCIDENT` to fix.
+Isso é uma configuração incorreta do lado do CoreLink. Abra um chamado
+imediatamente com uma captura de tela — nosso plantão segue
+`RB-STRIPE-PORTAL-INCIDENT` para corrigir.
 
-### I'm asked to sign in to Stripe inside the portal
+### É solicitado que eu faça login no Stripe dentro do portal
 
-That's expected for **high-risk actions** (like changing the
-default card or cancelling). Stripe sends a one-time code to your
-billing email — enter it to continue. The CoreLink admin UI session
-and the Stripe-side reauth are independent, by design.
+Isso é esperado para **ações de alto risco** (como trocar o cartão padrão ou
+cancelar). O Stripe envia um código de uso único para seu e-mail de cobrança —
+insira-o para continuar. A sessão da UI de administração do CoreLink e a
+reautenticação do lado do Stripe são independentes, por design.
 
-### Cancellation showed but my tenant is still on the paid tier
+### O cancelamento apareceu, mas meu tenant ainda está no plano pago
 
-Cancellations default to "at period end". You'll stay on your paid
-tier until the period ends, then drop to Free automatically. If you
-need to leave the paid tier immediately, choose **Cancel
-immediately** in the portal — Stripe will refund the prorated unused
-portion.
+Os cancelamentos usam "no fim do período" por padrão. Você permanecerá no seu
+plano pago até o período terminar, e então cairá para o Free automaticamente. Se
+precisar sair do plano pago imediatamente, escolha **Cancel immediately** no
+portal — o Stripe reembolsará a parte não utilizada rateada.
 
-## Related guides
+## Guias relacionados
 
-- [Pricing & comparison](/pricing/comparison)
-- [Cost calculator](/explanation/pricing/calculator)
-- [Sales FAQ](/explanation/pricing) (some answers also appear in
-  [our public sales FAQ](https://corelink.humangr.com/sales/faq))
-- [Submit a deletion request (DSR)](/how-to/dsr/submit-deletion-request)
+- [Preços & comparação](/pricing/comparison)
+- [Calculadora de custos](/explanation/pricing/calculator)
+- [FAQ de vendas](/explanation/pricing) (algumas respostas também aparecem em
+  [nosso FAQ público de vendas](https://corelink.humangr.com/sales/faq))
+- [Enviar uma solicitação de exclusão (DSR)](/how-to/dsr/submit-deletion-request)

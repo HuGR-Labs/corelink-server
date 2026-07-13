@@ -1,7 +1,7 @@
 ---
-title: "Cost calculator"
+title: "Kostenrechner"
 slug: "/pricing/calculator"
-description: "Self-serve cost estimate for CoreLink given CAS volume, read traffic, BYOK, hit rate, and region pin. Transparent math, copy-pasteable."
+description: "Self-Service-Kostenschätzung für CoreLink auf Basis von CAS-Volumen, Lesedatenverkehr, BYOK, Trefferquote und Region-Pin. Transparente Rechnung, zum Kopieren und Einfügen."
 draft: true
 cross_functional_review: TBD
 pending_signoff:
@@ -11,7 +11,7 @@ pending_signoff:
 sources:
   - "apps/docs/docs/explanation/pricing/index.mdx"
   - "marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md"
-last_updated: "2026-05-15"
+last_updated: "2026-06-09"
 ---
 
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
@@ -20,60 +20,67 @@ last_updated: "2026-05-15"
 >
 > Canonical EN source: `docs/explanation/pricing/calculator.mdx`
 
+# Kostenrechner
 
-# Cost calculator
+**Verständnisorientiert.** Diese Seite zeigt die exakte Arithmetik, mit der
+CoreLink die monatliche Rechnung eines Kunden berechnet, und führt drei
+durchgerechnete Beispiele in kleinem / mittlerem / großem Maßstab durch. Für
+die Stufendefinitionen siehe die [Preisübersicht](./). Für direkte Vergleiche
+mit selbst gehosteten Alternativen siehe [vs. Alternativen](./comparison).
 
-**Understanding-oriented.** This page shows the exact arithmetic
-CoreLink uses to compute a customer's monthly bill, and walks three
-worked examples at small / medium / large scale. For tier definitions,
-see [pricing overview](./). For comparisons against self-hosted
-alternatives, see [vs. alternatives](./comparison).
+> **ENTWURF — ausstehende Freigabe durch Finance + Marketing + Product.** Die
+> Arithmetik ist kanonisch; die Konstanten sind Zielwerte für den
+> Starttag und können sich innerhalb des Platzhalterfensters ändern, bis
+> Finance den Prüfpfad abzeichnet. Kunden in einem Beschaffungszyklus sollten
+> beim Vertrieb die vertragliche Preisliste anfragen.
 
-> **DRAFT — pending Finance + Marketing + Product sign-off.** The
-> arithmetic is canonical; the constants are launch-day targets and
-> may shift inside the placeholder window until Finance signs the
-> audit trail. Customers in a procurement cycle should ask Sales for
-> the contractual rate card.
+## Eingaben
 
-## Inputs
+Der Rechner nimmt sechs Eingaben entgegen. Alle sind aus jedem bestehenden
+Cache beobachtbar (Sie müssen CoreLink nicht zuerst betreiben, um die Rechnung
+zu schätzen).
 
-The calculator takes six inputs. All of them are observable from any
-existing cache (you do not need to run CoreLink first to estimate the
-bill).
-
-| Symbol | Input | Units | Typical range |
+| Symbol | Eingabe | Einheiten | Typischer Bereich |
 |---|---|---|---|
-| `T` | Tenants | count | 1–50 |
-| `S_w` | Monthly CAS write volume | GB / mo | 5–5000 |
-| `S_r` | Monthly CAS read volume | TB / mo | 0.05–50 |
-| `byok` | BYOK provider | `none` / `aws` / `gcp` / `azure` | — |
-| `h` | Cache hit rate | fraction `[0, 1]` | 0.5–0.95 |
-| `R` | Region pin | count of regions | 1–4 |
+| `T` | Mandanten | Anzahl | 1–50 |
+| `S_w` | Monatliches CAS-Schreibvolumen | GB / Mon. | 5–5000 |
+| `S_r` | Monatliches CAS-Lesevolumen | TB / Mon. | 0.05–50 |
+| `byok` | BYOK-Anbieter | `none` / `aws` / `gcp` / `azure` | — |
+| `h` | Cache-Trefferquote | Bruch `[0, 1]` | 0.5–0.95 |
+| `R` | Region-Pin | Anzahl der Regionen | 1–4 |
 
-- `T` is the number of distinct tenants under one billing account.
-  Solo developers and most small teams have `T = 1`. Multi-product
-  orgs that want billing isolation per product have `T > 1`.
-- `S_w` is monthly **net** CAS storage growth after dedup and eviction.
-  Bazel monorepos at steady state are typically 10–200 GB; large
-  Buck2 monorepos run 500 GB to a few TB.
-- `S_r` is monthly **read** volume (TB), which scales with CI run
-  volume × per-run cache lookup × per-lookup blob size. Hit rate
-  matters here because misses do not generate reads.
-- `byok` toggles the BYOK add-on on Team. Free / Starter do not
-  support BYOK; Enterprise includes BYOK at no extra charge.
-- `h` is the hit rate. The calculator does **not** charge for cache
-  misses (a miss is a `404` and the customer's runner builds locally),
-  but `h` is included so the calculator can also report inner-loop
-  savings (the "cache tax" model from the
-  [economics blog post](/blog/05-fast-cache-hit-economics/)).
-- `R` is the count of distinct R2 regions the tenant pins to. Free /
-  Starter pin to 1; Team pins to up to 2; Enterprise pins to all 4.
-  Extra regions on Team and Enterprise replicate writes (a `2×`
-  multiplier on `S_w` for billable storage).
+- `T` ist die Anzahl der einzelnen Mandanten unter einem Abrechnungskonto.
+  Einzelentwickler und die meisten kleinen Teams haben `T = 1`. Organisationen
+  mit mehreren Produkten, die eine Abrechnungsisolierung pro Produkt wünschen,
+  haben `T > 1`.
+- `S_w` ist das monatliche **Netto**-Wachstum des CAS-Speichers nach
+  Deduplizierung und Verdrängung (Eviction). Bazel-Monorepos im stabilen
+  Zustand liegen typischerweise bei 10–200 GB; große Buck2-Monorepos reichen
+  von 500 GB bis zu einigen TB.
+- `S_r` ist das monatliche **Lese**-Volumen (TB), das mit dem Volumen der
+  CI-Läufe × Cache-Abfragen pro Lauf × Blob-Größe pro Abfrage skaliert. Die
+  Trefferquote ist hier relevant, weil Fehlschläge (Misses) keine Lesevorgänge
+  erzeugen.
+- `byok` schaltet das BYOK-Add-on bei Max ein. Free / Solo / Starter / Pro
+  unterstützen BYOK nicht; Enterprise enthält BYOK ohne Aufpreis.
+- `h` ist die Trefferquote. Der Rechner berechnet **keine** Gebühr für
+  Cache-Fehlschläge (ein Fehlschlag ist ein `404`, und der Runner des Kunden
+  baut lokal), aber `h` wird einbezogen, damit der Rechner auch die
+  Inner-Loop-Einsparungen ausweisen kann (das „Cache-Steuer“-Modell aus dem
+  [Blogbeitrag zur Wirtschaftlichkeit](/blog/05-fast-cache-hit-economics/)).
+- `R` ist die Anzahl der einzelnen R2-Regionen, an die sich der Mandant
+  bindet. Free / Solo / Starter binden sich an 1; Pro / Max binden sich an bis
+  zu 2; Enterprise bindet sich an alle 4. Zusätzliche Regionen replizieren
+  Schreibvorgänge (ein `2×`-Multiplikator auf `S_w` für den abrechenbaren
+  Speicher).
 
-## Formula
+## Formel
 
-The exact monthly invoice is:
+In v0.1 hat jede Stufe eine **harte Obergrenze (Hard Cap)** bei ihren
+enthaltenen Kontingenten — es gibt keinen gemessenen Mehrverbrauch. Die Aufgabe
+des Rechners ist daher, die kleinste Stufe zu finden, deren enthaltene
+Kontingente Ihre Nutzung abdecken, und die pauschale Grundgebühr dieser Stufe
+auszuweisen. Die exakte Monatsrechnung lautet:
 
 ```
 # 1. Resolve effective storage and reads after replication and dedup.
@@ -84,131 +91,144 @@ S_r_billable = S_r × 1024                  # convert TB → GB for billing
 S_w_included = INCLUDED_STORAGE_GB[tier] × T
 S_r_included = INCLUDED_READS_GB[tier]   × T
 
-# 3. Compute overage on storage and reads.
-overage_storage = max(0, S_w_billable - S_w_included) × STORAGE_RATE[tier]
-overage_reads   = max(0, S_r_billable - S_r_included) × READ_RATE[tier]
+# 3. Hard cap: usage above the included quota does NOT bill — it 429s.
+#    The calculator flags it so you pick the next-larger tier instead.
+fits = (S_w_billable <= S_w_included) AND (S_r_billable <= S_r_included)
 
-# 4. Resolve add-ons (BYOK on Team only; included on Enterprise).
+# 4. Resolve add-ons (BYOK on Max only; included on Enterprise).
 addon_byok = (BYOK_FEE[tier] if byok != "none" else 0)
 
-# 5. Resolve base fee. Free is $0; Starter / Team are flat;
+# 5. Resolve base fee. Free is $0; Solo / Starter / Pro / Max are flat;
 #    Enterprise is negotiated (calculator returns a quote-request CTA).
-invoice = BASE_FEE[tier] × T + overage_storage + overage_reads + addon_byok
+invoice = BASE_FEE[tier] × T + addon_byok          # only when `fits`
 ```
 
-`replication_factor(R, tier)` is:
+`replication_factor(R, tier)` ist:
 
-| `R` regions | Free | Starter | Team | Enterprise |
-|---|---|---|---|---|
-| 1 | 1.0 | 1.0 | 1.0 | 1.0 |
-| 2 | n/a | n/a | 2.0 | 2.0 |
-| 3 | n/a | n/a | n/a | 3.0 |
-| 4 | n/a | n/a | n/a | 4.0 |
-
-Reads are not replicated for billing (a read serves one runner, not
-all regions).
-
-## Constants
-
-These are the rate-card constants the formula references.
-
-| Tier | `BASE_FEE` ($/mo) | `INCLUDED_STORAGE_GB` | `INCLUDED_READS_GB` | `STORAGE_RATE` ($/GB/mo) | `READ_RATE` ($/GB) | `BYOK_FEE` ($/mo) |
+| `R` Regionen | Free | Solo | Starter | Pro | Max | Enterprise |
 |---|---|---|---|---|---|---|
-| Free | 0 | 5 | 50 | hard-capped | hard-capped | n/a |
-| Starter | 29 | 50 | 500 | 0.20 | 0.04 | n/a |
-| Team | 199 | 500 | 5,120 | 0.15 | 0.03 | 99 |
-| Enterprise | quote | quote | quote | quote | quote | included |
+| 1 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 | 1.0 |
+| 2 | n/a | n/a | n/a | 2.0 | 2.0 | 2.0 |
+| 3 | n/a | n/a | n/a | n/a | n/a | 3.0 |
+| 4 | n/a | n/a | n/a | n/a | n/a | 4.0 |
 
-"hard-capped" means Free returns `429` past the included quota until
-the next calendar month resets. Free does not generate an invoice.
+Lesevorgänge werden für die Abrechnung nicht repliziert (ein Lesevorgang
+bedient einen Runner, nicht alle Regionen).
 
-## Tier indicator
+## Konstanten
 
-The calculator picks the indicated tier as the cheapest tier that
-covers the customer's inputs without overage, falling back to overage
-on the next-larger tier if needed:
+Dies sind die Preislisten-Konstanten, auf die sich die Formel bezieht. Jede
+kostenpflichtige Stufe hat in v0.1 eine **harte Obergrenze** (kein gemessener
+Mehrverbrauch); die `BYOK_FEE` gilt nur bei Max.
+
+| Stufe | `BASE_FEE` ($/Mon.) | `INCLUDED_STORAGE_GB` | `INCLUDED_READS_GB` | Mehrverbrauch | `BYOK_FEE` ($/Mon.) |
+|---|---|---|---|---|---|
+| Free | 0 | 10 | 50 | harte Obergrenze | n/a |
+| Solo | 15 | 50 | 500 | harte Obergrenze | n/a |
+| Starter | 35 | 150 | 1,536 | harte Obergrenze | n/a |
+| Pro | 50 | 500 | 5,120 | harte Obergrenze | n/a |
+| Max | 149 | 2,048 | 20,480 | harte Obergrenze | 99 |
+| Enterprise | Angebot | Angebot | Angebot | verhandelt | enthalten |
+
+„harte Obergrenze“ bedeutet, dass eine Stufe jenseits des enthaltenen
+Kontingents ein `429` zurückgibt, bis der nächste Kalendermonat zurücksetzt
+oder bis der Mandant ein Upgrade durchführt. Free erzeugt keine Rechnung.
+
+## Stufenindikator
+
+Der Rechner wählt die angezeigte Stufe als die **kleinste** Stufe, deren
+hart begrenzte Kontingente die Eingaben des Kunden abdecken (er klettert die
+Leiter hinauf, bis die Nutzung passt):
 
 ```
 indicated_tier =
-  Free        if S_w ≤ 5  AND S_r × 1024 ≤ 50  AND T = 1 AND byok = "none" AND R ≤ 1
-  Starter     if S_w ≤ 50 AND S_r × 1024 ≤ 500 AND T ≤ 5 AND byok = "none" AND R ≤ 1
-  Team        if S_w ≤ 500 AND S_r ≤ 5         AND T ≤ 10                  AND R ≤ 2
+  Free        if S_w ≤ 10   AND S_r × 1024 ≤ 50     AND T = 1 AND byok = "none" AND R ≤ 1
+  Solo        if S_w ≤ 50   AND S_r × 1024 ≤ 500    AND byok = "none" AND R ≤ 1
+  Starter     if S_w ≤ 150  AND S_r × 1024 ≤ 1536   AND byok = "none" AND R ≤ 1
+  Pro         if S_w ≤ 500  AND S_r × 1024 ≤ 5120   AND byok = "none" AND R ≤ 2
+  Max         if S_w ≤ 2048 AND S_r × 1024 ≤ 20480  AND R ≤ 2
   Enterprise  otherwise
 ```
 
-If the customer overshoots a tier on one dimension but is otherwise
-fine, the calculator picks that tier and reports the overage; if they
-overshoot on three or more dimensions or trigger BYOK / 3+ regions /
-`T > 10`, the calculator routes to the Enterprise inquiry form.
+Wenn der Kunde in einer beliebigen Dimension sogar Max überschreitet oder BYOK
+ohne Max / 3+ Regionen / einen benutzerdefinierten DPA auslöst, leitet der
+Rechner an das Enterprise-Anfrageformular weiter.
 
-## Per-tier price table (worked)
+## Preistabelle je Stufe (durchgerechnet)
 
-For a representative input — `T = 1`, `S_w = 100 GB/mo`, `S_r = 2 TB/mo`,
-`byok = none`, `h = 0.8`, `R = 1` — the per-tier price is:
+Für eine repräsentative Eingabe — `T = 1`, `S_w = 100 GB/mo`, `S_r = 2 TB/mo`
+(2,048 GB), `byok = none`, `h = 0.8`, `R = 1` — passt jede Stufe entweder
+(pauschale Grundgebühr) oder erreicht die harte Obergrenze (über dem
+Kontingent):
 
-| Tier | Base | Storage overage | Read overage | BYOK | Total | Notes |
-|---|---|---|---|---|---|---|
-| Free | $0 | hard-cap (over) | hard-cap (over) | n/a | n/a | exceeds Free cap |
-| Starter | $29 | (100−50) × $0.20 = $10 | (2048−500) × $0.04 = $61.92 | n/a | **$100.92** | indicated tier candidate |
-| Team | $199 | $0 (100 ≤ 500) | $0 (2048 ≤ 5120) | $0 | **$199.00** | no overage |
-| Enterprise | quote | quote | quote | included | **quote** | overkill at this scale |
+| Stufe | Grundgebühr | Passt? | Gesamt | Anmerkungen |
+|---|---|---|---|---|
+| Free | $0 | nein | n/a | überschreitet die Free-Obergrenze (10 GB / 50 GB) |
+| Solo | $15 | nein | n/a | überschreitet die Solo-Obergrenze (50 GB / 500 GB) |
+| Starter | $35 | nein | n/a | Lesevorgänge 2,048 GB > Obergrenze 1,536 GB |
+| Pro ⭐ | $50 | ja | **$50.00** | 100 ≤ 500, 2,048 ≤ 5,120 — angezeigte Stufe |
+| Max | $149 | ja | $149.00 | passt, aber für diesen Maßstab überdimensioniert |
+| Enterprise | Angebot | — | Angebot | für diesen Maßstab übertrieben |
 
-The calculator surfaces all four lines so the customer sees the
-break-even tier (Team is cheaper than Starter-with-overage above ~120 GB
-storage or ~3 TB reads, depending on the mix).
+Der Rechner zeigt alle sechs Zeilen an, damit der Kunde genau sieht, auf
+welche Stufe seine Nutzung fällt — hier ist **Pro** die kleinste Stufe, die
+passt, und der empfohlene Anker.
 
-## Three worked scale points
+## Drei durchgerechnete Skalierungspunkte
 
-### Small: solo dev on Bazel
+### Klein: Einzelentwickler mit Bazel
 
 `T = 1`, `S_w = 4 GB/mo`, `S_r = 40 GB/mo`, `byok = none`, `h = 0.75`, `R = 1`.
 
-| Tier | Total | Notes |
+| Stufe | Gesamt | Anmerkungen |
 |---|---|---|
-| Free | **$0** | fits within Free cap |
-| Starter | $29 | over-served |
-| Team | $199 | over-served |
-| Enterprise | quote | wildly over-served |
+| Free | **$0** | passt in die Free-Obergrenze (10 GB / 50 GB) |
+| Solo | $15 | überdimensioniert |
+| Pro | $50 | völlig überdimensioniert |
+| Enterprise | Angebot | völlig überdimensioniert |
 
-Indicated tier: **Free**.
+Angezeigte Stufe: **Free**.
 
-### Medium: 200-engineer Bazel monorepo, single region
+### Mittel: kleines Produktionsteam, eine Region
 
-`T = 1`, `S_w = 180 GB/mo`, `S_r = 4 TB/mo`, `byok = none`, `h = 0.82`, `R = 1`.
+`T = 1`, `S_w = 180 GB/mo`, `S_r = 4 TB/mo` (4,096 GB), `byok = none`, `h = 0.82`, `R = 1`.
 
-| Tier | Total | Notes |
+| Stufe | Gesamt | Anmerkungen |
 |---|---|---|
-| Free | n/a | exceeds cap |
-| Starter | $29 + (130 × $0.20) + ((4096 − 500) × $0.04) = $29 + $26 + $143.84 = **$198.84** | overage on both axes |
-| Team | $199 + $0 + $0 = **$199.00** | included quotas cover it |
-| Enterprise | quote | overkill |
+| Free | n/a | überschreitet die Obergrenze |
+| Solo | n/a | überschreitet die Obergrenze (50 GB / 500 GB) |
+| Starter | n/a | Lesevorgänge 4,096 GB > Obergrenze 1,536 GB |
+| Pro ⭐ | **$50.00** | 180 ≤ 500, 4,096 ≤ 5,120 — enthaltene Kontingente decken es ab |
+| Max | $149.00 | passt, aber überdimensioniert |
+| Enterprise | Angebot | übertrieben |
 
-Indicated tier: **Team** (effectively tied with Starter at this size,
-which is by design — Team is priced as the natural graduation
-threshold).
+Angezeigte Stufe: **Pro** — die kleinste Stufe, deren hart begrenzte
+Kontingente die Nutzung abdecken, und der empfohlene Anker mit dem besten
+Preis-Leistungs-Verhältnis.
 
-### Large: multi-region enterprise, BYOK, 5 tenants
+### Groß: Multiregion-Enterprise, BYOK, 5 Mandanten
 
 `T = 5`, `S_w = 800 GB/mo`, `S_r = 12 TB/mo`, `byok = aws`, `h = 0.88`, `R = 3`.
 
-| Tier | Total | Notes |
+| Stufe | Gesamt | Anmerkungen |
 |---|---|---|
-| Free | n/a | exceeds cap |
-| Starter | n/a | exceeds tenant + region cap |
-| Team | n/a | exceeds region cap (`R = 3 > 2`) |
-| Enterprise | **quote** | required (3 regions, BYOK, multi-tenant) |
+| Free | n/a | überschreitet die Obergrenze |
+| Solo / Starter | n/a | überschreiten die Speicher- + Region-Obergrenze |
+| Pro | n/a | überschreitet die Region-Obergrenze (`R = 3 > 2`) |
+| Max | n/a | überschreitet die Region-Obergrenze (`R = 3 > 2`) + BYOK ist Add-on, nicht Multiregion |
+| Enterprise | **Angebot** | erforderlich (3 Regionen, BYOK, mandantenübergreifend) |
 
-Indicated tier: **Enterprise**. The calculator routes to the inquiry
-form with a pre-filled quote-request payload containing the inputs
-above. Per WI-S19-005, Enterprise customers cannot self-serve through
-Stripe Checkout; they must complete the inquiry form and receive a
-contractual rate from Sales.
+Angezeigte Stufe: **Enterprise**. Der Rechner leitet an das Anfrageformular
+weiter, mit einer vorausgefüllten Angebotsanfrage-Nutzlast, die die obigen
+Eingaben enthält. Gemäß WI-S19-005 können Enterprise-Kunden den Self-Service
+über Stripe Checkout nicht nutzen; sie müssen das Anfrageformular ausfüllen und
+einen vertraglichen Tarif vom Vertrieb erhalten.
 
-## Inner-loop savings (informational)
+## Inner-Loop-Einsparungen (informativ)
 
-For each set of inputs, the calculator also reports the annualized
-inner-loop cache-tax savings using the model from
-[the economics post](/blog/05-fast-cache-hit-economics/):
+Für jeden Satz von Eingaben weist der Rechner auch die annualisierten
+Inner-Loop-Cache-Steuer-Einsparungen aus, unter Verwendung des Modells aus
+[dem Beitrag zur Wirtschaftlichkeit](/blog/05-fast-cache-hit-economics/):
 
 ```
 annual_cache_tax_saved
@@ -222,34 +242,34 @@ annual_cache_tax_saved
   / 3600
 ```
 
-This is *not* part of the bill (it is the customer's avoided cost on
-their existing cache, not a CoreLink line item) but is the
-break-even-relevant number when comparing CoreLink to a self-hosted
-baseline. The [comparison page](./comparison) walks this arithmetic
-explicitly at three scale points.
+Dies ist *nicht* Teil der Rechnung (es sind die vermiedenen Kosten des Kunden
+bei seinem bestehenden Cache, kein CoreLink-Posten), aber es ist die für den
+Break-even relevante Zahl beim Vergleich von CoreLink mit einer selbst
+gehosteten Basislinie. Die [Vergleichsseite](./comparison) führt diese
+Arithmetik an drei Skalierungspunkten ausdrücklich durch.
 
-## What the calculator deliberately does not do
+## Was der Rechner bewusst nicht tut
 
-- It does not assume a specific hit-rate improvement from migrating
-  to CoreLink. We do not promise a specific hit-rate delta because it
-  depends on the customer's build graph. The customer enters their
-  current observed hit rate; CoreLink's hit-rate budget is
-  policy-pinned but the absolute number is the customer's.
-- It does not assume a specific developer-hour-saved-per-build
-  number. The economics model exposes that input; the customer enters
-  their loaded-cost-per-hour. We don't pick it for them.
-- It does not give Enterprise an estimated price. Enterprise is
-  always quote-routed because the dimensions that push a customer to
-  Enterprise (BYOK, multi-region, multi-tenant, custom DPA) are not
-  uniform across customers and the rate card varies. The calculator
-  emits a pre-filled quote-request, not a number.
+- Er nimmt keine bestimmte Verbesserung der Trefferquote durch die Migration zu
+  CoreLink an. Wir versprechen kein bestimmtes Trefferquoten-Delta, weil es vom
+  Build-Graphen des Kunden abhängt. Der Kunde gibt seine aktuell beobachtete
+  Trefferquote ein; das Trefferquoten-Budget von CoreLink ist durch Richtlinien
+  fixiert, aber die absolute Zahl gehört dem Kunden.
+- Er nimmt keine bestimmte Zahl an eingesparten Entwicklerstunden pro Build an.
+  Das Wirtschaftlichkeitsmodell macht diese Eingabe zugänglich; der Kunde gibt
+  seine Vollkosten pro Stunde ein. Wir wählen sie nicht für ihn aus.
+- Er gibt Enterprise keinen geschätzten Preis. Enterprise wird immer an ein
+  Angebot geleitet, weil die Dimensionen, die einen Kunden zu Enterprise
+  drängen (BYOK, Multiregion, mandantenübergreifend, benutzerdefinierter DPA),
+  nicht über alle Kunden hinweg einheitlich sind und die Preisliste variiert.
+  Der Rechner gibt eine vorausgefüllte Angebotsanfrage aus, keine Zahl.
 
-## Copy-pasteable formula (for spreadsheets)
+## Zum Kopieren und Einfügen geeignete Formel (für Tabellenkalkulationen)
 
-This is the same arithmetic in spreadsheet-friendly form. Paste each
-line into a cell of your favorite spreadsheet (Excel, Google Sheets,
-Numbers, LibreOffice) and replace the named-range references with
-cell coordinates.
+Dies ist dieselbe Arithmetik in einer für Tabellenkalkulationen geeigneten
+Form. Fügen Sie jede Zeile in eine Zelle Ihrer bevorzugten
+Tabellenkalkulation ein (Excel, Google Sheets, Numbers, LibreOffice) und
+ersetzen Sie die benannten Bereichsverweise durch Zellkoordinaten.
 
 ```
 # Inputs
@@ -260,42 +280,36 @@ byok             = "none"      # "none" | "aws" | "gcp" | "azure"
 h                = 0.82
 R                = 1
 
-# Tier rate-card (Starter / Team — Free is $0, Enterprise is quote)
-base_starter     = 29
-incl_storage_starter = 50
-incl_reads_starter   = 500
-rate_storage_starter = 0.20
-rate_reads_starter   = 0.04
-
-base_team        = 199
-incl_storage_team    = 500
-incl_reads_team      = 5120
-rate_storage_team    = 0.15
-rate_reads_team      = 0.03
-byok_fee_team        = 99
+# Tier rate-card (flat base; hard-capped quotas — Free is $0, Enterprise is quote)
+base_free        = 0     ; incl_storage_free    = 10   ; incl_reads_free    = 50
+base_solo        = 15    ; incl_storage_solo    = 50   ; incl_reads_solo    = 500
+base_starter     = 35    ; incl_storage_starter = 150  ; incl_reads_starter = 1536
+base_pro         = 50    ; incl_storage_pro     = 500  ; incl_reads_pro     = 5120
+base_max         = 149   ; incl_storage_max     = 2048 ; incl_reads_max     = 20480
+byok_fee_max     = 99    # add-on, Max only
 
 # Derived
 S_w_billable     = S_w_gb * IF(R<=1, 1, IF(R=2, 2, IF(R=3, 3, 4)))
 S_r_billable_gb  = S_r_tb * 1024
 
-# Per-tier totals
-total_starter    = base_starter * T
-                 + MAX(0, S_w_billable - incl_storage_starter * T) * rate_storage_starter
-                 + MAX(0, S_r_billable_gb - incl_reads_starter * T) * rate_reads_starter
+# Per-tier total: the flat base when usage fits the hard-capped quotas,
+# otherwise "over" (the tier 429s — pick the next-larger tier).
+total_pro =
+  IF(AND(S_w_billable <= incl_storage_pro * T, S_r_billable_gb <= incl_reads_pro * T),
+     base_pro * T, "over (hard cap)")
 
-total_team       = base_team * T
-                 + MAX(0, S_w_billable - incl_storage_team * T) * rate_storage_team
-                 + MAX(0, S_r_billable_gb - incl_reads_team * T) * rate_reads_team
-                 + IF(byok = "none", 0, byok_fee_team)
+total_max =
+  IF(AND(S_w_billable <= incl_storage_max * T, S_r_billable_gb <= incl_reads_max * T),
+     base_max * T + IF(byok = "none", 0, byok_fee_max), "over (hard cap)")
 ```
 
-The internal version of this calculator with margin analysis (vendor
-cost / sale price / gross margin per tier) lives at
-`marketing/sales/PRICING-WORKSHEET.md` and is not customer-visible.
+Die interne Version dieses Rechners mit Margenanalyse (Anbieterkosten /
+Verkaufspreis / Bruttomarge je Stufe) befindet sich unter
+`marketing/sales/PRICING-WORKSHEET.md` und ist für Kunden nicht sichtbar.
 
-## Trace
+## Rückverfolgbarkeit
 
-- WI-S19-004 §6.1 (tier taxonomy)
-- WI-S19-005 (Enterprise inquiry form)
-- WI-S20-008 §2.1.2 Post 5 (economics framing)
-- WI-S20-007 (SLO budget for latency term in inner-loop model)
+- WI-S19-004 §6.1 (Stufentaxonomie)
+- WI-S19-005 (Enterprise-Anfrageformular)
+- WI-S20-008 §2.1.2 Post 5 (wirtschaftliche Einordnung)
+- WI-S20-007 (SLO-Budget für den Latenzterm im Inner-Loop-Modell)

@@ -1,7 +1,7 @@
 ---
-title: "Pricing overview"
+title: "Preisübersicht"
 slug: "/pricing/"
-description: "CoreLink pricing tiers: Free, Starter, Team, and Enterprise. Feature matrix, included quotas, and overage pricing."
+description: "CoreLink-Preisstufen: Free, Solo, Starter, Pro, Max und Enterprise. Funktionsmatrix, enthaltene Kontingente und Mehrverbrauchspreise."
 draft: true
 cross_functional_review: TBD
 pending_signoff:
@@ -11,7 +11,7 @@ pending_signoff:
 sources:
   - "marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md"
   - "crates/corelink-tier-selection/src/tier.rs"
-last_updated: "2026-05-15"
+last_updated: "2026-06-09"
 ---
 
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
@@ -20,164 +20,179 @@ last_updated: "2026-05-15"
 >
 > Canonical EN source: `docs/explanation/pricing/index.mdx`
 
+# Preisübersicht
 
-# Pricing overview
+**Verständnisorientiert.** Diese Seite erklärt, *was* jede CoreLink-Stufe
+enthält, *warum* die Stufengrenzen dort liegen, wo sie liegen, und *wie* die
+Rechnung berechnet wird. Für eine interaktive Schätzung siehe den
+[Kostenrechner](./calculator). Für direkte Vergleiche mit selbst gehosteten
+Alternativen siehe [vs. Alternativen](./comparison).
 
-**Understanding-oriented.** This page explains *what* each CoreLink tier
-includes, *why* the tier boundaries are where they are, and *how* the
-bill is computed. For interactive estimation, see the
-[cost calculator](./calculator). For head-to-head comparisons against
-self-hosted alternatives, see [vs. alternatives](./comparison).
+> **ENTWURF — ausstehende Freigabe durch Finance + Marketing + Product.** Die
+> unten aufgeführten Listenpreise sind Zielwerte für den Starttag und bleiben
+> als Platzhalter änderbar, bis der Prüfpfad von Finance abgeschlossen ist.
+> Kunden, die Pilotprojekte vor GA durchführen, sollten die Zahlen als
+> indikativ und nicht als vertraglich betrachten.
 
-> **DRAFT — pending Finance + Marketing + Product sign-off.** List prices
-> below are launch-day targets and remain placeholder-eligible until the
-> Finance audit trail is closed. Customers running pre-GA pilots should
-> consider the numbers indicative, not contractual.
+## Die sechs Stufen
 
-## The four tiers
+CoreLink bietet sechs kundenorientierte Stufen an. Vier sind Self-Service über
+Stripe Checkout (**Solo, Starter, Pro, Max**); eine ist sofort aktivierbar
+(Free); eine läuft über ein Anfrageformular (Enterprise).
 
-CoreLink ships four customer-facing tiers. Three are self-serve via
-Stripe Checkout (Starter, Team); one is instant-activation (Free); one
-routes through an inquiry form (Enterprise).
+**Pro ist die empfohlene Stufe** — sie ist der Anker mit dem besten
+Preis-Leistungs-Verhältnis für ein Team, das Produktions-Builds ausliefert.
 
-| Tier | Monthly price | Included CAS storage | Included read traffic | BYOK | Region pin | Activation |
+| Stufe | Monatspreis | Für wen | Enthaltener CAS-Speicher | Enthaltener Lesedatenverkehr | BYOK | Region-Pin | Aktivierung |
+|---|---|---|---|---|---|---|---|
+| **Free** | $0 | Persönliche Projekte + Evaluierung | 10 GB | 50 GB / Mon. | — | geteilt | Sofort |
+| **Solo** | $15 | Der Einzelentwickler | 50 GB | 500 GB / Mon. | — | 1 Region | Stripe Checkout |
+| **Starter** | $35 | Ein kleines Team | 150 GB | 1.5 TB / Mon. | — | 1 Region | Stripe Checkout |
+| **Pro** ⭐ | $50 | Bestes Preis-Leistungs-Verhältnis — Produktionsteams | 500 GB | 5 TB / Mon. | — | bis zu 2 Regionen | Stripe Checkout |
+| **Max** | $149 | Skalierende Teams, ernsthaftes Volumen | 2 TB | 20 TB / Mon. | optionales Add-on | bis zu 2 Regionen | Stripe Checkout |
+| **Enterprise** | Kontaktieren Sie uns | Multiregion / reguliert / BYOK | Individuell | Individuell | enthalten | alle 4 Regionen | Anfrageformular |
+
+Alle Stufen laufen auf derselben Datenebene, demselben SLO-Katalog und
+demselben Audit- und Residenzmodell. Die Unterschiede sind Kontingente,
+BYOK-Einschluss, Regionenanzahl und Support-Stufe — nicht die Funktionalität.
+
+## Funktionsmatrix
+
+| Funktion | Free | Solo | Starter | Pro | Max | Enterprise |
 |---|---|---|---|---|---|---|
-| **Free** | $0 | 5 GB | 50 GB / mo | — | shared | Instant |
-| **Starter** | $29 | 50 GB | 500 GB / mo | — | 1 region | Stripe Checkout |
-| **Team** | $199 | 500 GB | 5 TB / mo | optional add-on | up to 2 regions | Stripe Checkout |
-| **Enterprise** | Custom | Custom | Custom | included | all 4 regions | Inquiry form |
+| REAPI v2 (CAS + Action Cache) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| BLAKE3-Inhaltsadressierung | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Null-Egress bei Cache-Lesevorgängen | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Audit-Kette (Merkle-Beweise) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| RBAC + Teamkollegen einladen | ✓ (3 Plätze) | ✓ (5 Plätze) | ✓ (10 Plätze) | ✓ (50 Plätze) | ✓ (100 Plätze) | unbegrenzt |
+| BYOK (kundenverwalteter KEK) | — | — | — | — | Add-on | enthalten |
+| Region-Pin (Residenz) | geteilt | 1 von 4 | 1 von 4 | bis zu 2 | bis zu 2 | alle 4 |
+| Multiregion-Failover | — | — | — | ✓ | ✓ | ✓ |
+| DPA (Auftragsverarbeitungszusatz) | Clickwrap | Clickwrap | Clickwrap | Clickwrap | Clickwrap | verhandelt |
+| Support | Community | E-Mail (nach bestem Bemühen) | E-Mail (2 Werktage) | E-Mail (1 Werktag) | vorrangige E-Mail (1 Werktag) | dediziert (1 Std.) |
+| Verfügbarkeits-SLO | nach bestem Bemühen | 99.5% | 99.5% | 99.9% | 99.9% | 99.95% |
+| Aufbewahrung des Audit-Protokolls | 7 Tage | 30 Tage | 30 Tage | 90 Tage | 90 Tage | 1 Jahr+ |
+| Compliance-Berichte (SOC 2, ISO) | — | — | — | Zusammenfassung | Zusammenfassung | vollständig + individuell |
 
-All tiers run on the same data plane, the same SLO catalog, and the
-same audit and residency model. The differences are quotas, BYOK
-inclusion, region count, and support tier — not capability.
+## Wie die Rechnung berechnet wird
 
-## Feature matrix
-
-| Capability | Free | Starter | Team | Enterprise |
-|---|---|---|---|---|
-| REAPI v2 (CAS + Action Cache) | ✓ | ✓ | ✓ | ✓ |
-| BLAKE3 content addressing | ✓ | ✓ | ✓ | ✓ |
-| Zero-egress on cache reads | ✓ | ✓ | ✓ | ✓ |
-| Audit chain (Merkle proofs) | ✓ | ✓ | ✓ | ✓ |
-| RBAC + invite teammates | ✓ (3 seats) | ✓ (10 seats) | ✓ (50 seats) | unlimited |
-| BYOK (customer-managed KEK) | — | — | add-on | included |
-| Region pin (residency) | shared | 1 of 4 | up to 2 | all 4 |
-| Multi-region failover | — | — | ✓ | ✓ |
-| DPA (Data Processing Addendum) | clickwrap | clickwrap | clickwrap | negotiated |
-| Support | community | email (2 biz day) | email (1 biz day) | dedicated (1 hr) |
-| Uptime SLO | best-effort | 99.5% | 99.9% | 99.95% |
-| Audit log retention | 7 days | 30 days | 90 days | 1 year+ |
-| Compliance reports (SOC 2, ISO) | — | — | summary | full + custom |
-
-## How the bill is computed
-
-The monthly invoice for paid tiers is:
+In v0.1 hat jede Stufe eine **harte Obergrenze (Hard Cap)** bei ihren
+enthaltenen Kontingenten — es gibt keine stille Mehrverbrauchsabrechnung. Die
+Monatsrechnung für eine kostenpflichtige Stufe ist einfach ihre pauschale
+Grundgebühr:
 
 ```
-invoice = base_fee
-        + max(0, observed_storage_gb - included_storage_gb) × overage_storage_per_gb
-        + max(0, observed_reads_gb   - included_reads_gb)   × overage_reads_per_gb
-        + optional_add_ons
+invoice = base_fee + optional_add_ons
 ```
 
-Overage unit prices:
+Ein Mandant, der 100 % seines Speicher- oder Lesekontingents erreicht, erhält
+ein `429 Too Many Requests` (mit einem Upgrade-CTA), bis der nächste
+Kalendermonat zurücksetzt oder bis der Mandanten-Administrator ein Upgrade der
+Stufe durchführt. Die Obergrenze ist eine Funktion, keine Strafe — sie hält den
+Preis vorhersehbar und Free kostenlos. Der gemessene Mehrverbrauch ist auf v0.2
+verschoben.
 
-| Tier | Storage overage ($/GB/mo) | Read overage ($/GB) |
+| Stufe | Monatliche Grundgebühr | Mehrverbrauch |
 |---|---|---|
-| Starter | $0.20 | $0.04 |
-| Team | $0.15 | $0.03 |
-| Enterprise | negotiated | negotiated |
+| Free | $0 | harte Obergrenze — Upgrade zum Fortfahren |
+| Solo | $15 | harte Obergrenze — Upgrade zum Fortfahren |
+| Starter | $35 | harte Obergrenze — Upgrade zum Fortfahren |
+| Pro | $50 | harte Obergrenze — Upgrade zum Fortfahren |
+| Max | $149 | harte Obergrenze — Upgrade zum Fortfahren |
+| Enterprise | Kontaktieren Sie uns | verhandelt |
 
-Free tier has no overage line: it is hard-capped at the included quotas
-and returns `429 Too Many Requests` past the cap until the next
-calendar month. The cap is a feature, not a punishment — it is what
-keeps Free free.
+Das BYOK-Add-on für Max kostet pauschal $99/Monat und bietet eine
+mandantenbezogene DEK-Umschlüsselung (Wrapping) durch einen kundengesteuerten
+KEK in AWS KMS, GCP KMS oder Azure Key Vault.
 
-BYOK add-on for Team is a flat $99/month and provides per-tenant DEK
-wrapping by a customer-controlled KEK in AWS KMS, GCP KMS, or Azure
-Key Vault.
+## Warum es keinen Egress-Posten gibt
 
-## Why no per-egress line item
+Cloud-Egress ist bei den meisten Anbietern von verwaltetem Cache der
+dominierende Posten auf einer Rechnung mit intensivem CI. CoreLink speichert
+Cache-Inhalte auf Cloudflare R2, das für Egress bei Lesevorgängen ins
+öffentliche Internet und in das Netzwerk von Cloudflare nichts berechnet.
+CoreLink gibt diese Eigenschaft an die Kunden weiter: kostenpflichtige Stufen
+berechnen Speicher und *Lese*-Operationen pro GB (eine Amortisierung pro
+Operation), nicht *Bytes* pro GB, die den Cache verlassen.
 
-Cloud egress is, on most managed cache vendors, the dominant line item
-on a heavy-CI bill. CoreLink stores cache content on Cloudflare R2,
-which charges zero for egress on reads to the public internet and to
-Cloudflare's network. CoreLink passes that property through to
-customers: paid tiers price storage and per-GB *read* operations (a
-per-operation amortization), not per-GB *bytes* leaving the cache.
+Das ist der strukturelle Grund, warum die CoreLink-Rechnung bei hohem
+Lesevolumen typischerweise ein Vielfaches kleiner ist als das S3-gestützte,
+selbst gehostete Äquivalent bei gleicher Trefferquote und gleichem Working-Set.
+Die [Vergleichsseite](./comparison) führt die Arithmetik an drei
+Skalierungspunkten durch.
 
-This is structurally why the CoreLink bill at heavy read volume is
-typically a multiple smaller than the S3-backed self-hosted equivalent
-at the same hit-rate and working-set. The [comparison page](./comparison)
-walks the arithmetic at three scale points.
+## Warum es auf den kostenpflichtigen Stufen keinen Posten pro Platz gibt
 
-## Why no per-seat line item on Starter / Team
+CoreLink berechnet keine Gebühr pro Entwicklerplatz. Die Cache-Last korreliert
+mit dem Build-Volumen und der CI-Parallelität, nicht mit der Anzahl der Plätze,
+und eine Preisgestaltung pro Platz schafft einen perversen Anreiz, den nächsten
+Ingenieur nicht in den Cache aufzunehmen. Die Plätze sind pro Stufe (oben)
+gedeckelt, als Missbrauchsschutz-Maßnahme; sie sind keine Abrechnungsdimension.
 
-CoreLink does not charge per developer seat. Cache load correlates with
-build volume and CI parallelism, not with seat count, and per-seat
-pricing creates a perverse incentive against onboarding the next
-engineer to the cache. Seats are capped per tier (above) as an
-anti-abuse measure; they are not a billing dimension.
+Enterprise entfernt die Obergrenze vollständig.
 
-Enterprise removes the cap entirely.
+## Warum es keinen Compute-/CPU-Posten gibt
 
-## Why no compute / CPU line item
+CoreLink ist ein Cache, kein Build-Runner. Kunden betreiben ihre eigenen Runner
+(GitHub Actions, BuildJet, selbst gehostet usw.); CoreLink stellt den Cache
+bereit. Daher gibt es keinen Compute-Posten pro Minute auf der
+CoreLink-Rechnung — der Kunde zahlt bereits seinem CI-Anbieter für die
+Rechenleistung.
 
-CoreLink is a cache, not a build runner. Customers run their own
-runners (GitHub Actions, BuildJet, self-hosted, etc.); CoreLink serves
-the cache. There is therefore no per-minute compute line item on the
-CoreLink invoice — the customer is already paying their CI vendor for
-compute.
+## Wozu die Free-Stufe dient
 
-## What the Free tier is for
+Die Free-Stufe ist für zwei Fälle konzipiert:
 
-The Free tier is designed for two cases:
+1. **Einzelentwickler**, die persönliche Monorepos betreiben. 10 GB und
+   50 GB/Mon. an Lesevorgängen reichen für einen typischen persönlichen
+   Bazel-Build mit täglichen inkrementellen grünen Builds. (Ein
+   Einzelentwickler, der darüber hinauswächst, steigt in die **Solo**-Stufe zu
+   $15/Mon. auf.)
+2. **Evaluierung durch größere Teams**, die CoreLink neben ihrem bestehenden
+   Cache in eine einzelne CI-Pipeline einbinden möchten, für einen
+   zweiwöchigen Schattenvergleich.
 
-1. **Solo developers** running personal monorepos. 5 GB and 50 GB/mo of
-   reads is enough for a typical personal Bazel build with daily
-   incremental green builds.
-2. **Evaluation by larger teams** who want to wire CoreLink into a
-   single CI pipeline alongside their existing cache for a two-week
-   shadow comparison.
+Free ist keine ablaufende Testversion. Es ist eine dauerhaft kostenlose Stufe
+mit harten Kontingenten. Die meisten Teams, deren CI-Volumen einen verwalteten
+Cache rechtfertigt, steigen innerhalb einer Woche der ernsthaften Nutzung auf
+Solo, Starter oder Pro auf.
 
-Free is not a trial that expires. It is a permanent free tier with
-hard quotas. Most teams whose CI volume justifies a managed cache
-graduate to Starter or Team within a week of seriously using it.
+## Was Enterprise Ihnen bietet, das Max nicht bietet
 
-## What Enterprise gives you that Team does not
+- **BYOK-Einschluss** (Max kann es als Add-on kaufen; Enterprise hat es).
+- **Alle vier Regionen** gleichzeitig, nicht nur zwei.
+- **Verhandelter DPA** statt Clickwrap, einschließlich individueller
+  Datenverarbeitungssprache für regulierte Branchen (Finanzdienstleistungen,
+  Gesundheitswesen, verteidigungsnah).
+- **Individuelle Aufbewahrung** für Audit-Protokolle und Compliance-Berichte —
+  eine mehrjährige Aufbewahrung ist zu verhandelten Bedingungen verfügbar.
+- **Dedizierter Support** mit einem SLO von 1 Stunde während der
+  Geschäftszeiten, mit der Zuweisung eines benannten Technical Account Managers
+  oberhalb einer Nutzungsschwelle.
+- **Individuelle Kontingente** für Speicher, Lesevorgänge und Plätze.
 
-- **BYOK inclusion** (Team can buy it as an add-on; Enterprise has it).
-- **All four regions** simultaneously, not just two.
-- **Negotiated DPA** rather than clickwrap, including custom data-handling
-  language for regulated industries (financial services, healthcare,
-  defense-adjacent).
-- **Custom retention** for audit logs and compliance reports — multi-year
-  retention is available on negotiated terms.
-- **Dedicated support** with a 1-hour SLO during business hours, with
-  named technical account manager assignments above a usage threshold.
-- **Custom quotas** for storage, reads, and seats.
+Enterprise ist die richtige Wahl, wenn mindestens eine der folgenden Bedingungen
+zutrifft: Die Residenzanforderungen übersteigen zwei Regionen; die
+Sicherheitsprüfung erfordert BYOK; die Prüfer des Kunden verlangen eine
+mehrjährige Aufbewahrung; die CI-Flotte des Kunden übersteigt in Spitzenzeiten
+die Kontingente von Max.
 
-Enterprise is the right fit when at least one of the following is
-true: residency requirements exceed two regions; security review
-requires BYOK; the customer's auditors require multi-year retention;
-the customer's CI fleet exceeds Team's quotas during peak.
+## Rückverfolgbarkeit
 
-## Trace
-
-- spec contract S-19 §6.1 (tier taxonomy)
-- spec contract S-19 §5.3 R-S19-7 (tier canonical set)
-- WI-S19-004 §6.1 (5-tier baseline; see caveat below)
-- WI-S19-005 (Enterprise inquiry form routing)
-- WI-S20-008 §2.1.2 Post 5 (economics framing)
+- Spec-Vertrag S-19 §6.1 (Stufentaxonomie)
+- Spec-Vertrag S-19 §5.3 R-S19-7 (kanonischer Stufensatz)
+- WI-S19-004 §6.1 (Stufen-Basislinie)
+- WI-S19-005 (Routing des Enterprise-Anfrageformulars)
+- WI-S20-008 §2.1.2 Post 5 (wirtschaftliche Einordnung)
 - REMOTE-CACHE-PRODUCT-PROFILE
-- SLO-LAT-CAS-GET (latency budget)
+- SLO-LAT-CAS-GET (Latenzbudget)
 
-### Caveat: 4 customer-facing tiers vs. 5 internal tiers
+### Der kanonische 6-Stufen-Satz
 
-The internal billing system models five tiers — Free, Starter, Team,
-Pro, Enterprise — to support an interim Pro SKU that Finance may or
-may not enable for GA-day depending on the customer mix at the time.
-The pages here describe the four customer-facing tiers that will be
-listed on the public marketing site at GA-day. If the Pro SKU is
-enabled before GA, this page and the calculator will be updated to
-include it before the public toggle flips.
+Die öffentliche Website und das interne Abrechnungsmodell
+(`crates/corelink-tier-selection/src/tier.rs`) teilen sich eine eingefrorene
+Taxonomie: **Free, Solo, Starter, Pro, Max, Enterprise**. Die vier
+kostenpflichtigen Stufen (Solo, Starter, Pro, Max) sind Self-Service über
+Stripe Checkout; Free ist sofort aktivierbar; Enterprise läuft über das
+Anfrageformular. Es gibt keinen zurückgehaltenen internen SKU mehr — die
+öffentliche Oberfläche und der Code sind dieselben sechs Stufen.

@@ -1,21 +1,22 @@
 ---
 id: 06-verify-cache-hit
-title: Verify cache hit ratio
-sidebar_label: 6. Verify cache hit
-description: Confirm the remote cache is actually serving hits — and benchmark the round-trip.
+title: Verificar a taxa de acerto do cache
+sidebar_label: 6. Verificar acerto de cache
+description: Confirme que o cache remoto está realmente servindo acertos — e faça o benchmark do ida-e-volta.
 ---
 
 <!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
 > MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
 >
-> Canonical EN source: `tutorial/06-verify-cache-hit.mdx`
+> Canonical EN source: `docs/tutorial/06-verify-cache-hit.mdx`
 
-# Verify cache hit ratio
+# Verificar a taxa de acerto do cache
 
-The tutorial is complete only when you can prove the cache is working. This page collects three independent checks.
+O tutorial só está completo quando você consegue provar que o cache está
+funcionando. Esta página reúne três verificações independentes.
 
-## A. Bazel BES / Buck2 logs
+## A. Logs de Bazel BES / Buck2
 
 Bazel:
 
@@ -30,11 +31,13 @@ Buck2:
 buck2 build //:hello --show-output 2>&1 | grep -iE "cache hits"
 ```
 
-A 100% green build that prints **0 processes** is the strongest single signal — Bazel/Buck2 short-circuited every action through the cache.
+Uma build 100% verde que imprime **0 processes** é o sinal isolado mais forte — o
+Bazel/Buck2 curto-circuitou cada ação através do cache.
 
-## B. CLI microbenchmark
+## B. Microbenchmark de CLI
 
-Run the built-in `corelink bench` (writes a deterministic 16 KiB blob 50× then reads it 50×):
+Execute o `corelink bench` embutido (grava um blob determinístico de 16 KiB 50× e
+depois o lê 50×):
 
 ```bash
 corelink bench --put 50 --get 50
@@ -42,24 +45,29 @@ corelink bench --put 50 --get 50
 # get p50=2.1ms  p95= 4.8ms  err=0/50 hit_ratio=100%
 ```
 
-`hit_ratio=100%` on the read pass confirms the second-and-later requests are served from the cache.
+`hit_ratio=100%` na passagem de leitura confirma que as requisições da segunda em
+diante são atendidas pelo cache.
 
-## C. Admin UI dashboard
+## C. Painel da UI de administração
 
-1. Open `https://app.corelink.humangr.com/orgs/<your-org>/observability`.
-2. Pick **Cache hit ratio (5m, by tenant)**.
-3. Trigger a fresh build (`bazel clean && bazel build //...`).
-4. The series should jump to ~100% after the first warm pass.
+1. Abra `https://corelink-app.humangr.com/orgs/<your-org>/observability`.
+2. Selecione **Cache hit ratio (5m, by tenant)**.
+3. Dispare uma nova build (`bazel clean && bazel build //...`).
+4. A série deve saltar para ~100% após a primeira passagem quente.
 
-The hit ratio Grafana panel is documented in `dashboards/cache_hit_ratio.json`; alert thresholds live in `infra/alerts/cache_hit_ratio.yaml`.
+O painel Grafana de taxa de acerto está documentado em
+`dashboards/cache_hit_ratio.json`; os limiares de alerta ficam em
+`infra/alerts/cache_hit_ratio.yaml`.
 
-## Troubleshooting
+## Solução de problemas
 
-| Symptom | Likely cause | Fix |
+| Sintoma | Causa provável | Correção |
 | --- | --- | --- |
-| `hit_ratio=0%` on second build | local disk cache served the request, never touched remote | `bazel clean` and set `build --noremote_accept_cached=false` to force remote read |
-| `UNAUTHENTICATED` errors | PAT expired or wrong env | Re-run `corelink doctor --check-auth`, regenerate PAT |
-| `COR_CAS_DIGEST_MISMATCH` | bytes corrupted in transit | `client_verify` rejected the blob — file an issue, do not disable verify |
-| Slow `p95 > 50ms` | far from the nearest edge | Pin the closer region in `.bazelrc`: `build --remote_cache=https://<region>.<tenant>.corelink.humangr.com/v1/cache` |
+| `hit_ratio=0%` na segunda build | o cache de disco local atendeu a requisição, nunca tocou o remoto | `bazel clean` e defina `build --noremote_accept_cached=false` para forçar a leitura remota |
+| Erros `UNAUTHENTICATED` | PAT expirado ou ambiente errado | Execute novamente `corelink doctor --check-auth`, regenere o PAT |
+| `COR_CAS_DIGEST_MISMATCH` | bytes corrompidos em trânsito | `client_verify` rejeitou o blob — abra uma issue, não desative a verificação |
+| Lento `p95 > 50ms` | distante da edge mais próxima | Fixe a região mais próxima no `.bazelrc`: `build --remote_cache=https://<region>.<tenant>.corelink.humangr.com/v1/cache` |
 
-You finished the getting-started track. Continue to the [REAPI reference](../reference/reapi/index.mdx) for the full RPC surface.
+Você concluiu a trilha de introdução. Continue para a
+[referência da REAPI](../reference/reapi/index) para conhecer toda a superfície de
+RPC.

@@ -1,0 +1,119 @@
+---
+title: "Eine Sicherheitslücke melden"
+slug: "/security/report-security"
+description: "Koordinierte Schwachstellen-Offenlegung bei CoreLink: wohin senden, PGP-Schlüssel, SLA, Safe Harbor, Umfang und (nach GA) Bug-Bounty-Programm."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+sources:
+  - "docs/security/report-security.md"
+  - "specs/_security/vulnerability-disclosure-policy.md"
+  - "SECURITY.md"
+last_updated: "2026-05-16"
+---
+
+<!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
+
+> MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
+>
+> Canonical EN source: `docs/explanation/security/report-security.mdx`
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="security" />
+
+# Eine Sicherheitslücke melden
+
+> **Verbindliche Quelle:** [`docs/security/report-security.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/docs/security/report-security.md).
+> Dieses MDX ist ein schlankes Spiegelbild, damit die React-Landingpage des Trust Center (`/trust`)
+> und die URL `/.well-known/security.txt` per Deep-Link auf eine kanonische
+> öffentliche Route verweisen können. Liefergegenstand von Wave-29 Stream-8.
+
+## TL;DR
+
+| Element | Wert |
+|---|---|
+| **Wohin senden** | `security@humangr.com` |
+| **Fingerabdruck des PGP-Schlüssels** | `5C2C 8E2A 6B17 9F4D 1A0B 3E9C 6F8B 2D7E 4A91 0C15` (veröffentlicht unter [`/.well-known/security.txt`](/.well-known/security.txt)) |
+| **Antwort-SLA — Bestätigung** | 1 Werktag |
+| **Antwort-SLA — Triage-Entscheidung** | 5 Werktage |
+| **Fenster der koordinierten Offenlegung** | 90 Tage ab Annahme der Triage |
+| **Umfang des Safe Harbor** | Alle `*.corelink.humangr.com`-Domains + Open-Source-CoreLink-Crates und -CLIs |
+| **Bug-Bounty-Programm** | Vor GA noch nicht aktiv; monetäre Belohnungen werden bei GA +30 Tage eingeführt |
+
+## Wie man meldet
+
+1. Senden Sie eine E-Mail an `security@humangr.com` mit dem Betreff-Präfix
+   `[VULN-REPORT]`. Verschlüsseln Sie den Text mit unserem PGP-Schlüssel
+   (Fingerabdruck oben).
+2. Fügen Sie genügend Details zur Reproduktion bei: betroffener Endpunkt oder
+   betroffene Komponente, Anfrage-Payload, erwartetes vs. beobachtetes
+   Verhalten. Proof-of-Concept-Code ist willkommen, aber nicht erforderlich.
+3. Teilen Sie uns Ihre bevorzugte Zuordnung mit (Handle für die Hall of Thanks
+   bei GA +30 Tage oder „anonym“).
+4. Teilen Sie uns Ihre geografische Lage mit, damit wir an die
+   Bereitschaftsrotation weiterleiten können, die Ihre Zeitzone abdeckt.
+
+## Was Sie erwarten können
+
+- **Bestätigung innerhalb von 1 Werktag** mit einer Tracking-ID
+  (`VULN-YYYY-NNNN`).
+- **Triage-Entscheidung innerhalb von 5 Werktagen** mit einem vorläufigen
+  CVSS-v3.1-Schweregrad und einer Einstufung als im Umfang / außerhalb des
+  Umfangs.
+- Kadenz für Behebung oder Minderung:
+  - CVSS 9.0+ (Kritisch) — Hotfix innerhalb von 24 Stunden.
+  - CVSS 7.0–8.9 (Hoch) — Hotfix innerhalb von 7 Tagen.
+  - CVSS 4.0–6.9 (Mittel) — Patch innerhalb von 30 Tagen.
+  - CVSS < 4.0 (Niedrig) — Patch innerhalb von 90 Tagen oder im nächsten
+    geplanten Release.
+- Öffentliche Offenlegung am Ende des 90-Tage-Fensters (oder früher nach
+  Vereinbarung), koordiniert mit einer CVE-Zuweisung, sofern zutreffend.
+- **Keine rechtlichen Schritte** gegen gutgläubige Forscher, die dieser
+  Richtlinie entsprechen.
+
+## Safe Harbor
+
+Wenn Sie sich in gutem Glauben bemühen, dieser Richtlinie zu entsprechen, werden
+wir keine rechtlichen Schritte gegen Sie einleiten oder unterstützen (DMCA, CFAA
+oder analoge ausländische Gesetze) und Ihre Forschung als gemäß
+18 U.S.C. §1030 autorisiert behandeln. Der vollständige Safe-Harbor-Text
+befindet sich in
+[`specs/_security/vulnerability-disclosure-policy.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_security/vulnerability-disclosure-policy.md)
+§3.
+
+## Umfang
+
+**Im Umfang:** alle `*.corelink.humangr.com`-Subdomains, alle
+Open-Source-Crates, die aus `github.com/HumanGuardrail/corelink-server`
+veröffentlicht werden, das `corelink-cli`-Distributable und die
+Einstiegspunkte des CoreLink Cloudflare Worker.
+
+**Außerhalb des Umfangs:** Drittanbieter-Unterauftragsverarbeiter (melden Sie
+direkt an den Anbieter — Liste unter [`/trust/sub-processor-register`](/trust/sub-processor-register)),
+Social Engineering von Mitarbeitern, physische Angriffe, Demonstrationen von
+Denial-of-Service-Fähigkeiten, Befunde, die nur mit einem veralteten Browser
+erreichbar sind, und bereits offengelegte Schwachstellen in
+Drittanbieter-Abhängigkeiten.
+
+## Bug-Bounty-Programm
+
+**Vor GA (heute):** nur Anerkennung. Forscher, die gültige Berichte einreichen,
+werden bei GA-Start +30 Tage in der öffentlichen Hall of Thanks anerkannt
+(`/security/hall-of-thanks`).
+
+**GA +30 Tage (geplant):** monetäre Belohnungen auf einer USD-Skala (Kritisch
+USD 2,500 – USD 10,000; Hoch USD 1,000 – USD 2,500; Mittel USD 250 –
+USD 1,000; Niedrig Anerkennung + Swag), vorbehaltlich der Freigabe durch
+Finance, der Sanktionsprüfung nach OFAC / EU / UK und der
+Zwei-Schlüssel-Autorisierung durch Owner+Security-Lead gemäß ADR-0034b.
+
+## Verwandtes
+
+- Kundenorientierte [Sicherheitsrichtlinie](/security/policy) — CVSS-Matrix und
+  detaillierte Regeln zum Ausschluss vom Umfang.
+- [Trust Center](/trust) — konsolidierte Landingpage.
+- [`/.well-known/security.txt`](/.well-known/security.txt) — maschinenlesbare
+  Kontaktkarte nach RFC 9116.

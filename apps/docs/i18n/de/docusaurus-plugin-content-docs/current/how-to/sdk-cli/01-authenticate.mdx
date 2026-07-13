@@ -1,8 +1,8 @@
 ---
 id: sdk-cli-authenticate
-title: Authenticate (CLI)
-sidebar_label: Authenticate
-description: Configure the corelink CLI with a Personal Access Token (PAT).
+title: Authentifizieren (CLI)
+sidebar_label: Authentifizieren
+description: Konfigurieren Sie die corelink-CLI mit einem Personal Access Token (PAT).
 tags: [sdk, cli, auth, how-to]
 ---
 
@@ -12,60 +12,60 @@ tags: [sdk, cli, auth, how-to]
 >
 > Canonical EN source: `docs/how-to/sdk-cli/01-authenticate.mdx`
 
+# CLI authentifizieren
 
-# Authenticate the CLI
+## Wann Sie diese Anleitung verwenden
 
-## When to use this guide
+Sie haben das `corelink`-Binary installiert (eine einzige signierte ausführbare
+Datei für macOS, Linux und Windows) und müssen einen beliebigen Befehl außer
+`version` ausführen.
 
-You installed the `corelink` binary (single signed executable for macOS,
-Linux, and Windows) and need to run any command except `version`.
+## Voraussetzungen
 
-## Prerequisites
+- `corelink`-Binary im `$PATH`. Installieren Sie es über Ihren Paketmanager oder
+  laden Sie es von der GitHub-Releases-Seite herunter. Überprüfen Sie die
+  SLSA-Attestierung vor der ersten Verwendung.
+- Ein PAT, erstellt unter `https://corelink-app.humangr.com/tokens`.
 
-- `corelink` binary on `$PATH`. Install via your package manager or
-  download from the GitHub releases page. Verify the SLSA attestation
-  before first use.
-- A PAT minted at `https://app.corelink.humangr.com/tokens`.
-
-## Recommended: env var
+## Empfohlen: Umgebungsvariable
 
 ```bash
 export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
 corelink ls --tenant acme-corp
 ```
 
-## Alternative: config file
+## Alternative: Konfigurationsdatei
 
 ```bash
 corelink config set auth.pat corelink_dev_t_xxx.xxx.xxx
 corelink config set defaults.tenant_id acme-corp
 ```
 
-The file lives at `~/.corelink/config.toml` on macOS/Linux and
-`%APPDATA%\corelink\config.toml` on Windows. File mode is enforced to
-`0600` and the PAT is redacted by `corelink config list`.
+Die Datei liegt unter `~/.corelink/config.toml` auf macOS/Linux und unter
+`%APPDATA%\corelink\config.toml` auf Windows. Der Dateimodus wird auf `0600`
+erzwungen und der PAT wird von `corelink config list` unkenntlich gemacht.
 
-## Forbidden: PAT as a CLI flag
+## Verboten: PAT als CLI-Flag
 
 ```bash
 # DO NOT DO THIS — the CLI exits 2 with an explicit security error.
 corelink --pat=corelink_dev_t_xxx.xxx.xxx ls --tenant acme-corp
 ```
 
-CTRL-CRED-001 forbids the `--pat` flag because process arguments leak via
-`ps`, shell history, and CI logs. The CLI rejects the flag before any other
-parsing.
+CTRL-CRED-001 verbietet das Flag `--pat`, weil Prozessargumente über `ps`, den
+Shell-Verlauf und CI-Logs nach außen gelangen. Die CLI weist das Flag vor jeder
+weiteren Auswertung zurück.
 
-## Verify
+## Überprüfen
 
 ```bash
 corelink doctor --json | jq '.checks[] | select(.name=="auth")'
 ```
 
-Expected `status: "ok"`. Any other status maps to a `COR_AUTH_*` code with a
-direct link to the right next-action doc.
+Erwartet wird `status: "ok"`. Jeder andere Status wird einem `COR_AUTH_*`-Code mit
+einem direkten Link zum passenden Dokument für die nächste Aktion zugeordnet.
 
-## Next steps
+## Nächste Schritte
 
-- [Upload a blob](./02-upload-blob.mdx)
-- [Download a blob](./03-download-blob.mdx)
+- [Blob hochladen](./02-upload-blob)
+- [Blob herunterladen](./03-download-blob)

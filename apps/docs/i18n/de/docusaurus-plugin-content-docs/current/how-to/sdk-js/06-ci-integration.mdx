@@ -1,8 +1,8 @@
 ---
 id: sdk-js-ci-integration
-title: CI integration (JS/TS)
-sidebar_label: CI integration
-description: Wire @corelink/client into GitHub Actions, GitLab CI, and CircleCI.
+title: CI-Integration (JS/TS)
+sidebar_label: CI-Integration
+description: Binden Sie @corelink/client in GitHub Actions, GitLab CI und CircleCI ein.
 tags: [sdk, javascript, typescript, ci, how-to]
 ---
 
@@ -12,13 +12,12 @@ tags: [sdk, javascript, typescript, ci, how-to]
 >
 > Canonical EN source: `docs/how-to/sdk-js/06-ci-integration.mdx`
 
+# CI-Integration
 
-# CI integration
+## Wann Sie diese Anleitung verwenden
 
-## When to use this guide
-
-Your build pipeline runs Node.js and you want CoreLink as a shared cache
-without invoking the CLI binary.
+Ihre Build-Pipeline führt Node.js aus und Sie möchten CoreLink als gemeinsam genutzten Cache
+verwenden, ohne die CLI-Binärdatei aufzurufen.
 
 ## GitHub Actions
 
@@ -44,9 +43,14 @@ import { CoreLinkClient } from "@corelink/client";
 
 const client = new CoreLinkClient({ tenantId: process.env.CORELINK_TENANT });
 try {
-  const report = await client.bench({ read: true, samples: 10 });
-  console.log(`p50=${report.p50Ms}ms p99=${report.p99Ms}ms`);
-  if (report.p99Ms > 500) process.exit(1);
+  // A tiny put/get round-trip proves connectivity + auth before the build runs.
+  const probe = new TextEncoder().encode(`warm ${Date.now()}`);
+  const t0 = performance.now();
+  const digest = await client.put(probe);
+  await client.get(digest); // BLAKE3-verified
+  const ms = performance.now() - t0;
+  console.log(`cache reachable; round-trip=${ms.toFixed(1)}ms digest=${digest}`);
+  if (ms > 500) console.warn("cache round-trip slower than 500ms");
 } finally {
   await client.close();
 }
@@ -80,12 +84,12 @@ jobs:
       - run: node ./ci/warm-cache.mjs
 ```
 
-## Job-scoped PATs
+## Auftragsbezogene PATs
 
-Mint a short-lived PAT per pipeline via the admin API. See
-[CLI reference](../../reference/cli/index.mdx).
+Erzeugen Sie pro Pipeline ein kurzlebiges PAT über die Admin-API. Siehe
+[CLI-Referenz](../../reference/cli/index).
 
-## Next steps
+## Nächste Schritte
 
-- [Batch operations](./05-batch-operations.mdx)
-- [Troubleshooting](./07-troubleshooting.mdx)
+- [Stapelverarbeitung](./05-batch-operations)
+- [Fehlerbehebung](./07-troubleshooting)
