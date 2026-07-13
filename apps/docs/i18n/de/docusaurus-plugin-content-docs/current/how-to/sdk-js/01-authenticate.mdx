@@ -1,8 +1,8 @@
 ---
 id: sdk-js-authenticate
-title: Authenticate (JS/TS)
-sidebar_label: Authenticate
-description: Configure a Personal Access Token (PAT) for @corelink/client.
+title: Authentifizieren (JS/TS)
+sidebar_label: Authentifizieren
+description: Konfigurieren Sie ein Personal Access Token (PAT) für @corelink/client.
 tags: [sdk, javascript, typescript, auth, how-to]
 ---
 
@@ -12,22 +12,21 @@ tags: [sdk, javascript, typescript, auth, how-to]
 >
 > Canonical EN source: `docs/how-to/sdk-js/01-authenticate.mdx`
 
+# Das JS/TS-SDK authentifizieren
 
-# Authenticate the JS/TS SDK
+## Wann Sie diese Anleitung verwenden
 
-## When to use this guide
+Sie installieren `@corelink/client` in einem Node.js- oder modernen Bundler-Kontext und
+müssen eine beliebige Cache-API aufrufen. Die PAT-Authentifizierung ist zwingend erforderlich; der Client verweigert die
+Konstruktion ohne eine solche.
 
-You install `@corelink/client` in a Node.js or modern bundler context and
-need to call any cache API. PAT auth is mandatory; the client refuses to
-construct without one.
+## Voraussetzungen
 
-## Prerequisites
-
-- Node.js 22+ (LTS bis 2027-04-30) oder ein Bundler mit ES2022-Ziel. ESM ist die Vorgabe; CommonJS `require()` ist für neuen Tenant-Code veraltet.
+- Node.js 18+ (verwendet das globale `fetch`) oder ein beliebiger Bundler mit Ziel ES2022. ESM ist die Voreinstellung; `require()` von CommonJS wird nicht unterstützt.
 - `npm install @corelink/client`
-- A PAT minted at `https://app.corelink.humangr.com/tokens`.
+- Ein unter `https://corelink-app.humangr.com/tokens` erzeugtes PAT.
 
-## Recommended: env var (Node.js)
+## Empfohlene Umgebungsvariable (Node.js)
 
 ```bash
 export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
@@ -36,16 +35,20 @@ export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
 ```typescript
 import { CoreLinkClient } from "@corelink/client";
 
+// PAT is read from CORELINK_PAT; the constructor throws if neither the
+// `pat` argument nor the env var is present.
 const client = new CoreLinkClient({ tenantId: "acme-corp" });
-const me = await client.whoami();
-console.log(me.tenantId, me.scopes);
+
+// The first real call surfaces an invalid/revoked PAT as an AuthError (401).
+const digest = await client.put(new TextEncoder().encode("ping"));
+console.log("authenticated; wrote", digest);
 await client.close();
 ```
 
-## Browser / bundler
+## Browser / Bundler
 
-Never embed a PAT in browser-shipped JS. Instead, proxy through your own
-backend and forward short-lived per-user tokens minted by your server.
+Betten Sie niemals ein PAT in JS ein, das an den Browser ausgeliefert wird. Leiten Sie stattdessen über Ihr eigenes
+Backend weiter und übermitteln Sie kurzlebige, pro Benutzer von Ihrem Server erzeugte Token.
 
 ```typescript
 // frontend
@@ -55,10 +58,10 @@ const client = new CoreLinkClient({
 });
 ```
 
-The `/api/corelink-token` endpoint must validate the end-user session and
-issue a job-scoped PAT with the minimum scopes required.
+Der Endpunkt `/api/corelink-token` muss die Sitzung des Endbenutzers validieren und
+ein auftragsbezogenes PAT mit den minimal erforderlichen Berechtigungen ausstellen.
 
-## Forbidden: PAT in committed source
+## Verboten: PAT im eingecheckten Quellcode
 
 ```typescript
 // DO NOT DO THIS
@@ -68,15 +71,16 @@ const client = new CoreLinkClient({
 });
 ```
 
-Violates CTRL-CRED-001. CI lint flags hard-coded PAT-looking strings.
+Verstößt gegen CTRL-CRED-001. Das CI-Lint meldet fest codierte Zeichenketten, die wie ein PAT aussehen.
 
-## Verify
+## Überprüfen
 
 ```typescript
 import { AuthError } from "@corelink/client";
 
 try {
-  await client.whoami();
+  // Any authenticated call works; `stat` is cheap and side-effect-free.
+  await client.stat("0".repeat(64));
 } catch (e) {
   if (e instanceof AuthError) {
     console.error("auth failed:", e.code);
@@ -86,7 +90,7 @@ try {
 }
 ```
 
-## Next steps
+## Nächste Schritte
 
-- [Upload a blob](./02-upload-blob.mdx)
-- [Download a blob](./03-download-blob.mdx)
+- [Ein Blob hochladen](./02-upload-blob)
+- [Ein Blob herunterladen](./03-download-blob)

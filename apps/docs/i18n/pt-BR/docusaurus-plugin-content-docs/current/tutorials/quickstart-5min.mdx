@@ -1,0 +1,241 @@
+---
+id: quickstart-5min
+title: Quickstart — primeiro PUT/GET no CAS em 5 minutos
+sidebar_label: Quickstart de 5 minutos
+description: Do zero a um roundtrip de blob verificado em menos de 5 minutos. Cadastre-se, exporte seu PAT, execute dois comandos curl, pronto.
+---
+
+<!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/tutorials/quickstart-5min.mdx`
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+# Quickstart — primeiro PUT/GET no CAS em 5 minutos
+
+**Objetivo:** cadastre-se, obtenha um PAT, envie um blob ao CAS do CoreLink, baixe-o de volta
+e verifique se os bytes são idênticos — tudo em menos de 5 minutos de relógio.
+
+Nenhuma CLI para instalar. Nenhum Bazel necessário. Apenas `curl`, `b3sum` e um
+shell. O [quickstart de 10 minutos](./quickstart-10min) adiciona a CLI completa, a integração com o Bazel
+e cache HITs assim que você dominar o básico.
+
+:::info O CoreLink endereça por conteúdo com BLAKE3
+O CAS nativo chaveia todo blob pelo seu digest **BLAKE3** (hex minúsculo) — não
+SHA-256. Instale o `b3sum` primeiro: `brew install b3sum` (macOS) ou
+`cargo install b3sum` / o pacote `b3sum` da sua distribuição (Linux).
+:::
+
+:::tip Nenhum cartão de crédito necessário
+Uma conta inicial é gratuita até 10 GB. O cadastro provisiona seu inquilino e um
+PAT inicial — sem etapa de cobrança.
+:::
+
+---
+
+## Orçamento de tempo
+
+| Passo | Orçamento | Acumulado |
+|---|---|---|
+| 1 — Cadastre-se | 30 s | 30 s |
+| 2 — Copie seu PAT | 10 s | 40 s |
+| 3 — Exporte variáveis de ambiente | 10 s | 50 s |
+| 4 — PUT de um blob | 1 min | ~2 min |
+| 5 — GET de volta | 30 s | ~2,5 min |
+| 6 — Próximos passos | 30 s | **~3 min no total** |
+
+---
+
+## Passo 1 — Cadastre-se <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
+
+Abra **[https://corelink-admin.humangr.com/sign-up](https://corelink-admin.humangr.com/sign-up)**
+no seu navegador e conclua o cadastro em duas etapas (Google ou e-mail aceitos).
+
+Após o cadastro, você chega à página **`/welcome`**. Mantenha-a aberta.
+
+---
+
+## Passo 2 — Copie seu PAT <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~10 s)</span>
+
+Na página `/welcome` você verá seu **Personal Access Token (PAT)** e
+seu **Tenant ID**. Ambos são mostrados exatamente uma vez nesta tela.
+
+Seu PAT se parece com:
+
+```text
+corelink_pat_XXXXXXXXXXXXXXXX.YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY.ZZZZZZZZZZZZZZZZZZZZ
+```
+
+Seu Tenant ID é um UUID:
+
+```text
+xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+:::warning Revelação única — copie ambos os valores agora
+Se você fechar a aba sem copiar, gere novamente via **Settings → Access
+tokens → Regenerate**. Nunca cole um PAT real em docs compartilhados, no Slack
+ou no código-fonte — armazene-o em um gerenciador de segredos (`direnv`, `1Password`,
+o cofre de segredos do seu provedor de CI).
+:::
+
+---
+
+## Passo 3 — Exporte variáveis de ambiente <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~10 s)</span>
+
+Abra um terminal e exporte os dois valores que você copiou da página `/welcome`:
+
+```bash
+export CORELINK_PAT="corelink_pat_XXXXXXXXXXXXXXXX.YYYYYYYYYYYYYYY.ZZZZZZZZZZ"
+export CORELINK_TENANT="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+```
+
+Substitua os placeholders pelo seu PAT e Tenant ID reais.
+Todos os comandos abaixo referenciam apenas `$CORELINK_PAT` e `$CORELINK_TENANT` — nenhum
+segredo aparece jamais em um literal de comando.
+
+---
+
+## Passo 4 — PUT de um blob <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~1 min)</span>
+
+Crie um pequeno payload de teste, calcule seu digest BLAKE3 e faça o upload. O
+comando é idêntico no macOS e no Linux depois que o `b3sum` estiver instalado:
+
+```bash
+# Create a test payload
+echo "hello corelink $(date)" > /tmp/cl-test.txt
+
+# Compute the BLAKE3 digest (lowercase hex) — this IS the storage key
+DIGEST=$(b3sum /tmp/cl-test.txt | awk '{print $1}')
+echo "digest: $DIGEST"
+
+# Upload — 201 Created means success
+curl -sSf -X PUT \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @/tmp/cl-test.txt \
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
+```
+
+Em caso de sucesso, o servidor retorna **HTTP 201 Created** (ou **200 OK** se o blob
+já existia) e o corpo da resposta é o hex BLAKE3 do blob armazenado — o
+mesmo valor que você enviou na URL:
+
+```text
+<your-blake3-digest-here>
+```
+
+Se você vir `401 Unauthorized`, verifique novamente se `CORELINK_PAT` está exportado
+corretamente na sua sessão de shell atual (`echo $CORELINK_PAT`).
+
+:::note O digest BLAKE3 É a chave da URL
+O CoreLink é um armazenamento endereçável por conteúdo — o digest BLAKE3 **é** a chave
+de armazenamento. O servidor recalcula o BLAKE3 sobre os bytes enviados e verifica se
+ele corresponde ao digest na URL; uma divergência retorna `422 Unprocessable Entity`.
+:::
+
+---
+
+## Passo 5 — GET do blob de volta <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
+
+Baixe o blob que você acabou de enviar e verifique se ele é byte-a-byte idêntico ao
+original:
+
+```bash
+curl -sSf \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST" \
+  -o /tmp/cl-test-downloaded.txt
+
+diff /tmp/cl-test.txt /tmp/cl-test-downloaded.txt && echo "PASS — byte-exact roundtrip"
+```
+
+Saída esperada:
+
+```text
+PASS — byte-exact roundtrip
+```
+
+Essa linha `PASS` é o seu evento de ativação — um blob escrito e lido de volta do
+CAS do CoreLink, verificado byte a byte na sua máquina.
+
+:::tip Automatize
+O script complementar `scripts/quickstart.sh` no repositório do CoreLink executa este
+exato roundtrip PUT/GET automaticamente e imprime um resumo do tempo de relógio. Veja
+[o código-fonte do script](https://github.com/HumanGuardrail/corelink-server/blob/main/scripts/quickstart.sh)
+como referência.
+:::
+
+---
+
+## Passo 6 — Próximos passos <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
+
+Você tem um PAT funcionando e um roundtrip verificado. Para onde ir a seguir:
+
+### Integre sua ferramenta de build
+
+<Tabs groupId="build-tool">
+<TabItem value="bazel" label="Bazel" default>
+
+O CoreLink expõe um cache **Bazel REAPI v2** em
+`https://corelink-api.humangr.com/bazel/v2/<your-tenant-id>` (o esquema ByteStream
+`/bazel/v2/<tenant>/blobs/<hash>/<size>`). Aponte um cliente REAPI/ByteStream
+para ele, usando seu UUID de inquilino como o nome de instância REAPI — veja a
+configuração de referência versionada em
+[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
+
+:::note Suporte nativo a `bazel --remote_cache`: em andamento
+Um alias plain-HTTP do Bazel padrão (`--remote_cache=https://…` enviando
+`/cas/<hash>` e `/ac/<hash>`) está sendo construído e **ainda não está ativo** — ele
+atualmente retorna 404. Até que ele chegue, use um cliente compatível com REAPI/ByteStream
+contra o endpoint `/bazel/v2/<tenant>` acima.
+:::
+
+Guia completo: [Integração com o Bazel](../integrations/bazel).
+
+</TabItem>
+<TabItem value="turborepo" label="Turborepo">
+
+Em `turbo.json`, defina seu endpoint de cache remoto:
+
+```json
+{
+  "remoteCache": {
+    "apiUrl": "https://corelink-api.humangr.com",
+    "teamId": "<your-tenant-id>",
+    "token": "<set TURBO_TOKEN=$CORELINK_PAT in CI>"
+  }
+}
+```
+
+Guia completo: [Integração com o Turborepo](../integrations/turborepo).
+
+</TabItem>
+</Tabs>
+
+### Aprofunde-se
+
+- **[Quickstart de 10 minutos](./quickstart-10min)** — instalação da CLI, `corelink doctor`
+  e os primeiros cache HITs de ponta a ponta.
+- **[O que é o CoreLink?](../intro)** — arquitetura, modelo de inquilinos, garantias
+  de invariantes.
+- **[Conceitos: CAS vs AC](../concepts/cas-vs-ac)** — quando usar o
+  Content-Addressable Store versus o Action Cache.
+- **[Referência da API](../api/http)** — especificação completa dos endpoints HTTP.
+
+---
+
+## Solução de problemas
+
+| Erro | Causa | Correção |
+|---|---|---|
+| `401 Unauthorized` | PAT não exportado ou expirado | `echo $CORELINK_PAT` — reexporte se estiver vazio; gere novamente em **Settings → Access tokens** |
+| `403 Forbidden` | PAT com escopo para um inquilino diferente | Confirme se `$CORELINK_TENANT` corresponde ao inquilino do seu PAT (mostrado na página de boas-vindas) |
+| `404 Not Found` no GET | Blob ainda não enviado, ou inquilino errado | Faça o PUT primeiro; verifique novamente `$CORELINK_TENANT` |
+| `422 Unprocessable Entity` | O digest BLAKE3 na URL não corresponde ao corpo | Recalcule: `b3sum /tmp/cl-test.txt` e reexporte `DIGEST` |
+| `curl: (22)` / não-2xx | Falha geral de requisição com `-sSf` | Remova o `-f`, execute novamente, leia o corpo JSON de erro completo |
+
+Referência completa de erros: [Solução de problemas](../troubleshooting).

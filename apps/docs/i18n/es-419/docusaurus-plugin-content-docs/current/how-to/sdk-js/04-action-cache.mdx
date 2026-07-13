@@ -1,8 +1,8 @@
 ---
 id: sdk-js-action-cache
-title: Action Cache lookup & store (JS/TS)
+title: Búsqueda y almacenamiento en Action Cache (JS/TS)
 sidebar_label: Action Cache
-description: Use the REAPI v2 Action Cache via @corelink/client.
+description: Use el Action Cache de REAPI v2 mediante @corelink/client.
 tags: [sdk, javascript, typescript, ac, reapi, how-to]
 ---
 
@@ -10,28 +10,37 @@ tags: [sdk, javascript, typescript, ac, reapi, how-to]
 
 > MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
 >
-> Canonical EN source: `sdk-js/04-action-cache.mdx`
+> Canonical EN source: `docs/how-to/sdk-js/04-action-cache.mdx`
 
-# Action Cache lookup and store
+# Búsqueda y almacenamiento en Action Cache
 
-## When to use this guide
+## Cuándo usar esta guía
 
-You wrap a JS-driven test runner (e.g. Jest, Vitest, Playwright) with a
-build-cache layer and want hit/miss semantics keyed by an Action digest.
+Usted envuelve un ejecutor de pruebas basado en JS (por ejemplo, Jest, Vitest, Playwright) con una
+capa de caché de compilación y quiere semántica de acierto/fallo indexada por un digest de Action.
 
-If you only need raw CAS, see
-[02-upload-blob](./02-upload-blob.mdx) and
-[03-download-blob](./03-download-blob.mdx).
+Si solo necesita el CAS sin procesar, consulte
+[02-upload-blob](./02-upload-blob) y
+[03-download-blob](./03-download-blob).
 
-## Lookup
+## El payload del AC son bytes opacos
+
+CoreLink almacena un **payload de bytes `ActionResult` opaco** indexado por un digest de
+action de 64 hex (`routes/ac.rs`). El SDK mueve esos bytes literalmente — usted es dueño de la
+codificación (por ejemplo, un mensaje `ActionResult` de REAPI serializado, o su propio manifiesto
+JSON que referencia blobs del CAS por digest). `actionCache.get` devuelve un
+`Uint8Array`; `actionCache.put` recibe uno.
+
+## Búsqueda
 
 ```typescript
 import { ActionCacheMiss } from "@corelink/client";
 
 async function getOrRun(actionDigest: string): Promise<Uint8Array> {
   try {
-    const result = await client.actionCache.get(actionDigest);
-    return client.get(result.stdoutDigest);
+    const resultBytes = await client.actionCache.get(actionDigest);
+    const manifest = JSON.parse(new TextDecoder().decode(resultBytes));
+    return client.get(manifest.stdoutDigest); // fetch the referenced CAS blob
   } catch (e) {
     if (e instanceof ActionCacheMiss) {
       return runLocallyAndStore(actionDigest);
@@ -41,7 +50,7 @@ async function getOrRun(actionDigest: string): Promise<Uint8Array> {
 }
 ```
 
-## Store
+## Almacenamiento
 
 ```typescript
 async function storeResult(
@@ -50,24 +59,18 @@ async function storeResult(
   exitCode: number,
 ): Promise<void> {
   const stdoutDigest = await client.put(stdout);
-  await client.actionCache.put(actionDigest, {
-    stdoutDigest,
-    exitCode,
-  });
+  const manifest = { stdoutDigest, exitCode };
+  const bytes = new TextEncoder().encode(JSON.stringify(manifest));
+  await client.actionCache.put(actionDigest, bytes);
 }
 ```
 
-## TTL
+## Inmutabilidad y protección contra envenenamiento de caché
 
-```typescript
-await client.actionCache.put(actionDigest, result, { ttlSeconds: 86_400 });
-```
+Las entradas del AC son inmutables por contenido: el servidor rechaza una sobrescritura divergente de
+una `(tenant, action_digest)` existente con `409`, expuesto como `ConflictError`. Un
+nuevo almacenamiento idéntico byte a byte es una operación idempotente sin efecto.
 
-## Cache poisoning protection
+## Próximos pasos
 
-Server-side checks reject any `ActionResult` whose declared digest does not
-match the bytes already stored.
-
-## Next steps
-
-- [CI integration](./06-ci-integration.mdx)
+- [Integración con CI](./06-ci-integration)

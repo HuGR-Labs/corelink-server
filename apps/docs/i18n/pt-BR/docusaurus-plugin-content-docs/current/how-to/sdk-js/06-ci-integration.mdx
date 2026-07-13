@@ -1,8 +1,8 @@
 ---
 id: sdk-js-ci-integration
-title: CI integration (JS/TS)
-sidebar_label: CI integration
-description: Wire @corelink/client into GitHub Actions, GitLab CI, and CircleCI.
+title: Integração com CI (JS/TS)
+sidebar_label: Integração com CI
+description: Conecte @corelink/client ao GitHub Actions, GitLab CI e CircleCI.
 tags: [sdk, javascript, typescript, ci, how-to]
 ---
 
@@ -10,14 +10,14 @@ tags: [sdk, javascript, typescript, ci, how-to]
 
 > MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
 >
-> Canonical EN source: `sdk-js/06-ci-integration.mdx`
+> Canonical EN source: `docs/how-to/sdk-js/06-ci-integration.mdx`
 
-# CI integration
+# Integração com CI
 
-## When to use this guide
+## Quando usar este guia
 
-Your build pipeline runs Node.js and you want CoreLink as a shared cache
-without invoking the CLI binary.
+Seu pipeline de build roda Node.js e você quer o CoreLink como um cache compartilhado
+sem invocar o binário da CLI.
 
 ## GitHub Actions
 
@@ -43,9 +43,14 @@ import { CoreLinkClient } from "@corelink/client";
 
 const client = new CoreLinkClient({ tenantId: process.env.CORELINK_TENANT });
 try {
-  const report = await client.bench({ read: true, samples: 10 });
-  console.log(`p50=${report.p50Ms}ms p99=${report.p99Ms}ms`);
-  if (report.p99Ms > 500) process.exit(1);
+  // A tiny put/get round-trip proves connectivity + auth before the build runs.
+  const probe = new TextEncoder().encode(`warm ${Date.now()}`);
+  const t0 = performance.now();
+  const digest = await client.put(probe);
+  await client.get(digest); // BLAKE3-verified
+  const ms = performance.now() - t0;
+  console.log(`cache reachable; round-trip=${ms.toFixed(1)}ms digest=${digest}`);
+  if (ms > 500) console.warn("cache round-trip slower than 500ms");
 } finally {
   await client.close();
 }
@@ -79,12 +84,12 @@ jobs:
       - run: node ./ci/warm-cache.mjs
 ```
 
-## Job-scoped PATs
+## PATs com escopo de tarefa
 
-Mint a short-lived PAT per pipeline via the admin API. See
-[CLI reference](../../reference/cli/index.mdx).
+Gere uma PAT de curta duração por pipeline via API de administração. Veja
+[Referência da CLI](../../reference/cli/index).
 
-## Next steps
+## Próximos passos
 
-- [Batch operations](./05-batch-operations.mdx)
-- [Troubleshooting](./07-troubleshooting.mdx)
+- [Operações em lote](./05-batch-operations)
+- [Solução de problemas](./07-troubleshooting)

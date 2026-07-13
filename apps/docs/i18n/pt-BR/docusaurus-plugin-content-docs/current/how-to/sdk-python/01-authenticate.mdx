@@ -1,8 +1,8 @@
 ---
 id: sdk-python-authenticate
-title: Authenticate (Python)
-sidebar_label: Authenticate
-description: Configure a Personal Access Token (PAT) for the corelink-py SDK.
+title: Autenticar (Python)
+sidebar_label: Autenticar
+description: Configure um Personal Access Token (PAT) para o SDK corelink-py.
 tags: [sdk, python, auth, how-to]
 ---
 
@@ -10,27 +10,27 @@ tags: [sdk, python, auth, how-to]
 
 > MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
 >
-> Canonical EN source: `sdk-python/01-authenticate.mdx`
+> Canonical EN source: `docs/how-to/sdk-python/01-authenticate.mdx`
 
-# Authenticate the Python SDK
+# Autenticar o SDK Python
 
-## When to use this guide
+## Quando usar este guia
 
-You have installed `corelink-py` and need to call any cache-mutating or
-cache-reading API. A PAT is required for every request except `corelink.ping`.
+Você instalou o `corelink-py` e precisa chamar qualquer API que altere ou leia o
+cache. Um PAT é obrigatório em todas as requisições, exceto `corelink.ping`.
 
-If you only need to read the current SDK version, see
-[Troubleshooting](./07-troubleshooting.mdx).
+Se você só precisa ler a versão atual do SDK, consulte
+[Solução de problemas](./07-troubleshooting).
 
-## Prerequisites
+## Pré-requisitos
 
-- Python 3.10+ (`asyncio` is used by every example in this section).
-- `pip install corelink-py` (wheels published on PyPI; pyO3 bindings).
-- A CoreLink tenant. Issue a PAT at `https://app.corelink.humangr.com/tokens`.
+- Python 3.10+ (`asyncio` é usado por todos os exemplos desta seção).
+- `pip install corelink-py` (wheels publicados no PyPI; bindings pyO3).
+- Um tenant CoreLink. Emita um PAT em `https://corelink-app.humangr.com/tokens`.
 
-## Recommended: env var
+## Recomendado: variável de ambiente
 
-The SDK reads `CORELINK_PAT` automatically:
+O SDK lê `CORELINK_PAT` automaticamente:
 
 ```bash
 export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
@@ -48,11 +48,11 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-The `with` block ensures the underlying HTTP/2 pool is closed cleanly.
+O bloco `with` garante que o pool HTTP/2 subjacente seja fechado corretamente.
 
-## Alternative: config file
+## Alternativa: arquivo de configuração
 
-For local development, write `~/.corelink/config.toml`:
+Para desenvolvimento local, crie `~/.corelink/config.toml`:
 
 ```toml
 [auth]
@@ -62,20 +62,21 @@ pat = "corelink_dev_t_xxx.xxx.xxx"
 tenant_id = "acme-corp"
 ```
 
-The SDK falls back to this file if `CORELINK_PAT` is not set.
+O SDK recorre a esse arquivo se `CORELINK_PAT` não estiver definido.
 
-## Forbidden: PAT as a function argument in shipped code
+## Proibido: PAT como argumento de função em código publicado
 
-Do not commit code that hard-codes a PAT:
+Não faça commit de código que embuta um PAT diretamente:
 
 ```python
 # DO NOT DO THIS
 client = CoreLinkClient(pat="corelink_dev_t_xxx.xxx.xxx", tenant_id="acme-corp")
 ```
 
-This violates CTRL-CRED-001. Use env vars or config files only.
+Isso viola CTRL-CRED-001. Use apenas variáveis de ambiente ou arquivos de
+configuração.
 
-## Verify
+## Verificar
 
 ```python
 import asyncio
@@ -92,9 +93,9 @@ async def verify() -> None:
 asyncio.run(verify())
 ```
 
-Expected exit code `0` on success; `1` on `AuthError`.
+Código de saída esperado `0` em caso de sucesso; `1` em `AuthError`.
 
-## Next steps
+## Próximos passos
 
-- [Upload a blob](./02-upload-blob.mdx)
-- [Download a blob](./03-download-blob.mdx)
+- [Enviar um blob](./02-upload-blob)
+- [Baixar um blob](./03-download-blob)

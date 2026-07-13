@@ -1,0 +1,113 @@
+---
+title: "Reportar uma vulnerabilidade de segurança"
+slug: "/security/report-security"
+description: "Recebimento de divulgação coordenada de vulnerabilidades da CoreLink: para onde enviar, chave PGP, SLA, safe harbor, escopo e (pós-GA) programa de recompensas."
+draft: true
+cross_functional_review: TBD
+pending_signoff:
+  - "Security Lead"
+  - "Legal"
+sources:
+  - "docs/security/report-security.md"
+  - "specs/_security/vulnerability-disclosure-policy.md"
+  - "SECURITY.md"
+last_updated: "2026-05-16"
+---
+
+<!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
+
+> MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
+>
+> Canonical EN source: `docs/explanation/security/report-security.mdx`
+
+import { DraftBanner } from "../../../src/components/DraftBanner";
+
+<DraftBanner pageType="security" />
+
+# Reportar uma vulnerabilidade de segurança
+
+> **Fonte de verdade:** [`docs/security/report-security.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/docs/security/report-security.md).
+> Este MDX é um espelho fino para que a landing do Trust Center em React (`/trust`)
+> e a URL `/.well-known/security.txt` possam apontar (deep-link) para uma rota
+> pública canônica. Entregável do Wave-29 stream-8.
+
+## TL;DR
+
+| Item | Valor |
+|---|---|
+| **Para onde enviar** | `security@humangr.com` |
+| **Impressão digital da chave PGP** | `5C2C 8E2A 6B17 9F4D 1A0B 3E9C 6F8B 2D7E 4A91 0C15` (publicada em [`/.well-known/security.txt`](/.well-known/security.txt)) |
+| **SLA de resposta — confirmação** | 1 dia útil |
+| **SLA de resposta — decisão de triagem** | 5 dias úteis |
+| **Janela de divulgação coordenada** | 90 dias a partir da aceitação da triagem |
+| **Escopo do safe harbor** | Todos os domínios `*.corelink.humangr.com` + crates e CLIs open-source da CoreLink |
+| **Programa de recompensas** | Ainda não ativo pré-GA; as recompensas monetárias entram em vigor no GA +30 dias |
+
+## Como reportar
+
+1. Envie um e-mail para `security@humangr.com` com o prefixo de assunto
+   `[VULN-REPORT]`. Criptografe o corpo com nossa chave PGP (impressão digital acima).
+2. Inclua detalhes suficientes para reproduzir: endpoint ou componente afetado,
+   payload da requisição, comportamento esperado vs. observado. Código de prova
+   de conceito é bem-vindo, mas não obrigatório.
+3. Diga-nos sua atribuição preferida (identificador para o Hall of Thanks no
+   GA +30 dias, ou "anônimo").
+4. Diga-nos sua região geográfica para que possamos encaminhar à rotação de
+   plantão que cobre seu fuso horário.
+
+## O que você pode esperar
+
+- **Confirmação em até 1 dia útil** com um ID de acompanhamento
+  (`VULN-YYYY-NNNN`).
+- **Decisão de triagem em até 5 dias úteis** com uma severidade CVSS v3.1
+  provisória e determinação de dentro/fora do escopo.
+- Cadência de correção ou mitigação:
+  - CVSS 9.0+ (Crítica) — hotfix em até 24 horas.
+  - CVSS 7.0–8.9 (Alta) — hotfix em até 7 dias.
+  - CVSS 4.0–6.9 (Média) — patch em até 30 dias.
+  - CVSS < 4.0 (Baixa) — patch em até 90 dias ou na próxima release agendada.
+- Divulgação pública ao fim da janela de 90 dias (ou antes, por acordo),
+  coordenada com a atribuição de um CVE quando aplicável.
+- **Nenhuma ação legal** contra pesquisadores de boa-fé que cumpram esta
+  política.
+
+## Safe harbor
+
+Se você fizer um esforço de boa-fé para cumprir esta política, não moveremos
+nem apoiaremos ação legal contra você (DMCA, CFAA ou estatutos estrangeiros
+análogos) e trataremos sua pesquisa como autorizada nos termos de
+18 U.S.C. §1030. O texto completo do safe harbor está em
+[`specs/_security/vulnerability-disclosure-policy.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_security/vulnerability-disclosure-policy.md)
+§3.
+
+## Escopo
+
+**No escopo:** todos os subdomínios `*.corelink.humangr.com`, todos os crates
+open-source publicados a partir de `github.com/HumanGuardrail/corelink-server`, o
+distribuível `corelink-cli` e os entrypoints do Cloudflare Worker da CoreLink.
+
+**Fora do escopo:** subprocessadores de terceiros (reporte diretamente ao
+fornecedor — lista em [`/trust/sub-processor-register`](/trust/sub-processor-register)),
+engenharia social de funcionários, ataques físicos, demonstrações de capacidade
+de negação de serviço, achados alcançáveis apenas com um navegador desatualizado
+e vulnerabilidades já divulgadas em dependências de terceiros.
+
+## Programa de recompensas
+
+**Pré-GA (hoje):** apenas reconhecimento. Pesquisadores que enviarem relatórios
+válidos serão reconhecidos no Hall of Thanks público no lançamento GA +30 dias
+(`/security/hall-of-thanks`).
+
+**GA +30 dias (planejado):** recompensas monetárias em escala de USD (Crítica
+USD 2,500 – USD 10,000; Alta USD 1,000 – USD 2,500; Média USD 250 –
+USD 1,000; Baixa reconhecimento + brindes) sujeitas à aprovação de Finance,
+triagem de sanções OFAC / EU / UK e autorização de 2 chaves de
+Owner+Security-Lead conforme ADR-0034b.
+
+## Relacionados
+
+- [Política de segurança](/security/policy) voltada ao cliente — matriz CVSS e
+  regras detalhadas de fora do escopo.
+- [Trust Center](/trust) — landing consolidada.
+- [`/.well-known/security.txt`](/.well-known/security.txt) — cartão de contato
+  legível por máquina do RFC 9116.

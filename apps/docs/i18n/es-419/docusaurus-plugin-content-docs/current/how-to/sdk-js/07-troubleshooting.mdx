@@ -1,8 +1,8 @@
 ---
 id: sdk-js-troubleshooting
-title: Troubleshooting (JS/TS)
-sidebar_label: Troubleshooting
-description: Diagnose common @corelink/client errors with reproducible recipes.
+title: Solución de problemas (JS/TS)
+sidebar_label: Solución de problemas
+description: Diagnostique errores comunes de @corelink/client con recetas reproducibles.
 tags: [sdk, javascript, typescript, debug, how-to]
 ---
 
@@ -10,63 +10,60 @@ tags: [sdk, javascript, typescript, debug, how-to]
 
 > MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
 >
-> Canonical EN source: `sdk-js/07-troubleshooting.mdx`
+> Canonical EN source: `docs/how-to/sdk-js/07-troubleshooting.mdx`
 
-# Troubleshooting
+# Solución de problemas
 
-## When to use this guide
+## Cuándo usar esta guía
 
-A `@corelink/client` call is throwing, hanging, or returning the wrong
-region. Use the table below to map errors to canonical fixes in
-`docs/reference/error-taxonomy`.
+Una llamada de `@corelink/client` está lanzando una excepción o quedándose colgada. Todo error
+extiende `CoreLinkError` y lleva un `status` (estado HTTP, cuando se origina en el servidor)
+y un `code` corto (la cadena de motivo del servidor). Inspecciónelos:
 
-## Diagnostic flow
+## Flujo de diagnóstico
 
 ```typescript
-const rep = await client.doctor();
-for (const check of rep.checks) {
-  console.log(check.name, check.status, check.nextActionDoc);
+import { CoreLinkError } from "@corelink/client";
+
+try {
+  await client.get(digest);
+} catch (e) {
+  if (e instanceof CoreLinkError) {
+    console.error(`${e.name} status=${e.status} code=${e.code}: ${e.message}`);
+  }
+  throw e;
 }
 ```
 
-Same 8 checks as `corelink doctor --json`.
+## Errores comunes
 
-## Common errors
+Asigne la clase lanzada a su causa y solución:
 
-| Error code | Class | First action |
+| Clase | Estado | Primera acción |
 |---|---|---|
-| `COR_AUTH_001` | `AuthError` | Re-export `CORELINK_PAT`; check `client.whoami()` |
-| `COR_AUTH_002` | `AuthError` | PAT revoked; mint a new one |
-| `COR_QUOTA_001` | `QuotaError` | Tenant over storage cap |
-| `COR_REGION_001` | `RegionError` | Use regional endpoint |
-| `COR_VERIFY_001` | `DigestMismatchError` | Discard bytes; retry |
-| `COR_NET_001` | `ConnectError` | `corelink doctor network` |
+| `AuthError` | 401 | Vuelva a exportar `CORELINK_PAT`; si está revocado, genere un PAT nuevo. |
+| `ForbiddenError` | 403 | Tenant incorrecto, o el PAT carece del alcance de caché requerido. |
+| `QuotaError` | 402 | Tenant por encima de su límite de almacenamiento / techo de gasto. |
+| `NotFoundError` / `ActionCacheMiss` | 404 | Digest / action no almacenado para este tenant. |
+| `GoneError` | 410 | El artefacto fue borrado (GDPR/DSR); no regresará. |
+| `DigestMismatchError` | 422 / verify | Descarte los bytes; vuelva a descargar o a subir. |
+| `RateLimitError` | 429 | Se reintenta automáticamente; si sigue apareciendo, baje la concurrencia. |
+| `ServerError` | 5xx | Falla transitoria del backend; reintente con retroceso. |
+| `ConnectError` | — | Falla de transporte; revise la red / `baseUrl`. |
 
-## WASM init failure
+## Sin paso de compilación nativa ni WASM
 
-If you see `Error: failed to instantiate corelink-verify.wasm`, your bundler
-is stripping the WASM artifact. Add an explicit asset rule:
+`@corelink/client` es JavaScript puro (BLAKE3 vía `@noble/hashes`). No hay artefacto
+`.wasm` que empaquetar ni regla de asset de bundler que configurar — si encuentra un
+error de resolución, es un problema común de resolución de paquete ESM, no de WASM.
 
-```javascript
-// vite.config.js
-export default {
-  optimizeDeps: { exclude: ["@corelink/client/wasm"] },
-  assetsInclude: ["**/*.wasm"],
-};
-```
+## Ciclo de vida
 
-For webpack 5, set `experiments.asyncWebAssembly = true`.
-
-## Promise leaks
-
-Every client must be closed:
+`close()` hoy es una operación sin efecto (el SDK usa el `fetch` de la plataforma y no mantiene
+un pool persistente), pero llámelo de todos modos para que su código siga siendo correcto si una
+versión futura agrega pooling:
 
 ```typescript
-// WRONG — leaks the HTTP/2 session
-const client = new CoreLinkClient({ tenantId: "acme-corp" });
-await client.get(digest);
-
-// RIGHT
 const client = new CoreLinkClient({ tenantId: "acme-corp" });
 try {
   await client.get(digest);
@@ -75,18 +72,18 @@ try {
 }
 ```
 
-## Verbose logging
+## Registro detallado
 
 ```bash
 export CORELINK_LOG=debug
 ```
 
-Structured JSON logs go to `stderr`. Pipe through `jq`:
+Los registros JSON estructurados van a `stderr`. Canalícelos con `jq`:
 
 ```bash
 node ./script.mjs 2>&1 | jq 'select(.level=="error")'
 ```
 
-## Filing a bug
+## Cómo reportar un error
 
-Include `corelink doctor --json` output. Never include your PAT.
+Incluya la salida de `corelink doctor --json`. Nunca incluya su PAT.

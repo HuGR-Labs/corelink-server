@@ -1,8 +1,8 @@
 ---
 id: sdk-js-authenticate
-title: Authenticate (JS/TS)
-sidebar_label: Authenticate
-description: Configure a Personal Access Token (PAT) for @corelink/client.
+title: Autenticar (JS/TS)
+sidebar_label: Autenticar
+description: Configure un Personal Access Token (PAT) para @corelink/client.
 tags: [sdk, javascript, typescript, auth, how-to]
 ---
 
@@ -10,23 +10,23 @@ tags: [sdk, javascript, typescript, auth, how-to]
 
 > MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
 >
-> Canonical EN source: `sdk-js/01-authenticate.mdx`
+> Canonical EN source: `docs/how-to/sdk-js/01-authenticate.mdx`
 
-# Authenticate the JS/TS SDK
+# Autenticar el SDK JS/TS
 
-## When to use this guide
+## Cuándo usar esta guía
 
-You install `@corelink/client` in a Node.js or modern bundler context and
-need to call any cache API. PAT auth is mandatory; the client refuses to
-construct without one.
+Usted instala `@corelink/client` en un contexto de Node.js o de un bundler moderno y
+necesita llamar a cualquier API de caché. La autenticación por PAT es obligatoria; el cliente se niega a
+construirse sin una.
 
-## Prerequisites
+## Requisitos previos
 
-- Node.js 22+ (LTS hasta 2027-04-30) o cualquier bundler que apunte a ES2022. ESM es el predeterminado; `require()` (CommonJS) está obsoleto para código nuevo de tenants.
+- Node.js 18+ (usa el `fetch` global) o cualquier bundler que apunte a ES2022. ESM es el valor predeterminado; `require()` de CommonJS no es compatible.
 - `npm install @corelink/client`
-- A PAT minted at `https://app.corelink.humangr.com/tokens`.
+- Un PAT generado en `https://corelink-app.humangr.com/tokens`.
 
-## Recommended: env var (Node.js)
+## Variable de entorno recomendada (Node.js)
 
 ```bash
 export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
@@ -35,16 +35,20 @@ export CORELINK_PAT="corelink_dev_t_xxx.xxx.xxx"
 ```typescript
 import { CoreLinkClient } from "@corelink/client";
 
+// PAT is read from CORELINK_PAT; the constructor throws if neither the
+// `pat` argument nor the env var is present.
 const client = new CoreLinkClient({ tenantId: "acme-corp" });
-const me = await client.whoami();
-console.log(me.tenantId, me.scopes);
+
+// The first real call surfaces an invalid/revoked PAT as an AuthError (401).
+const digest = await client.put(new TextEncoder().encode("ping"));
+console.log("authenticated; wrote", digest);
 await client.close();
 ```
 
-## Browser / bundler
+## Navegador / bundler
 
-Never embed a PAT in browser-shipped JS. Instead, proxy through your own
-backend and forward short-lived per-user tokens minted by your server.
+Nunca incruste un PAT en el JS enviado al navegador. En su lugar, haga proxy a través de su propio
+backend y reenvíe tokens de corta duración por usuario generados por su servidor.
 
 ```typescript
 // frontend
@@ -54,10 +58,10 @@ const client = new CoreLinkClient({
 });
 ```
 
-The `/api/corelink-token` endpoint must validate the end-user session and
-issue a job-scoped PAT with the minimum scopes required.
+El endpoint `/api/corelink-token` debe validar la sesión del usuario final y
+emitir un PAT con alcance de tarea que tenga los alcances mínimos requeridos.
 
-## Forbidden: PAT in committed source
+## Prohibido: PAT en el código fuente versionado
 
 ```typescript
 // DO NOT DO THIS
@@ -67,15 +71,16 @@ const client = new CoreLinkClient({
 });
 ```
 
-Violates CTRL-CRED-001. CI lint flags hard-coded PAT-looking strings.
+Infringe CTRL-CRED-001. El lint de la CI marca las cadenas con apariencia de PAT codificadas de forma fija en el código.
 
-## Verify
+## Verificar
 
 ```typescript
 import { AuthError } from "@corelink/client";
 
 try {
-  await client.whoami();
+  // Any authenticated call works; `stat` is cheap and side-effect-free.
+  await client.stat("0".repeat(64));
 } catch (e) {
   if (e instanceof AuthError) {
     console.error("auth failed:", e.code);
@@ -85,7 +90,7 @@ try {
 }
 ```
 
-## Next steps
+## Próximos pasos
 
-- [Upload a blob](./02-upload-blob.mdx)
-- [Download a blob](./03-download-blob.mdx)
+- [Subir un blob](./02-upload-blob)
+- [Descargar un blob](./03-download-blob)
