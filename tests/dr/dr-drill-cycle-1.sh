@@ -63,10 +63,10 @@ log "failover target=${FAILOVER_TARGET}"
 # Pre-flight: build the orchestrator (no Rust runtime changes, just verify
 # the crate compiles).
 # ---------------------------------------------------------------------------
-log "Pre-flight: cargo check corelink-dr-drill"
+log "Pre-flight: cargo check corelink-ops (dr-drill absorbed per W35-P2)"
 if [[ "${DRY_RUN}" != "true" ]]; then
-    (cd "${REPO_ROOT}" && cargo check -p corelink-dr-drill --quiet) \
-        || fail "corelink-dr-drill crate failed cargo check"
+    (cd "${REPO_ROOT}" && cargo check -p corelink-ops --quiet) \
+        || fail "corelink-ops (absorbed dr-drill, W35-P2) failed cargo check"
 fi
 
 # ---------------------------------------------------------------------------
@@ -90,8 +90,8 @@ log "Phase 2: run corelink-dr-drill simulator"
 ORCH_OUT="${REPO_ROOT}/target/dr-drill-cycle-1.out"
 mkdir -p "$(dirname "${ORCH_OUT}")"
 if [[ "${DRY_RUN}" != "true" ]]; then
-    (cd "${REPO_ROOT}" && cargo test -p corelink-dr-drill \
-        --test '*' -- --nocapture --quiet 2>&1) \
+    (cd "${REPO_ROOT}" && cargo test -p corelink-ops \
+        --test dr_drill_prop_dr_drill -- --nocapture --quiet 2>&1) \
         | tee "${ORCH_OUT}" \
         || true
 fi
