@@ -530,7 +530,7 @@ zeroize = { version = "1.8", features = ["derive"] }
 hkdf = "0.13"
 bytes = "1"
 # Ed25519 (FIPS 186-5 EdDSA) — erasure attestation signing (WI-S14-007)
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+ed25519-dalek = { version = "3", features = ["rand_core"] }
 
 # Internal crates
 # Wave-33 Stage 0 sub-step 1: apex cross-cutting types crate.
