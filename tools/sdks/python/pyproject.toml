@@ -17,7 +17,10 @@ classifiers = [
 
 [tool.maturin]
 # Build the cdylib + strip debug symbols in release.
+# NB: no `python-source` — corelink_py is a PURE Rust/PyO3 extension module,
+# there is no `./corelink_py/` Python package to mix in. Setting python-source
+# made maturin look for that (nonexistent) package and fail the wheel build
+# ("python module at .../corelink_py does not exist").
 features = ["extension-module"]
 module-name = "corelink_py"
-python-source = "."
 strip = true
