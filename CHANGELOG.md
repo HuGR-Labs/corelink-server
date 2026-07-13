@@ -36,6 +36,16 @@ Each entry cross-references:
   `migrations/**`. (3) `secrets-drift.yml` PR-triggered only on the container crate, so
   a new `env::var()` secret read in any other crate/app escaped the PR gate — broadened
   to `crates/**/*.rs`, `apps/**/*.ts(x)`, `worker/**/*.ts`.
+- **fix(container): persist native CAS/AC data-plane audit events to a DURABLE D1 `audit_outbox` sink (F1 / CAA-360).**
+  The deployed builders (`storage::r2_s3::build_r2_cas_handler_from_env` / `build_r2_ac_handler_from_env`)
+  hardcoded a volatile `InMemoryAuditSink`, so every CAS/AC audit event (`ReadAttempted`, `ReadDenied`,
+  write-committed, `CorrectnessViolation`, …) was written only to RAM and lost on container restart — the
+  "durable audit row before mutation" guarantee was unwired — and the route's fail-CLOSED `AuditFailed → 503`
+  guard was dead code (in-memory `emit` only errors under a test-injected failure). New `storage::d1_audit_sink`
+  wires a durable sink that appends each event to the D1 `audit_outbox` intake table (the same trail the S-09
+  drain seals; mirrors the DSR erasure sink), wired into BOTH builders. Fail-CLOSED: if the durable sink cannot
+  be constructed while storage creds are present, the builder refuses to mount the handler (route serves 503),
+  never a silent in-memory fallback. Rows are plain/unchanged/`emitted_at=NULL` (sealing remains the S-09 drain).
 - **fix(canary): repoint the CAS drift-canary to a dedicated tenant after the githugr/hugit pause revoked its PAT.**
   The hourly authenticated CAS BLAKE3 round-trip canary (`cas-canary.yml`) used a `cas:rw` PAT on the `d863fafb`
   dogfood tenant, whose PATs were revoked by the 2026-07-11 owner-authorized githugr/hugit pause — so the canary
