@@ -242,15 +242,22 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # Canonical required checks per branch-protection on `main`.
-          # Keep this list in sync with the repo's branch-protection ruleset.
+          # Canonical PR-gating checks a Dependabot PR MUST have executed. These
+          # are the EXACT check-run names GitHub reports (job `name:`), verified
+          # against the live API below — the old "workflow / job" strings never
+          # matched any real check-run, so this step reported ALL missing and
+          # blocked every Dependabot PR. Reconciled 2026-07-13 to the real names
+          # AND to the post-#770 gate set: `cas_foundation` clippy/cargo-test +
+          # `action-sha-audit` moved to nightly/on-main (they no longer run on a
+          # PR), so requiring them here was unsatisfiable. The crate-scoped PR
+          # gate + cargo-deny + cargo-audit + dco + secrets-matrix are the real
+          # per-PR bar; keep this list in sync with the load-bearing PR gates.
           required=(
-            "cargo-deny / cargo-deny"
-            "cargo-audit / cargo-audit-pr"
-            "cas_foundation / cargo-test"
-            "cas_foundation / clippy"
-            "action-sha-audit / sha-audit"
-            "dco-check / DCO"
+            "PR gate (crate-scoped clippy + tests)"
+            "cargo-deny (license + advisories + sources + bans)"
+            "cargo-audit PR gate"
+            "dco"
+            "secrets-matrix drift gate"
           )
           checks_json=$(gh api "repos/${REPO}/commits/${PR_HEAD_SHA}/check-runs?per_page=100")
           missing=()
