@@ -23,6 +23,7 @@
 import {
   insertTenant,
   insertTenantOrgMap,
+  seedTenantEntitlements,
   acceptTeamInvitation,
 } from "../lib/d1.js";
 
@@ -851,6 +852,22 @@ export async function autoProvisionFromClerkEvent(input: {
    * write is a no-op, mirroring the other D1 writes in this flow.
    */
   writeOrgMap?: (clerkOrgId: string, tenantId: string) => Promise<void>;
+  /**
+   * Seed the free-tier entitlement row-family (`tier_selections('free','active')`,
+   * `tenant_quota`, `runners_entitlement('free')`) for the created tenant —
+   * everything a FULLY-provisioned tenant needs beyond `tenant`/`tenant_org_map`/
+   * `pat`. WITHOUT these rows the tenant reports billing `inactive` and the
+   * quota/runner gates read empty → degraded dashboard; this CONVERGES the
+   * Clerk-signup path with the login-time provisioner
+   * `worker/src/lib/githugr_provision.ts` (the canonical row shape).
+   *
+   * LOAD-BEARING (same posture as {@link writeOrgMap}): if this throws, the whole
+   * provision throws → the webhook returns non-2xx and Svix retries. Idempotent
+   * on retry (`INSERT OR IGNORE`). Absent (dev/CI without CONFIG_DB) → a no-op,
+   * mirroring the other D1 writes in this flow. Invoked BEFORE {@link issuePat}
+   * so the handler's tenant+live-PAT idempotency guard implies these rows exist.
+   */
+  seedEntitlements?: (tenantId: string) => Promise<void>;
 }): Promise<AutoProvisionResult> {
   const user = input.event.data;
   const name = tenantSlugFor(user);
@@ -899,6 +916,23 @@ export async function autoProvisionFromClerkEvent(input: {
     source: input.colo ? "geo_ip_cf_colo" : "launch_default",
     svix_id: input.svixId,
   });
+
+  // 2b. Seed the free-tier entitlement row-family so the tenant is FULLY
+  //     provisioned — NOT just tenant+org_map+pat. Without tier_selections
+  //     ('free','active'), tenant_quota, and runners_entitlement('free') the
+  //     tenant reports billing `inactive` and the quota/runner gates read empty,
+  //     yielding a degraded dashboard. This CONVERGES the Clerk-signup path with
+  //     the parallel login-time provisioner worker/src/lib/githugr_provision.ts
+  //     (the canonical row shape). Wired only when CONFIG_DB is present (prod);
+  //     dev/CI without it is a no-op, like the other D1 writes here. Runs BEFORE
+  //     issuePat (step 3) so the handler's tenant+live-PAT idempotency guard
+  //     implies these rows already exist — a partial failure here (before the
+  //     PAT) leaves no "looks-provisioned-but-isn't" tenant. LOAD-BEARING +
+  //     fail-CLOSED: a throw propagates → webhook non-2xx → Svix retries
+  //     (idempotent: INSERT OR IGNORE), same posture as writeOrgMap.
+  if (input.seedEntitlements) {
+    await input.seedEntitlements(tenant.id);
+  }
 
   // 3. Issue PAT (read-write).
   const pat = await input.api.issuePat(tenant.id, "read-write");
@@ -1116,6 +1150,21 @@ export async function handleClerkWebhook(
         }
       : undefined;
 
+    // Same CONFIG_DB-gated pattern as writeOrgMap: seed the free-tier
+    // entitlement row-family (tier_selections/tenant_quota/runners_entitlement)
+    // so the tenant is FULLY provisioned (billing `active`, non-empty quota +
+    // runner gates), converging with worker/src/lib/githugr_provision.ts. A D1
+    // failure PROPAGATES (seedTenantEntitlements does not swallow) → the catch
+    // below maps it to 500 and Svix retries; these rows are load-bearing.
+    const seedEntitlements = configDb
+      ? async (tenantId: string): Promise<void> => {
+          await seedTenantEntitlements(configDb, {
+            tenantId,
+            nowMs: Date.now(),
+          });
+        }
+      : undefined;
+
     const result = await autoProvisionFromClerkEvent({
       event,
       colo,
@@ -1123,6 +1172,7 @@ export async function handleClerkWebhook(
       api: apiFactory(env),
       analytics: d1AnalyticsEmitter(env.ANALYTICS_DB),
       writeOrgMap,
+      seedEntitlements,
     });
 
     // WP-T3 (ADR-S33-001 WP-4): if this new user was invited to a team, flip the

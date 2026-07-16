@@ -244,6 +244,87 @@ describe("autoProvisionFromClerkEvent", () => {
     expect(createTenantCalled).toBe(false);
   });
 
+  it("seeds the free-tier entitlement row-family AFTER configureTenant and BEFORE issuePat (fully-provisioned tenant; converge with githugr_provision)", async () => {
+    // The launch-critical gap this closes: the Clerk-signup path previously
+    // seeded only tenant+org_map+pat, leaving tier_selections/tenant_quota/
+    // runners_entitlement empty → billing `inactive` + empty quota/runner gates.
+    // seedEntitlements must fire (with the created tenant id) and be ordered so
+    // the tenant+live-PAT idempotency guard implies the rows exist: after
+    // configureTenant, before issuePat.
+    const calls: string[] = [];
+    const seededFor: string[] = [];
+    const api = {
+      async createTenant(_name: string, _userId: string, _region: string) {
+        calls.push("createTenant");
+        return { id: "t_seed" };
+      },
+      async configureTenant() {
+        calls.push("configureTenant");
+      },
+      async issuePat() {
+        calls.push("issuePat");
+        return { id: "pat_seed", plaintext: "ct_seed" };
+      },
+      async publishUserMetadata() {
+        calls.push("publishUserMetadata");
+      },
+    };
+    const analytics = { async emit() {} };
+    const result = await autoProvisionFromClerkEvent({
+      event: fakeUser(),
+      colo: "ORD",
+      svixId: "msg_seed",
+      api,
+      analytics,
+      async seedEntitlements(tenantId: string) {
+        calls.push("seedEntitlements");
+        seededFor.push(tenantId);
+      },
+    });
+    expect(result.tenant_id).toBe("t_seed");
+    // Fired exactly once, keyed to the created tenant.
+    expect(seededFor).toEqual(["t_seed"]);
+    // Ordering: after configureTenant, before issuePat.
+    expect(calls).toEqual([
+      "createTenant",
+      "configureTenant",
+      "seedEntitlements",
+      "issuePat",
+      "publishUserMetadata",
+    ]);
+  });
+
+  it("propagates a seedEntitlements failure (fail-CLOSED → webhook 500 → Svix retry) BEFORE the PAT is minted", async () => {
+    let issuePatCalled = false;
+    const api = {
+      async createTenant() {
+        return { id: "t_fail" };
+      },
+      async configureTenant() {},
+      async issuePat() {
+        issuePatCalled = true;
+        return { id: "pat_fail", plaintext: "ct_fail" };
+      },
+      async publishUserMetadata() {},
+    };
+    const analytics = { async emit() {} };
+    await expect(
+      autoProvisionFromClerkEvent({
+        event: fakeUser(),
+        colo: "ORD",
+        svixId: "msg_seed_fail",
+        api,
+        analytics,
+        async seedEntitlements() {
+          throw new Error("d1_seed_entitlements_failed");
+        },
+      }),
+    ).rejects.toThrow(/d1_seed_entitlements_failed/);
+    // The throw is BEFORE issuePat, so no orphan PAT is minted; on Svix retry the
+    // tenant+live-PAT idempotency guard re-drives the whole (idempotent) flow.
+    expect(issuePatCalled).toBe(false);
+  });
+
   it("re-throws Clerk metadata 5xx (transient; let Svix retry)", async () => {
     const api = {
       async createTenant(_name: string, _userId: string) {
