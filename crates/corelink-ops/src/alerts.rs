@@ -15,7 +15,10 @@
 //!
 //! # Example
 //!
-//! ```rust
+//! ```rust,ignore
+//! // (illustrative — the corelink-byok-core / -revocation symbols were
+//! //  consolidated into `corelink-byok` and are not in corelink-ops's dep graph;
+//! //  marked `ignore` so this stays readable without a doc-test compile.)
 //! use corelink_ops::alerts::{MultiChannelAlerter, AlerterConfig};
 //! use corelink_byok_core::KmsKeyId;
 //! use corelink_byok_revocation::alerter::RevocationAlertPayload;
