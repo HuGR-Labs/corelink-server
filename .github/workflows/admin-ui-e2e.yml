@@ -89,7 +89,11 @@ jobs:
     env:
       NEXT_TELEMETRY_DISABLED: "1"
       NEXT_PUBLIC_E2E_TEST_MODE: "1"
-      NEXT_PUBLIC_CORELINK_API_URL: "/api"
+      # basePath (`/corelink`) is ON, so the same-origin mock is served under
+      # `/corelink/api/*`; a bare `/api` 404s (Next never auto-prefixes fetch()).
+      # The config's webServer.env sets the same value as the single source of
+      # truth via APP_BASE_PATH — kept here in lockstep so the intent is explicit.
+      NEXT_PUBLIC_CORELINK_API_URL: "/corelink/api"
       PROJECTS: ${{ matrix.browser }}
       PORT: "3010"
     steps:

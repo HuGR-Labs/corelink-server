@@ -83,7 +83,15 @@ export default defineConfig({
           PORT: String(PORT),
           NEXT_TELEMETRY_DISABLED: "1",
           NEXT_PUBLIC_E2E_TEST_MODE: "1",
-          NEXT_PUBLIC_CORELINK_API_URL: "/api",
+          // The app is mounted under `basePath` (`/corelink`), so the dev server
+          // serves the catch-all mock at `/corelink/api/v1/*` — a bare `/api`
+          // 404s (Next does NOT auto-prefix `fetch()`, only framework links). The
+          // typed clients (admin/customer/dsr) read this env for BOTH the SSR
+          // absolute origin (`http://127.0.0.1:PORT${API}`) and the client-side
+          // relative base, so prefixing it here makes every data fetch land on
+          // the mock under basePath. Kept as a single source of truth via
+          // `APP_BASE_PATH`; prod builds set an absolute cross-origin API URL.
+          NEXT_PUBLIC_CORELINK_API_URL: `${APP_BASE_PATH}/api`,
         },
       },
 });
