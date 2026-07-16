@@ -34,6 +34,12 @@ afterEach(() => {
 });
 
 function reqFor(path: string): NextRequest {
+  return new NextRequest(new URL(`https://humangr.com/corelink${path}`));
+}
+
+// The root/subdomain surface (corelink-app.humangr.com) serves the app with NO
+// `/corelink` prefix — its sign-in redirect must stay root-relative.
+function rootReqFor(path: string): NextRequest {
   return new NextRequest(new URL(`https://corelink-app.humangr.com${path}`));
 }
 
@@ -43,9 +49,30 @@ describe("middleware fail-CLOSED on absent publishable key", () => {
     const res = await middleware(reqFor("/admin/tenants"));
     expect(res.status).toBe(307);
     const location = res.headers.get("location") ?? "";
-    expect(location).toContain("/sign-in");
+    // basePath-ABSOLUTE: a bare `/sign-in` resolves to the apex marketing site,
+    // not this app — the redirect MUST carry the `/corelink` basePath.
+    expect(location).toContain("/corelink/sign-in");
     // Security headers still ride along on the fail-closed redirect.
     expect(res.headers.get("x-nonce")).toBeTruthy();
+  });
+
+  it("(a2) path surface → redirect target carries the /corelink mount prefix", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const res = await middleware(reqFor("/admin/tenants"));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location") ?? "").toContain("/corelink/sign-in");
+  });
+
+  it("(a3) root/subdomain surface → redirect target stays root-relative /sign-in", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const res = await middleware(rootReqFor("/admin/tenants"));
+    expect(res.status).toBe(307);
+    const location = new URL(
+      res.headers.get("location") ?? "",
+      "https://corelink-app.humangr.com",
+    );
+    // Root surface: sign-in is at /sign-in, NOT /corelink/sign-in (which 404s).
+    expect(location.pathname).toBe("/sign-in");
   });
 
   it("(b) non-production + no key → falls through (dev/test ergonomics)", async () => {

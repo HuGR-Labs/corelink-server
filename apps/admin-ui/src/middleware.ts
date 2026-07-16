@@ -16,7 +16,12 @@ import {
   generateNonce,
   STATIC_SECURITY_HEADERS,
 } from "@/lib/csp";
-import { isPublicPath, isSelfGatedPath } from "@/lib/route-matcher";
+import {
+  isPublicPath,
+  isSelfGatedPath,
+  signInPathFor,
+  signInRedirectPath,
+} from "@/lib/route-matcher";
 
 // WI-S16-007 deliverable 4: CSP rollout flag.
 //   CSP_ENFORCEMENT=enforce      → enforce mode (production default).
@@ -104,29 +109,25 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
   // Protected path — defer to Clerk if configured; otherwise fall through
   // and let the route render (dev/test ergonomics).
   const publishableKey = process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"];
+  const secretKey = process.env["CLERK_SECRET_KEY"];
 
-  // Fail CLOSED on a MISSING publishable key in PRODUCTION. Without this guard an
-  // absent NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY skips the Clerk block below and falls
-  // through to the terminal NextResponse.next() — rendering a protected page with
-  // NO middleware auth gate. The ONLY legitimate skips are (a) non-production
-  // dev/test ergonomics (a missing key must not break local boot — see the public
-  // stub above) and (b) the E2E bypass (which is itself already NODE_ENV-gated off
-  // in production). So in production, a protected path with no publishable key is a
-  // misconfiguration that must bounce to sign-in exactly like the catch-branch —
-  // never serve the page anonymously. Self-gated paths own their own gating, so
-  // they fall through to render as before.
+  // Fail CLOSED on missing Clerk server config in PRODUCTION. Without this guard
+  // an absent key skips or breaks the Clerk block below and can fall through to
+  // the terminal NextResponse.next() — rendering a protected page with NO
+  // middleware auth gate. Non-production still falls through for dev/test
+  // ergonomics, and self-gated paths own their signed-out redirect.
   if (
-    !publishableKey &&
+    (!publishableKey || !secretKey) &&
     !isE2E &&
     process.env["NODE_ENV"] === "production" &&
     !isSelfGatedPath(pathname)
   ) {
-    const redirectRes = NextResponse.redirect(new URL("/sign-in", req.url));
+    const redirectRes = NextResponse.redirect(new URL(signInPathFor(pathname), req.url));
     applySecurityHeaders(redirectRes, nonce);
     return redirectRes;
   }
 
-  if (publishableKey && !isE2E) {
+  if (publishableKey && secretKey && !isE2E) {
     try {
       // Dynamic import keeps the bundle slim for public paths.
       const mod = (await import("@clerk/nextjs/server").catch(() => null)) as
@@ -169,9 +170,14 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
               // the originally-requested page after signing in.
               await auth.protect({
                 unauthenticatedUrl: new URL(
-                  `/sign-in?redirect_url=${encodeURIComponent(
+                  // Surface-correct sign-in (`/corelink/sign-in` on the path
+                  // surface, `/sign-in` on the root subdomain). The return URL
+                  // is the raw pathname+search — already surface-correct — so
+                  // the user lands back on the requested page after signing in.
+                  signInRedirectPath(
+                    req.nextUrl.pathname,
                     req.nextUrl.pathname + req.nextUrl.search,
-                  )}`,
+                  ),
                   req.url,
                 ).toString(),
               });
@@ -180,13 +186,16 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
             applySecurityHeaders(res, nonce);
             return res;
           },
-          // signInUrl MUST point at this app's real (locale-less) sign-in route.
-          // Without it, `auth.protect()` on a signed-out request cannot build a
-          // redirect and THROWS — which the catch below previously swallowed,
-          // letting the request fall through and render a protected page whose
-          // server-side `auth()` then 500'd (the /en/welcome outage). With it,
-          // `protect()` returns a clean 307 to /sign-in and the page never runs.
-          { signInUrl: "/sign-in" },
+          // signInUrl MUST point at this app's real (locale-less) sign-in route,
+          // surface-correct (`/corelink/sign-in` on the path surface) — a bare
+          // `/sign-in` on `humangr.com` resolves to the apex marketing site, not
+          // this app. Without it, `auth.protect()` on a signed-out request cannot
+          // build a redirect and THROWS — which the catch below previously
+          // swallowed, letting the request fall through and render a protected
+          // page whose server-side `auth()` then 500'd (the /en/welcome outage).
+          // With it, `protect()` returns a clean 307 to the app's sign-in and the
+          // page never runs.
+          { signInUrl: signInPathFor(pathname) },
         );
         const result = await handler(req);
         // Preserve Clerk's response verbatim (set-cookie, handshake headers,
@@ -208,7 +217,7 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
       // Redirect to sign-in instead. Self-gated paths own their gating, so they
       // fall through to render as before.
       if (!isSelfGatedPath(pathname)) {
-        const redirectRes = NextResponse.redirect(new URL("/sign-in", req.url));
+        const redirectRes = NextResponse.redirect(new URL(signInPathFor(pathname), req.url));
         applySecurityHeaders(redirectRes, nonce);
         return redirectRes;
       }
