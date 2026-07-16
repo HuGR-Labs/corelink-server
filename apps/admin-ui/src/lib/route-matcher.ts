@@ -5,7 +5,8 @@
  * Public exemptions: the `/` landing page, /sign-in, /sign-up,
  * /api/csp-report, /api/health, /api/newsletter/subscribe, /_next/*,
  * /locales/*, static asset prefixes, and the locale-prefixed public
- * marketing/compliance pages (pricing, legal, privacy, security, 403).
+ * marketing/compliance pages (pricing, legal, privacy, security, 403, and the
+ * pre-auth consent-capture leaf /consent/new).
  *
  * basePath (`/corelink`) awareness — THE load-bearing invariant:
  *   OpenNext (@opennextjs/cloudflare) invokes the edge middleware with
@@ -52,6 +53,17 @@ export const PUBLIC_LOCALE_PAGE_PREFIXES: readonly string[] = [
   "/privacy",
   "/security",
   "/403",
+  // The consent-CAPTURE page (`/[locale]/consent/new`) is a public, pre-auth
+  // compliance surface: it renders the disclosed-purpose notice + grant form
+  // with NO user-data read (see the page + ConsentCaptureFlow — no `auth()`),
+  // POSTing only to the backend `/v1/consent/grant` (which enforces its own
+  // auth). It is one of the three Lighthouse-audited public routes (S-16 DoD).
+  // NOTE: intentionally the `/consent/new` LEAF, not the `/consent` tree —
+  // `/consent/history` and `/consent/withdraw/:id` are user-specific and MUST
+  // stay protected. Was previously (mis)treated as protected: the fail-closed
+  // sign-in redirect masked it (it landed on a 200 sign-in), until the
+  // `/corelink` basePath turned that hop into a 404 and broke the gate.
+  "/consent/new",
 ];
 
 // Locales per src/i18n/request.ts LOCALES. Kept as a literal so this
