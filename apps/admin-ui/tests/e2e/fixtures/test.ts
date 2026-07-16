@@ -12,6 +12,7 @@
  * Every spec imports `{ test, expect }` from here instead of `@playwright/test`.
  */
 import { test as base, expect } from "@playwright/test";
+import { APP_BASE_PATH } from "../../../src/lib/route-matcher";
 
 export const test = base.extend({
   // Override the `page` fixture so the reset runs during fixture setup, i.e.
@@ -24,6 +25,25 @@ export const test = base.extend({
   // its very first test. Route compilation is a one-time cost, so a wide setup
   // budget is correct here; steady-state resets return in single-digit ms.
   page: async ({ page, baseURL }, use) => {
+    // basePath (`/corelink`) awareness for navigation. The specs + page objects
+    // call `page.goto("/en/admin/…")` / `"/sign-in"` — absolute-path forms.
+    // Playwright resolves those against `baseURL`'s ORIGIN only (a leading-slash
+    // path replaces the whole path), so the `/corelink` mount prefix would be
+    // dropped and every navigation would 404. Re-attach it here, ONCE, exactly
+    // as Next itself auto-prefixes framework-generated links — keeping every
+    // `goto` call site prefix-free and the base path a single source of truth
+    // (`APP_BASE_PATH`). Already-prefixed and absolute-URL targets pass through.
+    const originalGoto = page.goto.bind(page);
+    page.goto = ((url: string, options?: Parameters<typeof originalGoto>[1]) => {
+      const target =
+        typeof url === "string" &&
+        url.startsWith("/") &&
+        url !== APP_BASE_PATH &&
+        !url.startsWith(`${APP_BASE_PATH}/`)
+          ? `${APP_BASE_PATH}${url}`
+          : url;
+      return originalGoto(target, options);
+    }) as typeof page.goto;
     await page.request.post(`${baseURL}/api/v1/_e2e/reset`, { timeout: 60_000 });
     await use(page);
   },

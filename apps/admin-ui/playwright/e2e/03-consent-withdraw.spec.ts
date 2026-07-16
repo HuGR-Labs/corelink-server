@@ -5,7 +5,7 @@
  * The mock backend returns a withdraw receipt.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { signInAs, FIXTURE_USERS } from "../fixtures/clerk";
 import { installApiMocks } from "../fixtures/api-mocks";
 

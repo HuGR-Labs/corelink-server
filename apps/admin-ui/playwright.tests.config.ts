@@ -15,9 +15,19 @@
  * deterministic mock.
  */
 import { defineConfig, devices } from "@playwright/test";
+import { APP_BASE_PATH } from "./src/lib/route-matcher";
 
 const PORT = Number(process.env["PORT"] ?? 3010);
-const BASE_URL = process.env["E2E_BASE_URL"] ?? `http://localhost:${PORT}`;
+// The app is mounted under `basePath` (`/corelink`, see next.config.ts), so the
+// local dev server serves every route — including the root landing page used as
+// the webServer readiness probe — under that prefix. Bake the base path into the
+// localhost default so `webServer.url` resolves to a real 200 (root at `/` 404s
+// under basePath) and Playwright's `baseURL` origin is correct. When
+// `E2E_BASE_URL` is provided externally (e.g. the prod-surface run passes the
+// full `https://humangr.com/corelink`) it ALREADY carries the base path — use it
+// verbatim, never re-append (the spec `goto` prefixer keys off the same constant).
+const BASE_URL =
+  process.env["E2E_BASE_URL"] ?? `http://localhost:${PORT}${APP_BASE_PATH}`;
 const PROJECTS_ENV = (process.env["PROJECTS"] ?? "chromium")
   .split(",")
   .map((s) => s.trim())

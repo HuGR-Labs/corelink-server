@@ -12,7 +12,7 @@
  *   - Time-to-first-CLI-authed under the §3.1 target (≤ 5 min stretch).
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { signInAs, FIXTURE_USERS } from "../fixtures/clerk";
 import { installApiMocks } from "../fixtures/api-mocks";
 
