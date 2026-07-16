@@ -232,7 +232,17 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
 export const config = {
   // Run middleware on all paths EXCEPT static assets (Next automatically
   // excludes /_next/static and image-optimized routes via this matcher).
+  //
+  // basePath (`/corelink`) + the mount root: Next auto-prepends the basePath to
+  // every matcher, so the catch-all below becomes `/corelink/(...)` — which
+  // matches `/corelink/<anything>` but NOT the bare mount root `/corelink`
+  // itself (there is no trailing segment for `.*` to bind the leading slash to).
+  // Without the explicit `"/"` entry the canonical landing page (`humangr.com/
+  // corelink`) rendered with NO per-request CSP/nonce (middleware never ran on
+  // it) — a real security regression surfaced by the domain migration. The `"/"`
+  // entry is basePath-prefixed to exactly `/corelink`, restoring CSP on the root.
   matcher: [
+    "/",
     "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
   ],
 };
