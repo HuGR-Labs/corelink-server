@@ -161,6 +161,93 @@ export async function insertTenantOrgMap(
     .run();
 }
 
+/**
+ * Free-tier entitlement DEFAULTS — kept in LOCK-STEP with the parallel
+ * login-time provisioner `worker/src/lib/githugr_provision.ts` (the CANONICAL
+ * shape; see its provision batch, ~lines 154-200). Both provisioners MUST
+ * converge on the SAME row-family so a Clerk-signup tenant and a githugr-login
+ * tenant are seeded identically — a Clerk tenant missing these three rows
+ * reports billing `inactive` and reads empty quota/runner gates → degraded
+ * dashboard.
+ *
+ * The two workers are SEPARATE deploy units (no cross-import between `worker/`
+ * and `apps/signup-worker/`), so these statements + constants are replicated by
+ * hand. Keep them faithful to githugr_provision.ts.
+ */
+/** Free-tier monthly $-ceiling BACKSTOP, micro-dollars ($1,000,000/mo, ADR-0068). */
+const FREE_MONTHLY_BUDGET_USD_MICROS = 1_000_000_000_000;
+/** Free-tier runner concurrency (family-e2e free row; >0 CHECK, migration 0070). */
+const FREE_RUNNER_MAX_CONCURRENCY = 1;
+
+/** Parameters for seeding the free-tier entitlement row-family. */
+export interface SeedEntitlementsParams {
+  tenantId: string;
+  nowMs: number;
+}
+
+/**
+ * Seed the THREE entitlement rows a fully-provisioned tenant needs beyond
+ * `tenant` / `tenant_org_map` / `pat`:
+ *   - `tier_selections('free','active')` — so billing reads `active`, not `inactive`
+ *   - `tenant_quota` — non-zero monthly ceiling so the container quota gate is
+ *     not a flat 402 / fail-open None on an empty read
+ *   - `runners_entitlement('free')` — so the runner cap gate reads a real entitlement
+ *
+ * CANONICAL SHAPE: mirrors `worker/src/lib/githugr_provision.ts` (~lines 154-200)
+ * statement-for-statement (column lists, literal 'free'/'active', schema_version
+ * 1, the `subscription_started_when_active` CHECK — 0039 — satisfied by the
+ * non-NULL `subscription_started_at_ms`, and the same free-tier constants). Only
+ * the `correlation_id` provenance string differs (`clerk-signup:` vs
+ * `githugr-provision:`), since it is a per-path audit label.
+ *
+ * Every statement is `INSERT OR IGNORE` for the same race-/retry-safety as
+ * `insertTenant` / `insertTenantOrgMap`: a Svix redelivery of `user.created` is a
+ * harmless no-op (tenant_id PRIMARY KEY → first-writer-wins).
+ *
+ * Deliberately NOT wrapped in try/catch — a throw MUST propagate so the webhook
+ * returns non-2xx and Svix retries. These rows are LOAD-BEARING for a working
+ * dashboard, exactly like the `tenant_org_map` row. Sequential (not a D1
+ * `batch`) to match this file's other insert helpers + the prepare-only
+ * `D1Database` surface; the signup path's atomicity guarantee comes from the
+ * handler's tenant+live-PAT idempotency re-entry, not a transaction.
+ */
+export async function seedTenantEntitlements(
+  db: D1Database,
+  params: SeedEntitlementsParams,
+): Promise<void> {
+  const { tenantId, nowMs } = params;
+
+  // (1) tier_selections — free/active. subscription_started_at_ms MUST be
+  // non-NULL when state='active' (0039 CHECK subscription_started_when_active).
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO tier_selections " +
+        "(tenant_id, tier, subscription_state, schema_version, correlation_id, subscription_started_at_ms) " +
+        "VALUES (?1, 'free', 'active', 1, ?2, ?3)",
+    )
+    .bind(tenantId, `clerk-signup:${tenantId}`, nowMs)
+    .run();
+
+  // (2) runners_entitlement — free plan, min concurrency (>0 CHECK, 0070).
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO runners_entitlement " +
+        "(tenant_id, max_concurrency, plan, created_at_ms) VALUES (?1, ?2, 'free', ?3)",
+    )
+    .bind(tenantId, FREE_RUNNER_MAX_CONCURRENCY, nowMs)
+    .run();
+
+  // (3) tenant_quota — effectively-unlimited $-ceiling backstop (ADR-0068), so
+  // the container quota gate isn't a flat 402 / fail-open None on an empty read.
+  await db
+    .prepare(
+      "INSERT OR IGNORE INTO tenant_quota " +
+        "(tenant_id, monthly_budget_usd_micros) VALUES (?1, ?2)",
+    )
+    .bind(tenantId, FREE_MONTHLY_BUDGET_USD_MICROS)
+    .run();
+}
+
 /** A single outstanding `invited` team-member row (the acceptance target). */
 interface InvitedMemberRow {
   tenant_id: string;

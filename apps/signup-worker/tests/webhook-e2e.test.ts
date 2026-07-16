@@ -42,6 +42,16 @@ class InMemoryD1 {
     return t;
   }
 
+  /** Number of rows recorded for a table (0 if the table was never written). */
+  rowCount(name: string): number {
+    return this.tables.get(name)?.length ?? 0;
+  }
+
+  /** The first recorded row for a table, or undefined. */
+  firstRow(name: string): D1Row | undefined {
+    return this.tables.get(name)?.[0];
+  }
+
   prepare(query: string) {
     const self = this;
     let boundValues: unknown[] = [];
@@ -317,6 +327,66 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     expect(regions.length).toBeGreaterThan(0);
     for (const r of regions) {
       expect(r).toBe("enam");
+    }
+  });
+
+  it("provisions the FULL 5-row-family on first user.created: tenant, tenant_org_map, pat, tier_selections('free','active'), tenant_quota, runners_entitlement('free') — converges with githugr_provision", async () => {
+    // LAUNCH-CRITICAL GAP: the Clerk-signup path previously seeded only
+    // tenant+tenant_org_map+pat, leaving tier_selections/tenant_quota/
+    // runners_entitlement EMPTY — so a Clerk-signup tenant reported billing
+    // `inactive` and read empty quota/runner gates (degraded dashboard), while a
+    // githugr-LOGIN tenant (worker/src/lib/githugr_provision.ts) was seeded with
+    // all five. This drives the REAL defaultApiClient end-to-end (mint mocked)
+    // and asserts every one of the five row-families lands.
+    const db = new InMemoryD1();
+    const env: AutoProvisionEnv = {
+      CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      CORELINK_API_BASE: "https://corelink-api.humangr.com",
+      CONFIG_DB: db as unknown as Parameters<typeof defaultApiClient>[0]["CONFIG_DB"],
+      CORELINK_INTERNAL_AUTH_KEY: "test-internal-auth-key-e2e",
+      // No CLERK_SECRET_KEY → publishUserMetadata is a no-op (dev path).
+    };
+
+    // Mock the container /_internal/pat/mint call so issuePat lands a pat row.
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          token_plaintext: "corelink_pat_FULLROWS",
+          pat_id: "pat-full-1",
+          token_id: "tok-full-1",
+          expires_ms: Date.now() + 365 * 24 * 60 * 60 * 1000,
+          hash: "deadbeefhash",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+
+    try {
+      const event = makeUserCreatedEvent("user_full_rows");
+      const req = await makeWebhookRequest(event, WEBHOOK_SECRET, "msg_full_rows_001");
+      const resp = await handleClerkWebhook(req, env, defaultApiClient);
+      expect(resp.status).toBe(200);
+
+      // ── ALL FIVE row-families seeded (the convergence assertion) ────────────
+      expect(db.rowCount("tenant")).toBeGreaterThanOrEqual(1);
+      expect(db.rowCount("tenant_org_map")).toBe(1);
+      expect(db.rowCount("pat")).toBe(1);
+      // The three rows the gap left empty:
+      expect(db.rowCount("tier_selections")).toBe(1);
+      expect(db.rowCount("tenant_quota")).toBe(1);
+      expect(db.rowCount("runners_entitlement")).toBe(1);
+
+      // tier_selections is seeded free/ACTIVE (billing reads `active`, not the
+      // degraded `inactive`), matching githugr_provision's shape.
+      const tierRaw = String(db.firstRow("tier_selections")?.["_raw_query"] ?? "");
+      expect(tierRaw).toContain("INTO tier_selections");
+      expect(tierRaw).toContain("'free', 'active'");
+      // runners_entitlement is seeded on the free plan.
+      const runnersRaw = String(db.firstRow("runners_entitlement")?.["_raw_query"] ?? "");
+      expect(runnersRaw).toContain("INTO runners_entitlement");
+      expect(runnersRaw).toContain("'free'");
+    } finally {
+      fetchMock.mockRestore();
     }
   });
 
