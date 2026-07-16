@@ -9,6 +9,15 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Canonical app surface is `humangr.com/corelink` (the retired
+  // `corelink-app.humangr.com` subdomain served the app at `/`). Without a
+  // basePath, OpenNext serves every route at `/` and the path-mounted surface
+  // 404s. Next auto-prefixes framework links, the Sentry `tunnelRoute`
+  // (`/monitoring` → `/corelink/monitoring`), and the static `headers()` source
+  // with this basePath; hand-built URLs (middleware sign-in redirects, the
+  // `/upgrade` forwarder, and the checkout success/cancel URLs handed to Stripe)
+  // re-attach it explicitly via `APP_BASE_PATH` in `src/lib/route-matcher.ts`.
+  basePath: "/corelink",
   // This app imports `next/image` zero times. Disabling the optimizer removes
   // the on-the-fly `/_next/image` endpoint as a CPU/cost amplification surface
   // on the Worker (it would otherwise re-encode per unique url+w+q tuple). The

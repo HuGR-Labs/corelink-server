@@ -14,7 +14,7 @@ This directory contains the BetterStack synthetic monitoring probe definitions f
 | # | Name | URL | Interval | Method | Notes |
 |---|---|---|---|---|---|
 | 1 | `corelink-api-health` | `https://corelink-api.humangr.com/health` | 30s | GET | JSON body assert `$.status == "ok"` |
-| 2 | `corelink-app-ui` | `https://corelink-app.humangr.com` | 60s | GET | Clerk-gated Next.js; expect 200 |
+| 2 | `corelink-app-ui` | `https://humangr.com/corelink` | 60s | GET | Clerk-gated Next.js; expect 200 |
 | 3 | `corelink-docs` | `https://corelink-docs.humangr.com` | 60s | GET | Docusaurus CF Pages; expect 200 |
 | 4 | `corelink-signup-health` | `https://corelink-signup.humangr.com` | 60s | GET | Signup worker; expect 200 |
 | 5 | `corelink-get-install` | `https://corelink-get.humangr.com` | 60s | GET | Install script; expect 200 + `text/plain` |

@@ -431,7 +431,7 @@ mod tests {
         let url = creator
             .create_session(
                 "cus_abc",
-                "https://corelink-app.humangr.com/billing",
+                "https://humangr.com/corelink/billing",
                 "tenant_acme",
             )
             .unwrap();
@@ -451,7 +451,7 @@ mod tests {
         let err = creator
             .create_session(
                 "cus_abc",
-                "https://corelink-app.humangr.com/billing",
+                "https://humangr.com/corelink/billing",
                 "tenant_acme",
             )
             .unwrap_err();
@@ -468,7 +468,7 @@ mod tests {
         let err = creator
             .create_session(
                 "cus_abc",
-                "http://corelink-app.humangr.com/billing",
+                "http://humangr.com/corelink/billing",
                 "tenant_acme",
             )
             .unwrap_err();
@@ -481,7 +481,7 @@ mod tests {
         let err = creator
             .create_session(
                 "not_a_customer",
-                "https://corelink-app.humangr.com/billing",
+                "https://humangr.com/corelink/billing",
                 "tenant_acme",
             )
             .unwrap_err();
@@ -511,7 +511,7 @@ mod tests {
         let url = creator
             .create_session(
                 "cus_abc",
-                "https://corelink-app.humangr.com/billing",
+                "https://humangr.com/corelink/billing",
                 "tenant_acme",
             )
             .unwrap();
@@ -539,7 +539,7 @@ mod tests {
         let url2 = creator
             .create_session(
                 "cus_abc",
-                "https://corelink-app.humangr.com/billing",
+                "https://humangr.com/corelink/billing",
                 "tenant_acme",
             )
             .unwrap();

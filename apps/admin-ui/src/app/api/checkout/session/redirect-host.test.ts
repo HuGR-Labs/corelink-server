@@ -13,7 +13,7 @@ describe("checkout redirect host allow-list", () => {
   it("accepts the real prod app hosts", () => {
     for (const h of [
       "corelink-admin.humangr.com",
-      "corelink-app.humangr.com",
+      "humangr.com", // public app apex (path-mounted at /corelink)
       "corelink-docs.humangr.com",
     ]) {
       expect(isAllowedRedirectHost(h), h).toBe(true);
@@ -31,7 +31,6 @@ describe("checkout redirect host allow-list", () => {
       "evil.com",
       "corelink-admin.humangr.com.evil.com",
       "evil.humangr.com", // not the corelink-* shape
-      "humangr.com",
       "corelink-admin.humangr.com:8080@evil.com",
       "notcorelink-admin.humangr.com",
       "",

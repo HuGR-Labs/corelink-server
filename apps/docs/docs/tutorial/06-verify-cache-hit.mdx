@@ -40,7 +40,7 @@ corelink bench --put 50 --get 50
 
 ## C. Admin UI dashboard
 
-1. Open `https://corelink-app.humangr.com/orgs/<your-org>/observability`.
+1. Open `https://humangr.com/corelink/orgs/<your-org>/observability`.
 2. Pick **Cache hit ratio (5m, by tenant)**.
 3. Trigger a fresh build (`bazel clean && bazel build //...`).
 4. The series should jump to ~100% after the first warm pass.

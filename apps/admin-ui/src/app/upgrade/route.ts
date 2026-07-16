@@ -2,7 +2,7 @@
  * GET /upgrade — locale-less forwarder for the public pricing CTAs (#49).
  *
  * The docs pricing page links every paid SKU at
- * `https://corelink-app.humangr.com/upgrade?plan=<tier>` (see
+ * `https://humangr.com/corelink/upgrade?plan=<tier>` (see
  * `apps/docs/src/pages/pricing.tsx` `ctaForTier`) — with NO locale
  * prefix, because the docs site is locale-unaware. next-intl pages live
  * under `/[locale]/…`, so this handler 307s to the canonical
@@ -26,6 +26,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { DEFAULT_LOCALE } from "@/i18n/request";
 import { normalizeCheckoutTier } from "@/lib/pricing";
+import { APP_BASE_PATH } from "@/lib/route-matcher";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,12 @@ export function GET(req: NextRequest): NextResponse {
   const tier = normalizeCheckoutTier(
     new URL(req.url).searchParams.getAll("plan"),
   );
+  // Re-attach the `/corelink` base path: this is a hand-built absolute URL, and
+  // Next never auto-prefixes basePath onto those. `new URL(absolutePath, …)`
+  // takes only the ORIGIN from `req.url`, so this is robust whether or not the
+  // incoming pathname already carries the mount prefix.
   return NextResponse.redirect(
-    new URL(`/${DEFAULT_LOCALE}/upgrade?plan=${tier}`, req.url),
+    new URL(`${APP_BASE_PATH}/${DEFAULT_LOCALE}/upgrade?plan=${tier}`, req.url),
     { status: 307 },
   );
 }

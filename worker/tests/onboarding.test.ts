@@ -167,10 +167,10 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
     expect(captured.req).toBeUndefined();
   });
 
-  it("accepts azp from corelink-app.humangr.com (the user-facing sign-up host, #219)", async () => {
+  it("accepts azp from humangr.com (the user-facing sign-up host, #219)", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_app_host",
-      azp: "https://corelink-app.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request } = {};

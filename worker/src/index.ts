@@ -366,7 +366,7 @@ const TIMING_PAD_MIN_MS = 5;
 
 const ALLOWED_ORIGINS = [
   "https://corelink-admin.humangr.com",
-  "https://corelink-app.humangr.com",
+  "https://humangr.com",
   "https://corelink-docs.humangr.com",
 ];
 

@@ -21,7 +21,7 @@ Objetivo: autenticado, primer push y pull, verificado en menos de 5 minutos.
 
 ## Paso 1 — Obtenga un PAT
 
-1. Regístrese en [corelink-app.humangr.com/sign-up](https://corelink-app.humangr.com/sign-up).
+1. Regístrese en [humangr.com/corelink/sign-up](https://humangr.com/corelink/sign-up).
 2. Después de que finalice el asistente de onboarding de 2 pasos, su inquilino queda aprovisionado y se muestra un PAT inicial **exactamente una vez** en la pantalla de bienvenida.
 3. Copie el PAT y guárdelo en un gestor de secretos (1Password, AWS Secrets Manager, secret de GitHub Actions — cualquier cosa menos texto plano). No se vuelve a mostrar nunca más.
 

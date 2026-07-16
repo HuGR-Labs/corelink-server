@@ -72,8 +72,8 @@ export default function TermsPage(): ReactElement {
               corelink-docs.humangr.com
             </a>
             , and{" "}
-            <a href="https://corelink-app.humangr.com">
-              corelink-app.humangr.com
+            <a href="https://humangr.com/corelink">
+              humangr.com/corelink
             </a>
             ).
           </p>

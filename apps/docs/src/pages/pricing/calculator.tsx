@@ -23,7 +23,7 @@ import type { BillingPeriod, UsageInputs } from "../../lib/pricing";
 
 import styles from "../pricing.module.css";
 
-const APP_BASE = "https://corelink-app.humangr.com";
+const APP_BASE = "https://humangr.com/corelink";
 const SIGNUP_URL = `${APP_BASE}/sign-up`;
 const UPGRADE_PRO_URL = `${APP_BASE}/upgrade?plan=pro`;
 const SALES_MAILTO = "mailto:sales@humangr.com?subject=CoreLink%20Enterprise%20inquiry";

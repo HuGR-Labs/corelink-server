@@ -2,7 +2,7 @@
  * /[locale]/upgrade — public pricing CTA → Stripe Checkout bridge (#49).
  *
  * Every public docs pricing CTA targets
- * `https://corelink-app.humangr.com/upgrade?plan=<tier>` (see
+ * `https://humangr.com/corelink/upgrade?plan=<tier>` (see
  * `apps/docs/src/pages/pricing.tsx` `ctaForTier`). Before this page
  * existed that URL 404'd — the checkout plumbing
  * (`/api/checkout/session` + `<UpgradeButton />`) was built but had no

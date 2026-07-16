@@ -21,7 +21,7 @@ A `corelink-cli` está em desenvolvimento ativo (stream 1.1). Todos os exemplos 
 
 ## Passo 1 — Obtenha um PAT
 
-1. Cadastre-se em [corelink-app.humangr.com/sign-up](https://corelink-app.humangr.com/sign-up).
+1. Cadastre-se em [humangr.com/corelink/sign-up](https://humangr.com/corelink/sign-up).
 2. Depois que o assistente de onboarding de 2 etapas terminar, seu inquilino é provisionado e um PAT inicial é mostrado **exatamente uma vez** na tela de boas-vindas.
 3. Copie o PAT e armazene-o em um gerenciador de segredos (1Password, AWS Secrets Manager, secret do GitHub Actions — qualquer coisa, menos texto puro). Ele nunca mais será mostrado.
 

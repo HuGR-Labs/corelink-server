@@ -689,13 +689,13 @@ describe("CORS", () => {
     const resp = await workerFetch("http://localhost/v2/", {
       method: "OPTIONS",
       headers: {
-        Origin: "https://corelink-app.humangr.com",
+        Origin: "https://humangr.com",
         "Access-Control-Request-Method": "GET",
       },
     });
     expect(resp.status).toBe(204);
     expect(resp.headers.get("access-control-allow-origin")).toBe(
-      "https://corelink-app.humangr.com",
+      "https://humangr.com",
     );
   });
 
@@ -729,14 +729,14 @@ describe("CORS", () => {
 
   it("attaches Vary: Origin when ACAO is set", async () => {
     const resp = await workerFetch("http://localhost/health", {
-      headers: { Origin: "https://corelink-app.humangr.com" },
+      headers: { Origin: "https://humangr.com" },
     });
     expect(resp.headers.get("vary")).toBe("Origin");
   });
 
   it("all three allowed origins work", async () => {
     const allowed = [
-      "https://corelink-app.humangr.com",
+      "https://humangr.com",
       "https://corelink-admin.humangr.com",
       "https://corelink-docs.humangr.com",
     ];

@@ -33,7 +33,7 @@ ENVIRONMENT = "dev"
 # Comma-separated allow-list of trusted ingest origins. Server-side callers
 # (signup-worker, cas-worker, get-corelink-worker) authenticate via the
 # `X-Corelink-Ingest-Key` header instead and bypass the origin check.
-ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://corelink-app.humangr.com,http://localhost:3000,http://localhost:3001"
+ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://humangr.com,http://localhost:3000,http://localhost:3001"
 # Plausible domain — only used by the cron worker to surface Plausible totals
 # in the weekly email if a Plausible API token is configured (optional).
 PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com"
@@ -72,7 +72,7 @@ crons = [
 # ──────────────────────────────────────────────────────────────────────────
 [env.prod]
 name = "corelink-analytics-prod"
-vars = { ENVIRONMENT = "prod", ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://corelink-app.humangr.com", PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com", DIGEST_RECIPIENT = "gustavo@humangr.com", DIGEST_FROM = "noreply@humangr.com" }
+vars = { ENVIRONMENT = "prod", ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://humangr.com", PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com", DIGEST_RECIPIENT = "gustavo@humangr.com", DIGEST_FROM = "noreply@humangr.com" }
 
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.prod.observability]
@@ -102,7 +102,7 @@ crons = [
 # ──────────────────────────────────────────────────────────────────────────
 [env.staging]
 name = "corelink-analytics-staging"
-vars = { ENVIRONMENT = "staging", ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://corelink-app.humangr.com", PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com", DIGEST_RECIPIENT = "gustavo@humangr.com", DIGEST_FROM = "noreply@humangr.com" }
+vars = { ENVIRONMENT = "staging", ALLOWED_ORIGINS = "https://corelink-docs.humangr.com,https://corelink-admin.humangr.com,https://humangr.com", PLAUSIBLE_DOMAIN = "corelink-docs.humangr.com", DIGEST_RECIPIENT = "gustavo@humangr.com", DIGEST_FROM = "noreply@humangr.com" }
 
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.staging.observability]

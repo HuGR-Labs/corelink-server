@@ -117,7 +117,7 @@ export function isProtectedPath(pathname: string): boolean {
  * The mount prefix the CURRENT request arrived under, derived from its
  * pathname — mirroring {@link stripBasePath}:
  *   - `/corelink` on the path surface   (`humangr.com/corelink/*`)
- *   - ""         on the root surface    (`corelink-app.humangr.com/*`)
+ *   - ""         on the legacy no-prefix surface (requests without `/corelink`)
  * The app is served on BOTH during the subdomain→path migration, so a
  * hand-built sign-in redirect must re-attach EXACTLY the prefix the request
  * carried: a bare `/sign-in` on `humangr.com` resolves to the apex marketing

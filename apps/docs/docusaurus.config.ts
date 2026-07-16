@@ -347,7 +347,7 @@ const config: Config = {
           position: "right",
         },
         {
-          href: "https://corelink-app.humangr.com",
+          href: "https://humangr.com/corelink",
           label: "Admin",
           position: "right",
         },

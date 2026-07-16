@@ -48,7 +48,7 @@ probes:
   # Probe 2: App (Admin UI) — Clerk-gated Next.js frontend
   - name: "corelink-app-ui"
     pronounceable_name: "CoreLink App UI"
-    url: "https://corelink-app.humangr.com"
+    url: "https://humangr.com/corelink"
     method: "GET"
     monitor_type: "status"
     check_frequency_seconds: 60
