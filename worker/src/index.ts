@@ -478,6 +478,26 @@ function handlePreflight(request: Request): Response | null {
  * (e.g. `admin`) straight through on any path. The Worker is the sole setter of
  * the scope value (read from the trusted D1 `pat.scope`), never the client.
  */
+/**
+ * DSR destructive-arm MFA step-up freshness window, in MINUTES.
+ *
+ * The `/v1/privacy/*` erasure/rectification gate in the container
+ * (`routes/dsr/portal.rs`) is fail-CLOSED on the Worker-trusted
+ * `x-corelink-mfa-verified: 1` marker. The Worker is its SOLE setter, and must
+ * only stamp it when the Clerk session's factor-verification age is FRESH —
+ * otherwise a stolen/XSS/CSRF long-lived dashboard session could trigger
+ * irreversible cross-region tenant-data destruction with NO re-auth.
+ *
+ * Freshness = `clerkAuth.fvaMinutes` (verified `fva[0]`, minutes since the first
+ * factor was last verified) `<= MFA_FVA_FRESH_MAX_MINUTES`. `undefined`
+ * (absent/malformed `fva`) is treated as NOT fresh (fail-CLOSED, never `0`),
+ * mirroring the session/token-exchange freshness signal (lib/session_exchange.ts).
+ * The 5-minute window matches the canonical admin step-up TTL
+ * (`corelink_auth::webauthn::admin_step_up_default_ttl()` = 300s) — this is the
+ * SAME step-up policy, not a new one.
+ */
+const MFA_FVA_FRESH_MAX_MINUTES = 5;
+
 const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   "x-admin-scope",
   "x-admin-principal",
@@ -2424,14 +2444,24 @@ const baseHandler: ExportedHandler<Env> = {
               custClerkAuth.role === "viewer" ? "read-only" : "read-write",
             );
             // DSR portal (/v1/privacy/*) destructive-arm MFA step-up: the Worker
-            // is the SOLE setter of x-corelink-mfa-verified (stripped above). An
-            // edge-verified Clerk session is the destructive-arm authority today
-            // (consistent with /v1/customer/account/delete, which erases on a
-            // Clerk session alone); the container gate (routes/dsr/portal.rs) is
-            // fail-CLOSED on this trusted marker, so tightening it to require a
-            // real WebAuthn step-up assertion later is a header-condition change
-            // here, not a container rewire. Only stamped for the privacy plane.
-            if (route.pathSuffix.startsWith("/v1/privacy/")) {
+            // is the SOLE setter of x-corelink-mfa-verified (stripped above). The
+            // container gate (routes/dsr/portal.rs) is fail-CLOSED on this trusted
+            // marker. We stamp it ONLY when the Clerk session's factor-verification
+            // age is FRESH — `fvaMinutes != null && fvaMinutes <= threshold` — so a
+            // stolen/XSS/CSRF long-lived dashboard session can NOT trigger
+            // irreversible cross-region erasure with no re-auth. `undefined`
+            // (absent/malformed `fva`) ⇒ NOT fresh (fail-CLOSED, never 0), the same
+            // freshness signal the session/token-exchange paths forward
+            // (lib/session_exchange.ts). When NOT fresh we leave the marker unset:
+            // the container gate then fails closed and records the DSR ticket
+            // `pending` with `mfa_required=true` (the caller completes step-up via
+            // POST /v1/privacy/dsr/{id}/verify-mfa) — matching existing missing-marker
+            // behaviour. Only ever stamped for the privacy plane.
+            if (
+              route.pathSuffix.startsWith("/v1/privacy/") &&
+              custClerkAuth.fvaMinutes !== undefined &&
+              custClerkAuth.fvaMinutes <= MFA_FVA_FRESH_MAX_MINUTES
+            ) {
               h.set("x-corelink-mfa-verified", "1");
             }
             // Deliberately NOT set: x-corelink-internal-auth (least privilege —
