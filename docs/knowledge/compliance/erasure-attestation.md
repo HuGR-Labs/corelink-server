@@ -11,7 +11,7 @@ source_files:
   - crates/corelink-erasure-attestation/src/evidence.rs
   - crates/corelink-container/src/routes/dsr/attestation.rs
   - crates/corelink-container/src/routes/public_attestation.rs
-checkpoint_sha: "a3a894c1e0881cdba24f890bd6ca6657f78153e9"
+checkpoint_sha: "ef28238b559f3e973e5e3ccba6d948571ffa7224"
 provenance: "AUTHORED"
 tags: ["compliance", "erasure", "ed25519", "jcs", "rfc-8785", "nist-sp-800-88", "gdpr-art-17", "byok", "dsr"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -58,6 +58,7 @@ This crate is the pure-logic signing and verification surface for erasure attest
 - `EvidenceBundle::compute_hash` falls back to `serde_json` if `serde_jcs` fails, but that branch is treated as unreachable (a property test guards JCS); rely on `validated_hash` for the fail-closed checks `crates/corelink-erasure-attestation/src/evidence.rs:52-61`.
 - `from_seed` reproduces the same keypair on every process start; the seed is the raw 32-byte Ed25519 secret scalar and MUST stay out of logs/Debug/errors — only `generate` is random/ephemeral `crates/corelink-erasure-attestation/src/key.rs:87-115`.
 - Old public keys remain served for the 30d overlap but accept no new signatures; emergency rotation zeroizes the old key and publishes a security notice `specs/03_architecture/adrs/ADR-S14-007-erasure-attestation-ed25519-jcs.md:93-96`.
+- M22(a): the unauth `/v1/public/*` verifier router mounts OUTSIDE the data-plane's `ratelimit_layer.rs`/residency/auth layers (no PAT, no per-tenant token bucket), so before this fix it carried NO container-side rate limiting at all despite being internet-reachable. It now wraps its two routes in a SCOPED per-IP token-bucket layer local to the router itself (never the shared data-plane limiter) — generous budget (20 req/s, burst 60) so a regulator/DPA/human verifier or shared-NAT/CI-egress caller is never falsely throttled; FAIL-OPEN when the trusted `x-corelink-client-ip` header is absent `crates/corelink-container/src/routes/public_attestation.rs:103-118`.
 
 # Citations
 
@@ -81,4 +82,4 @@ This crate is the pure-logic signing and verification surface for erasure attest
 - `crates/corelink-erasure-attestation/src/evidence.rs:68-85` — fail-closed bundle validation.
 - `crates/corelink-container/src/routes/dsr/attestation.rs:1-9` — container-side signed + served attestation is LIVE: real Ed25519 certificate, served by the `/v1/public/*` verifier.
 - `crates/corelink-container/src/routes/dsr/attestation.rs:55-79` — the STRICT all-or-nothing ordering (R2 PUT → pubkey → signed index row) that makes the served cert non-forgeable (anti-theater invariant).
-- `crates/corelink-container/src/routes/public_attestation.rs:69-73` — the unauth public verifier router: `GET /v1/public/attestation/{request_id}` + `GET /v1/public/keys/erasure/{region}.pub` (registered with axum-0.8 `{param}` capture syntax).
+- `crates/corelink-container/src/routes/public_attestation.rs:103-118` — the unauth public verifier router: `GET /v1/public/attestation/{request_id}` + `GET /v1/public/keys/erasure/{region}.pub` (axum-0.8 `{param}` capture syntax), wrapped in the M22(a) scoped per-IP rate-limit layer.

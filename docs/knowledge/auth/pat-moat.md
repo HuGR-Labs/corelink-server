@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "3bb207e56ace90201dc202deeb435f5172f55a0a"
+checkpoint_sha: "ef28238b559f3e973e5e3ccba6d948571ffa7224"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -91,7 +91,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
   (`worker/src/index.ts:1221-1231`). The PAT-gate caller (H1 fix) now maps BOTH
   `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
-  (`worker/src/index.ts:2537-2542`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
+  (`worker/src/index.ts:2544-2549`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
   surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
   chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
   still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
@@ -118,7 +118,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   round-trip; it fails **OPEN** on a transient D1 fault (availability), but a KNOWN-suspended cached value
   still denies (`worker/src/lib/tenant_suspend_gate.ts:129-159`). The caller maps the distinct
   `tenant_suspended` reason to **403** (an authorization denial, fail-closed), separate from the 401
-  bad-credential arms and the 503 transient-infra arms (`worker/src/index.ts:2553`).
+  bad-credential arms and the 503 transient-infra arms (`worker/src/index.ts:2560`).
 
 # Citations
 
