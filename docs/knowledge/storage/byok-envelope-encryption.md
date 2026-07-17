@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-byok/src/byok_aws/real.rs"
   - "crates/corelink-container/src/storage/byok_cas.rs"
   - "crates/corelink-container/src/routes/byok_admin.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "222074448e71a761c7d50ff06c48f5a0ead2d012"
 provenance: "AUTHORED"
 tags: ["storage", "byok", "encryption", "kms", "envelope"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -132,7 +132,7 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 14. The operator activation surface is `byok_admin::router`, exposing `POST /v1/admin/byok/activate`
     (writes the `active` `tenant_byok_config` row from an operator-asserted CMK provider/identity + the
     CMK-WRAPPED Tcs — never the plaintext Tcs) and `POST /v1/admin/byok/deactivate` (the crypto-shred kill
-    switch) (`crates/corelink-container/src/routes/byok_admin.rs:129-134`).
+    switch) (`crates/corelink-container/src/routes/byok_admin.rs:146-149`).
 
 # Invariants
 - **Encrypt at rest ONLY for an `active` tenant, in its configured mode.** `partial` is active-but-deferred
@@ -199,4 +199,4 @@ reclaim failure warns but never rolls back the delete, since an orphaned wrapped
 22. `crates/corelink-byok/src/lib.rs:105-139` — compile-time at-most-one-provider `compile_error!` guards.
 23. `crates/corelink-container/src/byok_orchestrator.rs:208-219` — `make_provider`: builds the singleton `Arc<dyn KmsProvider>` + boot audit event.
 24. `crates/corelink-container/src/byok_orchestrator.rs:223-272` — `build_active`: compile-time `cfg` dispatch over the four `byok-*-real` providers, `InMemoryFake` fallback when none set.
-25. `crates/corelink-container/src/routes/byok_admin.rs:129-134` — `byok_admin::router`: the operator `POST /v1/admin/byok/{activate,deactivate}` surface — the wired writer of `active`/`shredded` `tenant_byok_config` rows (activation takes the CMK-wrapped Tcs, never the plaintext).
+25. `crates/corelink-container/src/routes/byok_admin.rs:146-149` — `byok_admin::router`: the operator `POST /v1/admin/byok/{activate,deactivate}` surface — the wired writer of `active`/`shredded` `tenant_byok_config` rows (activation takes the CMK-wrapped Tcs, never the plaintext).
