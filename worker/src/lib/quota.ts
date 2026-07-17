@@ -186,14 +186,14 @@ export async function getTierForTenant(
   if (tenantTier !== null && isValidTier(tenantTier.tier)) {
     const fallbackTier = tenantTier.tier as Tier;
     // M14 (billing-integrity fail-safe): `tenant.tier` is NOT an authoritative
-    // paid-subscription signal. signup-worker is the downgrade authority and an
-    // ACTIVE `tier_selections` row (step 1) is the paid gate; migration-0057
-    // only defaults this column to 'free'. If any writer ever set it to a paid
-    // tier, honoring it here would serve full PAID quota with no confirmed
-    // payment. Least-privilege: floor a paid fallback to 'free' unless an active
-    // subscription was confirmed on this path.
+    // paid signal — an ACTIVE `tier_selections` row (step 1) is the paid gate
+    // (migration-0057 only defaults this column to 'free'). Floor a paid fallback
+    // to 'free' unless an active subscription was confirmed, so a rogue paid
+    // `tenant.tier` never leaks paid quota. `d1Error` mirrors `tierSelError`: a
+    // floor after a step-1 THROW is OUTAGE-derived (fails OPEN downstream, no
+    // false 429), not a confirmed 'free' (F21).
     if (isPaidTier(fallbackTier) && !hasActiveSubscription) {
-      return { tier: "free", d1Error: false };
+      return { tier: "free", d1Error: tierSelError };
     }
     return { tier: fallbackTier, d1Error: false };
   }

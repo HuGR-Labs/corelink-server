@@ -50,6 +50,8 @@ function makeQuotaD1Mock(opts: {
   storageBytes?: number | null;
   patRow?: { tenant_id: string; expires_ms: number } | null;
   throwOnTierQuery?: boolean;
+  /** Throw ONLY on the step-1 `tier_selections` query (tenant.tier still resolves). */
+  throwOnTierSelectionsQuery?: boolean;
   throwOnStorageQuery?: boolean;
   /**
    * Post-increment request_count returned by the monthly_request_counts UPSERT
@@ -67,6 +69,7 @@ function makeQuotaD1Mock(opts: {
     storageBytes = 0,
     patRow = { tenant_id: TEST_TENANT_ID, expires_ms: Date.now() + 3_600_000 },
     throwOnTierQuery = false,
+    throwOnTierSelectionsQuery = false,
     throwOnStorageQuery = false,
     requestCountAfterIncrement = 1,
     throwOnRequestCountQuery = false,
@@ -89,7 +92,8 @@ function makeQuotaD1Mock(opts: {
           }
 
           if (isTierSelQuery) {
-            if (throwOnTierQuery) throw new Error("D1 tier_selections error");
+            if (throwOnTierQuery || throwOnTierSelectionsQuery)
+              throw new Error("D1 tier_selections error");
             // Mirror the SQL's `subscription_state = 'active'` filter: a
             // non-active row (e.g. pending_checkout, written at checkout
             // click time before payment) is INVISIBLE to the enforcement
@@ -223,6 +227,22 @@ describe("getTierForTenant", () => {
     const db = makeQuotaD1Mock({ tierSelectionsRow: null, tenantTierRow: { tier: "pro" } });
     const tier = await getTierForTenant(db, TEST_TENANT_ID);
     expect(tier.tier).toBe("free");
+    // A CONFIRMED-absent active row → the floored 'free' is confirmed (not d1Error),
+    // so downstream enforces the free cap normally.
+    expect(tier.d1Error).toBe(false);
+  });
+
+  it("floors to 'free' but marks d1Error when the tier_selections query THREW (outage, not confirmed) — M14 fail-open", async () => {
+    // step-1 (tier_selections) errored → we could NOT confirm the subscription
+    // state; step-2 (tenant.tier) succeeded with a paid value. We still floor to
+    // 'free' (never leak paid without confirmation), but the floor is OUTAGE-
+    // derived, so d1Error MUST be true → downstream fails OPEN (no free-cap
+    // enforcement / false 429). Before the follow-up fix this returned
+    // d1Error:false, mismarking an outage as a confirmed free.
+    const db = makeQuotaD1Mock({ throwOnTierSelectionsQuery: true, tenantTierRow: { tier: "pro" } });
+    const tier = await getTierForTenant(db, TEST_TENANT_ID);
+    expect(tier.tier).toBe("free");
+    expect(tier.d1Error).toBe(true);
   });
 
   it("falls back to 'free' when both tables return null", async () => {
