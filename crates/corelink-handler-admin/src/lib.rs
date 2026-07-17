@@ -25,6 +25,7 @@
 pub mod audit;
 pub mod error;
 pub mod handler;
+pub mod ledger;
 pub mod observer;
 
 pub use audit::{AuditEvent, AuditEventKind, AuditSink, InMemoryAuditSink};
@@ -32,5 +33,9 @@ pub use error::AdminHandlerError;
 pub use handler::{
     AdminMutateHandler, AdminMutateRequest, AdminMutateResponse, AdminReadHandler,
     AdminReadRequest, AdminReadResponse, DualApprovalToken, InMemoryAdminHandler, MutateOp,
+};
+pub use ledger::{
+    ApprovalLedger, ApprovalLedgerWriter, ApprovalRejection, InMemoryApprovalLedger,
+    VerifiedApproval,
 };
 pub use observer::{InMemorySliObserver, Sli, SliObservation, SliObserver};

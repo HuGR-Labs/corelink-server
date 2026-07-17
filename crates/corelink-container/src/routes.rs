@@ -646,11 +646,25 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
              mounted but FAIL CLOSED (403) — operator gate not configured (dev/CI mode)"
         );
     }
-    let (admin_read, admin_mutate) = admin::build_handlers();
+    let admin_stack = admin::build_handler_stack();
+    // Dedicated approve-gate key (finding H5) — a DIFFERENT credential from
+    // the mutate/admin key so approve and mutate require distinct keys (real
+    // two-person control). Shared-key fallback keeps it additive.
+    let admin_approver_auth_key = admin::approver_auth_key_from_env();
+    if admin_approver_auth_key.is_none() {
+        tracing::warn!(
+            "CORELINK_ADMIN_APPROVER_AUTH_KEY (and shared fallback) unset; \
+             POST /v1/admin/approve mounted but FAILS CLOSED (403) — dual-approval \
+             cannot be recorded until an approver key is configured"
+        );
+    }
     let admin_state = admin::AdminRouteState {
-        read: admin_read,
-        mutate: admin_mutate,
+        read: admin_stack.read,
+        mutate: admin_stack.mutate,
         internal_auth_key: admin_internal_auth_key.clone(),
+        approval_writer: admin_stack.approval_writer,
+        approver_auth_key: admin_approver_auth_key,
+        approvals_durable: admin_stack.durable,
     };
     let (default_pilot_store, pilot_audit) = admin_pilot::build_handlers();
     // Durable pilot-tenant store (hugit-P2 WP-FOUND): D1-backed when the

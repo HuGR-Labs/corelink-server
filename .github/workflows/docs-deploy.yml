@@ -1,0 +1,114 @@
+name: docs — CF Pages deploy
+
+# Deploys apps/docs (Docusaurus 3) to the Cloudflare Pages project
+# `corelink-docs` (custom domain corelink-docs.humangr.com) on every push to
+# main that touches the apps/docs subtree, plus manual workflow_dispatch.
+#
+# Why this exists: the `corelink-docs` Pages project's git integration is
+# DISCONNECTED (source: None), so nothing auto-publishes the site. Its last
+# deployment was 2026-06-11 — every docs change since then (including the #804
+# corelink-app → humangr.com/corelink host migration in the CTAs) was built by
+# docs-ci but never shipped. This workflow is the repo-controlled publish path:
+# `wrangler pages deploy` uploads the built static site directly, without
+# needing the dashboard git integration reconnected (that is an owner action).
+#
+# Build parity: mirrors the `build` job of docs-ci.yml EXACTLY (same pnpm
+# version, node version, install command, and `pnpm build`) so the artifact we
+# deploy is byte-for-byte what CI gates. Docusaurus emits the static site to
+# apps/docs/build.
+#
+# Required GH Secrets (same pair as admin-ui-deploy.yml):
+#   CF_API_TOKEN   — Cloudflare API token. MUST include the
+#                    "Cloudflare Pages: Edit" permission (Workers-Scripts:Edit
+#                    alone is NOT sufficient for `wrangler pages deploy`).
+#   CF_ACCOUNT_ID  — Cloudflare account ID (HumanGuardrail / gmhelmold).
+#
+# All actions are SHA-pinned per the action-sha-audit gate (S-12 supply-chain).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/docs/**"
+      - ".github/workflows/docs-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: docs-deploy-${{ github.ref }}
+  cancel-in-progress: false # don't cancel an in-flight deploy; queue instead
+
+env:
+  PNPM_VERSION: "10.32.1"
+  NODE_VERSION: "20"
+
+jobs:
+  build-and-deploy:
+    name: build + deploy to CF Pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: apps/docs
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Set up pnpm
+        # Local composite (offline-first) — mirrors docs-ci.yml.
+        uses: ./.github/actions/setup-pnpm
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
+      # Same build command docs-ci.yml gates. Emits the static site to
+      # apps/docs/build.
+      - name: Build
+        run: pnpm build
+
+      # wrangler 4.95.0 requires Node >= 22; the build above deliberately runs on
+      # Node 20 for byte-for-byte parity with the docs-ci `build` gate. Re-pin the
+      # Node runtime to 22 for the deploy phase only — the built static site in
+      # apps/docs/build is runtime-agnostic, so switching Node after the build
+      # does not change what ships.
+      - name: Set up Node.js 22 (wrangler runtime)
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+
+      # wrangler is not a dependency of apps/docs, so install it globally.
+      # Pinned exact to match admin-ui-deploy.yml / cf-deploy-prod.yml (v3
+      # cannot parse [[env.*.containers]] arrays; v4 is the supported line).
+      - name: Install wrangler
+        working-directory: .
+        run: npm install -g wrangler@4.95.0
+
+      # Publish the built static site to the corelink-docs Pages project.
+      # --branch=main marks this as the production deployment (Pages maps the
+      # project's production branch to the custom domain).
+      - name: Deploy to Cloudflare Pages
+        run: wrangler pages deploy build --project-name=corelink-docs --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+
+      - name: Print deployment URL
+        if: success()
+        run: |
+          echo "Deployed Pages project: corelink-docs"
+          echo "Production URL: https://corelink-docs.humangr.com"
+          echo "Commit: ${{ github.sha }}"
