@@ -35,7 +35,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::{json, Value};
 
 use crate::harness::{
-    bearer, expect_denied, expect_gate_denied, sha256_hex, stripe_signature_header, unique_blob,
+    bearer, expect_gate_denied, sha256_hex, stripe_signature_header, unique_blob,
     url_cas, url_customer, url_stripe_webhook, url_tier_select, Config, JourneyResult,
 };
 use crate::personas::Persona;
@@ -589,16 +589,22 @@ fn webhook_unsigned_rejected(_cfg: &Config, client: &Client) -> JourneyResult {
              unconfigured on this env (fail-closed); cannot probe the signature gate here",
         );
     }
-    match expect_denied("unsigned webhook", status) {
-        // 400 is the canonical reject; expect_denied also accepts 401/403.
+    // This is a route-EXISTENCE + signature-gate probe: the receiver must
+    // ACTIVELY reject the forgery. 400 is the canonical `invalid_signature`
+    // reject; 401/403 are acceptable active denies (`expect_gate_denied`). A 404
+    // is a FAILURE here (H18) — it means `/webhooks/stripe` is unmounted / the
+    // path drifted, so the signature gate never ran and the forgery-rejection is
+    // UNPROVEN (a 404 must never score this money-path guarantee as GREEN).
+    match expect_gate_denied("unsigned webhook", status) {
         Ok(()) => JourneyResult::pass(name, ms(start)),
         Err(_) if status == 400 => JourneyResult::pass(name, ms(start)),
         Err(_) => JourneyResult::fail(
             name,
             ms(start),
             format!(
-                "unsigned webhook got {status} — expected 400 invalid_signature (the signature \
-                 gate must reject before any side effect)"
+                "unsigned webhook got {status} — expected 400 invalid_signature or an active \
+                 auth deny (401/403). A 404 means /webhooks/stripe is unmounted/renamed (the \
+                 signature gate never ran), not that the forgery was rejected"
             ),
         ),
     }
@@ -865,11 +871,13 @@ fn webhook_subscription_cancel_simulation(cfg: &Config, client: &Client) -> Jour
     }
 
     // Canonical enforcement: a now-canceled tenant must lose paid-tier service.
-    // Probe the data plane with a fresh CAS write; a 2xx is the billing-integrity
-    // failure (paid capacity served after cancel). 402/503 is the billing deny;
-    // 401/403/404 is an acceptable auth-layer deny. (The container reads the
-    // canonical tier_selections gate; entitlement revocation may take a moment to
-    // propagate across edges — a 2xx is still the only outright failure.)
+    // Probe the data plane with a fresh CAS write on the tenant's OWN path (the
+    // route is guaranteed to exist); a 2xx is the billing-integrity failure (paid
+    // capacity served after cancel). 402/503 is the billing deny; 401/403 is an
+    // acceptable auth-layer deny. A 404 is a FAILURE (H18) — the CAS route is the
+    // caller's own and must exist, so a 404 means route-drop (the gate never ran),
+    // not a deny. (Entitlement revocation may take a moment to propagate across
+    // edges — a 2xx is still the only silent-serve failure.)
     let blob = unique_blob("post-cancel-should-be-denied");
     let hash = sha256_hex(&blob);
     let cas_url = url_cas(cfg, &p1.tenant, &hash);
@@ -897,14 +905,15 @@ fn webhook_subscription_cancel_simulation(cfg: &Config, client: &Client) -> Jour
     if matches!(cstatus, 402 | 503) {
         return JourneyResult::pass(name, ms(start));
     }
-    match expect_denied("post-cancel data-plane write", cstatus) {
+    match expect_gate_denied("post-cancel data-plane write", cstatus) {
         Ok(()) => JourneyResult::pass(name, ms(start)),
         Err(_) => JourneyResult::fail(
             name,
             ms(start),
             format!(
-                "post-cancel CAS write got {cstatus} — expected a billing deny (402/503) or auth \
-                 deny (401/403/404)"
+                "post-cancel CAS write got {cstatus} — expected a billing deny (402/503) or an \
+                 active auth deny (401/403); a 404 means the CAS route dropped, not that the \
+                 canceled tenant was denied"
             ),
         ),
     }

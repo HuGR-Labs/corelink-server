@@ -54,7 +54,7 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
 
 use crate::harness::{
-    bearer, blake3_hex, expect_denied, expect_gate_denied, unique_blob, url_cas, url_customer,
+    bearer, blake3_hex, expect_gate_denied, unique_blob, url_cas, url_customer,
     Config, JourneyResult, TokenKind,
 };
 use crate::personas::Persona;
@@ -548,15 +548,20 @@ fn seat_removal_gated_no_route(cfg: &Config, client: &Client) -> JourneyResult {
                 return JourneyResult::fail(name, ms(start), format!("post-probe {url}: {e}"))
             }
         };
-        if expect_denied("removed-member CAS write", status).is_ok() {
+        // The removed member's PAT hits their OWN tenant's CAS route (guaranteed
+        // to exist), so the deny must be an ACTIVE auth rejection (401/403), never
+        // a 404 (H18): a 404 would mean the route dropped, not that the revoked
+        // seat was denied — it must not score seat-removal as enforced.
+        if expect_gate_denied("removed-member CAS write", status).is_ok() {
             return JourneyResult::pass(name, ms(start));
         }
         if !matches!(status, 200 | 201) {
-            // Some non-2xx, non-standard-deny — surface it rather than spin.
+            // Some non-2xx, non-auth-deny (e.g. 404 route-drop, 5xx) — surface it
+            // rather than spin; it is NOT a proven seat-removal deny.
             return JourneyResult::fail(
                 name,
                 ms(start),
-                format!("post-removal member write got {status} (expected a 401/403/404 deny)"),
+                format!("post-removal member write got {status} (expected an active 401/403 deny)"),
             );
         }
         if attempt < 7 {
