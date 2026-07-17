@@ -502,7 +502,13 @@ export async function handleRunnerMint(
   return mintScopedPat(
     env,
     requestId,
-    MintGrant.fromRunnerDerivation(tenantId, jobId),
+    // Domain-separate the per-JOB throttle principal ("runner-job:") from the
+    // per-TENANT ceiling key ("runner-tenant:"): both are hashed into the same
+    // throttle table, so a raw `job_id` of "runner-tenant:<victimTenant>" would
+    // otherwise collide with that tenant's ceiling row and let a caller burn a
+    // victim tenant's runner-mint budget (M22b review finding). Distinct prefixes
+    // make a preimage collision impossible; per-job semantics are unchanged.
+    MintGrant.fromRunnerDerivation(tenantId, "runner-job:" + jobId),
     ttlSeconds,
     scope,
     internalAuthKey,

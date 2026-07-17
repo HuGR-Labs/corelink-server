@@ -213,6 +213,10 @@ export function rank(scope: CanonScope): number {
  *     crux of the design.
  */
 export class MintGrant {
+  // Nominal-typing brand: a private INSTANCE field (NOT just the private ctor) is
+  // what makes MintGrant unforgeable — without it a `{...} as MintGrant` bare
+  // literal compiles clean and defeats the whole capability (L12b review finding).
+  private readonly __brand!: void;
   private constructor(
     /** The tenant the minted PAT is scoped to — the SOLE tenant source for the mint. */
     readonly tenantId: string,
