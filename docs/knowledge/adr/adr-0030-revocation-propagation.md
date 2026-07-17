@@ -4,10 +4,10 @@ title: "ADR-0030 — PAT revocation propagation (DO + CF Queue, ≤ 60 s p99)"
 description: "Why PAT revocation uses Neon as source-of-truth with a Durable-Object broadcast cache and CF-Queue cross-region fan-out to hit a single 60 s p99 stale-window SLA."
 source_files:
   - "specs/03_architecture/adrs/ADR-0030-revocation-propagation.md"
-checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
+checkpoint_sha: "a889ff0829cec6c25526d4c873a3eda124dfefb4"
 provenance: "AUTHORED"
 tags: ["adr", "revocation", "pat", "durable-object", "cf-queue", "auth", "s03"]
-timestamp: "2026-06-26T00:00:00Z"
+timestamp: "2026-07-17T00:00:00Z"
 ---
 
 # ADR-0030 — PAT revocation propagation (DO + CF Queue, ≤ 60 s p99)
@@ -28,8 +28,11 @@ Neon `pat.revoked_at` is the canonical source-of-truth that the verify cold path
 
 The verify path is fail-closed on the Neon SoT so a cache outage never lets a revoked token through, propagation latency is bounded with tiered SEV alerts, and mass-revoke is atomic, traded against running three storage planes that need a daily reconciliation cron and cross-region lag that can exceed 60 s during a CF Queue outage (graceful but customer-visible) (ADR-0030:72-87). It governs the [D1 PAT store](/auth/d1-pat-store.md) and the [PAT verification gauntlet](/flows/pat-gauntlet.md).
 
+**Addendum (WP-D M26, 2026-07-17):** on the LIVE D1-SoT path, the container's `NativePatGate` in-memory verify cache (5 s TTL — see [the HMAC fast-reject gate](/auth/hmac-fast-reject.md)) is an additional in-region consumer of this ADR's propagation budget, bounded well within the single 60 s p99 SLA and not one of the three axes above (ADR-0030:89).
+
 # Citations
 
 1. `specs/03_architecture/adrs/ADR-0030-revocation-propagation.md:24-32` — the 60 s p99 SLO and the three stale-window axes (Context).
 2. `specs/03_architecture/adrs/ADR-0030-revocation-propagation.md:35-66` — Neon SoT + DO broadcast cache + CF-Queue fan-out + single-max-axis 60 s SLA (Decision).
 3. `specs/03_architecture/adrs/ADR-0030-revocation-propagation.md:72-87` — fail-closed verify vs three-plane reconciliation and Queue-outage lag (Consequences).
+4. `specs/03_architecture/adrs/ADR-0030-revocation-propagation.md:89` — Consequences addendum: the container native PAT gate's 5 s verify-cache is an in-region consumer of the propagation budget, not one of the three SLA axes.
