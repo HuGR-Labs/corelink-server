@@ -177,6 +177,18 @@ async function customerFetch(env: Env, headers: Record<string, string>): Promise
   return workerHandler.fetch!(req, env, makeCtx());
 }
 
+// DSR destructive-arm (erasure) fetch on the privacy plane — the surface where
+// the Worker stamps the container's fail-CLOSED `x-corelink-mfa-verified: 1`
+// step-up marker. Distinct path from customerFetch on purpose (the marker is
+// ONLY set for /v1/privacy/*).
+async function privacyEraseFetch(env: Env, headers: Record<string, string>): Promise<Response> {
+  const req = new Request("http://localhost/v1/privacy/dsr/erasure", {
+    method: "POST",
+    headers,
+  });
+  return workerHandler.fetch!(req, env, makeCtx());
+}
+
 describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () => {
   beforeEach(() => {
     mockVerifyToken.mockReset();
@@ -521,6 +533,123 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     const body = await resp.json() as { error: string };
     expect(body.error).toBe("FORBIDDEN");
     expect(captured.req).toBeUndefined();
+  });
+
+  // ── DSR erasure MFA step-up freshness (Finding H2) ──────────────────────────
+  // The container erasure gate (routes/dsr/portal.rs) is fail-CLOSED on the
+  // Worker-set `x-corelink-mfa-verified: 1`. The Worker must stamp it ONLY when
+  // the Clerk session's factor-verification age (`fva[0]`, minutes) is FRESH —
+  // otherwise a stolen/XSS long-lived dashboard session could trigger
+  // irreversible cross-region erasure with no re-auth.
+
+  it("erasure WITH a fresh factor-verification age stamps x-corelink-mfa-verified", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_dsr_fresh",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+      // fva[0] = 0 ⇒ the user reauthed within the last minute (FRESH).
+      fva: [0, 0],
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_dsr_fresh", CLERK_TENANT_ID]]),
+    });
+
+    const resp = await privacyEraseFetch(env, { Authorization: "Bearer fresh.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req).toBeDefined();
+    // The load-bearing assertion: the fresh session is stamped mfa-verified so
+    // the container gate ALLOWS the destructive erase.
+    expect(captured.req!.headers.get("x-corelink-mfa-verified")).toBe("1");
+    expect(captured.doName).toBe(CLERK_TENANT_ID);
+  });
+
+  it("erasure at the freshness boundary (fva == threshold) still stamps mfa-verified", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_dsr_boundary",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+      // fva[0] = 5 = MFA_FVA_FRESH_MAX_MINUTES ⇒ still fresh (inclusive bound).
+      fva: [5, 5],
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_dsr_boundary", CLERK_TENANT_ID]]),
+    });
+
+    const resp = await privacyEraseFetch(env, { Authorization: "Bearer boundary.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req!.headers.get("x-corelink-mfa-verified")).toBe("1");
+  });
+
+  it("erasure WITHOUT a fresh factor age (no fva claim) does NOT stamp mfa-verified (fail-CLOSED)", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_dsr_nofva",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+      // fva intentionally absent ⇒ NOT fresh (undefined, never treated as 0).
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_dsr_nofva", CLERK_TENANT_ID]]),
+    });
+
+    const resp = await privacyEraseFetch(env, { Authorization: "Bearer nofva.clerk.jwt" });
+
+    // The session is still authenticated (forwards to the DO), but the marker
+    // is WITHHELD, so the container gate fails closed → step-up required.
+    expect(resp.status).toBe(200);
+    expect(captured.req).toBeDefined();
+    expect(captured.req!.headers.get("x-corelink-mfa-verified")).toBeNull();
+  });
+
+  it("erasure with a STALE factor age (fva beyond threshold) does NOT stamp mfa-verified", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_dsr_stale",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+      // fva[0] = 60 min ⇒ well past the 5-min step-up window (a stolen long-lived session).
+      fva: [60, 60],
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_dsr_stale", CLERK_TENANT_ID]]),
+    });
+
+    const resp = await privacyEraseFetch(env, { Authorization: "Bearer stale.clerk.jwt" });
+
+    expect(resp.status).toBe(200);
+    expect(captured.req!.headers.get("x-corelink-mfa-verified")).toBeNull();
+  });
+
+  it("STRIPS a client-forged x-corelink-mfa-verified even on a stale erasure session (no smuggle)", async () => {
+    mockVerifyToken.mockResolvedValue({
+      sub: "user_dsr_forge",
+      azp: "https://humangr.com",
+      iss: "https://clerk.humangr.com",
+      fva: [60, 60], // stale ⇒ the Worker must NOT re-stamp
+    } as never);
+    const captured: { req?: Request; doName?: string } = {};
+    const env = makeBridgeEnv({
+      captured,
+      clerkUserToTenant: new Map([["user_dsr_forge", CLERK_TENANT_ID]]),
+    });
+
+    const resp = await privacyEraseFetch(env, {
+      Authorization: "Bearer forge.clerk.jwt",
+      // Attacker tries to smuggle the freshness marker directly.
+      "x-corelink-mfa-verified": "1",
+    });
+
+    expect(resp.status).toBe(200);
+    // Stripped as a client-trust header AND not re-stamped (stale) ⇒ null.
+    expect(captured.req!.headers.get("x-corelink-mfa-verified")).toBeNull();
   });
 
   it("M2: rejects (401) when CLERK_ISSUER_URL is pinned and iss does not match", async () => {
