@@ -59,11 +59,14 @@ const TEST_INTERNAL_AUTH_KEY: &str = "test-internal-auth-key-32-bytes-x";
 
 /// Build an `AdminRouteState` with the operator gate configured.
 fn admin_state_with_gate() -> AdminRouteState {
-    let (read, mutate) = admin::build_handlers();
+    let stack = admin::build_handler_stack();
     AdminRouteState {
-        read,
-        mutate,
+        read: stack.read,
+        mutate: stack.mutate,
         internal_auth_key: Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
+        approval_writer: stack.approval_writer,
+        approver_auth_key: Some(Arc::from(TEST_INTERNAL_AUTH_KEY)),
+        approvals_durable: stack.durable,
     }
 }
 

@@ -16,12 +16,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^10.63.0"
+    "@sentry/cloudflare": "^10.65.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260619.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9",
-    "wrangler": "^4.103.0"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.111.0"
   }
 }
