@@ -370,7 +370,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     expect(h.get("x-corelink-tenant-id")).toBe(CLERK_TENANT_ID);
     expect(h.get("x-corelink-route-kind")).toBe("customer_v1");
     expect(h.get("x-corelink-token-prefix")).toBe("clerk");
-    expect(h.get("x-corelink-scope")).toBe("read-write");
+    expect(h.get("x-corelink-scope")).toBe("read-write billing");
     // Least privilege: the Clerk JWT is dropped at the edge…
     expect(h.get("authorization")).toBeNull();
     // …and the internal-auth key is NOT injected (it IS bound in this env —
@@ -400,7 +400,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     const h = captured.req!.headers;
     expect(h.get("x-corelink-internal-auth")).toBeNull();
     expect(h.get("x-corelink-tenant-id")).toBe(CLERK_TENANT_ID);
-    expect(h.get("x-corelink-scope")).toBe("read-write");
+    expect(h.get("x-corelink-scope")).toBe("read-write billing");
   });
 
   // ── Team-member fallback (C-RESOLVE / WP-T4) ────────────────────────────────
@@ -464,7 +464,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     const resp = await customerFetch(env, { Authorization: "Bearer admin.clerk.jwt" });
 
     expect(resp.status).toBe(200);
-    expect(captured.req!.headers.get("x-corelink-scope")).toBe("read-write");
+    expect(captured.req!.headers.get("x-corelink-scope")).toBe("read-write billing");
   });
 
   it("team_member RBAC: a missing/unknown role fails SAFE to read-only", async () => {

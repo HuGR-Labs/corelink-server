@@ -2437,12 +2437,12 @@ const baseHandler: ExportedHandler<Env> = {
             h.set("x-corelink-route-kind", "customer_v1");
             h.set("x-corelink-token-prefix", "clerk");
             h.set("x-corelink-tenant-id", custTenantId);
-            // RBAC scope from the resolved team_member role (0074): a `viewer`
-            // gets read-only; owner/admin/member get read-write. The Worker is the
-            // sole setter (stripClientTrustHeaders deleted any client value above).
+            // RBAC scope (team_member role 0074): `viewer` → read-only; every other
+            // role → `read-write billing` (H17: the billing capability a cache PAT
+            // never carries, so only a dashboard human clears the F-018 gate). Sole setter.
             h.set(
               "x-corelink-scope",
-              custClerkAuth.role === "viewer" ? "read-only" : "read-write",
+              custClerkAuth.role === "viewer" ? "read-only" : "read-write billing",
             );
             // DSR portal (/v1/privacy/*) destructive-arm MFA step-up: the Worker
             // is the SOLE setter of x-corelink-mfa-verified (stripped above). The

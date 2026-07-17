@@ -148,6 +148,43 @@ pub fn classify_requested_scopes(requested: &[String]) -> Result<RequestedScopeC
     })
 }
 
+/// True when `scope` grants the **billing-admin / financial-PII** capability —
+/// the owner/admin surface (Stripe billing-portal mint, subscription cancel,
+/// billing detail + account overview financial PII, and the security/PII audit
+/// log). Granted by `billing` / `admin` / `owner`; a plain cache credential
+/// (`cas:rw` / `cas:w` / `read-write` / `cas:r` / `read-only`) does NOT grant
+/// it. Fail-CLOSED: empty / missing / no matching token ⇒ `false`.
+///
+/// This is the correct grammar for the F-018 gate (`routes::customer`): billing
+/// management is an owner/admin capability, NOT cache access — so it must NOT be
+/// gated on [`requires_cache_write`] (which a leaked CI cache-write PAT carries).
+/// Uses the same [`tokens`] tokenizer + exact-match grammar as the cache
+/// predicates (no substring match). Route-level admin authorization for the
+/// operator plane remains a separate internal-auth gate (`admin.rs`/
+/// `admin_pilot.rs`); this governs the customer-plane billing/financial surface.
+///
+/// # The three billing-capable tokens
+///
+/// - **`billing`** — the capability the Worker forwards for a NON-viewer
+///   dashboard Clerk session (owner/admin/member). The Worker sets
+///   `x-corelink-scope: "read-write billing"` for a non-viewer customer session
+///   (`worker/src/index.ts`), so a dashboard user keeps BOTH cache and billing
+///   access exactly as before. A minted PAT is NEVER granted `billing` (its D1
+///   scope is `read-write`/`cas:rw`/`admin`), so this token cleanly separates
+///   "a human at the dashboard" from "a leaked CI credential".
+/// - **`admin` / `owner`** — the owner-grade operator/legacy tokens (a legacy
+///   `admin`-scoped customer PAT is already owner-grade, so it retains billing).
+///
+/// The H17 hole this closes: the F-018 gate previously used
+/// [`requires_cache_write`], so a leaked `read-write` / `cas:rw` cache PAT could
+/// open the Stripe portal, read financial PII, and cancel the subscription.
+/// `read-write` alone no longer grants billing — only the `billing` capability
+/// (dashboard session) or an owner-grade `admin`/`owner` token does.
+#[must_use]
+pub fn requires_billing_admin(scope: &str) -> bool {
+    tokens(scope).any(|t| matches!(t, "billing" | "admin" | "owner"))
+}
+
 /// Read the trusted [`SCOPE_HEADER`] value off the request parts, trimmed.
 ///
 /// Returns `""` when the header is absent or non-UTF-8 (⇒ fail-CLOSED at the
@@ -432,6 +469,50 @@ mod tests {
     fn whitespace_only_scope_grants_nothing() {
         assert!(!requires_cache_read("   \t "));
         assert!(!requires_cache_write("   \t "));
+    }
+
+    #[test]
+    fn requires_billing_admin_grants_billing_admin_owner() {
+        // GRANTED: the billing capability (dashboard session) + owner-grade tokens.
+        assert!(requires_billing_admin("billing"));
+        assert!(requires_billing_admin("admin"));
+        assert!(requires_billing_admin("owner"));
+        // The exact string the Worker forwards for a non-viewer dashboard session:
+        // `read-write` (cache) + `billing` (financial surface) in one scope.
+        assert!(requires_billing_admin("read-write billing"));
+        // Granted when a billing-capable token appears anywhere in a tolerated list.
+        assert!(requires_billing_admin("admin,cas:rw"));
+        assert!(requires_billing_admin("cas:rw owner"));
+        assert!(requires_billing_admin("billing,read-write"));
+    }
+
+    #[test]
+    fn requires_billing_admin_denies_cache_credentials() {
+        // H17: a leaked cache-write PAT (what a CI / `corelink put` job carries)
+        // must NOT open billing / financial-PII / subscription-cancel. Every cache
+        // credential — including the self-serve `read-write` scope — is denied
+        // (a minted PAT never carries the `billing` capability).
+        for cache in ["cas:rw", "cas:w", "read-write", "cas:r", "read-only"] {
+            assert!(
+                !requires_billing_admin(cache),
+                "{cache:?} is a cache credential, not billing-admin",
+            );
+        }
+    }
+
+    #[test]
+    fn requires_billing_admin_fail_closed_on_empty_and_whitespace() {
+        assert!(!requires_billing_admin(""));
+        assert!(!requires_billing_admin("   \t "));
+    }
+
+    #[test]
+    fn requires_billing_admin_is_exact_token_not_substring() {
+        // `xadmin` / `admin-x` / `co-owner` must NOT be treated as admin/owner.
+        assert!(!requires_billing_admin("xadmin"));
+        assert!(!requires_billing_admin("admin-x"));
+        assert!(!requires_billing_admin("co-owner"));
+        assert!(!requires_billing_admin("ownership"));
     }
 
     #[test]
