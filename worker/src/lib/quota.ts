@@ -158,6 +158,13 @@ export async function getTierForTenant(
     tierSelError = true;
   }
 
+  // Whether an ACTIVE subscription record exists for this tenant. The step-1
+  // query already filters `subscription_state = 'active'`, so a non-null row
+  // IS the authoritative active-subscription signal on this path. Captured so
+  // the tenant.tier fallback (step 2) can refuse to serve a paid ceiling
+  // without it (M14).
+  const hasActiveSubscription = tierSel !== null;
+
   if (tierSel !== null && isValidTier(tierSel.tier)) {
     return { tier: tierSel.tier as Tier, d1Error: false };
   }
@@ -177,7 +184,18 @@ export async function getTierForTenant(
   }
 
   if (tenantTier !== null && isValidTier(tenantTier.tier)) {
-    return { tier: tenantTier.tier as Tier, d1Error: false };
+    const fallbackTier = tenantTier.tier as Tier;
+    // M14 (billing-integrity fail-safe): `tenant.tier` is NOT an authoritative
+    // paid-subscription signal. signup-worker is the downgrade authority and an
+    // ACTIVE `tier_selections` row (step 1) is the paid gate; migration-0057
+    // only defaults this column to 'free'. If any writer ever set it to a paid
+    // tier, honoring it here would serve full PAID quota with no confirmed
+    // payment. Least-privilege: floor a paid fallback to 'free' unless an active
+    // subscription was confirmed on this path.
+    if (isPaidTier(fallbackTier) && !hasActiveSubscription) {
+      return { tier: "free", d1Error: false };
+    }
+    return { tier: fallbackTier, d1Error: false };
   }
 
   // ── 3. Hard default ───────────────────────────────────────────────────────
@@ -186,6 +204,17 @@ export async function getTierForTenant(
   // positive 429s for paid tenants during partial D1 outages).
   const d1Error = tierSelError && tenantTierError;
   return { tier: "free", d1Error };
+}
+
+/**
+ * True for every tier whose quota ceiling exceeds the free tier — i.e. any tier
+ * that requires a paid, active subscription. 'free' is the only non-paid class;
+ * all other canonical/legacy classes (solo/starter/team/pro/org/max/enterprise)
+ * are paid. Used by the tenant.tier fallback to refuse serving a paid ceiling
+ * without a confirmed active subscription (M14).
+ */
+function isPaidTier(tier: Tier): boolean {
+  return tier !== "free";
 }
 
 function isValidTier(value: string): value is Tier {

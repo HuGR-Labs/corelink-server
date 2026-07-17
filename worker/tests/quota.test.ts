@@ -7,7 +7,7 @@
  *
  * Test inventory:
  *   Quota constants          (3 tests)
- *   getTierForTenant         (8 tests)
+ *   getTierForTenant         (9 tests)
  *   checkStorageQuota        (9 tests)
  *   checkRequestQuota        (7 tests)  ← red-team #5: monthly request cap
  *   secondsUntilNextMonth    (1 test)
@@ -207,10 +207,22 @@ describe("getTierForTenant", () => {
     expect(tier.tier).toBe("team");
   });
 
-  it("falls back to tenant.tier when tier_selections has no row", async () => {
-    const db = makeQuotaD1Mock({ tierSelectionsRow: null, tenantTierRow: { tier: "solo" } });
+  it("falls back to tenant.tier when tier_selections has no row (free default)", async () => {
+    const db = makeQuotaD1Mock({ tierSelectionsRow: null, tenantTierRow: { tier: "free" } });
     const tier = await getTierForTenant(db, TEST_TENANT_ID);
-    expect(tier.tier).toBe("solo");
+    expect(tier.tier).toBe("free");
+  });
+
+  // M14 (billing-integrity): the tenant.tier fallback must NEVER serve a paid
+  // ceiling without a confirmed active subscription. migration-0057 only ever
+  // defaults tenant.tier to 'free', but any writer that set it to a paid value
+  // would otherwise leak full PAID quota with no payment. Fail-safe: floor to
+  // 'free'. (This test FAILS before the M14 fix — the old fallback returned the
+  // raw paid tier — and PASSES after.)
+  it("floors a paid tenant.tier fallback to 'free' when there is no active subscription (M14)", async () => {
+    const db = makeQuotaD1Mock({ tierSelectionsRow: null, tenantTierRow: { tier: "pro" } });
+    const tier = await getTierForTenant(db, TEST_TENANT_ID);
+    expect(tier.tier).toBe("free");
   });
 
   it("falls back to 'free' when both tables return null", async () => {
