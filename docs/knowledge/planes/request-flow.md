@@ -6,7 +6,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "c660e68d9c35134b6ef603eed338d85f6fe6d59e"
+checkpoint_sha: "82520d933bb98df1bcbac0d7525b257e038ff123"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -65,6 +65,10 @@ semantics in the container.
   established at this hop (`worker/src/index.ts:2848-2850`).
 - The request that crosses Worker→DO carries only Worker-established trust headers; client values are
   stripped first (`worker/src/index.ts:2860-2896`).
+- On the Clerk-session `customer_v1` forward the DSR destructive-arm marker `x-corelink-mfa-verified: 1`
+  is set only for a `/v1/privacy/*` request whose session factor-verification age is FRESH
+  (`worker/src/index.ts:2460-2466`); a stale session has the marker withheld so the container erasure
+  gate fails closed.
 - The DO→container hop always targets port 50051 via the `getTcpPort` fetcher
   (`worker/src/durable_object.ts:251-264`).
 - The container re-verifies possession at the shared handler chokepoint rather than trusting the hop

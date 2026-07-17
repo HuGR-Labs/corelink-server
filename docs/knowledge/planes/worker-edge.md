@@ -5,7 +5,7 @@ description: "The HTTPS entry point: route table, PAT auth, server-trust header 
 source_files:
   - "worker/src/index.ts"
   - "worker/src/sentry-scrub.ts"
-checkpoint_sha: "c660e68d9c35134b6ef603eed338d85f6fe6d59e"
+checkpoint_sha: "82520d933bb98df1bcbac0d7525b257e038ff123"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -97,7 +97,13 @@ keeps forged tokens cheap to reject before any expensive work.
 - Tenant isolation is structural: the DO id is derived solely from the PAT-resolved tenant, never the
   URL path segment (`worker/src/index.ts:2848-2850`).
 - A client can never smuggle a server-trust header: the strip list is applied on every forward path
-  before the Worker sets its own values (`worker/src/index.ts:468-507`).
+  before the Worker sets its own values (`worker/src/index.ts:501-563`).
+- The DSR destructive-arm MFA step-up marker `x-corelink-mfa-verified` is a Worker-only trust header
+  (in the strip list at `worker/src/index.ts:562`): on the `/v1/privacy/*` customer forward the Worker
+  stamps `1` ONLY when the verified Clerk session's factor-verification age is FRESH
+  (`fvaMinutes !== undefined && fvaMinutes <= MFA_FVA_FRESH_MAX_MINUTES`, 5 min —
+  `worker/src/index.ts:2460-2466`), so a stolen long-lived dashboard session can't authorize
+  irreversible erasure with no re-auth; the container gate fails closed on a withheld marker.
 - The signing-key gate is mandatory — a missing/short `PAT_SIGNING_KEY` is a 503, never a silent skip
   (`worker/src/index.ts:1009-1048`).
 - The Worker forwards the D1-resolved `scope` as `x-corelink-scope` and is its sole setter

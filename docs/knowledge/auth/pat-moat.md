@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "82520d933bb98df1bcbac0d7525b257e038ff123"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -89,9 +89,9 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - **Availability-vs-auth at the Worker edge: a transient D1 PAT-lookup FAULT now maps to a retryable
   503, NOT a 401.** `extractAuth` wraps the `SELECT … FROM pat` in a try/catch and on any D1 error
   (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
-  (`worker/src/index.ts:1200-1210`). The PAT-gate caller (H1 fix) now maps BOTH
+  (`worker/src/index.ts:1220-1231`). The PAT-gate caller (H1 fix) now maps BOTH
   `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
-  (`worker/src/index.ts:2506-2511`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
+  (`worker/src/index.ts:2536-2543`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
   surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
   chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
   still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
