@@ -297,11 +297,11 @@ fn internal_auth_ok(expected: &[u8], headers: &HeaderMap) -> bool {
     (content_ok & len_ok) == 1
 }
 
-/// Build the route state from env. `None` when the erase/internal-auth key is
+/// Build the route state from env. `None` when the dedicated erase key is
 /// unset or shorter than 32 chars, OR when D1 `StorageEnv` is not configured
-/// (route not mounted — fail-CLOSED). Mirrors the DSR route's gate: prefers the
-/// dedicated `CORELINK_ERASE_AUTH_KEY`, falls back to the shared
-/// `CORELINK_INTERNAL_AUTH_KEY`, preserves the ≥32-char floor (F28/F15). Without
+/// (route not mounted — fail-CLOSED). Mirrors the DSR route's gate: requires the
+/// dedicated `CORELINK_ERASE_AUTH_KEY` ONLY (NO shared `CORELINK_INTERNAL_AUTH_KEY`
+/// fallback — finding H4), preserves the ≥32-char floor (F28/F15). Without
 /// D1 there is nothing to seal, so the route is simply not mounted.
 #[must_use]
 pub fn build_state_from_env() -> Option<AuditDrainState> {
@@ -309,7 +309,7 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
         Some(k) if k.len() >= 32 => k.to_string(),
         _ => {
             tracing::warn!(
-                "no usable CORELINK_ERASE_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY \
+                "no usable CORELINK_ERASE_AUTH_KEY (dedicated; NO shared fallback) \
                  (< 32 chars); /_internal/audit/drain NOT mounted (fail-CLOSED)"
             );
             return None;
