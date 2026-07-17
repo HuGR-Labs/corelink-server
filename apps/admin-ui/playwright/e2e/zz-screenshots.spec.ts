@@ -3,7 +3,7 @@
  * mocked API) to /tmp/corelink-screens for visual review. Not a real test.
  * Run: npx playwright test zz-screenshots --project=chromium
  */
-import { test } from "@playwright/test";
+import { test } from "../fixtures/test";
 import { signInAs, FIXTURE_USERS } from "../fixtures/clerk";
 import { installApiMocks } from "../fixtures/api-mocks";
 

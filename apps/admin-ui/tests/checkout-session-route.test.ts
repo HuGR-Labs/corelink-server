@@ -102,10 +102,10 @@ describe("POST /api/checkout/session", () => {
     expect(path).toBe("/v1/onboarding/tier-select");
     expect((payload as { tier: string }).tier).toBe("pro");
     expect((payload as { success_url: string }).success_url).toMatch(
-      /^https:\/\/corelink-admin\.humangr\.com\/en\/upgraded\?session_id=\{CHECKOUT_SESSION_ID\}$/,
+      /^https:\/\/humangr\.com\/corelink\/en\/upgraded\?session_id=\{CHECKOUT_SESSION_ID\}$/,
     );
     expect((payload as { cancel_url: string }).cancel_url).toMatch(
-      /^https:\/\/corelink-admin\.humangr\.com\/en\/pricing$/,
+      /^https:\/\/humangr\.com\/corelink\/en\/pricing$/,
     );
     expect((opts as { token: string }).token).toBe("clerk_test_jwt_xxx");
   });
@@ -180,7 +180,7 @@ describe("POST /api/checkout/session", () => {
         { tier: "pro", locale: "de" },
         {
           accept: "application/json",
-          "x-forwarded-host": "corelink-app.humangr.com",
+          "x-forwarded-host": "humangr.com",
           "x-forwarded-proto": "https",
         },
       ),
@@ -191,10 +191,10 @@ describe("POST /api/checkout/session", () => {
       cancel_url: string;
     };
     expect(payload.success_url).toContain(
-      "https://corelink-app.humangr.com/de/upgraded",
+      "https://humangr.com/corelink/de/upgraded",
     );
     expect(payload.cancel_url).toContain(
-      "https://corelink-app.humangr.com/de/pricing",
+      "https://humangr.com/corelink/de/pricing",
     );
   });
 
@@ -218,9 +218,10 @@ describe("POST /api/checkout/session", () => {
       success_url: string;
       cancel_url: string;
     };
-    // Attacker host is dropped; Stripe redirect stays on the canonical host.
-    expect(payload.success_url).toContain("https://corelink-admin.humangr.com/en/upgraded");
+    // Attacker host is dropped; Stripe redirect stays on the canonical host
+    // (`humangr.com`, path-mounted at /corelink).
+    expect(payload.success_url).toContain("https://humangr.com/corelink/en/upgraded");
     expect(payload.success_url).not.toContain("evil.com");
-    expect(payload.cancel_url).toContain("https://corelink-admin.humangr.com/en/pricing");
+    expect(payload.cancel_url).toContain("https://humangr.com/corelink/en/pricing");
   });
 });

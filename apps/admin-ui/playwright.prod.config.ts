@@ -14,7 +14,7 @@
  *   - Docs build broke /legal/* or /pricing → public surface dead
  *
  * Env overrides:
- *   E2E_BASE_URL              app URL          (default https://app.corelink.humangr.com)
+ *   E2E_BASE_URL              app URL          (default https://humangr.com/corelink)
  *   E2E_DOCS_URL              docs URL         (default https://docs.corelink.humangr.com)
  *   E2E_INSTALL_URL           install Worker   (default https://get.corelink.io)
  *   E2E_AUTH_STORAGE_STATE    path to Playwright storageState.json from a real
@@ -27,7 +27,7 @@
  */
 import { defineConfig, devices } from "@playwright/test";
 
-const BASE_URL = process.env["E2E_BASE_URL"] ?? "https://app.corelink.humangr.com";
+const BASE_URL = process.env["E2E_BASE_URL"] ?? "https://humangr.com/corelink";
 const PROJECTS_ENV = (process.env["PROJECTS"] ?? "chromium")
   .split(",")
   .map((s) => s.trim())

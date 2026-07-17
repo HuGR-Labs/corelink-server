@@ -6,7 +6,7 @@
  * fail the build (per spec contract S-16 §6 DoD + 10.s16.4).
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import AxeBuilder from "@axe-core/playwright";
 import { signInAs, FIXTURE_USERS } from "../fixtures/clerk";
 import { installApiMocks } from "../fixtures/api-mocks";

@@ -116,7 +116,7 @@ during the parallel-run.
 ```bazel
 # .bazelrc — add these lines; do NOT remove your existing --remote_cache flag.
 build:ci --bes_backend=grpcs://corelink-api.humangr.com:443
-build:ci --bes_results_url=https://corelink-app.humangr.com/tenants/$CORELINK_TENANT_ID/builds
+build:ci --bes_results_url=https://humangr.com/corelink/tenants/$CORELINK_TENANT_ID/builds
 build:ci --bes_header=Authorization=Bearer\ $CORELINK_PAT
 build:ci --bes_upload_mode=fully_async
 ```
@@ -322,7 +322,7 @@ bazel info --config=ci | grep remote_cache
 corelink ls --tenant "$CORELINK_TENANT_ID" --limit 5
 
 # 3. Audit trail is populated:
-# Open https://corelink-app.humangr.com/tenants/$CORELINK_TENANT_ID/audit
+# Open https://humangr.com/corelink/tenants/$CORELINK_TENANT_ID/audit
 # Filter: event_type=cas.write, last 24h. You should see one event per
 # CI action with a non-trivial output.
 

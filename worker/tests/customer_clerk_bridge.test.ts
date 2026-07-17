@@ -257,7 +257,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
   it("returns 403 when the verified session has no CoreLink tenant", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_no_tenant",
-      azp: "https://corelink-app.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};
@@ -305,10 +305,10 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     expect(captured.req).toBeUndefined();
   });
 
-  it("accepts azp from corelink-app.humangr.com (the dashboard host)", async () => {
+  it("accepts azp from humangr.com (the dashboard host)", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_app",
-      azp: "https://corelink-app.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};
@@ -399,7 +399,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     // resolve the session to tenant A.
     mockVerifyToken.mockResolvedValue({
       sub: "user_member_a",
-      azp: "https://corelink-app.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};
@@ -419,7 +419,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
   it("team_member RBAC: a VIEWER seat gets read-only scope (not read-write)", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_viewer",
-      azp: "https://corelink-app.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};
@@ -439,7 +439,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
   it("team_member RBAC: an ADMIN seat gets read-write scope", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_admin",
-      azp: "https://corelink-app.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};
@@ -458,7 +458,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
   it("team_member RBAC: a missing/unknown role fails SAFE to read-only", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_norole",
-      azp: "https://corelink-app.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};
@@ -480,7 +480,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     // user_id-keyed lookup must yield tenant A — never tenant B.
     mockVerifyToken.mockResolvedValue({
       sub: "user_member_a",
-      azp: "https://corelink-app.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};
@@ -505,7 +505,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
     // no owner row + no active membership ⇒ 403, no DO forward.
     mockVerifyToken.mockResolvedValue({
       sub: "user_removed",
-      azp: "https://corelink-app.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};

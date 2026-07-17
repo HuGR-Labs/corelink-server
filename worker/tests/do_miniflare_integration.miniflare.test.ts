@@ -378,13 +378,13 @@ describe("miniflare: CORS in workerd", () => {
     const resp = await dispatchFetch("/v2/", {
       method: "OPTIONS",
       headers: {
-        Origin: "https://corelink-app.humangr.com",
+        Origin: "https://humangr.com",
         "Access-Control-Request-Method": "GET",
       },
     });
     expect(resp.status).toBe(204);
     expect(resp.headers.get("access-control-allow-origin")).toBe(
-      "https://corelink-app.humangr.com",
+      "https://humangr.com",
     );
   });
 

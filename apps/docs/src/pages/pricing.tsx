@@ -6,8 +6,8 @@
  * + phase-0-execution-plan.md §2.E. Prices are concrete launch prices
  * (no longer provisional). CTAs route to real surfaces:
  *
- *   Free        → https://corelink-app.humangr.com/sign-up
- *   Paid tiers  → https://corelink-app.humangr.com/upgrade?plan=<tier>
+ *   Free        → https://humangr.com/corelink/sign-up
+ *   Paid tiers  → https://humangr.com/corelink/upgrade?plan=<tier>
  *   Enterprise  → mailto:sales@humangr.com
  *
  * The `/upgrade?plan=pro` route in `apps/admin-ui` triggers the
@@ -31,7 +31,7 @@ import type { BillingPeriod, TierId, TierShape } from "../lib/pricing";
 
 import styles from "./pricing.module.css";
 
-const APP_BASE = "https://corelink-app.humangr.com";
+const APP_BASE = "https://humangr.com/corelink";
 const SIGNUP_URL = `${APP_BASE}/sign-up`;
 const UPGRADE_PRO_URL = `${APP_BASE}/upgrade?plan=pro`;
 const SALES_MAILTO = "mailto:sales@humangr.com?subject=CoreLink%20Enterprise%20inquiry";

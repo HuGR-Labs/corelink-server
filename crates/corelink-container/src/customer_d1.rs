@@ -634,7 +634,7 @@ impl D1CustomerHandler {
         let portal_return_url = std::env::var("CORELINK_PORTAL_RETURN_URL")
             .ok()
             .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| "https://corelink-app.humangr.com/en/customer/billing".to_owned());
+            .unwrap_or_else(|| "https://humangr.com/corelink/en/customer/billing".to_owned());
 
         Some(Arc::new(Self::new(
             Arc::new(D1HttpCustomerDb::new(Arc::new(d1))),
@@ -2423,7 +2423,7 @@ mod tests {
         let handler = D1CustomerHandler::new(
             db.clone(),
             portal,
-            "https://corelink-app.humangr.com/en/customer/billing".to_owned(),
+            "https://humangr.com/corelink/en/customer/billing".to_owned(),
             Some((Arc::new(signing), 1)),
             audit.clone(),
             sli.clone(),

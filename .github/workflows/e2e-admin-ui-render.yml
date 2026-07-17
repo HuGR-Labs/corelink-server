@@ -16,7 +16,7 @@ on:
       base_url:
         description: "Base URL to smoke (default prod)"
         required: false
-        default: "https://corelink-app.humangr.com"
+        default: "https://humangr.com/corelink"
   schedule:
     # Every 6h, offset from the backend e2e cron to spread shared-Mac load.
     - cron: "40 */6 * * *"
@@ -75,7 +75,7 @@ jobs:
         # against prod with this layout.
         working-directory: apps/admin-ui
         env:
-          BASE_URL: ${{ github.event.inputs.base_url || 'https://corelink-app.humangr.com' }}
+          BASE_URL: ${{ github.event.inputs.base_url || 'https://humangr.com/corelink' }}
         run: |
           cp ../../scripts/e2e-admin-ui-render-smoke.mjs ./.render-smoke.mjs
           node ./.render-smoke.mjs; rc=$?

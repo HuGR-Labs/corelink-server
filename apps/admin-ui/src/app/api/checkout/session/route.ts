@@ -57,6 +57,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { apiPost, ApiClientError } from "@/lib/api-client";
 import { CHECKOUT_TIER_IDS, DEFAULT_CHECKOUT_TIER } from "@/lib/pricing";
+import { APP_BASE_PATH } from "@/lib/route-matcher";
 
 // Edge runtime — required by Cloudflare Pages (per Wave 32 Phase F).
 // Clerk's server SDK works on edge via the lazy `await import(...)`
@@ -110,15 +111,20 @@ async function getSessionToken(): Promise<string | null> {
 }
 
 // The canonical app host, used when the request's (client-suppliable) host
-// headers don't pass the allow-list. `corelink-*.humangr.com` all serve this
-// same app; localhost covers dev.
-const CANONICAL_APP_HOST = "corelink-admin.humangr.com";
+// headers don't pass the allow-list. The public app is `humangr.com` (path-
+// mounted at /corelink); `corelink-admin.humangr.com` serves the same app;
+// localhost covers dev.
+const CANONICAL_APP_HOST = "humangr.com";
 
 export function isAllowedRedirectHost(host: string): boolean {
   const h = host.toLowerCase();
   if (h === "localhost" || h.startsWith("localhost:") || h.startsWith("127.0.0.1")) {
     return true;
   }
+  // Bare `humangr.com` is the public app apex (path-mounted at /corelink); it is
+  // NOT the `corelink-*` shape, so it is allow-listed explicitly. The
+  // `corelink-*.humangr.com` regex still covers the admin/docs custom domains.
+  if (h === "humangr.com") return true;
   return /^corelink-[a-z0-9-]+\.humangr\.com$/.test(h);
 }
 
@@ -126,8 +132,9 @@ function originFromRequest(req: NextRequest): string {
   // This origin becomes Stripe's post-checkout `success_url`/`cancel_url` host,
   // so it must never be an attacker-supplied value. `x-forwarded-host` /`host`
   // are client-suppliable (Cloudflare sets the real one, but a direct caller
-  // can spoof them), so validate against the `corelink-*.humangr.com` allow-list
-  // and fall back to the canonical host otherwise. (The body origin is likewise
+  // can spoof them), so validate against the app-host allow-list (`humangr.com`
+  // + `corelink-*.humangr.com`) and fall back to the canonical host otherwise.
+  // (The body origin is likewise
   // never trusted; the tier-select backend host-allow-lists these URLs too.)
   const rawHost =
     req.headers.get("x-forwarded-host") ??
@@ -172,9 +179,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // --- 3. Build URLs. -----------------------------------------------
+  // Stripe redirects the browser here post-checkout, so these MUST be fully
+  // resolved public URLs. The app is path-mounted under `APP_BASE_PATH`
+  // (`/corelink`); Next never auto-prefixes a hand-built absolute URL, so we
+  // re-attach the base path explicitly (mirrors the middleware sign-in redirect
+  // and the `/upgrade` forwarder). The tier-select backend host-allow-lists
+  // these URLs (host `humangr.com`, path `/corelink/...` — the path is fine).
   const origin = originFromRequest(req);
-  const success_url = `${origin}/${locale}/upgraded?session_id={CHECKOUT_SESSION_ID}`;
-  const cancel_url = `${origin}/${locale}/pricing`;
+  const success_url = `${origin}${APP_BASE_PATH}/${locale}/upgraded?session_id={CHECKOUT_SESSION_ID}`;
+  const cancel_url = `${origin}${APP_BASE_PATH}/${locale}/pricing`;
 
   // --- 4. Call canonical backend route. -----------------------------
   let resp: TierSelectResponse;

@@ -8,7 +8,7 @@
  *   - Consent capture writes locale matching the active URL prefix.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 
 const LOCALES = [
   { code: "en", lang: /^en/ },

@@ -15,9 +15,19 @@
  * deterministic mock.
  */
 import { defineConfig, devices } from "@playwright/test";
+import { APP_BASE_PATH } from "./src/lib/route-matcher";
 
 const PORT = Number(process.env["PORT"] ?? 3010);
-const BASE_URL = process.env["E2E_BASE_URL"] ?? `http://localhost:${PORT}`;
+// The app is mounted under `basePath` (`/corelink`, see next.config.ts), so the
+// local dev server serves every route — including the root landing page used as
+// the webServer readiness probe — under that prefix. Bake the base path into the
+// localhost default so `webServer.url` resolves to a real 200 (root at `/` 404s
+// under basePath) and Playwright's `baseURL` origin is correct. When
+// `E2E_BASE_URL` is provided externally (e.g. the prod-surface run passes the
+// full `https://humangr.com/corelink`) it ALREADY carries the base path — use it
+// verbatim, never re-append (the spec `goto` prefixer keys off the same constant).
+const BASE_URL =
+  process.env["E2E_BASE_URL"] ?? `http://localhost:${PORT}${APP_BASE_PATH}`;
 const PROJECTS_ENV = (process.env["PROJECTS"] ?? "chromium")
   .split(",")
   .map((s) => s.trim())
@@ -73,7 +83,15 @@ export default defineConfig({
           PORT: String(PORT),
           NEXT_TELEMETRY_DISABLED: "1",
           NEXT_PUBLIC_E2E_TEST_MODE: "1",
-          NEXT_PUBLIC_CORELINK_API_URL: "/api",
+          // The app is mounted under `basePath` (`/corelink`), so the dev server
+          // serves the catch-all mock at `/corelink/api/v1/*` — a bare `/api`
+          // 404s (Next does NOT auto-prefix `fetch()`, only framework links). The
+          // typed clients (admin/customer/dsr) read this env for BOTH the SSR
+          // absolute origin (`http://127.0.0.1:PORT${API}`) and the client-side
+          // relative base, so prefixing it here makes every data fetch land on
+          // the mock under basePath. Kept as a single source of truth via
+          // `APP_BASE_PATH`; prod builds set an absolute cross-origin API URL.
+          NEXT_PUBLIC_CORELINK_API_URL: `${APP_BASE_PATH}/api`,
         },
       },
 });

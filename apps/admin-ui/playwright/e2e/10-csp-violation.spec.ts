@@ -13,7 +13,7 @@
  * is that violations are reported.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 
 test.describe("CSP", () => {
   test("response carries hardened CSP without unsafe-inline", async ({ page }) => {

@@ -31,16 +31,15 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 # `corelink-admin-ui` Pages project; detached via CF API on migration day
 # (Pages project remains but no longer serves these domains).
 #
-# corelink-app.humangr.com is the PUBLIC app entry point: all docs pricing
-# CTAs target it and the Clerk production Frontend API lives at
-# clerk.corelink-app.humangr.com (it is Clerk's home domain). It was left on
-# the dead Pages project when corelink-admin was migrated (2026-05-30,
-# 5435fd8a), which served the broken next-on-pages build: `/` → literal
-# "Not Found", every SSR route (incl. /sign-up) → 500. Flip runbook:
-# docs/operator/corelink-app-domain-flip-runbook.md
+# The PUBLIC app entry point is now `humangr.com/corelink` (path-mounted, served
+# via the `humangr.com/corelink/*` zone route — added by the operator at cutover,
+# NOT a custom_domain). The old `corelink-app.humangr.com` subdomain is RETIRED:
+# its custom_domain binding was removed here so the subdomain ceases to exist.
+# NOTE: the Clerk production Frontend API still lives at
+# `clerk.corelink-app.humangr.com` (baked into the pk_live key) — that is a
+# SEPARATE domain the operator migrates on the Clerk cutover; do not conflate it.
 routes = [
-  { pattern = "corelink-admin.humangr.com", custom_domain = true },
-  { pattern = "corelink-app.humangr.com", custom_domain = true }
+  { pattern = "corelink-admin.humangr.com", custom_domain = true }
 ]
 
 [assets]

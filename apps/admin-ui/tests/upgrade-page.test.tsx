@@ -2,7 +2,7 @@
  * /upgrade — public pricing CTA → Stripe Checkout bridge tests (#49).
  *
  * Covers the three layers added for the docs CTAs
- * (`corelink-app.humangr.com/upgrade?plan=<tier>`):
+ * (`humangr.com/corelink/upgrade?plan=<tier>`):
  *   1. `normalizeCheckoutTier` — `?plan=` validation/defaulting
  *      (solo|starter|team|pro|max; invalid/missing → "pro").
  *   2. `GET /upgrade` (locale-less) — 307 forwarder to
@@ -97,20 +97,20 @@ describe("GET /upgrade (locale-less docs-CTA forwarder)", () => {
   it("307s to /en/upgrade preserving a valid plan", async () => {
     const { GET } = await import("@/app/upgrade/route");
     const res = GET(
-      makeGetRequest("https://corelink-app.humangr.com/upgrade?plan=starter"),
+      makeGetRequest("https://humangr.com/corelink/upgrade?plan=starter"),
     );
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe(
-      "https://corelink-app.humangr.com/en/upgrade?plan=starter",
+      "https://humangr.com/corelink/en/upgrade?plan=starter",
     );
   });
 
   it("defaults to plan=pro when ?plan= is missing", async () => {
     const { GET } = await import("@/app/upgrade/route");
-    const res = GET(makeGetRequest("https://corelink-app.humangr.com/upgrade"));
+    const res = GET(makeGetRequest("https://humangr.com/corelink/upgrade"));
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe(
-      "https://corelink-app.humangr.com/en/upgrade?plan=pro",
+      "https://humangr.com/corelink/en/upgrade?plan=pro",
     );
   });
 
@@ -118,12 +118,12 @@ describe("GET /upgrade (locale-less docs-CTA forwarder)", () => {
     const { GET } = await import("@/app/upgrade/route");
     const res = GET(
       makeGetRequest(
-        "https://corelink-app.humangr.com/upgrade?plan=%3Cscript%3E",
+        "https://humangr.com/corelink/upgrade?plan=%3Cscript%3E",
       ),
     );
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe(
-      "https://corelink-app.humangr.com/en/upgrade?plan=pro",
+      "https://humangr.com/corelink/en/upgrade?plan=pro",
     );
   });
 });

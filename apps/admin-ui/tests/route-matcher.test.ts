@@ -31,6 +31,14 @@ describe("route matcher", () => {
     expect(isPublicPath("/es/privacy/sub-processors")).toBe(true);
     expect(isPublicPath("/de/security/policy")).toBe(true);
     expect(isPublicPath("/en/403")).toBe(true);
+    // The consent-CAPTURE leaf is public (pre-auth compliance page, Lighthouse-
+    // audited) — but ONLY the leaf; the user-specific consent sub-routes stay
+    // protected.
+    expect(isPublicPath("/en/consent/new")).toBe(true);
+    expect(isPublicPath("/consent/new")).toBe(true);
+    expect(isProtectedPath("/en/consent/history")).toBe(true);
+    expect(isProtectedPath("/en/consent/withdraw/abc123")).toBe(true);
+    expect(isProtectedPath("/en/consent")).toBe(true);
     // Locale-less shapes stay public too.
     expect(isPublicPath("/pricing")).toBe(true);
   });
@@ -81,6 +89,8 @@ describe("route matcher", () => {
     });
 
     it("treats /corelink-prefixed marketing/compliance pages as public", () => {
+      expect(isPublicPath("/corelink/en/consent/new")).toBe(true);
+      expect(isProtectedPath("/corelink/en/consent/history")).toBe(true);
       expect(isPublicPath("/corelink/en/pricing")).toBe(true);
       expect(isPublicPath("/corelink/pt/legal/terms")).toBe(true);
       expect(isPublicPath("/corelink/es/privacy/sub-processors")).toBe(true);

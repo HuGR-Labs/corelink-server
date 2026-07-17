@@ -7,7 +7,7 @@
  *   - Receipt + SLA clock 30d visible.
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect } from "../fixtures/test";
 import { signInAs, FIXTURE_USERS } from "../fixtures/clerk";
 import { installApiMocks } from "../fixtures/api-mocks";
 

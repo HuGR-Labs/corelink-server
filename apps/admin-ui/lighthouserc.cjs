@@ -41,10 +41,13 @@ module.exports = {
       // render (perf is unmeasurable, NaN). The S-16 budget is scoped to the
       // customer-facing, statically-renderable routes — the admin surface is
       // covered by the Playwright a11y sweep instead.
+      // The app is mounted under `basePath` (`/corelink`, see next.config.ts):
+      // the standalone server serves every route under that prefix, so the
+      // root-relative URLs 404 without it. Audit the real pages.
       url: [
-        "http://localhost:3000/",
-        "http://localhost:3000/en/privacy",
-        "http://localhost:3000/en/consent/new",
+        "http://localhost:3000/corelink/",
+        "http://localhost:3000/corelink/en/privacy",
+        "http://localhost:3000/corelink/en/consent/new",
       ],
       numberOfRuns: 3,
       settings: {

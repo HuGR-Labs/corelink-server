@@ -80,7 +80,7 @@ use uuid::Uuid;
 /// `cancel_url`.  Must be kept in sync with the deployed admin-ui and app
 /// origins.  Case-insensitive comparison (`.to_ascii_lowercase()` on the
 /// parsed host).
-const ALLOWED_REDIRECT_HOSTS: &[&str] = &["corelink-admin.humangr.com", "corelink-app.humangr.com"];
+const ALLOWED_REDIRECT_HOSTS: &[&str] = &["corelink-admin.humangr.com", "humangr.com"];
 
 /// Validate a single redirect URL (success or cancel).  Fail-CLOSED: any
 /// parse failure, wrong scheme, disallowed host, present userinfo, or
@@ -1141,14 +1141,14 @@ mod tests {
 
     #[test]
     fn f6_accepts_both_urls_on_allowlist() {
-        // Both corelink-admin.humangr.com and corelink-app.humangr.com are
+        // Both corelink-admin.humangr.com and humangr.com are
         // in ALLOWED_REDIRECT_HOSTS — a valid combination must pass.
         let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
         let mut good = req("pro");
         good.success_url =
-            "https://corelink-app.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
+            "https://humangr.com/corelink/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
                 .to_owned();
-        good.cancel_url = "https://corelink-app.humangr.com/en/pricing".to_owned();
+        good.cancel_url = "https://humangr.com/corelink/en/pricing".to_owned();
         let result = authorize_and_validate(&state(), &h, &good);
         assert!(result.is_ok());
     }

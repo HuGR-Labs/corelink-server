@@ -37,10 +37,11 @@ function reqFor(path: string): NextRequest {
   return new NextRequest(new URL(`https://humangr.com/corelink${path}`));
 }
 
-// The root/subdomain surface (corelink-app.humangr.com) serves the app with NO
-// `/corelink` prefix — its sign-in redirect must stay root-relative.
+// The legacy no-prefix surface (a request whose pathname does NOT carry the
+// `/corelink` mount) serves the app root-relative — its sign-in redirect must
+// stay root-relative.
 function rootReqFor(path: string): NextRequest {
-  return new NextRequest(new URL(`https://corelink-app.humangr.com${path}`));
+  return new NextRequest(new URL(`https://humangr.com${path}`));
 }
 
 describe("middleware fail-CLOSED on absent publishable key", () => {
@@ -63,13 +64,13 @@ describe("middleware fail-CLOSED on absent publishable key", () => {
     expect(res.headers.get("location") ?? "").toContain("/corelink/sign-in");
   });
 
-  it("(a3) root/subdomain surface → redirect target stays root-relative /sign-in", async () => {
+  it("(a3) legacy no-prefix surface → redirect target stays root-relative /sign-in", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const res = await middleware(rootReqFor("/admin/tenants"));
     expect(res.status).toBe(307);
     const location = new URL(
       res.headers.get("location") ?? "",
-      "https://corelink-app.humangr.com",
+      "https://humangr.com",
     );
     // Root surface: sign-in is at /sign-in, NOT /corelink/sign-in (which 404s).
     expect(location.pathname).toBe("/sign-in");
