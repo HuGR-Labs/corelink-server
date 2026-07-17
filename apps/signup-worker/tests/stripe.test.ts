@@ -1149,7 +1149,10 @@ describe("handleStripeWebhook", () => {
             (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
         );
         expect(deact).toBeDefined();
-        expect(deact!.params).toContain("cus_pf");
+        // H1: revocation is keyed by the SPECIFIC subscription (via tenant_billing),
+        // never by the shared customer.
+        expect(deact!.params).toContain("sub_pf");
+        expect(deact!.sql).toContain("tenant_billing");
 
         // tenant_billing status set to past_due (status-only update).
         const billing = db.runCalls.find(
@@ -1214,7 +1217,9 @@ describe("handleStripeWebhook", () => {
             (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
         );
         expect(deact).toBeDefined();
-        expect(deact!.params).toContain("cus_pf3");
+        // H1: keyed by subscription id (via tenant_billing), not the shared customer.
+        expect(deact!.params).toContain("sub_pf3");
+        expect(deact!.sql).toContain("tenant_billing");
         expect(
             db.runCalls.find(
                 (c) => c.sql.includes("UPDATE tenant_billing") && c.params.includes("past_due"),
@@ -1339,7 +1344,10 @@ describe("handleStripeWebhook", () => {
             (c) => c.sql.includes("UPDATE tier_selections") && c.sql.includes("'inactive'"),
         );
         expect(deact).toBeDefined();
-        expect(deact!.params).toContain("cus_del_gate");
+        // H1: keyed by the SPECIFIC subscription (via tenant_billing), never the
+        // shared per-tenant customer.
+        expect(deact!.params).toContain("sub_del_gate");
+        expect(deact!.sql).toContain("tenant_billing");
     });
 
     it("customer.subscription.deleted with NO customer field → gate STILL revoked by subscription id (fail-safe)", async () => {
@@ -1473,7 +1481,7 @@ describe("handleStripeWebhook", () => {
                 object: {
                     id: "sub_f35",
                     customer: "cus_f35",
-                    status: "canceled", // non-granting → deactivateTierSelectionByCustomer fires
+                    status: "canceled", // non-granting → deactivateTierSelectionBySubscription fires
                     current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
                     // Price maps to 'max' → tier update would run (newTier non-null)
                     items: { data: [{ price: { id: "price_max_www" } }] },
@@ -2164,9 +2172,11 @@ describe("handleStripeWebhook", () => {
         expect(deact!.params).toContain("sub_pf_nocust");
     });
 
-    // Also pin the EXISTING happy-path (customer present) to ensure it still
-    // uses the customer-keyed path, not the subscription fallback.
-    it("F34: invoice.payment_failed terminal WITH customer → gate revoked by customer (primary path unchanged)", async () => {
+    // H1: even WITH a customer field present, revocation must be keyed by the
+    // SPECIFIC subscription (via tenant_billing), NOT by the shared customer —
+    // otherwise a runner-sub failure would revoke the tenant's cache tier. There
+    // is no longer a customer-keyed revocation path.
+    it("H1: invoice.payment_failed terminal WITH customer → gate revoked by SUBSCRIPTION id (never by customer)", async () => {
         const db = fakeDb();
         const nowMs = Date.now();
         const event = {
@@ -2186,16 +2196,27 @@ describe("handleStripeWebhook", () => {
         const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
         expect(res.status).toBe(200);
 
-        // Should use the customer-keyed path (deactivateTierSelectionByCustomer),
-        // NOT the subscription-id fallback.
+        // The deactivation must resolve the tenant THROUGH tenant_billing by the
+        // subscription id — and must NOT bind the shared customer.
+        const deact = db.runCalls.find(
+            (c) =>
+                c.sql.includes("UPDATE tier_selections") &&
+                c.sql.includes("'inactive'"),
+        );
+        expect(deact).toBeDefined();
+        expect(deact!.sql).toContain("tenant_billing");
+        expect(deact!.params).toContain("sub_pf_cust");
+        // Crucially: the customer id is NEVER used as a revocation key (that is the
+        // H1 defect — it would flip every tier_selections row for the tenant).
+        expect(deact!.params).not.toContain("cus_pf_cust");
+        // And there is no customer-keyed (subquery-less) tier_selections deactivate.
         const deactByCustomer = db.runCalls.find(
             (c) =>
                 c.sql.includes("UPDATE tier_selections") &&
                 c.sql.includes("'inactive'") &&
-                !c.sql.includes("tenant_billing"), // customer path has no subquery
+                c.sql.includes("stripe_customer_id"),
         );
-        expect(deactByCustomer).toBeDefined();
-        expect(deactByCustomer!.params).toContain("cus_pf_cust");
+        expect(deactByCustomer).toBeUndefined();
     });
 
     it("terminal-state: a late invoice.payment_failed after cancel is guarded too (status-only UPDATE carries the guard)", async () => {
@@ -2591,6 +2612,160 @@ describe("handleStripeWebhook", () => {
         // Guarded through the runner_billing subquery → a cache-sub id matches no
         // runner_billing row, so this DELETE affects nothing (safe no-op).
         expect(del!.sql).toContain("SELECT tenant_id FROM runner_billing");
+    });
+
+    // ------------------------------------------------------------------
+    // H1 (money/GDPR): two subscriptions on ONE Stripe customer (checkout
+    // reuses one cus_… per tenant across the cache AND runner subs). A terminal
+    // event for the RUNNER subscription must NOT flip the tenant's ACTIVE
+    // cache-tier row to inactive. The stateless runCalls fakes above assert the
+    // SQL SHAPE; this stateful fake proves the ROW OUTCOME (fails-before /
+    // passes-after) by executing the two tier_selections revoke SQL variants
+    // against seeded rows.
+    // ------------------------------------------------------------------
+
+    /**
+     * Stateful D1 stub holding tier_selections / tenant_billing / runner_billing
+     * rows. It interprets ONLY the statements this test path issues:
+     *  - the dedup claim (PK-conflict changes 1/0),
+     *  - a tier_selections deactivate — EITHER the customer-keyed variant
+     *    (`WHERE stripe_customer_id = ?1`, the pre-H1 bug) OR the
+     *    subscription-keyed variant (`… tenant_id IN (SELECT tenant_id FROM
+     *    tenant_billing WHERE stripe_subscription_id = ?1)`, the H1 fix).
+     * Every other statement is a recorded no-op. Whichever SQL the handler emits,
+     * the fake applies its real semantics — so reverting the fix (customer-keyed)
+     * would genuinely flip the cache row and fail the assertion.
+     */
+    function fakeStatefulBillingDb(seed: {
+        tierSelections: Array<{
+            tenant_id: string;
+            stripe_customer_id: string;
+            subscription_state: string;
+        }>;
+        tenantBilling: Array<{ tenant_id: string; stripe_subscription_id: string }>;
+        runnerBilling: Array<{ runner_subscription_id: string; tenant_id: string }>;
+    }): { prepare: Mock; tierSelections: typeof seed.tierSelections } {
+        const { tierSelections, tenantBilling } = seed;
+        const claimed = new Set<string>();
+        const prepare = vi.fn((sql: string) => {
+            const params: unknown[] = [];
+            const stmt = {
+                bind: vi.fn((...args: unknown[]) => {
+                    params.push(...args);
+                    return stmt;
+                }),
+                run: vi.fn(async () => {
+                    if (sql.includes("INSERT OR IGNORE INTO stripe_webhook_events_processed")) {
+                        const id = params[0] as string;
+                        const changes = claimed.has(id) ? 0 : (claimed.add(id), 1);
+                        return { meta: { changes } };
+                    }
+                    // tier_selections revoke → apply the real WHERE semantics.
+                    if (sql.includes("UPDATE tier_selections") && sql.includes("'inactive'")) {
+                        const key = params[0] as string;
+                        if (sql.includes("stripe_customer_id = ?1")) {
+                            // Pre-H1 customer-keyed path (the bug): flips EVERY row
+                            // sharing the customer.
+                            for (const r of tierSelections) {
+                                if (r.stripe_customer_id === key && r.subscription_state !== "inactive") {
+                                    r.subscription_state = "inactive";
+                                }
+                            }
+                        } else if (sql.includes("SELECT tenant_id FROM tenant_billing")) {
+                            // H1 subscription-keyed path: resolve the tenant THROUGH
+                            // tenant_billing (cache-only map) by the subscription id.
+                            const tenants = tenantBilling
+                                .filter((b) => b.stripe_subscription_id === key)
+                                .map((b) => b.tenant_id);
+                            for (const r of tierSelections) {
+                                if (tenants.includes(r.tenant_id) && r.subscription_state !== "inactive") {
+                                    r.subscription_state = "inactive";
+                                }
+                            }
+                        }
+                    }
+                    // All other statements (cancelBilling, runner writers) are no-ops.
+                    return { meta: { changes: 1 } };
+                }),
+            };
+            return stmt;
+        });
+        return { prepare, tierSelections };
+    }
+
+    it("H1 REGRESSION: runner subscription.deleted on a shared customer leaves the ACTIVE cache tier row ACTIVE (fails pre-fix)", async () => {
+        const nowMs = Date.now();
+        const db = fakeStatefulBillingDb({
+            // The tenant's cache tier is ACTIVE (a paying cache customer).
+            tierSelections: [
+                {
+                    tenant_id: "tenant_h1",
+                    stripe_customer_id: "cus_h1_shared",
+                    subscription_state: "active",
+                },
+            ],
+            // tenant_billing maps ONLY the cache subscription (one row per tenant).
+            tenantBilling: [{ tenant_id: "tenant_h1", stripe_subscription_id: "sub_cache_h1" }],
+            // runner_billing maps the SEPARATE runner subscription (same tenant/customer).
+            runnerBilling: [{ runner_subscription_id: "sub_runner_h1", tenant_id: "tenant_h1" }],
+        });
+
+        // Cancel the RUNNER add-on. The deleted subscription object carries the
+        // SHARED customer (as real Stripe events do).
+        const event = {
+            id: "evt_h1_runner_del",
+            type: "customer.subscription.deleted",
+            data: {
+                object: {
+                    id: "sub_runner_h1",
+                    customer: "cus_h1_shared",
+                    metadata: { tenant_id: "tenant_h1", tier: "runner_max" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db as unknown as ReturnType<typeof fakeDb>), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // THE ASSERTION: the paying cache customer keeps access — the cache tier
+        // row is STILL 'active'. (Pre-H1 the customer-keyed revoke flipped it to
+        // 'inactive' because it shares the tenant's single Stripe customer.)
+        expect(db.tierSelections[0]!.subscription_state).toBe("active");
+    });
+
+    it("H1 CONTROL: cache subscription.deleted DOES deactivate the cache tier row (no fail-open)", async () => {
+        const nowMs = Date.now();
+        const db = fakeStatefulBillingDb({
+            tierSelections: [
+                {
+                    tenant_id: "tenant_h1",
+                    stripe_customer_id: "cus_h1_shared",
+                    subscription_state: "active",
+                },
+            ],
+            tenantBilling: [{ tenant_id: "tenant_h1", stripe_subscription_id: "sub_cache_h1" }],
+            runnerBilling: [{ runner_subscription_id: "sub_runner_h1", tenant_id: "tenant_h1" }],
+        });
+
+        // Cancel the CACHE subscription itself → the cache tier MUST be revoked.
+        const event = {
+            id: "evt_h1_cache_del",
+            type: "customer.subscription.deleted",
+            data: {
+                object: {
+                    id: "sub_cache_h1",
+                    customer: "cus_h1_shared",
+                    metadata: { tenant_id: "tenant_h1", tier: "pro" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db as unknown as ReturnType<typeof fakeDb>), fakeCtx());
+        expect(res.status).toBe(200);
+
+        // The cache sub id IS in tenant_billing → the tenant's cache tier row is
+        // deactivated. Scoping by subscription did not break legitimate revocation.
+        expect(db.tierSelections[0]!.subscription_state).toBe("inactive");
     });
 
     // ---- IDEMPOTENCY: redelivery re-runs harmlessly (distinct from same-id dedup) ----
