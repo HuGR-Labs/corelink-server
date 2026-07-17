@@ -760,10 +760,19 @@ async function activatePaidTierSelection(
  * invoice.payment_failed (final dunning), subscription.deleted (cancel), and
  * any subscription.updated that no longer grants access.
  *
- * Keyed by `stripe_customer_id` because subscription-lifecycle events identify
- * the tenant by customer, not by tenant_id metadata (which subscription objects
- * may lack — only the checkout SESSION carried it). We resolve the customer
- * here; tier_selections.stripe_customer_id is written on activation.
+ * Keyed by `stripe_subscription_id` — the SPECIFIC subscription in the terminal
+ * event — resolved to the tenant through `tenant_billing` (which maps
+ * subscription id → tenant id, 0055) via a correlated subquery. This is the sole
+ * revocation key (H1 fix): keying by `stripe_customer_id` would flip EVERY
+ * tier_selections row sharing the tenant's SINGLE Stripe customer, and because
+ * checkout reuses one `cus_…` per tenant across the cache AND runner
+ * subscriptions, a runner-subscription terminal event would silently revoke the
+ * tenant's ACTIVE cache tier. `tenant_billing` is the one-row-per-tenant CACHE
+ * billing map and NEVER holds a runner subscription id (runner subs live in
+ * `runner_billing`, 0087), so this join is a clean no-op for a runner-sub event
+ * and revokes only the cache tier when the CACHE subscription ends. Subscription
+ * objects always carry their own id (the callers guard on it) even when they omit
+ * `customer`, so this key is both more precise AND more robust than the customer.
  *
  * `inactive` (NOT `pending_checkout`) is chosen per the 0039 CHECK so the tenant
  * (a) immediately loses access and (b) can re-subscribe — tier_select.rs:699
@@ -771,38 +780,9 @@ async function activatePaidTierSelection(
  *
  * Idempotent: a bare UPDATE with `WHERE … <> 'inactive'` is a safe no-op on
  * redelivery, and clearing `subscription_started_at_ms` keeps the
- * `subscription_started_when_active` CHECK satisfied for the non-active state.
- */
-async function deactivateTierSelectionByCustomer(
-    db: D1DatabaseLike,
-    opts: { stripeCustomerId: string },
-): Promise<void> {
-    await db
-        .prepare(
-            `UPDATE tier_selections
-             SET subscription_state = 'inactive',
-                 subscription_started_at_ms = NULL
-             WHERE stripe_customer_id = ?1
-               AND subscription_state <> 'inactive'`,
-        )
-        .bind(opts.stripeCustomerId)
-        .run();
-}
-
-/**
- * Revoke the canonical access gate keyed by `stripe_subscription_id` — used when
- * a subscription-lifecycle event (e.g. subscription.updated → canceled/unpaid)
- * arrives WITHOUT a top-level `customer` field. Stripe subscription objects are
- * not guaranteed to carry `customer`, but they always carry their own id; if we
- * gated revocation on `customer` we would fail-OPEN and leave a non-paying
- * tenant entitled.
- *
- * `tier_selections` has no `stripe_subscription_id` column (0039), so we resolve
- * the tenant through `tenant_billing` (which maps subscription id → tenant id,
- * 0055) via a correlated subquery. Bare idempotent UPDATE; clears
- * `subscription_started_at_ms` to keep the `subscription_started_when_active`
- * CHECK satisfied for the now non-active state. Safe no-op if no billing row
- * maps the subscription id (e.g. event for an unknown/foreign subscription).
+ * `subscription_started_when_active` CHECK satisfied for the now non-active
+ * state. Safe no-op if no billing row maps the subscription id (e.g. an event
+ * for an unknown/foreign subscription, or a runner subscription).
  */
 async function deactivateTierSelectionBySubscription(
     db: D1DatabaseLike,
@@ -892,7 +872,7 @@ async function reactivateTierSelectionBySubscription(
  * onto an inactive row: the access gate (quota.ts `subscription_state='active'`)
  * is unaffected, but the row carries an incorrect tier label that misleads
  * forensic/audit queries. The filter makes the tier update a no-op when
- * `deactivateTierSelectionByCustomer` wins the D1 race (or has already run),
+ * `deactivateTierSelectionBySubscription` wins the D1 race (or has already run),
  * preventing stale tier data on inactive rows.
  */
 async function updateTierSelectionTierByCustomer(
@@ -1520,19 +1500,25 @@ export async function handleStripeWebhook(
                 // (not just on a separate deleted/payment_failed event) must lose
                 // entitlement.
                 //
-                // FAIL-SAFE: entitlement REVOCATION must NOT depend on the
-                // subscription object carrying a `customer` field (it may not).
-                // Prefer the customer key when present; otherwise revoke by
-                // subscription id (resolved to the tenant via tenant_billing). A
-                // non-granting status with neither key would be unreachable, but
-                // we always have the subscription id here (guarded above).
+                // H1 FIX (money/GDPR): revoke ONLY the tier_selection tied to THIS
+                // subscription — resolved to the tenant via `tenant_billing`, the
+                // one-row-per-tenant CACHE billing map. The old code preferred a
+                // customer-keyed revoke, which flipped EVERY tier_selections row
+                // sharing this tenant's SINGLE Stripe customer (checkout reuses one
+                // `cus_…` per tenant across the cache AND runner subscriptions). A
+                // RUNNER subscription dropping to a non-granting status therefore
+                // silently revoked the tenant's ACTIVE cache tier. `tenant_billing`
+                // never holds a runner subscription id (runner subs live in
+                // `runner_billing`), so keying by subscription id makes a runner-sub
+                // event a clean no-op on the cache row while a cache-sub event still
+                // revokes the cache tier. The subscription id is always present
+                // (guarded above) and is the strictly-more-robust key — the customer
+                // field is the one a subscription payload may omit.
                 if (!grantsAccess) {
                     requiredWrites.push(
-                        typeof stripeCustomerId === "string" && stripeCustomerId
-                            ? deactivateTierSelectionByCustomer(db, { stripeCustomerId })
-                            : deactivateTierSelectionBySubscription(db, {
-                                  stripeSubscriptionId,
-                              }),
+                        deactivateTierSelectionBySubscription(db, {
+                            stripeSubscriptionId,
+                        }),
                     );
                 }
 
@@ -1731,7 +1717,6 @@ export async function handleStripeWebhook(
                 (((obj["subscription_details"] as Record<string, unknown> | undefined)?.[
                     "subscription"
                 ]) as string | undefined);
-            const stripeCustomerId = obj["customer"] as string | undefined;
             const attemptCount = obj["attempt_count"] as number | undefined;
             const nextAttempt = obj["next_payment_attempt"]; // null when Stripe has given up
             // Terminal when Stripe will not retry again. Two signals:
@@ -1766,24 +1751,26 @@ export async function handleStripeWebhook(
                 );
                 // 2. CANONICAL gate: flip tier_selections away from 'active'.
                 //
-                // F34 FIX: mirror the pattern used by `customer.subscription.updated`
-                // (lines above) and `customer.subscription.deleted`: prefer the
-                // customer key when present; fall back to the subscription id
-                // (resolved to the tenant via a correlated subquery through
-                // `tenant_billing`) when `customer` is absent from the invoice
-                // payload. Without this fallback, a terminal `invoice.payment_failed`
-                // whose payload omits `customer` leaves `tier_selections.subscription_state`
-                // as 'active', granting the tenant indefinite paid-tier access despite
-                // a definitive payment failure. We always have `stripeSubscriptionId`
-                // at this point (guarded above) so the fallback is always available.
+                // H1 FIX (money/GDPR): revoke ONLY the tier_selection tied to THIS
+                // subscription — resolved to the tenant via a correlated subquery
+                // through `tenant_billing` (the one-row-per-tenant CACHE billing
+                // map). The old code preferred a customer-keyed revoke, which flipped
+                // EVERY tier_selections row sharing this tenant's SINGLE Stripe
+                // customer (checkout reuses one `cus_…` per tenant across the cache
+                // AND runner subscriptions). A terminal `invoice.payment_failed` on a
+                // RUNNER subscription therefore silently revoked the tenant's ACTIVE
+                // cache tier. `tenant_billing` never holds a runner subscription id
+                // (runner subs live in `runner_billing`, revoked separately below),
+                // so keying by subscription id makes a runner-sub failure a clean
+                // no-op on the cache row while a cache-sub failure still revokes the
+                // cache tier. We always have `stripeSubscriptionId` here (guarded
+                // above); the invoice payload's `customer` field, by contrast, may be
+                // absent — so the subscription key is both more precise and more
+                // robust.
                 requiredWrites.push(
-                    typeof stripeCustomerId === "string" && stripeCustomerId
-                        ? deactivateTierSelectionByCustomer(db, {
-                              stripeCustomerId,
-                          })
-                        : deactivateTierSelectionBySubscription(db, {
-                              stripeSubscriptionId,
-                          }),
+                    deactivateTierSelectionBySubscription(db, {
+                        stripeSubscriptionId,
+                    }),
                 );
 
                 // 3. RUNNER entitlement revocation. The invoice carries NO price,
@@ -1826,7 +1813,6 @@ export async function handleStripeWebhook(
         case "customer.subscription.deleted": {
             const stripeSubscriptionId = obj["id"] as string | undefined;
             if (!stripeSubscriptionId) break;
-            const stripeCustomerId = obj["customer"] as string | undefined;
 
             if (env.BILLING_DB) {
                 const db = env.BILLING_DB;
@@ -1837,18 +1823,25 @@ export async function handleStripeWebhook(
                 // the tenant entitled forever AND tripped tier_select.rs:699
                 // `AlreadyActive` on any re-subscribe. Flip to 'inactive'.
                 //
-                // FAIL-SAFE (mirrors subscription.updated FIX-2): a cancel must
-                // ALWAYS revoke entitlement, even when the deleted subscription
-                // object carries no top-level `customer` field. Prefer the
-                // customer key when present; otherwise revoke by subscription id
-                // (resolved to the tenant via tenant_billing). We always have the
-                // subscription id here (guarded above).
+                // H1 FIX (money/GDPR): revoke ONLY the tier_selection tied to THIS
+                // subscription — resolved to the tenant via `tenant_billing` (the
+                // one-row-per-tenant CACHE billing map). The old code preferred a
+                // customer-keyed revoke, which flipped EVERY tier_selections row
+                // sharing this tenant's SINGLE Stripe customer (checkout reuses one
+                // `cus_…` per tenant across the cache AND runner subscriptions), so
+                // cancelling an unrelated RUNNER add-on silently revoked the tenant's
+                // ACTIVE cache tier — a paying cache customer losing access. A runner
+                // subscription id is never in `tenant_billing` (runner subs live in
+                // `runner_billing`, revoked separately below), so keying by
+                // subscription id makes a runner-sub cancel a clean no-op on the
+                // cache row while a cache-sub cancel still revokes the cache tier. The
+                // subscription id is always present (guarded above) and is the
+                // strictly-more-robust key — the deleted subscription object may
+                // carry no top-level `customer` field.
                 requiredWrites.push(
-                    typeof stripeCustomerId === "string" && stripeCustomerId
-                        ? deactivateTierSelectionByCustomer(db, { stripeCustomerId })
-                        : deactivateTierSelectionBySubscription(db, {
-                              stripeSubscriptionId,
-                          }),
+                    deactivateTierSelectionBySubscription(db, {
+                        stripeSubscriptionId,
+                    }),
                 );
 
                 // RUNNER entitlement revocation on cancel. Same disambiguation as
