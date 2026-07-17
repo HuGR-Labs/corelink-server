@@ -293,9 +293,11 @@ fn past_due_data_plane_denied(cfg: &Config, client: &Client) -> JourneyResult {
 /// carrying NO credential must never mint a Stripe Checkout session (that would
 /// let an anonymous caller open checkout sessions / probe the money path). This
 /// is deterministic and needs no creds — it asserts the negative contract: a
-/// `POST /v1/onboarding/tier-select` with no Authorization is denied
-/// (401/403/404), never a 2xx and never a 5xx (a 5xx on a missing-auth request
-/// is itself a contract failure — auth must reject before any Stripe work).
+/// `POST /v1/onboarding/tier-select` with no Authorization is denied by the auth
+/// gate (401/403 — a 404 is NOT a deny here: it would mean the route is absent,
+/// so the gate never ran, per `expect_gate_denied`), never a 2xx and never a 5xx
+/// (a 5xx on a missing-auth request is itself a contract failure — auth must
+/// reject before any Stripe work).
 fn checkout_unauthed_denied(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "Billing: unauthed checkout (tier-select, no auth) -> denied (no session minted)";
     let start = Instant::now();
@@ -345,8 +347,8 @@ fn checkout_unauthed_denied(cfg: &Config, client: &Client) -> JourneyResult {
             name,
             ms(start),
             format!(
-                "unauthed tier-select got {status} — expected an auth deny (401/403/404), not \
-                 a 5xx (auth must reject before any Stripe work)"
+                "unauthed tier-select got {status} — expected an auth deny (401/403; a 404 is \
+                 route-absent, not a deny), not a 5xx (auth must reject before any Stripe work)"
             ),
         ),
     }
