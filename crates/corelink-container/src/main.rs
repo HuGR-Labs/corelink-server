@@ -767,12 +767,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // here, OUTSIDE the ratelimit/residency/auth layers (same as the `/_internal/*`
     // family above) but with NO internal-auth gate. D1-read only; mounts only when
     // the D1 `StorageEnv` is present (nothing to serve without the index).
+    //
+    // M22(a): the router itself now carries a SCOPED per-IP token-bucket rate
+    // limit (`public_attestation::rate_limit_public_verifier`) — reachable
+    // internet-wide + unauthenticated, this surface had NO container-side
+    // rate limiting at all before this fix. `PublicVerifierRateLimitState` is
+    // a dedicated limiter instance local to this router (never the shared
+    // `ratelimit_layer.rs` gate), so it cannot re-throttle the data plane.
     if let Some(public_att_state) =
         corelink_server::routes::public_attestation::build_state_from_env()
     {
-        info!("routes: /v1/public/{{attestation,keys}} mounted (public verifier; D1 present)");
+        info!("routes: /v1/public/{{attestation,keys}} mounted (public verifier; D1 present; M22a per-IP rate limit armed)");
         app = app.merge(corelink_server::routes::public_attestation::router(
             public_att_state,
+            corelink_server::routes::public_attestation::PublicVerifierRateLimitState::new(),
         ));
     } else {
         warn!(
