@@ -769,13 +769,21 @@ fn http_malformed_authorization(cfg: &Config, client: &Client) -> JourneyResult 
                         format!("AUTH-BYPASS: malformed Authorization [{why}] → 200. url={url}"),
                     );
                 }
-                // 401 is canonical; 403/404 are acceptable non-5xx denies. Anything
-                // outside the deny band on a junk credential is wrong.
-                if !matches!(st, 401 | 403 | 404) {
+                // 401 is canonical; 403 is an acceptable active auth deny. A 404 is
+                // a FAILURE here (H18): the probed route is the caller's own CAS
+                // path (guaranteed to exist), so a junk credential must be rejected
+                // AT AUTH — a 404 means the malformed header slipped past the gate
+                // into the not-found path (an auth-bypass signature) or the route
+                // dropped, not that the gate denied it. Anything outside 401/403 on
+                // a junk credential is wrong.
+                if !matches!(st, 401 | 403) {
                     return JourneyResult::fail(
                         name,
                         ms(start),
-                        format!("malformed Authorization [{why}] → {st} (expected 401). url={url}"),
+                        format!(
+                            "malformed Authorization [{why}] → {st} (expected an active auth deny \
+                             401/403; a 404 means the gate never ran). url={url}"
+                        ),
                     );
                 }
             }

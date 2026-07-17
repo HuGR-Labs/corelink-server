@@ -235,7 +235,7 @@ fn edge_invalid_pat(cfg: &Config, client: &Client) -> JourneyResult {
 /// This probe does NOT need the real service key (it tests its absence), so it
 /// runs whenever the endpoint is reachable — gating only on connectivity.
 fn adversarial_no_service_key(cfg: &Config, client: &Client) -> JourneyResult {
-    let name = "Introspect: missing/wrong service key → denied (401/403/404), never 200";
+    let name = "Introspect: missing/wrong service key → active auth deny (401/403), never 200/404";
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 

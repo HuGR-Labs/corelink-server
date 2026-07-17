@@ -141,13 +141,48 @@ fn main() {
         .ok()
         .and_then(|v| v.parse().ok());
 
-    let (verdict, exit_red) = if fail > 0 {
+    let (verdict, exit_red) = ship_verdict(pass, fail, gated, min_pass, max_gated);
+
+    println!("╔══════════════════════════════════════════════════════════════════╗");
+    println!("║  SHIP-GATE: {:<54} ║", trunc(&verdict, 54));
+    println!("╚══════════════════════════════════════════════════════════════════╝");
+    println!();
+
+    // Exit non-zero on a real failure OR on a below-floor (vacuum) run.
+    if exit_red {
+        std::process::exit(1);
+    }
+}
+
+/// Compute the ship verdict + the process exit disposition from the run tallies.
+///
+/// Pure (no I/O) so the ship-gate policy is unit-testable and can never silently
+/// rot back to the green-by-vacuum behavior. Returns `(verdict_banner, exit_red)`
+/// where `exit_red == true` means the process exits non-zero.
+///
+/// Precedence (first match wins):
+///   1. `fail > 0`                    → RED (a journey actively FAILED).
+///   2. `pass < min_pass`             → RED (H18 anti-vacuum floor — a run that
+///      asserted nothing positive is NOT a green; with the default `min_pass = 1`
+///      a zero-PASS / all-gated run is RED + exit non-zero, never GREEN).
+///   3. `Some(ceil)` && `gated > ceil`→ RED (a Pass→Gated regression breached the
+///      known-gated ceiling).
+///   4. otherwise                     → GREEN.
+fn ship_verdict(
+    pass: usize,
+    fail: usize,
+    gated: usize,
+    min_pass: usize,
+    max_gated: Option<usize>,
+) -> (String, bool) {
+    if fail > 0 {
         ("RED (a journey FAILED)".to_owned(), true)
     } else if pass < min_pass {
         (
             format!(
-                "RED — only {pass} PASS < floor {min_pass} ({gated} gated). Nothing substantive \
-                 ran; this is NOT a green. Provision CORELINK_E2E_PAT_* / lower CORELINK_E2E_MIN_PASS."
+                "RED — only {pass} PASS < floor {min_pass} ({gated} gated). NO POSITIVE \
+                 ASSERTIONS — this is NOT a green. Provision CORELINK_E2E_PAT_* / lower \
+                 CORELINK_E2E_MIN_PASS."
             ),
             true,
         )
@@ -163,16 +198,6 @@ fn main() {
         )
     } else {
         (format!("GREEN ({pass} PASS, {gated} gated)"), false)
-    };
-
-    println!("╔══════════════════════════════════════════════════════════════════╗");
-    println!("║  SHIP-GATE: {:<54} ║", trunc(&verdict, 54));
-    println!("╚══════════════════════════════════════════════════════════════════╝");
-    println!();
-
-    // Exit non-zero on a real failure OR on a below-floor (vacuum) run.
-    if exit_red {
-        std::process::exit(1);
     }
 }
 
@@ -203,4 +228,49 @@ fn print_header(cfg: &Config) {
     };
     println!("║  Slow:     {slow:<54} ║");
     println!("╚══════════════════════════════════════════════════════════════════╝");
+}
+
+#[cfg(test)]
+mod ship_verdict_tests {
+    use super::ship_verdict;
+
+    // H18 anti-vacuum floor: a run that asserted NOTHING positive (pass == 0)
+    // is RED + exit non-zero — never GREEN. This is the fail-before/pass-after
+    // case: before H18 the runner exited 0 (GREEN) on a zero-assertion run.
+    #[test]
+    fn zero_pass_is_red_not_green_vacuum() {
+        let (verdict, exit_red) = ship_verdict(0, 0, 42, 1, None);
+        assert!(exit_red, "a zero-PASS all-gated run must exit non-zero");
+        assert!(
+            verdict.contains("NO POSITIVE ASSERTIONS"),
+            "verdict must name the vacuum reason, was: {verdict}"
+        );
+        assert!(!verdict.starts_with("GREEN"));
+    }
+
+    #[test]
+    fn a_real_failure_is_red_even_with_passes() {
+        let (verdict, exit_red) = ship_verdict(10, 1, 0, 1, None);
+        assert!(exit_red);
+        assert!(verdict.contains("FAILED"));
+    }
+
+    #[test]
+    fn passes_at_or_above_floor_with_no_failures_is_green() {
+        let (verdict, exit_red) = ship_verdict(3, 0, 2, 1, None);
+        assert!(!exit_red, "pass>=floor, fail==0 must be GREEN");
+        assert!(verdict.starts_with("GREEN"));
+    }
+
+    #[test]
+    fn gated_over_ceiling_is_a_pass_to_gated_regression() {
+        // pass meets the floor and nothing failed, but the gated count breached
+        // the known-gated ceiling → a silent Pass→Gated regression is RED.
+        let (verdict, exit_red) = ship_verdict(5, 0, 9, 1, Some(8));
+        assert!(exit_red);
+        assert!(verdict.contains("Pass→Gated"));
+        // Exactly at the ceiling is still GREEN (boundary).
+        let (_, at_ceiling_red) = ship_verdict(5, 0, 8, 1, Some(8));
+        assert!(!at_ceiling_red, "gated == ceiling is not a regression");
+    }
 }

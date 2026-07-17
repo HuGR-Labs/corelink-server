@@ -232,7 +232,7 @@ fn read_only_write_denied(cfg: &Config, client: &Client, s: Surface) -> JourneyR
             ),
         );
     }
-    if let Err(m) = expect_denied("RO write", st) {
+    if let Err(m) = expect_gate_denied("RO write", st) {
         return JourneyResult::fail(name, ms(start), m);
     }
     JourneyResult::pass(name, ms(start))
@@ -240,8 +240,12 @@ fn read_only_write_denied(cfg: &Config, client: &Client, s: Surface) -> JourneyR
 
 /// **P4 Revoked:** every op (GET / PUT / DELETE / list) must be denied. A
 /// revoked PAT is an attacker replaying a leaked-then-revoked token; the server
-/// must reject it on every verb (the canonical deny is 401, but any of
-/// 401/403/404 is an acceptable deny here).
+/// must ACTIVELY reject it on every verb. These probes target the caller's OWN
+/// primary-tenant path, so the route is guaranteed to exist — the deny must be
+/// an authorization rejection (401/403), NEVER a 404. A 404 here would mean the
+/// route is absent/renamed (the auth gate never ran), which masks a real
+/// regression as "secure" (H18); so `expect_gate_denied` is used, matching the
+/// sibling `pat_lifecycle` revoke-deny standard.
 fn revoked_every_op_denied(cfg: &Config, client: &Client, s: Surface) -> JourneyResult {
     let name: &'static str = match s {
         Surface::Cas => "SEC CAS: P4 revoked PAT — GET/PUT/DELETE/list all DENIED",
@@ -308,7 +312,7 @@ fn every_op_denied(
                     format!("SECURITY: denied-persona GET returned 200 on {}", s.label()),
                 );
             }
-            if let Err(m) = expect_denied("denied GET", st) {
+            if let Err(m) = expect_gate_denied("denied GET", st) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }
@@ -325,7 +329,7 @@ fn every_op_denied(
                     format!("SECURITY: denied-persona WROTE (got {st}) on {}", s.label()),
                 );
             }
-            if let Err(m) = expect_denied("denied PUT", st) {
+            if let Err(m) = expect_gate_denied("denied PUT", st) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }
@@ -345,7 +349,7 @@ fn every_op_denied(
                     ),
                 );
             }
-            if let Err(m) = expect_denied("denied DELETE", st) {
+            if let Err(m) = expect_gate_denied("denied DELETE", st) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }
@@ -365,7 +369,7 @@ fn every_op_denied(
                     ),
                 );
             }
-            if let Err(m) = expect_denied("denied LIST", st) {
+            if let Err(m) = expect_gate_denied("denied LIST", st) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }
@@ -639,7 +643,7 @@ fn scope_no_escalation(cfg: &Config, client: &Client, s: Surface) -> JourneyResu
                     ),
                 );
             }
-            if let Err(m) = expect_denied("RO escalation PUT", st) {
+            if let Err(m) = expect_gate_denied("RO escalation PUT", st) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }
@@ -660,7 +664,7 @@ fn scope_no_escalation(cfg: &Config, client: &Client, s: Surface) -> JourneyResu
                     ),
                 );
             }
-            if let Err(m) = expect_denied("RO escalation DELETE", st) {
+            if let Err(m) = expect_gate_denied("RO escalation DELETE", st) {
                 return JourneyResult::fail(name, ms(start), m);
             }
         }

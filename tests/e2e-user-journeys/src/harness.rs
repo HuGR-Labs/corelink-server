@@ -709,6 +709,54 @@ pub fn stripe_signature_header(secret: &str, timestamp_secs: u64, body: &str) ->
 mod tests {
     use super::*;
 
+    // ── H18: deny-probe rigor (a 404 is NOT an active auth deny) ──────────────
+    //
+    // `expect_gate_denied` backs every route-existence / auth-gate / scope probe
+    // (revoked/expired/anon ops, RO write-escalation, the unsigned-webhook
+    // signature gate, removed-member writes, malformed-auth). For those, a 404
+    // means "route absent / renamed" — the gate never ran — so it MUST score as a
+    // FAILURE, never a pass. `expect_denied` stays 404-tolerant ONLY for genuine
+    // content-isolation reads (tenant B reading tenant A's private address, where
+    // a not-found IS the correct privacy-preserving answer).
+
+    #[test]
+    fn expect_gate_denied_rejects_404_and_2xx_accepts_only_401_403() {
+        // The H18 fix: a 404 on a gate probe is a FAILURE (before this fix these
+        // sites routed through `expect_denied`, which returned Ok(()) — a PASS —
+        // on exactly this 404, masking an unmounted/renamed route as "secure").
+        assert!(
+            expect_gate_denied("gate", 404).is_err(),
+            "404 must FAIL a gate probe (route absent, gate never ran) — H18"
+        );
+        // The only active-deny statuses pass.
+        assert!(expect_gate_denied("gate", 401).is_ok());
+        assert!(expect_gate_denied("gate", 403).is_ok());
+        // A success or a server error is never a deny.
+        for bad in [200u16, 201, 400, 402, 500, 503] {
+            assert!(
+                expect_gate_denied("gate", bad).is_err(),
+                "status {bad} must not score as an active gate deny"
+            );
+        }
+        // The failure message must name the 404-is-not-a-deny reason.
+        let msg = expect_gate_denied("mint", 404).unwrap_err();
+        assert!(msg.contains("404") && msg.contains("gate"), "msg was: {msg}");
+    }
+
+    #[test]
+    fn expect_denied_stays_404_tolerant_for_content_isolation_reads() {
+        // The content-isolation helper is DELIBERATELY 404-tolerant: a tenant
+        // reading another tenant's private address correctly gets a not-found and
+        // must reveal nothing. This is the audit's fix-theme-2 split — do NOT
+        // collapse it into the gate helper, or every cross-tenant read false-reds.
+        for ok in [401u16, 403, 404] {
+            assert!(expect_denied("cross-read", ok).is_ok());
+        }
+        // But a success still fails (a leak) and a 5xx still fails.
+        assert!(expect_denied("cross-read", 200).is_err());
+        assert!(expect_denied("cross-read", 500).is_err());
+    }
+
     #[test]
     fn b64_decode_matches_known_vectors() {
         // RFC 4648 examples.
