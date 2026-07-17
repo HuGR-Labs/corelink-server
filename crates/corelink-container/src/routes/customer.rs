@@ -373,23 +373,23 @@ fn role_is_privileged(role: &str) -> bool {
 /// methods, **cancel the subscription**), the billing detail, the account
 /// overview (billing status + amount-due + financial PII), and the audit log
 /// (security/PII events) — are an owner/admin capability, NOT cache access. A
-/// read-only (`cas:r`) cache token is a credential meant only to READ the cache;
-/// it must not open the billing portal, mutate the subscription, or read
-/// financial/audit PII.
+/// cache token is a credential meant only to READ/WRITE the cache; it must not
+/// open the billing portal, mutate the subscription, or read financial/audit PII.
 ///
-/// We gate on `requires_cache_write` (the same Worker-trusted `x-corelink-scope`
-/// capability the key-management + privileged-team siblings enforce at
-/// `customer.rs` keys-list/create/revoke + team-invite) — the maximal owner/admin
-/// proxy available on this plane: dashboard Clerk-session callers carry the
-/// `read-write` scope (Worker-set), and `cas:rw` / `admin` PATs pass; a `cas:r`
-/// PAT → 403. Cache scopes must NOT grant billing-management or PII reads.
+/// We gate on `requires_billing_admin` (finding H17): billing is a DEDICATED
+/// capability, not cache write. The Worker forwards `billing` in `x-corelink-scope`
+/// for a NON-viewer dashboard Clerk session (`read-write billing`), so a dashboard
+/// user keeps billing access as before; an owner-grade `admin`/`owner` also passes.
+/// A minted cache PAT (`read-write`/`cas:rw`/`cas:w`/`cas:r`) is NEVER granted
+/// `billing`, so a leaked CI cache token can no longer open the portal, read
+/// financial PII, or cancel the subscription — the H17 hole (was `requires_cache_write`).
 ///
 /// `Some(resp)` ⇒ REJECT 403 (insufficient scope); `None` ⇒ proceed.
 /// Called AFTER the fail-CLOSED tenant resolution + the PAT possession backstop,
 /// BEFORE any storage/handler access.
 fn billing_pii_gate_reject(headers: &HeaderMap) -> Option<axum::response::Response> {
     let caller_scope = header_or(headers, crate::scope::SCOPE_HEADER, "");
-    if crate::scope::requires_cache_write(&caller_scope) {
+    if crate::scope::requires_billing_admin(&caller_scope) {
         return None;
     }
     Some(
@@ -1510,9 +1510,9 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/customer/overview")
             .method("GET")
-            // F-018: the overview carries billing/PII — requires a write-capable
-            // (dashboard `read-write` / `cas:rw`) caller, like keys/team mgmt.
-            .header("x-corelink-scope", "read-write")
+            // F-018 (H17): the overview carries billing/PII — requires the billing
+            // capability. Send the Worker's real non-viewer dashboard scope.
+            .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "tenant-xyz")
             .header("x-corelink-token-prefix", "clpat_abc")
             .body(Body::empty())
@@ -1534,9 +1534,9 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/customer/overview")
             .method("GET")
-            // F-018: billing/PII surface — pass the write-capable scope so the
-            // request reaches the handler (asserting the 404, not the scope 403).
-            .header("x-corelink-scope", "read-write")
+            // F-018 (H17): billing/PII surface — pass the billing-capable dashboard
+            // scope so the request reaches the handler (asserting 404, not the 403).
+            .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "ghost")
             .header("x-corelink-token-prefix", "clpat_x")
             .body(Body::empty())
@@ -1650,9 +1650,10 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/customer/billing")
             .method("GET")
-            // F-018: billing detail is financial PII — requires a write-capable
-            // (dashboard `read-write` / `cas:rw`) caller.
-            .header("x-corelink-scope", "read-write")
+            // F-018 (H17): billing detail is financial PII — requires the billing
+            // capability. The Worker forwards `read-write billing` for a non-viewer
+            // dashboard session; a bare cache scope is denied (see H17 tests below).
+            .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "t2")
             .header("x-corelink-token-prefix", "clpat_t2")
             .body(Body::empty())
@@ -1687,11 +1688,11 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/customer/billing/portal")
             .method("POST")
-            // F-018: opening the Stripe billing portal (cancel subscription /
-            // manage payment methods) requires a write-capable owner/admin
-            // caller — a bare cache PAT must NOT reach it. Send the dashboard
-            // `read-write` scope on the happy path.
-            .header("x-corelink-scope", "read-write")
+            // F-018 (H17): opening the Stripe billing portal (cancel subscription /
+            // manage payment methods) requires the billing capability — a bare
+            // cache PAT must NOT reach it. Send the dashboard `read-write billing`
+            // scope (what the Worker forwards for a non-viewer session).
+            .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "t3")
             .header("x-corelink-token-prefix", "clpat_t3")
             .header("content-type", "application/json")
@@ -1730,6 +1731,59 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// H17 regression: a leaked cache-WRITE PAT (`read-write` / `cas:rw` — what a
+    /// CI / `corelink put` job carries) MUST NOT open the Stripe billing portal
+    /// nor read billing detail. Before the fix the gate used `requires_cache_write`,
+    /// so `read-write` PASSED (403 fails-before / passes-after). The billing
+    /// capability (`read-write billing`, the Worker-forwarded dashboard scope) and
+    /// owner-grade `admin` still pass.
+    #[tokio::test]
+    async fn cache_write_pat_cannot_reach_billing_but_billing_capability_can() {
+        for cache in ["read-write", "cas:rw", "cas:w"] {
+            let (state, _shared) = fixture();
+            let app = router(state);
+            let req = Request::builder()
+                .uri("/v1/customer/billing/portal")
+                .method("POST")
+                .header("x-corelink-tenant-id", "cw-tenant")
+                .header(crate::scope::SCOPE_HEADER, cache)
+                .header("x-corelink-token-prefix", "clpat_cw")
+                .header("content-type", "application/json")
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.oneshot(req).await.expect("oneshot");
+            assert_eq!(
+                resp.status(),
+                StatusCode::FORBIDDEN,
+                "cache scope {cache:?} must NOT open the billing portal (H17)",
+            );
+        }
+        // The dashboard billing capability + an owner-grade admin token DO pass.
+        for ok in ["read-write billing", "admin", "owner"] {
+            let (state, shared) = fixture();
+            let billing = BillingResponse::new(
+                "active", "team", "2026-05-01", "2026-06-01", 4900, "usd", vec![],
+            );
+            shared.seed_billing("cw-ok", billing).expect("seed");
+            let app = router(state);
+            let req = Request::builder()
+                .uri("/v1/customer/billing/portal")
+                .method("POST")
+                .header("x-corelink-tenant-id", "cw-ok")
+                .header(crate::scope::SCOPE_HEADER, ok)
+                .header("x-corelink-token-prefix", "clpat_ok")
+                .header("content-type", "application/json")
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.oneshot(req).await.expect("oneshot");
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "billing-capable scope {ok:?} must open the billing portal",
+            );
+        }
     }
 
     /// A read-only caller MUST NOT read the account overview (billing/PII) (403).
@@ -1801,35 +1855,11 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
-    /// A write-capable (`cas:rw`) PAT caller passes the F-018 gate (the gate is a
-    /// NO-OP for a sufficiently-scoped principal) — billing/PII stays reachable
-    /// for owners/admins + the dashboard.
-    #[tokio::test]
-    async fn write_capable_caller_can_open_billing_portal() {
-        let (state, shared) = fixture();
-        let billing = BillingResponse::new(
-            "active",
-            "pro",
-            "2026-05-01",
-            "2026-06-01",
-            5000,
-            "usd",
-            vec![],
-        );
-        shared.seed_billing("rw-tenant", billing).expect("seed");
-        let app = router(state);
-        let req = Request::builder()
-            .uri("/v1/customer/billing/portal")
-            .method("POST")
-            .header("x-corelink-tenant-id", "rw-tenant")
-            .header(crate::scope::SCOPE_HEADER, "cas:rw")
-            .header("x-corelink-token-prefix", "clpat_rw")
-            .header("content-type", "application/json")
-            .body(Body::empty())
-            .unwrap();
-        let resp = app.oneshot(req).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::OK);
-    }
+    // (Removed `write_capable_caller_can_open_billing_portal`: it asserted a
+    // `cas:rw` cache PAT COULD open the billing portal — exactly the H17 hole now
+    // closed. The correct inverted behavior — cache scope → 403, billing
+    // capability / owner-grade → 200 — is covered by
+    // `cache_write_pat_cannot_reach_billing_but_billing_capability_can` above.)
 
     // ── Keys routes ───────────────────────────────────────────────────────────
 
@@ -2023,9 +2053,9 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/customer/audit")
             .method("GET")
-            // F-018: the audit log carries security/account PII — requires a
-            // write-capable (dashboard `read-write` / `cas:rw`) caller.
-            .header("x-corelink-scope", "read-write")
+            // F-018 (H17): the audit log carries security/account PII — requires
+            // the billing capability (the Worker's non-viewer dashboard scope).
+            .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "t8")
             .header("x-corelink-token-prefix", "clpat_t8")
             .body(Body::empty())
@@ -2812,7 +2842,7 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/customer/account/export")
             .method("POST")
-            .header("x-corelink-scope", "read-write")
+            .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "tenant-a")
             .header("x-corelink-token-prefix", "clerk")
             .body(Body::empty())
@@ -2854,7 +2884,7 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/customer/account/export")
             .method("POST")
-            .header("x-corelink-scope", "read-write")
+            .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "tenant-a")
             .header("x-corelink-token-prefix", "clerk")
             .body(Body::empty())
@@ -2908,7 +2938,7 @@ mod tests {
         let req = Request::builder()
             .uri("/v1/customer/account/export")
             .method("POST")
-            .header("x-corelink-scope", "read-write")
+            .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "tenant-a")
             .header("x-corelink-token-prefix", "clerk")
             .body(Body::empty())
