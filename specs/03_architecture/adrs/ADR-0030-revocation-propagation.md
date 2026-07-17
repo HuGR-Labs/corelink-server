@@ -86,6 +86,8 @@ Per INV-AUTH-MASS-REVOKE-ATOMIC: Phase 1 is a single atomic Postgres UPDATE boun
 - Tiered alerts + RB-FM-REVOKE-LAG runbook.
 - Local revocation effective immediately (D1 commit ≤ 100 ms regional) — cross-region lag never compromises the origin region.
 
+**Consequences addendum (2026-07-17, WP-D M26, non-normative):** on the LIVE D1-SoT path (see Reconciliation below), the container's `NativePatGate` in-memory verify cache (`crates/corelink-container/src/native_pat_gate.rs`, `VERIFY_CACHE_TTL = 5s`) is an additional, in-region consumer of this ADR's propagation budget: a cache hit skips the D1 `revoked_at_ms IS NULL` check entirely for up to 5s. It is not one of the three axes above and is not counted toward the deferred Neon/DO/Queue design — it is bounded well within the single 60s p99 SLA regardless.
+
 ## Reconciliation vs shipped code (2026-07-12)
 
 > ⚠️ **The Decision above is DESIGN-INTENT (DEFERRED / roadmap), not the deployed path.** The Neon-Postgres `pat.revoked_at` SoT + `RevocationDo` broadcast + CF-Queue cross-region fan-out backbone is NOT wired in production. The Rust surface (`crates/corelink-worker/src/auth/revocation.rs`) is feature-gated behind `tower-middleware` and is not in the verify hot path; its only callers today are the in-memory fakes (see the Implementation-seam note below).
