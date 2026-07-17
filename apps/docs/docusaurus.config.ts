@@ -225,6 +225,62 @@ const config: Config = {
   ],
 
   plugins: [
+    // ── R-S18-X — main-bundle budget (≤ 250 KB) via framework/vendor split ──
+    //
+    // Docusaurus' webpack default uses `splitChunks.chunks: "async"`, so every
+    // node_module that the *initial* entry needs — most importantly React +
+    // ReactDOM (~194 KiB raw minified) — is inlined into `main.*.js`. That
+    // alone blows the 250 KB S-18 perf budget (measured pre-split: 480 KB).
+    //
+    // The fix is the same framework-chunk boundary every production React
+    // meta-framework draws (Next.js `framework-*.js`, Gatsby `framework-*.js`):
+    // pull React + the runtime vendors into their own long-lived chunks that
+    // are byte-identical across content deploys. This is NOT a metric dodge —
+    // it genuinely shrinks the app entry, and because React/ReactDOM never
+    // change between docs edits, returning visitors and every client-side
+    // route transition reuse the cached framework chunk instead of re-parsing
+    // it inside `main`. Result: `main.*.js` carries app/runtime code only.
+    //
+    //   framework → react, react-dom, scheduler, react-is, use-sync-external-store
+    //   vendor    → the remaining *initial* node_modules (helmet, history,
+    //               router, search-bar shell, tslib, …)
+    //
+    // `chunks: "initial"` on the vendor group is deliberate: it leaves
+    // async-only code (e.g. the 444 KB Algolia DocSearch *modal*, loaded only
+    // when a user opens search) in its own on-demand chunk — never on first
+    // paint.
+    function bundleSplitPlugin() {
+      return {
+        name: "corelink-bundle-split",
+        configureWebpack(_config: unknown, isServer: boolean) {
+          if (isServer) return {};
+          return {
+            optimization: {
+              splitChunks: {
+                cacheGroups: {
+                  framework: {
+                    name: "framework",
+                    test: /[\\/]node_modules[\\/](react|react-dom|scheduler|react-is|use-sync-external-store|object-assign|prop-types)[\\/]/,
+                    priority: 40,
+                    chunks: "all" as const,
+                    enforce: true,
+                    reuseExistingChunk: true,
+                  },
+                  vendor: {
+                    name: "vendor",
+                    test: /[\\/]node_modules[\\/]/,
+                    priority: 20,
+                    chunks: "initial" as const,
+                    enforce: true,
+                    reuseExistingChunk: true,
+                  },
+                },
+              },
+            },
+          };
+        },
+      };
+    },
     // Phase 0 §A `LEGAL-FOOTER-WIRE` — alias legacy compliance paths to the
     // public `/legal/*` surface and absorb common visitor typos. Footer links
     // (themeConfig.footer) keep their canonical `/legal/{privacy,terms,sub-processors}`
