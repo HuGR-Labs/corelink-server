@@ -563,6 +563,13 @@ export class CoreLinkServer implements DurableObject {
           CORELINK_PAT_MINT_AUTH_KEY: this.env.CORELINK_PAT_MINT_AUTH_KEY ?? "",
           CORELINK_ADMIN_AUTH_KEY: this.env.CORELINK_ADMIN_AUTH_KEY ?? "",
           CORELINK_ERASE_AUTH_KEY: this.env.CORELINK_ERASE_AUTH_KEY ?? "",
+          // H5 dual-approval: the container's `POST /v1/admin/approve` gate reads
+          // a DEDICATED `CORELINK_ADMIN_APPROVER_AUTH_KEY` (distinct from the
+          // mutate/admin key so approve+mutate need different keys — real
+          // two-person control). Forward it or the container 401s every approve
+          // call the moment the dedicated key is bound (the CP-1 self-inflicted
+          // outage this block guards against). Empty when unset ⇒ shared fallback.
+          CORELINK_ADMIN_APPROVER_AUTH_KEY: this.env.CORELINK_ADMIN_APPROVER_AUTH_KEY ?? "",
           // #634: the per-user DSR legitimacy-anchor route (`/_internal/dsr/anchor`)
           // reads a dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY`; forward it too or the
           // container 401s every anchor call the moment the dedicated key is bound

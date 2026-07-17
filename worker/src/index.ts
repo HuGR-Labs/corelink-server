@@ -149,6 +149,7 @@ export interface Env {
   // the same names on its side.
   CORELINK_PAT_MINT_AUTH_KEY?: string; // gate for `/_internal/pat/mint`
   CORELINK_ADMIN_AUTH_KEY?: string;    // gate for admin `/_internal/*` routes
+  CORELINK_ADMIN_APPROVER_AUTH_KEY?: string; // H5 dual-approve gate for `POST /v1/admin/approve` (DISTINCT from the mutate/admin key → two-person control)
   CORELINK_ERASE_AUTH_KEY?: string;    // gate for erase `/_internal/*` routes
   CORELINK_DSR_ANCHOR_AUTH_KEY?: string; // gate for `/_internal/dsr/anchor` (per-user DSR legitimacy anchor; held by githugr, distinct from the eraser's ERASE key)
   DSR_RECEIPT_SIGNING_KEY?: string; // HMAC signer for DSR customer-portal receipt JWTs (union #717; read by dsr/portal.rs, forwarded to the container)

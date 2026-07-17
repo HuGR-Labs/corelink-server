@@ -45,12 +45,14 @@ use axum::{
 };
 use corelink_handler_admin::{
     AdminHandlerError, AdminMutateHandler, AdminMutateRequest, AdminMutateResponse,
-    AdminReadHandler, AdminReadRequest, AdminReadResponse, DualApprovalToken, InMemoryAdminHandler,
-    InMemoryAuditSink, InMemorySliObserver, MutateOp,
+    AdminReadHandler, AdminReadRequest, AdminReadResponse, ApprovalLedger, ApprovalLedgerWriter,
+    ApprovalRejection, DualApprovalToken, InMemoryAdminHandler, InMemoryApprovalLedger,
+    InMemoryAuditSink, InMemorySliObserver, MutateOp, VerifiedApproval,
 };
 use serde::Deserialize;
 use subtle::ConstantTimeEq;
 
+use crate::storage::d1_http::AdminApprovalConsume;
 use crate::wall_clock::{SystemWallClock, WallClock};
 
 /// Request header carrying the operator-only shared secret. The admin
@@ -121,6 +123,11 @@ pub const ADMIN_READ_ROUTE: &str = "/v1/admin/read/{resource}";
 /// Canonical admin mutate route path.
 pub const ADMIN_MUTATE_ROUTE: &str = "/v1/admin/mutate";
 
+/// Canonical admin dual-approve route path (finding H5). Records a second
+/// approver into the durable approval ledger; the recorded approval then
+/// authorizes exactly one [`ADMIN_MUTATE_ROUTE`] call for the same resource.
+pub const ADMIN_APPROVE_ROUTE: &str = "/v1/admin/approve";
+
 /// Shared route state — distinct trait objects for read and mutate.
 #[derive(Clone)]
 pub struct AdminRouteState {
@@ -135,6 +142,19 @@ pub struct AdminRouteState {
     /// key is unset at boot → every admin handler fails CLOSED (403)
     /// (mirrors the `internal_pat` fail-CLOSED posture).
     pub internal_auth_key: Option<Arc<str>>,
+    /// Records a second approver into the durable approval ledger for
+    /// `POST /v1/admin/approve`. Shares the same ledger the `mutate`
+    /// handler verifies + consumes against.
+    pub approval_writer: Arc<dyn ApprovalLedgerWriter>,
+    /// Operator-only shared secret for the **approve** gate (sourced from
+    /// `CORELINK_ADMIN_APPROVER_AUTH_KEY`, shared-key fallback). Deliberately
+    /// a DIFFERENT credential from `internal_auth_key` so approve and mutate
+    /// require different keys (real two-person control). `None` ⇒ the approve
+    /// route fails CLOSED (403).
+    pub approver_auth_key: Option<Arc<str>>,
+    /// True when the approval ledger is D1-backed (durable). When false
+    /// (in-memory dev/CI), recorded approvals do not survive a restart.
+    pub approvals_durable: bool,
 }
 
 impl core::fmt::Debug for AdminRouteState {
@@ -143,21 +163,47 @@ impl core::fmt::Debug for AdminRouteState {
     }
 }
 
-/// Build the canonical
-/// `(Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandler>)` pair
-/// for the current build target.
+/// The admin handler stack: the read + mutate trait objects PLUS the shared
+/// approval-ledger writer that backs `POST /v1/admin/approve`.
+///
+/// The `approval_writer` records approvals into the SAME ledger the `mutate`
+/// handler verifies + consumes against, so an approval created by the
+/// (independently-authenticated) approve endpoint is exactly what a later
+/// mutation must present.
+pub struct AdminHandlerStack {
+    /// Admin read handler.
+    pub read: Arc<dyn AdminReadHandler>,
+    /// Admin mutate handler (dual-approval-gated).
+    pub mutate: Arc<dyn AdminMutateHandler>,
+    /// Records ("creates") approvals for the approve route.
+    pub approval_writer: Arc<dyn ApprovalLedgerWriter>,
+    /// True when the ledger is D1-backed (durable across restarts). False on
+    /// the in-memory dev/CI fallback (approvals are process-local).
+    pub durable: bool,
+}
+
+impl core::fmt::Debug for AdminHandlerStack {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AdminHandlerStack")
+            .field("durable", &self.durable)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Build the admin handler stack (read + mutate + approval writer) for the
+/// current build target.
 ///
 /// # Runtime selection (WP-S1 Phase 2)
 ///
 /// - When `StorageEnv::from_env()` returns `Some(_)` (real CF creds
 ///   are present in the container environment), this function builds
-///   a [`D1AdminHandler`] backed by `CONFIG_DB` over the D1 HTTP API.
-///   This is the **production path**: admin reads/mutations land on
-///   durable D1 instead of volatile InMemory.
+///   a [`D1AdminHandler`] backed by `CONFIG_DB` over the D1 HTTP API and a
+///   durable [`D1ApprovalLedger`] over the `admin_approvals` table
+///   (migration 0091). This is the **production path**.
 ///
-/// - When credentials are absent (unit tests, local dev, CI) the
-///   function falls back to [`InMemoryAdminHandler`]. No network I/O
-///   occurs.
+/// - When credentials are absent (unit tests, local dev, CI) the function
+///   falls back to [`InMemoryAdminHandler`] + [`InMemoryApprovalLedger`]. No
+///   network I/O occurs; approvals are process-local.
 ///
 /// On `wasm32-unknown-unknown` a compile-error placeholder is emitted
 /// per the `trait-abstraction-defer` rule.
@@ -165,9 +211,9 @@ impl core::fmt::Debug for AdminRouteState {
 /// # Panics
 ///
 /// Does not panic. If the D1 client cannot be constructed, an error
-/// is logged and the function falls back to [`InMemoryAdminHandler`].
+/// is logged and the function falls back to the in-memory stack.
 #[must_use]
-pub fn build_handlers() -> (Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandler>) {
+pub fn build_handler_stack() -> AdminHandlerStack {
     #[cfg(not(target_arch = "wasm32"))]
     {
         use crate::storage::{d1_http::D1HttpClient, StorageEnv};
@@ -187,16 +233,27 @@ pub fn build_handlers() -> (Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandle
                 Ok(client) => {
                     tracing::info!(
                         d1_db = %db_id,
-                        "Admin handler: D1 (real storage)"
+                        "Admin handler: D1 (real storage) + durable approval ledger"
                     );
                     let audit = Arc::new(InMemoryAuditSink::new());
                     let sli = Arc::new(InMemorySliObserver::new());
-                    let inner = Arc::new(InMemoryAdminHandler::new(audit, sli));
-                    let shared: Arc<D1AdminHandler> =
-                        Arc::new(D1AdminHandler::new(Arc::new(client), inner));
+                    let client = Arc::new(client);
+                    let ledger = Arc::new(D1ApprovalLedger::new(client.clone()));
+                    let inner = Arc::new(InMemoryAdminHandler::new_with_ledger(
+                        audit,
+                        sli,
+                        ledger.clone() as Arc<dyn ApprovalLedger>,
+                    ));
+                    let shared: Arc<D1AdminHandler> = Arc::new(D1AdminHandler::new(client, inner));
                     let read: Arc<dyn AdminReadHandler> = shared.clone();
                     let mutate: Arc<dyn AdminMutateHandler> = shared;
-                    return (read, mutate);
+                    let approval_writer: Arc<dyn ApprovalLedgerWriter> = ledger;
+                    return AdminHandlerStack {
+                        read,
+                        mutate,
+                        approval_writer,
+                        durable: true,
+                    };
                 }
                 Err(e) => {
                     tracing::error!(
@@ -210,10 +267,21 @@ pub fn build_handlers() -> (Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandle
         tracing::info!("Admin handler: InMemory (no storage credentials configured)");
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
-        let shared: Arc<InMemoryAdminHandler> = Arc::new(InMemoryAdminHandler::new(audit, sli));
+        let ledger = Arc::new(InMemoryApprovalLedger::new());
+        let shared: Arc<InMemoryAdminHandler> = Arc::new(InMemoryAdminHandler::new_with_ledger(
+            audit,
+            sli,
+            ledger.clone() as Arc<dyn ApprovalLedger>,
+        ));
         let read: Arc<dyn AdminReadHandler> = shared.clone();
         let mutate: Arc<dyn AdminMutateHandler> = shared;
-        (read, mutate)
+        let approval_writer: Arc<dyn ApprovalLedgerWriter> = ledger;
+        AdminHandlerStack {
+            read,
+            mutate,
+            approval_writer,
+            durable: false,
+        }
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -222,6 +290,14 @@ pub fn build_handlers() -> (Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandle
              tracked as WI-S04-CF-WIRING"
         );
     }
+}
+
+/// Back-compat helper returning just the read + mutate pair. Prefer
+/// [`build_handler_stack`] when the approve route also needs wiring.
+#[must_use]
+pub fn build_handlers() -> (Arc<dyn AdminReadHandler>, Arc<dyn AdminMutateHandler>) {
+    let stack = build_handler_stack();
+    (stack.read, stack.mutate)
 }
 
 /// Real D1-backed admin handler (WP-S1 Phase 2).
@@ -374,6 +450,89 @@ impl AdminMutateHandler for D1AdminHandler {
     }
 }
 
+/// Durable, D1-backed dual-approval ledger (migration 0091, finding H5).
+///
+/// Implements both halves of the ledger over the `admin_approvals` table:
+/// [`ApprovalLedgerWriter::record_approval`] (the approve endpoint's "create"
+/// step) and [`ApprovalLedger::verify_and_consume`] (the mutate handler's
+/// verify + single-use consume). The consume is an atomic conditional
+/// `UPDATE ... WHERE consumed = 0 RETURNING`, so a concurrent replay of the
+/// same approval cannot double-spend.
+///
+/// Both trait methods are sync (the ledger is consulted from the sync admin
+/// handler chain); each bridges to the async D1 client with the same
+/// `block_in_place` pattern used by [`D1AdminHandler`].
+pub struct D1ApprovalLedger {
+    client: Arc<crate::storage::d1_http::D1HttpClient>,
+}
+
+impl core::fmt::Debug for D1ApprovalLedger {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("D1ApprovalLedger").finish_non_exhaustive()
+    }
+}
+
+impl D1ApprovalLedger {
+    /// Construct from the shared D1 client.
+    #[must_use]
+    pub fn new(client: Arc<crate::storage::d1_http::D1HttpClient>) -> Self {
+        Self { client }
+    }
+
+    /// Bridge sync → async D1 query (see [`D1AdminHandler::block_on`]).
+    fn block_on<F, T>(fut: F) -> T
+    where
+        F: core::future::Future<Output = T>,
+    {
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| handle.block_on(fut))
+    }
+}
+
+impl ApprovalLedger for D1ApprovalLedger {
+    fn verify_and_consume(
+        &self,
+        approval_id: &str,
+        initiator: &str,
+        resource: &str,
+    ) -> Result<VerifiedApproval, ApprovalRejection> {
+        let now_ms = SystemWallClock.now_ms();
+        let outcome = Self::block_on(self.client.admin_approval_verify_consume(
+            approval_id,
+            initiator,
+            resource,
+            i64::try_from(now_ms).unwrap_or(i64::MAX),
+        ))
+        .map_err(ApprovalRejection::Backend)?;
+        match outcome {
+            AdminApprovalConsume::Consumed { approver } => Ok(VerifiedApproval::new(approver)),
+            AdminApprovalConsume::Unknown => Err(ApprovalRejection::Unknown),
+            AdminApprovalConsume::ScopeMismatch => Err(ApprovalRejection::ScopeMismatch),
+            AdminApprovalConsume::SelfApproval { approver } => {
+                Err(ApprovalRejection::SelfApproval { approver })
+            }
+            AdminApprovalConsume::AlreadyConsumed => Err(ApprovalRejection::Consumed),
+        }
+    }
+}
+
+impl ApprovalLedgerWriter for D1ApprovalLedger {
+    fn record_approval(
+        &self,
+        approval_id: &str,
+        approver: &str,
+        resource: &str,
+    ) -> Result<(), String> {
+        let now_ms = SystemWallClock.now_ms();
+        Self::block_on(self.client.admin_approval_create(
+            approval_id,
+            approver,
+            resource,
+            i64::try_from(now_ms).unwrap_or(i64::MAX),
+        ))
+    }
+}
+
 /// Minimum accepted length (chars) for any internal-auth shared secret.
 ///
 /// Shared 32-char floor used by EVERY internal-auth reader in the
@@ -444,6 +603,28 @@ pub fn internal_auth_key_from_env() -> Option<Arc<str>> {
     resolve_internal_auth_key("CORELINK_ADMIN_AUTH_KEY")
 }
 
+/// Read the operator **dual-approver** shared secret from the environment
+/// (finding H5).
+///
+/// This gates `POST /v1/admin/approve` — the step that RECORDS a second
+/// approver into the durable approval ledger. It is deliberately a **separate
+/// credential** from [`internal_auth_key_from_env`] (the mutate/admin key): a
+/// real two-person control requires the approver and the initiator to hold
+/// DIFFERENT keys, so a single admin-key holder cannot both create the
+/// approval and spend it.
+///
+/// Reads `CORELINK_ADMIN_APPROVER_AUTH_KEY` first, falling back to the shared
+/// `CORELINK_INTERNAL_AUTH_KEY` when unset/blank/too-short (see
+/// [`resolve_internal_auth_key`]) — additive, deployable before the dedicated
+/// secret exists. Until a DISTINCT `CORELINK_ADMIN_APPROVER_AUTH_KEY` is
+/// provisioned, the two surfaces may resolve to the same shared key; provision
+/// a distinct value to obtain true credential separation. When `None`, the
+/// approve route fails CLOSED (403).
+#[must_use]
+pub fn approver_auth_key_from_env() -> Option<Arc<str>> {
+    resolve_internal_auth_key("CORELINK_ADMIN_APPROVER_AUTH_KEY")
+}
+
 /// Read the **DSR / CAS-erase** shared secret from the environment
 /// (red-team #3).
 ///
@@ -465,11 +646,12 @@ pub fn erase_auth_key_from_env() -> Option<Arc<str>> {
     resolve_internal_auth_key("CORELINK_ERASE_AUTH_KEY")
 }
 
-/// Build the axum `Router` exposing the admin read + mutate routes.
+/// Build the axum `Router` exposing the admin read + mutate + approve routes.
 pub fn router(state: AdminRouteState) -> Router {
     Router::new()
         .route(ADMIN_READ_ROUTE, get(handle_read))
         .route(ADMIN_MUTATE_ROUTE, post(handle_mutate))
+        .route(ADMIN_APPROVE_ROUTE, post(handle_approve))
         .with_state(state)
 }
 
@@ -768,11 +950,135 @@ fn map_err(e: AdminHandlerError) -> axum::response::Response {
         AdminHandlerError::DualApprovalSelfApproval { .. } => {
             (StatusCode::FORBIDDEN, "self-approval rejected").into_response()
         }
+        AdminHandlerError::DualApprovalUnknown { .. } => {
+            // No ledger record for the supplied approval_id — the forged /
+            // absent-approver reject that kills the H5 free-text bypass.
+            (StatusCode::FORBIDDEN, "dual-approval not found").into_response()
+        }
+        AdminHandlerError::DualApprovalScopeMismatch { .. } => {
+            (StatusCode::FORBIDDEN, "dual-approval scope mismatch").into_response()
+        }
+        AdminHandlerError::DualApprovalConsumed { .. } => {
+            // Single-use replay.
+            (StatusCode::CONFLICT, "dual-approval already used").into_response()
+        }
+        AdminHandlerError::ApprovalLedgerUnavailable(_) => {
+            // Fail-CLOSED: cannot authoritatively consult+consume the ledger.
+            (StatusCode::SERVICE_UNAVAILABLE, "approval ledger unavailable").into_response()
+        }
         AdminHandlerError::AuditFailed(_) => {
             // Fail-CLOSED: audit pipeline down = 503; never mutate.
             (StatusCode::SERVICE_UNAVAILABLE, "audit closed").into_response()
         }
         _ => (StatusCode::INTERNAL_SERVER_ERROR, "internal").into_response(),
+    }
+}
+
+/// Principal recorded as the second approver for an operator-gated approval.
+/// Deliberately DISTINCT from [`ADMIN_OPERATOR_PRINCIPAL`] so a recorded
+/// approval is never a self-approval at the identity level; the real
+/// two-person guarantee is the separate [`approver_auth_key_from_env`]
+/// credential the approve gate requires.
+const ADMIN_APPROVER_PRINCIPAL: &str = "approver@internal";
+
+/// JSON shape for `POST /v1/admin/approve` (finding H5).
+///
+/// Records a second-approver approval for a specific pending mutation. The
+/// `approval_id` the operator later presents on `POST /v1/admin/mutate` MUST
+/// match the one recorded here, and the `resource` is derived identically to
+/// [`MutateOp::resource`] so scope-binding lines up.
+#[derive(Clone, Debug, Deserialize)]
+pub struct AdminApproveBody {
+    /// Opaque approval id (the operator generates a fresh one, e.g. a UUID).
+    pub approval_id: String,
+    /// Operation kind being approved (`set_tenant_tier` / `rotate_admin_token`).
+    pub op_kind: String,
+    /// Tenant id (required for `set_tenant_tier`).
+    pub tenant: Option<String>,
+    /// Token id (required for `rotate_admin_token`).
+    pub token_id: Option<String>,
+}
+
+impl AdminApproveBody {
+    /// Derive the scope `resource` string this approval binds to, identical to
+    /// [`MutateOp::resource`] so the mutate-time scope check matches.
+    ///
+    /// # Errors
+    ///
+    /// Returns a static error when the op-kind / required fields are invalid.
+    fn resource(&self) -> Result<String, &'static str> {
+        match self.op_kind.as_str() {
+            "set_tenant_tier" => {
+                let tenant = self.tenant.as_deref().ok_or("set_tenant_tier requires tenant")?;
+                Ok(format!("tenant:{tenant}"))
+            }
+            "rotate_admin_token" => {
+                let token_id = self
+                    .token_id
+                    .as_deref()
+                    .ok_or("rotate_admin_token requires token_id")?;
+                Ok(format!("admin_token:{token_id}"))
+            }
+            _ => Err("unknown op_kind"),
+        }
+    }
+}
+
+/// `POST /v1/admin/approve` handler (finding H5).
+///
+/// Records the second approver into the durable approval ledger. Gated by the
+/// dedicated `CORELINK_ADMIN_APPROVER_AUTH_KEY` (approve gate), a DIFFERENT
+/// credential from the mutate gate — so a single admin-key holder cannot both
+/// approve and mutate. Auth is checked BEFORE the body is parsed (M3 pattern).
+async fn handle_approve(
+    State(state): State<AdminRouteState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> impl IntoResponse {
+    // Approve gate (fail-CLOSED), evaluated before body parse (M3).
+    if !internal_auth_ok(state.approver_auth_key.as_ref(), &headers) {
+        tracing::warn!(
+            event = "AdminApproveUnauthorized",
+            "admin approve rejected: missing/invalid approver auth (fail-CLOSED)"
+        );
+        return (StatusCode::FORBIDDEN, "forbidden").into_response();
+    }
+    let body: AdminApproveBody = match serde_json::from_slice(&body) {
+        Ok(b) => b,
+        Err(e) => {
+            tracing::warn!(error = %e, "admin approve: invalid request body");
+            return (StatusCode::BAD_REQUEST, "invalid_body").into_response();
+        }
+    };
+    let resource = match body.resource() {
+        Ok(r) => r,
+        Err(msg) => return (StatusCode::BAD_REQUEST, msg).into_response(),
+    };
+    // The approver identity is derived from the (dedicated) approve gate, NEVER
+    // from the client body — mirrors the mutate path's operator-principal rule.
+    match state
+        .approval_writer
+        .record_approval(&body.approval_id, ADMIN_APPROVER_PRINCIPAL, &resource)
+    {
+        Ok(()) => {
+            tracing::info!(
+                event = "AdminApprovalRecorded",
+                approval_id = %body.approval_id,
+                resource = %resource,
+                durable = state.approvals_durable,
+                "admin dual-approval recorded"
+            );
+            (StatusCode::OK, "approved").into_response()
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "admin approve: ledger record failed");
+            // A re-record of a consumed approval, or a backend error.
+            if e.contains("already consumed") {
+                (StatusCode::CONFLICT, "approval already used").into_response()
+            } else {
+                (StatusCode::SERVICE_UNAVAILABLE, "approval ledger unavailable").into_response()
+            }
+        }
     }
 }
 
@@ -803,17 +1109,25 @@ mod tests {
     fn fixture() -> (
         Arc<InMemoryAuditSink>,
         Arc<InMemorySliObserver>,
+        Arc<InMemoryApprovalLedger>,
         Arc<InMemoryAdminHandler>,
         AdminRouteState,
     ) {
         let audit = Arc::new(InMemoryAuditSink::new());
         let sli = Arc::new(InMemorySliObserver::new());
-        let shared = Arc::new(InMemoryAdminHandler::new(audit.clone(), sli.clone()));
+        let ledger = Arc::new(InMemoryApprovalLedger::new());
+        let shared = Arc::new(InMemoryAdminHandler::new_with_ledger(
+            audit.clone(),
+            sli.clone(),
+            ledger.clone() as Arc<dyn ApprovalLedger>,
+        ));
         let read: Arc<dyn AdminReadHandler> = shared.clone();
         let mutate: Arc<dyn AdminMutateHandler> = shared.clone();
+        let approval_writer: Arc<dyn ApprovalLedgerWriter> = ledger.clone();
         (
             audit,
             sli,
+            ledger,
             shared,
             AdminRouteState {
                 read,
@@ -822,6 +1136,9 @@ mod tests {
                 // key here keeps the router constructable. Gate behaviour
                 // is covered by the internal_auth_ok unit tests below.
                 internal_auth_key: Some(Arc::from("test-internal-auth-key-32-bytes-x")),
+                approval_writer,
+                approver_auth_key: Some(Arc::from("test-approver-auth-key-32-bytes-y")),
+                approvals_durable: false,
             },
         )
     }
@@ -837,7 +1154,7 @@ mod tests {
         let (read, _mutate) = build_handlers();
         let res = read.read(AdminReadRequest::new("ghost", "admin", true, 0));
         assert!(matches!(res, Err(AdminHandlerError::NotFound { .. })));
-        let (_a, _s, _shared, st) = fixture();
+        let (_a, _s, _ledger, _shared, st) = fixture();
         let _router = router(st);
     }
 
@@ -846,7 +1163,7 @@ mod tests {
     /// `Sli::AvailControlPlane` observation.
     #[test]
     fn admin_read_happy_emits_audit_and_sli() {
-        let (audit, sli, shared, st) = fixture();
+        let (audit, sli, _ledger, shared, st) = fixture();
         shared.seed_read("tenant:t1", b"{}").expect("seed");
         let req = AdminReadRequest::new("tenant:t1", "admin@root", true, 1);
         let resp = st.read.read(req).expect("read");
@@ -867,7 +1184,7 @@ mod tests {
     /// BEFORE the rejection (fail-CLOSED ordering pin).
     #[test]
     fn admin_read_auth_fail_audits_before_denial() {
-        let (audit, _sli, _shared, st) = fixture();
+        let (audit, _sli, _ledger, _shared, st) = fixture();
         let req = AdminReadRequest::new("tenant:t1", "alice", false, 1);
         let err = st.read.read(req).expect_err("forbidden");
         assert!(matches!(err, AdminHandlerError::Forbidden { .. }));
@@ -881,7 +1198,7 @@ mod tests {
     /// to read a tenant resource they don't own.
     #[test]
     fn admin_read_cross_tenant_via_rbac_denial() {
-        let (audit, _sli, _shared, st) = fixture();
+        let (audit, _sli, _ledger, _shared, st) = fixture();
         // Non-admin principal attempting to read another tenant's data.
         let req = AdminReadRequest::new("tenant:victim", "attacker", false, 1);
         let err = st.read.read(req).expect_err("denied");
@@ -898,7 +1215,7 @@ mod tests {
     /// `MutateDualApprovalRejected` BEFORE the response.
     #[test]
     fn admin_mutate_dual_approval_missing_rejected() {
-        let (audit, _sli, _shared, st) = fixture();
+        let (audit, _sli, _ledger, _shared, st) = fixture();
         let req = AdminMutateRequest::new(
             MutateOp::set_tenant_tier("t1", "Team"),
             "alice",
@@ -913,11 +1230,14 @@ mod tests {
         assert_eq!(rows[1].kind, AuditEventKind::MutateDualApprovalRejected);
     }
 
-    /// Self-approval (initiator == approver) MUST be rejected with
-    /// audit `MutateDualApprovalRejected` BEFORE the response.
+    /// Self-approval MUST be rejected — based on the LEDGER-recorded
+    /// approver, not the request body. The recorded approver for `a1` is the
+    /// initiator (`alice`), so it rejects even though the body could claim
+    /// anything.
     #[test]
     fn admin_mutate_self_approval_rejected() {
-        let (audit, _sli, _shared, st) = fixture();
+        let (audit, _sli, ledger, _shared, st) = fixture();
+        ledger.record("a1", "alice", "tenant:t1").expect("record");
         let req = AdminMutateRequest::new(
             MutateOp::set_tenant_tier("t1", "Team"),
             "alice",
@@ -940,7 +1260,9 @@ mod tests {
     /// records `Sli::AvailControlPlane` non-error.
     #[test]
     fn admin_mutate_happy_commits_and_audits() {
-        let (audit, sli, shared, st) = fixture();
+        let (audit, sli, ledger, shared, st) = fixture();
+        // A genuine, distinct, recorded approval authorizes the mutation.
+        ledger.record("a1", "bob", "tenant:t1").expect("record");
         let req = AdminMutateRequest::new(
             MutateOp::set_tenant_tier("t1", "Team"),
             "alice",
@@ -966,7 +1288,7 @@ mod tests {
     /// Audit failure MUST abort the mutation — fail-CLOSED ordering.
     #[test]
     fn admin_mutate_audit_failure_aborts_before_state_change() {
-        let (audit, _sli, shared, st) = fixture();
+        let (audit, _sli, _ledger, shared, st) = fixture();
         audit.inject_failure("audit pipeline down").expect("inject");
         let req = AdminMutateRequest::new(
             MutateOp::set_tenant_tier("t1", "Team"),
@@ -982,31 +1304,34 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
-    /// Idempotent retry: a second mutation with the same approval-id
-    /// re-records `MutateCommitted` and stays consistent (the
-    /// in-memory handler overwrites the applied entry; the test
-    /// pins that no panic / no audit-row loss happens on retry).
+    /// Single-use: an approval authorizes EXACTLY one mutation. A replay with
+    /// the same approval-id is rejected `DualApprovalConsumed` and applies no
+    /// second mutation. (Anti-replay — an operator who wants to repeat the op
+    /// must obtain a fresh approval.)
     #[test]
-    fn admin_mutate_idempotent_retry_stable_state() {
-        let (audit, _sli, shared, st) = fixture();
-        for at in [1u64, 2u64] {
-            let req = AdminMutateRequest::new(
+    fn admin_mutate_replay_rejected_single_use() {
+        let (audit, _sli, ledger, shared, st) = fixture();
+        ledger.record("a1", "bob", "tenant:t1").expect("record");
+        let mk = || {
+            AdminMutateRequest::new(
                 MutateOp::set_tenant_tier("t1", "Team"),
                 "alice",
                 true,
                 Some(DualApprovalToken::new("a1", "bob")),
-                at,
-            );
-            st.mutate.mutate(req).expect("commit");
-        }
-        // One applied resource (overwritten on retry).
+                1,
+            )
+        };
+        st.mutate.mutate(mk()).expect("first commit");
+        let err = st.mutate.mutate(mk()).expect_err("replay rejected");
+        assert!(matches!(err, AdminHandlerError::DualApprovalConsumed { .. }));
+        // Exactly one applied resource; no double-spend.
         assert_eq!(shared.applied_snapshot().expect("snap").len(), 1);
         let rows = audit.snapshot().expect("audit");
         let commits = rows
             .iter()
             .filter(|r| r.kind == AuditEventKind::MutateCommitted)
             .count();
-        assert_eq!(commits, 2, "every retry emits an audit row");
+        assert_eq!(commits, 1, "only the first spend commits");
     }
 
     /// Body parsing: `set_tenant_tier` without `tier` MUST fail at
@@ -1206,7 +1531,7 @@ mod tests {
 
     /// Build an axum router from the fixture state for end-to-end handler tests.
     fn fixture_router() -> (axum::Router, Arc<str>) {
-        let (_audit, _sli, _shared, state) = fixture();
+        let (_audit, _sli, _ledger, _shared, state) = fixture();
         let key = state
             .internal_auth_key
             .clone()
