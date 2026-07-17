@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-container/src/routes/failover.rs"
   - "crates/corelink-container/src/routes/otel_layer.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "294982663d1b05462077c616ca00886be16159e7"
+checkpoint_sha: "42a72649a06a981400ed125161b4e7ac2adb3840"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -129,8 +129,8 @@ surface.
 5. `crates/corelink-container/src/main.rs:408-411` — PORT resolution (default 50051).
 6. `crates/corelink-container/src/main.rs:610-615` — the 10 MiB global body limit + `/_health` route.
 7. `crates/corelink-container/src/main.rs:617-630` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
-8. `crates/corelink-container/src/main.rs:619-956` — the full set of env-gated privileged route mounts, including the S-09 `POST /_internal/audit/drain` audit-chain drain (BLAKE3 tamper-evident seal of `audit_outbox`; internal-auth gated, env-gated on D1) alongside the `/_internal/dsr/*` family — the single `dsr::router` now mounts ALL five data-subject-rights legs (`erase` Art.17 + `verify`, plus `access` Art.15 / `portability` Art.20 / `rectification` Art.16 added by the DSAR-completion work), sharing one internal-auth gate.
-8b. `crates/corelink-container/src/main.rs:793-956` — the LIVE Stripe-webhook materializer mount: signature-verified `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to `tier_selections` over D1-HTTP (one of two activation writers; the Worker routes `/v1/billing/stripe-webhook` to this `_system` DO as the sole signature-verifier — see `WebhookState::new` + `STRIPE_WEBHOOK_ROUTE` at the mount).
+8. `crates/corelink-container/src/main.rs:619-956` — the full set of env-gated privileged route mounts, including the S-09 `POST /_internal/audit/drain` audit-chain drain (BLAKE3 tamper-evident seal of `audit_outbox`; internal-auth gated, env-gated on D1) alongside the `/_internal/dsr/*` family — the single `dsr::router` now mounts ALL five data-subject-rights legs (`erase` Art.17 + `verify`, plus `access` Art.15 / `portability` Art.20 / `rectification` Art.16 added by the DSAR-completion work), sharing one internal-auth gate. The irreversible-erase mounts — CAS-erase, the `dsr::router` erase legs, `audit/drain`, and `/_internal/dsr/anchor` — now gate on their DEDICATED keys (`CORELINK_ERASE_AUTH_KEY` / `CORELINK_DSR_ANCHOR_AUTH_KEY`) with NO fallback to the shared `CORELINK_INTERNAL_AUTH_KEY` (finding H4), so a shared-key leak cannot drive an erase or forge an erasure-legitimacy anchor.
+8b. `crates/corelink-container/src/main.rs:849-993` — the LIVE Stripe-webhook materializer mount: signature-verified `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to `tier_selections` over D1-HTTP (one of two activation writers; the Worker routes `/v1/billing/stripe-webhook` to this `_system` DO as the sole signature-verifier — see `WebhookState::new` + `STRIPE_WEBHOOK_ROUTE` at the mount).
 9. `crates/corelink-container/src/main.rs:961-964` — binding the composed router to the PORT listener.
 10. `crates/corelink-container/src/routes.rs:754-771` — the `Router::new().merge(...)` composition chain (now incl. `admin_tenant_detail`, `byok_admin`, `customer_runners`, `workspaces`, and the `dsr::portal` self-service privacy surface).
 11. `crates/corelink-container/src/routes.rs:411-465` — shared gates resolved from env (quota, OCI-scoped request-count, PAT, accountant); the request-count gate is OCI-only, not cloned into native states (would double-count vs the Worker edge).
