@@ -1015,6 +1015,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // ── BYOK activation inert-in-prod boot note (C1) ──
+    // The prod container links NO `byok-*-real` feature, so the only
+    // `KmsProvider` is the `InMemoryFake` (XOR-mask "crypto", "Not for
+    // production"). `/v1/admin/byok/activate` fail-CLOSES to 501 in that build
+    // so a tenant can never be reported `active` under fake crypto. Log it once
+    // at boot so the inert state is observable alongside the other guards.
+    // (Emitted last, after the OKF-cited boot blocks above, to keep the
+    // anti-drift line-anchors stable — same rule as the DSR-anchor mount.)
+    if corelink_server::byok_orchestrator::active_provider()
+        == corelink_server::byok_orchestrator::ActiveProvider::InMemoryFake
+    {
+        info!(
+            event = "byok_activation_inert",
+            provider = corelink_server::byok_orchestrator::active_provider().as_str(),
+            "BYOK activation is INERT (no real KmsProvider) — \
+             /v1/admin/byok/activate returns 501"
+        );
+    }
+
     // Single HTTP/1.1 listener on PORT (50051) — the DO's getTcpPort target.
     let listener = tokio::net::TcpListener::bind(serve_addr).await?;
     info!(%serve_addr, "CoreLink HTTP data-plane server starting");

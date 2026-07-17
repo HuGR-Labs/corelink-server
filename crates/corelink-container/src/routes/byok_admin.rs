@@ -59,6 +59,23 @@ pub const BYOK_ACTIVATE_ROUTE: &str = "/v1/admin/byok/activate";
 /// Canonical deactivation (kill-switch) route path.
 pub const BYOK_DEACTIVATE_ROUTE: &str = "/v1/admin/byok/deactivate";
 
+/// Compile-time truth: did THIS binary link a real `KmsProvider`?
+///
+/// The BYOK data plane's provider is selected at compile time by the
+/// `byok-*-real` cargo features (see [`crate::byok_orchestrator`]). With
+/// NONE of them set — the shipping prod `Dockerfile` case — the only
+/// `KmsProvider` is the `InMemoryFake` (XOR-mask against a fixed constant,
+/// doc-marked "Not for production"). Flipping a tenant to BYOK `active`
+/// under that fake would report a security guarantee the binary cannot
+/// deliver, so activation MUST fail closed (501) in any build where this is
+/// `false`. `active_provider()` is `const fn`, so the whole gate resolves at
+/// compile time (zero hot-path cost) — the exact "feature inert in prod"
+/// mechanism used elsewhere in the container.
+const REAL_KMS_PROVIDER_WIRED: bool = !matches!(
+    crate::byok_orchestrator::active_provider(),
+    crate::byok_orchestrator::ActiveProvider::InMemoryFake
+);
+
 /// Shared route state for the BYOK activation control plane.
 #[derive(Clone)]
 pub struct ByokAdminRouteState {
@@ -221,6 +238,24 @@ async fn handle_activate(
         );
         return (StatusCode::FORBIDDEN, "forbidden").into_response();
     }
+    // ── Fail-CLOSED: no real KmsProvider linked → BYOK activation is INERT. ──
+    // In a build with no `byok-*-real` feature the only provider is the
+    // `InMemoryFake` (XOR-mask "crypto", "Not for production"). Flipping a
+    // tenant to `active` under it would report a live BYOK guarantee the
+    // binary cannot deliver, so we return 501 Not Implemented and NEVER reach
+    // the writer — state is never mutated to 'active'. This fires AFTER the
+    // operator gate so an unauthenticated caller still 403s (no inertness leak)
+    // and BEFORE the body is parsed or the writer touched.
+    if !REAL_KMS_PROVIDER_WIRED {
+        tracing::error!(
+            event = "ByokActivateNotAvailable",
+            provider = crate::byok_orchestrator::active_provider().as_str(),
+            "byok activate rejected: no real KmsProvider linked (InMemoryFake \
+             active) → 501 not-available; state NOT mutated"
+        );
+        return (StatusCode::NOT_IMPLEMENTED, "{\"error\":\"byok_not_available\"}")
+            .into_response();
+    }
     let Some(writer) = state.writer.as_ref() else {
         tracing::error!("byok activate: D1 writer unwired → 503 (fail-CLOSED)");
         return (StatusCode::SERVICE_UNAVAILABLE, "byok_write_unavailable").into_response();
@@ -336,19 +371,59 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
-    /// Authenticated but writer unwired (dev/CI) → 503 fail-CLOSED, never a
-    /// silent 200.
+    /// C1 regression: with NO real `KmsProvider` linked (the default/prod
+    /// build — no `byok-*-real` feature), an AUTHENTICATED activate must fail
+    /// closed with `501 Not Implemented` and body `byok_not_available`, and
+    /// must NEVER reach the writer (state is never mutated to 'active').
+    ///
+    /// Before the gate, this exact request (authenticated, writer unwired,
+    /// fake provider) returned `503 SERVICE_UNAVAILABLE` after passing the
+    /// auth gate — proving the request DID flow into the write path. After the
+    /// gate it short-circuits at 501 BEFORE the writer resolution, so the flip
+    /// to `active` under the `InMemoryFake` is impossible.
+    ///
+    /// Gated to the no-real-provider build (the default/prod build, and the
+    /// only one CI compiles — the `byok-*-real` features are prod-flavour, off
+    /// by default), mirroring the umbrella crate's
+    /// `no_provider_feature_default_build`. In a real-provider build the 501
+    /// gate is compiled out (`REAL_KMS_PROVIDER_WIRED == true`) and the route
+    /// reaches the write path instead, so this expectation is deliberately
+    /// scoped to the inert build.
+    #[cfg(not(any(
+        feature = "byok-aws-real",
+        feature = "byok-gcp-real",
+        feature = "byok-azure-real",
+        feature = "byok-vault-real",
+    )))]
     #[tokio::test]
-    async fn activate_authenticated_but_no_writer_is_503() {
+    async fn activate_fake_provider_is_501_not_available() {
+        // A writer is deliberately provided-as-absent; the 501 must fire
+        // regardless of writer wiring, proving it precedes the write path.
         let app = router(state_no_writer(Some(KEY)));
+        let body = format!(
+            "{{\"tenant\":\"{TENANT}\",\"mode\":\"byok\",\"cmk_provider\":\"aws\",\
+             \"cmk_key_id\":\"arn:aws:kms:us-east-1:1:key/abc\",\"tcs_wrapped_b64\":\"AQID\"}}"
+        );
         let req = Request::builder()
             .method(http::Method::POST)
             .uri(BYOK_ACTIVATE_ROUTE)
             .header("x-corelink-internal-auth", KEY)
-            .body(Body::from("{}"))
+            .body(Body::from(body))
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_IMPLEMENTED,
+            "authenticated activate under InMemoryFake must be 501, not a state flip"
+        );
+        let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let text = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(
+            text.contains("byok_not_available"),
+            "501 body must name the not-available reason; got {text:?}"
+        );
     }
 
     #[tokio::test]
