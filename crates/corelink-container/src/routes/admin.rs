@@ -625,25 +625,25 @@ pub fn approver_auth_key_from_env() -> Option<Arc<str>> {
     resolve_internal_auth_key("CORELINK_ADMIN_APPROVER_AUTH_KEY")
 }
 
-/// Read the **DSR / CAS-erase** shared secret from the environment
-/// (red-team #3).
+/// Read the **CAS-erase / DSR** dedicated secret from the environment
+/// (finding H4 — was red-team #3).
 ///
-/// Reads `CORELINK_ERASE_AUTH_KEY` first, falling back to the shared
-/// `CORELINK_INTERNAL_AUTH_KEY` when unset/blank/too-short (see
-/// [`resolve_internal_auth_key`]). When `None`, the erase surfaces fail
-/// CLOSED (403).
+/// Reads `CORELINK_ERASE_AUTH_KEY` ONLY and does **NOT** fall back to the
+/// shared `CORELINK_INTERNAL_AUTH_KEY`: the erase authority drives
+/// irreversible tombstones, so a leak of the broad shared secret must never,
+/// by itself, exercise it. This keeps the anti-forge "eraser ≠ requester"
+/// split against the anchor authority (`CORELINK_DSR_ANCHOR_AUTH_KEY`) that
+/// the old shared fallback silently collapsed (finding H4). `None` ⇒ every
+/// erase surface (CAS-erase, DSR, audit-drain) fails CLOSED (403/unmounted).
 ///
-/// # Wiring note (LEAD)
+/// # Owner action (Track-2)
 ///
-/// `main.rs` currently seeds the CAS-erase route with
-/// [`internal_auth_key_from_env`] (the ADMIN key). To complete the #3
-/// split, `main.rs` should call THIS function for `cas_erase`, and
-/// `dsr::build_state_from_env` (outside this file) should read the erase
-/// key too. Until those two one-line swaps land, both surfaces keep
-/// working via the shared-key fallback.
+/// The dedicated `CORELINK_ERASE_AUTH_KEY` is now REQUIRED in prod (≥ 32
+/// chars, `openssl rand -hex 32`); until it is bound the erase surfaces stay
+/// fail-CLOSED. Mirrors the dedicated-key-only PAT-mint gate (`internal_pat`).
 #[must_use]
 pub fn erase_auth_key_from_env() -> Option<Arc<str>> {
-    resolve_internal_auth_key("CORELINK_ERASE_AUTH_KEY")
+    resolve_dedicated_auth_key("CORELINK_ERASE_AUTH_KEY")
 }
 
 /// Build the axum `Router` exposing the admin read + mutate + approve routes.
@@ -1082,16 +1082,50 @@ async fn handle_approve(
     }
 }
 
+/// Resolve a **dedicated-only** internal-auth key: reads `dedicated_env` and
+/// NEVER falls back to the shared `CORELINK_INTERNAL_AUTH_KEY` (finding H4).
+///
+/// This is the fail-CLOSED sibling of [`resolve_internal_auth_key`], for the
+/// two authorities whose entire security value is that they are held by a
+/// DIFFERENT party than the broad shared secret: the irreversible **erase**
+/// authority (`CORELINK_ERASE_AUTH_KEY`) and the DSR legitimacy **anchor**
+/// authority (`CORELINK_DSR_ANCHOR_AUTH_KEY`). If either fell back to the
+/// shared key, a single `CORELINK_INTERNAL_AUTH_KEY` leak would collapse the
+/// "eraser ≠ requester" two-authority split. Mirrors the dedicated-key-only
+/// PAT-mint gate (`internal_pat::resolve_mint_auth_key`).
+///
+/// Fail-CLOSED: an absent / blank / `< INTERNAL_AUTH_KEY_MIN_LEN`-char value
+/// yields `None`, so the caller declines to mount the surface (route
+/// unavailable / 403) rather than silently widening to the shared key.
+#[must_use]
+pub(crate) fn resolve_dedicated_auth_key(dedicated_env: &str) -> Option<Arc<str>> {
+    match std::env::var(dedicated_env) {
+        Ok(key) if key.len() >= INTERNAL_AUTH_KEY_MIN_LEN => Some(Arc::from(key.as_str())),
+        Ok(key) if !key.is_empty() => {
+            tracing::warn!(
+                env = dedicated_env,
+                "dedicated internal-auth key set but < 32 chars; this surface will \
+                 fail CLOSED (403) — NO fallback to the shared CORELINK_INTERNAL_AUTH_KEY \
+                 (finding H4; use `openssl rand -hex 32`)"
+            );
+            None
+        }
+        _ => None,
+    }
+}
+
 /// Resolve the DSR legitimacy-anchor register key (`POST /_internal/dsr/anchor`),
-/// preferring the dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY` with the shared
-/// `CORELINK_INTERNAL_AUTH_KEY` as fallback. This key MUST be held by the
-/// erasure-REQUEST authority (e.g. githugr), a DIFFERENT party than the eraser
-/// holding `CORELINK_ERASE_AUTH_KEY` — the anti-forge basis of the legitimacy
-/// gate. See [`crate::routes::dsr_anchor`]. (Placed at the end of the module,
-/// after the OKF-cited items above, to keep anti-drift line-anchors stable.)
+/// from the dedicated `CORELINK_DSR_ANCHOR_AUTH_KEY` ONLY — NO shared-key
+/// fallback (finding H4). This key MUST be held by the erasure-REQUEST authority
+/// (e.g. githugr), a DIFFERENT party than the eraser holding
+/// `CORELINK_ERASE_AUTH_KEY` — the anti-forge basis of the legitimacy gate; a
+/// shared fallback would let one `CORELINK_INTERNAL_AUTH_KEY` holder forge both.
+/// `None` ⇒ the anchor route is not mounted (fail-CLOSED). See
+/// [`crate::routes::dsr_anchor`]. (Placed at the end of the module, after the
+/// OKF-cited items above, to keep anti-drift line-anchors stable.)
 #[must_use]
 pub fn dsr_anchor_auth_key_from_env() -> Option<Arc<str>> {
-    resolve_internal_auth_key("CORELINK_DSR_ANCHOR_AUTH_KEY")
+    resolve_dedicated_auth_key("CORELINK_DSR_ANCHOR_AUTH_KEY")
 }
 
 #[cfg(test)]
@@ -1620,6 +1654,7 @@ mod tests {
         std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
         std::env::remove_var("CORELINK_ADMIN_AUTH_KEY");
         std::env::remove_var("CORELINK_ERASE_AUTH_KEY");
+        std::env::remove_var("CORELINK_DSR_ANCHOR_AUTH_KEY");
         std::env::remove_var("CORELINK_PAT_MINT_AUTH_KEY");
     }
 
@@ -1643,16 +1678,17 @@ mod tests {
         clear_key_env();
     }
 
-    /// #3: when the consumer-specific key is ABSENT, fall back to the shared
-    /// `CORELINK_INTERNAL_AUTH_KEY`.
+    /// #3: when the consumer-specific key is ABSENT, the shared-fallback
+    /// resolver (used by admin/approver/quota, NOT erase/anchor) falls back to
+    /// the shared `CORELINK_INTERNAL_AUTH_KEY`.
     #[test]
     fn split_specific_absent_falls_back_to_shared() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_key_env();
         std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
-        // No CORELINK_ERASE_AUTH_KEY set.
+        // No CORELINK_ADMIN_AUTH_KEY set → shared fallback applies.
         let resolved =
-            resolve_internal_auth_key("CORELINK_ERASE_AUTH_KEY").expect("falls back to shared");
+            resolve_internal_auth_key("CORELINK_ADMIN_AUTH_KEY").expect("falls back to shared");
         assert_eq!(&*resolved, KEY_A);
         clear_key_env();
     }
@@ -1691,31 +1727,80 @@ mod tests {
         clear_key_env();
     }
 
-    /// #3: `internal_auth_key_from_env` (admin) and `erase_auth_key_from_env`
-    /// read DISTINCT specific vars but share the same fallback — so the operator
-    /// can rotate admin and erase independently. Pins the two readers point at
-    /// their contracted env names.
+    /// #3 + H4: `internal_auth_key_from_env` (admin) still reads its specific
+    /// var with a shared fallback, while `erase_auth_key_from_env` is now
+    /// DEDICATED-ONLY (no shared fallback). Pins that the two readers point at
+    /// their contracted env names and rotate independently.
     #[test]
     fn split_admin_and_erase_read_distinct_keys() {
         let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_key_env();
         std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A); // shared fallback
         std::env::set_var("CORELINK_ADMIN_AUTH_KEY", KEY_B);
-        // erase has no specific key → falls back to shared KEY_A;
-        // admin has its own KEY_B.
+        // admin has its own KEY_B; erase has NO dedicated key → H4: rejected
+        // (must NOT fall back to the shared KEY_A).
         let admin = internal_auth_key_from_env().expect("admin key");
-        let erase = erase_auth_key_from_env().expect("erase key");
         assert_eq!(&*admin, KEY_B, "admin reads CORELINK_ADMIN_AUTH_KEY");
-        assert_eq!(
-            &*erase, KEY_A,
-            "erase falls back to shared (no specific set)"
+        assert!(
+            erase_auth_key_from_env().is_none(),
+            "H4: erase must NOT fall back to the shared key"
         );
-        // Now give erase its own key — the two diverge.
+        // Now give erase its own key — both resolve to their own credential.
         std::env::set_var("CORELINK_ERASE_AUTH_KEY", KEY_A);
         std::env::set_var("CORELINK_ADMIN_AUTH_KEY", KEY_B);
         std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
         assert_eq!(&*internal_auth_key_from_env().expect("admin"), KEY_B);
         assert_eq!(&*erase_auth_key_from_env().expect("erase"), KEY_A);
+        clear_key_env();
+    }
+
+    /// H4 (verified HIGH): the erase + DSR-anchor authorities MUST be gated by
+    /// their DEDICATED keys and MUST NOT fall back to the shared
+    /// `CORELINK_INTERNAL_AUTH_KEY` — otherwise a single shared-key leak
+    /// collapses the anti-forge "eraser ≠ requester" two-authority split.
+    ///
+    /// Fails BEFORE the fix (both fell back to the shared key via
+    /// `resolve_internal_auth_key`); passes AFTER (dedicated-only).
+    #[test]
+    fn h4_erase_and_anchor_reject_shared_only_require_dedicated() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_key_env();
+
+        // Shared key present, NO dedicated erase/anchor keys → both REJECTED.
+        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
+        assert!(
+            erase_auth_key_from_env().is_none(),
+            "H4: erase authenticated with ONLY the shared key must be rejected"
+        );
+        assert!(
+            dsr_anchor_auth_key_from_env().is_none(),
+            "H4: dsr-anchor authenticated with ONLY the shared key must be rejected"
+        );
+
+        // Bind the DEDICATED keys (distinct parties) → both ACCEPTED, and each
+        // resolves to its own credential (not the shared one).
+        std::env::set_var("CORELINK_ERASE_AUTH_KEY", KEY_A);
+        std::env::set_var("CORELINK_DSR_ANCHOR_AUTH_KEY", KEY_B);
+        std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY"); // prove no shared dependency
+        assert_eq!(
+            &*erase_auth_key_from_env().expect("erase key present"),
+            KEY_A,
+            "erase resolves to its dedicated CORELINK_ERASE_AUTH_KEY"
+        );
+        assert_eq!(
+            &*dsr_anchor_auth_key_from_env().expect("anchor key present"),
+            KEY_B,
+            "anchor resolves to its dedicated CORELINK_DSR_ANCHOR_AUTH_KEY"
+        );
+
+        // A too-short dedicated key is rejected (≥32 floor, fail-CLOSED).
+        clear_key_env();
+        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", KEY_A);
+        std::env::set_var("CORELINK_ERASE_AUTH_KEY", "too-short"); // < 32
+        assert!(
+            erase_auth_key_from_env().is_none(),
+            "H4: a < 32-char dedicated erase key fails CLOSED (no shared fallback)"
+        );
         clear_key_env();
     }
 

@@ -20,7 +20,7 @@ source_files:
   - "crates/corelink-analytics/src/lib.rs"
   - "crates/corelink-analytics/src/validator.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "42a72649a06a981400ed125161b4e7ac2adb3840"
 provenance: "AUTHORED"
 tags: ["billing", "stripe", "usage-metering", "reconciliation", "money-path"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -93,7 +93,7 @@ The crates split into a **deferred pure-logic front** and a **live egress + mate
 16. `crates/corelink-billing-stripe-materializer/src/d1.rs:173` — `SQL_UPSERT_TIER`: writes literal `subscription_state='active'` + tier on `ON CONFLICT(tenant_id)`.
 17. `crates/corelink-billing-stripe-materializer/src/wasm32_binders.rs:158-191` — wasm32 `sync_gate` validates+ct-eq then stages (`wasm32_async_dispatch_pending`); real call one frame above. The runner-revoke binder `delete_runners_entitlement` (ct-eq + `SQL_DELETE_RUNNERS_ENTITLEMENT` stage) is at `:373-391`.
 18. `crates/corelink-billing-stripe-materializer/src/lib.rs:1-56` — materializer ships the production `StateMaterializer`; native InMemory vs wasm32/native-HTTP binders.
-19. `crates/corelink-container/src/main.rs:793-956` — the LIVE container webhook mount (`STRIPE_WEBHOOK_SECRET`-gated): durable `D1HttpBillingWriter` wiring (`:821-849`) + `WebhookDispatcher::new` (`:898-908`) on the data-plane listener (line numbers shifted further by the DSAR-completion `/_internal/dsr/{access,portability,rectification}` route mount added earlier in `main`, on top of the Artifact 1 `/v1/public/*` attestation-verifier mount).
+19. `crates/corelink-container/src/main.rs:849-993` — the LIVE container webhook mount (`STRIPE_WEBHOOK_SECRET`-gated): durable `D1HttpBillingWriter` wiring (`:897-908`) + `WebhookDispatcher::new` (`:976-986`) on the data-plane listener (line numbers shifted further by the DSAR-completion `/_internal/dsr/{access,portability,rectification}` route mount and the finding-H4 dedicated-key CAS-erase mount added earlier in `main`, on top of the Artifact 1 `/v1/public/*` attestation-verifier mount).
 20. `crates/corelink-container/src/main.rs:890-905` — plan→tier map MUST key off real `STRIPE_PRICE_ID_{TIER}` env values or every event is `UnknownPlan` 422 (env→tier table + `build_tier_selector` at `:93-214`).
 21. `crates/corelink-analytics/src/validator.rs:195-237` — `validate_and_register` rejects over-budget emits BEFORE registering (INV-OBS-CARDINALITY-BUDGET runtime half).
 22. `crates/corelink-analytics/src/lib.rs:98-103` — `tenant_id` forbidden as a label; only canonical `Tier` appears.

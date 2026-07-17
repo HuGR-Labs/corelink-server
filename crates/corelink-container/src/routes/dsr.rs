@@ -361,23 +361,23 @@ pub fn build_in_process_erasure_sink() -> Option<Arc<dyn crate::routes::customer
     Some(Arc::new(InProcessErasureSink::new(Arc::new(worker))))
 }
 
-/// Build the route state from env. `None` when `CORELINK_INTERNAL_AUTH_KEY` is
+/// Build the route state from env. `None` when `CORELINK_ERASE_AUTH_KEY` is
 /// unset or shorter than 32 chars (route not mounted — fail-CLOSED). Mirrors
 /// the ≥32-char floor set by the PAT-signing key standard and recommended by
 /// F28/F15 of the 2026-06-13 CAA-360 security audit.
 #[must_use]
 pub fn build_state_from_env() -> Option<DsrRouteState> {
-    // rt-nuclear #18/#19: DSR (GDPR mass-erase) MUST gate on the dedicated ERASE
-    // key (CORELINK_ERASE_AUTH_KEY), not the shared key directly — so the #297
-    // per-consumer split actually reaches this destructive surface. Prefers the
-    // dedicated key, falls back to the shared CORELINK_INTERNAL_AUTH_KEY (so this
-    // is non-breaking until the per-consumer secret #158 is provisioned), and
-    // preserves the ≥32-char fail-CLOSED floor (F28/F15).
+    // rt-nuclear #18/#19 + finding H4: DSR (GDPR mass-erase) MUST gate on the
+    // dedicated ERASE key (CORELINK_ERASE_AUTH_KEY), not the shared key — so the
+    // #297 per-consumer split actually reaches this destructive surface. The key
+    // is DEDICATED-ONLY: NO fallback to the shared CORELINK_INTERNAL_AUTH_KEY
+    // (H4 — a shared-key leak must not drive erases), and it preserves the
+    // ≥32-char fail-CLOSED floor (F28/F15).
     let internal_auth_key = match crate::routes::admin::erase_auth_key_from_env() {
         Some(k) if k.len() >= 32 => k.to_string(),
         _ => {
             tracing::warn!(
-                "no usable CORELINK_ERASE_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY \
+                "no usable CORELINK_ERASE_AUTH_KEY (dedicated; NO shared fallback) \
                  (< 32 chars); /_internal/dsr/* NOT mounted (fail-CLOSED)"
             );
             return None;
@@ -767,15 +767,24 @@ async fn handle_verify(
 mod tests {
     use super::*;
 
-    /// F28/F15 (CAA-360 2026-06-13): `build_state_from_env` must reject any key
-    /// shorter than 32 chars and return `None` (route not mounted, fail-CLOSED).
+    /// F28/F15 (CAA-360 2026-06-13) + finding H4: `build_state_from_env` must
+    /// reject any DEDICATED erase key shorter than 32 chars and return `None`
+    /// (route not mounted, fail-CLOSED). H4: a shared `CORELINK_INTERNAL_AUTH_KEY`
+    /// (even a valid one) must NOT mount the erase route — only the dedicated key.
     #[test]
-    fn build_state_rejects_short_internal_auth_key() {
-        // 31-char key — just below the minimum floor.
-        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", "a".repeat(31));
+    fn build_state_rejects_short_dedicated_erase_key() {
+        // 31-char dedicated key — just below the minimum floor.
+        std::env::set_var("CORELINK_ERASE_AUTH_KEY", "a".repeat(31));
         assert!(
             build_state_from_env().is_none(),
-            "31-char key must not mount the DSR route (< 32 floor)"
+            "31-char dedicated erase key must not mount the DSR route (< 32 floor)"
+        );
+        // H4: a VALID shared key with NO dedicated erase key must also NOT mount.
+        std::env::remove_var("CORELINK_ERASE_AUTH_KEY");
+        std::env::set_var("CORELINK_INTERNAL_AUTH_KEY", "a".repeat(64));
+        assert!(
+            build_state_from_env().is_none(),
+            "H4: a valid shared key must NOT mount erase without the dedicated key"
         );
         std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
     }

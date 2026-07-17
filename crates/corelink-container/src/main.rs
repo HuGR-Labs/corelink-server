@@ -782,7 +782,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     // hugit-P2 seam B, WP-B: `POST /_internal/cas/:tenant/:hash/erase` — per-hash
-    // CAS erase + 410-Gone tombstone, gated by the same CORELINK_INTERNAL_AUTH_KEY.
+    // CAS erase + 410-Gone tombstone, gated by the dedicated CORELINK_ERASE_AUTH_KEY.
     // The WRITE route mounts only when ALL prod transports build from env: the
     // internal-auth key, the R2 TDK (`R2_TDK_HEX`), and the D1 tombstone store.
     // Without the TDK the eraser cannot derive the writer's tenant prefix, so the
@@ -791,9 +791,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // posture). The read-side 410 gate is wired separately in `routes::cas`.
     // rt-nuclear #20/#21: CAS-erase MUST gate on the dedicated ERASE key
     // (CORELINK_ERASE_AUTH_KEY), not the ADMIN key — so an admin-key leak cannot
-    // drive irreversible erases. `erase_auth_key_from_env` still falls back to the
-    // shared CORELINK_INTERNAL_AUTH_KEY when the dedicated key is unset, so this is
-    // non-breaking until the per-consumer secret (#158) is provisioned.
+    // drive irreversible erases. `erase_auth_key_from_env` reads the DEDICATED
+    // CORELINK_ERASE_AUTH_KEY ONLY (NO shared fallback; finding H4) — the erase
+    // surface stays fail-CLOSED until the operator binds that secret (Track-2).
     let cas_erase_auth_key = corelink_server::routes::admin::erase_auth_key_from_env();
     if let Some(cas_erase_state) =
         corelink_server::routes::cas_erase::build_state_from_env(cas_erase_auth_key)
@@ -802,7 +802,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         app = app.merge(corelink_server::routes::cas_erase::router(cas_erase_state));
     } else {
         warn!(
-            "CORELINK_INTERNAL_AUTH_KEY / R2_TDK_HEX / D1 incomplete; \
+            "CORELINK_ERASE_AUTH_KEY / R2_TDK_HEX / D1 incomplete; \
              /_internal/cas/:tenant/:hash/erase route NOT mounted (fail-CLOSED)"
         );
     }
@@ -996,8 +996,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // GDPR1 per-user erasure: `POST /_internal/dsr/anchor` — register the
     // `dsr_requested` legitimacy anchor for a per-user (not whole-account)
     // erasure, so the per-digest CAS erase can authorize it. Gated by the
-    // dedicated CORELINK_DSR_ANCHOR_AUTH_KEY (shared-key fallback until
-    // provisioned) — held by the erasure-request authority (githugr), a DIFFERENT
+    // dedicated CORELINK_DSR_ANCHOR_AUTH_KEY ONLY (NO shared fallback; finding
+    // H4) — held by the erasure-request authority (githugr), a DIFFERENT
     // party than the eraser (hugit), or the legitimacy gate is moot. (Mounted last,
     // after the cited-in-OKF blocks above, to keep the anti-drift line-anchors stable.)
     let dsr_anchor_auth_key = corelink_server::routes::admin::dsr_anchor_auth_key_from_env();
