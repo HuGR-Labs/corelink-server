@@ -39,17 +39,55 @@ test.describe("Signup → Welcome → Activation (prod surface)", () => {
     expect(res.status()).toBeLessThan(400);
   });
 
-  test("sign-up page renders Clerk widget (anchors the post-Clerk-load shell)", async ({
+  test("sign-up page mounts the Clerk widget (deploy canary for Clerk config)", async ({
     page,
   }) => {
     await page.goto(`${APP_URL}/sign-up`, { waitUntil: "domcontentloaded" });
     // Title is locale-dependent; assert generously.
     await expect(page).toHaveTitle(/Sign\s?(?:Up|In|in)|CoreLink/i);
-    // Clerk's hosted form mounts a node that carries one of these stable hooks.
-    // We don't assert a specific selector beyond "something rendered" because
-    // Clerk owns the DOM shape and we don't want a copy/CSS bump to break us.
-    const body = await page.locator("body").innerText();
-    expect(body.length, "sign-up page should render non-empty body").toBeGreaterThan(0);
+
+    // The /sign-up route is client-rendered: `<SignUp>` is dynamic-imported
+    // with `ssr:false` (see src/app/sign-up/[[...sign-up]]/page.tsx), so the
+    // SSR pass emits only a BAILOUT_TO_CLIENT_SIDE_RENDERING shell. At
+    // domcontentloaded the <main> is therefore empty — the previous
+    // `body.length > 0` assertion measured that shell (title text), NOT the
+    // widget, so it could pass on a broken deploy. We now wait for Clerk's own
+    // mount node, which React renders ONLY when <ClerkProvider>+<SignUp> mount
+    // with a valid publishable key. If NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY is
+    // unset, page.tsx renders the "Clerk publishable key not configured"
+    // fallback with NO data-clerk-component — so this both proves the widget
+    // mounted and catches a missing Clerk key on deploy (a real regression the
+    // old assertion missed).
+    //
+    // We assert the mount node is ATTACHED, not visible, and we do NOT assert
+    // on the rendered credential form/inputs. Verified against LIVE prod
+    // (2026-07-17, headless chromium): Clerk's hosted sign-up does not paint
+    // its form under an automated/headless browser — the FAPI bundle loads and
+    // initialises (window.Clerk.loaded === true) but the form is withheld
+    // (mount node stays 0-height), so `toBeVisible()` / an inputs assertion
+    // would be a false-negative in CI. The interactive auth round-trip is
+    // covered by the localhost test-mode suite (see file header).
+    const clerkMount = page.locator('[data-clerk-component="SignUp"]');
+    await clerkMount.waitFor({ state: "attached", timeout: 20_000 });
+    await expect(clerkMount).toHaveCount(1);
+
+    // Stronger, headless-stable signal than raw body length: Clerk's remote
+    // client bundle must actually load AND initialise. This proves the FAPI
+    // host + CSP (clerk.corelink-app.humangr.com) are wired on the deploy —
+    // the exact chain that breaks when Pages secrets or CSP regress.
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => {
+            const c = (window as unknown as { Clerk?: { loaded?: boolean } }).Clerk;
+            return Boolean(c && c.loaded);
+          }),
+        {
+          message: "Clerk client bundle must load + initialise (window.Clerk.loaded)",
+          timeout: 20_000,
+        },
+      )
+      .toBe(true);
   });
 
   // The full Clerk OAuth/email round-trip requires real credentials. We skip
@@ -100,10 +138,18 @@ test.describe("Pricing page (prod surface)", () => {
     // locale-routed deployment.
     await page.goto(`${DOCS_URL}/pricing`, { waitUntil: "domcontentloaded" });
 
+    // The docs site is a Docusaurus React app that hydrates the pricing tiers
+    // client-side; at domcontentloaded the body may still be the app shell.
+    // Wait for the app root to render real content before asserting so we test
+    // the rendered page, not a loading shell (avoids a client-render race
+    // false-negative). We keep the tier assertions themselves unchanged and
+    // give each a generous timeout so it retries while content streams in.
+    await page.waitForSelector("#__docusaurus, main, article", { timeout: 20_000 });
+
     const body = page.locator("body");
-    await expect(body).toContainText(/Free/i);
-    await expect(body).toContainText(/Pro/i);
-    await expect(body).toContainText(/Enterprise/i);
+    await expect(body).toContainText(/Free/i, { timeout: 20_000 });
+    await expect(body).toContainText(/Pro/i, { timeout: 20_000 });
+    await expect(body).toContainText(/Enterprise/i, { timeout: 20_000 });
 
     // CTA assertion is best-effort — if no CTA matches we don't fail the
     // tier check (copy / link text may evolve). When a CTA IS present, its
