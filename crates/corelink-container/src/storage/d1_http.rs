@@ -334,6 +334,159 @@ impl D1HttpClient {
     }
 }
 
+/// Outcome of [`D1HttpClient::admin_approval_verify_consume`] (finding H5).
+/// Mirrors the reject taxonomy of `corelink-handler-admin`'s
+/// `ApprovalRejection`; the container's `D1ApprovalLedger` maps it across.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AdminApprovalConsume {
+    /// Verified + atomically consumed; carries the recorded approver.
+    Consumed {
+        /// The authenticated approver recorded at approval-creation time.
+        approver: String,
+    },
+    /// No approval row exists for the id (forged / absent).
+    Unknown,
+    /// The row was recorded for a different `resource`.
+    ScopeMismatch,
+    /// The recorded approver equals the initiator (self-approval).
+    SelfApproval {
+        /// The recorded approver that collided with the initiator.
+        approver: String,
+    },
+    /// The approval was already spent (single-use replay / lost race).
+    AlreadyConsumed,
+}
+
+impl D1HttpClient {
+    /// Record ("create") an admin dual-approval row (migration 0091,
+    /// finding H5). Idempotent on an UNCONSUMED `approval_id`; refuses to
+    /// overwrite a consumed one (a spent approval can never be resurrected).
+    ///
+    /// `approver` MUST be the independently-authenticated approver identity
+    /// from the approve endpoint's own auth gate — never a client-body value.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on a D1 error or an attempt to re-record a
+    /// consumed approval.
+    pub async fn admin_approval_create(
+        &self,
+        approval_id: &str,
+        approver: &str,
+        resource: &str,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        // Guard: never resurrect a consumed approval.
+        let existing = self
+            .query(
+                "SELECT consumed FROM admin_approvals WHERE approval_id = ?1 LIMIT 1",
+                &[serde_json::json!(approval_id)],
+            )
+            .await?;
+        if let Some(row) = existing.first() {
+            let consumed = row
+                .get("consumed")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            if consumed != 0 {
+                return Err(format!(
+                    "approval_id={approval_id} already consumed; cannot re-record"
+                ));
+            }
+        }
+        let _ = self
+            .query(
+                "INSERT INTO admin_approvals \
+                   (approval_id, approver, resource, consumed, created_at_ms) \
+                 VALUES (?1, ?2, ?3, 0, ?4) \
+                 ON CONFLICT(approval_id) DO UPDATE SET \
+                   approver = excluded.approver, resource = excluded.resource \
+                 WHERE admin_approvals.consumed = 0",
+                &[
+                    serde_json::json!(approval_id),
+                    serde_json::json!(approver),
+                    serde_json::json!(resource),
+                    serde_json::json!(now_ms),
+                ],
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// Verify an admin approval against `initiator` + `resource`, then
+    /// ATOMICALLY consume it (single-use). The recorded approver — not any
+    /// request-body value — is the authority for the distinct-approver check.
+    ///
+    /// The consume is a conditional `UPDATE ... WHERE consumed = 0 RETURNING`
+    /// so two concurrent spends of the same approval cannot both succeed.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on a D1 error or a malformed row. A malformed /
+    /// unreachable ledger is fail-CLOSED at the caller (no mutation commits).
+    pub async fn admin_approval_verify_consume(
+        &self,
+        approval_id: &str,
+        initiator: &str,
+        resource: &str,
+        now_ms: i64,
+    ) -> Result<AdminApprovalConsume, String> {
+        let rows = self
+            .query(
+                "SELECT approver, resource, consumed FROM admin_approvals \
+                 WHERE approval_id = ?1 LIMIT 1",
+                &[serde_json::json!(approval_id)],
+            )
+            .await?;
+        let Some(row) = rows.first() else {
+            return Ok(AdminApprovalConsume::Unknown);
+        };
+        let rec_approver = row
+            .get("approver")
+            .and_then(|v| v.as_str())
+            .ok_or("D1 admin_approvals: missing `approver` column")?
+            .to_owned();
+        let rec_resource = row
+            .get("resource")
+            .and_then(|v| v.as_str())
+            .ok_or("D1 admin_approvals: missing `resource` column")?
+            .to_owned();
+        let consumed = row
+            .get("consumed")
+            .and_then(serde_json::Value::as_i64)
+            .unwrap_or(0);
+        // Ordering mirrors the in-memory ledger: self-approval, then scope,
+        // then already-consumed.
+        if rec_approver == initiator {
+            return Ok(AdminApprovalConsume::SelfApproval {
+                approver: rec_approver,
+            });
+        }
+        if rec_resource != resource {
+            return Ok(AdminApprovalConsume::ScopeMismatch);
+        }
+        if consumed != 0 {
+            return Ok(AdminApprovalConsume::AlreadyConsumed);
+        }
+        // Atomic single-use consume — only one racer flips 0 -> 1.
+        let consumed_rows = self
+            .query(
+                "UPDATE admin_approvals SET consumed = 1, consumed_at_ms = ?2 \
+                 WHERE approval_id = ?1 AND consumed = 0 RETURNING approver",
+                &[serde_json::json!(approval_id), serde_json::json!(now_ms)],
+            )
+            .await?;
+        if consumed_rows.is_empty() {
+            // Lost the race to a concurrent consume.
+            return Ok(AdminApprovalConsume::AlreadyConsumed);
+        }
+        Ok(AdminApprovalConsume::Consumed {
+            approver: rec_approver,
+        })
+    }
+}
+
 impl D1HttpClient {
     /// Read a tenant's `tenant_quota` row (migration 0066).
     ///
