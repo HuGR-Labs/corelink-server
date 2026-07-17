@@ -19,7 +19,7 @@ source_files:
   - "crates/corelink-container/src/customer_d1.rs"
   - "crates/corelink-container/src/byte_accounting.rs"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "ab4e1a5f80d90d5e95e4ec8f477c3f64cbaa5984"
+checkpoint_sha: "294982663d1b05462077c616ca00886be16159e7"
 provenance: "AUTHORED"
 tags: ["handlers", "traits", "cas", "hot-path", "dependency-injection"]
 timestamp: "2026-06-29T00:00:00Z"
@@ -51,7 +51,7 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 
 **Erasure-gating wraps read/write/delete.** `TombstoneGatedCasHandler` likewise impls `CasReadHandler` (`crates/corelink-container/src/routes/cas_erase.rs:986`) and `CasWriteHandler` (`:1015`), consulting a `TombstoneStore` trait (`:81`) so a tombstoned read 404s and a re-PUT of a tombstoned hash is refused — applied at the *same* chokepoint as accounting, so every surface inherits the GDPR gate. Note the pure-logic crate `corelink-handler-cas-erase` defines *no* trait object: it owns I/O-free decision functions (`prepare_erase` at `crates/corelink-handler-cas-erase/src/handler.rs:145`, `read_gate` at `:164`) that the container's `cas_erase.rs` wiring composes over D1/R2 transports. It is the seam's logic kernel, not part of the `Arc<dyn>` chain.
 
-**AC / admin / customer follow the same shape.** AC delegates `state.lookup.lookup(req)` / `update` / `delete` / `list` at `crates/corelink-container/src/routes/ac.rs:553`, `:636`, `:729`, `:776`. Admin delegates `state.read.read(req)` (`crates/corelink-container/src/routes/admin.rs:692`) and `state.mutate.mutate(req)` (`:752`) — the mutate contract additionally enforces dual-approval (reject `DualApprovalMissing`/self-approval) per the trait doc at `crates/corelink-handler-admin/src/handler.rs:204`. The admin surface's constant-time internal-auth gate `internal_auth_ok` is now `pub(crate)` (`crates/corelink-container/src/routes/admin.rs:84`) so the sibling operator per-tenant read module `admin_tenant_detail`, merged into the SAME router (`crates/corelink-container/src/routes.rs:726`), reuses the exact same gate rather than re-implementing the compare — one source of truth for the operator-auth boundary. The customer control plane is six narrow traits (`CustomerOverviewHandler` at `crates/corelink-handler-customer/src/handler.rs:43`, plus usage/billing/keys/team/audit) whose **live production impl** is `D1CustomerHandler` in `crates/corelink-container/src/customer_d1.rs` — it impls all six (`:816`, `:880`, `:933`, `:1050`, `:1253`, `:1464`) over an inner `Arc<dyn CustomerD1>` D1-over-HTTP transport. `build_handlers_from_env` puts the *same* `D1CustomerHandler` `Arc` behind all six route-state slots when D1 creds are present (`crates/corelink-container/src/routes/customer.rs:125`), falling back to `InMemoryCustomerHandler` in dev/CI; the route then delegates `state.overview.overview(req)` (`:446`), `state.usage.usage(req)` (`:502`), `state.billing.billing(req)` (`:601`), etc.
+**AC / admin / customer follow the same shape.** AC delegates `state.lookup.lookup(req)` / `update` / `delete` / `list` at `crates/corelink-container/src/routes/ac.rs:553`, `:636`, `:729`, `:776`. Admin delegates `state.read.read(req)` (`crates/corelink-container/src/routes/admin.rs:874`) and `state.mutate.mutate(req)` (`:752`) — the mutate contract additionally enforces dual-approval (reject `DualApprovalMissing`/self-approval) per the trait doc at `crates/corelink-handler-admin/src/handler.rs:220`. The admin surface's constant-time internal-auth gate `internal_auth_ok` is now `pub(crate)` (`crates/corelink-container/src/routes/admin.rs:86`) so the sibling operator per-tenant read module `admin_tenant_detail`, merged into the SAME router (`crates/corelink-container/src/routes.rs:740`), reuses the exact same gate rather than re-implementing the compare — one source of truth for the operator-auth boundary. The customer control plane is six narrow traits (`CustomerOverviewHandler` at `crates/corelink-handler-customer/src/handler.rs:43`, plus usage/billing/keys/team/audit) whose **live production impl** is `D1CustomerHandler` in `crates/corelink-container/src/customer_d1.rs` — it impls all six (`:816`, `:880`, `:933`, `:1050`, `:1253`, `:1464`) over an inner `Arc<dyn CustomerD1>` D1-over-HTTP transport. `build_handlers_from_env` puts the *same* `D1CustomerHandler` `Arc` behind all six route-state slots when D1 creds are present (`crates/corelink-container/src/routes/customer.rs:125`), falling back to `InMemoryCustomerHandler` in dev/CI; the route then delegates `state.overview.overview(req)` (`:446`), `state.usage.usage(req)` (`:502`), `state.billing.billing(req)` (`:601`), etc.
 
 # Invariants
 
@@ -89,8 +89,8 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - `crates/corelink-handler-ac/src/handler.rs:376` — `pub trait AcListHandler`.
 - `crates/corelink-handler-customer/src/handler.rs:43` — `pub trait CustomerOverviewHandler` (one of six control-plane traits).
 - `crates/corelink-handler-customer/src/handler.rs:77` — `pub trait CustomerBillingHandler`.
-- `crates/corelink-handler-admin/src/handler.rs:182` — `pub trait AdminReadHandler`.
-- `crates/corelink-handler-admin/src/handler.rs:204` — `pub trait AdminMutateHandler` (dual-approval contract).
+- `crates/corelink-handler-admin/src/handler.rs:192` — `pub trait AdminReadHandler`.
+- `crates/corelink-handler-admin/src/handler.rs:220` — `pub trait AdminMutateHandler` (dual-approval contract).
 - `crates/corelink-handler-cas-erase/src/handler.rs:145` — `prepare_erase` pure decision fn (no trait object in this crate).
 - `crates/corelink-handler-cas-erase/src/handler.rs:168` — `read_gate` pure decision fn.
 - `crates/corelink-container/src/routes/cas.rs:141` — `CasRouteState` holds `Arc<dyn CasReadHandler>` etc. (the seam, route side).
@@ -100,9 +100,9 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - `crates/corelink-container/src/routes/cas.rs:1598` — `handle_list` delegates `state.list.list(req)`.
 - `crates/corelink-container/src/routes/ac.rs:553` — `state.lookup.lookup(req)` delegation.
 - `crates/corelink-container/src/routes/ac.rs:636` — `state.update.update(req)` delegation.
-- `crates/corelink-container/src/routes/admin.rs:692` — `state.read.read(req)` delegation.
-- `crates/corelink-container/src/routes/admin.rs:752` — `state.mutate.mutate(req)` delegation.
-- `crates/corelink-container/src/routes/admin.rs:84` — `internal_auth_ok` is now `pub(crate)` (the shared constant-time operator-auth gate reused by `admin_tenant_detail`).
+- `crates/corelink-container/src/routes/admin.rs:874` — `state.read.read(req)` delegation.
+- `crates/corelink-container/src/routes/admin.rs:934` — `state.mutate.mutate(req)` delegation.
+- `crates/corelink-container/src/routes/admin.rs:86` — `internal_auth_ok` is now `pub(crate)` (the shared constant-time operator-auth gate reused by `admin_tenant_detail`).
 - `crates/corelink-container/src/routes/customer.rs:125` — `build_handlers_from_env` wires the same `D1CustomerHandler` Arc behind all six slots.
 - `crates/corelink-container/src/routes/customer.rs:472` — `state.overview.overview(req)` delegation.
 - `crates/corelink-container/src/routes/customer.rs:631` — `state.billing.billing(req)` delegation.
@@ -118,4 +118,4 @@ The `Arc<dyn>` (vs a generic `H: CasWriteHandler` type parameter) is deliberate:
 - `crates/corelink-container/src/routes.rs:487` — wraps write+delete in `AccountingCasHandler` at the chokepoint.
 - `crates/corelink-container/src/routes.rs:537` — wraps read/write/delete in `TombstoneGatedCasHandler` at the same chokepoint.
 - `crates/corelink-container/src/routes.rs:600` — clones the shared CAS `Arc`s into the cargo/brew/Bazel surfaces.
-- `crates/corelink-container/src/routes.rs:726` — `.merge(admin_tenant_detail::router(...))` mounts the operator per-tenant read module beside `admin::router`.
+- `crates/corelink-container/src/routes.rs:740` — `.merge(admin_tenant_detail::router(...))` mounts the operator per-tenant read module beside `admin::router`.
