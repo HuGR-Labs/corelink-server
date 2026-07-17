@@ -82,6 +82,28 @@ pub trait TombstoneStore: Send + Sync + std::fmt::Debug {
     /// Is `(tenant, digest)` tombstoned? Drives the read-path 410 gate.
     async fn is_tombstoned(&self, tenant: &str, digest: &str) -> Result<bool, String>;
 
+    /// AUTHORITATIVE tombstone check — MUST consult the durable store on every
+    /// call, NEVER a cached/bloom fast-path negative.
+    ///
+    /// The **write** gate uses this (finding H3). A within-window bloom
+    /// false-negative is *tolerable on the READ path* (invariant 1: the bytes
+    /// are already gone from R2, so a GET that slips past the gate 404s rather
+    /// than serving erased content), but on the **WRITE path** the same
+    /// false-negative would let a re-PUT **RESURRECT legally-erased bytes** at
+    /// the same content address — the erasure attestation becomes false. So a
+    /// write must never trust a fast-path `Ok(false)`.
+    ///
+    /// The default delegates to [`Self::is_tombstoned`] — already authoritative
+    /// for the D1 / in-memory stores. [`BloomTombstoneStore`] overrides it to
+    /// bypass its own bloom fast-path and always hit the inner (D1) store.
+    async fn is_tombstoned_authoritative(
+        &self,
+        tenant: &str,
+        digest: &str,
+    ) -> Result<bool, String> {
+        self.is_tombstoned(tenant, digest).await
+    }
+
     /// Upsert a tombstone (idempotent). Returns whether a row already existed
     /// (so the route can report `AlreadyErased` for an idempotent re-erase).
     async fn upsert(
@@ -529,6 +551,22 @@ const DEFAULT_BLOOM_HASHES: u32 = 7;
 /// becomes locally visible within at most this window (invariant 1).
 const DEFAULT_BLOOM_REFRESH: Duration = Duration::from_secs(30);
 
+/// Upper bound on the number of live per-tenant blooms the store retains
+/// (finding H3 OOM fix). Each bloom is a fixed 128 KiB array
+/// ([`DEFAULT_BLOOM_BITS`]); with NO bound the `tenants` map lazily mints one
+/// per distinct tenant ever read/written and NEVER frees it — a slow
+/// unbounded-memory creep (≈1.3 GB at 10 000 tenants) that OOM-kills the
+/// memory-capped `standard-1` container. We cap it as an LRU: when the map is
+/// full and a NEW tenant must be inserted, the least-recently-accessed bloom is
+/// evicted first. Evicting a bloom is ALWAYS safe — it is a pure read-through
+/// cache, so the next lookup for that tenant simply reloads (authoritatively)
+/// from D1 (invariant 1 preserved: the reload re-seeds from the durable set).
+/// 2048 blooms ⇒ ≤256 MiB worst-case, a safe fraction of the container budget;
+/// a real SMB fleet has far fewer *concurrently-active* tenants, so steady-state
+/// eviction is rare — the cap exists to defeat a long-tail / adversarial churn
+/// of distinct tenant ids, not to throttle legitimate multi-tenancy.
+const DEFAULT_MAX_TENANT_BLOOMS: usize = 2048;
+
 /// A fixed-size, thread-safe Bloom filter over arbitrary `&str` keys.
 ///
 /// Hand-rolled (no external crate added — see WP-2b note): two SipHash-1-3
@@ -631,6 +669,17 @@ struct TenantBloom {
     loaded_at: Instant,
 }
 
+/// One entry in the LRU-bounded per-tenant bloom map (finding H3): the tenant's
+/// shared [`TenantBloom`] plus the monotonic tick at which it was last accessed
+/// (created or fetched). The smallest tick is the least-recently-used ⇒ the
+/// eviction candidate.
+#[derive(Debug)]
+struct TenantBloomEntry {
+    bloom: Arc<TenantBloom>,
+    /// Monotonic LRU recency tick (last get-or-insert); smallest = LRU.
+    last_access: u64,
+}
+
 /// A drop-in [`TombstoneStore`] that fronts an authoritative inner store with
 /// an in-memory per-tenant Bloom filter, removing the synchronous D1-over-HTTP
 /// round-trip from the **99.99 %-common non-erased** CAS read.
@@ -687,12 +736,14 @@ struct TenantBloom {
 ///    keeps today's fail-OPEN semantics; the wrapper never swallows it into a
 ///    bogus `Ok(false)`.
 /// 4. **Bounded memory.** Each tenant bloom is a fixed `bits`-bit array
-///    (default `2^20` bits = 128 KiB) that never grows. The number of
-///    tenant blooms is bounded by the number of tenants that have ever had a
-///    tombstone read/written on this instance; erasures are rare so this map
-///    stays tiny. (No per-tenant eviction is implemented — the cap is "one
-///    128 KiB array per tenant ever touched"; documented, not unbounded
-///    per-element growth.)
+///    (default `2^20` bits = 128 KiB) that never grows, AND the number of live
+///    tenant blooms is itself LRU-capped at `max_tenants` (default
+///    [`DEFAULT_MAX_TENANT_BLOOMS`] ⇒ ≤256 MiB worst-case) — finding H3. When
+///    the map is full and a NEW tenant is inserted, the least-recently-accessed
+///    bloom is evicted; because a bloom is a pure read-through cache the evicted
+///    tenant's next lookup just reloads authoritatively from D1 (invariant 1
+///    preserved). The current live count is exposed via
+///    [`BloomTombstoneStore::tenant_bloom_count`] as a map-size gauge.
 /// 5. **Concurrency-safe.** The bit-array is `Vec<AtomicU64>` (lock-free
 ///    set/test). The tenant map is behind a `Mutex` held only for the brief
 ///    get-or-create; the reload reads the inner store and repopulates the
@@ -702,14 +753,24 @@ struct TenantBloom {
 pub struct BloomTombstoneStore {
     /// The authoritative durable store (D1 in prod).
     inner: Arc<dyn TombstoneStore>,
-    /// Per-tenant blooms + load timestamps.
-    tenants: Mutex<std::collections::HashMap<String, Arc<TenantBloom>>>,
+    /// Per-tenant blooms + LRU recency (invariant 4). LRU-capped at
+    /// `max_tenants` so the map footprint is bounded (finding H3).
+    tenants: Mutex<std::collections::HashMap<String, TenantBloomEntry>>,
     /// Bloom bit-array size (bits) per tenant.
     bits: usize,
     /// Probe count `k`.
     k: u32,
     /// Bounded staleness window for cross-instance freshness (invariant 1).
     refresh: Duration,
+    /// LRU capacity of the `tenants` map (finding H3). A field (not a const) so
+    /// a test can shrink it to drive the eviction path deterministically.
+    max_tenants: usize,
+    /// Monotonic clock for the per-tenant bloom LRU recency order. Bumped on
+    /// every get-or-insert; the smallest tick is the least-recently-used.
+    tick: AtomicU64,
+    /// Live per-tenant bloom count — a lock-free map-size gauge (finding H3),
+    /// updated under the map lock, readable via [`Self::tenant_bloom_count`].
+    bloom_count: AtomicU64,
 }
 
 impl std::fmt::Debug for BloomTombstoneStore {
@@ -719,12 +780,14 @@ impl std::fmt::Debug for BloomTombstoneStore {
             .field("bits", &self.bits)
             .field("k", &self.k)
             .field("refresh", &self.refresh)
+            .field("max_tenants", &self.max_tenants)
+            .field("bloom_count", &self.bloom_count.load(Ordering::Relaxed))
             .finish_non_exhaustive()
     }
 }
 
 impl BloomTombstoneStore {
-    /// Wrap `inner` with the default bloom geometry + staleness window.
+    /// Wrap `inner` with the default bloom geometry + staleness window + LRU cap.
     #[must_use]
     pub fn new(inner: Arc<dyn TombstoneStore>) -> Self {
         Self::with_params(
@@ -736,7 +799,8 @@ impl BloomTombstoneStore {
     }
 
     /// Wrap `inner` with explicit bloom geometry + staleness window (tests +
-    /// tuning). `bits`/`k` are clamped to sane minimums by [`Bloom::new`].
+    /// tuning), using the default tenant-bloom LRU cap. `bits`/`k` are clamped
+    /// to sane minimums by [`Bloom::new`].
     #[must_use]
     pub fn with_params(
         inner: Arc<dyn TombstoneStore>,
@@ -744,13 +808,39 @@ impl BloomTombstoneStore {
         k: u32,
         refresh: Duration,
     ) -> Self {
+        Self::with_params_capped(inner, bits, k, refresh, DEFAULT_MAX_TENANT_BLOOMS)
+    }
+
+    /// Wrap `inner` with explicit bloom geometry, staleness window, AND
+    /// tenant-bloom LRU cap (finding H3 — the `max_tenants` bound). A test can
+    /// pass a tiny `max_tenants` to drive the eviction path deterministically.
+    #[must_use]
+    pub fn with_params_capped(
+        inner: Arc<dyn TombstoneStore>,
+        bits: usize,
+        k: u32,
+        refresh: Duration,
+        max_tenants: usize,
+    ) -> Self {
         Self {
             inner,
             tenants: Mutex::new(std::collections::HashMap::new()),
             bits,
             k,
             refresh,
+            // A zero cap would defeat the cache AND wedge the eviction loop;
+            // clamp to at least 1 live bloom.
+            max_tenants: max_tenants.max(1),
+            tick: AtomicU64::new(0),
+            bloom_count: AtomicU64::new(0),
         }
+    }
+
+    /// Current number of live per-tenant blooms — the map-size gauge (H3).
+    /// Lock-free (reads the atomic maintained under the map lock).
+    #[must_use]
+    pub fn tenant_bloom_count(&self) -> u64 {
+        self.bloom_count.load(Ordering::Relaxed)
     }
 
     /// Inner-store key for a `(tenant, digest)` membership bit. Tenant is folded
@@ -768,14 +858,32 @@ impl BloomTombstoneStore {
     /// `None` when the tenant has no bloom yet or its epoch is staler than the
     /// refresh window (⇒ the caller must (re)load via [`Self::reload_tenant_bloom`]).
     fn fresh_tenant_bloom(&self, tenant: &str) -> Option<Arc<TenantBloom>> {
-        let g = lock_or_recover(&self.tenants);
-        g.get(tenant).and_then(|tb| {
-            if tb.loaded_at.elapsed() < self.refresh {
-                Some(Arc::clone(tb))
-            } else {
-                None
+        let mut g = lock_or_recover(&self.tenants);
+        let tick = self.tick.fetch_add(1, Ordering::Relaxed);
+        match g.get_mut(tenant) {
+            Some(entry) if entry.bloom.loaded_at.elapsed() < self.refresh => {
+                // Touch ⇒ most-recently-used (keeps a hot tenant from eviction).
+                entry.last_access = tick;
+                Some(Arc::clone(&entry.bloom))
             }
-        })
+            _ => None,
+        }
+    }
+
+    /// Evict the least-recently-accessed tenant bloom (finding H3). Caller holds
+    /// the map lock. Unlike the PAT-permit LRU there is NO in-flight hazard: a
+    /// bloom is a pure read-through cache, so dropping ANY tenant's bloom only
+    /// forces its next lookup to reload authoritatively from D1 (invariant 1
+    /// preserved via the reload re-seed). Evicts nothing on an empty map.
+    fn evict_lru(map: &mut std::collections::HashMap<String, TenantBloomEntry>) {
+        let victim = map
+            .iter()
+            .min_by_key(|(_, e)| e.last_access)
+            .map(|(k, _)| k.clone());
+        if let Some(k) = victim {
+            tracing::debug!(tenant = %k, "cas_erase: evicting LRU tenant bloom (map at cap)");
+            map.remove(&k);
+        }
     }
 
     /// (Re)load a tenant's bloom, SEEDING it from the AUTHORITATIVE inner store
@@ -801,7 +909,7 @@ impl BloomTombstoneStore {
         let seed = self.inner.list_tenant_tombstones(tenant).await;
 
         let mut g = lock_or_recover(&self.tenants);
-        let prior = g.get(tenant).map(Arc::clone);
+        let prior = g.get(tenant).map(|e| Arc::clone(&e.bloom));
         let fresh = Arc::new(TenantBloom {
             bloom: Bloom::new(self.bits, self.k),
             loaded_at: Instant::now(),
@@ -821,7 +929,22 @@ impl BloomTombstoneStore {
                 fresh.bloom.insert(&Self::bloom_key(tenant, d));
             }
         }
-        g.insert(tenant.to_owned(), Arc::clone(&fresh));
+        // LRU cap (finding H3): enforce the bound BEFORE inserting a genuinely
+        // NEW tenant key. Replacing an existing tenant's bloom (prior.is_some())
+        // does not grow the map, so it never triggers eviction.
+        if prior.is_none() && g.len() >= self.max_tenants {
+            Self::evict_lru(&mut g);
+        }
+        let tick = self.tick.fetch_add(1, Ordering::Relaxed);
+        g.insert(
+            tenant.to_owned(),
+            TenantBloomEntry {
+                bloom: Arc::clone(&fresh),
+                last_access: tick,
+            },
+        );
+        // Refresh the map-size gauge under the lock (bounded by max_tenants).
+        self.bloom_count.store(g.len() as u64, Ordering::Relaxed);
         (fresh, true)
     }
 }
@@ -847,6 +970,25 @@ impl TombstoneStore for BloomTombstoneStore {
         // F-010 fix) closes the within-window false-negative for cross-writer
         // tombstones written before the reload. Propagate the inner Result
         // UNCHANGED (invariant 3).
+        self.inner.is_tombstoned(tenant, digest).await
+    }
+
+    async fn is_tombstoned_authoritative(
+        &self,
+        tenant: &str,
+        digest: &str,
+    ) -> Result<bool, String> {
+        // WRITE-side gate (finding H3): consult the AUTHORITATIVE inner store
+        // directly, bypassing the bloom fast-path ENTIRELY. A cross-instance /
+        // cross-region erase written straight to D1 (via the erase route's own
+        // `D1TombstoneStore`, which never seeds THIS instance's bloom) within
+        // the ≤`refresh` staleness window would otherwise be invisible to this
+        // bloom → a fast-path `Ok(false)` → a re-PUT that resurrects the
+        // legally-erased bytes at the same content address. Reads tolerate that
+        // window (invariant 1 — the bytes are already gone from R2), but a WRITE
+        // must not: it always pays the one authoritative D1 read. Writes are far
+        // rarer than reads and already do R2 + accounting work, so this is an
+        // acceptable cost for the GDPR no-resurrection guarantee.
         self.inner.is_tombstoned(tenant, digest).await
     }
 
@@ -926,7 +1068,11 @@ pub const TOMBSTONE_UNAVAILABLE_SENTINEL: &str = "tombstone-unavailable: ";
 /// `write` refuses a re-PUT of a tombstoned `(tenant, claimed_hash)` with an
 /// [`TOMBSTONE_GONE_SENTINEL`]-tagged `Internal` (→ 410), so erased content
 /// cannot be silently resurrected at the same content address by ANY write
-/// surface (the prior write path was explicitly NOT gated).
+/// surface (the prior write path was explicitly NOT gated). The write gate uses
+/// the AUTHORITATIVE tombstone check ([`TombstoneStore::is_tombstoned_authoritative`]),
+/// NOT the read-path bloom fast-path: a within-window cross-instance erase would
+/// otherwise be invisible to a stale local bloom and the re-PUT would resurrect
+/// the bytes (finding H3).
 ///
 /// # Fail-CLOSED
 ///
@@ -981,6 +1127,22 @@ impl TombstoneGatedCasHandler {
             handle.block_on(self.tombstones.is_tombstoned(tenant, digest))
         })
     }
+
+    /// Like [`Self::is_tombstoned_blocking`] but AUTHORITATIVE — always consults
+    /// the durable store, never a bloom fast-path negative. The WRITE gate uses
+    /// this so a within-window cross-instance erase can NEVER be resurrected by
+    /// a re-PUT (finding H3). See
+    /// [`TombstoneStore::is_tombstoned_authoritative`].
+    fn is_tombstoned_authoritative_blocking(
+        &self,
+        tenant: &str,
+        digest: &str,
+    ) -> Result<bool, String> {
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::block_in_place(|| {
+            handle.block_on(self.tombstones.is_tombstoned_authoritative(tenant, digest))
+        })
+    }
 }
 
 impl corelink_handler_cas::CasReadHandler for TombstoneGatedCasHandler {
@@ -1022,8 +1184,11 @@ impl corelink_handler_cas::CasWriteHandler for TombstoneGatedCasHandler {
     ) -> Result<corelink_handler_cas::CasWriteResponse, corelink_handler_cas::CasHandlerError> {
         // Tombstone-gate the WRITE: a re-PUT of an erased blob must NOT resurrect
         // legally-erased bytes at the same content address (F-004). Checked BEFORE
-        // delegating to the (accounting-wrapped) write handler.
-        match self.is_tombstoned_blocking(&req.tenant, &req.claimed_hash) {
+        // delegating to the (accounting-wrapped) write handler. Uses the
+        // AUTHORITATIVE check (finding H3) so a cross-instance erase written to D1
+        // within the bloom staleness window can never slip a re-PUT through a
+        // stale fast-path `Ok(false)`.
+        match self.is_tombstoned_authoritative_blocking(&req.tenant, &req.claimed_hash) {
             Ok(true) => Err(corelink_handler_cas::CasHandlerError::Internal(format!(
                 "{TOMBSTONE_GONE_SENTINEL}re-PUT of erased (tenant, hash) refused"
             ))),
@@ -2226,5 +2391,143 @@ mod tests {
         );
         gated.delete(req).expect("delete passes through");
         assert_eq!(lock_or_recover(&backing.deleted).len(), 1);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // H3 — resurrection guard (authoritative write gate) + bloom-map eviction
+    // ──────────────────────────────────────────────────────────────────────
+
+    /// H3 (resurrection): after a SEPARATE writer (another container instance /
+    /// region) erases a hash STRAIGHT to D1 — invisible to THIS instance's warm
+    /// bloom within the staleness window — a re-PUT of that hash MUST be REFUSED
+    /// (GONE), never silently resurrected. The READ fast-path is (tolerably)
+    /// within-window blind (the bytes are already gone from R2), but the WRITE
+    /// gate is authoritative. FAILS before the fix (write trusted the stale
+    /// bloom `Ok(false)` → resurrection); PASSES after.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gated_write_after_cross_writer_erase_within_window_is_refused() {
+        let inner = Arc::new(CountingInner::new());
+        // LONG window: once warm, the bloom is NOT re-stamped, so a cross-writer
+        // erase that lands AFTER the load is invisible to the fast path — the
+        // exact H3 resurrection window.
+        let bloom = Arc::new(BloomTombstoneStore::with_params(
+            inner.clone(),
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
+        ));
+        // Warm the tenant bloom past its one-shot just-reloaded epoch (the bloom
+        // was seeded while the inner set was still empty).
+        warm(&bloom, TENANT).await;
+        // Another instance erases the hash DIRECTLY in D1 (never through this
+        // bloom), AFTER this bloom was loaded.
+        inner.seed_inner(TENANT, DIGEST);
+        // The READ fast path is fooled within the window (the tolerable case:
+        // R2 bytes already gone, a slipped GET 404s).
+        assert!(
+            !bloom.is_tombstoned(TENANT, DIGEST).await.expect("read q"),
+            "read fast-path is within-window blind (expected)"
+        );
+        // The AUTHORITATIVE write gate is NOT fooled — the re-PUT is refused GONE.
+        let (gated, backing) = gated_with(bloom);
+        match gated.write(write_req()) {
+            Err(CasHandlerError::Internal(msg)) => assert!(
+                msg.starts_with(TOMBSTONE_GONE_SENTINEL),
+                "H3: re-PUT after a cross-writer erase must be GONE, got {msg}"
+            ),
+            other => {
+                panic!("H3: re-PUT of a cross-writer-erased blob must be refused, got {other:?}")
+            }
+        }
+        assert!(
+            lock_or_recover(&backing.wrote).is_empty(),
+            "H3: erased bytes must NOT be resurrected"
+        );
+    }
+
+    /// H3 (resurrection, control): a genuinely-LIVE hash still writes normally
+    /// through the authoritative gate (the fix does not block legitimate PUTs).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn gated_write_of_live_hash_through_bloom_still_commits() {
+        let inner = Arc::new(CountingInner::new());
+        let bloom = Arc::new(BloomTombstoneStore::with_params(
+            inner,
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
+        ));
+        warm(&bloom, TENANT).await;
+        let (gated, backing) = gated_with(bloom);
+        let resp = gated.write(write_req()).expect("live write commits");
+        assert!(resp.durable);
+        assert_eq!(lock_or_recover(&backing.wrote).len(), 1);
+    }
+
+    /// H3 (OOM): the per-tenant bloom map is LRU-BOUNDED. Touching far more
+    /// distinct tenants than the cap never grows the map past the cap, and the
+    /// live-count gauge tracks it. Pre-fix the map grew one 128 KiB bloom per
+    /// tenant forever (≈1.3 GB @ 10k tenants ⇒ OOM on the capped container).
+    #[tokio::test]
+    async fn bloom_map_is_lru_bounded_under_many_tenants() {
+        const CAP: usize = 8;
+        let inner = Arc::new(CountingInner::new());
+        let store = BloomTombstoneStore::with_params_capped(
+            inner,
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
+            CAP,
+        );
+        // Touch 200 distinct tenants — each first touch mints (reloads) a bloom.
+        for i in 0..200u32 {
+            let tenant = format!("tenant-{i:04}");
+            let _ = store.is_tombstoned(&tenant, DIGEST).await.expect("q");
+        }
+        // The map (and its gauge) never exceeds the cap despite 200 tenants.
+        assert!(
+            store.tenant_bloom_count() <= CAP as u64,
+            "bloom map must stay LRU-bounded: {} > {CAP}",
+            store.tenant_bloom_count()
+        );
+        // The gauge is live and the map fills exactly to the cap (evict-one-per
+        // -new-insert steady state).
+        assert_eq!(
+            store.tenant_bloom_count(),
+            CAP as u64,
+            "map fills to — and holds at — the cap"
+        );
+    }
+
+    /// H3 (eviction correctness): evicting a tenant's bloom is safe — a
+    /// subsequent lookup for an evicted tenant reloads AUTHORITATIVELY from D1,
+    /// so a tombstone written before eviction is still reported `true` (no
+    /// false-negative introduced by eviction; invariant 1 preserved).
+    #[tokio::test]
+    async fn evicted_tenant_reload_still_sees_its_tombstone() {
+        const CAP: usize = 2;
+        let inner = Arc::new(CountingInner::new());
+        // A tombstone for TENANT lives durably in D1 (any writer).
+        inner.seed_inner(TENANT, DIGEST);
+        let store = BloomTombstoneStore::with_params_capped(
+            inner,
+            DEFAULT_BLOOM_BITS,
+            DEFAULT_BLOOM_HASHES,
+            LONG_WINDOW,
+            CAP,
+        );
+        // Prime TENANT (loads its bloom, seeded from D1 → reports true).
+        assert!(store.is_tombstoned(TENANT, DIGEST).await.expect("q0"));
+        // Churn other tenants past the cap to force TENANT's bloom out.
+        for i in 0..8u32 {
+            let t = format!("other-{i:04}");
+            let _ = store.is_tombstoned(&t, DIGEST).await.expect("q");
+        }
+        assert_eq!(store.tenant_bloom_count(), CAP as u64, "still bounded");
+        // TENANT's bloom was evicted; the next lookup reloads from D1 and MUST
+        // still report the tombstone (authoritative — no eviction false-negative).
+        assert!(
+            store.is_tombstoned(TENANT, DIGEST).await.expect("q1"),
+            "evicted tenant's durable tombstone must survive reload"
+        );
     }
 }
