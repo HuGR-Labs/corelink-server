@@ -616,9 +616,11 @@ pub fn build_state_from_env() -> Option<TierSelectRouteState> {
     };
 
     // D1 config travels in `StorageEnv` (CF account / token / database id).
+    // Shared as one `Arc<D1HttpClient>` between the store AND the audit
+    // adapter so both durable collaborators ride the same connection.
     let storage_env = crate::storage::StorageEnv::from_env()?;
     let d1 = match crate::storage::d1_http::D1HttpClient::new(&storage_env) {
-        Ok(client) => client,
+        Ok(client) => Arc::new(client),
         Err(e) => {
             tracing::warn!(error = %e, "D1HttpClient init failed; tier-select NOT mounted");
             return None;
@@ -636,12 +638,12 @@ pub fn build_state_from_env() -> Option<TierSelectRouteState> {
     Some(TierSelectRouteState {
         internal_auth_key: Arc::from(auth_key),
         store: Arc::new(super::tier_select_store::D1HttpTierSelectStore::new(
-            Arc::new(d1),
+            Arc::clone(&d1),
         )),
         checkout: Arc::new(super::tier_select_checkout::StripeCheckoutCreator::new(
             Arc::new(stripe),
         )),
-        audit: Arc::new(super::tier_select_audit::TierSelectAuditAdapter::new()),
+        audit: Arc::new(super::tier_select_audit::TierSelectAuditAdapter::new(d1)),
         current_dpa_version: Arc::from(dpa_version),
     })
 }
@@ -966,7 +968,7 @@ mod tests {
             checkout: Arc::new(
                 super::super::tier_select_checkout::StripeCheckoutCreator::for_test(),
             ),
-            audit: Arc::new(super::super::tier_select_audit::TierSelectAuditAdapter::new()),
+            audit: Arc::new(super::super::tier_select_audit::TierSelectAuditAdapter::for_test()),
             current_dpa_version: Arc::from("v3"),
         }
     }
@@ -1333,6 +1335,26 @@ mod tests {
         }
     }
 
+    /// A D1 client that points at bogus CF credentials — the real Cloudflare
+    /// D1 REST API rejects the request (non-2xx), so every `query` fails.
+    /// Used to wire the REAL `TierSelectAuditAdapter` (not the `SpyAudit`
+    /// fake) down a real failure path for the L2 regression below. Mirrors
+    /// `auth_introspect.rs`'s `unreachable_d1` fault-injection helper and
+    /// `tier_select_audit.rs`'s own `failing_d1` test helper.
+    fn failing_d1() -> std::sync::Arc<crate::storage::d1_http::D1HttpClient> {
+        let env = crate::storage::StorageEnv {
+            r2_endpoint: "http://127.0.0.1:1".to_owned(),
+            r2_access_key_id: "x".to_owned(),
+            r2_secret_access_key: "x".to_owned(),
+            cloudflare_account_id: "definitely-not-a-real-account".to_owned(),
+            cf_api_token: "definitely-not-a-real-token".to_owned(),
+            d1_database_id: "definitely-not-a-real-db".to_owned(),
+        };
+        std::sync::Arc::new(
+            crate::storage::d1_http::D1HttpClient::new(&env).expect("build D1HttpClient"),
+        )
+    }
+
     async fn run(
         store: MemStore,
         checkout: SpyCheckout,
@@ -1580,6 +1602,49 @@ mod tests {
         assert!(!*checkout.called.lock().unwrap());
         assert!(store.persisted.lock().unwrap().is_empty());
         assert!(store.locks.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn real_audit_adapter_durable_d1_failure_aborts_before_any_mutation() {
+        // Regression for finding L2: the PRODUCTION `TierSelectAuditAdapter`
+        // (not the `SpyAudit` test fake) wired to a D1 client whose queries
+        // always fail must abort the orchestration BEFORE any mutation. This
+        // proves the abort-before-mutation wiring binds on the real durable
+        // adapter, not merely on a test fake — the bug this fix closes is
+        // that the prod adapter was `tracing::info!(...); Ok(())`, i.e.
+        // always-Ok, so this exact scenario could never abort in prod.
+        let mut store = MemStore::default();
+        store.dpa_accepted.insert("tenant-x".into());
+        let checkout = SpyCheckout::default();
+        let audit = super::super::tier_select_audit::TierSelectAuditAdapter::new(failing_d1());
+
+        let r = orchestrate_tier_select(
+            &store,
+            &checkout,
+            &audit,
+            "tenant-x",
+            RequestedTier::Pro,
+            "https://app/upgraded",
+            "https://app/pricing",
+            "v3",
+            1_700_000_000_000,
+            "corr-l2",
+        )
+        .await;
+
+        assert_eq!(r.unwrap_err(), TierSelectHttpError::Internal);
+        assert!(
+            !*checkout.called.lock().unwrap(),
+            "Stripe MUST NOT be called when the FIRST audit emit already fails"
+        );
+        assert!(
+            store.persisted.lock().unwrap().is_empty(),
+            "no persist may happen when the audit-before-mutation write fails"
+        );
+        assert!(
+            store.locks.lock().unwrap().is_empty(),
+            "lock must not be left held on an audit-emit abort"
+        );
     }
 
     #[tokio::test]
