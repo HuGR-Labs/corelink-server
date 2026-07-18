@@ -249,6 +249,28 @@ describe("POST /internal/v1/auth/rotate — clw auth rotate", () => {
     expect(mintBody["scopes"]).toBe("admin");
   });
 
+  // ── (L12b/3) same-tenant admin rotation STILL succeeds under the scope ceiling ──
+  // The rotation grant's ceiling = the OLD row's admin scope (ownership proven via
+  // owner_tenant === oldRow.tenant_id), so mintScopedPat's rank-assert permits the
+  // admin mint. A blanket refuse-admin would break this legitimate flow — the crux.
+  it("(L12b/3) admin rotation succeeds + old admin PAT is revoked (not blanket-refused)", async () => {
+    const captured: { req?: Request } = {};
+    const revokeCapture: { binds?: unknown[]; called?: boolean } = {};
+    const env = makeEnv({ captured, oldRow: activeRow("admin"), revokeCapture });
+    // Distinct pat_id ⇒ a fresh per-principal mint-throttle counter (module-scoped).
+    const uniqueId = "dddddddd-1111-2222-3333-888888888888";
+    const resp = await rotateFetch(env, {
+      auth: INTERNAL_KEY,
+      body: { pat_id: uniqueId, owner_tenant: TENANT },
+    });
+    expect(resp.status).toBe(200);
+    const mintBody = (await captured.req!.json()) as Record<string, unknown>;
+    expect(mintBody["scopes"]).toBe("admin"); // no escalation, no weakening — admin preserved
+    expect(mintBody["tenant_id"]).toBe(TENANT); // same tenant (sourced from the grant)
+    expect(revokeCapture.called).toBe(true); // the old admin PAT is soft-revoked
+    expect(revokeCapture.binds![1]).toBe(uniqueId);
+  });
+
   it("(b) NEVER lets a client trust header reach the mint route", async () => {
     const captured: { req?: Request } = {};
     const env = makeEnv({ captured, oldRow: activeRow() });

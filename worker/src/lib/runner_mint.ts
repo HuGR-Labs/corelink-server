@@ -37,7 +37,12 @@
 
 import type { Env } from "../index.js";
 import { requireConsumerAuth } from "./internal_auth.js";
-import { mintScopedPat } from "./session_exchange.js";
+import {
+  mintScopedPat,
+  MintGrant,
+  checkMintThrottle,
+  deriveTenantCeilingThrottleKey,
+} from "./session_exchange.js";
 import { blake3Hex } from "./blake3.js";
 
 /**
@@ -87,6 +92,27 @@ const RUNNER_MINT_ALLOWED_SCOPES = new Set(["cas:rw", "read-write"]);
 
 /** Default scope minted when the caller omits `scope`. */
 const RUNNER_MINT_DEFAULT_SCOPE = "cas:rw";
+
+/**
+ * M22(b) per-tenant mint-ceiling scaling factor.
+ *
+ * The per-tenant runner mint ceiling is `max(max_concurrency * K, FLOOR)` over the
+ * shared throttle window. Keyed off the tenant's runner ceiling so it GROWS with
+ * entitlement — a bigger plan legitimately fans out more concurrent jobs, each
+ * needing its own PAT — while a small K keeps a compromised runner_mint key or a
+ * mint-storm bounded per tenant. This composes WITH (does not replace) the
+ * per-job throttle inside {@link mintScopedPat}: a storm across many DISTINCT
+ * job_ids (each under its own per-job cap) is still caught by this per-tenant gate.
+ */
+const RUNNER_TENANT_CEILING_K = 2;
+
+/**
+ * M22(b) per-tenant mint-ceiling FLOOR — the minimum ceiling regardless of
+ * `max_concurrency`, so a tenant with a tiny (or 1) concurrency still tolerates
+ * normal retry/fan-out bursts without a false 429. Deliberately small so the
+ * ceiling stays a real bound.
+ */
+const RUNNER_TENANT_CEILING_FLOOR = 8;
 
 /**
  * REAPI error envelope builder — local mirror (avoids the index.ts ⇄ lib import
@@ -439,16 +465,50 @@ export async function handleRunnerMint(
     return reapiError("INTERNAL_ERROR", "runner mint unavailable", 500, requestId);
   }
 
+  // ── 5e. M22(b) per-tenant mint ceiling (AFTER derivation, BEFORE the mint) ──
+  // The per-job throttle inside mintScopedPat caps mints per job_id, but a
+  // mint-storm across MANY distinct job_ids for the SAME tenant slips past it
+  // (each job stays under its own cap). Apply a SECOND throttle keyed by a
+  // domain-separated, hashed per-tenant key with a cap SCALED off the tenant's
+  // runner ceiling — so it grows with entitlement (never squeezing legitimate
+  // fan-out) yet bounds a per-tenant storm. Composes with, does not replace, the
+  // per-job throttle. This is a per-WINDOW ceiling: the durable D1 counter is the
+  // gate, so the in-memory backstop is DISABLED here (Infinity). The in-memory
+  // backstop is a monotonic per-isolate-lifetime counter (it never window-resets),
+  // so a finite value would squeeze a busy tenant's legitimate fan-out ACROSS
+  // windows over the isolate's life — the opposite of "grows with entitlement".
+  // Outage CPU safety is already provided by the per-JOB burst backstop inside
+  // mintScopedPat, and during a D1 outage the pat-row INSERT fails-CLOSED anyway
+  // (no PAT is persisted), so the tenant gate needs no in-memory arm.
+  const tenantCeiling = Math.max(
+    maxConcurrency * RUNNER_TENANT_CEILING_K,
+    RUNNER_TENANT_CEILING_FLOOR,
+  );
+  const tenantThrottleKey = await deriveTenantCeilingThrottleKey(tenantId);
+  const tenantThrottled = await checkMintThrottle(env.CONFIG_DB, tenantThrottleKey, requestId, {
+    maxPerWindow: tenantCeiling,
+    inMemoryBurstCap: Number.POSITIVE_INFINITY,
+  });
+  if (tenantThrottled !== null) {
+    return tenantThrottled;
+  }
+
   // ── 6+7. Mint via the SINGLE authority with the DERIVED tenant ─────────────
   // `max_concurrency` is threaded through mintScopedPat's extraFields bag so it
   // appears in the returned JSON alongside the standard envelope; `tenant` in
-  // the response is the DERIVED tenantId (mintScopedPat sets it from its
-  // tenantId argument).
+  // the response is the DERIVED tenantId (mintScopedPat sources it from the
+  // branded grant). L12(b): a runner grant's ceiling is `read-write` — a
+  // disposable runner can never mint an admin PAT.
   return mintScopedPat(
     env,
     requestId,
-    tenantId,
-    jobId,
+    // Domain-separate the per-JOB throttle principal ("runner-job:") from the
+    // per-TENANT ceiling key ("runner-tenant:"): both are hashed into the same
+    // throttle table, so a raw `job_id` of "runner-tenant:<victimTenant>" would
+    // otherwise collide with that tenant's ceiling row and let a caller burn a
+    // victim tenant's runner-mint budget (M22b review finding). Distinct prefixes
+    // make a preimage collision impossible; per-job semantics are unchanged.
+    MintGrant.fromRunnerDerivation(tenantId, "runner-job:" + jobId),
     ttlSeconds,
     scope,
     internalAuthKey,

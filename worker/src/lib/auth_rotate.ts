@@ -45,7 +45,7 @@
 
 import type { Env } from "../index.js";
 import { requireConsumerAuth } from "./internal_auth.js";
-import { mintScopedPat } from "./session_exchange.js";
+import { mintScopedPat, MintGrant, canonicalizePatScope } from "./session_exchange.js";
 
 /**
  * Default lifetime (seconds) of the rotated PAT when the OLD PAT's remaining
@@ -262,7 +262,8 @@ export async function handleAuthRotate(
     // beyond "not yours"; an unknown/revoked pat_id remains an indistinguishable 404.
     return reapiError("FORBIDDEN", "pat does not belong to the specified tenant", 403, requestId);
   }
-  if (!ROTATABLE_SCOPES.has(oldRow.scope)) {
+  const canonOldScope = canonicalizePatScope(oldRow.scope);
+  if (!ROTATABLE_SCOPES.has(oldRow.scope) || canonOldScope === null) {
     // The single mint authority cannot reproduce this scope (a label outside the
     // canonical `read-only`/`read-write`/`admin` set) without escalating or weakening
     // it. Refuse rather than silently change the scope — rotation must preserve
@@ -277,11 +278,14 @@ export async function handleAuthRotate(
   // Response (429 throttle / 500 upstream). On a non-200 we return it VERBATIM and
   // do NOT revoke — so a mint failure never leaves the caller with zero valid PATs.
   const ttlSeconds = computeRotateTtlSeconds(oldRow.expires_ms);
+  // L12(b): rotation's grant declares the OLD row's (ownership-proven, canonical)
+  // scope as its ceiling — so a same-tenant `admin` rotation keeps working while
+  // nothing else can escalate. Ownership was proven above
+  // (owner_tenant === oldRow.tenant_id, REV-S2).
   const mintResp = await mintScopedPat(
     env,
     requestId,
-    oldRow.tenant_id,
-    patId,
+    MintGrant.fromRotation(oldRow.tenant_id, patId, canonOldScope),
     ttlSeconds,
     oldRow.scope,
     internalAuthKey,
