@@ -196,6 +196,14 @@ pub(super) const RETAIN_SET: &[&str] = &[
     "stripe_submission_state",      // billing submission state (migr. 0019)
     "customer_audit_events",        // per-tenant audit evidence (migr. 0077)
     "audit_chain_head",             // audit-chain seal head — integrity (migr. 0078)
+    // Durable money-path audit-before-mutation record (migr. 0092): the
+    // tier-select orchestration's `tier_select_attempted` / `dpa_first_violation`
+    // / `stripe_checkout_session_created` / `tier_activated_free` events. Holds
+    // no raw subject PII (tenant_id is the pseudonymous tenant ref; the rest is
+    // event_type / correlation_id / ts_ms) — the same audit-evidence class as
+    // `audit_outbox` / `customer_audit_events`. Erasing it would defeat the very
+    // audit-before-mutation guarantee it exists for → RETAIN (Art.5(2)).
+    "tier_select_audit_events",
     // Legal-hold control record (migr. 0076): the durable signal that gates
     // erasure itself. A row = "destructive erasure refused"; it is a
     // legal-process / audit anchor (`placed_at`), `reason` is operator-internal
@@ -316,6 +324,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "stripe_submission_state",
     "customer_audit_events",
     "audit_chain_head",
+    "tier_select_audit_events",
     "tenant_legal_hold",
     "abuse_score_history",
     "session_exchange_throttle",
