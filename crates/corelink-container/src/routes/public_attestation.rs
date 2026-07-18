@@ -23,21 +23,54 @@
 //! bytes; R2 is the authoritative archive but is not needed for verification.
 //! All queries are parameterized (`request_id` / `region` are bound params) —
 //! injection-safe.
+//!
+//! # M22(a) — scoped per-IP rate limit
+//!
+//! This router is merged in `main.rs` OUTSIDE `build_with_factory`'s
+//! `rate_limit_layer` (see the module docs above: no PAT, no residency guard,
+//! no per-tenant token bucket), so before this fix it carried NO container-side
+//! rate limiting at all — an internet-reachable, unauthenticated, D1-read-only
+//! surface. [`rate_limit_public_verifier`] closes that gap with a SCOPED
+//! per-IP token bucket local to this router only (never touches
+//! [`crate::routes::ratelimit_layer`] or the data-plane gate). It reuses the
+//! same `corelink-ratelimit` engine + bounded F-022 NoOp sinks
+//! ([`NoOpRateLimitAuditSink`] / [`NoOpRateLimitMetrics`]) as
+//! `ratelimit_layer.rs`, keyed by [`ip_key_uuid`] — a LOCAL FNV-1a-128
+//! IP→UUID fold (mirrors `ratelimit_layer::tenant_key_uuid`'s shape, own
+//! namespace, own function — the shared layer is not touched).
+//!
+//! Budget: [`PUBLIC_VERIFIER_REQ_PER_SEC`] / [`PUBLIC_VERIFIER_BURST`] —
+//! deliberately generous (regulator/DPA/human verifier traffic, never CI/cache
+//! volume) so shared-NAT/VPN/CI-egress callers are never falsely throttled.
+//! FAIL-OPEN: the trusted `x-corelink-client-ip` header (set by the Worker
+//! from `cf-connecting-ip`, mirrors [`crate::routes::signup`]'s
+//! `extract_client_ip`) is REQUIRED to key a bucket; when absent (dev/CI/no
+//! header) the request passes through untouched rather than sharing one
+//! collapsed bucket — this surface has no pre-auth abuse budget to protect
+//! (D1-read-only, no mutation), so unlike `signup.rs`'s `"_no_ip"` sentinel
+//! the conservative choice here is availability, not a shared throttle.
 
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
+    extract::{Path, Request, State},
+    http::{header::RETRY_AFTER, HeaderMap, HeaderValue, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
 };
 use serde_json::{json, Value};
+use uuid::Uuid;
 
 use corelink_erasure_attestation::Region;
+use corelink_ratelimit::{
+    BucketKey, InMemoryTokenBucketRateLimiter, NoOpRateLimitAuditSink, NoOpRateLimitMetrics,
+    RateLimitConfig, RateLimitDecision, RateLimiter,
+};
 
 use crate::storage::d1_http::{D1HttpClient, D1Row};
+use crate::wall_clock::{self, WallClock};
 
 /// Shared state for the public attestation routes (D1 index reader).
 #[derive(Clone)]
@@ -65,8 +98,9 @@ pub fn build_state_from_env() -> Option<PublicAttestationState> {
     Some(PublicAttestationState { d1 })
 }
 
-/// Mount the two public verifier routes.
-pub fn router(state: PublicAttestationState) -> Router {
+/// Mount the two public verifier routes, wrapped in the M22(a) scoped per-IP
+/// rate-limit layer ([`rate_limit_public_verifier`]).
+pub fn router(state: PublicAttestationState, rl_state: PublicVerifierRateLimitState) -> Router {
     Router::new()
         .route(
             "/v1/public/attestation/{request_id}",
@@ -77,6 +111,205 @@ pub fn router(state: PublicAttestationState) -> Router {
             get(handle_region_key),
         )
         .with_state(state)
+        .layer(middleware::from_fn_with_state(
+            rl_state,
+            rate_limit_public_verifier,
+        ))
+}
+
+// --- M22(a): scoped per-IP rate limit ---------------------------------------
+
+/// The trusted, Worker-injected client-IP header (see
+/// [`crate::routes::signup::extract_client_ip`] for the sibling pre-auth
+/// pattern; the Worker sets it from the unforgeable `cf-connecting-ip`).
+const CLIENT_IP_HEADER: &str = "x-corelink-client-ip";
+
+/// Generous sustained per-IP request rate (tokens/second) for the public
+/// verifier surface. ~20 req/s is far above any single regulator/DPA/human
+/// verifier's interactive rate while still bounding a single-IP flood; kept
+/// intentionally loose so shared-NAT/VPN/CI-egress traffic is never falsely
+/// throttled (this surface carries zero CI/cache traffic).
+pub const PUBLIC_VERIFIER_REQ_PER_SEC: u32 = 20;
+
+/// Per-IP burst capacity (tokens) for the public verifier surface. A 3×
+/// burst-over-sustained window absorbs a verifier script fetching several
+/// attestations + keys back-to-back before shedding with 429s.
+pub const PUBLIC_VERIFIER_BURST: u32 = 60;
+
+/// Per-request cost charged against the bucket (one token per HTTP request).
+const COST_PER_REQUEST: u32 = 1;
+
+/// Fixed namespace bytes for [`ip_key_uuid`] — LOCAL to this router (distinct
+/// from [`crate::routes::ratelimit_layer`]'s `TENANT_NS`; the two limiters
+/// never share a bucket map).
+const PUBLIC_VERIFIER_IP_NS: [u8; 16] = *b"corelink-rl-pub!";
+
+/// Derive a STABLE 128-bit bucket key from the raw client-IP string via
+/// FNV-1a-128 (mirrors `ratelimit_layer::tenant_key_uuid`'s shape — a LOCAL
+/// re-implementation, not a shared call, per the frozen M22(a) design: this
+/// router's rate limiting must stay fully decoupled from the data-plane
+/// `ratelimit_layer.rs`). A real IPv4/IPv6 literal folds deterministically so
+/// the same client IP always lands in the same bucket and distinct IPs land
+/// in distinct buckets with overwhelming probability.
+#[must_use]
+fn ip_key_uuid(raw_ip: &str) -> Uuid {
+    const FNV_OFFSET: u128 = 0x6c62_272e_07bb_0142_62b8_2175_6295_c58d;
+    const FNV_PRIME: u128 = 0x0000_0000_0100_0000_0000_0000_0000_013b;
+    let mut hash = FNV_OFFSET;
+    for &b in PUBLIC_VERIFIER_IP_NS.iter().chain(raw_ip.as_bytes()) {
+        hash ^= u128::from(b);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    Uuid::from_u128(hash)
+}
+
+/// Shared state for [`rate_limit_public_verifier`]: one per-IP token-bucket
+/// limiter instance for the whole public-verifier router, plus the wall clock
+/// anchoring bucket refill. Wired with the BOUNDED F-022 production sinks
+/// ([`NoOpRateLimitAuditSink`] / [`NoOpRateLimitMetrics`]) — O(1) memory, no
+/// unbounded capture buffers on ordinary in-budget traffic (the same posture
+/// `ratelimit_layer.rs` documents; the TEST-capture `InMemory*` sinks are
+/// never wired here).
+#[derive(Clone)]
+pub struct PublicVerifierRateLimitState {
+    limiter: Arc<InMemoryTokenBucketRateLimiter<NoOpRateLimitAuditSink, NoOpRateLimitMetrics>>,
+    clock: Arc<dyn WallClock>,
+}
+
+impl std::fmt::Debug for PublicVerifierRateLimitState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PublicVerifierRateLimitState")
+            .finish_non_exhaustive()
+    }
+}
+
+impl PublicVerifierRateLimitState {
+    /// Build the production state: the canonical generous per-IP cap
+    /// ([`PUBLIC_VERIFIER_REQ_PER_SEC`] / [`PUBLIC_VERIFIER_BURST`]) and the
+    /// system wall clock.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::with_clock(wall_clock::default_wall_clock())
+    }
+
+    /// Build with an explicit wall clock (test wiring injects a deterministic
+    /// fake; production uses [`wall_clock::default_wall_clock`]).
+    #[must_use]
+    pub fn with_clock(clock: Arc<dyn WallClock>) -> Self {
+        // `with_overrides` only returns `None` on a self-inconsistent config
+        // (zero burst, inverted Retry-After bounds); our constants are
+        // statically valid, so fall back to the crate's canonical config if a
+        // future edit ever breaks that invariant rather than panicking.
+        let config = RateLimitConfig::with_overrides(
+            PUBLIC_VERIFIER_REQ_PER_SEC,
+            PUBLIC_VERIFIER_BURST,
+            corelink_ratelimit::DEFAULT_RETRY_AFTER_FLOOR_SECS,
+            corelink_ratelimit::RETRY_AFTER_HARD_CEILING_SECS,
+            corelink_ratelimit::RETRY_AFTER_CANCELED_TENANT_SECS,
+        )
+        .unwrap_or_else(RateLimitConfig::canonical);
+        let limiter = InMemoryTokenBucketRateLimiter::new(
+            Arc::new(NoOpRateLimitAuditSink::new()),
+            Arc::new(NoOpRateLimitMetrics::new()),
+            config,
+        );
+        Self {
+            limiter: Arc::new(limiter),
+            clock,
+        }
+    }
+}
+
+impl Default for PublicVerifierRateLimitState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Axum middleware: scoped per-IP token-bucket gate for the public verifier
+/// router ONLY (M22a). Reads [`CLIENT_IP_HEADER`]; FAIL-OPEN (pass through,
+/// no bucket charged) when it is absent/empty — dev/CI/no-header traffic is
+/// never throttled. On a present header, charges one token against the IP's
+/// bucket and either forwards (`Allow`) or rejects with 429 + `Retry-After`
+/// (RFC 6585 §4). On the limiter's OWN internal fault (mutex poison, sink
+/// error) we fail-OPEN (allow) but log — availability of the public verifier
+/// is prioritised over a perfectly-enforced cap, matching
+/// `ratelimit_layer::rate_limit_layer`'s documented posture.
+async fn rate_limit_public_verifier(
+    State(state): State<PublicVerifierRateLimitState>,
+    req: Request,
+    next: Next,
+) -> Response {
+    let raw_ip = client_ip_from_headers(req.headers());
+    let Some(raw_ip) = raw_ip else {
+        // No trusted client-IP header ⇒ fail-OPEN (dev/CI/no-header traffic).
+        return next.run(req).await;
+    };
+
+    let ip = ip_key_uuid(&raw_ip);
+    let now_ms = state.clock.now_ms();
+    let bucket_key = BucketKey::per_tenant(ip);
+
+    match state
+        .limiter
+        .try_acquire(ip, bucket_key, COST_PER_REQUEST, now_ms)
+    {
+        Ok(outcome) => match outcome.decision {
+            RateLimitDecision::Allow { .. } => next.run(req).await,
+            RateLimitDecision::Deny429 {
+                retry_after_secs, ..
+            } => {
+                tracing::warn!(
+                    retry_after_secs,
+                    "public_attestation: per-IP request rate exceeded (429)"
+                );
+                too_many_requests(retry_after_secs)
+            }
+            // `RateLimitDecision` is `#[non_exhaustive]`; any future non-Allow
+            // arm fail-CLOSES to 429 (a new deny-shaped arm should not
+            // silently become an allow).
+            _ => too_many_requests(corelink_ratelimit::DEFAULT_RETRY_AFTER_FLOOR_SECS),
+        },
+        // Limiter's OWN internal fault ⇒ fail-OPEN for availability, logged.
+        Err(err) => {
+            tracing::warn!(
+                error = %err,
+                "public_attestation: rate limiter internal error; failing OPEN"
+            );
+            next.run(req).await
+        }
+    }
+}
+
+/// Extract the trusted client IP from [`CLIENT_IP_HEADER`]. Returns `None`
+/// (caller fail-OPENs) when the header is absent, non-UTF8, or blank.
+fn client_ip_from_headers(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(CLIENT_IP_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
+/// Build the uniform 429 response with a clamped `Retry-After` header
+/// (mirrors `ratelimit_layer::too_many_requests`, kept LOCAL/duplicated per
+/// the frozen M22(a) design rather than importing from that module).
+fn too_many_requests(retry_after_secs: u64) -> Response {
+    let body = format!(
+        "{{\"error\":\"rate_limited\",\"message\":\"public-verifier per-IP request rate \
+         exceeded; retry after {retry_after_secs}s\"}}"
+    );
+    let mut resp = (
+        StatusCode::TOO_MANY_REQUESTS,
+        [("content-type", "application/json")],
+        body,
+    )
+        .into_response();
+    if let Ok(val) = HeaderValue::from_str(&retry_after_secs.to_string()) {
+        resp.headers_mut().insert(RETRY_AFTER, val);
+    }
+    resp
 }
 
 /// Extract a non-NULL string column (`None` for SQL NULL / absent / non-string).
@@ -356,5 +589,124 @@ mod tests {
         assert_eq!(keys[0]["key_id"], json!(1));
         assert_eq!(keys[1]["key_id"], json!(2));
         assert!(keys[1]["public_key_pem"].as_str().unwrap().contains("NEW"));
+    }
+
+    // ---- M22(a): scoped per-IP rate limit ---------------------------------
+
+    mod rate_limit {
+        use super::*;
+        use crate::wall_clock::InMemoryFakeWallClock;
+        use axum::{body::Body, http::Request as HttpRequest, routing::get as axum_get};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tower::ServiceExt; // for `.oneshot()`
+
+        const IP_A: &str = "203.0.113.7";
+        const IP_B: &str = "198.51.100.9";
+
+        fn fixed_clock(unix_ms: u64) -> Arc<dyn WallClock> {
+            Arc::new(InMemoryFakeWallClock::at_unix_ms(unix_ms))
+        }
+
+        /// A minimal stub app wrapped in ONLY the M22(a) middleware — mirrors
+        /// `ratelimit_layer.rs`'s own test harness shape (a fake route +
+        /// `.layer(from_fn_with_state(...))`), so the test exercises the exact
+        /// middleware [`router`] wires, without needing a live D1 backend.
+        fn app(state: PublicVerifierRateLimitState, hits: Arc<AtomicUsize>) -> Router {
+            Router::new()
+                .route(
+                    "/v1/public/attestation/{request_id}",
+                    axum_get(move || {
+                        let h = hits.clone();
+                        async move {
+                            h.fetch_add(1, Ordering::SeqCst);
+                            "ok"
+                        }
+                    }),
+                )
+                .layer(middleware::from_fn_with_state(
+                    state,
+                    rate_limit_public_verifier,
+                ))
+        }
+
+        fn req(client_ip: Option<&str>) -> HttpRequest<Body> {
+            let mut b = HttpRequest::builder().uri("/v1/public/attestation/req-1");
+            if let Some(ip) = client_ip {
+                b = b.header(CLIENT_IP_HEADER, ip);
+            }
+            b.body(Body::empty()).unwrap()
+        }
+
+        #[test]
+        fn ip_key_uuid_is_stable_and_distinct() {
+            assert_eq!(ip_key_uuid(IP_A), ip_key_uuid(IP_A));
+            assert_ne!(ip_key_uuid(IP_A), ip_key_uuid(IP_B));
+        }
+
+        #[tokio::test]
+        async fn within_budget_allows() {
+            let hits = Arc::new(AtomicUsize::new(0));
+            let app = app(PublicVerifierRateLimitState::new(), hits.clone());
+            let resp = app.oneshot(req(Some(IP_A))).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            assert_eq!(hits.load(Ordering::SeqCst), 1);
+        }
+
+        /// Fail-OPEN: no `x-corelink-client-ip` header (dev/CI/no-header) →
+        /// pass through untouched, never a 429, no bucket charged.
+        #[tokio::test]
+        async fn absent_client_ip_header_fails_open() {
+            let hits = Arc::new(AtomicUsize::new(0));
+            let app = app(PublicVerifierRateLimitState::new(), hits.clone());
+            let resp = app.oneshot(req(None)).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK);
+            assert_eq!(hits.load(Ordering::SeqCst), 1);
+        }
+
+        /// Burst+1 same client-IP, same fixed instant → the last request is
+        /// 429 with a `Retry-After` header.
+        #[tokio::test]
+        async fn over_burst_is_429_with_retry_after() {
+            let clock = fixed_clock(1_000_000);
+            let state = PublicVerifierRateLimitState::with_clock(clock);
+            let hits = Arc::new(AtomicUsize::new(0));
+
+            let mut last = StatusCode::OK;
+            for _ in 0..(PUBLIC_VERIFIER_BURST + 1) {
+                let app = app(state.clone(), hits.clone());
+                let resp = app.oneshot(req(Some(IP_A))).await.unwrap();
+                last = resp.status();
+                if last == StatusCode::TOO_MANY_REQUESTS {
+                    assert!(
+                        resp.headers().get(RETRY_AFTER).is_some(),
+                        "429 must carry Retry-After"
+                    );
+                    break;
+                }
+            }
+            assert_eq!(
+                last,
+                StatusCode::TOO_MANY_REQUESTS,
+                "exceeding the per-IP burst must 429"
+            );
+        }
+
+        /// A distinct client IP at the SAME instant is isolated from a drained
+        /// bucket (INV-AVAIL-ISOLATION, per-IP scope).
+        #[tokio::test]
+        async fn distinct_ip_same_instant_is_isolated() {
+            let clock = fixed_clock(2_000_000);
+            let state = PublicVerifierRateLimitState::with_clock(clock);
+            let hits = Arc::new(AtomicUsize::new(0));
+
+            for _ in 0..(PUBLIC_VERIFIER_BURST + 1) {
+                let app = app(state.clone(), hits.clone());
+                let _ = app.oneshot(req(Some(IP_A))).await.unwrap();
+            }
+            // IP A is now drained to 429; IP B (different key) — fresh bucket.
+            let app = app(state.clone(), hits.clone());
+            let resp = app.oneshot(req(Some(IP_B))).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK, "distinct IP must not be throttled");
+        }
     }
 }

@@ -2290,6 +2290,13 @@ const baseHandler: ExportedHandler<Env> = {
           h.set("x-request-id", requestId);
           h.set("x-corelink-route-kind", "public_attestation");
           h.set("x-corelink-tenant-id", "_anonymous");
+          // M22(a): this arm did NOT set the trusted client-IP header (unlike
+          // the cache/OCI/signup arms), so the container's scoped per-IP
+          // rate limiter on `/v1/public/*` had nothing to key on. Forward
+          // CF's unforgeable client IP as x-corelink-client-ip
+          // (stripClientTrustHeaders above already deleted any
+          // client-supplied value, so a client cannot spoof it).
+          h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
           return h;
         })(),
       });

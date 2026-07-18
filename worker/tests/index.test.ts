@@ -983,6 +983,106 @@ describe("Stripe billing webhook pass-through (/v1/billing/stripe-webhook)", () 
   });
 });
 
+// ──────────────────────────────────────────────────────────────────────────────
+// M22(a): the public erasure-attestation verifier pass-through
+// (/v1/public/attestation/*, /v1/public/keys/erasure/*.pub) forwards to the
+// _anonymous DO with NO PAT. The container now applies a scoped per-IP rate
+// limit on this router, keyed on the trusted x-corelink-client-ip header —
+// so this arm MUST forward CF's unforgeable cf-connecting-ip as
+// x-corelink-client-ip (the only arm among the pure pass-throughs that
+// previously did NOT set it).
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("public erasure-attestation verifier pass-through (/v1/public/*)", () => {
+  /** Capture what the Worker forwards to the DO + the DO name it routes to. */
+  function makePublicAttestationCapturingEnv(): {
+    env: Partial<Env>;
+    namesUsed: string[];
+    captured: { routeKind?: string | null; tenant?: string | null; clientIp?: string | null };
+  } {
+    const namesUsed: string[] = [];
+    const captured: { routeKind?: string | null; tenant?: string | null; clientIp?: string | null } = {};
+    const env: Partial<Env> = {
+      CORELINK_SERVER: {
+        idFromName: (name: string) => {
+          namesUsed.push(name);
+          return { toString: () => `do-${name}` };
+        },
+        get: () => ({
+          fetch: async (req: Request): Promise<Response> => {
+            captured.routeKind = req.headers.get("x-corelink-route-kind");
+            captured.tenant = req.headers.get("x-corelink-tenant-id");
+            captured.clientIp = req.headers.get("x-corelink-client-ip");
+            return new Response(JSON.stringify({ ok: true }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          },
+        }),
+        idFromString: (_s: string) => ({ toString: () => "stub-id" }),
+        newUniqueId: () => ({ toString: () => "stub-id" }),
+        jurisdiction: (_j: string) => env.CORELINK_SERVER,
+      } as unknown as DurableObjectNamespace,
+    };
+    return { env, namesUsed, captured };
+  }
+
+  it("routes to the shared _anonymous DO with routeKind=public_attestation", async () => {
+    const { env, namesUsed, captured } = makePublicAttestationCapturingEnv();
+    const resp = await workerFetch(
+      "http://localhost/v1/public/attestation/req-1",
+      { headers: { "cf-connecting-ip": "203.0.113.7" } },
+      env,
+    );
+    expect(resp.status).toBe(200);
+    expect(namesUsed).toEqual(["_anonymous"]);
+    expect(captured.routeKind).toBe("public_attestation");
+    expect(captured.tenant).toBe("_anonymous");
+  });
+
+  it("forwards cf-connecting-ip as the trusted x-corelink-client-ip (M22a rate-limit anchor)", async () => {
+    const { env, captured } = makePublicAttestationCapturingEnv();
+    await workerFetch(
+      "http://localhost/v1/public/attestation/req-1",
+      { headers: { "cf-connecting-ip": "203.0.113.7" } },
+      env,
+    );
+    expect(captured.clientIp).toBe("203.0.113.7");
+  });
+
+  it("strips a client-forged x-corelink-client-ip before setting the trusted value", async () => {
+    const { env, captured } = makePublicAttestationCapturingEnv();
+    await workerFetch(
+      "http://localhost/v1/public/keys/erasure/weur.pub",
+      {
+        headers: {
+          "cf-connecting-ip": "203.0.113.7",
+          // Client tries to smuggle a forged client-IP to dodge/attribute the
+          // per-IP bucket to a different IP.
+          "x-corelink-client-ip": "6.6.6.6",
+        },
+      },
+      env,
+    );
+    // The Worker-set value (from cf-connecting-ip) wins, never the client's.
+    expect(captured.clientIp).toBe("203.0.113.7");
+  });
+
+  it("still forwards (empty client-ip) when cf-connecting-ip is absent — container fail-opens", async () => {
+    const { env, captured } = makePublicAttestationCapturingEnv();
+    const resp = await workerFetch(
+      "http://localhost/v1/public/attestation/req-1",
+      {},
+      env,
+    );
+    expect(resp.status).toBe(200);
+    // No cf-connecting-ip (e.g. local dev) → the Worker sets "" (never absent
+    // header, never the client's own value) and the container's rate limiter
+    // fail-opens on an absent/empty header.
+    expect(captured.clientIp).toBe("");
+  });
+});
+
 describe("route resolution — non-OCI paths", () => {
   const reapiPaths = [
     "/api/v2/tenant/blobs",
