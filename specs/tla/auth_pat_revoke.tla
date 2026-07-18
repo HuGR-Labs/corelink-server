@@ -60,6 +60,17 @@
 (*     via INV-AUTH-PAT-HMAC-SIG-VERIFIED.                                 *)
 (*   - Wall-clock 60s SLA — chaos tests measure the p99 budget; this spec  *)
 (*     proves the topological invariants (no 200/204 on revoked).          *)
+(*   - WP-D M26 (2026-07-17, comment-only, no property change): the        *)
+(*     `VerifyAttempt` abstraction and `InvRevokedTokenNeverValidates`     *)
+(*     model the EDGE + adapter-D1 verify path (`revoked_at_ms IS NULL`    *)
+(*     queried directly, "no edge cache lookahead"). They do NOT model     *)
+(*     the CONTAINER's separate in-memory `NativePatGate` verify cache     *)
+(*     (`crates/corelink-container/src/native_pat_gate.rs`,               *)
+(*     `VERIFY_CACHE_TTL = 5s`) — that cache IS a deliberate, bounded      *)
+(*     edge-cache lookahead on the native (CAS/AC/Bazel/Turbo) plane only, *)
+(*     scoped to <=5s and therefore within (not a witness against) the     *)
+(*     <=60s propagation-window SLA this spec's invariants certify. See    *)
+(*     the registry §3.28 "Container native-plane carve-out" note.        *)
 (*                                                                          *)
 (* Cross-refs:                                                              *)
 (*   - `specs/03_architecture/invariant_registry.md §3.28`                  *)
@@ -251,6 +262,13 @@ Spec ==
 \* this invariant catches any future refactor that decouples `outcome`
 \* from `sot` (e.g. an erroneous edge-cache shortcut for the revoked_at
 \* check).
+\*
+\* SCOPE (WP-D M26, comment-only): `sot`/`region_cache` here model the
+\* EDGE + adapter-D1 verify path only. This invariant does NOT claim
+\* anything about the container's separate `NativePatGate` in-memory
+\* verify cache (`crates/corelink-container/src/native_pat_gate.rs`,
+\* 5s TTL) — that cache is an out-of-model, deliberately bounded-stale
+\* surface on the native plane (see the "Out of scope" header note above).
 InvRevokedTokenNeverValidates ==
     bad_admit_observed = FALSE
 
