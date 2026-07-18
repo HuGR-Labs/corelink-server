@@ -7,10 +7,10 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "a889ff0829cec6c25526d4c873a3eda124dfefb4"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
-timestamp: "2026-06-26T00:00:00Z"
+timestamp: "2026-07-17T00:00:00Z"
 ---
 
 # D1 PAT store + existence/scope check
@@ -53,11 +53,11 @@ written.
   remediation (`crates/corelink-container/src/routes/internal_pat.rs:1-22`).
 - That mint route is a PURE function — it NEVER persists the row itself; the caller (signup-worker)
   writes the returned `hash` to the D1 `pat` row and discards the plaintext after one use
-  (`crates/corelink-container/src/routes/internal_pat.rs:534-694`).
+  (`crates/corelink-container/src/routes/internal_pat.rs:550-710`).
 - A mint failure returns an OPAQUE 503 body (`{"error":"mint_failed"}`): the real `PatError` detail
   (e.g. `SigningKeyTooShort`, entropy/hash-corruption internals) is logged SERVER-SIDE only and never
   disclosed in the response — even to a holder of the mint auth key
-  (`crates/corelink-container/src/routes/internal_pat.rs:643-655`).
+  (`crates/corelink-container/src/routes/internal_pat.rs:659-671`).
 
 # Invariants
 
@@ -71,8 +71,13 @@ written.
 # Gotchas
 
 - The mint route returns the Argon2id `hash` in its 200 body because the signup-worker — not the
-  container — is what WRITES that hash to the D1 `pat` row (the M7 follow-up to move the write into the
-  container is deferred) (`crates/corelink-container/src/routes/internal_pat.rs:88-92`).
+  container — is what WRITES that hash to the D1 `pat` row. **M7 reclassified (WP-D L12a, 2026-07-17):**
+  this is NOT a security exposure, not just a deferred follow-up — `hash` is a one-way Argon2id verifier
+  of a high-entropy random secret (not replayable on its own), it crosses only the internal
+  Worker↔`_system`-DO boundary the plaintext already crosses on the SAME response, and it is never
+  logged. Dropping it would need moving the D1 `pat`-row write into the container (high blast radius) for
+  zero security gain, so it stays an optional future consolidation, not a fix
+  (`crates/corelink-container/src/routes/internal_pat.rs:86-108`).
 - `scope` may be NULL on legacy rows; the verifier's D1 row reader maps that to `""`
   (`crates/corelink-container/src/adapter_pat.rs:145-151`), which then fails CLOSED at the scope gate
   rather than erroring (`crates/corelink-container/src/scope.rs:73-95`).
@@ -88,7 +93,7 @@ written.
 5. `crates/corelink-container/src/customer_d1.rs:1352-1354` — idempotent tenant-scoped revoke UPDATE.
 6. `crates/corelink-container/src/routes/internal_pat.rs:1-22` — the `/_internal/pat/mint` route + the DEDICATED-key-only auth gate (no shared-key fallback; fail-CLOSED — DD-HIGH remediation).
 7. `crates/corelink-container/src/routes/internal_pat.rs:73-75` — plaintext never persisted; caller's responsibility.
-8. `crates/corelink-container/src/routes/internal_pat.rs:88-92` — M7: signup-worker writes the hash to the D1 row.
-9. `crates/corelink-container/src/routes/internal_pat.rs:534-694` — `handle_mint`: mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:643-655`).
+8. `crates/corelink-container/src/routes/internal_pat.rs:86-108` — M7 reclassified: hash-on-wire is a one-way verifier of a high-entropy secret crossing an already-trusted internal boundary, never logged; removal (moving the D1 write into the container) is optional future consolidation, not a security fix.
+9. `crates/corelink-container/src/routes/internal_pat.rs:550-710` — `handle_mint`: mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:659-671`).
 10. `crates/corelink-container/src/adapter_pat.rs:145-151` — the verifier's D1 row reader mapping a NULL `scope` to `""`.
 11. `crates/corelink-container/src/scope.rs:73-95` — the fail-CLOSED scope gate (`""` grants nothing).
