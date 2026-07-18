@@ -102,9 +102,17 @@ impl ErasureAuditSink for D1ErasureAuditSink {
         let payload_json = serde_json::to_string(&payload)
             .map_err(|e| ErasureAuditSinkError::Store(format!("audit payload serialize: {e}")))?;
 
+        // `region` MUST equal the tenant's `primary_region` (migration 0023
+        // residency trigger RAISE(ABORT)s otherwise). Do NOT rely on the `'wnam'`
+        // column default — tenants default to `'enam'` (migration 0028), so the
+        // default aborts the INSERT and fails the erasure audit CLOSED. Tag from a
+        // correlated subquery (COALESCE `'wnam'` for the tenant-absent case). Same
+        // fix as the CAS/AC durable sink (`storage/d1_audit_sink.rs`, incident
+        // 2026-07-17).
         let sql = "INSERT OR IGNORE INTO audit_outbox \
-             (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at) \
-             VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, NULL)";
+             (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
+             VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, NULL, \
+                     COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
         let params = vec![
             json!(id),
             json!(record.tenant_id.to_string()),

@@ -288,6 +288,29 @@ impl NativePatGate {
             );
         }
     }
+
+    /// Test-only: read a cached entry's `expires_at`, for asserting the TTL
+    /// window does not slide on repeated cache hits (WP-D M26 no-slide test —
+    /// the window is anchored at population, not last use).
+    #[cfg(test)]
+    fn cache_expires_at_for_test(&self, fp: &str) -> Option<Instant> {
+        self.cache.lock().ok()?.get(fp).map(|entry| entry.expires_at)
+    }
+
+    /// Test-only: force the cached entry for `fp` to already be expired, so
+    /// the NEXT verify takes the cache-MISS path and re-consults the
+    /// verifier (WP-D M26 bound regression test — models the 5s TTL
+    /// deterministically, without a real-time sleep).
+    #[cfg(test)]
+    fn expire_cache_entry_for_test(&self, fp: &str) {
+        if let Ok(mut cache) = self.cache.lock() {
+            if let Some(entry) = cache.get_mut(fp) {
+                entry.expires_at = Instant::now()
+                    .checked_sub(Duration::from_secs(1))
+                    .unwrap_or_else(Instant::now);
+            }
+        }
+    }
 }
 
 /// Uniform 401 for any PAT-rejection condition (forged, wrong tenant, expired,
@@ -400,8 +423,10 @@ pub(crate) mod testing {
     reason = "tests are allowed to use these primitives"
 )]
 mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
 
+    use async_trait::async_trait;
     use corelink_pat::{
         mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_RW,
     };
@@ -409,7 +434,7 @@ mod tests {
 
     use super::testing::verifier_with_row;
     use super::*;
-    use crate::adapter_pat::PatRow;
+    use crate::adapter_pat::{PatRow, PatRowLookup, PatVerifier};
 
     fn test_key() -> Arc<PatSigningKey> {
         Arc::new(PatSigningKey::from_bytes(vec![0x42u8; 32]).unwrap())
@@ -572,5 +597,127 @@ mod tests {
         assert_ne!(fp, token);
         assert_eq!(fp.len(), 64, "sha-256 hex is 64 chars");
         assert!(!fp.contains("secret"));
+    }
+
+    /// A one-row lookup that can be flipped to simulate a D1-side revoke
+    /// mid-test. A real revoke UPDATEs `revoked_at_ms` and the verifier's
+    /// SQL filters `AND revoked_at_ms IS NULL`
+    /// (`crate::adapter_pat::PAT_LOOKUP_SQL`), so a revoked row surfaces to
+    /// the verifier as `Ok(None)` exactly like an unknown token_id — this
+    /// fake models that by returning `None` once `revoke()` is called.
+    #[derive(Debug)]
+    struct ToggleableLookup {
+        token_id: String,
+        row: PatRow,
+        revoked: AtomicBool,
+    }
+
+    impl ToggleableLookup {
+        fn new(token_id: String, row: PatRow) -> Self {
+            Self {
+                token_id,
+                row,
+                revoked: AtomicBool::new(false),
+            }
+        }
+
+        /// Flip this token_id's row to look revoked on the NEXT lookup.
+        fn revoke(&self) {
+            self.revoked.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[async_trait]
+    impl PatRowLookup for ToggleableLookup {
+        async fn lookup(&self, token_id: &str) -> Result<Option<PatRow>, String> {
+            if token_id == self.token_id && !self.revoked.load(Ordering::SeqCst) {
+                Ok(Some(self.row.clone()))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+
+    /// WP-D M26 — the BOUND regression test for INV-PAT-REVOKE-PROPAGATION's
+    /// documented container native-plane carve-out: a cache hit skips D1 (by
+    /// design), so revocation on the native plane is bounded by the cache
+    /// TTL, not immediate. This proves the OTHER half of that bound: once the
+    /// cached entry's TTL has genuinely elapsed, the NEXT verify re-consults
+    /// the verifier (no infinite/silent staleness) and a revoked-in-the-
+    /// interim PAT is rejected 401 — the gate re-verifies rather than
+    /// re-using stale trust past its own expiry.
+    #[tokio::test]
+    async fn cache_expiry_forces_reverify_and_rejects_revoked_pat() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 30);
+        let lookup: Arc<ToggleableLookup> = Arc::new(ToggleableLookup::new(tid, row(&hash, &tenant)));
+        let lookup_dyn: Arc<dyn PatRowLookup> = lookup.clone();
+        let verifier = Arc::new(PatVerifier::new(lookup_dyn, key));
+        let gate = NativePatGate::new_for_test(verifier);
+
+        // 1. First verify: cache MISS, full pipeline runs, genuine PAT ⇒ Ok,
+        //    and the entry is now cached.
+        assert!(gate.verify(&tenant, &pt).await.is_ok());
+        let fp = fingerprint(&pt);
+        assert!(
+            gate.cache_get(&fp).is_some(),
+            "verify must populate the cache on a genuine PAT"
+        );
+
+        // 2. Revoke at the (fake) D1 layer. Because the cache entry is still
+        //    within its TTL, the NEXT verify is served from cache and does
+        //    NOT observe the revoke yet — this is the documented ≤5s bounded-
+        //    stale window, not a bug.
+        lookup.revoke();
+        assert!(
+            gate.verify(&tenant, &pt).await.is_ok(),
+            "within the TTL, a cache hit must NOT re-consult D1 (bounded-stale by design)"
+        );
+
+        // 3. Force the cache TTL to have elapsed (deterministic — no
+        //    real-time sleep). The NEXT verify must now MISS the cache, run
+        //    the full pipeline again, observe the revoke, and reject 401.
+        gate.expire_cache_entry_for_test(&fp);
+        let err = gate.verify(&tenant, &pt).await.unwrap_err();
+        assert_eq!(
+            err.status(),
+            StatusCode::UNAUTHORIZED,
+            "once the cache TTL has elapsed, a revoked PAT must be rejected on re-verify"
+        );
+    }
+
+    /// WP-D M26 — the NO-SLIDE regression test: the verify-cache window is
+    /// anchored at POPULATION time, not at last use. Repeated cache hits for
+    /// the same PAT must NOT push `expires_at` further into the future —
+    /// otherwise a continuously-polled revoked PAT could stay valid
+    /// indefinitely instead of being bounded by a fixed 5s window from the
+    /// moment it was cached.
+    #[tokio::test]
+    async fn cache_hit_does_not_extend_expiry() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 31);
+        let verifier = verifier_with_row(tid, row(&hash, &tenant), key);
+        let gate = NativePatGate::new_for_test(verifier);
+
+        // Populate the cache.
+        assert!(gate.verify(&tenant, &pt).await.is_ok());
+        let fp = fingerprint(&pt);
+        let expires_at_after_populate = gate
+            .cache_expires_at_for_test(&fp)
+            .expect("entry must be cached after a genuine verify");
+
+        // N more hits for the SAME token — all should be served from cache
+        // (no re-verify needed) and none should slide the expiry.
+        for _ in 0..5 {
+            assert!(gate.verify(&tenant, &pt).await.is_ok());
+        }
+
+        let expires_at_after_hits = gate
+            .cache_expires_at_for_test(&fp)
+            .expect("entry must still be cached");
+        assert_eq!(
+            expires_at_after_populate, expires_at_after_hits,
+            "repeated cache hits must not slide expires_at — the window is fixed from population"
+        );
     }
 }

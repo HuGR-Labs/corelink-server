@@ -118,11 +118,22 @@ impl D1AuditOutboxSink {
         let payload_json =
             serde_json::to_string(&payload).map_err(|e| format!("audit payload serialize: {e}"))?;
 
-        // NOTE: `region` deliberately omitted → DEFAULT 'wnam' (see module docs;
-        // mirrors `routes/dsr/audit.rs`).
+        // `region` MUST be the tenant's `primary_region`, NOT the `'wnam'` column
+        // default: migration 0023 installs a BEFORE-INSERT residency trigger
+        // (`trg_audit_outbox_region_match_insert`) that RAISE(ABORT)s when
+        // `NEW.region != tenant.primary_region`. Tenants default to `'enam'`
+        // (migration 0028), so relying on the `'wnam'` default aborts the INSERT
+        // for essentially every tenant → the handler fails CLOSED → 503 on every
+        // CAS/AC op (prod incident 2026-07-17, surfaced when task #74 flipped this
+        // sink from InMemory to durable-D1). Set `region` from a correlated
+        // subquery so the row is tagged with the tenant's true residency region
+        // and always satisfies the trigger; COALESCE to `'wnam'` for the
+        // tenant-absent case (the trigger's `NEW.region != NULL` is UNKNOWN ⇒ no
+        // abort). Mirrors the fix owed to `routes/dsr/audit.rs`.
         let sql = "INSERT OR IGNORE INTO audit_outbox \
-             (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)";
+             (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
+                     COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
         let digest_param = match dig {
             Some(d) => Value::String(d.to_owned()),
             None => Value::Null,
