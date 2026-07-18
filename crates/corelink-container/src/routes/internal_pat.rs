@@ -83,13 +83,29 @@
 //! - The raw tenant UUID is NEVER logged; only a SHA-256 correlation handle
 //!   (`hash_for_log`) is emitted (INV-NO-PII-IN-LOGS, M6).
 //!
-//! # Known follow-up (NOT fixed here)
+//! # Hash-on-wire (M7) — reclassified, not a security follow-up (WP-D L12a)
 //!
 //! - **M7** — the 200 response returns the Argon2id `hash` alongside
-//!   `token_plaintext`. Dropping `hash` from the response is entangled with the
-//!   signup-worker, which is what WRITES that hash to the D1 `pat` row; removing
-//!   it requires moving the D1 pat-row write into the container. Deferred to a
-//!   separate change.
+//!   `token_plaintext`. This was originally flagged as a security follow-up;
+//!   on review it is **NOT an exposure** and is reclassified as an *optional
+//!   future consolidation* only:
+//!   - The `hash` is a one-way Argon2id PHC verifier of a HIGH-ENTROPY random
+//!     secret (the PAT's random segment), not a user password — it is not
+//!     replayable, and possessing the hash alone does not let a caller
+//!     construct a valid PAT (verifying still requires the plaintext secret).
+//!   - It crosses only the **internal Worker ↔ `_system`-DO boundary**
+//!     (same CF account/isolate, TLS-internal) — the SAME boundary
+//!     `token_plaintext` itself already crosses on this exact response. If
+//!     that boundary is trusted enough to carry the plaintext, it is trusted
+//!     enough to carry a one-way hash of it.
+//!   - It is never logged (see the hard rules above) and is not persisted by
+//!     this route — the caller (signup-worker) writes it once to the D1
+//!     `pat.pat_hash` column and discards it.
+//!   - Removing it would require moving the D1 `pat`-row write into the
+//!     container itself — a high-blast-radius change (new write path, new
+//!     failure modes, signup-worker/container coupling change) for **zero
+//!     security gain**, since the hash is already safe to transmit on this
+//!     boundary. Deferred as a possible future consolidation, not a fix.
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};

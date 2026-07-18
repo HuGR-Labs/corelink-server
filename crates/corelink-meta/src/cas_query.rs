@@ -102,11 +102,17 @@ WHERE tenant_id = ?1 AND digest = ?2";
 ///
 /// Bind: `?1` id text; `?2` tenant_id text; `?3` digest text or NULL;
 /// `?4` request_id text; `?5` event_type text; `?6` payload_json text;
-/// `?7` enqueued_at ms.
+/// `?7` enqueued_at ms. `region` is NOT a bind — it is tagged from a correlated
+/// subquery on `tenant.primary_region` so the row satisfies migration 0023's
+/// residency trigger (`NEW.region != tenant.primary_region → RAISE(ABORT)`).
+/// Relying on the `'wnam'` column default aborts the INSERT for any non-`wnam`
+/// tenant (tenants default to `'enam'`, 0028) → fail-CLOSED 503 (incident
+/// 2026-07-17); COALESCE `'wnam'` covers the tenant-absent case.
 pub const INSERT_AUDIT_OUTBOX: &str = "\
 INSERT OR IGNORE INTO audit_outbox \
-(id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at) \
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)";
+(id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, region) \
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, \
+        COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
 
 /// Lookup an audit_outbox row by its idempotency key. Used by the impl to
 /// detect "same request_id + event_type, different payload" before
