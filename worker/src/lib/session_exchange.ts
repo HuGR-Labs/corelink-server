@@ -150,7 +150,7 @@ const MAX_IN_MEMORY_MINT_ENTRIES = 50_000;
  * An unmappable scope returns `null` → the caller fails CLOSED with a 500 rather
  * than writing a CHECK-violating (or privilege-escalating) row.
  */
-function canonicalizePatScope(scope: string): "read-write" | "read-only" | "admin" | null {
+export function canonicalizePatScope(scope: string): CanonScope | null {
   switch (scope) {
     case "cas:rw":
     case "read-write":
@@ -162,6 +162,121 @@ function canonicalizePatScope(scope: string): "read-write" | "read-only" | "admi
     default:
       return null;
   }
+}
+
+/**
+ * A canonical D1 `pat.scope` value — the codomain of {@link canonicalizePatScope}
+ * and the type over which the scope lattice {@link rank} is total.
+ */
+export type CanonScope = "read-only" | "read-write" | "admin";
+
+/**
+ * Total rank over the PAT scope lattice (L12(b)): `read-only < read-write < admin`.
+ *
+ * `cas:rw` canonicalizes to `read-write` (via {@link canonicalizePatScope}) so it
+ * shares rank 1 — there is no separate cache-write rank. The order is total (every
+ * pair is comparable), which is what lets {@link mintScopedPat} enforce a
+ * "requested ≤ ceiling" capability check with a single numeric comparison.
+ */
+export function rank(scope: CanonScope): number {
+  switch (scope) {
+    case "read-only":
+      return 0;
+    case "read-write":
+      return 1;
+    case "admin":
+      return 2;
+  }
+}
+
+/**
+ * L12(b) — a branded, unforgeable **mint capability**.
+ *
+ * The single mint chokepoint {@link mintScopedPat} previously trusted a LOOSE
+ * `tenantId` string and had no ceiling on the scope a caller could request — a
+ * guardrail-by-convention that a future 5th caller could silently break (forget
+ * the authorizer ⇒ cross-tenant / privilege-escalating mint). A `MintGrant`
+ * replaces that convention with a type the compiler enforces: it can ONLY be
+ * produced by one of the four per-caller factories below (the constructor is
+ * `private`), and each factory binds the `{tenantId, principalSource, maxScope}`
+ * the caller has actually PROVEN it may mint for. `mintScopedPat` sources the
+ * tenant FROM the grant (no loose string is accepted) and refuses — fail-CLOSED,
+ * no token, no D1 row — any requested scope that outranks `maxScope`.
+ *
+ * The ceilings encode least privilege:
+ *   - session / token-exchange / runner mints declare `read-write` (a viewer is
+ *     capped DOWN to `read-only` by the caller; none may ever mint `admin`);
+ *   - rotation declares the OLD row's scope, so — and ONLY so — a same-tenant
+ *     `admin` rotation (whose ownership the caller proved via
+ *     `owner_tenant === oldRow.tenant_id`) keeps working. A blanket refuse-admin
+ *     would break admin rotation; binding the ceiling to proven ownership is the
+ *     crux of the design.
+ */
+export class MintGrant {
+  // Nominal-typing brand: a private INSTANCE field (NOT just the private ctor) is
+  // what makes MintGrant unforgeable — without it a `{...} as MintGrant` bare
+  // literal compiles clean and defeats the whole capability (L12b review finding).
+  private readonly __brand!: void;
+  private constructor(
+    /** The tenant the minted PAT is scoped to — the SOLE tenant source for the mint. */
+    readonly tenantId: string,
+    /** Stable, non-PII string the per-principal UUID is SHA-256-derived from. */
+    readonly principalSource: string,
+    /** The HIGHEST scope this grant authorizes; a request above it fails CLOSED. */
+    readonly maxScope: CanonScope,
+  ) {}
+
+  /**
+   * A verified Clerk session (hugit Seam C). Ceiling = `read-write` (least
+   * privilege: a session-derived PAT never carries admin; the caller has already
+   * capped a `viewer` seat to `read-only`).
+   */
+  static fromVerifiedSession(tenantId: string, principalSource: string): MintGrant {
+    return new MintGrant(tenantId, principalSource, "read-write");
+  }
+
+  /**
+   * An RFC-8693 token exchange (githugr #1). Ceiling = `read-write` — the endpoint
+   * already refuses `admin` at the request layer; the ceiling makes it structural.
+   */
+  static fromTokenExchange(tenantId: string, principalSource: string): MintGrant {
+    return new MintGrant(tenantId, principalSource, "read-write");
+  }
+
+  /**
+   * A `clw auth rotate` (same-tenant key replacement). Ceiling = the OLD row's
+   * (already-canonical, ownership-proven) scope, so an `admin` PAT rotates to an
+   * `admin` PAT and NOTHING else escalates. The caller MUST have proven
+   * `owner_tenant === oldRow.tenant_id` before building this grant.
+   */
+  static fromRotation(tenantId: string, principalSource: string, oldScope: CanonScope): MintGrant {
+    return new MintGrant(tenantId, principalSource, oldScope);
+  }
+
+  /**
+   * A D-9 runner mint (server-DERIVED tenant). Ceiling = `read-write` — a
+   * disposable runner must never carry an admin bit (least privilege).
+   */
+  static fromRunnerDerivation(tenantId: string, principalSource: string): MintGrant {
+    return new MintGrant(tenantId, principalSource, "read-write");
+  }
+}
+
+/**
+ * Domain-separation prefix for the M22(b) per-tenant runner mint-ceiling key.
+ * Prepended before hashing so a tenant-ceiling counter can NEVER collide with a
+ * per-principal (per-job / per-user) mint counter in the shared throttle table.
+ */
+export const RUNNER_TENANT_THROTTLE_PREFIX = "runner-tenant:";
+
+/**
+ * Derive the domain-separated, hashed throttle key for a tenant's runner mint
+ * ceiling (M22(b)). SHA-256(`"runner-tenant:" + tenantId`) → a UUID-shaped key,
+ * so it shares the throttle table with per-principal keys without collision and
+ * never exposes the raw tenant id in that column.
+ */
+export async function deriveTenantCeilingThrottleKey(tenantId: string): Promise<string> {
+  return clerkUserIdToPrincipalUuid(RUNNER_TENANT_THROTTLE_PREFIX + tenantId);
 }
 
 /**
@@ -185,12 +300,24 @@ function canonicalizePatScope(scope: string): "read-write" | "read-only" | "admi
  * per isolate lifetime to {@link MAX_IN_MEMORY_BURST} (F20 fix — fail-LOUD:
  * the D1 error is logged AND the in-memory backstop fires a 429 if the burst
  * ceiling is reached within this isolate).
+ *
+ * M22(b): the window cap AND the in-memory burst cap are BOTH parametrizable via
+ * `opts`. The default per-principal caps stay {@link MINT_THROTTLE_MAX_PER_WINDOW}
+ * / {@link MAX_IN_MEMORY_BURST}; the D-9 runner path invokes this a SECOND time
+ * with a domain-separated per-tenant key and a cap SCALED off the tenant's runner
+ * ceiling (see `handleRunnerMint`), composing a per-tenant mint ceiling ON TOP OF
+ * the per-job throttle. The in-memory cap is parametrized alongside the window cap
+ * so a scaled per-tenant window (larger than the default burst of 5) is not
+ * false-throttled by the tighter per-principal burst backstop.
  */
-async function checkMintThrottle(
+export async function checkMintThrottle(
   db: D1Database,
   principalId: string,
   requestId: string,
+  opts?: { readonly maxPerWindow?: number; readonly inMemoryBurstCap?: number },
 ): Promise<Response | null> {
+  const maxPerWindow = opts?.maxPerWindow ?? MINT_THROTTLE_MAX_PER_WINDOW;
+  const inMemoryBurstCap = opts?.inMemoryBurstCap ?? MAX_IN_MEMORY_BURST;
   const now = Date.now();
   interface CountRow {
     count: number;
@@ -225,7 +352,7 @@ async function checkMintThrottle(
   }
 
   // ── Primary gate: durable D1 counter ────────────────────────────────────────
-  if (!d1Failed && row !== null && row.count > MINT_THROTTLE_MAX_PER_WINDOW) {
+  if (!d1Failed && row !== null && row.count > maxPerWindow) {
     return reapiError(
       "TOO_MANY_REQUESTS",
       "session exchange mint rate exceeded; retry shortly",
@@ -252,7 +379,7 @@ async function checkMintThrottle(
       _inMemoryMintCounts.delete(lru);
     }
   }
-  if (inMemCount > MAX_IN_MEMORY_BURST) {
+  if (inMemCount > inMemoryBurstCap) {
     console.error(
       `[${requestId}] session exchange in-memory backstop fired (d1_failed=${String(d1Failed)})`,
     );
@@ -417,8 +544,7 @@ export async function handleSessionExchange(
   return mintScopedPat(
     env,
     requestId,
-    tenantId,
-    clerkUserId,
+    MintGrant.fromVerifiedSession(tenantId, clerkUserId),
     EXCHANGE_PAT_TTL_SECONDS,
     mintScope,
     internalAuthKey,
@@ -462,14 +588,19 @@ export async function handleSessionExchange(
 export async function mintScopedPat(
   env: Env,
   requestId: string,
-  tenantId: string,
-  principalSource: string,
+  grant: MintGrant,
   ttlSeconds: number,
   scope: string,
   internalAuthKey: string,
   extraFields?: Readonly<Record<string, string | number | boolean>>,
   runnerJobAcKey?: string,
 ): Promise<Response> {
+  // L12(b): the tenant is sourced FROM the branded capability — a loose string is
+  // no longer accepted, so a caller can only mint for the tenant its proven grant
+  // binds. `principalSource` (the SHA-256 preimage for the per-principal UUID) is
+  // likewise carried by the grant.
+  const { tenantId, principalSource } = grant;
+
   // Route to the _system DO which fronts the container, then call the audited
   // /_internal/pat/mint route with the SERVER-trusted internal-auth header.
   // The browser/client can never supply that header — it never leaves the
@@ -490,6 +621,20 @@ export async function mintScopedPat(
   const canonicalScope = canonicalizePatScope(scope);
   if (canonicalScope === null) {
     console.error(`[${requestId}] mint scoped pat: unmappable scope (cannot persist)`);
+    return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
+  }
+
+  // ── L12(b) scope-ceiling assert (fail-CLOSED, BEFORE any expensive work) ────
+  // The requested scope must NOT outrank the ceiling the caller's grant binds.
+  // This is the structural replacement for the old guardrail-by-convention: even
+  // if a caller passes a higher scope than it proved (a bug, or a future 5th
+  // caller wiring the wrong ceiling), we refuse here — no container mint, no D1
+  // row, no token. Admin is reachable ONLY through a grant whose maxScope is
+  // admin (rotation of an admin PAT whose same-tenant ownership was proven).
+  if (rank(canonicalScope) > rank(grant.maxScope)) {
+    console.error(
+      `[${requestId}] mint scoped pat: requested scope exceeds grant ceiling (fail-closed)`,
+    );
     return reapiError("INTERNAL_ERROR", "session exchange mint failed", 500, requestId);
   }
 
@@ -802,8 +947,7 @@ export async function handleTokenExchange(
   return mintScopedPat(
     env,
     requestId,
-    tenantId,
-    clerkUserId,
+    MintGrant.fromTokenExchange(tenantId, clerkUserId),
     TOKEN_EXCHANGE_PAT_TTL_SECONDS,
     scope,
     internalAuthKey,
