@@ -23,6 +23,7 @@ vi.mock("@clerk/backend", () => ({ verifyToken: vi.fn() }));
 import { verifyToken } from "@clerk/backend";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
+import { mintScopedPat, MintGrant } from "../src/lib/session_exchange.js";
 
 const mockVerifyToken = vi.mocked(verifyToken);
 
@@ -718,5 +719,84 @@ describe("POST /v1/session/exchange — githugr multi-issuer (per-user isolated 
     });
     expect(resp.status).toBe(200);
     expect((await resp.json() as Record<string, unknown>)["fva_minutes"]).toBeUndefined();
+  });
+});
+
+/**
+ * L12(b) — the branded {@link MintGrant} capability + the scope-ceiling assert in
+ * {@link mintScopedPat}. These exercise the mint chokepoint DIRECTLY (not through
+ * the HTTP handler) so the ceiling can be probed with a scope no public handler
+ * would ever pass. Distinct principal sources keep the module-scoped F20 in-memory
+ * mint-throttle backstop from cross-contaminating cases.
+ */
+describe("L12(b) — MintGrant capability + mintScopedPat scope ceiling", () => {
+  const REQ = "req-mintgrant";
+
+  it("(1) each factory yields the correct maxScope ceiling (+ carries tenant/principal)", () => {
+    expect(MintGrant.fromVerifiedSession("t", "p").maxScope).toBe("read-write");
+    expect(MintGrant.fromTokenExchange("t", "p").maxScope).toBe("read-write");
+    expect(MintGrant.fromRunnerDerivation("t", "p").maxScope).toBe("read-write");
+    // Rotation's ceiling = the OLD row's scope — the ONLY factory that can reach admin.
+    expect(MintGrant.fromRotation("t", "p", "admin").maxScope).toBe("admin");
+    expect(MintGrant.fromRotation("t", "p", "read-only").maxScope).toBe("read-only");
+    expect(MintGrant.fromRotation("t", "p", "read-write").maxScope).toBe("read-write");
+    // The grant is the SOLE tenant source — it binds tenantId + principalSource.
+    const g = MintGrant.fromVerifiedSession("acme", "user_x");
+    expect(g.tenantId).toBe("acme");
+    expect(g.principalSource).toBe("user_x");
+  });
+
+  it("(2) fail-CLOSED: a scope ABOVE the grant ceiling → 500, NO token, NO pat row, NO container mint", async () => {
+    const captured: { req?: Request } = {};
+    const patInsertCapture: { binds?: unknown[]; sql?: string } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map(), patInsertCapture });
+    // A session grant's ceiling is read-write; requesting admin outranks it.
+    const resp = await mintScopedPat(
+      env,
+      REQ,
+      MintGrant.fromVerifiedSession("acme-default", "user_ceiling"),
+      3600,
+      "admin",
+      INTERNAL_KEY,
+    );
+    expect(resp.status).toBe(500);
+    const body = (await resp.json()) as Record<string, unknown>;
+    expect(body["error"]).toBe("INTERNAL_ERROR");
+    expect(body["token_plaintext"]).toBeUndefined(); // no token handed back
+    expect(captured.req).toBeUndefined(); // container mint NEVER called (rejected before expensive work)
+    expect(patInsertCapture.binds).toBeUndefined(); // no D1 pat row written
+  });
+
+  it("(2b) at-or-below the ceiling still mints (cas:rw / read-write / read-only under read-write)", async () => {
+    for (const scope of ["cas:rw", "read-write", "read-only"]) {
+      const captured: { req?: Request } = {};
+      const env = makeEnv({ captured, clerkUserToTenant: new Map() });
+      const resp = await mintScopedPat(
+        env,
+        `${REQ}-ok-${scope}`,
+        MintGrant.fromVerifiedSession("acme-default", `user_ok_${scope}`),
+        3600,
+        scope,
+        INTERNAL_KEY,
+      );
+      expect(resp.status).toBe(200);
+      expect(captured.req).toBeDefined(); // the mint DID run
+    }
+  });
+
+  it("(2c) admin IS permitted under a rotation grant whose ceiling is admin (the crux — no blanket refuse)", async () => {
+    const captured: { req?: Request } = {};
+    const env = makeEnv({ captured, clerkUserToTenant: new Map() });
+    const resp = await mintScopedPat(
+      env,
+      `${REQ}-admin-ok`,
+      MintGrant.fromRotation("acme-default", "old-pat-id-admin", "admin"),
+      3600,
+      "admin",
+      INTERNAL_KEY,
+    );
+    expect(resp.status).toBe(200);
+    const mintBody = (await captured.req!.json()) as Record<string, unknown>;
+    expect(mintBody["scopes"]).toBe("admin"); // admin flows through when the ceiling permits it
   });
 });
