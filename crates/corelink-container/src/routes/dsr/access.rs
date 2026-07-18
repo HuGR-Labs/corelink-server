@@ -328,9 +328,15 @@ fn audit_dsr_event(
     });
     let payload_json =
         serde_json::to_string(&payload).map_err(|e| format!("audit payload serialize: {e}"))?;
+    // `region` MUST equal tenant.primary_region (migration 0023 residency trigger
+    // RAISE(ABORT)s otherwise; tenants default to 'enam', 0028). Do NOT rely on the
+    // 'wnam' column default — it fails the DSR access/export audit CLOSED → 503.
+    // Tag from a correlated subquery (COALESCE 'wnam' for the tenant-absent case).
+    // Same fix as storage/d1_audit_sink.rs + dsr/audit.rs (incident 2026-07-17).
     let sql = "INSERT OR IGNORE INTO audit_outbox \
-         (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at) \
-         VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, NULL)";
+         (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
+         VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, NULL, \
+                 COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
     let params = vec![
         json!(id),
         json!(tenant_id),
