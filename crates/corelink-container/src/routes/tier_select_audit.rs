@@ -1,12 +1,7 @@
 //! Production [`TierSelectAudit`] adapter: the fail-CLOSED audit seam
 //! backing `POST /v1/onboarding/tier-select`.
 //!
-//! This is the **WP-C SCAFFOLD**. The struct + trait impl + `Debug` are
-//! frozen here so WP-C can fill the single `emit` body (currently
-//! `todo!("WP-C")`) against a stable surface WITHOUT touching the trait,
-//! the orchestration, or the other adapters.
-//!
-//! # What WP-C implements
+//! # What this implements
 //!
 //! [`TierSelectAudit::emit`] records the durable audit-chain entry for
 //! `event` (one of the orchestration's static labels:
@@ -16,58 +11,98 @@
 //! ABORTS the whole operation (fail-CLOSED;
 //! INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER) → 500 `internal`.
 //!
-//! Mirrors the audit approach in `internal_pat.rs`: the native container
-//! path has no D1 binding, so the baseline implementation emits a
-//! STRUCTURED `tracing` event (ingested by the CF Logs pipeline) and
-//! returns `Ok(())`. WP-C upgrades this to the durable D1 audit-chain write
-//! (the same `corelink-audit-chain` archive path the Worker billing flow
-//! uses) so the emit is genuinely fail-CLOSED on the durable store, not
-//! merely on the log sink.
+//! The durable backing is a dedicated D1 table, `tier_select_audit_events`
+//! (migration `0092`), mirroring the proven `customer_d1.rs::insert_audit_event`
+//! precedent (real D1 INSERT, `Err` → fail-CLOSED). It is DELIBERATELY
+//! SEPARATE from `customer_audit_events` (migration 0077): that table feeds
+//! the customer-facing `GET /v1/customer/audit` dashboard, and these internal
+//! money-path events must never leak onto it. The structured `tracing` event
+//! is kept alongside as defense-in-depth (still ingested by the CF Logs
+//! pipeline) but is no longer the durability source — the D1 write is.
 //!
-//! # SECURITY INVARIANTS (preserved by WP-C — do NOT regress)
+//! # SECURITY INVARIANTS (do NOT regress)
 //!
 //! - **Audit BEFORE mutation, fail-CLOSED.** `emit` returning `Err` MUST
-//!   abort the orchestration — WP-C must propagate a real durable-write
-//!   failure as `Err`, never swallow it.
+//!   abort the orchestration — a real durable-write failure propagates as
+//!   `Err`, never swallowed.
 //! - **Tenant from the verified header only.** `emit` records the
 //!   `tenant_id` the orchestration passes (extracted from the
 //!   edge-verified `x-corelink-tenant-id`); this adapter never re-derives
 //!   or defaults it.
-//! - **No secrets / no PII in the audit line.** Log only the static
-//!   `event`, the `tenant_id`, and the `correlation_id` — never tokens,
-//!   never the buyer email, never a Stripe key.
+//! - **No secrets / no PII in the audit line or row.** Only the static
+//!   `event`, the `tenant_id`, the `correlation_id`, and a wall-clock
+//!   timestamp are ever recorded — never tokens, never the buyer email,
+//!   never a Stripe key.
+
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use serde_json::json;
 
 use crate::routes::tier_select::TierSelectAudit;
+use crate::storage::d1_http::D1HttpClient;
 
-/// Production audit sink for tier-select.
+/// Wall-clock epoch-millisecond timestamp for the audit row. A pre-epoch
+/// system clock is impossible on a deployed container; the saturating
+/// fallback keeps `emit` total rather than letting it panic.
+fn unix_millis_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+/// Production audit sink for tier-select: a durable D1-over-HTTP INSERT into
+/// `tier_select_audit_events` (migration `0092`).
 ///
-/// The baseline (this scaffold) is a structured-`tracing` emitter with no
-/// secret state — a unit-shaped marker. WP-C replaces the body with the
-/// durable D1 audit-chain write and, if it needs a collaborator (e.g. an
-/// `Arc<dyn ArchiveProducer>` / audit-emitter), adds it as an `Arc<...>`
-/// field here with a redacting `Debug`.
-#[derive(Clone, Default)]
+/// Holds the shared [`D1HttpClient`] (which owns + redacts the CF API
+/// token) — the same collaborator [`super::tier_select_store::D1HttpTierSelectStore`]
+/// uses, wired from the same `Arc` at boot (`build_state_from_env`).
+#[derive(Clone)]
 pub struct TierSelectAuditAdapter {
-    // WP-C: hold the durable audit collaborator here, e.g.
-    //   audit: Arc<dyn corelink_audit_chain::...>,
-    // as `Arc<...>` with a redacting Debug. Unit-shaped for the scaffold.
-    _private: (),
+    /// D1-over-HTTP client for the durable audit INSERT. `Arc` so the same
+    /// connection is shared with the store rather than opening a second one.
+    d1: Arc<D1HttpClient>,
 }
 
 impl TierSelectAuditAdapter {
-    /// Construct the audit adapter.
+    /// Wire the audit adapter over a shared [`D1HttpClient`].
     #[must_use]
-    pub fn new() -> Self {
-        Self { _private: () }
+    pub fn new(d1: Arc<D1HttpClient>) -> Self {
+        Self { d1 }
+    }
+
+    /// Test-only constructor: an INERT adapter over a `D1HttpClient` built
+    /// from dummy (never-reached in the auth-gate unit tests) credentials.
+    /// Mirrors `D1HttpTierSelectStore::for_test`.
+    #[cfg(test)]
+    #[allow(
+        clippy::panic,
+        reason = "test-only constructor: panic on setup failure is fine"
+    )]
+    #[must_use]
+    pub(crate) fn for_test() -> Self {
+        let env = crate::storage::StorageEnv {
+            r2_endpoint: "https://example.r2.cloudflarestorage.com".to_owned(),
+            r2_access_key_id: "test-akid".to_owned(),
+            r2_secret_access_key: "test-secret".to_owned(),
+            cloudflare_account_id: "test-account".to_owned(),
+            cf_api_token: "test-token-never-sent".to_owned(),
+            d1_database_id: "test-db".to_owned(),
+        };
+        let client = D1HttpClient::new(&env)
+            .unwrap_or_else(|e| panic!("test D1HttpClient build failed: {e}"));
+        Self::new(Arc::new(client))
     }
 }
 
 impl std::fmt::Debug for TierSelectAuditAdapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // No secret state today; the redacting shape is fixed now so a
-        // future durable collaborator (WP-C) is added behind a marker and
-        // can never leak via Debug.
-        f.debug_struct("TierSelectAuditAdapter").finish()
+        // The D1 client redacts its own CF API token; nothing secret is
+        // surfaced here. Shown as a marker so a leaked Debug can never
+        // expose credentials.
+        f.debug_struct("TierSelectAuditAdapter")
+            .field("d1", &"[D1HttpClient]")
+            .finish()
     }
 }
 
@@ -78,16 +113,8 @@ impl TierSelectAudit for TierSelectAuditAdapter {
         tenant_id: &str,
         correlation_id: &str,
     ) -> Result<(), String> {
-        // Structured audit event ingested by the CF Logs pipeline. Mirrors
-        // `internal_pat.rs`, which likewise emits a `tracing` audit and
-        // defers the durable D1 audit-chain write to Wave-37. Records ONLY
-        // the static `event`, the edge-verified `tenant_id`, and the
-        // `correlation_id` — never a token, the buyer email, or a Stripe key
-        // (security model §7). Returns `Ok(())` because the log sink cannot
-        // fail; the durable-store upgrade — which makes the fail-CLOSED
-        // contract bind on D1 rather than only the log — is the tracked
-        // Wave-37 hardening. The `Result` surface is kept so that upgrade is a
-        // body-only change (no trait / orchestration churn).
+        // Defense-in-depth structured log (CF Logs pipeline) — kept alongside
+        // the durable write, no longer the durability source itself.
         tracing::info!(
             target: "corelink.tier_select.audit",
             event = event,
@@ -95,7 +122,34 @@ impl TierSelectAudit for TierSelectAuditAdapter {
             correlation_id = correlation_id,
             "tier-select audit",
         );
-        Ok(())
+
+        let ts_ms = unix_millis_now();
+        self.d1
+            .query(
+                "INSERT INTO tier_select_audit_events \
+                 (tenant_id, event_type, correlation_id, ts_ms) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                &[
+                    json!(tenant_id),
+                    json!(event),
+                    json!(correlation_id),
+                    json!(ts_ms),
+                ],
+            )
+            .await
+            .map(|_rows| ())
+            .map_err(|e| {
+                // Fail-CLOSED: propagate so the caller ABORTS before the
+                // primary mutation (audit-before-mutation). Never swallowed.
+                tracing::error!(
+                    error = %e,
+                    event,
+                    tenant_id,
+                    correlation_id,
+                    "tier_select_audit: durable D1 audit insert failed (fail-CLOSED)"
+                );
+                format!("tier_select_audit: D1 insert failed for {event}: {e}")
+            })
     }
 }
 
@@ -111,10 +165,43 @@ mod tests {
 
     #[test]
     fn debug_surfaces_no_state() {
-        // The marker shape carries no secret/PII even before WP-C adds a
-        // durable collaborator.
-        let rendered = format!("{:?}", TierSelectAuditAdapter::new());
+        // The redacting Debug never leaks the CF API token.
+        let rendered = format!("{:?}", TierSelectAuditAdapter::for_test());
         assert!(rendered.contains("TierSelectAuditAdapter"));
         assert!(!rendered.contains("token"));
+        assert!(!rendered.contains("test-token-never-sent"));
+    }
+
+    /// A D1 client that points at an unroutable host + carries bogus CF
+    /// credentials — the real Cloudflare D1 REST API rejects the request
+    /// (non-2xx), so every `query` fails. Mirrors `auth_introspect.rs`'s
+    /// `unreachable_d1` fault-injection helper — this is the established
+    /// pattern in this crate for driving the REAL async `D1HttpClient` down
+    /// a real (not mocked) failure path.
+    fn failing_d1() -> Arc<D1HttpClient> {
+        let env = crate::storage::StorageEnv {
+            r2_endpoint: "http://127.0.0.1:1".to_owned(),
+            r2_access_key_id: "x".to_owned(),
+            r2_secret_access_key: "x".to_owned(),
+            cloudflare_account_id: "definitely-not-a-real-account".to_owned(),
+            cf_api_token: "definitely-not-a-real-token".to_owned(),
+            d1_database_id: "definitely-not-a-real-db".to_owned(),
+        };
+        Arc::new(D1HttpClient::new(&env).expect("build D1HttpClient"))
+    }
+
+    /// BEFORE this fix: `emit` was `tracing::info!(...); Ok(())` — infallible.
+    /// AFTER: a durable D1 insert failure propagates as `Err`, closing the
+    /// fail-CLOSED audit-before-mutation contract on the real durable store.
+    #[tokio::test]
+    async fn emit_returns_err_when_durable_insert_fails() {
+        let adapter = TierSelectAuditAdapter::new(failing_d1());
+        let result = adapter
+            .emit("tier_select_attempted", "tenant-l2", "corr-l2")
+            .await;
+        assert!(
+            result.is_err(),
+            "emit must propagate a durable D1 failure as Err (fail-CLOSED), got {result:?}"
+        );
     }
 }
