@@ -79,21 +79,21 @@ function makePatD1(opts: {
 describe("verifyPatRowCached", () => {
   it("returns the row for a present, non-revoked token", async () => {
     const { db } = makePatD1({});
-    const r = await verifyPatRowCached(db, TEST_TOKEN_ID, 1_000);
+    const r = await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 });
     expect(r).toEqual({ kind: "found", row: ROW });
   });
 
   it("returns not_found for an absent/revoked token", async () => {
     const { db } = makePatD1({ present: () => false });
-    const r = await verifyPatRowCached(db, TEST_TOKEN_ID, 1_000);
+    const r = await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 });
     expect(r.kind).toBe("not_found");
   });
 
   it("serves a fresh hit WITHOUT a second D1 read", async () => {
     const { db, reads } = makePatD1({});
-    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, 1_000)).kind).toBe("found");
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 })).kind).toBe("found");
     expect(
-      (await verifyPatRowCached(db, TEST_TOKEN_ID, 1_000 + PAT_VERIFY_CACHE_TTL_MS - 1)).kind,
+      (await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 + PAT_VERIFY_CACHE_TTL_MS - 1 })).kind,
     ).toBe("found");
     expect(reads()).toBe(1);
   });
@@ -104,9 +104,9 @@ describe("verifyPatRowCached", () => {
     // and now finds it — no ≤TTL delay for a new token.
     let minted = false;
     const { db, reads } = makePatD1({ present: () => minted });
-    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, 1_000)).kind).toBe("not_found");
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 })).kind).toBe("not_found");
     minted = true;
-    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, 1_050)).kind).toBe("found");
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_050 })).kind).toBe("found");
     expect(reads()).toBe(2); // both reads hit D1 — the null was not cached
   });
 
@@ -115,25 +115,25 @@ describe("verifyPatRowCached", () => {
     let revoked = false;
     const { db } = makePatD1({ present: () => !revoked });
     // t=1000: valid → cached (positive).
-    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, 1_000)).kind).toBe("found");
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 })).kind).toBe("found");
     // t=1001: admin revokes — D1 would now return null, but the fresh cache
     // entry (<TTL) still serves the token. This is the bounded, documented window.
     revoked = true;
     expect(
-      (await verifyPatRowCached(db, TEST_TOKEN_ID, 1_000 + PAT_VERIFY_CACHE_TTL_MS - 1)).kind,
+      (await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 + PAT_VERIFY_CACHE_TTL_MS - 1 })).kind,
     ).toBe("found");
     // t=1000+TTL: entry expired → re-read D1 → null → DENIED. Never longer than TTL.
     expect(
-      (await verifyPatRowCached(db, TEST_TOKEN_ID, 1_000 + PAT_VERIFY_CACHE_TTL_MS + 1)).kind,
+      (await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 + PAT_VERIFY_CACHE_TTL_MS + 1 })).kind,
     ).toBe("not_found");
   });
 
   it("single-flights concurrent misses into ONE D1 read", async () => {
     const { db, reads } = makePatD1({});
     const [a, b, c] = await Promise.all([
-      verifyPatRowCached(db, TEST_TOKEN_ID, 1_000),
-      verifyPatRowCached(db, TEST_TOKEN_ID, 1_000),
-      verifyPatRowCached(db, TEST_TOKEN_ID, 1_000),
+      verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 }),
+      verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 }),
+      verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 }),
     ]);
     expect([a.kind, b.kind, c.kind]).toEqual(["found", "found", "found"]);
     expect(reads()).toBe(1);
@@ -141,32 +141,81 @@ describe("verifyPatRowCached", () => {
 
   it("surfaces a D1 fault as `error` and does NOT cache it (self-heals)", async () => {
     const { db: errDb } = makePatD1({ throwOnRead: true });
-    expect((await verifyPatRowCached(errDb, TEST_TOKEN_ID, 1_000)).kind).toBe("error");
+    expect((await verifyPatRowCached(errDb, TEST_TOKEN_ID, { nowMs: 1_000 })).kind).toBe("error");
     // The error was not cached — a subsequent good read resolves normally.
     const { db: goodDb } = makePatD1({});
-    expect((await verifyPatRowCached(goodDb, TEST_TOKEN_ID, 1_050)).kind).toBe("found");
+    expect((await verifyPatRowCached(goodDb, TEST_TOKEN_ID, { nowMs: 1_050 })).kind).toBe("found");
   });
 
   it("serves a still-FRESH hit through a transient D1 fault (availability, ≤TTL)", async () => {
     // t=1000: good read → cached.
     const { db: goodDb } = makePatD1({});
-    expect((await verifyPatRowCached(goodDb, TEST_TOKEN_ID, 1_000)).kind).toBe("found");
+    expect((await verifyPatRowCached(goodDb, TEST_TOKEN_ID, { nowMs: 1_000 })).kind).toBe("found");
     // t<TTL: D1 now faults, but the fresh entry is served (no error surfaced) —
     // it was DB-confirmed <TTL ago, so this never extends the revocation window.
     const { db: errDb } = makePatD1({ throwOnRead: true });
     expect(
-      (await verifyPatRowCached(errDb, TEST_TOKEN_ID, 1_000 + PAT_VERIFY_CACHE_TTL_MS - 1)).kind,
+      (await verifyPatRowCached(errDb, TEST_TOKEN_ID, { nowMs: 1_000 + PAT_VERIFY_CACHE_TTL_MS - 1 })).kind,
     ).toBe("found");
   });
 
   it("does NOT serve an EXPIRED entry through a D1 fault (window stays bounded)", async () => {
     const { db: goodDb } = makePatD1({});
-    expect((await verifyPatRowCached(goodDb, TEST_TOKEN_ID, 1_000)).kind).toBe("found");
+    expect((await verifyPatRowCached(goodDb, TEST_TOKEN_ID, { nowMs: 1_000 })).kind).toBe("found");
     // Past TTL + D1 faults → must surface `error` (503), NOT serve the stale entry.
     const { db: errDb } = makePatD1({ throwOnRead: true });
     expect(
-      (await verifyPatRowCached(errDb, TEST_TOKEN_ID, 1_000 + PAT_VERIFY_CACHE_TTL_MS + 1)).kind,
+      (await verifyPatRowCached(errDb, TEST_TOKEN_ID, { nowMs: 1_000 + PAT_VERIFY_CACHE_TTL_MS + 1 })).kind,
     ).toBe("error");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Read-replica routing + primary fallback (D1 read replication, perf #99)
+// ─────────────────────────────────────────────────────────────────────────────
+describe("verifyPatRowCached — replica read with primary fallback", () => {
+  it("read-after-write: a replica MISS falls back to the primary (fresh mint authenticates immediately)", async () => {
+    // The replica has not replicated the just-minted row yet (returns null); the
+    // primary has it. Must NOT 401 a brand-new token.
+    const { db: replica } = makePatD1({ present: () => false });
+    const { db: primary, reads: pReads } = makePatD1({ present: () => true });
+    const r = await verifyPatRowCached(replica, TEST_TOKEN_ID, { primaryDb: primary, nowMs: 1_000 });
+    expect(r).toEqual({ kind: "found", row: ROW });
+    expect(pReads()).toBe(1); // the primary WAS consulted on the replica miss
+  });
+
+  it("a replica FAULT falls back to the primary (availability)", async () => {
+    const { db: replica } = makePatD1({ throwOnRead: true });
+    const { db: primary } = makePatD1({ present: () => true });
+    const r = await verifyPatRowCached(replica, TEST_TOKEN_ID, { primaryDb: primary, nowMs: 1_000 });
+    expect(r.kind).toBe("found");
+  });
+
+  it("both replica AND primary absent → not_found (genuine unknown)", async () => {
+    const { db: replica } = makePatD1({ present: () => false });
+    const { db: primary } = makePatD1({ present: () => false });
+    expect((await verifyPatRowCached(replica, TEST_TOKEN_ID, { primaryDb: primary, nowMs: 1_000 })).kind).toBe(
+      "not_found",
+    );
+  });
+
+  it("a HIT on the replica does NOT consult the primary (fast path; revocation staleness honored ≤lag)", async () => {
+    // A token revoked on the primary but still present on a stale replica is
+    // honored — the primary is never read, so the revocation window is the
+    // replication lag, not re-tightened here. This is the accepted ≤lag window.
+    const { db: replica } = makePatD1({ present: () => true });
+    const { db: primary, reads: pReads } = makePatD1({ present: () => false });
+    const r = await verifyPatRowCached(replica, TEST_TOKEN_ID, { primaryDb: primary, nowMs: 1_000 });
+    expect(r.kind).toBe("found");
+    expect(pReads()).toBe(0); // primary NOT consulted on a replica hit
+  });
+
+  it("both handles fault → error (503, fail-closed)", async () => {
+    const { db: replica } = makePatD1({ throwOnRead: true });
+    const { db: primary } = makePatD1({ throwOnRead: true });
+    expect((await verifyPatRowCached(replica, TEST_TOKEN_ID, { primaryDb: primary, nowMs: 1_000 })).kind).toBe(
+      "error",
+    );
   });
 });
 
@@ -221,7 +270,7 @@ function makeWorkerD1(opts: {
     }),
     batch: async () => [],
     exec: async () => ({ count: 0, duration: 0 }),
-    withSession: () => null as never,
+    withSession() { return this; },
     dump: async () => new ArrayBuffer(0),
   } as unknown as D1Database;
   return { db, patReads: () => patReads };

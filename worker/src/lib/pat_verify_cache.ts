@@ -59,6 +59,15 @@
 import type { D1Database } from "@cloudflare/workers-types";
 
 /**
+ * A read-capable D1 handle — either the `D1Database` primary or a
+ * `D1Database.withSession(...)` replica session (D1 read replication). Both
+ * expose `prepare`, which is all this cache needs. Typed structurally so a
+ * session (whose full type varies by @cloudflare/workers-types version) is
+ * accepted without a hard dependency on `D1DatabaseSession`.
+ */
+export type D1Reader = Pick<D1Database, "prepare">;
+
+/**
  * The verified `pat` row cached on the hot path — byte-for-byte the columns
  * `extractAuth` selects and returns. Positive (found, non-revoked) rows only.
  */
@@ -136,6 +145,52 @@ function putCache(tokenId: string, row: CachedPatRow, nowMs: number): void {
   patCache.set(tokenId, { row, fetchedAtMs: nowMs });
 }
 
+const PAT_ROW_SQL =
+  "SELECT tenant_id, expires_ms, scope, runner_job_ac_key FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1";
+
+/**
+ * Read the `pat` row, preferring the replica `readDb` and falling back to the
+ * `primaryDb` when the replica is stale or faulted. Returns the row, or `null`
+ * only when it is genuinely absent (confirmed against the primary). Throws only
+ * if BOTH handles fault.
+ *
+ * The fallback is what makes D1 read replication SAFE for auth:
+ * - **Freshness (read-after-write):** a freshly-MINTED PAT is written to the
+ *   primary; the client may present it before it has replicated. A replica read
+ *   would return `null` → a spurious 401. So a `null` from the replica is
+ *   re-checked against the PRIMARY before we reject — a new token authenticates
+ *   immediately. A genuinely unknown/revoked token is `null` on both.
+ * - **Availability:** a replica fault falls back to the primary rather than 503.
+ * - **Revocation staleness is intentionally NOT re-checked here:** a *non-null*
+ *   stale replica read (a token revoked on the primary but not yet replicated)
+ *   is honored, bounding the revocation window to the replication lag — the same
+ *   ≤lag window the whole read-replica auth path accepts, well within ADR-0030's
+ *   `SLO-FRESH-PAT-REVOKE ≤ 60 s p99` (D1 replica lag is sub-second in practice).
+ */
+async function readPatRow(
+  readDb: D1Reader,
+  primaryDb: D1Reader | undefined,
+  tokenId: string,
+): Promise<CachedPatRow | null> {
+  const canFallBack = primaryDb !== undefined && primaryDb !== readDb;
+  try {
+    const row = await readDb.prepare(PAT_ROW_SQL).bind(tokenId).first<CachedPatRow>();
+    if (row !== null) {
+      return row;
+    }
+    // Replica miss — could be a not-yet-replicated fresh mint. Confirm on primary.
+    return canFallBack
+      ? await primaryDb!.prepare(PAT_ROW_SQL).bind(tokenId).first<CachedPatRow>()
+      : null;
+  } catch (replicaErr) {
+    // Replica fault — fall back to the primary for availability.
+    if (canFallBack) {
+      return primaryDb!.prepare(PAT_ROW_SQL).bind(tokenId).first<CachedPatRow>();
+    }
+    throw replicaErr;
+  }
+}
+
 /**
  * Resolve the `pat` row for `tokenId`, served from a per-isolate 5 s cache with
  * single-flight. MUST be called only AFTER the HMAC possession proof (see the
@@ -143,15 +198,21 @@ function putCache(tokenId: string, row: CachedPatRow, nowMs: number): void {
  * the pre-cache `extractAuth` read, so decisions are unchanged except for the
  * ≤{@link PAT_VERIFY_CACHE_TTL_MS} revocation window on a cache hit.
  *
- * @param db       CONFIG_DB (D1) holding the `pat` table.
+ * @param readDb   The read handle for the lookup — a `withSession(...)` replica
+ *                 session (fast, near the caller) or the primary. Reads route
+ *                 here first.
  * @param tokenId  The parsed, non-secret token_id (D1 lookup key).
- * @param nowMs    Wall-clock ms (injectable for tests; defaults to Date.now()).
+ * @param opts.primaryDb  The primary `CONFIG_DB`, used as the read-after-write /
+ *                 availability fallback (see {@link readPatRow}). Omit (or pass
+ *                 the same handle as `readDb`) to read a single handle only.
+ * @param opts.nowMs      Wall-clock ms (injectable for tests; defaults to Date.now()).
  */
 export async function verifyPatRowCached(
-  db: D1Database,
+  readDb: D1Reader,
   tokenId: string,
-  nowMs: number = Date.now(),
+  opts: { primaryDb?: D1Reader; nowMs?: number } = {},
 ): Promise<PatVerifyResult> {
+  const nowMs = opts.nowMs ?? Date.now();
   // ── Fresh positive hit ──────────────────────────────────────────────────────
   // Served even through a transient D1 blip: the entry was DB-confirmed < TTL
   // ago, so this never extends the revocation window past the TTL.
@@ -168,27 +229,22 @@ export async function verifyPatRowCached(
 
   const flight = (async (): Promise<PatVerifyResult> => {
     try {
-      const row = await db
-        .prepare(
-          "SELECT tenant_id, expires_ms, scope, runner_job_ac_key FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1",
-        )
-        .bind(tokenId)
-        .first<CachedPatRow>();
+      const row = await readPatRow(readDb, opts.primaryDb, tokenId);
       if (row === null) {
-        // Unknown OR revoked-at-read-time. Do NOT cache negatives — a token
-        // minted a moment ago must authenticate immediately, and a revoked
-        // token stays bounded solely by any existing positive entry's TTL.
-        // (Any stale positive entry is left to expire; it is never refreshed
-        // from a null read.) D1 stays the source-of-truth.
+        // Unknown OR revoked-at-read-time (confirmed against the primary). Do NOT
+        // cache negatives — a token minted a moment ago must authenticate
+        // immediately, and a revoked token stays bounded solely by any existing
+        // positive entry's TTL. (Any stale positive entry is left to expire; it
+        // is never refreshed from a null read.) D1 stays the source-of-truth.
         return { kind: "not_found" };
       }
       putCache(tokenId, row, nowMs);
       return { kind: "found", row };
     } catch {
-      // D1 fault — do NOT cache, and do NOT fall back to a stale/expired entry
-      // (that would push the revocation window past the TTL). Surface the fault
-      // so extractAuth returns d1_lookup_error → 503 (unchanged fail-closed,
-      // retryable posture).
+      // Both handles faulted — do NOT cache, and do NOT fall back to a
+      // stale/expired entry (that would push the revocation window past the
+      // TTL). Surface the fault so extractAuth returns d1_lookup_error → 503
+      // (unchanged fail-closed, retryable posture).
       return { kind: "error" };
     } finally {
       inflight.delete(tokenId);

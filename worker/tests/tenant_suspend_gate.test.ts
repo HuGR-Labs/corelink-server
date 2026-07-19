@@ -179,7 +179,7 @@ function makeWorkerD1(opts: { offboardingState?: string | null }): D1Database {
     }),
     batch: async () => [],
     exec: async () => ({ count: 0, duration: 0 }),
-    withSession: () => null as never,
+    withSession() { return this; },
     dump: async () => new ArrayBuffer(0),
   } as unknown as D1Database;
 }

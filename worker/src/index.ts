@@ -1203,19 +1203,31 @@ async function extractAuth(
     return { ok: false, reason: "invalid_pat_hmac" };
   }
 
-  // ── Step 4: PAT-row lookup by token_id (cached) ──────────────────────────
+  // ── Step 4: PAT-row lookup by token_id (replica-read, cached) ────────────
   // Any token whose token_id is not in the D1 store → 401. This kills the
   // "any 32–256 char string accepted" vulnerability (P0-2). The D1 read
-  // (`SELECT … FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL`) was the
-  // SOLE uncached read left on the warm hot path and cost ~0.7 s trans-continental
-  // per request (perf #99). It is now served from a per-isolate 5 s single-flight
-  // cache — SAME SQL, SAME columns, SAME decisions — bounding revocation to ≤5 s
-  // on a hit (well within ADR-0030's 60 s p99 SLA; mirrors the container
-  // NativePatGate's 5 s verify cache). The cache is consulted ONLY here, AFTER
-  // the HMAC possession proof above, so a wrong-secret token never reaches it;
-  // positive results only (a freshly-minted token authenticates immediately),
-  // and D1 remains the source-of-truth on every miss. See lib/pat_verify_cache.ts.
-  const verify = await verifyPatRowCached(env.CONFIG_DB, parsed.tokenId);
+  // (`SELECT … FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL`) is the
+  // per-request auth cost; trans-continental to the D1 primary it was ~0.5–0.7 s
+  // (perf #99). ROOT FIX: route it through a D1 read-replication session
+  // (`first-unconstrained` → nearest replica, ~tens of ms globally) with a
+  // PRIMARY fallback for read-after-write freshness (a just-minted PAT that has
+  // not yet replicated is re-checked on the primary — see readPatRow), so a new
+  // token still authenticates immediately while a token revoked on the primary
+  // is honored only for the ≤replication-lag window (sub-second; well within
+  // ADR-0030's 60 s p99 revocation SLA). Still fronted by the per-isolate 5 s
+  // single-flight cache (herd protection). Consulted ONLY here, AFTER the HMAC
+  // possession proof; positive results only; D1 stays the source-of-truth.
+  // See lib/pat_verify_cache.ts.
+  // Feature-detect the Sessions API: on a runtime (or a test double) without
+  // read replication, degrade gracefully to the primary handle rather than
+  // crash. When present, `first-unconstrained` reads the nearest replica.
+  const readSession =
+    typeof env.CONFIG_DB.withSession === "function"
+      ? env.CONFIG_DB.withSession("first-unconstrained")
+      : env.CONFIG_DB;
+  const verify = await verifyPatRowCached(readSession, parsed.tokenId, {
+    primaryDb: env.CONFIG_DB,
+  });
   if (verify.kind === "error") {
     // D1 errors (network partition, DB unavailable) must not fail-open. Return a
     // distinct reason; the caller maps d1_lookup_error to 503 (transient,
@@ -1245,11 +1257,14 @@ async function extractAuth(
   // + write access until every one of its PATs is individually revoked. The
   // check is a single-flight + ~30s-TTL cached D1 read (mirrors #667's
   // CachedTierResolver — see lib/tenant_suspend_gate.ts), so it adds no
-  // uncached per-request D1 round-trip to the hot path. Fail-OPEN on a D1
-  // fault (availability), but a KNOWN-suspended cached value still denies. The
-  // caller maps `tenant_suspended` to 403 (fail-closed, distinct from the 401
-  // bad-credential arms and the 503 transient-infra arms).
-  if (await isTenantSuspended(env.CONFIG_DB, row.tenant_id)) {
+  // uncached per-request D1 round-trip to the hot path. It reads through the
+  // same `first-unconstrained` replica session as the pat lookup (perf #99):
+  // a newly-suspended tenant is honored only for the ≤replication-lag window,
+  // which is already inside this gate's own ~30s TTL tolerance. Fail-OPEN on a
+  // D1 fault (availability), but a KNOWN-suspended cached value still denies.
+  // The caller maps `tenant_suspended` to 403 (fail-closed, distinct from the
+  // 401 bad-credential arms and the 503 transient-infra arms).
+  if (await isTenantSuspended(readSession, row.tenant_id)) {
     return { ok: false, reason: "tenant_suspended" };
   }
 
