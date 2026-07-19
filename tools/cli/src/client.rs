@@ -606,7 +606,12 @@ mod tests {
             .mount(&server)
             .await;
         let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
-        let res = client.cas_head("x").await;
+        // Bound the call: a mutation that turns the retry counter into an
+        // idempotent op (`*=`) or forces a guard true would loop forever —
+        // caught here as a fast test failure, not a slow cargo-mutants timeout.
+        let res = tokio::time::timeout(Duration::from_secs(3), client.cas_head("x"))
+            .await
+            .expect("cas_head must terminate (no unbounded retry)");
         assert!(res.is_err(), "exhausted retries ⇒ error");
         let reqs = server.received_requests().await.expect("recorded");
         assert_eq!(
@@ -617,20 +622,43 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cas_head_connection_error_retries_with_backoff() {
-        // A transport error is retried (kills the `attempt < MAX_RETRIES`
-        // network-retry guard/`<` comparison: the mutants that return after a
-        // single attempt finish in ~0ms; the real path sleeps through the
-        // backoff schedule). Port 9 (discard) is not listening ⇒ refused.
-        let client =
-            CorelinkClient::for_test("http://127.0.0.1:9".to_owned(), Some("t-test".to_owned()));
-        let start = std::time::Instant::now();
-        let res = client.cas_head("x").await;
-        let elapsed = start.elapsed();
+    async fn cas_head_connection_error_retries_exact_count() {
+        // A transport error is retried exactly MAX_RETRIES times (⇒
+        // MAX_RETRIES + 1 total connection attempts). A local listener that
+        // accepts then immediately closes each socket forces reqwest into a
+        // transport error every time; counting `accept()`s is DETERMINISTIC,
+        // so it kills the `attempt < MAX_RETRIES` guard AND the `<`→`<=`
+        // off-by-one (which would make one extra attempt), unlike a timing
+        // heuristic. A `*=`/guard-true infinite loop is caught by the
+        // surrounding timeout as a fast failure.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let accepts = Arc::new(AtomicUsize::new(0));
+        let accepts_bg = Arc::clone(&accepts);
+        tokio::spawn(async move {
+            // Accept then immediately close each socket ⇒ reqwest sees a
+            // transport error every attempt. Loop ends when the listener drops.
+            while let Ok((socket, _)) = listener.accept().await {
+                accepts_bg.fetch_add(1, Ordering::SeqCst);
+                drop(socket);
+            }
+        });
+
+        let client = CorelinkClient::for_test(
+            format!("http://127.0.0.1:{}", addr.port()),
+            Some("t-test".to_owned()),
+        );
+        let res = tokio::time::timeout(Duration::from_secs(5), client.cas_head("x"))
+            .await
+            .expect("cas_head must terminate (no unbounded retry)");
         assert!(res.is_err(), "unreachable host ⇒ error");
-        assert!(
-            elapsed >= Duration::from_millis(150),
-            "must retry with backoff (slept {elapsed:?}); a single-attempt mutant returns instantly"
+        assert_eq!(
+            accepts.load(Ordering::SeqCst) as u32,
+            MAX_RETRIES + 1,
+            "exactly MAX_RETRIES + 1 connection attempts"
         );
     }
 
