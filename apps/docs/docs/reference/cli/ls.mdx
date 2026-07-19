@@ -21,8 +21,8 @@ corelink ls --tenant <TENANT_ID> [--prefix <PREFIX>] [--limit <N>] [--cursor <CU
 | Flag | Required | Default | Description |
 |---|---|---|---|
 | `--tenant` | yes | — | Tenant ID. |
-| `--prefix` | no  | — | Optional prefix filter (e.g. `ac/` to scope to Action Cache). |
-| `--limit`  | no  | `100` | Maximum entries to return (1..1000). |
+| `--prefix` | no  | — | Client-side filter: keep only blobs whose hash starts with this prefix (applies to the current page only). Not sent to the server. |
+| `--limit`  | no  | `100` | Maximum entries to return per page (1..1000). |
 | `--cursor` | no  | — | Pagination cursor from a previous response. |
 | `--output` | no  | `text` | `text` or `json`. |
 
@@ -38,29 +38,29 @@ Paginate JSON:
 
 ```bash
 corelink ls --tenant acme-corp --output json
-# → { "next_cursor": "abc123", "entries": [...] }
+# → { "blobs": [...], "next_cursor": "abc123" }
 corelink ls --tenant acme-corp --cursor abc123 --output json
 ```
 
-Filter to Action Cache namespace:
+Filter a page to a hash prefix (client-side):
 
 ```bash
-corelink ls --tenant acme-corp --prefix ac/ --output json
+corelink ls --tenant acme-corp --prefix ab --output json
 ```
 
 ## JSON schema
 
+The body is the server's `GET /v1/cas/{tenant}` response verbatim — one
+**page** of blobs plus an opaque continuation cursor (`null` on the last
+page). There is no total count.
+
 ```json
 {
-  "ok": true,
-  "subcommand": "ls",
-  "tenant_id": "acme-corp",
-  "entries": [
+  "blobs": [
     {
-      "digest": "0123...cdef",
-      "size_bytes": 1048576,
-      "kind": "blob",
-      "created_at_unix": 1715000000
+      "hash": "0123...cdef",
+      "size": 1048576,
+      "created_at": "2026-05-14T00:00:00Z"
     }
   ],
   "next_cursor": "abc123"

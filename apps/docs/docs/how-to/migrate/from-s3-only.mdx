@@ -262,8 +262,10 @@ window. **Do not** disable S3 writes yet.
 ### Step 3 — Watch the first day
 
 ```bash
-# CoreLink reads should match what S3 reads were doing yesterday.
-corelink ls --tenant "$CORELINK_TENANT_ID" --output json | jq '.total'
+# `ls` returns ONE page of blobs (bounded by --limit, default 100) plus an
+# opaque `next_cursor` — there is no server-side total. Count the page, and
+# page forward with --cursor until `next_cursor` is null to tally the rest.
+corelink ls --tenant "$CORELINK_TENANT_ID" --output json | jq '.blobs | length'
 # Compare to your CloudWatch S3 GET request count for the previous day.
 ```
 
@@ -347,7 +349,7 @@ your 14-day clean-operation window is genuinely clean.**
 corelink ls --tenant "$CORELINK_TENANT_ID" --limit 10
 
 # 2. A round-trip integrity check on the most recent artifact:
-RECENT=$(corelink ls --tenant "$CORELINK_TENANT_ID" --limit 1 --output json | jq -r '.entries[0].digest')
+RECENT=$(corelink ls --tenant "$CORELINK_TENANT_ID" --limit 1 --output json | jq -r '.blobs[0].hash')
 corelink get "$RECENT" --output /tmp/recent.bin
 corelink stat "$RECENT" --output json | jq '.size_bytes'
 wc -c < /tmp/recent.bin   # should match size_bytes

@@ -9,7 +9,7 @@
 //! the DPA receipt. There is **no server-side bulk-export endpoint** that
 //! streams that archive today — the reachable, real surfaces are the
 //! audit-export route (`GET /v1/audit/:tenant/export`) and the CAS
-//! listing (`GET /v1/cas/list`).
+//! listing (`GET /v1/cas/:tenant`).
 //!
 //! So `tenant export` assembles a **content-addressed JSON bundle** from
 //! those real surfaces: the audit-chain NDJSON slice + the CAS blob index
@@ -68,7 +68,7 @@ pub struct TenantExportBundle {
     /// Raw audit-chain NDJSON slice (one `{event, proof}` per line + a
     /// trailing manifest line, verbatim from the export route).
     pub audit_chain_ndjson: String,
-    /// CAS blob index (the `GET /v1/cas/list` response, verbatim).
+    /// CAS blob index (the `GET /v1/cas/:tenant` response, verbatim).
     pub cas_index: serde_json::Value,
     /// Component descriptors, keyed by name.
     pub components: std::collections::BTreeMap<String, Component>,
@@ -266,10 +266,10 @@ pub async fn run_export(
     let audit_ndjson = String::from_utf8(audit_bytes.to_vec())
         .map_err(|e| CliError::Other(format!("tenant export: audit slice not UTF-8: {e}")))?;
 
-    // 2. CAS blob index.
-    let cas_index = client
-        .get_json(&format!("/v1/cas/list?tenant={tenant}"))
-        .await?;
+    // 2. CAS blob index. Tenant is a PATH segment on the real list route
+    //    (`routes/cas.rs`, `CAS_LIST_ROUTE = "/v1/cas/{tenant}"`); the old
+    //    `/v1/cas/list?tenant=` shape 403'd (axum matched `{tenant}="list"`).
+    let cas_index = client.get_json(&format!("/v1/cas/{tenant}")).await?;
 
     // 3. Assemble + persist the bundle.
     let bundle = build_bundle(tenant, generated_at, audit_ndjson, cas_index, anchor);
@@ -320,7 +320,7 @@ mod tests {
             "tenant-xyz",
             1_700_000_000_000,
             "{\"event\":1}\n{\"manifest\":true}\n".to_owned(),
-            serde_json::json!({"entries": [{"digest": "sha256:abc", "size_bytes": 10}]}),
+            serde_json::json!({"blobs": [{"hash": "abc", "size": 10, "created_at": "2026-07-01T00:00:00Z"}], "next_cursor": null}),
             Some("deadbeef".repeat(8)),
         )
     }

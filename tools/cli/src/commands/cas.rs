@@ -139,14 +139,17 @@ pub async fn run_export(
     let mut blobs_written = 0u64;
     let mut bytes_written = 0u64;
     loop {
-        let mut path = format!("/v1/cas/list?tenant={tenant}&limit=500");
+        // Real CAS list route: tenant is a PATH segment, pagination is
+        // `?limit=&cursor=` ONLY (`routes/cas.rs`, `CAS_LIST_ROUTE`). The old
+        // `/v1/cas/list?tenant=` shape 403'd (axum matched `{tenant}="list"`).
+        let mut path = format!("/v1/cas/{tenant}?limit=500");
         if let Some(c) = &cursor {
             path.push_str(&format!("&cursor={c}"));
         }
         let raw = client.get_json(&path).await?;
         let page: LsResponse = serde_json::from_value(raw).map_err(CliError::Json)?;
-        for entry in &page.entries {
-            let bare = normalize_digest(&entry.digest);
+        for blob in &page.blobs {
+            let bare = normalize_digest(&blob.hash);
             let data = client.cas_get(bare).await?;
             let blob_path = out_dir.join(bare);
             std::fs::write(&blob_path, &data).map_err(CliError::Io)?;
