@@ -17,7 +17,7 @@
 // The admin-ui Plausible domain is separate from the docs-site Plausible
 // domain so the funnels can be inspected independently:
 //     docs:       data-domain="corelink-docs.humangr.com"
-//     admin-ui:   data-domain="corelink-admin.humangr.com"
+//     admin-ui:   data-domain="humangr.com"
 
 import { useEffect, useState } from "react";
 
@@ -45,7 +45,7 @@ function analyticsConsented(): boolean {
 }
 
 export function PlausibleScript({
-    domain = "corelink-admin.humangr.com",
+    domain = "humangr.com",
 }: { domain?: string }) {
     const [consented, setConsented] = useState(false);
 

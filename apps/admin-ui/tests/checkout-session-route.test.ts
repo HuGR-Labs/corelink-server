@@ -162,7 +162,7 @@ describe("POST /api/checkout/session", () => {
       body: "",
     };
     const req = new Request(
-      "https://corelink-admin.humangr.com/api/checkout/session",
+      "https://humangr.com/corelink/api/checkout/session",
       init,
     ) as unknown as import("next/server").NextRequest;
     const res = await POST(req);

@@ -112,8 +112,7 @@ async function getSessionToken(): Promise<string | null> {
 
 // The canonical app host, used when the request's (client-suppliable) host
 // headers don't pass the allow-list. The public app is `humangr.com` (path-
-// mounted at /corelink); `corelink-admin.humangr.com` serves the same app;
-// localhost covers dev.
+// mounted at /corelink) — the sole canonical origin; localhost covers dev.
 const CANONICAL_APP_HOST = "humangr.com";
 
 export function isAllowedRedirectHost(host: string): boolean {
@@ -121,11 +120,11 @@ export function isAllowedRedirectHost(host: string): boolean {
   if (h === "localhost" || h.startsWith("localhost:") || h.startsWith("127.0.0.1")) {
     return true;
   }
-  // Bare `humangr.com` is the public app apex (path-mounted at /corelink); it is
-  // NOT the `corelink-*` shape, so it is allow-listed explicitly. The
-  // `corelink-*.humangr.com` regex still covers the admin/docs custom domains.
-  if (h === "humangr.com") return true;
-  return /^corelink-[a-z0-9-]+\.humangr\.com$/.test(h);
+  // `humangr.com` is the SOLE canonical app host (path-mounted at /corelink).
+  // The retired `corelink-admin` / `corelink-app` subdomains are no longer
+  // accepted — checkout only ever redirects to the canonical app (the
+  // tier-select backend likewise host-allow-lists to `humangr.com` only).
+  return h === "humangr.com";
 }
 
 function originFromRequest(req: NextRequest): string {
@@ -133,7 +132,7 @@ function originFromRequest(req: NextRequest): string {
   // so it must never be an attacker-supplied value. `x-forwarded-host` /`host`
   // are client-suppliable (Cloudflare sets the real one, but a direct caller
   // can spoof them), so validate against the app-host allow-list (`humangr.com`
-  // + `corelink-*.humangr.com`) and fall back to the canonical host otherwise.
+  // only) and fall back to the canonical host otherwise.
   // (The body origin is likewise
   // never trusted; the tier-select backend host-allow-lists these URLs too.)
   const rawHost =

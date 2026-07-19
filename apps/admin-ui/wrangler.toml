@@ -1,7 +1,7 @@
 # Cloudflare Worker config for the CoreLink Admin UI.
 #
 # Project name: corelink-admin-ui  (HumanGuardrail org)
-# Custom domain: corelink-admin.humangr.com  (manual: Worker dashboard → Custom domains)
+# Public entry point: humangr.com/corelink  (operator-managed zone route; see routes below)
 #
 # Build: pnpm cf:build  (opennextjs-cloudflare build)
 # Deploy: wrangler deploy  (orchestrator-only -- do NOT run locally)
@@ -31,16 +31,18 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 # `corelink-admin-ui` Pages project; detached via CF API on migration day
 # (Pages project remains but no longer serves these domains).
 #
-# The PUBLIC app entry point is now `humangr.com/corelink` (path-mounted, served
+# The PUBLIC app entry point is `humangr.com/corelink` (path-mounted, served
 # via the `humangr.com/corelink/*` zone route — added by the operator at cutover,
-# NOT a custom_domain). The old `corelink-app.humangr.com` subdomain is RETIRED:
-# its custom_domain binding was removed here so the subdomain ceases to exist.
+# NOT a custom_domain, so it is intentionally NOT listed here). Both retired
+# subdomains — `corelink-app.humangr.com` AND `corelink-admin.humangr.com` — had
+# their custom_domain bindings removed here so the subdomains cease to serve the
+# Worker. OPERATOR follow-up: unbind the `corelink-admin.humangr.com` custom
+# domain in the CF Worker dashboard + remove its DNS record (the wrangler removal
+# stops the Worker claiming it; the dashboard/DNS cleanup is manual).
 # NOTE: the Clerk production Frontend API still lives at
 # `clerk.corelink-app.humangr.com` (baked into the pk_live key) — that is a
 # SEPARATE domain the operator migrates on the Clerk cutover; do not conflate it.
-routes = [
-  { pattern = "corelink-admin.humangr.com", custom_domain = true }
-]
+routes = []
 
 [assets]
 directory = ".open-next/assets"
