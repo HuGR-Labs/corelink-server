@@ -24,6 +24,21 @@ pub const DEFAULT_METADATA_TTL_SECONDS: u64 = 300;
 /// Default tarball size limit (256 MiB; spec §5).
 pub const DEFAULT_TARBALL_SIZE_LIMIT_BYTES: u64 = 256 * 1024 * 1024;
 
+/// Maximum validated packument size (bytes) the adapter will attempt to WRITE
+/// into the tenant metadata KV cache. Packuments larger than this are served
+/// proxy-through (fetched + validated + returned to the client) but NOT cached.
+///
+/// Package metadata is a pure CACHE, so a write we cannot land must never break
+/// `npm install`. The backing store is D1/CF-KV over HTTP, whose per-value size
+/// limit a large packument (e.g. `react` ~6.8 MiB, `npm` ~25 MiB) exceeds — the
+/// write then errors and, before this cap existed, that CACHE-WRITE failure was
+/// mapped to a 503 that failed the READ. This is a deliberately CONSERVATIVE
+/// 1 MiB cap: it sits comfortably ABOVE the largest packuments that cache fine
+/// today (prod-verified: `express` ~805 KiB → 200/cached) and well BELOW the
+/// observed backing-store failure threshold, so small/medium packuments still
+/// cache + serve exactly as before while oversized ones skip the write proactively.
+pub const DEFAULT_METADATA_CACHE_MAX_BYTES: usize = 1024 * 1024;
+
 /// npm adapter configuration.
 ///
 /// `#[non_exhaustive]` so we can extend boot-time tunables without
@@ -122,6 +137,13 @@ mod tests {
         assert_eq!(DEFAULT_UPSTREAM_REGISTRY, "https://registry.npmjs.org");
         assert_eq!(DEFAULT_METADATA_TTL_SECONDS, 300);
         assert_eq!(DEFAULT_TARBALL_SIZE_LIMIT_BYTES, 256 * 1024 * 1024);
+        assert_eq!(DEFAULT_METADATA_CACHE_MAX_BYTES, 1024 * 1024);
+        // The metadata-cache cap must sit BELOW the tarball limit (metadata is a
+        // small cache surface, not a bulk artifact) and be non-trivial.
+        assert!(
+            (DEFAULT_METADATA_CACHE_MAX_BYTES as u64) < DEFAULT_TARBALL_SIZE_LIMIT_BYTES,
+            "metadata cache cap must be well below the tarball limit"
+        );
     }
 
     #[test]

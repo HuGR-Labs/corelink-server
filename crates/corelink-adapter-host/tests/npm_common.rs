@@ -117,6 +117,33 @@ impl KvStore for InMemKv {
     }
 }
 
+/// KV store whose `get` always misses and whose `put` always ERRORS — used to
+/// simulate a metadata-cache backend OUTAGE so the smoke suite can prove the
+/// metadata surface degrades to proxy-through (200 + body) instead of 503.
+#[derive(Debug, Default)]
+pub struct FailingKv;
+
+#[async_trait]
+impl KvStore for FailingKv {
+    async fn get(
+        &self,
+        _tenant: &TenantId,
+        _key: &str,
+    ) -> Result<Option<(Vec<u8>, u64)>, NpmAdapterError> {
+        Ok(None)
+    }
+
+    async fn put(
+        &self,
+        _tenant: &TenantId,
+        _key: &str,
+        _value: Vec<u8>,
+        _inserted_at_unix_ms: u64,
+    ) -> Result<(), NpmAdapterError> {
+        Err(NpmAdapterError::Kv("simulated KV outage".into()))
+    }
+}
+
 /// Fixed-tenant resolver that performs a constant-time PAT comparison
 /// against a single configured fixture PAT.
 #[derive(Debug)]
