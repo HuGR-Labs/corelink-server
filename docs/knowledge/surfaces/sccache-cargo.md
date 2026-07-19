@@ -4,7 +4,7 @@ title: "sccache / cargo (WebDAV) surface"
 description: "The sccache HTTP build-cache surface mounted at /cargo/<tenant>/<key>, with nest_service path bridging and F27 two-layer write enforcement."
 source_files:
   - "crates/corelink-container/src/routes/cargo.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "84e3a88ad674702ef0f33d362bfe918e2c5d6319"
 provenance: "AUTHORED"
 tags: ["surfaces", "sccache", "cargo", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -33,17 +33,22 @@ namespaced per tenant.
    flattened, which would reject the 3-segment wire path (`crates/corelink-container/src/routes/cargo.rs:23-26`; `crates/corelink-container/src/routes/cargo.rs:252`).
 3. The tenant is derived from the PAT via the shared `PatVerifier`, wrapped by `resolver_from_verifier`;
    the path `<tenant>` is never trusted for storage (`crates/corelink-container/src/routes/cargo.rs:187`; `crates/corelink-container/src/routes/cargo.rs:29-35`).
-4. `cargo_gate` enforces per-operation scope: PUT requires cache-write, GET/HEAD require cache-read,
-   any other method fails closed 403 (`crates/corelink-container/src/routes/cargo.rs:277-304`).
-5. For PUT, the F27 second layer requires the PAT's D1-verified `can_write` bit from the SAME single
+4. `cargo_gate` first short-circuits a WebDAV `MKCOL` (opendal's parent-"directory" create issued
+   before a sharded `PUT`) as a success no-op — `201 CREATED` under a cache-write scope, else `403` —
+   because the cargo store is a FLAT content-addressed KV with implicit directories; without it the
+   real `sccache` binary can never write (`crates/corelink-container/src/routes/cargo.rs:295-301`).
+5. It then enforces per-operation scope: PUT requires cache-write, GET/HEAD require cache-read,
+   any other method fails closed 403 (`crates/corelink-container/src/routes/cargo.rs:303-316`).
+6. For PUT, the F27 second layer requires the PAT's D1-verified `can_write` bit from the SAME single
    verification (no redundant verify) — the executed gate checks the Worker-set scope header
-   (`scope_ok`) and then `resolve_with_capability(...).can_write` (`crates/corelink-container/src/routes/cargo.rs:296-345`).
+   (`scope_ok`) and then `resolve_with_capability(...).can_write` (`crates/corelink-container/src/routes/cargo.rs:331-381`).
 
 # Invariants
 - Tenant identity comes from the PAT, re-verified against D1; the path `<tenant>` is NEVER trusted for storage (`crates/corelink-container/src/routes/cargo.rs:27-35`).
-- A write must pass BOTH the scope header AND the PAT-derived `can_write` bit (F27), closing the single-header-trust gap — enforced in `cargo_gate` (`crates/corelink-container/src/routes/cargo.rs:296-345`).
-- Per-operation scope is enforced before the adapter runs: PUT→write, GET/HEAD→read (`crates/corelink-container/src/routes/cargo.rs:289-304`).
-- An unmapped HTTP method is denied at the gate rather than assumed safe (fail-closed) (`crates/corelink-container/src/routes/cargo.rs:295-302`).
+- A write must pass BOTH the scope header AND the PAT-derived `can_write` bit (F27), closing the single-header-trust gap — enforced in `cargo_gate` (`crates/corelink-container/src/routes/cargo.rs:331-381`).
+- Per-operation scope is enforced before the adapter runs: PUT→write, GET/HEAD→read (`crates/corelink-container/src/routes/cargo.rs:303-316`).
+- A WebDAV `MKCOL` is a success no-op still gated on cache-write scope (the flat store's directories are implicit); it short-circuits before the F27 resolver and stores no body (`crates/corelink-container/src/routes/cargo.rs:295-301`).
+- An unmapped HTTP method is denied at the gate rather than assumed safe (fail-closed) (`crates/corelink-container/src/routes/cargo.rs:307-312`).
 
 # Gotchas
 - `nest` would flatten the adapter's `/:key` into a 2-segment matcher (`/cargo/:key`) and reject the
@@ -59,7 +64,8 @@ namespaced per tenant.
 4. `crates/corelink-container/src/routes/cargo.rs:187` — `resolver_from_verifier` (shared `PatVerifier`).
 5. `crates/corelink-container/src/routes/cargo.rs:29-35` — PAT-derived tenant; path never trusted.
 6. `crates/corelink-container/src/routes/cargo.rs:27-35` — tenant + scope trust model.
-7. `crates/corelink-container/src/routes/cargo.rs:277-304` — `cargo_gate` per-operation scope enforcement.
-8. `crates/corelink-container/src/routes/cargo.rs:289-304` — method→scope mapping + 403.
-9. `crates/corelink-container/src/routes/cargo.rs:295-302` — fail-closed unmapped method.
-10. `crates/corelink-container/src/routes/cargo.rs:296-345` — `cargo_gate` F27 two-layer write enforcement (scope header + `resolve_with_capability` `can_write`), executed.
+7. `crates/corelink-container/src/routes/cargo.rs:277-316` — `cargo_gate` per-operation scope enforcement.
+8. `crates/corelink-container/src/routes/cargo.rs:303-316` — method→scope mapping + 403.
+9. `crates/corelink-container/src/routes/cargo.rs:307-312` — fail-closed unmapped method.
+10. `crates/corelink-container/src/routes/cargo.rs:331-381` — `cargo_gate` F27 two-layer write enforcement (scope header + `resolve_with_capability` `can_write`), executed.
+11. `crates/corelink-container/src/routes/cargo.rs:295-301` — `cargo_gate` WebDAV `MKCOL` success no-op (gated on cache-write), the sccache/opendal real-client fix.
