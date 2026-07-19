@@ -1041,6 +1041,9 @@ async function extractAuth(
   // route keeps rejecting non-Bearer schemes with `invalid_scheme` (no bypass:
   // native CAS/AC, browser, and all other adapters are unchanged).
   allowBasicAuth = false,
+  // `ctx.waitUntil`, forwarded to the PAT-verify KV write-behind so it survives
+  // the response (a bare fire-and-forget kv.put is cancelled → KV never warms).
+  waitUntil?: (p: Promise<unknown>) => void,
 ): Promise<AuthResult> {
   // F18: PAT_SIGNING_KEY is the SOLE possession gate for the native plane (F3/F17).
   // Fail CLOSED and LOUD when it is absent or too short — never silently skip the
@@ -1232,6 +1235,7 @@ async function extractAuth(
   const verify = await verifyPatRowCached(readSession, parsed.tokenId, {
     primaryDb: env.CONFIG_DB,
     ...(kvBinding ? { kv: kvBinding } : {}),
+    ...(waitUntil ? { waitUntil } : {}),
   });
   if (verify.kind === "error") {
     // D1 errors (network partition, DB unavailable) must not fail-open. Return a
@@ -2536,7 +2540,12 @@ const baseHandler: ExportedHandler<Env> = {
       // route. pip/uv can emit nothing but URL-embedded Basic; every other
       // surface (native CAS/AC, npm `_authToken` Bearer, cargo/sccache Bearer,
       // browser) still rejects non-Bearer schemes with `invalid_scheme`.
-      const result = await extractAuth(request, env, route.routeKind === "pip");
+      const result = await extractAuth(
+        request,
+        env,
+        route.routeKind === "pip",
+        ctx.waitUntil.bind(ctx),
+      );
       if (!result.ok) {
         // OCI (oci_v2 / oci_token) never reaches here — it is handled by the
         // dedicated pass-through branch ABOVE (which forwards to the container

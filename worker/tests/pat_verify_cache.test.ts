@@ -289,6 +289,22 @@ describe("verifyPatRowCached — L2 KV cache", () => {
     const { db } = makePatD1({});
     expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { kv, nowMs: 1_000 })).kind).toBe("found");
   });
+
+  it("hands the KV write-behind to waitUntil (so it survives the response, not a cancelled void)", async () => {
+    // The bug this guards: a bare `void kv.put(...)` is cancelled when the Worker
+    // returns, so KV never warms. With waitUntil the write is registered to
+    // outlive the response — assert the promise is handed over AND completes.
+    const { kv, puts, current } = makeKv({ seed: null });
+    const { db } = makePatD1({});
+    const registered: Promise<unknown>[] = [];
+    const waitUntil = (p: Promise<unknown>) => registered.push(p);
+    const r = await verifyPatRowCached(db, TEST_TOKEN_ID, { kv, waitUntil, nowMs: 1_000 });
+    expect(r.kind).toBe("found");
+    expect(registered).toHaveLength(1); // the put was handed to waitUntil, not awaited inline
+    await Promise.all(registered); // the runtime would drain these post-response
+    expect(puts()).toBe(1);
+    expect(JSON.parse(current()!)).toMatchObject({ tenant_id: TEST_TENANT_ID });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
