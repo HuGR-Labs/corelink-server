@@ -32,7 +32,7 @@ All four URLs added via `POST /v1/redirect_urls`:
 
 | URL                                     | Clerk ID                      | Purpose                        |
 |-----------------------------------------|-------------------------------|--------------------------------|
-| `https://corelink-admin.humangr.com`    | `ru_3EPv51K6uYXlf0P6015CpV6TG0w` | Admin UI — Cloudflare Pages    |
+| `https://humangr.com`    | `ru_3EPv51K6uYXlf0P6015CpV6TG0w` | Admin UI — Cloudflare Pages    |
 | `https://www.humangr.com`               | `ru_3EPv4xKXZ8wNAR3b6LkYv2B1z96` | Production marketing site      |
 | `http://localhost:3000`                 | `ru_3EPv57oRnIkorVZ3v9qowg4pERU` | Next.js local dev (default)    |
 | `http://localhost:3001`                 | `ru_3EPv58WmY5FucSjAS6BDSjKahTV` | Next.js local dev (alternate)  |
@@ -48,7 +48,7 @@ Updated via `PATCH /v1/instance` (`allowed_origins` field):
 
 ```json
 [
-  "https://corelink-admin.humangr.com",
+  "https://humangr.com",
   "https://www.humangr.com",
   "http://localhost:3000",
   "http://localhost:3001"
@@ -77,7 +77,7 @@ When promoting to a **production** Clerk instance, the following must be re-appl
 
 1. Re-run this same `POST /v1/redirect_urls` flow against the production `CLERK_SECRET_KEY`
 2. Set `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` in Cloudflare Pages environment variables (production)
-3. Confirm the production domain `corelink-admin.humangr.com` resolves and has a valid TLS cert
+3. Confirm the production domain `humangr.com` resolves and has a valid TLS cert
 4. The production Clerk instance may restrict certain API operations — check Clerk dashboard for any
    pending domain verification requirements
 
@@ -88,7 +88,7 @@ When promoting to a **production** Clerk instance, the following must be re-appl
 Re-listing `GET /v1/redirect_urls` after the run confirmed all 4 URLs present:
 
 ```
-corelink-admin.humangr.com present: YES
+humangr.com present: YES
 www.humangr.com present: YES
 localhost:3000 present: YES
 localhost:3001 present: YES

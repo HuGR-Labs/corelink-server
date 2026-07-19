@@ -31,7 +31,7 @@ exactly 5 hosts (per `smoke-prod-corelink.sh` `DNS_PLAN`):
 |---|---|
 | `corelink-api.humangr.com`    | worker (`corelink-prod.…workers.dev`) |
 | `corelink-signup.humangr.com` | worker |
-| `corelink-admin.humangr.com`  | worker |
+| `humangr.com`  | worker |
 | `corelink-app.humangr.com`    | pages (`corelink-admin-ui.pages.dev`) — the customer console UI |
 | `corelink-docs.humangr.com`   | pages (`corelink-docs.pages.dev`) |
 

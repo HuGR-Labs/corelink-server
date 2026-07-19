@@ -26,7 +26,7 @@ name: admin-ui — CF Worker deploy
 #   SENTRY_AUTH_TOKEN  (optional — enables source-map upload)
 #
 # Custom domain: bound directly to the Worker in apps/admin-ui/wrangler.toml
-# (`routes = [{ pattern = "corelink-admin.humangr.com", custom_domain = true }]`),
+# (`routes = [{ pattern = "humangr.com", custom_domain = true }]`),
 # so `wrangler deploy` provisions it — no manual Pages-dashboard step.
 
 on:
@@ -129,5 +129,5 @@ jobs:
         if: success()
         run: |
           echo "Deployed Worker: corelink-admin-ui"
-          echo "Production URL: https://corelink-admin.humangr.com"
+          echo "Production URL: https://humangr.com"
           echo "Commit: ${{ github.sha }}"

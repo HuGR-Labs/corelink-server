@@ -92,7 +92,7 @@ HOSTS=(
   "corelink-app.humangr.com|pages|"
   "corelink-docs.humangr.com|pages|"
   "corelink-signup.humangr.com|worker|"
-  "corelink-admin.humangr.com|worker|"
+  "humangr.com|worker|"
   "corelink-get.humangr.com|worker|"
   "status.corelink.humangr.com|statuspage|hugrl.betteruptime.com"
 )

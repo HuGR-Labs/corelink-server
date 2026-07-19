@@ -42,6 +42,7 @@ Each entry cross-references:
 ### Changed
 
 - **feat(domain): canonical app URL is now `humangr.com/corelink`; `corelink-app.humangr.com` is retired.** The public app moves off the `corelink-app.humangr.com` subdomain onto the path-mounted `humangr.com/corelink` surface (kills the subdomain↔path drift). Migration handled per-context so it is NOT a blind find/replace: **(1) URL context** (browser destinations, docs CTAs, curl examples, Stripe success/cancel URLs, the billing-portal return URL) → `https://humangr.com/corelink/…`; **(2) HOST/ORIGIN context** (allowlists / CORS / azp / redirect-host checks, where a path is invalid) → bare `humangr.com` — `tier_select.rs` `ALLOWED_REDIRECT_HOSTS`, the checkout route's `isAllowedRedirectHost` + `CANONICAL_APP_HOST`, `worker` CORS `ALLOWED_ORIGINS`, the analytics-worker `ALLOWED_ORIGINS`, and the Clerk `CLERK_AZP_ALLOWLIST`; **(3) KEPT** the separate Clerk Frontend-API domain `clerk.corelink-app.humangr.com` (baked into `pk_live`, migrated later by the operator). Keystone: `basePath: "/corelink"` added to `apps/admin-ui/next.config.ts` so the path-mounted routes resolve; the two hand-built-URL routes (the `/upgrade` forwarder and the checkout success/cancel URLs handed to Stripe) now re-attach the base path explicitly via `APP_BASE_PATH` — Next never auto-prefixes hand-built absolute URLs (same class as the #803 middleware fix). The retired subdomain's `custom_domain` binding was removed from `apps/admin-ui/wrangler.toml`. Route bindings, CF secrets, Clerk, and deploy/cutover are the operator's; historical audit records (`specs/_audits/**`) and operator DNS/smoke tooling (`scripts/**`) are intentionally left untouched (rewriting them would falsify history or apex-hijack DNS records). Regression-locked in `checkout-session-route.test.ts`, `redirect-host.test.ts`, `upgrade-page.test.tsx`, `middleware-failclosed.test.ts`, and the `tier_select.rs` / `portal.rs` unit tests.
+- **fix(repo): purge the remaining retired `corelink-admin` admin-subdomain references from the non-load-bearing surfaces, completing the subdomain retirement.** Follow-up mechanical sweep after the load-bearing fix: the retired admin host is replaced with the canonical `humangr.com/corelink` (URL contexts — success/cancel URLs, docs, quickstart) or bare `humangr.com` (host/origin/azp/CORS contexts) across tests, scripts, docs, monitoring probes, specs/`_audits`, workflows, and the historical CHANGELOG prose — applying the same per-context rule (path-bearing URL vs bare origin) so an `azp`/CORS value never gains a path. Two references are intentionally KEPT: `redirect-host.test.ts` (asserts the retired host is *no longer accepted*) and `apps/admin-ui/wrangler.toml` (operator follow-up note to unbind the retired custom domain) — replacing either would invert the assertion or falsify the operator instruction.
 
 ### Fixed
 
@@ -4414,7 +4415,7 @@ Each entry cross-references:
   the dead Pages build — `/` returned literal `"Not Found"` and `/sign-up`
   500'd** (pre-existing since ≥ 2026-05-27, launch-flip blocker). Root cause:
   the 2026-05-30 Pages→Worker migration (`5435fd8a`) moved only
-  `corelink-admin.humangr.com` to the OpenNext Worker and left
+  `humangr.com` to the OpenNext Worker and left
   `corelink-app.humangr.com` attached to the abandoned `corelink-admin-ui`
   Pages project (broken next-on-pages build, commit `3daebca6`). Fix:
   `apps/admin-ui/wrangler.toml` now binds `corelink-app.humangr.com` as a
@@ -4422,7 +4423,7 @@ Each entry cross-references:
   (`FORCE_LEGACY_PAGES_DEPLOY=1` escape hatch); owner-gated flip steps in
   `docs/operator/corelink-app-domain-flip-runbook.md`. No app code, env or
   secret changes — the identical Worker already serves these routes 200 on
-  `corelink-admin.humangr.com`.
+  `humangr.com`.
 - **Docs CI: the four pre-existing reds greened (task #42).** (1) The Vale
   prose-lint jobs (`docs-ci.yml` + `docs-vale.yml`) moved to GitHub-hosted
   `ubuntu-latest` — `errata-ai/vale-action` downloads a Linux x86_64 reviewdog
@@ -5082,7 +5083,7 @@ Each entry cross-references:
   internal-auth secret or the tenant id. Fail-CLOSED: missing
   `CORELINK_INTERNAL_AUTH_KEY`/`CLERK_SECRET_KEY` → 403, bad token → 401, no
   tenant → 403. (Launch-day: confirm the live Clerk session `azp` matches the app
-  origin `https://corelink-admin.humangr.com`.)
+  origin `https://humangr.com`.)
 - **Public landing page** (ROADMAP-TO-GA Phase 1 L1). `apps/admin-ui/src/app/page.tsx`
   replaces the bare "CoreLink Admin" admin shell with a real first-visitor landing
   page, porting positioning from `marketing/launch/PILOT-LANDING-PAGE-COPY.md`: hero

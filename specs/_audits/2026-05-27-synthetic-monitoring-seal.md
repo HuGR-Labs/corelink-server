@@ -64,7 +64,7 @@ references:
 | 3 | `corelink-docs` | `https://corelink-docs.humangr.com` | 60s | GET | status 200 |
 | 4 | `corelink-signup-health` | `https://corelink-signup.humangr.com` | 60s | GET | status 200 |
 | 5 | `corelink-get-install` | `https://corelink-get.humangr.com` | 60s | GET | status 200 + `Content-Type: text/plain` |
-| 6 (R27) | `corelink-admin-health` | `https://corelink-admin.humangr.com/health` | 60s | GET | status 200 |
+| 6 (R27) | `corelink-admin-health` | `https://humangr.com/corelink/health` | 60s | GET | status 200 |
 | 7 (R27) | `corelink-get-head` | `https://corelink-get.humangr.com` | 60s | HEAD | status 200 |
 
 All probes run from three regions: `us-east`, `eu`, `ap`.

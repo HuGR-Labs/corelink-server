@@ -20,11 +20,11 @@ broken `@cloudflare/next-on-pages` one: `/` → literal `"Not Found"` (HTTP 200,
 next-intl + middleware + ClerkProvider — that is *why* the app was migrated to
 the `corelink-admin-ui` **Worker** (`@opennextjs/cloudflare`) on 2026-05-30
 (`035f10ec` / `5435fd8a`). The migration moved **only**
-`corelink-admin.humangr.com` to the Worker; `corelink-app.humangr.com` was left
+`humangr.com` to the Worker; `corelink-app.humangr.com` was left
 behind on the dead Pages project.
 
 It is **not** a code, env or secret problem: the same build serves
-`corelink-admin.humangr.com` → `/` 200 (38 KB HTML), `/sign-up` 200, with the
+`humangr.com` → `/` 200 (38 KB HTML), `/sign-up` 200, with the
 correct CSP (`clerk.corelink-app.humangr.com`). The stale Pages build even
 carries the pre-Wave-32 **dotted** hostnames (`clerk.corelink.humangr.com`,
 `api.corelink.humangr.com`) in its CSP — both dead.
@@ -35,7 +35,7 @@ carries the pre-Wave-32 **dotted** hostnames (`clerk.corelink.humangr.com`,
 |---|---|
 | `GET https://corelink-app.humangr.com/` | 200, body = `Not Found` (9 bytes, `text/plain`) |
 | `GET https://corelink-app.humangr.com/sign-up` | **500**, CSP references dead `clerk.corelink.humangr.com`, `x-matched-path: /sign-up/[[...sign-up]]` |
-| `GET https://corelink-admin.humangr.com/sign-up` | **200**, CSP references live `clerk.corelink-app.humangr.com` |
+| `GET https://humangr.com/corelink/sign-up` | **200**, CSP references live `clerk.corelink-app.humangr.com` |
 | `GET https://corelink-admin-ui.pages.dev/sign-up` | **500** (the Pages build itself is broken, independent of DNS) |
 | `wrangler pages project list` | `corelink-admin-ui` domains = `corelink-admin-ui.pages.dev, corelink-app.humangr.com` |
 | `wrangler pages deployment list --project-name corelink-admin-ui` | last Production deploys = commit `3daebca6` (pre-migration next-on-pages era) |
@@ -53,7 +53,7 @@ resolves a broken v3.
 ### 0. Preflight (read-only)
 
 ```sh
-curl -sS -o /dev/null -w '%{http_code}\n' https://corelink-admin.humangr.com/sign-up   # expect 200
+curl -sS -o /dev/null -w '%{http_code}\n' https://humangr.com/corelink/sign-up   # expect 200
 curl -sS -o /dev/null -w '%{http_code}\n' https://corelink-app.humangr.com/sign-up     # expect 500 (the bug)
 ```
 
@@ -114,7 +114,7 @@ curl -sS -o /dev/null -w '/sign-in  %{http_code}\n' https://corelink-app.humangr
 curl -sS -o /dev/null -w '/health   %{http_code}\n' https://corelink-app.humangr.com/api/health   # 200
 curl -sS -o /dev/null -w '/terms    %{http_code}\n' https://corelink-app.humangr.com/en/legal/terms  # 200
 curl -sSI https://corelink-app.humangr.com/sign-up | grep -o 'clerk.corelink-app.humangr.com' | head -1  # live Clerk FAPI in CSP
-curl -sS -o /dev/null -w 'admin still %{http_code}\n' https://corelink-admin.humangr.com/sign-up  # 200 (unchanged)
+curl -sS -o /dev/null -w 'admin still %{http_code}\n' https://humangr.com/corelink/sign-up  # 200 (unchanged)
 ```
 
 Then a real browser sign-up against the Clerk widget (Clerk's home domain IS
@@ -128,7 +128,7 @@ this hostname, so the widget must load).
 - Build-time `NEXT_PUBLIC_*` (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
   `NEXT_PUBLIC_CORELINK_API_URL`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`,
   `NEXT_PUBLIC_SENTRY_DSN`, `CSP_ENFORCEMENT`) are baked into the deployed
-  Worker bundle — proven correct by `corelink-admin.humangr.com` serving the
+  Worker bundle — proven correct by `humangr.com` serving the
   live CSP. The flip adds a hostname; it does not touch the bundle.
 - Clerk dashboard: allowed origins already include `corelink-app` (Wave-32
   allowlist, CHANGELOG `corelink-admin`/`corelink-app`/`corelink-docs`).

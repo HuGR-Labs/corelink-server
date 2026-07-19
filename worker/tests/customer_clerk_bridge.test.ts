@@ -351,7 +351,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
   it("valid Clerk session: forwards to the PER-TENANT DO with the exact server-trust headers", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};
@@ -381,7 +381,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
   it("STRIPS client-supplied trust headers before forwarding (spoof defence)", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request; doName?: string } = {};
@@ -655,7 +655,7 @@ describe("/v1/customer/* — Clerk session bridge (dashboard revival WP-1)", () 
   it("M2: rejects (401) when CLERK_ISSUER_URL is pinned and iss does not match", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://attacker.clerk.accounts.dev",
     } as never);
     const captured: { req?: Request; doName?: string } = {};

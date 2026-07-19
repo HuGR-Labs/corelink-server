@@ -34,7 +34,7 @@ Clear `[PASS]`/`[FAIL]` per probe; exit 0 only when all green.
 | corelink-app.humangr.com | `GET /` | 200 + security headers (XFO `DENY`, XCTO `nosniff`, HSTS, Referrer-Policy, Permissions-Policy, CSP w/ `frame-ancestors`) |
 | corelink-app.humangr.com | `GET /upgrade?plan=solo` | 307 → `/en/upgrade?plan=solo`; redirect chain ends 200 (signed-out Clerk round-trip) |
 | corelink-app.humangr.com | `GET /sign-up` | 200 |
-| corelink-admin.humangr.com | `GET /` | 200 + same security headers |
+| humangr.com | `GET /` | 200 + same security headers |
 | corelink-docs.humangr.com | `GET /` | 200 |
 | corelink-api.humangr.com | `GET /` | **404** fail-closed JSON (anything else = open unauthenticated surface or broken route binding) |
 | corelink-api.humangr.com | `GET /health` | 200 + `"status":"ok"` |

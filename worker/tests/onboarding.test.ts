@@ -89,8 +89,8 @@ async function onbFetch(env: Env, headers: Record<string, string>): Promise<Resp
     headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify({
       tier: "starter",
-      success_url: "https://corelink-admin.humangr.com/en/upgraded",
-      cancel_url: "https://corelink-admin.humangr.com/en/pricing",
+      success_url: "https://humangr.com/corelink/en/upgraded",
+      cancel_url: "https://humangr.com/corelink/en/pricing",
     }),
   });
   return workerHandler.fetch!(req, env, makeCtx());
@@ -104,7 +104,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   it("verifies Clerk, resolves tenant, injects internal-auth, forwards to the DO", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request } = {};
@@ -124,7 +124,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   it("STRIPS client-supplied internal-auth + tenant-id + Clerk JWT before forwarding (CRITICAL-2)", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request } = {};
@@ -185,7 +185,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   it("returns 403 when the verified session has no CoreLink tenant", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_no_tenant",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request } = {};
@@ -210,7 +210,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   it("fail-CLOSED: 403 when CORELINK_INTERNAL_AUTH_KEY is unbound (cannot authorize to container)", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request } = {};
@@ -229,7 +229,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   it("preserves the request body when forwarding to the DO", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request } = {};
@@ -245,7 +245,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   it("returns 401 when the verified token carries no subject (sub)", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: undefined,
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request } = {};
@@ -296,7 +296,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
   it("M1: accepts a legitimate corelink-admin token with correct azp + iss (happy path unbroken)", async () => {
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request } = {};
@@ -316,7 +316,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
     const ISSUER = "https://clerk.humangr.com";
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: ISSUER,
     } as never);
     const captured: { req?: Request } = {};
@@ -336,7 +336,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
     // Exact-pin mode: token's iss is a different (possibly spoofed) issuer.
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://attacker.clerk.accounts.dev",
     } as never);
     const captured: { req?: Request } = {};
@@ -355,7 +355,7 @@ describe("/v1/onboarding/* — Clerk edge-verification bridge (GAP-5)", () => {
     // No CLERK_ISSUER_URL set — shape-check fallback must accept a valid Clerk issuer.
     mockVerifyToken.mockResolvedValue({
       sub: "user_abc",
-      azp: "https://corelink-admin.humangr.com",
+      azp: "https://humangr.com",
       iss: "https://clerk.humangr.com",
     } as never);
     const captured: { req?: Request } = {};

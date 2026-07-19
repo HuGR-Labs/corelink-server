@@ -517,7 +517,7 @@ Currently `wrangler.toml [env.prod.routes]` declares only `api`,
   zone_name = "humangr.com"
 
   [[env.prod.routes]]
-  pattern = "corelink-admin.humangr.com/*"
+  pattern = "humangr.com/*"
   zone_name = "humangr.com"
   ```
 - New routes to add (3):

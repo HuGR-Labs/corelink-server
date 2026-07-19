@@ -18,7 +18,7 @@ This directory contains the BetterStack synthetic monitoring probe definitions f
 | 3 | `corelink-docs` | `https://corelink-docs.humangr.com` | 60s | GET | Docusaurus CF Pages; expect 200 |
 | 4 | `corelink-signup-health` | `https://corelink-signup.humangr.com` | 60s | GET | Signup worker; expect 200 |
 | 5 | `corelink-get-install` | `https://corelink-get.humangr.com` | 60s | GET | Install script; expect 200 + `text/plain` |
-| 6 | `corelink-admin-health` | `https://corelink-admin.humangr.com/health` | 60s | GET | R27 — admin worker health |
+| 6 | `corelink-admin-health` | `https://humangr.com/corelink/health` | 60s | GET | R27 — admin worker health |
 | 7 | `corelink-get-head` | `https://corelink-get.humangr.com` | 60s | HEAD | R27 — lightweight HEAD check |
 
 Probes run from three regions: `us-east`, `eu`, `ap`.

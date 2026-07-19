@@ -215,7 +215,7 @@ const config: Config = {
   // makes it lawful as "necessary measurement" under both ePrivacy and LGPD
   // without an opt-in dialog. We still document the choice in the privacy
   // page; the admin-ui dashboard uses the existing cookie-consent gate on a
-  // separate Plausible domain (`corelink-admin.humangr.com`).
+  // separate Plausible domain (`humangr.com`).
   scripts: [
     {
       src: "https://plausible.io/js/script.js",

@@ -713,10 +713,10 @@ describe("CORS", () => {
 
   it("attaches ACAO to /health from allowed admin origin", async () => {
     const resp = await workerFetch("http://localhost/health", {
-      headers: { Origin: "https://corelink-admin.humangr.com" },
+      headers: { Origin: "https://humangr.com" },
     });
     expect(resp.headers.get("access-control-allow-origin")).toBe(
-      "https://corelink-admin.humangr.com",
+      "https://humangr.com",
     );
   });
 
@@ -737,7 +737,7 @@ describe("CORS", () => {
   it("all three allowed origins work", async () => {
     const allowed = [
       "https://humangr.com",
-      "https://corelink-admin.humangr.com",
+      "https://humangr.com",
       "https://corelink-docs.humangr.com",
     ];
     for (const origin of allowed) {

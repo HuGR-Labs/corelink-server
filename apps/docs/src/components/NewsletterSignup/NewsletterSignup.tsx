@@ -42,7 +42,7 @@ import styles from "./NewsletterSignup.module.css";
  * header for `*.humangr.com` origins (see
  * `apps/admin-ui/src/app/api/newsletter/subscribe/route.ts`).
  */
-const DEFAULT_SUBSCRIBE_URL = "https://corelink-admin.humangr.com/api/newsletter/subscribe";
+const DEFAULT_SUBSCRIBE_URL = "https://humangr.com/corelink/api/newsletter/subscribe";
 
 export interface NewsletterSignupProps {
   /**

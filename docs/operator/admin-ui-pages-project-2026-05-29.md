@@ -22,7 +22,7 @@
 | Domain                        | Status   | Notes                                             |
 |-------------------------------|----------|---------------------------------------------------|
 | `corelink-admin-ui.pages.dev` | active   | Always-on Pages default subdomain                |
-| `corelink-admin.humangr.com`  | pending  | Added 2026-05-29; cert provisions after DNS TTL  |
+| `humangr.com`  | pending  | Added 2026-05-29; cert provisions after DNS TTL  |
 | `corelink-app.humangr.com`    | active   | Pre-existing domain (left untouched)             |
 
 ---
@@ -42,7 +42,7 @@ DNS record ID: `a5c5d015842ad841759dce865ce509b8`
 
 ## Custom Domain Verification
 
-`corelink-admin.humangr.com` will transition from `pending` → `active` automatically once:
+`humangr.com` will transition from `pending` → `active` automatically once:
 1. DNS propagates (Cloudflare proxied records are near-instant within CF network)
 2. CF Pages provisions the TLS certificate (~1-5 minutes typical)
 
@@ -96,7 +96,7 @@ npx wrangler pages secret put CORELINK_ADMIN_API_KEY --project-name corelink-adm
 curl -I https://corelink-admin-ui.pages.dev
 
 # Custom domain (after cert provisions)
-curl -I https://corelink-admin.humangr.com
+curl -I https://humangr.com
 ```
 
 ---

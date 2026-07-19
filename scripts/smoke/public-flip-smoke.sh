@@ -21,7 +21,7 @@
 #                            200 (signed-out → Clerk /sign-in round-trip per
 #                            src/app/[locale]/upgrade/page.tsx)
 #       /sign-up           → 200 (Clerk widget page)
-#   corelink-admin.humangr.com    same OpenNext Worker (operator domain).
+#   humangr.com    same OpenNext Worker (operator domain).
 #       /                  → 200 + security headers
 #   corelink-docs.humangr.com     docs Pages (apps/docs/docusaurus.config.ts).
 #       /                  → 200
@@ -40,7 +40,7 @@
 set -euo pipefail
 
 APP_URL="https://corelink-app.humangr.com"
-ADMIN_URL="https://corelink-admin.humangr.com"
+ADMIN_URL="https://humangr.com"
 DOCS_URL="https://corelink-docs.humangr.com"
 API_URL="https://corelink-api.humangr.com"
 
@@ -133,8 +133,8 @@ probe_status "app GET /upgrade?plan=solo (follow redirects → sign-in)" \
   "$APP_URL/upgrade?plan=solo" 200 -L
 probe_status "app GET /sign-up" "$APP_URL/sign-up" 200
 
-# ── corelink-admin.humangr.com (operator domain, same Worker) ──────────────
-step "corelink-admin.humangr.com (OpenNext Worker — operator domain)"
+# ── humangr.com (operator domain, same Worker) ──────────────
+step "humangr.com (OpenNext Worker — operator domain)"
 probe_status "admin landing GET /" "$ADMIN_URL/" 200
 probe_security_headers "admin landing" "$ADMIN_URL/"
 

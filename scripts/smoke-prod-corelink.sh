@@ -40,7 +40,7 @@ DNS_PLAN["corelink-api.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev
 DNS_PLAN["corelink-app.humangr.com"]="corelink-admin-ui.pages.dev"
 DNS_PLAN["corelink-docs.humangr.com"]="corelink-docs.pages.dev"
 DNS_PLAN["corelink-signup.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
-DNS_PLAN["corelink-admin.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
+DNS_PLAN["humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
 DNS_PLAN["status.corelink.humangr.com"]="hugrl.betteruptime.com"
 
 # Ordered list for deterministic output (6 active records; 4 deleted hosts removed)
@@ -49,7 +49,7 @@ DNS_NAMES=(
   "corelink-app.humangr.com"
   "corelink-docs.humangr.com"
   "corelink-signup.humangr.com"
-  "corelink-admin.humangr.com"
+  "humangr.com"
   "status.corelink.humangr.com"
 )
 
@@ -179,7 +179,7 @@ Check inventory:
   [10] dig corelink-app.humangr.com       → corelink-admin-ui.pages.dev
   [11] dig corelink-docs.humangr.com      → corelink-docs.pages.dev
   [12] dig corelink-signup.humangr.com    → corelink-prod.gustavoschneiter.workers.dev
-  [13] dig corelink-admin.humangr.com     → corelink-prod.gustavoschneiter.workers.dev
+  [13] dig humangr.com     → corelink-prod.gustavoschneiter.workers.dev
   [14] dig status.corelink.humangr.com    → hugrl.betteruptime.com (NO-OP — Phase A)
   (acme-dev, sandbox, go, staging: DELETED in flat-rename surface reduction)
 

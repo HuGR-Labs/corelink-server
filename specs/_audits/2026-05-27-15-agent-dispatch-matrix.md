@@ -143,7 +143,7 @@ Orchestrator-decided:
 - **R26** [WP-2.1] `cargo-init` checks `sccache --version` and emits
   actionable error if missing (does NOT auto-install).
 - **R27** [WP-7.1] `corelink-signup.humangr.com` and
-  `corelink-admin.humangr.com` get separate monitors (R18) even though
+  `humangr.com` get separate monitors (R18) even though
   same Worker — different routes, different SLOs.
 
 ---
@@ -1057,7 +1057,7 @@ BetterStack from US/EU/AP regions.
 | 4 | `https://corelink-docs.humangr.com` | GET | 60s | 200 | `Docusaurus` substring |
 | 5 | `https://corelink-signup.humangr.com` | GET | 60s | 200 | redirect-to-Clerk OK |
 
-Plus monitors for `corelink-admin.humangr.com` + `corelink-get.humangr.com`
+Plus monitors for `humangr.com` + `corelink-get.humangr.com`
 (R27): each gets own monitor.
 
 BetterStack:

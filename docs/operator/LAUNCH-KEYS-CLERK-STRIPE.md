@@ -24,7 +24,7 @@ Code-verified against `main` 2026-07-10. Prod host: `corelink-signup.humangr.com
    subscribe to **`user.created`** (this is what auto-provisions the tenant). Its
    signing secret = `CLERK_WEBHOOK_SECRET` above.
 2. **Allowed origins / redirect URLs + Frontend-API domain** → the flat prod hosts
-   (`corelink-app.humangr.com`, `corelink-admin.humangr.com`). The admin-ui CSP must
+   (`corelink-app.humangr.com`, `humangr.com`). The admin-ui CSP must
    list Clerk's Frontend-API host or the sign-in widget is CSP-blocked.
 
 **One caveat I handle at wiring time:** `CLERK_ISSUER_URL` is shared with the githugr

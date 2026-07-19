@@ -712,7 +712,7 @@ From `wrangler.toml` `[env.prod.routes]` (lines 239-249):
 ```
 corelink-api.humangr.com/*       → Worker (API)
 corelink-signup.humangr.com/*    → Worker (signup)
-corelink-admin.humangr.com/*     → Worker (admin)
+humangr.com/*     → Worker (admin)
 ```
 
 Pages-backed (not in worker routes, via CF Pages custom domain):
@@ -729,7 +729,7 @@ Status page: `status.corelink.humangr.com → hugrl.betteruptime.com` (CNAME per
 | `https://corelink-api.humangr.com/v2/` | 401 | application/json | `$.errors[0].code == "UNAUTHORIZED"` |
 | `https://corelink-api.humangr.com/health` | 200 | application/json | `$.status == "ok"` (worker /health) |
 | `https://corelink-signup.humangr.com/health` | 200 | application/json | `$.status == "ok"` |
-| `https://corelink-admin.humangr.com/health` | 200 | application/json | `$.status == "ok"` |
+| `https://humangr.com/corelink/health` | 200 | application/json | `$.status == "ok"` |
 | `https://app.corelink.humangr.com` | 200 | text/html | body contains `CoreLink` |
 | `https://docs.corelink.humangr.com` | 200 | text/html | body contains `CoreLink` |
 | `https://status.corelink.humangr.com` | 200 or 301 | — | DNS → hugrl.betteruptime.com |
@@ -771,7 +771,7 @@ Auth: `Authorization: Bearer <BETTERSTACK_API_TOKEN>` header.
 ### Open questions
 
 - Q1: Phase A deferred component creation (monitors → sections → resources) to Phase H. WP-7.1 should confirm which BetterStack alert policy ID to use for the 5 monitors.
-- Q2: `corelink-signup.humangr.com` and `corelink-admin.humangr.com` worker routes are bound but the underlying routes serve the same Worker binary. Should they have separate BetterStack monitors or share one?
+- Q2: `corelink-signup.humangr.com` and `humangr.com` worker routes are bound but the underlying routes serve the same Worker binary. Should they have separate BetterStack monitors or share one?
 - Q3: `https://corelink-api.humangr.com/health` (Worker-level) vs `https://corelink-api.humangr.com/api/health` (server-level) are different endpoints. Both should be monitored separately for layered health visibility.
 
 ---

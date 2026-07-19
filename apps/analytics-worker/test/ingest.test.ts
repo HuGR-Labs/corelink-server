@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { handleIngest } from "../src/ingest";
 import type { Env } from "../src/types";
 
-const ALLOWED = "https://corelink-admin.humangr.com";
+const ALLOWED = "https://humangr.com";
 const KEY = "k".repeat(40);
 
 function makeEnv(): { env: Env; rows: unknown[][] } {

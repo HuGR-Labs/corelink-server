@@ -28,7 +28,7 @@ import styles from "./legal.module.css";
 const GITHUB_REPO = "https://github.com/HumanGuardrail/corelink-server";
 const COMMIT_HISTORY_URL = `${GITHUB_REPO}/commits/main/apps/docs/src/pages/legal/sub-processors.tsx`;
 const NEWSLETTER_SUBSCRIBE_URL =
-  "https://corelink-admin.humangr.com/newsletter";
+  "https://humangr.com/corelink/newsletter";
 const PRIVACY_EMAIL = "privacy@humangr.com";
 
 interface SubProcessor {

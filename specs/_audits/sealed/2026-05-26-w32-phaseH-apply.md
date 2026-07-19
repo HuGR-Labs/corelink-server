@@ -74,7 +74,7 @@ following sed patches:
 | `app.corelink.humangr.com` | `corelink-app.humangr.com` | ACTIVE |
 | `docs.corelink.humangr.com` | `corelink-docs.humangr.com` | ACTIVE |
 | `signup.corelink.humangr.com` | `corelink-signup.humangr.com` | ACTIVE |
-| `admin.corelink.humangr.com` | `corelink-admin.humangr.com` | ACTIVE |
+| `admin.corelink.humangr.com` | `humangr.com` | ACTIVE |
 | `acme-dev.corelink.humangr.com` | (DELETED) | Surface reduction |
 | `sandbox.corelink.humangr.com` | (DELETED) | Surface reduction |
 | `go.corelink.humangr.com` | (DELETED) | Surface reduction |
@@ -150,7 +150,7 @@ verification used for all checks).
 |---|---|---|
 | https://corelink-api.humangr.com/health | 200 | PASS |
 | https://corelink-signup.humangr.com/health | 200 | PASS |
-| https://corelink-admin.humangr.com/health | 200 | PASS |
+| https://humangr.com/corelink/health | 200 | PASS |
 | https://corelink-app.humangr.com | 200 | PASS |
 | https://corelink-docs.humangr.com | 200 | PASS |
 
@@ -276,7 +276,7 @@ was set up in Phase A). This is a future-state record.
 |---|---|
 | `workers_dev` | false |
 | `cpu_ms` | 30 |
-| Routes | corelink-api.humangr.com/*, corelink-signup.humangr.com/*, corelink-admin.humangr.com/* |
+| Routes | corelink-api.humangr.com/*, corelink-signup.humangr.com/*, humangr.com/* |
 | Secrets | 17 deployed (16 MVP + STRIPE_WEBHOOK_SECRET) |
 
 ### DNS layer
@@ -287,7 +287,7 @@ was set up in Phase A). This is a future-state record.
 | corelink-app.humangr.com | CNAME | corelink-admin-ui.pages.dev | yes |
 | corelink-docs.humangr.com | CNAME | corelink-docs.pages.dev | yes |
 | corelink-signup.humangr.com | CNAME | corelink-prod.gustavoschneiter.workers.dev | yes |
-| corelink-admin.humangr.com | CNAME | corelink-prod.gustavoschneiter.workers.dev | yes |
+| humangr.com | CNAME | corelink-prod.gustavoschneiter.workers.dev | yes |
 | status.corelink.humangr.com | CNAME | hugrl.betteruptime.com | no (Phase A DNS-only) |
 
 ### Email layer (SPF/DKIM/DMARC)
