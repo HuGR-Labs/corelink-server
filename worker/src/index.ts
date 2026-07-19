@@ -1264,16 +1264,22 @@ async function extractAuth(
   // or erased (tenant_offboarding_state.state ∈ {suspended, erased}, migration
   // 0046). Without this gate a suspended/abusive tenant keeps full CAS/AC read
   // + write access until every one of its PATs is individually revoked. The
-  // check is a single-flight + ~30s-TTL cached D1 read (mirrors #667's
-  // CachedTierResolver — see lib/tenant_suspend_gate.ts), so it adds no
-  // uncached per-request D1 round-trip to the hot path. It reads through the
-  // same `first-unconstrained` replica session as the pat lookup (perf #99):
-  // a newly-suspended tenant is honored only for the ≤replication-lag window,
-  // which is already inside this gate's own ~30s TTL tolerance. Fail-OPEN on a
-  // D1 fault (availability), but a KNOWN-suspended cached value still denies.
-  // The caller maps `tenant_suspended` to 403 (fail-closed, distinct from the
-  // 401 bad-credential arms and the 503 transient-infra arms).
-  if (await isTenantSuspended(readSession, row.tenant_id)) {
+  // check is a three-tier read — L1 isolate → L2 KV (`tsusp:` on METADATA_KV) →
+  // L3 D1 (the replica session), mirroring the pat read's L2 (ADR-0070) — so it
+  // adds no uncached per-request far-D1 round-trip on the SAM hot path. It reads
+  // through the same `first-unconstrained` replica session as the pat lookup
+  // (perf #99) and, on a cold L1+L2, serves the rest of the colo's traffic from
+  // the edge-local KV. A newly-suspended tenant is honored only for the bounded
+  // ≤KV-TTL enforcement window (ADR-0070's ratified trade-off; PAT revoke stays
+  // the immediate lever). Fail-OPEN on a D1 fault (availability), but a
+  // KNOWN-suspended cached value still denies. The caller maps `tenant_suspended`
+  // to 403 (fail-closed, distinct from the 401 bad-credential and 503 infra arms).
+  if (
+    await isTenantSuspended(readSession, row.tenant_id, {
+      ...(kvBinding ? { kv: kvBinding } : {}),
+      ...(waitUntil ? { waitUntil } : {}),
+    })
+  ) {
     return { ok: false, reason: "tenant_suspended" };
   }
 
