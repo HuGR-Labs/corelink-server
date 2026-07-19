@@ -4,7 +4,7 @@ title: "sccache / cargo (WebDAV) surface"
 description: "The sccache HTTP build-cache surface mounted at /cargo/<tenant>/<key>, with nest_service path bridging, WebDAV MKCOL/PROPFIND/DELETE support for the real sccache/opendal client, and F27 two-layer write enforcement."
 source_files:
   - "crates/corelink-container/src/routes/cargo.rs"
-checkpoint_sha: "64383adeeabaa89b69e9376c37abe2dea0a965fd"
+checkpoint_sha: "77db914cce647aa983819a6b9955c9315f7d5a11"
 provenance: "AUTHORED"
 tags: ["surfaces", "sccache", "cargo", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -45,7 +45,7 @@ namespaced per tenant.
    a `207 Multi-Status` from the per-tenant moat lookup, carrying the stored blob's real byte length as
    `getcontentlength` on a hit, or `404` on a miss (opendal then proceeds to write); a trailing-slash
    collection path returns a minimal `207` (`crates/corelink-container/src/routes/cargo.rs:324-340`;
-   `crates/corelink-container/src/routes/cargo.rs:525-558`; `crates/corelink-container/src/routes/cargo.rs:637-647`).
+   `crates/corelink-container/src/routes/cargo.rs:525-558`; `crates/corelink-container/src/routes/cargo.rs:641-658`).
 6. `cargo_gate` short-circuits a WebDAV `DELETE` (opendal's write-check cleanup) — gated on cache-write AND
    the PAT's D1 `can_write` bit (F27, keyed by the PAT-resolved tenant), it removes the per-tenant
    key→content-hash map row and returns `204` (idempotent even if absent); the CAS blob is left for GC
@@ -61,7 +61,7 @@ namespaced per tenant.
 - A write must pass BOTH the scope header AND the PAT-derived `can_write` bit (F27), closing the single-header-trust gap — enforced for PUT in `cargo_gate` and mirrored for the WebDAV `DELETE` (`crates/corelink-container/src/routes/cargo.rs:392-459`; `crates/corelink-container/src/routes/cargo.rs:577-583`).
 - Per-operation scope is enforced before the adapter runs: PUT→write, GET/HEAD→read; PROPFIND is a read (cache-read), DELETE is a write (cache-write) (`crates/corelink-container/src/routes/cargo.rs:366-378`; `crates/corelink-container/src/routes/cargo.rs:325-326`; `crates/corelink-container/src/routes/cargo.rs:351-352`).
 - The WebDAV control methods are handled in the gate, not routed to the adapter: `MKCOL`/`PROPFIND`/`DELETE` short-circuit `cargo_gate` because axum's `MethodRouter` cannot route them (they would 405) (`crates/corelink-container/src/routes/cargo.rs:307-313`; `crates/corelink-container/src/routes/cargo.rs:324-340`; `crates/corelink-container/src/routes/cargo.rs:350-363`).
-- A PROPFIND on an existing key reports the stored blob's real byte length in `getcontentlength`; an absent key is `404` (opendal treats it as not-found and writes) (`crates/corelink-container/src/routes/cargo.rs:550-556`; `crates/corelink-container/src/routes/cargo.rs:637-647`).
+- A PROPFIND on an existing key reports the stored blob's real byte length in `getcontentlength`; an absent key is `404` (opendal treats it as not-found and writes) (`crates/corelink-container/src/routes/cargo.rs:550-556`; `crates/corelink-container/src/routes/cargo.rs:641-658`).
 - A DELETE removes only the url→content-hash map row (the CAS blob is left for GC, as it may be shared by dedup); it is idempotent — `204` even for an absent key (`crates/corelink-container/src/routes/cargo.rs:599-605`).
 - An unmapped HTTP method is denied at the gate rather than assumed safe (fail-closed) (`crates/corelink-container/src/routes/cargo.rs:374-374`).
 
@@ -88,6 +88,6 @@ namespaced per tenant.
 10. `crates/corelink-container/src/routes/cargo.rs:307-313` — `cargo_gate` WebDAV `MKCOL` success no-op (gated on cache-write).
 11. `crates/corelink-container/src/routes/cargo.rs:324-340` — `cargo_gate` WebDAV `PROPFIND` short-circuit (cache-read gated), the opendal stat.
 12. `crates/corelink-container/src/routes/cargo.rs:525-558` — `handle_propfind`: moat lookup → `207` (present) / `404` (absent) / collection.
-13. `crates/corelink-container/src/routes/cargo.rs:637-647` — `propfind_file_response`: the `207 Multi-Status` XML with `getcontentlength`.
+13. `crates/corelink-container/src/routes/cargo.rs:641-658` — `PROPFIND_LAST_MODIFIED` + `propfind_file_response`: the `207 Multi-Status` XML with `getcontentlength` **and `getlastmodified`** (opendal's WebDAV stat deserializer treats `getlastmodified` as REQUIRED — a 207 without it fails `missing field getlastmodified` → sccache flags storage ReadOnly and never writes; a stable epoch httpdate is used since CAS objects are immutable).
 14. `crates/corelink-container/src/routes/cargo.rs:350-363` — `cargo_gate` WebDAV `DELETE` short-circuit (cache-write gated).
 15. `crates/corelink-container/src/routes/cargo.rs:566-606` — `handle_delete`: F27 `can_write` + PAT-resolved tenant → moat map-row removal → `204`.

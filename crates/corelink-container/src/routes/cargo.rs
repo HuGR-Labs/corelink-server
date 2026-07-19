@@ -631,15 +631,25 @@ async fn resolve_read_tenant(
     }
 }
 
-/// `207 Multi-Status` for an EXISTING key: `getcontentlength` + a `200 OK`
-/// propstat — the exact shape opendal's WebDAV stat parser accepts (empirically
-/// proven against the real `sccache` 0.15 binary).
+/// Fixed `getlastmodified` for every PROPFIND `207`. opendal's WebDAV stat
+/// deserializer treats `<D:getlastmodified>` as a REQUIRED field: a 207 without
+/// it fails with `missing field getlastmodified`, so the real `sccache` binary
+/// flags the whole storage ReadOnly and never writes (invisible to a 207-status
+/// check; caught only by a cold-store to warm-HIT round-trip). CAS objects are
+/// immutable + content-addressed, so a stable epoch httpdate is correct and keeps
+/// the response deterministic. RFC 1123 format.
+const PROPFIND_LAST_MODIFIED: &str = "Thu, 01 Jan 1970 00:00:00 GMT";
+
+/// `207 Multi-Status` for an EXISTING key: a `200 OK` propstat carrying
+/// `getcontentlength` and `getlastmodified` — the exact shape opendal's WebDAV
+/// stat parser accepts (empirically proven against the real `sccache` 0.15 binary).
 fn propfind_file_response(href: &str, size_bytes: u64) -> Response {
     let body = format!(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
          <D:multistatus xmlns:D=\"DAV:\"><D:response><D:href>{href}</D:href>\
          <D:propstat><D:prop><D:resourcetype/>\
-         <D:getcontentlength>{size_bytes}</D:getcontentlength></D:prop>\
+         <D:getcontentlength>{size_bytes}</D:getcontentlength>\
+         <D:getlastmodified>{PROPFIND_LAST_MODIFIED}</D:getlastmodified></D:prop>\
          <D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>",
         href = xml_escape(href),
     );
@@ -652,7 +662,8 @@ fn propfind_collection_response(href: &str) -> Response {
     let body = format!(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
          <D:multistatus xmlns:D=\"DAV:\"><D:response><D:href>{href}</D:href>\
-         <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>\
+         <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype>\
+         <D:getlastmodified>{PROPFIND_LAST_MODIFIED}</D:getlastmodified></D:prop>\
          <D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>",
         href = xml_escape(href),
     );
@@ -1051,6 +1062,14 @@ mod tests {
             body.contains("/cargo/tenant-abc/abc123object"),
             "href must echo the request path; got: {body}"
         );
+        // REGRESSION LOCK: opendal's WebDAV stat deserializer treats
+        // <D:getlastmodified> as REQUIRED — a 207 without it fails "missing field
+        // getlastmodified", so the real sccache binary flags storage ReadOnly and
+        // never writes (invisible to a 207-status check). Empirically proven.
+        assert!(
+            body.contains("<D:getlastmodified>"),
+            "207 MUST carry <D:getlastmodified> or opendal/sccache treats storage as ReadOnly; got: {body}"
+        );
     }
 
     /// PROPFIND on an ABSENT key → `404` (opendal treats it as not-found and
@@ -1137,6 +1156,13 @@ mod tests {
         assert!(
             body.contains("<D:collection/>"),
             "a collection stat must carry <D:collection/>; got: {body}"
+        );
+        // REGRESSION LOCK: the collection 207 is what opendal PROPFINDs on the
+        // tenant/dir root during its write-check — it MUST also carry
+        // <D:getlastmodified> or the deserialize fails and storage goes ReadOnly.
+        assert!(
+            body.contains("<D:getlastmodified>"),
+            "collection 207 MUST carry <D:getlastmodified> (opendal stat parser); got: {body}"
         );
     }
 
