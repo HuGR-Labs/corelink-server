@@ -3,8 +3,28 @@
 > **Found by:** the r2_kv SOTA test wave (2 independent agents flagged pad16
 > non-injectivity) + lead verification of the full auth path · 2026-06-05
 > **Surface:** `/v8/artifacts/*` (Turborepo remote cache), **live in prod**.
-> **Severity: HIGH** — authenticated cross-tenant read/write. NOT unauthenticated.
-> **Status: UNCOMMITTED finding — awaiting Owner's call on handling + fix scope.**
+> **Severity: HIGH** (Class-1) + **CRITICAL** (Class-2 priv-esc). NOT unauthenticated.
+>
+> ## ✅ STATUS: RESOLVED — fixed in the H1–H8 audit fix-wave; verified LIVE 2026-07-19
+>
+> Both defect classes are closed at HEAD and **re-verified against prod** (black-box,
+> real PATs) during the real-client e2e sweep:
+>
+> | Item | Fix | Live proof (2026-07-19, prod) |
+> |---|---|---|
+> | **Class-1 Turbo** `teamId` binding | container derives `caller_tenant` from the injected `x-corelink-tenant-id` (PAT-resolved), not the client `?teamId=`; `teamId` is a sub-namespace | tenant A writes `/v8/artifacts/<h>?teamId=shared` (200); tenant **B** reads same → **404** (no bleed) |
+> | **Class-1 CAS** `/v1/cas/:tenant` | `AuthTenant`: `path==auth.0` else 403 (`cas.rs`) | cross-tenant `ls`/GET → **403** |
+> | **Class-1 AC** `/v1/ac/:tenant` | same `AuthTenant` | 403 by design |
+> | **Class-1 audit_export** | route **redesigned** to `GET /v1/audit/export?from=&to=` — **no `:tenant` path segment**; tenant is PAT-derived | no-auth → **401**; no path tenant to spoof |
+> | **Class-2 admin_pilot** priv-esc | Worker **strips the client `x-admin-*` header set** (`index.ts:502-504`, delete-then-reinject); `/v1/admin/pilots/*` is **internal-auth gated** (`CORELINK_INTERNAL_AUTH_KEY`, `routes.rs:634`) | free-tier **and** RW PAT + forged `x-admin-scope: corelink:admin:pilots` → `grant-tier` → **403** (was the arbitrary-tenant-mutate exploit) |
+>
+> `pad16` non-injectivity is moot: the storage tenant is now always the UUID PAT
+> tenant → the injective HMAC `derive_prefix` path; `pad16` is test-only.
+> **#141 (durable R2 turbo) is safe** now that binding precedes durability.
+>
+> Historical analysis preserved below for the record.
+>
+> ~~**Status: UNCOMMITTED finding — awaiting Owner's call on handling + fix scope.**~~
 
 ## What is verified (file:line)
 
