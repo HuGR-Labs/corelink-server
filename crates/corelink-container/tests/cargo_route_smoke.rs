@@ -262,10 +262,13 @@ async fn read_only_scope_allows_get() {
 
 #[tokio::test]
 async fn unmapped_methods_are_403_even_with_rw_scope() {
-    // Fail-CLOSED method gate: DELETE/PATCH carry a FULL cas:rw scope but are
-    // not a mapped cache operation (GET/HEAD/PUT), so the gate must deny them
-    // (403) rather than fall through to downstream routing.
-    for method in ["DELETE", "PATCH"] {
+    // Fail-CLOSED method gate: the mapped cache operations are
+    // GET/HEAD/PUT (+ the WebDAV verbs opendal/sccache needs: MKCOL/PROPFIND/DELETE).
+    // Any OTHER method carries a FULL cas:rw scope but is not a mapped operation,
+    // so the gate must deny it (403) rather than fall through to downstream routing.
+    // (DELETE was moved out of this list once it became a mapped write op — see the
+    // PROPFIND/DELETE handlers + their dedicated tests.)
+    for method in ["PATCH", "PROPPATCH", "LOCK", "COPY", "MOVE"] {
         let app = cargo_router();
         let key = key_for(b"unmapped-method");
         let req = Request::builder()
