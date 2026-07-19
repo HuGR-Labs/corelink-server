@@ -36,6 +36,7 @@ import {
 } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { isTenantSuspended } from "./lib/tenant_suspend_gate.js";
+import { verifyPatRowCached } from "./lib/pat_verify_cache.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
@@ -1202,39 +1203,30 @@ async function extractAuth(
     return { ok: false, reason: "invalid_pat_hmac" };
   }
 
-  // ── Step 4: D1 lookup by token_id ────────────────────────────────────────
-  // Any token whose token_id is not in the D1 store → 401.
-  // This kills the "any 32–256 char string accepted" vulnerability (P0-2).
-  interface PatRow {
-    tenant_id: string;
-    expires_ms: number;
-    // H1: the PAT's persisted scope (D1 `pat.scope`, SINGULAR TEXT column).
-    // Prod values are `cas:rw` (post back-fill) / historically `admin`. May be
-    // NULL on older rows — normalised to "" at the return site below.
-    scope: string | null;
-    // WP5a: the NARROWED runner-job marker (D1 `pat.runner_job_ac_key`). NULL on
-    // every normal PAT (session/token-exchange/rotate/customer); non-NULL only
-    // for runner-minted PATs. Forwarded (when non-NULL) as the server-trust
-    // runner-job headers so the container enforces the narrowing.
-    runner_job_ac_key: string | null;
-  }
-  let row: PatRow | null;
-  try {
-    row = await env.CONFIG_DB
-      .prepare("SELECT tenant_id, expires_ms, scope, runner_job_ac_key FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1")
-      .bind(parsed.tokenId)
-      .first<PatRow>();
-  } catch (_err: unknown) {
-    // D1 errors (network partition, DB unavailable) must not fail-open.
-    // Return a distinct reason; the caller maps d1_lookup_error to 503 (transient,
+  // ── Step 4: PAT-row lookup by token_id (cached) ──────────────────────────
+  // Any token whose token_id is not in the D1 store → 401. This kills the
+  // "any 32–256 char string accepted" vulnerability (P0-2). The D1 read
+  // (`SELECT … FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL`) was the
+  // SOLE uncached read left on the warm hot path and cost ~0.7 s trans-continental
+  // per request (perf #99). It is now served from a per-isolate 5 s single-flight
+  // cache — SAME SQL, SAME columns, SAME decisions — bounding revocation to ≤5 s
+  // on a hit (well within ADR-0030's 60 s p99 SLA; mirrors the container
+  // NativePatGate's 5 s verify cache). The cache is consulted ONLY here, AFTER
+  // the HMAC possession proof above, so a wrong-secret token never reaches it;
+  // positive results only (a freshly-minted token authenticates immediately),
+  // and D1 remains the source-of-truth on every miss. See lib/pat_verify_cache.ts.
+  const verify = await verifyPatRowCached(env.CONFIG_DB, parsed.tokenId);
+  if (verify.kind === "error") {
+    // D1 errors (network partition, DB unavailable) must not fail-open. Return a
+    // distinct reason; the caller maps d1_lookup_error to 503 (transient,
     // retryable) — still fail-closed (access denied), NOT 401 "bad credentials" (H1).
     return { ok: false, reason: "d1_lookup_error" };
   }
-
-  if (row === null) {
-    // token_id not in D1 — reject.
+  if (verify.kind === "not_found") {
+    // token_id not in D1 (unknown or revoked) — reject.
     return { ok: false, reason: "pat_not_found" };
   }
+  const row = verify.row;
 
   // ── Step 5: Expiry check ──────────────────────────────────────────────────
   // `expires_ms === 0` is the canonical "never expires" sentinel (mint:
