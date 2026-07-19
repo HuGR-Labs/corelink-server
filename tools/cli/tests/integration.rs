@@ -166,36 +166,36 @@ fn config_unknown_key_errors() {
 }
 
 // ---------------------------------------------------------------------------
-// SHA-256 streaming integrity (no I/O — pure algorithm test)
+// BLAKE3 streaming integrity (no I/O — pure algorithm test).
+//
+// Native CAS is BLAKE3-addressed (a non-BLAKE3 claim 422s), so the CLI's
+// `put`/`cas`/`get` paths hash with BLAKE3 — these mirror that contract.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn sha256_streaming_matches_oneshot_hello() {
-    use sha2::{Digest as _, Sha256};
+fn blake3_streaming_matches_oneshot_hello() {
     let data = b"hello corelink stream-1";
-    let mut h1 = Sha256::new();
-    h1.update(data);
-    let expected = hex::encode(h1.finalize());
+    let expected = hex::encode(blake3::hash(data).as_bytes());
 
-    let mut h2 = Sha256::new();
+    let mut h = blake3::Hasher::new();
     for chunk in data.chunks(4) {
-        h2.update(chunk);
+        h.update(chunk);
     }
-    let actual = hex::encode(h2.finalize());
+    let actual = hex::encode(h.finalize().as_bytes());
 
     assert_eq!(expected, actual);
 }
 
 #[test]
-fn sha256_10mb_is_64_char_hex() {
-    use sha2::{Digest as _, Sha256};
+fn blake3_10mb_is_64_char_hex() {
     let data: Vec<u8> = (0..10 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
-    let mut hasher = Sha256::new();
+    let mut hasher = blake3::Hasher::new();
     // Simulate 256 KiB chunks (same as put.rs CHUNK_SIZE).
     for chunk in data.chunks(256 * 1024) {
         hasher.update(chunk);
     }
-    let digest = hex::encode(hasher.finalize());
+    let digest = hex::encode(hasher.finalize().as_bytes());
+    assert_eq!(digest, hex::encode(blake3::hash(&data).as_bytes()));
     assert_eq!(digest.len(), 64);
     assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
 }

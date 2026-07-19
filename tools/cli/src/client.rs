@@ -24,7 +24,7 @@ const DEFAULT_BASE_URL: &str = DEFAULT_ENDPOINT;
 /// Response from `GET /v1/users/me`.
 #[derive(Debug, Deserialize)]
 pub struct WhoamiResp {
-    /// Tenant identifier (used in API paths: `/v1/cas/<tenant_id>/<sha256>`).
+    /// Tenant identifier (used in API paths: `/v1/cas/<tenant_id>/<blake3>`).
     pub tenant_id: String,
     /// PAT prefix shown in audit logs (e.g. `corelink_pat_ABCDEF***`).
     pub token_prefix: String,
@@ -35,7 +35,7 @@ pub struct WhoamiResp {
 /// Response for PUT CAS/AC operations (201 fresh or 200 idempotent).
 #[derive(Debug, Deserialize)]
 pub struct PutResp {
-    /// The SHA-256 hex digest echoed by the server.
+    /// The BLAKE3 hex digest echoed by the server.
     pub hash: Option<String>,
 }
 
@@ -109,12 +109,12 @@ impl CorelinkClient {
         }
     }
 
-    /// `PUT /v1/cas/<tenant>/<sha256>` — upload raw bytes.
+    /// `PUT /v1/cas/<tenant>/<blake3>` — upload raw bytes.
     ///
     /// Returns `CliError::Other("tenant_id not set")` if tenant is unknown.
-    pub async fn cas_put(&self, sha256_hex: &str, body: Bytes) -> Result<PutResp, CliError> {
+    pub async fn cas_put(&self, blake3_hex: &str, body: Bytes) -> Result<PutResp, CliError> {
         let tenant = self.require_tenant()?;
-        let url = format!("{}/v1/cas/{tenant}/{sha256_hex}", self.inner.base_url);
+        let url = format!("{}/v1/cas/{tenant}/{blake3_hex}", self.inner.base_url);
         let mut attempt = 0u32;
         loop {
             let resp = self
@@ -130,7 +130,7 @@ impl CorelinkClient {
                 Ok(r) if r.status().is_success() => {
                     // Drain body; ignore parse error (server may return empty 201).
                     let put_resp: PutResp = r.json().await.unwrap_or(PutResp {
-                        hash: Some(sha256_hex.to_owned()),
+                        hash: Some(blake3_hex.to_owned()),
                     });
                     return Ok(put_resp);
                 }
@@ -148,7 +148,7 @@ impl CorelinkClient {
                 }
                 Ok(r) => {
                     return Err(CliError::Other(format!(
-                        "cas_put: HTTP {} for /v1/cas/{tenant}/{sha256_hex}",
+                        "cas_put: HTTP {} for /v1/cas/{tenant}/{blake3_hex}",
                         r.status()
                     )));
                 }
@@ -163,10 +163,10 @@ impl CorelinkClient {
         }
     }
 
-    /// `GET /v1/cas/<tenant>/<sha256>` — download bytes.
-    pub async fn cas_get(&self, sha256_hex: &str) -> Result<Bytes, CliError> {
+    /// `GET /v1/cas/<tenant>/<blake3>` — download bytes.
+    pub async fn cas_get(&self, blake3_hex: &str) -> Result<Bytes, CliError> {
         let tenant = self.require_tenant()?;
-        let path = format!("/v1/cas/{tenant}/{sha256_hex}");
+        let path = format!("/v1/cas/{tenant}/{blake3_hex}");
         self.get_bytes(&path).await
     }
 

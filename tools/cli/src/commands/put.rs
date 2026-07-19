@@ -1,19 +1,23 @@
 //! `corelink put` — upload a blob (WI-S15-001 + Stream-1 prod API).
 //!
-//! Computes SHA-256 digest via streaming read (never loads entire file into
-//! memory at once — safe for multi-GB blobs). Uses `indicatif` progress bar
-//! when stderr is a tty; suppressed in pipes (CTRL-UX-001).
+//! Computes a BLAKE3 digest via streaming read (never loads the whole file
+//! into memory at once for hashing — safe for multi-GB blobs). Uses
+//! `indicatif` progress bar when stderr is a tty; suppressed in pipes
+//! (CTRL-UX-001).
 //!
-//! API: `PUT /v1/cas/<tenant>/<sha256>` (Stream-1 prod contract).
+//! Native CAS addresses blobs by BLAKE3 (the write handler re-hashes the
+//! bytes and 422s a non-BLAKE3 claim), so the CLI MUST claim the BLAKE3
+//! digest here.
+//!
+//! API: `PUT /v1/cas/<tenant>/<blake3>` (Stream-1 prod contract).
 
 use std::fmt;
-use std::io::{BufReader, Read as _};
+use std::io::BufReader;
 use std::path::PathBuf;
 
 use bytes::Bytes;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Serialize;
-use sha2::{Digest as _, Sha256};
 
 use crate::client::CorelinkClient;
 use crate::error::CliError;
@@ -26,7 +30,7 @@ const CHUNK_SIZE: usize = 256 * 1024;
 #[derive(Debug, Serialize)]
 #[non_exhaustive]
 pub struct PutResult {
-    /// SHA-256 hex digest of the uploaded blob.
+    /// BLAKE3 hex digest of the uploaded blob.
     pub digest: String,
     /// Bytes uploaded.
     pub bytes_uploaded: u64,
@@ -41,7 +45,7 @@ impl fmt::Display for PutResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Uploaded {} bytes from '{}' → sha256: {}",
+            "Uploaded {} bytes from '{}' → blake3: {}",
             self.bytes_uploaded, self.source, self.digest
         )
     }
@@ -49,8 +53,8 @@ impl fmt::Display for PutResult {
 
 /// Run `corelink put <file>`.
 ///
-/// Streams the file in chunks, computing SHA-256 on the fly, then uploads
-/// via `PUT /v1/cas/<tenant>/<sha256>`. Shows a progress bar when stderr is
+/// Streams the file in chunks, computing BLAKE3 on the fly, then uploads
+/// via `PUT /v1/cas/<tenant>/<blake3>`. Shows a progress bar when stderr is
 /// a tty.
 pub async fn run(
     client: &CorelinkClient,
@@ -76,37 +80,14 @@ pub async fn run(
         None
     };
 
-    // Stream file in chunks to compute SHA-256 + collect bytes for upload.
+    // Stream file in chunks to compute BLAKE3 + collect bytes for upload.
     // Note: for truly large blobs (>4 GB) a streaming PUT would be ideal;
     // reqwest 0.12 with body streaming is used here via Bytes::from(Vec).
     // For the Stream-1 MVP this is acceptable (max practical blob ~ few hundred MB).
     let (digest, data) = {
         let f = std::fs::File::open(file)?;
-        let mut reader = BufReader::new(f);
-        let mut hasher = Sha256::new();
-        let mut buf = vec![0u8; CHUNK_SIZE];
-        let mut all_data: Vec<u8> = Vec::with_capacity(file_size as usize);
-
-        loop {
-            let n = reader.read(&mut buf)?;
-            if n == 0 {
-                break;
-            }
-            // `n <= buf.len()` is guaranteed by the `Read` contract.
-            // Use `get(..n)` to satisfy `indexing_slicing` lint; the else
-            // branch is unreachable in practice.
-            if let Some(filled) = buf.get(..n) {
-                hasher.update(filled);
-                all_data.extend_from_slice(filled);
-            }
-            if let Some(pb) = &progress {
-                pb.inc(n as u64);
-            }
-        }
-
-        let hash = hasher.finalize();
-        let hex = hex::encode(hash);
-        (hex, all_data)
+        let reader = BufReader::new(f);
+        blake3_digest_and_read(reader, progress.as_ref(), file_size as usize)?
     };
 
     if let Some(pb) = &progress {
@@ -118,7 +99,7 @@ pub async fn run(
 
     let bytes_uploaded = data.len() as u64;
 
-    // Upload via the new Stream-1 method (PUT /v1/cas/<tenant>/<sha256>).
+    // Upload via the new Stream-1 method (PUT /v1/cas/<tenant>/<blake3>).
     let resp = client.cas_put(upload_digest, Bytes::from(data)).await?;
 
     let result = PutResult {
@@ -134,6 +115,44 @@ pub async fn run(
     fmt.emit(&result).map_err(CliError::Json)?;
 
     Ok(())
+}
+
+/// Stream `reader` in [`CHUNK_SIZE`] chunks, computing the BLAKE3 digest of
+/// the bytes as they flow AND collecting them for the upload body. Returns
+/// `(blake3_hex, bytes)` where `blake3_hex` is the 64-char lowercase hex the
+/// native CAS route addresses by. `progress`, when present, is advanced by the
+/// byte count of each chunk.
+///
+/// Extracted from [`run`] so the BLAKE3-not-SHA-256 contract is unit-testable
+/// against `blake3::hash` without a live upload.
+fn blake3_digest_and_read<R: std::io::Read>(
+    mut reader: R,
+    progress: Option<&ProgressBar>,
+    size_hint: usize,
+) -> Result<(String, Vec<u8>), CliError> {
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = vec![0u8; CHUNK_SIZE];
+    let mut all_data: Vec<u8> = Vec::with_capacity(size_hint);
+
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        // `n <= buf.len()` is guaranteed by the `Read` contract.
+        // Use `get(..n)` to satisfy `indexing_slicing` lint; the else
+        // branch is unreachable in practice.
+        if let Some(filled) = buf.get(..n) {
+            hasher.update(filled);
+            all_data.extend_from_slice(filled);
+        }
+        if let Some(pb) = progress {
+            pb.inc(n as u64);
+        }
+    }
+
+    let hex = hex::encode(hasher.finalize().as_bytes());
+    Ok((hex, all_data))
 }
 
 /// Returns true when stderr is connected to a tty.
@@ -165,7 +184,7 @@ mod tests {
         let s = format!("{r}");
         assert!(s.contains("2048 bytes"));
         assert!(s.contains("abc123"));
-        assert!(s.contains("sha256:"));
+        assert!(s.contains("blake3:"));
     }
 
     #[test]
@@ -183,33 +202,39 @@ mod tests {
     }
 
     #[test]
-    fn sha256_streaming_matches_oneshot() {
+    fn put_digest_is_blake3_not_sha256() {
+        // B3 regression: the streaming put-hash helper must return the SAME
+        // 64-hex as `blake3::hash` (proves BLAKE3, not SHA-256). Native CAS
+        // 422s a non-BLAKE3 claim, so this is the load-bearing contract.
         let data = b"hello corelink";
-        // One-shot SHA-256.
-        let mut h1 = Sha256::new();
-        h1.update(data);
-        let expected = hex::encode(h1.finalize());
+        let (digest, echoed) =
+            blake3_digest_and_read(&data[..], None, data.len()).expect("hashing must not fail");
 
-        // Streaming (simulated chunked).
-        let mut h2 = Sha256::new();
-        for chunk in data.chunks(4) {
-            h2.update(chunk);
-        }
-        let actual = hex::encode(h2.finalize());
-
-        assert_eq!(expected, actual);
+        let reference = hex::encode(blake3::hash(data).as_bytes());
+        assert_eq!(digest, reference, "put must claim the BLAKE3 digest");
+        assert_ne!(
+            digest,
+            // A SHA-256 of the same bytes must NOT match (regression sentinel).
+            {
+                use sha2::{Digest as _, Sha256};
+                let mut h = Sha256::new();
+                h.update(data);
+                hex::encode(h.finalize())
+            },
+            "digest must be BLAKE3, never SHA-256"
+        );
+        assert_eq!(echoed, data, "collected bytes must equal the input");
+        assert_eq!(digest.len(), 64);
     }
 
     #[test]
-    fn sha256_10mb_streaming() {
-        // Verify streaming hash on a 10 MB synthetic blob (regression gate for OOM).
+    fn blake3_10mb_streaming() {
+        // Verify streaming hash on a 10 MB synthetic blob (regression gate for
+        // OOM) and that the chunked digest equals the one-shot BLAKE3.
         let data: Vec<u8> = (0..10 * 1024 * 1024).map(|i| (i % 251) as u8).collect();
-        let mut hasher = Sha256::new();
-        for chunk in data.chunks(CHUNK_SIZE) {
-            hasher.update(chunk);
-        }
-        let digest = hex::encode(hasher.finalize());
-        // Just verify it's a valid 64-char hex string.
+        let (digest, _) =
+            blake3_digest_and_read(&data[..], None, data.len()).expect("hashing must not fail");
+        assert_eq!(digest, hex::encode(blake3::hash(&data).as_bytes()));
         assert_eq!(digest.len(), 64);
         assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
     }
