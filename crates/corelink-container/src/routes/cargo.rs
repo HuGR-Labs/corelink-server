@@ -53,24 +53,25 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+use axum::Router;
 use axum::extract::Request;
 use axum::http::{Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::Router;
 
 use async_trait::async_trait;
 use corelink_adapter_host::cargo::config::DEFAULT_BODY_SIZE_LIMIT_BYTES;
 use corelink_adapter_host::cargo::ports::{
     CasError, CasStore, ResolvedTenant, SharedTenantResolver, TenantResolveError, TenantResolver,
 };
-use corelink_adapter_host::cargo::{server, CargoAdapterConfig};
+use corelink_adapter_host::cargo::translate::key_from_path;
+use corelink_adapter_host::cargo::{CargoAdapterConfig, server};
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
 use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
 
 use crate::adapter_cache::{MoatCache, MoatError, UrlMapStore};
 use crate::adapter_pat::{PatVerifier, VerifyError};
-use crate::scope::{requires_cache_read, requires_cache_write, SCOPE_HEADER};
+use crate::scope::{SCOPE_HEADER, requires_cache_read, requires_cache_write};
 
 /// Service principal recorded on adapter CAS operations. Identifies the
 /// adapter-host service, NOT the end-user PAT (which the resolver verified).
@@ -198,8 +199,12 @@ pub fn resolver_from_verifier(verifier: Arc<PatVerifier>) -> SharedTenantResolve
 struct CargoGateState {
     quota: Option<crate::routes::QuotaGate>,
     resolver: SharedTenantResolver,
+    /// The SAME per-tenant 2-level moat the adapter's [`CargoMoatStore`] wraps —
+    /// held here so the gate can serve the WebDAV `PROPFIND` (stat) and `DELETE`
+    /// (write-check cleanup) that opendal issues but axum's `MethodRouter` cannot
+    /// route (a non-standard / unregistered method). Reused, not a second store.
+    moat: Arc<MoatCache>,
 }
-
 /// Build the `/cargo/*` sub-router from shared CAS handlers + a PAT→tenant
 /// resolver. The SAME resolver backs both the adapter (tenant resolution) and
 /// the gate's two-layer write enforcement (F27) — one PAT verification, not two.
@@ -230,7 +235,10 @@ pub fn router(
         map,
         CARGO_SERVICE_PRINCIPAL,
     ));
-    let cas: Arc<dyn CasStore> = Arc::new(CargoMoatStore { moat, cap_resolver });
+    let cas: Arc<dyn CasStore> = Arc::new(CargoMoatStore {
+        moat: Arc::clone(&moat),
+        cap_resolver,
+    });
     let auditor: Arc<dyn AuditEmitter> = Arc::new(InMemoryAuditEmitter::new());
     // bind_addr is unused by `build_router` (only `run_cargo_adapter` binds);
     // pass an ephemeral placeholder.
@@ -246,7 +254,11 @@ pub fn router(
     // resolver so PUT requests are subject to two-layer write enforcement (F27):
     // scope header check AND the PAT-derived `can_write` bit from the resolver's
     // single verification (no redundant second PAT verify).
-    let gate_state = CargoGateState { quota, resolver };
+    let gate_state = CargoGateState {
+        quota,
+        resolver,
+        moat,
+    };
     let adapter =
         server::build_router(config).layer(middleware::from_fn_with_state(gate_state, cargo_gate));
     Router::new().nest_service("/cargo", adapter)
@@ -298,6 +310,56 @@ async fn cargo_gate(
         } else {
             (StatusCode::FORBIDDEN, "insufficient cache scope").into_response()
         };
+    }
+
+    // WebDAV PROPFIND (opendal "stat"): sccache's opendal WebDAV backend PROPFINDs
+    // a key (Depth: 0) to check existence + size around the `.sccache_check`
+    // write-probe and directory handling. The flat content-addressed KV has no
+    // native stat verb, so we synthesize a WebDAV `207 Multi-Status` from the
+    // per-tenant moat lookup (present) or `404` (absent — opendal then proceeds to
+    // write). It is a READ, gated on cache-read scope. Short-circuited HERE (like
+    // MKCOL) because PROPFIND is a NON-STANDARD method that axum's `MethodRouter`
+    // cannot route — falling through to the adapter would 405 and the real
+    // `sccache` binary could never stat. Root-caused live 2026-07-19.
+    if req.method().as_str() == "PROPFIND" {
+        if !requires_cache_read(scope) {
+            return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
+        }
+        // Extract owned inputs BEFORE awaiting so no borrow of `req` (whose body
+        // is not `Sync`) crosses an `.await` — that would make the gate future
+        // non-`Send` and `from_fn` would reject it.
+        let path = webdav_path(&req);
+        let bearer = bearer_owned(&req);
+        return handle_propfind(
+            Arc::clone(&state.moat),
+            state.resolver.clone(),
+            path,
+            bearer,
+        )
+        .await;
+    }
+
+    // WebDAV DELETE (opendal write-check cleanup): sccache PUTs `.sccache_check`,
+    // reads it back, then DELETEs it. Remove the per-tenant key→content-hash map
+    // row so a later GET/PROPFIND misses (the CAS blob is left for GC). It is a
+    // WRITE — gated on cache-write scope AND the PAT's D1 `can_write` bit (F27,
+    // mirroring PUT), keyed by the PAT-resolved tenant (NEVER the path tenant).
+    // Idempotent: 204 even if the key was absent. Short-circuited here (not routed
+    // to the adapter, whose `MethodRouter` has no DELETE route → 405) so ALL of
+    // the sccache WebDAV surface lives on ONE path.
+    if req.method() == Method::DELETE {
+        if !requires_cache_write(scope) {
+            return (StatusCode::FORBIDDEN, "insufficient cache scope").into_response();
+        }
+        let path = webdav_path(&req);
+        let bearer = bearer_owned(&req);
+        return handle_delete(
+            Arc::clone(&state.moat),
+            state.resolver.clone(),
+            path,
+            bearer,
+        )
+        .await;
     }
 
     let is_write = req.method() == Method::PUT;
@@ -425,6 +487,199 @@ async fn cargo_gate(
     next.run(req).await
 }
 
+/// The WebDAV request path used for the `<D:href>` and key extraction.
+///
+/// Behind `nest_service("/cargo", …)` the middleware may observe the
+/// prefix-stripped path (`/<tenant>/<key>`); the outer router preserves the full
+/// wire path (`/cargo/<tenant>/<key>`) in the [`axum::extract::OriginalUri`]
+/// extension. We prefer the original so the `href` echoes exactly what opendal
+/// sent. The key is the LAST path segment either way, so key extraction is
+/// unaffected by which one we use. Returns an OWNED `String` so no borrow of the
+/// request (whose body is not `Sync`) is held across an `.await`.
+fn webdav_path(req: &Request) -> String {
+    req.extensions()
+        .get::<axum::extract::OriginalUri>()
+        .map(|o| o.0.path().to_owned())
+        .unwrap_or_else(|| req.uri().path().to_owned())
+}
+
+/// Extract the `Bearer` PAT as an OWNED `String` (so it is not borrowed from the
+/// non-`Sync` request body across an `.await`, which would make the gate future
+/// non-`Send` and break `from_fn`).
+fn bearer_owned(req: &Request) -> Option<String> {
+    req.headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .map(str::to_owned)
+}
+
+/// `PROPFIND /cargo/<tenant>/<key>` — synthesize a WebDAV stat from the moat.
+///
+/// Scope (cache-read) is enforced by the caller. Resolves the tenant from the
+/// PAT (never the path), mirroring the adapter's GET/HEAD auth, then serves a
+/// `207 Multi-Status` (present, with the real byte length) or `404` (absent).
+///
+/// Takes fully OWNED inputs (the caller extracts them from the request before
+/// the first `.await`) so the gate future stays `Send`.
+async fn handle_propfind(
+    moat: Arc<MoatCache>,
+    resolver: SharedTenantResolver,
+    path: String,
+    bearer: Option<String>,
+) -> Response {
+    // A collection stat (trailing slash ⇒ empty last segment): opendal stats the
+    // tenant/dir root. Answer a minimal `207` collection — it discloses nothing
+    // beyond "this is a directory" and needs no moat/auth lookup.
+    if path.ends_with('/') {
+        return propfind_collection_response(&path);
+    }
+
+    // Use the SAME normalization GET/PUT use so the stat resolves the identical
+    // moat key. A key those paths would reject cannot exist ⇒ not-found.
+    let key = match key_from_path(&path) {
+        Some(k) => k,
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+
+    let tenant_id = match resolve_read_tenant(&resolver, bearer).await {
+        Ok(t) => t,
+        Err(resp) => return resp,
+    };
+
+    match moat.get(&tenant_id, &key).await {
+        Ok(Some(bytes)) => propfind_file_response(&path, bytes.len() as u64),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(MoatError::Backend(m)) => {
+            tracing::error!(error = %m, "cargo PROPFIND: moat backend error");
+            (StatusCode::BAD_GATEWAY, "cache backend error").into_response()
+        }
+    }
+}
+
+/// `DELETE /cargo/<tenant>/<key>` — remove the per-tenant key→hash map row.
+///
+/// Scope (cache-write) is enforced by the caller. Applies the F27 second layer
+/// (the PAT's D1-verified `can_write` bit) and keys the delete by the
+/// PAT-resolved tenant. Idempotent: `204` even if the key was absent. All `req`
+/// borrows are dropped before the first `.await` (gate future must be `Send`).
+async fn handle_delete(
+    moat: Arc<MoatCache>,
+    resolver: SharedTenantResolver,
+    path: String,
+    bearer: Option<String>,
+) -> Response {
+    // F27 two-layer write: require a bearer PAT whose D1 record grants write.
+    let pat = match bearer {
+        Some(p) => p,
+        None => return (StatusCode::UNAUTHORIZED, "missing bearer token").into_response(),
+    };
+    let tenant_id = match resolver.resolve_with_capability(&pat).await {
+        Ok(resolved) if resolved.can_write => resolved.tenant_id,
+        Ok(_no_write) => {
+            return (StatusCode::FORBIDDEN, "PAT does not grant write capability").into_response();
+        }
+        Err(TenantResolveError::Backend(m)) => {
+            tracing::error!(error = %m, "cargo DELETE: resolver backend error");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "PAT verifier backend error",
+            )
+                .into_response();
+        }
+        Err(_) => return (StatusCode::UNAUTHORIZED, "invalid PAT").into_response(),
+    };
+
+    let key = match key_from_path(&path) {
+        Some(k) => k,
+        // A key GET/PUT would reject cannot exist ⇒ idempotent no-op success.
+        None => return StatusCode::NO_CONTENT.into_response(),
+    };
+
+    match moat.delete(&tenant_id, &key).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(MoatError::Backend(m)) => {
+            tracing::error!(error = %m, "cargo DELETE: moat backend error");
+            (StatusCode::BAD_GATEWAY, "cache backend error").into_response()
+        }
+    }
+}
+
+/// Resolve the tenant from an OWNED bearer PAT for a READ (never the path
+/// tenant). `Err(response)` carries the 401/503 to return on failure.
+async fn resolve_read_tenant(
+    resolver: &SharedTenantResolver,
+    bearer: Option<String>,
+) -> Result<String, Response> {
+    let pat = match bearer {
+        Some(p) => p,
+        None => {
+            return Err((StatusCode::UNAUTHORIZED, "missing bearer token").into_response());
+        }
+    };
+    match resolver.resolve(&pat).await {
+        Ok(t) => Ok(t),
+        Err(TenantResolveError::Backend(m)) => {
+            tracing::error!(error = %m, "cargo PROPFIND: resolver backend error");
+            Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                "PAT verifier backend error",
+            )
+                .into_response())
+        }
+        Err(_) => Err((StatusCode::UNAUTHORIZED, "invalid PAT").into_response()),
+    }
+}
+
+/// `207 Multi-Status` for an EXISTING key: `getcontentlength` + a `200 OK`
+/// propstat — the exact shape opendal's WebDAV stat parser accepts (empirically
+/// proven against the real `sccache` 0.15 binary).
+fn propfind_file_response(href: &str, size_bytes: u64) -> Response {
+    let body = format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+         <D:multistatus xmlns:D=\"DAV:\"><D:response><D:href>{href}</D:href>\
+         <D:propstat><D:prop><D:resourcetype/>\
+         <D:getcontentlength>{size_bytes}</D:getcontentlength></D:prop>\
+         <D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>",
+        href = xml_escape(href),
+    );
+    multistatus_response(body)
+}
+
+/// `207 Multi-Status` for a collection (directory) stat — `resourcetype` carries
+/// `<D:collection/>`. opendal stats the tenant/dir root; this satisfies it.
+fn propfind_collection_response(href: &str) -> Response {
+    let body = format!(
+        "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
+         <D:multistatus xmlns:D=\"DAV:\"><D:response><D:href>{href}</D:href>\
+         <D:propstat><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop>\
+         <D:status>HTTP/1.1 200 OK</D:status></D:propstat></D:response></D:multistatus>",
+        href = xml_escape(href),
+    );
+    multistatus_response(body)
+}
+
+/// Build a `207 Multi-Status` response with `Content-Type: application/xml`.
+fn multistatus_response(body: String) -> Response {
+    let mut resp = Response::new(axum::body::Body::from(body));
+    *resp.status_mut() = StatusCode::MULTI_STATUS;
+    resp.headers_mut().insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/xml"),
+    );
+    resp
+}
+
+/// Minimal XML text escaping for the `<D:href>` value. Cargo keys are already a
+/// constrained safe alphabet (see `key_from_path`), so this is defense-in-depth.
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -468,6 +723,13 @@ mod tests {
                 (ns.to_owned(), url_hash.to_owned()),
                 content_hash.to_owned(),
             );
+            Ok(())
+        }
+        async fn delete(&self, ns: &str, url_hash: &str) -> Result<(), String> {
+            self.0
+                .lock()
+                .unwrap()
+                .remove(&(ns.to_owned(), url_hash.to_owned()));
             Ok(())
         }
     }
@@ -610,10 +872,33 @@ mod tests {
         let state = CargoGateState {
             quota: None,
             resolver,
+            // MKCOL short-circuits before any moat access; a real (unused) store
+            // keeps the state well-formed.
+            moat: in_memory_moat(),
         };
         Router::new()
             .fallback(any(|| async { StatusCode::OK }))
             .layer(middleware::from_fn_with_state(state, cargo_gate))
+    }
+
+    /// A hermetic [`MoatCache`] over an in-memory CAS + fake map, wired with
+    /// `fake_hash` (matching `InMemoryCasHandler`'s verification). Seed it via
+    /// `moat.put(tenant, key, bytes, None)` and read it via `moat.get`.
+    fn in_memory_moat() -> Arc<MoatCache> {
+        use corelink_handler_cas::handler::fake_hash;
+        use corelink_handler_cas::{InMemoryAuditSink, InMemoryCasHandler, InMemorySliObserver};
+        let cas = Arc::new(InMemoryCasHandler::new(
+            Arc::new(InMemoryAuditSink::new()),
+            Arc::new(InMemorySliObserver::new()),
+        ));
+        let map: Arc<dyn UrlMapStore> = Arc::new(FakeUrlMap::default());
+        Arc::new(MoatCache::new(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            map,
+            fake_hash,
+            CARGO_SERVICE_PRINCIPAL,
+        ))
     }
 
     fn mkcol_request(scope: &str) -> axum::http::Request<axum::body::Body> {
@@ -656,5 +941,304 @@ mod tests {
             StatusCode::FORBIDDEN,
             "MKCOL with a read-only scope must be denied (still gated on cache-write)"
         );
+    }
+
+    // ---- cargo_gate: WebDAV PROPFIND + DELETE (real-sccache/opendal fix) --------
+
+    /// A resolver that resolves ANY PAT to a fixed tenant with a fixed
+    /// write-capability (so the PROPFIND read path + DELETE F27 path reach the
+    /// moat). Distinct from `UnusedResolver`, which panics.
+    #[derive(Debug)]
+    struct FixedTenantResolver {
+        tenant: String,
+        can_write: bool,
+    }
+    #[async_trait]
+    impl TenantResolver for FixedTenantResolver {
+        async fn resolve(&self, _pat: &str) -> Result<String, TenantResolveError> {
+            Ok(self.tenant.clone())
+        }
+        async fn resolve_with_capability(
+            &self,
+            _pat: &str,
+        ) -> Result<ResolvedTenant, TenantResolveError> {
+            Ok(ResolvedTenant {
+                tenant_id: self.tenant.clone(),
+                can_write: self.can_write,
+            })
+        }
+    }
+
+    /// Router carrying the `cargo_gate` over the given moat + resolver. GET/PUT/
+    /// HEAD would hit the 200 fallback; PROPFIND/DELETE short-circuit in the gate.
+    fn webdav_router(moat: Arc<MoatCache>, tenant: &str, can_write: bool) -> Router {
+        use axum::routing::any;
+        let resolver: SharedTenantResolver = Arc::new(FixedTenantResolver {
+            tenant: tenant.to_owned(),
+            can_write,
+        });
+        let state = CargoGateState {
+            quota: None,
+            resolver,
+            moat,
+        };
+        Router::new()
+            .fallback(any(|| async { StatusCode::OK }))
+            .layer(middleware::from_fn_with_state(state, cargo_gate))
+    }
+
+    fn webdav_request(
+        method: &[u8],
+        uri: &str,
+        scope: &str,
+        bearer: Option<&str>,
+    ) -> axum::http::Request<axum::body::Body> {
+        let mut b = axum::http::Request::builder()
+            .method(Method::from_bytes(method).unwrap())
+            .uri(uri)
+            .header(SCOPE_HEADER, scope);
+        if let Some(t) = bearer {
+            b = b.header(axum::http::header::AUTHORIZATION, format!("Bearer {t}"));
+        }
+        b.body(axum::body::Body::empty()).unwrap()
+    }
+
+    async fn body_string(resp: Response) -> String {
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    /// PROPFIND on an EXISTING key → `207` with the right `getcontentlength` and
+    /// a `200 OK` propstat (the shape opendal's stat parser accepts).
+    #[tokio::test]
+    async fn propfind_existing_key_is_207_with_size() {
+        use tower::ServiceExt;
+        let tenant = "tenant-abc";
+        let moat = in_memory_moat();
+        let bytes = b"sccache-artifact".to_vec(); // 16 bytes
+        moat.put(tenant, "abc123object", bytes.clone(), None)
+            .await
+            .unwrap();
+        let app = webdav_router(Arc::clone(&moat), tenant, true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"PROPFIND",
+                "/cargo/tenant-abc/abc123object",
+                "cas:rw",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::MULTI_STATUS);
+        assert_eq!(
+            resp.headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("application/xml")
+        );
+        let body = body_string(resp).await;
+        assert!(
+            body.contains("<D:getcontentlength>16</D:getcontentlength>"),
+            "must report the stored blob's real byte length; got: {body}"
+        );
+        assert!(
+            body.contains("HTTP/1.1 200 OK"),
+            "must carry a 200 OK propstat; got: {body}"
+        );
+        assert!(
+            body.contains("/cargo/tenant-abc/abc123object"),
+            "href must echo the request path; got: {body}"
+        );
+    }
+
+    /// PROPFIND on an ABSENT key → `404` (opendal treats it as not-found and
+    /// proceeds to write).
+    #[tokio::test]
+    async fn propfind_absent_key_is_404() {
+        use tower::ServiceExt;
+        let moat = in_memory_moat();
+        let app = webdav_router(moat, "tenant-abc", true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"PROPFIND",
+                "/cargo/tenant-abc/never-written",
+                "cas:rw",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// PROPFIND with a read-ONLY scope is ALLOWED (it is a read) — reaches the
+    /// moat and returns `207` for an existing key.
+    #[tokio::test]
+    async fn propfind_readonly_scope_is_allowed() {
+        use tower::ServiceExt;
+        let tenant = "tenant-abc";
+        let moat = in_memory_moat();
+        moat.put(tenant, "roobject", b"z".to_vec(), None)
+            .await
+            .unwrap();
+        let app = webdav_router(Arc::clone(&moat), tenant, false);
+        let resp = app
+            .oneshot(webdav_request(
+                b"PROPFIND",
+                "/cargo/tenant-abc/roobject",
+                "cas:r",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::MULTI_STATUS,
+            "PROPFIND is a read — a read-only scope must be sufficient"
+        );
+    }
+
+    /// PROPFIND with NO cache scope → `403` (fail-closed, before any lookup).
+    #[tokio::test]
+    async fn propfind_without_scope_is_403() {
+        use tower::ServiceExt;
+        let moat = in_memory_moat();
+        let app = webdav_router(moat, "tenant-abc", true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"PROPFIND",
+                "/cargo/tenant-abc/whatever",
+                "",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// PROPFIND on the collection root (trailing slash) → `207` collection.
+    #[tokio::test]
+    async fn propfind_collection_root_is_207_collection() {
+        use tower::ServiceExt;
+        let moat = in_memory_moat();
+        let app = webdav_router(moat, "tenant-abc", true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"PROPFIND",
+                "/cargo/tenant-abc/",
+                "cas:r",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::MULTI_STATUS);
+        let body = body_string(resp).await;
+        assert!(
+            body.contains("<D:collection/>"),
+            "a collection stat must carry <D:collection/>; got: {body}"
+        );
+    }
+
+    /// DELETE an EXISTING key → `204` and the key is GONE from the moat.
+    #[tokio::test]
+    async fn delete_existing_key_is_204_and_removes_it() {
+        use tower::ServiceExt;
+        let tenant = "tenant-abc";
+        let moat = in_memory_moat();
+        moat.put(tenant, "delobject", b"bytes".to_vec(), None)
+            .await
+            .unwrap();
+        // Sanity: present before.
+        assert!(moat.get(tenant, "delobject").await.unwrap().is_some());
+        let check = Arc::clone(&moat);
+        let app = webdav_router(moat, tenant, true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"DELETE",
+                "/cargo/tenant-abc/delobject",
+                "cas:rw",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+        assert!(
+            check.get(tenant, "delobject").await.unwrap().is_none(),
+            "the key must be gone from the moat after DELETE"
+        );
+    }
+
+    /// DELETE with a read-ONLY scope → `403` (it is write-gated).
+    #[tokio::test]
+    async fn delete_readonly_scope_is_403() {
+        use tower::ServiceExt;
+        let moat = in_memory_moat();
+        let app = webdav_router(moat, "tenant-abc", true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"DELETE",
+                "/cargo/tenant-abc/delobject",
+                "cas:r",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// DELETE with a write scope but a PAT whose D1 record lacks write (F27) →
+    /// `403` — the second layer blocks it even though the header said `cas:rw`.
+    #[tokio::test]
+    async fn delete_pat_without_write_is_403_f27() {
+        use tower::ServiceExt;
+        let moat = in_memory_moat();
+        let app = webdav_router(moat, "tenant-abc", false); // PAT can_write = false
+        let resp = app
+            .oneshot(webdav_request(
+                b"DELETE",
+                "/cargo/tenant-abc/delobject",
+                "cas:rw",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// DELETE with no bearer token → `401` (F27 requires a PAT).
+    #[tokio::test]
+    async fn delete_without_bearer_is_401() {
+        use tower::ServiceExt;
+        let moat = in_memory_moat();
+        let app = webdav_router(moat, "tenant-abc", true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"DELETE",
+                "/cargo/tenant-abc/delobject",
+                "cas:rw",
+                None,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// DELETE of an ABSENT key is idempotent → still `204`.
+    #[tokio::test]
+    async fn delete_absent_key_is_204_idempotent() {
+        use tower::ServiceExt;
+        let moat = in_memory_moat();
+        let app = webdav_router(moat, "tenant-abc", true);
+        let resp = app
+            .oneshot(webdav_request(
+                b"DELETE",
+                "/cargo/tenant-abc/nothing-here",
+                "cas:rw",
+                Some("pat"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     }
 }

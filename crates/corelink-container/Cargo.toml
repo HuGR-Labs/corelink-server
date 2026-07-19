@@ -136,7 +136,10 @@ serde_json = { workspace = true }
 # R2-12: Stripe webhook HTTP route + signature verify + idempotency
 # Wave-15.3 adds the `query` feature so `apps/server/src/routes/audit_export.rs`
 # can extract `?from=&to=&tenant=` via `axum::extract::Query`.
-axum = { workspace = true, features = ["query"] }
+# `original-uri` lets the cargo WebDAV gate read the FULL wire path
+# (`/cargo/<tenant>/<key>`) via `OriginalUri` for the PROPFIND `<D:href>` —
+# `nest_service("/cargo", …)` strips the prefix from `req.uri()` otherwise.
+axum = { workspace = true, features = ["query", "original-uri"] }
 tower = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }

@@ -33,3 +33,16 @@ exclude_globs = [
     "crates/corelink-byok/src/byok_azure.rs",
     "crates/corelink-byok/src/byok_vault.rs",
 ]
+
+# `exclude_re` drops individual mutants by their rendered name (same "no in-CI
+# test → only surviving mutants → noise" rationale as `exclude_globs`).
+#
+# The `impl UrlMapStore for D1HttpClient` methods (adapter_cache_map get/put/
+# delete) run ONLY against a LIVE Cloudflare D1 — their round-trip tests are
+# `#[ignore]` (they need real CF credentials), so no in-CI test can KILL a mutant
+# on them; every changed line surfaces as a FALSE survivor. The TESTABLE seams
+# that wrap them — `MoatCache` (delete/get/put over an in-memory CAS + fake map)
+# and the cargo WebDAV gate (PROPFIND/DELETE) — stay fully mutation-covered.
+exclude_re = [
+    "impl UrlMapStore for D1HttpClient",
+]

@@ -53,6 +53,23 @@ pub trait UrlMapStore: Send + Sync {
         content_hash: &str,
         content_len: u64,
     ) -> Result<(), String>;
+
+    /// Remove the `(namespace, url_hash)` mapping so a subsequent [`Self::get`]
+    /// misses. Idempotent: deleting an absent mapping succeeds.
+    ///
+    /// This backs the cargo/sccache WebDAV `DELETE` (opendal's write-check
+    /// cleanup). Only the url→content-hash row is removed; the content-addressed
+    /// CAS blob is left for GC (see [`MoatCache::delete`]).
+    ///
+    /// # Default
+    ///
+    /// The default returns `Err` — a store must OPT IN to deletion by overriding
+    /// this. The production [`D1HttpClient`] and the cargo WebDAV surface do; the
+    /// read-through caches (brew/npm/pip/oci) never issue a `DELETE`, so they keep
+    /// the fail-LOUD default rather than a silent no-op.
+    async fn delete(&self, _namespace: &str, _url_hash: &str) -> Result<(), String> {
+        Err("UrlMapStore backend does not support delete".to_owned())
+    }
 }
 
 #[async_trait]
@@ -95,6 +112,18 @@ impl UrlMapStore for D1HttpClient {
                 serde_json::Value::String(url_hash.to_owned()),
                 serde_json::Value::String(content_hash.to_owned()),
                 serde_json::Value::from(content_len),
+            ],
+        )
+        .await?;
+        Ok(())
+    }
+
+    async fn delete(&self, namespace: &str, url_hash: &str) -> Result<(), String> {
+        self.query(
+            "DELETE FROM adapter_cache_map WHERE namespace = ?1 AND url_hash = ?2",
+            &[
+                serde_json::Value::String(namespace.to_owned()),
+                serde_json::Value::String(url_hash.to_owned()),
             ],
         )
         .await?;
@@ -284,6 +313,21 @@ impl MoatCache {
             .map_err(MoatError::Backend)?;
         Ok(())
     }
+
+    /// Remove the `(namespace, url_hash)` map entry so a later [`Self::get`]
+    /// misses — the WebDAV `DELETE` on the cargo/sccache surface.
+    ///
+    /// Only the url→content-hash map row is removed; the content-addressed CAS
+    /// blob is intentionally LEFT for GC. The blob may be shared by other keys
+    /// (content dedup), so removing it here could break an unrelated mapping;
+    /// unreferenced blobs are reclaimed by the storage GC, not by this path.
+    /// Idempotent: deleting an absent key succeeds.
+    pub async fn delete(&self, namespace: &str, url_hash: &str) -> Result<(), MoatError> {
+        self.map
+            .delete(namespace, url_hash)
+            .await
+            .map_err(MoatError::Backend)
+    }
 }
 
 /// Current wall-clock unix milliseconds.
@@ -376,6 +420,19 @@ mod tests {
     async fn miss_returns_none() {
         let m = moat(in_memory_cas(), Arc::new(FakeUrlMap::default()));
         assert_eq!(m.get(PUBLIC_NAMESPACE, "nope").await.unwrap(), None);
+    }
+
+    /// The `UrlMapStore::delete` DEFAULT is fail-LOUD: a store that does not
+    /// override it (here the brew/npm/pip/oci-style `FakeUrlMap`, which does not)
+    /// reports the unsupported error verbatim — never a silent success. Asserting
+    /// the EXACT message pins both the Ok and the Err mutant on the default body.
+    #[tokio::test]
+    async fn urlmapstore_delete_default_is_unsupported_err() {
+        let m = FakeUrlMap::default();
+        assert_eq!(
+            UrlMapStore::delete(&m, "ns", "k").await,
+            Err("UrlMapStore backend does not support delete".to_owned())
+        );
     }
 
     #[tokio::test]
