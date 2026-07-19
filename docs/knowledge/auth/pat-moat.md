@@ -7,7 +7,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "ef28238b559f3e973e5e3ccba6d948571ffa7224"
+checkpoint_sha: "6da2754726fc4e6b54ec25be6294afb825add582"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -89,14 +89,14 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - **Availability-vs-auth at the Worker edge: a transient D1 PAT-lookup FAULT now maps to a retryable
   503, NOT a 401.** `extractAuth` wraps the `SELECT … FROM pat` in a try/catch and on any D1 error
   (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
-  (`worker/src/index.ts:1221-1231`). The PAT-gate caller (H1 fix) now maps BOTH
+  (`worker/src/index.ts:1220-1230`). The PAT-gate caller (H1 fix) now maps BOTH
   `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
-  (`worker/src/index.ts:2544-2549`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
+  (`worker/src/index.ts:2543-2548`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
   surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
   chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
   still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
   COMPLETE for the worker edge — a transient D1 fault is NOT a cause of a 401 there; it is a 503. The
-  in-line `catch` comment at `worker/src/index.ts:1228-1230` now correctly states that the caller maps
+  in-line `catch` comment at `worker/src/index.ts:1227-1229` now correctly states that the caller maps
   `d1_lookup_error` to a 503 (it previously lied — "for now we 401 to fail-closed"); the cited line
   numbers shifted after the Artifact 1 `/v1/public/*`
   attestation-verifier route arm was added above this handler, again when the CF-6 audit-chain
@@ -104,7 +104,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   PII/secret scrubber import was added at the top of the module, when the
   `/internal/v1/auth/resolve-tenant` fabric route was added to `matchRoute`, and most recently when the
   multi-region "route to the LOCAL (this-region) container" DO-forward block was inserted above the
-  per-tenant DO forward (`worker/src/index.ts:1872-1874`)). Both the D1-fault and the
+  per-tenant DO forward (`worker/src/index.ts:1871-1873`)). Both the D1-fault and the
   `signing_key_not_configured` config-fault
   are retryable 503s; the edge still fails CLOSED (security > availability) for every credential-shaped
   failure.
@@ -113,12 +113,12 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   (`tenant_offboarding_state.state ∈ {suspended, erased}`) is denied even though its PAT is still
   cryptographically valid, so an abusive/offboarded tenant is fast-denied on the customer CAS/AC hot path
   without waiting for every one of its PATs to be individually revoked
-  (`worker/src/index.ts:1260-1261`). The check is a single-flight, ~30s-TTL cached D1 read
+  (`worker/src/index.ts:1259-1260`). The check is a single-flight, ~30s-TTL cached D1 read
   (`isTenantSuspended`, mirroring the CachedTierResolver shape) so it adds no uncached per-request D1
   round-trip; it fails **OPEN** on a transient D1 fault (availability), but a KNOWN-suspended cached value
   still denies (`worker/src/lib/tenant_suspend_gate.ts:129-159`). The caller maps the distinct
   `tenant_suspended` reason to **403** (an authorization denial, fail-closed), separate from the 401
-  bad-credential arms and the 503 transient-infra arms (`worker/src/index.ts:2560`).
+  bad-credential arms and the 503 transient-infra arms (`worker/src/index.ts:2559`).
 
 # Citations
 
@@ -132,4 +132,4 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 5. `crates/corelink-container/src/adapter_pat.rs:643-648` — the HMAC fast-reject, pre-D1, no permit consumed.
 6. `crates/corelink-container/src/adapter_pat.rs:706-754` — the deep Argon2id possession proof on a blocking thread.
 7. `worker/src/lib/tenant_suspend_gate.ts:129-159` — `isTenantSuspended`: the single-flight, ~30s-TTL cached `tenant_offboarding_state` D1 read that fails OPEN on a D1 fault but denies on a KNOWN-suspended cached value.
-8. `worker/src/index.ts:1260-1261` — the `extractAuth` fast-suspend arm: a valid PAT whose tenant is suspended/erased returns `tenant_suspended` (G4).
+8. `worker/src/index.ts:1259-1260` — the `extractAuth` fast-suspend arm: a valid PAT whose tenant is suspended/erased returns `tenant_suspended` (G4).
