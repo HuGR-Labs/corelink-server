@@ -44,7 +44,7 @@
  * INV-NO-PII-IN-LOGS: tenant_id is not logged here.
  */
 
-import type { D1Database } from "@cloudflare/workers-types";
+import type { D1Reader } from "./pat_verify_cache.js";
 
 /**
  * The `tenant_offboarding_state.state` values that DENY customer CAS/AC access.
@@ -127,7 +127,7 @@ interface OffboardingRow {
  * @param nowMs     Wall-clock ms (injectable for tests; defaults to Date.now()).
  */
 export async function isTenantSuspended(
-  db: D1Database,
+  db: D1Reader,
   tenantId: string,
   nowMs: number = Date.now(),
 ): Promise<boolean> {
