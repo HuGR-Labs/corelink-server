@@ -6,6 +6,9 @@
  * and configures the test environment.
  */
 
+import { beforeEach } from "vitest";
+import { __resetPatVerifyCacheForTest } from "../src/lib/pat_verify_cache.js";
+
 // Node.js v18+ has global fetch, crypto, Request, Response, Headers, URL natively.
 // Node.js v22.17.1 is installed — no additional polyfills needed.
 
@@ -106,3 +109,22 @@ export async function mintTestPat(opts?: {
   const sig16 = new Uint8Array(macBuf, 0, 16); // 128-bit truncated MAC
   return `corelink_pat_${tokenId}.${secret}.${b64urlNoPad(sig16)}`;
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Per-case isolation of the per-isolate PAT-verify cache (perf #99).
+//
+// `extractAuth` now serves the `pat` row from a module-level, per-isolate cache
+// (src/lib/pat_verify_cache.ts) keyed by token_id. In PRODUCTION a token_id is a
+// permanent identity mapping to exactly ONE immutable row, so this is correct.
+// In TESTS, many cases reuse the SAME fixture token_id while supplying DIFFERENT
+// synthetic D1 rows (e.g. runner_job_header_forward.test.ts varies
+// runner_job_ac_key per case) — so a row cached by one case would leak into the
+// next within the 5 s TTL. Clear the singleton before every test so each case
+// starts from a cold cache (mirrors how tenant_suspend_gate.test.ts resets its
+// own cache; done globally here so no current or future test file can silently
+// collide). This does NOT weaken the perf-win test — that asserts across two
+// requests INSIDE one case, and beforeEach runs only BETWEEN cases.
+// ──────────────────────────────────────────────────────────────────────────────
+beforeEach(() => {
+  __resetPatVerifyCacheForTest();
+});
