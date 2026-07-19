@@ -284,6 +284,22 @@ async fn cargo_gate(
         .get(SCOPE_HEADER)
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
+
+    // WebDAV MKCOL: opendal (sccache's WebDAV backend) creates parent "directories"
+    // before PUTting a sharded key (e.g. `6/b/4/<hash>`). The cargo store is a FLAT
+    // content-addressed KV — directories are implicit — so MKCOL is a success no-op.
+    // Gate it on cache-WRITE scope (it is part of a write flow) so the surface stays
+    // fail-closed. Without this, opendal's dir-creation 403s and the real `sccache`
+    // binary can never write (a real-client gap invisible to curl, which PUTs the
+    // sharded key directly and never issues MKCOL). Root-caused live 2026-07-19.
+    if req.method().as_str() == "MKCOL" {
+        return if requires_cache_write(scope) {
+            (StatusCode::CREATED, "").into_response()
+        } else {
+            (StatusCode::FORBIDDEN, "insufficient cache scope").into_response()
+        };
+    }
+
     let is_write = req.method() == Method::PUT;
     let scope_ok = match *req.method() {
         Method::PUT => requires_cache_write(scope),
@@ -569,6 +585,76 @@ mod tests {
         assert_eq!(
             recorded, None,
             "indeterminate resolver cap must stay None (never unlimited)"
+        );
+    }
+
+    // ---- cargo_gate: WebDAV MKCOL no-op (sccache real-client fix) --------------
+
+    /// A `TenantResolver` that MUST NOT be called: MKCOL short-circuits in the
+    /// gate before any PAT verification, so reaching the resolver is a bug.
+    #[derive(Debug)]
+    struct UnusedResolver;
+    #[async_trait]
+    impl TenantResolver for UnusedResolver {
+        async fn resolve(&self, _pat_plaintext: &str) -> Result<String, TenantResolveError> {
+            panic!("MKCOL must short-circuit before the resolver is ever called");
+        }
+    }
+
+    /// Router carrying ONLY the `cargo_gate` layer over a fallback that 200s if
+    /// reached. MKCOL requests short-circuit in the gate and never hit the
+    /// fallback, so this exercises `cargo_gate` in isolation (no adapter/CAS).
+    fn gate_only_router() -> Router {
+        use axum::routing::any;
+        let resolver: SharedTenantResolver = Arc::new(UnusedResolver);
+        let state = CargoGateState {
+            quota: None,
+            resolver,
+        };
+        Router::new()
+            .fallback(any(|| async { StatusCode::OK }))
+            .layer(middleware::from_fn_with_state(state, cargo_gate))
+    }
+
+    fn mkcol_request(scope: &str) -> axum::http::Request<axum::body::Body> {
+        axum::http::Request::builder()
+            .method(Method::from_bytes(b"MKCOL").unwrap())
+            .uri("/cargo/tenant-abc/6/b/4")
+            .header(SCOPE_HEADER, scope)
+            .body(axum::body::Body::empty())
+            .unwrap()
+    }
+
+    /// MKCOL + a cache-WRITE scope → 201 CREATED (success no-op). This is the
+    /// exact path opendal issues before PUTting a sharded key; without it the
+    /// real `sccache` binary can never write.
+    #[tokio::test]
+    async fn mkcol_with_write_scope_is_201_noop() {
+        use tower::ServiceExt;
+        let resp = gate_only_router()
+            .oneshot(mkcol_request("cas:rw"))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::CREATED,
+            "MKCOL with cache-write scope must succeed as a directory-creation no-op"
+        );
+    }
+
+    /// MKCOL + a read-only scope → 403 FORBIDDEN. MKCOL is part of a write flow,
+    /// so the surface stays fail-closed on a credential that lacks write.
+    #[tokio::test]
+    async fn mkcol_with_readonly_scope_is_403() {
+        use tower::ServiceExt;
+        let resp = gate_only_router()
+            .oneshot(mkcol_request("cas:r"))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::FORBIDDEN,
+            "MKCOL with a read-only scope must be denied (still gated on cache-write)"
         );
     }
 }
