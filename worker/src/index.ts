@@ -36,7 +36,7 @@ import {
 } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { isTenantSuspended } from "./lib/tenant_suspend_gate.js";
-import { verifyPatRowCached } from "./lib/pat_verify_cache.js";
+import { verifyPatRowCached, type KvReader } from "./lib/pat_verify_cache.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
@@ -1225,8 +1225,13 @@ async function extractAuth(
     typeof env.CONFIG_DB.withSession === "function"
       ? env.CONFIG_DB.withSession("first-unconstrained")
       : env.CONFIG_DB;
+  // L2: globally-replicated, per-colo KV cache — the latency fix for callers far
+  // from the ENAM D1 primary (SAM has no D1 replica region). Feature-detected so
+  // a build without the binding just skips L2. Reuses METADATA_KV (`patrow:` prefix).
+  const kvBinding = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
   const verify = await verifyPatRowCached(readSession, parsed.tokenId, {
     primaryDb: env.CONFIG_DB,
+    ...(kvBinding ? { kv: kvBinding } : {}),
   });
   if (verify.kind === "error") {
     // D1 errors (network partition, DB unavailable) must not fail-open. Return a

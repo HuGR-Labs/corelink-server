@@ -220,6 +220,78 @@ describe("verifyPatRowCached — replica read with primary fallback", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// L2 KV cache (the SAM latency fix: globally-replicated, per-colo edge cache)
+// ─────────────────────────────────────────────────────────────────────────────
+function makeKv(opts: { seed?: string | null; throwOnGet?: boolean; throwOnPut?: boolean } = {}) {
+  let gets = 0;
+  let puts = 0;
+  let store: string | null = opts.seed ?? null;
+  const kv = {
+    get: async (_k: string) => {
+      gets += 1;
+      if (opts.throwOnGet) throw new Error("KV get fault");
+      return store;
+    },
+    put: async (_k: string, v: string) => {
+      puts += 1;
+      if (opts.throwOnPut) throw new Error("KV put fault");
+      store = v;
+    },
+  };
+  return { kv, gets: () => gets, puts: () => puts, current: () => store };
+}
+
+describe("verifyPatRowCached — L2 KV cache", () => {
+  it("a KV HIT returns the row WITHOUT touching D1 (the fast global path)", async () => {
+    const { kv, gets } = makeKv({ seed: JSON.stringify(ROW) });
+    const { db, reads: d1Reads } = makePatD1({});
+    const r = await verifyPatRowCached(db, TEST_TOKEN_ID, { kv, nowMs: 1_000 });
+    expect(r).toEqual({ kind: "found", row: ROW });
+    expect(gets()).toBe(1);
+    expect(d1Reads()).toBe(0); // D1 never consulted on a KV hit
+  });
+
+  it("a KV MISS reads D1 and POPULATES KV (best-effort write-behind)", async () => {
+    const { kv, puts, current } = makeKv({ seed: null });
+    const { db } = makePatD1({});
+    const r = await verifyPatRowCached(db, TEST_TOKEN_ID, { kv, nowMs: 1_000 });
+    expect(r.kind).toBe("found");
+    // allow the void kvPut microtask to settle
+    await Promise.resolve();
+    expect(puts()).toBe(1);
+    expect(JSON.parse(current()!)).toMatchObject({ tenant_id: TEST_TENANT_ID });
+  });
+
+  it("a MALFORMED KV value falls through to D1 (never trusts junk)", async () => {
+    const { kv } = makeKv({ seed: "not-json{" });
+    const { db, reads } = makePatD1({});
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { kv, nowMs: 1_000 })).kind).toBe("found");
+    expect(reads()).toBe(1); // fell through to D1
+  });
+
+  it("a KV GET fault falls through to D1 (availability — KV never breaks auth)", async () => {
+    const { kv } = makeKv({ throwOnGet: true });
+    const { db, reads } = makePatD1({});
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { kv, nowMs: 1_000 })).kind).toBe("found");
+    expect(reads()).toBe(1);
+  });
+
+  it("does NOT populate KV on a D1 miss (a fresh mint must not be shadowed by a negative)", async () => {
+    const { kv, puts } = makeKv({ seed: null });
+    const { db } = makePatD1({ present: () => false });
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { kv, nowMs: 1_000 })).kind).toBe("not_found");
+    await Promise.resolve();
+    expect(puts()).toBe(0); // negatives are never cached in KV
+  });
+
+  it("a KV PUT failure does NOT break auth (the D1 read already succeeded)", async () => {
+    const { kv } = makeKv({ seed: null, throwOnPut: true });
+    const { db } = makePatD1({});
+    expect((await verifyPatRowCached(db, TEST_TOKEN_ID, { kv, nowMs: 1_000 })).kind).toBe("found");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Integration: Worker handler — the perf win + revocation + expiry end-to-end
 // ─────────────────────────────────────────────────────────────────────────────
 

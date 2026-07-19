@@ -68,6 +68,43 @@ import type { D1Database } from "@cloudflare/workers-types";
 export type D1Reader = Pick<D1Database, "prepare">;
 
 /**
+ * Minimal KV handle for the L2 auth cache — the subset of `KVNamespace` this
+ * module uses. Typed structurally so any bound KV namespace is accepted without
+ * a hard `KVNamespace` import, and so a test double is trivial.
+ *
+ * Why KV as L2: the D1 primary is single-region (ENAM); D1 read replication has
+ * no South-America presence, so a São-Paulo edge still pays a trans-continental
+ * `pat` read (~0.5 s) even via a replica session, and the L1 in-memory cache is
+ * per-isolate so Cloudflare's isolate fan-out defeats it for a single client.
+ * KV is globally replicated with a PER-COLO edge cache (survives fan-out) and
+ * edge-local reads everywhere — including SAM. So a `patrow:<token_id>` value,
+ * once read at a colo, serves the rest of that colo's traffic locally.
+ */
+export interface KvReader {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+}
+
+/** KV key prefix for a cached positive `pat` row. */
+const KV_PAT_ROW_PREFIX = "patrow:";
+
+/**
+ * KV entry TTL for a cached positive `pat` row, in SECONDS. 60 s is KV's floor
+ * and bounds the revocation window on the L2 layer: a PAT revoked in D1 keeps
+ * edge access until this entry expires. That is the MAX of ADR-0030's
+ * `SLO-FRESH-PAT-REVOKE ≤ 60 s p99` — compliant, and it REPLACES (not adds to)
+ * the D1-read axis on the hot path, so it is not additive with replication lag.
+ * Worker-initiated revokes additionally KV-delete for immediacy (see the revoke
+ * paths); this TTL is the uniform backstop for every revoke path.
+ */
+const KV_PAT_ROW_TTL_S = 60;
+
+/** The KV key for a token_id's cached pat row. */
+export function patRowKvKey(tokenId: string): string {
+  return KV_PAT_ROW_PREFIX + tokenId;
+}
+
+/**
  * The verified `pat` row cached on the hot path — byte-for-byte the columns
  * `extractAuth` selects and returns. Positive (found, non-revoked) rows only.
  */
@@ -210,18 +247,18 @@ async function readPatRow(
 export async function verifyPatRowCached(
   readDb: D1Reader,
   tokenId: string,
-  opts: { primaryDb?: D1Reader; nowMs?: number } = {},
+  opts: { primaryDb?: D1Reader; kv?: KvReader; nowMs?: number } = {},
 ): Promise<PatVerifyResult> {
   const nowMs = opts.nowMs ?? Date.now();
-  // ── Fresh positive hit ──────────────────────────────────────────────────────
-  // Served even through a transient D1 blip: the entry was DB-confirmed < TTL
-  // ago, so this never extends the revocation window past the TTL.
+  // ── L1: fresh in-memory (per-isolate) positive hit ─────────────────────────
+  // Cheap hot-repeat path within one isolate; served even through a transient
+  // D1/KV blip (DB-confirmed < TTL ago, so never past the TTL revocation window).
   const cached = patCache.get(tokenId);
   if (cached !== undefined && nowMs - cached.fetchedAtMs < PAT_VERIFY_CACHE_TTL_MS) {
     return { kind: "found", row: cached.row };
   }
 
-  // ── Single-flight: collapse concurrent misses to one D1 read ────────────────
+  // ── Single-flight: collapse concurrent misses to one L2/L3 read ─────────────
   const existing = inflight.get(tokenId);
   if (existing !== undefined) {
     return existing;
@@ -229,22 +266,39 @@ export async function verifyPatRowCached(
 
   const flight = (async (): Promise<PatVerifyResult> => {
     try {
+      // ── L2: KV (globally replicated, per-colo edge cache) ──────────────────
+      // The latency fix for callers far from the D1 primary (e.g. SAM): once a
+      // colo has read `patrow:<token_id>`, it serves the rest of that colo's
+      // traffic locally (unlike the per-isolate L1, which Cloudflare's fan-out
+      // defeats). A KV hit skips D1 entirely. A KV miss / parse-fail / KV fault
+      // all fall through to D1 (availability); D1 stays the source-of-truth.
+      const kvRow = opts.kv ? await kvGetPatRow(opts.kv, tokenId) : null;
+      if (kvRow !== null) {
+        putCache(tokenId, kvRow, nowMs);
+        return { kind: "found", row: kvRow };
+      }
+
+      // ── L3: D1 (replica session → primary fallback), the source-of-truth ───
       const row = await readPatRow(readDb, opts.primaryDb, tokenId);
       if (row === null) {
         // Unknown OR revoked-at-read-time (confirmed against the primary). Do NOT
-        // cache negatives — a token minted a moment ago must authenticate
-        // immediately, and a revoked token stays bounded solely by any existing
-        // positive entry's TTL. (Any stale positive entry is left to expire; it
-        // is never refreshed from a null read.) D1 stays the source-of-truth.
+        // cache negatives in L1 or L2 — a token minted a moment ago must
+        // authenticate immediately (KV miss → D1 → found), and a revoked token
+        // stays bounded by any existing positive entry's TTL. D1 is authoritative.
         return { kind: "not_found" };
       }
       putCache(tokenId, row, nowMs);
+      // Populate L2 best-effort: a KV write failure must NEVER break auth (the
+      // read already succeeded against D1). Bounded 60 s TTL = the L2 revocation
+      // backstop; positive rows only.
+      if (opts.kv) {
+        void kvPutPatRow(opts.kv, tokenId, row);
+      }
       return { kind: "found", row };
     } catch {
-      // Both handles faulted — do NOT cache, and do NOT fall back to a
-      // stale/expired entry (that would push the revocation window past the
-      // TTL). Surface the fault so extractAuth returns d1_lookup_error → 503
-      // (unchanged fail-closed, retryable posture).
+      // The D1 read faulted (KV never throws to here — kvGetPatRow swallows).
+      // Do NOT cache, do NOT serve a stale/expired entry. Surface the fault so
+      // extractAuth returns d1_lookup_error → 503 (fail-closed, retryable).
       return { kind: "error" };
     } finally {
       inflight.delete(tokenId);
@@ -252,6 +306,48 @@ export async function verifyPatRowCached(
   })();
   inflight.set(tokenId, flight);
   return flight;
+}
+
+/**
+ * Read + validate a cached pat row from KV. Returns the row on a clean hit, or
+ * `null` on miss / malformed value / KV fault (all of which fall through to D1).
+ * Never throws — a KV fault must not break auth.
+ */
+async function kvGetPatRow(kv: KvReader, tokenId: string): Promise<CachedPatRow | null> {
+  let raw: string | null;
+  try {
+    raw = await kv.get(patRowKvKey(tokenId));
+  } catch {
+    return null; // KV fault → treat as miss, fall through to D1.
+  }
+  if (raw === null) {
+    return null;
+  }
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    // Validate the shape before trusting it (a malformed/foreign value ⇒ miss).
+    if (typeof o["tenant_id"] !== "string" || typeof o["expires_ms"] !== "number") {
+      return null;
+    }
+    return {
+      tenant_id: o["tenant_id"] as string,
+      expires_ms: o["expires_ms"] as number,
+      scope: typeof o["scope"] === "string" ? (o["scope"] as string) : null,
+      runner_job_ac_key:
+        typeof o["runner_job_ac_key"] === "string" ? (o["runner_job_ac_key"] as string) : null,
+    };
+  } catch {
+    return null; // malformed JSON → miss.
+  }
+}
+
+/** Write a positive pat row to KV with the bounded revocation-backstop TTL. Best-effort. */
+async function kvPutPatRow(kv: KvReader, tokenId: string, row: CachedPatRow): Promise<void> {
+  try {
+    await kv.put(patRowKvKey(tokenId), JSON.stringify(row), { expirationTtl: KV_PAT_ROW_TTL_S });
+  } catch {
+    // Swallow — a KV write failure must never break auth (the D1 read succeeded).
+  }
 }
 
 /**
