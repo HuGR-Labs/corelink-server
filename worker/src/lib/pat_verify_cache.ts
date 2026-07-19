@@ -247,7 +247,18 @@ async function readPatRow(
 export async function verifyPatRowCached(
   readDb: D1Reader,
   tokenId: string,
-  opts: { primaryDb?: D1Reader; kv?: KvReader; nowMs?: number } = {},
+  opts: {
+    primaryDb?: D1Reader;
+    kv?: KvReader;
+    /**
+     * `ctx.waitUntil` — extends the request lifetime so the best-effort KV
+     * write-behind actually COMPLETES. Without it, the un-awaited `kv.put`
+     * promise is cancelled when the response returns, so KV never populates and
+     * every read falls through to D1 (the SAM-latency regression this fixes).
+     */
+    waitUntil?: (p: Promise<unknown>) => void;
+    nowMs?: number;
+  } = {},
 ): Promise<PatVerifyResult> {
   const nowMs = opts.nowMs ?? Date.now();
   // ── L1: fresh in-memory (per-isolate) positive hit ─────────────────────────
@@ -290,9 +301,18 @@ export async function verifyPatRowCached(
       putCache(tokenId, row, nowMs);
       // Populate L2 best-effort: a KV write failure must NEVER break auth (the
       // read already succeeded against D1). Bounded 60 s TTL = the L2 revocation
-      // backstop; positive rows only.
+      // backstop; positive rows only. CRUCIAL: hand the write to `waitUntil` so
+      // it survives the response — a bare `void kv.put(...)` is cancelled when
+      // the Worker returns, so KV would never populate (measured: 100% D1 reads
+      // from SAM before this). Fallback to `await` when no waitUntil is provided
+      // (tests) so the write is observable.
       if (opts.kv) {
-        void kvPutPatRow(opts.kv, tokenId, row);
+        const putPromise = kvPutPatRow(opts.kv, tokenId, row);
+        if (opts.waitUntil) {
+          opts.waitUntil(putPromise);
+        } else {
+          await putPromise;
+        }
       }
       return { kind: "found", row };
     } catch {
