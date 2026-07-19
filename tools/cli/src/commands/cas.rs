@@ -284,4 +284,32 @@ mod tests {
         let files = collect_files(dir.path()).unwrap();
         assert_eq!(files.len(), 2);
     }
+
+    #[tokio::test]
+    async fn upload_dir_puts_each_file_blake3_addressed() {
+        // Kills the `hex::encode(...) -> String::new()` mutant on the upload
+        // digest: an empty digest would PUT to `/v1/cas/t-test/` (unmatched)
+        // and 404 → error. The mock only matches the true BLAKE3 path.
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let contents = b"import-me";
+        let digest = hex::encode(blake3::hash(contents).as_bytes());
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.bin"), contents).unwrap();
+
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path(format!("/v1/cas/t-test/{digest}")))
+            .respond_with(ResponseTemplate::new(201))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+
+        let summary = upload_dir(&client, dir.path()).await.expect("upload ok");
+        assert_eq!(summary.files_uploaded, 1);
+        assert_eq!(summary.bytes_uploaded, contents.len() as u64);
+        let reqs = server.received_requests().await.expect("recorded");
+        assert_eq!(reqs.len(), 1, "one PUT to the BLAKE3-addressed path");
+    }
 }

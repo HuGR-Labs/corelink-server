@@ -60,6 +60,14 @@ pub(crate) fn cas_object_path(tenant: &str, hash: &str) -> String {
     format!("/v1/cas/{tenant}/{hash}")
 }
 
+/// Parse a `content-length` header value into a byte count. Pure so the
+/// HEAD size-derivation (present/absent/garbage) is unit-testable without
+/// HTTP. `None` when the header is absent or not a base-10 `u64`.
+#[must_use]
+pub(crate) fn parse_content_length(raw: Option<&str>) -> Option<u64> {
+    raw.and_then(|s| s.parse::<u64>().ok())
+}
+
 /// Maximum retry attempts for transient failures (FM-150).
 const MAX_RETRIES: u32 = 3;
 
@@ -107,6 +115,22 @@ impl CorelinkClient {
                 tenant_id,
             }),
         })
+    }
+
+    /// Construct a client pointed at an explicit `base_url` (a localhost
+    /// mock) with an explicit cached `tenant_id` — for hermetic tests only.
+    /// The production binary resolves both from env/config in [`Self::new`].
+    #[cfg(test)]
+    pub(crate) fn for_test(base_url: String, tenant_id: Option<String>) -> Self {
+        let http = Client::builder().build().unwrap_or_else(|_| Client::new());
+        Self {
+            inner: Arc::new(ClientInner {
+                http,
+                base_url,
+                pat: "corelink_pat_test.secret.sig".to_owned(),
+                tenant_id,
+            }),
+        }
     }
 
     /// Call `GET /v1/users/me` and return the parsed response.
@@ -219,11 +243,11 @@ impl CorelinkClient {
                 .await;
             match resp {
                 Ok(r) if r.status().is_success() => {
-                    let size = r
-                        .headers()
-                        .get(reqwest::header::CONTENT_LENGTH)
-                        .and_then(|v| v.to_str().ok())
-                        .and_then(|s| s.parse::<u64>().ok());
+                    let size = parse_content_length(
+                        r.headers()
+                            .get(reqwest::header::CONTENT_LENGTH)
+                            .and_then(|v| v.to_str().ok()),
+                    );
                     return Ok(CasHead {
                         exists: true,
                         size_bytes: size,
@@ -476,9 +500,139 @@ fn backoff_ms(attempt: u32) -> u64 {
 }
 
 #[cfg(test)]
-#[allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
+#[allow(
+    clippy::uninlined_format_args,
+    clippy::format_in_format_args,
+    clippy::expect_used,
+    clippy::unwrap_used
+)]
 mod tests {
     use super::*;
+
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn parse_content_length_cases() {
+        assert_eq!(parse_content_length(Some("1234")), Some(1234));
+        assert_eq!(parse_content_length(Some("0")), Some(0));
+        assert_eq!(
+            parse_content_length(Some("18446744073709551615")),
+            Some(u64::MAX)
+        );
+        assert_eq!(parse_content_length(Some("abc")), None);
+        assert_eq!(parse_content_length(Some("")), None);
+        assert_eq!(parse_content_length(Some("-5")), None);
+        assert_eq!(parse_content_length(None), None);
+    }
+
+    #[tokio::test]
+    async fn cas_get_returns_the_body_bytes() {
+        // Kills the `cas_get -> Ok(Default::default())` mutant: a Default
+        // (empty) Bytes would not equal the mock's body.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/cas/t-test/deadbeef"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"corelink-blob".as_ref()))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let got = client.cas_get("deadbeef").await.expect("cas_get ok");
+        assert_eq!(got.as_ref(), b"corelink-blob");
+        assert!(
+            !got.is_empty(),
+            "default/empty body would survive otherwise"
+        );
+    }
+
+    #[tokio::test]
+    async fn cas_head_present_reports_size_from_content_length() {
+        let server = MockServer::start().await;
+        Mock::given(method("HEAD"))
+            .and(path("/v1/cas/t-test/abc"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0u8; 512]))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let head = client.cas_head("abc").await.expect("cas_head ok");
+        assert!(head.exists, "200 ⇒ exists");
+        assert_eq!(head.size_bytes, Some(512), "content-length ⇒ size");
+    }
+
+    #[tokio::test]
+    async fn cas_head_404_reports_absent() {
+        // Kills the `== NOT_FOUND` guard/`==→!=` mutants: a 200 must NOT be
+        // classified absent, and a 404 MUST be (exists=false, no size).
+        let server = MockServer::start().await;
+        Mock::given(method("HEAD"))
+            .and(path("/v1/cas/t-test/missing"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let head = client
+            .cas_head("missing")
+            .await
+            .expect("cas_head ok on 404");
+        assert!(!head.exists);
+        assert_eq!(head.size_bytes, None);
+    }
+
+    #[tokio::test]
+    async fn cas_head_403_errors_without_retry() {
+        // A non-transient error status must NOT be retried (kills the
+        // is_transient guard forced-true): exactly ONE request is made.
+        let server = MockServer::start().await;
+        Mock::given(method("HEAD"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let res = client.cas_head("x").await;
+        assert!(res.is_err(), "403 ⇒ error");
+        let reqs = server.received_requests().await.expect("recorded");
+        assert_eq!(reqs.len(), 1, "403 must not retry");
+    }
+
+    #[tokio::test]
+    async fn cas_head_503_retries_then_errors() {
+        // A transient status IS retried MAX_RETRIES times then errors:
+        // exactly MAX_RETRIES + 1 requests. Kills the transient guard
+        // forced-false, the `attempt += 1`, and the `attempt > MAX_RETRIES`
+        // comparison mutants (each changes the request count).
+        let server = MockServer::start().await;
+        Mock::given(method("HEAD"))
+            .respond_with(ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let res = client.cas_head("x").await;
+        assert!(res.is_err(), "exhausted retries ⇒ error");
+        let reqs = server.received_requests().await.expect("recorded");
+        assert_eq!(
+            reqs.len() as u32,
+            MAX_RETRIES + 1,
+            "503 retries exactly MAX_RETRIES times"
+        );
+    }
+
+    #[tokio::test]
+    async fn cas_head_connection_error_retries_with_backoff() {
+        // A transport error is retried (kills the `attempt < MAX_RETRIES`
+        // network-retry guard/`<` comparison: the mutants that return after a
+        // single attempt finish in ~0ms; the real path sleeps through the
+        // backoff schedule). Port 9 (discard) is not listening ⇒ refused.
+        let client =
+            CorelinkClient::for_test("http://127.0.0.1:9".to_owned(), Some("t-test".to_owned()));
+        let start = std::time::Instant::now();
+        let res = client.cas_head("x").await;
+        let elapsed = start.elapsed();
+        assert!(res.is_err(), "unreachable host ⇒ error");
+        assert!(
+            elapsed >= Duration::from_millis(150),
+            "must retry with backoff (slept {elapsed:?}); a single-attempt mutant returns instantly"
+        );
+    }
 
     #[test]
     fn cas_object_path_is_tenant_scoped() {

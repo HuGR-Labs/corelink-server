@@ -238,4 +238,33 @@ mod tests {
         assert_eq!(digest.len(), 64);
         assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
     }
+
+    #[tokio::test]
+    async fn put_run_uploads_to_blake3_addressed_path() {
+        // Kills `run -> Ok(())`: the mutant makes NO request. A real run
+        // hashes the file with BLAKE3 and PUTs it to the tenant-scoped route
+        // keyed by that digest, with the file bytes as the body.
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let contents = b"upload-me-please";
+        let digest = hex::encode(blake3::hash(contents).as_bytes());
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path(format!("/v1/cas/t-test/{digest}")))
+            .respond_with(ResponseTemplate::new(201))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("in.bin");
+        std::fs::write(&f, contents).unwrap();
+        run(&client, &f, None, OutputFormat::Json)
+            .await
+            .expect("put ok");
+        let reqs = server.received_requests().await.expect("recorded");
+        assert_eq!(reqs.len(), 1, "one PUT to the BLAKE3-addressed path");
+        let req = reqs.first().expect("one request");
+        assert_eq!(req.body.as_slice(), contents, "raw file bytes uploaded");
+    }
 }

@@ -327,6 +327,27 @@ fn check_region() -> DoctorCheck {
     )
 }
 
+/// Storage-quota verdict from raw usage vs limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum QuotaState {
+    /// Within quota (or the cap is unknown / zero).
+    Ok,
+    /// Usage has reached or passed the quota.
+    Exceeded,
+}
+
+/// Decide the quota verdict from `cas_bytes` vs `quota_bytes`. Pure so the
+/// threshold boundary is unit-testable without HTTP. A missing or zero limit
+/// is treated as "not exceeded" — an unknown cap must never raise a false
+/// `COR_QUOTA_EXCEEDED`.
+#[must_use]
+pub(crate) fn quota_verdict(cas_bytes: Option<u64>, quota_bytes: Option<u64>) -> QuotaState {
+    match (cas_bytes, quota_bytes) {
+        (Some(used), Some(limit)) if limit > 0 && used >= limit => QuotaState::Exceeded,
+        _ => QuotaState::Ok,
+    }
+}
+
 /// Check #7 — Quota: current usage vs plan limit, derived from the
 /// PAT-readable usage route (`GET /v1/customer/usage`), which returns
 /// `cas_bytes` + `quota_bytes` at the TOP LEVEL and — unlike the billing-
@@ -340,14 +361,14 @@ async fn check_quota(client: &CorelinkClient) -> DoctorCheck {
         Ok(v) => {
             let used = v.get("cas_bytes").and_then(serde_json::Value::as_u64);
             let limit = v.get("quota_bytes").and_then(serde_json::Value::as_u64);
-            match (used, limit) {
-                (Some(used), Some(limit)) if limit > 0 && used >= limit => DoctorCheck::fail(
+            match quota_verdict(used, limit) {
+                QuotaState::Exceeded => DoctorCheck::fail(
                     "quota",
                     latency,
                     "COR_QUOTA_EXCEEDED",
                     "Tenant storage quota reached (cas_bytes ≥ quota_bytes). Verify plan limits and contact sales to upgrade. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED",
                 ),
-                _ => DoctorCheck::ok("quota", latency),
+                QuotaState::Ok => DoctorCheck::ok("quota", latency),
             }
         }
         Err(_) => DoctorCheck::fail(
@@ -473,5 +494,202 @@ mod tests {
         );
         assert_eq!(c.status, CheckStatus::Fail);
         assert_eq!(c.error_code.as_deref(), Some("COR_STORAGE_READ_FAIL"));
+    }
+
+    #[test]
+    fn quota_verdict_boundary() {
+        // Kills the `>`, `>=`, `&&`, and guard mutants on the threshold.
+        assert_eq!(quota_verdict(Some(100), Some(100)), QuotaState::Exceeded); // at cap (>=)
+        assert_eq!(quota_verdict(Some(99), Some(100)), QuotaState::Ok); // below cap
+        assert_eq!(quota_verdict(Some(101), Some(100)), QuotaState::Exceeded); // over cap
+        assert_eq!(quota_verdict(Some(100), Some(0)), QuotaState::Ok); // zero cap ⇒ unknown
+        assert_eq!(quota_verdict(Some(100), None), QuotaState::Ok); // no cap datum
+        assert_eq!(quota_verdict(None, Some(100)), QuotaState::Ok); // no usage datum
+        assert_eq!(quota_verdict(Some(0), Some(0)), QuotaState::Ok);
+    }
+
+    // -----------------------------------------------------------------------
+    // Hermetic mock-HTTP checks (localhost only — never prod).
+    // -----------------------------------------------------------------------
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn mock_client(server: &MockServer) -> CorelinkClient {
+        CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()))
+    }
+
+    #[tokio::test]
+    async fn run_checks_returns_all_eight() {
+        // Kills `run_checks -> Ok(vec![])`: an empty server 404s everything,
+        // so checks fail/skip — but the vector still holds all 8 entries.
+        let server = MockServer::start().await;
+        let checks = run_checks(&mock_client(&server))
+            .await
+            .expect("run_checks ok");
+        assert_eq!(checks.len(), 8, "doctor always reports 8 checks");
+    }
+
+    #[tokio::test]
+    async fn check_byok_active_is_ok() {
+        // Kills the `Some("active") => ok` arm-delete mutant: an active BYOK
+        // status must resolve `ok` (a deleted arm would fall through to fail).
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/overview"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"byok": {"status": "active"}})),
+            )
+            .mount(&server)
+            .await;
+        let c = check_byok(&mock_client(&server), true).await;
+        assert_eq!(c.status, CheckStatus::Ok);
+    }
+
+    #[tokio::test]
+    async fn check_byok_inactive_is_fail() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/overview"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"byok": {"status": "disabled"}})),
+            )
+            .mount(&server)
+            .await;
+        let c = check_byok(&mock_client(&server), true).await;
+        assert_eq!(c.status, CheckStatus::Fail);
+        assert_eq!(c.error_code.as_deref(), Some("COR_BYOK_REVOKED"));
+    }
+
+    #[tokio::test]
+    async fn check_byok_403_degrades_to_skip() {
+        // The overview is billing-admin-gated; a cache PAT 403s ⇒ honest skip.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/overview"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&server)
+            .await;
+        let c = check_byok(&mock_client(&server), true).await;
+        assert_eq!(c.status, CheckStatus::Skip);
+    }
+
+    #[tokio::test]
+    async fn check_byok_disabled_skips_without_network() {
+        let server = MockServer::start().await;
+        let c = check_byok(&mock_client(&server), false).await;
+        assert_eq!(c.status, CheckStatus::Skip);
+        // No overview request when BYOK isn't enabled locally.
+        let reqs = server.received_requests().await.expect("recorded");
+        assert!(reqs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn check_quota_over_limit_fails() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"cas_bytes": 200, "quota_bytes": 100})),
+            )
+            .mount(&server)
+            .await;
+        let c = check_quota(&mock_client(&server)).await;
+        assert_eq!(c.status, CheckStatus::Fail);
+        assert_eq!(c.error_code.as_deref(), Some("COR_QUOTA_EXCEEDED"));
+    }
+
+    #[tokio::test]
+    async fn check_quota_under_limit_ok() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"cas_bytes": 10, "quota_bytes": 100})),
+            )
+            .mount(&server)
+            .await;
+        let c = check_quota(&mock_client(&server)).await;
+        assert_eq!(c.status, CheckStatus::Ok);
+    }
+
+    #[tokio::test]
+    async fn check_quota_unreadable_fails() {
+        // Kills the `Err(_) => fail` arm: an unreadable usage route ⇒ fail.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let c = check_quota(&mock_client(&server)).await;
+        assert_eq!(c.status, CheckStatus::Fail);
+    }
+
+    #[tokio::test]
+    async fn check_network_ok_and_auth_ok() {
+        // `/health` 200 ⇒ network ok; `/v1/users/me` 200 ⇒ auth ok.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/users/me"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"tenant_id": "t-test"})),
+            )
+            .mount(&server)
+            .await;
+        let client = mock_client(&server);
+        assert_eq!(check_network(&client).await.status, CheckStatus::Ok);
+        assert_eq!(check_auth(&client).await.status, CheckStatus::Ok);
+    }
+
+    #[tokio::test]
+    async fn check_network_and_auth_fail_on_error() {
+        // 5xx ⇒ both checks fail (kills the Ok/Err arm mutants).
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let client = mock_client(&server);
+        assert_eq!(check_network(&client).await.status, CheckStatus::Fail);
+        assert_eq!(check_auth(&client).await.status, CheckStatus::Fail);
+    }
+
+    #[tokio::test]
+    async fn storage_write_then_read_roundtrip_ok() {
+        // A real CAS round-trip: PUT stores the 1 KB blob, GET returns the
+        // exact bytes ⇒ storage_write ok + a digest, storage_read verifies ok.
+        let blob: Vec<u8> = (0u8..=255u8).cycle().take(1024).collect();
+        let digest = {
+            let mut h = blake3::Hasher::new();
+            h.update(&blob);
+            hex::encode(h.finalize().as_bytes())
+        };
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path(format!("/v1/cas/t-test/{digest}")))
+            .respond_with(ResponseTemplate::new(201))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/v1/cas/t-test/{digest}")))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(blob.clone()))
+            .mount(&server)
+            .await;
+        let client = mock_client(&server);
+        let (write_check, dig) = check_storage_write(&client).await;
+        assert_eq!(write_check.status, CheckStatus::Ok);
+        assert_eq!(dig.as_deref(), Some(digest.as_str()));
+        let read_check = check_storage_read(&client, dig.as_deref()).await;
+        assert_eq!(read_check.status, CheckStatus::Ok);
     }
 }

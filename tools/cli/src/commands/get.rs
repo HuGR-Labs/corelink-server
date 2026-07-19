@@ -153,4 +153,37 @@ mod tests {
         let computed = hex::encode(hasher.finalize().as_bytes());
         assert_eq!(computed, hex::encode(blake3::hash(data).as_bytes()));
     }
+
+    #[tokio::test]
+    async fn get_run_downloads_verifies_and_writes_file() {
+        // Kills `run -> Ok(())`: the mutant writes no file. A real run
+        // downloads the blob, BLAKE3-verifies it against the digest, and
+        // writes the exact bytes to `-o <file>`.
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let data = b"blob-under-test";
+        let digest = hex::encode(blake3::hash(data).as_bytes());
+        let server = MockServer::start().await;
+        // Mock matches the BARE digest path; the caller passes a `blake3:`
+        // prefix, so this also proves the prefix is stripped (a mutated
+        // strip would leave `blake3:` in the path ⇒ 404 ⇒ error).
+        Mock::given(method("GET"))
+            .and(path(format!("/v1/cas/t-test/{digest}")))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(data.as_ref()))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.bin");
+        run(
+            &client,
+            &format!("blake3:{digest}"),
+            Some(out.clone()),
+            OutputFormat::Json,
+        )
+        .await
+        .expect("get ok");
+        assert_eq!(std::fs::read(&out).unwrap(), data);
+    }
 }

@@ -141,4 +141,30 @@ mod tests {
         let json = serde_json::to_string(&r).unwrap();
         assert!(!json.contains("\"size_bytes\""));
     }
+
+    #[tokio::test]
+    async fn stat_run_issues_head_on_tenant_scoped_route() {
+        // Kills `run -> Ok(())`: the mutant makes NO request. A real run
+        // probes the blob with a single HEAD on `/v1/cas/<tenant>/<digest>`
+        // (there is no `/v1/cas/stat/…` route).
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        // Mock matches the BARE digest; caller passes a `blake3:` prefix, so
+        // this also proves the prefix strip (a mutated strip ⇒ wrong path).
+        Mock::given(method("HEAD"))
+            .and(path("/v1/cas/t-test/abc"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0u8; 7]))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        run(&client, "blake3:abc", OutputFormat::Json)
+            .await
+            .expect("stat ok");
+        let reqs = server.received_requests().await.expect("recorded");
+        assert_eq!(reqs.len(), 1, "exactly one HEAD probe");
+        let req = reqs.first().expect("one request");
+        assert_eq!(req.url.path(), "/v1/cas/t-test/abc");
+    }
 }
