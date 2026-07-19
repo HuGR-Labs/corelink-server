@@ -659,6 +659,12 @@ candidates:
     status: "active"
     source_cluster: "adr"
     seed_from: ["specs/03_architecture/adrs/ADR-0069-pat-verification-fast-hash-vs-argon2id.md"]
+  - id: "adr/adr-0070-tenant-suspend-gate-kv-l2-cache"
+    type: "ADR"
+    title: "ADR 0070 tenant suspend gate kv l2 cache"
+    status: "active"
+    source_cluster: "adr"
+    seed_from: ["specs/03_architecture/adrs/ADR-0070-tenant-suspend-gate-kv-l2-cache.md"]
   - id: "adr/adr-multi-region-v1"
     type: "ADR"
     title: "ADR MULTI REGION V1"

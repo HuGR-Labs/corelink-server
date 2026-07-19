@@ -2,8 +2,9 @@
  * Tests for the tenant fast-suspend gate (go-live GAP G4).
  *
  * Two layers:
- *   1. Unit tests on `isTenantSuspended` — the single-flight + TTL cache and
- *      its fail-open-but-never-for-a-known-suspend posture.
+ *   1. Unit tests on `isTenantSuspended` — the three-tier read (L1 isolate →
+ *      L2 KV → L3 D1), the single-flight, and its fail-open-but-never-for-a-
+ *      known-suspend posture.
  *   2. Integration tests through the Worker handler — a suspended tenant's
  *      valid PAT is 403'd on the customer CAS/AC hot path; an active tenant's
  *      identical PAT passes the gate.
@@ -14,8 +15,11 @@ import type { D1Database, DurableObjectNamespace } from "@cloudflare/workers-typ
 import {
   isTenantSuspended,
   __resetTenantSuspendCacheForTest,
+  suspendKvKey,
   SUSPEND_CACHE_TTL_MS,
+  KV_SUSPEND_TTL_S,
 } from "../src/lib/tenant_suspend_gate.js";
+import type { KvReader } from "../src/lib/pat_verify_cache.js";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 import { TEST_PAT_SIGNING_KEY, mintTestPat } from "./setup.js";
@@ -64,52 +68,95 @@ function makeOffboardingD1(opts: {
   return { db, reads: () => reads };
 }
 
+/**
+ * In-memory KV mock (the L2 tier). Backed by a Map; counts get/put; can seed a
+ * value and inject get/put faults. Mirrors the pat-cache KV mock.
+ */
+function makeKv(seed?: Record<string, string>): {
+  kv: KvReader;
+  gets: () => number;
+  puts: () => number;
+  store: Map<string, string>;
+  setThrowOnGet: (v: boolean) => void;
+  setThrowOnPut: (v: boolean) => void;
+} {
+  const store = new Map<string, string>(Object.entries(seed ?? {}));
+  let gets = 0;
+  let puts = 0;
+  let throwOnGet = false;
+  let throwOnPut = false;
+  const kv: KvReader = {
+    get: async (key: string) => {
+      gets += 1;
+      if (throwOnGet) throw new Error("KV get fault");
+      return store.get(key) ?? null;
+    },
+    put: async (key: string, value: string, _o?: { expirationTtl?: number }) => {
+      puts += 1;
+      if (throwOnPut) throw new Error("KV put fault");
+      store.set(key, value);
+    },
+  };
+  return {
+    kv,
+    gets: () => gets,
+    puts: () => puts,
+    store,
+    setThrowOnGet: (v) => (throwOnGet = v),
+    setThrowOnPut: (v) => (throwOnPut = v),
+  };
+}
+
 describe("isTenantSuspended", () => {
   it("returns false for a tenant with NO offboarding row (active)", async () => {
     const { db } = makeOffboardingD1({ state: null });
-    expect(await isTenantSuspended(db, TEST_TENANT_ID, 1_000)).toBe(false);
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 })).toBe(false);
   });
 
   it("returns true for state='suspended'", async () => {
     const { db } = makeOffboardingD1({ state: "suspended" });
-    expect(await isTenantSuspended(db, TEST_TENANT_ID, 1_000)).toBe(true);
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 })).toBe(true);
   });
 
   it("returns true for state='erased'", async () => {
     const { db } = makeOffboardingD1({ state: "erased" });
-    expect(await isTenantSuspended(db, TEST_TENANT_ID, 1_000)).toBe(true);
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 })).toBe(true);
   });
 
   it("returns FALSE for the earlier arms (grace_period / read_only / cancel_requested keep access)", async () => {
     for (const state of ["cancel_requested", "grace_period", "read_only"]) {
       __resetTenantSuspendCacheForTest();
       const { db } = makeOffboardingD1({ state });
-      expect(await isTenantSuspended(db, TEST_TENANT_ID, 1_000)).toBe(false);
+      expect(await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 })).toBe(false);
     }
   });
 
   it("serves a fresh cache hit without a second D1 read", async () => {
     const { db, reads } = makeOffboardingD1({ state: "suspended" });
-    expect(await isTenantSuspended(db, TEST_TENANT_ID, 1_000)).toBe(true);
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 })).toBe(true);
     // Within TTL → cached, no new read.
-    expect(await isTenantSuspended(db, TEST_TENANT_ID, 1_000 + SUSPEND_CACHE_TTL_MS - 1)).toBe(true);
+    expect(
+      await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 + SUSPEND_CACHE_TTL_MS - 1 }),
+    ).toBe(true);
     expect(reads()).toBe(1);
   });
 
   it("re-reads D1 after the TTL expires", async () => {
     const { db, reads } = makeOffboardingD1({ state: null });
-    expect(await isTenantSuspended(db, TEST_TENANT_ID, 1_000)).toBe(false);
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 })).toBe(false);
     // Past TTL → stale → re-read.
-    expect(await isTenantSuspended(db, TEST_TENANT_ID, 1_000 + SUSPEND_CACHE_TTL_MS + 1)).toBe(false);
+    expect(
+      await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 + SUSPEND_CACHE_TTL_MS + 1 }),
+    ).toBe(false);
     expect(reads()).toBe(2);
   });
 
   it("single-flights concurrent misses into ONE D1 read", async () => {
     const { db, reads } = makeOffboardingD1({ state: "suspended" });
     const [a, b, c] = await Promise.all([
-      isTenantSuspended(db, TEST_TENANT_ID, 1_000),
-      isTenantSuspended(db, TEST_TENANT_ID, 1_000),
-      isTenantSuspended(db, TEST_TENANT_ID, 1_000),
+      isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 }),
+      isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 }),
+      isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 }),
     ]);
     expect([a, b, c]).toEqual([true, true, true]);
     expect(reads()).toBe(1);
@@ -118,17 +165,124 @@ describe("isTenantSuspended", () => {
   it("fails OPEN (false) on a D1 read error with NO prior knowledge", async () => {
     const { db } = makeOffboardingD1({ throwOnRead: true });
     // A transient D1 fault must not break an active tenant we know nothing about.
-    expect(await isTenantSuspended(db, TEST_TENANT_ID, 1_000)).toBe(false);
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 })).toBe(false);
   });
 
   it("still DENIES (true) on a D1 read error when the last known value is suspended", async () => {
     // First: a good read establishes the tenant as suspended.
     const { db: goodDb } = makeOffboardingD1({ state: "suspended" });
-    expect(await isTenantSuspended(goodDb, TEST_TENANT_ID, 1_000)).toBe(true);
+    expect(await isTenantSuspended(goodDb, TEST_TENANT_ID, { nowMs: 1_000 })).toBe(true);
     // Later (past TTL): the refresh read errors — fail-open must NOT grant access
     // to a tenant we already know is suspended.
     const { db: errDb } = makeOffboardingD1({ throwOnRead: true });
-    expect(await isTenantSuspended(errDb, TEST_TENANT_ID, 1_000 + SUSPEND_CACHE_TTL_MS + 1)).toBe(true);
+    expect(
+      await isTenantSuspended(errDb, TEST_TENANT_ID, { nowMs: 1_000 + SUSPEND_CACHE_TTL_MS + 1 }),
+    ).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Unit: L2 KV tier (ADR-0070 — the SAM-latency layer)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("isTenantSuspended — L2 KV", () => {
+  it("KV HIT (suspended) → returns true WITHOUT consulting D1", async () => {
+    const { db, reads } = makeOffboardingD1({ state: null }); // D1 would say NOT suspended
+    const { kv, gets } = makeKv({ [suspendKvKey(TEST_TENANT_ID)]: JSON.stringify({ suspended: true }) });
+    // KV wins on a hit — proves L2 is consulted before L3.
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { kv, nowMs: 1_000 })).toBe(true);
+    expect(reads()).toBe(0);
+    expect(gets()).toBe(1);
+  });
+
+  it("KV HIT (NOT suspended) → returns false WITHOUT consulting D1 (the negative is cached — the latency win)", async () => {
+    const { db, reads } = makeOffboardingD1({ state: "suspended" }); // D1 would say suspended
+    const { kv } = makeKv({ [suspendKvKey(TEST_TENANT_ID)]: JSON.stringify({ suspended: false }) });
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { kv, nowMs: 1_000 })).toBe(false);
+    expect(reads()).toBe(0); // negative served from the edge — no far-D1 hop
+  });
+
+  it("KV MISS → reads D1 and POPULATES KV (positive verdict)", async () => {
+    const { db, reads } = makeOffboardingD1({ state: "suspended" });
+    const { kv, puts, store } = makeKv();
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { kv, nowMs: 1_000 })).toBe(true);
+    expect(reads()).toBe(1);
+    expect(puts()).toBe(1);
+    expect(store.get(suspendKvKey(TEST_TENANT_ID))).toBe(JSON.stringify({ suspended: true }));
+  });
+
+  it("KV MISS → also POPULATES KV with the NEGATIVE verdict (not-suspended)", async () => {
+    const { db } = makeOffboardingD1({ state: null });
+    const { kv, store } = makeKv();
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { kv, nowMs: 1_000 })).toBe(false);
+    // The crux of ADR-0070: the negative is cached, so the next colo request is
+    // edge-local instead of a far-D1 read.
+    expect(store.get(suspendKvKey(TEST_TENANT_ID))).toBe(JSON.stringify({ suspended: false }));
+  });
+
+  it("writes KV with the bounded 60s enforcement-window TTL", async () => {
+    const { db } = makeOffboardingD1({ state: "suspended" });
+    let seenTtl: number | undefined;
+    const kv: KvReader = {
+      get: async () => null,
+      put: async (_k, _v, o) => {
+        seenTtl = o?.expirationTtl;
+      },
+    };
+    await isTenantSuspended(db, TEST_TENANT_ID, { kv, nowMs: 1_000 });
+    expect(seenTtl).toBe(KV_SUSPEND_TTL_S);
+    expect(KV_SUSPEND_TTL_S).toBe(60);
+  });
+
+  it("malformed KV value → falls through to D1", async () => {
+    const { db, reads } = makeOffboardingD1({ state: "suspended" });
+    const { kv } = makeKv({ [suspendKvKey(TEST_TENANT_ID)]: "{not-json" });
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { kv, nowMs: 1_000 })).toBe(true);
+    expect(reads()).toBe(1);
+  });
+
+  it("KV value of the wrong shape → falls through to D1", async () => {
+    const { db, reads } = makeOffboardingD1({ state: null });
+    const { kv } = makeKv({ [suspendKvKey(TEST_TENANT_ID)]: JSON.stringify({ suspended: "yes" }) });
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { kv, nowMs: 1_000 })).toBe(false);
+    expect(reads()).toBe(1);
+  });
+
+  it("KV GET fault → falls through to D1 (KV never breaks auth)", async () => {
+    const { db, reads } = makeOffboardingD1({ state: "suspended" });
+    const { kv, setThrowOnGet } = makeKv();
+    setThrowOnGet(true);
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { kv, nowMs: 1_000 })).toBe(true);
+    expect(reads()).toBe(1);
+  });
+
+  it("KV PUT fault → the verdict is still returned (auth succeeds)", async () => {
+    const { db } = makeOffboardingD1({ state: null });
+    const { kv, setThrowOnPut } = makeKv();
+    setThrowOnPut(true);
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { kv, nowMs: 1_000 })).toBe(false);
+  });
+
+  it("hands the KV write-behind to waitUntil (so it survives the response, not a cancelled void)", async () => {
+    const { db } = makeOffboardingD1({ state: "suspended" });
+    const { kv, puts, store } = makeKv();
+    const handed: Promise<unknown>[] = [];
+    const waitUntil = (p: Promise<unknown>) => {
+      handed.push(p);
+    };
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { kv, waitUntil, nowMs: 1_000 })).toBe(true);
+    // The put was handed to waitUntil, not awaited inline — exactly one promise.
+    expect(handed.length).toBe(1);
+    // Draining waitUntil (as the runtime does) completes the write.
+    await Promise.all(handed);
+    expect(puts()).toBe(1);
+    expect(store.get(suspendKvKey(TEST_TENANT_ID))).toBe(JSON.stringify({ suspended: true }));
+  });
+
+  it("no KV binding → L1 + D1 only (unchanged legacy behaviour)", async () => {
+    const { db, reads } = makeOffboardingD1({ state: "suspended" });
+    expect(await isTenantSuspended(db, TEST_TENANT_ID, { nowMs: 1_000 })).toBe(true);
+    expect(reads()).toBe(1);
   });
 });
 

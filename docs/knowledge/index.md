@@ -119,6 +119,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [ADR-0067 — Secrets broker: defer the broker, design as a D1-encrypted lease](/adr/adr-0067-secrets-broker-d1-encrypted-lease-deferred.md)
 - [ADR-0068 — Per-tenant monthly $-ceiling: a fail-closed spend cap (G1)](/adr/adr-0068-per-tenant-monthly-dollar-ceiling.md)
 - [ADR-0069 — PAT verification: fast keyed hash, not Argon2id (high-entropy tokens)](/adr/adr-0069-pat-verification-fast-hash-vs-argon2id.md)
+- [ADR-0070 — Tenant-suspend gate: L2 KV cache with a bounded enforcement window](/adr/adr-0070-tenant-suspend-gate-kv-l2-cache.md)
 - [ADR-MULTI-REGION-V1 — Multi-region container deployments v1 (per-region worker envs)](/adr/adr-multi-region-v1.md)
 - [ADR-S11-001 — MFA step-up required only on destructive DSR arms](/adr/adr-s11-001-mfa-step-up-destructive-arms-only.md)
 - [ADR-S11-002 — Split-tier audit fail-CLOSED discipline (S-11 privacy)](/adr/adr-s11-002-split-tier-audit-fail-closed.md)
