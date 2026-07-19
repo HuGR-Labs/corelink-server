@@ -58,21 +58,6 @@ impl Formatter {
         Ok(())
     }
 
-    /// Emit raw JSON value directly (already serialised).
-    pub fn emit_json_value(&self, value: &serde_json::Value) -> Result<(), serde_json::Error> {
-        match self.format {
-            OutputFormat::Json => {
-                let json = serde_json::to_string_pretty(value)?;
-                println!("{json}");
-            }
-            OutputFormat::Text => {
-                // For text mode, print a simplified view.
-                println!("{value}");
-            }
-        }
-        Ok(())
-    }
-
     /// Returns the current format.
     #[must_use]
     #[allow(dead_code)]

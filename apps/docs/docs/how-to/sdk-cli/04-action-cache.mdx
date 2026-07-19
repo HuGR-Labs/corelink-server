@@ -61,10 +61,14 @@ corelink stat <action-digest> --output json
 ## Listing recent entries
 
 ```bash
-corelink ls --tenant acme-corp --prefix ac/ --limit 50 --output json
+corelink ls --tenant acme-corp --prefix ab --limit 50 --output json
 ```
 
-The `prefix` filter scopes to the Action Cache namespace.
+`--prefix` is a **client-side** filter applied to the returned page: it
+keeps only blobs whose BLAKE3 `hash` starts with the given hex prefix (here,
+`ab`). It is not sent to the server and does not scope by namespace — entries
+are content-addressed hashes, so a human label like `ac/` would match
+nothing. Use it to narrow a page to a specific hash range.
 
 ## Forcing a miss
 

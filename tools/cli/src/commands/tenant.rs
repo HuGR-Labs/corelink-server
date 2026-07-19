@@ -9,7 +9,7 @@
 //! the DPA receipt. There is **no server-side bulk-export endpoint** that
 //! streams that archive today — the reachable, real surfaces are the
 //! audit-export route (`GET /v1/audit/:tenant/export`) and the CAS
-//! listing (`GET /v1/cas/list`).
+//! listing (`GET /v1/cas/:tenant`).
 //!
 //! So `tenant export` assembles a **content-addressed JSON bundle** from
 //! those real surfaces: the audit-chain NDJSON slice + the CAS blob index
@@ -68,7 +68,7 @@ pub struct TenantExportBundle {
     /// Raw audit-chain NDJSON slice (one `{event, proof}` per line + a
     /// trailing manifest line, verbatim from the export route).
     pub audit_chain_ndjson: String,
-    /// CAS blob index (the `GET /v1/cas/list` response, verbatim).
+    /// CAS blob index (the `GET /v1/cas/:tenant` response, verbatim).
     pub cas_index: serde_json::Value,
     /// Component descriptors, keyed by name.
     pub components: std::collections::BTreeMap<String, Component>,
@@ -266,10 +266,10 @@ pub async fn run_export(
     let audit_ndjson = String::from_utf8(audit_bytes.to_vec())
         .map_err(|e| CliError::Other(format!("tenant export: audit slice not UTF-8: {e}")))?;
 
-    // 2. CAS blob index.
-    let cas_index = client
-        .get_json(&format!("/v1/cas/list?tenant={tenant}"))
-        .await?;
+    // 2. CAS blob index. Tenant is a PATH segment on the real list route
+    //    (`routes/cas.rs`, `CAS_LIST_ROUTE = "/v1/cas/{tenant}"`); the old
+    //    `/v1/cas/list?tenant=` shape 403'd (axum matched `{tenant}="list"`).
+    let cas_index = client.get_json(&format!("/v1/cas/{tenant}")).await?;
 
     // 3. Assemble + persist the bundle.
     let bundle = build_bundle(tenant, generated_at, audit_ndjson, cas_index, anchor);
@@ -320,7 +320,7 @@ mod tests {
             "tenant-xyz",
             1_700_000_000_000,
             "{\"event\":1}\n{\"manifest\":true}\n".to_owned(),
-            serde_json::json!({"entries": [{"digest": "sha256:abc", "size_bytes": 10}]}),
+            serde_json::json!({"blobs": [{"hash": "abc", "size": 10, "created_at": "2026-07-01T00:00:00Z"}], "next_cursor": null}),
             Some("deadbeef".repeat(8)),
         )
     }
@@ -375,5 +375,50 @@ mod tests {
         let b = sample_bundle();
         assert!(b.components.contains_key("audit_chain_ndjson"));
         assert!(b.components.contains_key("cas_index"));
+    }
+
+    /// Kills the `run_export -> Ok(())` whole-body mutant: `tenant export`
+    /// MUST fetch the audit slice + the CAS index (tenant as a PATH segment)
+    /// and WRITE the assembled bundle to `output`. A no-op body writes no
+    /// file, so reading the bundle back fails.
+    #[tokio::test]
+    async fn run_export_writes_the_assembled_bundle() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        // Audit-chain slice (query params vary — match on path only).
+        Mock::given(method("GET"))
+            .and(path("/v1/audit/t-test/export"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("{\"event\":1}\n{\"manifest\":true}\n"),
+            )
+            .mount(&server)
+            .await;
+        // CAS blob index (tenant is a PATH segment, not `/v1/cas/list`).
+        Mock::given(method("GET"))
+            .and(path("/v1/cas/t-test"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "blobs": [{"hash": "abc", "size": 10, "created_at": "2026-07-01T00:00:00Z"}],
+                "next_cursor": null
+            })))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+
+        let out = tempfile::tempdir().unwrap();
+        let dest = out.path().join("bundle.json");
+        run_export(&client, "t-test", &dest, OutputFormat::Json)
+            .await
+            .expect("tenant export must succeed against the real routes");
+
+        // The bundle file must exist and round-trip as a valid bundle.
+        let raw = std::fs::read(&dest).expect("bundle file must be written");
+        let bundle: TenantExportBundle = serde_json::from_slice(&raw).expect("valid bundle JSON");
+        assert_eq!(bundle.tenant_id, "t-test");
+        assert!(
+            verify_bundle(&bundle, "written").ok,
+            "written bundle must verify"
+        );
     }
 }

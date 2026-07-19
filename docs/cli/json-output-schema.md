@@ -33,20 +33,27 @@ corelink config  list         --output=json
 
 ## `corelink ls --output=json`
 
+The body is the server's `GET /v1/cas/{tenant}` response verbatim — one
+**page** of blobs plus an opaque continuation cursor. There is no total
+count; page size is bounded by `--limit` (1..1000, default 100).
+
 ```json
 {
-  "entries": [
+  "blobs": [
     {
-      "digest": "string (BLAKE3 hex)",
-      "size_bytes": 12345,
-      "tenant_prefix": "string (pseudonymised)",
+      "hash": "string (BLAKE3 hex, 64 chars)",
+      "size": 12345,
       "created_at": "ISO-8601 timestamp"
     }
   ],
-  "next_cursor": "string | null",
-  "total_count": 42
+  "next_cursor": "string | null"
 }
 ```
+
+`next_cursor` is `null` on the last page; otherwise pass it back via
+`--cursor` to fetch the next page. `--prefix` is a **client-side** filter
+applied to the returned page (keeps blobs whose `hash` starts with the
+prefix); it is not sent to the server.
 
 ---
 

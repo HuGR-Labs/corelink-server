@@ -69,7 +69,7 @@ enum Commands {
         /// Tenant ID (required).
         #[arg(long, value_name = "TENANT_ID")]
         tenant: String,
-        /// Optional prefix filter.
+        /// Client-side filter: keep only blobs whose hash starts with this prefix (applies to the current page only).
         #[arg(long, value_name = "PREFIX")]
         prefix: Option<String>,
         /// Maximum entries to return (default 100).
