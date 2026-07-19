@@ -58,18 +58,21 @@ macro_rules! resolve_or_gate {
     };
 }
 
-/// Happy (P1–P4): the three primary read panels (overview, usage, billing) each
-/// return 200 with their documented required fields. We drive the surface with
-/// the read-write persona (P1); the tier-specific personas P2/P3/P4 prove the
-/// SAME shape and gate on their own tokens when present, so a single RW PAT is
-/// enough to exercise the contract.
+/// Happy: the three primary read panels (overview, usage, billing) each return
+/// 200 with their documented required fields. The overview + billing panels
+/// carry financial state, so post-H17 they are gated on the `billing`/`admin`
+/// capability (`requires_billing_admin`) — the real dashboard reaches them via a
+/// Clerk session that forwards `read-write billing`; the PAT equivalent is the
+/// `admin` scope. We therefore drive the surface with the admin persona (P3). A
+/// plain cache PAT is CORRECTLY denied here — proven separately by
+/// [`billing_surface_denies_cache_pat`].
 fn overview_usage_billing_shape(cfg: &Config, client: &Client) -> JourneyResult {
     let name = "Dashboard: overview+usage+billing → 200 with expected shape";
     let start = Instant::now();
     let dur = ms(start);
 
-    let p1 = resolve_or_gate!(Persona::P1ReadWrite, cfg, name);
-    let token = p1.token.expect("P1 always has a token");
+    let p3 = resolve_or_gate!(Persona::P3Admin, cfg, name);
+    let token = p3.token.expect("P3 always has a token");
 
     // --- overview ---
     let overview = match client
@@ -263,10 +266,23 @@ fn tenant_scoping(cfg: &Config, client: &Client) -> JourneyResult {
     let start = Instant::now();
     let dur = ms(start);
 
-    let a = resolve_or_gate!(Persona::P1ReadWrite, cfg, name);
-    let b = resolve_or_gate!(Persona::P6TenantB, cfg, name);
-    let token_a = a.token.expect("P1 always has a token");
-    let token_b = b.token.expect("P6 always has a token");
+    // The dashboard overview is billing-admin-gated (H17), so BOTH tenants read
+    // their own overview with an admin-capable token: A via P3Admin, B via a
+    // dedicated admin token on tenant B (`CORELINK_E2E_PAT_TENANT_B_ADMIN`). The
+    // security property is unchanged — B's overview is scoped to B, never A.
+    let a = resolve_or_gate!(Persona::P3Admin, cfg, name);
+    let token_a = a.token.expect("P3 always has a token");
+    let token_b = match cfg.pat_tenant_b_admin.as_deref() {
+        Some(t) => t,
+        None => {
+            return JourneyResult::gated(
+                name,
+                "CORELINK_E2E_PAT_TENANT_B_ADMIN not set — need an admin-scoped PAT on tenant B \
+                 to read B's (billing-admin-gated) overview for the scoping assertion"
+                    .to_string(),
+            )
+        }
+    };
 
     // Read A's overview to learn A's tenant_id (the value B must never return).
     let a_resp = match client

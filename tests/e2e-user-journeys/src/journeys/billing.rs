@@ -97,11 +97,11 @@ fn billing_state(cfg: &Config, client: &Client) -> JourneyResult {
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
-    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+    let p1 = match Persona::P3Admin.resolve(cfg) {
         Ok(p) => p,
         Err(reason) => return JourneyResult::gated(name, reason),
     };
-    let token = p1.token.expect("P1 always has a token");
+    let token = p1.token.expect("P3 always has a token");
 
     let url = url_customer(cfg, "billing");
     let resp = match client.get(&url).header(AUTHORIZATION, bearer(token)).send() {
@@ -154,11 +154,11 @@ fn billing_portal(cfg: &Config, client: &Client) -> JourneyResult {
     let start = Instant::now();
     let ms = |s: Instant| s.elapsed().as_millis() as u64;
 
-    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+    let p1 = match Persona::P3Admin.resolve(cfg) {
         Ok(p) => p,
         Err(reason) => return JourneyResult::gated(name, reason),
     };
-    let token = p1.token.expect("P1 always has a token");
+    let token = p1.token.expect("P3 always has a token");
 
     let url = url_customer(cfg, "billing/portal");
     let resp = match client
@@ -635,11 +635,11 @@ fn webhook_tier_upgrade_simulation(cfg: &Config, client: &Client) -> JourneyResu
         Err(reason) => return JourneyResult::gated(name, reason),
     };
     // We need the RW PAT to read the post-webhook billing state black-box.
-    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+    let p1 = match Persona::P3Admin.resolve(cfg) {
         Ok(p) => p,
         Err(reason) => return JourneyResult::gated(name, reason),
     };
-    let token = p1.token.expect("P1 always has a token");
+    let token = p1.token.expect("P3 always has a token");
 
     // Build the signed event. `metadata[tenant_id]` lets the analytics emit
     // attribute the tenant; the billing/entitlement writes key on the
@@ -803,11 +803,11 @@ fn webhook_subscription_cancel_simulation(cfg: &Config, client: &Client) -> Jour
              the tenant segment",
         );
     }
-    let p1 = match Persona::P1ReadWrite.resolve(cfg) {
+    let p1 = match Persona::P3Admin.resolve(cfg) {
         Ok(p) => p,
         Err(reason) => return JourneyResult::gated(name, reason),
     };
-    let token = p1.token.expect("P1 always has a token");
+    let token = p1.token.expect("P3 always has a token");
 
     // Build + sign a customer.subscription.deleted for the provisioned ids.
     let ts = now_unix_secs();

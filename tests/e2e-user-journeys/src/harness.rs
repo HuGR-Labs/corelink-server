@@ -98,6 +98,10 @@ pub struct Config {
     pub tenant: Option<String>,
     /// Second tenant id, for cross-tenant isolation journeys.
     pub tenant_b: Option<String>,
+    /// An admin-scoped PAT on tenant B — needed to read B's own
+    /// billing-admin-gated dashboard overview (H17) for the tenant-scoping
+    /// journey. `CORELINK_E2E_PAT_TENANT_B_ADMIN`.
+    pub pat_tenant_b_admin: Option<String>,
     /// Token map keyed by [`TokenKind`]. Absent kinds gate the journey.
     tokens: TokenMap,
     /// Slow / destructive journeys are opt-in via this flag.
@@ -223,6 +227,7 @@ impl Config {
                 .to_string(),
             tenant: var("CORELINK_E2E_TENANT"),
             tenant_b: var("CORELINK_E2E_TENANT_B"),
+            pat_tenant_b_admin: var("CORELINK_E2E_PAT_TENANT_B_ADMIN"),
             tokens: TokenMap {
                 rw: var("CORELINK_E2E_PAT_RW"),
                 ro: var("CORELINK_E2E_PAT_RO"),
