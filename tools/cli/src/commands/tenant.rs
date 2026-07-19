@@ -376,4 +376,49 @@ mod tests {
         assert!(b.components.contains_key("audit_chain_ndjson"));
         assert!(b.components.contains_key("cas_index"));
     }
+
+    /// Kills the `run_export -> Ok(())` whole-body mutant: `tenant export`
+    /// MUST fetch the audit slice + the CAS index (tenant as a PATH segment)
+    /// and WRITE the assembled bundle to `output`. A no-op body writes no
+    /// file, so reading the bundle back fails.
+    #[tokio::test]
+    async fn run_export_writes_the_assembled_bundle() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        // Audit-chain slice (query params vary — match on path only).
+        Mock::given(method("GET"))
+            .and(path("/v1/audit/t-test/export"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string("{\"event\":1}\n{\"manifest\":true}\n"),
+            )
+            .mount(&server)
+            .await;
+        // CAS blob index (tenant is a PATH segment, not `/v1/cas/list`).
+        Mock::given(method("GET"))
+            .and(path("/v1/cas/t-test"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "blobs": [{"hash": "abc", "size": 10, "created_at": "2026-07-01T00:00:00Z"}],
+                "next_cursor": null
+            })))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+
+        let out = tempfile::tempdir().unwrap();
+        let dest = out.path().join("bundle.json");
+        run_export(&client, "t-test", &dest, OutputFormat::Json)
+            .await
+            .expect("tenant export must succeed against the real routes");
+
+        // The bundle file must exist and round-trip as a valid bundle.
+        let raw = std::fs::read(&dest).expect("bundle file must be written");
+        let bundle: TenantExportBundle = serde_json::from_slice(&raw).expect("valid bundle JSON");
+        assert_eq!(bundle.tenant_id, "t-test");
+        assert!(
+            verify_bundle(&bundle, "written").ok,
+            "written bundle must verify"
+        );
+    }
 }

@@ -315,4 +315,44 @@ mod tests {
         let reqs = server.received_requests().await.expect("recorded");
         assert_eq!(reqs.len(), 1, "one PUT to the BLAKE3-addressed path");
     }
+
+    /// Kills the `run_export -> Ok(())` whole-body mutant: `cas export` MUST
+    /// page the real `GET /v1/cas/{tenant}` list route, download every blob
+    /// via `GET /v1/cas/{tenant}/{hash}`, and WRITE each blob to `<dir>/<hash>`.
+    /// A no-op body would write no file, so the on-disk assertion fails.
+    #[tokio::test]
+    async fn run_export_downloads_and_writes_each_blob() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let blob = b"exported-blob-bytes";
+        let hash = hex::encode(blake3::hash(blob).as_bytes());
+        let server = MockServer::start().await;
+        // The single-page CAS listing (tenant is a PATH segment).
+        Mock::given(method("GET"))
+            .and(path("/v1/cas/t-test"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "blobs": [{"hash": hash, "size": blob.len(), "created_at": "2026-07-01T00:00:00Z"}],
+                "next_cursor": null
+            })))
+            .mount(&server)
+            .await;
+        // The per-object read route.
+        Mock::given(method("GET"))
+            .and(path(format!("/v1/cas/t-test/{hash}")))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(blob.to_vec()))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+
+        let out = tempfile::tempdir().unwrap();
+        let dest = out.path().join("export");
+        run_export(&client, "me", dest.to_str().unwrap(), OutputFormat::Json)
+            .await
+            .expect("cas export must succeed against the real routes");
+
+        // The blob must have been written to <dir>/<hash> with exact bytes.
+        let written = std::fs::read(dest.join(&hash)).expect("exported blob file must exist");
+        assert_eq!(written, blob, "exported blob bytes must round-trip");
+    }
 }
