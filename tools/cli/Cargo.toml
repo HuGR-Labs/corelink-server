@@ -74,6 +74,11 @@ url = "2"
 tokio-test = { workspace = true }
 tempfile = "3"
 proptest = { workspace = true }
+# Hermetic localhost mock HTTP server for the client/command I/O tests
+# (mutation coverage of `cas_get`/`cas_head`/each `run()` + the retry loop).
+# Already a workspace dev-dep (0.6) across the container crates — reused here.
+# Tests NEVER hit prod; every server binds an ephemeral 127.0.0.1 port.
+wiremock = "0.6"
 # Wave-23 (W23-RUSTLS-INIT): explicit rustls dep with `ring` feature so
 # the integration test suite can install a `CryptoProvider` exactly once
 # at test-suite init. With a single provider feature (`ring`) wired

@@ -1,14 +1,23 @@
 //! `corelink doctor` — 8 canonical diagnostic checks (WI-S15-001).
 //!
-//! Checks align with Lote 9.5c spec (8 checks vs 6 Codex R3-14 fix):
-//! 1. Network — ping CF endpoint; report p50/p99 latency.
-//! 2. Auth — validate PAT format + tenant scope via API call.
-//! 3. Storage write — 1 KB blob upload smoke test.
-//! 4. Storage read — round-trip integrity verify (BLAKE3).
-//! 5. BYOK — KMS access check if `auth.byok_enabled = true` (S-14).
-//! 6. Region — tenant region matches expected hostname.
-//! 7. Quota — current usage vs plan limit + soft/hard thresholds.
-//! 8. Client verify — BLAKE3 verify default-on reflection (CTRL-CAS-002).
+//! Checks align with Lote 9.5c spec (8 checks). Every check is grounded on a
+//! route that actually exists in the container/worker router (a prior version
+//! called invented paths — `/v1/health`, `/v1/auth/me`, `/v1/byok/status`,
+//! `/v1/tenant/region`, `/v1/quota/status`, `/v1/sdk/verify-status` — none of
+//! which are mounted, so every check 404'd red):
+//! 1. Network — `GET /health` (public worker liveness route).
+//! 2. Auth — `GET /v1/users/me` (caller-identity reflection).
+//! 3. Storage write — real CAS round-trip PUT `/v1/cas/<tenant>/<blake3>`.
+//! 4. Storage read — GET the same blob back + BLAKE3 integrity verify.
+//! 5. BYOK — `byok.status` from `GET /v1/customer/overview` (skip if the
+//!    caller has not opted into BYOK, OR the token can't read the
+//!    billing-gated overview — the status needs an admin/billing token).
+//! 6. Region — SKIP: no public route exposes the tenant's primary region
+//!    (informational only; not invented).
+//! 7. Quota — `cas_bytes`/`quota_bytes` from `GET /v1/customer/usage` (the
+//!    plain PAT-readable usage route, NOT the billing-admin-gated overview).
+//! 8. Client verify — this CLI always BLAKE3-verifies downloads (compile-time
+//!    guarantee, CTRL-CAS-002); reported `ok` without a network call.
 //!
 //! Each check emits a [`DoctorCheck`] with: check name, status, latency_ms,
 //! error_code (COR_* from `docs/error_taxonomy.md`), and next_action.
@@ -21,6 +30,19 @@ use serde::{Deserialize, Serialize};
 use crate::client::CorelinkClient;
 use crate::config::load as load_config;
 use crate::error::CliError;
+
+/// Public worker liveness route (`worker/src/index.ts` `matchRoute`).
+pub(crate) const HEALTH_ROUTE: &str = "/health";
+/// Caller-identity reflection route (`routes/users.rs` `USERS_ME_ROUTE`).
+pub(crate) const AUTH_ROUTE: &str = "/v1/users/me";
+/// Customer account overview (`routes/customer.rs`) — carries `plan`,
+/// `billing.*`, and `byok.status`. GATED by `billing_pii_gate_reject`
+/// (`requires_billing_admin`), so a plain cache PAT gets 403 here.
+pub(crate) const OVERVIEW_ROUTE: &str = "/v1/customer/overview";
+/// Customer usage (`routes/customer.rs` `handle_usage`) — `cas_bytes` +
+/// `quota_bytes` at the TOP LEVEL. Same tenant + PAT-possession gates as the
+/// data plane but NO billing-admin gate, so a normal cache PAT can read it.
+pub(crate) const USAGE_ROUTE: &str = "/v1/customer/usage";
 
 /// Status of a single doctor check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,9 +148,9 @@ pub async fn run_checks(client: &CorelinkClient) -> Result<Vec<DoctorCheck>, Cli
     results.push(read_result);
 
     results.push(check_byok(client, cfg.auth.byok_enabled).await);
-    results.push(check_region(client).await);
+    results.push(check_region());
     results.push(check_quota(client).await);
-    results.push(check_client_verify(client).await);
+    results.push(check_client_verify());
 
     Ok(results)
 }
@@ -137,10 +159,10 @@ pub async fn run_checks(client: &CorelinkClient) -> Result<Vec<DoctorCheck>, Cli
 // Check implementations
 // ---------------------------------------------------------------------------
 
-/// Check #1 — Network: ping the cluster endpoint.
+/// Check #1 — Network: ping the public worker liveness route.
 async fn check_network(client: &CorelinkClient) -> DoctorCheck {
     let start = Instant::now();
-    let result = client.get_json("/v1/health").await;
+    let result = client.get_json(HEALTH_ROUTE).await;
     let latency = start.elapsed().as_millis() as u64;
 
     match result {
@@ -149,7 +171,10 @@ async fn check_network(client: &CorelinkClient) -> DoctorCheck {
             "network",
             latency,
             "COR_NET_UNREACHABLE",
-            "Verify network connectivity, firewall rules, and DNS resolution for corelink.humangr.com. See docs/error_taxonomy.md#COR_NET_UNREACHABLE",
+            &format!(
+                "Verify network connectivity, firewall rules, and DNS resolution for the configured endpoint ({}). See docs/error_taxonomy.md#COR_NET_UNREACHABLE",
+                client.base_url()
+            ),
         ),
     }
 }
@@ -157,7 +182,7 @@ async fn check_network(client: &CorelinkClient) -> DoctorCheck {
 /// Check #2 — Auth: validate PAT format + tenant scope via API.
 async fn check_auth(client: &CorelinkClient) -> DoctorCheck {
     let start = Instant::now();
-    let result = client.get_json("/v1/auth/me").await;
+    let result = client.get_json(AUTH_ROUTE).await;
     let latency = start.elapsed().as_millis() as u64;
 
     match result {
@@ -171,7 +196,9 @@ async fn check_auth(client: &CorelinkClient) -> DoctorCheck {
     }
 }
 
-/// Check #3 — Storage write: upload a 1 KB test blob.
+/// Check #3 — Storage write: upload a 1 KB test blob via a REAL CAS PUT
+/// (`PUT /v1/cas/<tenant>/<blake3>`). The blob is BLAKE3-addressed, matching
+/// the native CAS write contract (a non-BLAKE3 claim would 422).
 ///
 /// Returns (check_result, digest_option) so check #4 can read it back.
 async fn check_storage_write(client: &CorelinkClient) -> (DoctorCheck, Option<String>) {
@@ -181,11 +208,9 @@ async fn check_storage_write(client: &CorelinkClient) -> (DoctorCheck, Option<St
     let digest = {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&blob);
-        hasher.finalize().to_hex().to_string()
+        hex::encode(hasher.finalize().as_bytes())
     };
-    let result = client
-        .post_bytes("/v1/cas/upload", bytes::Bytes::from(blob))
-        .await;
+    let result = client.cas_put(&digest, bytes::Bytes::from(blob)).await;
     let latency = start.elapsed().as_millis() as u64;
 
     match result {
@@ -195,14 +220,15 @@ async fn check_storage_write(client: &CorelinkClient) -> (DoctorCheck, Option<St
                 "storage_write",
                 latency,
                 "COR_STORAGE_WRITE_DENIED",
-                "Verify tenant quota and plan limits. See docs/error_taxonomy.md#COR_STORAGE_WRITE_DENIED",
+                "Verify tenant quota and plan limits, and that a tenant is cached (run `corelink login`). See docs/error_taxonomy.md#COR_STORAGE_WRITE_DENIED",
             ),
             None,
         ),
     }
 }
 
-/// Check #4 — Storage read: download and BLAKE3-verify the test blob from check #3.
+/// Check #4 — Storage read: download and BLAKE3-verify the test blob from
+/// check #3 via a REAL CAS GET (`GET /v1/cas/<tenant>/<blake3>`).
 async fn check_storage_read(client: &CorelinkClient, digest: Option<&str>) -> DoctorCheck {
     let Some(digest) = digest else {
         return DoctorCheck::fail(
@@ -214,8 +240,7 @@ async fn check_storage_read(client: &CorelinkClient, digest: Option<&str>) -> Do
     };
 
     let start = Instant::now();
-    let path = format!("/v1/cas/download/{digest}");
-    let result = client.get_bytes(&path).await;
+    let result = client.cas_get(digest).await;
     let latency = start.elapsed().as_millis() as u64;
 
     match result {
@@ -246,7 +271,11 @@ async fn check_storage_read(client: &CorelinkClient, digest: Option<&str>) -> Do
 
 /// Check #5 — BYOK: KMS access check (S-14 alignment).
 ///
-/// Skipped if `auth.byok_enabled = false`.
+/// Skipped if `auth.byok_enabled = false`. `byok.status` lives ONLY on the
+/// billing-admin-gated `GET /v1/customer/overview`, so a plain cache PAT
+/// gets 403 — in that case we degrade to `skip` (honest: the status needs an
+/// admin/billing token) rather than a spurious `fail`. We do NOT invent a
+/// dedicated byok route.
 async fn check_byok(client: &CorelinkClient, byok_enabled: bool) -> DoctorCheck {
     if !byok_enabled {
         return DoctorCheck::skip(
@@ -256,123 +285,109 @@ async fn check_byok(client: &CorelinkClient, byok_enabled: bool) -> DoctorCheck 
     }
 
     let start = Instant::now();
-    let result = client.get_json("/v1/byok/status").await;
-    let latency = start.elapsed().as_millis() as u64;
-
-    match result {
-        Ok(_) => DoctorCheck::ok("byok", latency),
-        Err(_) => DoctorCheck::fail(
-            "byok",
-            latency,
-            "COR_BYOK_REVOKED",
-            "Verify Customer Managed Key (CMK) status in your KMS provider. The key may be disabled or revoked. See docs/error_taxonomy.md#COR_BYOK_REVOKED",
-        ),
-    }
-}
-
-/// Check #6 — Region: tenant region matches expected hostname.
-async fn check_region(client: &CorelinkClient) -> DoctorCheck {
-    let start = Instant::now();
-    let result = client.get_json("/v1/tenant/region").await;
+    let result = client.get_json(OVERVIEW_ROUTE).await;
     let latency = start.elapsed().as_millis() as u64;
 
     match result {
         Ok(v) => {
-            // Server returns `{"region":"wnam","expected":"wnam","match":true}`.
-            let region_match = v
-                .get("match")
-                .and_then(|m| m.as_bool())
-                .unwrap_or(false);
-            if region_match {
-                DoctorCheck::ok("region", latency)
-            } else {
-                DoctorCheck::fail(
-                    "region",
+            // `GET /v1/customer/overview` returns `{ "byok": { "status": … } }`.
+            let status = v
+                .get("byok")
+                .and_then(|b| b.get("status"))
+                .and_then(|s| s.as_str());
+            match status {
+                Some("active") => DoctorCheck::ok("byok", latency),
+                _ => DoctorCheck::fail(
+                    "byok",
                     latency,
-                    "COR_REGION_MISMATCH",
-                    "Tenant primary_region does not match the connected endpoint. Update tenant primary_region in admin UI. See docs/error_taxonomy.md#COR_REGION_MISMATCH",
-                )
+                    "COR_BYOK_REVOKED",
+                    "BYOK is enabled locally but the tenant BYOK state is not active. Verify Customer Managed Key (CMK) status in your KMS provider. See docs/error_taxonomy.md#COR_BYOK_REVOKED",
+                ),
             }
         }
-        Err(_) => DoctorCheck::fail(
-            "region",
-            latency,
-            "COR_REGION_MISMATCH",
-            "Cannot determine tenant region. Verify tenant configuration in admin UI. See docs/error_taxonomy.md#COR_REGION_MISMATCH",
+        // The overview is billing-admin-gated; a normal cache PAT 403s here.
+        // BYOK status is genuinely unreadable with this token → honest skip,
+        // not a false COR_BYOK_REVOKED.
+        Err(_) => DoctorCheck::skip(
+            "byok",
+            "BYOK status requires an admin/billing token (it lives on the billing-gated account overview); skipping with this token.",
         ),
     }
 }
 
-/// Check #7 — Quota: current usage vs plan limit.
+/// Check #6 — Region: SKIP.
+///
+/// No public route exposes the tenant's primary region (the invented
+/// `/v1/tenant/region` never existed). Rather than 404 red, report `skip`
+/// with an honest reason — region is informational only for `doctor`.
+fn check_region() -> DoctorCheck {
+    DoctorCheck::skip(
+        "region",
+        "Tenant primary region is not exposed on a public read route; skipping (informational only).",
+    )
+}
+
+/// Storage-quota verdict from raw usage vs limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum QuotaState {
+    /// Within quota (or the cap is unknown / zero).
+    Ok,
+    /// Usage has reached or passed the quota.
+    Exceeded,
+}
+
+/// Decide the quota verdict from `cas_bytes` vs `quota_bytes`. Pure so the
+/// threshold boundary is unit-testable without HTTP. A missing or zero limit
+/// is treated as "not exceeded" — an unknown cap must never raise a false
+/// `COR_QUOTA_EXCEEDED`.
+#[must_use]
+pub(crate) fn quota_verdict(cas_bytes: Option<u64>, quota_bytes: Option<u64>) -> QuotaState {
+    match (cas_bytes, quota_bytes) {
+        (Some(used), Some(limit)) if limit > 0 && used >= limit => QuotaState::Exceeded,
+        _ => QuotaState::Ok,
+    }
+}
+
+/// Check #7 — Quota: current usage vs plan limit, derived from the
+/// PAT-readable usage route (`GET /v1/customer/usage`), which returns
+/// `cas_bytes` + `quota_bytes` at the TOP LEVEL and — unlike the billing-
+/// admin-gated `/v1/customer/overview` — is reachable with a plain cache PAT.
 async fn check_quota(client: &CorelinkClient) -> DoctorCheck {
     let start = Instant::now();
-    let result = client.get_json("/v1/quota/status").await;
+    let result = client.get_json(USAGE_ROUTE).await;
     let latency = start.elapsed().as_millis() as u64;
 
     match result {
         Ok(v) => {
-            // Server returns `{"exceeded":false,"soft_threshold":false,"hard_threshold":false}`.
-            let hard = v
-                .get("hard_threshold")
-                .and_then(|h| h.as_bool())
-                .unwrap_or(false);
-            let exceeded = v
-                .get("exceeded")
-                .and_then(|e| e.as_bool())
-                .unwrap_or(false);
-            if hard || exceeded {
-                DoctorCheck::fail(
+            let used = v.get("cas_bytes").and_then(serde_json::Value::as_u64);
+            let limit = v.get("quota_bytes").and_then(serde_json::Value::as_u64);
+            match quota_verdict(used, limit) {
+                QuotaState::Exceeded => DoctorCheck::fail(
                     "quota",
                     latency,
                     "COR_QUOTA_EXCEEDED",
-                    "Tenant quota exceeded. Verify plan limits and contact sales to upgrade. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED",
-                )
-            } else {
-                DoctorCheck::ok("quota", latency)
+                    "Tenant storage quota reached (cas_bytes ≥ quota_bytes). Verify plan limits and contact sales to upgrade. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED",
+                ),
+                QuotaState::Ok => DoctorCheck::ok("quota", latency),
             }
         }
         Err(_) => DoctorCheck::fail(
             "quota",
             latency,
             "COR_QUOTA_EXCEEDED",
-            "Cannot determine quota status. Verify plan + contact support. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED",
+            "Cannot read usage from /v1/customer/usage. Verify plan + contact support. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED",
         ),
     }
 }
 
-/// Check #8 — Client verify: BLAKE3 verify default-on (CTRL-CAS-002 reflection).
+/// Check #8 — Client verify: BLAKE3 verify default-on (CTRL-CAS-002).
 ///
-/// Validates that the CLI itself has client-verify enabled (always true for this
-/// binary; reflects on the SDK verify flag via /v1/sdk/verify-status if available).
-async fn check_client_verify(client: &CorelinkClient) -> DoctorCheck {
-    let start = Instant::now();
-    // This CLI always performs BLAKE3 client-verify (compile-time guarantee).
-    // We query the server for any override flags.
-    let result = client.get_json("/v1/sdk/verify-status").await;
-    let latency = start.elapsed().as_millis() as u64;
-
-    match result {
-        Ok(v) => {
-            let verify_on = v
-                .get("client_verify_enabled")
-                .and_then(|e| e.as_bool())
-                .unwrap_or(true); // default-on: if field absent, assume OK.
-            if verify_on {
-                DoctorCheck::ok("client_verify", latency)
-            } else {
-                DoctorCheck::fail(
-                    "client_verify",
-                    latency,
-                    "COR_CLIENT_VERIFY_DISABLED",
-                    "Client-side BLAKE3 verification is disabled (CTRL-CAS-002 violation). Do NOT disable except for explicit dev/test. See docs/error_taxonomy.md#COR_CLIENT_VERIFY_DISABLED",
-                )
-            }
-        }
-        Err(_) => {
-            // Endpoint may not exist in all versions; assume OK (default-on).
-            DoctorCheck::ok("client_verify", latency)
-        }
-    }
+/// This CLI ALWAYS BLAKE3-verifies downloaded blobs (see `commands::get` /
+/// `commands::cas`) — a compile-time guarantee, not a server flag. No route
+/// reflects it (the invented `/v1/sdk/verify-status` never existed), so we
+/// report `ok` without a network call.
+fn check_client_verify() -> DoctorCheck {
+    DoctorCheck::ok("client_verify", 0)
 }
 
 #[cfg(test)]
@@ -437,6 +452,37 @@ mod tests {
     }
 
     #[test]
+    fn doctor_routes_are_real_not_invented() {
+        // B2 regression: the network/auth/overview checks must hit routes that
+        // actually exist in the container/worker router — never the invented
+        // `/v1/health`, `/v1/auth/me`, `/v1/byok|tenant|quota|sdk/...` paths
+        // that made every check 404 red.
+        assert_eq!(HEALTH_ROUTE, "/health");
+        assert_eq!(AUTH_ROUTE, "/v1/users/me");
+        assert_eq!(OVERVIEW_ROUTE, "/v1/customer/overview");
+        // Quota reads the PAT-readable usage route, NOT the billing-gated
+        // overview (a plain cache PAT 403s on overview → false COR_QUOTA).
+        assert_eq!(USAGE_ROUTE, "/v1/customer/usage");
+    }
+
+    #[test]
+    fn region_check_is_skip_with_reason() {
+        // No public route exposes region → honest skip, not a 404 fail.
+        let c = check_region();
+        assert_eq!(c.status, CheckStatus::Skip);
+        assert!(c.next_action.is_some());
+        assert!(c.error_code.is_none());
+    }
+
+    #[test]
+    fn client_verify_is_ok_without_network() {
+        // Compile-time BLAKE3 guarantee → ok, no dead route.
+        let c = check_client_verify();
+        assert_eq!(c.status, CheckStatus::Ok);
+        assert!(c.error_code.is_none());
+    }
+
+    #[test]
     fn storage_read_skips_gracefully_when_write_failed() {
         // check_storage_read with digest=None should return FAIL with COR_STORAGE_READ_FAIL.
         // We test the synchronous logic indirectly via the DoctorCheck::fail branch.
@@ -448,5 +494,202 @@ mod tests {
         );
         assert_eq!(c.status, CheckStatus::Fail);
         assert_eq!(c.error_code.as_deref(), Some("COR_STORAGE_READ_FAIL"));
+    }
+
+    #[test]
+    fn quota_verdict_boundary() {
+        // Kills the `>`, `>=`, `&&`, and guard mutants on the threshold.
+        assert_eq!(quota_verdict(Some(100), Some(100)), QuotaState::Exceeded); // at cap (>=)
+        assert_eq!(quota_verdict(Some(99), Some(100)), QuotaState::Ok); // below cap
+        assert_eq!(quota_verdict(Some(101), Some(100)), QuotaState::Exceeded); // over cap
+        assert_eq!(quota_verdict(Some(100), Some(0)), QuotaState::Ok); // zero cap ⇒ unknown
+        assert_eq!(quota_verdict(Some(100), None), QuotaState::Ok); // no cap datum
+        assert_eq!(quota_verdict(None, Some(100)), QuotaState::Ok); // no usage datum
+        assert_eq!(quota_verdict(Some(0), Some(0)), QuotaState::Ok);
+    }
+
+    // -----------------------------------------------------------------------
+    // Hermetic mock-HTTP checks (localhost only — never prod).
+    // -----------------------------------------------------------------------
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn mock_client(server: &MockServer) -> CorelinkClient {
+        CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()))
+    }
+
+    #[tokio::test]
+    async fn run_checks_returns_all_eight() {
+        // Kills `run_checks -> Ok(vec![])`: an empty server 404s everything,
+        // so checks fail/skip — but the vector still holds all 8 entries.
+        let server = MockServer::start().await;
+        let checks = run_checks(&mock_client(&server))
+            .await
+            .expect("run_checks ok");
+        assert_eq!(checks.len(), 8, "doctor always reports 8 checks");
+    }
+
+    #[tokio::test]
+    async fn check_byok_active_is_ok() {
+        // Kills the `Some("active") => ok` arm-delete mutant: an active BYOK
+        // status must resolve `ok` (a deleted arm would fall through to fail).
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/overview"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"byok": {"status": "active"}})),
+            )
+            .mount(&server)
+            .await;
+        let c = check_byok(&mock_client(&server), true).await;
+        assert_eq!(c.status, CheckStatus::Ok);
+    }
+
+    #[tokio::test]
+    async fn check_byok_inactive_is_fail() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/overview"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"byok": {"status": "disabled"}})),
+            )
+            .mount(&server)
+            .await;
+        let c = check_byok(&mock_client(&server), true).await;
+        assert_eq!(c.status, CheckStatus::Fail);
+        assert_eq!(c.error_code.as_deref(), Some("COR_BYOK_REVOKED"));
+    }
+
+    #[tokio::test]
+    async fn check_byok_403_degrades_to_skip() {
+        // The overview is billing-admin-gated; a cache PAT 403s ⇒ honest skip.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/overview"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&server)
+            .await;
+        let c = check_byok(&mock_client(&server), true).await;
+        assert_eq!(c.status, CheckStatus::Skip);
+    }
+
+    #[tokio::test]
+    async fn check_byok_disabled_skips_without_network() {
+        let server = MockServer::start().await;
+        let c = check_byok(&mock_client(&server), false).await;
+        assert_eq!(c.status, CheckStatus::Skip);
+        // No overview request when BYOK isn't enabled locally.
+        let reqs = server.received_requests().await.expect("recorded");
+        assert!(reqs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn check_quota_over_limit_fails() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"cas_bytes": 200, "quota_bytes": 100})),
+            )
+            .mount(&server)
+            .await;
+        let c = check_quota(&mock_client(&server)).await;
+        assert_eq!(c.status, CheckStatus::Fail);
+        assert_eq!(c.error_code.as_deref(), Some("COR_QUOTA_EXCEEDED"));
+    }
+
+    #[tokio::test]
+    async fn check_quota_under_limit_ok() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"cas_bytes": 10, "quota_bytes": 100})),
+            )
+            .mount(&server)
+            .await;
+        let c = check_quota(&mock_client(&server)).await;
+        assert_eq!(c.status, CheckStatus::Ok);
+    }
+
+    #[tokio::test]
+    async fn check_quota_unreadable_fails() {
+        // Kills the `Err(_) => fail` arm: an unreadable usage route ⇒ fail.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/v1/customer/usage"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let c = check_quota(&mock_client(&server)).await;
+        assert_eq!(c.status, CheckStatus::Fail);
+    }
+
+    #[tokio::test]
+    async fn check_network_ok_and_auth_ok() {
+        // `/health` 200 ⇒ network ok; `/v1/users/me` 200 ⇒ auth ok.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/health"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/v1/users/me"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"tenant_id": "t-test"})),
+            )
+            .mount(&server)
+            .await;
+        let client = mock_client(&server);
+        assert_eq!(check_network(&client).await.status, CheckStatus::Ok);
+        assert_eq!(check_auth(&client).await.status, CheckStatus::Ok);
+    }
+
+    #[tokio::test]
+    async fn check_network_and_auth_fail_on_error() {
+        // 5xx ⇒ both checks fail (kills the Ok/Err arm mutants).
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let client = mock_client(&server);
+        assert_eq!(check_network(&client).await.status, CheckStatus::Fail);
+        assert_eq!(check_auth(&client).await.status, CheckStatus::Fail);
+    }
+
+    #[tokio::test]
+    async fn storage_write_then_read_roundtrip_ok() {
+        // A real CAS round-trip: PUT stores the 1 KB blob, GET returns the
+        // exact bytes ⇒ storage_write ok + a digest, storage_read verifies ok.
+        let blob: Vec<u8> = (0u8..=255u8).cycle().take(1024).collect();
+        let digest = {
+            let mut h = blake3::Hasher::new();
+            h.update(&blob);
+            hex::encode(h.finalize().as_bytes())
+        };
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path(format!("/v1/cas/t-test/{digest}")))
+            .respond_with(ResponseTemplate::new(201))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(format!("/v1/cas/t-test/{digest}")))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(blob.clone()))
+            .mount(&server)
+            .await;
+        let client = mock_client(&server);
+        let (write_check, dig) = check_storage_write(&client).await;
+        assert_eq!(write_check.status, CheckStatus::Ok);
+        assert_eq!(dig.as_deref(), Some(digest.as_str()));
+        let read_check = check_storage_read(&client, dig.as_deref()).await;
+        assert_eq!(read_check.status, CheckStatus::Ok);
     }
 }

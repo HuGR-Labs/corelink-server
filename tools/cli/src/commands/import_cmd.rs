@@ -3,7 +3,7 @@
 //! content-addressed, so dedup happens for free").
 //!
 //! **Wired today:** a local directory source — every file is uploaded
-//! into CoreLink CAS keyed by its SHA-256 (dedup is automatic; re-import
+//! into CoreLink CAS keyed by its BLAKE3 (dedup is automatic; re-import
 //! is idempotent because identical content maps to the same digest).
 //!
 //! **Flagged gap:** `s3://…` (and other object-store URIs) — direct

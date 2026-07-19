@@ -1,15 +1,15 @@
-//! `corelink get` — download a blob by SHA-256 digest (WI-S15-001 + Stream-1).
+//! `corelink get` — download a blob by BLAKE3 digest (WI-S15-001 + Stream-1).
 //!
-//! Client-verify default-on: SHA-256 of downloaded bytes is compared against
-//! the requested digest (CTRL-CAS-002 + INV-CAS-INTEGRITY).
+//! Client-verify default-on: BLAKE3 of downloaded bytes is compared against
+//! the requested digest (CTRL-CAS-002 + INV-CAS-INTEGRITY). Native CAS is
+//! BLAKE3-addressed, so the digest the caller passes is a BLAKE3 hex.
 //!
-//! API: `GET /v1/cas/<tenant>/<sha256>` (Stream-1 prod contract).
+//! API: `GET /v1/cas/<tenant>/<blake3>` (Stream-1 prod contract).
 
 use std::fmt;
 use std::path::PathBuf;
 
 use serde::Serialize;
-use sha2::{Digest as _, Sha256};
 
 use crate::client::CorelinkClient;
 use crate::error::CliError;
@@ -41,28 +41,30 @@ impl fmt::Display for GetResult {
 
 /// Run `corelink get <digest> [-o <file>]`.
 ///
-/// Uses `GET /v1/cas/<tenant>/<sha256>` via the Stream-1 client method.
-/// Performs client-side SHA-256 verify against the requested digest.
+/// Uses `GET /v1/cas/<tenant>/<blake3>` via the Stream-1 client method.
+/// Performs client-side BLAKE3 verify against the requested digest.
 pub async fn run(
     client: &CorelinkClient,
     digest: &str,
     output_path: Option<PathBuf>,
     format: OutputFormat,
 ) -> Result<(), CliError> {
-    // Strip any `sha256:` prefix the user may have supplied.
-    let bare_digest = digest.trim_start_matches("sha256:");
+    // Strip any `blake3:`/`sha256:` scheme prefix the user may have supplied.
+    let bare_digest = digest
+        .trim_start_matches("blake3:")
+        .trim_start_matches("sha256:");
 
     let data = client.cas_get(bare_digest).await?;
 
-    // Client-verify: SHA-256 the downloaded bytes against the requested digest.
+    // Client-verify: BLAKE3 the downloaded bytes against the requested digest.
     let computed = {
-        let mut hasher = Sha256::new();
+        let mut hasher = blake3::Hasher::new();
         hasher.update(&data);
-        hex::encode(hasher.finalize())
+        hex::encode(hasher.finalize().as_bytes())
     };
     if computed != bare_digest {
         return Err(CliError::Other(format!(
-            "Client verify FAILED: expected sha256:{bare_digest}, got sha256:{computed}. \
+            "Client verify FAILED: expected blake3:{bare_digest}, got blake3:{computed}. \
              Possible data corruption (INV-CAS-INTEGRITY)."
         )));
     }
@@ -133,9 +135,55 @@ mod tests {
     }
 
     #[test]
-    fn sha256_prefix_strip() {
-        let digest = "sha256:abcdef0123456789";
-        let bare = digest.trim_start_matches("sha256:");
+    fn blake3_prefix_strip() {
+        let digest = "blake3:abcdef0123456789";
+        let bare = digest
+            .trim_start_matches("blake3:")
+            .trim_start_matches("sha256:");
         assert_eq!(bare, "abcdef0123456789");
+    }
+
+    #[test]
+    fn client_verify_uses_blake3() {
+        // Downloading `data` and verifying must recompute BLAKE3, matching
+        // `blake3::hash` — never SHA-256.
+        let data = b"corelink cas blob";
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(data);
+        let computed = hex::encode(hasher.finalize().as_bytes());
+        assert_eq!(computed, hex::encode(blake3::hash(data).as_bytes()));
+    }
+
+    #[tokio::test]
+    async fn get_run_downloads_verifies_and_writes_file() {
+        // Kills `run -> Ok(())`: the mutant writes no file. A real run
+        // downloads the blob, BLAKE3-verifies it against the digest, and
+        // writes the exact bytes to `-o <file>`.
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let data = b"blob-under-test";
+        let digest = hex::encode(blake3::hash(data).as_bytes());
+        let server = MockServer::start().await;
+        // Mock matches the BARE digest path; the caller passes a `blake3:`
+        // prefix, so this also proves the prefix is stripped (a mutated
+        // strip would leave `blake3:` in the path ⇒ 404 ⇒ error).
+        Mock::given(method("GET"))
+            .and(path(format!("/v1/cas/t-test/{digest}")))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(data.as_ref()))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("out.bin");
+        run(
+            &client,
+            &format!("blake3:{digest}"),
+            Some(out.clone()),
+            OutputFormat::Json,
+        )
+        .await
+        .expect("get ok");
+        assert_eq!(std::fs::read(&out).unwrap(), data);
     }
 }

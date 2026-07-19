@@ -85,7 +85,7 @@ enum Commands {
         /// BLAKE3 digest of the blob to download.
         digest: String,
         /// Output file path. Defaults to stdout if not specified.
-        #[arg(short = 'o', long, value_name = "FILE")]
+        #[arg(short = 'o', long = "out", value_name = "FILE", id = "out_file")]
         output: Option<PathBuf>,
     },
 
@@ -229,7 +229,7 @@ enum TenantAction {
         #[arg(long = "tenant-id", value_name = "TENANT_ID")]
         tenant_id: Option<String>,
         /// Destination file for the bundle.
-        #[arg(long, value_name = "FILE")]
+        #[arg(long = "out", value_name = "FILE", id = "out_file")]
         output: PathBuf,
     },
     /// Re-verify every content hash in a previously exported bundle.
@@ -249,7 +249,7 @@ enum CasAction {
         /// Digest of the blob to download.
         digest: String,
         /// Output file path. Defaults to stdout if not specified.
-        #[arg(short = 'o', long, value_name = "FILE")]
+        #[arg(short = 'o', long = "out", value_name = "FILE", id = "out_file")]
         output: Option<PathBuf>,
     },
     /// Bulk-download every blob in the tenant CAS to a local directory.
@@ -258,7 +258,7 @@ enum CasAction {
         #[arg(long, value_name = "TENANT_ID", default_value = "me")]
         tenant: String,
         /// Destination directory (an `s3://…` URI is a flagged gap).
-        #[arg(long, value_name = "DEST")]
+        #[arg(long = "out", value_name = "DEST", id = "out_file")]
         output: String,
     },
 }
@@ -296,7 +296,7 @@ enum AuditAction {
         #[arg(long, value_name = "FORMAT", default_value = "json-ld")]
         format: commands::audit::ExportFormat,
         /// Output directory (file name is content-addressed). Defaults to cwd.
-        #[arg(long = "output", value_name = "DIR")]
+        #[arg(long = "out", value_name = "DIR", id = "out_file")]
         output: Option<PathBuf>,
         /// Embed Merkle inclusion proofs in each event row.
         #[arg(long = "include-merkle-proofs")]
@@ -449,7 +449,7 @@ enum AcAction {
         /// Action digest key.
         digest: String,
         /// Output file path. Defaults to stdout if not specified.
-        #[arg(short = 'o', long, value_name = "FILE")]
+        #[arg(short = 'o', long = "out", value_name = "FILE", id = "out_file")]
         output: Option<std::path::PathBuf>,
     },
 }
@@ -907,5 +907,19 @@ fn run_config(action: &ConfigAction, format: OutputFormat) -> Result<(), CliErro
                 )))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::Cli;
+    use clap::CommandFactory as _;
+
+    /// B1 regression: the global `--output` (format) flag must NOT share a
+    /// clap arg id with any subcommand file-output arg. `debug_assert()`
+    /// panics on a duplicate arg id, so this proves the collision is gone.
+    #[test]
+    fn cli_command_has_no_arg_id_collisions() {
+        Cli::command().debug_assert();
     }
 }

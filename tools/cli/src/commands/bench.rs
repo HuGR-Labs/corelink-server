@@ -104,37 +104,36 @@ pub async fn run(
     let mut read_latencies: Vec<u64> = Vec::with_capacity(ops as usize);
     let mut digests: Vec<String> = Vec::with_capacity(ops as usize);
 
-    if mode == BenchMode::Write || mode == BenchMode::Full {
-        for _ in 0..ops {
-            let blob: Vec<u8> = (0u8..255u8).cycle().take(blob_size).collect();
-            let digest = {
-                let mut hasher = blake3::Hasher::new();
-                hasher.update(&blob);
-                hasher.finalize().to_hex().to_string()
-            };
+    if does_write(mode) {
+        for i in 0..ops {
+            let blob = bench_blob(blob_size, i);
+            let digest = blob_digest(&blob);
             let t = Instant::now();
-            let _ = client
-                .post_bytes("/v1/cas/upload", bytes::Bytes::from(blob))
-                .await;
+            // Real CAS write: PUT /v1/cas/<tenant>/<blake3>. A failed op is
+            // surfaced (never a fake latency for a swallowed 404).
+            client.cas_put(&digest, bytes::Bytes::from(blob)).await?;
             write_latencies.push(t.elapsed().as_millis() as u64);
             digests.push(digest);
         }
     }
 
-    if mode == BenchMode::Read || mode == BenchMode::Full {
-        for (i, _) in (0..ops).enumerate() {
-            let path = if mode == BenchMode::Full && !digests.is_empty() {
-                let idx = i % digests.len();
-                format!(
-                    "/v1/cas/download/{}",
-                    digests.get(idx).map(String::as_str).unwrap_or("")
-                )
-            } else {
-                // Read-only mode: use a known-good test digest.
-                "/v1/cas/download/benchmark-test".to_owned()
-            };
+    if does_read(mode) {
+        // Read-only mode has no freshly-written digests; seed one real blob
+        // (untimed) so the read benchmark exercises a genuine CAS GET rather
+        // than a guaranteed 404.
+        if digests.is_empty() {
+            let blob = bench_blob(blob_size, 0);
+            let digest = blob_digest(&blob);
+            client.cas_put(&digest, bytes::Bytes::from(blob)).await?;
+            digests.push(digest);
+        }
+        for i in 0..ops as usize {
+            // `digests` is non-empty here (seeded above / filled by writes).
+            let idx = wrap_index(i, digests.len());
+            let digest = digests.get(idx).map(String::as_str).unwrap_or_default();
             let t = Instant::now();
-            let _ = client.get_bytes(&path).await;
+            // Real CAS read: GET /v1/cas/<tenant>/<blake3>. Errors surface.
+            client.cas_get(digest).await?;
             read_latencies.push(t.elapsed().as_millis() as u64);
         }
     }
@@ -172,6 +171,41 @@ pub async fn run(
     fmt.emit(&result).map_err(CliError::Json)?;
 
     Ok(())
+}
+
+/// Whether `mode` performs the write phase (`write` or `full`).
+fn does_write(mode: BenchMode) -> bool {
+    matches!(mode, BenchMode::Write | BenchMode::Full)
+}
+
+/// Whether `mode` performs the read phase (`read` or `full`).
+fn does_read(mode: BenchMode) -> bool {
+    matches!(mode, BenchMode::Read | BenchMode::Full)
+}
+
+/// Round-robin a read index `i` into `[0, len)` over the collected digests.
+/// `0` when `len == 0` (defensive; the read loop always seeds ≥1 digest).
+fn wrap_index(i: usize, len: usize) -> usize {
+    if len == 0 {
+        0
+    } else {
+        i % len
+    }
+}
+
+/// Deterministic synthetic blob of `size` bytes, salted by `seed` so distinct
+/// iterations write distinct CAS objects (not an idempotent re-PUT of one
+/// blob) — a more representative write benchmark.
+fn bench_blob(size: usize, seed: u32) -> Vec<u8> {
+    let salt = seed as u8;
+    (0..size).map(|j| (j as u8).wrapping_add(salt)).collect()
+}
+
+/// BLAKE3 hex digest of a blob (64-char lowercase) — the CAS content address.
+fn blob_digest(blob: &[u8]) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(blob);
+    hasher.finalize().to_hex().to_string()
 }
 
 fn compute_stats(samples: &mut [u64]) -> LatencyStats {
@@ -243,6 +277,66 @@ mod tests {
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("\"ops_per_sec\""));
+    }
+
+    #[test]
+    fn blob_digest_is_blake3() {
+        // The bench write loop addresses each PUT by this digest; it MUST be
+        // BLAKE3 (native CAS 422s a non-BLAKE3 claim), matching `blake3::hash`.
+        let blob = bench_blob(1024, 7);
+        assert_eq!(blob_digest(&blob), blake3::hash(&blob).to_hex().to_string());
+        assert_eq!(blob_digest(&blob).len(), 64);
+    }
+
+    #[test]
+    fn bench_blob_varies_by_seed() {
+        // Distinct iterations write distinct CAS objects (not idempotent).
+        assert_ne!(bench_blob(64, 0), bench_blob(64, 1));
+        assert_eq!(bench_blob(64, 3).len(), 64);
+    }
+
+    #[test]
+    fn does_write_and_does_read_phase_selection() {
+        assert!(does_write(BenchMode::Write));
+        assert!(does_write(BenchMode::Full));
+        assert!(!does_write(BenchMode::Read));
+        assert!(does_read(BenchMode::Read));
+        assert!(does_read(BenchMode::Full));
+        assert!(!does_read(BenchMode::Write));
+    }
+
+    #[test]
+    fn wrap_index_round_robins() {
+        assert_eq!(wrap_index(0, 3), 0);
+        assert_eq!(wrap_index(4, 3), 1);
+        // 5 % 3 == 2 distinguishes `%` from `/` (=1) and `+` (=8).
+        assert_eq!(wrap_index(5, 3), 2);
+        // Defensive: empty digest list ⇒ 0 (no modulo-by-zero panic).
+        assert_eq!(wrap_index(7, 0), 0);
+    }
+
+    #[tokio::test]
+    async fn bench_write_issues_real_tenant_scoped_puts() {
+        // Kills `run -> Ok(())`: the mutant makes ZERO requests; the real run
+        // issues one PUT per op on the tenant-scoped CAS route.
+        use wiremock::matchers::method;
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let client =
+            crate::client::CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+        run(&client, true, false, false, OutputFormat::Json)
+            .await
+            .expect("bench --write ok");
+        let reqs = server.received_requests().await.expect("recorded");
+        assert_eq!(reqs.len(), 100, "one PUT per op");
+        assert!(reqs
+            .iter()
+            .all(|r| r.url.path().starts_with("/v1/cas/t-test/")));
     }
 
     #[test]

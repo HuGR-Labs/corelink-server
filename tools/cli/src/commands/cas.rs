@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
 
 use bytes::Bytes;
 use serde::Serialize;
-use sha2::{Digest as _, Sha256};
 
 use crate::client::CorelinkClient;
 use crate::commands::ls::LsResponse;
@@ -215,7 +214,10 @@ fn collect_files_into(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), CliError
 }
 
 /// Upload every regular file under `dir` into the tenant CAS, keyed by
-/// the SHA-256 of its contents. Shared by `import` and `ci mirror`.
+/// the BLAKE3 of its contents. Shared by `import` and `ci mirror`.
+///
+/// Native CAS is BLAKE3-addressed (a non-BLAKE3 claim 422s), so the digest
+/// claimed here MUST be BLAKE3.
 pub async fn upload_dir(client: &CorelinkClient, dir: &Path) -> Result<UploadSummary, CliError> {
     if !dir.is_dir() {
         return Err(CliError::Other(format!(
@@ -228,13 +230,13 @@ pub async fn upload_dir(client: &CorelinkClient, dir: &Path) -> Result<UploadSum
     let mut bytes_uploaded = 0u64;
     for f in &files {
         let data = std::fs::read(f).map_err(CliError::Io)?;
-        let sha = {
-            let mut h = Sha256::new();
+        let digest = {
+            let mut h = blake3::Hasher::new();
             h.update(&data);
-            hex::encode(h.finalize())
+            hex::encode(h.finalize().as_bytes())
         };
         let len = data.len() as u64;
-        client.cas_put(&sha, Bytes::from(data)).await?;
+        client.cas_put(&digest, Bytes::from(data)).await?;
         files_uploaded += 1;
         bytes_uploaded += len;
     }
@@ -281,5 +283,33 @@ mod tests {
         std::fs::write(sub.join("b.bin"), b"bb").unwrap();
         let files = collect_files(dir.path()).unwrap();
         assert_eq!(files.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn upload_dir_puts_each_file_blake3_addressed() {
+        // Kills the `hex::encode(...) -> String::new()` mutant on the upload
+        // digest: an empty digest would PUT to `/v1/cas/t-test/` (unmatched)
+        // and 404 → error. The mock only matches the true BLAKE3 path.
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let contents = b"import-me";
+        let digest = hex::encode(blake3::hash(contents).as_bytes());
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("f.bin"), contents).unwrap();
+
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path(format!("/v1/cas/t-test/{digest}")))
+            .respond_with(ResponseTemplate::new(201))
+            .mount(&server)
+            .await;
+        let client = CorelinkClient::for_test(server.uri(), Some("t-test".to_owned()));
+
+        let summary = upload_dir(&client, dir.path()).await.expect("upload ok");
+        assert_eq!(summary.files_uploaded, 1);
+        assert_eq!(summary.bytes_uploaded, contents.len() as u64);
+        let reqs = server.received_requests().await.expect("recorded");
+        assert_eq!(reqs.len(), 1, "one PUT to the BLAKE3-addressed path");
     }
 }
