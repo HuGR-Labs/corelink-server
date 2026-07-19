@@ -10,10 +10,12 @@
 //! 3. Storage write — real CAS round-trip PUT `/v1/cas/<tenant>/<blake3>`.
 //! 4. Storage read — GET the same blob back + BLAKE3 integrity verify.
 //! 5. BYOK — `byok.status` from `GET /v1/customer/overview` (skip if the
-//!    caller has not opted into BYOK via `auth.byok_enabled`).
+//!    caller has not opted into BYOK, OR the token can't read the
+//!    billing-gated overview — the status needs an admin/billing token).
 //! 6. Region — SKIP: no public route exposes the tenant's primary region
 //!    (informational only; not invented).
-//! 7. Quota — `usage.{cas_bytes,quota_bytes}` from `GET /v1/customer/overview`.
+//! 7. Quota — `cas_bytes`/`quota_bytes` from `GET /v1/customer/usage` (the
+//!    plain PAT-readable usage route, NOT the billing-admin-gated overview).
 //! 8. Client verify — this CLI always BLAKE3-verifies downloads (compile-time
 //!    guarantee, CTRL-CAS-002); reported `ok` without a network call.
 //!
@@ -34,8 +36,13 @@ pub(crate) const HEALTH_ROUTE: &str = "/health";
 /// Caller-identity reflection route (`routes/users.rs` `USERS_ME_ROUTE`).
 pub(crate) const AUTH_ROUTE: &str = "/v1/users/me";
 /// Customer account overview (`routes/customer.rs`) — carries `plan`,
-/// `usage.{cas_bytes,quota_bytes}`, `billing.*`, and `byok.status`.
+/// `billing.*`, and `byok.status`. GATED by `billing_pii_gate_reject`
+/// (`requires_billing_admin`), so a plain cache PAT gets 403 here.
 pub(crate) const OVERVIEW_ROUTE: &str = "/v1/customer/overview";
+/// Customer usage (`routes/customer.rs` `handle_usage`) — `cas_bytes` +
+/// `quota_bytes` at the TOP LEVEL. Same tenant + PAT-possession gates as the
+/// data plane but NO billing-admin gate, so a normal cache PAT can read it.
+pub(crate) const USAGE_ROUTE: &str = "/v1/customer/usage";
 
 /// Status of a single doctor check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -264,7 +271,11 @@ async fn check_storage_read(client: &CorelinkClient, digest: Option<&str>) -> Do
 
 /// Check #5 — BYOK: KMS access check (S-14 alignment).
 ///
-/// Skipped if `auth.byok_enabled = false`.
+/// Skipped if `auth.byok_enabled = false`. `byok.status` lives ONLY on the
+/// billing-admin-gated `GET /v1/customer/overview`, so a plain cache PAT
+/// gets 403 — in that case we degrade to `skip` (honest: the status needs an
+/// admin/billing token) rather than a spurious `fail`. We do NOT invent a
+/// dedicated byok route.
 async fn check_byok(client: &CorelinkClient, byok_enabled: bool) -> DoctorCheck {
     if !byok_enabled {
         return DoctorCheck::skip(
@@ -294,11 +305,12 @@ async fn check_byok(client: &CorelinkClient, byok_enabled: bool) -> DoctorCheck 
                 ),
             }
         }
-        Err(_) => DoctorCheck::fail(
+        // The overview is billing-admin-gated; a normal cache PAT 403s here.
+        // BYOK status is genuinely unreadable with this token → honest skip,
+        // not a false COR_BYOK_REVOKED.
+        Err(_) => DoctorCheck::skip(
             "byok",
-            latency,
-            "COR_BYOK_REVOKED",
-            "Cannot read BYOK status from the account overview. See docs/error_taxonomy.md#COR_BYOK_REVOKED",
+            "BYOK status requires an admin/billing token (it lives on the billing-gated account overview); skipping with this token.",
         ),
     }
 }
@@ -315,22 +327,19 @@ fn check_region() -> DoctorCheck {
     )
 }
 
-/// Check #7 — Quota: current usage vs plan limit, derived from the account
-/// overview (`usage.cas_bytes` vs `usage.quota_bytes`).
+/// Check #7 — Quota: current usage vs plan limit, derived from the
+/// PAT-readable usage route (`GET /v1/customer/usage`), which returns
+/// `cas_bytes` + `quota_bytes` at the TOP LEVEL and — unlike the billing-
+/// admin-gated `/v1/customer/overview` — is reachable with a plain cache PAT.
 async fn check_quota(client: &CorelinkClient) -> DoctorCheck {
     let start = Instant::now();
-    let result = client.get_json(OVERVIEW_ROUTE).await;
+    let result = client.get_json(USAGE_ROUTE).await;
     let latency = start.elapsed().as_millis() as u64;
 
     match result {
         Ok(v) => {
-            let usage = v.get("usage");
-            let used = usage
-                .and_then(|u| u.get("cas_bytes"))
-                .and_then(serde_json::Value::as_u64);
-            let limit = usage
-                .and_then(|u| u.get("quota_bytes"))
-                .and_then(serde_json::Value::as_u64);
+            let used = v.get("cas_bytes").and_then(serde_json::Value::as_u64);
+            let limit = v.get("quota_bytes").and_then(serde_json::Value::as_u64);
             match (used, limit) {
                 (Some(used), Some(limit)) if limit > 0 && used >= limit => DoctorCheck::fail(
                     "quota",
@@ -345,7 +354,7 @@ async fn check_quota(client: &CorelinkClient) -> DoctorCheck {
             "quota",
             latency,
             "COR_QUOTA_EXCEEDED",
-            "Cannot read usage from the account overview. Verify plan + contact support. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED",
+            "Cannot read usage from /v1/customer/usage. Verify plan + contact support. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED",
         ),
     }
 }
@@ -430,6 +439,9 @@ mod tests {
         assert_eq!(HEALTH_ROUTE, "/health");
         assert_eq!(AUTH_ROUTE, "/v1/users/me");
         assert_eq!(OVERVIEW_ROUTE, "/v1/customer/overview");
+        // Quota reads the PAT-readable usage route, NOT the billing-gated
+        // overview (a plain cache PAT 403s on overview → false COR_QUOTA).
+        assert_eq!(USAGE_ROUTE, "/v1/customer/usage");
     }
 
     #[test]

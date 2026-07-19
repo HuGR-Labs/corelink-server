@@ -1,4 +1,11 @@
-//! `corelink stat` — show metadata for a digest (WI-S15-001).
+//! `corelink stat` — existence + size for a digest (WI-S15-001).
+//!
+//! There is NO `/v1/cas/stat/…` route; the only per-object CAS surface is
+//! `/v1/cas/<tenant>/<blake3>`. `stat` therefore issues a `HEAD` against that
+//! route (axum's `get(handle_read)` also serves HEAD) using the logged-in
+//! tenant — 200 (+ `content-length` when present) ⇒ present, 404 ⇒ absent.
+//! Creation time / age / region are NOT exposed on a HEAD response, so they
+//! are reported as `n/a` rather than invented.
 
 use std::fmt;
 
@@ -8,32 +15,31 @@ use crate::client::CorelinkClient;
 use crate::error::CliError;
 use crate::output::{Formatter, OutputFormat};
 
-/// Metadata returned by the stat endpoint.
+/// Metadata derived from a CAS `HEAD` probe.
 #[derive(Debug, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct StatResult {
-    /// BLAKE3 digest.
+    /// BLAKE3 digest (bare hex, scheme prefix stripped).
     pub digest: String,
-    /// Blob size in bytes.
-    pub size_bytes: u64,
-    /// ISO-8601 creation timestamp.
-    pub created_at: String,
-    /// Age in human-readable form.
-    pub age: String,
-    /// Storage region.
-    pub region: String,
-    /// Pseudonymised tenant ID.
-    pub tenant_id_pseudonym: String,
+    /// Whether the blob exists in the tenant CAS.
+    pub exists: bool,
+    /// Blob size in bytes, when the server reports `content-length` on HEAD.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
+    /// Tenant the digest was looked up under.
+    pub tenant_id: String,
 }
 
 impl fmt::Display for StatResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Digest:     {}", self.digest)?;
-        writeln!(f, "Size:       {} bytes", self.size_bytes)?;
-        writeln!(f, "Created:    {}", self.created_at)?;
-        writeln!(f, "Age:        {}", self.age)?;
-        writeln!(f, "Region:     {}", self.region)?;
-        write!(f, "Tenant:     {}", self.tenant_id_pseudonym)
+        writeln!(f, "Digest:  {}", self.digest)?;
+        writeln!(f, "Exists:  {}", self.exists)?;
+        let size = self
+            .size_bytes
+            .map(|n| format!("{n} bytes"))
+            .unwrap_or_else(|| "n/a".to_owned());
+        writeln!(f, "Size:    {size}")?;
+        write!(f, "Tenant:  {}", self.tenant_id)
     }
 }
 
@@ -43,19 +49,32 @@ pub async fn run(
     digest: &str,
     format: OutputFormat,
 ) -> Result<(), CliError> {
-    let path = format!("/v1/cas/stat/{digest}");
-    let raw = client.get_json(&path).await?;
+    // Strip any `blake3:`/`sha256:` scheme prefix the user may have supplied.
+    let bare = digest
+        .trim_start_matches("blake3:")
+        .trim_start_matches("sha256:");
 
-    match serde_json::from_value::<StatResult>(raw.clone()) {
-        Ok(stat) => {
-            let fmt = Formatter::new(format);
-            fmt.emit(&stat).map_err(CliError::Json)?;
-        }
-        Err(_) => {
-            let fmt = Formatter::new(format);
-            fmt.emit_json_value(&raw).map_err(CliError::Json)?;
-        }
-    }
+    let tenant = client
+        .tenant_id()
+        .ok_or_else(|| {
+            CliError::Other(
+                "stat: tenant_id not set — run `corelink login`/`corelink whoami` first."
+                    .to_owned(),
+            )
+        })?
+        .to_owned();
+
+    let head = client.cas_head(bare).await?;
+
+    let result = StatResult {
+        digest: bare.to_owned(),
+        exists: head.exists,
+        size_bytes: head.size_bytes,
+        tenant_id: tenant,
+    };
+
+    let fmt = Formatter::new(format);
+    fmt.emit(&result).map_err(CliError::Json)?;
 
     Ok(())
 }
@@ -71,31 +90,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn stat_result_display_contains_fields() {
+    fn stat_result_display_present_with_size() {
         let r = StatResult {
-            digest: "blake3:abc".to_owned(),
-            size_bytes: 4096,
-            created_at: "2026-05-14T00:00:00Z".to_owned(),
-            age: "2 days".to_owned(),
-            region: "wnam".to_owned(),
-            tenant_id_pseudonym: "t-abc***".to_owned(),
+            digest: "abc".to_owned(),
+            exists: true,
+            size_bytes: Some(4096),
+            tenant_id: "t-abc".to_owned(),
         };
         let s = format!("{r}");
         assert!(s.contains("4096 bytes"));
-        assert!(s.contains("wnam"));
+        assert!(s.contains("Exists:  true"));
+        assert!(s.contains("t-abc"));
+    }
+
+    #[test]
+    fn stat_result_display_absent_shows_na_size() {
+        let r = StatResult {
+            digest: "abc".to_owned(),
+            exists: false,
+            size_bytes: None,
+            tenant_id: "t-abc".to_owned(),
+        };
+        let s = format!("{r}");
+        assert!(s.contains("Exists:  false"));
+        assert!(s.contains("Size:    n/a"));
     }
 
     #[test]
     fn stat_result_serialises() {
         let r = StatResult {
             digest: "d".to_owned(),
-            size_bytes: 0,
-            created_at: "2026-01-01T00:00:00Z".to_owned(),
-            age: "0s".to_owned(),
-            region: "enam".to_owned(),
-            tenant_id_pseudonym: "t-***".to_owned(),
+            exists: true,
+            size_bytes: Some(10),
+            tenant_id: "t".to_owned(),
         };
         let json = serde_json::to_string(&r).unwrap();
-        assert!(json.contains("\"region\""));
+        assert!(json.contains("\"exists\""));
+        assert!(json.contains("\"size_bytes\""));
+        assert!(json.contains("\"tenant_id\""));
+    }
+
+    #[test]
+    fn stat_result_omits_size_when_absent() {
+        let r = StatResult {
+            digest: "d".to_owned(),
+            exists: false,
+            size_bytes: None,
+            tenant_id: "t".to_owned(),
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(!json.contains("\"size_bytes\""));
     }
 }

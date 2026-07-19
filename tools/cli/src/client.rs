@@ -39,6 +39,27 @@ pub struct PutResp {
     pub hash: Option<String>,
 }
 
+/// Result of a CAS existence probe (`HEAD /v1/cas/<tenant>/<blake3>`).
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct CasHead {
+    /// Whether the blob exists (HTTP 200 vs 404).
+    pub exists: bool,
+    /// Blob size from the `content-length` header, when the server sets it.
+    /// `None` on a HEAD response that omits the header (existence still known).
+    pub size_bytes: Option<u64>,
+}
+
+/// Build the native CAS object path `/v1/cas/<tenant>/<hash>` — the ONLY
+/// per-object CAS route (`crates/corelink-container/src/routes/cas.rs`,
+/// `get(handle_read).put(handle_write).delete(handle_delete)`). Shared by
+/// `cas_get` / `cas_head` (and mirrored by `cas_put`) so the CLI never
+/// re-invents a `/cas/upload`, `/cas/download/…`, or `/cas/stat/…` path.
+#[must_use]
+pub(crate) fn cas_object_path(tenant: &str, hash: &str) -> String {
+    format!("/v1/cas/{tenant}/{hash}")
+}
+
 /// Maximum retry attempts for transient failures (FM-150).
 const MAX_RETRIES: u32 = 3;
 
@@ -114,7 +135,11 @@ impl CorelinkClient {
     /// Returns `CliError::Other("tenant_id not set")` if tenant is unknown.
     pub async fn cas_put(&self, blake3_hex: &str, body: Bytes) -> Result<PutResp, CliError> {
         let tenant = self.require_tenant()?;
-        let url = format!("{}/v1/cas/{tenant}/{blake3_hex}", self.inner.base_url);
+        let url = format!(
+            "{}{}",
+            self.inner.base_url,
+            cas_object_path(tenant, blake3_hex)
+        );
         let mut attempt = 0u32;
         loop {
             let resp = self
@@ -166,8 +191,74 @@ impl CorelinkClient {
     /// `GET /v1/cas/<tenant>/<blake3>` — download bytes.
     pub async fn cas_get(&self, blake3_hex: &str) -> Result<Bytes, CliError> {
         let tenant = self.require_tenant()?;
-        let path = format!("/v1/cas/{tenant}/{blake3_hex}");
+        let path = cas_object_path(tenant, blake3_hex);
         self.get_bytes(&path).await
+    }
+
+    /// `HEAD /v1/cas/<tenant>/<blake3>` — existence + size probe.
+    ///
+    /// The native CAS read route (`get(handle_read)`) also serves HEAD (axum),
+    /// so this returns 200 (with `content-length` when the server sets it) for
+    /// a present blob and 404 for an absent one — WITHOUT transferring the
+    /// body. Used by `corelink stat` (there is no `/v1/cas/stat/…` route).
+    pub async fn cas_head(&self, blake3_hex: &str) -> Result<CasHead, CliError> {
+        let tenant = self.require_tenant()?;
+        let url = format!(
+            "{}{}",
+            self.inner.base_url,
+            cas_object_path(tenant, blake3_hex)
+        );
+        let mut attempt = 0u32;
+        loop {
+            let resp = self
+                .inner
+                .http
+                .head(&url)
+                .bearer_auth(&self.inner.pat)
+                .send()
+                .await;
+            match resp {
+                Ok(r) if r.status().is_success() => {
+                    let size = r
+                        .headers()
+                        .get(reqwest::header::CONTENT_LENGTH)
+                        .and_then(|v| v.to_str().ok())
+                        .and_then(|s| s.parse::<u64>().ok());
+                    return Ok(CasHead {
+                        exists: true,
+                        size_bytes: size,
+                    });
+                }
+                Ok(r) if r.status() == StatusCode::NOT_FOUND => {
+                    return Ok(CasHead {
+                        exists: false,
+                        size_bytes: None,
+                    });
+                }
+                Ok(r) if is_transient(r.status()) => {
+                    attempt += 1;
+                    if attempt > MAX_RETRIES {
+                        return Err(CliError::Other(format!(
+                            "cas_head: HTTP {} after {MAX_RETRIES} retries",
+                            r.status()
+                        )));
+                    }
+                    tokio::time::sleep(Duration::from_millis(backoff_ms(attempt))).await;
+                }
+                Ok(r) => {
+                    return Err(CliError::Other(format!(
+                        "cas_head: HTTP {} for /v1/cas/{tenant}/{blake3_hex}",
+                        r.status()
+                    )));
+                }
+                Err(e) if attempt < MAX_RETRIES => {
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_millis(backoff_ms(attempt))).await;
+                    let _ = e;
+                }
+                Err(e) => return Err(CliError::Network(e)),
+            }
+        }
     }
 
     /// `PUT /v1/ac/<tenant>/<digest>` — store action cache result.
@@ -355,28 +446,8 @@ impl CorelinkClient {
         }
     }
 
-    /// POST bytes with bearer auth.
-    pub async fn post_bytes(&self, path: &str, body: Bytes) -> Result<serde_json::Value, CliError> {
-        let url = format!("{}{}", self.inner.base_url, path);
-        let resp = self
-            .inner
-            .http
-            .post(&url)
-            .bearer_auth(&self.inner.pat)
-            .header("content-type", "application/octet-stream")
-            .body(body)
-            .send()
-            .await?;
-        if resp.status().is_success() {
-            Ok(resp.json().await?)
-        } else {
-            Err(CliError::Other(format!("HTTP error {}", resp.status())))
-        }
-    }
-
     /// Base URL accessor (for doctor check #1).
     #[must_use]
-    #[allow(dead_code)]
     pub fn base_url(&self) -> &str {
         &self.inner.base_url
     }
@@ -408,6 +479,22 @@ fn backoff_ms(attempt: u32) -> u64 {
 #[allow(clippy::uninlined_format_args, clippy::format_in_format_args)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cas_object_path_is_tenant_scoped() {
+        // The ONLY per-object CAS route is `/v1/cas/<tenant>/<hash>` — the
+        // dead `/v1/cas/upload`, `/v1/cas/download/…`, `/v1/cas/stat/…`
+        // paths must never be reconstructed. `cas_get`/`cas_head`/`cas_put`
+        // (used by get/stat/bench/put/doctor) all route through this.
+        assert_eq!(
+            cas_object_path("tenant-abc", "deadbeef"),
+            "/v1/cas/tenant-abc/deadbeef"
+        );
+        assert!(cas_object_path("t", "h").starts_with("/v1/cas/"));
+        assert!(!cas_object_path("t", "h").contains("upload"));
+        assert!(!cas_object_path("t", "h").contains("download"));
+        assert!(!cas_object_path("t", "h").contains("stat"));
+    }
 
     #[test]
     fn backoff_grows_exponentially() {

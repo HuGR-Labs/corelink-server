@@ -105,36 +105,35 @@ pub async fn run(
     let mut digests: Vec<String> = Vec::with_capacity(ops as usize);
 
     if mode == BenchMode::Write || mode == BenchMode::Full {
-        for _ in 0..ops {
-            let blob: Vec<u8> = (0u8..255u8).cycle().take(blob_size).collect();
-            let digest = {
-                let mut hasher = blake3::Hasher::new();
-                hasher.update(&blob);
-                hasher.finalize().to_hex().to_string()
-            };
+        for i in 0..ops {
+            let blob = bench_blob(blob_size, i);
+            let digest = blob_digest(&blob);
             let t = Instant::now();
-            let _ = client
-                .post_bytes("/v1/cas/upload", bytes::Bytes::from(blob))
-                .await;
+            // Real CAS write: PUT /v1/cas/<tenant>/<blake3>. A failed op is
+            // surfaced (never a fake latency for a swallowed 404).
+            client.cas_put(&digest, bytes::Bytes::from(blob)).await?;
             write_latencies.push(t.elapsed().as_millis() as u64);
             digests.push(digest);
         }
     }
 
     if mode == BenchMode::Read || mode == BenchMode::Full {
-        for (i, _) in (0..ops).enumerate() {
-            let path = if mode == BenchMode::Full && !digests.is_empty() {
-                let idx = i % digests.len();
-                format!(
-                    "/v1/cas/download/{}",
-                    digests.get(idx).map(String::as_str).unwrap_or("")
-                )
-            } else {
-                // Read-only mode: use a known-good test digest.
-                "/v1/cas/download/benchmark-test".to_owned()
-            };
+        // Read-only mode has no freshly-written digests; seed one real blob
+        // (untimed) so the read benchmark exercises a genuine CAS GET rather
+        // than a guaranteed 404.
+        if digests.is_empty() {
+            let blob = bench_blob(blob_size, 0);
+            let digest = blob_digest(&blob);
+            client.cas_put(&digest, bytes::Bytes::from(blob)).await?;
+            digests.push(digest);
+        }
+        for i in 0..ops as usize {
+            // `digests` is non-empty here (seeded above / filled by writes).
+            let idx = i % digests.len();
+            let digest = digests.get(idx).map(String::as_str).unwrap_or_default();
             let t = Instant::now();
-            let _ = client.get_bytes(&path).await;
+            // Real CAS read: GET /v1/cas/<tenant>/<blake3>. Errors surface.
+            client.cas_get(digest).await?;
             read_latencies.push(t.elapsed().as_millis() as u64);
         }
     }
@@ -172,6 +171,21 @@ pub async fn run(
     fmt.emit(&result).map_err(CliError::Json)?;
 
     Ok(())
+}
+
+/// Deterministic synthetic blob of `size` bytes, salted by `seed` so distinct
+/// iterations write distinct CAS objects (not an idempotent re-PUT of one
+/// blob) — a more representative write benchmark.
+fn bench_blob(size: usize, seed: u32) -> Vec<u8> {
+    let salt = seed as u8;
+    (0..size).map(|j| (j as u8).wrapping_add(salt)).collect()
+}
+
+/// BLAKE3 hex digest of a blob (64-char lowercase) — the CAS content address.
+fn blob_digest(blob: &[u8]) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(blob);
+    hasher.finalize().to_hex().to_string()
 }
 
 fn compute_stats(samples: &mut [u64]) -> LatencyStats {
@@ -243,6 +257,22 @@ mod tests {
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(json.contains("\"ops_per_sec\""));
+    }
+
+    #[test]
+    fn blob_digest_is_blake3() {
+        // The bench write loop addresses each PUT by this digest; it MUST be
+        // BLAKE3 (native CAS 422s a non-BLAKE3 claim), matching `blake3::hash`.
+        let blob = bench_blob(1024, 7);
+        assert_eq!(blob_digest(&blob), blake3::hash(&blob).to_hex().to_string());
+        assert_eq!(blob_digest(&blob).len(), 64);
+    }
+
+    #[test]
+    fn bench_blob_varies_by_seed() {
+        // Distinct iterations write distinct CAS objects (not idempotent).
+        assert_ne!(bench_blob(64, 0), bench_blob(64, 1));
+        assert_eq!(bench_blob(64, 3).len(), 64);
     }
 
     #[test]
