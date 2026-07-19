@@ -29,6 +29,14 @@ pub mod event_types {
     pub const METADATA_REFRESHED: &str = "corelink.npm.metadata.refreshed.v1";
     /// Package metadata served from KV cache (no upstream call).
     pub const METADATA_CACHE_HIT: &str = "corelink.npm.metadata.cache_hit.v1";
+    /// Package metadata fetched + validated from upstream and served to the
+    /// client, but the KV cache WRITE was intentionally skipped (packument
+    /// exceeded [`crate::npm::config::DEFAULT_METADATA_CACHE_MAX_BYTES`]) or
+    /// swallowed (a KV backend outage). The client still receives the metadata —
+    /// this is a proxy-through, NOT a failure. Metadata is a pure cache, so a
+    /// write we cannot land must never break `npm install`.
+    pub const METADATA_CACHE_SKIPPED_OVERSIZED: &str =
+        "corelink.npm.metadata.cache_skipped_oversized.v1";
     /// Registry search proxied to upstream + served (read, no mutation).
     pub const SEARCH_SERVED: &str = "corelink.npm.search.served.v1";
     /// Forged / malformed / unscoped PAT rejected at the auth layer.
@@ -89,6 +97,7 @@ mod tests {
             event_types::TARBALL_OVERSIZED,
             event_types::METADATA_REFRESHED,
             event_types::METADATA_CACHE_HIT,
+            event_types::METADATA_CACHE_SKIPPED_OVERSIZED,
             event_types::SEARCH_SERVED,
             event_types::AUTH_REJECTED,
         ] {
