@@ -5,9 +5,10 @@ description: "How CoreLink rejects forged tokens cheaply at the edge and proves 
 source_files:
   - "worker/src/lib/internal_auth.ts"
   - "worker/src/index.ts"
+  - "worker/src/lib/pat_verify_cache.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "6da2754726fc4e6b54ec25be6294afb825add582"
+checkpoint_sha: "5aa105118328e2cac283e36cca2c2eae4776fa23"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -55,7 +56,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   (`/_internal/dsr/anchor`) resolves its OWN dedicated `dsr_anchor` consumer key
   (`CORELINK_DSR_ANCHOR_AUTH_KEY`, held by githugr and DISTINCT from the eraser's key): it is matched by
   an exact-path special-case in `internalConsumerForPath` placed BEFORE the `/_internal/dsr/*` erase
-  catch-all (`worker/src/index.ts:277-279`) and resolved by the `dsr_anchor` branch of the
+  catch-all (`worker/src/index.ts:278-280`) and resolved by the `dsr_anchor` branch of the
   consumer-key ternary (`worker/src/lib/internal_auth.ts:91-92`). This is an anti-forge two-authority
   split — a leaked erase key cannot pass the anchor gate and vice-versa (least privilege, A6).
 - In the container the **first** verification step is the HMAC fast-reject: the plaintext is parsed and
@@ -64,6 +65,17 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - Only a token that passes HMAC and resolves to a live D1 row reaches the expensive layer: an Argon2id
   verify of the secret segment against the stored PHC hash, run on a blocking thread under a bounded
   permit (`crates/corelink-container/src/adapter_pat.rs:706-754`).
+- On the Worker edge the per-request `pat` D1 read behind `extractAuth` is served through a per-isolate
+  PAT-verify cache: `verifyPatRowCached` keys a `Map` by the non-secret `token_id`, caches POSITIVE
+  results ONLY, collapses concurrent misses for the same `token_id` into ONE D1 read (single-flight),
+  and caps at `PAT_VERIFY_CACHE_CAP` with expired-first/oldest-next eviction
+  (`worker/src/lib/pat_verify_cache.ts:150-199`, `worker/src/lib/pat_verify_cache.ts:120-137`). Its TTL
+  `PAT_VERIFY_CACHE_TTL_MS = 5 s` (`worker/src/lib/pat_verify_cache.ts:90`) matches the container
+  `NativePatGate` verify cache and stays well within ADR-0030's `SLO-FRESH-PAT-REVOKE ≤ 60 s p99`. The
+  cache is consulted ONLY AFTER the HMAC possession proof above (`worker/src/index.ts:1218`), so a
+  wrong-secret token never reaches it, and it stores only the D1 row (tenant / scope / expiry / runner
+  marker), never the secret — a hit leaks nothing and grants nothing without an independent possession
+  proof.
 
 # Invariants
 
@@ -74,6 +86,11 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   (`crates/corelink-container/src/adapter_pat.rs:43-47`).
 - The edge gate fails CLOSED: an unbound/short secret is unavailable, never an open gate
   (`worker/src/lib/internal_auth.ts:166-172`).
+- The edge PAT-verify cache keeps D1 the source-of-truth (INV-AUTH-NEON-IS-SOT): NEGATIVES are never
+  cached, so a freshly-minted token authenticates immediately and a mid-entry revoke is bounded to the
+  ≤5 s TTL then denied; expiry is re-checked by the caller on every hit
+  (`worker/src/index.ts:1237`); and a D1 fault is never cached and never serves a stale/expired entry —
+  it surfaces as the existing `d1_lookup_error → 503` (`worker/src/lib/pat_verify_cache.ts:177-195`).
 
 # Gotchas
 
@@ -87,24 +104,27 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   step is only reached once a row exists. See [the Argon2id verify](/auth/argon2id-verify.md) and
   [the D1 PAT store](/auth/d1-pat-store.md).
 - **Availability-vs-auth at the Worker edge: a transient D1 PAT-lookup FAULT now maps to a retryable
-  503, NOT a 401.** `extractAuth` wraps the `SELECT … FROM pat` in a try/catch and on any D1 error
-  (network partition / DB unavailable) returns the distinct reason `d1_lookup_error`
-  (`worker/src/index.ts:1220-1230`). The PAT-gate caller (H1 fix) now maps BOTH
-  `signing_key_not_configured` AND `d1_lookup_error` to `503 authentication service unavailable`
-  (`worker/src/index.ts:2543-2548`) — a D1 hiccup is a TRANSIENT infra fault, not a bad credential, so
-  surfacing it as 401 would make every client see "bad credentials" (spurious PAT rotation / on-call
-  chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` / `invalid_*`)
-  still fall through to `401`. Therefore the gotcha above ("401 = bad HMAC OR no live D1 row") stays
-  COMPLETE for the worker edge — a transient D1 fault is NOT a cause of a 401 there; it is a 503. The
-  in-line `catch` comment at `worker/src/index.ts:1227-1229` now correctly states that the caller maps
-  `d1_lookup_error` to a 503 (it previously lied — "for now we 401 to fail-closed"); the cited line
-  numbers shifted after the Artifact 1 `/v1/public/*`
+  503, NOT a 401.** `extractAuth` no longer inlines the `SELECT … FROM pat` read; it calls
+  `verifyPatRowCached` (the per-isolate PAT-verify cache), which returns `error` / `not_found` / `found`
+  and owns the miss-path try/catch. On the `error` kind (a D1 fault: network partition / DB unavailable)
+  `extractAuth` returns the distinct reason `d1_lookup_error` (`worker/src/index.ts:1218-1223`). The
+  PAT-gate caller (H1 fix) then maps BOTH `signing_key_not_configured` AND `d1_lookup_error` to
+  `503 authentication service unavailable` (`worker/src/index.ts:2535-2540`) — a D1 hiccup is a
+  TRANSIENT infra fault, not a bad credential, so surfacing it as 401 would make every client see "bad
+  credentials" (spurious PAT rotation / on-call chasing the wrong thing). Genuine bad/unknown PATs
+  (`pat_not_found` / `pat_expired` / `invalid_*`) still fall through to `401`. Therefore the gotcha above
+  ("401 = bad HMAC OR no live D1 row") stays COMPLETE for the worker edge — a transient D1 fault is NOT
+  a cause of a 401 there; it is a 503. The error-branch comment at `worker/src/index.ts:1220-1222`
+  correctly states that the caller maps `d1_lookup_error` to a 503 (transient, retryable, still
+  fail-closed); the cited line numbers shifted after the Artifact 1 `/v1/public/*`
   attestation-verifier route arm was added above this handler, again when the CF-6 audit-chain
   signing env vars were declared on the `Env` type, when the WP4 Sentry `beforeSend`
   PII/secret scrubber import was added at the top of the module, when the
-  `/internal/v1/auth/resolve-tenant` fabric route was added to `matchRoute`, and most recently when the
+  `/internal/v1/auth/resolve-tenant` fabric route was added to `matchRoute`, when the
   multi-region "route to the LOCAL (this-region) container" DO-forward block was inserted above the
-  per-tenant DO forward (`worker/src/index.ts:1871-1873`)). Both the D1-fault and the
+  per-tenant DO forward (`worker/src/index.ts:1864-1866`), and most recently when the `extractAuth`
+  inline `pat` read was replaced by the `verifyPatRowCached` call (perf #99), which removed the inline
+  `PatRow` interface + try/catch and shortened the module. Both the D1-fault and the
   `signing_key_not_configured` config-fault
   are retryable 503s; the edge still fails CLOSED (security > availability) for every credential-shaped
   failure.
@@ -113,12 +133,12 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   (`tenant_offboarding_state.state ∈ {suspended, erased}`) is denied even though its PAT is still
   cryptographically valid, so an abusive/offboarded tenant is fast-denied on the customer CAS/AC hot path
   without waiting for every one of its PATs to be individually revoked
-  (`worker/src/index.ts:1259-1260`). The check is a single-flight, ~30s-TTL cached D1 read
+  (`worker/src/index.ts:1252-1253`). The check is a single-flight, ~30s-TTL cached D1 read
   (`isTenantSuspended`, mirroring the CachedTierResolver shape) so it adds no uncached per-request D1
   round-trip; it fails **OPEN** on a transient D1 fault (availability), but a KNOWN-suspended cached value
   still denies (`worker/src/lib/tenant_suspend_gate.ts:129-159`). The caller maps the distinct
   `tenant_suspended` reason to **403** (an authorization denial, fail-closed), separate from the 401
-  bad-credential arms and the 503 transient-infra arms (`worker/src/index.ts:2559`).
+  bad-credential arms and the 503 transient-infra arms (`worker/src/index.ts:2551`).
 
 # Citations
 
@@ -126,10 +146,11 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 2. `worker/src/lib/internal_auth.ts:166-178` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
 2a. `worker/src/lib/internal_auth.ts:96-121` — `resolveConsumerKey`: prefers a consumer's dedicated key; a SET-but-sub-floor (<32-char) dedicated key fails LOUD + fail-CLOSED (null) instead of silently widening to the shared key (deep-audit C/sub-floor); a genuinely UNSET dedicated key still falls back to shared.
 2b. `worker/src/lib/internal_auth.ts:91-92` — the `dsr_anchor` branch of the consumer-key ternary (`CORELINK_DSR_ANCHOR_AUTH_KEY`).
-2c. `worker/src/index.ts:277-279` — `internalConsumerForPath` special-cases `/_internal/dsr/anchor` → `dsr_anchor` before the `/_internal/dsr/*` erase catch-all.
+2c. `worker/src/index.ts:278-280` — `internalConsumerForPath` special-cases `/_internal/dsr/anchor` → `dsr_anchor` before the `/_internal/dsr/*` erase catch-all.
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
 4. `crates/corelink-container/src/adapter_pat.rs:43-47` — uniform `InvalidPat`: no on-the-wire oracle.
 5. `crates/corelink-container/src/adapter_pat.rs:643-648` — the HMAC fast-reject, pre-D1, no permit consumed.
 6. `crates/corelink-container/src/adapter_pat.rs:706-754` — the deep Argon2id possession proof on a blocking thread.
 7. `worker/src/lib/tenant_suspend_gate.ts:129-159` — `isTenantSuspended`: the single-flight, ~30s-TTL cached `tenant_offboarding_state` D1 read that fails OPEN on a D1 fault but denies on a KNOWN-suspended cached value.
-8. `worker/src/index.ts:1259-1260` — the `extractAuth` fast-suspend arm: a valid PAT whose tenant is suspended/erased returns `tenant_suspended` (G4).
+8. `worker/src/index.ts:1252-1253` — the `extractAuth` fast-suspend arm: a valid PAT whose tenant is suspended/erased returns `tenant_suspended` (G4).
+9. `worker/src/lib/pat_verify_cache.ts:150-199` — `verifyPatRowCached`: the per-isolate, POSITIVE-only, single-flight (`worker/src/lib/pat_verify_cache.ts:163-197`) PAT-verify cache fronting the edge `pat` D1 read, with a `PAT_VERIFY_CACHE_TTL_MS = 5 s` TTL (`worker/src/lib/pat_verify_cache.ts:90`) and an LRU cap (`worker/src/lib/pat_verify_cache.ts:120-137`); negatives and D1 faults are never cached, so D1 stays the source-of-truth on every miss (`worker/src/lib/pat_verify_cache.ts:177-195`).
