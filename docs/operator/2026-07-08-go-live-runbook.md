@@ -30,7 +30,7 @@ Go-live is gated on a handful of **owner-only** live-key / Stripe-config switche
 ## Prod surface names (corrected — my old `corelink-worker.humangr.com` note was stale)
 - Main worker: **`corelink-prod`** (+ regional `-lhr/-nrt/-sam/-syd`).
 - Downgrade authority: **`corelink-signup-worker-prod`**.
-- Admin UI: **`corelink-admin-ui`** (`corelink-admin.humangr.com` → 200 live).
+- Admin UI: **`corelink-admin-ui`** (`humangr.com` → 200 live).
 - Container (checkout + webhook materializer): CF **Containers** deploy (`corelink-container`),
   secrets injected via the Containers API — verify separately from worker secrets.
 

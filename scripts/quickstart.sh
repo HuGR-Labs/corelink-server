@@ -40,7 +40,7 @@ info() { printf '       %s\n' "$*"; }
 # ─────────────────────────────────────────
 if [[ -z "${CORELINK_PAT:-}" ]]; then
   echo "ERROR: CORELINK_PAT is not set." >&2
-  echo "       Get your PAT from https://corelink-admin.humangr.com/sign-up" >&2
+  echo "       Get your PAT from https://humangr.com/corelink/sign-up" >&2
   echo "       then run: export CORELINK_PAT=\"corelink_pat_...\"" >&2
   exit 2
 fi

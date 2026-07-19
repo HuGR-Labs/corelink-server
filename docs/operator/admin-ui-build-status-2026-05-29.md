@@ -39,7 +39,7 @@ vercel build && node scripts/patch-vercel-synthetic-routes.mjs && next-on-pages 
 
 ## Currently live
 - Pages project `corelink-admin-ui` exists
-- Custom domain `corelink-admin.humangr.com` provisioned
+- Custom domain `humangr.com` provisioned
 - DNS CNAME points at `corelink-admin-ui.pages.dev`
 - Nothing actually deployed yet — next step is `pnpm pages:deploy`
 

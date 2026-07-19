@@ -16,7 +16,7 @@ tags: ["audit", "launch", "solo-startup", "readiness", "post-w36"]
 
 > **Method.** (a) static survey of `apps/docs/` and `apps/admin-ui/`, (b) curl smoke tests against the production hostnames recorded in `specs/_audits/sealed/2026-05-26-w32-phaseI-signoff.md`, (c) cross-reference Wave-32 phase audits for known deferred work.
 
-> **Prod hostnames (per Wave-32 sign-off §3).** `corelink-docs.humangr.com`, `corelink-app.humangr.com`, `corelink-api.humangr.com`, `corelink-admin.humangr.com`, `corelink-signup.humangr.com`. The spec-suggested `*.corelink.humangr.com` form (e.g. `app.corelink.humangr.com`) does **not** resolve — the actual DNS in Wave-32 used the flat `corelink-*` pattern. This audit uses the live names.
+> **Prod hostnames (per Wave-32 sign-off §3).** `corelink-docs.humangr.com`, `corelink-app.humangr.com`, `corelink-api.humangr.com`, `humangr.com`, `corelink-signup.humangr.com`. The spec-suggested `*.corelink.humangr.com` form (e.g. `app.corelink.humangr.com`) does **not** resolve — the actual DNS in Wave-32 used the flat `corelink-*` pattern. This audit uses the live names.
 
 ## §1 L1 — Landing page
 

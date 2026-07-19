@@ -302,7 +302,7 @@ if [[ ! -f "$DNS_APPLY" ]]; then
   echo "    corelink-app.humangr.com" >&2
   echo "    corelink-docs.humangr.com" >&2
   echo "    corelink-signup.humangr.com" >&2
-  echo "    corelink-admin.humangr.com" >&2
+  echo "    humangr.com" >&2
   echo "    acme-dev.corelink.humangr.com" >&2
   echo "    staging.corelink.humangr.com" >&2
   echo "    sandbox.corelink.humangr.com" >&2

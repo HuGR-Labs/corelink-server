@@ -1064,7 +1064,7 @@ if tier.is_paid()
 ```
 The only constraint is the `https://` prefix; there is no host/domain allowlist on success_url or cancel_url.
 
-**recommendation:** Constrain success_url/cancel_url to an explicit allowlist of CoreLink-owned origins (e.g. `https://corelink-admin.humangr.com/`, the app origin) rather than any https URL. Parse the URL and assert host ∈ {known origins} (and reject userinfo/`@`, non-standard ports, and embedded credentials). Keep the https check as an additional constraint. Example: after parsing, `if !ALLOWED_REDIRECT_ORIGINS.iter().any(|o| url.origin_matches(o)) { return Err(BadRequest); }`.
+**recommendation:** Constrain success_url/cancel_url to an explicit allowlist of CoreLink-owned origins (e.g. `https://humangr.com/corelink/`, the app origin) rather than any https URL. Parse the URL and assert host ∈ {known origins} (and reject userinfo/`@`, non-standard ports, and embedded credentials). Keep the https check as an additional constraint. Example: after parsing, `if !ALLOWED_REDIRECT_ORIGINS.iter().any(|o| url.origin_matches(o)) { return Err(BadRequest); }`.
 
 **confidence:** medium
 
@@ -1088,11 +1088,11 @@ The Worker's onboarding arm at `worker/src/index.ts:1322` uses `new Request(requ
 
 **Normal flow (admin-ui → Worker → container):** The admin-ui's `/api/checkout/session/route.ts:157-159` constructs `success_url` server-side: `const origin = originFromRequest(req); const success_url = \`${origin}/\${locale}/upgraded?session_id={CHECKOUT_SESSION_ID}\``. The `originFromRequest` function trusts `x-forwarded-host`/`x-forwarded-proto` from Cloudflare's proxy layer — headers that Cloudflare sets and that a browser cannot spoof in transit to Cloudflare Pages. The route.ts comment at line 115 explicitly says: "Never trust user-supplied origin from the JSON body — that would let an attacker direct Stripe's post-checkout redirect anywhere." So in the normal flow, `success_url` is fully server-controlled.
 
-**Direct attacker path (browser → Worker → container):** The Worker's `/v1/onboarding/tier-select` endpoint is reachable by any caller with a valid Clerk JWT whose `azp` is in `CLERK_AZP_ALLOWLIST` = `[https://corelink-admin.humangr.com, https://corelink-app.humangr.com]`. An authenticated malicious user (a real tenant on the platform) CAN bypass the admin-ui and POST directly to the Worker with `success_url: "https://attacker.tld/?"`. The Worker forwards this body to the container, and the container accepts it. Stripe creates the session and redirects the attacker's browser to `attacker.tld` after payment with `?cs_...` in the query.
+**Direct attacker path (browser → Worker → container):** The Worker's `/v1/onboarding/tier-select` endpoint is reachable by any caller with a valid Clerk JWT whose `azp` is in `CLERK_AZP_ALLOWLIST` = `[https://humangr.com, https://corelink-app.humangr.com]`. An authenticated malicious user (a real tenant on the platform) CAN bypass the admin-ui and POST directly to the Worker with `success_url: "https://attacker.tld/?"`. The Worker forwards this body to the container, and the container accepts it. Stripe creates the session and redirects the attacker's browser to `attacker.tld` after payment with `?cs_...` in the query.
 
 **Why this is low, not medium/high:**
 
-1. **The attacker must be authenticated AND must pay.** They must hold a valid Clerk JWT for `corelink-admin.humangr.com` or `corelink-app.humangr.com` (an actual registered user) AND they must go through the actual payment flow to trigger the Stripe redirect. There is no unauthenticated path.
+1. **The attacker must be authenticated AND must pay.** They must hold a valid Clerk JWT for `humangr.com` or `corelink-app.humangr.com` (an actual registered user) AND they must go through the actual payment flow to trigger the Stripe redirect. There is no unauthenticated path.
 
 2. **The exfiltrated data is the attacker's own session ID.** The `CHECKOUT_SESSION_ID` that Stripe appends to the `success_url` belongs to the attacker's own checkout. They already have it — Stripe's API gives it to the session creator. There is no cross-tenant session exposure.
 

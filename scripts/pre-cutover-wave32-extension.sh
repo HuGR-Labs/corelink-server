@@ -90,7 +90,7 @@ SUBDOMAINS=(
     "https://corelink-app.humangr.com"
     "https://corelink-docs.humangr.com"
     "https://corelink-signup.humangr.com"
-    "https://corelink-admin.humangr.com"
+    "https://humangr.com"
     "https://corelink-get.humangr.com"
     "https://status.corelink.humangr.com"
 )

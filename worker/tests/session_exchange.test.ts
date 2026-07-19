@@ -238,7 +238,7 @@ function exchangeFetch(
 function validClaims(sub: string) {
   return {
     sub,
-    azp: "https://corelink-admin.humangr.com",
+    azp: "https://humangr.com",
     iss: "https://clerk.humangr.com",
   } as never;
 }
@@ -660,7 +660,7 @@ describe("POST /v1/session/exchange — githugr multi-issuer (per-user isolated 
   // hugit's erase engine reads fresh_auth from the /v1/session/exchange response,
   // so fva_minutes MUST ride this body (not only the githugr token-exchange one).
   function claimsWithFva(sub: string, fva: unknown) {
-    return { sub, azp: "https://corelink-admin.humangr.com", iss: "https://clerk.humangr.com", fva } as never;
+    return { sub, azp: "https://humangr.com", iss: "https://clerk.humangr.com", fva } as never;
   }
   let sfvaSeq = 0;
   async function fvaMinutesInResponse(fvaClaim: unknown): Promise<unknown> {

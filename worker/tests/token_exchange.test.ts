@@ -116,7 +116,7 @@ function exchangeFetch(
 function validClaims(sub: string) {
   return {
     sub,
-    azp: "https://corelink-admin.humangr.com",
+    azp: "https://humangr.com",
     iss: "https://clerk.humangr.com",
   } as never;
 }
@@ -235,7 +235,7 @@ describe("POST /internal/v1/auth/token-exchange — githugr authz #1", () => {
 
   // ── Track-B: propagate the Clerk step-up freshness signal `fva[0]` ──────────
   function claimsWithFva(sub: string, fva: unknown) {
-    return { sub, azp: "https://corelink-admin.humangr.com", iss: "https://clerk.humangr.com", fva } as never;
+    return { sub, azp: "https://humangr.com", iss: "https://clerk.humangr.com", fva } as never;
   }
   // Each exchange uses a UNIQUE user+tenant so repeated calls don't trip the
   // worker's per-tenant session-exchange throttle (429).

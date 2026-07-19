@@ -16,7 +16,7 @@
  *     environment secrets configured (Stripe, Clerk, etc.). Adding one
  *     more secret here is the lowest-risk path.
  *   - The browser POSTs to the *absolute* admin-ui origin
- *     (e.g. `https://corelink-admin.humangr.com/api/newsletter/subscribe`)
+ *     (e.g. `https://humangr.com/corelink/api/newsletter/subscribe`)
  *     from the docs site — see the matching `NewsletterSignup` component
  *     for the CORS-safe `fetch` configuration.
  *

@@ -23,14 +23,14 @@
 #     Source: https://docs.sentry.io/platforms/javascript/install/cdn/#content-security-policy
 #     https://status.corelink.humangr.com — BetterStack badge.json fetch by
 #     StatusPill component (CNAME to BetterStack; browser sees this hostname).
-#     https://corelink-admin.humangr.com — NewsletterSignup POSTs cross-origin
+#     https://humangr.com — NewsletterSignup POSTs cross-origin
 #     to admin-ui /api/newsletter/subscribe route.
 #   - img-src: data: + https: kept permissive for embedded screenshots.
 #   - frame-ancestors 'none' (no embedding the docs site in iframes).
 #   - no frame-src needed — docs never embeds Stripe / Clerk.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://plausible.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolianet.com https://*.algolia.io https://*.ingest.sentry.io https://status.corelink.humangr.com https://corelink-admin.humangr.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://plausible.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolianet.com https://*.algolia.io https://*.ingest.sentry.io https://status.corelink.humangr.com https://humangr.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

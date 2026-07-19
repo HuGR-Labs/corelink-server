@@ -58,7 +58,7 @@ references:
 | 2 | `corelink-app.humangr.com` | Pages | CF IP | HTTP 2xx/3xx | Cloudflare issuer |
 | 3 | `corelink-docs.humangr.com` | Pages | CF IP | HTTP 2xx/3xx | Cloudflare issuer |
 | 4 | `corelink-signup.humangr.com` | Worker | CF IP | HTTP 2xx/3xx | Cloudflare issuer |
-| 5 | `corelink-admin.humangr.com` | Worker | CF IP | HTTP 2xx/3xx | Cloudflare issuer |
+| 5 | `humangr.com` | Worker | CF IP | HTTP 2xx/3xx | Cloudflare issuer |
 | 6 | `corelink-get.humangr.com` | Worker | CF IP | HTTP 2xx/3xx | Cloudflare issuer |
 | 7 | `status.corelink.humangr.com` | StatusPage | CNAME→hugrl.betteruptime.com | HTTP 2xx/3xx | Let's Encrypt issuer |
 
@@ -149,13 +149,13 @@ issuer=C = US, O = "Cloudflare, Inc.", CN = Cloudflare Inc ECC CA-3
 
 ---
 
-### 5.5 `corelink-admin.humangr.com` (Worker, proxied)
+### 5.5 `humangr.com` (Worker, proxied)
 
 ```
-▸ corelink-admin.humangr.com (worker)
-[PASS]  dns:corelink-admin.humangr.com: CF IP confirmed (104.21.x.x) [proxied=true]
-[PASS]  https:corelink-admin.humangr.com: HTTP 200
-[PASS]  cert:corelink-admin.humangr.com: issuer contains 'Cloudflare' — CF Universal SSL confirmed
+▸ humangr.com (worker)
+[PASS]  dns:humangr.com: CF IP confirmed (104.21.x.x) [proxied=true]
+[PASS]  https:humangr.com: HTTP 200
+[PASS]  cert:humangr.com: issuer contains 'Cloudflare' — CF Universal SSL confirmed
 ```
 
 ---
@@ -234,7 +234,7 @@ Source: https://www.cloudflare.com/ips-v4/
 | `corelink-app.humangr.com` | 2nd level | YES | CF Universal SSL |
 | `corelink-docs.humangr.com` | 2nd level | YES | CF Universal SSL |
 | `corelink-signup.humangr.com` | 2nd level | YES | CF Universal SSL |
-| `corelink-admin.humangr.com` | 2nd level | YES | CF Universal SSL |
+| `humangr.com` | 2nd level | YES | CF Universal SSL |
 | `corelink-get.humangr.com` | 2nd level | YES | CF Universal SSL |
 | `status.corelink.humangr.com` | 3rd level | NO — DNS-only | BetterStack (Let's Encrypt) |
 
@@ -261,7 +261,7 @@ Would verify 7 hosts × 3 checks = 21 assertions:
   corelink-app.humangr.com                    pages         dns+https+cert
   corelink-docs.humangr.com                   pages         dns+https+cert
   corelink-signup.humangr.com                 worker        dns+https+cert
-  corelink-admin.humangr.com                  worker        dns+https+cert
+  humangr.com                  worker        dns+https+cert
   corelink-get.humangr.com                    worker        dns+https+cert
   status.corelink.humangr.com                 statuspage    dns+https+cert
 

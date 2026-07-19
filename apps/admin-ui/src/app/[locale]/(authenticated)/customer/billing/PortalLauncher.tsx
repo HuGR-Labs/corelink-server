@@ -59,7 +59,7 @@ export function PortalLauncher({
       const returnUrl =
         typeof window !== "undefined"
           ? `${window.location.origin}/${locale}/customer/billing`
-          : `https://corelink-admin.humangr.com/${locale}/customer/billing`;
+          : `https://humangr.com/corelink/${locale}/customer/billing`;
       const f = fetchImpl ?? fetch;
       const res = await f("/api/v1/customer/billing/portal-session", {
         method: "POST",

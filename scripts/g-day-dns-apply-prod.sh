@@ -27,7 +27,7 @@ WORKER_ROUTE_TARGET="corelink-worker.humangr.com"
 SUBDOMAINS=(
   "corelink-api.humangr.com"
   "corelink-signup.humangr.com"
-  "corelink-admin.humangr.com"
+  "humangr.com"
   "corelink-app.humangr.com"
   "corelink-docs.humangr.com"
   "corelink-get.humangr.com"

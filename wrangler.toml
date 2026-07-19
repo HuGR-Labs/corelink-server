@@ -338,7 +338,7 @@ service = "corelink-prod-syd"
 # dedicated signup-worker so the route binding aligns with the code
 # that handles those webhooks.
 
-# NOTE (Stream 3.11, 2026-05-29): corelink-admin.humangr.com is served by
+# NOTE (Stream 3.11, 2026-05-29): humangr.com is served by
 # the CF Pages project `corelink-admin-ui`, NOT by this Worker.  The route
 # was removed here so Pages custom-domain routing takes effect (Worker routes
 # take precedence over Pages custom domains when both match the same hostname;

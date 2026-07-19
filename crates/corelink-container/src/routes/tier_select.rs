@@ -80,7 +80,7 @@ use uuid::Uuid;
 /// `cancel_url`.  Must be kept in sync with the deployed admin-ui and app
 /// origins.  Case-insensitive comparison (`.to_ascii_lowercase()` on the
 /// parsed host).
-const ALLOWED_REDIRECT_HOSTS: &[&str] = &["corelink-admin.humangr.com", "humangr.com"];
+const ALLOWED_REDIRECT_HOSTS: &[&str] = &["humangr.com"];
 
 /// Validate a single redirect URL (success or cancel).  Fail-CLOSED: any
 /// parse failure, wrong scheme, disallowed host, present userinfo, or
@@ -977,9 +977,9 @@ mod tests {
         TierSelectRequest {
             tier: tier.to_owned(),
             success_url:
-                "https://corelink-admin.humangr.com/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
+                "https://humangr.com/corelink/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
                     .to_owned(),
-            cancel_url: "https://corelink-admin.humangr.com/en/pricing".to_owned(),
+            cancel_url: "https://humangr.com/corelink/en/pricing".to_owned(),
         }
     }
 
@@ -1118,7 +1118,7 @@ mod tests {
     fn f6_rejects_success_url_with_userinfo() {
         let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
         let mut bad = req("pro");
-        bad.success_url = "https://user:pass@corelink-admin.humangr.com/upgraded".to_owned();
+        bad.success_url = "https://user:pass@humangr.com/upgraded".to_owned();
         let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
         assert_eq!(e, TierSelectHttpError::BadRequest);
     }
@@ -1127,7 +1127,7 @@ mod tests {
     fn f6_rejects_success_url_with_explicit_port() {
         let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
         let mut bad = req("pro");
-        bad.success_url = "https://corelink-admin.humangr.com:8443/upgraded".to_owned();
+        bad.success_url = "https://humangr.com:8443/upgraded".to_owned();
         let e = authorize_and_validate(&state(), &h, &bad).unwrap_err();
         assert_eq!(e, TierSelectHttpError::BadRequest);
     }
@@ -1143,8 +1143,8 @@ mod tests {
 
     #[test]
     fn f6_accepts_both_urls_on_allowlist() {
-        // Both corelink-admin.humangr.com and humangr.com are
-        // in ALLOWED_REDIRECT_HOSTS — a valid combination must pass.
+        // `humangr.com` is the sole canonical redirect host in
+        // ALLOWED_REDIRECT_HOSTS — a valid combination must pass.
         let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
         let mut good = req("pro");
         good.success_url =

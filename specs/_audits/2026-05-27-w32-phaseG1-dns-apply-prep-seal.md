@@ -17,7 +17,7 @@ Phase F, WP-7.1, and WP-7.3.
 |----------------------------------|-------------------------------------------------|------------------------|--------------------------|---------------|
 | `corelink-api.humangr.com`       | `corelink-api.humangr.com/*`                    | yes                    | Universal SSL Free `*.humangr.com` | yes |
 | `corelink-signup.humangr.com`    | `corelink-signup.humangr.com/*`                 | yes                    | Universal SSL Free `*.humangr.com` | yes |
-| `corelink-admin.humangr.com`     | `corelink-admin.humangr.com/*`                  | yes                    | Universal SSL Free `*.humangr.com` | yes |
+| `humangr.com`     | `humangr.com/*`                  | yes                    | Universal SSL Free `*.humangr.com` | yes |
 | `corelink-app.humangr.com`       | `corelink-app.humangr.com/*` (**NEW Phase G.1**) | yes                   | Universal SSL Free `*.humangr.com` | no  |
 | `corelink-docs.humangr.com`      | `corelink-docs.humangr.com/*` (**NEW Phase G.1**) | yes                  | Universal SSL Free `*.humangr.com` | no  |
 | `corelink-get.humangr.com`       | `corelink-get.humangr.com/*` (**NEW Phase G.1**)  | yes                  | Universal SSL Free `*.humangr.com` | no  |

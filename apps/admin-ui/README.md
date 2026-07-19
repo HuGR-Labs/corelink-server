@@ -121,9 +121,9 @@ push to `main` that touches `apps/admin-ui/**`.
 > returned HTTP 500. The supported path is `@opennextjs/cloudflare` + `wrangler deploy`,
 > configured in [`wrangler.toml`](./wrangler.toml) (`main = .open-next/worker.js`).
 
-Routing note: the custom domain `corelink-admin.humangr.com` is bound **directly to
+Routing note: the custom domain `humangr.com` is bound **directly to
 this Worker** in `wrangler.toml`
-(`routes = [{ pattern = "corelink-admin.humangr.com", custom_domain = true }]`), so
+(`routes = [{ pattern = "humangr.com", custom_domain = true }]`), so
 `wrangler deploy` provisions it. The legacy `corelink-admin-ui` Pages project no longer
 serves this hostname.
 
@@ -171,23 +171,23 @@ CF provisions the TLS cert automatically — no manual dashboard step:
 
 ```toml
 routes = [
-  { pattern = "corelink-admin.humangr.com", custom_domain = true }
+  { pattern = "humangr.com", custom_domain = true }
 ]
 ```
 
 Prerequisite: the `humangr.com` zone must be on the same Cloudflare account
 (`CF_ACCOUNT_ID`). The hostname was previously owned by the `corelink-admin-ui` Pages
 project and detached on migration day, so it is free for the Worker to claim. Do NOT
-add a `corelink-admin.humangr.com/*` route to any *other* Worker (e.g. the root
+add a `humangr.com/*` route to any *other* Worker (e.g. the root
 `wrangler.toml`) — a second route on the same hostname would shadow this one.
 
 #### 4. Update Clerk allowed redirect URLs (MANUAL — Clerk dashboard)
 
 In [Clerk dashboard](https://dashboard.clerk.com) → Your application → **Domains**:
 
-- Add `https://corelink-admin.humangr.com` as an **Allowed redirect origin**
-- Ensure `https://corelink-admin.humangr.com/sign-in` and
-  `https://corelink-admin.humangr.com/sign-up` are listed under redirect URLs.
+- Add `https://humangr.com` as an **Allowed redirect origin**
+- Ensure `https://humangr.com/corelink/sign-in` and
+  `https://humangr.com/corelink/sign-up` are listed under redirect URLs.
 
 Without this step, Clerk will block sign-in redirects from the custom domain.
 
@@ -195,13 +195,13 @@ Without this step, Clerk will block sign-in redirects from the custom domain.
 
 ```bash
 # After the custom domain is active:
-curl -I https://corelink-admin.humangr.com/api/health
+curl -I https://humangr.com/corelink/api/health
 # Expected: 200 OK with X-Content-Type-Options: nosniff
 ```
 
 ### Security
 
-Production traffic must arrive exclusively via `corelink-admin.humangr.com`.
+Production traffic must arrive exclusively via `humangr.com`.
 
 > **Open item (post Pages → Worker migration):** the default Worker subdomain
 > (`*.workers.dev`) is a secret-exposure surface and should be either disabled for

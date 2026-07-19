@@ -100,7 +100,7 @@ PLAN_ENTRIES=(
   "corelink-app.humangr.com|CNAME|corelink-admin-ui.pages.dev|true|1|Phase F Pages: corelink-admin-ui (customer console)"
   "corelink-docs.humangr.com|CNAME|corelink-docs.pages.dev|true|1|Phase F Pages: corelink-docs (4 locales)"
   "corelink-signup.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker signup/pilot-onboard route"
-  "corelink-admin.humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker internal-admin route (Clerk-gated)"
+  "humangr.com|CNAME|corelink-prod.gustavoschneiter.workers.dev|true|1|Worker internal-admin route (Clerk-gated)"
   "status.corelink.humangr.com|CNAME|hugrl.betteruptime.com|false|1|Phase A (ALREADY EXISTS — dns-only per BetterUptime requirement)"
 )
 

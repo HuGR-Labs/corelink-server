@@ -83,7 +83,7 @@ All phases: **CLOSED**.
 | API Worker health | https://corelink-api.humangr.com/health | 200 + {"status":"ok","env":"prod"} | LIVE |
 | OCI Registry auth challenge | https://corelink-api.humangr.com/v2/ | 401 (expected) | LIVE |
 | Signup Worker health | https://corelink-signup.humangr.com/health | 200 | LIVE |
-| Admin Worker health | https://corelink-admin.humangr.com/health | 200 | LIVE |
+| Admin Worker health | https://humangr.com/corelink/health | 200 | LIVE |
 | Admin UI (Next.js) | https://corelink-app.humangr.com | 200 | LIVE |
 | Docs (Docusaurus) | https://corelink-docs.humangr.com | 200 + HTML | LIVE |
 | Status page (Phase A) | https://status.corelink.humangr.com | 000 (KNOWN EXCEPTION — 2-level SSL gap) | LIVE (BetterStack-side) |
@@ -196,7 +196,7 @@ All 9 phases SEALED (A–I):
 Production endpoints (all 200):
   https://corelink-api.humangr.com/health
   https://corelink-signup.humangr.com/health
-  https://corelink-admin.humangr.com/health
+  https://humangr.com/corelink/health
   https://corelink-app.humangr.com
   https://corelink-docs.humangr.com
 

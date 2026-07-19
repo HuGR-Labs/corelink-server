@@ -70,14 +70,14 @@ PLAN_TARGET["corelink-api.humangr.com"]="corelink-prod.gustavoschneiter.workers.
 PLAN_TARGET["corelink-app.humangr.com"]="corelink-admin-ui.pages.dev"
 PLAN_TARGET["corelink-docs.humangr.com"]="corelink-docs.pages.dev"
 PLAN_TARGET["corelink-signup.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
-PLAN_TARGET["corelink-admin.humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
+PLAN_TARGET["humangr.com"]="corelink-prod.gustavoschneiter.workers.dev"
 PLAN_TARGET["status.corelink.humangr.com"]="hugrl.betteruptime.com"
 
 PLAN_PROXIED["corelink-api.humangr.com"]="true"
 PLAN_PROXIED["corelink-app.humangr.com"]="true"
 PLAN_PROXIED["corelink-docs.humangr.com"]="true"
 PLAN_PROXIED["corelink-signup.humangr.com"]="true"
-PLAN_PROXIED["corelink-admin.humangr.com"]="true"
+PLAN_PROXIED["humangr.com"]="true"
 PLAN_PROXIED["status.corelink.humangr.com"]="false"
 
 PLAN_DNS_ONLY_NOTE["status.corelink.humangr.com"]="dns-only — TLS managed by BetterUptime, not CF edge"
@@ -88,7 +88,7 @@ PLAN_HEALTH_PATH["corelink-api.humangr.com"]="/health"
 PLAN_HEALTH_PATH["corelink-app.humangr.com"]="/"
 PLAN_HEALTH_PATH["corelink-docs.humangr.com"]="/"
 PLAN_HEALTH_PATH["corelink-signup.humangr.com"]="/health"
-PLAN_HEALTH_PATH["corelink-admin.humangr.com"]="/health"
+PLAN_HEALTH_PATH["humangr.com"]="/health"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -195,7 +195,7 @@ NAMES=(
   "corelink-app.humangr.com"
   "corelink-docs.humangr.com"
   "corelink-signup.humangr.com"
-  "corelink-admin.humangr.com"
+  "humangr.com"
   "status.corelink.humangr.com"
 )
 

@@ -15,7 +15,7 @@
 | **Stripe Checkout** | `@stripe/stripe-js` via JS SDK; `window.location.assign(checkout_url)` from `/api/checkout/session` | `script-src`, `connect-src`, `frame-src` |
 | **Stripe Customer Portal** | `window.location.assign(portal_url)` from `/api/v1/customer/billing/portal-session` | `connect-src` (redirect to `billing.stripe.com`) |
 | **Clerk** | `@clerk/nextjs` (SSR + client); CNAME proxy at `clerk.corelink.humangr.com`; modal/popup auth steps | `script-src`, `connect-src`, `frame-src` |
-| **Plausible Analytics** | `PlausibleScript` component — consent-gated dynamic `<script>` injection; domain `corelink-admin.humangr.com` | `script-src`, `connect-src` |
+| **Plausible Analytics** | `PlausibleScript` component — consent-gated dynamic `<script>` injection; domain `humangr.com` | `script-src`, `connect-src` |
 | **Sentry** | `@sentry/nextjs` SDK (bundled); `tunnelRoute: "/monitoring"` proxies all ingest through same-origin | no CSP additions needed — same-origin tunnel |
 | **PostHog** | Listed in sub-processors legal copy as "fallback" but NOT wired in any source file | none required |
 | **Resend** | Server-side only (`RESEND_API_KEY` never reaches browser) | none required |
@@ -27,7 +27,7 @@
 | **Plausible Analytics** | `scripts:` array in `docusaurus.config.ts`; loads `https://plausible.io/js/script.js` | `script-src`, `connect-src` |
 | **Sentry CDN loader** | `headTags` in `docusaurus.config.ts`; loads `https://browser.sentry-cdn.com/8.45.0/bundle.tracing.min.js`; reports directly to `https://*.ingest.sentry.io` (no tunnel) | `script-src`, `connect-src` |
 | **BetterStack** | `StatusPill` component fetches `${statuspageUrl}/badge.json` — canonical URL is `https://status.corelink.humangr.com` (CNAME to BetterStack) | `connect-src` |
-| **NewsletterSignup** | POSTs cross-origin to `https://corelink-admin.humangr.com/api/newsletter/subscribe` | `connect-src` |
+| **NewsletterSignup** | POSTs cross-origin to `https://humangr.com/corelink/api/newsletter/subscribe` | `connect-src` |
 | **Algolia DocSearch** | React-rendered (no remote `<script>`); API calls to `*.algolia.net` / `*.algolianet.com` / `*.algolia.io` | `connect-src` |
 
 ---
@@ -79,7 +79,7 @@ connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolian
 | G-005 | `script-src` | `https://browser.sentry-cdn.com` — Sentry CDN loader injected via `headTags` in `docusaurus.config.ts` | [Sentry CDN CSP docs](https://docs.sentry.io/platforms/javascript/install/cdn/#content-security-policy) |
 | G-006 | `connect-src` | `https://*.ingest.sentry.io` — Sentry error/event ingest; docs site has no tunnel route, loader POSTs directly | [Sentry CDN CSP docs](https://docs.sentry.io/platforms/javascript/install/cdn/#content-security-policy) |
 | G-007 | `connect-src` | `https://status.corelink.humangr.com` — `StatusPill` component fetches `badge.json` from this URL (BetterStack CNAME; browser sees this hostname) | [BetterStack status JSON](https://betterstack.com/docs/uptime/api/get-current-status-of-statuspage/) |
-| G-008 | `connect-src` | `https://corelink-admin.humangr.com` — `NewsletterSignup` cross-origin POST to admin-ui API route | Component source: `apps/docs/src/components/NewsletterSignup/NewsletterSignup.tsx:45` |
+| G-008 | `connect-src` | `https://humangr.com` — `NewsletterSignup` cross-origin POST to admin-ui API route | Component source: `apps/docs/src/components/NewsletterSignup/NewsletterSignup.tsx:45` |
 
 ---
 
@@ -110,7 +110,7 @@ connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolian
 
 - connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolianet.com https://*.algolia.io
 + connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolianet.com https://*.algolia.io
-+             https://*.ingest.sentry.io https://status.corelink.humangr.com https://corelink-admin.humangr.com  // G-006, G-007, G-008
++             https://*.ingest.sentry.io https://status.corelink.humangr.com https://humangr.com  // G-006, G-007, G-008
 ```
 
 ### 3.3 `apps/admin-ui/tests/csp.test.ts`
@@ -188,7 +188,7 @@ After deploying to production (or staging with `CSP_ENFORCEMENT=enforce`), valid
 |---|---|
 | `apps/admin-ui/src/lib/csp.ts` | +`'unsafe-inline'` on `style-src`; +`checkout.stripe.com` and `billing.stripe.com` on `connect-src`; +`clerk.corelink.humangr.com` on `frame-src`; updated docstring with vendor source citations |
 | `apps/admin-ui/tests/csp.test.ts` | +3 test cases covering gaps G-001 through G-004 |
-| `apps/docs/static/_headers` | +`browser.sentry-cdn.com` on `script-src`; +`*.ingest.sentry.io`, `status.corelink.humangr.com`, `corelink-admin.humangr.com` on `connect-src`; updated comments |
+| `apps/docs/static/_headers` | +`browser.sentry-cdn.com` on `script-src`; +`*.ingest.sentry.io`, `status.corelink.humangr.com`, `humangr.com` on `connect-src`; updated comments |
 | `specs/_audits/2026-05-27-csp-allowlist-validation.md` | This document |
 
 ---

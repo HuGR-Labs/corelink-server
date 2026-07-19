@@ -33,21 +33,18 @@ import { provisionOrLookupGithugrTenant } from "./githugr_provision.js";
 /**
  * Shared azp allowlist for Clerk session verification (M1).
  *
- * Both admin-ui surfaces are bound to the OpenNext Worker (#219): sessions are
- * minted on the public app at humangr.com (the sign-up/user-facing surface, now
- * path-mounted at /corelink) AND corelink-admin. `azp` is the app ORIGIN, so a
- * JWT minted on the public app carries azp=https://humangr.com (the path
- * component is never part of the origin) — listing only corelink-admin
- * 401-blocked the whole onboarding/checkout funnel.
+ * The admin-ui is bound to the OpenNext Worker (#219): sessions are minted on
+ * the public app at humangr.com (the sign-up/user-facing surface, path-mounted
+ * at /corelink — the sole canonical origin; the retired `corelink-admin`
+ * subdomain is purged). `azp` is the app ORIGIN, so a JWT minted on the public
+ * app carries azp=https://humangr.com (the path component is never part of the
+ * origin). Getting this wrong 401-blocks the whole onboarding/checkout funnel.
  *
  * This is THE single allowlist const — formerly the onboarding-arm-local
  * ONBOARDING_AZP_ALLOWLIST — now shared by the onboarding arm and the
  * customer_v1 Clerk bridge. Do NOT duplicate it.
  */
-export const CLERK_AZP_ALLOWLIST = [
-  "https://corelink-admin.humangr.com",
-  "https://humangr.com",
-] as const;
+export const CLERK_AZP_ALLOWLIST = ["https://humangr.com"] as const;
 
 /**
  * Authorized parties for the **githugr** Clerk instance (`clerk.githugr.com`).

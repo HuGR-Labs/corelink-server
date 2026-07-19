@@ -138,7 +138,7 @@ probes:
   # Probe 6 (R27): Admin worker health — BetterStack operator endpoint
   - name: "corelink-admin-health"
     pronounceable_name: "CoreLink Admin Worker Health"
-    url: "https://corelink-admin.humangr.com/health"
+    url: "https://humangr.com/corelink/health"
     method: "GET"
     monitor_type: "status"
     check_frequency_seconds: 60
