@@ -370,8 +370,12 @@ fn scope_to_list(scope: &str, find_only: bool) -> Vec<String> {
 /// can never violate the CHECK (which would surface as a 500). Case-insensitive.
 fn normalize_invite_role(role: &str) -> &'static str {
     match role.trim().to_ascii_lowercase().as_str() {
-        "owner" => "owner",
-        "admin" => "admin",
+        // `owner` is NEVER mintable via a self-serve invite (there is exactly one
+        // owner — the tenant creator). The route handler rejects an owner invite
+        // outright (`handle_team_invite`); this maps it to `admin` as
+        // defense-in-depth so NO code path can ever persist a second owner seat
+        // (the member→owner escalation closed at the persistence layer too).
+        "owner" | "admin" => "admin",
         "viewer" => "viewer",
         // `developer` + anything else → the least-privileged seat (CHECK-safe).
         _ => "member",
@@ -3693,7 +3697,9 @@ mod tests {
 
     #[test]
     fn normalize_invite_role_maps_to_check_domain() {
-        assert_eq!(normalize_invite_role("Owner"), "owner");
+        // RBAC hardening: `owner` is NEVER mintable via a self-serve invite — it
+        // maps to `admin` (defense-in-depth so no code path persists a 2nd owner).
+        assert_eq!(normalize_invite_role("Owner"), "admin");
         assert_eq!(normalize_invite_role("ADMIN"), "admin");
         assert_eq!(normalize_invite_role("Viewer"), "viewer");
         assert_eq!(normalize_invite_role("Developer"), "member");
