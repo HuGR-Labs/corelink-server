@@ -15,17 +15,14 @@ workspace = true
 # host-side integration tests + local dev.
 default = []
 
-# Wire the production `RealNeonShadowSink` Neon analytics shadow
-# driver (wave-19 closure for the wave-18 caveat #3). Off by default —
-# enable in production deployments where the per-region Neon project
-# DSN is configured via `NEON_DB_URL_<REGION_UPPER>` (rows 120–124 of
-# `docs/internal/secrets-checklist.md`). The flag is a build-time
-# witness: the `RealNeonShadowSink` orchestration surface is always
-# compiled in; the flag toggles the `apps/server` boot path log that
-# pins the production wiring is live.
-#
-# Pattern reference: `specs/_audits/sealed/2026-05-16-neon-shadow-real-driver.md` §3.
-neon-real = ["corelink-audit-chain/neon-real"]
+# NOTE (#71): the container-side `neon-real` feature + `neon_shadow_factory`
+# (production `TokioPgShadowSinkFactory`) were REMOVED. The Neon "analytics
+# shadow" was never wired in prod — the per-region DSN env was never set, so the
+# `/v1/audit/analytics/*` boot path always fell back to the in-memory sink and
+# every query returned empty. Those routes now read the live D1
+# `customer_audit_events` table (migration 0077) via
+# `routes::audit_analytics::D1ShadowSinkFactory`. The cross-crate audit-chain
+# `neon-real` feature (its own test harness) is untouched.
 
 # Wire the production AWS KMS provider (`corelink_byok_aws::AwsKmsRealProvider`)
 # instead of the in-memory fake. Off by default — enable in production

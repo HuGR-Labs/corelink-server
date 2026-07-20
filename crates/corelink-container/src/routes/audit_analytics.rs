@@ -76,6 +76,7 @@
 #![allow(rustdoc::broken_intra_doc_links)]
 
 pub mod audit_sink;
+pub mod d1_sink;
 pub mod handler_event_count;
 pub mod handler_timeline;
 pub mod rate_limit;
@@ -98,6 +99,7 @@ mod tests_prelude;
 // ---------------------------------------------------------------------------
 
 pub use audit_sink::{AnalyticsAuditSink, InMemoryAnalyticsAuditSink};
+pub use d1_sink::D1ShadowSinkFactory;
 pub use shadow_factory::ShadowSinkFactory;
 pub use state::{audit_analytics_rate_limit_config, build_state, router, AuditAnalyticsRouteState};
 pub use types::{

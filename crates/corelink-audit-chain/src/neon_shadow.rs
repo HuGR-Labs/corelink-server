@@ -620,6 +620,30 @@ pub struct TimelineBucket {
     pub count: u64,
 }
 
+impl EventCountBucket {
+    /// Construct an event-count bucket. Public so out-of-crate
+    /// [`NeonShadowSink`] implementations (e.g. the container's
+    /// D1-backed analytics sink over `customer_audit_events`) can build
+    /// the aggregate result — the struct is `#[non_exhaustive]`, so a
+    /// struct literal is not constructible outside this crate.
+    #[must_use]
+    pub fn new(event_type: String, count: u64) -> Self {
+        Self { event_type, count }
+    }
+}
+
+impl TimelineBucket {
+    /// Construct a timeline bucket. Public for the same reason as
+    /// [`EventCountBucket::new`] — the struct is `#[non_exhaustive]`.
+    #[must_use]
+    pub fn new(bucket_start_ms: u64, count: u64) -> Self {
+        Self {
+            bucket_start_ms,
+            count,
+        }
+    }
+}
+
 /// In-memory shadow sink for tests + adversarial fixtures. Captures
 /// every successfully-persisted row + supports the same aggregate-query
 /// API as `RealNeonShadowSink` so end-to-end tests exercise the SQL
