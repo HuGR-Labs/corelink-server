@@ -154,7 +154,7 @@ jobs:
             --no-color
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9 # v4.37.0
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
         # Best-effort: the Security tab (code-scanning / GHAS) is not enabled on
         # this private repo, so this upload returns "Resource not accessible by
         # integration / Code scanning is not enabled" and would otherwise red the
