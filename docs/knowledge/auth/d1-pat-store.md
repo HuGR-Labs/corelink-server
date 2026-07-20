@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "843e2cba0ffe8678b226d9e683cc8b5acf097f6e"
+checkpoint_sha: "51cbc85b2da2ba57eec2d485163f61e86ddaa027"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-07-17T00:00:00Z"
@@ -92,8 +92,11 @@ written.
   zero security gain, so it stays an optional future consolidation, not a fix
   (`crates/corelink-container/src/routes/internal_pat.rs:86-108`).
 - `scope` may be NULL on legacy rows; the verifier's D1 row reader maps that to `""`
-  (`crates/corelink-container/src/adapter_pat.rs:145-151`), which then fails CLOSED at the scope gate
-  rather than erroring (`crates/corelink-container/src/scope.rs:73-95`).
+  (`crates/corelink-container/src/adapter_pat.rs:156-160`), which then fails CLOSED at the scope gate
+  rather than erroring (`crates/corelink-container/src/scope.rs:73-95`). The SAME reader also selects and
+  parses the additive `find_only` marker (migration 0093) into `PatRow.find_only` (NULL/`0` ⇒ a normal
+  PAT, `1` ⇒ find-only), which the adapter verifier fail-CLOSES on before the read grant
+  (`crates/corelink-container/src/adapter_pat.rs:164`; field at `crates/corelink-container/src/adapter_pat.rs:100`).
 - `last_used_at` is not tracked; the list handler always reports `None`
   (`crates/corelink-container/src/customer_d1.rs:18-20`).
 
@@ -111,5 +114,5 @@ written.
 9. `crates/corelink-container/src/routes/internal_pat.rs:73-75` — plaintext never persisted; caller's responsibility.
 10. `crates/corelink-container/src/routes/internal_pat.rs:86-108` — M7 reclassified: hash-on-wire is a one-way verifier of a high-entropy secret crossing an already-trusted internal boundary, never logged; removal (moving the D1 write into the container) is optional future consolidation, not a security fix.
 11. `crates/corelink-container/src/routes/internal_pat.rs:550-710` — `handle_mint`: mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:659-671`).
-12. `crates/corelink-container/src/adapter_pat.rs:145-151` — the verifier's D1 row reader mapping a NULL `scope` to `""`.
+12. `crates/corelink-container/src/adapter_pat.rs:156-160` — the verifier's D1 row reader mapping a NULL `scope` to `""` (the same reader parses the additive `find_only` marker at `crates/corelink-container/src/adapter_pat.rs:164` into the `PatRow.find_only` field at `crates/corelink-container/src/adapter_pat.rs:100`).
 13. `crates/corelink-container/src/scope.rs:73-95` — the fail-CLOSED scope gate (`""` grants nothing).

@@ -5,7 +5,7 @@ description: "The container's deep PAT possession proof — bounded Argon2id, a 
 source_files:
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "92140a5af7b41d50d8b43e2dfa7ab45686a596ac"
+checkpoint_sha: "51cbc85b2da2ba57eec2d485163f61e86ddaa027"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "argon2id", "scope", "dos"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -32,19 +32,24 @@ allowed to do on a cache surface.
 
 - After HMAC + D1, the full verify runs `verify_with_hash_multi` on a `spawn_blocking` thread: it
   re-parses, constant-time matches `token_id`, re-checks HMAC, then Argon2id-verifies the secret against
-  the stored PHC hash (`crates/corelink-container/src/adapter_pat.rs:706-754`).
+  the stored PHC hash (`crates/corelink-container/src/adapter_pat.rs:757-764`).
 - Concurrent Argon2id work is capped process-wide at 16 permits so a flood of valid-PAT requests cannot
-  OOM-kill the shared container (`crates/corelink-container/src/adapter_pat.rs:260-270`).
+  OOM-kill the shared container (`crates/corelink-container/src/adapter_pat.rs:284`).
 - A per-tenant sub-cap (¼ of the global pool, floor 2) keeps one tenant flooding distinct PATs from
   draining all global permits and starving others
-  (`crates/corelink-container/src/adapter_pat.rs:272-299`).
+  (`crates/corelink-container/src/adapter_pat.rs:306-313`).
 - An unknown/expired/revoked `token_id` runs a dummy Argon2id burn for timing parity so latency does not
-  leak whether the token exists (`crates/corelink-container/src/adapter_pat.rs:650-703`).
+  leak whether the token exists (`crates/corelink-container/src/adapter_pat.rs:677-718`).
 - That dummy burn is routed through ONE shared synthetic bucket so a leaked-key flood across bogus
   `token_id`s cannot drain the pool via the timing-burn path
-  (`crates/corelink-container/src/adapter_pat.rs:320-329`).
-- The final scope gate fails CLOSED unless the D1 `scope` grants cache read, then surfaces the write bit
-  for credential-minting callers to downscope (`crates/corelink-container/src/adapter_pat.rs:753-761`).
+  (`crates/corelink-container/src/adapter_pat.rs:705`).
+- The final scope gate fail-CLOSES a find-only PAT FIRST — `if row.find_only { return InvalidPat }` runs
+  BEFORE the read grant (ADR-0071): a find-only PAT stores the CHECK-safe base `read-only`, but this
+  adapter verifier authorizes package-manager reads directly from the D1 `scope` (the OCI `/token`
+  exchange has no `x-corelink-scope` header gate), so an un-rejected `read-only` base would grant e.g.
+  `docker pull`. Only then does the gate fail CLOSED unless the D1 `scope` grants cache read, and finally
+  surface the write bit for credential-minting callers to downscope
+  (`crates/corelink-container/src/adapter_pat.rs:779-787`).
 - The scope vocabulary lives in `scope.rs`: `requires_cache_read` / `requires_cache_write` grant by
   exact-token match (`cas:rw`/`read-write`/`admin` etc.), never substring
   (`crates/corelink-container/src/scope.rs:67-95`).
@@ -56,7 +61,7 @@ allowed to do on a cache surface.
 # Invariants
 
 - Argon2id concurrency is bounded; an acquire timeout fails CLOSED as `Backend` (503), never piling on
-  more 64-MiB allocations (`crates/corelink-container/src/adapter_pat.rs:720-733`).
+  more 64-MiB allocations (`crates/corelink-container/src/adapter_pat.rs:735-744`).
 - An empty/missing/unrecognized scope grants NOTHING — both read and write return `false`
   (`crates/corelink-container/src/scope.rs:73-95`).
 - Self-serve scope classification is exact-token and fail-CLOSED: unknown grammar can never silently map
@@ -68,14 +73,14 @@ allowed to do on a cache surface.
   and an EMPTY request→`ReadOnly` (back-compat; empty ≠ find-only). Because read is a SUPERSET of
   find-missing, `cache:find-missing` combined with read/write folds into that superset rather than
   minting a mislabeled token (`crates/corelink-container/src/scope.rs:148-194`).
-- A permit is acquired only AFTER the cheap HMAC fast-reject (`crates/corelink-container/src/adapter_pat.rs:647-648`),
-  so a forged token never reaches the permit acquire (`crates/corelink-container/src/adapter_pat.rs:720-733`).
+- A permit is acquired only AFTER the cheap HMAC fast-reject (`crates/corelink-container/src/adapter_pat.rs:661-662`),
+  so a forged token never reaches the permit acquire (`crates/corelink-container/src/adapter_pat.rs:735-744`).
 
 # Gotchas
 
 - The dummy timing-burn still consumes a global permit; under sustained overload the burn is skipped and
   the request fails CLOSED uniformly — the lost timing parity is acceptable because every request shares
-  its fate (`crates/corelink-container/src/adapter_pat.rs:650-703`).
+  its fate (`crates/corelink-container/src/adapter_pat.rs:677-718`).
 - `admin` is treated as a cache-rw superset by the capability checks, but admin *route* authorization is
   a SEPARATE internal-auth gate, not this scope module
   (`crates/corelink-container/src/scope.rs:34-45`).
@@ -87,13 +92,13 @@ allowed to do on a cache surface.
 
 # Citations
 
-1. `crates/corelink-container/src/adapter_pat.rs:260-270` — the global Argon2id concurrency cap (OOM guard).
-2. `crates/corelink-container/src/adapter_pat.rs:272-299` — the per-tenant Argon2id sub-cap (fairness).
-3. `crates/corelink-container/src/adapter_pat.rs:320-329` — the shared synthetic dummy-burn bucket.
-4. `crates/corelink-container/src/adapter_pat.rs:650-703` — the None-row constant-time Argon2id timing-burn.
-5. `crates/corelink-container/src/adapter_pat.rs:706-754` — the Argon2id possession verify on a blocking thread.
-6. `crates/corelink-container/src/adapter_pat.rs:720-733` — permit-acquire timeout → fail-CLOSED `Backend`.
-7. `crates/corelink-container/src/adapter_pat.rs:753-761` — the fail-CLOSED scope gate + write-bit surfacing.
+1. `crates/corelink-container/src/adapter_pat.rs:284` — the global Argon2id concurrency cap (OOM guard).
+2. `crates/corelink-container/src/adapter_pat.rs:306-313` — the per-tenant Argon2id sub-cap (fairness).
+3. `crates/corelink-container/src/adapter_pat.rs:705` — the dummy burn routed through the shared synthetic bucket (`UNKNOWN_TOKEN_BUCKET`).
+4. `crates/corelink-container/src/adapter_pat.rs:677-718` — the None-row constant-time Argon2id timing-burn.
+5. `crates/corelink-container/src/adapter_pat.rs:757-764` — the Argon2id possession verify on a blocking thread.
+6. `crates/corelink-container/src/adapter_pat.rs:735-744` — permit-acquire timeout → fail-CLOSED `Backend`.
+7. `crates/corelink-container/src/adapter_pat.rs:779-787` — the scope gate: find-only fail-close FIRST (`if row.find_only`, ADR-0071), then fail-CLOSED read grant + write-bit surfacing.
 8. `crates/corelink-container/src/scope.rs:73-95` — fail-CLOSED: empty/missing scope grants nothing (`requires_cache_read`/`_write`).
 9. `crates/corelink-container/src/scope.rs:67-95` — exact-token `requires_cache_read` / `requires_cache_write`.
 10. `crates/corelink-container/src/scope.rs:107-110` — `requires_find_missing`: find-missing granted by an explicit find token OR any read grant (read ⊇ find, ADR-0071).
