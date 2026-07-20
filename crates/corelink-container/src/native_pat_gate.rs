@@ -466,6 +466,7 @@ mod tests {
             tenant_id: tenant.to_owned(),
             pat_hash: pat_hash.to_owned(),
             scope: "cas:rw".to_owned(),
+            find_only: false,
         }
     }
 
@@ -476,6 +477,7 @@ mod tests {
             tenant_id: tenant.to_owned(),
             pat_hash: pat_hash.to_owned(),
             scope: "cas:r".to_owned(),
+            find_only: false,
         }
     }
 

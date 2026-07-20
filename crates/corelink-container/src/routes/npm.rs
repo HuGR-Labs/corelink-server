@@ -837,6 +837,7 @@ mod tests {
                 tenant_id: pat.tenant_id.0.to_string(),
                 pat_hash: pat.hash.as_str().to_owned(),
                 scope: SCOPE_RW.to_owned(),
+                find_only: false,
             },
         };
         let verifier = Arc::new(PatVerifier::new(Arc::new(lookup), key));
@@ -908,6 +909,7 @@ mod tests {
                 tenant_id: pat.tenant_id.0.to_string(),
                 pat_hash: pat.hash.as_str().to_owned(),
                 scope: SCOPE_RW.to_owned(),
+                find_only: false,
             },
         };
         let verifier = Arc::new(PatVerifier::new(Arc::new(lookup), key));

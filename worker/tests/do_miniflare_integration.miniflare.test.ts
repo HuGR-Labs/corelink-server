@@ -140,7 +140,9 @@ beforeAll(async () => {
       // 0063: soft-revocation marker — NULL = active (worker filters AND revoked_at_ms IS NULL)
       "revoked_at_ms BIGINT, " +
       // 0086: cf-multitenant narrowed runner-job marker — NULL on normal PATs
-      "runner_job_ac_key TEXT)",
+      "runner_job_ac_key TEXT, " +
+      // 0093: find-only least-privilege marker — NULL/0 = normal PAT; 1 = find-missing only
+      "find_only INTEGER)",
   );
   await d1.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_pat_token_id ON pat (token_id)");
   const seedPat =

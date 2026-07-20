@@ -321,6 +321,7 @@ mod tests {
             tenant_id: tenant,
             pat_hash,
             scope: "cas:rw".to_owned(),
+            find_only: false,
         };
         let verifier = verifier_with_row(token_id, row, key);
         UsersRouteState {

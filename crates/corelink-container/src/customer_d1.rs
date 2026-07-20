@@ -73,8 +73,8 @@ use corelink_handler_customer::{
     TeamListResponse, TeamRemoveRequest, TeamRemoveResponse, UsageRequest, UsageResponse,
 };
 use corelink_pat::{
-    mint::mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_R,
-    SCOPE_CACHE_RW,
+    mint::mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_FIND,
+    SCOPE_CACHE_R, SCOPE_CACHE_RW,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -316,21 +316,45 @@ fn map_requested_scopes(requested: &[String]) -> Result<&'static str, CustomerHa
     // classifier, and unrecognized tokens are REJECTED (fail-CLOSED) rather than
     // silently mapped to a privilege.
     match crate::scope::classify_requested_scopes(requested) {
-        Ok(crate::scope::RequestedScopeClass::ReadOnly) => Ok("read-only"),
+        // ADR-0071: a find-only PAT stores the CHECK-safe base `read-only`
+        // (`pat.scope` CHECK forbids a 4th value, migration 0037) and is narrowed
+        // to find-missing via the additive `find_only` marker (migration 0093) —
+        // NOT a new `pat.scope` string. See `mint_is_find_only`.
+        Ok(crate::scope::RequestedScopeClass::FindMissing)
+        | Ok(crate::scope::RequestedScopeClass::ReadOnly) => Ok("read-only"),
         Ok(crate::scope::RequestedScopeClass::ReadWrite) => Ok("read-write"),
         Ok(crate::scope::RequestedScopeClass::Admin) => Err(CustomerHandlerError::Unauthorized(
             "the admin scope is not grantable via self-serve key creation".to_owned(),
         )),
         Err(token) => Err(CustomerHandlerError::Unauthorized(format!(
-            "unrecognized scope token {token:?}; valid self-serve scopes: cache:read, cache:write"
+            "unrecognized scope token {token:?}; valid self-serve scopes: cache:read, cache:write, cache:find-missing"
         ))),
     }
+}
+
+/// True when the requested scopes classify as FIND-ONLY (the true least-privilege
+/// scope, ADR-0071) — a `find-missing` grant with NO read/write. The mint stores
+/// `pat.scope = 'read-only'` (CHECK-safe) PLUS the `find_only = 1` marker; the
+/// Worker then narrows the forwarded `x-corelink-scope` to `find-missing`. Any
+/// unrecognized/admin token classifies elsewhere and is rejected by
+/// [`map_requested_scopes`], so this is only ever consulted after that succeeds.
+fn mint_is_find_only(requested: &[String]) -> bool {
+    matches!(
+        crate::scope::classify_requested_scopes(requested),
+        Ok(crate::scope::RequestedScopeClass::FindMissing)
+    )
 }
 
 /// D1 `pat.scope` string → dashboard scopes list (inverse of
 /// [`map_requested_scopes`] for the canonical values; unknown legacy
 /// values are surfaced verbatim rather than guessed at).
-fn scope_to_list(scope: &str) -> Vec<String> {
+fn scope_to_list(scope: &str, find_only: bool) -> Vec<String> {
+    // ADR-0071: a find-only PAT stores the CHECK-safe base `read-only` + the
+    // `find_only` marker, so surface it as the find-missing capability it
+    // actually grants (NOT `cache:read`, which it cannot do).
+    if find_only {
+        return vec!["cache:find-missing".to_owned()];
+    }
     match scope {
         "read-only" => vec!["cache:read".to_owned()],
         "read-write" => vec!["cache:read".to_owned(), "cache:write".to_owned()],
@@ -1179,18 +1203,20 @@ impl CustomerKeysHandler for D1CustomerHandler {
         let rows = self.run(
             // `name` + `revoked_at_ms` are the WP-2 columns (migration
             // 0063, landing in a parallel PR — this PR depends on it).
-            "SELECT pat_id, name, scope, created_ms, revoked_at_ms \
+            "SELECT pat_id, name, scope, created_ms, revoked_at_ms, find_only \
              FROM pat WHERE tenant_id = ?1 ORDER BY created_ms DESC",
             vec![json!(req.caller_tenant)],
         )?;
         let pats: Vec<PatRow> = rows
             .iter()
             .map(|row| {
+                // `find_only` (0093): NULL/0 = normal PAT; 1 = find-missing only.
+                let find_only = col_opt_i64(row, "find_only").unwrap_or(0) == 1;
                 PatRow::new(
                     col_opt_str(row, "pat_id").unwrap_or_default(),
                     // Pre-0063 rows have no name: honest empty string.
                     col_opt_str(row, "name").unwrap_or_default(),
-                    scope_to_list(&col_opt_str(row, "scope").unwrap_or_default()),
+                    scope_to_list(&col_opt_str(row, "scope").unwrap_or_default(), find_only),
                     col_opt_i64(row, "created_ms")
                         .map(ms_to_iso8601)
                         .unwrap_or_default(),
@@ -1224,13 +1250,26 @@ impl CustomerKeysHandler for D1CustomerHandler {
             ));
         };
 
-        // FROZEN scope map ('admin' NEVER grantable).
+        // FROZEN scope map ('admin' NEVER grantable). `scope` is the CHECK-safe
+        // D1 value ('read-only'/'read-write'); a FIND-ONLY request maps to
+        // 'read-only' + the `find_only` marker (ADR-0071, migration 0093).
         let scope = map_requested_scopes(&req.scopes).inspect_err(|_| self.emit_sli(true))?;
-        let scope_bits = if scope == "read-write" {
-            PatScopes::from_u64(SCOPE_CACHE_RW)
+        let find_only = mint_is_find_only(&req.scopes);
+        // Bitset mirrors the effective grant (ADR-0071). Read is a superset of
+        // find-missing, so read/read-write also carry the FIND bit; a find-only
+        // token carries ONLY `SCOPE_CACHE_FIND` (no read/write). (The authoritative
+        // enforcement input is the scope the Worker forwards as `x-corelink-scope`
+        // — `find-missing` for a find-only PAT; these bits mirror it.)
+        let scope_bits = if find_only {
+            PatScopes::from_u64(SCOPE_CACHE_FIND)
+        } else if scope == "read-write" {
+            PatScopes::from_u64(SCOPE_CACHE_RW | SCOPE_CACHE_FIND)
         } else {
-            PatScopes::from_u64(SCOPE_CACHE_R)
+            PatScopes::from_u64(SCOPE_CACHE_R | SCOPE_CACHE_FIND)
         };
+        // Human-readable scope for the audit summary (the stored `scope` is the
+        // CHECK-safe base, so a find-only PAT would otherwise read "read-only").
+        let scope_label = if find_only { "find-missing" } else { scope };
 
         let tenant_uuid = Uuid::parse_str(&req.caller_tenant).map_err(|_| {
             self.emit_sli(true);
@@ -1274,7 +1313,7 @@ impl CustomerKeysHandler for D1CustomerHandler {
             "pat.created",
             &req.principal,
             &pat.id.to_string(),
-            &format!("Created API key {:?} ({scope})", req.name),
+            &format!("Created API key {:?} ({scope_label})", req.name),
         )?;
 
         // Durable INSERT. `shown_once_token` (NOT NULL UNIQUE, 0037) is
@@ -1284,8 +1323,8 @@ impl CustomerKeysHandler for D1CustomerHandler {
         self.run(
             "INSERT INTO pat \
              (pat_id, tenant_id, pat_hash, scope, expires_ms, \
-              shown_once_token, shown_once_consumed, created_ms, token_id, name) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9)",
+              shown_once_token, shown_once_consumed, created_ms, token_id, name, find_only) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?10)",
             vec![
                 json!(pat.id.to_string()),
                 json!(req.caller_tenant),
@@ -1296,13 +1335,14 @@ impl CustomerKeysHandler for D1CustomerHandler {
                 json!(i64::try_from(now_ms).unwrap_or(i64::MAX)),
                 json!(pat.token_id.as_str()),
                 json!(req.name),
+                json!(i32::from(find_only)),
             ],
         )?;
 
         let row = PatRow::new(
             pat.id.to_string(),
             req.name.clone(),
-            scope_to_list(scope),
+            scope_to_list(scope, find_only),
             ms_to_iso8601(i64::try_from(now_ms).unwrap_or(i64::MAX)),
             None,
             None,
@@ -1331,7 +1371,7 @@ impl CustomerKeysHandler for D1CustomerHandler {
         // Tenant-scoped SELECT: a PAT owned by another tenant is simply
         // not visible → NotFound (cross-tenant safe by construction).
         let rows = self.run(
-            "SELECT pat_id, name, scope, created_ms, revoked_at_ms \
+            "SELECT pat_id, name, scope, created_ms, revoked_at_ms, find_only \
              FROM pat WHERE pat_id = ?1 AND tenant_id = ?2 LIMIT 1",
             vec![json!(req.pat_id), json!(req.caller_tenant)],
         )?;
@@ -1359,7 +1399,10 @@ impl CustomerKeysHandler for D1CustomerHandler {
         let pat = PatRow::new(
             col_opt_str(&row, "pat_id").unwrap_or_else(|| req.pat_id.clone()),
             col_opt_str(&row, "name").unwrap_or_default(),
-            scope_to_list(&col_opt_str(&row, "scope").unwrap_or_default()),
+            scope_to_list(
+                &col_opt_str(&row, "scope").unwrap_or_default(),
+                col_opt_i64(&row, "find_only").unwrap_or(0) == 1,
+            ),
             col_opt_i64(&row, "created_ms")
                 .map(ms_to_iso8601)
                 .unwrap_or_default(),
@@ -2510,6 +2553,26 @@ mod tests {
         );
         // Least privilege for an empty request.
         assert_eq!(map_requested_scopes(&[]).unwrap(), "read-only");
+        // ADR-0071: find-ONLY stores the CHECK-safe base "read-only" + the
+        // `find_only` marker (NOT a 4th `pat.scope` value — the 0037 CHECK forbids
+        // it); combined with read/write it folds into the superset (read ⊇ find).
+        assert_eq!(
+            map_requested_scopes(&["cache:find-missing".to_owned()]).unwrap(),
+            "read-only"
+        );
+        assert!(mint_is_find_only(&["cache:find-missing".to_owned()]));
+        assert_eq!(
+            map_requested_scopes(&["cache:read".to_owned(), "cache:find-missing".to_owned()])
+                .unwrap(),
+            "read-only"
+        );
+        // find + read is NOT find-only (it's a full read grant).
+        assert!(!mint_is_find_only(&["cache:read".to_owned(), "cache:find-missing".to_owned()]));
+        assert!(!mint_is_find_only(&["cache:read".to_owned()]));
+        // Display: a find-only PAT surfaces as cache:find-missing (via the marker),
+        // a normal read PAT as cache:read.
+        assert_eq!(scope_to_list("read-only", true), vec!["cache:find-missing".to_owned()]);
+        assert_eq!(scope_to_list("read-only", false), vec!["cache:read".to_owned()]);
         // 'admin' is NEVER grantable.
         let err = map_requested_scopes(&["admin".to_owned()]).unwrap_err();
         assert!(
@@ -3341,6 +3404,36 @@ mod tests {
             .find(|(sql, _)| sql.contains("INSERT INTO pat"))
             .expect("INSERT executed");
         assert_eq!(insert.1[3], json!("read-only"));
+        // A normal read PAT is NOT find-only (?10 = find_only = 0).
+        assert_eq!(insert.1[9], json!(0));
+    }
+
+    /// ADR-0071: a find-only request stores the CHECK-safe base `read-only` +
+    /// `find_only = 1` (NOT a 4th `pat.scope` value the 0037 CHECK would reject),
+    /// and surfaces as the `cache:find-missing` capability it actually grants.
+    #[test]
+    fn keys_create_find_only_stores_read_only_base_plus_marker() {
+        let f = fixture_with(MockD1::with(vec![]), None);
+        let resp = f
+            .handler
+            .create(KeyCreateRequest::new(
+                TENANT,
+                "clpat_x",
+                "find-key",
+                vec!["cache:find-missing".to_owned()],
+                0,
+            ))
+            .unwrap();
+        // Displayed as find-missing (via the marker), never cache:read.
+        assert_eq!(resp.pat.scopes, vec!["cache:find-missing".to_owned()]);
+        let calls = f.db.calls();
+        let insert = calls
+            .iter()
+            .find(|(sql, _)| sql.contains("INSERT INTO pat"))
+            .expect("INSERT executed");
+        // Base scope is CHECK-safe `read-only` (?4); the `find_only` marker (?10) = 1.
+        assert_eq!(insert.1[3], json!("read-only"));
+        assert_eq!(insert.1[9], json!(1));
     }
 
     #[test]

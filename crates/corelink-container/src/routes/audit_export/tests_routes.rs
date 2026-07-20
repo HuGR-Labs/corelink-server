@@ -629,6 +629,7 @@ async fn forged_pat_is_rejected_when_gate_present() {
             tenant_id: tenant.to_string(),
             pat_hash: String::new(),
             scope: "cas:rw".to_owned(),
+            find_only: false,
         },
         key,
     );

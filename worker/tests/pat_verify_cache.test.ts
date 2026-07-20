@@ -46,6 +46,7 @@ const ROW: CachedPatRow = {
   expires_ms: 0, // never-expires sentinel
   scope: "cas:rw",
   runner_job_ac_key: null,
+                find_only: null,
 };
 
 /**
@@ -336,6 +337,7 @@ function makeWorkerD1(opts: {
                 expires_ms: expiresMs(),
                 scope: "cas:rw",
                 runner_job_ac_key: null,
+                find_only: null,
               } as T | null;
             }
             return null as T | null;

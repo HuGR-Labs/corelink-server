@@ -2625,6 +2625,7 @@ mod tests {
                 tenant_id: TEST_TENANT.to_owned(),
                 pat_hash: String::new(),
                 scope: "cas:rw".to_owned(),
+                find_only: false,
             },
             key,
         );

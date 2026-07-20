@@ -94,14 +94,35 @@ pub fn requires_cache_write(scope: &str) -> bool {
     tokens(scope).any(|t| matches!(t, "cas:rw" | "cas:w" | "read-write" | "admin"))
 }
 
+/// True when `scope` grants the cache **find-missing** (existence-probe)
+/// capability — the `FindMissingBlobs` REAPI op (ADR-0071).
+///
+/// Granted by an EXPLICIT find-missing token (`find-missing` / `cache:find-missing`,
+/// the true least-privilege scope) OR by ANY read grant (read is a superset of
+/// find-missing: if you can download a blob you can probe its existence). So
+/// `read-only` / `read-write` / `cas:*` / `admin` all satisfy it — which is why
+/// pre-ADR-0071 read-scoped PATs keep working unchanged. Fail-CLOSED: empty /
+/// missing / no matching token ⇒ `false` (a scope-less request probes nothing).
+#[must_use]
+pub fn requires_find_missing(scope: &str) -> bool {
+    requires_cache_read(scope)
+        || tokens(scope).any(|t| matches!(t, "find-missing" | "cache:find-missing"))
+}
+
 /// Classification of a self-serve key-mint scope request.
 ///
-/// `Admin` is the privileged class (never grantable self-serve); `ReadWrite`
-/// carries a cache-write capability; `ReadOnly` is the least-privilege default
-/// (incl. the canonical `["cache:read"]` and an empty request).
+/// Capability hierarchy (least → most): `FindMissing` ⊂ `ReadOnly` ⊂ `ReadWrite`;
+/// `Admin` is separate and never self-serve-grantable. **Read is a superset of
+/// find-missing** (if you can download a blob you can certainly probe whether it
+/// exists), so a `ReadOnly` PAT satisfies find-missing — but a `FindMissing` PAT
+/// is the TRUE least privilege: it may run `FindMissingBlobs` existence probes and
+/// nothing else (no download, no upload). `ReadOnly` remains the default for an
+/// empty request (back-compat; empty ≠ find-only).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RequestedScopeClass {
-    /// Least privilege — read-only cache access.
+    /// True least privilege — find-missing (existence probe) ONLY; no read/write.
+    FindMissing,
+    /// Read-only cache access (a superset that also grants find-missing).
     ReadOnly,
     /// Carries a cache-write capability.
     ReadWrite,
@@ -127,6 +148,8 @@ pub enum RequestedScopeClass {
 pub fn classify_requested_scopes(requested: &[String]) -> Result<RequestedScopeClass, String> {
     let mut admin = false;
     let mut write = false;
+    let mut read = false;
+    let mut find = false;
     for raw in requested {
         for t in tokens(raw) {
             match t.to_ascii_lowercase().as_str() {
@@ -141,20 +164,16 @@ pub fn classify_requested_scopes(requested: &[String]) -> Result<RequestedScopeC
                     write = true;
                 }
                 // Read class. `cache:r` is the canonical corelink-pat read form
-                // (`SCOPE_CACHE_R`).
-                //
-                // `cache:find-missing` (`SCOPE_CACHE_FIND`) is DELIBERATELY NOT
-                // accepted here: the self-serve mint provisions the PAT bitset from
-                // this coarse read/write string (`customer_d1::create`, hard-coded
-                // `SCOPE_CACHE_R` / `SCOPE_CACHE_RW`) and has NO path that sets the
-                // distinct `SCOPE_CACHE_FIND` bit. The REAPI plane enforces
-                // `CacheFindMissing` as a non-implying scope (`corelink-reapi`:
-                // `cache_find_missing_does_not_imply_cache_read`), so classifying
-                // find-missing as read would mint a MISLABELED token — it could not
-                // actually do FindMissingBlobs (under-grant) yet would silently gain
-                // full download read (over-grant). Faithful find-missing support
-                // needs a bitset-based mint; until then it stays an honest `Err`.
-                "cas:r" | "cache:r" | "read-only" | "cache:read" => {}
+                // (`SCOPE_CACHE_R`). Read is a SUPERSET of find-missing.
+                "cas:r" | "cache:r" | "read-only" | "cache:read" => read = true,
+                // Find-missing class (`SCOPE_CACHE_FIND`, auth_model.md §3.1): the
+                // TRUE least-privilege scope — existence probes (`FindMissingBlobs`)
+                // ONLY, no download/upload. Enforced distinctly on the live cache
+                // plane (`bazel_v2::handle_find_missing` → `CacheScope::can_find_missing`)
+                // via ADR-0071. A find-only request (no read/write) mints a
+                // find-only PAT; combined with read/write it folds into that
+                // superset (read ⊇ find), never a mislabel.
+                "cache:find-missing" | "find-missing" => find = true,
                 other => return Err(other.to_owned()),
             }
         }
@@ -163,7 +182,13 @@ pub fn classify_requested_scopes(requested: &[String]) -> Result<RequestedScopeC
         RequestedScopeClass::Admin
     } else if write {
         RequestedScopeClass::ReadWrite
+    } else if read {
+        RequestedScopeClass::ReadOnly
+    } else if find {
+        RequestedScopeClass::FindMissing
     } else {
+        // Empty / no capability token ⇒ least-privilege read-only (back-compat;
+        // an EMPTY request is not the same as an explicit find-only request).
         RequestedScopeClass::ReadOnly
     })
 }
@@ -229,6 +254,7 @@ fn scope_from_parts(parts: &Parts) -> &str {
 pub struct CacheScope {
     can_read: bool,
     can_write: bool,
+    can_find_missing: bool,
 }
 
 impl CacheScope {
@@ -238,6 +264,7 @@ impl CacheScope {
         Self {
             can_read: requires_cache_read(scope),
             can_write: requires_cache_write(scope),
+            can_find_missing: requires_find_missing(scope),
         }
     }
 
@@ -251,6 +278,14 @@ impl CacheScope {
     #[must_use]
     pub fn can_write(self) -> bool {
         self.can_write
+    }
+
+    /// Whether this scope grants the cache find-missing (existence-probe)
+    /// capability — satisfied by an explicit find-missing grant OR any read
+    /// grant (read ⊇ find-missing). See [`requires_find_missing`] (ADR-0071).
+    #[must_use]
+    pub fn can_find_missing(self) -> bool {
+        self.can_find_missing
     }
 }
 
@@ -413,7 +448,7 @@ mod tests {
 
     #[test]
     fn classify_requested_scopes_is_exact_token_and_fail_closed() {
-        use RequestedScopeClass::{Admin, ReadOnly, ReadWrite};
+        use RequestedScopeClass::{Admin, FindMissing, ReadOnly, ReadWrite};
         let one = |s: &str| vec![s.to_owned()];
         // Canonical self-serve inputs.
         assert_eq!(classify_requested_scopes(&one("cache:read")), Ok(ReadOnly));
@@ -432,15 +467,25 @@ mod tests {
         // 401'd (unrecognized token → Unauthorized). They must classify, not error.
         assert_eq!(classify_requested_scopes(&one("cache:r")), Ok(ReadOnly));
         assert_eq!(classify_requested_scopes(&one("cache:w")), Ok(ReadWrite));
-        // `cache:find-missing` is DELIBERATELY still rejected: the self-serve mint
-        // provisions only `SCOPE_CACHE_R`/`SCOPE_CACHE_RW` (no `SCOPE_CACHE_FIND`
-        // path), and REAPI enforces `CacheFindMissing` as a non-implying scope, so
-        // accepting it would mint a mislabeled token (under-grant find-missing,
-        // over-grant read). Faithful support needs a bitset-based mint (follow-up).
-        assert!(
-            classify_requested_scopes(&one("cache:find-missing")).is_err(),
-            "find-missing must stay rejected until the mint can provision SCOPE_CACHE_FIND",
+        // ADR-0071: `cache:find-missing` is now the TRUE least-privilege scope —
+        // find-only when requested ALONE, folding into the read/write superset
+        // otherwise (read ⊇ find-missing, so no mislabel).
+        assert_eq!(
+            classify_requested_scopes(&one("cache:find-missing")),
+            Ok(FindMissing)
         );
+        assert_eq!(classify_requested_scopes(&one("find-missing")), Ok(FindMissing));
+        // find + read ⇒ read (superset); find + write ⇒ read-write.
+        assert_eq!(
+            classify_requested_scopes(&["cache:r".into(), "cache:find-missing".into()]),
+            Ok(ReadOnly)
+        );
+        assert_eq!(
+            classify_requested_scopes(&["cache:w".into(), "cache:find-missing".into()]),
+            Ok(ReadWrite)
+        );
+        // An EMPTY request is read-only (least-priv default), NOT find-only.
+        assert_eq!(classify_requested_scopes(&[]), Ok(ReadOnly));
         // Case-insensitive.
         assert_eq!(
             classify_requested_scopes(&one("CACHE:WRITE")),
@@ -476,6 +521,30 @@ mod tests {
         // Forward-design: a write-only token still implies read.
         assert!(requires_cache_write("cas:w"));
         assert!(requires_cache_read("cas:w"));
+    }
+
+    #[test]
+    fn find_missing_capability_hierarchy() {
+        // ADR-0071. A find-only token grants ONLY find-missing (no read/write) —
+        // the true least privilege.
+        assert!(requires_find_missing("find-missing"));
+        assert!(requires_find_missing("cache:find-missing"));
+        assert!(!requires_cache_read("find-missing"));
+        assert!(!requires_cache_write("find-missing"));
+        // Read is a SUPERSET of find-missing (no regression for existing PATs):
+        // every read/write/admin scope satisfies find-missing.
+        for s in ["read-only", "read-write", "cas:r", "cas:rw", "cas:w", "admin"] {
+            assert!(requires_find_missing(s), "{s:?} (read⊇find) must satisfy find-missing");
+        }
+        // Fail-CLOSED: an empty / unknown scope grants no find-missing.
+        assert!(!requires_find_missing(""));
+        assert!(!requires_find_missing("viewer"));
+        // CacheScope mirrors the capability functions.
+        assert!(CacheScope::from_scope_str("find-missing").can_find_missing());
+        assert!(!CacheScope::from_scope_str("find-missing").can_read());
+        assert!(!CacheScope::from_scope_str("find-missing").can_write());
+        assert!(CacheScope::from_scope_str("read-only").can_find_missing());
+        assert!(!CacheScope::from_scope_str("").can_find_missing());
     }
 
     #[test]

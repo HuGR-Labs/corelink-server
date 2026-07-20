@@ -1,0 +1,45 @@
+-- 0093_pat_find_only.sql
+--
+-- FIND-ONLY (least-privilege) PAT marker (ADR-0071). Tag a self-serve PAT so the
+-- container narrows it to the find-missing (existence-probe) capability ONLY —
+-- no CAS/AC read, no write. This is the TRUE least-privilege cache credential:
+-- a client can run `FindMissingBlobs` ("which of these do you already have?")
+-- but can neither download nor upload.
+--
+-- ## Why a marker, not a new `pat.scope` value
+--
+-- `pat.scope` carries `CHECK (scope IN ('read-write','read-only','admin'))`
+-- (0037). Adding a fourth value would require a DESTRUCTIVE rebuild of the live
+-- credential table (SQLite cannot ALTER a CHECK) — banned by
+-- INV-AUTH-MIGRATION-ADDITIVE without an ADR waiver. Instead a find-only PAT
+-- stores the CHECK-safe base `scope = 'read-only'` PLUS this additive marker;
+-- the Worker narrows it at auth-resolve. Same narrowing pattern as the runner-job
+-- marker (0086 `runner_job_ac_key`).
+--
+-- ## Semantics
+--
+--   * NULL / 0 — a NORMAL PAT. Behaviour UNCHANGED: every existing PAT row reads
+--                NULL = unchanged. Launch state for all non-find-only PATs.
+--   * 1        — a FIND-ONLY PAT. Base `scope` is `'read-only'` but the Worker
+--                forwards `x-corelink-scope: find-missing` (NOT the base scope),
+--                so the container grants ONLY `can_find_missing()` — read/write
+--                are 403 (`routes/bazel_v2::handle_find_missing`, `scope.rs`).
+--
+-- ## Writer / reader authority
+--
+-- Written ONLY by the self-serve mint (`customer_d1::create`) when the requested
+-- scopes classify as find-only (`scope::RequestedScopeClass::FindMissing`). Read
+-- ONLY by the Worker PAT auth-resolve (`extractAuth` in `worker/src/index.ts`),
+-- which — when set — forwards the server-trusted `x-corelink-scope: find-missing`
+-- the client can never supply. No hot path changes until a find-only PAT exists.
+--
+-- ## Additive policy
+--
+-- Single `ALTER TABLE … ADD COLUMN` (nullable, no default → existing rows read
+-- NULL = unchanged). No DROP, no retype, no rewrite, no CHECK change. Purely
+-- additive, zero prod risk. INV-AUTH-MIGRATION-ADDITIVE
+-- (auth-migrations-additive-only). The d1_migrations ledger guarantees
+-- exactly-once application (d1-migrations-ledger-desync).
+
+-- Find-only least-privilege marker: NULL/0 = normal PAT; 1 = find-missing only.
+ALTER TABLE pat ADD COLUMN find_only INTEGER;
