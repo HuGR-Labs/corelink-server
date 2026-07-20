@@ -59,7 +59,7 @@ http = { version = "1", optional = true }
 tokio = { workspace = true, optional = true }
 pin-project-lite = { version = "0.2", optional = true }
 rand = { version = "0.9", default-features = false, features = ["std", "std_rng", "os_rng"], optional = true }
-rand_chacha = { version = "0.9", default-features = false, features = ["std"], optional = true }
+rand_chacha = { version = "0.10", default-features = false, features = ["std"], optional = true }
 tracing = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 # Needs `jwt-adapter` so ClerkAdapter is available in the middleware;
@@ -123,7 +123,7 @@ rand = { version = "0.9", default-features = false, features = ["std", "std_rng"
 # Cross-component prop test (`prop_auth_full.rs`) needs to inspect
 # the PHC string parameters directly + craft fixed Argon2 salts.
 argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash"] }
-password-hash = { version = "0.5", default-features = false, features = ["alloc"] }
+password-hash = { version = "0.6", default-features = false, features = ["alloc"] }
 base64 = { workspace = true }
 
 [[test]]
