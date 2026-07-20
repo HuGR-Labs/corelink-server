@@ -141,10 +141,20 @@ pub fn classify_requested_scopes(requested: &[String]) -> Result<RequestedScopeC
                     write = true;
                 }
                 // Read class. `cache:r` is the canonical corelink-pat read form
-                // (`SCOPE_CACHE_R`); `cache:find-missing` (`SCOPE_CACHE_FIND`) is a
-                // discovery-only capability with NO write — it classifies read
-                // (least-privilege), never granting a cache-write.
-                "cas:r" | "cache:r" | "read-only" | "cache:read" | "cache:find-missing" => {}
+                // (`SCOPE_CACHE_R`).
+                //
+                // `cache:find-missing` (`SCOPE_CACHE_FIND`) is DELIBERATELY NOT
+                // accepted here: the self-serve mint provisions the PAT bitset from
+                // this coarse read/write string (`customer_d1::create`, hard-coded
+                // `SCOPE_CACHE_R` / `SCOPE_CACHE_RW`) and has NO path that sets the
+                // distinct `SCOPE_CACHE_FIND` bit. The REAPI plane enforces
+                // `CacheFindMissing` as a non-implying scope (`corelink-reapi`:
+                // `cache_find_missing_does_not_imply_cache_read`), so classifying
+                // find-missing as read would mint a MISLABELED token — it could not
+                // actually do FindMissingBlobs (under-grant) yet would silently gain
+                // full download read (over-grant). Faithful find-missing support
+                // needs a bitset-based mint; until then it stays an honest `Err`.
+                "cas:r" | "cache:r" | "read-only" | "cache:read" => {}
                 other => return Err(other.to_owned()),
             }
         }
@@ -422,15 +432,14 @@ mod tests {
         // 401'd (unrecognized token → Unauthorized). They must classify, not error.
         assert_eq!(classify_requested_scopes(&one("cache:r")), Ok(ReadOnly));
         assert_eq!(classify_requested_scopes(&one("cache:w")), Ok(ReadWrite));
-        // find-missing is discovery-only (no write) ⇒ least-privilege read class.
-        assert_eq!(
-            classify_requested_scopes(&one("cache:find-missing")),
-            Ok(ReadOnly)
-        );
-        // The dashboard's read+find-missing combo stays read (no accidental write).
-        assert_eq!(
-            classify_requested_scopes(&["cache:r".into(), "cache:find-missing".into()]),
-            Ok(ReadOnly)
+        // `cache:find-missing` is DELIBERATELY still rejected: the self-serve mint
+        // provisions only `SCOPE_CACHE_R`/`SCOPE_CACHE_RW` (no `SCOPE_CACHE_FIND`
+        // path), and REAPI enforces `CacheFindMissing` as a non-implying scope, so
+        // accepting it would mint a mislabeled token (under-grant find-missing,
+        // over-grant read). Faithful support needs a bitset-based mint (follow-up).
+        assert!(
+            classify_requested_scopes(&one("cache:find-missing")).is_err(),
+            "find-missing must stay rejected until the mint can provision SCOPE_CACHE_FIND",
         );
         // Case-insensitive.
         assert_eq!(
