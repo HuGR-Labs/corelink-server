@@ -89,6 +89,15 @@ pub struct PatRow {
     /// The PAT's D1 `scope` string (e.g. `cas:rw`, `admin`, or `""` for
     /// legacy rows). Empty / absent ⇒ fail-CLOSED at the scope gate.
     pub scope: String,
+    /// D1 `pat.find_only` (migration 0093, ADR-0071): `true` = a FIND-ONLY
+    /// least-privilege PAT whose base `scope` is the CHECK-safe `read-only`, but
+    /// which grants ONLY cache find-missing. The adapter planes (npm/pip/brew/
+    /// cargo/OCI) have NO find-missing operation, and — unlike the native cache
+    /// planes — the OCI adapter authorizes from THIS D1 `scope` directly (not the
+    /// Worker's `x-corelink-scope` header), so a find-only PAT MUST be rejected
+    /// here (else its `read-only` base would grant e.g. `docker pull`). Legacy /
+    /// non-find rows are `false`.
+    pub find_only: bool,
 }
 
 /// Fetch a `pat` row by its non-secret `token_id`, already expiry-filtered.
@@ -111,7 +120,7 @@ pub trait PatRowLookup: Send + Sync {
 /// filter (`expires_ms = 0` ⇒ no-expiry token) and the same soft-revocation
 /// filter (migration `0063_pat_customer_keys`: `revoked_at_ms IS NULL` ⇒
 /// active; a revoked row is indistinguishable from an absent one).
-const PAT_LOOKUP_SQL: &str = "SELECT tenant_id, pat_hash, scope FROM pat \
+const PAT_LOOKUP_SQL: &str = "SELECT tenant_id, pat_hash, scope, find_only FROM pat \
      WHERE token_id = ?1 \
        AND (expires_ms = 0 OR expires_ms > unixepoch('now', 'subsec') * 1000) \
        AND revoked_at_ms IS NULL \
@@ -149,11 +158,16 @@ impl PatRowLookup for D1HttpClient {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
+        // `find_only` (0093): NULL/0 = normal PAT; 1 = find-missing-only. Absent on
+        // a legacy row ⇒ false (a normal PAT). The D1 HTTP API returns integers as
+        // JSON numbers.
+        let find_only = row.get("find_only").and_then(serde_json::Value::as_i64) == Some(1);
 
         Ok(Some(PatRow {
             tenant_id,
             pat_hash,
             scope,
+            find_only,
         }))
     }
 }
@@ -753,6 +767,18 @@ impl PatVerifier {
         // 4. Scope gate — fail-CLOSED on NO cache capability at all, then
         //    surface the read/write split so credential-minting callers can
         //    downscope.
+        //
+        // ADR-0071 (find-only least-privilege): a find-only PAT stores the
+        // CHECK-safe base `scope = 'read-only'` and is narrowed to find-missing
+        // ONLY at the Worker's `x-corelink-scope` header. But this adapter verifier
+        // authorizes package-manager reads (npm/pip/brew/cargo/OCI) directly from
+        // the D1 `scope` — the OCI `/token` exchange (`routes/oci.rs`) has NO header
+        // gate — so the `read-only` base would otherwise grant e.g. `docker pull`.
+        // The adapter planes have no find-missing operation, so a find-only PAT is
+        // rejected here fail-CLOSED (defense-in-depth for every adapter surface).
+        if row.find_only {
+            return Err(VerifyError::InvalidPat);
+        }
         if !requires_cache_read(&row.scope) {
             return Err(VerifyError::InvalidPat);
         }
@@ -933,6 +959,7 @@ mod tests {
             tenant_id: tenant.to_owned(),
             pat_hash: pat_hash.to_owned(),
             scope: scope.to_owned(),
+            find_only: false,
         }
     }
 
@@ -1070,6 +1097,31 @@ mod tests {
         let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:r")));
         let verifier = PatVerifier::new(lookup, key);
         assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
+    }
+
+    #[tokio::test]
+    async fn find_only_pat_is_rejected_on_the_adapter_plane() {
+        // ADR-0071: a find-only PAT stores the CHECK-safe base `read-only` but is
+        // narrowed to find-missing at the Worker header. The adapter verifier
+        // authorizes package-manager reads (OCI has NO header gate) directly from
+        // the D1 scope, so `requires_cache_read("read-only")` would otherwise grant
+        // e.g. `docker pull`. The `find_only` marker MUST fail-CLOSE here even
+        // though the base scope reads. (Same possession proof as a normal PAT.)
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 52, SCOPE_CACHE_R);
+        let find_only_row = PatRow {
+            tenant_id: tenant.clone(),
+            pat_hash: hash,
+            scope: "read-only".to_owned(),
+            find_only: true,
+        };
+        let lookup = Arc::new(FakeLookup::with_row(&tid, find_only_row));
+        let verifier = PatVerifier::new(lookup, key);
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::InvalidPat),
+            "a find-only PAT must be rejected on every adapter surface; got {err:?}"
+        );
     }
 
     #[tokio::test]

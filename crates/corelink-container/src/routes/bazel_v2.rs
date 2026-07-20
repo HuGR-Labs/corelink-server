@@ -2003,6 +2003,7 @@ mod tests {
                 tenant_id: TENANT.to_owned(),
                 pat_hash: String::new(),
                 scope: "cas:rw".to_owned(),
+                find_only: false,
             },
             key,
         );

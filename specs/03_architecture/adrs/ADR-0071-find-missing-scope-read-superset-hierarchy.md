@@ -103,6 +103,17 @@ mint's FIND bit) rather than reject read-scoped PATs.
   `AC-FM-5/6` tests remain dormant/aspirational and are NOT the canonical model;
   this ADR is the anti-drift record so nobody mounts them without adopting the
   hierarchy.
+- **Adapter-plane fail-close (security).** Because the marker stores the
+  CHECK-safe base `scope = 'read-only'`, any plane that authorizes from the D1
+  `scope` DIRECTLY — not the Worker's `x-corelink-scope` header — would see
+  `read-only` and grant read. The **OCI registry `/token` exchange
+  (`routes/oci.rs`) does exactly that** (no header gate), so a find-only PAT would
+  otherwise `docker pull`. The shared adapter verifier
+  (`adapter_pat::verify_capability`) therefore selects `find_only` and **rejects a
+  find-only PAT fail-CLOSED on EVERY adapter surface** (npm/pip/brew/cargo/OCI have
+  no find-missing op) — defense-in-depth that does not depend on each adapter
+  having its own header gate. Regression-locked in
+  `adapter_pat::tests::find_only_pat_is_rejected_on_the_adapter_plane`.
 
 ## Alternatives considered
 
