@@ -1,0 +1,13 @@
+{
+  "name": "corelink-e2e-browser",
+  "private": true,
+  "type": "module",
+  "description": "Real-browser (Playwright + @clerk/testing) e2e that drives the money/DSR journeys against PROD humangr.com/corelink with a REAL prod-accepted Clerk session — the surfaces the black-box PAT suite gates (need a browser session).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@clerk/testing": "^2.2.10",
+    "@playwright/test": "^1.61.1"
+  }
+}
