@@ -810,11 +810,15 @@ async fn handle_find_missing(
     headers: HeaderMap,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
-    // Scope gate (fail-CLOSED): findMissingBlobs is a read/existence probe
-    // over the CAS — require `cas:r` (or `cas:rw`/`admin`) BEFORE any storage
-    // access. The body extractor (`Bytes`) stays LAST per axum 0.7 ordering;
-    // `CacheScope` is `FromRequestParts` so it precedes the body.
-    if !scope.can_read() {
+    // Scope gate (fail-CLOSED): findMissingBlobs is an existence probe over the
+    // CAS — require the find-missing capability (ADR-0071) BEFORE any storage
+    // access. `can_find_missing()` is satisfied by an EXPLICIT find-missing grant
+    // (the true least-privilege `find-missing` scope) OR by any read grant (read ⊇
+    // find-missing), so pre-ADR-0071 `cas:r`/`cas:rw`/`admin` PATs are unchanged
+    // while a find-only PAT can now probe here (and ONLY here). The body extractor
+    // (`Bytes`) stays LAST per axum 0.7 ordering; `CacheScope` is `FromRequestParts`
+    // so it precedes the body.
+    if !scope.can_find_missing() {
         return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
     }
     // F-defense (fail-CLOSED): reject a missing/sentinel tenant with 401
@@ -1797,6 +1801,48 @@ mod tests {
             .header("content-type", "application/json")
             // no x-corelink-scope header → fail-CLOSED
             .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+        assert_eq!(body_bytes(resp).await, b"insufficient scope");
+    }
+
+    /// ADR-0071: a find-ONLY (`find-missing`) token PASSES the find-missing gate
+    /// (200, not 403) — the true least-privilege existence probe works.
+    #[tokio::test]
+    async fn find_missing_find_only_scope_passes_gate() {
+        let app = router(make_state());
+        let body = serde_json::json!({
+            "blobDigests": [{"hash": HASH_A, "sizeBytes": 5}]
+        })
+        .to_string();
+        let req = Request::builder()
+            .uri(format!("/bazel/v2/{TENANT}/findMissingBlobs"))
+            .method("POST")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header("content-type", "application/json")
+            .header(crate::scope::SCOPE_HEADER, "find-missing")
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::OK, "find-only must pass find-missing");
+    }
+
+    /// ADR-0071: a find-ONLY (`find-missing`) token is DENIED on a CAS read
+    /// (403) — it grants existence probes ONLY, never download. Proves the
+    /// least-privilege boundary (find ⊄ read).
+    #[tokio::test]
+    async fn find_only_scope_denied_on_cas_read() {
+        let app = router(make_state());
+        let uri = format!("/bazel/v2/{TENANT}/blobs/{HASH_A}/10");
+        let req = Request::builder()
+            .uri(&uri)
+            .method("GET")
+            .header("x-corelink-tenant-id", TENANT)
+            .header("x-corelink-token-prefix", "tok_test")
+            .header(crate::scope::SCOPE_HEADER, "find-missing")
+            .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);

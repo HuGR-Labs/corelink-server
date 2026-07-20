@@ -73,8 +73,8 @@ use corelink_handler_customer::{
     TeamListResponse, TeamRemoveRequest, TeamRemoveResponse, UsageRequest, UsageResponse,
 };
 use corelink_pat::{
-    mint::mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_R,
-    SCOPE_CACHE_RW,
+    mint::mint, PatEnv, PatScopes, PatSigningKey, PrincipalId, TenantId, SCOPE_CACHE_FIND,
+    SCOPE_CACHE_R, SCOPE_CACHE_RW,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -316,13 +316,14 @@ fn map_requested_scopes(requested: &[String]) -> Result<&'static str, CustomerHa
     // classifier, and unrecognized tokens are REJECTED (fail-CLOSED) rather than
     // silently mapped to a privilege.
     match crate::scope::classify_requested_scopes(requested) {
+        Ok(crate::scope::RequestedScopeClass::FindMissing) => Ok("find-missing"),
         Ok(crate::scope::RequestedScopeClass::ReadOnly) => Ok("read-only"),
         Ok(crate::scope::RequestedScopeClass::ReadWrite) => Ok("read-write"),
         Ok(crate::scope::RequestedScopeClass::Admin) => Err(CustomerHandlerError::Unauthorized(
             "the admin scope is not grantable via self-serve key creation".to_owned(),
         )),
         Err(token) => Err(CustomerHandlerError::Unauthorized(format!(
-            "unrecognized scope token {token:?}; valid self-serve scopes: cache:read, cache:write"
+            "unrecognized scope token {token:?}; valid self-serve scopes: cache:read, cache:write, cache:find-missing"
         ))),
     }
 }
@@ -334,6 +335,7 @@ fn scope_to_list(scope: &str) -> Vec<String> {
     match scope {
         "read-only" => vec!["cache:read".to_owned()],
         "read-write" => vec!["cache:read".to_owned(), "cache:write".to_owned()],
+        "find-missing" => vec!["cache:find-missing".to_owned()],
         "" => vec![],
         other => vec![other.to_owned()],
     }
@@ -1226,10 +1228,16 @@ impl CustomerKeysHandler for D1CustomerHandler {
 
         // FROZEN scope map ('admin' NEVER grantable).
         let scope = map_requested_scopes(&req.scopes).inspect_err(|_| self.emit_sli(true))?;
-        let scope_bits = if scope == "read-write" {
-            PatScopes::from_u64(SCOPE_CACHE_RW)
-        } else {
-            PatScopes::from_u64(SCOPE_CACHE_R)
+        // Bitset mirrors the D1 `scope` string (ADR-0071). Read is a superset of
+        // find-missing, so read/read-write also carry the FIND bit; a find-only
+        // token carries ONLY `SCOPE_CACHE_FIND` (no read/write). (The authoritative
+        // enforcement input is the `scope` STRING forwarded as `x-corelink-scope`;
+        // these bits are kept correct for any consumer of the embedded scope set.)
+        let scope_bits = match scope {
+            "read-write" => PatScopes::from_u64(SCOPE_CACHE_RW | SCOPE_CACHE_FIND),
+            "find-missing" => PatScopes::from_u64(SCOPE_CACHE_FIND),
+            // "read-only" (and the least-privilege default)
+            _ => PatScopes::from_u64(SCOPE_CACHE_R | SCOPE_CACHE_FIND),
         };
 
         let tenant_uuid = Uuid::parse_str(&req.caller_tenant).map_err(|_| {
@@ -2510,6 +2518,18 @@ mod tests {
         );
         // Least privilege for an empty request.
         assert_eq!(map_requested_scopes(&[]).unwrap(), "read-only");
+        // ADR-0071: find-ONLY (true least-privilege) maps to "find-missing";
+        // combined with read/write it folds into the superset (read ⊇ find).
+        assert_eq!(
+            map_requested_scopes(&["cache:find-missing".to_owned()]).unwrap(),
+            "find-missing"
+        );
+        assert_eq!(
+            map_requested_scopes(&["cache:read".to_owned(), "cache:find-missing".to_owned()])
+                .unwrap(),
+            "read-only"
+        );
+        assert_eq!(scope_to_list("find-missing"), vec!["cache:find-missing".to_owned()]);
         // 'admin' is NEVER grantable.
         let err = map_requested_scopes(&["admin".to_owned()]).unwrap_err();
         assert!(
