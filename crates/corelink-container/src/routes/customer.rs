@@ -279,6 +279,13 @@ fn principal(headers: &HeaderMap) -> String {
 /// is skipped (mirrors how the native plane only runs the gate on the PAT path).
 const CLERK_TOKEN_PREFIX: &str = "clerk";
 
+/// The server-trusted team-RBAC role header the Worker forwards on the customer
+/// plane (the D1-resolved `team_member` role, migration 0074: `owner`/`admin`/
+/// `member`/`viewer`). The Worker is the SOLE setter (client copies are stripped
+/// at the edge), so the container may trust it — currently the OWNER-only gate on
+/// account deletion (`handle_account_delete`).
+const ROLE_HEADER: &str = "x-corelink-role";
+
 /// Logical wall-clock: 0 in routes (handler-provided `at_unix_ms` acts as
 /// stand-in; production wiring threads a real clock collaborator).
 fn now_ms() -> u64 {
@@ -999,6 +1006,19 @@ async fn handle_account_delete(
         return (
             StatusCode::FORBIDDEN,
             "account deletion requires a dashboard (Clerk) session",
+        )
+            .into_response();
+    }
+    // OWNER-only (team RBAC, migration 0074). This erases the WHOLE tenant
+    // (`request_erasure(&t)` below), so a non-owner seat — `admin`/`member`/
+    // `viewer`, which all resolve to the OWNING tenant and all carry a Clerk
+    // session — must NOT be able to nuke every teammate's account. The Worker
+    // forwards the D1-resolved role as the server-trusted `x-corelink-role`
+    // (client copies stripped); fail-CLOSED on anything but `owner`.
+    if header_or(&headers, ROLE_HEADER, "") != "owner" {
+        return (
+            StatusCode::FORBIDDEN,
+            "account deletion requires the tenant OWNER",
         )
             .into_response();
     }
@@ -2542,12 +2562,42 @@ mod tests {
             .method("POST")
             .header("x-corelink-tenant-id", "t-acct")
             .header("x-corelink-token-prefix", "clerk")
+            .header("x-corelink-role", "owner")
             .header("content-type", "application/json")
             .body(Body::from(json!({ "confirm": true }).to_string()))
             .unwrap();
         let resp = app.oneshot(r).await.expect("oneshot");
         assert_eq!(resp.status(), StatusCode::ACCEPTED);
         assert_eq!(requester.calls.lock().unwrap().as_slice(), ["t-acct"]);
+    }
+
+    #[tokio::test]
+    async fn account_delete_non_owner_clerk_session_is_403() {
+        // A NON-owner team seat (admin/member/viewer, migration 0074) carries a
+        // Clerk session and resolves to the OWNING tenant — but must NOT be able to
+        // erase the WHOLE tenant. Gated OWNER-only; the requester is never reached.
+        let requester = Arc::new(MockRequester::default());
+        let app = router(fixture_with_requester(requester.clone()));
+        for role in ["member", "admin", "viewer", ""] {
+            let r = Request::builder()
+                .uri("/v1/customer/account/delete")
+                .method("POST")
+                .header("x-corelink-tenant-id", "t-acct")
+                .header("x-corelink-token-prefix", "clerk")
+                .header("x-corelink-role", role)
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.clone().oneshot(r).await.expect("oneshot");
+            assert_eq!(
+                resp.status(),
+                StatusCode::FORBIDDEN,
+                "role {role:?} must be denied account deletion (owner-only)"
+            );
+        }
+        assert!(
+            requester.calls.lock().unwrap().is_empty(),
+            "a non-owner must never reach the erasure requester"
+        );
     }
 
     #[tokio::test]
@@ -2577,6 +2627,7 @@ mod tests {
             .uri("/v1/customer/account/delete")
             .method("POST")
             .header("x-corelink-token-prefix", "clerk")
+            .header("x-corelink-role", "owner")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(r).await.expect("oneshot");
@@ -2593,6 +2644,7 @@ mod tests {
             .method("POST")
             .header("x-corelink-tenant-id", "t-acct")
             .header("x-corelink-token-prefix", "clerk")
+            .header("x-corelink-role", "owner")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(r).await.expect("oneshot");
@@ -2611,6 +2663,7 @@ mod tests {
             .method("POST")
             .header("x-corelink-tenant-id", "t-acct")
             .header("x-corelink-token-prefix", "clerk")
+            .header("x-corelink-role", "owner")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(r).await.expect("oneshot");
@@ -2629,6 +2682,7 @@ mod tests {
             .method("POST")
             .header("x-corelink-tenant-id", "t-acct")
             .header("x-corelink-token-prefix", "clerk")
+            .header("x-corelink-role", "owner")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(r).await.expect("oneshot");
@@ -2846,6 +2900,7 @@ mod tests {
             .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "tenant-a")
             .header("x-corelink-token-prefix", "clerk")
+            .header("x-corelink-role", "owner")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -2888,6 +2943,7 @@ mod tests {
             .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "tenant-a")
             .header("x-corelink-token-prefix", "clerk")
+            .header("x-corelink-role", "owner")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -2942,6 +2998,7 @@ mod tests {
             .header("x-corelink-scope", "read-write billing")
             .header("x-corelink-tenant-id", "tenant-a")
             .header("x-corelink-token-prefix", "clerk")
+            .header("x-corelink-role", "owner")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
