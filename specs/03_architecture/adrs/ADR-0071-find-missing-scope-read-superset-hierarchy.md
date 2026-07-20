@@ -70,11 +70,18 @@ STRICT SUBSET of read: `find-missing ⊂ read-only ⊂ read-write`.**
   `bazel_v2::handle_find_missing` ONLY. `can_find_missing() = can_read() ||
   <explicit find token>`, so the gate widens to admit find-only PATs and admits
   nothing it did not already admit via read.
-- The self-serve mint persists a new `pat.scope` string value `"find-missing"`
-  (forwarded verbatim by the Worker as `x-corelink-scope`); the embedded
-  `PatScopes` bitset mirrors it (`SCOPE_CACHE_FIND`; read/read-write also carry the
-  FIND bit, reflecting the superset). An EMPTY request stays `read-only`
-  (back-compat), NOT find-only.
+- **Storage — an additive marker, NOT a 4th `pat.scope` value.** `pat.scope`
+  carries `CHECK (scope IN ('read-write','read-only','admin'))` (0037); adding a
+  value would need a DESTRUCTIVE rebuild of the live credential table (SQLite
+  cannot ALTER a CHECK), banned by INV-AUTH-MIGRATION-ADDITIVE. Instead a
+  find-only PAT stores the CHECK-safe base `scope = 'read-only'` PLUS an **additive
+  `find_only` column** (migration 0093, `ALTER TABLE pat ADD COLUMN`, same pattern
+  as the runner-job marker 0086). The Worker (`extractAuth`, sole
+  `x-corelink-scope` authority) reads `find_only` and — when `= 1` — forwards the
+  literal `x-corelink-scope: find-missing` (NOT the base `read-only`), so the
+  container narrows to `can_find_missing()` only. `scope_to_list` surfaces a
+  find-only PAT as `cache:find-missing` (via the marker), never `cache:read`. An
+  EMPTY request stays `read-only` (back-compat), NOT find-only.
 - `admin`/`owner` remain **never** self-serve-grantable; the fail-CLOSED
   exact-token grammar (rt-nuclear #15) is unchanged — truly-unknown tokens still
   `Err`.
@@ -105,6 +112,10 @@ mint's FIND bit) rather than reject read-scoped PATs.
 - **Strict non-implying (honour the dormant reapi model): read does NOT imply
   find.** Would break every existing read-scoped PAT's find-missing (a live
   regression) and revive dead infrastructure. Rejected.
+- **A new `pat.scope` value `"find-missing"` (a DESTRUCTIVE pat-table rebuild to
+  widen the 0037 CHECK).** Risky rebuild of the live credential table +
+  INV-AUTH-MIGRATION-ADDITIVE waiver, disproportionate for a dormant-plane
+  distinction. Rejected in favour of the additive `find_only` marker.
 - **Full bitset mint with a mounted strict plane.** Over-engineered for a dormant
   surface with no demand; large and launch-risky. Rejected.
 
@@ -117,7 +128,9 @@ mint's FIND bit) rather than reject read-scoped PATs.
 - `routes/bazel_v2::tests::find_missing_find_only_scope_passes_gate` (find-only →
   200) + `find_only_scope_denied_on_cas_read` (find-only → 403 on read) +
   `find_missing_missing_scope_returns_403` (no scope → 403, unchanged).
-- `customer_d1::tests::scope_map_is_frozen` (find-only → `"find-missing"`;
-  find+read → `"read-only"`; `scope_to_list("find-missing")`).
+- `customer_d1::tests::{scope_map_is_frozen, keys_create_find_only_stores_read_only_base_plus_marker}`
+  (find-only → base `"read-only"` + `find_only = 1`; display `cache:find-missing`).
+- `worker/tests/find_only_scope_forward.test.ts` (find_only=1 → forwarded
+  `x-corelink-scope: find-missing`; normal PAT → base scope, no regression).
 - Live: a dashboard-minted find-only PAT performs `FindMissingBlobs` and is denied
   CAS read (verified post-roll).

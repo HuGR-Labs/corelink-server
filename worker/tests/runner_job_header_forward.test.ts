@@ -74,6 +74,7 @@ function makeD1(runnerJobAcKey: string | null): D1Database {
                 expires_ms: Date.now() + 3_600_000,
                 scope: "cas:rw",
                 runner_job_ac_key: runnerJobAcKey,
+                find_only: null,
               } as T;
             }
             return null as T | null;

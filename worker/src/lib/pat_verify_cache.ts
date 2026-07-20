@@ -115,6 +115,13 @@ export interface CachedPatRow {
   readonly scope: string | null;
   /** D1 `pat.runner_job_ac_key` (NULL on normal PATs; set on runner-minted). */
   readonly runner_job_ac_key: string | null;
+  /**
+   * D1 `pat.find_only` (0093): NULL/0 = normal PAT; 1 = a find-only (least-
+   * privilege) PAT — the caller forwards `x-corelink-scope: find-missing`
+   * (NOT the base `read-only` scope) so the container narrows it to the
+   * find-missing capability ONLY (ADR-0071).
+   */
+  readonly find_only: number | null;
 }
 
 /**
@@ -183,7 +190,7 @@ function putCache(tokenId: string, row: CachedPatRow, nowMs: number): void {
 }
 
 const PAT_ROW_SQL =
-  "SELECT tenant_id, expires_ms, scope, runner_job_ac_key FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1";
+  "SELECT tenant_id, expires_ms, scope, runner_job_ac_key, find_only FROM pat WHERE token_id = ?1 AND revoked_at_ms IS NULL LIMIT 1";
 
 /**
  * Read the `pat` row, preferring the replica `readDb` and falling back to the
@@ -355,6 +362,7 @@ async function kvGetPatRow(kv: KvReader, tokenId: string): Promise<CachedPatRow 
       scope: typeof o["scope"] === "string" ? (o["scope"] as string) : null,
       runner_job_ac_key:
         typeof o["runner_job_ac_key"] === "string" ? (o["runner_job_ac_key"] as string) : null,
+      find_only: typeof o["find_only"] === "number" ? (o["find_only"] as number) : null,
     };
   } catch {
     return null; // malformed JSON → miss.

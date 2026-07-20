@@ -1292,7 +1292,12 @@ async function extractAuth(
     ok: true,
     tenantId: row.tenant_id,
     tokenPrefix,
-    scope: row.scope ?? "",
+    // ADR-0071: a FIND-ONLY PAT (`pat.find_only = 1`, migration 0093) stores the
+    // CHECK-safe base `read-only` but is NARROWED here to the find-missing
+    // capability ONLY — the Worker (sole `x-corelink-scope` authority) forwards
+    // the literal `find-missing`, so the container grants `can_find_missing()`
+    // and 403s CAS read/write. NULL/0 = normal PAT → forward the base scope.
+    scope: row.find_only === 1 ? "find-missing" : (row.scope ?? ""),
     // WP5a: carry the narrowed runner-job marker (NULL on normal PATs). The
     // forward sites set the runner-job headers only when this is non-NULL.
     runnerJobAcKey: row.runner_job_ac_key ?? null,
