@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Operator-mint the Group-A e2e personas on a STABLE tenant + seed their D1 state.
 
-Recipe (proven 2026-06-24): POST /_internal/pat/mint (gate = CORELINK_INTERNAL_AUTH_KEY)
+Recipe (proven 2026-06-24): POST /_internal/pat/mint (gate = CORELINK_PAT_MINT_AUTH_KEY,
+the dedicated mint key — the shared CORELINK_INTERNAL_AUTH_KEY no longer authorizes it)
 → INSERT the `pat` row via the CF D1 HTTP API with PARAM BINDING (the Argon2id PHC
 hash contains `$`, so string interpolation is unsafe) → the PAT verifies end-to-end at
 both the Worker (HMAC + D1 expiry lookup) and the container (NativePatGate Argon2id).
@@ -10,8 +11,10 @@ Writes `CORELINK_E2E_*` exports to the path in argv[1] (default /tmp/e2e-persona
 for `provision-and-run-suite.sh` to source. Persona PATs live on a stable tenant so they
 survive across runs (unlike the ephemeral Clerk-signup TA).
 
-Env required: CORELINK_INTERNAL_AUTH_KEY, CLOUDFLARE_API_TOKEN, PAT_SIGNING_KEY (mint),
-FABRIC_INTROSPECT_AUTH_KEY (introspect-key export). All read from the process env.
+Env required: CORELINK_PAT_MINT_AUTH_KEY (mint gate; falls back to the shared
+CORELINK_INTERNAL_AUTH_KEY only on pre-remediation deploys), CLOUDFLARE_API_TOKEN,
+PAT_SIGNING_KEY (mint), FABRIC_INTROSPECT_AUTH_KEY (introspect-key export). All read
+from the process env.
 """
 import hashlib
 import json
@@ -32,7 +35,13 @@ STABLE_TENANT = os.environ.get("E2E_STABLE_TENANT", "3560e213-1e23-4fd0-8871-703
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124 Safari/537.36")  # WAF 1010 dodges urllib UA
 
-INTERNAL = os.environ["CORELINK_INTERNAL_AUTH_KEY"]
+# The any-tenant PAT mint (`/_internal/pat/mint`) is gated by the DEDICATED
+# `CORELINK_PAT_MINT_AUTH_KEY` — the DD-HIGH remediation (see
+# `crates/corelink-container/src/routes/internal_pat.rs`) deliberately split it
+# off from the broad shared `CORELINK_INTERNAL_AUTH_KEY`, which no longer
+# authorizes the mint. Prefer the dedicated key; fall back to the shared one only
+# for pre-remediation deploys.
+INTERNAL = os.environ.get("CORELINK_PAT_MINT_AUTH_KEY") or os.environ["CORELINK_INTERNAL_AUTH_KEY"]
 CFT = os.environ["CLOUDFLARE_API_TOKEN"]
 
 
@@ -157,6 +166,16 @@ def provision():
     m = mint(STABLE_TENANT, "cas:rw")
     insert_pat(m, STABLE_TENANT, "read-write", 1, "e2e-expired")  # expires_ms=1 (1970)
     out["CORELINK_E2E_PAT_EXPIRED"] = m["token_plaintext"]
+
+    # P4 Revoked — a genuine PAT that WAS valid, then soft-revoked (the leaked-
+    # then-revoked-token attacker case). Mint + insert an active row, then set
+    # `revoked_at_ms` (migration 0063: non-NULL ⇒ the Worker/container lookups
+    # filter `revoked_at_ms IS NULL`, so it uniformly fails closed) → every op
+    # DENIED. Faithful to the customer soft-revoke path (not a hard delete).
+    m = mint(STABLE_TENANT, "cas:rw")
+    insert_pat(m, STABLE_TENANT, "read-write", m["expires_ms"], "e2e-revoked")
+    d1("UPDATE pat SET revoked_at_ms = ?2 WHERE token_id = ?1", [m["token_id"], now_ms])
+    out["CORELINK_E2E_PAT_REVOKED"] = m["token_plaintext"]
 
     # Runner — seed a runners_entitlement row (additive) + a cas:rw PAT on the
     # runner tenant. RUNNER_PRO cap = 40 concurrency / 240 vCPU-h.
