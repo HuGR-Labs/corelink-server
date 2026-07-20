@@ -131,10 +131,30 @@ pub fn classify_requested_scopes(requested: &[String]) -> Result<RequestedScopeC
         for t in tokens(raw) {
             match t.to_ascii_lowercase().as_str() {
                 "admin" | "owner" => admin = true,
-                "cas:rw" | "cas:w" | "read-write" | "cache:write" | "cache:rw" | "write" => {
+                // Write class. Includes the CANONICAL corelink-pat wire form
+                // `cache:w` (`SCOPE_CACHE_W`, auth_model.md §3.1) alongside the
+                // `cas:*` / long-form aliases — the self-serve mint endpoint must
+                // accept the SAME scope vocabulary the data plane enforces, which
+                // is exactly what the dashboard (`KeysClient` SCOPE_SPECS) sends.
+                "cas:rw" | "cas:w" | "cache:w" | "read-write" | "cache:write" | "cache:rw"
+                | "write" => {
                     write = true;
                 }
-                "cas:r" | "read-only" | "cache:read" => {}
+                // Read class. `cache:r` is the canonical corelink-pat read form
+                // (`SCOPE_CACHE_R`).
+                //
+                // `cache:find-missing` (`SCOPE_CACHE_FIND`) is DELIBERATELY NOT
+                // accepted here: the self-serve mint provisions the PAT bitset from
+                // this coarse read/write string (`customer_d1::create`, hard-coded
+                // `SCOPE_CACHE_R` / `SCOPE_CACHE_RW`) and has NO path that sets the
+                // distinct `SCOPE_CACHE_FIND` bit. The REAPI plane enforces
+                // `CacheFindMissing` as a non-implying scope (`corelink-reapi`:
+                // `cache_find_missing_does_not_imply_cache_read`), so classifying
+                // find-missing as read would mint a MISLABELED token — it could not
+                // actually do FindMissingBlobs (under-grant) yet would silently gain
+                // full download read (over-grant). Faithful find-missing support
+                // needs a bitset-based mint; until then it stays an honest `Err`.
+                "cas:r" | "cache:r" | "read-only" | "cache:read" => {}
                 other => return Err(other.to_owned()),
             }
         }
@@ -406,6 +426,21 @@ mod tests {
         assert_eq!(classify_requested_scopes(&[]), Ok(ReadOnly)); // least privilege
         assert_eq!(classify_requested_scopes(&one("admin")), Ok(Admin));
         assert_eq!(classify_requested_scopes(&one("owner")), Ok(Admin));
+        // CANONICAL corelink-pat wire form (auth_model.md §3.1) — exactly what the
+        // dashboard `KeysClient` SCOPE_SPECS send. REGRESSION: these were NOT in the
+        // vocabulary, so every dashboard "Create token" with the default `cache:r`
+        // 401'd (unrecognized token → Unauthorized). They must classify, not error.
+        assert_eq!(classify_requested_scopes(&one("cache:r")), Ok(ReadOnly));
+        assert_eq!(classify_requested_scopes(&one("cache:w")), Ok(ReadWrite));
+        // `cache:find-missing` is DELIBERATELY still rejected: the self-serve mint
+        // provisions only `SCOPE_CACHE_R`/`SCOPE_CACHE_RW` (no `SCOPE_CACHE_FIND`
+        // path), and REAPI enforces `CacheFindMissing` as a non-implying scope, so
+        // accepting it would mint a mislabeled token (under-grant find-missing,
+        // over-grant read). Faithful support needs a bitset-based mint (follow-up).
+        assert!(
+            classify_requested_scopes(&one("cache:find-missing")).is_err(),
+            "find-missing must stay rejected until the mint can provision SCOPE_CACHE_FIND",
+        );
         // Case-insensitive.
         assert_eq!(
             classify_requested_scopes(&one("CACHE:WRITE")),

@@ -5,7 +5,7 @@ description: "The container's deep PAT possession proof — bounded Argon2id, a 
 source_files:
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "d2a1f643464c2bd4636cd7fb62f17d3843c621ee"
+checkpoint_sha: "5b47508eeed9a108edc4b00c9c3ba9362e3311a8"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "argon2id", "scope", "dos"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -56,7 +56,11 @@ allowed to do on a cache surface.
 - An empty/missing/unrecognized scope grants NOTHING — both read and write return `false`
   (`crates/corelink-container/src/scope.rs:73-95`).
 - Self-serve scope classification is exact-token and fail-CLOSED: unknown grammar can never silently map
-  to a privilege (`crates/corelink-container/src/scope.rs:112-149`).
+  to a privilege. The accepted vocabulary is the canonical corelink-pat wire form the data plane
+  enforces — `cache:r`/`cache:w` (`SCOPE_CACHE_R`/`SCOPE_CACHE_RW`) plus the `cas:*` and long-form
+  aliases. `cache:find-missing` is deliberately still rejected: the mint provisions only the coarse
+  read/write bitset and has no `SCOPE_CACHE_FIND` path, so accepting it would mint a mislabeled token
+  (`crates/corelink-container/src/scope.rs:112-169`).
 - A permit is acquired only AFTER the cheap HMAC fast-reject (`crates/corelink-container/src/adapter_pat.rs:647-648`),
   so a forged token never reaches the permit acquire (`crates/corelink-container/src/adapter_pat.rs:720-733`).
 
@@ -69,8 +73,10 @@ allowed to do on a cache surface.
   a SEPARATE internal-auth gate, not this scope module
   (`crates/corelink-container/src/scope.rs:34-45`).
 - `classify_requested_scopes` is the shared truth for the mint escalation gate and the D1 persister; the
-  substring-vs-exact-token divergence it closed once let `"writes"` slip through
-  (`crates/corelink-container/src/scope.rs:112-149`).
+  substring-vs-exact-token divergence it closed once let `"writes"` slip through. It must accept the SAME
+  faithfully-mintable scope vocabulary the dashboard `KeysClient` sends (the canonical `cache:r`/`cache:w`)
+  — a gap here 401s every self-serve "Create token"
+  (`crates/corelink-container/src/scope.rs:112-169`).
 
 # Citations
 
@@ -83,4 +89,4 @@ allowed to do on a cache surface.
 7. `crates/corelink-container/src/adapter_pat.rs:753-761` — the fail-CLOSED scope gate + write-bit surfacing.
 8. `crates/corelink-container/src/scope.rs:73-95` — fail-CLOSED: empty/missing scope grants nothing (`requires_cache_read`/`_write`).
 9. `crates/corelink-container/src/scope.rs:67-95` — exact-token `requires_cache_read` / `requires_cache_write`.
-10. `crates/corelink-container/src/scope.rs:112-149` — `classify_requested_scopes`: the single, fail-CLOSED scope truth.
+10. `crates/corelink-container/src/scope.rs:112-169` — `classify_requested_scopes`: the single, fail-CLOSED scope truth (canonical `cache:r`/`cache:w` + aliases; `cache:find-missing` stays rejected).
