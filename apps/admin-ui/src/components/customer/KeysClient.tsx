@@ -63,14 +63,13 @@ const SCOPE_SPECS: readonly ScopeSpec[] = [
     id: "cache:find-missing",
     label: "Find missing",
     desc: "Batch-check which artifacts are absent before uploading.",
-    help: "The REAPI find-missing-blobs probe: a client asks 'which of these do you already have?' so it only uploads what's missing. Build tools (Bazel, sccache) use this to avoid re-uploading known objects.",
+    help: "The REAPI find-missing-blobs probe: a client asks 'which of these do you already have?' so it only uploads what's missing. Build tools (Bazel, sccache) use this to avoid re-uploading known objects. Least-privilege: it grants ONLY existence probes — no download, no upload.",
   },
-  {
-    id: "admin:audit",
-    label: "Read audit log",
-    desc: "Read this tenant's audit events. No cache access.",
-    help: "Read-only access to your tenant's audit trail (who did what, when). Grant this to compliance/monitoring integrations. It does NOT grant any cache read or write.",
-  },
+  // NOTE: the audit log is read from the dashboard (the "Audit log" page, your
+  // signed-in session) — it is NOT a self-serve PAT scope. `admin:audit`
+  // (`SCOPE_ADMIN_AUDIT`) is an OPERATOR/internal-mint scope only; there is no
+  // customer-PAT endpoint that consumes it, and the self-serve mint never grants
+  // an `admin:*` scope. Offering it here minted nothing (401) — removed.
 ] as const;
 
 const DEFAULT_SCOPES = ["cache:r"];
