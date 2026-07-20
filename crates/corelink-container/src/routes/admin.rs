@@ -964,7 +964,11 @@ fn map_err(e: AdminHandlerError) -> axum::response::Response {
         }
         AdminHandlerError::ApprovalLedgerUnavailable(_) => {
             // Fail-CLOSED: cannot authoritatively consult+consume the ledger.
-            (StatusCode::SERVICE_UNAVAILABLE, "approval ledger unavailable").into_response()
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "approval ledger unavailable",
+            )
+                .into_response()
         }
         AdminHandlerError::AuditFailed(_) => {
             // Fail-CLOSED: audit pipeline down = 503; never mutate.
@@ -1009,7 +1013,10 @@ impl AdminApproveBody {
     fn resource(&self) -> Result<String, &'static str> {
         match self.op_kind.as_str() {
             "set_tenant_tier" => {
-                let tenant = self.tenant.as_deref().ok_or("set_tenant_tier requires tenant")?;
+                let tenant = self
+                    .tenant
+                    .as_deref()
+                    .ok_or("set_tenant_tier requires tenant")?;
                 Ok(format!("tenant:{tenant}"))
             }
             "rotate_admin_token" => {
@@ -1056,10 +1063,11 @@ async fn handle_approve(
     };
     // The approver identity is derived from the (dedicated) approve gate, NEVER
     // from the client body — mirrors the mutate path's operator-principal rule.
-    match state
-        .approval_writer
-        .record_approval(&body.approval_id, ADMIN_APPROVER_PRINCIPAL, &resource)
-    {
+    match state.approval_writer.record_approval(
+        &body.approval_id,
+        ADMIN_APPROVER_PRINCIPAL,
+        &resource,
+    ) {
         Ok(()) => {
             tracing::info!(
                 event = "AdminApprovalRecorded",
@@ -1076,7 +1084,11 @@ async fn handle_approve(
             if e.contains("already consumed") {
                 (StatusCode::CONFLICT, "approval already used").into_response()
             } else {
-                (StatusCode::SERVICE_UNAVAILABLE, "approval ledger unavailable").into_response()
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "approval ledger unavailable",
+                )
+                    .into_response()
             }
         }
     }
@@ -1357,7 +1369,10 @@ mod tests {
         };
         st.mutate.mutate(mk()).expect("first commit");
         let err = st.mutate.mutate(mk()).expect_err("replay rejected");
-        assert!(matches!(err, AdminHandlerError::DualApprovalConsumed { .. }));
+        assert!(matches!(
+            err,
+            AdminHandlerError::DualApprovalConsumed { .. }
+        ));
         // Exactly one applied resource; no double-spend.
         assert_eq!(shared.applied_snapshot().expect("snap").len(), 1);
         let rows = audit.snapshot().expect("audit");

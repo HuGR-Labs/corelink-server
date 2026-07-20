@@ -474,7 +474,10 @@ mod tests {
             classify_requested_scopes(&one("cache:find-missing")),
             Ok(FindMissing)
         );
-        assert_eq!(classify_requested_scopes(&one("find-missing")), Ok(FindMissing));
+        assert_eq!(
+            classify_requested_scopes(&one("find-missing")),
+            Ok(FindMissing)
+        );
         // find + read ⇒ read (superset); find + write ⇒ read-write.
         assert_eq!(
             classify_requested_scopes(&["cache:r".into(), "cache:find-missing".into()]),
@@ -533,8 +536,18 @@ mod tests {
         assert!(!requires_cache_write("find-missing"));
         // Read is a SUPERSET of find-missing (no regression for existing PATs):
         // every read/write/admin scope satisfies find-missing.
-        for s in ["read-only", "read-write", "cas:r", "cas:rw", "cas:w", "admin"] {
-            assert!(requires_find_missing(s), "{s:?} (read⊇find) must satisfy find-missing");
+        for s in [
+            "read-only",
+            "read-write",
+            "cas:r",
+            "cas:rw",
+            "cas:w",
+            "admin",
+        ] {
+            assert!(
+                requires_find_missing(s),
+                "{s:?} (read⊇find) must satisfy find-missing"
+            );
         }
         // Fail-CLOSED: an empty / unknown scope grants no find-missing.
         assert!(!requires_find_missing(""));

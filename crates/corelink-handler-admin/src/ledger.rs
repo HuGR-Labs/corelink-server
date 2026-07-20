@@ -315,7 +315,9 @@ mod tests {
         l.record("a1", "approver", "tenant:t1").expect("record");
         l.verify_and_consume("a1", "operator", "tenant:t1")
             .expect("accept");
-        let err = l.record("a1", "approver", "tenant:t1").expect_err("refused");
+        let err = l
+            .record("a1", "approver", "tenant:t1")
+            .expect_err("refused");
         assert!(err.contains("already consumed"));
     }
 }

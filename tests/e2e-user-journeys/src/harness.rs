@@ -745,7 +745,10 @@ mod tests {
         }
         // The failure message must name the 404-is-not-a-deny reason.
         let msg = expect_gate_denied("mint", 404).unwrap_err();
-        assert!(msg.contains("404") && msg.contains("gate"), "msg was: {msg}");
+        assert!(
+            msg.contains("404") && msg.contains("gate"),
+            "msg was: {msg}"
+        );
     }
 
     #[test]

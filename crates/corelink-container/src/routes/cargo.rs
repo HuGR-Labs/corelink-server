@@ -53,11 +53,11 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use axum::Router;
 use axum::extract::Request;
 use axum::http::{Method, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
+use axum::Router;
 
 use async_trait::async_trait;
 use corelink_adapter_host::cargo::config::DEFAULT_BODY_SIZE_LIMIT_BYTES;
@@ -65,13 +65,13 @@ use corelink_adapter_host::cargo::ports::{
     CasError, CasStore, ResolvedTenant, SharedTenantResolver, TenantResolveError, TenantResolver,
 };
 use corelink_adapter_host::cargo::translate::key_from_path;
-use corelink_adapter_host::cargo::{CargoAdapterConfig, server};
+use corelink_adapter_host::cargo::{server, CargoAdapterConfig};
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
 use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
 
 use crate::adapter_cache::{MoatCache, MoatError, UrlMapStore};
 use crate::adapter_pat::{PatVerifier, VerifyError};
-use crate::scope::{SCOPE_HEADER, requires_cache_read, requires_cache_write};
+use crate::scope::{requires_cache_read, requires_cache_write, SCOPE_HEADER};
 
 /// Service principal recorded on adapter CAS operations. Identifies the
 /// adapter-host service, NOT the end-user PAT (which the resolver verified).

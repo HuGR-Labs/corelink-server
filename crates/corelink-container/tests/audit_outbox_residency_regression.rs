@@ -67,7 +67,13 @@ fn seeded() -> Connection {
 
 fn bind() -> [&'static dyn rusqlite::ToSql; 7] {
     [
-        &"id-1", &"t-enam", &"blake3:aa", &"req-1", &"corelink.cas.read_attempted", &"{}", &1_i64,
+        &"id-1",
+        &"t-enam",
+        &"blake3:aa",
+        &"req-1",
+        &"corelink.cas.read_attempted",
+        &"{}",
+        &1_i64,
     ]
 }
 
@@ -76,12 +82,19 @@ fn fixed_insert_satisfies_residency_trigger_for_enam_tenant() {
     let conn = seeded();
     // The fix: region is tagged from tenant.primary_region ('enam') → trigger
     // condition `'enam' != 'enam'` is false → INSERT succeeds.
-    let n = conn.execute(FIXED_INSERT, bind()).expect("fixed INSERT must succeed");
+    let n = conn
+        .execute(FIXED_INSERT, bind())
+        .expect("fixed INSERT must succeed");
     assert_eq!(n, 1, "the audit row must be persisted");
     let region: String = conn
-        .query_row("SELECT region FROM audit_outbox WHERE id='id-1'", [], |r| r.get(0))
+        .query_row("SELECT region FROM audit_outbox WHERE id='id-1'", [], |r| {
+            r.get(0)
+        })
         .unwrap();
-    assert_eq!(region, "enam", "row must be tagged with the tenant's residency region");
+    assert_eq!(
+        region, "enam",
+        "row must be tagged with the tenant's residency region"
+    );
 }
 
 #[test]
@@ -103,8 +116,16 @@ fn fixed_insert_tolerates_absent_tenant_row() {
     // UNKNOWN → no abort → INSERT succeeds (mirrors a pre-provisioning / synthetic
     // caller, and keeps the audit path fail-safe rather than fail-closed).
     let params: [&dyn rusqlite::ToSql; 7] = [
-        &"id-2", &"t-missing", &"blake3:bb", &"req-2", &"corelink.ac.read_attempted", &"{}", &2_i64,
+        &"id-2",
+        &"t-missing",
+        &"blake3:bb",
+        &"req-2",
+        &"corelink.ac.read_attempted",
+        &"{}",
+        &2_i64,
     ];
-    let n = conn.execute(FIXED_INSERT, params).expect("absent-tenant INSERT must succeed");
+    let n = conn
+        .execute(FIXED_INSERT, params)
+        .expect("absent-tenant INSERT must succeed");
     assert_eq!(n, 1);
 }

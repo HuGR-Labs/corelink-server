@@ -446,53 +446,53 @@ impl AdminMutateHandler for InMemoryAdminHandler {
         // authenticated approver. Consume happens here (before the state
         // change) so a concurrent replay of the same approval cannot
         // double-spend.
-        let verified = match self.ledger.verify_and_consume(
-            &token.approval_id,
-            &req.initiator,
-            &resource,
-        ) {
-            Ok(v) => v,
-            Err(rejection) => {
-                // Audit the rejection BEFORE returning (fail-CLOSED ordering).
-                let recorded_approver = match &rejection {
-                    ApprovalRejection::SelfApproval { approver } => Some(approver.clone()),
-                    _ => None,
-                };
-                self.audit
-                    .emit(AuditEvent {
-                        kind: AuditEventKind::MutateDualApprovalRejected,
-                        principal: req.initiator.clone(),
-                        resource: resource.clone(),
-                        approver: recorded_approver,
-                        at_unix_ms: req.at_unix_ms,
-                    })
-                    .map_err(AdminHandlerError::AuditFailed)?;
-                emit(true);
-                return Err(match rejection {
-                    ApprovalRejection::Unknown => AdminHandlerError::DualApprovalUnknown {
-                        approval_id: token.approval_id,
-                    },
-                    ApprovalRejection::ScopeMismatch => {
-                        AdminHandlerError::DualApprovalScopeMismatch {
+        let verified =
+            match self
+                .ledger
+                .verify_and_consume(&token.approval_id, &req.initiator, &resource)
+            {
+                Ok(v) => v,
+                Err(rejection) => {
+                    // Audit the rejection BEFORE returning (fail-CLOSED ordering).
+                    let recorded_approver = match &rejection {
+                        ApprovalRejection::SelfApproval { approver } => Some(approver.clone()),
+                        _ => None,
+                    };
+                    self.audit
+                        .emit(AuditEvent {
+                            kind: AuditEventKind::MutateDualApprovalRejected,
+                            principal: req.initiator.clone(),
+                            resource: resource.clone(),
+                            approver: recorded_approver,
+                            at_unix_ms: req.at_unix_ms,
+                        })
+                        .map_err(AdminHandlerError::AuditFailed)?;
+                    emit(true);
+                    return Err(match rejection {
+                        ApprovalRejection::Unknown => AdminHandlerError::DualApprovalUnknown {
                             approval_id: token.approval_id,
-                            resource,
+                        },
+                        ApprovalRejection::ScopeMismatch => {
+                            AdminHandlerError::DualApprovalScopeMismatch {
+                                approval_id: token.approval_id,
+                                resource,
+                            }
                         }
-                    }
-                    ApprovalRejection::SelfApproval { approver } => {
-                        AdminHandlerError::DualApprovalSelfApproval {
-                            initiator: req.initiator,
-                            approver,
+                        ApprovalRejection::SelfApproval { approver } => {
+                            AdminHandlerError::DualApprovalSelfApproval {
+                                initiator: req.initiator,
+                                approver,
+                            }
                         }
-                    }
-                    ApprovalRejection::Consumed => AdminHandlerError::DualApprovalConsumed {
-                        approval_id: token.approval_id,
-                    },
-                    ApprovalRejection::Backend(msg) => {
-                        AdminHandlerError::ApprovalLedgerUnavailable(msg)
-                    }
-                });
-            }
-        };
+                        ApprovalRejection::Consumed => AdminHandlerError::DualApprovalConsumed {
+                            approval_id: token.approval_id,
+                        },
+                        ApprovalRejection::Backend(msg) => {
+                            AdminHandlerError::ApprovalLedgerUnavailable(msg)
+                        }
+                    });
+                }
+            };
 
         // Apply mutation.
         {
@@ -676,10 +676,7 @@ mod tests {
                 at_unix_ms: 1,
             })
             .expect_err("forged approver rejected");
-        assert!(matches!(
-            err,
-            AdminHandlerError::DualApprovalUnknown { .. }
-        ));
+        assert!(matches!(err, AdminHandlerError::DualApprovalUnknown { .. }));
         assert!(h.applied_snapshot().expect("snap").is_empty());
         let rows = audit.snapshot().expect("audit");
         assert_eq!(rows[0].kind, AuditEventKind::MutateAttempted);
@@ -693,9 +690,7 @@ mod tests {
     #[test]
     fn mutate_scope_mismatch_rejected() {
         let (_audit, _sli, ledger, h) = fixture();
-        ledger
-            .record("a1", "bob", "tenant:OTHER")
-            .expect("record");
+        ledger.record("a1", "bob", "tenant:OTHER").expect("record");
         let err = h
             .mutate(AdminMutateRequest {
                 op: MutateOp::set_tenant_tier("t1", "max"),
@@ -726,7 +721,10 @@ mod tests {
         };
         h.mutate(mk()).expect("first spend commits");
         let err = h.mutate(mk()).expect_err("replay rejected");
-        assert!(matches!(err, AdminHandlerError::DualApprovalConsumed { .. }));
+        assert!(matches!(
+            err,
+            AdminHandlerError::DualApprovalConsumed { .. }
+        ));
         // Exactly one applied mutation despite two attempts.
         assert_eq!(h.applied_snapshot().expect("snap").len(), 1);
     }

@@ -2571,12 +2571,21 @@ mod tests {
             "read-only"
         );
         // find + read is NOT find-only (it's a full read grant).
-        assert!(!mint_is_find_only(&["cache:read".to_owned(), "cache:find-missing".to_owned()]));
+        assert!(!mint_is_find_only(&[
+            "cache:read".to_owned(),
+            "cache:find-missing".to_owned()
+        ]));
         assert!(!mint_is_find_only(&["cache:read".to_owned()]));
         // Display: a find-only PAT surfaces as cache:find-missing (via the marker),
         // a normal read PAT as cache:read.
-        assert_eq!(scope_to_list("read-only", true), vec!["cache:find-missing".to_owned()]);
-        assert_eq!(scope_to_list("read-only", false), vec!["cache:read".to_owned()]);
+        assert_eq!(
+            scope_to_list("read-only", true),
+            vec!["cache:find-missing".to_owned()]
+        );
+        assert_eq!(
+            scope_to_list("read-only", false),
+            vec!["cache:read".to_owned()]
+        );
         // 'admin' is NEVER grantable.
         let err = map_requested_scopes(&["admin".to_owned()]).unwrap_err();
         assert!(

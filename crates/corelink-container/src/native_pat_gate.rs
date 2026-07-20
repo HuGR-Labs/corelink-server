@@ -294,7 +294,11 @@ impl NativePatGate {
     /// the window is anchored at population, not last use).
     #[cfg(test)]
     fn cache_expires_at_for_test(&self, fp: &str) -> Option<Instant> {
-        self.cache.lock().ok()?.get(fp).map(|entry| entry.expires_at)
+        self.cache
+            .lock()
+            .ok()?
+            .get(fp)
+            .map(|entry| entry.expires_at)
     }
 
     /// Test-only: force the cached entry for `fp` to already be expired, so
@@ -652,7 +656,8 @@ mod tests {
     async fn cache_expiry_forces_reverify_and_rejects_revoked_pat() {
         let key = test_key();
         let (pt, tid, hash, tenant) = mint_pat(&key, 30);
-        let lookup: Arc<ToggleableLookup> = Arc::new(ToggleableLookup::new(tid, row(&hash, &tenant)));
+        let lookup: Arc<ToggleableLookup> =
+            Arc::new(ToggleableLookup::new(tid, row(&hash, &tenant)));
         let lookup_dyn: Arc<dyn PatRowLookup> = lookup.clone();
         let verifier = Arc::new(PatVerifier::new(lookup_dyn, key));
         let gate = NativePatGate::new_for_test(verifier);
