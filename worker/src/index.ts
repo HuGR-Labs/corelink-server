@@ -561,6 +561,13 @@ const CLIENT_TRUST_HEADERS: ReadonlyArray<string> = [
   // bypass the destructive-arm (erasure/rectification) step-up gate in
   // routes/dsr/portal.rs — strip it structurally on EVERY forward.
   "x-corelink-mfa-verified",
+  // Team RBAC role (migration 0074): the Worker is the SOLE setter of
+  // x-corelink-role (the D1-resolved team_member role — `owner`/`admin`/`member`/
+  // `viewer`), forwarded on the customer plane so the container can gate
+  // role-restricted operations (e.g. OWNER-only account deletion). A client MUST
+  // NOT be able to smuggle a forged role to escalate — strip it structurally on
+  // EVERY forward so only the Worker's D1-derived value reaches the container.
+  "x-corelink-role",
 ];
 
 /**
@@ -2477,6 +2484,12 @@ const baseHandler: ExportedHandler<Env> = {
               "x-corelink-scope",
               custClerkAuth.role === "viewer" ? "read-only" : "read-write billing",
             );
+            // Team RBAC role (0074): forward the D1-resolved role so the container
+            // can gate OWNER-only operations (account deletion erases the WHOLE
+            // tenant — a non-owner seat must not trigger it). Sole setter; the
+            // client copy was stripped above. `x-corelink-scope` only distinguishes
+            // viewer vs the rest, so it cannot express "is owner" — the role does.
+            h.set("x-corelink-role", custClerkAuth.role);
             // DSR portal (/v1/privacy/*) destructive-arm MFA step-up: the Worker
             // is the SOLE setter of x-corelink-mfa-verified (stripped above). The
             // container gate (routes/dsr/portal.rs) is fail-CLOSED on this trusted
