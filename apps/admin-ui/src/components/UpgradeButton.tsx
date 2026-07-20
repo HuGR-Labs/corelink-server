@@ -47,6 +47,7 @@ import { InlineError, Callout } from "@/components/ui/linear";
 import type { CheckoutTierId } from "@/lib/pricing";
 import { DpaStep } from "@/components/DpaStep";
 import type { DpaNotice } from "@/lib/dpa-notice";
+import { requestBasePath } from "@/lib/route-matcher";
 import type { Locale } from "@/i18n/messages";
 
 const SUPPORTED_LOCALES: readonly Locale[] = ["en", "pt", "es", "de"];
@@ -115,7 +116,14 @@ export function UpgradeButton({
     setBusy(true);
     try {
       const f = fetchImpl ?? fetch;
-      const res = await f("/api/checkout/session", {
+      // Re-attach the surface's `/corelink` basePath: Next auto-prefixes
+      // basePath onto framework links but NEVER onto a raw `fetch()` URL, so a
+      // bare `/api/checkout/session` posts to the apex (→ 405, checkout dead)
+      // on the path surface after the humangr.com/corelink migration (#804).
+      // Derive it from the current pathname so both migration surfaces work.
+      const basePath =
+        typeof window !== "undefined" ? requestBasePath(window.location.pathname) : "";
+      const res = await f(`${basePath}/api/checkout/session`, {
         method: "POST",
         headers: {
           "Accept": "application/json",
