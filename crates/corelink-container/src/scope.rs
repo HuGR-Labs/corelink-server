@@ -131,10 +131,20 @@ pub fn classify_requested_scopes(requested: &[String]) -> Result<RequestedScopeC
         for t in tokens(raw) {
             match t.to_ascii_lowercase().as_str() {
                 "admin" | "owner" => admin = true,
-                "cas:rw" | "cas:w" | "read-write" | "cache:write" | "cache:rw" | "write" => {
+                // Write class. Includes the CANONICAL corelink-pat wire form
+                // `cache:w` (`SCOPE_CACHE_W`, auth_model.md §3.1) alongside the
+                // `cas:*` / long-form aliases — the self-serve mint endpoint must
+                // accept the SAME scope vocabulary the data plane enforces, which
+                // is exactly what the dashboard (`KeysClient` SCOPE_SPECS) sends.
+                "cas:rw" | "cas:w" | "cache:w" | "read-write" | "cache:write" | "cache:rw"
+                | "write" => {
                     write = true;
                 }
-                "cas:r" | "read-only" | "cache:read" => {}
+                // Read class. `cache:r` is the canonical corelink-pat read form
+                // (`SCOPE_CACHE_R`); `cache:find-missing` (`SCOPE_CACHE_FIND`) is a
+                // discovery-only capability with NO write — it classifies read
+                // (least-privilege), never granting a cache-write.
+                "cas:r" | "cache:r" | "read-only" | "cache:read" | "cache:find-missing" => {}
                 other => return Err(other.to_owned()),
             }
         }
@@ -406,6 +416,22 @@ mod tests {
         assert_eq!(classify_requested_scopes(&[]), Ok(ReadOnly)); // least privilege
         assert_eq!(classify_requested_scopes(&one("admin")), Ok(Admin));
         assert_eq!(classify_requested_scopes(&one("owner")), Ok(Admin));
+        // CANONICAL corelink-pat wire form (auth_model.md §3.1) — exactly what the
+        // dashboard `KeysClient` SCOPE_SPECS send. REGRESSION: these were NOT in the
+        // vocabulary, so every dashboard "Create token" with the default `cache:r`
+        // 401'd (unrecognized token → Unauthorized). They must classify, not error.
+        assert_eq!(classify_requested_scopes(&one("cache:r")), Ok(ReadOnly));
+        assert_eq!(classify_requested_scopes(&one("cache:w")), Ok(ReadWrite));
+        // find-missing is discovery-only (no write) ⇒ least-privilege read class.
+        assert_eq!(
+            classify_requested_scopes(&one("cache:find-missing")),
+            Ok(ReadOnly)
+        );
+        // The dashboard's read+find-missing combo stays read (no accidental write).
+        assert_eq!(
+            classify_requested_scopes(&["cache:r".into(), "cache:find-missing".into()]),
+            Ok(ReadOnly)
+        );
         // Case-insensitive.
         assert_eq!(
             classify_requested_scopes(&one("CACHE:WRITE")),
