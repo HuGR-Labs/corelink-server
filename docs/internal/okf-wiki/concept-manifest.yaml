@@ -430,7 +430,7 @@ candidates:
     status: "active"
     source_cluster: "flows"
     seed_from: ["apps/signup-worker/src/webhooks/github_install_state.ts", "apps/signup-worker/src/webhooks/github_install_callback.ts", "apps/signup-worker/src/webhooks/github_app_manifest.ts", "apps/signup-worker/src/webhooks/github_provision.ts", "apps/signup-worker/src/index.ts"]
-  # ---- ADR re-index (76) ----
+  # ---- ADR re-index (77) ----
   - id: "adr/adr-0012-ff-hr-011-gc-reachability"
     type: "ADR"
     title: "ADR 0012 ff hr 011 gc reachability"
@@ -665,6 +665,12 @@ candidates:
     status: "active"
     source_cluster: "adr"
     seed_from: ["specs/03_architecture/adrs/ADR-0070-tenant-suspend-gate-kv-l2-cache.md"]
+  - id: "adr/adr-0071-find-missing-scope-read-superset-hierarchy"
+    type: "ADR"
+    title: "ADR 0071 find missing scope read superset hierarchy"
+    status: "active"
+    source_cluster: "adr"
+    seed_from: ["specs/03_architecture/adrs/ADR-0071-find-missing-scope-read-superset-hierarchy.md"]
   - id: "adr/adr-multi-region-v1"
     type: "ADR"
     title: "ADR MULTI REGION V1"

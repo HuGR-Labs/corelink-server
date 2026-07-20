@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-container/src/routes/internal_pat.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
   - "crates/corelink-container/src/scope.rs"
-checkpoint_sha: "a889ff0829cec6c25526d4c873a3eda124dfefb4"
+checkpoint_sha: "92140a5af7b41d50d8b43e2dfa7ab45686a596ac"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "d1", "store", "scope"]
 timestamp: "2026-07-17T00:00:00Z"
@@ -35,15 +35,21 @@ written.
 - Self-serve key create mints a PAT then writes the row with `INSERT INTO pat (pat_id, tenant_id,
   pat_hash, scope, expires_ms, …, token_id, name)` — the hash and the non-secret `token_id` are
   persisted, the plaintext is returned once and never stored
-  (`crates/corelink-container/src/customer_d1.rs:1285-1300`).
+  (`crates/corelink-container/src/customer_d1.rs:1292-1305`).
 - The requested-scope → stored-scope map is FROZEN and fail-CLOSED: `admin` is NEVER grantable
-  self-serve, anything-with-write → `read-write`, else `read-only`
-  (`crates/corelink-container/src/customer_d1.rs:306-328`).
+  self-serve, anything-with-write → `read-write`, any read → `read-only`, an explicit find-only request →
+  the new `find-missing` value (ADR-0071), else `read-only`
+  (`crates/corelink-container/src/customer_d1.rs:310-328`).
+- The minted PAT's embedded scope bitset mirrors that stored `scope` string: `read-write` carries
+  `SCOPE_CACHE_RW | SCOPE_CACHE_FIND`, `find-missing` carries ONLY `SCOPE_CACHE_FIND`, and the
+  read-only default carries `SCOPE_CACHE_R | SCOPE_CACHE_FIND` — read is a superset of find-missing, so
+  every read/read-write PAT also carries the FIND bit (`crates/corelink-container/src/customer_d1.rs:1236-1241`).
 - Revoke is an idempotent, tenant-scoped soft delete: `UPDATE pat SET revoked_at_ms = ?1 WHERE pat_id =
   ?2 AND tenant_id = ?3 AND revoked_at_ms IS NULL` — a PAT owned by another tenant is simply not found
-  (`crates/corelink-container/src/customer_d1.rs:1352-1354`).
+  (`crates/corelink-container/src/customer_d1.rs:1360-1361`).
 - Listing is read-only and always self-tenant-scoped, mapping the stored `scope` back to a dashboard
-  scopes list (`crates/corelink-container/src/customer_d1.rs:1182-1183`).
+  scopes list via `scope_to_list` (`find-missing` → `["cache:find-missing"]`)
+  (`crates/corelink-container/src/customer_d1.rs:1184-1185`; `crates/corelink-container/src/customer_d1.rs:334-342`).
 - The internal mint route is the SECOND writer's mint half: `POST /_internal/pat/mint` mints the PAT
   and returns plaintext + Argon2id hash, gated by a constant-time compare against the DEDICATED
   `CORELINK_PAT_MINT_AUTH_KEY` ONLY — with NO fallback to the shared `CORELINK_INTERNAL_AUTH_KEY`. Because
@@ -64,9 +70,9 @@ written.
 - The PAT plaintext is never logged or persisted at the mint route; the caller writes it to Clerk
   session metadata once and discards it (`crates/corelink-container/src/routes/internal_pat.rs:73-75`).
 - The `admin` scope is never grantable via self-serve key creation; unrecognized tokens fail CLOSED
-  (`crates/corelink-container/src/customer_d1.rs:306-328`).
+  (`crates/corelink-container/src/customer_d1.rs:310-328`).
 - Revoke is tenant-scoped: a cross-tenant `pat_id` cannot be revoked (or even observed)
-  (`crates/corelink-container/src/customer_d1.rs:1352-1354`).
+  (`crates/corelink-container/src/customer_d1.rs:1360-1361`).
 
 # Gotchas
 
@@ -87,13 +93,15 @@ written.
 # Citations
 
 1. `crates/corelink-container/src/customer_d1.rs:18-22` — the PAT-store overview: tables, create, revoke.
-2. `crates/corelink-container/src/customer_d1.rs:306-328` — `map_requested_scopes`: the FROZEN requested-scope → `pat.scope` map (admin never grantable, unrecognized tokens fail CLOSED).
-3. `crates/corelink-container/src/customer_d1.rs:1182-1183` — tenant-scoped key listing SELECT.
-4. `crates/corelink-container/src/customer_d1.rs:1285-1300` — `INSERT INTO pat` (hash + token_id persisted, plaintext not).
-5. `crates/corelink-container/src/customer_d1.rs:1352-1354` — idempotent tenant-scoped revoke UPDATE.
-6. `crates/corelink-container/src/routes/internal_pat.rs:1-22` — the `/_internal/pat/mint` route + the DEDICATED-key-only auth gate (no shared-key fallback; fail-CLOSED — DD-HIGH remediation).
-7. `crates/corelink-container/src/routes/internal_pat.rs:73-75` — plaintext never persisted; caller's responsibility.
-8. `crates/corelink-container/src/routes/internal_pat.rs:86-108` — M7 reclassified: hash-on-wire is a one-way verifier of a high-entropy secret crossing an already-trusted internal boundary, never logged; removal (moving the D1 write into the container) is optional future consolidation, not a security fix.
-9. `crates/corelink-container/src/routes/internal_pat.rs:550-710` — `handle_mint`: mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:659-671`).
-10. `crates/corelink-container/src/adapter_pat.rs:145-151` — the verifier's D1 row reader mapping a NULL `scope` to `""`.
-11. `crates/corelink-container/src/scope.rs:73-95` — the fail-CLOSED scope gate (`""` grants nothing).
+2. `crates/corelink-container/src/customer_d1.rs:310-328` — `map_requested_scopes`: the FROZEN requested-scope → `pat.scope` map (admin never grantable, unrecognized tokens fail CLOSED; `FindMissing` → `find-missing` per ADR-0071).
+3. `crates/corelink-container/src/customer_d1.rs:334-342` — `scope_to_list`: inverse map (`find-missing` → `["cache:find-missing"]`) for the dashboard listing.
+4. `crates/corelink-container/src/customer_d1.rs:1184-1185` — tenant-scoped key listing SELECT.
+5. `crates/corelink-container/src/customer_d1.rs:1236-1241` — the minted PAT's scope bitset mirrors the `scope` string (read/read-write carry `SCOPE_CACHE_FIND`; find-only carries only it).
+6. `crates/corelink-container/src/customer_d1.rs:1292-1305` — `INSERT INTO pat` (hash + token_id persisted, plaintext not).
+7. `crates/corelink-container/src/customer_d1.rs:1360-1361` — idempotent tenant-scoped revoke UPDATE.
+8. `crates/corelink-container/src/routes/internal_pat.rs:1-22` — the `/_internal/pat/mint` route + the DEDICATED-key-only auth gate (no shared-key fallback; fail-CLOSED — DD-HIGH remediation).
+9. `crates/corelink-container/src/routes/internal_pat.rs:73-75` — plaintext never persisted; caller's responsibility.
+10. `crates/corelink-container/src/routes/internal_pat.rs:86-108` — M7 reclassified: hash-on-wire is a one-way verifier of a high-entropy secret crossing an already-trusted internal boundary, never logged; removal (moving the D1 write into the container) is optional future consolidation, not a security fix.
+11. `crates/corelink-container/src/routes/internal_pat.rs:550-710` — `handle_mint`: mint is a pure function returning plaintext + hash; a mint failure returns an OPAQUE 503 body (detail logged server-side only) (`crates/corelink-container/src/routes/internal_pat.rs:659-671`).
+12. `crates/corelink-container/src/adapter_pat.rs:145-151` — the verifier's D1 row reader mapping a NULL `scope` to `""`.
+13. `crates/corelink-container/src/scope.rs:73-95` — the fail-CLOSED scope gate (`""` grants nothing).
