@@ -100,7 +100,7 @@ jobs:
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
 
       - name: Install cargo-audit (pinned, prebuilt)
-        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
 
@@ -145,7 +145,7 @@ jobs:
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
 
       - name: Install cargo-audit (pinned, prebuilt)
-        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
 
