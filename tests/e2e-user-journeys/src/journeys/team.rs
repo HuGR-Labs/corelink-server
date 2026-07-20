@@ -54,8 +54,8 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::json;
 
 use crate::harness::{
-    bearer, blake3_hex, expect_gate_denied, unique_blob, url_cas, url_customer,
-    Config, JourneyResult, TokenKind,
+    bearer, blake3_hex, expect_gate_denied, unique_blob, url_cas, url_customer, Config,
+    JourneyResult, TokenKind,
 };
 use crate::personas::Persona;
 

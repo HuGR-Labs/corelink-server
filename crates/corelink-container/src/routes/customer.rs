@@ -378,7 +378,9 @@ fn role_is_privileged(role: &str) -> bool {
 /// (the Worker is the sole setter; client copies are stripped at the edge).
 /// Empty / absent ⇒ `""` (fail-CLOSED at every role gate below).
 fn caller_role(headers: &HeaderMap) -> String {
-    header_or(headers, ROLE_HEADER, "").trim().to_ascii_lowercase()
+    header_or(headers, ROLE_HEADER, "")
+        .trim()
+        .to_ascii_lowercase()
 }
 
 /// True when the caller is the tenant OWNER or an ADMIN — the team-management /
@@ -1833,7 +1835,13 @@ mod tests {
         for ok in ["read-write billing", "admin", "owner"] {
             let (state, shared) = fixture();
             let billing = BillingResponse::new(
-                "active", "team", "2026-05-01", "2026-06-01", 4900, "usd", vec![],
+                "active",
+                "team",
+                "2026-05-01",
+                "2026-06-01",
+                4900,
+                "usd",
+                vec![],
             );
             shared.seed_billing("cw-ok", billing).expect("seed");
             let app = router(state);
@@ -2110,22 +2118,42 @@ mod tests {
         };
         // member / viewer / unknown cannot invite at all → 403.
         for caller in ["member", "viewer", ""] {
-            let r = app.clone().oneshot(invite(caller, "Developer")).await.unwrap();
-            assert_eq!(r.status(), StatusCode::FORBIDDEN, "caller {caller:?} cannot invite");
+            let r = app
+                .clone()
+                .oneshot(invite(caller, "Developer"))
+                .await
+                .unwrap();
+            assert_eq!(
+                r.status(),
+                StatusCode::FORBIDDEN,
+                "caller {caller:?} cannot invite"
+            );
         }
         // admin can invite a non-privileged member → 201, but NOT a privileged admin → 403.
         assert_eq!(
-            app.clone().oneshot(invite("admin", "Developer")).await.unwrap().status(),
+            app.clone()
+                .oneshot(invite("admin", "Developer"))
+                .await
+                .unwrap()
+                .status(),
             StatusCode::CREATED
         );
         assert_eq!(
-            app.clone().oneshot(invite("admin", "Admin")).await.unwrap().status(),
+            app.clone()
+                .oneshot(invite("admin", "Admin"))
+                .await
+                .unwrap()
+                .status(),
             StatusCode::FORBIDDEN,
             "only the owner may invite a privileged admin"
         );
         // owner can invite an admin → 201.
         assert_eq!(
-            app.clone().oneshot(invite("owner", "Admin")).await.unwrap().status(),
+            app.clone()
+                .oneshot(invite("owner", "Admin"))
+                .await
+                .unwrap()
+                .status(),
             StatusCode::CREATED
         );
     }

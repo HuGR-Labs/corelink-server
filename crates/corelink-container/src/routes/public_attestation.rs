@@ -706,7 +706,11 @@ mod tests {
             // IP A is now drained to 429; IP B (different key) — fresh bucket.
             let app = app(state.clone(), hits.clone());
             let resp = app.oneshot(req(Some(IP_B))).await.unwrap();
-            assert_eq!(resp.status(), StatusCode::OK, "distinct IP must not be throttled");
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "distinct IP must not be throttled"
+            );
         }
     }
 }

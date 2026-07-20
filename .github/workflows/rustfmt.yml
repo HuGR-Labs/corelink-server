@@ -1,0 +1,35 @@
+# PR-blocking rustfmt gate (weld-the-door).
+#
+# The per-crate lanes (corelink-server.yml etc.) run `cargo fmt` only under a
+# `paths:` filter + nightly, so formatting drift on an un-filtered path merged
+# to main unnoticed (17 files were dirty on main when this gate was added). This
+# lane runs `cargo fmt --all --check` over the WHOLE workspace on EVERY PR — no
+# `paths:` filter — so no formatting drift can land again. It is fast (fmt needs
+# no build) and its ONLY job is the format check, so it stays green in seconds.
+name: rustfmt
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rustfmt-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    name: cargo fmt --all --check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+
+      - name: Install Rust toolchain (stable + rustfmt)
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
+        with:
+          components: rustfmt
+
+      - name: cargo fmt --all --check
+        run: cargo fmt --all --check

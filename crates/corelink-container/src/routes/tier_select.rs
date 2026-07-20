@@ -1148,8 +1148,7 @@ mod tests {
         let h = headers(Some("super-secret-internal-key"), Some("tenant-abc"));
         let mut good = req("pro");
         good.success_url =
-            "https://humangr.com/corelink/en/upgraded?session_id={CHECKOUT_SESSION_ID}"
-                .to_owned();
+            "https://humangr.com/corelink/en/upgraded?session_id={CHECKOUT_SESSION_ID}".to_owned();
         good.cancel_url = "https://humangr.com/corelink/en/pricing".to_owned();
         let result = authorize_and_validate(&state(), &h, &good);
         assert!(result.is_ok());

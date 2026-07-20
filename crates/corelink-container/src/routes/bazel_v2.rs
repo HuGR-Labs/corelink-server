@@ -1826,7 +1826,11 @@ mod tests {
             .body(Body::from(body))
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
-        assert_eq!(resp.status(), StatusCode::OK, "find-only must pass find-missing");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "find-only must pass find-missing"
+        );
     }
 
     /// ADR-0071: a find-ONLY (`find-missing`) token is DENIED on a CAS read

@@ -272,17 +272,16 @@ fn tenant_scoping(cfg: &Config, client: &Client) -> JourneyResult {
     // security property is unchanged — B's overview is scoped to B, never A.
     let a = resolve_or_gate!(Persona::P3Admin, cfg, name);
     let token_a = a.token.expect("P3 always has a token");
-    let token_b = match cfg.pat_tenant_b_admin.as_deref() {
-        Some(t) => t,
-        None => {
-            return JourneyResult::gated(
+    let token_b =
+        match cfg.pat_tenant_b_admin.as_deref() {
+            Some(t) => t,
+            None => return JourneyResult::gated(
                 name,
                 "CORELINK_E2E_PAT_TENANT_B_ADMIN not set — need an admin-scoped PAT on tenant B \
                  to read B's (billing-admin-gated) overview for the scoping assertion"
                     .to_string(),
-            )
-        }
-    };
+            ),
+        };
 
     // Read A's overview to learn A's tenant_id (the value B must never return).
     let a_resp = match client

@@ -253,7 +253,10 @@ async fn handle_activate(
             "byok activate rejected: no real KmsProvider linked (InMemoryFake \
              active) → 501 not-available; state NOT mutated"
         );
-        return (StatusCode::NOT_IMPLEMENTED, "{\"error\":\"byok_not_available\"}")
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            "{\"error\":\"byok_not_available\"}",
+        )
             .into_response();
     }
     let Some(writer) = state.writer.as_ref() else {
