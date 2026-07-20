@@ -374,6 +374,23 @@ fn role_is_privileged(role: &str) -> bool {
     matches!(role.trim().to_ascii_lowercase().as_str(), "owner" | "admin")
 }
 
+/// The CALLER's D1-resolved team role, from the server-trusted [`ROLE_HEADER`]
+/// (the Worker is the sole setter; client copies are stripped at the edge).
+/// Empty / absent ⇒ `""` (fail-CLOSED at every role gate below).
+fn caller_role(headers: &HeaderMap) -> String {
+    header_or(headers, ROLE_HEADER, "").trim().to_ascii_lowercase()
+}
+
+/// True when the caller is the tenant OWNER or an ADMIN — the team-management /
+/// billing capability (invite/remove seats, open the billing portal, cancel the
+/// subscription). A plain `member`/`viewer` must NOT manage the team or billing
+/// (RBAC hardening: the coarse `x-corelink-scope` granted every non-viewer
+/// `read-write billing`, collapsing owner/admin/member — the role restores the
+/// distinction). Fail-CLOSED on an unknown/empty role.
+fn caller_is_owner_or_admin(headers: &HeaderMap) -> bool {
+    matches!(caller_role(headers).as_str(), "owner" | "admin")
+}
+
 /// Billing-management / financial-PII gate (F-018).
 ///
 /// The billing surfaces — the Stripe billing-portal mint (manage/remove payment
@@ -395,6 +412,14 @@ fn role_is_privileged(role: &str) -> bool {
 /// Called AFTER the fail-CLOSED tenant resolution + the PAT possession backstop,
 /// BEFORE any storage/handler access.
 fn billing_pii_gate_reject(headers: &HeaderMap) -> Option<axum::response::Response> {
+    // We gate on `requires_billing_admin` (finding H17): billing is a DEDICATED
+    // capability, not cache write. The Worker forwards `billing` in
+    // `x-corelink-scope` ONLY for an OWNER/ADMIN dashboard Clerk session (a plain
+    // `member`/`viewer` gets `read-write`/`read-only` — no `billing`), so a member
+    // can no longer open the portal, read financial PII, or cancel the subscription
+    // (RBAC hardening — the role restriction lives at the Worker's sole scope
+    // setter). A minted cache PAT (`read-write`/`cas:rw`/…) is NEVER granted
+    // `billing`, so a leaked CI cache token also cannot reach it.
     let caller_scope = header_or(headers, crate::scope::SCOPE_HEADER, "");
     if crate::scope::requires_billing_admin(&caller_scope) {
         return None;
@@ -894,19 +919,38 @@ async fn handle_team_invite(
     if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
         return resp;
     }
-    // Privilege-escalation gate (cluster A): inviting a privileged role
-    // (`Owner` / `Admin`) is a write/admin mutation — a read-only principal
-    // must not be able to add a privileged member. Mirrors the keys-create
-    // scope gate. A read-only caller may still invite a `Developer` / `Viewer`.
-    if role_is_privileged(&body.role) {
-        let caller_scope = header_or(&headers, crate::scope::SCOPE_HEADER, "");
-        if !crate::scope::requires_cache_write(&caller_scope) {
-            return (
-                StatusCode::FORBIDDEN,
-                "insufficient scope to invite a privileged role",
-            )
-                .into_response();
-        }
+    // Team-management RBAC (owner/admin only). The coarse `x-corelink-scope`
+    // granted EVERY non-viewer `read-write billing`, so the prior cache-write gate
+    // let a plain `member` invite seats — including a privileged `admin`, and (via
+    // the member→owner escalation the account-delete audit flagged) an `owner`
+    // seat. Gate on the D1-resolved role instead (migration 0074):
+    //   1. `owner` is NEVER self-serve-invitable — there is exactly one owner (the
+    //      tenant creator). Reject outright so the escalation chain (invite-owner →
+    //      accept → resolve owner → delete tenant) is closed at the source.
+    //      (`normalize_invite_role` also maps owner→admin as defense-in-depth.)
+    //   2. inviting a privileged `admin` requires the caller be the OWNER.
+    //   3. any invite at all requires the caller be owner OR admin (a plain
+    //      member/viewer cannot add seats).
+    if body.role.trim().eq_ignore_ascii_case("owner") {
+        return (
+            StatusCode::FORBIDDEN,
+            "the owner role is not grantable via a team invite",
+        )
+            .into_response();
+    }
+    if !caller_is_owner_or_admin(&headers) {
+        return (
+            StatusCode::FORBIDDEN,
+            "only the owner or an admin may invite team members",
+        )
+            .into_response();
+    }
+    if role_is_privileged(&body.role) && caller_role(&headers) != "owner" {
+        return (
+            StatusCode::FORBIDDEN,
+            "only the owner may invite a privileged (admin) role",
+        )
+            .into_response();
     }
     let p = principal(&headers);
     let req = TeamInviteRequest::new(t, p, body.email, body.role, now_ms());
@@ -944,15 +988,16 @@ async fn handle_team_remove(
     if let Some(resp) = pat_gate_reject(&state, &t, &headers).await {
         return resp;
     }
-    // Privilege gate: removing a seat is a destructive admin op that revokes
-    // another principal's credentials. A read-only (`cas:r`) caller must NOT be
-    // able to remove a seat (intra-tenant credential-DoS / member lockout) —
-    // require cache-write capability (mirrors keys-revoke + invite-privileged).
-    let caller_scope = header_or(&headers, crate::scope::SCOPE_HEADER, "");
-    if !crate::scope::requires_cache_write(&caller_scope) {
+    // Team-management RBAC (owner/admin only). Removing a seat is a destructive
+    // admin op that revokes another principal's credentials — a plain `member`
+    // must NOT be able to remove teammates / revoke their PATs (intra-tenant
+    // lockout / credential-DoS). The coarse cache-write gate granted every
+    // non-viewer this; gate on the D1-resolved role instead (the owner row itself
+    // is separately protected from removal in `customer_d1`).
+    if !caller_is_owner_or_admin(&headers) {
         return (
             StatusCode::FORBIDDEN,
-            "insufficient scope to remove a team member",
+            "only the owner or an admin may remove a team member",
         )
             .into_response();
     }
@@ -1533,6 +1578,7 @@ mod tests {
             // F-018 (H17): the overview carries billing/PII — requires the billing
             // capability. Send the Worker's real non-viewer dashboard scope.
             .header("x-corelink-scope", "read-write billing")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-tenant-id", "tenant-xyz")
             .header("x-corelink-token-prefix", "clpat_abc")
             .body(Body::empty())
@@ -1557,6 +1603,7 @@ mod tests {
             // F-018 (H17): billing/PII surface — pass the billing-capable dashboard
             // scope so the request reaches the handler (asserting 404, not the 403).
             .header("x-corelink-scope", "read-write billing")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-tenant-id", "ghost")
             .header("x-corelink-token-prefix", "clpat_x")
             .body(Body::empty())
@@ -1674,6 +1721,7 @@ mod tests {
             // capability. The Worker forwards `read-write billing` for a non-viewer
             // dashboard session; a bare cache scope is denied (see H17 tests below).
             .header("x-corelink-scope", "read-write billing")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-tenant-id", "t2")
             .header("x-corelink-token-prefix", "clpat_t2")
             .body(Body::empty())
@@ -1713,6 +1761,7 @@ mod tests {
             // cache PAT must NOT reach it. Send the dashboard `read-write billing`
             // scope (what the Worker forwards for a non-viewer session).
             .header("x-corelink-scope", "read-write billing")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-tenant-id", "t3")
             .header("x-corelink-token-prefix", "clpat_t3")
             .header("content-type", "application/json")
@@ -1933,6 +1982,7 @@ mod tests {
             // #336 (rt-nuclear #7): listing credentials requires a cache-write
             // (dashboard `read-write`) scope — a read-only PAT must not enumerate keys.
             .header("x-corelink-scope", "read-write")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-token-prefix", "clpat_t5")
             .body(Body::empty())
             .unwrap();
@@ -1965,6 +2015,7 @@ mod tests {
             // #336 (rt-nuclear #7): revoking a credential requires a cache-write
             // (dashboard `read-write`) scope — a read-only PAT must not revoke keys.
             .header("x-corelink-scope", "read-write")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-token-prefix", "clpat_t6")
             .body(Body::empty())
             .unwrap();
@@ -1992,6 +2043,7 @@ mod tests {
             .method("POST")
             .header("x-corelink-tenant-id", "t7")
             .header("x-corelink-token-prefix", "clpat_t7")
+            .header("x-corelink-role", "owner")
             .header("content-type", "application/json")
             .body(Body::from(body))
             .unwrap();
@@ -2002,6 +2054,105 @@ mod tests {
         assert_eq!(v["member"]["email"], "alice@example.com");
         assert_eq!(v["member"]["role"], "Developer");
         assert_eq!(v["member"]["status"], "invited");
+    }
+
+    /// RBAC hardening (#103): the escalation chain the account-delete audit found
+    /// — a member invites an `owner` seat → accepts → resolves owner → deletes the
+    /// tenant — is closed at the source: an `owner` invite is rejected 403 for ANY
+    /// caller (even the owner), so no second owner can ever be minted.
+    #[tokio::test]
+    async fn team_invite_owner_role_is_always_rejected() {
+        let (state, _) = fixture();
+        let app = router(state);
+        for caller in ["owner", "admin", "member", "viewer", ""] {
+            let body = serde_json::to_string(&serde_json::json!({
+                "email": "evil@example.com", "role": "Owner"
+            }))
+            .unwrap();
+            let req = Request::builder()
+                .uri("/v1/customer/team/invite")
+                .method("POST")
+                .header("x-corelink-tenant-id", "t7")
+                .header("x-corelink-token-prefix", "clpat_t7")
+                .header("x-corelink-role", caller)
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap();
+            let resp = app.clone().oneshot(req).await.expect("oneshot");
+            assert_eq!(
+                resp.status(),
+                StatusCode::FORBIDDEN,
+                "an owner invite must be rejected for caller role {caller:?}"
+            );
+        }
+    }
+
+    /// RBAC hardening (#103): a plain `member`/`viewer` cannot invite ANY seat,
+    /// and only the OWNER can invite a privileged `admin` (an admin cannot mint
+    /// another admin). Owner→member/admin and admin→member succeed.
+    #[tokio::test]
+    async fn team_invite_is_owner_admin_gated() {
+        let (state, _) = fixture();
+        let app = router(state);
+        let invite = |caller: &str, role: &str| {
+            let body =
+                serde_json::to_string(&serde_json::json!({ "email": "x@e.com", "role": role }))
+                    .unwrap();
+            Request::builder()
+                .uri("/v1/customer/team/invite")
+                .method("POST")
+                .header("x-corelink-tenant-id", "t7")
+                .header("x-corelink-token-prefix", "clpat_t7")
+                .header("x-corelink-role", caller)
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap()
+        };
+        // member / viewer / unknown cannot invite at all → 403.
+        for caller in ["member", "viewer", ""] {
+            let r = app.clone().oneshot(invite(caller, "Developer")).await.unwrap();
+            assert_eq!(r.status(), StatusCode::FORBIDDEN, "caller {caller:?} cannot invite");
+        }
+        // admin can invite a non-privileged member → 201, but NOT a privileged admin → 403.
+        assert_eq!(
+            app.clone().oneshot(invite("admin", "Developer")).await.unwrap().status(),
+            StatusCode::CREATED
+        );
+        assert_eq!(
+            app.clone().oneshot(invite("admin", "Admin")).await.unwrap().status(),
+            StatusCode::FORBIDDEN,
+            "only the owner may invite a privileged admin"
+        );
+        // owner can invite an admin → 201.
+        assert_eq!(
+            app.clone().oneshot(invite("owner", "Admin")).await.unwrap().status(),
+            StatusCode::CREATED
+        );
+    }
+
+    /// RBAC hardening (#103): a plain `member` (cache-write scope) can no longer
+    /// remove teammates / revoke their PATs — owner/admin only.
+    #[tokio::test]
+    async fn team_remove_member_role_is_403() {
+        let (state, _) = fixture();
+        let app = router(state);
+        for caller in ["member", "viewer", ""] {
+            let req = Request::builder()
+                .uri("/v1/customer/team/user_victim")
+                .method("DELETE")
+                .header("x-corelink-tenant-id", "t7")
+                .header("x-corelink-token-prefix", "clpat_t7")
+                .header("x-corelink-scope", "read-write")
+                .header("x-corelink-role", caller)
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.clone().oneshot(req).await.expect("oneshot");
+            assert_eq!(
+                resp.status(),
+                StatusCode::FORBIDDEN,
+                "caller role {caller:?} must not remove a team member"
+            );
+        }
     }
 
     #[tokio::test]
@@ -2036,6 +2187,7 @@ mod tests {
             .method("POST")
             .header("x-corelink-tenant-id", "t7")
             .header("x-corelink-token-prefix", "clpat_t7")
+            .header("x-corelink-role", "owner")
             .header("content-type", "application/json")
             .body(Body::from(invite_body))
             .unwrap();
@@ -2054,6 +2206,7 @@ mod tests {
             .header("x-corelink-tenant-id", "t7")
             .header("x-corelink-token-prefix", "clpat_t7")
             .header("x-corelink-scope", "read-write")
+            .header("x-corelink-role", "owner")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(remove).await.expect("remove oneshot");
@@ -2076,6 +2229,7 @@ mod tests {
             // F-018 (H17): the audit log carries security/account PII — requires
             // the billing capability (the Worker's non-viewer dashboard scope).
             .header("x-corelink-scope", "read-write billing")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-tenant-id", "t8")
             .header("x-corelink-token-prefix", "clpat_t8")
             .body(Body::empty())
@@ -2898,6 +3052,7 @@ mod tests {
             .uri("/v1/customer/account/export")
             .method("POST")
             .header("x-corelink-scope", "read-write billing")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-tenant-id", "tenant-a")
             .header("x-corelink-token-prefix", "clerk")
             .header("x-corelink-role", "owner")
@@ -2941,6 +3096,7 @@ mod tests {
             .uri("/v1/customer/account/export")
             .method("POST")
             .header("x-corelink-scope", "read-write billing")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-tenant-id", "tenant-a")
             .header("x-corelink-token-prefix", "clerk")
             .header("x-corelink-role", "owner")
@@ -2967,6 +3123,7 @@ mod tests {
             .uri("/v1/customer/account/export")
             .method("POST")
             .header("x-corelink-scope", "read-write")
+            .header("x-corelink-role", "owner")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.expect("oneshot");
@@ -2996,6 +3153,7 @@ mod tests {
             .uri("/v1/customer/account/export")
             .method("POST")
             .header("x-corelink-scope", "read-write billing")
+            .header("x-corelink-role", "owner")
             .header("x-corelink-tenant-id", "tenant-a")
             .header("x-corelink-token-prefix", "clerk")
             .header("x-corelink-role", "owner")

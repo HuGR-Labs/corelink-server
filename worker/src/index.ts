@@ -2477,12 +2477,24 @@ const baseHandler: ExportedHandler<Env> = {
             h.set("x-corelink-route-kind", "customer_v1");
             h.set("x-corelink-token-prefix", "clerk");
             h.set("x-corelink-tenant-id", custTenantId);
-            // RBAC scope (team_member role 0074): `viewer` → read-only; every other
-            // role → `read-write billing` (H17: the billing capability a cache PAT
-            // never carries, so only a dashboard human clears the F-018 gate). Sole setter.
+            // RBAC scope (team_member role 0074), sole setter:
+            //   viewer        → read-only  (no write, no billing)
+            //   member        → read-write (cache write; NO `billing`)
+            //   owner / admin → read-write billing (H17: the billing capability a
+            //                   cache PAT never carries — only an owner/admin
+            //                   dashboard human clears the F-018 billing/PII gate)
+            // The billing carve-out is now OWNER/ADMIN-only: a plain `member` must
+            // not open the billing portal / cancel the subscription / read financial
+            // PII (RBAC hardening — this is the sole place `billing` is granted).
+            // Team-management ops (invite/remove) gate on the `x-corelink-role`
+            // header separately in the container.
             h.set(
               "x-corelink-scope",
-              custClerkAuth.role === "viewer" ? "read-only" : "read-write billing",
+              custClerkAuth.role === "viewer"
+                ? "read-only"
+                : custClerkAuth.role === "owner" || custClerkAuth.role === "admin"
+                  ? "read-write billing"
+                  : "read-write",
             );
             // Team RBAC role (0074): forward the D1-resolved role so the container
             // can gate OWNER-only operations (account deletion erases the WHOLE
