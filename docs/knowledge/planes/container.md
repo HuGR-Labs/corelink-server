@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-container/src/routes/failover.rs"
   - "crates/corelink-container/src/routes/otel_layer.rs"
   - "crates/corelink-container/src/storage/r2_kv.rs"
-checkpoint_sha: "ef28238b559f3e973e5e3ccba6d948571ffa7224"
+checkpoint_sha: "fe5c157eeced92fcf99f216e569a88239b3ca43c"
 provenance: "AUTHORED"
 tags: ["planes", "container", "rust", "axum", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -51,29 +51,29 @@ surface.
    looks healthy while every erasure call silently 500s, so it is asserted alongside the PAT/quota/byte-cap
    controls (`crates/corelink-container/src/main.rs:328-406`; `crates/corelink-container/src/main.rs:376-388`).
 3. The composed router is built and given a global 10 MiB body limit + the `/_health` route, then bound
-   to the listener on PORT (`crates/corelink-container/src/main.rs:610-615`,
-   `crates/corelink-container/src/main.rs:969-972`).
+   to the listener on PORT (`crates/corelink-container/src/main.rs:504-509`,
+   `crates/corelink-container/src/main.rs:903-905`).
 4. Privileged routes are env-gated mounts: `/_internal/pat/mint`, `/internal/v1/auth/introspect`,
    `/internal/v1/billing/usage`, `/_internal/dsr/erase`, the S-09 `POST /_internal/audit/drain`
    audit-chain drain (seals the `audit_outbox` trail into the BLAKE3 tamper-evident chain — internal-auth
    gated, env-gated on D1; sits alongside the `/_internal/dsr/*` routes), CAS-erase, tier-select, and the
    Stripe webhook each mount only when their secrets are present
-   (`crates/corelink-container/src/main.rs:619-964`). The Stripe-webhook mount here is NOT a stub:
+   (`crates/corelink-container/src/main.rs:511-881`). The Stripe-webhook mount here is NOT a stub:
    gated on `STRIPE_WEBHOOK_SECRET`, it is a LIVE, signature-verified billing materializer —
    `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to
    `tier_selections` over D1-HTTP, and the Worker routes `/v1/billing/stripe-webhook` to THIS container
    (the shared `_system` DO) as the sole signature-verifier
-   (`crates/corelink-container/src/main.rs:801-964`). It is one of TWO live activation writers (the other
+   (`crates/corelink-container/src/main.rs:716-859`). It is one of TWO live activation writers (the other
    is the signup-worker), so go-live-readiness flags a divergent-tier-map risk: both must key the same
    `STRIPE_PRICE_ID_{SOLO,STARTER,PRO,MAX}` env map or a real `customer.subscription.updated` resolves to
-   `UnknownPlan` → 422 (`crates/corelink-container/src/main.rs:898-913`). See `launch/money-path`.
+   `UnknownPlan` → 422 (`crates/corelink-container/src/main.rs:797-808`). See `launch/money-path`.
 4b. UNAUTHENTICATED public-verifier mount (Artifact 1): when the D1 `StorageEnv` is present, `main`
    merges the `public_attestation` router (`GET /v1/public/attestation/{request_id}` +
    `GET /v1/public/keys/erasure/{region}.pub`) directly onto the data-plane app — deliberately OUTSIDE
    the ratelimit/residency/auth layers (same placement as the `/_health` + `/_internal/*` family) and with
    NO internal-auth gate, because an erasure proof is publicly verifiable. The container is the SOLE
    authority; the Worker forwards `/v1/public/*` to it as a pure `_anonymous` pass-through with NO PAT
-   (`crates/corelink-container/src/main.rs:704-722`, router `crates/corelink-container/src/routes/public_attestation.rs:103-118` — axum-0.8 `{param}` capture syntax). M22(a): being outside `ratelimit_layer.rs` meant this router had NO container-side rate limiting at all — internet-reachable + unauthenticated. The router now wraps its two routes in its OWN scoped per-IP token-bucket layer (`PublicVerifierRateLimitState`, `rate_limit_public_verifier`) — a dedicated limiter instance local to this router, never the shared data-plane gate, so it cannot re-throttle CAS/Bazel/Turbo/OCI; generous budget (20 req/s, burst 60) and FAIL-OPEN when the trusted `x-corelink-client-ip` header is absent, wired via `PublicVerifierRateLimitState::new()` at the `main.rs` mount call.
+   (`crates/corelink-container/src/main.rs:634-647`, router `crates/corelink-container/src/routes/public_attestation.rs:103-118` — axum-0.8 `{param}` capture syntax). M22(a): being outside `ratelimit_layer.rs` meant this router had NO container-side rate limiting at all — internet-reachable + unauthenticated. The router now wraps its two routes in its OWN scoped per-IP token-bucket layer (`PublicVerifierRateLimitState`, `rate_limit_public_verifier`) — a dedicated limiter instance local to this router, never the shared data-plane gate, so it cannot re-throttle CAS/Bazel/Turbo/OCI; generous budget (20 req/s, burst 60) and FAIL-OPEN when the trusted `x-corelink-client-ip` header is absent, wired via `PublicVerifierRateLimitState::new()` at the `main.rs` mount call.
 5. `build_with_factory` resolves the shared gates from env — the $-ceiling `QuotaGate`, the OCI-scoped
    request-count gate, the native PAT gate, and the byte-accountant — warning (not failing) when absent.
    The request-count gate is DELIBERATELY consumed only by the OCI router (not cloned into the native
@@ -100,11 +100,11 @@ surface.
 
 # Invariants
 - A single HTTP listener on PORT (default 50051) serves the whole data plane — the DO's only target
-  (`crates/corelink-container/src/main.rs:408-411`).
+  (`crates/corelink-container/src/main.rs:457-460`).
 - In prod a missing native PAT gate is FATAL — the binary refuses to boot the data plane without its
   Argon2id possession backstop (`crates/corelink-container/src/main.rs:300-313`).
 - Privileged routes fail CLOSED: absent secrets ⇒ the route is simply not mounted (404), never an open
-  proxy (`crates/corelink-container/src/main.rs:617-630`).
+  proxy (`crates/corelink-container/src/main.rs:511-524`).
 - The 410-Gone erasure gate and byte-accounting are centralized at the shared CAS chokepoint, so every
   surface inherits them by construction (`crates/corelink-container/src/routes.rs:531-550`).
 - The rate-limit + residency layers wrap exactly the data plane, never `/_health` or `/_internal/*`
@@ -126,12 +126,12 @@ surface.
 2. `crates/corelink-container/src/main.rs:266-279` — boot-time storage-backing selection for `/_health`.
 3. `crates/corelink-container/src/main.rs:264-298` — the fail-CLOSED native-PAT-gate boot guard.
 4. `crates/corelink-container/src/main.rs:300-313` — the FATAL `std::process::exit(1)` on a missing prod gate.
-5. `crates/corelink-container/src/main.rs:408-411` — PORT resolution (default 50051).
-6. `crates/corelink-container/src/main.rs:610-615` — the 10 MiB global body limit + `/_health` route.
-7. `crates/corelink-container/src/main.rs:617-630` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
-8. `crates/corelink-container/src/main.rs:619-964` — the full set of env-gated privileged route mounts, including the S-09 `POST /_internal/audit/drain` audit-chain drain (BLAKE3 tamper-evident seal of `audit_outbox`; internal-auth gated, env-gated on D1) alongside the `/_internal/dsr/*` family — the single `dsr::router` now mounts ALL five data-subject-rights legs (`erase` Art.17 + `verify`, plus `access` Art.15 / `portability` Art.20 / `rectification` Art.16 added by the DSAR-completion work), sharing one internal-auth gate. The irreversible-erase mounts — CAS-erase, the `dsr::router` erase legs, `audit/drain`, and `/_internal/dsr/anchor` — now gate on their DEDICATED keys (`CORELINK_ERASE_AUTH_KEY` / `CORELINK_DSR_ANCHOR_AUTH_KEY`) with NO fallback to the shared `CORELINK_INTERNAL_AUTH_KEY` (finding H4), so a shared-key leak cannot drive an erase or forge an erasure-legitimacy anchor.
-8b. `crates/corelink-container/src/main.rs:857-1001` — the LIVE Stripe-webhook materializer mount: signature-verified `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to `tier_selections` over D1-HTTP (one of two activation writers; the Worker routes `/v1/billing/stripe-webhook` to this `_system` DO as the sole signature-verifier — see `WebhookState::new` + `STRIPE_WEBHOOK_ROUTE` at the mount).
-9. `crates/corelink-container/src/main.rs:969-972` — binding the composed router to the PORT listener.
+5. `crates/corelink-container/src/main.rs:457-460` — PORT resolution (default 50051).
+6. `crates/corelink-container/src/main.rs:504-509` — the 10 MiB global body limit + `/_health` route.
+7. `crates/corelink-container/src/main.rs:511-524` — env-gated `/_internal/pat/mint` mount (fail-CLOSED).
+8. `crates/corelink-container/src/main.rs:511-881` — the full set of env-gated privileged route mounts, including the S-09 `POST /_internal/audit/drain` audit-chain drain (BLAKE3 tamper-evident seal of `audit_outbox`; internal-auth gated, env-gated on D1) alongside the `/_internal/dsr/*` family — the single `dsr::router` now mounts ALL five data-subject-rights legs (`erase` Art.17 + `verify`, plus `access` Art.15 / `portability` Art.20 / `rectification` Art.16 added by the DSAR-completion work), sharing one internal-auth gate. The irreversible-erase mounts — CAS-erase, the `dsr::router` erase legs, `audit/drain`, and `/_internal/dsr/anchor` — now gate on their DEDICATED keys (`CORELINK_ERASE_AUTH_KEY` / `CORELINK_DSR_ANCHOR_AUTH_KEY`) with NO fallback to the shared `CORELINK_INTERNAL_AUTH_KEY` (finding H4), so a shared-key leak cannot drive an erase or forge an erasure-legitimacy anchor.
+8b. `crates/corelink-container/src/main.rs:716-859` — the LIVE Stripe-webhook materializer mount: signature-verified `D1SubscriptionStateHandler` (+ `build_tier_selector`) writes `subscription_state='active'`+tier to `tier_selections` over D1-HTTP (one of two activation writers; the Worker routes `/v1/billing/stripe-webhook` to this `_system` DO as the sole signature-verifier — see `WebhookState::new` + `STRIPE_WEBHOOK_ROUTE` at the mount).
+9. `crates/corelink-container/src/main.rs:903-905` — binding the composed router to the PORT listener.
 10. `crates/corelink-container/src/routes.rs:754-771` — the `Router::new().merge(...)` composition chain (now incl. `admin_tenant_detail`, `byok_admin`, `customer_runners`, `workspaces`, and the `dsr::portal` self-service privacy surface).
 11. `crates/corelink-container/src/routes.rs:411-465` — shared gates resolved from env (quota, OCI-scoped request-count, PAT, accountant); the request-count gate is OCI-only, not cloned into native states (would double-count vs the Worker edge).
 12. `crates/corelink-container/src/routes.rs:467-560` — shared CAS handler objects + accounting/tombstone wrap (incl. `put_inflight`/`read_inflight` pools in the `CasRouteState` ctor).

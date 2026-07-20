@@ -11,6 +11,7 @@ source_files:
   - "crates/corelink-container/src/routes/audit_analytics/handler_event_count.rs"
   - "crates/corelink-container/src/routes/audit_analytics/handler_timeline.rs"
   - "crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs"
+  - "crates/corelink-container/src/routes/audit_analytics/d1_sink.rs"
   - "crates/corelink-container/src/routes/audit_export.rs"
   - "crates/corelink-container/src/routes/audit_export/audit_sink.rs"
   - "crates/corelink-container/src/routes/audit_export/handler.rs"
@@ -21,7 +22,7 @@ source_files:
   - "apps/analytics-worker/src/ingest.ts"
   - "apps/signup-worker/src/webhooks/audit_drain_cron.ts"
   - "docs/cli/audit-export.md"
-checkpoint_sha: "42a72649a06a981400ed125161b4e7ac2adb3840"
+checkpoint_sha: "fe5c157eeced92fcf99f216e569a88239b3ca43c"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -89,11 +90,12 @@ another tenant's rows.
 - The CLI offline mode re-verifies a downloaded NDJSON file against a chain-head anchor `docs/cli/audit-export.md:10-31`.
 - The CLI HTTP-aware mode streams directly off the wire and watches for the abort trailer `docs/cli/audit-export.md:33-55`.
 - Analytics routes (event-count, timeline) ship their router (`crates/corelink-container/src/routes/audit_analytics/state.rs:80`) + per-tenant rate-limit config (`crates/corelink-container/src/routes/audit_analytics/state.rs:63`) enforced by `rate_limit_check` (`crates/corelink-container/src/routes/audit_analytics/rate_limit.rs:99`).
-- Each analytics handler runs the native PAT possession gate before any data access `crates/corelink-container/src/routes/audit_analytics.rs:118`.
+- Each analytics handler runs the native PAT possession gate before any data access `crates/corelink-container/src/routes/audit_analytics.rs:124-129`.
 - The analytics audit emit is itself a fail-CLOSED helper: `emit_or_503` pushes the row through the sink and, on `Err`, drops the prepared success response and returns `503 "audit pipeline closed"` instead `crates/corelink-container/src/routes/audit_analytics/audit_sink.rs:76-85`.
 - The `/event-count` handler binds the tenant SOLELY to the `AuthTenant`-extracted `x-corelink-tenant-id` header (400 on a non-UUID), runs the PAT gate, rejects inverted windows, rate-limits, then aggregates per-tenant bucket counts emitting an `analytics_query` audit row on every arm `crates/corelink-container/src/routes/audit_analytics/handler_event_count.rs:42-61`.
 - The `/timeline` handler additionally caps query cost with a bucket-cardinality guard — `(to - from) / granularity` must not exceed `MAX_TIMELINE_BUCKETS`, with `granularity` itself bounded to `(0, MAX_GRANULARITY_MS]` — before any aggregate runs `crates/corelink-container/src/routes/audit_analytics/handler_timeline.rs:94-124`.
 - `resolve_shadow_via_prelude` prefers the wave-26 `RequestPrelude` region (hot path skips the per-request region round-trip) and, when the prelude is absent or bound to a different tenant, emits a `request_prelude_missing` marker row + WARN and falls back to `shadow_factory.for_tenant` rather than failing the route `crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs:121-156`.
+- **The analytics data source is the LIVE D1 `customer_audit_events` table (`#71`), NOT the Neon shadow.** The former per-region Neon Postgres "analytics shadow" was designed but NEVER wired in prod (the DSN env was never set and the `neon-real` driver was never compiled into the shipped container, so every prod query fell back to the in-memory factory and returned an EMPTY aggregate); it is retired and the aggregates now read the SAME durable D1 table `/v1/customer/audit` reads (migration 0077). `D1ShadowSinkFactory::from_env` builds the factory over a shared `D1HttpCustomerDb` row source `crates/corelink-container/src/routes/audit_analytics/d1_sink.rs:100-103` and `for_tenant` binds a read-only `D1AuditAnalyticsSink` `crates/corelink-container/src/routes/audit_analytics/d1_sink.rs:113-119` whose `aggregate_event_count` runs `SELECT event_type, COUNT(*) … WHERE tenant_id = ?1 AND ts_ms in [from,to)` with the optional `event_type` filter BOUND (`?4`, never interpolated) `crates/corelink-container/src/routes/audit_analytics/d1_sink.rs:204-232`, and `aggregate_timeline` buckets by `((ts_ms - ?2) / ?4)` under the same tenant scope `crates/corelink-container/src/routes/audit_analytics/d1_sink.rs:246-284`. The read-only sink rejects `NeonShadowSink::sync_chunk` — the archive WRITE half is the D1 `audit_outbox` sink (`#74`) `crates/corelink-container/src/routes/audit_analytics/d1_sink.rs:182-196`. Because the swap is behind the existing `ShadowSinkFactory` seam, the route wiring, rate-limit, native-PAT gate and audit-emit ordering above are UNCHANGED — only the data source moved.
 - The export handler treats the client-controllable `:tenant` path segment as an untrusted echo: it is parsed and constant-time-compared against the `AuthTenant` header tenant, and a mismatch emits a SEV-1 cross-tenant audit row and returns 403 (fail-CLOSED: 503 on sink failure) BEFORE any data access `crates/corelink-container/src/routes/audit_export/handler.rs:83-99`.
 - The export window timestamps are parsed by `parse_timestamp`, which accepts a raw Unix-epoch-ms integer or a deliberately minimal RFC 3339 `YYYY-MM-DDTHH:MM:SSZ` subset (UTC-only, no fractional seconds, no offsets) to keep the security-sensitive window grammar small `crates/corelink-container/src/routes/audit_export/parse.rs:25-32`.
 - The product-analytics EDGE collector (`POST /v1/event` on the standalone analytics-worker) is the ingest tap that feeds the analytics D1 store; it authenticates each request two ways — a CORS `Origin` allow-list for browsers, or a constant-time-compared `X-Corelink-Ingest-Key` for trusted servers — and rejects anything matching neither with 403 before any write (`apps/analytics-worker/src/ingest.ts:143-168`, `apps/analytics-worker/src/ingest.ts:159-167`), the compare being length-checked + XOR-folded so a wrong key cannot be timing-probed (`apps/analytics-worker/src/ingest.ts:95-102`).
@@ -106,7 +108,7 @@ another tenant's rows.
 - The persisted `canonical_jcs` is byte-for-byte what was hashed (`chain_hash = BLAKE3(prev || canonical_jcs)`), so the verifier path re-hashes the stored bytes rather than re-canonicalizing `crates/corelink-container/src/routes/audit_drain.rs:426-453`.
 - The chain HEAD is tamper-evident, not just append-linked (CF-6): a resumed checkpoint whose Ed25519 signature does not verify under the current key id — or a signed head with no seed to verify it — is rejected as TAMPER and the drain refuses to extend it (fail-CLOSED, SEV-1), so a D1 writer cannot silently rewrite the head `crates/corelink-container/src/routes/audit_drain.rs:502-560`.
 - The export audit row is emitted fail-CLOSED — a sink `Err` aborts with 503 before streaming `crates/corelink-container/src/routes/audit_export/audit_sink.rs:100-105`.
-- Analytics data access is gated per-tenant: the PAT gate rejects forged/wrong-tenant (401) or verifier fault (503) before reads `crates/corelink-container/src/routes/audit_analytics.rs:118`.
+- Analytics data access is gated per-tenant: the PAT gate rejects forged/wrong-tenant (401) or verifier fault (503) before reads `crates/corelink-container/src/routes/audit_analytics.rs:124-129`.
 - The edge ingest tap is authenticated, never anonymous: an event with neither an allow-listed `Origin` nor a correct constant-time-matched `X-Corelink-Ingest-Key` is rejected 403 before any D1 write `apps/analytics-worker/src/ingest.ts:127-136`.
 - PII can never land in the analytics store: the edge validator hard-rejects any event whose `properties` carries an `email`/`ip`/`ip_address`/`remote_addr` field — the privacy rule is enforced at the gate, not left to each caller `apps/analytics-worker/src/ingest.ts:104-107`.
 - A mid-stream abort surfaces as sysexits DATAERR (65) on the CLI, distinct from generic exit 1 `docs/cli/audit-export.md:79-89`.
@@ -124,7 +126,7 @@ another tenant's rows.
 3. `crates/corelink-container/src/routes/audit_export/stream.rs:412-417` — `mid_stream_abort_trailer_value` builder.
 4. `crates/corelink-container/src/routes/audit_export/types.rs:42-57` — chain-head-anchor + abort header constants.
 5. `crates/corelink-container/src/routes/audit_analytics/state.rs:80` — analytics `router`; `crates/corelink-container/src/routes/audit_analytics/state.rs:63` + `crates/corelink-container/src/routes/audit_analytics/rate_limit.rs:99` — per-tenant rate-limit config + `rate_limit_check`.
-6. `crates/corelink-container/src/routes/audit_analytics.rs:118` — per-handler native PAT possession gate (in-barrel impl).
+6. `crates/corelink-container/src/routes/audit_analytics.rs:124-129` — per-handler native PAT possession gate (in-barrel impl).
 7. `docs/cli/audit-export.md:10-31` — CLI offline (file) re-verify mode.
 8. `docs/cli/audit-export.md:33-55` — CLI HTTP-aware re-verify + anchor cross-check.
 9. `docs/cli/audit-export.md:79-89` — exit-65 sysexits DATAERR on mid-stream abort.
@@ -136,6 +138,7 @@ another tenant's rows.
 15. `crates/corelink-container/src/routes/audit_analytics/handler_event_count.rs:42-61` — `/event-count` handler: `AuthTenant`-bound tenant (400 on non-UUID) + native PAT gate before data access.
 16. `crates/corelink-container/src/routes/audit_analytics/handler_timeline.rs:94-124` — `/timeline` bucket-cardinality + granularity cost guards (`MAX_TIMELINE_BUCKETS` / `MAX_GRANULARITY_MS`).
 17. `crates/corelink-container/src/routes/audit_analytics/shadow_factory.rs:121-156` — `resolve_shadow_via_prelude`: prelude-preferred region with `request_prelude_missing` marker + factory fallback.
+17b. `crates/corelink-container/src/routes/audit_analytics/d1_sink.rs:100-103` — `D1ShadowSinkFactory::from_env`: the `#71` D1-backed analytics factory over `customer_audit_events` (migration 0077), replacing the never-wired Neon shadow; `for_tenant` → read-only `D1AuditAnalyticsSink` (`:113-119`); tenant-scoped `WHERE tenant_id = ?1` + BOUND `event_type` filter in `aggregate_event_count` (`:204-232`); `((ts_ms-?2)/?4)` timeline buckets (`:246-284`); `sync_chunk` rejected on the read-only sink (`:182-196`).
 18. `crates/corelink-container/src/routes/audit_export/handler.rs:83-99` — export `:tenant` path-segment constant-time cross-tenant check → SEV-1 row + 403 (fail-CLOSED).
 19. `crates/corelink-container/src/routes/audit_export/parse.rs:25-32` — `parse_timestamp`: epoch-ms-or-minimal-RFC3339 window parser.
 20. `crates/corelink-container/src/routes/audit_drain.rs:923-981` — `handle_drain`: LIVE S-09 `POST /_internal/audit/drain` entry (partition scan → seal → summary).

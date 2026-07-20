@@ -120,8 +120,6 @@ pub mod email_hash;
 /// verification (via [`adapter_pat::PatVerifier`]) at the container, so a leaked
 /// `PAT_SIGNING_KEY` (HMAC-only forgery) cannot serve a forged tenant's PAT.
 pub mod native_pat_gate;
-#[cfg(feature = "neon-real")]
-pub mod neon_shadow_factory;
 /// Container-side resolution of a tenant's resolved per-tier storage cap for the
 /// OCI `/token` mint (WP #10). Ports the Worker's `tier → storageBytesMax`
 /// derivation so a DOWNGRADED tenant pushing exclusively over OCI reserves

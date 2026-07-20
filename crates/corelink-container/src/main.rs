@@ -461,175 +461,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let serve_addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
 
-    // Wave-19 + Wave-20: Neon analytics shadow per-region project
-    // resolution + `TokioPostgresExecutor` binder.
-    //
-    // `corelink-audit-chain::neon_shadow::real::RealNeonShadowSink` is
-    // bound at the binary boot path against the per-region Neon
-    // project DSN read from `NEON_DB_URL_<REGION_UPPER>` (rows 120–124
-    // of `docs/internal/secrets-checklist.md`). We log which regions
-    // resolve so a misconfigured rollout is observable at boot, not
-    // at first customer query.
-    //
-    // Wave-20 (this commit) closes the deferred `TokioPostgresExecutor`
-    // binder caveat: with `--feature neon-real` + per-region DSN env
-    // vars present, the boot path constructs a
-    // `TokioPostgresExecutor` per region (deadpool-postgres pool +
-    // tokio-postgres-rustls TLS) and feeds it to a
-    // `TokioPgShadowSinkFactory` that resolves per-tenant
-    // `RealNeonShadowSink`s. Without `--feature neon-real` or with
-    // every DSN env var unset, the `/v1/audit/analytics/*` routes stay
-    // on the in-memory factory (dev/CI friendly).
-    let shadow_factory: Arc<dyn ShadowSinkFactory> = {
-        use corelink_analytics::Region;
-        use corelink_audit_chain::{EnvVarResolver, NeonProjectResolver};
-        let resolver = EnvVarResolver::new();
-        let active_regions = [
-            Region::Iad,
-            Region::Fra,
-            Region::Gru,
-            Region::Nrt,
-            Region::Syd,
-        ];
-        let mut resolved_dsns: Vec<(Region, String)> = Vec::new();
-        for region in active_regions {
-            match resolver.resolve(region) {
-                Ok(dsn) => {
-                    info!(
-                        region = region.as_str(),
-                        "wave-19 neon shadow: project DSN resolved"
-                    );
-                    resolved_dsns.push((region, dsn));
-                }
-                Err(_) => {
-                    info!(
-                        region = region.as_str(),
-                        env_var = EnvVarResolver::env_var_name(region),
-                        "wave-19 neon shadow: project DSN unset (bring-up friendly skip)"
-                    );
-                }
-            }
-        }
-        if resolved_dsns.is_empty() {
-            warn!(
-                "wave-19 neon shadow: NO per-region Neon DSN configured; \
-                 analytics endpoints stay on InMemoryNeonShadowSink"
-            );
-        } else {
-            info!(
-                resolved_regions = resolved_dsns.len(),
-                "wave-19 neon shadow: per-region project resolver ready"
-            );
-        }
-
-        #[cfg(feature = "neon-real")]
-        {
-            use corelink_audit_chain::neon_shadow::real_tokio_pg::TokioPostgresExecutor;
-            use corelink_audit_chain::{
-                InMemoryShadowSyncAuditSink, InMemoryTenantRegionResolver, NeonExecutor,
-                ShadowSyncAuditSink, TenantRegionResolver,
-            };
-            use corelink_server::neon_shadow_factory::TokioPgShadowSinkFactory;
-            use std::collections::BTreeMap;
-            use uuid::Uuid;
-
-            // Build a per-region executor map. Each Neon project gets
-            // its own pool (`DEFAULT_POOL_MAX_SIZE = 4`) so a region's
-            // back-pressure does NOT cross-pollute other regions'
-            // capacity headroom.
-            let mut executors: BTreeMap<&'static str, Arc<dyn NeonExecutor>> = BTreeMap::new();
-            for (region, dsn) in &resolved_dsns {
-                match TokioPostgresExecutor::connect(dsn).await {
-                    Ok(exec) => {
-                        info!(
-                            region = region.as_str(),
-                            "wave-20 neon shadow: TokioPostgresExecutor pool ready"
-                        );
-                        executors.insert(region.as_str(), exec.into_arc());
-                    }
-                    Err(e) => {
-                        // SEV-2 — the per-region DSN was set but the pool
-                        // refused to build (bad DSN, TLS handshake fail,
-                        // pool capacity refused). We continue boot —
-                        // other regions may still be wired — and the
-                        // `for_tenant` resolver surfaces the typed error
-                        // per request for the affected region.
-                        warn!(
-                            region = region.as_str(),
-                            error = %e,
-                            "wave-20 neon shadow: TokioPostgresExecutor build FAILED — region marked unavailable"
-                        );
-                    }
-                }
-            }
-
-            if executors.is_empty() {
+    // Audit-analytics data source (#71). The `/v1/audit/analytics/*` routes are
+    // backed by the live D1 `customer_audit_events` table (migration 0077 — the
+    // SAME table `/v1/customer/audit` reads). The former per-region Neon
+    // "analytics shadow" (`TokioPgShadowSinkFactory`, feature `neon-real`) was
+    // never wired in prod: the per-region DSN env was never set and the real
+    // driver was never compiled into the shipped container, so the boot path
+    // silently fell back to the in-memory sink and EVERY analytics query returned
+    // an empty result. That dead scaffold is removed; the D1-backed factory below
+    // serves real aggregates. Env-gated: when the D1 storage env is absent
+    // (dev/CI) the routes stay on the in-memory factory so the surface still
+    // boots (mirrors the customer-plane `*_from_env` fail-closed pattern).
+    let shadow_factory: Arc<dyn ShadowSinkFactory> =
+        match routes::audit_analytics::D1ShadowSinkFactory::from_env() {
+            Some(f) => {
                 info!(
-                    "wave-20 neon shadow: --feature neon-real on but no executor pools came up; \
-                     falling back to InMemoryShadowSinkFactory"
+                    "audit-analytics: D1-backed factory wired over customer_audit_events (real aggregates)"
+                );
+                Arc::new(f) as Arc<dyn ShadowSinkFactory>
+            }
+            None => {
+                warn!(
+                    "audit-analytics: D1 storage env absent — analytics on InMemoryShadowSinkFactory (dev/CI)"
                 );
                 Arc::new(routes::InMemoryShadowSinkFactory::new()) as Arc<dyn ShadowSinkFactory>
-            } else {
-                info!(
-                    pool_count = executors.len(),
-                    "wave-20 neon shadow: --feature neon-real witness OK — TokioPgShadowSinkFactory wired"
-                );
-
-                // Wave-21 closure: build the per-tenant region
-                // resolver that replaces the wave-20 hard-coded
-                // `Region::Iad` default. Native binaries cannot reach
-                // the `worker::D1Database` binding directly (the same
-                // constraint pinned `InMemoryBillingD1` in the
-                // wave-18 Stripe-materializer wire). So the native
-                // gRPC boot path falls back to an
-                // `InMemoryTenantRegionResolver` with an explicit
-                // fallback to IAD; the CF Worker production boot path
-                // (`corelink-clerk-cf::prod_wiring`) is what swaps in
-                // a `D1TenantRegionResolver` against the
-                // `tenant_config` D1 table.
-                //
-                // The dev pin `[("tenant-id-zero", Region::Iad)]`
-                // matches the in-process integration tests' seed
-                // (which use a known `Uuid::nil()`-derived tenant id
-                // when exercising the analytics routes against the
-                // real factory).
-                let tenant_region_resolver: Arc<dyn TenantRegionResolver> = {
-                    warn!(
-                        "wave-21 neon shadow: native boot path — installing \
-                         InMemoryTenantRegionResolver with Region::Iad fallback \
-                         (D1TenantRegionResolver is the CF Worker production wire)"
-                    );
-                    Arc::new(
-                        InMemoryTenantRegionResolver::new()
-                            .with(Uuid::nil(), corelink_analytics::Region::Iad)
-                            .with_fallback(corelink_analytics::Region::Iad),
-                    )
-                };
-
-                // Wave-29 closure: the production factory now lives
-                // in `corelink_server::neon_shadow_factory` as a public
-                // type so the `for_tenant_in_region` override (which
-                // skips the per-request `TenantRegionResolver` round-
-                // trip when the wave-26 `RequestPrelude` populated the
-                // region) is unit-testable. See
-                // `specs/_audits/sealed/2026-05-16-shadow-sink-full-adoption.md`.
-                let audit_sink: Arc<dyn ShadowSyncAuditSink> =
-                    Arc::new(InMemoryShadowSyncAuditSink::new());
-                Arc::new(TokioPgShadowSinkFactory::new(
-                    executors,
-                    audit_sink,
-                    tenant_region_resolver,
-                )) as Arc<dyn ShadowSinkFactory>
             }
-        }
-        #[cfg(not(feature = "neon-real"))]
-        {
-            // Bring-up friendly default — in-memory factory satisfies
-            // the `/v1/audit/analytics/*` route surface in dev/CI.
-            let _ = resolved_dsns;
-            Arc::new(routes::InMemoryShadowSinkFactory::new()) as Arc<dyn ShadowSinkFactory>
-        }
-    };
+        };
 
     info!(
         "routes: building composed data-plane router (CAS + AC + Admin + audit-export + audit-analytics + signup) + /_health"
