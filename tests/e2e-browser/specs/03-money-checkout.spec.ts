@@ -16,11 +16,15 @@ test("upgrade to Pro → DPA click-through → real Stripe checkout session", as
   authedPage: page,
 }) => {
   // Capture the checkout/tier-select network to classify any failure.
-  page.on("response", (r) => {
+  page.on("response", async (r) => {
     const u = r.url();
     if (u.includes("/checkout/session") || u.includes("tier-select") || u.includes("/onboarding")) {
+      let detail = "";
+      if (r.status() >= 500 || r.status() === 403) {
+        detail = " body=" + (await r.text().catch(() => "?")).slice(0, 300);
+      }
       // eslint-disable-next-line no-console
-      console.log(`[money][net] ${r.request().method()} ${u.replace("https://humangr.com", "")} → ${r.status()}`);
+      console.log(`[money][net] ${r.request().method()} ${u.replace("https://humangr.com", "")} → ${r.status()}${detail}`);
     }
   });
 
