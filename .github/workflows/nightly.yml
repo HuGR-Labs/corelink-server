@@ -133,7 +133,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Setup Java (TLC requires JVM)
-        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           java-version: '17'
           distribution: 'temurin'
@@ -400,7 +400,7 @@ jobs:
         # reproducible and a future cargo-mutants upstream change can't
         # silently shift our kill-rate. Prebuilt binary (taiki-e) avoids the
         # from-source compile race on the contended self-hosted Mac.
-        uses: taiki-e/install-action@43aecc8d72668fbcfe75c31400bc4f890f1c5853 # v2.83.2
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
         with:
           tool: cargo-mutants@27.0.0
 
