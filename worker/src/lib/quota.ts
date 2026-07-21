@@ -217,7 +217,7 @@ function isPaidTier(tier: Tier): boolean {
   return tier !== "free";
 }
 
-function isValidTier(value: string): value is Tier {
+export function isValidTier(value: string): value is Tier {
   return (
     value === "free" ||
     value === "solo" ||
