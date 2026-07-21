@@ -15,9 +15,10 @@ import { test, expect } from "../fixtures/auth.js";
  *   2. The operator API (`/v1/admin/read|mutate|approve`, `/v1/admin/audit/events`)
  *      is gated by the internal keys `CORELINK_ADMIN_AUTH_KEY` (mutate) +
  *      a DISTINCT `CORELINK_ADMIN_APPROVER_AUTH_KEY` (H5 two-person control), NOT
- *      a customer PAT. Verified: customer PAT, admin-scoped PAT, and anon ALL get
- *      401 — the operator plane is correctly locked. Driving the read/mutate/
- *      dual-approve flow itself needs the operator keys (owner-held, OOB).
+ *      a customer PAT. So a real customer credential is rejected, a client cannot
+ *      forge its way in with an `x-*-scope` header (the Worker strips them), and
+ *      anon is rejected. Driving the read/mutate/dual-approve flow itself needs
+ *      the operator keys (owner-held, OOB).
  *
  * This spec proves the RBAC lockdown a real user hits. (When Clerk Orgs are
  * enabled + the operator keys are ferried OOB, add the positive admin-drive.)
@@ -38,22 +39,68 @@ test("RBAC: a customer is denied the operator CONSOLE (org role required, orgs d
   ).toBeTruthy();
 });
 
-// The operator API is locked to the internal key: no user-held credential works.
-const ADMIN_API = [
-  "/v1/admin/read/tenants",
-  "/v1/admin/audit/events",
-];
+const ADMIN_API = ["/v1/admin/read/tenants", "/v1/admin/audit/events"];
 
-test("RBAC: the operator API is locked — customer PAT / admin PAT / anon all 401", async () => {
-  const base = "https://corelink-api.humangr.com";
-  const rw = process.env["CORELINK_E2E_PAT_RW"] ?? "";
-  const admin = process.env["CORELINK_E2E_PAT_ADMIN"] ?? "";
-  for (const path of ADMIN_API) {
-    for (const [who, tok] of [["customer", rw], ["admin-pat", admin], ["anon", ""]] as const) {
-      const r = await fetch(`${base}${path}`, tok ? { headers: { Authorization: `Bearer ${tok}` } } : {});
-      // eslint-disable-next-line no-console
-      console.log(`[admin-api] ${who} ${path} → ${r.status}`);
-      expect(r.status, `${who} must be denied ${path}`).toBe(401);
+/**
+ * The operator API is internal-key-gated, so NO user-held credential works. This
+ * exercises the three real client-controlled shapes against it:
+ *   - a REAL, freshly-minted customer `cas:rw` PAT (a valid credential — the
+ *     strongest a customer can self-serve; admin/owner scopes are never grantable),
+ *   - that same PAT PLUS forged `x-corelink-scope` / `x-admin-scope` headers (a
+ *     scope-escalation attempt — the Worker strips client-supplied scope headers),
+ *   - anon.
+ * All must be denied (401). The PAT is minted live via the session and the mint
+ * is asserted 201 FIRST — without that guard an un-minted token silently
+ * collapses every arm to anon, so the test would "pass" while proving nothing
+ * (the prior shape read two never-set env vars → all three arms were anon).
+ */
+test("RBAC: the operator API rejects a real customer PAT, a forged-admin-scope PAT, and anon", async ({
+  authedPage: page,
+}) => {
+  const out = await page.evaluate(async (paths: string[]) => {
+    const API = "https://corelink-api.humangr.com";
+    const clerk = (window as unknown as { Clerk: { session: { getToken(): Promise<string> } } }).Clerk;
+    const session = await clerk.session.getToken();
+    const sessAuth = { Authorization: `Bearer ${session}`, "content-type": "application/json" };
+
+    // Mint a REAL customer cas:rw PAT via the authed session.
+    const mintR = await fetch(`${API}/v1/customer/keys`, {
+      method: "POST",
+      headers: sessAuth,
+      body: JSON.stringify({ name: `rbac-probe-${Date.now()}`, scopes: ["cas:rw"] }),
+    });
+    const mintBody = (await mintR.json().catch(() => ({}))) as { token?: string };
+    const pat = mintBody?.token ?? "";
+
+    const results: Record<string, number> = {};
+    for (const path of paths) {
+      // 1. a real, valid customer credential
+      results[`customer ${path}`] = (
+        await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${pat}` } })
+      ).status;
+      // 2. real customer PAT + FORGED operator-scope headers (must be stripped/ignored)
+      results[`forged-admin ${path}`] = (
+        await fetch(`${API}${path}`, {
+          headers: {
+            Authorization: `Bearer ${pat}`,
+            "x-corelink-scope": "corelink:admin:pilots",
+            "x-admin-scope": "corelink:admin:pilots",
+          },
+        })
+      ).status;
+      // 3. anon
+      results[`anon ${path}`] = (await fetch(`${API}${path}`)).status;
     }
+    return { mintStatus: mintR.status, hasPat: pat.length > 0, results };
+  }, ADMIN_API);
+  // eslint-disable-next-line no-console
+  console.log("[admin-api] " + JSON.stringify(out, null, 2));
+
+  // Guard the fix: the credentialed arms are only meaningful if a REAL PAT exists.
+  expect(out.mintStatus, "customer PAT mint must 201 (else the credentialed arms collapse to anon)").toBe(201);
+  expect(out.hasPat, "a real customer cas:rw PAT must be minted").toBe(true);
+  // Internal-auth-gated operator plane → every user-controlled shape is denied 401.
+  for (const [label, status] of Object.entries(out.results)) {
+    expect(status, `${label} must be denied (401)`).toBe(401);
   }
 });
