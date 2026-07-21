@@ -352,6 +352,13 @@ type AuthResult =
        * D1 `pat` mirror only — never the client.
        */
       readonly runnerJobAcKey: string | null;
+      /**
+       * Which tier served the PAT row (`l1` isolate / `kv` L2 / `d1` primary).
+       * Surfaced into the `Server-Timing` `auth` desc for client latency probes;
+       * NOT a trust signal and never forwarded to the container. Absent on the
+       * anonymous/signup path (no PAT verify runs there).
+       */
+      readonly patSource?: "l1" | "kv" | "d1";
     }
   | { readonly ok: false; readonly reason: string };
 
@@ -374,7 +381,7 @@ const ALLOWED_ORIGINS = [
 const CORS_HEADERS: ReadonlyArray<readonly [string, string]> = [
   ["Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"],
   ["Access-Control-Allow-Headers", "Authorization, Content-Type, X-Request-Id, Accept"],
-  ["Access-Control-Expose-Headers", "X-Request-Id, X-Corelink-Tenant-Id"],
+  ["Access-Control-Expose-Headers", "X-Request-Id, X-Corelink-Tenant-Id, Server-Timing"],
   ["Access-Control-Max-Age", "86400"],
 ];
 
@@ -1308,6 +1315,8 @@ async function extractAuth(
     // WP5a: carry the narrowed runner-job marker (NULL on normal PATs). The
     // forward sites set the runner-job headers only when this is non-NULL.
     runnerJobAcKey: row.runner_job_ac_key ?? null,
+    // Observability only (Server-Timing `auth` desc) — which tier served the row.
+    patSource: verify.source,
   };
 }
 
@@ -1724,6 +1733,17 @@ function getServerNonce(): number {
 const baseHandler: ExportedHandler<Env> = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const requestStart = Date.now();
+    // Server-Timing phase clocks (observability — clw latency probe self-serve).
+    // Date.now() in a Worker advances only across I/O (Spectre coarsening), which
+    // is exactly what we want: these deltas measure the wall time spent in the
+    // auth read, the worker-side D1 reads, and the DO/container subrequest — the
+    // three phases that split "is it auth or the downstream D1 reads". 0 = phase
+    // not reached (e.g. anon/error paths that never emit the header).
+    let stAuthStart = 0;
+    let stAuthEnd = 0;
+    let stOriginStart = 0;
+    let stOriginEnd = 0;
+    let stPatSource: "l1" | "kv" | "d1" | undefined;
     const requestId = resolveRequestId(request);
     requestCounter = (requestCounter + 1) | 0;
 
@@ -2576,12 +2596,15 @@ const baseHandler: ExportedHandler<Env> = {
       // route. pip/uv can emit nothing but URL-embedded Basic; every other
       // surface (native CAS/AC, npm `_authToken` Bearer, cargo/sccache Bearer,
       // browser) still rejects non-Bearer schemes with `invalid_scheme`.
+      stAuthStart = Date.now();
       const result = await extractAuth(
         request,
         env,
         route.routeKind === "pip",
         ctx.waitUntil.bind(ctx),
       );
+      stAuthEnd = Date.now();
+      if (result.ok) stPatSource = result.patSource;
       if (!result.ok) {
         // OCI (oci_v2 / oci_token) never reaches here — it is handled by the
         // dedicated pass-through branch ABOVE (which forwards to the container
@@ -3068,7 +3091,9 @@ const baseHandler: ExportedHandler<Env> = {
 
     let doResponse: Response;
     try {
+      stOriginStart = Date.now();
       doResponse = await stub.fetch(augmented);
+      stOriginEnd = Date.now();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "unknown error";
       // Do NOT include error detail that could leak internal topology
@@ -3095,6 +3120,29 @@ const baseHandler: ExportedHandler<Env> = {
     const finalHeaders = new Headers(doResponse.headers);
     if (!finalHeaders.has("x-request-id")) {
       finalHeaders.set("x-request-id", requestId);
+    }
+    // Server-Timing (observability, self-serve latency probes): split the authed
+    // hot path into `auth` (PAT verify — KV-served ⇒ single-digit ms), `wdb` (the
+    // worker-side quota + residency D1 reads to the ENAM primary, uncached), and
+    // `origin` (the DO/container subrequest). This is what lets a client
+    // distinguish "auth is slow" from "the downstream D1 reads are slow" WITHOUT a
+    // log grep. `desc` on `auth` carries the cache tier (`kv`/`l1`/`d1`). Emitted
+    // only when the phases ran (authed data-plane path); durations are coarse
+    // (Date.now advances across I/O only), directional not authoritative.
+    {
+      const st: string[] = [];
+      if (stAuthEnd > stAuthStart) {
+        const d = stAuthEnd - stAuthStart;
+        st.push(stPatSource ? `auth;dur=${d};desc="${stPatSource}"` : `auth;dur=${d}`);
+      }
+      if (stOriginStart > 0 && stAuthEnd > 0 && stOriginStart > stAuthEnd) {
+        st.push(`wdb;dur=${stOriginStart - stAuthEnd}`);
+      }
+      if (stOriginEnd > stOriginStart) {
+        st.push(`origin;dur=${stOriginEnd - stOriginStart}`);
+      }
+      st.push(`total;dur=${Date.now() - requestStart}`);
+      if (st.length > 0) finalHeaders.set("Server-Timing", st.join(", "));
     }
     const finalResponse = new Response(doResponse.body, {
       status: doResponse.status,
