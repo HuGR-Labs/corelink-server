@@ -150,11 +150,19 @@ impl D1AuditAnalyticsSink {
     }
 }
 
-/// Read `COUNT(*)`-style integer columns from a D1 row. D1 returns integers as
-/// JSON numbers; a missing/non-numeric cell counts as 0 (never a panic).
+/// Read an integer-valued D1 cell tolerantly. Cloudflare's D1 REST API binds —
+/// and can return computed columns as — SQLite REAL (JSON has one number type),
+/// so a value may arrive as either a JSON integer (`5`) or float (`5.0`); accept
+/// both and floor. `None` for a missing/non-numeric cell.
+fn col_i64(row: &D1Row, key: &str) -> Option<i64> {
+    let v = row.get(key)?;
+    v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))
+}
+
+/// Read a non-negative `COUNT(*)`-style column (float-tolerant, see [`col_i64`]);
+/// a missing/negative/non-numeric cell counts as 0 (never a panic).
 fn col_u64(row: &D1Row, key: &str) -> u64 {
-    row.get(key)
-        .and_then(serde_json::Value::as_i64)
+    col_i64(row, key)
         .filter(|n| *n >= 0)
         .map(|n| n as u64)
         .unwrap_or(0)
@@ -245,14 +253,24 @@ impl NeonShadowSink for D1AuditAnalyticsSink {
         }
         let from_i = clamp_i64(from_ms);
         let gran_i = clamp_i64(granularity_ms);
-        // Bucket index = floor((ts_ms - from) / granularity). Both operands are
-        // bound integers, so `/` is SQLite integer division; `ts_ms >= from`
-        // keeps the numerator non-negative. Bucket start is reconstructed as
+        // Bucket index = floor((ts_ms - from) / granularity), reconstructed as
         // `from + index*granularity` on the Rust side (never interpolated).
+        //
+        // CRITICAL (`CAST(?N AS INTEGER)`): Cloudflare's D1 REST API binds every
+        // JSON number as SQLite **REAL** (JSON has one number type). Without the
+        // CAST, `(ts_ms - 1.74e12) / 8.64e7` is REAL division that KEEPS the
+        // sub-bucket fractional position — so every event gets a DISTINCT real
+        // key (`514.0`, `514.37`, …), `GROUP BY` degrades to one group per row,
+        // and the float bucket then reads back as `None` via `as_i64` → every
+        // bucket collapses to `from`. Casting the bound operands to INTEGER
+        // restores integer floor-division (one group per real bucket, an integer
+        // result). `event-count` is immune (its bound params appear only in
+        // `>=`/`<` comparisons, exact for ms magnitudes ≪ 2^53). `ts_ms` is a
+        // stored INTEGER column, so only the bound `?N` operands need the cast.
         let sql = format!(
-            "SELECT ((ts_ms - ?2) / ?4) AS bucket, COUNT(*) AS c \
+            "SELECT ((ts_ms - CAST(?2 AS INTEGER)) / CAST(?4 AS INTEGER)) AS bucket, COUNT(*) AS c \
              FROM customer_audit_events \
-             WHERE tenant_id = ?1 AND ts_ms >= ?2 AND ts_ms < ?3 \
+             WHERE tenant_id = ?1 AND ts_ms >= CAST(?2 AS INTEGER) AND ts_ms < CAST(?3 AS INTEGER) \
              GROUP BY bucket ORDER BY bucket LIMIT {AGGREGATE_ROW_LIMIT}"
         );
         let binds: Vec<Value> = vec![
@@ -269,11 +287,11 @@ impl NeonShadowSink for D1AuditAnalyticsSink {
         Ok(rows
             .iter()
             .map(|row| {
-                let bucket_index = row
-                    .get("bucket")
-                    .and_then(serde_json::Value::as_i64)
-                    .filter(|n| *n >= 0)
-                    .unwrap_or(0);
+                // Defense in depth: the `CAST(... AS INTEGER)` in the SQL already
+                // yields an integer, but read float-tolerantly so a REAL-typed
+                // cell (were the cast ever dropped) still floors correctly rather
+                // than silently collapsing to bucket 0.
+                let bucket_index = col_i64(row, "bucket").filter(|n| *n >= 0).unwrap_or(0);
                 // from + index*granularity, saturating (all inputs are already
                 // clamped into the non-negative i64 domain).
                 let start = (from_i as i128) + (bucket_index as i128) * (gran_i as i128);
@@ -409,7 +427,13 @@ mod tests {
         let out = s.aggregate_timeline(1_000, 2_000, 100).unwrap();
 
         let (sql, binds) = mock.last();
-        assert!(sql.contains("(ts_ms - ?2) / ?4"), "bucket expr: {sql}");
+        // The bound division operands MUST be CAST to INTEGER — D1's REST API
+        // binds JSON numbers as SQLite REAL, and REAL division would degrade the
+        // GROUP BY to one row per event + an unreadable float bucket.
+        assert!(
+            sql.contains("CAST(?2 AS INTEGER)") && sql.contains("CAST(?4 AS INTEGER)"),
+            "bucket operands must be CAST to INTEGER: {sql}"
+        );
         assert!(sql.contains("WHERE tenant_id = ?1"), "tenant scope: {sql}");
         assert_eq!(binds[3], json!(100_i64), "granularity bound");
 
@@ -418,6 +442,26 @@ mod tests {
         assert_eq!(out[0].count, 5);
         assert_eq!(out[1].bucket_start_ms, 1_200);
         assert_eq!(out[1].count, 2);
+    }
+
+    #[test]
+    fn timeline_reads_real_typed_bucket_and_count() {
+        // Regression for the live bug: D1's REST API can return the computed
+        // bucket + COUNT as SQLite REAL (JSON float). A float bucket/count MUST
+        // still floor correctly, not collapse to bucket 0 / count 0.
+        let mock = Arc::new(MockD1::with_rows(vec![
+            row(&[("bucket", json!(514.0)), ("c", json!(12.0))]),
+            row(&[("bucket", json!(515.0)), ("c", json!(25.0))]),
+        ]));
+        let s = sink(mock);
+        let out = s
+            .aggregate_timeline(0, 99_999_999_999_999, 86_400_000)
+            .unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].bucket_start_ms, 514 * 86_400_000);
+        assert_eq!(out[0].count, 12);
+        assert_eq!(out[1].bucket_start_ms, 515 * 86_400_000);
+        assert_eq!(out[1].count, 25);
     }
 
     #[test]
