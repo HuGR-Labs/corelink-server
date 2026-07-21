@@ -90,6 +90,19 @@ pub enum BazelBridgeError {
         cap: usize,
     },
 
+    /// The request BODY was malformed — e.g. `findMissingBlobs` was sent
+    /// syntactically-invalid JSON. This is a CLIENT error (the caller sent a
+    /// bad request), distinct from [`Self::Internal`] (a server fault): a
+    /// malformed client body must surface as 4xx, never a 5xx that pollutes the
+    /// server error-rate / SLO signal.
+    ///
+    /// HTTP 400 equivalent.
+    #[error("invalid request body: {reason}")]
+    InvalidRequest {
+        /// Human-readable explanation (e.g. the JSON parse error).
+        reason: String,
+    },
+
     /// Internal error (lock poisoning, unexpected handler state, etc.).
     ///
     /// HTTP 500 equivalent.
@@ -104,7 +117,9 @@ impl BazelBridgeError {
     pub fn http_status(&self) -> u16 {
         match self {
             Self::NotFound { .. } => 404,
-            Self::InvalidDigest { .. } | Self::SizeMismatch { .. } => 400,
+            Self::InvalidDigest { .. }
+            | Self::SizeMismatch { .. }
+            | Self::InvalidRequest { .. } => 400,
             Self::DigestMismatch { .. } => 422,
             Self::CrossTenantDenied { .. } => 403,
             Self::AuditFailed(_) => 503,
@@ -178,6 +193,14 @@ mod tests {
     fn http_status_internal() {
         let e = BazelBridgeError::Internal("lock poisoned".into());
         assert_eq!(e.http_status(), 500);
+    }
+
+    #[test]
+    fn http_status_invalid_request_is_client_400_not_500() {
+        let e = BazelBridgeError::InvalidRequest {
+            reason: "expected value at line 1 column 1".into(),
+        };
+        assert_eq!(e.http_status(), 400);
     }
 
     #[test]

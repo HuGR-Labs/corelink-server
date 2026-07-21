@@ -499,6 +499,9 @@ fn map_bridge_err(e: BazelBridgeError) -> axum::response::Response {
     let (code, body): (StatusCode, &str) = match e {
         BazelBridgeError::NotFound { .. } => (StatusCode::NOT_FOUND, "not found"),
         BazelBridgeError::InvalidDigest { .. } => (StatusCode::BAD_REQUEST, "invalid digest"),
+        BazelBridgeError::InvalidRequest { .. } => {
+            (StatusCode::BAD_REQUEST, "invalid request body")
+        }
         BazelBridgeError::SizeMismatch { .. } => {
             (StatusCode::UNPROCESSABLE_ENTITY, "size mismatch")
         }

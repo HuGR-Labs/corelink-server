@@ -217,8 +217,8 @@ impl FindMissingHandler for InMemoryFindMissing {
 /// Returns [`BazelBridgeError::Internal`] if the JSON cannot be
 /// deserialised.
 pub fn parse_find_missing_request(body: &str) -> Result<Vec<Digest>, BazelBridgeError> {
-    let req: FindMissingRequest =
-        serde_json::from_str(body).map_err(|e| BazelBridgeError::Internal(e.to_string()))?;
+    let req: FindMissingRequest = serde_json::from_str(body)
+        .map_err(|e| BazelBridgeError::InvalidRequest { reason: e.to_string() })?;
 
     if req.blob_digests.len() > crate::FIND_MISSING_BLOB_CAP {
         return Err(BazelBridgeError::BatchTooLarge {
@@ -449,9 +449,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_find_missing_request_bad_json_is_internal() {
+    fn parse_find_missing_request_bad_json_is_client_bad_request() {
+        // A syntactically-invalid client body is a 4xx, NOT a 5xx: it must not
+        // pollute the server error-rate/SLO signal (real-client hygiene finding).
         let err = parse_find_missing_request("not json").expect_err("bad json");
-        assert!(matches!(err, BazelBridgeError::Internal(_)));
+        assert!(matches!(err, BazelBridgeError::InvalidRequest { .. }));
+        assert_eq!(err.http_status(), 400);
     }
 
     #[test]
