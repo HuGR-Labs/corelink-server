@@ -130,7 +130,17 @@ export interface CachedPatRow {
  * 503 — preserving the pre-cache fail-closed posture exactly.
  */
 export type PatVerifyResult =
-  | { readonly kind: "found"; readonly row: CachedPatRow }
+  | {
+      readonly kind: "found";
+      readonly row: CachedPatRow;
+      /**
+       * Which tier served the row — surfaced (via `extractAuth`) into the
+       * `Server-Timing` response header's `auth` desc so a client latency probe
+       * can self-verify the auth read was edge-local. `l1` = per-isolate memory,
+       * `kv` = Workers KV L2 (the SAM latency fix), `d1` = the ENAM primary/replica.
+       */
+      readonly source: "l1" | "kv" | "d1";
+    }
   | { readonly kind: "not_found" }
   | { readonly kind: "error" };
 
@@ -273,7 +283,7 @@ export async function verifyPatRowCached(
   // D1/KV blip (DB-confirmed < TTL ago, so never past the TTL revocation window).
   const cached = patCache.get(tokenId);
   if (cached !== undefined && nowMs - cached.fetchedAtMs < PAT_VERIFY_CACHE_TTL_MS) {
-    return { kind: "found", row: cached.row };
+    return { kind: "found", row: cached.row, source: "l1" };
   }
 
   // ── Single-flight: collapse concurrent misses to one L2/L3 read ─────────────
@@ -293,7 +303,7 @@ export async function verifyPatRowCached(
       const kvRow = opts.kv ? await kvGetPatRow(opts.kv, tokenId) : null;
       if (kvRow !== null) {
         putCache(tokenId, kvRow, nowMs);
-        return { kind: "found", row: kvRow };
+        return { kind: "found", row: kvRow, source: "kv" };
       }
 
       // ── L3: D1 (replica session → primary fallback), the source-of-truth ───
@@ -321,7 +331,7 @@ export async function verifyPatRowCached(
           await putPromise;
         }
       }
-      return { kind: "found", row };
+      return { kind: "found", row, source: "d1" };
     } catch {
       // The D1 read faulted (KV never throws to here — kvGetPatRow swallows).
       // Do NOT cache, do NOT serve a stale/expired entry. Surface the fault so

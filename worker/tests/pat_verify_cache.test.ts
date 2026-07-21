@@ -81,7 +81,7 @@ describe("verifyPatRowCached", () => {
   it("returns the row for a present, non-revoked token", async () => {
     const { db } = makePatD1({});
     const r = await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 });
-    expect(r).toEqual({ kind: "found", row: ROW });
+    expect(r).toEqual({ kind: "found", row: ROW, source: "d1" });
   });
 
   it("returns not_found for an absent/revoked token", async () => {
@@ -97,6 +97,15 @@ describe("verifyPatRowCached", () => {
       (await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 + PAT_VERIFY_CACHE_TTL_MS - 1 })).kind,
     ).toBe("found");
     expect(reads()).toBe(1);
+  });
+
+  it("tags the serving tier as `source` (d1 on the read, l1 on the cached hit) for Server-Timing", async () => {
+    const { db } = makePatD1({});
+    const first = await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_000 });
+    expect(first).toEqual({ kind: "found", row: ROW, source: "d1" });
+    // Second call within the TTL is served from the per-isolate L1 cache.
+    const second = await verifyPatRowCached(db, TEST_TOKEN_ID, { nowMs: 1_500 });
+    expect(second).toEqual({ kind: "found", row: ROW, source: "l1" });
   });
 
   it("does NOT cache a negative — a freshly minted token authenticates immediately", async () => {
@@ -181,7 +190,7 @@ describe("verifyPatRowCached — replica read with primary fallback", () => {
     const { db: replica } = makePatD1({ present: () => false });
     const { db: primary, reads: pReads } = makePatD1({ present: () => true });
     const r = await verifyPatRowCached(replica, TEST_TOKEN_ID, { primaryDb: primary, nowMs: 1_000 });
-    expect(r).toEqual({ kind: "found", row: ROW });
+    expect(r).toEqual({ kind: "found", row: ROW, source: "d1" });
     expect(pReads()).toBe(1); // the primary WAS consulted on the replica miss
   });
 
@@ -247,7 +256,7 @@ describe("verifyPatRowCached — L2 KV cache", () => {
     const { kv, gets } = makeKv({ seed: JSON.stringify(ROW) });
     const { db, reads: d1Reads } = makePatD1({});
     const r = await verifyPatRowCached(db, TEST_TOKEN_ID, { kv, nowMs: 1_000 });
-    expect(r).toEqual({ kind: "found", row: ROW });
+    expect(r).toEqual({ kind: "found", row: ROW, source: "kv" });
     expect(gets()).toBe(1);
     expect(d1Reads()).toBe(0); // D1 never consulted on a KV hit
   });
