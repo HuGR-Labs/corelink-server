@@ -13,12 +13,15 @@
 import { ClerkProvider, SignUp } from "@clerk/nextjs";
 
 import { clerkLocalization } from "@/lib/clerk-localization";
+import { APP_BASE_PATH } from "@/lib/route-matcher";
 
 export default function ClerkSignUp(): React.ReactElement {
   return (
     <ClerkProvider
       publishableKey={process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]}
       localization={clerkLocalization}
+      signInUrl={`${APP_BASE_PATH}/sign-in`}
+      signUpUrl={`${APP_BASE_PATH}/sign-up`}
     >
       {/*
        * forceRedirectUrl: always land on /en/welcome after Clerk completes
@@ -28,7 +31,12 @@ export default function ClerkSignUp(): React.ReactElement {
        * /en/welcome is used because next-intl requires the locale prefix;
        * the default locale is "en" (src/i18n/request.ts).
        */}
-      <SignUp forceRedirectUrl="/en/welcome" fallbackRedirectUrl="/en/welcome" />
+      <SignUp
+        path={`${APP_BASE_PATH}/sign-up`}
+        routing="path"
+        forceRedirectUrl="/en/welcome"
+        fallbackRedirectUrl="/en/welcome"
+      />
     </ClerkProvider>
   );
 }
