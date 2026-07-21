@@ -6,8 +6,9 @@ import { getStatuspageUrl } from "./src/statuspage-url";
 /**
  * CoreLink public docs Docusaurus configuration.
  *
- * WI-S18-001 foundation deliverable. Deploys to Cloudflare Pages at
- * `corelink-docs.humangr.com` (custom domain via CNAME) with three locales
+ * WI-S18-001 foundation deliverable. Deploys as a Cloudflare Worker (Static
+ * Assets) mounted at the canonical path `humangr.com/corelink/docs` (see
+ * wrangler.toml + worker/index.ts) with three locales
  * (en-US default + pt-BR + es-419 per sprint contract R-S18-12) and a
  * Diátaxis-organized sidebar (tutorial / how-to / reference / explanation).
  *
@@ -15,7 +16,14 @@ import { getStatuspageUrl } from "./src/statuspage-url";
  * injected at D-day via environment variables (`ALGOLIA_APP_ID`,
  * `ALGOLIA_SEARCH_API_KEY`, `ALGOLIA_INDEX_NAME`).
  */
-const SITE_URL = "https://corelink-docs.humangr.com";
+// Canonical path-based home: the docs are mounted under the CoreLink product
+// path on the primary zone (humangr.com/corelink/docs) — NOT a subdomain — so
+// the whole product lives under one host (matches the #804 canonical migration).
+// `url` is the bare host; `baseUrl` is the mount path. `SITE_URL` is their
+// concatenation (no trailing slash) for absolute asset/schema/OG URLs.
+const SITE_HOST = "https://humangr.com";
+const BASE_URL = "/corelink/docs/";
+const SITE_URL = `${SITE_HOST}${BASE_URL.replace(/\/+$/, "")}`;
 const ORG = "HumanGuardrail";
 const REPO = "corelink-server";
 const EDIT_BASE = `https://github.com/${ORG}/${REPO}/edit/main/apps/docs/`;
@@ -125,8 +133,8 @@ const config: Config = {
   title: "CoreLink",
   tagline: "Multi-tenant content-addressable cache on Cloudflare",
   favicon: "img/favicon.svg",
-  url: SITE_URL,
-  baseUrl: "/",
+  url: SITE_HOST,
+  baseUrl: BASE_URL,
   organizationName: ORG,
   projectName: REPO,
   trailingSlash: false,

@@ -50,7 +50,7 @@ jobs:
       # Defaults match playwright.prod.config.ts — override via repo vars/secrets
       # if a staging/preview environment needs to be probed instead.
       E2E_BASE_URL: ${{ vars.E2E_BASE_URL || 'https://humangr.com/corelink' }}
-      E2E_DOCS_URL: ${{ vars.E2E_DOCS_URL || 'https://corelink-docs.humangr.com' }}
+      E2E_DOCS_URL: ${{ vars.E2E_DOCS_URL || 'https://humangr.com/corelink/docs' }}
       E2E_INSTALL_URL: ${{ vars.E2E_INSTALL_URL || 'https://corelink-get.humangr.com' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

@@ -1,0 +1,50 @@
+# corelink-docs — Cloudflare Worker (Static Assets) that serves the Docusaurus
+# build at the CANONICAL product path `humangr.com/corelink/docs` (NOT a
+# subdomain — matches the #804 canonical migration; one host for the whole
+# product).
+#
+# WHY a Worker (not Cloudflare Pages): Pages binds to a HOST, so it cannot serve
+# on a path prefix of an existing zone. A Worker with a Static-Assets binding
+# CAN — and, unlike the old dashboard-managed `/corelink/*` route, its route is
+# DECLARED HERE (versioned, PR-reviewed, testable), not hand-wired in the panel.
+#
+# ROUTING SAFETY: `humangr.com/corelink/docs/*` is MORE SPECIFIC than the
+# admin-ui app's `humangr.com/corelink/*` route, so Cloudflare matches it FIRST.
+# The docs Worker only ever sees docs traffic; the money-path app is untouched.
+#
+# The Docusaurus build (baseUrl `/corelink/docs/`) writes files to `build/<path>`
+# (baseUrl rewrites in-page URLs, not the on-disk layout). `worker/index.ts`
+# strips the `/corelink/docs` mount prefix before delegating to the ASSETS
+# binding, which applies `_headers` (CSP), `_redirects`, and 404 handling.
+
+name = "corelink-docs"
+main = "worker/index.ts"
+compatibility_date = "2026-04-01"
+
+[assets]
+directory = "./build"
+binding = "ASSETS"
+# Match Docusaurus `trailingSlash: false` (it emits flat `<route>.html` files);
+# drop trailing slashes and serve the built 404 page on a miss.
+html_handling = "drop-trailing-slash"
+not_found_handling = "404-page"
+
+# Zone route on the primary humangr.com zone. Two patterns so both the bare
+# mount and everything under it are captured (the bare path would otherwise fall
+# through to the admin-ui `/corelink/*` route).
+[[routes]]
+pattern = "humangr.com/corelink/docs"
+zone_name = "humangr.com"
+
+[[routes]]
+pattern = "humangr.com/corelink/docs/*"
+zone_name = "humangr.com"
+
+# Legacy subdomain → 301 to the canonical path (worker/index.ts issues the
+# redirect for any non-humangr.com host). The proxied CNAME for this host stays;
+# this Worker route intercepts it. NOTE cutover order: the corelink-docs Pages
+# project's custom domain for this host must be REMOVED before this route binds
+# (a host cannot be claimed by both a Pages custom domain and a Worker route).
+[[routes]]
+pattern = "corelink-docs.humangr.com/*"
+zone_name = "humangr.com"

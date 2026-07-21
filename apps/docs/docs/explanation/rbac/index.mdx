@@ -39,7 +39,7 @@ The `membership.role` column is constrained to exactly four values
 > permission scope (`admin:billing`) granted exclusively to the `Owner` role.
 > A tenant may have multiple Owners, all of whom see the billing surface.
 
-See [Role catalog](./role-catalog) for the per-role detail page.
+See [Role catalog](./role-catalog.mdx) for the per-role detail page.
 
 ## Permission categories
 
@@ -56,8 +56,8 @@ categories:
 | **Members** | `admin:users`, `admin:tokens`                                                                   | Invite / demote users; mint / revoke PATs.           |
 | **Executor**| `execute:action`, `report:result`                                                               | Phase-2 executor only; not granted to humans.        |
 
-For the full ID-by-ID reference see [`permissions.mdx`](../../reference/rbac/permissions).
-For the role × permission matrix see [`permission-matrix.mdx`](./permission-matrix).
+For the full ID-by-ID reference see [`permissions.mdx`](../../reference/rbac/permissions.mdx).
+For the role × permission matrix see [`permission-matrix.mdx`](./permission-matrix.mdx).
 
 ## Dual-approval gate — why some buttons require a second person
 
@@ -109,7 +109,7 @@ Every outcome is recorded in `admin_op_log` with one of these strings:
   authenticates through Clerk; on first sign-in CoreLink writes a
   `membership` row binding `(user_id, tenant_id, role)`.
 
-See [Invite a team member](../../how-to/rbac/invite-team-member) for the
+See [Invite a team member](../../how-to/rbac/invite-team-member.mdx) for the
 walkthrough.
 
 ## What changes when someone is demoted or revoked
@@ -121,14 +121,14 @@ co-sign a destructive op on the very next request after revocation
 (`tests/adversarial.rs::adversarial_approver_role_revoked_rejected`).
 
 Demote and revoke events are themselves audited — see
-[Audit role changes](../../how-to/rbac/audit-role-changes).
+[Audit role changes](../../how-to/rbac/audit-role-changes.mdx).
 
 ## Related reading
 
-- [Role catalog](./role-catalog) — per-role detail.
-- [Permission matrix](./permission-matrix) — full table.
-- [Permissions reference](../../reference/rbac/permissions) — every
-  permission ID + which endpoint(s) it gates.
+- [Role catalog](./role-catalog.mdx) — per-role detail.
+- [Permission matrix](./permission-matrix.mdx) — full table.
+- [Permissions reference](../../reference/rbac/permissions.mdx) — every
+  permission ID + which endpoints it gates.
 - [Audit chain](../security/audit-chain) — how the underlying log
   works.
 - [BYOK](../security/byok) — Enterprise customer-managed keys.

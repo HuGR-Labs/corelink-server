@@ -112,7 +112,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   const allow =
     origin && /^https:\/\/[a-z0-9-]+\.humangr\.com$/i.test(origin)
       ? origin
-      : "https://corelink-docs.humangr.com";
+      : "https://humangr.com/corelink/docs";
   return {
     "access-control-allow-origin": allow,
     "access-control-allow-methods": "POST, OPTIONS",

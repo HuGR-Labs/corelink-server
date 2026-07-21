@@ -13,7 +13,7 @@ tags: [sdk, go, performance, how-to]
 You have many small blobs to push or pull and want to saturate available
 bandwidth without exceeding the server-side per-PAT concurrency limit.
 
-## Pattern: bounded `errgroup`
+## Pattern: Bounded `errgroup`
 
 ```go
 import "golang.org/x/sync/errgroup"
@@ -67,7 +67,7 @@ cli, _ := corelink.NewClient(ctx,
 When attempts are exhausted, drain in-flight work and stop submitting new
 tasks.
 
-## Pattern: pre-digest dedupe
+## Pattern: Pre-digest dedupe
 
 ```go
 func uploadDedup(ctx context.Context, cli *corelink.Client, paths []string) (map[string]string, error) {
@@ -93,5 +93,5 @@ func uploadDedup(ctx context.Context, cli *corelink.Client, paths []string) (map
 
 ## Next steps
 
-- [CI integration](./06-ci-integration)
-- [Troubleshooting](./07-troubleshooting)
+- [CI integration](./06-ci-integration.mdx)
+- [Troubleshooting](./07-troubleshooting.mdx)

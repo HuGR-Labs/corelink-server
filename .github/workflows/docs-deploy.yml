@@ -1,26 +1,26 @@
-name: docs — CF Pages deploy
+name: docs — CF Worker deploy
 
-# Deploys apps/docs (Docusaurus 3) to the Cloudflare Pages project
-# `corelink-docs` (custom domain corelink-docs.humangr.com) on every push to
-# main that touches the apps/docs subtree, plus manual workflow_dispatch.
+# Deploys apps/docs (Docusaurus 3) as a Cloudflare Worker with Static Assets,
+# mounted at the CANONICAL product path `humangr.com/corelink/docs` (NOT a
+# subdomain), on every push to main touching the apps/docs subtree, plus manual
+# workflow_dispatch.
 #
-# Why this exists: the `corelink-docs` Pages project's git integration is
-# DISCONNECTED (source: None), so nothing auto-publishes the site. Its last
-# deployment was 2026-06-11 — every docs change since then (including the #804
-# corelink-app → humangr.com/corelink host migration in the CTAs) was built by
-# docs-ci but never shipped. This workflow is the repo-controlled publish path:
-# `wrangler pages deploy` uploads the built static site directly, without
-# needing the dashboard git integration reconnected (that is an owner action).
+# Why a Worker (not Pages): Cloudflare Pages binds to a HOST, so it cannot serve
+# on a path prefix of an existing zone. The docs must live under the product
+# path (`/corelink/docs`) to match the #804 canonical migration, so they are
+# served by a Worker with a Static-Assets binding whose zone route is DECLARED
+# IN-REPO (apps/docs/wrangler.toml) — versioned and PR-reviewed, unlike the old
+# dashboard-managed route. `/corelink/docs/*` is more specific than the admin-ui
+# app's `/corelink/*`, so Cloudflare matches it first and the app is untouched.
 #
 # Build parity: mirrors the `build` job of docs-ci.yml EXACTLY (same pnpm
 # version, node version, install command, and `pnpm build`) so the artifact we
 # deploy is byte-for-byte what CI gates. Docusaurus emits the static site to
-# apps/docs/build.
+# apps/docs/build; `wrangler deploy` uploads it via the ASSETS binding.
 #
 # Required GH Secrets (same pair as admin-ui-deploy.yml):
-#   CF_API_TOKEN   — Cloudflare API token. MUST include the
-#                    "Cloudflare Pages: Edit" permission (Workers-Scripts:Edit
-#                    alone is NOT sufficient for `wrangler pages deploy`).
+#   CF_API_TOKEN   — Cloudflare API token. MUST include "Workers Scripts: Edit"
+#                    AND "Workers Routes: Edit" (to bind the zone route).
 #   CF_ACCOUNT_ID  — Cloudflare account ID (HumanGuardrail / gmhelmold).
 #
 # All actions are SHA-pinned per the action-sha-audit gate (S-12 supply-chain).
@@ -97,11 +97,11 @@ jobs:
         working-directory: .
         run: npm install -g wrangler@4.95.0
 
-      # Publish the built static site to the corelink-docs Pages project.
-      # --branch=main marks this as the production deployment (Pages maps the
-      # project's production branch to the custom domain).
-      - name: Deploy to Cloudflare Pages
-        run: wrangler pages deploy build --project-name=corelink-docs --branch=main
+      # Publish the Worker + Static Assets and bind the zone route. Uses
+      # apps/docs/wrangler.toml (assets = ./build, route = humangr.com/corelink/docs*).
+      - name: Deploy Worker (Static Assets)
+        working-directory: apps/docs
+        run: wrangler deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
@@ -109,6 +109,6 @@ jobs:
       - name: Print deployment URL
         if: success()
         run: |
-          echo "Deployed Pages project: corelink-docs"
-          echo "Production URL: https://corelink-docs.humangr.com"
+          echo "Deployed Worker: corelink-docs"
+          echo "Production URL: https://humangr.com/corelink/docs"
           echo "Commit: ${{ github.sha }}"

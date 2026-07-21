@@ -5,12 +5,8 @@ import { describe, expect, it } from "vitest";
 const STATIC_DIR = path.resolve(__dirname, "..", "static");
 
 describe("static/ assets", () => {
-  it("publishes a CNAME pointing at corelink-docs.humangr.com (custom domain)", () => {
-    const cname = fs
-      .readFileSync(path.join(STATIC_DIR, "CNAME"), "utf8")
-      .trim();
-    expect(cname).toBe("corelink-docs.humangr.com");
-  });
+  // No CNAME: the docs are served by a Worker (Static Assets) mounted at the
+  // canonical path humangr.com/corelink/docs, not a Pages custom domain.
 
   it("ships a robots.txt that allows crawling and points at the sitemap", () => {
     const robots = fs.readFileSync(
@@ -20,7 +16,7 @@ describe("static/ assets", () => {
     expect(robots).toMatch(/User-agent:\s*\*/);
     expect(robots).toMatch(/Allow:\s*\//);
     expect(robots).toMatch(
-      /Sitemap:\s*https:\/\/corelink-docs\.humangr\.com\/sitemap\.xml/,
+      /Sitemap:\s*https:\/\/humangr\.com\/corelink\/docs\/sitemap\.xml/,
     );
   });
 

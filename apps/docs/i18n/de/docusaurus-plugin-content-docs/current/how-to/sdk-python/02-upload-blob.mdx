@@ -25,7 +25,7 @@ geben Sie ihn über `expected_digest=` an.
 
 ## Voraussetzungen
 
-- Authentifizierung konfiguriert (siehe [01-authenticate](./01-authenticate)).
+- Authentifizierung konfiguriert (siehe [01-authenticate](./01-authenticate.mdx)).
 
 ## Minimalbeispiel
 
@@ -67,8 +67,8 @@ gibt denselben Digest ohne zusätzliche Speicherkosten zurück (CTRL-CAS-001-Ded
 
 | Ausnahme | Ursache | Maßnahme |
 |---|---|---|
-| `CoreLinkAuthError` | PAT fehlt oder wurde widerrufen (HTTP 401) | Führen Sie [01-authenticate](./01-authenticate) erneut aus |
-| `CoreLinkQuotaError` | Tenant über dem Kontingent (HTTP 402) | Prüfen Sie `corelink stat`; siehe [Fehlerbehebung](./07-troubleshooting) |
+| `CoreLinkAuthError` | PAT fehlt oder wurde widerrufen (HTTP 401) | Führen Sie [01-authenticate](./01-authenticate.mdx) erneut aus |
+| `CoreLinkQuotaError` | Tenant über dem Kontingent (HTTP 402) | Prüfen Sie `corelink stat`; siehe [Fehlerbehebung](./07-troubleshooting.mdx) |
 | `CoreLinkDigestMismatchError` | `expected_digest` stimmte nicht mit `blake3(body)` überein (HTTP 422) | Lokal neu berechnen; nicht blind wiederholen |
 
 Alle werden aus `corelink.exceptions` (oder dem übergeordneten Paket `corelink`)
@@ -76,5 +76,5 @@ importiert und sind Unterklassen von `CoreLinkError`.
 
 ## Nächste Schritte
 
-- [Blob herunterladen](./03-download-blob)
-- [Viele Uploads bündeln](./05-batch-operations)
+- [Blob herunterladen](./03-download-blob.mdx)
+- [Viele Uploads bündeln](./05-batch-operations.mdx)

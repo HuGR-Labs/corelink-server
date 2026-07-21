@@ -19,7 +19,7 @@ If you already have a digest and want to skip recomputation, supply it via
 
 ## Prerequisites
 
-- Authentication configured (see [01-authenticate](./01-authenticate)).
+- Authentication configured (see [01-authenticate](./01-authenticate.mdx)).
 
 ## Minimal example
 
@@ -60,8 +60,8 @@ the same digest with no extra storage cost (CTRL-CAS-001 dedupe).
 
 | Exception | Cause | Action |
 |---|---|---|
-| `CoreLinkAuthError` | PAT missing or revoked (HTTP 401) | Re-run [01-authenticate](./01-authenticate) |
-| `CoreLinkQuotaError` | Tenant over quota (HTTP 402) | Inspect `corelink stat`; see [troubleshooting](./07-troubleshooting) |
+| `CoreLinkAuthError` | PAT missing or revoked (HTTP 401) | Re-run [01-authenticate](./01-authenticate.mdx) |
+| `CoreLinkQuotaError` | Tenant over quota (HTTP 402) | Inspect `corelink stat`; see [troubleshooting](./07-troubleshooting.mdx) |
 | `CoreLinkDigestMismatchError` | `expected_digest` did not match `blake3(body)` (HTTP 422) | Recompute locally; do not retry blindly |
 
 All import from `corelink.exceptions` (or the top-level `corelink` package) and
@@ -69,5 +69,5 @@ subclass `CoreLinkError`.
 
 ## Next steps
 
-- [Download the blob](./03-download-blob)
-- [Batch many uploads](./05-batch-operations)
+- [Download the blob](./03-download-blob.mdx)
+- [Batch many uploads](./05-batch-operations.mdx)

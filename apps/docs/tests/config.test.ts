@@ -4,8 +4,9 @@ import config from "../docusaurus.config";
 describe("docusaurus.config.ts — site identity", () => {
   it("has the canonical CoreLink site identity", () => {
     expect(config.title).toBe("CoreLink");
-    expect(config.url).toBe("https://corelink-docs.humangr.com");
-    expect(config.baseUrl).toBe("/");
+    // Canonical path-based mount: humangr.com/corelink/docs (not a subdomain).
+    expect(config.url).toBe("https://humangr.com");
+    expect(config.baseUrl).toBe("/corelink/docs/");
     expect(config.organizationName).toBe("HumanGuardrail");
     expect(config.projectName).toBe("corelink-server");
   });

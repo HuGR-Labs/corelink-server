@@ -21,10 +21,10 @@ Legend:
 - ✅ granted (single-actor; no approver needed).
 - 2P **dual-approval** — granted but the operation routes through
   `POST /v1/admin/ops` with `X-Dual-Approver`/`X-Approver-Signature` headers.
-  See [INV-ADMIN-DUAL-APPROVAL](./index#dual-approval-gate--why-some-buttons-require-a-second-person).
+  See [INV-ADMIN-DUAL-APPROVAL](./index.mdx#dual-approval-gate--why-some-buttons-require-a-second-person).
 - ❌ denied.
 - self only — operation is permitted only against the actor's own account
-  (e.g. mint a PAT for yourself).
+  (for example, mint a PAT for yourself).
 
 > **Note (v1, manual):** This matrix is hand-maintained from
 > `crates/corelink-pat/src/scopes.rs` and
@@ -129,4 +129,4 @@ Legend:
 - [Role catalog](./role-catalog) — narrative version.
 - [Permissions reference](../../reference/rbac/permissions) — ID-by-ID
   with gated endpoints.
-- [INV-ADMIN-DUAL-APPROVAL](./index#dual-approval-gate--why-some-buttons-require-a-second-person)
+- [INV-ADMIN-DUAL-APPROVAL](./index.mdx#dual-approval-gate--why-some-buttons-require-a-second-person)

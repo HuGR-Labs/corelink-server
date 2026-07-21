@@ -68,8 +68,8 @@ export default function TermsPage(): ReactElement {
             use the Service for your internal business purposes during your
             subscription term. The Service includes the API, the command-line
             tool, the Admin UI, and the documentation surfaces (this site,{" "}
-            <a href="https://corelink-docs.humangr.com">
-              corelink-docs.humangr.com
+            <a href="https://humangr.com/corelink/docs">
+              humangr.com/corelink/docs
             </a>
             , and{" "}
             <a href="https://humangr.com/corelink">
@@ -109,7 +109,7 @@ export default function TermsPage(): ReactElement {
             are non-refundable except where required by law or where we
             materially reduce the Service per §1. Overage above your plan
             allowance is metered at the rate card published on{" "}
-            <a href="/pricing">corelink-docs.humangr.com/pricing</a> and is
+            <a href="/pricing">humangr.com/corelink/docs/pricing</a> and is
             invoiced at the close of each billing cycle.
           </p>
           <p>

@@ -13,6 +13,9 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  /* WCAG 2.5.8 Target Size (Minimum): keep the pill ≥ 24×24 CSS px. */
+  min-height: 24px;
+  min-width: 24px;
   padding: 0.2rem 0.6rem;
   border-radius: 999px;
   font-size: 0.78rem;
@@ -57,12 +60,19 @@
   box-shadow: 0 0 0 2px rgba(207, 34, 46, 0.2);
 }
 
-/* Hide on very narrow screens so the navbar doesn't overflow. */
-@media (max-width: 480px) {
+/*
+ * Collapse to a dot-only target below 1400px so the (dense) navbar does not
+ * overflow and overlap adjacent links — that overlap is what makes axe report
+ * the pill and neighbouring navbar links as "partially obscured"
+ * (WCAG 2.5.8 target-size). The link keeps its aria-label + title, so the
+ * "All systems operational" text is still exposed to assistive tech and on
+ * hover; the full inline label returns on wide viewports (≥ 1400px).
+ */
+@media (max-width: 1400px) {
   .pillLabel {
     display: none;
   }
   .pill {
-    padding: 0.2rem 0.35rem;
+    padding: 0.2rem;
   }
 }

@@ -22,7 +22,7 @@ CoreLink's audit chain is BLAKE3-linked, retained 7 years on R2 with Object Lock
 ## Prerequisites
 
 - CoreLink CLI installed (`corelink version` ≥ this WI).
-- Authenticated as your tenant ([01-authenticate](./sdk-cli/01-authenticate)).
+- Authenticated as your tenant ([01-authenticate](./sdk-cli/01-authenticate.mdx)).
 - The tenant id you want to export (pseudonymous UUIDv7; the same id shown in the admin console).
 
 ## Minimal command
@@ -131,11 +131,11 @@ Each row carries the canonical CloudEvents 1.0 attribute set + CoreLink extensio
 
 ## Troubleshooting
 
-**Export hangs at "verify".** The `--verify` pass is O(events²) for the sibling walk; a 1M-event window takes ~30s on commodity hardware. For very large windows, split into monthly chunks and concatenate the JSON-LD `events` arrays — chain head continuity is enforced via the manifest.
+**Export hangs at "verify."** The `--verify` pass is O(events²) for the sibling walk; a 1M-event window takes ~30s on commodity hardware. For very large windows, split into monthly chunks and concatenate the JSON-LD `events` arrays — chain head continuity is enforced via the manifest.
 
-**Verify reports "chain break".** Stop — that's a SEV-0 signal. Open a support ticket at [`support@hugr.com`](mailto:support@hugr.com) **with the export file attached**. Internal triage runbook: `RB-AUDIT-EXPORT-INTEGRITY`.
+**Verify reports "chain break."** Stop — that's a SEV-0 signal. Open a support ticket at [`support@hugr.com`](mailto:support@hugr.com) **with the export file attached**. Internal triage runbook: `RB-AUDIT-EXPORT-INTEGRITY`.
 
-**"production server-side endpoint not yet wired".** Today the CLI requires `--fixture` for offline / regression mode while the CF Worker `GET /v1/audit/export/window` impl lands. Production wiring goes live in the audit-export-worker rollout — see `ROADMAP-TO-GA.md` §4 R-4.
+**"production server-side endpoint not yet wired."** Today the CLI requires `--fixture` for offline / regression mode while the CF Worker `GET /v1/audit/export/window` impl lands. Production wiring goes live in the audit-export-worker rollout — see `ROADMAP-TO-GA.md` §4 R-4.
 
 ## Related
 

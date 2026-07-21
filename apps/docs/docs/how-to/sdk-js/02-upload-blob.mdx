@@ -16,7 +16,7 @@ may optionally pass an `expectedDigest` to assert it matches locally.
 
 ## Prerequisites
 
-- Authentication configured ([01-authenticate](./01-authenticate)).
+- Authentication configured ([01-authenticate](./01-authenticate.mdx)).
 
 ## Minimal example
 
@@ -69,11 +69,11 @@ const opts: PutOptions = { expectedDigest: "..." satisfies BlobDigest };
 
 | Class | Cause | Action |
 |---|---|---|
-| `AuthError` | PAT missing or revoked | [01-authenticate](./01-authenticate) |
-| `QuotaError` | Tenant over quota | [troubleshooting](./07-troubleshooting) |
+| `AuthError` | PAT missing or revoked | [01-authenticate](./01-authenticate.mdx) |
+| `QuotaError` | Tenant over quota | [troubleshooting](./07-troubleshooting.mdx) |
 | `DigestMismatchError` | `expectedDigest` wrong | Recompute |
 
 ## Next steps
 
-- [Download the blob](./03-download-blob)
-- [Batch many uploads](./05-batch-operations)
+- [Download the blob](./03-download-blob.mdx)
+- [Batch many uploads](./05-batch-operations.mdx)

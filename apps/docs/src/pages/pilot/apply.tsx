@@ -1,5 +1,5 @@
 /**
- * Pilot signup form — `corelink-docs.humangr.com/pilot/apply`.
+ * Pilot signup form — `humangr.com/corelink/docs/pilot/apply`.
  *
  * R-prep wave-29 stream-2 deliverable. Pairs with the
  * `signup.corelink.humangr.com` backend handler (stream-1):
@@ -123,7 +123,7 @@ function backendErrorMessage(status: number, raw: string): string {
     return translate({
       id: "pilot.apply.backend.closed",
       message:
-        "Signup pipeline closed — all 10 pilot slots are currently reserved. Watch for GA at corelink-docs.humangr.com or email pilot@humangr.com to join the waitlist.",
+        "Signup pipeline closed — all 10 pilot slots are currently reserved. Watch for GA at humangr.com/corelink/docs or email pilot@humangr.com to join the waitlist.",
       description: "Pilot apply form — backend 503 fallback",
     });
   }
