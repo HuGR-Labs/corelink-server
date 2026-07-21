@@ -36,6 +36,10 @@ import {
 } from "./lib/quota.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { isTenantSuspended } from "./lib/tenant_suspend_gate.js";
+import {
+  resolveTenantResidency,
+  RESIDENCY_UNRESOLVED,
+} from "./lib/tenant_residency_cache.js";
 import { verifyPatRowCached, type KvReader } from "./lib/pat_verify_cache.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
@@ -2873,15 +2877,23 @@ const baseHandler: ExportedHandler<Env> = {
       resolvedTenantId !== "_system" &&
       resolvedTenantId !== "_pending"
     ) {
-      try {
-        const row = await env.CONFIG_DB
-          .prepare("SELECT primary_region FROM tenant WHERE tenant_id = ?1 LIMIT 1")
-          .bind(resolvedTenantId)
-          .first<{ primary_region: string }>();
-        primaryRegion = row?.primary_region;
-      } catch (_err) {
-        // D1 hiccup: we cannot establish residency. FAIL-CLOSED — refuse rather
-        // than risk routing an EU tenant to US storage on a transient error.
+      // Residency is resolved through the three-tier cache (L1 isolate → L2 KV
+      // `tres:` → L3 D1) so a far-from-D1 (e.g. SAM) caller no longer pays a
+      // synchronous D1-PRIMARY round-trip per request for this near-immutable
+      // value (latency WP — the `wdb` phase). FAIL-CLOSED is preserved: an
+      // unresolved region (D1 fault with no cached fallback) still 503s rather
+      // than IAD-leaking; a stale cached region cannot SILENTLY leak because the
+      // container residency backstop (residency.rs) 409s any real cross-region
+      // mismatch.
+      const residencyKv = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
+      const residency = await resolveTenantResidency(env.CONFIG_DB, resolvedTenantId, {
+        ...(residencyKv ? { kv: residencyKv } : {}),
+        waitUntil: ctx.waitUntil.bind(ctx),
+      });
+      if (residency === RESIDENCY_UNRESOLVED) {
+        // D1 hiccup with no cached region: we cannot establish residency.
+        // FAIL-CLOSED — refuse rather than risk routing an EU tenant to US
+        // storage on a transient error.
         return applyCors(
           new Response(
             JSON.stringify({
@@ -2897,6 +2909,9 @@ const baseHandler: ExportedHandler<Env> = {
           request,
         );
       }
+      // A `null` region (no tenant row / no pin) ⇒ `undefined`, preserving the
+      // existing `primaryRegion === undefined` IAD-local fall-through below.
+      primaryRegion = residency.region ?? undefined;
 
       const colo = primaryRegion !== undefined ? coloForMacro(primaryRegion) : undefined;
       // Non-IAD residency: must fan-out to the matching regional Service Binding.

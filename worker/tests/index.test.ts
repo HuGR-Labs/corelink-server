@@ -11,7 +11,7 @@
  * URL — no polyfills needed.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
@@ -20,6 +20,16 @@ import {
   TEST_PAT_TOKEN_ID,
   mintTestPat,
 } from "./setup.js";
+import { __resetTenantResidencyCacheForTest } from "../src/lib/tenant_residency_cache.js";
+
+// The residency resolver keeps a per-isolate L1 cache keyed by tenant_id. Many
+// cases here reuse TEST_TENANT_ID with DIFFERENT mock-D1 residency verdicts (a
+// resolved region, a missing binding, a D1 throw), so a cached decision from one
+// case must not leak into the next — reset it before every case (mirrors the
+// uncached direct-D1 read these tests were written against).
+beforeEach(() => {
+  __resetTenantResidencyCacheForTest();
+});
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Test helpers
