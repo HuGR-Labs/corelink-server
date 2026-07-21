@@ -57,7 +57,7 @@ curl -X POST \
   -d '{
   "byok_provider": "aws",
   "company": "string",
-  "expected_egress_gb_month": 0,
+  "expected_egress_gb_month": null,
   "message": "string",
   "name": "string",
   "work_email": "test-tenant@example.com"
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 {
   "byok_provider": "aws",
   "company": "string",
-  "expected_egress_gb_month": 0,
+  "expected_egress_gb_month": null,
   "message": "string",
   "name": "string",
   "work_email": "test-tenant@example.com"
@@ -108,7 +108,7 @@ def main() -> None:
     body = {
   "byok_provider": "aws",
   "company": "string",
-  "expected_egress_gb_month": 0,
+  "expected_egress_gb_month": null,
   "message": "string",
   "name": "string",
   "work_email": "test-tenant@example.com"
@@ -141,7 +141,7 @@ func main() {
     body := []byte(`{
   "byok_provider": "aws",
   "company": "string",
-  "expected_egress_gb_month": 0,
+  "expected_egress_gb_month": null,
   "message": "string",
   "name": "string",
   "work_email": "test-tenant@example.com"
@@ -172,7 +172,7 @@ const resp = await fetch("https://corelink-api.humangr.com/v1/enterprise/inquire
   body: JSON.stringify({
   "byok_provider": "aws",
   "company": "string",
-  "expected_egress_gb_month": 0,
+  "expected_egress_gb_month": null,
   "message": "string",
   "name": "string",
   "work_email": "test-tenant@example.com"
