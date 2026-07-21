@@ -151,7 +151,7 @@ Field semantics:
    absent (it shouldn't be — CoreLink always emits it on 429).
    Canonical starting point: 250ms → 500ms → 1s → 2s → 4s → 8s.
 4. **For long deferred retries**, prefer `reset_utc` over
-   `reset_seconds` — your retry might run hours later (e.g. cron),
+   `reset_seconds` — your retry might run hours later (for example, cron),
    by which time the seconds value is stale.
 5. **Stop retrying on `over_quota`.** A storage-quota 429 will
    persist until the 1st UTC of next month or until the tenant
@@ -181,7 +181,7 @@ You should **not** upgrade for:
 - `global_circuit_open` 429s — wait it out; the circuit recovers in
   ≤ 2 minutes.
 
-## Reference: spec sources
+## Reference: Spec sources
 
 - `crates/corelink-rate-headers/src/headers.rs` — header builder
   source of truth.
