@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: check_migrations_additive.py
         run: python3 scripts/check_migrations_additive.py
@@ -66,7 +66,7 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Self-hosted Macs already ship rustup+cargo; re-provisioning via
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
@@ -97,7 +97,7 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Self-hosted Macs already ship rustup+cargo; re-provisioning via
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
@@ -128,7 +128,7 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Self-hosted Macs already ship rustup+cargo; re-provisioning via
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
@@ -155,7 +155,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: RB-region-leak dry-run
         run: bash scripts/rb_region_leak_dry_run.sh
@@ -168,7 +168,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: region_pinning.yml parse smoke
         run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/region_pinning.yml'))"
@@ -201,7 +201,7 @@ jobs:
     # Only runs on schedule or manual dispatch with explicit override
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Self-hosted Macs already ship rustup+cargo; re-provisioning via
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
