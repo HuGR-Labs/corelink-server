@@ -20,12 +20,15 @@
 import { ClerkProvider, SignIn } from "@clerk/nextjs";
 
 import { clerkLocalization } from "@/lib/clerk-localization";
+import { APP_BASE_PATH } from "@/lib/route-matcher";
 
 export default function ClerkSignIn(): React.ReactElement {
   return (
     <ClerkProvider
       publishableKey={process.env["NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]}
       localization={clerkLocalization}
+      signInUrl={`${APP_BASE_PATH}/sign-in`}
+      signUpUrl={`${APP_BASE_PATH}/sign-up`}
     >
       {/*
        * forceRedirectUrl: after sign-in, land on the authenticated dashboard —
@@ -36,7 +39,12 @@ export default function ClerkSignIn(): React.ReactElement {
        * /sign-in is also redirected straight here instead of bouncing to "/".
        * /en/customer is the (authenticated)-group dashboard (default locale en).
        */}
-      <SignIn forceRedirectUrl="/en/customer" fallbackRedirectUrl="/en/customer" />
+      <SignIn
+        path={`${APP_BASE_PATH}/sign-in`}
+        routing="path"
+        forceRedirectUrl="/en/customer"
+        fallbackRedirectUrl="/en/customer"
+      />
     </ClerkProvider>
   );
 }
