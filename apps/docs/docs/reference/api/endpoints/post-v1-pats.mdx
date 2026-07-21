@@ -59,7 +59,7 @@ curl -X POST \
   -H 'Authorization: Bearer <YOUR_PAT>' \
   -H 'Content-Type: application/json' \
   -d '{
-  "expires_at_ms": 0,
+  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
     "cas.read"
@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = Client::new();
     let body: Value = serde_json::from_str(r#"
 {
-  "expires_at_ms": 0,
+  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
     "cas.read"
@@ -110,7 +110,7 @@ def main() -> None:
         "Content-Type": "application/json",
     }
     body = {
-  "expires_at_ms": 0,
+  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
     "cas.read"
@@ -142,7 +142,7 @@ import (
 
 func main() {
     body := []byte(`{
-  "expires_at_ms": 0,
+  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
     "cas.read"
@@ -174,7 +174,7 @@ const resp = await fetch("https://corelink-api.humangr.com/v1/pats", {
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
-  "expires_at_ms": 0,
+  "expires_at_ms": null,
   "label": "ci-runner-build-cache",
   "scopes": [
     "cas.read"

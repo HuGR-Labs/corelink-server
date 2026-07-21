@@ -105,7 +105,11 @@ jobs:
       - name: Install oasdiff
         if: steps.base.outputs.has_base == 'true'
         run: |
-          go install github.com/oasdiff/oasdiff@v1.10.27
+          # v1.10.27's go.mod still declares the pre-rename module path
+          # (`github.com/tufin/oasdiff`); installing via the new
+          # `github.com/oasdiff/oasdiff` path fails "version constraints conflict".
+          # Use the path the pinned version actually declares.
+          go install github.com/tufin/oasdiff@v1.10.27
           echo "$HOME/go/bin" >> "$GITHUB_PATH"
 
       - name: Run oasdiff breaking-change scan

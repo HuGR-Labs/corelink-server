@@ -2093,9 +2093,8 @@ components:
             enum: [cas.read, cas.write, ac.read, ac.write, admin]
           default: [cas.read, cas.write, ac.read, ac.write]
         expires_at_ms:
-          type: integer
+          type: [integer, "null"]
           format: int64
-          nullable: true
     PatIssueResponse:
       allOf:
         - $ref: "#/components/schemas/PatMetadata"
@@ -2116,9 +2115,9 @@ components:
           type: array
           items: { type: string }
         created_at_ms: { type: integer, format: int64 }
-        last_used_at_ms: { type: integer, format: int64, nullable: true }
-        expires_at_ms: { type: integer, format: int64, nullable: true }
-        revoked_at_ms: { type: integer, format: int64, nullable: true }
+        last_used_at_ms: { type: [integer, "null"], format: int64 }
+        expires_at_ms: { type: [integer, "null"], format: int64 }
+        revoked_at_ms: { type: [integer, "null"], format: int64 }
         prefix:
           type: string
           description: First 8 chars of the raw token (display only).
@@ -2194,8 +2193,7 @@ components:
         status: { $ref: "#/components/schemas/DsrStatus" }
         sla_deadline_ms: { type: integer, format: int64 }
         rejected_reason:
-          type: string
-          nullable: true
+          type: [string, "null"]
         receipt:
           $ref: "#/components/schemas/DsrAcceptedReceipt"
     ConsentPurpose:
@@ -2260,8 +2258,8 @@ components:
           type: string
           enum: [granted, revoked]
         at_ms: { type: integer, format: int64 }
-        consent_id: { type: string, format: uuid, nullable: true }
-        revocation_id: { type: string, format: uuid, nullable: true }
+        consent_id: { type: [string, "null"], format: uuid }
+        revocation_id: { type: [string, "null"], format: uuid }
         notice_version: { type: string }
     ConsentHistoryResponse:
       type: object
@@ -2318,7 +2316,7 @@ components:
           enum: [pending_approval, approved, executed, rejected, failed]
         caller_user_id: { type: string, format: uuid }
         approver_user_id: { type: string, format: uuid }
-        executed_at_ms: { type: integer, format: int64, nullable: true }
+        executed_at_ms: { type: [integer, "null"], format: int64 }
         result:
           type: object
           additionalProperties: true
@@ -2333,9 +2331,9 @@ components:
             "corelink.dsr.request_received",
             "corelink.consent.granted",
             "corelink.admin.op.approved"]
-        tenant_id: { type: string, format: uuid, nullable: true }
+        tenant_id: { type: [string, "null"], format: uuid }
         occurred_at_ms: { type: integer, format: int64 }
-        correlation_id: { type: string, nullable: true }
+        correlation_id: { type: [string, "null"] }
         payload:
           type: object
           additionalProperties: true
@@ -2347,8 +2345,7 @@ components:
           type: array
           items: { $ref: "#/components/schemas/AuditEvent" }
         next_cursor:
-          type: string
-          nullable: true
+          type: [string, "null"]
     TenantSummary:
       type: object
       required: [tenant_id, region, tier, state, created_at_ms]
@@ -2372,8 +2369,7 @@ components:
           type: array
           items: { $ref: "#/components/schemas/TenantSummary" }
         next_cursor:
-          type: string
-          nullable: true
+          type: [string, "null"]
     EnterpriseInquiryRequest:
       type: object
       required: [name, work_email, company, message]
@@ -2385,11 +2381,10 @@ components:
           examples: ["test-tenant@example.com"]
         company: { type: string, minLength: 1, maxLength: 128 }
         message: { type: string, minLength: 10, maxLength: 4096 }
-        expected_egress_gb_month: { type: integer, minimum: 0, nullable: true }
+        expected_egress_gb_month: { type: [integer, "null"], minimum: 0 }
         byok_provider:
-          type: string
+          type: [string, "null"]
           enum: [aws, gcp, azure, vault]
-          nullable: true
     EnterpriseInquiryResponse:
       type: object
       required: [inquiry_id, received_at_ms]
@@ -2408,7 +2403,7 @@ components:
           type: string
           pattern: "^[0-9a-f]{64}$"
         locale: { $ref: "#/components/schemas/Bcp47Locale" }
-        display_name: { type: string, nullable: true }
+        display_name: { type: [string, "null"] }
         created_at_ms: { type: integer, format: int64 }
         active_tenants:
           type: array
@@ -2417,7 +2412,7 @@ components:
       type: object
       properties:
         locale: { $ref: "#/components/schemas/Bcp47Locale" }
-        display_name: { type: string, nullable: true, maxLength: 128 }
+        display_name: { type: [string, "null"], maxLength: 128 }
     DataCategory:
       type: object
       required: [id, name, legal_basis]
@@ -2560,15 +2555,13 @@ components:
           format: int64
           minimum: 0
         tier_granted_at_ms:
-          type: integer
+          type: [integer, "null"]
           format: int64
           minimum: 0
-          nullable: true
         first_blob_at_ms:
-          type: integer
+          type: [integer, "null"]
           format: int64
           minimum: 0
-          nullable: true
 
     ListPilotsResponse:
       type: object
