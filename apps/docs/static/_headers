@@ -9,7 +9,13 @@
 # CSP notes:
 #   - script-src: 'self' + Plausible Analytics (plausible.io) for usage stats.
 #     Docusaurus injects its bundle from /assets/* (same-origin), which 'self'
-#     covers. Algolia DocSearch UI is React-rendered (no remote <script>).
+#     covers — BUT it also emits two INLINE bootstrap scripts that 'self' does
+#     NOT cover (inline needs a hash/nonce): the theme initialiser (sets
+#     data-theme before paint to avoid a flash) and the base-url load-failure
+#     banner. Both are allow-listed by their sha256 below. The banner hash is
+#     baseUrl-dependent — regenerate both if baseUrl or the Docusaurus version
+#     changes: `node -e` sha256(inline <script> bodies of build/index.html).
+#     Algolia DocSearch UI is React-rendered (no remote <script>).
 #     https://browser.sentry-cdn.com — Sentry CDN loader for client-side error
 #     tracking (injected via docusaurus.config.ts headTags when SENTRY_DSN_DOCS
 #     is set at build time). Source: https://docs.sentry.io/platforms/javascript/install/cdn/#content-security-policy
@@ -30,7 +36,7 @@
 #   - no frame-src needed — docs never embeds Stripe / Clerk.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://plausible.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolianet.com https://*.algolia.io https://*.ingest.sentry.io https://status.corelink.humangr.com https://humangr.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-0xt7rjlfRsoD7aukiSWSNvMBWU159Lh5cl3WNaV1g+w=' 'sha256-0ruMAFH9auSuLY3YAHGSHAcwCIo9sGOgiXNMd+7JqKQ=' https://plausible.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://plausible.io https://*.algolia.net https://*.algolianet.com https://*.algolia.io https://*.ingest.sentry.io https://status.corelink.humangr.com https://humangr.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

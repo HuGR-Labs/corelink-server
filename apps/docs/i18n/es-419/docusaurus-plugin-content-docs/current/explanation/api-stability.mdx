@@ -43,7 +43,7 @@ extension and is mirrored in the per-endpoint reference docs.
 
 | Tier        | SLO?         | Deprecation notice | Versioning policy                            | Visible to       |
 |-------------|--------------|--------------------|----------------------------------------------|------------------|
-| **GA**      | Full SLO (per [SLO catalog](/reference/slos/)) | **≥ 24 months** before `410 Gone` | Semver under the URL major (`/v1`)            | All customers    |
+| **GA**      | Full SLO (per SLO catalog) | **≥ 24 months** before `410 Gone` | Semver under the URL major (`/v1`)            | All customers    |
 | **Preview** | No SLO, best-effort | **≥ 90 days** before removal     | May change shape **without semver bump**; opt-in via `X-CoreLink-Preview: 1` header | All customers (advertised as preview) |
 | **Internal**| No SLO        | **No notice**     | May change or disappear at any time           | CoreLink staff, system-to-system only |
 

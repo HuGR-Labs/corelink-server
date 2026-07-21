@@ -22,7 +22,7 @@ pode, opcionalmente, passar um `expectedDigest` para afirmar que ele corresponde
 
 ## Pré-requisitos
 
-- Autenticação configurada ([01-authenticate](./01-authenticate)).
+- Autenticação configurada ([01-authenticate](./01-authenticate.mdx)).
 
 ## Exemplo mínimo
 
@@ -75,11 +75,11 @@ const opts: PutOptions = { expectedDigest: "..." satisfies BlobDigest };
 
 | Classe | Causa | Ação |
 |---|---|---|
-| `AuthError` | PAT ausente ou revogada | [01-authenticate](./01-authenticate) |
-| `QuotaError` | Tenant acima da cota | [solução de problemas](./07-troubleshooting) |
+| `AuthError` | PAT ausente ou revogada | [01-authenticate](./01-authenticate.mdx) |
+| `QuotaError` | Tenant acima da cota | [solução de problemas](./07-troubleshooting.mdx) |
 | `DigestMismatchError` | `expectedDigest` incorreto | Recalcular |
 
 ## Próximos passos
 
-- [Baixar o blob](./03-download-blob)
-- [Enviar muitos em lote](./05-batch-operations)
+- [Baixar o blob](./03-download-blob.mdx)
+- [Enviar muitos em lote](./05-batch-operations.mdx)

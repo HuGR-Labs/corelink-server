@@ -45,7 +45,7 @@ canonical fix in `docs/reference/error-taxonomy`.
 | Exit | Meaning | Next step |
 |---|---|---|
 | `1` | Generic failure | `corelink doctor --json` |
-| `2` | Argument error or `--pat` flag rejected | Re-read [01-authenticate](./01-authenticate) |
+| `2` | Argument error or `--pat` flag rejected | Re-read [01-authenticate](./01-authenticate.mdx) |
 | `3` | Verify mismatch (`COR_VERIFY_001`) | Retry; if persistent open Sev-2 |
 | `4` | Not found (`COR_CAS_NOT_FOUND`) | Confirm digest with `corelink stat` |
 | `5` | Rate limit (`COR_QUOTA_RATELIMIT`) | Back off + retry |

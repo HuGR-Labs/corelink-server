@@ -219,7 +219,7 @@ const QUADRANTS: readonly TrustQuadrant[] = [
       },
       {
         title: "Service-Level Agreement (SLA)",
-        href: "/legal/sla",
+        href: "/legal/terms",
         status: "LIVE",
         summary:
           "99.95% monthly uptime (Pro+); service-credit schedule; reporting cadence; root-cause publication commitment.",
@@ -539,7 +539,7 @@ export default function TrustCenter(): ReactElement {
             >
               To report a security vulnerability, please follow our
             </Translate>{" "}
-            <Link to="/security/report-security">
+            <Link to="/security/policy">
               <Translate
                 id="trust.landing.contact.disclosure.linktext"
                 description="Security disclosure link text"

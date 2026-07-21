@@ -1,5 +1,5 @@
 /**
- * Pilot landing page — `corelink-docs.humangr.com/pilot`.
+ * Pilot landing page — `humangr.com/corelink/docs/pilot`.
  *
  * R-prep wave-29 stream-2 deliverable. Source-of-truth copy:
  *   marketing/launch/PILOT-LANDING-PAGE-COPY.md (wave-28 step-7, b0485bc).

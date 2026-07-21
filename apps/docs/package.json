@@ -2,8 +2,7 @@
   "name": "@corelink/docs",
   "version": "0.1.0",
   "private": true,
-  "description": "CoreLink public documentation site (Docusaurus 3 + Diátaxis + 3-locale i18n + custom domain corelink-docs.humangr.com). WI-S18-001 foundation + WI-S18-002 REAPI/tutorials + WI-S18-003 SDK guides + WI-S18-004 compliance/security/pricing + WI-S18-005 ship gate.",
-  "type": "module",
+  "description": "CoreLink public documentation site (Docusaurus 3 + Diátaxis + 3-locale i18n) served by a Cloudflare Worker (Static Assets) at the canonical path humangr.com/corelink/docs. WI-S18-001 foundation + WI-S18-002 REAPI/tutorials + WI-S18-003 SDK guides + WI-S18-004 compliance/security/pricing + WI-S18-005 ship gate.",
   "scripts": {
     "dev": "docusaurus start",
     "start": "docusaurus start",

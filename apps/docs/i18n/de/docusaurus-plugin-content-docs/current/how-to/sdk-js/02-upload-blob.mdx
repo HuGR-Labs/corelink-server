@@ -22,7 +22,7 @@ können Sie ein `expectedDigest` übergeben, um zu bestätigen, dass es lokal ü
 
 ## Voraussetzungen
 
-- Authentifizierung konfiguriert ([01-authenticate](./01-authenticate)).
+- Authentifizierung konfiguriert ([01-authenticate](./01-authenticate.mdx)).
 
 ## Minimalbeispiel
 
@@ -75,11 +75,11 @@ const opts: PutOptions = { expectedDigest: "..." satisfies BlobDigest };
 
 | Klasse | Ursache | Aktion |
 |---|---|---|
-| `AuthError` | PAT fehlt oder wurde widerrufen | [01-authenticate](./01-authenticate) |
-| `QuotaError` | Tenant über dem Kontingent | [Fehlerbehebung](./07-troubleshooting) |
+| `AuthError` | PAT fehlt oder wurde widerrufen | [01-authenticate](./01-authenticate.mdx) |
+| `QuotaError` | Tenant über dem Kontingent | [Fehlerbehebung](./07-troubleshooting.mdx) |
 | `DigestMismatchError` | `expectedDigest` falsch | Neu berechnen |
 
 ## Nächste Schritte
 
-- [Das Blob herunterladen](./03-download-blob)
-- [Viele Uploads bündeln](./05-batch-operations)
+- [Das Blob herunterladen](./03-download-blob.mdx)
+- [Viele Uploads bündeln](./05-batch-operations.mdx)

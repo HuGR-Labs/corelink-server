@@ -25,7 +25,7 @@ Se você já tem um digest e quer pular o recálculo, forneça-o via
 
 ## Pré-requisitos
 
-- Autenticação configurada (consulte [01-authenticate](./01-authenticate)).
+- Autenticação configurada (consulte [01-authenticate](./01-authenticate.mdx)).
 
 ## Exemplo mínimo
 
@@ -67,8 +67,8 @@ retorna o mesmo digest sem custo adicional de armazenamento (dedupe CTRL-CAS-001
 
 | Exceção | Causa | Ação |
 |---|---|---|
-| `CoreLinkAuthError` | PAT ausente ou revogado (HTTP 401) | Execute novamente [01-authenticate](./01-authenticate) |
-| `CoreLinkQuotaError` | Tenant acima da cota (HTTP 402) | Inspecione `corelink stat`; consulte [solução de problemas](./07-troubleshooting) |
+| `CoreLinkAuthError` | PAT ausente ou revogado (HTTP 401) | Execute novamente [01-authenticate](./01-authenticate.mdx) |
+| `CoreLinkQuotaError` | Tenant acima da cota (HTTP 402) | Inspecione `corelink stat`; consulte [solução de problemas](./07-troubleshooting.mdx) |
 | `CoreLinkDigestMismatchError` | `expected_digest` não correspondeu a `blake3(body)` (HTTP 422) | Recalcule localmente; não repita cegamente |
 
 Todas são importadas de `corelink.exceptions` (ou do pacote de nível superior
@@ -76,5 +76,5 @@ Todas são importadas de `corelink.exceptions` (ou do pacote de nível superior
 
 ## Próximos passos
 
-- [Baixar o blob](./03-download-blob)
-- [Agrupar vários uploads em lote](./05-batch-operations)
+- [Baixar o blob](./03-download-blob.mdx)
+- [Agrupar vários uploads em lote](./05-batch-operations.mdx)
