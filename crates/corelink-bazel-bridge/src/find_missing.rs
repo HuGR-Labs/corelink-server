@@ -214,11 +214,13 @@ impl FindMissingHandler for InMemoryFindMissing {
 /// [`crate::FIND_MISSING_BLOB_CAP`].
 /// Returns [`BazelBridgeError::InvalidDigest`] if any digest fails
 /// validation.
-/// Returns [`BazelBridgeError::Internal`] if the JSON cannot be
-/// deserialised.
+/// Returns [`BazelBridgeError::InvalidRequest`] if the JSON body cannot be
+/// deserialised (a client error → 400, not a server 500).
 pub fn parse_find_missing_request(body: &str) -> Result<Vec<Digest>, BazelBridgeError> {
-    let req: FindMissingRequest = serde_json::from_str(body)
-        .map_err(|e| BazelBridgeError::InvalidRequest { reason: e.to_string() })?;
+    let req: FindMissingRequest =
+        serde_json::from_str(body).map_err(|e| BazelBridgeError::InvalidRequest {
+            reason: e.to_string(),
+        })?;
 
     if req.blob_digests.len() > crate::FIND_MISSING_BLOB_CAP {
         return Err(BazelBridgeError::BatchTooLarge {
