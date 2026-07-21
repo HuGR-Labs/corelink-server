@@ -26,7 +26,6 @@ import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
 import { EventLogDO } from "./event_log_do.js";
 import {
-  getTierForTenant,
   checkStorageQuota,
   incrementMonthlyRequestCount,
   requestCapResultForCount,
@@ -40,6 +39,7 @@ import {
   resolveTenantResidency,
   RESIDENCY_UNRESOLVED,
 } from "./lib/tenant_residency_cache.js";
+import { resolveTenantTierCached } from "./lib/tenant_tier_cache.js";
 import { verifyPatRowCached, type KvReader } from "./lib/pat_verify_cache.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
@@ -2804,7 +2804,16 @@ const baseHandler: ExportedHandler<Env> = {
       // sub-request forwarding to its regional container — needs the resolved
       // tier for the server-trusted STORAGE_QUOTA_HEADER. Gating these on
       // !isFanout would re-introduce the regional storage-header regression.
-      const quotaTier = await getTierForTenant(env.CONFIG_DB, resolvedTenantId);
+      // Latency WP slice 2: resolve the tier through the L1→KV-L2→D1 cache
+      // (`ttier:`), mirroring the residency KV-L2 (slice 1) — collapses the tier
+      // pair of the `wdb` quota trio for far-from-D1 (SAM/GRU) callers. Returns
+      // the same TierResult shape; an unconfirmed (`d1Error`) result is never
+      // cached, so the F21 fail-open posture is preserved.
+      const tierKv = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
+      const quotaTier = await resolveTenantTierCached(env.CONFIG_DB, resolvedTenantId, {
+        ...(tierKv ? { kv: tierKv } : {}),
+        waitUntil: ctx.waitUntil.bind(ctx),
+      });
       storageQuotaHeader = storageQuotaHeaderValue(quotaTier);
 
       // Monthly request-count quota (red-team #5): compare the already-counted

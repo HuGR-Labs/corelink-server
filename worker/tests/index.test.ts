@@ -21,14 +21,16 @@ import {
   mintTestPat,
 } from "./setup.js";
 import { __resetTenantResidencyCacheForTest } from "../src/lib/tenant_residency_cache.js";
+import { __resetTierCacheForTests } from "../src/lib/tenant_tier_cache.js";
 
-// The residency resolver keeps a per-isolate L1 cache keyed by tenant_id. Many
-// cases here reuse TEST_TENANT_ID with DIFFERENT mock-D1 residency verdicts (a
-// resolved region, a missing binding, a D1 throw), so a cached decision from one
-// case must not leak into the next — reset it before every case (mirrors the
-// uncached direct-D1 read these tests were written against).
+// The residency + tier resolvers each keep a per-isolate L1 cache keyed by
+// tenant_id. Many cases here reuse TEST_TENANT_ID with DIFFERENT mock-D1 verdicts
+// (a resolved region, a missing binding, a D1 throw; a tier), so a cached
+// decision from one case must not leak into the next — reset both before every
+// case (mirrors the uncached direct-D1 reads these tests were written against).
 beforeEach(() => {
   __resetTenantResidencyCacheForTest();
+  __resetTierCacheForTests();
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
