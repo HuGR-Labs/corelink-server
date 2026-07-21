@@ -24,6 +24,12 @@ compatibility_date = "2026-04-01"
 [assets]
 directory = "./build"
 binding = "ASSETS"
+# Run worker/index.ts BEFORE static-asset matching. Without this, Cloudflare
+# serves a matching asset directly and the Worker never runs — so the legacy
+# `corelink-docs.humangr.com/` request (which matches `/` -> index.html) would
+# be served 200 instead of hitting the host-redirect. Worker-first lets the
+# shim own routing (host 301 + mount-prefix strip) for every request.
+run_worker_first = true
 # Match Docusaurus `trailingSlash: false` (it emits flat `<route>.html` files);
 # drop trailing slashes and serve the built 404 page on a miss.
 html_handling = "drop-trailing-slash"
