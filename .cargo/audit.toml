@@ -31,50 +31,12 @@ ignore = [
     # per-tenant signing-process isolation. Full decision matrix +
     # auto-promotion triggers in ADR-S20-RSA-MARVIN-MITIGATION.
     "RUSTSEC-2023-0071",
-    # 2026-06-02 — number_prefix 0.4.0 RUSTSEC-2025-0119 (unmaintained-ONLY;
-    # no vuln, no CVE). Reached solely via `indicatif 0.17.11 → corelink-cli`
-    # (the dev/ops CLI progress bars in tools/cli). Upstream advisory states
-    # "No safe upgrade is available!" — number_prefix has no maintained
-    # replacement wired into indicatif yet (indicatif must migrate to
-    # `unit-prefix` first). Zero production/runtime exposure: corelink-cli is
-    # an operator tool, not shipped in the CF Workers runtime. Re-evaluate
-    # when indicatif cuts a release dropping number_prefix (track an indicatif
-    # bump that switches to unit-prefix), then remove this ignore.
-    # (Also added to deny.toml `[advisories].ignore` by PR #77.)
-    "RUSTSEC-2025-0119",
-    # 2026-05-27 Wave 36 close-out — rustls-pemfile RUSTSEC-2025-0134
-    # (unmaintained). Reached only via `bollard 0.17 → testcontainers 0.21
-    # → testcontainers-modules 0.9` which is a `[dev-dependencies]` of
-    # `corelink-audit-chain` (test-only). Zero production exposure. Re-evaluate
-    # when bollard cuts a release dropping rustls-pemfile or when testcontainers
-    # migrates to rustls-pki-types directly. Mitigation: PEM parsing only
-    # happens at test-container boot, never against external input in prod.
-    "RUSTSEC-2025-0134",
-    # 2026-06-11 — pyo3 0.24.2 RUSTSEC-2026-0176 (out-of-bounds read in
-    # `nth`/`nth_back` for `PyList`/`PyTuple` iterators). Reached SOLELY via
-    # `corelink-py` (the Python SDK bindings) — pyo3 is NOT shipped in the
-    # CoreLink Cloudflare runtime (no Python interpreter in the product attack
-    # surface). No semver-compatible fix in the 0.24 line (`cargo update -p pyo3`
-    # is a no-op; the fix is pyo3 0.25+, a major bump for the Python SDK).
-    # Mirror of `deny.toml` `[advisories].ignore`. Re-evaluate: bump
-    # `corelink-py` to pyo3 >= 0.25, then remove from BOTH files.
-    "RUSTSEC-2026-0176",
-    # 2026-06-12 — pyo3 0.24.2 RUSTSEC-2026-0177 (missing `Sync` bound on the
-    # `PyCFunction::new_closure` closure; free-threaded-Python thread-safety bug).
-    # Same provenance as 0176 (corelink-py Python SDK only, not shipped). Fixed in
-    # pyo3 0.29.0 (major bump). Mirror of deny.toml. A single corelink-py bump to
-    # pyo3 >= 0.29 clears BOTH; then remove both from BOTH files.
-    "RUSTSEC-2026-0177",
-    # 2026-06-12 — three same-day rust-postgres DoS advisories (postgres-protocol
-    # / tokio-postgres): -0178 short-`DataRow` panic, -0179 unbounded SCRAM
-    # iteration CPU-exhaustion, -0180 malformed-`hstore` decode panic. Reached
-    # only via `corelink-audit-chain`'s OPTIONAL feature-gated postgres audit sink
-    # + dev test-containers; the shipped CF runtime is D1/SQLite (no postgres
-    # connection) and all three require a malicious postgres *server*. The semver
-    # fix (tokio-postgres >= 0.7.18) force-downgrades unrelated shared workspace
-    # deps (windows-sys / socket2 / getrandom), so it is waived rather than
-    # applied. Mirror of `deny.toml` — re-evaluate the trio together.
-    "RUSTSEC-2026-0178",
-    "RUSTSEC-2026-0179",
-    "RUSTSEC-2026-0180",
+    # PRUNED 2026-07-21 (mirrors the deny.toml prune): the seven dev/optional-only
+    # ignores — number_prefix RUSTSEC-2025-0119, rustls-pemfile RUSTSEC-2025-0134,
+    # pyo3 RUSTSEC-2026-0176/0177, rust-postgres RUSTSEC-2026-0178/0179/0180 — were
+    # removed because `cargo deny check advisories` reports each as
+    # `advisory-not-detected`: their affected crate/version is no longer in the
+    # graph (rustls-pemfile + number_prefix dropped; pyo3 upgraded to 0.29 fixing
+    # 0176/0177; rust-postgres moved out of range). Both files stay in sync; only
+    # the LIVE rsa Marvin mitigation (RUSTSEC-2023-0071, ADR-tracked) remains.
 ]
