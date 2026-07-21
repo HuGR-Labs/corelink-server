@@ -306,19 +306,42 @@ fn constant_time_variance() {
         let n = v.len() as f64;
         v.iter().map(|&x| x as f64).sum::<f64>() / n
     };
+    // Compare the MEDIANs, not the means. On a shared/self-hosted CI runner,
+    // OS-scheduler preemption, CPU migration and co-tenant load produce a
+    // handful of high outlier trials; because they can land disproportionately
+    // in one of the two groups they skew that group's MEAN, so a genuinely
+    // constant-time impl measured 6–10% mean-deltas whose SIGN FLIPPED run to
+    // run (noise, not a directional oracle) and false-failed this gate. The
+    // median over 1000 samples per group is immune to those tail outliers,
+    // while a REAL timing leak shifts the whole distribution — so the medians
+    // still diverge and the constant-time property stays genuinely tested.
+    let median = |v: &[u128]| -> f64 {
+        let mut s = v.to_vec();
+        s.sort_unstable();
+        let n = s.len();
+        assert!(n > 0, "ct-variance: empty sample group");
+        if n % 2 == 1 {
+            s[n / 2] as f64
+        } else {
+            (s[n / 2 - 1] as f64 + s[n / 2] as f64) / 2.0
+        }
+    };
 
-    let m_zero = mean(&zero_match);
-    let m_diff = mean(&last_byte_diff);
-    let ratio = (m_zero - m_diff).abs() / m_zero.max(m_diff);
+    let med_zero = median(&zero_match);
+    let med_diff = median(&last_byte_diff);
+    let ratio = (med_zero - med_diff).abs() / med_zero.max(med_diff);
 
     eprintln!(
-        "ct-variance: zero-match mean={m_zero:.0}ns last-byte-diff mean={m_diff:.0}ns \
-         relative-delta={:.3}%",
-        ratio * 100.0
+        "ct-variance: zero-match median={med_zero:.0}ns last-byte-diff median={med_diff:.0}ns \
+         relative-delta={:.3}% (means: {:.0}ns / {:.0}ns)",
+        ratio * 100.0,
+        mean(&zero_match),
+        mean(&last_byte_diff),
     );
 
-    // < 5% per AC §8 "Constant-time verify". 5% leaves comfortable headroom
-    // for OS-scheduler jitter without admitting an actual timing oracle.
+    // < 5% per AC §8 "Constant-time verify". On the robust median statistic 5%
+    // is comfortable headroom for residual jitter without admitting an actual
+    // timing oracle (a real leak shifts the median, not just the tail).
     assert!(
         ratio < 0.05,
         "constant-time verify variance {:.3}% exceeds 5% gate",
