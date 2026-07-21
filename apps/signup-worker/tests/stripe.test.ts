@@ -2362,11 +2362,14 @@ describe("handleStripeWebhook", () => {
                 c.sql.includes("INSERT INTO runners_entitlement"),
             );
             expect(ent).toBeDefined();
-            expect(ent!.params).toContain(maxConcurrency); // ?1 max_concurrency
-            expect(ent!.params).toContain(maxVcpuH); // ?3 max_vcpu_h
-            expect(ent!.params).toContain(`sub_runner_seed_${tier}`); // ?4 subscription id
-            // Seeds via the subscription→tenant subquery through runner_billing.
-            expect(ent!.sql).toContain("FROM runner_billing WHERE runner_subscription_id");
+            expect(ent!.params).toContain(maxConcurrency); // max_concurrency
+            expect(ent!.params).toContain(maxVcpuH); // max_vcpu_h
+            // Race-free: the event carries `metadata.tenant_id`, so the seed binds
+            // the tenant id DIRECTLY and does NOT correlate through `runner_billing`
+            // — the concurrent `runner_billing` INSERT can't lose the race (the
+            // money-path bug where a paying customer got 0 capacity).
+            expect(ent!.params).toContain(`tenant_runner_seed_${tier}`); // tenant id
+            expect(ent!.sql).not.toContain("FROM runner_billing");
             // runner_billing status upserted (tenant+plan from metadata).
             const rb = db.runCalls.find((c) => c.sql.includes("INSERT INTO runner_billing"));
             expect(rb).toBeDefined();
@@ -2421,6 +2424,44 @@ describe("handleStripeWebhook", () => {
         expect(ent).toBeDefined();
         expect(ent!.params).toContain(80);
         expect(ent!.params).toContain(600);
+    });
+
+    it("runner seed does NOT correlate on runner_billing when the tenant is known (race fix — paying customer must always get capacity)", async () => {
+        // Regression for the prod money-path bug: `runner_billing` (INSERT) and the
+        // entitlement seed were both pushed onto `requiredWrites` and run via
+        // `Promise.all`, i.e. CONCURRENTLY. The old seed `SELECT`ed the tenant FROM
+        // `runner_billing`, so it could race ahead of that INSERT, read no row, and
+        // silently seed 0 rows — a paying runner customer with no capacity (acquire
+        // 429). With the tenant known from metadata, the seed MUST bind it directly.
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_runner_race_1",
+            type: "customer.subscription.created",
+            data: {
+                object: {
+                    id: "sub_runner_race_1",
+                    customer: "cus_runner_race_1",
+                    status: "active",
+                    current_period_end: Math.floor(nowMs / 1000) + 30 * 24 * 3600,
+                    metadata: { tenant_id: "tenant_runner_race_1", tier: "runner_starter" },
+                    items: { data: [{ price: { id: "price_runner_starter_r1" } }] },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        const ent = db.runCalls.find((c) => c.sql.includes("INSERT INTO runners_entitlement"));
+        expect(ent).toBeDefined();
+        // The seed binds the tenant id directly and does NOT read runner_billing —
+        // so it cannot lose the race with the concurrent runner_billing INSERT.
+        expect(ent!.sql).not.toContain("FROM runner_billing");
+        expect(ent!.sql).toContain("VALUES");
+        expect(ent!.params).toContain("tenant_runner_race_1");
+        expect(ent!.params).toContain(20); // runner_starter max_concurrency
+        expect(ent!.params).toContain(100); // runner_starter max_vcpu_h
     });
 
     it("runner subscription.updated non-granting status (past_due) → runners_entitlement REVOKED", async () => {

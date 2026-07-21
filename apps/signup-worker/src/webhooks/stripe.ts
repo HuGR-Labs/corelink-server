@@ -994,6 +994,42 @@ async function upsertRunnersEntitlementBySubscription(
 }
 
 /**
+ * Seed the runner entitlement for a KNOWN tenant id — race-free.
+ *
+ * WHY (money-path bug fix): the caller pushes both `upsertRunnerBilling` (the
+ * `runner_billing` INSERT) and the entitlement seed onto `requiredWrites`, which
+ * runs via `await Promise.all(...)`. Because `requiredWrites.push(fn(...))`
+ * INVOKES each write immediately, the two run CONCURRENTLY — so the
+ * [`upsertRunnersEntitlementBySubscription`] variant (which `SELECT`s the tenant
+ * FROM `runner_billing`) can race AHEAD of the `runner_billing` INSERT, read no
+ * row, and silently seed 0 rows. A paying runner customer then gets NO capacity
+ * (acquire stays 429) — non-deterministically, whoever wins the race. On the
+ * `customer.subscription.{created,updated}` path we ALREADY hold the tenant id
+ * (from the subscription's `metadata.tenant_id`), so seed DIRECTLY by tenant and
+ * drop the dependency on the concurrent `runner_billing` write entirely. The
+ * subscription-correlated variant above is retained ONLY for the no-metadata
+ * path, where `runner_billing` was mapped by a PRIOR event and already exists.
+ */
+async function upsertRunnersEntitlementByTenant(
+    db: D1DatabaseLike,
+    opts: {
+        tenantId: string;
+        maxConcurrency: number;
+        maxVcpuH: number;
+        nowMs: number;
+    },
+): Promise<void> {
+    await db
+        .prepare(
+            `INSERT INTO runners_entitlement (tenant_id, max_concurrency, plan, created_at_ms, max_vcpu_h)
+             VALUES (?1, ?2, 'runners', ?3, ?4)
+             ON CONFLICT(tenant_id) DO UPDATE SET max_concurrency=excluded.max_concurrency, max_vcpu_h=excluded.max_vcpu_h`,
+        )
+        .bind(opts.tenantId, opts.maxConcurrency, opts.nowMs, opts.maxVcpuH)
+        .run();
+}
+
+/**
  * REVOKE the tenant's Runners entitlement for a cancelled/lapsed subscription.
  * Resolves the tenant through `runner_billing` (subscription id → tenant id) and
  * deletes the `runners_entitlement` row ONLY when the tenant retains no other
@@ -1569,13 +1605,28 @@ export async function handleStripeWebhook(
                     // the tenant through runner_billing (subscription id → tenant)
                     // and are idempotent, so a redelivery converges.
                     if (grantsAccess) {
+                        // Seed by tenant id DIRECTLY when we hold it (from the
+                        // subscription metadata) — race-free. The subscription-
+                        // correlated variant `SELECT`s FROM `runner_billing`, which
+                        // is being INSERTed CONCURRENTLY (same `requiredWrites`
+                        // Promise.all batch), so it can lose the race and silently
+                        // seed 0 rows — a paying customer with no capacity. Fall
+                        // back to correlation only on the no-metadata path, where
+                        // `runner_billing` was mapped by a prior event.
                         requiredWrites.push(
-                            upsertRunnersEntitlementBySubscription(db, {
-                                runnerSubscriptionId: stripeSubscriptionId,
-                                maxConcurrency: runnerEnt.maxConcurrency,
-                                maxVcpuH: runnerEnt.maxVcpuH,
-                                nowMs,
-                            }),
+                            tenantId
+                                ? upsertRunnersEntitlementByTenant(db, {
+                                      tenantId,
+                                      maxConcurrency: runnerEnt.maxConcurrency,
+                                      maxVcpuH: runnerEnt.maxVcpuH,
+                                      nowMs,
+                                  })
+                                : upsertRunnersEntitlementBySubscription(db, {
+                                      runnerSubscriptionId: stripeSubscriptionId,
+                                      maxConcurrency: runnerEnt.maxConcurrency,
+                                      maxVcpuH: runnerEnt.maxVcpuH,
+                                      nowMs,
+                                  }),
                         );
                     } else {
                         requiredWrites.push(
@@ -1680,13 +1731,28 @@ export async function handleStripeWebhook(
                         );
                     }
                     if (grantsAccess) {
+                        // Seed by tenant id DIRECTLY when we hold it (from the
+                        // subscription metadata) — race-free. The subscription-
+                        // correlated variant `SELECT`s FROM `runner_billing`, which
+                        // is being INSERTed CONCURRENTLY (same `requiredWrites`
+                        // Promise.all batch), so it can lose the race and silently
+                        // seed 0 rows — a paying customer with no capacity. Fall
+                        // back to correlation only on the no-metadata path, where
+                        // `runner_billing` was mapped by a prior event.
                         requiredWrites.push(
-                            upsertRunnersEntitlementBySubscription(db, {
-                                runnerSubscriptionId: stripeSubscriptionId,
-                                maxConcurrency: runnerEnt.maxConcurrency,
-                                maxVcpuH: runnerEnt.maxVcpuH,
-                                nowMs,
-                            }),
+                            tenantId
+                                ? upsertRunnersEntitlementByTenant(db, {
+                                      tenantId,
+                                      maxConcurrency: runnerEnt.maxConcurrency,
+                                      maxVcpuH: runnerEnt.maxVcpuH,
+                                      nowMs,
+                                  })
+                                : upsertRunnersEntitlementBySubscription(db, {
+                                      runnerSubscriptionId: stripeSubscriptionId,
+                                      maxConcurrency: runnerEnt.maxConcurrency,
+                                      maxVcpuH: runnerEnt.maxVcpuH,
+                                      nowMs,
+                                  }),
                         );
                     } else {
                         requiredWrites.push(
