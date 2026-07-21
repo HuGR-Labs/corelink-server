@@ -103,3 +103,95 @@ button:focus-visible {
   outline: 3px solid var(--ifm-color-primary);
   outline-offset: 2px;
 }
+
+/* ---------- WCAG 1.4.1 Use of Colour: underline in-prose links --------- */
+/*
+ * axe `link-in-text-block` (serious): inline links in prose rely on colour
+ * alone (link vs body-text contrast is 1.68:1, below the 3:1 floor). Fix is
+ * to underline links that sit inside a *text block* (paragraphs, list items,
+ * table cells) so they are distinguishable without colour. Scope is the
+ * article/markdown prose and custom-page `<main>` paragraphs ONLY — navbar,
+ * footer, breadcrumbs, TOC, cards and CTA buttons live outside these
+ * selectors and keep their undecorated styling.
+ */
+.markdown p a,
+.markdown li a,
+.markdown td a,
+main p a {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.markdown p a:hover,
+.markdown li a:hover,
+.markdown td a:hover,
+main p a:hover {
+  text-decoration: underline;
+}
+
+/* ---------- WCAG 2.5.8 Target Size (Minimum): 24x24 CSS px ------------- */
+/*
+ * axe `target-size` (serious): navbar links ("Blog", "API") and the status
+ * pill render < 24px tall. Give them a 24px minimum target while keeping the
+ * navbar row centred and layout intact.
+ */
+.navbar__items a.navbar__item.navbar__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  white-space: nowrap;
+}
+/*
+ * The primary navbar is dense (9 doc sections + GitHub/Admin/locale/search/
+ * status). At common desktop widths the left group would otherwise overrun and
+ * overlap the right group, leaving links "partially obscured" (axe target-size/
+ * target-offset). Trim the per-item horizontal padding on desktop so the row
+ * fits without overlap; the mobile drawer (≤ 996px) is unaffected.
+ */
+@media (min-width: 997px) {
+  .navbar__item.navbar__link {
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+  }
+}
+
+/* ---------- WCAG 1.4.3 Contrast: Prism light-theme code tokens -------- */
+/*
+ * axe `color-contrast` (serious): the Prism `github` light theme paints
+ * several syntax tokens as inline styles that fall below 4.5:1 on the
+ * `#f6f8fa` code-block background (e.g. #36acaa 2.58, #999988 2.71,
+ * #d73a49 4.29, and latent #e3116c 4.41 / #00a4db 2.78). Override those
+ * token groups with darker, same-hue colours that clear AA. Scoped to the
+ * light theme only (`:root:not([data-theme='dark'])`) so the dark Prism
+ * theme (dracula) is untouched. `!important` is required because
+ * prism-react-renderer emits the theme colours as inline `style` attrs.
+ */
+:root:not([data-theme="dark"]) .token.comment,
+:root:not([data-theme="dark"]) .token.prolog,
+:root:not([data-theme="dark"]) .token.doctype,
+:root:not([data-theme="dark"]) .token.cdata {
+  color: #5c6370 !important; /* 5.40:1 on #f6f8fa (was #999988 2.71:1) */
+}
+:root:not([data-theme="dark"]) .token.string,
+:root:not([data-theme="dark"]) .token.attr-value {
+  color: #b3115c !important; /* 6.34:1 (was #e3116c 4.41:1) */
+}
+:root:not([data-theme="dark"]) .token.entity,
+:root:not([data-theme="dark"]) .token.url,
+:root:not([data-theme="dark"]) .token.symbol,
+:root:not([data-theme="dark"]) .token.number,
+:root:not([data-theme="dark"]) .token.boolean,
+:root:not([data-theme="dark"]) .token.variable,
+:root:not([data-theme="dark"]) .token.constant,
+:root:not([data-theme="dark"]) .token.property,
+:root:not([data-theme="dark"]) .token.regex,
+:root:not([data-theme="dark"]) .token.inserted {
+  color: #0b6e6b !important; /* 5.82:1 (was #36acaa 2.58:1) */
+}
+:root:not([data-theme="dark"]) .token.atrule,
+:root:not([data-theme="dark"]) .token.attr-name {
+  color: #0868ac !important; /* 5.63:1 (was #00a4db 2.78:1) */
+}
+:root:not([data-theme="dark"]) .token.function,
+:root:not([data-theme="dark"]) .token.deleted {
+  color: #b31d28 !important; /* 6.43:1 (was #d73a49 4.29:1) */
+}

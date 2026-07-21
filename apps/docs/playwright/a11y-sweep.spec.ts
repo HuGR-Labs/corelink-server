@@ -14,6 +14,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+// The docs are served under the canonical product path (Docusaurus
+// `baseUrl: /corelink/docs/`), so every route is prefixed. Kept as a constant
+// (overridable) so a future base-path change is a one-line edit.
+const BASE_PATH = process.env.DOCS_BASE_PATH ?? "/corelink/docs";
+
 const ROUTES = [
   "/",
   "/tutorial/",
@@ -30,7 +35,7 @@ const ROUTES = [
   "/compliance/",
   "/security/",
   "/pricing/",
-];
+].map((r) => (r === "/" ? `${BASE_PATH}/` : `${BASE_PATH}${r}`));
 
 const FORBIDDEN_IMPACT = new Set(["serious", "critical"]);
 
