@@ -5,6 +5,8 @@ import type {
   ReactNode,
 } from "react";
 
+import { withAppBasePath } from "@/lib/route-matcher";
+
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "ghost" | "danger";
   size?: "sm" | "md";
@@ -75,7 +77,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   if (href != null) {
     return (
       <a
-        href={href}
+        // Next does NOT auto-basePath a raw anchor href — prefix INTERNAL
+        // absolute paths with `/corelink` so a `<Button href="/upgrade">` lands
+        // on the app, not the apex marketing site (idempotent; leaves external/
+        // hash/relative/already-prefixed hrefs untouched).
+        href={withAppBasePath(href)}
         download={download}
         target={target}
         rel={rel}
