@@ -316,22 +316,45 @@ export async function handleInstallGithubCallback(
     const jwt = await mintAppJwt(appId, privateKey, Date.now());
     const token = await installationToken(jwt, installationId);
     if (!token) {
+      console.error(
+        `install callback: installation-token exchange returned no token installation_id=${installationId} (App JWT / GITHUB_APP_ID / private key?)`,
+      );
       return done(env, false, "installation token exchange failed");
     }
     repos = await installationRepos(token);
   } catch (e) {
+    console.error(
+      `install callback: github api error installation_id=${installationId}: ${(e as Error).message}`,
+    );
     return done(env, false, `github api error: ${(e as Error).message}`);
   }
 
   // 3. Persist the map + allowlist (idempotent, shared write path).
+  // OBSERVABILITY: a live self-serve install returned 200 while provisioning
+  // NOTHING (map row absent), and the catch below previously SWALLOWED the D1
+  // error — leaving the callback un-debuggable from a `wrangler tail`. Log the
+  // persist boundary (no token/state material — INV-NO-PII-IN-LOGS) so the exact
+  // failure surfaces. `repos.length === 0` is itself a signal (App-token could
+  // not enumerate the installation's repos ⇒ nothing to allowlist).
   try {
+    console.log(
+      `install callback: persisting installation_id=${installationId} tenant=${tenantId} repos=${repos.length}`,
+    );
     await writeInstallationProvision(db, {
       installationId,
       tenantId,
       repos,
       nowMs: Date.now(),
     });
-  } catch {
+    console.log(
+      `install callback: persist OK installation_id=${installationId} repos=${repos.length}`,
+    );
+  } catch (e) {
+    console.error(
+      `install callback: persist FAILED installation_id=${installationId} tenant=${tenantId}: ${
+        (e as Error).message
+      }`,
+    );
     return done(env, false, "provision persist failed");
   }
 
