@@ -751,6 +751,14 @@ fn build_checkout_form(
 ) -> Vec<(&'static str, String)> {
     let mut form = vec![
         ("mode", "subscription".to_string()),
+        // `if_required` (not the subscription-mode default `always`): at a $0
+        // total — a 100%-off / comp coupon fully discounting the first invoice —
+        // Stripe SKIPS the card field, so a full-discount checkout completes
+        // CARDLESS. The default `always` forces a card even at $0, which both
+        // blocks a headless $0 e2e and is real self-serve friction for a comp
+        // customer (runners-TL finding). A genuine paid total still collects a
+        // card (payment IS required), so paying subscribers are unaffected.
+        ("payment_method_collection", "if_required".to_string()),
         // Attach the pre-created Customer. A `mode=subscription` session created
         // WITHOUT a customer leaves `session.customer` NULL until the buyer
         // completes checkout (Stripe creates it then) — which the caller rejects
