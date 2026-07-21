@@ -531,8 +531,8 @@ describe("ConsentDashboard", () => {
     await waitFor(() => expect(screen.getByTestId("row-csn_a")).toBeInTheDocument());
     expect(screen.getByLabelText("Withdraw consent csn_a")).toHaveAttribute(
       "href",
-      "/consent/withdraw/csn_a",
+      "/corelink/consent/withdraw/csn_a",
     );
-    expect(screen.getByLabelText("View consent csn_b")).toHaveAttribute("href", "/consent/csn_b");
+    expect(screen.getByLabelText("View consent csn_b")).toHaveAttribute("href", "/corelink/consent/csn_b");
   });
 });

@@ -38,7 +38,7 @@ describe("Button (linear)", () => {
       </Button>,
     );
     const link = screen.getByRole("link", { name: "Install" });
-    expect(link).toHaveAttribute("href", "/api/install/github");
+    expect(link).toHaveAttribute("href", "/corelink/api/install/github");
     expect(link).toHaveClass("lin-btn", "lin-btn--ghost", "lin-btn--sm");
     // The anchor variant is a link, never a <button>.
     expect(screen.queryByRole("button")).not.toBeInTheDocument();

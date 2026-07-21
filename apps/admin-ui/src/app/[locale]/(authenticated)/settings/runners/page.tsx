@@ -10,6 +10,8 @@
 
 import type { ReactElement } from "react";
 
+import { withAppBasePath } from "@/lib/route-matcher";
+
 interface PageProps {
   searchParams: Promise<{ runner_install?: string; reason?: string }>;
 }
@@ -45,8 +47,13 @@ export default async function RunnerSettingsPage(props: PageProps): Promise<Reac
         GitHub (cross-origin). next/link does client-side routing and cannot
         follow a cross-origin server redirect, so a full navigation is required.
       */}
+      {/*
+        Raw <a> is NOT auto-basePath'd by Next, so prefix explicitly with
+        `/corelink` — else the click lands on the apex marketing site, not the
+        install API route (the reported self-serve-UX break).
+      */}
       {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-      <a href="/api/install/github" role="button">
+      <a href={withAppBasePath("/api/install/github")} role="button">
         Install GitHub App
       </a>
     </main>

@@ -159,3 +159,27 @@ export function signInRedirectPath(pathname: string, returnTo?: string): string 
   const base = signInPathFor(pathname);
   return returnTo ? `${base}?redirect_url=${encodeURIComponent(returnTo)}` : base;
 }
+
+/**
+ * Prefix an INTERNAL absolute href with the app {@link APP_BASE_PATH}, for the
+ * hand-built links Next does NOT auto-basePath (a raw `<a href>` or the kit
+ * `<Button href>` anchor — see the module header: Next only auto-applies
+ * `basePath` to framework-generated links like `next/link`/`router.push`, never
+ * to hrefs built by hand). Without this a `<Button href="/upgrade">` /
+ * `<a href="/api/install/github">` navigates to `humangr.com/upgrade` (the apex
+ * marketing site), NOT `humangr.com/corelink/upgrade` — the class of bug that
+ * broke the runner Install button.
+ *
+ * Left UNTOUCHED: external (`http(s):`, `mailto:`, protocol-relative `//`),
+ * hash-only (`#…`), relative (no leading `/`), and already-prefixed
+ * (`/corelink…`) hrefs. Idempotent.
+ */
+export function withAppBasePath(href: string): string {
+  if (!href.startsWith("/") || href.startsWith("//")) {
+    return href; // relative, protocol-relative, or non-path (mailto:/http:) — leave as-is.
+  }
+  if (href === APP_BASE_PATH || href.startsWith(`${APP_BASE_PATH}/`)) {
+    return href; // already prefixed — idempotent, never double-prefix.
+  }
+  return `${APP_BASE_PATH}${href}`;
+}
