@@ -25,7 +25,13 @@ tags: ["runbook", "p0", "region", "pinning", "residency", "schrems-ii", "lgpd", 
 ## Pre-conditions
 
 - Region pinning enforcement active (WI-S14-002 SEALED).
-- D1 migration 0027 applied (`tenants.primary_region NOT NULL` + immutable trigger).
+- D1 migrations applied: **0023**`_residency_check_constraints.sql` (`tenant.primary_region`
+  `NOT NULL` + region `CHECK`) **and 0028**`_tenant_primary_region.sql` (legacy `'enam'`
+  backfill + `trg_tenant_primary_region_immutable`, the D1 backstop that makes
+  `primary_region` immutable post-INSERT). *(Corrected 2026-08-01: this line read
+  "D1 migration 0027" from the day the runbook was authored. `0027_region_provisioning.sql`
+  is the multi-region Terraform provisioning migration and contains neither the column nor
+  the trigger — an on-call working this checklist would have verified the wrong object.)*
 - `corelink_region_cross_region_read_blocked_total` Prometheus counter at zero baseline.
 - DO `region_enforcer` per-region instance running (5min TTL cache + D1 fallback).
 - KV namespace per-region scope enforced (`corelink-session-{region}`).

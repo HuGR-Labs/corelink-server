@@ -7,7 +7,7 @@ name: Region pinning enforcement gate (WI-S14-002)
 #   - Nightly: 100k property test via PROPTEST_CASES=100000.
 #   - Adversarial regression tests: 10 scenarios (subdomain spoof, header tamper,
 #     cache poison, replay, D1 mutation, KV namespace, etc.).
-#   - Migration additivity check (migration 0027 is additive-only).
+#   - Migration additivity check (migration 0028 is additive-only).
 #   - Clippy -D warnings clean.
 #   - All tests fail-closed (HIGH_RISK lane FF-HR-002 + FF-HR-003).
 #
@@ -64,7 +64,12 @@ jobs:
   clippy-and-existing-tests:
     name: clippy -D warnings + corelink-privacy all tests
     runs-on: [self-hosted, mac, corelink-builder]
-    timeout-minutes: 20
+    # Timeout raised 20 → 35 (2026-08-01). The original 20 was never calibrated
+    # against a real run — the authoring commit (cc65c4ee) sealed on a fabricated
+    # verification block, so NO number in this workflow was ever observed green.
+    # 20 min is a hard cold-compile + full-test-surface miss on the shared
+    # self-hosted Mac (observed: cancelled at 20m51s, run 30715557213).
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -87,6 +92,17 @@ jobs:
           -- -D warnings
 
       - name: cargo test -p corelink-privacy --all-targets
+        # `--all-targets` sweeps ALL 23 test binaries in the crate, which INCLUDES
+        # residency_property_region_pinning_30k and residency_property_residency_20k.
+        # Left unbounded, this job re-ran the 30k density a THIRD time (in DEBUG —
+        # far slower than the dedicated `--release` job below), duplicating the
+        # proptest-30k job for zero added assurance and driving the 20m timeout.
+        # The MANDATED density is owned by proptest-30k (30k, release) and
+        # proptest-100k-nightly (100k); here the proptest targets run at a smoke
+        # density instead. 1000 is the floor asserted by
+        # test_proptest_cases_runtime_configurable_s14 (`cases >= 1_000`).
+        env:
+          PROPTEST_CASES: '1000'
         run: cargo test -p corelink-privacy --all-targets
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -95,7 +111,12 @@ jobs:
   proptest-30k:
     name: 30k property test — INV-REGION-NO-CROSS-LEAK (PR gate)
     runs-on: [self-hosted, mac, corelink-builder]
-    timeout-minutes: 30
+    # Timeout raised 30 → 50 (2026-08-01). Never calibrated against a real run
+    # (see the clippy job's note); observed cancelled at 30m22s on the shared
+    # self-hosted Mac (run 30715557213) — a cold `--release` build of the
+    # corelink-privacy dep graph plus 4 × 30k proptest blocks does not fit 30 min
+    # under fleet contention.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -126,7 +147,12 @@ jobs:
   adversarial-tests:
     name: adversarial regression tests (10 scenarios)
     runs-on: [self-hosted, mac, corelink-builder]
-    timeout-minutes: 10
+    # Timeout raised 10 → 25 (2026-08-01). Never calibrated against a real run
+    # (see the clippy job's note); observed cancelled at 10m31s on the shared
+    # self-hosted Mac (run 30715557213). The 10 scenarios themselves are
+    # sub-second — the cost is the cold cargo build of the corelink-privacy dep
+    # graph, which this job pays independently of the two jobs above.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
