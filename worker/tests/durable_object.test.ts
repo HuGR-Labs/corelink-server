@@ -777,3 +777,196 @@ describe("adversarial_container_start_race — concurrent start race simulation"
     }
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// DO durable idle reaper (immortal-container regression, 2026-08-01)
+//
+// The idle reaper MUST run inside alarm() off persisted lastActivityMs. The
+// original in-memory setTimeout reaper evaporated on isolate eviction while
+// the 30s health-check alarm chain survived, so any once-started container
+// became immortal and was billed 24/7 (2026-07 invoice: ~13 GiB resident
+// memory around the clock, $84/mo Container Memory, $0.00 real traffic).
+// ──────────────────────────────────────────────────────────────────────────────
+
+interface ReaperHarness {
+  state: DurableObjectState;
+  destroy: ReturnType<typeof vi.fn>;
+  portFetch: ReturnType<typeof vi.fn>;
+  alarms: number[];
+  storageMap: Map<string, unknown>;
+}
+
+/** Mock state WITH a running container + setAlarm capture. */
+function makeReaperState(lifecycle: Record<string, unknown>): ReaperHarness {
+  const storageMap = new Map<string, unknown>();
+  storageMap.set("lifecycle", lifecycle);
+  const alarms: number[] = [];
+  const destroy = vi.fn(async () => {});
+  const portFetch = vi.fn(async () => new Response(null, { status: 200 }));
+
+  const state = {
+    id: {
+      toString: () => "reaper-do-id",
+      name: "reaper-do-id",
+      equals: (other: DurableObjectId) => other.toString() === "reaper-do-id",
+    } as DurableObjectId,
+    storage: {
+      get: async (key: string) => storageMap.get(key),
+      put: async (key: string, val: unknown) => { storageMap.set(key, val); },
+      delete: async (key: string) => storageMap.delete(key),
+      list: async () => new Map(storageMap),
+      getAlarm: async () => null,
+      setAlarm: async (time: number) => { alarms.push(time); },
+      deleteAlarm: async () => {},
+      deleteAll: async () => { storageMap.clear(); },
+    } as unknown as DurableObjectStorage,
+    container: {
+      running: true,
+      destroy,
+      getTcpPort: () => ({ fetch: portFetch }),
+      start: () => {},
+      monitor: () => new Promise<void>(() => {}),
+    },
+    waitUntil: (_p: Promise<unknown>) => {},
+    blockConcurrencyWhile: async <T>(fn: () => Promise<T>): Promise<T> => fn(),
+  } as unknown as DurableObjectState;
+
+  return { state, destroy, portFetch, alarms, storageMap };
+}
+
+async function makeReaperDO(lifecycle: Record<string, unknown>): Promise<{ h: ReaperHarness; do_: CoreLinkServer }> {
+  const h = makeReaperState(lifecycle);
+  const do_ = new CoreLinkServer(h.state, makeEnv());
+  await new Promise<void>((r) => setTimeout(r, 5));
+  return { h, do_ };
+}
+
+const IDLE_MS = 30 * 60 * 1000;
+
+describe("DO durable idle reaper (immortal-container regression)", () => {
+  it("alarm() destroys the container and does NOT reschedule once idle expires", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({
+      containerStatus: "running",
+      lastHealthCheckMs: now - 60_000,
+      coldStartCount: 1,
+      tenantId: "tenant-idle",
+      lastActivityMs: now - IDLE_MS - 60_000,
+    });
+
+    await do_.alarm();
+
+    expect(h.destroy).toHaveBeenCalledTimes(1);
+    expect(h.alarms).toHaveLength(0); // chain ends → DO free to hibernate
+    const persisted = h.storageMap.get("lifecycle") as { containerStatus: string };
+    expect(persisted.containerStatus).toBe("stopped");
+  });
+
+  it("alarm() health-checks and reschedules while activity is recent", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({
+      containerStatus: "running",
+      lastHealthCheckMs: now - 60_000,
+      coldStartCount: 1,
+      tenantId: "tenant-active",
+      lastActivityMs: now - 60_000,
+    });
+
+    await do_.alarm();
+
+    expect(h.destroy).not.toHaveBeenCalled();
+    expect(h.portFetch).toHaveBeenCalledTimes(1); // health probe ran
+    expect(h.alarms).toHaveLength(1); // chain continues
+  });
+
+  it("alarm() backfills an absent lastActivityMs (pre-fix state) instead of reaping", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({
+      containerStatus: "running",
+      lastHealthCheckMs: now - 60_000,
+      coldStartCount: 3,
+      tenantId: "tenant-prefix-state",
+      // no lastActivityMs — state persisted before this field existed
+    });
+
+    await do_.alarm();
+
+    expect(h.destroy).not.toHaveBeenCalled();
+    expect(h.alarms.length).toBeGreaterThan(0); // chain continues
+    const persisted = h.storageMap.get("lifecycle") as { lastActivityMs?: number };
+    expect(persisted.lastActivityMs).toBeGreaterThanOrEqual(now); // clock started + persisted
+  });
+
+  it("a fresh proxied request protects the container even against stale persisted activity", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({
+      containerStatus: "running",
+      lastHealthCheckMs: now - 60_000,
+      coldStartCount: 1,
+      tenantId: "tenant-just-active",
+      lastActivityMs: now - IDLE_MS - 60_000, // persisted value says: reap
+    });
+
+    // Real request → in-memory touch of lastActivityMs (no storage write)
+    const resp = await do_.fetch(
+      new Request("http://localhost/v1/cas/tenant-just-active/abc", {
+        headers: { "x-corelink-tenant-id": "tenant-just-active" },
+      }),
+    );
+    expect(resp.status).toBe(200); // proxied to the mock container
+
+    await do_.alarm();
+
+    expect(h.destroy).not.toHaveBeenCalled(); // in-memory activity wins
+    expect(h.alarms.length).toBeGreaterThan(0);
+  });
+
+  it("alarm() double-fire dedup still reschedules (never orphans the chain)", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({
+      containerStatus: "running",
+      lastHealthCheckMs: now - 1_000, // probed 1s ago → dedup path
+      coldStartCount: 1,
+      tenantId: "tenant-dedup",
+      lastActivityMs: now - 1_000,
+    });
+
+    await do_.alarm();
+
+    expect(h.portFetch).not.toHaveBeenCalled(); // probe skipped
+    expect(h.alarms).toHaveLength(1); // but chain NOT broken
+  });
+
+  it("degraded-but-running stays in the chain: reaper still fires on idle expiry", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({
+      containerStatus: "degraded",
+      lastHealthCheckMs: now - 60_000,
+      coldStartCount: 5,
+      tenantId: "tenant-degraded",
+      lastActivityMs: now - IDLE_MS - 60_000,
+    });
+
+    await do_.alarm();
+
+    expect(h.destroy).toHaveBeenCalledTimes(1);
+    expect(h.alarms).toHaveLength(0);
+  });
+
+  it("degraded-but-running with recent activity: no probe, chain alive", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({
+      containerStatus: "degraded",
+      lastHealthCheckMs: now - 60_000,
+      coldStartCount: 5,
+      tenantId: "tenant-degraded-active",
+      lastActivityMs: now - 60_000,
+    });
+
+    await do_.alarm();
+
+    expect(h.destroy).not.toHaveBeenCalled();
+    expect(h.portFetch).not.toHaveBeenCalled(); // degraded: no probe (preserved semantics)
+    expect(h.alarms).toHaveLength(1); // reaper keeps watching
+  });
+});
