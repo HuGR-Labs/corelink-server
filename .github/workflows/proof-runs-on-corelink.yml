@@ -34,11 +34,6 @@ name: proof — runs-on corelink (remote cache hit)
 
 on:
   workflow_dispatch: {}
-  # TEMPORÁRIO — `workflow_dispatch` só é despachável a partir da branch default,
-  # então este gatilho existe apenas para PROVAR o workflow antes do merge.
-  # REMOVER no commit seguinte, assim que a primeira execução der veredito.
-  push:
-    branches: [proof/runs-on-corelink-cache-hit]
 
 permissions:
   contents: read
@@ -142,7 +137,11 @@ jobs:
           fi
 
           # ── CORROBORAÇÃO: o log do clw. Sinal fraco, por isso não decide sozinho. ──
-          if grep -qiE "run cache hit|hit=true|hit = true" r2.err; then
+          # O binário v0.1.4 emite "[clw] cache hit" — NÃO "run cache hit", que é o
+          # texto do tracing::debug! no fonte. Confirmado na primeira execução real
+          # contra o fabric (run 30721505482). Os dois padrões ficam para tolerar
+          # a diferença entre versões.
+          if grep -qiE "\[clw\] cache hit|run cache hit|hit ?= ?true" r2.err; then
             echo "  ✓ o log do clw corrobora: cache hit no run 2"
           else
             echo "  ! o log do run 2 não trouxe 'run cache hit' — corroboração ausente"
