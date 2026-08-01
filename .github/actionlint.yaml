@@ -15,3 +15,12 @@ self-hosted-runner:
     # container-build-push-prod.yml. Declared here so actionlint does not flag
     # the org-defined larger-runner label as unknown.
     - ubuntu-x64-4core
+    # `corelink` — the product's OWN ephemeral runner fabric (CoreLink Runners:
+    # Cloudflare Containers, billed by concurrency, cache-warm). Registered by
+    # the spawn-Worker per lease, NOT a standing runner; the fleet resolves
+    # `corelink[-<size>]` (bare label = default box size, see
+    # corelink-runners/crates/corelink-fabric-server/src/size.rs).
+    # Dogfood target: moving hosted jobs here is what takes CI off the GitHub
+    # bill — the free-org allowance is 2 000 min/month against a ~13 700 min
+    # baseline, so the diet alone never closes the gap.
+    - corelink
