@@ -7,7 +7,7 @@ name: Region pinning enforcement gate (WI-S14-002)
 #   - Nightly: 100k property test via PROPTEST_CASES=100000.
 #   - Adversarial regression tests: 10 scenarios (subdomain spoof, header tamper,
 #     cache poison, replay, D1 mutation, KV namespace, etc.).
-#   - Migration additivity check (migration 0027 is additive-only).
+#   - Migration additivity check (migration 0028 is additive-only).
 #   - Clippy -D warnings clean.
 #   - All tests fail-closed (HIGH_RISK lane FF-HR-002 + FF-HR-003).
 #
@@ -18,10 +18,10 @@ on:
   pull_request:
     paths:
       - 'crates/corelink-privacy/**'
-      - 'migrations/d1/0027_tenant_primary_region.sql'
+      - 'migrations/d1/0028_tenant_primary_region.sql'
       - 'specs/04_sprints/S14/**'
       - 'specs/05_quality/runbooks/RB-region-leak.md'
-      - 'specs/03_architecture/adrs/ADR-S14-001-region-pinning-enforcement.md'
+      - 'specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md'
       - '.github/workflows/region_pinning.yml'
   schedule:
     # 02:17 UTC nightly — staggered from existing nightly crons (:04, :23).
@@ -46,10 +46,10 @@ env:
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
-  # 1. Migration additivity check — 0027 must be additive-only.
+  # 1. Migration additivity check — 0028 must be additive-only.
   # ────────────────────────────────────────────────────────────────────────────
   migration-check:
-    name: migration additivity check (0027_tenant_primary_region)
+    name: migration additivity check (0028_tenant_primary_region)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -64,7 +64,12 @@ jobs:
   clippy-and-existing-tests:
     name: clippy -D warnings + corelink-privacy all tests
     runs-on: [self-hosted, mac, corelink-builder]
-    timeout-minutes: 20
+    # Timeout raised 20 → 35 (2026-08-01). The original 20 was never calibrated
+    # against a real run — the authoring commit (cc65c4ee) sealed on a fabricated
+    # verification block, so NO number in this workflow was ever observed green.
+    # 20 min is a hard cold-compile + full-test-surface miss on the shared
+    # self-hosted Mac (observed: cancelled at 20m51s, run 30715557213).
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -75,9 +80,19 @@ jobs:
       - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
         run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
+      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
+      # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
+      # SAVE ran 3m36s and was still going when it consumed the job's entire
+      # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
+      # These runners are persistent Macs with a fixed `_work/.../target` on local
+      # disk, so the real cache is that directory, not a GitHub-hosted archive
+      # uploaded off the founder's machine on every job. Restore is kept (5s, free
+      # upside if a cache ever exists); only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
+          save-if: 'false'
 
       - name: clippy -D warnings
         run: >
@@ -87,6 +102,17 @@ jobs:
           -- -D warnings
 
       - name: cargo test -p corelink-privacy --all-targets
+        # `--all-targets` sweeps ALL 23 test binaries in the crate, which INCLUDES
+        # residency_property_region_pinning_30k and residency_property_residency_20k.
+        # Left unbounded, this job re-ran the 30k density a THIRD time (in DEBUG —
+        # far slower than the dedicated `--release` job below), duplicating the
+        # proptest-30k job for zero added assurance and driving the 20m timeout.
+        # The MANDATED density is owned by proptest-30k (30k, release) and
+        # proptest-100k-nightly (100k); here the proptest targets run at a smoke
+        # density instead. 1000 is the floor asserted by
+        # test_proptest_cases_runtime_configurable_s14 (`cases >= 1_000`).
+        env:
+          PROPTEST_CASES: '1000'
         run: cargo test -p corelink-privacy --all-targets
 
   # ────────────────────────────────────────────────────────────────────────────
@@ -95,7 +121,12 @@ jobs:
   proptest-30k:
     name: 30k property test — INV-REGION-NO-CROSS-LEAK (PR gate)
     runs-on: [self-hosted, mac, corelink-builder]
-    timeout-minutes: 30
+    # Timeout raised 30 → 50 (2026-08-01). Never calibrated against a real run
+    # (see the clippy job's note); observed cancelled at 30m22s on the shared
+    # self-hosted Mac (run 30715557213) — a cold `--release` build of the
+    # corelink-privacy dep graph plus 4 × 30k proptest blocks does not fit 30 min
+    # under fleet contention.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -106,9 +137,19 @@ jobs:
       - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
         run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
+      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
+      # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
+      # SAVE ran 3m36s and was still going when it consumed the job's entire
+      # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
+      # These runners are persistent Macs with a fixed `_work/.../target` on local
+      # disk, so the real cache is that directory, not a GitHub-hosted archive
+      # uploaded off the founder's machine on every job. Restore is kept (5s, free
+      # upside if a cache ever exists); only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
+          save-if: 'false'
 
       - name: 30k property test — residency_property_region_pinning_30k
         # PROPTEST_CASES defaults to 30_000 in code; CI env confirms it explicitly.
@@ -126,7 +167,14 @@ jobs:
   adversarial-tests:
     name: adversarial regression tests (10 scenarios)
     runs-on: [self-hosted, mac, corelink-builder]
-    timeout-minutes: 10
+    # Timeout raised 10 → 30 (2026-08-01). Never calibrated against a real run
+    # (see the clippy job's note). Measured twice: cancelled at 10m31s under the
+    # original 10 (run 30715557213), then under a first-pass 25 the TEST STEP
+    # SUCCEEDED at 21m11s and the job was still cancelled — in the rust-cache
+    # SAVE post-step, now disabled above. The 10 scenarios are sub-second; the
+    # cost is the cold cargo build of the corelink-privacy dep graph, which this
+    # job pays independently of the two jobs above.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -137,9 +185,19 @@ jobs:
       - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
         run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
+      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
+      # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
+      # SAVE ran 3m36s and was still going when it consumed the job's entire
+      # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
+      # These runners are persistent Macs with a fixed `_work/.../target` on local
+      # disk, so the real cache is that directory, not a GitHub-hosted archive
+      # uploaded off the founder's machine on every job. Restore is kept (5s, free
+      # upside if a cache ever exists); only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
+          save-if: 'false'
 
       - name: adversarial regression tests — residency_region_adversarial
         run: >
@@ -210,9 +268,19 @@ jobs:
       - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
         run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
+      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
+      # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
+      # SAVE ran 3m36s and was still going when it consumed the job's entire
+      # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
+      # These runners are persistent Macs with a fixed `_work/.../target` on local
+      # disk, so the real cache is that directory, not a GitHub-hosted archive
+      # uploaded off the founder's machine on every job. Restore is kept (5s, free
+      # upside if a cache ever exists); only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
+          save-if: 'false'
 
       - name: 100k property test NIGHTLY — residency_property_region_pinning_30k
         env:

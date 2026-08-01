@@ -9,14 +9,21 @@
 # CTRL: CTRL-PRIV-031 (residency) + CTRL-AUDIT-005 (7y retention)
 # SLA: detect ≤ 1h, mitigate ≤ 6h, customer notification ≤ 72h
 #
-# What this script validates (host-side, no staging required):
-#   Step 1: Runbook file present + well-formed.
-#   Step 2: Property test binary exists and runs clean (30k iter).
-#   Step 3: ADR-S14-001 present (region pinning architectural decision).
-#   Step 4: Migration 0027 present (D1 primary_region enforcement).
-#   Step 5: Adversarial tests compile and pass (10 scenarios).
-#   Step 6: Drift findings committed (no uncommitted runbook stale state).
-#   Step 7: Emit simulated audit event template (customer notification).
+# What this script validates (host-side, no staging required).
+# This index is the AUTHORITATIVE list of what the code below actually does. It
+# was previously desynchronised from the code in BOTH numbering AND content —
+# see specs/_audits/2026-08-01-cc65c4ee-fabricated-verification.md:
+#   Step 1:  Runbook file present + well-formed.
+#   Step 2:  Migration 0028_tenant_primary_region.sql present.
+#            Step 2a: it carries trg_tenant_primary_region_immutable (D1 backstop).
+#   Step 3:  ADR-S14-002 present (region pinning architectural decision).
+#   Step 4:  30k property test target compiles (residency_property_region_pinning_30k).
+#   Step 5:  Adversarial tests compile and pass (10 scenarios).
+#   Step 6:  Emit simulated cross-region-leak audit event template (forensic format).
+#   Step 7:  Customer notification template renders (GDPR Art. 33 / LGPD Art. 48).
+#
+# Total pass points: 8 (Step 2a is a nested assertion inside Step 2). A clean
+# run is therefore PASS=8 FAIL=0.
 #
 # Exit codes:
 #   0 — dry-run succeeded; every step passed.
@@ -44,9 +51,9 @@ else
     _fail "Step 1: Runbook $RUNBOOK MISSING — create per WI-S14-002 §6.1.8"
 fi
 
-# ── Step 2: Migration 0027 present ───────────────────────────────────────────
+# ── Step 2: Migration 0028 present ───────────────────────────────────────────
 
-MIGRATION="migrations/d1/0027_tenant_primary_region.sql"
+MIGRATION="migrations/d1/0028_tenant_primary_region.sql"
 if [[ -f "$MIGRATION" ]]; then
     _pass "Step 2: Migration $MIGRATION present"
     # Verify it contains the immutable trigger
@@ -59,9 +66,9 @@ else
     _fail "Step 2: Migration $MIGRATION MISSING"
 fi
 
-# ── Step 3: ADR-S14-001 present ───────────────────────────────────────────────
+# ── Step 3: ADR-S14-002 present ───────────────────────────────────────────────
 
-ADR="specs/03_architecture/adrs/ADR-S14-001-region-pinning-enforcement.md"
+ADR="specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md"
 if [[ -f "$ADR" ]]; then
     _pass "Step 3: ADR $ADR present"
 else
