@@ -93,6 +93,10 @@ describe("sign-in honours ?redirect_url= (upgrade-funnel round-trip regression)"
     render(React.createElement(ClerkSignIn));
     expect(captured.signIn?.["forceRedirectUrl"]).toBeUndefined();
     expect(captured.signIn?.["fallbackRedirectUrl"]).toBe("/en/customer");
+    // The provider-level option would beat ?redirect_url= through the same
+    // precedence chain (RedirectUrls#getRedirectUrl: force > query > fallback)
+    // — pin its absence too, or the widget-prop lock above can be bypassed.
+    expect(captured.provider?.["signInForceRedirectUrl"]).toBeUndefined();
   });
 
   it("<SignUp> keeps forceRedirectUrl to /en/welcome (DPA-first onboarding, BY DESIGN)", () => {
