@@ -53,6 +53,10 @@ jobs:
   fmt:
     name: cargo fmt --all --check
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 

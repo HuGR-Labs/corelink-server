@@ -41,6 +41,10 @@ jobs:
   rust-unit:
     name: Rust unit tests (FFI crates)
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     # corelink-py pulls pyo3 with abi3-py310, which needs an interpreter
     # >= 3.10. This job has no setup-python step, so pyo3 auto-detected a
     # stale 3.8 on the fleet PATH and failed ("cannot set a minimum Python
@@ -90,6 +94,10 @@ jobs:
   python-matrix:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -168,6 +176,10 @@ jobs:
   go-matrix:
     name: Go ${{ matrix.go-version }}
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -218,6 +230,10 @@ jobs:
   js-matrix:
     name: Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -299,6 +315,10 @@ jobs:
   cross-language-verify:
     name: Cross-language BLAKE3 verify (single Rust truth)
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     needs: [python-matrix, go-matrix, js-matrix]
     # Same pyo3 abi3-py310 build as rust-unit (cargo test -p corelink-py
     # below). The setup-python 3.12 step is unreliable on this fleet
