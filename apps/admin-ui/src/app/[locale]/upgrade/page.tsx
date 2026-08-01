@@ -21,8 +21,11 @@
  *      `app/api/checkout/session/route.ts` verbatim (lazy Clerk import →
  *      `auth().getToken()`), so this page gates on EXACTLY the predicate
  *      the checkout POST will 401 on. Clerk's `<SignIn />` widget honours
- *      the standard `redirect_url` query param (the sign-in page sets no
- *      `forceRedirectUrl`), so after sign-in the visitor lands back here
+ *      the standard `redirect_url` query param (the sign-in page sets only
+ *      `fallbackRedirectUrl`, NEVER `forceRedirectUrl` — force would
+ *      unconditionally override `redirect_url` and strand the buyer on the
+ *      dashboard; regression-locked in tests/clerk-basepath.test.tsx), so
+ *      after sign-in the visitor lands back here
  *      and checkout auto-fires. Brand-NEW users who choose "Sign up"
  *      inside the widget land on `/en/welcome` instead — that page sets
  *      `forceRedirectUrl` by design (one-time PAT reveal + DPA-first
@@ -48,6 +51,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Locale } from "@/i18n/LocaleContext";
 import { TIERS, normalizeCheckoutTier } from "@/lib/pricing";
+import { withAppBasePath } from "@/lib/route-matcher";
 import { UpgradeButton } from "@/components/UpgradeButton";
 import { Callout, Card } from "@/components/ui/linear";
 
@@ -85,8 +89,16 @@ export default async function UpgradePage(props: {
   // and return to this exact page (normalized plan preserved).
   const token = await getSessionToken();
   if (!token) {
+    // The `redirect()` TARGET is basePath-auto-applied by Next, but the
+    // `redirect_url` VALUE is consumed by Clerk — which navigates without
+    // Next's router and therefore without basePath (proven live: a plain
+    // sign-in landed on `humangr.com/en/customer`, the marketing site). So
+    // the return URL must carry `/corelink` explicitly, or the buyer bounces
+    // out of the app instead of back here to auto-fire checkout.
     redirect(
-      `/sign-in?redirect_url=${encodeURIComponent(`/${locale}/upgrade?plan=${tier}`)}`,
+      `/sign-in?redirect_url=${encodeURIComponent(
+        withAppBasePath(`/${locale}/upgrade?plan=${tier}`),
+      )}`,
     );
   }
 
