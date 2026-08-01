@@ -126,22 +126,39 @@ export function isProtectedPath(pathname: string): boolean {
 }
 
 /**
- * The mount prefix the CURRENT request arrived under, derived from its
- * pathname — mirroring {@link stripBasePath}:
- *   - `/corelink` on the path surface   (`humangr.com/corelink/*`)
- *   - ""         on the legacy no-prefix surface (requests without `/corelink`)
- * The app is served on BOTH during the subdomain→path migration, so a
- * hand-built sign-in redirect must re-attach EXACTLY the prefix the request
- * carried: a bare `/sign-in` on `humangr.com` resolves to the apex marketing
- * site (a different app), while a `/corelink/sign-in` on the subdomain 404s.
+ * The mount prefix a hand-built redirect must re-attach. Always
+ * {@link APP_BASE_PATH} — the app is served on exactly ONE surface.
+ *
+ * This used to branch on whether `pathname` already carried `/corelink`, to
+ * support the subdomain→path migration where the app answered on BOTH
+ * `corelink-app.humangr.com/*` (no prefix) and `humangr.com/corelink/*`. That
+ * branch was wrong in production for two independent reasons, and the two
+ * cancelled out into a silent breakage:
+ *
+ *   1. **Next strips `basePath` BEFORE middleware runs.** A request to
+ *      `humangr.com/corelink/dashboard` reaches the middleware as `/dashboard`,
+ *      so the `startsWith("/corelink")` test never matched and the function
+ *      always returned "" — the branch written for the subdomain.
+ *   2. **The subdomain surface is retired.** Both `corelink-app` and
+ *      `corelink-admin` had their `custom_domain` bindings removed
+ *      (`apps/admin-ui/wrangler.toml`), so the no-prefix surface the ""
+ *      branch existed for no longer answers at all.
+ *
+ * Live consequence before this fix: `/corelink/dashboard` 307'd to
+ * `humangr.com/sign-in`, which is the APEX MARKETING SITE (a different app,
+ * 42 KB landing page) rather than this app's sign-in at `/corelink/sign-in`.
+ * Every logged-out user sent to a protected route landed on marketing — the
+ * user-visible "signup is broken" report.
+ *
+ * The unit tests did not catch it: they fed `signInPathFor` a pathname WITH the
+ * prefix (an input the middleware never receives in production), and the
+ * companion case asserted the no-prefix output as correct.
+ *
  * (Next only auto-applies `basePath` to framework-generated links, never to
- * URLs the middleware builds by hand — hence this manual re-attachment.)
+ * URLs the middleware builds by hand — hence the manual re-attachment.)
  */
-export function requestBasePath(pathname: string): string {
-  if (pathname === APP_BASE_PATH || pathname.startsWith(`${APP_BASE_PATH}/`)) {
-    return APP_BASE_PATH;
-  }
-  return "";
+export function requestBasePath(_pathname: string): string {
+  return APP_BASE_PATH;
 }
 
 /** Surface-correct, app-absolute `/sign-in` path for the request's pathname. */
