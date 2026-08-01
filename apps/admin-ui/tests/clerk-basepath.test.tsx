@@ -77,3 +77,29 @@ describe("Clerk auth widgets are basePath-aware (blank-page outage regression)",
     expect(APP_BASE_PATH.length).toBeGreaterThan(0);
   });
 });
+
+describe("sign-in honours ?redirect_url= (upgrade-funnel round-trip regression)", () => {
+  /**
+   * The signed-out buyer funnel depends on Clerk's redirect_url precedence:
+   * /upgrade?plan=<tier> redirects to /sign-in?redirect_url=/<locale>/upgrade
+   * ([locale]/upgrade/page.tsx) and the visitor must land BACK there after
+   * sign-in so checkout auto-fires. `forceRedirectUrl` unconditionally
+   * overrides the redirect_url query param (Clerk docs + clerk-js
+   * buildAfterSignInUrl), so <SignIn> must only ever set the FALLBACK —
+   * force strands the buyer on the dashboard and drops the ?plan intent.
+   * (Introduced by 9f2fac50 (#270); fixed here.)
+   */
+  it("<SignIn> sets fallbackRedirectUrl but NEVER forceRedirectUrl", () => {
+    render(React.createElement(ClerkSignIn));
+    expect(captured.signIn?.["forceRedirectUrl"]).toBeUndefined();
+    expect(captured.signIn?.["fallbackRedirectUrl"]).toBe("/en/customer");
+  });
+
+  it("<SignUp> keeps forceRedirectUrl to /en/welcome (DPA-first onboarding, BY DESIGN)", () => {
+    // Sign-UP intentionally forces /en/welcome: the one-time PAT reveal +
+    // DPA-first ordering must precede any tier-select (the backend 403s the
+    // checkout until the DPA is accepted) — see [locale]/upgrade/page.tsx.
+    render(React.createElement(ClerkSignUp));
+    expect(captured.signUp?.["forceRedirectUrl"]).toBe("/en/welcome");
+  });
+});

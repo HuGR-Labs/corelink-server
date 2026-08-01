@@ -21,8 +21,11 @@
  *      `app/api/checkout/session/route.ts` verbatim (lazy Clerk import →
  *      `auth().getToken()`), so this page gates on EXACTLY the predicate
  *      the checkout POST will 401 on. Clerk's `<SignIn />` widget honours
- *      the standard `redirect_url` query param (the sign-in page sets no
- *      `forceRedirectUrl`), so after sign-in the visitor lands back here
+ *      the standard `redirect_url` query param (the sign-in page sets only
+ *      `fallbackRedirectUrl`, NEVER `forceRedirectUrl` — force would
+ *      unconditionally override `redirect_url` and strand the buyer on the
+ *      dashboard; regression-locked in tests/clerk-basepath.test.tsx), so
+ *      after sign-in the visitor lands back here
  *      and checkout auto-fires. Brand-NEW users who choose "Sign up"
  *      inside the widget land on `/en/welcome` instead — that page sets
  *      `forceRedirectUrl` by design (one-time PAT reveal + DPA-first

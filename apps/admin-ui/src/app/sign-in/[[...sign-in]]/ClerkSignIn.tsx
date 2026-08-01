@@ -31,18 +31,29 @@ export default function ClerkSignIn(): React.ReactElement {
       signUpUrl={`${APP_BASE_PATH}/sign-up`}
     >
       {/*
-       * forceRedirectUrl: after sign-in, land on the authenticated dashboard —
-       * NOT the marketing home. The Clerk instance "paths" are all null, so the
-       * default after-sign-in was "/" (the public landing, which has no
-       * ClerkProvider and shows no signed-in state) → users perceived "can't
-       * sign in / it bounces to home". An already-signed-in user hitting
-       * /sign-in is also redirected straight here instead of bouncing to "/".
+       * fallbackRedirectUrl (NOT force): after sign-in, land on the
+       * authenticated dashboard — NOT the marketing home. The Clerk instance
+       * "paths" are all null, so the default after-sign-in was "/" (the public
+       * landing, which has no ClerkProvider and shows no signed-in state) →
+       * users perceived "can't sign in / it bounces to home" (#270). An
+       * already-signed-in user hitting /sign-in is also redirected straight
+       * here instead of bouncing to "/".
+       *
+       * It MUST be `fallbackRedirectUrl`, never `forceRedirectUrl`: force
+       * unconditionally overrides the `?redirect_url=` query param, which
+       * broke the signed-out buyer funnel — `/upgrade?plan=<tier>` round-trips
+       * through `/sign-in?redirect_url=/<locale>/upgrade?plan=<tier>`
+       * ([locale]/upgrade/page.tsx) and the visitor must land BACK on the
+       * upgrade page to auto-fire checkout, not on the dashboard with the
+       * plan intent dropped. Fallback preserves both behaviours: honours
+       * `redirect_url` when present, dashboard otherwise. Regression-locked
+       * in tests/clerk-basepath.test.tsx.
+       *
        * /en/customer is the (authenticated)-group dashboard (default locale en).
        */}
       <SignIn
         path={`${APP_BASE_PATH}/sign-in`}
         routing="path"
-        forceRedirectUrl="/en/customer"
         fallbackRedirectUrl="/en/customer"
       />
     </ClerkProvider>
