@@ -44,9 +44,9 @@ else
     _fail "Step 1: Runbook $RUNBOOK MISSING — create per WI-S14-002 §6.1.8"
 fi
 
-# ── Step 2: Migration 0027 present ───────────────────────────────────────────
+# ── Step 2: Migration 0028 present ───────────────────────────────────────────
 
-MIGRATION="migrations/d1/0027_tenant_primary_region.sql"
+MIGRATION="migrations/d1/0028_tenant_primary_region.sql"
 if [[ -f "$MIGRATION" ]]; then
     _pass "Step 2: Migration $MIGRATION present"
     # Verify it contains the immutable trigger
@@ -59,9 +59,9 @@ else
     _fail "Step 2: Migration $MIGRATION MISSING"
 fi
 
-# ── Step 3: ADR-S14-001 present ───────────────────────────────────────────────
+# ── Step 3: ADR-S14-002 present ───────────────────────────────────────────────
 
-ADR="specs/03_architecture/adrs/ADR-S14-001-region-pinning-enforcement.md"
+ADR="specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md"
 if [[ -f "$ADR" ]]; then
     _pass "Step 3: ADR $ADR present"
 else

@@ -18,10 +18,10 @@ on:
   pull_request:
     paths:
       - 'crates/corelink-privacy/**'
-      - 'migrations/d1/0027_tenant_primary_region.sql'
+      - 'migrations/d1/0028_tenant_primary_region.sql'
       - 'specs/04_sprints/S14/**'
       - 'specs/05_quality/runbooks/RB-region-leak.md'
-      - 'specs/03_architecture/adrs/ADR-S14-001-region-pinning-enforcement.md'
+      - 'specs/03_architecture/adrs/ADR-S14-002-region-pinning-enforcement.md'
       - '.github/workflows/region_pinning.yml'
   schedule:
     # 02:17 UTC nightly — staggered from existing nightly crons (:04, :23).
@@ -46,10 +46,10 @@ env:
 
 jobs:
   # ────────────────────────────────────────────────────────────────────────────
-  # 1. Migration additivity check — 0027 must be additive-only.
+  # 1. Migration additivity check — 0028 must be additive-only.
   # ────────────────────────────────────────────────────────────────────────────
   migration-check:
-    name: migration additivity check (0027_tenant_primary_region)
+    name: migration additivity check (0028_tenant_primary_region)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
