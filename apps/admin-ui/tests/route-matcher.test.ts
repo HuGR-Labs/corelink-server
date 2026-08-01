@@ -71,11 +71,24 @@ describe("route matcher", () => {
     expect(PUBLIC_PATH_PREFIXES).toContain("/sign-in");
   });
 
-  // ── basePath awareness (THE prod bug) ──────────────────────────────────────
-  // OpenNext invokes the middleware with `req.nextUrl.pathname` STILL carrying
-  // the `/corelink` basePath. Public paths must be public in that prod shape,
-  // not only the basePath-less dev shape.
-  describe("basePath-prefixed forms (prod / OpenNext shape)", () => {
+  // ── basePath awareness ─────────────────────────────────────────────────────
+  // CORRECTION (2026-08-01): this block used to assert that "OpenNext invokes
+  // the middleware with `req.nextUrl.pathname` STILL carrying the `/corelink`
+  // basePath". That is FALSE, and believing it is what broke the sign-in
+  // redirect — `requestBasePath` branched on the prefix being present, never
+  // matched, and emitted a bare `/sign-in` pointing at the apex marketing site.
+  //
+  // Decisive evidence from prod (before the fix): the middleware's own 307
+  // carried `?redirect_url=%2Fdashboard`. That value is built from
+  // `req.nextUrl.pathname + req.nextUrl.search` (`middleware.ts`), so the
+  // pathname the middleware received was `/dashboard` — basePath ALREADY
+  // stripped, not `/corelink/dashboard`.
+  //
+  // These prefixed cases are still worth keeping as DEFENSIVE coverage (a
+  // future rewrite or a direct call could hand in the prefixed shape, and the
+  // matchers must not gate it), but they are NOT the production shape. The
+  // production shape is the prefix-less block above.
+  describe("basePath-prefixed forms (defensive — NOT the prod shape)", () => {
     it("treats /corelink-prefixed public paths as public", () => {
       expect(isPublicPath("/corelink/sign-in")).toBe(true);
       expect(isPublicPath("/corelink/sign-up")).toBe(true);
@@ -130,11 +143,14 @@ describe("route matcher", () => {
     });
   });
 
-  // The app is served on BOTH surfaces during the subdomain→path migration, so
-  // the sign-in redirect must re-attach the SAME prefix the request carried:
-  // `/corelink/sign-in` for a `/corelink/*` request (a bare `/sign-in` on
-  // humangr.com resolves to the apex marketing site), `/sign-in` for a root
-  // request (a `/corelink/sign-in` on the subdomain 404s).
+  // The app is served on exactly ONE surface: `humangr.com/corelink/*`. The
+  // subdomain surface this block was originally written for — where a bare
+  // `/sign-in` was the correct output — is RETIRED (`corelink-app` and
+  // `corelink-admin` both had their `custom_domain` bindings removed).
+  //
+  // So the sign-in redirect must ALWAYS re-attach `/corelink`. A bare
+  // `/sign-in` on `humangr.com` resolves to the apex marketing site, which is
+  // a different app — that was the live breakage this suite failed to catch.
   describe("sign-in redirect target is surface-correct", () => {
     it("exposes /corelink as the mount prefix", () => {
       expect(APP_BASE_PATH).toBe("/corelink");
