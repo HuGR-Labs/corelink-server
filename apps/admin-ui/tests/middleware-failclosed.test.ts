@@ -37,9 +37,12 @@ function reqFor(path: string): NextRequest {
   return new NextRequest(new URL(`https://humangr.com/corelink${path}`));
 }
 
-// The legacy no-prefix surface (a request whose pathname does NOT carry the
-// `/corelink` mount) serves the app root-relative — its sign-in redirect must
-// stay root-relative.
+// A request whose pathname does NOT carry the `/corelink` mount. This is the
+// shape the RETIRED subdomain surface (`corelink-app` / `corelink-admin`,
+// custom_domain bindings removed — both NXDOMAIN, re-verified 2026-08-01)
+// used to produce, and it is ALSO the shape Next hands the middleware on the
+// live path surface, since basePath is stripped before middleware runs.
+// Either way the redirect must re-attach `/corelink`.
 function rootReqFor(path: string): NextRequest {
   return new NextRequest(new URL(`https://humangr.com${path}`));
 }
@@ -64,7 +67,7 @@ describe("middleware fail-CLOSED on absent publishable key", () => {
     expect(res.headers.get("location") ?? "").toContain("/corelink/sign-in");
   });
 
-  it("(a3) legacy no-prefix surface → redirect target stays root-relative /sign-in", async () => {
+  it("(a3) prefix-less pathname → STILL /corelink/sign-in, never the bare apex path", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const res = await middleware(rootReqFor("/admin/tenants"));
     expect(res.status).toBe(307);
@@ -72,8 +75,15 @@ describe("middleware fail-CLOSED on absent publishable key", () => {
       res.headers.get("location") ?? "",
       "https://humangr.com",
     );
-    // Root surface: sign-in is at /sign-in, NOT /corelink/sign-in (which 404s).
-    expect(location.pathname).toBe("/sign-in");
+    // This case used to assert a bare `/sign-in`, which was the whole bug: a
+    // bare `/sign-in` on humangr.com serves the hugr-site MARKETING landing
+    // (HTTP 200, title "HuGR — CoreLink · content-addressed cache & execution
+    // fabric", zero Clerk — measured live 2026-08-01), so every logged-out
+    // user hitting a protected route was stranded on marketing. The old
+    // suite was green from both sides because a companion case asserted the
+    // prefixed output as correct for a prefixed input production never sends.
+    expect(location.pathname).toBe("/corelink/sign-in");
+    expect(location.pathname).not.toBe("/sign-in");
   });
 
   it("(b) non-production + no key → falls through (dev/test ergonomics)", async () => {
