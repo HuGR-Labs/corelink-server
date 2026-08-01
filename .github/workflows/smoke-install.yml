@@ -27,7 +27,9 @@ on:
       - "apps/get-corelink-worker/**"
       - ".github/workflows/smoke-install.yml"
   schedule:
-    - cron: "0 6 * * *"  # daily at 06:00 UTC
+    # Cadence: daily -> WEEKLY Wed (CI cost diet 2026-08-01). The paths-filtered
+    # `push` lane above still smokes every change to the installer surface.
+    - cron: "0 6 * * 3"
   workflow_dispatch:
 
 # Least-privilege: this smoke test only checks out + builds + runs a throwaway

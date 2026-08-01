@@ -12,10 +12,16 @@ name: coverage (R7-1 supply-quality rollup)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
+  # on a staggered schedule + on-demand. Re-add pull_request only if
   # this must block PRs again.
+  #
+  # Cadence: daily -> WEEKLY Tue (CI cost diet 2026-08-01). cargo-llvm-cov
+  # instruments the WHOLE workspace on the paid 4-core hosted fleet (45-min
+  # timeout) and produces a trend report nothing blocks on; a weekly point is
+  # enough to see the coverage curve move. Stays `workflow_dispatch`-able for
+  # a pre-release coverage snapshot.
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 5 * * 2'
   workflow_dispatch:
 
 permissions:

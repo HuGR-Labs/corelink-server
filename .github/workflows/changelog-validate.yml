@@ -27,7 +27,13 @@ concurrency:
 jobs:
   changelog-required:
     name: CHANGELOG.md updated when feat/fix present
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
+    # Pure git + stdlib-python3 diff parse; runs on EVERY PR
+    # (731 runs in June 2026) — the highest-volume hosted job after dco-check.
+    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
+    # check costs a full paid minute every run; on the fleet it costs $0.
+    # Verified running natively on the fleet host (macOS/BSD userland).
+    runs-on: [self-hosted, mac, corelink-builder]
     steps:
       - name: Checkout (full history; needed to diff against base ref)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

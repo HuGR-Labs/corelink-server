@@ -39,7 +39,13 @@ concurrency:
 jobs:
   density-gate:
     name: proptest density gate
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
+    # Two portable bash scripts (audit + gate); both verified to run
+    # clean on the fleet host.
+    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
+    # check costs a full paid minute every run; on the fleet it costs $0.
+    # Verified running natively on the fleet host (macOS/BSD userland).
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     steps:
       - name: Checkout

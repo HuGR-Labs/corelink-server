@@ -50,7 +50,10 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   migration-check:
     name: migration additivity check (0027_tenant_primary_region)
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01) — sub-minute
+    # stdlib-only python3 migration scan, and hosted bills a 1-MINUTE-PER-JOB
+    # FLOOR. The heavy legs of this workflow already run on this fleet.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -152,7 +155,9 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   rb-region-leak-dry-run:
     name: RB-region-leak dry-run (INV-REGION-NO-CROSS-LEAK forensic)
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01) — sub-minute
+    # portable bash dry-run script, and hosted bills a 1-MINUTE-PER-JOB FLOOR.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -165,7 +170,9 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   workflow-yaml-smoke:
     name: region_pinning.yml YAML parse smoke
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01) — a one-line
+    # python3 YAML parse, and hosted bills a 1-MINUTE-PER-JOB FLOOR.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -178,7 +185,9 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   region-pinning-gate:
     name: region pinning gate (aggregate — INV-REGION-NO-CROSS-LEAK)
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01) — a fan-in `echo`
+    # that still costs a full paid minute under the 1-MINUTE-PER-JOB FLOOR.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 1
     needs:
       - migration-check

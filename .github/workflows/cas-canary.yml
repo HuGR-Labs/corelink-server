@@ -8,7 +8,14 @@ name: cas-datacenter-canary
 #   See docs/operator/edge-security-per-plane-sota.md + memory edge-security-blocked-datacenter-ci.
 on:
   schedule:
-    - cron: "17 * * * *"   # hourly (economical); staggered off :00
+    # Every 4h (was hourly). This job MUST stay GitHub-hosted — the whole
+    # assertion is "a DATACENTER IP can use the cache", which the self-hosted
+    # Mac fleet (residential IP) cannot prove — so its only cost lever is
+    # cadence. Hourly cost ~720 billable min/month on its own (24 runs/day x
+    # the 1-min per-job billing floor), i.e. ~36% of the 2,000-min Free tier;
+    # 6 runs/day keeps ~4h worst-case detection latency for an edge-policy
+    # regression at ~180 min/month. Staggered off :00. (CI cost diet 2026-08-01)
+    - cron: "17 */4 * * *"
   workflow_dispatch:
 permissions:
   contents: read

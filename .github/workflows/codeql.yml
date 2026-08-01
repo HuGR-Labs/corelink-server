@@ -10,7 +10,7 @@ name: CodeQL (R-prep static analysis)
 # Triggers:
 #   - pull_request: paths-filtered (only when files in the language scope change).
 #   - push to main: full sweep on default branch.
-#   - schedule: weekly Monday 02:00 UTC (drift detection on tooling cadence).
+#   - schedule: weekly Monday 05:30 UTC (drift detection on tooling cadence).
 #   - workflow_dispatch: manual trigger for on-call / pentest preparation re-run.
 #
 # Fail policy:
@@ -33,10 +33,17 @@ name: CodeQL (R-prep static analysis)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
+  # on a staggered schedule + on-demand. Re-add pull_request only if
   # this must block PRs again.
+  #
+  # Cadence: daily -> WEEKLY Mon (CI cost diet 2026-08-01). Multi-language
+  # CodeQL (rust + js/ts + python) is one of the most expensive hosted jobs in
+  # the repo and it detects *drift*, not per-change regressions — nothing gates
+  # on it between runs. The header above already documented "weekly Monday";
+  # the cron had drifted to daily. `workflow_dispatch` stays for on-demand
+  # pentest-prep re-runs.
   schedule:
-    - cron: '30 5 * * *'
+    - cron: '30 5 * * 1'
   workflow_dispatch:
 
 permissions:

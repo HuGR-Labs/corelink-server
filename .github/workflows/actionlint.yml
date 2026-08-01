@@ -38,7 +38,15 @@ concurrency:
 jobs:
   actionlint:
     name: actionlint (native, SHA-pinned tool)
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
+    # The step below was ALREADY written for this fleet ("Native
+    # actionlint on the macOS self-hosted fleet... the fleet ships actionlint on
+    # PATH") but runs-on had drifted back to hosted. actionlint 1.7.12 confirmed
+    # on the fleet PATH; the pinned-release fallback auto-detects darwin.
+    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
+    # check costs a full paid minute every run; on the fleet it costs $0.
+    # Verified running natively on the fleet host (macOS/BSD userland).
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0

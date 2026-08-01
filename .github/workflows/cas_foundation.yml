@@ -28,10 +28,18 @@ name: CAS Foundation CI (WI-S01-007)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
+  # on a staggered schedule + on-demand. Re-add pull_request only if
   # this must block PRs again.
+  #
+  # Cadence: daily -> WEEKLY Wed (CI cost diet 2026-08-01). This is the
+  # sprint-level CONVERGENCE workflow (workspace build+test on the paid 4-core
+  # fleet, TLC, cargo-deny, SBOM). Per-crate PR lanes already gate every
+  # per-crate diff on the touched paths, and cargo-deny/cargo-audit keep their
+  # own DAILY advisory-freshness crons — so the only thing lost between weekly
+  # runs is the workspace-wide convergence smoke, which is exactly the class of
+  # check that is cheap to catch weekly and ruinous to pay for nightly.
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 9 * * 3'
   workflow_dispatch:
 
 permissions:

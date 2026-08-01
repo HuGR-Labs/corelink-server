@@ -50,7 +50,16 @@ env:
 jobs:
   mutants-diff:
     name: cargo-mutants (changed lines only)
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01) — this RESTORES
+    # the runner this workflow's own header documents ("Runner: self-hosted Mac
+    # on purpose — cargo-mutants + cargo-nextest are already installed there and
+    # the build cache is warm"). runs-on had drifted to hosted, which made the
+    # job both SLOWER (cold cache, tools reinstalled every run) and by far the
+    # most expensive PR gate in the repo (~1,140 billable min in June 2026).
+    # `--in-diff` spawns ~5-10 mutants for a typical PR, and the
+    # cancel-in-progress group above guarantees at most one live run per PR, so
+    # fleet load stays bounded.
+    runs-on: [self-hosted, mac, corelink-builder]
     # Pass the PR base branch via env (not interpolated into run: shell) —
     # template-injection-safe (a branch name can carry shell metacharacters).
     env:

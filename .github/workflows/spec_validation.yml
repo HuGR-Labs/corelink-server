@@ -29,7 +29,13 @@ concurrency:
 
 jobs:
   spec-validation:
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
+    # Five stdlib/venv python3 validators; the step comment below
+    # already documents the venv-on-system-python3 idiom written FOR this fleet.
+    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
+    # check costs a full paid minute every run; on the fleet it costs $0.
+    # Verified running natively on the fleet host (macOS/BSD userland).
+    runs-on: [self-hosted, mac, corelink-builder]
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0

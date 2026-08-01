@@ -8,10 +8,17 @@ name: FFI Matrix CI (Python × Go × JS)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
+  # on a staggered schedule + on-demand. Re-add pull_request only if
   # this must block PRs again.
+  #
+  # Cadence: daily -> WEEKLY Thu (CI cost diet 2026-08-01). This is a
+  # 3-language x N-runtime matrix (the widest hosted fan-out in the repo) and
+  # it is a KNOWN-RED, deliberately parked lane — paying for a full matrix
+  # every night to re-observe the same breaks is the clearest waste in the
+  # schedule. Weekly keeps the drift signal; fixing the lane is tracked
+  # separately.
   schedule:
-    - cron: '30 6 * * *'
+    - cron: '30 6 * * 4'
   workflow_dispatch:
 
 # Least-privilege: this build/test matrix only checks out + compiles + tests —

@@ -19,7 +19,13 @@ on:
       - "apps/admin-ui/**"
       - ".github/workflows/admin-ui-e2e.yml"
   schedule:
-    - cron: "0 6 * * *"
+    # Cadence: daily -> WEEKLY Thu (CI cost diet 2026-08-01). This workflow was
+    # the single most expensive line item in the repo (~3,480 modeled billable
+    # min in June 2026 — 4 hosted Playwright jobs at ~7 min each). The
+    # `pull_request` + `push:main` lanes above already run it on every
+    # admin-ui change; the cron only re-runs an UNCHANGED tree, so its job is
+    # drift detection against prod-ish deps — weekly-shaped.
+    - cron: "0 6 * * 4"
   workflow_dispatch:
 
 permissions:
@@ -82,7 +88,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox, webkit]
+        # Browser fan-out is EVENT-SCOPED (CI cost diet 2026-08-01). Each entry
+        # is a separate hosted job that installs its own Playwright browser +
+        # deps and then runs the suite (~7 paid min each), so the 3-browser
+        # matrix cost ~21 paid min on EVERY admin-ui PR push. Chromium is the
+        # engine the product is developed against and catches essentially all
+        # functional regressions; firefox + webkit exist to catch ENGINE drift,
+        # which is a weekly-shaped signal, not a per-commit one. So:
+        #   pull_request        -> chromium only
+        #   push / schedule / workflow_dispatch -> full 3-engine matrix
+        # Cross-engine coverage is therefore still enforced on every merge to
+        # main and on the weekly cron — it is not deleted, only de-duplicated
+        # off the per-push lane.
+        browser: ${{ github.event_name == 'pull_request' && fromJSON('["chromium"]') || fromJSON('["chromium","firefox","webkit"]') }}
     defaults:
       run:
         working-directory: apps/admin-ui
