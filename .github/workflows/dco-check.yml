@@ -28,6 +28,12 @@ jobs:
     # natively on the fleet host (git 2.51 supports %(trailers:...), bash
     # 5.3 supports the process substitution below).
     runs-on: [self-hosted, mac, corelink-builder]
+    # Bound the job (CI cost diet 2026-08-01): a self-hosted job with no
+    # timeout inherits GitHub's 360-min default, so one wedged run can hold
+    # 1 of the 4 `corelink-builder` runners for 6h and stall
+    # `scripts/pre-merge-gate-check.sh` (the mandatory merge gate) for every
+    # other PR. This check is sub-minute.
+    timeout-minutes: 5
     steps:
       - name: Checkout PR head
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

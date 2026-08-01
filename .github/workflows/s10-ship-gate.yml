@@ -29,9 +29,14 @@ on:
   #
   # Cadence: daily -> WEEKLY Fri (CI cost diet 2026-08-01). This is
   # belt-and-braces re-execution for a SEALED sprint and it fans out to 4
-  # hosted jobs (2 of them full Rust builds). Unlike s07/s08/s09 this lane has
-  # NO pull_request trigger, so weekly + `workflow_dispatch` is its whole
-  # surface — dispatch it explicitly when touching the S-10 crates/migrations.
+  # hosted jobs (2 of them full Rust builds; ~10 hosted min/run measured, so
+  # ~257 min/month at daily cadence). Unlike s07/s08/s09/gc this lane has NO
+  # pull_request trigger, so weekly + `workflow_dispatch` is its WHOLE surface
+  # and the honest cost of this change is up to 7 days before a regression in
+  # a SEALED sprint's crates is re-observed automatically. Mitigation is
+  # explicit, not implied: dispatch this workflow when touching the S-10
+  # crates/migrations. (Its light legs' underlying assertions are also
+  # re-executed by the S-10 crates' own per-crate PR lanes.)
   schedule:
     - cron: '30 9 * * 5'
   workflow_dispatch:

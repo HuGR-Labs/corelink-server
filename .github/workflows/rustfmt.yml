@@ -8,23 +8,37 @@
 # again. It is fast (fmt needs no build) and its ONLY job is the format check,
 # so it stays green in seconds.
 #
-# `paths:` (CI cost diet 2026-08-01): the door stays welded. `cargo fmt --check`
-# reads exactly two kinds of input — Rust source and the rustfmt config — so a
-# PR that touches NEITHER is provably incapable of changing this gate's verdict,
-# and the filter below is the whole input surface, not a subset of it (the
-# original "no paths: filter" wording was aimed at per-CRATE path lists, which
-# DO leave un-filtered Rust paths uncovered; `**/*.rs` does not). What this buys:
-# the job installs a Rust toolchain before it can run, so every docs-only,
-# spec-only or workflow-only PR was paying ~2 hosted minutes to format-check a
-# tree with no Rust in the diff.
+# `paths:` (CI cost diet 2026-08-01): the door stays welded, but ONLY because
+# the filter below is the COMPLETE input surface of `cargo fmt --all --check`,
+# not a convenient subset. That verdict depends on four inputs, all filtered:
+#   1. Rust source                -> `**.rs`
+#   2. the rustfmt config         -> `**rustfmt.toml`  (also matches
+#                                    `.rustfmt.toml`, at any depth INCLUDING
+#                                    the repo root — the repo has none today,
+#                                    so a future one must still trigger this)
+#   3. the workspace member list AND `edition`, both of which `cargo fmt --all`
+#      reads and `edition` of which CHANGES the formatting rules
+#                                 -> `**Cargo.toml`   (root + every member)
+#   4. the rustfmt VERSION, pinned by the toolchain file
+#                                 -> `rust-toolchain.toml`
+# NOTE the glob form: GitHub's `paths:` `**/` requires at least one slash, so
+# `**/*.rs` / `**/rustfmt.toml` / `**/Cargo.toml` would MISS a root-level file.
+# `**.rs` / `**rustfmt.toml` / `**Cargo.toml` is the form GitHub documents for
+# "any depth, including the root" — the same form `mutation-pr.yml` uses.
+# (The original "no paths: filter" wording was aimed at per-CRATE path lists,
+# which DO leave un-filtered Rust paths uncovered; this filter does not.)
+# What this buys: the job installs a Rust toolchain before it can run, so every
+# docs-only, spec-only or workflow-only PR was paying a hosted minute to
+# format-check a tree with no Rust in the diff (~110 runs/month measured).
 name: rustfmt
 
 on:
   pull_request:
     paths:
-      - '**/*.rs'
-      - '**/rustfmt.toml'
-      - '**/.rustfmt.toml'
+      - '**.rs'
+      - '**rustfmt.toml'
+      - '**Cargo.toml'
+      - 'rust-toolchain.toml'
       - '.github/workflows/rustfmt.yml'
   workflow_dispatch:
 

@@ -8,15 +8,18 @@ name: FFI Matrix CI (Python × Go × JS)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # on a staggered schedule + on-demand. Re-add pull_request only if
-  # this must block PRs again.
+  # on a staggered schedule + on-demand. There is NO `pull_request` lane and
+  # NO `push` lane — re-add one only if this must block PRs again.
   #
-  # Cadence: daily -> WEEKLY Thu (CI cost diet 2026-08-01). This is a
-  # 3-language x N-runtime matrix (the widest hosted fan-out in the repo) and
-  # it is a KNOWN-RED, deliberately parked lane — paying for a full matrix
-  # every night to re-observe the same breaks is the clearest waste in the
-  # schedule. Weekly keeps the drift signal; fixing the lane is tracked
-  # separately.
+  # Cadence: daily -> WEEKLY Thu (CI cost diet 2026-08-01). No PR lane covers
+  # this, so weekly does add up to 7 days of drift latency on the FFI surface.
+  # That is accepted here because this lane has NEVER been green: 0 successful
+  # scheduled runs in July 2026 (8 failure / 13 cancelled out of 21), matching
+  # the standing "ffi-matrix never worked, deliberately parked" position. It is
+  # a 3-language x N-runtime matrix (~19 hosted min, 10 jobs, the widest fan-out
+  # in the repo), so daily cadence pays ~490 min/month to re-observe the same
+  # two known breaks. Weekly keeps the drift signal alive; fixing the lane is
+  # tracked separately, and when it is fixed this cron should go back to daily.
   schedule:
     - cron: '30 6 * * 4'
   workflow_dispatch:

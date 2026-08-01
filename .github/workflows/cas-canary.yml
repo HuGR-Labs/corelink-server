@@ -8,14 +8,22 @@ name: cas-datacenter-canary
 #   See docs/operator/edge-security-per-plane-sota.md + memory edge-security-blocked-datacenter-ci.
 on:
   schedule:
-    # Every 4h (was hourly). This job MUST stay GitHub-hosted — the whole
-    # assertion is "a DATACENTER IP can use the cache", which the self-hosted
-    # Mac fleet (residential IP) cannot prove — so its only cost lever is
-    # cadence. Hourly cost ~720 billable min/month on its own (24 runs/day x
-    # the 1-min per-job billing floor), i.e. ~36% of the 2,000-min Free tier;
-    # 6 runs/day keeps ~4h worst-case detection latency for an edge-policy
-    # regression at ~180 min/month. Staggered off :00. (CI cost diet 2026-08-01)
-    - cron: "17 */4 * * *"
+    # HOURLY — deliberately KEPT (the CI cost diet 2026-08-01 proposed every-4h
+    # and the proposal was REJECTED on review). This job MUST stay
+    # GitHub-hosted: its whole assertion is "a DATACENTER IP can use the
+    # cache", which the self-hosted Mac fleet (residential IP) cannot prove, so
+    # cadence is its only cost lever — but the trade does not clear.
+    #   - Real cost is NOT ~720 min/month. Measured 2026-07-15..21, GitHub
+    #     drops scheduled runs under load: 10-13 dispatches/day, not 24, each
+    #     ~10s = 1 billable min under the per-job floor -> ~340 min/month.
+    #   - Moving to every 4h would therefore save ~185 min/month (~9% of the
+    #     Free allowance) in exchange for 4x the detection window on the ONLY
+    #     probe that proves the edge (Bot Fight Mode / WAF / TLS floor) has not
+    #     re-blocked customer CI on a LAUNCHED product.
+    #   - It is not theoretical: this canary caught a real production CAS
+    #     outage on 2026-08-01 (two consecutive failures, R2 binding disabled).
+    # Staggered off :00.
+    - cron: "17 * * * *"
   workflow_dispatch:
 permissions:
   contents: read
