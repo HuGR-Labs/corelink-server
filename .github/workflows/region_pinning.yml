@@ -80,9 +80,19 @@ jobs:
       - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
         run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
+      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
+      # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
+      # SAVE ran 3m36s and was still going when it consumed the job's entire
+      # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
+      # These runners are persistent Macs with a fixed `_work/.../target` on local
+      # disk, so the real cache is that directory, not a GitHub-hosted archive
+      # uploaded off the founder's machine on every job. Restore is kept (5s, free
+      # upside if a cache ever exists); only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
+          save-if: 'false'
 
       - name: clippy -D warnings
         run: >
@@ -127,9 +137,19 @@ jobs:
       - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
         run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
+      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
+      # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
+      # SAVE ran 3m36s and was still going when it consumed the job's entire
+      # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
+      # These runners are persistent Macs with a fixed `_work/.../target` on local
+      # disk, so the real cache is that directory, not a GitHub-hosted archive
+      # uploaded off the founder's machine on every job. Restore is kept (5s, free
+      # upside if a cache ever exists); only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
+          save-if: 'false'
 
       - name: 30k property test — residency_property_region_pinning_30k
         # PROPTEST_CASES defaults to 30_000 in code; CI env confirms it explicitly.
@@ -147,12 +167,14 @@ jobs:
   adversarial-tests:
     name: adversarial regression tests (10 scenarios)
     runs-on: [self-hosted, mac, corelink-builder]
-    # Timeout raised 10 → 25 (2026-08-01). Never calibrated against a real run
-    # (see the clippy job's note); observed cancelled at 10m31s on the shared
-    # self-hosted Mac (run 30715557213). The 10 scenarios themselves are
-    # sub-second — the cost is the cold cargo build of the corelink-privacy dep
-    # graph, which this job pays independently of the two jobs above.
-    timeout-minutes: 25
+    # Timeout raised 10 → 30 (2026-08-01). Never calibrated against a real run
+    # (see the clippy job's note). Measured twice: cancelled at 10m31s under the
+    # original 10 (run 30715557213), then under a first-pass 25 the TEST STEP
+    # SUCCEEDED at 21m11s and the job was still cancelled — in the rust-cache
+    # SAVE post-step, now disabled above. The 10 scenarios are sub-second; the
+    # cost is the cold cargo build of the corelink-privacy dep graph, which this
+    # job pays independently of the two jobs above.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -163,9 +185,19 @@ jobs:
       - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
         run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
+      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
+      # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
+      # SAVE ran 3m36s and was still going when it consumed the job's entire
+      # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
+      # These runners are persistent Macs with a fixed `_work/.../target` on local
+      # disk, so the real cache is that directory, not a GitHub-hosted archive
+      # uploaded off the founder's machine on every job. Restore is kept (5s, free
+      # upside if a cache ever exists); only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
+          save-if: 'false'
 
       - name: adversarial regression tests — residency_region_adversarial
         run: >
@@ -236,9 +268,19 @@ jobs:
       - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
         run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
 
+      # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
+      # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
+      # cache RESTORE took 5s and MISSED (restored nothing), while the `Post Run`
+      # SAVE ran 3m36s and was still going when it consumed the job's entire
+      # timeout budget — the test step itself had already SUCCEEDED at 21m11s.
+      # These runners are persistent Macs with a fixed `_work/.../target` on local
+      # disk, so the real cache is that directory, not a GitHub-hosted archive
+      # uploaded off the founder's machine on every job. Restore is kept (5s, free
+      # upside if a cache ever exists); only the save cost is dropped.
       - uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
         with:
           workspaces: ". -> target"
+          save-if: 'false'
 
       - name: 100k property test NIGHTLY — residency_property_region_pinning_30k
         env:
