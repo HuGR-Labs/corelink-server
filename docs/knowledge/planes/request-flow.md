@@ -6,7 +6,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "eee895f37094841cac4bbad5e20d7528c30872cc"
+checkpoint_sha: "7cd80e81ae93861406eb065945fa0609e844db3c"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -51,9 +51,9 @@ semantics in the container.
 4. It strips any client-supplied trust headers (delete-then-set discipline), sets its own verified
    tenant-id/scope/token-prefix, and dispatches via `stub.fetch` (`worker/src/index.ts:3040-3119`).
 5. The DO's `fetch` binds the forwarded tenant-id, ensures the container is running, then proxies the
-   request (`worker/src/durable_object.ts:314-381`).
+   request (`worker/src/durable_object.ts:333-404`).
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
-   DO→container hop (`worker/src/durable_object.ts:251-264`).
+   DO→container hop (`worker/src/durable_object.ts:282-295`).
 7. The container's composed router (built by `build_with_factory`) receives the request and routes it to
    the matching handler (`crates/corelink-container/src/routes.rs:390-398`).
 8. The shared CAS/AC handler objects — wrapped once with byte-accounting, the erasure tombstone gate,
@@ -66,11 +66,11 @@ semantics in the container.
 - The request that crosses Worker→DO carries only Worker-established trust headers; client values are
   stripped first (`worker/src/index.ts:3040-3071`).
 - The DO→container hop always targets port 50051 via the `getTcpPort` fetcher
-  (`worker/src/durable_object.ts:251-264`).
+  (`worker/src/durable_object.ts:282-295`).
 - The container re-verifies possession at the shared handler chokepoint rather than trusting the hop
   blindly (`crates/corelink-container/src/routes.rs:459-568`).
 - The DO will not proxy until the container is confirmed running (or it returns 503/500)
-  (`worker/src/durable_object.ts:343-372`).
+  (`worker/src/durable_object.ts:363-392`).
 
 # Gotchas
 - OCI, the Stripe webhook, and fabric-introspect take dedicated pass-through arms in the Worker that
@@ -86,8 +86,8 @@ semantics in the container.
 4. `worker/src/index.ts:3035-3037` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
 5. `worker/src/index.ts:3040-3071` — strip-then-set trust headers on the forward.
 6. `worker/src/index.ts:3040-3119` — the augmented forward + `stub.fetch` dispatch to the DO.
-7. `worker/src/durable_object.ts:251-264` — the DO→container proxy via `getTcpPort(50051)`.
-8. `worker/src/durable_object.ts:314-381` — the DO `fetch`: tenant bind, ensure-running, proxy.
-9. `worker/src/durable_object.ts:343-372` — the ensure-running gate before proxying (503/500 otherwise).
+7. `worker/src/durable_object.ts:282-295` — the DO→container proxy via `getTcpPort(50051)`.
+8. `worker/src/durable_object.ts:333-404` — the DO `fetch`: tenant bind, ensure-running, proxy.
+9. `worker/src/durable_object.ts:363-392` — the ensure-running gate before proxying (503/500 otherwise).
 10. `crates/corelink-container/src/routes.rs:390-398` — the container's composed router receiving the request.
 11. `crates/corelink-container/src/routes.rs:459-568` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
