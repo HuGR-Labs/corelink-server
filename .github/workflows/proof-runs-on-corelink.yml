@@ -1,0 +1,156 @@
+name: proof — runs-on corelink (remote cache hit)
+
+# Prova, contra o fabric de runners do próprio produto, que:
+#   1. `runs-on: corelink` recebe uma box de verdade, e
+#   2. essa box acerta o cache REMOTO do CoreLink — não um cache local.
+#
+# ── POR QUE ESTE WORKFLOW NÃO ASSERTA "O JOB PASSOU" ─────────────────────────
+# Uma box COLD passa no job e entrega ZERO do valor do produto: ela roda, o
+# comando executa, o job fica verde, e nada foi reaproveitado. Um gate que
+# aceitasse "verde" aqui provaria apenas que o fabric consegue alugar uma VM.
+#
+# A auditoria de 2026-08-01 encontrou SEIS gates neste projeto que reportavam
+# verde provando nada (region_pinning selado com um PASS fabricado, o gate de
+# release do clw que nunca buildava o binário, o CodeQL com GHAS desligado, o
+# allowlist do test-mint que validava um campo enquanto o mint usava outro...).
+# Este workflow existe para não ser o sétimo.
+#
+# ── O DESENHO DA PROVA ───────────────────────────────────────────────────────
+# Duas execuções do MESMO comando memoizado, com duas garantias independentes:
+#
+#   A) `CLW_CACHE_DIR` DIFERENTE em cada execução. A segunda começa com cache
+#      local vazio, então um acerto SÓ pode ter vindo do AC/CAS remoto do
+#      CoreLink. Sem isso, um hit local passaria por hit remoto.
+#
+#   B) O comando anexa uma linha a um arquivo que NÃO é output declarado. Se o
+#      cache funcionou, o comando NÃO executou — e o marcador continua com 1
+#      linha. É esta a asserção forte: ela mede o efeito colateral ausente, não
+#      um log. Se o cache estiver frio, o comando roda de novo → 2 linhas → RED.
+#
+# O log `run cache hit` (um tracing::debug, só visível com `-v`) entra apenas
+# como corroboração. `clw run` não tem forma JSON — ele repassa stdout/stderr
+# do filho — então o log é o único sinal textual disponível, e sinal textual
+# não é prova.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proof-runs-on-corelink
+  cancel-in-progress: false
+
+jobs:
+  remote-cache-hit:
+    name: box do fabric + acerto no cache remoto
+    runs-on: corelink
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: preflight — a box tem clw e credencial?
+        run: |
+          set -uo pipefail
+          echo "== identidade da box =="
+          echo "  host: $(uname -a)"
+          echo "  user: $(id -un) (uid $(id -u))"
+          echo
+          echo "== clw =="
+          if ! command -v clw >/dev/null 2>&1; then
+            echo "::error::clw NÃO está no PATH desta box. A imagem do runner deveria trazê-lo pinado (deploy/runner/Dockerfile). Sem clw não há o que provar."
+            exit 1
+          fi
+          echo "  binário: $(command -v clw)"
+          clw --version || true
+          echo
+          echo "== credencial injetada pelo fabric =="
+          # Só a PRESENÇA, nunca o valor (INV-NO-PII-IN-LOGS).
+          for v in CLW_ENDPOINT CLW_FABRIC_ENDPOINT CLW_LEASE_ID CLW_CRED_TICKET CLW_TOKEN; do
+            if [ -n "${!v:-}" ]; then echo "  $v: presente"; else echo "  $v: AUSENTE"; fi
+          done
+
+      - name: a prova — dois runs, caches locais distintos, marcador fora do output
+        run: |
+          set -uo pipefail
+
+          MARKER="$RUNNER_TEMP/clw-proof-marker"
+          CACHE_A="$RUNNER_TEMP/clw-cache-a"
+          CACHE_B="$RUNNER_TEMP/clw-cache-b"
+          INPUT="$RUNNER_TEMP/proof-input"
+          rm -rf "$MARKER" "$CACHE_A" "$CACHE_B" "$INPUT"
+          mkdir -p "$CACHE_A" "$CACHE_B" "$INPUT"
+
+          # Entrada única por execução do workflow: garante que o run 1 seja um
+          # MISS genuíno, e não um acerto herdado de uma execução anterior.
+          echo "proof-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" > "$INPUT/key.txt"
+
+          # O comando memoizado. O `>> $MARKER` é o efeito colateral observável:
+          # ele NÃO é um output declarado, então o clw não o restaura num hit.
+          # Se o marcador crescer, o comando executou de verdade.
+          CMD='echo "linha" >> '"$MARKER"'; echo "saida-deterministica"'
+
+          echo "══ RUN 1 — espera-se MISS (o comando deve EXECUTAR) ══"
+          CLW_CACHE_DIR="$CACHE_A" clw -v run --input "$INPUT" -- sh -c "$CMD" > r1.out 2> r1.err
+          rc1=$?
+          echo "  exit=$rc1"
+          sed -n '1,12p' r1.err | sed 's/^/  err| /'
+
+          n1=$( [ -f "$MARKER" ] && wc -l < "$MARKER" | tr -d ' ' || echo 0 )
+          echo "  marcador após run 1: $n1 linha(s)"
+
+          if [ "$rc1" -ne 0 ]; then
+            echo "::error::RUN 1 falhou (exit $rc1). O fabric entregou a box, mas o clw não completou — leia o err acima. Nada foi provado."
+            exit 1
+          fi
+          if [ "$n1" != "1" ]; then
+            echo "::error::RUN 1 deveria ter EXECUTADO o comando exatamente uma vez (marcador esperado=1, obtido=$n1). Se for 0, o clw serviu um hit para uma entrada que deveria ser inédita — a chave de memoização não está incluindo a entrada única."
+            exit 1
+          fi
+
+          echo
+          echo "══ RUN 2 — cache local VAZIO; um acerto só pode vir do CoreLink remoto ══"
+          CLW_CACHE_DIR="$CACHE_B" clw -v run --input "$INPUT" -- sh -c "$CMD" > r2.out 2> r2.err
+          rc2=$?
+          echo "  exit=$rc2"
+          sed -n '1,12p' r2.err | sed 's/^/  err| /'
+
+          n2=$( wc -l < "$MARKER" | tr -d ' ' )
+          echo "  marcador após run 2: $n2 linha(s)"
+
+          if [ "$rc2" -ne 0 ]; then
+            echo "::error::RUN 2 falhou (exit $rc2)."
+            exit 1
+          fi
+
+          echo
+          echo "══ VEREDITO ══"
+          fail=0
+
+          # ── ASSERÇÃO FORTE: o comando NÃO executou de novo. ──
+          if [ "$n2" = "1" ]; then
+            echo "  ✓ o comando NÃO re-executou (marcador segue em 1) — trabalho idêntico não foi repetido"
+          else
+            echo "::error::CACHE REMOTO NÃO ACERTOU. O marcador foi de 1 para $n2, ou seja o comando executou de novo com o cache local vazio. A box subiu COLD: o job passaria verde entregando zero do valor do produto. Verifique o mint (403?), o AC/CAS remoto e a allowlist do tenant."
+            fail=1
+          fi
+
+          # ── CORROBORAÇÃO: o log do clw. Sinal fraco, por isso não decide sozinho. ──
+          if grep -qiE "run cache hit|hit=true|hit = true" r2.err; then
+            echo "  ✓ o log do clw corrobora: cache hit no run 2"
+          else
+            echo "  ! o log do run 2 não trouxe 'run cache hit' — corroboração ausente"
+            echo "    (não falha o gate sozinho: o sinal é um tracing::debug e o formato pode mudar;"
+            echo "     a asserção que decide é o marcador acima)"
+          fi
+
+          # Saúde: um hit deve replicar o stdout do filho byte a byte.
+          if cmp -s r1.out r2.out; then
+            echo "  ✓ stdout replicado byte a byte entre as duas execuções"
+          else
+            echo "::error::o stdout diferiu entre run 1 e run 2 — um hit deve replicar a saída do filho byte a byte."
+            fail=1
+          fi
+
+          exit $fail
