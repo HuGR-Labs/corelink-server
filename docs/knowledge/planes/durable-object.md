@@ -8,7 +8,7 @@ source_files:
   - "worker/src/event_log_do.ts"
   - "worker/src/rollout_controller.ts"
   - "worker/src/replication_coordinator_do.ts"
-checkpoint_sha: "7cd80e81ae93861406eb065945fa0609e844db3c"
+checkpoint_sha: "8d26d6d2172d14021ff7fa6a41f07fac19c5790c"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -42,32 +42,32 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   (the server-held salt for the email-hash pseudonym; unset ⇒ legacy unsalted SHA-256, zero
   regression) — which the container's `email_hash::hash_email` reads, so it MUST be forwarded
   here or a `wrangler secret put EMAIL_HASH_SALT` would never reach the container
-  (`worker/src/durable_object.ts:555-750`).
+  (`worker/src/durable_object.ts:564-761`).
 
 # How it works
 1. The DO restores its persisted `LifecycleState` under `blockConcurrencyWhile` on every wakeup so a
    re-hydrated isolate sees the last known container status (`worker/src/durable_object.ts:314-327`).
 2. `fetch` binds the Worker-injected `x-corelink-tenant-id` into lifecycle state, ensures the container
    is running, touches the durable idle clock (`lastActivityMs`, in-memory — the alarm persists it),
-   then proxies (`worker/src/durable_object.ts:333-404`).
+   then proxies (`worker/src/durable_object.ts:333-432`).
 3. `proxyToContainer` rewrites the request to `http://localhost:50051` and forwards it through the
    `getTcpPort(CONTAINER_PORT)` fetcher, never reading the body (`worker/src/durable_object.ts:282-295`).
 4. `ensureContainerRunning` is the state machine: running→proceed, stale-running/stopped/degraded→
-   restart, starting→wait (`worker/src/durable_object.ts:430-489`).
+   restart, starting→wait (`worker/src/durable_object.ts:439-497`).
 5. `startContainer` closes the concurrent-start race with a SYNCHRONOUS in-memory flip to `"starting"`
-   before the first `await` (`worker/src/durable_object.ts:498-533`).
+   before the first `await` (`worker/src/durable_object.ts:507-542`).
 6. Cold start emits the `corelink.do.cold_start.v1` audit event BEFORE calling `container.start`, per
-   the charter's audit-before-mutation rule (`worker/src/durable_object.ts:537-555`).
+   the charter's audit-before-mutation rule (`worker/src/durable_object.ts:547-564`).
 7. `waitForContainerHealth` polls `GET /_health` on the container port until a 200 or the 90s startup
-   timeout (`worker/src/durable_object.ts:853-880`). The `waitForContainerReady` queue FAST-EXITS the
+   timeout (`worker/src/durable_object.ts:872-902`). The `waitForContainerReady` queue FAST-EXITS the
    moment the container status flips to the terminal `"stopped"` state (a bad deploy / OOM / panic) — it
    no longer spins the full ~90s `STARTUP_TIMEOUT_MS` on a container that is already dead, returning a
-   prompt `503` so the next request triggers a restart (`worker/src/durable_object.ts:818-840`).
+   prompt `503` so the next request triggers a restart (`worker/src/durable_object.ts:837-866`).
 8. The idle reaper lives INSIDE the alarm tick (durable), not in a `setTimeout`: it compares the
    persisted `lastActivityMs` against `IDLE_TIMEOUT_MS` (30 min) and, on expiry, emits the death event,
    re-checks the clock (the emit is an outbound POST — a yield point a live request can slip through),
    destroys the container, and ENDS the alarm chain so the DO hibernates too
-   (`worker/src/durable_object.ts:96-113`, `worker/src/durable_object.ts:1043-1064`). An in-memory
+   (`worker/src/durable_object.ts:96-113`, `worker/src/durable_object.ts:1043-1072`). An in-memory
    timer could not do this job: it evaporates on isolate eviction while the storage-backed alarm chain
    survives, which is exactly how a once-started container became immortal and billed 24/7.
 9. `alarm()` is a `try/finally` shell that ALWAYS re-arms the chain unless the tick deliberately ended
@@ -103,9 +103,9 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 - One DO instance per tenant — the DO ID is tenant-derived, never cross-tenant
   (`worker/src/durable_object.ts:1-26`).
 - Audit events are emitted BEFORE the state mutation they describe (charter rule)
-  (`worker/src/durable_object.ts:537-555`).
+  (`worker/src/durable_object.ts:547-564`).
 - A concurrent burst cannot double-start the container: the in-memory `"starting"` flip is the
-  load-bearing guard, set synchronously before any await (`worker/src/durable_object.ts:498-533`).
+  load-bearing guard, set synchronously before any await (`worker/src/durable_object.ts:507-542`).
 - A stale persisted `"starting"` older than `STALE_STARTING_MS` self-heals to a restart, never wedging
   every request forever (the F-020 `_system` wedge fix) (`worker/src/durable_object.ts:127-135`).
 - The proxy never reads or logs the request body (INV-NO-BODY-IN-LOGS)
@@ -141,13 +141,13 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 3. `worker/src/durable_object.ts:127-135` — `STALE_STARTING_MS` self-heal (the F-020 wedge fix).
 4. `worker/src/durable_object.ts:282-295` — `proxyToContainer` via the `getTcpPort` fetcher, no body read.
 5. `worker/src/durable_object.ts:314-327` — constructor restoring `LifecycleState` under `blockConcurrencyWhile`.
-6. `worker/src/durable_object.ts:333-404` — the DO `fetch` entry: tenant bind, ensure-running, idle-clock touch, proxy.
-7. `worker/src/durable_object.ts:430-489` — `ensureContainerRunning` lifecycle state machine.
-8. `worker/src/durable_object.ts:498-533` — the synchronous in-memory `"starting"` concurrent-start guard.
-9. `worker/src/durable_object.ts:537-555` — audit-before-mutation cold-start event + `container.start`.
-10. `worker/src/durable_object.ts:555-750` — the `container.start({ env })` env-contract forward.
-11. `worker/src/durable_object.ts:853-880` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:818-840` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
-12. `worker/src/durable_object.ts:1043-1064` — the DURABLE idle reaper inside `alarmTick()`: an absent `lastActivityMs` backfills, an expired one emits the death event (audit-before-mutation), RE-CHECKS the clock (every `await` is a yield point where a queued request may have arrived), then destroys the container and signals chain-end so the DO hibernates instead of heartbeating a dead container forever.
+6. `worker/src/durable_object.ts:333-432` — the DO `fetch` entry: tenant bind, ensure-running, idle-clock touch, proxy.
+7. `worker/src/durable_object.ts:439-497` — `ensureContainerRunning` lifecycle state machine.
+8. `worker/src/durable_object.ts:507-542` — the synchronous in-memory `"starting"` concurrent-start guard.
+9. `worker/src/durable_object.ts:547-564` — audit-before-mutation cold-start event + `container.start`.
+10. `worker/src/durable_object.ts:564-761` — the `container.start({ env })` env-contract forward.
+11. `worker/src/durable_object.ts:872-902` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:837-866` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
+12. `worker/src/durable_object.ts:1043-1072` — the DURABLE idle reaper inside `alarmTick()`: an absent `lastActivityMs` backfills, an expired one emits the death event (audit-before-mutation), RE-CHECKS the clock (every `await` is a yield point where a queued request may have arrived), then destroys the container and signals chain-end so the DO hibernates instead of heartbeating a dead container forever.
 13. `worker/src/durable_object.ts:991-1007` — `alarm()`: a thin `try/finally` that ALWAYS re-arms the chain unless the tick reported a deliberate end, so a throwing tick can never strand the reaper (the posture `ReplicationCoordinatorDO.alarm()` already used); `worker/src/durable_object.ts:1015-1128` — `alarmTick()`: chain guard (dead container ⇒ end the chain), the idle reaper, the `degraded`-but-running arm (probe skipped, chain kept so the reaper still applies), the dedup arm, then the health re-probe + degrade.
 14. `worker/src/index.ts:3218` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO`, `ReplicationCoordinatorDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
 15. `worker/src/event_log_do.ts:207-218` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).

@@ -6,7 +6,7 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "7cd80e81ae93861406eb065945fa0609e844db3c"
+checkpoint_sha: "8d26d6d2172d14021ff7fa6a41f07fac19c5790c"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -51,7 +51,7 @@ semantics in the container.
 4. It strips any client-supplied trust headers (delete-then-set discipline), sets its own verified
    tenant-id/scope/token-prefix, and dispatches via `stub.fetch` (`worker/src/index.ts:3040-3119`).
 5. The DO's `fetch` binds the forwarded tenant-id, ensures the container is running, then proxies the
-   request (`worker/src/durable_object.ts:333-404`).
+   request (`worker/src/durable_object.ts:333-432`).
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
    DO→container hop (`worker/src/durable_object.ts:282-295`).
 7. The container's composed router (built by `build_with_factory`) receives the request and routes it to
@@ -87,7 +87,7 @@ semantics in the container.
 5. `worker/src/index.ts:3040-3071` — strip-then-set trust headers on the forward.
 6. `worker/src/index.ts:3040-3119` — the augmented forward + `stub.fetch` dispatch to the DO.
 7. `worker/src/durable_object.ts:282-295` — the DO→container proxy via `getTcpPort(50051)`.
-8. `worker/src/durable_object.ts:333-404` — the DO `fetch`: tenant bind, ensure-running, proxy.
+8. `worker/src/durable_object.ts:333-432` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:363-392` — the ensure-running gate before proxying (503/500 otherwise).
 10. `crates/corelink-container/src/routes.rs:390-398` — the container's composed router receiving the request.
 11. `crates/corelink-container/src/routes.rs:459-568` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
