@@ -64,8 +64,34 @@ jobs:
           cmp -s blob.bin got.bin || { echo "::error::CAS round-trip byte mismatch"; fail=1; }
 
           if [ "$fail" = "1" ]; then
+            # The canary used to shout WITHOUT saying why: it printed only the
+            # status code + a handful of edge markers, so an origin-side 5xx
+            # (the one class it CANNOT attribute to the edge) left no evidence
+            # at all. On 2026-08-01 it went red with PUT/GET=500 and the whole
+            # forensic trail was "500". Dump the origin's own error envelope.
+            #
+            # Redaction: bodies are the API's typed error envelope (code +
+            # detail + request id) and never echo credentials — but redact
+            # anything token-shaped anyway, since this log is world-readable on
+            # a public-workflow re-run. INV-NO-PII-IN-LOGS.
+            redact() { sed -E 's/(corelink_pat_[A-Za-z0-9_-]+|Bearer +[A-Za-z0-9._-]+)/[REDACTED]/g'; }
+
+            echo "== origin error envelope (PUT) =="
+            head -c 2000 put.out | redact || true; echo
+            echo "== origin error envelope (GET) =="
+            head -c 2000 got.bin | redact || true; echo
+
+            echo "== CoreLink origin headers (which plane answered, and why) =="
+            grep -iE 'x-corelink-|server-timing|x-request-id|cf-worker' put.hdr get.hdr | redact || echo "  (none — the response never reached a CoreLink handler)"
+
             echo "== response headers (edge-challenge / rate-limit markers) =="
             grep -iE 'cf-ray|cf-mitigated|server:|retry-after|cf-cache' put.hdr get.hdr || true
+
+            case "$put$get" in
+              *500*|*502*|*503*|*504*)
+                echo "::error::ORIGIN 5xx — this is NOT an edge/bot/rate-limit block (those are 403/429/challenge). The request authenticated and reached CoreLink, then the origin failed. Read the error envelope above; then check the container roll state (running image vs the wrangler.toml pin) and the D1 migration ledger."
+                ;;
+            esac
             if grep -qi 'cf-mitigated: *challenge' put.hdr get.hdr; then
               echo "::error::Cloudflare CHALLENGE on the cache API — Bot Fight Mode / WAF re-enabled for corelink-api? See docs/operator/edge-security-per-plane-sota.md"
             fi
