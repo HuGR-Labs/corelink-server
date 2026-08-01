@@ -140,25 +140,32 @@ describe("route matcher", () => {
       expect(APP_BASE_PATH).toBe("/corelink");
     });
 
-    it("re-attaches /corelink for path-surface requests", () => {
-      expect(signInPathFor("/corelink/en/welcome")).toBe("/corelink/sign-in");
-      expect(signInPathFor("/corelink")).toBe("/corelink/sign-in");
-      expect(signInRedirectPath("/corelink/en/welcome", "/corelink/en/welcome")).toBe(
-        "/corelink/sign-in?redirect_url=%2Fcorelink%2Fen%2Fwelcome",
+    // REGRESSION GUARD. Next strips `basePath` BEFORE middleware runs, so the
+    // pathnames below are what the middleware ACTUALLY receives in production
+    // for `humangr.com/corelink/*` — already prefix-less. The previous version
+    // of this suite fed the prefixed form (an input production never produces)
+    // and asserted the prefix-less OUTPUT as correct in a companion case, so it
+    // passed green while every logged-out user was 307'd to the apex marketing
+    // site instead of this app's sign-in.
+    it("re-attaches /corelink to the basePath-stripped pathname the middleware sees", () => {
+      expect(signInPathFor("/en/welcome")).toBe("/corelink/sign-in");
+      expect(signInPathFor("/admin")).toBe("/corelink/sign-in");
+      expect(signInPathFor("/dashboard")).toBe("/corelink/sign-in");
+      expect(signInRedirectPath("/en/welcome", "/en/welcome")).toBe(
+        "/corelink/sign-in?redirect_url=%2Fen%2Fwelcome",
       );
     });
 
-    it("stays root-relative for root-surface (subdomain) requests", () => {
-      expect(signInPathFor("/en/welcome")).toBe("/sign-in");
-      expect(signInPathFor("/admin")).toBe("/sign-in");
-      expect(signInRedirectPath("/en/welcome", "/en/welcome")).toBe(
-        "/sign-in?redirect_url=%2Fen%2Fwelcome",
-      );
+    it("never emits a bare /sign-in — that path is the apex marketing site", () => {
+      for (const p of ["/", "/dashboard", "/billing", "/en/dashboard", "/corelink/x", "/admin"]) {
+        expect(signInPathFor(p).startsWith(`${APP_BASE_PATH}/`)).toBe(true);
+        expect(signInRedirectPath(p, p).startsWith(`${APP_BASE_PATH}/sign-in`)).toBe(true);
+      }
     });
 
     it("omits the return URL when none is given", () => {
-      expect(signInRedirectPath("/corelink/en/welcome")).toBe("/corelink/sign-in");
-      expect(signInRedirectPath("/en/welcome")).toBe("/sign-in");
+      expect(signInRedirectPath("/en/welcome")).toBe("/corelink/sign-in");
+      expect(signInRedirectPath("/dashboard")).toBe("/corelink/sign-in");
     });
   });
 });
