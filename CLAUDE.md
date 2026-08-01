@@ -49,9 +49,13 @@ for bodies), or invoke the **`okf-context`** skill.
 **Run `bash scripts/pre-merge-gate-check.sh <PR>` and merge ONLY if it prints
 all-green.** The heavy gates (coverage / CodeQL / the TLA+ model-checks /
 ffi-matrix / reproducible-build / cas-foundation / s10-ship-gate) were moved OFF
-per-PR (2026-06-02) and now run **nightly (staggered) + on `main` + on-demand** —
-so the checks that REMAIN on a PR are the fast, load-bearing ones and they MUST be
-green. Never blind `--admin` merge; if you must `--admin`, state the documented
+per-PR (2026-06-02) and now run **on a cron + on-demand only** — there is no
+`pull_request` and no `push` lane on any of them, so nothing gates on them
+between scheduled runs. Cadence after the 2026-08-01 CI cost diet: **CodeQL +
+TLA+ + reproducible-build stay nightly (staggered); coverage / cas-foundation /
+ffi-matrix / s10-ship-gate are WEEKLY** (Tue/Wed/Thu/Fri). Dispatch the weekly
+ones explicitly when a PR touches their surface. The checks that REMAIN on a PR
+are the fast, load-bearing ones and they MUST be green. Never blind `--admin` merge; if you must `--admin`, state the documented
 infra/flake reason explicitly. (A green PR now takes minutes, not 30+.)
 
 ## Workflow
