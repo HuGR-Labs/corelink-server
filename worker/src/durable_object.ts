@@ -51,6 +51,17 @@ interface LifecycleState {
    * (an absent value reads as 0 → treated as immediately stale → self-heals).
    */
   readonly startingAt_ms?: number;
+  /**
+   * Wall-clock (ms) of the last REAL proxied request (or container start).
+   * Drives the DURABLE idle reaper in `alarm()`. Touched in-memory on the
+   * request hot path (zero storage cost) and persisted by the health-check
+   * alarm's existing lifecycle write, so it is never more than one
+   * `HEALTH_CHECK_INTERVAL_MS` stale after an isolate eviction — negligible
+   * against `IDLE_TIMEOUT_MS`. Optional for back-compat: an absent value
+   * (pre-fix persisted state) starts the idle clock at the next alarm, so a
+   * previously-immortal container dies one idle window after this deploys.
+   */
+  readonly lastActivityMs?: number;
 }
 
 type ContainerStatus = "stopped" | "starting" | "running" | "degraded";
@@ -89,6 +100,15 @@ const CONTAINER_PORT = 50051;
  * idle tail — so the COGS is proportional to real activity (recently-active
  * tenants only), NOT a global always-on warm pool. The cheap, infra-free
  * version of WP-3 (`docs/perf/2026-06-19-cas-hot-path-latency.md`).
+ *
+ * ENFORCED IN `alarm()` (durable), NOT a `setTimeout`: the original in-memory
+ * idle timer evaporated on every isolate eviction while the health-check
+ * alarm chain survived, so any once-started container became immortal and
+ * was billed 24/7 (2026-07 invoice: ~13 GiB resident memory around the
+ * clock / $84 per month of Container Memory against $0.00 of billable
+ * traffic). The reaper compares `lastActivityMs` (persisted lifecycle state)
+ * against this window on every alarm tick and destroys the container +
+ * ends the alarm chain when it expires.
  */
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 /** Health check interval when container is running (ms). */
@@ -289,7 +309,6 @@ export class CoreLinkServer implements DurableObject {
     tenantId: null,
   };
   private healthFailures = 0;
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private doIdHash = "";
 
   constructor(state: DurableObjectState, env: Env) {
@@ -371,8 +390,19 @@ export class CoreLinkServer implements DurableObject {
       );
     }
 
-    // Reset idle timer on every request
-    this.resetIdleTimer();
+    // Touch the durable idle clock on every REAL proxied request. In-memory
+    // only (zero hot-path storage cost): the health-check alarm's periodic
+    // lifecycle write persists it within one HEALTH_CHECK_INTERVAL_MS.
+    this.lifecycleState = { ...this.lifecycleState, lastActivityMs: Date.now() };
+
+    // SELF-HEAL the alarm chain. The alarm owns the reaper, so a lost chain =
+    // an immortal container. `ensureContainerRunning` returns early (ok) for an
+    // already-running container without arming anything, so a chain dropped by
+    // CF (retries exhausted on a throwing tick) would never come back on its
+    // own. `getAlarm()` is a cheap cached read; re-arm only when it is null.
+    if ((await this.storage.getAlarm()) === null) {
+      await this.storage.setAlarm(Date.now() + HEALTH_CHECK_INTERVAL_MS);
+    }
 
     // Get the TCP-port Fetcher for gRPC port 50051
     const fetcher = container.getTcpPort(CONTAINER_PORT);
@@ -743,7 +773,14 @@ export class CoreLinkServer implements DurableObject {
           newColdStartCount,
           this.env.ENVIRONMENT,
         );
-        await this.transitionStatus("stopped", requestId);
+        // DESTROY, don't just re-label. `container.start()` already ran, so the
+        // container may well be RESIDENT (up but wedged on /_health — the R2/S3
+        // init alone was measured at 26s+). Marking lifecycle "stopped" without
+        // destroying leaves it resident and BILLED with no alarm chain to reap
+        // it — the same immortality this fix exists to close, entered through
+        // the failure door. (This is the per-DO `container_start_threw` wedge
+        // that previously cleared only on an image roll.)
+        await this.destroyContainer(requestId);
         return { ok: false, reason: "container_health_check_failed" };
       }
 
@@ -751,6 +788,7 @@ export class CoreLinkServer implements DurableObject {
         ...this.lifecycleState,
         containerStatus: "running",
         lastHealthCheckMs: Date.now(),
+        lastActivityMs: Date.now(),
         coldStartCount: newColdStartCount,
       });
 
@@ -766,9 +804,8 @@ export class CoreLinkServer implements DurableObject {
         this.env.ENVIRONMENT,
       );
 
-      this.resetIdleTimer();
-
-      // Schedule alarm for periodic health checks
+      // Schedule alarm for periodic health checks (which also runs the
+      // durable idle reaper — see alarm())
       const nextAlarm = Date.now() + HEALTH_CHECK_INTERVAL_MS;
       await this.storage.setAlarm(nextAlarm);
 
@@ -788,7 +825,10 @@ export class CoreLinkServer implements DurableObject {
         this.env.ENVIRONMENT,
       );
 
-      await this.transitionStatus("stopped", requestId);
+      // DESTROY, don't just re-label — see the health-check arm above: the
+      // throw may have happened AFTER container.start() took effect, leaving a
+      // resident, billed, un-reapable container.
+      await this.destroyContainer(requestId);
       return { ok: false, reason: "container_start_threw" };
     }
   }
@@ -926,44 +966,6 @@ export class CoreLinkServer implements DurableObject {
       }
     }
     await this.transitionStatus("stopped", requestId);
-    this.clearIdleTimer();
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // Idle timeout
-  // ──────────────────────────────────────────────────────────────────────────
-
-  private resetIdleTimer(): void {
-    this.clearIdleTimer();
-    this.idleTimer = setTimeout(() => {
-      void this.onIdleTimeout();
-    }, IDLE_TIMEOUT_MS);
-  }
-
-  private clearIdleTimer(): void {
-    if (this.idleTimer !== null) {
-      clearTimeout(this.idleTimer);
-      this.idleTimer = null;
-    }
-  }
-
-  private async onIdleTimeout(): Promise<void> {
-    const tenantHash = await hashForLog(this.lifecycleState.tenantId ?? "_unknown");
-    const requestId = "idle-timeout-" + crypto.randomUUID().slice(0, 8);
-
-    // AUDIT BEFORE MUTATION
-    await emitLifecycleEvent(
-      this.env.PAGERDUTY_ROUTING_KEY ?? "",
-      "corelink.do.container_died.v1",
-      `CoreLink container stopped (idle timeout) for tenant ${tenantHash}`,
-      "info",
-      tenantHash,
-      this.doIdHash,
-      this.lifecycleState.coldStartCount,
-      this.env.ENVIRONMENT,
-    );
-
-    await this.destroyContainer(requestId);
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -987,20 +989,104 @@ export class CoreLinkServer implements DurableObject {
   // ──────────────────────────────────────────────────────────────────────────
 
   async alarm(): Promise<void> {
+    // The alarm is the SOLE owner of both the health chain and the reaper, so
+    // losing a link is losing the reaper — the immortal container re-entered
+    // through a third door. Any throw below (a storage.put fault, the
+    // PagerDuty POST, hashForLog) would otherwise end the chain permanently
+    // once CF exhausts its bounded retries. Mirror the always-re-arm posture
+    // of ReplicationCoordinatorDO.alarm(): re-arm in `finally` UNLESS this
+    // tick deliberately ended the chain (`chainEnded`).
+    let chainEnded = false;
+    try {
+      chainEnded = await this.alarmTick();
+    } finally {
+      if (!chainEnded) {
+        await this.storage.setAlarm(Date.now() + HEALTH_CHECK_INTERVAL_MS);
+      }
+    }
+  }
+
+  /**
+   * One alarm tick. Returns `true` when the chain was deliberately ENDED (the
+   * container is dead or was just reaped) — the caller then does NOT re-arm,
+   * which is what lets the DO hibernate instead of heartbeating a dead
+   * container forever. Any other return (or a throw) leaves the chain armed.
+   */
+  private async alarmTick(): Promise<boolean> {
     const container = this.state.container;
+    const status = this.lifecycleState.containerStatus;
     if (
-      this.lifecycleState.containerStatus !== "running" ||
       container === undefined ||
-      !container.running
+      !container.running ||
+      (status !== "running" && status !== "degraded")
     ) {
-      return;
+      // Chain deliberately ENDS here (no reschedule): a dead container must
+      // not keep the DO alive on a 30s alarm heartbeat — that is the other
+      // half of the immortal-container bill. The next real request restarts
+      // both the container and the alarm chain (ensureContainerRunning).
+      // NB: "degraded" with a still-running container stays IN the chain —
+      // it must remain subject to the idle reaper below, or a degraded
+      // container becomes the one immortality path left.
+      return true;
     }
 
     const requestId = "alarm-health-" + crypto.randomUUID().slice(0, 8);
     const now = Date.now();
 
+    // ── Durable idle reaper ─────────────────────────────────────────────────
+    // The reaper MUST live here, on the alarm (durable, storage-backed), not
+    // in a setTimeout: the old in-memory idle timer evaporated on every
+    // isolate eviction (deploy/recycle) while this alarm chain survived and
+    // kept health-checking the container — so any once-started container
+    // became IMMORTAL and was billed 24/7 (2026-07 invoice: ~13 GiB resident
+    // memory around the clock, $84/mo, with $0.00 of real traffic).
+    const lastActivity = this.lifecycleState.lastActivityMs;
+    if (lastActivity === undefined) {
+      // Pre-fix persisted state: start the idle clock now; reaps one idle
+      // window later. Persisted immediately so an eviction can't reset it.
+      await this.updateLifecycleState({ ...this.lifecycleState, lastActivityMs: now });
+    } else if (now - lastActivity >= IDLE_TIMEOUT_MS) {
+      const tenantHash = await hashForLog(this.lifecycleState.tenantId ?? "_unknown");
+      // AUDIT BEFORE MUTATION
+      await emitLifecycleEvent(
+        this.env.PAGERDUTY_ROUTING_KEY ?? "",
+        "corelink.do.container_died.v1",
+        `CoreLink container stopped (idle timeout) for tenant ${tenantHash}`,
+        "info",
+        tenantHash,
+        this.doIdHash,
+        this.lifecycleState.coldStartCount,
+        this.env.ENVIRONMENT,
+      );
+      // RE-CHECK before destroying. Every `await` above is a yield point where
+      // a queued fetch() runs (the same concurrency rule the REV-S2
+      // concurrent-start guard is built on), and emitLifecycleEvent is a real
+      // outbound POST — seconds-scale. A request that arrived in that window
+      // has already passed ensureContainerRunning and may be mid-proxy;
+      // destroying now would kill it in flight. Abort and let the chain re-arm.
+      const activityNow = this.lifecycleState.lastActivityMs ?? 0;
+      if (Date.now() - activityNow < IDLE_TIMEOUT_MS) {
+        return false; // raced with a live request — keep the container
+      }
+      await this.destroyContainer(requestId);
+      return true; // chain ends — container dead, DO free to hibernate
+    }
+
+    if (status !== "running") {
+      // Degraded-but-running: no health probe (preserved semantics), but the
+      // chain stays alive so the reaper above still fires on idle expiry.
+      // Persist the idle clock too — the degraded arm never wrote lifecycle,
+      // so an eviction here would revert lastActivityMs to a stale value.
+      await this.updateLifecycleState({ ...this.lifecycleState });
+      return false;
+    }
+
     if (now - this.lifecycleState.lastHealthCheckMs < HEALTH_CHECK_INTERVAL_MS) {
-      return;
+      // Deduped double-fire: skip the probe but NEVER break the alarm chain —
+      // a silent early-return here would orphan a running container with no
+      // health checks AND no reaper. (Persist for the same reason as above.)
+      await this.updateLifecycleState({ ...this.lifecycleState });
+      return false;
     }
 
     try {
@@ -1037,9 +1123,8 @@ export class CoreLinkServer implements DurableObject {
       }
     }
 
-    // Schedule next alarm
-    const nextAlarm = now + HEALTH_CHECK_INTERVAL_MS;
-    await this.storage.setAlarm(nextAlarm);
+    // Chain continues — alarm() re-arms in its `finally`.
+    return false;
   }
 }
 
