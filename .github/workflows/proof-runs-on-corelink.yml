@@ -34,6 +34,11 @@ name: proof — runs-on corelink (remote cache hit)
 
 on:
   workflow_dispatch: {}
+  # TEMPORÁRIO — `workflow_dispatch` só é despachável a partir da branch default,
+  # então este gatilho existe apenas para PROVAR o workflow antes do merge.
+  # REMOVER no commit seguinte, assim que a primeira execução der veredito.
+  push:
+    branches: [proof/runs-on-corelink-cache-hit]
 
 permissions:
   contents: read
