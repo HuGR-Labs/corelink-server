@@ -41,13 +41,13 @@ jobs:
 
     steps:
       - name: Checkout base ref
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.base_ref }}
           path: base
 
       - name: Checkout head ref
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           path: head
 
@@ -61,7 +61,7 @@ jobs:
       # the prebuilt binary also avoids the from-source compile race that
       # bites `cargo install` on the contended self-hosted Mac).
       - name: Install cargo-deny (SHA-pinned) for license check
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        uses: taiki-e/install-action@065d6a08a14e61e89fb0a4c10eecdbdef39c7d8e # v2.85.4
         with:
           tool: cargo-deny@0.19.8
 

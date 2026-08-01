@@ -90,7 +90,7 @@ jobs:
     steps:
       - name: Checkout
         # actions/checkout v4.2.2 — SHA-pinned (matches cargo-audit.yml).
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       # -----------------------------------------------------------------
       # GHAS preflight — check whether code scanning is enabled for this
@@ -138,7 +138,7 @@ jobs:
         # the `# TBD` comment with the verified SHA from
         # https://github.com/github/codeql-action/releases/tag/v3.27.0).
         # Version bumps require ADR + Security review per §14.
-        uses: github/codeql-action/init@7188fc363630916deb702c7fdcf4e481b751f97a  # github/codeql-action/init@v4.37.1
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81  # github/codeql-action/init@v4.37.3
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -164,7 +164,7 @@ jobs:
         id: analyze
         # github/codeql-action/analyze@v3.27.0 — same SHA pin as init above +
         # semgrep.yml's upload-sarif (verified against the v3.27.0 commit).
-        uses: github/codeql-action/analyze@7188fc363630916deb702c7fdcf4e481b751f97a  # github/codeql-action/analyze@v4.37.1
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81  # github/codeql-action/analyze@v4.37.3
         with:
           category: "/language:${{ matrix.language }}"
           # Write the SARIF to a local dir for BOTH the severity gate below and
@@ -191,7 +191,7 @@ jobs:
         # with no further change.
         continue-on-error: true
         if: always() && steps.preflight.outputs.enabled == 'true'
-        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a  # github/codeql-action/upload-sarif@v4.37.1
+        uses: github/codeql-action/upload-sarif@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81  # github/codeql-action/upload-sarif@v4.37.3
         with:
           # Directory of per-language SARIF emitted by the analyze step above.
           sarif_file: codeql-results

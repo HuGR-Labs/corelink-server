@@ -57,7 +57,7 @@ jobs:
       BASE_REF: ${{ github.base_ref }}
     steps:
       - name: Checkout (full history — needed for the base diff)
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -74,11 +74,11 @@ jobs:
       # `cargo install` compile race (os error 2 / aws-lc-sys) that flakes on
       # the contended self-hosted Mac, and is faster than compiling.
       - name: Install cargo-mutants (prebuilt)
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        uses: taiki-e/install-action@065d6a08a14e61e89fb0a4c10eecdbdef39c7d8e # v2.85.4
         with:
           tool: cargo-mutants@25.0.1
       - name: Install cargo-nextest (prebuilt)
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        uses: taiki-e/install-action@065d6a08a14e61e89fb0a4c10eecdbdef39c7d8e # v2.85.4
         with:
           tool: cargo-nextest
 

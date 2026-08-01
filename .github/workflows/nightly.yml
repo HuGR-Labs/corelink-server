@@ -130,7 +130,7 @@ jobs:
           - sub_processor_audit_fail_closed
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Setup Java (TLC requires JVM)
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
@@ -174,7 +174,7 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
 
@@ -335,7 +335,7 @@ jobs:
           - { crate: corelink-reapi, target: proto_decode_batch_update }
           - { crate: corelink-reapi, target: audit_request_id_total }
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # ROOT FIX (2026-06-17): do NOT use `dtolnay/rust-toolchain@nightly` — it
       # mutates the SHARED ~/.rustup on the self-hosted Mac and nukes the rustup
@@ -383,7 +383,7 @@ jobs:
     runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
 
@@ -400,7 +400,7 @@ jobs:
         # reproducible and a future cargo-mutants upstream change can't
         # silently shift our kill-rate. Prebuilt binary (taiki-e) avoids the
         # from-source compile race on the contended self-hosted Mac.
-        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        uses: taiki-e/install-action@065d6a08a14e61e89fb0a4c10eecdbdef39c7d8e # v2.85.4
         with:
           tool: cargo-mutants@27.0.0
 
