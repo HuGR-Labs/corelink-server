@@ -37,6 +37,7 @@ import {
   normalizeCheckoutTier,
 } from "@/lib/pricing";
 import { UpgradeButton } from "@/components/UpgradeButton";
+import { APP_BASE_PATH } from "@/lib/route-matcher";
 
 // ---------------------------------------------------------------------------
 // 1. ?plan= validation / defaulting
@@ -171,17 +172,25 @@ describe("/[locale]/upgrade page", () => {
     vi.clearAllMocks();
   });
 
-  it("signed-out: redirects to /sign-in with redirect_url back to the upgrade page (plan preserved)", async () => {
+  // The `redirect_url` VALUE must carry the basePath: it is consumed by Clerk,
+  // which navigates without Next's router (proven live — a plain sign-in landed
+  // on `humangr.com/en/customer`, the marketing site). A bare `/pt/upgrade?…`
+  // here bounces the buyer out of the app instead of back to checkout.
+  it("signed-out: redirects to /sign-in with a basePath-carrying redirect_url (plan preserved)", async () => {
     await mockClerkToken(null);
     await expect(renderUpgradePage({ locale: "pt", plan: "max" })).rejects.toThrow(
-      `REDIRECT:/sign-in?redirect_url=${encodeURIComponent("/pt/upgrade?plan=max")}`,
+      `REDIRECT:/sign-in?redirect_url=${encodeURIComponent(
+        `${APP_BASE_PATH}/pt/upgrade?plan=max`,
+      )}`,
     );
   });
 
   it("signed-out: the normalized (defaulted) plan rides the sign-in round-trip", async () => {
     await mockClerkToken(null);
     await expect(renderUpgradePage({ locale: "en" })).rejects.toThrow(
-      `REDIRECT:/sign-in?redirect_url=${encodeURIComponent("/en/upgrade?plan=pro")}`,
+      `REDIRECT:/sign-in?redirect_url=${encodeURIComponent(
+        `${APP_BASE_PATH}/en/upgrade?plan=pro`,
+      )}`,
     );
   });
 

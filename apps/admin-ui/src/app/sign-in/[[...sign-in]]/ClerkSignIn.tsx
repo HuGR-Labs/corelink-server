@@ -20,7 +20,7 @@
 import { ClerkProvider, SignIn } from "@clerk/nextjs";
 
 import { clerkLocalization } from "@/lib/clerk-localization";
-import { APP_BASE_PATH } from "@/lib/route-matcher";
+import { APP_BASE_PATH, withAppBasePath } from "@/lib/route-matcher";
 
 export default function ClerkSignIn(): React.ReactElement {
   return (
@@ -49,12 +49,23 @@ export default function ClerkSignIn(): React.ReactElement {
        * `redirect_url` when present, dashboard otherwise. Regression-locked
        * in tests/clerk-basepath.test.tsx.
        *
+       * It must ALSO carry the basePath (`withAppBasePath`). PROVEN against
+       * live prod with a throwaway Clerk user: a plain sign-in landed on
+       * `humangr.com/en/customer` — basePath LOST — which is not the app at
+       * all but the hugr-site marketing landing, so the user "signs in and
+       * gets bounced to the marketing page". Clerk's after-auth navigation
+       * does not go through Next's router, and the router is the only thing
+       * that auto-applies basePath. Prefixing is safe under BOTH mechanisms:
+       * Clerk's own `removeBasePath` strips it before any `router.push` (Next
+       * then re-adds it), while a hard `window.location` navigation gets the
+       * already-correct absolute path.
+       *
        * /en/customer is the (authenticated)-group dashboard (default locale en).
        */}
       <SignIn
         path={`${APP_BASE_PATH}/sign-in`}
         routing="path"
-        fallbackRedirectUrl="/en/customer"
+        fallbackRedirectUrl={withAppBasePath("/en/customer")}
       />
     </ClerkProvider>
   );

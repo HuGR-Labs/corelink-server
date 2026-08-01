@@ -13,7 +13,7 @@
 import { ClerkProvider, SignUp } from "@clerk/nextjs";
 
 import { clerkLocalization } from "@/lib/clerk-localization";
-import { APP_BASE_PATH } from "@/lib/route-matcher";
+import { APP_BASE_PATH, withAppBasePath } from "@/lib/route-matcher";
 
 export default function ClerkSignUp(): React.ReactElement {
   return (
@@ -30,12 +30,23 @@ export default function ClerkSignUp(): React.ReactElement {
        * (e.g. email-verification flows that redirect independently).
        * /en/welcome is used because next-intl requires the locale prefix;
        * the default locale is "en" (src/i18n/request.ts).
+       *
+       * BOTH must carry the basePath (`withAppBasePath`). PROVEN against live
+       * prod with a throwaway Clerk user: the after-auth navigation landed on
+       * `humangr.com/en/customer` — basePath LOST — i.e. the hugr-site
+       * marketing landing, not the app. The identical shape here meant every
+       * NEW SIGN-UP was dropped on the marketing page instead of /en/welcome,
+       * silently skipping the one-time PAT reveal + DPA onboarding. Clerk's
+       * after-auth navigation does not go through Next's router (the only
+       * thing that auto-applies basePath); prefixing is safe under both
+       * mechanisms (Clerk's `removeBasePath` strips it before a router.push,
+       * and a hard `window.location` gets the correct absolute path).
        */}
       <SignUp
         path={`${APP_BASE_PATH}/sign-up`}
         routing="path"
-        forceRedirectUrl="/en/welcome"
-        fallbackRedirectUrl="/en/welcome"
+        forceRedirectUrl={withAppBasePath("/en/welcome")}
+        fallbackRedirectUrl={withAppBasePath("/en/welcome")}
       />
     </ClerkProvider>
   );
