@@ -39,13 +39,21 @@ on:
       - "crates/corelink-reapi/proto/**"
       - "crates/corelink-container/proto/**"
   schedule:
-    # Nightly Lighthouse baseline at 08:00 UTC (absorbed from docs-lighthouse.yml).
+    # Lighthouse baseline at 08:00 UTC (absorbed from docs-lighthouse.yml).
     # Tag-trigger surface from old docs-lighthouse.yml (docs-v*, v*) is
-    # deferred: PR-time `lighthouse` job covers every PR; nightly
+    # deferred: PR-time `lighthouse` job covers every PR; the scheduled
     # `lighthouse-baseline` covers regression detection. Add a tag-time
     # lighthouse job in a follow-up if release verification becomes a hard
     # requirement.
-    - cron: "0 8 * * *"
+    #
+    # Cadence: daily -> WEEKLY Mon (CI cost diet 2026-08-01). This workflow
+    # fans out to 10 hosted jobs (build, axe, a11y-diff, i18n, vale,
+    # broken-links, reapi-gen-drift, lighthouse-baseline, ...), so one
+    # scheduled run costs ~10x the per-job billing floor before any real work.
+    # The `pull_request` + `push:main` paths above already gate EVERY docs
+    # change; the schedule only catches external drift (dead outbound links,
+    # a Lighthouse score moving under an unchanged site), which is weekly-shaped.
+    - cron: "0 8 * * 1"
   workflow_dispatch:
 
 permissions:

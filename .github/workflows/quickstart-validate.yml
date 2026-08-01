@@ -35,7 +35,12 @@ concurrency:
 jobs:
   validate-quickstart:
     name: validate quickstart MDX vs CLI surface
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01).
+    # A single portable bash validator (soft-fail / continue-on-error).
+    # Hosted minutes bill with a 1-MINUTE-PER-JOB FLOOR, so this sub-minute
+    # check costs a full paid minute every run; on the fleet it costs $0.
+    # Verified running natively on the fleet host (macOS/BSD userland).
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 5
     # Soft-fail: surface as a warning annotation, do not block merges.
     continue-on-error: true

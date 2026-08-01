@@ -7,16 +7,28 @@ name: CodeQL (R-prep static analysis)
 #   - javascript-typescript (admin-ui + docs site + tooling).
 #   - python (validate_specs.py, conformance harness, audit scripts).
 #
-# Triggers:
-#   - pull_request: paths-filtered (only when files in the language scope change).
-#   - push to main: full sweep on default branch.
-#   - schedule: weekly Monday 02:00 UTC (drift detection on tooling cadence).
+# Triggers (CORRECTED 2026-08-01 — the list below had drifted away from the
+# actual `on:` block, which is the drift that produced a false "every real diff
+# is still gated on PR" claim in the CI-cost-diet review):
+#   - schedule: DAILY 05:30 UTC. This is the ONLY automatic trigger.
 #   - workflow_dispatch: manual trigger for on-call / pentest preparation re-run.
+#   - there is NO `pull_request` lane and NO `push` lane — both were removed on
+#     2026-06-02 when the heavy gates moved off per-PR. Nothing gates on CodeQL
+#     between scheduled runs.
 #
 # Fail policy:
-#   PR mode → fail-closed on any HIGH or CRITICAL severity finding (see
-#   `analyze` step `--severity` flag + post-process gate). Lower severities
-#   are surfaced as warnings in the GitHub Security tab but do not block.
+#   The severity gate below only fails on `pull_request` / `workflow_dispatch`.
+#   Since there is no `pull_request` trigger, in practice only a dispatched run
+#   can fail-closed on a HIGH/CRITICAL finding; scheduled runs surface findings
+#   in the Security tab without blocking.
+#
+# CURRENT REALITY (verified 2026-08-01 from run 2026-07-21 job steps): GitHub
+# Advanced Security is NOT enabled on this repo, so the `GHAS code-scanning
+# preflight` step below sets enabled=false and EVERY heavy step (init, build,
+# analyse, upload, severity gate) reports `skipped`. Each matrix leg finishes in
+# ~10s and the whole run bills 3 hosted minutes (the 1-min-per-job floor x 3
+# legs). Until the owner enables GHAS this workflow performs ZERO static
+# analysis. The repo's live SAST lane is `semgrep.yml` (daily, untouched).
 #
 # SARIF uploaded to the GHA Security tab (category per language) so the
 # Security team can triage via the repo's central security dashboard.
@@ -33,8 +45,21 @@ name: CodeQL (R-prep static analysis)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
+  # nightly + on-demand. There is NO `pull_request` lane — re-add one only if
   # this must block PRs again.
+  #
+  # Cadence: DAILY, deliberately KEPT (CI cost diet 2026-08-01 considered
+  # daily -> weekly and rejected it). Two reasons:
+  #   1. There is no `pull_request` lane, so weekly really would open a 7-day
+  #      window with nothing compensating — on a launched product carrying
+  #      auth + billing. The "the PR paths: lane still gates every diff"
+  #      argument applies to s07/s08/s09/gc, NOT to this workflow.
+  #   2. The saving did not justify that risk: with GHAS off the whole run
+  #      bills 3 hosted minutes (see the header), so daily -> weekly buys
+  #      ~66 min/month — ~2% of this repo's Actions bill.
+  # Revisit only together with enabling GHAS: a full 3-language CodeQL run is
+  # expensive, and at that point the correct lever is a paths-filtered
+  # `pull_request` lane, not a longer cron interval.
   schedule:
     - cron: '30 5 * * *'
   workflow_dispatch:

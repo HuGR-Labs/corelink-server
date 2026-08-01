@@ -24,10 +24,21 @@ name: S-10 ship gate (WI-S10-007)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
+  # on a staggered schedule + on-demand. Re-add pull_request only if
   # this must block PRs again.
+  #
+  # Cadence: daily -> WEEKLY Fri (CI cost diet 2026-08-01). This is
+  # belt-and-braces re-execution for a SEALED sprint and it fans out to 4
+  # hosted jobs (2 of them full Rust builds; ~10 hosted min/run measured, so
+  # ~257 min/month at daily cadence). Unlike s07/s08/s09/gc this lane has NO
+  # pull_request trigger, so weekly + `workflow_dispatch` is its WHOLE surface
+  # and the honest cost of this change is up to 7 days before a regression in
+  # a SEALED sprint's crates is re-observed automatically. Mitigation is
+  # explicit, not implied: dispatch this workflow when touching the S-10
+  # crates/migrations. (Its light legs' underlying assertions are also
+  # re-executed by the S-10 crates' own per-crate PR lanes.)
   schedule:
-    - cron: '30 9 * * *'
+    - cron: '30 9 * * 5'
   workflow_dispatch:
 
 permissions:
@@ -118,7 +129,11 @@ jobs:
   # --------------------------------------------------------------------
   workflow-yaml-smoke:
     name: tla_billing_check.yml + s10-ship-gate.yml parse smoke
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01) — a JSON/YAML
+    # parse smoke that still costs a full paid minute under the hosted
+    # 1-MINUTE-PER-JOB FLOOR. The step comment below already documents the
+    # system-python3 idiom written FOR this fleet.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -148,7 +163,10 @@ jobs:
   # --------------------------------------------------------------------
   s10-ship-gate:
     name: S-10 ship gate (aggregate)
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01) — a fan-in
+    # `echo` that still costs a full paid minute under the hosted
+    # 1-MINUTE-PER-JOB FLOOR.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 1
     needs: [prop-and-tests, rb-dry-runs, workflow-yaml-smoke]
     steps:

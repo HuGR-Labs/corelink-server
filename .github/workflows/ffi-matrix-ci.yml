@@ -8,10 +8,20 @@ name: FFI Matrix CI (Python × Go × JS)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
-  # this must block PRs again.
+  # on a staggered schedule + on-demand. There is NO `pull_request` lane and
+  # NO `push` lane — re-add one only if this must block PRs again.
+  #
+  # Cadence: daily -> WEEKLY Thu (CI cost diet 2026-08-01). No PR lane covers
+  # this, so weekly does add up to 7 days of drift latency on the FFI surface.
+  # That is accepted here because this lane has NEVER been green: 0 successful
+  # scheduled runs in July 2026 (8 failure / 13 cancelled out of 21), matching
+  # the standing "ffi-matrix never worked, deliberately parked" position. It is
+  # a 3-language x N-runtime matrix (~19 hosted min, 10 jobs, the widest fan-out
+  # in the repo), so daily cadence pays ~490 min/month to re-observe the same
+  # two known breaks. Weekly keeps the drift signal alive; fixing the lane is
+  # tracked separately, and when it is fixed this cron should go back to daily.
   schedule:
-    - cron: '30 6 * * *'
+    - cron: '30 6 * * 4'
   workflow_dispatch:
 
 # Least-privilege: this build/test matrix only checks out + compiles + tests —
@@ -31,6 +41,10 @@ jobs:
   rust-unit:
     name: Rust unit tests (FFI crates)
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     # corelink-py pulls pyo3 with abi3-py310, which needs an interpreter
     # >= 3.10. This job has no setup-python step, so pyo3 auto-detected a
     # stale 3.8 on the fleet PATH and failed ("cannot set a minimum Python
@@ -80,6 +94,10 @@ jobs:
   python-matrix:
     name: Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -158,6 +176,10 @@ jobs:
   go-matrix:
     name: Go ${{ matrix.go-version }}
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -208,6 +230,10 @@ jobs:
   js-matrix:
     name: Node.js ${{ matrix.node-version }}
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     needs: rust-unit
     strategy:
       fail-fast: false
@@ -289,6 +315,10 @@ jobs:
   cross-language-verify:
     name: Cross-language BLAKE3 verify (single Rust truth)
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 25
     needs: [python-matrix, go-matrix, js-matrix]
     # Same pyo3 abi3-py310 build as rust-unit (cargo test -p corelink-py
     # below). The setup-python 3.12 step is unreliable on this fleet

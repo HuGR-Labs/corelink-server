@@ -12,10 +12,24 @@ name: coverage (R7-1 supply-quality rollup)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
-  # this must block PRs again.
+  # on a staggered schedule + on-demand. There is NO `pull_request` lane and
+  # NO `push` lane — re-add one only if this must block PRs again.
+  #
+  # Cadence: daily -> WEEKLY Tue (CI cost diet 2026-08-01).
+  # WHAT IS ACTUALLY LOST: this workflow has no PR lane, so between scheduled
+  # runs there is no coverage measurement at all — the honest cost of weekly is
+  # up to 7 days of coverage-trend latency, not "zero". That is acceptable here
+  # and NOWHERE ELSE in this diet, because:
+  #   - nothing blocks on it: it emits a trend report, not a threshold gate;
+  #   - it is the single most expensive scheduled lane in the repo — measured
+  #     21-46 hosted min per run on the paid 4-core runner (median ~34), i.e.
+  #     ~860 min/month at daily cadence;
+  #   - it produced ZERO successful scheduled runs in July 2026 (6 failure /
+  #     15 cancelled out of 21), so daily cadence is currently buying no signal
+  #     at all.
+  # Stays `workflow_dispatch`-able for a pre-release coverage snapshot.
   schedule:
-    - cron: '0 5 * * *'
+    - cron: '0 5 * * 2'
   workflow_dispatch:
 
 permissions:

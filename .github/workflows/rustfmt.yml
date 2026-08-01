@@ -3,13 +3,43 @@
 # The per-crate lanes (corelink-server.yml etc.) run `cargo fmt` only under a
 # `paths:` filter + nightly, so formatting drift on an un-filtered path merged
 # to main unnoticed (17 files were dirty on main when this gate was added). This
-# lane runs `cargo fmt --all --check` over the WHOLE workspace on EVERY PR — no
-# `paths:` filter — so no formatting drift can land again. It is fast (fmt needs
-# no build) and its ONLY job is the format check, so it stays green in seconds.
+# lane runs `cargo fmt --all --check` over the WHOLE workspace on every PR that
+# can possibly change the formatted surface, so no formatting drift can land
+# again. It is fast (fmt needs no build) and its ONLY job is the format check,
+# so it stays green in seconds.
+#
+# `paths:` (CI cost diet 2026-08-01): the door stays welded, but ONLY because
+# the filter below is the COMPLETE input surface of `cargo fmt --all --check`,
+# not a convenient subset. That verdict depends on four inputs, all filtered:
+#   1. Rust source                -> `**.rs`
+#   2. the rustfmt config         -> `**rustfmt.toml`  (also matches
+#                                    `.rustfmt.toml`, at any depth INCLUDING
+#                                    the repo root — the repo has none today,
+#                                    so a future one must still trigger this)
+#   3. the workspace member list AND `edition`, both of which `cargo fmt --all`
+#      reads and `edition` of which CHANGES the formatting rules
+#                                 -> `**Cargo.toml`   (root + every member)
+#   4. the rustfmt VERSION, pinned by the toolchain file
+#                                 -> `rust-toolchain.toml`
+# NOTE the glob form: GitHub's `paths:` `**/` requires at least one slash, so
+# `**/*.rs` / `**/rustfmt.toml` / `**/Cargo.toml` would MISS a root-level file.
+# `**.rs` / `**rustfmt.toml` / `**Cargo.toml` is the form GitHub documents for
+# "any depth, including the root" — the same form `mutation-pr.yml` uses.
+# (The original "no paths: filter" wording was aimed at per-CRATE path lists,
+# which DO leave un-filtered Rust paths uncovered; this filter does not.)
+# What this buys: the job installs a Rust toolchain before it can run, so every
+# docs-only, spec-only or workflow-only PR was paying a hosted minute to
+# format-check a tree with no Rust in the diff (~110 runs/month measured).
 name: rustfmt
 
 on:
   pull_request:
+    paths:
+      - '**.rs'
+      - '**rustfmt.toml'
+      - '**Cargo.toml'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/rustfmt.yml'
   workflow_dispatch:
 
 permissions:
@@ -23,6 +53,10 @@ jobs:
   fmt:
     name: cargo fmt --all --check
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
+    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
+    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 

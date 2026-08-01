@@ -16,7 +16,10 @@ on:
       - "apps/admin-ui/**"
       - ".github/workflows/lighthouse-ci.yml"
   schedule:
-    - cron: "0 7 * * *"
+    # Cadence: daily -> WEEKLY Tue (CI cost diet 2026-08-01). The paths-filtered
+    # `pull_request` lane above already scores every admin-ui change; the cron
+    # re-scores an UNCHANGED tree, so it only detects slow environmental drift.
+    - cron: "0 7 * * 2"
   workflow_dispatch:
 
 permissions:

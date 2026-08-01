@@ -13,10 +13,29 @@ name: mutation-pr (per-diff cargo-mutants — fast PR gate)
 # zero mutants and passes instantly. Same protection where bugs actually live —
 # the NEW code — without re-auditing months-stale code every night.
 #
-# Runner: self-hosted Mac on purpose — cargo-mutants + cargo-nextest are
-# already installed there and the build cache is warm (same machine), so a
-# per-diff run is genuinely fast. The Mac relief comes from demoting the
-# nightly full-workspace sweep (now weekly), not from this light check.
+# Runner: GitHub-hosted `ubuntu-latest`. (This paragraph previously read
+# "self-hosted Mac on purpose"; that text was stale and, on 2026-08-01, it
+# caused a CI-cost PR to "restore" a runner this job must NOT use. Corrected
+# here so the drift cannot mislead again.) The job stays hosted because:
+#   1. It is a COMPILE job (cargo-mutants builds + tests the workspace once per
+#      mutant). CLAUDE.md is explicit that heavy compiles stay off the founder's
+#      Mac — the self-hosted runners ARE that Mac, and it has crashed under CI
+#      bursts.
+#   2. Provisioning it on the fleet is a known-hazardous re-plumb. The fleet
+#      pattern is "put the pre-installed host toolchain on PATH" — see
+#      region_pinning.yml / corelink-hash.yml / corelink-meta.yml /
+#      tenant-path.yml / corelink-worker.yml, and the ROOT FIX escalation in
+#      corelink-client-verify.yml: `dtolnay/rust-toolchain` on the shared Mac
+#      mutates the SHARED ~/.rustup and dangles every ~/.cargo/bin symlink,
+#      breaking every OTHER Rust gate on the host mid-run. The two
+#      `taiki-e/install-action` steps below write the same shared ~/.cargo/bin.
+#   3. It runs on EVERY Rust PR (207 runs in July 2026), so it is also the job
+#      most likely to saturate the 4-runner fleet and stall
+#      `scripts/pre-merge-gate-check.sh`, the mandatory merge gate.
+# Measured hosted cost: median ~3.5 billable min/run (~700 min/month), most of
+# which is already suppressed by the `paths:` filter + cancel-in-progress below.
+# The Mac relief comes from demoting the nightly full-workspace sweep (now
+# weekly), not from moving this check onto the Mac.
 #
 # The full-crate kill-rate BASELINE regression gate still lives in
 # `mutation-nightly.yml` (now weekly / dedicated-runner). This per-PR check is
@@ -50,7 +69,14 @@ env:
 jobs:
   mutants-diff:
     name: cargo-mutants (changed lines only)
+    # Runner: GitHub-hosted on purpose — see the "Runner:" paragraph in the
+    # header above for the three reasons (heavy compile off the founder's Mac,
+    # the shared-~/.rustup ROOT FIX, fleet saturation of the merge gate).
     runs-on: ubuntu-latest
+    # Bound the job (CI cost diet 2026-08-01): it had NO timeout, so the GitHub
+    # default of 360 min applied — a wedged cargo-mutants run could burn 6h of
+    # paid minutes. `--in-diff` runs are minutes; 20 is generous headroom.
+    timeout-minutes: 20
     # Pass the PR base branch via env (not interpolated into run: shell) —
     # template-injection-safe (a branch name can carry shell metacharacters).
     env:

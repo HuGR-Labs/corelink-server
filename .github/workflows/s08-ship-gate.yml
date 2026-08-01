@@ -33,8 +33,12 @@ on:
       - 'dashboards/alerts/dash-rate-alerts.yml'
       - 'specs/04_sprints/S08/**'
       - '.github/workflows/s08-ship-gate.yml'
+  # Cadence: daily -> WEEKLY (CI cost diet 2026-08-01). The `pull_request`
+  # paths: lane above still gates EVERY diff that can regress this sprint's
+  # surface; the schedule is only belt-and-braces re-execution for a SEALED
+  # sprint, and it fans out to 4 hosted jobs (2 of them full Rust builds).
   schedule:
-    - cron: '30 8 * * *'
+    - cron: '30 8 * * 3'
   workflow_dispatch:
 
 permissions:
@@ -120,7 +124,11 @@ jobs:
   # --------------------------------------------------------------------
   dashboard-smoke:
     name: DASH-RATE parse smoke
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01) — a JSON/YAML
+    # parse smoke that still costs a full paid minute under the hosted
+    # 1-MINUTE-PER-JOB FLOOR. The step comment below already documents the
+    # system-python3 idiom written FOR this fleet.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -150,7 +158,10 @@ jobs:
   # --------------------------------------------------------------------
   s08-ship-gate:
     name: S-08 ship gate (aggregate)
-    runs-on: ubuntu-latest
+    # Runner: self-hosted mac fleet (CI cost diet 2026-08-01) — a fan-in
+    # `echo` that still costs a full paid minute under the hosted
+    # 1-MINUTE-PER-JOB FLOOR.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 1
     needs: [prop-and-tests, rb-dry-runs, dashboard-smoke]
     steps:

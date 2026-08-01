@@ -28,10 +28,37 @@ name: CAS Foundation CI (WI-S01-007)
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
+  # on a staggered schedule + on-demand. Re-add pull_request only if
   # this must block PRs again.
+  #
+  # Cadence: daily -> WEEKLY Wed (CI cost diet 2026-08-01).
+  # This workflow has NO `pull_request` lane of its own (removed 2026-06-02),
+  # so "the PR paths: lane still covers it" is NOT the argument. The argument is
+  # that every one of its four legs is ALREADY re-verified elsewhere on a
+  # cadence this change does not touch — verified 2026-08-01, file by file:
+  #   - `tlc-canonical` (4 specs: tenant_isolation, cas_integrity,
+  #     gc_correctness, audit_immutability) -> all four are re-model-checked
+  #     DAILY by `tla_check.yml` (cron '0 7 * * *'), which runs a superset of
+  #     these specs with the same pinned TLC v1.8.0 + run_tlc_corelink.sh.
+  #   - `cargo-deny` -> `cargo-deny.yml` runs the same `cargo deny check`
+  #     DAILY (cron '30 6 * * *') **and on every pull_request**.
+  #   - `sbom-cyclonedx` (CycloneDX 1.5 + NTIA minimum elements) ->
+  #     `sbom.yml` generates the same CycloneDX 1.5 SBOM and runs a STRICT
+  #     NTIA minimum-elements gate on its own weekly cron ('17 3 * * 2'),
+  #     plus on every release.
+  #   - `workspace-build-test` (fmt + clippy -D warnings + workspace test) ->
+  #     the per-crate PR lanes (corelink-server/-hash/-meta/-worker/-reapi/
+  #     tenant-path/...) gate the touched crates on every PR; what weekly
+  #     costs is the CROSS-crate convergence smoke on an unchanged tree.
+  # So the residual exposure of weekly is: up to 7 days before a cross-crate
+  # convergence break on an unchanged tree is observed. Against that: this lane
+  # produced ZERO successful scheduled runs in July 2026 (19 failure /
+  # 2 cancelled out of 21) at ~18 hosted min per run, so daily cadence is
+  # currently paying ~460 min/month to re-observe the same red.
+  # NOTE: if any of the four compensating lanes above is ever removed or
+  # slowed, this cron must go back to daily in the same PR.
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 9 * * 3'
   workflow_dispatch:
 
 permissions:
