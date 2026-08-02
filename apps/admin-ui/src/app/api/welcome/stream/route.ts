@@ -13,11 +13,13 @@
  *   - The `since` cursor advances on each successful flush.
  *
  * Storage backend:
- *   The D1 binding `ANALYTICS_DB` is owned by Phase-0 agent G
- *   (`apps/analytics-worker/`). Until that binding ships in the Pages env
- *   this handler short-circuits to a heartbeat-only stream — keeps the
- *   browser's `EventSource` open so the UI badge stays in the "waiting"
- *   state without spurious reconnects.
+ *   The D1 binding `ANALYTICS_DB` points at `corelink-analytics-prod`, whose
+ *   schema + migrations are owned by `apps/analytics-worker/`. It is declared
+ *   for this Worker in `apps/admin-ui/wrangler.toml`. If the binding is ever
+ *   absent (local `next dev` without a Workers context, a stripped preview
+ *   env) this handler degrades to a heartbeat-only stream — that keeps the
+ *   browser's `EventSource` open so the UI badge stays in the "waiting" state
+ *   without spurious reconnects, instead of 500-ing.
  *
  * Edge runtime is mandatory: ReadableStream + setInterval map onto the
  * Workers `ctx.waitUntil` lifecycle correctly there. Node.js runtime would
@@ -25,6 +27,7 @@
  */
 
 import { NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 export const dynamic = "force-dynamic";
 
@@ -63,17 +66,28 @@ async function resolveTenantId(): Promise<string | null> {
   return session.sessionClaims?.tenant_id ?? null;
 }
 
-function readEnv(): RouteEnv {
-  // `next-on-pages` exposes Workers env via `process.env` at edge runtime
-  // for primitive secrets, but bindings (D1, KV) flow through
-  // `(globalThis as any).__env__` or `getRequestContext().env`. We read
-  // defensively so the handler is testable without a Workers shim.
-  const ctx = (
-    globalThis as {
-      __env__?: RouteEnv;
-    }
-  ).__env__;
-  return ctx ?? {};
+async function readEnv(): Promise<RouteEnv> {
+  // admin-ui runs on `@opennextjs/cloudflare` (wrangler.toml
+  // `main = ".open-next/worker.js"`), which publishes the Workers bindings on
+  // the Cloudflare context — read via `getCloudflareContext()`. It does NOT
+  // populate `globalThis.__env__`; that is the `next-on-pages` convention this
+  // app migrated away from, and reading it here always yielded `undefined`.
+  //
+  // `async: true` is used deliberately: in the deployed Worker both overloads
+  // read the same global (so it costs nothing), but only the async overload can
+  // also resolve the context under the `next dev` Node runtime.
+  //
+  // Defensive by design — any failure (no Cloudflare context, `next dev`
+  // without `initOpenNextCloudflareForDev`) degrades to `{}` so `pollEvents`
+  // reports "no events yet" rather than throwing a 500 at the client.
+  try {
+    const { env } = await getCloudflareContext({ async: true });
+    // The generated `CloudflareEnv` does not declare this app-specific binding;
+    // narrow structurally at the boundary.
+    return (env ?? {}) as unknown as RouteEnv;
+  } catch {
+    return {};
+  }
 }
 
 async function pollEvents(
@@ -102,7 +116,7 @@ export async function GET(): Promise<Response> {
       { status: 401 },
     );
   }
-  const env = readEnv();
+  const env = await readEnv();
 
   const encoder = new TextEncoder();
   let cursor = new Date(0).toISOString();

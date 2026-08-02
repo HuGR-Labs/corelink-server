@@ -130,7 +130,7 @@ candidates:
     title: "Cloudflare Worker edge plane"
     status: "active"
     source_cluster: "planes"
-    seed_from: ["worker/src/index.ts", "worker/src/sentry-scrub.ts", "worker/src/lib/tenant_residency_cache.ts", "worker/src/lib/tenant_tier_cache.ts"]
+    seed_from: ["worker/src/index.ts", "worker/src/sentry-scrub.ts", "worker/src/lib/tenant_residency_cache.ts", "worker/src/lib/tenant_tier_cache.ts", "worker/src/lib/onboarding_events.ts"]
   - id: "planes/durable-object"
     type: "Plane"
     title: "Durable Object lifecycle (CoreLinkServer)"
