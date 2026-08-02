@@ -45,6 +45,8 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
   - **Source-available trajectory:** while CoreLink ships as a managed service at GA, the source-available + on-prem path is on the post-GA roadmap (anti-scoped from GA explicitly — see `BLOG-POSTS/01` "What is next").
 - **Counter-question:** "What's the procurement gate you need to clear here? Is it 'vendor must have ≥ N employees', or 'we must have an exit strategy that survives vendor failure'? Those map to different conversations."
 
+> **Internal — not customer copy (operator-assisted export has no runbook).** "Operator-assisted" means a human on our side performs it on request, so its absence from the CLI is expected — but the **direct-to-customer-bucket export is undocumented**: as of this edit there is no procedure for it in `specs/_runbooks/` or `docs/operator/` (the offboarding runbook only hands the customer the self-serve command — `specs/_runbooks/RB-TENANT-OFFBOARDING.md:80`). Same gap for operator-assisted bulk **import** (FAQ M2). Selling either commits us to a procedure nobody has written; get Founder sign-off and file the runbook gap. GDPR erasure is the counter-example — that one **is** documented end-to-end (`specs/_runbooks/RB-DSR-GDPR.md` §2.3, line 134). Applies to the Obj-1 escape-hatch bullet above and to Obj-22.
+
 ### Obj-2 — "You haven't been around long enough."
 
 - **Why it matters:** customers want a track record. Build-cache outages are quietly catastrophic.
@@ -240,9 +242,9 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 ### Obj-24 — "What if your migration tool breaks something?"
 
 - **Why it matters:** trust in tooling.
-- **Our position:** the tools are open / inspectable. The mirror pattern means you don't depend on them for cutover.
-- **Evidence:** `corelink-bazel-remote-shim` is a drop-in front (you can read it before deploying it). Bulk import (`corelink import <dir>`) is idempotent and content-addressed, so re-running is safe (digests already-present are no-ops); object-store sources like `s3://...` aren't wired yet, so sync them locally first. Rollback is a build-tool config flip.
-- **Counter-question:** "Want your build-tools engineer on a working session with our integrations engineer? We'll walk the shim source live."
+- **Our position:** there is **no CoreLink migration tool in your build path** — nothing to install, nothing that can break your build. Your build tool talks to us over its own native remote-cache flag; the protocol translation runs on our side. Combined with mirror-then-cutover (Obj-23), your incumbent cache stays primary and rollback is one config flip.
+- **Evidence:** Integration is a URL plus a header — `--remote_cache=https://corelink-api.humangr.com/bazel/cache` for stock Bazel's plain-HTTP cache, or `/bazel/v2` for a REAPI/ByteStream client, both with `--remote_header=Authorization=Bearer ${CORELINK_PAT}` (`apps/docs/docs/integrations/bazel.md`). The REAPI v2 translation layer is a server-side component of the managed service (`crates/corelink-bazel-bridge`), not something you deploy — so the failure mode "their tool broke our build" has no surface to happen on. Pre-warming is an **optional, offline** step that never sits in the build path: `corelink import <dir>` is content-addressed, so re-running is safe (an already-present digest is an idempotent re-write, not a duplicate); object-store sources like `s3://...` aren't wired yet, so sync them locally first. Rollback during mirror is the `--remote_cache` line you haven't removed yet.
+- **Counter-question:** "Want your build-tools engineer on a working session with our integrations engineer? We'll do the `.bazelrc` diff live and rehearse the rollback flip before you mirror anything."
 
 ### Obj-25 — "We've been burned by 'easy migration' promises."
 

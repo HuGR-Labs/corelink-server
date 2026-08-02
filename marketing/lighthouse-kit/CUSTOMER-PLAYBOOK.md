@@ -141,7 +141,7 @@ Your Customer Success engineer will pick the right one with you on the D+3 scopi
 
 **Buck2** — set `[buck2_re_client] action_cache_address` to our HTTP endpoint for the test scope; keep the existing primary in your `buckconfig.local`.
 
-**Bazel-remote-cache replacement candidates** — if you're already running `bazel-remote-cache` standalone, the easiest path is `corelink-bazel-remote-shim` (a drop-in front that forwards to CoreLink with your existing API surface). Ask us about it.
+**Bazel-remote-cache replacement candidates** — if you're already running `bazel-remote` standalone, you don't deploy anything of ours: CoreLink answers the same plain-HTTP cache protocol Bazel already speaks, at `--remote_cache=https://corelink-api.humangr.com/bazel/cache` with `--remote_header=Authorization=Bearer ${CORELINK_PAT}` (`/cas/<hash>` + `/ac/<hash>`, same as bazel-remote). Keep your bazel-remote running as primary through the mirror period; cutover and rollback are the one `--remote_cache` line. Full setup: `apps/docs/docs/how-to/migrate/from-bazel-remote-cache.mdx`.
 
 **Pants** — `[cache] remote_store_address = grpc://cache.corelink.humangr.com:443/{your-slot-id}` and `remote_oauth_bearer_token_path = /etc/corelink/pat`.
 

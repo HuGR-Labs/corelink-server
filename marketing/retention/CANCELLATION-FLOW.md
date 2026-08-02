@@ -204,7 +204,7 @@ The content of this screen depends on the Step 2 answer. Three offer variants + 
 |                      deleted per our DPA + privacy notice.    |
 |                                                               |
 |   Export your data:  [ Run corelink cas export ↗ ]            |
-|                      Walk-through guide: docs/cli/cas-export  |
+|                      Guide: /how-to/leave-corelink            |
 |                                                               |
 |   Audit chain:       This action will be logged with          |
 |                      event id corelink.billing.subscription.  |
@@ -290,12 +290,13 @@ The content of this screen depends on the Step 2 answer. Three offer variants + 
 
 ## 5. Export-tools handoff
 
-The cancellation flow surfaces `corelink cas export` at Steps 4 and 5. Export tooling must be:
+The cancellation flow surfaces `corelink cas export` at Steps 4 and 5. This is a **requirements list with per-item status** — two of the four are met today, two are OPEN and must not be described to a customer as shipped.
 
-- **Pre-existing** at GA (the customer escape-hatch is a hard requirement — see [`../sales/OBJECTION-HANDLING.md`](../sales/OBJECTION-HANDLING.md) Obj-1).
-- **Documented** at `apps/docs/docs/cli/cas-export` with a worked example for the three target destinations: S3-compatible bucket, local filesystem, Docker registry.
-- **Egress-bounded** — the customer pays no marginal cost; we eat the egress per the COGS model in [`../sales/PRICING-WORKSHEET.md`](../sales/PRICING-WORKSHEET.md) because we have committed to no-cost departure.
-- **Auditable** — every `cas export` operation emits `corelink.cas.exported` audit events so the customer's own audit chain is the receipt of what they took.
+- **Pre-existing** at GA (the customer escape-hatch is a hard requirement — see [`../sales/OBJECTION-HANDLING.md`](../sales/OBJECTION-HANDLING.md) Obj-1). — **MET.** `corelink cas export --tenant me --out <dir>` is wired in the CLI (`tools/cli/src/commands/cas.rs`), as is the portability bundle `corelink tenant export --out <file>`.
+- **Documented** with a worked example. — **PARTIALLY MET.** The customer-facing offboarding walk-through is `apps/docs/docs/how-to/leave-corelink.mdx` (slug `/how-to/leave-corelink`). There is **no** `apps/docs/docs/cli/cas-export` page — that path was cited here but never existed; a dedicated `cas export` reference page is OPEN.
+- **Multi-destination** — a worked example per target: S3-compatible bucket, local filesystem, Docker registry. — **OPEN, 1 of 3 wired.** Only a **local directory** is implemented; any remote URI is rejected outright ("only a local directory is wired today. Direct-to-S3/GCS streaming needs an object-store client + credentials (flagged gap)" — `tools/cli/src/commands/cas.rs`). Pushing into a customer bucket is operator-assisted for now (and see the runbook gap flagged in `../sales/FAQ-MASTER.md` M2).
+- **Egress-bounded** — the customer pays no marginal cost; we eat the egress per the COGS model in [`../sales/PRICING-WORKSHEET.md`](../sales/PRICING-WORKSHEET.md) because we have committed to no-cost departure. — **MET** (policy commitment, no tooling dependency).
+- **Auditable** — the customer's own audit chain should be the receipt of what they took. — **PARTIALLY MET, and the named event does not exist.** There is no `corelink.cas.exported` event anywhere in the codebase; do not cite it. What an export *does* leave in the chain today is the per-operation trail the CLI's own reads produce — `corelink.cas.list.attempted` and `corelink.cas.read.attempted` / `.served` (slugs at `crates/corelink-handler-cas/src/audit.rs:61-62,70`; emitted at `crates/corelink-handler-cas/src/handler.rs:338,583`), because `cas export` is a client-side page-and-download loop over the normal CAS routes. A **single, first-class export-receipt event** is OPEN.
 
 If the customer cancels without exporting, the 30 d retention window is the second chance — they can re-activate, export, and re-cancel cleanly.
 
