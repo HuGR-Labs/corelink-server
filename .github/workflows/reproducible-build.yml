@@ -119,8 +119,17 @@ jobs:
       # pins every version to Cargo.lock, and the COMPILE below is still
       # `--frozen --offline`. Dependency acquisition and hermetic compilation are
       # separate phases — SLSA cares about the second.
+      # NOTE the absence of `--target`. A first attempt used
+      # `--target wasm32-unknown-unknown`, and that narrowing is exactly what
+      # broke the next run: the build still failed, on
+      # `failed to download cpufeatures v0.3.0 / attempting to make an HTTP
+      # request, but --frozen was specified` — a dependency the target filter had
+      # excluded from the fetch but the compile still wanted. Plain
+      # `cargo fetch --locked` populates the registry for every target in the
+      # lockfile, which is what an offline compile needs. Do not "optimise" the
+      # target back in; it saves seconds and costs the whole gate.
       - name: Fetch dependencies (network allowed; --locked pins to Cargo.lock)
-        run: cargo fetch --locked --target wasm32-unknown-unknown
+        run: cargo fetch --locked
 
       # Hermetic, deterministic build:
       #   --remap-path-prefix  → strips absolute paths from LLVM debug info
