@@ -86,7 +86,7 @@ export function renderInstallScript(config: InstallScriptConfig): string {
  */
 const INSTALL_SCRIPT_TEMPLATE = `#!/bin/sh
 # CoreLink CLI installer — served from https://corelink-get.humangr.com.
-# Source: github.com/HumanGuardrail/corelink-cli :: apps/get-corelink-worker.
+# Source: github.com/HuGR-Labs/corelink-cli :: apps/get-corelink-worker.
 # Re-run is safe: writes to /usr/local/bin/corelink and ~/.corelink/config.toml.
 set -eu
 
