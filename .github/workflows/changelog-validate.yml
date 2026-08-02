@@ -1,9 +1,17 @@
 name: changelog-validate
 
 # Enforces that every PR carrying a `feat:` or `fix:` Conventional Commit
-# touches `CHANGELOG.md` under the `[Unreleased]` section. Prevents the
-# common drift where the changelog falls behind the actual feature/bug
-# trajectory.
+# touches `CHANGELOG.md` under the `[Unreleased]` section — and that it adds
+# EXACTLY ONE entry for the change, not two. Prevents (a) the common drift
+# where the changelog falls behind the actual feature/bug trajectory, and
+# (b) the rebase-duplication observed on PR #955 (2026-08-01): a
+# `1 insertion(+), 1 deletion(-)` CHANGELOG commit silently became
+# insertion-only when upstream moved the context the deletion was anchored to,
+# leaving BOTH the stale entry and its replacement — with the stale one still
+# asserting what the replacement was written to retract. This job was green
+# throughout, because "has an entry" was the only assertion it made.
+# The duplicate half lives in `scripts/check_changelog_duplicates.py`
+# (thresholds justified there against the measured corpus).
 #
 # Implements: WI-S20-008 (release engineering) + Keep-A-Changelog v1.1.0
 # Reference : https://keepachangelog.com/en/1.1.0/
@@ -153,6 +161,28 @@ jobs:
               sys.exit(1)
           print("OK: CHANGELOG.md [Unreleased] section was updated.")
           PY
+
+      - name: Self-test the duplicate detector
+        # The detector is only worth its exit code if it is shown to catch the
+        # real incident AND to leave this repo's honest sibling entries alone
+        # (several related `fix(admin-ui):` / `fix(container):` entries ship per
+        # release). Both directions are asserted by the embedded fixtures.
+        # Pure stdlib python3, ~50 ms — cheaper than being wrong.
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_changelog_duplicates.py --self-test
+
+      - name: Verify no duplicated [Unreleased] entry (rebase guard)
+        # Runs on EVERY PR, not just feat:/fix: ones — a rebase can duplicate an
+        # entry in a PR that carries no feat:/fix: commit of its own (e.g. a
+        # docs: or chore: PR that rebased over one).
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check_changelog_duplicates.py \
+            --base "${{ github.event.pull_request.base.sha }}" \
+            --head "${{ github.event.pull_request.head.sha }}"
 
       - name: Verify Keep-A-Changelog header is intact
         shell: bash
