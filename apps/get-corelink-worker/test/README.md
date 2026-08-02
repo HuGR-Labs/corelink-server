@@ -17,7 +17,7 @@ performs the full bootstrap:
    — fetches the install script from the Cloudflare Worker
 2. The install script downloads the `corelink-cli` binary from GitHub Releases
 3. `corelink --version` — confirms the binary executes
-4. `corelink ping` — confirms the binary can reach the API and authenticate
+4. `corelink whoami` — confirms the binary can reach the API and authenticate
 
 ## When it runs
 
@@ -39,7 +39,7 @@ A failed run means one of the following is broken in production:
 - The install Worker at `corelink-get.humangr.com` (HTTP error, malformed
   script, etc.)
 - The `corelink-cli` GitHub Release artifact (missing, wrong arch, corrupted)
-- The CoreLink API (`corelink ping` cannot authenticate or reach the server)
+- The CoreLink API (`corelink whoami` cannot authenticate or reach the server)
 - The CI test PAT (`CORELINK_TEST_TOKEN_CI`) has been revoked or expired
 
 ## Configuration
@@ -47,7 +47,7 @@ A failed run means one of the following is broken in production:
 The workflow expects a GitHub Actions secret:
 
 - **`CORELINK_TEST_TOKEN_CI`** — a low-privilege PAT scoped only to what
-  `corelink ping` needs (read-only health probe). Must be set in the
+  `corelink whoami` needs (read-only identity probe). Must be set in the
   repo/org secrets after repo provisioning. **DO NOT** bake a real token
   into the Dockerfile or workflow YAML; the Dockerfile default
   (`CORELINK_TEST_TOKEN=changeme`) is intentionally invalid so local builds
