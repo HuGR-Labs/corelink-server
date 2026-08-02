@@ -10,10 +10,6 @@
 name: probe-corelink-box
 on:
   workflow_dispatch: {}
-  # Gatilho temporario: workflow_dispatch so vale a partir da branch default,
-  # e o dado e necessario ANTES do merge. Removido no commit seguinte.
-  push:
-    branches: [ci/fabric-capability-probe]
 
 permissions:
   contents: read

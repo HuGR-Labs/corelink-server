@@ -52,7 +52,16 @@ concurrency:
 jobs:
   fmt:
     name: cargo fmt --all --check
-    runs-on: ubuntu-latest
+    # CoreLink fabric (dogfood). Moved off the hosted runner because this repo
+    # is PRIVATE, so every hosted minute is billed against a 2,000/mo quota that
+    # was 1,671 spent on 2026-08-01. A self-hosted job bills ZERO. The box was
+    # inventoried first (probe run 30724931256): it carries rustc/cargo 1.91.1 —
+    # the exact version rust-toolchain.toml pins — plus rustfmt and clippy, so
+    # nothing this job runs is missing. No step is changed: on a self-hosted
+    # runner the saving is total regardless of how many steps run, so trimming
+    # them would add risk and buy nothing.
+    # Revert = change this one line back to `ubuntu-latest`.
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
