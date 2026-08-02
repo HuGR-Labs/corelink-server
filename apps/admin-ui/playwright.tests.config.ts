@@ -42,6 +42,13 @@ const allProjects = [
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: /.*\.spec\.ts$/,
+  // Compile every route ONCE before the first assertion. The suite runs against
+  // `next dev` (it must — the synthetic-session auth bypass is gated on
+  // `NODE_ENV !== "production"`, so `next start` disables it), and dev compiles
+  // a route on FIRST REQUEST. Without this the compile lands inside a spec's
+  // 30 s locator timeout on a 2-core runner and a different spec fails each
+  // run — the "flakiness" that blocked #923 four times. See tests/e2e/warm-routes.ts.
+  globalSetup: "./tests/e2e/warm-routes.ts",
   fullyParallel: false,
   forbidOnly: !!process.env["CI"],
   retries: process.env["CI"] ? 2 : 0,
