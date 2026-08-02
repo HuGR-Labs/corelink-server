@@ -9,11 +9,20 @@ name: TLA+ Model Check (Lote 10.11.0-bis-prime cycle 2)
 # CI block on any spec failure (exit code != 0).
 
 on:
+  # Check a CHANGE immediately (the cron below only re-proves an unchanged
+  # tree, so on its own a weekly cadence would delay a real regression).
+  pull_request:
+    paths:
+      - 'specs/tla/**'
+      - '.github/workflows/tla_check.yml'
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
   schedule:
-    - cron: '0 7 * * *'
+    # CI cost diet 2026-08-02: daily -> WEEKLY. TLA+ model check — the .tla specs change on the order of months.
+    # Kept the same minute/hour (spread out, low-traffic window); only the
+    # weekday field is added. Per-PR gating is unchanged.
+    - cron: '0 7 * * 1'
   workflow_dispatch:
 
 permissions:

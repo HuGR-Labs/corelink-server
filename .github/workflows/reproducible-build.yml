@@ -16,11 +16,23 @@ name: Reproducible Build (2-Runner Diff)
 # SHA pins: bump via ADR amendment + reproducible-build test on the PR.
 
 on:
+  # Check a CHANGE immediately (the cron below only re-proves an unchanged
+  # tree, so on its own a weekly cadence would delay a real regression).
+  pull_request:
+    paths:
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - 'crates/**'
+      - 'Dockerfile'
+      - '.github/workflows/reproducible-build.yml'
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
   schedule:
-    - cron: '0 10 * * *'
+    # CI cost diet 2026-08-02: daily -> WEEKLY. determinism of an UNCHANGED tree — nothing varies day to day.
+    # Kept the same minute/hour (spread out, low-traffic window); only the
+    # weekday field is added. Per-PR gating is unchanged.
+    - cron: '0 10 * * 3'
   workflow_dispatch:
 
 permissions:

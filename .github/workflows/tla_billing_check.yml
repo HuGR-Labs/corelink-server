@@ -16,11 +16,20 @@ name: TLA+ billing_atomicity Model Check (WI-S10-007)
 #   - INV_LAYER_1_RECONCILE            (Layer-1 sub-property of INV-BILLING-RECONCILE-3-LAYER)
 
 on:
+  # Check a CHANGE immediately (the cron below only re-proves an unchanged
+  # tree, so on its own a weekly cadence would delay a real regression).
+  pull_request:
+    paths:
+      - 'specs/tla/**'
+      - '.github/workflows/tla_billing_check.yml'
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
   schedule:
-    - cron: '20 7 * * *'
+    # CI cost diet 2026-08-02: daily -> WEEKLY. TLA+ model check — spec-driven, not code-driven.
+    # Kept the same minute/hour (spread out, low-traffic window); only the
+    # weekday field is added. Per-PR gating is unchanged.
+    - cron: '20 7 * * 2'
   workflow_dispatch:
 
 permissions:

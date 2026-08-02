@@ -26,7 +26,10 @@ on:
   schedule:
     # Nightly at 04:31 UTC — staggered into the Rust-compile nightly band
     # (between corelink-* component gates at 04:23 and 04:37) to spread fleet load.
-    - cron: '31 4 * * *'
+    # CI cost diet 2026-08-02: daily -> WEEKLY. lint-shaped density check over unchanged sources.
+    # Kept the same minute/hour (spread out, low-traffic window); only the
+    # weekday field is added. Per-PR gating is unchanged.
+    - cron: '31 4 * * 4'
   workflow_dispatch:
 
 permissions:
