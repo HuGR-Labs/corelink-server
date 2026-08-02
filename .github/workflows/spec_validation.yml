@@ -14,6 +14,14 @@ on:
       - 'scripts/validate_*.py'
       - 'scripts/check_*.py'
       - '.github/workflows/spec_validation.yml'
+      # The TLC pin consistency check reads the SHA-256 out of the workflows and
+      # `run_tlc_corelink.sh`, so a change to EITHER carrier has to re-run it.
+      # Without these paths the gate would miss the exact edit it exists to
+      # catch: a pin bumped in CI without its ADR-0042 §A1 ceremony.
+      - '.github/workflows/tla_*.yml'
+      - '.github/workflows/nightly.yml'
+      - '.github/workflows/cas_foundation.yml'
+      - 'scripts/run_tlc_corelink.sh'
   push:
     branches: [main]
     paths:
@@ -69,6 +77,14 @@ jobs:
 
       - name: Check TLA+ obligations matrix
         run: python3 scripts/check_tla_obligations.py
+
+      # ADR-0042 §A1 requires an addendum entry for every tla2tools.jar pin
+      # change. On 2026-07-09 one shipped without it, so for three weeks the ADR
+      # declared one SHA-256 and all 8 CI carriers used another — and nothing
+      # noticed, because a policy written as prose cannot fail a build. This
+      # step makes §A1 enforceable instead of aspirational.
+      - name: Check TLC pin matches ADR-0042 §A1 (supply-chain)
+        run: python3 scripts/check_tlc_pin_consistency.py
         # NOTE: warnings (forward-looking PLANNED specs) are OK; errors block.
 
       - name: Check error_taxonomy.md schema + domain coverage

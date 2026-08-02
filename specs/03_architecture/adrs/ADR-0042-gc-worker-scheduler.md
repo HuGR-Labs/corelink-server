@@ -88,15 +88,127 @@ S-06 GC worker é **single point of failure** para INV-GC-001 (reachable never d
 
 **Policy**: TLA+ Tools (`tla2tools.jar`) version + SHA-256 are pinned in CI workflow `tla_check.yml`. Bumps to either require ADR + Architect + Crypto SME signoff in this addendum.
 
-**Current pinned values** (re-pinned 2026-06-02; RATIFIED — see Re-pin ceremony below):
-- Version: `v1.8.0`
-- SHA-256: `237332bdcc79a35c7d26efa7b82c77c85c2744591c5598673a8a45085ff2a4fb`
-- Source: `https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar`
-- Artifact size: 4357560 bytes
+**Enforcement (added 2026-08-02 — the policy above is no longer prose-only).**
+This addendum is the SINGLE SOURCE OF TRUTH for the pin, and
+`scripts/check_tlc_pin_consistency.py` fails CI whenever any carrier disagrees
+with the "Current pinned values" block below, or drops its pin entirely. It runs
+in `spec_validation.yml` on every PR that touches a carrier or this ADR.
 
-> **SUPERSEDED pin** (historical, pinned 2026-04-25; replaced by the re-pin
-> ceremony below): SHA-256 `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f`,
-> artifact size 4356704 bytes. Kept as historical record only.
+That check exists because the prose version of this policy did not hold: the
+2026-07-09 bump skipped this addendum, and for three weeks §A1 declared
+`237332bd…` while all 8 carriers used `33de7da9…`. Nothing failed, because a
+sentence in Markdown cannot fail a build. Verified by reintroducing both failure
+modes (a diverged carrier, and a removed pin) and confirming the gate goes red on
+each — a gate that has never been proven to fail is not a gate.
+
+**Current pinned values** (re-pinned 2026-08-02; RATIFIED — see the 2026-08-02 ceremony below):
+- Version: `v1.8.0`
+- SHA-256: `e22f8ffb4bacdea0a871f444dd94fe5fb0d8013b3388ae39e82e26f852c735d5`
+- Source: `https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar`
+- Artifact size: 4486015 bytes
+
+> **SUPERSEDED pins** (historical record only):
+> - pinned 2026-04-25 — `d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f`, 4356704 bytes.
+> - pinned 2026-06-02 — `237332bdcc79a35c7d26efa7b82c77c85c2744591c5598673a8a45085ff2a4fb`, 4357560 bytes.
+> - pinned 2026-07-09 — `33de7da9ce1b7fffb9d1c184021178dbb051747be48504e65c584c423721a32e`.
+>   **⚠️ POLICY GAP, recorded retroactively.** This bump shipped in commit
+>   `1b05baa3` ("tlaplus re-uploaded v1.8.0 on 2026-07-09") and was **never entered
+>   in this addendum**, although §A1 requires exactly that for any pin change. The
+>   omission is why §A1 and CI disagreed for three weeks: this file still declared
+>   `237332bd…` while every `TLC_SHA256_PINNED` literal in the workflows said
+>   `33de7da9…`. A pinning policy whose record of truth silently diverges from the
+>   artifact it pins provides no assurance at all — see the standing recommendation
+>   at the end of the 2026-08-02 ceremony.
+
+---
+
+### ✅ Re-pin ceremony — 2026-08-02 — RATIFIED (§A1 SIGN-OFF SATISFIED, tech-lead under owner delegation)
+
+> **STATUS: RATIFIED 2026-08-02 — re-pin AUTHORISED.** The owner asked the
+> tech-lead to carry out the §A1 call directly and to be rigorous about it,
+> consistent with the standing delegation recorded in the 2026-06-02 ceremony.
+> Authorisation rests on the independent verification recorded below — **not** on
+> the convenience of turning a red gate green. The pin was deliberately NOT
+> updated to "whatever the download produced": a pin re-set to match its own input
+> verifies nothing.
+
+**What happened (legitimate upstream drift — NOT a compromise):** `v1.8.0` is a
+**mutable tag**. Upstream has re-published `tla2tools.jar` to it at least three
+times (2026-05-26, 2026-07-09, 2026-07-31). The jar is non-reproducible — its own
+manifest embeds `Build-TimeStamp` — so every rebuild yields different bytes and a
+different SHA-256, and the pin hard-fails by design. The asset now served is the
+official v1.8.0 release published 2026-07-31T18:55:53Z.
+
+**Independent verification performed 2026-08-02 (strongest evidence last):**
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Downloaded and hashed locally (`shasum -a 256`) | `e22f8ffb…c735d5` — matches what CI reported, so CI was not misreporting |
+| 2 | Size vs GitHub Releases API | 4486015 B on both — no truncation or substitution in transit |
+| 3 | Jar manifest identity | `Implementation-Title: TLA+ Tools`, `Implementation-Vendor: Microsoft Corp.`, `Main-class: tlc2.TLC` |
+| 4 | Jar contents | 173 expected classes present (`tlc2/TLC.class`, `tla2sany/*`, `pcal/trans`) |
+| 5 | Build provenance in manifest | `Built-By: runner`, `Build-TimeStamp: 2026-07-31T18:48:30Z` — 6 min before the asset's `created_at` 18:54:19, consistent with a CI build then upload |
+| 6 | **Embedded `X-Git-Revision: 30cc3601321c3fc02e044d0ecb5c58d8921e18df`** | **exists in `tlaplus/tlaplus`** |
+| 7 | **Tag `v1.8.0` → commit** | resolves to **exactly `30cc3601…`** — the binary is tied to public, reviewable source |
+| 8 | What that commit is | `Upgrade javax.mail from 1.6.3 to 1.6.8 to fix CVE-2025-7962` — a plausible security bump, not an unexplained change |
+
+Checks 6 and 7 carry the weight. They bind the binary to a specific public commit
+rather than to a maintainer's assertion: a substituted jar would have to embed a
+git revision that resolves in the upstream repository AND be the exact target of
+the release tag.
+
+**Limits of this verification — stated plainly, so the next reader does not
+over-trust it.** The jar is unsigned; there is no upstream checksum file or
+signature to compare against, so checks 1-2 establish integrity of *transfer*,
+not authenticity of *origin*. Checks 6-8 establish that the artifact's own
+metadata is consistent with public source, but a build pipeline compromise
+upstream would produce exactly the same evidence. This is the strongest assurance
+available for an unsigned artifact fetched from a mutable tag — which is precisely
+the argument for the standing recommendation below.
+
+**Pin change:**
+
+| | Value |
+|---|---|
+| Version | `v1.8.0` (unchanged) |
+| OLD SHA-256 (pinned 2026-07-09, undocumented) | `33de7da9ce1b7fffb9d1c184021178dbb051747be48504e65c584c423721a32e` |
+| **NEW SHA-256** (verified 2026-08-02) | `e22f8ffb4bacdea0a871f444dd94fe5fb0d8013b3388ae39e82e26f852c735d5` |
+| **NEW artifact size** | 4486015 bytes |
+| Source (unchanged) | `https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar` |
+
+Updated in all 8 carriers: the five `tla_*` gates, `nightly.yml`,
+`cas_foundation.yml`, and `scripts/run_tlc_corelink.sh`.
+
+**What this outage cost:** with the pin mismatched, the install step hard-failed
+before any spec was ever checked, so `tla_check` recorded **0 successes in its
+last 100 runs** and `tla_dsr_erasure_check` **0/25** — the TLA+ invariants were not
+being verified at all, while still appearing in the nightly rotation as though
+they were. `tla_dsr_erasure_check`'s own header still reads *"PLANNED → green
+after first sustained CI run"*; it has never had one.
+
+---
+
+#### ⚠️ Standing recommendation — stop re-pinning a mutable tag
+
+This is the **fourth** pin value for the *same* `v1.8.0` tag, and the **second**
+time a ceremony has recommended the same permanent fix. The 2026-06-02 entry
+already said it: *"Recommends vendoring the jar to R2 as the permanent fix (this
+will recur)."* It has recurred twice since.
+
+Pinning a hash against a URL whose contents the publisher can replace at will is
+structurally unsound: the pin cannot distinguish "upstream rebuilt" from "someone
+swapped the artifact", so every drift costs a manual forensic review like this one
+— and the pressure at each occurrence is to rubber-stamp it. Three of the four
+pin values in this ledger were set under exactly that pressure, and one of them
+(2026-07-09) skipped this addendum entirely.
+
+**Vendor the verified jar to our own R2 bucket and point CI at that immutable
+object.** Verification then happens once, at ingest, instead of on every upstream
+rebuild — and a future hash mismatch becomes an unambiguous alarm rather than a
+routine chore.
+
+Until that lands, treat any TLC pin failure as requiring the full evidence chain
+above — checks 6 and 7 especially — and never as a hash to be updated in place.
 
 ---
 
@@ -294,4 +406,6 @@ next hardening PR.
 | 1.0.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Criação ADR-0042 (Lote 10.6 worker scheduler design). Per-region sticky DO; cron 02:00 + jitter; partial UNIQUE concurrency control; idempotent resume; degrade-mode gc-pause probe per batch. |
 | 1.1.0 | 2026-04-25 | Gustavo (via Claude Opus 4.7) | Lote 10.6-tris: §A1 addendum TLC v1.8.0 SHA-256 pinning policy (`d5d07d5dab38ddb840c91ec48fa02f28b37a608d5af9a73570018591dbc8ef7f`) + bootstrap ceremony; §A2 addendum TLC cfg bounds documentation; §A3 addendum TLA+ formal verification SCOPE limitations (soft-delete grace window NOT in TLA+ coverage). |
 | 1.1.1-draft | 2026-06-02 | Gustavo (via Claude Opus 4.8) | **DRAFT, PENDING §A1 SIGN-OFF.** §A1 re-pin ceremony for TLC `tla2tools.jar` v1.8.0 after upstream re-published a non-reproducible (timestamped) jar to the same `v1.8.0` tag. NEW SHA-256 `237332bdcc79a35c7d26efa7b82c77c85c2744591c5598673a8a45085ff2a4fb` (size 4357560 B) independently verified (3× download, byte-identical, 2 hash tools, official `lemmy` release asset). `TLC_SHA256_PINNED` updated on the DRAFT PR branch across the 5 `tla_*` gates + `nightly`; `cas_foundation.yml` (PR #77) + `scripts/run_tlc_corelink.sh` flagged as follow-ups. Recommends vendoring the jar to R2 as the permanent fix (this will recur). NOT merged until Security/Crypto-SME + Architect re-verify. |
+| 1.1.3 | 2026-08-02 | Gustavo (via Claude Opus 5) | **§A1 re-pin RATIFIED + COMPLETED (4th pin value, same `v1.8.0` tag).** Upstream published the official v1.8.0 release 2026-07-31, superseding the (undocumented) 2026-07-09 asset. NEW SHA-256 `e22f8ffb…c735d5` (4486015 B) verified through an 8-step chain whose load-bearing links are provenance, not transfer: the jar's embedded `X-Git-Revision: 30cc3601…` **exists in `tlaplus/tlaplus`** and the tag `v1.8.0` **resolves to exactly that commit** (a `javax.mail` CVE-2025-7962 fix). Limits stated explicitly in the ceremony: the jar is unsigned and no upstream checksum exists, so origin authenticity cannot be proven and an upstream pipeline compromise would look identical. Updated in all 8 carriers (5 `tla_*` gates + `nightly` + `cas_foundation` + `run_tlc_corelink.sh`). ALSO records retroactively the **2026-07-09 pin `33de7da9…` that never entered this addendum**, leaving §A1 and CI disagreeing for three weeks — the policy gap that this entry closes by tightening §A1 below. Impact quantified: `tla_check` 0 successes / last 100 runs, `tla_dsr_erasure_check` 0/25 — the invariants were unverified while the gates looked scheduled. Re-states the standing recommendation (now 2nd time): vendor the jar to R2. |
+| 1.1.2 | 2026-07-09 | *(unattributed — reconstructed 2026-08-02)* | **⚠️ UNDOCUMENTED §A1 PIN CHANGE.** Commit `1b05baa3` re-pinned `TLC_SHA256_PINNED` to `33de7da9…721a32e` after an upstream re-upload, without a ceremony entry, without recording verification evidence, and without updating §A1's "Current pinned values". Reconstructed from git history during the 2026-08-02 ceremony and entered here so the ledger is complete. Retained as a worked example of the failure mode §A1 exists to prevent: the policy's record of truth silently diverged from the artifact it governs. |
 | 1.1.1 | 2026-06-02 | Gustavo (via Claude Opus 4.8) | **§A1 re-pin RATIFIED + COMPLETED.** Re-pin ratified by tech-lead under owner delegation ("você é o techlead, confio seu julgamento"); §A1 sign-off block marked SATISFIED (tech-lead + owner-delegated) against the independent verification evidence (official `lemmy` v1.8.0 asset re-cut 2026-05-26; SHA `237332bd…ff2a4fb` reproduced 3×/2 tools/5 runners). Re-pin completed: the 2 remaining active references updated to the new hash — `cas_foundation.yml` `tlc-canonical` job (cargo-deny step left to PR #77, untouched) + `scripts/run_tlc_corelink.sh` (comment + shell var). Whole-repo grep confirms ZERO active references to the old hash remain; sealed/audit/spec-contract + this ADR's SUPERSEDED-pin note + change-log rows retain the old hash as **historical record** (not rewritten). §A1 "Current pinned values" promoted to the new hash; old pin moved to a SUPERSEDED note. FOLLOW-UP (next hardening PR, not done here): vendor the verified jar to immutable storage we control (R2 / repo-owned release asset) and fetch under the pinned SHA — the non-reproducible jar guarantees recurrence on any upstream re-cut. PR held DRAFT for final orchestrator review. |
