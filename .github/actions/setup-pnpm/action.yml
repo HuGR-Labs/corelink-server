@@ -45,3 +45,31 @@ runs:
       uses: pnpm/action-setup@a3252b78c470c02df07e9d59298aecedc3ccdd6d # v4.1.0
       with:
         version: ${{ inputs.version }}
+
+    # The SAME shared-$HOME race as above, one layer down. The steps above
+    # isolated the pnpm BINARY; every runner still wrote to ONE content-
+    # addressable STORE (~/Library/pnpm/store/v10). Concurrent installs across
+    # the runners on this one Mac corrupt it — observed 2026-08-02:
+    #   ERR_PNPM_ENOENT  the source path is not an existing regular file,
+    #   reflink '…/store/v10/files/a7/499a…' -> '…/node_modules/…'
+    # i.e. a store entry vanished mid-install because a sibling job was mutating
+    # it. `pnpm store prune` then also failed — the store was genuinely damaged,
+    # and every job sharing it stayed broken until it was repaired by hand.
+    #
+    # Give each runner its OWN store. Still persistent, so the offline-first
+    # cache benefit is kept (this is deliberately NOT $RUNNER_TEMP) — just no
+    # longer shared. Hosted runners have a private $HOME, so this is a no-op
+    # there. Verified on a run with 7 pnpm workflows on the mac fleet: the same
+    # lighthouse job that failed with ERR_PNPM_ENOENT passed once the store was
+    # per-runner.
+    - name: Isolate the pnpm store per runner (shared-$HOME race, store layer)
+      shell: bash
+      run: |
+        set -euo pipefail
+        slug="$(printf '%s' "${RUNNER_NAME:-default}" | tr -c 'A-Za-z0-9_.-' '-')"
+        store="${HOME}/.pnpm-store-${slug}"
+        mkdir -p "$store"
+        # pnpm honours npm-style config env vars; this scopes every later
+        # `pnpm install` in the job without touching any workflow file.
+        echo "npm_config_store_dir=${store}" >> "$GITHUB_ENV"
+        echo "pnpm store for ${RUNNER_NAME:-default}: ${store}"

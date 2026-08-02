@@ -22,6 +22,9 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/docs-ci.yml"
+      # This job's `pnpm install` behaviour comes from the composite action as
+      # much as from this file, so a change to it must re-run this gate.
+      - ".github/actions/setup-pnpm/**"
       # REAPI drift surface (absorbed from docs-reapi-gen.yml per CI-OPT-002).
       # apps/server/proto/** moved to crates/corelink-container/proto/** in
       # wave-33 stage 2.B.1 (1d0c221e) — keep the trigger pointed at the live
@@ -36,6 +39,9 @@ on:
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/docs-ci.yml"
+      # This job's `pnpm install` behaviour comes from the composite action as
+      # much as from this file, so a change to it must re-run this gate.
+      - ".github/actions/setup-pnpm/**"
       - "crates/corelink-reapi/proto/**"
       - "crates/corelink-container/proto/**"
   schedule:

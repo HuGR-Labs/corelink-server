@@ -10,11 +10,17 @@ on:
     paths:
       - "apps/admin-ui/**"
       - ".github/workflows/lighthouse-ci.yml"
+      # This job's `pnpm install` behaviour comes from the composite action as
+      # much as from this file, so a change to it must re-run this gate.
+      - ".github/actions/setup-pnpm/**"
   push:
     branches: [main]
     paths:
       - "apps/admin-ui/**"
       - ".github/workflows/lighthouse-ci.yml"
+      # This job's `pnpm install` behaviour comes from the composite action as
+      # much as from this file, so a change to it must re-run this gate.
+      - ".github/actions/setup-pnpm/**"
   schedule:
     # Cadence: daily -> WEEKLY Tue (CI cost diet 2026-08-01). The paths-filtered
     # `pull_request` lane above already scores every admin-ui change; the cron
