@@ -46,8 +46,27 @@ permissions:
 jobs:
   build-push:
     name: build + push prod container (fat-LTO SOTA, off-Mac)
-    runs-on: ubuntu-x64-4core
-    timeout-minutes: 30
+    # `ubuntu-x64-4core` was a GitHub LARGER runner, which is a per-organization
+    # resource. It did not survive the move to the HuGR-Labs org (Free plan —
+    # larger runners are a Team/Enterprise feature), so the label now matches
+    # nothing and a dispatch simply QUEUES FOREVER with no error: verified
+    # 2026-08-02, run 30743452742 sat queued 4h30 with zero competing jobs, and
+    # every other workflow on this label last ran 2026-07-20/21, i.e. before the
+    # migration. Standard hosted runners are unaffected and ran fine the same day.
+    #
+    # Why standard is expected to cope here: the OOM warnings on this label
+    # elsewhere in the repo ("ld Bus error, signal 7") come from `coverage.yml`
+    # (cargo-llvm-cov instrumenting the WHOLE workspace) and the full-workspace
+    # TEST link (every test binary). This job links ONE release binary, and took
+    # 6.5 / 6.8 min on the 4-core — a small job that inherited a big label.
+    # Timeout raised 30 -> 60 to absorb the halved core count (link is the long
+    # pole and is largely single-threaded under `codegen-units = 1`).
+    #
+    # If this OOMs anyway, the fallback is `runs-on: corelink` (our own CoreLink
+    # Runners, already registered on this repo) — NOT relaxing `lto = "fat"`,
+    # which would degrade the shipped production binary to work around CI.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Confirm intent
         run: |
