@@ -40,14 +40,17 @@ A failed run means one of the following is broken in production:
   script, etc.)
 - The `corelink-cli` GitHub Release artifact (missing, wrong arch, corrupted)
 - The CoreLink API (`corelink whoami` cannot authenticate or reach the server)
-- The CI test PAT (`CORELINK_TEST_TOKEN_CI`) has been revoked or expired
+- The CI PAT (`CORELINK_CANARY_PAT`, shared with `cas-canary`) has been revoked or expired
 
 ## Configuration
 
 The workflow expects a GitHub Actions secret:
 
-- **`CORELINK_TEST_TOKEN_CI`** — a low-privilege PAT scoped only to what
-  `corelink whoami` needs (read-only identity probe). Must be set in the
+- **`CORELINK_CANARY_PAT`** — reused from `cas-canary.yml`; already bound, so
+  there is nothing to mint. It is deliberately NOT low-privilege: it needs
+  `cas:rw`, because `corelink doctor`'s storage_write check performs a real
+  production CAS PUT. (`CORELINK_TEST_TOKEN_CI` is retired and never existed.)
+  Rotating it takes BOTH workflows red. It is set in the
   repo/org secrets after repo provisioning. **DO NOT** bake a real token
   into the Dockerfile or workflow YAML; the Dockerfile default
   (`CORELINK_TEST_TOKEN=changeme`) is intentionally invalid so local builds
