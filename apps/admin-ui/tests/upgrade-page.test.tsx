@@ -256,7 +256,8 @@ describe("/[locale]/upgrade page", () => {
     await waitFor(() => expect(assignSpy).toHaveBeenCalledWith(checkoutUrl));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("/api/checkout/session");
+    // basePath-ABSOLUTE — a bare path posts to the apex marketing app (405).
+    expect(url).toBe("/corelink/api/checkout/session");
     expect((init as RequestInit).method).toBe("POST");
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers["Accept"]).toBe("application/json");

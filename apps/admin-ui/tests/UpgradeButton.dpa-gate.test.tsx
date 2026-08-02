@@ -16,7 +16,7 @@
  */
 
 import * as React from "react";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // The exact shape DpaStep passes to acceptDpaAction on accept.
@@ -64,6 +64,41 @@ function checkoutOk(): Response {
   } as unknown as Response;
 }
 
+/**
+ * Take the LAZY-MODULE TRANSFORM out of every timed window in this file.
+ *
+ * On the `dpa_required` branch `UpgradeButton` does `await import(
+ * "@/lib/dpa-notice")` (`src/components/UpgradeButton.tsx`) — correct in
+ * production, since that specifier drags in the whole `@/content/load` map
+ * (12 markdown modules + sub-processors) which the rare 403 path is the only
+ * consumer of. In vitest, though, the FIRST evaluation of that specifier makes
+ * vite resolve + transform that chain ON DEMAND, and that cost lands inside the
+ * `findByTestId` window below, whose default budget is 1000 ms.
+ *
+ * Measured on the shared 12-core Mac, 2026-08-01 (see the fix commit):
+ *
+ *     cold `await import("@/lib/dpa-notice")`   55.6 ms   <- 98% of the window
+ *     `loadDpaNotice()` (map read + hash)        0.8 ms
+ *     `sha256Hex()` alone                        0.1 ms   <- NOT the cost
+ *     same import once warm                      0.0 ms
+ *
+ *     click -> gate rendered, module cold:
+ *       idle box            68 / 75 / 78 / 88 / 98 ms   (n=5)
+ *       inside a full-suite run, load-avg 11->42
+ *                          159 / 168 / 184 ms           (n=3)
+ *
+ * So the window is TRANSFORM-bound, not crypto-bound, and it inflates with CPU
+ * contention. The observed failure was a full-suite run at a 15-min load
+ * average of 103.5 on 12 cores (~8.6x oversubscribed); the test died at
+ * 1061 ms, i.e. the 1000 ms `findBy` budget plus teardown — not a hang.
+ *
+ * Pre-resolving here collapses that 55.6 ms to 0 and leaves the window
+ * measuring only what is actually under test: the 403 -> gate wiring.
+ */
+beforeAll(async () => {
+  await import("@/lib/dpa-notice");
+});
+
 describe("<UpgradeButton /> DPA-first gate", () => {
   afterEach(() => {
     vi.clearAllMocks();
@@ -87,7 +122,19 @@ describe("<UpgradeButton /> DPA-first gate", () => {
 
     // 1. Click upgrade → 403 dpa_required → gate appears (no dead-end error).
     fireEvent.click(screen.getByTestId("upgrade-open-button"));
-    await screen.findByTestId("upgrade-dpa-gate");
+    // Explicit budget, and it is a NET — not the mechanism. The `beforeAll`
+    // pre-resolve above is what makes this window fast, but it is coupled to
+    // the component's import specifier by hand: if `UpgradeButton` ever lazily
+    // imports something else, the pre-resolve silently becomes a no-op and the
+    // cold transform comes back into this window. This budget is what survives
+    // that rot.
+    //
+    // 4000 ms is derived, not round: ~22x the worst value measured under a
+    // saturated full-suite run (184 ms) and ~51x the idle median (78 ms), so
+    // CPU contention alone can never trip it — while still firing INSIDE
+    // vitest's 5000 ms default `testTimeout`, so a genuine hang fails here
+    // with "gate never appeared" rather than as an opaque test timeout.
+    await screen.findByTestId("upgrade-dpa-gate", undefined, { timeout: 4000 });
     expect(screen.queryByTestId("upgrade-error")).toBeNull();
 
     // 2. Accept is gated on scroll-to-end.

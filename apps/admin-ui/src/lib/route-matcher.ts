@@ -9,15 +9,27 @@
  * pre-auth consent-capture leaf /consent/new).
  *
  * basePath (`/corelink`) awareness — THE load-bearing invariant:
- *   OpenNext (@opennextjs/cloudflare) invokes the edge middleware with
- *   `req.nextUrl.pathname` STILL CARRYING the configured `basePath`
- *   (`/corelink/sign-up`, `/corelink/_next/...`), unlike `next dev` which
- *   strips it. Every matcher here therefore normalizes the path through
- *   {@link stripBasePath} first, so a public path is public in BOTH the
- *   basePath-prefixed (prod) and basePath-less (dev/test) shapes. Without
- *   this, every `/corelink/*` public path fell through to Clerk and was 307'd
- *   to a basePath-less `/sign-in` (which resolves to the apex marketing site,
- *   not this app). Regression-locked in tests/route-matcher.test.ts.
+ *   Next **strips** `basePath` before the middleware runs, so a request to
+ *   `humangr.com/corelink/dashboard` arrives here as `/dashboard`. Proven live
+ *   2026-08-01: that request 307s with `redirect_url=%2Fdashboard`, the value
+ *   the middleware built from `req.nextUrl.pathname`.
+ *
+ *   This header previously asserted the OPPOSITE — that OpenNext invokes the
+ *   middleware with the pathname "STILL CARRYING" the basePath, unlike
+ *   `next dev`. That claim was false, it was labelled load-bearing, and it
+ *   caused two production outages by being believed:
+ *     - `requestBasePath` branched on `startsWith("/corelink")`, never
+ *       matched, and 307'd every logged-out user to the apex marketing site;
+ *     - `signInRedirectPath` forwarded `returnTo` verbatim as "already
+ *       surface-correct", sending the user to marketing AFTER signing in.
+ *
+ *   Consequences for this file: the MATCHERS are unaffected either way — they
+ *   normalize through {@link stripBasePath}, which is idempotent, so a public
+ *   path is public in both shapes. Only the RE-ATTACHMENT helpers
+ *   ({@link requestBasePath}, {@link signInPathFor}, {@link signInRedirectPath})
+ *   depended on the direction, and they now attach unconditionally rather than
+ *   inferring the surface from the path. Regression-locked in
+ *   tests/route-matcher.test.ts.
  */
 
 /** The path prefix this app is mounted under on the path-based surface. */
@@ -126,22 +138,39 @@ export function isProtectedPath(pathname: string): boolean {
 }
 
 /**
- * The mount prefix the CURRENT request arrived under, derived from its
- * pathname — mirroring {@link stripBasePath}:
- *   - `/corelink` on the path surface   (`humangr.com/corelink/*`)
- *   - ""         on the legacy no-prefix surface (requests without `/corelink`)
- * The app is served on BOTH during the subdomain→path migration, so a
- * hand-built sign-in redirect must re-attach EXACTLY the prefix the request
- * carried: a bare `/sign-in` on `humangr.com` resolves to the apex marketing
- * site (a different app), while a `/corelink/sign-in` on the subdomain 404s.
+ * The mount prefix a hand-built redirect must re-attach. Always
+ * {@link APP_BASE_PATH} — the app is served on exactly ONE surface.
+ *
+ * This used to branch on whether `pathname` already carried `/corelink`, to
+ * support the subdomain→path migration where the app answered on BOTH
+ * `corelink-app.humangr.com/*` (no prefix) and `humangr.com/corelink/*`. That
+ * branch was wrong in production for two independent reasons, and the two
+ * cancelled out into a silent breakage:
+ *
+ *   1. **Next strips `basePath` BEFORE middleware runs.** A request to
+ *      `humangr.com/corelink/dashboard` reaches the middleware as `/dashboard`,
+ *      so the `startsWith("/corelink")` test never matched and the function
+ *      always returned "" — the branch written for the subdomain.
+ *   2. **The subdomain surface is retired.** Both `corelink-app` and
+ *      `corelink-admin` had their `custom_domain` bindings removed
+ *      (`apps/admin-ui/wrangler.toml`), so the no-prefix surface the ""
+ *      branch existed for no longer answers at all.
+ *
+ * Live consequence before this fix: `/corelink/dashboard` 307'd to
+ * `humangr.com/sign-in`, which is the APEX MARKETING SITE (a different app,
+ * 42 KB landing page) rather than this app's sign-in at `/corelink/sign-in`.
+ * Every logged-out user sent to a protected route landed on marketing — the
+ * user-visible "signup is broken" report.
+ *
+ * The unit tests did not catch it: they fed `signInPathFor` a pathname WITH the
+ * prefix (an input the middleware never receives in production), and the
+ * companion case asserted the no-prefix output as correct.
+ *
  * (Next only auto-applies `basePath` to framework-generated links, never to
- * URLs the middleware builds by hand — hence this manual re-attachment.)
+ * URLs the middleware builds by hand — hence the manual re-attachment.)
  */
-export function requestBasePath(pathname: string): string {
-  if (pathname === APP_BASE_PATH || pathname.startsWith(`${APP_BASE_PATH}/`)) {
-    return APP_BASE_PATH;
-  }
-  return "";
+export function requestBasePath(_pathname: string): string {
+  return APP_BASE_PATH;
 }
 
 /** Surface-correct, app-absolute `/sign-in` path for the request's pathname. */
@@ -150,14 +179,34 @@ export function signInPathFor(pathname: string): string {
 }
 
 /**
- * Build the middleware's sign-in redirect target for the surface the request
- * arrived on, optionally preserving the post-auth return URL. `returnTo` is
- * passed through verbatim (it is already surface-correct — the raw
- * `pathname + search`) so the user lands back on the requested page.
+ * Build the middleware's sign-in redirect target, preserving the post-auth
+ * return URL.
+ *
+ * **`returnTo` is re-attached to the basePath, NOT passed through verbatim.**
+ * It used to be forwarded raw, on the belief that the middleware's
+ * `req.nextUrl.pathname` was "already surface-correct" — the same false premise
+ * that broke {@link requestBasePath}. Next strips `basePath` before middleware
+ * runs, so the caller's `pathname + search` is basePath-LESS, and the value
+ * shipped to production was:
+ *
+ *     GET /corelink/dashboard
+ *       -> 307 /corelink/sign-in?redirect_url=%2Fdashboard
+ *                                             ^^^^^^^^^^^ apex, not this app
+ *
+ * `redirect_url` is consumed by **Clerk**, which navigates with a plain
+ * assignment rather than Next's router — so nothing re-attaches the prefix
+ * downstream, and `humangr.com/dashboard` is the hugr-site marketing landing
+ * (HTTP 200, a different app). The sign-in PAGE was correct while the place it
+ * sent you AFTER signing in was not: the funnel broke one hop later.
+ *
+ * Normalization is strip-then-attach, so it is idempotent and a caller that
+ * already prefixed its own value cannot produce `/corelink/corelink/…`.
  */
 export function signInRedirectPath(pathname: string, returnTo?: string): string {
   const base = signInPathFor(pathname);
-  return returnTo ? `${base}?redirect_url=${encodeURIComponent(returnTo)}` : base;
+  if (!returnTo) return base;
+  const appAbsolute = `${requestBasePath(pathname)}${stripBasePath(returnTo)}`;
+  return `${base}?redirect_url=${encodeURIComponent(appAbsolute)}`;
 }
 
 /**

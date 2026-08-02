@@ -51,7 +51,10 @@ describe("<UpgradeButton />", () => {
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0]!;
-    expect(url).toBe("/api/checkout/session");
+    // basePath-ABSOLUTE. `fetch()` never gets Next's automatic basePath, and a
+    // bare `/api/checkout/session` posts to the apex marketing app (405 live).
+    // See `src/components/UpgradeButton.test.tsx` for the dedicated guard.
+    expect(url).toBe("/corelink/api/checkout/session");
     expect((init as RequestInit).method).toBe("POST");
     const headers = (init as RequestInit).headers as Record<string, string>;
     expect(headers["Accept"]).toBe("application/json");

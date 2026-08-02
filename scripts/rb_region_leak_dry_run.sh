@@ -111,30 +111,67 @@ fi
 
 _info "Step 6: Simulating cross-region leak audit event template..."
 
-AUDIT_EVENT=$(cat <<'EOF'
+# The four dynamic fields are precomputed and interpolated into an UNQUOTED
+# heredoc. They used to sit inside a `<<'EOF'` (quoted) heredoc, which suppresses
+# expansion — so `id`/`time`/`request_id`/`ts` were emitted as the literal source
+# text `$(date -u …)` / `$(uuidgen …)`, and the step still reported PASS. What it
+# "validated" was the template source, not an event a real incident would emit.
+EVT_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+EVT_ID="DRY-RUN-evt-$(date -u +%Y%m%dT%H%M%SZ)"
+REQ_ID="DRY-RUN-req-$(uuidgen 2>/dev/null || echo 'uuid-unavailable')"
+
+AUDIT_EVENT=$(cat <<EOF
 {
   "specversion": "1.0",
   "type": "dev.hugr.corelink.region.cross_region_read_blocked.v1",
   "source": "https://corelink.humangr.com/region-enforcer",
-  "id": "DRY-RUN-evt-$(date -u +%Y%m%dT%H%M%SZ)",
-  "time": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "id": "${EVT_ID}",
+  "time": "${EVT_TS}",
   "datacontenttype": "application/json",
   "data": {
     "tenant_id_hashed": "sha256:DRY-RUN-TENANT-HASH",
     "primary_region": "weur",
     "request_region": "enam",
     "endpoint": "DRY-RUN-enam.api.corelink.humangr.com",
-    "request_id": "DRY-RUN-req-$(uuidgen 2>/dev/null || echo 'uuid-unavailable')",
+    "request_id": "${REQ_ID}",
     "dry_run": true,
-    "ts": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    "ts": "${EVT_TS}"
   }
 }
 EOF
 )
 
-_info "Audit event template (DRY RUN — not sent to audit chain):"
+_info "Audit event (DRY RUN — not sent to audit chain):"
 _info "$AUDIT_EVENT"
-_pass "Step 6: Audit event template rendered (forensic evidence format validated)"
+
+# Assert the rendered event is well-formed JSON carrying the CloudEvents fields
+# the forensic chain requires — so this step's PASS means "a valid event was
+# produced", not merely "the echo ran".
+if printf '%s' "$AUDIT_EVENT" | python3 -c '
+import json, sys
+evt = json.load(sys.stdin)
+required = ("specversion", "type", "source", "id", "time", "datacontenttype", "data")
+missing = [k for k in required if k not in evt]
+if missing:
+    sys.exit("missing CloudEvents field(s): " + ", ".join(missing))
+data_required = ("tenant_id_hashed", "primary_region", "request_region", "endpoint",
+                 "request_id", "dry_run", "ts")
+missing = [k for k in data_required if k not in evt["data"]]
+if missing:
+    sys.exit("missing data field(s): " + ", ".join(missing))
+# An unexpanded shell construct survives verbatim in a rendered field. Check BOTH
+# shapes: "$(" is the original defect (a `<<\x27EOF\x27` heredoc suppressing a command
+# substitution) and "${" is the shape it takes once the values are precomputed
+# into variables — re-quoting the heredoc would emit "${EVT_ID}" literally, which
+# an "$(" -only check would wave through.
+for k, v in list(evt.items()) + list(evt["data"].items()):
+    if isinstance(v, str) and ("$(" in v or "${" in v):
+        sys.exit(f"field {k!r} kept an UNEXPANDED shell construct: {v!r}")
+' 2>&1; then
+    _pass "Step 6: Audit event rendered + validated (well-formed JSON, all forensic fields expanded)"
+else
+    _fail "Step 6: Audit event FAILED validation — see error above"
+fi
 
 # ── Step 7: Customer notification template ────────────────────────────────────
 
@@ -171,7 +208,33 @@ Contact: privacy@humangr.com | DPO: dpo@hugr.dev
 EOF
 )
 _info "Notification template rendered (DRY RUN)"
-_pass "Step 7: Customer notification template ready"
+
+# Unlike Step 6, this template's `[BRACKETED]` fields are DELIBERATE — an on-call
+# fills them during a real incident, so a quoted heredoc is correct here and there
+# is nothing to expand. The defect this step shared with Step 6 was the other half:
+# an unconditional PASS that asserted nothing. Assert the regulatory content the
+# notification exists to carry, so drift in the template is caught.
+notif_missing=()
+for required in \
+    "GDPR Art. 33" \
+    "72-hour" \
+    "[TENANT_ID_HASHED]" \
+    "[REGION]" \
+    "[WRONG_REGION]" \
+    "[TIMESTAMP]" \
+    "corelink_region_cross_region_read_blocked_total" \
+    "privacy@humangr.com"
+do
+    case "$NOTIF_TEMPLATE" in
+        *"$required"*) ;;
+        *) notif_missing+=("$required") ;;
+    esac
+done
+if [[ ${#notif_missing[@]} -eq 0 ]]; then
+    _pass "Step 7: Customer notification template carries all required regulatory elements"
+else
+    _fail "Step 7: Notification template MISSING: ${notif_missing[*]}"
+fi
 
 # ── Final summary ─────────────────────────────────────────────────────────────
 
