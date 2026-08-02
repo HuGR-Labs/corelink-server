@@ -14,7 +14,10 @@
  *      next-action signpost from the Phase 0 plan).
  */
 
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { renderInstallScript } from "../src/install.ts";
@@ -118,6 +121,58 @@ describe("renderInstallScript", () => {
     const phantom = invoked.filter((v) => !real.includes(v));
     expect(phantom, `install script invokes non-existent subcommand(s): ${phantom.join(", ")}`)
       .toEqual([]);
+  });
+
+  // ── Architecture mapping (2026-08-02) ──────────────────────────────────────
+  // `uname -m` says `arm64` on Apple Silicon; the published release asset is
+  // `corelink-darwin-aarch64`. Passing uname through unmapped built a URL that
+  // 404s, so EVERY Apple Silicon Mac got "FATAL: failed to download" — verified
+  // against the real release: the fixed script fetches corelink-darwin-aarch64
+  // and reports "Checksum OK.", the old one 404s. Linux was unaffected (uname
+  // already says aarch64/x86_64 there), which is why this survived so long — it
+  // failed on laptops, not in CI.
+  //
+  // These EXECUTE the mapping with a stubbed `uname` rather than string-matching
+  // it, so they measure behaviour and not spelling.
+  const archFor = (unameM: string): { arch: string; code: number } => {
+    const script = renderInstallScript(FIXTURE);
+    const re = new RegExp(String.raw`ARCH=\$\(uname -m\)\ncase "\$ARCH" in[\s\S]*?\nesac`);
+    const block = re.exec(script);
+    if (!block) throw new Error("ARCH mapping block not found in the rendered script");
+    const dir = mkdtempSync(join(tmpdir(), "corelink-arch-"));
+    writeFileSync(join(dir, "uname"), `#!/bin/sh\necho "${unameM}"\n`, { mode: 0o755 });
+    const r = spawnSync("sh", ["-c", `${block[0]}\necho "$ARCH"`], {
+      env: { PATH: `${dir}:/usr/bin:/bin` },
+      encoding: "utf8",
+    });
+    return { arch: r.stdout.trim(), code: r.status ?? -1 };
+  };
+
+  it("arch :: Apple Silicon `arm64` maps to the published `aarch64` asset name", () => {
+    expect(archFor("arm64")).toEqual({ arch: "aarch64", code: 0 });
+  });
+
+  it("arch :: the platforms that already worked still map to themselves", () => {
+    expect(archFor("aarch64").arch).toBe("aarch64");
+    expect(archFor("x86_64").arch).toBe("x86_64");
+    expect(archFor("amd64").arch).toBe("x86_64");
+  });
+
+  it("arch :: an unsupported architecture FAILS instead of building a 404 URL", () => {
+    expect(archFor("riscv64").code).not.toBe(0);
+  });
+
+  it("integrity :: the download is checksum-verified BEFORE it is made executable", () => {
+    const script = renderInstallScript(FIXTURE);
+    expect(script).toContain('curl -fsSL "$URL.sha256"');
+    expect(script).toMatch(/sha256sum|shasum -a 256/);
+    // Order matters: a binary chmod'd before the check is already a usable
+    // artefact on disk.
+    expect(script.indexOf("checksum mismatch")).toBeLessThan(
+      script.indexOf("chmod +x /tmp/corelink"),
+    );
+    // A missing checksum must REFUSE, not fall back to trusting the transport.
+    expect(script).toContain("FATAL: no checksum published");
   });
 
   it("invariant 5 :: no placeholder markers leak through to rendered output", () => {
