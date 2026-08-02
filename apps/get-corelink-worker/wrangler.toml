@@ -10,6 +10,14 @@
 # headers, and surface CF-side metrics without an extra request to KV.
 # This keeps p99 < 50 ms even from cold start.
 #
+# RELEASE_ORIGIN (2026-08-02): pinned to HuGR-Labs/corelink-cli, the canonical
+# home. Three different values were in play — this file said HumanGuardrail, the
+# DEPLOYED worker said humangr-labs (a discontinued org, reaching the repo only
+# through GitHub's transfer redirect), and the repo itself lived on the personal
+# account gmhelmold. The repo was transferred into HuGR-Labs so a
+# security-sensitive download no longer depends on a redirect chain or on a
+# personal account. Changing this var needs a Worker redeploy to take effect.
+#
 # DNS / custom-domain setup is OUT OF SCOPE for this file — Gustavo
 # wires `get.corelink.io` as a CF custom domain on the Worker via the
 # CF dashboard (separate runbook, see `apps/get-corelink-worker/README.md`
@@ -52,13 +60,13 @@ cpu_ms = 10
 # one-liner).
 [vars]
 ENVIRONMENT = "dev"
-RELEASE_ORIGIN = "https://github.com/HumanGuardrail/corelink-cli/releases/latest/download"
+RELEASE_ORIGIN = "https://github.com/HuGR-Labs/corelink-cli/releases/latest/download"
 DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com"
 
 # ── Production environment (deploy with --env prod) ──────────────────────
 [env.prod]
 name = "corelink-get-cli-prod"
-vars = { ENVIRONMENT = "prod", RELEASE_ORIGIN = "https://github.com/HumanGuardrail/corelink-cli/releases/latest/download", DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com" }
+vars = { ENVIRONMENT = "prod", RELEASE_ORIGIN = "https://github.com/HuGR-Labs/corelink-cli/releases/latest/download", DEFAULT_API_ENDPOINT = "https://corelink-api.humangr.com" }
 
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.prod.observability]
