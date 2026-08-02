@@ -102,6 +102,26 @@ jobs:
           echo "SOURCE_DATE_EPOCH=${EPOCH}" >> "$GITHUB_ENV"
           echo "SOURCE_DATE_EPOCH=${EPOCH}"
 
+      # Acquire dependencies BEFORE going hermetic.
+      #
+      # This step did not exist, and its absence is why the gate failed on its
+      # first-ever real execution (2026-08-02): `cargo build --frozen --offline`
+      # on a clean machine has an EMPTY registry, so it cannot resolve anything —
+      # it died on `no matching package named async-stream found`, a crate that
+      # is present in Cargo.lock.
+      #
+      # The workflow only ever "worked" on a machine whose ~/.cargo was already
+      # warm, i.e. the self-hosted mac. A reproducible build that reproduces only
+      # on one pre-warmed host fails its own premise, and the rust-cache step
+      # above cannot help on a cold key (it also only saves on `main`).
+      #
+      # Fetching over the network here does NOT weaken hermeticity: `--locked`
+      # pins every version to Cargo.lock, and the COMPILE below is still
+      # `--frozen --offline`. Dependency acquisition and hermetic compilation are
+      # separate phases — SLSA cares about the second.
+      - name: Fetch dependencies (network allowed; --locked pins to Cargo.lock)
+        run: cargo fetch --locked --target wasm32-unknown-unknown
+
       # Hermetic, deterministic build:
       #   --remap-path-prefix  → strips absolute paths from LLVM debug info
       #   --jobs 1             → eliminates link-order non-determinism
