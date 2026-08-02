@@ -44,6 +44,13 @@ vi.mock("@/lib/use-customer-client", async () => {
 
 import { KeysClient } from "@/components/customer/KeysClient";
 import { SettingsClient } from "@/components/customer/SettingsClient";
+import { TeamClient } from "@/components/customer/TeamClient";
+
+// Mounting a whole screen in jsdom costs ~1.1 s isolated, but this Mac is also the
+// self-hosted CI runner fleet (load average has hit 700+) and the first case here
+// was measured at 5742 ms under that load — over vitest's 5000 ms default. Give
+// every suite in this file explicit headroom instead of asserting less.
+const WIRE_UI_TIMEOUT_MS = 30_000;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -80,7 +87,31 @@ const KEYS_CREATE_WIRE = {
   token: "crl_pat_shown_once_secret",
 };
 
-describe("KeysClient against the real POST /v1/customer/keys wire", () => {
+/** `GET /v1/customer/team` → `{ members }` (routes/customer.rs:894-902). */
+const TEAM_LIST_WIRE = {
+  members: [
+    {
+      user_id: "usr_owner",
+      email: "owner@company.com",
+      role: "Owner",
+      joined_at: "2026-04-01T00:00:00Z",
+      status: "active",
+    },
+  ],
+};
+
+/** `POST /v1/customer/team/invite` → 201 `{ member: {…} }` (routes/customer.rs:961-969). */
+const TEAM_INVITE_WIRE = {
+  member: {
+    user_id: "usr_invited",
+    email: "teammate@company.com",
+    role: "Developer",
+    joined_at: "2026-08-01T00:00:00Z",
+    status: "invited",
+  },
+};
+
+describe("KeysClient against the real POST /v1/customer/keys wire", { timeout: WIRE_UI_TIMEOUT_MS }, () => {
   beforeEach(() => {
     wireFetch.mockReset();
   });
@@ -110,7 +141,7 @@ describe("KeysClient against the real POST /v1/customer/keys wire", () => {
   });
 });
 
-describe("SettingsClient against the real POST /v1/customer/account/delete wire", () => {
+describe("SettingsClient against the real POST /v1/customer/account/delete wire", { timeout: WIRE_UI_TIMEOUT_MS }, () => {
   beforeEach(() => {
     wireFetch.mockReset();
   });
@@ -146,3 +177,45 @@ describe("SettingsClient against the real POST /v1/customer/account/delete wire"
     expect(toast).toHaveTextContent(/nothing left to erase/i);
   });
 });
+
+// This is the envelope whose breakage users actually SAW: with the bare cast,
+// `inviteTeam` handed the screen the `{ member }` wrapper itself, so `m.email`
+// was `undefined` — the confirmation named nobody, and the address the user must
+// pass on to their teammate (we store only a hash of it, so this is the one time
+// it can be echoed back) was lost. `tests/customer-client.test.ts` pins the
+// unwrap at client level; this pins what the USER reads.
+describe(
+  "TeamClient against the real POST /v1/customer/team/invite wire",
+  { timeout: WIRE_UI_TIMEOUT_MS },
+  () => {
+    beforeEach(() => {
+      wireFetch.mockReset();
+    });
+
+    it("names the teammate whose seat was just reserved", async () => {
+      wireFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (init?.method === "POST") return json(TEAM_INVITE_WIRE, 201);
+        return json(TEAM_LIST_WIRE);
+      });
+
+      render(<TeamClient />);
+      await waitFor(() => expect(screen.getByTestId("team-invite")).toBeInTheDocument());
+
+      fireEvent.change(screen.getByTestId("team-invite-email"), {
+        target: { value: "teammate@company.com" },
+      });
+      fireEvent.click(screen.getByTestId("team-invite-submit"));
+
+      // The user-visible confirmation. Before the unwrap this named `undefined`.
+      const toast = await screen.findByRole("status");
+      expect(toast).toHaveTextContent("Seat reserved for teammate@company.com");
+      expect(toast).not.toHaveTextContent("undefined");
+
+      // The persistent callout echoes the same address back — it is the only
+      // place the invitee's email is ever shown again.
+      const callout = await screen.findByTestId("team-invite-success");
+      expect(callout).toHaveTextContent("Seat reserved for teammate@company.com");
+      expect(callout).not.toHaveTextContent("undefined");
+    });
+  },
+);
