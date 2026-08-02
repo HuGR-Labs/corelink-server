@@ -1,0 +1,82 @@
+# Inventário da box do fabric — o que dá pra migrar pra `runs-on: corelink`.
+#
+# Existe porque ler o Dockerfile responde "o que foi instalado", não "o que a
+# box tem". A diferença importa: o runner do GitHub Actions traz o próprio Node
+# embutido (por isso `actions/checkout`, que é uma JS action, roda mesmo sem
+# Node no PATH), e a base ubuntu:24.04 pode ou não trazer python3. Adivinhar
+# isso decide errado quais gates podem mudar de runner.
+#
+# Manual-only. Não é gate: reporta e nunca falha o PR por ausência de nada.
+name: probe-corelink-box
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d8853aa2fdbca0d # v6.0.1
+
+      - name: o que existe nesta box
+        shell: bash
+        run: |
+          line() { printf '\n== %s ==\n' "$1"; }
+          have() {
+            if command -v "$1" >/dev/null 2>&1; then
+              printf '  %-14s SIM   %s\n' "$1" "$($1 ${2:---version} 2>&1 | head -1)"
+            else
+              printf '  %-14s NAO\n' "$1"
+            fi
+          }
+
+          line "identidade"
+          echo "  runner: ${RUNNER_NAME:-?}   os: ${RUNNER_OS:-?}   arch: ${RUNNER_ARCH:-?}"
+          echo "  kernel: $(uname -srm)"
+          echo "  distro: $(. /etc/os-release 2>/dev/null && echo "$PRETTY_NAME")"
+          echo "  user:   $(id -un)  sudo: $(sudo -n true 2>/dev/null && echo sim || echo nao)"
+
+          line "recursos"
+          echo "  cpus:   $(nproc)"
+          echo "  mem:    $(awk '/MemTotal/{printf "%.1f GiB", $2/1048576}' /proc/meminfo)"
+          echo "  disco:  $(df -h / | awk 'NR==2{print $4" livre de "$2}')"
+
+          line "ferramentas que os gates deste repo usam"
+          have python3
+          have node
+          have npm
+          have pnpm
+          have cargo
+          have rustc
+          have clippy-driver
+          have docker
+          have jq
+          have git
+          have curl
+          have clw
+          have cargo-deny
+          have cargo-audit
+          have gh
+
+          line "node embutido no runner (usado pelas JS actions)"
+          ls -d /opt/actions-runner/externals/node* 2>/dev/null || echo "  (nenhum)"
+
+          line "toolchain Rust vs o que o repo pede"
+          echo "  rust-toolchain.toml: $(grep -hoE '[0-9]+\.[0-9]+\.[0-9]+' rust-toolchain.toml 2>/dev/null | head -1 || echo '(sem arquivo)')"
+          echo "  instalado:           $(rustc --version 2>/dev/null || echo '(sem rustc)')"
+
+          line "egress (os gates baixam binarios e crates)"
+          for h in github.com api.github.com static.crates.io registry.npmjs.org index.crates.io; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$h" || echo "FALHOU")
+            printf '  %-22s %s\n' "$h" "$code"
+          done
+
+          line "cache do CoreLink (o motivo de tudo isto)"
+          echo "  CLW_ENDPOINT=${CLW_ENDPOINT:-(nao setado)}"
+          echo "  token presente: $([ -n "${CORELINK_TOKEN:-}" ] && echo sim || echo nao)"
+
+          echo
+          echo "Nada aqui falha o job de proposito — o resultado E o relatorio."
