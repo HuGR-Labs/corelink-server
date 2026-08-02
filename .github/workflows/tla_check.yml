@@ -1,23 +1,34 @@
 name: TLA+ Model Check (Lote 10.11.0-bis-prime cycle 2)
 
-# Runs TLC v1.8.0 SHA-256 pinned (ADR-0042 §A1) sobre specs/tla/*.tla.
-# Gates each spec via scripts/run_tlc_corelink.sh which enforces:
-#   1. TLC binary SHA-256 supply-chain pin (mandatory por default; opt-out apenas local dev)
-#   2. .tla + .cfg presence
-#   3. TLC invariant + property check verde
+# Runs TLC v1.8.0 SHA-256 pinned (ADR-0042 §A1) over specs/tla/*.tla via
+# scripts/run_tla_suite.sh, which discovers every spec, bounds each one with its
+# own timeout, and reconciles failures against specs/tla/QUARANTINE.md.
 #
-# CI block on any spec failure (exit code != 0).
+# CI blocks on any non-quarantined spec failure, on a quarantined spec that has
+# started passing, and on a spec with no .cfg.
 
 on:
-  # NO pull_request trigger — deliberately. This gate has not produced a single
-  # success in its last 100 runs (measured 2026-08-02, back to 2026-06-13): the
-  # pinned TLC v1.8.0 jar no longer matches the SHA-256 in ADR-0042 §A1, so the
-  # install step hard-fails before any spec is ever checked. Adding a PR trigger
-  # would therefore block EVERY pull request while proving nothing. Re-add it in
-  # the same change that re-pins TLC (Security review + ADR-0042 §A1 update).
-  # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
-  # this must block PRs again.
+  # PR trigger restored 2026-08-02, PATH-SCOPED.
+  #
+  # It was removed twice for two different reasons, and both are now addressed:
+  #   - 2026-06-02, cost: this was a heavy per-PR gate on the self-hosted mac
+  #     fleet. Still true in general — which is why this trigger fires only on
+  #     PRs that touch the specs, the runner, or this workflow. The .tla files
+  #     change on the order of months, so for almost every PR this costs nothing.
+  #   - 2026-08-02, honesty: the gate had 0 successes in 195 runs (the TLC pin
+  #     was stale AND 44 serial steps shared one 30-minute budget behind a
+  #     non-terminating spec). A PR trigger then would have blocked every pull
+  #     request while proving nothing. The pin was re-pinned in ADR-0042 §A1 and
+  #     the suite now verifies 40 specs in ~6 minutes.
+  #
+  # The scheduled run stays: it covers a spec breaking because the TLC jar or
+  # the runner environment changed underneath us, which no path filter can see.
+  pull_request:
+    paths:
+      - 'specs/tla/**'
+      - 'scripts/run_tla_suite.sh'
+      - 'scripts/run_tlc_corelink.sh'
+      - '.github/workflows/tla_check.yml'
   schedule:
     # CI cost diet 2026-08-02: daily -> WEEKLY. TLA+ model check — the .tla specs change on the order of months.
     # Kept the same minute/hour (spread out, low-traffic window); only the
@@ -80,228 +91,24 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           echo "TLC_JAR=$RUNNER_TEMP/tla/tla2tools.jar" >> "$GITHUB_ENV"
 
-      # CI MUST verify TLC SHA-256 pin per ADR-0042 §A1.
-      # NOTE: TLC_SHA256_SKIP NOT set — runner enforces mandatory SHA check.
-      # Install step above already validated; runner re-validates as defense-in-depth.
-
-      - name: TLC verify dsr_erasure_atomicity (S-11 WI-S11-008)
-        run: bash scripts/run_tlc_corelink.sh dsr_erasure_atomicity
-
-      - name: TLC verify tenant_isolation (S-02 cross-tenant)
-        run: bash scripts/run_tlc_corelink.sh tenant_isolation
-
-      - name: TLC verify gc_correctness (S-06)
-        run: bash scripts/run_tlc_corelink.sh gc_correctness
-
-      - name: TLC verify cas_integrity (S-04)
-        run: bash scripts/run_tlc_corelink.sh cas_integrity
-
-      - name: TLC verify audit_immutability (S-09)
-        run: bash scripts/run_tlc_corelink.sh audit_immutability
-
-      - name: TLC verify auth_revocation (R-PREP 2026-05-15; auth-revocation cluster)
-        # Added by `specs/_audits/sealed/2026-05-15-tla-coverage-audit.md` closing the
-        # 3 CRITICAL gaps (INV-AUTH-REVOCATION-IDEMPOTENT, INV-AUTH-REVOCATION-
-        # SLO-60S, INV-AUTH-MASS-REVOKE-ATOMIC) + 1 HIGH (INV-AUTH-PROPAGATION-
-        # AT-LEAST-ONCE) per invariant_registry.md §3.14 obligation matrix.
-        run: bash scripts/run_tlc_corelink.sh auth_revocation
-
-      - name: TLC verify auth_pat_hybrid (DEBT-014 FT-1)
-        # Added by DEBT-014 dispatch 2026-05-15 closing FT-1
-        # (`specs/_audits/sealed/tla-followup-tickets.md`): proves the PAT verify
-        # hybrid path short-circuits BEFORE DB hit on HMAC mismatch.
-        # Closes INV-AUTH-PAT-HMAC-SIG-VERIFIED (CRITICAL) +
-        # INV-AUTH-PAT-VERIFY-CONSTANT-TIME + INV-AUTH-PAT-HASH-ARGON2ID-2024.
-        run: bash scripts/run_tlc_corelink.sh auth_pat_hybrid
-
-      - name: TLC verify auth_pat_revoke (Wave-24 R-PREP — INV-PAT-REVOKE-PROPAGATION)
-        # Added by Wave-24 R-PREP dispatch 2026-05-16
-        # (`specs/_audits/sealed/2026-05-16-auth-pat-revoke-tla.md`): closes the
-        # Wave-23 INV-DRAFT sweep CRITICAL PLANNED obligation
-        # INV-PAT-REVOKE-PROPAGATION (registry §3.28). Proves the verify
-        # path short-circuits to 401 on a revoked SoT regardless of region
-        # cache propagation lag ("no edge cache lookahead") + audit row
-        # durable BEFORE 204 response + idempotent retry collapse.
-        # Sibling of auth_pat_hybrid.tla (mint side); disjoint from
-        # auth_revocation.tla (queue side).
-        run: bash scripts/run_tlc_corelink.sh auth_pat_revoke
-
-      - name: TLC verify key_lifecycle (DEBT-014 FT-2)
-        # Added by DEBT-014 dispatch 2026-05-15 closing FT-2. Per-asset
-        # rotation state machine with overlap window. Closes INV-KEY-NO-SKIP,
-        # INV-KEY-OVERLAP, INV-ADMIN-DUAL-APPROVAL (HIGH × 3) +
-        # INV-KEY-AUDIT (inherited).
-        run: bash scripts/run_tlc_corelink.sh key_lifecycle
-
-      - name: TLC verify gc_lock_protocol (DEBT-014 FT-5)
-        # Added by DEBT-014 dispatch 2026-05-15 closing FT-5. Distributed
-        # lock protocol singleton-per-(tenant,region) under leader handoff
-        # + DO crash + reconcile sweep. Closes INV-GC-SINGLE-RUNNING-PER-
-        # TENANT-REGION (HIGH) + INV-GC-RECONCILE-AUDIT-FAIL-CLOSED
-        # (CRITICAL, inherited from audit_immutability append-only chain).
-        run: bash scripts/run_tlc_corelink.sh gc_lock_protocol
-
-      - name: TLC verify multipart_finalize (DEBT-014 FT-6)
-        # Added by DEBT-014 dispatch 2026-05-16 closing FT-6. Multipart
-        # session state machine live -> {finalized, aborted} with
-        # concurrent abort+finalize race + idempotent re-finalize.
-        # Closes INV-MULTIPART-FINALIZE-IRREVOCABLE,
-        # INV-MULTIPART-STATE-MONOTONIC,
-        # INV-MULTIPART-CONCURRENCY-BOUNDED (HIGH × 3).
-        run: bash scripts/run_tlc_corelink.sh multipart_finalize
-
-      - name: TLC verify byok_dek_race (DEBT-014 FT-7)
-        # Added by DEBT-014 dispatch 2026-05-16 closing FT-7 (CRITICAL
-        # upgrade). Per-region DEK cache eviction race across regions
-        # when KMS is revoked — lifts the runbook spec's single-cache
-        # abstraction. Closes INV-BYOK-CRYPTO-SOVEREIGNTY (CRITICAL).
-        run: bash scripts/run_tlc_corelink.sh byok_dek_race
-
-      - name: TLC verify signup_resignup (DEBT-014 FT-9)
-        # Added by DEBT-014 dispatch 2026-05-16 closing FT-9. Extends the
-        # signup_atomic runbook with explicit ReSignupSameEmail action +
-        # late Stripe webhook arrival. Closes INV-SIGNUP-RESIGNUP-
-        # IDEMPOTENT (HIGH) + inherits INV-ONBOARD-DPA-FIRST.
-        run: bash scripts/run_tlc_corelink.sh signup_resignup
-
-      - name: TLC verify signup_token_idempotent (Wave-30 R-PREP — INV-SIGNUP-TOKEN-IDEMPOTENT)
-        # Added by Wave-30 stream-4 R-PREP dispatch 2026-05-16
-        # (`specs/_audits/sealed/2026-05-16-inv-signup-token-tla.md`): promotes the
-        # wave-29 stream-10 closure §6.2 DRAFT candidate to PROMOTED +
-        # TLA-VERIFIED. Proves the pilot signup route (POST /v1/signup/
-        # pilot/{token}, wave-29 stream-1 commit b3c359f) exhibits
-        # exactly-once tenant allocation per email AND per token (any
-        # replay returns the original tenant_id + emits a `duplicate`-
-        # tagged audit row, never a second `reserved`). Sibling of
-        # signup_resignup.tla (production-onboarding path with Stripe
-        # webhook + DPA-first) and disjoint from it; inherits the
-        # audit_emit_atomic.tla atomic-pairing pattern.
-        run: bash scripts/run_tlc_corelink.sh signup_token_idempotent
-      # DEBT-005 batch 1 (5 net-new TLA specs, 2026-05-15) — close 5 CRITICAL
-      # gaps from canonical-consistency baseline §4 (critical_no_tla 40 → 35).
-      - name: TLC verify auth_jwt_validation (DEBT-005 batch 1)
-        run: bash scripts/run_tlc_corelink.sh auth_jwt_validation
-
-      - name: TLC verify tenant_ctx_propagation (DEBT-005 batch 1)
-        run: bash scripts/run_tlc_corelink.sh tenant_ctx_propagation
-
-      - name: TLC verify merkle_integrity (DEBT-005 batch 1)
-        run: bash scripts/run_tlc_corelink.sh merkle_integrity
-
-      - name: TLC verify byok_envelope_aad (DEBT-005 batch 1)
-        run: bash scripts/run_tlc_corelink.sh byok_envelope_aad
-
-      - name: TLC verify failover_no_split_brain (DEBT-005 batch 1)
-        run: bash scripts/run_tlc_corelink.sh failover_no_split_brain
-
-      # DEBT-005 batch 2 (5 net-new TLA specs, 2026-05-15) — close 5 more
-      # CRITICAL gaps from canonical-consistency baseline §4 (critical_no_tla
-      # 35 → 30). Covers INV-ROLLOUT-COSIGN-GATE + INV-SUPPLY-SIGNED-DEPLOY +
-      # INV-BACKUP-RESTORE-EPHEMERAL + INV-GC-SWEEP-AUDIT-FAIL-CLOSED +
-      # INV-GC-RECONCILE-AUDIT-FAIL-CLOSED + INV-AC-EVICT-REGION-PINNED +
-      # INV-AC-EVICT-TENANT-SCOPED + INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER.
-      - name: TLC verify rollout_cosign_gate (DEBT-005 batch 2)
-        run: bash scripts/run_tlc_corelink.sh rollout_cosign_gate
-
-      - name: TLC verify backup_restore_ephemeral (DEBT-005 batch 2)
-        run: bash scripts/run_tlc_corelink.sh backup_restore_ephemeral
-
-      - name: TLC verify gc_sweep_audit_fail_closed (DEBT-005 batch 2)
-        run: bash scripts/run_tlc_corelink.sh gc_sweep_audit_fail_closed
-
-      - name: TLC verify ac_eviction_isolation (DEBT-005 batch 2)
-        run: bash scripts/run_tlc_corelink.sh ac_eviction_isolation
-
-      - name: TLC verify audit_emit_atomic (DEBT-005 batch 2)
-        run: bash scripts/run_tlc_corelink.sh audit_emit_atomic
-
-      # DEBT-005 batch 3 (5 net-new TLA specs, 2026-05-15) — close 8 more
-      # CRITICAL/HIGH INV-granularity gaps from canonical-consistency
-      # baseline §4 (critical_no_tla 34 → 26; tla_verified 33 → 49).
-      # Covers INV-OBS-NO-PII + INV-OFFBOARDING-AUDIT-COMPLETE +
-      # INV-OFFBOARDING-GRACE-RESPECTED + INV-BILLING-CHAIN-INTEGRITY +
-      # INV-GC-GRACE-BOUNDARY-STRICT + INV-GC-MARK-TENANT-SCOPED +
-      # INV-GC-SWEEP-TENANT-SCOPED + INV-BACKUP-FRESH +
-      # INV-BACKUP-INTEGRITY-SAMPLE-CAP.
-      - name: TLC verify obs_no_pii (DEBT-005 batch 3)
-        run: bash scripts/run_tlc_corelink.sh obs_no_pii
-
-      - name: TLC verify offboarding_audit_complete (DEBT-005 batch 3)
-        run: bash scripts/run_tlc_corelink.sh offboarding_audit_complete
-
-      - name: TLC verify billing_chain_integrity (DEBT-005 batch 3)
-        run: bash scripts/run_tlc_corelink.sh billing_chain_integrity
-
-      - name: TLC verify gc_grace_boundary (DEBT-005 batch 3)
-        run: bash scripts/run_tlc_corelink.sh gc_grace_boundary
-
-      - name: TLC verify backup_fresh (DEBT-005 batch 3)
-        run: bash scripts/run_tlc_corelink.sh backup_fresh
-
-      # DEBT-005 batch 4 (5 net-new TLA specs, 2026-05-15) — close 10 more
-      # CRITICAL INV-granularity gaps from canonical-consistency baseline
-      # §4 (critical_no_tla 26 → 16; tla_verified 49 → 59).
-      # Covers INV-AC-DIGEST-SIGNED + INV-AC-MERKLE-DETERMINISTIC +
-      # INV-AC-TENANT-SCOPED + INV-AUTH-WEBAUTHN-ORIGIN-EXACT +
-      # INV-AUTH-WEBAUTHN-RP-ID-CANONICAL + INV-DIGEST-VERIFICATION +
-      # INV-GC-MARK-STARTED-AT-ATOMIC + INV-GC-MARK-STARTED-AT-IMMUTABLE +
-      # INV-MULTIPART-CHUNK-DETERMINISTIC + INV-MULTIPART-PATH-TENANT-SCOPED.
-      - name: TLC verify ac_integrity (DEBT-005 batch 4)
-        run: bash scripts/run_tlc_corelink.sh ac_integrity
-
-      - name: TLC verify webauthn_origin (DEBT-005 batch 4)
-        run: bash scripts/run_tlc_corelink.sh webauthn_origin
-
-      - name: TLC verify digest_verification (DEBT-005 batch 4)
-        run: bash scripts/run_tlc_corelink.sh digest_verification
-
-      - name: TLC verify gc_mark_started_at (DEBT-005 batch 4)
-        run: bash scripts/run_tlc_corelink.sh gc_mark_started_at
-
-      - name: TLC verify multipart_determinism (DEBT-005 batch 4)
-        run: bash scripts/run_tlc_corelink.sh multipart_determinism
-
-      # DEBT-005 batch 5 (5 net-new TLA specs, 2026-05-15) — close further
-      # CRITICAL INV-granularity gaps from canonical-consistency baseline
-      # §4 (critical_no_tla 16 → 6; tla_verified 59 → 71).
-      # Covers INV-AUDIT-NO-RAW-PII + INV-NO-PII-IN-LOGS +
-      # INV-NO-BODY-IN-LOGS + INV-AUTH-PAT-PLAINTEXT-NEVER-PERSISTED +
-      # INV-AUTH-WEBAUTHN-UV-REQUIRED-ADMIN +
-      # INV-AUTH-WEBAUTHN-ATTESTATION-VERIFIED + INV-CAS-IMMUTABILITY +
-      # INV-CAS-IDEMPOTENCY + INV-CAS-CORRECTNESS +
-      # INV-AUTH-SCHEMA-RLS-DEFAULT-ON + INV-AUTH-PII-ENCRYPTED.
-      - name: TLC verify audit_no_raw_pii (DEBT-005 batch 5)
-        run: bash scripts/run_tlc_corelink.sh audit_no_raw_pii
-
-      - name: TLC verify auth_pat_plaintext_never_persisted (DEBT-005 batch 5)
-        run: bash scripts/run_tlc_corelink.sh auth_pat_plaintext_never_persisted
-
-      - name: TLC verify auth_webauthn_uv_admin (DEBT-005 batch 5)
-        run: bash scripts/run_tlc_corelink.sh auth_webauthn_uv_admin
-
-      - name: TLC verify cas_immutability (DEBT-005 batch 5)
-        run: bash scripts/run_tlc_corelink.sh cas_immutability
-
-      - name: TLC verify auth_schema_rls_default_on (DEBT-005 batch 5)
-        run: bash scripts/run_tlc_corelink.sh auth_schema_rls_default_on
-
-      # DEBT-005 batch 6 FINAL (5 net-new TLA specs, 2026-05-15) — closes the
-      # last 5 CRITICAL INV-no-TLA gaps from canonical-consistency baseline
-      # §4 (critical_no_tla 5 → 0; tla_verified 71 → 76). DEBT-005 SEALED.
-      # Covers INV-AUTH-AUDIT-PSEUDONYMIZATION + INV-AUTH-CONSTANT-TIME-COLD-PAD +
-      # INV-CONSENT-PROOF-VERIFIABLE + INV-GC-REACHABLE-SET-COMPLETE +
-      # INV-SUB-PROCESSOR-AUDIT-FAIL-CLOSED.
-      - name: TLC verify auth_audit_pseudonymization (DEBT-005 batch 6 FINAL)
-        run: bash scripts/run_tlc_corelink.sh auth_audit_pseudonymization
-
-      - name: TLC verify auth_constant_time_cold_pad (DEBT-005 batch 6 FINAL)
-        run: bash scripts/run_tlc_corelink.sh auth_constant_time_cold_pad
-
-      - name: TLC verify consent_proof_verifiable (DEBT-005 batch 6 FINAL)
-        run: bash scripts/run_tlc_corelink.sh consent_proof_verifiable
-
-      - name: TLC verify gc_reachable_set_complete (DEBT-005 batch 6 FINAL)
-        run: bash scripts/run_tlc_corelink.sh gc_reachable_set_complete
-
-      - name: TLC verify sub_processor_audit_fail_closed (DEBT-005 batch 6 FINAL)
-        run: bash scripts/run_tlc_corelink.sh sub_processor_audit_fail_closed
+      # One runner over the whole directory, replacing 44 hand-maintained steps.
+      #
+      # The step list was why this gate had 0 successes in 195 runs: 44 steps
+      # shared ONE 30-minute budget, and the spec listed first
+      # (`dsr_erasure_atomicity`) does not terminate at its current bounds — so it
+      # consumed the entire budget and the other 43 were skipped on every run. The
+      # gate appeared scheduled and verified nothing.
+      #
+      # The list had also drifted: 47 specs exist, 44 were listed, and
+      # `replica_failover` was in no workflow at all. Discovery removes that whole
+      # class of gap — a spec added to specs/tla/ cannot escape the gate because
+      # someone forgot to add a step.
+      #
+      # Per-spec timeout so one runaway cannot starve the suite. 300 s is ~3x the
+      # slowest passing spec measured (`sub_processor_audit_fail_closed`, 98 s at
+      # -workers 2) — enough headroom that CI contention cannot turn a pass into
+      # a flake, tight enough that a genuinely diverging spec is caught fast.
+      # Quarantined specs get a smaller budget (see the runner) so the two that
+      # provably diverge do not burn 300 s each re-proving a measured fact.
+      - name: TLA+ suite (discovery + per-spec timeout + honest quarantine)
+        run: bash scripts/run_tla_suite.sh --timeout 300 --workers 2

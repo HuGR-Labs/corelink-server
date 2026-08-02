@@ -18,6 +18,15 @@ tags: ["tla", "formal-verification", "evidence"]
 
 > **Propósito:** verify formal das invariantes CRITICAL do CoreLink (CTRL-FORMAL-001 em `security_model.md §6.9`). Cada invariante CRITICAL em `invariant_registry.md §4` tem spec `.tla` + `.cfg` aqui.
 
+> ⚠️ **The `Status` column below is a hand-maintained historical claim, not a
+> verification result.** The authoritative, machine-checked status is whatever
+> `scripts/run_tla_suite.sh` reports plus [`QUARANTINE.md`](QUARANTINE.md) — read
+> those first. This warning exists because the CI gate that was supposed to keep
+> this table true had **0 successes in 195 runs** (2026-05-07 → 2026-08-02), so
+> every "✅ verde" here was written by hand and never re-confirmed by a passing
+> build. Some of them are, in fact, true; the point is that this table is not
+> evidence of it. Also note this table lists a subset — 47 specs exist.
+
 ---
 
 ## Specs (v2 pós Lote 6.1 — endereçando audit G-01/G-02/G-03)

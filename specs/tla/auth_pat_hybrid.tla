@@ -53,7 +53,17 @@ ASSUME
     /\ MaxOps \in Nat
 
 VARIABLES
-    submissions,       \* Sequence of <<pat, hmac_ok, row_found, argon_ok>>
+    \* SET (not sequence) of <<pat, hmac_ok, row_found, argon_ok>> submitted so
+    \* far. It was a sequence until 2026-08-02, which made the state space the
+    \* number of ORDERED logs — exactly sum(16^i, i=0..MaxOps) = 17,895,697 at
+    \* MaxOps = 6, confirmed by TLC to the state. No invariant below ever reads
+    \* a position: both users are `\E s \in submissions: ...` membership tests,
+    \* and the pipeline's step ordering is enforced structurally by the
+    \* disjuncts of VerifyAdmit within a single atomic action, not by log order.
+    \* So the ordering was paid for and never used. As a set the same MaxOps = 6
+    \* bound checks in 25,141 states / ~7 s instead of 17.9 M / ~4 min — same
+    \* coverage, 712x fewer states.
+    submissions,
     accepted_pats,     \* Set of pat IDs that the verify pipeline admitted
     step3c_fired,      \* Set of pats for which Argon2id (step 3c) executed
     db_lookups,        \* Set of pats that triggered the indexed DB lookup (step 3b)
@@ -64,7 +74,7 @@ vars == <<submissions, accepted_pats, step3c_fired, db_lookups, op_count>>
 (*-- Init --------------------------------------------------------------------*)
 
 Init ==
-    /\ submissions = <<>>
+    /\ submissions = {}
     /\ accepted_pats = {}
     /\ step3c_fired = {}
     /\ db_lookups = {}
@@ -85,8 +95,8 @@ VerifyAdmit(p, hmac_ok, row_found, argon_ok) ==
     /\ p \in Pats
     /\ op_count < MaxOps
     /\ op_count' = op_count + 1
-    /\ submissions' = Append(submissions,
-                              <<p, hmac_ok, row_found, argon_ok>>)
+    /\ submissions' = submissions \union
+                          {<<p, hmac_ok, row_found, argon_ok>>}
     /\ \/ /\ hmac_ok = FALSE
           \* Short-circuit before step 3b — no DB hit, no Argon2id.
           /\ UNCHANGED <<accepted_pats, step3c_fired, db_lookups>>
@@ -139,20 +149,20 @@ InvNoArgonWithoutHmacAndRow ==
 \* surface — adversary cannot probe DB by sending bogus HMAC.
 InvNoDbHitWithoutHmac ==
     \A p \in db_lookups:
-        \E i \in 1..Len(submissions):
-            /\ submissions[i][1] = p
-            /\ submissions[i][2] = TRUE
+        \E s \in submissions:
+            /\ s[1] = p
+            /\ s[2] = TRUE
 
 \* INV-AUTH-PAT-HASH-ARGON2ID-2024 (HIGH): no accepted PAT skipped
 \* Argon2id (step 3c). Equivalent to accepted_pats ⊆ step3c_fired with the
 \* additional obligation that some prior submission carried argon_ok=TRUE.
 InvAcceptedRequiresArgon ==
     \A p \in accepted_pats:
-        \E i \in 1..Len(submissions):
-            /\ submissions[i][1] = p
-            /\ submissions[i][2] = TRUE   \* hmac_ok
-            /\ submissions[i][3] = TRUE   \* row_found
-            /\ submissions[i][4] = TRUE   \* argon_ok
+        \E s \in submissions:
+            /\ s[1] = p
+            /\ s[2] = TRUE   \* hmac_ok
+            /\ s[3] = TRUE   \* row_found
+            /\ s[4] = TRUE   \* argon_ok
 
 \* Bound sanity: accepted ⊆ step3c_fired ⊆ db_lookups (strict hybrid order).
 InvHybridOrderingChain ==
