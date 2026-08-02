@@ -33,11 +33,14 @@
  *      PINNED the defect rather than catching it.
  *
  *      NOTE: this line was documented as what flips the `/welcome` SSE pane
- *      from "Waiting" to "Connected". It never did, and still does not: the
- *      pane waits on a `first_cli_authed` analytics event whose only emitter
- *      lives in `apps/cas-worker/`, an app with no entrypoint and no wrangler
- *      config — it is not deployable. Tracked separately; do not assume this
- *      script fixes that pane.
+ *      from "Waiting" to "Connected". It never did, and this script still is
+ *      not what does it. The pane waits on a `first_cli_authed` analytics
+ *      event; its emitter is now the main Worker
+ *      (`worker/src/lib/onboarding_events.ts`, hooked on `GET /v1/users/me` —
+ *      i.e. `corelink whoami` / `corelink doctor`), NOT this install script and
+ *      NOT the older `apps/cas-worker/` draft (that app has no entrypoint and
+ *      no wrangler config and is not deployable). So the pane flips on the
+ *      user's first authenticated CLI call, not on install.
  *
  * Bash conventions:
  *   - `#!/bin/sh` (POSIX sh, NOT bash) so macOS default + Alpine/BusyBox both work.

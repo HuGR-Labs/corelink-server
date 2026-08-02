@@ -136,7 +136,7 @@ Severity tiers map roughly to:
 ### S-05 — Audit trail query rate drops to zero
 
 - **Severity:** `medium`
-- **What it means.** A tenant who has historically queried the audit chain (via `corelink audit list` / `corelink audit verify` / `corelink audit export`) has stopped entirely for 14 consecutive days. Indicates that internal compliance or governance interest in CoreLink has cooled — frequently a precursor to procurement reviewing the contract for cut.
+- **What it means.** A tenant who has historically queried the audit chain (via `corelink audit tail` / `corelink audit verify` / `corelink audit export`, or the `/v1/audit/*` API) has stopped entirely for 14 consecutive days. Indicates that internal compliance or governance interest in CoreLink has cooled — frequently a precursor to procurement reviewing the contract for cut.
 - **Detection (PromQL):**
   ```promql
   (

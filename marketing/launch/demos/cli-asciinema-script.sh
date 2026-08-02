@@ -167,7 +167,7 @@ beat
 
 narrate "Step 4 — retrieve by digest + client-side BLAKE3 verify."
 
-typeline "corelink get ${DIGEST} --output /tmp/restored.txt"
+typeline "corelink get ${DIGEST} --out /tmp/restored.txt"
 
 typeline 'diff -q /tmp/hello.txt /tmp/restored.txt && echo "MATCH (no drift)"'
 

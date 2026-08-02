@@ -99,13 +99,13 @@ Piecewise linear mapping:
 
 Count of distinct **product surfaces** with at least 1 event in last 30d. Surfaces:
 
-1. `cas` — any `cas put|get` event
+1. `cas` — any CAS read/write event (`corelink put|get|stat|ls`, `corelink cas get|export`)
 2. `ac` — any action-cache event
-3. `audit` — any `audit list|query` event
+3. `audit` — any audit read event (`corelink audit tail|export|verify`, or `/v1/audit/*`)
 4. `dsr` — any DSR endpoint hit (own DSR, not third-party)
 5. `byok` — any BYOK key reference (Enterprise only)
 6. `dashboard` — any human login to admin-ui
-7. `cli` — any CLI subcommand invocation outside the `cas`/`ac` surfaces (e.g., `corelink config`, `corelink billing`)
+7. `cli` — any CLI subcommand invocation outside the `cas`/`ac` surfaces (e.g., `corelink config`, `corelink doctor`, `corelink tenant export`)
 
 Map count → `B`:
 
@@ -177,7 +177,7 @@ P = clamp(P_base + penalty, 0, 100)
 Count distinct human users (= non-service-account principals) who performed any of:
 
 - Dashboard login
-- Audit chain query (`corelink audit list|query`)
+- Audit chain query (`corelink audit tail|export`, or `/v1/audit/*`)
 - CLI invocation against a tenant-scoped command
 
 over last 30 days, and the **weeks-active** ratio:

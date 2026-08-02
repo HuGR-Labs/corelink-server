@@ -50,16 +50,33 @@ HMAC keys so the log can be retained without retaining the underlying secrets.
 - **Chain key rotation:** annual; rotation is forward-only and does not
   invalidate prior inclusion proofs.
 
-## Customer-facing verification (planned)
+## Verificación por parte del cliente
 
-Enterprise tenants can request inclusion proofs for a specific event:
+Las pruebas de inclusión se entregan mediante la **exportación** de
+auditoría, no con un comando suelto por evento. `--include-merkle-proofs`
+incrusta una prueba de inclusión Merkle en cada fila de evento exportada, y
+`--verify` revalida todas las pruebas antes de escribir el archivo
+(fail-closed):
 
 ```sh
-corelink audit prove --request-id <request_id>
-# returns: { tree_size, leaf_index, audit_path, signed_tree_head }
+corelink audit export --tenant <tenant_id> --since <ms> --until <ms> \
+  --include-merkle-proofs --verify
 ```
 
-The Signed Tree Head (STH) is signed with the audit-chain key documented in
+Para volver a revisar una exportación que ya tienes, usa
+`corelink audit verify <ruta>`.
+
+Para el sobre NDJSON en streaming de `GET /v1/audit/export` — una línea
+`{event, proof}` por registro de auditoría más una línea final de
+manifiesto — `corelink audit verify-ndjson` revalida la cadena completa
+contra el ancla de cabeza de cadena que el servidor publica en el
+encabezado de respuesta `X-CoreLink-Audit-Export-Chain-Head-Anchor`. Lee el
+sobre desde disco (`--ndjson <archivo> --chain-head-anchor <hex>`) o por
+HTTP (`--url <url> --bearer <PAT>`, que recupera el ancla del propio
+encabezado), y termina con 0 si la integridad de la cadena es total y
+distinto de 0 ante cualquier divergencia.
+
+La clave de la cadena y su política de rotación están documentadas en
 `security_model.md §7.2`.
 
 ## Privacidad interaction with DSR erasure

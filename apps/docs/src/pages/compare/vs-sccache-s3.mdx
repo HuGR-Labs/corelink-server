@@ -260,60 +260,66 @@ so you can compare cache-hit ratios and latency without a flag day.
 **Step 1: Provision a CoreLink workspace.**
 
 Sign up at `https://humangr.com/corelink/sign-up`. No credit card.
-Free tier (10 GB, 500k req/mo) is sufficient for the trial phase. You
-will get a workspace token (`ct_xxx`) and a regional endpoint.
+Free tier (10 GB, 500k req/mo) is sufficient for the trial phase. The
+sign-up wizard provisions your tenant, your region, and a starter
+Personal Access Token (`corelink_pat_…`), rendered once.
 
-**Step 2: Install the CoreLink CLI and verify it authenticates.**
+**Step 2: Install the CoreLink CLI and confirm it is authenticated.**
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
-  --token=ct_xxx --region=ord
-corelink whoami
-# Expected: your tenant_id, token_prefix and route_kind
+  --token=corelink_pat_XXXX --region=ord
 ```
 
-**Step 3: Add CoreLink as a Cargo cache backend.**
+The installer ends by running `corelink whoami`, which resolves your
+identity and caches your `tenant_id` locally. It prints the `tenant_id`,
+a redacted token prefix, and the route kind.
 
-Run the CoreLink CLI init command — it appends idempotent config to
-`.cargo/config.toml`. If the marker line is already present, it exits
-0 without modification:
+**Step 3: Point sccache at CoreLink.**
+
+CoreLink exposes an sccache **WebDAV** backend at `/cargo/<tenant>`, backed
+by the same per-tenant content-addressable store as the native CAS — and
+both key artifacts by BLAKE3, so there is no digest translation. There is
+no `.cargo/config.toml` edit: sccache is configured entirely by environment,
+so the same three variables work locally and in CI.
 
 ```bash
-export RUSTC_WRAPPER=sccache
 export SCCACHE_WEBDAV_ENDPOINT="https://corelink-api.humangr.com/cargo/<your-tenant-id>"
-export SCCACHE_WEBDAV_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export SCCACHE_WEBDAV_TOKEN="corelink_pat_XXXX"
+export RUSTC_WRAPPER=sccache
 ```
 
-You keep using `sccache` itself — CoreLink replaces only the **storage backend**
-behind it, over the WebDAV protocol sccache already speaks. Full setup, including
-GitHub Actions, is in [sccache + Cargo](/integrations/sccache-cargo).
+Full walkthrough: [sccache (Rust / cargo) integration](/integrations/sccache-cargo).
 
-**Step 4: Run your CI in shadow mode for one week.**
+**Step 4: Run a subset of CI against CoreLink for one week.**
 
-Keep sccache as the local cache while CoreLink populates its CAS from
-the same builds. Compare cache-hit ratio (`sccache --show-stats` vs
-the CoreLink dashboard), p95 build time, and error rate.
+sccache talks to one storage backend at a time, so the parallel run is
+per-job rather than per-request: point a slice of your CI jobs (or a
+branch) at the WebDAV variables above and leave the rest on S3. Compare
+`sccache --show-stats` between the two slices, plus p95 build time and
+error rate.
 
 **Step 5: Cut over.**
 
-When the shadow week confirms cache-hit parity: remove
-`RUSTC_WRAPPER=sccache` from your CI env, let the CoreLink Cargo
-adapter become primary, and stop the sccache daemon on your workers.
-Keep the S3 bucket alive for 30 days (one TTL window) in case you
-need to roll back.
+When the shadow week confirms cache-hit parity, swap the S3 variables
+(`SCCACHE_BUCKET` and friends) for the two `SCCACHE_WEBDAV_*` variables
+across your CI env. `RUSTC_WRAPPER=sccache` stays — sccache remains the
+compiler wrapper; only its storage backend moves. Keep the S3 bucket alive
+for 30 days (one TTL window) in case you need to roll back.
 
 **Step 6: Migrate other workloads.**
 
-Once Cargo is on CoreLink, add Bazel (`--remote_cache` in `.bazelrc`),
-then npm, pip, and Docker layer caches via the respective CoreLink
-adapter init commands. One workspace, one bill, one audit log.
+Once Cargo is on CoreLink, add your other build tools against the same
+tenant CAS: Bazel over REAPI v2 (`corelink bazel-init` writes the
+`.bazelrc` block and credentials for you), Turborepo, and the native
+HTTP CAS for everything else. One workspace, one bill, one audit log.
 
 **Step 7 (optional): BYOK for compliance.**
 
-On Enterprise, BYOK is configured with our team during onboarding — it needs a
-key-access role in your own cloud account, so it is not a self-serve CLI step.
-CoreLink signs an Ed25519 attestation on every cached object and on revocation.
-Rotation is operator-controlled.
+Enterprise tenants can supply their own AES-256 key so blobs are
+encrypted at rest under a key you control. There is no self-serve
+command or dashboard toggle for it — activation is operator-side, so
+contact sales to enable BYOK on your tenant.
 
 Most teams complete steps 1–5 in a single sprint.
 

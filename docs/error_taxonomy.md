@@ -71,7 +71,10 @@ and server API responses. All codes use the `COR_` prefix (namespace: CoreLink).
 **Remediation**:
 1. Verify CMK status in your KMS provider (AWS KMS / GCP Cloud KMS / Azure Key Vault / HashiCorp Vault).
 2. Ensure the CoreLink service principal has `kms:Decrypt` and `kms:GenerateDataKey` permissions on the CMK.
-3. If the key was rotated, update `[auth].byok_key_id` in `~/.corelink/config.toml`.
+3. The CLI config has no key-id field — `[auth]` carries only `pat` and the
+   `byok_enabled` flag (`tools/cli/src/config.rs`). Key identity and rotation
+   live in the tenant's BYOK configuration server-side, not in
+   `~/.corelink/config.toml`.
 4. See S-14 BYOK runbook for full rotation procedure.
 
 ---
@@ -92,10 +95,14 @@ and server API responses. All codes use the `COR_` prefix (namespace: CoreLink).
 **Check**: doctor #7 (Quota)
 **Meaning**: Tenant storage or operations quota is at or above the hard threshold.
 **Remediation**:
-1. Check current usage in CoreLink admin UI under Plan & Billing.
-2. Evict unused blobs via `corelink gc` (when available, WI-S06-*).
-3. Contact sales to upgrade plan: sales@humangr.com.
-4. Soft threshold (80%) generates a warning; hard threshold (100%) blocks writes.
+1. Check current usage in the CoreLink dashboard under Plan & Billing, or
+   read `GET /v1/customer/usage`.
+2. Contact sales to upgrade plan: sales@humangr.com.
+3. Soft threshold (80%) generates a warning; hard threshold (100%) blocks writes.
+
+**Note**: there is no self-serve eviction path — the CLI has no
+garbage-collection verb and there is no customer-facing eviction endpoint.
+Freeing quota means upgrading the plan (or an operator-side action).
 
 ---
 

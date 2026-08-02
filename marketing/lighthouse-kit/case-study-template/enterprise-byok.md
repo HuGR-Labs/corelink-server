@@ -38,14 +38,9 @@ DevRel maintains both versions side-by-side. Customer countersigns BOTH versions
 
 ## Auto-prefill instructions (for DevRel)
 
-```
-corelink lighthouse export-case-study --slot LH-ENT-BYOK-01 --format markdown \
-  --sanitized=false > /tmp/ent-internal-prefill.md
-corelink lighthouse export-case-study --slot LH-ENT-BYOK-01 --format markdown \
-  --sanitized=true  > /tmp/ent-public-prefill.md
-```
+Both versions are filled by hand from slot `LH-ENT-BYOK-01` in the `lighthouse_customers` / `lighthouse_sla_samples` D1 tables (migration `0042_lighthouse_customers.sql`) — there is no export-and-prefill tool yet, and no automated sanitizer.
 
-The `--sanitized=true` flag rounds metrics, redacts region to coarse geography ("EU"), redacts KMS to family ("cloud KMS"), and omits any field marked `sensitive=true` in the lighthouse record.
+Producing the **public-sanitized** version is therefore a deliberate manual edit: round the metrics, cut region down to coarse geography ("EU"), cut KMS down to family ("cloud KMS"), and drop anything the customer marked sensitive. DevRel is accountable for that pass; the customer countersigns the sanitized version before it ships.
 
 ---
 

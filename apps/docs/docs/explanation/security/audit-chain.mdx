@@ -43,16 +43,31 @@ HMAC keys so the log can be retained without retaining the underlying secrets.
 - **Chain key rotation:** annual; rotation is forward-only and does not
   invalidate prior inclusion proofs.
 
-## Customer-facing verification (planned)
+## Customer-facing verification
 
-Enterprise tenants can request inclusion proofs for a specific event:
+Inclusion proofs are delivered through the audit **export**, not a
+standalone per-event command. `--include-merkle-proofs` embeds a Merkle
+inclusion proof in every exported event row, and `--verify` re-validates
+every proof before the file is written (fail-closed):
 
 ```sh
-corelink audit prove --request-id <request_id>
-# returns: { tree_size, leaf_index, audit_path, signed_tree_head }
+corelink audit export --tenant <tenant_id> --since <ms> --until <ms> \
+  --include-merkle-proofs --verify
 ```
 
-The Signed Tree Head (STH) is signed with the audit-chain key documented in
+To re-check an export you already hold, `corelink audit verify <path>`.
+
+For the streaming NDJSON envelope from `GET /v1/audit/export` — one
+`{event, proof}` line per audit row plus a trailing manifest line —
+`corelink audit verify-ndjson` re-verifies the whole chain against the
+chain-head anchor the server publishes in the
+`X-CoreLink-Audit-Export-Chain-Head-Anchor` response header. It reads the
+envelope either from disk (`--ndjson <file> --chain-head-anchor <hex>`) or
+over HTTP (`--url <url> --bearer <PAT>`, which recovers the anchor from the
+response header), exiting 0 on full chain integrity and non-zero on any
+divergence.
+
+The chain key and its rotation policy are documented in
 `security_model.md §7.2`.
 
 ### See it in your browser

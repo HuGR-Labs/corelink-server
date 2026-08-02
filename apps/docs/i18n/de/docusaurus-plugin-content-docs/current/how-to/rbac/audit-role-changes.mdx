@@ -1,11 +1,11 @@
 ---
 id: rbac-audit-role-changes
-title: "Audit role changes"
+title: "Rollenänderungen auditieren"
 slug: "/how-to/rbac/audit-role-changes"
-sidebar_label: "Audit role changes"
-description: "Query the CoreLink audit chain for role-grant and role-revoke events; sample queries and verification workflow."
+sidebar_label: "Rollenänderungen auditieren"
+description: "Die CoreLink-Audit-Kette nach Rollenvergaben und Rollenentzügen abfragen; Beispielabfragen und Verifikations-Workflow."
 tags: [rbac, how-to, audit, security]
-last_updated: "2026-05-15"
+last_updated: "2026-08-02"
 ---
 
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
@@ -15,186 +15,214 @@ last_updated: "2026-05-15"
 > Canonical EN source: `docs/how-to/rbac/audit-role-changes.mdx`
 
 
-# Audit role changes
+# Rollenänderungen auditieren
 
-## When to use this guide
+## Wann Sie diese Anleitung brauchen
 
-You need to answer questions like:
+Sie müssen Fragen dieser Art beantworten:
 
-- "Who promoted Alice from Developer to Admin, and when?"
-- "Show me every Owner-role grant in this tenant in the last 90 days."
-- "Did the dual-approval gate fire on the rollback we did last Tuesday?"
+- „Wer hat Alice von Developer zu Admin befördert, und wann?"
+- „Zeige jede Vergabe der Owner-Rolle in diesem Tenant in den letzten 90 Tagen."
+- „Hat das Vier-Augen-Gate beim Rollback vom letzten Dienstag ausgelöst?"
 
-This guide shows how to query the CoreLink audit chain for role changes
-and dual-approval events.
+Diese Anleitung zeigt, wie Sie die CoreLink-Audit-Kette nach
+Rollenänderungen und Vier-Augen-Ereignissen abfragen.
 
-## Prerequisites
+> Die Team- und Rollenverwaltung selbst läuft **ausschließlich über das
+> Dashboard und die HTTP-API** — dafür gibt es keine CLI. Verwalten Sie
+> Mitglieder unter `https://humangr.com/corelink/customer/team` oder über
+> `GET /v1/customer/team`, `POST /v1/customer/team/invite`
+> (`{email, role}`) und `DELETE /v1/customer/team/{user_id}` (Einladen
+> und Entfernen sind Owner/Admin vorbehalten). Das Lesen des Audit-Trails
+> — das Thema dieser Anleitung — leisten die `/v1/audit/*`-Routen und der
+> Befehl `corelink audit`.
 
-- You hold `admin:audit` scope (granted to `Owner`, `Admin`, `Viewer`).
-- A PAT with that scope, or you're signed into the admin UI.
+## Voraussetzungen
 
-## The audit chain in one paragraph
+- Sie besitzen den Scope `admin:audit`.
+- Ein PAT mit diesem Scope
+  (`Authorization: Bearer corelink_<env>_…`) oder eine Clerk-Session im
+  Dashboard. PATs erzeugen und auflisten Sie mit
+  `POST /v1/customer/keys` (`{name, scopes[]}`) und
+  `GET /v1/customer/keys`; widerrufen mit
+  `POST /v1/customer/keys/{pat_id}/revoke`.
+- API-Basis-URL: `https://corelink-api.humangr.com`.
 
-Every administrative or data-plane mutation is written to an append-only
-log structured as an RFC 6962 Merkle tree. Role-relevant events live in
-two streams:
+## Die Audit-Kette in einem Absatz
 
-1. `admin_op_log` — the table-backed log of every dual-approval-gated
-   operation, with `outcome` ∈ `{approved, denied_missing, denied_sig,
-   denied_caller_eq, denied_collusion, denied_mfa_stale,
+Jede administrative Mutation und jede Mutation der Datenebene wird in ein
+Append-only-Log geschrieben, das als RFC-6962-Merkle-Baum strukturiert
+ist. Die rollenrelevanten Ereignisse liegen in zwei Strömen:
+
+1. `admin_op_log` — das tabellengestützte Log jeder per Vier-Augen-Prinzip
+   abgesicherten Operation, mit `outcome` ∈ `{approved, denied_missing,
+   denied_sig, denied_caller_eq, denied_collusion, denied_mfa_stale,
    denied_approver_not_admin, denied_nonce_replay, denied_clock_skew}`
    (`crates/corelink-dual-approval/src/types.rs::ApprovalOutcome`).
 
-2. `audit_chain` — the broader CloudEvent log, including
-   `corelink.admin.member.invited`,
-   `corelink.admin.member.joined`,
-   `corelink.admin.member.role_granted`,
-   `corelink.admin.member.role_revoked`,
-   `corelink.admin.op.executed`, and
-   `corelink.admin.op.denied`.
+2. Die CloudEvent-Audit-Kette — das breitere Log. Die beiden Ereignistypen,
+   die an Quellcode-Konstanten gebunden sind, lauten
+   `corelink.admin.op.executed` und `corelink.admin.op.denied`
+   (`crates/corelink-dual-approval/src/audit.rs`). Mitglieds- und
+   Rollenmutationen landen im selben Tenant-Strom, doch diese Anleitung
+   nennt deren `type`-Zeichenketten nicht: Ermitteln Sie die exakten
+   Werte, die Ihr Tenant ausgibt, mit Abfrage 1 weiter unten, und filtern
+   Sie dann darauf.
 
-Both are queryable via the admin API and CLI. The deeper
-[audit chain explainer](pathname:///security/audit-chain) covers
-the underlying mechanism (Merkle proofs, retention, etc).
+Beide werden über die HTTP-Routen `/v1/audit/*` und die CLI
+`corelink audit` gelesen. Die
+[Erläuterung zur Audit-Kette](../../explanation/security/audit-chain.mdx)
+beschreibt den zugrunde liegenden Mechanismus (Merkle-Beweise, Aufbewahrung usw.).
 
-## Query 1 — every role grant or revoke in the last 30 days
+## Abfrage 1 — welche Ereignistypen im Zeitfenster auftraten
 
-```bash
-corelink admin audit query \
-  --tenant <tenant_slug> \
-  --event-type corelink.admin.member.role_granted,corelink.admin.member.role_revoked \
-  --since 30d
-```
-
-Sample output:
-
-```
-TIMESTAMP            EVENT                                     ACTOR_HASH      TARGET_HASH    DETAIL
-2026-05-13T14:02:11Z corelink.admin.member.role_granted        ee44...10c3     a3f9...c821    Developer → Admin
-2026-04-29T09:15:02Z corelink.admin.member.role_granted        ee44...10c3     b71d...e442    (new) Developer
-2026-04-22T18:31:55Z corelink.admin.member.role_revoked        ee44...10c3     71fc...3a08    Admin (deleted_at set)
-```
-
-The `actor` is the user who initiated the grant/revoke. The `target` is
-the user whose role changed.
-
-> Emails appear only as hashes (`email_hash`) per
-> `INV-AUDIT-NO-RAW-PII`. To resolve back to a human, cross-reference
-> with `Settings → Members` while the membership is still active.
-
-## Query 2 — every dual-approval event in the last 7 days
+`GET /v1/audit/analytics/event-count` aggregiert die Audit-Zeilen des
+Tenants nach dem CloudEvents-`type` über `[from, to)` (Unix-Epoch in
+**Millisekunden**), mit optionalem, exakt passendem `event_type`-Filter:
 
 ```bash
-corelink admin audit query \
-  --tenant <tenant_slug> \
-  --event-type corelink.admin.op.executed,corelink.admin.op.denied \
-  --since 7d
+curl -sS \
+  -H "Authorization: Bearer corelink_<env>_…" \
+  "https://corelink-api.humangr.com/v1/audit/analytics/event-count?from=<epoch_ms>&to=<epoch_ms>"
 ```
 
-Sample output (one approved + one denied):
+Die Antwort enthält ein `buckets`-Array — ein Eintrag je im Fenster
+beobachtetem `event_type`, wobei jeder Eintrag diesen `event_type` mit
+seiner Zeilenzahl (`count`) verbindet. Führen Sie die Abfrage zuerst ohne
+Filter aus, um die exakten Typ-Zeichenketten Ihres Tenants zu erfahren,
+und wiederholen Sie sie dann mit `&event_type=<type>`, um einen davon zu
+isolieren.
 
-```
-TIMESTAMP            EVENT                          OP_TYPE                CALLER          APPROVER        OUTCOME
-2026-05-14T16:42:08Z corelink.admin.op.executed     ConfigRollback         ee44...10c3     b71d...e442     approved
-2026-05-13T10:11:54Z corelink.admin.op.denied       FeatureFlagDisable     ee44...10c3     ee44...10c3     denied_caller_eq
-```
+> E-Mail-Adressen erscheinen gemäß `INV-AUDIT-NO-RAW-PII` nur als Hashes
+> (`email_hash`). Um wieder auf eine Person zu schließen, gleichen Sie mit
+> der Team-Seite (`https://humangr.com/corelink/customer/team`) ab,
+> solange die Mitgliedschaft noch aktiv ist.
 
-That second row shows the gate doing its job — the caller tried to
-self-approve, and `denied_caller_eq` rejected it.
+## Abfrage 2 — wann sie auftraten
 
-## Query 3 — verify a specific event with a Merkle inclusion proof
-
-For high-stakes audit evidence (SOC 2, legal, customer audit), request
-an RFC 6962 inclusion proof:
+`GET /v1/audit/analytics/timeline` verteilt dasselbe Fenster zeitlich auf
+Buckets:
 
 ```bash
-corelink admin audit prove \
-  --tenant <tenant_slug> \
-  --event-id 01H9XYZ-...-A4B7
+curl -sS \
+  -H "Authorization: Bearer corelink_<env>_…" \
+  "https://corelink-api.humangr.com/v1/audit/analytics/timeline?from=<epoch_ms>&to=<epoch_ms>&granularity=3600000"
 ```
 
-The CLI returns:
+`granularity` ist die Bucket-Breite in Millisekunden und steht
+standardmäßig auf `3600000` (1 h). Die Route weist eine Anfrage mit
+`400 Bad Request` ab, wenn `(to - from) / granularity` 1000 Buckets
+überschreitet oder wenn `granularity` über 24 h liegt.
 
-- The event payload (canonical JSON).
-- The Merkle path from the event to the current log head.
-- The log head signature + log version.
+## Abfrage 3 — die Ereignisse selbst holen, mit Merkle-Beweisen
 
-You can verify the proof locally with any RFC 6962 client (e.g.
-`ct-tools`) without trusting CoreLink. See
-[audit chain](pathname:///security/audit-chain) for the
-verification walkthrough.
-
-## Query 4 — REST API alternative
-
-If you prefer to drive this from a custom dashboard or SIEM, the same
-data is available via REST:
+Für Audit-Nachweise mit hohem Einsatz (SOC 2, Recht, Kundenaudit)
+exportieren Sie das Fenster und verifizieren die Kette. Die HTTP-Fläche
+streamt NDJSON — eine `{event, proof}`-Zeile je Audit-Zeile plus eine
+abschließende Manifest-Zeile — und veröffentlicht den Chain-Head-Anchor
+im Antwort-Header `X-CoreLink-Audit-Export-Chain-Head-Anchor`:
 
 ```http
-GET /v1/admin/audit/events?tenant_id={uuid}
-  &event_type=corelink.admin.member.role_granted
-  &event_type=corelink.admin.member.role_revoked
-  &since=2026-04-15T00:00:00Z
-Authorization: Bearer <PAT with admin:audit scope>
+GET /v1/audit/{tenant}/export?from=<epoch_ms>&to=<epoch_ms>
+Authorization: Bearer corelink_<env>_…
 ```
 
-Response:
+Die CLI nutzt dieselbe Route. `corelink audit` ist das einzige
+Audit-Verb, das die CLI mitbringt:
 
-```json
-{
-  "events": [
-    {
-      "id": "01H9XYZ-...-A4B7",
-      "timestamp": "2026-05-13T14:02:11Z",
-      "type": "corelink.admin.member.role_granted",
-      "actor": { "user_id": "...", "email_hash": "ee44...10c3" },
-      "target": { "user_id": "...", "email_hash": "a3f9...c821" },
-      "previous_role": "developer",
-      "new_role": "admin",
-      "tenant_id": "..."
-    }
-  ],
-  "next_cursor": null
-}
+```bash
+# Export the window, embedding + re-validating Merkle inclusion proofs.
+corelink audit export \
+  --tenant <tenant_id> \
+  --since <epoch_ms> \
+  --until <epoch_ms> \
+  --include-merkle-proofs \
+  --verify \
+  --out ./audit-evidence
+
+# Re-validate a previously exported JSON-LD file, offline.
+corelink audit verify ./audit-evidence/<export-file>
+
+# Re-verify the streaming NDJSON envelope straight off the export route.
+corelink audit verify-ndjson \
+  --url "https://corelink-api.humangr.com/v1/audit/<tenant_id>/export?from=<epoch_ms>&to=<epoch_ms>" \
+  --bearer corelink_<env>_…
 ```
 
-## Common forensic patterns
+`--verify` ist fail-CLOSED: Jeder Beweis wird neu validiert, bevor
+irgendetwas geschrieben wird. `verify-ndjson` endet mit `0` bei
+vollständiger Kettenintegrität und mit `65` (sysexits `DATAERR`), wenn
+der Server über den HTTP-Trailer `x-corelink-audit-export-aborted` einen
+Kettenbruch meldet. Um eine bereits vorliegende Datei zu prüfen,
+verwenden Sie `--ndjson <FILE>` zusammen mit `--chain-head-anchor <HEX>`
+(dem Anchor-Wert, den der Server beim Export veröffentlicht hat) statt
+`--url`.
 
-### "Did anyone bypass the dual-approval gate?"
+Siehe [Audit-Kette](../../explanation/security/audit-chain.mdx) für die
+Verifikations-Schritt-für-Schritt-Anleitung.
 
-Short answer: **they cannot**. The gate is fail-CLOSED and every denied
-outcome is itself audited. If you see `corelink.admin.op.executed` with
-`op_type` in the destructive set, an approver UUID is present and an
-HMAC signature was verified server-side. If you suspect tampering, run
-the inclusion proof check (Query 3) to confirm the event is in the
-canonical log head.
+## Abfrage 4 — aktuelle Ereignisse verfolgen
 
-### "Who was Admin on 2026-04-22 at 18:31 UTC?"
+Für einen schnellen Blick statt eines Nachweispakets:
 
-The audit chain is your point-in-time source of truth. Query the
-`role_granted`/`role_revoked` stream up to that timestamp and replay the
-state — the membership table only reflects the current snapshot.
+```bash
+corelink audit tail \
+  --tenant <tenant_id> \
+  --filter event_type=<type> \
+  --limit 50
+```
 
-### "An ex-employee claims they were never granted Admin."
+`tail` ist ein fensterbasierter Abruf der Live-Export-Route (kein
+laufendes Follow). Das Standardfenster ist die letzte Stunde, das
+Standardlimit 50 Ereignisse. `--filter` nimmt ein `key=value`-Prädikat
+entgegen; zulässige Schlüssel sind `event_type`, `subject`, `source`,
+`region`, `tenant_id`, `sequence_number` und `id`.
 
-Pull the inclusion proof for the `corelink.admin.member.role_granted`
-event with their `email_hash` as `target`. The proof is non-repudiable:
-HMAC-signed by the dual-approval signing key under a per-tenant region
-(`signed by region="enam"`, for example, per the gate constructor).
+## Häufige forensische Muster
 
-## Retention
+### „Hat jemand das Vier-Augen-Gate umgangen?"
 
-Audit chain entries are retained 7 years (aligned with SOC 2 Type II).
-After tenant offboarding, customer-identifying fields are pseudonymized
-but the chain entries themselves persist for the regulatory window. See
-[audit chain](pathname:///security/audit-chain) for the
-retention contract.
+Kurze Antwort: **das ist nicht möglich**. Das Gate ist fail-CLOSED, und
+jedes abgelehnte Ergebnis wird selbst auditiert. Sehen Sie
+`corelink.admin.op.executed` mit einem `op_type` aus der destruktiven
+Menge, dann liegt eine Genehmiger-Identität vor und eine HMAC-Signatur
+wurde serverseitig verifiziert. Bei Manipulationsverdacht führen Sie den
+Export mit Beweisen aus (Abfrage 3), um zu bestätigen, dass das Ereignis
+im kanonischen Log-Head steht.
 
-## Related
+### „Wer war am 22.04.2026 um 18:31 UTC Admin?"
 
-- [Audit chain](pathname:///security/audit-chain) — underlying
-  Merkle log mechanism.
-- [RBAC overview](../../explanation/rbac/index.mdx) — the dual-approval
-  gate.
-- [Role catalog](../../explanation/rbac/role-catalog.mdx) — what each
-  role can do.
-- [Invite a team member](./invite-team-member.mdx)
+Die Audit-Kette ist Ihre Wahrheitsquelle für einen Zeitpunkt.
+Exportieren Sie das Fenster bis zu diesem Zeitstempel (Abfrage 3),
+filtern Sie auf die Mitglieds-Ereignistypen, die Sie in Abfrage 1
+ermittelt haben, und spielen Sie den Zustand nach — die Team-Liste zeigt
+nur die aktuelle Momentaufnahme.
+
+### „Ein Ex-Mitarbeiter bestreitet, jemals Admin bekommen zu haben."
+
+Exportieren Sie das Fenster, das die Vergabe abdeckt, und bewahren Sie
+die Merkle-Beweise auf (Abfrage 3). Vier-Augen-Ereignisse führen sowohl
+den Akteur als auch den zweiten Genehmiger als Paar aus `user_id` und
+`email_hash`, dazu eine HMAC-Signatur über die kanonischen Audit-Bytes;
+die CloudEvent-`source` lautet `/corelink/admin/<region>` — der Eintrag
+ist damit unbestreitbar und regional zugeordnet, ohne je eine
+Klartext-E-Mail zu speichern.
+
+## Aufbewahrung
+
+Die Audit-Aufbewahrung beträgt im Enterprise-Tier standardmäßig 7 Jahre
+(abgestimmt auf SOC 2 Type II). Nach dem Offboarding eines Tenants werden
+kundenidentifizierende Felder pseudonymisiert, die Ketteneinträge selbst
+bleiben jedoch für den regulatorischen Zeitraum bestehen. Siehe
+[Audit-Kette](../../explanation/security/audit-chain.mdx) für den
+Aufbewahrungsvertrag.
+
+## Verwandte Themen
+
+- [Audit-Kette](../../explanation/security/audit-chain.mdx) — der
+  zugrunde liegende Merkle-Log-Mechanismus.
+- [RBAC-Überblick](../../explanation/rbac/index.mdx) — das
+  Vier-Augen-Gate.
+- [Rollenkatalog](../../explanation/rbac/role-catalog) — was jede Rolle
+  darf.
+- [Teammitglied einladen](./invite-team-member)

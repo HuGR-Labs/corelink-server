@@ -15,7 +15,8 @@ roadmap). RFC-6962-style audit chain
 **[corelink-cli](https://github.com/HumanGuardrail/corelink-cli)**
 Install in one line; drop into any Bazel, Buck2, Cargo, Docker, or ML
 pipeline. Cross-compiled binaries for Linux x64/arm64, macOS arm64/x64,
-and Alpine. Zero config after `corelink init`.
+and Alpine. Zero config after `corelink login` — it saves your token and
+resolves your tenant; `corelink bazel-init` wires a Bazel repo in one shot.
 
 **[HumanGuardrail](https://github.com/HumanGuardrail/HumanGuardrail)**
 This profile — maintained as a source-of-truth index of what ships and

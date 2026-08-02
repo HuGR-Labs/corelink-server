@@ -56,89 +56,117 @@ CoreLink delegates authentication to Clerk. Before inviting, make sure:
 
 ## Step 2 — Send the invite
 
-From the tenant admin UI:
+Team management lives in the dashboard, at
+[https://humangr.com/corelink/customer/team](https://humangr.com/corelink/customer/team):
 
-```
-1. Settings → Members → "Invite member"
-2. Enter the invitee's email.
-3. Pick the role (defaults to Developer — see table above).
-4. Click "Send invite".
-```
+1. Open the **Team** page.
+2. Under **Invite a teammate**, enter the invitee's email address.
+3. Pick the **Role** (see the table above).
+4. Click **Send invite**.
 
 Behind the scenes:
 
-- A Clerk invitation email is sent.
-- A pending `membership` row is **not** yet written — it's created on
-  first successful sign-in. This means an unaccepted invite leaves no
-  membership row to revoke later.
-- An audit event is emitted: `corelink.admin.member.invited` (CloudEvent).
+- The seat is recorded immediately as a `team_member` row with status
+  `invited` — that is what the **Pending invitations** list shows.
+- Only a pseudonymised hash of the trimmed, lower-cased email is stored;
+  the raw address is never persisted.
+- A customer-visible audit row with event type `team.invited` is written
+  *before* the seat row, so an invite can never commit without its audit
+  entry. Its detail names the role only, never the address.
 
-### Equivalent CLI command
+### Automating it over the HTTP API
+
+There is **no `corelink` CLI command for team management** — the two
+supported paths are the dashboard above and the HTTP API below. The API
+accepts either a CoreLink PAT or your signed-in Clerk session, so you can
+script invites from CI with a PAT:
 
 ```bash
-corelink admin members invite \
-  --email teammate@example.com \
-  --role developer
+curl -X POST https://corelink-api.humangr.com/v1/customer/team/invite \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"teammate@example.com","role":"Developer"}'
 ```
+
+Inviting (and removing) a member is **owner/admin only** — a `Developer`
+or `Viewer` token gets a `403` here, whichever path it uses.
 
 ## Step 3 — Invitee accepts the invite
 
-1. They click the email link → land in Clerk → complete sign-in (or
-   sign-up + MFA setup if first time).
+1. The invitee signs in to CoreLink — or signs up and sets up MFA, if
+   it's their first time — using **the same email address you invited**.
 2. Clerk redirects back to CoreLink.
-3. CoreLink writes the `membership` row binding their `user_id` to your
-   `tenant_id` with the role you assigned.
-4. Audit event: `corelink.admin.member.joined`.
+3. CoreLink matches the pending seat by its email hash, rebinds it to
+   their real `user_id`, and flips its status from `invited` to `active`.
+   The role you chose at invite time is preserved.
 
-The invitee can now sign in directly to the CoreLink admin UI.
+They now appear under **Members** instead of **Pending invitations**.
 
 ## Step 4 — Verify the role
 
-```bash
-corelink admin members list --tenant <tenant_slug>
-```
+On the **Team** page, the **Members** table lists everyone with access and
+the role each one holds; people who have been invited but have not signed
+in yet appear under **Pending invitations**.
 
-Sample output:
-
-```
-USER                                  EMAIL_HASH         ROLE        SINCE
-019095a3-...-3f4a                     a3f9...c821        developer   2026-05-15T14:02:00Z
-019095a3-...-7c1b                     b71d...e442        admin       2026-04-12T09:30:00Z
-019095a3-...-9d8e                     ee44...10c3        owner       2026-01-04T16:18:00Z
-```
-
-> Note `email_hash` — raw emails are not stored
-> (`INV-AUDIT-NO-RAW-PII`). The hash is the deterministic HMAC-SHA256 of
-> the canonical-form email; we use it for forensics and dedupe.
-
-## Step 5 — Mint their first PAT (Developer only)
-
-`Developer` users can mint their own PATs from the admin UI; `Viewer`
-cannot. If you want to pre-mint a CI service-account PAT for them:
+To check the same thing from a script:
 
 ```bash
-corelink admin pat mint \
-  --tenant <tenant_slug> \
-  --issued-to-user 019095a3-...-3f4a \
-  --scopes cache:r,cache:w,cache:find-missing \
-  --ttl 90d
+curl https://corelink-api.humangr.com/v1/customer/team \
+  -H "Authorization: Bearer $CORELINK_PAT"
 ```
 
-The PAT is displayed **once**. Hand it to the invitee through your secret
-manager (1Password, Doppler, your CI's secret store). The Argon2id hash
-is what we persist; the raw PAT is irrecoverable after this step.
+The response carries a `members` array; each entry has the member's
+`user_id`, `role`, `joined_at` and `status` (`invited` until they sign in,
+then `active`). An `email` field is present in the shape, but it comes back
+as a placeholder — see the note below.
+
+> **CoreLink never stores the raw invitee email.** The invite persists
+> only a pseudonymised hash of the trimmed, lower-cased address
+> (`CTRL-PRIV-001`), and that hash is also the key used to match the
+> invitation when the person signs in. Audit rows follow the same rule
+> (`INV-AUDIT-NO-RAW-PII`): the `team.invited` entry records the role, not
+> the address.
+
+## Step 5 — Mint their first PAT (Developer and above)
+
+`Developer`, `Admin` and `Owner` users can mint their own PATs from the
+**API keys** page of the dashboard
+(`https://humangr.com/corelink/customer/keys`); `Viewer` cannot.
+
+If you'd rather pre-mint a CI service-account token yourself, use the keys
+API — again, there is no CLI for this:
+
+```bash
+curl -X POST https://corelink-api.humangr.com/v1/customer/keys \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}'
+```
+
+The request body is only a name and a list of scopes — there is no field
+for issuing a token *on another user's behalf*, so a service-account token
+belongs to the tenant, not to the invitee. See the
+[Permissions reference](/reference/rbac/permissions) for every scope you
+can grant.
+
+The token secret is displayed **once**. Hand it to the invitee through
+your secret manager (1Password, Doppler, your CI's secret store); it is
+irrecoverable after this step. A token can be revoked at any time with
+`POST /v1/customer/keys/{pat_id}/revoke`.
 
 ## Common pitfalls
 
-1. **"They got the invite but the link is expired."** Clerk invite emails
-   expire in 14 days. Re-issue from Settings → Members.
-2. **"They signed in but I don't see them in the member list."** Membership
-   rows are written on first successful sign-in. If they bounced off a
-   Clerk error, the membership wasn't created. Check Clerk's audit log.
-3. **"I want to invite a Developer but the role dropdown is grayed out."**
-   You're an `Admin`, not `Owner`, and the role you tried to assign is
-   above your level. Only `Owner` can grant `Owner`.
-4. **"The invitee complains they can't approve a destructive op."** Check:
+1. **"They signed in but they're still under Pending invitations."** A
+   seat only flips to `active` when the address Clerk reports matches the
+   address you invited, after normalisation (trimmed and lower-cased). A
+   sign-in with a different address — an alias, a personal account —
+   leaves the invited seat untouched. Re-invite the address they actually
+   sign in with.
+2. **"My invite came back 403."** Three gates run, in this order: an
+   invite carrying the `Owner` role is always rejected (a tenant has
+   exactly one owner, its creator); the caller must itself be `Owner` or
+   `Admin`; and only the `Owner` may invite a privileged role (`Admin`).
+3. **"The invitee complains they can't approve a destructive op."** Check:
    (a) they're `Admin` or `Owner`; (b) MFA is enabled on their account;
    (c) their last MFA challenge was within the last 30 minutes
    (`MFA_MAX_AGE_MS`).

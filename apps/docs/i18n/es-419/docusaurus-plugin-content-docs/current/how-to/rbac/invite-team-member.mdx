@@ -61,94 +61,130 @@ CoreLink delegates authentication to Clerk. Before inviting, make sure:
    `crates/corelink-dual-approval/src/gate.rs`). If MFA isn't enabled for
    the user, they can sign in but they cannot approve destructive ops.
 
-## Step 2 — Send the invite
+## Paso 2 — Enviar la invitación
 
-From the tenant admin UI:
+La gestión del equipo vive en el panel, en
+[https://humangr.com/corelink/customer/team](https://humangr.com/corelink/customer/team):
 
-```
-1. Settings → Members → "Invite member"
-2. Enter the invitee's email.
-3. Pick the role (defaults to Developer — see table above).
-4. Click "Send invite".
-```
+1. Abre la página **Team**.
+2. En **Invite a teammate**, escribe el correo de la persona invitada.
+3. Elige el rol en **Role** (mira la tabla de arriba).
+4. Haz clic en **Send invite**.
 
-Behind the scenes:
+Detrás de escena:
 
-- A Clerk invitation email is sent.
-- A pending `membership` row is **not** yet written — it's created on
-  first successful sign-in. This means an unaccepted invite leaves no
-  membership row to revoke later.
-- An audit event is emitted: `corelink.admin.member.invited` (CloudEvent).
+- El asiento se registra de inmediato como una fila `team_member` con
+  estado `invited`: eso es lo que muestra la lista
+  **Pending invitations**.
+- Solo se guarda un hash seudonimizado del correo (sin espacios al
+  principio ni al final y en minúsculas); la dirección en texto plano
+  nunca se persiste.
+- Se escribe una fila de auditoría visible para el cliente, con tipo de
+  evento `team.invited`, *antes* de la fila del asiento: así una
+  invitación nunca se concreta sin su registro de auditoría. Su detalle
+  menciona solo el rol, nunca la dirección.
 
-### Equivalent CLI command
+### Automatizarlo con la API HTTP
 
-```bash
-corelink admin members invite \
-  --email teammate@example.com \
-  --role developer
-```
-
-## Step 3 — Invitee accepts the invite
-
-1. They click the email link → land in Clerk → complete sign-in (or
-   sign-up + MFA setup if first time).
-2. Clerk redirects back to CoreLink.
-3. CoreLink writes the `membership` row binding their `user_id` to your
-   `tenant_id` with the role you assigned.
-4. Audit event: `corelink.admin.member.joined`.
-
-The invitee can now sign in directly to the CoreLink admin UI.
-
-## Step 4 — Verify the role
+**No existe ningún comando `corelink` de CLI para gestionar el equipo**:
+las dos rutas soportadas son el panel de arriba y la API HTTP de abajo. La
+API acepta tanto un PAT de CoreLink como tu sesión de Clerk ya iniciada,
+así que puedes automatizar invitaciones desde CI con un PAT:
 
 ```bash
-corelink admin members list --tenant <tenant_slug>
+curl -X POST https://corelink-api.humangr.com/v1/customer/team/invite \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"teammate@example.com","role":"Developer"}'
 ```
 
-Sample output:
+Invitar (y quitar) a un miembro es **exclusivo de owner/admin**: un token
+`Developer` o `Viewer` recibe un `403` aquí, por cualquiera de las dos
+rutas.
 
-```
-USER                                  EMAIL_HASH         ROLE        SINCE
-019095a3-...-3f4a                     a3f9...c821        developer   2026-05-15T14:02:00Z
-019095a3-...-7c1b                     b71d...e442        admin       2026-04-12T09:30:00Z
-019095a3-...-9d8e                     ee44...10c3        owner       2026-01-04T16:18:00Z
-```
+## Paso 3 — La persona invitada acepta la invitación
 
-> Note `email_hash` — raw emails are not stored
-> (`INV-AUDIT-NO-RAW-PII`). The hash is the deterministic HMAC-SHA256 of
-> the canonical-form email; we use it for forensics and dedupe.
+1. Inicia sesión en CoreLink —o se registra y configura MFA, si es su
+   primera vez— usando **la misma dirección de correo que invitaste**.
+2. Clerk la redirige de vuelta a CoreLink.
+3. CoreLink localiza el asiento pendiente por el hash del correo, lo
+   vincula a su `user_id` real y cambia el estado de `invited` a `active`.
+   El rol que elegiste al invitar se conserva.
 
-## Step 5 — Mint their first PAT (Developer only)
+Desde ese momento aparece en **Members** y ya no en
+**Pending invitations**.
 
-`Developer` users can mint their own PATs from the admin UI; `Viewer`
-cannot. If you want to pre-mint a CI service-account PAT for them:
+## Paso 4 — Verificar el rol
+
+En la página **Team**, la tabla **Members** lista a todas las personas con
+acceso y el rol de cada una; quienes fueron invitadas pero aún no
+ingresaron aparecen en **Pending invitations**.
+
+Para verificar lo mismo desde un script:
 
 ```bash
-corelink admin pat mint \
-  --tenant <tenant_slug> \
-  --issued-to-user 019095a3-...-3f4a \
-  --scopes cache:r,cache:w,cache:find-missing \
-  --ttl 90d
+curl https://corelink-api.humangr.com/v1/customer/team \
+  -H "Authorization: Bearer $CORELINK_PAT"
 ```
 
-The PAT is displayed **once**. Hand it to the invitee through your secret
-manager (1Password, Doppler, your CI's secret store). The Argon2id hash
-is what we persist; the raw PAT is irrecoverable after this step.
+La respuesta trae un arreglo `members`; cada entrada tiene el `user_id`,
+el `role`, el `joined_at` y el `status` del miembro (`invited` hasta que
+inicie sesión, y después `active`). También hay un campo `email`, pero
+vuelve como un marcador de posición: mira la nota de abajo.
 
-## Common pitfalls
+> **CoreLink nunca almacena el correo en texto plano.** La invitación
+> persiste solo un hash seudonimizado de la dirección (sin espacios al
+> principio ni al final y en minúsculas, `CTRL-PRIV-001`), y ese hash es
+> además la clave con la que se localiza la invitación cuando la persona
+> inicia sesión. Las filas de auditoría siguen la misma regla
+> (`INV-AUDIT-NO-RAW-PII`): el registro `team.invited` guarda el rol, no
+> la dirección.
 
-1. **"They got the invite but the link is expired."** Clerk invite emails
-   expire in 14 days. Re-issue from Settings → Members.
-2. **"They signed in but I don't see them in the member list."** Membership
-   rows are written on first successful sign-in. If they bounced off a
-   Clerk error, the membership wasn't created. Check Clerk's audit log.
-3. **"I want to invite a Developer but the role dropdown is grayed out."**
-   You're an `Admin`, not `Owner`, and the role you tried to assign is
-   above your level. Only `Owner` can grant `Owner`.
-4. **"The invitee complains they can't approve a destructive op."** Check:
-   (a) they're `Admin` or `Owner`; (b) MFA is enabled on their account;
-   (c) their last MFA challenge was within the last 30 minutes
-   (`MFA_MAX_AGE_MS`).
+## Paso 5 — Emitir su primer PAT (`Developer` o superior)
+
+Las personas con rol `Developer`, `Admin` y `Owner` pueden emitir sus
+propios PAT desde la página **API keys** del panel
+(`https://humangr.com/corelink/customer/keys`); `Viewer` no puede.
+
+Si prefieres emitir tú mismo un token de cuenta de servicio para CI, usa
+la API de llaves — de nuevo, no hay CLI para esto:
+
+```bash
+curl -X POST https://corelink-api.humangr.com/v1/customer/keys \
+  -H "Authorization: Bearer $CORELINK_PAT" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"ci-service-account","scopes":["cache:r","cache:w","cache:find-missing"]}'
+```
+
+El cuerpo de la petición es solo un nombre y una lista de alcances: no
+existe un campo para emitir un token *en nombre de otra persona*, así que
+un token de cuenta de servicio pertenece al tenant, no a quien invitaste.
+Consulta la [referencia de permisos](/reference/rbac/permissions) para ver
+todos los alcances que puedes otorgar.
+
+El secreto del token se muestra **una sola vez**. Entrégalo a la persona
+invitada a través de tu gestor de secretos (1Password, Doppler, el almacén
+de secretos de tu CI); es irrecuperable después de este paso. Un token se
+puede revocar en cualquier momento con
+`POST /v1/customer/keys/{pat_id}/revoke`.
+
+## Errores comunes
+
+1. **"Inició sesión, pero sigue en Pending invitations."** Un asiento solo
+   pasa a `active` cuando la dirección que reporta Clerk coincide con la
+   dirección que invitaste, ya normalizada (sin espacios al principio ni
+   al final y en minúsculas). Un inicio de sesión con otra dirección —un
+   alias, una cuenta personal— deja intacto el asiento invitado. Invita la
+   dirección con la que realmente inicia sesión.
+2. **"Mi invitación devolvió 403."** Corren tres verificaciones, en este
+   orden: una invitación con el rol `Owner` siempre se rechaza (un tenant
+   tiene exactamente un owner, quien lo creó); quien llama debe ser
+   `Owner` o `Admin`; y solo el `Owner` puede invitar a un rol
+   privilegiado (`Admin`).
+3. **"La persona invitada dice que no puede aprobar una operación
+   destructiva."** Verifica: (a) que sea `Admin` u `Owner`; (b) que tenga
+   MFA habilitado en su cuenta; (c) que su último desafío de MFA haya sido
+   dentro de los últimos 30 minutos (`MFA_MAX_AGE_MS`).
 
 ## Related
 

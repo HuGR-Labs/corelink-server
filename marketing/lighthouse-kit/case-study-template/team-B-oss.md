@@ -26,12 +26,7 @@ tags: ["lighthouse", "marketing", "case-study", "template", "team-tier", "oss", 
 
 ## Auto-prefill instructions (for DevRel)
 
-```
-corelink lighthouse export-case-study --slot LH-OSS-01 --format markdown \
-  > /tmp/oss-prefill.md
-```
-
-The `{{db:...}}` markers get replaced from D1; `{{interview:...}}` and `{{quote:...}}` are filled from the case-study interview transcript.
+The `{{db:...}}` markers are filled by hand from slot `LH-OSS-01` in the `lighthouse_customers` / `lighthouse_sla_samples` D1 tables (migration `0042_lighthouse_customers.sql`) — there is no export-and-prefill tool yet. `{{interview:...}}` and `{{quote:...}}` are filled from the case-study interview transcript.
 
 ---
 
