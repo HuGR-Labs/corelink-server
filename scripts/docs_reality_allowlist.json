@@ -1,67 +1,179 @@
 {
-  "_README": "Curated allowlist for scripts/validate_docs_reality.py. Two CLI buckets: roadmap_allow (intentional forward-looking / other-product / internal-tool references — NEVER a failure) and tracked_drift (KNOWN drift in customer docs/marketing being removed/reconciled by in-flight docs PRs — non-fatal in the normal gate so a green tree stays green, but FAILS under --strict; this is the punch-list). Any `corelink <cmd>` that is neither valid, roadmap-allowed, nor tracked FAILS the gate — that is how NEW drift is caught. Shrink tracked_drift as the fix PRs land; a stale entry is harmless (it simply stops matching).",
-
+  "_README": "Curated allowlist for scripts/validate_docs_reality.py. Two CLI buckets: roadmap_allow (intentional forward-looking / other-product / internal-tool references — NEVER a failure, so this bucket is a PERMANENT MUTE: put a reference here only when the command is genuinely someone else's surface, and name where that surface lives) and tracked_drift (KNOWN drift in customer docs/marketing being removed/reconciled by in-flight docs PRs — non-fatal in the normal gate so a green tree stays green, but FAILS under --strict; this is the punch-list). Any `corelink <cmd>` that is neither valid, roadmap-allowed, nor tracked FAILS the gate — that is how NEW drift is caught.",
+  "_RULES_FOR_NEW_ENTRIES": [
+    "1. A stale entry is NOT harmless. It is a permanent mute that re-silences the same defect the day it recurs — that is exactly how `corelink ping` survived in the served install script for months while the gate printed `0 drift`. The validator now emits a `[suppression-hygiene] ... never matched` WARN for every entry that matches nothing; drive that list to zero.",
+    "2. Before adding an entry, answer IN THE REASON: is the DOC wrong, or is the PRODUCT wrong? If a customer is told to run a command that would give them a working capability and the CLI simply does not have it, that is a PRODUCT gap — say so, and link the tracking issue. Do not file it as a wording fix.",
+    "3. Before adding an entry, check whether the same phantom command also ships in an EXECUTABLE surface the gate cannot see (apps/get-corelink-worker/src/install.ts, *.sh, e2e tests, workflows, the repo-root README/ROADMAP). The gate scans only .md/.mdx/.mdc/.html/.txt under apps/docs/{docs,blog,src}, marketing/ and docs/ (minus docs/knowledge, docs/okf-wiki-site, docs/internal). Suppressing the doc echo of a defect that also ships in code is the worst outcome this file can produce.",
+    "4. New entries SHOULD carry provenance: `added` (ISO date), `owner`, `expires` (ISO date), `ref` (PR/issue). The existing entries carry none — there is no way to tell `known and accepted` from `known and forgotten`."
+  ],
   "cli": {
     "roadmap_allow": {
-      "ci":         "Build-acceleration / CI expansion campaign #1 (post-launch phase 3) — a roadmap surface, not the launch CLI. See marketing/expansion/ci-build-acceleration.md.",
-      "lighthouse": "Internal marketing 'lighthouse-kit' case-study tooling, not the customer product CLI.",
-      "kms":        "BYOK CMK attach — ships at GA per the BYOK roadmap (byok concept still gated-inert).",
-      "workspace":  "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary.",
-      "workspaces": "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary.",
-      "runners":    "Runners metered add-on — roadmap surface, not a shipped `corelink` verb."
+      "kms": "BYOK CMK attach — ships at GA per the BYOK roadmap (byok concept still gated-inert). Zero matches as of 2026-08-02: candidate for deletion (see _retired).",
+      "workspace": "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary. Zero matches as of 2026-08-02: candidate for deletion (see _retired).",
+      "workspaces": "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary. Zero matches as of 2026-08-02: candidate for deletion (see _retired).",
+      "runners": "Runners metered add-on — roadmap surface, not a shipped `corelink` verb. Zero matches as of 2026-08-02: candidate for deletion (see _retired)."
     },
     "tracked_drift": {
-      "buck2-init":  { "reason": "Installation tutorial documents `corelink buck2-init`; absent from the CLI enum. (Sibling `bazel-init` now shipped in the CLI via #708 and auto-passes; buck2-init is still the docs-fix punch-list.)" },
-      "cargo-init":  { "reason": "A comparison page documents `corelink cargo-init`; absent from the CLI enum." },
-      "cas import":  { "reason": "A migration/objection doc references `corelink cas import`; the shipped CAS actions are `export` / `get` (bulk ingest is `corelink import`, a top-level verb). Docs-fix PR reconciling the verb name." },
-      "cas put":     { "reason": "Docs/marketing reference `corelink cas put`; the shipped CAS action set is `export` / `get` and the write verb is top-level `corelink put`. Docs-fix PR reconciling the verb name." },
-      "ping":        { "reason": "Installation tutorial references `corelink ping`; the shipped health/connectivity check is `corelink doctor`." },
-      "init":        { "reason": "An onboarding step references `corelink init`; not in the CLI enum (`corelink login` is the setup verb)." },
-      "gc":          { "reason": "The error taxonomy references `corelink gc`; GC is a server-side scheduled worker, there is no client verb." },
-      "billing":     { "reason": "A retention health-score doc references `corelink billing`; billing is admin/console-plane, not a CLI verb." },
-      "admin":       { "reason": "RBAC how-tos document `corelink admin {audit,members,pat}`; admin operations are console/API today, there is no shipped `admin` CLI verb." },
-      "dsr":         { "reason": "Support templates document `corelink dsr request`; DSR is an admin-plane operation, not a CLI verb." },
-      "auth":        { "reason": "A playbook documents `corelink auth login`; the shipped verb is top-level `corelink login`." },
-      "audit list":  { "reason": "Marketing/retention docs document `corelink audit list`; there is no `list` action (valid: export / tail / verify / verify-ndjson)." },
-      "audit prove": { "reason": "An audit-chain explainer documents `corelink audit prove`; proof verification is `corelink audit verify` / `verify-ndjson`." }
-    }
+      "cas import": {
+        "reason": "A migration/objection doc references `corelink cas import`; the shipped CAS actions are `export` / `get` (bulk ingest is `corelink import`, a top-level verb). Docs-fix PR reconciling the verb name.",
+        "PRODUCT_GAP": "This reason is TRUE BUT INCOMPLETE, and the incompleteness hides a product gap: marketing/sales/OBJECTION-HANDLING.md sold `corelink cas import s3://...` as an idempotent, safe-to-re-run migration path. The shipped `corelink import` REJECTS `s3://` sources outright (tools/cli/src/commands/import_cmd.rs:26 — 'direct S3 ingestion needs an object-store client + credentials (flagged gap)'). Renaming the verb does not deliver the capability the objection-handler promised to a prospect. Track the S3-ingest gap separately from the wording fix.",
+        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
+      },
+      "cas put": {
+        "reason": "Docs/marketing reference `corelink cas put`; the shipped CAS action set is `export` / `get` and the write verb is top-level `corelink put`. Docs-fix PR reconciling the verb name.",
+        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
+      },
+      "init": {
+        "reason": "An onboarding step references `corelink init`; not in the CLI enum (`corelink login` is the setup verb).",
+        "customer_facing": "The reference lives in marketing/profile-readme.md — the PUBLIC GitHub org profile README ('Zero config after `corelink init`'), not an internal note. Same class of surface as the install one-liner: copy a reader can paste.",
+        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
+      },
+      "billing": {
+        "reason": "A retention health-score doc references `corelink billing`; billing is admin/console-plane, not a CLI verb.",
+        "verified": "Doc-only: no health-score implementation exists in code (no rs/ts/sql/py consumer of the surface list), so nothing computes off the phantom verb.",
+        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
+      },
+      "dsr": {
+        "reason": "Support templates document `corelink dsr request`; DSR is an admin-plane operation, not a CLI verb.",
+        "customer_facing": "marketing/launch/SUPPORT-RESPONSE-TEMPLATES.md is copy a support agent SENDS TO A CUSTOMER, offering `corelink dsr request --type access` as the GDPR export/exit path. The real surface is the privacy portal `/dsr` + `POST /v1/privacy/dsr/erasure`. Doc bug, but the blast radius is a customer's data-rights exit path, not an internal note.",
+        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
+      },
+      "auth": {
+        "reason": "A playbook documents `corelink auth login`; the shipped verb is top-level `corelink login`.",
+        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
+      },
+      "audit list": {
+        "reason": "Marketing/retention docs document `corelink audit list`; there is no `list` action (valid: export / tail / verify / verify-ndjson).",
+        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
+      }
+    },
+    "_retired": [
+      {
+        "key": "ping",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-02",
+        "removed_by": "W12-allowlist-audit",
+        "old_reason": "Installation tutorial references `corelink ping`; the shipped health/connectivity check is `corelink doctor`.",
+        "verdict": "REASON TRUE, CLASSIFICATION WRONG — filed as a documentation bug while the same phantom verb was the last line of the SERVED install script (apps/get-corelink-worker/src/install.ts), so every customer install exited non-zero. That file is a .ts worker outside the gate's doc roots, so the gate never saw the shipping copy; the allowlist muted the only echo of it that the gate COULD see. Installer fixed 2026-08-02; `corelink doctor` confirmed in the clap enum (tools/cli/src/main.rs).",
+        "zero_matches_verified": "gate run 2026-08-02, pre-existing (not a same-session edit)"
+      },
+      {
+        "key": "cargo-init",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-02",
+        "removed_by": "W12-allowlist-audit",
+        "old_reason": "A comparison page documents `corelink cargo-init`; absent from the CLI enum.",
+        "verdict": "Doc bug, reason true (no `cargo-init` variant in `enum Commands`); docs fixed in the phantom-CLI sweep (CHANGELOG [Unreleased]).",
+        "zero_matches_verified": "gate run 2026-08-02, pre-existing"
+      },
+      {
+        "key": "buck2-init",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-02",
+        "removed_by": "W12-allowlist-audit",
+        "old_reason": "Installation tutorial documents `corelink buck2-init`; absent from the CLI enum. (Sibling `bazel-init` now shipped in the CLI via #708 and auto-passes; buck2-init is still the docs-fix punch-list.)",
+        "verdict": "Doc bug, reason true (`bazel-init` is in the enum, `buck2-init` is not). NOTE the shape: the sibling verb was resolved by BUILDING it, which is the tell that some entries in this file are product gaps wearing a doc-bug label. Docs fixed.",
+        "zero_matches_verified": "gate run 2026-08-02, pre-existing"
+      },
+      {
+        "key": "gc",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-02",
+        "removed_by": "W12-allowlist-audit",
+        "old_reason": "The error taxonomy references `corelink gc`; GC is a server-side scheduled worker, there is no client verb.",
+        "verdict": "REASON VERIFIED TRUE against code — crates/corelink-gc/ (sweep.rs, sweep_runner.rs, scheduler.rs, worker.rs), the gc_sweep binary, and .github/workflows/gc-sweep-dry-run.yml + gc-ship-gate.yml. GC really is server-side with no client verb; a doc bug, correctly diagnosed. Docs fixed.",
+        "zero_matches_verified": "gate run 2026-08-02, pre-existing"
+      },
+      {
+        "key": "admin",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-02",
+        "removed_by": "W12-allowlist-audit",
+        "old_reason": "RBAC how-tos document `corelink admin {audit,members,pat}`; admin operations are console/API today, there is no shipped `admin` CLI verb.",
+        "verdict": "Reason true (no `Admin` variant in `enum Commands`; the admin plane is crates/corelink-handler-admin + admin-ui). Doc bug. Docs fixed.",
+        "zero_matches_verified": "gate run 2026-08-02, pre-existing"
+      },
+      {
+        "key": "audit prove",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-02",
+        "removed_by": "W12-allowlist-audit",
+        "old_reason": "An audit-chain explainer documents `corelink audit prove`; proof verification is `corelink audit verify` / `verify-ndjson`.",
+        "verdict": "Reason true — `AuditAction` = export / tail / verify / verify-ndjson, no `prove`. Doc bug. Docs fixed.",
+        "zero_matches_verified": "gate run 2026-08-02, pre-existing"
+      },
+      {
+        "key": "ci",
+        "bucket": "roadmap_allow",
+        "removed": "2026-08-02",
+        "removed_by": "W12-allowlist-audit",
+        "old_reason": "Build-acceleration / CI expansion campaign #1 (post-launch phase 3) — a roadmap surface, not the launch CLI. See marketing/expansion/ci-build-acceleration.md.",
+        "verdict": "REASON NOW FALSE and the entry was UNREACHABLE: `Ci { action: CiAction }` IS in the shipped clap enum (`corelink ci mirror`), so validate_docs_reality.py resolves `ci` via is_valid_top() and never consults roadmap_allow for it. A permanent mute describing the command as unbuilt, kept alive after the command shipped."
+      },
+      {
+        "verb": "lighthouse",
+        "verdict": "Phantom, not tooling. `lighthouse` is the customer-farol PROGRAM, not a CLI surface; no `export-case-study` implementation exists in this repo, and a sweep of the HuGR-Labs and HumanGuardrail orgs found no case-study tool either. Zero live matches, so there is nothing to track — the mute is removed rather than moved to tracked_drift.",
+        "retired": "2026-08-02"
+      }
+    ]
   },
-
   "deferred_coherence": [
     {
       "id": "byok-multiprovider-available-now",
       "tracked": true,
-      "grounding": { "okf_concept": "docs/knowledge/storage/byok-envelope-encryption.md", "marker": "gated-inert" },
-      "scope_globs": ["marketing/", "apps/docs/"],
+      "grounding": {
+        "okf_concept": "docs/knowledge/storage/byok-envelope-encryption.md",
+        "marker": "gated-inert"
+      },
+      "scope_globs": [
+        "marketing/",
+        "apps/docs/"
+      ],
       "forbidden": [
         "customer-managed encryption keys.{0,40}\\bY\\b",
         "Yes\\s*[—-].{0,40}4 providers",
         "Yes \\(4 providers\\)"
       ],
       "allow": [
-        "ships at GA", "not in pilot", "pre-GA", "no BYOK", "at GA",
-        "GA per", "roadmap", "will ship", "planned", "gap"
+        "ships at GA",
+        "not in pilot",
+        "pre-GA",
+        "no BYOK",
+        "at GA",
+        "GA per",
+        "roadmap",
+        "will ship",
+        "planned",
+        "gap"
       ],
       "reason": "BYOK across 4 KMS providers is asserted as an AVAILABLE capability, but the OKF byok concept records the prod KmsProvider wiring as DEFERRED / still gated-inert (zero active tenants). State it as a GA/roadmap item, not present-tense available."
     },
     {
       "id": "cas-digest-is-blake3-not-sha256",
       "tracked": true,
-      "grounding": { "cli_source": "tools/cli/src/main.rs", "marker": "BLAKE3" },
-      "scope_globs": ["apps/docs/"],
+      "grounding": {
+        "cli_source": "tools/cli/src/main.rs",
+        "marker": "BLAKE3"
+      },
+      "scope_globs": [
+        "apps/docs/"
+      ],
       "forbidden": [
         "\"hash\":\\s*\"sha256:",
         "corelink (stat|get) sha256:",
         "DIGEST=\\$\\(sha256sum"
       ],
       "allow": [
-        "HMAC-SHA256", "salted SHA-256", "content_hash", "shasum -a 256",
-        "hash of the token", "deterministic HMAC"
+        "HMAC-SHA256",
+        "salted SHA-256",
+        "content_hash",
+        "shasum -a 256",
+        "hash of the token",
+        "deterministic HMAC"
       ],
       "reason": "The CAS plane addresses + client-verifies blobs by BLAKE3 (CTRL-CAS-002; see the CLI Get/Put docstrings). A quickstart that computes the digest with `sha256sum` and uploads `sha256:<digest>` instructs users to produce a digest the server will reject. Use BLAKE3 (`corelink put` computes it)."
     }
   ],
-
   "endpoint": {
     "_comment": "Best-effort HTTP-path check. Unresolved paths WARN (non-fatal). Add a doc file to flagship_files to escalate its unresolved paths to a hard FAIL once its recipe is verified end-to-end. ignore_path_prefixes drops noisy non-route matches (illustrative/placeholder paths).",
     "flagship_files": [],

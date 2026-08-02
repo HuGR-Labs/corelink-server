@@ -585,9 +585,9 @@ Your options:
    customer-managed keys, dedicated capacity, or SLA. Reply here and
    I'll set up a 30-min scoping call.
 
-3. **Export and walk away** — issue an `Access` DSR via
-   `corelink dsr request --type access` and we'll deliver a portable
-   JSON export within 5 business days. No hard feelings.
+3. **Export and walk away** — issue an `Access` DSR from the privacy
+   portal in your dashboard (the `/dsr` section) and we'll deliver a
+   portable JSON export within 5 business days. No hard feelings.
 
 4. **Extend the sandbox** — one-time 14-day extension available on
    request. Reply with "extend" and I'll process it.

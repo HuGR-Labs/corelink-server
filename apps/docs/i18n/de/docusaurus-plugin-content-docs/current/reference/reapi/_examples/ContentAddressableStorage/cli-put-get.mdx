@@ -30,7 +30,7 @@ DIGEST=$(corelink put /tmp/sample.txt --format=digest)
 echo "digest = $DIGEST"
 
 # Download — client-verify default on.
-corelink get "$DIGEST" --output /tmp/roundtrip.txt
+corelink get "$DIGEST" --out /tmp/roundtrip.txt
 diff /tmp/sample.txt /tmp/roundtrip.txt && echo "ROUNDTRIP OK"
 ```
 

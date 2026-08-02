@@ -195,7 +195,8 @@ corelink audit tail --filter "event_type=corelink.observability.export_ready"
 
 # 3) End-to-end: fire a known request against CoreLink, then look for
 #    its trace span in the Collector log:
-corelink cas put --tenant t1 --file /tmp/probe.bin
+#    (the tenant comes from your cached config / the PAT, not a flag)
+corelink put /tmp/probe.bin
 ```
 
 If `corelink.observability.export_failed` shows up instead:

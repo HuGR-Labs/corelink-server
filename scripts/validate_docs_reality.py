@@ -54,6 +54,11 @@ CHECKS
                             algorithm). Each rule RE-VERIFIES its OKF grounding, so a
                             rule auto-retires (WARN: stale) once the capability ships
                             and the OKF concept drops the DEFERRED marker.
+  [suppression-hygiene]     WARN (non-fatal) for every allowlist key — in either
+                            CLI bucket — that suppressed NOTHING on this run. A
+                            suppression with no expiry is a permanent mute; this
+                            makes a dead one visible so it is deleted rather than
+                            left armed to re-silence the same defect on recurrence.
   [endpoint-existence]      Best-effort: HTTP paths named in onboarding recipes
                             (`/v1/cas/...`, `/bazel/v2/...`, `/turbo/...`,
                             `grpcs://...`) should resolve to a wired route (the
@@ -574,14 +579,21 @@ def main() -> int:
     # --- [cli-existence] ---
     cli_failures: list[tuple[str, CliRef, str]] = []
     cli_tracked: list[tuple[str, CliRef]] = []
+    # Every allowlist key that actually suppressed something on this run. A key
+    # that suppresses NOTHING is a DEAD suppression: the defect it was written
+    # for is gone (or was never reachable), and all it does now is stand ready to
+    # re-silence the same defect the day it recurs. See [suppression-hygiene].
+    used_suppressions: set[str] = set()
     for r in all_refs:
         if model.is_valid_top(r.cmd):
             if model.is_group(r.cmd) and r.action and not r.action.startswith("-"):
                 key2 = f"{r.cmd} {r.action}"
                 if not model.is_valid_action(r.cmd, r.action):
                     if key2 in roadmap_allow:
+                        used_suppressions.add(key2)
                         continue
                     if key2 in tracked_drift:
+                        used_suppressions.add(key2)
                         cli_tracked.append((key2, r))
                         continue
                     cli_failures.append(
@@ -591,8 +603,10 @@ def main() -> int:
                          f"{sorted(model.groups[r.cmd])})"))
             continue
         if r.cmd in roadmap_allow:
+            used_suppressions.add(r.cmd)
             continue
         if r.cmd in tracked_drift:
+            used_suppressions.add(r.cmd)
             cli_tracked.append((r.cmd, r))
             continue
         cli_failures.append(
@@ -605,8 +619,23 @@ def main() -> int:
         strict_tracked_fail = cli_tracked
         cli_tracked = []
 
-    # --- [okf-deferred-coherence] ---
+    # --- [suppression-hygiene] ---
+    # An allowlist with no expiry is a permanent mute button. Report every
+    # suppression key that matched NOTHING on this run so a dead entry is visible
+    # instead of dormant — the difference between "known and accepted" and "known
+    # and forgotten". Non-fatal by design (the corpus legitimately shrinks); the
+    # remedy is to DELETE the entry, recording why, not to leave it armed.
     warnings: list[str] = []
+    for key in sorted(roadmap_allow | tracked_drift):
+        if key in used_suppressions:
+            continue
+        bucket = "roadmap_allow" if key in roadmap_allow else "tracked_drift"
+        warnings.append(
+            f"[suppression-hygiene] allowlist {bucket} entry `corelink {key}` "
+            f"never matched — dead suppression; delete it (record the removal in "
+            f"cli._retired) or state why it must stay armed.")
+
+    # --- [okf-deferred-coherence] ---
     deferred_rules = allow.get("deferred_coherence", [])
     deferred_findings = run_deferred_coherence(deferred_rules, docs, warnings)
     deferred_tracked_ids = {r["id"] for r in deferred_rules if r.get("tracked")}

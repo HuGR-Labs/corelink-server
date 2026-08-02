@@ -21,10 +21,10 @@ import TabItem from "@theme/TabItem";
 segundo build.
 **Presupuesto total: ≤ 10 minutos para un ingeniero con experiencia.**
 
-Todos los comandos son canónicos y verificados contra el MVP de `corelink-cli`
-(commit [`71d7f6a9`](https://github.com/HumanGuardrail/corelink-cli/commit/71d7f6a9),
-subcomandos: `ping`, `bazel-init`; `doctor` llega en la próxima release del CLI —
-la documentación refleja el UX planificado antes del binario).
+Todos los subcomandos `corelink` que aparecen aquí — `doctor`, `whoami`,
+`config`, `bazel-init` — existen en el CLI publicado. La configuración de
+caché remoto del `.bazelrc` del Paso 4 ya funciona hoy contra el endpoint
+REAPI v2 en producción y no requiere CLI alguno.
 
 :::tip Sin tarjeta de crédito
 Una cuenta inicial es gratuita hasta 10 GB. El asistente de registro
@@ -69,24 +69,21 @@ curl -fsSL https://corelink-get.humangr.com | sh -s -- \
 ```
 
 El script:
-1. Detecta tu plataforma (macOS arm64/amd64, Linux amd64/arm64).
-2. Descarga el binario estático `corelink` en `/usr/local/bin`
-   (fallback a `~/.local/bin` si `/usr/local/bin` no es escribible).
-3. Escribe `~/.corelink/config.toml` con tu PAT y endpoint.
-4. Ejecuta `corelink whoami`, que verifica el PAT **y** guarda el tenant ID
-   resuelto en ese mismo archivo (el instalador no lo conoce).
+1. Detecta tu plataforma a partir de `uname -s` / `uname -m` (macOS y
+   Linux; `arm64`/`amd64` se normalizan a `aarch64`/`x86_64`, y una
+   arquitectura desconocida se rechaza explícitamente).
+2. Descarga el binario `corelink` correspondiente y lo verifica contra el
+   `.sha256` publicado junto al artefacto de release **antes** de hacerlo
+   ejecutable — la ausencia del checksum aborta la instalación — y luego lo
+   mueve a `/usr/local/bin/corelink` (con `sudo` si no eres root).
+3. Escribe `~/.corelink/config.toml` con permisos `0600`, con tu token, la
+   región y el endpoint de la API.
+4. Ejecuta `corelink whoami`, que resuelve tu identidad contra
+   `/v1/users/me` y guarda el `tenant_id` resuelto en ese mismo archivo de
+   configuración — todo comando con alcance de tenant lo necesita.
 
-Salida esperada:
-
-```text
-Downloading CoreLink CLI from https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-arm64 ...
-tenant_id:    <your-tenant-id>
-token_prefix: corelink_pat_3f9a…
-route_kind:   pat
-Next: cd into your Bazel repo, run: corelink bazel-init
-```
-
-Si `corelink whoami` imprime tu tenant ID, avanza al Paso 3.
+`corelink whoami` imprime tu `tenant_id`, un `token_prefix` redactado y el
+`route_kind`. Si funciona, avanza al Paso 3.
 
 ---
 
@@ -98,36 +95,21 @@ Si `corelink whoami` imprime tu tenant ID, avanza al Paso 3.
 corelink doctor
 ```
 
-Salida saludable:
+Las ocho verificaciones, en este orden, son `network`, `auth`,
+`storage_write`, `storage_read`, `byok`, `region`, `quota` y
+`client_verify`. Cada una reporta `ok`, `fail` o `skip` junto con su
+latencia; una verificación que falla trae además un código de error y la
+siguiente acción. Usa `--json` para una salida legible por máquina.
 
-```text
-CHECK              STATUS   LATENCY             ERROR_CODE   NEXT_ACTION
-----------------------------------------------------------------------------------------------------
-network            ok            12ms
-auth               ok            31ms
-storage_write      ok            88ms
-storage_read       ok            41ms
-byok               skip           n/a                        BYOK not configured; set auth.byok_enabled=true and KMS credentials to enable.
-region             skip           n/a
-quota              ok            27ms
-client_verify      ok             n/a
-
-All checks passed (6 ok, 2 skipped).
-```
-
-Las latencias varían. `region` siempre reporta `skip` — ninguna ruta pública
-expone la región primaria de un tenant — y `byok` se omite salvo que hayas
-optado por BYOK. Así que `6 ok, 2 skipped` es el resultado sano, no una alerta.
-
-Si alguna verificación muestra `✗`, la salida incluye una sugerencia de
-corrección. Los fallos más comunes están en la sección
+Si alguna verificación falla, la sugerencia de corrección viene en la misma
+línea. Los fallos más comunes están en la sección
 [Solución de problemas](#solucion-de-problemas) abajo.
 
-:::note
-`corelink whoami` es la verificación más ligera — comprueba la autenticación y
-resuelve tu tenant sin tocar la caché. `corelink doctor` ejecuta las 8
-verificaciones, incluida una escritura/lectura real en CAS, por lo que requiere un
-PAT de lectura y escritura.
+:::caution `doctor` escribe en tu CAS
+La verificación `storage_write` hace un `PUT` real en el CAS de tu tenant,
+así que `corelink doctor` falla con un PAT legítimamente de solo lectura.
+Cuando solo necesitas confirmar que el CLI está autenticado, usa
+`corelink whoami`.
 :::
 
 ---
@@ -206,7 +188,8 @@ cache es más valioso en la segunda ejecución de tu pipeline de CI.
 
 ### Incompatibilidad de región — alta latencia o errores gRPC `UNAVAILABLE`
 
-**Síntoma:** RTT > 200 ms en `corelink doctor` paso 6, o Bazel registra `UNAVAILABLE`.
+**Síntoma:** la verificación `network` de `corelink doctor` reporta una
+latencia superior a 200 ms, o Bazel registra `UNAVAILABLE`.
 
 **Solución:**
 ```bash
@@ -233,9 +216,10 @@ corelink config set auth.pat "ct_live_xxx…xxx"
 
 **Solución:** elimina las líneas duplicadas manualmente y confirma con `corelink doctor`.
 
-### Verificación 8 de `corelink doctor` falla — `PERMISSION_DENIED`
+### La verificación `storage_write` de `corelink doctor` falla
 
-**Síntoma:** `[8/8] tenant write permission  ✗  PERMISSION_DENIED`.
+**Síntoma:** la verificación `storage_write` reporta `fail` (el blob de
+sondeo fue rechazado al subirse).
 
 **Solución:** verifica el tenant ID y regenera el PAT con alcance `write`:
 

@@ -114,7 +114,7 @@ $ echo "release-artifact" > build/out.bin
 $ corelink put build/out.bin
 digest=af1c3e9b…  size=17  uploaded=ok
 
-$ corelink get af1c3e9b… --output /tmp/restored.bin
+$ corelink get af1c3e9b… --out /tmp/restored.bin
 downloaded 17 bytes, blake3 verified ok
 ```
 

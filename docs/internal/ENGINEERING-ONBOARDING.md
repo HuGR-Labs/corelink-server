@@ -197,10 +197,22 @@ Steps live in `docs/customer/QUICKSTART.md` (if not yet published,
 your buddy has the staging Bazel `.bazelrc.staging` snippet). At
 minimum:
 
-1. `cargo install --path crates/corelink-cli` (or grab a release binary).
-2. `corelink auth login --env staging`.
-3. Configure Bazel with the `--remote_cache=https://staging.corelink.humangr.com`
-   block.
+1. `cargo install --path tools/cli` — the `corelink-cli` package, binary
+   `corelink` (or grab a release binary).
+2. Point the CLI at the staging endpoint, then save your PAT. There is no
+   `--env` switch and no `auth` subcommand; the endpoint lives in config and
+   `login` takes the token:
+
+   ```bash
+   corelink config set defaults.endpoint <staging-endpoint>
+   corelink login --token <staging-PAT>
+   ```
+
+   `login` writes `~/.corelink/config.toml` at mode 0600 and then resolves +
+   caches your `tenant_id`. Ask your buddy for the current staging endpoint —
+   it is not committed here.
+3. Configure Bazel with the staging `--remote_cache=` block from your buddy's
+   `.bazelrc.staging` snippet.
 4. Build any open-source Bazel target (e.g. `bazelbuild/rules_rust`).
 5. Confirm cache hits on the second build.
 6. Note your *time-to-first-hit* in your onboarding doc.

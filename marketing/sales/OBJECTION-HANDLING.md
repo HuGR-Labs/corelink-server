@@ -41,7 +41,7 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 - **Evidence:**
   - **Advisor pool:** named technical + commercial advisors on file; available under NDA.
   - **OSS-foundation roadmap:** the verification toolkit for the audit chain (independent of the managed service) is planned for OSS release; the core REAPI surface conforms to a public spec — a successor maintainer is not starting from zero.
-  - **Escape hatch is structural:** your data is content-addressed by BLAKE3 / SHA-256. A full export to any S3-compatible destination is operator-assisted today (a self-serve `corelink cas export` CLI is on the roadmap); departure is bounded by your egress, not by our cooperation.
+  - **Escape hatch is structural:** your data is content-addressed by BLAKE3 / SHA-256. `corelink cas export --tenant me --out <dir>` pulls your whole tenant down self-serve today; pushing straight to an S3-compatible destination is operator-assisted for now. Departure is bounded by your egress, not by our cooperation.
   - **Source-available trajectory:** while CoreLink ships as a managed service at GA, the source-available + on-prem path is on the post-GA roadmap (anti-scoped from GA explicitly — see `BLOG-POSTS/01` "What is next").
 - **Counter-question:** "What's the procurement gate you need to clear here? Is it 'vendor must have ≥ N employees', or 'we must have an exit strategy that survives vendor failure'? Those map to different conversations."
 
@@ -227,21 +227,21 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 
 - **Why it matters:** healthy CFO instinct.
 - **Our position:** lock-in is structurally bounded for CoreLink. Content-addressed storage is the escape hatch.
-- **Evidence:** Your data is BLAKE3 / SHA-256 keyed. A full content-addressed export to `s3://...` is one operator-assisted request today (a self-serve `corelink cas export` CLI is on the roadmap). Audit-chain export is free. Migration credit (3 months 50% on Team) explicitly exists for *both directions* — we'd rather know early if you want to leave. The content-addressed nature of CAS *is* the escape hatch.
+- **Evidence:** Your data is BLAKE3 / SHA-256 keyed. Self-serve bulk export ships in the CLI today — `corelink cas export --tenant me --out ./corelink-export` pulls every blob in your tenant to a local directory, plus an index. (Writing straight to `s3://...` is not wired yet; that leg is operator-assisted.) Audit-chain export is free. Migration credit (3 months 50% on Team) explicitly exists for *both directions* — we'd rather know early if you want to leave. The content-addressed nature of CAS *is* the escape hatch.
 - **Counter-question:** "What does 'lock-in' actually look like for you in worst case? If it's '90 days to extract data,' we can show you the export tool right now. If it's 'rewrite our toolchain,' that's REAPI-level standardization, not CoreLink-specific."
 
 ### Obj-23 — "Migration is too disruptive."
 
 - **Why it matters:** real cost; engineers value uninterrupted CI.
 - **Our position:** mirror-then-cutover. Your existing cache stays primary; CoreLink runs as secondary; if we misbehave, your builds don't break.
-- **Evidence:** `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#phase-1-days-1-7-mirror-your-ci`. Practical pattern today: dual `--remote_cache` writes (existing cache + CoreLink), read from the incumbent, compare hit ratios. A turnkey sidecar-mirror (`corelink ci mirror`) and a BES-consumer ingest path are on the roadmap. Typical mirror period: 1–2 weeks. Cutover is a `--remote_cache` URL flip.
+- **Evidence:** `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#phase-1-days-1-7-mirror-your-ci`. Practical pattern today: dual `--remote_cache` writes (existing cache + CoreLink), read from the incumbent, compare hit ratios. `corelink ci mirror --from <your-cache-dir> --to corelink` ships today as a one-shot, idempotent copy of an existing cache's on-disk directory; the live streaming sidecar and a BES-consumer ingest path are on the roadmap. Typical mirror period: 1–2 weeks. Cutover is a `--remote_cache` URL flip.
 - **Counter-question:** "Want to scope the smallest possible pilot? One pipeline, 14 days of mirror, no production cutover. That's a 30-min scoping call, not a deal."
 
 ### Obj-24 — "What if your migration tool breaks something?"
 
 - **Why it matters:** trust in tooling.
 - **Our position:** the tools are open / inspectable. The mirror pattern means you don't depend on them for cutover.
-- **Evidence:** `corelink-bazel-remote-shim` is a drop-in front (you can read it before deploying it). Bulk import (`corelink cas import s3://...`) is idempotent and content-addressed, so re-running is safe (digests already-present are no-ops). Rollback is a build-tool config flip.
+- **Evidence:** `corelink-bazel-remote-shim` is a drop-in front (you can read it before deploying it). Bulk import (`corelink import <dir>`) is idempotent and content-addressed, so re-running is safe (digests already-present are no-ops); object-store sources like `s3://...` aren't wired yet, so sync them locally first. Rollback is a build-tool config flip.
 - **Counter-question:** "Want your build-tools engineer on a working session with our integrations engineer? We'll walk the shim source live."
 
 ### Obj-25 — "We've been burned by 'easy migration' promises."

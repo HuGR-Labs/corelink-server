@@ -192,7 +192,7 @@ digest=af1c3e9b…  size=43  exists=true  first_seen=2026-05-15T12:34:56Z  last_
 ### 3.1 — Retrieve via CLI (2:00 → 2:15)
 
 ```bash
-$ corelink get af1c3e9b… --output /tmp/restored.txt
+$ corelink get af1c3e9b… --out /tmp/restored.txt
 downloaded 43 bytes, blake3 verified ok
 
 $ diff /tmp/hello.txt /tmp/restored.txt && echo "MATCH"

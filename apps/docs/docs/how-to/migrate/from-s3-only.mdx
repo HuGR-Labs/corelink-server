@@ -246,7 +246,7 @@ Pick the lowest-traffic window. Update every consumer script:
 ```diff
 - aws s3 cp "s3://your-bucket/releases/1.2.3/myapp.tar.gz" /tmp/myapp.tar.gz
 + DIGEST=$(grep "releases/1.2.3/myapp.tar.gz" /etc/corelink/mapping.csv | cut -d, -f2)
-+ corelink get "$DIGEST" --output /tmp/myapp.tar.gz
++ corelink get "$DIGEST" --out /tmp/myapp.tar.gz
 ```
 
 For consumers running on hosts that already had `corelink doctor`
@@ -350,7 +350,7 @@ corelink ls --tenant "$CORELINK_TENANT_ID" --limit 10
 
 # 2. A round-trip integrity check on the most recent artifact:
 RECENT=$(corelink ls --tenant "$CORELINK_TENANT_ID" --limit 1 --output json | jq -r '.blobs[0].hash')
-corelink get "$RECENT" --output /tmp/recent.bin
+corelink get "$RECENT" --out /tmp/recent.bin
 corelink stat "$RECENT" --output json | jq '.size_bytes'
 wc -c < /tmp/recent.bin   # should match size_bytes
 

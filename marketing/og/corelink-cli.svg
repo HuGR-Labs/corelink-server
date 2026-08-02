@@ -31,7 +31,7 @@
   <text x="940" y="200"
     font-family="'SF Mono', 'Fira Code', 'Courier New', monospace"
     font-size="18"
-    fill="#94A3B8"> corelink push</text>
+    fill="#94A3B8"> corelink import .</text>
   <text x="920" y="228"
     font-family="'SF Mono', 'Fira Code', 'Courier New', monospace"
     font-size="16"

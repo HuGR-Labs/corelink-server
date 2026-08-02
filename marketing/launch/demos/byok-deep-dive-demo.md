@@ -181,7 +181,7 @@ digest=9c4d2a1f…  size=18.2 MB  exists=true  encryption=byok:aws-kms  key_fp=a
 4. Cut to terminal. Run a `corelink get` against an existing digest under this tenant:
 
 ```bash
-$ corelink get 9c4d2a1f… --output /tmp/restored.tgz
+$ corelink get 9c4d2a1f… --out /tmp/restored.tgz
 error: COR_BYOK_KILL_SWITCH_ACTIVE
        Tenant acme-prod has BYOK kill switch armed and active.
        Operator action required to disarm. See: /en/admin/tenants/acme-prod/encryption

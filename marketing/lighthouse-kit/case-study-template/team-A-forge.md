@@ -26,14 +26,7 @@ tags: ["lighthouse", "marketing", "case-study", "template", "team-tier", "forge"
 
 ## Auto-prefill instructions (for DevRel)
 
-Pre-fill the bracketed `{{db:...}}` markers from a single CLI invocation before the customer interview:
-
-```
-corelink lighthouse export-case-study --slot LH-FORGE --format markdown \
-  > /tmp/forge-prefill.md
-```
-
-The export tool reads from `lighthouse_customers`, `lighthouse_sla_samples`, and `lighthouse_audit_chain` D1 tables and replaces every `{{db:...}}` placeholder. Manual placeholders `{{interview:...}}` and `{{quote:...}}` require the interview transcript.
+Fill the bracketed `{{db:...}}` markers before the customer interview, reading slot `LH-FORGE` out of the `lighthouse_customers` and `lighthouse_sla_samples` D1 tables (migration `0042_lighthouse_customers.sql`). There is **no export-and-prefill tool yet** — this is a manual pass today. Manual placeholders `{{interview:...}}` and `{{quote:...}}` require the interview transcript.
 
 ---
 

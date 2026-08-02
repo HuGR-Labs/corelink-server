@@ -5,7 +5,7 @@ description: "The post-GA new-engineer ramp — offer to first-PR in ≤5 days, 
 source_files:
   - "docs/internal/ENGINEERING-ONBOARDING.md"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md"
-checkpoint_sha: "b5ce2bff384a09047f027082dcf4355136822242"
+checkpoint_sha: "e081f1fc9e8a4a861686e9acd4687e1494803d0f"
 provenance: "AUTHORED"
 tags: ["ops", "onboarding", "buddy", "process", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -32,22 +32,22 @@ ad hoc.
 - Day 0 (manager-owned) provisions laptop, access requests (GitHub org `HumanGuardrail`), and ≤ 3 pre-reads `docs/internal/ENGINEERING-ONBOARDING.md:51-98`.
 - Day 1 runs the first workspace build + spec-validator smoke `docs/internal/ENGINEERING-ONBOARDING.md:114-141`.
 - Day 2 walks the four canonical architecture docs in a fixed order `docs/internal/ENGINEERING-ONBOARDING.md:145-185`.
-- Day 3 traces one request end-to-end crate-by-crate (signup → tier-select → Stripe → audit) `docs/internal/ENGINEERING-ONBOARDING.md:219-237`.
-- Days 4–5 ship one curated first-PR item paired with a senior `docs/internal/ENGINEERING-ONBOARDING.md:239-266`.
+- Day 3 traces one request end-to-end crate-by-crate (signup → tier-select → Stripe → audit) `docs/internal/ENGINEERING-ONBOARDING.md:231-249`.
+- Days 4–5 ship one curated first-PR item paired with a senior `docs/internal/ENGINEERING-ONBOARDING.md:251-278`.
 - The buddy cadence tapers daily → weekly over Weeks 1–4 (~10–12h total) `docs/internal/onboarding/BUDDY-PROTOCOL.md:22-31`.
 - The buddy's always-on duty is translating internal shorthand (R-charter, SEAL, InMemoryFake, P0/P1) `docs/internal/onboarding/BUDDY-PROTOCOL.md:72-89`.
 
 # Invariants
 
-- Every PR (including the first) must pass build, test, clippy `-D warnings`, `cargo deny`, `validate_specs.py`, and pre-commit `docs/internal/ENGINEERING-ONBOARDING.md:253-258`.
-- New-hire branches use `<handle>/<short-desc>`; the `wt/` prefix is reserved for orchestrator worktrees `docs/internal/ENGINEERING-ONBOARDING.md:250-252`.
+- Every PR (including the first) must pass build, test, clippy `-D warnings`, `cargo deny`, `validate_specs.py`, and pre-commit `docs/internal/ENGINEERING-ONBOARDING.md:265-270`.
+- New-hire branches use `<handle>/<short-desc>`; the `wt/` prefix is reserved for orchestrator worktrees `docs/internal/ENGINEERING-ONBOARDING.md:262-264`.
 - The buddy is explicitly NOT the reviewer-of-record, manager, domain mentor, or on-call backup `docs/internal/onboarding/BUDDY-PROTOCOL.md:92-99`.
 - The Day-30 buddy→manager note is manager-prep only; the new hire never sees it directly `docs/internal/onboarding/BUDDY-PROTOCOL.md:122-125`.
 
 # Gotchas
 
 - New hires are explicitly told NOT to over-prepare: anything beyond the 3 pre-reads before Day 1 is over-reading `docs/internal/ENGINEERING-ONBOARDING.md:90-98`.
-- Most crates are still `InMemoryFake` by charter — read the trait, not the placeholder body; this is intentional, not a bug `docs/internal/ENGINEERING-ONBOARDING.md:357-360`.
+- Most crates are still `InMemoryFake` by charter — read the trait, not the placeholder body; this is intentional, not a bug `docs/internal/ENGINEERING-ONBOARDING.md:369-372`.
 
 # Citations
 
@@ -56,11 +56,11 @@ ad hoc.
 3. `docs/internal/ENGINEERING-ONBOARDING.md:90-98` — the don't-over-prepare rule.
 4. `docs/internal/ENGINEERING-ONBOARDING.md:114-141` — Day 1 first build + validator smoke.
 5. `docs/internal/ENGINEERING-ONBOARDING.md:145-185` — Day 2 four-doc architecture deep-dive.
-6. `docs/internal/ENGINEERING-ONBOARDING.md:219-237` — Day 3 end-to-end request trace.
-7. `docs/internal/ENGINEERING-ONBOARDING.md:239-266` — Days 4–5 first-PR flow.
-8. `docs/internal/ENGINEERING-ONBOARDING.md:250-252` — branch-naming convention.
-9. `docs/internal/ENGINEERING-ONBOARDING.md:253-258` — the mandatory per-PR gate set.
-10. `docs/internal/ENGINEERING-ONBOARDING.md:357-360` — the InMemoryFake charter convention.
+6. `docs/internal/ENGINEERING-ONBOARDING.md:231-249` — Day 3 end-to-end request trace.
+7. `docs/internal/ENGINEERING-ONBOARDING.md:251-278` — Days 4–5 first-PR flow.
+8. `docs/internal/ENGINEERING-ONBOARDING.md:262-264` — branch-naming convention.
+9. `docs/internal/ENGINEERING-ONBOARDING.md:265-270` — the mandatory per-PR gate set.
+10. `docs/internal/ENGINEERING-ONBOARDING.md:369-372` — the InMemoryFake charter convention.
 11. `docs/internal/onboarding/BUDDY-PROTOCOL.md:22-31` — buddy cadence + time commitment.
 12. `docs/internal/onboarding/BUDDY-PROTOCOL.md:72-89` — buddy translation duties.
 13. `docs/internal/onboarding/BUDDY-PROTOCOL.md:92-99` — what the buddy is NOT.

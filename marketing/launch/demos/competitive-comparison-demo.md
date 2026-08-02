@@ -117,7 +117,7 @@ $ curl -o /tmp/restored.tgz \
 $ corelink put build/release-v2.tar.gz
 digest=9c4d2a1f…  size=4.0 MB  uploaded=ok
 
-$ corelink get 9c4d2a1f… --output /tmp/restored.tgz
+$ corelink get 9c4d2a1f… --out /tmp/restored.tgz
 downloaded 4.0 MB, blake3 verified ok
 ```
 
@@ -158,15 +158,17 @@ A populated audit table with the `put` and `get` events visible — actor PAT pr
 **Action sequence:**
 
 1. Show `/en/admin/tenants` — two tenants visible (`acme-build-cache`, `acme-prod`) plus the "phantom" row indicator showing N other tenants exist but are not visible to this admin.
-2. Cut to terminal: attempt a `corelink stat` against a digest known to exist in a tenant we don't have access to (using a digest known from another tenant by collision-of-luck).
+2. Cut to terminal: run `corelink stat` against a digest known to exist in a tenant we don't have access to. There is no `--tenant` flag to reach for — the CLI always looks the digest up under the tenant your PAT resolves to, so the only possible answer is "not here":
 
 ```bash
-$ corelink stat 9c4d2a1f… --tenant other-customer
-error: COR_AUTH_TENANT_FORBIDDEN
-       PAT does not have access to tenant 'other-customer'.
+$ corelink stat 9c4d2a1f…
+Digest:  9c4d2a1f…
+Exists:  false
+Size:    n/a
+Tenant:  acme-build-cache
 ```
 
-The CLI exits with code 1 — show it.
+Point at the `Tenant:` line — that's the boundary, and it isn't user-selectable.
 
 **Voiceover (~25s):**
 

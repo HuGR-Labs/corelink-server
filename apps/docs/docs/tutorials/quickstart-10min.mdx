@@ -14,10 +14,10 @@ import TabItem from "@theme/TabItem";
 wire your Bazel repo, and watch cache HITs land on the second build.
 **Total budget: ≤ 10 minutes for an experienced engineer.**
 
-Some `corelink` CLI subcommands shown here (`doctor`, and the config helpers)
-ship in an upcoming CLI release — the docs reflect the planned UX ahead of the
-binary. The `.bazelrc` remote-cache configuration in Step 4 works today against
-the live REAPI v2 endpoint and needs no CLI.
+Every `corelink` subcommand shown here — `doctor`, `whoami`, `config`,
+`bazel-init` — exists in the shipped CLI. The `.bazelrc` remote-cache
+configuration in Step 4 works today against the live REAPI v2 endpoint and
+needs no CLI at all.
 
 :::tip No credit card required
 A starter account is free up to 10 GB. The sign-up wizard provisions
@@ -64,24 +64,21 @@ curl -fsSL https://corelink-get.humangr.com | sh -s -- \
 ```
 
 The script:
-1. Detects your platform (macOS arm64/amd64, Linux amd64/arm64).
-2. Downloads the statically-linked `corelink` binary to `/usr/local/bin`
-   (falls back to `~/.local/bin` if `/usr/local/bin` is not writable).
-3. Writes `~/.corelink/config.toml` with your PAT and endpoint.
-4. Runs `corelink whoami`, which verifies the PAT **and** caches the resolved
-   tenant ID into that same file (the installer does not know it).
+1. Detects your platform from `uname -s` / `uname -m` (macOS and Linux;
+   `arm64`/`amd64` are normalised to `aarch64`/`x86_64`, and an
+   unrecognised architecture refuses by name).
+2. Downloads the matching `corelink` binary and verifies it against the
+   `.sha256` published beside the release asset **before** making it
+   executable — a missing checksum aborts the install — then moves it to
+   `/usr/local/bin/corelink` (via `sudo` if you are not root).
+3. Writes `~/.corelink/config.toml` at mode `0600` with your token,
+   region, and API endpoint.
+4. Runs `corelink whoami`, which resolves your identity against
+   `/v1/users/me` and caches the resolved `tenant_id` back into that
+   config file — every later tenant-scoped command needs it.
 
-Expected output:
-
-```text
-Downloading CoreLink CLI from https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-arm64 ...
-tenant_id:    <your-tenant-id>
-token_prefix: corelink_pat_3f9a…
-route_kind:   pat
-Next: cd into your Bazel repo, run: corelink bazel-init
-```
-
-If `corelink whoami` prints your tenant ID, you're good. Jump straight to Step 3.
+`corelink whoami` prints your `tenant_id`, a redacted `token_prefix`, and
+the `route_kind`. If it succeeds, you're good. Jump straight to Step 3.
 
 <details>
 <summary>Manual / air-gapped install</summary>
@@ -127,44 +124,27 @@ corelink config set defaults.region ord
 
 ## Step 3 — `corelink doctor` <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
 
-`corelink doctor` runs 8 checks in sequence — network, auth, a real CAS
-write/read round-trip, BYOK, region, quota and client-verify — and tells you
-exactly what is wrong if anything fails. Note that the storage checks perform a
-real 1 KB write to your CAS, so `doctor` needs a read-write PAT:
+`corelink doctor` runs 8 connectivity and auth checks in sequence and
+tells you exactly what is wrong if anything fails:
 
 ```bash
 corelink doctor
 ```
 
-Healthy output:
+The eight checks, in order, are `network`, `auth`, `storage_write`,
+`storage_read`, `byok`, `region`, `quota`, and `client_verify`. Each
+reports `ok`, `fail`, or `skip` together with its latency; a failing check
+carries an error code and a next action. Add `--json` for machine-readable
+output.
 
-```text
-CHECK              STATUS   LATENCY             ERROR_CODE   NEXT_ACTION
-----------------------------------------------------------------------------------------------------
-network            ok            12ms
-auth               ok            31ms
-storage_write      ok            88ms
-storage_read       ok            41ms
-byok               skip           n/a                        BYOK not configured; set auth.byok_enabled=true and KMS credentials to enable.
-region             skip           n/a
-quota              ok            27ms
-client_verify      ok             n/a
-
-All checks passed (6 ok, 2 skipped).
-```
-
-Latencies vary. `region` always reports `skip` — no public route exposes a
-tenant's primary region — and `byok` skips unless you have opted into BYOK, so
-`6 ok, 2 skipped` is the healthy result, not a warning.
-
-A failing check shows `FAIL` with a `COR_*` error code and a NEXT_ACTION hint. The
-most common failures are listed in the [Troubleshooting](#troubleshooting)
+If any check fails, the remediation hint is on the same line. The most
+common failures are listed in the [Troubleshooting](#troubleshooting)
 section below.
 
-:::note
-`corelink whoami` is the lighter check — it verifies auth and resolves your
-tenant without touching the cache. `corelink doctor` runs all 8 checks,
-including a real CAS write/read round-trip, so it needs a read-write PAT.
+:::caution `doctor` writes to your CAS
+The `storage_write` check performs a real `PUT` into your tenant's CAS, so
+`corelink doctor` fails for a legitimately read-only PAT. When you only
+need to confirm the CLI is authenticated, run `corelink whoami` instead.
 :::
 
 ---
@@ -252,10 +232,11 @@ Common failure modes and their fixes:
 
 ### Regional mismatch — high latency or `UNAVAILABLE` gRPC errors
 
-**Symptom:** `corelink doctor` step 6 shows RTT > 200 ms, or `bazel build` logs `UNAVAILABLE: connection closed`.
+**Symptom:** the `network` check in `corelink doctor` reports a latency over
+200 ms, or `bazel build` logs `UNAVAILABLE: connection closed`.
 
 **Fix:** your `.bazelrc` is pointing to the wrong region endpoint. Run
-`corelink doctor` and note the `region=` in the API ping output. Then:
+`corelink doctor` and read the `region` check. Then:
 
 ```bash
 corelink config set defaults.region <correct-region>
@@ -300,9 +281,10 @@ grep -n "remote_cache\|remote_header\|remote_upload" .bazelrc
 Re-run `corelink doctor` to confirm the auth and connectivity checks
 still pass after the edit.
 
-### `corelink doctor` check 8 fails — `PERMISSION_DENIED` on probe blob
+### `corelink doctor` — the `storage_write` check fails
 
-**Symptom:** `[8/8] tenant write permission  ✗  PERMISSION_DENIED`.
+**Symptom:** the `storage_write` check reports `fail` (the probe upload was
+rejected).
 
 **Fix:** Your PAT is read-only or belongs to a different tenant. Confirm:
 

@@ -33,11 +33,16 @@
  *      PINNED the defect rather than catching it.
  *
  *      NOTE: this line was documented as what flips the `/welcome` SSE pane
- *      from "Waiting" to "Connected". It never did, and still does not: the
- *      pane waits on a `first_cli_authed` analytics event whose only emitter
- *      lives in `apps/cas-worker/`, an app with no entrypoint and no wrangler
- *      config — it is not deployable. Tracked separately; do not assume this
- *      script fixes that pane.
+ *      from "Waiting" to "Connected". It never did, and this script still is
+ *      not what does it. The pane waits on a `first_cli_authed` analytics
+ *      event, and as of this commit NOTHING LIVE EMITS IT: the only emitter in
+ *      the tree is `apps/cas-worker/src/middleware/analytics.ts`, and that app
+ *      has no entrypoint and no wrangler config, so it is not deployable. The
+ *      pane therefore waits forever. Wiring a real emitter is tracked
+ *      separately; do not describe it here until it ships — a comment in the
+ *      file that serves the public installer is an executable surface the
+ *      docs-reality gate cannot scan, which is precisely where an unshipped
+ *      claim survives longest.
  *
  * Bash conventions:
  *   - `#!/bin/sh` (POSIX sh, NOT bash) so macOS default + Alpine/BusyBox both work.

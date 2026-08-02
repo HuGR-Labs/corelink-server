@@ -87,10 +87,10 @@ Print this. Tick it. Bring questions to the D+0 call or to your Slack Connect ch
 
 ### During the call
 - [ ] CLI installed: `curl -sSL https://corelink.humangr.com/install.sh | sh` (verifies signature against our Sigstore bundle).
-- [ ] First PAT issued via `corelink auth login --lighthouse-slot {your-slot-id}`.
-- [ ] First CAS write: `corelink cas put ./README.md` returns a `blake3:` digest.
+- [ ] First PAT minted in the dashboard (`https://humangr.com/corelink/customer/keys`) and saved locally with `corelink login --token {your-pat}`.
+- [ ] First CAS write: `corelink put ./README.md` returns a `blake3:` digest.
 - [ ] First CAS read: `corelink cas get blake3:{digest}` returns the same bytes.
-- [ ] Audit chain access verified: `corelink audit list --since 1h` lists the two events above.
+- [ ] Audit chain access verified: `corelink audit tail` (trailing hour by default) lists the two events above.
 - [ ] **(Enterprise)** BYOK provider declared in the call; first KMS key id captured in our tracker.
 - [ ] Region pin confirmed (wnam / enam / weur / sam — chosen by you with our latency advice).
 - [ ] Slack Connect channel `#corelink-{your-slot-id}` joined by your eng lead.
@@ -134,7 +134,7 @@ build:ci --remote_header=Authorization=Bearer\ ${CORELINK_PAT}
 ```
 
 (Bazel doesn't natively support dual-write to two remote caches in one flag. Two practical patterns:
-1. **Sidecar mirror** — `corelink ci mirror --from bazel-remote --to corelink` runs as a sidecar process on CI runners.
+1. **Directory mirror** — `corelink ci mirror --from /var/cache/bazel-remote --to corelink` does a one-shot, idempotent copy of your existing cache's on-disk directory into CoreLink CAS. (A live streaming sidecar that speaks the source cache's wire protocol is not built yet — point `--from` at the directory, not at the service.)
 2. **Build-event-protocol consumer** — point Bazel's `--bes_backend` at our endpoint; we ingest cache references asynchronously without touching the build's critical path.
 
 Your Customer Success engineer will pick the right one with you on the D+3 scoping call.)
@@ -214,7 +214,7 @@ Notable events (24h):
   - 2026-MM-DD 21:08Z: 1 transient cache GET 502 (retry succeeded, no customer impact)
 
 Grafana: https://grafana.corelink.humangr.com/lighthouse/LH-EXAMPLE
-Audit chain query: corelink audit list --customer LH-EXAMPLE --since 24h
+Audit chain query: corelink audit export --tenant LH-EXAMPLE --since {epoch_ms} --until {epoch_ms}
 
 Reply with questions or page on PagerDuty for urgent items.
 ```
@@ -324,7 +324,7 @@ No. The observation window measures CoreLink SLOs against your tenant. Your unre
 No. The engineer is there if you need them. Many lighthouse customers go full weeks without paging us. That's fine. Light usage is a positive signal.
 
 **3. What happens to our data if we withdraw mid-window?**
-You issue a DSR (data subject request) via `corelink dsr request --type erasure` and we honor it within 30 days per our DPA. Your audit chain entries are retained per regulatory requirement (we anonymize the customer reference) but the cached blobs are evicted within 24h.
+You issue a DSR (data subject request) from the privacy portal in your CoreLink dashboard — the **Erasure** action under `/dsr`, or `POST /v1/privacy/dsr/erasure` if you'd rather script it — and we honor it within 30 days per our DPA. Your audit chain entries are retained per regulatory requirement (we anonymize the customer reference) but the cached blobs are evicted within 24h.
 
 **4. Can we extend beyond 6 months free?**
 At the end of the 60-day engagement we'll talk about going onto a paid tier. The 6 months free runs from your `Engaged` state regardless — even if attestation takes 60 days, you still get a full 6 months at no charge from D+0.
