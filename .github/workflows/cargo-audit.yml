@@ -86,7 +86,11 @@ jobs:
   # -----------------------------------------------------------------------
   cargo-audit-pr:
     name: cargo-audit PR gate
-    runs-on: ubuntu-latest
+    # TEMPORARY (2026-08-02): GitHub-hosted runners are billing-blocked
+    # (jobs die in ~2s, zero steps, runner=""). Moved to the self-hosted
+    # mac fleet to keep the PR gates ALIVE. Revert to ubuntu-latest once
+    # billing clears or the corelink runner fleet is generally available.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deny_warnings == 'true')
     steps:
@@ -131,7 +135,11 @@ jobs:
   # -----------------------------------------------------------------------
   cargo-audit-daily:
     name: cargo-audit daily cron
-    runs-on: ubuntu-latest
+    # TEMPORARY (2026-08-02): GitHub-hosted runners are billing-blocked
+    # (jobs die in ~2s, zero steps, runner=""). Moved to the self-hosted
+    # mac fleet to keep the PR gates ALIVE. Revert to ubuntu-latest once
+    # billing clears or the corelink runner fleet is generally available.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 10
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deny_warnings == 'false')
     steps:

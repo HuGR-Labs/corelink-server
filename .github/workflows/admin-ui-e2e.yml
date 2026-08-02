@@ -38,7 +38,11 @@ concurrency:
 jobs:
   legacy-e2e:
     name: playwright legacy (chromium)
-    runs-on: ubuntu-latest
+    # TEMPORARY (2026-08-02): GitHub-hosted runners are billing-blocked
+    # (jobs die in ~2s, zero steps, runner=""). Moved to the self-hosted
+    # mac fleet to keep the PR gates ALIVE. Revert to ubuntu-latest once
+    # billing clears or the corelink runner fleet is generally available.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
     defaults:
       run:
@@ -83,7 +87,11 @@ jobs:
 
   critical-e2e:
     name: playwright critical-flows (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    # TEMPORARY (2026-08-02): GitHub-hosted runners are billing-blocked
+    # (jobs die in ~2s, zero steps, runner=""). Moved to the self-hosted
+    # mac fleet to keep the PR gates ALIVE. Revert to ubuntu-latest once
+    # billing clears or the corelink runner fleet is generally available.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -132,7 +140,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+        run: pnpm exec playwright install ${{ matrix.browser }}
 
       - name: Run critical-flow Playwright suite
         run: pnpm exec playwright test --config=playwright.tests.config.ts --reporter=line

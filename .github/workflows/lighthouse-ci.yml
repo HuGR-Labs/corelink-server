@@ -32,7 +32,11 @@ concurrency:
 jobs:
   lhci:
     name: lighthouse-ci (≥ 95)
-    runs-on: ubuntu-latest
+    # TEMPORARY (2026-08-02): GitHub-hosted runners are billing-blocked
+    # (jobs die in ~2s, zero steps, runner=""). Moved to the self-hosted
+    # mac fleet to keep the PR gates ALIVE. Revert to ubuntu-latest once
+    # billing clears or the corelink runner fleet is generally available.
+    runs-on: [self-hosted, mac, corelink-builder]
     timeout-minutes: 25
     defaults:
       run:
