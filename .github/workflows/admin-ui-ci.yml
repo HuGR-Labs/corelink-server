@@ -9,6 +9,9 @@ on:
       - "package.json"
       - "pnpm-workspace.yaml"
       - ".github/workflows/admin-ui-ci.yml"
+      # This job's `pnpm install` behaviour comes from the composite action as
+      # much as from this file, so a change to it must re-run this gate.
+      - ".github/actions/setup-pnpm/**"
   push:
     branches: [main]
     paths:
@@ -16,6 +19,9 @@ on:
       - "package.json"
       - "pnpm-workspace.yaml"
       - ".github/workflows/admin-ui-ci.yml"
+      # This job's `pnpm install` behaviour comes from the composite action as
+      # much as from this file, so a change to it must re-run this gate.
+      - ".github/actions/setup-pnpm/**"
   workflow_dispatch:
 
 permissions:
