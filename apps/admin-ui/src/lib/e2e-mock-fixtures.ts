@@ -692,9 +692,14 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
       actor: "user_e2e_admin",
       summary: `created PAT '${pat.name}'`,
     });
+    // WIRE-SHAPE: the container replies `{ "pat": { … }, "token": "…" }` — the row
+    // is ENVELOPED and the shown-once secret rides alongside it
+    // (routes/customer.rs:810-820). This fixture used to return the flat row +
+    // token, a shape the server never sends, which left the E2E gate structurally
+    // unable to catch the missing unwrap in `createPat`. Mirror the real wire.
     return {
       status: 201,
-      body: { ...pat, token: `crl_pat_${pat.pat_id}_secret_shown_once` },
+      body: { pat, token: `crl_pat_${pat.pat_id}_secret_shown_once` },
     };
   }
   if (path.startsWith("/v1/customer/keys/") && path.endsWith("/revoke") && method === "POST") {
@@ -711,7 +716,9 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
       actor: "user_e2e_admin",
       summary: `revoked PAT '${pat.name}'`,
     });
-    return { status: 200, body: pat };
+    // WIRE-SHAPE: the container replies `{ "pat": { … } }` (routes/customer.rs:860-870),
+    // not a bare row. Mirror the real wire so the E2E gate can fail on a dropped unwrap.
+    return { status: 200, body: { pat } };
   }
 
   if (path === "/v1/customer/team" && method === "GET") {
@@ -736,7 +743,12 @@ export function getFixtureResponse(req: MockRequest): MockResponse {
       actor: "user_e2e_admin",
       summary: `invited ${b.email} as ${m.role}`,
     });
-    return { status: 201, body: m };
+    // WIRE-SHAPE: the container replies `{ "member": { … } }`, not a bare member
+    // (routes/customer.rs:961, asserted server-side at :2062). This fixture used
+    // to return the flat row — a shape the server never sends — which left the
+    // E2E gate structurally unable to catch the missing unwrap in `inviteTeam`.
+    // Mirror the real wire here, always.
+    return { status: 201, body: { member: m } };
   }
 
 

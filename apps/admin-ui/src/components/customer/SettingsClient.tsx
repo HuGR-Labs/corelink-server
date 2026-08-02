@@ -107,11 +107,19 @@ function SettingsInner(): React.ReactElement {
 
   const [confirmDelete, setConfirmDelete] = React.useState(false);
 
+  // The container acks `202 { ok, status }` — there is NO request/ticket id on
+  // this wire (`routes/customer.rs:1082-1093`), so the copy must not promise
+  // one. `status` is the only signal it sends: `erasure_requested` (queued) vs
+  // `no_account` (idempotent no-op — nothing provisioned to erase). Report
+  // exactly that; never fabricate an id the customer could not look up anyway.
   async function onConfirmDelete(): Promise<void> {
     try {
-      const r = await client.deleteAccount();
+      const { status } = await client.deleteAccount();
       toast({
-        title: `Erasure requested (${r.request_id}). You'll be signed out shortly.`,
+        title:
+          status === "no_account"
+            ? "Nothing left to erase — this account has no data on CoreLink."
+            : "Erasure requested. Your data is being deleted and you'll be signed out shortly.",
         tone: "success",
       });
     } catch {

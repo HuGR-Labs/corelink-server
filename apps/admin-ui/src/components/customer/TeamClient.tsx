@@ -101,11 +101,11 @@ function TeamInner(): React.ReactElement {
       const m = await client.inviteTeam({ email, role });
       setLastInvited(m.email);
       setEmail("");
-      toast({ title: `Invite sent to ${m.email}`, tone: "success" });
+      toast({ title: `Seat reserved for ${m.email}`, tone: "success" });
       await reload();
     } catch (ex) {
       setErr(ex);
-      toast({ title: "Couldn't send the invite", tone: "danger" });
+      toast({ title: "Couldn't create the invite", tone: "danger" });
     } finally {
       setInviting(false);
     }
@@ -143,11 +143,17 @@ function TeamInner(): React.ReactElement {
   const seatsLabel = `${activeMembers.length} ${activeMembers.length === 1 ? "member" : "members"}`;
   const pendingLabel = `${pendingInvites.length} ${pendingInvites.length === 1 ? "invitation" : "invitations"}`;
 
+  // COPY-TRUTH (OB-1 open): inviting writes a `team_member` row with status
+  // `invited` keyed by a hash of the normalised email — it sends NO email
+  // (`customer_d1.rs::invite`). The seat binds only when the invitee signs up
+  // independently with the SAME address and the signup-worker
+  // `acceptTeamInvitation` matches that hash. Every string below must keep
+  // saying so until OB-1 actually ships the mail round-trip.
   return (
     <div data-testid="team-shell">
       <Card
         title="Invite a teammate"
-        meta="They'll get an email invitation to join this tenant."
+        meta="Reserves a seat right away. CoreLink doesn't email them — ask your teammate to sign up with this exact address."
       >
         <form data-testid="team-invite" onSubmit={onInvite}>
           <Field label="Email" htmlFor="team-invite-email-input">
@@ -180,15 +186,18 @@ function TeamInner(): React.ReactElement {
             </Select>
           </Field>
           <Button type="submit" data-testid="team-invite-submit" loading={inviting}>
-            Send invite
+            Create invite
           </Button>
         </form>
 
         {lastInvited != null ? (
           <Callout tone="info">
             <span data-testid="team-invite-success">
-              Invited {lastInvited}. We&apos;ve emailed them an invitation — they&apos;ll show
-              under &quot;Pending invitations&quot; until they accept.
+              Seat reserved for {lastInvited} — it shows under &quot;Pending
+              invitations&quot;. We don&apos;t email them, so tell them to sign up for
+              CoreLink with that exact address; the seat then activates on its own.
+              Note the address down now — we store only a hash of it, so this is the
+              one time we can show it back to you.
             </span>
           </Callout>
         ) : null}
@@ -314,8 +323,10 @@ function TeamInner(): React.ReactElement {
             </tbody>
           </table>
           <p className="lin-t3 lin-mt">
-            These teammates have been emailed an invitation and will move to Members once they
-            accept. Resending and canceling invitations aren&apos;t available yet.
+            These seats are held, but nobody has been notified — CoreLink doesn&apos;t send the
+            invitation. Ask each teammate to sign up with the exact address you invited: they
+            move to Members automatically once they do. Resending and canceling invitations
+            aren&apos;t available yet.
           </p>
         </Card>
       ) : null}
