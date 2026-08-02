@@ -696,10 +696,11 @@ function matchRoute(url: URL): RouteMatch {
   }
 
   // Stock-Bazel HTTP cache alias — /bazel/cache/{cas,ac}/<hash>
-  // What vanilla `bazel --remote_cache=https://host/bazel/cache` (and Buck2 as a
-  // REAPI HTTP cache) actually sends: GET/PUT on /cas/<hash> and /ac/<hash> with
-  // NO tenant segment in the URL. Unlike /bazel/v2/<instance>/…, the tenant is
-  // NOT in the path — it is resolved from the PAT and injected as
+  // What vanilla `bazel --remote_cache=https://host/bazel/cache` actually sends:
+  // GET/PUT on /cas/<hash> and /ac/<hash> with NO tenant segment in the URL.
+  // Buck2 is NOT a client of this alias — it speaks REAPI over gRPC only.
+  // Unlike /bazel/v2/<instance>/…, the tenant is NOT in the path — it is
+  // resolved from the PAT and injected as
   // x-corelink-tenant-id (tenantId="_anonymous" defers to the PAT, exactly like
   // turbo_v8 / reapi_v1, and skips the URL-vs-PAT spoof check). Reuses the
   // bazel_v2 routeKind: same container router, same PAT gate + metering + DO.
