@@ -197,7 +197,7 @@ export class CustomerClient {
    * unwrap the envelope here so callers get the row itself. `request<T>()` only
    * CASTS the parsed JSON, so declaring the flat type without unwrapping compiled
    * clean and handed every caller `undefined` fields at runtime: the team screen
-   * rendered "Seat reserved for undefined" in production. Both the unit stub and
+   * rendered "Invite sent to undefined" in production (the copy shipped at the time). Both the unit stub and
    * the E2E fixture returned a flat member, so no gate could catch it.
    */
   async inviteTeam(input: {

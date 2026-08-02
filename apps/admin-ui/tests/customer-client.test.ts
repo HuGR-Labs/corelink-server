@@ -138,8 +138,8 @@ describe("CustomerClient wire-shape contract", () => {
   // `POST /v1/customer/team/invite` → 201 `{ "member": { … } }`
   // (routes/customer.rs:961-969; shape asserted server-side at :2062).
   // Regression: the client bare-cast this envelope to `CustomerTeamMember`, so
-  // `.email` was `undefined` and the team screen rendered "Seat reserved for
-  // undefined" in production — while every mock returned a flat member, so no
+  // `.email` was `undefined` and the team screen rendered "Invite sent to
+  // undefined" in production (the copy shipped at the time) — while every mock returned a flat member, so no
   // gate could catch it.
   it("inviteTeam unwraps the { member } envelope the container actually sends", async () => {
     const client = new CustomerClient({
