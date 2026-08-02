@@ -19,9 +19,25 @@
  *      FATAL message on stderr.
  *   3. `OS` and `ARCH` are derived from `uname -s` (lowercased) and
  *      `uname -m` — the agent prompt §4 fixes this contract.
- *   4. Final command is `corelink ping` (NOT `corelink --version` or a
- *      no-op) — this is what flips the `/welcome` SSE pane from
- *      "Waiting" to "Connected".
+ *   4. Final command is `corelink whoami` (NOT `corelink --version` or a
+ *      no-op). It was `corelink ping` until 2026-08-02 — a subcommand that has
+ *      NEVER existed, so the public one-liner ended in a clap "unrecognized
+ *      subcommand" error and a non-zero exit for every customer, and the
+ *      documented `curl … | sh … && corelink doctor` never reached its `&&`.
+ *      `whoami` is also more than a check: it caches `tenant_id` into
+ *      ~/.corelink/config.toml, which this script does not write and every
+ *      later tenant-scoped command needs. `doctor` would be wrong — it does a
+ *      real prod CAS write, so it fails for a legitimately read-only PAT.
+ *      Invariant 4b in the tests now checks the verb against the CLI's actual
+ *      clap enum, because the old test string-matched `corelink ping` and so
+ *      PINNED the defect rather than catching it.
+ *
+ *      NOTE: this line was documented as what flips the `/welcome` SSE pane
+ *      from "Waiting" to "Connected". It never did, and still does not: the
+ *      pane waits on a `first_cli_authed` analytics event whose only emitter
+ *      lives in `apps/cas-worker/`, an app with no entrypoint and no wrangler
+ *      config — it is not deployable. Tracked separately; do not assume this
+ *      script fixes that pane.
  *
  * Bash conventions:
  *   - `#!/bin/sh` (POSIX sh, NOT bash) so macOS default + Alpine/BusyBox both work.
@@ -70,7 +86,7 @@ export function renderInstallScript(config: InstallScriptConfig): string {
  */
 const INSTALL_SCRIPT_TEMPLATE = `#!/bin/sh
 # CoreLink CLI installer — served from https://corelink-get.humangr.com.
-# Source: github.com/HumanGuardrail/corelink-cli :: apps/get-corelink-worker.
+# Source: github.com/HuGR-Labs/corelink-cli :: apps/get-corelink-worker.
 # Re-run is safe: writes to /usr/local/bin/corelink and ~/.corelink/config.toml.
 set -eu
 
@@ -92,16 +108,64 @@ if [ -z "$TOKEN" ]; then
 fi
 
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+# \`uname -m\` and the published asset names DISAGREE, and the disagreement is
+# not cosmetic: macOS on Apple Silicon reports \`arm64\`, while the release asset
+# is \`corelink-darwin-aarch64\`. Passing uname's answer through unmapped built a
+# URL that 404s, so every Apple Silicon Mac got \`FATAL: failed to download\` —
+# the most common developer machine, and the exact platform the tutorial used
+# as its worked example ("detected darwin/arm64"). Linux was unaffected, since
+# uname already says aarch64/x86_64 there; that is why this survived — it fails
+# on laptops, not in CI. Normalise here rather than renaming assets, so releases
+# already published keep working.
 ARCH=$(uname -m)
+case "$ARCH" in
+  arm64|aarch64) ARCH="aarch64" ;;
+  x86_64|amd64) ARCH="x86_64" ;;
+  *)
+    echo "FATAL: unsupported architecture: $ARCH" >&2
+    echo "Supported: arm64/aarch64, x86_64/amd64." >&2
+    exit 3
+    ;;
+esac
 
 URL="__RELEASE_ORIGIN__/corelink-\${OS}-\${ARCH}"
 
 echo "Downloading CoreLink CLI from $URL ..."
 if ! curl -fsSL "$URL" -o /tmp/corelink; then
   echo "FATAL: failed to download $URL" >&2
-  echo "Check https://github.com/HumanGuardrail/corelink-cli/releases for available binaries." >&2
+  echo "Check __RELEASE_ORIGIN__ for available binaries." >&2
   exit 3
 fi
+
+# Verify before making it executable. This is a curl-pipe-sh installer, so what
+# it fetches runs with the user's privileges; every release already publishes a
+# \`.sha256\` beside its asset, and not checking it left a published integrity
+# signal unused. A missing checksum REFUSES rather than silently degrading to
+# trusting the transport.
+if ! curl -fsSL "$URL.sha256" -o /tmp/corelink.sha256; then
+  echo "FATAL: no checksum published for $URL" >&2
+  rm -f /tmp/corelink
+  exit 3
+fi
+EXPECTED=$(cut -d' ' -f1 < /tmp/corelink.sha256)
+if command -v sha256sum >/dev/null 2>&1; then
+  ACTUAL=$(sha256sum /tmp/corelink | cut -d' ' -f1)
+elif command -v shasum >/dev/null 2>&1; then
+  ACTUAL=$(shasum -a 256 /tmp/corelink | cut -d' ' -f1)
+else
+  echo "FATAL: neither sha256sum nor shasum available; cannot verify the download" >&2
+  rm -f /tmp/corelink /tmp/corelink.sha256
+  exit 3
+fi
+if [ "$EXPECTED" != "$ACTUAL" ]; then
+  echo "FATAL: checksum mismatch for $URL" >&2
+  echo "  expected: $EXPECTED" >&2
+  echo "  actual:   $ACTUAL" >&2
+  rm -f /tmp/corelink /tmp/corelink.sha256
+  exit 3
+fi
+rm -f /tmp/corelink.sha256
+echo "Checksum OK."
 chmod +x /tmp/corelink
 
 if [ "$(id -u)" -eq 0 ]; then
@@ -118,6 +182,6 @@ endpoint = "__DEFAULT_API_ENDPOINT__"
 EOF
 chmod 600 "$HOME/.corelink/config.toml"
 
-corelink ping
+corelink whoami
 echo "Next: cd into your Bazel repo, run: corelink bazel-init"
 `;

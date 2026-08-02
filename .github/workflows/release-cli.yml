@@ -259,14 +259,21 @@ jobs:
   # -------------------------------------------------------------------
   # release — collect artifacts, create GH Release in THIS repo
   #
-  # Same-repo release simplification (2026-05-29):
-  # - Original design used a separate HumanGuardrail/corelink-cli repo +
-  #   CORELINK_CLI_RELEASE_TOKEN PAT for cross-repo upload. That required
-  #   a manual operator step (PAT creation + secret config) per the
-  #   release-procedure runbook.
-  # - Switched to publishing in this repo's Releases. The default
-  #   GITHUB_TOKEN (with contents:write below) handles upload. Zero
-  #   secret config. corelink-cli repo can be archived / repurposed.
+  # ⚠️ STALE COMMENT CORRECTED 2026-08-02. The block here claimed the release
+  # had been "switched to publishing in this repo's Releases" and that the
+  # separate corelink-cli repo "can be archived / repurposed". The release
+  # history says otherwise — all three on 2026-05-29:
+  #     20:09  corelink-server  cli-v0.1.0   (the switch)
+  #     21:35  corelink-cli     v0.1.0
+  #     22:04  corelink-cli     v0.1.1   <- newest, 11 assets incl. windows
+  # i.e. publishing moved BACK to the separate repo and the comment was never
+  # updated. The installer downloads from corelink-cli, so the latest CLI a
+  # customer can install is v0.1.1 — not the cli-v0.1.0 in this repo.
+  #
+  # Canonical home is now HuGR-Labs/corelink-cli (transferred 2026-08-02 off the
+  # personal gmhelmold account; the get-corelink-worker RELEASE_ORIGIN is pinned
+  # to it). Anyone changing where releases are published MUST repin that var and
+  # redeploy the worker, or the installer keeps fetching the old location.
   # - The install script (apps/get-corelink-worker) is updated in lock-
   #   step to point at HumanGuardrail/corelink-server/releases/latest.
   # -------------------------------------------------------------------

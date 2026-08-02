@@ -71,20 +71,21 @@ O script:
 1. Detecta sua plataforma (macOS arm64/amd64, Linux amd64/arm64).
 2. Baixa o binário estático `corelink` para `/usr/local/bin`
    (fallback para `~/.local/bin` se `/usr/local/bin` não for gravável).
-3. Escreve `~/.config/corelink/config.toml` com seu PAT e tenant ID.
-4. Executa `corelink ping` contra a região CAS mais próxima e imprime o RTT.
+3. Escreve `~/.corelink/config.toml` com seu PAT e endpoint.
+4. Executa `corelink whoami`, que verifica o PAT **e** grava o tenant ID
+   resolvido nesse mesmo arquivo (o instalador não sabe qual é o seu).
 
 Saída esperada:
 
 ```text
-corelink-get: detected darwin/arm64
-corelink-get: downloading corelink 0.1.0 ...
-corelink-get: installed /usr/local/bin/corelink
-corelink-get: writing ~/.config/corelink/config.toml
-corelink ping: ok (region=cf-ord, rtt=22ms, tenant=acme-prod)
+Downloading CoreLink CLI from https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-arm64 ...
+tenant_id:    <your-tenant-id>
+token_prefix: corelink_pat_3f9a…
+route_kind:   pat
+Next: cd into your Bazel repo, run: corelink bazel-init
 ```
 
-Se `corelink ping` imprimir `ok`, avance para o Passo 3.
+Se `corelink whoami` imprimir seu tenant ID, avance para o Passo 3.
 
 ---
 
@@ -99,23 +100,31 @@ corelink doctor
 Saída saudável:
 
 ```text
-[1/8] config file found              ✓  ~/.config/corelink/config.toml
-[2/8] PAT format valid               ✓  prefix=ct_live, length=ok
-[3/8] PAT not expired                ✓  ttl=365d (tenant=acme-prod)
-[4/8] DNS resolution                 ✓  cas.corelink.humangr.com → <IP>
-[5/8] TLS handshake                  ✓  TLSv1.3, 0-RTT=off
-[6/8] API ping (HTTP/2)              ✓  200 OK (rtt=18ms, region=cf-ord)
-[7/8] gRPC channel (REAPI v2)        ✓  capabilities handshake ok
-[8/8] tenant write permission        ✓  can upload 1-byte probe blob
-8/8 checks PASS
+CHECK              STATUS   LATENCY             ERROR_CODE   NEXT_ACTION
+----------------------------------------------------------------------------------------------------
+network            ok            12ms
+auth               ok            31ms
+storage_write      ok            88ms
+storage_read       ok            41ms
+byok               skip           n/a                        BYOK not configured; set auth.byok_enabled=true and KMS credentials to enable.
+region             skip           n/a
+quota              ok            27ms
+client_verify      ok             n/a
+
+All checks passed (6 ok, 2 skipped).
 ```
+
+Latências variam. `region` sempre reporta `skip` — nenhuma rota pública expõe
+a região primária de um tenant — e `byok` é pulado a menos que você tenha optado
+por BYOK. Portanto `6 ok, 2 skipped` é o resultado saudável, não um alerta.
 
 Se alguma verificação mostrar `✗`, a saída inclui uma dica de correção.
 Os problemas mais comuns estão na seção [Solução de problemas](#solucao-de-problemas) abaixo.
 
-:::note Nota de release da CLI
-`corelink doctor` chega na próxima release. Se seu binário for anterior,
-use `corelink ping` como substituto mais leve (verifica apenas os itens 4–6).
+:::note
+`corelink whoami` é a checagem mais leve — verifica a autenticação e resolve seu
+tenant sem tocar no cache. `corelink doctor` roda as 8 checagens, incluindo uma
+escrita/leitura real na CAS, então exige um PAT de leitura e escrita.
 :::
 
 ---

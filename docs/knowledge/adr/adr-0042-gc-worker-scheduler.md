@@ -4,7 +4,7 @@ title: "ADR-0042 — GC worker scheduler design + gc-pause degrade-mode contract
 description: "Per-region sticky DO GC workers on a jittered 02:00 UTC cron, partial-UNIQUE single-flight, checkpoint-idempotent resume, and a config-singleton gc-pause emergency stop."
 source_files:
   - "specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md"
-checkpoint_sha: "10218d5bf423d6666228c796ee4118222f3456d7"
+checkpoint_sha: "70e5469e5149afb4a0462f015316dcb72256a799"
 provenance: "AUTHORED"
 tags: ["adr", "gc", "worker", "scheduler", "degrade-mode", "s06"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -35,8 +35,10 @@ resume from a per-batch checkpoint, phases are tracked monotonically by a CHECK-
 degrade-mode is probed per batch boundary so a `gc-pause` propagates within ≤100ms. A single global
 cron, no-jitter firing, hash-based concurrency control, a monolithic non-phase-tracked worker, and
 synchronous degrade-mode were all rejected. Addendum §A1 additionally pins the TLA+ `tla2tools.jar`
-v1.8.0 SHA-256 in CI, and §A3 scopes the formal proof to the mark-sweep algorithm (the soft-delete
-grace window is covered architecturally, not by TLA+).
+v1.8.0 SHA-256 in CI — and since 2026-08-02 that pin is enforced by `check_tlc_pin_consistency.py`
+rather than by prose, because a 2026-07-09 bump skipped the addendum and left the ADR and all eight
+CI carriers disagreeing for three weeks with nothing failing. §A3 scopes the formal proof to the
+mark-sweep algorithm (the soft-delete grace window is covered architecturally, not by TLA+).
 
 # Consequences
 
@@ -51,5 +53,5 @@ the manual admin trigger is a forward-S-13 staging stub that returns 501 in prod
 2. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:37-37` — Decision: per-region sticky DO + jittered 02:00 cron + config-singleton gc-pause + S-13 manual trigger.
 3. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:41-59` — the architectural-choices table (partial UNIQUE single-flight, checkpoint resume, monotonic phases, ≤100ms degrade-mode) and the rejected alternatives (single global cron, no-jitter, hash-based concurrency, monolithic worker, synchronous degrade-mode).
 4. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:63-72` — Consequences: horizontal scale + idempotent resume vs sequential per-region GC and the 501 admin stub.
-5. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:270-284` — §A3 addendum: the TLA+ formal-verification scope (mark-sweep proven; grace window covered architecturally).
-6. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:87-95` — §A1 addendum: pins the TLA+ `tla2tools.jar` v1.8.0 + SHA-256 in CI.
+5. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:382-398` — §A3 addendum: the TLA+ formal-verification scope (mark-sweep proven; grace window covered architecturally).
+6. `specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md:87-95` — §A1 addendum: pins the TLA+ `tla2tools.jar` v1.8.0 + SHA-256 in CI, and makes that pin enforceable by a CI check rather than prose.
