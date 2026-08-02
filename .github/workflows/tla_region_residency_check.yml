@@ -24,12 +24,11 @@ name: TLA+ region_residency Model Check (WI-S14-009)
 # Reference: WI-S14-009 §6.1 + §9.1 + invariant_registry.md §3.11/§3.12.
 
 on:
-  # Check a CHANGE immediately (the cron below only re-proves an unchanged
-  # tree, so on its own a weekly cadence would delay a real regression).
-  pull_request:
-    paths:
-      - 'specs/tla/**'
-      - '.github/workflows/tla_region_residency_check.yml'
+  # NO pull_request trigger — deliberately. 6 successes in the last 25 runs
+  # (measured 2026-08-02): the shared TLC install step fails the ADR-0042 §A1
+  # SHA-256 pin, so a PR trigger would block pull requests on an infrastructure
+  # fault rather than on a spec regression. Re-add it in the same change that
+  # re-pins TLC (Security review + ADR-0042 §A1 update).
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.

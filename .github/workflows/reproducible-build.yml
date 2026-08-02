@@ -16,15 +16,9 @@ name: Reproducible Build (2-Runner Diff)
 # SHA pins: bump via ADR amendment + reproducible-build test on the PR.
 
 on:
-  # Check a CHANGE immediately (the cron below only re-proves an unchanged
-  # tree, so on its own a weekly cadence would delay a real regression).
-  pull_request:
-    paths:
-      - 'Cargo.lock'
-      - 'Cargo.toml'
-      - 'crates/**'
-      - 'Dockerfile'
-      - '.github/workflows/reproducible-build.yml'
+  # NO pull_request trigger — deliberately. 0 successes in the last 25 runs
+  # (measured 2026-08-02), so a PR trigger would block every pull request while
+  # proving nothing. Re-add it in the same change that makes this gate pass.
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
