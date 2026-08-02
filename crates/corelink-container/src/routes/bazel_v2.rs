@@ -16,9 +16,10 @@
 //!    (or `bazel` configured against this scheme). The tenant is the `:instance`
 //!    path segment.
 //! 2. The **stock-Bazel HTTP cache alias** (`/bazel/cache/{cas,ac}/:hash`) — what
-//!    vanilla `bazel --remote_cache=https://host/bazel/cache` (and Buck2 used as a
-//!    REAPI HTTP cache) actually sends: `GET`/`PUT` on `/cas/<hash>` and
-//!    `/ac/<hash>` with **no `:instance` segment and no `:size`**. Here the tenant
+//!    vanilla `bazel --remote_cache=https://host/bazel/cache` actually sends:
+//!    `GET`/`PUT` on `/cas/<hash>` and `/ac/<hash>` with **no `:instance` segment
+//!    and no `:size`**. Buck2 is NOT a client of this alias — it speaks REAPI over
+//!    **gRPC** only and has no plain-HTTP cache backend. Here the tenant
 //!    (== REAPI `instance`) is derived from the Worker-injected
 //!    `x-corelink-tenant-id` header, so a missing/sentinel tenant → 401 and
 //!    isolation is by the per-tenant namespace (a cross-tenant hash is a uniform
@@ -325,12 +326,13 @@ pub fn router(state: BazelRouteState) -> Router {
             post(handle_find_missing),
         )
         // ── Stock-Bazel HTTP cache alias ─────────────────────────────────────
-        // Stock `bazel --remote_cache=https://host/bazel/cache` (and Buck2 used
-        // as a REAPI HTTP cache) speak the plain HTTP-cache scheme: GET/PUT on
-        // `/{cas,ac}/<hash>` with NO `:instance` segment and NO `:size`. These
-        // routes map that shape onto the SAME adapter/handlers/store as the REST
-        // scheme above; the tenant (== REAPI `instance`) is derived from the
-        // Worker-injected `x-corelink-tenant-id` header (fail-CLOSED via
+        // Stock `bazel --remote_cache=https://host/bazel/cache` speaks the plain
+        // HTTP-cache scheme: GET/PUT on `/{cas,ac}/<hash>` with NO `:instance`
+        // segment and NO `:size`. (Buck2 cannot use these routes — it speaks
+        // REAPI over gRPC only.) These routes map that shape onto the SAME
+        // adapter/handlers/store as the REST scheme above; the tenant
+        // (== REAPI `instance`) is derived from the Worker-injected
+        // `x-corelink-tenant-id` header (fail-CLOSED via
         // `caller_tenant`), so isolation is by the per-tenant namespace. `cas`
         // and `ac` are literal segments (no conflict with each other).
         .route(
@@ -878,13 +880,14 @@ async fn handle_find_missing(
 // ─── Stock-Bazel HTTP cache alias handlers ─────────────────────────────────────
 //
 // These four handlers implement the plain HTTP-cache scheme stock `bazel
-// --remote_cache=https://host/bazel/cache` (and Buck2 as a REAPI HTTP cache)
-// actually speaks: `GET`/`PUT` on `/cas/<hash>` and `/ac/<hash>` — no `:instance`
-// segment, no `:size`. They map onto the SAME `BazelAdapter`/store as the REST
-// handlers above and run the IDENTICAL gate sequence (scope → tenant → PAT →
-// quota; AC-write also the runner-job key pin), preserving every security
-// invariant. The one difference vs the REST handlers is where the REAPI
-// `instance`/tenant comes from: NOT a path segment (there is none) but the
+// --remote_cache=https://host/bazel/cache` actually speaks: `GET`/`PUT` on
+// `/cas/<hash>` and `/ac/<hash>` — no `:instance` segment, no `:size`. Buck2 is
+// NOT in scope here: it speaks REAPI over gRPC only. They map onto the SAME
+// `BazelAdapter`/store as the REST handlers above and run the IDENTICAL gate
+// sequence (scope → tenant → PAT → quota; AC-write also the runner-job key
+// pin), preserving every security invariant. The one difference vs the REST
+// handlers is where the REAPI `instance`/tenant
+// comes from: NOT a path segment (there is none) but the
 // Worker-injected `x-corelink-tenant-id` header, extracted fail-CLOSED by
 // `caller_tenant`. Because `instance == caller_tenant` by construction, the
 // adapter's cross-tenant guard is a tautology here and isolation rests entirely
