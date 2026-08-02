@@ -263,13 +263,13 @@ Sign up at `https://humangr.com/corelink/sign-up`. No credit card.
 Free tier (10 GB, 500k req/mo) is sufficient for the trial phase. You
 will get a workspace token (`ct_xxx`) and a regional endpoint.
 
-**Step 2: Install the CoreLink CLI and run `corelink ping`.**
+**Step 2: Install the CoreLink CLI and verify it authenticates.**
 
 ```bash
 curl -fsSL https://corelink-get.humangr.com | sh -s -- \
   --token=ct_xxx --region=ord
-corelink ping
-# Expected: latency <50ms, 200 OK
+corelink whoami
+# Expected: your tenant_id, token_prefix and route_kind
 ```
 
 **Step 3: Add CoreLink as a Cargo cache backend.**
@@ -279,8 +279,14 @@ Run the CoreLink CLI init command — it appends idempotent config to
 0 without modification:
 
 ```bash
-corelink cargo-init --token=ct_xxx --region=ord
+export RUSTC_WRAPPER=sccache
+export SCCACHE_WEBDAV_ENDPOINT="https://corelink-api.humangr.com/cargo/<your-tenant-id>"
+export SCCACHE_WEBDAV_TOKEN="corelink_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 ```
+
+You keep using `sccache` itself — CoreLink replaces only the **storage backend**
+behind it, over the WebDAV protocol sccache already speaks. Full setup, including
+GitHub Actions, is in [sccache + Cargo](/docs/integrations/sccache-cargo).
 
 **Step 4: Run your CI in shadow mode for one week.**
 
@@ -304,8 +310,9 @@ adapter init commands. One workspace, one bill, one audit log.
 
 **Step 7 (optional): BYOK for compliance.**
 
-On Enterprise, attach your KMS with `corelink kms attach`. CoreLink
-signs an Ed25519 attestation on every cached object and on revocation.
+On Enterprise, BYOK is configured with our team during onboarding — it needs a
+key-access role in your own cloud account, so it is not a self-serve CLI step.
+CoreLink signs an Ed25519 attestation on every cached object and on revocation.
 Rotation is operator-controlled.
 
 Most teams complete steps 1–5 in a single sprint.

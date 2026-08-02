@@ -67,20 +67,21 @@ The script:
 1. Detects your platform (macOS arm64/amd64, Linux amd64/arm64).
 2. Downloads the statically-linked `corelink` binary to `/usr/local/bin`
    (falls back to `~/.local/bin` if `/usr/local/bin` is not writable).
-3. Writes `~/.config/corelink/config.toml` with your PAT and tenant ID.
-4. Runs `corelink ping` against the closest CAS region and prints the RTT.
+3. Writes `~/.corelink/config.toml` with your PAT and endpoint.
+4. Runs `corelink whoami`, which verifies the PAT **and** caches the resolved
+   tenant ID into that same file (the installer does not know it).
 
 Expected output:
 
 ```text
-corelink-get: detected darwin/arm64
-corelink-get: downloading corelink 0.1.0 ...
-corelink-get: installed /usr/local/bin/corelink
-corelink-get: writing ~/.config/corelink/config.toml
-corelink ping: ok (region=cf-ord, rtt=22ms, tenant=acme-prod)
+Downloading CoreLink CLI from https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-arm64 ...
+tenant_id:    <your-tenant-id>
+token_prefix: corelink_pat_3f9a…
+route_kind:   pat
+Next: cd into your Bazel repo, run: corelink bazel-init
 ```
 
-If `corelink ping` prints `ok`, you're good. Jump straight to Step 3.
+If `corelink whoami` prints your tenant ID, you're good. Jump straight to Step 3.
 
 <details>
 <summary>Manual / air-gapped install</summary>
@@ -126,8 +127,10 @@ corelink config set defaults.region ord
 
 ## Step 3 — `corelink doctor` <span style={{color:"var(--ifm-color-emphasis-600)"}}>(~30 s)</span>
 
-`corelink doctor` runs 8 connectivity and auth checks in sequence and
-tells you exactly what is wrong if anything fails:
+`corelink doctor` runs 8 checks in sequence — network, auth, a real CAS
+write/read round-trip, BYOK, region, quota and client-verify — and tells you
+exactly what is wrong if anything fails. Note that the storage checks perform a
+real 1 KB write to your CAS, so `doctor` needs a read-write PAT:
 
 ```bash
 corelink doctor
@@ -136,25 +139,32 @@ corelink doctor
 Healthy output:
 
 ```text
-[1/8] config file found              ✓  ~/.config/corelink/config.toml
-[2/8] PAT format valid               ✓  prefix=corelink_pat, length=ok
-[3/8] PAT not expired                ✓  ttl=365d (tenant=acme-prod)
-[4/8] DNS resolution                 ✓  corelink-api.humangr.com → <IP>
-[5/8] TLS handshake                  ✓  TLSv1.3, 0-RTT=off
-[6/8] API ping (HTTP/2)              ✓  200 OK (rtt=18ms, region=cf-ord)
-[7/8] gRPC channel (REAPI v2)        ✓  capabilities handshake ok
-[8/8] tenant write permission        ✓  can upload 1-byte probe blob
-8/8 checks PASS
+CHECK              STATUS   LATENCY             ERROR_CODE   NEXT_ACTION
+----------------------------------------------------------------------------------------------------
+network            ok            12ms
+auth               ok            31ms
+storage_write      ok            88ms
+storage_read       ok            41ms
+byok               skip           n/a                        BYOK not configured; set auth.byok_enabled=true and KMS credentials to enable.
+region             skip           n/a
+quota              ok            27ms
+client_verify      ok             n/a
+
+All checks passed (6 ok, 2 skipped).
 ```
 
-If any check shows `✗`, the output includes a remediation hint. The
+Latencies vary. `region` always reports `skip` — no public route exposes a
+tenant's primary region — and `byok` skips unless you have opted into BYOK, so
+`6 ok, 2 skipped` is the healthy result, not a warning.
+
+A failing check shows `FAIL` with a `COR_*` error code and a NEXT_ACTION hint. The
 most common failures are listed in the [Troubleshooting](#troubleshooting)
 section below.
 
-:::note WP-2.1 / CLI release note
-`corelink doctor` ships in the next CLI release. If your installed
-binary predates that release, run `corelink ping` as a lighter
-substitute (checks items 4–6 only).
+:::note
+`corelink whoami` is the lighter check — it verifies auth and resolves your
+tenant without touching the cache. `corelink doctor` runs all 8 checks,
+including a real CAS write/read round-trip, so it needs a read-write PAT.
 :::
 
 ---
@@ -266,7 +276,7 @@ echo $CORELINK_PAT
 ```
 
 If empty, either re-export it or ensure it is written to
-`~/.config/corelink/config.toml` (the one-liner installer does this
+`~/.corelink/config.toml` (the one-liner installer does this
 automatically):
 
 ```bash
