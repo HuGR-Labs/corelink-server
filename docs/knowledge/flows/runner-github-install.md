@@ -10,7 +10,7 @@ source_files:
   - "apps/signup-worker/src/index.ts"
   - "apps/admin-ui/src/lib/install-state.ts"
   - "apps/admin-ui/src/app/api/install/github/route.ts"
-checkpoint_sha: "978944ff02be12463bf72f9ec041dbada08167df"
+checkpoint_sha: "3397e91bca1044cf84948d7310f0d9aeedb82048"
 provenance: "AUTHORED"
 tags: ["flows", "runners", "github-app", "install", "provisioning", "identity", "worker-edge"]
 timestamp: "2026-07-05T00:00:00Z"
