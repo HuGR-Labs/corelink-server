@@ -22,8 +22,21 @@
 
 set -uo pipefail
 
-SPEC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../specs/tla" && pwd)"
-QUARANTINE_FILE="${SPEC_DIR}/QUARANTINE.md"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# EVERY directory that holds .tla specs. There is more than one, which is easy to
+# miss and was missed: `specs/03_architecture/tla+/runbooks/` holds 4 specs that
+# no discovery scan of `specs/tla/` will ever see. Before this list existed they
+# were reachable only through `tla_runbooks_check`, a separate weekly workflow —
+# so "the suite discovers everything" was true of one directory and quietly false
+# of the repo. If a third location ever appears, it belongs here; a `find` over
+# the whole tree is the wrong instrument, because it would also sweep up vendored
+# or example specs that are not ours to gate on.
+SPEC_DIRS=(
+  "${REPO_ROOT}/specs/tla"
+  "${REPO_ROOT}/specs/03_architecture/tla+/runbooks"
+)
+QUARANTINE_FILE="${REPO_ROOT}/specs/tla/QUARANTINE.md"
 TIMEOUT_SECS=300
 # Quarantined specs still run — that is how a stale quarantine is detected — but
 # they get a smaller budget. Two of them provably do not terminate, so giving them
@@ -74,8 +87,6 @@ pass=(); fail=(); quarantine_ok=(); quarantine_stale=()
 echo "TLA+ suite — jar $(basename "$TLC_JAR"), ${WORKERS} workers, ${TIMEOUT_SECS}s per spec"
 echo
 
-cd "$SPEC_DIR" || exit 1
-
 # TLC writes its fingerprint/state metadata into `states/` next to the model
 # unless told otherwise, and that directory is large. The self-hosted mac fleet
 # reuses one workspace across runs, so left in the repo it accumulates per spec
@@ -84,12 +95,25 @@ cd "$SPEC_DIR" || exit 1
 METADIR="$(mktemp -d "${TMPDIR:-/tmp}/tla-suite-meta.XXXXXX")"
 trap 'rm -rf "$METADIR"' EXIT INT TERM
 
-# Traces from a PREVIOUS run are stale by definition and must not be mistaken
-# for this run's evidence. The discovery loop skips them by name as well, so
-# this is belt-and-braces: it keeps the count honest even if that skip is ever
-# removed, and it stops them piling up in a reused workspace.
-rm -f ./*_TTrace_*.tla ./*_TTrace_*.bin
-for tla in *.tla; do
+for spec_dir in "${SPEC_DIRS[@]}"; do
+ if [ ! -d "$spec_dir" ]; then
+   # A configured directory that has vanished means SPEC_DIRS and the repo have
+   # drifted. Silently skipping it would shrink the suite without shrinking the
+   # count anyone reads, so treat it as a failure.
+   echo "  MISSING-DIR  ${spec_dir}"
+   fail+=("${spec_dir} (configured in SPEC_DIRS but does not exist)")
+   continue
+ fi
+ cd "$spec_dir" || exit 1
+ echo "── ${spec_dir#"${REPO_ROOT}"/}"
+
+ # Traces from a PREVIOUS run are stale by definition and must not be mistaken
+ # for this run's evidence. The discovery loop skips them by name as well, so
+ # this is belt-and-braces: it keeps the count honest even if that skip is ever
+ # removed, and it stops them piling up in a reused workspace.
+ rm -f ./*_TTrace_*.tla ./*_TTrace_*.bin
+ for tla in *.tla; do
+  [ -e "$tla" ] || continue   # empty dir: the glob stays literal
   name="${tla%.tla}"
   [ -n "$ONLY" ] && [ "$ONLY" != "$name" ] && continue
   # TLC drops `<spec>_TTrace_<epoch>.tla` beside the model when an invariant is
@@ -143,6 +167,7 @@ for tla in *.tla; do
       fail+=("$name")
     fi
   fi
+ done
 done
 
 echo

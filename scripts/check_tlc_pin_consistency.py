@@ -38,10 +38,12 @@ ADR = REPO / "specs/03_architecture/adrs/ADR-0042-gc-worker-scheduler.md"
 # passed" is precisely the failure mode this gate exists to prevent.
 CARRIERS = [
     ".github/workflows/tla_check.yml",
-    ".github/workflows/tla_billing_check.yml",
-    ".github/workflows/tla_dsr_erasure_check.yml",
-    ".github/workflows/tla_region_residency_check.yml",
-    ".github/workflows/tla_runbooks_check.yml",
+    # 2026-08-02: was 8 carriers. tla_billing_check / tla_dsr_erasure_check /
+    # tla_region_residency_check / tla_runbooks_check were retired as exact
+    # duplicates of tla_check (same specs, same .cfg files), so their copies of
+    # the pin went with them. Fewer carriers is the point: every extra copy of a
+    # SHA-256 is another place for §A1 and CI to drift apart, which is the defect
+    # this script exists to catch.
     ".github/workflows/nightly.yml",
     ".github/workflows/cas_foundation.yml",
     "scripts/run_tlc_corelink.sh",

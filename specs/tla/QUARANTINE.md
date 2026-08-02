@@ -16,7 +16,9 @@ tags: ["tla", "formal-verification", "evidence", "ci"]
 
 # TLA+ suite quarantine
 
-Specs in `specs/tla/` that **do not currently verify**, with the measured reason.
+Specs that **do not currently verify**, with the measured reason. Covers every
+directory the suite scans (`specs/tla/` and `specs/03_architecture/tla+/runbooks/`
+— see `SPEC_DIRS` in the runner); rows are matched by spec name.
 
 This file is machine-read by `scripts/run_tla_suite.sh`. It is not documentation
 *about* the gate — it *is* part of the gate. Two rules keep it from rotting into
@@ -42,10 +44,18 @@ row) or to consciously add a row with a reason. Both are visible in review.
   and the other 46 were skipped, every single run.
 
 Measured 2026-08-02 on a 12-core host with the CI flags (`-workers 2 -fp 32`):
-**40 of 47 specs pass, and together they take about 6 minutes.** The suite was
-never far from working; it was structured so that it could not.
+**44 of 51 specs pass, and the whole suite finishes in about 5 minutes** (299 s
+wall clock, including the bounded budget the quarantined specs are allowed to
+burn). The suite was never far from working; it was structured so that it could
+not.
 
-One of those 40 only passes because this change also fixed it: `auth_pat_hybrid`
+The count is 51, not 47, because the specs live in TWO directories: `specs/tla/`
+and `specs/03_architecture/tla+/runbooks/`. The second was missed by the first
+version of the runner, whose discovery scanned only `specs/tla/`; those 4 specs
+were reachable solely through the separate weekly `tla_runbooks_check` workflow.
+They all pass, in about 3 seconds combined.
+
+One of those 44 only passes because this change also fixed it: `auth_pat_hybrid`
 kept its submission log as an ordered sequence, so its state space was the number
 of ordered logs — sum(16^i, i=0..6) = 17,895,697 states, 4 min 12 s at 8 workers,
 over any sane per-spec budget. No invariant read a log position, so the ordering
@@ -65,6 +75,13 @@ frontier faster; they do not make it finite.
 |---|---|
 | `dsr_erasure_atomicity` | 1.5 M states in 90 s, no convergence; depth 4 after 6 min |
 | `auth_jwt_validation` | 34.2 M states in 90 s, no convergence |
+
+> **Correction, 2026-08-02 — do not act on the "shrink the bounds" advice below
+> for `dsr_erasure_atomicity`.** It was written from the timing evidence alone and
+> is wrong about the cause. Investigating it produced a much more serious finding;
+> see the dedicated section further down. Shrinking bounds there would buy a green
+> check on a model that proves nothing. The advice still stands for
+> `auth_jwt_validation`, which has not been investigated at this depth.
 
 **Fix direction (NOT applied here — it changes what is proven):** shrink the
 `.cfg` bounds until the model checks, and record in the spec header exactly which
@@ -121,8 +138,53 @@ formal-methods change to a CRITICAL invariant's model and must be reviewed as
 such — doing it in the same change that merely makes the suite runnable would bury
 it.
 
+### `dsr_erasure_atomicity` — `INV-DATA-ERASURE-COMPLETE` cannot fail
+
+Investigated 2026-08-02 while attempting the "shrink the bounds" fix above. The
+bounds are not the problem. This spec is quarantined for the same reason as
+`byok_envelope_aad`, on the invariant that carries the **GDPR** erasure claim.
+
+`InvErasureComplete` asserts: a ticket in state `completed` has every backend in
+`{erased, pseudonymized, not_applicable}`. It is true by construction, twice over:
+
+1. **The only writer cannot write a violating value.** `backend_state` is assigned
+   in exactly one place (`EraseBackend`), as
+   `IF b \in EffectiveBackends THEN "erased" ELSE "pseudonymized"` — a total
+   function of the backend with **no failure branch and no nondeterminism**. Of
+   the five values `BackendOutcome` declares, **three (`pending`,
+   `not_applicable`, `failed`) are never written by any action.** The model cannot
+   express an incomplete erasure, which is the only thing the invariant forbids.
+2. **The invariant restates the guard.** `CompleteErasure` is the only action that
+   can set `completed`, and its guard is character-for-character the invariant's
+   consequent. So the check reduces to *an `if` implies its own condition*.
+
+This also explains the state explosion, which is a **symptom**: `attempt_count`
+carries a 0..`MaxAttempts` counter per (ticket, backend) — 24 slots — to model
+**retries of an operation that never fails**, and `FailDsr` can only fire after 5
+redundant, identical re-erasures of a backend that already succeeded. Together
+`backend_state` × `attempt_count` is on the order of 10^37 before any other
+variable is considered. Two further findings from the same pass, recorded so the
+next attempt does not rediscover them: the consent timestamp KEY ranged over
+`1..MaxAuditChainLen`, coupling two unrelated quantities so the audit-chain bound
+multiplied the consent key space; and `ProofRecord` was the 216-record cross
+product of six fields (~10^561 partial functions on `consent_ledger`) of which
+**every one was valid**, so `ValidProof` never rejected anything reachable.
+
+**Fix direction (NOT applied — this is a model redesign, not a bounds tweak):**
+give `EraseBackend` a genuine failure branch so `pending`/`failed` become
+reachable — which is also what makes `attempt_count` and `FailDsr` do real work —
+and restate `InvErasureComplete` against an independent record of what erasure was
+*requested*, so it is no longer the guard of the action it constrains. Only then
+is it worth tuning bounds. A bounds-only change here would produce a green check
+on a model that proves nothing, which is strictly worse than the honest red.
+
+**Consequence to state plainly:** `INV-DATA-ERASURE-COMPLETE` is currently **not**
+formally verified, and was not verified at any point in this gate's history. The
+dedicated `tla_dsr_erasure_check` workflow (0 successes in 100 runs) does not
+change that — it never got past the TLC install step.
+
 ---
 
-**Bottom line for a reader in a hurry:** 40 specs went from *never verified* to
+**Bottom line for a reader in a hurry:** 44 specs went from *never verified* to
 *verified on every run*. Seven are honestly marked unverified. Nothing here
 weakens an invariant to buy a green check.

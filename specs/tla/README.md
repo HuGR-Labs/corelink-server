@@ -25,7 +25,8 @@ tags: ["tla", "formal-verification", "evidence"]
 > this table true had **0 successes in 195 runs** (2026-05-07 → 2026-08-02), so
 > every "✅ verde" here was written by hand and never re-confirmed by a passing
 > build. Some of them are, in fact, true; the point is that this table is not
-> evidence of it. Also note this table lists a subset — 47 specs exist.
+> evidence of it. Also note this table lists a subset — 51 specs exist, across
+> `specs/tla/` (47) and `specs/03_architecture/tla+/runbooks/` (4).
 
 ---
 
@@ -37,20 +38,26 @@ tags: ["tla", "formal-verification", "evidence"]
 | `gc_correctness.tla` + `.cfg` | **InvGCReachableNeverDeleted** (core INV-GC-001) + **InvGCReRefProtected** (INV-GC-004) — ambos no cfg; **InvMarkingConsistent** definido em .tla mas não no cfg INVARIANTS list (Lote 10.6 cycle 1 honest-flag — ver scope limitations em ADR-0042 §A3). v3 (Lote 7.1): ambos invariantes core no cfg; Mark multi-pass com UpdateActionResult interleaved. **Bounds canonical:** Blobs={b1,b2} (2), AC_Entries={e1} (1), MaxTime=10, GracePeriod=2 (cfg actual; WI-S06-006 references aligned cycle 1). | ~5k-50k states (bounded; was previously claimed 170k — corrected) | ✅ verde core; out-of-scope soft-delete/DSR/physical-delete per ADR-0042 §A3 |
 | `cas_integrity.tla` + `.cfg` | InvCASIntegrityUncorrupted + InvClientVerifyIsSound + InvCASImmutability + InvPoisoningRejected. v2 (Lote 6.1): BitRot muta r2_storage body real (não flag). | ~3k states | ✅ verde |
 | `audit_immutability.tla` + `.cfg` | InvAuditAppendOnly + InvAuditChainIntact + InvAuditOrderPreserved + InvAuditRejectTamper + **InvDefenseInDepth**. v2 (Lote 7.1): adversary agora REALMENTE muta audit_log quando `object_lock_on=FALSE ∧ db_constraint_on=FALSE` (defense-in-depth explícito). | ~5k states | ✅ verde |
-| `dsr_erasure_atomicity.tla` + `.cfg` (S-11 WI-S11-008) | **State invariants (5):** InvErasureComplete (INV-DATA-ERASURE-COMPLETE CRITICAL) + InvConsentSymmetry (INV-CONSENT-PROOF-VERIFIABLE CRITICAL) + InvResidencyPinned (INV-DATA-RESIDENCY CRITICAL) + InvBackendAckIdempotent + TypeOK. **Temporal properties (3):** InvAuditAppendOnly (box-prime sobre Len+prefix) + **InvResidencyMonotonic** (region pinning monotonic; no cross-region migration; Lote 10.11.0-bis-prime cycle 2 NEW) + EventualTermination (liveness `~>`). CONSTANTS: Backends (12 canonical = 8 EffectiveBackends + 4 PseudonymizedBackends), ConsentBasedPurposes/NonConsentPurposes, Subjects, Tenants, Tickets, Regions (6), Locales (3), MaxConcurrentErasures, MaxAuditChainLen, MaxAttempts. ASSUME garante partição válida e cardinalidades. WF fairness em todas as transition actions. SHA-256 pinned (TLC v1.8.0 ADR-0042 §A1). Dedicated CI: `.github/workflows/tla_dsr_erasure_check.yml` (WI-S11-008 SEALED). | TBD pós-CI primeiro run | 🟡 spec written (Lote 10.11.0-bis-prime; WI-S11-008 SEALED 2026-05-13); **TLC verification pending CI green run** via `.github/workflows/tla_dsr_erasure_check.yml` (dedicated, SHA-pinned) + `tla_check.yml` (omnibus) + `scripts/run_tlc_corelink.sh` (status PLANNED → GREEN somente após CI gate verde primeira vez — AC-008 honest-flag) |
+| `dsr_erasure_atomicity.tla` + `.cfg` (S-11 WI-S11-008) | **State invariants (5):** InvErasureComplete (INV-DATA-ERASURE-COMPLETE CRITICAL) + InvConsentSymmetry (INV-CONSENT-PROOF-VERIFIABLE CRITICAL) + InvResidencyPinned (INV-DATA-RESIDENCY CRITICAL) + InvBackendAckIdempotent + TypeOK. **Temporal properties (3):** InvAuditAppendOnly (box-prime sobre Len+prefix) + **InvResidencyMonotonic** (region pinning monotonic; no cross-region migration; Lote 10.11.0-bis-prime cycle 2 NEW) + EventualTermination (liveness `~>`). CONSTANTS: Backends (12 canonical = 8 EffectiveBackends + 4 PseudonymizedBackends), ConsentBasedPurposes/NonConsentPurposes, Subjects, Tenants, Tickets, Regions (6), Locales (3), MaxConcurrentErasures, MaxAuditChainLen, MaxAttempts. ASSUME garante partição válida e cardinalidades. WF fairness em todas as transition actions. SHA-256 pinned (TLC v1.8.0 ADR-0042 §A1). CI: `tla_check.yml` (the single TLA+ gate). The dedicated `tla_dsr_erasure_check.yml` was retired 2026-08-02 — it duplicated this spec with the same `.cfg` and had 0 successes in 100 runs. | TBD pós-CI primeiro run | 🟡 spec written (Lote 10.11.0-bis-prime; WI-S11-008 SEALED 2026-05-13); ⛔ **NOT verified — quarantined.** `INV-DATA-ERASURE-COMPLETE` is currently VACUOUS in this model (the only writer of `backend_state` has no failure branch, and the invariant restates the guard of the only action that sets `completed`). See `QUARANTINE.md`. The AC-008 honest-flag never flipped: the gate that was supposed to flip it never passed. |
 
 ## Como rodar
 
+Run the whole suite the way CI does — this is the only invocation that reconciles
+results against `QUARANTINE.md`, so it is the only one whose "green" means
+anything:
+
 ```bash
-cd specs/tla
-tlc -config tenant_isolation.cfg       tenant_isolation.tla
-tlc -config gc_correctness.cfg         gc_correctness.tla
-tlc -config cas_integrity.cfg          cas_integrity.tla
-tlc -config audit_immutability.cfg     audit_immutability.tla
-tlc -config dsr_erasure_atomicity.cfg  dsr_erasure_atomicity.tla   # S-11 WI-S11-008 PLANNED
+TLC_JAR=/path/to/tla2tools.jar bash scripts/run_tla_suite.sh --timeout 300 --workers 2
 ```
 
-Requer TLA+ Toolbox ou `tlc` CLI (https://github.com/tlaplus/tlaplus).
+One spec at a time, while iterating on it:
+
+```bash
+TLC_JAR=/path/to/tla2tools.jar bash scripts/run_tla_suite.sh --only gc_correctness
+```
+
+`TLC_JAR` must be the SHA-256-pinned jar (ADR-0042 §A1) — the runner refuses to
+start without it rather than silently model-check with an unverified binary.
 
 ## Scope dos models
 

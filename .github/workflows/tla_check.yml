@@ -1,8 +1,11 @@
 name: TLA+ Model Check (Lote 10.11.0-bis-prime cycle 2)
 
-# Runs TLC v1.8.0 SHA-256 pinned (ADR-0042 §A1) over specs/tla/*.tla via
-# scripts/run_tla_suite.sh, which discovers every spec, bounds each one with its
-# own timeout, and reconciles failures against specs/tla/QUARANTINE.md.
+# Runs TLC v1.8.0 SHA-256 pinned (ADR-0042 §A1) over every .tla in the runner's
+# SPEC_DIRS via scripts/run_tla_suite.sh, which discovers each spec, bounds it
+# with its own timeout, and reconciles failures against specs/tla/QUARANTINE.md.
+#
+# This is the ONLY TLA+ gate. The four per-spec workflows that used to sit beside
+# it were retired on 2026-08-02 as exact duplicates.
 #
 # CI blocks on any non-quarantined spec failure, on a quarantined spec that has
 # started passing, and on a spec with no .cfg.
@@ -19,13 +22,14 @@ on:
   #     was stale AND 44 serial steps shared one 30-minute budget behind a
   #     non-terminating spec). A PR trigger then would have blocked every pull
   #     request while proving nothing. The pin was re-pinned in ADR-0042 §A1 and
-  #     the suite now verifies 40 specs in ~6 minutes.
+  #     the suite now verifies 44 specs in ~5 minutes.
   #
   # The scheduled run stays: it covers a spec breaking because the TLC jar or
   # the runner environment changed underneath us, which no path filter can see.
   pull_request:
     paths:
       - 'specs/tla/**'
+      - 'specs/03_architecture/tla+/runbooks/**'
       - 'scripts/run_tla_suite.sh'
       - 'scripts/run_tlc_corelink.sh'
       - '.github/workflows/tla_check.yml'
@@ -99,10 +103,15 @@ jobs:
       # consumed the entire budget and the other 43 were skipped on every run. The
       # gate appeared scheduled and verified nothing.
       #
-      # The list had also drifted: 47 specs exist, 44 were listed, and
-      # `replica_failover` was in no workflow at all. Discovery removes that whole
-      # class of gap — a spec added to specs/tla/ cannot escape the gate because
-      # someone forgot to add a step.
+      # The list had also drifted: `replica_failover` was in no workflow at all.
+      # Discovery removes that class of gap for every directory in the runner's
+      # SPEC_DIRS — which is TWO, not one: `specs/tla/` (47 specs) and
+      # `specs/03_architecture/tla+/runbooks/` (4). The second was reachable only
+      # through a separate weekly workflow until 2026-08-02; it runs here now, and
+      # the four sibling per-spec workflows (billing / dsr-erasure /
+      # region-residency / runbooks) were retired, because each ran the SAME specs
+      # through the SAME .cfg files — four extra self-hosted mac jobs a week to
+      # duplicate this one, three of them chronically red.
       #
       # Per-spec timeout so one runaway cannot starve the suite. 300 s is ~3x the
       # slowest passing spec measured (`sub_processor_audit_fail_closed`, 98 s at
