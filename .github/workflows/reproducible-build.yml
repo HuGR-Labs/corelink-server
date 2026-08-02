@@ -2,7 +2,7 @@ name: Reproducible Build (2-Runner Diff)
 # WI-S12-006 — CAP-SUPPLY-005 (reproducible builds best-effort).
 #
 # Triggers 2 independent GitHub Actions runners (matrix runner ×2) on the
-# SAME ubuntu-22.04 OS image, builds the corelink-worker WASM bundle with
+# SAME hosted ubuntu image, builds the corelink-worker WASM bundle with
 # hermetic flags (SOURCE_DATE_EPOCH + --remap-path-prefix + --frozen
 # --offline), computes SHA-256, and compares the two hashes.
 #
@@ -16,9 +16,18 @@ name: Reproducible Build (2-Runner Diff)
 # SHA pins: bump via ADR amendment + reproducible-build test on the PR.
 
 on:
-  # NO pull_request trigger — deliberately. 0 successes in the last 25 runs
-  # (measured 2026-08-02), so a PR trigger would block every pull request while
-  # proving nothing. Re-add it in the same change that makes this gate pass.
+  # NO pull_request trigger — still deliberate, and NOT yet earned.
+  #
+  # 0 successes in the last 60 runs (measured 2026-08-02). The CAUSE is now
+  # known and fixed — `runs-on` named a self-hosted Linux fleet that does not
+  # exist, so every run queued forever and never executed a step (see the note
+  # on the `build` job). But a fixed cause is not an observed pass: this gate has
+  # never once completed, so nobody knows whether the two builds actually
+  # reproduce within the ADR-0015 5 % tolerance.
+  #
+  # Re-add `pull_request` only after a `workflow_dispatch` run is observed GREEN,
+  # and say in that PR what the measured diff was. Turning it on now would just
+  # move an unknown onto every pull request.
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
@@ -45,11 +54,27 @@ jobs:
       matrix:
         runner: [runner-1, runner-2]
       fail-fast: false            # collect both artefacts even on failure
-    # Was the ubuntu-22.04 matrix-OS (hosted); now the self-hosted Linux fleet
-    # (off GitHub billing). The OS matrix dim was dropped — both runners land on
-    # the same self-hosted Linux env, which is internally consistent for the
-    # 2-runner byte-diff. Re-baseline the reproducibility check on first run.
-    runs-on: [self-hosted, Linux, X64]
+    # 2026-08-02: BACK to hosted ubuntu. The previous value was
+    # `[self-hosted, Linux, X64]`, moved here to get off GitHub billing — but
+    # **there is no self-hosted Linux runner.** Every online self-hosted runner
+    # in this repo is labelled `self-hosted,macOS,X64,mac,corelink-builder`.
+    # GitHub does not fail an unsatisfiable `runs-on`; it QUEUES IT FOREVER, and
+    # the run later surfaces as "cancelled" when the queue expires. That is the
+    # whole explanation for 0 successes in 60 runs: this gate never executed a
+    # single step, on any runner, ever. (Same class as the
+    # `container-build-push-prod` blocker fixed in #940 — a label that no runner
+    # carries is silent, not loud.)
+    #
+    # Hosted is also the RIGHT home for this particular gate: the point is a
+    # byte-diff between two builds, so a deterministic, identical image on both
+    # legs is the requirement. Both matrix legs of a single run get the same
+    # `ubuntu-latest` image, so the within-run comparison stays valid; the
+    # cross-run baseline moves when GitHub bumps the image, which is expected and
+    # is what `docs/build/reproducible.md` calls a re-baseline event.
+    runs-on: ubuntu-latest
+    # No timeout existed on either job. A self-hosted job with no timeout
+    # inherits GitHub's 360-min default; a QUEUED one just sits. Bound it.
+    timeout-minutes: 45
 
     steps:
       - name: Checkout (full history for SOURCE_DATE_EPOCH)
@@ -118,7 +143,8 @@ jobs:
   diff-check:
     name: Diff check (2-runner compare)
     needs: build
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest       # see the note on `build` — no self-hosted Linux exists
+    timeout-minutes: 15
 
     outputs:
       bit_identical:   ${{ steps.diff.outputs.BIT_IDENTICAL }}
