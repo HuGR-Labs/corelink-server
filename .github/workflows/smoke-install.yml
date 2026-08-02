@@ -6,18 +6,35 @@
 # NOT hit the "Container action is only supported on Linux" failure. It instead
 # requires a working Docker daemon on the macOS self-hosted runner.
 #
-# ⚠️ OWNER DECISION NEEDED (TODO, 2026-06-02):
-#   The 5-runner macOS fleet has NO guaranteed Docker daemon. Docker Desktop was
-#   confirmed working on the primary builder Mac (Docker 28.3.2, `desktop-linux`
-#   context, `docker info` OK) — but Docker Desktop needs the GUI app actively
-#   running and is not present/started on every runner. Rather than hard-fail
-#   the job on Docker-less runners, the preflight step below SKIPS the smoke test
-#   (green, with a ::notice::) when `docker info` fails. Decide one of:
-#     (a) install + auto-start Colima (headless Docker) on all runners and drop
-#         this guard so the smoke test always runs, or
-#     (b) retire this Docker-based smoke test in favour of a native one.
-#   Only `push:main` + schedule trigger this (NOT pull_request), so it never
-#   blocks PRs — lowest urgency.
+# ⚠️ THIS GATE WAS GREEN AND BLIND (fixed 2026-08-02).
+#   `CORELINK_TEST_TOKEN_CI` has never existed — verified: absent from the repo
+#   secrets, and there are no org secrets. The preflight treated that as a reason
+#   to SKIP and report success, so every run since inception passed while
+#   executing none of the smoke test. That covers the 2026-07-10 launch and the
+#   three weeks since — exactly the window in which this was meant to be proving
+#   that the customer-facing install one-liner still works.
+#
+#   It is also the gate that should have caught the CLI being fully broken
+#   against prod while its unit tests stayed green (found and fixed by hand, #842).
+#
+#   Both skip branches are now HARD FAILURES. A gate that cannot run must say so
+#   in red: reporting green is worse than having no gate at all, because it also
+#   consumes the attention that would otherwise notice the gap.
+#
+#   OWNER ACTION to make it green legitimately — one step:
+#     Settings → Secrets and variables → Actions → new repository secret
+#     `CORELINK_TEST_TOKEN_CI`, a CoreLink PAT the install one-liner can
+#     authenticate with.
+#
+#   Safe to fail loudly: the triggers are `push:main` + weekly schedule + manual
+#   dispatch, NOT `pull_request`, so a red here blocks nobody's PR.
+#
+# NOTE on the stale macOS/Docker story that used to live here: it described a
+#   Docker-less macOS fleet, but this job has since moved to `ubuntu-latest`,
+#   where the Docker daemon is part of the hosted image and IS present (confirmed
+#   at runtime in run 30723111099: "Docker daemon reachable."). That skip branch
+#   was dead code guarding a condition that can no longer occur — and if it ever
+#   does, it means a broken runner image, which is a failure, not a skip.
 
 name: smoke-install
 on:
@@ -61,32 +78,40 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          run=true
+          ok=true
 
-          # `docker info` exits non-zero if the CLI is missing OR the daemon is
-          # not reachable — exactly the two ways this fleet can lack Docker.
+          # Both checks below FAIL rather than skip. This job's whole purpose is to
+          # prove the customer install one-liner still works; if it cannot run then
+          # it has proven nothing, and saying so in red is the only honest report.
+          # Safe to be loud: there is no `pull_request` trigger, so this blocks no PR.
+
+          # On ubuntu-latest the Docker daemon ships with the runner image, so a miss
+          # here means the image is broken — a genuine failure, not an environmental
+          # skip. (`docker info` also catches a present CLI with a dead daemon.)
           if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
             echo "Docker daemon reachable."
           else
-            run=false
-            echo "::notice title=smoke-install skipped (Docker)::No Docker daemon on this runner; skipping the container smoke test (see workflow header TODO — owner decision: Colima fleet-wide vs. drop)."
+            ok=false
+            echo "::error title=smoke-install cannot run (Docker)::No Docker daemon on this runner. ubuntu-latest ships one, so this points at a broken runner image."
           fi
 
-          # The install one-liner authenticates with CORELINK_TEST_TOKEN_CI — an
-          # owner-provided repo secret that does NOT exist pre-launch. SKIP
-          # (green) when it is absent rather than red the gate; it RUNS as soon
-          # as the owner sets it. (Routed from secrets into env above.)
+          # The install one-liner authenticates with CORELINK_TEST_TOKEN_CI. That
+          # secret has NEVER been set, and the previous version treated its absence
+          # as a reason to report SUCCESS — so this gate was green and blind through
+          # the 2026-07-10 launch and the three weeks after it.
           if [ -n "${CORELINK_TEST_TOKEN_CI:-}" ]; then
             echo "CORELINK_TEST_TOKEN_CI is set."
           else
-            run=false
-            echo "::notice title=smoke-install skipped (token)::CORELINK_TEST_TOKEN_CI not set — set it (Settings → Secrets → Actions) to enable this gate."
+            ok=false
+            echo "::error title=smoke-install cannot run (token)::CORELINK_TEST_TOKEN_CI is not set, so the install one-liner cannot authenticate and this gate proves nothing. Set it: Settings -> Secrets and variables -> Actions."
           fi
 
-          echo "run=${run}" >> "$GITHUB_OUTPUT"
-          if [ "${run}" = "true" ]; then
-            echo "Preflight OK — running smoke test."
+          if [ "${ok}" != "true" ]; then
+            echo "Preflight FAILED — refusing to report success without running the smoke test."
+            exit 1
           fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "Preflight OK — running smoke test."
 
       - name: Build smoke image
         if: steps.preflight.outputs.run == 'true'
