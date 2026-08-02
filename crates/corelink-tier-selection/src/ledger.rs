@@ -110,6 +110,27 @@ pub struct TierSelectionRow {
     pub subscription_started_at_ms: Option<u64>,
 }
 
+impl TierSelectionRow {
+    /// Does this row represent an active **paid** subscription?
+    ///
+    /// This is the predicate behind the "at most one active subscription per
+    /// tenant" rule (the UNIQUE partial index `idx_tenant_active_subscription`),
+    /// and it is deliberately NOT just `state == Active`.
+    ///
+    /// Every tenant is seeded at signup with `tier = Free, state = Active` — free
+    /// is an instant *activation*, not a subscription. Treating that row as an
+    /// active subscription makes the guard reject the first purchase attempt of
+    /// every account in existence with `already_active` (this shipped: 117 prod
+    /// tenants were in exactly that state on 2026-08-02, none of them able to
+    /// buy). `Enterprise` is likewise not a self-serve subscription — it routes
+    /// to the inquiry form and never reaches Checkout — but an Enterprise row is
+    /// only ever written by an operator grant, so it stays guarded here.
+    #[must_use]
+    pub fn holds_paid_subscription(&self) -> bool {
+        self.subscription_state == SubscriptionState::Active && self.tier != TierKind::Free
+    }
+}
+
 /// Mirror row for an in-flight Checkout Session.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -246,9 +267,11 @@ impl TierSelectionLedger {
             if g.locks.contains_key(&ctx.tenant_id) {
                 return Err(TierError::LockHeld);
             }
-            // UNIQUE partial index: at most one Active per tenant.
+            // UNIQUE partial index: at most one active PAID subscription per
+            // tenant. A free row is an activation, not a subscription — see
+            // `TierSelectionRow::holds_paid_subscription`.
             if let Some(row) = g.rows.get(&ctx.tenant_id) {
-                if row.subscription_state == SubscriptionState::Active {
+                if row.holds_paid_subscription() {
                     return Err(TierError::AlreadyActive);
                 }
             }
@@ -410,9 +433,12 @@ impl TierSelectionLedger {
             .lock()
             .map_err(|e| TierError::Internal(format!("mutex poisoned: {e}")))?;
 
-        // UNIQUE partial index defense-in-depth.
+        // UNIQUE partial index defense-in-depth. Scoped to a PAID row: the
+        // tenant being activated by this webhook was on the free tier moments
+        // ago (that is what an upgrade IS), so matching a free row here would
+        // reject the very activation that the successful Checkout paid for.
         if let Some(row) = g.rows.get(&event.tenant_id) {
-            if row.subscription_state == SubscriptionState::Active {
+            if row.holds_paid_subscription() {
                 return Err(TierError::AlreadyActive);
             }
         }

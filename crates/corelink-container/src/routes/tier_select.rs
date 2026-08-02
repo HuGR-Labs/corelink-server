@@ -860,11 +860,19 @@ where
         return Err(TierSelectHttpError::DpaRequired);
     }
 
-    // (4) At most one active subscription per AXIS. Runner is a separate
+    // (4) At most one active PAID subscription per AXIS. Runner is a separate
     // entitlement axis from the cache tier (migrations 0070/0087), so a
     // cache-active tenant may still buy runner and vice-versa; we guard each
     // axis against a *second* subscription of the SAME kind — never letting a
     // cache subscription block a runner purchase (or the reverse).
+    //
+    // "Active" here means an active PAID subscription. The free tier is an
+    // instant activation, not a subscription, and signup seeds every tenant with
+    // `tier_selections('free','active')` — so a tier-agnostic read makes this
+    // guard reject the first purchase of every account that exists. Both store
+    // methods therefore exclude the free/unentitled rows (`tier != 'free'` on the
+    // cache axis; `status IN ('active','trialing')` already scopes the runner
+    // axis to a real paid subscription).
     let active = if tier.is_runner() {
         store.has_active_runner_subscription(tenant_id).await
     } else {

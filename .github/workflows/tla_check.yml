@@ -9,11 +9,20 @@ name: TLA+ Model Check (Lote 10.11.0-bis-prime cycle 2)
 # CI block on any spec failure (exit code != 0).
 
 on:
+  # NO pull_request trigger — deliberately. This gate has not produced a single
+  # success in its last 100 runs (measured 2026-08-02, back to 2026-06-13): the
+  # pinned TLC v1.8.0 jar no longer matches the SHA-256 in ADR-0042 §A1, so the
+  # install step hard-fails before any spec is ever checked. Adding a PR trigger
+  # would therefore block EVERY pull request while proving nothing. Re-add it in
+  # the same change that re-pins TLC (Security review + ADR-0042 §A1 update).
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
   schedule:
-    - cron: '0 7 * * *'
+    # CI cost diet 2026-08-02: daily -> WEEKLY. TLA+ model check — the .tla specs change on the order of months.
+    # Kept the same minute/hour (spread out, low-traffic window); only the
+    # weekday field is added. Per-PR gating is unchanged.
+    - cron: '0 7 * * 1'
   workflow_dispatch:
 
 permissions:

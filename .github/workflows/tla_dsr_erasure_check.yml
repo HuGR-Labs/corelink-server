@@ -28,11 +28,20 @@ name: TLA+ dsr_erasure_atomicity Model Check (WI-S11-008)
 #            L452 (INV-CONSENT-PROOF-VERIFIABLE) — PLANNED → green after this workflow first passes.
 
 on:
+  # NO pull_request trigger — deliberately. 0 successes in the last 25 runs
+  # (measured 2026-08-02): the shared TLC install step fails the ADR-0042 §A1
+  # SHA-256 pin, so a PR trigger would block EVERY pull request while proving
+  # nothing. Note the header above still reads "PLANNED → green after first
+  # sustained CI run" — it has never had one. Re-add the trigger in the same
+  # change that re-pins TLC (Security review + ADR-0042 §A1 update).
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
   schedule:
-    - cron: '40 7 * * *'
+    # CI cost diet 2026-08-02: daily -> WEEKLY. TLA+ model check — spec-driven, not code-driven.
+    # Kept the same minute/hour (spread out, low-traffic window); only the
+    # weekday field is added. Per-PR gating is unchanged.
+    - cron: '40 7 * * 3'
   workflow_dispatch:
 
 permissions:

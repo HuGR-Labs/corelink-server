@@ -16,11 +16,19 @@ name: TLA+ billing_atomicity Model Check (WI-S10-007)
 #   - INV_LAYER_1_RECONCILE            (Layer-1 sub-property of INV-BILLING-RECONCILE-3-LAYER)
 
 on:
+  # NO pull_request trigger — deliberately. 7 successes in the last 25 runs
+  # (measured 2026-08-02): the shared TLC install step fails the ADR-0042 §A1
+  # SHA-256 pin, so a PR trigger would block pull requests on an infrastructure
+  # fault rather than on a spec regression. Re-add it in the same change that
+  # re-pins TLC (Security review + ADR-0042 §A1 update).
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
   schedule:
-    - cron: '20 7 * * *'
+    # CI cost diet 2026-08-02: daily -> WEEKLY. TLA+ model check — spec-driven, not code-driven.
+    # Kept the same minute/hour (spread out, low-traffic window); only the
+    # weekday field is added. Per-PR gating is unchanged.
+    - cron: '20 7 * * 2'
   workflow_dispatch:
 
 permissions:

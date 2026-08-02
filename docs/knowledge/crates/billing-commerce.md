@@ -10,7 +10,7 @@ source_files:
   - "crates/corelink-tier-selection/src/lib.rs"
   - "crates/corelink-tier-selection/src/dpa.rs"
   - "crates/corelink-tier-selection/src/ledger.rs"
-checkpoint_sha: "cc51893253fa3a86ae5b02bff56c8022cbeb72b5"
+checkpoint_sha: "17516da7418918381a8752550ec2db471b7c4101"
 provenance: "AUTHORED"
 tags: ["crates", "billing", "stripe", "tier", "money-path", "commerce"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -29,7 +29,7 @@ The cluster powers the [money-path checkout + billing ingest](/launch/money-path
 - `corelink-billing` is an Option-A aggregator re-exporting the 14 billing primitives (aggregator, emit, reconcile, replay, stripe, materializer, tier, quota, rate-headers, ratelimit, abuse) at canonical `corelink_billing::*` submodule paths (`crates/corelink-billing/src/lib.rs:1-20`, `crates/corelink-billing/src/lib.rs:32-63`).
 - `corelink-billing-stripe` derives the canonical `Idempotency-Key = BLAKE3-256(JCS(aggregate))` so the same aggregate always maps to one Stripe charge regardless of retries — the executed `derive_idempotency_key` (`crates/corelink-billing-stripe/src/idempotency.rs:80-92`).
 - It verifies inbound webhooks with HMAC-SHA256 over the `Stripe-Signature: t=…,v1=…` header plus a 5-minute replay window, using a constant-time compare via `subtle::ConstantTimeEq` — the executed `verify_stripe_signature` (`crates/corelink-billing-stripe/src/signature.rs:198-230`), replay window `REPLAY_WINDOW_MS` (`crates/corelink-billing-stripe/src/signature.rs:53`).
-- `corelink-tier-selection` runs the checkout pipeline audit → DPA gate → Enterprise route → D1 row-lock, returning `TierError::DpaRequired` before any Stripe call if the DPA is not accepted — the executed `select_tier` (`crates/corelink-tier-selection/src/ledger.rs:191-244`), the DPA gate it consults (`crates/corelink-tier-selection/src/dpa.rs:18-20`).
+- `corelink-tier-selection` runs the checkout pipeline audit → DPA gate → Enterprise route → D1 row-lock, returning `TierError::DpaRequired` before any Stripe call if the DPA is not accepted — the executed `select_tier` (`crates/corelink-tier-selection/src/ledger.rs:212-265`), the DPA gate it consults (`crates/corelink-tier-selection/src/dpa.rs:18-20`).
 
 # Invariants
 
@@ -53,7 +53,7 @@ The cluster powers the [money-path checkout + billing ingest](/launch/money-path
 3. `crates/corelink-billing-stripe/src/idempotency.rs:80-92` — `derive_idempotency_key`: `Idempotency-Key = BLAKE3-256(JCS(aggregate))` derivation (`INV-BILLING-NO-DUP`).
 4. `crates/corelink-billing-stripe/src/signature.rs:198-230` — `verify_stripe_signature`: webhook HMAC-SHA256 verify, constant-time `ct_eq`, 5-min replay window.
 5. `crates/corelink-billing-stripe/src/signature.rs:53` — `REPLAY_WINDOW_MS = 300_000` (the canonical 5-minute skew window).
-6. `crates/corelink-tier-selection/src/ledger.rs:191-244` — `select_tier`: the executed audit → DPA-gate → Enterprise-route → D1 row-lock checkout orchestrator.
+6. `crates/corelink-tier-selection/src/ledger.rs:212-265` — `select_tier`: the executed audit → DPA-gate → Enterprise-route → D1 row-lock checkout orchestrator.
 7. `crates/corelink-tier-selection/src/ledger.rs:206-220` — `INV-ONBOARD-DPA-FIRST` (DPA gate consulted before Stripe, all tiers → `DpaRequired`).
 8. `crates/corelink-tier-selection/src/dpa.rs:18-20` — the `DpaAcceptanceGate::is_accepted` trait the checkout consults.
 9. `crates/corelink-tier-selection/src/ledger.rs:38` + `:236-244` — the 60s `tier_selection_locks` window const + `INSERT OR IGNORE` row-lock acquire (`TierError::LockHeld`).
