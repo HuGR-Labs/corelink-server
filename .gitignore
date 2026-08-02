@@ -96,3 +96,10 @@ package-lock.json
 target-cas-erase/
 target-isolated/
 .env.prod
+
+# TLC writes a trace-exploration spec next to the model whenever an invariant
+# is violated (`<spec>_TTrace_<epoch>.tla` + `.bin`). They are per-run artifacts of
+# a FAILED check, never inputs — and because they live in specs/tla/ they would
+# otherwise be picked up by the suite runner as if they were real specs.
+specs/tla/*_TTrace_*.tla
+specs/tla/*_TTrace_*.bin
