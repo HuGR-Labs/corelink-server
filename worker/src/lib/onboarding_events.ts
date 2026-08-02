@@ -131,7 +131,21 @@ export function emitFirstCliAuthed(
     if (svc === undefined || svc === null) return;
     // `first_cli_authed` is on ingest's SERVER_ONLY list, so an unkeyed POST is
     // rejected as `server_only_event`. Skip rather than emit a guaranteed reject.
-    if (typeof key !== "string" || key.length === 0) return;
+    //
+    // This is the ONE skip path that is LOUD. It means the operator wired the
+    // service binding but not the secret — a half-configured deploy, not a
+    // deliberate off-switch — and it is the exact state that made activation
+    // analytics silently dark before (see the `analytics_events` funnel audit).
+    // Warn once per request rather than let the pane wait forever with no trace.
+    // The other skip paths stay silent by design: they are either "feature not
+    // deployed here" (no binding) or "not a real customer" (sentinel/oversized
+    // tenant), neither of which an operator can or should act on.
+    if (typeof key !== "string" || key.length === 0) {
+      console.warn(
+        "[analytics] first_cli_authed skipped: ANALYTICS_SVC bound but ANALYTICS_INGEST_KEY unset",
+      );
+      return;
+    }
     if (typeof tenantId !== "string" || tenantId.length === 0) return;
     if (SENTINEL_TENANTS.has(tenantId)) return;
     if (tenantId.length > ANALYTICS_TENANT_ID_MAX_LEN) return;

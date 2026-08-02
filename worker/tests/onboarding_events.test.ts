@@ -30,6 +30,7 @@ import {
   ANALYTICS_EVENT_ID_MAX_LEN,
   ANALYTICS_INGEST_KEY_HEADER,
   ANALYTICS_INGEST_URL,
+  ANALYTICS_TENANT_ID_MAX_LEN,
   FIRST_CLI_AUTHED_EVENT,
   emitFirstCliAuthed,
   firstCliAuthedEventId,
@@ -394,6 +395,43 @@ describe("ingest contract", () => {
     // unkeyed POST is a guaranteed reject — do not burn a subrequest on it.
     emitFirstCliAuthed(env, TEST_TENANT_ID);
     expect(calls).toHaveLength(0);
+  });
+
+  it("WARNS (does not skip silently) when the binding is present but the key is unset", () => {
+    // Half-configured deploy — the operator wired [[services]] but never ran
+    // `wrangler secret put ANALYTICS_INGEST_KEY`. That is the single skip path
+    // an operator can act on, so it is the single skip path that logs. Silence
+    // here is what made the activation funnel undiagnosable before.
+    const { env } = makeSpyEnv(); // binding present, key absent
+    const warns: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => { warns.push(String(args[0])); };
+    try {
+      emitFirstCliAuthed(env, TEST_TENANT_ID);
+    } finally {
+      console.warn = original;
+    }
+    expect(warns).toHaveLength(1);
+    expect(warns[0]).toContain("ANALYTICS_INGEST_KEY");
+  });
+
+  it("the OTHER skip paths stay silent — only the half-configured one logs", () => {
+    const warns: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => { warns.push(String(args[0])); };
+    try {
+      // No binding at all: the feature is simply not deployed here.
+      emitFirstCliAuthed({} as AnalyticsIngestEnv, TEST_TENANT_ID);
+      // Fully configured, but not a real customer.
+      const { env } = makeSpyEnv(INGEST_KEY);
+      for (const sentinel of ["_anonymous", "_system", "_pending", ""]) {
+        emitFirstCliAuthed(env, sentinel);
+      }
+      emitFirstCliAuthed(env, "T".repeat(ANALYTICS_TENANT_ID_MAX_LEN + 1));
+    } finally {
+      console.warn = original;
+    }
+    expect(warns).toHaveLength(0);
   });
 
   it("never emits for the synthetic tenant sentinels", () => {
