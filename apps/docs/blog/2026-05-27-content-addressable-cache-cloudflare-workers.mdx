@@ -654,7 +654,7 @@ corelink doctor                    # 8/8 checks PASS
 # Store, retrieve, audit.
 echo "hello, corelink — $(date)" > /tmp/hello.txt
 DIGEST=$(corelink put /tmp/hello.txt --output json | jq -r .digest)
-corelink get "$DIGEST" --output /tmp/restored.txt
+corelink get "$DIGEST" --out /tmp/restored.txt
 diff -q /tmp/hello.txt /tmp/restored.txt
 corelink ls --limit 5
 ```

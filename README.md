@@ -43,7 +43,7 @@ echo "hello, corelink — $(date)" > /tmp/hello.txt
 DIGEST=$(corelink put /tmp/hello.txt --output json | jq -r .digest)
 
 # 4. Retrieve as if from another machine. Client-side BLAKE3 re-verify.
-corelink get "$DIGEST" --output /tmp/restored.txt
+corelink get "$DIGEST" --out /tmp/restored.txt
 diff -q /tmp/hello.txt /tmp/restored.txt    # identical
 
 # 5. Confirm the audit trail saw both events.
