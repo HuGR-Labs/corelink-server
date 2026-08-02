@@ -170,10 +170,17 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
               // the originally-requested page after signing in.
               await auth.protect({
                 unauthenticatedUrl: new URL(
-                  // Surface-correct sign-in (`/corelink/sign-in` on the path
-                  // surface, `/sign-in` on the root subdomain). The return URL
-                  // is the raw pathname+search — already surface-correct — so
-                  // the user lands back on the requested page after signing in.
+                  // Surface-correct sign-in — ALWAYS `/corelink/sign-in`; a bare
+                  // `/sign-in` on humangr.com is the apex marketing site.
+                  //
+                  // `req.nextUrl.pathname` here is basePath-STRIPPED (Next
+                  // strips it before middleware runs), so the return URL is NOT
+                  // "already surface-correct" as this comment used to claim —
+                  // `signInRedirectPath` re-attaches the prefix to it. Without
+                  // that, `redirect_url` was a bare `/dashboard`, and Clerk —
+                  // which navigates it by plain assignment, with no Next router
+                  // to re-apply basePath — dropped the user on marketing right
+                  // after a successful sign-in.
                   signInRedirectPath(
                     req.nextUrl.pathname,
                     req.nextUrl.pathname + req.nextUrl.search,

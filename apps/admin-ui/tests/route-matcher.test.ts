@@ -168,7 +168,7 @@ describe("route matcher", () => {
       expect(signInPathFor("/admin")).toBe("/corelink/sign-in");
       expect(signInPathFor("/dashboard")).toBe("/corelink/sign-in");
       expect(signInRedirectPath("/en/welcome", "/en/welcome")).toBe(
-        "/corelink/sign-in?redirect_url=%2Fen%2Fwelcome",
+        "/corelink/sign-in?redirect_url=%2Fcorelink%2Fen%2Fwelcome",
       );
     });
 
@@ -177,6 +177,45 @@ describe("route matcher", () => {
         expect(signInPathFor(p).startsWith(`${APP_BASE_PATH}/`)).toBe(true);
         expect(signInRedirectPath(p, p).startsWith(`${APP_BASE_PATH}/sign-in`)).toBe(true);
       }
+    });
+
+    // The SECOND half of the same defect, found live after the sign-in PATH was
+    // already fixed and deployed: the redirect TARGET was `/corelink/sign-in`
+    // but the `redirect_url` VALUE was still bare, so the buyer signed in and
+    // was then handed to the marketing site. Measured in prod 2026-08-01:
+    //
+    //   GET /corelink/dashboard -> 307 /corelink/sign-in?redirect_url=%2Fdashboard
+    //   GET humangr.com/dashboard -> 200 "HuGR — CoreLink · …" (marketing)
+    //
+    // Clerk consumes `redirect_url` and navigates by plain assignment, so
+    // nothing re-attaches the prefix downstream.
+    it("the redirect_url VALUE carries the basePath — Clerk navigates it verbatim", () => {
+      for (const p of ["/dashboard", "/en/welcome", "/billing", "/en/customer/keys"]) {
+        const url = new URL(signInRedirectPath(p, p), "https://humangr.com");
+        const back = url.searchParams.get("redirect_url");
+        expect(back).toBe(`${APP_BASE_PATH}${p}`);
+        // The exact shape that was live and broken.
+        expect(back).not.toBe(p);
+      }
+    });
+
+    it("preserves the query string on the return URL", () => {
+      const url = new URL(
+        signInRedirectPath("/en/upgrade", "/en/upgrade?plan=max"),
+        "https://humangr.com",
+      );
+      expect(url.searchParams.get("redirect_url")).toBe("/corelink/en/upgrade?plan=max");
+    });
+
+    it("re-attachment is idempotent — an already-prefixed returnTo never doubles", () => {
+      // `/[locale]/upgrade/page.tsx` builds its own `${APP_BASE_PATH}/…` value.
+      // If that caller ever routes through here, it must not become
+      // `/corelink/corelink/…` (which 404s).
+      const url = new URL(
+        signInRedirectPath("/en/upgrade", `${APP_BASE_PATH}/en/upgrade?plan=max`),
+        "https://humangr.com",
+      );
+      expect(url.searchParams.get("redirect_url")).toBe("/corelink/en/upgrade?plan=max");
     });
 
     it("omits the return URL when none is given", () => {
