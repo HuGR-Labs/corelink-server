@@ -102,12 +102,17 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 
 ```
 1. Admin: receives alert "PAT tok_abc...XYZ used from unusual region".
-2. Admin: corelink pat revoke tok_abcXYZ --reason CompromiseSuspected
-   → POST /v1/admin/pat/{id}/revoke (single-actor; no approver required;
-     this is a non-destructive op).
-3. revocation_log row inserted with reason=CompromiseSuspected.
+2. Admin: revokes the token in the dashboard (https://humangr.com/corelink/),
+   or calls the HTTP API directly:
+   → POST /v1/customer/keys/{pat_id}/revoke (single-actor; no approver
+     required; this is a non-destructive op).
+3. The pat row is stamped revoked_at — idempotent (re-revoking keeps the
+   original timestamp). No caller-supplied reason is recorded: the endpoint
+   takes no request body.
 4. Audit chain entry written.
-5. All running clients holding that PAT receive 401 on next request.
+5. Clients holding that PAT receive 401 on subsequent requests, once the
+   edge PAT-verify cache entry expires (≤5s; ADR-0030 bounds revocation
+   at ≤60s p99).
 ```
 
 ---
@@ -193,8 +198,8 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 3. Auditor mints a PAT (forbidden — Viewer cannot mint).
 4. Admin: mints a PAT on the auditor's behalf with cache:r + admin:audit
    scopes, time-boxed expiry (e.g. 14 days).
-5. After audit closes: Admin revokes the PAT
-   (reason=UserInitiated or AdminRevoked) and demotes the membership row
+5. After audit closes: Admin revokes the PAT (no reason is recorded — the
+   revoke endpoint takes no request body) and demotes the membership row
    (deleted_at = now()).
 ```
 

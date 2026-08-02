@@ -5,7 +5,7 @@ slug: "/how-to/rbac/audit-role-changes"
 sidebar_label: "Audit role changes"
 description: "Query the CoreLink audit chain for role-grant and role-revoke events; sample queries and verification workflow."
 tags: [rbac, how-to, audit, security]
-last_updated: "2026-05-15"
+last_updated: "2026-08-02"
 ---
 
 # Audit role changes
@@ -21,10 +21,24 @@ You need to answer questions like:
 This guide shows how to query the CoreLink audit chain for role changes
 and dual-approval events.
 
+> Team and role management itself is **dashboard + HTTP API only** —
+> there is no CLI for it. Manage members at
+> `https://humangr.com/corelink/customer/team`, or through
+> `GET /v1/customer/team`, `POST /v1/customer/team/invite`
+> (`{email, role}`) and `DELETE /v1/customer/team/{user_id}` (invite and
+> remove are owner/admin only). Reading the audit trail — the subject of
+> this guide — is what the `/v1/audit/*` routes and the `corelink audit`
+> command do.
+
 ## Prerequisites
 
-- You hold `admin:audit` scope (granted to `Owner`, `Admin`, `Viewer`).
-- A PAT with that scope, or you're signed into the admin UI.
+- You hold `admin:audit` scope.
+- A PAT with that scope
+  (`Authorization: Bearer corelink_<env>_…`), or a Clerk session in the
+  dashboard. Mint and list PATs with `POST /v1/customer/keys`
+  (`{name, scopes[]}`) and `GET /v1/customer/keys`; revoke with
+  `POST /v1/customer/keys/{pat_id}/revoke`.
+- API base URL: `https://corelink-api.humangr.com`.
 
 ## The audit chain in one paragraph
 
@@ -38,117 +52,119 @@ two streams:
    denied_approver_not_admin, denied_nonce_replay, denied_clock_skew}`
    (`crates/corelink-dual-approval/src/types.rs::ApprovalOutcome`).
 
-2. `audit_chain` — the broader CloudEvent log, including
-   `corelink.admin.member.invited`,
-   `corelink.admin.member.joined`,
-   `corelink.admin.member.role_granted`,
-   `corelink.admin.member.role_revoked`,
-   `corelink.admin.op.executed`, and
-   `corelink.admin.op.denied`.
+2. The CloudEvent audit chain — the broader log. The two event types
+   pinned to source constants are `corelink.admin.op.executed` and
+   `corelink.admin.op.denied`
+   (`crates/corelink-dual-approval/src/audit.rs`). Membership and role
+   mutations land in the same tenant stream, but this guide does not
+   print their `type` strings: discover the exact values your tenant
+   emits with Query 1 below, then filter on them.
 
-Both are queryable via the admin API and CLI. The deeper
+Both are read through the `/v1/audit/*` HTTP routes and the
+`corelink audit` CLI. The deeper
 [audit chain explainer](../../explanation/security/audit-chain.mdx) covers
 the underlying mechanism (Merkle proofs, retention, etc).
 
-## Query 1 — every role grant or revoke in the last 30 days
+## Query 1 — which event types fired in a window
+
+`GET /v1/audit/analytics/event-count` aggregates the tenant's audit rows
+by CloudEvents `type` over `[from, to)` (Unix epoch **milliseconds**),
+with an optional exact-match `event_type` filter:
 
 ```bash
-corelink admin audit query \
-  --tenant <tenant_slug> \
-  --event-type corelink.admin.member.role_granted,corelink.admin.member.role_revoked \
-  --since 30d
+curl -sS \
+  -H "Authorization: Bearer corelink_<env>_…" \
+  "https://corelink-api.humangr.com/v1/audit/analytics/event-count?from=<epoch_ms>&to=<epoch_ms>"
 ```
 
-Sample output:
-
-```
-TIMESTAMP            EVENT                                     ACTOR_HASH      TARGET_HASH    DETAIL
-2026-05-13T14:02:11Z corelink.admin.member.role_granted        ee44...10c3     a3f9...c821    Developer → Admin
-2026-04-29T09:15:02Z corelink.admin.member.role_granted        ee44...10c3     b71d...e442    (new) Developer
-2026-04-22T18:31:55Z corelink.admin.member.role_revoked        ee44...10c3     71fc...3a08    Admin (deleted_at set)
-```
-
-The `actor` is the user who initiated the grant/revoke. The `target` is
-the user whose role changed.
+The response carries a `buckets` array — one entry per distinct
+`event_type` seen in the window, each entry pairing that `event_type`
+with its row `count`. Run it unfiltered first to learn the exact type
+strings your tenant emits, then re-run with `&event_type=<type>` to
+isolate one of them.
 
 > Emails appear only as hashes (`email_hash`) per
 > `INV-AUDIT-NO-RAW-PII`. To resolve back to a human, cross-reference
-> with `Settings → Members` while the membership is still active.
+> with the team page (`https://humangr.com/corelink/customer/team`)
+> while the membership is still active.
 
-## Query 2 — every dual-approval event in the last 7 days
+## Query 2 — when they fired
 
-```bash
-corelink admin audit query \
-  --tenant <tenant_slug> \
-  --event-type corelink.admin.op.executed,corelink.admin.op.denied \
-  --since 7d
-```
-
-Sample output (one approved + one denied):
-
-```
-TIMESTAMP            EVENT                          OP_TYPE                CALLER          APPROVER        OUTCOME
-2026-05-14T16:42:08Z corelink.admin.op.executed     ConfigRollback         ee44...10c3     b71d...e442     approved
-2026-05-13T10:11:54Z corelink.admin.op.denied       FeatureFlagDisable     ee44...10c3     ee44...10c3     denied_caller_eq
-```
-
-That second row shows the gate doing its job — the caller tried to
-self-approve, and `denied_caller_eq` rejected it.
-
-## Query 3 — verify a specific event with a Merkle inclusion proof
-
-For high-stakes audit evidence (SOC 2, legal, customer audit), request
-an RFC 6962 inclusion proof:
+`GET /v1/audit/analytics/timeline` buckets the same window over time:
 
 ```bash
-corelink admin audit prove \
-  --tenant <tenant_slug> \
-  --event-id 01H9XYZ-...-A4B7
+curl -sS \
+  -H "Authorization: Bearer corelink_<env>_…" \
+  "https://corelink-api.humangr.com/v1/audit/analytics/timeline?from=<epoch_ms>&to=<epoch_ms>&granularity=3600000"
 ```
 
-The CLI returns:
+`granularity` is the bucket width in milliseconds and defaults to
+`3600000` (1 h). The route rejects a request with `400 Bad Request` when
+`(to - from) / granularity` exceeds 1000 buckets, or when `granularity`
+is above 24 h.
 
-- The event payload (canonical JSON).
-- The Merkle path from the event to the current log head.
-- The log head signature + log version.
+## Query 3 — pull the events themselves, with Merkle proofs
 
-You can verify the proof locally with any RFC 6962 client (e.g.
-`ct-tools`) without trusting CoreLink. See
-[audit chain](../../explanation/security/audit-chain.mdx) for the
-verification walkthrough.
-
-## Query 4 — REST API alternative
-
-If you prefer to drive this from a custom dashboard or SIEM, the same
-data is available via REST:
+For high-stakes audit evidence (SOC 2, legal, customer audit), export the
+window and verify the chain. The HTTP surface streams NDJSON — one
+`{event, proof}` line per audit row plus a trailing manifest line — and
+publishes the chain-head anchor in the
+`X-CoreLink-Audit-Export-Chain-Head-Anchor` response header:
 
 ```http
-GET /v1/admin/audit/events?tenant_id={uuid}
-  &event_type=corelink.admin.member.role_granted
-  &event_type=corelink.admin.member.role_revoked
-  &since=2026-04-15T00:00:00Z
-Authorization: Bearer <PAT with admin:audit scope>
+GET /v1/audit/{tenant}/export?from=<epoch_ms>&to=<epoch_ms>
+Authorization: Bearer corelink_<env>_…
 ```
 
-Response:
+The CLI drives the same route. `corelink audit` is the only audit verb
+the CLI ships:
 
-```json
-{
-  "events": [
-    {
-      "id": "01H9XYZ-...-A4B7",
-      "timestamp": "2026-05-13T14:02:11Z",
-      "type": "corelink.admin.member.role_granted",
-      "actor": { "user_id": "...", "email_hash": "ee44...10c3" },
-      "target": { "user_id": "...", "email_hash": "a3f9...c821" },
-      "previous_role": "developer",
-      "new_role": "admin",
-      "tenant_id": "..."
-    }
-  ],
-  "next_cursor": null
-}
+```bash
+# Export the window, embedding + re-validating Merkle inclusion proofs.
+corelink audit export \
+  --tenant <tenant_id> \
+  --since <epoch_ms> \
+  --until <epoch_ms> \
+  --include-merkle-proofs \
+  --verify \
+  --out ./audit-evidence
+
+# Re-validate a previously exported JSON-LD file, offline.
+corelink audit verify ./audit-evidence/<export-file>
+
+# Re-verify the streaming NDJSON envelope straight off the export route.
+corelink audit verify-ndjson \
+  --url "https://corelink-api.humangr.com/v1/audit/<tenant_id>/export?from=<epoch_ms>&to=<epoch_ms>" \
+  --bearer corelink_<env>_…
 ```
+
+`--verify` is fail-CLOSED: every proof is re-validated before anything is
+written. `verify-ndjson` exits `0` on full chain integrity and exits
+`65` (sysexits `DATAERR`) when the server signals a chain break through
+the `x-corelink-audit-export-aborted` HTTP trailer. To verify a file you
+already hold, use `--ndjson <FILE>` together with
+`--chain-head-anchor <HEX>` (the anchor value the server published at
+export time) instead of `--url`.
+
+See [audit chain](../../explanation/security/audit-chain.mdx) for the
+verification walkthrough.
+
+## Query 4 — tail recent events
+
+For a quick look rather than an evidence bundle:
+
+```bash
+corelink audit tail \
+  --tenant <tenant_id> \
+  --filter event_type=<type> \
+  --limit 50
+```
+
+`tail` is a windowed pull from the live export route (not a live follow).
+The default window is the trailing hour and the default limit is 50
+events. `--filter` takes one `key=value` predicate; the accepted keys are
+`event_type`, `subject`, `source`, `region`, `tenant_id`,
+`sequence_number` and `id`.
 
 ## Common forensic patterns
 
@@ -156,29 +172,33 @@ Response:
 
 Short answer: **they cannot**. The gate is fail-CLOSED and every denied
 outcome is itself audited. If you see `corelink.admin.op.executed` with
-`op_type` in the destructive set, an approver UUID is present and an
+`op_type` in the destructive set, an approver identity is present and an
 HMAC signature was verified server-side. If you suspect tampering, run
-the inclusion proof check (Query 3) to confirm the event is in the
-canonical log head.
+the export with proofs (Query 3) to confirm the event is in the canonical
+log head.
 
 ### "Who was Admin on 2026-04-22 at 18:31 UTC?"
 
-The audit chain is your point-in-time source of truth. Query the
-`role_granted`/`role_revoked` stream up to that timestamp and replay the
-state — the membership table only reflects the current snapshot.
+The audit chain is your point-in-time source of truth. Export the window
+up to that timestamp (Query 3), filter to the membership event types you
+identified in Query 1, and replay the state — the team roster only
+reflects the current snapshot.
 
 ### "An ex-employee claims they were never granted Admin."
 
-Pull the inclusion proof for the `corelink.admin.member.role_granted`
-event with their `email_hash` as `target`. The proof is non-repudiable:
-HMAC-signed by the dual-approval signing key under a per-tenant region
-(`signed by region="enam"`, for example, per the gate constructor).
+Export the window covering the grant and keep the Merkle proofs
+(Query 3). Dual-approval events carry both the actor and the dual
+approver as a `user_id` + `email_hash` pair, plus an HMAC signature over
+the canonical audit bytes, and the CloudEvent `source` is
+`/corelink/admin/<region>` — so the record is non-repudiable and
+region-attributed without ever storing a raw email.
 
 ## Retention
 
-Audit chain entries are retained 7 years (aligned with SOC 2 Type II).
-After tenant offboarding, customer-identifying fields are pseudonymized
-but the chain entries themselves persist for the regulatory window. See
+Audit retention defaults to 7 years on the Enterprise tier (aligned with
+SOC 2 Type II). After tenant offboarding, customer-identifying fields are
+pseudonymized but the chain entries themselves persist for the regulatory
+window. See
 [audit chain](../../explanation/security/audit-chain.mdx) for the
 retention contract.
 

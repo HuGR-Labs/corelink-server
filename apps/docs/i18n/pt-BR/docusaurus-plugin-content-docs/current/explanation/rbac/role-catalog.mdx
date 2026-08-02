@@ -109,12 +109,17 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 
 ```
 1. Admin: receives alert "PAT tok_abc...XYZ used from unusual region".
-2. Admin: corelink pat revoke tok_abcXYZ --reason CompromiseSuspected
-   → POST /v1/admin/pat/{id}/revoke (single-actor; no approver required;
-     this is a non-destructive op).
-3. revocation_log row inserted with reason=CompromiseSuspected.
+2. Admin: revoga o token no painel (https://humangr.com/corelink/)
+   ou chama a API HTTP diretamente:
+   → POST /v1/customer/keys/{pat_id}/revoke (ator único; não requer
+     aprovador; é uma operação não destrutiva).
+3. A linha pat recebe o carimbo revoked_at — idempotente (revogar de novo
+   mantém o timestamp original). Nenhum motivo informado por quem chama é
+   registrado: o endpoint não aceita corpo de requisição.
 4. Audit chain entry written.
-5. All running clients holding that PAT receive 401 on next request.
+5. Os clientes que possuem esse PAT recebem 401 nas requisições seguintes,
+   assim que a entrada do cache de verificação de PAT na borda expira
+   (≤5s; a ADR-0030 limita a revogação a ≤60s p99).
 ```
 
 ---
@@ -200,9 +205,9 @@ and the SQL `CHECK` constraint lives in `specs/03_architecture/data_model.md`
 3. Auditor mints a PAT (forbidden — Viewer cannot mint).
 4. Admin: mints a PAT on the auditor's behalf with cache:r + admin:audit
    scopes, time-boxed expiry (e.g. 14 days).
-5. After audit closes: Admin revokes the PAT
-   (reason=UserInitiated or AdminRevoked) and demotes the membership row
-   (deleted_at = now()).
+5. Após o fim da auditoria: o Admin revoga o PAT (nenhum motivo é
+   registrado — o endpoint de revogação não aceita corpo de requisição) e
+   rebaixa a linha de associação (deleted_at = now()).
 ```
 
 ---
