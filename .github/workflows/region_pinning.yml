@@ -25,7 +25,10 @@ on:
       - '.github/workflows/region_pinning.yml'
   schedule:
     # 02:17 UTC nightly — staggered from existing nightly crons (:04, :23).
-    - cron: '17 2 * * *'
+    # CI cost diet 2026-08-02: daily -> WEEKLY. ~33 min/run and already tightly path-gated on PRs.
+    # Kept the same minute/hour (spread out, low-traffic window); only the
+    # weekday field is added. Per-PR gating is unchanged.
+    - cron: '17 2 * * 2'
   workflow_dispatch:
     inputs:
       proptest_cases:
