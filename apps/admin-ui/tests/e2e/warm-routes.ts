@@ -69,7 +69,10 @@ export default async function warmRoutes(config: FullConfig): Promise<void> {
       // Any status is fine — a redirect or a 403 still means the route
       // COMPILED, which is the only thing being warmed here. Correctness is
       // the specs' job, not this file's.
-      console.log(`[warm] ${res.status} ${route}`);
+      // `process.stdout.write`, not `console.log`: the admin-ui eslint config
+      // allows only console.warn/error, and neither is honest for routine
+      // progress output from a setup script.
+      process.stdout.write(`[warm] ${res.status} ${route}\n`);
     } catch (err) {
       // Never fail the run on a warm miss: the spec that owns this route will
       // report a real, readable failure. Warming is an optimisation, not a gate.
@@ -77,5 +80,7 @@ export default async function warmRoutes(config: FullConfig): Promise<void> {
       console.warn(`[warm] SKIPPED ${route} — ${msg}`);
     }
   }
-  console.log(`[warm] ${ROUTES.length} routes compiled in ${Date.now() - started}ms`);
+  process.stdout.write(
+    `[warm] ${ROUTES.length} routes compiled in ${Date.now() - started}ms\n`,
+  );
 }
