@@ -50,6 +50,7 @@ import {
   constantTimeSecretEqual,
   type InternalConsumer,
 } from "./lib/internal_auth.js";
+import { emitFirstCliAuthed } from "./lib/onboarding_events.js";
 import { coloForMacro } from "./region-map.js";
 import {
   ReplicationCoordinatorDO,
@@ -236,6 +237,17 @@ export interface Env {
   PROD_LHR?: { fetch: typeof fetch };
   PROD_NRT?: { fetch: typeof fetch };
   PROD_SYD?: { fetch: typeof fetch };
+  // ── Onboarding funnel telemetry (PLG §7.1) ─────────────────────────────────
+  // Service binding to the analytics ingest Worker (`corelink-analytics-prod`).
+  // Set in [[env.prod.services]]. Only that Worker holds the ANALYTICS_DB
+  // binding for `analytics_events`, and a Worker→Worker fetch over the public
+  // custom domain is edge-rejected (error 1014, CNAME Cross-User Banned) — so
+  // the binding is the ONLY path. Absent ⇒ the emit is a silent no-op.
+  ANALYTICS_SVC?: { fetch: typeof fetch };
+  // Shared trusted-ingest secret; same value as the analytics-worker's
+  // `INGEST_KEY` (secrets matrix row 138). Caller-side name mirrors
+  // apps/signup-worker/src/lib/analytics-server.ts. Absent ⇒ no-op.
+  ANALYTICS_INGEST_KEY?: string;
   // ── Observability (Sentry error tracking) ───────────────────────────────────
   // OPTIONAL. The Sentry hook (see `export default` at the bottom of this file)
   // is a COMPLETE no-op until the operator sets SENTRY_DSN via
@@ -2682,6 +2694,31 @@ const baseHandler: ExportedHandler<Env> = {
         reapiError("FORBIDDEN", "tenant mismatch", 403, requestId),
         request,
       );
+    }
+
+    // ── Onboarding funnel: `first_cli_authed` producer (PLG §7.1) ─────────────
+    // The CLI's FIRST authenticated call is `GET /v1/users/me` (`corelink
+    // whoami` — tools/cli/src/client.rs:138 — and the doctor auth probe —
+    // tools/cli/src/doctor.rs:37). This is the earliest point where BOTH facts
+    // the event asserts are established: the PAT verified (extractAuth returned
+    // ok, above) and the tenant is a real, non-spoofed tenant (the path-spoof
+    // guard immediately above has just cleared). It is deliberately BEFORE the
+    // quota/residency/DO legs so a later 429/503 can never suppress a signal
+    // that is about AUTH, not about the response body.
+    //
+    // Fire-and-forget: `emitFirstCliAuthed` returns void (impossible to await
+    // inline), swallows all its own errors, and its promise is handed to
+    // ctx.waitUntil so it survives the response (#859 — a bare floating promise
+    // is cancelled on return, see lib/tenant_suspend_gate.ts:115).
+    // Dedup is the deterministic id `first_cli_authed:<tenant_id>` against the
+    // analytics_events PRIMARY KEY + ingest's INSERT OR IGNORE — see
+    // lib/onboarding_events.ts.
+    if (
+      route.routeKind === "reapi_v1" &&
+      request.method === "GET" &&
+      url.pathname === "/v1/users/me"
+    ) {
+      emitFirstCliAuthed(env, resolvedTenantId, { waitUntil: ctx.waitUntil.bind(ctx) });
     }
 
     // ── Per-tier quota enforcement ────────────────────────────────────────────

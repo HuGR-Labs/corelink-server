@@ -7,6 +7,7 @@ source_files:
   - "worker/src/sentry-scrub.ts"
   - "worker/src/lib/tenant_residency_cache.ts"
   - "worker/src/lib/tenant_tier_cache.ts"
+  - "worker/src/lib/onboarding_events.ts"
 checkpoint_sha: "b62747eb59434fe5ce011e76925452719d7c2c2b"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
@@ -81,6 +82,17 @@ keeps forged tokens cheap to reject before any expensive work.
    caller-mapping fix landed.
 6. `stripClientTrustHeaders` deletes every client-suppliable trust header on every forward, then the
    Worker re-sets its own verified values (`worker/src/index.ts:589-593`).
+6b. The Worker is also the PRODUCER of the `first_cli_authed` onboarding signal. Immediately after the
+   PAT resolves a real tenant and the path-spoof guard clears — and BEFORE quota/residency — a
+   `GET /v1/users/me` (the CLI's first authenticated call) fires a fire-and-forget analytics event
+   (`worker/src/index.ts:2715-2721`). It lives here rather than in the container because the container's
+   single `D1_DATABASE_ID` points at the control plane while `analytics_events` lives only in
+   `corelink-analytics-prod`, and its charter forbids `tokio::spawn` in `src/`. The write is dispatched
+   over the `ANALYTICS_SVC` service binding (`worker/src/index.ts:246`) to the analytics Worker's
+   `POST /v1/event` ingest — never the public hostname, which Cloudflare edge-rejects Worker→Worker with
+   error 1014. Dedup is structural, not a round-trip: the event id is the deterministic
+   `first_cli_authed:<tenant_id>` (`worker/src/lib/onboarding_events.ts:109-111`), so `analytics_events`'
+   `PRIMARY KEY (id)` + ingest's `INSERT OR IGNORE` act as a once-per-tenant lock.
 7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
    request-count fail-CLOSED; storage verb-aware (reads fail-open for availability, byte-adding writes
    fail-closed) (`worker/src/index.ts:2687-2848`).
@@ -158,6 +170,7 @@ keeps forged tokens cheap to reject before any expensive work.
 7b. `worker/src/index.ts:2617-2654` — caller reason→status mapping: BOTH `signing_key_not_configured` (config fault) AND `d1_lookup_error` (transient D1 fault) → retryable `503`; every other reason (`pat_not_found` / `pat_expired` / `invalid_*`) → `401`.
 8. `worker/src/index.ts:1738-1762` — the `baseHandler.fetch` entry, request-id, CORS, route match.
 9. `worker/src/index.ts:1764-1781` — health short-circuit (no auth, no DO).
+9b. `worker/src/index.ts:2715-2721` — the `first_cli_authed` emit site (`GET /v1/users/me`, after the PAT-resolved tenant clears the path-spoof guard), handed to `ctx.waitUntil`. The producer module is `worker/src/lib/onboarding_events.ts:121-181` (`emitFirstCliAuthed` returns `void` and swallows every error, so the emit can never add latency to — or fail — the response); the deterministic id is built at `worker/src/lib/onboarding_events.ts:109-111`; the `ANALYTICS_SVC` service binding + `ANALYTICS_INGEST_KEY` are declared on `Env` at `worker/src/index.ts:246`.
 10. `worker/src/index.ts:2687-2848` — per-tier quota enforcement after auth, before forward.
 10a. `worker/src/index.ts:2813-2817` — `resolveTenantTierCached` three-tier tier resolution (L1 isolate → L2 KV `ttier:` 60 s → L3 D1 `getTierForTenant`) for the storage-quota header + request-count cap, replacing the former inline per-request tier D1-PRIMARY read (latency WP slice 2). FAIL-OPEN like the suspend gate: an unconfirmed (`d1Error`) result is returned unchanged and NEVER cached (a transient D1 fault can't pin a tenant to 'free' — F21 preserved), so a stale worker tier is bounded (`≤ 60 s`) and never authoritative (the DO quota FSM re-derives the hard caps). The cache module is `worker/src/lib/tenant_tier_cache.ts:182`.
 10b. `worker/src/index.ts:2898-2902` — `resolveTenantResidency` three-tier residency resolution (L1 isolate → L2 KV `tres:` 60 s → L3 D1) replacing the former inline `SELECT primary_region` per-request D1-PRIMARY read; FAIL-CLOSED `503 RESIDENCY_UNAVAILABLE` on the `RESIDENCY_UNRESOLVED` sentinel (`worker/src/index.ts:2903-2920`), `null` region ⇒ IAD-local (`worker/src/index.ts:2924`). The cache module is `worker/src/lib/tenant_residency_cache.ts:231-298`, whose catch serves a cached region on a transient D1 fault but returns `RESIDENCY_UNRESOLVED` (never caches the error) when none is held (`worker/src/lib/tenant_residency_cache.ts:284-291`).

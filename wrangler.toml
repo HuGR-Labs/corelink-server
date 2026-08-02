@@ -332,6 +332,23 @@ service = "corelink-prod-nrt"
 binding = "PROD_SYD"
 service = "corelink-prod-syd"
 
+# Onboarding funnel telemetry (PLG §7.1) — `first_cli_authed`.
+# `analytics_events` lives ONLY in corelink-analytics-prod (D1
+# d7fe391f-9fe0-4544-a1fb-64747bcd2639, see apps/analytics-worker/wrangler.toml);
+# this Worker's CONFIG_DB is the control plane, so the row must be written via
+# the analytics Worker's `POST /v1/event` ingest. A Worker→Worker fetch over the
+# public humangr.com custom domain is rejected by Cloudflare's edge with error
+# 1014 (CNAME Cross-User Banned) even inside one account — see the
+# `[[services]]` note in apps/signup-worker/wrangler.toml — so the service
+# binding is the ONLY viable path. Consumed by
+# worker/src/lib/onboarding_events.ts (fire-and-forget, ctx.waitUntil).
+# Operator prerequisite: `wrangler secret put ANALYTICS_INGEST_KEY --env prod`
+# on corelink-prod, set to the SAME value as the analytics Worker's INGEST_KEY
+# (secrets matrix row 138). Without it the emit is a silent no-op.
+[[env.prod.services]]
+binding = "ANALYTICS_SVC"
+service = "corelink-analytics-prod"
+
 # corelink-signup.humangr.com/* is served by apps/signup-worker
 # (Phase 1 / Stream A4). The route was previously misassigned to this
 # Worker which has no Clerk/Stripe webhook handlers; moved to the

@@ -81,3 +81,25 @@ routes = []
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
+
+# D1 — activation/onboarding analytics (READ-ONLY consumer).
+#
+# `/api/welcome/stream` (src/app/api/welcome/stream/route.ts) polls
+# `analytics_events` for the signed-in tenant and streams the rows as SSE.
+# Without this binding `env.ANALYTICS_DB` is `undefined` and the route can only
+# ever emit heartbeats.
+#
+# The table lives ONLY in `corelink-analytics-prod`, owned (schema + migrations)
+# by apps/analytics-worker — see apps/analytics-worker/wrangler.toml
+# [[env.prod.d1_databases]]. It is deliberately NOT the control-plane database
+# (`corelink-config-prod`, d64742ea-…/CONFIG_DB) the rest of the platform uses.
+# No `migrations_dir` here: admin-ui never migrates this database.
+#
+# Binding name must stay `ANALYTICS_DB` (matches the analytics worker and the
+# route's env read). Declared at the top level — not under an `[env.*]` block —
+# because this Worker ships via a bare `wrangler deploy` with no `--env`
+# (.github/workflows/admin-ui-deploy.yml), same as `routes`/`[assets]` above.
+[[d1_databases]]
+binding = "ANALYTICS_DB"
+database_name = "corelink-analytics-prod"
+database_id = "d7fe391f-9fe0-4544-a1fb-64747bcd2639"

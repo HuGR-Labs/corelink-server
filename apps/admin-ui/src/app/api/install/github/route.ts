@@ -22,11 +22,13 @@
  */
 
 import { NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { signInstallState } from "@/lib/install-state";
 
-// Edge runtime (Cloudflare Pages) — mirrors `/api/checkout/session`. Clerk's
-// server SDK works on edge via the lazy `await import(...)` below; the HMAC uses
-// Web Crypto (no Buffer dependency).
+// Always dynamic — mirrors `/api/checkout/session`. Clerk's server SDK is
+// lazy-imported below; the HMAC uses Web Crypto (no Buffer dependency). The app
+// is deployed as a Cloudflare Worker via `@opennextjs/cloudflare` (NOT Pages /
+// `next-on-pages`) — see `readEnv` for how bindings are read.
 export const dynamic = "force-dynamic";
 
 interface SessionClaims {
@@ -56,17 +58,49 @@ async function resolveTenantId(): Promise<string | null> {
   }
 }
 
+/** The Workers vars/secrets this route needs, narrowed at the boundary. */
+interface RouteEnv {
+  INSTALL_STATE_SIGNING_KEY?: string;
+  GITHUB_APP_SLUG?: string;
+}
+
 /**
- * Read a primitive secret at edge runtime. `next-on-pages`/open-next exposes
- * Workers env via `process.env` for primitive secrets, but we also check
- * `globalThis.__env__` so the handler is testable without a Workers shim (same
- * defensive read as `/api/welcome/stream`).
+ * Read this Worker's bindings.
+ *
+ * admin-ui runs on `@opennextjs/cloudflare` (wrangler.toml
+ * `main = ".open-next/worker.js"`), which publishes the Workers bindings on the
+ * Cloudflare context — read via `getCloudflareContext()`. It does NOT populate
+ * `globalThis.__env__`; that is the `next-on-pages` convention this app migrated
+ * away from, and reading it here always yielded `undefined` (same defect fixed
+ * in `/api/welcome/stream`).
+ *
+ * `async: true` is used deliberately: in the deployed Worker both overloads read
+ * the same context global (so it costs nothing), but only the async overload can
+ * also resolve the context under the `next dev` Node runtime — this app's
+ * `next.config` does not call `initOpenNextCloudflareForDev`.
+ *
+ * Defensive by design — any failure degrades to `{}`, which lands on the same
+ * fail-closed 503 as an unbound var rather than becoming a new 500.
  */
-function readSecret(name: string): string | undefined {
+async function readEnv(): Promise<RouteEnv> {
+  try {
+    const { env } = await getCloudflareContext({ async: true });
+    return (env ?? {}) as unknown as RouteEnv;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Read a primitive var/secret. `@opennextjs/cloudflare` mirrors string bindings
+ * onto `process.env` during worker init, so that read is kept as the first
+ * source (it also picks up Next `.env*` values); the Cloudflare context is the
+ * authoritative fallback.
+ */
+function readSecret(name: keyof RouteEnv, env: RouteEnv): string | undefined {
   const fromProc = (process.env as Record<string, string | undefined>)[name];
   if (fromProc) return fromProc;
-  const g = (globalThis as { __env__?: Record<string, string | undefined> }).__env__;
-  return g?.[name];
+  return env[name];
 }
 
 export async function GET(): Promise<Response> {
@@ -80,8 +114,9 @@ export async function GET(): Promise<Response> {
   }
 
   // 2. Config — fail closed until the App exists and the secret is bound.
-  const signingKey = readSecret("INSTALL_STATE_SIGNING_KEY");
-  const appSlug = readSecret("GITHUB_APP_SLUG");
+  const env = await readEnv();
+  const signingKey = readSecret("INSTALL_STATE_SIGNING_KEY", env);
+  const appSlug = readSecret("GITHUB_APP_SLUG", env);
   if (!signingKey || !appSlug) {
     return NextResponse.json({ error: "runner_install_not_configured" }, { status: 503 });
   }
