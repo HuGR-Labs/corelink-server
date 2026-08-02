@@ -60,7 +60,7 @@ const SERVER_ONLY_EVENT_NAMES: ReadonlySet<EventName> = new Set<EventName>([
     "subscription_canceled",
 ]);
 
-interface IngestResult {
+export interface IngestResult {
     accepted: number;
     rejected: number;
     errors: Array<{ id?: string; reason: string }>;
@@ -199,8 +199,54 @@ export async function handleIngest(request: Request, env: Env): Promise<Response
         });
     }
 
-    // 4. Validate + insert. Build a single batched D1 transaction so 100
-    // events cost 1 RTT instead of 100. Bad rows are dropped, not retried.
+    // 4. Validate + insert. Delegated to `ingestEvents` — the SINGLE shared
+    // validate-then-write path, also used by the trusted RPC entrypoint
+    // (`AnalyticsIngest.ingestServerEvent`, src/index.ts). Neither surface owns
+    // a private copy of the rules: duplicated validation is how two ingest
+    // paths silently drift apart (one gains a check, the other does not).
+    const result = await ingestEvents(events, env, trusted);
+
+    return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: {
+            "Content-Type": "application/json",
+            ...(origin ? corsHeaders(origin) : {}),
+        },
+    });
+}
+
+/**
+ * The SHARED validate-then-write path — every ingest surface funnels through
+ * here, so the validation rules and the storage semantics are defined exactly
+ * once.
+ *
+ * Callers:
+ *   - `handleIngest` above (HTTP `POST /v1/event`), with `trusted` = "the
+ *     request presented a matching `X-Corelink-Ingest-Key`";
+ *   - `AnalyticsIngest.ingestServerEvent` (`src/index.ts`), the service-binding
+ *     RPC entrypoint, with `trusted = true` — see the trust rationale there.
+ *
+ * `trusted` is the ONLY thing the two callers decide for themselves; it is the
+ * single lever that gates `SERVER_ONLY_EVENT_NAMES` (see `validate`). Nothing
+ * else about the write differs between surfaces.
+ *
+ * Storage semantics (unchanged, and load-bearing):
+ *   - `INSERT OR IGNORE` against `id TEXT NOT NULL PRIMARY KEY` — the primary
+ *     key is the ONLY uniqueness constraint (migrations/0001), so a caller with
+ *     a DETERMINISTIC id gets once-only semantics for free: the re-send is
+ *     coalesced by SQLite, not by an extra read.
+ *   - `created_at` omitted ⇒ `COALESCE(?7, strftime(...))` stamps the server
+ *     clock at insert time.
+ *   - One batched D1 call for the whole set (100 events = 1 RTT, not 100).
+ *
+ * Never throws: a D1 fault is folded into the result as `d1_error:*` with the
+ * accepted count moved to `rejected`. Analytics must never break its caller.
+ */
+export async function ingestEvents(
+    events: readonly unknown[],
+    env: Env,
+    trusted: boolean,
+): Promise<IngestResult> {
     const result: IngestResult = { accepted: 0, rejected: 0, errors: [] };
     const statements: D1PreparedStatement[] = [];
     const stmt = env.ANALYTICS_DB.prepare(
@@ -209,17 +255,18 @@ export async function handleIngest(request: Request, env: Env): Promise<Response
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE(?7, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')))`
     );
 
-    for (const evt of events) {
-        const reason = validate(evt, trusted);
+    for (const raw of events) {
+        const reason = validate(raw, trusted);
         if (reason) {
             result.rejected++;
-            const id = (evt as { id?: unknown })?.id;
+            const id = (raw as { id?: unknown })?.id;
             result.errors.push({
                 id: typeof id === "string" ? id : undefined,
                 reason,
             });
             continue;
         }
+        const evt = raw as EventPayload;
         statements.push(
             stmt.bind(
                 evt.id,
@@ -246,11 +293,5 @@ export async function handleIngest(request: Request, env: Env): Promise<Response
         }
     }
 
-    return new Response(JSON.stringify(result), {
-        status: 200,
-        headers: {
-            "Content-Type": "application/json",
-            ...(origin ? corsHeaders(origin) : {}),
-        },
-    });
+    return result;
 }
