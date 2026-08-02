@@ -5,9 +5,7 @@ name: CAS Foundation CI (WI-S01-007)
 # corelink-worker, corelink-meta, corelink-reapi) do NOT cover and that
 # enforce CTRL-FORMAL-001 + CTRL-SUPPLY-001..005:
 #
-#   1. tlc-canonical: TLC v1.8.0 SHA-256 pinned model check on the 4 S-01
-#      canonical TLA+ specs (tenant_isolation, cas_integrity, gc_correctness,
-#      audit_immutability) with PR-lane bounds.
+#   (tlc-canonical was REMOVED 2026-08-02 — see the note under `on:`.)
 #   2. workspace-build-test: workspace-wide convergence build + test (sprint
 #      smoke; per-crate workflows run targeted subsets on touched crates).
 #   3. cargo-deny: license + advisories + sources + bans policy via deny.toml.
@@ -36,10 +34,9 @@ on:
   # so "the PR paths: lane still covers it" is NOT the argument. The argument is
   # that every one of its four legs is ALREADY re-verified elsewhere on a
   # cadence this change does not touch — verified 2026-08-01, file by file:
-  #   - `tlc-canonical` (4 specs: tenant_isolation, cas_integrity,
-  #     gc_correctness, audit_immutability) -> all four are re-model-checked
-  #     DAILY by `tla_check.yml` (cron '0 7 * * *'), which runs a superset of
-  #     these specs with the same pinned TLC v1.8.0 + run_tlc_corelink.sh.
+  #   - `tlc-canonical` -> REMOVED 2026-08-02, see below. It ran 4 specs
+  #     (tenant_isolation, cas_integrity, gc_correctness, audit_immutability)
+  #     through the SAME .cfg files as `tla_check.yml`, which runs a superset.
   #   - `cargo-deny` -> `cargo-deny.yml` runs the same `cargo deny check`
   #     DAILY (cron '30 6 * * *') **and on every pull_request**.
   #   - `sbom-cyclonedx` (CycloneDX 1.5 + NTIA minimum elements) ->
@@ -50,13 +47,32 @@ on:
   #     the per-crate PR lanes (corelink-server/-hash/-meta/-worker/-reapi/
   #     tenant-path/...) gate the touched crates on every PR; what weekly
   #     costs is the CROSS-crate convergence smoke on an unchanged tree.
+  # CORRECTION 2026-08-02 — the `tlc-canonical` bullet above was wrong twice.
+  # It claimed `tla_check.yml` re-verified those specs DAILY at cron
+  # '0 7 * * *'. That cron is now WEEKLY ('0 7 * * 1'), which by this file's own
+  # closing rule ("if any compensating lane is removed OR SLOWED, this cron must
+  # go back to daily in the same PR") should have been handled when tla_check was
+  # slowed, and was not. More importantly the compensation was fictional when
+  # written: `tla_check` had **0 successes in 195 runs** and did not model-check
+  # a single spec. Coverage was justified by pointing at a gate that had never
+  # passed.
+  #
+  # Both halves are now resolved rather than re-documented: `tla_check` actually
+  # works (44 specs verified per run) and this workflow's `tlc-canonical` job was
+  # DELETED as a strict duplicate — same 4 specs, same .cfg files, no custom
+  # bounds. That also removed this file's copy of TLC_SHA256_PINNED, so it is no
+  # longer a pin carrier (CARRIERS in scripts/check_tlc_pin_consistency.py: 4 -> 3).
+  # Formal-verification coverage is unchanged; it just happens in one place.
+  #
   # So the residual exposure of weekly is: up to 7 days before a cross-crate
   # convergence break on an unchanged tree is observed. Against that: this lane
   # produced ZERO successful scheduled runs in July 2026 (19 failure /
   # 2 cancelled out of 21) at ~18 hosted min per run, so daily cadence is
   # currently paying ~460 min/month to re-observe the same red.
-  # NOTE: if any of the four compensating lanes above is ever removed or
-  # slowed, this cron must go back to daily in the same PR.
+  # NOTE: if any of the compensating lanes above is ever removed or slowed,
+  # this cron must go back to daily in the same PR. That rule was violated once
+  # already (see the CORRECTION above) — a rule written in a comment does not
+  # enforce itself, which is the same lesson ADR-0042 §A1 learned the hard way.
   schedule:
     - cron: '0 9 * * 3'
   workflow_dispatch:
@@ -90,59 +106,6 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # ---------------------------------------------------------------------
-  # 1. TLC formal verification gate — 4 canonical S-01 specs, PR bounds.
-  # ---------------------------------------------------------------------
-  tlc-canonical:
-    name: TLC canonical (PR bounds)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Setup Java (TLC requires JVM)
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: Install pinned TLC v1.8.0 (SHA-256 verified — ADR-0042 §A1)
-        env:
-          TLC_VERSION: '1.8.0'
-          TLC_SHA256_PINNED: 'e22f8ffb4bacdea0a871f444dd94fe5fb0d8013b3388ae39e82e26f852c735d5'
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/tla"
-          curl -fsSL -o "$RUNNER_TEMP/tla/tla2tools.jar" \
-            "https://github.com/tlaplus/tlaplus/releases/download/v${TLC_VERSION}/tla2tools.jar"
-          ACTUAL_SHA="$(sha256sum "$RUNNER_TEMP/tla/tla2tools.jar" | awk '{print $1}')"
-          if [[ "${ACTUAL_SHA}" != "${TLC_SHA256_PINNED}" ]]; then
-            echo "::error::TLC SHA-256 supply-chain pin violation (ADR-0042 §A1)"
-            echo "::error::expected: ${TLC_SHA256_PINNED}"
-            echo "::error::actual:   ${ACTUAL_SHA}"
-            exit 1
-          fi
-          mkdir -p "$HOME/.local/bin"
-          cat > "$HOME/.local/bin/tlc" <<'EOF'
-          #!/usr/bin/env bash
-          exec java -cp "${TLC_JAR}" tlc2.TLC "$@"
-          EOF
-          chmod +x "$HOME/.local/bin/tlc"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          echo "TLC_JAR=$RUNNER_TEMP/tla/tla2tools.jar" >> "$GITHUB_ENV"
-
-      # Hard 8-min timeout per spec (per WI §6.1.7 PR-lane budget).
-      # `timeout` returns 124 on hit → job fails fail-closed.
-      - name: TLC tenant_isolation (PR bounds)
-        run: timeout 480s bash scripts/run_tlc_corelink.sh tenant_isolation
-      - name: TLC cas_integrity (PR bounds)
-        run: timeout 480s bash scripts/run_tlc_corelink.sh cas_integrity
-      - name: TLC gc_correctness (PR bounds)
-        run: timeout 480s bash scripts/run_tlc_corelink.sh gc_correctness
-      - name: TLC audit_immutability (PR bounds)
-        run: timeout 480s bash scripts/run_tlc_corelink.sh audit_immutability
-
   # ---------------------------------------------------------------------
   # 2. Workspace-level convergence build + test (sprint smoke).
   # Per-crate workflows already gate touched-crate diffs; this is the
