@@ -1,0 +1,87 @@
+# Prova que uma box do fabric sobrevive além do fusível de 15 minutos.
+#
+# POR QUE ISTO EXISTE
+# Até 2026-08-02 toda box do CoreLink Runners morria por volta dos 15 minutos,
+# independente de carga. `RunnerContainer.sleepAfter = "15m"` estava documentado
+# como janela de OCIOSIDADE, mas o SDK só renova esse prazo em tráfego que chega
+# via `containerFetch` — e ninguém disca PARA dentro de uma box (o agente do
+# Actions é o entrypoint da imagem e disca pra fora). O contador ficava em zero,
+# o prazo congelava em "início + 900 s", e a box levava SIGTERM no meio do job.
+# Corrigido em corelink-runners#439: o cron passou a informar a atividade que o
+# SDK não consegue observar.
+#
+# O defeito era invisível porque nada exercitava a faixa: o job mais longo que já
+# rodou com sucesso no fabric durou 864 s — 14,4 min, logo abaixo do fusível.
+# Uma correção que ninguém consegue ver falhar não é uma correção verificada, e
+# `coverage.yml` (45 min), `perf-nightly.yml` (60 min) e `dr-drill-monthly.yml`
+# (60 min) já apontam para `runs-on: corelink`.
+#
+# COMO ISTO FALHA (importa — um portão que não sabe falhar não prova nada)
+# Se a box for morta, o job NÃO termina em erro limpo: o runner some e o GitHub
+# encerra o job com a anotação "The self-hosted runner lost communication with
+# the server". É esse o sinal de regressão. O passo final também exige
+# explicitamente que o tempo decorrido tenha passado dos 900 s, para que um
+# `minutes` mal configurado não produza um verde falso.
+#
+# Manual-only e de propósito: gasta minutos de box sem exercitar código do
+# produto, então roda quando alguém quer a prova, não em todo push.
+name: fabric-soak-proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "Duração do soak (precisa passar de 15 para provar algo)"
+        required: false
+        default: "18"
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    runs-on: corelink
+    # Bem acima do soak: se o teto do job disparar antes da box morrer, o teste
+    # mede o teto e não o fusível — e reportaria verde sem ter provado nada.
+    timeout-minutes: 45
+    steps:
+      - name: soak
+        shell: bash
+        env:
+          MINUTES: ${{ github.event.inputs.minutes || '18' }}
+        run: |
+          set -euo pipefail
+
+          # O fusível que estamos provando não existir mais: sleepAfter = 15m.
+          FUSE_S=900
+          target=$(( MINUTES * 60 ))
+
+          if [ "$target" -le "$FUSE_S" ]; then
+            echo "::error title=soak curto demais::${MINUTES} min nao passa do fusivel de 15 min — este soak nao provaria nada."
+            exit 1
+          fi
+
+          echo "runner: ${RUNNER_NAME:-?}"
+          echo "alvo:   ${MINUTES} min (${target}s), fusivel antigo: $(( FUSE_S / 60 )) min"
+          start=$(date +%s)
+
+          # Marca de minuto em minuto: se a box morrer, o log para aqui e o ponto
+          # em que parou é o dado (esperado: por volta dos 900 s, pre-correcao).
+          while :; do
+            elapsed=$(( $(date +%s) - start ))
+            [ "$elapsed" -ge "$target" ] && break
+            printf '  %4ds  (%s)\n' "$elapsed" \
+              "$([ "$elapsed" -gt "$FUSE_S" ] && echo 'PASSOU do fusivel' || echo 'antes do fusivel')"
+            sleep 60
+          done
+
+          elapsed=$(( $(date +%s) - start ))
+          echo
+          echo "sobreviveu ${elapsed}s"
+
+          # Exigencia explicita: um verde so vale se de fato passamos do fusivel.
+          if [ "$elapsed" -le "$FUSE_S" ]; then
+            echo "::error title=nao provou nada::${elapsed}s nao passa dos ${FUSE_S}s do fusivel."
+            exit 1
+          fi
+          echo "::notice title=fusivel de 15 min nao existe mais::box viva ha ${elapsed}s (fusivel era ${FUSE_S}s)"
