@@ -1,6 +1,9 @@
 # Cloudflare Worker config for the CoreLink Admin UI.
 #
-# Project name: corelink-admin-ui  (HumanGuardrail org)
+# Project name: corelink-admin-ui  (HuGR-Labs org — the repos moved out of
+#   `HumanGuardrail` on 2026-08-01; the old paths still resolve, but only through
+#   GitHub's transfer redirect, so names are pinned to the live org rather than
+#   left depending on it)
 # Public entry point: humangr.com/corelink  (operator-managed zone route; see routes below)
 #
 # Build: pnpm cf:build  (opennextjs-cloudflare build)
@@ -14,6 +17,37 @@
 #   CLERK_SECRET_KEY
 #   STRIPE_SECRET_KEY
 #   SENTRY_AUTH_TOKEN      (optional -- enables source-map upload at build time)
+#
+# ⚠️ THIS LIST IS NOT THE DEPLOYED STATE, AND READING IT AS SUCH COSTS TIME.
+#   Cloudflare secrets are write-only: values never come back, but NAMES are
+#   listable via `GET /accounts/<acct>/workers/scripts/corelink-admin-ui/secrets`.
+#   As of 2026-08-02 the deployed Worker carries FIVE secrets, and two of them
+#   appear nowhere in this file:
+#
+#     ADMIN_UI_PUBLIC_URL          CLERK_PUBLISHABLE_KEY     CLERK_SECRET_KEY
+#     GITHUB_APP_SLUG              INSTALL_STATE_SIGNING_KEY
+#
+#   Both `GITHUB_APP_SLUG` and `INSTALL_STATE_SIGNING_KEY` are the config that
+#   `/api/install/github` fails closed without. They have been bound the whole
+#   time. The "Install GitHub App" button nevertheless returned
+#   `runner_install_not_configured` (503) for every tenant, because the route
+#   read its bindings via `globalThis.__env__` — the `next-on-pages` convention
+#   this app migrated AWAY from — instead of `getCloudflareContext()`. Fixed
+#   separately; see the activation-telemetry change, which fixes the same read
+#   bug in `/api/welcome/stream`.
+#
+#   The lesson is the reason this comment exists: **absence from this file is
+#   not evidence that a secret is unset.** That inference was made, believed,
+#   and briefly written into a changelog entry as "left unbound" before the
+#   deployed list was actually queried. Query it.
+#
+#   (`GITHUB_APP_SLUG` is worth a second note: it is a PUBLIC identifier — the
+#   `<slug>` in `github.com/apps/<slug>/installations/new`, the URL this app
+#   redirects the customer to. Storing a public string as a write-only secret is
+#   why it looked missing. Moving it to `[vars]` is a defensible cleanup, but it
+#   is deliberately NOT done here: a name cannot be both a var and a secret, so
+#   the change requires deleting the deployed secret first, which is an operator
+#   step and not worth the churn today.)
 #
 # Public (build-time) env vars -- set in CF Worker dashboard or via CI:
 #   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY  -- Clerk publishable key (pk_live_...)
