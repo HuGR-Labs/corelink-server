@@ -154,29 +154,61 @@ export class CustomerClient {
     );
   }
 
+  /**
+   * [live] Mint a PAT. The container replies `201 { "pat": { … }, "token": "…" }`
+   * (`crates/corelink-container/src/routes/customer.rs:810-820`) — the row is
+   * ENVELOPED, the shown-once secret rides alongside it. `request<T>()` only
+   * CASTS, so declaring the flat row compiled clean while every PAT field came
+   * back `undefined`: the create toast read `Token "undefined" created` and the
+   * rotate path fed that same undefined metadata to the shown-once reveal.
+   * Unwrap here and re-flatten `token` onto the row, so callers keep the
+   * `{ …pat, token }` shape they already destructure.
+   */
   async createPat(input: { name: string; scopes: string[] }): Promise<CustomerPat & { token?: string }> {
-    return this.request<CustomerPat & { token?: string }>("/v1/customer/keys", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
+    const { pat, token } = await this.request<{ pat: CustomerPat; token?: string }>(
+      "/v1/customer/keys",
+      { method: "POST", body: JSON.stringify(input) },
+    );
+    return { ...pat, token };
   }
 
+  /**
+   * [live] Revoke a PAT. The container replies `200 { "pat": { … } }`
+   * (`crates/corelink-container/src/routes/customer.rs:860-870`), NOT a bare row —
+   * unwrap the envelope so the returned value is usable. Latent as of 2026-08:
+   * both `KeysClient` call sites discard the result, so the un-unwrapped cast was
+   * invisible; it is fixed here so it can never surface.
+   */
   async revokePat(patId: string): Promise<CustomerPat> {
-    return this.request<CustomerPat>(`/v1/customer/keys/${patId}/revoke`, { method: "POST" });
+    const { pat } = await this.request<{ pat: CustomerPat }>(
+      `/v1/customer/keys/${patId}/revoke`,
+      { method: "POST" },
+    );
+    return pat;
   }
 
   async listTeam(): Promise<{ members: CustomerTeamMember[] }> {
     return this.request<{ members: CustomerTeamMember[] }>("/v1/customer/team");
   }
 
+  /**
+   * [live] Invite a teammate. The container replies `201 { "member": { … } }`
+   * (`crates/corelink-container/src/routes/customer.rs:961`), NOT a bare member —
+   * unwrap the envelope here so callers get the row itself. `request<T>()` only
+   * CASTS the parsed JSON, so declaring the flat type without unwrapping compiled
+   * clean and handed every caller `undefined` fields at runtime: the team screen
+   * rendered "Invite sent to undefined" in production (the copy shipped at the time). Both the unit stub and
+   * the E2E fixture returned a flat member, so no gate could catch it.
+   */
   async inviteTeam(input: {
     email: string;
     role: CustomerTeamMember["role"];
   }): Promise<CustomerTeamMember> {
-    return this.request<CustomerTeamMember>("/v1/customer/team/invite", {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
+    const { member } = await this.request<{ member: CustomerTeamMember }>(
+      "/v1/customer/team/invite",
+      { method: "POST", body: JSON.stringify(input) },
+    );
+    return member;
   }
 
   /** [live] Remove a member (flips seat to removed AND revokes their PATs). */
@@ -187,9 +219,21 @@ export class CustomerClient {
     );
   }
 
-  /** [live] GDPR self-erasure of the whole tenant (Clerk-session only; MFA-gated upstream). */
-  async deleteAccount(): Promise<{ request_id: string }> {
-    return this.request<{ request_id: string }>("/v1/customer/account/delete", { method: "POST" });
+  /**
+   * [live] GDPR self-erasure of the whole tenant (Clerk-session + OWNER only;
+   * MFA-gated upstream). The container acks `202 { "ok": true, "status": … }`
+   * (`crates/corelink-container/src/routes/customer.rs:1082-1093`) where `status`
+   * is `erasure_requested` (queued) or `no_account` (idempotent no-op for an
+   * already-erased / never-provisioned tenant). There is NO request/ticket id on
+   * this wire — the old `{ request_id }` declaration was a cast over a field the
+   * server never sends, and the settings screen rendered
+   * "Erasure requested (undefined)". Do not re-introduce an id here unless the
+   * handler actually starts returning one.
+   */
+  async deleteAccount(): Promise<{ ok: boolean; status: string }> {
+    return this.request<{ ok: boolean; status: string }>("/v1/customer/account/delete", {
+      method: "POST",
+    });
   }
 
   // ── [not-wired] reads — throw NotWiredError so screens teach, never fake. ──

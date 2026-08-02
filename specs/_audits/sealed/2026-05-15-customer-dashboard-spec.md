@@ -77,10 +77,16 @@ All endpoints are tenant-scoped — the backend resolves tenant from the session
 | `/v1/customer/billing` | GET | Owner | `CustomerBilling` |
 | `/v1/customer/billing/portal` | POST | Owner | `{portal_url}` |
 | `/v1/customer/keys` | GET | Viewer | `{pats, byok}` |
-| `/v1/customer/keys` | POST | Developer (own) / Admin (any) | `CustomerPat & {token}` |
-| `/v1/customer/keys/:id/revoke` | POST | issuer or Admin | `CustomerPat` |
+| `/v1/customer/keys` | POST | Developer (own) / Admin (any) | `{pat, token}` |
+| `/v1/customer/keys/:id/revoke` | POST | issuer or Admin | `{pat}` |
 | `/v1/customer/team` | GET | Viewer | `{members}` |
-| `/v1/customer/team/invite` | POST | Admin | `CustomerTeamMember` |
+| `/v1/customer/team/invite` | POST | Admin | `{member}` |
+
+> **Corrected 2026-08-02.** The three POST rows above declared FLAT shapes; the container has always
+> enveloped them (`routes/customer.rs:810`, `:860`, `:961`). The client was implemented faithfully
+> against this table and was therefore wrong — the divergence originated HERE, not in the fixtures.
+> A contract of record that is never re-checked against the handler is how a correct implementation
+> becomes a production defect.
 
 The mock implementation lives in `apps/admin-ui/src/lib/e2e-mock-fixtures.ts`
 behind the catch-all route `apps/admin-ui/src/app/api/v1/[...path]/route.ts`.

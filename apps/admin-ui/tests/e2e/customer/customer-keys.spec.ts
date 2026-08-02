@@ -29,8 +29,10 @@ test.describe("customer keys", () => {
     );
     await page.getByTestId("keys-create-submit").click();
     const created = await createResp;
-    const createdBody = (await created.json()) as { pat_id: string };
-    const newId = createdBody.pat_id;
+    // Wire shape: `201 { "pat": { … }, "token": "…" }` — the row is enveloped
+    // (routes/customer.rs:810-820).
+    const createdBody = (await created.json()) as { pat: { pat_id: string } };
+    const newId = createdBody.pat.pat_id;
 
     // Token shown once.
     await expect(page.getByTestId("keys-new-token")).toContainText("crl_pat_");
