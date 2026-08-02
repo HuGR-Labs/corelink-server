@@ -681,3 +681,167 @@ fn ledger_paid_tier_with_dpa_accepted_returns_checkout_redirect_with_session() {
     // Exactly one Stripe Checkout session was created.
     assert_eq!(stripe.sessions().len(), 1);
 }
+
+// =====================================================================
+// THE FREE ROW IS NOT A SUBSCRIPTION
+// ---------------------------------------------------------------------
+// The money-path regression of 2026-08-02. Signup seeds EVERY tenant with
+// `tier_selections('free','active')`, and the "at most one active
+// subscription per tenant" guard read only `subscription_state == Active`.
+// So the guard fired on the FIRST purchase attempt of every account that
+// had ever signed up: 409 `already_active`, nobody could upgrade, 117 prod
+// tenants sat in exactly that state.
+//
+// These kill the mutation that drops the `tier != Free` half of
+// `TierSelectionRow::holds_paid_subscription` (ledger.rs).
+// =====================================================================
+
+#[test]
+fn free_active_row_does_not_block_the_upgrade_to_paid() {
+    let dpa = InMemoryDpaGate::new();
+    dpa.accept(TenantId::new("t-upgrade"), "v1");
+    let stripe = InMemoryStripeClient::new();
+    let stripe_arc: Arc<dyn StripeClient> = Arc::new(stripe.clone());
+    let ledger = TierSelectionLedger::new(
+        Arc::new(dpa),
+        stripe_arc,
+        Arc::new(InMemoryTierSelectionAuditSink::new()),
+        "v1",
+        "https://ok",
+        "https://cancel",
+    );
+
+    // (1) Signup shape: the tenant is activated on Free.
+    let signup = TenantCtx::new(TenantId::new("t-upgrade"), 1_000, "corr-signup");
+    ledger
+        .select_tier(&signup, TierKind::Free, "u@x.com")
+        .expect("free activation must succeed");
+    let row = ledger.row(&TenantId::new("t-upgrade")).expect("row");
+    assert_eq!(row.tier, TierKind::Free);
+    assert_eq!(row.subscription_state, SubscriptionState::Active);
+    assert!(
+        !row.holds_paid_subscription(),
+        "a free/active row is an activation, not a paid subscription"
+    );
+
+    // (2) The upgrade. This is what 409'd in prod.
+    let upgrade = TenantCtx::new(
+        TenantId::new("t-upgrade"),
+        1_000 + TIER_SELECTION_LOCK_WINDOW_MS + 1,
+        "corr-upgrade",
+    );
+    let r = ledger.select_tier(&upgrade, TierKind::Pro, "u@x.com");
+    assert!(
+        r.is_ok(),
+        "a tenant on the free tier MUST be able to buy a paid tier; got {r:?}"
+    );
+    assert!(
+        matches!(
+            r.expect("checked ok"),
+            TierSelectionReceipt::CheckoutRedirect { .. }
+        ),
+        "the upgrade must reach Stripe Checkout"
+    );
+    assert_eq!(stripe.sessions().len(), 1, "exactly one Checkout session");
+}
+
+#[test]
+fn paid_active_row_still_blocks_a_second_paid_subscription() {
+    // The other half of the guard: excluding free must NOT weaken the real
+    // rule. A tenant already on a PAID active tier is still refused.
+    let dpa = InMemoryDpaGate::new();
+    dpa.accept(TenantId::new("t-dbl"), "v1");
+    let stripe = InMemoryStripeClient::new();
+    let stripe_arc: Arc<dyn StripeClient> = Arc::new(stripe.clone());
+    let ledger = TierSelectionLedger::new(
+        Arc::new(dpa),
+        stripe_arc,
+        Arc::new(InMemoryTierSelectionAuditSink::new()),
+        "v1",
+        "https://ok",
+        "https://cancel",
+    );
+
+    // Drive the tenant to a PAID active row the way prod does: Checkout, then
+    // the Stripe webhook activates it.
+    let ctx = TenantCtx::new(TenantId::new("t-dbl"), 1_000, "corr-1");
+    ledger
+        .select_tier(&ctx, TierKind::Pro, "u@x.com")
+        .expect("first paid select must succeed");
+    let event = StripeCheckoutSessionCompletedEvent::new(
+        "evt_dbl",
+        "cs_dbl",
+        TenantId::new("t-dbl"),
+        TierKind::Pro,
+        StripeCustomerId::new("cus_dbl"),
+        2_000,
+    );
+    ledger
+        .on_checkout_completed(&event)
+        .expect("webhook activation must succeed on a free/pending row");
+    let row = ledger.row(&TenantId::new("t-dbl")).expect("row");
+    assert!(
+        row.holds_paid_subscription(),
+        "pro/active IS a paid subscription"
+    );
+
+    // A second paid purchase is still refused.
+    let again = TenantCtx::new(
+        TenantId::new("t-dbl"),
+        2_000 + TIER_SELECTION_LOCK_WINDOW_MS + 1,
+        "corr-2",
+    );
+    assert!(
+        matches!(
+            ledger.select_tier(&again, TierKind::Max, "u@x.com"),
+            Err(TierError::AlreadyActive)
+        ),
+        "a second PAID subscription on the same axis must still be refused"
+    );
+}
+
+#[test]
+fn webhook_activates_an_upgrading_free_tenant() {
+    // The second guard, in `on_checkout_completed`. An upgrading tenant is on
+    // free/active at the moment the webhook lands — matching that row would
+    // reject the activation the customer just paid for.
+    let dpa = InMemoryDpaGate::new();
+    dpa.accept(TenantId::new("t-hook"), "v1");
+    let stripe = InMemoryStripeClient::new();
+    let stripe_arc: Arc<dyn StripeClient> = Arc::new(stripe.clone());
+    let ledger = TierSelectionLedger::new(
+        Arc::new(dpa),
+        stripe_arc,
+        Arc::new(InMemoryTierSelectionAuditSink::new()),
+        "v1",
+        "https://ok",
+        "https://cancel",
+    );
+    let signup = TenantCtx::new(TenantId::new("t-hook"), 1_000, "corr-signup");
+    ledger
+        .select_tier(&signup, TierKind::Free, "u@x.com")
+        .expect("free activation");
+
+    let event = StripeCheckoutSessionCompletedEvent::new(
+        "evt_hook",
+        "cs_hook",
+        TenantId::new("t-hook"),
+        TierKind::Pro,
+        StripeCustomerId::new("cus_hook"),
+        3_000,
+    );
+    let receipt = ledger
+        .on_checkout_completed(&event)
+        .expect("a paid activation over a free row must NOT be AlreadyActive");
+    assert!(matches!(
+        receipt,
+        SubscriptionActivationReceipt::Activated { .. }
+    ));
+    let row = ledger.row(&TenantId::new("t-hook")).expect("row");
+    assert_eq!(
+        row.tier,
+        TierKind::Pro,
+        "the tenant is now on the paid tier"
+    );
+    assert!(row.holds_paid_subscription());
+}

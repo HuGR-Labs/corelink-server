@@ -1618,6 +1618,51 @@ describe("handleStripeWebhook", () => {
     });
 
     // ------------------------------------------------------------------
+    // The free seed row must not block a paid activation.
+    //
+    // Signup seeds EVERY tenant with tier_selections('free','active'). On the
+    // normal path the container flips the row to 'pending_checkout' before
+    // Checkout, so the `<> 'active'` guard passes. But this UPSERT deliberately
+    // doubles as the fallback for "the container's pending_checkout persist was
+    // lost" — and with a bare `<> 'active'` guard that fallback silently does
+    // NOTHING for a free tenant (their row is already 'active'): Stripe took the
+    // money and the tenant stays on free. The guard must therefore let a paid
+    // activation overwrite a FREE active row, while still protecting a PAID one.
+    // ------------------------------------------------------------------
+    it("checkout.session.completed → activation guard exempts a free/active row (lost-persist fallback)", async () => {
+        const db = fakeDb();
+        const nowMs = Date.now();
+        const event = {
+            id: "evt_free_upgrade",
+            type: "checkout.session.completed",
+            data: {
+                object: {
+                    customer: "cus_free_up",
+                    subscription: "sub_free_up",
+                    amount_total: 4900,
+                    payment_status: "paid",
+                    metadata: { tenant_id: "tenant_free_up", tier: "pro" },
+                },
+            },
+        };
+        const req = await makeStripeRequest(event, TEST_SECRET, nowMs);
+        const res = await handleStripeWebhook(req, baseEnv(db), fakeCtx());
+        expect(res.status).toBe(200);
+
+        const activation = db.runCalls.find(
+            (c) =>
+                c.sql.includes("INSERT INTO tier_selections") &&
+                c.sql.includes("ON CONFLICT"),
+        );
+        expect(activation).toBeDefined();
+        const whereClause = activation!.sql.slice(activation!.sql.indexOf("DO UPDATE"));
+        // Still refuses to clobber an already-active PAID subscription…
+        expect(whereClause).toContain("subscription_state <> 'active'");
+        // …but a free row is an activation, not a subscription, so it is exempt.
+        expect(whereClause).toContain("tier = 'free'");
+    });
+
+    // ------------------------------------------------------------------
     // FIX 4: re-subscribe sequence. A prior cancel/payment-failure NULLs
     // subscription_started_at_ms; the SECOND checkout hits the ON CONFLICT
     // re-activation branch, which MUST write a fresh non-null timestamp or

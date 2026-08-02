@@ -701,10 +701,22 @@ async function cancelBilling(
  * is only ever set to 'active' here with a non-null `subscription_started_at_ms`,
  * satisfying the `subscription_started_when_active` CHECK.
  *
- * The ON CONFLICT UPDATE is guarded `WHERE subscription_state <> 'active'`, so a
- * duplicate or out-of-order `checkout.session.completed` can never downgrade an
- * already-active tier or shift its activation timestamp (review hardening —
- * Stripe can redeliver and reorder webhook events). When the guard DOES fire
+ * The ON CONFLICT UPDATE is guarded `WHERE subscription_state <> 'active' OR
+ * tier = 'free'`, so a duplicate or out-of-order `checkout.session.completed` can
+ * never downgrade an already-active PAID tier or shift its activation timestamp
+ * (review hardening — Stripe can redeliver and reorder webhook events).
+ *
+ * The `OR tier = 'free'` half is what makes the "even if the container's
+ * pending_checkout persist was lost" fallback above actually work. Signup seeds
+ * every tenant `('free','active')`, so on the normal path the container first
+ * flips the row to `pending_checkout` and the `<> 'active'` guard passes — but if
+ * that persist was lost, the row is still `('free','active')` and a bare
+ * `<> 'active'` guard silently skips the UPDATE: Stripe has taken the customer's
+ * money and the tenant stays on free. Free is an activation, not a paid
+ * subscription, so a paid activation is always allowed to overwrite it; a paid
+ * active row remains protected exactly as before.
+ *
+ * When the guard DOES fire
  * (the row was previously deactivated — state <> 'active' with
  * subscription_started_at_ms = NULL), the UPDATE rewrites
  * subscription_started_at_ms to a fresh non-null value so the re-activated row
@@ -741,7 +753,8 @@ async function activatePaidTierSelection(
                -- same value the INSERT arm writes; NOT a COALESCE of the
                -- existing column (which is NULL after cancel).
                subscription_started_at_ms = ?4
-             WHERE tier_selections.subscription_state <> 'active'`,
+             WHERE tier_selections.subscription_state <> 'active'
+                OR tier_selections.tier = 'free'`,
         )
         .bind(
             opts.tenantId,
