@@ -46,7 +46,10 @@ describe("get-corelink-worker routes", () => {
     expect(res.headers.get("Content-Type")).toBe("text/x-shellscript; charset=utf-8");
     const body = await res.text();
     expect(body.startsWith("#!/bin/sh\n")).toBe(true);
-    expect(body).toContain("corelink ping");
+    // Was `corelink ping` — a subcommand that has never existed. See
+    // install.test.ts invariant 4b, which checks the verb against the CLI's
+    // clap enum instead of string-matching it.
+    expect(body).toContain("corelink whoami");
   });
 
   it("GET / response sets Cache-Control no-store (never serve stale)", async () => {

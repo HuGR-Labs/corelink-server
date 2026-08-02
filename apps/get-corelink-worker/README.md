@@ -16,7 +16,11 @@ The script:
    `https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`.
 4. Writes `~/.corelink/config.toml` with `token`, `region`, and the
    default `endpoint = "https://corelink-api.humangr.com"`.
-5. Runs `corelink ping` to verify connectivity. On success, the
+5. Runs `corelink whoami` to verify connectivity AND cache the resolved
+   `tenant_id` into `~/.corelink/config.toml` (the script itself does not write
+   it, and every later tenant-scoped command needs it). This was `corelink ping`
+   until 2026-08-02 — a subcommand that never existed, so the one-liner exited
+   non-zero for every customer. On success, the
    developer's `/welcome` SSE pane in `admin-ui` flips from "Waiting"
    to "Connected" within ~1 second.
 
