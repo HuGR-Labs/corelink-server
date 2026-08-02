@@ -19,9 +19,25 @@
  *      FATAL message on stderr.
  *   3. `OS` and `ARCH` are derived from `uname -s` (lowercased) and
  *      `uname -m` — the agent prompt §4 fixes this contract.
- *   4. Final command is `corelink ping` (NOT `corelink --version` or a
- *      no-op) — this is what flips the `/welcome` SSE pane from
- *      "Waiting" to "Connected".
+ *   4. Final command is `corelink whoami` (NOT `corelink --version` or a
+ *      no-op). It was `corelink ping` until 2026-08-02 — a subcommand that has
+ *      NEVER existed, so the public one-liner ended in a clap "unrecognized
+ *      subcommand" error and a non-zero exit for every customer, and the
+ *      documented `curl … | sh … && corelink doctor` never reached its `&&`.
+ *      `whoami` is also more than a check: it caches `tenant_id` into
+ *      ~/.corelink/config.toml, which this script does not write and every
+ *      later tenant-scoped command needs. `doctor` would be wrong — it does a
+ *      real prod CAS write, so it fails for a legitimately read-only PAT.
+ *      Invariant 4b in the tests now checks the verb against the CLI's actual
+ *      clap enum, because the old test string-matched `corelink ping` and so
+ *      PINNED the defect rather than catching it.
+ *
+ *      NOTE: this line was documented as what flips the `/welcome` SSE pane
+ *      from "Waiting" to "Connected". It never did, and still does not: the
+ *      pane waits on a `first_cli_authed` analytics event whose only emitter
+ *      lives in `apps/cas-worker/`, an app with no entrypoint and no wrangler
+ *      config — it is not deployable. Tracked separately; do not assume this
+ *      script fixes that pane.
  *
  * Bash conventions:
  *   - `#!/bin/sh` (POSIX sh, NOT bash) so macOS default + Alpine/BusyBox both work.
@@ -118,6 +134,6 @@ endpoint = "__DEFAULT_API_ENDPOINT__"
 EOF
 chmod 600 "$HOME/.corelink/config.toml"
 
-corelink ping
+corelink whoami
 echo "Next: cd into your Bazel repo, run: corelink bazel-init"
 `;
