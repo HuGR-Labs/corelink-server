@@ -29,21 +29,24 @@ The installer:
 1. Detects your platform (macOS arm64 / amd64, Linux amd64 / arm64).
 2. Downloads the statically-linked `corelink` binary into `/usr/local/bin`
    (or `~/.local/bin` if `/usr/local/bin` is not writable).
-3. Writes `~/.config/corelink/config.toml` with your PAT and tenant ID.
-4. Runs `corelink ping` against the closest CAS region and prints the RTT.
+3. Writes `~/.corelink/config.toml` with your PAT and endpoint.
+4. Runs `corelink whoami`, which verifies the PAT against the API **and**
+   caches the resolved tenant ID into that same file — the installer does not
+   know your tenant ID, and later tenant-scoped commands need it.
 
 Expected output:
 
 ```text
-corelink-get: detected darwin/arm64
-corelink-get: downloading corelink 0.1.0 ...
-corelink-get: installed /usr/local/bin/corelink
-corelink-get: writing ~/.config/corelink/config.toml
-corelink ping: ok (region=cf-iad, rtt=18ms, tenant=acme-prod)
+Downloading CoreLink CLI from https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-darwin-arm64 ...
+tenant_id:    <your-tenant-id>
+token_prefix: corelink_pat_3f9a…
+route_kind:   pat
+Next: cd into your Bazel repo, run: corelink bazel-init
 ```
 
-If `corelink ping` reports `ok`, the CLI is wired and authenticated — go to
-Step 2.
+If `corelink whoami` prints your tenant ID, the CLI is wired and authenticated —
+go to Step 2. If it errors, your PAT is wrong or the endpoint is unreachable;
+`corelink doctor` runs the full 8-check diagnostic.
 
 ## Step 2 — Wire your build tool and verify a cache hit
 
@@ -100,7 +103,8 @@ that your tenant is permitted to reach.
 
 | Command | Purpose |
 | --- | --- |
-| `corelink ping` | Probe the closest CAS region (RTT + tenant resolution). |
+| `corelink whoami` | Show the tenant this PAT resolves to (and cache it). |
+| `corelink doctor` | Full diagnostic: network, auth, CAS round-trip, quota. |
 | `corelink ls` | List blobs in your tenant CAS. |
 | `corelink get` | Download a blob by digest. |
 | `corelink put` | Upload a file as a blob (client-verify default on). |
