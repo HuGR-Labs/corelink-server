@@ -9,11 +9,16 @@
 //
 // Cron:
 //   Mondays 08:00 UTC → src/cron/weekly-email.ts
+//
+// RPC (service binding):
+//   `AnalyticsIngest.ingestServerEvent` — the keyless, trusted-by-construction
+//   path for server-only events (see the class doc below).
 
+import { WorkerEntrypoint } from "cloudflare:workers";
 import * as Sentry from "@sentry/cloudflare";
 import { scrubSentryEvent } from "./sentry-scrub";
-import type { Env } from "./types";
-import { handleIngest } from "./ingest";
+import type { Env, EventPayload } from "./types";
+import { handleIngest, ingestEvents, type IngestResult } from "./ingest";
 import { runWeeklyDigest, computeThreeNumbers } from "./cron/weekly-email";
 import { withSecurityHeaders } from "./security-headers";
 
@@ -99,3 +104,79 @@ export default Sentry.withSentry(
     // both type graphs happy without weakening the inner handler's types.
     baseHandler as unknown as Parameters<typeof Sentry.withSentry>[1],
 ) as ExportedHandler<Env>;
+
+/**
+ * `AnalyticsIngest` — the RPC entrypoint for TRUSTED, SERVER-ONLY events.
+ *
+ * Bound by a caller Worker as:
+ *
+ *     [[env.prod.services]]
+ *     binding    = "ANALYTICS_SVC"
+ *     service    = "corelink-analytics-prod"
+ *     entrypoint = "AnalyticsIngest"       # ← required: without it the binding
+ *                                          #   resolves to the default `fetch`
+ *                                          #   export, which has no RPC methods
+ *
+ * and called as `await env.ANALYTICS_SVC.ingestServerEvent({...})`.
+ *
+ * ── WHY THERE IS NO KEY CHECK HERE (this is NOT a missing check) ───────────
+ * `ingestServerEvent` passes `trusted = true` unconditionally. That is an
+ * authentication CONCLUSION, not a skipped step:
+ *
+ *   - A service binding is not a URL. It is resolved by the Cloudflare control
+ *     plane at deploy time from the CALLER's own config, and the call never
+ *     leaves the runtime — there is no hostname to point at, no socket to open,
+ *     no header to forge. The ONLY way to obtain this stub is to be a Worker in
+ *     this account whose deployed config declares the binding above; that
+ *     declaration is itself an authenticated act (a `wrangler deploy` with an
+ *     account-scoped token). The platform authenticates the caller's IDENTITY,
+ *     which is strictly stronger than a shared static secret that both sides
+ *     must hold, that lives in two secret stores, and that leaks on any log.
+ *   - A browser can NEVER reach this method. RPC methods are not exposed over
+ *     HTTP: the public surface of this Worker is the default `fetch` export on
+ *     the `humangr.com` routes, and that path still enforces the original
+ *     `Origin`-allow-list-OR-`X-Corelink-Ingest-Key` split
+ *     (`ingest.ts:159-168`) and still rejects `SERVER_ONLY_EVENT_NAMES` on the
+ *     spoofable-`Origin` browser path (`ingest.ts:120-122`). Nothing about the
+ *     HTTP contract changes because this class exists.
+ *
+ * The invariant that keeps the above true: this class must never be made
+ * reachable by an untrusted caller — do NOT add a `fetch()` method to it, do
+ * NOT put a route on it, and do NOT widen it beyond the analytics-event shape.
+ * If any of those changes, `trusted = true` stops being sound and the caller
+ * must be authenticated explicitly again.
+ *
+ * The pre-existing `INGEST_KEY` HTTP path is untouched and still serves its
+ * current callers (signup-worker, cas-worker, get-corelink-worker); this is an
+ * ADDITIONAL, key-free path for Workers that can hold a binding.
+ */
+export class AnalyticsIngest extends WorkerEntrypoint<Env> {
+    /**
+     * Write ONE trusted server event. Deliberately narrow: a single event, the
+     * `EventPayload` shape, nothing else. It shares the SAME validator and the
+     * SAME `INSERT OR IGNORE` write as `POST /v1/event` (`ingestEvents`,
+     * `ingest.ts`), so the two surfaces cannot drift.
+     *
+     * Idempotency is the caller's lever: pass a DETERMINISTIC `id` and the
+     * `analytics_events` primary key coalesces every re-send (the table's only
+     * uniqueness constraint). Omit `created_at` and ingest stamps its own clock.
+     *
+     * Never throws — an invalid event comes back as `{accepted:0, rejected:1}`
+     * with a reason, and a D1 fault as a `d1_error:*` reason. Callers emit this
+     * on a hot path (`ctx.waitUntil`) and must not be able to fail because
+     * analytics did. A throw would cross the RPC boundary as an exception in
+     * the CALLER's isolate, so the catch below is load-bearing, not decorative.
+     */
+    async ingestServerEvent(event: EventPayload): Promise<IngestResult> {
+        try {
+            return await ingestEvents([event], this.env, true);
+        } catch (err) {
+            Sentry.captureException(err);
+            return {
+                accepted: 0,
+                rejected: 1,
+                errors: [{ reason: `rpc_error:${(err as Error).message}` }],
+            };
+        }
+    }
+}
