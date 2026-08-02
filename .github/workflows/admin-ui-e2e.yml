@@ -76,15 +76,20 @@ jobs:
       - name: Build
         run: pnpm build
 
+      # See the critical-e2e job below for why `--reporter=line` is gone: the CLI
+      # flag overrides the config's reporter list and silently disables the html
+      # reporter that the upload step expects to find output from.
       - name: Run legacy Playwright suite
-        run: pnpm e2e --reporter=line
+        run: pnpm e2e
 
-      - name: Upload Playwright report on failure
+      - name: Upload Playwright failure evidence
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report-legacy
-          path: apps/admin-ui/playwright-report/
+          path: |
+            apps/admin-ui/playwright-report/
+            apps/admin-ui/test-results/
           retention-days: 14
 
   critical-e2e:
@@ -140,13 +145,33 @@ jobs:
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
 
+      # No `--reporter=line`: the CLI flag OVERRIDES the config's reporter list,
+      # and the config already picks CI-appropriate reporters
+      # (`[github, html, list]` when CI is set, `list` locally). Passing the flag
+      # silently disabled the html reporter, so `playwright-report/` was never
+      # written and the upload below had nothing to collect — see that step.
       - name: Run critical-flow Playwright suite
-        run: pnpm exec playwright test --config=playwright.tests.config.ts --reporter=line
+        run: pnpm exec playwright test --config=playwright.tests.config.ts
 
-      - name: Upload Playwright report on failure
+      # Two paths, because they are produced by different mechanisms and only
+      # one of them was ever collected:
+      #   playwright-report/ — the html REPORTER's output (needs the reporter to
+      #                        actually be enabled; see the step above).
+      #   test-results/      — `outputDir`: the per-failure screenshot, video and
+      #                        error-context.md. Written regardless of reporter,
+      #                        and it is the ONLY thing that explains a CI-only
+      #                        failure.
+      # Before this change a failing run produced ZERO artifacts (verified on run
+      # 30729094790: `gh run download` → "no valid artifacts found"), even though
+      # the log printed the exact paths of the screenshot and video it had just
+      # written. That is why the rotating-browser flake in audit-trail.spec.ts
+      # could not be diagnosed from CI at all.
+      - name: Upload Playwright failure evidence
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: playwright-report-critical-${{ matrix.browser }}
-          path: apps/admin-ui/playwright-report/
+          path: |
+            apps/admin-ui/playwright-report/
+            apps/admin-ui/test-results/
           retention-days: 14
