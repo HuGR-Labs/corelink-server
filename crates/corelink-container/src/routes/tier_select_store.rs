@@ -19,8 +19,11 @@
 //! - `is_dpa_accepted`        → `SELECT 1 FROM dpa_acceptances WHERE
 //!   tenant_id = ?1 AND dpa_version = ?2` (INV-ONBOARD-DPA-FIRST).
 //! - `has_active_subscription`→ `SELECT 1 FROM tier_selections WHERE
-//!   tenant_id = ?1 AND subscription_state = 'active'` (the UNIQUE partial
-//!   index `idx_tenant_active_subscription` is the defense-in-depth).
+//!   tenant_id = ?1 AND subscription_state = 'active' AND tier != 'free'`
+//!   (the UNIQUE partial index `idx_tenant_active_subscription` is the
+//!   defense-in-depth). The `tier != 'free'` predicate is required: signup
+//!   seeds `('free','active')` for every tenant, so without it the guard
+//!   reports a subscription that does not exist and blocks all upgrades.
 //! - `persist_pending_checkout` → `UPDATE tier_selections SET state =
 //!   'pending_checkout', stripe_customer_id = ? ...` + `INSERT INTO
 //!   stripe_checkout_sessions (...)` ATOMICALLY (WI §6.7 drift prevention).
@@ -53,6 +56,17 @@ use crate::storage::d1_http::D1HttpClient;
 /// 60-second durable lock window — matches migration 0039's `lock_window_60s`
 /// CHECK (`expires_at_ms - acquired_at_ms <= 60000`) and WI §6.4.
 const LOCK_TTL_MS: i64 = 60_000;
+
+/// The "does this tenant already hold an active PAID cache subscription?" read
+/// behind [`TierSelectStore::has_active_subscription`].
+///
+/// Named (rather than inlined at the call site) so the `tier != 'free'`
+/// predicate is unit-testable in CI: the real behaviour can only be proven
+/// against live D1 (`#[ignore]` harness), so a cheap always-on test asserts the
+/// statement still excludes the free seed row. Dropping that predicate is what
+/// made every signed-up tenant 409 `already_active` on their first upgrade.
+const HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL: &str = "SELECT 1 FROM tier_selections \
+     WHERE tenant_id = ?1 AND subscription_state = 'active' AND tier != 'free' LIMIT 1";
 
 /// Map `RequestedTier` → the exact snake_case label the D1 `tier` CHECK
 /// constraints accept (`tier_selections` / `stripe_checkout_sessions`).
@@ -202,12 +216,26 @@ impl TierSelectStore for D1HttpTierSelectStore {
     async fn has_active_subscription(&self, tenant_id: &str) -> Result<bool, String> {
         // Primary check; the UNIQUE partial index `idx_tenant_active_subscription`
         // is the defense-in-depth backstop. Fail-CLOSED on any error.
+        //
+        // `tier != 'free'` is LOAD-BEARING, not a nicety. Signup seeds every new
+        // tenant with `tier_selections('free','active')` (the canonical shape in
+        // `apps/signup-worker/src/lib/d1.ts::seedTenantEntitlements`, mirrored by
+        // `worker/src/lib/githugr_provision.ts`) so billing reads `active` rather
+        // than `inactive`. Without this predicate that seed row answers "yes, this
+        // tenant already has an active subscription", and the guard in
+        // `orchestrate_tier_select` 409s `already_active` on the FIRST purchase
+        // attempt of every signed-up tenant — i.e. nobody can ever upgrade.
+        //
+        // Free is an instant ACTIVATION, not a subscription: the guard exists to
+        // refuse a *second* paid subscription on the same axis, which is exactly
+        // what excluding free restores. The one-row-per-tenant shape is preserved
+        // either way — `persist_pending_checkout` upserts `ON CONFLICT(tenant_id)`,
+        // so an upgrade flips the SAME row free/active → pending_checkout → paid/
+        // active and never inserts a second `active` row (the UNIQUE partial index
+        // still holds).
         let rows = self
             .d1
-            .query(
-                "SELECT 1 FROM tier_selections WHERE tenant_id = ?1 AND subscription_state = 'active' LIMIT 1",
-                &[json!(tenant_id)],
-            )
+            .query(HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL, &[json!(tenant_id)])
             .await?;
         Ok(!rows.is_empty())
     }
@@ -456,10 +484,18 @@ mod tests {
     /// `persist_free_active` flips a tenant to `tier='free' / state='active'`
     /// (setting `subscription_started_at_ms`, per the
     /// `subscription_started_when_active` CHECK) — after which
-    /// `has_active_subscription` reads `Ok(true)`.
+    /// `has_active_subscription` still reads `Ok(false)`, because FREE IS NOT A
+    /// SUBSCRIPTION.
+    ///
+    /// This assertion used to be `assert!(after)`, which froze the defect: it
+    /// encoded "a free row counts as an active subscription" as the intended
+    /// contract, and the orchestration's `already_active` guard then 409'd every
+    /// signed-up tenant's first upgrade attempt (117 of them in prod on
+    /// 2026-08-02). The guard's job is to refuse a *second paid* subscription on
+    /// the axis, so the free seed row must read false.
     #[tokio::test]
     #[ignore = "requires live CF D1 test database (StorageEnv env vars + migrations 0038/0039 applied)"]
-    async fn d1_persist_free_active_then_active_true() {
+    async fn d1_persist_free_active_does_not_count_as_a_subscription() {
         let store = live_store();
         let tenant = unique_tenant_id("free");
         let cid = "corr-d1-free-active";
@@ -478,11 +514,44 @@ mod tests {
             .await
             .expect("persist_free_active query");
 
-        // Now active.
+        // Still NOT an active subscription — otherwise this tenant could never
+        // buy a paid tier (409 `already_active` on the upgrade attempt).
         let after = store
             .has_active_subscription(&tenant)
             .await
             .expect("post has_active_subscription query");
-        assert!(after, "tenant must be active after persist_free_active");
+        assert!(
+            !after,
+            "a free/active row must NOT count as an active subscription — it is \
+             what every signed-up tenant starts with, so counting it blocks all upgrades"
+        );
+    }
+
+    /// Always-on (no live D1) guard on the statement itself.
+    ///
+    /// The behavioural proof needs a real database and therefore lives behind
+    /// `#[ignore]`, which means CI would NOT catch someone deleting the
+    /// `tier != 'free'` predicate — the exact regression that took the money-path
+    /// down. This cheap test runs on every PR and fails if the predicate is
+    /// dropped or the state/table drift.
+    #[test]
+    fn has_active_subscription_sql_excludes_the_free_seed_row() {
+        let sql = HAS_ACTIVE_PAID_CACHE_SUBSCRIPTION_SQL;
+        assert!(
+            sql.contains("tier != 'free'"),
+            "the free-tier exclusion is load-bearing: signup seeds ('free','active') \
+             for EVERY tenant, so without it `has_active_subscription` returns true \
+             for a tenant that has never paid and the upgrade 409s `already_active`. \
+             Statement was: {sql}"
+        );
+        assert!(
+            sql.contains("subscription_state = 'active'"),
+            "must still only match ACTIVE rows (a pending_checkout row has to stay \
+             retryable). Statement was: {sql}"
+        );
+        assert!(
+            sql.contains("tenant_id = ?1"),
+            "tenant must stay parameterised (never interpolated). Statement was: {sql}"
+        );
     }
 }
