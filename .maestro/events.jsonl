@@ -1,0 +1,10 @@
+{"id":"G7","probe":"session-start progress fold","passed":false,"at":"2026-07-25T22:13:08.497Z"}
+{"id":"G4","probe":"session-start memory recall","passed":false,"at":"2026-07-25T22:13:08.505Z"}
+{"id":"G3","probe":"session-start doctrine re-injection","passed":true,"at":"2026-07-25T22:13:08.506Z"}
+{"id":"G7","probe":"session-start progress fold","passed":true,"at":"2026-07-25T22:15:22.115Z"}
+{"id":"G4","probe":"session-start memory recall","passed":false,"at":"2026-07-25T22:15:22.116Z"}
+{"id":"G3","probe":"session-start doctrine re-injection","passed":true,"at":"2026-07-25T22:15:22.117Z"}
+{"id":"A-ANTIDET-01","probe":"context-cap actuation (§3.75)","passed":true,"at":"2026-07-25T22:17:25.643Z"}
+{"id":"G7","probe":"session-start progress fold","passed":true,"at":"2026-08-01T17:41:55.556Z"}
+{"id":"G4","probe":"session-start memory recall","passed":false,"at":"2026-08-01T17:41:55.558Z"}
+{"id":"G3","probe":"session-start doctrine re-injection","passed":true,"at":"2026-08-01T17:41:55.560Z"}
