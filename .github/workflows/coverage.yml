@@ -49,7 +49,22 @@ permissions:
 jobs:
   coverage:
     name: cargo-llvm-cov (workspace HTML + summary)
-    runs-on: ubuntu-x64-4core  # 4-core hosted: cargo-llvm-cov instruments the whole workspace (heavy link); 2-core OOMs (ld Bus error, signal 7)
+    # Moved off the GitHub-hosted runner: this repo is PRIVATE, so every hosted
+    # minute is billed, and on 2026-08-02 the org's Actions quota ran out —
+    # hosted jobs now fail in ~10 s with "The job was not started because
+    # recent account payments have failed or your spending limit needs to be
+    # increased". Self-hosted jobs bill zero and are unaffected.
+    # The box was inventoried before any of this moved (probe run 30724931256);
+    # nothing this job runs is missing from it. No step is changed — on a
+    # self-hosted runner the saving is total however many steps run.
+    # Revert = this one line back to the hosted label.
+    # Preserved from the previous runner (ubuntu-x64-4core): "4-core hosted:
+    # cargo-llvm-cov instruments the whole workspace (heavy link); 2-core OOMs
+    # (ld Bus error, signal 7)". That constraint is why this job was on a larger
+    # hosted runner, and it is SATISFIED here, not waived: the fabric box was
+    # measured at 4 vCPU / 11.9 GiB RAM / 16 GB free disk (probe 30724931256),
+    # i.e. the same core count and more memory than the runner it leaves.
+    runs-on: corelink
     timeout-minutes: 45
     steps:
       - name: Checkout

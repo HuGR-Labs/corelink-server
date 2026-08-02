@@ -26,10 +26,11 @@ jobs:
         run: |
           line() { printf '\n== %s ==\n' "$1"; }
           have() {
-            if command -v "$1" >/dev/null 2>&1; then
-              printf '  %-14s SIM   %s\n' "$1" "$($1 ${2:---version} 2>&1 | head -1)"
+            local bin="$1" flag="${2:---version}"
+            if command -v "$bin" >/dev/null 2>&1; then
+              printf '  %-14s SIM   %s\n' "$bin" "$("$bin" "$flag" 2>&1 | head -1)"
             else
-              printf '  %-14s NAO\n' "$1"
+              printf '  %-14s NAO\n' "$bin"
             fi
           }
 

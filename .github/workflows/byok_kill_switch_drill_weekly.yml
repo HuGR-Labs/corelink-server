@@ -17,7 +17,16 @@ permissions:
 jobs:
   kill-switch-drill:
     name: BYOK Kill Switch Drill
-    runs-on: ubuntu-latest
+    # Moved off the GitHub-hosted runner: this repo is PRIVATE, so every hosted
+    # minute is billed, and on 2026-08-02 the org's Actions quota ran out —
+    # hosted jobs now fail in ~10 s with "The job was not started because
+    # recent account payments have failed or your spending limit needs to be
+    # increased". Self-hosted jobs bill zero and are unaffected.
+    # The box was inventoried before any of this moved (probe run 30724931256);
+    # nothing this job runs is missing from it. No step is changed — on a
+    # self-hosted runner the saving is total however many steps run.
+    # Revert = this one line back to the hosted label.
+    runs-on: corelink
     timeout-minutes: 20  # SLA ≤ 6 min + overhead
 
     steps:

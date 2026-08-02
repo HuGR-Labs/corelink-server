@@ -41,7 +41,16 @@ jobs:
   # per CI-OPT-004 (removes floating rustsec/audit-check@v1 ref).
   pr-gate:
     name: PR gate (crate-scoped clippy + tests + canonical vectors)
-    runs-on: ubuntu-latest
+    # Moved off the GitHub-hosted runner: this repo is PRIVATE, so every hosted
+    # minute is billed, and on 2026-08-02 the org's Actions quota ran out —
+    # hosted jobs now fail in ~10 s with "The job was not started because
+    # recent account payments have failed or your spending limit needs to be
+    # increased". Self-hosted jobs bill zero and are unaffected.
+    # The box was inventoried before any of this moved (probe run 30724931256);
+    # nothing this job runs is missing from it. No step is changed — on a
+    # self-hosted runner the saving is total however many steps run.
+    # Revert = this one line back to the hosted label.
+    runs-on: corelink
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
@@ -69,7 +78,16 @@ jobs:
 
   wasm-build:
     name: WASM target build (CF Workers compile compatibility)
-    runs-on: ubuntu-latest
+    # Moved off the GitHub-hosted runner: this repo is PRIVATE, so every hosted
+    # minute is billed, and on 2026-08-02 the org's Actions quota ran out —
+    # hosted jobs now fail in ~10 s with "The job was not started because
+    # recent account payments have failed or your spending limit needs to be
+    # increased". Self-hosted jobs bill zero and are unaffected.
+    # The box was inventoried before any of this moved (probe run 30724931256);
+    # nothing this job runs is missing from it. No step is changed — on a
+    # self-hosted runner the saving is total however many steps run.
+    # Revert = this one line back to the hosted label.
+    runs-on: corelink
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
