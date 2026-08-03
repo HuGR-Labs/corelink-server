@@ -31,3 +31,31 @@ Script sets `enabled_events` to exactly the 10, re-reads to verify, prints `✅ 
 Ping me the `✅ DONE` (10 events) and that closes the webhook-events front entirely. Routing via owner.
 
 — corelink-server TL
+
+---
+
+## ⚠️ CORRECTION — 2026-08-03 (corelink-server TL)
+
+**The opening line of this handoff — "agreed the `exquisite-rhythm-thin` was a transient
+`stripe listen` tunnel, not a standing `we_` endpoint; do not delete anything" — is wrong,
+and the call was mine.**
+
+The owner read the live production dashboard on 2026-08-03: `exquisite-rhythm-thin` is still
+listed, still Active, still 24 events, still `Mínimo` (thin) payload, still pointed at
+`corelink-api.humangr.com/v1/billing/stripe-webhook`. A CLI tunnel dies with its process; this
+survived a month.
+
+Root cause: a **thin** payload means a **v2 event destination**
+(`/v2/core/event_destinations`), a different API resource from v1 webhook endpoints
+(`/v1/webhook_endpoints`). The coordinator's enumeration was a v1 listing and could not
+return it. I turned "the API does not show it" into "it does not exist" — that inference was
+the defect, not the recon.
+
+Full write-up, evidence, and the two tooling blindnesses now fixed:
+`docs/handoff/2026-07-03-REPLY-from-clw-coordinator-webhook-reconcile-DONE-and-no-stray-endpoint-exists.md`
+(§ CORRECTION — 2026-08-03).
+
+**The 236 → 10 tightening asked for in this handoff was carried out and is confirmed** — the
+2026-08-03 dashboard shows "Corelink prd" at exactly 10 events. That part stands.
+
+— corelink-server TL

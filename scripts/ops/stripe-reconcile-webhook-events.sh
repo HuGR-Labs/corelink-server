@@ -19,8 +19,27 @@
 #      signup-worker endpoint (default: the `endpoint_url` in the JSON; override
 #      with --url).
 #   3. Diffs its live `enabled_events` vs canonical → prints ADD / REMOVE.
-#   4. Flags any OTHER endpoint pointing at a *.humangr.com host (duplicate /
-#      stray-CLI-listener detection) — REPORT ONLY, never deletes.
+#   4. Lists EVERY Stripe destination pointing at a *.humangr.com host — BOTH
+#      v1 webhook endpoints (`/v1/webhook_endpoints`) AND v2 event destinations
+#      (`/v2/core/event_destinations`) — and WARNs on any url carrying more than
+#      one. REPORT ONLY, never deletes.
+#
+#      ⚠️ This step was blind twice over until 2026-08-03, and both blindnesses
+#      shipped a clean report over a live stray:
+#        (a) it read ONLY `/v1/webhook_endpoints`. v2 event destinations — the
+#            `thin`-payload ones Stripe auto-names `adjective-noun-thin` — are a
+#            SEPARATE API resource and are never returned by the v1 list. On
+#            2026-07-03 a v1 enumeration returned 3 endpoints and the stray
+#            `exquisite-rhythm-thin` was declared non-existent on that basis. It
+#            was still Active on prod a month later.
+#        (b) the duplicate counter only counted endpoints whose url equalled the
+#            RECONCILE TARGET, so duplicates on any other humangr.com url could
+#            not make it fire however many there were — and the two destinations
+#            that really did share the corelink-api billing url were on a
+#            different url than the target.
+#      If the CLI/key cannot enumerate v2, the script says so loudly and exits 3
+#      rather than printing a clean report: a detector that cannot look must
+#      never report "none found".
 #   5. DRY-RUN by default. With --yes (or CONFIRM_LIVE=1) it SETS enabled_events
 #      to exactly the canonical list (Stripe replaces the array), then re-reads to
 #      verify. Re-running when already in sync is a no-op.
@@ -51,8 +70,12 @@
 #   --help            Print this header and exit.
 #
 # Exit codes:
-#   0   — success (in sync, dry-run completed, or applied+verified)
+#   0   — success (in sync, dry-run completed, or applied+verified) AND the
+#         stray sweep was complete
 #   1   — a Stripe operation failed / endpoint not found / verify mismatch
+#   3   — the reconcile succeeded but the STRAY SWEEP WAS INCOMPLETE (v2 event
+#         destinations could not be enumerated). NOT evidence that no stray
+#         exists. Re-run with a CLI/key that can read `/v2/core/event_destinations`.
 #   2   — usage / argument error
 #   127 — `stripe` CLI or python3 not found in PATH
 
@@ -165,31 +188,110 @@ if [[ -z "$ENDPOINTS_JSON" ]]; then
     exit 1
 fi
 
-# Report ALL humangr.com endpoints + flag duplicates on the SAME url (stray CLI
-# listeners). Purely informational — never mutated.
-log "Webhook endpoints on this account (humangr.com hosts):"
-# The endpoints JSON is passed via env (ENDPOINTS_JSON) so stdin is free for the
-# heredoc program (`python3 -` reads its program from stdin).
-ENDPOINTS_JSON="$ENDPOINTS_JSON" python3 - "$TARGET_URL" <<'PY'
+# ── v2 event destinations (the blind spot — see the 2026-08-03 correction) ───
+#
+# `/v1/webhook_endpoints` and `/v2/core/event_destinations` are DIFFERENT API
+# resources. A v2 event destination (the ones that carry a `thin` payload and an
+# auto-generated `adjective-noun-thin` name) is NEVER returned by the v1 list, so
+# a sweep that only reads v1 reports "no strays" while a v2 destination sits
+# Active on a production URL. That is exactly what happened: on 2026-07-03 a v1
+# enumeration returned 3 endpoints and the stray `exquisite-rhythm-thin` was
+# declared non-existent — it was still Active a month later.
+#
+# Fetch is best-effort BUT NEVER SILENT: if the CLI cannot enumerate v2, we set
+# V2_SWEEP_OK=false and the script exits non-zero at the end with a loud
+# INCOMPLETE banner. A detector that cannot look must never report "none found".
+V2_SWEEP_OK=true
+V2_JSON="$(stripe_cli get /v2/core/event_destinations -d "limit=100" 2>/dev/null || true)"
+if [[ -z "$V2_JSON" ]] || ! printf '%s' "$V2_JSON" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+sys.exit(0 if isinstance(d.get('data'), list) else 1)
+" 2>/dev/null; then
+    V2_SWEEP_OK=false
+    V2_JSON='{"data": []}'
+fi
+
+# Report ALL humangr.com destinations (v1 endpoints + v2 event destinations) and
+# flag ANY url carrying more than one. Purely informational — never mutated.
+#
+# NOTE ON A SECOND, INDEPENDENT BUG FIXED HERE: the previous duplicate check only
+# counted endpoints whose url == the reconcile TARGET (the signup-worker). A
+# duplicate on any OTHER humangr.com url — e.g. the two destinations that really
+# do share the corelink-api billing url — could not make it fire, no matter how
+# many there were. Duplicates are now counted per-url across the whole account.
+log "Stripe destinations on this account (humangr.com hosts):"
+# JSON is passed via env so stdin is free for the heredoc program.
+ENDPOINTS_JSON="$ENDPOINTS_JSON" V2_JSON="$V2_JSON" \
+python3 - "$TARGET_URL" <<'PY'
 import os, json, sys
+from collections import defaultdict
+
 target = sys.argv[1]
-data = json.loads(os.environ["ENDPOINTS_JSON"]).get("data", [])
-same_url = 0
-for ep in data:
-    url = ep.get("url", "")
-    if "humangr.com" not in url:
+rows = []
+
+for ep in json.loads(os.environ["ENDPOINTS_JSON"]).get("data", []):
+    rows.append((
+        "v1", ep.get("id", "?"), ep.get("url", ""), ep.get("status", "?"),
+        len(ep.get("enabled_events", [])), "snapshot", ep.get("description") or "",
+    ))
+
+for d in json.loads(os.environ["V2_JSON"]).get("data", []):
+    # The url lives under the webhook_endpoint sub-object for
+    # type == "webhook_endpoint"; other destination types (EventBridge, …)
+    # have no url and are reported with an empty one rather than skipped.
+    we = d.get("webhook_endpoint") or {}
+    rows.append((
+        "v2", d.get("id", "?"), we.get("url", "") or d.get("url", "") or "",
+        d.get("status", "?"), len(d.get("enabled_events", []) or []),
+        d.get("event_payload", "?"), d.get("name") or "",
+    ))
+
+by_url = defaultdict(int)
+for api, _id, url, _st, _n, _pl, _nm in rows:
+    if url and "humangr.com" in url:
+        by_url[url] += 1
+
+seen = False
+for api, _id, url, status, n, payload, name in rows:
+    if not url or "humangr.com" not in url:
         continue
-    n = len(ep.get("enabled_events", []))
-    status = ep.get("status", "?")
+    seen = True
     marker = "  <-- reconcile target" if url == target else ""
-    print(f"  [{status:8}] {n:3} events  {url}{marker}")
-    if url == target:
-        same_url += 1
-if same_url > 1:
-    print(f"  WARN: {same_url} endpoints share the target URL — a stray `stripe listen` "
-          f"CLI listener may be Active on prod. Review + delete the extra in the dashboard.")
+    label = f" ({name})" if name else ""
+    print(f"  [{api}] [{status:8}] {n:3} events  payload={payload:8}  {_id}  {url}{label}{marker}")
+
+if not seen:
+    print("  (none)")
+
+dupes = {u: c for u, c in by_url.items() if c > 1}
+for url, count in sorted(dupes.items()):
+    print(f"  WARN: {count} destinations share {url} — only ONE signing secret can be "
+          f"bound to a consumer, so the others can only ever be rejected. Likely a stray "
+          f"`stripe listen` tunnel or an orphaned v2 destination. Review in the dashboard; "
+          f"this script never deletes.")
 PY
+
+if ! $V2_SWEEP_OK; then
+    err "v2 event-destination sweep FAILED (\`stripe get /v2/core/event_destinations\` returned"
+    err "nothing usable — CLI too old, or the key lacks v2 read scope). The v1 listing above is"
+    err "therefore INCOMPLETE: a thin-payload v2 destination on a production URL would not appear."
+    err "Do NOT read this run as 'no strays found'. Re-run with a CLI/key that can read v2."
+fi
 log ""
+
+# Fail CLOSED on an incomplete sweep, on EVERY success path.
+#
+# The reconcile itself (the script's primary job) still runs to completion — an
+# operator reconciling enabled_events should not be blocked by a CLI that cannot
+# read v2. But a ZERO exit from this script has, since 2026-07-03, been read as
+# "and there are no strays". That reading is what buried a live destination for a
+# month, so a run whose stray sweep could not look never exits 0 again.
+trap 'if [[ $? -eq 0 ]] && ! $V2_SWEEP_OK; then
+        err "EXIT 3 — the reconcile finished, but the STRAY SWEEP WAS INCOMPLETE (see above)."
+        err "This run is NOT evidence that no stray destination exists."
+        exit 3
+      fi' EXIT
 
 # ── Diff ─────────────────────────────────────────────────────────────────────
 
