@@ -33,11 +33,19 @@ on:
       - 'scripts/run_tla_suite.sh'
       - 'scripts/run_tlc_corelink.sh'
       - '.github/workflows/tla_check.yml'
-  schedule:
-    # CI cost diet 2026-08-02: daily -> WEEKLY. TLA+ model check — the .tla specs change on the order of months.
-    # Kept the same minute/hour (spread out, low-traffic window); only the
-    # weekday field is added. Per-PR gating is unchanged.
-    - cron: '0 7 * * 1'
+  # ⛔ CRON REMOVED 2026-08-02 — redundant: this workflow already has a
+  # `pull_request` trigger, so the code IS verified when it changes. The
+  # nightly re-verified BYTE-IDENTICAL code: 10 of the last 14 days had
+  # ZERO commits to main, and the self-hosted Mac (the founder's own
+  # machine) was spending ~8.8 h/day on scheduled jobs, 75% of which
+  # failed. A clock only earns its keep when something can change
+  # WITHOUT a commit — CVE feeds, prod state, backups, certs. This
+  # workflow is none of those.
+  # Restore by uncommenting if this ever stops being PR-gated.
+  # # CI cost diet 2026-08-02: daily -> WEEKLY. TLA+ model check — the .tla specs change on the order of months.
+  # # Kept the same minute/hour (spread out, low-traffic window); only the
+  # # weekday field is added. Per-PR gating is unchanged.
+  # - cron: '0 7 * * 1'
   workflow_dispatch:
 
 permissions:
