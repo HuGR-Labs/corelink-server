@@ -43,7 +43,7 @@ Every claim below traces to a canonical CoreLink spec source, an external letter
 
 ## Pricing
 
-Tiered pricing across Free / Team / Enterprise. Specific list prices are available at `corelink.humangr.com/pricing` and in customer-facing collateral; reference pricing is denoted in collateral as `$X` placeholders pending finalization by Finance.
+Tiered pricing across Free / Team / Enterprise. Specific list prices are available at `corelink-docs.humangr.com/pricing` and in customer-facing collateral; reference pricing is denoted in collateral as `$X` placeholders pending finalization by Finance.
 
 ## Quote slots
 
@@ -72,7 +72,7 @@ Tiered pricing across Free / Team / Enterprise. Specific list prices are availab
 
 **About HuGR Labs.** HuGR Labs ("Human Guardrail") is a developer infrastructure company building tooling that makes high-leverage engineering work auditable, governable, and humane by default. Founded by **[FOUNDER_NAME(S)]** in **[FOUNDING_YEAR]**, the company is headquartered in **[HQ_LOCATION]**. HuGR Labs is funded by **[INVESTOR_PLACEHOLDERS]**. Total funding to date: **$X** (placeholder pending Finance confirmation). Additional information is available at `humangr.com`.
 
-**About CoreLink.** CoreLink is HuGR Labs' first commercial product, in development since 2026-04-23 (canonical naming decision) and reaching General Availability after twenty-one engineering sprints culminating in S-20 GA Readiness. Additional information is available at `corelink.humangr.com`.
+**About CoreLink.** CoreLink is HuGR Labs' first commercial product, in development since 2026-04-23 (canonical naming decision) and reaching General Availability after twenty-one engineering sprints culminating in S-20 GA Readiness. Additional information is available at `humangr.com/corelink`.
 
 ## Forward-looking statements
 

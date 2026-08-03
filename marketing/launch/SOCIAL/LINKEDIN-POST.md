@@ -24,7 +24,7 @@ Some technical decisions I am proud of, in the order I am proud of them:
 
 To the engineering team at HuGR Labs and the engineering teams at the three lighthouse customers — thank you. To external counsel (Cooley / DLA Piper / Bird & Bird) for the DPA review, to the pentest firm for finding the things we wanted them to find, to the on-call rotation for the synthetic page exercises that nobody enjoys — thank you.
 
-CoreLink is at `corelink.humangr.com`. Trust center is at `corelink.humangr.com/trust`. Blog series (five posts, technical deep-dives) is at `corelink.humangr.com/blog`.
+CoreLink is at `humangr.com/corelink`. Trust center is at `corelink-docs.humangr.com/trust`. Blog series (five posts, technical deep-dives) is at `corelink-docs.humangr.com/blog`.
 
 If your build cache is the bottleneck in your inner loop, I would like to hear from you.
 

@@ -167,12 +167,12 @@ Same digest. Audited. BYOK-encrypted at rest. Per-tenant boundary.
 **On-screen text (final hold for 3s):**
 
 ```
-corelink.humangr.com  —  10-minute quickstart, free sandbox tenant.
+humangr.com/corelink  —  10-minute quickstart, free sandbox tenant.
 ```
 
 **Voiceover (~4s):**
 
-> "CoreLink — generally available today. Ten-minute quickstart, free sandbox tenant. corelink.humangr.com."
+> "CoreLink — generally available today. Ten-minute quickstart, free sandbox tenant. humangr.com/corelink."
 
 **Sound:** same tonal sting as opening, mirrored. End on a half-second of silence over the URL.
 

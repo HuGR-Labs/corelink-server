@@ -12,7 +12,7 @@
 
 (Title length: 92 chars. HN soft cap is 80, hard cap 150; this fits and the parenthetical pre-GA disclosure inoculates against "you said launched but it's not GA" complaints.)
 
-**Submission URL field:** `https://signup.corelink.humangr.com/pilot`
+**Submission URL field:** `https://corelink-docs.humangr.com/pilot/apply`
 
 ---
 
@@ -53,7 +53,7 @@ Body: 269 words (target was 200; HN tolerance is 300+ for "what's NOT shipped" c
 - **Do not solicit upvotes.** HN moderators will detach the submission if even a few friends comment "upvoted!" — it's the single fastest way to kill a Show HN.
 - **Author is Owner's personal HN account** (must have ≥1 prior comment / submission to avoid green-name penalty); if Owner has a fresh account, post a normal Ask HN or comment first.
 - **Reply velocity matters more than content.** Be at the keyboard for the first 90 minutes after submission; reply to every top-level comment with technical substance.
-- **Flagging risks:** the "Show HN" prefix is reserved for things people can actually try. The signup page being token-gated is fine, but the landing page MUST not 404 at submission time. Verify `signup.corelink.humangr.com/pilot` resolves before clicking submit.
+- **Flagging risks:** the "Show HN" prefix is reserved for things people can actually try. The signup page being token-gated is fine, but the landing page MUST not 404 at submission time. Verify `corelink-docs.humangr.com/pilot/apply` resolves before clicking submit.
 - **If the submission goes nowhere in 90 minutes,** do NOT resubmit. HN's anti-resubmission heuristic penalises the second post. Wait a week.
 
 ---

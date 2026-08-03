@@ -122,7 +122,7 @@ When a customer initiates erasure under DSR / DSAR / right-to-erasure, CoreLink 
 - Tenant identifier and scope of erasure.
 - Audit-chain leaf hashes for the erased objects (so the chain remains verifiable after the underlying bytes are gone).
 - Timestamp.
-- The CoreLink-side signing key identifier (publishable, rotation-tracked at `corelink.humangr.com/trust`).
+- The CoreLink-side signing key identifier (publishable, rotation-tracked at `corelink-docs.humangr.com/trust`).
 - A NIST SP 800-88 Rev. 1 crypto-erase classification.
 
 The attestation is retained for 7 years (regulator-driven) and is independently re-verifiable by the customer using CoreLink's published signing key — the invariant `INV-ERASURE-ATTESTATION-SIGNED` makes the signing path a structural requirement.
@@ -151,7 +151,7 @@ A BYOK implementation is a series of trade-offs. The ones we made consciously:
 
 ## Where to go next
 
-- **Trust center:** `corelink.humangr.com/trust`
+- **Trust center:** `corelink-docs.humangr.com/trust`
 - **BYOK provider matrix:** `docs.corelink.humangr.com/trust/byok-providers`
 - **Erasure attestation spec:** `docs.corelink.humangr.com/trust/erasure-attestation`
 - **Kill switch runbook:** `docs.corelink.humangr.com/runbooks/byok-kill-switch`

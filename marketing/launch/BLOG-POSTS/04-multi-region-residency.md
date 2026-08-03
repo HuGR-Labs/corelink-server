@@ -122,10 +122,10 @@ CoreLink residency is also not a guarantee against governmental compulsion of th
 
 ## Where to go next
 
-- **Trust center:** `corelink.humangr.com/trust`
+- **Trust center:** `corelink-docs.humangr.com/trust`
 - **Residency invariant:** `docs.corelink.humangr.com/trust/residency`
 - **Schrems II TIA template:** `docs.corelink.humangr.com/trust/schrems-ii`
-- **DPA package (EN / PT-BR / ES):** `legal.corelink.humangr.com/dpa`
+- **DPA package (EN / PT-BR / ES):** `humangr.com/corelink/en/legal/dpa`
 
 — Privacy and Trust at CoreLink
 

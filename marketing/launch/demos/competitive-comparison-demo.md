@@ -196,7 +196,7 @@ Point at the `Tenant:` line — that's the boundary, and it isn't user-selectabl
 
 > "If your scope is single-org, no regulator, and you trust your network, bazel-remote is excellent. If your scope is multi-tenant, regulated, or audit-driven, CoreLink ships the additional surface as a product, not a roadmap. The choice is scope-driven, not better-versus-worse."
 
-**End card hold for 2s with `corelink.humangr.com` URL.**
+**End card hold for 2s with `humangr.com/corelink` URL.**
 
 ---
 

@@ -10,7 +10,7 @@ Multi-tenant content-addressable cache — Bazel, Cargo, npm, pip, OCI.
 REAPI v2 compatible. Per-tenant BYOK (AWS KMS; GCP/Azure/Vault on the
 roadmap). RFC-6962-style audit chain
 (BLAKE3 + Ed25519). TLA+-proved cross-tenant isolation. Cloudflare Workers
-+ R2 + D1 + Neon Postgres. Free tier: 10 GB / 500k req/mo.
++ Durable Objects + Containers + R2 + D1. Free tier: 10 GB / 500k req/mo.
 
 **[corelink-cli](https://github.com/HumanGuardrail/corelink-cli)**
 Install in one line; drop into any Bazel, Buck2, Cargo, Docker, or ML
@@ -66,5 +66,5 @@ opens. First paying customer gets a named thank-you in the changelog.
 
 - Engineering and product questions: gustavo@humangr.com
 - Twitter / X: [@corelinkdev](https://twitter.com/corelinkdev)
-- Pilot signup: [signup.corelink.humangr.com/pilot](https://signup.corelink.humangr.com/pilot)
+- Pilot signup: [corelink-docs.humangr.com/pilot/apply](https://corelink-docs.humangr.com/pilot/apply)
 - Docs: [corelink-docs.humangr.com](https://corelink-docs.humangr.com)

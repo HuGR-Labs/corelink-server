@@ -27,7 +27,7 @@
 |---|---|---|
 | Tier-1 press mentions (TechCrunch, The Register, Ars Technica, etc.) | ahrefs Brand Mentions + manual sweep | ≥ 3 substantive mentions in launch week. |
 | Ecosystem press mentions (Bazel community, Buck2 community, build-tools newsletters) | Manual sweep | ≥ 5 substantive mentions in launch week. |
-| Backlinks to `corelink.humangr.com` from earned media | ahrefs Site Explorer | ≥ 20 new referring domains in launch week. |
+| Backlinks to `humangr.com/corelink` from earned media | ahrefs Site Explorer | ≥ 20 new referring domains in launch week. |
 | Wire pickup count | BusinessWire dashboard + PR Newswire dashboard | ≥ 50 pickups (typical for tech wire). |
 
 ### 2.2 Blog UVs
@@ -47,7 +47,7 @@
 | Final day-1 rank | Product Hunt API | T+1d close |
 | Upvote count | Product Hunt API | Hourly T-0 |
 | Comment count (Maker + non-Maker) | Product Hunt API | Hourly T-0 |
-| Click-through to `corelink.humangr.com` from PH | Cloudflare Web Analytics (referrer = producthunt.com) | Daily |
+| Click-through to `humangr.com/corelink` from PH | Cloudflare Web Analytics (referrer = producthunt.com) | Daily |
 | Signups attributed to PH | Signup form referrer parameter | Daily |
 
 ### 2.4 Hacker News
@@ -57,7 +57,7 @@
 | HN rank trajectory | Hacker News API | Hourly T-0 |
 | Show HN comment count | Hacker News API | Hourly T-0 |
 | Comment quality sample | Manual review (Founder + Marketing) | Daily T+1d to T+7d |
-| Click-through to `corelink.humangr.com` from HN | Cloudflare Web Analytics (referrer = ycombinator) | Daily |
+| Click-through to `humangr.com/corelink` from HN | Cloudflare Web Analytics (referrer = ycombinator) | Daily |
 | Signups attributed to HN | Signup form referrer parameter | Daily |
 
 ### 2.5 Signup conversion
@@ -72,7 +72,7 @@
 
 | Metric | Tool | Target |
 |---|---|---|
-| `corelink.humangr.com` Lighthouse score (performance / accessibility / SEO) | Lighthouse (Google) + PageSpeed Insights | ≥ 90 across the four categories at launch. |
+| `humangr.com/corelink` Lighthouse score (performance / accessibility / SEO) | Lighthouse (Google) + PageSpeed Insights | ≥ 90 across the four categories at launch. |
 | Core Web Vitals (LCP, INP, CLS) | Cloudflare Web Analytics + PageSpeed Insights | Within "good" thresholds at launch. |
 
 ### 2.7 Social
