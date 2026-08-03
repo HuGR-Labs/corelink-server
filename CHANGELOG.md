@@ -65,22 +65,41 @@ Each entry cross-references:
   must not fail a build must not fail its own measurement either — and `hits == 0` is
   **expected** on the first run, because that run populates.
 
-  **The number came back, and it says NO — for now.** Same job, same box class, three runs on
-  this branch: **409 s** and **423 s** with sccache absent, versus **917 s** with sccache active
-  at a **22.85 % hit rate** (189 hits / 638 misses). Pointing sccache at CoreLink made the lane
-  roughly **2.2× slower**, and **0 cache errors / 0 read errors / 0 write errors** says the
-  surface worked perfectly — the cost is the round-trips themselves, not a malfunction. Each
-  miss pays a network `PROPFIND`+`PUT` on top of the compile it did not avoid, from an ephemeral
-  box against a CAS whose hot path is already known to be D1-over-HTTP bound. Caveats, stated so
-  nobody over-reads this: single samples, a shared ephemeral box with genuine run-to-run
-  variance, and an only partially warm cache — a fully warm one converts misses into hits and
-  could still flip the sign. The honest verdict is **unproven and currently negative**, not
-  "proven bad". Also corrected: the **676 s** cold baseline this work was justified with is not
-  reproduced by any of the three runs above, so it is no longer cited as the cost being removed.
+  **The number came back and it says NO — so the pilot ships OFF.** Same job, same box class,
+  four runs on this branch:
+
+  | run | sccache | hit rate | PR gate |
+  |---|---|---|---|
+  | `d88b1af4` | absent | — | **409 s** |
+  | `81919a49` | absent | — | **423 s** |
+  | `1f832a41` | on | 22.85 % (189 hits / 638 misses) | **917 s** |
+  | `a4e864e0` | on | **100.00 %** (827 hits / 0 misses) | **631 s** |
+
+  The last row settles it. At a **perfect** hit rate — zero compilation, every artifact served
+  from CoreLink — the lane is still **~1.5× slower** than compiling cold. Fetching 827 artifacts
+  over the network costs more than building them on 4 local vCPUs, so "wait until the cache
+  warms up" is answered, not open: the warm case was the pilot's best case and it lost.
+
+  This is **not a malfunction** — **0 cache errors, 0 read errors, 0 write errors, 0 timeouts**
+  across both engaged runs. The surface authenticated, served reads and accepted writes
+  flawlessly; the credential and the `/cargo` route are proven live. The cost *is* the
+  round-trips, from an ephemeral box against a CAS hot path already known to be D1-over-HTTP
+  bound. A cache pays only when a fetch is cheaper than the work it skips, and for small Rust
+  translation units on a 4-vCPU box it is not.
+
+  So all three pilot steps (install / wire / measure) are gated on a repo variable
+  `CORELINK_SCCACHE_PILOT == 'on'` that **does not exist** — they skip, and merging this changes
+  CI behaviour by nothing. Flip the variable to re-run the experiment (say, after a latency fix
+  on the `/cargo` hot path); delete the steps once it is settled either way.
+
+  **Scope of the claim, stated so nobody over-reads it:** single samples on a shared ephemeral
+  box with real run-to-run variance. Enough to refuse a rollout; **not** a claim about
+  sccache-on-CoreLink for customers — a slower compiler, larger translation units or a fatter
+  box flips the arithmetic, and that is the case the product actually sells. Also retracted: the
+  **676 s** cold baseline this work was justified with, which none of the four runs reproduces.
 
   **One lane on purpose.** The point was a number, not a rollout — and the number is the
-  deliverable even when it is unflattering. The other 10 lanes stay untouched until a warm run
-  beats the ~409–423 s baseline.
+  deliverable even when it is unflattering. The other 10 lanes were never touched.
 
   The new credential `CORELINK_SCCACHE_TOKEN` (a `cas:rw` PAT on the internal dogfood tenant
   `ee30f7ba…`, GHA repo secret, bound 2026-08-03) is registered as row **#188** of
