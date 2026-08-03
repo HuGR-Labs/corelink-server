@@ -5,7 +5,7 @@ description: "How the corelink-runners fabric resolves a PAT to a tenant, a cach
 source_files:
   - "crates/corelink-container/src/routes/auth_introspect.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "51cbc85b2da2ba57eec2d485163f61e86ddaa027"
+checkpoint_sha: "ae712b8cc1ea8844572d72f7400efd674725b4f5"
 provenance: "AUTHORED"
 tags: ["flows", "auth", "introspect", "runners", "request-flow"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -24,7 +24,7 @@ This endpoint is the runners fabric's authorization oracle. It is the boundary t
 1. Mount gating: the route is built only when a DEDICATED `FABRIC_INTROSPECT_AUTH_KEY` (>= 32 chars) is present, plus the PAT verifier and D1 client; otherwise it is NOT mounted (warn, fail-closed) (`crates/corelink-container/src/routes/auth_introspect.rs:960-1003`). The same router also mounts the sibling `POST /internal/v1/auth/resolve-tenant` (`clerk_org_id`→`tenant_id` via `tenant_org_map`, migration 0083) on the SAME state and internal-auth gate (`crates/corelink-container/src/routes/auth_introspect.rs:544-547`). Per the ratified A1 ordering contract, that resolver stays lookup-only ON PURPOSE — a `404 org_not_mapped` is a TRANSIENT not-yet-provisioned answer (`crates/corelink-container/src/routes/auth_introspect.rs:799-803`).
 2. Caller auth: the presented `X-Corelink-Internal-Auth` header is compared against EVERY configured consumer key with a non-short-circuiting OR of constant-time compares, so timing reveals neither validity nor WHICH consumer matched (`crates/corelink-container/src/routes/auth_introspect.rs:570-580`).
 3. Body parse: only after the auth gate passes is the body parsed; an invalid shape is 400 and the token is never logged (`crates/corelink-container/src/routes/auth_introspect.rs:582-594`).
-4. PAT verification: `state.verifier.verify(&req.token)` runs the full HMAC + D1 liveness + Argon2id + scope [PAT verification gauntlet](/flows/pat-gauntlet.md), returning the owning tenant (`crates/corelink-container/src/routes/auth_introspect.rs:596-597`; `crates/corelink-container/src/adapter_pat.rs:858-862`).
+4. PAT verification: `state.verifier.verify(&req.token)` runs the full HMAC + D1 liveness + Argon2id + scope [PAT verification gauntlet](/flows/pat-gauntlet.md), returning the owning tenant (`crates/corelink-container/src/routes/auth_introspect.rs:596-597`; `crates/corelink-container/src/adapter_pat.rs:1169-1173`).
 5. Plan resolution: `tier_for_tenant` resolves the cache plan; a tier-query fault fails closed 503 — never serve a wrong plan (`crates/corelink-container/src/routes/auth_introspect.rs:601-602`; `crates/corelink-container/src/routes/auth_introspect.rs:490-490`).
 6. Entitlement resolution: `runner_concurrency_for_tenant` reads the SEPARATE `runners_entitlement` D1 table (migrations 0070 + 0072) in one lookup for both the concurrency cap and the monthly vCPU-h ceiling — NOT derived from the plan (`crates/corelink-container/src/routes/auth_introspect.rs:610-625`; `crates/corelink-container/src/routes/auth_introspect.rs:308-318`).
 7. Entitlement decode: an absent `max_concurrency` row means no entitlement (omitted -> fabric rejects the placement); an absent `max_vcpu_h` is a wall-off, not an error (`crates/corelink-container/src/routes/auth_introspect.rs:382-394`).
@@ -52,5 +52,5 @@ This endpoint is the runners fabric's authorization oracle. It is the boundary t
 3. `crates/corelink-container/src/routes/auth_introspect.rs:490-490` — `tier_for_tenant` plan resolution.
 4. `crates/corelink-container/src/routes/auth_introspect.rs:558-643` — `handle_introspect`: constant-time auth, parse, verify, plan + entitlement resolution, response.
 5. `crates/corelink-container/src/routes/auth_introspect.rs:960-1003` — `build_state_from_env`: dedicated-secret mount gating (fail-closed).
-6. `crates/corelink-container/src/adapter_pat.rs:858-862` — `PatVerifier::verify` (the shared verification the route delegates to).
+6. `crates/corelink-container/src/adapter_pat.rs:1169-1173` — `PatVerifier::verify` (the shared verification the route delegates to).
 </content>
