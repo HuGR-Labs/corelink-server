@@ -23,6 +23,44 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(ci): five workflow `paths:` globs matched zero tracked files, so those triggers had
+  silently stopped firing — and a trigger that never fires produces no red check.** A
+  `pull_request` workflow runs only when a changed file matches one of its globs; when a
+  directory is renamed the glob keeps parsing fine and simply matches nothing. GitHub does not
+  warn, and `actionlint` validates syntax, not whether a glob resolves — so the failure is
+  invisible in exactly the way this repo's dominant defect class is invisible: **the check
+  observes nothing and that reads as "no problem found."** The five, all verified against
+  `git ls-files` at HEAD: `tenant-path.yml` watched `apps/server/**`, a tree absorbed into
+  `crates/corelink-container` on 2026-05-26 (`1d0c221e`, wave-33 stage 2.B.1) — repointed at
+  the successor, which really does depend on `corelink-tenant-path` for `derive_prefix`;
+  `perf-regression.yml` watched `crates/corelink-tenant-path/**` (the PACKAGE name — the
+  DIRECTORY is `crates/tenant-path`, already listed one line below, so the entry was a dead
+  duplicate) and `crates/corelink-rate-limit/**` (the real crate is `corelink-ratelimit`, no
+  hyphen); `s07-ship-gate.yml` and `s09-ship-gate.yml` watched `specs/04_sprints/S07|S09/**`
+  after `282a41f0` archived sealed sprints to `specs/04_sprints/_sealed/`. **Scope correction
+  on the reported symptom:** neither named workflow was dead overall — measured against the
+  Actions API, `perf-regression` has 199 `pull_request` runs and `tenant-path` 192, both as
+  recently as 2026-08-03. Each still fired through its *other*, still-valid globs; what the
+  broken entries did was silently NARROW the trigger surface, which is the subtler and
+  longer-lived version of the bug. The rate-limit entry is deliberately **not** repointed:
+  `corelink-ratelimit` has no bench target and no baseline under `reports/perf/`, so this gate
+  cannot measure it — guarding it means adding a bench, not adding a trigger that benches
+  eleven unrelated crates.
+  **The failure mode is now mechanically impossible to repeat.**
+  `scripts/validate_workflow_path_filters.py` (stdlib-only, like its shared-`$HOME` siblings —
+  the mac fleet cannot provision PyYAML) fails CI when any `paths:`/`paths-ignore:` glob in any
+  workflow matches zero tracked files, and it fails closed if it parses zero patterns. It runs
+  as a step in the existing `actionlint` lane rather than a new workflow, since every added
+  workflow bills on every push. Across `.github/workflows/` it checks **431 patterns in 114
+  workflows**. Proven to fail before it was trusted: reverting `apps/server/**` → exit 1 naming
+  `tenant-path.yml:17`; reverting both perf globs → exit 1 naming `perf-regression.yml:48-49`;
+  restored → exit 0. The one legitimate case — a filter that must fire for a file that does not
+  exist *yet* — is opted out by an inline `# path-filter-allow: <reason>` marker on the glob's
+  own line (4 in use: `rustfmt.yml`'s `**rustfmt.toml`, which must trigger the day someone adds
+  one, and 3 in `pentest-findings-sync.yml` awaiting the first `PF-*.md`). The marker is
+  self-policing in **both** directions — a marked glob that starts matching files also fails, as
+  a stale exception — and lives inline rather than in a separate allowlist file, because a
+  suppression you edit somewhere else is how a suppression outlives its reason.
 - **fix(ops): the brand-new stray-destination WARN counted duplicates regardless of status, so a stray retired by DISABLING it raised the same alarm forever — and said something false while doing it.** Shipped hours earlier in the same sweep hardening; caught when the owner retired `exquisite-rhythm-thin` by **disabling** rather than deleting it. A disabled destination receives nothing, so it cannot deliver, be rejected, or double-process — yet the check still counted it toward `N destinations share <url>` and still printed *"the others can only ever be rejected"*, which is not true of a destination that receives nothing. **A permanent WARN is an alarm the operator learns to ignore — the same failure mode this sweep exists to prevent**, reintroduced by the fix for it. The duplicate check now counts **enabled** destinations only (`status in {enabled, active}`); disabled ones are still LISTED, with a `note:` line saying they receive nothing and are excluded — visible, not alarming. Proven against a stub in three states: stray **disabled** → row shown `[disabled]`, `note:` printed, **no WARN**, exit 0; stray **re-enabled** → `WARN: 2 ENABLED destinations share https://corelink-api.humangr.com/v1/billing/stripe-webhook` returns, so the suppression is not a blanket; v2 **unreadable** → still exit 3. The operator runbook records the resolution and now states the expected post-fix output for both retirement paths (disabled row + `note:`, or deleted row gone).
 - **fix(ops): the Stripe stray-destination sweep reported "no strays" over a live one for a month — it enumerated only `/v1/webhook_endpoints`, and its duplicate check could not fire on the URL that actually had duplicates.** On 2026-07-03 a live enumeration returned 3 endpoints, the reported stray `exquisite-rhythm-thin` was absent, and it was recorded in `docs/handoff/` as a "transient `stripe listen` tunnel" that did not exist. The 2026-08-03 production dashboard shows it still **Active** — 24 events, `thin` payload, on `corelink-api.humangr.com/v1/billing/stripe-webhook`, the same URL as the kept `Corelink prd` materializer. A CLI tunnel dies with its process; this survived a month. Root cause: a `thin` payload means a **v2 event destination** (`/v2/core/event_destinations`), a *different API resource* from v1 webhook endpoints, never returned by a v1 list — so the check was structurally incapable of observing the positive case, and its negative result was evidence of nothing. The counts reconcile exactly: v1 saw **3**, the dashboard shows **4**, and the invisible one is precisely the thin/v2 one. `scripts/ops/stripe-reconcile-webhook-events.sh` carried a **second, independent** blindness: the same-URL WARN counted only destinations whose url equalled the *reconcile target* (the signup-worker), so duplicates on any other host — including the corelink-api pair that really exists — could never trip it, which is why "the same-URL WARN also did NOT fire" was mistaken for corroboration. Both are fixed: the sweep now enumerates v1 **and** v2, reports id + `payload=` + name per destination, warns per-URL across the whole account, and — when the CLI/key cannot read v2 — says so loudly and **exits 3** instead of printing a clean report, because a detector that cannot look must never report "none found". Proven against a stub serving the real 2026-08-03 state: the **old** script prints 3 endpoints, **zero** warnings, `✅ Already in sync`, exit **0**; the **new** one lists `[v2] [enabled] 24 events payload=thin ed_… (exquisite-rhythm-thin)` and warns `2 destinations share https://corelink-api.humangr.com/v1/billing/stripe-webhook`, and in v2-blind mode exits **3** with the reconcile still completing. The two 2026-07-03 handoffs carry dated corrections naming the wrong call as the TL's (the recon was honest; converting "the API does not show it" into "it does not exist" was the defect). Removal of the stray is an **owner** action and is written up in `docs/operator/stripe-webhook-events-reconcile.md`, which also loses its claim that a signing secret is "verified working when deliveries show 0% error" — zero errors over **zero deliveries** is also 0%, and all four destinations read 0% including the one whose deliveries could only ever have been rejected.
 - **fix(sdks/js): adopt `@corelink/client` into the workspace and gate it — the SDK was never

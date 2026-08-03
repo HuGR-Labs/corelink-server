@@ -7,7 +7,14 @@ on:
   pull_request:
     paths:
       - 'crates/tenant-path/**'
-      - 'apps/server/**'
+      # The crate's in-repo CONSUMER, so a change to the calling code re-runs
+      # the crate's own gate. This was `apps/server/**` until 2026-08-03 — that
+      # whole tree was absorbed into `crates/corelink-container` on 2026-05-26
+      # (1d0c221e, wave-33 stage 2.B.1) and the filter was never updated, so
+      # the entry matched zero files and silently stopped triggering anything.
+      # `corelink-container` depends on `corelink-tenant-path` (its Cargo.toml
+      # pulls it in for `derive_prefix`, tenant-scoped R2 keys).
+      - 'crates/corelink-container/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/tenant-path.yml'

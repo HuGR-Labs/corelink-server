@@ -33,8 +33,18 @@ on:
       - 'crates/corelink-signup/**'
       - 'crates/corelink-tier-selection/**'
       - 'crates/corelink-hash/**'
-      - 'crates/corelink-rate-limit/**'
-      - 'crates/corelink-tenant-path/**'
+      # NOTE: the tenant-path crate's PACKAGE name is `corelink-tenant-path`
+      # but its DIRECTORY is `crates/tenant-path`. Two entries here used to
+      # spell the directory the way the package is spelled
+      # (`crates/corelink-tenant-path/**`) and the rate-limit crate with a
+      # hyphen it does not have (`crates/corelink-rate-limit/**`; the real
+      # directory is `crates/corelink-ratelimit`). Both matched zero files,
+      # so both were inert. Removed 2026-08-03 — the directory-correct
+      # `crates/tenant-path/**` below is what actually triggers this gate.
+      # The rate-limit entry is NOT repointed on purpose: `corelink-ratelimit`
+      # has no bench target and no baseline under `reports/perf/`, so this
+      # gate could not measure it. Guarding it means ADDING a bench + a
+      # baseline, not adding a trigger that benches eleven other crates.
       - 'crates/tenant-path/**'
       - 'crates/corelink-dpa-acceptance/**'
       - 'crates/corelink-stripe-real/**'
