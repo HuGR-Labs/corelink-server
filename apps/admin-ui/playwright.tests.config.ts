@@ -86,6 +86,21 @@ export default defineConfig({
         url: BASE_URL,
         reuseExistingServer: !process.env["CI"],
         timeout: 180_000,
+        // Playwright's DEFAULT is `stdout: "ignore"` — and Next prints its
+        // route-compilation log, its "Ready in Xs" line and every turbopack
+        // diagnostic to STDOUT. So for as long as this suite has existed, the
+        // only stream that could explain a dev-server failure was being thrown
+        // away, and CI kept just the stderr trickle (a middleware-deprecation
+        // warning and forwarded browser console noise).
+        //
+        // That is why the rotating red on `main` stayed unexplained: on run
+        // 30769355309 the dev server stopped resolving App Router routes ~12 s
+        // after boot and 404'd 9 of the 11 routes `tests/e2e/warm-routes.ts`
+        // asks for — permanently — and NOTHING in the captured log says why,
+        // because Next's own account of it went to a stream nobody read.
+        // Piping stdout costs a few hundred log lines and is the difference
+        // between diagnosing the next occurrence and guessing at it again.
+        stdout: "pipe",
         env: {
           PORT: String(PORT),
           NEXT_TELEMETRY_DISABLED: "1",
