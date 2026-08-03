@@ -23,6 +23,30 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(sdks/js): adopt `@corelink/client` into the workspace and gate it — the SDK was never
+  broken, it had simply never been installed.** It was an orphan: absent from
+  `pnpm-workspace.yaml`, referenced by **no workflow**. So `pnpm install` never reached it, and
+  `import { blake3 } from "@noble/hashes/blake3"` failed with *"Cannot find package"* — which
+  reads exactly like a broken package. It is not. **The moment it joined the workspace, all 23
+  tests passed, `tsc --noEmit` was clean, and the build emitted both entrypoints.** 875 lines
+  of working, tested SDK that nothing had ever executed.
+
+  The bug was the absence of CI, and the fix is `.github/workflows/sdks-js.yml`: typecheck +
+  test + build, i.e. exactly the three promises `package.json`'s `scripts` and `exports` make.
+  Two details are load-bearing:
+  - the install step uses `--filter '@corelink/client...'`, so if `sdks/js` ever falls out of
+    `pnpm-workspace.yaml` again the filter matches nothing and the run **fails** on a missing
+    dependency instead of passing quietly — the orphan state cannot recur silently;
+  - a final step asserts `dist/index.js` and `dist/index.d.ts` exist, because `exports` points
+    consumers there. Without it the build could stop emitting them while every other step
+    stayed green and every `import` broke for users.
+
+  `private: true` **stays for now** (set in #1010). Removing it is the *publish* decision and
+  needs a versioned release path first; un-privating before that just restores the
+  accidental-publish risk this closed. Audit note: `tools/sdks/go` is the second orphan (661
+  lines, no workflow, **no `go.mod`** — not importable at all), and `sdks/python` +
+  `tools/sdks/python` both declare `name = "corelink-py"`, i.e. two different packages
+  claiming one PyPI name. Both are open.
 - **chore(sdks/js): mark `@corelink/client` `private: true` — an unpublishable orphan should
   not be publishable.** Surfaced while closing the `vitest` alert in #1004: the package is
   absent from `pnpm-workspace.yaml`, referenced by **no workflow**, its dependencies are
