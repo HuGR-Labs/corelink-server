@@ -10,15 +10,50 @@ name: Fuzz nightly (BYOK + tenant-path + audit-chain + HKDF)
 # Fail-closed: any libfuzzer-discovered crash uploads the offending
 # artifact + exits non-zero.
 
+# ⛔ SCHEDULE PARKED 2026-08-02 — this lane has NEVER passed on this fleet.
+#
+# Measured before parking: 0 successes in the last 30 scheduled runs, and the
+# last 5 burned an average of 80 min EACH before failing. Across all scheduled
+# lanes the self-hosted Mac was spending ~8.8 h/day on jobs that fail, of which
+# this was the third-largest contributor (238 min per 48 h). The Mac is the
+# founder's own machine and heavy compiles have crashed it before, so this is
+# not free CI — it is the machine the whole fleet depends on.
+#
+# The failure is structural, not flaky. Every run dies in the fuzz BUILD:
+#     cargo:warning=clang++: error: no input files
+#     error occurred in cc-rs: command did not execute successfully
+#     Error: failed to build fuzz script: ASAN_OPTIONS=... RUSTFLAGS=...
+# i.e. libfuzzer's sanitizer build cannot link on this host. No amount of
+# re-running changes that.
+#
+# STRONG LEAD for whoever picks this up: the header two lines below still says
+# "on a fresh Ubuntu runner", but `runs-on` is the self-hosted Mac pool. The
+# lane was written for Ubuntu and moved later; the sanitizer toolchain came
+# along in name only. The obvious fix is to move it BACK to `ubuntu-latest`
+# (6 targets × 30 min ≈ 3 h/run ≈ $1.44 on GitHub-hosted, ~$43/mo — cheap for a
+# gate that would actually run).
+#
+# ⚠️ That move is NOT a one-line change, which is why this PR parks rather than
+# migrates: the "ROOT FIX (2026-06-15)" step below deliberately uses the
+# PRE-INSTALLED host nightly toolchain instead of `dtolnay/rust-toolchain@nightly`,
+# because installing nightly on the shared Mac once deleted the rustup shim and
+# broke EVERY Rust gate on the host for a day. `ubuntu-latest` has no
+# pre-installed nightly, so that step must be rewritten as part of the move —
+# and the result has to be PROVEN with a `workflow_dispatch` run before the
+# schedule goes back on. Same discipline applied to `reproducible-build`.
+#
+# Re-arming checklist: fix the runner + toolchain → dispatch manually → observe
+# a GREEN run → restore the `schedule:` block below in that same PR.
 on:
-  schedule:
-    # 03:17 UTC nightly — staggered before the 04:23 UTC main nightly
-    # (so failures here surface ~1h before the broader nightly gates
-    # run; ops gets a clean signal on which lane regressed).
-    - cron: '17 3 * * *'
+  # schedule:
+  #   # 03:17 UTC nightly — staggered before the 04:23 UTC main nightly
+  #   # (so failures here surface ~1h before the broader nightly gates
+  #   # run; ops gets a clean signal on which lane regressed).
+  #   - cron: '17 3 * * *'
   workflow_dispatch:
     # Manual trigger for ops/dev to re-run on demand (e.g. after landing
-    # a crypto-adjacent PR).
+    # a crypto-adjacent PR). Currently the ONLY trigger — see the parking
+    # note above.
 
 permissions:
   contents: read
