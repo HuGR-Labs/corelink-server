@@ -77,11 +77,24 @@ jobs:
     # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
     # check as ⛔ DO NOT MERGE, so a stranded box blocks the PR rather than
     # waving it through.
+    #
+    # ⚠️ A box can also die MID-JOB, and this lane hit it on its very first run,
+    # so it is recorded here rather than left for the next person to rediscover.
+    # Run 30862512340 attempt 1: "The self-hosted runner lost communication with
+    # the server", no log blob uploaded, `cargo test --features stream,ffi
+    # --all-targets` wedged ~10 min before the box went silent. Attempt 2, plain
+    # re-run, no code change: the SAME step took 29 s and the whole job 1 m 57 s
+    # on cf-runner-8e55183d. A 20x spread on identical work is a sick box, not a
+    # workload — which also means `timeout-minutes` is not the mitigation, since
+    # GitHub failed the job before it could fire. The mitigation is a re-run; the
+    # thing to watch is the RATE. If lost-runner failures stop being rare here,
+    # move the lane back rather than papering over it with retries.
     runs-on: corelink
-    # Sized from the measurement, not from a guess: the heaviest crate lane
-    # already on this fabric (corelink-reapi::pr-gate, 8 cargo invocations incl.
-    # two release builds and the 100k-concurrent isolation proptest) runs cold in
-    # ~409-423 s. 30 min is ~4x headroom over that.
+    # Sized from the measurement, not from a guess: this lane runs cold in
+    # ~1 m 57 s on the fabric, and the heaviest crate lane already on it
+    # (corelink-reapi::pr-gate, 8 cargo invocations incl. two release builds and
+    # the 100k-concurrent isolation proptest) takes ~409-423 s. 30 min is ~4x
+    # headroom over the heavier neighbour.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
@@ -111,15 +124,16 @@ jobs:
       # the code: `constant_time_variance_on_verify` (tests/prop_verify.rs) is a
       # nanosecond timing measurement with a 5% variance ceiling, and it has a
       # history of flaking on the shared founder Mac under load. Moving the lane
-      # changes the machine. What IS measured on a corelink box: the sibling gate
-      # this test was modelled on — `corelink-hash`'s `constant_time_variance`,
-      # same trimmed-mean technique, same 5% threshold — ran there in run
-      # 30825772599 (cf-runner-cdeec405) and passed in 50 s. This particular test
-      # has NOT been run on the fabric; the sibling result is the evidence, and it
-      # is not the same thing as a direct one. The reasoning it supports: a
-      # dedicated, idle 4-vCPU box is a quieter place to measure timing than a
-      # 2-vCPU hosted runner. The threshold is untouched — if this starts flaking
-      # here, the fix is to move THIS lane back, not to loosen the gate.
+      # changes the machine, so it was measured on the destination rather than
+      # assumed: this exact step passed on a corelink box (cf-runner-8e55183d) in
+      # 47 s on run 30862512340, the run that introduced this change. The sibling
+      # gate it was modelled on — `corelink-hash`'s `constant_time_variance`, same
+      # trimmed-mean technique, same 5% threshold — likewise passed on the fabric
+      # in run 30825772599. The reasoning both support: a dedicated, idle 4-vCPU
+      # box is a quieter place to measure timing than a 2-vCPU hosted runner.
+      # One green run is not a flake rate, though. The threshold is untouched — if
+      # this starts flaking here, the fix is to move THIS lane back, not to loosen
+      # the gate.
       - name: cargo test (release — perf + ct-variance gates)
         run: cargo test --release --package corelink-client-verify --features stream
 
