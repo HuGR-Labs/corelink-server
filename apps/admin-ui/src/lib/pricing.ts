@@ -9,6 +9,8 @@
  * Tier numbers last verified: 2026-06-10 (6-tier launch ladder).
  */
 
+import { isLocaleLessPath } from "./route-matcher";
+
 /**
  * Product axis a tier belongs to. `cache` = the storage/CAS ladder
  * (Free…Enterprise). `runner` = the SEPARATE self-serve CI-runner axis
@@ -84,6 +86,36 @@ export function normalizeCheckoutTier(
   const raw = Array.isArray(plan) ? plan[0] : plan;
   const candidate = (typeof raw === "string" ? raw : "").trim().toLowerCase();
   return isCheckoutTierId(candidate) ? candidate : DEFAULT_CHECKOUT_TIER;
+}
+
+/**
+ * Resolve a tier's `ctaHref` into the app-relative href a prospect actually
+ * clicks. THE single place a pricing CTA URL is composed — the pricing page
+ * must never build one by hand.
+ *
+ * Three shapes, and getting them confused is what broke the public buyer
+ * funnel (fixed 2026-08-03):
+ *   - external (`mailto:` / `http(s):`)  → emitted verbatim.
+ *   - locale-LESS app route (`/sign-up`) → emitted verbatim. These routes are
+ *     mounted outside `app/[locale]` and have no locale-prefixed shape (see
+ *     {@link isLocaleLessPath}). The page used to prepend the locale
+ *     unconditionally, producing `/en/sign-up` — a path with NO route, which
+ *     the middleware then classified as protected and 307'd to the sign-IN
+ *     screen with a `redirect_url` pointing back at the same dead path. 5 of
+ *     the 6 cache tiers (Free/Solo/Starter/Pro/Max) shipped that way, in all
+ *     four locales: the entire top of the self-serve funnel.
+ *   - locale-scoped app route (`/upgrade?plan=…`) → locale segment prepended.
+ *
+ * The result is deliberately NOT basePath-prefixed: the pricing page renders
+ * it through `next/link`, which auto-applies `basePath` — calling
+ * `withAppBasePath` here too would emit `/corelink/corelink/…`.
+ */
+export function resolveTierCtaHref(tier: Tier, locale: string): string {
+  const href = tier.ctaHref;
+  // Non-path targets (mailto:, https:, protocol-relative) are already final.
+  if (!href.startsWith("/") || href.startsWith("//")) return href;
+  if (isLocaleLessPath(href)) return href;
+  return `/${locale}${href}`;
 }
 
 export const TIERS: Tier[] = [

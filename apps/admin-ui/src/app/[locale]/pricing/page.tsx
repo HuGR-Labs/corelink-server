@@ -21,10 +21,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { PublicShell } from "@/components/public/PublicShell";
-import { PublicPageHeader } from "@/components/public/PublicPageHeader";
 import { Badge } from "@/components/ui/linear";
 import type { Locale } from "@/i18n/LocaleContext";
-import { TIERS, type Tier } from "@/lib/pricing";
+import { TIERS, resolveTierCtaHref, type Tier } from "@/lib/pricing";
 
 /**
  * A single tier card. Shared by both the cache-ladder and the runner
@@ -35,6 +34,7 @@ function TierCard(props: {
   locale: Locale;
 }): React.ReactElement {
   const { tier, locale } = props;
+  const ctaHref = resolveTierCtaHref(tier, locale);
   const cardClasses = [
     "lin-card lin-card--pad lin-card--hover relative flex flex-col",
     tier.highlight ? "border-[var(--line-2)] ring-1 ring-[var(--line-2)]" : "",
@@ -120,11 +120,19 @@ function TierCard(props: {
         ))}
       </ul>
 
-      {/* CTA */}
+      {/*
+        CTA — the href is composed by `resolveTierCtaHref`, NEVER by hand
+        here. This page used to build `/${locale}${tier.ctaHref}` for every
+        non-mailto tier, which is only correct for the `[locale]`-mounted
+        `/upgrade` target; the five `/sign-up` tiers became `/en/sign-up`,
+        a path with no route, and the prospect was bounced to sign-IN. The
+        emitted value is app-relative on purpose: `next/link` applies the
+        `/corelink` basePath itself (prefixing here would double it).
+      */}
       <div className="mt-8">
-        {tier.ctaHref.startsWith("mailto:") ? (
+        {ctaHref.startsWith("mailto:") ? (
           <a
-            href={tier.ctaHref}
+            href={ctaHref}
             data-testid={`tier-cta-${tier.id}`}
             className={ctaClasses}
           >
@@ -132,7 +140,7 @@ function TierCard(props: {
           </a>
         ) : (
           <Link
-            href={`/${locale}${tier.ctaHref}`}
+            href={ctaHref}
             data-testid={`tier-cta-${tier.id}`}
             className={ctaClasses}
           >
