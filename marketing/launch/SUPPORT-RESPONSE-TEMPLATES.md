@@ -84,7 +84,7 @@ What happens next:
 - We will attempt a first fix within 1 hour. If we can't, you'll know
   why.
 - If we find this is affecting other tenants, we'll convert to an
-  incident and post to https://status.corelink.humangr.com.
+  incident and post to https://hugrl.betteruptime.com.
 
 If you need to reach a human immediately, reply to this email with
 "escalate" and our Support Lead will phone you.
@@ -177,8 +177,8 @@ urgent than P3 (you have a deadline, this is blocking a decision),
 just reply with "urgent" and I'll re-triage.
 
 Useful links while you wait:
-- Docs: https://corelink.humangr.com/docs
-- Status: https://status.corelink.humangr.com
+- Docs: https://corelink-docs.humangr.com
+- Status: https://hugrl.betteruptime.com
 - {{Optional context-specific link}}
 
 — {{agent_first_name}}, CoreLink Support
@@ -579,7 +579,7 @@ Your options:
 
 1. **Upgrade to Team tier** — keep everything, no migration needed.
    Pricing: ${{team_tier_price}}/mo flat or usage-based per
-   https://corelink.humangr.com/pricing. Upgrade in-app or reply here.
+   https://corelink-docs.humangr.com/pricing. Upgrade in-app or reply here.
 
 2. **Upgrade to Enterprise (BYOK)** — best fit if you need
    customer-managed keys, dedicated capacity, or SLA. Reply here and
@@ -598,7 +598,7 @@ of them easier.
 
 — {{agent_first_name}}, CoreLink Support
 Sandbox: {{tenant_id}}
-Pricing: https://corelink.humangr.com/pricing
+Pricing: https://corelink-docs.humangr.com/pricing
 ```
 
 ---

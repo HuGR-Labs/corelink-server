@@ -97,7 +97,7 @@ The calculator's outputs are scoped to the customer's inputs. A team with strong
 
 ## Pricing
 
-CoreLink ships with Free, Team, and Enterprise tiers. Specific list prices live at `corelink.humangr.com/pricing`. In this and other launch documents, dollar values are denoted as `$X` placeholders pending Finance sign-off — not because pricing is undecided, but because every customer-facing dollar value will be reviewed and approved against the Finance audit trail before it appears in print.
+CoreLink ships with Free, Team, and Enterprise tiers. Specific list prices live at `corelink-docs.humangr.com/pricing`. In this and other launch documents, dollar values are denoted as `$X` placeholders pending Finance sign-off — not because pricing is undecided, but because every customer-facing dollar value will be reviewed and approved against the Finance audit trail before it appears in print.
 
 ## What CoreLink will not promise
 
@@ -134,7 +134,7 @@ That experiment will tell you, with measurement rather than marketing, whether t
 ## Where to go next
 
 - **Calculator:** `corelink.humangr.com/calculator`
-- **Pricing:** `corelink.humangr.com/pricing`
+- **Pricing:** `corelink-docs.humangr.com/pricing`
 - **SLO catalog:** `docs.corelink.humangr.com/slo`
 - **Product profile (remote cache semantics):** `docs.corelink.humangr.com/architecture/remote-cache-product-profile`
 

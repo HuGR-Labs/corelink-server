@@ -197,7 +197,7 @@ beat
 
 # ── Step 7 — version reprint (signs-off the cast) ───────────────────────
 
-narrate "Done. corelink.humangr.com for the 10-minute tutorial."
+narrate "Done. humangr.com/corelink for the 10-minute tutorial."
 
 typeline 'corelink version'
 

@@ -120,7 +120,7 @@ mechanism.>
 What we're doing:
 <One paragraph: immediate remediation + medium-term prevention.>
 
-Live updates: https://status.corelink.humangr.com
+Live updates: https://hugrl.betteruptime.com
 Public retrospective: published within 14 days at corelink.humangr.com/blog/incidents
 
 If you have questions or believe your impact was greater than what we've
@@ -137,7 +137,7 @@ automatically; no action required.
 
 ```
 We're aware of an issue affecting <Component> at <HH:MM UTC>. Engineering
-is on it. Live updates: https://status.corelink.humangr.com — full retro to follow.
+is on it. Live updates: https://hugrl.betteruptime.com — full retro to follow.
 ```
 
 ### A.6 Internal protocol
@@ -351,7 +351,7 @@ internal review. Based on <CoreLink-internal telemetry / audit chain
 inspection>, we have <no evidence / preliminary evidence> of <specific
 claim>. We will share verified findings within <timeframe: 24h / 48h>.
 
-For confirmed customer impact, status.corelink.humangr.com will publish.
+For confirmed customer impact, hugrl.betteruptime.com will publish.
 For security disclosures, contact security@humangr.com.
 
 — CoreLink Security
@@ -512,7 +512,7 @@ PR firm sends embargo-recall to all journalists; offer to re-embargo for new dat
 4. **Privacy incidents = 72-hour clock.** Document the awareness timestamp immediately.
 5. **No vendor blame** until Legal-cleared.
 6. **Blameless retros.** Per `specs/_runbooks/RB-POSTMORTEM-PROCESS.md`.
-7. **Single source of truth for incident status: `status.corelink.humangr.com`.** All other channels (tweets, customer emails, press) point back to it.
+7. **Single source of truth for incident status: `hugrl.betteruptime.com`.** All other channels (tweets, customer emails, press) point back to it.
 
 ---
 

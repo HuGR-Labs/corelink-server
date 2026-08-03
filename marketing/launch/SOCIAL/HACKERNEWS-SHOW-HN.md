@@ -16,7 +16,7 @@
 
 **URL:**
 
-> https://corelink.humangr.com
+> https://humangr.com/corelink
 
 **Text (optional Show HN body):**
 
@@ -35,10 +35,10 @@ Stuff that is not in this launch (anti-scope, on purpose): on-prem self-hosting,
 What I would love from HN: hard technical questions, especially on the TLA+ approach, the BYOK threat model, the audit chain construction, and where the SLOs are most likely to surprise us in production. We will respond in the thread.
 
 Links:
-- Site: https://corelink.humangr.com
-- Docs: https://docs.corelink.humangr.com
-- Trust center (TLA+ specs, SBOM, DPA): https://corelink.humangr.com/trust
-- Blog launch series (5 technical posts): https://corelink.humangr.com/blog
+- Site: https://humangr.com/corelink
+- Docs: https://corelink-docs.humangr.com
+- Trust center (TLA+ specs, SBOM, DPA): https://corelink-docs.humangr.com/trust
+- Blog launch series (5 technical posts): https://corelink-docs.humangr.com/blog
 
 — Gustavo
 

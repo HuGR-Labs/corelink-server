@@ -71,12 +71,12 @@ Source: INV-ERASURE-ATTESTATION-SIGNED + INV-DATA-ERASURE-COMPLETE.
 ## Pricing
 
 **Q: How much does CoreLink cost?**
-A: CoreLink ships with Free, Team, and Enterprise tiers. Specific list prices are published at `corelink.humangr.com/pricing`. We don't quote pricing in PH comments.
-Source: `corelink.humangr.com/pricing`.
+A: CoreLink ships with Free, Team, and Enterprise tiers. Specific list prices are published at `corelink-docs.humangr.com/pricing`. We don't quote pricing in PH comments.
+Source: `corelink-docs.humangr.com/pricing`.
 
 **Q: Is there a Free tier?**
-A: Yes. Tier details and limits at `corelink.humangr.com/pricing`.
-Source: `corelink.humangr.com/pricing`.
+A: Yes. Tier details and limits at `corelink-docs.humangr.com/pricing`.
+Source: `corelink-docs.humangr.com/pricing`.
 
 ## Roadmap
 
@@ -101,7 +101,7 @@ A: Yes. Published at `corelink.humangr.com/trust/formal-verification`.
 A: Yes. CycloneDX 1.5+, signed, published. `corelink.humangr.com/trust/sbom`.
 
 **Q: Can I see your DPA?**
-A: Yes. `legal.corelink.humangr.com/dpa`. The DPA package was Legal-reviewed by external EU privacy counsel before any lighthouse customer signed.
+A: Yes. `humangr.com/corelink/en/legal/dpa`. The DPA package was Legal-reviewed by external EU privacy counsel before any lighthouse customer signed.
 
 ---
 

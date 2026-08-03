@@ -391,17 +391,32 @@ impl ShadowSinkFactory for InMemoryShadowSinkFactory {
 ///
 /// The audit-analytics router is mounted unconditionally — the
 /// [`InMemoryShadowSinkFactory`] is the default backing for dev/CI;
-/// production deployments swap the factory at the boot path
-/// (`apps/server/src/main.rs`) when the `neon-real` feature + per-
-/// region `NEON_DB_URL_<REGION>` env vars are present.
+/// production swaps in `audit_analytics::D1ShadowSinkFactory` at the
+/// boot path (`crates/corelink-container/src/main.rs`), which serves the
+/// `/v1/audit/analytics/*` aggregates from the live D1
+/// `customer_audit_events` table (migration 0077 — the SAME table
+/// `/v1/customer/audit` reads). The swap is env-gated by
+/// `D1ShadowSinkFactory::from_env`: when the D1 storage env is absent
+/// (dev/CI) the routes stay on the in-memory factory so the surface
+/// still boots.
+///
+/// RETIRED (#71): the former per-region Neon "analytics shadow" — the
+/// container-side `neon-real` feature, `TokioPgShadowSinkFactory`, and
+/// the per-region `NEON_DB_URL_<REGION>` env vars — is REMOVED, not
+/// merely disabled. It was never wired in prod (the DSN env was never
+/// set and the driver was never compiled into the shipped container), so
+/// the boot path always fell back to the in-memory sink and every
+/// analytics query returned empty. Do not re-derive that design from
+/// this comment: D1 is the only production backing for these routes.
 pub fn build() -> Router {
     build_with_factory(Arc::new(InMemoryShadowSinkFactory::new()))
 }
 
 /// Build the composed router with an explicit
 /// [`ShadowSinkFactory`] — used by the production boot path to swap
-/// in a Neon-backed factory while keeping every other route shape
-/// identical.
+/// in the D1-backed `D1ShadowSinkFactory` while keeping every other
+/// route shape identical. (The Neon-backed factory this once named was
+/// retired with #71 — see [`build`].)
 pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router {
     // Per-tenant monthly $-ceiling gate (ADR-0068; hugit-P2 WP-G1). ONE
     // gate (D1-backed) shared across every billable data-plane surface
@@ -1078,10 +1093,11 @@ mod tests {
 
     #[test]
     fn build_with_factory_accepts_in_memory_factory() {
-        // Wave-20 closure: the production boot path uses
-        // build_with_factory() to swap in a TokioPgShadowSinkFactory
-        // under --feature neon-real; tests + dev use the in-memory
-        // factory. Both branches must construct without panic.
+        // #71: the production boot path uses build_with_factory() to
+        // swap in the D1-backed D1ShadowSinkFactory; tests + dev use the
+        // in-memory factory. (It swapped in a TokioPgShadowSinkFactory
+        // under --feature neon-real until #71 retired that path.) Both
+        // branches must construct without panic.
         let factory: Arc<dyn ShadowSinkFactory> = Arc::new(InMemoryShadowSinkFactory::new());
         let _router = build_with_factory(factory);
     }

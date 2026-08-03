@@ -111,7 +111,7 @@ We publish bench numbers at GA-day. Today, in the embargoed launch documents, th
 
 ## Daily proof publication
 
-The chain head, signed by a CoreLink-side Ed25519 signing key (rotated and tracked at `corelink.humangr.com/trust`), is published daily per region. The schedule is documented per region in the trust center. Customers can configure their own auditing pipeline to fetch the head and verify a consistency proof against the previous day's head as a routine integrity exercise.
+The chain head, signed by a CoreLink-side Ed25519 signing key (rotated and tracked at `corelink-docs.humangr.com/trust`), is published daily per region. The schedule is documented per region in the trust center. Customers can configure their own auditing pipeline to fetch the head and verify a consistency proof against the previous day's head as a routine integrity exercise.
 
 We have customers who do this. We think more of them should.
 
@@ -143,7 +143,7 @@ Three things on the roadmap that are explicitly out of GA scope:
 
 ## Where to go next
 
-- **Trust center:** `corelink.humangr.com/trust`
+- **Trust center:** `corelink-docs.humangr.com/trust`
 - **Audit chain spec:** `docs.corelink.humangr.com/trust/audit-chain`
 - **Verification toolkit (open source):** `github.com/HumanGuardrail/corelink-audit-verify` (placeholder pending GA repo open)
 - **Daily proof bundle format:** `docs.corelink.humangr.com/trust/proof-bundle`

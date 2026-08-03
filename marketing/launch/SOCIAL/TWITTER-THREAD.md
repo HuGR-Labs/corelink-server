@@ -12,7 +12,7 @@
 >
 > Why now, and what we did differently. A thread. 🧵
 >
-> corelink.humangr.com
+> humangr.com/corelink
 
 `[image_1: hero shot — CoreLink wordmark + tagline; 1600x900]`
 
@@ -88,14 +88,14 @@
 
 > CoreLink is GA today.
 >
-> - Site: corelink.humangr.com
-> - Docs: docs.corelink.humangr.com
-> - Trust center: corelink.humangr.com/trust
-> - Blog (launch series, 5 posts): corelink.humangr.com/blog
+> - Site: humangr.com/corelink
+> - Docs: corelink-docs.humangr.com
+> - Trust center: corelink-docs.humangr.com/trust
+> - Blog (launch series, 5 posts): corelink-docs.humangr.com/blog
 >
 > If your build cache is the bottleneck — we'd like to hear from you.
 
-`[image_5: closing card — "CoreLink GA" + corelink.humangr.com URL; 1600x900]`
+`[image_5: closing card — "CoreLink GA" + humangr.com/corelink URL; 1600x900]`
 
 ---
 
@@ -107,7 +107,7 @@
 | 2 | TLA+ snippet | "Code excerpt from tenant_isolation.tla showing the safety invariant that cross-tenant CAS reads are structurally impossible." |
 | 3 | BYOK flow | "Diagram showing customer-held KEK in customer KMS, per-object DEK at CoreLink wrapped under KEK, and customer-initiated kill switch arrow." |
 | 4 | Merkle tree | "Merkle tree diagram with daily chain heads highlighted and a consistency proof path between two heads marked." |
-| 5 | Closing | "CoreLink GA announcement card with corelink.humangr.com URL and HuGR Labs logo." |
+| 5 | Closing | "CoreLink GA announcement card with humangr.com/corelink URL and HuGR Labs logo." |
 
 ---
 
