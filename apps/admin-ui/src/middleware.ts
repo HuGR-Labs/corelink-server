@@ -17,6 +17,7 @@ import {
   STATIC_SECURITY_HEADERS,
 } from "@/lib/csp";
 import {
+  canonicalAuthPathFor,
   isPublicPath,
   isSelfGatedPath,
   signInPathFor,
@@ -78,6 +79,25 @@ export default async function middleware(req: NextRequest): Promise<NextResponse
     "content-security-policy",
     buildCspHeaderValue(nonce, devAllowUnsafeEval()),
   );
+
+  // Canonicalize a locale-prefixed auth URL BEFORE any auth decision. The
+  // Clerk auth routes are mounted outside `app/[locale]`, so `/en/sign-up` has
+  // no route: without this it falls through to the protected branch and the
+  // brand-new prospect is 307'd to the sign-IN screen carrying a `redirect_url`
+  // that points back at the same non-existent path. Sending them to the real
+  // sign-up page instead is the only outcome that keeps the funnel alive.
+  // `?redirect_url=` and friends are preserved verbatim. See
+  // `canonicalAuthPathFor` in src/lib/route-matcher.ts.
+  const canonicalAuthPath = canonicalAuthPathFor(pathname);
+  if (canonicalAuthPath) {
+    const target = new URL(canonicalAuthPath, req.url);
+    target.search = req.nextUrl.search;
+    // 308: preserve the method, and let caches/browsers learn the canonical
+    // shape — the locale-prefixed shape is never coming back.
+    const canonicalRes = NextResponse.redirect(target, 308);
+    applySecurityHeaders(canonicalRes, nonce);
+    return canonicalRes;
+  }
 
   // For public paths or auth UI we never invoke Clerk middleware.
   // Clerk integration runs only for protected paths; we keep this stub

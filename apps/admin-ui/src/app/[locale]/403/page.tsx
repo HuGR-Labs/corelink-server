@@ -4,14 +4,25 @@ import React from "react";
 import { PublicShell } from "@/components/public/PublicShell";
 import { Callout } from "@/components/ui/linear";
 
+/**
+ * `searchParams` is a PROMISE in Next 16 (async request APIs) — typing it as a
+ * plain object made `searchParams?.reason` read a property off a Promise, so it
+ * was `undefined` on every request and every 403 rendered the generic fallback
+ * reason instead of the specific one the caller passed. Repeated params are
+ * possible on the wire, so the array shape is normalized to its first value.
+ */
 export interface ForbiddenPageProps {
-  searchParams?: { reason?: string };
+  searchParams?: Promise<{ reason?: string | string[] }>;
 }
 
-export default function ForbiddenPage({
+export default async function ForbiddenPage({
   searchParams,
-}: ForbiddenPageProps): React.ReactElement {
-  const reason = searchParams?.reason ?? "operator role required";
+}: ForbiddenPageProps): Promise<React.ReactElement> {
+  const params = (await searchParams) ?? {};
+  const rawReason = Array.isArray(params.reason)
+    ? params.reason[0]
+    : params.reason;
+  const reason = rawReason?.trim() ? rawReason : "operator role required";
   return (
     <PublicShell width="prose">
       <section aria-labelledby="forbidden-heading" className="py-10">

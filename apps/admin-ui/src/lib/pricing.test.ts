@@ -16,9 +16,11 @@ import {
   TIERS,
   isCheckoutTierId,
   normalizeCheckoutTier,
+  resolveTierCtaHref,
   DEFAULT_CHECKOUT_TIER,
   type Tier,
 } from "@/lib/pricing";
+import { isLocaleLessPath } from "@/lib/route-matcher";
 
 // The FROZEN backend contract — byte-identical ids. If the backend ever
 // renames a runner SKU this list is the canary that catches the drift.
@@ -126,6 +128,36 @@ describe("catalog integrity", () => {
     for (const card of TIERS) {
       if (card.ctaHref.startsWith("mailto:")) continue;
       expect(card.ctaHref.startsWith("/")).toBe(true);
+    }
+  });
+
+  /**
+   * ⚠️ The assertion ABOVE is necessary but NOT sufficient, and shipping it
+   * alone broke the public buyer funnel: `ctaHref` is an INTERMEDIATE
+   * constant. `/sign-up` satisfies `startsWith("/")` while the URL the
+   * pricing page actually rendered — `/${locale}/sign-up` — matched no route
+   * and 307'd the prospect to the sign-IN screen. Assert the RESOLVED href.
+   * The end-to-end lock (real page render + route/middleware oracles) lives
+   * in tests/pricing-cta-funnel.test.tsx.
+   */
+  it("resolves every CTA to a href whose locale shape matches its route mount", () => {
+    for (const locale of ["en", "pt", "es", "de"]) {
+      for (const card of TIERS) {
+        const href = resolveTierCtaHref(card, locale);
+        if (card.ctaHref.startsWith("mailto:")) {
+          expect(href).toBe(card.ctaHref);
+          continue;
+        }
+        if (isLocaleLessPath(card.ctaHref)) {
+          // Mounted outside app/[locale] — a locale segment kills the route.
+          expect(href).toBe(card.ctaHref);
+          expect(href.startsWith(`/${locale}/`)).toBe(false);
+        } else {
+          expect(href).toBe(`/${locale}${card.ctaHref}`);
+        }
+        // next/link applies the basePath itself — never pre-apply it here.
+        expect(href.startsWith("/corelink")).toBe(false);
+      }
     }
   });
 });

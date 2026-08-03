@@ -90,6 +90,68 @@ export const PUBLIC_LOCALE_PAGE_PREFIXES: readonly string[] = [
 const LOCALE_SEGMENT_RE = /^\/(?:en|pt|es|de)(?=\/|$)/;
 
 /**
+ * Page routes mounted OUTSIDE `app/[locale]` — they have NO locale-prefixed
+ * shape, and building one produces a URL with no matching route.
+ *
+ * The Clerk auth surfaces live at `app/sign-in/[[...sign-in]]` and
+ * `app/sign-up/[[...sign-up]]`, and BOTH widgets pin `path` / `signInUrl` /
+ * `signUpUrl` to `${APP_BASE_PATH}/sign-{in,up}` (regression-locked in
+ * tests/clerk-basepath.test.tsx) — Clerk's `routing="path"` matches that one
+ * literal against `window.location.pathname`, so there is exactly ONE legal
+ * shape for these routes and it carries no locale segment.
+ *
+ * Live consequence of ignoring this (the pricing-CTA funnel break, fixed
+ * 2026-08-03): `/corelink/en/sign-up` matches no route, so
+ * {@link isPublicPath} classified it PROTECTED and the middleware bounced the
+ * brand-new prospect to `/corelink/sign-in?redirect_url=%2Fcorelink%2Fen%2Fsign-up`
+ * — the sign-IN screen, with a return target that does not exist. Every
+ * "start free / upgrade" CTA on the public pricing page pointed there.
+ *
+ * Consumed by {@link isLocaleLessPath} (link builders) and
+ * {@link canonicalAuthPathFor} (the middleware's self-healing redirect).
+ */
+export const LOCALE_LESS_PAGE_PREFIXES: readonly string[] = [
+  "/sign-in",
+  "/sign-up",
+];
+
+/**
+ * True when `href` targets a route that exists ONLY in its locale-less shape
+ * (see {@link LOCALE_LESS_PAGE_PREFIXES}) — i.e. a link builder must NOT
+ * prepend a locale segment to it. Query/hash tolerant; basePath tolerant.
+ */
+export function isLocaleLessPath(href: string): boolean {
+  const pathname = stripBasePath(href.split("?")[0]!.split("#")[0]!);
+  for (const prefix of LOCALE_LESS_PAGE_PREFIXES) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) return true;
+  }
+  return false;
+}
+
+/**
+ * Self-healing canonicalization for the locale-prefixed auth URLs that have no
+ * route: given a middleware pathname, return the surface-correct
+ * (basePath-carrying) locale-LESS target, or `null` when the path is already
+ * canonical / is not an auth path.
+ *
+ * This is the safety net behind the {@link LOCALE_LESS_PAGE_PREFIXES} fix: the
+ * link builders now emit `/sign-up`, but any URL already in the wild (a
+ * bookmark, an email, a stale `redirect_url`) would otherwise keep landing the
+ * prospect on the sign-IN screen. Redirecting is strictly better than the
+ * alternatives — a 404 is still a dead funnel, and making the locale shape
+ * *render* would need a second Clerk mount fighting `routing="path"`.
+ */
+export function canonicalAuthPathFor(pathname: string): string | null {
+  const stripped = stripBasePath(pathname || "/");
+  // Only act when a locale segment is actually present — otherwise the
+  // canonical path is what we were given and redirecting would loop.
+  if (!LOCALE_SEGMENT_RE.test(stripped)) return null;
+  const delocalized = stripped.replace(LOCALE_SEGMENT_RE, "") || "/";
+  if (!isLocaleLessPath(delocalized)) return null;
+  return `${requestBasePath(pathname)}${delocalized}`;
+}
+
+/**
  * Reduce a raw middleware pathname to its app-relative shape by removing the
  * `basePath` prefix. Tolerates the basePath being:
  *   - present  → `/corelink/sign-up`  (prod / OpenNext — the real shape)

@@ -3,6 +3,8 @@ import {
   isPublicPath,
   isProtectedPath,
   isSelfGatedPath,
+  isLocaleLessPath,
+  canonicalAuthPathFor,
   signInPathFor,
   signInRedirectPath,
   APP_BASE_PATH,
@@ -222,5 +224,62 @@ describe("route matcher", () => {
       expect(signInRedirectPath("/en/welcome")).toBe("/corelink/sign-in");
       expect(signInRedirectPath("/dashboard")).toBe("/corelink/sign-in");
     });
+  });
+});
+
+/**
+ * The locale-prefixed auth URL trap — the public buyer funnel break of
+ * 2026-08-03. `/en/sign-up` matches NO route (the Clerk auth pages are mounted
+ * outside `app/[locale]`), so `isPublicPath` calls it protected and the
+ * middleware 307s a brand-new prospect to the sign-IN screen carrying a
+ * `redirect_url` that points back at the same dead path. The link builders now
+ * emit the locale-less shape; this is the middleware-side net for every URL
+ * already in the wild.
+ */
+describe("locale-less auth routes", () => {
+  it("recognises the routes that have no locale-prefixed shape", () => {
+    expect(isLocaleLessPath("/sign-up")).toBe(true);
+    expect(isLocaleLessPath("/sign-in")).toBe(true);
+    expect(isLocaleLessPath("/sign-up/verify-email-address")).toBe(true);
+    expect(isLocaleLessPath("/sign-in?redirect_url=%2Fcorelink%2Fen%2Fupgrade")).toBe(true);
+    expect(isLocaleLessPath(`${APP_BASE_PATH}/sign-up`)).toBe(true);
+  });
+
+  it("leaves the locale-mounted routes alone", () => {
+    expect(isLocaleLessPath("/upgrade?plan=pro")).toBe(false);
+    expect(isLocaleLessPath("/en/pricing")).toBe(false);
+    expect(isLocaleLessPath("/signup")).toBe(false); // no `/` boundary confusion
+    expect(isLocaleLessPath("mailto:gustavo@humangr.com")).toBe(false);
+  });
+
+  it("canonicalizes every locale's dead auth URL onto the real route", () => {
+    for (const locale of ["en", "pt", "es", "de"]) {
+      expect(canonicalAuthPathFor(`/${locale}/sign-up`)).toBe(
+        `${APP_BASE_PATH}/sign-up`,
+      );
+      expect(canonicalAuthPathFor(`/${locale}/sign-in`)).toBe(
+        `${APP_BASE_PATH}/sign-in`,
+      );
+      // Clerk's own step routes under the widget path must survive.
+      expect(canonicalAuthPathFor(`/${locale}/sign-up/verify-email-address`)).toBe(
+        `${APP_BASE_PATH}/sign-up/verify-email-address`,
+      );
+    }
+  });
+
+  it("returns null for anything already canonical — no redirect loop", () => {
+    expect(canonicalAuthPathFor("/sign-up")).toBeNull();
+    expect(canonicalAuthPathFor("/sign-in")).toBeNull();
+    expect(canonicalAuthPathFor(`${APP_BASE_PATH}/sign-up`)).toBeNull();
+    expect(canonicalAuthPathFor("/en/pricing")).toBeNull();
+    expect(canonicalAuthPathFor("/en/upgrade")).toBeNull();
+    expect(canonicalAuthPathFor("/dashboard")).toBeNull();
+    expect(canonicalAuthPathFor("/")).toBeNull();
+  });
+
+  it("the canonical target it emits is itself PUBLIC (else the net feeds the bounce)", () => {
+    const target = canonicalAuthPathFor("/pt/sign-up");
+    expect(target).not.toBeNull();
+    expect(isPublicPath(target as string)).toBe(true);
   });
 });

@@ -23,6 +23,40 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(admin-ui): every "start free" button on the public pricing page handed a brand-new
+  prospect the sign-IN screen — the top of the self-serve funnel, in all four locales.**
+  Measured live: `GET /corelink/en/sign-up` → `307 → /corelink/sign-in?redirect_url=%2Fcorelink%2Fen%2Fsign-up`,
+  while `/corelink/sign-up` served 200 the whole time. The pricing page composed
+  `` `/${locale}${tier.ctaHref}` `` for every non-`mailto:` tier, but the Clerk auth pages are
+  mounted at `app/sign-up/[[...sign-up]]` — **outside** `app/[locale]`. `/en/sign-up` therefore
+  matched no route, `isPublicPath()` classified it as PROTECTED, and the middleware bounced the
+  visitor to sign-IN carrying a return URL that does not exist — so completing sign-in returned
+  them to the same dead path. Five of the six cache tiers (Free · Solo · Starter · Pro · Max)
+  shipped that way in `en`, `pt`, `es` and `de`.
+
+  Fixed by routing the CTA at the canonical locale-less `/sign-up` through a new
+  `resolveTierCtaHref()` — the one place a CTA URL is composed — which discriminates locale-LESS
+  routes (`/sign-{in,up}`, declared as `LOCALE_LESS_PAGE_PREFIXES` in `route-matcher.ts`) from the
+  `[locale]`-mounted `/upgrade?plan=…` targets, whose prefix is preserved. Adding an
+  `app/[locale]/sign-up` route was rejected: Clerk pins `path`/`signInUrl`/`signUpUrl` to the one
+  literal `${APP_BASE_PATH}/sign-{in,up}` under `routing="path"`, so a second mount would be a
+  half-working auth surface. The href stays app-relative because `next/link` applies the
+  `/corelink` basePath itself. As a net for URLs already in the wild, the middleware now **308s**
+  `/<locale>/sign-{in,up}` onto the real route (query preserved) instead of treating it as a
+  protected page.
+
+  The old guard could not have caught this: it asserted `card.ctaHref.startsWith("/")` on an
+  INTERMEDIATE constant, which `/sign-up` satisfies while the rendered `/en/sign-up` is dead —
+  and `/en/pricing` returned 200 throughout, so no render smoke test would have flagged it either.
+  The replacement renders the real page, reads the `href` off the real anchor, and interrogates the
+  DESTINATION through two independent oracles: a filesystem App-Router resolver (does a route
+  exist?) and the middleware's own `isPublicPath`/`isSelfGatedPath` predicates (does it 307 to
+  sign-in?). Reverting the one-line discriminator fails 17 tests across both files.
+
+  Also fixed on the same funnel: `app/[locale]/403/page.tsx` typed `searchParams` synchronously,
+  but Next 16 makes it a Promise — `searchParams?.reason` read a property off a Promise, so every
+  403 (the page a bounced user lands on) rendered the generic "operator role required" instead of
+  the specific reason the caller passed.
 - **fix(deps): close the 12 npm Dependabot alerts — all transitive build/test tooling, none
   shipped.** Traced every one with `pnpm why` rather than trusting the `runtime` scope the
   API reports (that scope reflects lockfile resolution, not what reaches an artifact):
