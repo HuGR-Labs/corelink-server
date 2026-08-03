@@ -52,18 +52,38 @@ concurrency:
 jobs:
   fmt:
     name: cargo fmt --all --check
-    runs-on: ubuntu-latest
-    # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
-    # inherits GitHub's 360-min default, so one wedged run can burn 6h of
-    # PAID minutes. Measured runs are minutes; this is generous headroom.
+    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 2 of
+    # the migration off GitHub-hosted runners, 2026-08-03; wave 1 moved gitleaks
+    # + trivy). This lane is the cheapest possible tenant of that fabric: it
+    # never compiles, so it holds a box for well under a minute.
+    #
+    # ⚠️ Ephemeral-runner reality — a box is minted per job and destroyed after,
+    # so nothing is cached between runs. This job cached nothing to begin with.
+    # The real exposure is the opposite one: if the fabric refuses or drops the
+    # spawn, the job sits QUEUED, and `timeout-minutes` does NOT apply to queued
+    # time (it starts counting once a job is RUNNING). GitHub cancels a job left
+    # queued for 24 h. That is a stall, not a false pass:
+    # `scripts/pre-merge-gate-check.sh` scores a pending check as ⛔ DO NOT MERGE
+    # (`order = {"fail": 0, "cancel": 0, "pending": 1, …}`), so a stranded box
+    # blocks the PR rather than waving it through.
+    runs-on: corelink
+    # Bound the job: a job with no timeout inherits GitHub's 360-min default, so
+    # one wedged run can burn 6h. Measured runs are under a minute; generous.
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
-      - name: Install Rust toolchain (stable + rustfmt)
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
-        with:
-          components: rustfmt
+      # `dtolnay/rust-toolchain` was REMOVED here, and that is a no-op for what
+      # this gate checks — not a shortcut. It requested `stable` + the `rustfmt`
+      # component, but `rust-toolchain.toml` pins channel 1.91.1 WITH rustfmt in
+      # its `components` list, and rustup's shims honour that file over any
+      # `rustup default`. So `cargo fmt` has always run 1.91.1's rustfmt on this
+      # lane, on hosted runners too; the action's `stable` never reached it. What
+      # changes is only that an ephemeral box no longer re-downloads an unused
+      # toolchain on every run. The step below now PROVES the pinned rustfmt is
+      # the one doing the checking — a guarantee this lane did not have before.
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        run: bash scripts/ci-assert-pinned-toolchain.sh
 
       - name: cargo fmt --all --check
         run: cargo fmt --all --check

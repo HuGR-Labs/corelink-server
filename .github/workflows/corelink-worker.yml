@@ -49,14 +49,34 @@ jobs:
   # per CI-OPT-004 (removes floating rustsec/audit-check@v1 ref).
   pr-gate:
     name: PR gate (crate-scoped clippy + tests + canonical keys)
-    runs-on: ubuntu-latest
+    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 2,
+    # 2026-08-03). See `.github/workflows/corelink-reapi.yml` for the full
+    # rationale; the short version is that the box is 4 vCPU / 12.5 GB against
+    # ubuntu-latest's 2 vCPU / 7 GB on a private repo, and the image ships a
+    # pre-seeded ~/.cargo (415 MB), so a cold crate build here measured ~105 s —
+    # comparable to the warm-cache hosted runs this lane was getting.
+    #
+    # ⚠️ The `Swatinem/rust-cache` step below is gated `runner.environment ==
+    # 'github-hosted'`, so it SKIPS on a corelink box and this lane compiles cold
+    # every run. Do NOT re-enable it for self-hosted: that guard exists because
+    # the MAC fleet shares one $HOME and rust-cache's prune deletes a sibling
+    # job's registry mid-compile (#979/#980). Ephemeral boxes have a private
+    # $HOME, but the guard is written per-environment, not per-fleet.
+    #
+    # ⚠️ A refused or dropped spawn leaves the job QUEUED, and `timeout-minutes`
+    # does not bound queued time. That is a stall, not a false pass —
+    # `scripts/pre-merge-gate-check.sh` scores a pending check as ⛔ DO NOT MERGE.
+    runs-on: corelink
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
-        with:
-          components: clippy, rustfmt
+      # `dtolnay/rust-toolchain` removed. It asked for `stable` + clippy/rustfmt;
+      # `rust-toolchain.toml` pins 1.91.1 and lists both components, and rustup
+      # honours that file over any `rustup default` — so 1.91.1's clippy is what
+      # has always run here. The assertion makes that provable per run, so an
+      # image drift fails loudly instead of silently changing the compiler.
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        run: bash scripts/ci-assert-pinned-toolchain.sh
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
@@ -78,12 +98,21 @@ jobs:
 
   wasm-build:
     name: WASM target build (CF Workers compile compatibility)
-    runs-on: ubuntu-latest
+    # Runner: `corelink` (wave 2, 2026-08-03) — see the pr-gate job above for the
+    # ephemeral-box caveats.
+    runs-on: corelink
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
-        with:
-          targets: wasm32-unknown-unknown
+      # `dtolnay/rust-toolchain@stable` with `targets: wasm32-unknown-unknown`
+      # removed. The image does NOT ship wasm32 (its only target is
+      # x86_64-unknown-linux-gnu) — `rust-toolchain.toml` does, via
+      # `targets = ["wasm32-unknown-unknown", "x86_64-unknown-linux-musl"]`,
+      # which rustup installs with the channel on first use. Measured on the box:
+      # `rustup target add wasm32-unknown-unknown` was a 0 s no-op afterwards.
+      # The removed action added wasm32 to `stable`, which cargo never uses in
+      # this repo; the assertion checks the target on the toolchain that does.
+      - name: Assert the workspace-pinned toolchain + wasm32 target
+        run: bash scripts/ci-assert-pinned-toolchain.sh wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
