@@ -6,8 +6,11 @@ import {
   containsUnsafeDirective,
   containsScriptUnsafeInline,
   generateNonce,
+  CSP_REPORT_GROUP,
+  CSP_REPORT_PATH,
   STATIC_SECURITY_HEADERS,
 } from "@/lib/csp";
+import { APP_BASE_PATH, isPublicPath, withAppBasePath } from "@/lib/route-matcher";
 
 describe("CSP header generation", () => {
   it("nonce-hardens script-src; style-src uses 'unsafe-inline' WITHOUT a nonce", () => {
@@ -44,8 +47,64 @@ describe("CSP header generation", () => {
     expect(value).toContain("base-uri 'self'");
   });
 
-  it("emits report-uri /api/csp-report", () => {
-    expect(buildCspHeaderValue("n")).toContain("report-uri /api/csp-report");
+  /**
+   * Regression lock for the telemetry loss fixed 2026-08-03.
+   *
+   * `report-uri` used to be the literal `/api/csp-report`. A report URL is
+   * resolved against the DOCUMENT's URL, so that root-absolute path pointed at
+   * the origin root while the handler is mounted under Next's `basePath`
+   * (`/corelink`). Live on `https://humangr.com/corelink/sign-in`:
+   * `POST /api/csp-report` -> 405 (apex marketing Pages) and
+   * `POST /corelink/api/csp-report` -> 204. Every violation report was lost.
+   *
+   * The PREVIOUS version of this test asserted exactly the broken literal — it
+   * pinned the defect rather than catching it. These assertions are written so
+   * that restoring the literal FAILS them, and so that they cannot be satisfied
+   * by a second hardcoded `/corelink` that drifts from `next.config.ts`.
+   */
+  describe("violation-report routing (basePath)", () => {
+    const reportUri = (): string =>
+      buildCspDirectives("n").find((d) => d.startsWith("report-uri ")) ?? "";
+    const reportPath = (): string => reportUri().slice("report-uri ".length);
+
+    it("report-uri carries the app basePath, not the bare /api/csp-report", () => {
+      // Derived from route-matcher's APP_BASE_PATH (the same constant every
+      // other hand-built URL re-attaches), never from a literal typed here.
+      expect(reportPath()).toBe(`${APP_BASE_PATH}/api/csp-report`);
+      expect(reportPath().startsWith(`${APP_BASE_PATH}/`)).toBe(true);
+      // The exact pre-fix value. Kills a revert even if APP_BASE_PATH were "".
+      expect(reportUri()).not.toBe("report-uri /api/csp-report");
+    });
+
+    it("the report path is the same URL withAppBasePath builds", () => {
+      expect(reportPath()).toBe(withAppBasePath("/api/csp-report"));
+      expect(CSP_REPORT_PATH).toBe(reportPath());
+    });
+
+    it("the sink stays public — middleware must not auth-gate it", () => {
+      // Requests arrive at middleware basePath-STRIPPED; isPublicPath must
+      // accept both shapes or the browser's unauthenticated POST gets bounced.
+      expect(isPublicPath(reportPath())).toBe(true);
+      expect(isPublicPath("/api/csp-report")).toBe(true);
+    });
+
+    it("advertises report-to + a matching Reporting-Endpoints header", () => {
+      // `report-uri` is deprecated but retained: Firefox/Safari implement ONLY
+      // it, Chromium implements ONLY report-to (and ignores report-uri when a
+      // report-to group is present). Dropping either loses a browser family.
+      const value = buildCspHeaderValue("n");
+      expect(value).toContain(`report-to ${CSP_REPORT_GROUP}`);
+      expect(value).toContain(`report-uri ${CSP_REPORT_PATH}`);
+
+      const header = STATIC_SECURITY_HEADERS.find(
+        (h) => h.name === "Reporting-Endpoints",
+      );
+      expect(header, "Reporting-Endpoints header emitted").toBeTruthy();
+      // The group name in the header MUST match the directive, and the URL it
+      // names MUST be the basePath-correct one — otherwise Chromium resolves
+      // the group to nothing and drops every report without a console warning.
+      expect(header!.value).toBe(`${CSP_REPORT_GROUP}="${APP_BASE_PATH}/api/csp-report"`);
+    });
   });
 
   it("allows clerk.corelink-app.humangr.com for script + connect", () => {

@@ -41,7 +41,19 @@ test.describe("CSP", () => {
     );
     expect(scriptSrc, "script-src must be nonce-hardened").toMatch(/'nonce-/);
     expect(cspHeader).toMatch(/default-src/);
-    expect(cspHeader).toMatch(/report-uri/);
+    // The report URL must carry the app basePath. A bare `report-uri
+    // /api/csp-report` resolves against the ORIGIN root, where this app is not
+    // mounted — observed live as POST /api/csp-report -> 405 on humangr.com and
+    // 404 under `next dev`, i.e. 100% of reports discarded. `/report-uri/`
+    // alone (the previous assertion) passed straight through that.
+    expect(cspHeader, "report-uri must be basePath-correct").toMatch(
+      /report-uri \/corelink\/api\/csp-report/,
+    );
+    // Reporting API v1 channel for Chromium, which ignores report-uri.
+    expect(cspHeader).toMatch(/report-to csp-endpoint/);
+    expect(headers["reporting-endpoints"], "Reporting-Endpoints header").toBe(
+      'csp-endpoint="/corelink/api/csp-report"',
+    );
   });
 
   test("inline script injection fires securitypolicyviolation", async ({ page }) => {
