@@ -238,16 +238,17 @@ export interface Env {
   PROD_NRT?: { fetch: typeof fetch };
   PROD_SYD?: { fetch: typeof fetch };
   // ── Onboarding funnel telemetry (PLG §7.1) ─────────────────────────────────
-  // Service binding to the analytics ingest Worker (`corelink-analytics-prod`).
-  // Set in [[env.prod.services]]. Only that Worker holds the ANALYTICS_DB
-  // binding for `analytics_events`, and a Worker→Worker fetch over the public
-  // custom domain is edge-rejected (error 1014, CNAME Cross-User Banned) — so
-  // the binding is the ONLY path. Absent ⇒ the emit is a silent no-op.
-  ANALYTICS_SVC?: { fetch: typeof fetch };
-  // Shared trusted-ingest secret; same value as the analytics-worker's
-  // `INGEST_KEY` (secrets matrix row 138). Caller-side name mirrors
-  // apps/signup-worker/src/lib/analytics-server.ts. Absent ⇒ no-op.
-  ANALYTICS_INGEST_KEY?: string;
+  // Service binding to the analytics ingest Worker (`corelink-analytics-prod`),
+  // resolved to its `AnalyticsIngest` RPC entrypoint by
+  // `entrypoint = "AnalyticsIngest"` in [[env.prod.services]] — without that
+  // line the stub is the target's default `fetch` export and has no RPC methods.
+  // Only that Worker holds the ANALYTICS_DB binding for `analytics_events`, and
+  // a Worker→Worker fetch over the public custom domain is edge-rejected (error
+  // 1014, CNAME Cross-User Banned) — so the binding is the ONLY path. NO
+  // companion secret: the platform authenticates the caller, so `first_cli_authed`
+  // needs no `ANALYTICS_INGEST_KEY` (see lib/onboarding_events.ts). Absent ⇒ the
+  // emit is a silent no-op.
+  ANALYTICS_SVC?: import("./lib/onboarding_events.js").AnalyticsIngestStub;
   // ── Observability (Sentry error tracking) ───────────────────────────────────
   // OPTIONAL. The Sentry hook (see `export default` at the bottom of this file)
   // is a COMPLETE no-op until the operator sets SENTRY_DSN via
