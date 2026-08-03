@@ -58,6 +58,34 @@ const MIN_INTERNAL_AUTH_KEY_LEN = 32;
  * untrusted runner dispatcher its OWN consumer key (distinct from signup's
  * `pat_mint`) means a leaked runner key can ONLY mint/revoke per-job runner PATs —
  * never the signup PAT-mint, erase, or admin surfaces (least privilege, A6).
+ *
+ * ## A missing key is an OUTAGE (503), not a denial (403) — 2026-08-02
+ *
+ * Both gates below distinguish two failures that used to share a status:
+ *
+ *   - the caller presented a wrong/absent header  → **401** (an authz verdict
+ *     ABOUT THE CALLER: "you did not prove you may do this")
+ *   - no properly-sized key is bound server-side  → **503** (a statement about
+ *     US: "this endpoint cannot evaluate authz at all right now")
+ *
+ * Both still fail CLOSED — nothing is authorized either way. The distinction is
+ * for the CALLER's retry logic, and it is load-bearing. The runner dispatcher
+ * (corelink-runners `deploy/cloudflare/src/lib.ts`) branches on exactly this: a
+ * 403 is treated as a HARD DENY and the job is dropped with no dead-letter and no
+ * retry, while any 5xx falls open to a COLD spawn (the job still runs, just
+ * without cache warm). GitHub delivers `workflow_job.queued` exactly once, so
+ * "dropped" means dropped FOREVER.
+ *
+ * Under the old 403, an unbound secret therefore ate EVERY runner job in the
+ * fleet, permanently and silently — and the only signal was a `spawn_forbidden`
+ * counter indistinguishable from ordinary "customer not entitled" traffic. That
+ * is a config fault wearing an authz costume; the body already said
+ * "unavailable" while the status said "forbidden".
+ *
+ * This also RESTORES the frozen Rust contract rather than diverging from it: the
+ * container returns 503 for the same condition (`routes/internal_pat.rs:21`,
+ * ":755", ":785" — "the endpoint is unavailable (503) rather than silently
+ * widening to the shared key"). The TypeScript side was the half that drifted.
  */
 export type InternalConsumer =
   | "pat_mint"
@@ -178,15 +206,19 @@ function reapiError(error: string, message: string, status: number, requestId: s
  * Gate an inbound request on the shared internal-auth secret.
  *
  * @returns `null` when the caller is authorized (proceed); otherwise a
- *   fail-CLOSED error {@link Response} (403 if the secret is unbound, 401 if the
- *   header is missing/wrong) that the caller must return verbatim.
+ *   fail-CLOSED error {@link Response} (**503** if the secret is unbound — an
+ *   outage, not a verdict about the caller — 401 if the header is missing/wrong)
+ *   that the caller must return verbatim. See the module header for why the
+ *   distinction is load-bearing.
  */
 export function requireInternalAuth(request: Request, env: Env, requestId: string): Response | null {
   const expected = env.CORELINK_INTERNAL_AUTH_KEY;
   if (!expected || expected.length < MIN_INTERNAL_AUTH_KEY_LEN) {
     // No properly sized secret bound → the internal endpoint is unavailable.
     // Fail CLOSED (never an open gate); do not reveal which precondition failed.
-    return reapiError("FORBIDDEN", "internal endpoint unavailable", 403, requestId);
+    // 503, NOT 403: nothing about the CALLER failed here, and a client that
+    // treats 403 as final would give up on what is a transient config fault.
+    return reapiError("SERVICE_UNAVAILABLE", "internal endpoint unavailable", 503, requestId);
   }
   const provided = request.headers.get(INTERNAL_AUTH_HEADER) ?? "";
   if (!constantTimeSecretEqual(expected, provided)) {
@@ -201,7 +233,8 @@ export function requireInternalAuth(request: Request, env: Env, requestId: strin
  * Resolves the consumer's dedicated key via {@link resolveConsumerKey} (the
  * #297 per-consumer-key + shared-fallback pattern): the dedicated key if set and
  * properly sized, else the shared `CORELINK_INTERNAL_AUTH_KEY`, else `null`. A
- * `null` resolution means NO properly sized gate is bound → fail CLOSED (403).
+ * `null` resolution means NO properly sized gate is bound → fail CLOSED (**503**
+ * — the endpoint cannot evaluate authz, which is an outage, not a denial).
  *
  * Used by the D-9 runner-mint / runner-revoke routes (`pat_mint` consumer →
  * `CORELINK_PAT_MINT_AUTH_KEY` with shared fallback), mirroring the container's
@@ -209,8 +242,8 @@ export function requireInternalAuth(request: Request, env: Env, requestId: strin
  * not unlock the rest of the `/internal/*` family.
  *
  * @returns `null` when the caller is authorized (proceed); otherwise a
- *   fail-CLOSED error {@link Response} (403 if no sized key is bound, 401 if the
- *   header is missing/wrong) that the caller must return verbatim.
+ *   fail-CLOSED error {@link Response} (**503** if no sized key is bound, 401 if
+ *   the header is missing/wrong) that the caller must return verbatim.
  */
 export function requireConsumerAuth(
   request: Request,
@@ -221,8 +254,10 @@ export function requireConsumerAuth(
   const expected = resolveConsumerKey(env, consumer);
   if (expected === null) {
     // Neither the dedicated nor the shared key qualifies → unavailable.
-    // Fail CLOSED; do not reveal which precondition failed.
-    return reapiError("FORBIDDEN", "internal endpoint unavailable", 403, requestId);
+    // Fail CLOSED; do not reveal which precondition failed. 503, NOT 403 — this
+    // is the branch that ate every runner job in the fleet when a rotation left
+    // a key unbound (see the module header).
+    return reapiError("SERVICE_UNAVAILABLE", "internal endpoint unavailable", 503, requestId);
   }
   const provided = request.headers.get(INTERNAL_AUTH_HEADER) ?? "";
   if (!constantTimeSecretEqual(expected, provided)) {

@@ -8,7 +8,7 @@ source_files:
   - "worker/src/lib/pat_verify_cache.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "3397e91bca1044cf84948d7310f0d9aeedb82048"
+checkpoint_sha: "d19f0a7880c34db7ae0300b44da3886d5f5f033c"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -41,7 +41,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - The Worker-edge internal gate compares a presented secret against the expected one in constant time,
   copying into a fixed buffer so neither length nor content leaks via an early branch — one
   `timingSafeEqual` over equal-length buffers AND a single length-equality bit
-  (`worker/src/lib/internal_auth.ts:144-159`).
+  (`worker/src/lib/internal_auth.ts:172-187`).
 - That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (403),
   a missing/wrong header is 401, and only an exact match returns `null` to let the caller proceed
   (`worker/src/lib/internal_auth.ts:166-178`).
@@ -128,7 +128,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - A token that fails the cheap HMAC fast-reject NEVER reaches the Argon2id layer
   (`crates/corelink-container/src/adapter_pat.rs:661-662`).
 - Both layers are constant-time with no length or content oracle — the edge compare
-  (`worker/src/lib/internal_auth.ts:144-159`) and the uniform `InvalidPat` collapse in the container
+  (`worker/src/lib/internal_auth.ts:172-187`) and the uniform `InvalidPat` collapse in the container
   (`crates/corelink-container/src/adapter_pat.rs:43-47`).
 - The edge gate fails CLOSED: an unbound/short secret is unavailable, never an open gate
   (`worker/src/lib/internal_auth.ts:166-172`).
@@ -210,7 +210,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 
 # Citations
 
-1. `worker/src/lib/internal_auth.ts:144-159` — the edge constant-time secret compare with no length oracle.
+1. `worker/src/lib/internal_auth.ts:172-187` — the edge constant-time secret compare with no length oracle.
 2. `worker/src/lib/internal_auth.ts:166-178` — the fail-CLOSED edge gate (403 unbound / 401 wrong / `null` pass).
 2a. `worker/src/lib/internal_auth.ts:96-121` — `resolveConsumerKey`: prefers a consumer's dedicated key; a SET-but-sub-floor (<32-char) dedicated key fails LOUD + fail-CLOSED (null) instead of silently widening to the shared key (deep-audit C/sub-floor); a genuinely UNSET dedicated key still falls back to shared.
 2b. `worker/src/lib/internal_auth.ts:91-92` — the `dsr_anchor` branch of the consumer-key ternary (`CORELINK_DSR_ANCHOR_AUTH_KEY`).
