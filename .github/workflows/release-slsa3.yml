@@ -63,10 +63,15 @@ jobs:
           # Fetch full history to include commit SHA in provenance
           fetch-depth: 1
 
-      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53adbf3a8ef48ed33 # stable
-        with:
-          targets: wasm32-unknown-unknown
+      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
+      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
+      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
+      # `rustc` unexecutable mid-build for every other job — it took the host down
+      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
+      # default, silently moving every concurrent job off the ADR-0015 reproducibility
+      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      - name: Use the workspace-pinned host toolchain (provisions nothing)
+        run: bash scripts/ci-use-host-toolchain.sh wasm32-unknown-unknown
 
       - name: Cache Cargo registry + build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

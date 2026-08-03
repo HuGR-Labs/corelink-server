@@ -52,11 +52,15 @@ jobs:
         # SHA-pinned: actions/checkout v4.2.2
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
-      - name: Install Rust toolchain (pinned via rust-toolchain.toml)
-        # SHA-pinned: dtolnay/rust-toolchain stable
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
-        with:
-          toolchain: stable
+      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
+      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
+      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
+      # `rustc` unexecutable mid-build for every other job — it took the host down
+      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
+      # default, silently moving every concurrent job off the ADR-0015 reproducibility
+      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      - name: Use the workspace-pinned host toolchain (provisions nothing)
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Cache Cargo registry
         # SHA-pinned: actions/cache v4.2.3
@@ -166,10 +170,15 @@ jobs:
         with:
           name: sbom-cdx-json
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
-        with:
-          toolchain: stable
+      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
+      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
+      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
+      # `rustc` unexecutable mid-build for every other job — it took the host down
+      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
+      # default, silently moving every concurrent job off the ADR-0015 reproducibility
+      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      - name: Use the workspace-pinned host toolchain (provisions nothing)
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Build sbom-publish binary
         run: cargo build --release -p sbom-publish
@@ -214,10 +223,15 @@ jobs:
         with:
           name: sbom-cdx-json
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
-        with:
-          toolchain: stable
+      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
+      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
+      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
+      # `rustc` unexecutable mid-build for every other job — it took the host down
+      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
+      # default, silently moving every concurrent job off the ADR-0015 reproducibility
+      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      - name: Use the workspace-pinned host toolchain (provisions nothing)
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Build sbom-publish binary
         run: cargo build --release -p sbom-publish

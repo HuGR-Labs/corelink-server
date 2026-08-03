@@ -23,6 +23,41 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(ci): 12 self-hosted jobs were provisioning a Rust toolchain into the SHARED
+  `~/.rustup` — sibling of the #980 `~/.cargo` race, one level up.** Five runners share
+  one `$HOME`. `dtolnay/rust-toolchain` is built for GitHub-hosted runners, where `$HOME`
+  is job-private; per its own `action.yml` it runs `rustup toolchain install` **and**
+  `rustup default` against that shared tree while other jobs execute binaries out of it.
+
+  Two failure modes, and the second is the one that matters:
+  - **Crash.** Every `~/.cargo/bin/*` is a symlink to the single `rustup` shim, so a
+    concurrent install can make `rustc` unexecutable mid-build
+    (`could not execute process rustc … (never executed)`). This took the host down for a
+    day on 2026-06-15 — the incident already written up in `fuzz-nightly.yml`'s ROOT FIX
+    note. The fix was applied to the fuzz jobs then and **never generalised**.
+  - **Silent reproducibility drift.** `rustup default` rewrites the MACHINE-GLOBAL default.
+    `rust-toolchain.toml` pins 1.91.1 precisely because "rustc minor upgrades can introduce
+    LLVM non-determinism that breaks reproducibility" (ADR-0015). A job defaulting the host
+    to `stable` moves every concurrent job off that pin with no error anywhere. **Measured
+    2026-08-03: the host default had already drifted to `stable-x86_64-apple-darwin`.**
+    Two of the offending steps were even named "pinned via rust-toolchain.toml" while
+    passing `toolchain: stable`.
+
+  All 12 now call `scripts/ci-use-host-toolchain.sh`, which provisions nothing: it reads
+  the channel **from `rust-toolchain.toml`** (so the CI step and ADR-0015 cannot disagree),
+  points PATH at the pre-installed host toolchain, verifies any requested target, and fails
+  loudly — writing nothing to `$GITHUB_PATH` on failure, so a job can never be
+  half-configured. Every target the fleet needs (the 5 `release-cli` triples,
+  `wasm32-unknown-unknown`, `x86_64-unknown-linux-musl`) was verified already installed.
+
+  Also folded in: **9 hand-rolled `echo …/1.91.1-…/bin >> $GITHUB_PATH` steps**. They
+  worked, but each was a second copy of the ADR-0015 pin that no gate kept in sync — the
+  next pin bump would have silently left CI on the old compiler.
+
+  Regression gate `scripts/validate_no_shared_rustup_mutation.py` (wired into
+  `actionlint.yml` beside its #980 sibling) rejects both patterns, and **exits non-zero if
+  it inspects zero self-hosted jobs** rather than reporting success on a check that looked
+  at nothing. Proven RED against all three regressions before landing.
 - **fix(ci): `pre-merge-gate-check.sh` printed `✅ All gates green` when a check had been CANCELLED — the one tool whose entire job is to not fail open.** Observed live on PR #982: the runner killed `spec-validation` at 5m37s (`The operation was canceled` — the shape an ENOSPC or an overloaded self-hosted mac takes), the script printed `? cancel  spec-validation`, and then concluded `✅ All gates green — OK to merge`. The classifier tested `bucket == "fail"` and `bucket == "pending"` and let **everything else fall through as green**, so a bucket it did not enumerate was silently a pass. A cancelled gate has not run; it has proven nothing. This is the same shape the file's own header already warns about one level up ("Zero failures out of zero real gates read as green") — there the check list was empty, here one entry was simply uncountable. **Fixed by inverting the test from denylist to allowlist:** only `pass` and `skipping` are non-blocking; `fail`, `cancel`, and **any bucket GitHub has not invented yet** now block. Unknown ⇒ blocking is the fail-CLOSED direction, and it is the only acceptable one in a last-line-of-defense script. The verdict line names the bucket (`[bucket=cancel — not a pass; it did not run to a verdict]`) so the next reader is not left guessing why a non-`fail` entry blocked them. **Proven by running the classifier directly, both directions:** the `main` version on a payload of `{pass, pass, cancel}` prints `✅ All gates green` and exits **0**; the fixed version on the identical payload prints `⛔ DO NOT MERGE — 1 not-green, 0 pending` and exits **1**; an invented bucket (`quantum`) also exits **1**; and the all-green control still exits **0**, so the fix is not merely making everything red. **Method note, recorded because it is the same class and it was mine:** the defect surfaced only because a `bash pre-merge-gate-check.sh <pr> | tail -3 && gh pr merge …` invocation merged anyway — a shell pipeline's exit status is the **last** command's, so the `&&` was testing `tail`, not the gate. The gate had already exited 1. Piping a guard through `tail` disarms it exactly as thoroughly as the bug the guard was written to catch.
 - **fix(ci): `cargo install` on the shared Mac corrupted every OTHER concurrent Rust
   job — the real `os error 2` root cause.** All 5 self-hosted runners share ONE
