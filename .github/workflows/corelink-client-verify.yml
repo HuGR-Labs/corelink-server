@@ -145,9 +145,33 @@ jobs:
       # this file. Put the pre-installed host nightly toolchain on PATH instead.
       - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
         run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
-      # Guarded + version-pinned: only install when absent, so concurrent
-      # per-crate fuzz jobs never race on writing the shared ~/.cargo/bin shim.
-      - run: command -v cargo-fuzz >/dev/null 2>&1 || cargo install cargo-fuzz --locked --version =0.13.1
+      # `cargo install` compiles cargo-fuzz's OWN dependency tree (aws-lc-sys, syn,
+      # tokio, ctutils, parking_lot …) into whatever CARGO_HOME points at. Pointed at
+      # the SHARED `~/.cargo`, it mutates the registry that every other concurrent
+      # Rust job on this 5-runner Mac is compiling from — and those are exactly the
+      # crate names in the `os error 2` failures. cargo-fuzz is NOT pre-installed on
+      # the host, so this ran on EVERY fuzz job, not just after a version bump.
+      #
+      # Same class as the 2026-06-15 rustup incident documented in fuzz-nightly.yml
+      # (shared `~/.rustup` mutated mid-run), one level down: shared `~/.cargo`.
+      # There is no prebuilt binary to switch to — cargo-fuzz has no manifest in
+      # taiki-e/install-action at the SHA this repo pins, so it would silently fall
+      # back to this same from-source install.
+      #
+      # Fix: build it into a PER-RUNNER CARGO_HOME. Isolated, so the shared registry
+      # is never written; persistent, so each runner pays the compile at most once.
+      - name: Install cargo-fuzz (isolated CARGO_HOME — never the shared one)
+        run: |
+          set -euo pipefail
+          TOOLS="$HOME/.cargo-tools/${RUNNER_NAME:-default}"
+          mkdir -p "$TOOLS/bin"
+          echo "$TOOLS/bin" >> "$GITHUB_PATH"
+          if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | grep -q '0.13.1'; then
+            echo "cargo-fuzz 0.13.1 already in $TOOLS — no compile, no shared-registry write"
+          else
+            echo "compiling cargo-fuzz 0.13.1 into $TOOLS (isolated from ~/.cargo)"
+            CARGO_HOME="$TOOLS" cargo install cargo-fuzz --locked --version =0.13.1
+          fi
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         with:
           workspaces: "crates/corelink-client-verify/fuzz -> target"
@@ -173,9 +197,33 @@ jobs:
       # this file. Put the pre-installed host nightly toolchain on PATH instead.
       - name: Put host nightly toolchain on PATH (cargo-fuzz needs nightly)
         run: echo "$HOME/.rustup/toolchains/nightly-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
-      # Guarded + version-pinned: only install when absent, so concurrent
-      # per-crate fuzz jobs never race on writing the shared ~/.cargo/bin shim.
-      - run: command -v cargo-fuzz >/dev/null 2>&1 || cargo install cargo-fuzz --locked --version =0.13.1
+      # `cargo install` compiles cargo-fuzz's OWN dependency tree (aws-lc-sys, syn,
+      # tokio, ctutils, parking_lot …) into whatever CARGO_HOME points at. Pointed at
+      # the SHARED `~/.cargo`, it mutates the registry that every other concurrent
+      # Rust job on this 5-runner Mac is compiling from — and those are exactly the
+      # crate names in the `os error 2` failures. cargo-fuzz is NOT pre-installed on
+      # the host, so this ran on EVERY fuzz job, not just after a version bump.
+      #
+      # Same class as the 2026-06-15 rustup incident documented in fuzz-nightly.yml
+      # (shared `~/.rustup` mutated mid-run), one level down: shared `~/.cargo`.
+      # There is no prebuilt binary to switch to — cargo-fuzz has no manifest in
+      # taiki-e/install-action at the SHA this repo pins, so it would silently fall
+      # back to this same from-source install.
+      #
+      # Fix: build it into a PER-RUNNER CARGO_HOME. Isolated, so the shared registry
+      # is never written; persistent, so each runner pays the compile at most once.
+      - name: Install cargo-fuzz (isolated CARGO_HOME — never the shared one)
+        run: |
+          set -euo pipefail
+          TOOLS="$HOME/.cargo-tools/${RUNNER_NAME:-default}"
+          mkdir -p "$TOOLS/bin"
+          echo "$TOOLS/bin" >> "$GITHUB_PATH"
+          if "$TOOLS/bin/cargo-fuzz" --version 2>/dev/null | grep -q '0.13.1'; then
+            echo "cargo-fuzz 0.13.1 already in $TOOLS — no compile, no shared-registry write"
+          else
+            echo "compiling cargo-fuzz 0.13.1 into $TOOLS (isolated from ~/.cargo)"
+            CARGO_HOME="$TOOLS" cargo install cargo-fuzz --locked --version =0.13.1
+          fi
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         with:
           workspaces: "crates/corelink-client-verify/fuzz -> target"

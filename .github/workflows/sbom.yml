@@ -69,8 +69,15 @@ jobs:
           key: ${{ runner.os }}-cargo-sbom-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-sbom-
 
-      - name: Install cargo-cyclonedx ${{ env.CARGO_CYCLONEDX_VERSION }}
-        run: cargo install cargo-cyclonedx --version "$CARGO_CYCLONEDX_VERSION" --locked
+      # Prebuilt binary, NOT `cargo install` — a from-source install compiles its
+      # own dep tree into the SHARED `~/.cargo` used by all 5 self-hosted runners
+      # at once, which is the documented `os error 2` race (same reasoning as
+      # mutation-pr.yml / lockfile-diff.yml). The version stays driven by
+      # env.CARGO_CYCLONEDX_VERSION so there is still exactly ONE pin to bump.
+      - name: Install cargo-cyclonedx ${{ env.CARGO_CYCLONEDX_VERSION }} (prebuilt)
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-cyclonedx@${{ env.CARGO_CYCLONEDX_VERSION }}
 
       - name: Determine release version
         id: version

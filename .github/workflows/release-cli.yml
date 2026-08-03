@@ -134,19 +134,18 @@ jobs:
             exit 1
           fi
 
-      # Optimization: cargo-zigbuild is pinned and stays the same between
-      # builds. Install it ONCE per host (under ~/.cargo/bin) and reuse.
-      - name: Install cargo-zigbuild (Linux + Windows only, if not present)
+      # Prebuilt binary, NOT `cargo install`. The old form compiled cargo-zigbuild
+      # from source into the SHARED `~/.cargo` that all 5 self-hosted runners use
+      # at once — the documented `os error 2` race. The "install once and reuse"
+      # guard did NOT make that safe: it only narrowed the window to the first
+      # build after a version bump, and the whole matrix hits that window at the
+      # same moment. Same reasoning as mutation-pr.yml / lockfile-diff.yml.
+      # install-action is a no-op when the pinned version is already on the host.
+      - name: Install cargo-zigbuild (prebuilt, Linux + Windows only)
         if: ${{ !contains(matrix.target.triple, 'apple-darwin') }}
-        shell: bash
-        run: |
-          PINNED=0.19.8
-          if cargo-zigbuild --version 2>&1 | grep -q "$PINNED"; then
-            echo "  cargo-zigbuild $PINNED already installed — skipping"
-          else
-            echo "  installing cargo-zigbuild $PINNED"
-            cargo install --locked --version "$PINNED" cargo-zigbuild
-          fi
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: cargo-zigbuild@0.19.8
 
       # Exit-126 fix: cargo-zigbuild writes zigcc-*.sh linker wrapper scripts to
       # ~/Library/Caches/cargo-zigbuild/<version>/. Swatinem/rust-cache restores
