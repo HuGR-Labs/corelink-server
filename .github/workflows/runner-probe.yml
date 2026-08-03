@@ -12,13 +12,6 @@ name: runner probe — what is actually on a corelink box
 
 on:
   workflow_dispatch: {}
-  # TEMPORARY (removed before this PR opens): `workflow_dispatch` only fires for
-  # workflow files that already exist on the default branch, so a brand-new probe
-  # cannot be dispatched from a feature branch. A branch-scoped push trigger is
-  # the only way to get the first reading.
-  push:
-    branches: [ci/migrate-off-github-hosted-wave1]
-    paths: ['.github/workflows/runner-probe.yml']
 
 permissions:
   contents: read
