@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ConsentApi, ConsentHistoryQuery } from "@/lib/consent-api";
-import { defaultConsentApi } from "@/lib/consent-api";
+import { useConsentApi } from "@/lib/use-consent-api";
 import type { ConsentRow } from "@/lib/consent-types";
 import {
   Badge,
@@ -28,7 +28,9 @@ interface Filters {
   date_to: string;
 }
 
-export function ConsentHistory({ api = defaultConsentApi }: ConsentHistoryProps) {
+export function ConsentHistory({ api: apiProp }: ConsentHistoryProps) {
+  const sessionApi = useConsentApi();
+  const api = apiProp ?? sessionApi;
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState<Filters>({
     status: "",
