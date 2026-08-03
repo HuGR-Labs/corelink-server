@@ -978,6 +978,100 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C5 reports EVERY drifted range, not just the first -----------------------
+# C5 used to `break` after the FIRST drifted range per (concept, file), so its
+# report was a LOWER BOUND: an author who fixed exactly what the gate printed
+# could re-run and be handed the NEXT one, and a final `grep` was the only way to
+# learn the real set. A single concept cites THREE disjoint ranges of one file
+# (lines 2, 5 and 8); commit B rewrites all three. All three STALE lines MUST be
+# reported in ONE run. The dedup half is proven too: the concept cites `:2` twice
+# (once under `# How it works`, once under `# Citations`) and must still produce
+# exactly ONE offender line for it.
+assert_c5_all_ranges() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'l1\nl2-orig\nl3\nl4\nl5-orig\nl6\nl7\nl8-orig\nl9\n' > multi.txt
+    git add multi.txt
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [multi](/ops/multi.md)
+EOF
+    cat > docs/knowledge/ops/multi.md <<EOF
+---
+type: "Runbook"
+title: "Multi-range drift (hermetic)"
+description: "cites three disjoint ranges of one file; all three drift at once."
+source_files:
+  - "multi.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Multi-range drift (hermetic)
+
+Lead paragraph for the multi-range reporting case.
+
+# How it works
+- the first anchor (\`multi.txt:2\`).
+- the second anchor (\`multi.txt:5\`).
+- the third anchor (\`multi.txt:8\`).
+
+# Invariants
+- all three anchors are reconciled (\`multi.txt:2\`).
+
+# Citations
+1. \`multi.txt:2\` — first anchor (cited twice on purpose: dedup control).
+2. \`multi.txt:5\` — second anchor.
+3. \`multi.txt:8\` — third anchor.
+EOF
+    git add -A
+    git commit -q -m A
+
+    # commit B: rewrite ALL THREE cited lines in one change.
+    printf 'l1\nl2-CHANGED\nl3\nl4\nl5-CHANGED\nl6\nl7\nl8-CHANGED\nl9\n' > multi.txt
+    git add -A
+    git commit -q -m B
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.multi_out" 2>&1 || true
+  )
+
+  # every drifted range is named in ONE run.
+  total=$((total + 1))
+  local n2 n5 n8
+  n2="$(grep -c 'STALE: cited content `multi.txt:2-2`' "$tmp/.multi_out" 2>/dev/null || true)"
+  n5="$(grep -c 'STALE: cited content `multi.txt:5-5`' "$tmp/.multi_out" 2>/dev/null || true)"
+  n8="$(grep -c 'STALE: cited content `multi.txt:8-8`' "$tmp/.multi_out" 2>/dev/null || true)"
+  if [ "$n2" -ge 1 ] && [ "$n5" -ge 1 ] && [ "$n8" -ge 1 ]; then
+    ok "C5 all-ranges: three drifted ranges of one file are ALL reported in one run"
+  else
+    miss "C5 all-ranges (got :2=$n2 :5=$n5 :8=$n8, want >=1 each)" "C5-allranges"
+  fi
+
+  # dedup control: `multi.txt:2` is cited TWICE -> exactly ONE offender line.
+  total=$((total + 1))
+  if [ "$n2" -eq 1 ]; then
+    ok "C5 all-ranges: a range cited twice is reported ONCE (dedup)"
+  else
+    miss "C5 all-ranges dedup (multi.txt:2 reported $n2 times, want 1)" "C5-allranges-dedup"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- gate v5 #2: module-parent grounding REMOVED -------------------------------
 # A concept that cites the module-ROOT file `routes.rs` (the `mod routes;`
 # declaration site) but NOT the handler `routes/sub_handler.rs` must NO LONGER
@@ -2691,6 +2785,7 @@ assert_c5
 assert_c5_shift
 assert_c5_below
 assert_c5_added_file
+assert_c5_all_ranges
 assert_c5b
 assert_c5b_orphan_exempt
 assert_c4_squash_orphan_tolerant

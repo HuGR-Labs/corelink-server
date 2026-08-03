@@ -32,7 +32,9 @@ this replaces). The HEAD side is read from the WORKING TREE — the SAME tree C3
 consistent (worktree≠HEAD can't produce a false verdict); in CI worktree==HEAD so
 behavior is unchanged. We NEVER use `git log -L` / blame. Per-file fast skip: when
 the file is byte-identical at checkpoint and in the working tree, no content can
-have drifted.
+have drifted. EVERY drifted range is reported (C5 does not stop at the first hit
+per (concept, file)), so the offender list is the COMPLETE worklist, not a lower
+bound that has to be re-derived by hand after each fix.
 
 Usage:
     python3 scripts/validate_okf.py                       # default bundle docs/knowledge/
@@ -1302,7 +1304,22 @@ def run_checks(args, git: Git, fails: Failures):
                 cranges = ranges_by_file.get(sf, [])
                 if not cranges:
                     continue
-                for (l1, l2) in cranges:
+                # EVERY drifted range is reported, not just the first. This used
+                # to `break` after the first hit per (concept, file), which made
+                # the C5 report a LOWER BOUND: an author who fixed exactly what
+                # the gate printed could still be left with stale citations in
+                # the same file, and only a manual `grep` over the concept found
+                # the real set — a fix/re-run/fix loop per drifted range. The
+                # ranges are already computed; reporting all of them costs one
+                # more comparison per cite and turns C5's output into the
+                # COMPLETE worklist it is consumed as (okf_reconcile has always
+                # reported every range — this makes the gate agree with it).
+                # Ranges are de-duplicated first (a concept legitimately cites the
+                # same `path:Lx-Ly` under both `# How it works` and `# Citations`,
+                # which would otherwise print the identical failure twice and
+                # inflate the failure COUNT) — the same `dict.fromkeys` dedup
+                # okf_reconcile already applies to its hit list.
+                for (l1, l2) in dict.fromkeys(cranges):
                     if cited_range_drifted(git, c5_baseline, sf, l1, l2):
                         fails.add(
                             "C5",
@@ -1311,7 +1328,6 @@ def run_checks(args, git: Git, fails: Failures):
                             f"{anchor_kind} {c5_baseline[:12]} "
                             "(in-range edit or position-shift)",
                         )
-                        break
 
     # --- C5b: SHA advanced without a body edit (needs a 'previous' version) ---
     _check_c5b(args, git, bundle_root, concepts, fails)
