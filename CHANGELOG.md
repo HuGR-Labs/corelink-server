@@ -23,6 +23,60 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(deps): close the 12 npm Dependabot alerts — all transitive build/test tooling, none
+  shipped.** Traced every one with `pnpm why` rather than trusting the `runtime` scope the
+  API reports (that scope reflects lockfile resolution, not what reaches an artifact):
+  `adm-zip` ← chromedriver ← `@axe-core/cli`; `webpack-dev-server`/`joi` ← `@docusaurus/core`;
+  `tmp` ← `@lhci/cli` + selenium-webdriver. **None appears in any `package.json`, and none
+  appears — word-boundary matched — in the deployed `corelink-prod` or `corelink-spawn-worker`
+  bundles.** (A naive `grep joi` reported 32 hits in the prod bundle; every one was inside the
+  word `join`.)
+
+  Fixed anyway, because "does not ship" is not "no risk": these execute in CI, on the shared
+  Mac, in jobs holding a repo-scoped token — an `adm-zip` decompression bomb or a `tmp` path
+  traversal there is real, just smaller. Closed with 8 `pnpm.overrides` range entries, the
+  pattern this repo already uses. Verified in the resolved lockfile:
+  `adm-zip 0.5.18 → 0.6.0` · `tmp {0.0.33, 0.1.0, 0.2.5} → 0.2.7` (three vulnerable versions
+  collapsed into one patched) · `body-parser {1.20.5, 2.2.2} → {1.20.6, 2.3.0}` ·
+  `http-proxy-middleware 2.0.9 → 2.0.10` · `joi 17.13.3 → 17.13.4` ·
+  `launch-editor 2.13.2 → 2.14.1` · `webpack-dev-server 5.2.4 → 5.2.6`.
+
+- **fix(sdks/js): vitest `^2.0.0` → `^3.2.6`, closing the only `critical` alert.** The advisory
+  needs the **Vitest UI server listening on Windows** with `--api.host`; this SDK runs
+  `vitest run` on macOS/Linux and depends on neither `--ui` nor `@vitest/ui`, so it was never
+  exposed. Bumped rather than dismissed: a dismissal would not re-fire if someone later added
+  the UI, and the major turned out to cost nothing — see below.
+
+  ⚠️ **`sdks/js` is an ORPHAN and this bump does not change that.** It is absent from
+  `pnpm-workspace.yaml`, **no workflow references it**, its dependencies are therefore never
+  installed, and its one test file fails identically on vitest 2 and 3 with
+  `Cannot find package '@noble/hashes/blake3'` — proven by running the suite on the unmodified
+  tree first. So the major bump broke nothing, and the package is **publishable**
+  (`@corelink/client`, no `private: true`) while having zero CI. Adopting it into the
+  workspace + a gate, or marking it private, is a separate decision and is NOT done here.
+- **fix(deps): close the 3 Rust Dependabot alerts — triaged by measured exposure, not by
+  the severity label.** Dependabot alerts had been **disabled** on this repository, so these
+  had never surfaced (enabled 2026-08-03; the initial scan then reported 15 alerts across all
+  ecosystems). Each was resolved against the actual dependency graph rather than the advisory
+  text:
+  - **`cmov` 0.5.3 → 0.5.4** — the only one that reaches shipped code:
+    `cmov → ctutils → digest → blake3 → corelink-ac → corelink-cas`, a **normal** (non-dev)
+    edge into the CAS hash path. Labelled *medium*, but it is the highest real exposure of
+    the three. The advisory is aarch64-specific and the prod container is amd64 — however
+    `release-cli` ships `aarch64-apple-darwin` and `aarch64-unknown-linux-gnu` binaries, so
+    the affected architecture IS distributed.
+  - **`quinn-proto` 0.11.14 → 0.11.16** (labelled *high*) and **`serde_with` 3.20.0 → 3.21.0**
+    (*medium*) — `cargo tree -i … --target all` prints **"nothing to print"** for both: they
+    are orphaned `Cargo.lock` entries with no path from any workspace crate. Real exposure:
+    zero. Bumped anyway because the cost is a lockfile line and it keeps the alert list at a
+    length a human will actually read.
+
+  Verified: `cargo check` + `cargo test -p corelink-cas -p corelink-ac` green (18 tests);
+  diff is `Cargo.lock` only.
+
+  ⚠️ This touches `Cargo.lock`, so the prod container pin is stale again — the path to prod
+  is rebuild (`container-build-push-prod`) → repin the 5 pins → `cf-deploy-prod`, not a
+  Worker-only deploy.
 - **fix(ci): 12 self-hosted jobs were provisioning a Rust toolchain into the SHARED
   `~/.rustup` — sibling of the #980 `~/.cargo` race, one level up.** Five runners share
   one `$HOME`. `dtolnay/rust-toolchain` is built for GitHub-hosted runners, where `$HOME`
