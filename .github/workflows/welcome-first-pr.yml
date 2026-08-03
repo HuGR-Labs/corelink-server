@@ -25,8 +25,14 @@ name: Welcome First-Time Contributor
 on:
   issues:
     types: [opened, reopened]
+  # `synchronize` dropped 2026-08-03: this job posts a one-time greeting on a
+  # contributor's FIRST issue/PR — a later push to the same PR cannot make its
+  # author a first-time contributor, so re-running on every force-push only
+  # re-queued work on the self-hosted mac (54 runs in a 12 h sample). `opened` +
+  # `reopened` is the whole meaningful surface. This workflow is a greeter, not a
+  # gate: it has no assertion and cannot fail a PR, so nothing is left uncovered.
   pull_request_target:
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened]
 
 permissions:
   issues: write
@@ -34,7 +40,9 @@ permissions:
 
 concurrency:
   group: welcome-${{ github.event.issue.number || github.event.pull_request.number }}
-  cancel-in-progress: false
+  # A superseded greeting run has nothing to protect — the newer run posts the
+  # same comment. Cancelling frees the self-hosted mac immediately.
+  cancel-in-progress: true
 
 jobs:
   welcome:

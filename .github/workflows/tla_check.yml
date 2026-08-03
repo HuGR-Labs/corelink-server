@@ -52,6 +52,14 @@ permissions:
   contents: read
   pull-requests: read
 
+# A rebase force-push must not leave a 30-minute TLC run burning a slot on the
+# self-hosted mac. Cancel only supersedes runs of the SAME PR ref; the scheduled/
+# dispatch lanes (github.ref == a branch, one at a time) are never cancelled, so
+# no verification is skipped — the newest commit is always the one modelled.
+concurrency:
+  group: tla-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   tla-check:
     runs-on: [self-hosted, mac, corelink-builder]

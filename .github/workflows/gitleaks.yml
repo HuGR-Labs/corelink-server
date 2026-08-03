@@ -34,6 +34,13 @@ name: gitleaks (secret-leak scan)
 
 on:
   pull_request:
+  schedule:
+    # Full-history baseline sweep, weekly Sat 05:17 UTC. The `pull_request` lane
+    # below scans the PR's OWN diff on every PR (that coverage is unconditional
+    # and unchanged); this cron is the belt-and-braces re-scan of the entire
+    # commit graph, which used to be reachable only by manual dispatch — so this
+    # trigger ADDS coverage, it does not replace any.
+    - cron: '17 5 * * 6'
   workflow_dispatch:
 
 permissions:
@@ -59,7 +66,106 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout (full history — gitleaks scans the commit graph)
+      # ── PR lane: fetch ONLY what `BASE_SHA..HEAD_SHA` needs ──────────────────
+      # Measured 2026-08-03: the scan itself takes 1 SECOND; the `fetch-depth: 0`
+      # clone of this repo (3,445 commits / 259 MiB pack) took 12–308 s and was
+      # therefore ~100% of this gate's billed time. The scan below is byte-for-byte
+      # the same `gitleaks detect --log-opts=BASE..HEAD` it always was — only the
+      # amount of history fetched to satisfy it changed.
+      - name: Checkout PR head (shallow — full history is not needed for base..head)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Cheapest possible seed clone. The REAL depth is `commits + 1` and it
+          # is applied by the next step, because GitHub's expression syntax has
+          # no arithmetic operator (`${{ x + 1 }}` is a lex error — actionlint
+          # rejects it), so the +1 cannot be computed here.
+          fetch-depth: 1
+          # Credentials MUST persist here: the next step deepens the clone until
+          # the PR's whole commit range is present AND un-grafted, which needs an
+          # authenticated fetch. The scan-only posture is enforced by
+          # `permissions: contents: read` above (a persisted token cannot push),
+          # and the step unsets the auth header as soon as it is done.
+
+      - name: Deepen to the whole PR range and assert it is un-grafted
+        if: github.event_name == 'pull_request'
+        # Deepen to `commits + 1`: every commit of `BASE..HEAD` PLUS the base
+        # itself, so the shallow graft boundary lands ON the base commit — which
+        # `BASE..HEAD` excludes and the scan never touches.
+        #
+        # WHY the +1 matters (measured 2026-08-03). A shallow fetch marks its
+        # boundary commits as GRAFTS — commits with no parents locally — and
+        # `git log -p` renders a graft as its ENTIRE TREE added at once, not as
+        # its real patch. Seeding at depth 1 leaves the PR head itself grafted,
+        # so `gitleaks --log-opts=BASE..HEAD` scanned the whole repository
+        # presented as one giant addition: 63.49 MB and 16 pre-existing fixture
+        # hits for a PR touching 4 YAML files, while
+        # `git rev-list --count BASE..HEAD` still said "1 commit". The commit
+        # COUNT was right; the CONTENT was not.
+        #
+        # Two invariants, both checked against the LOCAL graph — never assumed:
+        #   1. coverage — at least `pull_request.commits` commits are reachable in
+        #      `BASE..HEAD`, so the scan can never see LESS than the PR's diff;
+        #   2. fidelity — NO commit inside `BASE..HEAD` is a shallow graft point,
+        #      so every scanned commit produces its true patch and not its whole
+        #      tree. Invariant 1 alone is vacuously true on a grafted head (that
+        #      is exactly how the 63.49 MB scan passed it), which is why 2 exists.
+        # If either fails, deepen further; if deepening cannot fix it, fall back
+        # to the full history — the pre-optimisation behaviour, correct but slow.
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+        run: |
+          set -euo pipefail
+          shallow_file="$(git rev-parse --git-path shallow)"
+
+          grafts_in_range() {
+            # Commits of BASE..HEAD that are shallow boundaries. BASE itself may
+            # be a graft — it is excluded from the range and never scanned.
+            [ -f "${shallow_file}" ] || return 0
+            git rev-list "${BASE_SHA}..${HEAD_SHA}" 2>/dev/null \
+              | grep -cxF -f "${shallow_file}" || true
+          }
+          range_ok() {
+            local n g
+            n="$(git rev-list --count "${BASE_SHA}..${HEAD_SHA}" 2>/dev/null)" || return 1
+            [ "${n}" -ge "${PR_COMMITS}" ] || return 1
+            g="$(grafts_in_range)"
+            [ "${g:-0}" -eq 0 ]
+          }
+
+          depth=$(( PR_COMMITS + 1 ))
+          while ! range_ok; do
+            if [ "${depth}" -gt 8192 ]; then
+              echo "::warning::PR range still incomplete or grafted at depth ${depth} — fetching full history so the scan sees real patches"
+              git fetch --no-tags --unshallow origin || git fetch --no-tags origin
+              break
+            fi
+            git fetch --no-tags --depth="${depth}" origin "${HEAD_SHA}" "${BASE_SHA}" >/dev/null 2>&1 || true
+            depth=$(( depth * 4 ))
+          done
+          git config --local --unset-all http.https://github.com/.extraheader || true
+
+          # Fail CLOSED. A still-grafted range would scan the whole tree as an
+          # addition and report historical fixtures as this PR's leaks — a red
+          # that means nothing. Better to stop and say so.
+          if ! range_ok; then
+            echo "::error::gitleaks range ${BASE_SHA}..${HEAD_SHA} is still grafted after unshallowing — refusing to scan a diff that is not the PR's diff"
+            exit 1
+          fi
+
+          # Proof-by-bytes, printed every run: this is the exact patch stream
+          # gitleaks will consume. Tens of KB for a normal PR; if this ever prints
+          # tens of MB again, the scan is lying about what it covered.
+          echo "commits in ${BASE_SHA}..${HEAD_SHA}: $(git rev-list --count "${BASE_SHA}..${HEAD_SHA}") (PR reports ${PR_COMMITS}), grafts in range: $(grafts_in_range)"
+          echo "patch bytes to be scanned: $(git log -p -U0 "${BASE_SHA}..${HEAD_SHA}" | wc -c)"
+          echo "files touched: $(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" | wc -l)"
+
+      # ── Schedule / dispatch lane: the full-history baseline sweep ────────────
+      - name: Checkout (full history — full-graph baseline sweep)
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
@@ -105,9 +211,9 @@ jobs:
             --report-format sarif \
             --report-path "${RUNNER_TEMP}/gitleaks.sarif"
 
-      - name: gitleaks detect — full history (manual dispatch)
-        # workflow_dispatch runs a full-history baseline sweep.
-        if: github.event_name == 'workflow_dispatch'
+      - name: gitleaks detect — full history (weekly cron + manual dispatch)
+        # schedule + workflow_dispatch run a full-history baseline sweep.
+        if: github.event_name != 'pull_request'
         run: |
           gitleaks detect \
             --source . \
