@@ -66,8 +66,9 @@ The script:
 - lists every `*.humangr.com` destination — **both** v1 webhook endpoints
   (`/v1/webhook_endpoints`) **and** v2 event destinations
   (`/v2/core/event_destinations`, the `thin`-payload ones) — and **warns on any
-  URL carrying more than one** (a stray `stripe listen` listener or an orphaned
-  v2 destination — review it in the dashboard; the script never deletes). If the
+  URL carrying more than one ENABLED destination** (a stray `stripe listen`
+  listener or an orphaned v2 destination; disabled ones receive nothing, so they
+  are listed with a `note:` instead of raising a standing alarm — review it in the dashboard; the script never deletes). If the
   CLI/key cannot read v2 it says so loudly and **exits 3**: a run that could not
   look must never be read as "no strays found". See the 2026-08-03 correction in
   `docs/handoff/2026-07-03-REPLY-from-clw-coordinator-webhook-reconcile-DONE-and-no-stray-endpoint-exists.md`
@@ -129,18 +130,19 @@ If the dry-run shows ANY `+ ADD`, STOP — the matrix handles an event the live 
 - Billing authority split: the signup-worker is the authoritative downgrade
   handler; the container materializer is grant-only.
 
-## ⚠️ OWNER ACTION — remove the stray `exquisite-rhythm-thin` v2 destination
+## ✅ CLOSED — the stray `exquisite-rhythm-thin` v2 destination
 
-**Status: OPEN as of 2026-08-03.** This needs a human in the Stripe dashboard; no script here
-does it, and none should.
+**Status: CLOSED 2026-08-03 — the owner disabled it** (see the resolution at the end of this
+section). The history below is kept because the *mechanism* recurs: a v2 destination is
+invisible to a v1 listing, so the next stray will hide the same way.
 
-Production currently has **four** Stripe destinations. Exactly one is stray:
+Production has **four** Stripe destinations. Exactly one was stray:
 
 | Destination | URL | Events | Payload | Verdict |
 |---|---|---|---|---|
 | *(unnamed)* `we_1Tolig…` | `corelink-signup.humangr.com/webhooks/stripe` | 7 | snapshot | ✅ **KEEP** — the authoritative signup-worker handler. Matches `apps/signup-worker/src/webhooks/handled-stripe-events.json` exactly. |
 | `Corelink prd` `we_1Tfh8P…` | `corelink-api.humangr.com/v1/billing/stripe-webhook` | 10 | snapshot | ✅ **KEEP** — the container grant-only materializer. Its signing secret is the one bound to the container. |
-| **`exquisite-rhythm-thin`** | `corelink-api.humangr.com/v1/billing/stripe-webhook` | 24 | **thin** | ❌ **REMOVE** |
+| **`exquisite-rhythm-thin`** | `corelink-api.humangr.com/v1/billing/stripe-webhook` | 24 | **thin** | ❌ was the stray — **DISABLED by the owner 2026-08-03** |
 | *(unnamed)* `we_1TJ1YZ…` | `api.humangr.com/_wallet/stripe/webhook` | 4 | snapshot | 🚫 **DO NOT TOUCH — a different project (hugr-wallet).** Not CoreLink's. |
 
 **How:** Stripe Dashboard → **Developers → Webhooks** (event destinations) → open
@@ -161,11 +163,29 @@ v1 webhook endpoints, so it was invisible to tooling for a month while a check r
 That gap is fixed in `scripts/ops/stripe-reconcile-webhook-events.sh` (it now enumerates v2,
 warns on any shared URL, and exits 3 rather than reporting clean when it cannot look).
 
-**After removing,** re-run the read-only sweep to confirm the WARN is gone:
+### ✅ RESOLVED 2026-08-03 — the owner **disabled** it
+
+The owner retired `exquisite-rhythm-thin` by **disabling** it rather than deleting it. That
+closes the hazard: a disabled destination receives nothing, so it cannot deliver, cannot be
+rejected, and cannot double-process. It remains on the account as an inert row.
+
+Deleting it as well is optional housekeeping, not a fix. If you ever **re-enable** it, the
+duplicate returns and the sweep will say so.
+
+**Disable vs delete matters to the tooling**, and the first version of this sweep got it
+wrong: it counted duplicates by URL regardless of status, so a disabled stray raised the same
+WARN forever — and the WARN's own wording ("the others can only ever be rejected") is false
+for a destination that receives nothing. A permanent alarm is an alarm the operator learns to
+ignore, which is the same failure mode this sweep exists to prevent. The duplicate check now
+counts **enabled** destinations only; disabled ones are still listed and get a `note:` line.
+
+**To verify the current state,** re-run the read-only sweep:
 
 ```bash
 STRIPE_API_KEY=rk_live_… scripts/ops/stripe-reconcile-webhook-events.sh --live
 ```
 
-Expected: four rows become three, no `WARN: N destinations share …`, exit `0`. An exit of `3`
-means the sweep could not read v2 and proves nothing — fix the key/CLI and re-run.
+Expected now: **four rows**, the `exquisite-rhythm-thin` one showing `[disabled]` with a
+`note:` line, **no** `WARN: N ENABLED destinations share …`, exit `0`. (If you delete it
+instead, the row simply disappears — three rows, same verdict.) An exit of `3` means the
+sweep could not read v2 and **proves nothing** — fix the key/CLI and re-run.

@@ -247,10 +247,23 @@ for d in json.loads(os.environ["V2_JSON"]).get("data", []):
         d.get("event_payload", "?"), d.get("name") or "",
     ))
 
+# Count only destinations that can actually RECEIVE — a disabled destination
+# delivers nothing, so it is not a duplicate-delivery hazard and must not raise a
+# standing WARN. Disabling is a legitimate way to retire a stray (the owner
+# disabled `exquisite-rhythm-thin` on 2026-08-03 rather than deleting it); a WARN
+# that fires forever afterwards is an alarm the operator learns to ignore, which
+# is the same failure this sweep exists to prevent. Disabled ones are still
+# LISTED above, and called out below as a note — visible, not alarming.
+ACTIVE = {"enabled", "active"}
 by_url = defaultdict(int)
-for api, _id, url, _st, _n, _pl, _nm in rows:
-    if url and "humangr.com" in url:
+disabled_rows = []
+for api, _id, url, st, _n, _pl, nm in rows:
+    if not url or "humangr.com" not in url:
+        continue
+    if str(st).lower() in ACTIVE:
         by_url[url] += 1
+    else:
+        disabled_rows.append((_id, url, st, nm))
 
 seen = False
 for api, _id, url, status, n, payload, name in rows:
@@ -266,10 +279,17 @@ if not seen:
 
 dupes = {u: c for u, c in by_url.items() if c > 1}
 for url, count in sorted(dupes.items()):
-    print(f"  WARN: {count} destinations share {url} — only ONE signing secret can be "
-          f"bound to a consumer, so the others can only ever be rejected. Likely a stray "
+    print(f"  WARN: {count} ENABLED destinations share {url} — only ONE signing secret can "
+          f"be bound to a consumer, so the others can only ever be rejected. Likely a stray "
           f"`stripe listen` tunnel or an orphaned v2 destination. Review in the dashboard; "
           f"this script never deletes.")
+
+# Informational, never a WARN: a disabled destination receives nothing.
+for _id, url, st, nm in disabled_rows:
+    label = f" ({nm})" if nm else ""
+    print(f"  note: {_id}{label} on {url} is {st} — receives nothing, so it is excluded "
+          f"from the duplicate check above. Retired-by-disable is fine; delete it if you "
+          f"want it gone from the account entirely.")
 PY
 
 if ! $V2_SWEEP_OK; then
