@@ -8,7 +8,13 @@ source_files:
   - "worker/src/lib/pat_verify_cache.ts"
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "9b042a4272a76b470347478558ddefb2e171df96"
+source_blobs:
+  - "worker/src/lib/internal_auth.ts@4e399de52d42e661d7dd819f5434001eb0845145"
+  - "worker/src/index.ts@e0300e4d06ccd5aa81bb2bf4c7a8f9c13354b048"
+  - "worker/src/lib/pat_verify_cache.ts@b0dafab6381684057de4c0589b5d95d18a35c741"
+  - "worker/src/lib/tenant_suspend_gate.ts@bed740c1e2a471244a2c9680fcf4f1e800f26d7c"
+  - "crates/corelink-container/src/adapter_pat.rs@1ebe6fd37ac780c5c159023c3f599d4ba824d2b3"
+checkpoint_sha: "c0fcadc21c9d8dc7c24c96e12f3ed13177a56c21"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"

@@ -12,8 +12,11 @@ the self-healing loop; the LLM half (re-authoring) is in
 Staleness is detected with the EXACT C5 mechanic shared with
 `scripts/validate_okf.py` (and the frozen contract §4): the CONTENT-ANCHOR
 predicate `validate_okf.cited_range_drifted` — for each cited `path:Lx-Ly` it
-compares the CONTENT of lines Lx..Ly between `checkpoint_sha` and HEAD (each line
-trailing-whitespace-stripped). This fires on an in-range edit AND on a pure
+compares the CONTENT of lines Lx..Ly between the concept's authoring-time
+baseline and HEAD (each line trailing-whitespace-stripped). That baseline is the
+file's `source_blobs` BLOB anchor when the concept declares one (§2.2 — immutable
+under rebase/squash/cherry-pick) and otherwise the legacy `checkpoint_sha`
+commit, exactly as C5 chooses it. This fires on an in-range edit AND on a pure
 position-shift (an insertion above the cited range). It NEVER uses `git log -L`/
 blame. The Concept model AND the drift predicate are imported from `validate_okf`
 so the two tools can never disagree on what "stale" means.
@@ -59,6 +62,24 @@ def _full_diff(git: "okf.Git", base_sha: str, path: str) -> str:
     return cp.stdout if cp.returncode == 0 else ""
 
 
+def _blob_diff(git: "okf.Git", base_blob: str, path: str) -> str:
+    """The patch for a BLOB-anchored source file: authored blob -> working tree.
+
+    `git diff <blobA> <blobB>` is the blob-to-blob form; the working-tree side is
+    hashed with `git hash-object` (no `-w`, nothing is written). When that blob is
+    not in the object database — a dirty working tree whose content was never
+    committed — there is nothing to diff against and the reporter degrades to an
+    empty patch rather than guessing. The STALE verdict itself never depends on
+    this: it comes from `okf.cited_range_drifted`, which reads the working tree
+    directly.
+    """
+    wt_blob = git.worktree_blob_sha(path)
+    if not wt_blob or not git.blob_is_present(wt_blob):
+        return ""
+    cp = git.run(["diff", "--unified=3", base_blob, wt_blob])
+    return cp.stdout if cp.returncode == 0 else ""
+
+
 def collect_stale(git: "okf.Git", bundle_root: Path):
     """Return a list of stale-concept worklist entries (dicts)."""
     worklist = []
@@ -72,9 +93,17 @@ def collect_stale(git: "okf.Git", bundle_root: Path):
         c = okf.Concept(md, bundle_root)
         if c.is_deferred or not c.has_frontmatter:
             continue
-        if not c.checkpoint_sha or not isinstance(c.checkpoint_sha, str):
-            continue
-        if not okf.HEX40_RE.match(c.checkpoint_sha) or not git.sha_exists(c.checkpoint_sha):
+        # A concept is reportable when it has a usable ANCHOR. That is either a
+        # resolvable `checkpoint_sha` (legacy commit anchor) or, per file, a
+        # `source_blobs` blob anchor (§2.2) — the blob anchor survives rebase /
+        # squash / cherry-pick, so a concept whose checkpoint commit was rewritten
+        # is still fully reportable on its blob-addressed files.
+        ckpt_usable = (
+            isinstance(c.checkpoint_sha, str)
+            and bool(okf.HEX40_RE.match(c.checkpoint_sha))
+            and git.sha_exists(c.checkpoint_sha)
+        )
+        if not ckpt_usable and not c.source_blobs:
             continue
 
         # cited line ranges per file (HEAD coordinates) — same as validate_okf C5.
@@ -93,9 +122,16 @@ def collect_stale(git: "okf.Git", bundle_root: Path):
             if not cranges:
                 continue
 
+            # Per-file anchor selection, IDENTICAL to validate_okf C5.
+            blob_anchor = c.source_blobs.get(sf)
+            if not blob_anchor and not ckpt_usable:
+                continue  # no anchor for this file — validate_okf reports why
+
             hit: list[tuple[int, int]] = []
             for (l1, l2) in cranges:
-                if okf.cited_range_drifted(git, c.checkpoint_sha, sf, l1, l2):
+                if okf.cited_range_drifted(
+                    git, c.checkpoint_sha, sf, l1, l2, blob_sha=blob_anchor
+                ):
                     hit.append((l1, l2))
             # dedup while preserving order (a concept may cite a range N times)
             hit_ranges = [[a, b] for (a, b) in dict.fromkeys(hit)]
@@ -106,7 +142,14 @@ def collect_stale(git: "okf.Git", bundle_root: Path):
                 {
                     "source_file": sf,
                     "changed_cited_ranges": hit_ranges,
-                    "diff": _full_diff(git, c.checkpoint_sha, sf),
+                    "anchor": (
+                        f"blob:{blob_anchor}" if blob_anchor else f"commit:{c.checkpoint_sha}"
+                    ),
+                    "diff": (
+                        _blob_diff(git, blob_anchor, sf)
+                        if blob_anchor
+                        else _full_diff(git, c.checkpoint_sha, sf)
+                    ),
                 }
             )
 
@@ -142,7 +185,10 @@ def print_human(worklist: list[dict]) -> None:
         print(f"   checkpoint_sha: {w['checkpoint_sha'][:12]}")
         for s in w["stale_sources"]:
             ranges = ", ".join(f"{a}-{b}" for a, b in s["changed_cited_ranges"])
-            print(f"   • {s['source_file']}  cited lines changed: {ranges}")
+            anchor = s.get("anchor", "")
+            kind, _, val = anchor.partition(":")
+            suffix = f"  [{kind} anchor {val[:12]}]" if anchor else ""
+            print(f"   • {s['source_file']}  cited lines changed: {ranges}{suffix}")
         print()
         for s in w["stale_sources"]:
             if s["diff"]:

@@ -79,6 +79,11 @@ type: "{type}"
 title: "{title}"
 description: "<one sentence>"
 source_files: []  # FILL: >=1 repo-relative path this concept is grounded in
+# OPTIONAL but recommended (§2.2): pin each cited file on its git BLOB id, which
+# survives rebase/squash/cherry-pick. C5 compares against it instead of the commit
+# below, so the concept stops going false-STALE every time history is rewritten.
+#   source_blobs:
+#     - "<path>@$(git hash-object <path>)"
 checkpoint_sha: "{sha}"
 provenance: "AUTHORED"
 tags: []

@@ -39,7 +39,9 @@ For EACH stale concept: open its cited code at current HEAD, re-anchor its `# Ci
 inline path:line) to the CURRENT lines, and CONFIRM the claim still holds — if the code changed the
 behavior, UPDATE the claim to the current truth HONESTLY (never a blind line-bump). Advance each
 touched concept checkpoint_sha to the current HEAD SHA (the C5b anti-phantom check needs a real body
-edit alongside it — your cite/claim edit satisfies it). Then `python3 scripts/okf_index.py`.
+edit alongside it — your cite/claim edit satisfies it), and for a concept that carries `source_blobs`,
+advance each re-authored file's anchor to `git hash-object <path>` — that anchor is what C5 compares
+against, and NEVER delete one to clear a red (C4c refuses it). Then `python3 scripts/okf_index.py`.
 HARD CONSTRAINTS: edit ONLY docs/knowledge/** + docs/internal/okf-wiki/** + docs/knowledge/index.md;
 NEVER edit code (crates/worker/apps/scripts/migrations) — you document it, not change it. Every cite
 must resolve to a real path:line that performs the claim; every cited file in source_files. Do NOT git.

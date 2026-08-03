@@ -978,6 +978,540 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C5 reports EVERY drifted range, not just the first -----------------------
+# C5 used to `break` after the FIRST drifted range per (concept, file), so its
+# report was a LOWER BOUND: an author who fixed exactly what the gate printed
+# could re-run and be handed the NEXT one, and a final `grep` was the only way to
+# learn the real set. A single concept cites THREE disjoint ranges of one file
+# (lines 2, 5 and 8); commit B rewrites all three. All three STALE lines MUST be
+# reported in ONE run. The dedup half is proven too: the concept cites `:2` twice
+# (once under `# How it works`, once under `# Citations`) and must still produce
+# exactly ONE offender line for it.
+assert_c5_all_ranges() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'l1\nl2-orig\nl3\nl4\nl5-orig\nl6\nl7\nl8-orig\nl9\n' > multi.txt
+    git add multi.txt
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [multi](/ops/multi.md)
+EOF
+    cat > docs/knowledge/ops/multi.md <<EOF
+---
+type: "Runbook"
+title: "Multi-range drift (hermetic)"
+description: "cites three disjoint ranges of one file; all three drift at once."
+source_files:
+  - "multi.txt"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Multi-range drift (hermetic)
+
+Lead paragraph for the multi-range reporting case.
+
+# How it works
+- the first anchor (\`multi.txt:2\`).
+- the second anchor (\`multi.txt:5\`).
+- the third anchor (\`multi.txt:8\`).
+
+# Invariants
+- all three anchors are reconciled (\`multi.txt:2\`).
+
+# Citations
+1. \`multi.txt:2\` — first anchor (cited twice on purpose: dedup control).
+2. \`multi.txt:5\` — second anchor.
+3. \`multi.txt:8\` — third anchor.
+EOF
+    git add -A
+    git commit -q -m A
+
+    # commit B: rewrite ALL THREE cited lines in one change.
+    printf 'l1\nl2-CHANGED\nl3\nl4\nl5-CHANGED\nl6\nl7\nl8-CHANGED\nl9\n' > multi.txt
+    git add -A
+    git commit -q -m B
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.multi_out" 2>&1 || true
+  )
+
+  # every drifted range is named in ONE run.
+  total=$((total + 1))
+  local n2 n5 n8
+  n2="$(grep -c 'STALE: cited content `multi.txt:2-2`' "$tmp/.multi_out" 2>/dev/null || true)"
+  n5="$(grep -c 'STALE: cited content `multi.txt:5-5`' "$tmp/.multi_out" 2>/dev/null || true)"
+  n8="$(grep -c 'STALE: cited content `multi.txt:8-8`' "$tmp/.multi_out" 2>/dev/null || true)"
+  if [ "$n2" -ge 1 ] && [ "$n5" -ge 1 ] && [ "$n8" -ge 1 ]; then
+    ok "C5 all-ranges: three drifted ranges of one file are ALL reported in one run"
+  else
+    miss "C5 all-ranges (got :2=$n2 :5=$n5 :8=$n8, want >=1 each)" "C5-allranges"
+  fi
+
+  # dedup control: `multi.txt:2` is cited TWICE -> exactly ONE offender line.
+  total=$((total + 1))
+  if [ "$n2" -eq 1 ]; then
+    ok "C5 all-ranges: a range cited twice is reported ONCE (dedup)"
+  else
+    miss "C5 all-ranges dedup (multi.txt:2 reported $n2 times, want 1)" "C5-allranges-dedup"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- BLOB ANCHOR (§2.2 source_blobs): C5 keeps ALL its teeth ------------------
+# The blob anchor replaces the commit id as C5's baseline. Its whole value is
+# that a blob id survives rebase/squash/cherry-pick — so the ONE thing that must
+# be proven is that nothing was traded away for that: the two things C5 exists to
+# catch must both still fire when the baseline is a blob.
+#   (a) in-range content EDIT under a blob anchor -> [C5]
+#   (b) pure POSITION-SHIFT under a blob anchor (the cite slides off its authored
+#       content with the cited lines never appearing in a diff hunk) -> [C5]
+#   (c) negative control: untouched content under a blob anchor -> NO [C5]
+# All three share one repo so the anchors are directly comparable.
+assert_blob_anchor_teeth() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'head1\nEDIT-TARGET\ntail1\n'                > edit.txt
+    printf 'head1\nhead2\nSHIFT-A\nSHIFT-B\ntail1\n'    > shift.txt
+    printf 'stable1\nstable2\nstable3\n'                > stable.txt
+    git add -A
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+    blob_edit="$(git rev-parse HEAD:edit.txt)"
+    blob_shift="$(git rev-parse HEAD:shift.txt)"
+    blob_stable="$(git rev-parse HEAD:stable.txt)"
+
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [edit](/ops/edit.md)
+- [shift](/ops/shift.md)
+- [stable](/ops/stable.md)
+EOF
+    concept() {  # $1=slug $2=file $3=blob $4=cite-range
+      cat > "docs/knowledge/ops/$1.md" <<EOF
+---
+type: "Runbook"
+title: "Blob anchor — $1"
+description: "blob-addressed concept citing $2:$4."
+source_files:
+  - "$2"
+source_blobs:
+  - "$2@$3"
+checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# Blob anchor — $1
+
+Lead paragraph for the blob-anchored $1 case.
+
+# How it works
+- the blob-anchored citation (\`$2:$4\`).
+
+# Invariants
+- the blob-anchored citation is reconciled (\`$2:$4\`).
+
+# Citations
+1. \`$2:$4\` — the anchor under test.
+EOF
+    }
+    concept edit   edit.txt   "$blob_edit"   "2"
+    concept shift  shift.txt  "$blob_shift"  "3-4"
+    concept stable stable.txt "$blob_stable" "2"
+    git add -A
+    git commit -q -m A
+
+    # commit B: (a) edit line 2 of edit.txt IN RANGE;
+    #           (b) insert TWO lines ABOVE the cited 3-4 of shift.txt (pure shift);
+    #           (c) leave stable.txt alone.
+    printf 'head1\nEDIT-TARGET-CHANGED\ntail1\n'                        > edit.txt
+    printf 'INS-1\nINS-2\nhead1\nhead2\nSHIFT-A\nSHIFT-B\ntail1\n'      > shift.txt
+    git add -A
+    git commit -q -m B
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.teeth_out" 2>&1 || true
+
+    # prove (b) really is the diff-hunk blind spot: the changed HEAD-side lines
+    # are {1,2}, disjoint from the cited range [3,4].
+    git diff --unified=0 "$sha_a" HEAD -- shift.txt | grep '^@@' > "$tmp/.shift_hunks" 2>&1 || true
+  )
+
+  total=$((total + 1))
+  if grep -q 'STALE: cited content `edit.txt:2-2`' "$tmp/.teeth_out" 2>/dev/null \
+     && grep -q 'blob anchor' "$tmp/.teeth_out" 2>/dev/null; then
+    ok "blob anchor: in-range content edit STILL fires [C5] (named as a blob anchor)"
+  else
+    miss "blob anchor in-range edit not caught: $(tail -1 "$tmp/.teeth_out" 2>/dev/null)" "blob-edit"
+  fi
+
+  total=$((total + 1))
+  if grep -q 'STALE: cited content `shift.txt:3-4`' "$tmp/.teeth_out" 2>/dev/null \
+     && grep -q '+1,2 @@' "$tmp/.shift_hunks" 2>/dev/null; then
+    ok "blob anchor: pure POSITION-SHIFT STILL fires [C5] (hunk {1,2} disjoint from cited [3,4])"
+  else
+    miss "blob anchor position-shift not caught: $(tail -1 "$tmp/.teeth_out" 2>/dev/null)" "blob-shift"
+  fi
+
+  total=$((total + 1))
+  if grep -q 'stable.txt' "$tmp/.teeth_out" 2>/dev/null; then
+    miss "blob anchor negative control fired on untouched stable.txt" "blob-stable"
+  else
+    ok "blob anchor: untouched content does NOT fire [C5] (negative control)"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- BLOB ANCHOR: the recurring re-anchor TAX, deleted ------------------------
+# The tax this WP removes. A PR legitimately changes a source AND re-authors the
+# concept against the new content, pinning checkpoint_sha at its own pre-merge
+# tip. A rebase/squash rewrites that tip -> the commit is unreachable -> C4 warns
+# and C5 silently re-anchors to the BASE REF, which still holds the OLD content
+# -> every citation the branch legitimately moved reads STALE, and the author
+# re-anchors again, and the next rebase undoes it again.
+# Two concepts, same repo, same file, same cited line, same orphaned checkpoint:
+# the legacy one MUST fire the false [C5]; the blob-addressed one MUST NOT.
+assert_blob_anchor_survives_rewrite() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  local orphan="beef0000beef0000beef0000beef0000beef0000"
+  (
+    set -e
+    cd "$tmp"
+    git init -q -b main
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    # BASE REF content (what a rebase re-anchors to).
+    printf 'v1-cited-line\nfiller\n' > code.txt
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [legacy](/ops/legacy.md)
+- [blobbed](/ops/blobbed.md)
+EOF
+    git add -A
+    git commit -q -m base
+    base_sha="$(git rev-parse HEAD)"
+
+    # The PR: legitimately rewrites the cited line AND re-authors both concepts
+    # against the NEW content. checkpoint_sha = the pre-merge tip a rebase kills.
+    printf 'v2-cited-line\nfiller\n' > code.txt
+    blob_v2="$(git hash-object code.txt)"
+    concept() {  # $1=slug  $2=extra frontmatter lines
+      cat > "docs/knowledge/ops/$1.md" <<EOF
+---
+type: "Runbook"
+title: "Rebase survival — $1"
+description: "cites code.txt:1, re-authored against v2."
+source_files:
+  - "code.txt"
+$2checkpoint_sha: "$orphan"
+provenance: "AUTHORED"
+---
+
+# Rebase survival — $1
+
+Lead paragraph for the rebase-survival case.
+
+# How it works
+- the re-authored citation (\`code.txt:1\`).
+
+# Invariants
+- the re-authored citation is reconciled (\`code.txt:1\`).
+
+# Citations
+1. \`code.txt:1\` — v2 content, authored this PR.
+EOF
+    }
+    concept legacy  ""
+    concept blobbed "source_blobs:
+  - \"code.txt@$blob_v2\"
+"
+    git add -A
+    git commit -q -m "PR: rewrite code.txt + re-author both concepts"
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$base_sha" > "$tmp/.rewrite_out" 2>&1 || true
+  )
+
+  # the tax, reproduced: the LEGACY concept reads STALE though nothing is stale.
+  total=$((total + 1))
+  if grep -q 'ops/legacy.md: STALE' "$tmp/.rewrite_out" 2>/dev/null \
+     && grep -q 'base-ref anchor' "$tmp/.rewrite_out" 2>/dev/null; then
+    ok "rebase tax reproduced: the COMMIT-anchored concept falsely reads STALE off the base ref"
+  else
+    miss "rebase tax not reproduced (legacy concept did not fire): $(tail -1 "$tmp/.rewrite_out" 2>/dev/null)" "blob-tax-repro"
+  fi
+
+  # the tax, deleted: the BLOB-anchored concept is clean under the same rewrite.
+  total=$((total + 1))
+  if grep -q 'ops/blobbed.md' "$tmp/.rewrite_out" 2>/dev/null; then
+    miss "blob-anchored concept ALSO went stale under the rewrite: $(grep 'blobbed' "$tmp/.rewrite_out" | head -1)" "blob-tax-gone"
+  else
+    ok "rebase tax deleted: the BLOB-anchored concept is untouched by the orphaned checkpoint"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- BLOB ANCHOR: the laundering residual, CLOSED -----------------------------
+# validate_okf.py used to carry a ~40-line comment accepting this: a forged,
+# well-formed, UNREACHABLE checkpoint_sha is indistinguishable from a genuine
+# squash-orphan, so C5 re-anchors to the base ref — which ALREADY CONTAINS the
+# landed drift — and the drifted citation reads fresh. Reproduced here on the
+# legacy path (positive control, so the fixture proves the hole is real and not
+# folklore), then shown CLOSED on the blob path: a forged blob id is not an
+# orphan, it is an absent object, and it REDs [C4b] with no fallback.
+# Both attackers also make a cosmetic body edit, which is all C5b requires.
+assert_blob_launder_closed() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  local forged="beef0000beef0000beef0000beef0000beef0000"
+  (
+    set -e
+    cd "$tmp"
+    git init -q -b main
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'CITED-ORIGINAL\nfiller\n' > code.txt
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [legacy](/ops/legacy.md)
+- [blobbed](/ops/blobbed.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+    blob_v1="$(git rev-parse HEAD:code.txt)"
+    concept() {  # $1=slug $2=ckpt $3=extra-frontmatter $4=lead-paragraph
+      cat > "docs/knowledge/ops/$1.md" <<EOF
+---
+type: "Runbook"
+title: "Laundering — $1"
+description: "cites code.txt:1 authored at v1."
+source_files:
+  - "code.txt"
+$3checkpoint_sha: "$2"
+provenance: "AUTHORED"
+---
+
+# Laundering — $1
+
+$4
+
+# How it works
+- the citation under attack (\`code.txt:1\`).
+
+# Invariants
+- the citation is reconciled (\`code.txt:1\`).
+
+# Citations
+1. \`code.txt:1\` — authored against CITED-ORIGINAL.
+EOF
+    }
+    concept legacy  "$sha_a" "" "Lead paragraph."
+    concept blobbed "$sha_a" "source_blobs:
+  - \"code.txt@$blob_v1\"
+" "Lead paragraph."
+    git add -A
+    git commit -q -m "concepts authored at v1"
+
+    # The DRIFT lands on the base branch. Both concepts are now genuinely stale.
+    printf 'CITED-DRIFTED-ON-MAIN\nfiller\n' > code.txt
+    git add -A
+    git commit -q -m "drift lands on main"
+    base_sha="$(git rev-parse HEAD)"
+    git checkout -q -b pr
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$base_sha" > "$tmp/.honest_out" 2>&1 || true
+
+    # THE ATTACK: forge an unreachable anchor instead of reconciling, plus a
+    # cosmetic body edit (all C5b asks for).
+    concept legacy  "$forged" "" "Lead paragraph, lightly reworded."
+    concept blobbed "$sha_a" "source_blobs:
+  - \"code.txt@$forged\"
+" "Lead paragraph, lightly reworded."
+    git add -A
+    git commit -q -m "launder"
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$base_sha" > "$tmp/.attack_out" 2>&1 || true
+
+    # THE UN-MIGRATION dodge: drop the blob anchor to fall back onto the legacy
+    # carve-out. The C4c ratchet must refuse it.
+    concept blobbed "$forged" "" "Lead paragraph, reworded again."
+    git add -A
+    git commit -q -m "un-migrate"
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" --base-ref "$base_sha" > "$tmp/.unmigrate_out" 2>&1 || true
+  )
+
+  # honest control: BOTH concepts are stale before the attack.
+  total=$((total + 1))
+  if grep -q 'ops/legacy.md: STALE' "$tmp/.honest_out" 2>/dev/null \
+     && grep -q 'ops/blobbed.md: STALE' "$tmp/.honest_out" 2>/dev/null; then
+    ok "laundering control: real drift fires [C5] on BOTH the commit- and blob-anchored concept"
+  else
+    miss "laundering control (expected both STALE): $(tail -1 "$tmp/.honest_out" 2>/dev/null)" "launder-ctl"
+  fi
+
+  # positive control: the hole is REAL on the legacy path (forged SHA -> silent).
+  total=$((total + 1))
+  if grep -q 'ops/legacy.md' "$tmp/.attack_out" 2>/dev/null; then
+    miss "legacy laundering unexpectedly caught — the residual this WP closes is not reproducible" "launder-legacy"
+  else
+    ok "laundering residual reproduced: a forged unreachable checkpoint_sha silences [C5] on the LEGACY path"
+  fi
+
+  # the closure: the SAME forgery on the blob path REDs [C4b], no fallback.
+  total=$((total + 1))
+  if grep -q '^\[C4b\]' "$tmp/.attack_out" 2>/dev/null \
+     && grep -q 'ops/blobbed.md: `source_blobs` anchor `code.txt@' "$tmp/.attack_out" 2>/dev/null; then
+    ok "laundering CLOSED: a forged blob anchor is an absent object -> [C4b], never a base-ref re-anchor"
+  else
+    miss "forged blob anchor did not RED [C4b]: $(tail -1 "$tmp/.attack_out" 2>/dev/null)" "launder-blob"
+  fi
+
+  # the closure is not merely MOVED: un-migrating to reach the carve-out REDs.
+  total=$((total + 1))
+  if grep -q '^\[C4c\]' "$tmp/.unmigrate_out" 2>/dev/null \
+     && grep -q 'ops/blobbed.md' "$tmp/.unmigrate_out" 2>/dev/null; then
+    ok "laundering not MOVED: dropping the blob anchor to regain the carve-out fires [C4c] (ratchet)"
+  else
+    miss "un-migration dodge not caught by [C4c]: $(tail -1 "$tmp/.unmigrate_out" 2>/dev/null)" "launder-ratchet"
+  fi
+  rm -rf "$tmp"
+}
+
+# --- C4b: the source_blobs entry itself is validated --------------------------
+# A shape check with no tolerance: malformed entry, an anchor for a path that is
+# not a declared source, a duplicate anchor, and a COMMIT id pasted where a blob
+# id belongs (the likeliest honest mistake — it resolves as an object, so only a
+# type check rejects it).
+assert_c4b_entry_shapes() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'anchor-line\nfiller\n' > code.txt
+    printf 'other\n' > other.txt
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/ops/x.md)
+EOF
+    git add -A
+    git commit -q -m base
+    sha_a="$(git rev-parse HEAD)"
+    blob="$(git rev-parse HEAD:code.txt)"
+    concept() {  # $1 = the source_blobs block body
+      cat > docs/knowledge/ops/x.md <<EOF
+---
+type: "Runbook"
+title: "C4b entry shapes"
+description: "exercises source_blobs entry validation."
+source_files:
+  - "code.txt"
+source_blobs:
+$1checkpoint_sha: "$sha_a"
+provenance: "AUTHORED"
+---
+
+# C4b entry shapes
+
+Lead paragraph for the entry-shape case.
+
+# How it works
+- the anchor (\`code.txt:1\`).
+
+# Invariants
+- the anchor holds (\`code.txt:1\`).
+
+# Citations
+1. \`code.txt:1\` — the anchor.
+EOF
+    }
+    # (1) malformed: no @sha
+    concept "  - \"code.txt\"
+"
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.malformed" 2>&1 || true
+    # (2) anchors a path not in source_files
+    concept "  - \"other.txt@$blob\"
+"
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.undeclared" 2>&1 || true
+    # (3) duplicate anchor for the same path
+    concept "  - \"code.txt@$blob\"
+  - \"code.txt@$blob\"
+"
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.dupe" 2>&1 || true
+    # (4) a COMMIT id where a blob id belongs (resolves as an object, wrong type)
+    concept "  - \"code.txt@$sha_a\"
+"
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.commitid" 2>&1 || true
+    # (5) negative control: a correct anchor passes cleanly
+    concept "  - \"code.txt@$blob\"
+"
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.good" 2>&1 || true
+  )
+  local case
+  for case in malformed undeclared dupe commitid; do
+    total=$((total + 1))
+    if grep -q '^\[C4b\]' "$tmp/.$case" 2>/dev/null; then
+      ok "C4b: $case source_blobs entry fires [C4b]"
+    else
+      miss "C4b $case not caught: $(tail -1 "$tmp/.$case" 2>/dev/null)" "C4b-$case"
+    fi
+  done
+  total=$((total + 1))
+  if grep -q 'OKF-CoreLink profile valid' "$tmp/.good" 2>/dev/null; then
+    ok "C4b: a well-formed, resolvable blob anchor passes (negative control)"
+  else
+    miss "C4b negative control failed: $(tail -1 "$tmp/.good" 2>/dev/null)" "C4b-good"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- gate v5 #2: module-parent grounding REMOVED -------------------------------
 # A concept that cites the module-ROOT file `routes.rs` (the `mod routes;`
 # declaration site) but NOT the handler `routes/sub_handler.rs` must NO LONGER
@@ -2691,6 +3225,11 @@ assert_c5
 assert_c5_shift
 assert_c5_below
 assert_c5_added_file
+assert_c5_all_ranges
+assert_blob_anchor_teeth
+assert_blob_anchor_survives_rewrite
+assert_blob_launder_closed
+assert_c4b_entry_shapes
 assert_c5b
 assert_c5b_orphan_exempt
 assert_c4_squash_orphan_tolerant

@@ -8,7 +8,13 @@ source_files:
   - "crates/corelink-container/src/auth_tenant.rs"
   - "crates/tenant-path/src/lib.rs"
   - "crates/tenant-path/src/prefix.rs"
-checkpoint_sha: "9b042a4272a76b470347478558ddefb2e171df96"
+source_blobs:
+  - "worker/src/index.ts@e0300e4d06ccd5aa81bb2bf4c7a8f9c13354b048"
+  - "crates/corelink-worker/src/tenant.rs@d3ba56482c7b31fa168133737d8eddba72462a80"
+  - "crates/corelink-container/src/auth_tenant.rs@299dd57e7a045709717860a3d52b8fcf57defe73"
+  - "crates/tenant-path/src/lib.rs@ed40ce405d38f398b6537f17531f0fd05be3dfdb"
+  - "crates/tenant-path/src/prefix.rs@cb25dffd2461c9cd3e6c8f5a98744d3a3d75066c"
+checkpoint_sha: "c0fcadc21c9d8dc7c24c96e12f3ed13177a56c21"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
 timestamp: "2026-06-26T00:00:00Z"

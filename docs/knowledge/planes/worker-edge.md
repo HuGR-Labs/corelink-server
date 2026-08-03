@@ -8,7 +8,13 @@ source_files:
   - "worker/src/lib/tenant_residency_cache.ts"
   - "worker/src/lib/tenant_tier_cache.ts"
   - "worker/src/lib/onboarding_events.ts"
-checkpoint_sha: "9b042a4272a76b470347478558ddefb2e171df96"
+source_blobs:
+  - "worker/src/index.ts@e0300e4d06ccd5aa81bb2bf4c7a8f9c13354b048"
+  - "worker/src/sentry-scrub.ts@e9cd0d761cab3aaa83ea618f7d270e8b77adc316"
+  - "worker/src/lib/tenant_residency_cache.ts@dc42b4123dae51e9887264168efcc5d8f6ab817b"
+  - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
+  - "worker/src/lib/onboarding_events.ts@13087a3f130b93729ade6e30e9568ea500344c22"
+checkpoint_sha: "c0fcadc21c9d8dc7c24c96e12f3ed13177a56c21"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
