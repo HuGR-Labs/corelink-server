@@ -22,6 +22,58 @@ description = "Stripe webhook signing secret (whsec_…) — the default ruleset
 regex = '''whsec_[A-Za-z0-9]{24,}'''
 keywords = ["whsec_"]
 
+# ── REVOKED-CREDENTIAL CLOSURE — exactly one historical finding ───────────────
+# This is NOT a false positive and NOT a deferral. The value this suppresses IS a
+# real Stripe webhook signing secret that WAS committed. It is suppressed because
+# the credential is REVOKED and can no longer authenticate anything.
+#
+#   What it was ...... the `whsec_…` signing secret of Stripe webhook endpoint
+#                      `we_1TcaMDLh0hhAZjwol9KDCJTp`. A Stripe signing secret is
+#                      scoped to exactly ONE endpoint and validates nothing else.
+#   How it died ...... that endpoint was DELETED on 2026-05-29 and replaced by
+#                      `we_1TcaeeLh0hhAZjwoWambOOhJ`. Deleting the endpoint
+#                      revokes its signing secret — there is nothing left to
+#                      rotate; rotation was never an open action, only unproven.
+#   Evidence (3) ..... (1) docs/operator/stripe-checkout-e2e-2026-05-29.md
+#                          §"Issue 3: STRIPE_WEBHOOK_SECRET mismatch" — records
+#                          the endpoint id and its deletion+replacement.
+#                      (2) docs/handoff/2026-07-03-REPLY-from-clw-coordinator-
+#                          webhook-reconcile-DONE-and-no-stray-endpoint-exists.md
+#                          — a LIVE Stripe API enumeration of every v1 webhook
+#                          endpoint on the prod account (2026-07-03) listing
+#                          exactly 3; `we_1TcaMDLh…` is NOT among them.
+#                      (3) owner read the live Stripe dashboard 2026-08-03:
+#                          signup-worker (7 events), "Corelink prd" → corelink-api
+#                          (10), v2 thin destination "exquisite-rhythm-thin" →
+#                          corelink-api (24), plus one unrelated hugr-wallet
+#                          endpoint. Nothing matching `we_1TcaMDLh…`.
+#
+# WHY IT IS PINNED HERE AND NOT EDITED AWAY. `gitleaks detect` scans the COMMIT
+# GRAPH. The literal was redacted at HEAD on 2026-06-18, but it lives in commit
+# b59c4862 forever, so no edit to today's file can clear it. Without this pin the
+# weekly cron (`17 5 * * 6`, first firing 2026-08-08) exits 1 on this one finding
+# every week for the life of the repo — and a permanently-red gate is a gate
+# nobody reads. Finding fingerprint being closed:
+#   b59c4862fa7c826cad5269ec0d35874b7014cfaf:docs/operator/stripe-checkout-e2e-2026-05-29.md:stripe-webhook-secret:73
+#
+# HOW NARROW THIS IS. `condition = "AND"` — all three predicates must hold, so the
+# suppressed set is ONE immutable (commit, file, line-context) triple that can
+# never grow: (a) that one historical commit SHA, (b) that one file path, (c) a
+# line that also names the dead endpoint id `we_1TcaMDLh…` (a PUBLIC Stripe
+# object id, not secret material). A NEW `whsec_` lands in a NEW commit, so it
+# fires — including in this very same file. Deliberately NOT done: no rule
+# disable, no path-only mute, no global value allowlist, no tree exclusion, and
+# the secret literal itself is NOT written here (it would add no tightness — the
+# bytes of commit b59c4862 are frozen — while permanently re-disclosing a
+# credential at HEAD).
+[[rules.allowlists]]
+description = "REVOKED (endpoint we_1TcaMDLh0hhAZjwol9KDCJTp deleted 2026-05-29) Stripe webhook signing secret, historically committed in b59c4862. Closure, not a false positive — see the comment block above."
+condition = "AND"
+commits = ["b59c4862fa7c826cad5269ec0d35874b7014cfaf"]
+paths = ['''^docs/operator/stripe-checkout-e2e-2026-05-29\.md$''']
+regexTarget = "line"
+regexes = ['''we_1TcaMDLh0hhAZjwol9KDCJTp''']
+
 [[rules]]
 id = "corelink-internal-auth-hex"
 description = "A 64-hex internal-auth/signing key assigned to a CORELINK_*_AUTH_KEY / PAT_SIGNING_KEY (openssl rand -hex 32)"

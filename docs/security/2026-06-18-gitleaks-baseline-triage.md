@@ -16,6 +16,10 @@ The numbers here are from the manual full-history dispatch mode.
   `02df9a17`, 2026-05-30). The default gitleaks ruleset did NOT flag this — our
   custom `stripe-webhook-secret` rule caught it.
   - **Action taken:** redacted in HEAD (working tree no longer carries it).
+  - **✅ OWNER ACTION (rotation) — CLOSED 2026-08-03. The endpoint was deleted
+    2026-05-29, which revokes the secret; there was nothing to rotate. See
+    "Update 2026-08-03 (second)" at the end of this doc for the evidence and the
+    `.gitleaks.toml` pin.** Original text, kept for the record:
   - **⚠️ OWNER ACTION (rotation):** the secret is in git history = disclosed to
     anyone with repo read. The doc itself records it was already *stale/wrong*
     (the endpoint `we_1Tca…` it belonged to was deleted), so it is almost
@@ -77,6 +81,59 @@ moves this number.
 `docs/operator/stripe-checkout-e2e-2026-05-29.md:73`, commit `b59c4862`. It is
 deliberately NOT suppressed. The sweep will stay red until the OWNER ACTION above
 (rotation confirm) is done, and that is the point: one real item, visible.
+
+### Update 2026-08-03 (second) — the survivor is CLOSED: the credential is REVOKED
+
+The OWNER ACTION above is **done**, and the answer is that there was never
+anything to rotate. A Stripe webhook signing secret is scoped to **exactly one
+endpoint**; delete the endpoint and the secret can no longer validate anything.
+Endpoint `we_1TcaMDLh0hhAZjwol9KDCJTp` — the one this secret belonged to — was
+deleted on **2026-05-29**, the same day, as part of the fix that produced the
+finding in the first place. Three independent confirmations:
+
+1. `docs/operator/stripe-checkout-e2e-2026-05-29.md` §"Issue 3:
+   STRIPE_WEBHOOK_SECRET mismatch" records the deletion and the replacement
+   endpoint `we_1TcaeeLh0hhAZjwoWambOOhJ`.
+2. `docs/handoff/2026-07-03-REPLY-from-clw-coordinator-webhook-reconcile-DONE-and-no-stray-endpoint-exists.md`
+   carries a **live Stripe API enumeration** of every v1 webhook endpoint on the
+   production account as of 2026-07-03 — exactly three, and
+   `we_1TcaMDLh0hhAZjwol9KDCJTp` is not one of them.
+3. The owner read the **live Stripe dashboard on 2026-08-03**: signup-worker
+   (7 events), "Corelink prd" → corelink-api (10), the v2 thin destination
+   `exquisite-rhythm-thin` → corelink-api (24), plus one unrelated hugr-wallet
+   endpoint. Nothing matching the deleted endpoint.
+
+**This is a REVOKED-credential closure — not a false positive, and not a
+deferral.** The value is real; it is simply dead.
+
+**Where the closure lives, and why not here.** Editing the doc at HEAD does
+nothing (see the warning above): the finding is in commit `b59c4862` forever, so
+the weekly cron would have exited 1 on it every Saturday for the life of the
+repo. It is therefore pinned in **`.gitleaks.toml`**, as a `condition = "AND"`
+`[[rules.allowlists]]` on the `stripe-webhook-secret` rule requiring all three
+of: that one commit SHA, that one file path, and a line that also names the dead
+endpoint id. Fingerprint closed:
+`b59c4862fa7c826cad5269ec0d35874b7014cfaf:docs/operator/stripe-checkout-e2e-2026-05-29.md:stripe-webhook-secret:73`.
+Measured on this branch: **before 1 finding / exit 1 → after 0 findings / exit
+0**, and the set difference between the two runs is that single fingerprint and
+nothing else. Re-proved in the other direction against a scratch commit planting
+three NEW `whsec_` values — one in a different file, one in this very same file,
+and one in this same file on a line that *also* names the dead endpoint (i.e.
+satisfying two of the three predicates): **all three still fire.**
+
+⚠️ **The lesson, and the pattern this doc must stop repeating.** This file's own
+"20 historical FPs, triaged out of band" habit is precisely what let three real
+**rule defects** sit unexamined for six weeks — they were only found and fixed in
+#1012, when a cron turned the prose into a weekly red gate. Prose triage is not
+enforcement: it ages, nobody re-reads it, and it cannot distinguish "we decided
+this is fine" from "we never looked again." So the closure above is deliberately
+**not** narrated-and-left; it is pinned where the *scanner* enforces it, scoped
+so tightly that it can only ever match one immutable historical finding. Anything
+future triage decides to accept belongs in `.gitleaks.toml` under the same
+standard — a value-shaped rule predicate where the finding is a detection defect,
+or an AND-pinned commit+path entry where a specific credential is provably dead —
+with the evidence written next to it. Never a path mute, never a rule disable,
+never a note in a doc.
 
 ### Sweep completeness
 Separately confirmed via `git grep`: **0** `sk_live_` / `rk_live_` (live Stripe),
