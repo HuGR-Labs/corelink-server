@@ -240,15 +240,21 @@ async function resolveTenantFromAcquiringPat(
  *           offboarding row).
  *        c. Allowlist: `runner_repo_allowlist WHERE tenant_id AND
  *           repo_full_name`. No row → 403.
- *        d. Entitlement + ceiling: `runners_entitlement WHERE tenant_id`. No row
- *           → 403; capture `max_concurrency` (the runner ceiling).
+ *        d. Entitlement + ceilings: `runners_entitlement WHERE tenant_id`. No row
+ *           → 403; capture `max_concurrency` (the GATE) and `max_vcpu_h` (the
+ *           monthly compute allowance — advisory, forwarded so the dispatcher
+ *           can warn before overage; NULLABLE, omitted from the wire when
+ *           absent).
  *      Any D1 exception in a/b/c/d → 500 "runner mint unavailable".
  *   6. Mint via the SINGLE authority {@link mintScopedPat}, using the DERIVED
  *      `tenantId` and passing `job_id` as the principal-source string (SHA-256 →
  *      stable per-job principal UUID for audit correlation) and the clamped
  *      lease-bound TTL (≤ {@link RUNNER_PAT_TTL_SECONDS}).
  *   7. Return the standard mint envelope `{ token_plaintext, pat_id, token_id,
- *      expires_ms, tenant, max_concurrency }` (tenant = the derived tenant).
+ *      expires_ms, tenant, max_concurrency, max_vcpu_h? }` (tenant = the derived
+ *      tenant). `max_vcpu_h` is ADDITIVE and OMITTED when the tenant has no
+ *      metered compute ceiling on file, so the wire is byte-identical for every
+ *      tenant that had none — an existing consumer cannot tell the difference.
  */
 export async function handleRunnerMint(
   request: Request,
@@ -394,6 +400,11 @@ export async function handleRunnerMint(
 
   let tenantId: string;
   let maxConcurrency: number;
+  // The MONTHLY compute ceiling (vCPU-hours), NULLABLE by design in migration
+  // 0072 — a tenant may be entitled to concurrency without a metered compute
+  // ceiling. Threaded to the dispatcher so it can warn a customer BEFORE they
+  // cross into overage; absent stays absent (never invent a ceiling).
+  let maxVcpuH: number | null = null;
   try {
     // 5a. Derive the tenant SERVER-SIDE — NEVER a body value. Two unforgeable
     // sources (frozen 2026-07-08); the single-tenant hole stays closed on both.
@@ -457,17 +468,28 @@ export async function handleRunnerMint(
       return forbidden();
     }
 
-    // 5d. Entitlement + ceiling: the tenant must be entitled to Runners; capture
-    // its max_concurrency (the runner ceiling threaded into the response).
+    // 5d. Entitlement + ceilings: the tenant must be entitled to Runners; capture
+    // BOTH ceilings — `max_concurrency` (instantaneous parallelism) and
+    // `max_vcpu_h` (the monthly compute allowance). Only the first is a GATE;
+    // the second rides along so the dispatcher can warn the customer as they
+    // approach it rather than surprising them with overage on the invoice.
     const entRow = await env.CONFIG_DB.prepare(
-      "SELECT max_concurrency FROM runners_entitlement WHERE tenant_id = ?1",
+      "SELECT max_concurrency, max_vcpu_h FROM runners_entitlement WHERE tenant_id = ?1",
     )
       .bind(tenantId)
-      .first<{ max_concurrency: number }>();
+      .first<{ max_concurrency: number; max_vcpu_h: number | null }>();
     if (entRow === null || typeof entRow.max_concurrency !== "number") {
       return forbidden();
     }
     maxConcurrency = entRow.max_concurrency;
+    // NULLABLE column (0072): absent means "no metered compute ceiling on file",
+    // which is NOT the same as zero. Only a real positive number is forwarded —
+    // a 0 or a negative would make the dispatcher compute a nonsense percentage
+    // and warn every tenant on their first job.
+    maxVcpuH =
+      typeof entRow.max_vcpu_h === "number" && entRow.max_vcpu_h > 0
+        ? entRow.max_vcpu_h
+        : null;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "unknown error";
     console.error(`[${requestId}] runner mint authz lookup failed: ${message.slice(0, 80)}`);
@@ -521,7 +543,13 @@ export async function handleRunnerMint(
     ttlSeconds,
     scope,
     internalAuthKey,
-    { max_concurrency: maxConcurrency },
+    // `max_vcpu_h` is omitted (not null) when absent, so the wire stays byte-
+    // identical for a tenant without a metered ceiling — an additive field, not
+    // a shape change.
+    {
+      max_concurrency: maxConcurrency,
+      ...(maxVcpuH !== null ? { max_vcpu_h: maxVcpuH } : {}),
+    },
     // WP5a: persist the narrowed runner-job marker on the `pat` row so the
     // Worker's auth-resolve can forward it to the container for enforcement.
     runnerJobAcKey,
