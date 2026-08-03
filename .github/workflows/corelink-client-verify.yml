@@ -20,9 +20,17 @@ on:
   # 2026-06-04; extends the 977225d3 "stop heavy-gate stampede" sweep). The
   # nightly cron below + the PR `paths:` lane above keep continuous + targeted
   # coverage.
-  schedule:
-    # Nightly full lane.
-    - cron: '41 4 * * *'
+  # ⛔ CRON REMOVED 2026-08-02 — redundant: this workflow already has a
+  # `pull_request` trigger, so the code IS verified when it changes. The
+  # nightly re-verified BYTE-IDENTICAL code: 10 of the last 14 days had
+  # ZERO commits to main, and the self-hosted Mac (the founder's own
+  # machine) was spending ~8.8 h/day on scheduled jobs, 75% of which
+  # failed. A clock only earns its keep when something can change
+  # WITHOUT a commit — CVE feeds, prod state, backups, certs. This
+  # workflow is none of those.
+  # Restore by uncommenting if this ever stops being PR-gated.
+  # # Nightly full lane.
+  # - cron: '41 4 * * *'
 
 permissions:
   contents: read

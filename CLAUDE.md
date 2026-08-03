@@ -47,16 +47,31 @@ for bodies), or invoke the **`okf-context`** skill.
 ## ⛔ Before merging ANY PR — do not skip
 
 **Run `bash scripts/pre-merge-gate-check.sh <PR>` and merge ONLY if it prints
-all-green.** The heavy gates (coverage / CodeQL / the TLA+ model-checks /
-ffi-matrix / reproducible-build / cas-foundation / s10-ship-gate) were moved OFF
-per-PR (2026-06-02) and now run **on a cron + on-demand only** — there is no
-`pull_request` and no `push` lane on any of them, so nothing gates on them
-between scheduled runs. Cadence after the 2026-08-01 CI cost diet: **CodeQL +
-TLA+ + reproducible-build stay nightly (staggered); coverage / cas-foundation /
+all-green.** The heavy gates (coverage / CodeQL / ffi-matrix / reproducible-build
+/ cas-foundation / s10-ship-gate) were moved OFF per-PR (2026-06-02) and run
+**on a cron + on-demand only** — no `pull_request`, no `push` lane — so nothing
+gates on them between scheduled runs. Cadence after the 2026-08-01 CI cost diet:
+**CodeQL + reproducible-build stay nightly; coverage / cas-foundation /
 ffi-matrix / s10-ship-gate are WEEKLY** (Tue/Wed/Thu/Fri). Dispatch the weekly
 ones explicitly when a PR touches their surface. The checks that REMAIN on a PR
 are the fast, load-bearing ones and they MUST be green. Never blind `--admin` merge; if you must `--admin`, state the documented
 infra/flake reason explicitly. (A green PR now takes minutes, not 30+.)
+
+**2026-08-02 correction — the "cron only" rule no longer covers everything it
+used to.** 14 workflows that DID have a `pull_request` trigger were still also
+running a daily cron, i.e. re-verifying byte-identical code on a clock. Their
+crons were removed (`tla_check`, `region_pinning`, `cargo-deny`, `s07/s08/s09-
+ship-gate`, `corelink-worker/meta/hash/reapi/client-verify/adapter-host`,
+`tenant-path`, `corelink-server`). They are PR-gated and on-demand now.
+
+**The rule to apply going forward: a cron earns its keep ONLY when something can
+change WITHOUT a commit** — CVE feeds (cargo-audit / semgrep / CodeQL / trivy /
+pnpm-audit), prod state (e2e-prod / canaries / smoke), backups, cert + infra
+drift, billing reconciliation, DR drills. Those keep their schedules. Anything
+that only changes when code changes belongs on a PR/push trigger. Measured
+before the change: 10 of the previous 14 days had ZERO commits to `main`, while
+the self-hosted Mac — the founder's own machine — burned ~8.8 h/day on scheduled
+jobs, 75% of which failed.
 
 ## Workflow
 
