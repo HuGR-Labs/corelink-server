@@ -101,6 +101,20 @@ jobs:
         with:
           workspaces: ". -> target"
 
+      # The corelink box image does not ship sccache — the first run of this pilot
+      # proved it, printing "sccache not on the box image" and compiling cold.
+      # Prebuilt binary (verified: taiki-e/install-action HAS a sccache manifest at
+      # the SHA this repo pins — checked, not assumed, after cargo-fuzz turned out
+      # to have none and would have silently fallen back to a source build).
+      #
+      # Installing per-job costs seconds and buys the measurement now. Baking it
+      # into the runner image (corelink-runners) is the right long-term home, but
+      # only worth doing once the number below justifies it.
+      - name: Install sccache (prebuilt, SHA-pinned)
+        uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4
+        with:
+          tool: sccache
+
       # ── sccache -> CoreLink's own /cargo surface (pilot, 2026-08-03) ──────────
       #
       # This lane already runs on `corelink` (wave 2), and the rust-cache step
