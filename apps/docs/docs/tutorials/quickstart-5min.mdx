@@ -181,11 +181,11 @@ client at it, using your tenant UUID as the REAPI instance name — see the
 committed reference config at
 [`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
 
-:::note Native `bazel --remote_cache` support: in progress
-A stock-Bazel plain-HTTP alias (`--remote_cache=https://…` sending
-`/cas/<hash>` and `/ac/<hash>`) is being built and is **not yet live** — it
-currently returns 404. Until it lands, use a REAPI/ByteStream-compatible client
-against the `/bazel/v2/<tenant>` endpoint above.
+:::note Stock `bazel --remote_cache` works too
+The plain-HTTP alias `https://corelink-api.humangr.com/bazel/cache` is **live**:
+it serves the `/cas/<sha256>` and `/ac/<sha256>` paths stock Bazel emits, no
+REAPI client required. The tenant comes from your PAT, not the URL — so no
+`--remote_instance_name`. Both surfaces back onto the same per-tenant blobs.
 :::
 
 Full guide: [Bazel integration](../integrations/bazel).

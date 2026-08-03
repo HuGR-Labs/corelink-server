@@ -66,7 +66,7 @@ O painel Grafana de taxa de acerto está documentado em
 | `hit_ratio=0%` na segunda build | o cache de disco local atendeu a requisição, nunca tocou o remoto | `bazel clean` e defina `build --noremote_accept_cached=false` para forçar a leitura remota |
 | Erros `UNAUTHENTICATED` | PAT expirado ou ambiente errado | Execute novamente `corelink doctor --check-auth`, regenere o PAT |
 | `COR_CAS_DIGEST_MISMATCH` | bytes corrompidos em trânsito | `client_verify` rejeitou o blob — abra uma issue, não desative a verificação |
-| Lento `p95 > 50ms` | distante da edge mais próxima | Fixe a região mais próxima no `.bazelrc`: `build --remote_cache=https://<region>.<tenant>.corelink.humangr.com/v1/cache` |
+| Lento `p95 > 50ms` | a região do seu inquilino está distante dos seus runners de CI | **Não é uma configuração do cliente.** As requisições são roteadas para o `primary_region` do seu inquilino, definido no provisionamento; a edge o consulta no servidor e descarta qualquer região informada pelo cliente, então nenhuma URL ou flag do `.bazelrc` a sobrescreve. Se o inquilino estiver na região errada, escreva para support@humangr.com — mudar isso é uma alteração de residência de dados, não de configuração. |
 
 Você concluiu a trilha de introdução. Continue para a
 [referência da REAPI](../reference/reapi/index.mdx) para conhecer toda a superfície de

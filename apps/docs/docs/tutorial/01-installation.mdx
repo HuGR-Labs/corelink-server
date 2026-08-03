@@ -63,12 +63,19 @@ export CORELINK_TENANT="<your-tenant-id>"
 bazel build //...
 ```
 
-:::note Native `bazel --remote_cache` support: in progress
-CoreLink's wired Bazel surface is the **REAPI v2 ByteStream** scheme at
-`/bazel/v2/<tenant>` and requires a REAPI/ByteStream-compatible client. A
-stock plain-HTTP `--remote_cache` alias (`/cas/<hash>`) is being built and is
-not yet live — it currently returns 404. See the
-[Bazel quickstart](./03-bazel-quickstart) for details.
+:::note Two live Bazel surfaces — pick either
+The config above is the **REAPI v2 ByteStream** scheme at `/bazel/v2/<tenant>`,
+which needs a REAPI/ByteStream-compatible client. If you run **stock Bazel**,
+point `--remote_cache` at the plain-HTTP alias instead — it is live and needs no
+REAPI client (the tenant comes from the PAT, not the URL, so drop
+`--remote_instance_name`):
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/cache
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+```
+
+See the [Bazel quickstart](./03-bazel-quickstart) for details.
 :::
 
 The first `bazel build //...` populates the cache (cold). Run it a second

@@ -129,15 +129,32 @@ para la raíz del repositorio:
 
 ```text
 corelink bazel-init: appended to .bazelrc:
-  build --remote_cache=grpcs://cas.corelink.humangr.com:443
-  build --remote_header=x-corelink-tenant=acme-prod
-  build --remote_header=authorization=Bearer ${CORELINK_PAT}
+  build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+  build --remote_instance_name=acme-prod
+  build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+  build --remote_timeout=30s
   build --remote_upload_local_results=true
 corelink bazel-init: wrote .corelink/credentials (mode 0600)
 ```
 
 `bazel-init` es **idempotente**: ejecutarlo una segunda vez detecta la
 línea marcadora existente en `.bazelrc` y termina con `0` sin duplicados.
+
+:::tip ¿Usas Bazel estándar? Usa el alias plain-HTTP
+Las líneas anteriores son el esquema **REAPI v2 ByteStream** en
+`/bazel/v2/<tenant>`, que requiere un cliente compatible con REAPI/ByteStream.
+Bazel estándar es atendido por el alias plain-HTTP, que está activo: acepta las
+rutas `/cas/<sha256>` y `/ac/<sha256>` que emite Bazel y resuelve el inquilino a
+partir del PAT (por eso no hay `--remote_instance_name`):
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/cache
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_upload_local_results=true
+```
+
+Consulta la [guía de integración de Bazel](../integrations/bazel) para más detalles.
+:::
 
 :::tip Comitear .bazelrc, no .corelink/credentials
 Agrega `.bazelrc` a git para que el equipo comparta la configuración.

@@ -18,9 +18,13 @@ pointed at a `grpcs://` CoreLink address would simply fail to connect.
 
 ## What works today
 
-The only wired build-tool cache in the Bazel family is the **Bazel REAPI v2
-ByteStream** surface at `/bazel/v2/<tenant>`. If you can use Bazel, see the
-[Bazel quickstart](./03-bazel-quickstart).
+In the Bazel family, **Bazel itself is fully served over plain HTTP** — two live
+surfaces: the stock-Bazel HTTP alias at `/bazel/cache` (`/cas/<sha256>` and
+`/ac/<sha256>`, what vanilla `--remote_cache` emits) and the **REAPI v2
+ByteStream** scheme at `/bazel/v2/<tenant>`. If you can use Bazel, see the
+[Bazel quickstart](./03-bazel-quickstart). Buck2 cannot use either: it has no
+plain-HTTP cache backend, so `/bazel/cache` is unreachable for it, and
+`/bazel/v2` is REST — not the gRPC REAPI service `buck2_re_client` dials.
 
 For any tool that speaks plain HTTP, the [raw HTTP (curl)](../integrations/raw-curl)
 and native CAS endpoints are available directly.

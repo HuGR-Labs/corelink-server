@@ -31,7 +31,8 @@ Both are Bearer-PAT authenticated. (Bazel content-addresses by SHA-256, which th
 
 ## Prerequisites
 
-- A REAPI/ByteStream-compatible Bazel client.
+- Stock Bazel (for the `/bazel/cache` alias) or a REAPI/ByteStream-compatible
+  client (for `/bazel/v2`). Either works.
 - A CoreLink PAT (`corelink_pat_...`) with cache read + write scope. See [PAT creation](../concepts/tenancy.md).
 
 ## Configure `.bazelrc`

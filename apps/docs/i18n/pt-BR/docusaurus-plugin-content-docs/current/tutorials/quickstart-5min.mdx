@@ -187,11 +187,12 @@ para ele, usando seu UUID de inquilino como o nome de instância REAPI — veja 
 configuração de referência versionada em
 [`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
 
-:::note Suporte nativo a `bazel --remote_cache`: em andamento
-Um alias plain-HTTP do Bazel padrão (`--remote_cache=https://…` enviando
-`/cas/<hash>` e `/ac/<hash>`) está sendo construído e **ainda não está ativo** — ele
-atualmente retorna 404. Até que ele chegue, use um cliente compatível com REAPI/ByteStream
-contra o endpoint `/bazel/v2/<tenant>` acima.
+:::note O `bazel --remote_cache` padrão também funciona
+O alias plain-HTTP `https://corelink-api.humangr.com/bazel/cache` está **ativo**:
+ele serve os caminhos `/cas/<sha256>` e `/ac/<sha256>` que o Bazel padrão emite,
+sem exigir nenhum cliente REAPI. O inquilino vem do seu PAT, não da URL — portanto
+sem `--remote_instance_name`. As duas superfícies apontam para os mesmos blobs
+por inquilino.
 :::
 
 Guia completo: [Integração com o Bazel](../integrations/bazel).

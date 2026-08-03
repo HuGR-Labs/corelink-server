@@ -1,8 +1,8 @@
 ---
 id: 01-installation
-title: Install the CoreLink CLI
-sidebar_label: 1. Installation
-description: Install the CoreLink CLI on macOS, Linux, or Windows in under a minute.
+title: Install CoreLink and verify your first cache hit
+sidebar_label: 1. Install + first hit
+description: Curl-install the CoreLink CLI, wire Bazel, and watch your first cache hit land in under 5 minutes.
 ---
 
 <!-- i18n:MT (es-419) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
@@ -11,11 +11,137 @@ description: Install the CoreLink CLI on macOS, Linux, or Windows in under a min
 >
 > Canonical EN source: `tutorial/01-installation.mdx`
 
-# Install the CoreLink CLI
+# Install CoreLink and verify your first cache hit
 
-The `corelink` CLI ships as a single statically-linked binary. Pick your platform.
+This is the Phase-0 quickstart. TTFV target: **under 5 minutes** from a fresh
+shell to a green cache-hit log line. We collapsed the legacy 6-step wizard
+into 2 steps (sign up + welcome) and replaced the per-platform install
+matrix with a single `curl | sh` path; the previous per-platform recipes
+are still listed at the bottom for air-gapped or policy-restricted shops.
 
-## macOS (Apple Silicon or Intel)
+## Step 1 — Curl-install the CLI
+
+You need a Personal Access Token (PAT) from the [welcome page](https://humangr.com/corelink/welcome).
+The 2-step signup wizard provisions your tenant, region, plan, and a starter
+PAT server-side on Clerk `user.created`; the PAT is rendered exactly once
+on the welcome pane. Copy it before you close the tab.
+
+```bash
+curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=<PAT>
+```
+
+The installer:
+
+1. Detects your platform from `uname -s` / `uname -m` (macOS and Linux;
+   `aarch64` and `x86_64`, with `arm64`/`amd64` normalised onto them). Any
+   other architecture refuses by name rather than building a URL that
+   cannot exist.
+2. Downloads the matching `corelink` binary and verifies it against the
+   `.sha256` published beside the release asset **before** making it
+   executable. A missing checksum aborts the install.
+3. Installs it to `/usr/local/bin/corelink` (via `sudo` if you are not
+   root) and writes `~/.corelink/config.toml` at mode `0600` with your
+   token, region, and API endpoint.
+4. Runs `corelink whoami`, which resolves your identity against
+   `/v1/users/me` and caches the resolved `tenant_id` back into that same
+   config file — every later tenant-scoped command needs it.
+
+`corelink whoami` prints your `tenant_id`, a redacted `token_prefix`, and
+the `route_kind`. If it succeeds, the CLI is installed and authenticated —
+go to Step 2.
+
+## Step 2 — Wire your build tool and verify a cache hit
+
+For **Bazel** projects, point a REAPI v2 client at your tenant's cache endpoint.
+Add these lines to your `.bazelrc` (see the committed reference config at
+[`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc)):
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+build --remote_instance_name=${CORELINK_TENANT}
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_upload_local_results=true
+```
+
+```bash
+export CORELINK_PAT="corelink_pat_XXXXXXXXXXXX"
+export CORELINK_TENANT="<your-tenant-id>"
+bazel build //...
+```
+
+:::note Two live Bazel surfaces — pick either
+The config above is the **REAPI v2 ByteStream** scheme at `/bazel/v2/<tenant>`,
+which needs a REAPI/ByteStream-compatible client. If you run **stock Bazel**,
+point `--remote_cache` at the plain-HTTP alias instead — it is live and needs no
+REAPI client (the tenant comes from the PAT, not the URL, so drop
+`--remote_instance_name`):
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/cache
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+```
+
+See the [Bazel quickstart](./03-bazel-quickstart) for details.
+:::
+
+The first `bazel build //...` populates the cache (cold). Run it a second
+time (or have a teammate clone and build) and Bazel should read the outputs
+back from CoreLink instead of recompiling — inspect the execution log
+(`--execution_log_json_file=/tmp/exec.json`) for `remoteCacheHit: true`.
+
+For other surfaces, skip ahead:
+
+- [Native FFI quickstart](./05-native-ffi-quickstart) — link the C ABI directly.
+- [Verify a cache hit](./06-verify-cache-hit) — explicit CLI walkthrough.
+- [Raw HTTP (curl)](../integrations/raw-curl) — the native CAS with BLAKE3 digests.
+
+## Verify
+
+```bash
+corelink version
+corelink doctor
+```
+
+`corelink version` prints the build version, git rev, and SLSA attestation
+link. `corelink doctor` is the one-shot diagnostic: it runs eight checks —
+`network`, `auth`, `storage_write`, `storage_read`, `byok`, `region`,
+`quota`, and `client_verify` — each reporting `ok`, `fail`, or `skip` with a
+latency and, on failure, an error code and a next action. Add `--json` for
+machine-readable output.
+
+:::caution `doctor` writes to your CAS
+The `storage_write` check performs a real `PUT` into your tenant's CAS, so
+`corelink doctor` fails for a legitimately read-only PAT. Use
+`corelink whoami` when you only need to confirm the CLI is authenticated.
+:::
+
+## Subcommand reference (quick map)
+
+| Command | Purpose |
+| --- | --- |
+| `corelink whoami` | Show identity (`tenant_id`, redacted token prefix, route kind) and cache the tenant ID. |
+| `corelink login` | Save a PAT into `~/.corelink/config.toml` and cache the tenant ID. |
+| `corelink ls` | List blobs in your tenant CAS. |
+| `corelink get` | Download a blob by digest. |
+| `corelink put` | Upload a file as a blob (client-verify default on). |
+| `corelink stat` | Stat a blob (presence, size, last seen). |
+| `corelink bench` | Run the built-in put/get microbenchmark. |
+| `corelink doctor` | Diagnose local environment + reachability. |
+| `corelink version` | Print build version + commit SHA. |
+
+The next step ([First PAT](./02-first-pat)) is only relevant if the
+curl-install path did not write your starter PAT — for example, you used one
+of the manual install paths below, which only place the binary and leave
+`~/.corelink/config.toml` to you (`corelink login --token=<PAT>` writes it).
+Otherwise skip straight to the build-tool-specific quickstarts.
+
+## Alternative install paths (air-gapped, policy-restricted)
+
+The curl-install above is the recommended path for new tenants. If your
+shop blocks `curl | sh` patterns, or you need a reproducible install in
+CI, pick a per-platform recipe below.
+
+### macOS (Apple Silicon or Intel)
 
 ```bash
 brew install HumanGuardrail/tap/corelink
@@ -24,44 +150,26 @@ brew install HumanGuardrail/tap/corelink
 Or download a release tarball:
 
 ```bash
-curl -fsSL https://releases.corelink.humangr.com/cli/latest/corelink-darwin-arm64.tar.gz \
+curl -fsSL https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-darwin-arm64.tar.gz \
   | tar -xz -C /usr/local/bin
 ```
 
-## Linux (x86_64, arm64)
+### Linux (x86_64, arm64)
 
 ```bash
-curl -fsSL https://releases.corelink.humangr.com/cli/latest/corelink-linux-amd64.tar.gz \
+curl -fsSL https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-linux-amd64.tar.gz \
   | sudo tar -xz -C /usr/local/bin
 ```
 
-## Windows (PowerShell)
+### Windows (PowerShell)
 
 ```powershell
 winget install HumanGuardrail.corelink
 ```
 
-Or download `corelink-windows-amd64.zip` from the releases page and place `corelink.exe` on your `PATH`.
+Or download `corelink-windows-amd64.zip` from the releases page and place
+`corelink.exe` on your `PATH`.
 
-## Verify
-
-```bash
-corelink version
-# corelink 0.1.0 (build sha=...)
-corelink doctor
-# OK — config dir writable, network reachable, no PAT configured yet
-```
-
-`corelink doctor` confirms the binary works locally. The next step ([First PAT](./02-first-pat.mdx)) creates the personal access token the CLI needs to authenticate to your tenant.
-
-## Subcommand reference (quick map)
-
-| Command | Purpose |
-| --- | --- |
-| `corelink ls` | List blobs in your tenant CAS. |
-| `corelink get` | Download a blob by digest. |
-| `corelink put` | Upload a file as a blob (client-verify default on). |
-| `corelink stat` | Stat a blob (presence, size, last seen). |
-| `corelink bench` | Run the built-in put/get microbenchmark. |
-| `corelink doctor` | Diagnose local environment. |
-| `corelink version` | Print build version + commit SHA. |
+After any of the manual paths above, re-run Step 2 (`corelink bazel-init`
++ `bazel build //...`) and you should still hit the same activation event
+within 5 minutes.

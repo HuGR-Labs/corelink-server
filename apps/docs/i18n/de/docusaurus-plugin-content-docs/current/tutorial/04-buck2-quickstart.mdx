@@ -1,8 +1,8 @@
 ---
 id: 04-buck2-quickstart
-title: Buck2 remote cache in 5 minutes
+title: Buck2 remote cache
 sidebar_label: 4. Buck2 quickstart
-description: Wire Buck2 to CoreLink via the REAPI v2 endpoint.
+description: Buck2 support status — CoreLink is a cache-only, HTTP surface; Buck2 gRPC remote execution is not available.
 ---
 
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
@@ -12,76 +12,33 @@ description: Wire Buck2 to CoreLink via the REAPI v2 endpoint.
 > Canonical EN source: `docs/tutorial/04-buck2-quickstart.mdx`
 
 
-# Buck2 remote cache in 5 minutes
+# Buck2 remote cache
 
-Mirrors [`examples/buck2-starter/`](https://github.com/HumanGuardrail/corelink-server/tree/main/examples/buck2-starter) in the repo.
-
-## Prerequisites
-
-- `corelink` CLI installed ([step 1](./01-installation.mdx)).
-- `CORELINK_PAT` exported ([step 2](./02-first-pat.mdx)).
-- Buck2 (any recent nightly).
-
-## 1. Clone the starter (optional)
-
-```bash
-git clone https://github.com/HumanGuardrail/corelink-server.git
-cd corelink-server/examples/buck2-starter
-```
-
-## 2. `.buckconfig`
-
-```ini
-[buck2_re_client]
-engine_address       = grpcs://<YOUR_TENANT_ID>.corelink.humangr.com:443
-action_cache_address = grpcs://<YOUR_TENANT_ID>.corelink.humangr.com:443
-cas_address          = grpcs://<YOUR_TENANT_ID>.corelink.humangr.com:443
-http_headers         = Authorization=Bearer ${CORELINK_PAT}
-
-[build]
-execution_platforms = prelude//platforms:default
-
-[buck2]
-materializations = deferred
-restarter = true
-```
-
-:::note PAT handling
-Buck2 expands `${CORELINK_PAT}` from the environment at load time. Do not paste the PAT inline; keep it in `CORELINK_PAT`.
+:::warning Buck2 is not yet supported
+CoreLink is a **cache-only** platform served over **HTTP**. Buck2's remote
+cache and remote-execution client connects over **gRPC**
+(`buck2_re_client` with `engine_address` / `cas_address` / `action_cache_address`),
+and CoreLink does **not** expose a gRPC remote-execution endpoint. There is no
+working Buck2 configuration today, so this page does not provide one — a config
+pointed at a `grpcs://` CoreLink address would simply fail to connect.
 :::
 
-## 3. Minimal `BUCK` target (the starter has one)
+## What works today
 
-```python
-cxx_binary(
-    name = "hello",
-    srcs = ["main.cc", "greeter.cc"],
-    headers = ["greeter.h"],
-)
-```
+In the Bazel family, **Bazel itself is fully served over plain HTTP** — two live
+surfaces: the stock-Bazel HTTP alias at `/bazel/cache` (`/cas/<sha256>` and
+`/ac/<sha256>`, what vanilla `--remote_cache` emits) and the **REAPI v2
+ByteStream** scheme at `/bazel/v2/<tenant>`. If you can use Bazel, see the
+[Bazel quickstart](./03-bazel-quickstart). Buck2 cannot use either: it has no
+plain-HTTP cache backend, so `/bazel/cache` is unreachable for it, and
+`/bazel/v2` is REST — not the gRPC REAPI service `buck2_re_client` dials.
 
-## 4. Build twice and observe the cache hit
+For any tool that speaks plain HTTP, the [raw HTTP (curl)](../integrations/raw-curl)
+and native CAS endpoints are available directly.
 
-```bash
-# First build — populates the cache.
-buck2 build //:hello
+## Want Buck2?
 
-# Force a clean rebuild — should hit remote cache.
-buck2 clean
-buck2 build //:hello --show-output 2>&1 | grep -iE "remote|cache"
-# remote cache hits: 1
-```
+Buck2 support is not on the current cache surface. If you need it, let us know
+via [support](../troubleshooting) so we can weigh it against the roadmap.
 
-## 5. Inspect the action digest
-
-```bash
-buck2 log what-ran --show-cache-queries | head
-```
-
-Each `cache_query` line carries the REAPI v2 `Digest` Buck2 looked up. Cross-check it with the CLI:
-
-```bash
-corelink stat sha256:<digest_hex>:<size_bytes>
-```
-
-Next: [Native FFI quickstart](./05-native-ffi-quickstart.mdx) for Python / Go / Node SDKs.
+Next: [Native FFI quickstart](./05-native-ffi-quickstart) for Python / Go / Node SDKs.

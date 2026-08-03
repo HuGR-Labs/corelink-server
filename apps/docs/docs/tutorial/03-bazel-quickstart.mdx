@@ -17,18 +17,27 @@ https://corelink-api.humangr.com/bazel/v2/<your-tenant-id>/blobs/<hash>/<size>
 The `<instance>` path segment is your tenant UUID, and the endpoint is backed by
 the same per-tenant R2 blobs the native CAS serves.
 
-:::warning Native `bazel --remote_cache` support: in progress
-Stock Bazel's plain-HTTP remote cache (`--remote_cache=https://…`) sends
-`/cas/<hash>` and `/ac/<hash>` requests, which do **not** match CoreLink's
-ByteStream scheme and currently return **404**. A stock-HTTP alias is being
-built and is not yet live. Until it ships, use a **REAPI/ByteStream-compatible
-client** pointed at the `/bazel/v2/<tenant>` endpoint above.
+:::tip Stock `bazel --remote_cache` works today — no REAPI client needed
+The **stock-HTTP alias** `https://corelink-api.humangr.com/bazel/cache` is live.
+It serves exactly what vanilla Bazel emits: `GET`/`PUT` on `/cas/<sha256>` and
+`/ac/<sha256>`, with no `:instance` segment and no `:size`. Your tenant is
+**not** in that URL — it is resolved from the PAT you pass in `--remote_header`.
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/cache
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_upload_local_results=true
+```
+
+Both surfaces are live and back onto the same per-tenant R2 blobs; use the
+`/bazel/v2` ByteStream config below if your client speaks REAPI.
 :::
 
 ## Prerequisites
 
 - `CORELINK_PAT` exported ([step 2](./02-first-pat)) and your tenant UUID.
-- A REAPI/ByteStream-compatible Bazel client.
+- Stock Bazel (for `/bazel/cache`) or a REAPI/ByteStream-compatible client
+  (for `/bazel/v2`). Either works.
 
 ## Reference configuration
 
