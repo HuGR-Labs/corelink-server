@@ -60,7 +60,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **A:** Soft-cap then notify, then negotiate. Concretely: at 80% of any cap we emit a webhook + email; at 100% we serve a `429 / overage-pending` for **TPS** (rate-limited, not refused — your build still completes, just slower) and continue serving **storage / egress** with the overage line appearing on the next invoice. We *do not* hard-fail builds in production tenants when caps are exceeded; we'd rather invoice you than break your inner loop. For Enterprise the overage line is governed by your order form; for Team it's metered at our standard list rate. We are happy to convert a recurring overage into a contractual tier upgrade with no penalty (see P5 — migration discount).
 
-**Sources:** SLO catalog (`docs.corelink.humangr.com/slo`); overage runbook (`specs/_runbooks/RB-BILLING-OVERAGE.md`); quickstart-faq Q8.
+**Sources:** SLO catalog (`specs/03_architecture/slo_catalog.md` — internal; no public SLO page is published today, `/slo` 404s); overage runbook (`specs/_runbooks/RB-BILLING-OVERAGE.md`); quickstart-faq Q8.
 
 ### P3 — Is BYOK a premium? How much more?
 
@@ -296,7 +296,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **A:** **p99 CAS GET latency target ≤ 300 ms** in-region (SLO `SLO-LAT-CAS-GET`, customer-tenant scope). For lighthouse customers we measure daily; representative steady-state runs are well below target (typical observed p99: **180–220 ms** depending on region and blob-size mix; the calculator at `corelink.humangr.com/calculator` exposes your projected value). Audit-append p99 target ≤ 500 ms. The fast path does *not* call your KMS — DEK is unwrapped at first read into the bounded 5-min in-memory cache and re-used until expiry. Cache-miss reads pay one KMS unwrap RTT (provider-specific; AWS / GCP / Azure / Vault all sub-100 ms p99 in practice).
 
-**Sources:** SLO catalog (`docs.corelink.humangr.com/slo`); `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#what-were-measuring-daily-automated`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`.
+**Sources:** SLO catalog (`specs/03_architecture/slo_catalog.md` — internal; no public SLO page is published today, `/slo` 404s); `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#what-were-measuring-daily-automated`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`.
 
 ### PF2 — What hit rates are realistic?
 

@@ -135,11 +135,13 @@ build:ci --remote_cache=https://corelink-api.humangr.com/bazel/cache
 build:ci --remote_header=Authorization=Bearer\ ${CORELINK_PAT}
 ```
 
-(Bazel doesn't natively support dual-write to two remote caches in one flag. Two practical patterns:
-1. **Directory mirror** — `corelink ci mirror --from /var/cache/bazel-remote --to corelink` does a one-shot, idempotent copy of your existing cache's on-disk directory into CoreLink CAS. (A live streaming sidecar that speaks the source cache's wire protocol is not built yet — point `--from` at the directory, not at the service.)
-2. **Build-event-protocol consumer** — point Bazel's `--bes_backend` at our endpoint; we ingest cache references asynchronously without touching the build's critical path.
+(Bazel doesn't natively support dual-write to two remote caches in one flag. One practical pattern today:
 
-Your Customer Success engineer will pick the right one with you on the D+3 scoping call.)
+1. **Directory mirror** — `corelink ci mirror --from /var/cache/bazel-remote --to corelink` does a one-shot, idempotent copy of your existing cache's on-disk directory into CoreLink CAS. (A live streaming sidecar that speaks the source cache's wire protocol is not built yet — point `--from` at the directory, not at the service.)
+
+**Build-event-protocol (BES) ingest — not available today.** `--bes_backend` is a **gRPC** endpoint (Bazel publishes the build event stream over the Build Event Service protocol), and CoreLink has no gRPC ingress — same topology reason as Buck2 and Pants below: the edge runs on Cloudflare Workers, which implement no HTTP trailers, so native gRPC cannot work. There is no address to point `--bes_backend` at, and we are not going to hand you one that fails to connect. Our own sales material already treats BES ingest as roadmap (`marketing/sales/OBJECTION-HANDLING.md` Obj-23, `marketing/sales/FAQ-MASTER.md` M5); this playbook now agrees with it.
+
+Your Customer Success engineer will walk the directory mirror with you on the D+3 scoping call.)
 
 **Buck2 — not supported today.** Buck2's cache/RE client (`[buck2_re_client]` `engine_address` / `cas_address` / `action_cache_address`) connects over **gRPC**, and CoreLink exposes no gRPC endpoint — so there is no Buck2 configuration that works, and we won't hand you one that fails to connect. (Buck2 has no plain-HTTP cache backend either; the upstream request for one was closed `wontfix` — facebook/buck2#459.) If Buck2 is your build tool, say so on the scoping call and we'll tell you straight whether the pilot makes sense.
 

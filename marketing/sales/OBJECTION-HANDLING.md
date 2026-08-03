@@ -275,7 +275,7 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 
 - **Why it matters:** procurement / finance trying to de-risk.
 - **Our position:** we will not promise a specific percentage hit-rate improvement or specific dollar savings. We will promise the SLO catalog, sustained against 30 days of staging, and let your measurements do the rest.
-- **Evidence:** `BLOG-POSTS/05-fast-cache-hit-economics.md#what-corelink-will-not-promise`. SLO catalog at `docs.corelink.humangr.com/slo`. 14-day shadow period (no commitment) lets you measure.
+- **Evidence:** `BLOG-POSTS/05-fast-cache-hit-economics.md#what-corelink-will-not-promise`. SLO catalog at `specs/03_architecture/slo_catalog.md` (internal — there is no published public SLO page today; share the numbers from the catalog, don't send a link). 14-day shadow period (no commitment) lets you measure.
 - **Counter-question:** "Would a 14-day shadow period with no commitment, where you measure green-build wall-clock time against your existing cache, satisfy the ROI gate? If the measurement comes back unconvincing, you don't sign."
 
 ### Obj-29 — "We can build this in-house."

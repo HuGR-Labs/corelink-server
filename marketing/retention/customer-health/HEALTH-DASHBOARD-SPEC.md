@@ -31,7 +31,7 @@ tags:
 > **Companions:**
 > - `marketing/launch/SUPPORT-DASHBOARD-SPEC.md` — different surface (support team, ticket ops). Two dashboards co-exist; this one is **retention-focused**.
 > - `marketing/launch/DAY-1-DASHBOARD-SPEC.md` — launch war-room only.
-> **Hosting:** Grafana (existing instance, dedicated folder `CS / Retention`) consuming from Postgres read-replica + ticket queue + billing service. Embed at `grafana.corelink.humangr.com/cs/retention`. Same auth/RBAC as other internal Grafana dashboards.
+> **Hosting:** Grafana, dedicated folder `CS / Retention`, consuming from the tenant datastore + ticket queue + billing service. ⚠️ **The host is not provisioned.** `grafana.corelink.humangr.com` is NXDOMAIN and no hosted CoreLink Grafana instance is reachable under `humangr.com` (verified 2026-08-02); the repo has dashboard JSON (`dashboards/grafana/*.json`, internal SLO/on-call) but no instance serving it, and Grafana Cloud appears only as a customer-configurable *export* target (`CORELINK_GRAFANA_*`, `crates/corelink-container/src/routes/otel_layer.rs`). Standing up the instance and fixing the embed URL is part of building this dashboard — this spec deliberately does not print an address that resolves to nothing. Same auth/RBAC as other internal dashboards once it exists.
 > **Hard rule:** **action queue panel MUST be in the top half of the screen above the fold**. CSMs have to act, not just observe.
 
 ---
@@ -310,7 +310,7 @@ Action queue (untouched > 7d): 3 tenants
 NPS aggregate (rolling 90d): +27 (Δ +3 WoW)
   Detractors this week: 2 (1 post-incident, 1 quarterly)
 
-Full dashboard: grafana.corelink.humangr.com/cs/retention
+Full dashboard: <Grafana host not provisioned — see Hosting note above>
 ```
 
 **Quarterly board export:** CSV of all tenant scores, tiers, churn events, NPS trends. Owned by VPMkt; emailed to board ≤ 5 business days after quarter end.
