@@ -2,18 +2,53 @@ version: 2
 # Dependabot weekly grouped PRs — WI-S12-004 §6.1.4 (ST-004) + R-PREP refinement.
 #
 # Enforces: CAP-SUPPLY-004 Dependabot weekly cadence (weekly PER ECOSYSTEM).
-# Schedule: weekly, STAGGERED across Mon–Thu 08:00 BRT (America/Sao_Paulo) so the
+# Schedule: weekly, STAGGERED across the week 04:00 BRT (America/Sao_Paulo) so the
 #   self-hosted runner fleet (5 macOS runners = one Mac) never absorbs every
 #   ecosystem's CI in a single burst (root cause of a near-OOM on 2026-06-02 when
 #   ~9 grouped dep PRs landed at once). Heaviest lanes isolated on their own day:
 #     Mon — cargo (full Rust rebuild + proptest-density-gate) + github-actions
-#     Tue — npm /apps/admin-ui (Next build + Lighthouse)
+#     Tue — npm /apps/admin-ui (Next build + Lighthouse + Playwright x3)
 #     Wed — npm /apps/docs + npm /crates/corelink-wasm
-#     Thu — npm / (root tooling) + pip / + pip /tools/sdks/python
+#     Thu — npm / (Cloudflare Worker toolchain) + pip / + pip /tools/sdks/python
+#     Fri — npm /worker (04:00) + npm /apps/signup-worker (06:00)
+#     Sat — npm /apps/analytics-worker
+#     Sun — npm /apps/get-corelink-worker
 #   Each ecosystem stays weekly (CAP-SUPPLY-004 intact). See ADR-S12-045 §Schedule.
 #   Security-updates are NOT bound to the staggered day — opened immediately per
 #   advisory (see per-ecosystem policy below).
 # Rate limit: per-ecosystem (DoS protection — §26 security STRIDE delta).
+#
+# ---------------------------------------------------------------------------
+# WORKSPACE OWNERSHIP MAP (pnpm-workspace.yaml has SIX members; the npm entries
+# below must cover all six, with NO member owned by two entries).
+#
+#   pnpm-workspace.yaml member      owning entry
+#   ------------------------------  ---------------------------------------
+#   apps/admin-ui                   npm /apps/admin-ui          (Tue)
+#   apps/docs                       npm /apps/docs              (Wed)
+#   worker                          npm /worker                 (Fri 04:00)
+#   apps/signup-worker              npm /apps/signup-worker     (Fri 06:00)
+#   apps/analytics-worker           npm /apps/analytics-worker  (Sat)
+#   apps/get-corelink-worker        npm /apps/get-corelink-worker (Sun)
+#   (not a workspace member)        npm /crates/corelink-wasm   (Wed)
+#
+# The npm `/` entry is NOT a seventh package lane. Dependabot follows
+# pnpm-workspace.yaml from the root, so an unrestricted root entry re-scans
+# EVERY member — empirically proven by #802/#919, which rewrote all six member
+# package.json files from a root `package.json` whose only devDependency is
+# `wrangler` (#919 = one PR with 35 updates; apps/admin-ui and apps/docs were
+# therefore covered TWICE). The root entry is now `allow`-restricted to the
+# Cloudflare Worker toolchain and owns it workspace-wide, so wrangler /
+# miniflare / @cloudflare/* stay in lockstep across all four Worker packages
+# in a single small PR. The four Worker entries `ignore` those same three
+# patterns so no dependency is proposed by two lanes.
+#
+# `allow` (not just group `patterns`) is load-bearing: group patterns only
+# decide BATCHING. A dependency that matches no group is still opened as its
+# OWN PR, so `patterns` alone would have converted #919's single 35-update PR
+# into a stream of individual PRs — the opposite of the intent. `allow`
+# restricts the update universe itself.
+# ---------------------------------------------------------------------------
 #
 # Per-ecosystem policy:
 #   - security-updates: NEVER grouped. Always opened as separate PRs so the
@@ -49,10 +84,55 @@ updates:
       non-security-minor-patch:
         applies-to: version-updates
         update-types: ["patch", "minor"]
+      # Crypto / auth hot-path majors — SPLIT OUT of `non-security-major`.
+      #
+      # Why: these majors nearly always need call-site adaptation before they
+      # can merge (jsonwebtoken 10→11 needs a fresh RS256 perf baseline;
+      # password-hash 0.5→0.6 renames `Salt`/`SaltString`; the rand 0.8→0.9
+      # and getrandom 0.2→0.3 lines change `RngCore`/feature names). Bundled
+      # with everything else, ONE held blocker froze the whole batch — #915
+      # parked `base64` 0.23 and `rusqlite` 0.40 behind a jsonwebtoken 11 hold
+      # they have nothing to do with. Splitting lets the innocent majors land.
+      #
+      # Patterns verified against Cargo.lock (all present at the versions
+      # below) and the workspace manifests:
+      #   jsonwebtoken 10.4.0 (4 manifests)   argon2 0.5.3 (3 manifests)
+      #   password-hash 0.5.0 (3 manifests)   rand 0.8.6 (28 manifests)
+      #   rand_core 0.6.4, rand_chacha 0.3.1  getrandom 0.2.17 (4 manifests)
+      #   rustls 0.23.42, rustls-webpki 0.103.13, rustls-native-certs 0.8.4
+      #   ring 0.17.14 (transitive-only today; listed so a future direct dep
+      #   or a lockfile-level major lands in this lane, not the generic one)
+      # `rand_*` covers rand_core/rand_chacha; `rustls*` covers the three
+      # rustls-* crates. `rustls-pemfile` is NOT in Cargo.lock — omitted.
+      #
+      # MUST stay ABOVE `non-security-major`: Dependabot assigns a dependency
+      # to the FIRST group it matches. `non-security-major` also carries the
+      # mirrored `exclude-patterns` so the split is order-independent.
+      crypto-auth-major:
+        applies-to: version-updates
+        update-types: ["major"]
+        patterns:
+          - "jsonwebtoken"
+          - "argon2"
+          - "password-hash"
+          - "rand"
+          - "rand_*"
+          - "getrandom"
+          - "ring"
+          - "rustls*"
       # Non-security major: batched weekly (manual review — never auto-merged).
       non-security-major:
         applies-to: version-updates
         update-types: ["major"]
+        exclude-patterns:
+          - "jsonwebtoken"
+          - "argon2"
+          - "password-hash"
+          - "rand"
+          - "rand_*"
+          - "getrandom"
+          - "ring"
+          - "rustls*"
       # NOTE: NO security-updates group. Dependabot opens one PR per advisory
       # so the auto-merge gate scopes to a single CVE per merge event.
     labels:
@@ -155,7 +235,16 @@ updates:
     versioning-strategy: increase
 
   # ---------------------------------------------------------------------------
-  # npm — root tooling (lint/test scripts).
+  # npm — Cloudflare Worker toolchain, workspace-wide.
+  #
+  # Scope: `wrangler`, `miniflare`, `@cloudflare/*` ONLY. Root package.json has
+  # exactly ONE devDependency (`wrangler`); everything else this lane used to
+  # emit came from pnpm workspace expansion into the six members (see the
+  # WORKSPACE OWNERSHIP MAP at the top of this file). `allow` restricts the
+  # update universe; the group `patterns` then batch what survives. The four
+  # Worker package lanes `ignore` these same three patterns, so the Cloudflare
+  # toolchain is proposed by exactly one lane and stays version-locked across
+  # root + worker + the three apps/*-worker packages in a single PR.
   # ---------------------------------------------------------------------------
   - package-ecosystem: npm
     directory: "/"
@@ -165,17 +254,175 @@ updates:
       time: "04:00"
       timezone: America/Sao_Paulo
     open-pull-requests-limit: 3
+    allow:
+      - dependency-name: "wrangler"
+      - dependency-name: "miniflare"
+      - dependency-name: "@cloudflare/*"
     groups:
       root-tooling-minor-patch:
         applies-to: version-updates
         update-types: ["patch", "minor"]
+        patterns:
+          - "wrangler"
+          - "miniflare"
+          - "@cloudflare/*"
       root-tooling-major:
+        applies-to: version-updates
+        update-types: ["major"]
+        patterns:
+          - "wrangler"
+          - "miniflare"
+          - "@cloudflare/*"
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "tooling"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "HumanGuardrail/security"
+    rebase-strategy: disabled
+    versioning-strategy: increase
+
+  # ---------------------------------------------------------------------------
+  # npm — worker/ (@corelink/worker — the CF Worker edge plane).
+  # pnpm-workspace.yaml member. Was covered ONLY by the unrestricted root lane
+  # (#802/#919 rewrote worker/package.json); now owned here.
+  # Cloudflare toolchain (wrangler/miniflare/@cloudflare/*) is owned by the
+  # npm `/` lane above — ignored here so no dependency has two owners.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/worker"
+    schedule:
+      interval: weekly
+      day: friday
+      time: "04:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "wrangler"
+      - dependency-name: "miniflare"
+      - dependency-name: "@cloudflare/*"
+    groups:
+      worker-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      worker-major:
         applies-to: version-updates
         update-types: ["major"]
     labels:
       - "dependencies"
       - "javascript"
-      - "tooling"
+      - "worker"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "HumanGuardrail/security"
+    rebase-strategy: disabled
+    versioning-strategy: increase
+
+  # ---------------------------------------------------------------------------
+  # npm — apps/signup-worker (the AUTHORITATIVE live Stripe webhook handler).
+  # pnpm-workspace.yaml member; previously only reached by the root lane.
+  # Own day/time slot (Fri 06:00) — 2h after worker/ so the two Friday lanes
+  # never open together.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/apps/signup-worker"
+    schedule:
+      interval: weekly
+      day: friday
+      time: "06:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "wrangler"
+      - dependency-name: "miniflare"
+      - dependency-name: "@cloudflare/*"
+    groups:
+      signup-worker-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      signup-worker-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "worker"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "HumanGuardrail/security"
+    rebase-strategy: disabled
+    versioning-strategy: increase
+
+  # ---------------------------------------------------------------------------
+  # npm — apps/analytics-worker.
+  # pnpm-workspace.yaml member; previously only reached by the root lane.
+  # Saturday: the Mac fleet is idle (no human merges), and this lane is tiny.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/apps/analytics-worker"
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "04:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "wrangler"
+      - dependency-name: "miniflare"
+      - dependency-name: "@cloudflare/*"
+    groups:
+      analytics-worker-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      analytics-worker-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "worker"
+    commit-message:
+      prefix: "deps"
+      include: scope
+    reviewers:
+      - "HumanGuardrail/security"
+    rebase-strategy: disabled
+    versioning-strategy: increase
+
+  # ---------------------------------------------------------------------------
+  # npm — apps/get-corelink-worker (serves the public install.sh).
+  # pnpm-workspace.yaml member; previously only reached by the root lane.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/apps/get-corelink-worker"
+    schedule:
+      interval: weekly
+      day: sunday
+      time: "04:00"
+      timezone: America/Sao_Paulo
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "wrangler"
+      - dependency-name: "miniflare"
+      - dependency-name: "@cloudflare/*"
+    groups:
+      get-corelink-worker-minor-patch:
+        applies-to: version-updates
+        update-types: ["patch", "minor"]
+      get-corelink-worker-major:
+        applies-to: version-updates
+        update-types: ["major"]
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "worker"
     commit-message:
       prefix: "deps"
       include: scope
