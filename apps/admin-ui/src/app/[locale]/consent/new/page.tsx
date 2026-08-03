@@ -6,8 +6,14 @@
 // in this WI; the screenshot evidence PNG is the only payload leaving the
 // browser and it is sent only to the trusted backend `/v1/consent/grant`.
 
+// ⛔ RETIRED — this page answers 404. It was the ONE anonymous-reachable
+// screen of the surface (public per `lib/route-matcher.ts`), and it solicited
+// a GDPR/LGPD consent record — against STUB notice text, see below — that no
+// backend ever stored. Rationale + one-line reversal: `../retired.ts`.
+
 import type { Metadata } from "next";
 import { ConsentCaptureFlow } from "@/components/consent/ConsentCaptureFlow";
+import { assertConsentUiEnabled } from "../retired";
 
 interface PageProps {
   params: Promise<{ locale: string }>;
@@ -36,6 +42,7 @@ const STUB_NOTICE_VERSION = "1.0.0";
 const STUB_SUBPROCESSORS = ["Cloudflare", "Stripe", "Clerk"];
 
 export default async function ConsentNewPage({ params }: PageProps) {
+  assertConsentUiEnabled();
   const { locale } = await params;
   return (
     <ConsentCaptureFlow

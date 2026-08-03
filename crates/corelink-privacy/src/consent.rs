@@ -1,6 +1,29 @@
 //! `corelink-privacy-consent-ledger` — Consent Ledger proof-of-informed
 //! regulatory cornerstone (WI-S11-003).
 //!
+//! # ⛔ NOT WIRED — and the wire-up shape is CONTESTED (verified 2026-08-03)
+//!
+//! Nothing below is reachable in production. `corelink-privacy` is not a
+//! dependency of `corelink-container` or of any Worker, so this consent
+//! logic is not compiled into anything deployed; no `.route("…")` mount in
+//! `crates/` and no branch in `worker/src/index.ts` serves any
+//! `/v1/consent*` path. (A live `401` from `corelink-api.humangr.com` is
+//! NOT evidence otherwise — it 401s every `/v1/*` path, known or not.)
+//!
+//! ⚠️ **Before wiring these traits to routes, read the ⛔ CONSENT block in
+//! `tools/openapi/src/lib.rs`.** The endpoint shape named in the paragraph
+//! immediately below (`POST /v1/consent/<purpose>`, `DELETE
+//! /v1/consent/<purpose>`, `GET /v1/consent`) is what THIS crate and the
+//! canonical OpenAPI spec design — but the admin-UI client that is supposed
+//! to call it (`apps/admin-ui/src/lib/consent-api.ts`) calls a DIFFERENT
+//! surface (`POST /v1/consent/grant`, `POST /v1/consent/{id}/withdraw`,
+//! `GET /v1/consent/active`, `GET /v1/consent/history`, `GET
+//! /v1/subprocessors`), keying revocation by an opaque `consent_id` rather
+//! than by purpose. The two must be reconciled — pick one and change the
+//! other — or the backend will ship a surface no client calls. The admin-UI
+//! screens are RETIRED (404) until then; see
+//! `apps/admin-ui/src/app/[locale]/consent/retired.ts`.
+//!
 //! # What this crate ships
 //!
 //! Per the corelink autonomous execution charter

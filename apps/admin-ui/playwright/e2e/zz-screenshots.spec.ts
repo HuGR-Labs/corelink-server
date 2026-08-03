@@ -29,11 +29,12 @@ const SCREENS: { path: string; auth: Auth; name: string }[] = [
   { path: "/en/admin/tenants", auth: "admin", name: "22-admin-tenants" },
   // Onboarding / activation
   { path: "/en/team/invite", auth: "existingTenant", name: "32-team-invite" },
-  // DSR / consent
+  // DSR
   { path: "/en/dsr", auth: "existingTenant", name: "40-dsr-landing" },
   { path: "/en/dsr/status", auth: "existingTenant", name: "41-dsr-status" },
-  { path: "/en/consent/new", auth: "existingTenant", name: "42-consent-new" },
-  { path: "/en/consent", auth: "existingTenant", name: "43-consent-dashboard" },
+  // `/en/consent/new` (42) + `/en/consent` (43) removed: the consent surface is
+  // RETIRED and answers 404 (`src/app/[locale]/consent/retired.ts`), so these
+  // captured a 404 page, not a screen. Restore when `CONSENT_UI_RETIRED` flips.
   // Public / legal
   { path: "/en/pricing", auth: "none", name: "50-pricing" },
   { path: "/en/privacy", auth: "none", name: "51-privacy" },

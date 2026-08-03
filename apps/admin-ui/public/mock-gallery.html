@@ -64,8 +64,11 @@
     "Onboarding / activation": [
       ["/en/welcome","Welcome (PAT reveal)"],["/en/upgrade","Upgrade"],["/en/upgraded","Upgraded"],["/en/team/invite","Team invite (DPA)"]
     ],
-    "DSR / consent": [
-      ["/en/dsr","DSR landing"],["/en/dsr/status","DSR status"],["/en/consent/new","Consent (new)"],["/en/consent","Consent dashboard"]
+    "DSR": [
+      /* Consent (new) + Consent dashboard removed: the consent surface is
+         RETIRED and answers 404 (src/app/[locale]/consent/retired.ts).
+         Restore these two entries when CONSENT_UI_RETIRED flips back. */
+      ["/en/dsr","DSR landing"],["/en/dsr/status","DSR status"]
     ],
     "Public / legal": [
       ["/en/pricing","Pricing"],["/en/privacy","Privacy"],["/en/privacy/sub-processors","Sub-processors"],
