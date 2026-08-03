@@ -38,7 +38,10 @@ on:
       - 'scripts/rb_obs_cardinality_001_dry_run.sh'
       - 'dashboards/grafana/DASH-*.json'
       - 'dashboards/alerts/dash-slo-multi-burn.yml'
-      - 'specs/04_sprints/S09/**'
+      # Sealed sprints were archived to `specs/04_sprints/_sealed/` by
+      # 282a41f0; this was `specs/04_sprints/S09/**` until 2026-08-03 and had
+      # matched zero files ever since.
+      - 'specs/04_sprints/_sealed/S09/**'
       - '.github/workflows/s09-ship-gate.yml'
   # Cadence: daily -> WEEKLY (CI cost diet 2026-08-01). The `pull_request`
   # paths: lane above still gates EVERY diff that can regress this sprint's

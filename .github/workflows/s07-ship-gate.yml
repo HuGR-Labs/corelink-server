@@ -33,7 +33,10 @@ on:
       - 'scripts/rb_fm_305_dry_run.sh'
       - 'dashboards/grafana/DASH-DEDUP.json'
       - 'dashboards/alerts/dash-dedup-alerts.yml'
-      - 'specs/04_sprints/S07/**'
+      # Sealed sprints were archived to `specs/04_sprints/_sealed/` by
+      # 282a41f0; this was `specs/04_sprints/S07/**` until 2026-08-03 and had
+      # matched zero files ever since.
+      - 'specs/04_sprints/_sealed/S07/**'
       - '.github/workflows/s07-ship-gate.yml'
   # Cadence: daily -> WEEKLY (CI cost diet 2026-08-01). The `pull_request`
   # paths: lane above still gates EVERY diff that can regress this sprint's
