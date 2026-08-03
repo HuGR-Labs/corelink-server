@@ -1,4 +1,4 @@
-//! Canonical [`UsageEvent`] CloudEvents 1.0 envelope + 7-element
+//! Canonical [`UsageEvent`] CloudEvents 1.0 envelope + 8-element
 //! `UsageEventKind` taxonomy + BLAKE3-derived `idem_key` slot.
 //!
 //! ## Why CloudEvents 1.0 (CNCF spec)
@@ -85,10 +85,13 @@ pub const USAGE_EVENT_TYPE: &str = "corelink.billing.usage.recorded";
 /// `corelink_audit_chain::GENESIS_PREV_HASH` convention.
 pub const GENESIS_IDEM_KEY: [u8; 32] = [0u8; 32];
 
-/// Canonical 7-element usage-event kind taxonomy per WI-S10-001 §1
+/// Canonical 8-element usage-event kind taxonomy per WI-S10-001 §1
 /// (StorageBytesHourly / EgressBytes / AcLookup / CasGet / CasPut /
 /// ReplayRequest) + the ASK-2 runner-billing addition
-/// (RunnerSlotSeconds — NON-Stripe-billable, like ReplayRequest).
+/// (RunnerSlotSeconds — NON-Stripe-billable, like ReplayRequest) + the
+/// 2026-08-02 runner-overage addition (RunnerVcpuSeconds — the BILLABLE
+/// runner compute unit; owner-ratified the same day, superseding the
+/// "concurrency priced, minutes unlimited" model).
 ///
 /// `#[non_exhaustive]` so follow-on WIs (S-13 admin / S-19 Stripe) can
 /// extend the taxonomy additively without breaking downstream Stripe /
@@ -130,16 +133,52 @@ pub enum UsageEventKind {
     ReplayRequest,
     /// `runner_slot_seconds` — per-lease runner wall-clock occupancy in
     /// SLOT-SECONDS, pushed by the corelink-runners fabric per finished
-    /// lease (ASK-2 runner billing usage-push ingest). It is
-    /// **NON-Stripe-billable** — treated like [`Self::ReplayRequest`]: it
-    /// feeds the dashboard / reconciliation surface only and is NEVER
-    /// metered to a Stripe SKU. This is the owner-ratified "concurrency
-    /// priced, minutes unlimited" runner pricing model — the billable
-    /// runner axis is the per-tenant CONCURRENCY cap (the
-    /// `runners_entitlement.max_concurrency` entitlement, NOT a per-minute
-    /// meter), so the minutes a tenant burns are unmetered for billing and
-    /// recorded here only for capacity / cost reconciliation.
+    /// lease (ASK-2 runner billing usage-push ingest).
+    ///
+    /// **NON-Stripe-billable, and it STAYS that way.** This is capacity /
+    /// cost-reconciliation telemetry: how long a slot was held, independent of
+    /// how big the box was. It is deliberately NOT the billing unit — see
+    /// [`Self::RunnerVcpuSeconds`], which supersedes it for money.
+    ///
+    /// ⚠️ HISTORICAL NOTE (2026-08-02). This variant used to carry the sentence
+    /// *"the owner-ratified 'concurrency priced, minutes unlimited' runner
+    /// pricing model … the minutes a tenant burns are unmetered for billing"*.
+    /// **That model was superseded by the owner the same day**: minutes above the
+    /// tier's included `runners_entitlement.max_vcpu_h` are now billed as
+    /// overage. The sentence is preserved here, struck, rather than deleted —
+    /// a pricing model that lived in a doc-comment is exactly the kind of
+    /// decision that gets silently re-derived from stale code by the next
+    /// reader. Concurrency is still an entitlement axis; it is no longer the
+    /// ONLY billable one.
     RunnerSlotSeconds,
+    /// `runner_vcpu_seconds` — the BILLABLE runner compute unit: wall-clock
+    /// seconds a runner box was ALLOCATED, multiplied by that box's vCPU count.
+    ///
+    /// ## Why vCPU-seconds and not slot-seconds
+    ///
+    /// The entitlement this meters against is `runners_entitlement.max_vcpu_h`,
+    /// denominated in vCPU-HOURS. A slot-second is not a vCPU-second: on the
+    /// current 4-vCPU runner box they differ by exactly 4×, so metering
+    /// slot-seconds against a vCPU-hour ceiling under-bills by 4× — silently,
+    /// because both numbers look like "seconds".
+    ///
+    /// ## Why the emitter multiplies (and this carries no size field)
+    ///
+    /// The multiplication happens at the emitter, which is the only component
+    /// that KNOWS the box it just tore down. That keeps the wire shape frozen
+    /// AND makes the unit correct-by-construction when the fleet stops being
+    /// one size: an 8-vCPU or 64-GiB SKU multiplies by its own vCPU count with
+    /// no change here, no migration, and no per-kind conversion table that
+    /// could drift from the hardware. A fixed ×4 anywhere in this path would
+    /// under-bill every future box the day it ships.
+    ///
+    /// ## Why ALLOCATED wall-clock, not CPU time
+    ///
+    /// Cloudflare bills memory + disk by ALLOCATION (wall-clock), not by CPU
+    /// consumed — measured on a real run at 490 allocated-seconds vs 170
+    /// cpu-seconds. Metering `cpuTimeSec` would therefore under-count COGS by
+    /// ~3× and break the loss-proof floor the pricing ladder assumes.
+    RunnerVcpuSeconds,
 }
 
 impl UsageEventKind {
@@ -155,6 +194,7 @@ impl UsageEventKind {
             Self::CasPut => "cas_put",
             Self::ReplayRequest => "replay_request",
             Self::RunnerSlotSeconds => "runner_slot_seconds",
+            Self::RunnerVcpuSeconds => "runner_vcpu_seconds",
         }
     }
 
@@ -169,7 +209,8 @@ impl UsageEventKind {
             | Self::CasGet
             | Self::CasPut
             | Self::ReplayRequest
-            | Self::RunnerSlotSeconds => UsageUnit::OpCount,
+            | Self::RunnerSlotSeconds
+            | Self::RunnerVcpuSeconds => UsageUnit::OpCount,
         }
     }
 }
@@ -197,6 +238,7 @@ impl<'de> Deserialize<'de> for UsageEventKind {
             "cas_put" => Ok(Self::CasPut),
             "replay_request" => Ok(Self::ReplayRequest),
             "runner_slot_seconds" => Ok(Self::RunnerSlotSeconds),
+            "runner_vcpu_seconds" => Ok(Self::RunnerVcpuSeconds),
             other => Err(serde::de::Error::custom(format!(
                 "unknown UsageEventKind: {other}"
             ))),
@@ -204,10 +246,10 @@ impl<'de> Deserialize<'de> for UsageEventKind {
     }
 }
 
-/// Canonical 7-element `UsageEventKind` list. Pinned for cardinality
+/// Canonical 8-element `UsageEventKind` list. Pinned for cardinality
 /// estimate + cross-component regression tests.
 #[must_use]
-pub const fn canonical_usage_event_kinds() -> &'static [UsageEventKind; 7] {
+pub const fn canonical_usage_event_kinds() -> &'static [UsageEventKind; 8] {
     &[
         UsageEventKind::StorageBytesHourly,
         UsageEventKind::EgressBytes,
@@ -216,6 +258,7 @@ pub const fn canonical_usage_event_kinds() -> &'static [UsageEventKind; 7] {
         UsageEventKind::CasPut,
         UsageEventKind::ReplayRequest,
         UsageEventKind::RunnerSlotSeconds,
+        UsageEventKind::RunnerVcpuSeconds,
     ]
 }
 
@@ -611,10 +654,18 @@ mod tests {
         assert_eq!(GENESIS_IDEM_KEY, [0u8; 32]);
     }
 
+    /// Cardinality pin. It is SUPPOSED to fail when a kind is added — adding one
+    /// requires Finance + Compliance sign-off (WI-S10-001 §6.1.6), and a silent
+    /// taxonomy growth is exactly what that rule exists to prevent. Bumping this
+    /// number is the deliberate act that records the sign-off happened.
+    ///
+    /// 7 → 8 on 2026-08-02: `RunnerVcpuSeconds`, the billable runner compute
+    /// unit, added when the owner superseded the "concurrency priced, minutes
+    /// unlimited" model with metered overage above `max_vcpu_h`.
     #[test]
-    fn canonical_event_kinds_count_is_seven() {
+    fn canonical_event_kinds_count_is_eight() {
         let v = canonical_usage_event_kinds();
-        assert_eq!(v.len(), 7);
+        assert_eq!(v.len(), 8);
     }
 
     #[test]
@@ -624,7 +675,7 @@ mod tests {
         for k in v {
             assert!(set.insert(k.as_str()));
         }
-        assert_eq!(set.len(), 7);
+        assert_eq!(set.len(), 8);
     }
 
     #[test]
@@ -641,6 +692,26 @@ mod tests {
         assert_eq!(
             UsageEventKind::RunnerSlotSeconds.as_str(),
             "runner_slot_seconds"
+        );
+        assert_eq!(
+            UsageEventKind::RunnerVcpuSeconds.as_str(),
+            "runner_vcpu_seconds"
+        );
+    }
+
+    /// The two runner kinds are DISTINCT and must never be conflated: one is
+    /// capacity telemetry (slot occupancy), the other is money (vCPU-seconds).
+    /// They differ by the box's vCPU count — 4× on today's fleet — so a reader
+    /// who treats them as synonyms under-bills by exactly that factor.
+    #[test]
+    fn the_two_runner_kinds_are_distinct() {
+        assert_ne!(
+            UsageEventKind::RunnerSlotSeconds,
+            UsageEventKind::RunnerVcpuSeconds
+        );
+        assert_ne!(
+            UsageEventKind::RunnerSlotSeconds.as_str(),
+            UsageEventKind::RunnerVcpuSeconds.as_str()
         );
     }
 
