@@ -29,6 +29,85 @@ regex = '''(?i)(CORELINK_[A-Z_]*AUTH_KEY|PAT_SIGNING_KEY[A-Z_]*)\s*[:=]\s*["']?(
 secretGroup = 2
 keywords = ["auth_key", "signing_key", "CORELINK_", "PAT_SIGNING"]
 
+# ── Upstream rules re-declared to fix a DETECTION defect ─────────────────────
+# gitleaks merges an extending config into the default ruleset per rule id:
+# declaring a `regex` REPLACES the default pattern for that id; declaring only
+# `[[rules.allowlists]]` LEAVES the default pattern, entropy, keywords and the
+# ~1.3k upstream stopwords in force and merely ADDS a predicate. Both forms are
+# used below. Nothing here is keyed on a path, a commit or a file — every
+# predicate is a property of the VALUE, so it holds repo-wide and forever.
+
+[[rules]]
+id = "curl-auth-user"
+description = "curl basic-auth credential (-u/--user) whose value is a LITERAL, not a shell/env expansion"
+# Same pattern as gitleaks 8.30.1 upstream, with ONE change: the USER half of
+# `user:pass` may no longer begin with `$` nor contain `{`/`}`.
+#
+# WHY. `-u "${STRIPE_SECRET_KEY}:"` is a reference to a secret, not a secret —
+# the bytes committed are the variable's NAME. Upstream already encodes exactly
+# this principle, but only for the PASSWORD half: its own allowlist carries
+#     ['"]?[^:]+['"]?:['"]?\$(?:\d|\w+|\{(?:\d|\w+)})['"]?      →  user:$VAR
+# and has no mirror for `$VAR:`, so the very common Stripe/REST idiom
+# `-u "${KEY}:"` (empty password, credential in the user field) fires every
+# time. This completes the upstream predicate symmetrically.
+#
+# It cannot blind a real secret: a committed credential is by definition
+# literal bytes, and literal bytes are exactly what still matches. Only a value
+# that STARTS with `$` (i.e. is an indirection) is dropped — `-u "sk_live_…:"`,
+# `-u "user:pass"` and `-u "AKIA…:"` all still fire (proved by the planted set).
+regex = '''\bcurl\b(?:.*|.*(?:[\r\n]{1,2}.*){1,5})[ \t\n\r](?:-u|--user)(?:=|[ \t]{0,5})("(:[^"]{3,}|[^:"${}][^:"{}]{2,}:|[^:"${}][^:"{}]{2,}:[^"]{3,})"|'([^:'${}][^:'{}]{2,}:[^']{3,})'|((?:"[^"]{3,}"|'[^']{3,}'|[\w@.-]+):(?:"[^"]{3,}"|'[^']{3,}'|[\w${}@.-]+)))(?:\s|\z)'''
+entropy = 2
+keywords = ["curl"]
+# Upstream's own allowlist for this rule, carried over verbatim so redeclaring
+# the regex does not silently drop it.
+[[rules.allowlists]]
+regexes = [
+  '''[^:]+:(?:change(?:it|me)|pass(?:word)?|pwd|test|token|\*+|x+)''',
+  '''['"]?<[^>]+>['"]?:['"]?<[^>]+>|<[^:]+:[^>]+>['"]?''',
+  '''[^:]+:\[[^]]+]''',
+  '''['"]?[^:]+['"]?:['"]?\$(?:\d|\w+|\{(?:\d|\w+)})['"]?''',
+  '''\$\([^)]+\):\$\([^)]+\)''',
+  '''['"]?\$?{{[^}]+}}['"]?:['"]?\$?{{[^}]+}}['"]?''',
+]
+
+[[rules]]
+id = "curl-auth-header"
+description = "curl -H auth token that is a COMPLETE credential (not an elided one)"
+# Same pattern as gitleaks 8.30.1 upstream, with ONE change: every token class
+# `[\w=~@.+/-]{8,}` becomes `[\w=~@.+/-]{7,}[\w=~@+/-]`, i.e. the LAST character
+# of the token may not be `.`.
+#
+# WHY. `Authorization: Bearer corelink_pat_...` is prose showing the SHAPE of a
+# header; the value has been elided with an ellipsis. A token that terminates in
+# `.` is by construction incomplete — no bearer token, JWT, opaque token or
+# base64url value ends in a period (a JWT's dots are interior separators). The
+# minimum length is unchanged at 8, and dots INSIDE a token are still accepted,
+# so real three-segment JWTs and dotted opaque tokens keep firing.
+regex = '''\bcurl\b(?:.*?|.*?(?:[\r\n]{1,2}.*?){1,5})[ \t\n\r](?:-H|--header)(?:=|[ \t]{0,5})(?:"(?i)(?:Authorization:[ \t]{0,5}(?:Basic[ \t]([a-z0-9+/]{8,}={0,3})|(?:Bearer|(?:Api-)?Token)[ \t]([\w=~@.+/-]{7,}[\w=~@+/-])|([\w=~@.+/-]{7,}[\w=~@+/-]))|(?:(?:X-(?:[a-z]+-)?)?(?:Api-?)?(?:Key|Token)):[ \t]{0,5}([\w=~@.+/-]{7,}[\w=~@+/-]))"|'(?i)(?:Authorization:[ \t]{0,5}(?:Basic[ \t]([a-z0-9+/]{8,}={0,3})|(?:Bearer|(?:Api-)?Token)[ \t]([\w=~@.+/-]{7,}[\w=~@+/-])|([\w=~@.+/-]{7,}[\w=~@+/-]))|(?:(?:X-(?:[a-z]+-)?)?(?:Api-?)?(?:Key|Token)):[ \t]{0,5}([\w=~@.+/-]{7,}[\w=~@+/-]))')(?:\B|\s|\z)'''
+entropy = 2.75
+keywords = ["curl"]
+
+[[rules]]
+id = "generic-api-key"
+description = "generic high-entropy credential — upstream rule, extended with three placeholder SHAPES"
+# NO `regex` key on purpose: the upstream pattern, entropy floor (3.5), keyword
+# list and ~1.3k stopwords stay exactly as shipped. The blocks below only add
+# value-shape predicates to the heuristic CATCH-ALL rule; every purpose-built
+# rule (stripe, aws, github, whsec_, corelink-internal-auth-hex, …) is untouched.
+
+[[rules.allowlists]]
+description = "Ascending alphabet/digit walks — a placeholder shape, never a generated key. Same family as upstream's own `000000` / `aaaaaa` stopwords."
+stopwords = ["01234567", "12345678", "abcdefgh", "qwertyui", "deadbeef", "cafebabe"]
+
+[[rules.allowlists]]
+description = "A value that states its own size in prose (`…-20-char-…`, `32-byte`, `256-bit`) is documentation ABOUT a key, not the key."
+regexes = ['''(?i)\b\d{1,4}[-_ ]?(?:char|byte|bit)s?\b''']
+
+[[rules.allowlists]]
+description = "`*_key` identifiers that are dedup/partition keys, not credentials — extends upstream's own `(?:bucket|foreign|natural|primary|schema|sequence)[_.-]?key` list. `routing_key` is deliberately NOT here: PagerDuty routing keys ARE secrets."
+regexTarget = "match"
+regexes = ['''(?i)\b(?:dedup|dedupe|idempotency|partition|shard|sort)[_.-]?key\b''']
+
 [allowlist]
 description = "CoreLink deliberate test/example/fixture/spec values — NOT operational secrets"
 # Pure example / fixture / spec / doc-REFERENCE / test trees. These legitimately

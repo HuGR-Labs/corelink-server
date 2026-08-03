@@ -38,6 +38,46 @@ The default gitleaks ruleset does **not** include Stripe webhook secrets
 trees (`docs/operator/`, `scripts/`, all `src/`) IN scope — the real leak was in
 `docs/operator/`, so muting docs wholesale would have hidden it.
 
+### Update 2026-08-03 — the "false positives" were RULE DEFECTS, and are now fixed
+
+PR #1002 put this sweep on a **weekly cron** (`17 5 * * 6`, first firing
+2026-08-08), which turns "20 historical FPs triaged out of band" from a note in
+a doc into a gate that is RED every Saturday. Re-measured on `fcc517c3`: **17
+findings / 2,561 commits / 85.47 MB, exit 1.**
+
+Sixteen of the seventeen were traced to three detection defects in the rules
+themselves — not to anything about the files they landed in — and `.gitleaks.toml`
+now fixes them at the rule level. **After: 1 finding.** The three defects:
+
+1. `curl-auth-user` fired on `-u "${VAR}:"` — a shell variable REFERENCE. Upstream
+   already allowlists the mirror case (`user:$VAR`) and simply has no rule for a
+   credential in the user position with an empty password.
+2. `curl-auth-header` fired on `Authorization: Bearer corelink_pat_...` — a value
+   elided with an ellipsis, i.e. a token ending in `.`.
+3. `generic-api-key` fired on ascending character walks (`ABCDEFGH01234567`,
+   `0123456789abcdef`), on a value that states its own size in prose
+   (`my-20-char-internal-k`), and on a PagerDuty `dedup_key`.
+
+**No path, commit, file or literal was allowlisted** to achieve this: every
+predicate is a property of the value, so it holds repo-wide and for future
+commits too. The rule set was re-proved in the other direction against a planted
+commit carrying a `whsec_`, an `AKIA…`, a `ghp_…`, an `sk_live_…`, a literal
+`curl -u "user:pass"`, a real 3-segment bearer token, a 64-hex
+`CORELINK_INTERNAL_AUTH_KEY` and an AWS secret-access-key — detection is
+byte-identical before and after the change (10 caught, 0 lost).
+
+⚠️ **Note for anyone triaging this sweep in future: editing the fixture at HEAD
+does nothing.** `gitleaks detect` scans the COMMIT GRAPH, so a finding lives in
+the commit that introduced it forever. Three of the 17 were reported at
+`apps/server/src/routes/signup.rs` and `crates/corelink-cli/src/{auth,lib}.rs` —
+paths that do not exist at HEAD at all. Only a rule change (or a history rewrite)
+moves this number.
+
+**The one survivor is the real one** — the `whsec_` at
+`docs/operator/stripe-checkout-e2e-2026-05-29.md:73`, commit `b59c4862`. It is
+deliberately NOT suppressed. The sweep will stay red until the OWNER ACTION above
+(rotation confirm) is done, and that is the point: one real item, visible.
+
 ### Sweep completeness
 Separately confirmed via `git grep`: **0** `sk_live_` / `rk_live_` (live Stripe),
 **0** `sk_test_` in tracked files (test keys live only in gitignored `.env.local`),
