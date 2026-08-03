@@ -16,7 +16,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@sentry/cloudflare": "^10.65.0"
+    "@sentry/cloudflare": "^10.69.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260619.1",
