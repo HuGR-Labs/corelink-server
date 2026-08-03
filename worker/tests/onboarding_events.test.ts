@@ -2,7 +2,7 @@
  * `first_cli_authed` producer — onboarding funnel telemetry (PLG §7.1).
  *
  * The customer `/welcome` pane can never light up while this signal has zero
- * producers. These tests pin the three properties the design freezes:
+ * producers. These tests pin the properties the design freezes:
  *
  *   (a) DETERMINISTIC ID — `first_cli_authed:<tenant_id>` is byte-stable across
  *       two calls for the same tenant. That stability IS the dedup: the only
@@ -10,16 +10,23 @@
  *       (apps/analytics-worker/migrations/0001_create_analytics_events.sql:7)
  *       and ingest uses `INSERT OR IGNORE`
  *       (apps/analytics-worker/src/ingest.ts:207).
- *   (b) FAILURE ISOLATION — an ingest that throws, rejects, or returns 5xx
+ *   (b) FAILURE ISOLATION — an RPC that throws, rejects, or never settles
  *       cannot change the `/v1/users/me` status, headers, or body.
  *   (c) waitUntil, NOT inline — the emit promise is handed to `ctx.waitUntil`
  *       (a bare floating promise is CANCELLED on response return, bug #859 —
  *       worker/src/lib/tenant_suspend_gate.ts:115) and the emit helper returns
  *       `void`, so no call-site can await it onto the hot path.
+ *   (d) TRANSPORT — the dispatch is the RPC method `ingestServerEvent` on the
+ *       `AnalyticsIngest` entrypoint, and NEVER `svc.fetch`. A stub carrying
+ *       only `fetch` (i.e. `entrypoint = "AnalyticsIngest"` missing from the
+ *       `[[env.prod.services]]` block) must degrade to a silent no-op, not a
+ *       `TypeError` on the customer's request path.
+ *   (e) SCOPE — only `GET /v1/users/me`, only behind the PAT gate.
  *
- * Plus the contract details read straight out of the ingest worker: the header
- * name, the batch body shape, the id-length cap, and the server-only-event rule
- * that makes the key mandatory.
+ * There is no ingest KEY in any of this any more: a service binding is
+ * authenticated by the platform and `ingestServerEvent` passes `trusted = true`
+ * on that basis (apps/analytics-worker/src/index.ts:109-153). The absence of a
+ * key is asserted below, so re-introducing one fails the suite.
  */
 
 import { describe, it, expect } from "vitest";
@@ -28,13 +35,13 @@ import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 import {
   ANALYTICS_EVENT_ID_MAX_LEN,
-  ANALYTICS_INGEST_KEY_HEADER,
-  ANALYTICS_INGEST_URL,
   ANALYTICS_TENANT_ID_MAX_LEN,
   FIRST_CLI_AUTHED_EVENT,
   emitFirstCliAuthed,
   firstCliAuthedEventId,
   type AnalyticsIngestEnv,
+  type AnalyticsIngestResult,
+  type AnalyticsServerEvent,
 } from "../src/lib/onboarding_events.js";
 
 // ── PAT fixture (same construction as tests/storage_quota_header.test.ts) ─────
@@ -42,7 +49,6 @@ const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA"; // 16 Crockford-b32 chars
 const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000042";
 const TEST_SECRET = "A".repeat(43); // 43 base64url chars
 const SIGNING_KEY_HEX = "ab".repeat(32); // 32-byte key (extractAuth floor)
-const INGEST_KEY = "test-ingest-key";
 
 function b64urlNoPad(bytes: Uint8Array): string {
   let bin = "";
@@ -116,14 +122,24 @@ function makeRecordingCtx(): { ctx: ExecutionContext; pending: Promise<unknown>[
   return { ctx, pending };
 }
 
+const ACCEPTED: AnalyticsIngestResult = { accepted: 1, rejected: 0, errors: [] };
+
+/** Default RPC behaviour: the analytics worker accepted the event. */
+const okRpc = async (): Promise<AnalyticsIngestResult> => ACCEPTED;
+
 /**
- * Worker Env with a stub DO (constant 200) and a stub ANALYTICS_SVC whose
+ * Worker Env with a stub DO (constant 200) and a stub ANALYTICS_SVC whose RPC
  * behaviour is caller-supplied, so a THROWING ingest can be simulated.
+ *
+ * The stub ALSO carries a `fetch` that fails the test on sight: the HTTP
+ * transport is gone, and any regression back to it is caught here rather than
+ * silently working.
  */
 function makeEnv(
-  analyticsFetch?: (req: Request) => Promise<Response>,
-): { env: Env; ingest: () => Request[] } {
-  const seen: Request[] = [];
+  rpc?: (event: AnalyticsServerEvent) => Promise<AnalyticsIngestResult>,
+): { env: Env; events: () => AnalyticsServerEvent[]; fetchCalls: () => number } {
+  const seen: AnalyticsServerEvent[] = [];
+  let fetchCalls = 0;
   const stub = {
     fetch: async (): Promise<Response> =>
       new Response(JSON.stringify({ ok: true, users_me: true }), {
@@ -143,42 +159,41 @@ function makeEnv(
     CONFIG_DB: makeD1(),
     PAT_SIGNING_KEY: SIGNING_KEY_HEX,
     REQUEST_QUOTA_DISABLED: "true",
-    ANALYTICS_INGEST_KEY: INGEST_KEY,
-    ...(analyticsFetch === undefined
+    ...(rpc === undefined
       ? {}
       : {
           ANALYTICS_SVC: {
-            fetch: async (req: Request): Promise<Response> => {
-              seen.push(req.clone());
-              return analyticsFetch(req);
+            ingestServerEvent: async (e: AnalyticsServerEvent): Promise<AnalyticsIngestResult> => {
+              seen.push(e);
+              return rpc(e);
+            },
+            // Must never be reached — the emitter is RPC-only now.
+            fetch: async (): Promise<Response> => {
+              fetchCalls += 1;
+              return new Response("{}");
             },
           },
         }),
   } as unknown as Env;
-  return { env, ingest: () => seen };
+  return { env, events: () => seen, fetchCalls: () => fetchCalls };
 }
 
 /**
  * Minimal `AnalyticsIngestEnv` (no Worker `Env`) whose service binding records
- * every request it is handed — for the direct unit-level guard tests.
- * `key: undefined` omits `ANALYTICS_INGEST_KEY` entirely.
+ * every event it is handed — for the direct unit-level guard tests.
  */
-function makeSpyEnv(key?: string): { env: AnalyticsIngestEnv; calls: Request[] } {
-  const calls: Request[] = [];
+function makeSpyEnv(): { env: AnalyticsIngestEnv; calls: AnalyticsServerEvent[] } {
+  const calls: AnalyticsServerEvent[] = [];
   const env: AnalyticsIngestEnv = {
-    ...(key === undefined ? {} : { ANALYTICS_INGEST_KEY: key }),
     ANALYTICS_SVC: {
-      fetch: (async (r: Request): Promise<Response> => {
-        calls.push(r);
-        return new Response("{}");
-      }) as unknown as typeof fetch,
+      ingestServerEvent: async (e: AnalyticsServerEvent): Promise<AnalyticsIngestResult> => {
+        calls.push(e);
+        return ACCEPTED;
+      },
     },
   };
   return { env, calls };
 }
-
-const okIngest = async (): Promise<Response> =>
-  new Response(JSON.stringify({ accepted: 1, rejected: 0 }), { status: 200 });
 
 async function whoami(env: Env, ctx: ExecutionContext): Promise<Response> {
   const token = await mintValidToken();
@@ -190,6 +205,19 @@ async function whoami(env: Env, ctx: ExecutionContext): Promise<Response> {
     env,
     ctx,
   );
+}
+
+/** Capture console.warn for the duration of `fn`. */
+function captureWarn(fn: () => void): string[] {
+  const warns: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => { warns.push(String(args[0])); };
+  try {
+    fn();
+  } finally {
+    console.warn = original;
+  }
+  return warns;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -215,86 +243,96 @@ describe("(a) deterministic event id", () => {
   });
 
   it("skips the emit entirely when the id would exceed the 64-char cap", () => {
-    const { env, calls } = makeSpyEnv(INGEST_KEY);
+    const { env, calls } = makeSpyEnv();
+    // 60 chars + "first_cli_authed:" (17) = 77 > 64.
     emitFirstCliAuthed(env, "x".repeat(60));
     expect(calls).toHaveLength(0);
   });
 
   it("TWO whoami calls send the SAME id, so ingest's INSERT OR IGNORE coalesces", async () => {
-    const { env, ingest } = makeEnv(okIngest);
+    const { env, events } = makeEnv(okRpc);
     const { ctx, pending } = makeRecordingCtx();
     await whoami(env, ctx);
     await whoami(env, ctx);
     await Promise.all(pending);
-    const bodies = await Promise.all(ingest().map(r => r.json() as Promise<{ events: { id: string }[] }>));
-    expect(bodies).toHaveLength(2);
-    expect(bodies[0]!.events[0]!.id).toBe(bodies[1]!.events[0]!.id);
-    expect(bodies[0]!.events[0]!.id).toBe(`first_cli_authed:${TEST_TENANT_ID}`);
+    expect(events()).toHaveLength(2);
+    expect(events()[0]!.id).toBe(events()[1]!.id);
+    expect(events()[0]!.id).toBe(`first_cli_authed:${TEST_TENANT_ID}`);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// (b) A failing / throwing ingest cannot affect the /v1/users/me response
+// (b) A failing / throwing RPC cannot affect the /v1/users/me response
 // ─────────────────────────────────────────────────────────────────────────────
 describe("(b) failure isolation — the emit cannot break the request", () => {
   const baseline = async (): Promise<{ status: number; body: string }> => {
-    const { env } = makeEnv(okIngest);
+    const { env } = makeEnv(okRpc);
     const { ctx, pending } = makeRecordingCtx();
     const resp = await whoami(env, ctx);
     await Promise.all(pending);
     return { status: resp.status, body: await resp.text() };
   };
 
-  it("a THROWING ingest leaves the response byte-identical to the healthy one", async () => {
+  it("a THROWING RPC leaves the response byte-identical to the healthy one", async () => {
     const good = await baseline();
-    const { env } = makeEnv(async () => { throw new Error("analytics exploded"); });
+    const { env, events } = makeEnv(async () => { throw new Error("analytics exploded"); });
     const { ctx, pending } = makeRecordingCtx();
     const resp = await whoami(env, ctx);
     // The rejection must be absorbed inside the emit — settling the waitUntil
     // promises must NOT reject (an unhandled rejection would fail the isolate).
     await expect(Promise.all(pending)).resolves.toBeDefined();
+    // The emit was genuinely ATTEMPTED (guards against a vacuous pass).
+    expect(events()).toHaveLength(1);
     expect(resp.status).toBe(good.status);
     expect(await resp.text()).toBe(good.body);
   });
 
-  it("a 500 from ingest leaves the response byte-identical", async () => {
+  it("an RPC stub whose method throws SYNCHRONOUSLY cannot surface to the caller", () => {
+    const env = {
+      ANALYTICS_SVC: {
+        ingestServerEvent: () => { throw new Error("sync boom"); },
+      },
+    } as unknown as AnalyticsIngestEnv;
+    expect(() => emitFirstCliAuthed(env, TEST_TENANT_ID)).not.toThrow();
+  });
+
+  it("a REJECTED event (accepted:0) leaves the response byte-identical", async () => {
     const good = await baseline();
-    const { env } = makeEnv(async () => new Response("boom", { status: 500 }));
+    const { env, events } = makeEnv(async () => ({
+      accepted: 0,
+      rejected: 1,
+      errors: [{ reason: "unknown_event_name" }],
+    }));
     const { ctx, pending } = makeRecordingCtx();
     const resp = await whoami(env, ctx);
     await Promise.all(pending);
+    expect(events()).toHaveLength(1);
     expect(resp.status).toBe(good.status);
     expect(await resp.text()).toBe(good.body);
   });
 
-  it("an ingest that never settles does not hold up the response", async () => {
-    const { env } = makeEnv(() => new Promise<Response>(() => { /* never resolves */ }));
+  it("an RPC that NEVER SETTLES does not hold up the response", async () => {
+    const { env, events } = makeEnv(
+      () => new Promise<AnalyticsIngestResult>(() => { /* never resolves */ }),
+    );
     const { ctx } = makeRecordingCtx();
     // If the emit were awaited inline this would hang forever; the test's own
     // timeout is the assertion. `pending` is deliberately left un-awaited.
     const resp = await whoami(env, ctx);
     expect(resp.status).toBe(200);
+    // …and the never-settling call really was dispatched.
+    expect(events()).toHaveLength(1);
   });
 
   it("no ANALYTICS_SVC binding at all ⇒ silent no-op, response unaffected", async () => {
     const good = await baseline();
-    const { env, ingest } = makeEnv(); // binding omitted entirely
+    const { env, events } = makeEnv(); // binding omitted entirely
     const { ctx, pending } = makeRecordingCtx();
     const resp = await whoami(env, ctx);
     await Promise.all(pending);
-    expect(ingest()).toHaveLength(0);
+    expect(events()).toHaveLength(0);
     expect(resp.status).toBe(good.status);
     expect(await resp.text()).toBe(good.body);
-  });
-
-  it("emitFirstCliAuthed never throws even when the binding itself throws synchronously", () => {
-    const env = {
-      ANALYTICS_INGEST_KEY: INGEST_KEY,
-      ANALYTICS_SVC: {
-        fetch: () => { throw new Error("sync boom"); },
-      },
-    } as unknown as Parameters<typeof emitFirstCliAuthed>[0];
-    expect(() => emitFirstCliAuthed(env, TEST_TENANT_ID)).not.toThrow();
   });
 });
 
@@ -306,149 +344,160 @@ describe("(c) fire-and-forget via ctx.waitUntil", () => {
     // The route has other pre-existing waitUntil users (the PAT-verify cache /
     // tier / residency write-behinds), so the assertion is on the DELTA: with
     // the analytics binding bound, exactly one more promise is handed off than
-    // without it — and that extra one is the emit (proved by the ingest call).
+    // without it — and that extra one is the emit (proved by the RPC call).
     const withoutBinding = makeEnv();
     const ctxA = makeRecordingCtx();
     await whoami(withoutBinding.env, ctxA.ctx);
     await Promise.all(ctxA.pending);
 
-    const withBinding = makeEnv(okIngest);
+    const withBinding = makeEnv(okRpc);
     const ctxB = makeRecordingCtx();
     await whoami(withBinding.env, ctxB.ctx);
 
     expect(ctxB.pending.length).toBe(ctxA.pending.length + 1);
     expect(ctxB.pending[ctxB.pending.length - 1]).toBeInstanceOf(Promise);
-    expect(withBinding.ingest()).toHaveLength(1);
+    expect(withBinding.events()).toHaveLength(1);
     await Promise.all(ctxB.pending);
   });
 
   it("returns void — structurally impossible to await onto the hot path", () => {
-    const { env } = makeEnv(okIngest);
+    const { env } = makeEnv(okRpc);
     const ret = emitFirstCliAuthed(env as never, TEST_TENANT_ID, { waitUntil: () => {} });
     expect(ret).toBeUndefined();
   });
 
-  it("the POST is in flight BEFORE the promise handed to waitUntil settles", async () => {
+  it("the RPC is in flight BEFORE the promise handed to waitUntil settles", async () => {
     let released!: () => void;
     const gate = new Promise<void>(res => { released = res; });
-    const { env, ingest } = makeEnv(async () => {
+    const { env, events } = makeEnv(async () => {
       await gate;
-      return new Response("{}");
+      return ACCEPTED;
     });
     const { ctx, pending } = makeRecordingCtx();
     const resp = await whoami(env, ctx);
-    // Response has already returned while the ingest POST is still blocked on `gate`.
+    // Response has already returned while the ingest RPC is still blocked on `gate`.
     expect(resp.status).toBe(200);
-    expect(ingest()).toHaveLength(1);
+    expect(events()).toHaveLength(1);
     released();
     await Promise.all(pending);
   });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ingest contract — every value read out of apps/analytics-worker/src/ingest.ts
+// (d) Transport — RPC entrypoint, never `fetch`, never a key
 // ─────────────────────────────────────────────────────────────────────────────
-describe("ingest contract", () => {
-  it("POSTs to /v1/event with the trusted-key header and the batch envelope", async () => {
-    const { env, ingest } = makeEnv(okIngest);
+describe("(d) transport is the AnalyticsIngest RPC entrypoint", () => {
+  it("calls ingestServerEvent and NEVER svc.fetch", async () => {
+    const { env, events, fetchCalls } = makeEnv(okRpc);
+    const { ctx, pending } = makeRecordingCtx();
+    await whoami(env, ctx);
+    await Promise.all(pending);
+    expect(events()).toHaveLength(1);
+    expect(fetchCalls()).toBe(0);
+  });
+
+  it("sends exactly the EventPayload shape ingestServerEvent expects", async () => {
+    const { env, events } = makeEnv(okRpc);
     const { ctx, pending } = makeRecordingCtx();
     await whoami(env, ctx);
     await Promise.all(pending);
 
-    const req = ingest()[0]!;
-    expect(req.method).toBe("POST");
-    // Path is what matters; the service binding routes internally (never the
-    // public edge — a Worker→Worker custom-domain fetch is 1014-rejected).
-    expect(new URL(req.url).pathname).toBe("/v1/event");
-    expect(req.url).toBe(ANALYTICS_INGEST_URL);
-    // apps/analytics-worker/src/ingest.ts:160 — the trusted-server auth header.
-    expect(req.headers.get(ANALYTICS_INGEST_KEY_HEADER)).toBe(INGEST_KEY);
-    expect(req.headers.get("Content-Type")).toBe("application/json");
-
-    const body = (await req.json()) as {
-      events: Array<{
-        id: string;
-        event_name: string;
-        tenant_id: string;
-        properties: Record<string, unknown>;
-        created_at?: string;
-      }>;
-    };
-    // Batch envelope — ingest.ts:184. Batch of 1 ≤ trusted cap of 100 (ingest.ts:191).
-    expect(Array.isArray(body.events)).toBe(true);
-    expect(body.events).toHaveLength(1);
-    const evt = body.events[0]!;
+    const evt = events()[0]!;
+    // ONE event, NOT the `{ events: [...] }` batch envelope the HTTP route takes:
+    // `ingestServerEvent(event)` is single-event (apps/analytics-worker/src/index.ts:170).
+    expect(Array.isArray(evt)).toBe(false);
+    expect((evt as { events?: unknown }).events).toBeUndefined();
     expect(evt.event_name).toBe(FIRST_CLI_AUTHED_EVENT);
     expect(evt.tenant_id).toBe(TEST_TENANT_ID);
     expect(evt.id).toBe(`first_cli_authed:${TEST_TENANT_ID}`);
+    expect(evt.properties).toEqual({ surface: "cli" });
     // created_at omitted ⇒ the ingest worker stamps its own clock (ingest.ts:209).
-    expect(evt.created_at).toBeUndefined();
+    expect((evt as { created_at?: string }).created_at).toBeUndefined();
     // Privacy gate (ingest.ts:134): properties may not carry email/ip.
     for (const forbidden of ["email", "ip", "ip_address", "remote_addr"]) {
-      expect(forbidden in evt.properties).toBe(false);
+      expect(forbidden in (evt.properties ?? {})).toBe(false);
     }
   });
 
-  it("skips the emit when ANALYTICS_INGEST_KEY is unset (server-only event would 403)", () => {
-    const { env, calls } = makeSpyEnv(); // binding present, key absent
-    // `first_cli_authed` is on SERVER_ONLY_EVENT_NAMES (ingest.ts:51), so an
-    // unkeyed POST is a guaranteed reject — do not burn a subrequest on it.
-    emitFirstCliAuthed(env, TEST_TENANT_ID);
-    expect(calls).toHaveLength(0);
+  it("carries NO ingest key — not in the event, not on the env interface", async () => {
+    const { env, events } = makeEnv(okRpc);
+    const { ctx, pending } = makeRecordingCtx();
+    await whoami(env, ctx);
+    await Promise.all(pending);
+    // The RPC is trusted by construction; a key here would mean the HTTP-path
+    // coupling came back. Assert on the payload AND on the module's exports.
+    const evt = events()[0]! as Record<string, unknown>;
+    for (const k of Object.keys(evt)) {
+      expect(k.toLowerCase()).not.toContain("key");
+    }
+    const mod = await import("../src/lib/onboarding_events.js");
+    expect(Object.keys(mod).some(k => k.includes("KEY"))).toBe(false);
+    expect(Object.keys(mod).some(k => k.includes("URL"))).toBe(false);
   });
 
-  it("WARNS (does not skip silently) when the binding is present but the key is unset", () => {
-    // Half-configured deploy — the operator wired [[services]] but never ran
-    // `wrangler secret put ANALYTICS_INGEST_KEY`. That is the single skip path
-    // an operator can act on, so it is the single skip path that logs. Silence
-    // here is what made the activation funnel undiagnosable before.
-    const { env } = makeSpyEnv(); // binding present, key absent
-    const warns: string[] = [];
-    const original = console.warn;
-    console.warn = (...args: unknown[]) => { warns.push(String(args[0])); };
-    try {
-      emitFirstCliAuthed(env, TEST_TENANT_ID);
-    } finally {
-      console.warn = original;
-    }
-    expect(warns).toHaveLength(1);
-    expect(warns[0]).toContain("ANALYTICS_INGEST_KEY");
-  });
-
-  it("the OTHER skip paths stay silent — only the half-configured one logs", () => {
-    const warns: string[] = [];
-    const original = console.warn;
-    console.warn = (...args: unknown[]) => { warns.push(String(args[0])); };
-    try {
-      // No binding at all: the feature is simply not deployed here.
-      emitFirstCliAuthed({} as AnalyticsIngestEnv, TEST_TENANT_ID);
-      // Fully configured, but not a real customer.
-      const { env } = makeSpyEnv(INGEST_KEY);
-      for (const sentinel of ["_anonymous", "_system", "_pending", ""]) {
-        emitFirstCliAuthed(env, sentinel);
-      }
-      emitFirstCliAuthed(env, "T".repeat(ANALYTICS_TENANT_ID_MAX_LEN + 1));
-    } finally {
-      console.warn = original;
-    }
+  it("a stub with ONLY fetch (entrypoint= missing) is a silent no-op, not a TypeError", () => {
+    // This is the shape of a deploy where `[[env.prod.services]]` binds
+    // ANALYTICS_SVC but omits `entrypoint = "AnalyticsIngest"`: the stub is the
+    // target's DEFAULT fetch export and has no RPC methods at all.
+    let fetched = 0;
+    const env = {
+      ANALYTICS_SVC: { fetch: async () => { fetched += 1; return new Response("{}"); } },
+    } as unknown as AnalyticsIngestEnv;
+    const warns = captureWarn(() => {
+      expect(() => emitFirstCliAuthed(env, TEST_TENANT_ID)).not.toThrow();
+    });
+    expect(fetched).toBe(0);
     expect(warns).toHaveLength(0);
   });
 
+  it("emits for a real tenant with no operator-set secret in the env at all", () => {
+    // The whole point of WP-7: the env carries ONLY the binding. Under the old
+    // key-gated emitter this env produced zero calls and one warning.
+    const { env, calls } = makeSpyEnv();
+    const warns = captureWarn(() => { emitFirstCliAuthed(env, TEST_TENANT_ID); });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.id).toBe(`first_cli_authed:${TEST_TENANT_ID}`);
+    expect(warns).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenant guards
+// ─────────────────────────────────────────────────────────────────────────────
+describe("tenant guards", () => {
   it("never emits for the synthetic tenant sentinels", () => {
-    const { env, calls } = makeSpyEnv(INGEST_KEY);
+    const { env, calls } = makeSpyEnv();
     for (const sentinel of ["_anonymous", "_system", "_pending", ""]) {
       emitFirstCliAuthed(env, sentinel);
     }
     expect(calls).toHaveLength(0);
   });
+
+  it("never emits for an over-long tenant id", () => {
+    const { env, calls } = makeSpyEnv();
+    emitFirstCliAuthed(env, "T".repeat(ANALYTICS_TENANT_ID_MAX_LEN + 1));
+    expect(calls).toHaveLength(0);
+  });
+
+  it("every skip path stays SILENT — no binding, sentinel, oversized", () => {
+    const { env } = makeSpyEnv();
+    const warns = captureWarn(() => {
+      emitFirstCliAuthed({} as AnalyticsIngestEnv, TEST_TENANT_ID);
+      for (const sentinel of ["_anonymous", "_system", "_pending", ""]) {
+        emitFirstCliAuthed(env, sentinel);
+      }
+      emitFirstCliAuthed(env, "T".repeat(ANALYTICS_TENANT_ID_MAX_LEN + 1));
+    });
+    expect(warns).toHaveLength(0);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Scope — only /v1/users/me, and only GET
+// (e) Scope — only /v1/users/me, only GET, only behind the PAT gate
 // ─────────────────────────────────────────────────────────────────────────────
-describe("emit scope", () => {
+describe("(e) emit scope", () => {
   it("does NOT fire on a different authenticated /v1/* route", async () => {
-    const { env, ingest } = makeEnv(okIngest);
+    const { env, events } = makeEnv(okRpc);
     const { ctx, pending } = makeRecordingCtx();
     const token = await mintValidToken();
     await workerHandler.fetch!(
@@ -460,11 +509,27 @@ describe("emit scope", () => {
       ctx,
     );
     await Promise.all(pending);
-    expect(ingest()).toHaveLength(0);
+    expect(events()).toHaveLength(0);
+  });
+
+  it("does NOT fire on a NON-GET /v1/users/me", async () => {
+    const { env, events } = makeEnv(okRpc);
+    const { ctx, pending } = makeRecordingCtx();
+    const token = await mintValidToken();
+    await workerHandler.fetch!(
+      new Request("http://localhost/v1/users/me", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      env,
+      ctx,
+    );
+    await Promise.all(pending);
+    expect(events()).toHaveLength(0);
   });
 
   it("does NOT fire when the PAT is rejected (401 — no authed tenant)", async () => {
-    const { env, ingest } = makeEnv(okIngest);
+    const { env, events } = makeEnv(okRpc);
     const { ctx, pending } = makeRecordingCtx();
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/v1/users/me", {
@@ -476,6 +541,18 @@ describe("emit scope", () => {
     );
     await Promise.all(pending);
     expect(resp.status).toBe(401);
-    expect(ingest()).toHaveLength(0);
+    expect(events()).toHaveLength(0);
+  });
+
+  it("does NOT fire with NO Authorization header at all", async () => {
+    const { env, events } = makeEnv(okRpc);
+    const { ctx, pending } = makeRecordingCtx();
+    await workerHandler.fetch!(
+      new Request("http://localhost/v1/users/me", { method: "GET" }),
+      env,
+      ctx,
+    );
+    await Promise.all(pending);
+    expect(events()).toHaveLength(0);
   });
 });

@@ -342,12 +342,33 @@ service = "corelink-prod-syd"
 # `[[services]]` note in apps/signup-worker/wrangler.toml — so the service
 # binding is the ONLY viable path. Consumed by
 # worker/src/lib/onboarding_events.ts (fire-and-forget, ctx.waitUntil).
-# Operator prerequisite: `wrangler secret put ANALYTICS_INGEST_KEY --env prod`
-# on corelink-prod, set to the SAME value as the analytics Worker's INGEST_KEY
-# (secrets matrix row 138). Without it the emit is a silent no-op.
+#
+# `entrypoint` is LOAD-BEARING, not cosmetic. Without it the binding resolves to
+# corelink-analytics-prod's DEFAULT `fetch` export, which exposes NO RPC methods
+# — `env.ANALYTICS_SVC.ingestServerEvent` would simply not exist. With it the
+# binding resolves to the `AnalyticsIngest` WorkerEntrypoint
+# (apps/analytics-worker/src/index.ts:153).
+#
+# NO OPERATOR PREREQUISITE. The RPC path needs no shared secret: a service
+# binding is authenticated by the platform (the stub is resolved by the CF
+# control plane from this Worker's own deployed config; the call never leaves
+# the runtime, so there is no hostname to point at and no header to forge), and
+# `ingestServerEvent` passes `trusted = true` on that basis. That is what turns
+# this emitter ON — it previously no-op'd waiting on an ANALYTICS_INGEST_KEY
+# secret that was never set on corelink-prod. The `INGEST_KEY`/HTTP path is
+# untouched and still serves its own callers (secrets matrix row 138).
+#
+# ⚠️ DEPLOY ORDER: corelink-analytics-prod must ship `AnalyticsIngest` BEFORE
+# corelink-prod deploys with `entrypoint =` set — a binding that names an
+# entrypoint the target Worker does not export is rejected at deploy time.
+#
+# Scope note: this is the ONLY ANALYTICS_SVC binding in the repo. [env.staging]
+# and the regional envs (prod-sam/lhr/nrt/syd) declare no services blocks at
+# all, so the emit stays a silent no-op there — unchanged by this WP.
 [[env.prod.services]]
 binding = "ANALYTICS_SVC"
 service = "corelink-analytics-prod"
+entrypoint = "AnalyticsIngest"
 
 # corelink-signup.humangr.com/* is served by apps/signup-worker
 # (Phase 1 / Stream A4). The route was previously misassigned to this

@@ -18,15 +18,42 @@
  *
  * WHY A SERVICE BINDING (and never the public hostname)
  * ----------------------------------------------------
- * Only `apps/analytics-worker` holds the `ANALYTICS_DB` binding, so the write
- * must go through its ingest route (`POST /v1/event`,
- * `apps/analytics-worker/src/ingest.ts:143`). A Worker→Worker fetch over a
- * public custom domain on the same zone is rejected by Cloudflare's edge with
- * error 1014 (CNAME Cross-User Banned) — documented from real experience in the
- * `[[services]]` comment block at `apps/signup-worker/wrangler.toml:92-95`. So
- * this module dispatches EXCLUSIVELY through the `ANALYTICS_SVC` service
- * binding; when the binding is absent the emit is a silent no-op (there is no
- * public-hostname fallback, by design).
+ * Only `apps/analytics-worker` holds the `ANALYTICS_DB` binding for
+ * `analytics_events`, and a Worker→Worker fetch over a public custom domain on
+ * the same zone is rejected by Cloudflare's edge with error 1014 (CNAME
+ * Cross-User Banned) — documented from real experience in the `[[services]]`
+ * comment block at `apps/signup-worker/wrangler.toml:92-95`. So this module
+ * dispatches EXCLUSIVELY through the `ANALYTICS_SVC` service binding; when the
+ * binding is absent the emit is a silent no-op (there is no public-hostname
+ * fallback, by design).
+ *
+ * WHY RPC AND NOT `svc.fetch(...)` — AND WHY THERE IS NO KEY ANY MORE
+ * ------------------------------------------------------------------
+ * The binding resolves to the `AnalyticsIngest` WorkerEntrypoint
+ * (apps/analytics-worker/src/index.ts:153), declared caller-side by
+ * `entrypoint = "AnalyticsIngest"` on the `[[env.prod.services]]` block
+ * (wrangler.toml). Without that line the binding resolves to the analytics
+ * Worker's DEFAULT `fetch` export, which exposes no RPC methods at all — so
+ * the entrypoint declaration is load-bearing, not cosmetic.
+ *
+ * `ingestServerEvent` passes `trusted = true` unconditionally because a service
+ * binding is authenticated BY THE PLATFORM: the stub is resolved by the
+ * Cloudflare control plane at deploy time from this Worker's own config, the
+ * call never leaves the runtime, and there is no hostname to point at nor
+ * header to forge. That identity proof is strictly stronger than the shared
+ * `X-Corelink-Ingest-Key` secret the HTTP path uses — which is why this module
+ * no longer holds a key at all, and why the emit is finally LIVE rather than
+ * blocked on an operator running `wrangler secret put` on `corelink-prod`.
+ * The server-only-event rule (`first_cli_authed` is on
+ * `SERVER_ONLY_EVENT_NAMES`, apps/analytics-worker/src/ingest.ts:51) is still
+ * honoured — `trusted = true` is exactly what satisfies it. The spoofable
+ * `Origin` browser path over HTTP still rejects the event, unchanged.
+ *
+ * DEPLOY ORDERING (load-bearing)
+ * ------------------------------
+ * `corelink-analytics-prod` must ship `AnalyticsIngest` BEFORE `corelink-prod`
+ * deploys with `entrypoint =` set; a binding naming an entrypoint the target
+ * Worker does not export is rejected at deploy time.
  *
  * IDEMPOTENCY
  * -----------
@@ -50,20 +77,9 @@
  */
 
 /** Canonical event name — on the ingest allow-list AND its server-only list
- *  (apps/analytics-worker/src/ingest.ts:25 and :51), so the trusted-key header
- *  below is mandatory: the browser/Origin path would reject it. */
+ *  (apps/analytics-worker/src/ingest.ts:25 and :51). The RPC entrypoint passes
+ *  `trusted = true`, which is what makes a server-only name admissible. */
 export const FIRST_CLI_AUTHED_EVENT = "first_cli_authed";
-
-/**
- * Ingest URL. The hostname is inert for a service-binding dispatch (the request
- * is routed inside Cloudflare's runtime by the binding, never resolved over the
- * public edge); only the PATH `/v1/event` is load-bearing
- * (apps/analytics-worker/src/index.ts route → `handleIngest`).
- */
-export const ANALYTICS_INGEST_URL = "https://corelink-analytics.humangr.com/v1/event";
-
-/** Trusted-server ingest header — read at apps/analytics-worker/src/ingest.ts:160. */
-export const ANALYTICS_INGEST_KEY_HEADER = "X-Corelink-Ingest-Key";
 
 /** Max event-id length enforced by ingest validation (apps/analytics-worker/src/ingest.ts:112). */
 export const ANALYTICS_EVENT_ID_MAX_LEN = 64;
@@ -77,23 +93,56 @@ export const ANALYTICS_TENANT_ID_MAX_LEN = 128;
  */
 const SENTINEL_TENANTS: ReadonlySet<string> = new Set(["_anonymous", "_system", "_pending"]);
 
+/**
+ * The event shape accepted by `AnalyticsIngest.ingestServerEvent`. Structural
+ * mirror of `EventPayload` (apps/analytics-worker/src/types.ts) narrowed to the
+ * fields this producer sets; `created_at` is deliberately omitted so ingest
+ * stamps its own clock (apps/analytics-worker/src/ingest.ts:209 COALESCE).
+ */
+export interface AnalyticsServerEvent {
+  readonly id: string;
+  readonly event_name: string;
+  readonly tenant_id?: string;
+  readonly properties?: Record<string, unknown>;
+}
+
+/** Return shape of `ingestServerEvent` — `IngestResult`, apps/analytics-worker/src/ingest.ts:63. */
+export interface AnalyticsIngestResult {
+  readonly accepted: number;
+  readonly rejected: number;
+  readonly errors?: ReadonlyArray<{ id?: string; reason: string }>;
+}
+
+/**
+ * The `ANALYTICS_SVC` stub, narrowed to the RPC surface. `fetch` is deliberately
+ * NOT on this type: the HTTP ingest path is not reachable from here any more,
+ * so no call-site can fall back to it by accident.
+ *
+ * The runtime still capability-checks `ingestServerEvent` before calling it
+ * (see {@link emitFirstCliAuthed}): a deploy that set the binding before
+ * `corelink-analytics-prod` shipped `AnalyticsIngest` would hand back a stub
+ * for the DEFAULT `fetch` export, and that must degrade to a no-op rather than
+ * throw a `TypeError` on the customer's request path.
+ */
+export interface AnalyticsIngestStub {
+  readonly ingestServerEvent: (event: AnalyticsServerEvent) => Promise<AnalyticsIngestResult>;
+}
+
 /** The subset of `Env` this module needs. Keeps the lib unit-testable. */
 export interface AnalyticsIngestEnv {
-  /** Service binding to `corelink-analytics-prod` ([[env.prod.services]]). */
-  readonly ANALYTICS_SVC?: { fetch: typeof fetch };
   /**
-   * Shared trusted-ingest secret. Same value as the analytics-worker's
-   * `INGEST_KEY` (secrets matrix row 138, docs/internal/secrets-checklist.md);
-   * named `ANALYTICS_INGEST_KEY` on the CALLER side, mirroring
-   * `apps/signup-worker/src/lib/analytics-server.ts:9`.
+   * Service binding to `corelink-analytics-prod`, resolved to the
+   * `AnalyticsIngest` entrypoint by `entrypoint = "AnalyticsIngest"` on the
+   * `[[env.prod.services]]` block. No companion secret: the platform
+   * authenticates the caller (see the module header).
    */
-  readonly ANALYTICS_INGEST_KEY?: string;
+  readonly ANALYTICS_SVC?: AnalyticsIngestStub;
 }
 
 /** Options for {@link emitFirstCliAuthed}. */
 export interface EmitOpts {
   /**
-   * `ctx.waitUntil` — extends the request lifetime so the fire-and-forget POST
+   * `ctx.waitUntil` — extends the request lifetime so the fire-and-forget RPC
    * survives the response. Without it the promise is cancelled on return (#859).
    * Absent (tests) ⇒ the promise is left floating; it never rejects.
    */
@@ -115,8 +164,8 @@ export function firstCliAuthedEventId(tenantId: string): string {
  *
  * Returns `void` — deliberately NOT a promise, so no call-site can accidentally
  * `await` it onto the hot path. Every failure mode (missing binding, missing
- * key, sentinel tenant, over-long id, `new Request` throw, service-binding
- * throw, non-2xx) is absorbed here and can never surface to the caller.
+ * entrypoint, sentinel tenant, over-long id, RPC throw, RPC never settling,
+ * rejected event) is absorbed here and can never surface to the caller.
  */
 export function emitFirstCliAuthed(
   env: AnalyticsIngestEnv,
@@ -125,27 +174,15 @@ export function emitFirstCliAuthed(
 ): void {
   try {
     const svc = env.ANALYTICS_SVC;
-    const key = env.ANALYTICS_INGEST_KEY;
     // No binding ⇒ no emit. There is NO public-hostname fallback: Worker→Worker
     // over the custom domain is edge-rejected with error 1014.
     if (svc === undefined || svc === null) return;
-    // `first_cli_authed` is on ingest's SERVER_ONLY list, so an unkeyed POST is
-    // rejected as `server_only_event`. Skip rather than emit a guaranteed reject.
-    //
-    // This is the ONE skip path that is LOUD. It means the operator wired the
-    // service binding but not the secret — a half-configured deploy, not a
-    // deliberate off-switch — and it is the exact state that made activation
-    // analytics silently dark before (see the `analytics_events` funnel audit).
-    // Warn once per request rather than let the pane wait forever with no trace.
-    // The other skip paths stay silent by design: they are either "feature not
-    // deployed here" (no binding) or "not a real customer" (sentinel/oversized
-    // tenant), neither of which an operator can or should act on.
-    if (typeof key !== "string" || key.length === 0) {
-      console.warn(
-        "[analytics] first_cli_authed skipped: ANALYTICS_SVC bound but ANALYTICS_INGEST_KEY unset",
-      );
-      return;
-    }
+    // Binding present but no RPC method ⇒ the binding resolved to the target's
+    // DEFAULT `fetch` export because `entrypoint = "AnalyticsIngest"` is missing
+    // (or the target predates the entrypoint). Degrade instead of throwing.
+    // The declared type says this is always a function; the check defends the
+    // one case the type system cannot see — a stale/mis-declared BINDING.
+    if (typeof svc.ingestServerEvent !== "function") return;
     if (typeof tenantId !== "string" || tenantId.length === 0) return;
     if (SENTINEL_TENANTS.has(tenantId)) return;
     if (tenantId.length > ANALYTICS_TENANT_ID_MAX_LEN) return;
@@ -153,32 +190,21 @@ export function emitFirstCliAuthed(
     const id = firstCliAuthedEventId(tenantId);
     if (id.length > ANALYTICS_EVENT_ID_MAX_LEN) return;
 
-    const post = (async (): Promise<void> => {
+    const emit = (async (): Promise<void> => {
       try {
-        const req = new Request(ANALYTICS_INGEST_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            [ANALYTICS_INGEST_KEY_HEADER]: key,
-          },
-          // Batch envelope (`{ events: [...] }`) — accepted at
-          // apps/analytics-worker/src/ingest.ts:184; batch of 1 is within the
-          // trusted cap of 100 (ingest.ts:191). `created_at` is omitted so the
-          // ingest worker stamps its own clock (ingest.ts:209 COALESCE).
-          body: JSON.stringify({
-            events: [
-              {
-                id,
-                event_name: FIRST_CLI_AUTHED_EVENT,
-                tenant_id: tenantId,
-                properties: { surface: "cli" },
-              },
-            ],
-          }),
+        // ONE event, no batch envelope, no key, no URL — the RPC method is the
+        // whole contract (apps/analytics-worker/src/index.ts:170). It documents
+        // itself as never-throwing, but a cross-isolate RPC fault can still
+        // surface as an exception here, so the catch below stays load-bearing.
+        const res = await svc.ingestServerEvent({
+          id,
+          event_name: FIRST_CLI_AUTHED_EVENT,
+          tenant_id: tenantId,
+          properties: { surface: "cli" },
         });
-        const res = await svc.fetch(req);
-        if (!res.ok) {
-          console.warn(`[analytics] first_cli_authed non-2xx ${res.status}`);
+        if (res.rejected > 0) {
+          const reason = res.errors?.[0]?.reason ?? "unknown";
+          console.warn(`[analytics] first_cli_authed rejected: ${reason}`);
         }
       } catch (err) {
         // Analytics MUST NOT break the request. Log and drop.
@@ -187,10 +213,10 @@ export function emitFirstCliAuthed(
     })();
 
     if (opts.waitUntil) {
-      opts.waitUntil(post);
+      opts.waitUntil(emit);
     } else {
-      // No waitUntil (tests): leave it floating. `post` never rejects.
-      void post;
+      // No waitUntil (tests): leave it floating. `emit` never rejects.
+      void emit;
     }
   } catch {
     // Belt-and-braces: nothing on the synchronous leg may escape either.
