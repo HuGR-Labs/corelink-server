@@ -22,6 +22,7 @@ import type {
   CustomerUsage,
   CustomerWorkspace,
 } from "./customer-types";
+import { withAppBasePath } from "./route-matcher";
 
 /**
  * Thrown by client methods whose backend endpoint is not wired yet (DATA-TRUTH
@@ -60,13 +61,17 @@ export class CustomerClientError extends Error {
 // build time (NEXT_PUBLIC_* is inlined into the client bundle), so the browser
 // talks to the real API origin; without it we fall back to the same-origin
 // `/api` path (E2E mock catch-all / local dev).
+// The same-origin fallback must carry the app's `/corelink` basePath — a bare
+// `/api` resolves against the apex `humangr.com`, which is the hugr-site
+// MARKETING app, not this one. `withAppBasePath` is a no-op on the absolute
+// prod value, so this is latent today and stays correct if it is ever dropped.
 function resolveBaseUrl(): string {
   const explicit =
     typeof process !== "undefined" ? process.env?.NEXT_PUBLIC_CORELINK_API_URL : undefined;
-  if (typeof window !== "undefined") return explicit ?? "/api";
+  if (typeof window !== "undefined") return withAppBasePath(explicit ?? "/api");
   if (explicit && !explicit.startsWith("/")) return explicit;
   const port = (typeof process !== "undefined" && process.env?.PORT) || "3000";
-  const relPath = explicit ?? "/api";
+  const relPath = withAppBasePath(explicit ?? "/api");
   return `http://127.0.0.1:${port}${relPath}`;
 }
 

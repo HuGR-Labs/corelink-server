@@ -6,10 +6,12 @@ import {
   ActivationStateBadge,
   type ActivationState,
 } from "@/components/ActivationStateBadge";
+import { withAppBasePath } from "@/lib/route-matcher";
 
 /**
- * WelcomeStream — client component that subscribes to the `/api/welcome/stream`
- * SSE endpoint and projects the inbound `analytics_events` into a single
+ * WelcomeStream — client component that subscribes to the
+ * `/corelink/api/welcome/stream` SSE endpoint (the basePath is re-attached via
+ * `withAppBasePath`) and projects the inbound `analytics_events` into a single
  * `ActivationState` value.
  *
  * Event mapping (per PLG framework §7.1):
@@ -31,7 +33,13 @@ import {
 export function WelcomeStream(props: {
   streamUrl?: string;
 }): React.ReactElement {
-  const url = props.streamUrl ?? "/api/welcome/stream";
+  // Re-attach the surface's `/corelink` basePath. `EventSource` resolves its
+  // URL against the document origin with NO framework involvement, so a bare
+  // `/api/welcome/stream` connects to the apex `humangr.com` — the hugr-site
+  // MARKETING app. That surface answers `200 text/html`, so the EventSource
+  // opens successfully against HTML and then never delivers an event: the
+  // activation pane waits forever and merely looks empty. Silent, not loud.
+  const url = props.streamUrl ?? withAppBasePath("/api/welcome/stream");
   const [state, setState] = React.useState<ActivationState>("waiting");
   const [error, setError] = React.useState<string | null>(null);
 
