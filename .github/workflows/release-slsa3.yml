@@ -70,6 +70,7 @@ jobs:
 
       - name: Cache Cargo registry + build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           path: |
             ~/.cargo/registry/index/

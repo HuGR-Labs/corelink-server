@@ -53,6 +53,7 @@ jobs:
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
 
@@ -75,6 +76,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
       - name: cargo build (no default features)
@@ -101,6 +103,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
       - name: cargo check (corelink-client-verify on wasm32-unknown-unknown)
@@ -113,6 +116,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
       - name: Install cbindgen
@@ -173,6 +177,7 @@ jobs:
             CARGO_HOME="$TOOLS" cargo install cargo-fuzz --locked --version =0.13.1
           fi
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: "crates/corelink-client-verify/fuzz -> target"
       - name: verify_sync 60s
@@ -225,6 +230,7 @@ jobs:
             CARGO_HOME="$TOOLS" cargo install cargo-fuzz --locked --version =0.13.1
           fi
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: "crates/corelink-client-verify/fuzz -> target"
       - name: verify_sync 3600s
@@ -242,6 +248,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
       - uses: taiki-e/install-action@07b4745e0c39a41822af610387492e3e53aa222b # v2.83.4

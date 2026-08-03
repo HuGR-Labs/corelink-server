@@ -60,6 +60,7 @@ jobs:
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
 
@@ -101,6 +102,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
       - name: Install protoc
@@ -127,6 +129,7 @@ jobs:
       - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
         run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
       - name: Install protoc

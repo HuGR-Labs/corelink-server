@@ -125,6 +125,7 @@ jobs:
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
 
@@ -189,6 +190,7 @@ jobs:
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
 
@@ -358,6 +360,7 @@ jobs:
 
       - name: Cargo cache (build A)
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
           workspaces: ". -> target"
           shared-key: repro-build-a
