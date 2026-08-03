@@ -16,9 +16,10 @@
  * sub twice → the same tenant, no dup rows (IDEMPOTENT).
  *
  * Row-set + column shapes are mirrored from the authoritative fixtures:
- *   - `scripts/family-e2e-tier-seed.sql` (the 5 row-families the container gates
- *     read: tenant / tier_selections / runners_entitlement / tenant_quota, and
- *     the identity map)
+ *   - `scripts/family-e2e-tier-seed.sql` (tenant / tier_selections / tenant_quota,
+ *     and the identity map). NOTE the fixture ALSO seeds `runners_entitlement`
+ *     and provisioning deliberately does NOT: the fixture is a test-persona
+ *     ladder, not the free-signup contract (2026-08-02).
  *   - `apps/signup-worker/src/lib/d1.ts` (`insertTenantOrgMap` — `tenant_org_map`
  *     keyed on the Clerk principal id).
  *
@@ -30,10 +31,10 @@
  * HARDENING (audit H3 lookup-first + H5 atomic batch):
  *   - H3 (write-amplification): the COMMON case is a repeat login, whose row-set
  *     already exists. So we do the read-back `SELECT` FIRST; on a hit we return
- *     immediately with ZERO writes. The 5 provisioning writes run ONLY on the
+ *     immediately with ZERO writes. The 4 provisioning writes run ONLY on the
  *     first-ever login for a `sub`. Deterministic id + INSERT OR IGNORE keeps
  *     this idempotency-safe and returns the identical tenant_id.
- *   - H5 (partial-provision): the 5 first-login writes are issued as a SINGLE
+ *   - H5 (partial-provision): the 4 first-login writes are issued as a SINGLE
  *     D1 `batch([...])` (Cloudflare D1 batches are transactional — all-or-nothing
  *     on the same connection), so a mid-provision D1 fault can never leave a
  *     partial row-family lingering. FK order (tenant first) is preserved INSIDE
@@ -78,8 +79,11 @@ const DEFAULT_REGION = "wnam";
  * reconciliation left in this worker-side inserter).
  */
 const FREE_MONTHLY_BUDGET_USD_MICROS = 1_000_000_000_000;
-/** Free-tier runner concurrency (family-e2e free row). */
-const FREE_RUNNER_MAX_CONCURRENCY = 1;
+
+// NOTE: no `FREE_RUNNER_MAX_CONCURRENCY`. Provisioning grants NO runner capacity —
+// Runners is a separate PAID axis (Option B) and migration 0070's contract is that
+// the ABSENCE of a `runners_entitlement` row IS the zero. See the long note in
+// `apps/signup-worker/src/lib/d1.ts` (`seedTenantEntitlements`) for the full story.
 
 function bytesToHex(buf: ArrayBuffer): string {
   return Array.from(new Uint8Array(buf))
@@ -118,7 +122,7 @@ export async function deriveGithugrTenantId(sub: string): Promise<string> {
  * login for this `sub` (no row) do we run the provisioning writes and then
  * read the mapping back.
  *
- * ATOMIC PROVISION (audit H5): the 5 first-login writes are issued as a SINGLE
+ * ATOMIC PROVISION (audit H5): the 4 first-login writes are issued as a SINGLE
  * transactional D1 `batch([...])` (all-or-nothing), FK order preserved (tenant
  * first), every statement INSERT OR IGNORE — so a mid-provision D1 fault cannot
  * leave a partial row-family behind. The authoritative read-back runs AFTER the
@@ -138,7 +142,7 @@ export async function provisionOrLookupGithugrTenant(
   const tenantId = await deriveGithugrTenantId(sub);
 
   // LOOKUP-FIRST: on a repeat login the identity row already exists — return it
-  // with ZERO writes (removes the 5-write amplification on every session). A D1
+  // with ZERO writes (removes the 4-write amplification on every session). A D1
   // fault here PROPAGATES (fail-CLOSED — never a silent shared-tenant fallback).
   const existing = await db
     .prepare("SELECT tenant_id FROM tenant_org_map WHERE clerk_org_id = ?1 LIMIT 1")
@@ -148,7 +152,7 @@ export async function provisionOrLookupGithugrTenant(
     return existing.tenant_id;
   }
 
-  // FIRST-EVER login for this sub: provision the full 5-family row-set as ONE
+  // FIRST-EVER login for this sub: provision the full 4-family row-set as ONE
   // transactional batch (all-or-nothing) so a mid-provision D1 fault can't leave
   // a partial row-set. FK order is preserved by statement order (tenant first).
   await db.batch([
@@ -172,15 +176,7 @@ export async function provisionOrLookupGithugrTenant(
       )
       .bind(tenantId, `githugr-provision:${tenantId}`, nowMs),
 
-    // (3) runners_entitlement — free plan, min concurrency (>0 CHECK, 0070).
-    db
-      .prepare(
-        "INSERT OR IGNORE INTO runners_entitlement " +
-          "(tenant_id, max_concurrency, plan, created_at_ms) VALUES (?1, ?2, 'free', ?3)",
-      )
-      .bind(tenantId, FREE_RUNNER_MAX_CONCURRENCY, nowMs),
-
-    // (4) tenant_quota — non-zero monthly ceiling so the container quota gate isn't
+    // (3) tenant_quota — non-zero monthly ceiling so the container quota gate isn't
     // a flat 402 / fail-open None (family-e2e note).
     db
       .prepare(
@@ -189,7 +185,7 @@ export async function provisionOrLookupGithugrTenant(
       )
       .bind(tenantId, FREE_MONTHLY_BUDGET_USD_MICROS),
 
-    // (5) tenant_org_map — the identity row keyed on the Clerk principal (`sub`);
+    // (4) tenant_org_map — the identity row keyed on the Clerk principal (`sub`);
     // clerk_org_id PRIMARY KEY ⇒ first writer wins (mirrors insertTenantOrgMap).
     db
       .prepare(

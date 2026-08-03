@@ -8,14 +8,16 @@
  *   (b) IDEMPOTENT — same sub twice → SAME tenant_id, no dup rows, no error.
  *   (c) FAIL-CLOSED — a D1 error propagates (caller maps it to a 500); the helper
  *                     NEVER swallows it or returns a shared tenant.
- *   (d) FULL ROW-FAMILY — a FIRST-EVER provision writes all 5 row-families
- *                     (tenant, tier_selections, runners_entitlement,
- *                     tenant_quota, tenant_org_map) as ONE transactional batch
- *                     with the `tenant` row FIRST (FK order).
+ *   (d) FULL ROW-FAMILY — a FIRST-EVER provision writes all 4 row-families
+ *                     (tenant, tier_selections, tenant_quota, tenant_org_map) as
+ *                     ONE transactional batch with the `tenant` row FIRST (FK
+ *                     order) — and, since 2026-08-02, NO `runners_entitlement`:
+ *                     Runners is a separate PAID axis and any row there is a real
+ *                     grant of billable compute, never a placeholder.
  *   (H3) LOOKUP-FIRST — an EXISTING sub returns via a single SELECT with ZERO
  *                     writes (batch is NEVER called).
- *   (H5) ATOMIC — a first-ever provision calls `batch` EXACTLY ONCE with the 5
- *                     statements (never 5 separate .run()s).
+ *   (H5) ATOMIC — a first-ever provision calls `batch` EXACTLY ONCE with the 4
+ *                     statements (never 4 separate .run()s).
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -142,33 +144,41 @@ describe("deriveGithugrTenantId — deterministic per-sub tenant_id", () => {
 });
 
 describe("provisionOrLookupGithugrTenant — provision-or-lookup", () => {
-  it("(d) FULL ROW-FAMILY: first-ever login writes all 5 families with `tenant` FIRST (FK order)", async () => {
+  it("(d) FULL ROW-FAMILY: first-ever login writes all 4 families with `tenant` FIRST (FK order), and NO runner grant", async () => {
     const { db, sqlLog, batchSpy } = makeFakeDb();
     const resolved = await provisionOrLookupGithugrTenant(db, "user_prov", 1781568000000);
 
     expect(resolved).toMatch(UUID_V5_SHAPE);
     expect(resolved).toBe(await deriveGithugrTenantId("user_prov"));
 
-    // The 5 provisioning writes are issued as ONE transactional batch (H5).
+    // The 4 provisioning writes are issued as ONE transactional batch (H5).
     const batched = batchSpy.mock.calls[0]![0] as { sql: string }[];
-    expect(batched).toHaveLength(5);
+    expect(batched).toHaveLength(4);
     // FK order: tenant is the FIRST statement in the batch.
     expect(batched[0]!.sql).toContain("INSERT OR IGNORE INTO tenant ");
-    // All 5 families present, in FK order.
+    // All 4 families present, in FK order.
     expect(batched[1]!.sql).toContain("INSERT OR IGNORE INTO tier_selections");
-    expect(batched[2]!.sql).toContain("INSERT OR IGNORE INTO runners_entitlement");
-    expect(batched[3]!.sql).toContain("INSERT OR IGNORE INTO tenant_quota");
-    expect(batched[4]!.sql).toContain("INSERT OR IGNORE INTO tenant_org_map");
+    expect(batched[2]!.sql).toContain("INSERT OR IGNORE INTO tenant_quota");
+    expect(batched[3]!.sql).toContain("INSERT OR IGNORE INTO tenant_org_map");
+
+    // NEGATIVE pin (2026-08-02): provisioning grants NO Runners capacity. This
+    // batch used to carry a `runners_entitlement('free', 1)` statement, which is
+    // not a placeholder but a real grant — it satisfies mint gate 5d and, once the
+    // tenant installs the GitHub App (map + allowlist seeded with no entitlement
+    // check), lets a never-paying tenant spawn boxes on our CF account. Migration
+    // 0070's contract is that the ABSENCE of the row is the zero; the schema's
+    // CHECK(max_concurrency > 0) means there is no zero-valued row to write.
+    expect(batched.some((s) => s.sql.includes("runners_entitlement"))).toBe(false);
     // Read-back of the authoritative mapping (SELECTs appear in the sqlLog: the
     // lookup-first miss + the post-batch read-back).
     expect(sqlLog.some((s) => s.includes("SELECT tenant_id FROM tenant_org_map"))).toBe(true);
   });
 
-  it("(H5) ATOMIC: a first-ever provision calls batch EXACTLY ONCE (not 5 .run()s)", async () => {
+  it("(H5) ATOMIC: a first-ever provision calls batch EXACTLY ONCE (not 4 .run()s)", async () => {
     const { db, batchSpy } = makeFakeDb();
     await provisionOrLookupGithugrTenant(db, "user_atomic", 1);
     expect(batchSpy).toHaveBeenCalledTimes(1);
-    expect((batchSpy.mock.calls[0]![0] as unknown[]).length).toBe(5);
+    expect((batchSpy.mock.calls[0]![0] as unknown[]).length).toBe(4);
   });
 
   it("(H3) LOOKUP-FIRST: an EXISTING sub returns via SELECT only — ZERO writes, no batch", async () => {
