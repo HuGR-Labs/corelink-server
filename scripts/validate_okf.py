@@ -189,6 +189,7 @@ class Git:
         self._wt_lines_cache: dict[str, list[str] | None] = {}
         self._blob_present_cache: dict[str, bool] = {}
         self._blob_lines_cache: dict[str, list[str] | None] = {}
+        self._show_file_cache: dict[tuple[str, str], str | None] = {}
 
     def run(self, args: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -348,10 +349,17 @@ class Git:
         return None
 
     def show_file(self, rev: str, repo_rel: str):
+        """Contents of `repo_rel` at `rev`, or None. CACHED: C5b and C4c both read
+        the SAME previous-version text for every concept (one `git show` per
+        concept each), and on a 160-concept corpus that is 160 redundant
+        subprocesses. One cache keyed on (rev, path) makes the second reader free."""
+        key = (rev, repo_rel)
+        if key in self._show_file_cache:
+            return self._show_file_cache[key]
         cp = self.run(["show", f"{rev}:{repo_rel}"])
-        if cp.returncode != 0:
-            return None
-        return cp.stdout
+        out = cp.stdout if cp.returncode == 0 else None
+        self._show_file_cache[key] = out
+        return out
 
 
 # ---------------------------------------------------------------------------
