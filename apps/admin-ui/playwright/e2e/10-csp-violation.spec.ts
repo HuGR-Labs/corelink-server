@@ -51,6 +51,17 @@ test.describe("CSP", () => {
     );
     // Reporting API v1 channel for Chromium, which ignores report-uri.
     expect(cspHeader).toMatch(/report-to csp-endpoint/);
+    // KNOWN BLIND SPOT — a green run here is NOT evidence that prod is clean.
+    // The exact-equality assertion below is the right shape (a doubled value
+    // fails it), but this suite drives `next dev` (playwright.config.ts →
+    // `webServer.command: "pnpm dev"`), and the duplication it would catch is
+    // introduced by the `@opennextjs/cloudflare` adapter's header merge, which
+    // `next dev` never runs. It stayed green for the whole window in which prod
+    // actually served `csp-endpoint="…", csp-endpoint="…"` (fixed in
+    // fix/reporting-endpoints-emitted-twice). The PR-time gate for that class is
+    // `tests/security-headers-single-emitter.test.ts`, which asserts the two
+    // emitters' path coverage is disjoint; the post-deploy detector belongs in
+    // the LIVE prod suite (`e2e/`, daily cron) — see that branch's PR body.
     expect(headers["reporting-endpoints"], "Reporting-Endpoints header").toBe(
       'csp-endpoint="/corelink/api/csp-report"',
     );

@@ -58,6 +58,62 @@ Each entry cross-references:
   `actionlint.yml` beside its #980 sibling) rejects both patterns, and **exits non-zero if
   it inspects zero self-hosted jobs** rather than reporting success on a check that looked
   at nothing. Proven RED against all three regressions before landing.
+- **fix(admin-ui): the static security headers had TWO overlapping emitters, so
+  every rendered response carried each of them twice on one folded line.**
+  Follow-up to #981, which added `Reporting-Endpoints` (the basePath repoint
+  itself is correct and is unchanged here). Measured on `/corelink/sign-in`
+  immediately after that deploy:
+  `reporting-endpoints: csp-endpoint="/corelink/api/csp-report", csp-endpoint="/corelink/api/csp-report"`
+  — and a sweep of every response header found the same doubling on
+  `X-Frame-Options`, `Referrer-Policy` and `Permissions-Policy`. It is
+  **`STATIC_SECURITY_HEADERS` as a whole** that was doubled, not one header;
+  HSTS and `X-Content-Type-Options` merely hid it because the Cloudflare zone's
+  `security_header` setting (`max_age=15552000`, `nosniff=true`, confirmed via
+  the CF API — prod serves 15552000, the code says 63072000) overwrites those
+  two at the edge. RFC 8941 dictionaries are last-wins and both copies agreed,
+  so nothing was broken — but a header assembled twice means that the day the
+  two sources disagree, one silently wins.
+
+  **Mechanism, established by path-class differential against live prod rather
+  than assumed:** the set had two emitters — `next.config.ts`'s `headers()` on
+  `source: "/:path*"` and the `res.headers.set()` loop in `src/middleware.ts`.
+  `set()` replaces, so middleware alone can never double a header; the two are
+  merged as *plain object keys* by `@opennextjs/cloudflare` before the Worker
+  builds its `Headers`, and they disagree on **case** — `getNextConfigHeaders`
+  copies our `h.key` verbatim (`Reporting-Endpoints`) while the middleware
+  `Response` lowercases it. Both keys survive the merge, and the `Headers`
+  constructor *appends* each entry, which is exactly the observed `", "` fold
+  (`new Headers({"x-frame-options":"DENY","X-Frame-Options":"DENY"}).get(…)`
+  === `"DENY, DENY"`, reproduced directly). The three path classes pin the
+  layers: `/corelink/robots.txt` (middleware matcher skips it) → one copy, from
+  `headers()`; the 307 from `/corelink/dashboard` (middleware short-circuits,
+  and OpenNext's `routingHandler` `return`s before merging the `headers()` set)
+  → one copy, from middleware; a rendered page → both → two.
+
+  **Fix — partition by path instead of deleting either side,** because that
+  differential shows neither side is redundant: dropping `headers()` strips
+  every security header from `/_next/static/*`, favicon, robots and sitemap
+  (the matcher skips them by design), and dropping the middleware loop strips
+  them from every middleware redirect. `headers()` now emits on exactly the
+  five paths the matcher excludes and nowhere else, so **every response has
+  exactly one emitter**. CSP itself is untouched: both report channels stay
+  (`report-uri` for Firefox/Safari, `report-to` for Chromium).
+
+  **Gated by `apps/admin-ui/tests/security-headers-single-emitter.test.ts`**,
+  which asserts per path that the two emitters' coverage is disjoint and that
+  the config and the matcher literal are still exact complements. Proven by
+  mutation: with the fix `npx vitest run tests/security-headers-single-emitter.test.ts`
+  exits **0** (18 passed); with `next.config.ts` + `src/lib/csp.ts` reverted to
+  the shipped versions and the test kept, it exits **1**. **Named gap:** the
+  Playwright spec that *should* have caught this
+  (`playwright/e2e/10-csp-violation.spec.ts`, an exact-equality assertion on
+  `reporting-endpoints`) was green throughout, because that suite runs against
+  `next dev` — the adapter merge that creates the duplicate only exists in a
+  real OpenNext Worker build, and CI runs no such build on a PR. The spec is
+  annotated in place so a green run there is not misread as evidence about
+  prod; the post-deploy detector belongs in the live `e2e/` suite (daily cron)
+  and is deliberately left for a follow-up, since asserting "no duplicates"
+  against prod would fail until this deploys.
 - **fix(ci): `pre-merge-gate-check.sh` printed `✅ All gates green` when a check had been CANCELLED — the one tool whose entire job is to not fail open.** Observed live on PR #982: the runner killed `spec-validation` at 5m37s (`The operation was canceled` — the shape an ENOSPC or an overloaded self-hosted mac takes), the script printed `? cancel  spec-validation`, and then concluded `✅ All gates green — OK to merge`. The classifier tested `bucket == "fail"` and `bucket == "pending"` and let **everything else fall through as green**, so a bucket it did not enumerate was silently a pass. A cancelled gate has not run; it has proven nothing. This is the same shape the file's own header already warns about one level up ("Zero failures out of zero real gates read as green") — there the check list was empty, here one entry was simply uncountable. **Fixed by inverting the test from denylist to allowlist:** only `pass` and `skipping` are non-blocking; `fail`, `cancel`, and **any bucket GitHub has not invented yet** now block. Unknown ⇒ blocking is the fail-CLOSED direction, and it is the only acceptable one in a last-line-of-defense script. The verdict line names the bucket (`[bucket=cancel — not a pass; it did not run to a verdict]`) so the next reader is not left guessing why a non-`fail` entry blocked them. **Proven by running the classifier directly, both directions:** the `main` version on a payload of `{pass, pass, cancel}` prints `✅ All gates green` and exits **0**; the fixed version on the identical payload prints `⛔ DO NOT MERGE — 1 not-green, 0 pending` and exits **1**; an invented bucket (`quantum`) also exits **1**; and the all-green control still exits **0**, so the fix is not merely making everything red. **Method note, recorded because it is the same class and it was mine:** the defect surfaced only because a `bash pre-merge-gate-check.sh <pr> | tail -3 && gh pr merge …` invocation merged anyway — a shell pipeline's exit status is the **last** command's, so the `&&` was testing `tail`, not the gate. The gate had already exited 1. Piping a guard through `tail` disarms it exactly as thoroughly as the bug the guard was written to catch.
 - **fix(ci): `cargo install` on the shared Mac corrupted every OTHER concurrent Rust
   job — the real `os error 2` root cause.** All 5 self-hosted runners share ONE
