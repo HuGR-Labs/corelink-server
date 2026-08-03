@@ -94,16 +94,34 @@ GATE_JSON="$json" python3 - "$PR" <<'PY'
 import os, sys, json
 pr = sys.argv[1]
 data = json.loads(os.environ["GATE_JSON"])
-order = {"fail": 0, "pending": 1, "skipping": 2, "pass": 3}
-mark = {"pass": "✓", "fail": "✗", "pending": "…", "skipping": "-"}
+# Bucket handling is ALLOWLIST-based, not denylist-based, and that is the whole
+# point. The previous version tested `b == "fail"` / `b == "pending"` and let
+# every other bucket fall through as green — so a **cancelled** check printed as
+# `? cancel  spec-validation` and the script still concluded
+# "✅ All gates green". Observed on PR #982, 2026-08-03: a job the runner killed
+# at 5m37s ("The operation was canceled", the shape an ENOSPC or an overloaded
+# self-hosted mac takes) read as a pass. A cancelled gate has not run; it has
+# proven nothing. Same failure shape this file already documents for zero-gates,
+# one level down — the check list was present, one entry was simply uncountable.
+#
+# Anything that is not an explicit PASS or an explicit SKIP is now BLOCKING,
+# including a bucket name GitHub has not invented yet. Unknown ⇒ blocking is the
+# fail-CLOSED direction, which is the only acceptable one here.
+PASS_BUCKETS = {"pass"}
+SKIP_BUCKETS = {"skipping"}
+order = {"fail": 0, "cancel": 0, "pending": 1, "skipping": 2, "pass": 3}
+mark = {"pass": "✓", "fail": "✗", "cancel": "✗", "pending": "…", "skipping": "-"}
 fails, pends = [], []
-for c in sorted(data, key=lambda x: order.get(x.get("bucket"), 9)):
+for c in sorted(data, key=lambda x: order.get(x.get("bucket"), 0)):
     b = c.get("bucket")
-    print(f"  {mark.get(b,'?')} {b:9} {c.get('name')}")
-    if b == "fail":
-        fails.append(c)
-    elif b == "pending":
+    print(f"  {mark.get(b,'✗')} {str(b):9} {c.get('name')}")
+    if b in PASS_BUCKETS or b in SKIP_BUCKETS:
+        continue
+    if b == "pending":
         pends.append(c)
+    else:
+        # fail, cancel, or anything unrecognised.
+        fails.append(c)
 print()
 
 # ── Defense 2: the real gates must be PRESENT, not merely not-failing ─────────
@@ -133,9 +151,11 @@ if missing:
     sys.exit(1)
 
 if fails or pends:
-    print(f"  ⛔ DO NOT MERGE PR #{pr} — {len(fails)} failing, {len(pends)} pending.")
+    print(f"  ⛔ DO NOT MERGE PR #{pr} — {len(fails)} not-green, {len(pends)} pending.")
     for c in fails:
-        print(f"     ✗ {c.get('name')}  {c.get('link','')}")
+        b = c.get("bucket")
+        why = "" if b == "fail" else f"  [bucket={b} — not a pass; it did not run to a verdict]"
+        print(f"     ✗ {c.get('name')}  {c.get('link','')}{why}")
     print("     Fix or re-run until green. Use --admin ONLY for a documented,")
     print("     non-blocking infra/flake reason you state explicitly.")
     sys.exit(1)
