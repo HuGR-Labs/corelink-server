@@ -33,6 +33,7 @@ import {
   Modal,
   Skeleton,
 } from "@/components/ui/linear";
+import { withAppBasePath } from "@/lib/route-matcher";
 
 interface ChainHead {
   head_digest: string;
@@ -69,11 +70,15 @@ interface ChainSnapshot {
   total_events: number;
 }
 
+// The same-origin fallback must carry the app's `/corelink` basePath — a bare
+// `/api` resolves against the apex `humangr.com`, which is the hugr-site
+// MARKETING app, not this one. `withAppBasePath` is a no-op on the absolute
+// prod value, so this is latent today and stays correct if it is ever dropped.
 const apiBase = (): string => {
   if (typeof process !== "undefined") {
-    return process.env["NEXT_PUBLIC_CORELINK_API_URL"] ?? "/api";
+    return withAppBasePath(process.env["NEXT_PUBLIC_CORELINK_API_URL"] ?? "/api");
   }
-  return "/api";
+  return withAppBasePath("/api");
 };
 
 async function fetchJson<T>(path: string): Promise<T> {

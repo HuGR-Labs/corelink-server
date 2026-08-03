@@ -18,6 +18,7 @@ import type {
   OpType,
   Tenant,
 } from "./types";
+import { withAppBasePath } from "./route-matcher";
 
 export interface AdminClientOptions {
   baseUrl?: string;
@@ -40,10 +41,17 @@ function resolveDefaultBaseUrl(): string {
   // (Node runtime) requires absolute. When running in dev/test we synthesize
   // an absolute origin from PORT so SSR calls land on our own catch-all
   // mock. On the client side `window.fetch` happily accepts relative paths.
-  if (typeof window !== "undefined") return explicit ?? "/api";
+  //
+  // Any SAME-ORIGIN fallback must carry the app's `/corelink` basePath: the
+  // catch-all mock lives at `/corelink/api/v1/**`, and the bare `/api` form
+  // resolves against the apex `humangr.com` — the hugr-site MARKETING app,
+  // not this one. `withAppBasePath` is a no-op on an absolute
+  // `https://corelink-api…` value (which is what prod injects), so this is
+  // latent today and stays correct if the env var is ever dropped.
+  if (typeof window !== "undefined") return withAppBasePath(explicit ?? "/api");
   if (explicit && !explicit.startsWith("/")) return explicit;
   const port = (typeof process !== "undefined" && process.env?.PORT) || "3000";
-  const relPath = explicit ?? "/api";
+  const relPath = withAppBasePath(explicit ?? "/api");
   return `http://127.0.0.1:${port}${relPath}`;
 }
 

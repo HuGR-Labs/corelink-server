@@ -5,7 +5,8 @@
  *
  * Flow:
  *   1. User clicks "Open Stripe Portal".
- *   2. Component POSTs to `/api/v1/customer/billing/portal-session` with
+ *   2. Component POSTs to `/corelink/api/v1/customer/billing/portal-session`
+ *      (the basePath is re-attached via `withAppBasePath`) with
  *      `{ return_url }`. The return_url is derived from the current
  *      `window.location` so closing the portal returns the user to the
  *      billing page (NOT, e.g., to the marketing site).
@@ -24,6 +25,7 @@
  */
 
 import * as React from "react";
+import { withAppBasePath } from "@/lib/route-matcher";
 
 interface PortalSessionResponse {
   portal_url: string;
@@ -61,7 +63,12 @@ export function PortalLauncher({
           ? `${window.location.origin}/${locale}/customer/billing`
           : `https://humangr.com/corelink/${locale}/customer/billing`;
       const f = fetchImpl ?? fetch;
-      const res = await f("/api/v1/customer/billing/portal-session", {
+      // Re-attach the surface's `/corelink` basePath. Next auto-prefixes
+      // basePath onto framework-generated links but NEVER onto a raw `fetch()`
+      // URL, so a bare `/api/v1/...` POSTs to the apex `humangr.com` — which is
+      // the hugr-site MARKETING app, not this one (proven live: 405). Same
+      // class as the checkout fix in #804.
+      const res = await f(withAppBasePath("/api/v1/customer/billing/portal-session"), {
         method: "POST",
         headers: {
           "Accept": "application/json",

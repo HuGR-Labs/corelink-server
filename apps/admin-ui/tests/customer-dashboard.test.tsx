@@ -182,8 +182,12 @@ describe("PortalLauncher", () => {
     fireEvent.click(screen.getByTestId("portal-open-button"));
 
     await waitFor(() => expect(assignSpy).toHaveBeenCalledWith(portalUrl));
+    // basePath-ABSOLUTE. `fetch()` never gets Next's automatic basePath, and a
+    // bare `/api/v1/...` POSTs to the apex `humangr.com` — the hugr-site
+    // MARKETING app (405 in production). This assertion previously PINNED the
+    // broken bare literal.
     expect(fetchImpl).toHaveBeenCalledWith(
-      "/api/v1/customer/billing/portal-session",
+      "/corelink/api/v1/customer/billing/portal-session",
       expect.objectContaining({ method: "POST" }),
     );
   });
