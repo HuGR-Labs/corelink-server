@@ -31,9 +31,22 @@ test.describe("customer team", () => {
     );
     await page.getByTestId("team-invite-submit").click();
     const invited = await inviteResp;
-    const invitedBody = (await invited.json()) as { user_id: string };
+    // WIRE-SHAPE: the container replies `201 { "member": { … } }` — the row is
+    // ENVELOPED (`crates/corelink-container/src/routes/customer.rs:960-968`,
+    // asserted server-side at :2062). Reading `user_id` off the top level yields
+    // `undefined`, so the row locator became `team-row-undefined` and could never
+    // match. Unwrap the envelope, exactly as `CustomerClient.inviteTeam` does.
+    const invitedBody = (await invited.json()) as { member: { user_id: string } };
+    const invitedUserId = invitedBody.member.user_id;
+    expect(invitedUserId, "invite response must carry member.user_id").toBeTruthy();
 
     await expect(page.getByTestId("team-invite-success")).toContainText("newbie@acme.example");
-    await expect(page.getByTestId(`team-row-${invitedBody.user_id}`)).toBeVisible();
+    // An invited-but-not-yet-joined seat is `status: "invited"`, so TeamClient
+    // renders it in the "Pending invitations" table — same `team-row-<user_id>`
+    // testid, different card. Assert the row AND that it is the pending one.
+    const invitedRow = page.getByTestId(`team-row-${invitedUserId}`);
+    await expect(invitedRow).toBeVisible();
+    await expect(page.getByTestId("team-pending-list")).toContainText("newbie@acme.example");
+    await expect(invitedRow).toContainText("Invited");
   });
 });
