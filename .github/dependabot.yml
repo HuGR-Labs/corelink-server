@@ -1,4 +1,37 @@
 version: 2
+# ⛔ ROUTINE VERSION UPDATES ARE OFF (2026-08-03) — `open-pull-requests-limit: 0`
+#    on every ecosystem below. SECURITY updates are NOT affected and keep flowing.
+#
+# Read this before setting any limit back above 0.
+#
+# WHY. Measured 2026-08-03: routine dep PRs burned 194 of the repo's ~300 workflow
+# runs that day and helped exhaust the Actions spending limit — which reds EVERY PR
+# in the repo, including unrelated ones. Cost per PR is ~30 workflow runs: #999
+# touched only `Cargo.lock` + 3 `Cargo.toml` and still triggered the JS CVE scanner,
+# the OKF wiki validation, the first-time-contributor welcome bot, and
+# `changelog-validate` three times. 15 such PRs were open and none was mergeable:
+# `dependabot-auto-merge.yml` is scoped to SECURITY patches only, so a routine bump
+# can never merge itself, and nobody reviews ~15 a week. They only accumulate.
+#
+# WHY THIS IS SAFE NOW, AND WAS NOT BEFORE. Until 2026-08-03 Dependabot ALERTS were
+# disabled on this repository (`GET /vulnerability-alerts` returned 404), so the
+# security lane did not exist — `dependabot-auto-merge` had never had anything to
+# merge, and these routine PRs were the ONLY dependency updates the repo received.
+# Turning them off then would have left ZERO. Alerts + automated security fixes were
+# both enabled that day (404 -> 204; `automated-security-fixes.enabled = true`), the
+# initial scan surfaced 15 vulnerabilities, and all 15 were closed in #1004. The
+# security lane is live and self-merging, so routine bumps are now genuinely optional.
+#
+# HOW TO DO ROUTINE BUMPS INSTEAD. Deliberately, in one batch, when someone has the
+# context to review them — not on a clock that outruns review capacity.
+#
+# TO RE-ARM: raise the limits below AND first make routine PRs actually mergeable
+# (widen `dependabot-auto-merge` to green minor/patch, or accept the review load).
+# Re-arming without that just recreates the pile.
+#
+# The staggering notes below are preserved: they are correct and become live again
+# the moment any limit goes back above 0.
+#
 # Dependabot weekly grouped PRs — WI-S12-004 §6.1.4 (ST-004) + R-PREP refinement.
 #
 # Enforces: CAP-SUPPLY-004 Dependabot weekly cadence (weekly PER ECOSYSTEM).
@@ -78,7 +111,7 @@ updates:
       day: monday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
     groups:
       # Non-security patch + minor: batched weekly (manual review).
       non-security-minor-patch:
@@ -156,7 +189,7 @@ updates:
       day: monday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
       actions-minor-patch:
         applies-to: version-updates
@@ -184,7 +217,7 @@ updates:
       day: tuesday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
       npm-minor-patch:
         applies-to: version-updates
@@ -214,7 +247,7 @@ updates:
       day: wednesday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
       docs-minor-patch:
         applies-to: version-updates
@@ -253,7 +286,7 @@ updates:
       day: thursday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     allow:
       - dependency-name: "wrangler"
       - dependency-name: "miniflare"
@@ -299,7 +332,7 @@ updates:
       day: friday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     ignore:
       - dependency-name: "wrangler"
       - dependency-name: "miniflare"
@@ -336,7 +369,7 @@ updates:
       day: friday
       time: "06:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     ignore:
       - dependency-name: "wrangler"
       - dependency-name: "miniflare"
@@ -372,7 +405,7 @@ updates:
       day: saturday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     ignore:
       - dependency-name: "wrangler"
       - dependency-name: "miniflare"
@@ -407,7 +440,7 @@ updates:
       day: sunday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     ignore:
       - dependency-name: "wrangler"
       - dependency-name: "miniflare"
@@ -443,7 +476,7 @@ updates:
       day: wednesday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     groups:
       wasm-minor-patch:
         applies-to: version-updates
@@ -473,7 +506,7 @@ updates:
       day: thursday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     groups:
       pip-ci-minor-patch:
         applies-to: version-updates
@@ -502,7 +535,7 @@ updates:
       day: thursday
       time: "04:00"
       timezone: America/Sao_Paulo
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     groups:
       py-sdk-minor-patch:
         applies-to: version-updates

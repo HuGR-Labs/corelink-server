@@ -23,6 +23,32 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **chore(sdks/js): mark `@corelink/client` `private: true` — an unpublishable orphan should
+  not be publishable.** Surfaced while closing the `vitest` alert in #1004: the package is
+  absent from `pnpm-workspace.yaml`, referenced by **no workflow**, its dependencies are
+  therefore never installed, and its single test fails on `@noble/hashes/blake3` — identically
+  on vitest 2 and 3, so it has been broken independent of that bump. It carried no
+  `private` flag, so any `npm publish` would have shipped it. Verified against the registry:
+  **never published**, so nothing downstream breaks. This is the *cheap* half of the decision;
+  adopting it into the workspace with a real CI gate remains open and is the right move if the
+  SDK is ever to be sold as official.
+
+- **chore(deps): turn OFF routine Dependabot version updates (`open-pull-requests-limit: 0`
+  on all 12 ecosystems); SECURITY updates are unaffected.** Measured 2026-08-03: routine dep
+  PRs burned **194 of the repo's ~300 workflow runs** that day and helped exhaust the Actions
+  spending limit — which reds every PR in the repo, unrelated ones included. Cost is ~30
+  workflow runs each (#999 touched only `Cargo.lock` + 3 `Cargo.toml` and still triggered the
+  JS CVE scanner, the OKF wiki validation, the welcome bot, and `changelog-validate` ×3).
+  15 were open and **none was mergeable**: `dependabot-auto-merge` is scoped to SECURITY
+  patches, so a routine bump can never merge itself and nobody reviews 15 a week.
+
+  **This became safe only today.** Dependabot alerts had been *disabled* on the repository
+  (`GET /vulnerability-alerts` → 404), so the security lane did not exist and these routine
+  PRs were the only dependency updates the repo received — switching them off before would
+  have left **zero**. Alerts + automated security fixes were enabled the same day (404 → 204),
+  the initial scan surfaced 15 vulnerabilities, and all 15 were closed in #1004. The re-arm
+  conditions are written into `.github/dependabot.yml`'s header so this cannot be flipped back
+  without reading why it was flipped off.
 - **fix(admin-ui): every "start free" button on the public pricing page handed a brand-new
   prospect the sign-IN screen — the top of the self-serve funnel, in all four locales.**
   Measured live: `GET /corelink/en/sign-up` → `307 → /corelink/sign-in?redirect_url=%2Fcorelink%2Fen%2Fsign-up`,
