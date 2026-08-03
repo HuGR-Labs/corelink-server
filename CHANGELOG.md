@@ -63,6 +63,88 @@ Each entry cross-references:
   suppression you edit somewhere else is how a suppression outlives its reason.
 - **fix(repo): `.gitignore` did not cover the docs Playwright output or agent telemetry, so build artifacts rode into PRs as if they were source.** PR #932 added 1148 lines of which only **35** were its actual change (`runs-on: ubuntu-latest` → `runs-on: corelink`); **698** were `apps/docs/playwright-report/a11y-results.json`, `apps/docs/playwright-report/a11y/index.html` and `apps/docs/test-results/.last-run.json`, and **11** were `.maestro/*.jsonl` agent telemetry — a 3% signal ratio, and enough volume to earn a `size:XL` label that pushed a genuinely one-line change toward "split this PR". None of these paths were ignored at root **or** in `apps/docs/.gitignore` (which covers `build/`, `.docusaurus/`, `dist/` but not Playwright's output dirs). All three paths were confirmed **untracked at HEAD** before being ignored — `git ls-tree -r HEAD` returns 0 files for each — so the ignore is real and not a silent no-op over already-tracked files, and each pattern was then verified against the exact filenames #932 committed via `git check-ignore -v`. The measured box inventory and migration plan salvaged from that PR now live in `docs/internal/ci-runner-fabric-box.md`.
 - **fix(ops): the brand-new stray-destination WARN counted duplicates regardless of status, so a stray retired by DISABLING it raised the same alarm forever — and said something false while doing it.** Shipped hours earlier in the same sweep hardening; caught when the owner retired `exquisite-rhythm-thin` by **disabling** rather than deleting it. A disabled destination receives nothing, so it cannot deliver, be rejected, or double-process — yet the check still counted it toward `N destinations share <url>` and still printed *"the others can only ever be rejected"*, which is not true of a destination that receives nothing. **A permanent WARN is an alarm the operator learns to ignore — the same failure mode this sweep exists to prevent**, reintroduced by the fix for it. The duplicate check now counts **enabled** destinations only (`status in {enabled, active}`); disabled ones are still LISTED, with a `note:` line saying they receive nothing and are excluded — visible, not alarming. Proven against a stub in three states: stray **disabled** → row shown `[disabled]`, `note:` printed, **no WARN**, exit 0; stray **re-enabled** → `WARN: 2 ENABLED destinations share https://corelink-api.humangr.com/v1/billing/stripe-webhook` returns, so the suppression is not a blanket; v2 **unreadable** → still exit 3. The operator runbook records the resolution and now states the expected post-fix output for both retirement paths (disabled row + `note:`, or deleted row gone).
+- **feat(ci): point sccache at CoreLink's own `/cargo` surface — dogfood the product on the
+  workload that hurts most (pilot: `corelink-reapi` PR gate).** Wave 2 moved 11 Rust jobs onto
+  `runs-on: corelink`, and `Swatinem/rust-cache` is correctly gated to github-hosted (#980), so
+  those lanes **compile cold on every run** — `corelink-reapi` PR gate measured **409 s** and
+  **423 s** cold on this branch (`corelink-worker` fuzz smoke ~309 s, `corelink-hash` ~203 s,
+  WASM builds 50–99 s).
+  An ephemeral box has no disk to cache to — which is exactly the problem this product exists
+  to solve, and it was not being used on its own CI.
+
+  `/cargo/<tenant>/<key>` is a live sccache WebDAV surface on the product itself
+  (`crates/corelink-container/src/routes/cargo.rs` implements MKCOL/PROPFIND/DELETE for
+  sccache's opendal backend). Probed in prod before wiring anything: `GET`/`PUT`/`PROPFIND`
+  each returned **401 from the handler**, against **404** for an unmounted path — the 404 is the
+  control proving the 401 means "reached the route", not "generic reject".
+
+  **Fail-open by construction.** `SCCACHE_IGNORE_SERVER_IO_ERROR=1` degrades a miss, a 5xx or an
+  expired token into an ordinary cold compile, never a red gate — a build cache that can fail a
+  build is not a cache, it is a dependency. The secret check lives *inside* the script rather
+  than in an `if:`, so a fork PR with no secrets behaves exactly as today. `CARGO_INCREMENTAL=0`
+  is required: incremental artifacts embed per-invocation paths, which would make sccache store
+  and never hit.
+
+  **The first run went green while doing nothing, and that is the part worth recording.**
+  `sccache` is not on the `corelink` box image. The wiring step took its fail-open branch,
+  printed `::notice::sccache not on the box image`, exported nothing, and the PR gate reported
+  **success at 409 s** — an ordinary cold run. "All gates green" and
+  "the cache is working" were two different statements and only the job log distinguished them.
+  Two fixes followed. (1) The binary is now installed per-job from a prebuilt, SHA-pinned
+  `taiki-e/install-action` (manifest existence checked at the pinned SHA, not assumed — a
+  sibling tool has none and would have silently fallen back to a from-source build); baking it
+  into the runner image is the right long-term home, once the number justifies it. (2) The
+  measurement no longer prints whatever it finds — it **names the state it is in**:
+  `RUSTC_WRAPPER` unset ⇒ `::warning::` *"this run measured NOTHING"*; `hits == 0` ⇒
+  `::warning::` *"the cache is NOT being hit"*; `hits > 0` ⇒ the claim with a number behind it —
+  plus a `hits=…/misses=…` line in the job summary, visible without opening the log.
+  `RUSTC_WRAPPER` is the load-bearing probe: the wiring step exports it through `$GITHUB_ENV`,
+  so its absence downstream is proof the wiring no-opped, for a missing secret, a missing
+  binary, or any future regression in either. Still report-only and `always()` — a cache that
+  must not fail a build must not fail its own measurement either — and `hits == 0` is
+  **expected** on the first run, because that run populates.
+
+  **The number came back and it says NO — so the pilot ships OFF.** Same job, same box class,
+  four runs on this branch:
+
+  | run | sccache | hit rate | PR gate |
+  |---|---|---|---|
+  | `d88b1af4` | absent | — | **409 s** |
+  | `81919a49` | absent | — | **423 s** |
+  | `1f832a41` | on | 22.85 % (189 hits / 638 misses) | **917 s** |
+  | `a4e864e0` | on | **100.00 %** (827 hits / 0 misses) | **631 s** |
+
+  The last row settles it. At a **perfect** hit rate — zero compilation, every artifact served
+  from CoreLink — the lane is still **~1.5× slower** than compiling cold. Fetching 827 artifacts
+  over the network costs more than building them on 4 local vCPUs, so "wait until the cache
+  warms up" is answered, not open: the warm case was the pilot's best case and it lost.
+
+  This is **not a malfunction** — **0 cache errors, 0 read errors, 0 write errors, 0 timeouts**
+  across both engaged runs. The surface authenticated, served reads and accepted writes
+  flawlessly; the credential and the `/cargo` route are proven live. The cost *is* the
+  round-trips, from an ephemeral box against a CAS hot path already known to be D1-over-HTTP
+  bound. A cache pays only when a fetch is cheaper than the work it skips, and for small Rust
+  translation units on a 4-vCPU box it is not.
+
+  So all three pilot steps (install / wire / measure) are gated on a repo variable
+  `CORELINK_SCCACHE_PILOT == 'on'` that **does not exist** — they skip, and merging this changes
+  CI behaviour by nothing. Flip the variable to re-run the experiment (say, after a latency fix
+  on the `/cargo` hot path); delete the steps once it is settled either way.
+
+  **Scope of the claim, stated so nobody over-reads it:** single samples on a shared ephemeral
+  box with real run-to-run variance. Enough to refuse a rollout; **not** a claim about
+  sccache-on-CoreLink for customers — a slower compiler, larger translation units or a fatter
+  box flips the arithmetic, and that is the case the product actually sells. Also retracted: the
+  **676 s** cold baseline this work was justified with, which none of the four runs reproduces.
+
+  **One lane on purpose.** The point was a number, not a rollout — and the number is the
+  deliverable even when it is unflattering. The other 10 lanes were never touched.
+
+  The new credential `CORELINK_SCCACHE_TOKEN` (a `cas:rw` PAT on the internal dogfood tenant
+  `ee30f7ba…`, GHA repo secret, bound 2026-08-03) is registered as row **#188** of
+  `docs/internal/secrets-checklist.md` — the secrets-matrix drift gate caught the unregistered
+  name, which is the gate working; it is fixed by registering the secret, never by loosening
+  the gate.
 - **fix(ops): the Stripe stray-destination sweep reported "no strays" over a live one for a month — it enumerated only `/v1/webhook_endpoints`, and its duplicate check could not fire on the URL that actually had duplicates.** On 2026-07-03 a live enumeration returned 3 endpoints, the reported stray `exquisite-rhythm-thin` was absent, and it was recorded in `docs/handoff/` as a "transient `stripe listen` tunnel" that did not exist. The 2026-08-03 production dashboard shows it still **Active** — 24 events, `thin` payload, on `corelink-api.humangr.com/v1/billing/stripe-webhook`, the same URL as the kept `Corelink prd` materializer. A CLI tunnel dies with its process; this survived a month. Root cause: a `thin` payload means a **v2 event destination** (`/v2/core/event_destinations`), a *different API resource* from v1 webhook endpoints, never returned by a v1 list — so the check was structurally incapable of observing the positive case, and its negative result was evidence of nothing. The counts reconcile exactly: v1 saw **3**, the dashboard shows **4**, and the invisible one is precisely the thin/v2 one. `scripts/ops/stripe-reconcile-webhook-events.sh` carried a **second, independent** blindness: the same-URL WARN counted only destinations whose url equalled the *reconcile target* (the signup-worker), so duplicates on any other host — including the corelink-api pair that really exists — could never trip it, which is why "the same-URL WARN also did NOT fire" was mistaken for corroboration. Both are fixed: the sweep now enumerates v1 **and** v2, reports id + `payload=` + name per destination, warns per-URL across the whole account, and — when the CLI/key cannot read v2 — says so loudly and **exits 3** instead of printing a clean report, because a detector that cannot look must never report "none found". Proven against a stub serving the real 2026-08-03 state: the **old** script prints 3 endpoints, **zero** warnings, `✅ Already in sync`, exit **0**; the **new** one lists `[v2] [enabled] 24 events payload=thin ed_… (exquisite-rhythm-thin)` and warns `2 destinations share https://corelink-api.humangr.com/v1/billing/stripe-webhook`, and in v2-blind mode exits **3** with the reconcile still completing. The two 2026-07-03 handoffs carry dated corrections naming the wrong call as the TL's (the recon was honest; converting "the API does not show it" into "it does not exist" was the defect). Removal of the stray is an **owner** action and is written up in `docs/operator/stripe-webhook-events-reconcile.md`, which also loses its claim that a signing secret is "verified working when deliveries show 0% error" — zero errors over **zero deliveries** is also 0%, and all four destinations read 0% including the one whose deliveries could only ever have been rejected.
 - **fix(sdks/js): adopt `@corelink/client` into the workspace and gate it — the SDK was never
   broken, it had simply never been installed.** It was an orphan: absent from
