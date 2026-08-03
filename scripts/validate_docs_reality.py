@@ -111,6 +111,24 @@ DOC_ROOTS_WITH_EXCLUDES = [
     # internal wiki + its generated site + internal design notes.
     (REPO_ROOT / "docs", ["docs/knowledge", "docs/okf-wiki-site", "docs/internal"]),
 ]
+
+# Repo-root markdown, scanned NON-recursively (the recursive roots above already
+# cover every subtree we care about; rglob from REPO_ROOT would re-walk the whole
+# repo). These files are outside every root above and yet include the two most-read
+# documents in the project — `README.md` and the roadmaps — so a phantom command
+# here reaches more readers than one buried in a tutorial. `ROADMAP-TO-LAUNCH.md`
+# was carrying `corelink ping` (a subcommand that has never existed) and a
+# `get.corelink.io` one-liner (a domain we do not own) precisely because nothing
+# looked here.
+#
+# `CHANGELOG.md` is EXCLUDED, and the exclusion is load-bearing rather than
+# convenient: it is a historical ledger whose entries DESCRIBE defects, so it
+# legitimately quotes commands that do not exist — 9 mentions of `corelink ping`
+# today, every one of them narrating the fix that removed it. Scanning it would
+# make the gate red for recording history accurately, which is the fastest way to
+# get a gate allowlisted into uselessness (see `scripts/docs_reality_allowlist.json`).
+ROOT_DOC_GLOBS = ["*.md"]
+ROOT_DOC_EXCLUDE = {"CHANGELOG.md"}
 # Route sources for the best-effort endpoint check.
 ROUTE_SOURCE_ROOTS = [REPO_ROOT / "crates", REPO_ROOT / "worker" / "src"]
 
@@ -259,6 +277,20 @@ def _iter_doc_files() -> list[DocFile]:
         _walk(root, [])
     for root, excludes in DOC_ROOTS_WITH_EXCLUDES:
         _walk(root, excludes)
+
+    # Repo-root markdown, non-recursively (see ROOT_DOC_GLOBS above).
+    for pattern in ROOT_DOC_GLOBS:
+        for p in sorted(REPO_ROOT.glob(pattern)):
+            if not p.is_file() or p.suffix.lower() not in DOC_EXTS:
+                continue
+            if p.name in ROOT_DOC_EXCLUDE or p in seen:
+                continue
+            seen.add(p)
+            try:
+                out.append(DocFile(p, p.relative_to(REPO_ROOT).as_posix(),
+                                   p.read_text(encoding="utf-8")))
+            except (OSError, UnicodeDecodeError):
+                continue
     return out
 
 
