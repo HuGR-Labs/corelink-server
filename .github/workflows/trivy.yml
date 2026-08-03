@@ -7,9 +7,30 @@ name: trivy (JS-deps CVE + IaC misconfig)
 #                (RustSec); trivy fs is run with `--scanners vuln` only and we
 #                deliberately do not duplicate that Rust-advisory job here.
 #
-# Runner: GitHub-hosted `ubuntu-latest` (the CI migration off the self-hosted Mac
-# fleet). This is a light download + filesystem scan (no Rust compilation). trivy is
-# pinned for Linux-64bit to match the ubuntu-latest x86_64 fleet.
+# Runner: `corelink` — the product's own ephemeral runner fabric (wave 1 of the
+# migration off GitHub-hosted runners, 2026-08-03). This is a light download +
+# filesystem scan (no Rust compilation), and the pinned Linux-64bit binary is
+# exactly what a corelink box runs: Ubuntu 24.04 / x86_64 / 4 vCPU / 12.5 GB.
+# curl, tar and sha256sum are all on the image, so the install step below does
+# byte-for-byte the same work it did on ubuntu-latest — same tarball, same
+# checksum, same two scans, same `--exit-code 1` failure mode.
+#
+# trivy and gitleaks were the ONLY two hosted workflows with an unfiltered
+# `pull_request:` trigger, i.e. the two that ran on EVERY pull request. That is
+# why they are wave 1: they carry the hosted PR bill almost by themselves.
+#
+# ⚠️ This job has an egress dependency the other wave-1 gate does not: trivy
+# pulls its vulnerability DB and its misconfig-checks bundle as OCI artifacts
+# from ghcr.io. It was already doing that on ubuntu-latest with no cache
+# configured, so an ephemeral box costs nothing extra here — but ghcr.io
+# reachability is a hard requirement for this gate specifically, and
+# `runner-probe.yml` checks it.
+#
+# ⚠️ Ephemeral-runner reality. If the fabric refuses or drops the spawn, the job
+# sits QUEUED, and `timeout-minutes` does NOT apply to queued time (it starts
+# once a job is RUNNING); GitHub cancels a job left queued for 24 h. That is a
+# stall, not a false pass — `scripts/pre-merge-gate-check.sh` scores a pending
+# check as ⛔ DO NOT MERGE, so a stranded box blocks the PR.
 #
 # Trivy is installed as a VERSION-pinned release BINARY (curl the tarball +
 # verify its sha256 checksum), not via a marketplace action — this matches the
@@ -29,8 +50,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Pinned trivy release + its published Linux-64bit tarball sha256 (runs on the
-  # GitHub-hosted ubuntu-latest fleet, x86_64). Source of truth
+  # Pinned trivy release + its published Linux-64bit tarball sha256 (the corelink
+  # fabric hands out Linux x86_64 boxes, so this stays the Linux-64bit asset —
+  # unchanged by the runner migration). Source of truth
   # (trivy_0.71.1_checksums.txt):
   # https://github.com/aquasecurity/trivy/releases/tag/v0.71.1
   TRIVY_VERSION: '0.71.1'
@@ -39,7 +61,7 @@ env:
 jobs:
   trivy:
     name: trivy fs (JS vuln) + config (IaC misconfig)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 10
 
     steps:

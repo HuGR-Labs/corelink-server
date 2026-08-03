@@ -1,0 +1,116 @@
+name: runner probe — what is actually on a corelink box
+
+# Inventory of the `runs-on: corelink` image. This exists because migrating a
+# gate off a GitHub-hosted runner is only safe once you know what the
+# destination image ACTUALLY ships: an ephemeral box carries no cache between
+# runs, so every tool the image lacks becomes a `setup-*` step paid on EVERY
+# run, in wall-clock and in network.
+#
+# Run it (`workflow_dispatch`) before planning a migration wave; the log is the
+# evidence. It asserts nothing on purpose — a probe that fails on a missing
+# tool would hide the rest of the inventory, which is the part with value.
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: inventory the corelink image
+    runs-on: corelink
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: hardware, kernel, disk
+        run: |
+          set -uo pipefail
+          echo "== identity =="
+          uname -a
+          echo "  runner_name : ${RUNNER_NAME:-?}"
+          echo "  arch        : ${RUNNER_ARCH:-?}  os: ${RUNNER_OS:-?}"
+          echo "  user        : $(id -un) (uid $(id -u))  home=$HOME"
+          echo
+          echo "== cpu =="
+          echo "  nproc: $(nproc)"
+          grep -m1 'model name' /proc/cpuinfo || true
+          echo
+          echo "== memory =="
+          grep -E '^(MemTotal|MemAvailable|SwapTotal)' /proc/meminfo || true
+          echo
+          echo "== disk =="
+          df -h
+          echo
+          echo "== os release =="
+          cat /etc/os-release 2>/dev/null || echo "  (no /etc/os-release)"
+
+      - name: toolchain inventory
+        run: |
+          set -uo pipefail
+          # Never `set -e` here: a missing tool is a RESULT, not a failure.
+          probe() {
+            if command -v "$1" >/dev/null 2>&1; then
+              printf '  %-12s PRESENT  %s\n' "$1" "$("${@:2}" 2>&1 | head -1)"
+            else
+              printf '  %-12s ABSENT\n' "$1"
+            fi
+          }
+          echo "== rust =="
+          probe rustc  rustc --version
+          probe cargo  cargo --version
+          probe rustup rustup --version
+          probe clippy-driver clippy-driver --version
+          probe rustfmt rustfmt --version
+          echo "  cargo fmt  : $( cargo fmt --version >/dev/null 2>&1 && echo WORKS || echo BROKEN )"
+          echo "  ~/.cargo   : $( [ -d "$HOME/.cargo" ]  && echo EXISTS || echo missing )"
+          echo "  ~/.rustup  : $( [ -d "$HOME/.rustup" ] && echo EXISTS || echo missing )"
+          echo
+          echo "== node =="
+          probe node node --version
+          probe npm  npm --version
+          probe pnpm pnpm --version
+          probe npx  npx --version
+          echo
+          echo "== python =="
+          probe python3 python3 --version
+          probe pip3    pip3 --version
+          echo
+          echo "== containers / misc =="
+          probe docker docker --version
+          probe jq     jq --version
+          probe git    git --version
+          probe curl   curl --version
+          probe wget   wget --version
+          probe unzip  unzip -v
+          probe tar    tar --version
+          probe gh     gh --version
+          probe go     go version
+          probe java   java -version
+          probe clw    clw --version
+          probe make   make --version
+          probe cc     cc --version
+          probe ld     ld --version
+          probe sha256sum sha256sum --version
+          echo
+          echo "== package manager =="
+          probe apt-get apt-get --version
+          echo "  can sudo   : $( sudo -n true 2>/dev/null && echo YES || echo NO )"
+
+      - name: network egress + PATH
+        run: |
+          set -uo pipefail
+          echo "== PATH =="
+          echo "$PATH" | tr ':' '\n' | sed 's/^/  /'
+          echo
+          echo "== egress reachability (headers only) =="
+          # ghcr.io + mirror.gcr.io matter specifically for `trivy`: it pulls its
+          # vulnerability DB and its misconfig-checks bundle as OCI artifacts, so
+          # a box that can reach github.com but not ghcr.io fails that gate only.
+          for u in https://github.com https://api.github.com https://static.rust-lang.org \
+                   https://registry.npmjs.org https://pypi.org https://ghcr.io/v2/ \
+                   https://mirror.gcr.io https://objects.githubusercontent.com; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$u" || echo TIMEOUT)
+            printf '  %-34s %s\n' "$u" "$code"
+          done
