@@ -86,7 +86,7 @@ Print this. Tick it. Bring questions to the D+0 call or to your Slack Connect ch
 - [ ] One designated "ops/SRE" identified — receives the daily SLA samples and is paged on incidents.
 
 ### During the call
-- [ ] CLI installed: `curl -sSL https://corelink.humangr.com/install.sh | sh` (verifies signature against our Sigstore bundle).
+- [ ] CLI installed — **your Customer Success engineer gives you the current install command on the call.** Do not use `https://corelink.humangr.com/install.sh`: that hostname does not resolve (verified 2026-08-02; prod hostnames are flat, see `docs/operator/host-scheme-canonical-2026-06-09.md`), and no replacement one-liner has been verified to serve a script, so this checklist will not print a guess. Whatever command you are given, the binary verifies its signature against our Sigstore bundle.
 - [ ] First PAT minted in the dashboard (`https://humangr.com/corelink/customer/keys`) and saved locally with `corelink login --token {your-pat}`.
 - [ ] First CAS write: `corelink put ./README.md` returns a `blake3:` digest.
 - [ ] First CAS read: `corelink cas get blake3:{digest}` returns the same bytes.
@@ -128,8 +128,10 @@ build:ci --remote_cache=https://your-existing-cache.example.com
 build:ci --experimental_remote_cache_async=true
 build:ci --remote_executor=
 build:ci --remote_upload_local_results=true
-# Use the CoreLink HTTP cache adapter:
-build:ci --remote_cache=https://cache.corelink.humangr.com/v1/{your-slot-id}
+# CoreLink, over the same plain-HTTP cache protocol Bazel already speaks.
+# NOTE: Bazel honors only the LAST --remote_cache flag, so this line REPLACES
+# the primary above — it is your cutover line, not a second destination.
+build:ci --remote_cache=https://corelink-api.humangr.com/bazel/cache
 build:ci --remote_header=Authorization=Bearer\ ${CORELINK_PAT}
 ```
 
@@ -139,11 +141,13 @@ build:ci --remote_header=Authorization=Bearer\ ${CORELINK_PAT}
 
 Your Customer Success engineer will pick the right one with you on the D+3 scoping call.)
 
-**Buck2** — set `[buck2_re_client] action_cache_address` to our HTTP endpoint for the test scope; keep the existing primary in your `buckconfig.local`.
+**Buck2 — not supported today.** Buck2's cache/RE client (`[buck2_re_client]` `engine_address` / `cas_address` / `action_cache_address`) connects over **gRPC**, and CoreLink exposes no gRPC endpoint — so there is no Buck2 configuration that works, and we won't hand you one that fails to connect. (Buck2 has no plain-HTTP cache backend either; the upstream request for one was closed `wontfix` — facebook/buck2#459.) If Buck2 is your build tool, say so on the scoping call and we'll tell you straight whether the pilot makes sense.
 
 **Bazel-remote-cache replacement candidates** — if you're already running `bazel-remote` standalone, you don't deploy anything of ours: CoreLink answers the same plain-HTTP cache protocol Bazel already speaks, at `--remote_cache=https://corelink-api.humangr.com/bazel/cache` with `--remote_header=Authorization=Bearer ${CORELINK_PAT}` (`/cas/<hash>` + `/ac/<hash>`, same as bazel-remote). Keep your bazel-remote running as primary through the mirror period; cutover and rollback are the one `--remote_cache` line. Full setup: `apps/docs/docs/how-to/migrate/from-bazel-remote-cache.mdx`.
 
-**Pants** — `[cache] remote_store_address = grpc://cache.corelink.humangr.com:443/{your-slot-id}` and `remote_oauth_bearer_token_path = /etc/corelink/pat`.
+**Pants — not supported today.** Pants' `reapi` provider accepts only `grpc://` / `grpcs://` addresses, and CoreLink has no gRPC ingress: the edge runs on Cloudflare Workers, which implement no HTTP trailers, and native gRPC cannot work without them. That is a property of the topology, not a missing feature we're about to add — so we are not going to give you a `grpc://` address that cannot connect, and there is no date to promise. Same answer as Buck2, same reason.
+
+*(The contrast is the point: Bazel works today precisely because it can speak plain HTTP. Buck2 and Pants cannot.)*
 
 ### What to look for in week 1
 
@@ -213,7 +217,7 @@ Notable events (24h):
   - 2026-MM-DD 14:22Z: scheduled BYOK chaos drill, kill-switch RTT 3m12s (target ≤ 5 min, PASS)
   - 2026-MM-DD 21:08Z: 1 transient cache GET 502 (retry succeeded, no customer impact)
 
-Grafana: https://grafana.corelink.humangr.com/lighthouse/LH-EXAMPLE
+Usage console: https://humangr.com/corelink/en/customer/usage
 Audit chain query: corelink audit export --tenant LH-EXAMPLE --since {epoch_ms} --until {epoch_ms}
 
 Reply with questions or page on PagerDuty for urgent items.
