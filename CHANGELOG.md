@@ -23,6 +23,29 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(deps): close the 3 Rust Dependabot alerts — triaged by measured exposure, not by
+  the severity label.** Dependabot alerts had been **disabled** on this repository, so these
+  had never surfaced (enabled 2026-08-03; the initial scan then reported 15 alerts across all
+  ecosystems). Each was resolved against the actual dependency graph rather than the advisory
+  text:
+  - **`cmov` 0.5.3 → 0.5.4** — the only one that reaches shipped code:
+    `cmov → ctutils → digest → blake3 → corelink-ac → corelink-cas`, a **normal** (non-dev)
+    edge into the CAS hash path. Labelled *medium*, but it is the highest real exposure of
+    the three. The advisory is aarch64-specific and the prod container is amd64 — however
+    `release-cli` ships `aarch64-apple-darwin` and `aarch64-unknown-linux-gnu` binaries, so
+    the affected architecture IS distributed.
+  - **`quinn-proto` 0.11.14 → 0.11.16** (labelled *high*) and **`serde_with` 3.20.0 → 3.21.0**
+    (*medium*) — `cargo tree -i … --target all` prints **"nothing to print"** for both: they
+    are orphaned `Cargo.lock` entries with no path from any workspace crate. Real exposure:
+    zero. Bumped anyway because the cost is a lockfile line and it keeps the alert list at a
+    length a human will actually read.
+
+  Verified: `cargo check` + `cargo test -p corelink-cas -p corelink-ac` green (18 tests);
+  diff is `Cargo.lock` only.
+
+  ⚠️ This touches `Cargo.lock`, so the prod container pin is stale again — the path to prod
+  is rebuild (`container-build-push-prod`) → repin the 5 pins → `cf-deploy-prod`, not a
+  Worker-only deploy.
 - **fix(ci): 12 self-hosted jobs were provisioning a Rust toolchain into the SHARED
   `~/.rustup` — sibling of the #980 `~/.cargo` race, one level up.** Five runners share
   one `$HOME`. `dtolnay/rust-toolchain` is built for GitHub-hosted runners, where `$HOME`
