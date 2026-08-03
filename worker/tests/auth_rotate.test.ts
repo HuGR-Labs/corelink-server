@@ -183,11 +183,18 @@ describe("POST /internal/v1/auth/rotate — clw auth rotate", () => {
     expect(captured.req).toBeUndefined();
   });
 
-  it("(a) 403 when NO internal-auth key is bound (fail-CLOSED)", async () => {
+  it("(a) 503 (not 403) when NO internal-auth key is bound — fail-CLOSED, but an OUTAGE not a denial", async () => {
+    // 2026-08-02: this asserted 403. Still fail-CLOSED either way (the onward
+    // request is never made — see the `captured.req` assertion), but an unbound
+    // server secret says nothing about the CALLER, who authenticated correctly.
+    // A client that reads 403 as final gives up on what is a transient config
+    // fault; 503 lets it retry. 503 also matches the frozen Rust contract
+    // (`routes/internal_pat.rs` — "the endpoint is unavailable (503)").
     const captured: { req?: Request } = {};
     const env = makeEnv({ captured, oldRow: activeRow(), withInternalKey: false });
     const resp = await rotateFetch(env, { auth: INTERNAL_KEY });
-    expect(resp.status).toBe(403);
+    expect(resp.status).toBe(503);
+    // The load-bearing half: fail-CLOSED. Nothing was authorized.
     expect(captured.req).toBeUndefined();
   });
 

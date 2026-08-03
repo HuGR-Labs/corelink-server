@@ -120,18 +120,23 @@ describe("POST /internal/v1/auth/tenant/lookup — githugr authz #3", () => {
     expect(resp.status).toBe(401);
   });
 
-  it("fail-CLOSED 403 when CORELINK_INTERNAL_AUTH_KEY is unbound", async () => {
+  it("fail-CLOSED 503 when CORELINK_INTERNAL_AUTH_KEY is unbound", async () => {
+    // 2026-08-02: 403 → 503. Still a DENIAL (nothing is authorized), but the
+    // status now says whose fault it is: the caller presented the right key and
+    // WE have no key bound to check it against. 401 remains the caller-fault
+    // code (see the wrong-secret case above), so the two stay distinguishable.
     const env = makeEnv({ withInternalKey: false });
     const resp = await lookupFetch(env, { auth: INTERNAL_KEY, body: { sub: "user_abc" } });
-    expect(resp.status).toBe(403);
+    expect(resp.status).toBe(503);
   });
 
-  it("fail-CLOSED 403 when the bound secret is too short (< 32)", async () => {
+  it("fail-CLOSED 503 when the bound secret is too short (< 32)", async () => {
     const env = makeEnv({ shortKey: true });
-    // Caller supplies the (short) key — still 403 because the gate refuses an
-    // undersized secret regardless of the provided value.
+    // Caller supplies the (short) key — still refused, because the gate rejects
+    // an undersized secret regardless of the provided value. A sub-floor key is
+    // a misconfiguration, so it takes the same 503 as an absent one.
     const resp = await lookupFetch(env, { auth: "tooshort", body: { sub: "user_abc" } });
-    expect(resp.status).toBe(403);
+    expect(resp.status).toBe(503);
   });
 
   it("400 when sub is absent (email fallback is N/A — see module doc)", async () => {

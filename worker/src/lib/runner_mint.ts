@@ -279,7 +279,16 @@ export async function handleRunnerMint(
   const internalAuthKey =
     env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY;
   if (!internalAuthKey || internalAuthKey.length === 0) {
-    return reapiError("FORBIDDEN", "runner mint unavailable", 403, requestId);
+    // 503, NOT 403 (2026-08-02). Nothing about the DISPATCHER failed here — it
+    // authenticated fine at step 2. What failed is OUR onward credential to the
+    // container mint authority, i.e. a config fault on our side. The body always
+    // said "unavailable"; only the status disagreed, and the status is what the
+    // dispatcher branches on (corelink-runners `lib.ts` mintCasPat: 403 ⇒ hard
+    // deny + drop the job with no dead-letter; 5xx ⇒ fall open to a COLD spawn).
+    // Since GitHub delivers `workflow_job.queued` exactly once, the old 403 meant
+    // an unbound secret silently ate EVERY job in the fleet, forever, while the
+    // `spawn_forbidden` counter looked like ordinary unentitled traffic.
+    return reapiError("SERVICE_UNAVAILABLE", "runner mint unavailable", 503, requestId);
   }
 
   // ── 4. Parse the body (job_id + repo_full_name + installation_id required) ──
