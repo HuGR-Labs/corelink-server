@@ -169,12 +169,20 @@ export CORELINK_PAT="corelink_pat_XXXXXXXXXXXX"
 export CORELINK_TENANT="acme-prod"
 ```
 
-:::warning Native `bazel --remote_cache` support: in progress
-CoreLink's wired Bazel surface is the **REAPI v2 ByteStream** scheme at
-`/bazel/v2/<tenant>` and requires a REAPI/ByteStream-compatible client. A stock
-plain-HTTP `--remote_cache` alias (`/cas/<hash>`) is being built and is not yet
-live — it currently returns 404. See the
-[Bazel integration guide](../integrations/bazel) for details.
+:::tip Running stock Bazel? Use the plain-HTTP alias instead
+The config above is the **REAPI v2 ByteStream** scheme at `/bazel/v2/<tenant>`,
+which needs a REAPI/ByteStream-compatible client. Stock Bazel is served by the
+live plain-HTTP alias — it takes the `/cas/<sha256>` and `/ac/<sha256>` paths
+Bazel emits, and resolves your tenant from the PAT (so no
+`--remote_instance_name`):
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/cache
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_upload_local_results=true
+```
+
+See the [Bazel integration guide](../integrations/bazel) for details.
 :::
 
 :::tip Commit .bazelrc, keep the PAT out of git

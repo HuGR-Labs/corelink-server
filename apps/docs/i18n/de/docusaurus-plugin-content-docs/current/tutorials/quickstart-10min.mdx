@@ -130,15 +130,32 @@ und schreibt eine `.corelink/credentials`-Datei (Modus `0600`):
 
 ```text
 corelink bazel-init: appended to .bazelrc:
-  build --remote_cache=grpcs://cas.corelink.humangr.com:443
-  build --remote_header=x-corelink-tenant=acme-prod
-  build --remote_header=authorization=Bearer ${CORELINK_PAT}
+  build --remote_cache=https://corelink-api.humangr.com/bazel/v2
+  build --remote_instance_name=acme-prod
+  build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+  build --remote_timeout=30s
   build --remote_upload_local_results=true
 corelink bazel-init: wrote .corelink/credentials (mode 0600)
 ```
 
 `bazel-init` ist **idempotent**: ein zweiter Aufruf erkennt die vorhandene
 Markierungszeile in `.bazelrc` und beendet sich mit `0` ohne Duplikate.
+
+:::tip Standard-Bazel? Dann den Plain-HTTP-Alias verwenden
+Die obigen Zeilen sind das **REAPI-v2-ByteStream**-Schema unter
+`/bazel/v2/<tenant>`, das einen REAPI/ByteStream-kompatiblen Client voraussetzt.
+Standard-Bazel wird vom Plain-HTTP-Alias bedient, der aktiv ist: Er nimmt die
+Pfade `/cas/<sha256>` und `/ac/<sha256>` entgegen, die Bazel sendet, und leitet
+den Mandanten aus dem PAT ab (daher kein `--remote_instance_name`):
+
+```ini
+build --remote_cache=https://corelink-api.humangr.com/bazel/cache
+build --remote_header=Authorization=Bearer ${CORELINK_PAT}
+build --remote_upload_local_results=true
+```
+
+Details im [Bazel-Integrationsleitfaden](../integrations/bazel).
+:::
 
 :::tip .bazelrc committen, nicht .corelink/credentials
 Fügen Sie `.bazelrc` zu Git hinzu, damit das Team die Konfiguration teilt.

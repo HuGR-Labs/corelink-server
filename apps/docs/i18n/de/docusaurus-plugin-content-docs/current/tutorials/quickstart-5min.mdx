@@ -187,11 +187,12 @@ darauf und verwenden Sie Ihre Mandanten-UUID als REAPI-Instanznamen — siehe di
 eingecheckte Referenzkonfiguration unter
 [`apps/examples/bazel/.bazelrc`](https://github.com/HumanGuardrail/corelink-server/blob/main/apps/examples/bazel/.bazelrc).
 
-:::note Native `bazel --remote_cache`-Unterstützung: in Arbeit
-Ein Standard-Bazel-Plain-HTTP-Alias (`--remote_cache=https://…`, der
-`/cas/<hash>` und `/ac/<hash>` sendet) wird gerade gebaut und ist **noch nicht aktiv** — er
-gibt derzeit 404 zurück. Bis er verfügbar ist, verwenden Sie einen REAPI/ByteStream-kompatiblen Client
-gegen den obigen Endpunkt `/bazel/v2/<tenant>`.
+:::note Auch das Standard-`bazel --remote_cache` funktioniert
+Der Plain-HTTP-Alias `https://corelink-api.humangr.com/bazel/cache` ist **aktiv**:
+Er bedient genau die Pfade `/cas/<sha256>` und `/ac/<sha256>`, die Standard-Bazel
+sendet — ein REAPI-Client ist nicht erforderlich. Der Mandant stammt aus Ihrem PAT,
+nicht aus der URL — also kein `--remote_instance_name`. Beide Oberflächen liegen
+auf denselben mandantenbezogenen Blobs.
 :::
 
 Vollständiger Leitfaden: [Bazel-Integration](../integrations/bazel).

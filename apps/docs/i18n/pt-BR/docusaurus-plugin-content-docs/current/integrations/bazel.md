@@ -37,7 +37,8 @@ rotas `/bazel/*` aceitam; o CAS REST *nativo* em `/v1/cas/...` é chaveado por B
 
 ## Pré-requisitos
 
-- Um cliente Bazel compatível com REAPI/ByteStream.
+- Bazel padrão (para o alias `/bazel/cache`) ou um cliente compatível com
+  REAPI/ByteStream (para `/bazel/v2`). Qualquer um funciona.
 - Um PAT do CoreLink (`corelink_pat_...`) com escopo de leitura + escrita de cache. Veja [criação de PAT](../concepts/tenancy.md).
 
 ## Configurar o `.bazelrc`

@@ -276,8 +276,9 @@ read-only mode for 30 days as a fallback; its S3 bucket costs roughly
 $0.023/GB-month for the transition window.
 
 ```ini
-# .bazelrc
-build --remote_cache=https://corelink-api.humangr.com/cache/v1/<workspace-id>
+# .bazelrc — stock-Bazel HTTP alias. Your tenant is resolved from the PAT,
+# so there is no tenant or workspace segment in the URL.
+build --remote_cache=https://corelink-api.humangr.com/bazel/cache
 build --remote_header=Authorization=Bearer <PAT>
 build --remote_cache_compression=true
 ```

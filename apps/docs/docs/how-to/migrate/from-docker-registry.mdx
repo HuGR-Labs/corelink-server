@@ -3,7 +3,7 @@ id: migrate-from-docker-registry
 title: "Migrate from a self-hosted Docker registry (Harbor / Quay)"
 slug: "/how-to/migrate/from-docker-registry"
 sidebar_label: "From a Docker registry"
-description: "Move your self-hosted Harbor, Quay, or generic Docker Distribution registry to CoreLink CAS as the layer storage backend. The registry frontend stays; the layer bytes move to CoreLink with BLAKE3 integrity and dedup."
+description: "Move your self-hosted Harbor, Quay, or generic Docker Distribution registry to CoreLink, itself a full OCI Distribution Spec v1.1 registry. Clients re-point at CoreLink over HTTPS; layers keep BLAKE3 integrity and dedup."
 tags: [migration, docker, harbor, quay, registry, oci, how-to]
 last_updated: "2026-05-15"
 ---
@@ -14,27 +14,26 @@ last_updated: "2026-05-15"
 registry — Harbor, Quay, JFrog Container Registry, the upstream
 `registry:2` reference implementation, or a custom registry.
 
-**Target:** **CoreLink as the layer storage backend** behind your
-existing registry frontend. The registry's manifest store, tag
-namespace, and Docker API endpoint stay exactly where they are; only
-the blob storage (the heavy bytes) moves.
+**Target:** **CoreLink as the registry itself**, over HTTPS at
+`corelink-api.humangr.com`. CoreLink is a full **OCI Distribution Spec v1.1**
+registry (`/v2/*` plus the two-leg `/token` bearer flow) — manifests, tags and
+blobs all live in CoreLink, and your clients re-point at it.
 
 This is **the lowest-risk migration of the three** because:
 1. Docker layers are already content-addressed by sha256 (a strict
    subset of what CoreLink does with BLAKE3).
-2. The registry frontend already abstracts the storage backend; you're
-   swapping S3/filesystem for CoreLink CAS via the same backend
-   interface.
-3. Image pulls are read-mostly; you can run a pull-through cache for
+2. Every standard OCI client already speaks the wire protocol CoreLink
+   serves — there is nothing to build or install.
+3. Image pulls are read-mostly; you can backfill and read from CoreLink for
    weeks before flipping write paths.
 
-:::note CoreLink is not (yet) a full OCI distribution server
-At GA, CoreLink replaces the **storage backend** of your existing
-registry, not the registry itself. Your `docker push` still hits
-Harbor/Quay; Harbor/Quay's storage driver then writes blobs to
-CoreLink CAS instead of S3 or local disk. Full OCI distribution
-endpoints (`/v2/`) are on the post-GA roadmap; track
-[`RFC-OCI-DIST-001`](https://github.com/HumanGuardrail/corelink-server/issues?q=RFC-OCI-DIST-001).
+:::info CoreLink IS the OCI registry — you re-point clients, you do not plug it in underneath one
+The `/v2/*` Distribution endpoints are **live**, not roadmap: `docker`,
+`podman`, `buildah`, `crane`, `helm` (OCI charts), containerd and Kubernetes
+image pulls all authenticate with a PAT and talk to CoreLink directly (see
+[OCI registry integration](/integrations/oci-registry)). Correspondingly, there
+is **no** CoreLink storage-driver plugin that keeps Harbor or Quay in front —
+that topology is not supported today.
 :::
 
 ---
@@ -139,53 +138,36 @@ done
 For large registries (> 500 GiB), parallelize with `xargs -P 16` per
 the [S3 migration guide](./from-s3-only#step-1--backfill-existing-artifacts-into-corelink).
 
-### Step 2 — Configure your registry to use CoreLink as the storage driver
+### Step 2 — Point your clients at CoreLink as the registry
 
-The exact mechanism depends on your registry product. CoreLink ships
-an OCI-compatible **storage driver shim** (`corelink-registry-driver`)
-that implements the upstream Distribution
-[`StorageDriver` interface](https://distribution.github.io/distribution/storage-drivers/).
-
-**Harbor (recommended path):**
-
-```yaml
-# harbor.yml — replace the storage_service block.
-storage_service:
-  # OLD: filesystem or s3
-  # NEW: CoreLink CAS via the driver shim.
-  driver: corelink
-  corelink:
-    endpoint: grpcs://corelink-api.humangr.com:443
-    tenant_id: ${CORELINK_TENANT_ID}
-    pat_secret_ref: corelink-pat   # k8s secret containing CORELINK_PAT
-    region: enam
-    # Verify BLAKE3 on every read (default-on; spelled out for clarity).
-    client_verify: true
-```
-
-Then reload Harbor:
+**CoreLink replaces the registry; it does not plug in underneath one.**
+CoreLink is itself a full **OCI Distribution Spec v1.1** registry at
+`corelink-api.humangr.com` — `docker`, `podman`, `buildah`, `crane`, `helm`
+(OCI charts), containerd and Kubernetes image pulls all speak to it directly.
 
 ```bash
-helm upgrade harbor harbor/harbor -f harbor.yml
-kubectl rollout status -n harbor deploy/harbor-registry
+# Log in with your PAT as the password (the username is not checked).
+echo "$CORELINK_PAT" | docker login corelink-api.humangr.com \
+  --username corelink --password-stdin
+
+# Re-tag and push. The first segment after the host is the REPOSITORY name,
+# not a tenant — your tenant comes from the token, so there is no tenant
+# segment in the URL.
+docker tag registry.example.com/library/myapp:1.2.3 corelink-api.humangr.com/library/myapp:1.2.3
+docker push corelink-api.humangr.com/library/myapp:1.2.3
 ```
 
-**Upstream `registry:2`:**
+Full reference: [OCI registry integration](/integrations/oci-registry).
 
-```yaml
-# /etc/docker/registry/config.yml
-storage:
-  corelink:
-    endpoint: grpcs://corelink-api.humangr.com:443
-    tenant_id: ${CORELINK_TENANT_ID}
-    pat: ${CORELINK_PAT}
-    region: enam
-```
-
-The driver is published as
-[`HumanGuardrail/corelink-registry-driver`](https://github.com/HumanGuardrail/corelink-server/tree/main/crates/corelink-registry-driver)
-and ships with the registry image at
-`humangr/registry-with-corelink:2.8.x`.
+:::warning No storage-driver shim, and no gRPC endpoint
+There is **no** CoreLink `StorageDriver` plugin for Harbor or upstream
+`registry:2`, and no driver image to deploy — keeping Harbor in front of
+CoreLink is not a supported topology today. There is also no `grpc://` /
+`grpcs://` CoreLink address to configure anywhere: CoreLink has no gRPC ingress
+(the data plane is a single HTTP/1.1 listener behind Cloudflare Workers, and
+workerd implements no HTTP trailers, which gRPC requires). The migration is a
+**client re-point**, as above.
+:::
 
 ### Step 3 — Verify layers round-trip
 
@@ -243,9 +225,9 @@ Run this every day during the parallel-run window.
 ## Phase 3 — Cutover (30 min)
 
 Cutover for this migration is **already done at the end of Phase 1**
-if you set the registry's storage driver to CoreLink. Phase 3 here is
-about making the change permanent and removing the read-only fallback
-mount of the old backend.
+if your clients now push and pull against `corelink-api.humangr.com`.
+Phase 3 here is about making the change permanent and standing the old
+registry down to read-only.
 
 ### Step 1 — Confirm 7 days clean
 
@@ -303,13 +285,12 @@ kubectl edit deploy -n harbor harbor-registry
 
 ## Rollback — any phase
 
-### Phase 1–2 rollback (driver swap)
+### Phase 1–2 rollback (re-point clients back)
 
-Revert the storage driver config:
+Point image references at the old registry host again:
 
 ```bash
-git checkout pre-corelink-migration -- harbor.yml
-helm upgrade harbor harbor/harbor -f harbor.yml
+git checkout pre-corelink-migration -- $(git ls-files '*.yaml' '*.yml' | xargs grep -l corelink-api.humangr.com)
 kubectl rollout status -n harbor deploy/harbor-registry
 ```
 
@@ -321,10 +302,10 @@ in practice the old backend is kept warm precisely so that pulls of
 older layers still work and you can `docker push` again to repopulate
 the new ones.
 
-### Phase 3 rollback (already cutover, old backend read-only)
+### Phase 3 rollback (already cutover, old registry read-only)
 
-Re-mount the old backend as read-write, flip the storage driver back.
-Same one-line config change as Phase 1–2 rollback.
+Re-mount the old backend as read-write and re-point image references
+back. Same change as the Phase 1–2 rollback.
 
 ### Phase 4 rollback (after decommission)
 

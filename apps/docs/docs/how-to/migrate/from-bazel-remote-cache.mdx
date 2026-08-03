@@ -3,23 +3,46 @@ id: migrate-from-bazel-remote-cache
 title: "Migrate from a Bazel remote cache (bazel-remote / BuildBuddy)"
 slug: "/how-to/migrate/from-bazel-remote-cache"
 sidebar_label: "From a Bazel remote cache"
-description: "Move your Bazel remote cache from bazel-remote or BuildBuddy to CoreLink REAPI v2 with a one-week parallel-run window and a zero-data-loss rollback."
+description: "Move your Bazel remote cache from bazel-remote or BuildBuddy to CoreLink over plain HTTPS, with a one-week parallel-run window and a zero-data-loss rollback."
 tags: [migration, bazel, remote-cache, reapi, how-to]
 last_updated: "2026-05-15"
 ---
 
 # Migrate from a Bazel remote cache to CoreLink
 
-**Source systems covered:** `bazel-remote` (open-source HTTP cache),
-BuildBuddy (managed REAPI), or any other build-tool remote cache that
-speaks the REAPI v2 protocol (Buck2, Pants, reclient).
+**Source systems covered:** `bazel-remote` (open-source HTTP cache) or
+BuildBuddy (managed REAPI) — **read by a Bazel client**. The build tool you
+cut over must be **Bazel**.
 
-**Target:** CoreLink REAPI v2 endpoint at
-`grpc://corelink-api.humangr.com:443/<tenant-id>` (or `https://...` for
-HTTP/2). Surface is implemented by
+**Target:** CoreLink's Bazel cache over **plain HTTPS**. Two live surfaces,
+both Bearer-PAT authenticated:
+
+| Surface | URL | Client |
+| --- | --- | --- |
+| Stock-Bazel HTTP alias | `https://corelink-api.humangr.com/bazel/cache` | vanilla `bazel --remote_cache` (`GET`/`PUT` on `/cas/<sha256>`, `/ac/<sha256>`; tenant comes from the PAT, not the URL) |
+| REAPI v2 ByteStream (REST) | `https://corelink-api.humangr.com/bazel/v2` | any REAPI/ByteStream client; `--remote_instance_name` = your tenant UUID |
+
+:::warning Not a gRPC endpoint — Buck2, Pants and `--bes_backend` cannot cut over
+CoreLink exposes **no gRPC ingress at all**. The data plane is a single
+HTTP/1.1 listener behind Cloudflare Workers, and workerd implements no HTTP
+trailers — `grpc-status` is carried in a trailer, so a well-formed gRPC
+response cannot be emitted on this topology. A `grpc://` or `grpcs://` CoreLink
+address does not exist and will not connect. Concretely:
+
+- **Bazel — supported.** Its plain-HTTP remote cache is exactly the alias above.
+- **Pants — not supported today.** Its `reapi` provider accepts only
+  `grpc://`/`grpcs://` addresses, and its sole HTTP provider targets GitHub's
+  cache service, not a Bazel-style cache.
+- **Buck2 — not supported today.** Buck2 speaks REAPI over gRPC only; the
+  HTTP-cache request was closed `wontfix` upstream (`facebook/buck2#459`).
+- **Build Event Protocol (`--bes_backend`) — not supported today.** BES is a
+  gRPC service; there is no HTTP transport for it to fall back to.
+
+The gRPC REAPI implementation in
 [`crates/corelink-reapi/`](https://github.com/HumanGuardrail/corelink-server/tree/main/crates/corelink-reapi)
-and exposes `ContentAddressableStorage`, `ActionCache`, `ByteStream`,
-and `Capabilities`.
+is host-only and not reachable from this topology. Standing up a separate
+non-Worker origin for it is a roadmap decision; no date is committed.
+:::
 
 **Why this migration is low-risk:** Bazel remote caches are
 **content-addressed by definition**. The digest of an action's output
@@ -104,28 +127,22 @@ CoreLink.
 ## Phase 1 — Configure CoreLink as a secondary cache (2–4 h)
 
 Bazel does not natively dual-write to two remote caches behind a single
-flag. There are two supported patterns; pick one.
+flag. Use the sidecar mirror below.
 
-### Pattern A — Build-Event-Protocol consumer (recommended for SaaS sources)
+### Pattern A — Build-Event-Protocol consumer — **not available**
 
-Best when your current cache is BuildBuddy or any REAPI v2 SaaS that
-already speaks BEP. CoreLink ingests cache references asynchronously,
-**off the build's critical path** — your CI wall time is unchanged
-during the parallel-run.
+A BEP/BES parallel-run is the pattern you would reach for first if your current
+cache is BuildBuddy. **CoreLink cannot serve it today.** `--bes_backend` takes a
+gRPC endpoint (`grpc://`/`grpcs://`) and speaks the Build Event Service over
+gRPC; CoreLink has no gRPC ingress, and BES has no HTTP transport to fall back
+to. There is no `.bazelrc` line that makes this work, so this guide does not
+print one. Use Pattern B.
 
-```bazel
-# .bazelrc — add these lines; do NOT remove your existing --remote_cache flag.
-build:ci --bes_backend=grpcs://corelink-api.humangr.com:443
-build:ci --bes_results_url=https://humangr.com/corelink/tenants/$CORELINK_TENANT_ID/builds
-build:ci --bes_header=Authorization=Bearer\ $CORELINK_PAT
-build:ci --bes_upload_mode=fully_async
-```
+### Pattern B — Sidecar mirror (the supported parallel-run)
 
-### Pattern B — Sidecar mirror (recommended for self-hosted sources)
-
-Best when you run `bazel-remote` on your own infra. The CoreLink CLI
-ships a mirror command that watches the source cache and replicates
-new blobs to CoreLink in the background.
+Works for any source cache whose blobs you can read from disk or an
+object store — self-hosted `bazel-remote` included. The CoreLink CLI
+replicates new blobs to CoreLink in the background.
 
 ```bash
 # Run on each CI runner (or once, on a dedicated mirror host):
@@ -143,8 +160,8 @@ enforces `INV-CAS-IMMUTABILITY` via `If-None-Match: *`.
 
 :::warning Do not point Bazel's `--remote_cache` at *two* URLs
 Bazel only honors the last `--remote_cache` flag. If you set it twice,
-the first is silently ignored. Use Pattern A or Pattern B; do not try to
-overlap them.
+the first is silently ignored. Keep your existing cache on `--remote_cache`
+during the parallel-run and let the Pattern B mirror do the copying.
 :::
 
 ### Verify Phase 1 is live
@@ -153,8 +170,7 @@ overlap them.
 # 1. Trigger a CI build that writes to the existing cache.
 bazel build //... --config=ci
 
-# 2. Confirm the blobs landed in CoreLink within ~60 s (Pattern A) or
-#    on the next mirror interval (Pattern B):
+# 2. Confirm the blobs landed in CoreLink on the next mirror interval:
 corelink ls --tenant "$CORELINK_TENANT_ID" --limit 20
 
 # 3. Confirm at least one digest matches between systems:
@@ -164,8 +180,8 @@ corelink stat "$EXAMPLE_DIGEST"
 ```
 
 If `exists=false` for a blob you know was just built, your replication
-isn't keeping up. Inspect logs from your mirror process or check
-`corelink doctor` for the `BES ingestion` check.
+isn't keeping up. Inspect logs from your mirror process, then run
+`corelink doctor`.
 
 ---
 
@@ -222,12 +238,18 @@ Friday evening or Sunday morning in your CI runners' timezone).
 # OLD:
 # build:ci --remote_cache=https://bazel-remote.your-domain.com
 
-# NEW:
-build:ci --remote_cache=grpcs://corelink-api.humangr.com:443/$CORELINK_TENANT_ID
+# NEW — stock-Bazel HTTP alias. No tenant in the URL: it is resolved from the
+# PAT, so there is no --remote_instance_name line.
+build:ci --remote_cache=https://corelink-api.humangr.com/bazel/cache
 build:ci --remote_header=Authorization=Bearer\ $CORELINK_PAT
 build:ci --remote_upload_local_results=true
 build:ci --remote_timeout=60s
 ```
+
+If you run a REAPI/ByteStream client instead of stock Bazel, point it at
+`https://corelink-api.humangr.com/bazel/v2` and add
+`build:ci --remote_instance_name=$CORELINK_TENANT_ID`. Both are HTTPS; neither
+is gRPC.
 
 Commit. Push. Wait for CI to pick up the new config.
 
@@ -316,7 +338,7 @@ Run this after Phase 4:
 ```bash
 # 1. Last 24h CI builds all hit CoreLink:
 bazel info --config=ci | grep remote_cache
-# remote_cache: grpcs://corelink-api.humangr.com:443/...
+# remote_cache: https://corelink-api.humangr.com/bazel/cache
 
 # 2. CoreLink is the only place new blobs land:
 corelink ls --tenant "$CORELINK_TENANT_ID" --limit 5

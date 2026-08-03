@@ -37,7 +37,8 @@ Beide werden per Bearer-PAT authentifiziert. (Bazel adressiert Inhalte per SHA-2
 
 ## Voraussetzungen
 
-- Ein REAPI/ByteStream-kompatibler Bazel-Client.
+- Standard-Bazel (für den Alias `/bazel/cache`) oder ein REAPI/ByteStream-
+  kompatibler Client (für `/bazel/v2`). Beides funktioniert.
 - Ein CoreLink-PAT (`corelink_pat_...`) mit Lese- und Schreibberechtigung für den Cache. Siehe [PAT-Erstellung](../concepts/tenancy.md).
 
 ## `.bazelrc` konfigurieren
