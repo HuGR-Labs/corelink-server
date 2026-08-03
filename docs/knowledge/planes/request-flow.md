@@ -6,7 +6,11 @@ source_files:
   - "worker/src/index.ts"
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
-checkpoint_sha: "9b042a4272a76b470347478558ddefb2e171df96"
+source_blobs:
+  - "worker/src/index.ts@e0300e4d06ccd5aa81bb2bf4c7a8f9c13354b048"
+  - "worker/src/durable_object.ts@9b407f2b402cc395576be41779afe9387d5a6bc9"
+  - "crates/corelink-container/src/routes.rs@37c9e0fc4514d4276e195c8cd8c576a78668fc32"
+checkpoint_sha: "c0fcadc21c9d8dc7c24c96e12f3ed13177a56c21"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
