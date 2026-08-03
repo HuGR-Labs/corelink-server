@@ -330,14 +330,26 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
     }
   });
 
-  it("provisions the FULL 5-row-family on first user.created: tenant, tenant_org_map, pat, tier_selections('free','active'), tenant_quota, runners_entitlement('free') — converges with githugr_provision", async () => {
+  it("provisions the 4-row-family on first user.created: tenant, tenant_org_map, pat, tier_selections('free','active'), tenant_quota — and grants NO runners_entitlement", async () => {
     // LAUNCH-CRITICAL GAP: the Clerk-signup path previously seeded only
-    // tenant+tenant_org_map+pat, leaving tier_selections/tenant_quota/
-    // runners_entitlement EMPTY — so a Clerk-signup tenant reported billing
-    // `inactive` and read empty quota/runner gates (degraded dashboard), while a
-    // githugr-LOGIN tenant (worker/src/lib/githugr_provision.ts) was seeded with
-    // all five. This drives the REAL defaultApiClient end-to-end (mint mocked)
-    // and asserts every one of the five row-families lands.
+    // tenant+tenant_org_map+pat, leaving tier_selections/tenant_quota EMPTY — so a
+    // Clerk-signup tenant reported billing `inactive` and read an empty quota gate
+    // (degraded dashboard), while a githugr-LOGIN tenant
+    // (worker/src/lib/githugr_provision.ts) was seeded. This drives the REAL
+    // defaultApiClient end-to-end (mint mocked) and asserts each row-family lands.
+    //
+    // ⚠️ `runners_entitlement` is the DELIBERATE exception and this test pins it
+    // NEGATIVELY (2026-08-02). It used to be seeded here as ('free', 1) "so the
+    // runner cap gate reads a real entitlement" — but that row IS the entitlement
+    // the mint gate checks, so seeding it granted paid Runners capacity to every
+    // free signup, silently reverting owner-ratified Option B (Runners = separate
+    // PAID axis) and migration 0070's "empty table = no cap = reject" contract.
+    // A free signup that then installs the public GitHub App (which seeds the
+    // installation map + repo allowlist with NO entitlement check) would clear all
+    // four mint gates and spawn boxes on our Cloudflare account.
+    //
+    // So: if this assertion ever fails because a row appeared, the leak is back.
+    // Do NOT "fix" it by relaxing the expectation.
     const db = new InMemoryD1();
     const env: AutoProvisionEnv = {
       CLERK_WEBHOOK_SECRET: WEBHOOK_SECRET,
@@ -367,24 +379,26 @@ describe("Clerk webhook — Stream-5 end-to-end flow", () => {
       const resp = await handleClerkWebhook(req, env, defaultApiClient);
       expect(resp.status).toBe(200);
 
-      // ── ALL FIVE row-families seeded (the convergence assertion) ────────────
+      // ── The FOUR row-families a signup gets (the convergence assertion) ────
       expect(db.rowCount("tenant")).toBeGreaterThanOrEqual(1);
       expect(db.rowCount("tenant_org_map")).toBe(1);
       expect(db.rowCount("pat")).toBe(1);
-      // The three rows the gap left empty:
+      // The two rows the gap left empty:
       expect(db.rowCount("tier_selections")).toBe(1);
       expect(db.rowCount("tenant_quota")).toBe(1);
-      expect(db.rowCount("runners_entitlement")).toBe(1);
+
+      // ── The NEGATIVE pin: a signup buys CACHE, never RUNNERS ───────────────
+      // Absence of the row IS the zero (migration 0070). The schema's
+      // `CHECK(max_concurrency > 0)` makes "entitled to zero" inexpressible, so
+      // there is no such thing as a harmless placeholder row here — any row is a
+      // grant of real, billable compute capacity.
+      expect(db.rowCount("runners_entitlement")).toBe(0);
 
       // tier_selections is seeded free/ACTIVE (billing reads `active`, not the
       // degraded `inactive`), matching githugr_provision's shape.
       const tierRaw = String(db.firstRow("tier_selections")?.["_raw_query"] ?? "");
       expect(tierRaw).toContain("INTO tier_selections");
       expect(tierRaw).toContain("'free', 'active'");
-      // runners_entitlement is seeded on the free plan.
-      const runnersRaw = String(db.firstRow("runners_entitlement")?.["_raw_query"] ?? "");
-      expect(runnersRaw).toContain("INTO runners_entitlement");
-      expect(runnersRaw).toContain("'free'");
     } finally {
       fetchMock.mockRestore();
     }

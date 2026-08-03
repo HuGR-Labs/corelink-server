@@ -164,11 +164,14 @@ export async function insertTenantOrgMap(
 /**
  * Free-tier entitlement DEFAULTS — kept in LOCK-STEP with the parallel
  * login-time provisioner `worker/src/lib/githugr_provision.ts` (the CANONICAL
- * shape; see its provision batch, ~lines 154-200). Both provisioners MUST
- * converge on the SAME row-family so a Clerk-signup tenant and a githugr-login
- * tenant are seeded identically — a Clerk tenant missing these three rows
- * reports billing `inactive` and reads empty quota/runner gates → degraded
- * dashboard.
+ * shape; see its provision batch). Both provisioners MUST converge on the SAME
+ * row-family so a Clerk-signup tenant and a githugr-login tenant are seeded
+ * identically — a Clerk tenant missing these rows reports billing `inactive` and
+ * reads an empty quota gate → degraded dashboard.
+ *
+ * Convergence cuts BOTH ways: when the runner grant was removed here (2026-08-02)
+ * it was removed there in the same change. If you add a row-family to one, add it
+ * to the other — a divergence means two classes of tenant with different rights.
  *
  * The two workers are SEPARATE deploy units (no cross-import between `worker/`
  * and `apps/signup-worker/`), so these statements + constants are replicated by
@@ -176,8 +179,11 @@ export async function insertTenantOrgMap(
  */
 /** Free-tier monthly $-ceiling BACKSTOP, micro-dollars ($1,000,000/mo, ADR-0068). */
 const FREE_MONTHLY_BUDGET_USD_MICROS = 1_000_000_000_000;
-/** Free-tier runner concurrency (family-e2e free row; >0 CHECK, migration 0070). */
-const FREE_RUNNER_MAX_CONCURRENCY = 1;
+
+// NOTE: there is deliberately NO `FREE_RUNNER_MAX_CONCURRENCY` here any more.
+// Runners is a SEPARATE PAID axis (owner-ratified Option B) and a signup grants
+// NO runner capacity — see the `seedTenantEntitlements` doc-comment below for the
+// full reasoning. Re-introducing a free runner row re-opens the leak.
 
 /** Parameters for seeding the free-tier entitlement row-family. */
 export interface SeedEntitlementsParams {
@@ -186,12 +192,39 @@ export interface SeedEntitlementsParams {
 }
 
 /**
- * Seed the THREE entitlement rows a fully-provisioned tenant needs beyond
+ * Seed the TWO entitlement rows a fully-provisioned tenant needs beyond
  * `tenant` / `tenant_org_map` / `pat`:
  *   - `tier_selections('free','active')` — so billing reads `active`, not `inactive`
  *   - `tenant_quota` — non-zero monthly ceiling so the container quota gate is
  *     not a flat 402 / fail-open None on an empty read
- *   - `runners_entitlement('free')` — so the runner cap gate reads a real entitlement
+ *
+ * ## Why NO `runners_entitlement` row (2026-08-02)
+ *
+ * This used to seed a third row, `runners_entitlement('free', max_concurrency=1)`,
+ * "so the runner cap gate reads a real entitlement". That comment described the
+ * intent correctly and the effect wrongly: `runners_entitlement` is not a cap the
+ * gate merely READS, it is the ENTITLEMENT the gate CHECKS. Writing the row is
+ * granting the capacity.
+ *
+ * It silently reverted an owner-ratified decision. Runners is a SEPARATE PAID axis
+ * from the cache tier (Option B, 2026-06-13) — chosen precisely because the
+ * alternative "leaked compute a cache-only tenant never bought". Migration 0070
+ * states the contract in its own header: "NO row … the tenant is cache-only and
+ * gets no runner cap … Empty table = no cap = reject." A free cache signup is
+ * exactly the cache-only tenant that clause is about.
+ *
+ * The row made all four `handleRunnerMint` gates passable for a tenant that never
+ * bought Runners: 5d (entitlement) came from here, and 5a (installation map) + 5c
+ * (repo allowlist) are both seeded by `webhooks/github_install_callback.ts`, which
+ * checks no entitlement of any kind. So: free signup → install the public GitHub
+ * App → boxes spawn on our Cloudflare account. Slots are first-come-first-served
+ * against a GLOBAL fleet cap of 20 with no reservation for paying tenants, so the
+ * grant also competes directly with revenue.
+ *
+ * ⚠️ The trap that produced the bug is still in the schema: `max_concurrency
+ * INTEGER NOT NULL CHECK(max_concurrency > 0)` makes "entitled to ZERO"
+ * INEXPRESSIBLE. Anyone wanting a placeholder row is forced by the CHECK to grant
+ * real capacity. Do not add one. Absence IS the zero — that is the whole design.
  *
  * CANONICAL SHAPE: mirrors `worker/src/lib/githugr_provision.ts` (~lines 154-200)
  * statement-for-statement (column lists, literal 'free'/'active', schema_version
@@ -228,16 +261,7 @@ export async function seedTenantEntitlements(
     .bind(tenantId, `clerk-signup:${tenantId}`, nowMs)
     .run();
 
-  // (2) runners_entitlement — free plan, min concurrency (>0 CHECK, 0070).
-  await db
-    .prepare(
-      "INSERT OR IGNORE INTO runners_entitlement " +
-        "(tenant_id, max_concurrency, plan, created_at_ms) VALUES (?1, ?2, 'free', ?3)",
-    )
-    .bind(tenantId, FREE_RUNNER_MAX_CONCURRENCY, nowMs)
-    .run();
-
-  // (3) tenant_quota — effectively-unlimited $-ceiling backstop (ADR-0068), so
+  // (2) tenant_quota — effectively-unlimited $-ceiling backstop (ADR-0068), so
   // the container quota gate isn't a flat 402 / fail-open None on an empty read.
   await db
     .prepare(
