@@ -24,7 +24,7 @@ tags: ["sales", "legal", "questionnaire", "evidence-pack", "procurement", "audit
 > **⛔ CoreLink is not open source.** There is no public source repository. No row in this index may invite an auditor to "go read the code" — the platform source is private and is shared only under NDA. The only artifacts anyone can fetch without auth are release **binaries and checksums** (see PUBLIC-REPO). Verified 2026-08-02: `HumanGuardrail/corelink` and `HuGR-Labs/corelink` both return **HTTP 404** — that repo has never existed in either org, so this is not org-rename drift.
 >
 > **Access model:**
-> - **PUBLIC** = visible on `apps/docs/docs/` or on `https://docs.corelink.humangr.com/`.
+> - **PUBLIC** = visible on `apps/docs/docs/` or on the live docs site `https://humangr.com/corelink/docs/` (the old `https://docs.corelink.humangr.com/` hostname is NXDOMAIN; `corelink-docs.humangr.com` 301s to the same live base).
 > - **PUBLIC-REPO** = a **release artifact** (binary, checksum) downloadable without auth from `HuGR-Labs/corelink-cli` (HTTP 200) or `HuGR-Labs/clw-releases` (HTTP 200). Both publish **build outputs only — no source**.
 > - **NDA** = shareable with countersigned NDA on file via `trust@humangr.com`. Turnaround: 1 business day.
 > - **AUDITOR-ONLY** = shared with engaged 3PAO / external auditor only; not distributed even with NDA.
@@ -133,8 +133,13 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 85 | **VDP / responsible disclosure** | `apps/docs/docs/security/policy` | PUBLIC |
 | 86 | Security contact card | `/.well-known/security.txt` | PUBLIC |
 | 87 | PGP key | `/.well-known/security-pgp.asc` | PUBLIC |
+<<<<<<< HEAD
 | 88 | **SLO catalog** | `specs/03_architecture/slo_catalog.md` | NDA |
 | 89 | SLO — public summary | `https://docs.corelink.humangr.com/slo` | PUBLIC |
+=======
+| 88 | **SLO catalog** | `specs/03_architecture/slo_catalog.md` | NDA |
+| 89 | SLO — public summary | **not published** — `/slo` 404s on the live docs site and no source page exists; use row 88 | NDA |
+>>>>>>> ec54c5c7 (fix(marketing): BES ingest has no endpoint either, and finish the dead-host sweep across sales + retention)
 | 90 | Status page | `https://status.corelink.humangr.com` | PUBLIC |
 | 91 | **Trust Center — index** | `apps/docs/docs/trust/index.mdx` | PUBLIC |
 | 92 | Trust Center — compliance | `apps/docs/docs/trust/compliance.mdx` | PUBLIC |

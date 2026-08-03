@@ -60,7 +60,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **A:** Soft-cap then notify, then negotiate. Concretely: at 80% of any cap we emit a webhook + email; at 100% we serve a `429 / overage-pending` for **TPS** (rate-limited, not refused — your build still completes, just slower) and continue serving **storage / egress** with the overage line appearing on the next invoice. We *do not* hard-fail builds in production tenants when caps are exceeded; we'd rather invoice you than break your inner loop. For Enterprise the overage line is governed by your order form; for Team it's metered at our standard list rate. We are happy to convert a recurring overage into a contractual tier upgrade with no penalty (see P5 — migration discount).
 
-**Sources:** SLO catalog (`docs.corelink.humangr.com/slo`); overage runbook (`specs/_runbooks/RB-BILLING-OVERAGE.md`); quickstart-faq Q8.
+**Sources:** SLO catalog (`specs/03_architecture/slo_catalog.md` — internal; no public SLO page is published today, `/slo` 404s); overage runbook (`specs/_runbooks/RB-BILLING-OVERAGE.md`); quickstart-faq Q8.
 
 ### P3 — Is BYOK a premium? How much more?
 
@@ -296,7 +296,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **A:** **p99 CAS GET latency target ≤ 300 ms** in-region (SLO `SLO-LAT-CAS-GET`, customer-tenant scope). For lighthouse customers we measure daily; representative steady-state runs are well below target (typical observed p99: **180–220 ms** depending on region and blob-size mix; the calculator at `corelink.humangr.com/calculator` exposes your projected value). Audit-append p99 target ≤ 500 ms. The fast path does *not* call your KMS — DEK is unwrapped at first read into the bounded 5-min in-memory cache and re-used until expiry. Cache-miss reads pay one KMS unwrap RTT (provider-specific; AWS / GCP / Azure / Vault all sub-100 ms p99 in practice).
 
-**Sources:** SLO catalog (`docs.corelink.humangr.com/slo`); `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#what-were-measuring-daily-automated`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`.
+**Sources:** SLO catalog (`specs/03_architecture/slo_catalog.md` — internal; no public SLO page is published today, `/slo` 404s); `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#what-were-measuring-daily-automated`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`.
 
 ### PF2 — What hit rates are realistic?
 
@@ -404,7 +404,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **A:** **7 years.** Customer-controlled? No — compliance-driven minimum. Audit chain is append-only, Merkle-linked, with RFC 6962 inclusion proofs and JCS-canonicalized leaves. Backup snapshots of the chain follow the same 35-day rolling window with tombstones recorded on day 0 so a Type II auditor can trace the chain. Right-to-erasure under GDPR Art. 17 / LGPD Art. 18: erasure is fulfilled today via an operator-assisted request (the erasure pipeline is live); PII-bearing claims are made cryptographically unrecoverable via the salt-rotation pattern (`ADR-S11-003`) while the audit record itself remains for integrity. A customer-served signed Ed25519 erasure attestation is on the near-term roadmap.
 
-**Sources:** `apps/docs/docs/trust/data-handling.mdx#retention`; `marketing/launch/BLOG-POSTS/03-audit-chain-merkle-proofs.md`.
+**Sources:** `apps/docs/docs/trust/data-handling.mdx#retention`; `marketing/launch/BLOG-POSTS/03-audit-chain-merkle-proofs.md`; the operator procedure behind "operator-assisted erasure" is `specs/_runbooks/RB-DSR-GDPR.md` §2.3 (Art. 17, 30-day SLA, MFA-gated) and its LGPD sister `specs/_runbooks/RB-DSR-LGPD-FULL.md`.
 
 ---
 
@@ -414,17 +414,19 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** We're running `bazel-remote` standalone today. How do we switch?
 
-**A:** Easiest path is the **`corelink-bazel-remote-shim`** — a drop-in front that forwards to CoreLink with the existing bazel-remote API surface. Your `.bazelrc` doesn't change beyond the cache URL. Alternative: use Bazel's native `--remote_cache` against `https://cache.corelink.humangr.com/v1/{slot-id}` directly with a `--remote_header=Authorization=Bearer ${CORELINK_PAT}`. We recommend the **mirror-then-cutover** pattern (see M5) — write to both for 1–2 weeks, validate hit ratio, then flip primary. The full self-serve guide is at `apps/docs/docs/how-to/migrate/from-bazel-remote/`.
+**A:** You don't install anything — there is **no CoreLink component in your build path**. `.bazelrc` changes by a cache URL and an auth header; the protocol translation runs on our side. Two live schemes, both Bearer-PAT authenticated: (1) **stock plain-HTTP cache** — `--remote_cache=https://corelink-api.humangr.com/bazel/cache`, which serves the `/cas/<hash>` and `/ac/<hash>` paths vanilla Bazel emits; (2) **REAPI v2 / ByteStream** — `--remote_cache=https://corelink-api.humangr.com/bazel/v2` with `--remote_instance_name=${CORELINK_TENANT}` (your tenant UUID is the REAPI instance segment). Both take `--remote_header=Authorization=Bearer ${CORELINK_PAT}`. We recommend the **mirror-then-cutover** pattern (see M5) — keep bazel-remote primary for 1–2 weeks, validate hit ratio, then flip. The full self-serve guide is `apps/docs/docs/how-to/migrate/from-bazel-remote-cache.mdx`.
 
-**Sources:** `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#phase-1-days-1-7-mirror-your-ci`; `apps/docs/docs/how-to/migrate/`.
+**Sources:** `apps/docs/docs/integrations/bazel.md`; `apps/docs/docs/how-to/migrate/from-bazel-remote-cache.mdx`; `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#phase-1-days-1-7-mirror-your-ci`.
 
 ### M2 — Migrating from S3-based self-hosted cache?
 
 **Q:** We rolled our own on S3 + a custom HTTP shim. How does that move?
 
-**A:** Three components to migrate: (1) **The cache surface** — point your build tool at CoreLink's HTTP/REAPI endpoint; we support any client that does PUT/GET against a content-addressable backend. (2) **Existing blobs** — optional; you can either let CoreLink warm naturally (recommended; cold-start is < 1 week to steady state — see PF6) or bulk-pre-warm yourself with `corelink import <dir>` (content-addressed, so dedup happens for free — and re-runs are free too). Reading straight out of your bucket isn't wired yet, so sync the objects down first, or ask us for an operator-assisted import. (3) **Egress economics** — the migration *itself* costs you one final S3 egress charge if you pre-warm; ongoing reads then run on R2 with zero egress (see PF1 / `BLOG-POSTS/05`). Migration guide: `apps/docs/docs/how-to/migrate/from-s3/`.
+**A:** Three components to migrate: (1) **The cache surface** — point your build tool at CoreLink's HTTP/REAPI endpoint; we support any client that does PUT/GET against a content-addressable backend. (2) **Existing blobs** — optional; you can either let CoreLink warm naturally (recommended; cold-start is < 1 week to steady state — see PF6) or bulk-pre-warm yourself with `corelink import <dir>` (content-addressed, so dedup happens for free — and re-runs are free too). Reading straight out of your bucket isn't wired yet, so sync the objects down first, or ask us for an operator-assisted import. (3) **Egress economics** — the migration *itself* costs you one final S3 egress charge if you pre-warm; ongoing reads then run on R2 with zero egress (see PF1 / `BLOG-POSTS/05`). Migration guide: `apps/docs/docs/how-to/migrate/from-s3-only.mdx`.
 
-**Sources:** `apps/docs/docs/how-to/migrate/from-s3/`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`.
+**Sources:** `apps/docs/docs/how-to/migrate/from-s3-only.mdx`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`; CLI behaviour: `tools/cli/src/commands/import_cmd.rs` (local dir wired; `s3://` hard-errors with the flagged gap).
+
+> **Internal — the operator-assisted import has no runbook.** Offering it is fine as a *service* (a human does it on request), but as of this edit no procedure for it exists in `specs/_runbooks/` or `docs/operator/` — the phrase appears nowhere outside `marketing/`. Same for the operator-assisted push-to-your-bucket export in M4. Get Founder sign-off before promising either, and file the runbook gap. Contrast O8: operator-assisted **erasure** is fully documented (`specs/_runbooks/RB-DSR-GDPR.md` §2.3).
 
 ### M3 — Migrating from Docker registry / Harbor?
 

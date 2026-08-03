@@ -36,7 +36,7 @@ tags: ["sales", "faq", "rate-limit", "429", "throughput", "tier", "r-prep", "ga"
   upgrade-tier path, and the 5-arm taxonomy.
 - Each entry has: **Q**, **A** (short canonical answer), **Sources**.
 - If a prospect's question isn't here, route to the engineering doc
-  at `docs.corelink.humangr.com/explanation/rate-limits` or to
+  at `https://humangr.com/corelink/docs/explanation/rate-limits` or to
   `trust@humangr.com`.
 
 ---
@@ -95,6 +95,8 @@ default 10k RPS is the benchmark we anchor on.
   }
 }
 ```
+
+> ⚠️ **The two URLs in that body are dead in production — and the sample is correct anyway.** `tier_upgrade_url` and `docs_url` are frozen canonical constants in the service (`crates/corelink-rate-headers/src/headers.rs:164,173`), pinned by a property test (`INV-BODY-FROZEN-URLS`, `crates/corelink-rate-headers/tests/prop_rate_headers.rs:969-971`), so this is byte-for-byte what a customer receives today. Both hostnames are NXDOMAIN (verified 2026-08-02): the live equivalents are `https://humangr.com/corelink/en/pricing` (200; the locale-less `/corelink/pricing` 404s) and `https://humangr.com/corelink/docs/explanation/rate-limits` (200). **Do not "fix" it here** — editing the sample would make this FAQ diverge from the wire. The fix belongs in the constants + the frozen-URL test, in its own PR; if a prospect asks, tell them the links in the error body are stale and hand them the live ones.
 
 Your SDK pattern-matches on `error.kind`; humans read
 `error.message`; long deferred retries use `error.reset_utc`
