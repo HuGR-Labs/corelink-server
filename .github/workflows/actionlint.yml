@@ -9,6 +9,12 @@ name: actionlint
 #   - deprecated set-env / add-path commands
 #   - unused step IDs, wrong job-needs references, etc.
 #
+# Also runs scripts/validate_shared_home_cache_guard.py, which fails the PR if a
+# cargo-cache step is not gated to github-hosted runners. Five self-hosted
+# runners share ONE ~/.cargo, and Swatinem/rust-cache's save step prunes
+# $CARGO_HOME/registry/src while another runner's rustc compiles from it —
+# reddening unrelated PRs with `os error 2`. See the script's docstring.
+#
 # DEBT-020 closure: gate workflow drift before merge.
 # Sprint / WI link: WI-R-PREP §workflows
 # Quality lane: STANDARD
@@ -21,12 +27,14 @@ on:
       - '.actionlint.yaml'
       - '.github/actionlint.yaml'
       - '.github/workflows/actionlint.yml'
+      - 'scripts/validate_shared_home_cache_guard.py'
   push:
     branches: [main]
     paths:
       - '.github/workflows/**'
       - '.actionlint.yaml'
       - '.github/actionlint.yaml'
+      - 'scripts/validate_shared_home_cache_guard.py'
 
 permissions:
   contents: read
@@ -71,3 +79,11 @@ jobs:
           fi
           actionlint -version
           actionlint -color -verbose
+
+      # Fleet-safety gate: a cargo-cache step that runs on the shared-$HOME
+      # self-hosted fleet deletes ~/.cargo/registry/src out from under OTHER
+      # runners' in-flight rustc processes. stdlib-only python3, no setup-python
+      # (RUNNER_TOOL_CACHE is unset on this fleet — see action-sha-audit.yml).
+      - name: Cargo-cache steps must be gated to github-hosted runners
+        shell: bash
+        run: python3 scripts/validate_shared_home_cache_guard.py

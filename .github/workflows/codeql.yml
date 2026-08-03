@@ -152,7 +152,7 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
 
       - name: Cargo cache
-        if: matrix.language == 'rust' && steps.preflight.outputs.enabled == 'true'
+        if: (matrix.language == 'rust' && steps.preflight.outputs.enabled == 'true') && runner.environment == 'github-hosted'
         # Swatinem/rust-cache v2.7.7 — SHA-pinned (matches cargo-audit.yml).
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c
 
