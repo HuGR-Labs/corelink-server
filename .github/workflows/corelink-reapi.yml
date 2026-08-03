@@ -187,15 +187,49 @@ jobs:
 
       - name: cargo test (cross-tenant isolation property — 10k iter + 100k concurrent, WI-S02-001)
         run: cargo test --release --package corelink-reapi --test prop_cross_tenant_read
-      # The number this pilot exists to produce. Report-only and `always()`: a
-      # cache that must not fail the build must not fail its own measurement
-      # either. Compare "Cache hits" vs "Cache misses" across two consecutive
-      # runs — run 1 populates the cache, run 2 is the real signal.
-      - name: sccache stats
+
+      # The number this pilot exists to produce, ASSERTED rather than eyeballed.
+      #
+      # "the build passed" is not evidence: this lane passes at a 100 % miss rate
+      # too, and it passed for 676 s on the run that proved sccache was missing
+      # from the box image entirely. A run in which the pilot did not execute
+      # must not look like one in which it worked, so this step NAMES the state
+      # it is in instead of printing whatever it happens to find:
+      #
+      #   RUSTC_WRAPPER unset  -> the wiring step no-opped; the pilot did NOT run
+      #   hits == 0            -> the cache is not being hit; we are paying a
+      #                           round-trip and buying nothing
+      #   hits > 0             -> the claim is true, with a number behind it
+      #
+      # RUSTC_WRAPPER is the load-bearing probe: the wiring step exports it via
+      # $GITHUB_ENV, so its absence HERE is proof the wiring no-opped — whether
+      # for a missing secret, a missing binary, or a future regression in either.
+      #
+      # Still report-only (`always()`, never a non-zero exit): a cache that must
+      # not fail the build must not fail its own measurement either. The signal
+      # is a ::warning:: plus a line in the job summary, visible without opening
+      # the log and without reddening a gate. Run 1 populates the cache, so
+      # hits == 0 is EXPECTED on the first run and only meaningful from run 2 on.
+      - name: sccache stats (hit-rate assertion — report-only)
         if: always()
         run: |
-          command -v sccache >/dev/null 2>&1 || { echo "sccache absent — lane compiled cold"; exit 0; }
-          sccache --show-stats || echo "::notice::sccache inactive on this run"
+          if [ -z "${RUSTC_WRAPPER:-}" ]; then
+            echo "::warning::sccache never engaged (RUSTC_WRAPPER unset) — this run measured NOTHING; the lane compiled cold exactly as before the pilot"
+            echo "sccache: not engaged this run (no secret, or sccache missing from the box)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          stats="$(sccache --show-stats 2>&1 || true)"
+          echo "${stats}"
+          hits="$(printf '%s\n' "${stats}" | awk '/^Cache hits/ {print $NF; exit}')"
+          misses="$(printf '%s\n' "${stats}" | awk '/^Cache misses/ {print $NF; exit}')"
+          case "${hits}" in ''|*[!0-9]*) hits=0 ;; esac
+          case "${misses}" in ''|*[!0-9]*) misses=0 ;; esac
+          echo "sccache -> CoreLink /cargo: hits=${hits} misses=${misses}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${hits}" -eq 0 ]; then
+            echo "::warning::sccache 0 hits / ${misses} misses — the CoreLink cache is NOT being hit. Expected on the first run (it populates); from run 2 on it means the pilot costs a round-trip and buys nothing."
+          else
+            echo "::notice::sccache ${hits} hits / ${misses} misses against CoreLink /cargo"
+          fi
 
   wasm-build:
     name: WASM target build (CF Workers compile compatibility — pure-logic core)

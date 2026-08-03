@@ -45,9 +45,33 @@ Each entry cross-references:
   is required: incremental artifacts embed per-invocation paths, which would make sccache store
   and never hit.
 
-  **One lane on purpose.** The point is a number, not a rollout: `sccache --show-stats` runs
-  `always()`, and hits-vs-misses across two consecutive runs is the signal (run 1 populates).
-  The other 10 lanes follow only if it earns them.
+  **The first run went green while doing nothing, and that is the part worth recording.**
+  `sccache` is not on the `corelink` box image. The wiring step took its fail-open branch,
+  printed `::notice::sccache not on the box image`, exported nothing, and the PR gate reported
+  **success at 676 s** — the exact cold time the pilot exists to remove. "All gates green" and
+  "the cache is working" were two different statements and only the job log distinguished them.
+  Two fixes followed. (1) The binary is now installed per-job from a prebuilt, SHA-pinned
+  `taiki-e/install-action` (manifest existence checked at the pinned SHA, not assumed — a
+  sibling tool has none and would have silently fallen back to a from-source build); baking it
+  into the runner image is the right long-term home, once the number justifies it. (2) The
+  measurement no longer prints whatever it finds — it **names the state it is in**:
+  `RUSTC_WRAPPER` unset ⇒ `::warning::` *"this run measured NOTHING"*; `hits == 0` ⇒
+  `::warning::` *"the cache is NOT being hit"*; `hits > 0` ⇒ the claim with a number behind it —
+  plus a `hits=…/misses=…` line in the job summary, visible without opening the log.
+  `RUSTC_WRAPPER` is the load-bearing probe: the wiring step exports it through `$GITHUB_ENV`,
+  so its absence downstream is proof the wiring no-opped, for a missing secret, a missing
+  binary, or any future regression in either. Still report-only and `always()` — a cache that
+  must not fail a build must not fail its own measurement either — and `hits == 0` is
+  **expected** on the first run, because that run populates.
+
+  **One lane on purpose.** The point is a number, not a rollout; hits-vs-misses across two
+  consecutive runs is the signal. The other 10 lanes follow only if it earns them.
+
+  The new credential `CORELINK_SCCACHE_TOKEN` (a `cas:rw` PAT on the internal dogfood tenant
+  `ee30f7ba…`, GHA repo secret, bound 2026-08-03) is registered as row **#188** of
+  `docs/internal/secrets-checklist.md` — the secrets-matrix drift gate caught the unregistered
+  name, which is the gate working; it is fixed by registering the secret, never by loosening
+  the gate.
 - **fix(ops): the Stripe stray-destination sweep reported "no strays" over a live one for a month — it enumerated only `/v1/webhook_endpoints`, and its duplicate check could not fire on the URL that actually had duplicates.** On 2026-07-03 a live enumeration returned 3 endpoints, the reported stray `exquisite-rhythm-thin` was absent, and it was recorded in `docs/handoff/` as a "transient `stripe listen` tunnel" that did not exist. The 2026-08-03 production dashboard shows it still **Active** — 24 events, `thin` payload, on `corelink-api.humangr.com/v1/billing/stripe-webhook`, the same URL as the kept `Corelink prd` materializer. A CLI tunnel dies with its process; this survived a month. Root cause: a `thin` payload means a **v2 event destination** (`/v2/core/event_destinations`), a *different API resource* from v1 webhook endpoints, never returned by a v1 list — so the check was structurally incapable of observing the positive case, and its negative result was evidence of nothing. The counts reconcile exactly: v1 saw **3**, the dashboard shows **4**, and the invisible one is precisely the thin/v2 one. `scripts/ops/stripe-reconcile-webhook-events.sh` carried a **second, independent** blindness: the same-URL WARN counted only destinations whose url equalled the *reconcile target* (the signup-worker), so duplicates on any other host — including the corelink-api pair that really exists — could never trip it, which is why "the same-URL WARN also did NOT fire" was mistaken for corroboration. Both are fixed: the sweep now enumerates v1 **and** v2, reports id + `payload=` + name per destination, warns per-URL across the whole account, and — when the CLI/key cannot read v2 — says so loudly and **exits 3** instead of printing a clean report, because a detector that cannot look must never report "none found". Proven against a stub serving the real 2026-08-03 state: the **old** script prints 3 endpoints, **zero** warnings, `✅ Already in sync`, exit **0**; the **new** one lists `[v2] [enabled] 24 events payload=thin ed_… (exquisite-rhythm-thin)` and warns `2 destinations share https://corelink-api.humangr.com/v1/billing/stripe-webhook`, and in v2-blind mode exits **3** with the reconcile still completing. The two 2026-07-03 handoffs carry dated corrections naming the wrong call as the TL's (the recon was honest; converting "the API does not show it" into "it does not exist" was the defect). Removal of the stray is an **owner** action and is written up in `docs/operator/stripe-webhook-events-reconcile.md`, which also loses its claim that a signing secret is "verified working when deliveries show 0% error" — zero errors over **zero deliveries** is also 0%, and all four destinations read 0% including the one whose deliveries could only ever have been rejected.
 - **fix(sdks/js): adopt `@corelink/client` into the workspace and gate it — the SDK was never
   broken, it had simply never been installed.** It was an orphan: absent from
