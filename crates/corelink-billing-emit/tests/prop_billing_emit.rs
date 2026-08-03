@@ -84,13 +84,16 @@ const ALL_REGIONS: &[Region] = &[
 
 #[test]
 fn canonical_usage_event_kinds_pinned() {
+    // 7 → 8 on 2026-08-02 (`runner_vcpu_seconds`). See the same-named pin in
+    // `src/event.rs` for why bumping this number is the deliberate record that
+    // the Finance + Compliance sign-off for a new kind actually happened.
     let v = canonical_usage_event_kinds();
-    assert_eq!(v.len(), 7);
+    assert_eq!(v.len(), 8);
     let mut set = HashSet::new();
     for k in v {
         assert!(set.insert(k.as_str()));
     }
-    assert_eq!(set.len(), 7);
+    assert_eq!(set.len(), 8);
     assert!(set.contains("storage_bytes_hourly"));
     assert!(set.contains("egress_bytes"));
     assert!(set.contains("ac_lookup"));
@@ -98,6 +101,7 @@ fn canonical_usage_event_kinds_pinned() {
     assert!(set.contains("cas_put"));
     assert!(set.contains("replay_request"));
     assert!(set.contains("runner_slot_seconds"));
+    assert!(set.contains("runner_vcpu_seconds"));
 }
 
 #[test]
