@@ -34,6 +34,13 @@ name: gitleaks (secret-leak scan)
 
 on:
   pull_request:
+  schedule:
+    # Full-history baseline sweep, weekly Sat 05:17 UTC. The `pull_request` lane
+    # below scans the PR's OWN diff on every PR (that coverage is unconditional
+    # and unchanged); this cron is the belt-and-braces re-scan of the entire
+    # commit graph, which used to be reachable only by manual dispatch — so this
+    # trigger ADDS coverage, it does not replace any.
+    - cron: '17 5 * * 6'
   workflow_dispatch:
 
 permissions:
@@ -59,7 +66,57 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout (full history — gitleaks scans the commit graph)
+      # ── PR lane: fetch ONLY what `BASE_SHA..HEAD_SHA` needs ──────────────────
+      # Measured 2026-08-03: the scan itself takes 1 SECOND; the `fetch-depth: 0`
+      # clone of this repo (3,445 commits / 259 MiB pack) took 12–308 s and was
+      # therefore ~100% of this gate's billed time. The scan below is byte-for-byte
+      # the same `gitleaks detect --log-opts=BASE..HEAD` it always was — only the
+      # amount of history fetched to satisfy it changed.
+      - name: Checkout PR head (shallow — full history is not needed for base..head)
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          # Credentials MUST persist here: the next step deepens the clone until
+          # the PR's whole commit range is present, which needs an authenticated
+          # fetch. The scan-only posture is enforced by `permissions: contents:
+          # read` above (a persisted token cannot push), and the step unsets the
+          # auth header as soon as the deepening is done.
+
+      - name: Deepen until the whole PR commit range is present
+        if: github.event_name == 'pull_request'
+        # Fail-OPEN on coverage, never on cost: the loop deepens until the local
+        # graph contains EXACTLY the number of commits GitHub says the PR has
+        # (`pull_request.commits` == `git rev-list --count BASE..HEAD`). If that
+        # invariant is not reached, it falls back to the full history — i.e. the
+        # previous behaviour — so the scan can never see LESS than the PR's diff.
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+        run: |
+          set -euo pipefail
+          range_count() {
+            git rev-list --count "${BASE_SHA}..${HEAD_SHA}" 2>/dev/null || echo -1
+          }
+          git fetch --no-tags --depth=1 origin "${BASE_SHA}" >/dev/null 2>&1 || true
+          depth=32
+          while [ "$(range_count)" != "${PR_COMMITS}" ]; do
+            if [ "${depth}" -gt 8192 ]; then
+              echo "::warning::PR commit range not fully reachable within ${depth} commits — fetching full history so the diff stays fully covered"
+              git fetch --no-tags --unshallow origin || git fetch --no-tags origin
+              break
+            fi
+            git fetch --no-tags --deepen="${depth}" origin "${BASE_SHA}" "${HEAD_SHA}" >/dev/null 2>&1 || true
+            depth=$(( depth * 4 ))
+          done
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          echo "commits reachable in ${BASE_SHA}..${HEAD_SHA}: $(range_count) (PR reports ${PR_COMMITS})"
+
+      # ── Schedule / dispatch lane: the full-history baseline sweep ────────────
+      - name: Checkout (full history — full-graph baseline sweep)
+        if: github.event_name != 'pull_request'
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
@@ -105,9 +162,9 @@ jobs:
             --report-format sarif \
             --report-path "${RUNNER_TEMP}/gitleaks.sarif"
 
-      - name: gitleaks detect — full history (manual dispatch)
-        # workflow_dispatch runs a full-history baseline sweep.
-        if: github.event_name == 'workflow_dispatch'
+      - name: gitleaks detect — full history (weekly cron + manual dispatch)
+        # schedule + workflow_dispatch run a full-history baseline sweep.
+        if: github.event_name != 'pull_request'
         run: |
           gitleaks detect \
             --source . \

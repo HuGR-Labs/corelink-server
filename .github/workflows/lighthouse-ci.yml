@@ -6,9 +6,30 @@ name: admin-ui lighthouse
 # fails the PR per spec contract S-16 §6 DoD + 14.s16.5.
 
 on:
+  # SCOPE NOTE (2026-08-03): this gate scores the BUILT Next app (`pnpm build`
+  # then `pnpm lhci`). `apps/admin-ui/{tests,playwright,e2e}/**` and the
+  # playwright/vitest configs are pure test trees — verified: nothing under
+  # `apps/admin-ui/src` imports them and `next build` does not bundle them — so a
+  # test-only diff cannot move a Lighthouse score. They are excluded here so a
+  # test-only PR (e.g. #962, which touched ONLY `tests/**` +
+  # `playwright.tests.config.ts`) stops paying for a full build + LHCI run.
+  # Everything that CAN affect a score still matches, including
+  # `src/content/*.md` (rendered legal copy) — the exclusions are directory- and
+  # config-specific, never a blanket `*.md`.
+  #
+  # `admin-ui-ci` (lint + typecheck + unit tests) and `admin-ui-e2e` still run on
+  # those paths, so a test-only diff loses NO gate — only this scoring lane.
   pull_request:
     paths:
       - "apps/admin-ui/**"
+      - "!apps/admin-ui/tests/**"
+      - "!apps/admin-ui/playwright/**"
+      - "!apps/admin-ui/e2e/**"
+      - "!apps/admin-ui/playwright.config.ts"
+      - "!apps/admin-ui/playwright.prod.config.ts"
+      - "!apps/admin-ui/playwright.tests.config.ts"
+      - "!apps/admin-ui/vitest.config.ts"
+      - "!apps/admin-ui/vitest.setup.ts"
       - ".github/workflows/lighthouse-ci.yml"
       # This job's `pnpm install` behaviour comes from the composite action as
       # much as from this file, so a change to it must re-run this gate.
@@ -17,6 +38,14 @@ on:
     branches: [main]
     paths:
       - "apps/admin-ui/**"
+      - "!apps/admin-ui/tests/**"
+      - "!apps/admin-ui/playwright/**"
+      - "!apps/admin-ui/e2e/**"
+      - "!apps/admin-ui/playwright.config.ts"
+      - "!apps/admin-ui/playwright.prod.config.ts"
+      - "!apps/admin-ui/playwright.tests.config.ts"
+      - "!apps/admin-ui/vitest.config.ts"
+      - "!apps/admin-ui/vitest.setup.ts"
       - ".github/workflows/lighthouse-ci.yml"
       # This job's `pnpm install` behaviour comes from the composite action as
       # much as from this file, so a change to it must re-run this gate.
