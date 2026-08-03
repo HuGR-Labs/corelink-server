@@ -15,7 +15,7 @@ the diff hunks. This skill is the judgement half: read the changed code, re-writ
 the stale concept so every claim is true again, and advance its checkpoint.
 
 > The deterministic tool tells you WHAT drifted. You decide HOW to reconcile it.
-> Never advance a `checkpoint_sha` without a real body edit — that is a phantom
+> Never advance a `checkpoint_sha` or a `source_blobs` anchor without a real body edit — that is a phantom
 > reconcile and **C5b** will (rightly) reject it.
 
 ## Procedure
@@ -47,6 +47,16 @@ the stale concept so every claim is true again, and advance its checkpoint.
    d. **Advance the checkpoint.** Set `checkpoint_sha:` to the current HEAD SHA
       (`git rev-parse HEAD`). Because step (c) edited the body, C5b is satisfied.
       If a concept is `provenance: GENERATED`, keep the `> GENERATED` marker.
+   e. **Advance the BLOB anchors** (concepts that carry `source_blobs`). For every
+      re-authored file, set its entry to the file's blob id at the content you just
+      cited: `git hash-object <path>` (equivalently `git rev-parse HEAD:<path>` once
+      committed). The anchor is what C5 actually compares against, so a stale entry
+      keeps the concept red; a MISSING entry for a path that had one fails C4c
+      (blob addressing is a ratchet — never delete an anchor to make a red go away).
+      A blob anchor is immutable under rebase/squash/cherry-pick, so unlike
+      `checkpoint_sha` it does NOT need re-touching after a rebase: if the reconcile
+      you are doing was triggered only by a rebase and the cited files are
+      byte-identical, a blob-addressed concept has nothing to reconcile at all.
 
 3. **Re-validate until green.** Run from the repo root:
    `python3 scripts/validate_okf.py` (PyYAML in a venv if the manifest is parsed).

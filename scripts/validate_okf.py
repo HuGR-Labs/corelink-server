@@ -11,13 +11,31 @@ schema), §3 (body conventions), §4 (checks C1-C10b + secondary C-AGE/C-REV),
 All STRUCTURAL checks validate the working tree at HEAD (the thing being gated);
 `checkpoint_sha` is used ONLY as the content baseline for the C5 freshness check.
 
-SQUASH-MERGE RESILIENCE (C4/C5): a concept may pin `checkpoint_sha` at a PR's
-pre-merge branch tip that git rewrites at squash/rebase merge, ORPHANING the
-commit — unreachable from `main` and absent from the `fetch-depth: 0` CI clone.
-That is not drift (the squash landing preserves the cited source byte-for-byte)
-and no longer hard-fails C4; instead C4 warns and C5 re-anchors freshness to the
-reachable base ref (the fork point), so a genuinely drifted cite STILL fails but
-the recurring "checkpoint not found in git history" false-positive is gone.
+BLOB ADDRESSING (C4b/C4c/C5, §2.2 `source_blobs`): C5 wants exactly one thing —
+"the file's CONTENT at authoring time". A commit id is an indirect and fragile way
+to name that: rebase, squash and cherry-pick all destroy commit ids, and the dead
+object survives only in the author's clone, never in CI's fresh one. A git BLOB id
+IS that content, and is immutable under all three. So a concept may anchor each
+cited FILE on its blob id (`path@<40-hex>`), additively — `checkpoint_sha` stays
+required for provenance and for C-AGE / C-REV / C5b, which want a commit_date.
+When a file has a blob anchor, C5 compares against that blob and NOTHING else: the
+squash-orphan tolerance and the base-ref fallback below DO NOT APPLY to it. That is
+the point — it deletes the recurring re-anchor tax (a rebase that leaves the cited
+file byte-identical can no longer make its citations read STALE) and it closes the
+laundering residual the tolerance accepted (a forged unreachable blob is an absent
+object, so it REDs C4b instead of re-anchoring to a base ref that already contains
+the landed drift). C4c keeps that closure from merely MOVING: an anchored path may
+not lose its anchor while it is still a declared source.
+
+SQUASH-MERGE RESILIENCE (C4/C5) — the LEGACY path, for files not yet blob-
+addressed: a concept may pin `checkpoint_sha` at a PR's pre-merge branch tip that
+git rewrites at squash/rebase merge, ORPHANING the commit — unreachable from
+`main` and absent from the `fetch-depth: 0` CI clone. That is not drift (the squash
+landing preserves the cited source byte-for-byte) and no longer hard-fails C4;
+instead C4 warns and C5 re-anchors freshness to the reachable base ref (the fork
+point), so a genuinely drifted cite STILL fails but the recurring "checkpoint not
+found in git history" false-positive is gone. This carve-out — and the narrow
+laundering residual it carries — applies ONLY to files with no blob anchor.
 
 C5 freshness mechanism (CONTENT-ANCHOR): for each cited `path:Lx-Ly`, compare the
 CONTENT of lines Lx..Ly of `path` between the concept's `checkpoint_sha` and the
@@ -86,6 +104,12 @@ LINK_RE = re.compile(r"\[[^\]]*\]\((/[^)\s]+)\)")
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
 LIST_ITEM_RE = re.compile(r"^\s*(?:[-*]|\d+\.)\s+")
 HEX40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+# A `source_blobs` entry: `<repo-relative path>@<40-hex blob object id>`.
+# `@` is NOT in the citation path charset above, so the split is unambiguous;
+# the shape mirrors the house `grounded@sha` idiom used across the repo.
+SOURCE_BLOB_RE = re.compile(
+    r"^(?P<path>[A-Za-z0-9._/\-]+)@(?P<blob>[0-9a-fA-F]{40})$"
+)
 
 RESERVED_NAMES = {"index.md", "log.md"}
 ADR_TYPE = "ADR"
@@ -163,6 +187,8 @@ class Git:
         self._blob_cache: dict[tuple[str, str], str | None] = {}
         self._wt_blob_cache: dict[str, str | None] = {}
         self._wt_lines_cache: dict[str, list[str] | None] = {}
+        self._blob_present_cache: dict[str, bool] = {}
+        self._blob_lines_cache: dict[str, list[str] | None] = {}
 
     def run(self, args: list[str]) -> subprocess.CompletedProcess:
         return subprocess.run(
@@ -235,6 +261,47 @@ class Git:
             content = None
         lines = content.splitlines() if content is not None else None
         self._wt_lines_cache[repo_rel] = lines
+        return lines
+
+    def blob_is_present(self, sha: str) -> bool:
+        """True iff `sha` names a BLOB object present in THIS clone's object
+        database. Deliberately strict about the object TYPE: a commit id pasted
+        into `source_blobs` must be rejected, not silently peeled.
+
+        This is the fail-CLOSED half of blob addressing. A commit id can be
+        legitimately absent (rebase/squash rewrote it — the squash-orphan case
+        C4 tolerates), so an absent commit cannot be treated as an error. A blob
+        is the opposite: blob ids are content hashes, immutable under rebase,
+        squash and cherry-pick, so a blob that was ever pushed stays reachable
+        from the rewritten history and IS in the gate's `fetch-depth: 0` clone.
+        An absent blob is therefore never "orphaned" — it is a typo or a forgery,
+        and it FAILS (C4b) instead of falling back to anything.
+
+        Caveat recorded honestly: locally, `git hash-object -w` can plant a loose
+        blob that resolves in the author's clone only. That is why the CI gate —
+        which clones fresh and has only pushed objects — is the enforcing
+        instance; a fabricated blob RESOLVES for the author and FAILS in CI,
+        which is the fail-loud direction."""
+        if not sha:
+            return False
+        if sha in self._blob_present_cache:
+            return self._blob_present_cache[sha]
+        cp = self.run(["cat-file", "-t", sha])
+        ok = cp.returncode == 0 and cp.stdout.strip() == "blob"
+        self._blob_present_cache[sha] = ok
+        return ok
+
+    def blob_lines(self, sha: str):
+        """Lines of the blob object `sha` (line terminators stripped), or None
+        when the object is absent or is not a blob. Cached per sha."""
+        if sha in self._blob_lines_cache:
+            return self._blob_lines_cache[sha]
+        if not self.blob_is_present(sha):
+            self._blob_lines_cache[sha] = None
+            return None
+        cp = self.run(["cat-file", "blob", sha])
+        lines = cp.stdout.splitlines() if cp.returncode == 0 else None
+        self._blob_lines_cache[sha] = lines
         return lines
 
     def commit_date(self, sha: str):
@@ -313,6 +380,39 @@ class Concept:
         sf = self.fm.get("source_files")
         self.source_files = [s for s in sf if isinstance(s, str)] if isinstance(sf, list) else []
         self.checkpoint_sha = self.fm.get("checkpoint_sha")
+        # OPTIONAL per-file BLOB anchor (§2.2): a flat list of `path@<40-hex blob>`
+        # strings. Additive to `checkpoint_sha`, which stays REQUIRED — it is the
+        # provenance record and the input C-AGE / C-REV / C5b read (they want a
+        # commit_date, which a blob does not have). `source_blobs` names only the
+        # thing C5 actually compares: the file's CONTENT at authoring time.
+        #
+        # SHAPE RATIONALE — flat list of scalars, not a nested mapping. This
+        # frontmatter is read by FIVE independent hand-rolled parsers plus PyYAML,
+        # and a nested `path: sha` mapping is the one shape they DISAGREE on:
+        # PyYAML yields a dict while every hand parser here drops the indented
+        # lines (their key regexes are anchored at column 0), so the same file
+        # would validate differently depending on whether PyYAML happens to be
+        # importable — and `.github/workflows/okf_wiki.yml` installs PyYAML into a
+        # venv but invokes the gate with the SYSTEM python3, so both readers are
+        # live in this repo. A flat list of strings parses identically under all
+        # six. Per-FILE (not per-concept) so migration is incremental: a concept
+        # may blob-address some of its sources and leave the rest on the legacy
+        # commit anchor.
+        sb = self.fm.get("source_blobs")
+        self.source_blobs_raw = [x for x in sb if isinstance(x, str)] if isinstance(sb, list) else []
+        self.source_blobs: dict[str, str] = {}
+        self.source_blobs_bad: list[str] = []
+        self.source_blobs_dupe: list[str] = []
+        for entry in self.source_blobs_raw:
+            m = SOURCE_BLOB_RE.match(entry.strip())
+            if not m:
+                self.source_blobs_bad.append(entry)
+                continue
+            path_, blob_ = m.group("path"), m.group("blob").lower()
+            if path_ in self.source_blobs:
+                self.source_blobs_dupe.append(path_)
+                continue
+            self.source_blobs[path_] = blob_
         self.is_adr = (self.type == ADR_TYPE) or self.concept_id.startswith("adr/")
         # parse cites + links
         self.cites = _collect_cites(self.body)  # list[(file, l1, l2)]
@@ -347,7 +447,14 @@ def _norm_block(lines: list[str], l1: int, l2: int) -> list[str]:
     return [ln.rstrip() for ln in lines[l1 - 1 : l2]]
 
 
-def cited_range_drifted(git: "Git", checkpoint_sha: str, path: str, l1: int, l2: int) -> bool:
+def cited_range_drifted(
+    git: "Git",
+    checkpoint_sha: str,
+    path: str,
+    l1: int,
+    l2: int,
+    blob_sha: str | None = None,
+) -> bool:
     """CONTENT-ANCHOR C5 predicate (shared by validate_okf and okf_reconcile so
     the two tools can never disagree on what "stale" means).
 
@@ -364,9 +471,37 @@ def cited_range_drifted(git: "Git", checkpoint_sha: str, path: str, l1: int, l2:
     equals HEAD so behavior is identical; on a dirty/pre-commit run it makes C5
     agree with C3/C6 (no false-negative when a cited source is edited-but-
     uncommitted, no false-positive when a source is added on disk but not in HEAD).
+
+    BLOB ANCHOR (`blob_sha`, §2.2 `source_blobs`). When the caller supplies the
+    git BLOB id of the file at authoring time, that blob IS the baseline and
+    `checkpoint_sha` is ignored for this comparison. This is what C5's own
+    contract has always asked for — "the file's content at authoring time" — named
+    directly instead of via a commit id that rebase, squash and cherry-pick all
+    destroy. The comparison performed is otherwise IDENTICAL (same `_norm_block`
+    slice, same working-tree HEAD side), so the check's power is unchanged: an
+    in-range edit and a pure position-shift both still fire. What changes is only
+    that the baseline survives history rewriting, so a re-anchor is needed when
+    the CONTENT moved — never merely because the commit that named it was
+    rewritten.
     """
-    ckpt_blob = git.file_blob_sha(checkpoint_sha, path)
     wt_blob = git.worktree_blob_sha(path)
+
+    # BLOB-ANCHORED path (preferred). The baseline is named DIRECTLY by its
+    # content hash, so no commit needs to be resolvable — and no fallback of any
+    # kind applies. `blob_lines` returns None when the object is absent or is not
+    # a blob, which is reported STALE here and hard-failed by C4b upstream; it is
+    # never re-anchored to anything.
+    if blob_sha:
+        if wt_blob is not None and wt_blob == blob_sha:
+            return False  # file byte-identical to the authored blob
+        base_lines = git.blob_lines(blob_sha)
+        wt_lines = git.worktree_lines(path)
+        if base_lines is None or wt_lines is None:
+            return True  # unresolvable anchor or vanished file — conservatively stale
+        return _norm_block(base_lines, l1, l2) != _norm_block(wt_lines, l1, l2)
+
+    # COMMIT-ANCHORED path (legacy, unchanged) — for concepts not yet migrated.
+    ckpt_blob = git.file_blob_sha(checkpoint_sha, path)
     if ckpt_blob is not None and wt_blob is not None and ckpt_blob == wt_blob:
         return False  # file unchanged checkpoint->working-tree: no content could drift
     ckpt_lines = git.show_lines(checkpoint_sha, path)
@@ -996,7 +1131,7 @@ def _line_count(path: Path) -> int:
 # ---------------------------------------------------------------------------
 class Failures:
     ORDER = [
-        "C1", "C2", "C3", "C4", "C5", "C5b", "C6", "C6b", "C6c",
+        "C1", "C2", "C3", "C4", "C4b", "C4c", "C5", "C5b", "C6", "C6b", "C6c",
         "C7", "C8", "C9", "C10", "C10b",
     ]
 
@@ -1143,18 +1278,16 @@ def run_checks(args, git: Git, fails: Failures):
         # and a fat-fingered SHA is caught in that concept's own PR review; only the
         # 40-hex FORMAT violation remains a hard C4 failure.)
         #
-        # KNOWN TRADE-OFF (accepted, human-review-guarded — cold-review noted): a
-        # FORGED well-formed-hex checkpoint is indistinguishable from a genuine
-        # squash-orphan, so an author could in principle write a bogus unreachable
-        # SHA to launder an ALREADY-LANDED drift past C5's reconcile-nag (the
-        # re-anchor compares to the base ref, which already contains that landed
-        # drift, so it reads "fresh"). This is NARROW: NEW drift a PR introduces
-        # still fails C5 (working tree ≠ base ref), and freshness-when-base-resolves
-        # + the fail-closed no-base path are both enforced below. It is the same
-        # freshness ≠ authoring-correctness residual the contract already assigns to
-        # human/panel review (a hand-picked unreachable SHA is review-visible), so
-        # no code change is warranted — logged here so it is never mistaken for a
-        # silently-closed hole.
+        # The forged-unreachable-SHA laundering trade-off this comment used to
+        # accept is CLOSED for blob-addressed files (`source_blobs`, C4b below):
+        # there is no orphan tolerance and no base-ref fallback on that path, so a
+        # forged/unreachable anchor FAILS instead of re-anchoring to a base ref
+        # that already contains the landed drift. The carve-out survives ONLY for
+        # files still on the legacy commit anchor, where it remains exactly as
+        # narrow as described above and is retired file-by-file as the corpus
+        # migrates. (Reproduced before the fix: forged 40-hex + any cosmetic body
+        # edit — enough to satisfy C5b — turned a genuine C5 STALE into a green
+        # gate on a citation pointing at content the author never saw.)
         ckpt_ok = False
         ckpt_orphaned = False
         if c.checkpoint_sha:
@@ -1172,6 +1305,45 @@ def run_checks(args, git: Git, fails: Failures):
                     "(squash/rebase rewrote its commit; unreachable in this clone) — "
                     f"C5 freshness re-anchored to base ref `{args.base_ref}`; "
                     "cited content still gated",
+                )
+
+        # C4b: `source_blobs` — the per-file BLOB anchor (§2.2). Every rule here
+        # is a HARD failure with no tolerance and no fallback, which is the whole
+        # point of the key: a commit id can be legitimately unreachable (squash /
+        # rebase rewrote it), a BLOB id cannot. Blob ids are content hashes and
+        # survive rebase, squash and cherry-pick untouched, so a blob that was
+        # ever pushed is still in the gate's fetch-depth:0 clone. An unresolvable
+        # blob is therefore a typo or a forgery, never an orphan — and it REDs
+        # here rather than silently re-anchoring C5 to the base ref (which is the
+        # exact move that let a forged unreachable checkpoint launder an
+        # already-landed drift past C5).
+        for bad in c.source_blobs_bad:
+            fails.add(
+                "C4b", loc,
+                f"malformed `source_blobs` entry (want `path@<40-hex blob>`): `{bad}`",
+            )
+        for dupe in c.source_blobs_dupe:
+            fails.add(
+                "C4b", loc,
+                f"duplicate `source_blobs` entry for path `{dupe}` — one blob anchor per file",
+            )
+        for bpath, bsha in c.source_blobs.items():
+            if bpath not in set(c.source_files):
+                fails.add(
+                    "C4b", loc,
+                    f"`source_blobs` anchors a path not declared in `source_files`: "
+                    f"`{bpath}` (it would anchor nothing C5 gates)",
+                )
+                continue
+            if bpath in missing_sources:
+                continue  # C3 already reported the vanished path
+            if not git.blob_is_present(bsha):
+                fails.add(
+                    "C4b", loc,
+                    f"`source_blobs` anchor `{bpath}@{bsha[:12]}` is not a blob object "
+                    "present in this clone — a blob id is immutable under rebase/squash/"
+                    "cherry-pick, so this is a typo or a forged anchor, NOT a squash-orphan "
+                    "(no base-ref fallback applies)",
                 )
 
         # Build cited-line ranges per file (HEAD coordinates).
@@ -1275,62 +1447,94 @@ def run_checks(args, git: Git, fails: Failures):
         # UNVERIFIABLE, so we HARD-FAIL rather than skip. (Latent in practice: CI
         # always resolves `origin/<base_ref>` with a common ancestor. But a missing
         # anchor is a fail-open footgun, so it errors, never passes.)
-        c5_baseline = None
-        anchor_kind = "checkpoint"
+        #
+        # BLOB ANCHOR (§2.2 `source_blobs`) takes precedence PER FILE. A file with
+        # a blob anchor is compared against that blob and nothing else: the
+        # squash-orphan tolerance and the base-ref fallback DO NOT APPLY to it,
+        # which is the entire reason the key exists. Files without one keep the
+        # legacy commit-anchor behaviour verbatim, so the 160-concept corpus
+        # migrates incrementally instead of in one flag-day commit.
+        c5_commit_baseline = None
+        commit_anchor_kind = "checkpoint"
+
+        # The set of (file, ranges) C5 will actually compare, computed BEFORE the
+        # anchor is resolved so the fail-closed branch below only fires when a
+        # file genuinely still needs the commit anchor.
+        c5_files: list[str] = []
+        for sf in c.source_files:
+            if sf in missing_sources:
+                continue
+            # ADR sub-profile: an accepted ADR does not go stale on the code
+            # it governs — C5 applies only to the ADR file's own content.
+            if c.is_adr and not sf.endswith(".md"):
+                continue
+            if not ranges_by_file.get(sf):
+                continue
+            c5_files.append(sf)
+        needs_commit_anchor = any(sf not in c.source_blobs for sf in c5_files)
+
         if ckpt_ok:
-            c5_baseline = c.checkpoint_sha
-            anchor_kind = "checkpoint"
+            c5_commit_baseline = c.checkpoint_sha
+            commit_anchor_kind = "checkpoint"
         elif ckpt_orphaned:
             if base_rev_for_c5 is None:
-                fails.add(
-                    "C5",
-                    loc,
-                    f"orphaned checkpoint `{c.checkpoint_sha[:12]}` and NO reachable "
-                    f"base anchor (base ref `{args.base_ref}` unresolvable / no common "
-                    "ancestor with HEAD) — freshness UNVERIFIABLE (fail-closed; "
-                    "re-anchor impossible)",
-                )
+                # Fail-closed, but only for concepts that still DEPEND on the
+                # commit anchor. A fully blob-addressed concept has a reachable
+                # anchor by construction (C4b proved every blob resolves), so an
+                # orphaned checkpoint is irrelevant to its freshness and must not
+                # manufacture a failure.
+                if needs_commit_anchor:
+                    fails.add(
+                        "C5",
+                        loc,
+                        f"orphaned checkpoint `{c.checkpoint_sha[:12]}` and NO reachable "
+                        f"base anchor (base ref `{args.base_ref}` unresolvable / no common "
+                        "ancestor with HEAD) — freshness UNVERIFIABLE (fail-closed; "
+                        "re-anchor impossible)",
+                    )
             else:
-                c5_baseline = base_rev_for_c5
-                anchor_kind = "base-ref anchor"
-        if c5_baseline:
-            for sf in c.source_files:
-                if sf in missing_sources:
-                    continue
-                # ADR sub-profile: an accepted ADR does not go stale on the code
-                # it governs — C5 applies only to the ADR file's own content.
-                if c.is_adr and not sf.endswith(".md"):
-                    continue
-                cranges = ranges_by_file.get(sf, [])
-                if not cranges:
-                    continue
-                # EVERY drifted range is reported, not just the first. This used
-                # to `break` after the first hit per (concept, file), which made
-                # the C5 report a LOWER BOUND: an author who fixed exactly what
-                # the gate printed could still be left with stale citations in
-                # the same file, and only a manual `grep` over the concept found
-                # the real set — a fix/re-run/fix loop per drifted range. The
-                # ranges are already computed; reporting all of them costs one
-                # more comparison per cite and turns C5's output into the
-                # COMPLETE worklist it is consumed as (okf_reconcile has always
-                # reported every range — this makes the gate agree with it).
-                # Ranges are de-duplicated first (a concept legitimately cites the
-                # same `path:Lx-Ly` under both `# How it works` and `# Citations`,
-                # which would otherwise print the identical failure twice and
-                # inflate the failure COUNT) — the same `dict.fromkeys` dedup
-                # okf_reconcile already applies to its hit list.
-                for (l1, l2) in dict.fromkeys(cranges):
-                    if cited_range_drifted(git, c5_baseline, sf, l1, l2):
-                        fails.add(
-                            "C5",
-                            loc,
-                            f"STALE: cited content `{sf}:{l1}-{l2}` no longer matches "
-                            f"{anchor_kind} {c5_baseline[:12]} "
-                            "(in-range edit or position-shift)",
-                        )
+                c5_commit_baseline = base_rev_for_c5
+                commit_anchor_kind = "base-ref anchor"
+
+        for sf in c5_files:
+            blob_anchor = c.source_blobs.get(sf)
+            if blob_anchor:
+                c5_baseline, anchor_kind = blob_anchor, "blob anchor"
+            elif c5_commit_baseline:
+                c5_baseline, anchor_kind = c5_commit_baseline, commit_anchor_kind
+            else:
+                continue  # no anchor and no blob — already hard-failed above
+            cranges = ranges_by_file.get(sf, [])
+            # EVERY drifted range is reported, not just the first. This used
+            # to `break` after the first hit per (concept, file), which made
+            # the C5 report a LOWER BOUND: an author who fixed exactly what
+            # the gate printed could still be left with stale citations in
+            # the same file, and only a manual `grep` over the concept found
+            # the real set — a fix/re-run/fix loop per drifted range. The
+            # ranges are already computed; reporting all of them costs one
+            # more comparison per cite and turns C5's output into the
+            # COMPLETE worklist it is consumed as (okf_reconcile has always
+            # reported every range — this makes the gate agree with it).
+            # Ranges are de-duplicated first (a concept legitimately cites the
+            # same `path:Lx-Ly` under both `# How it works` and `# Citations`,
+            # which would otherwise print the identical failure twice and
+            # inflate the failure COUNT) — the same `dict.fromkeys` dedup
+            # okf_reconcile already applies to its hit list.
+            for (l1, l2) in dict.fromkeys(cranges):
+                if cited_range_drifted(git, c5_baseline, sf, l1, l2, blob_sha=blob_anchor):
+                    fails.add(
+                        "C5",
+                        loc,
+                        f"STALE: cited content `{sf}:{l1}-{l2}` no longer matches "
+                        f"{anchor_kind} {c5_baseline[:12]} "
+                        "(in-range edit or position-shift)",
+                    )
 
     # --- C5b: SHA advanced without a body edit (needs a 'previous' version) ---
     _check_c5b(args, git, bundle_root, concepts, fails)
+
+    # --- C4c: blob addressing is a RATCHET (needs a 'previous' version) ---
+    _check_c4c(args, git, bundle_root, concepts, fails)
 
     # --- C10 / C10b: manifest (skip-with-warning when absent/unparseable) ---
     # Runs before C7 because it populates the planned-id set used by C7 tolerance.
@@ -1401,6 +1605,75 @@ def _check_c5b(args, git: Git, bundle_root: Path, concepts: list[Concept], fails
                 loc,
                 f"checkpoint_sha advanced ({str(prev_sha)[:12]} -> {c.checkpoint_sha[:12]}) "
                 "without any body edit (phantom reconcile)",
+            )
+
+
+def _check_c4c(args, git: Git, bundle_root: Path, concepts: list[Concept], fails: Failures):
+    """C4c — blob addressing is a ONE-WAY RATCHET.
+
+    Without this, closing the forged-anchor laundering hole would only MOVE it:
+    an author facing a legitimate C5 STALE could delete the file's `source_blobs`
+    entry, drop back onto the legacy commit anchor, forge an unreachable
+    `checkpoint_sha`, and inherit the squash-orphan base-ref fallback that reads
+    already-landed drift as fresh. So a path that WAS blob-addressed in the
+    previous version of the concept must stay blob-addressed while it is still a
+    declared source. Un-migrating requires deleting the source itself (a
+    review-visible change to `source_files` that C3/C6/C10b all react to), not a
+    one-line frontmatter deletion.
+
+    The 'previous version' is read exactly as C5b reads it — the concept file at
+    the merge-base with the base ref (or `--base-bundle`) — so a NEW concept and a
+    detached checkout with no common ancestor are both no-ops, never failures.
+    """
+    base_bundle = Path(args.base_bundle).resolve() if args.base_bundle else None
+    base_rev = None if base_bundle is not None else git.merge_base(args.base_ref)
+
+    for c in concepts:
+        if c.is_deferred:
+            continue
+        prev_text = None
+        if base_bundle is not None:
+            prev_path = base_bundle / c.rel
+            if prev_path.exists():
+                prev_text = prev_path.read_text(encoding="utf-8")
+        elif base_rev and _under(c.path, git.repo_root):
+            repo_rel = c.path.relative_to(git.repo_root).as_posix()
+            prev_text = git.show_file(base_rev, repo_rel)
+        if prev_text is None:
+            continue  # new concept — nothing to ratchet against
+        prev_block, _ = _split(prev_text)
+        if prev_block is None:
+            continue
+        try:
+            prev_fm = parse_frontmatter(prev_block)
+        except Exception:
+            continue
+        prev_sb = prev_fm.get("source_blobs")
+        if not isinstance(prev_sb, list):
+            continue
+        prev_paths = set()
+        for entry in prev_sb:
+            if not isinstance(entry, str):
+                continue
+            m = SOURCE_BLOB_RE.match(entry.strip())
+            if m:
+                prev_paths.add(m.group("path"))
+        if not prev_paths:
+            continue
+        loc = (
+            c.path.relative_to(git.repo_root).as_posix()
+            if _under(c.path, git.repo_root)
+            else f"{bundle_root.name}/{c.rel}"
+        )
+        for lost in sorted(prev_paths - set(c.source_blobs)):
+            if lost not in set(c.source_files):
+                continue  # the source itself was dropped — the anchor is moot
+            fails.add(
+                "C4c",
+                loc,
+                f"`source_blobs` anchor for `{lost}` was REMOVED while the path is still "
+                "a declared source — blob addressing is a ratchet (dropping it would "
+                "restore the squash-orphan base-ref fallback this concept no longer uses)",
             )
 
 
