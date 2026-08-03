@@ -7,14 +7,22 @@
 //!
 //! # Which config we actually write (important)
 //!
-//! The tutorial docs advertise a `grpcs://cas.corelink.humangr.com:443`
-//! endpoint, but that host is **not the wired Bazel surface**. The live
-//! Bazel cache is the REAPI v2 ByteStream scheme served by the container
-//! at `<endpoint>/bazel/v2/<tenant>` (see `crates/corelink-container/
-//! src/routes/bazel_v2.rs` — stock `--remote_cache=http(s)://…/cas` 404s
-//! there). We therefore emit the REAPI config that ACTUALLY works, driven
-//! by `--remote_instance_name=<tenant>` so Bazel's built-in REAPI client
-//! hits `<endpoint>/bazel/v2/<tenant>/…`:
+//! The container serves TWO live Bazel cache surfaces, both plain HTTPS —
+//! there is no gRPC endpoint on this topology, so any `grpcs://` CoreLink
+//! address is wrong by construction (see `crates/corelink-container/src/
+//! routes/bazel_v2.rs`, where both are registered):
+//!
+//! 1. **REAPI v2 ByteStream** at `<endpoint>/bazel/v2/<tenant>` — the
+//!    tenant is the `:instance` path segment.
+//! 2. **The stock-Bazel HTTP alias** at `<endpoint>/bazel/cache` — the
+//!    `/cas/<hash>` and `/ac/<hash>` paths vanilla
+//!    `--remote_cache=https://…` emits. It is BUILT (it does not 404); the
+//!    tenant comes from the PAT rather than the URL, so it takes NO
+//!    `--remote_instance_name`.
+//!
+//! We emit the REAPI v2 config, because this command has already resolved
+//! the tenant and can pin it explicitly via `--remote_instance_name=<tenant>`,
+//! so Bazel's built-in REAPI client hits `<endpoint>/bazel/v2/<tenant>/…`:
 //!
 //! ```text
 //! build --remote_cache=<endpoint>/bazel/v2

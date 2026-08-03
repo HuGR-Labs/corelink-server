@@ -65,7 +65,7 @@ dokumentiert; die Alarmschwellen liegen in `infra/alerts/cache_hit_ratio.yaml`.
 | `hit_ratio=0%` bei der zweiten Build | der lokale Festplatten-Cache hat die Anfrage bedient, den Remote nie berührt | `bazel clean` und `build --noremote_accept_cached=false` setzen, um einen Remote-Lesevorgang zu erzwingen |
 | `UNAUTHENTICATED`-Fehler | PAT abgelaufen oder falsche Umgebung | `corelink doctor --check-auth` erneut ausführen, PAT neu generieren |
 | `COR_CAS_DIGEST_MISMATCH` | Bytes während der Übertragung beschädigt | `client_verify` hat den Blob abgelehnt — melden Sie ein Issue, deaktivieren Sie die Prüfung nicht |
-| Langsam `p95 > 50ms` | weit von der nächsten Edge entfernt | Fixieren Sie die nähere Region in `.bazelrc`: `build --remote_cache=https://<region>.<tenant>.corelink.humangr.com/v1/cache` |
+| Langsam `p95 > 50ms` | die Region Ihres Mandanten liegt weit von Ihren CI-Runnern entfernt | **Keine clientseitige Einstellung.** Anfragen werden an die `primary_region` Ihres Mandanten geleitet, die bei der Bereitstellung festgelegt wird; die Edge liest sie serverseitig aus und verwirft jede vom Client mitgegebene Region — keine URL und kein `.bazelrc`-Flag kann das überschreiben. Liegt Ihr Mandant in der falschen Region, wenden Sie sich an support@humangr.com — eine Verlagerung ist eine Änderung der Datenresidenz, keine Konfigurationsänderung. |
 
 Sie haben den Einstiegspfad abgeschlossen. Fahren Sie mit der
 [REAPI-Referenz](../reference/reapi/index.mdx) fort, um die vollständige
