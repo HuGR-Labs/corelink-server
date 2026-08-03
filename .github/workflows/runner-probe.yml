@@ -69,6 +69,8 @@ jobs:
           probe cargo  cargo --version
           probe rustup rustup --version
           probe clippy-driver clippy-driver --version
+          probe rustfmt rustfmt --version
+          echo "  cargo fmt  : $( cargo fmt --version >/dev/null 2>&1 && echo WORKS || echo BROKEN )"
           echo "  ~/.cargo   : $( [ -d "$HOME/.cargo" ]  && echo EXISTS || echo missing )"
           echo "  ~/.rustup  : $( [ -d "$HOME/.rustup" ] && echo EXISTS || echo missing )"
           echo
@@ -97,6 +99,7 @@ jobs:
           probe make   make --version
           probe cc     cc --version
           probe ld     ld --version
+          probe sha256sum sha256sum --version
           echo
           echo "== package manager =="
           probe apt-get apt-get --version
@@ -109,7 +112,12 @@ jobs:
           echo "$PATH" | tr ':' '\n' | sed 's/^/  /'
           echo
           echo "== egress reachability (headers only) =="
-          for u in https://github.com https://api.github.com https://static.rust-lang.org https://registry.npmjs.org https://pypi.org; do
+          # ghcr.io + mirror.gcr.io matter specifically for `trivy`: it pulls its
+          # vulnerability DB and its misconfig-checks bundle as OCI artifacts, so
+          # a box that can reach github.com but not ghcr.io fails that gate only.
+          for u in https://github.com https://api.github.com https://static.rust-lang.org \
+                   https://registry.npmjs.org https://pypi.org https://ghcr.io/v2/ \
+                   https://mirror.gcr.io https://objects.githubusercontent.com; do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$u" || echo TIMEOUT)
             printf '  %-34s %s\n' "$u" "$code"
           done
