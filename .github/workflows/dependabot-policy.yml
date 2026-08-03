@@ -12,6 +12,12 @@ name: dependabot-policy (license + status-check enforcement)
 #   2. Required status checks present on the PR head SHA.
 #      If a required check is missing/skipped (not just failing), the gate
 #      FAILS — closes the "skip check by event filter" bypass.
+#      The required list is RESOLVED PER PR from the changed-file set, by
+#      mirroring each producing workflow's own `paths:` filter (see Step 7).
+#      A flat list is wrong here: `PR gate (crate-scoped clippy + tests)` is
+#      `paths:`-filtered to Cargo.*/crates/**, so requiring it on an npm-only
+#      Dependabot PR made that PR red BY CONSTRUCTION, forever (#801, #914,
+#      #919 all reported "Required status checks missing on head SHA").
 #   3. PR does NOT skip git hooks: scans commit messages on the PR for
 #      `--no-verify`, `--no-gpg-sign`, or `[skip ci]`.
 #   4. PR does NOT include suspicious file paths (release manifests,
@@ -234,6 +240,18 @@ jobs:
       # A check that is `skipped` due to a path filter can let a PR slip
       # through branch protection. Verify the canonical required checks
       # have actually executed on this PR's head SHA.
+      #
+      # The required set is RESOLVED PER PR from the changed-file list. A flat
+      # list is not just imprecise here, it is unsatisfiable: every check below
+      # except `dco` is produced by a `paths:`-filtered workflow, so demanding
+      # all of them on every Dependabot PR guaranteed a red gate on any PR that
+      # did not touch Rust. Confirmed on #801 / #914 / #919, each of which had
+      # cargo-deny + cargo-audit + secrets-matrix + dco + pnpm-audit present and
+      # was failed solely on the missing crate-scoped Rust gate.
+      #
+      # Each regex below MIRRORS the `paths:` of the workflow that produces the
+      # check. If you change a producing workflow's `paths:`, change its regex
+      # here in the same PR or this gate silently drifts.
       # ---------------------------------------------------------------------
       - name: Verify required checks are present
         env:
@@ -242,23 +260,60 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          # Canonical PR-gating checks a Dependabot PR MUST have executed. These
-          # are the EXACT check-run names GitHub reports (job `name:`), verified
-          # against the live API below — the old "workflow / job" strings never
-          # matched any real check-run, so this step reported ALL missing and
-          # blocked every Dependabot PR. Reconciled 2026-07-13 to the real names
-          # AND to the post-#770 gate set: `cas_foundation` clippy/cargo-test +
-          # `action-sha-audit` moved to nightly/on-main (they no longer run on a
-          # PR), so requiring them here was unsatisfiable. The crate-scoped PR
-          # gate + cargo-deny + cargo-audit + dco + secrets-matrix are the real
-          # per-PR bar; keep this list in sync with the load-bearing PR gates.
-          required=(
-            "PR gate (crate-scoped clippy + tests)"
-            "cargo-deny (license + advisories + sources + bans)"
-            "cargo-audit PR gate"
-            "dco"
-            "secrets-matrix drift gate"
-          )
+
+          base="origin/$BASE_REF"
+          mapfile -t changed < <(git diff --name-only "${base}"...HEAD)
+          echo "::group::Changed files (${#changed[@]})"
+          printf '  %s\n' "${changed[@]}"
+          echo "::endgroup::"
+
+          # --- path -> producing-workflow trigger map -------------------------
+          # .github/workflows/corelink-server.yml + corelink-adapter-host.yml
+          re_rust_pr_gate='^(Cargo\.(toml|lock)|crates/corelink-(container|handler-customer|adapter-host)/.+|migrations/d1/.+|\.github/workflows/corelink-(server|adapter-host)\.yml)$'
+          # .github/workflows/cargo-deny.yml
+          re_cargo_deny='^(crates/.+|apps/.+|Cargo\.(toml|lock)|deny\.toml|\.github/workflows/cargo-deny\.yml)$'
+          # .github/workflows/cargo-audit.yml
+          re_cargo_audit='^(crates/.+|apps/.+|Cargo\.(toml|lock)|deny\.toml|\.cargo/audit\.toml|\.github/workflows/cargo-audit\.yml)$'
+          # .github/workflows/secrets-drift.yml
+          re_secrets='^(Cargo\.(toml|lock)|crates/.+/Cargo\.toml|apps/.+/Cargo\.toml|apps/.+/package\.json|.*wrangler\.toml|\.github/workflows/.+|crates/.+\.rs|apps/.+\.tsx?|worker/.+\.ts|docs/internal/secrets-checklist\.md|scripts/(validate_secrets_matrix|check-env-contract)\.py|scripts/secrets-checklist-verify\.sh)$'
+          # .github/workflows/pnpm-audit.yml — the npm lane's presence check.
+          # NOTE: this step asserts PRESENCE, never conclusion, so the chronic
+          # advisory red on this job does not make the gate unsatisfiable; it
+          # only proves the npm supply-chain lane actually executed.
+          re_pnpm_audit='^(pnpm-lock\.yaml|package\.json|apps/.+/package\.json|worker/package\.json|crates/corelink-wasm/package\.json|\.github/workflows/pnpm-audit\.yml)$'
+
+          matches() {
+            local re="$1" f
+            for f in "${changed[@]}"; do
+              if [[ "$f" =~ $re ]]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # dco-check.yml has NO `paths:` filter — it runs on every PR, so it is
+          # unconditionally required.
+          required=("dco")
+          if matches "$re_rust_pr_gate"; then required+=("PR gate (crate-scoped clippy + tests)"); fi
+          if matches "$re_cargo_deny";   then required+=("cargo-deny (license + advisories + sources + bans)"); fi
+          if matches "$re_cargo_audit";  then required+=("cargo-audit PR gate"); fi
+          if matches "$re_secrets";      then required+=("secrets-matrix drift gate"); fi
+          if matches "$re_pnpm_audit";   then required+=("pnpm advisory audit"); fi
+
+          echo "::group::Resolved required checks (${#required[@]})"
+          printf '  %s\n' "${required[@]}"
+          echo "::endgroup::"
+
+          # Degradation guard: if nothing beyond `dco` resolved, this PR touches
+          # no path any supply-chain gate watches. That is legitimate today only
+          # for the pip lanes (requirements-ci.txt / tools/sdks/python — no
+          # dedicated PR gate exists), so warn loudly instead of silently
+          # passing a no-op gate.
+          if (( ${#required[@]} == 1 )); then
+            echo "::warning::Only \`dco\` resolved as required — no ecosystem-specific PR gate watches the changed paths. Review this Dependabot PR by hand."
+          fi
+
           checks_json=$(gh api "repos/${REPO}/commits/${PR_HEAD_SHA}/check-runs?per_page=100")
           missing=()
           for r in "${required[@]}"; do
@@ -272,7 +327,7 @@ jobs:
             echo "::error::Dependabot PR may not be auto-mergeable until all checks run."
             exit 1
           fi
-          echo "::notice::All required status checks are present."
+          echo "::notice::All ${#required[@]} resolved required status checks are present."
 
       # ---------------------------------------------------------------------
       # Step 8 — Annotate audit-log emission (deferred to audit-chain).
