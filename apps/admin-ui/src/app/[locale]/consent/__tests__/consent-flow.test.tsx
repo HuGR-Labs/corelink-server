@@ -11,6 +11,16 @@ import { JwtReceiptDisplay } from "@/components/consent/JwtReceiptDisplay";
 import { __setHtml2Canvas } from "@/lib/consent-screenshot";
 import { makeJwtReceipt, makeMockApi, type MockApiState } from "./test-utils";
 
+// The consent components now mint a Clerk session bearer via `useConsentApi()`
+// so their `/v1/consent/*` calls are authenticated against the real API origin
+// (they previously fetched bare `/v1/...` paths, which resolved against the
+// apex MARKETING app). Every test here injects its own `api` stub, so Clerk is
+// never actually consulted — but the hook still runs, and `useAuth()` throws
+// outside a <ClerkProvider>. Same module mock the customer-screen suites use.
+vi.mock("@clerk/nextjs", () => ({
+  useAuth: () => ({ getToken: async () => null }),
+}));
+
 const NOTICE_TEXT = "Test notice body for hashing.";
 const NOTICE_VERSION = "1.2.3";
 const LOCALE_PT = "pt-BR";

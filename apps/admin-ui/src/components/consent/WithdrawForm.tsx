@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { ConsentApi } from "@/lib/consent-api";
-import { defaultConsentApi } from "@/lib/consent-api";
+import { useConsentApi } from "@/lib/use-consent-api";
 import { JwtReceiptDisplay } from "@/components/consent/JwtReceiptDisplay";
 import {
   Badge,
@@ -26,7 +26,9 @@ export interface WithdrawFormProps {
   clerkClient?: ClerkMfaClient;
 }
 
-export function WithdrawForm({ consentId, api = defaultConsentApi, clerkClient }: WithdrawFormProps) {
+export function WithdrawForm({ consentId, api: apiProp, clerkClient }: WithdrawFormProps) {
+  const sessionApi = useConsentApi();
+  const api = apiProp ?? sessionApi;
   const [reason, setReason] = useState("");
   const [mfaVerified, setMfaVerified] = useState(false);
   const [mfaError, setMfaError] = useState<string | null>(null);

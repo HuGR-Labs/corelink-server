@@ -10,7 +10,7 @@ import { sha256Hex } from "@/lib/sha256";
 import { safeLog } from "@/lib/safe-log";
 import { getActiveLocale } from "@/lib/i18n";
 import type { ConsentApi, ConsentGrantResponse } from "@/lib/consent-api";
-import { defaultConsentApi } from "@/lib/consent-api";
+import { useConsentApi } from "@/lib/use-consent-api";
 import {
   WITHDRAWAL_METHOD_DEFAULT,
   type ConsentSixFields,
@@ -37,8 +37,10 @@ export function ConsentCaptureFlow({
   noticeText,
   noticeVersion,
   thirdParties,
-  api = defaultConsentApi,
+  api: apiProp,
 }: ConsentCaptureFlowProps) {
+  const sessionApi = useConsentApi();
+  const api = apiProp ?? sessionApi;
   const [step, setStep] = useState<Step>("review");
   const [scrolled, setScrolled] = useState(false);
   const [submitting, setSubmitting] = useState(false);

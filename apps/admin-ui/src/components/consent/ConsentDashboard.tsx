@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import type { ConsentRow } from "@/lib/consent-types";
 import type { ConsentApi } from "@/lib/consent-api";
-import { defaultConsentApi } from "@/lib/consent-api";
+import { useConsentApi } from "@/lib/use-consent-api";
+import { withAppBasePath } from "@/lib/route-matcher";
 import {
   Badge,
   Button,
@@ -25,9 +26,13 @@ export interface ConsentDashboardProps {
 }
 
 export function ConsentDashboard({
-  api = defaultConsentApi,
+  api: apiProp,
   locale,
 }: ConsentDashboardProps) {
+  // Hook is called unconditionally (rules of hooks); the injected prop still
+  // wins, so the existing test seam is untouched.
+  const sessionApi = useConsentApi();
+  const api = apiProp ?? sessionApi;
   const [rows, setRows] = useState<ConsentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -172,7 +177,13 @@ export function ConsentDashboard({
           </p>
         }
         onConfirm={() => {
-          if (confirmRow) window.location.assign(withdrawHref(confirmRow.id));
+          // `withAppBasePath` is REQUIRED here and only here on this screen:
+          // Next re-attaches the `/corelink` basePath to framework-generated
+          // navigation and the kit `<Button href>` prefixes its own anchors,
+          // but a hand-built `window.location.assign()` is blind — a bare
+          // `/{locale}/consent/withdraw/{id}` lands on the apex `humangr.com`,
+          // which is the hugr-site MARKETING app, not this one.
+          if (confirmRow) window.location.assign(withAppBasePath(withdrawHref(confirmRow.id)));
         }}
       />
     </div>
