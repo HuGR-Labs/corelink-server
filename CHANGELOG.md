@@ -77,6 +77,54 @@ Each entry cross-references:
   ⚠️ This touches `Cargo.lock`, so the prod container pin is stale again — the path to prod
   is rebuild (`container-build-push-prod`) → repin the 5 pins → `cf-deploy-prod`, not a
   Worker-only deploy.
+- **fix(admin-ui): an anonymous stranger could complete a GDPR/LGPD consent ceremony on
+  `humangr.com` that recorded nothing — the four consent screens are now RETIRED behind a
+  one-line kill-switch.** This is the TAKEDOWN, not the diagnosis; the missing backend and
+  the wrong request origin are a separate, earlier entry in this section and are not
+  restated here. What was still live afterwards: `GET humangr.com/corelink/en/consent/new`
+  answered **200** to a signed-out visitor, titled "Grant consent — CoreLink", and walked
+  them through a three-step ceremony collecting legal basis, data categories, retention
+  period, sub-processors and withdrawal method, then stamped `Captured at: <ISO
+  timestamp>` — the visual grammar of a compliance artifact, with no storage behind it.
+  Worse, the notice it asked people to agree to is `STUB_NOTICE_TEXT`, a placeholder
+  string hardcoded in the page: people were being asked to consent to scaffolding copy.
+  Soliciting a consent record you cannot produce on request is a worse compliance position
+  than having no consent surface at all — it manufactures a false artifact for the data
+  subject and a false audit trail for us. **Mechanism — `notFound()`, deliberately not
+  deletion and not an auth gate.** Deletion would destroy real work (the backend is a
+  planned WP); an auth gate only narrows the audience for the same lie, since a signed-in
+  customer would still be invited to grant a consent that goes nowhere — "gated but broken"
+  is not materially better than "public but broken" once the user is inside. A new
+  `assertConsentUiEnabled()` guard (`src/app/[locale]/consent/retired.ts`) is the first
+  statement of all four page components, so `/consent/new`, `/consent`, `/consent/history`
+  and `/consent/withdraw/[id]` are now indistinguishable from routes that do not exist —
+  uniformly, anonymous and authenticated alike. The middleware public-allowlist entry for
+  `/consent/new` is deliberately LEFT IN PLACE so the retirement lives in exactly one place
+  and cannot half-apply; with it intact the anonymous request resolves straight to 404
+  instead of taking a pointless Clerk round-trip to reach the same 404. **Nothing is
+  deleted:** every component, translation string, test and route file is preserved
+  byte-for-byte, and the reversal is flipping `CONSENT_UI_RETIRED` to `false`. **Marker for
+  the next implementer, placed where they will actually stand:** the client and the crate
+  DISAGREE on the endpoint shape, so building either blindly ships a surface the other half
+  never calls — the crate and the canonical spec key revocation by PURPOSE, the admin-UI
+  client keys it by an opaque per-grant id. A side-by-side table now sits in the ⛔ block
+  above the `CONSENT_*` constants in `tools/openapi/src/lib.rs`, with a pointer to it from
+  the `crates/corelink-privacy/src/consent.rs` module header. Those four constants are
+  contract-only and are now marked **UNIMPLEMENTED** in their doc comments plus enumerated
+  in a machine-readable `CONSENT_UNIMPLEMENTED` list (kept in `ALL`, so `spec_roundtrip`
+  stays green; the list is meant to only ever shrink). **Collateral kept honest:** the
+  Lighthouse third-route slot moved off the now-404 page to `/en/security/policy`
+  (`lighthouserc.cjs`) — `/en/pricing` was rejected as the substitute because its
+  cache-tier CTAs point at a `/{locale}/sign-up` route that does not exist; the retired
+  paths were dropped from the axe sweep, the dev screenshot gallery and `mock-gallery.html`
+  with restore notes. **Mutation-proved:** `tests/consent-ui-retired.test.tsx` drives all
+  four page components through the real kill-switch and asserts each calls `notFound()` and
+  renders no flow — flipping the switch back turns all 5 cases red (exit 1), and it is
+  green with the takedown (exit 0). admin-ui 537/537 vitest across 111 files, `tsc
+  --noEmit` clean, eslint 0 errors. ⚠️ **Found and NOT fixed:** the public
+  `/[locale]/legal/cookies` page carries a second cookie-preference consent control with
+  the same missing backend, and its four-locale user-facing copy cannot be rewritten
+  without owner sign-off — retiring it needs its own change.
 - **fix(ci): 12 self-hosted jobs were provisioning a Rust toolchain into the SHARED
   `~/.rustup` — sibling of the #980 `~/.cargo` race, one level up.** Five runners share
   one `$HOME`. `dtolnay/rust-toolchain` is built for GitHub-hosted runners, where `$HOME`

@@ -10,7 +10,7 @@
  * Routing note: the homepage is served un-prefixed at `/` (src/app/page.tsx;
  * locale is resolved per-request via cookie/header in the root layout, with no
  * locale-prefix redirect). The `[locale]` segment has no root page, so `/en`
- * itself 404s — only its sub-routes (/en/privacy, /en/consent/new,
+ * itself 404s — only its sub-routes (/en/privacy, /en/pricing,
  * /en/admin/audit) render. URLs below stay on actually-rendered routes;
  * `/onboarding` is excluded because it redirects (Phase-0 PLG collapsed the
  * legacy /onboarding/tenant wizard into a post-signup /welcome redirect).
@@ -47,7 +47,19 @@ module.exports = {
       url: [
         "http://localhost:3000/corelink/",
         "http://localhost:3000/corelink/en/privacy",
-        "http://localhost:3000/corelink/en/consent/new",
+        // Was `/corelink/en/consent/new` (the S-16 DoD third route). That page
+        // is RETIRED and now answers 404 — the consent surface has no backend
+        // and was soliciting an unstored GDPR/LGPD consent record from
+        // anonymous visitors (see `app/[locale]/consent/retired.ts`). A 404
+        // aborts the collect step with ERRORED_DOCUMENT_REQUEST, so the slot is
+        // reassigned to `/en/security/policy`: statically renderable, genuinely
+        // public (`PUBLIC_LOCALE_PAGE_PREFIXES` → `/security`), no auth and no
+        // backend fetch at all. (`/en/pricing` was the other candidate and is
+        // deliberately NOT used — its cache-tier CTAs point at a `/{locale}/
+        // sign-up` route that does not exist, so it should not be held up as a
+        // reference page until that is fixed.) Restore the original URL in the
+        // same commit that flips `CONSENT_UI_RETIRED` to `false`.
+        "http://localhost:3000/corelink/en/security/policy",
       ],
       numberOfRuns: 3,
       settings: {

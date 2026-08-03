@@ -73,14 +73,86 @@ pub mod paths {
     pub const DSR_SUBMIT: &str = "/v1/privacy/dsr/{action}";
     /// DSR status poll.
     pub const DSR_STATUS: &str = "/v1/privacy/dsr/{request_id}/status";
+    // ===================================================================
+    // ⛔ CONSENT — SPEC'D BUT **NOT IMPLEMENTED**. READ THIS BEFORE
+    //    WRITING A SINGLE CONSENT HANDLER.  (verified 2026-08-03)
+    // ===================================================================
+    //
+    // The four constants below are canonical *contract* entries — they
+    // appear in `openapi/corelink-v1.yaml`, which is why `spec_roundtrip`
+    // is green. They are NOT served. No `.route("…")` mount in `crates/`
+    // matches any `/v1/consent*` path, `worker/src/index.ts` has no
+    // consent branch, and `corelink-privacy` — the crate that owns the
+    // consent ledger — is not a dependency of `corelink-container` or of
+    // any Worker, so its consent logic is not compiled into anything
+    // deployed.
+    //
+    // ⚠️ DO NOT read a live `401` as proof a consent route exists.
+    //    `corelink-api.humangr.com` answers `401` to EVERY `/v1/*` path,
+    //    including `/v1/definitely-not-a-real-route-xyz123`. It is a
+    //    blanket edge auth gate that masks routing entirely.
+    //
+    // -------------------------------------------------------------------
+    // 🔀 THE TWO SIDES DISAGREE ON THE ENDPOINT SHAPE. RECONCILE FIRST.
+    // -------------------------------------------------------------------
+    // The admin-UI client that will call these
+    // (`apps/admin-ui/src/lib/consent-api.ts`) and the crate that
+    // designs them (`crates/corelink-privacy/src/consent.rs` module
+    // header) describe DIFFERENT APIs. Implementing either one blindly
+    // ships a surface the other half does not call:
+    //
+    //   operation        │ crate design (= this spec) │ admin-UI client
+    //   ─────────────────┼────────────────────────────┼─────────────────────────────
+    //   grant            │ POST   /v1/consent/{purpose}│ POST /v1/consent/grant
+    //   revoke/withdraw  │ DELETE /v1/consent/{purpose}│ POST /v1/consent/{id}/withdraw
+    //   list active      │ (none — history only)       │ GET  /v1/consent/active
+    //   history/list     │ GET    /v1/consent          │ GET  /v1/consent/history
+    //   sub-processors   │ (not a consent endpoint)    │ GET  /v1/subprocessors
+    //   stateless verify │ GET /v1/consent/verify (+   │ (never called)
+    //                    │ /v1/consent/revocation/verify)
+    //
+    // The disagreement is structural, not cosmetic: the crate keys
+    // revocation by PURPOSE (a tenant has at most one live grant per
+    // purpose), the client keys it by an opaque per-grant `consent_id`.
+    // Pick one and change the other; the spec YAML, these constants, and
+    // `consent-api.ts` must all end up on the same side.
+    //
+    // The admin-UI screens that consume them are RETIRED (404) until this
+    // lands — see `apps/admin-ui/src/app/[locale]/consent/retired.ts`.
+    // -------------------------------------------------------------------
+
     /// Consent grant / revoke per canonical purpose.
+    ///
+    /// **UNIMPLEMENTED** — contract only, no handler. See the block above,
+    /// and [`CONSENT_UNIMPLEMENTED`].
     pub const CONSENT_ITEM: &str = "/v1/consent/{purpose}";
     /// Consent history list.
+    ///
+    /// **UNIMPLEMENTED** — contract only, no handler. Note the admin-UI
+    /// client calls `/v1/consent/history`, not this path.
     pub const CONSENT_HISTORY: &str = "/v1/consent";
     /// Public stateless grant verify.
+    ///
+    /// **UNIMPLEMENTED** — contract only, no handler and no caller.
     pub const CONSENT_VERIFY: &str = "/v1/consent/verify";
     /// Public stateless revocation verify.
+    ///
+    /// **UNIMPLEMENTED** — contract only, no handler and no caller.
     pub const CONSENT_REVOCATION_VERIFY: &str = "/v1/consent/revocation/verify";
+
+    /// Paths that are in the canonical spec but have **no handler anywhere
+    /// in this repo**. Machine-readable companion to the ⛔ block above so a
+    /// future gate can assert the list only ever shrinks.
+    ///
+    /// Every entry here is also in [`ALL`] — they are real contract
+    /// entries, just unserved. Delete an entry from THIS list (not from
+    /// [`ALL`]) the day its handler is mounted.
+    pub const CONSENT_UNIMPLEMENTED: &[&str] = &[
+        CONSENT_ITEM,
+        CONSENT_HISTORY,
+        CONSENT_VERIFY,
+        CONSENT_REVOCATION_VERIFY,
+    ];
     /// Admin op submission (dual-approval).
     pub const ADMIN_OPS: &str = "/v1/admin/ops";
     /// Admin op detail.

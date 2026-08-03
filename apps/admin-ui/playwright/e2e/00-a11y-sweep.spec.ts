@@ -15,7 +15,9 @@ const PAGES = [
   { path: "/", auth: "none" as const, name: "landing" },
   { path: "/sign-in", auth: "none" as const, name: "sign-in" },
   { path: "/en/welcome", auth: "newDev" as const, name: "welcome" },
-  { path: "/en/consent/new", auth: "existingTenant" as const, name: "consent-new" },
+  // `/en/consent/new` removed: the consent surface is RETIRED and answers 404
+  // (`src/app/[locale]/consent/retired.ts`), which fails the <400 status
+  // assertion below. Restore this entry when `CONSENT_UI_RETIRED` flips back.
   { path: "/en/dsr", auth: "existingTenant" as const, name: "dsr-landing" },
   { path: "/en/admin/audit", auth: "admin" as const, name: "admin-audit" },
   { path: "/en/admin/ops", auth: "admin" as const, name: "admin-ops" },
@@ -26,13 +28,10 @@ for (const p of PAGES) {
   // FIXME(WI-S16-007): pages requiring authenticated sessions cannot run a
   // full axe sweep without real Clerk credentials in this agent env.
   // Public pages (landing, sign-in, privacy) DO run; auth-gated pages
-  // (onboarding/consent/dsr/admin) are queued for first CI execution with
+  // (onboarding/dsr/admin) are queued for first CI execution with
   // Clerk test-mode keys (PRR-S16 deferred item).
-  // The consent-new path additionally hits the nested-<html> merge bug
-  // (see locale-switch FIXME) which axe may flag as a serious violation.
   const isAuthGated = p.auth !== "none";
-  const isConsentNew = p.name === "consent-new";
-  const runner = isAuthGated || isConsentNew ? test.fixme : test;
+  const runner = isAuthGated ? test.fixme : test;
   runner(`a11y: ${p.name} (${p.path}) — zero serious/critical violations`, async ({
     page,
     context,
