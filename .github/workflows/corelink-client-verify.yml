@@ -50,14 +50,50 @@ jobs:
   # per CI-OPT-004 (removes floating rustsec/audit-check@v1 ref).
   pr-gate:
     name: PR gate (crate-scoped clippy + tests + canonical vectors)
-    runs-on: ubuntu-latest
+    # Runner: `corelink` — the product's own ephemeral runner fabric (wave 4,
+    # 2026-08-03). This workflow burned 133 billed minutes of ubuntu-latest
+    # (~$0.80) across its 4 hosted jobs in the 3 days to 2026-08-03; this wave
+    # moves 3 of them. `cbindgen-header-stable` deliberately stays hosted — see
+    # the blocker recorded on that job below.
+    #
+    # The box is 4 vCPU / 12.5 GB (probe run 30825772599) against ubuntu-latest's
+    # 2 vCPU / 7 GB on a private repo — twice the cores, and that headroom is what
+    # pays for the cache loss described next.
+    #
+    # ⚠️ Ephemeral-runner reality — the box carries NO cache between runs, and the
+    # `Swatinem/rust-cache` step below is gated `runner.environment ==
+    # 'github-hosted'` (the shared-$HOME guard), so on a corelink box it SKIPS and
+    # the crate compiles COLD every run. Measured, that costs far less than it
+    # sounds: the image ships a pre-seeded ~/.cargo (415 MB, 362 registry
+    # entries), so `cargo fetch --locked` took 12 s and a full cold
+    # clippy + debug-test + release-test cycle for a crate lane ran in ~105 s on
+    # 4 cores — comparable to the warm-cache hosted runs. Do NOT "fix" this by
+    # re-enabling the cache step on self-hosted: that guard exists because the MAC
+    # fleet shares one $HOME and rust-cache's prune step deletes a sibling job's
+    # registry mid-compile (#979/#980).
+    #
+    # ⚠️ A refused or dropped spawn leaves the job QUEUED, and `timeout-minutes`
+    # does not bound queued time — it starts once a job is RUNNING. That is a
+    # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
+    # check as ⛔ DO NOT MERGE, so a stranded box blocks the PR rather than
+    # waving it through.
+    runs-on: corelink
+    # Sized from the measurement, not from a guess: the heaviest crate lane
+    # already on this fabric (corelink-reapi::pr-gate, 8 cargo invocations incl.
+    # two release builds and the 100k-concurrent isolation proptest) runs cold in
+    # ~409-423 s. 30 min is ~4x headroom over that.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
-        with:
-          components: clippy, rustfmt
+      # `dtolnay/rust-toolchain` removed. It asked for `stable` + clippy/rustfmt;
+      # `rust-toolchain.toml` pins 1.91.1 and lists both components, and rustup
+      # honours that file over any `rustup default` — so 1.91.1's clippy is what
+      # has always run here, hosted included. The assertion makes that provable
+      # per run, so an image drift fails loudly instead of silently changing the
+      # compiler.
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        run: bash scripts/ci-assert-pinned-toolchain.sh
 
       - name: Cargo cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
@@ -71,6 +107,19 @@ jobs:
       - name: cargo test (client-verify, stream + ffi)
         run: cargo test --package corelink-client-verify --features stream,ffi --all-targets
 
+      # ⚠️ The one step in this lane whose result depends on the MACHINE, not just
+      # the code: `constant_time_variance_on_verify` (tests/prop_verify.rs) is a
+      # nanosecond timing measurement with a 5% variance ceiling, and it has a
+      # history of flaking on the shared founder Mac under load. Moving the lane
+      # changes the machine. What IS measured on a corelink box: the sibling gate
+      # this test was modelled on — `corelink-hash`'s `constant_time_variance`,
+      # same trimmed-mean technique, same 5% threshold — ran there in run
+      # 30825772599 (cf-runner-cdeec405) and passed in 50 s. This particular test
+      # has NOT been run on the fabric; the sibling result is the evidence, and it
+      # is not the same thing as a direct one. The reasoning it supports: a
+      # dedicated, idle 4-vCPU box is a quieter place to measure timing than a
+      # 2-vCPU hosted runner. The threshold is untouched — if this starts flaking
+      # here, the fix is to move THIS lane back, not to loosen the gate.
       - name: cargo test (release — perf + ct-variance gates)
         run: cargo test --release --package corelink-client-verify --features stream
 
@@ -79,10 +128,22 @@ jobs:
 
   standalone-build:
     name: Stand-alone build (no Worker deps; AC §6.1 — FFI distribution friction)
-    runs-on: ubuntu-latest
+    # Runner: `corelink` (wave 4, 2026-08-03) — see the pr-gate job above for the
+    # full rationale: 4 vCPU / 12.5 GB vs ubuntu-latest's 2 vCPU / 7 GB on a
+    # private repo; the rust-cache step below SKIPS here, so the lane compiles
+    # cold every run, which the pre-seeded ~/.cargo (415 MB, 362 registry
+    # entries) keeps competitive; and a refused or dropped spawn strands the job
+    # as ⛔ pending rather than passing it.
+    runs-on: corelink
+    # One debug build + a `cargo tree` — strictly lighter than pr-gate's ~409 s.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
+      # `dtolnay/rust-toolchain@stable` removed — `rust-toolchain.toml` pins
+      # 1.91.1 and rustup honours it over any default, so 1.91.1 is what has
+      # always compiled here. Asserted instead of assumed.
+      - name: Assert the workspace-pinned toolchain (rust-toolchain.toml)
+        run: bash scripts/ci-assert-pinned-toolchain.sh
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
@@ -104,12 +165,29 @@ jobs:
 
   wasm-build:
     name: WASM target builds (CF Workers compile compatibility)
-    runs-on: ubuntu-latest
+    # Runner: `corelink` (wave 4, 2026-08-03) — see the pr-gate job above for the
+    # ephemeral-box caveats (4 vCPU / 12.5 GB vs 2 vCPU / 7 GB hosted; no cache
+    # between runs so it compiles cold, kept competitive by the pre-seeded
+    # ~/.cargo; a dropped spawn stalls the job as ⛔ pending, which
+    # `timeout-minutes` cannot bound because it does not cover queued time).
+    runs-on: corelink
+    # A single `cargo check --target wasm32` — measured at 4 s on the box for a
+    # comparable crate, plus the ~15 s toolchain provision.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15
-        with:
-          targets: wasm32-unknown-unknown
+      # `dtolnay/rust-toolchain@stable` with `targets: wasm32-unknown-unknown`
+      # removed. The image does NOT ship wasm32 (probe 30825772599: its only
+      # installed target is x86_64-unknown-linux-gnu on a 1.96.0 default) —
+      # `rust-toolchain.toml` does, via
+      # `targets = ["wasm32-unknown-unknown", "x86_64-unknown-linux-musl"]`,
+      # which rustup installs with the channel on first use. Measured on the box:
+      # after the 15 s provision, `rustup target add wasm32-unknown-unknown` said
+      # "up to date" and took 0 s. The removed action added wasm32 to `stable`, a
+      # toolchain cargo never uses in this repo; the assertion below checks the
+      # target on the toolchain that actually compiles.
+      - name: Assert the workspace-pinned toolchain + wasm32 target
+        run: bash scripts/ci-assert-pinned-toolchain.sh wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:
@@ -119,6 +197,31 @@ jobs:
 
   cbindgen-header-stable:
     name: cbindgen header drift gate (ABI stability)
+    # ⛔ STAYS ON ubuntu-latest — deliberately NOT migrated in wave 4
+    # (2026-08-03), and the reason is the `Install cbindgen` step below.
+    #
+    # `cargo install cbindgen --locked` is a SOURCE build of cbindgen and its
+    # whole dependency tree (syn, clap, toml, …). On a GitHub-hosted runner the
+    # `Swatinem/rust-cache` step above absorbs that: `runner.environment ==
+    # 'github-hosted'` is true, so the compiled artifacts are restored between
+    # runs. On a corelink box that same guard makes the step SKIP — the fabric is
+    # ephemeral with a private $HOME and no cache carries over — so cbindgen
+    # would be compiled from scratch on EVERY run. That is a per-run cost this
+    # job does not pay today and it plausibly exceeds the ~$0.20/3d of hosted
+    # time the move would save, i.e. the migration would be net-negative.
+    #
+    # Note this is exactly the case a binaries-on-PATH inventory misses:
+    # `docs/internal/ci-runner-fabric-box.md` §8.3 lists this whole workflow as
+    # class A ("moves today") because its mechanical scan looks for missing
+    # system binaries, and cbindgen is not one — it is a cargo-installed tool.
+    # §8.2 warns about precisely this ("Confirm per-workflow before moving
+    # anything"); this job is an instance of that warning.
+    #
+    # To unblock, the honest fix is a prebuilt: confirm `taiki-e/install-action`
+    # actually publishes a cbindgen manifest at the SHA this repo pins (checked,
+    # not assumed — cargo-fuzz turned out to have none and would have silently
+    # fallen back to a source build). Not done here: inventing an install step to
+    # make a job fit is out of scope for a runner-label wave.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
