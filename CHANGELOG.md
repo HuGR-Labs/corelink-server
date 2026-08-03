@@ -27,8 +27,9 @@ Each entry cross-references:
 - **feat(ci): point sccache at CoreLink's own `/cargo` surface — dogfood the product on the
   workload that hurts most (pilot: `corelink-reapi` PR gate).** Wave 2 moved 11 Rust jobs onto
   `runs-on: corelink`, and `Swatinem/rust-cache` is correctly gated to github-hosted (#980), so
-  those lanes **compile cold on every run**. Measured today: `corelink-reapi` PR gate **676 s**,
-  `corelink-worker` fuzz smoke 309 s, `corelink-hash` fuzz smoke 203 s, WASM builds 50–99 s.
+  those lanes **compile cold on every run** — `corelink-reapi` PR gate measured **409 s** and
+  **423 s** cold on this branch (`corelink-worker` fuzz smoke ~309 s, `corelink-hash` ~203 s,
+  WASM builds 50–99 s).
   An ephemeral box has no disk to cache to — which is exactly the problem this product exists
   to solve, and it was not being used on its own CI.
 
@@ -48,7 +49,7 @@ Each entry cross-references:
   **The first run went green while doing nothing, and that is the part worth recording.**
   `sccache` is not on the `corelink` box image. The wiring step took its fail-open branch,
   printed `::notice::sccache not on the box image`, exported nothing, and the PR gate reported
-  **success at 676 s** — the exact cold time the pilot exists to remove. "All gates green" and
+  **success at 409 s** — an ordinary cold run. "All gates green" and
   "the cache is working" were two different statements and only the job log distinguished them.
   Two fixes followed. (1) The binary is now installed per-job from a prebuilt, SHA-pinned
   `taiki-e/install-action` (manifest existence checked at the pinned SHA, not assumed — a
@@ -64,8 +65,22 @@ Each entry cross-references:
   must not fail a build must not fail its own measurement either — and `hits == 0` is
   **expected** on the first run, because that run populates.
 
-  **One lane on purpose.** The point is a number, not a rollout; hits-vs-misses across two
-  consecutive runs is the signal. The other 10 lanes follow only if it earns them.
+  **The number came back, and it says NO — for now.** Same job, same box class, three runs on
+  this branch: **409 s** and **423 s** with sccache absent, versus **917 s** with sccache active
+  at a **22.85 % hit rate** (189 hits / 638 misses). Pointing sccache at CoreLink made the lane
+  roughly **2.2× slower**, and **0 cache errors / 0 read errors / 0 write errors** says the
+  surface worked perfectly — the cost is the round-trips themselves, not a malfunction. Each
+  miss pays a network `PROPFIND`+`PUT` on top of the compile it did not avoid, from an ephemeral
+  box against a CAS whose hot path is already known to be D1-over-HTTP bound. Caveats, stated so
+  nobody over-reads this: single samples, a shared ephemeral box with genuine run-to-run
+  variance, and an only partially warm cache — a fully warm one converts misses into hits and
+  could still flip the sign. The honest verdict is **unproven and currently negative**, not
+  "proven bad". Also corrected: the **676 s** cold baseline this work was justified with is not
+  reproduced by any of the three runs above, so it is no longer cited as the cost being removed.
+
+  **One lane on purpose.** The point was a number, not a rollout — and the number is the
+  deliverable even when it is unflattering. The other 10 lanes stay untouched until a warm run
+  beats the ~409–423 s baseline.
 
   The new credential `CORELINK_SCCACHE_TOKEN` (a `cas:rw` PAT on the internal dogfood tenant
   `ee30f7ba…`, GHA repo secret, bound 2026-08-03) is registered as row **#188** of

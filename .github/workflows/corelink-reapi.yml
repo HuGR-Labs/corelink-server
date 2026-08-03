@@ -119,7 +119,24 @@ jobs:
       #
       # This lane already runs on `corelink` (wave 2), and the rust-cache step
       # above is correctly gated to github-hosted, so it SKIPS here and the lane
-      # compiles COLD every run — measured 676 s. That is the cost this removes.
+      # compiles COLD every run. That is the cost this pilot targets.
+      #
+      # ⚠️ FIRST MEASURED RESULT SAYS IT IS NOT WORTH IT YET. Same job, same box
+      # class, three runs on this branch:
+      #     409 s  sccache absent (d88b1af4)
+      #     423 s  sccache absent (81919a49)
+      #     917 s  sccache active, 189 hits / 638 misses = 22.85 % hit rate
+      # i.e. pointing sccache at CoreLink made the lane ~2.2x SLOWER, not faster,
+      # and 0 cache/read/write errors means the surface worked perfectly — the
+      # cost is the round-trips themselves, not a malfunction. A miss pays a
+      # network PROPFIND+PUT on top of the compile it did not avoid.
+      # Caveats before anyone treats this as final: single samples, a shared
+      # ephemeral box with real run-to-run variance, and an only partially warm
+      # cache (a fully warm one shifts misses into hits). The honest reading is
+      # "unproven and currently negative", NOT "proven bad" — and definitely not
+      # the "676 s removed" this comment used to assert, a figure none of the
+      # three runs above reproduces. Do not roll this to the other 10 lanes
+      # until a warm run beats the ~409-423 s baseline.
       #
       # An ephemeral box has no disk to cache to, which is precisely the problem
       # CoreLink sells the answer to. `/cargo/<tenant>/<key>` is a live sccache
@@ -191,7 +208,7 @@ jobs:
       # The number this pilot exists to produce, ASSERTED rather than eyeballed.
       #
       # "the build passed" is not evidence: this lane passes at a 100 % miss rate
-      # too, and it passed for 676 s on the run that proved sccache was missing
+      # too, and it passed for 409 s on the run that proved sccache was missing
       # from the box image entirely. A run in which the pilot did not execute
       # must not look like one in which it worked, so this step NAMES the state
       # it is in instead of printing whatever it happens to find:
