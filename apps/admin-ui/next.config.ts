@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import path from "path";
 import { withSentryConfig } from "@sentry/nextjs";
 import createNextIntlPlugin from "next-intl/plugin";
-import { STATIC_SECURITY_HEADERS } from "./src/lib/csp";
+import { securityHeaderRoutes } from "./src/lib/csp";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
@@ -44,19 +44,20 @@ const nextConfig: NextConfig = {
   // Content-Security-Policy here: a static header carries a fixed placeholder
   // nonce (defeating the per-request nonce — any attacker could reuse it) and,
   // because Next merges headers() on top of middleware, it would OVERRIDE the
-  // real per-request CSP. The nonce-free static security headers below are safe
-  // to emit statically and also cover the static-asset paths that middleware's
-  // matcher excludes (`/_next/static`, favicon, robots, etc.).
+  // real per-request CSP.
+  //
+  // The nonce-free static security headers are emitted here for EXACTLY the
+  // paths the middleware matcher skips (`/_next/static`, `/_next/image`,
+  // favicon, robots, sitemap) and nowhere else — the middleware `set()` loop
+  // owns every other response. This partition is the fix for the headers being
+  // emitted twice on the render path (a `"/:path*"` source here overlapped the
+  // matcher, and OpenNext merged the two case-divergent copies into one folded
+  // line). The reasoning, the live evidence, and why neither emitter could be
+  // deleted outright live on `SECURITY_HEADER_ROUTE_SOURCES` in src/lib/csp.ts;
+  // `tests/security-headers-single-emitter.test.ts` fails if the partition is
+  // broken from either side.
   async headers() {
-    return [
-      {
-        source: "/:path*",
-        headers: STATIC_SECURITY_HEADERS.map((h) => ({
-          key: h.name,
-          value: h.value,
-        })),
-      },
-    ];
+    return securityHeaderRoutes();
   },
 };
 

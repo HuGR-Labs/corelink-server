@@ -218,6 +218,81 @@ export const STATIC_SECURITY_HEADERS: ReadonlyArray<{ name: string; value: strin
 ];
 
 /**
+ * The paths the root middleware's `config.matcher` (`src/middleware.ts`)
+ * EXCLUDES — kept here so the `headers()` sources below can be its exact
+ * complement, and so a unit test can prove the two stay complementary.
+ *
+ * This list MUST stay byte-identical to the negative-lookahead alternation in
+ * that matcher. Next statically analyses `config.matcher` at build time, so the
+ * matcher itself cannot import this constant; `tests/security-headers-single-
+ * emitter.test.ts` re-reads the middleware source and fails if they diverge.
+ */
+export const MIDDLEWARE_EXCLUDED_ASSET_PATHS: readonly string[] = [
+  "_next/static",
+  "_next/image",
+  "favicon.ico",
+  "robots.txt",
+  "sitemap.xml",
+];
+
+/**
+ * `source` patterns for `next.config.ts`'s `headers()` — EXACTLY the paths
+ * {@link MIDDLEWARE_EXCLUDED_ASSET_PATHS} names, i.e. the exact complement of
+ * the middleware matcher. Next prefixes each with the `basePath`.
+ *
+ * WHY A COMPLEMENT AND NOT `"/:path*"` (fix/reporting-endpoints-emitted-twice):
+ * `STATIC_SECURITY_HEADERS` has two emitters — this `headers()` route set and
+ * the `res.headers.set()` loop in `src/middleware.ts`. `set()` replaces, so
+ * middleware alone can never double a header; but under `@opennextjs/cloudflare`
+ * the two emitters are merged as PLAIN OBJECT KEYS before the Worker builds its
+ * `Headers`, and they disagree on CASE — `getNextConfigHeaders` copies our
+ * `h.key` verbatim (`Reporting-Endpoints`) while the middleware `Response`
+ * lowercases (`reporting-endpoints`). Two object keys survive the merge, and
+ * `new Headers({...})` APPENDS each entry, so the same value lands twice on one
+ * folded line. Observed live on `/corelink/sign-in` after #981:
+ *   `reporting-endpoints: csp-endpoint="/corelink/api/csp-report", csp-endpoint="…"`
+ * and identically on `X-Frame-Options`, `Referrer-Policy` and
+ * `Permissions-Policy` (the other two static headers are masked because the
+ * Cloudflare zone's `security_header` setting overwrites HSTS + nosniff at the
+ * edge). RFC 8941 dictionaries are last-wins so nothing broke — but the day the
+ * two sources disagree, one silently wins.
+ *
+ * WHY NEITHER EMITTER COULD SIMPLY BE DELETED:
+ *   - Delete this one → `/_next/static/*`, `favicon.ico`, `robots.txt` and
+ *     `sitemap.xml` lose every security header: the middleware matcher skips
+ *     them by design (they must not pay for a middleware invocation).
+ *   - Delete the middleware loop → every middleware SHORT-CIRCUIT loses them.
+ *     OpenNext's `routingHandler` computes the `headers()` set BEFORE running
+ *     middleware and then `return`s early when middleware produces a result,
+ *     discarding it — which is why the live 307 from `/corelink/dashboard` to
+ *     `/corelink/sign-in` carries exactly one copy of each header today.
+ * So the two are partitioned by PATH instead: every response now has exactly
+ * one emitter.
+ */
+export const SECURITY_HEADER_ROUTE_SOURCES: readonly string[] = [
+  "/_next/static/:path*",
+  "/_next/image",
+  "/favicon.ico",
+  "/robots.txt",
+  "/sitemap.xml",
+];
+
+/**
+ * The `headers()` return value for `next.config.ts`. Lives here (rather than
+ * inline in the config) so the single-emitter partition is unit-testable
+ * without importing the Sentry/next-intl-wrapped config.
+ */
+export function securityHeaderRoutes(): Array<{
+  source: string;
+  headers: Array<{ key: string; value: string }>;
+}> {
+  return SECURITY_HEADER_ROUTE_SOURCES.map((source) => ({
+    source,
+    headers: STATIC_SECURITY_HEADERS.map((h) => ({ key: h.name, value: h.value })),
+  }));
+}
+
+/**
  * Generate a cryptographically random per-request nonce.
  * Uses Web Crypto (available in Edge runtime + Node 20+).
  */

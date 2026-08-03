@@ -248,6 +248,15 @@ export const config = {
   // corelink`) rendered with NO per-request CSP/nonce (middleware never ran on
   // it) — a real security regression surfaced by the domain migration. The `"/"`
   // entry is basePath-prefixed to exactly `/corelink`, restoring CSP on the root.
+  //
+  // The excluded list below is the EXACT complement of
+  // `SECURITY_HEADER_ROUTE_SOURCES` in `src/lib/csp.ts`: middleware owns the
+  // static security headers on every path it matches, `next.config.ts`'s
+  // `headers()` owns them on exactly these excluded paths, and no response is
+  // covered by both (which is what emitted them twice on the render path).
+  // Next statically analyses `config.matcher` at build time, so this literal
+  // cannot import that constant — `tests/security-headers-single-emitter.test.ts`
+  // re-reads this file and fails if the two lists drift apart.
   matcher: [
     "/",
     "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)",
