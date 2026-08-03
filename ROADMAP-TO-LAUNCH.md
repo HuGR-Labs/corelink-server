@@ -180,7 +180,7 @@ cost is the deciding factor). Revisit at month 3.
 |---|---|---|
 | Median TTFV (signup → first cache hit) | **≤ 10 min** | ≤ 5 min |
 | p75 TTFV | ≤ 20 min | ≤ 10 min |
-| Median signup → authenticated `corelink ping` | ≤ 5 min | ≤ 2 min |
+| Median signup → authenticated `corelink whoami` | ≤ 5 min | ≤ 2 min |
 | % signups reaching activation same session | ≥ 35 % | ≥ 50 % |
 
 **Canonical activation event.** `first_cache_hit` = the **second**
@@ -195,7 +195,7 @@ in one session. Source: plg §3.2.
 2. Click → Clerk sign-up with **GitHub OAuth first**, email/password second
 3. Auto-provision tenant + free plan + nearest region (Geo-IP) + PAT (server-side, invisible)
 4. `/welcome` shows three things: one-line copy-paste install, PAT (copy button), live status pane
-5. User runs `curl -fsSL https://get.corelink.io | sh -s -- --token=ct_xxx --region=ord` (writes config, runs `corelink ping`)
+5. User runs `curl -fsSL https://corelink-get.humangr.com | sh -s -- --token=ct_xxx --region=ord` (writes config, runs `corelink whoami`)
 6. User runs `corelink bazel-init` (CLI detects `WORKSPACE` / `MODULE.bazel`, appends 3 lines to `.bazelrc` idempotently)
 7. User runs `bazel build //...` twice → second build is mostly cache hits → `/welcome` pane animates "First cache hit. Your build was 8× faster."
 
@@ -299,7 +299,7 @@ Operator + code work to flip the 2 RED + 2 YELLOW gates. Order matters
 
 | # | Item | Effort | Source |
 |---|---|---|---|
-| 1.1 | Ship `https://get.corelink.io` install-script Worker + `corelink` CLI flag handling | ~2 days | plg §5 |
+| 1.1 | Ship `https://corelink-get.humangr.com` install-script Worker + `corelink` CLI flag handling | ~2 days | plg §5 |
 | 1.2 | Implement auto-provision-on-signup (replaces wizard `tenant`+`region-plan`+`pat`) | ~3 days | plg §5 |
 | 1.3 | Implement `corelink bazel-init` (stub `buck2-init`, `cargo-init` for later) | ~1 week | plg §5 |
 | 1.4 | Build `/welcome` SSE pane (replaces `/onboarding/done`) | ~3 days | plg §5 |
