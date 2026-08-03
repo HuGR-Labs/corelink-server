@@ -101,6 +101,50 @@ jobs:
         with:
           workspaces: ". -> target"
 
+      # ── sccache -> CoreLink's own /cargo surface (pilot, 2026-08-03) ──────────
+      #
+      # This lane already runs on `corelink` (wave 2), and the rust-cache step
+      # above is correctly gated to github-hosted, so it SKIPS here and the lane
+      # compiles COLD every run — measured 676 s. That is the cost this removes.
+      #
+      # An ephemeral box has no disk to cache to, which is precisely the problem
+      # CoreLink sells the answer to. `/cargo/<tenant>/<key>` is a live sccache
+      # WebDAV surface on the product itself (crates/corelink-container/src/
+      # routes/cargo.rs implements MKCOL/PROPFIND/DELETE for sccache's opendal
+      # backend; probed in prod 2026-08-03 — GET/PUT/PROPFIND returned 401 from
+      # the handler vs 404 for an unmounted path). The cache lives in the
+      # product, not on the runner, so it survives the box being destroyed.
+      #
+      # FAIL-OPEN BY CONSTRUCTION. `SCCACHE_IGNORE_SERVER_IO_ERROR=1` degrades a
+      # miss, a 5xx, or an expired token into a normal cold compile — never a red
+      # gate. A build cache that can fail a build is not a cache, it is a
+      # dependency. The token check below is inside the script rather than in an
+      # `if:` for the same reason: no secret, no wiring, no failure.
+      #
+      # CARGO_INCREMENTAL=0 is required — incremental artifacts embed
+      # per-invocation paths, which would make sccache store and never hit.
+      - name: Point sccache at CoreLink (no-op without the secret)
+        env:
+          SCCACHE_TOKEN: ${{ secrets.CORELINK_SCCACHE_TOKEN }}
+          SCCACHE_TENANT: ee30f7ba-fc25-4d71-939e-ebe130b4c6a3
+        run: |
+          set -euo pipefail
+          if [ -z "${SCCACHE_TOKEN:-}" ]; then
+            echo "::notice::CORELINK_SCCACHE_TOKEN absent (fork PR?) — lane compiles cold, unchanged"
+            exit 0
+          fi
+          if ! command -v sccache >/dev/null 2>&1; then
+            echo "::notice::sccache not on the box image — lane compiles cold, nothing breaks"
+            exit 0
+          fi
+          {
+            echo "RUSTC_WRAPPER=sccache"
+            echo "CARGO_INCREMENTAL=0"
+            echo "SCCACHE_WEBDAV_ENDPOINT=https://corelink-api.humangr.com/cargo/${SCCACHE_TENANT}"
+            echo "SCCACHE_WEBDAV_TOKEN=${SCCACHE_TOKEN}"
+            echo "SCCACHE_IGNORE_SERVER_IO_ERROR=1"
+          } >> "$GITHUB_ENV"
+          echo "sccache -> CoreLink /cargo (fail-open)"
       - name: Install protoc
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b  # arduino/setup-protoc@v3.0.0
         with:
@@ -129,6 +173,15 @@ jobs:
 
       - name: cargo test (cross-tenant isolation property — 10k iter + 100k concurrent, WI-S02-001)
         run: cargo test --release --package corelink-reapi --test prop_cross_tenant_read
+      # The number this pilot exists to produce. Report-only and `always()`: a
+      # cache that must not fail the build must not fail its own measurement
+      # either. Compare "Cache hits" vs "Cache misses" across two consecutive
+      # runs — run 1 populates the cache, run 2 is the real signal.
+      - name: sccache stats
+        if: always()
+        run: |
+          command -v sccache >/dev/null 2>&1 || { echo "sccache absent — lane compiled cold"; exit 0; }
+          sccache --show-stats || echo "::notice::sccache inactive on this run"
 
   wasm-build:
     name: WASM target build (CF Workers compile compatibility — pure-logic core)
