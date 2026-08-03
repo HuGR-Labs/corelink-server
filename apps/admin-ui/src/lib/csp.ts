@@ -26,7 +26,8 @@
  *                                + https://clerk.corelink-app.humangr.com (Clerk modals)
  *   - img-src     'self' data: https:
  *   - frame-ancestors 'none', form-action 'self', base-uri 'self'
- *   - report-uri /api/csp-report
+ *   - report-uri /corelink/api/csp-report  (see {@link CSP_REPORT_PATH})
+ *   - report-to  csp-endpoint             (+ the `Reporting-Endpoints` header)
  *
  * Vendor CSP sources:
  *   - Stripe:  https://docs.stripe.com/security/guide#content-security-policy
@@ -41,6 +42,67 @@
  *
  * See WI-S16-001 §6.1.3 + §20 STRIDE Tampering.
  */
+
+import { withAppBasePath } from "./route-matcher";
+
+/**
+ * Surface-correct URL of the CSP violation sink.
+ *
+ * **Why this is not the literal `/api/csp-report`.** A `report-uri` /
+ * `Reporting-Endpoints` value is a URL reference the browser resolves against
+ * the *document's* URL, so a root-absolute path lands on the ORIGIN root — but
+ * the handler (`src/app/api/csp-report/route.ts`) is mounted under the app's
+ * Next `basePath` (`/corelink`), and Next never rewrites a path that we
+ * hand-embed in a header value. Proven live 2026-08-03 on
+ * `https://humangr.com/corelink/sign-in`, whose enforce-mode header carried
+ * `report-uri /api/csp-report`:
+ *
+ *     POST https://humangr.com/api/csp-report          -> 405  (apex marketing
+ *                                                              Pages app; the
+ *                                                              report is lost)
+ *     POST https://humangr.com/corelink/api/csp-report -> 204  (the real sink)
+ *
+ * Under `next dev` the same basePath-less URL 404s. Either way EVERY violation
+ * report this app believed it collected was discarded — the pipe had never
+ * carried a single report since the `/corelink` path-surface migration.
+ *
+ * Derived from {@link withAppBasePath} rather than re-typing `/corelink`, so
+ * this cannot drift from `next.config.ts`'s `basePath` the way a second literal
+ * would. Same failure mode as the Clerk-widget basePath blindness (#894), here
+ * in our own code.
+ */
+export const CSP_REPORT_PATH: string = withAppBasePath("/api/csp-report");
+
+/**
+ * Reporting API v1 group name shared by the `report-to` CSP directive and the
+ * `Reporting-Endpoints` response header. The two MUST agree or Chromium drops
+ * the reports silently.
+ */
+export const CSP_REPORT_GROUP = "csp-endpoint";
+
+/**
+ * `Reporting-Endpoints` header (Reporting API v1) naming {@link CSP_REPORT_PATH}
+ * under {@link CSP_REPORT_GROUP}.
+ *
+ * Emitted ALONGSIDE the deprecated `report-uri`, never instead of it — the two
+ * cover disjoint browser populations and dropping either loses reports:
+ *   - Chromium implements `report-to` and IGNORES `report-uri` whenever a
+ *     resolvable `report-to` group is present.
+ *   - Firefox and Safari implement `report-uri` ONLY; `report-to` is inert
+ *     there, so removing `report-uri` would blind us to those engines.
+ * This is the standard non-lossy migration for the `report-uri` deprecation.
+ *
+ * Note the two channels deliver DIFFERENT bodies — `report-uri` POSTs a single
+ * `application/csp-report` object, the Reporting API POSTs an
+ * `application/reports+json` ARRAY. The route handler accepts both.
+ *
+ * Distinct header name from Cloudflare's legacy `Report-To: {"group":"cf-nel"…}`
+ * (which the edge already injects), so the two do not collide.
+ */
+export const REPORTING_ENDPOINTS_HEADER: { name: string; value: string } = {
+  name: "Reporting-Endpoints",
+  value: `${CSP_REPORT_GROUP}="${CSP_REPORT_PATH}"`,
+};
 
 export interface CspOptions {
   /** Per-request base64 nonce (already URL-safe). */
@@ -109,7 +171,12 @@ export function buildCspDirectives(nonce: string, allowUnsafeEval = false): stri
     "base-uri 'self'",
     "form-action 'self'",
     "object-src 'none'",
-    "report-uri /api/csp-report",
+    // Both reporting channels, basePath-correct. See CSP_REPORT_PATH for the
+    // live proof that the bare `/api/csp-report` literal that used to sit here
+    // discarded 100% of reports, and REPORTING_ENDPOINTS_HEADER for why the
+    // deprecated `report-uri` stays next to `report-to`.
+    `report-uri ${CSP_REPORT_PATH}`,
+    `report-to ${CSP_REPORT_GROUP}`,
   ];
 }
 
@@ -144,6 +211,10 @@ export const STATIC_SECURITY_HEADERS: ReadonlyArray<{ name: string; value: strin
     // `interest-cohort=()` opts out of FLoC/Topics tracking (pre-HN-launch hardening).
     value: "interest-cohort=(), camera=(), microphone=(), geolocation=()",
   },
+  // Names the `report-to csp-endpoint` group the CSP references. Nonce-free, so
+  // it belongs with the static set and rides on every response that carries a
+  // CSP (middleware) as well as the static-asset paths middleware skips.
+  REPORTING_ENDPOINTS_HEADER,
 ];
 
 /**
