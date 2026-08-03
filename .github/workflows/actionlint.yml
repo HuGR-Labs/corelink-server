@@ -28,6 +28,8 @@ on:
       - '.github/actionlint.yaml'
       - '.github/workflows/actionlint.yml'
       - 'scripts/validate_shared_home_cache_guard.py'
+      - 'scripts/validate_no_shared_rustup_mutation.py'
+      - 'scripts/ci-use-host-toolchain.sh'
   push:
     branches: [main]
     paths:
@@ -35,6 +37,8 @@ on:
       - '.actionlint.yaml'
       - '.github/actionlint.yaml'
       - 'scripts/validate_shared_home_cache_guard.py'
+      - 'scripts/validate_no_shared_rustup_mutation.py'
+      - 'scripts/ci-use-host-toolchain.sh'
 
 permissions:
   contents: read
@@ -87,3 +91,14 @@ jobs:
       - name: Cargo-cache steps must be gated to github-hosted runners
         shell: bash
         run: python3 scripts/validate_shared_home_cache_guard.py
+
+      # Sibling of the gate above, one level up: that one protects the shared
+      # `~/.cargo`, this one protects the shared `~/.rustup`. A self-hosted job
+      # must never run `rustup toolchain install` / `rustup default` (it can make
+      # `rustc` unexecutable for every other job, and silently moves the whole
+      # host off the ADR-0015 reproducibility pin). Also bans hardcoding a
+      # versioned toolchain path, which is a second copy of that pin that nothing
+      # keeps in sync. Fails closed if it inspects zero self-hosted jobs.
+      - name: Self-hosted jobs must not provision a Rust toolchain
+        shell: bash
+        run: python3 scripts/validate_no_shared_rustup_mutation.py

@@ -88,8 +88,8 @@ jobs:
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
       # instead — see CLAUDE.md "the rustup proxy is broken" note.
-      - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
-        run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
+        run: bash scripts/ci-use-host-toolchain.sh
 
       # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
       # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
@@ -146,8 +146,8 @@ jobs:
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
       # instead — see CLAUDE.md "the rustup proxy is broken" note.
-      - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
-        run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
+        run: bash scripts/ci-use-host-toolchain.sh
 
       # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
       # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
@@ -195,8 +195,8 @@ jobs:
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
       # instead — see CLAUDE.md "the rustup proxy is broken" note.
-      - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
-        run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
+        run: bash scripts/ci-use-host-toolchain.sh
 
       # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
       # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):
@@ -279,8 +279,8 @@ jobs:
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
       # instead — see CLAUDE.md "the rustup proxy is broken" note.
-      - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
-        run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
+        run: bash scripts/ci-use-host-toolchain.sh
 
       # save-if: false — the SAVE post-step is disabled on this self-hosted fleet.
       # Measured 2026-08-01 (run 30715557213 / 30717730219, adversarial-tests job):

@@ -135,11 +135,16 @@ jobs:
       # so an unparseable SPDX (e.g., `SEE LICENSE IN <file>`) fails the
       # gate and forces human review.
       # ---------------------------------------------------------------------
-      - name: Set up Rust toolchain (SHA-pinned)
+      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
+      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
+      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
+      # `rustc` unexecutable mid-build for every other job — it took the host down
+      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
+      # default, silently moving every concurrent job off the ADR-0015 reproducibility
+      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      - name: Use the workspace-pinned host toolchain (provisions nothing)
         if: hashFiles('Cargo.toml') != ''
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b  # stable 1.83
-        with:
-          toolchain: stable
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Install cargo-deny (SHA-pinned)
         if: hashFiles('Cargo.toml') != ''

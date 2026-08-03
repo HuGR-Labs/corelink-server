@@ -201,8 +201,8 @@ jobs:
       # dtolnay/rust-toolchain collides on `bin/cargo`. Put the pre-installed
       # host toolchain (workspace pins 1.91.1 via rust-toolchain.toml) on PATH
       # instead — see CLAUDE.md "the rustup proxy is broken" note.
-      - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
-        run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      - name: Use the workspace-pinned host toolchain (channel read from rust-toolchain.toml)
+        run: bash scripts/ci-use-host-toolchain.sh
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # Swatinem/rust-cache@v2.9.1
         if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
         with:

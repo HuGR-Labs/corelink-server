@@ -52,15 +52,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
+      # Do NOT provision a toolchain on the self-hosted fleet. Per its own action.yml,
+      # `dtolnay/rust-toolchain` runs `rustup toolchain install` + `rustup default`
+      # against the SHARED `~/.rustup` (5 runners, one `$HOME`). That (a) can make
+      # `rustc` unexecutable mid-build for every other job — it took the host down
+      # for a day on 2026-06-15 — and (b) `rustup default` rewrites the MACHINE-GLOBAL
+      # default, silently moving every concurrent job off the ADR-0015 reproducibility
+      # pin. Full reasoning: scripts/ci-use-host-toolchain.sh header.
+      - name: Use the workspace-pinned host toolchain (provisions nothing)
+        run: bash scripts/ci-use-host-toolchain.sh
 
-      # The self-hosted Mac's rustup proxy is broken, so `cargo` is not on PATH
-      # by default and license-audit.sh hard-fails with "cargo not on PATH".
-      # Put the workspace-pinned host toolchain (1.91.1 via rust-toolchain.toml)
-      # on PATH directly — same fix the other Rust gates use (corelink-reapi.yml).
-      - name: Put host toolchain on PATH (workspace-pinned 1.91.1)
-        run: echo "$HOME/.rustup/toolchains/1.91.1-x86_64-apple-darwin/bin" >> "$GITHUB_PATH"
+      # (The hand-rolled `echo …/1.91.1-…/bin >> $GITHUB_PATH` that used to sit here
+      # is gone: the step above does the same thing, but reads the channel from
+      # rust-toolchain.toml instead of hardcoding it, so it cannot drift from the
+      # ADR-0015 pin — and it fails loudly if the toolchain is missing.)
 
       - name: Cache cargo registry
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
