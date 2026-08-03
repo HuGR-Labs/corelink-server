@@ -1,0 +1,94 @@
+name: sdks/js (@corelink/client)
+
+# CI gate for the published JavaScript/TypeScript SDK.
+#
+# WHY THIS FILE EXISTS. Until 2026-08-03 `sdks/js` was an ORPHAN: absent from
+# `pnpm-workspace.yaml` and referenced by NO workflow. Its dependencies were
+# therefore never installed and its 23 tests never ran once. The package looked
+# broken — `import { blake3 } from "@noble/hashes/blake3"` failed with "Cannot
+# find package" — but the code was fine; nothing had ever installed it. The bug
+# was the absence of this file.
+#
+# It also carried no `private` flag, so any `npm publish` would have shipped an
+# unbuilt, untested package. The repo being private is the only reason that never
+# happened — luck, not design.
+#
+# The three steps below are exactly the three promises `package.json` makes:
+#   typecheck  -> the types shipped in `exports.types` actually compile
+#   test       -> the 23 tests pass
+#   build      -> `dist/index.js` + `dist/index.d.ts` exist, i.e. `exports`
+#                 resolves for a consumer. `prepublishOnly` runs this too, but a
+#                 publish-time failure is discovered by the customer; here it is
+#                 discovered by us.
+#
+# Hosted ubuntu on purpose: ~875 lines of TypeScript is seconds of work and does
+# not belong on the self-hosted Mac fleet (see CLAUDE.md on runner load).
+
+on:
+  pull_request:
+    paths:
+      - 'sdks/js/**'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/sdks-js.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sdks/js/**'
+      - '.github/workflows/sdks-js.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gate:
+    name: typecheck + test + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sdks/js
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install pnpm
+        run: npm install -g pnpm@10.32.1
+        working-directory: ${{ github.workspace }}
+
+      # `--filter @corelink/client...` installs the SDK and its deps only, not the
+      # heavy admin-ui/docs workspace members. This step is ALSO the regression
+      # test for the orphan bug: if `sdks/js` ever falls out of
+      # pnpm-workspace.yaml again, the filter matches nothing and the next step
+      # fails on a missing @noble/hashes rather than passing quietly.
+      - name: Install (workspace-filtered)
+        run: pnpm install --frozen-lockfile --filter '@corelink/client...'
+        working-directory: ${{ github.workspace }}
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Build
+        run: pnpm run build
+
+      # `package.json` `exports` points consumers at these two paths. If the build
+      # stops emitting them, `import { CoreLinkClient } from "@corelink/client"`
+      # breaks for every user while every step above still passes.
+      - name: The published entrypoints exist
+        run: |
+          set -euo pipefail
+          for f in dist/index.js dist/index.d.ts; do
+            [ -f "$f" ] || { echo "::error::$f missing — package.json exports would not resolve for a consumer"; exit 1; }
+          done
+          echo "entrypoints present: dist/index.js, dist/index.d.ts"

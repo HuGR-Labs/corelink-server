@@ -5,3 +5,10 @@ packages:
   - "apps/get-corelink-worker"
   - "apps/signup-worker"
   - "worker"
+  # The published JS SDK. Adopted into the workspace 2026-08-03: it had been an
+  # ORPHAN — absent here, referenced by no workflow, so its dependencies were never
+  # installed and its test suite never ran. Consequence: `import { blake3 } from
+  # "@noble/hashes/blake3"` failed with "Cannot find package", and nobody saw it,
+  # because there was nothing to see it. Membership here is what makes
+  # `sdks-js.yml` able to install and gate it.
+  - "sdks/js"
