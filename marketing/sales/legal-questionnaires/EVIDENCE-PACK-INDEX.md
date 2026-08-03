@@ -3,9 +3,9 @@ id: "SALES-EVIDENCE-PACK-INDEX"
 type: "marketing"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-08-02"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -19,11 +19,13 @@ tags: ["sales", "legal", "questionnaire", "evidence-pack", "procurement", "audit
 
 > **Audience:** auditor or procurement reviewer with countersigned NDA on file via `trust@humangr.com`. This is the one-page wayfinder for the evidence bundle attached to any CoreLink SIG / CAIQ / custom-form response.
 >
-> **Source of truth:** `HumanGuardrail/corelink-server` at commit `<SHA>` (cited per response). All paths below are repo-relative unless they start with `https://`.
+> **Source of truth:** `HuGR-Labs/corelink-server` at commit `<SHA>` (cited per response) — a **private** repository. All paths below are repo-relative unless they start with `https://`.
+>
+> **⛔ CoreLink is not open source.** There is no public source repository. No row in this index may invite an auditor to "go read the code" — the platform source is private and is shared only under NDA. The only artifacts anyone can fetch without auth are release **binaries and checksums** (see PUBLIC-REPO). Verified 2026-08-02: `HumanGuardrail/corelink` and `HuGR-Labs/corelink` both return **HTTP 404** — that repo has never existed in either org, so this is not org-rename drift.
 >
 > **Access model:**
 > - **PUBLIC** = visible on `apps/docs/docs/` or on `https://docs.corelink.humangr.com/`.
-> - **OPEN-SOURCE** = visible in the public `HumanGuardrail/corelink` repo.
+> - **PUBLIC-REPO** = a **release artifact** (binary, checksum) downloadable without auth from `HuGR-Labs/corelink-cli` (HTTP 200) or `HuGR-Labs/clw-releases` (HTTP 200). Both publish **build outputs only — no source**.
 > - **NDA** = shareable with countersigned NDA on file via `trust@humangr.com`. Turnaround: 1 business day.
 > - **AUDITOR-ONLY** = shared with engaged 3PAO / external auditor only; not distributed even with NDA.
 
@@ -61,11 +63,11 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 15 | **GDPR — full audit** | `specs/_compliance/GDPR-FULL-AUDIT-2026-05-15.md` | NDA |
 | 16 | GDPR — SCC execution | `specs/_compliance/GDPR-SCC-EXECUTION-2026-05-15.md` | NDA |
 | 17 | GDPR — DPIA library | `specs/_compliance/GDPR-DPIA-LIBRARY.md` | NDA |
-| 18 | GDPR — DPIA validator | `scripts/validate_dpia.py` | OPEN-SOURCE |
+| 18 | GDPR — DPIA validator | `scripts/validate_dpia.py` | NDA |
 | 19 | **LGPD — full audit** | `specs/_compliance/LGPD-FULL-AUDIT-2026-05-15.md` | NDA |
 | 20 | LGPD — residency attestation (ROADMAP — in-jurisdiction residency not yet GA; data currently US/ENAM) | `specs/_compliance/LGPD-RESIDENCY-ATTESTATION-2026-05-15.md` | NDA |
 | 21 | LGPD — ROPA | `specs/_compliance/LGPD-ROPA-2026-05-15.md` | NDA |
-| 22 | LGPD — residency verifier (fails-loud today: in-jurisdiction residency not yet provisioned; ROADMAP) | `scripts/verify-lgpd-residency.py` | OPEN-SOURCE |
+| 22 | LGPD — residency verifier (fails-loud today: in-jurisdiction residency not yet provisioned; ROADMAP) | `scripts/verify-lgpd-residency.py` | NDA |
 | 23 | LGPD — DPO monthly checklist | `specs/_compliance/LGPD-DPO-MONTHLY-CHECKLIST.md` | NDA |
 | 24 | **DPO — appointment** | `specs/_compliance/DPO-APPOINTMENT-2026-05-15.md` | NDA |
 | 25 | DPO — responsibilities matrix | `specs/_compliance/DPO-RESPONSIBILITIES-MATRIX.md` | NDA |
@@ -76,18 +78,18 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 30 | BYOK — FIPS attestation matrix | `specs/_compliance/BYOK-FIPS-ATTESTATION-MATRIX.md` | NDA |
 | 31 | BYOK — vendor letters | `specs/_compliance/fips-attestation-letters/` | NDA |
 | 32 | BYOK — RFI questionnaire | `specs/_compliance/FIPS-RFI-QUESTIONNAIRE.md` | NDA |
-| 33 | BYOK — endpoint verifier | `scripts/verify-fips-endpoints.py` | OPEN-SOURCE |
+| 33 | BYOK — endpoint verifier | `scripts/verify-fips-endpoints.py` | NDA |
 | 34 | BYOK — renewal runbook | `specs/_runbooks/RB-FIPS-ATTESTATION-RENEWAL.md` | NDA |
 | 35 | BYOK — public explainer | `apps/docs/docs/security/byok` | PUBLIC |
-| 36 | BYOK — provider matrix | `compliance/byok-fips-matrix.md` | OPEN-SOURCE |
-| 37 | **Tenant isolation** | `specs/03_architecture/invariant_registry.md` (search `INV-TenantIsolation`) | OPEN-SOURCE |
+| 36 | BYOK — provider matrix | `compliance/byok-fips-matrix.md` | NDA |
+| 37 | **Tenant isolation** | `specs/03_architecture/invariant_registry.md` (search `INV-TenantIsolation`) | NDA |
 | 38 | Tenant isolation — public explainer | `apps/docs/docs/trust/index.mdx` §Posture-at-a-glance | PUBLIC |
 | 39 | **Data residency** (US/ENAM default + physically-EU/WEUR live for EU tenants; Brazil/`sam` + APAC are ROADMAP) | `apps/docs/docs/trust/data-handling.mdx#residency` | PUBLIC |
-| 40 | Residency — invariant (enforced for the live regions: `weur`→`lhr` guard refuses cross-region access; further regions ship under the same invariant) | `INV-REGION-NO-CROSS-LEAK` (in `specs/03_architecture/invariant_registry.md`) | OPEN-SOURCE |
-| 41 | LGPD residency — verifier (Brazil-specific; fails-loud today — Cloudflare R2 has no South-America region, so BR physical residency is ROADMAP) | `scripts/verify-lgpd-residency.py` | OPEN-SOURCE |
+| 40 | Residency — invariant (enforced for the live regions: `weur`→`lhr` guard refuses cross-region access; further regions ship under the same invariant) | `INV-REGION-NO-CROSS-LEAK` (in `specs/03_architecture/invariant_registry.md`) | NDA |
+| 41 | LGPD residency — verifier (Brazil-specific; fails-loud today — Cloudflare R2 has no South-America region, so BR physical residency is ROADMAP) | `scripts/verify-lgpd-residency.py` | NDA |
 | 42 | Residency — attestation API (ROADMAP — signed per-tenant residency-proof not live today) | `GET /v1/tenant/me/residency-proof` | PUBLIC |
 | 43 | **Audit chain — Merkle proofs** | `apps/docs/docs/security/audit-chain` | PUBLIC |
-| 44 | Audit chain — append-only invariant | `INV-AUDIT-APPEND-ONLY`, `INV-OBS-AUDIT-CHAIN-INTEGRITY` | OPEN-SOURCE |
+| 44 | Audit chain — append-only invariant | `INV-AUDIT-APPEND-ONLY`, `INV-OBS-AUDIT-CHAIN-INTEGRITY` | NDA |
 | 45 | Audit chain — retention | 7-year retention per `data-handling.mdx#retention` | PUBLIC |
 | 46 | **Incident response — playbook** | `specs/_compliance/IR-TABLETOP-PLAYBOOK.md` | NDA |
 | 47 | IR — 2026 tabletop schedule | `specs/_compliance/IR-TABLETOP-SCHEDULE-2026.md` | NDA |
@@ -100,7 +102,7 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 54 | Sub-processors — methodology | `specs/_compliance/VENDOR-RISK-METHODOLOGY.md` | NDA |
 | 55 | Sub-processors — DD files | `specs/_compliance/vendor-dd/` | NDA |
 | 56 | Sub-processors — quarterly review runbook | `specs/_runbooks/RB-VENDOR-RISK-QUARTERLY-REVIEW.md` | NDA |
-| 57 | Sub-processors — legal listing | `legal/sub-processors.md` | OPEN-SOURCE |
+| 57 | Sub-processors — legal listing | `legal/sub-processors.md` | NDA |
 | 58 | Sub-processors — change notice runbook | `specs/_runbooks/RB-SUBPROCESSOR-CHANGE.md` | NDA |
 | 59 | **BCP / DR — cadence** | `specs/_compliance/BCP-DR-DRILL-CADENCE.md` | NDA |
 | 60 | DR — cold restore spec | `specs/_compliance/COLD-RESTORE-DRILL-SPEC.md` | NDA |
@@ -112,15 +114,15 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 66 | **Vulnerability mgmt — static analysis** | `specs/_audits/sealed/2026-05-15-static-analysis-baseline.md` | NDA |
 | 67 | Vuln — triage runbook | `specs/_runbooks/RB-STATIC-ANALYSIS-TRIAGE.md` | NDA |
 | 68 | Vuln — cargo-fuzz summary | `specs/_audits/sealed/2026-05-14-cargo-fuzz-summary-s15.md` | NDA |
-| 69 | Vuln — Dependency-Track | ADR-0024 (`specs/03_architecture/adrs/`) | OPEN-SOURCE |
-| 70 | **Supply chain — SBOM** | Release artifacts `https://github.com/HumanGuardrail/corelink/releases` | OPEN-SOURCE |
-| 71 | Supply chain — Rekor / Sigstore | Per release (Cosign signatures) | OPEN-SOURCE |
-| 72 | Supply chain — license allowlist | `LICENSE-APACHE-2.0` + `LICENSE-MIT` + OSS matrix commit `44cdf15` + `.github/workflows/license-policy.yml` + `scripts/license-audit.sh` | OPEN-SOURCE |
+| 69 | Vuln — Dependency-Track | ADR-0024 (`specs/03_architecture/adrs/`) | NDA |
+| 70 | **Supply chain — SBOM** (a real CycloneDX 1.6 SBOM exists, but **no public SBOM does** — see the caveat below before answering) | `.sbom/cyclonedx-rust.json` (413 components) + `.sbom/cyclonedx-npm-admin-ui.json` (50) + `.sbom/cyclonedx-npm-docs.json` (25) — generated 2026-05-28, committed `1ed22958` | NDA |
+| 71 | Supply chain — Rekor / Sigstore / Cosign (**NOT LIVE — do not offer this to an auditor**; see the caveat below) | *No signature artifact exists.* Integrity evidence we can actually point at: `https://github.com/HuGR-Labs/corelink-cli/releases/download/v0.1.1/checksums.txt` + per-binary `.sha256` | PUBLIC-REPO (checksums only) |
+| 72 | Supply chain — license allowlist | `LICENSE-APACHE-2.0` + `LICENSE-MIT` + OSS matrix commit `44cdf15` + `.github/workflows/license-policy.yml` + `scripts/license-audit.sh` | NDA |
 | 73 | **Secrets management** | `docs/internal/secrets-checklist.md` (108-row matrix) | NDA |
-| 74 | Secrets — drift validator | `scripts/validate_secrets_matrix.py` | OPEN-SOURCE |
-| 75 | Secrets — drift gate | `.github/workflows/secrets-drift.yml` | OPEN-SOURCE |
+| 74 | Secrets — drift validator | `scripts/validate_secrets_matrix.py` | NDA |
+| 75 | Secrets — drift gate | `.github/workflows/secrets-drift.yml` | NDA |
 | 76 | Secrets — triage runbook | `specs/_runbooks/RB-SECRETS-DRIFT.md` | NDA |
-| 77 | Secrets — DEBT-001 closure | Commit `52624e7` (2026-05-15) | OPEN-SOURCE |
+| 77 | Secrets — DEBT-001 closure | Commit `52624e7` (2026-05-15) | NDA |
 | 78 | **GA gate — go/no-go** | `specs/_compliance/GA-GATE-CRITERIA.md` | NDA |
 | 79 | GA gate — template | `specs/_compliance/GA-GATE-GO-NOGO-TEMPLATE.md` | NDA |
 | 80 | **DPA — standard** | `legal/dpa/v1.0.0` (EN-EU+UK) | NDA (signed copy with each tenant) |
@@ -131,7 +133,7 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 85 | **VDP / responsible disclosure** | `apps/docs/docs/security/policy` | PUBLIC |
 | 86 | Security contact card | `/.well-known/security.txt` | PUBLIC |
 | 87 | PGP key | `/.well-known/security-pgp.asc` | PUBLIC |
-| 88 | **SLO catalog** | `specs/03_architecture/slo_catalog.md` | OPEN-SOURCE |
+| 88 | **SLO catalog** | `specs/03_architecture/slo_catalog.md` | NDA |
 | 89 | SLO — public summary | `https://docs.corelink.humangr.com/slo` | PUBLIC |
 | 90 | Status page | `https://status.corelink.humangr.com` | PUBLIC |
 | 91 | **Trust Center — index** | `apps/docs/docs/trust/index.mdx` | PUBLIC |
@@ -144,6 +146,33 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 98 | Trust Center — ISO 27001 | `apps/docs/docs/trust/iso27001.mdx` | PUBLIC |
 | 99 | **FAQ — sales canonical** | `marketing/sales/FAQ-MASTER.md` | NDA (internal sales reference) |
 | 100 | Lighthouse playbook — enterprise | `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md` | NDA (per engagement) |
+
+### 1.1 Supply-chain caveat — what rows 70–72 can and cannot promise
+
+Measured 2026-08-02. Answer supply-chain questions from this block, not from memory.
+
+- **SBOM — exists, is NOT public, is NOT per-release (row 70).** A CycloneDX 1.6 SBOM is committed
+  at `.sbom/` (488 components across the Rust workspace, admin-ui and docs) and ships under NDA.
+  It is *not* attached to any release: `.github/workflows/sbom.yml` has **12 runs, 0 green** —
+  including the single `release`-triggered run (`26659689412`, 2026-05-29, failed), and
+  `.github/workflows/sbom-consolidated.yml` has **never run**. The `.sbom/` snapshot is therefore
+  hand-refreshed (last touched by commit `1ed22958`, 2026-05-27) and may lag the shipped build —
+  state its generation date when you hand it over.
+- **Cosign / Rekor / Sigstore — does not exist (row 71).** No CoreLink artifact carries a Cosign
+  signature and no Rekor transparency entry has ever been created.
+  `.github/workflows/cosign-sign.yml` has **0 runs ever**: it triggers on a `v*` tag and no `v*`
+  tag has ever been pushed (the 52 tags in the repo are `cli-v*` / `*-sealed` and do not match).
+  Signing of the CLI is still an explicit placeholder — `.github/workflows/release-cli.yml:247`
+  is `"[TODO v2] cosign sign (placeholder)"`, which echoes *"cosign keyless signing not yet
+  wired"*. SLSA provenance is in the same state: `.github/workflows/release-slsa3.yml` has 1 run,
+  failed. **Never offer signatures, Rekor entries or SLSA attestation as available evidence.**
+  What we *can* substantiate today is per-binary SHA-256 integrity (row 71, PUBLIC-REPO).
+- **License allowlist — real and enforced (row 72).** `.github/workflows/license-policy.yml` is
+  green on 28 runs; `LICENSE-APACHE-2.0`, `LICENSE-MIT` and the OSS matrix (commit `44cdf15`)
+  are in-tree. NDA-gated only because the source tree is private.
+
+If a questionnaire asks for a signed SBOM or a transparency-log entry, the honest answer is
+**"not today"** plus the roadmap item — not a pointer to an artifact that was never produced.
 
 ---
 
@@ -213,7 +242,7 @@ Every artifact in a customer-bound pack **must** be watermarked:
 ```
 CONFIDENTIAL — <Prospect Org> — <YYYY-MM-DD> — CoreLink (HuGR Labs)
 Pursuant to NDA dated <NDA date>. Not for redistribution.
-Source commit: <SHA> · `HumanGuardrail/corelink-server`
+Source commit: <SHA> · `HuGR-Labs/corelink-server` (private)
 ```
 
 Bundle naming:
@@ -222,7 +251,7 @@ Bundle naming:
 <prospect>-corelink-evidence-pack-<YYYY-MM-DD>-<commit-short-SHA>.zip
 ```
 
-Hash + sign the ZIP with the CoreLink release-signing key (Cosign). Send the signature alongside the bundle so the receiver can verify integrity.
+Hash the ZIP (`shasum -a 256`) and send the digest alongside the bundle, out-of-band, so the receiver can verify integrity. **Do not promise a Cosign signature** — no CoreLink release-signing key is in service today (§1.1, row 71).
 
 ---
 
@@ -233,7 +262,7 @@ Hash + sign the ZIP with the CoreLink release-signing key (Cosign). Send the sig
 | A&A | SOC 2 rollup + Drata coverage |
 | AIS | security_model.md + static-analysis baseline |
 | BCR | BCP-DR-DRILL-CADENCE + chaos summary + active-failover spec |
-| CCC | branch protection + signed-deploy + Rekor + canonical-consistency validator |
+| CCC | branch protection + canonical-consistency validator — Rekor / signed-deploy NOT live, see §1.1 |
 | CEK | BYOK FIPS matrix + provider attestation letters + key flow |
 | DCS | Inherited from sub-processors (CF / AWS / GCP / Azure SOC 2 Type II) |
 | DSP | LGPD ROPA + GDPR DPIA library + data-handling.mdx |
@@ -244,7 +273,7 @@ Hash + sign the ZIP with the CoreLink release-signing key (Cosign). Send the sig
 | IVS | Cloudflare substrate (US/ENAM default + physically-EU/WEUR region live; further regions on roadmap) + immutable Workers |
 | LOG | INV-AUDIT-APPEND-ONLY + R2 Object Lock + Prometheus catalog |
 | SEF | IR-TABLETOP-PLAYBOOK + RB-BREACH-NOTIF + DPA §7 |
-| STA | VENDOR-RISK-REGISTER + sub-processors.mdx + SLSA / Sigstore / SBOM |
+| STA | VENDOR-RISK-REGISTER + sub-processors.mdx + SBOM (`.sbom/`, NDA) — SLSA / Sigstore NOT live, see §1.1 |
 | TVM | static-analysis baseline + Dependency-Track + VDP |
 | UEM | Remote-first org + WebAuthn-bound prod access + GAP-ISO-07 (T+3m) |
 
@@ -262,7 +291,7 @@ Hash + sign the ZIP with the CoreLink release-signing key (Cosign). Send the sig
 | F — Physical | Inherited (sub-processor SOC 2 Type II) |
 | G — Comms+Ops | 60+ runbooks + SLO catalog + chaos drills |
 | H — Access Control | INV-TenantIsolation + WebAuthn + PAT-DUAL-APPROVAL |
-| I — System Acq+Dev | static-analysis baseline + SBOM + SLSA |
+| I — System Acq+Dev | static-analysis baseline + SBOM (`.sbom/`, NDA) — SLSA NOT live, see §1.1 |
 | J — Incident Mgmt | IR-TABLETOP-PLAYBOOK + 72h breach commitment |
 | K — Compliance | SOC 2 rollup + ISO crosswalk + PCI SAQ-A + LGPD/GDPR audits |
 | L — Endpoint Security | GAP-ISO-06 + GAP-ISO-07 (T+1m–T+3m) |

@@ -3,9 +3,9 @@ id: "SALES-SIG-LITE-2026-PREFILLED"
 type: "marketing"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-08-02"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -68,7 +68,7 @@ Legend:
 
 | # | Question | A | CoreLink answer | Evidence |
 |---|---|---|---|---|
-| B.1 | Do you maintain a formally documented information security policy? | Y | Yes — distributed across `specs/03_architecture/security_model.md` (CTRL catalog), `specs/03_architecture/privacy_model.md` (CTRL-PRIV catalog), `specs/03_architecture/compliance_matrix.md` (framework crosswalk). All version-controlled in `HumanGuardrail/corelink-server`. | `specs/03_architecture/security_model.md`; `specs/03_architecture/compliance_matrix.md` |
+| B.1 | Do you maintain a formally documented information security policy? | Y | Yes — distributed across `specs/03_architecture/security_model.md` (CTRL catalog), `specs/03_architecture/privacy_model.md` (CTRL-PRIV catalog), `specs/03_architecture/compliance_matrix.md` (framework crosswalk). All version-controlled in `HuGR-Labs/corelink-server` (private). | `specs/03_architecture/security_model.md`; `specs/03_architecture/compliance_matrix.md` |
 | B.2 | Is the policy reviewed and approved at least annually? | Y | Yes — `quarterly-legal-review-template.md` cadence; sprint-contract sign-off model. Next full review 2026-Q3. | `legal/quarterly-legal-review-template.md` |
 | B.3 | Is the policy communicated to all personnel? | Y | All personnel sign DCO + Code of Conduct on onboarding (`CODE_OF_CONDUCT.md` + DCO line on every commit, CI-enforced via `.github/workflows/dco-check.yml`). OSS licensing under `LICENSE-APACHE-2.0` + `LICENSE-MIT`. Internal-comms via sprint-contract distribution. | `CODE_OF_CONDUCT.md`; `.github/workflows/dco-check.yml`; commit `44cdf15` |
 | B.4 | Do you maintain acceptable-use policies? | P | Currently informal (covered by Code of Conduct + sprint contracts); standalone signed Acceptable Use Policy is **GAP-ISO-02** (closes T+1m, before Q4-2026 Stage 1 ISO audit). | `specs/_compliance/ISO27001-GAP-ANALYSIS.md` GAP-ISO-02 |
@@ -95,8 +95,8 @@ Legend:
 | D.3 | Are assets classified by sensitivity / criticality? | Y | Data classes documented at `apps/docs/docs/trust/data-handling.mdx#what-we-store`: 8 data classes mapped to storage substrate + retention. | `apps/docs/docs/trust/data-handling.mdx` |
 | D.4 | Do you maintain a data inventory / data flow map? | Y | High-level data flow at `apps/docs/docs/trust/data-handling.mdx#customer-data-flow-high-level`. Detailed crate-level data model at `specs/03_architecture/data_model.md` + storage semantics at `specs/03_architecture/storage_semantics_matrix.md`. ROPA at `specs/_compliance/LGPD-ROPA-2026-05-15.md`. | `apps/docs/docs/trust/data-handling.mdx`; `specs/_compliance/LGPD-ROPA-2026-05-15.md`; `specs/03_architecture/data_model.md` |
 | D.5 | Are removable media and BYO devices governed? | CC | Remote-first; no removable-media transit of customer data (all storage cloud-side). MDM-lite documentation **GAP-ISO-07** (closes T+3m). | GAP-ISO-07 |
-| D.6 | Are licenses (OSS + commercial) tracked? | Y | OSS license allowlist + CycloneDX SBOM + Dependency-Track per release. `LICENSE-APACHE-2.0` (code) + `LICENSE-MIT` (selected) + OSS matrix landed 2026-05-15 (commit `44cdf15`). | `LICENSE-APACHE-2.0`; commit `44cdf15`; ADR-0024 |
-| D.7 | Do you maintain a software bill of materials (SBOM)? | Y | CycloneDX SBOM signed and published with every release; SLSA Level 3 build attestation; Cosign-signed releases; Rekor transparency entries. | `apps/docs/docs/trust/iso27001.mdx` §A.5.21; release artifacts `github.com/HumanGuardrail/corelink/releases` |
+| D.6 | Are licenses (OSS + commercial) tracked? | Y | OSS license allowlist enforced in CI by `.github/workflows/license-policy.yml` (green, 28 runs) + CycloneDX SBOM at `.sbom/`. `LICENSE-APACHE-2.0` (code) + `LICENSE-MIT` (selected) + OSS matrix landed 2026-05-15 (commit `44cdf15`). Dependency-Track ingestion is wired but not yet operating (see D.7). | `LICENSE-APACHE-2.0`; commit `44cdf15`; `.github/workflows/license-policy.yml`; ADR-0024 |
+| D.7 | Do you maintain a software bill of materials (SBOM)? | P | CycloneDX 1.6 SBOM maintained in-repo and shared under NDA: `.sbom/cyclonedx-rust.json` (413 components) + admin-ui (50) + docs (25), generated 2026-05-28. It is **not** published per release and **not** signed — the release-attachment job has never completed green, and there are no Cosign signatures, no Rekor entries and no SLSA attestation today (roadmap). Public integrity evidence = per-binary SHA-256 checksums on CLI releases. | `.sbom/cyclonedx-rust.json` (NDA); `https://github.com/HuGR-Labs/corelink-cli/releases/download/v0.1.1/checksums.txt`; `EVIDENCE-PACK-INDEX.md` §1.1 |
 | D.8 | Are media-disposal / data-destruction procedures documented? | Y | Verifiable erasure workflow: `INV-DATA-ERASURE-COMPLETE` + `INV-ERASURE-ATTESTATION-SIGNED` + salt-rotation pattern `ADR-S11-003`. 35-day backup tombstone window. | `apps/docs/docs/trust/data-handling.mdx#right-to-erasure`; ADR-S11-003 |
 
 ## E. HR Security (6 questions)

@@ -3,9 +3,9 @@ id: "SALES-VENDOR-QUESTIONNAIRE-RESPONSE-TEMPLATE"
 type: "marketing"
 doc_status: "DRAFT"
 audit_status: "ACTIVE"
-version: "1.0.0"
+version: "1.1.0"
 created: "2026-05-15"
-updated: "2026-05-15"
+updated: "2026-08-02"
 owner: "Gustavo Schneiter"
 final_approver: "Gustavo Schneiter"
 reviewers: []
@@ -78,7 +78,7 @@ Save as `<prospect>-corelink-response-cover-letter-YYYY-MM-DD.pdf`. Sign as Foun
 >
 > **About this response:**
 >
-> Every answer below is sourced to a concrete artifact in our repository (`HumanGuardrail/corelink-server`) at commit `<SHA>`. We have populated `Yes / Partial / Compensating Control / N/A / No` per question with explicit rationale; *no claim of capability is made without evidence on file*. Where remediation is in flight, the gap is identified with an ID and ETA (e.g. `GAP-02 → D+30`).
+> Every answer below is sourced to a concrete artifact in our repository (`HuGR-Labs/corelink-server` (private)) at commit `<SHA>`. We have populated `Yes / Partial / Compensating Control / N/A / No` per question with explicit rationale; *no claim of capability is made without evidence on file*. Where remediation is in flight, the gap is identified with an ID and ETA (e.g. `GAP-02 → D+30`).
 >
 > If any answer is materially insufficient for your evaluation, we welcome a follow-up call. Our DPO + Security Lead can walk auditors through the full evidence rollup under NDA.
 >
@@ -107,7 +107,7 @@ Where:
 
 - **A** (status): `Y` / `P` / `CC` / `N/A` / `N` per the legend below.
 - **CoreLink answer**: 1–4 sentences, direct, no marketing varnish. Cite the canonical phrasing in our public Trust Center where possible.
-- **Evidence pointer**: relative path within `HumanGuardrail/corelink-server` repository at commit `<SHA>` *OR* URL within the Trust Center *OR* "Available under NDA at `trust@humangr.com`" — never silence.
+- **Evidence pointer**: relative path within `HuGR-Labs/corelink-server` (private) repository at commit `<SHA>` *OR* URL within the Trust Center *OR* "Available under NDA at `trust@humangr.com`" — never silence.
 
 ### Legend (consistent across all CoreLink responses)
 
