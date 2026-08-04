@@ -1512,6 +1512,126 @@ EOF
   rm -rf "$tmp"
 }
 
+# --- C4b REACHABILITY: presence in the clone is a TIMING artifact --------------
+# The false-green this closes, reproduced end-to-end. A concept authored mid-PR
+# anchors an INTERMEDIATE commit's blob; a later commit on the same branch
+# supersedes it, so the squash-merge lands the branch TIP's blob and the anchored
+# one never reaches the mainline. Its only ref is the PR head, which GitHub
+# auto-DELETES at merge — but the `push:main` run clones seconds after the merge
+# and still resolves the object, so a presence-only C4b passes; every later clone
+# lacks it and the identical check REDs. Here the abandoned branch is deleted
+# while its loose object lingers (exactly the merge-time clone), so a
+# presence-only check would PASS and only the reachability half can fire.
+#
+# Positive control in the same repo: an OLDER blob that IS on HEAD's history must
+# still pass — the anchor names authoring-time content, and deciding whether the
+# CITED LINES have since drifted is C5's job, not C4b's. Without this control the
+# check could collapse into "the anchor must equal HEAD", which makes C5 vacuous.
+assert_c4b_blob_must_be_reachable() {
+  local tmp; tmp="$(mktemp -d 2>/dev/null || mktemp -d -t okf)"
+  local absval="$REPO_ROOT/$VAL"
+  (
+    set -e
+    cd "$tmp"
+    git init -q
+    git config user.email t@t.io
+    git config user.name tester
+    git config commit.gpgsign false
+    printf 'anchor-line\nfiller\n' > code.txt
+    mkdir -p docs/knowledge/ops
+    cat > docs/knowledge/index.md <<EOF
+---
+type: Index
+okf_version: '0.1'
+profile_version: '0.1'
+---
+# index
+- [x](/ops/x.md)
+EOF
+    git add -A
+    git commit -q -m base
+    local_branch="$(git rev-parse --abbrev-ref HEAD)"
+    blob_v1="$(git rev-parse HEAD:code.txt)"
+
+    # An ABANDONED intermediate commit: committed on a side branch, never merged,
+    # branch deleted. The loose blob survives in this clone (the merge-time race)
+    # but no commit reachable from HEAD ever carried it.
+    git checkout -q -b abandoned
+    printf 'anchor-line\nfiller\nsuperseded-only-on-the-dead-branch\n' > code.txt
+    git add code.txt
+    git commit -q -m abandoned
+    blob_dead="$(git rev-parse HEAD:code.txt)"
+    git checkout -q "$local_branch"
+    git branch -q -D abandoned
+
+    # What actually LANDED: a second commit on the mainline. HEAD's blob differs
+    # from blob_v1, so blob_v1 exercises the history walk, not the fast path.
+    printf 'anchor-line\nfiller\nlanded\n' > code.txt
+    git add code.txt
+    git commit -q -m landed
+    sha_head="$(git rev-parse HEAD)"
+
+    concept() {  # $1 = the anchored blob id
+      cat > docs/knowledge/ops/x.md <<EOF
+---
+type: "Runbook"
+title: "C4b reachability"
+description: "exercises the source_blobs reachability half of C4b."
+source_files:
+  - "code.txt"
+source_blobs:
+  - "code.txt@$1"
+checkpoint_sha: "$sha_head"
+provenance: "AUTHORED"
+---
+
+# C4b reachability
+
+Lead paragraph for the reachability case.
+
+# How it works
+- the anchor (\`code.txt:1\`).
+
+# Invariants
+- the anchor holds (\`code.txt:1\`).
+
+# Citations
+1. \`code.txt:1\` — the anchor.
+EOF
+    }
+    # (1) present-but-unreachable: the abandoned intermediate blob.
+    concept "$blob_dead"
+    git cat-file -t "$blob_dead" > "$tmp/.dead_type" 2>&1 || true
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.unreachable" 2>&1 || true
+    # (2) older-but-reachable: a real earlier version on HEAD's own history.
+    concept "$blob_v1"
+    python3 "$absval" --bundle docs/knowledge --manifest "$NONE" > "$tmp/.older" 2>&1 || true
+  )
+  # The premise of the whole case: the object really IS in the clone, so a
+  # presence-only C4b could not have fired. If this ever stops holding the test
+  # below would pass for the WRONG reason.
+  total=$((total + 1))
+  if grep -qx 'blob' "$tmp/.dead_type" 2>/dev/null; then
+    ok "C4b reachability: premise holds — the abandoned blob IS present in the clone"
+  else
+    miss "C4b reachability premise broken: abandoned object is not a present blob" "C4b-reach-premise"
+  fi
+  total=$((total + 1))
+  if grep -q '^\[C4b\]' "$tmp/.unreachable" 2>/dev/null \
+     && grep -q 'reachable from HEAD' "$tmp/.unreachable" 2>/dev/null; then
+    ok "C4b: a present-but-UNREACHABLE blob anchor fires [C4b] (merge-time false-green closed)"
+  else
+    miss "C4b unreachable anchor not caught: $(tail -1 "$tmp/.unreachable" 2>/dev/null)" "C4b-unreachable"
+  fi
+  total=$((total + 1))
+  if grep -q 'OKF-CoreLink profile valid' "$tmp/.older" 2>/dev/null; then
+    ok "C4b: an OLDER blob still on HEAD's history passes (age is C5's business, not C4b's)"
+  else
+    miss "C4b over-strict — a reachable older anchor failed: $(tail -1 "$tmp/.older" 2>/dev/null)" "C4b-older"
+  fi
+  rm -rf "$tmp"
+}
+
 # --- gate v5 #2: module-parent grounding REMOVED -------------------------------
 # A concept that cites the module-ROOT file `routes.rs` (the `mod routes;`
 # declaration site) but NOT the handler `routes/sub_handler.rs` must NO LONGER
@@ -3230,6 +3350,7 @@ assert_blob_anchor_teeth
 assert_blob_anchor_survives_rewrite
 assert_blob_launder_closed
 assert_c4b_entry_shapes
+assert_c4b_blob_must_be_reachable
 assert_c5b
 assert_c5b_orphan_exempt
 assert_c4_squash_orphan_tolerant
