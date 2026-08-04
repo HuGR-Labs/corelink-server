@@ -200,6 +200,28 @@ Each entry cross-references:
   applications (all detect convergence immediately, including the nrt one the old code still
   reports as `f7bb0961-r1`), plus canned-API cases for crashlooping / zero-healthy /
   scale-to-zero / image-mismatch: exit 0 only for a genuine roll.
+- **fix(auth): the PAT dummy-burn arm took the GLOBAL Argon2id permit before the shared bucket it
+  was about to be shed by, so a request that ran no Argon2id at all still occupied a global permit
+  for 250 ms.** `UNKNOWN_TOKEN_BUCKET` (red-team finding #12) routes every unknown/expired/revoked
+  `token_id`'s timing-burn through ONE shared synthetic bucket, and the in-code claim was that this
+  keeps the arm from draining the global pool. That claim held for concurrent *burns* and was false
+  for the *pool*: the arm acquired the global permit first
+  (`crates/corelink-container/src/adapter_pat.rs`) and only then entered a 250 ms bounded wait on
+  the shared bucket, so every request queued on the full bucket sat holding pool capacity it would
+  never use. The bucket capped burns at 4; global-pool occupancy by this arm was capped only by the
+  flood's arrival rate — the drain the bucket was introduced to close, displaced one step upstream.
+  The arm now takes the shared bucket **first** and **non-blockingly**
+  (`PerTenantGate::try_acquire`), so a shed holds no global permit at any instant and the arm's
+  global footprint really is the sub-cap. Deadlock-freedom is preserved because the module's
+  global→per-tenant order exists solely to be *consistent*, and a non-blocking try never enters a
+  wait-for relation. Semantic change, deliberate: a burn that would have waited up to
+  `ARGON2_PERMIT_WAIT` for a bucket slot now sheds immediately — a shed either way, sooner and
+  without holding capacity hostage, at the cost of tolerance for micro-bursts on that one arm.
+  `INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM` is untouched: the new failure path returns the identical
+  `Backend("pat verifier overloaded")`. Pinned by
+  `a_shed_on_the_shared_burn_bucket_holds_no_global_permit`, which asserts pool *capacity* rather
+  than a status code (both orders shed, with the same message); reverting the arm turns it red at
+  `parked the global permit on 30-38 of 40 samples` and `only 0 of 4 global permits were free`.
 - **fix(oci): the OCI `/token` rate-limit bucket was GLOBAL — one host at 50 req/s could 429
   `docker login` / `pull` / `push` for every CoreLink user, with no credential of any kind.**
   `oci_bucket_key` (`crates/corelink-container/src/routes/ratelimit_layer.rs`) derived the bucket
