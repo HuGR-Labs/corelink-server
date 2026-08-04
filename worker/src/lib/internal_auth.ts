@@ -39,8 +39,45 @@ const MIN_INTERNAL_AUTH_KEY_LEN = 32;
  * Mirrors the container's just-merged Rust split: each distinct internal
  * surface authenticates with its OWN key so that leaking one consumer's secret
  * does not unlock every `/_internal/*` route. Each consumer key FALLS BACK to
- * the shared `CORELINK_INTERNAL_AUTH_KEY` when its dedicated key is unset/short,
- * so the split can be rolled out per-consumer without a flag-day.
+ * the shared `CORELINK_INTERNAL_AUTH_KEY` when its dedicated key is UNSET, so the
+ * split can be rolled out per-consumer without a flag-day. NOT "unset or short":
+ * a dedicated key that is SET but below the floor is refused fail-closed (see
+ * {@link resolveConsumerKey}).
+ *
+ * WHAT THE SHARED KEY ACTUALLY IS. Enumerated exhaustively — re-derive with
+ * `grep -rn 'CORELINK_INTERNAL_AUTH_KEY' worker/src/`, because a count in prose is
+ * a claim and this one was wrong in several successive drafts. It is read in three
+ * ROLES (direct reads; indirect re-presentation of an already-resolved key, e.g.
+ * `index.ts:1980`, is role 2 by inheritance):
+ *
+ *   1. INBOUND gate credential, both arms fail-closed:
+ *      (a) {@link resolveConsumerKey} — per-consumer. Two call sites: the
+ *          `/_internal/*` edge gate (`index.ts`) and {@link requireConsumerAuth},
+ *          the latter gating PAT-rotate (`auth_rotate.ts`) and runner mint +
+ *          revoke (`runner_mint.ts`) => FOUR gates.
+ *      (b) {@link requireInternalAuth} — shared-key ONLY; no per-consumer key
+ *          exists for these. Same >= 32 floor, fails closed (503 unbound / 401
+ *          mismatch), gating githugr tenant-lookup (`tenant_lookup.ts`) and
+ *          session exchange's internal arm (`session_exchange.ts`). NO
+ *          per-consumer isolation, so a shared-key holder passes them outright —
+ *          the widest INBOUND exposure.
+ *      => six inbound gates accept the shared key.
+ *   2. OUTBOUND credential presented onward to the container:
+ *      `env.<DEDICATED> ?? env.CORELINK_INTERNAL_AUTH_KEY` in `session_exchange.ts`
+ *      (x2), `auth_rotate.ts` and `runner_mint.ts` — falls back on UNSET, but
+ *      checks only `length === 0`: no >= 32 floor, no fail-closed refusal. AND the
+ *      `onboarding` / tier-select-checkout arm in `index.ts`, which reads the
+ *      shared key DIRECTLY with NO dedicated-key preference at all — so
+ *      provisioning CORELINK_PAT_MINT_AUTH_KEY narrows the `??` sites but can
+ *      NEVER narrow onboarding. That is the real ceiling, and it is on the money
+ *      path.
+ *   3. The multi-region fan-out marker (`index.ts`): set on the service-binding
+ *      forward and constant-time matched on receipt.
+ *
+ * `durable_object.ts` propagates the key into the container env; that is plumbing,
+ * not a gate. `runner_mint`/`auth_rotate`/`session_exchange` appear in BOTH role 1
+ * and role 2 — strict inbound, loose outbound — which is why a per-FILE split of
+ * this surface keeps producing wrong sentences. The split is per-ROLE.
  *
  * FROZEN env names (identical to the Rust control-plane side):
  *   - pat_mint    → CORELINK_PAT_MINT_AUTH_KEY    (`/_internal/pat/mint` — signup + clw)
@@ -99,12 +136,19 @@ export type InternalConsumer =
  * Resolve the internal-auth key to verify against for a given consumer.
  *
  * Selection (matches the Rust contract exactly):
- *   1. the consumer-specific key  iff set AND length >= MIN_INTERNAL_AUTH_KEY_LEN;
- *   2. else the shared key        iff length >= MIN_INTERNAL_AUTH_KEY_LEN;
- *   3. else `null` → the caller MUST fail CLOSED (no properly sized gate bound).
+ *   1. consumer-specific key SET and >= MIN_INTERNAL_AUTH_KEY_LEN → use it;
+ *   2. consumer-specific key SET but < MIN → `null`, REFUSING the shared
+ *      fallback (fail-CLOSED, logged);
+ *   3. consumer-specific key UNSET → the shared key iff >= MIN;
+ *   4. else `null` → the caller MUST fail CLOSED (no properly sized gate bound).
  *
- * A too-short dedicated key is treated as ABSENT (falls through to the shared
- * key) rather than weakening the gate — never trust a sub-floor secret.
+ * Arm 2 is the subtle one and this comment used to state its OPPOSITE ("a
+ * too-short dedicated key is treated as ABSENT (falls through to the shared
+ * key)"). It does not fall through. An operator who sets a dedicated key for a
+ * consumer has declared that consumer should be ISOLATED, so silently serving it
+ * the broad shared key on a typo would widen the blast radius exactly when the
+ * operator was trying to narrow it. A sub-floor secret is a misconfiguration to
+ * surface, not one to route around.
  *
  * @returns the chosen key string, or `null` when neither qualifies (fail-CLOSED).
  */

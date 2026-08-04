@@ -109,7 +109,16 @@ async function mintValidToken(): Promise<string> {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** Which single statement to slow down, so exactly one phase should absorb it. */
-type SlowTarget = "none" | "meter" | "tier" | "storage" | "residency";
+/**
+ * Which single statement to slow down, so exactly one phase should absorb it.
+ * `null` (deliberately NOT a member) means "delay nothing": the no-delay sentinel
+ * must live OUTSIDE this union, because `phaseOf` returns `null` for a statement
+ * it cannot classify. When the sentinel was a member of this union those two
+ * meanings collided and asking for "no delay" delayed every unclassified
+ * statement — including `SELECT tier FROM tier_selections` inside the `wdb`
+ * window, so the supposedly-quiet env measured a full injected delay.
+ */
+type SlowTarget = "meter" | "tier" | "storage" | "residency";
 
 /**
  * Classify a statement by the phase it belongs to. Deliberately matched on the
@@ -123,12 +132,12 @@ type SlowTarget = "none" | "meter" | "tier" | "storage" | "residency";
  * delay still lands inside the `qtier` window either way, and matching one gives
  * a single, unambiguous injection point per phase.
  */
-function phaseOf(sql: string): SlowTarget {
+function phaseOf(sql: string): SlowTarget | null {
   if (sql.includes("INSERT INTO monthly_request_counts")) return "meter";
   if (sql.includes("SUM(bytes_used)")) return "storage";
   if (sql.includes("SELECT tier FROM tenant")) return "tier";
   if (sql.includes("SELECT primary_region FROM tenant")) return "residency";
-  return "none";
+  return null;
 }
 
 /** Every statement handed to `db.batch()`, in submission order, per call. */
@@ -148,7 +157,7 @@ function makeD1(slow: SlowTarget, batchLog: BatchLog = []): D1Database {
     bind: (...args: unknown[]) => ({
       __sql: sql,
       first: async <T>() => {
-        if (phaseOf(sql) === slow) await sleep(DELAY_MS);
+        if (slow !== null && phaseOf(sql) === slow) await sleep(DELAY_MS);
         if (sql.includes("INSERT INTO monthly_request_counts")) {
           return { request_count: 1 } as T;
         }
@@ -280,7 +289,7 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     // statement reads the other's result. This asserts the round-trip COUNT and
     // the batch's composition — not just that the labels look plausible.
     const batches: BatchLog = [];
-    const st = await requestOnce(makeEnv("none", batches), await mintValidToken(), "h");
+    const st = await requestOnce(makeEnv(null, batches), await mintValidToken(), "h");
 
     expect(
       batches.length,
@@ -306,7 +315,7 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
   });
 
   it("emits all three sub-phases on a normal authed request", async () => {
-    const st = await requestOnce(makeEnv("none"), await mintValidToken(), "a");
+    const st = await requestOnce(makeEnv(null), await mintValidToken(), "a");
     for (const p of SUBPHASES) {
       expect(st, `${p} missing from Server-Timing`).toHaveProperty(p);
     }
@@ -379,7 +388,7 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     // was it skipped?" ambiguity the sub-phase sentinel exists to remove. Fixing
     // it only for the children would leave the parent `wdb` capable of
     // disappearing while all of its own sub-phases report 0.
-    const env = makeEnv("none");
+    const env = makeEnv(null);
     const token = await mintValidToken();
     await requestOnce(env, token, "f"); // warm the caches so the reads cost ~0
     const st = await requestOnce(env, token, "g");
@@ -398,10 +407,14 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     // `resolveTenantTierCached` returns without any I/O and the clock reads 0.
     // The phase RAN, so it MUST still be emitted — otherwise "cache-served" and
     // "never executed" become the same observation on the wire.
-    const env = makeEnv("none");
+    // Delay the tier read specifically, so a cache MISS costs DELAY_MS here.
+    // Against `makeEnv(null)` an L1 hit and a real D1 read both measure ~0 in this
+    // harness, and the bound below would hold no matter what the cache did —
+    // decoration rather than a check.
+    const env = makeEnv("tier");
     const token = await mintValidToken();
-    await requestOnce(env, token, "c");
-    const st = await requestOnce(env, token, "d");
+    await requestOnce(env, token, "c"); // cold: pays the injected tier delay
+    const st = await requestOnce(env, token, "d"); // warm: L1 hit, no D1 read
 
     expect(
       st,
@@ -426,7 +439,7 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     // `qmeter` omission handed a fan-out caller — the header no longer says
     // which statements were in the batch.
     const batches: BatchLog = [];
-    const st = await requestOnce(makeEnv("none", batches), await mintValidToken(), "e", {
+    const st = await requestOnce(makeEnv(null, batches), await mintValidToken(), "e", {
       "x-corelink-fanout-from": INTERNAL_AUTH_KEY,
     });
 

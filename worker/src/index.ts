@@ -149,7 +149,8 @@ export interface Env {
   // iff >= 32; else fail-CLOSED. FROZEN names (identical to the Rust side):
   CORELINK_INTERNAL_AUTH_KEY?: string;
   // Per-consumer internal-auth keys (red-team #3 split). Each falls back to
-  // CORELINK_INTERNAL_AUTH_KEY when unset/short. Provisioned by the operator
+  // CORELINK_INTERNAL_AUTH_KEY when UNSET (a set-but-short key is refused
+  // fail-closed — see lib/internal_auth.ts). Provisioned by the operator
   // (`wrangler secret put …`) — see LEAD FLAGS in the PR. The container reads
   // the same names on its side.
   CORELINK_PAT_MINT_AUTH_KEY?: string; // gate for `/_internal/pat/mint`
@@ -1884,7 +1885,9 @@ const baseHandler: ExportedHandler<Env> = {
     // the container's Rust split — a leak of one consumer's secret must not unlock
     // every internal surface. The consumer is derived from the path prefix; each
     // consumer key falls back to the shared CORELINK_INTERNAL_AUTH_KEY when its
-    // dedicated key is unset/short (resolveConsumerKey). If neither qualifies,
+    // dedicated key is UNSET (resolveConsumerKey) — a dedicated key that is set
+    // but under the floor is REFUSED rather than widened to the shared key. If
+    // neither qualifies,
     // deny (fail-CLOSED — never open an unauthenticated proxy).
     if (route.routeKind === "internal") {
       const internalConsumer = internalConsumerForPath(route.pathSuffix);
