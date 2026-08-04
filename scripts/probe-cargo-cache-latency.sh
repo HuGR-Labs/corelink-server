@@ -185,6 +185,31 @@ for P in 1 2 4 8 16; do
 done
 echo
 
+# ---------------------------------------------------------------------------
+# Phase 4 — what a shed response actually SAYS.
+# Phase 3 shows requests being refused above the per-tenant Argon2id sub-cap,
+# with a status code that is NOT what an overload should return. A status code
+# alone cannot prove which branch produced it, so this phase keeps the body:
+# `invalid PAT` means the credential was judged bad; `backend: …` means a
+# transient overload was dressed up as an authentication failure. Those are very
+# different bugs and the difference is one string.
+# ---------------------------------------------------------------------------
+echo "── phase 4: the body of a refused request (8-wide, above the sub-cap) ──"
+rm -f /tmp/probe_body_*.txt /tmp/probe_body_codes.txt
+: > /tmp/probe_body_codes.txt
+for i in $(seq 1 8); do
+  curl -sS -o "/tmp/probe_body_${i}.txt" \
+    -H "Authorization: Bearer ${PROBE_TOKEN}" \
+    -w "${i} %{http_code}\n" \
+    "${CARGO_BASE}/$(randkey)" >> /tmp/probe_body_codes.txt 2>/dev/null &
+done
+wait
+sort -k1 -n /tmp/probe_body_codes.txt | while read -r idx code; do
+  body="$(tr -d '\r\n' < "/tmp/probe_body_${idx}.txt" 2>/dev/null | cut -c1-300)"
+  printf '  %s  %s\n' "${code}" "${body:-<empty body>}"
+done
+echo
+
 echo "=============================================================="
 echo "Reminder when reading these numbers:"
 echo "  * every request above was a 404 MISS — a real cache HIT costs strictly"

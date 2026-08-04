@@ -115,29 +115,34 @@ actual compilation in the 409 s baseline. 593 − 373 = 220 s. Every other step 
 
 ### H3 — routing / latency: **REFUTED as the cause, and now measured.** The cost is CPU, not distance.
 
-#### The measurement (run 30868784748, box `cf-runner-3a0c4d34`, 4 vCPU, colo **BOS**)
+#### The measurement — two independent runs, two different boxes and colos
+
+Run 30868784748 (`cf-runner-3a0c4d34`, colo **BOS**) and run 30868993110
+(`cf-runner-3c882bde`, colo **IAD**), 30 samples per phase each.
 
 Every request below is an authenticated `GET /cargo/<tenant>/<random-64-hex>` returning
 **404** — a real miss, no blob fetched, nothing written. A cache **hit** costs strictly more.
 
-| | p50 | p90 | max |
-|---|---|---|---|
-| `/health` TTFB, new conn (Worker-only floor) | **25 ms** | 29 ms | 29 ms |
-| — of which TCP connect | 3 ms | 3 ms | 3 ms |
-| — of which TLS handshake | 18 ms | 20 ms | 21 ms |
-| `/cargo` TTFB, **new** connection | **514 ms** | 598 ms | 3922 ms |
-| — server time (TTFB − TLS done) | **489 ms** | 575 ms | 3902 ms |
-| `/cargo` TTFB, **reused** connection (sccache-shaped) | **501 ms** | 740 ms | 2191 ms |
+| | p50 (run 1, colo BOS) | p50 (run 2, colo IAD) |
+|---|---|---|
+| `/health` TTFB, new conn (Worker-only floor) | **25 ms** | **44 ms** |
+| — of which TCP connect | 3 ms | 4 ms |
+| — of which TLS handshake | 18 ms | 24 ms |
+| `/cargo` TTFB, **new** connection | **514 ms** | **497 ms** |
+| — server time (TTFB − TLS done) | **489 ms** | **462 ms** |
+| `/cargo` TTFB, **reused** connection (sccache-shaped) | **501 ms** | **504 ms** |
 
 Three things fall out, and they close H3:
 
-1. **The network is 3 ms.** TCP connect to the edge is 3 ms and a full Worker round trip is
-   25 ms. The fabric box is not badly placed; there is no region to move it to that would
-   recover meaningful time.
-2. **Connection reuse buys 13 ms** (514 → 501 ms). If TLS handshakes or connection churn
+1. **The network is 3–4 ms.** TCP connect to the edge is 3–4 ms and a full Worker round
+   trip is 25–44 ms. Two different boxes landing on two different colos (BOS, IAD) produced
+   `/cargo` p50s within 3 % of each other (514 / 497 ms) while their *edge floors* differed
+   by 76 % — the variable that changed is not the one that costs. There is no region to
+   move the runner to that would recover meaningful time.
+2. **Connection reuse buys 13 ms, and −7 ms on the second run** (i.e. nothing). If TLS handshakes or connection churn
    were the cost, this is where it would show. It does not. opendal already pools
    connections, so this is the case sccache actually runs in.
-3. **~489 ms of server time on a request that fetches nothing.** That is ~20× the Worker
+3. **~460–490 ms of server time on a request that fetches nothing.** That is ~20× the Worker
    floor, on a path whose only remaining work is: container dispatch, PAT verify
    (HMAC + D1 row read + **Argon2id**), and a url-map lookup that returns "absent". The
    1.702 s a real hit costs is this number plus the R2 fetch plus 2.4× self-contention.
@@ -146,26 +151,42 @@ Three things fall out, and they close H3:
 
 `PatVerifier` **sheds** load rather than queueing it: a request that cannot take an Argon2id
 permit within `ARGON2_PERMIT_WAIT` (250 ms) is rejected. A rejected request is *fast*, so
-raw req/s **rises** as the server refuses more traffic — which is why the probe counts 404s
-(served) separately and reports a served throughput. First run (status codes not yet
-captured — the script was amended for exactly this reason):
+raw req/s **rises** as the server refuses more traffic. The first probe run did not record
+status codes and duly reported "6.66 req/s at P=8, 14.38 at P=16" — a throughput column with
+no status column is a gate that cannot fail, so the script was amended to count 404s
+(served) separately. Run 30868993110, box `cf-runner-3c882bde`:
 
-| P | reqs | wall | req/s | eff. ms/req |
-|---|---|---|---|---|
-| 1 | 4 | 2.04 s | 1.96 | 511 |
-| 2 | 8 | 3.73 s | 2.14 | 466 |
-| 4 | 16 | 6.50 s | 2.46 | 406 |
-| 8 | 32 | 4.80 s | 6.66 | 150 |
-| 16 | 64 | 4.45 s | 14.38 | 70 |
+| P | reqs | wall | **404 served** | **refused** | **served/s** |
+|---|---|---|---|---|---|
+| 1 | 4 | 2.37 s | 4 | 0 | **1.69** |
+| 2 | 8 | 3.53 s | 8 | 0 | **2.27** |
+| 4 | 16 | 6.30 s | 16 | 0 | **2.54** |
+| 8 | 32 | 4.44 s | 12 | **20 × HTTP 401** | **2.71** |
+| 16 | 64 | 4.64 s | 10 | **54 × HTTP 401** | **2.15** |
 
-**From P=1 to P=4 — the range inside `ARGON2_PER_TENANT_PERMITS = 4` — throughput is flat
-at ~2.0–2.5 req/s.** Four-way client concurrency buys 25 %. That is a hard server-side CPU
-ceiling and it is the predicted one: 0.5 vCPU against a per-verify cost of ~0.2–0.25 CPU-s
-(the ~0.15 CPU-s figure is an explicit lower bound, so measuring slightly *below* 3.3 req/s
-is the expected direction).
+Two results, and the second one is the more serious.
 
-The jump at P=8/16 is above the permit cap and is therefore not a scaling result — see
-"found, not fixed" #6.
+**Served throughput is flat at 1.7–2.7 req/s across every level of client concurrency.**
+Sixteen-way parallelism serves no more than one-way. That is a hard server-side CPU ceiling
+and it is the predicted one: 0.5 vCPU against ~0.2–0.25 CPU-s per verify (the ~0.15 CPU-s
+figure is an explicit lower bound, so landing slightly *below* 3.3 req/s is the expected
+direction). The apparent "14.38 req/s" in the unfixed run was 54 refusals counted as
+successes.
+
+**The refusals are `401 Unauthorized`, with a valid PAT.** Zero refusals at P ≤ 4; refusals
+begin exactly at the `ARGON2_PER_TENANT_PERMITS = 4` boundary. The path is in the code:
+`PatVerifier` correctly signals overload as `VerifyError::Backend("pat verifier
+overloaded")`, and then `crates/corelink-adapter-host/src/cargo/auth.rs` flattens it:
+
+```rust
+Err(TenantResolveError::Backend(msg)) => {
+    Err(CargoAdapterError::Auth(format!("backend: {msg}")))   // → HTTP 401
+}
+```
+
+`CargoAdapterError` *has* a backend variant whose own doc-comment says "Routes map this to
+HTTP 503" — `resolve_tenant` routes around it. So a transient, retryable overload reaches
+the client as a permanent authentication failure. See "found, not fixed" #6.
 
 #### Why 490 ms — the mechanism
 
@@ -300,13 +321,24 @@ what the evidence says, and it is not what should be written down.
 5. **sccache's WebDAV operator has no opendal `RetryLayer`** (`src/cache/webdav.rs`). Any
    transient 5xx is a hard read error. It cost nothing in this pilot (0 cache errors), but
    it means a brief container blip degrades straight to cold compiles with no retry.
-6. **What happens above `ARGON2_PER_TENANT_PERMITS = 4` needs its own look.** The sweep
-   showed raw throughput rising to 6.7 and 14.4 req/s at P=8/16 against a served ceiling of
-   ~2.5 — arithmetically that can only be load-shedding, since the server cannot serve
-   14 req/s when it serves 2.5. The first probe run did not record status codes there, so
-   *which* rejection (503 vs something else) is unconfirmed; the script now counts them and
-   the answer will be in the next run. It matters because `cargo -jN` with N > 4 is the
-   normal case, and #1022's own commit message describes exactly this cold-burst 503 as
-   **pre-existing on main** — its single-flight remedy was withdrawn after review and is
-   tracked separately. So this is an open defect, not a probe artifact: a customer running
-   `cargo -j8` against `/cargo` today has half their requests shed.
+6. **⚠️ Overload is served to the client as `401 Unauthorized`.** Measured on a live prod
+   surface with a valid PAT: **20 of 32 requests at `-j8`, 54 of 64 at `-j16`**, all 401,
+   zero below the sub-cap. `crates/corelink-adapter-host/src/cargo/auth.rs::resolve_tenant`
+   maps `TenantResolveError::Backend` (the "pat verifier overloaded" signal) onto
+   `CargoAdapterError::Auth`, which routes to 401 — bypassing the backend variant in the
+   same enum whose doc-comment says it maps to 503. Consequences:
+   - **A retryable condition is presented as a permanent one.** No client retries a 401.
+   - **`cargo -jN` with N > 4 is the normal case**, not an edge case. A customer on `-j8`
+     has most of their cache traffic refused today, and `SCCACHE_IGNORE_SERVER_IO_ERROR=1`
+     converts that into a silent cold compile — the cache appears to "just not help".
+   - **It is unsupportable.** The one signal a customer gets says their token is bad when
+     the token is perfect, and the two cases are indistinguishable in logs. This is the
+     repo's recurring shape: a failure that presents as something the operator will not
+     act on.
+
+   Not fixed here because it is a T0 auth-path change (401↔503 is an error-taxonomy and
+   information-disclosure decision — the whole point of the surrounding code is that the
+   two 401 paths stay in timing parity, so widening the response set needs the same
+   threat-model review #1022's withdrawn single-flight got). It is adjacent to but distinct
+   from the cold-burst 503 that #1022's commit message records as pre-existing on main.
+   Flagged for its own PR with a red-first regression test.
