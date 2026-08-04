@@ -1,0 +1,91 @@
+name: /cargo cache-lookup latency probe (manual)
+
+# Measures what ONE sccache cache lookup against CoreLink's own
+# `/cargo/<tenant>/<key>` WebDAV surface actually costs, from the boxes that
+# would be doing the lookups.
+#
+# WHY: the 2026-08-03 sccache pilot on `corelink-reapi::pr-gate` recorded 631 s
+# at a 100 % hit rate (827 hits / 0 misses) against a 409-423 s no-cache
+# baseline. (631 - 409) / 827 = ~270 ms of amortised wall time per hit, with
+# ZERO cache errors. 270 ms is a network round trip, not a cache read — but it
+# was INFERRED BY SUBTRACTION from two runs, never measured. This workflow
+# measures it, so the next verdict on sccache-over-CoreLink rests on a number
+# from the surface itself rather than on a difference of two lane durations.
+#
+# ⚠️ `workflow_dispatch` ONLY. It has no `pull_request` and no `push` trigger,
+# so it costs nothing per PR and cannot join the nightly load on the shared Mac.
+# It is an instrument you pick up, not a gate.
+#
+# ⚠️ READ-ONLY. Every request is a GET against a freshly-random key, so every
+# authenticated request is a 404 MISS: nothing is written, nothing is created,
+# no R2 object is touched. That also means the numbers are a LOWER BOUND on a
+# real HIT, which additionally fetches and streams the blob. `scripts/
+# probe-cargo-cache-latency.sh` says so in its own output; do not quote a phase
+# figure as "the cost of a hit" without that qualifier.
+
+on:
+  workflow_dispatch:
+    inputs:
+      samples:
+        description: 'Requests per timed phase'
+        required: false
+        default: '30'
+      include_hosted:
+        description: 'Also probe from a GitHub-hosted ubuntu runner (costs hosted minutes; isolates box placement from server-side cost)'
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Two runner classes on purpose. The pilot ran on `corelink`, so that is the
+  # box whose number decides the question — but a single number there cannot
+  # tell you WHETHER the cost is the box's network position or CoreLink's own
+  # server-side work. Probing from a GitHub-hosted runner in the same minute
+  # separates the two: if both are slow, the cost is server-side (the D1 hops on
+  # the PAT-verify + url-map path) and moving the runner fixes nothing.
+  probe:
+    name: probe from ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ github.event.inputs.include_hosted == 'false' && fromJSON('["corelink"]') || fromJSON('["corelink", "ubuntu-latest"]') }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
+
+      # CORELINK_SCCACHE_TOKEN is the credential the pilot already used
+      # (secrets-checklist row 188): `cas:rw` on the internal dogfood tenant
+      # ee30f7ba-…. This job exercises only its READ half. The script exits
+      # non-zero on 401/403 rather than reporting a fast, meaningless number —
+      # a run that measured nothing must not look like one that measured
+      # something.
+      - name: Probe /cargo lookup latency
+        env:
+          PROBE_TOKEN: ${{ secrets.CORELINK_SCCACHE_TOKEN }}
+          SAMPLES: ${{ github.event.inputs.samples }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PROBE_TOKEN:-}" ]; then
+            echo "::error::CORELINK_SCCACHE_TOKEN is absent — nothing to measure."
+            exit 1
+          fi
+          bash scripts/probe-cargo-cache-latency.sh "${SAMPLES:-30}" | tee /tmp/probe.txt
+
+      - name: Publish the numbers to the job summary
+        if: always()
+        run: |
+          {
+            echo "### /cargo lookup latency — \`${{ matrix.runner }}\`"
+            echo
+            echo '```'
+            cat /tmp/probe.txt 2>/dev/null || echo "(probe produced no output — see the step log)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
