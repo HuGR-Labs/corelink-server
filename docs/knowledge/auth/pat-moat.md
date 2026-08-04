@@ -10,11 +10,11 @@ source_files:
   - "crates/corelink-container/src/adapter_pat.rs"
 source_blobs:
   - "worker/src/lib/internal_auth.ts@4e399de52d42e661d7dd819f5434001eb0845145"
-  - "worker/src/index.ts@3e9cde684944962569a6e24e62a07d68cfd662a2"
+  - "worker/src/index.ts@06fc6b8d72922ebb0818e043b56ba3eea6c5b9ce"
   - "worker/src/lib/pat_verify_cache.ts@b0dafab6381684057de4c0589b5d95d18a35c741"
   - "worker/src/lib/tenant_suspend_gate.ts@bed740c1e2a471244a2c9680fcf4f1e800f26d7c"
   - "crates/corelink-container/src/adapter_pat.rs@456e2f1586d1b60b55fd03af7aa263ebf41bdb13"
-checkpoint_sha: "109cff8ea56c6125e115409d3008ff1b14420ff6"
+checkpoint_sha: "726dca88ea018b9902879e97ebbc12e861183115"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -81,7 +81,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   stamps `PatVerifyResult.source` (`l1`/`kv`/`d1`, `worker/src/lib/pat_verify_cache.ts:142`), which
   `extractAuth` threads onto its `AuthResult` as `patSource` (`worker/src/index.ts:1336-1337`) purely so
   the handler can surface it in the `Server-Timing` response header's `auth` desc for a client latency
-  probe (`worker/src/index.ts:3267`); it is observability-only, never a trust signal and never forwarded
+  probe (`worker/src/index.ts:3276`); it is observability-only, never a trust signal and never forwarded
   to the container.
 - **L1 — per-isolate in-memory, 5 s.** A `Map` keyed by the non-secret `token_id`; a fresh (<TTL) hit
   returns with no I/O, served even through a transient D1/KV blip
@@ -109,7 +109,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   (measured: ~100% D1 reads from SAM before this); when no `waitUntil` is passed (tests) the write is
   `await`ed instead so it stays observable (`worker/src/lib/pat_verify_cache.ts:326-333`; `kvPutPatRow`
   at `worker/src/lib/pat_verify_cache.ts:383-389`). `extractAuth` threads `ctx.waitUntil` down: the
-  handler binds and passes `ctx.waitUntil.bind(ctx)` (`worker/src/index.ts:2639`) and `extractAuth`
+  handler binds and passes `ctx.waitUntil.bind(ctx)` (`worker/src/index.ts:2648`) and `extractAuth`
   forwards it into `verifyPatRowCached` only when present (`worker/src/index.ts:1270`). A KV MISS, a
   malformed/foreign value, or a KV FAULT all
   fall through to L3 D1: `kvGetPatRow` never throws and validates the row shape before trusting it
@@ -164,7 +164,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   and owns the miss-path try/catch. On the `error` kind (a D1 fault: network partition / DB unavailable)
   `extractAuth` returns the distinct reason `d1_lookup_error` (`worker/src/index.ts:1272-1276`). The
   PAT-gate caller (H1 fix) then maps BOTH `signing_key_not_configured` AND `d1_lookup_error` to
-  `503 authentication service unavailable` (`worker/src/index.ts:2659-2667`) — a D1 hiccup is a
+  `503 authentication service unavailable` (`worker/src/index.ts:2668-2676`) — a D1 hiccup is a
   TRANSIENT infra fault, not a bad credential, so surfacing it as 401 would make every client see "bad
   credentials" (spurious PAT rotation / on-call chasing the wrong thing). Genuine bad/unknown PATs
   (`pat_not_found` / `pat_expired` / `invalid_*`) still fall through to `401`. Therefore the gotcha above
@@ -212,7 +212,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   **OPEN** on a transient D1 fault (availability), but a KNOWN-suspended cached value still denies
   (`worker/src/lib/tenant_suspend_gate.ts:289-295`). The caller maps the distinct `tenant_suspended`
   reason to **403** (an authorization denial, fail-closed), separate from the 401 bad-credential arms and
-  the 503 transient-infra arms (`worker/src/index.ts:2674-2679`).
+  the 503 transient-infra arms (`worker/src/index.ts:2683-2688`).
 
 # Citations
 
@@ -230,6 +230,6 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 9. `worker/src/lib/pat_verify_cache.ts:264-346` — `verifyPatRowCached`: the POSITIVE-only three-tier read cascade (L1 in-memory → L2 KV → L3 D1). The L1 fresh hit (`worker/src/lib/pat_verify_cache.ts:284-287`) is single-flight-collapsed (`worker/src/lib/pat_verify_cache.ts:289-293`) with a `PAT_VERIFY_CACHE_TTL_MS = 5 s` TTL (`worker/src/lib/pat_verify_cache.ts:153`) and an LRU cap (`worker/src/lib/pat_verify_cache.ts:183-200`); negatives and D1 faults are never cached in any tier, so D1 stays the source-of-truth on every miss (`worker/src/lib/pat_verify_cache.ts:335-339`).
 10. `worker/src/lib/pat_verify_cache.ts:224-246` — `readPatRow`: the L3 replica-first read with a PRIMARY fallback — a replica MISS is re-checked on the primary (read-after-write freshness), a replica FAULT falls back to the primary (availability), and a non-null STALE replica read is honored (bounding revocation to the sub-second replication lag) — reached via the `first-unconstrained` `withSession` replica session `extractAuth` opens, degrading to the primary handle when `withSession` is absent (`worker/src/index.ts:1259-1262`).
 11. `worker/src/lib/pat_verify_cache.ts:297-307` — the **L2** Workers-KV read in `verifyPatRowCached` (consulted after L1, before L3), backed by `kvGetPatRow` (`worker/src/lib/pat_verify_cache.ts:353-380`) which never throws and validates the row shape (`worker/src/lib/pat_verify_cache.ts:363-379`) so a KV miss / malformed value / KV fault all fall through to D1.
-12. `worker/src/lib/pat_verify_cache.ts:326-333` — the best-effort L2 KV write on a D1 hydrate, handed to `ctx.waitUntil` so it survives the response (a bare `void kv.put(...)` is cancelled when the Worker returns, leaving KV un-populated), falling back to `await` when no `waitUntil` is passed (tests); `extractAuth` threads `ctx.waitUntil.bind(ctx)` from the handler (`worker/src/index.ts:2639`) into `verifyPatRowCached` (`worker/src/index.ts:1270`). Writes go via `kvPutPatRow` (`worker/src/lib/pat_verify_cache.ts:383-389`); a KV write failure is swallowed and never breaks auth (POSITIVE rows only).
+12. `worker/src/lib/pat_verify_cache.ts:326-333` — the best-effort L2 KV write on a D1 hydrate, handed to `ctx.waitUntil` so it survives the response (a bare `void kv.put(...)` is cancelled when the Worker returns, leaving KV un-populated), falling back to `await` when no `waitUntil` is passed (tests); `extractAuth` threads `ctx.waitUntil.bind(ctx)` from the handler (`worker/src/index.ts:2648`) into `verifyPatRowCached` (`worker/src/index.ts:1270`). Writes go via `kvPutPatRow` (`worker/src/lib/pat_verify_cache.ts:383-389`); a KV write failure is swallowed and never breaks auth (POSITIVE rows only).
 13. `worker/src/lib/pat_verify_cache.ts:83-86` — the structural `KvReader` handle for L2; the `patrow:` key prefix (`worker/src/lib/pat_verify_cache.ts:89`) + `patRowKvKey` (`worker/src/lib/pat_verify_cache.ts:103-105`) and the `KV_PAT_ROW_TTL_S = 60 s` revocation backstop = ADR-0030's 60 s p99 (`worker/src/lib/pat_verify_cache.ts:100`).
 14. `worker/src/index.ts:1266-1270` — the `extractAuth` L2 wiring: feature-detect the `METADATA_KV` binding and pass it as `kv` into `verifyPatRowCached` only when bound (a build without the binding skips L2).
