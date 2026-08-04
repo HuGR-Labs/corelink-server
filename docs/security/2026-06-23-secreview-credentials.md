@@ -42,7 +42,7 @@ launch blocker.
   unlocks every one of those surfaces — the least-privilege benefit the split was
   designed to give is only realized once the dedicated keys are actually set.
 - **Assessment:** This is a **documented, intentional** flag-day-free rollout
-  shape (internal_auth.ts:36-45, 138-151, 170-195) — the dedicated key is preferred
+  shape (internal_auth.ts:36-45, 140-153, 170-195) — the dedicated key is preferred
   when present and the shared key is the fallback **only when the dedicated key is
   UNSET**. A sub-floor (<32 char) dedicated key is **NOT** treated as absent: it is
   REFUSED fail-closed and logged, because falling through there would hand that
