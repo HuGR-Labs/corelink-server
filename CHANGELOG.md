@@ -65,7 +65,9 @@ Each entry cross-references:
   Third round found the harness's own no-delay case was not one: the `"none"` sentinel collided with
   `phaseOf`'s return for an UNCLASSIFIED statement, so asking for "no delay" delayed every statement
   the classifier could not name — including `SELECT tier FROM tier_selections` inside the window.
-  The supposedly-quiet env measured `wdb` at ~151 ms; it now measures 11 ms. The sentinel moved
+  The supposedly-quiet env measured `wdb` at ~151 ms — the injected delay, not noise; it now measures
+  single-digit-to-low-double-digit ms (11 on the authoring box, ~7 on the reviewer's), i.e. the
+  harness's own overhead rather than a planted delay. The sentinel moved
   outside the union (`SlowTarget | null`).
 
 ### Fixed

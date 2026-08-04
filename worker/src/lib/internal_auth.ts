@@ -39,8 +39,11 @@ const MIN_INTERNAL_AUTH_KEY_LEN = 32;
  * Mirrors the container's just-merged Rust split: each distinct internal
  * surface authenticates with its OWN key so that leaking one consumer's secret
  * does not unlock every `/_internal/*` route. Each consumer key FALLS BACK to
- * the shared `CORELINK_INTERNAL_AUTH_KEY` when its dedicated key is unset/short,
- * so the split can be rolled out per-consumer without a flag-day.
+ * the shared `CORELINK_INTERNAL_AUTH_KEY` when its dedicated key is UNSET, so the
+ * split can be rolled out per-consumer without a flag-day. NOT "unset or short":
+ * a dedicated key that is SET but below the floor is refused fail-closed (see
+ * {@link resolveConsumerKey}) — falling back there would silently hand that
+ * consumer the wider blast radius the dedicated key exists to avoid.
  *
  * FROZEN env names (identical to the Rust control-plane side):
  *   - pat_mint    → CORELINK_PAT_MINT_AUTH_KEY    (`/_internal/pat/mint` — signup + clw)
@@ -99,12 +102,19 @@ export type InternalConsumer =
  * Resolve the internal-auth key to verify against for a given consumer.
  *
  * Selection (matches the Rust contract exactly):
- *   1. the consumer-specific key  iff set AND length >= MIN_INTERNAL_AUTH_KEY_LEN;
- *   2. else the shared key        iff length >= MIN_INTERNAL_AUTH_KEY_LEN;
- *   3. else `null` → the caller MUST fail CLOSED (no properly sized gate bound).
+ *   1. consumer-specific key SET and >= MIN_INTERNAL_AUTH_KEY_LEN  → use it;
+ *   2. consumer-specific key SET but < MIN                          → `null`,
+ *      REFUSING the shared fallback (fail-CLOSED, logged);
+ *   3. consumer-specific key UNSET → the shared key iff >= MIN;
+ *   4. else `null` → the caller MUST fail CLOSED (no properly sized gate bound).
  *
- * A too-short dedicated key is treated as ABSENT (falls through to the shared
- * key) rather than weakening the gate — never trust a sub-floor secret.
+ * Arm 2 is the subtle one and this comment used to state its OPPOSITE ("a
+ * too-short dedicated key is treated as ABSENT (falls through to the shared
+ * key)"). It does not fall through: an operator who sets a dedicated key for a
+ * consumer has declared that consumer should be ISOLATED, so silently serving it
+ * the broad shared key on a typo would widen the blast radius exactly when the
+ * operator was trying to narrow it. A sub-floor secret is a misconfiguration to
+ * surface, not one to route around.
  *
  * @returns the chosen key string, or `null` when neither qualifies (fail-CLOSED).
  */

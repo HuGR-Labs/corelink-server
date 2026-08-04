@@ -265,9 +265,10 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     expect(st).toHaveProperty("wdb");
 
     // Accounting with NOTHING injected — now genuinely nothing (see SlowTarget).
-    // `wdb` and the sum are both near zero, so an un-instrumented await inside the
-    // window shows up here at its full cost instead of having to exceed the
-    // residual tolerance while a 150 ms delay dominates the window.
+    // This is a redundant net, not a more sensitive one: an injected delay cancels
+    // out of `wdb - sum`, so the delayed cases catch an un-instrumented await just
+    // as well. It is kept because it is the only case that exercises the
+    // accounting on a request with no delay in it at all.
     const sum = SUBPHASES.reduce((a, p) => a + (st[p] ?? 0), 0);
     expect(
       Math.abs(st["wdb"]! - sum),

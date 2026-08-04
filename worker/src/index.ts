@@ -146,11 +146,13 @@ export interface Env {
   // container's just-merged Rust split (red-team #3): each internal consumer
   // gets its OWN key so a single leak does not unlock every internal surface.
   // Resolution per consumer (see lib/internal_auth.ts `resolveConsumerKey`):
-  // use the consumer-specific key iff set AND >= 32 chars; else the shared key
-  // iff >= 32; else fail-CLOSED. FROZEN names (identical to the Rust side):
+  // use the consumer-specific key iff set AND >= 32 chars; if it is set but
+  // SHORTER, fail-CLOSED rather than falling back (that would widen the blast
+  // radius); only when it is UNSET does the shared key serve, iff >= 32; else
+  // fail-CLOSED. FROZEN names (identical to the Rust side):
   CORELINK_INTERNAL_AUTH_KEY?: string;
   // Per-consumer internal-auth keys (red-team #3 split). Each falls back to
-  // CORELINK_INTERNAL_AUTH_KEY when unset/short. Provisioned by the operator
+  // CORELINK_INTERNAL_AUTH_KEY when UNSET (a set-but-short key is refused). Provisioned by the operator
   // (`wrangler secret put …`) — see LEAD FLAGS in the PR. The container reads
   // the same names on its side.
   CORELINK_PAT_MINT_AUTH_KEY?: string; // gate for `/_internal/pat/mint`
@@ -1880,8 +1882,9 @@ const baseHandler: ExportedHandler<Env> = {
     // the container's Rust split — a leak of one consumer's secret must not unlock
     // every internal surface. The consumer is derived from the path prefix; each
     // consumer key falls back to the shared CORELINK_INTERNAL_AUTH_KEY when its
-    // dedicated key is unset/short (resolveConsumerKey). If neither qualifies,
-    // deny (fail-CLOSED — never open an unauthenticated proxy).
+    // dedicated key is UNSET (resolveConsumerKey) — a dedicated key that is set
+    // but under the floor is REFUSED rather than widened to the shared key. If
+    // neither qualifies, deny (fail-CLOSED — never open an unauthenticated proxy).
     if (route.routeKind === "internal") {
       const internalConsumer = internalConsumerForPath(route.pathSuffix);
       const internalAuthKey = resolveConsumerKey(env, internalConsumer);
@@ -2869,18 +2872,27 @@ const baseHandler: ExportedHandler<Env> = {
       // `_anonymous`/`_system`/`_pending`, but there the other three are absent too.
       //
       // Be precise about what is confirmed. CORELINK_INTERNAL_AUTH_KEY is NOT a
-      // metering key — it is the SHARED internal-auth secret that
-      // `resolveConsumerKey` (lib/internal_auth.ts:124-149) falls back to for its
-      // six consumers when a dedicated key is UNSET. Not "unset or short": a key
-      // that is set but under the length floor is REFUSED fail-closed, precisely so
-      // a misconfiguration cannot silently widen the blast radius. The ceiling is
-      // therefore PAT mint/rotate, runner mint, session exchange, quota-read, admin
-      // and the `/_internal/*` gate; the container-side erase and DSR-anchor gates
-      // deliberately have NO fallback at all (secrets-checklist finding H4), and
-      // that no-fallback property is itself a control. Which dedicated keys are
-      // actually provisioned in prod is NOT determinable from this repo — CF
-      // secrets are write-only — so treat the above as the ceiling, not the
-      // current state.
+      // metering key — it is the SHARED internal-auth secret. Two DIFFERENT paths
+      // reach it, and only one has the fail-closed property:
+      //
+      //   - `resolveConsumerKey` (lib/internal_auth.ts:124-149), used at exactly
+      //     one call site, the `/_internal/*` edge gate below. It serves the shared
+      //     key to its six consumers (pat_mint, admin, erase, dsr_anchor,
+      //     runner_mint, quota_read) only when that consumer's dedicated key is
+      //     UNSET; a key that is SET but under the floor is REFUSED fail-closed.
+      //   - Hand-rolled `env.<DEDICATED> ?? env.CORELINK_INTERNAL_AUTH_KEY` in
+      //     lib/session_exchange.ts and lib/runner_mint.ts, plus githugr
+      //     tenant-lookup which is gated on the shared key directly
+      //     (lib/tenant_lookup.ts:28). These fall back on UNSET too, but check only
+      //     `length === 0` — no >= 32 floor and NO fail-closed refusal, so the
+      //     property the first bullet guarantees does NOT hold here.
+      //
+      // Container-side, the erase and DSR-anchor gates use
+      // `resolve_dedicated_auth_key` and have NO fallback at all
+      // (secrets-checklist finding H4); that absence is itself a control. Which
+      // dedicated keys are actually provisioned is NOT determinable from this repo
+      // — CF secrets are write-only — so the above is the ceiling, not the current
+      // state.
       //
       // Accepted anyway, for a reason that survives that blast radius: a caller who
       // can reach this oracle already holds the complete key (the compare is
