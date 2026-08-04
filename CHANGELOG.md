@@ -112,6 +112,29 @@ Each entry cross-references:
   assertion. 0 failures in 25 runs under 6 busy loops after the fix.
 
 ### Fixed
+- **fix(auth): the "why the shed divergence is safe" rationale in `adapter_pat.rs` rested on a
+  security argument its own author later withdrew — two of its three bullets were false.** The
+  comment above `a_saturated_shared_burn_bucket_sheds_only_the_unknown_arm` documents the one
+  accepted state where the row-NOT-FOUND arm sheds `503` while a live PAT resolves. Bullet 1
+  claimed "an attacker who holds the signing key can mint valid PATs outright and has no use for a
+  liveness bit" — false: the key mints an HMAC, not access. A PAT authenticates only if a live D1
+  row exists whose `pat_hash` Argon2id-verifies the presented secret (step 3,
+  `verify_with_hash_multi`), and writing D1 is not something the signing key grants. A key-holder
+  can mint `token_id.<any secret>` at will, so "valid signature, wrong secret" is a state they
+  construct freely and a liveness bit **is** their reconnaissance step. Bullet 3 was backwards: it
+  cited the dummy burn and `INV-AUTH-CONSTANT-TIME-COLD-PAD` as covering the latency axis, but in
+  this exact state the burn is *skipped* — and since #1046 the shared-bucket acquire is
+  non-blocking, so the unknown arm answers immediately with no Argon2id while the live arm pays a
+  full one. The pad covers nothing here; the gap is wider than the comment implied, not narrower.
+  The corrected rationale rests on what is actually load-bearing: the only edge-unauthenticated
+  surface (OCI `/token`) collapses both arms into one scrubbed 401; every surface that *does*
+  distinguish them is gated (the Worker's `extractAuth` 401s `pat_not_found` at the edge before
+  forwarding and its verify cache is positives-only, so the arm is unreachable there;
+  `/internal/v1/auth/introspect` demands the internal-auth key on top of the signing key); and the
+  timing residual is *accepted and named*, not explained away. The test gains a wrong-secret arm —
+  same saturation, same free tenant bucket, live `token_id` presented with a non-matching secret →
+  `InvalidPat` — so the pinned divergence isolates row-existence instead of conflating it with
+  credential-correctness. Comment and test only; no production code path changed.
 - **fix(deploy): the exact wrangler pin was never in force on the production deploy path — a
   `-x` path test silently discarded the CI override and every prod deploy ran
   `npx wrangler@latest`.** `.github/workflows/cf-deploy-prod.yml` installs `wrangler@4.95.0`
