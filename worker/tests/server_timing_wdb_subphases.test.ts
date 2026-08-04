@@ -1,0 +1,300 @@
+/**
+ * `wdb` sub-phase attribution — does each Server-Timing label measure the
+ * operation it claims to?
+ *
+ * # Why this test exists
+ *
+ * The aggregate `wdb` phase measured 114 ms p50 on an authenticated `/cargo`
+ * lookup in production (2026-08-04), which told us the Worker-side reads own a
+ * third of the request and nothing about WHICH read. `wdb` is four serial
+ * awaits — the monthly-counter UPSERT, the tier resolve, the storage SUM, and
+ * the residency resolve — of which two are cache-backed and two are not. Fixing
+ * the wrong one is the default outcome of guessing.
+ *
+ * Instrumentation has a specific failure mode: it looks right while measuring
+ * the wrong thing, and nothing goes red, because a plausible number is
+ * indistinguishable from a correct one. So these tests do not assert that the
+ * labels EXIST — they inject a delay into ONE D1 statement at a time and assert
+ * that exactly the matching label absorbs it. A clock wired to the wrong await
+ * fails here.
+ *
+ * They also lock the emission contract, which carries real information:
+ *
+ *   - a phase that RAN is always emitted, INCLUDING at `dur=0`
+ *   - a phase that was SKIPPED is omitted entirely
+ *
+ * so `qtier;dur=0` means "cache-served, faster than the clock resolves" and a
+ * missing `qmeter` means "the UPSERT never happened". Collapsing those two into
+ * "absent" is what forced an inference from the `auth` phase's 2-of-30 emission
+ * rate in the production reading this work came out of.
+ */
+
+import { describe, it, expect, beforeEach } from "vitest";
+import type { D1Database } from "@cloudflare/workers-types";
+import workerHandler from "../src/index.js";
+import type { Env } from "../src/index.js";
+import { __resetTierCacheForTests } from "../src/lib/tenant_tier_cache.js";
+import { __resetTenantResidencyCacheForTest } from "../src/lib/tenant_residency_cache.js";
+
+const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA"; // 16 Crockford-b32 chars
+const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
+const TEST_SECRET = "A".repeat(43); // 43 base64url chars
+const SIGNING_KEY_HEX = "ab".repeat(32);
+const INTERNAL_AUTH_KEY = "cd".repeat(32);
+
+/**
+ * Injected delay, in ms. Comfortably above scheduler jitter so the assertion
+ * band below cannot be satisfied by noise, and small enough to keep the suite
+ * fast.
+ */
+const DELAY_MS = 60;
+/** Lower bound the delayed phase must clear (allows a little clock slack). */
+const DELAYED_MIN_MS = 45;
+/** Upper bound every NON-delayed phase must stay under. */
+const UNDELAYED_MAX_MS = 25;
+
+function b64urlNoPad(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  return out;
+}
+
+async function mintValidToken(): Promise<string> {
+  const preimage = new TextEncoder().encode(`${TEST_TOKEN_ID}.${TEST_SECRET}`);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    hexToBytes(SIGNING_KEY_HEX),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const macBuf = await crypto.subtle.sign("HMAC", key, preimage);
+  return `corelink_pat_${TEST_TOKEN_ID}.${TEST_SECRET}.${b64urlNoPad(new Uint8Array(macBuf, 0, 16))}`;
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Which single statement to slow down, so exactly one phase should absorb it. */
+type SlowTarget = "none" | "meter" | "tier" | "storage" | "residency";
+
+/**
+ * Classify a statement by the phase it belongs to. Deliberately matched on the
+ * distinguishing fragment of each real query (see `lib/quota.ts` and
+ * `lib/tenant_residency_cache.ts`) — the tier and residency reads BOTH select
+ * `FROM tenant`, so the discriminator is the projected column, not the table.
+ */
+function phaseOf(sql: string): SlowTarget {
+  if (sql.includes("INSERT INTO monthly_request_counts")) return "meter";
+  if (sql.includes("SUM(bytes_used)")) return "storage";
+  if (sql.includes("SELECT tier FROM tenant")) return "tier";
+  if (sql.includes("SELECT primary_region FROM tenant")) return "residency";
+  return "none";
+}
+
+/**
+ * D1 mock that resolves the PAT and the tier, and delays exactly one statement
+ * class by {@link DELAY_MS}.
+ */
+function makeD1(slow: SlowTarget): D1Database {
+  const stmt = (sql: string) => ({
+    bind: (...args: unknown[]) => ({
+      first: async <T>() => {
+        if (phaseOf(sql) === slow) await sleep(DELAY_MS);
+        if (sql.includes("INSERT INTO monthly_request_counts")) {
+          return { request_count: 1 } as T;
+        }
+        if (sql.includes("FROM pat") || sql.includes("token_id")) {
+          if (args[0] === TEST_TOKEN_ID) {
+            return {
+              tenant_id: TEST_TENANT_ID,
+              expires_ms: Date.now() + 3_600_000,
+              scope: "cas:rw",
+            } as T;
+          }
+          return null as T | null;
+        }
+        if (sql.includes("SELECT tier FROM tenant")) {
+          return { tier: "free" } as T;
+        }
+        // Storage SUM and residency both resolve empty: 0 bytes used (within
+        // cap) and no pinned region (the IAD-local fall-through).
+        return null as T | null;
+      },
+      all: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+      run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+      raw: async <T>() => [] as T[],
+    }),
+    first: async <T>() => null as T | null,
+    all: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+    run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
+    raw: async <T>() => [] as T[],
+  });
+  return {
+    prepare: stmt,
+    batch: async () => [],
+    exec: async () => ({ count: 0, duration: 0 }),
+    withSession() {
+      return this;
+    },
+    dump: async () => new ArrayBuffer(0),
+  } as unknown as D1Database;
+}
+
+function makeCtx(): ExecutionContext {
+  return {
+    waitUntil: () => {},
+    passThroughOnException: () => {},
+  } as unknown as ExecutionContext;
+}
+
+function makeEnv(slow: SlowTarget): Env {
+  const stub = {
+    fetch: async (): Promise<Response> =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+  };
+  return {
+    CORELINK_SERVER: {
+      idFromName: (_n: string) => ({ toString: () => "id" }),
+      get: (_id: unknown) => stub,
+      idFromString: (_s: string) => ({ toString: () => "id" }),
+      newUniqueId: () => ({ toString: () => "unique-id" }),
+      jurisdiction: (_j: string) => ({}) as unknown,
+    } as unknown as Env["CORELINK_SERVER"],
+    ENVIRONMENT: "test",
+    CONFIG_DB: makeD1(slow),
+    PAT_SIGNING_KEY: SIGNING_KEY_HEX,
+    CORELINK_INTERNAL_AUTH_KEY: INTERNAL_AUTH_KEY,
+    // METADATA_KV deliberately UNBOUND: with no L2, every L1 miss goes to D1,
+    // which is what makes the injected per-statement delay observable.
+  } as unknown as Env;
+}
+
+/** Parse a `Server-Timing` header into `{ metric: durationMs }`. */
+function parseServerTiming(header: string | null): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (header === null) return out;
+  for (const part of header.split(",")) {
+    const m = /^\s*([A-Za-z0-9_-]+)\s*;\s*dur=(\d+)/.exec(part);
+    if (m !== null) out[m[1]!] = Number(m[2]);
+  }
+  return out;
+}
+
+async function requestOnce(
+  env: Env,
+  token: string,
+  blobChar: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<Record<string, number>> {
+  const resp = await workerHandler.fetch!(
+    new Request(`http://localhost/v1/cas/${TEST_TENANT_ID}/` + blobChar.repeat(64), {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, ...extraHeaders },
+      body: "hello",
+    }),
+    env,
+    makeCtx(),
+  );
+  expect(resp.status).toBe(200);
+  return parseServerTiming(resp.headers.get("Server-Timing"));
+}
+
+/** The four `wdb` sub-phases, in the order they execute. */
+const SUBPHASES = ["qmeter", "qtier", "qstor", "qresid"] as const;
+
+describe("Server-Timing `wdb` sub-phase attribution", () => {
+  beforeEach(() => {
+    // Both caches are MODULE-level and would otherwise carry a warm entry for
+    // TEST_TENANT_ID across cases, making the delayed statement unreachable and
+    // the attribution assertions vacuously green.
+    __resetTierCacheForTests();
+    __resetTenantResidencyCacheForTest();
+  });
+
+  it("emits all four sub-phases on a normal authed request", async () => {
+    const st = await requestOnce(makeEnv("none"), await mintValidToken(), "a");
+    for (const p of SUBPHASES) {
+      expect(st, `${p} missing from Server-Timing`).toHaveProperty(p);
+    }
+    // The aggregate stays, unchanged, so existing probes keep working.
+    expect(st).toHaveProperty("wdb");
+  });
+
+  it.each([
+    ["meter", "qmeter"],
+    ["tier", "qtier"],
+    ["storage", "qstor"],
+    ["residency", "qresid"],
+  ] as const)(
+    "a delay injected into the %s statement is absorbed by %s and by no other phase",
+    async (slow, expectedPhase) => {
+      const st = await requestOnce(makeEnv(slow), await mintValidToken(), "b");
+
+      expect(
+        st[expectedPhase],
+        `${expectedPhase} did not absorb the ${DELAY_MS}ms delay injected into the ${slow} ` +
+          `statement — this clock is wired to the wrong await. Full split: ${JSON.stringify(st)}`,
+      ).toBeGreaterThanOrEqual(DELAYED_MIN_MS);
+
+      for (const p of SUBPHASES) {
+        if (p === expectedPhase) continue;
+        expect(
+          st[p],
+          `${p} also absorbed the delay meant for ${expectedPhase} — the sub-phase clocks ` +
+            `overlap instead of partitioning ${'`wdb`'}. Full split: ${JSON.stringify(st)}`,
+        ).toBeLessThan(UNDELAYED_MAX_MS);
+      }
+
+      // The aggregate must still contain the delay: a sub-phase that reports a
+      // cost `wdb` does not also contain would mean the split is measuring
+      // something outside the phase it claims to decompose.
+      expect(st["wdb"]).toBeGreaterThanOrEqual(DELAYED_MIN_MS);
+    },
+  );
+
+  it("emits a phase that ran but cost nothing as dur=0 rather than omitting it", async () => {
+    // Second request on the same isolate: the tier is L1-cached (5 s TTL), so
+    // `resolveTenantTierCached` returns without any I/O and the clock reads 0.
+    // The phase RAN, so it MUST still be emitted — otherwise "cache-served" and
+    // "never executed" become the same observation on the wire.
+    const env = makeEnv("none");
+    const token = await mintValidToken();
+    await requestOnce(env, token, "c");
+    const st = await requestOnce(env, token, "d");
+
+    expect(
+      st,
+      "qtier vanished once the tier was cache-served — a 0ms phase must be reported, " +
+        "not suppressed, or a fast phase is indistinguishable from a skipped one",
+    ).toHaveProperty("qtier");
+    expect(st["qtier"]).toBe(0);
+  });
+
+  it("omits qmeter entirely on a genuine fan-out sub-request, which does not meter", async () => {
+    // A fan-out sub-request carries the server secret and skips the UPSERT
+    // (#11 — it was already metered by the primary Worker). Nothing ran, so
+    // there is nothing to report: the phase must be ABSENT, not 0.
+    const st = await requestOnce(makeEnv("none"), await mintValidToken(), "e", {
+      "x-corelink-fanout-from": INTERNAL_AUTH_KEY,
+    });
+
+    expect(
+      st,
+      "qmeter was emitted for a fan-out sub-request that never ran the UPSERT — " +
+        "a reported 0 would claim the metering write cost nothing, not that it was skipped",
+    ).not.toHaveProperty("qmeter");
+    // The rest of the phase still runs and is still reported.
+    for (const p of ["qtier", "qstor", "qresid"] as const) {
+      expect(st).toHaveProperty(p);
+    }
+  });
+});

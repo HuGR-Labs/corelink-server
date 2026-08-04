@@ -157,8 +157,17 @@ echo
 # data-plane response carries `Server-Timing` (worker/src/index.ts):
 #   auth   — the Worker's PAT verify, with `desc` naming the cache tier that
 #            served the row (l1 / kv / d1)
-#   wdb    — the Worker-side quota + residency D1 reads, UNCACHED, to the ENAM
-#            primary
+#   wdb    — the Worker-side quota + residency reads to the ENAM primary, now
+#            broken into the four SERIAL awaits it is made of:
+#              qmeter — the monthly request-counter UPSERT (D1 write, uncached
+#                       by nature: it is a counter)
+#              qtier  — tier resolve  (L1 isolate -> KV -> D1)
+#              qstor  — the storage SUM(bytes_used) read (D1, uncached)
+#              qresid — residency resolve (L1 isolate -> KV -> D1)
+#            Two of the four are cache-backed and two are not, so the aggregate
+#            alone cannot say what to fix. A cache-backed phase can still cost a
+#            full D1 round trip on an isolate-cold request — which is exactly why
+#            these are measured rather than assumed.
 #   origin — the whole DO + container subrequest (so the container's own D1 `pat`
 #            read, the memo, the quota gate and the storage lookup are all
 #            INSIDE this one number — this phase narrows the residue to a tier,
@@ -183,7 +192,12 @@ if [ ! -s /tmp/probe_st.txt ]; then
   echo "  Worker's timing emission, so this surface ships with no latency"
   echo "  attribution at all — for us OR for a customer debugging a slow cache."
 else
-  for ph in auth wdb origin total; do
+  # `n=` in each row is load-bearing: a phase whose clock reads 0 ms is OMITTED
+  # from the header by the Worker only when it did not RUN, so a low n means
+  # "this phase was skipped on most requests", while n == SAMPLES with p50=0
+  # means "it ran every time and cost less than the clock can resolve". Do not
+  # read a missing row as a fast row.
+  for ph in auth wdb qmeter qtier qstor qresid origin total; do
     # `dur` is milliseconds; `pct` takes seconds.
     grep -oE "(^|[ ,])${ph};dur=[0-9]+" /tmp/probe_st.txt \
       | grep -oE '[0-9]+$' \

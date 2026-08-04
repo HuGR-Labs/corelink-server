@@ -1762,6 +1762,23 @@ const baseHandler: ExportedHandler<Env> = {
     let stOriginStart = 0;
     let stOriginEnd = 0;
     let stPatSource: "l1" | "kv" | "d1" | undefined;
+    // `wdb` sub-phase clocks — the four SERIAL awaits between `auth` and `origin`
+    // (metering UPSERT → tier resolve → storage SUM → residency resolve). The
+    // aggregate `wdb` says "the worker-side reads cost 114 ms" but not WHICH of
+    // the four owns it: two are cache-backed (tier, residency) and two are
+    // uncached D1 (the counter UPSERT, the storage SUM), and an isolate-cold
+    // request can turn a "cached" one back into a D1 round trip. Attributing
+    // before optimising is the whole point — do not guess which one to fix.
+    //
+    // `-1` = "this phase did not run" (anon/system tenant, uncapped tier, an
+    // early 429). That sentinel is what lets `dur=0` MEAN "ran, and cost less
+    // than the clock can see" instead of being indistinguishable from a phase
+    // that never executed — the ambiguity that forced an inference from the
+    // `auth` phase's 2-of-30 emission rate.
+    let stQMeterMs = -1;
+    let stQTierMs = -1;
+    let stQStorMs = -1;
+    let stQResidMs = -1;
     const requestId = resolveRequestId(request);
     requestCounter = (requestCounter + 1) | 0;
 
@@ -2830,6 +2847,7 @@ const baseHandler: ExportedHandler<Env> = {
       // yields `withinFreeCap === true`, so the request-cap comparison below is
       // also skipped — a fan-out sub-request is never re-metered nor 429'd on
       // the request cap.
+      const meterStart = Date.now();
       const inc = isFanout
         ? { counted: false, count: 0 }
         : await incrementMonthlyRequestCount(
@@ -2837,6 +2855,11 @@ const baseHandler: ExportedHandler<Env> = {
             resolvedTenantId,
             requestQuotaEnabled,
           );
+      // A fan-out sub-request skips the UPSERT entirely, so leave the `-1`
+      // sentinel: the phase DID NOT RUN, which is a different fact from "ran and
+      // cost nothing". (`requestQuotaEnabled === false` does call in and return
+      // without a write — that legitimately reads as a real 0.)
+      if (!isFanout) stQMeterMs = Date.now() - meterStart;
       const withinFreeCap = !inc.counted || inc.count <= FREE_REQUEST_CAP;
 
       // UNCONDITIONAL (also on fan-out): the served path — including a fan-out
@@ -2849,10 +2872,12 @@ const baseHandler: ExportedHandler<Env> = {
       // the same TierResult shape; an unconfirmed (`d1Error`) result is never
       // cached, so the F21 fail-open posture is preserved.
       const tierKv = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
+      const tierStart = Date.now();
       const quotaTier = await resolveTenantTierCached(env.CONFIG_DB, resolvedTenantId, {
         ...(tierKv ? { kv: tierKv } : {}),
         waitUntil: ctx.waitUntil.bind(ctx),
       });
+      stQTierMs = Date.now() - tierStart;
       storageQuotaHeader = storageQuotaHeaderValue(quotaTier);
 
       // Monthly request-count quota (red-team #5): compare the already-counted
@@ -2874,12 +2899,14 @@ const baseHandler: ExportedHandler<Env> = {
 
       // Storage quota check. (OCI never reaches this PAT-gate path — see the
       // dedicated pass-through branch above; the container enforces OCI quota.)
+      const storStart = Date.now();
       const storageCheck = await checkStorageQuota(
         env.CONFIG_DB,
         resolvedTenantId,
         quotaTier,
         isStorageMutating,
       );
+      stQStorMs = Date.now() - storStart;
       if (!storageCheck.ok) {
         return quotaExceeded(storageCheck.reason, storageCheck.retryAfterSec);
       }
@@ -2934,10 +2961,12 @@ const baseHandler: ExportedHandler<Env> = {
       // container residency backstop (residency.rs) 409s any real cross-region
       // mismatch.
       const residencyKv = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
+      const residStart = Date.now();
       const residency = await resolveTenantResidency(env.CONFIG_DB, resolvedTenantId, {
         ...(residencyKv ? { kv: residencyKv } : {}),
         waitUntil: ctx.waitUntil.bind(ctx),
       });
+      stQResidMs = Date.now() - residStart;
       if (residency === RESIDENCY_UNRESOLVED) {
         // D1 hiccup with no cached region: we cannot establish residency.
         // FAIL-CLOSED — refuse rather than risk routing an EU tenant to US
@@ -3200,6 +3229,19 @@ const baseHandler: ExportedHandler<Env> = {
       }
       if (stOriginStart > 0 && stAuthEnd > 0 && stOriginStart > stAuthEnd) {
         st.push(`wdb;dur=${stOriginStart - stAuthEnd}`);
+      }
+      // `wdb` sub-phases: the four serial awaits that make it up, in execution
+      // order. Emitted whenever the phase RAN (so `dur=0` is a real measurement,
+      // not an absence); a phase that was skipped is simply omitted. `wdb` itself
+      // is kept unchanged so existing probes/dashboards do not break — these are
+      // strictly additive.
+      for (const [name, ms] of [
+        ["qmeter", stQMeterMs],
+        ["qtier", stQTierMs],
+        ["qstor", stQStorMs],
+        ["qresid", stQResidMs],
+      ] as const) {
+        if (ms >= 0) st.push(`${name};dur=${ms}`);
       }
       if (stOriginEnd > stOriginStart) {
         st.push(`origin;dur=${stOriginEnd - stOriginStart}`);
