@@ -47,8 +47,10 @@ for bodies), or invoke the **`okf-context`** skill.
 ## ⛔ Before merging ANY PR — do not skip
 
 **Merge with ONE command: `bash scripts/pre-merge-gate-check.sh --merge <PR>`.**
-It gates, then `gh pr merge --squash --delete-branch` only if every check is
-green — the merge is unreachable otherwise. **Never chain
+It gates, then `gh pr merge --squash` only if every check is green — the merge
+is unreachable otherwise — deletes the merged remote branch itself, and exits on
+whether the PR merged, not on whether local cleanup worked (#1051). A **draft**
+is refused outright, `--admin-reason` included (#1048). **Never chain
 `pre-merge-gate-check.sh <PR> | tail -N && gh pr merge`:** a pipeline's exit
 status is `tail`'s, so the gate's refusal is discarded — that is how #1049
 merged with 4 checks pending. The report-only form (no flag) is unchanged: run
@@ -61,7 +63,7 @@ ffi-matrix / s10-ship-gate are WEEKLY** (Tue/Wed/Thu/Fri). Dispatch the weekly
 ones explicitly when a PR touches their surface. The checks that REMAIN on a PR
 are the fast, load-bearing ones and they MUST be green. Never blind `--admin` merge; if you must `--admin`, state the documented
 infra/flake reason explicitly — `--merge --admin-reason "<why>"`, which the
-script refuses on pending/conflicting/missing-gate states (those never ran).
+script refuses on draft/pending/conflicting/missing-gate states (those never ran).
 (A green PR now takes minutes, not 30+.)
 
 **2026-08-02 correction — the "cron only" rule no longer covers everything it

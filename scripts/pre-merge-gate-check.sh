@@ -40,6 +40,28 @@
 # this process. When stdout is NOT a tty and `--merge` was not used, the script
 # prints a warning on STDERR (which the pipe does not capture) naming the footgun.
 #
+# ── The two 2026-08-04 holes in `--merge`'s first day (PR #1048, #1051) ──────
+# 1. A DRAFT PR passed the gate. On #1048 this printed "✅ All gates green — OK
+#    to merge PR #1048", issued the merge, and GitHub rejected it with
+#    `GraphQL: Pull Request is still a draft (mergePullRequest)`. Green checks on
+#    a draft prove the code compiles; they do not prove the AUTHOR considers it
+#    done, which is the one thing a draft states. So draft joins the STRUCTURAL
+#    family below (not-OPEN / CONFLICTING / pending / gates-absent) and is NOT
+#    overridable by --admin-reason: no documented flake reason makes an
+#    unfinished PR finished.
+#
+# 2. A merge that SUCCEEDED reported failure. On #1051 the squash landed
+#    (state=MERGED on GitHub) and then `gh pr merge --squash --delete-branch`
+#    died deleting the LOCAL branch — `fatal: 'main' is already used by worktree
+#    at …` — so the script exited 1 on a merge that had worked. gh deletes the
+#    local branch BEFORE the remote one, so that abort also left the remote
+#    branch behind (refs/heads/chore/repin-3bd8f3b7 is still on origin today).
+#    This repo runs a dozen simultaneous worktrees and one of them holds `main`,
+#    so the failing `git checkout main` inside gh is the norm, not an edge case.
+#    Two consequences below: the exit status is now derived from the PR's STATE
+#    on GitHub (did it merge?) instead of from gh's exit code (did cleanup also
+#    work?), and branch deletion no longer touches local git at all.
+#
 # ── The 2026-08-02 hole this closes ──────────────────────────────────────────
 # It printed "✅ All gates green — OK to merge PR #967" for a PR touching two
 # Workers on which dco, changelog-validate, gitleaks, trivy, secrets-matrix and
@@ -70,13 +92,15 @@ usage() {
 usage: bash scripts/pre-merge-gate-check.sh [flags] <PR-number>
 
   (no flags)              gate + report. Exit 0 = green, 1 = DO NOT MERGE.
-  --merge                 gate, then `gh pr merge --squash --delete-branch`
-                          IFF the gate went green. Nothing to chain with `&&`.
+  --merge                 gate, then `gh pr merge --squash` IFF the gate went
+                          green, then delete the merged REMOTE branch. Exit
+                          status = did the PR merge. Nothing to chain with `&&`.
   --dry-run               with --merge: print the merge command, do not run it.
   --admin-reason "<why>"  with --merge: add `--admin`, and ONLY when the sole
                           reason the gate refused is a failed/cancelled check.
-                          Never usable on pending, conflicting, or missing-gate
-                          refusals. The reason is echoed into the output.
+                          Never usable on draft, pending, conflicting, or
+                          missing-gate refusals. The reason is echoed into the
+                          output.
 USAGE
 }
 
@@ -131,6 +155,7 @@ fi
 # from an EXIT trap so it survives `2>&1 | tail -N` too, and so that every exit
 # path (including the early structural refusals) carries it.
 VERDICT_FILE=""
+# shellcheck disable=SC2329  # invoked indirectly by `trap on_exit EXIT` below; 0.11 only spots that when the script does not end in an explicit `exit`.
 on_exit() {
   local rc=$?
   if [ -n "$VERDICT_FILE" ]; then rm -f "$VERDICT_FILE"; fi
@@ -146,9 +171,10 @@ on_exit() {
 trap on_exit EXIT
 
 # `verdict` records WHY the gate refused, for --admin-reason eligibility only.
-# STRUCTURAL  = not OPEN / not MERGEABLE / no checks / required gates absent /
-#               anything pending. Never overridable: these mean the gates have
-#               NOT RUN, which no amount of documented flake reason can fix.
+# STRUCTURAL  = not OPEN / DRAFT / not MERGEABLE / no checks / required gates
+#               absent / anything pending. Never overridable: these mean the
+#               gates have NOT RUN (or the author has not declared the PR done),
+#               which no amount of documented flake reason can fix.
 # OVERRIDABLE = gates all present and finished, and the only non-green entries
 #               are failed/cancelled checks — the documented-flake case.
 verdict() {
@@ -165,16 +191,30 @@ run_gate() {
   # GitHub computes `mergeable` asynchronously, so UNKNOWN means "ask again", not
   # "fine". Both non-MERGEABLE states are refused: on a conflict the check list is
   # actively misleading (see the header), and on UNKNOWN we cannot yet tell.
-  local state mergeable rest mergestatus prstate json
-  state="$(gh pr view "$PR" --json mergeable,mergeStateStatus,state \
-    -q '"\(.mergeable) \(.mergeStateStatus) \(.state)"' 2>/dev/null || echo "ERROR ERROR ERROR")"
-  mergeable="${state%% *}"
-  rest="${state#* }"
-  mergestatus="${rest%% *}"
-  prstate="${rest#* }"
+  local state mergeable mergestatus prstate isdraft json
+  state="$(gh pr view "$PR" --json mergeable,mergeStateStatus,state,isDraft \
+    -q '"\(.mergeable) \(.mergeStateStatus) \(.state) \(.isDraft)"' 2>/dev/null \
+    || echo "ERROR ERROR ERROR ERROR")"
+  read -r mergeable mergestatus prstate isdraft <<<"$state"
 
   if [ "$prstate" != "OPEN" ]; then
     echo "  ⛔ DO NOT MERGE PR #$PR — the PR is $prstate, not OPEN."
+    verdict STRUCTURAL
+    return 1
+  fi
+
+  # ── Defense 4: a DRAFT is the author saying "not ready" ─────────────────────
+  # Tested with `!= "false"` rather than `== "true"` so an empty/garbled/renamed
+  # field refuses too — fail-CLOSED, same direction as the bucket allowlist.
+  if [ "$isdraft" != "false" ]; then
+    echo "  ⛔ DO NOT MERGE PR #$PR — the PR is a DRAFT (isDraft=$isdraft)."
+    echo
+    echo "     Green checks on a draft prove the code compiles; they do NOT prove"
+    echo "     the author considers it done, which is the one thing draft states."
+    echo "     GitHub refuses the mutation anyway (\`Pull Request is still a draft\`)"
+    echo "     — observed on #1048, 2026-08-04, AFTER this gate said \"OK to merge\"."
+    echo
+    echo "     Fix:  the AUTHOR runs \`gh pr ready $PR\`, then re-run this script."
     verdict STRUCTURAL
     return 1
   fi
@@ -330,10 +370,21 @@ if [ "$gate_rc" -ne 0 ]; then
   fi
 fi
 
-MERGE_ARGS=(--squash --delete-branch)
-# squash + delete-branch is house practice: every PR merged since #1013 landed as
-# a single `… (#NNNN)` squash commit on main, and the repo has
-# delete_branch_on_merge=false, so the branch must be deleted explicitly.
+# squash is house practice: every PR merged since #1013 landed as a single
+# `… (#NNNN)` squash commit on main.
+#
+# `--delete-branch` was DROPPED (it was added because this repo has
+# delete_branch_on_merge=false). Reason: gh deletes the LOCAL branch first — it
+# `git checkout`s the default branch to do it — and only then the remote one. In
+# a repo with a dozen live worktrees, one of which holds `main`, that checkout
+# fails with `fatal: 'main' is already used by worktree at …`, which on #1051
+# both made a landed merge look failed AND aborted before the remote delete, so
+# the branch it was supposed to clean up is still on origin. Deleting the ref by
+# API instead (below, after the merge is confirmed) does the part that actually
+# needed doing, touches no local git state, and cannot fail the merge. The local
+# branch is deliberately left alone — a worktree may be sitting on it — and is
+# named in the output so the operator can remove it.
+MERGE_ARGS=(--squash --delete-branch=false)
 if [ -n "$ADMIN_REASON" ] && [ "$gate_rc" -ne 0 ]; then
   MERGE_ARGS+=(--admin)
 fi
@@ -344,4 +395,62 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "  ⏸  --dry-run: NOT executed."
   exit 0
 fi
-gh pr merge "$PR" "${MERGE_ARGS[@]}"
+
+merge_rc=0
+gh pr merge "$PR" "${MERGE_ARGS[@]}" || merge_rc=$?
+
+# ── Did it MERGE? Ask GitHub, do not ask gh's exit code ──────────────────────
+# `gh pr merge` exits non-zero for anything that went wrong AFTER the mutation
+# too (local branch cleanup, notably). The only question this script's exit
+# status is allowed to answer is "is PR #N merged", so re-query the PR and
+# decide on that. Retried: the mutation is synchronous, but a transient network
+# error on the read must not be reported as a failed merge.
+post_state="UNKNOWN"; head_ref=""; cross=""
+for attempt in 1 2 3; do
+  post="$(gh pr view "$PR" --json state,headRefName,isCrossRepository \
+    -q '"\(.state) \(.headRefName) \(.isCrossRepository)"' 2>/dev/null \
+    || echo "UNKNOWN - -")"
+  read -r post_state head_ref cross <<<"$post"
+  if [ "$post_state" = "MERGED" ]; then break; fi
+  if [ "$attempt" -lt 3 ]; then sleep 2; fi
+done
+
+if [ "$post_state" != "MERGED" ]; then
+  echo
+  echo "  ⛔ THE MERGE DID NOT LAND — PR #$PR is state=$post_state (gh exited $merge_rc)."
+  echo "     Nothing was merged. Read gh's error above; the PR is unchanged."
+  if [ "$merge_rc" -ne 0 ]; then exit "$merge_rc"; fi
+  exit 1
+fi
+
+echo
+if [ "$merge_rc" -ne 0 ]; then
+  echo "  ✅ PR #$PR IS MERGED (GitHub says state=MERGED) — the merge LANDED."
+  echo "  ⚠️  …but \`gh pr merge\` exited $merge_rc AFTER the merge, in post-merge"
+  echo "      cleanup. That is cosmetic: the merge is done and this script exits 0"
+  echo "      because the PR merged. See gh's message above for what it tripped on."
+else
+  echo "  ✅ PR #$PR merged."
+fi
+
+# delete_branch_on_merge=false here, so the head branch survives the merge until
+# someone removes it. Failures are reported, never fatal: the merge already
+# landed, and a leftover branch is untidy, not broken.
+if [ "$cross" = "true" ]; then
+  echo "  ℹ️  fork PR — head branch \`$head_ref\` lives in another repo; not deleting."
+elif [ -z "$head_ref" ] || [ "$head_ref" = "-" ]; then
+  echo "  ⚠️  could not read headRefName — delete the merged branch manually."
+else
+  if gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/$head_ref" --silent 2>/dev/null; then
+    echo "  🧹 deleted remote branch \`$head_ref\`."
+  else
+    echo "  ⚠️  remote branch \`$head_ref\` was NOT deleted (already gone, or no perms):"
+    echo "        gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/$head_ref"
+  fi
+  if git show-ref --verify --quiet "refs/heads/$head_ref" 2>/dev/null; then
+    echo "  ⚠️  LOCAL branch \`$head_ref\` still exists here (left on purpose — a"
+    echo "      worktree may be on it). Remove it when convenient:"
+    echo "        git branch -D $head_ref      # or: git worktree remove <path>"
+  fi
+fi
+exit 0

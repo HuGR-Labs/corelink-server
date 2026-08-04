@@ -112,6 +112,46 @@ Each entry cross-references:
   assertion. 0 failures in 25 runs under 6 busy loops after the fix.
 
 ### Fixed
+- **fix(ci): `--merge`'s first day found two holes — the gate passed a DRAFT PR (#1048), and a merge
+  that SUCCEEDED reported failure (#1051).** Both are in `scripts/pre-merge-gate-check.sh`; neither
+  weakens #1050's guarantee (the `gh pr merge` call is still reachable only past an all-green gate,
+  in one process). **(1) Draft.** On **PR #1048** the gate printed `✅ All gates green — OK to merge
+  PR #1048` and issued the merge, which GitHub rejected: `GraphQL: Pull Request is still a draft
+  (mergePullRequest)`. Green checks on a draft prove the code compiles; they do not prove the AUTHOR
+  considers it done, which is the one thing draft states — so the check list was green and the
+  verdict was still wrong. `isDraft` is now read alongside `mergeable`/`state` and a draft is refused
+  as **STRUCTURAL**, the same family as not-OPEN / CONFLICTING / pending / required-gates-absent, and
+  therefore **not overridable by `--admin-reason`**: no documented flake reason makes an unfinished PR
+  finished. The test is `!= "false"`, not `== "true"`, so an empty or renamed field refuses too
+  (fail-closed, same direction as the bucket allowlist). **(2) Exit status.** On **PR #1051** the
+  squash landed (`state=MERGED` on GitHub) and then `gh pr merge --squash --delete-branch` died
+  deleting the **local** branch — `fatal: 'main' is already used by worktree at …` — and the script
+  exited 1. Safe direction, still wrong, and structural here: this repo runs a dozen simultaneous
+  worktrees and one of them holds `main`, so the `git checkout main` gh performs before deleting the
+  local branch fails as a matter of course. The exit status is now derived from **whether the PR
+  merged** — after the merge call the script re-queries `state` (3 attempts, so a transient read error
+  is not reported as a failed merge) and decides on that: `MERGED` ⇒ exit 0, with an explicit warning
+  naming the leftover branch when `gh` itself exited non-zero; anything else ⇒ exit non-zero with
+  `⛔ THE MERGE DID NOT LAND — PR #N is state=<state>`. **`--delete-branch` was dropped, not patched.**
+  gh deletes the local branch *before* the remote one, so the #1051 abort also skipped the remote
+  delete — `refs/heads/chore/repin-3bd8f3b7` is still on origin today, i.e. the flag both broke the
+  exit status and failed at its own job. The script now passes `--delete-branch=false` (which also
+  suppresses gh's interactive delete prompt) and deletes the merged ref itself with
+  `gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/<head>` once the merge is confirmed — the part
+  that actually needed doing, given `delete_branch_on_merge=false`, with no local git side effects and
+  no ability to fail the merge. Fork PRs are skipped; the **local** branch is deliberately left alone
+  (a worktree may be sitting on it) and is named in the output. **Default (report-only) mode is
+  unchanged**, proven by diffing stdout+exit against `git show origin/main:` on live PRs #1009
+  (9 failing checks, exit 1) and #795 (CONFLICTING, exit 1) — both `IDENTICAL` — plus stub scenarios
+  green/pending/fail/conflicting/not-OPEN, all identical. The **only** deliberate delta is a draft:
+  on live #1048 the old script prints `✅ All gates green — OK to merge` and exits 0, the new one
+  refuses and exits 1 — that delta *is* the fix. **Proven with a `gh` stub logging every invocation:**
+  draft + `--merge` ⇒ `⛔ DO NOT MERGE … the PR is a DRAFT`, exit 1, **zero** `gh pr merge` calls;
+  draft + `--merge --admin-reason "<why>"` ⇒ `⛔ --admin-reason REFUSED: this refusal is STRUCTURAL`,
+  **zero** merge calls; merge lands + `gh` exits 1 in cleanup ⇒ `✅ PR #1051 IS MERGED … the merge
+  LANDED` + the leftover-branch warning, **exit 0**; merge genuinely fails (PR still OPEN) ⇒ `⛔ THE
+  MERGE DID NOT LAND`, **exit 1**. #1050's own controls re-run unchanged: pending ⇒ zero merges,
+  CONFLICTING ⇒ zero merges, bare `--admin` ⇒ exit 2.
 - **fix(ci): the mandatory merge gate was correct and still failed to gate — a pipeline threw its
   exit code away, so `pre-merge-gate-check.sh` now performs the merge itself (`--merge`).** Observed
   live on **PR #1049**: the invocation was
