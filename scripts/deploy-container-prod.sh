@@ -56,9 +56,14 @@
 #   - CLOUDFLARE_API_TOKEN (or CF_API_TOKEN) — CF API auth (CTRL-CRED-001:
 #     read from env / .env.local, never embedded here).
 #   - CLOUDFLARE_ACCOUNT_ID — required for the Containers applications API.
-#   - WRANGLER — wrangler binary (default: worker/node_modules/.bin/wrangler,
-#     the 4.x pin; v3 cannot parse [[containers]] arrays). Falls back to
-#     `npx wrangler@latest` if that path is absent.
+#   - WRANGLER — the wrangler CLI. Accepts an executable PATH (default:
+#     worker/node_modules/.bin/wrangler), a bare COMMAND NAME on $PATH (what CI
+#     sets after `npm install -g wrangler@<pin>`), or a full command line.
+#     v3 cannot parse [[containers]] arrays, so v4 is a hard floor. If none of
+#     those resolve: FATAL on CI (a prod deploy never network-resolves its
+#     toolchain), and locally a loud warning + the PINNED `npx wrangler@<pin>`.
+#     The pin lives in scripts/_wrangler-pin.sh — one copy, shared with
+#     .github/workflows/cf-deploy-prod.yml.
 #
 # Usage:
 #   bash scripts/deploy-container-prod.sh                 # dry-run, env=prod
@@ -125,10 +130,45 @@ CF_TOKEN="${CLOUDFLARE_API_TOKEN:-${CF_API_TOKEN:-}}"
 ACCT="${CLOUDFLARE_ACCOUNT_ID:-}"
 
 # ── Resolve wrangler ───────────────────────────────────────────────────────
+# WRANGLER may be any of three forms:
+#   1. a PATH to an executable  (default: worker/node_modules/.bin/wrangler)
+#   2. a bare COMMAND NAME on $PATH — this is what CI sets (`WRANGLER: wrangler`,
+#      after `npm install -g wrangler@$WRANGLER_PINNED_VERSION`)
+#   3. a multi-word command line (e.g. `npx wrangler@4.95.0`), used by operators
+#
+# BUG FIXED 2026-08-04: this block used to test ONLY `[ ! -x "$WRANGLER" ]` — a
+# path test that a bare command name can never satisfy. Form 2 was therefore
+# silently discarded and EVERY production deploy fell through to
+# `npx wrangler@latest`, resolving an unpinned wrangler from npm at deploy time.
+# Measured on the last two prod deploys (runs 30923390611, 30918887614): CI
+# installed 4.95.0, the deploy ran 4.118.0 — 23 minor versions past the audited
+# pin. The pin had never been in force on this path.
+# shellcheck source=scripts/_wrangler-pin.sh
+. "$REPO_ROOT/scripts/_wrangler-pin.sh"
+
 WRANGLER="${WRANGLER:-$REPO_ROOT/worker/node_modules/.bin/wrangler}"
-if [ ! -x "$WRANGLER" ]; then
-    warn "local wrangler not found at $WRANGLER; falling back to 'npx wrangler@latest'"
-    WRANGLER="npx wrangler@latest"
+WRANGLER_IS_CMDLINE=0
+case "$WRANGLER" in *[[:space:]]*) WRANGLER_IS_CMDLINE=1 ;; esac
+
+if [ -x "$WRANGLER" ]; then
+    :                                                   # form 1 — executable path
+elif command -v "$WRANGLER" >/dev/null 2>&1; then
+    WRANGLER="$(command -v "$WRANGLER")"                # form 2 — name on $PATH
+elif [ "$WRANGLER_IS_CMDLINE" -eq 1 ]; then
+    log "using caller-supplied wrangler command line: $WRANGLER"   # form 3
+elif [ -n "${CI:-}${GITHUB_ACTIONS:-}" ]; then
+    # Fail-loud on CI. A production deploy must never resolve its toolchain from
+    # the network at deploy time: that is exactly the defect above. If the
+    # `npm install -g wrangler@$WRANGLER_PINNED_VERSION` step did not take, we
+    # stop rather than ship prod with whatever npm's `latest` happens to be.
+    die "wrangler not resolvable from WRANGLER='$WRANGLER' (not an executable path, not on \$PATH).
+     Refusing to fall back to an unpinned 'npx wrangler' on CI — the pinned install step must have failed.
+     Expected: 'npm install -g wrangler@$WRANGLER_PINNED_VERSION' before this script (see .github/workflows/cf-deploy-prod.yml)."
+else
+    # Local/dev convenience only, and still PINNED — never '@latest'.
+    warn "wrangler not found at '$WRANGLER' and not on \$PATH; falling back to 'npx wrangler@$WRANGLER_PINNED_VERSION'."
+    warn "  (this downloads wrangler at run time; prefer 'pnpm install --filter worker...' for a local binary)"
+    WRANGLER="npx wrangler@$WRANGLER_PINNED_VERSION"
 fi
 
 # ── Extract the pinned image ref for this env from wrangler.toml ────────────
@@ -153,7 +193,7 @@ log "Env:            $ENV_NAME"
 log "Pinned image:   $PINNED_REF"
 log "  image name:   $PINNED_IMAGE_NAME"
 log "  image tag:    $PINNED_TAG"
-log "Wrangler:       $WRANGLER"
+log "Wrangler:       $WRANGLER (pin $WRANGLER_PINNED_VERSION, scripts/_wrangler-pin.sh)"
 log "Convergence:    poll ${POLL_INTERVAL_S}s, grace ${GRACE_PER_DEPLOY_S}s/deploy, total ${TIMEOUT_S}s, max $MAX_REDEPLOYS deploy(s), $CONFIRM_POLLS confirming read(s)"
 
 # ── Root-cause guard (2026-07-05 stale-pin incident) ──────────────────────────
@@ -294,6 +334,21 @@ if [ "$APPLY" -eq 0 ]; then
 fi
 
 # ── Preconditions for apply ────────────────────────────────────────────────
+# Print the wrangler version that will ACTUALLY deploy. Before 2026-08-04 the
+# deploy log never showed it, which is why a silent `npx wrangler@latest`
+# fallback survived undetected across every prod deploy. Probed only on --apply
+# so a dry-run never triggers an npx download. Report-only: a mismatch is loud
+# but not fatal (a `--version` output-format change must not fail a prod deploy).
+# shellcheck disable=SC2086  # $WRANGLER may be a multi-word command line (form 3)
+WRANGLER_ACTUAL_VERSION="$($WRANGLER --version 2>/dev/null | tr -d '\r' | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+if [ -z "$WRANGLER_ACTUAL_VERSION" ]; then
+    warn "could not read a version from '$WRANGLER --version' (deploy continues; pin is $WRANGLER_PINNED_VERSION)."
+elif [ "$WRANGLER_ACTUAL_VERSION" != "$WRANGLER_PINNED_VERSION" ]; then
+    warn "wrangler $WRANGLER_ACTUAL_VERSION is NOT the audited pin $WRANGLER_PINNED_VERSION (scripts/_wrangler-pin.sh)."
+else
+    log "Wrangler version: $WRANGLER_ACTUAL_VERSION (== pin)"
+fi
+
 [ -n "$CF_TOKEN" ] || die "CLOUDFLARE_API_TOKEN / CF_API_TOKEN not set (needed for the rollout-verify API)."
 [ -n "$ACCT" ]     || die "CLOUDFLARE_ACCOUNT_ID not set (needed for the Containers applications API)."
 command -v jq   >/dev/null 2>&1 || die "jq not found (required to parse the CF API response)."

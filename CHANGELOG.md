@@ -64,6 +64,30 @@ Each entry cross-references:
   assertion. 0 failures in 25 runs under 6 busy loops after the fix.
 
 ### Fixed
+- **fix(deploy): the exact wrangler pin was never in force on the production deploy path — a
+  `-x` path test silently discarded the CI override and every prod deploy ran
+  `npx wrangler@latest`.** `.github/workflows/cf-deploy-prod.yml` installs `wrangler@4.95.0`
+  (pinned exact by the 2026-06-11 pre-launch pentest, #248) and sets `WRANGLER: wrangler` so the
+  deploy script uses that global binary. But `scripts/deploy-container-prod.sh` resolved the
+  override with `if [ ! -x "$WRANGLER" ]` — a *path* test that a bare command name can never
+  satisfy — and fell through to `WRANGLER="npx wrangler@latest"`. Measured on the last two
+  production deploys (runs `30923390611`, `30918887614`): CI installed 4.95.0, the deploy ran
+  **4.118.0**, 23 minor versions ahead of the audited pin and resolved fresh from npm at deploy
+  time. Nothing printed the version, so the fallback survived undetected since the pin landed:
+  the audited pin has never governed a production deploy, and prod's deploy toolchain was
+  whatever npm's `latest` dist-tag pointed at that minute. The resolver now accepts an
+  executable path, a bare command name (via `command -v`), or a full command line; when none
+  resolves it is **fatal on CI** — a prod deploy must never network-resolve its own toolchain —
+  and locally warns loudly and falls back to a *pinned* `npx wrangler@<pin>`, never `@latest`.
+  The deploy log now prints the wrangler version that will actually deploy and warns if it is not
+  the pin (report-only: a `--version` format change must not fail a deploy). The version string
+  itself moved to `scripts/_wrangler-pin.sh`, sourced by both the workflow's install steps and
+  the scripts' fallback, so the two copies cannot drift apart again.
+  `scripts/put-secrets-regional.sh` carried the identical resolver bug (bare name → unpinned
+  `npx wrangler@latest`) and is fixed the same way. Not changed, reported for the record:
+  `scripts/verify-regional-secrets.sh`, `scripts/_pages-deploy-common.sh` and
+  `scripts/f-day-deploy-pages-docs.sh` also `-x`-test `$WRANGLER`, but they hard-error instead of
+  substituting an unpinned toolchain, so they fail loudly rather than silently drifting.
 - **fix(deploy): the container rollout verifier polled the applications LIST endpoint, which
   serves a stale snapshot — it failed two prod deploys that had actually rolled.**
   `scripts/deploy-container-prod.sh` compared the wrangler.toml pin against

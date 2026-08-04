@@ -129,8 +129,16 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install wrangler
-        run: npm install -g wrangler@4.95.0  # pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]] arrays (verified 2026-06-05)
+      - name: Install wrangler (pinned; version from scripts/_wrangler-pin.sh)
+        run: |
+          # Single source of truth for the pin — the same file the deploy
+          # scripts read for their fallback, so the two cannot drift apart.
+          # Pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]]
+          # arrays (verified 2026-06-05).
+          . ./scripts/_wrangler-pin.sh
+          echo "installing wrangler@${WRANGLER_PINNED_VERSION}"
+          npm install -g "wrangler@${WRANGLER_PINNED_VERSION}"
+          wrangler --version
 
       - name: Apply D1 migrations (idempotent; shared prod D1)
         env:
@@ -166,8 +174,16 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install wrangler
-        run: npm install -g wrangler@4.95.0  # pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]] arrays (verified 2026-06-05)
+      - name: Install wrangler (pinned; version from scripts/_wrangler-pin.sh)
+        run: |
+          # Single source of truth for the pin — the same file the deploy
+          # scripts read for their fallback, so the two cannot drift apart.
+          # Pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]]
+          # arrays (verified 2026-06-05).
+          . ./scripts/_wrangler-pin.sh
+          echo "installing wrangler@${WRANGLER_PINNED_VERSION}"
+          npm install -g "wrangler@${WRANGLER_PINNED_VERSION}"
+          wrangler --version
 
       - name: List CF Worker secrets (prod env)
         env:
@@ -279,8 +295,16 @@ jobs:
           npm install -g pnpm@10.32.1
           pnpm install --frozen-lockfile --filter worker...
 
-      - name: Install wrangler
-        run: npm install -g wrangler@4.95.0  # pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]] arrays (verified 2026-06-05)
+      - name: Install wrangler (pinned; version from scripts/_wrangler-pin.sh)
+        run: |
+          # Single source of truth for the pin — the same file the deploy
+          # scripts read for their fallback, so the two cannot drift apart.
+          # Pinned exact (audit 2026-06-11); v3 cannot parse [[env.*.containers]]
+          # arrays (verified 2026-06-05).
+          . ./scripts/_wrangler-pin.sh
+          echo "installing wrangler@${WRANGLER_PINNED_VERSION}"
+          npm install -g "wrangler@${WRANGLER_PINNED_VERSION}"
+          wrangler --version
 
       - name: Install jq (CF rollout-verify parser)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq
@@ -294,8 +318,13 @@ jobs:
           # CF Containers applications API until the running configuration.image
           # matches the wrangler.toml pin — re-deploying if the first deploy
           # didn't roll the running instances (a known CF Containers beta
-          # behavior). Use the globally-installed wrangler (no local node_modules
-          # path on the ubuntu runner).
+          # behavior). Use the globally-installed wrangler (the pnpm step above
+          # also drops a worker-local wrangler, but the audited pin is the global
+          # one). This bare NAME was silently ignored until 2026-08-04 — the
+          # script's resolver only did a path test, so every prod deploy actually
+          # ran `npx wrangler@latest` (4.118.0 vs the 4.95.0 pin, runs
+          # 30923390611 / 30918887614). The resolver now honours a bare name via
+          # `command -v` and is FATAL on CI rather than falling back to npx.
           WRANGLER: wrangler
           # Recycle-only override: when the dispatch requested it, bypass the
           # container-pin freshness gate so the RUNNING pinned image is re-deployed
