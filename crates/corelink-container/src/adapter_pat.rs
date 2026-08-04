@@ -3614,30 +3614,75 @@ mod tests {
     ///    downstream of the HMAC fast-reject (step 1 of
     ///    [`PatVerifier::verify_capability`]); without the key every probe is an
     ///    `InvalidPat` that never touches D1, a permit, or a bucket — see
-    ///    `forged_token_does_not_touch_argon2_permits`. An attacker who holds
-    ///    the signing key can mint valid PATs outright and has no use for a
-    ///    liveness bit.
+    ///    `forged_token_does_not_touch_argon2_permits`. Note what this does
+    ///    **not** say: the key alone grants no access (a PAT still needs a live
+    ///    D1 row whose `pat_hash` Argon2id-verifies the presented secret — step
+    ///    3 below, `verify_with_hash_multi`; with no row the pipeline can never
+    ///    return `Ok`), and a key-holder **can** mint `token_id.<any secret>`
+    ///    with a valid HMAC, so "valid signature, wrong secret" is a state they
+    ///    construct at will and a liveness bit **is** useful to them. The key
+    ///    requirement raises the bar; it is not what closes the oracle. The
+    ///    bullets below are.
     ///  - **The one edge-unauthenticated surface collapses both arms anyway.**
     ///    OCI `/token` (`routes/oci.rs`) maps `InvalidPat` AND
     ///    `Backend(..)` to the same scrubbed `401 authentication failed (ref:…)`
     ///    envelope — pinned by `oci::tests::token_backend_fault_is_opaque_to_unauth_caller`
-    ///    — so the divergence is not observable there even with the key.
-    ///  - **Saturating the shared bucket is itself the flood the bucket exists
-    ///    to bound**, and holding it saturated costs the attacker a sustained
-    ///    valid-HMAC flood while learning nothing a `token_id`'s ordinary
-    ///    latency signature would not already give (that axis is the dummy
-    ///    burn's job — `INV-AUTH-CONSTANT-TIME-COLD-PAD`).
+    ///    — so the divergence is not observable there even with the key. This
+    ///    bullet now carries more of the argument than it used to: it is the
+    ///    only surface that is reachable unauthenticated, and it is the one that
+    ///    collapses the two arms outright.
+    ///  - **Every surface that DOES distinguish the two arms is gated.** On
+    ///    cargo/brew/npm/pip a shed is `503` + `Retry-After` and `InvalidPat` is
+    ///    `401` — divergent — but the Worker's `extractAuth` resolves the `pat`
+    ///    row at the edge and 401s `pat_not_found` before forwarding
+    ///    (`worker/src/index.ts:1277-1279`), and the verify cache is
+    ///    positives-only (≤5 s isolate, `worker/src/lib/pat_verify_cache.ts:153`;
+    ///    ≤60 s KV, same file `:100`). So this arm is unreachable there except
+    ///    for a `token_id` that was positively cached and then revoked inside
+    ///    that window — which required authenticating with the real secret, i.e.
+    ///    a liveness the prober already knew.
+    ///    `/internal/v1/auth/introspect` distinguishes them too (200
+    ///    `{valid:false}` vs 503, `routes/auth_introspect.rs:634-656`,
+    ///    deliberately not special-cased) but demands the internal-auth key
+    ///    **on top of** the signing key, and without saturation both arms there
+    ///    return the same 200.
+    ///  - **Timing is NOT covered in this state — do not imply it is.** On a
+    ///    shed the burn is skipped (the `try_acquire` above returns before the
+    ///    `spawn_blocking`), so the unknown arm answers with no Argon2id at all
+    ///    while the live arm pays a full one. Since the bucket acquire on this
+    ///    arm is NON-BLOCKING ([`PerTenantGate::try_acquire`], #1046) that
+    ///    answer comes back IMMEDIATELY rather than after `ARGON2_PERMIT_WAIT`,
+    ///    so the gap is wider than the pre-#1046 order left, not narrower.
+    ///    `INV-AUTH-CONSTANT-TIME-COLD-PAD` holds only when the burn actually
+    ///    runs; citing it here would be exactly backwards. This residual is
+    ///    accepted for the same reason as the status divergence — signing key
+    ///    required, no ungated surface exposes it — not because the pad covers
+    ///    it.
     ///
     /// What this test defends is the SHAPE of the state, so a future refactor
     /// cannot slide the live arm into the shared bucket (which would turn one
     /// bogus-token flood into a fleet-wide 503) or the unknown arm out of it
-    /// (which would restore the drain vector) without turning this red.
+    /// (which would restore the drain vector) without turning this red. The
+    /// wrong-secret arm (1b) is what makes the pinned bit unambiguous: with the
+    /// credential held wrong on BOTH sides, the divergence can only be encoding
+    /// row existence.
     #[tokio::test]
     async fn a_saturated_shared_burn_bucket_sheds_only_the_unknown_arm() {
         let key = test_key();
         let (pt_live, tid, hash, tenant) = mint_pat(&key, 100, SCOPE_CACHE_RW);
         let (pt_unknown, _tid2, _h2, _t2) = mint_pat(&key, 101, SCOPE_CACHE_RW);
-        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        // The WRONG-SECRET arm: its token_id IS in D1, but the stored hash
+        // belongs to a different secret, so the Argon2id runs and fails. Its row
+        // carries the LIVE tenant string on purpose — same per-tenant bucket,
+        // same headroom, so the only thing separating it from `pt_unknown` is
+        // row existence. (Idiom borrowed from
+        // `a_concurrent_burst_cannot_reveal_whether_the_token_id_exists`.)
+        let (pt_wrong, tid_wrong, _h3, _t3) = mint_pat(&key, 103, SCOPE_CACHE_RW);
+        let (_pt_foreign, _tid4, foreign_hash, _t4) = mint_pat(&key, 104, SCOPE_CACHE_RW);
+        let lookup = Arc::new(fake_with_rows(vec![
+            (tid, row(&hash, &tenant, "cas:rw")),
+            (tid_wrong, row(&foreign_hash, &tenant, "cas:rw")),
+        ]));
         // Ample global pool and the per-tenant sub-cap at its PRODUCTION value,
         // so the only thing that can reject is a bucket this test holds itself.
         let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
@@ -3685,6 +3730,31 @@ mod tests {
             other => panic!("expected Backend(pat verifier overloaded), got {other:?}"),
         }
 
+        // Arm 1b — THE BIT THIS TEST IS ACTUALLY ABOUT, isolated. Arm 1 vs arm 2
+        // pairs "no row" against "row + CORRECT secret", which conflates two
+        // different facts: row existence and credential correctness. This arm
+        // holds the credential WRONG in both cases and varies only the row, so
+        // what the divergence encodes is unambiguous — and it is the state an
+        // attacker with the signing key actually drives, since they can mint
+        // `token_id.<any secret>` at will but cannot produce a secret matching a
+        // hash they have never seen. Its row is live, so it never consults the
+        // shared bucket: it routes to the (free) tenant bucket, pays a full
+        // failing Argon2id, and answers the uniform 401.
+        let wrong = verifier.verify(&pt_wrong).await;
+        match &wrong {
+            Err(VerifyError::InvalidPat) => {}
+            other => panic!("expected InvalidPat for a live row + wrong secret, got {other:?}"),
+        }
+        assert_ne!(
+            observe(&wrong),
+            observe(&unknown),
+            "this is the ACCEPTED divergence being pinned: with the credential \
+             held wrong on both sides, the row-NOT-FOUND arm sheds and the \
+             row-FOUND arm 401s. If these ever match, the shape this test \
+             defends has changed — re-derive the safety argument above, do not \
+             just relax the assertion"
+        );
+
         // Arm 2 — THE HALF THAT MAKES THIS A PIN RATHER THAN A TAUTOLOGY. In the
         // same instant, on the same verifier, a live PAT still resolves: it never
         // consults the shared bucket, so a bogus-token flood cannot 503 a paying
@@ -3705,6 +3775,15 @@ mod tests {
             observe(&verifier.verify(&pt_unknown).await),
             Observed::Unauthorized,
             "outside saturation an unknown row must be the uniform 401, never a 503"
+        );
+        // …and with the bucket released the two wrong-credential arms become
+        // indistinguishable again, which is what bounds the divergence to the
+        // saturated state rather than making it a standing property.
+        assert_eq!(
+            observe(&verifier.verify(&pt_wrong).await),
+            observe(&verifier.verify(&pt_unknown).await),
+            "outside saturation the row-FOUND and row-NOT-FOUND wrong-credential \
+             arms must be indistinguishable"
         );
     }
 
