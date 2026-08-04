@@ -2869,10 +2869,18 @@ const baseHandler: ExportedHandler<Env> = {
       // `_anonymous`/`_system`/`_pending`, but there the other three are absent too.
       //
       // Be precise about what is confirmed. CORELINK_INTERNAL_AUTH_KEY is NOT a
-      // metering key — it is the SHARED internal-auth secret that every consumer
-      // falls back to when its dedicated key is unset/short (lib/internal_auth.ts),
-      // which today is the live configuration for PAT mint/rotate, runner mint,
-      // session exchange, githugr tenant-lookup and the `/_internal/*` gate.
+      // metering key — it is the SHARED internal-auth secret that
+      // `resolveConsumerKey` (lib/internal_auth.ts:124-149) falls back to for its
+      // six consumers when a dedicated key is UNSET. Not "unset or short": a key
+      // that is set but under the length floor is REFUSED fail-closed, precisely so
+      // a misconfiguration cannot silently widen the blast radius. The ceiling is
+      // therefore PAT mint/rotate, runner mint, session exchange, quota-read, admin
+      // and the `/_internal/*` gate; the container-side erase and DSR-anchor gates
+      // deliberately have NO fallback at all (secrets-checklist finding H4), and
+      // that no-fallback property is itself a control. Which dedicated keys are
+      // actually provisioned in prod is NOT determinable from this repo — CF
+      // secrets are write-only — so treat the above as the ceiling, not the
+      // current state.
       //
       // Accepted anyway, for a reason that survives that blast radius: a caller who
       // can reach this oracle already holds the complete key (the compare is

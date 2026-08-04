@@ -62,6 +62,11 @@ Each entry cross-references:
   intermittently RED-ed unrelated PRs on the 2-vCPU runner. Replaced with a bounded check; the
   case's actual meaning (the phase is PRESENT, not suppressed) was already carried by a separate
   assertion. 0 failures in 25 runs under 6 busy loops after the fix.
+  Third round found the harness's own no-delay case was not one: the `"none"` sentinel collided with
+  `phaseOf`'s return for an UNCLASSIFIED statement, so asking for "no delay" delayed every statement
+  the classifier could not name — including `SELECT tier FROM tier_selections` inside the window.
+  The supposedly-quiet env measured `wdb` at ~151 ms; it now measures 11 ms. The sentinel moved
+  outside the union (`SlowTarget | null`).
 
 ### Fixed
 - **fix(oci): the OCI `/token` rate-limit bucket was GLOBAL — one host at 50 req/s could 429

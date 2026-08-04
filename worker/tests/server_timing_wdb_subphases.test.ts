@@ -99,8 +99,16 @@ async function mintValidToken(): Promise<string> {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Which single statement to slow down, so exactly one phase should absorb it. */
-type SlowTarget = "none" | "meter" | "tier" | "storage" | "residency";
+/**
+ * Which single statement to slow down, so exactly one phase should absorb it.
+ * `null` (not a member) means "delay nothing" — the no-delay sentinel is
+ * deliberately OUTSIDE this union. It used to be a `"none"` member, which
+ * collided with `phaseOf`'s return for an UNCLASSIFIED statement: asking for
+ * "no delay" then delayed every statement `phaseOf` could not name, including
+ * `SELECT tier FROM tier_selections` inside the `wdb` window. The supposed
+ * no-delay env measured `wdb` at ~151 ms.
+ */
+type SlowTarget = "meter" | "tier" | "storage" | "residency";
 
 /**
  * Classify a statement by the phase it belongs to. Deliberately matched on the
@@ -113,24 +121,27 @@ type SlowTarget = "none" | "meter" | "tier" | "storage" | "residency";
  * and only the second is classified here. That is deliberate and harmless: the
  * delay still lands inside the `qtier` window either way, and matching one gives
  * a single, unambiguous injection point per phase.
+ *
+ * Returns `null` for a statement this classifier does not name — which must NOT
+ * be confusable with "delay nothing"; see {@link SlowTarget}.
  */
-function phaseOf(sql: string): SlowTarget {
+function phaseOf(sql: string): SlowTarget | null {
   if (sql.includes("INSERT INTO monthly_request_counts")) return "meter";
   if (sql.includes("SUM(bytes_used)")) return "storage";
   if (sql.includes("SELECT tier FROM tenant")) return "tier";
   if (sql.includes("SELECT primary_region FROM tenant")) return "residency";
-  return "none";
+  return null;
 }
 
 /**
  * D1 mock that resolves the PAT and the tier, and delays exactly one statement
  * class by {@link DELAY_MS}.
  */
-function makeD1(slow: SlowTarget): D1Database {
+function makeD1(slow: SlowTarget | null): D1Database {
   const stmt = (sql: string) => ({
     bind: (...args: unknown[]) => ({
       first: async <T>() => {
-        if (phaseOf(sql) === slow) await sleep(DELAY_MS);
+        if (slow !== null && phaseOf(sql) === slow) await sleep(DELAY_MS);
         if (sql.includes("INSERT INTO monthly_request_counts")) {
           return { request_count: 1 } as T;
         }
@@ -178,7 +189,7 @@ function makeCtx(): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-function makeEnv(slow: SlowTarget): Env {
+function makeEnv(slow: SlowTarget | null): Env {
   const stub = {
     fetch: async (): Promise<Response> =>
       new Response(JSON.stringify({ ok: true }), {
@@ -246,16 +257,17 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
   });
 
   it("emits all four sub-phases on a normal authed request", async () => {
-    const st = await requestOnce(makeEnv("none"), await mintValidToken(), "a");
+    const st = await requestOnce(makeEnv(null), await mintValidToken(), "a");
     for (const p of SUBPHASES) {
       expect(st, `${p} missing from Server-Timing`).toHaveProperty(p);
     }
     // The aggregate stays, unchanged, so existing probes keep working.
     expect(st).toHaveProperty("wdb");
 
-    // Accounting with NOTHING injected: `wdb` and the sum are both near zero, so
-    // any un-instrumented await inside the window shows up here immediately
-    // rather than having to exceed the residual tolerance of a 150 ms case.
+    // Accounting with NOTHING injected — now genuinely nothing (see SlowTarget).
+    // `wdb` and the sum are both near zero, so an un-instrumented await inside the
+    // window shows up here at its full cost instead of having to exceed the
+    // residual tolerance while a 150 ms delay dominates the window.
     const sum = SUBPHASES.reduce((a, p) => a + (st[p] ?? 0), 0);
     expect(
       Math.abs(st["wdb"]! - sum),
@@ -319,7 +331,7 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     // was it skipped?" ambiguity the sub-phase sentinel exists to remove. Fixing
     // it only for the children would leave the parent `wdb` capable of
     // disappearing while all four of its own sub-phases report 0.
-    const env = makeEnv("none");
+    const env = makeEnv(null);
     const token = await mintValidToken();
     await requestOnce(env, token, "f"); // warm the caches so the reads cost ~0
     const st = await requestOnce(env, token, "g");
@@ -338,10 +350,13 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     // `resolveTenantTierCached` returns without any I/O and the clock reads 0.
     // The phase RAN, so it MUST still be emitted — otherwise "cache-served" and
     // "never executed" become the same observation on the wire.
-    const env = makeEnv("none");
+    // Delay the tier read specifically, so a cache MISS costs DELAY_MS here. Without
+    // that, an L1 hit and a D1 read both measure ~0 in this harness and the bound
+    // below would hold no matter what — decoration rather than a check.
+    const env = makeEnv("tier");
     const token = await mintValidToken();
-    await requestOnce(env, token, "c");
-    const st = await requestOnce(env, token, "d");
+    await requestOnce(env, token, "c"); // cold: pays the injected tier delay
+    const st = await requestOnce(env, token, "d"); // warm: L1 hit, no D1 read
 
     expect(
       st,
@@ -361,7 +376,7 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     // A fan-out sub-request carries the server secret and skips the UPSERT
     // (#11 — it was already metered by the primary Worker). Nothing ran, so
     // there is nothing to report: the phase must be ABSENT, not 0.
-    const st = await requestOnce(makeEnv("none"), await mintValidToken(), "e", {
+    const st = await requestOnce(makeEnv(null), await mintValidToken(), "e", {
       "x-corelink-fanout-from": INTERNAL_AUTH_KEY,
     });
 
