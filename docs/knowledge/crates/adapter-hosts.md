@@ -4,9 +4,10 @@ title: "Adapter-host crate cluster (surfaces + KMS)"
 description: "The translation layers that map third-party cache protocols (package managers, Bazel REAPI, Turborepo) and external KMS providers onto CoreLink's canonical CAS/auth SPI traits."
 source_files:
   - "crates/corelink-adapter-host/src/lib.rs"
+  - "crates/corelink-adapter-host/src/overload.rs"
   - "crates/corelink-bazel-bridge/src/lib.rs"
   - "crates/corelink-byok/src/lib.rs"
-checkpoint_sha: "30789129fe9bd4fdff000ecea3e6abefed996a2f"
+checkpoint_sha: "a298cd91a4f0429d6e3d31a64191d2b0e87eced5"
 provenance: "AUTHORED"
 tags: ["crates", "adapters", "bazel", "byok", "kms", "surfaces"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -23,7 +24,8 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 # How it works
 
 - `corelink-adapter-host` bridges each package-manager adapter's local async port traits (`CasStore`, `TenantResolver`, `KvStore`, `BlobStore`, `ManifestKvStore`) to the canonical sync workspace SPI traits, calling sync handlers from async ports via `spawn_blocking` so the runtime thread is never blocked (`crates/corelink-adapter-host/src/lib.rs:1-29`).
-- It physically absorbed the 5 Wave-34 adapter crates (brew/cargo/npm/oci/pip) as inline submodules, so one crate now hosts both the absorbed adapter source and its SPI bridge under stable `corelink_adapter_host::<adapter>::*` paths (`crates/corelink-adapter-host/src/lib.rs:31-66`).
+- It physically absorbed the 5 Wave-34 adapter crates (brew/cargo/npm/oci/pip) as inline submodules, so one crate now hosts both the absorbed adapter source and its SPI bridge under stable `corelink_adapter_host::<adapter>::*` paths (`crates/corelink-adapter-host/src/lib.rs:31-67`).
+- One cross-adapter concern lives at the crate root rather than in any single submodule: `overload` holds the shared `Retry-After` horizon every surface attaches to a PAT-verifier load shed, so cargo/brew/npm/pip cannot drift apart on it (`crates/corelink-adapter-host/src/overload.rs:35`; `crates/corelink-adapter-host/src/lib.rs:66`).
 - `corelink-bazel-bridge` maps the REAPI v2 REST subset Bazel speaks (`GET/POST /<instance>/blobs/…`, `findMissingBlobs`) onto the existing CAS/AC handler traits, REST-only with no gRPC runtime dependency (`crates/corelink-bazel-bridge/src/lib.rs:1-50`).
 - `corelink-byok` is a microkernel: a thin core (`KmsProvider` trait + envelope encryption + `DekCache`) plus exactly one feature-selected provider plugin (`aws`/`gcp`/`azure`/`vault`), with multi-provider builds rejected at compile time (`crates/corelink-byok/src/lib.rs:1-43`).
 
@@ -33,6 +35,7 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 - Bazel digests are validated at the boundary: hash must be 64 lowercase hex, size ≤ 4 GiB on writes, PUT body length must equal `size_bytes`, and `findMissingBlobs` rejects batches > 4096 digests (`crates/corelink-bazel-bridge/src/lib.rs:42-50`, `crates/corelink-bazel-bridge/src/lib.rs:68-75`).
 - The bridge is REST-only by invariant `INV-BAZEL-NO-GRPC` — no tonic/prost/gRPC dependency (`crates/corelink-bazel-bridge/src/lib.rs:48-50`). The invariant id is spelled correctly as `INV-BAZEL-NO-GRPC` in the code (the prior `GROPC` one-char typo was fixed in this change).
 - At most one BYOK provider is active per build, enforced by a compile-time guard, eliminating runtime branching on the crypto hot path (`crates/corelink-byok/src/lib.rs:105-150`).
+- Every package-manager adapter carries a `VerifierOverloaded` variant DISTINCT from its `Auth` variant, mapping a PAT-verifier load shed to `503 + Retry-After` rather than `401`. A shed reaches no verdict on the credential, so a 401 lies to a caller holding a valid PAT — and the container's shed is symmetric across D1 row existence (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`), which is only observable end-to-end if the HTTP status matches on both arms (`crates/corelink-adapter-host/src/overload.rs:35`).
 
 # Gotchas
 
@@ -43,7 +46,9 @@ These crates are the outer ring of the [adapter / package-manager surfaces](/sur
 # Citations
 
 1. `crates/corelink-adapter-host/src/lib.rs:1-29` — the bridge crate mapping adapter ports to canonical SPI traits via `spawn_blocking`.
-2. `crates/corelink-adapter-host/src/lib.rs:31-66` — the 5 absorbed package-manager adapters under stable submodule paths.
+2. `crates/corelink-adapter-host/src/lib.rs:31-67` — the 5 absorbed package-manager adapters under stable submodule paths.
+2b. `crates/corelink-adapter-host/src/lib.rs:66` — the crate-root `overload` module (shared shed semantics, not per-adapter).
+2c. `crates/corelink-adapter-host/src/overload.rs:35` — `SHED_RETRY_AFTER_SECS`: the one `Retry-After` horizon all four surfaces attach to a verifier shed.
 3. `crates/corelink-bazel-bridge/src/lib.rs:1-50` — REAPI v2 REST → CAS/AC trait mapping, REST-only.
 4. `crates/corelink-bazel-bridge/src/lib.rs:42-50` — the hard digest-validate + find-missing-cap + no-gRPC invariants.
 5. `crates/corelink-bazel-bridge/src/lib.rs:68-75` — `FIND_MISSING_BLOB_CAP` (4096) and `MAX_BLOB_SIZE_BYTES` (4 GiB).

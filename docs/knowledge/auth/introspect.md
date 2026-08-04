@@ -4,7 +4,7 @@ title: "Introspection endpoint (runners fabric authz)"
 description: "The internal POST /internal/v1/auth/introspect endpoint that resolves a PAT to its tenant, plan, and runner entitlement for the compute fabric."
 source_files:
   - "crates/corelink-container/src/routes/auth_introspect.rs"
-checkpoint_sha: "98d8bc3900f5d52b258ecb376093acdc7854a32e"
+checkpoint_sha: "a298cd91a4f0429d6e3d31a64191d2b0e87eced5"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "introspect", "runners", "fabric"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -31,7 +31,7 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 - The route is mounted only when its dedicated secret is present and ≥32 chars; absent/short →
   `build_state_from_env` reads `FABRIC_INTROSPECT_AUTH_KEY`, checks `len() < MIN_FABRIC_AUTH_KEY_LEN`,
   warn-logs and returns `None`, so the route is NOT mounted (fail-CLOSED)
-  (`crates/corelink-container/src/routes/auth_introspect.rs:960-968`).
+  (`crates/corelink-container/src/routes/auth_introspect.rs:975-983`).
 - The caller gate checks the `X-Corelink-Internal-Auth` header against EVERY configured consumer key
   with non-short-circuiting `|=`, so timing reveals no consumer identity; no match → 401
   (`crates/corelink-container/src/routes/auth_introspect.rs:570-580`).
@@ -43,17 +43,25 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
   `runners_entitlement`, NOT derived from the plan; a D1 fault → 503
   (`crates/corelink-container/src/routes/auth_introspect.rs:610-625`).
 - An invalid PAT returns a uniform `200 {"valid": false}` with no tenant_id and no reason; a genuine
-  backend fault returns 503 (`crates/corelink-container/src/routes/auth_introspect.rs:634-641`).
+  backend fault — and an Argon2id permit-pool SHED, which is also `VerifyError::Backend` — returns 503
+  (`crates/corelink-container/src/routes/auth_introspect.rs:634-656`).
+- ⚠️ Because this route classifies by VARIANT, the shed's symmetry
+  (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) reclassifies one narrow case here: a saturated verifier
+  presented with an UNKNOWN token answers 503 "unreachable" rather than `200 {"valid": false}`. That
+  is the honest answer — under saturation the verifier never judged the credential — and it is
+  deliberately NOT special-cased, because re-splitting the two shed arms by row existence at this
+  layer would rebuild the row-existence oracle the invariant closes
+  (`crates/corelink-container/src/routes/auth_introspect.rs:655`).
 - A sibling endpoint `POST /internal/v1/auth/resolve-tenant` is mounted on the SAME router and state
   (`crates/corelink-container/src/routes/auth_introspect.rs:544-547`): it resolves a Clerk `clerk_org_id`
   → isolated CoreLink `tenant_id` via the `tenant_org_map` table (migration 0083), behind the IDENTICAL
   multi-key internal-auth gate (parsed only after the gate passes). A mapped org → `200 {tenant_id}`; an
   unmapped org → `404 {"org_not_mapped"}` (lookup-only — it NEVER auto-provisions); a D1 fault → 503
-  (fail-CLOSED, never a guessed tenant) (`crates/corelink-container/src/routes/auth_introspect.rs:760-810`).
+  (fail-CLOSED, never a guessed tenant) (`crates/corelink-container/src/routes/auth_introspect.rs:775-825`).
   Per the ratified A1 ordering contract (Option 2), provisioning is the SOLE `tenant_org_map` writer and
   this handler NEVER writes, so a `404 org_not_mapped` is a TRANSIENT "not-yet-provisioned" answer during
   Svix webhook-delivery lag — consumers must treat it as retryable
-  (`crates/corelink-container/src/routes/auth_introspect.rs:799-803`).
+  (`crates/corelink-container/src/routes/auth_introspect.rs:814-818`).
 
 # Invariants
 
@@ -65,7 +73,7 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 - A `valid: false` response carries no `tenant_id` and no reason (uniform with `VerifyError`)
   (`crates/corelink-container/src/routes/auth_introspect.rs:634-636`).
 - Any tier or entitlement resolution fault fails CLOSED with 503 — never a guessed plan or cap
-  (`crates/corelink-container/src/routes/auth_introspect.rs:610-641`).
+  (`crates/corelink-container/src/routes/auth_introspect.rs:610-656`).
 
 # Gotchas
 
@@ -81,10 +89,10 @@ route but with its OWN dedicated secret so the two blast radii stay disjoint.
 
 1. `crates/corelink-container/src/routes/auth_introspect.rs:1-12` — why the endpoint exists (fabric tenant/plan resolution).
 2. `crates/corelink-container/src/routes/auth_introspect.rs:16-18` — not public; container-listener only.
-3. `crates/corelink-container/src/routes/auth_introspect.rs:960-968` — `build_state_from_env`: reads the dedicated `FABRIC_INTROSPECT_AUTH_KEY`, enforces `len() < MIN_FABRIC_AUTH_KEY_LEN`, returns `None` (route NOT mounted) when absent/short — fail-CLOSED.
+3. `crates/corelink-container/src/routes/auth_introspect.rs:975-983` — `build_state_from_env`: reads the dedicated `FABRIC_INTROSPECT_AUTH_KEY`, enforces `len() < MIN_FABRIC_AUTH_KEY_LEN`, returns `None` (route NOT mounted) when absent/short — fail-CLOSED.
 4. `crates/corelink-container/src/routes/auth_introspect.rs:24-27` — reuses the constant-time `internal_auth_ok` gate.
 5. `crates/corelink-container/src/routes/auth_introspect.rs:68-92` — runner entitlement axis + the cap/vCPU asymmetry.
 6. `crates/corelink-container/src/routes/auth_introspect.rs:74-83` — entitlement is separate from `plan`.
 7. `crates/corelink-container/src/routes/auth_introspect.rs:570-580` — non-short-circuit multi-key caller gate.
-8. `crates/corelink-container/src/routes/auth_introspect.rs:597-642` — verify → tier → entitlement → uniform invalid / 503.
-9. `crates/corelink-container/src/routes/auth_introspect.rs:760-810` — sibling `POST /internal/v1/auth/resolve-tenant` handler (same gate; `clerk_org_id`→`tenant_id` via `tenant_org_map`; 404 unmapped — TRANSIENT/retryable per the A1 ordering contract, 503 fail-CLOSED).
+8. `crates/corelink-container/src/routes/auth_introspect.rs:597-657` — verify → tier → entitlement → uniform invalid / 503.
+9. `crates/corelink-container/src/routes/auth_introspect.rs:775-825` — sibling `POST /internal/v1/auth/resolve-tenant` handler (same gate; `clerk_org_id`→`tenant_id` via `tenant_org_map`; 404 unmapped — TRANSIENT/retryable per the A1 ordering contract, 503 fail-CLOSED).
