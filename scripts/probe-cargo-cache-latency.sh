@@ -188,11 +188,14 @@ echo
 # ---------------------------------------------------------------------------
 # Phase 4 — what a shed response actually SAYS.
 # Phase 3 shows requests being refused above the per-tenant Argon2id sub-cap,
-# with a status code that is NOT what an overload should return. A status code
-# alone cannot prove which branch produced it, so this phase keeps the body:
-# `invalid PAT` means the credential was judged bad; `backend: …` means a
-# transient overload was dressed up as an authentication failure. Those are very
-# different bugs and the difference is one string.
+# with a status code that is NOT what an overload should return. This phase keeps
+# the body so the refusal can be characterised rather than guessed at.
+#
+# Measured answer (2026-08-04): `401 authentication failed (ref: <uuid>)`. The
+# body is deliberately opaque -- it does NOT distinguish "your PAT is invalid"
+# from "the verifier was overloaded", which is correct for the response and
+# exactly why the STATUS CODE has to carry that distinction and does not. The
+# `ref` is the handle for correlating one refusal with its container log line.
 # ---------------------------------------------------------------------------
 echo "── phase 4: the body of a refused request (8-wide, above the sub-cap) ──"
 rm -f /tmp/probe_body_*.txt /tmp/probe_body_codes.txt

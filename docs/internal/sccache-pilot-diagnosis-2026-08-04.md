@@ -164,6 +164,10 @@ no status column is a gate that cannot fail, so the script was amended to count 
 | 8 | 32 | 4.44 s | 12 | **20 × HTTP 401** | **2.71** |
 | 16 | 64 | 4.64 s | 10 | **54 × HTTP 401** | **2.15** |
 
+Reproduced on a third box (run in job 91867586152): served/s 1.67 / 2.36 / 2.31 / 2.22 /
+1.92 across P = 1…16, with 20 and 52 × 401 at P = 8 and 16. Three runs, three boxes, same
+flat ceiling and the same refusal threshold.
+
 Two results, and the second one is the more serious.
 
 **Served throughput is flat at 1.7–2.7 req/s across every level of client concurrency.**
@@ -186,7 +190,23 @@ Err(TenantResolveError::Backend(msg)) => {
 
 `CargoAdapterError` *has* a backend variant whose own doc-comment says "Routes map this to
 HTTP 503" — `resolve_tenant` routes around it. So a transient, retryable overload reaches
-the client as a permanent authentication failure. See "found, not fixed" #6.
+the client as a permanent authentication failure.
+
+The response body does not help a customer tell the two apart, by design:
+
+```
+401  authentication failed (ref: fe599b070af9462c97318f3d43a55ffc)
+```
+
+That opacity is correct for the *body* — and it is precisely why the *status code* has to
+carry the distinction, and does not.
+
+The attribution does not rest on the body. `CargoAdapterError::Auth` has exactly two
+producers here, `InvalidPat` and `Backend`, and the credential is provably not the first:
+**the same PAT, on the same box, within the same second, succeeded 16/16 at P=4 and failed
+20/32 at P=8.** A credential cannot be valid and invalid at the same instant. What changed
+was concurrency, and the only thing keyed on concurrency in that path is the Argon2id
+permit. Reproduced across three runs on three different boxes. See "found, not fixed" #6.
 
 #### Why 490 ms — the mechanism
 
