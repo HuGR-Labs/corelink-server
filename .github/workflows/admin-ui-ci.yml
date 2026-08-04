@@ -81,16 +81,25 @@ jobs:
         # cold every run (see the pnpm-store note on `Set up Node.js` below), so
         # the fabric's lack of a persistent store costs nothing extra here, and
         # the box has twice the cores.
+        #
+        # First fabric run (30867120079) confirms the sizing rather than merely
+        # assuming it — every leg came in AT OR UNDER its hosted median despite
+        # carrying no cache and paying a node download:
+        #   typecheck 61 s · lint 56 s · test 127 s · build 83 s · cf:build 87 s
+        # `test` nearly halved (221 s → 127 s) — vitest is the leg that actually
+        # uses the extra cores. The bounds stay sized off the LARGER hosted
+        # medians: a bound tight enough to trip on a slow-but-healthy run is
+        # worse than no bound at all.
         include:
-          - task: typecheck # median 64 s → 3x = 3.2 min → floor
+          - task: typecheck # median 64 s → 3x = 3.2 min → floor (fabric: 61 s)
             timeout: 10
-          - task: lint # median 67 s → 3x = 3.4 min → floor
+          - task: lint # median 67 s → 3x = 3.4 min → floor (fabric: 56 s)
             timeout: 10
-          - task: test # median 221 s → 3x = 11.1 min
+          - task: test # median 221 s → 3x = 11.1 min (fabric: 127 s)
             timeout: 12
-          - task: build # median 88 s → 3x = 4.4 min → floor
+          - task: build # median 88 s → 3x = 4.4 min → floor (fabric: 83 s)
             timeout: 10
-          - task: "cf:build" # median 96 s → 3x = 4.8 min → floor
+          - task: "cf:build" # median 96 s → 3x = 4.8 min → floor (fabric: 87 s)
             timeout: 10
     name: ${{ matrix.task }}
     # Runner: `corelink` — CoreLink's own ephemeral runner fabric (2026-08-04;
@@ -133,11 +142,12 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      # On the fabric box this takes the composite's zero-network fast path
-      # (pnpm 10.32.1 is pre-installed as of the 2026-08-03 image), so the
-      # `pnpm/action-setup` download that hosted runs paid on every job is gone.
-      # The step prints which path it took — that output is the live check on
-      # whether the image still ships pnpm.
+      # Takes the composite's zero-network fast path on the fabric box. Measured
+      # on run 30867120079: "Using pre-installed pnpm 10.32.1 at
+      # /usr/local/bin/pnpm — no network, no shared-dir race." Hosted, the same
+      # step logs "not pre-installed (found: none)" and downloads pnpm on EVERY
+      # job — `ubuntu-latest` ships no pnpm. The step prints which path it took,
+      # so its output is the live check on whether the image still ships pnpm.
       - name: Set up pnpm
         uses: ./.github/actions/setup-pnpm
 
@@ -146,9 +156,16 @@ jobs:
       # between the two probe runs with no announcement — so "the box has node"
       # is a snapshot, not a contract. This step pins the major explicitly and
       # fails loudly if it ever cannot provide it, instead of silently compiling
-      # the admin UI on whatever node the image happens to ship. The cost is one
-      # node download per run on a box with no tool cache (hosted resolved it for
-      # free from /opt/hostedtoolcache).
+      # the admin UI on whatever node the image happens to ship.
+      #
+      # The premium, measured on run 30867120079: 9-10 s per job. The box has no
+      # tool cache, so the step logs "Acquiring 22.23.2 - x64" and downloads it —
+      # today, the exact version already on the box's PATH. Hosted resolved the
+      # same request in 1-4 s from /opt/hostedtoolcache. So keeping it costs
+      # ~7 s/job on the fabric, and removing the dead `cache: pnpm` below hands
+      # back the 7-10 s/job its post step burned hosted. Net ≈ zero, and every
+      # leg still came in under its hosted median. That is why this stays: the
+      # drift insurance is, in practice, free.
       #
       # `cache: pnpm` + `cache-dependency-path` REMOVED. Measured, not assumed:
       # across the 20 jobs of the last 4 hosted runs the restore printed "pnpm
