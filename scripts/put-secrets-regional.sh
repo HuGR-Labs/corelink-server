@@ -174,9 +174,16 @@ fi
 
 # ── 5. Apply ─────────────────────────────────────────────────────────────────
 
+# Same resolver bug as scripts/deploy-container-prod.sh (fixed 2026-08-04):
+# `-x` is a PATH test, so a bare command name (e.g. WRANGLER=wrangler after a
+# global npm install) was silently discarded and replaced by an unpinned
+# `npx wrangler@latest`. Honour both forms; keep the fallback PINNED.
 WRANGLER_CMD="${WRANGLER:-$DEFAULT_WRANGLER}"
-if [[ ! -x "$WRANGLER_CMD" ]]; then
-    WRANGLER_CMD="npx wrangler@latest"
+if [[ ! -x "$WRANGLER_CMD" ]] && ! command -v "$WRANGLER_CMD" >/dev/null 2>&1; then
+    # shellcheck source=scripts/_wrangler-pin.sh
+    . "$REPO_ROOT/scripts/_wrangler-pin.sh"
+    warn "wrangler not found at '$WRANGLER_CMD' and not on \$PATH; falling back to 'npx wrangler@${WRANGLER_PINNED_VERSION}'"
+    WRANGLER_CMD="npx wrangler@${WRANGLER_PINNED_VERSION}"
 fi
 
 if ! $WRANGLER_CMD --version >/dev/null 2>&1; then

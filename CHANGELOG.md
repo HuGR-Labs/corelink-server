@@ -71,6 +71,65 @@ Each entry cross-references:
   outside the union (`SlowTarget | null`).
 
 ### Fixed
+- **fix(deploy): the exact wrangler pin was never in force on the production deploy path — a
+  `-x` path test silently discarded the CI override and every prod deploy ran
+  `npx wrangler@latest`.** `.github/workflows/cf-deploy-prod.yml` installs `wrangler@4.95.0`
+  (pinned exact by the 2026-06-11 pre-launch pentest, #248) and sets `WRANGLER: wrangler` so the
+  deploy script uses that global binary. But `scripts/deploy-container-prod.sh` resolved the
+  override with `if [ ! -x "$WRANGLER" ]` — a *path* test that a bare command name can never
+  satisfy — and fell through to `WRANGLER="npx wrangler@latest"`. Measured on the last two
+  production deploys (runs `30923390611`, `30918887614`): CI installed 4.95.0, the deploy ran
+  **4.118.0**, 23 minor versions ahead of the audited pin and resolved fresh from npm at deploy
+  time. Nothing printed the version, so the fallback survived undetected since the pin landed:
+  the audited pin has never governed a production deploy, and prod's deploy toolchain was
+  whatever npm's `latest` dist-tag pointed at that minute. The resolver now accepts an
+  executable path, a bare command name (via `command -v`), or a full command line; when none
+  resolves it is **fatal on CI** — a prod deploy must never network-resolve its own toolchain —
+  and locally warns loudly and falls back to a *pinned* `npx wrangler@<pin>`, never `@latest`.
+  The deploy log now prints the wrangler version that will actually deploy and warns if it is not
+  the pin (report-only: a `--version` format change must not fail a deploy). The version string
+  itself moved to `scripts/_wrangler-pin.sh`, sourced by both the workflow's install steps and
+  the scripts' fallback, so the two copies cannot drift apart again.
+  `scripts/put-secrets-regional.sh` carried the identical resolver bug (bare name → unpinned
+  `npx wrangler@latest`) and is fixed the same way. Not changed, reported for the record:
+  `scripts/verify-regional-secrets.sh`, `scripts/_pages-deploy-common.sh` and
+  `scripts/f-day-deploy-pages-docs.sh` also `-x`-test `$WRANGLER`, but they hard-error instead of
+  substituting an unpinned toolchain, so they fail loudly rather than silently drifting.
+- **fix(deploy): the container rollout verifier polled the applications LIST endpoint, which
+  serves a stale snapshot — it failed two prod deploys that had actually rolled.**
+  `scripts/deploy-container-prod.sh` compared the wrangler.toml pin against
+  `GET /accounts/{acct}/containers/applications` (the list) and gave up after `TIMEOUT_S=420`.
+  Re-checked live on 2026-08-04: for `corelink-prod-nrt-corelinkserver-prod-nrt`
+  (`a033417c-…`) the list reported version 100 / image `f7bb0961-r1` with `updated_at` frozen at
+  `15:27:12Z`, while the per-application `GET /containers/applications/{id}` on the same id
+  reported version 101 / `794ed958-r1` / 7 healthy / 0 failed / `updated_at` `15:28:46Z` — and the
+  list was STILL frozen 17 minutes later, i.e. past this script's entire budget. Five consecutive
+  list reads returned the byte-identical stale record, so this is a stale materialized view, not
+  transient replica lag, and no retry/settle window could have absorbed it. `corelink-prod-syd`
+  was one version behind in the list at the same moment (106 vs 107) and only escaped because
+  both versions happened to carry the same image. Cost: two false deploy failures — run
+  30872385188 (`prod`) and run 30923390611 (`prod-nrt`) — on containers that had genuinely
+  rolled; the real convergence in the nrt case landed 88 s after `wrangler deploy` returned, so
+  the 420 s budget was never the problem and is UNCHANGED. The convergence loop now polls the
+  authoritative per-application endpoint. The list is still read, but exactly once and only to
+  resolve the application id from the env-unique image name — a mapping that does not change, so
+  a stale list cannot corrupt it (and a failed resolution is not cached, so a first-ever deploy
+  still converges once the app appears). Two further tightenings, because a verifier that reads
+  correctly should also assert more: convergence now additionally requires `failed == 0` and, for
+  any application that wants instances at all, `healthy > 0` — image match alone only proves
+  Cloudflare accepted the config, so a rolled-but-crashlooping container used to pass as a good
+  deploy; and the state must hold across two consecutive reads before success is declared.
+  Neither is a workaround for the staleness (they cannot be — the stale read was perfectly
+  stable); they are insurance the correct read makes affordable. `healthy == instances` is
+  deliberately NOT required: the live `prod` application reports 3 of 7 healthy while serving
+  normally, so that gate would hang every deploy. The redeploy-on-grace-expiry behaviour (the
+  documented CF "first deploy doesn't roll" workaround) is unchanged, except that it no longer
+  fires mid-confirmation. `--dry-run` now exercises the read path against the live API and prints
+  the observed state without deploying, and the failure verdict prints the resolved app id plus
+  the exact per-application `curl` to run by hand. Verified against all five live prod
+  applications (all detect convergence immediately, including the nrt one the old code still
+  reports as `f7bb0961-r1`), plus canned-API cases for crashlooping / zero-healthy /
+  scale-to-zero / image-mismatch: exit 0 only for a genuine roll.
 - **fix(oci): the OCI `/token` rate-limit bucket was GLOBAL — one host at 50 req/s could 429
   `docker login` / `pull` / `push` for every CoreLink user, with no credential of any kind.**
   `oci_bucket_key` (`crates/corelink-container/src/routes/ratelimit_layer.rs`) derived the bucket

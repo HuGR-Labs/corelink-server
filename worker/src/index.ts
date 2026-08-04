@@ -2285,9 +2285,18 @@ const baseHandler: ExportedHandler<Env> = {
           // key — but to also bound abuse per-SOURCE it needs the UNFORGEABLE
           // client IP. Forward cf-connecting-ip as the server-trusted
           // x-corelink-client-ip (stripClientTrustHeaders above already deleted
-          // any client-supplied value, so a client cannot spoof it). The true
-          // per-IP EDGE cap is a Cloudflare WAF rule on corelink-oci (infra); this
-          // gives the in-container gate the trusted IP to key on in the meantime.
+          // any client-supplied value, so a client cannot spoof it). This header
+          // IS the per-IP enforcement input: the only per-source cap on the OCI
+          // plane is the in-container rate-limit bucket PARTITION keyed on it
+          // (see `routes::ratelimit_layer`), shipped 2026-08-04. There is no
+          // edge cap behind it — verified against the live Cloudflare API, the
+          // zone's only `http_ratelimit` rule covers `corelink-signup` /
+          // `corelink-admin` / `corelink-app` / `corelink-docs`, and
+          // `corelink-oci` is NOT in it. An earlier revision of this comment
+          // claimed such a WAF rule as the real cap "in the meantime"; that
+          // claim was false, and the residual it papered over is real and OPEN:
+          // a distributed attacker who rotates source IPs still earns a fresh
+          // bucket per IP, and blunting THAT needs an actual edge per-IP/ASN cap.
           h.set("x-corelink-client-ip", request.headers.get("cf-connecting-ip") ?? "");
           // Deliberately NOT set: x-corelink-tenant-id / x-corelink-scope.
           // The OCI adapter derives the tenant from the OCI Bearer/PAT and
