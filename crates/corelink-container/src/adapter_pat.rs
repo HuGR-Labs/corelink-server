@@ -51,9 +51,7 @@
 //! attacker *why* a token was rejected. Only genuine backend faults (D1
 //! unreachable, corrupt row) surface as [`VerifyError::Backend`].
 
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -390,17 +388,23 @@ struct PerTenantEntry {
 const SECRET_MATCH_MEMO_TTL: Duration = Duration::from_secs(300);
 
 /// Upper bound on live [`SecretMatchMemo`] entries. Each entry is a 64-char hex
-/// fingerprint + an `Instant` (~100 B), so 4096 is well under a MiB — orders of
-/// magnitude below the 64-MiB Argon2id allocations this memo exists to avoid.
-/// Sized to hold every PAT a realistic single container serves concurrently
-/// (one container serves ONE tenant's Durable Object — see `worker/src/index.ts`
-/// `idFromName(tenant_id)` — so the live set is that tenant's active tokens).
-const SECRET_MATCH_MEMO_CAP: usize = 4_096;
-
-/// Single-flight shards for cold-miss coalescing. A FIXED, memory-bounded array
-/// (same rationale as `native_pat_gate::VERIFY_LOCK_SHARDS`): no per-fingerprint
-/// map that grows with the live token set.
-const SECRET_MATCH_LOCK_SHARDS: usize = 256;
+/// fingerprint + an `Instant` (~100 B), so 32 768 is ~3 MiB — still orders of
+/// magnitude below the 64-MiB-per-verify Argon2id allocations this memo exists
+/// to avoid, on a 4 GiB container.
+///
+/// ⚠️ Sizing must assume a FLEET-WIDE live set, not one tenant's. The
+/// tenant-scoped adapter routes (`/cargo`, `/npm`, `/pip`, `/brew`) do route one
+/// tenant to one Durable Object and therefore one container
+/// (`worker/src/index.ts` `idFromName(tenant_id)`), but the OCI `/token`
+/// exchange and the public/anonymous surfaces pin ALL tenants onto the SHARED
+/// `_oci` / `_anonymous` DOs — the same reason `ARGON2_VERIFY_PERMITS` above
+/// talks about OOM-killing "the shared container … a registry outage for ALL
+/// tenants". A cap sized for one tenant would put that shared container in
+/// permanent eviction thrash: every insert would take the at-capacity branch,
+/// pay the O(n) purge under the map lock on the hot path, and drop the hit rate
+/// toward zero — turning the fix into a pessimisation on exactly one of the
+/// planes it targets.
+const SECRET_MATCH_MEMO_CAP: usize = 32_768;
 
 /// One memoised secret-match: the tick at which it was recorded. The value is
 /// the *presence* of the key — there is deliberately nothing else to store (see
@@ -443,7 +447,6 @@ struct SecretMatchEntry {
 /// **never** hit the memo — it always pays full Argon2id, exactly as before. A hit
 /// is only reachable for a plaintext that already verified, which is a request that
 /// returns 200 anyway. Parity between the two 401 paths is preserved.
-#[derive(Debug)]
 struct SecretMatchMemo {
     /// `fingerprint -> entry`. Sync mutex; the guard is NEVER held across an
     /// `.await` (every method here is synchronous and returns before the caller
@@ -540,6 +543,23 @@ impl SecretMatchMemo {
     }
 }
 
+/// Hand-written so the fingerprint set can never reach a log. A derived `Debug`
+/// would print every live entry, and the set of fingerprints currently held IS
+/// a live-PAT-presence oracle for anyone with log access — the same reason
+/// `PatVerifier`'s own `Debug` redacts `signing_keys`. Only the count escapes.
+impl std::fmt::Debug for SecretMatchMemo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretMatchMemo")
+            .field(
+                "entries",
+                &format_args!("[{} REDACTED]", self.entries.lock().map_or(0, |e| e.len())),
+            )
+            .field("cap", &self.cap)
+            .field("ttl", &self.ttl)
+            .finish()
+    }
+}
+
 /// The [`SecretMatchMemo`] key: a domain-separated, length-prefixed SHA-256 over
 /// `(plaintext, token_id, stored_pat_hash)`.
 ///
@@ -549,15 +569,6 @@ impl SecretMatchMemo {
 /// SHA-256-of-a-token use in the codebase (e.g. `native_pat_gate::fingerprint`).
 /// Only the digest is retained, so the memo never holds recoverable secret
 /// material.
-/// Build the fixed single-flight shard array for `PatVerifier::secret_match_locks`.
-fn new_secret_match_locks() -> Arc<Vec<Arc<tokio::sync::Mutex<()>>>> {
-    Arc::new(
-        (0..SECRET_MATCH_LOCK_SHARDS)
-            .map(|_| Arc::new(tokio::sync::Mutex::new(())))
-            .collect::<Vec<_>>(),
-    )
-}
-
 fn secret_match_fingerprint(plaintext: &str, token_id: &str, pat_hash: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"corelink/adapter-pat/secret-match/v1\0");
@@ -624,15 +635,26 @@ pub struct PatVerifier {
     /// Memoised Argon2id secret-matches — the fix for the adapter plane's
     /// throughput ceiling.
     ///
-    /// Argon2id at the OWASP-2024 cost (`m=64 MiB, t=3, p=4`) costs ~0.15 CPU-s
-    /// per verify, and the production container is provisioned at **0.5 vCPU**
-    /// (`corelink-prod-corelinkserver-prod`, confirmed against the CF Containers
-    /// API). Running it on EVERY request therefore capped one tenant's whole
-    /// adapter plane at ~3 requests/second regardless of client concurrency —
+    /// Argon2id at the OWASP-2024 cost (`m=64 MiB, t=3, p=4`) costs **at least
+    /// ~0.15 CPU-s** per verify — that figure is a LOWER BOUND measured with the
+    /// C reference implementation on an Apple-silicon core, and the pure-Rust
+    /// `argon2` crate on a fraction of an x86 vCPU is slower, not faster. The
+    /// production container is provisioned at **0.5 vCPU**
+    /// (`corelink-prod-corelinkserver-prod`, read back from the CF Containers
+    /// API). Running it on EVERY request therefore capped a tenant's adapter
+    /// plane at roughly 3 requests/second regardless of client concurrency —
     /// crippling for the small-object, high-frequency traffic a build cache is
     /// made of (sccache/cargo, npm, pip, brew, OCI all issue thousands of tiny
-    /// requests per build). Measured on the sccache CI pilot: 1067 requests,
-    /// ~500 s of overhead, matching the 160 CPU-s ÷ 0.5 vCPU floor.
+    /// requests per build).
+    ///
+    /// Evidence from the sccache CI pilot (#1017), stated at the precision it
+    /// actually supports: the fully-warm run served **827 cache operations at a
+    /// 100 % hit rate in 631 s against a 409-423 s cold baseline** (+208…222 s).
+    /// The predicted Argon2id floor for those 827 verifies is
+    /// `827 × 0.15 ÷ 0.5 ≈ 248 s`. That is the right order of magnitude and the
+    /// same direction, which makes Argon2id a SUFFICIENT explanation of the
+    /// regression — it is not a per-request measurement of the authenticated
+    /// path, and none has been captured yet.
     ///
     /// The native plane already solved this with
     /// `native_pat_gate::NativePatGate`'s verify cache; the adapter plane never
@@ -640,18 +662,6 @@ pub struct PatVerifier {
     /// window, because it memoises only the immutable Argon2id comparison and
     /// leaves the D1 row read per-request. See [`SecretMatchMemo`].
     secret_match_memo: Arc<SecretMatchMemo>,
-    /// Single-flight shards for [`Self::secret_match_memo`] misses: a concurrent
-    /// cold burst of the SAME PAT coalesces onto ONE Argon2id instead of N.
-    ///
-    /// This is load-bearing, not an optimisation. Without it, a build starting
-    /// with `-j8` fires 8 simultaneous first-touch verifies; the per-tenant
-    /// sub-cap admits only [`ARGON2_PER_TENANT_PERMITS`] (4) and the rest wait on
-    /// a [`ARGON2_PERMIT_WAIT`] (250 ms) timeout — but at 0.5 vCPU a single
-    /// Argon2id takes far longer than 250 ms, so the surplus requests timed out
-    /// into `Backend` ⇒ **503**. That is the same-key concurrent-burst 503
-    /// `native_pat_gate` documents. Coalescing removes the stampede at its
-    /// source: one flight runs the verify, the rest wake to a populated memo.
-    secret_match_locks: Arc<Vec<Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl std::fmt::Debug for PatVerifier {
@@ -705,7 +715,6 @@ impl PatVerifier {
                 SECRET_MATCH_MEMO_CAP,
                 SECRET_MATCH_MEMO_TTL,
             )),
-            secret_match_locks: new_secret_match_locks(),
         }
     }
 
@@ -889,29 +898,6 @@ impl PatVerifier {
         }
     }
 
-    /// The single-flight shard a secret-match fingerprint maps to.
-    ///
-    /// Deterministic (same fingerprint → same shard), which is the only property
-    /// coalescing requires. Two DIFFERENT fingerprints may share a shard and
-    /// briefly serialise; with [`SECRET_MATCH_LOCK_SHARDS`] shards that is
-    /// negligible for any realistic per-container concurrency, and it is the
-    /// price of a fixed, memory-bounded array instead of a per-fingerprint map.
-    fn secret_match_lock_for(&self, fp: &str) -> Arc<tokio::sync::Mutex<()>> {
-        let mut hasher = DefaultHasher::new();
-        fp.hash(&mut hasher);
-        #[allow(
-            clippy::cast_possible_truncation,
-            reason = "shard index: truncation is the intended modulo-bucketing, not a value error"
-        )]
-        let idx = (hasher.finish() as usize) % self.secret_match_locks.len();
-        self.secret_match_locks
-            .get(idx)
-            .map(Arc::clone)
-            // Unreachable (the array is non-empty by construction); a fresh
-            // mutex is the fail-safe — it degrades coalescing, never correctness.
-            .unwrap_or_else(|| Arc::new(tokio::sync::Mutex::new(())))
-    }
-
     /// The full Option-B verification pipeline, returning the PAT's owning
     /// tenant id **and** whether it carries cache WRITE capability.
     ///
@@ -1006,68 +992,83 @@ impl PatVerifier {
         //    pays the full Argon2id, which is what keeps the two 401 paths
         //    (unknown token_id ⇒ dummy burn / wrong secret ⇒ real verify) in
         //    timing parity.
+        //
+        //    DELIBERATELY LOCK-FREE. An earlier revision of this fix also
+        //    single-flighted the cold miss on a sharded mutex, so a `cargo -jN`
+        //    build's first N simultaneous requests would run ONE Argon2id rather
+        //    than N. Adversarial review killed it, and the reasons are worth
+        //    keeping so it is not reintroduced naively:
+        //      (a) it reopened the token-enumeration oracle the dummy burn at
+        //          step 2 exists to close — the lock sat on the row-FOUND path
+        //          only, so N concurrent copies of one wrong-secret token cost
+        //          ~N×Argon2id when the `token_id` existed and ~1× when it did
+        //          not, making liveness observable in the concurrency dimension;
+        //      (b) the lock wait was unbounded and sat IN FRONT of the two
+        //          `ARGON2_PERMIT_WAIT` load-sheds, converting a bounded 250 ms
+        //          fail-CLOSED into an unbounded stall (see the doc on
+        //          `ARGON2_PERMIT_WAIT` for why that shed exists); and
+        //      (c) it was acquired before the per-tenant sub-permit, so on the
+        //          SHARED `_oci` / `_anonymous` Durable Objects one tenant's
+        //          flood could block another upstream of the very fairness cap
+        //          `ARGON2_PER_TENANT_PERMITS` provides.
+        //    A correct version would coalesce on a shared FUTURE (the shape
+        //    `SingleFlightPatLookup` above already uses: every waiter resolves
+        //    when the ONE verify completes, so there is no queue to stall in)
+        //    and would have to mirror onto the dummy-burn arm to keep the two
+        //    401 paths symmetric. That is a separate change with its own
+        //    threat-model review; the cold-burst 503 it would fix is
+        //    pre-existing behaviour, not a regression introduced here.
         let fp = secret_match_fingerprint(pat_plaintext, token_id.as_str(), &row.pat_hash);
         if !self.secret_match_memo.contains(&fp) {
-            // Cold. SINGLE-FLIGHT on the fingerprint so a same-PAT burst (a
-            // `cargo -jN` build's first N requests) runs ONE Argon2id, not N —
-            // N would exceed the per-tenant sub-cap and, at 0.5 vCPU, blow the
-            // 250 ms permit wait into 503s for the surplus.
-            let flight = self.secret_match_lock_for(&fp);
-            let _flight = flight.lock().await;
-            // Double-checked: the flight we queued behind may have just proven
-            // this exact fingerprint — take the fast path rather than repeat it.
-            if !self.secret_match_memo.contains(&fp) {
-                let plaintext = pat_plaintext.to_owned();
-                let signing_keys = Arc::clone(&self.signing_keys);
-                let stored_hash = PatHash::from_phc_string(row.pat_hash.clone());
-                // Finding #2: bound concurrent Argon2id. Acquire a permit (bounded
-                // wait) BEFORE the blocking work; on acquire-timeout the verifier is
-                // overloaded — return `Backend` (reusing the existing variant, which
-                // the OCI `/token` handler and the native gate already map to a
-                // non-leaky fail-CLOSED rejection) rather than letting the request pile
-                // on more 64-MiB allocations. The permit is moved into the blocking
-                // closure and dropped there, so it is held ONLY across the Argon2id.
-                let permit = match tokio::time::timeout(
-                    ARGON2_PERMIT_WAIT,
-                    Arc::clone(&self.argon2_permits).acquire_owned(),
-                )
-                .await
-                {
-                    Ok(Ok(permit)) => permit,
-                    Ok(Err(_closed)) => {
-                        return Err(VerifyError::Backend("pat verifier overloaded".into()))
-                    }
-                    Err(_timeout) => {
-                        return Err(VerifyError::Backend("pat verifier overloaded".into()))
-                    }
-                };
-                // Finding #1: per-tenant fairness. With the GLOBAL permit already held,
-                // acquire this tenant's sub-permit (consistent order global→per-tenant
-                // ⇒ deadlock-free). If the tenant is at its sub-cap, fail-CLOSED with
-                // the SAME overloaded signal as a global timeout — so ONE tenant
-                // flooding distinct PATs cannot drain the whole global pool and starve
-                // others. The `permit` (global) is dropped on this early return by
-                // RAII, so a per-tenant rejection does NOT leak a global permit.
-                // `Ok(None)` is the fail-safe fall-through to global-only bounding.
-                let tenant_permit = match self.acquire_per_tenant(&row.tenant_id).await {
-                    Ok(maybe_permit) => maybe_permit,
-                    Err(()) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
-                };
-                let verify_result = tokio::task::spawn_blocking(move || {
-                    let r =
-                        verify_with_hash_multi(&plaintext, &token_id, &stored_hash, &signing_keys);
-                    drop(permit); // release the global Argon2id permit the moment the work ends
-                    drop(tenant_permit); // release the per-tenant permit too (RAII, both paths)
-                    r
-                })
-                .await
-                .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
-                verify_result.map_err(|_| VerifyError::InvalidPat)?;
-                // Proven. Record it AFTER the verify succeeded — a failed verify
-                // must never populate the memo (and never does: the `?` above
-                // returns first).
-                self.secret_match_memo.insert(fp);
-            }
+            let plaintext = pat_plaintext.to_owned();
+            let signing_keys = Arc::clone(&self.signing_keys);
+            let stored_hash = PatHash::from_phc_string(row.pat_hash.clone());
+            // Finding #2: bound concurrent Argon2id. Acquire a permit (bounded
+            // wait) BEFORE the blocking work; on acquire-timeout the verifier is
+            // overloaded — return `Backend` (reusing the existing variant, which
+            // the OCI `/token` handler and the native gate already map to a
+            // non-leaky fail-CLOSED rejection) rather than letting the request pile
+            // on more 64-MiB allocations. The permit is moved into the blocking
+            // closure and dropped there, so it is held ONLY across the Argon2id.
+            let permit = match tokio::time::timeout(
+                ARGON2_PERMIT_WAIT,
+                Arc::clone(&self.argon2_permits).acquire_owned(),
+            )
+            .await
+            {
+                Ok(Ok(permit)) => permit,
+                Ok(Err(_closed)) => {
+                    return Err(VerifyError::Backend("pat verifier overloaded".into()))
+                }
+                Err(_timeout) => {
+                    return Err(VerifyError::Backend("pat verifier overloaded".into()))
+                }
+            };
+            // Finding #1: per-tenant fairness. With the GLOBAL permit already held,
+            // acquire this tenant's sub-permit (consistent order global→per-tenant
+            // ⇒ deadlock-free). If the tenant is at its sub-cap, fail-CLOSED with
+            // the SAME overloaded signal as a global timeout — so ONE tenant
+            // flooding distinct PATs cannot drain the whole global pool and starve
+            // others. The `permit` (global) is dropped on this early return by
+            // RAII, so a per-tenant rejection does NOT leak a global permit.
+            // `Ok(None)` is the fail-safe fall-through to global-only bounding.
+            let tenant_permit = match self.acquire_per_tenant(&row.tenant_id).await {
+                Ok(maybe_permit) => maybe_permit,
+                Err(()) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
+            };
+            let verify_result = tokio::task::spawn_blocking(move || {
+                let r = verify_with_hash_multi(&plaintext, &token_id, &stored_hash, &signing_keys);
+                drop(permit); // release the global Argon2id permit the moment the work ends
+                drop(tenant_permit); // release the per-tenant permit too (RAII, both paths)
+                r
+            })
+            .await
+            .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
+            verify_result.map_err(|_| VerifyError::InvalidPat)?;
+            // Proven. Record it AFTER the verify succeeded — a failed verify
+            // must never populate the memo (and never does: the `?` above
+            // returns first).
+            self.secret_match_memo.insert(fp);
         }
 
         // 4. Scope gate — fail-CLOSED on NO cache capability at all, then
@@ -1159,7 +1160,6 @@ impl PatVerifier {
                 SECRET_MATCH_MEMO_CAP,
                 SECRET_MATCH_MEMO_TTL,
             )),
-            secret_match_locks: new_secret_match_locks(),
         }
     }
 
@@ -2091,40 +2091,6 @@ mod tests {
         );
     }
 
-    /// A concurrent burst of the SAME PAT must coalesce onto one verification.
-    ///
-    /// Regression lock for the 503 this fix removes: with one global and one
-    /// per-tenant permit, an un-coalesced burst leaves the surplus waiting out
-    /// `ARGON2_PERMIT_WAIT` and failing `Backend` — exactly what a `cargo -jN`
-    /// build's first N requests hit at 0.5 vCPU.
-    #[tokio::test]
-    async fn a_same_pat_burst_coalesces_instead_of_503ing() {
-        let key = test_key();
-        let (pt, tid, hash, tenant) = mint_pat(&key, 51, SCOPE_CACHE_RW);
-        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
-        let verifier = Arc::new(PatVerifier::with_key_set_and_permits_per_tenant(
-            lookup,
-            vec![(*key).clone()],
-            1,
-            1,
-        ));
-
-        let mut handles = Vec::new();
-        for _ in 0..8 {
-            let verifier = Arc::clone(&verifier);
-            let pt = pt.clone();
-            handles.push(tokio::spawn(async move { verifier.verify(&pt).await }));
-        }
-        for handle in handles {
-            let got = handle.await.unwrap();
-            assert_eq!(
-                got.unwrap(),
-                tenant,
-                "every member of a same-PAT burst must succeed (no permit stampede)"
-            );
-        }
-    }
-
     /// The memo key binds all three fields and is unambiguous across them.
     #[test]
     fn secret_match_fingerprint_binds_plaintext_token_id_and_hash() {
@@ -2138,9 +2104,15 @@ mod tests {
             secret_match_fingerprint("ab", "c", "d"),
             secret_match_fingerprint("a", "bc", "d")
         );
-        // A digest, never recoverable material.
+        // A digest, never recoverable material. `!contains("pt")` would be
+        // VACUOUS here — `p` and `t` are not hex digits, so it holds for any
+        // hex string, including `hex::encode(plaintext)`. Assert the properties
+        // that actually constrain the output instead.
         assert_eq!(base.len(), 64);
-        assert!(!base.contains("pt"));
+        assert!(base
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert_ne!(base, hex::encode("pt"), "must not be the plaintext encoded");
     }
 
     /// The memo is bounded and TTL'd — it can neither grow without limit nor
@@ -2148,18 +2120,23 @@ mod tests {
     #[test]
     fn memo_is_bounded_and_ttl_expired_entries_are_not_hits() {
         let memo = SecretMatchMemo::new(2, Duration::from_secs(300));
+        // Space the inserts so "oldest" is unambiguous rather than clock-jitter.
         memo.insert("a".to_owned());
+        std::thread::sleep(Duration::from_millis(5));
         memo.insert("b".to_owned());
+        std::thread::sleep(Duration::from_millis(5));
         memo.insert("c".to_owned());
         assert!(
             memo.len_for_test() <= 2,
             "the cap must bound the map, got {}",
             memo.len_for_test()
         );
-        assert!(
-            memo.contains("c"),
-            "the newest insert must survive eviction"
-        );
+        // Asserting `contains("c")` would be VACUOUS: `insert` places the new
+        // key unconditionally AFTER the eviction pass, so it holds even with
+        // the whole eviction branch deleted. What eviction actually DECIDES is
+        // WHICH pre-existing entry dies — the oldest, never the newer one.
+        assert!(!memo.contains("a"), "eviction must drop the OLDEST entry");
+        assert!(memo.contains("b"), "eviction must keep the newer survivor");
 
         let expiring = SecretMatchMemo::new(8, Duration::ZERO);
         expiring.insert("x".to_owned());
