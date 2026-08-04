@@ -152,19 +152,36 @@ echo
 # overhead implies a much larger true RTT. If throughput is FLAT, the surface
 # serialises and 270 ms is close to the real RTT. Measured, not assumed.
 # ---------------------------------------------------------------------------
+#
+# ⚠️ Throughput ALONE is not a scaling measurement, and reading it as one is the
+# mistake this block is written to prevent. `PatVerifier` sheds load: a request
+# that cannot get an Argon2id permit within ARGON2_PERMIT_WAIT (250 ms) is
+# REJECTED, not queued. A rejected request is fast, so a server that is refusing
+# most of its traffic posts a HIGHER req/s than one serving all of it. We
+# therefore count 404s (served) separately from everything else (shed), and
+# report a SERVED throughput. Only the served column means anything.
 echo "── phase 3: concurrency sweep (throughput vs parallelism) ──"
-printf '%-6s %-8s %-12s %-14s %s\n' "P" "reqs" "wall (s)" "req/s" "eff. ms/req"
+printf '%-5s %-6s %-10s %-8s %-8s %-11s %s\n' \
+  "P" "reqs" "wall (s)" "404 ok" "other" "served/s" "eff. ms/req"
 for P in 1 2 4 8 16; do
   M=$((P * 4))
-  keys=""
-  for _ in $(seq 1 "${M}"); do keys="${keys} ${CARGO_BASE}/$(randkey)"; done
+  : > /tmp/probe_conc.txt
+  keys=()
+  for _ in $(seq 1 "${M}"); do keys+=("${CARGO_BASE}/$(randkey)"); done
   start="$(date +%s.%N)"
-  # shellcheck disable=SC2086
-  printf '%s\n' ${keys} | xargs -P "${P}" -I{} \
-    curl -sS -o /dev/null -H "Authorization: Bearer ${PROBE_TOKEN}" {} || true
+  printf '%s\n' "${keys[@]}" | xargs -P "${P}" -I{} \
+    curl -sS -o /dev/null -w "%{http_code}\n" \
+      -H "Authorization: Bearer ${PROBE_TOKEN}" {} >> /tmp/probe_conc.txt 2>/dev/null || true
   end="$(date +%s.%N)"
-  awk -v p="${P}" -v m="${M}" -v s="${start}" -v e="${end}" \
-    'BEGIN { w = e - s; printf "%-6s %-8s %-12.2f %-14.2f %.0f\n", p, m, w, m/w, (w/m)*1000 }'
+  ok="$(awk '$1 == 404' /tmp/probe_conc.txt | wc -l | tr -d ' ')"
+  other=$((M - ok))
+  awk -v p="${P}" -v m="${M}" -v s="${start}" -v e="${end}" -v ok="${ok}" -v ot="${other}" \
+    'BEGIN { w = e - s
+             printf "%-5s %-6s %-10.2f %-8s %-8s %-11.2f %.0f\n",
+                    p, m, w, ok, ot, ok/w, (w/m)*1000 }'
+  if [ "${other}" -gt 0 ]; then
+    echo "      shed/errored status codes: $(awk '$1 != 404 {print $1}' /tmp/probe_conc.txt | sort | uniq -c | tr '\n' ' ')"
+  fi
 done
 echo
 

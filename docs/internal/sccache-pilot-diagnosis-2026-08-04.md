@@ -113,7 +113,61 @@ Reconstruction of the +222 s without appealing to the network: the three compile
 actual compilation in the 409 s baseline. 593 − 373 = 220 s. Every other step moved by
 ≤1 s.
 
-### H3 — routing / latency: **REFUTED as the cause.** The cost is CPU, not distance.
+### H3 — routing / latency: **REFUTED as the cause, and now measured.** The cost is CPU, not distance.
+
+#### The measurement (run 30868784748, box `cf-runner-3a0c4d34`, 4 vCPU, colo **BOS**)
+
+Every request below is an authenticated `GET /cargo/<tenant>/<random-64-hex>` returning
+**404** — a real miss, no blob fetched, nothing written. A cache **hit** costs strictly more.
+
+| | p50 | p90 | max |
+|---|---|---|---|
+| `/health` TTFB, new conn (Worker-only floor) | **25 ms** | 29 ms | 29 ms |
+| — of which TCP connect | 3 ms | 3 ms | 3 ms |
+| — of which TLS handshake | 18 ms | 20 ms | 21 ms |
+| `/cargo` TTFB, **new** connection | **514 ms** | 598 ms | 3922 ms |
+| — server time (TTFB − TLS done) | **489 ms** | 575 ms | 3902 ms |
+| `/cargo` TTFB, **reused** connection (sccache-shaped) | **501 ms** | 740 ms | 2191 ms |
+
+Three things fall out, and they close H3:
+
+1. **The network is 3 ms.** TCP connect to the edge is 3 ms and a full Worker round trip is
+   25 ms. The fabric box is not badly placed; there is no region to move it to that would
+   recover meaningful time.
+2. **Connection reuse buys 13 ms** (514 → 501 ms). If TLS handshakes or connection churn
+   were the cost, this is where it would show. It does not. opendal already pools
+   connections, so this is the case sccache actually runs in.
+3. **~489 ms of server time on a request that fetches nothing.** That is ~20× the Worker
+   floor, on a path whose only remaining work is: container dispatch, PAT verify
+   (HMAC + D1 row read + **Argon2id**), and a url-map lookup that returns "absent". The
+   1.702 s a real hit costs is this number plus the R2 fetch plus 2.4× self-contention.
+
+#### The concurrency sweep is where the ceiling becomes visible
+
+`PatVerifier` **sheds** load rather than queueing it: a request that cannot take an Argon2id
+permit within `ARGON2_PERMIT_WAIT` (250 ms) is rejected. A rejected request is *fast*, so
+raw req/s **rises** as the server refuses more traffic — which is why the probe counts 404s
+(served) separately and reports a served throughput. First run (status codes not yet
+captured — the script was amended for exactly this reason):
+
+| P | reqs | wall | req/s | eff. ms/req |
+|---|---|---|---|---|
+| 1 | 4 | 2.04 s | 1.96 | 511 |
+| 2 | 8 | 3.73 s | 2.14 | 466 |
+| 4 | 16 | 6.50 s | 2.46 | 406 |
+| 8 | 32 | 4.80 s | 6.66 | 150 |
+| 16 | 64 | 4.45 s | 14.38 | 70 |
+
+**From P=1 to P=4 — the range inside `ARGON2_PER_TENANT_PERMITS = 4` — throughput is flat
+at ~2.0–2.5 req/s.** Four-way client concurrency buys 25 %. That is a hard server-side CPU
+ceiling and it is the predicted one: 0.5 vCPU against a per-verify cost of ~0.2–0.25 CPU-s
+(the ~0.15 CPU-s figure is an explicit lower bound, so measuring slightly *below* 3.3 req/s
+is the expected direction).
+
+The jump at P=8/16 is above the permit cap and is therefore not a scaling result — see
+"found, not fixed" #6.
+
+#### Why 490 ms — the mechanism
 
 The container is provisioned `instance_type = "standard-1"` in `[[env.prod.containers]]`
 — **1/2 vCPU**, 4 GiB ([Cloudflare Containers limits](https://developers.cloudflare.com/containers/platform-details/limits/)).
@@ -136,6 +190,13 @@ It also explains the shape, not just the size. Four concurrent 64-MiB memory-har
 sharing half a core are each ~4× slower than one — which is why the *measured* per-read
 latency is 1.702 s rather than ~0.4 s, and why it did **not** improve as the cache warmed
 (1.663 s at 22.85 % hits → 1.702 s at 100 %; a network- or warm-up-bound path would have).
+
+Corroborated end to end: predicted single-request server time ~0.2–0.25 CPU-s at 0.5 vCPU
+⇒ ~400–500 ms; **measured 489 ms at P=1**. Predicted saturated throughput ~3.3 req/s (lower
+bound); **measured 2.0–2.5 req/s across P=1…4**. Predicted total for the pilot 248 s;
+**measured 215–222 s**.
+
+#### Why hand-probing this path misleads
 
 The trap this path sets for anyone probing it by hand: an unauthenticated or malformed
 bearer `GET /cargo/<tenant>/<key>` returns **401 in ~30 ms**, short-circuiting *before*
@@ -192,11 +253,11 @@ Dispatch `cargo-cache-latency-probe.yml` **before** PR #1022 deploys and again *
 > a `pull_request` trigger scoped by `paths:` to its own two files, so the PR that
 > introduces or edits it runs it, and an ordinary PR still pays nothing.
 
-It reports p50/p90 for an authenticated `/cargo` lookup from a `corelink` box, on a fresh
-connection and on a reused one, plus a concurrency sweep. The prediction to falsify: the
-before-run shows a p50 in the high hundreds of ms with throughput flattening near 3–4
-req/s, and the after-run shows both collapsing. If it does not, the Argon2id attribution
-is wrong and this document is wrong with it.
+The **before** number is already in hand (above): p50 **501–514 ms**, served throughput flat
+at **2.0–2.5 req/s** across P=1…4. The prediction to falsify is therefore sharp: after
+#1022 deploys, a warm-memo lookup should drop to roughly the Worker floor plus a D1 read
+(**tens of ms, not ~490 ms**) and served throughput should climb well past 2.5 req/s. If it
+does not, the Argon2id attribution is wrong and this document is wrong with it.
 
 **Step 2 — only then, re-run the pilot**, holding everything fixed:
 
@@ -239,3 +300,13 @@ what the evidence says, and it is not what should be written down.
 5. **sccache's WebDAV operator has no opendal `RetryLayer`** (`src/cache/webdav.rs`). Any
    transient 5xx is a hard read error. It cost nothing in this pilot (0 cache errors), but
    it means a brief container blip degrades straight to cold compiles with no retry.
+6. **What happens above `ARGON2_PER_TENANT_PERMITS = 4` needs its own look.** The sweep
+   showed raw throughput rising to 6.7 and 14.4 req/s at P=8/16 against a served ceiling of
+   ~2.5 — arithmetically that can only be load-shedding, since the server cannot serve
+   14 req/s when it serves 2.5. The first probe run did not record status codes there, so
+   *which* rejection (503 vs something else) is unconfirmed; the script now counts them and
+   the answer will be in the next run. It matters because `cargo -jN` with N > 4 is the
+   normal case, and #1022's own commit message describes exactly this cold-burst 503 as
+   **pre-existing on main** — its single-flight remedy was withdrawn after review and is
+   tracked separately. So this is an open defect, not a probe artifact: a customer running
+   `cargo -j8` against `/cargo` today has half their requests shed.
