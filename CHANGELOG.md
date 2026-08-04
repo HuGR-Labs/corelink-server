@@ -71,6 +71,57 @@ Each entry cross-references:
   `the quota gate issued 0 batch round trips: []`).
 
 ### Added
+- **feat(worker+container): `origin` was 66 % of an authenticated request and one opaque block; it
+  is now five named phases that sum to it exactly.** Live prod (`3bd8f3b7-r1`, warm memo-hit steady
+  state, n=30, single reused connection, authenticated `/cargo` 404 miss): `auth` 0/0/7 ms (solved,
+  #1022), `wdb` 152/156/161 ms (solved, #1047), **`origin` 281/300/329 ms**, `total` 443/457/547 ms
+  — with `total == auth + wdb + origin` on 30/30, so the residue is genuinely inside `origin` and
+  nowhere else. Everything in it was unmeasured: the DO dispatch and placement, the container's own
+  per-request D1 `pat` read (#1022 deliberately KEPT it for immediate revocation), the `$`-ceiling
+  quota accrue, the storage lookup. This is the third turn of the recipe that worked twice: decompose
+  BEFORE optimising, because both previous wins landed somewhere nobody predicted.
+  The split spans the Worker→DO boundary. The container reports what only it can see —
+  `opat` (its D1 `pat` read) / `oquota` (the ADR-0068 check-and-accrue) / `ostore` (the moat url-map
+  read + CAS/R2 blob) / `oother` (its own residue against its own whole-request clock) — on the
+  **subresponse's own `Server-Timing`**, via a new outermost data-plane layer
+  (`crates/corelink-container/src/origin_timing.rs`, a task-local phase ledger). The Worker parses
+  that, forwards the four verbatim, and derives the one number only IT can see: `ohop = origin −
+  Σ(container phases)` — the DO dispatch + placement, the DO's own prologue, the wire, and the
+  response coming back. The container's raw header never reaches the client on the measured path;
+  the Worker's merged one overwrites it.
+- **The five reconcile by construction, and the tests pin the arithmetic rather than the labels.**
+  `ohop + opat + oquota + ostore + oother == origin`, exactly. A split that does not add up is worse
+  than no split — it invites a confident wrong conclusion about which tier to attack — so the two
+  failure modes are refusals, not fudges: **no container report** (an older container image, or a
+  503 the DO synthesized without ever reaching the container) leaves `origin` undecomposed exactly
+  as before, which is what lets the Worker deploy ahead of the container repin; **a report that does
+  not fit** (Σ > `origin`, or a phase we consume carrying an unreadable duration) is dropped WHOLE
+  and says so on the wire as `ohop;dur=<origin>;desc="unreconciled"`.
+  `worker/tests/server_timing_origin_subphases.test.ts` (11 cases) asserts the sum identity, that a
+  delay the container never saw lands in `ohop` and in no container phase, that the container's
+  numbers survive the merge verbatim, and sweeps the identity across five `origin` values × four
+  reports. Negative control recorded in the PR: silently dropping one phase from the merge fails 4
+  of 11, headline `origin=300 with container report "opat;dur=1, oquota;dur=2, ostore;dur=3,
+  oother;dur=4" produced [...], which sums to 297: expected 297 to be 300`.
+- **What each phase will let us decide, and what it deliberately does NOT separate.** A large `ohop`
+  ⇒ attack DO placement/dispatch, not the container; a large `opat` ⇒ the per-request revocation
+  read is the price and the memo/TTL trade-off is back on the table; a large `oquota` ⇒ the accrue is
+  a second uncached D1 round trip AFTER the Worker already made one; a large `ostore` ⇒ it is R2/the
+  url-map. `ohop` bundles the DO's prologue (lifecycle bind, `ensureContainerRunning`, the
+  `getAlarm()` re-arm) with the dispatch RPC and the wire — separating those needs the DO to rewrite
+  the subresponse's headers on the hot path, which is a behaviour change an instrumentation-only PR
+  does not make. If `ohop` dominates, that is the next split; the decomposition decides, not a hunch.
+  `ostore` instruments the moat (cargo/brew/npm/pip); the native CAS/AC plane does not go through it,
+  so there its storage time lands in `oother` — stated rather than faked.
+  Overhead is a couple of microseconds per request (one `Arc`, one task-local scope, four
+  `Instant::now()` calls, three relaxed atomic adds, one ~50-byte header) against a phase measured in
+  hundreds of milliseconds. Documented clock caveat, now on BOTH sides: a Worker phase at `dur=0`
+  means "no I/O" (`Date.now()` advances only across I/O), a container phase at `dur=0` means "under a
+  millisecond of real wall time" (`Instant`) — directional attribution, never a profile.
+  `scripts/probe-cargo-cache-latency.sh` phase 2b reads the new names AND every old one, so a probe
+  run before the deploy still attributes, and it now checks the sum identity per response and reports
+  `unreconciled` / `ABSENT` explicitly. No behaviour, caching, ordering or D1 access pattern changed
+  — this measures, it does not optimise.
 - **feat(worker): `wdb` is four serial awaits and the header only reported their sum — a third
   of an authenticated request was attributable to "the Worker-side reads" and to nothing more
   precise.** Probe run 30916725902 (2026-08-04, 30 samples) reports p50s of `auth` 8 ms (emitted on 3 of 30 responses, `desc="kv"`), `wdb` 118 ms, `origin` 192 ms, `total` 311 ms — percentiles over a sample, NOT the decomposition of a single request, and they do not add. (The

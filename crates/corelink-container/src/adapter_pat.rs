@@ -1310,11 +1310,19 @@ impl PatVerifier {
             .map_err(|_| VerifyError::InvalidPat)?;
 
         // 2. D1 lookup by the non-secret token_id (expiry filtered in SQL).
-        let row = match self
-            .lookup
-            .lookup(token_id.as_str())
-            .await
-            .map_err(VerifyError::Backend)?
+        //
+        // Timed as the `opat` sub-phase of the Worker's `origin` block: this is
+        // the per-request D1 read #1022 deliberately KEPT (so a revocation takes
+        // effect immediately) and it is one of the two candidates for the ~300 ms
+        // `origin` measured in prod. `timed` is a pass-through wrapper — it adds
+        // two `Instant::now()` calls and changes nothing about the read, its
+        // single-flight coalescing, or its result. See `crate::origin_timing`.
+        let row = match crate::origin_timing::timed(
+            crate::origin_timing::Phase::Pat,
+            self.lookup.lookup(token_id.as_str()),
+        )
+        .await
+        .map_err(VerifyError::Backend)?
         {
             Some(row) => row,
             // Unknown / expired / revoked. Burn the SAME Argon2id cost as

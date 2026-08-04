@@ -311,8 +311,17 @@ impl QuotaGate {
     /// $-ceiling. `Some(resp)` ⇒ REJECT (402 over-ceiling / 503
     /// fail-CLOSED); `None` ⇒ proceed. Delegates to
     /// [`crate::tenant_quota::QuotaGuard::check`].
+    ///
+    /// Timed as the `oquota` sub-phase of the Worker's `origin` block: the
+    /// check-and-accrue is a D1 round trip on every billable request, so it is
+    /// the other prime candidate (with the `pat` read) for the ~300 ms `origin`
+    /// measured in prod. `timed` wraps the call and changes nothing about it.
     pub async fn check(&self, tenant: &str) -> Option<axum::response::Response> {
-        self.guard.check(tenant, self.cost_micros).await
+        crate::origin_timing::timed(
+            crate::origin_timing::Phase::Quota,
+            self.guard.check(tenant, self.cost_micros),
+        )
+        .await
     }
 
     /// Charge a BATCH of `n` flat-cost billable ops against `tenant`'s
@@ -330,8 +339,14 @@ impl QuotaGate {
     ///
     /// `Some(resp)` ⇒ REJECT (402 over-ceiling / 503 fail-CLOSED); `None` ⇒
     /// proceed. `n = 0` charges nothing and returns `None`.
+    /// Timed as `oquota`, exactly like [`Self::check`] — one batched round trip
+    /// is still one round trip inside `origin`.
     pub async fn check_batch(&self, tenant: &str, n: usize) -> Option<axum::response::Response> {
-        self.guard.check_batch(tenant, n, self.cost_micros).await
+        crate::origin_timing::timed(
+            crate::origin_timing::Phase::Quota,
+            self.guard.check_batch(tenant, n, self.cost_micros),
+        )
+        .await
     }
 
     /// Construct a gate from an explicit guard + per-op cost. Used by route
@@ -1040,6 +1055,18 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
             otel_layer::otel_export_layer,
         ));
     }
+
+    // `origin` sub-phase timing. Added LAST ⇒ the OUTERMOST data-plane layer, so
+    // its clock spans everything the container does (routing, the rate-limit
+    // layer, the OTel layer above, the handler) — which is what makes the
+    // `oother` residue it publishes a TRUE residue rather than a partial one.
+    // Unconditional, unlike the OTel layer: it needs no config, does no I/O, and
+    // costs a couple of microseconds (see `crate::origin_timing`). It reports on
+    // the response's own `Server-Timing`; the Worker parses that and merges it
+    // under `origin` alongside the `ohop` residue it derives.
+    router = router.layer(axum::middleware::from_fn(
+        crate::origin_timing::origin_timing_layer,
+    ));
 
     router
 }
