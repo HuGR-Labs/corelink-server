@@ -145,6 +145,61 @@ awk 'NR > 1 && $1 == 404 {print $3}' /tmp/probe_warm.txt | pct "cargo TTFB (reus
 echo
 
 # ---------------------------------------------------------------------------
+# Phase 2b — WHERE that server time goes, read off the wire.
+#
+# Phase 2 says how much server time a warm lookup costs. It does not say which
+# tier spends it, and after the Argon2id memo shipped (#1022) that became the
+# open question: ~300 ms still sits on a request that only authenticates and
+# 404s, and it is NOT Argon2id (the phase-3 throughput curve now scales with
+# parallelism, which a CPU-bound stage cannot do).
+#
+# The Worker already publishes the split and nobody was reading it. Every authed
+# data-plane response carries `Server-Timing` (worker/src/index.ts):
+#   auth   — the Worker's PAT verify, with `desc` naming the cache tier that
+#            served the row (l1 / kv / d1)
+#   wdb    — the Worker-side quota + residency D1 reads, UNCACHED, to the ENAM
+#            primary
+#   origin — the whole DO + container subrequest (so the container's own D1 `pat`
+#            read, the memo, the quota gate and the storage lookup are all
+#            INSIDE this one number — this phase narrows the residue to a tier,
+#            it does not break the container open)
+#   total  — the Worker's own view of the request
+#
+# ⚠️ These durations are coarse by construction: `Date.now()` in a Worker only
+# advances across I/O, so a purely-CPU stretch can measure 0. Read them as
+# directional attribution, never as a profile.
+# ---------------------------------------------------------------------------
+echo "── phase 2b: where that server time goes (Worker Server-Timing split) ──"
+urls_st=()
+for _ in $(seq 1 "${SAMPLES}"); do urls_st+=("${CARGO_BASE}/$(randkey)"); done
+curl -sS -o /dev/null -D /tmp/probe_hdrs.txt \
+  -H "Authorization: Bearer ${PROBE_TOKEN}" \
+  "${urls_st[@]}" || true
+tr -d '\r' < /tmp/probe_hdrs.txt | grep -i '^server-timing:' > /tmp/probe_st.txt || true
+
+if [ ! -s /tmp/probe_st.txt ]; then
+  echo "  NO Server-Timing header on any response."
+  echo "  That is itself the finding: the /cargo adapter route does not reach the"
+  echo "  Worker's timing emission, so this surface ships with no latency"
+  echo "  attribution at all — for us OR for a customer debugging a slow cache."
+else
+  for ph in auth wdb origin total; do
+    # `dur` is milliseconds; `pct` takes seconds.
+    grep -oE "(^|[ ,])${ph};dur=[0-9]+" /tmp/probe_st.txt \
+      | grep -oE '[0-9]+$' \
+      | awk '{ print $1 / 1000 }' \
+      | pct "  ${ph}"
+  done
+  echo -n "  auth served from  : "
+  grep -oE 'desc="[a-z0-9]+"' /tmp/probe_st.txt | sort | uniq -c | tr '\n' ' '
+  echo
+  echo "  (origin is the ENTIRE container hop — a large origin means the residue"
+  echo "   is inside the container, not at the edge; a large wdb means it is the"
+  echo "   Worker's own uncached D1 reads.)"
+fi
+echo
+
+# ---------------------------------------------------------------------------
 # Phase 3 — does the surface parallelise?
 # cargo runs -j N rustc processes, each of which is one sccache client, so
 # lookups are concurrent up to N. If throughput scales with concurrency, the
