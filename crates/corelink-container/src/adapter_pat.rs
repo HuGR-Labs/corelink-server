@@ -55,11 +55,13 @@
 //!
 //! There is one axis on which the two outcomes are deliberately NOT the
 //! uniform `InvalidPat`: the **load shed**. When the Argon2id permit pool
-//! (global or per-tenant) cannot be entered within `ARGON2_PERMIT_WAIT`,
+//! (global or per-tenant) cannot be entered within `ARGON2_PERMIT_WAIT` —
+//! or, on the dummy-burn arm's shared bucket, cannot be entered at once —
 //! the pipeline gives up *before deciding anything about the credential* —
 //! so the honest answer is "verifier overloaded", not "invalid PAT", and
 //! every shed arm returns [`VerifyError::Backend`] ⇒ HTTP 503 +
-//! `Retry-After`.
+//! `Retry-After`. WHEN a tier sheds is a tuning choice; WHAT it answers is
+//! the invariant.
 //!
 //! The invariant that matters is that the shed is **symmetric across row
 //! existence**: the row-FOUND arm (step 3) and the row-NOT-FOUND
@@ -379,8 +381,21 @@ const PER_TENANT_MAP_CAP: usize = 10_000;
 /// attacker could spread a flood across many bogus token_ids to drain the
 /// global pool through this path. Routing every dummy burn through ONE shared
 /// synthetic bucket caps the *total* concurrent dummy burns at the per-tenant
-/// sub-cap — so the unknown-token path can never starve real tenants. The key
-/// is not a valid tenant UUID, so it cannot collide with a real tenant bucket.
+/// sub-cap. The key is not a valid tenant UUID, so it cannot collide with a
+/// real tenant bucket.
+///
+/// ⚠️ **The bucket alone caps BURNS, not global-pool OCCUPANCY — the acquire
+/// ORDER is what makes it cap the pool.** As originally written this arm took
+/// the global permit first and then waited up to [`ARGON2_PERMIT_WAIT`] on this
+/// bucket, so a request already destined to shed still pinned a global permit
+/// for the entire wait. Concurrent *burns* were capped at the sub-cap exactly as
+/// claimed, while the number of global permits held by this arm was bounded only
+/// by the flood's arrival rate — the drain the bucket was introduced to close,
+/// still open one step to the left. The arm therefore takes this bucket FIRST
+/// and NON-BLOCKINGLY ([`PerTenantGate::try_acquire`]): a shed holds no global
+/// permit at any instant, so the arm's global footprint really is the sub-cap.
+/// Do not restore the global-first order here (see the arm in
+/// [`PatVerifier::verify_capability`]).
 const UNKNOWN_TOKEN_BUCKET: &str = "\0argon2-dummy-burn-bucket\0";
 
 /// How long a verify will wait for an Argon2id permit before declaring the
@@ -534,7 +549,10 @@ impl PerTenantGate {
     ///   monopolise the global pool.
     ///
     /// MUST be called AFTER the global permit is held (consistent acquire order
-    /// global→per-tenant ⇒ deadlock-free).
+    /// global→per-tenant ⇒ deadlock-free). The one caller that inverts the order
+    /// — the dummy-burn arm — uses the non-blocking [`Self::try_acquire`]
+    /// instead, which cannot participate in a wait-for cycle at all and so
+    /// preserves that rationale rather than breaking it.
     async fn acquire(&self, tenant: &str) -> Result<Option<OwnedSemaphorePermit>, ()> {
         let Some(sem) = self.semaphore(tenant) else {
             // Fail-safe: no per-tenant bookkeeping ⇒ global-only.
@@ -547,6 +565,35 @@ impl PerTenantGate {
             // collapse to a fail-CLOSED overloaded signal.
             Ok(Err(_)) | Err(_) => Err(()),
         }
+    }
+
+    /// NON-BLOCKING sibling of [`Self::acquire`], for a caller that must take a
+    /// per-tenant permit BEFORE the global one. Same three outcomes with the
+    /// same meanings — `Ok(Some)` held, `Ok(None)` fail-safe global-only,
+    /// `Err(())` at the sub-cap ⇒ the caller's usual fail-CLOSED overloaded
+    /// signal — except that a full bucket is reported IMMEDIATELY instead of
+    /// after [`ARGON2_PERMIT_WAIT`].
+    ///
+    /// Why a `try` and not the bounded wait: this is the only acquire that runs
+    /// with NO global permit held, so it inverts the module's
+    /// global→per-tenant order. A blocking wait in that position would be a
+    /// genuine lock-order inversion; a non-blocking one cannot be, because it
+    /// never enters a wait-for relation — it either succeeds outright or fails
+    /// outright, so no cycle can form and the deadlock-freedom rationale on
+    /// [`Self::acquire`] is preserved unchanged.
+    ///
+    /// See the dummy-burn arm of [`PatVerifier::verify_capability`] for why the
+    /// inversion is worth having: shedding a request that was going to be shed
+    /// anyway must not first park a global permit for the whole wait.
+    fn try_acquire(&self, tenant: &str) -> Result<Option<OwnedSemaphorePermit>, ()> {
+        let Some(sem) = self.semaphore(tenant) else {
+            // Fail-safe: no per-tenant bookkeeping ⇒ global-only. Identical to
+            // `acquire`'s fall-through — a bookkeeping fault never blocks auth.
+            return Ok(None);
+        };
+        // Saturated bucket OR closed semaphore (never happens — we never close
+        // it) collapse to the same fail-CLOSED overloaded signal `acquire` uses.
+        sem.try_acquire_owned().map(Some).map_err(|_| ())
     }
 }
 
@@ -1045,13 +1092,16 @@ pub struct PatVerifier {
     argon2_permits: Arc<Semaphore>,
     /// Per-tenant Argon2id sub-limit (finding #1, fairness). A lazily-created
     /// `Arc<Semaphore>` per `tenant_id`, each capped at
-    /// [`ARGON2_PER_TENANT_PERMITS`]. A verify acquires the global permit
-    /// FIRST, then this tenant's permit (CONSISTENT order => no deadlock), so a
-    /// single tenant flooding distinct PATs can hold at most
+    /// [`ARGON2_PER_TENANT_PERMITS`]. A row-FOUND verify acquires the global
+    /// permit FIRST, then this tenant's permit (CONSISTENT order => no
+    /// deadlock), so a single tenant flooding distinct PATs can hold at most
     /// `ARGON2_PER_TENANT_PERMITS` global permits at once -- leaving the rest of
-    /// the global pool for other tenants. See [`PerTenantGate`] for the bounded
-    /// LRU and the fail-safe posture; it lives behind an `Arc` so the coalescing
-    /// flight future can own a handle to it.
+    /// the global pool for other tenants. The dummy-burn arm INVERTS that order
+    /// (shared bucket first, non-blocking) for the reason spelled out on
+    /// [`UNKNOWN_TOKEN_BUCKET`]: it is the only way its sub-cap bounds
+    /// global-pool occupancy and not merely concurrent burns. See
+    /// [`PerTenantGate`] for the bounded LRU and the fail-safe posture; it lives
+    /// behind an `Arc` so the coalescing flight future can own a handle to it.
     per_tenant: Arc<PerTenantGate>,
     /// Memoised Argon2id secret-matches — the fix for the adapter plane's
     /// throughput ceiling.
@@ -1309,34 +1359,45 @@ impl PatVerifier {
                         &dummy_burn_fingerprint(pat_plaintext),
                         move || {
                             async move {
-                                // The dummy burn ALSO runs Argon2id (for timing
-                                // parity), so it must be bounded by the same gate —
-                                // otherwise an attacker who floods valid-HMAC tokens
-                                // for NON-existent token_ids could OOM the container
-                                // exactly like the hot path.
-                                let permit = match tokio::time::timeout(
-                                    ARGON2_PERMIT_WAIT,
-                                    permits.acquire_owned(),
-                                )
-                                .await
-                                {
-                                    Ok(Ok(permit)) => permit,
-                                    // GLOBAL shed. Returns `Backend`, the SAME code
-                                    // the hot path returns for the SAME condition —
-                                    // see the status-parity note below.
-                                    _ => {
-                                        return BurnFlight::Backend(
-                                            "pat verifier overloaded".into(),
-                                        )
-                                    }
-                                };
                                 // Finding #12: cap the dummy-burn path through ONE
-                                // shared synthetic bucket (consistent
-                                // global→per-tenant order) so a leaked-key flood
+                                // shared synthetic bucket so a leaked-key flood
                                 // across bogus token_ids cannot drain the global
                                 // pool via this path.
+                                //
+                                // ⚠️ ORDER IS INVERTED HERE ON PURPOSE, and it is
+                                // the whole defence. This arm takes the SHARED
+                                // bucket FIRST and the global permit only after.
+                                // The original order (global, then a 250 ms
+                                // bounded wait on the bucket) capped concurrent
+                                // BURNS at the sub-cap but did NOT cap this arm's
+                                // global-pool occupancy: a request already
+                                // destined to shed still parked a global permit
+                                // for the full `ARGON2_PERMIT_WAIT` while queued
+                                // on the saturated bucket, so at the flood rate
+                                // the bucket itself admits, nearly the entire
+                                // global pool sat pinned by requests that would
+                                // go on to burn nothing. Bucket-first caps the
+                                // arm's global footprint at the sub-cap for real:
+                                // a shed here holds no global permit at any
+                                // instant.
+                                //
+                                // The acquire is NON-BLOCKING
+                                // ([`PerTenantGate::try_acquire`]) precisely
+                                // because it runs with no global permit held and
+                                // therefore inverts the module's
+                                // global→per-tenant order (see
+                                // [`PerTenantGate::acquire`]). That order exists
+                                // to keep the two tiers deadlock-free by being
+                                // consistent; a `try` cannot deadlock in any
+                                // order, because it never waits, so the rationale
+                                // survives the inversion intact. The cost is the
+                                // deliberate semantic change: a burn that would
+                                // previously have waited up to
+                                // `ARGON2_PERMIT_WAIT` for a bucket slot now
+                                // sheds at once — a shed either way, just sooner
+                                // and without holding capacity hostage meanwhile.
                                 let tenant_permit =
-                                    match per_tenant.acquire(UNKNOWN_TOKEN_BUCKET).await {
+                                    match per_tenant.try_acquire(UNKNOWN_TOKEN_BUCKET) {
                                         Ok(maybe_permit) => maybe_permit,
                                         // PER-TENANT shed: skip the burn and shed
                                         // with the SAME overloaded signal as the
@@ -1351,6 +1412,29 @@ impl PatVerifier {
                                             )
                                         }
                                     };
+                                // The dummy burn ALSO runs Argon2id (for timing
+                                // parity), so it must be bounded by the same gate —
+                                // otherwise an attacker who floods valid-HMAC tokens
+                                // for NON-existent token_ids could OOM the container
+                                // exactly like the hot path.
+                                let permit = match tokio::time::timeout(
+                                    ARGON2_PERMIT_WAIT,
+                                    permits.acquire_owned(),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(permit)) => permit,
+                                    // GLOBAL shed. Returns `Backend`, the SAME code
+                                    // the hot path returns for the SAME condition —
+                                    // see the status-parity note below. `tenant_permit`
+                                    // is released by RAII on this early return, so a
+                                    // global shed never strands a bucket slot either.
+                                    _ => {
+                                        return BurnFlight::Backend(
+                                            "pat verifier overloaded".into(),
+                                        )
+                                    }
+                                };
                                 let _ = tokio::task::spawn_blocking(move || {
                                     let r =
                                         corelink_pat::dummy_verify_for_constant_time(&plaintext);
@@ -3619,6 +3703,153 @@ mod tests {
         drop(held);
         assert_eq!(
             observe(&verifier.verify(&pt_unknown).await),
+            Observed::Unauthorized,
+            "outside saturation an unknown row must be the uniform 401, never a 503"
+        );
+    }
+
+    /// THE ACQUIRE-ORDER PIN. `a_saturated_shared_burn_bucket_sheds_only_the_unknown_arm`
+    /// above proves the shared bucket sheds the right arm; this proves the shed
+    /// is FREE, which is the property finding #12 was actually claiming.
+    ///
+    /// The bucket caps concurrent dummy BURNS at the sub-cap by construction.
+    /// It does NOT, by construction, cap this arm's occupancy of the GLOBAL
+    /// pool: with the original global-then-bucket order, a request already
+    /// destined to shed first took a global permit and then queued on the full
+    /// bucket for the whole `ARGON2_PERMIT_WAIT`, holding pool capacity hostage
+    /// for 250 ms in order to burn nothing. At the rate the bucket itself
+    /// admits, that pinned essentially the entire pool — the drain the bucket
+    /// exists to close, merely displaced one step upstream. Taking the bucket
+    /// FIRST, and non-blockingly, is what turns the sub-cap into a real bound on
+    /// the arm's global footprint.
+    ///
+    /// So a status assertion cannot carry this test: both orders shed, and both
+    /// shed with the same message. What separates them is whether the pool was
+    /// OCCUPIED while they did it, which is measured here directly — first for
+    /// one request, then for a flood.
+    ///
+    /// ⚠️ A note on what this test deliberately does NOT assert, because the
+    /// obvious formulation is a coin flip: "a concurrent live PAT still
+    /// resolves" does not separate the two orders. `tokio::sync::Semaphore` is
+    /// FIFO-fair, so a live request that queues behind the flood waits for
+    /// exactly ONE release — and the pre-fix arm holds its permit for exactly
+    /// `ARGON2_PERMIT_WAIT`, the same budget the live request is waiting under.
+    /// Measured, the pre-fix order let the live PAT through about half the
+    /// time. What a shedding request provably costs is CAPACITY, so capacity is
+    /// what gets asserted: an outside consumer must be able to take the whole
+    /// pool while the flood is in flight.
+    ///
+    /// PROVEN RED against the pre-fix order (measured, by reverting the arm to
+    /// the bounded `acquire` after the global permit): phase 1 reports
+    /// `parked the global permit on 30-38 of 40 samples`, and with phase 1
+    /// neutralised phase 2 reports `only 0 of 4 global permits were free while
+    /// 4 bogus token_ids shed` on 3 runs of 3. Both are green on 3 runs of 3
+    /// with the fix.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_shed_on_the_shared_burn_bucket_holds_no_global_permit() {
+        const FLOOD: usize = 4;
+        let key = test_key();
+        let (pt_live, tid, hash, tenant) = mint_pat(&key, 102, SCOPE_CACHE_RW);
+        // FLOOD + 1 DISTINCT bogus PATs. Distinct plaintexts ⇒ distinct flight
+        // keys ⇒ the coalescer cannot fold them into ONE burn, which is what
+        // makes this a flood rather than one request wearing N hats.
+        let (pt_probe, _tid_p, _h_p, _t_p) = mint_pat(&key, 200, SCOPE_CACHE_RW);
+        let flood_pats: Vec<String> = (0..FLOOD)
+            .map(|i| mint_pat(&key, 201 + i as u128, SCOPE_CACHE_RW).0)
+            .collect();
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        // Global pool exactly FLOOD, so the flood is *able* to take all of it,
+        // and a per-bucket sub-cap of one so a single held permit saturates the
+        // shared burn bucket.
+        let verifier = Arc::new(PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup,
+            vec![(*key).clone()],
+            FLOOD,
+            1,
+        ));
+        let burn_bucket = verifier
+            .per_tenant_semaphore(UNKNOWN_TOKEN_BUCKET)
+            .expect("dummy bucket");
+        let held = Arc::clone(&burn_bucket)
+            .try_acquire_owned()
+            .expect("the only burn-bucket permit");
+        assert_eq!(burn_bucket.available_permits(), 0, "burn bucket saturated");
+
+        // ── PHASE 1: one request, sampled. It meets the saturated bucket and
+        // is going to shed. Watch the pool across a 200 ms window — far wider
+        // than a correct shed needs, and well inside the 250 ms the pre-fix
+        // order would have parked for. The pool must stay whole throughout.
+        let probe = {
+            let (v, pt) = (Arc::clone(&verifier), pt_probe.clone());
+            tokio::spawn(async move { observe(&v.verify(&pt).await) })
+        };
+        let mut parked = 0usize;
+        for _ in 0..40 {
+            if verifier.argon2_permits.available_permits() != FLOOD {
+                parked += 1;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(
+            probe.await.expect("probe task"),
+            Observed::Overloaded,
+            "precondition: the probe must actually have SHED on the shared bucket"
+        );
+        assert_eq!(
+            parked, 0,
+            "parked the global permit on {parked} of 40 samples — a request \
+             destined to shed must never occupy the pool"
+        );
+
+        // ── PHASE 2: the flood, and the property stated as capacity. FLOOD
+        // distinct bogus token_ids, all shedding on the saturated bucket, are
+        // in flight. An outside consumer — standing in for the concurrent live
+        // traffic the pool exists to serve — must be able to take EVERY global
+        // permit, because a shed holds none.
+        let flood: Vec<_> = flood_pats
+            .iter()
+            .map(|pt| {
+                let (v, pt) = (Arc::clone(&verifier), pt.clone());
+                tokio::spawn(async move { observe(&v.verify(&pt).await) })
+            })
+            .collect();
+        // Sampled INSIDE the pre-fix park window (250 ms), so the two orders
+        // are distinguished by capacity and not by who woke up first.
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let grabbed: Vec<_> = (0..FLOOD)
+            .filter_map(|_| {
+                Arc::clone(&verifier.argon2_permits)
+                    .try_acquire_owned()
+                    .ok()
+            })
+            .collect();
+        assert_eq!(
+            grabbed.len(),
+            FLOOD,
+            "only {} of {FLOOD} global permits were free while {FLOOD} bogus \
+             token_ids shed — requests that ran no Argon2id at all were holding \
+             the pool a paying tenant needs",
+            grabbed.len()
+        );
+        drop(grabbed);
+        for (i, t) in flood.into_iter().enumerate() {
+            assert_eq!(
+                t.await.expect("flood task"),
+                Observed::Overloaded,
+                "flood request {i} must still shed as the uniform overloaded signal"
+            );
+        }
+
+        // CONTROLS. (a) The pool is genuinely usable, not merely idle: a live
+        // PAT resolves with the burn bucket still saturated…
+        let live = verifier.verify(&pt_live).await;
+        assert_eq!(observe(&live), Observed::Ok, "live PAT must resolve");
+        assert_eq!(live.expect("live PAT resolves"), tenant);
+        // …and (b) releasing the bucket returns the unknown arm to the uniform
+        // 401, so none of the above is a verifier that just 503s everything.
+        drop(held);
+        assert_eq!(
+            observe(&verifier.verify(&pt_probe).await),
             Observed::Unauthorized,
             "outside saturation an unknown row must be the uniform 401, never a 503"
         );
