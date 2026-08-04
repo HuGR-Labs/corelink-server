@@ -192,11 +192,19 @@ if [ ! -s /tmp/probe_st.txt ]; then
   echo "  Worker's timing emission, so this surface ships with no latency"
   echo "  attribution at all — for us OR for a customer debugging a slow cache."
 else
-  # `n=` in each row is load-bearing: a phase whose clock reads 0 ms is OMITTED
-  # from the header by the Worker only when it did not RUN, so a low n means
-  # "this phase was skipped on most requests", while n == SAMPLES with p50=0
-  # means "it ran every time and cost less than the clock can resolve". Do not
-  # read a missing row as a fast row.
+  # `n=` in each row is load-bearing. The Worker emits a phase that RAN even at
+  # `dur=0` and omits only a phase that did NOT run, so `n == SAMPLES` with
+  # `p50=0` means "ran every time, cheaper than the clock can resolve" and a low
+  # `n` means "skipped on that many requests". Never read a missing row as a fast
+  # row.
+  #
+  # ⚠️ That contract holds only against a Worker at or past the commit that
+  # introduced it. An OLDER deployed Worker suppressed `auth`/`wdb`/`origin` at
+  # 0 ms on a strict `>`, which is why the 2026-08-04 probe run showed `auth n=3`
+  # out of 30 responses: those 27 were KV-served in under a millisecond, NOT
+  # skipped. If you see a low `n` on `auth`/`wdb`/`origin`, check what is actually
+  # deployed before concluding anything — that number is the reason this contract
+  # was made explicit.
   for ph in auth wdb qmeter qtier qstor qresid origin total; do
     # `dur` is milliseconds; `pct` takes seconds.
     #
@@ -212,7 +220,7 @@ else
       | grep -oE '[0-9]+$' \
       | awk '{ print $1 / 1000 }' || true)"
     if [ -z "${vals}" ]; then
-      printf '  %-32s ABSENT — not emitted on ANY of the %s responses (deployed Worker predates this phase, or it was skipped every time)\n' \
+      printf '  %-32s ABSENT — not emitted on ANY of the %s responses (the deployed Worker does not publish this phase, or it was skipped on every request — NOT "it was fast")\n' \
         "${ph}" "${SAMPLES}"
       continue
     fi

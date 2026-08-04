@@ -1764,7 +1764,7 @@ const baseHandler: ExportedHandler<Env> = {
     let stPatSource: "l1" | "kv" | "d1" | undefined;
     // `wdb` sub-phase clocks — the four SERIAL awaits between `auth` and `origin`
     // (metering UPSERT → tier resolve → storage SUM → residency resolve). The
-    // aggregate `wdb` says "the worker-side reads cost 114 ms" but not WHICH of
+    // aggregate `wdb` says "the worker-side reads cost ~118 ms p50" but not WHICH of
     // the four owns it: two are cache-backed (tier, residency) and two are
     // uncached D1 (the counter UPSERT, the storage SUM), and an isolate-cold
     // request can turn a "cached" one back into a D1 round trip. Attributing
@@ -1774,7 +1774,7 @@ const baseHandler: ExportedHandler<Env> = {
     // early 429). That sentinel is what lets `dur=0` MEAN "ran, and cost less
     // than the clock can see" instead of being indistinguishable from a phase
     // that never executed — the ambiguity that forced an inference from the
-    // `auth` phase's 2-of-30 emission rate.
+    // `auth` phase's 3-of-30 emission rate in probe run 30916725902.
     let stQMeterMs = -1;
     let stQTierMs = -1;
     let stQStorMs = -1;
@@ -2859,6 +2859,21 @@ const baseHandler: ExportedHandler<Env> = {
       // sentinel: the phase DID NOT RUN, which is a different fact from "ran and
       // cost nothing". (`requestQuotaEnabled === false` does call in and return
       // without a write — that legitimately reads as a real 0.)
+      //
+      // ACCEPTED SIGNAL (independent review of this commit): because the omission
+      // is keyed on `isFanout`, an absent `qmeter` in the response header confirms
+      // to the CALLER that their `x-corelink-fanout-from` matched
+      // CORELINK_INTERNAL_AUTH_KEY — a one-request confirmation oracle on a server
+      // secret, where previously a successful forgery was only observable
+      // indirectly (never being 429'd). Accepted, deliberately, because
+      // `constantTimeSecretEqual` is a FULL-VALUE compare: it confirms a complete
+      // correct guess, it does not help build one byte-by-byte, and anyone holding
+      // the whole 64-hex secret already has the metering bypass this would
+      // confirm. Emitting `qmeter;dur=0` instead would re-introduce exactly the
+      // "skipped vs fast" ambiguity this phase exists to remove. The real close is
+      // to ingress-strip `x-corelink-fanout-from` at the public edge, which
+      // eliminates the forgery surface and this oracle with it — tracked
+      // separately; it is edge config, not a Worker change.
       if (!isFanout) stQMeterMs = Date.now() - meterStart;
       const withinFreeCap = !inc.counted || inc.count <= FREE_REQUEST_CAP;
 
@@ -3215,26 +3230,41 @@ const baseHandler: ExportedHandler<Env> = {
     }
     // Server-Timing (observability, self-serve latency probes): split the authed
     // hot path into `auth` (PAT verify — KV-served ⇒ single-digit ms), `wdb` (the
-    // worker-side quota + residency D1 reads to the ENAM primary, uncached), and
-    // `origin` (the DO/container subrequest). This is what lets a client
-    // distinguish "auth is slow" from "the downstream D1 reads are slow" WITHOUT a
-    // log grep. `desc` on `auth` carries the cache tier (`kv`/`l1`/`d1`). Emitted
-    // only when the phases ran (authed data-plane path); durations are coarse
-    // (Date.now advances across I/O only), directional not authoritative.
+    // worker-side quota + residency reads to the ENAM primary) and its four serial
+    // sub-phases, and `origin` (the DO/container subrequest). This is what lets a
+    // client distinguish "auth is slow" from "the downstream D1 reads are slow"
+    // WITHOUT a log grep. `desc` on `auth` carries the cache tier (`kv`/`l1`/`d1`).
+    //
+    // EMISSION CONTRACT — a phase that RAN is emitted, INCLUDING at `dur=0`; only
+    // a phase that did NOT run is omitted. This matters more than it looks: a
+    // Worker's `Date.now()` advances only across I/O, so a KV-served or L1-served
+    // phase genuinely measures 0, and suppressing it would make "served from cache,
+    // faster than the clock resolves" indistinguishable from "never executed" on
+    // the wire. `auth`/`wdb`/`origin` used to be emitted on a strict `>`, which is
+    // exactly that bug: the 2026-08-04 production probe reported `auth` on 3 of 30
+    // responses and the missing 27 had to be INFERRED to be KV-served rather than
+    // skipped. They now gate on "did this phase run?" like the sub-phases do.
+    //
+    // Durations are coarse by construction (Date.now advances across I/O only) —
+    // directional attribution, never a profile.
     {
       const st: string[] = [];
-      if (stAuthEnd > stAuthStart) {
+      // `stAuthEnd > 0` ⇔ the auth phase ran (both clocks start at 0 and are only
+      // ever set to a real Date.now()). Pre-tenant `signup` never enters it.
+      if (stAuthEnd > 0) {
         const d = stAuthEnd - stAuthStart;
         st.push(stPatSource ? `auth;dur=${d};desc="${stPatSource}"` : `auth;dur=${d}`);
       }
-      if (stOriginStart > 0 && stAuthEnd > 0 && stOriginStart > stAuthEnd) {
+      // `wdb` spans auth-end → origin-start, so it ran iff BOTH ends are stamped.
+      // The `stAuthEnd > 0` half is load-bearing beyond the ran-check: on a route
+      // that skipped auth it would otherwise compute `stOriginStart - 0`, i.e. the
+      // epoch, and publish it as a duration.
+      if (stAuthEnd > 0 && stOriginStart > 0) {
         st.push(`wdb;dur=${stOriginStart - stAuthEnd}`);
       }
-      // `wdb` sub-phases: the four serial awaits that make it up, in execution
-      // order. Emitted whenever the phase RAN (so `dur=0` is a real measurement,
-      // not an absence); a phase that was skipped is simply omitted. `wdb` itself
-      // is kept unchanged so existing probes/dashboards do not break — these are
-      // strictly additive.
+      // The four serial awaits `wdb` is made of, in execution order. `-1` is the
+      // did-not-run sentinel (see the declarations); anything >= 0 ran and is
+      // reported at its real cost, 0 included.
       for (const [name, ms] of [
         ["qmeter", stQMeterMs],
         ["qtier", stQTierMs],
@@ -3243,7 +3273,7 @@ const baseHandler: ExportedHandler<Env> = {
       ] as const) {
         if (ms >= 0) st.push(`${name};dur=${ms}`);
       }
-      if (stOriginEnd > stOriginStart) {
+      if (stOriginEnd > 0) {
         st.push(`origin;dur=${stOriginEnd - stOriginStart}`);
       }
       st.push(`total;dur=${Date.now() - requestStart}`);

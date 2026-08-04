@@ -4,9 +4,10 @@
  *
  * # Why this test exists
  *
- * The aggregate `wdb` phase measured 114 ms p50 on an authenticated `/cargo`
- * lookup in production (2026-08-04), which told us the Worker-side reads own a
- * third of the request and nothing about WHICH read. `wdb` is four serial
+ * The aggregate `wdb` phase measured a 118 ms p50 on an authenticated `/cargo`
+ * lookup in production (probe run 30916725902, 2026-08-04, 30 samples), against
+ * a 311 ms `total` — so the Worker-side reads own roughly a third of the request
+ * and the aggregate says nothing about WHICH read. `wdb` is four serial
  * awaits — the monthly-counter UPSERT, the tier resolve, the storage SUM, and
  * the residency resolve — of which two are cache-backed and two are not. Fixing
  * the wrong one is the default outcome of guessing.
@@ -25,8 +26,8 @@
  *
  * so `qtier;dur=0` means "cache-served, faster than the clock resolves" and a
  * missing `qmeter` means "the UPSERT never happened". Collapsing those two into
- * "absent" is what forced an inference from the `auth` phase's 2-of-30 emission
- * rate in the production reading this work came out of.
+ * "absent" is what forced an inference from the `auth` phase appearing on only
+ * 3 of 30 responses in that same run: KV-served below the clock, not skipped.
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
@@ -47,11 +48,15 @@ const INTERNAL_AUTH_KEY = "cd".repeat(32);
  * band below cannot be satisfied by noise, and small enough to keep the suite
  * fast.
  */
-const DELAY_MS = 60;
+const DELAY_MS = 150;
 /** Lower bound the delayed phase must clear (allows a little clock slack). */
-const DELAYED_MIN_MS = 45;
-/** Upper bound every NON-delayed phase must stay under. */
-const UNDELAYED_MAX_MS = 25;
+const DELAYED_MIN_MS = 110;
+/**
+ * Upper bound every NON-delayed phase must stay under. Sized so a GC pause or a
+ * loaded CI runner cannot push an un-delayed phase over it — the separation from
+ * DELAYED_MIN_MS, not the absolute value, is what makes the attribution sharp.
+ */
+const UNDELAYED_MAX_MS = 50;
 
 function b64urlNoPad(bytes: Uint8Array): string {
   let bin = "";
@@ -88,6 +93,12 @@ type SlowTarget = "none" | "meter" | "tier" | "storage" | "residency";
  * distinguishing fragment of each real query (see `lib/quota.ts` and
  * `lib/tenant_residency_cache.ts`) — the tier and residency reads BOTH select
  * `FROM tenant`, so the discriminator is the projected column, not the table.
+ *
+ * Note the tier resolve issues TWO statements — `SELECT tier FROM tier_selections`
+ * (the canonical active-subscription read) and then `SELECT tier FROM tenant` —
+ * and only the second is classified here. That is deliberate and harmless: the
+ * delay still lands inside the `qtier` window either way, and matching one gives
+ * a single, unambiguous injection point per phase.
  */
 function phaseOf(sql: string): SlowTarget {
   if (sql.includes("INSERT INTO monthly_request_counts")) return "meter";
@@ -258,8 +269,45 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
       // cost `wdb` does not also contain would mean the split is measuring
       // something outside the phase it claims to decompose.
       expect(st["wdb"]).toBeGreaterThanOrEqual(DELAYED_MIN_MS);
+
+      // ...and the four must ACCOUNT for `wdb`, not merely sit inside it. Without
+      // this, a clock that double-counts an await (or one that silently measures
+      // nothing) still satisfies every assertion above. The four are the only
+      // awaits in the window, so the unattributed remainder is pure CPU, which a
+      // Worker's coarsened clock reads as ~0.
+      const sum = SUBPHASES.reduce((a, p) => a + (st[p] ?? 0), 0);
+      expect(
+        sum,
+        `the four sub-phases sum to ${sum}ms but wdb is ${st["wdb"]}ms — they do not ` +
+          `account for the phase they decompose. Full split: ${JSON.stringify(st)}`,
+      ).toBeGreaterThanOrEqual(st["wdb"]! - UNDELAYED_MAX_MS);
+      expect(
+        sum,
+        `the four sub-phases sum to ${sum}ms, MORE than the ${st["wdb"]}ms wdb window ` +
+          `that contains them — an await is being counted twice. Full split: ${JSON.stringify(st)}`,
+      ).toBeLessThanOrEqual(st["wdb"]! + UNDELAYED_MAX_MS);
     },
   );
+
+  it("emits the parent phases at dur=0 too, not just the sub-phases", async () => {
+    // `auth`, `wdb` and `origin` were historically emitted on a strict `>`, so a
+    // sub-millisecond phase vanished from the header — the exact "was it fast or
+    // was it skipped?" ambiguity the sub-phase sentinel exists to remove. Fixing
+    // it only for the children would leave the parent `wdb` capable of
+    // disappearing while all four of its own sub-phases report 0.
+    const env = makeEnv("none");
+    const token = await mintValidToken();
+    await requestOnce(env, token, "f"); // warm the caches so the reads cost ~0
+    const st = await requestOnce(env, token, "g");
+
+    for (const p of ["auth", "wdb", "origin"] as const) {
+      expect(
+        st,
+        `${p} vanished from Server-Timing on a fully cache-warm request. A phase that ` +
+          `ran must be reported even at dur=0. Full split: ${JSON.stringify(st)}`,
+      ).toHaveProperty(p);
+    }
+  });
 
   it("emits a phase that ran but cost nothing as dur=0 rather than omitting it", async () => {
     // Second request on the same isolate: the tier is L1-cached (5 s TTL), so

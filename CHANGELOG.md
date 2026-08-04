@@ -25,8 +25,10 @@ Each entry cross-references:
 ### Added
 - **feat(worker): `wdb` is four serial awaits and the header only reported their sum — a third
   of an authenticated request was attributable to "the Worker-side reads" and to nothing more
-  precise.** The 2026-08-04 production reading of an authenticated `/cargo` lookup split as
-  `auth≈0 / wdb=114 ms / origin=233 ms / total=352 ms`. `wdb` is the monthly-counter UPSERT, the
+  precise.** Probe run 30916725902 (2026-08-04, 30 samples) reports p50s of `auth` 8 ms (emitted on 3 of 30 responses, `desc="kv"`), `wdb` 118 ms, `origin` 192 ms, `total` 311 ms — percentiles over a sample, NOT the decomposition of a single request, and they do not add. (The
+  entry for #1035 wrote those numbers as a single request's split; they were always percentiles.
+  The share is what holds: the Worker-side reads own roughly a third of the request.) `wdb` is the
+  monthly-counter UPSERT, the
   tier resolve, the storage `SUM(bytes_used)` read, and the residency resolve, run strictly in
   series; two are cache-backed and two are uncached D1, so the aggregate cannot say which one to
   fix and an isolate-cold request can turn a "cached" phase back into a full D1 round trip. Each
@@ -34,9 +36,11 @@ Each entry cross-references:
   `scripts/probe-cargo-cache-latency.sh` phase 2b reads them. `wdb` itself is unchanged — the
   split is strictly additive, so existing probes keep working.
   A phase that RAN is emitted even at `dur=0`; a phase that was SKIPPED is omitted. That
-  distinction is the point: the `auth` phase carries no such sentinel, so its 2-of-30 emission
-  rate had to be *inferred* to mean "KV-served, below clock resolution" rather than "did not
-  run". Instrumentation fails by measuring the wrong thing while looking plausible, so
+  distinction is the point: `auth`/`wdb`/`origin` were emitted on a strict `>`, so a sub-millisecond
+  phase vanished and `auth` appearing on only 3 of those 30 responses had to be *inferred* to mean
+  "KV-served, below clock resolution" rather than "did not run". All three now gate on "did this
+  phase run?" like the sub-phases do — fixing it for the children and leaving the parent able to
+  disappear while its own four sub-phases report 0 would have been half a fix. Instrumentation fails by measuring the wrong thing while looking plausible, so
   `worker/tests/server_timing_wdb_subphases.test.ts` injects a 60 ms delay into one D1 statement
   at a time and asserts exactly the matching label absorbs it and no other does. Proven RED three
   ways before merge: an overlapping clock (`qstor` timed from `authEnd`) failed 2 cases;
