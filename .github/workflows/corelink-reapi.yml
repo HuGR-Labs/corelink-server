@@ -179,6 +179,47 @@ jobs:
       # at the HMAC fast-reject BEFORE Argon2id and therefore measures nothing
       # about this path.
       #
+      # ── RE-RUN AFTER THE FIX (2026-08-04) ────────────────────────────────
+      #
+      # The Argon2id memo shipped: prod container 4036395f-r1 on all 5 regions
+      # (verified against the CF Containers API, not the deploy's own exit
+      # code). The `cargo-cache-latency-probe` was run against the SAME
+      # `/cargo` surface immediately before and after, 30 samples each, from a
+      # corelink box, every key freshly random so every request is a 404 miss
+      # doing no storage work:
+      #
+      #                                  before        after
+      #   /health TTFB p50                40 ms        38 ms   (unchanged: the
+      #                                                         edge was never
+      #                                                         the problem)
+      #   /cargo GET p50, new conn       682 ms       333 ms
+      #   /cargo GET p50, reused conn    696 ms       305 ms
+      #
+      #   throughput vs parallelism (served/s) -- the decisive one:
+      #     P=1    1.51  ->   2.73
+      #     P=2    1.52  ->   5.04
+      #     P=4    1.77  ->   9.90
+      #     P=8    1.72  ->  15.40      (was 23 of 32 shed as 401; now 0 shed)
+      #     P=16   1.32  ->  26.08      (was 56 of 64 shed as 401; now 5x 429)
+      #
+      # Before, throughput was FLAT at ~1.5/s no matter the parallelism -- the
+      # signature of a CPU-bound serialisation. It now scales with parallelism,
+      # which is what confirms the Argon2id attribution behaviourally rather
+      # than by arithmetic. The 401-under-load defect went with it: a genuine
+      # PAT above the sub-cap now gets an honest, retryable
+      # `429 rate_limited` instead of `authentication failed`.
+      #
+      # ⚠️ HONEST ABOUT WHAT DID *NOT* HAPPEN: the prediction was that phase 2
+      # would collapse toward the ~38 ms edge floor. It did not -- it halved.
+      # ~300 ms of server time still sits on a 404 that only authenticates.
+      # That residue is NOT Argon2id (the throughput curve rules that out) and
+      # it is NOT measured: the candidates are the per-request D1 `pat` row read
+      # deliberately kept for immediate revocation, and the storage lookup that
+      # resolves the miss. Nobody should quote a cause for those 300 ms until
+      # someone instruments them.
+      #
+      # This lane's own numbers below are the end-to-end check on all of it.
+      #
       # The verdict below is UNCHANGED and still binding: the pilot stays refused.
       # What changes is that there is now a specific, falsifiable hypothesis with
       # a fix in flight (the `SecretMatchMemo` in `adapter_pat.rs`). Re-running
