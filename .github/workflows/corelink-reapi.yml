@@ -179,6 +179,75 @@ jobs:
       # at the HMAC fast-reject BEFORE Argon2id and therefore measures nothing
       # about this path.
       #
+      # ── RE-RUN AFTER THE FIX (2026-08-04) ────────────────────────────────
+      #
+      # The Argon2id memo shipped: prod container 4036395f-r1 on all 5 regions
+      # (verified against the CF Containers API, not the deploy's own exit
+      # code). The `cargo-cache-latency-probe` was run against the SAME
+      # `/cargo` surface immediately before and after, 30 samples each, from a
+      # corelink box, every key freshly random so every request is a 404 miss
+      # doing no storage work:
+      #
+      #                                  before        after
+      #   /health TTFB p50                40 ms        38 ms   (unchanged: the
+      #                                                         edge was never
+      #                                                         the problem)
+      #   /cargo GET p50, new conn       682 ms       333 ms
+      #   /cargo GET p50, reused conn    696 ms       305 ms
+      #
+      #   throughput vs parallelism (served/s) -- the decisive one:
+      #     P=1    1.51  ->   2.73
+      #     P=2    1.52  ->   5.04
+      #     P=4    1.77  ->   9.90
+      #     P=8    1.72  ->  15.40      (was 23 of 32 shed as 401; now 0 shed)
+      #     P=16   1.32  ->  26.08      (was 56 of 64 shed as 401; now 5x 429)
+      #
+      # Before, throughput was FLAT at ~1.5/s no matter the parallelism -- the
+      # signature of a CPU-bound serialisation. It now scales with parallelism,
+      # which is what confirms the Argon2id attribution behaviourally rather
+      # than by arithmetic. The 401-under-load defect went with it: a genuine
+      # PAT above the sub-cap now gets an honest, retryable
+      # `429 rate_limited` instead of `authentication failed`.
+      #
+      # ⚠️ HONEST ABOUT WHAT DID *NOT* HAPPEN: the prediction was that phase 2
+      # would collapse toward the ~38 ms edge floor. It did not -- it halved.
+      # ~300 ms of server time still sits on a 404 that only authenticates.
+      # That residue is NOT Argon2id (the throughput curve rules that out) and
+      # it is NOT measured: the candidates are the per-request D1 `pat` row read
+      # deliberately kept for immediate revocation, and the storage lookup that
+      # resolves the miss. Nobody should quote a cause for those 300 ms until
+      # someone instruments them.
+      #
+      # END-TO-END RESULT (run 30874583952, this lane, cache already warm from
+      # the earlier pilot -- 827 hits / 0 misses / 100 % / 0 errors, directly
+      # comparable to the 631 s run):
+      #
+      #                                 no cache    pilot BEFORE   pilot AFTER
+      #   lane total                   409-423 s        631 s         435 s
+      #   Average cache read hit             --       1.702 s       0.864 s
+      #   cargo clippy                     64-72 s      145 s         100 s
+      #   cargo test (debug)              110-118 s     189 s         117 s
+      #   cargo test (release)            191-206 s     259 s         183 s
+      #
+      # The regression went from +215 s to +19 s against the no-cache mean, and
+      # sccache's own per-object figure HALVED. So ~91 % of what this pilot was
+      # blamed on the network was the Argon2id. The `debug` and `release` steps
+      # are now at or below their no-cache times; only clippy still carries a
+      # visible tail.
+      #
+      # ⚠️ THE VERDICT IS UNCHANGED ANYWAY: 435 s still loses to 416 s. The
+      # pilot stays OFF and CORELINK_SCCACHE_PILOT is back to `off`. What
+      # changed is the REASON -- this is no longer "the cache is 1.5x slower
+      # than compiling", it is "the cache is within noise of break-even on a
+      # 4-vCPU box compiling small crate units", which is the workload a
+      # compilation cache helps least. It says nothing about a customer whose
+      # units are expensive or whose boxes are slower, and 0.864 s per object
+      # is still a real number worth attacking (see the ~300 ms of unexplained
+      # server time in the probe block above).
+      #
+      # Re-run the experiment only after that 300 ms is instrumented; another
+      # run at this cost profile will just reproduce 435 s.
+      #
       # The verdict below is UNCHANGED and still binding: the pilot stays refused.
       # What changes is that there is now a specific, falsifiable hypothesis with
       # a fix in flight (the `SecretMatchMemo` in `adapter_pat.rs`). Re-running
