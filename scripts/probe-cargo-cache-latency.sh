@@ -199,10 +199,24 @@ else
   # read a missing row as a fast row.
   for ph in auth wdb qmeter qtier qstor qresid origin total; do
     # `dur` is milliseconds; `pct` takes seconds.
-    grep -oE "(^|[ ,])${ph};dur=[0-9]+" /tmp/probe_st.txt \
+    #
+    # An ABSENT phase must not kill the probe. Under `set -euo pipefail` a `grep`
+    # that matches nothing exits 1 and takes the whole script down, so asking
+    # about a phase the DEPLOYED Worker does not emit yet would abort the run
+    # before `origin` and `total` ever print — the probe would report LESS the
+    # moment we taught it to look for more. `|| true` keeps the run alive and the
+    # empty case is reported EXPLICITLY: a phase nobody emitted is a fact worth
+    # seeing (it means prod is behind this branch, or the phase was skipped on
+    # every request), and it must never be silently mistaken for a fast phase.
+    vals="$(grep -oE "(^|[ ,])${ph};dur=[0-9]+" /tmp/probe_st.txt \
       | grep -oE '[0-9]+$' \
-      | awk '{ print $1 / 1000 }' \
-      | pct "  ${ph}"
+      | awk '{ print $1 / 1000 }' || true)"
+    if [ -z "${vals}" ]; then
+      printf '  %-32s ABSENT — not emitted on ANY of the %s responses (deployed Worker predates this phase, or it was skipped every time)\n' \
+        "${ph}" "${SAMPLES}"
+      continue
+    fi
+    printf '%s\n' "${vals}" | pct "  ${ph}"
   done
   echo -n "  auth served from  : "
   grep -oE 'desc="[a-z0-9]+"' /tmp/probe_st.txt | sort | uniq -c | tr '\n' ' '

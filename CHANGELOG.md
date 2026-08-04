@@ -42,6 +42,12 @@ Each entry cross-references:
   ways before merge: an overlapping clock (`qstor` timed from `authEnd`) failed 2 cases;
   suppressing `dur=0` failed all 7; reporting the skipped `qmeter` on a fan-out sub-request
   failed the sentinel case. No behaviour change — this measures, it does not optimise.
+  Asking phase 2b for the new phases also exposed that the probe DIED on a phase prod does not
+  emit: under `set -euo pipefail` a non-matching `grep` exits 1 and took the whole script down at
+  `qmeter`, so `origin` and `total` never printed — the probe reported LESS the moment it was
+  taught to look for more (caught by CI on this PR, run 30916180801). An absent phase is now
+  reported explicitly as `ABSENT — not emitted on ANY of the N responses` and the run continues,
+  because "nobody emitted this" is a fact worth seeing and must never be mistaken for a fast phase.
 
 ### Fixed
 - **fix(okf): the OKF wiki gate certified `main` green against evidence that no longer existed —
