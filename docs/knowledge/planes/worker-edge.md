@@ -149,29 +149,37 @@ keeps forged tokens cheap to reject before any expensive work.
    `qmeter` **while `qtier`/`qstor`/`qresid` are present** confirms to the caller that their marker equalled
    `CORELINK_INTERNAL_AUTH_KEY`. (The conjunction matters: `qmeter` is also absent for
    `_anonymous`/`_system`/`_pending`, where the other three are absent too.) Be precise about the stake —
-   that variable is NOT a metering key, it is the SHARED internal-auth secret. THREE
-   mechanisms reach it, and the axis that matters is **direction**: every inbound one is fail-closed,
-   the outbound one is not.
-   **Inbound (a)** — `resolveConsumerKey` (`worker/src/lib/internal_auth.ts:124-149`), per-consumer:
-   serves the shared key only when that consumer's dedicated key is **unset**, and REFUSES fail-closed a
-   key that is SET but under the length floor. Two call sites — the `/_internal/*` edge gate and
-   `requireConsumerAuth` (`worker/src/lib/internal_auth.ts:264`), the latter gating PAT-rotate
+   that variable is NOT a metering key, it is the SHARED internal-auth secret.
+   Enumerated exhaustively (re-derive with `grep -rn 'CORELINK_INTERNAL_AUTH_KEY' worker/src/` — a count
+   in prose is a claim, so make it re-checkable), it is read in three **roles**:
+   **1. Inbound gate credential**, both fail-closed.
+   **(a)** `resolveConsumerKey` (`worker/src/lib/internal_auth.ts:124-158`), per-consumer: serves the
+   shared key only when that consumer's dedicated key is **unset**, and REFUSES fail-closed a key that is
+   SET but under the floor. Two call sites — the `/_internal/*` edge gate and `requireConsumerAuth`
+   (`worker/src/lib/internal_auth.ts:264`), the latter gating PAT-rotate
    (`worker/src/lib/auth_rotate.ts:167`) and runner mint + revoke (`worker/src/lib/runner_mint.ts:273`,
    `worker/src/lib/runner_mint.ts:599`) — so **four** gates.
-   **Inbound (b)** — `requireInternalAuth` (`worker/src/lib/internal_auth.ts:224-238`), shared-key
-   **only**: there is no per-consumer key for these at all. It enforces the same `>= 32` floor and fails
-   closed (503 unbound / 401 mismatch), gating githugr tenant-lookup
-   (`worker/src/lib/tenant_lookup.ts:90`) and session exchange's internal arm
-   (`worker/src/lib/session_exchange.ts:868`). These two carry **no per-consumer isolation**, so a
-   shared-key holder passes them outright — the widest of the three, and the reason this key's blast
-   radius is not bounded by the per-consumer split. Six inbound gates accept the shared key in total.
-   **Outbound** — the credential presented onward to the container: hand-rolled
-   `env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY` at
-   `worker/src/lib/session_exchange.ts:505-510`, `worker/src/lib/session_exchange.ts:877`,
-   `worker/src/lib/auth_rotate.ts:180` and `worker/src/lib/runner_mint.ts:286`. Falls back on unset too,
-   but checks only `length === 0` — no `>= 32` floor and **no** fail-closed refusal. (`runner_mint`,
-   `auth_rotate` and `session_exchange` appear on BOTH sides: strict inbound, loose outbound. That is why
-   a per-FILE split kept producing wrong sentences — the split is per-direction.)
+   **(b)** `requireInternalAuth` (`worker/src/lib/internal_auth.ts:224-238`), shared-key **only**: no
+   per-consumer key exists for these. Same `>= 32` floor, fails closed (503 unbound / 401 mismatch),
+   gating githugr tenant-lookup (`worker/src/lib/tenant_lookup.ts:90`) and session exchange's internal
+   arm (`worker/src/lib/session_exchange.ts:868`). **No per-consumer isolation**, so a shared-key holder
+   passes them outright — the widest *inbound* exposure. Six inbound gates accept the shared key.
+   **2. Outbound credential presented onward to the container.** `env.CORELINK_PAT_MINT_AUTH_KEY ??
+   env.CORELINK_INTERNAL_AUTH_KEY` at `worker/src/lib/session_exchange.ts:505-510`,
+   `worker/src/lib/session_exchange.ts:877`, `worker/src/lib/auth_rotate.ts:180` and
+   `worker/src/lib/runner_mint.ts:286` — falls back on unset, but checks only `length === 0`: no `>= 32`
+   floor, no fail-closed refusal. Separately the `onboarding` arm (`worker/src/index.ts:2113`, forwarded
+   at `worker/src/index.ts:2159`) reads the shared key **directly, with no dedicated-key preference at
+   all** — which matters for the ceiling: provisioning `CORELINK_PAT_MINT_AUTH_KEY` narrows the four `??`
+   sites but can never narrow onboarding, so the shared key is the only credential that can authorize
+   tier-select checkout to the container.
+   **3. The fan-out marker itself** — this check (`worker/src/index.ts:2837-2839`), its sibling on the
+   region branch (`worker/src/index.ts:3009-3011`), and the primary setting it on the service-binding
+   forward (`worker/src/index.ts:3156-3157`).
+   (`runner_mint`, `auth_rotate` and `session_exchange` appear in BOTH role 1 and role 2: strict inbound,
+   loose outbound. That is why a per-FILE split kept producing wrong sentences — the split is per-ROLE.)
+   `worker/src/durable_object.ts:585` propagates the key into the container env; that is plumbing, not a
+   gate.
    Container-side, the erase and DSR-anchor gates use `resolve_dedicated_auth_key` with NO fallback at
    all (`docs/internal/secrets-checklist.md` finding H4), and that absence is itself a control. Which
    dedicated keys are actually provisioned is NOT determinable from this repo — CF secrets are

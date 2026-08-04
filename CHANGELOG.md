@@ -70,6 +70,24 @@ Each entry cross-references:
   harness's own overhead rather than a planted delay. The sentinel moved
   outside the union (`SlowTarget | null`).
 
+### Documentation
+- **docs(auth): the repo documented a fail-closed control as fail-open, in five places, including the
+  function's own normative contract.** `resolveConsumerKey` REFUSES the shared-key fallback for a
+  dedicated key that is SET but under the length floor (`worker/src/lib/internal_auth.ts:139-151`,
+  which logs "REFUSING to fall back … that would silently widen the blast radius"). Its doc-comment
+  claimed the opposite — *"A too-short dedicated key is treated as ABSENT (falls through to the shared
+  key)"* — and that phrasing had been copied into the module header, the `Env` declaration and the live
+  `/_internal/*` gate comment. Concrete risk: someone simplifying the function to match its documented
+  contract reintroduces exactly the silent blast-radius widening the code was written to prevent.
+  All five corrected; no behaviour change (both commits are provably comment-only in `worker/src/`).
+  The OKF `worker-edge` concept now also states what the shared key actually is, enumerated
+  exhaustively and with the grep that re-derives the enumeration, because a count in prose is a claim:
+  three ROLES — six inbound gates (four per-consumer + two with no per-consumer isolation at all, the
+  widest inbound exposure), five outbound sites of which the `onboarding`/tier-select-checkout arm
+  reads the shared key with NO dedicated-key preference (so no provisioning can ever narrow it), and
+  the multi-region fan-out marker. Five earlier drafts of that paragraph were each wrong in a
+  different direction.
+
 ### Fixed
 - **fix(deploy): the exact wrangler pin was never in force on the production deploy path — a
   `-x` path test silently discarded the CI override and every prod deploy ran
