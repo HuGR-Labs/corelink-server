@@ -157,8 +157,17 @@ echo
 # data-plane response carries `Server-Timing` (worker/src/index.ts):
 #   auth   — the Worker's PAT verify, with `desc` naming the cache tier that
 #            served the row (l1 / kv / d1)
-#   wdb    — the Worker-side quota + residency D1 reads, UNCACHED, to the ENAM
-#            primary
+#   wdb    — the Worker-side quota + residency reads to the ENAM primary, now
+#            broken into the four SERIAL awaits it is made of:
+#              qmeter — the monthly request-counter UPSERT (D1 write, uncached
+#                       by nature: it is a counter)
+#              qtier  — tier resolve  (L1 isolate -> KV -> D1)
+#              qstor  — the storage SUM(bytes_used) read (D1, uncached)
+#              qresid — residency resolve (L1 isolate -> KV -> D1)
+#            Two of the four are cache-backed and two are not, so the aggregate
+#            alone cannot say what to fix. A cache-backed phase can still cost a
+#            full D1 round trip on an isolate-cold request — which is exactly why
+#            these are measured rather than assumed.
 #   origin — the whole DO + container subrequest (so the container's own D1 `pat`
 #            read, the memo, the quota gate and the storage lookup are all
 #            INSIDE this one number — this phase narrows the residue to a tier,
@@ -183,12 +192,39 @@ if [ ! -s /tmp/probe_st.txt ]; then
   echo "  Worker's timing emission, so this surface ships with no latency"
   echo "  attribution at all — for us OR for a customer debugging a slow cache."
 else
-  for ph in auth wdb origin total; do
+  # `n=` in each row is load-bearing. The Worker emits a phase that RAN even at
+  # `dur=0` and omits only a phase that did NOT run, so `n == SAMPLES` with
+  # `p50=0` means "ran every time, cheaper than the clock can resolve" and a low
+  # `n` means "skipped on that many requests". Never read a missing row as a fast
+  # row.
+  #
+  # ⚠️ That contract holds only against a Worker at or past the commit that
+  # introduced it. An OLDER deployed Worker suppressed `auth`/`wdb`/`origin` at
+  # 0 ms on a strict `>`, which is why the 2026-08-04 probe run showed `auth n=3`
+  # out of 30 responses: those 27 were KV-served in under a millisecond, NOT
+  # skipped. If you see a low `n` on `auth`/`wdb`/`origin`, check what is actually
+  # deployed before concluding anything — that number is the reason this contract
+  # was made explicit.
+  for ph in auth wdb qmeter qtier qstor qresid origin total; do
     # `dur` is milliseconds; `pct` takes seconds.
-    grep -oE "(^|[ ,])${ph};dur=[0-9]+" /tmp/probe_st.txt \
+    #
+    # An ABSENT phase must not kill the probe. Under `set -euo pipefail` a `grep`
+    # that matches nothing exits 1 and takes the whole script down, so asking
+    # about a phase the DEPLOYED Worker does not emit yet would abort the run
+    # before `origin` and `total` ever print — the probe would report LESS the
+    # moment we taught it to look for more. `|| true` keeps the run alive and the
+    # empty case is reported EXPLICITLY: a phase nobody emitted is a fact worth
+    # seeing (it means prod is behind this branch, or the phase was skipped on
+    # every request), and it must never be silently mistaken for a fast phase.
+    vals="$(grep -oE "(^|[ ,])${ph};dur=[0-9]+" /tmp/probe_st.txt \
       | grep -oE '[0-9]+$' \
-      | awk '{ print $1 / 1000 }' \
-      | pct "  ${ph}"
+      | awk '{ print $1 / 1000 }' || true)"
+    if [ -z "${vals}" ]; then
+      printf '  %-32s ABSENT — not emitted on ANY of the %s responses (the deployed Worker does not publish this phase, or it was skipped on every request — NOT "it was fast")\n' \
+        "${ph}" "${SAMPLES}"
+      continue
+    fi
+    printf '%s\n' "${vals}" | pct "  ${ph}"
   done
   echo -n "  auth served from  : "
   grep -oE 'desc="[a-z0-9]+"' /tmp/probe_st.txt | sort | uniq -c | tr '\n' ' '

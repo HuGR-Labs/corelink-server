@@ -1762,6 +1762,23 @@ const baseHandler: ExportedHandler<Env> = {
     let stOriginStart = 0;
     let stOriginEnd = 0;
     let stPatSource: "l1" | "kv" | "d1" | undefined;
+    // `wdb` sub-phase clocks — the four SERIAL awaits between `auth` and `origin`
+    // (metering UPSERT → tier resolve → storage SUM → residency resolve). The
+    // aggregate `wdb` says "the worker-side reads cost ~118 ms p50" but not WHICH of
+    // the four owns it: two are cache-backed (tier, residency) and two are
+    // uncached D1 (the counter UPSERT, the storage SUM), and an isolate-cold
+    // request can turn a "cached" one back into a D1 round trip. Attributing
+    // before optimising is the whole point — do not guess which one to fix.
+    //
+    // `-1` = "this phase did not run" (anon/system tenant, uncapped tier, an
+    // early 429). That sentinel is what lets `dur=0` MEAN "ran, and cost less
+    // than the clock can see" instead of being indistinguishable from a phase
+    // that never executed — the ambiguity that forced an inference from the
+    // `auth` phase's 3-of-30 emission rate in probe run 30916725902.
+    let stQMeterMs = -1;
+    let stQTierMs = -1;
+    let stQStorMs = -1;
+    let stQResidMs = -1;
     const requestId = resolveRequestId(request);
     requestCounter = (requestCounter + 1) | 0;
 
@@ -2830,6 +2847,7 @@ const baseHandler: ExportedHandler<Env> = {
       // yields `withinFreeCap === true`, so the request-cap comparison below is
       // also skipped — a fan-out sub-request is never re-metered nor 429'd on
       // the request cap.
+      const meterStart = Date.now();
       const inc = isFanout
         ? { counted: false, count: 0 }
         : await incrementMonthlyRequestCount(
@@ -2837,6 +2855,37 @@ const baseHandler: ExportedHandler<Env> = {
             resolvedTenantId,
             requestQuotaEnabled,
           );
+      // A fan-out sub-request skips the UPSERT entirely, so leave the `-1`
+      // sentinel: the phase DID NOT RUN, which is a different fact from "ran and
+      // cost nothing". (`requestQuotaEnabled === false` does call in and return
+      // without a write — that legitimately reads as a real 0.)
+      //
+      // ACCEPTED SIGNAL (independent review of this commit): because the omission
+      // is keyed on `isFanout`, an absent `qmeter` WHILE `qtier`/`qstor`/`qresid`
+      // are present confirms to the CALLER that their `x-corelink-fanout-from`
+      // matched CORELINK_INTERNAL_AUTH_KEY — a one-request confirmation oracle,
+      // where previously a successful forgery was only observable indirectly
+      // (never being 429'd). Note the conjunction: `qmeter` is ALSO absent for
+      // `_anonymous`/`_system`/`_pending`, but there the other three are absent too.
+      //
+      // Be precise about what is confirmed. CORELINK_INTERNAL_AUTH_KEY is NOT a
+      // metering key — it is the SHARED internal-auth secret that every consumer
+      // falls back to when its dedicated key is unset/short (lib/internal_auth.ts),
+      // which today is the live configuration for PAT mint/rotate, runner mint,
+      // session exchange, githugr tenant-lookup and the `/_internal/*` gate.
+      //
+      // Accepted anyway, for a reason that survives that blast radius: a caller who
+      // can reach this oracle already holds the complete key (the compare is
+      // constant-time and FULL-VALUE — it confirms a complete guess, it never helps
+      // build one byte-by-byte), and a key holder has a far more direct oracle in a
+      // 200-vs-401 on `/_internal/*`. So this adds no capability. Emitting
+      // `qmeter;dur=0` instead would re-introduce exactly the "skipped vs fast"
+      // ambiguity this phase exists to remove. The real close is to ingress-strip
+      // `x-corelink-fanout-from` at the public edge — the primary sets it only on
+      // the service-binding forward, which never traverses the public edge, so
+      // stripping it costs nothing and removes the forgery surface and this oracle
+      // together. Tracked separately; it is edge config, not a Worker change.
+      if (!isFanout) stQMeterMs = Date.now() - meterStart;
       const withinFreeCap = !inc.counted || inc.count <= FREE_REQUEST_CAP;
 
       // UNCONDITIONAL (also on fan-out): the served path — including a fan-out
@@ -2849,10 +2898,12 @@ const baseHandler: ExportedHandler<Env> = {
       // the same TierResult shape; an unconfirmed (`d1Error`) result is never
       // cached, so the F21 fail-open posture is preserved.
       const tierKv = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
+      const tierStart = Date.now();
       const quotaTier = await resolveTenantTierCached(env.CONFIG_DB, resolvedTenantId, {
         ...(tierKv ? { kv: tierKv } : {}),
         waitUntil: ctx.waitUntil.bind(ctx),
       });
+      stQTierMs = Date.now() - tierStart;
       storageQuotaHeader = storageQuotaHeaderValue(quotaTier);
 
       // Monthly request-count quota (red-team #5): compare the already-counted
@@ -2874,12 +2925,14 @@ const baseHandler: ExportedHandler<Env> = {
 
       // Storage quota check. (OCI never reaches this PAT-gate path — see the
       // dedicated pass-through branch above; the container enforces OCI quota.)
+      const storStart = Date.now();
       const storageCheck = await checkStorageQuota(
         env.CONFIG_DB,
         resolvedTenantId,
         quotaTier,
         isStorageMutating,
       );
+      stQStorMs = Date.now() - storStart;
       if (!storageCheck.ok) {
         return quotaExceeded(storageCheck.reason, storageCheck.retryAfterSec);
       }
@@ -2934,10 +2987,12 @@ const baseHandler: ExportedHandler<Env> = {
       // container residency backstop (residency.rs) 409s any real cross-region
       // mismatch.
       const residencyKv = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
+      const residStart = Date.now();
       const residency = await resolveTenantResidency(env.CONFIG_DB, resolvedTenantId, {
         ...(residencyKv ? { kv: residencyKv } : {}),
         waitUntil: ctx.waitUntil.bind(ctx),
       });
+      stQResidMs = Date.now() - residStart;
       if (residency === RESIDENCY_UNRESOLVED) {
         // D1 hiccup with no cached region: we cannot establish residency.
         // FAIL-CLOSED — refuse rather than risk routing an EU tenant to US
@@ -3186,22 +3241,50 @@ const baseHandler: ExportedHandler<Env> = {
     }
     // Server-Timing (observability, self-serve latency probes): split the authed
     // hot path into `auth` (PAT verify — KV-served ⇒ single-digit ms), `wdb` (the
-    // worker-side quota + residency D1 reads to the ENAM primary, uncached), and
-    // `origin` (the DO/container subrequest). This is what lets a client
-    // distinguish "auth is slow" from "the downstream D1 reads are slow" WITHOUT a
-    // log grep. `desc` on `auth` carries the cache tier (`kv`/`l1`/`d1`). Emitted
-    // only when the phases ran (authed data-plane path); durations are coarse
-    // (Date.now advances across I/O only), directional not authoritative.
+    // worker-side quota + residency reads to the ENAM primary) and its four serial
+    // sub-phases, and `origin` (the DO/container subrequest). This is what lets a
+    // client distinguish "auth is slow" from "the downstream D1 reads are slow"
+    // WITHOUT a log grep. `desc` on `auth` carries the cache tier (`kv`/`l1`/`d1`).
+    //
+    // EMISSION CONTRACT — a phase that RAN is emitted, INCLUDING at `dur=0`; only
+    // a phase that did NOT run is omitted. This matters more than it looks: a
+    // Worker's `Date.now()` advances only across I/O, so a KV-served or L1-served
+    // phase genuinely measures 0, and suppressing it would make "served from cache,
+    // faster than the clock resolves" indistinguishable from "never executed" on
+    // the wire. `auth`/`wdb`/`origin` used to be emitted on a strict `>`, which is
+    // exactly that bug: the 2026-08-04 production probe reported `auth` on 3 of 30
+    // responses and the missing 27 had to be INFERRED to be KV-served rather than
+    // skipped. They now gate on "did this phase run?" like the sub-phases do.
+    //
+    // Durations are coarse by construction (Date.now advances across I/O only) —
+    // directional attribution, never a profile.
     {
       const st: string[] = [];
-      if (stAuthEnd > stAuthStart) {
+      // `stAuthEnd > 0` ⇔ the auth phase ran (both clocks start at 0 and are only
+      // ever set to a real Date.now()). Pre-tenant `signup` never enters it.
+      if (stAuthEnd > 0) {
         const d = stAuthEnd - stAuthStart;
         st.push(stPatSource ? `auth;dur=${d};desc="${stPatSource}"` : `auth;dur=${d}`);
       }
-      if (stOriginStart > 0 && stAuthEnd > 0 && stOriginStart > stAuthEnd) {
+      // `wdb` spans auth-end → origin-start, so it ran iff BOTH ends are stamped.
+      // The `stAuthEnd > 0` half is load-bearing beyond the ran-check: on a route
+      // that skipped auth it would otherwise compute `stOriginStart - 0`, i.e. the
+      // epoch, and publish it as a duration.
+      if (stAuthEnd > 0 && stOriginStart > 0) {
         st.push(`wdb;dur=${stOriginStart - stAuthEnd}`);
       }
-      if (stOriginEnd > stOriginStart) {
+      // The four serial awaits `wdb` is made of, in execution order. `-1` is the
+      // did-not-run sentinel (see the declarations); anything >= 0 ran and is
+      // reported at its real cost, 0 included.
+      for (const [name, ms] of [
+        ["qmeter", stQMeterMs],
+        ["qtier", stQTierMs],
+        ["qstor", stQStorMs],
+        ["qresid", stQResidMs],
+      ] as const) {
+        if (ms >= 0) st.push(`${name};dur=${ms}`);
+      }
+      if (stOriginEnd > 0) {
         st.push(`origin;dur=${stOriginEnd - stOriginStart}`);
       }
       st.push(`total;dur=${Date.now() - requestStart}`);

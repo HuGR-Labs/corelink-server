@@ -22,6 +22,47 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(worker): `wdb` is four serial awaits and the header only reported their sum — a third
+  of an authenticated request was attributable to "the Worker-side reads" and to nothing more
+  precise.** Probe run 30916725902 (2026-08-04, 30 samples) reports p50s of `auth` 8 ms (emitted on 3 of 30 responses, `desc="kv"`), `wdb` 118 ms, `origin` 192 ms, `total` 311 ms — percentiles over a sample, NOT the decomposition of a single request, and they do not add. (The
+  entry for #1035 wrote those numbers as a single request's split; they were always percentiles.
+  The share is what holds: the Worker-side reads own roughly a third of the request.) `wdb` is the
+  monthly-counter UPSERT, the
+  tier resolve, the storage `SUM(bytes_used)` read, and the residency resolve, run strictly in
+  series; two are cache-backed and two are uncached D1, so the aggregate cannot say which one to
+  fix and an isolate-cold request can turn a "cached" phase back into a full D1 round trip. Each
+  now reports separately as `qmeter` / `qtier` / `qstor` / `qresid` (`worker/src/index.ts`), and
+  `scripts/probe-cargo-cache-latency.sh` phase 2b reads them. `wdb` itself is unchanged — the
+  split is strictly additive, so existing probes keep working.
+  A phase that RAN is emitted even at `dur=0`; a phase that was SKIPPED is omitted. That
+  distinction is the point: `auth`/`wdb`/`origin` were emitted on a strict `>`, so a sub-millisecond
+  phase vanished and `auth` appearing on only 3 of those 30 responses had to be *inferred* to mean
+  "KV-served, below clock resolution" rather than "did not run". All three now gate on "did this
+  phase run?" like the sub-phases do — fixing it for the children and leaving the parent able to
+  disappear while its own four sub-phases report 0 would have been half a fix. Instrumentation fails by measuring the wrong thing while looking plausible, so
+  `worker/tests/server_timing_wdb_subphases.test.ts` injects a 150 ms delay into one D1 statement
+  at a time and asserts exactly the matching label absorbs it, that no other does, and that the
+  four ACCOUNT for `wdb` rather than merely sitting inside it. Proven RED five ways before merge:
+  an overlapping clock (`qstor` timed from `authEnd`) failed 2 cases; suppressing `dur=0` failed
+  all 7; reporting the skipped `qmeter` on a fan-out sub-request failed the sentinel case;
+  restoring the strict `>` on the parent phases failed with "origin vanished from Server-Timing on
+  a fully cache-warm request"; and an unmeasured 150 ms await inserted inside the `wdb` window
+  failed the accounting assertion ALONE, with every attribution assertion still passing — which is
+  the regression (a fifth, uninstrumented read added later) that assertion exists for. No behaviour change — this measures, it does not optimise.
+  Asking phase 2b for the new phases also exposed that the probe DIED on a phase prod does not
+  emit: under `set -euo pipefail` a non-matching `grep` exits 1 and took the whole script down at
+  `qmeter`, so `origin` and `total` never printed — the probe reported LESS the moment it was
+  taught to look for more (caught by CI on this PR, run 30916180801). An absent phase is now
+  reported explicitly as `ABSENT — not emitted on ANY of the N responses` and the run continues,
+  because "nobody emitted this" is a fact worth seeing and must never be mistaken for a fast phase.
+  Second review round caught a flake this work had itself introduced into a PR-BLOCKING gate: the
+  cache-warm case asserted `expect(qtier).toBe(0)` — a strict equality on a wall-clock read with no
+  band — which reproduced 1-in-20 under CPU contention (`expected 1 to be +0`) and would have
+  intermittently RED-ed unrelated PRs on the 2-vCPU runner. Replaced with a bounded check; the
+  case's actual meaning (the phase is PRESENT, not suppressed) was already carried by a separate
+  assertion. 0 failures in 25 runs under 6 busy loops after the fix.
+
 ### Fixed
 - **fix(okf): the OKF wiki gate certified `main` green against evidence that no longer existed —
   a blob anchor was validated by PRESENCE in the clone, which is a timing artifact of when CI
