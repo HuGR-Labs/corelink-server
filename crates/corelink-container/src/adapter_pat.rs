@@ -400,6 +400,156 @@ struct PerTenantEntry {
     last_access: u64,
 }
 
+/// The per-tenant Argon2id fairness tier (finding #1), extracted from
+/// [`PatVerifier`] so it can be held behind one `Arc` and moved into the
+/// `'static` coalescing flight future ([`FlightGroup`]) — the flight runs the
+/// permit acquires itself, so it needs the gate, not a borrow of the verifier.
+///
+/// Owns the bounded LRU of `tenant_id -> Arc<Semaphore>` plus its recency clock.
+struct PerTenantGate {
+    /// `tenant_id -> entry`. Wrapped in a `Mutex` only to guard the map's
+    /// get-or-insert; the guard is NEVER held across the Argon2id work or the
+    /// async acquire (it is dropped before either). FAIL-SAFE: a poisoned lock
+    /// falls back to global-only bounding (a bookkeeping fault must never block
+    /// a legitimate auth) — see [`Self::semaphore`].
+    permits: Mutex<HashMap<String, PerTenantEntry>>,
+    /// Monotonic clock for the LRU recency order. Bumped on every
+    /// get-or-insert; the smallest tick is the least-recently-used. `u64` never
+    /// realistically wraps (one tick per verify ⇒ ~10^11 years at 1M/s).
+    tick: AtomicU64,
+    /// The cap each per-tenant semaphore is created with
+    /// ([`ARGON2_PER_TENANT_PERMITS`] in production). A field (not a const) so a
+    /// test can shrink it to drive the two-tier interaction deterministically.
+    cap: usize,
+    /// LRU capacity of the map ([`PER_TENANT_MAP_CAP`] in production). A field
+    /// (not a const) so a test can shrink it to drive eviction deterministically.
+    map_cap: usize,
+}
+
+impl PerTenantGate {
+    fn new(cap: usize, map_cap: usize) -> Self {
+        Self {
+            permits: Mutex::new(HashMap::new()),
+            tick: AtomicU64::new(0),
+            cap,
+            map_cap,
+        }
+    }
+
+    /// Resolve (get-or-create) the per-tenant Argon2id semaphore for `tenant`.
+    ///
+    /// Returns `Some(sem)` with a clone of the tenant's `Arc<Semaphore>`, or
+    /// `None` to signal FAIL-SAFE fall-through to global-only bounding. We
+    /// return `None` (rather than propagating an error) on a poisoned lock so a
+    /// bookkeeping fault can NEVER block a legitimate auth — the global bound
+    /// still protects against OOM; we merely lose per-tenant fairness for the
+    /// rare poisoned-lock window.
+    ///
+    /// The `Mutex` is held ONLY for the brief get-or-insert (+ any LRU
+    /// eviction) and is dropped before the caller awaits the (async) permit
+    /// acquire or runs Argon2id — so it never serializes the verify path nor
+    /// risks a lock-across-await.
+    ///
+    /// BOUNDED LRU (#1/#12 follow-up): the map is capped at [`Self::map_cap`]. A
+    /// get bumps the entry's recency tick. An insert that would exceed the cap
+    /// first evicts the least-recently-used entry **that is fully idle** —
+    /// `available_permits() == cap`, i.e. no in-flight verify holds any of its
+    /// permits — so eviction can never disrupt an active or contended tenant.
+    /// The shared [`UNKNOWN_TOKEN_BUCKET`] is NEVER an eviction candidate. If no
+    /// idle entry can be freed (every entry is in-flight — pathological, far
+    /// beyond a 10k real-tenant working set), we skip eviction and let the map
+    /// grow past the cap transiently rather than block/evict an active tenant;
+    /// it shrinks back as those verifies complete and a later insert finds an
+    /// idle victim. Re-inserting an evicted tenant simply recreates its (idle)
+    /// semaphore — semantically identical.
+    fn semaphore(&self, tenant: &str) -> Option<Arc<Semaphore>> {
+        let mut map = match self.permits.lock() {
+            Ok(guard) => guard,
+            // Poisoned: a previous holder panicked while mutating the map. Do
+            // NOT block auth on bookkeeping — fall back to global-only.
+            Err(_poisoned) => return None,
+        };
+        let tick = self.tick.fetch_add(1, Ordering::Relaxed);
+        if let Some(entry) = map.get_mut(tenant) {
+            entry.last_access = tick; // touch ⇒ most-recently-used
+            return Some(Arc::clone(&entry.sem));
+        }
+        // New tenant. Enforce the LRU cap BEFORE inserting: if at/over capacity,
+        // evict the least-recently-used FULLY-IDLE entry (never the shared
+        // UNKNOWN_TOKEN_BUCKET, never an in-flight tenant).
+        if map.len() >= self.map_cap {
+            self.evict_one_idle(&mut map);
+        }
+        let sem = Arc::new(Semaphore::new(self.cap));
+        map.insert(
+            tenant.to_owned(),
+            PerTenantEntry {
+                sem: Arc::clone(&sem),
+                last_access: tick,
+            },
+        );
+        Some(sem)
+    }
+
+    /// Evict the single least-recently-used entry that is SAFE to drop: fully
+    /// idle (`available_permits() == cap` ⇒ no in-flight verify holds a permit)
+    /// and NOT the shared [`UNKNOWN_TOKEN_BUCKET`]. If no such entry exists,
+    /// evict nothing (the map grows transiently past the cap rather than disrupt
+    /// an active tenant). Caller holds the map lock.
+    fn evict_one_idle(&self, map: &mut HashMap<String, PerTenantEntry>) {
+        let mut victim: Option<(&str, u64)> = None;
+        for (key, entry) in map.iter() {
+            // SAFETY INVARIANTS for eviction:
+            //  - never the synthetic dummy-burn bucket (must always exist), and
+            //  - only a fully-idle semaphore (no permit checked out) so an
+            //    active/contended tenant is never disrupted.
+            if key == UNKNOWN_TOKEN_BUCKET {
+                continue;
+            }
+            if entry.sem.available_permits() != self.cap {
+                continue; // in-flight verify(s) for this tenant — do not evict
+            }
+            match victim {
+                Some((_, best_tick)) if entry.last_access >= best_tick => {}
+                _ => victim = Some((key.as_str(), entry.last_access)),
+            }
+        }
+        if let Some((key, _)) = victim {
+            let key = key.to_owned();
+            map.remove(&key);
+        }
+    }
+
+    /// Acquire the per-tenant Argon2id permit for `tenant` under the same
+    /// bounded wait as the global permit, returning a held
+    /// `Option<OwnedSemaphorePermit>`:
+    ///
+    /// - `Ok(Some(permit))` — tenant permit held (the common case).
+    /// - `Ok(None)` — FAIL-SAFE: per-tenant bookkeeping was unavailable
+    ///   (poisoned lock), so we proceed under the GLOBAL bound only. A legit
+    ///   auth is never blocked by a bookkeeping fault.
+    /// - `Err(())` — the tenant is at its sub-cap and did not free a permit
+    ///   within the wait. The caller maps this to the SAME overloaded
+    ///   fail-CLOSED as a global-permit timeout, so one tenant's flood cannot
+    ///   monopolise the global pool.
+    ///
+    /// MUST be called AFTER the global permit is held (consistent acquire order
+    /// global→per-tenant ⇒ deadlock-free).
+    async fn acquire(&self, tenant: &str) -> Result<Option<OwnedSemaphorePermit>, ()> {
+        let Some(sem) = self.semaphore(tenant) else {
+            // Fail-safe: no per-tenant bookkeeping ⇒ global-only.
+            return Ok(None);
+        };
+        match tokio::time::timeout(ARGON2_PERMIT_WAIT, sem.acquire_owned()).await {
+            Ok(Ok(permit)) => Ok(Some(permit)),
+            // Semaphore closed (never happens in practice — we never close it)
+            // OR the per-tenant sub-cap was saturated for the whole wait. Both
+            // collapse to a fail-CLOSED overloaded signal.
+            Ok(Err(_)) | Err(_) => Err(()),
+        }
+    }
+}
+
 /// TTL of a memoised Argon2id secret-match ([`SecretMatchMemo`]).
 ///
 /// ⚠️ **This is NOT a revocation window and must not be read as one.** The
@@ -644,6 +794,235 @@ fn secret_match_fingerprint(
     hex::encode(hasher.finalize())
 }
 
+/// The [`FlightGroup`] key for the None-row dummy burn: a domain-separated
+/// SHA-256 over the plaintext alone.
+///
+/// # Why the plaintext alone, and why that is the SAME key the hot path uses
+///
+/// The two arms must coalesce **identically for the same plaintext whether or
+/// not the D1 row exists** — otherwise `token_id` liveness becomes observable in
+/// the concurrency dimension (the finding that killed the first attempt at this
+/// fix). The hot path keys on [`secret_match_fingerprint`], i.e. on
+/// `(plaintext, token_id, stored pat_hash, scope, find_only)`. Every extra field
+/// is, at any instant, a **pure function of the plaintext**: `token_id` is parsed
+/// out of the plaintext itself (stage 1), and `pat_hash` / `scope` / `find_only`
+/// are whatever the single D1 row for that `token_id` holds. So both arms key on
+/// a pure function of the plaintext,
+/// and N concurrent copies of ONE plaintext collapse to exactly ONE Argon2id on
+/// either arm. The keys need not be *equal* across the arms — they must only
+/// *partition identically*, and they do. They are deliberately in SEPARATE maps
+/// with separate domain tags so a flight can never hand a result from one arm to
+/// a waiter on the other (a token revoked mid-burst must not join the hot-path
+/// flight that started before the revocation).
+fn dummy_burn_fingerprint(plaintext: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"corelink/adapter-pat/dummy-burn/v1\0");
+    hasher.update((plaintext.len() as u64).to_be_bytes());
+    hasher.update(plaintext.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+/// One in-flight, cloneable unit of coalesced work. `Arc<..>` so every joiner
+/// clones one heap result; `Shared` so one poll drives the single inner run for
+/// all joiners.
+type SharedFlight<T> = Shared<BoxFuture<'static, Arc<T>>>;
+
+/// Upper bound on retained [`FlightGroup`] entries before an insert purges the
+/// resolved ones.
+///
+/// A flight is normally removed by the first awaiter to observe it resolved, so
+/// the steady-state map holds only genuinely in-flight work — a handful of
+/// entries, bounded in practice by [`ARGON2_VERIFY_PERMITS`] plus whatever is
+/// inside its 250 ms admission wait. The cap exists for the one case that leaks:
+/// if EVERY awaiter of a flight is dropped (client disconnect cancels the
+/// request future) after the flight resolved but before anyone removed it, the
+/// resolved entry lingers until some later request for the same key replaces it
+/// — which may never come. 8192 × (a 64-char hex key + a resolved `Shared`) is
+/// ~2 MiB worst case, and the purge that bounds it drops only RESOLVED entries,
+/// which are pure garbage (a joiner already refuses to reuse them).
+const FLIGHT_GROUP_CAP: usize = 8_192;
+
+/// A **no-cache single-flight** over a keyed unit of async work — the same shape
+/// [`SingleFlightPatLookup`] uses for the D1 row read, generalised so the
+/// Argon2id stage can use it too.
+///
+/// The first caller for a key LEADS: it builds the future and drives it. Every
+/// concurrent caller for that key JOINS the leader's [`Shared`] future and
+/// resolves the instant the ONE run completes. There is deliberately **no queue
+/// and no lock to wait behind**: the N-th joiner waits exactly as long as the
+/// 1st, not N× as long. That is the property that distinguishes this from a
+/// mutex — a mutex converts a burst into an N-deep FIFO whose tail waits
+/// unboundedly, in front of the very load-shed that exists to bound it.
+///
+/// # It is NOT a cache
+///
+/// The flight is removed as soon as it resolves, and an awaiter that finds an
+/// already-RESOLVED flight REFUSES to reuse it and leads a fresh run instead. So
+/// a result is only ever shared with callers that were **concurrent with the run
+/// that produced it** — never with one that started afterwards. Anything that
+/// must be re-decided per request (here: the D1 row, hence revocation, expiry,
+/// tenant and scope) is read OUTSIDE the flight and is unaffected.
+struct FlightGroup<T> {
+    /// `key -> in-flight shared run`. Sync mutex; the guard is NEVER held across
+    /// an `.await` (we clone the `Shared` out, then drop the guard).
+    inflight: Mutex<HashMap<String, SharedFlight<T>>>,
+    /// Entry cap ([`FLIGHT_GROUP_CAP`] in production). A field, not a const, so a
+    /// test can shrink it to drive the purge path deterministically.
+    cap: usize,
+}
+
+impl<T: Send + Sync + 'static> FlightGroup<T> {
+    fn new(cap: usize) -> Self {
+        Self {
+            inflight: Mutex::new(HashMap::new()),
+            cap,
+        }
+    }
+
+    /// Join the UNRESOLVED flight for `key`, or lead a fresh one built by
+    /// `lead`. `lead` is invoked ONLY when leading, so a joiner never builds
+    /// (or runs) the work. `on_abort` supplies the outcome if the work's task
+    /// dies (panic/abort) — pass the type's fail-CLOSED variant.
+    ///
+    /// # The work is SPAWNED, and that is load-bearing
+    ///
+    /// A `Shared` future is driven only by whoever polls it, so if every awaiter
+    /// goes away — one client disconnecting is enough, since an unbursted
+    /// request has exactly one awaiter — nothing would ever poll it again. The
+    /// map still holds a clone, so the inner future would not be dropped either;
+    /// it would simply be frozen wherever it was parked. If that happened to be
+    /// the per-tenant acquire, it would be frozen **holding a global Argon2id
+    /// permit**, with its own `tokio::time::timeout` unable to fire (timers need
+    /// polling) — pinning a permit until some later request for the same key
+    /// happened to resume it. Uncoalesced code has no such hazard: dropping the
+    /// request future drops the permit by RAII.
+    ///
+    /// Spawning restores that property and strengthens it. The one run is owned
+    /// by the runtime, so it always completes on its own: the bounded waits fire,
+    /// the permits are released, and the result is recorded, regardless of
+    /// whether anybody is still listening.
+    ///
+    /// FAIL-SAFE: a poisoned lock runs the work inline, uncoalesced — correct,
+    /// merely unshared, and cancellation-safe in the pre-coalescing way. A
+    /// bookkeeping fault must only ever cost throughput.
+    async fn run<F>(&self, key: &str, lead: F, on_abort: fn(String) -> T) -> Arc<T>
+    where
+        F: FnOnce() -> BoxFuture<'static, T>,
+    {
+        let shared = {
+            let Ok(mut map) = self.inflight.lock() else {
+                return Arc::new(lead().await);
+            };
+            match map.get(key) {
+                // Only JOIN a flight that has NOT resolved — never reuse a
+                // completed run (see "It is NOT a cache" above).
+                Some(existing) if existing.peek().is_none() => existing.clone(),
+                _ => {
+                    // Bound the map before inserting. Only RESOLVED entries are
+                    // dropped: they are unreachable to joiners anyway, so this
+                    // can never disrupt in-flight work. If nothing is resolved
+                    // the map grows transiently — bounded by live concurrency,
+                    // itself bounded by the permits below.
+                    if map.len() >= self.cap {
+                        map.retain(|_, flight| flight.peek().is_none());
+                    }
+                    // Build AND spawn here, synchronously under the guard, so the
+                    // run is owned by the runtime from the instant it is
+                    // published — never contingent on a caller polling it. (Only
+                    // the resulting `'static` future is moved, so `lead` itself
+                    // never has to be `Send + 'static`.)
+                    let handle = tokio::spawn(lead());
+                    let fut: SharedFlight<T> = async move {
+                        Arc::new(match handle.await {
+                            Ok(outcome) => outcome,
+                            Err(e) => on_abort(format!("verify flight aborted: {e}")),
+                        })
+                    }
+                    .boxed()
+                    .shared();
+                    let _ = map.insert(key.to_owned(), fut.clone());
+                    fut
+                }
+            }
+        };
+
+        let result = shared.await;
+
+        // Retire the now-resolved flight so the NEXT call for this key is fresh.
+        // EVERY awaiter attempts this (not just the leader): the leader's own
+        // task may have been cancelled mid-flight, in which case a joiner is
+        // what drove the work to completion and must do the cleanup.
+        // Guard: remove ONLY if the entry currently under this key is resolved —
+        // a fresh leader may already have replaced it with a new unresolved
+        // flight, which must be left alone.
+        if let Ok(mut map) = self.inflight.lock() {
+            if let Some(cur) = map.get(key) {
+                if cur.peek().is_some() {
+                    let _ = map.remove(key);
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Test-only: live entry count, for asserting the map does not retain
+    /// resolved flights.
+    #[cfg(test)]
+    fn len_for_test(&self) -> usize {
+        self.inflight.lock().map(|m| m.len()).unwrap_or(0)
+    }
+}
+
+/// Hand-written for the same reason [`SecretMatchMemo`]'s is: the live key set
+/// is a PAT-presence oracle for anyone with log access. Only the count escapes.
+impl<T> std::fmt::Debug for FlightGroup<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FlightGroup")
+            .field(
+                "inflight",
+                &format_args!("[{} REDACTED]", self.inflight.lock().map_or(0, |m| m.len())),
+            )
+            .finish()
+    }
+}
+
+/// Outcome of ONE coalesced hot-path Argon2id run, cloned to every joiner.
+///
+/// Carrying the outcome (rather than re-deciding per joiner) is sound because
+/// every joiner shares the flight KEY — the same `(plaintext, token_id, stored
+/// pat_hash, scope, find_only)` tuple — and the outcome is a pure function of
+/// exactly that tuple. No joiner receives a decision its own inputs did not
+/// already determine. Since the key binds `scope` and `find_only` too, joiners
+/// are guaranteed to reach the SAME step-4 scope verdict as the leader; and
+/// everything the key does NOT bind (tenant, expiry, revocation) is read per
+/// request, outside the flight.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum VerifyFlight {
+    /// Argon2id proved the presented secret matches the stored PHC hash.
+    Proven,
+    /// Argon2id ran and the secret did NOT match ⇒ uniform `InvalidPat`.
+    Rejected,
+    /// Fail-CLOSED: a bounded permit acquire shed, or the blocking join faulted.
+    Backend(String),
+}
+
+/// Outcome of ONE coalesced dummy burn. Exactly two outcomes are observable,
+/// and they mirror [`VerifyFlight`]'s so the two 401 arms cannot diverge:
+/// a burn that RAN is the uniform `InvalidPat`, and a burn that was SHED is
+/// `Backend("pat verifier overloaded")` — see
+/// `INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum BurnFlight {
+    /// The dummy Argon2id ran (timing parity preserved) ⇒ uniform `InvalidPat`.
+    Burned,
+    /// Fail-CLOSED: a bounded permit acquire shed at EITHER tier (global pool
+    /// or the shared [`UNKNOWN_TOKEN_BUCKET`] sub-cap), or the flight task
+    /// faulted. Identical to [`VerifyFlight::Backend`] on the row-FOUND arm,
+    /// which is what keeps the shed free of a row-existence oracle.
+    Backend(String),
+}
+
 /// Container-side PAT → tenant verifier (Option B). Trait-agnostic: each
 /// adapter route module wraps an `Arc<PatVerifier>` in a thin newtype
 /// that impls that adapter's `TenantResolver` port.
@@ -670,33 +1049,10 @@ pub struct PatVerifier {
     /// FIRST, then this tenant's permit (CONSISTENT order => no deadlock), so a
     /// single tenant flooding distinct PATs can hold at most
     /// `ARGON2_PER_TENANT_PERMITS` global permits at once -- leaving the rest of
-    /// the global pool for other tenants. Wrapped in a `Mutex` only to guard
-    /// the map's get-or-insert; the `Mutex` is NEVER held across the Argon2id
-    /// work or the async acquire (it is dropped before either). FAIL-SAFE: a
-    /// poisoned lock falls back to global-only bounding (a bookkeeping fault
-    /// must never block a legitimate auth) -- see [`Self::per_tenant_semaphore`].
-    ///
-    /// BOUNDED (#1/#12 follow-up): the map is an LRU capped at
-    /// [`Self::per_tenant_map_cap`]. Each entry carries its semaphore plus a
-    /// monotonic last-access tick (the [`PerTenantEntry`]); on a get-or-insert
-    /// that would exceed the cap, the least-recently-used **fully-idle** entry
-    /// is evicted first (never an active/contended one, never the shared
-    /// [`UNKNOWN_TOKEN_BUCKET`]). This caps the steady-state memory the map can
-    /// retain without ever disrupting an in-flight verify.
-    per_tenant_permits: Arc<Mutex<HashMap<String, PerTenantEntry>>>,
-    /// Monotonic clock for the LRU recency order on `per_tenant_permits`. Bumped
-    /// on every get-or-insert; the smallest tick is the least-recently-used.
-    /// `u64` never realistically wraps (one tick per verify ⇒ ~10^11 years at
-    /// 1M/s), so a simple increment is sound.
-    per_tenant_tick: Arc<AtomicU64>,
-    /// The cap each per-tenant semaphore is created with
-    /// ([`ARGON2_PER_TENANT_PERMITS`] in production). A field (not a const) so a
-    /// test can shrink it to drive the two-tier interaction deterministically.
-    per_tenant_cap: usize,
-    /// LRU capacity of the `per_tenant_permits` map
-    /// ([`PER_TENANT_MAP_CAP`] in production). A field (not a const) so a test
-    /// can shrink it to drive the eviction path deterministically.
-    per_tenant_map_cap: usize,
+    /// the global pool for other tenants. See [`PerTenantGate`] for the bounded
+    /// LRU and the fail-safe posture; it lives behind an `Arc` so the coalescing
+    /// flight future can own a handle to it.
+    per_tenant: Arc<PerTenantGate>,
     /// Memoised Argon2id secret-matches — the fix for the adapter plane's
     /// throughput ceiling.
     ///
@@ -727,6 +1083,27 @@ pub struct PatVerifier {
     /// window, because it memoises only the immutable Argon2id comparison and
     /// leaves the D1 row read per-request. See [`SecretMatchMemo`].
     secret_match_memo: Arc<SecretMatchMemo>,
+    /// Coalesces a burst of concurrent COLD memo misses for the SAME
+    /// `(plaintext, token_id, pat_hash, scope, find_only)` onto ONE Argon2id.
+    ///
+    /// The memo above only helps once a first request has paid Argon2id. A cold
+    /// container's first burst — a `cargo -jN` build's opening N requests, all
+    /// bearing the same PAT — misses it N times simultaneously, and only
+    /// [`ARGON2_PER_TENANT_PERMITS`] of them are admitted; a single Argon2id at
+    /// 0.5 vCPU far exceeds the 250 ms [`ARGON2_PERMIT_WAIT`], so the surplus
+    /// sheds into `Backend` ⇒ **HTTP 503 on the first request of every cold
+    /// build**. Coalescing collapses that burst to one Argon2id under one
+    /// permit, so no request is shed for work another request is already doing.
+    verify_flights: Arc<FlightGroup<VerifyFlight>>,
+    /// The mirror of `verify_flights` on the unknown/expired/revoked arm.
+    ///
+    /// Its ONLY purpose is symmetry. Coalescing just the row-FOUND arm would
+    /// make N concurrent copies of one wrong-secret token cost ~1×Argon2id when
+    /// the `token_id` exists and ~N× when it does not — re-opening, in the
+    /// concurrency dimension, exactly the token-enumeration oracle the dummy
+    /// burn exists to close. See [`dummy_burn_fingerprint`] for why the two keys
+    /// partition identically.
+    burn_flights: Arc<FlightGroup<BurnFlight>>,
 }
 
 impl std::fmt::Debug for PatVerifier {
@@ -769,10 +1146,10 @@ impl PatVerifier {
             // Per-tenant fairness sub-limit (finding #1). Empty map; tenant
             // semaphores are created lazily on first verify for that tenant.
             // BOUNDED LRU (#1/#12 follow-up): capped at PER_TENANT_MAP_CAP.
-            per_tenant_permits: Arc::new(Mutex::new(HashMap::new())),
-            per_tenant_tick: Arc::new(AtomicU64::new(0)),
-            per_tenant_cap: ARGON2_PER_TENANT_PERMITS,
-            per_tenant_map_cap: PER_TENANT_MAP_CAP,
+            per_tenant: Arc::new(PerTenantGate::new(
+                ARGON2_PER_TENANT_PERMITS,
+                PER_TENANT_MAP_CAP,
+            )),
             // Memoise the (immutable) Argon2id secret-match so a build's
             // thousands of requests pay it once, not once each. Revocation is
             // unaffected — the D1 row is still read per request.
@@ -780,6 +1157,11 @@ impl PatVerifier {
                 SECRET_MATCH_MEMO_CAP,
                 SECRET_MATCH_MEMO_TTL,
             )),
+            // …and coalesce the COLD burst that misses that memo, on BOTH 401
+            // arms, so the cold-start 503 disappears without making `token_id`
+            // liveness observable in the concurrency dimension.
+            verify_flights: Arc::new(FlightGroup::new(FLIGHT_GROUP_CAP)),
+            burn_flights: Arc::new(FlightGroup::new(FLIGHT_GROUP_CAP)),
         }
     }
 
@@ -848,119 +1230,13 @@ impl PatVerifier {
         }
     }
 
-    /// Resolve (get-or-create) the per-tenant Argon2id semaphore for `tenant`,
-    /// for the two-tier fairness gate (finding #1).
-    ///
-    /// Returns `Some(sem)` with a clone of the tenant's `Arc<Semaphore>`, or
-    /// `None` to signal FAIL-SAFE fall-through to global-only bounding. We
-    /// return `None` (rather than propagating an error) on a poisoned lock so a
-    /// bookkeeping fault can NEVER block a legitimate auth — the global bound
-    /// still protects against OOM; we merely lose per-tenant fairness for the
-    /// rare poisoned-lock window.
-    ///
-    /// The `Mutex` is held ONLY for the brief get-or-insert (+ any LRU
-    /// eviction) and is dropped before the caller awaits the (async) permit
-    /// acquire or runs Argon2id — so it never serializes the verify path nor
-    /// risks a lock-across-await.
-    ///
-    /// BOUNDED LRU (#1/#12 follow-up): the map is capped at
-    /// [`Self::per_tenant_map_cap`]. A get bumps the entry's recency tick. An
-    /// insert that would exceed the cap first evicts the least-recently-used
-    /// entry **that is fully idle** — `available_permits() == per_tenant_cap`,
-    /// i.e. no in-flight verify holds any of its permits — so eviction can never
-    /// disrupt an active or contended tenant. The shared
-    /// [`UNKNOWN_TOKEN_BUCKET`] is NEVER an eviction candidate. If no idle entry
-    /// can be freed (every entry is in-flight — pathological, far beyond a 10k
-    /// real-tenant working set), we skip eviction and let the map grow past the
-    /// cap transiently rather than block/evict an active tenant; it shrinks back
-    /// as those verifies complete and a later insert finds an idle victim.
-    /// Re-inserting an evicted tenant simply recreates its (idle) semaphore —
-    /// semantically identical.
+    /// Test-only: reach the per-tenant fairness gate's semaphore for `tenant`
+    /// through the exact get-or-insert path a verify uses, so a test can
+    /// saturate (or pin) a bucket. Production code goes through
+    /// [`PerTenantGate::acquire`].
+    #[cfg(test)]
     fn per_tenant_semaphore(&self, tenant: &str) -> Option<Arc<Semaphore>> {
-        let mut map = match self.per_tenant_permits.lock() {
-            Ok(guard) => guard,
-            // Poisoned: a previous holder panicked while mutating the map. Do
-            // NOT block auth on bookkeeping — fall back to global-only.
-            Err(_poisoned) => return None,
-        };
-        let tick = self.per_tenant_tick.fetch_add(1, Ordering::Relaxed);
-        if let Some(entry) = map.get_mut(tenant) {
-            entry.last_access = tick; // touch ⇒ most-recently-used
-            return Some(Arc::clone(&entry.sem));
-        }
-        // New tenant. Enforce the LRU cap BEFORE inserting: if at/over capacity,
-        // evict the least-recently-used FULLY-IDLE entry (never the shared
-        // UNKNOWN_TOKEN_BUCKET, never an in-flight tenant).
-        if map.len() >= self.per_tenant_map_cap {
-            self.evict_one_idle(&mut map);
-        }
-        let sem = Arc::new(Semaphore::new(self.per_tenant_cap));
-        map.insert(
-            tenant.to_owned(),
-            PerTenantEntry {
-                sem: Arc::clone(&sem),
-                last_access: tick,
-            },
-        );
-        Some(sem)
-    }
-
-    /// Evict the single least-recently-used entry that is SAFE to drop: fully
-    /// idle (`available_permits() == per_tenant_cap` ⇒ no in-flight verify holds
-    /// a permit) and NOT the shared [`UNKNOWN_TOKEN_BUCKET`]. If no such entry
-    /// exists, evict nothing (the map grows transiently past the cap rather than
-    /// disrupt an active tenant). Caller holds the map lock.
-    fn evict_one_idle(&self, map: &mut HashMap<String, PerTenantEntry>) {
-        let mut victim: Option<(&str, u64)> = None;
-        for (key, entry) in map.iter() {
-            // SAFETY INVARIANTS for eviction:
-            //  - never the synthetic dummy-burn bucket (must always exist), and
-            //  - only a fully-idle semaphore (no permit checked out) so an
-            //    active/contended tenant is never disrupted.
-            if key == UNKNOWN_TOKEN_BUCKET {
-                continue;
-            }
-            if entry.sem.available_permits() != self.per_tenant_cap {
-                continue; // in-flight verify(s) for this tenant — do not evict
-            }
-            match victim {
-                Some((_, best_tick)) if entry.last_access >= best_tick => {}
-                _ => victim = Some((key.as_str(), entry.last_access)),
-            }
-        }
-        if let Some((key, _)) = victim {
-            let key = key.to_owned();
-            map.remove(&key);
-        }
-    }
-
-    /// Acquire the per-tenant Argon2id permit for `tenant` under the same
-    /// bounded wait as the global permit, returning a held
-    /// `Option<OwnedSemaphorePermit>`:
-    ///
-    /// - `Ok(Some(permit))` — tenant permit held (the common case).
-    /// - `Ok(None)` — FAIL-SAFE: per-tenant bookkeeping was unavailable
-    ///   (poisoned lock), so we proceed under the GLOBAL bound only. A legit
-    ///   auth is never blocked by a bookkeeping fault.
-    /// - `Err(())` — the tenant is at its sub-cap and did not free a permit
-    ///   within the wait. The caller maps this to the SAME overloaded
-    ///   fail-CLOSED as a global-permit timeout, so one tenant's flood cannot
-    ///   monopolise the global pool.
-    ///
-    /// MUST be called AFTER the global permit is held (consistent acquire order
-    /// global→per-tenant ⇒ deadlock-free).
-    async fn acquire_per_tenant(&self, tenant: &str) -> Result<Option<OwnedSemaphorePermit>, ()> {
-        let Some(sem) = self.per_tenant_semaphore(tenant) else {
-            // Fail-safe: no per-tenant bookkeeping ⇒ global-only.
-            return Ok(None);
-        };
-        match tokio::time::timeout(ARGON2_PERMIT_WAIT, sem.acquire_owned()).await {
-            Ok(Ok(permit)) => Ok(Some(permit)),
-            // Semaphore closed (never happens in practice — we never close it)
-            // OR the per-tenant sub-cap was saturated for the whole wait. Both
-            // collapse to a fail-CLOSED overloaded signal.
-            Ok(Err(_)) | Err(_) => Err(()),
-        }
+        self.per_tenant.semaphore(tenant)
     }
 
     /// The full Option-B verification pipeline, returning the PAT's owning
@@ -997,58 +1273,119 @@ impl PatVerifier {
             // defence). Errors here are ignored: it is timing padding, not
             // an auth decision.
             None => {
-                // The dummy burn ALSO runs Argon2id (for timing parity), so it
-                // must be bounded by the same gate — otherwise an attacker who
-                // floods valid-HMAC tokens for NON-existent token_ids could
-                // OOM the container exactly like the hot path. Acquire a permit
-                // (bounded wait) before the blocking burn.
+                // COALESCED, exactly like the hot path below — see
+                // `burn_flights`. N concurrent copies of ONE plaintext run ONE
+                // dummy burn here, just as N concurrent copies of one plaintext
+                // run ONE Argon2id there, so the cost of a burst is independent
+                // of whether the token_id exists.
                 //
-                // ⚠️ INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM: on a shed (acquire
-                // timeout / closed semaphore) this arm returns the SAME
-                // `Backend("pat verifier overloaded")` as the row-FOUND arm
-                // below, NOT `InvalidPat`. The two shed arms MUST stay
-                // byte-identical: the row-FOUND path sheds with `Backend` (503)
-                // and this row-NOT-FOUND path used to shed with `InvalidPat`
-                // (401), so under saturation the status code alone answered
-                // "does this token_id exist in D1?" — a row-existence oracle
-                // strictly stronger than the latency one the burn below exists
-                // to close. Uniformity, not the burn, is what makes the shed
-                // safe: the burn is deliberately SKIPPED here (there are no
-                // permits to run it with), so timing parity is already gone and
-                // the status must carry no information either. Every rejection
-                // that is NOT a shed still collapses to `InvalidPat`.
-                let permit = match tokio::time::timeout(
-                    ARGON2_PERMIT_WAIT,
-                    Arc::clone(&self.argon2_permits).acquire_owned(),
-                )
-                .await
-                {
-                    Ok(Ok(permit)) => permit,
-                    // Acquire failed (timeout) or the semaphore was closed —
-                    // skip the burn and shed exactly like the row-FOUND arm.
-                    _ => return Err(VerifyError::Backend("pat verifier overloaded".into())),
-                };
-                // Finding #12: cap the dummy-burn path through ONE shared
-                // synthetic bucket (consistent global→per-tenant order) so a
-                // leaked-key flood across bogus token_ids cannot drain the
-                // global pool via this path. On sub-cap saturation we skip the
-                // burn and shed with the SAME overloaded signal as the
-                // row-FOUND per-tenant arm (INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM);
-                // `Ok(None)` is the fail-safe fall-through to global-only
-                // bounding and proceeds to the burn.
-                let _tenant_permit = match self.acquire_per_tenant(UNKNOWN_TOKEN_BUCKET).await {
-                    Ok(maybe_permit) => maybe_permit,
-                    Err(()) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
-                };
+                // ⚠️ INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM (#1034) is preserved
+                // through the coalescing: EVERY shed inside this flight —
+                // global acquire timeout, closed semaphore, saturated
+                // per-tenant sub-cap, or an aborted flight task — resolves to
+                // `Backend("pat verifier overloaded")`, byte-identical to the
+                // row-FOUND arm below. The two shed arms MUST stay identical:
+                // the row-FOUND path sheds with `Backend` (503) and this
+                // row-NOT-FOUND path used to shed with `InvalidPat` (401), so
+                // under saturation the status code alone answered "does this
+                // token_id exist in D1?" — a row-existence oracle strictly
+                // stronger than the latency one the burn exists to close.
+                // Uniformity, not the burn, is what makes the shed safe: on a
+                // shed the burn is deliberately SKIPPED (there are no permits
+                // to run it with), so timing parity is already gone and the
+                // status must carry no information either. Every rejection that
+                // is NOT a shed still collapses to `InvalidPat`.
+                //
+                // Coalescing only ever makes that uniformity easier to hold: a
+                // burst of one plaintext now takes ONE trip through these two
+                // acquires instead of N, so the number of requests that can
+                // reach a shed at all strictly decreases.
                 let plaintext = pat_plaintext.to_owned();
-                let _ = tokio::task::spawn_blocking(move || {
-                    let r = corelink_pat::dummy_verify_for_constant_time(&plaintext);
-                    drop(permit); // hold the global permit ONLY across the blocking work
-                    drop(_tenant_permit); // release the synthetic-bucket permit too
-                    r
-                })
-                .await;
-                return Err(VerifyError::InvalidPat);
+                let permits = Arc::clone(&self.argon2_permits);
+                let per_tenant = Arc::clone(&self.per_tenant);
+                let outcome = self
+                    .burn_flights
+                    .run(
+                        &dummy_burn_fingerprint(pat_plaintext),
+                        move || {
+                            async move {
+                                // The dummy burn ALSO runs Argon2id (for timing
+                                // parity), so it must be bounded by the same gate —
+                                // otherwise an attacker who floods valid-HMAC tokens
+                                // for NON-existent token_ids could OOM the container
+                                // exactly like the hot path.
+                                let permit = match tokio::time::timeout(
+                                    ARGON2_PERMIT_WAIT,
+                                    permits.acquire_owned(),
+                                )
+                                .await
+                                {
+                                    Ok(Ok(permit)) => permit,
+                                    // GLOBAL shed. Returns `Backend`, the SAME code
+                                    // the hot path returns for the SAME condition —
+                                    // see the status-parity note below.
+                                    _ => {
+                                        return BurnFlight::Backend(
+                                            "pat verifier overloaded".into(),
+                                        )
+                                    }
+                                };
+                                // Finding #12: cap the dummy-burn path through ONE
+                                // shared synthetic bucket (consistent
+                                // global→per-tenant order) so a leaked-key flood
+                                // across bogus token_ids cannot drain the global
+                                // pool via this path.
+                                let tenant_permit =
+                                    match per_tenant.acquire(UNKNOWN_TOKEN_BUCKET).await {
+                                        Ok(maybe_permit) => maybe_permit,
+                                        // PER-TENANT shed: skip the burn and shed
+                                        // with the SAME overloaded signal as the
+                                        // global tier and as the row-FOUND arm
+                                        // (INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM).
+                                        // `Ok(None)` is the fail-safe fall-through
+                                        // to global-only bounding and proceeds to
+                                        // the burn.
+                                        Err(()) => {
+                                            return BurnFlight::Backend(
+                                                "pat verifier overloaded".into(),
+                                            )
+                                        }
+                                    };
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    let r =
+                                        corelink_pat::dummy_verify_for_constant_time(&plaintext);
+                                    drop(permit); // hold the global permit ONLY across the blocking work
+                                    drop(tenant_permit); // release the synthetic-bucket permit too
+                                    r
+                                })
+                                .await;
+                                BurnFlight::Burned
+                            }
+                            .boxed()
+                        },
+                        BurnFlight::Backend,
+                    )
+                    .await;
+                // STATUS PARITY between the two ways to earn a 401
+                // (INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM, #1034).
+                //
+                // A COMPLETED burn is the uniform 401 path — the burn ran, the
+                // credential was decided, and the answer is `InvalidPat`
+                // exactly as it is for a wrong secret on a live row.
+                //
+                // A SHED — at EITHER tier, global or per-tenant, and whether it
+                // fires inside the flight or the flight task itself dies —
+                // decided nothing about the credential, so it answers
+                // `Backend("pat verifier overloaded")`, identical to the
+                // row-FOUND arm. Uniformity across the two tiers matters as
+                // much as uniformity across the two arms: if the per-tenant
+                // tier still answered 401 here while the global tier answered
+                // 503, an attacker who can pick WHICH tier sheds would recover
+                // the same bit the asymmetry used to hand over for free.
+                return Err(match &*outcome {
+                    BurnFlight::Burned => VerifyError::InvalidPat,
+                    BurnFlight::Backend(msg) => VerifyError::Backend(msg.clone()),
+                });
             }
         };
 
@@ -1071,31 +1408,46 @@ impl PatVerifier {
         //    (unknown token_id ⇒ dummy burn / wrong secret ⇒ real verify) in
         //    timing parity.
         //
-        //    DELIBERATELY LOCK-FREE. An earlier revision of this fix also
-        //    single-flighted the cold miss on a sharded mutex, so a `cargo -jN`
-        //    build's first N simultaneous requests would run ONE Argon2id rather
-        //    than N. Adversarial review killed it, and the reasons are worth
-        //    keeping so it is not reintroduced naively:
-        //      (a) it reopened the token-enumeration oracle the dummy burn at
-        //          step 2 exists to close — the lock sat on the row-FOUND path
-        //          only, so N concurrent copies of one wrong-secret token cost
-        //          ~N×Argon2id when the `token_id` existed and ~1× when it did
-        //          not, making liveness observable in the concurrency dimension;
-        //      (b) the lock wait was unbounded and sat IN FRONT of the two
-        //          `ARGON2_PERMIT_WAIT` load-sheds, converting a bounded 250 ms
-        //          fail-CLOSED into an unbounded stall (see the doc on
-        //          `ARGON2_PERMIT_WAIT` for why that shed exists); and
-        //      (c) it was acquired before the per-tenant sub-permit, so on the
-        //          SHARED `_oci` / `_anonymous` Durable Objects one tenant's
-        //          flood could block another upstream of the very fairness cap
-        //          `ARGON2_PER_TENANT_PERMITS` provides.
-        //    A correct version would coalesce on a shared FUTURE (the shape
-        //    `SingleFlightPatLookup` above already uses: every waiter resolves
-        //    when the ONE verify completes, so there is no queue to stall in)
-        //    and would have to mirror onto the dummy-burn arm to keep the two
-        //    401 paths symmetric. That is a separate change with its own
-        //    threat-model review; the cold-burst 503 it would fix is
-        //    pre-existing behaviour, not a regression introduced here.
+        //    COALESCED on a shared FUTURE ([`FlightGroup`]) so a burst of COLD
+        //    memo misses for the SAME key runs ONE Argon2id, not N. Without
+        //    it the memo does nothing for the very first burst of a cold
+        //    container — a `cargo -jN` build opens with N simultaneous misses,
+        //    `ARGON2_PER_TENANT_PERMITS` (4) are admitted, and since one
+        //    Argon2id at 0.5 vCPU dwarfs the 250 ms `ARGON2_PERMIT_WAIT` the
+        //    surplus sheds to 503.
+        //
+        //    An earlier revision coalesced on a sharded MUTEX instead, and three
+        //    independent reviewers killed it. The shared future is not the same
+        //    object, and it is worth recording exactly why each finding does not
+        //    survive the change of shape:
+        //      (a) ORACLE — the mutex sat on the row-FOUND path only, so N
+        //          concurrent copies of one wrong-secret token cost ~1×Argon2id
+        //          when the `token_id` existed and ~N× when it did not. Here BOTH
+        //          arms coalesce, on keys that partition identically for a given
+        //          plaintext (see `dummy_burn_fingerprint`), so a burst costs
+        //          ~1×Argon2id either way and liveness stays unobservable in the
+        //          concurrency dimension.
+        //      (b) UNBOUNDED WAIT IN FRONT OF THE LOAD SHED — the mutex made a
+        //          burst an N-deep FIFO whose tail waited ~N× one Argon2id, with
+        //          no timeout, IN FRONT of the two `ARGON2_PERMIT_WAIT` sheds.
+        //          A shared future has no queue: every joiner resolves together
+        //          when the ONE run completes, so the N-th waits exactly as long
+        //          as the 1st. That wait is `250 ms + 250 ms + one Argon2id` —
+        //          i.e. the worst case of a request that is admitted TODAY. The
+        //          shed still bounds admission; it is now inside the flight, and
+        //          when it fires every joiner gets the same fail-CLOSED
+        //          `Backend`. Coalescing removes work; it never adds a wait
+        //          longer than the successful path already has.
+        //      (c) FAIRNESS BYPASS — the mutex was taken BEFORE the per-tenant
+        //          sub-permit, so on the SHARED `_oci` / `_anonymous` Durable
+        //          Objects one tenant's flood could block another upstream of the
+        //          cap. Here the acquires stay INSIDE the flight and in the
+        //          unchanged global→per-tenant order, and a joiner takes no
+        //          permit at all. Concurrent Argon2ids for a tenant still equal
+        //          that tenant's held sub-permits, so `ARGON2_PER_TENANT_PERMITS`
+        //          bounds them exactly as before — and a waiter only ever waits
+        //          on its own key's flight, which by construction belongs to its
+        //          own tenant. There is no cross-tenant coupling to bypass.
         let fp = secret_match_fingerprint(
             pat_plaintext,
             token_id.as_str(),
@@ -1103,57 +1455,101 @@ impl PatVerifier {
             &row.scope,
             row.find_only,
         );
-        // Whether THIS request paid the Argon2id. The memo is populated only at
-        // the very END of the pipeline, after the step-4 scope gate — see the
-        // comment there for why populating it here would be an oracle.
+        // Whether THIS request went through the Argon2id stage rather than
+        // being served by the memo. Under coalescing that includes a request
+        // that JOINED another's flight instead of running the hash itself —
+        // which is correct: the flight key binds `scope` and `find_only`, so a
+        // joiner reaches the identical step-4 verdict, and the memo is populated
+        // only at the very END of the pipeline, after that gate. See the comment
+        // there for why populating it earlier would be an oracle.
         let mut proved_here = false;
         if !self.secret_match_memo.contains(&fp) {
             proved_here = true;
             let plaintext = pat_plaintext.to_owned();
             let signing_keys = Arc::clone(&self.signing_keys);
             let stored_hash = PatHash::from_phc_string(row.pat_hash.clone());
-            // Finding #2: bound concurrent Argon2id. Acquire a permit (bounded
-            // wait) BEFORE the blocking work; on acquire-timeout the verifier is
-            // overloaded — return `Backend` (reusing the existing variant, which
-            // the OCI `/token` handler and the native gate already map to a
-            // non-leaky fail-CLOSED rejection) rather than letting the request pile
-            // on more 64-MiB allocations. The permit is moved into the blocking
-            // closure and dropped there, so it is held ONLY across the Argon2id.
-            let permit = match tokio::time::timeout(
-                ARGON2_PERMIT_WAIT,
-                Arc::clone(&self.argon2_permits).acquire_owned(),
-            )
-            .await
-            {
-                Ok(Ok(permit)) => permit,
-                Ok(Err(_closed)) => {
-                    return Err(VerifyError::Backend("pat verifier overloaded".into()))
-                }
-                Err(_timeout) => {
-                    return Err(VerifyError::Backend("pat verifier overloaded".into()))
-                }
-            };
-            // Finding #1: per-tenant fairness. With the GLOBAL permit already held,
-            // acquire this tenant's sub-permit (consistent order global→per-tenant
-            // ⇒ deadlock-free). If the tenant is at its sub-cap, fail-CLOSED with
-            // the SAME overloaded signal as a global timeout — so ONE tenant
-            // flooding distinct PATs cannot drain the whole global pool and starve
-            // others. The `permit` (global) is dropped on this early return by
-            // RAII, so a per-tenant rejection does NOT leak a global permit.
-            // `Ok(None)` is the fail-safe fall-through to global-only bounding.
-            let tenant_permit = match self.acquire_per_tenant(&row.tenant_id).await {
-                Ok(maybe_permit) => maybe_permit,
-                Err(()) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
-            };
-            let verify_result = tokio::task::spawn_blocking(move || {
-                let r = verify_with_hash_multi(&plaintext, &token_id, &stored_hash, &signing_keys);
-                drop(permit); // release the global Argon2id permit the moment the work ends
-                drop(tenant_permit); // release the per-tenant permit too (RAII, both paths)
-                r
-            })
-            .await
-            .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
-            verify_result.map_err(|_| VerifyError::InvalidPat)?;
+            let permits = Arc::clone(&self.argon2_permits);
+            let per_tenant = Arc::clone(&self.per_tenant);
+            let tenant_id = row.tenant_id.clone();
+            let outcome = self
+                .verify_flights
+                .run(
+                    &fp,
+                    move || {
+                        async move {
+                            // Finding #2: bound concurrent Argon2id. Acquire a permit
+                            // (bounded wait) BEFORE the blocking work; on
+                            // acquire-timeout the verifier is overloaded — return
+                            // `Backend` (reusing the existing variant, which the OCI
+                            // `/token` handler and the native gate already map to a
+                            // non-leaky fail-CLOSED rejection) rather than letting
+                            // the request pile on more 64-MiB allocations. The permit
+                            // is moved into the blocking closure and dropped there,
+                            // so it is held ONLY across the Argon2id.
+                            let permit = match tokio::time::timeout(
+                                ARGON2_PERMIT_WAIT,
+                                permits.acquire_owned(),
+                            )
+                            .await
+                            {
+                                Ok(Ok(permit)) => permit,
+                                // Semaphore closed (never in practice) or the
+                                // bounded wait elapsed — both fail CLOSED.
+                                Ok(Err(_)) | Err(_) => {
+                                    return VerifyFlight::Backend("pat verifier overloaded".into())
+                                }
+                            };
+                            // Finding #1: per-tenant fairness. With the GLOBAL permit
+                            // already held, acquire this tenant's sub-permit
+                            // (consistent order global→per-tenant ⇒ deadlock-free).
+                            // If the tenant is at its sub-cap, fail-CLOSED with the
+                            // SAME overloaded signal as a global timeout — so ONE
+                            // tenant flooding distinct PATs cannot drain the whole
+                            // global pool and starve others. The `permit` (global) is
+                            // dropped on this early return by RAII, so a per-tenant
+                            // rejection does NOT leak a global permit. `Ok(None)` is
+                            // the fail-safe fall-through to global-only bounding.
+                            let tenant_permit = match per_tenant.acquire(&tenant_id).await {
+                                Ok(maybe_permit) => maybe_permit,
+                                Err(()) => {
+                                    return VerifyFlight::Backend("pat verifier overloaded".into())
+                                }
+                            };
+                            let joined = tokio::task::spawn_blocking(move || {
+                                let r = verify_with_hash_multi(
+                                    &plaintext,
+                                    &token_id,
+                                    &stored_hash,
+                                    &signing_keys,
+                                );
+                                drop(permit); // release the global Argon2id permit the moment the work ends
+                                drop(tenant_permit); // release the per-tenant permit too (RAII, both paths)
+                                r
+                            })
+                            .await;
+                            // ⚠️ The flight proves the SECRET and nothing else. It
+                            // must NOT populate the memo here, even though this is
+                            // where the proof lands: the memo is written only past
+                            // the step-4 scope gate, per request — see the comment
+                            // there. A scope-rejected PAT memoised at this point
+                            // would 401 in ~0 ms forever after, which is the
+                            // latency oracle that gate placement exists to close.
+                            match joined {
+                                Ok(Ok(_verified)) => VerifyFlight::Proven,
+                                Ok(Err(_)) => VerifyFlight::Rejected,
+                                Err(e) => VerifyFlight::Backend(format!("verify join: {e}")),
+                            }
+                        }
+                        .boxed()
+                    },
+                    VerifyFlight::Backend,
+                )
+                .await;
+            match &*outcome {
+                VerifyFlight::Proven => {}
+                VerifyFlight::Rejected => return Err(VerifyError::InvalidPat),
+                VerifyFlight::Backend(msg) => return Err(VerifyError::Backend(msg.clone())),
+            }
         }
 
         // 4. Scope gate — fail-CLOSED on NO cache capability at all, then
@@ -1192,6 +1588,13 @@ impl PatVerifier {
         // Gating on `proved_here` (rather than inserting unconditionally) keeps a
         // warm hit off the memo's write lock and keeps the TTL anchored at the
         // proof, not sliding on use.
+        //
+        // Coalescing does not disturb this. A burst's joiners all have
+        // `proved_here == true` and so all reach this line, but they also all
+        // reach the SAME scope verdict as their leader — the flight key binds
+        // `scope` and `find_only`, so a burst cannot straddle the gate — and the
+        // insert is idempotent on a shared key. A scope-REJECTED burst returns
+        // above without any member inserting, exactly as a single request does.
         if proved_here {
             self.secret_match_memo.insert(fp);
         }
@@ -1205,7 +1608,9 @@ impl PatVerifier {
     #[cfg(test)]
     #[must_use]
     fn with_map_cap(mut self, cap: usize) -> Self {
-        self.per_tenant_map_cap = cap;
+        // The gate is behind an `Arc`, so rebuild it. Only ever called straight
+        // off a constructor, where the map is still empty.
+        self.per_tenant = Arc::new(PerTenantGate::new(self.per_tenant.cap, cap));
         self
     }
 
@@ -1219,7 +1624,7 @@ impl PatVerifier {
                   cfg(test) method sits on the impl block, outside that module's scope."
     )]
     fn per_tenant_map_len(&self) -> usize {
-        self.per_tenant_permits.lock().expect("map lock").len()
+        self.per_tenant.permits.lock().expect("map lock").len()
     }
 
     /// Test-only constructor that overrides the Argon2id concurrency bound so
@@ -1257,14 +1662,13 @@ impl PatVerifier {
             lookup,
             signing_keys: Arc::new(signing_keys),
             argon2_permits: Arc::new(Semaphore::new(permits)),
-            per_tenant_permits: Arc::new(Mutex::new(HashMap::new())),
-            per_tenant_tick: Arc::new(AtomicU64::new(0)),
-            per_tenant_cap: per_tenant_permits,
-            per_tenant_map_cap: PER_TENANT_MAP_CAP,
+            per_tenant: Arc::new(PerTenantGate::new(per_tenant_permits, PER_TENANT_MAP_CAP)),
             secret_match_memo: Arc::new(SecretMatchMemo::new(
                 SECRET_MATCH_MEMO_CAP,
                 SECRET_MATCH_MEMO_TTL,
             )),
+            verify_flights: Arc::new(FlightGroup::new(FLIGHT_GROUP_CAP)),
+            burn_flights: Arc::new(FlightGroup::new(FLIGHT_GROUP_CAP)),
         }
     }
 
@@ -1959,14 +2363,14 @@ mod tests {
             2,
         );
         // Poison the per-tenant mutex by panicking while holding the guard.
-        let map = Arc::clone(&verifier.per_tenant_permits);
+        let gate = Arc::clone(&verifier.per_tenant);
         let _ = std::thread::spawn(move || {
-            let _guard = map.lock().unwrap();
+            let _guard = gate.permits.lock().unwrap();
             panic!("intentional poison");
         })
         .join();
         assert!(
-            verifier.per_tenant_permits.is_poisoned(),
+            verifier.per_tenant.permits.is_poisoned(),
             "precondition: map must be poisoned"
         );
         // Despite the poison, the legit verify still resolves (fail-safe to
@@ -2428,6 +2832,59 @@ mod tests {
         );
     }
 
+    /// …and a scope-rejected BURST must not memoise either.
+    ///
+    /// This is the intersection of the scope-gate placement above and cold-miss
+    /// coalescing, and it is the one way coalescing could quietly undo that fix:
+    /// the flight is where the Argon2id proof lands, so writing the memo there
+    /// would be the natural thing to do — and would be exactly the placement
+    /// `a_scope_rejected_pat_is_never_memoised` forbids, reintroduced for every
+    /// member of a burst at once. The proof stays inside the flight; the memo
+    /// write stays outside it, past the gate, per request.
+    ///
+    /// A burst also cannot straddle the gate: the flight key binds `scope` and
+    /// `find_only`, so every joiner reaches its leader's verdict.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_scope_rejected_burst_leaves_the_memo_empty() {
+        const BURST: usize = 8;
+        let key = test_key();
+        // A genuine PAT whose D1 row grants NOTHING — rejected at step 4, after
+        // a perfectly successful Argon2id.
+        let (pt, tid, hash, tenant) = mint_pat(&key, 62, SCOPE_CACHE_R);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "")));
+        let verifier = Arc::new(PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup,
+            vec![(*key).clone()],
+            1,
+            1,
+        ));
+
+        // Coalescing means the burst is admitted rather than shed (that is the
+        // point of this PR), so every member reaches the scope gate and every
+        // member must be a uniform 401 — never a fast one.
+        assert_eq!(
+            burst_observations(&verifier, &pt, BURST).await,
+            vec![Observed::Unauthorized; BURST]
+        );
+        assert_eq!(
+            verifier.secret_match_memo.len_for_test(),
+            0,
+            "not one member of a scope-rejected burst may leave a proof behind"
+        );
+
+        // And the behavioural check the placement test uses: with the pool
+        // drained, the next attempt must still TRY to run Argon2id.
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "after a scope-rejected burst the PAT must still re-pay Argon2id, got {err:?}"
+        );
+    }
+
     /// A scope DOWNGRADE must invalidate the memo, so a downgraded PAT stays
     /// indistinguishable from a revoked one.
     ///
@@ -2549,6 +3006,500 @@ mod tests {
             expiring.len_for_test(),
             0,
             "and is evicted on the read that observed it expired"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // FlightGroup — the shared-future coalescer that collapses a burst of COLD
+    // memo misses onto ONE Argon2id, on BOTH 401 arms.
+    //
+    // These first four tests pin the coalescer's own contract deterministically
+    // (an explicit `Notify` gate holds every run open until the whole burst has
+    // provably joined, so "exactly N runs" is an assertion, not a race). The
+    // verifier-level tests after them prove the wiring and the security
+    // properties that wiring has to preserve.
+    // ---------------------------------------------------------------------
+
+    /// Drive `callers` concurrent [`FlightGroup::run`] calls spread over `keys`
+    /// distinct keys, holding every run open until ALL callers have joined, and
+    /// return how many times the work actually ran.
+    ///
+    /// # Why this is deterministic and not a race
+    ///
+    /// Two properties do the work, and BOTH are needed:
+    ///
+    /// 1. **The caller runs on a CURRENT-THREAD runtime** (plain `#[tokio::test]`),
+    ///    which is cooperative: a task is never preempted mid-poll. A caller
+    ///    bumps `entered` and then executes `run`'s whole synchronous prologue —
+    ///    the map lock, the join-or-lead decision, and (for a leader) the first
+    ///    poll of the work — with no await in between, so all of that happens in
+    ///    ONE uninterruptible poll. Observing `entered == callers` therefore
+    ///    proves every caller has already joined or led. On a multi-thread
+    ///    runtime it would prove nothing: a caller could be mid-prologue on
+    ///    another core, and releasing the gate there could let the flight resolve
+    ///    before that caller joins, which would inflate the run count.
+    /// 2. **The gate is LEVEL-triggered** — a `Semaphore` opened at zero permits
+    ///    and then CLOSED, so an `acquire()` that arrives after the close still
+    ///    returns immediately. An edge-triggered `Notify::notify_waiters()` here
+    ///    would be a lost-wakeup hazard: it wakes only whoever is registered at
+    ///    that instant, so any straggler would hang forever.
+    async fn count_flight_runs(group: Arc<FlightGroup<u32>>, callers: usize, keys: usize) -> usize {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let entered = Arc::new(AtomicUsize::new(0));
+        let gate = Arc::new(Semaphore::new(0));
+
+        let mut tasks = Vec::with_capacity(callers);
+        for i in 0..callers {
+            let (group, runs, entered, gate) = (
+                Arc::clone(&group),
+                Arc::clone(&runs),
+                Arc::clone(&entered),
+                Arc::clone(&gate),
+            );
+            let key = format!("key-{}", i % keys);
+            tasks.push(tokio::spawn(async move {
+                entered.fetch_add(1, Ordering::SeqCst);
+                *group
+                    .run(
+                        &key,
+                        move || {
+                            async move {
+                                runs.fetch_add(1, Ordering::SeqCst);
+                                // Blocks until the test CLOSES the gate — never
+                                // resolves early, so no caller can arrive to find a
+                                // finished flight.
+                                let _ = gate.acquire().await;
+                                7u32
+                            }
+                            .boxed()
+                        },
+                        |m| panic!("flight aborted: {m}"),
+                    )
+                    .await
+            }));
+        }
+
+        // Every caller has now joined or led (see (1) above) — release.
+        while entered.load(Ordering::SeqCst) < callers {
+            tokio::task::yield_now().await;
+        }
+        gate.close();
+
+        for t in tasks {
+            assert_eq!(
+                t.await.expect("flight task"),
+                7,
+                "every joiner sees the run"
+            );
+        }
+        runs.load(Ordering::SeqCst)
+    }
+
+    /// A concurrent burst on ONE key runs the work EXACTLY once — this is the
+    /// whole mechanism: the other 15 callers pay nothing and consume no permit.
+    #[tokio::test]
+    async fn flight_group_collapses_a_concurrent_burst_to_one_run() {
+        let group = Arc::new(FlightGroup::<u32>::new(FLIGHT_GROUP_CAP));
+        let runs = count_flight_runs(Arc::clone(&group), 16, 1).await;
+        assert_eq!(runs, 1, "16 concurrent callers on one key must run ONCE");
+    }
+
+    /// …and DISTINCT keys never share a run. This is the bound on the
+    /// mechanism: coalescing must never merge two different units of work (a
+    /// different plaintext, or a different stored hash, is a different proof and
+    /// must pay its own Argon2id).
+    #[tokio::test]
+    async fn flight_group_never_merges_distinct_keys() {
+        let group = Arc::new(FlightGroup::<u32>::new(FLIGHT_GROUP_CAP));
+        let runs = count_flight_runs(Arc::clone(&group), 16, 4).await;
+        assert_eq!(runs, 4, "16 callers over 4 keys must run exactly 4 times");
+    }
+
+    /// It is NOT a cache: a call that starts AFTER a flight resolved leads a
+    /// fresh run rather than reusing the finished one. This is what keeps the
+    /// per-request D1 row (revocation, expiry, scope) authoritative — a burst
+    /// shares only the Argon2id comparison it was concurrent with.
+    #[tokio::test]
+    async fn flight_group_is_not_a_cache_a_later_call_runs_again() {
+        let group = Arc::new(FlightGroup::<u32>::new(FLIGHT_GROUP_CAP));
+        assert_eq!(count_flight_runs(Arc::clone(&group), 4, 1).await, 1);
+        // Second, strictly-later burst on the SAME key ⇒ a fresh run.
+        assert_eq!(
+            count_flight_runs(Arc::clone(&group), 4, 1).await,
+            1,
+            "a later burst must not be served by the resolved flight"
+        );
+    }
+
+    /// The map retains only genuinely in-flight work: every resolved flight is
+    /// retired by the first awaiter to observe it, so a long-lived container
+    /// does not accumulate them.
+    #[tokio::test]
+    async fn flight_group_retires_every_resolved_flight() {
+        let group = Arc::new(FlightGroup::<u32>::new(FLIGHT_GROUP_CAP));
+        let _ = count_flight_runs(Arc::clone(&group), 16, 8).await;
+        assert_eq!(
+            group.len_for_test(),
+            0,
+            "resolved flights must not be retained"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // The cold-burst 503 — the bug this change exists to kill, and the two
+    // oracles the fix must not open while killing it.
+    // ---------------------------------------------------------------------
+
+    /// The COLD burst: N simultaneous requests bearing the SAME PAT, all missing
+    /// the memo, must all succeed.
+    ///
+    /// This is the `cargo -jN` opening burst against a cold container, scaled
+    /// down: global pool = 1 and per-tenant sub-cap = 1, so the container can
+    /// run exactly ONE Argon2id at a time. Production admits 4 per tenant and a
+    /// real build opens with far more than 4 — same shape, same outcome.
+    ///
+    /// PROVEN RED without the fix (measured, with coalescing disabled): fails
+    /// with `burst member 0 was SHED (Backend("pat verifier overloaded"))`. With
+    /// each request running its own Argon2id the burst serialises on that single
+    /// permit, so a member cannot start until the members ahead of it have
+    /// finished a full Argon2id — and one Argon2id at the OWASP-2024 cost
+    /// (`m=64 MiB, t=3, p=4`) far exceeds the 250 ms `ARGON2_PERMIT_WAIT`, so
+    /// everything behind the first verify times out. With the fix all 8 share
+    /// ONE Argon2id under ONE permit and all 8 resolve.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_cold_burst_of_one_pat_is_not_shed() {
+        const BURST: usize = 8;
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 91, SCOPE_CACHE_RW);
+        let (pt_other, tid_other, hash_other, tenant_other) = mint_pat(&key, 92, SCOPE_CACHE_RW);
+        let lookup = Arc::new(fake_with_rows(vec![
+            (tid, row(&hash, &tenant, "cas:rw")),
+            (tid_other, row(&hash_other, &tenant_other, "cas:rw")),
+        ]));
+        let verifier = Arc::new(PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup,
+            vec![(*key).clone()],
+            1,
+            1,
+        ));
+
+        let mut tasks = Vec::with_capacity(BURST);
+        for _ in 0..BURST {
+            let (v, pt) = (Arc::clone(&verifier), pt.clone());
+            tasks.push(tokio::spawn(async move { v.verify(&pt).await }));
+        }
+        for (i, task) in tasks.into_iter().enumerate() {
+            match task.await.expect("burst task") {
+                Ok(resolved) => assert_eq!(resolved, tenant, "burst member {i}"),
+                Err(e) => panic!(
+                    "burst member {i} was SHED ({e:?}) — {BURST} concurrent copies of ONE \
+                     cold PAT must coalesce onto ONE Argon2id, not race for one permit"
+                ),
+            }
+        }
+
+        // CONTROL — without it this test would pass just as happily against a
+        // verifier whose pool was never scarce. Hold the ONE global permit and
+        // show a cold, un-memoised PAT is still shed: the pool really is 1 and
+        // the 250 ms fail-CLOSED really does fire on this verifier.
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+        let err = verifier.verify(&pt_other).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "control: with the only permit held, a cold PAT must shed, got {err:?}"
+        );
+    }
+
+    /// An ABANDONED flight must still release its Argon2id permit.
+    ///
+    /// Coalescing introduces a hazard uncoalesced code does not have. A `Shared`
+    /// future is driven only by whoever polls it, and an unbursted request has
+    /// exactly ONE awaiter — so a single client disconnect can leave the run
+    /// with nobody to poll it. The map still holds a clone, so it is not dropped
+    /// either; it is frozen wherever it was parked. The dangerous park is the
+    /// per-tenant acquire, because the GLOBAL permit is already held there and
+    /// the `tokio::time::timeout` guarding it cannot fire without being polled.
+    /// Uncoalesced, dropping the request future drops the permit by RAII.
+    ///
+    /// `FlightGroup::run` closes this by SPAWNING the work, so the runtime owns
+    /// it and it always finishes. This test drives the exact window: it saturates
+    /// the tenant bucket so the verify parks holding the global permit, waits for
+    /// that state, then aborts the only awaiter.
+    ///
+    /// PROVEN RED without the spawn: the permit is never returned and the test
+    /// fails on its 5 s budget.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_abandoned_flight_still_releases_its_argon2id_permit() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 99, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        // One global permit, one per-tenant permit.
+        let verifier = Arc::new(PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup,
+            vec![(*key).clone()],
+            1,
+            1,
+        ));
+
+        // Hold the tenant's ONLY sub-permit, so a verify takes the global permit
+        // and then parks in the per-tenant acquire — the pinning window.
+        let sem = verifier
+            .per_tenant_semaphore(&tenant)
+            .expect("tenant semaphore");
+        let _held = Arc::clone(&sem)
+            .try_acquire_owned()
+            .expect("the only tenant permit");
+
+        let task = {
+            let (v, pt) = (Arc::clone(&verifier), pt.clone());
+            tokio::spawn(async move { v.verify(&pt).await })
+        };
+
+        // Wait for the flight to actually be parked holding the global permit.
+        for _ in 0..500 {
+            if verifier.argon2_permits.available_permits() == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(
+            verifier.argon2_permits.available_permits(),
+            0,
+            "precondition: the flight must be parked HOLDING the global permit"
+        );
+
+        // The only awaiter goes away — an ordinary client disconnect.
+        task.abort();
+
+        // The run is owned by the runtime, so its bounded wait still fires and
+        // the permit comes back. Budget generously past ARGON2_PERMIT_WAIT.
+        for _ in 0..200 {
+            if verifier.argon2_permits.available_permits() == 1 {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("an abandoned flight pinned the global Argon2id permit — a cancelled request must never strand one");
+    }
+
+    /// The response "shape" a caller can actually observe on the wire, so the
+    /// two 401 arms can be compared as data rather than by eye.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    enum Observed {
+        Ok,
+        Unauthorized,
+        Overloaded,
+    }
+
+    fn observe(r: &Result<String, VerifyError>) -> Observed {
+        match r {
+            Ok(_) => Observed::Ok,
+            Err(VerifyError::InvalidPat) => Observed::Unauthorized,
+            Err(VerifyError::Backend(_)) => Observed::Overloaded,
+        }
+    }
+
+    /// Fire `burst` concurrent copies of ONE plaintext at `verifier` and return
+    /// what each caller observed.
+    async fn burst_observations(
+        verifier: &Arc<PatVerifier>,
+        plaintext: &str,
+        burst: usize,
+    ) -> Vec<Observed> {
+        let mut tasks = Vec::with_capacity(burst);
+        for _ in 0..burst {
+            let (v, pt) = (Arc::clone(verifier), plaintext.to_owned());
+            tasks.push(tokio::spawn(async move { observe(&v.verify(&pt).await) }));
+        }
+        let mut out = Vec::with_capacity(burst);
+        for t in tasks {
+            out.push(t.await.expect("burst task"));
+        }
+        out
+    }
+
+    /// THE ORACLE TEST (the finding that killed the mutex version).
+    ///
+    /// A burst of N copies of one WRONG-SECRET token must cost the same, and
+    /// look the same, whether that token's `token_id` exists or not. If only the
+    /// row-FOUND arm coalesced, the existing-`token_id` burst would serialise on
+    /// the permits and shed while the unknown-`token_id` burst sailed through —
+    /// making `token_id` liveness readable straight off the responses, in the
+    /// concurrency dimension, which is precisely the enumeration oracle the
+    /// dummy burn exists to close.
+    ///
+    /// PROVEN RED without the fix (measured, with coalescing disabled): arm A —
+    /// `token_id` EXISTS, wrong secret, so every request pays its own failing
+    /// Argon2id — serialises on the single permit and comes back
+    /// `[Overloaded, Overloaded, Unauthorized, Overloaded, Overloaded,
+    /// Overloaded, Overloaded, Overloaded]`, i.e. 7 of 8 shed, while arm B —
+    /// `token_id` ABSENT — comes back `Unauthorized` 8 times out of 8. One burst,
+    /// one bit: the token_id is live. With the fix both arms are 8/8
+    /// `Unauthorized`.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_concurrent_burst_cannot_reveal_whether_the_token_id_exists() {
+        const BURST: usize = 8;
+        let key = test_key();
+        // Arm A: a valid-HMAC PAT whose token_id IS in D1 — but the stored hash
+        // belongs to a different secret, so every request pays a full (failing)
+        // Argon2id. This is the "known token_id, wrong secret" 401.
+        let (pt_known, tid_known, _hash_known, tenant) = mint_pat(&key, 93, SCOPE_CACHE_RW);
+        let (_pt_foreign, _tid_foreign, foreign_hash, _t) = mint_pat(&key, 94, SCOPE_CACHE_RW);
+        // Arm B: a valid-HMAC PAT whose token_id is NOT in D1 at all — the
+        // "unknown/expired/revoked token_id" 401, served by the dummy burn.
+        let (pt_unknown, _tid_unknown, _h, _t2) = mint_pat(&key, 95, SCOPE_CACHE_RW);
+
+        let lookup = Arc::new(fake_with_rows(vec![(
+            tid_known,
+            row(&foreign_hash, &tenant, "cas:rw"),
+        )]));
+        // One Argon2id at a time, per-tenant sub-cap 1 — which is ALSO the cap
+        // on the shared UNKNOWN_TOKEN_BUCKET, so neither arm is given an
+        // advantage the other lacks.
+        let verifier = Arc::new(PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup,
+            vec![(*key).clone()],
+            1,
+            1,
+        ));
+
+        let arm_known = burst_observations(&verifier, &pt_known, BURST).await;
+        let arm_unknown = burst_observations(&verifier, &pt_unknown, BURST).await;
+
+        assert_eq!(
+            arm_known,
+            vec![
+                Observed::Unauthorized,
+                Observed::Unauthorized,
+                Observed::Unauthorized,
+                Observed::Unauthorized,
+                Observed::Unauthorized,
+                Observed::Unauthorized,
+                Observed::Unauthorized,
+                Observed::Unauthorized,
+            ],
+            "a burst of one wrong-secret token for a LIVE token_id must be a \
+             uniform 401 — any shed here is the enumeration oracle"
+        );
+        assert_eq!(
+            arm_known, arm_unknown,
+            "the two 401 arms must be indistinguishable under a concurrent burst"
+        );
+
+        // …and a rejected flight must never leave a proof behind: the burst ran
+        // a FAILING Argon2id, so the memo must still be empty.
+        assert_eq!(
+            verifier.secret_match_memo.len_for_test(),
+            0,
+            "a rejected verify must never populate the memo"
+        );
+    }
+
+    /// The GLOBAL load-shed answers the SAME status on both 401 arms — pinned
+    /// here at ZERO permits, the one saturation an acquire can never win.
+    ///
+    /// The asymmetry itself (row-FOUND ⇒ `Backend`/503, unknown-`token_id` ⇒
+    /// `InvalidPat`/401, an enumeration oracle readable with no timing
+    /// measurement at all) was closed on `main` by #1034 —
+    /// `shed_is_indistinguishable_between_live_and_unknown_rows` above is its
+    /// oracle test. What THIS test adds is that coalescing does not undo it:
+    /// the acquire whose failure produces the shed now lives inside the flight
+    /// future, and an unresolvable acquire there must still surface as the
+    /// identical `Backend` on both arms.
+    #[tokio::test]
+    async fn both_401_arms_shed_alike_when_the_global_pool_is_exhausted() {
+        let key = test_key();
+        let (pt_known, tid, hash, tenant) = mint_pat(&key, 96, SCOPE_CACHE_RW);
+        let (pt_unknown, _tid2, _h2, _t2) = mint_pat(&key, 97, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        // ZERO global permits ⇒ the acquire can never succeed on either arm.
+        let verifier = PatVerifier::with_key_set_and_permits(lookup, vec![(*key).clone()], 0);
+
+        let known = verifier.verify(&pt_known).await;
+        let unknown = verifier.verify(&pt_unknown).await;
+        assert_eq!(observe(&known), Observed::Overloaded);
+        assert_eq!(
+            observe(&unknown),
+            Observed::Overloaded,
+            "an unknown token_id must shed with the SAME status as a live one — \
+             the status must not encode whether the row exists"
+        );
+    }
+
+    /// …and so does the PER-TENANT tier, which is what
+    /// `INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM` (#1034) requires and what this test
+    /// pins THROUGH the coalescer.
+    ///
+    /// `saturated_dummy_burn_bucket_sheds_an_unknown_row_as_backend` above pins
+    /// the row-NOT-FOUND half on its own. This pins the PAIR on one verifier, at
+    /// the per-tenant tier specifically, because that is the tier the coalescing
+    /// rewrote: the acquires now live INSIDE the flight future, so a resolution
+    /// that mapped a flight's per-tenant shed back to `InvalidPat` would
+    /// re-open the row-existence oracle in the exact place the shed moved to.
+    /// Each arm's own bucket is saturated (the shared
+    /// [`UNKNOWN_TOKEN_BUCKET`] for the unknown row, the tenant's own bucket for
+    /// the live one) with the global pool left ample, so ONLY the per-tenant
+    /// tier can reject and both arms must answer identically.
+    #[tokio::test]
+    async fn both_401_arms_shed_alike_when_the_per_tenant_tier_is_saturated() {
+        let key = test_key();
+        let (pt_known, tid, hash, tenant) = mint_pat(&key, 98, SCOPE_CACHE_RW);
+        let (pt_unknown, _tid2, _h2, _t2) = mint_pat(&key, 99, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        // Global pool ample (8) so ONLY the per-tenant tier can reject; every
+        // per-tenant bucket has a sub-cap of 1.
+        let verifier =
+            PatVerifier::with_key_set_and_permits_per_tenant(lookup, vec![(*key).clone()], 8, 1);
+
+        // Saturate BOTH buckets: the shared synthetic one the dummy burn uses…
+        let burn_bucket = verifier
+            .per_tenant_semaphore(UNKNOWN_TOKEN_BUCKET)
+            .expect("dummy bucket");
+        let _burn_held = Arc::clone(&burn_bucket)
+            .try_acquire_owned()
+            .expect("the only dummy-bucket permit");
+        // …and the live row's own tenant bucket.
+        let tenant_bucket = verifier
+            .per_tenant_semaphore(&tenant)
+            .expect("tenant bucket");
+        let _tenant_held = Arc::clone(&tenant_bucket)
+            .try_acquire_owned()
+            .expect("the only tenant permit");
+
+        let known = verifier.verify(&pt_known).await;
+        let unknown = verifier.verify(&pt_unknown).await;
+        assert_eq!(
+            observe(&known),
+            Observed::Overloaded,
+            "a per-tenant shed on the row-FOUND arm must be a 503, got {known:?}"
+        );
+        assert_eq!(
+            observe(&unknown),
+            Observed::Overloaded,
+            "a per-tenant shed on the row-NOT-FOUND arm must be the SAME 503 — \
+             the status must not encode whether the row exists, got {unknown:?}"
+        );
+        match (&known, &unknown) {
+            (Err(VerifyError::Backend(a)), Err(VerifyError::Backend(b))) => assert_eq!(
+                a, b,
+                "the two per-tenant shed arms must be byte-identical too"
+            ),
+            other => panic!("both arms must shed as Backend, got {other:?}"),
+        }
+
+        // CONTROL — without it this test would pass against a verifier that
+        // 503s everything. Release the buckets and the same two PATs must go
+        // back to their ordinary verdicts (resolve / uniform 401).
+        drop(_burn_held);
+        drop(_tenant_held);
+        assert_eq!(observe(&verifier.verify(&pt_known).await), Observed::Ok);
+        assert_eq!(
+            observe(&verifier.verify(&pt_unknown).await),
+            Observed::Unauthorized,
+            "outside saturation an unknown row must be the uniform 401, never a 503"
         );
     }
 }
