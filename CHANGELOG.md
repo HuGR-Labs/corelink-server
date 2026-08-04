@@ -112,6 +112,50 @@ Each entry cross-references:
   assertion. 0 failures in 25 runs under 6 busy loops after the fix.
 
 ### Fixed
+- **fix(ci): the mandatory merge gate was correct and still failed to gate — a pipeline threw its
+  exit code away, so `pre-merge-gate-check.sh` now performs the merge itself (`--merge`).** Observed
+  live on **PR #1049**: the invocation was
+  `bash scripts/pre-merge-gate-check.sh 1049 | tail -3 && gh pr merge 1049 --squash`. The script
+  printed `⛔ DO NOT MERGE — 4 pending` and exited **1**, exactly as designed — but `&&` binds to the
+  **pipeline**, whose exit status is the LAST command's (`tail`, always 0), so the refusal was
+  discarded and the merge ran with four checks still in flight. They happened to pass; that was luck,
+  not process. The same shape was used on #1043/#1045/#1046/#1047 (those printed green, so no harm —
+  but there was no enforcement in any of them either). This is the **second** occurrence of the class:
+  the 2026-08-03 cancelled-bucket fix in this same file records the identical `| tail -3 &&`
+  invocation as the reason that defect surfaced at all. A guard piped through `tail` is disarmed
+  exactly as thoroughly as the bug the guard was written to catch, and "be more careful" does not fix
+  a shell operator. **Fix: collapse gating and merging into ONE process.**
+  `bash scripts/pre-merge-gate-check.sh --merge <PR>` runs the gate, then reaches
+  `gh pr merge <PR> --squash --delete-branch` through a single `if` on the gate's own return code —
+  there is exactly one `gh pr merge` call site in the file and it is inside that branch, so no exit
+  status is left for a caller's pipeline to swallow. `--squash --delete-branch` is house practice,
+  verified rather than assumed: every PR merged since #1013 landed on `main` as a single `… (#NNNN)`
+  squash commit, and the repo has `delete_branch_on_merge=false`, so the branch must be deleted
+  explicitly. **`--admin` is NOT auto-granted.** Bare `--admin` is rejected (exit 2); the override is
+  `--merge --admin-reason "<why>"`, the reason string is echoed into the output above the merge, and
+  it is accepted **only** when every gate RAN and the sole non-green entries are `fail`/`cancel`.
+  Pending, CONFLICTING, non-OPEN and missing-required-gate refusals are classified `STRUCTURAL` via a
+  private side-channel file and are **never** overridable — a pending check has produced no verdict,
+  and that is precisely the #1049 state. **Default behaviour is byte-identical:** with no flags the
+  gate's stdout and exit code are unchanged, proven by diffing the pre-change script against the new
+  one on two live PRs — #1049 (merged ⇒ `not OPEN`, 60 bytes, exit 1) and #1048 (all-green, 605
+  bytes, exit 0) — both `STDOUT IDENTICAL`. The new stderr warning (see below) is the only addition,
+  and it is on stderr precisely so piped stdout stays identical. **Proven in both directions with a
+  `gh` stub that logs every invocation:** 4 pending ⇒ `⛔ NO MERGE ISSUED`, exit 1, **zero** `gh pr
+  merge` calls; 4 pending **+ `--admin-reason`** ⇒ `⛔ --admin-reason REFUSED: this refusal is
+  STRUCTURAL`, zero merge calls; a `fail` bucket ⇒ zero merge calls; `CONFLICTING` ⇒ zero merge calls
+  (and it never even reaches the check list); all-green ⇒ exactly
+  `gh pr merge 1234 --squash --delete-branch`; `fail` + `--admin-reason` ⇒
+  `gh pr merge 1234 --squash --delete-branch --admin` with the reason printed. The regression itself
+  is pinned: `--merge <PR> | tail -3` on the pending fixture leaves the pipeline exit status at 0 —
+  and **zero merge commands are issued**, because the decision never leaves the process. Additionally,
+  when `--merge` was NOT used and **stdout is not a tty** (`[ -t 1 ]` false — exactly the footgun
+  shape), the script prints a warning naming `#1049` and the `--merge` form. It goes to **stderr**,
+  which the pipe does not capture, so it reaches the human even while `tail` truncates stdout, and it
+  is emitted from an `EXIT` trap so it survives `2>&1 | tail -N` and fires on every exit path.
+  Honesty note kept in the record: the default mode still cannot stop a caller who insists on
+  chaining — that hole lives in the caller's shell, not in this script — which is why `CLAUDE.md`
+  now prescribes the `--merge` form as *the* way to merge.
 - **fix(auth): the "why the shed divergence is safe" rationale in `adapter_pat.rs` rested on a
   security argument its own author later withdrew — two of its three bullets were false.** The
   comment above `a_saturated_shared_burn_bucket_sheds_only_the_unknown_arm` documents the one

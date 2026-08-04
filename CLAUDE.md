@@ -46,8 +46,13 @@ for bodies), or invoke the **`okf-context`** skill.
 
 ## ⛔ Before merging ANY PR — do not skip
 
-**Run `bash scripts/pre-merge-gate-check.sh <PR>` and merge ONLY if it prints
-all-green.** The heavy gates (coverage / CodeQL / ffi-matrix / reproducible-build
+**Merge with ONE command: `bash scripts/pre-merge-gate-check.sh --merge <PR>`.**
+It gates, then `gh pr merge --squash --delete-branch` only if every check is
+green — the merge is unreachable otherwise. **Never chain
+`pre-merge-gate-check.sh <PR> | tail -N && gh pr merge`:** a pipeline's exit
+status is `tail`'s, so the gate's refusal is discarded — that is how #1049
+merged with 4 checks pending. The report-only form (no flag) is unchanged: run
+it and merge ONLY if it prints all-green. The heavy gates (coverage / CodeQL / ffi-matrix / reproducible-build
 / cas-foundation / s10-ship-gate) were moved OFF per-PR (2026-06-02) and run
 **on a cron + on-demand only** — no `pull_request`, no `push` lane — so nothing
 gates on them between scheduled runs. Cadence after the 2026-08-01 CI cost diet:
@@ -55,7 +60,9 @@ gates on them between scheduled runs. Cadence after the 2026-08-01 CI cost diet:
 ffi-matrix / s10-ship-gate are WEEKLY** (Tue/Wed/Thu/Fri). Dispatch the weekly
 ones explicitly when a PR touches their surface. The checks that REMAIN on a PR
 are the fast, load-bearing ones and they MUST be green. Never blind `--admin` merge; if you must `--admin`, state the documented
-infra/flake reason explicitly. (A green PR now takes minutes, not 30+.)
+infra/flake reason explicitly — `--merge --admin-reason "<why>"`, which the
+script refuses on pending/conflicting/missing-gate states (those never ran).
+(A green PR now takes minutes, not 30+.)
 
 **2026-08-02 correction — the "cron only" rule no longer covers everything it
 used to.** 14 workflows that DID have a `pull_request` trigger were still also
