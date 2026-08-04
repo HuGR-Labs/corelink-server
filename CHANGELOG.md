@@ -27,9 +27,12 @@ Each entry cross-references:
   passes either way, which is why it survived two reviews and a re-introduction.** The no-delay sentinel
   was a MEMBER of `SlowTarget` (`"none"`) while `phaseOf` returned that same value for a statement it
   could not classify, so `makeEnv("none")` delayed every unnamed statement — including
-  `SELECT tier FROM tier_selections` inside the `wdb` window, and the PAT lookup. Measured on this base,
-  the supposedly-quiet case: `{"auth":152,"wdb":154,"qtier":152,…}` before,
-  `{"auth":1,"wdb":2,"qtier":1,…}` after. The sentinel now lives OUTSIDE the union (`SlowTarget | null`),
+  `SELECT tier FROM tier_selections` inside the `wdb` window, and the PAT lookup. Counted on this base with an
+  instrumented mock, the supposedly-quiet case injected **3** delays in a cold isolate (the PAT
+  lookup, the suspend-gate read and `tier_selections`) and **0** after the fix. The wall-clock split
+  is order-dependent — `beforeEach` resets the tier and residency caches but not the suspend gate, so
+  a warm predecessor hides one injection — which is why the injection COUNT is the honest figure and
+  the millisecond split is not quoted as a fixed measurement. The sentinel now lives OUTSIDE the union (`SlowTarget | null`),
   so "delay nothing" and "cannot classify this" can no longer be the same value. This is a correctness
   bug in the INSTRUMENT, invisible to the instrument's own assertions — it had to be measured, not
   asserted. Also fixed a companion assertion that the above would have rendered vacuous: the cache-warm

@@ -45,10 +45,12 @@ const MIN_INTERNAL_AUTH_KEY_LEN = 32;
  * {@link resolveConsumerKey}).
  *
  * WHAT THE SHARED KEY ACTUALLY IS. Enumerated exhaustively — re-derive with
- * `grep -rn 'CORELINK_INTERNAL_AUTH_KEY' worker/src/`, because a count in prose is
+ * `grep -rnE 'CORELINK_INTERNAL_AUTH_KEY|resolveConsumerKey|requireConsumerAuth|requireInternalAuth' worker/src/`
+ * — the helper names are load-bearing: four of the six inbound gates contain NO
+ * occurrence of the variable itself, they reach it through these functions, because a count in prose is
  * a claim and this one was wrong in several successive drafts. It is read in three
  * ROLES (direct reads; indirect re-presentation of an already-resolved key, e.g.
- * `index.ts:1980`, is role 2 by inheritance):
+ * `index.ts:1984`, is role 2 by inheritance):
  *
  *   1. INBOUND gate credential, both arms fail-closed:
  *      (a) {@link resolveConsumerKey} — per-consumer. Two call sites: the
@@ -276,7 +278,9 @@ export function requireInternalAuth(request: Request, env: Env, requestId: strin
  *
  * Resolves the consumer's dedicated key via {@link resolveConsumerKey} (the
  * #297 per-consumer-key + shared-fallback pattern): the dedicated key if set and
- * properly sized, else the shared `CORELINK_INTERNAL_AUTH_KEY`, else `null`. A
+ * properly sized; `null` if it is SET but sub-floor (REFUSED — never widened to
+ * the shared key); the shared `CORELINK_INTERNAL_AUTH_KEY` only when the
+ * dedicated key is UNSET; else `null`. A
  * `null` resolution means NO properly sized gate is bound → fail CLOSED (**503**
  * — the endpoint cannot evaluate authz, which is an outage, not a denial).
  *

@@ -42,9 +42,12 @@ launch blocker.
   unlocks every one of those surfaces — the least-privilege benefit the split was
   designed to give is only realized once the dedicated keys are actually set.
 - **Assessment:** This is a **documented, intentional** flag-day-free rollout
-  shape (internal_auth.ts:41-43, 51-57) — the dedicated key is preferred when
-  present, the shared key is the fallback, and a sub-floor (<32 char) dedicated
-  key is treated as absent rather than weakening the gate. **Crucially, the two
+  shape (internal_auth.ts:36-45, 138-151, 170-195) — the dedicated key is preferred
+  when present and the shared key is the fallback **only when the dedicated key is
+  UNSET**. A sub-floor (<32 char) dedicated key is **NOT** treated as absent: it is
+  REFUSED fail-closed and logged, because falling through there would hand that
+  consumer the broad shared key exactly when the operator was trying to isolate it.
+  (This bullet asserted the opposite; corrected 2026-08-04 against the code.) **Crucially, the two
   highest-blast-radius dedicated keys do NOT fall back** (see INFO-1), so the
   fallback is confined to the worker-side `/internal/*` mint family.
 - **Fix (launch hardening, not blocker):** Provision `CORELINK_PAT_MINT_AUTH_KEY`,

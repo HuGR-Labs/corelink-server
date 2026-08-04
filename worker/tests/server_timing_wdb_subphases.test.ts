@@ -152,7 +152,7 @@ type BatchLog = string[][];
  * the injected delay — which is the point: a delay injected into either BATCHED
  * statement must surface in the single `qbatch` phase.
  */
-function makeD1(slow: SlowTarget, batchLog: BatchLog = []): D1Database {
+function makeD1(slow: SlowTarget | null, batchLog: BatchLog = []): D1Database {
   const stmt = (sql: string) => ({
     bind: (...args: unknown[]) => ({
       __sql: sql,
@@ -213,7 +213,7 @@ function makeCtx(): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-function makeEnv(slow: SlowTarget, batchLog: BatchLog = []): Env {
+function makeEnv(slow: SlowTarget | null, batchLog: BatchLog = []): Env {
   const stub = {
     fetch: async (): Promise<Response> =>
       new Response(JSON.stringify({ ok: true }), {
