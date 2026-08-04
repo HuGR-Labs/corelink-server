@@ -15,6 +15,7 @@ import type { D1Database } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
 import { TEST_PAT_SIGNING_KEY, mintTestPat } from "./setup.js";
+import { batchViaFirst } from "./d1_batch_mock.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -55,7 +56,9 @@ function makeTestD1(): D1Database {
       run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
       raw: async <T>() => [] as T[],
     }),
-    batch: async () => [],
+    // Both quota statements travel as ONE `db.batch` round trip
+    // (`runQuotaBatch`); resolve them through this mock's own routing.
+    batch: batchViaFirst(),
     exec: async () => ({ count: 0, duration: 0 }),
     withSession() { return this; },
     dump: async () => new ArrayBuffer(0),

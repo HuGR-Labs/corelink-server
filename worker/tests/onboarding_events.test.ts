@@ -43,6 +43,7 @@ import {
   type AnalyticsIngestResult,
   type AnalyticsServerEvent,
 } from "../src/lib/onboarding_events.js";
+import { batchViaFirst } from "./d1_batch_mock.js";
 
 // ── PAT fixture (same construction as tests/storage_quota_header.test.ts) ─────
 const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA"; // 16 Crockford-b32 chars
@@ -105,7 +106,9 @@ function makeD1(): D1Database {
       run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
       raw: async <T>() => [] as T[],
     }),
-    batch: async () => [],
+    // Both quota statements travel as ONE `db.batch` round trip
+    // (`runQuotaBatch`); resolve them through this mock's own routing.
+    batch: batchViaFirst(),
     exec: async () => ({ count: 0, duration: 0 }),
     withSession() { return this; },
     dump: async () => new ArrayBuffer(0),

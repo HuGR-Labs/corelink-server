@@ -22,6 +22,54 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Performance
+- **perf(worker): `wdb` was TWO serial uncached D1 round trips to the ENAM primary; they now
+  travel as one `db.batch`.** The sub-phase split shipped in #1036 answered the question it was
+  built for. Measured warm against live prod (n=30, single reused connection, 2026-08-04):
+  `qmeter` (the monthly request-counter UPSERT, a D1 WRITE) 152/158/163 ms, `qstor` (the storage
+  `SUM(bytes_used)` read) 120/126/130 ms, `qtier` 0/0/3 ms and `qresid` 0/0/2 ms (both L1-served),
+  against `wdb` 277/284/302 ms — and `sum(4) − wdb = 0 ms on 30 of 30 requests`. So `wdb` was those
+  two round trips and nothing else, and with `auth` now ~0 (the Argon2id memo) it was one of the
+  two co-equal terms of a ~571 ms median beside `origin` (~286 ms). Neither statement reads the
+  other's result, so the seriality bought nothing: `worker/src/lib/quota.ts` `runQuotaBatch` issues
+  both in a single `db.batch()` and the Worker awaits it once. Expected `wdb` after deploy:
+  **~155-175 ms** (one round trip, sized by the write, which was the more expensive of the two),
+  i.e. roughly **-110 to -130 ms off the median request**. To be confirmed by re-running
+  `scripts/probe-cargo-cache-latency.sh` phase 2b — the same instrument.
+- **The counter is deliberately NOT deferred, and the reason is written down.** `ctx.waitUntil`
+  makes no durability promise (an evicted isolate drops the pending write), and this counter is not
+  a fire-and-forget metric: its post-increment value IS the 429 decision at
+  `worker/src/index.ts` (the monthly request cap — free 500 K/mo … max 80 M/mo, `QUOTAS`), the OCI
+  surface enforces the same cap off the same table (`crates/corelink-container/src/request_count.rs`),
+  and `/v1/customer/usage` reports it (`crates/corelink-container/src/customer_d1.rs`). The UPSERT is
+  ADDITIVE (`request_count + 1`), so a retried deferred flush over-counts and wrongly 429s a paying
+  tenant, while a dropped one under-counts and lets a tenant past a contracted cap. A durable
+  deferral (per-tenant DO counter with an alarm-driven flush, as the red-team docs sketch) remains
+  possible and is NOT in this change; the batching is the part that is a pure latency win.
+- **Instrument follows the code:** `Server-Timing` now reports `qtier` / `qbatch` / `qresid` —
+  `qbatch` being the ONE round trip that carries both quota statements. `qmeter` and `qstor` are
+  gone because the round trips they named no longer exist; emitting them would describe a shape the
+  Worker stopped having. `scripts/probe-cargo-cache-latency.sh` reads the new names AND the old ones,
+  so a probe run against a not-yet-deployed Worker still attributes its `wdb`. The emission contract
+  is unchanged (a phase that RAN is emitted even at `dur=0`; a skipped one is omitted) — `qbatch` is
+  omitted only when BOTH its statements were skipped, i.e. no round trip was issued. Side effect
+  worth naming: the header no longer says WHICH statements were in the batch, which retires the
+  fan-out confirmation oracle the old `qmeter` omission handed a caller who guessed
+  `CORELINK_INTERNAL_AUTH_KEY` correctly.
+- **Unchanged, and tested to stay that way:** what is counted and how often (one UPSERT per
+  non-fan-out request, same SQL, same `YYYY-MM` bucket, same cap comparison, request-cap 429 still
+  taking precedence over the storage 429); the skip rules (no metering on a genuine fan-out, no
+  storage SUM for an unlimited-storage tier or an unconfirmed `d1Error` tier); and the verb-aware
+  D1-failure posture (CAA-360 #25) — reads fail OPEN, byte-adding writes fail CLOSED with
+  `Retry-After: 2`, and a failed round trip leaves the request UNCOUNTED (fail-open). One honest
+  consequence: a D1 batch is a transaction, so a fault now rolls the increment back as well, where
+  the serial pair could have committed it before the SUM failed. That is an UNDER-count on a fault —
+  the direction this counter's fail-open design already produces when the UPSERT itself throws — and
+  never an over-count. `worker/tests/quota_batch.test.ts` (16 cases) pins the round-trip COUNT, the
+  batch composition, and every branch above; the negative control is recorded in the PR (10 tests
+  fail against the pre-change Worker, headline signature
+  `the quota gate issued 0 batch round trips: []`).
+
 ### Added
 - **feat(worker): `wdb` is four serial awaits and the header only reported their sum — a third
   of an authenticated request was attributable to "the Worker-side reads" and to nothing more

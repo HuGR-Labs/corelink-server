@@ -22,6 +22,7 @@ import {
 } from "./setup.js";
 import { __resetTenantResidencyCacheForTest } from "../src/lib/tenant_residency_cache.js";
 import { __resetTierCacheForTests } from "../src/lib/tenant_tier_cache.js";
+import { batchViaFirst } from "./d1_batch_mock.js";
 
 // The residency + tier resolvers each keep a per-isolate L1 cache keyed by
 // tenant_id. Many cases here reuse TEST_TENANT_ID with DIFFERENT mock-D1 verdicts
@@ -114,7 +115,9 @@ function makeD1Mock(
       run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
       raw: async <T>() => [] as T[],
     }),
-    batch: async () => [],
+    // Both quota statements travel as ONE `db.batch` round trip
+    // (`runQuotaBatch`); resolve them through this mock's own routing.
+    batch: batchViaFirst(),
     exec: async () => ({ count: 0, duration: 0 }),
     withSession() { return this; },
     dump: async () => new ArrayBuffer(0),
