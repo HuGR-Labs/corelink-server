@@ -634,7 +634,22 @@ async fn handle_introspect(
         Err(VerifyError::InvalidPat) => {
             (StatusCode::OK, Json(IntrospectResponse::invalid())).into_response()
         }
-        // Genuine backend fault — the fabric maps 503 → Err(Unreachable).
+        // Genuine backend fault OR a verifier load shed — the fabric maps
+        // 503 → Err(Unreachable).
+        //
+        // ACCEPTED BEHAVIOUR CHANGE (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`):
+        // the container's Argon2id shed is now symmetric across D1 row
+        // existence, so a saturated verifier returns `Backend` for an
+        // UNKNOWN token where it previously returned `InvalidPat`. For HuGR
+        // Tools Mode B that flips this endpoint's answer for that narrow case
+        // from 200 `{valid:false}` ("this token is invalid") to 503 ("the auth
+        // service is unreachable, retry"). That is the HONEST answer — under
+        // saturation the verifier never judged the credential — and it is
+        // deliberately NOT special-cased here: re-splitting the two shed arms
+        // by row existence at this layer would rebuild the exact row-existence
+        // oracle the invariant exists to close. This route is internal-auth
+        // gated, so the reclassification is not an external attack surface;
+        // the caller's own retry (bounded, the shed clears in ~1 s) resolves it.
         Err(VerifyError::Backend(e)) => {
             tracing::error!(error = %e, "auth_introspect: verifier backend fault");
             StatusCode::SERVICE_UNAVAILABLE.into_response()

@@ -28,6 +28,19 @@ pub enum PipAdapterError {
     #[error("auth: {0}")]
     Auth(String),
 
+    /// The PAT verifier SHED this request under load — it never reached a
+    /// verdict on the credential, so this is emphatically NOT an auth
+    /// failure. Maps to `503 Service Unavailable` +
+    /// `Retry-After: `[`crate::overload::SHED_RETRY_AFTER_SECS`].
+    ///
+    /// pip already returned 503 for this case, but it did so by borrowing
+    /// [`Self::Cas`] — which mislabels a shed as a storage fault in logs and
+    /// gives the client no `Retry-After`. Split out so the shed is named,
+    /// retryable, and uniform across D1 row existence
+    /// (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`).
+    #[error("verifier overloaded: {0}")]
+    VerifierOverloaded(String),
+
     /// CAS read / write failure (transport, encoding, or store-level).
     /// Maps to `503 Service Unavailable`.
     #[error("cas: {0}")]
@@ -86,12 +99,26 @@ impl PipAdapterError {
             self,
             Self::Bind(_)
                 | Self::Auth(_)
+                | Self::VerifierOverloaded(_)
                 | Self::Cas(_)
                 | Self::Upstream(_)
                 | Self::IndexParse(_)
                 | Self::Kv(_)
                 | Self::Audit(_)
         )
+    }
+
+    /// `Retry-After` (seconds) this error must carry, if any.
+    ///
+    /// Only the load-shed variant is retryable on a bounded horizon; every
+    /// other 503 here (`Cas` / `Kv` / `Audit`) is a fail-CLOSED fault with no
+    /// useful back-off to advertise.
+    #[must_use]
+    pub const fn retry_after_secs(&self) -> Option<u64> {
+        match self {
+            Self::VerifierOverloaded(_) => Some(crate::overload::SHED_RETRY_AFTER_SECS),
+            _ => None,
+        }
     }
 
     /// The CLIENT-FACING response body for this error (Cluster E).
@@ -105,6 +132,9 @@ impl PipAdapterError {
         if self.leaks_internal_detail() {
             let class = match self {
                 Self::Auth(_) => "authentication failed",
+                // A shed is NOT an auth verdict — say so, without leaking
+                // which internal pool shed (the message is class-only).
+                Self::VerifierOverloaded(_) => "authentication service overloaded; retry",
                 _ => "internal error",
             };
             format!("{class} (ref: {request_id})")
@@ -121,7 +151,7 @@ impl PipAdapterError {
         match self {
             Self::Bind(_) => 500,
             Self::Auth(_) => 401,
-            Self::Cas(_) | Self::Kv(_) | Self::Audit(_) => 503,
+            Self::VerifierOverloaded(_) | Self::Cas(_) | Self::Kv(_) | Self::Audit(_) => 503,
             Self::Upstream(_) | Self::IntegrityMismatch { .. } | Self::IndexParse(_) => 502,
             Self::WheelOversized(_) => 413,
         }
@@ -142,6 +172,13 @@ mod tests {
     #[test]
     fn status_code_table_matches_contract() {
         assert_eq!(PipAdapterError::Auth("x".into()).status_code(), 401);
+        // A load shed is NOT an auth verdict — 503, and the ONLY variant here
+        // that advertises a back-off (INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM).
+        let shed = PipAdapterError::VerifierOverloaded("x".into());
+        assert_eq!(shed.status_code(), 503);
+        assert_eq!(shed.retry_after_secs(), Some(1));
+        assert_eq!(PipAdapterError::Cas("x".into()).retry_after_secs(), None);
+        assert_eq!(PipAdapterError::Auth("x".into()).retry_after_secs(), None);
         assert_eq!(PipAdapterError::Cas("x".into()).status_code(), 503);
         assert_eq!(PipAdapterError::Kv("x".into()).status_code(), 503);
         assert_eq!(PipAdapterError::Audit("x".into()).status_code(), 503);

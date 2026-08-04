@@ -50,6 +50,32 @@
 //! [`VerifyError::InvalidPat`] so the wire surface cannot tell an
 //! attacker *why* a token was rejected. Only genuine backend faults (D1
 //! unreachable, corrupt row) surface as [`VerifyError::Backend`].
+//!
+//! # The overload shed is uniform (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`)
+//!
+//! There is one axis on which the two outcomes are deliberately NOT the
+//! uniform `InvalidPat`: the **load shed**. When the Argon2id permit pool
+//! (global or per-tenant) cannot be entered within `ARGON2_PERMIT_WAIT`,
+//! the pipeline gives up *before deciding anything about the credential* —
+//! so the honest answer is "verifier overloaded", not "invalid PAT", and
+//! every shed arm returns [`VerifyError::Backend`] ⇒ HTTP 503 +
+//! `Retry-After`.
+//!
+//! The invariant that matters is that the shed is **symmetric across row
+//! existence**: the row-FOUND arm (step 3) and the row-NOT-FOUND
+//! dummy-burn arm (step 2) shed with the identical variant and message.
+//! An asymmetric shed would be a *row-existence oracle*: an attacker who
+//! can saturate the pool (cheap — the pool is small and Argon2id is slow)
+//! would read "503 vs 401" as "this `token_id` is live vs unknown",
+//! which is strictly more than the latency signal the dummy burn exists
+//! to hide. Concretely: under saturation EVERY outcome is `Backend`/503,
+//! and outside saturation EVERY rejection is `InvalidPat`/401.
+//!
+//! Two arms are NOT part of the shed and stay `InvalidPat` by design:
+//! the HMAC fast-reject (upstream of every permit, so an attacker without
+//! the signing key can never reach the shed at all) and the terminal
+//! rejection after the dummy burn actually ran (a completed burn IS the
+//! uniform 401 path).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -75,9 +101,18 @@ use crate::storage::{non_empty_env, StorageEnv};
 pub enum VerifyError {
     /// PAT not found, expired, forged, wrong secret, or lacking a cache
     /// scope. Uniform by design (no oracle). Surfaces as HTTP 401.
+    ///
+    /// NEVER returned from a load shed — see the module header on
+    /// `INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`.
     #[error("invalid PAT")]
     InvalidPat,
-    /// Verifier backend (D1, corrupt row) failed. Surfaces as HTTP 503.
+    /// Verifier backend (D1, corrupt row) failed, **or** the Argon2id
+    /// permit pool shed this request under saturation (message `pat
+    /// verifier overloaded`, identical on the row-FOUND and row-NOT-FOUND
+    /// arms — `INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`). Surfaces as HTTP 503;
+    /// the adapter surfaces attach `Retry-After: 1` because a shed is
+    /// transient and converges as soon as the first in-flight verify
+    /// populates the memo.
     #[error("verifier backend: {0}")]
     Backend(String),
 }
@@ -429,9 +464,12 @@ struct SecretMatchEntry {
 ///
 /// Exactly one fact: *"the presented plaintext's secret segment Argon2id-verifies
 /// against this exact stored PHC hash"*. The key is a domain-separated,
-/// length-prefixed SHA-256 over `(plaintext, token_id, stored_pat_hash)` — never
-/// the plaintext itself, so the map cannot leak a usable secret (same posture as
-/// `native_pat_gate::fingerprint`).
+/// length-prefixed SHA-256 over
+/// `(plaintext, token_id, stored_pat_hash, scope, find_only)` — never the
+/// plaintext itself, so the map cannot leak a usable secret (same posture as
+/// `native_pat_gate::fingerprint`). See [`secret_match_fingerprint`] for why
+/// `scope` / `find_only` are in the key even though the memoised fact does not
+/// depend on them.
 ///
 /// # Why memoising it is sound
 ///
@@ -963,11 +1001,22 @@ impl PatVerifier {
                 // must be bounded by the same gate — otherwise an attacker who
                 // floods valid-HMAC tokens for NON-existent token_ids could
                 // OOM the container exactly like the hot path. Acquire a permit
-                // (bounded wait) before the blocking burn; on overload, skip
-                // the burn and return the uniform InvalidPat. (The lost timing
-                // parity under sustained overload is acceptable: the request
-                // already shares its fate with every other overloaded one, so
-                // there is no per-token oracle to exploit.)
+                // (bounded wait) before the blocking burn.
+                //
+                // ⚠️ INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM: on a shed (acquire
+                // timeout / closed semaphore) this arm returns the SAME
+                // `Backend("pat verifier overloaded")` as the row-FOUND arm
+                // below, NOT `InvalidPat`. The two shed arms MUST stay
+                // byte-identical: the row-FOUND path sheds with `Backend` (503)
+                // and this row-NOT-FOUND path used to shed with `InvalidPat`
+                // (401), so under saturation the status code alone answered
+                // "does this token_id exist in D1?" — a row-existence oracle
+                // strictly stronger than the latency one the burn below exists
+                // to close. Uniformity, not the burn, is what makes the shed
+                // safe: the burn is deliberately SKIPPED here (there are no
+                // permits to run it with), so timing parity is already gone and
+                // the status must carry no information either. Every rejection
+                // that is NOT a shed still collapses to `InvalidPat`.
                 let permit = match tokio::time::timeout(
                     ARGON2_PERMIT_WAIT,
                     Arc::clone(&self.argon2_permits).acquire_owned(),
@@ -976,19 +1025,20 @@ impl PatVerifier {
                 {
                     Ok(Ok(permit)) => permit,
                     // Acquire failed (timeout) or the semaphore was closed —
-                    // skip the burn and fail-CLOSED uniformly.
-                    _ => return Err(VerifyError::InvalidPat),
+                    // skip the burn and shed exactly like the row-FOUND arm.
+                    _ => return Err(VerifyError::Backend("pat verifier overloaded".into())),
                 };
                 // Finding #12: cap the dummy-burn path through ONE shared
                 // synthetic bucket (consistent global→per-tenant order) so a
                 // leaked-key flood across bogus token_ids cannot drain the
-                // global pool via this path. On sub-cap saturation OR fail-safe
-                // fall-through we simply skip the burn and fail-CLOSED uniformly
-                // (the lost timing parity under flood is acceptable — every
-                // request shares its fate, so there is no per-token oracle).
+                // global pool via this path. On sub-cap saturation we skip the
+                // burn and shed with the SAME overloaded signal as the
+                // row-FOUND per-tenant arm (INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM);
+                // `Ok(None)` is the fail-safe fall-through to global-only
+                // bounding and proceeds to the burn.
                 let _tenant_permit = match self.acquire_per_tenant(UNKNOWN_TOKEN_BUCKET).await {
                     Ok(maybe_permit) => maybe_permit,
-                    Err(()) => return Err(VerifyError::InvalidPat),
+                    Err(()) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
                 };
                 let plaintext = pat_plaintext.to_owned();
                 let _ = tokio::task::spawn_blocking(move || {
@@ -1010,8 +1060,9 @@ impl PatVerifier {
         //    MEMOISED ([`SecretMatchMemo`]): Argon2id at the OWASP-2024 cost is
         //    ~0.15 CPU-s and the container runs at 0.5 vCPU, so paying it per
         //    request capped one tenant's whole adapter plane at ~3 req/s. The
-        //    memo is keyed on (plaintext, token_id, stored pat_hash) and holds
-        //    ONLY the immutable "these match" boolean — stages 1 and 2 above
+        //    memo is keyed on (plaintext, token_id, stored pat_hash, scope,
+        //    find_only) and holds ONLY the immutable "these match" boolean —
+        //    stages 1 and 2 above
         //    (HMAC against the CURRENT key set; the expiry- and
         //    revocation-filtered D1 row read) still run on EVERY request, so
         //    this changes no authorization decision and opens NO revocation
@@ -1581,6 +1632,192 @@ mod tests {
             "forged token must fast-reject before the permit gate"
         );
         assert_eq!(lookup.call_count(), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM — the load shed is symmetric
+    // across D1 row existence.
+    //
+    // The shed used to be asymmetric: the row-FOUND arm shed with
+    // `Backend` (⇒ 503) and the row-NOT-FOUND dummy-burn arm shed with
+    // `InvalidPat` (⇒ 401). An attacker who can saturate the (small,
+    // slow) Argon2id pool could therefore read the status code as a
+    // ROW-EXISTENCE oracle — strictly more than the latency signal the
+    // dummy burn exists to hide, because the burn is skipped on a shed
+    // anyway. These tests pin BOTH halves of the contract:
+    //
+    //   under saturation  ⇒ every outcome is Backend("…overloaded…")
+    //   outside saturation ⇒ every rejection is InvalidPat
+    //
+    // The idiom is #1022's: build the verifier with exactly ONE permit,
+    // HOLD it, and let the acquire time out deterministically. A control
+    // arm is mandatory — without it the test would pass just as happily
+    // if the permit had never actually been held.
+    // ------------------------------------------------------------------
+
+    /// THE NEW CASE. A saturated pool + an unknown/absent D1 row must shed as
+    /// `Backend`, not `InvalidPat`. This is the arm that used to leak row
+    /// existence through the status code.
+    #[tokio::test]
+    async fn saturated_pool_sheds_an_unknown_row_as_backend() {
+        let key = test_key();
+        // A genuinely-minted PAT (so it clears the HMAC fast-reject) whose
+        // token_id has NO row — the dummy-burn arm.
+        let (pt, _tid, _hash, _tenant) = mint_pat(&key, 90, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::empty());
+        let verifier =
+            PatVerifier::with_key_set_and_permits(lookup.clone(), vec![(*key).clone()], 1);
+
+        // Drain the one and only permit and keep it drained.
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "a shed on the row-NOT-FOUND arm must be Backend(overloaded), got {err:?}"
+        );
+        assert_eq!(lookup.call_count(), 1, "the shed sits AFTER the D1 lookup");
+    }
+
+    /// The per-tenant sub-cap arm of the same shed. The dummy burn is routed
+    /// through ONE shared synthetic bucket; saturating THAT bucket (with global
+    /// headroom to spare) must also shed as `Backend`, never `InvalidPat`.
+    #[tokio::test]
+    async fn saturated_dummy_burn_bucket_sheds_an_unknown_row_as_backend() {
+        let key = test_key();
+        let (pt, _tid, _hash, _tenant) = mint_pat(&key, 91, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::empty());
+        // Global 8 (ample) so a rejection can ONLY come from the per-tenant
+        // tier; synthetic bucket sub-cap 1 so holding one permit saturates it.
+        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup.clone(),
+            vec![(*key).clone()],
+            8,
+            1,
+        );
+        let bucket = verifier
+            .per_tenant_semaphore(UNKNOWN_TOKEN_BUCKET)
+            .expect("synthetic bucket semaphore");
+        let _held = Arc::clone(&bucket)
+            .try_acquire_owned()
+            .expect("bucket permit");
+        assert_eq!(bucket.available_permits(), 0, "burn bucket saturated");
+
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "a sub-cap shed on the row-NOT-FOUND arm must be Backend(overloaded), got {err:?}"
+        );
+    }
+
+    /// The row-FOUND half of the same contract — existing behaviour, pinned
+    /// here in the one-permit idiom so a future refactor cannot quietly
+    /// re-asymmetrise the pair by changing only this side.
+    #[tokio::test]
+    async fn saturated_pool_sheds_a_live_row_as_backend() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 92, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        let verifier =
+            PatVerifier::with_key_set_and_permits(lookup.clone(), vec![(*key).clone()], 1);
+
+        // Drain BEFORE the first verify so the PAT is never memoised (a warm
+        // memo hit consumes no permit and would sail straight through).
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "a shed on the row-FOUND arm must be Backend(overloaded), got {err:?}"
+        );
+    }
+
+    /// THE ORACLE TEST. On ONE saturated verifier, a live-row PAT and an
+    /// unknown-row PAT must produce byte-identical errors — same variant, same
+    /// message. Anything an attacker could `!=` on here is a row-existence
+    /// oracle.
+    #[tokio::test]
+    async fn shed_is_indistinguishable_between_live_and_unknown_rows() {
+        let key = test_key();
+        let (pt_live, tid_live, hash_live, tenant_live) = mint_pat(&key, 93, SCOPE_CACHE_RW);
+        let (pt_unknown, _tid_u, _hash_u, _tenant_u) = mint_pat(&key, 94, SCOPE_CACHE_RW);
+        // Only the FIRST token_id has a row; the second is unknown to D1.
+        let lookup = Arc::new(FakeLookup::with_row(
+            &tid_live,
+            row(&hash_live, &tenant_live, "cas:rw"),
+        ));
+        let verifier = PatVerifier::with_key_set_and_permits(lookup, vec![(*key).clone()], 1);
+
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        let err_live = verifier.verify(&pt_live).await.unwrap_err();
+        let err_unknown = verifier.verify(&pt_unknown).await.unwrap_err();
+
+        match (&err_live, &err_unknown) {
+            (VerifyError::Backend(a), VerifyError::Backend(b)) => assert_eq!(
+                a, b,
+                "the two shed arms must be byte-identical (row-existence oracle)"
+            ),
+            other => panic!("both arms must shed as Backend, got {other:?}"),
+        }
+    }
+
+    /// The anti-blanket-conversion control: with the pool NOT saturated, an
+    /// unknown row must still be the uniform `InvalidPat` (401). If this ever
+    /// flips to `Backend`, the fix stopped being a shed rule and became "the
+    /// verifier answers 503 for every unknown token", which would 503 the whole
+    /// world on a single bad credential.
+    #[tokio::test]
+    async fn unsaturated_pool_still_rejects_an_unknown_row_as_invalid_pat() {
+        let key = test_key();
+        let (pt, _tid, _hash, _tenant) = mint_pat(&key, 95, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::empty());
+        // Permits available ⇒ the dummy burn actually runs ⇒ terminal InvalidPat.
+        let verifier =
+            PatVerifier::with_key_set_and_permits(lookup.clone(), vec![(*key).clone()], 2);
+
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::InvalidPat),
+            "an unknown row with permits free must stay InvalidPat, got {err:?}"
+        );
+        assert_eq!(lookup.call_count(), 1, "valid HMAC must reach D1");
+    }
+
+    /// The HMAC fast-reject is UPSTREAM of every permit, so a forged token can
+    /// never be pushed onto the shed path — it stays `InvalidPat` even with the
+    /// pool fully drained. This is what stops an attacker without the signing
+    /// key from using saturation to turn 401s into 503s (or from probing the
+    /// shed at all).
+    #[tokio::test]
+    async fn forged_token_stays_invalid_pat_under_saturation() {
+        let key = test_key();
+        let lookup = Arc::new(FakeLookup::empty());
+        let verifier =
+            PatVerifier::with_key_set_and_permits(lookup.clone(), vec![(*key).clone()], 1);
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        let err = verifier
+            .verify("corelink_pat_not-a-real-token")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, VerifyError::InvalidPat),
+            "a forged token must fast-reject ahead of the shed, got {err:?}"
+        );
+        assert_eq!(lookup.call_count(), 0, "forged token must not reach D1");
     }
 
     /// With permits available, the hot path still succeeds end-to-end — the

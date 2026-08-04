@@ -48,6 +48,72 @@ Each entry cross-references:
   byte-identical between the two blobs, so no line range moved and the `[C5] STALE` reports were
   pure fallout of the absent object. Contract §4 C4b + the validator module docstring updated;
   3 new acceptance fixtures (84/84).
+- **fix(auth): a saturated Argon2id permit pool answered `401 Unauthorized` to a client holding a
+  perfectly valid PAT — and it answered `401` or `503` depending on whether the token existed in D1,
+  which made the status code a row-existence oracle.** Two defects, one root, fixed together because
+  fixing either alone is wrong. **(1) The live defect.** The container verifier bounds concurrent
+  Argon2id with a small permit pool; when a request cannot enter it within the 250 ms
+  `ARGON2_PERMIT_WAIT` the verifier *sheds* — it gives up **before deciding anything about the
+  credential**. `resolve_tenant` on `/cargo` and `/brew` mapped that shed onto `Auth("backend: …")`
+  ⇒ **401**, and `/npm` did the same. A shed is not an auth verdict; telling a caller its credential
+  is invalid when the server merely ran out of permits is a lie that a client cannot retry its way
+  out of (a 401 is terminal to `cargo`/`brew`/`npm`). This is the failure shape recorded against the
+  `/cargo` sccache surface: **overload surfaced as 401-with-a-valid-PAT, not as 503**.
+  **(2) The oracle that blocked the naive fix.** A first attempt simply mapped `Backend` ⇒ 503 and
+  was rejected in review, because the shed inside the verifier was itself **asymmetric**: the
+  row-FOUND arm shed with `Backend`, while the row-NOT-FOUND dummy-burn arm shed with `InvalidPat`
+  (`adapter_pat.rs:980` and `:991`). Split those two onto different HTTP statuses and an attacker who
+  can saturate the pool — cheap, since the pool is small and Argon2id is slow — reads `503 vs 401` as
+  **"this `token_id` is live vs unknown"**. That is strictly stronger than the latency signal the
+  dummy burn exists to hide, and it is *not* covered by the burn: on a shed the burn is **skipped**
+  (there are no permits to run it with), so timing parity is already gone and the status must
+  therefore carry no information either. **Fix:** symmetrise first, then map. Both shed arms in the
+  row-NOT-FOUND block now return the byte-identical `Backend("pat verifier overloaded")` the
+  row-FOUND arms at `:1079/:1082/:1095` already used, and all four adapter surfaces map `Backend`
+  ⇒ **503 + `Retry-After: 1`**. The contract is now: **under saturation every outcome is
+  `Backend`/503 regardless of row existence; outside saturation every rejection is
+  `InvalidPat`/401.** Two arms stay `InvalidPat` deliberately and are documented as such — the HMAC
+  fast-reject (upstream of every permit, so an attacker without the signing key can never reach the
+  shed) and the terminal rejection *after* the dummy burn actually ran (a completed burn IS the
+  uniform 401 path). **Surfaces:** `/cargo` and `/brew` and `/npm` moved 401 ⇒ 503; `/pip` was
+  already 503 but reached it by borrowing the `Cas` variant, which mislabels a shed as a storage
+  fault in the logs and gave the client no back-off — it now uses the same named
+  `VerifierOverloaded` variant. All four were fixed in one change on purpose: leaving any one
+  behind relocates the asymmetry to that surface rather than closing it. `routes/oci.rs` is
+  **deliberately untouched** — it is the one Worker pass-through with no edge gating and it is
+  already uniformly flat; changing it needs its own review. **`Retry-After: 1`** follows the house
+  RFC 6585 §4 floor (`corelink_ratelimit::config::DEFAULT_RETRY_AFTER_FLOOR_SECS`); one second is
+  the right horizon rather than the quota paths' "wait for the cycle to reset" because convergence
+  is **bounded by construction**: as soon as the first in-flight verify completes it populates the
+  `SecretMatchMemo`, and every later request for that PAT takes the warm path, which consumes no
+  permit at all. It is attached only to the shed — the other 503s (`Cas`/`Kv`/`Audit`) are
+  fail-CLOSED faults with no back-off the server could honour, and a test pins that they carry no
+  header. **Accepted behaviour change, stated rather than hidden:**
+  `routes/auth_introspect.rs` classifies by variant (`InvalidPat` ⇒ 200 `{valid:false}`, `Backend`
+  ⇒ 503 ⇒ the fabric's `Err(Unreachable)`), so a saturated **unknown** token now flips from
+  "invalid" to "auth service unreachable" for HuGR Tools Mode B. That is the honest answer — the
+  verifier never judged the credential — and it is deliberately **not** special-cased, because
+  re-splitting the two shed arms by row existence at that layer would rebuild the exact oracle this
+  change closes. The route is internal-auth gated, so it is not an external attack surface, and the
+  caller's own bounded retry resolves it. **Explicitly NOT done:** single-flight / mutex coalescing
+  of the Argon2id was not reintroduced — `adapter_pat.rs:1023-1047` records that it was built and
+  killed in adversarial review (it reopened the oracle in the concurrency dimension, waited unbounded
+  *in front of* the shed, and sat upstream of the per-tenant sub-permit). The cold-burst residual is
+  accepted and pre-existing; the correct future shape (coalescing on a shared FUTURE, mirrored onto
+  the dummy-burn arm) is described at `:1041-1045`. **Registered as an invariant, which it never
+  was — and that omission is precisely why the split got flattened without anyone noticing:**
+  `INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM` (§3.14, `specs/03_architecture/invariant_registry.md`).
+  **Six new verifier tests** pin both halves of the contract in #1022's hold-the-only-permit idiom,
+  including `shed_is_indistinguishable_between_live_and_unknown_rows`, which asserts the two arms
+  are byte-identical on one saturated verifier — the oracle test proper — plus the per-tenant
+  sub-cap arm, the two anti-blanket-conversion controls (unsaturated + unknown row is still 401;
+  a forged token is still 401 even with the pool drained) and per-surface status/`Retry-After`
+  tests. No pre-existing test needed changing: `unknown_token_id_is_invalid` and
+  `forged_token_does_not_touch_argon2_permits` both still pass unmodified, because the first runs
+  unsaturated and the second never reaches the shed. 42/42 `adapter_pat` (36 + 6), 291/291
+  `corelink-adapter-host` lib, 1 217/1 217 `corelink-server` lib. **Also corrected in passing (doc-only):** two comments described the
+  `SecretMatchMemo` key as the 3-tuple `(plaintext, token_id, stored_pat_hash)`; the code and the
+  authoritative doc at `adapter_pat.rs:572-591` use the 5-tuple including `scope` and `find_only`.
 - **fix(container): every request on the cache-adapter plane ran a full 64-MiB Argon2id, capping
   a tenant at roughly 3 requests/second — the product was structurally slow at exactly the traffic
   shape a build cache exists to serve.** `PatVerifier::verify_capability` ran the OWASP-2024

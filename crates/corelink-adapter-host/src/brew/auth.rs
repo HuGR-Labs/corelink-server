@@ -115,10 +115,21 @@ pub fn bearer_eq(token: &str, expected_prefix: &str) -> bool {
 }
 
 /// Resolve a PAT to its owning tenant id via the configured resolver.
-/// Maps [`TenantResolveError`] onto [`BrewAdapterError::Auth`] (401)
-/// for `InvalidPat` and onto [`BrewAdapterError::Auth`] with a
-/// `backend:` prefix for transient resolver failures (the route layer
-/// can choose to upgrade to 503 if needed).
+///
+/// Maps [`TenantResolveError::InvalidPat`] onto [`BrewAdapterError::Auth`]
+/// (401 — the credential was judged and rejected) and
+/// [`TenantResolveError::Backend`] onto
+/// [`BrewAdapterError::VerifierOverloaded`] (503 + `Retry-After`).
+///
+/// The `Backend` arm covers BOTH a genuine verifier fault (D1 unreachable)
+/// and an Argon2id permit-pool load shed, and in neither case did the
+/// verifier reach a verdict about the credential — so mapping it to 401 was
+/// a live defect: a client holding a perfectly valid PAT was told its
+/// credential was invalid whenever the pool saturated. It also had to stop
+/// being a 401 for a security reason: the container sheds row-FOUND and
+/// row-NOT-FOUND requests identically
+/// (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`), and that symmetry is only
+/// observable end-to-end if the status is the same on both, too.
 pub async fn resolve_tenant(
     resolver: &SharedTenantResolver,
     pat: &SecretString,
@@ -128,9 +139,7 @@ pub async fn resolve_tenant(
         Err(TenantResolveError::InvalidPat) => {
             Err(BrewAdapterError::Auth("invalid PAT".to_owned()))
         }
-        Err(TenantResolveError::Backend(msg)) => {
-            Err(BrewAdapterError::Auth(format!("backend: {msg}")))
-        }
+        Err(TenantResolveError::Backend(msg)) => Err(BrewAdapterError::VerifierOverloaded(msg)),
     }
 }
 
@@ -219,5 +228,44 @@ mod tests {
             Err(e) => panic!("must accept canonical PAT: {e}"),
         };
         assert_eq!(pat.expose_secret(), "corelink_abc123");
+    }
+
+    /// A canned resolver that always returns one error, so `resolve_tenant`'s
+    /// mapping table can be pinned without a real verifier.
+    #[derive(Debug)]
+    struct AlwaysErr(fn() -> TenantResolveError);
+
+    #[async_trait::async_trait]
+    impl crate::brew::ports::TenantResolver for AlwaysErr {
+        async fn resolve(&self, _pat: &str) -> Result<String, TenantResolveError> {
+            Err((self.0)())
+        }
+    }
+
+    /// `InvalidPat` is a VERDICT on the credential ⇒ 401.
+    #[tokio::test]
+    async fn invalid_pat_maps_to_auth() {
+        let resolver: SharedTenantResolver =
+            std::sync::Arc::new(AlwaysErr(|| TenantResolveError::InvalidPat));
+        let err = resolve_tenant(&resolver, &SecretString::from("corelink_x".to_owned()))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, BrewAdapterError::Auth(_)), "got {err:?}");
+    }
+
+    /// `Backend` is a load shed / verifier fault — NO verdict was reached ⇒
+    /// 503 + `Retry-After`, never 401 (the live defect this closes).
+    #[tokio::test]
+    async fn backend_maps_to_verifier_overloaded_not_auth() {
+        let resolver: SharedTenantResolver = std::sync::Arc::new(AlwaysErr(|| {
+            TenantResolveError::Backend("pat verifier overloaded".into())
+        }));
+        let err = resolve_tenant(&resolver, &SecretString::from("corelink_x".to_owned()))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, BrewAdapterError::VerifierOverloaded(_)),
+            "a shed must never surface as an auth verdict, got {err:?}"
+        );
     }
 }

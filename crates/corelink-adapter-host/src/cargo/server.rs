@@ -10,7 +10,8 @@
 //! Every request flows through:
 //!
 //! 1. `extract_bearer` → PAT plaintext (HTTP 401 on mismatch);
-//! 2. `resolve_tenant` → tenant id (HTTP 401);
+//! 2. `resolve_tenant` → tenant id (HTTP 401 on a verdict, HTTP 503 on a
+//!    verifier load shed — see `VerifierOverloaded` below);
 //! 3. Route handler → CAS read / write via adapter-local `CasStore` port.
 //!
 //! ## Status code mapping
@@ -18,6 +19,7 @@
 //! | `CargoAdapterError` variant | HTTP | Why |
 //! |---|---|---|
 //! | `Auth`           | 401 | bad / missing PAT |
+//! | `VerifierOverloaded` | 503 + `Retry-After: 1` | the PAT verifier SHED the request (Argon2id permit pool saturated, or a verifier fault) — no verdict was reached, so this is NOT a 401 |
 //! | `Cas`            | 502 | CAS dependency failure |
 //! | `Audit`          | 503 | audit chokepoint failed (fail-CLOSED) |
 //! | `BodyOversized`  | 413 | PUT body > `body_size_limit_bytes` |
@@ -28,7 +30,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::{Path, Request, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -320,10 +322,11 @@ impl IntoResponse for CargoAdapterError {
         let status = match &self {
             Self::Auth(_) => StatusCode::UNAUTHORIZED,
             Self::Cas(_) => StatusCode::BAD_GATEWAY,
-            Self::Audit(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::VerifierOverloaded(_) | Self::Audit(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::BodyOversized(_) => StatusCode::PAYLOAD_TOO_LARGE,
             Self::Bind(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
+        let retry_after = self.retry_after_secs();
         // Cluster E (A27/A29): scrub internal backend detail (raw D1/CF/R2
         // error, possibly SQL; R2 storage topology; derived per-tenant prefix)
         // from the client body. Mint a correlation id, log the REAL detail
@@ -340,6 +343,14 @@ impl IntoResponse for CargoAdapterError {
         let body = self.client_message(&request_id);
         let mut response = Response::new(Body::from(body));
         *response.status_mut() = status;
+        // A load shed is transient and bounded — advertise the back-off so a
+        // client (cargo, or an sccache/CI wrapper) retries instead of treating
+        // the 503 as terminal. RFC 6585 §4 / house convention floor of 1 s.
+        if let Some(secs) = retry_after {
+            if let Ok(v) = HeaderValue::from_str(&secs.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, v);
+            }
+        }
         response
     }
 }
@@ -393,6 +404,45 @@ mod tests {
         let full = Sha256::digest(input.as_bytes());
         let expected: String = full.iter().take(8).map(|b| format!("{b:02x}")).collect();
         assert_eq!(hash_for_log(input), expected);
+    }
+
+    /// A verifier load shed is 503 + `Retry-After`, NOT 401. Surfacing it as
+    /// 401 told a client holding a valid PAT that its credential was bad, and
+    /// broke the container's symmetric shed
+    /// (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) end-to-end.
+    #[test]
+    fn shed_is_503_with_retry_after() {
+        let resp =
+            CargoAdapterError::VerifierOverloaded("pat verifier overloaded".into()).into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            resp.headers()
+                .get(header::RETRY_AFTER)
+                .map(HeaderValue::as_bytes),
+            Some(&b"1"[..]),
+            "a shed must advertise a bounded back-off"
+        );
+    }
+
+    /// The other 503 here (`Audit`) is a fail-CLOSED fault, not a shed — it
+    /// must NOT carry a back-off the server cannot honour.
+    #[test]
+    fn non_shed_503_carries_no_retry_after() {
+        let resp = CargoAdapterError::Audit("x".into()).into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(resp.headers().get(header::RETRY_AFTER).is_none());
+    }
+
+    /// The shed body must not leak which internal pool shed, and must not
+    /// claim the credential was rejected.
+    #[test]
+    fn shed_body_is_opaque_and_not_an_auth_verdict() {
+        let msg = CargoAdapterError::VerifierOverloaded("D1 HTTP 500: SELECT ... FROM pat".into())
+            .client_message("RIDo");
+        assert!(!msg.contains("D1"), "leaked backend detail: {msg}");
+        assert!(!msg.contains("SELECT"), "leaked SQL: {msg}");
+        assert!(!msg.contains("authentication failed"), "mislabelled: {msg}");
+        assert!(msg.contains("RIDo"), "missing correlation ref: {msg}");
     }
 
     // --- REV-S3: PUT reuses the gate-resolved tenant, never re-verifying ---
