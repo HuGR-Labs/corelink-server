@@ -33,7 +33,7 @@ launch blocker.
 
 ### LOW-1 — `pat_mint` / `admin` / `erase` / `runner_mint` consumer keys fall back to the shared `CORELINK_INTERNAL_AUTH_KEY`
 
-- **Where:** `worker/src/lib/internal_auth.ts:73-90` (`resolveConsumerKey`);
+- **Where:** `worker/src/lib/internal_auth.ts:157-196` (`resolveConsumerKey`);
   mirrored in `crates/corelink-container/src/routes/internal_pat.rs:698-707`
   (`resolve_internal_auth_key("CORELINK_PAT_MINT_AUTH_KEY").or_else(... shared)`).
 - **Risk:** Until the operator provisions the dedicated per-consumer keys, all
@@ -136,7 +136,7 @@ launch blocker.
   single idempotent `UPDATE pat SET revoked_at_ms WHERE ... AND revoked_at_ms IS
   NULL`, tenant-scoped (REV-S2) to bound a leaked runner-mint key's blast radius.
 - **Constant-time internal-auth compare:** both the TS gate
-  (`internal_auth.ts:112-127` `constantTimeSecretEqual`) and the Rust gate
+  (`internal_auth.ts:218-233` `constantTimeSecretEqual`) and the Rust gate
   (`internal_pat.rs` / `dsr.rs:127-146` `internal_auth_ok`) pad the provided value
   to the expected length, run ONE `timingSafeEqual`/`ct_eq`, then AND a single
   length-equality bit — no length oracle (CAA-360 #27).

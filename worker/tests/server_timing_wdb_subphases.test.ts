@@ -108,7 +108,6 @@ async function mintValidToken(): Promise<string> {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** Which single statement to slow down, so exactly one phase should absorb it. */
 /**
  * Which single statement to slow down, so exactly one phase should absorb it.
  * `null` (deliberately NOT a member) means "delay nothing": the no-delay sentinel
@@ -323,8 +322,10 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     expect(st).toHaveProperty("wdb");
 
     // Accounting with NOTHING injected: `wdb` and the sum are both near zero, so
-    // any un-instrumented await inside the window shows up here immediately
-    // rather than having to exceed the residual tolerance of a 150 ms case.
+    // an un-instrumented await inside the window shows up here at its own cost.
+    // NOT more sensitively than the delayed cases — an injected delay cancels out
+    // of `wdb - sum` and SUM_RESIDUAL_MAX_MS is the same constant either way. A
+    // redundant net, kept because it is the only case with no delay in it at all.
     const sum = SUBPHASES.reduce((a, p) => a + (st[p] ?? 0), 0);
     expect(
       Math.abs(st["wdb"]! - sum),

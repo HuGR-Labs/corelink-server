@@ -44,8 +44,9 @@ Each entry cross-references:
   normative contract.** `resolveConsumerKey` REFUSES the shared-key fallback for a dedicated key that is
   SET but under the length floor, and logs "REFUSING to fall back … that would silently widen the blast
   radius". Its doc-comment claimed the opposite — *"A too-short dedicated key is treated as ABSENT (falls
-  through to the shared key)"* — and that phrasing had been copied into the `Env` declaration and the
-  live `/_internal/*` gate comment. Concrete risk: someone simplifying the function to match its
+  through to the shared key)"* — and that phrasing had been copied into the `Env` declaration, the
+  live `/_internal/*` gate comment, `requireConsumerAuth`'s own JSDoc, the `Env` block preamble, and
+  the 2026-06-23 credentials security review — six sites in all, found across two review rounds. Concrete risk: someone simplifying the function to match its
   documented contract reintroduces exactly the widening the code was written to prevent. No behaviour
   change. The `internal_auth.ts` module header now also states what the shared key IS, enumerated by
   ROLE and shipping the grep that re-derives the enumeration, because a count in prose is a claim and
