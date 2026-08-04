@@ -114,6 +114,25 @@ Each entry cross-references:
   `corelink-adapter-host` lib, 1 217/1 217 `corelink-server` lib. **Also corrected in passing (doc-only):** two comments described the
   `SecretMatchMemo` key as the 3-tuple `(plaintext, token_id, stored_pat_hash)`; the code and the
   authoritative doc at `adapter_pat.rs:572-591` use the 5-tuple including `scope` and `find_only`.
+- **fix(admin-ui): the sccache snippet customers copy out of the dashboard pointed at a path that
+  does not exist, and configured a cache with no local layer.** `ConnectClient.tsx` — the Connect
+  screen, the highest-traffic surface for this recipe, because the customer copies it from inside
+  the product — emitted two independent defects in six lines. (1) **Dead endpoint:** it built
+  `SCCACHE_WEBDAV_ENDPOINT` as `<origin>/webdav/<tenant>`. That route is mounted nowhere; the
+  sccache surface is `/cargo/<tenant>/<key>` (`crates/corelink-container/src/routes.rs:118`,
+  `nest_service("/cargo", …)` at `routes/cargo.rs:264`). Probed live against prod:
+  `/webdav/<uuid>/probe` → **404**, `/cargo/<uuid>/probe` → **401** (route exists, demands auth).
+  Every customer who copied this snippet configured a backend that could not answer. Our own CI
+  (`corelink-reapi.yml`) and e2e harness (`scripts/e2e-real-client/lib/clients.sh`) already used
+  `/cargo`, so the dashboard was the only emitter carrying the phantom path. (2) **No local cache
+  layer:** the snippet set the WebDAV endpoint and token and nothing else. sccache's
+  `storage_from_config` only falls through to the disk backend when *no* remote backend is
+  configured, so a configured WebDAV endpoint makes it remote-only — every cache read is an HTTPS
+  round trip and `SCCACHE_DIR` is inert. Now emits `SCCACHE_MULTILEVEL_CHAIN="disk,webdav"` plus
+  `SCCACHE_DIR`, matching the published docs recipe corrected in #1028, and states the sccache
+  **>= 0.15** floor that the multi-level chain requires (on an older sccache the variable is
+  silently ignored and you fall back to remote-only). In-product twin of #1028; content and
+  variable ordering deliberately kept identical to `apps/docs/docs/integrations/sccache-cargo.md`.
 - **fix(container): every request on the cache-adapter plane ran a full 64-MiB Argon2id, capping
   a tenant at roughly 3 requests/second — the product was structurally slow at exactly the traffic
   shape a build cache exists to serve.** `PatVerifier::verify_capability` ran the OWASP-2024
