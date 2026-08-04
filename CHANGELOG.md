@@ -41,11 +41,15 @@ Each entry cross-references:
   "KV-served, below clock resolution" rather than "did not run". All three now gate on "did this
   phase run?" like the sub-phases do — fixing it for the children and leaving the parent able to
   disappear while its own four sub-phases report 0 would have been half a fix. Instrumentation fails by measuring the wrong thing while looking plausible, so
-  `worker/tests/server_timing_wdb_subphases.test.ts` injects a 60 ms delay into one D1 statement
-  at a time and asserts exactly the matching label absorbs it and no other does. Proven RED three
-  ways before merge: an overlapping clock (`qstor` timed from `authEnd`) failed 2 cases;
-  suppressing `dur=0` failed all 7; reporting the skipped `qmeter` on a fan-out sub-request
-  failed the sentinel case. No behaviour change — this measures, it does not optimise.
+  `worker/tests/server_timing_wdb_subphases.test.ts` injects a 150 ms delay into one D1 statement
+  at a time and asserts exactly the matching label absorbs it, that no other does, and that the
+  four ACCOUNT for `wdb` rather than merely sitting inside it. Proven RED five ways before merge:
+  an overlapping clock (`qstor` timed from `authEnd`) failed 2 cases; suppressing `dur=0` failed
+  all 7; reporting the skipped `qmeter` on a fan-out sub-request failed the sentinel case;
+  restoring the strict `>` on the parent phases failed with "origin vanished from Server-Timing on
+  a fully cache-warm request"; and an unmeasured 150 ms await inserted inside the `wdb` window
+  failed the accounting assertion ALONE, with every attribution assertion still passing — which is
+  the regression (a fifth, uninstrumented read added later) that assertion exists for. No behaviour change — this measures, it does not optimise.
   Asking phase 2b for the new phases also exposed that the probe DIED on a phase prod does not
   emit: under `set -euo pipefail` a non-matching `grep` exits 1 and took the whole script down at
   `qmeter`, so `origin` and `total` never printed — the probe reported LESS the moment it was
@@ -210,7 +214,7 @@ Each entry cross-references:
   tenant's flood could block another past the very fairness cap. The cold-burst 503 it addressed is
   **pre-existing behaviour on `main`, not a regression introduced here**; a correct version
   coalesces on a shared future (the shape `SingleFlightPatLookup` already uses) and must mirror onto
-  the dummy-burn arm — tracked separately, with its own threat-model review. **The regression lock
+  the dummy-burn arm — done in the follow-up entry below. **The regression lock
   was proven RED before merge:** with the memo forced to always miss,
   `memo_hit_skips_argon2id_proven_by_holding_the_only_permit` fails with
   `Backend("pat verifier overloaded")`. It drains the verifier's only Argon2id permit and holds it,
@@ -242,6 +246,88 @@ Each entry cross-references:
   those fields removed from the key. **Every one of the five findings across three reviewers is
   closed in-branch; none was deferred.** 36/36 `adapter_pat`, 10/10 `native_pat_gate` and 834/834
   `routes::` tests pass.
+- **fix(container): the FIRST burst of every cold container still 503'd — the Argon2id memo only
+  helps once something has already paid for it, and a `cargo -jN` build opens with N simultaneous
+  misses.** Pre-existing on `main`, not introduced by the memo above: on the cache-adapter plane a
+  concurrent burst of the SAME PAT that all miss `SecretMatchMemo` each ran its own Argon2id. The
+  per-tenant sub-cap `ARGON2_PER_TENANT_PERMITS` (4) admits only four, and one Argon2id at
+  **0.5 vCPU** far exceeds the 250 ms `ARGON2_PERMIT_WAIT`, so everything behind the first verify
+  timed out into `VerifyError::Backend` ⇒ **HTTP 503 on the opening requests of every cold build**.
+  **Fix:** coalesce cold misses on a shared FUTURE (`FlightGroup`, the shape `SingleFlightPatLookup`
+  already uses) — the first caller for a key leads, the rest join its `Shared` future and all
+  resolve when the ONE verify completes; only one permit is consumed for the whole burst. **This is
+  deliberately not the sharded mutex three reviewers cut from the entry above, and each of their
+  three findings is answered by the change of shape, not by argument:** (a) the ORACLE — the mutex
+  sat on the row-found path only, so a burst of one wrong-secret token cost ~1×Argon2id when the
+  `token_id` existed and ~N× when it did not. **Both** arms now coalesce, on keys that partition
+  identically for a given plaintext (the hot-path key is
+  `(plaintext, token_id, stored pat_hash, scope, find_only)`, and every extra field is a pure
+  function of the plaintext at any instant — `token_id` is parsed out of it, and
+  `pat_hash` / `scope` / `find_only` are whatever the single D1 row for that `token_id` holds), in
+  **separate maps** so a flight can never hand a
+  result across the arms; (b) the UNBOUNDED WAIT — a mutex turns a burst into an N-deep FIFO whose
+  tail waits ~N× one Argon2id with no timeout, *in front of* the load-shed. A shared future has no
+  queue: the N-th joiner waits exactly as long as the 1st, and that wait is
+  `250 ms + 250 ms + one Argon2id`, i.e. the worst case of a request that is admitted **today**. The
+  shed still bounds admission — it now lives inside the flight, and when it fires every joiner gets
+  the same fail-CLOSED `Backend`; (c) the FAIRNESS BYPASS — the permit acquires stay INSIDE the
+  flight in the unchanged global→per-tenant order, and a joiner takes **no permit at all**, so
+  concurrent Argon2ids for a tenant still equal that tenant's held sub-permits and
+  `ARGON2_PER_TENANT_PERMITS` bounds them exactly as before. A waiter only ever waits on its own
+  key's flight, which by construction belongs to its own tenant, so the shared `_oci` / `_anonymous`
+  DOs gain no cross-tenant coupling. **The status-code asymmetry between the two 401 paths that this
+  branch originally closed only at the global tier was closed at BOTH tiers on `main` in the
+  meantime (#1034, `INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`), and the rebase keeps that, not the
+  branch's narrower version:** every shed inside either flight — global acquire timeout, closed
+  semaphore, saturated per-tenant sub-cap (including the shared `UNKNOWN_TOKEN_BUCKET`), or an
+  aborted flight task — resolves to a byte-identical `Backend("pat verifier overloaded")` ⇒ 503 +
+  `Retry-After: 1`, while every rejection that is NOT a shed stays the uniform `InvalidPat` ⇒ 401.
+  Coalescing only makes that uniformity easier to hold: a burst of one plaintext now takes ONE trip
+  through the two acquires instead of N, so strictly fewer requests can reach a shed at all.
+  `both_401_arms_shed_alike_when_the_per_tenant_tier_is_saturated` pins the pair on one verifier at
+  the per-tenant tier specifically — the tier the coalescing rewrote, since the acquires now live
+  *inside* the flight — with a control arm that releases the buckets and shows the same two PATs go
+  back to resolve / uniform 401.
+  **One hazard coalescing does introduce, found in self-review and closed:** a `Shared` future is
+  driven only by whoever polls it, and an unbursted request has exactly ONE awaiter — so a single
+  client disconnect can leave the run with nobody to poll it, and the map's own clone keeps it from
+  being dropped, so it simply freezes wherever it was parked. If that park was the per-tenant
+  acquire, it froze **holding a global Argon2id permit**, with the `tokio::time::timeout` guarding it
+  unable to fire (timers need polling) — pinning a permit until some later request for the same key
+  happened to resume it. Uncoalesced code has no such hazard: dropping the request future drops the
+  permit by RAII. `FlightGroup::run` therefore **spawns** the work, so the runtime owns it and it
+  always finishes — bounded waits fire, permits release, the result is recorded — regardless of who
+  is still listening. A test drives exactly that window (saturate the tenant bucket so the verify
+  parks holding the global permit, then abort the only awaiter) and was **proven RED with the spawn
+  removed**: the permit never comes back.
+  **And the interaction with the memo's placement, which is where coalescing could quietly undo the
+  fourth finding above:** the flight is where the Argon2id proof lands, so writing the memo there is
+  the natural thing to do — and is precisely the pre-scope-gate placement
+  `a_scope_rejected_pat_is_never_memoised` forbids, reintroduced for a whole burst at once. The proof
+  stays inside the flight; the memo write stays outside it, past the gate, per request. A burst also
+  cannot straddle that gate, because the `v2` key binds `scope` and `find_only`, so every joiner
+  reaches its leader's verdict. `a_scope_rejected_burst_leaves_the_memo_empty` locks it and was
+  proven RED against the in-flight placement — **as was the pre-existing
+  `a_scope_rejected_pat_is_never_memoised`, which is the check that this follow-up genuinely
+  preserves the fix rather than merely coexisting with it.**
+  **Eight tests were proven RED against a pre-fix model** (coalescing disabled + the old burn-arm
+  status restored) before the rebase onto #1034; one of the eight,
+  `a_saturated_unknown_token_bucket_still_answers_invalid_pat`, asserted the narrower
+  global-tier-only symmetry and was REPLACED in the rebase by
+  `both_401_arms_shed_alike_when_the_per_tenant_tier_is_saturated`, which asserts #1034's
+  both-tiers symmetry instead and carries its own control arm. The two RED proofs that matter most
+  read as the oracles they are: the cold burst fails
+  with `burst member 0 was SHED (Backend("pat verifier overloaded"))`, and the symmetry test comes
+  back `[Overloaded, Overloaded, Unauthorized, Overloaded, Overloaded, Overloaded, Overloaded,
+  Overloaded]` for a live `token_id` against `Unauthorized` 8/8 for an absent one — one burst, one
+  bit, the `token_id` is live. The four coalescer tests run on a **current-thread** runtime with a
+  **level-triggered** (`Semaphore::close()`) gate, both load-bearing: cooperative scheduling is what
+  makes "the caller has joined" observable without a race, and an edge-triggered
+  `Notify::notify_waiters()` here is a lost-wakeup hang — it hung the first draft of this suite, and
+  that is exactly the flake the current shape rules out. Rebased onto #1034: **52/52 `adapter_pat`
+  tests pass** — including #1034's own six shed-uniformity tests unchanged, with
+  `shed_is_indistinguishable_between_live_and_unknown_rows` (the byte-identity oracle) green through
+  the coalescer — clippy `-D warnings` clean.
 - **fix(ci): five workflow `paths:` globs matched zero tracked files, so those triggers had
   silently stopped firing — and a trigger that never fires produces no red check.** A
   `pull_request` workflow runs only when a changed file matches one of its globs; when a
