@@ -5,7 +5,7 @@ description: "How CoreLink stores, separates, and protects its secrets and PATs 
 source_files:
   - "docs/security/2026-06-23-secreview-credentials.md"
   - "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md"
-checkpoint_sha: "92dc6214f97d65a971cd2fc2dd83f2f90355ad03"
+checkpoint_sha: "e75c85178677421e093c864db8c0f23e7328b7de"
 provenance: "AUTHORED"
 tags: ["security", "credentials", "pat", "secrets", "clerk"]
 timestamp: "2026-06-26T00:00:00Z"

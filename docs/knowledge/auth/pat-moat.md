@@ -48,7 +48,7 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   copying into a fixed buffer so neither length nor content leaks via an early branch — one
   `timingSafeEqual` over equal-length buffers AND a single length-equality bit
   (`worker/src/lib/internal_auth.ts:218-233`).
-- That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (403),
+- That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (503),
   a missing/wrong header is 401, and only an exact match returns `null` to let the caller proceed
   (`worker/src/lib/internal_auth.ts:260-274`).
 - Per-consumer key resolution is `resolveConsumerKey`, which prefers a consumer's dedicated key. A

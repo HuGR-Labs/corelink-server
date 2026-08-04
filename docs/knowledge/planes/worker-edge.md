@@ -84,7 +84,7 @@ keeps forged tokens cheap to reject before any expensive work.
    transient outage can't masquerade as a 401 (which would trigger spurious CI failures, PAT rotation,
    and on-call chasing the wrong thing). Genuine bad/unknown PATs (`pat_not_found` / `pat_expired` /
    `invalid_*`) still fall through to `401` (`worker/src/index.ts:2663-2700`). NOTE: the
-   `extractAuth` error-branch comment at `:1260-1262` MATCHES that behaviour — it states the caller maps
+   `extractAuth` error-branch comment at `:1274-1276` MATCHES that behaviour — it states the caller maps
    `d1_lookup_error` to a 503 (transient, retryable; still fail-closed); the pre-cache inline `catch`
    previously lied ("for now we 401 to fail-closed"), a stale posture left over from before the H1
    caller-mapping fix landed.
@@ -227,7 +227,7 @@ keeps forged tokens cheap to reject before any expensive work.
 5. `worker/src/index.ts:655-967` — the `matchRoute` ordered route table.
 5b. `worker/src/index.ts:849` / `worker/src/index.ts:861` / `worker/src/index.ts:873` — the three exact-path pure-pass-through carve-outs: `/internal/v1/auth/introspect` + `/internal/v1/auth/resolve-tenant` (both `fabric_introspect`, `FABRIC_INTROSPECT_AUTH_KEY`) and `/internal/v1/billing/usage` (`billing_ingest`, `BILLING_INGEST_AUTH_KEY`).
 6. `worker/src/index.ts:1081-1107` — `extractAuth` fail-CLOSED on absent/short `PAT_SIGNING_KEY`.
-7. `worker/src/index.ts:1135-1293` — HMAC fast-reject + cached D1 lookup + expiry check (incl. the `expires_ms === 0` never-expires sentinel guard at `:1277`, and the cached PAT-row lookup `verifyPatRowCached` whose `error` kind becomes `d1_lookup_error` at `:1259-1263`).
+7. `worker/src/index.ts:1135-1293` — HMAC fast-reject + cached D1 lookup + expiry check (incl. the `expires_ms === 0` never-expires sentinel guard at `:1291`, and the cached PAT-row lookup `verifyPatRowCached` whose `error` kind becomes `d1_lookup_error` at `:1273-1277`).
 7b. `worker/src/index.ts:2663-2700` — caller reason→status mapping: BOTH `signing_key_not_configured` (config fault) AND `d1_lookup_error` (transient D1 fault) → retryable `503`; every other reason (`pat_not_found` / `pat_expired` / `invalid_*`) → `401`.
 8. `worker/src/index.ts:1752-1798` — the `baseHandler.fetch` entry, request-id, CORS, route match.
 9. `worker/src/index.ts:1800-1817` — health short-circuit (no auth, no DO).
