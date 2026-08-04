@@ -2233,7 +2233,12 @@ mod tests {
         );
     }
 
-    /// The memo key binds all three fields and is unambiguous across them.
+    /// The memo key binds EVERY decision field — plaintext, token_id, the stored
+    /// PHC hash, `scope` and `find_only` — and is unambiguous across them.
+    ///
+    /// `scope` / `find_only` are not incidental: dropping them back out
+    /// reintroduces the downgrade-vs-revocation latency split that
+    /// `a_scope_downgrade_invalidates_the_memo` exists to catch.
     #[test]
     fn secret_match_fingerprint_binds_every_decision_field() {
         let base = secret_match_fingerprint("pt", "tid", "hash", "cas:rw", false);
