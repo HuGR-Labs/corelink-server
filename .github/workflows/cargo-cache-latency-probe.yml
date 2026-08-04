@@ -12,9 +12,20 @@ name: /cargo cache-lookup latency probe (manual)
 # measures it, so the next verdict on sccache-over-CoreLink rests on a number
 # from the surface itself rather than on a difference of two lane durations.
 #
-# ⚠️ `workflow_dispatch` ONLY. It has no `pull_request` and no `push` trigger,
-# so it costs nothing per PR and cannot join the nightly load on the shared Mac.
-# It is an instrument you pick up, not a gate.
+# ⚠️ MANUAL, plus a self-test. There is no `push` trigger and no cron, so it can
+# never join the nightly load on the shared Mac, and the `pull_request` trigger
+# is scoped by `paths:` to this workflow and its own script — an ordinary PR
+# never pays for it. It is an instrument you pick up, not a gate.
+#
+# The self-test earns its keep twice over. GitHub will only dispatch a
+# `workflow_dispatch` workflow that already exists ON THE DEFAULT BRANCH (a
+# dispatch against this branch returns `HTTP 404: workflow … not found on the
+# default branch`), so a dispatch-only instrument produces its first number only
+# AFTER it merges — i.e. it merges unproven. The paths-scoped `pull_request`
+# lane makes the PR that introduces or edits the probe run it, so the numbers in
+# the diagnosis are measured by the same code being reviewed. It also means a
+# later edit that breaks the probe fails on its own PR instead of failing
+# silently the next time someone needs it.
 #
 # ⚠️ READ-ONLY. Every request is a GET against a freshly-random key, so every
 # authenticated request is a 404 MISS: nothing is written, nothing is created,
@@ -35,6 +46,13 @@ on:
         type: boolean
         required: false
         default: true
+  # Self-test — fires ONLY when the probe itself changes. `runs-on: corelink`
+  # only (see the matrix below): the hosted arm is opt-in via dispatch so this
+  # lane never spends hosted minutes.
+  pull_request:
+    paths:
+      - '.github/workflows/cargo-cache-latency-probe.yml'
+      - 'scripts/probe-cargo-cache-latency.sh'
 
 permissions:
   contents: read
@@ -48,14 +66,18 @@ jobs:
   # box whose number decides the question — but a single number there cannot
   # tell you WHETHER the cost is the box's network position or CoreLink's own
   # server-side work. Probing from a GitHub-hosted runner in the same minute
-  # separates the two: if both are slow, the cost is server-side (the D1 hops on
-  # the PAT-verify + url-map path) and moving the runner fixes nothing.
+  # separates the two: if both are slow, the cost is server-side (the Argon2id
+  # verify on the PAT path) and moving the runner fixes nothing.
+  #
+  # The hosted arm is OPT-IN — `include_hosted` is only ever 'true' on a manual
+  # dispatch, so the paths-scoped self-test above runs the `corelink` arm alone
+  # and spends no hosted minutes.
   probe:
     name: probe from ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        runner: ${{ github.event.inputs.include_hosted == 'false' && fromJSON('["corelink"]') || fromJSON('["corelink", "ubuntu-latest"]') }}
+        runner: ${{ github.event.inputs.include_hosted == 'true' && fromJSON('["corelink", "ubuntu-latest"]') || fromJSON('["corelink"]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:

@@ -183,6 +183,15 @@ The discriminating experiment is now cheap, and it is not a lane re-run.
 
 **Step 1 — measure the surface (≈1 minute, no compilation).**
 Dispatch `cargo-cache-latency-probe.yml` **before** PR #1022 deploys and again **after**.
+
+> A trap worth recording, because it nearly shipped an unproven instrument: GitHub will
+> only dispatch a `workflow_dispatch` workflow that already exists **on the default
+> branch** — `gh workflow run … --ref <feature-branch>` answers
+> `HTTP 404: workflow … not found on the default branch`. A dispatch-ONLY probe therefore
+> cannot produce a number until after it merges, i.e. it merges unproven. This one carries
+> a `pull_request` trigger scoped by `paths:` to its own two files, so the PR that
+> introduces or edits it runs it, and an ordinary PR still pays nothing.
+
 It reports p50/p90 for an authenticated `/cargo` lookup from a `corelink` box, on a fresh
 connection and on a reused one, plus a concurrency sweep. The prediction to falsify: the
 before-run shows a p50 in the high hundreds of ms with throughput flattening near 3–4
