@@ -2917,8 +2917,8 @@ const baseHandler: ExportedHandler<Env> = {
       //      checkout to the container.
       //
       // 3. The fan-out marker itself — this very check (index.ts:2837-2839), its
-      //    sibling on the region branch (:3009-3011), and the primary setting it
-      //    on the service-binding forward (:3156-3157).
+      //    sibling on the region branch (:3021-3024), and the primary setting it
+      //    on the service-binding forward (:3169-3170).
       //
       // (runner_mint, auth_rotate and session_exchange appear in BOTH role 1 and
       // role 2: strict inbound, loose outbound. That is why a per-FILE split kept
