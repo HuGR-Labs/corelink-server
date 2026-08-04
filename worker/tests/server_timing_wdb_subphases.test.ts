@@ -57,6 +57,20 @@ const DELAYED_MIN_MS = 110;
  * DELAYED_MIN_MS, not the absolute value, is what makes the attribution sharp.
  */
 const UNDELAYED_MAX_MS = 50;
+/**
+ * How far the four sub-phases may fall short of the `wdb` window they decompose.
+ * Deliberately a SEPARATE constant from {@link UNDELAYED_MAX_MS}: they answer
+ * different questions, and sharing one would mean tightening the per-phase
+ * ceiling silently retunes the accounting check.
+ *
+ * The residual is the un-instrumented sync work between the four awaits, which a
+ * Worker's coarsened clock reads as 0 but Node does not — under a GC or
+ * event-loop stall it accrues real wall time, so this cannot be tightened to
+ * nothing without buying a flake. The cost is SENSITIVITY, and it is worth
+ * naming: a fifth, uninstrumented await added inside the window later is caught
+ * only if it costs MORE than this. A 40 ms one passes silently.
+ */
+const SUM_RESIDUAL_MAX_MS = 40;
 
 function b64urlNoPad(bytes: Uint8Array): string {
   let bin = "";
@@ -238,6 +252,16 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
     }
     // The aggregate stays, unchanged, so existing probes keep working.
     expect(st).toHaveProperty("wdb");
+
+    // Accounting with NOTHING injected: `wdb` and the sum are both near zero, so
+    // any un-instrumented await inside the window shows up here immediately
+    // rather than having to exceed the residual tolerance of a 150 ms case.
+    const sum = SUBPHASES.reduce((a, p) => a + (st[p] ?? 0), 0);
+    expect(
+      Math.abs(st["wdb"]! - sum),
+      `wdb is ${st["wdb"]}ms but its four sub-phases sum to ${sum}ms with no delay ` +
+        `injected — the window contains work nothing is measuring. Full split: ${JSON.stringify(st)}`,
+    ).toBeLessThanOrEqual(SUM_RESIDUAL_MAX_MS);
   });
 
   it.each([
@@ -280,12 +304,12 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
         sum,
         `the four sub-phases sum to ${sum}ms but wdb is ${st["wdb"]}ms — they do not ` +
           `account for the phase they decompose. Full split: ${JSON.stringify(st)}`,
-      ).toBeGreaterThanOrEqual(st["wdb"]! - UNDELAYED_MAX_MS);
+      ).toBeGreaterThanOrEqual(st["wdb"]! - SUM_RESIDUAL_MAX_MS);
       expect(
         sum,
         `the four sub-phases sum to ${sum}ms, MORE than the ${st["wdb"]}ms wdb window ` +
           `that contains them — an await is being counted twice. Full split: ${JSON.stringify(st)}`,
-      ).toBeLessThanOrEqual(st["wdb"]! + UNDELAYED_MAX_MS);
+      ).toBeLessThanOrEqual(st["wdb"]! + SUM_RESIDUAL_MAX_MS);
     },
   );
 
@@ -324,7 +348,13 @@ describe("Server-Timing `wdb` sub-phase attribution", () => {
       "qtier vanished once the tier was cache-served — a 0ms phase must be reported, " +
         "not suppressed, or a fast phase is indistinguishable from a skipped one",
     ).toHaveProperty("qtier");
-    expect(st["qtier"]).toBe(0);
+    // NOT `toBe(0)`. That was a strict equality on a wall-clock read with no band
+    // at all, and it flaked 1-in-20 under CPU contention ("expected 1 to be +0")
+    // in a PR-BLOCKING gate — a scheduler hiccup between `tierStart` and the
+    // assignment is enough. The assertion that carries this case's meaning is the
+    // `toHaveProperty` above (the phase is PRESENT, not suppressed); the value
+    // check only needs to show it was cache-served rather than a real D1 read.
+    expect(st["qtier"]).toBeLessThan(UNDELAYED_MAX_MS);
   });
 
   it("omits qmeter entirely on a genuine fan-out sub-request, which does not meter", async () => {

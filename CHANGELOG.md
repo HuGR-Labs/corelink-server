@@ -56,6 +56,12 @@ Each entry cross-references:
   taught to look for more (caught by CI on this PR, run 30916180801). An absent phase is now
   reported explicitly as `ABSENT — not emitted on ANY of the N responses` and the run continues,
   because "nobody emitted this" is a fact worth seeing and must never be mistaken for a fast phase.
+  Second review round caught a flake this work had itself introduced into a PR-BLOCKING gate: the
+  cache-warm case asserted `expect(qtier).toBe(0)` — a strict equality on a wall-clock read with no
+  band — which reproduced 1-in-20 under CPU contention (`expected 1 to be +0`) and would have
+  intermittently RED-ed unrelated PRs on the 2-vCPU runner. Replaced with a bounded check; the
+  case's actual meaning (the phase is PRESENT, not suppressed) was already carried by a separate
+  assertion. 0 failures in 25 runs under 6 busy loops after the fix.
 
 ### Fixed
 - **fix(okf): the OKF wiki gate certified `main` green against evidence that no longer existed —

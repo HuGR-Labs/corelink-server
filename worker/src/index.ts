@@ -2861,19 +2861,30 @@ const baseHandler: ExportedHandler<Env> = {
       // without a write — that legitimately reads as a real 0.)
       //
       // ACCEPTED SIGNAL (independent review of this commit): because the omission
-      // is keyed on `isFanout`, an absent `qmeter` in the response header confirms
-      // to the CALLER that their `x-corelink-fanout-from` matched
-      // CORELINK_INTERNAL_AUTH_KEY — a one-request confirmation oracle on a server
-      // secret, where previously a successful forgery was only observable
-      // indirectly (never being 429'd). Accepted, deliberately, because
-      // `constantTimeSecretEqual` is a FULL-VALUE compare: it confirms a complete
-      // correct guess, it does not help build one byte-by-byte, and anyone holding
-      // the whole 64-hex secret already has the metering bypass this would
-      // confirm. Emitting `qmeter;dur=0` instead would re-introduce exactly the
-      // "skipped vs fast" ambiguity this phase exists to remove. The real close is
-      // to ingress-strip `x-corelink-fanout-from` at the public edge, which
-      // eliminates the forgery surface and this oracle with it — tracked
-      // separately; it is edge config, not a Worker change.
+      // is keyed on `isFanout`, an absent `qmeter` WHILE `qtier`/`qstor`/`qresid`
+      // are present confirms to the CALLER that their `x-corelink-fanout-from`
+      // matched CORELINK_INTERNAL_AUTH_KEY — a one-request confirmation oracle,
+      // where previously a successful forgery was only observable indirectly
+      // (never being 429'd). Note the conjunction: `qmeter` is ALSO absent for
+      // `_anonymous`/`_system`/`_pending`, but there the other three are absent too.
+      //
+      // Be precise about what is confirmed. CORELINK_INTERNAL_AUTH_KEY is NOT a
+      // metering key — it is the SHARED internal-auth secret that every consumer
+      // falls back to when its dedicated key is unset/short (lib/internal_auth.ts),
+      // which today is the live configuration for PAT mint/rotate, runner mint,
+      // session exchange, githugr tenant-lookup and the `/_internal/*` gate.
+      //
+      // Accepted anyway, for a reason that survives that blast radius: a caller who
+      // can reach this oracle already holds the complete key (the compare is
+      // constant-time and FULL-VALUE — it confirms a complete guess, it never helps
+      // build one byte-by-byte), and a key holder has a far more direct oracle in a
+      // 200-vs-401 on `/_internal/*`. So this adds no capability. Emitting
+      // `qmeter;dur=0` instead would re-introduce exactly the "skipped vs fast"
+      // ambiguity this phase exists to remove. The real close is to ingress-strip
+      // `x-corelink-fanout-from` at the public edge — the primary sets it only on
+      // the service-binding forward, which never traverses the public edge, so
+      // stripping it costs nothing and removes the forgery surface and this oracle
+      // together. Tracked separately; it is edge config, not a Worker change.
       if (!isFanout) stQMeterMs = Date.now() - meterStart;
       const withinFreeCap = !inc.counted || inc.count <= FREE_REQUEST_CAP;
 
