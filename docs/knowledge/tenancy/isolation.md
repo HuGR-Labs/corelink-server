@@ -14,7 +14,7 @@ source_blobs:
   - "crates/corelink-container/src/auth_tenant.rs@299dd57e7a045709717860a3d52b8fcf57defe73"
   - "crates/tenant-path/src/lib.rs@ed40ce405d38f398b6537f17531f0fd05be3dfdb"
   - "crates/tenant-path/src/prefix.rs@cb25dffd2461c9cd3e6c8f5a98744d3a3d75066c"
-checkpoint_sha: "3819a1426c77840c0e7004b052c92753c2a1920c"
+checkpoint_sha: "f58037b89872e3055608d8d336c98a5d5adcda38"
 provenance: "AUTHORED"
 tags: ["tenancy", "isolation", "durable-object", "multi-tenant", "security"]
 timestamp: "2026-06-26T00:00:00Z"

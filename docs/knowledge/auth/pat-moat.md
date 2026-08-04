@@ -14,7 +14,7 @@ source_blobs:
   - "worker/src/lib/pat_verify_cache.ts@b0dafab6381684057de4c0589b5d95d18a35c741"
   - "worker/src/lib/tenant_suspend_gate.ts@bed740c1e2a471244a2c9680fcf4f1e800f26d7c"
   - "crates/corelink-container/src/adapter_pat.rs@456e2f1586d1b60b55fd03af7aa263ebf41bdb13"
-checkpoint_sha: "3819a1426c77840c0e7004b052c92753c2a1920c"
+checkpoint_sha: "f58037b89872e3055608d8d336c98a5d5adcda38"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
