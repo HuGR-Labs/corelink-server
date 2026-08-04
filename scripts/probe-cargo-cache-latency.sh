@@ -173,10 +173,35 @@ echo
 #            The cache-backed phases can still cost a full D1 round trip on an
 #            isolate-cold request — which is exactly why these are measured
 #            rather than assumed.
-#   origin — the whole DO + container subrequest (so the container's own D1 `pat`
-#            read, the memo, the quota gate and the storage lookup are all
-#            INSIDE this one number — this phase narrows the residue to a tier,
-#            it does not break the container open)
+#   origin — the DO + container subrequest, broken into the phases it is made of.
+#            It measured 281/300/329 ms of a 443/457/547 ms total on 2026-08-04
+#            — 66 % of the request in ONE opaque block — which is why it was
+#            split the same way `wdb` was:
+#              ohop   — the DO hop: Worker->DO dispatch + placement, the DO's own
+#                       prologue (lifecycle bind, ensureContainerRunning, the
+#                       getAlarm re-arm), the DO->container wire, and the
+#                       response travelling back. DERIVED by the Worker as
+#                       `origin - Σ(the container's phases)`, because only the
+#                       Worker can see both ends of the hop.
+#              opat   — the container's OWN per-request D1 `pat` row read (#1022
+#                       deliberately kept it so a revocation takes effect at once)
+#              oquota — the per-tenant monthly $-ceiling check/accrue (ADR-0068),
+#                       a D1 round trip on every billable request
+#              ostore — the moat storage lookup: the url->content-hash map read
+#                       plus, on a hit, the CAS/R2 blob fetch
+#              oother — the container's own residue: routing, the rate-limit
+#                       layer, HMAC, Argon2id (or its memo hit), response
+#                       assembly. Computed by the CONTAINER against its own
+#                       whole-request clock.
+#            The container reports opat/oquota/ostore/oother on the subresponse's
+#            own `Server-Timing` and the Worker merges them; the five ALWAYS sum
+#            to `origin` exactly. A Worker deployed BEFORE the container image is
+#            repinned emits `origin` alone (the container says nothing to merge),
+#            so the o* rows read ABSENT — that is "prod is behind this branch",
+#            not "the hop was free". A container report the Worker cannot
+#            reconcile is refused WHOLE and shows up as a single
+#            `ohop;dur=<origin>;desc="unreconciled"` — never as a split that does
+#            not add up.
 #   total  — the Worker's own view of the request
 #
 # ⚠️ These durations are coarse by construction: `Date.now()` in a Worker only
@@ -212,8 +237,13 @@ else
   # was made explicit.
   # `qmeter`/`qstor` are the PRE-merge names of `qbatch` — kept in the list so a
   # probe run against an older deployed Worker still attributes its `wdb`
-  # instead of silently reporting an unexplained aggregate.
-  for ph in auth wdb qtier qbatch qresid qmeter qstor origin total; do
+  # instead of silently reporting an unexplained aggregate. The `origin`
+  # sub-phases (`ohop` … `oother`) are queried on the SAME terms: they exist only
+  # on a Worker+container at or past the commit that introduced them, and asking
+  # for them costs nothing on an older deployment beyond an honest ABSENT row.
+  # THAT is why the last transition was measurable — the probe knew both
+  # vocabularies across the deploy, so a run before the deploy still attributed.
+  for ph in auth wdb qtier qbatch qresid qmeter qstor origin ohop opat oquota ostore oother total; do
     # `dur` is milliseconds; `pct` takes seconds.
     #
     # An ABSENT phase must not kill the probe. Under `set -euo pipefail` a `grep`
@@ -237,9 +267,44 @@ else
   echo -n "  auth served from  : "
   grep -oE 'desc="[a-z0-9]+"' /tmp/probe_st.txt | sort | uniq -c | tr '\n' ' '
   echo
-  echo "  (origin is the ENTIRE container hop — a large origin means the residue"
-  echo "   is inside the container, not at the edge; a large wdb means it is the"
-  echo "   Worker's own uncached D1 reads.)"
+
+  # --- does the origin split RECONCILE on the wire? -------------------------
+  # A split that does not add up is worse than no split: it invites a confident
+  # wrong conclusion about which tier to attack. The Worker guarantees the
+  # identity by construction, so a mismatch here means the header was rewritten
+  # in transit (a proxy, a CDN feature) or the deployed Worker is not the one
+  # this script documents. Report it per-response, loudly, rather than averaging
+  # over it — an average hides exactly the responses worth looking at.
+  echo -n "  origin split      : "
+  awk '
+    { origin = -1; sum = 0; parts = 0; unrec = 0
+      if ($0 ~ /desc="unreconciled"/) unrec = 1
+      n = split($0, e, ",")
+      for (i = 1; i <= n; i++) {
+        if (match(e[i], /origin;dur=[0-9]+/))                { origin = substr(e[i], RSTART + 11, RLENGTH - 11) + 0 }
+        else if (match(e[i], /(ohop|opat|oquota|ostore|oother);dur=[0-9]+/)) {
+          f = substr(e[i], RSTART, RLENGTH); split(f, kv, ";dur="); sum += kv[2] + 0; parts++
+        }
+      }
+      if (origin < 0) next
+      if (unrec) { u++; next }
+      if (parts == 0) { absent++; next }
+      total++
+      if (sum == origin) ok++; else { bad++; badmsg = badmsg sprintf("\n      MISMATCH: origin=%dms but the sub-phases sum to %dms", origin, sum) }
+    }
+    END {
+      if (u > 0)      printf "%d response(s) carried desc=\"unreconciled\" — the container reported a split the Worker refused. ", u
+      if (absent > 0) printf "%d response(s) had NO sub-phases (the deployed container predates them — NOT a free hop). ", absent
+      if (total == 0) { printf "no decomposed response to check.\n"; exit }
+      printf "%d/%d reconcile exactly (ohop + opat + oquota + ostore + oother == origin).", ok, total
+      if (bad > 0) printf "%s\n      ^ the accounting is NOT trustworthy; do not act on the split above.", badmsg
+      printf "\n"
+    }' /tmp/probe_st.txt
+
+  echo "  (ohop is the DO hop — dispatch + placement + the DO's prologue + the wire;"
+  echo "   opat/oquota are D1 round trips the CONTAINER makes on every request;"
+  echo "   ostore is the storage lookup; oother is everything else in-container."
+  echo "   A large wdb instead means it is the Worker's own uncached D1 reads.)"
 fi
 echo
 

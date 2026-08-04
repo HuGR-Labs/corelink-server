@@ -220,7 +220,25 @@ impl MoatCache {
     ///
     /// A map hit whose CAS blob has been GC'd is treated as a miss (the caller
     /// re-fetches upstream + re-stores), not an error.
+    ///
+    /// Timed as the `ostore` sub-phase of the Worker's `origin` block (see
+    /// [`crate::origin_timing`]): the whole storage cost of a cache lookup —
+    /// the url-map read AND, on a map hit, the CAS/R2 blob fetch. The work is
+    /// in [`Self::get_untimed`]; this wrapper only starts and stops a clock.
     pub async fn get(&self, namespace: &str, url_hash: &str) -> Result<Option<Vec<u8>>, MoatError> {
+        crate::origin_timing::timed(
+            crate::origin_timing::Phase::Store,
+            self.get_untimed(namespace, url_hash),
+        )
+        .await
+    }
+
+    /// The unwrapped body of [`Self::get`] — see it for the contract.
+    async fn get_untimed(
+        &self,
+        namespace: &str,
+        url_hash: &str,
+    ) -> Result<Option<Vec<u8>>, MoatError> {
         let content_hash = match self
             .map
             .get(namespace, url_hash)
@@ -273,7 +291,26 @@ impl MoatCache {
 
     /// Store `bytes` content-addressed + map `(namespace, url_hash)` to the
     /// content-hash. Identical bytes (any namespace/url) dedup to one CAS blob.
+    ///
+    /// Timed as `ostore`, like [`Self::get`] — a write's storage cost belongs
+    /// to the same phase as a read's, so a probe against the write path
+    /// attributes without a second convention.
     pub async fn put(
+        &self,
+        namespace: &str,
+        url_hash: &str,
+        bytes: Vec<u8>,
+        storage_quota_bytes: Option<i64>,
+    ) -> Result<(), MoatError> {
+        crate::origin_timing::timed(
+            crate::origin_timing::Phase::Store,
+            self.put_untimed(namespace, url_hash, bytes, storage_quota_bytes),
+        )
+        .await
+    }
+
+    /// The unwrapped body of [`Self::put`] — see it for the contract.
+    async fn put_untimed(
         &self,
         namespace: &str,
         url_hash: &str,
@@ -322,11 +359,17 @@ impl MoatCache {
     /// (content dedup), so removing it here could break an unrelated mapping;
     /// unreferenced blobs are reclaimed by the storage GC, not by this path.
     /// Idempotent: deleting an absent key succeeds.
+    ///
+    /// Timed as `ostore`, like [`Self::get`] / [`Self::put`] — sccache's
+    /// write-probe cleanup issues one of these per build, so it is on the
+    /// measured surface.
     pub async fn delete(&self, namespace: &str, url_hash: &str) -> Result<(), MoatError> {
-        self.map
-            .delete(namespace, url_hash)
-            .await
-            .map_err(MoatError::Backend)
+        crate::origin_timing::timed(
+            crate::origin_timing::Phase::Store,
+            self.map.delete(namespace, url_hash),
+        )
+        .await
+        .map_err(MoatError::Backend)
     }
 }
 

@@ -133,6 +133,14 @@ pub mod oci_cap;
 /// bypass container-side at both the token mint and the residual `/v2` legs.
 /// Fail-CLOSED (a known-suspended tenant stays denied through a D1 read fault).
 pub mod oci_suspend;
+/// Container-side decomposition of the Worker's `origin` Server-Timing phase:
+/// a task-local phase ledger (`opat` / `oquota` / `ostore` / `oother`) plus the
+/// outermost data-plane layer that reports it on the subresponse's own
+/// `Server-Timing`, which the Worker merges under `origin`. Instrumentation
+/// only — no behaviour, ordering or D1 access pattern depends on it. (Declared
+/// last, after the alphabetical block above, so adding it shifts no existing
+/// OKF line-anchor.)
+pub mod origin_timing;
 /// Per-tenant monthly **request-count** middleware primitive (rt-nuclear #8):
 /// the container-side mirror of `worker/src/lib/quota.ts::checkRequestQuota`,
 /// backed by the `monthly_request_counts` D1 table (migration 0071). Wired into

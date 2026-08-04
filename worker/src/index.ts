@@ -3244,10 +3244,14 @@ const baseHandler: ExportedHandler<Env> = {
     }
     // Server-Timing (observability, self-serve latency probes): split the authed
     // hot path into `auth` (PAT verify — KV-served ⇒ single-digit ms), `wdb` (the
-    // worker-side quota + residency reads to the ENAM primary) and its four serial
-    // sub-phases, and `origin` (the DO/container subrequest). This is what lets a
-    // client distinguish "auth is slow" from "the downstream D1 reads are slow"
-    // WITHOUT a log grep. `desc` on `auth` carries the cache tier (`kv`/`l1`/`d1`).
+    // worker-side quota + residency reads to the ENAM primary) and its three
+    // serial sub-phases, and `origin` (the DO/container subrequest) and ITS
+    // sub-phases — `ohop` (the DO hop, derived here) plus `opat` / `oquota` /
+    // `ostore` / `oother`, which the container reports on the subresponse and
+    // `originSubPhases` merges. This is what lets a client distinguish "auth is
+    // slow" from "the downstream D1 reads are slow" from "the container's own
+    // per-request D1 read is slow" WITHOUT a log grep. `desc` on `auth` carries
+    // the cache tier (`kv`/`l1`/`d1`).
     //
     // EMISSION CONTRACT — a phase that RAN is emitted, INCLUDING at `dur=0`; only
     // a phase that did NOT run is omitted. This matters more than it looks: a
@@ -3288,8 +3292,19 @@ const baseHandler: ExportedHandler<Env> = {
       ] as const) {
         if (ms >= 0) st.push(`${name};dur=${ms}`);
       }
+      // `origin` and, immediately after it, the sub-phases it decomposes into —
+      // the same parent-then-children order `wdb` and its `q*` phases use. The
+      // container reports its own share on the SUBRESPONSE's `Server-Timing`
+      // (see `crate::origin_timing` in the Rust container); the Worker owns the
+      // `ohop` residue because only the Worker can see both ends of the DO hop.
+      // The container's raw header never reaches the client: `finalHeaders` is a
+      // copy of the DO response's headers and the `set` below overwrites it.
       if (stOriginEnd > 0) {
-        st.push(`origin;dur=${stOriginEnd - stOriginStart}`);
+        const originMs = stOriginEnd - stOriginStart;
+        st.push(`origin;dur=${originMs}`);
+        for (const sub of originSubPhases(originMs, doResponse.headers.get("server-timing"))) {
+          st.push(sub);
+        }
       }
       st.push(`total;dur=${Date.now() - requestStart}`);
       if (st.length > 0) finalHeaders.set("Server-Timing", st.join(", "));
@@ -3363,4 +3378,107 @@ export { CoreLinkServer, RolloutController, EventLogDO, ReplicationCoordinatorDO
  */
 export function isDsrEraseFanoutPath(pathSuffix: string): boolean {
   return pathSuffix === "/_internal/dsr/erase" || pathSuffix === "/_internal/dsr/verify";
+}
+
+/**
+ * The `origin` sub-phases the CONTAINER reports, in emission order.
+ *
+ * They are produced by `crates/corelink-container/src/origin_timing.rs` on the
+ * subresponse's own `Server-Timing`, and they partition the time the container
+ * held the request:
+ *
+ *   - `opat`   — the container's per-request D1 `pat` row read (#1022 kept it
+ *                so a revocation takes effect immediately)
+ *   - `oquota` — the per-tenant monthly `$`-ceiling check/accrue (ADR-0068)
+ *   - `ostore` — the moat storage lookup: url-map read + CAS/R2 blob
+ *   - `oother` — the container's own residue (routing, rate-limit layer, HMAC,
+ *                Argon2id or its memo hit, response assembly)
+ *
+ * `oother` is a residue the container computes against its OWN whole-request
+ * clock, so these always sum to the container's total. (Hoisted; used in
+ * `fetch` above.)
+ */
+const ORIGIN_CONTAINER_PHASES = ["opat", "oquota", "ostore", "oother"] as const;
+
+/**
+ * Decompose `origin` into `ohop` + the container's own phases.
+ *
+ * # Why the residue is the Worker's job
+ *
+ * `origin` is the Worker's clock around `stub.fetch()`. The container can time
+ * everything it does, but it cannot see the DO hop that brackets it, so the
+ * Worker derives that by SUBTRACTION and publishes it as an explicit phase:
+ *
+ *   `ohop` = `origin` − Σ(container phases)
+ *
+ * `ohop` covers the Worker→DO dispatch + placement RPC, the DO's own prologue
+ * (tenant-id lifecycle bind, `ensureContainerRunning`, the `getAlarm()` re-arm
+ * read), the DO→container HTTP wire, and the response travelling back. Those
+ * four are NOT separated: splitting the DO's prologue out needs the DO to
+ * rewrite the subresponse headers on the hot path, which is a behaviour change
+ * this instrumentation deliberately does not make. If `ohop` turns out to
+ * dominate, that is the next split — the decomposition, not a guess, decides.
+ *
+ * # The reconciliation rule
+ *
+ * `ohop` + Σ(container phases) === `origin`, exactly, always. Two cases would
+ * break that and both are handled by refusing to publish a split rather than by
+ * publishing one that does not add up:
+ *
+ *   - **no container report** (an older container image, or a response the DO
+ *     synthesized itself — a 503 `CONTAINER_UNAVAILABLE` never reached the
+ *     container): return nothing. `origin` stands alone exactly as before, which
+ *     is what lets this Worker deploy ahead of the container repin.
+ *   - **a report that does not fit** (Σ > `origin`, or a known phase name with
+ *     an unparseable duration): return a single
+ *     `ohop;dur=<origin>;desc="unreconciled"`. The split is dropped whole, and
+ *     the `desc` says so on the wire. A split that silently redistributes a
+ *     phase it could not read is worse than no split — it invites a confident
+ *     wrong conclusion, which is the entire failure mode this instrumentation
+ *     exists to prevent.
+ *
+ * ⚠️ The two sides do NOT share a clock resolution. The Worker's `Date.now()`
+ * advances only across I/O, so a Worker phase at `dur=0` means "no I/O"; the
+ * container measures a real monotonic `Instant`, so a container phase at
+ * `dur=0` means "under a millisecond of wall time". `ohop` is a difference of
+ * the two and carries ±1 ms of truncation either way — directional attribution,
+ * never a profile.
+ */
+export function originSubPhases(originMs: number, containerTiming: string | null): string[] {
+  if (containerTiming === null) return [];
+  const reported = new Map<string, number>();
+  let malformed = false;
+  for (const part of containerTiming.split(",")) {
+    // `name;dur=<int>` with optional trailing parameters (e.g. a `desc`).
+    const m = /^\s*([A-Za-z0-9_-]+)\s*;\s*dur=([0-9]+)\s*(?:;.*)?$/.exec(part);
+    const name = m === null ? part.trim().split(";")[0]?.trim() : m[1];
+    if (name === undefined || !(ORIGIN_CONTAINER_PHASES as readonly string[]).includes(name)) {
+      // Not one of ours — a future container phase, or a stray metric. Ignore
+      // it rather than treating the whole report as broken.
+      continue;
+    }
+    if (m === null) {
+      // A name we DO consume, carrying a duration we cannot read. Its
+      // milliseconds would silently land in `ohop` and be attributed to the
+      // network. Refuse the split instead.
+      malformed = true;
+      continue;
+    }
+    reported.set(name, Number(m[2]));
+  }
+  if (reported.size === 0) return [];
+  let sum = 0;
+  for (const v of reported.values()) sum += v;
+  if (malformed || sum > originMs) {
+    return [`ohop;dur=${originMs};desc="unreconciled"`];
+  }
+  const out = [`ohop;dur=${originMs - sum}`];
+  for (const name of ORIGIN_CONTAINER_PHASES) {
+    const v = reported.get(name);
+    // Emission contract, identical to the `wdb` sub-phases: a phase that RAN is
+    // emitted INCLUDING at `dur=0`; only a phase the container did not run at
+    // all is absent.
+    if (v !== undefined) out.push(`${name};dur=${v}`);
+  }
+  return out;
 }
