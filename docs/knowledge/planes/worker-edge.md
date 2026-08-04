@@ -8,13 +8,15 @@ source_files:
   - "worker/src/lib/tenant_residency_cache.ts"
   - "worker/src/lib/tenant_tier_cache.ts"
   - "worker/src/lib/onboarding_events.ts"
+  - "worker/src/lib/internal_auth.ts"
 source_blobs:
-  - "worker/src/index.ts@169b4780ad30b31fa219f13f53505312434e626f"
+  - "worker/src/index.ts@3e9cde684944962569a6e24e62a07d68cfd662a2"
   - "worker/src/sentry-scrub.ts@e9cd0d761cab3aaa83ea618f7d270e8b77adc316"
   - "worker/src/lib/tenant_residency_cache.ts@dc42b4123dae51e9887264168efcc5d8f6ab817b"
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
   - "worker/src/lib/onboarding_events.ts@13087a3f130b93729ade6e30e9568ea500344c22"
-checkpoint_sha: "b7bb0fbde14b4764e4f7e790047d2ecdf2184943"
+  - "worker/src/lib/internal_auth.ts@4e399de52d42e661d7dd819f5434001eb0845145"
+checkpoint_sha: "109cff8ea56c6125e115409d3008ff1b14420ff6"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -101,25 +103,26 @@ keeps forged tokens cheap to reject before any expensive work.
    `PRIMARY KEY (id)` + ingest's `INSERT OR IGNORE` act as a once-per-tenant lock.
 7. Per-tier quota (storage SUM + monthly request-count) runs after auth and before the DO forward —
    request-count fail-CLOSED; storage verb-aware (reads fail-open for availability, byte-adding writes
-   fail-closed) (`worker/src/index.ts:2742-2928`).
+   fail-closed) (`worker/src/index.ts:2742-2939`).
 7b. Data-residency (`primary_region`, for region fan-out) is resolved AFTER quota and BEFORE the DO
    forward through the three-tier cache `resolveTenantResidency` — **L1** per-isolate (5 s) → **L2** Workers
    KV (`tres:<tenant>`, 60 s) → **L3** D1 (`SELECT primary_region`) — replacing the former inline
    per-request D1-PRIMARY read so a far-from-D1 (e.g. SAM) caller no longer pays a synchronous round-trip
-   for this near-immutable value (`worker/src/index.ts:2978-2983`,
+   for this near-immutable value (`worker/src/index.ts:2989-2994`,
    `worker/src/lib/tenant_residency_cache.ts:231-298`). It is FAIL-CLOSED: an unresolved region (a D1 fault
    with no cached fallback ⇒ the `RESIDENCY_UNRESOLVED` sentinel) returns `503 RESIDENCY_UNAVAILABLE`
-   rather than IAD-leaking an EU tenant to US storage (`worker/src/index.ts:2985-3002`,
+   rather than IAD-leaking an EU tenant to US storage (`worker/src/index.ts:2996-3013`,
    `worker/src/lib/tenant_residency_cache.ts:284-291`); a `null` region (no tenant row / no pin) preserves
-   the existing `primaryRegion === undefined` IAD-local fall-through (`worker/src/index.ts:3006`). A stale
+   the existing `primaryRegion === undefined` IAD-local fall-through (`worker/src/index.ts:3017`). A stale
    cached region can only MIS-ROUTE, never silently leak, because the container residency backstop
    (`residency.rs`) 409s any real cross-region mismatch.
 7c. A response returned through **this PAT-gated native DO forward** carries a `Server-Timing` header
    splitting the request into `auth` (PAT verify, with `desc` naming the cache tier that served it) →
    `wdb` (the Worker-side reads between auth and the forward) → `origin` (the whole DO + container
-   subrequest) → `total`. It is NOT emitted on the other exits: the OCI registry pass-through, the Clerk
-   customer-plane forward, the `_system` container forwards, the public-attestation arm, or the regional
-   fan-out return — each returns before this block. `wdb` is further broken into the four SERIAL awaits it
+   subrequest) → `total`. It is NOT emitted on any other exit — the OCI registry
+   pass-through, the Clerk customer-plane forward, the `_system` container forwards, the
+   public-attestation arm, the regional fan-out return, and the replication-coordinator, onboarding,
+   billing-webhook, fabric-introspect and billing-ingest arms all return before this block. `wdb` is further broken into the four SERIAL awaits it
    is made of — `qmeter` (the monthly request-counter UPSERT), `qtier` (7 above), `qstor` (the storage
    `SUM(bytes_used)` read) and `qresid` (7b above) — because two of them are cache-backed and two are
    uncached D1, so the aggregate alone cannot say which read owns a slow request. **Every** phase that RAN
@@ -128,35 +131,42 @@ keeps forged tokens cheap to reject before any expensive work.
    at 0 ms instead, which is why the 2026-08-04 probe saw `auth` on 3 of 30 responses. Durations are coarse
    by construction — a Worker's `Date.now()` advances only across I/O, so a CPU-only stretch reads 0 —
    which makes them directional attribution, never a profile
-   (`worker/src/index.ts:3251-3280`). Two caveats a reader needs:
+   (`worker/src/index.ts:3262-3291`). Two caveats a reader needs:
    **(a)** on a multi-region tenant the client sees the REGIONAL Worker's split; the primary Worker
    computes its own four sub-phases and discards them at the fan-out return, so a missing `qmeter` there
    means "*this* Worker did not meter", not "the request was not metered" (the primary already did — 7
    above). **(b)** `origin` is stamped before `applyTimingPad`, so on a 404 the header publishes the
    UN-padded upstream duration that the pad exists to conceal.
-7d. Because the `qmeter` omission is keyed on the constant-time `x-corelink-fanout-from` match, its absence
-   confirms to the caller that their marker equalled `CORELINK_INTERNAL_AUTH_KEY`. This is an accepted
-   signal, not an oversight: the compare is FULL-VALUE, so it confirms a complete correct guess rather than
-   helping build one, and a holder of the whole secret already has the metering bypass. The real close is
-   ingress-stripping `x-corelink-fanout-from` at the public edge (which the edge does not do today),
-   removing the forgery surface and this oracle together.
+7d. Because the `qmeter` omission is keyed on the constant-time `x-corelink-fanout-from` match, an absent
+   `qmeter` **while `qtier`/`qstor`/`qresid` are present** confirms to the caller that their marker equalled
+   `CORELINK_INTERNAL_AUTH_KEY`. (The conjunction matters: `qmeter` is also absent for
+   `_anonymous`/`_system`/`_pending`, where the other three are absent too.) Be precise about the stake —
+   that variable is NOT a metering key, it is the SHARED internal-auth secret every consumer falls back to
+   when its dedicated key is unset/short (`worker/src/lib/internal_auth.ts:143-149`), which today is the live
+   configuration for PAT mint/rotate, runner mint, session exchange, githugr tenant-lookup and the
+   `/_internal/*` gate. The signal is accepted anyway, for a reason that survives that blast radius: the
+   compare is FULL-VALUE, so reaching this oracle requires already holding the complete key, and a key
+   holder has a far more direct oracle in a 200-vs-401 on `/_internal/*` — so it grants no capability. The
+   real close is ingress-stripping `x-corelink-fanout-from` at the public edge (which the edge does not do
+   today); the primary sets that header only on the service-binding forward, which never traverses the
+   public edge, so stripping it costs nothing and removes the forgery surface and this oracle together.
 8. The request is routed to the per-tenant DO via `idFromName(resolvedTenantId)`
-   (`worker/src/index.ts:3118-3120`) and dispatched with `stub.fetch` (`worker/src/index.ts:3202`). A
+   (`worker/src/index.ts:3129-3131`) and dispatched with `stub.fetch` (`worker/src/index.ts:3213`). A
    multi-region tenant may first take the LOCAL (this-region) `_system` container branch above this
    forward (`worker/src/index.ts:1961-1963`); a non-resident tenant falls through to the per-tenant DO
    derivation here.
 9. The forwarded request is augmented: strip-then-set the trusted tenant-id, scope, token-prefix, and
-   client-ip headers (`worker/src/index.ts:3123-3154`).
+   client-ip headers (`worker/src/index.ts:3134-3165`).
 10. The whole handler is wrapped by `Sentry.withSentry`, inert until `SENTRY_DSN` is set and with
-    `sendDefaultPii=false` (`worker/src/index.ts:3307-3315`); its `beforeSend`/`beforeSendTransaction`
+    `sendDefaultPii=false` (`worker/src/index.ts:3318-3326`); its `beforeSend`/`beforeSendTransaction`
     run `scrubSentryEvent` (`worker/src/sentry-scrub.ts`) over EVERY event before it leaves the Worker —
     not just sensitive header KEYS but message/exception bodies, breadcrumbs, and `extra`/`contexts`
     VALUES (CoreLink PATs, bearer/basic auth, Stripe `sk_`/`pk_`/`whsec_` keys, emails are
-    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:3316-3321`).
+    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:3327-3332`).
 
 # Invariants
 - Tenant isolation is structural: the DO id is derived solely from the PAT-resolved tenant, never the
-  URL path segment (`worker/src/index.ts:3118-3120`).
+  URL path segment (`worker/src/index.ts:3129-3131`).
 - A client can never smuggle a server-trust header: the strip list is applied on every forward path
   before the Worker sets its own values (`worker/src/index.ts:526-595`). The team-RBAC role header
   `x-corelink-role` (migration 0074) is a member of that strip list, so a client copy is always deleted;
@@ -167,7 +177,7 @@ keeps forged tokens cheap to reject before any expensive work.
 - The signing-key gate is mandatory — a missing/short `PAT_SIGNING_KEY` is a 503, never a silent skip
   (`worker/src/index.ts:1080-1106`).
 - The Worker forwards the D1-resolved `scope` as `x-corelink-scope` and is its sole setter
-  (`worker/src/index.ts:3154`); for a find-only PAT (`pat.find_only = 1`) the forwarded value is narrowed
+  (`worker/src/index.ts:3165`); for a find-only PAT (`pat.find_only = 1`) the forwarded value is narrowed
   to `find-missing` rather than the stored base `read-only` (ADR-0071, `worker/src/index.ts:1332`).
 - On the customer (Clerk-session) forward the Worker sets `x-corelink-scope` from the D1-resolved team
   role, a THREE-way branch (not the old "viewer vs everyone-else"): `viewer` → `read-only`, `member` →
@@ -175,11 +185,11 @@ keeps forged tokens cheap to reject before any expensive work.
   cancel subscription / financial PII) is now OWNER/ADMIN-only and a plain `member` no longer clears the
   container's F-018 billing/PII gate; the Worker is the sole setter (`worker/src/index.ts:2546-2553`).
 - A 404 from the DO is timing-padded to defeat cross-tenant enumeration
-  (`worker/src/index.ts:3216-3224`).
+  (`worker/src/index.ts:3227-3235`).
 - Data-residency is resolved FAIL-CLOSED before the DO forward: an unresolvable region (a D1 fault with
   no cached fallback) is a `503`, never an IAD-local fall-through that could place an EU tenant's bytes in
   US storage; only a resolved `null` (no row / no pin) falls through to IAD-local
-  (`worker/src/index.ts:2985-3002`, `worker/src/lib/tenant_residency_cache.ts:284-291`).
+  (`worker/src/index.ts:2996-3013`, `worker/src/lib/tenant_residency_cache.ts:284-291`).
 
 # Gotchas
 - Argon2id is NOT run in the Worker (cpu_ms budget) — possession on the native CAS/AC/Bazel/Turbo plane
@@ -203,14 +213,14 @@ keeps forged tokens cheap to reject before any expensive work.
 8. `worker/src/index.ts:1751-1792` — the `baseHandler.fetch` entry, request-id, CORS, route match.
 9. `worker/src/index.ts:1794-1811` — health short-circuit (no auth, no DO).
 9b. `worker/src/index.ts:2733-2739` — the `first_cli_authed` emit site (`GET /v1/users/me`, after the PAT-resolved tenant clears the path-spoof guard), handed to `ctx.waitUntil`. The producer module is `worker/src/lib/onboarding_events.ts:170-224` (`emitFirstCliAuthed` returns `void` and swallows every error, so the emit can never add latency to — or fail — the response); every skip path is silent by design, including the one where the binding resolved to the target's default `fetch` export because `entrypoint = "AnalyticsIngest"` is missing, which degrades to a no-op rather than a `TypeError`; the deterministic id is built at `worker/src/lib/onboarding_events.ts:158-160`; the `ANALYTICS_SVC` service binding is declared on `Env` at `worker/src/index.ts:251` and bound with `entrypoint = "AnalyticsIngest"` at `wrangler.toml` `[[env.prod.services]]`. There is NO caller-side ingest key any more: the RPC path is authenticated by the platform (`ingestServerEvent` passes `trusted = true` on that basis), which is what removed the `ANALYTICS_INGEST_KEY` operator prerequisite that kept this emit dark in prod.
-10. `worker/src/index.ts:2742-2928` — per-tier quota enforcement after auth, before forward.
-10a. `worker/src/index.ts:2889-2894` — `resolveTenantTierCached` three-tier tier resolution (L1 isolate → L2 KV `ttier:` 60 s → L3 D1 `getTierForTenant`) for the storage-quota header + request-count cap, replacing the former inline per-request tier D1-PRIMARY read (latency WP slice 2). FAIL-OPEN like the suspend gate: an unconfirmed (`d1Error`) result is returned unchanged and NEVER cached (a transient D1 fault can't pin a tenant to 'free' — F21 preserved), so a stale worker tier is bounded (`≤ 60 s`) and never authoritative (the DO quota FSM re-derives the hard caps). The cache module is `worker/src/lib/tenant_tier_cache.ts:182`.
-10b. `worker/src/index.ts:2978-2983` — `resolveTenantResidency` three-tier residency resolution (L1 isolate → L2 KV `tres:` 60 s → L3 D1) replacing the former inline `SELECT primary_region` per-request D1-PRIMARY read; FAIL-CLOSED `503 RESIDENCY_UNAVAILABLE` on the `RESIDENCY_UNRESOLVED` sentinel (`worker/src/index.ts:2985-3002`), `null` region ⇒ IAD-local (`worker/src/index.ts:3006`). The cache module is `worker/src/lib/tenant_residency_cache.ts:231-298`, whose catch serves a cached region on a transient D1 fault but returns `RESIDENCY_UNRESOLVED` (never caches the error) when none is held (`worker/src/lib/tenant_residency_cache.ts:284-291`).
-11. `worker/src/index.ts:3118-3120` — `idFromName(resolvedTenantId)` per-tenant DO routing.
-12. `worker/src/index.ts:3123-3154` — the augmented forward (strip-then-set trust headers).
-13. `worker/src/index.ts:3154` — forwarding the D1-resolved scope as `x-corelink-scope` (narrowed to `find-missing` for a find-only PAT, ADR-0071 `worker/src/index.ts:1332`).
-14. `worker/src/index.ts:3202` — `stub.fetch` dispatch to the DO.
-14a. `worker/src/index.ts:3251-3280` — the `Server-Timing` emission: `auth` / `wdb` / `origin` / `total`, with `wdb` decomposed into its four serial awaits (`qmeter` / `qtier` / `qstor` / `qresid`). A phase that ran is emitted even at `dur=0`; a phase that was skipped is omitted (the `-1` sentinel at `worker/src/index.ts:1778-1781`), so a cache-served phase is never mistaken for one that did not execute.
-15. `worker/src/index.ts:3216-3224` — 404 timing-pad.
-16. `worker/src/index.ts:3307-3315` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
-17. `worker/src/index.ts:3316-3321` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.
+10. `worker/src/index.ts:2742-2939` — per-tier quota enforcement after auth, before forward.
+10a. `worker/src/index.ts:2900-2905` — `resolveTenantTierCached` three-tier tier resolution (L1 isolate → L2 KV `ttier:` 60 s → L3 D1 `getTierForTenant`) for the storage-quota header + request-count cap, replacing the former inline per-request tier D1-PRIMARY read (latency WP slice 2). FAIL-OPEN like the suspend gate: an unconfirmed (`d1Error`) result is returned unchanged and NEVER cached (a transient D1 fault can't pin a tenant to 'free' — F21 preserved), so a stale worker tier is bounded (`≤ 60 s`) and never authoritative (the DO quota FSM re-derives the hard caps). The cache module is `worker/src/lib/tenant_tier_cache.ts:182`.
+10b. `worker/src/index.ts:2989-2994` — `resolveTenantResidency` three-tier residency resolution (L1 isolate → L2 KV `tres:` 60 s → L3 D1) replacing the former inline `SELECT primary_region` per-request D1-PRIMARY read; FAIL-CLOSED `503 RESIDENCY_UNAVAILABLE` on the `RESIDENCY_UNRESOLVED` sentinel (`worker/src/index.ts:2996-3013`), `null` region ⇒ IAD-local (`worker/src/index.ts:3017`). The cache module is `worker/src/lib/tenant_residency_cache.ts:231-298`, whose catch serves a cached region on a transient D1 fault but returns `RESIDENCY_UNRESOLVED` (never caches the error) when none is held (`worker/src/lib/tenant_residency_cache.ts:284-291`).
+11. `worker/src/index.ts:3129-3131` — `idFromName(resolvedTenantId)` per-tenant DO routing.
+12. `worker/src/index.ts:3134-3165` — the augmented forward (strip-then-set trust headers).
+13. `worker/src/index.ts:3165` — forwarding the D1-resolved scope as `x-corelink-scope` (narrowed to `find-missing` for a find-only PAT, ADR-0071 `worker/src/index.ts:1332`).
+14. `worker/src/index.ts:3213` — `stub.fetch` dispatch to the DO.
+14a. `worker/src/index.ts:3262-3291` — the `Server-Timing` emission: `auth` / `wdb` / `origin` / `total`, with `wdb` decomposed into its four serial awaits (`qmeter` / `qtier` / `qstor` / `qresid`). A phase that ran is emitted even at `dur=0`; a phase that was skipped is omitted (the `-1` sentinel at `worker/src/index.ts:1778-1781`), so a cache-served phase is never mistaken for one that did not execute.
+15. `worker/src/index.ts:3227-3235` — 404 timing-pad.
+16. `worker/src/index.ts:3318-3326` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
+17. `worker/src/index.ts:3327-3332` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.
