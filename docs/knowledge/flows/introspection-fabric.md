@@ -5,7 +5,7 @@ description: "How the corelink-runners fabric resolves a PAT to a tenant, a cach
 source_files:
   - "crates/corelink-container/src/routes/auth_introspect.rs"
   - "crates/corelink-container/src/adapter_pat.rs"
-checkpoint_sha: "ae712b8cc1ea8844572d72f7400efd674725b4f5"
+checkpoint_sha: "8fb8f7fa69a19c9a1d5ddde0c38b5fee8760f794"
 provenance: "AUTHORED"
 tags: ["flows", "auth", "introspect", "runners", "request-flow"]
 timestamp: "2026-06-26T00:00:00Z"
