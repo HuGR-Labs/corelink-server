@@ -2881,20 +2881,36 @@ const baseHandler: ExportedHandler<Env> = {
       // `_anonymous`/`_system`/`_pending`, but there the other three are absent too.
       //
       // Be precise about what is confirmed. CORELINK_INTERNAL_AUTH_KEY is NOT a
-      // metering key — it is the SHARED internal-auth secret. Two DIFFERENT paths
-      // reach it, and only one has the fail-closed property:
+      // metering key — it is the SHARED internal-auth secret. THREE mechanisms
+      // reach it, and the axis that matters is DIRECTION: every inbound one is
+      // fail-closed, the outbound one is not.
       //
-      //   - `resolveConsumerKey` (lib/internal_auth.ts:124-149), used at exactly
-      //     one call site, the `/_internal/*` edge gate below. It serves the shared
-      //     key to its six consumers (pat_mint, admin, erase, dsr_anchor,
-      //     runner_mint, quota_read) only when that consumer's dedicated key is
-      //     UNSET; a key that is SET but under the floor is REFUSED fail-closed.
-      //   - Hand-rolled `env.<DEDICATED> ?? env.CORELINK_INTERNAL_AUTH_KEY` in
-      //     lib/session_exchange.ts and lib/runner_mint.ts, plus githugr
-      //     tenant-lookup which is gated on the shared key directly
-      //     (lib/tenant_lookup.ts:28). These fall back on UNSET too, but check only
-      //     `length === 0` — no >= 32 floor and NO fail-closed refusal, so the
-      //     property the first bullet guarantees does NOT hold here.
+      // INBOUND — verifying a caller:
+      //   (a) `resolveConsumerKey` (lib/internal_auth.ts:124-149), per-consumer:
+      //       serves the shared key only when that consumer's dedicated key is
+      //       UNSET, and REFUSES fail-closed a key that is SET but under the
+      //       floor. Two call sites — the `/_internal/*` edge gate below and
+      //       `requireConsumerAuth` (lib/internal_auth.ts:264), the latter gating
+      //       PAT-rotate (lib/auth_rotate.ts:167) and runner mint + revoke
+      //       (lib/runner_mint.ts:273, lib/runner_mint.ts:599) — so FOUR gates.
+      //   (b) `requireInternalAuth` (lib/internal_auth.ts:224-238), shared-key
+      //       ONLY — there is no per-consumer key for these at all. It enforces
+      //       the same >= 32 floor and fails closed (503 unbound / 401 mismatch),
+      //       gating githugr tenant-lookup (lib/tenant_lookup.ts:90) and session
+      //       exchange's internal arm (lib/session_exchange.ts:868). These two
+      //       carry NO per-consumer isolation, so a shared-key holder passes them
+      //       outright — the WIDEST of the three, and the reason this key's blast
+      //       radius is not bounded by the per-consumer split.
+      //   => six inbound gates accept the shared key.
+      //
+      // OUTBOUND — the credential presented onward to the container: hand-rolled
+      // `env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY` at
+      // lib/session_exchange.ts:506 and :877, lib/auth_rotate.ts:180 and
+      // lib/runner_mint.ts:286. Falls back on UNSET too, but checks only
+      // `length === 0` — no >= 32 floor and NO fail-closed refusal.
+      // (runner_mint, auth_rotate and session_exchange appear on BOTH sides:
+      // strict inbound, loose outbound. That is why a per-FILE split kept
+      // producing wrong sentences — the split is per-direction.)
       //
       // Container-side, the erase and DSR-anchor gates use
       // `resolve_dedicated_auth_key` and have NO fallback at all
