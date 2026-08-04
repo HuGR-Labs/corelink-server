@@ -13,8 +13,8 @@ source_blobs:
   - "worker/src/index.ts@e0300e4d06ccd5aa81bb2bf4c7a8f9c13354b048"
   - "worker/src/lib/pat_verify_cache.ts@b0dafab6381684057de4c0589b5d95d18a35c741"
   - "worker/src/lib/tenant_suspend_gate.ts@bed740c1e2a471244a2c9680fcf4f1e800f26d7c"
-  - "crates/corelink-container/src/adapter_pat.rs@1ebe6fd37ac780c5c159023c3f599d4ba824d2b3"
-checkpoint_sha: "c0fcadc21c9d8dc7c24c96e12f3ed13177a56c21"
+  - "crates/corelink-container/src/adapter_pat.rs@386fafda97f30a5c077a0ea2ce1b994e428b3b27"
+checkpoint_sha: "7bf58501233442c34e6613dd304a38afc3337f75"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -27,7 +27,7 @@ verification cost on a token that cannot possibly be genuine. The moat is two in
 layers: a cheap fail-CLOSED gate at the Cloudflare Worker edge that rejects before any expensive work,
 and a deep Argon2id possession proof in the Rust container plane that only genuine tokens reach. The two
 layers share a design rule — every distinguishable rejection collapses to one uniform answer, so the
-wire never tells an attacker *why* a token failed (`crates/corelink-container/src/adapter_pat.rs:43-47`).
+wire never tells an attacker *why* a token failed (`crates/corelink-container/src/adapter_pat.rs:48-52`).
 This is why a flood of garbage tokens cannot exhaust the container's Argon2id pool: garbage never gets
 there.
 
@@ -67,10 +67,10 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
   split — a leaked erase key cannot pass the anchor gate and vice-versa (least privilege, A6).
 - In the container the **first** verification step is the HMAC fast-reject: the plaintext is parsed and
   a bad signature is rejected pre-D1, so a forged token drives no D1 cost and consumes no Argon2id
-  permit (`crates/corelink-container/src/adapter_pat.rs:661-662`).
+  permit (`crates/corelink-container/src/adapter_pat.rs:945-946`).
 - Only a token that passes HMAC and resolves to a live D1 row reaches the expensive layer: an Argon2id
   verify of the secret segment against the stored PHC hash, run on a blocking thread under a bounded
-  permit (`crates/corelink-container/src/adapter_pat.rs:757-764`).
+  permit (`crates/corelink-container/src/adapter_pat.rs:1097-1104`).
 - On the Worker edge the per-request `pat` read behind `extractAuth` is served through a THREE-TIER read
   cascade — **L1** per-isolate in-memory → **L2** Workers KV → **L3** D1 — orchestrated by
   `verifyPatRowCached` (`worker/src/lib/pat_verify_cache.ts:264-346`). It caches POSITIVE rows ONLY and is
@@ -132,10 +132,10 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 # Invariants
 
 - A token that fails the cheap HMAC fast-reject NEVER reaches the Argon2id layer
-  (`crates/corelink-container/src/adapter_pat.rs:661-662`).
+  (`crates/corelink-container/src/adapter_pat.rs:945-946`).
 - Both layers are constant-time with no length or content oracle — the edge compare
   (`worker/src/lib/internal_auth.ts:172-187`) and the uniform `InvalidPat` collapse in the container
-  (`crates/corelink-container/src/adapter_pat.rs:43-47`).
+  (`crates/corelink-container/src/adapter_pat.rs:48-52`).
 - The edge gate fails CLOSED: an unbound/short secret is unavailable, never an open gate
   (`worker/src/lib/internal_auth.ts:166-172`).
 - The edge PAT-verify cache keeps D1 the source-of-truth (INV-AUTH-NEON-IS-SOT): NEGATIVES are never
@@ -222,9 +222,9 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 2b. `worker/src/lib/internal_auth.ts:91-92` — the `dsr_anchor` branch of the consumer-key ternary (`CORELINK_DSR_ANCHOR_AUTH_KEY`).
 2c. `worker/src/index.ts:295-297` — `internalConsumerForPath` special-cases `/_internal/dsr/anchor` → `dsr_anchor` before the `/_internal/dsr/*` erase catch-all.
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
-4. `crates/corelink-container/src/adapter_pat.rs:43-47` — uniform `InvalidPat`: no on-the-wire oracle.
-5. `crates/corelink-container/src/adapter_pat.rs:661-662` — the HMAC fast-reject, pre-D1, no permit consumed.
-6. `crates/corelink-container/src/adapter_pat.rs:757-764` — the deep Argon2id possession proof on a blocking thread. After it, the container's scope gate additionally fail-CLOSES a find-only PAT before the read grant (`crates/corelink-container/src/adapter_pat.rs:779-781`, ADR-0071): a find-only PAT's CHECK-safe `read-only` base would otherwise `docker pull` via the header-less OCI `/token` exchange.
+4. `crates/corelink-container/src/adapter_pat.rs:48-52` — uniform `InvalidPat`: no on-the-wire oracle.
+5. `crates/corelink-container/src/adapter_pat.rs:945-946` — the HMAC fast-reject, pre-D1, no permit consumed.
+6. `crates/corelink-container/src/adapter_pat.rs:1097-1104` — the deep Argon2id possession proof on a blocking thread. After it, the container's scope gate additionally fail-CLOSES a find-only PAT before the read grant (`crates/corelink-container/src/adapter_pat.rs:1120-1122`, ADR-0071): a find-only PAT's CHECK-safe `read-only` base would otherwise `docker pull` via the header-less OCI `/token` exchange.
 7. `worker/src/lib/tenant_suspend_gate.ts:233-302` — `isTenantSuspended`: the THREE-TIER read L1 in-memory (`SUSPEND_CACHE_TTL_MS = 5 s`, `worker/src/lib/tenant_suspend_gate.ts:84`) → L2 Workers KV (`tsusp:<tenant_id>`, `KV_SUSPEND_TTL_S = 60 s`, `worker/src/lib/tenant_suspend_gate.ts:98`; key at `worker/src/lib/tenant_suspend_gate.ts:101-103`) → L3 D1 (`tenant_offboarding_state`, source-of-truth via the `first-unconstrained` replica session), single-flighted. UNLIKE the pat L2 it caches the NEGATIVE ("not suspended") verdict too — the ratified ADR-0070 trade-off, a ≤ 60 s (KV) + ≤ 5 s (L1) bounded suspend window — with the write-behind handed to `ctx.waitUntil` (`worker/src/lib/tenant_suspend_gate.ts:276-287`; `kvPutSuspend` at `worker/src/lib/tenant_suspend_gate.ts:203-211`); a KV fault is a miss and a D1 fault fails OPEN except a KNOWN-suspended cached value still denies (`worker/src/lib/tenant_suspend_gate.ts:289-295`).
 8. `worker/src/index.ts:1309-1316` — the `extractAuth` fast-suspend arm: a valid PAT whose tenant is suspended/erased returns `tenant_suspended` (G4), now passing the `kv` (`METADATA_KV`) + `waitUntil` opts into `isTenantSuspended`.
 9. `worker/src/lib/pat_verify_cache.ts:264-346` — `verifyPatRowCached`: the POSITIVE-only three-tier read cascade (L1 in-memory → L2 KV → L3 D1). The L1 fresh hit (`worker/src/lib/pat_verify_cache.ts:284-287`) is single-flight-collapsed (`worker/src/lib/pat_verify_cache.ts:289-293`) with a `PAT_VERIFY_CACHE_TTL_MS = 5 s` TTL (`worker/src/lib/pat_verify_cache.ts:153`) and an LRU cap (`worker/src/lib/pat_verify_cache.ts:183-200`); negatives and D1 faults are never cached in any tier, so D1 stays the source-of-truth on every miss (`worker/src/lib/pat_verify_cache.ts:335-339`).

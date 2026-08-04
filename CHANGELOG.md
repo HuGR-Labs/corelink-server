@@ -23,6 +23,84 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(container): every request on the cache-adapter plane ran a full 64-MiB Argon2id, capping
+  a tenant at roughly 3 requests/second — the product was structurally slow at exactly the traffic
+  shape a build cache exists to serve.** `PatVerifier::verify_capability` ran the OWASP-2024
+  Argon2id (`m=64 MiB, t=3, p=4`) on EVERY authenticated request to `/cargo` (sccache), `/npm`,
+  `/pip`, `/brew` and the OCI `/token` exchange. That primitive costs **at least ~0.15 CPU-s** —
+  stated as a LOWER BOUND, because it was measured with the C reference implementation on an
+  Apple-silicon core, and this repo's pure-Rust `argon2` crate on a fraction of an x86 vCPU is
+  slower, not faster. The production container is provisioned at **0.5 vCPU / 4096 MiB**
+  (`corelink-prod-corelinkserver-prod`, read back from the CF Containers API). **Evidence, at the
+  precision it actually supports:** the sccache CI pilot (#1017) recorded four runs of the same job
+  on the same box class — 409 s and 423 s with sccache absent, 917 s at a 22.85 % hit rate, and
+  **631 s at a 100 % hit rate (827 cache operations, 0 misses, 0 errors of any kind)**. The
+  fully-warm run is the informative one: +208…222 s over baseline for 827 verifies, against a
+  predicted Argon2id floor of `827 × 0.15 ÷ 0.5 ≈ 248 s`. Same order, same direction — Argon2id is a
+  **sufficient** explanation of the whole regression. It is not a per-request measurement: **no
+  server-timing breakdown of an authenticated `/cargo` request has ever been captured**, and the
+  ~20 ms probe cited while investigating was a **401**, which short-circuits at the HMAC fast-reject
+  *before* Argon2id and therefore says nothing about this path. `corelink-reapi.yml` carried the
+  competing attribution ("the cost IS the round-trips … D1-over-HTTP bound"); that comment is
+  amended in this change rather than left to contradict the code, and the post-deploy re-run is
+  named there as the experiment that discriminates the two. **The native plane never had this
+  problem** — `NativePatGate` has carried a verify cache since the same latency concern was raised
+  there; the adapter plane simply never got one. **Fix:** memoise the Argon2id result in the
+  verifier (`SecretMatchMemo`), keyed by a domain-separated, length-prefixed SHA-256 over
+  `(plaintext, token_id, stored pat_hash)`, bounded (32 768 entries — sized for a FLEET-wide live
+  set, because the OCI/anonymous surfaces pin all tenants onto shared `_oci` / `_anonymous` Durable
+  Objects) and TTL'd (300 s). What is memoised is ONLY the immutable boolean "this plaintext
+  Argon2id-matches this exact stored PHC hash" — a pure function of the key, which cannot become
+  false. **This opens no revocation window, unlike every other PAT cache in the repo:** stage 1
+  (HMAC against the *current* signing-key overlap set) and stage 2 (the D1 row read, which filters
+  `revoked_at_ms IS NULL` + expiry in SQL) still run on every single request, so revocation, expiry,
+  scope changes, `find_only` and tenant binding are never cached and remain immediate — stronger, on
+  that axis, than the ≤5 s window `NativePatGate` accepts and the up-to-60 s L2-KV window the
+  Worker's `pat_verify_cache` accepts. It adds no timing oracle either: the two ways to earn a 401
+  (unknown `token_id` ⇒ the bounded dummy burn; known `token_id` + WRONG secret ⇒ a real verify)
+  both still pay full Argon2id, because a wrong secret produces a different memo key and can never
+  hit the memo. **What adversarial review removed before merge:** an earlier revision also
+  single-flighted cold misses on a sharded mutex, so a `cargo -jN` burst would run one Argon2id
+  instead of N. Two independent reviewers converged on it and it was cut, because it (a) reopened
+  the token-enumeration oracle the dummy burn exists to close — the lock sat on the row-found path
+  only, making `token_id` liveness observable in the concurrency dimension; (b) waited unbounded
+  *in front of* the 250 ms `ARGON2_PERMIT_WAIT` load-shed, converting a bounded fail-CLOSED into an
+  unbounded stall; and (c) sat upstream of the per-tenant sub-permit, so on the shared `_oci` DO one
+  tenant's flood could block another past the very fairness cap. The cold-burst 503 it addressed is
+  **pre-existing behaviour on `main`, not a regression introduced here**; a correct version
+  coalesces on a shared future (the shape `SingleFlightPatLookup` already uses) and must mirror onto
+  the dummy-burn arm — tracked separately, with its own threat-model review. **The regression lock
+  was proven RED before merge:** with the memo forced to always miss,
+  `memo_hit_skips_argon2id_proven_by_holding_the_only_permit` fails with
+  `Backend("pat verifier overloaded")`. It drains the verifier's only Argon2id permit and holds it,
+  so a verify that still succeeds provably never ran Argon2id, and an un-memoised control PAT
+  asserts the pool really was empty. The eviction test was likewise proven RED with eviction
+  disabled — after two of its assertions were rewritten, because review showed they were vacuous
+  (`contains(newest)` holds by construction since the insert lands after the eviction pass, and
+  `!contains("pt")` holds for any hex string). Three further tests pin the safety claims: a scope
+  downgrade and a revocation each take effect on the very next request with a warm memo, and a
+  re-hashed row is never served from it. **A confirmation pass by the reviewer who found the first
+  three then surfaced a fourth defect that had been present since the first draft and that everyone,
+  including that reviewer, had walked past:** the memo was populated at the end of the Argon2id step,
+  *before* the step-4 scope gate. That is an oracle. A PAT whose secret is CORRECT but whose scope is
+  rejected (`find_only`, or no cache grant — a live, shipped ADR-0071 state) would be memoised on its
+  first slow 401 and 401 in ~0 ms on every attempt after, sorting "live credential, insufficient
+  scope" from "dead / unknown / wrong secret", and a *revoked* PAT from a merely *scope-downgraded*
+  one, on latency alone with no grant of any kind. The module header requires every rejection reason
+  to be indistinguishable on the wire, and latency is part of the wire. The insert now happens past
+  the scope gate, so a scope-rejected PAT re-pays Argon2id on every request exactly as on `main`;
+  `a_scope_rejected_pat_is_never_memoised` locks it and was proven RED against the old placement,
+  failing with `got InvalidPat` — the fast 401 that IS the oracle. A second confirmation pass then
+  found the tail of the same class and it is closed too: the memo key bound only
+  `(plaintext, token_id, pat_hash)`, so a PAT that verified successfully and was then *downgraded*
+  in D1 (rather than revoked) kept hitting the memo for the rest of the TTL and 401'd in ~0 ms, while
+  a *revoked* PAT still paid the slow dummy burn — separating "downgraded" from "revoked" on latency.
+  `scope` and `find_only` are now two more length-prefixed fields in the fingerprint (domain tag
+  bumped to `v2`), so any change to either makes the old entry unreachable exactly as a `pat_hash`
+  change already did. `a_scope_downgrade_invalidates_the_memo` locks it, likewise proven RED with
+  those fields removed from the key. **Every one of the five findings across three reviewers is
+  closed in-branch; none was deferred.** 36/36 `adapter_pat`, 10/10 `native_pat_gate` and 834/834
+  `routes::` tests pass.
 - **fix(ci): five workflow `paths:` globs matched zero tracked files, so those triggers had
   silently stopped firing — and a trigger that never fires produces no red check.** A
   `pull_request` workflow runs only when a changed file matches one of its globs; when a

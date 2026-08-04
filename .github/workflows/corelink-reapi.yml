@@ -156,10 +156,36 @@ jobs:
       #
       # This is NOT a malfunction: 0 cache errors, 0 read errors, 0 write errors,
       # 0 timeouts across both engaged runs. The surface authenticated, served
-      # reads and accepted writes flawlessly. The cost IS the round-trips, from an
-      # ephemeral box against a CAS hot path already known to be D1-over-HTTP
-      # bound. A cache only pays when a fetch is cheaper than the work it skips,
-      # and for a 4-vCPU box compiling small crate units, it is not.
+      # reads and accepted writes flawlessly. A cache only pays when a fetch is
+      # cheaper than the work it skips, and for a 4-vCPU box compiling small
+      # crate units, on these runs, it was not.
+      #
+      # ⚠️ ATTRIBUTION AMENDED (2026-08-03). The numbers above stand unchanged;
+      # the CAUSE assigned to them here does not. This comment blamed "the
+      # round-trips … a CAS hot path already known to be D1-over-HTTP bound".
+      # That was reasoning by analogy to the native plane, not a measurement of
+      # THIS path, and tracing `/cargo` found a larger, adapter-plane-specific
+      # term the native plane does not pay: every authenticated request ran a
+      # full OWASP-2024 Argon2id (m=64 MiB, t=3, p=4, >=0.15 CPU-s) on a 0.5-vCPU
+      # container, uncached. For the 100 %-hit run that predicts
+      # `827 x 0.15 / 0.5 ~= 248 s` against the +208...222 s observed — a
+      # sufficient explanation of the whole regression on its own, and the D1 hop
+      # is NOT needed to account for it (`adapter_pat.rs` has said since before
+      # this pilot that "the D1 hop is dwarfed by Argon2id").
+      #
+      # Neither attribution is measurement-confirmed: no per-request server-timing
+      # breakdown of an AUTHENTICATED /cargo request has ever been captured, and
+      # the ~20 ms probe cited while investigating was a 401, which short-circuits
+      # at the HMAC fast-reject BEFORE Argon2id and therefore measures nothing
+      # about this path.
+      #
+      # The verdict below is UNCHANGED and still binding: the pilot stays refused.
+      # What changes is that there is now a specific, falsifiable hypothesis with
+      # a fix in flight (the `SecretMatchMemo` in `adapter_pat.rs`). Re-running
+      # this lane AFTER that container deploys is the experiment that
+      # discriminates the two causes — if the warm run drops to or below the
+      # 409-423 s baseline, Argon2id was the cost; if it does not, the round-trip
+      # explanation survives and the refusal hardens.
       #
       # Retracted with it: the 676 s cold baseline this work was justified with,
       # which NONE of the four runs reproduces.

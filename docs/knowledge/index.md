@@ -11,7 +11,7 @@ profile_version: '0.1'
 
 This is the reserved machine-generated listing of every concept in `docs/knowledge/` (profile §1 / §2.3). Concepts are grounded code/docs knowledge; author new ones with `scripts/okf_scaffold.py` and re-run this generator. The frozen contract lives outside the bundle at `docs/internal/okf-wiki/01-okf-corelink-profile.contract.md`; the change history is in `/log.md`.
 
-**Concepts: 158**
+**Concepts: 160**
 
 ## planes
 

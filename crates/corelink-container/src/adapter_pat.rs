@@ -33,7 +33,12 @@
 //!    — global permit + a single shared synthetic per-tenant bucket).
 //! 3. **Full verify** ([`verify_with_hash`]) — constant-time `token_id`
 //!    match + HMAC + Argon2id of the secret segment against the stored
-//!    PHC hash. Run on a blocking thread (Argon2id is CPU-heavy).
+//!    PHC hash. Run on a blocking thread (Argon2id is CPU-heavy), and
+//!    **memoised** by [`SecretMatchMemo`]: the memoised fact is the
+//!    immutable "this plaintext matches this PHC hash", never an
+//!    authorization decision. Steps 1 and 2 still run on every request,
+//!    so revocation, expiry, scope and tenant binding are never cached
+//!    and stay immediate on this plane.
 //! 4. **Scope gate** — fail-CLOSED unless the D1 `scope` string grants a
 //!    cache capability. The port carries no operation, so this asserts
 //!    only "has SOME cache capability"; per-operation read/write is
@@ -49,11 +54,12 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use corelink_pat::{verify_hmac_only_multi, verify_with_hash_multi, PatHash, PatSigningKey};
 use futures::future::{BoxFuture, FutureExt, Shared};
+use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::scope::{requires_cache_read, requires_cache_write};
@@ -359,6 +365,247 @@ struct PerTenantEntry {
     last_access: u64,
 }
 
+/// TTL of a memoised Argon2id secret-match ([`SecretMatchMemo`]).
+///
+/// ⚠️ **This is NOT a revocation window and must not be read as one.** The
+/// repo's other PAT caches (`native_pat_gate::VERIFY_CACHE_TTL`, the Worker's
+/// `PAT_VERIFY_CACHE_TTL_MS`) memoise the *authorization decision* — they skip
+/// the D1 row on a hit, so their TTL literally bounds how long a revoked PAT
+/// keeps access, and both are pinned at 5 s against `SLO-FRESH-PAT-REVOKE`.
+/// This memo caches something categorically different: the single boolean
+/// "Argon2id(`plaintext`) matches this exact stored PHC hash". That is a **pure
+/// function of the memo key itself** — it can never become false, and it
+/// carries no tenant, no scope, no expiry, and no revocation state. Every one
+/// of those still comes from the per-request, uncached D1 row read
+/// (`PAT_LOOKUP_SQL`, which filters `revoked_at_ms IS NULL` + expiry in SQL),
+/// so **revocation stays immediate on the adapter plane** — strictly stronger
+/// than the ≤5 s window the native plane accepts.
+///
+/// The TTL therefore exists only as a memory-hygiene bound (bounded staleness
+/// for a token that stops being used), not as a security control. 300 s keeps a
+/// long build's thousands of requests on ONE Argon2id while still letting an
+/// idle fleet's entries age out well inside a container's lifetime.
+const SECRET_MATCH_MEMO_TTL: Duration = Duration::from_secs(300);
+
+/// Upper bound on live [`SecretMatchMemo`] entries. Each entry is a 64-char hex
+/// fingerprint + an `Instant` (~100 B), so 32 768 is ~3 MiB — still orders of
+/// magnitude below the 64-MiB-per-verify Argon2id allocations this memo exists
+/// to avoid, on a 4 GiB container.
+///
+/// ⚠️ Sizing must assume a FLEET-WIDE live set, not one tenant's. The
+/// tenant-scoped adapter routes (`/cargo`, `/npm`, `/pip`, `/brew`) do route one
+/// tenant to one Durable Object and therefore one container
+/// (`worker/src/index.ts` `idFromName(tenant_id)`), but the OCI `/token`
+/// exchange and the public/anonymous surfaces pin ALL tenants onto the SHARED
+/// `_oci` / `_anonymous` DOs — the same reason `ARGON2_VERIFY_PERMITS` above
+/// talks about OOM-killing "the shared container … a registry outage for ALL
+/// tenants". A cap sized for one tenant would put that shared container into
+/// at-capacity eviction on a working set it should comfortably hold.
+///
+/// Be honest about what this buys: raising the cap DEFERS saturation, it does
+/// not remove it. Once a shared DO's live set does reach the cap, every
+/// cold-miss insert takes the at-capacity branch and pays an O(cap) purge while
+/// holding the same `std::sync::Mutex` that each warm `contains()` needs — and a
+/// bigger cap makes that pass longer, not shorter. It is acceptable rather than
+/// ideal because the insert RATE is bounded by [`ARGON2_VERIFY_PERMITS`]: a cold
+/// miss cannot happen without an Argon2id, so inserts arrive at most ~50/s even
+/// on a saturated box, which is a small duty cycle for a microsecond-scale pass
+/// over an in-memory map. If a shared surface is ever observed to sit at
+/// capacity in steady state, the right fix is an O(1)-amortised eviction (or
+/// moving the purge off the request path), NOT another cap bump.
+const SECRET_MATCH_MEMO_CAP: usize = 32_768;
+
+/// One memoised secret-match: the tick at which it was recorded. The value is
+/// the *presence* of the key — there is deliberately nothing else to store (see
+/// [`SECRET_MATCH_MEMO_TTL`] on why no authorization state may live here).
+#[derive(Debug, Clone, Copy)]
+struct SecretMatchEntry {
+    verified_at: Instant,
+}
+
+/// A bounded, TTL'd set of proven Argon2id secret-matches.
+///
+/// # What is memoised
+///
+/// Exactly one fact: *"the presented plaintext's secret segment Argon2id-verifies
+/// against this exact stored PHC hash"*. The key is a domain-separated,
+/// length-prefixed SHA-256 over `(plaintext, token_id, stored_pat_hash)` — never
+/// the plaintext itself, so the map cannot leak a usable secret (same posture as
+/// `native_pat_gate::fingerprint`).
+///
+/// # Why memoising it is sound
+///
+/// - **Immutable fact.** Argon2id is deterministic, so the memoised boolean is a
+///   pure function of the key. It cannot go stale in the direction that matters
+///   (a `true` cannot silently become `false`).
+/// - **Re-hash invalidates automatically.** `stored_pat_hash` is *in* the key, so
+///   if the row's `pat_hash` ever changes the old entry is simply unreachable.
+/// - **Key-rotation is still enforced per request.** The HMAC fast-reject (stage 1)
+///   runs against the *current* signing-key overlap set on EVERY request, before
+///   this memo is consulted — dropping a rotated-out key still rejects immediately.
+/// - **No authorization state.** tenant / scope / `find_only` / expiry /
+///   revocation all come from the fresh per-request D1 row. See
+///   [`SECRET_MATCH_MEMO_TTL`].
+///
+/// # Why it adds no timing oracle
+///
+/// The pair that must stay indistinguishable is the two ways to earn a **401**:
+/// (a) a valid-HMAC token for an unknown/expired/revoked `token_id` → the bounded
+/// dummy burn, and (b) a known `token_id` presented with the WRONG secret → a real
+/// Argon2id. A wrong secret changes the plaintext, hence the key, so case (b) can
+/// **never** hit the memo — it always pays full Argon2id, exactly as before. A hit
+/// is only reachable for a plaintext that already verified, which is a request that
+/// returns 200 anyway. Parity between the two 401 paths is preserved.
+struct SecretMatchMemo {
+    /// `fingerprint -> entry`. Sync mutex; the guard is NEVER held across an
+    /// `.await` (every method here is synchronous and returns before the caller
+    /// awaits anything).
+    entries: Mutex<HashMap<String, SecretMatchEntry>>,
+    /// Entry cap ([`SECRET_MATCH_MEMO_CAP`] in production). A field, not a const,
+    /// so a test can shrink it to drive the eviction path deterministically.
+    cap: usize,
+    /// Entry TTL ([`SECRET_MATCH_MEMO_TTL`] in production). A field, not a const,
+    /// so a test can shrink it to drive expiry deterministically.
+    ttl: Duration,
+}
+
+impl SecretMatchMemo {
+    fn new(cap: usize, ttl: Duration) -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+            cap,
+            ttl,
+        }
+    }
+
+    /// `true` when `fp` has a non-expired proven match.
+    ///
+    /// FAIL-SAFE: a poisoned lock reports `false`, so the caller runs the full
+    /// Argon2id. A bookkeeping fault must only ever cost performance, never
+    /// admit an unverified secret — and never reject a legitimate one.
+    fn contains(&self, fp: &str) -> bool {
+        let Ok(mut entries) = self.entries.lock() else {
+            return false;
+        };
+        match entries.get(fp) {
+            Some(entry) if entry.verified_at.elapsed() < self.ttl => true,
+            Some(_) => {
+                // Expired — evict on read so a recurring token cannot accumulate
+                // stale entries between eviction sweeps.
+                let _ = entries.remove(fp);
+                false
+            }
+            None => false,
+        }
+    }
+
+    /// Record a proven match for `fp`, bounding the map at [`Self::cap`].
+    ///
+    /// On a full map a single pass drops every expired entry and remembers the
+    /// oldest survivor; if that pass freed nothing, the oldest survivor is
+    /// evicted so the insert still lands. O(n) only on the insert that finds the
+    /// map full — never on a hit, and never on an insert with headroom.
+    ///
+    /// FAIL-SAFE: a poisoned lock silently skips the insert (the next request
+    /// simply re-runs Argon2id).
+    fn insert(&self, fp: String) {
+        let Ok(mut entries) = self.entries.lock() else {
+            return;
+        };
+        if entries.len() >= self.cap && !entries.contains_key(&fp) {
+            let now = Instant::now();
+            let ttl = self.ttl;
+            let mut oldest: Option<(String, Instant)> = None;
+            entries.retain(|key, entry| {
+                let live = now.duration_since(entry.verified_at) < ttl;
+                // `Option::is_none_or` would read better but is stable only
+                // since 1.82; this crate's MSRV is 1.80 (clippy::incompatible_msrv).
+                let is_oldest_so_far = match oldest.as_ref() {
+                    Some((_, at)) => entry.verified_at < *at,
+                    None => true,
+                };
+                if live && is_oldest_so_far {
+                    oldest = Some((key.clone(), entry.verified_at));
+                }
+                live
+            });
+            // Purging expired entries freed nothing ⇒ evict the oldest survivor
+            // so the map stays bounded and the new entry still lands.
+            if entries.len() >= self.cap {
+                if let Some((key, _)) = oldest {
+                    let _ = entries.remove(&key);
+                }
+            }
+        }
+        let _ = entries.insert(
+            fp,
+            SecretMatchEntry {
+                verified_at: Instant::now(),
+            },
+        );
+    }
+
+    /// Test-only: live entry count, for asserting the cap actually bounds.
+    #[cfg(test)]
+    fn len_for_test(&self) -> usize {
+        self.entries.lock().map(|e| e.len()).unwrap_or(0)
+    }
+}
+
+/// Hand-written so the fingerprint set can never reach a log. A derived `Debug`
+/// would print every live entry, and the set of fingerprints currently held IS
+/// a live-PAT-presence oracle for anyone with log access — the same reason
+/// `PatVerifier`'s own `Debug` redacts `signing_keys`. Only the count escapes.
+impl std::fmt::Debug for SecretMatchMemo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecretMatchMemo")
+            .field(
+                "entries",
+                &format_args!("[{} REDACTED]", self.entries.lock().map_or(0, |e| e.len())),
+            )
+            .field("cap", &self.cap)
+            .field("ttl", &self.ttl)
+            .finish()
+    }
+}
+
+/// The [`SecretMatchMemo`] key: a domain-separated, length-prefixed SHA-256 over
+/// every field of the row that the decision depends on —
+/// `(plaintext, token_id, stored_pat_hash, scope, find_only)`.
+///
+/// Length-prefixing every field makes the pre-image unambiguous (no
+/// concatenation-boundary confusion between two different tuples), and the
+/// domain tag keeps this fingerprint from ever colliding with another
+/// SHA-256-of-a-token use in the codebase (e.g. `native_pat_gate::fingerprint`).
+/// Only the digest is retained, so the memo never holds recoverable secret
+/// material.
+///
+/// `scope` and `find_only` are in the key even though the gate re-reads them
+/// fresh every request and the memoised fact does not depend on them. They are
+/// here to close the last latency tail: without them, a PAT that verified
+/// successfully and was then *downgraded* in D1 (rather than revoked) would keep
+/// hitting the memo for the rest of the TTL and 401 in ~0 ms, while a *revoked*
+/// PAT still pays the slow dummy burn — distinguishing "downgraded" from
+/// "revoked" on latency alone. With them in the key, any change to either field
+/// makes the old entry unreachable, exactly as a `pat_hash` change already does,
+/// and the two rejections stay uniform.
+fn secret_match_fingerprint(
+    plaintext: &str,
+    token_id: &str,
+    pat_hash: &str,
+    scope: &str,
+    find_only: bool,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"corelink/adapter-pat/secret-match/v2\0");
+    let find_only = if find_only { "1" } else { "0" };
+    for part in [plaintext, token_id, pat_hash, scope, find_only] {
+        hasher.update((part.len() as u64).to_be_bytes());
+        hasher.update(part.as_bytes());
+    }
+    hex::encode(hasher.finalize())
+}
+
 /// Container-side PAT → tenant verifier (Option B). Trait-agnostic: each
 /// adapter route module wraps an `Arc<PatVerifier>` in a thin newtype
 /// that impls that adapter's `TenantResolver` port.
@@ -412,6 +659,36 @@ pub struct PatVerifier {
     /// ([`PER_TENANT_MAP_CAP`] in production). A field (not a const) so a test
     /// can shrink it to drive the eviction path deterministically.
     per_tenant_map_cap: usize,
+    /// Memoised Argon2id secret-matches — the fix for the adapter plane's
+    /// throughput ceiling.
+    ///
+    /// Argon2id at the OWASP-2024 cost (`m=64 MiB, t=3, p=4`) costs **at least
+    /// ~0.15 CPU-s** per verify — that figure is a LOWER BOUND measured with the
+    /// C reference implementation on an Apple-silicon core, and the pure-Rust
+    /// `argon2` crate on a fraction of an x86 vCPU is slower, not faster. The
+    /// production container is provisioned at **0.5 vCPU**
+    /// (`corelink-prod-corelinkserver-prod`, read back from the CF Containers
+    /// API). Running it on EVERY request therefore capped a tenant's adapter
+    /// plane at roughly 3 requests/second regardless of client concurrency —
+    /// crippling for the small-object, high-frequency traffic a build cache is
+    /// made of (sccache/cargo, npm, pip, brew, OCI all issue thousands of tiny
+    /// requests per build).
+    ///
+    /// Evidence from the sccache CI pilot (#1017), stated at the precision it
+    /// actually supports: the fully-warm run served **827 cache operations at a
+    /// 100 % hit rate in 631 s against a 409-423 s cold baseline** (+208…222 s).
+    /// The predicted Argon2id floor for those 827 verifies is
+    /// `827 × 0.15 ÷ 0.5 ≈ 248 s`. That is the right order of magnitude and the
+    /// same direction, which makes Argon2id a SUFFICIENT explanation of the
+    /// regression — it is not a per-request measurement of the authenticated
+    /// path, and none has been captured yet.
+    ///
+    /// The native plane already solved this with
+    /// `native_pat_gate::NativePatGate`'s verify cache; the adapter plane never
+    /// got one. This memo closes that gap WITHOUT native's ≤5 s revocation
+    /// window, because it memoises only the immutable Argon2id comparison and
+    /// leaves the D1 row read per-request. See [`SecretMatchMemo`].
+    secret_match_memo: Arc<SecretMatchMemo>,
 }
 
 impl std::fmt::Debug for PatVerifier {
@@ -458,6 +735,13 @@ impl PatVerifier {
             per_tenant_tick: Arc::new(AtomicU64::new(0)),
             per_tenant_cap: ARGON2_PER_TENANT_PERMITS,
             per_tenant_map_cap: PER_TENANT_MAP_CAP,
+            // Memoise the (immutable) Argon2id secret-match so a build's
+            // thousands of requests pay it once, not once each. Revocation is
+            // unaffected — the D1 row is still read per request.
+            secret_match_memo: Arc::new(SecretMatchMemo::new(
+                SECRET_MATCH_MEMO_CAP,
+                SECRET_MATCH_MEMO_TTL,
+            )),
         }
     }
 
@@ -722,47 +1006,104 @@ impl PatVerifier {
         //    CPU-heavy and must not stall the async worker). Re-parses,
         //    constant-time matches token_id, re-checks HMAC, then
         //    Argon2id-verifies the secret segment against the stored hash.
-        let plaintext = pat_plaintext.to_owned();
-        let signing_keys = Arc::clone(&self.signing_keys);
-        let stored_hash = PatHash::from_phc_string(row.pat_hash);
-        // Finding #2: bound concurrent Argon2id. Acquire a permit (bounded
-        // wait) BEFORE the blocking work; on acquire-timeout the verifier is
-        // overloaded — return `Backend` (reusing the existing variant, which
-        // the OCI `/token` handler and the native gate already map to a
-        // non-leaky fail-CLOSED rejection) rather than letting the request pile
-        // on more 64-MiB allocations. The permit is moved into the blocking
-        // closure and dropped there, so it is held ONLY across the Argon2id.
-        let permit = match tokio::time::timeout(
-            ARGON2_PERMIT_WAIT,
-            Arc::clone(&self.argon2_permits).acquire_owned(),
-        )
-        .await
-        {
-            Ok(Ok(permit)) => permit,
-            Ok(Err(_closed)) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
-            Err(_timeout) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
-        };
-        // Finding #1: per-tenant fairness. With the GLOBAL permit already held,
-        // acquire this tenant's sub-permit (consistent order global→per-tenant
-        // ⇒ deadlock-free). If the tenant is at its sub-cap, fail-CLOSED with
-        // the SAME overloaded signal as a global timeout — so ONE tenant
-        // flooding distinct PATs cannot drain the whole global pool and starve
-        // others. The `permit` (global) is dropped on this early return by
-        // RAII, so a per-tenant rejection does NOT leak a global permit.
-        // `Ok(None)` is the fail-safe fall-through to global-only bounding.
-        let tenant_permit = match self.acquire_per_tenant(&row.tenant_id).await {
-            Ok(maybe_permit) => maybe_permit,
-            Err(()) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
-        };
-        let verify_result = tokio::task::spawn_blocking(move || {
-            let r = verify_with_hash_multi(&plaintext, &token_id, &stored_hash, &signing_keys);
-            drop(permit); // release the global Argon2id permit the moment the work ends
-            drop(tenant_permit); // release the per-tenant permit too (RAII, both paths)
-            r
-        })
-        .await
-        .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
-        verify_result.map_err(|_| VerifyError::InvalidPat)?;
+        //
+        //    MEMOISED ([`SecretMatchMemo`]): Argon2id at the OWASP-2024 cost is
+        //    ~0.15 CPU-s and the container runs at 0.5 vCPU, so paying it per
+        //    request capped one tenant's whole adapter plane at ~3 req/s. The
+        //    memo is keyed on (plaintext, token_id, stored pat_hash) and holds
+        //    ONLY the immutable "these match" boolean — stages 1 and 2 above
+        //    (HMAC against the CURRENT key set; the expiry- and
+        //    revocation-filtered D1 row read) still run on EVERY request, so
+        //    this changes no authorization decision and opens NO revocation
+        //    window. A wrong secret yields a different key and therefore always
+        //    pays the full Argon2id, which is what keeps the two 401 paths
+        //    (unknown token_id ⇒ dummy burn / wrong secret ⇒ real verify) in
+        //    timing parity.
+        //
+        //    DELIBERATELY LOCK-FREE. An earlier revision of this fix also
+        //    single-flighted the cold miss on a sharded mutex, so a `cargo -jN`
+        //    build's first N simultaneous requests would run ONE Argon2id rather
+        //    than N. Adversarial review killed it, and the reasons are worth
+        //    keeping so it is not reintroduced naively:
+        //      (a) it reopened the token-enumeration oracle the dummy burn at
+        //          step 2 exists to close — the lock sat on the row-FOUND path
+        //          only, so N concurrent copies of one wrong-secret token cost
+        //          ~N×Argon2id when the `token_id` existed and ~1× when it did
+        //          not, making liveness observable in the concurrency dimension;
+        //      (b) the lock wait was unbounded and sat IN FRONT of the two
+        //          `ARGON2_PERMIT_WAIT` load-sheds, converting a bounded 250 ms
+        //          fail-CLOSED into an unbounded stall (see the doc on
+        //          `ARGON2_PERMIT_WAIT` for why that shed exists); and
+        //      (c) it was acquired before the per-tenant sub-permit, so on the
+        //          SHARED `_oci` / `_anonymous` Durable Objects one tenant's
+        //          flood could block another upstream of the very fairness cap
+        //          `ARGON2_PER_TENANT_PERMITS` provides.
+        //    A correct version would coalesce on a shared FUTURE (the shape
+        //    `SingleFlightPatLookup` above already uses: every waiter resolves
+        //    when the ONE verify completes, so there is no queue to stall in)
+        //    and would have to mirror onto the dummy-burn arm to keep the two
+        //    401 paths symmetric. That is a separate change with its own
+        //    threat-model review; the cold-burst 503 it would fix is
+        //    pre-existing behaviour, not a regression introduced here.
+        let fp = secret_match_fingerprint(
+            pat_plaintext,
+            token_id.as_str(),
+            &row.pat_hash,
+            &row.scope,
+            row.find_only,
+        );
+        // Whether THIS request paid the Argon2id. The memo is populated only at
+        // the very END of the pipeline, after the step-4 scope gate — see the
+        // comment there for why populating it here would be an oracle.
+        let mut proved_here = false;
+        if !self.secret_match_memo.contains(&fp) {
+            proved_here = true;
+            let plaintext = pat_plaintext.to_owned();
+            let signing_keys = Arc::clone(&self.signing_keys);
+            let stored_hash = PatHash::from_phc_string(row.pat_hash.clone());
+            // Finding #2: bound concurrent Argon2id. Acquire a permit (bounded
+            // wait) BEFORE the blocking work; on acquire-timeout the verifier is
+            // overloaded — return `Backend` (reusing the existing variant, which
+            // the OCI `/token` handler and the native gate already map to a
+            // non-leaky fail-CLOSED rejection) rather than letting the request pile
+            // on more 64-MiB allocations. The permit is moved into the blocking
+            // closure and dropped there, so it is held ONLY across the Argon2id.
+            let permit = match tokio::time::timeout(
+                ARGON2_PERMIT_WAIT,
+                Arc::clone(&self.argon2_permits).acquire_owned(),
+            )
+            .await
+            {
+                Ok(Ok(permit)) => permit,
+                Ok(Err(_closed)) => {
+                    return Err(VerifyError::Backend("pat verifier overloaded".into()))
+                }
+                Err(_timeout) => {
+                    return Err(VerifyError::Backend("pat verifier overloaded".into()))
+                }
+            };
+            // Finding #1: per-tenant fairness. With the GLOBAL permit already held,
+            // acquire this tenant's sub-permit (consistent order global→per-tenant
+            // ⇒ deadlock-free). If the tenant is at its sub-cap, fail-CLOSED with
+            // the SAME overloaded signal as a global timeout — so ONE tenant
+            // flooding distinct PATs cannot drain the whole global pool and starve
+            // others. The `permit` (global) is dropped on this early return by
+            // RAII, so a per-tenant rejection does NOT leak a global permit.
+            // `Ok(None)` is the fail-safe fall-through to global-only bounding.
+            let tenant_permit = match self.acquire_per_tenant(&row.tenant_id).await {
+                Ok(maybe_permit) => maybe_permit,
+                Err(()) => return Err(VerifyError::Backend("pat verifier overloaded".into())),
+            };
+            let verify_result = tokio::task::spawn_blocking(move || {
+                let r = verify_with_hash_multi(&plaintext, &token_id, &stored_hash, &signing_keys);
+                drop(permit); // release the global Argon2id permit the moment the work ends
+                drop(tenant_permit); // release the per-tenant permit too (RAII, both paths)
+                r
+            })
+            .await
+            .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
+            verify_result.map_err(|_| VerifyError::InvalidPat)?;
+        }
 
         // 4. Scope gate — fail-CLOSED on NO cache capability at all, then
         //    surface the read/write split so credential-minting callers can
@@ -783,6 +1124,26 @@ impl PatVerifier {
             return Err(VerifyError::InvalidPat);
         }
         let can_write = requires_cache_write(&row.scope);
+
+        // ⚠️ The memo is populated HERE — past the scope gate — and nowhere
+        // earlier. Populating it at the end of step 3 (right after the Argon2id
+        // succeeded) looks natural and is an ORACLE: a PAT whose secret is
+        // CORRECT but whose scope is rejected (`find_only`, or no cache grant)
+        // would be memoised on its first, slow 401, and every later attempt with
+        // that same token would 401 in ~0 ms instead of paying Argon2id. An
+        // attacker replaying a bag of leaked plaintexts TWICE could then sort
+        // "live credential, insufficient scope" from "dead/unknown/wrong-secret"
+        // — and a *revoked* PAT (row gone ⇒ slow dummy burn) from a merely
+        // *scope-downgraded* one (fast memo hit) — purely on latency, with no
+        // grant of any kind. The module header requires every rejection reason to
+        // be indistinguishable on the wire; latency is part of the wire.
+        //
+        // Gating on `proved_here` (rather than inserting unconditionally) keeps a
+        // warm hit off the memo's write lock and keeps the TTL anchored at the
+        // proof, not sliding on use.
+        if proved_here {
+            self.secret_match_memo.insert(fp);
+        }
 
         Ok((row.tenant_id, can_write))
     }
@@ -849,6 +1210,10 @@ impl PatVerifier {
             per_tenant_tick: Arc::new(AtomicU64::new(0)),
             per_tenant_cap: per_tenant_permits,
             per_tenant_map_cap: PER_TENANT_MAP_CAP,
+            secret_match_memo: Arc::new(SecretMatchMemo::new(
+                SECRET_MATCH_MEMO_CAP,
+                SECRET_MATCH_MEMO_TTL,
+            )),
         }
     }
 
@@ -1653,5 +2018,300 @@ mod tests {
             "error not cached"
         );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    // ---------------------------------------------------------------------
+    // SecretMatchMemo — the Argon2id memo that lifts the adapter plane's
+    // ~3 req/s throughput ceiling. The tests below are written to prove the
+    // two claims that make it safe, not merely that it is fast:
+    //   (1) a memo HIT genuinely skips Argon2id, and
+    //   (2) it caches NO authorization state — revocation, scope changes and
+    //       re-hashes all still take effect on the very next request.
+    // ---------------------------------------------------------------------
+
+    /// A `FakeLookup` holding several rows (the single-row `with_row` cannot
+    /// serve the control arm of the permit-exhaustion test, which needs a
+    /// SECOND, un-memoised PAT to resolve).
+    fn fake_with_rows(pairs: Vec<(String, PatRow)>) -> FakeLookup {
+        FakeLookup {
+            rows: pairs.into_iter().collect(),
+            calls: AtomicUsize::new(0),
+            backend_err: None,
+        }
+    }
+
+    /// A memo HIT must not run Argon2id.
+    ///
+    /// Proven behaviourally rather than by counting: we HOLD the verifier's one
+    /// and only Argon2id permit, which makes any real Argon2id impossible (the
+    /// acquire times out after `ARGON2_PERMIT_WAIT` into `Backend`). A verify
+    /// that still SUCCEEDS under that condition provably never entered the
+    /// Argon2id path. The second half is the control — without it, the test
+    /// would pass just as happily if the permit had never actually been held.
+    #[tokio::test]
+    async fn memo_hit_skips_argon2id_proven_by_holding_the_only_permit() {
+        let key = test_key();
+        let (pt, tid, hash, tenant) = mint_pat(&key, 21, SCOPE_CACHE_RW);
+        let (pt_other, tid_other, hash_other, tenant_other) = mint_pat(&key, 22, SCOPE_CACHE_RW);
+        let lookup = Arc::new(fake_with_rows(vec![
+            (tid, row(&hash, &tenant, "cas:rw")),
+            (tid_other, row(&hash_other, &tenant_other, "cas:rw")),
+        ]));
+        // ONE global permit, so holding it drains the pool completely.
+        let verifier = PatVerifier::with_key_set_and_permits(lookup, vec![(*key).clone()], 1);
+
+        // Cold: runs the real Argon2id and memoises the match.
+        assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
+
+        // Drain the pool and keep it drained for the rest of the test.
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        // Warm: succeeds with ZERO permits available ⇒ no Argon2id ran.
+        assert_eq!(
+            verifier.verify(&pt).await.unwrap(),
+            tenant,
+            "a memoised PAT must verify without an Argon2id permit"
+        );
+
+        // CONTROL: a different, un-memoised PAT MUST fail-closed on the very
+        // same drained pool — which is what proves the pool really was empty.
+        let err = verifier.verify(&pt_other).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "un-memoised PAT must still need (and fail to get) a permit, got {err:?}"
+        );
+    }
+
+    /// The memo holds no authorization state: revocation and scope changes in
+    /// D1 take effect on the NEXT request, with no TTL window. This is the
+    /// property that makes the adapter plane strictly stronger than the native
+    /// plane's ≤5 s `native_pat_gate::VERIFY_CACHE_TTL`.
+    #[tokio::test]
+    async fn memo_caches_no_authorization_state() {
+        let key = test_key();
+        let (pt, _tid, hash, tenant) = mint_pat(&key, 31, SCOPE_CACHE_RW);
+        let lookup = Arc::new(SwitchableLookup::new(
+            Ok(Some(row(&hash, &tenant, "cas:rw"))),
+            0,
+        ));
+        let verifier = PatVerifier::new(lookup.clone(), key);
+
+        // Warm the memo on a read-write PAT.
+        let (_t, can_write) = verifier.verify_capability(&pt).await.unwrap();
+        assert!(can_write);
+
+        // Scope downgraded in D1 → the write bit must drop immediately.
+        lookup.set(Ok(Some(row(&hash, &tenant, "cas:r"))));
+        let (_t, can_write) = verifier.verify_capability(&pt).await.unwrap();
+        assert!(
+            !can_write,
+            "a scope downgrade must apply on the next request (scope is never memoised)"
+        );
+
+        // Revoked in D1 (the SQL filter makes a revoked row indistinguishable
+        // from an absent one) → rejected immediately, NOT after a TTL.
+        lookup.set(Ok(None));
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::InvalidPat),
+            "revocation must be immediate with a warm memo, got {err:?}"
+        );
+    }
+
+    /// The stored PHC hash is part of the memo key, so re-hashing the row makes
+    /// the old proof unreachable — the real Argon2id runs again and fails.
+    #[tokio::test]
+    async fn a_rehashed_row_is_never_served_from_the_memo() {
+        let key = test_key();
+        let (pt, _tid, hash, tenant) = mint_pat(&key, 41, SCOPE_CACHE_RW);
+        // A hash of a DIFFERENT secret — what a re-mint/rotation would write.
+        let (_pt2, _tid2, foreign_hash, _tenant2) = mint_pat(&key, 42, SCOPE_CACHE_RW);
+        let lookup = Arc::new(SwitchableLookup::new(
+            Ok(Some(row(&hash, &tenant, "cas:rw"))),
+            0,
+        ));
+        let verifier = PatVerifier::new(lookup.clone(), key);
+
+        assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
+
+        lookup.set(Ok(Some(row(&foreign_hash, &tenant, "cas:rw"))));
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::InvalidPat),
+            "the memo must not survive a pat_hash change, got {err:?}"
+        );
+    }
+
+    /// A PAT whose SECRET is correct but whose SCOPE is rejected must keep
+    /// paying full Argon2id on every attempt — it must never be memoised.
+    ///
+    /// This is the oracle the memo's placement past the step-4 scope gate
+    /// closes. If the memo were populated as soon as the Argon2id succeeded, a
+    /// live-but-insufficiently-scoped credential would 401 slowly ONCE and then
+    /// ~instantly forever, which separates it on latency alone from a dead /
+    /// unknown / wrong-secret token — and separates a revoked PAT from a merely
+    /// scope-downgraded one. Every rejection must stay indistinguishable.
+    ///
+    /// Proven the same way as the hit test, in reverse: hold the verifier's only
+    /// Argon2id permit, then present the scope-rejected PAT again. If it were
+    /// memoised it would skip Argon2id and fall through to the scope gate for a
+    /// fast `InvalidPat`; because it is NOT, it must block on the drained pool
+    /// and surface the overloaded `Backend` instead.
+    #[tokio::test]
+    async fn a_scope_rejected_pat_is_never_memoised() {
+        let key = test_key();
+        // `SCOPE_CACHE_R` mints a genuine PAT; the D1 row then carries a scope
+        // string that grants NOTHING, which is what the step-4 gate rejects.
+        let (pt, tid, hash, tenant) = mint_pat(&key, 61, SCOPE_CACHE_R);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "")));
+        let verifier = PatVerifier::with_key_set_and_permits(lookup, vec![(*key).clone()], 1);
+
+        // First attempt: real Argon2id runs, scope gate rejects.
+        assert!(matches!(
+            verifier.verify(&pt).await.unwrap_err(),
+            VerifyError::InvalidPat
+        ));
+
+        // Drain the pool: no Argon2id can run from here on.
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        // Second attempt MUST still try to run Argon2id ⇒ overloaded, not a fast
+        // 401. A fast `InvalidPat` here would mean the scope-rejected PAT had
+        // been memoised — the oracle.
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "a scope-rejected PAT must re-pay Argon2id every request, got {err:?}"
+        );
+    }
+
+    /// A scope DOWNGRADE must invalidate the memo, so a downgraded PAT stays
+    /// indistinguishable from a revoked one.
+    ///
+    /// Without `scope` in the fingerprint, a PAT that verified successfully and
+    /// was then downgraded (rather than revoked) would keep hitting the memo for
+    /// the rest of the TTL and 401 in ~0 ms, while a REVOKED PAT still pays the
+    /// slow dummy burn — telling the holder "downgraded, not revoked" on latency
+    /// alone. Both are uniform on `main` and must stay uniform.
+    ///
+    /// Proven with the drained-permit technique: after the downgrade the verify
+    /// must attempt a fresh Argon2id (⇒ `Backend` on an exhausted pool). A fast
+    /// `InvalidPat` would mean the stale entry was still being served.
+    #[tokio::test]
+    async fn a_scope_downgrade_invalidates_the_memo() {
+        let key = test_key();
+        let (pt, _tid, hash, tenant) = mint_pat(&key, 71, SCOPE_CACHE_RW);
+        let lookup = Arc::new(SwitchableLookup::new(
+            Ok(Some(row(&hash, &tenant, "cas:rw"))),
+            0,
+        ));
+        let verifier =
+            PatVerifier::with_key_set_and_permits(lookup.clone(), vec![(*key).clone()], 1);
+
+        // Warm the memo on the fully-scoped PAT.
+        assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
+
+        // Downgrade in D1 to a scope that grants nothing (NOT a revocation).
+        lookup.set(Ok(Some(row(&hash, &tenant, ""))));
+
+        // Drain the pool: no Argon2id can run from here on.
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "a downgraded PAT must miss the memo and re-pay Argon2id, got {err:?}"
+        );
+    }
+
+    /// The memo key binds EVERY decision field — plaintext, token_id, the stored
+    /// PHC hash, `scope` and `find_only` — and is unambiguous across them.
+    ///
+    /// `scope` / `find_only` are not incidental: dropping them back out
+    /// reintroduces the downgrade-vs-revocation latency split that
+    /// `a_scope_downgrade_invalidates_the_memo` exists to catch.
+    #[test]
+    fn secret_match_fingerprint_binds_every_decision_field() {
+        let base = secret_match_fingerprint("pt", "tid", "hash", "cas:rw", false);
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt-x", "tid", "hash", "cas:rw", false)
+        );
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt", "tid-x", "hash", "cas:rw", false)
+        );
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt", "tid", "hash-x", "cas:rw", false)
+        );
+        // scope + find_only are in the key so a DOWNGRADE (as opposed to a
+        // revocation) makes the old entry unreachable instead of serving a
+        // fast 401 that a revoked PAT would not get.
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt", "tid", "hash", "cas:r", false)
+        );
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt", "tid", "hash", "cas:rw", true)
+        );
+        // Length-prefixed ⇒ no concatenation-boundary collision between two
+        // different triples that share a flat concatenation.
+        assert_ne!(
+            secret_match_fingerprint("ab", "c", "d", "e", false),
+            secret_match_fingerprint("a", "bc", "d", "e", false)
+        );
+        // A digest, never recoverable material. `!contains("pt")` would be
+        // VACUOUS here — `p` and `t` are not hex digits, so it holds for any
+        // hex string, including `hex::encode(plaintext)`. Assert the properties
+        // that actually constrain the output instead.
+        assert_eq!(base.len(), 64);
+        assert!(base
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert_ne!(base, hex::encode("pt"), "must not be the plaintext encoded");
+    }
+
+    /// The memo is bounded and TTL'd — it can neither grow without limit nor
+    /// serve an aged entry.
+    #[test]
+    fn memo_is_bounded_and_ttl_expired_entries_are_not_hits() {
+        let memo = SecretMatchMemo::new(2, Duration::from_secs(300));
+        // Space the inserts so "oldest" is unambiguous rather than clock-jitter.
+        memo.insert("a".to_owned());
+        std::thread::sleep(Duration::from_millis(5));
+        memo.insert("b".to_owned());
+        std::thread::sleep(Duration::from_millis(5));
+        memo.insert("c".to_owned());
+        assert!(
+            memo.len_for_test() <= 2,
+            "the cap must bound the map, got {}",
+            memo.len_for_test()
+        );
+        // Asserting `contains("c")` would be VACUOUS: `insert` places the new
+        // key unconditionally AFTER the eviction pass, so it holds even with
+        // the whole eviction branch deleted. What eviction actually DECIDES is
+        // WHICH pre-existing entry dies — the oldest, never the newer one.
+        assert!(!memo.contains("a"), "eviction must drop the OLDEST entry");
+        assert!(memo.contains("b"), "eviction must keep the newer survivor");
+
+        let expiring = SecretMatchMemo::new(8, Duration::ZERO);
+        expiring.insert("x".to_owned());
+        assert!(!expiring.contains("x"), "an expired entry is not a hit");
+        assert_eq!(
+            expiring.len_for_test(),
+            0,
+            "and is evicted on the read that observed it expired"
+        );
     }
 }
