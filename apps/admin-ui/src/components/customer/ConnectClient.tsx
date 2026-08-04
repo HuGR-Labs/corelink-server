@@ -87,10 +87,15 @@ turbo run build --remote-only`,
         TOKEN_ENV +
         " — never embedded in the URL.",
       docsHref: `${DOCS}/sccache`,
-      code: `# sccache → CoreLink (WebDAV backend)
-export SCCACHE_WEBDAV_ENDPOINT=${origin}/webdav/${tenantId}
+      code: `# sccache → CoreLink (WebDAV backend) — needs sccache >= 0.15
+export SCCACHE_WEBDAV_ENDPOINT=${origin}/cargo/${tenantId}
 export SCCACHE_WEBDAV_TOKEN="\${${TOKEN_ENV}}"
+export SCCACHE_MULTILEVEL_CHAIN="disk,webdav"   # local disk in front of CoreLink
+export SCCACHE_DIR="$HOME/.cache/sccache"       # where the local layer lives
 export RUSTC_WRAPPER=sccache
+
+# Without SCCACHE_MULTILEVEL_CHAIN sccache is remote-only: it picks exactly one
+# backend, so every single cache read becomes a network round trip.
 
 # verify it is wired:
 sccache --show-stats`,
