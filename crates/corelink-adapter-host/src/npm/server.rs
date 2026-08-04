@@ -287,6 +287,14 @@ fn error_response(err: &NpmAdapterError) -> Response {
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/plain; charset=utf-8"),
     );
+    // A load shed is transient and bounded — advertise the back-off so an npm
+    // client retries instead of treating the 503 as terminal. RFC 6585 §4 /
+    // house convention floor of 1 s.
+    if let Some(secs) = err.retry_after_secs() {
+        if let Ok(v) = HeaderValue::from_str(&secs.to_string()) {
+            h.insert(header::RETRY_AFTER, v);
+        }
+    }
     (code, h, body).into_response()
 }
 
@@ -374,5 +382,51 @@ mod tests {
     fn error_response_502_for_upstream() {
         let resp = error_response(&NpmAdapterError::Upstream("x".into()));
         assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    /// A verifier load shed is 503 + `Retry-After`, NOT 401. Surfacing it as
+    /// 401 told a client holding a valid PAT that its credential was bad, and
+    /// broke the container's symmetric shed
+    /// (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) end-to-end.
+    #[test]
+    fn shed_is_503_with_retry_after() {
+        let resp = error_response(&NpmAdapterError::VerifierOverloaded(
+            "pat verifier overloaded".into(),
+        ));
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            resp.headers()
+                .get(header::RETRY_AFTER)
+                .map(HeaderValue::as_bytes),
+            Some(&b"1"[..]),
+            "a shed must advertise a bounded back-off"
+        );
+    }
+
+    /// The other 503s are fail-CLOSED faults, not sheds — they must NOT carry a
+    /// back-off the server cannot honour.
+    #[test]
+    fn non_shed_503s_carry_no_retry_after() {
+        for err in [
+            NpmAdapterError::Cas("x".into()),
+            NpmAdapterError::Kv("x".into()),
+            NpmAdapterError::Audit("x".into()),
+        ] {
+            let resp = error_response(&err);
+            assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+            assert!(resp.headers().get(header::RETRY_AFTER).is_none());
+        }
+    }
+
+    /// The shed body must not leak which internal pool shed, and must not
+    /// claim the credential was rejected.
+    #[test]
+    fn shed_body_is_opaque_and_not_an_auth_verdict() {
+        let msg = NpmAdapterError::VerifierOverloaded("D1 HTTP 500: SELECT ... FROM pat".into())
+            .client_message("RIDn");
+        assert!(!msg.contains("D1"), "leaked backend detail: {msg}");
+        assert!(!msg.contains("SELECT"), "leaked SQL: {msg}");
+        assert!(!msg.contains("authentication failed"), "mislabelled: {msg}");
+        assert!(msg.contains("RIDn"), "missing correlation ref: {msg}");
     }
 }

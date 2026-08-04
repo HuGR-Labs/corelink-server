@@ -178,6 +178,14 @@ fn error_response(err: &PipAdapterError) -> Response {
         header::CONTENT_TYPE,
         HeaderValue::from_static("text/plain; charset=utf-8"),
     );
+    // A load shed is transient and bounded — advertise the back-off so a pip
+    // client retries instead of treating the 503 as terminal. RFC 6585 §4 /
+    // house convention floor of 1 s.
+    if let Some(secs) = err.retry_after_secs() {
+        if let Ok(v) = HeaderValue::from_str(&secs.to_string()) {
+            h.insert(header::RETRY_AFTER, v);
+        }
+    }
     (code, h, body).into_response()
 }
 
@@ -264,5 +272,50 @@ mod tests {
     fn error_response_status_matches_enum() {
         let resp = error_response(&PipAdapterError::Auth("x".into()));
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// pip already answered 503 for a verifier shed (it borrowed `Cas`), so
+    /// this pins the two things that were missing: the shed is NAMED (not a
+    /// storage fault in the logs) and it carries a bounded back-off.
+    #[test]
+    fn shed_is_503_with_retry_after() {
+        let resp = error_response(&PipAdapterError::VerifierOverloaded(
+            "pat verifier overloaded".into(),
+        ));
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            resp.headers()
+                .get(header::RETRY_AFTER)
+                .map(HeaderValue::as_bytes),
+            Some(&b"1"[..]),
+            "a shed must advertise a bounded back-off"
+        );
+    }
+
+    /// The other 503s are fail-CLOSED faults, not sheds — they must NOT carry a
+    /// back-off the server cannot honour.
+    #[test]
+    fn non_shed_503s_carry_no_retry_after() {
+        for err in [
+            PipAdapterError::Cas("x".into()),
+            PipAdapterError::Kv("x".into()),
+            PipAdapterError::Audit("x".into()),
+        ] {
+            let resp = error_response(&err);
+            assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+            assert!(resp.headers().get(header::RETRY_AFTER).is_none());
+        }
+    }
+
+    /// The shed body must not leak which internal pool shed, and must not
+    /// claim the credential was rejected.
+    #[test]
+    fn shed_body_is_opaque_and_not_an_auth_verdict() {
+        let msg = PipAdapterError::VerifierOverloaded("D1 HTTP 500: SELECT ... FROM pat".into())
+            .client_message("RIDp");
+        assert!(!msg.contains("D1"), "leaked backend detail: {msg}");
+        assert!(!msg.contains("SELECT"), "leaked SQL: {msg}");
+        assert!(!msg.contains("authentication failed"), "mislabelled: {msg}");
+        assert!(msg.contains("RIDp"), "missing correlation ref: {msg}");
     }
 }

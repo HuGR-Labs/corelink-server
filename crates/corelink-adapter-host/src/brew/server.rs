@@ -5,7 +5,8 @@
 //! request flows through:
 //!
 //! 1. `extract_bearer` → PAT plaintext (HTTP 401 on mismatch);
-//! 2. `resolve_tenant` → tenant id (HTTP 401);
+//! 2. `resolve_tenant` → tenant id (HTTP 401 on a verdict, HTTP 503 on a
+//!    verifier load shed — see `VerifierOverloaded` below);
 //! 3. `BottleService::fetch` → bytes (HTTP 200) or one of the
 //!    structured failure modes mapped below.
 //!
@@ -14,6 +15,7 @@
 //! | `BrewAdapterError` variant | HTTP | Why |
 //! |---|---|---|
 //! | `Auth`              | 401 | bad / missing PAT |
+//! | `VerifierOverloaded`| 503 + `Retry-After: 1` | the PAT verifier SHED the request (Argon2id permit pool saturated, or a verifier fault) — no verdict was reached, so this is NOT a 401 |
 //! | `ForbiddenRepoPath` | 403 | path outside the allowed Homebrew repo namespace |
 //! | `Cas`               | 502 | upstream-CAS dependency failure |
 //! | `Upstream`          | 502 | upstream bottle host failed |
@@ -26,7 +28,7 @@ use std::sync::Arc;
 
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -153,9 +155,10 @@ impl IntoResponse for BrewAdapterError {
             Self::ForbiddenRepoPath(_) => StatusCode::FORBIDDEN,
             Self::Cas(_) | Self::Upstream(_) => StatusCode::BAD_GATEWAY,
             Self::BottleOversized(_) => StatusCode::PAYLOAD_TOO_LARGE,
-            Self::Audit(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::VerifierOverloaded(_) | Self::Audit(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Bind(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
+        let retry_after = self.retry_after_secs();
         // Cluster E (A27/A29): scrub internal backend detail (raw D1/CF/R2
         // error, possibly SQL; R2 storage topology; derived per-tenant prefix;
         // upstream host/transport) from the client body. Mint a correlation id,
@@ -171,6 +174,14 @@ impl IntoResponse for BrewAdapterError {
         let body = self.client_message(&request_id);
         let mut response = Response::new(Body::from(body));
         *response.status_mut() = status;
+        // A load shed is transient and bounded — advertise the back-off so a
+        // `brew` client retries instead of treating the 503 as terminal.
+        // RFC 6585 §4 / house convention floor of 1 s.
+        if let Some(secs) = retry_after {
+            if let Ok(v) = HeaderValue::from_str(&secs.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, v);
+            }
+        }
         response
     }
 }
@@ -325,5 +336,44 @@ mod tests {
             "an upstream fill MUST carry X-Cache: MISS"
         );
         assert_eq!(resp.bytes().await.unwrap().as_ref(), BOTTLE_BYTES);
+    }
+
+    /// A verifier load shed is 503 + `Retry-After`, NOT 401. Surfacing it as
+    /// 401 told a client holding a valid PAT that its credential was bad, and
+    /// broke the container's symmetric shed
+    /// (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) end-to-end.
+    #[test]
+    fn shed_is_503_with_retry_after() {
+        let resp =
+            BrewAdapterError::VerifierOverloaded("pat verifier overloaded".into()).into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            resp.headers()
+                .get(header::RETRY_AFTER)
+                .map(HeaderValue::as_bytes),
+            Some(&b"1"[..]),
+            "a shed must advertise a bounded back-off"
+        );
+    }
+
+    /// The other 503 here (`Audit`) is a fail-CLOSED fault, not a shed — it
+    /// must NOT carry a back-off the server cannot honour.
+    #[test]
+    fn non_shed_503_carries_no_retry_after() {
+        let resp = BrewAdapterError::Audit("x".into()).into_response();
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert!(resp.headers().get(header::RETRY_AFTER).is_none());
+    }
+
+    /// The shed body must not leak which internal pool shed, and must not
+    /// claim the credential was rejected.
+    #[test]
+    fn shed_body_is_opaque_and_not_an_auth_verdict() {
+        let msg = BrewAdapterError::VerifierOverloaded("D1 HTTP 500: SELECT ... FROM pat".into())
+            .client_message("RIDb");
+        assert!(!msg.contains("D1"), "leaked backend detail: {msg}");
+        assert!(!msg.contains("SELECT"), "leaked SQL: {msg}");
+        assert!(!msg.contains("authentication failed"), "mislabelled: {msg}");
+        assert!(msg.contains("RIDb"), "missing correlation ref: {msg}");
     }
 }

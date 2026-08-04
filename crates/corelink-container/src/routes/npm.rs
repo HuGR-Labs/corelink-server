@@ -229,8 +229,16 @@ impl KvStore for NpmMetaKv {
 /// `pat.tenant_id` column); npm's port returns a typed
 /// [`corelink_core::types::tenant::TenantId`], so this parses the text into
 /// the newtype. A non-UUID tenant id is a backend invariant break (D1
-/// always stores canonical UUID text) ⇒ surfaced as a 503-class auth error,
-/// never a 401 oracle.
+/// always stores canonical UUID text); it keeps its pre-existing `Auth`
+/// mapping here (the arm is unreachable without a corrupt D1 row and is NOT a
+/// load shed, so it is out of scope for the shed split below — noted rather
+/// than silently changed).
+///
+/// `VerifyError::Backend` — a D1 fault OR an Argon2id permit-pool load shed —
+/// maps to `NpmAdapterError::VerifierOverloaded` (503 + `Retry-After`), NOT to
+/// `Auth` (401): the verifier never reached a verdict on the credential, so a
+/// 401 both lied to a client holding a valid PAT and broke the container's
+/// symmetric shed (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) end-to-end.
 #[derive(Debug)]
 struct NpmPatResolver(Arc<PatVerifier>);
 
@@ -239,7 +247,7 @@ impl TenantResolver for NpmPatResolver {
     async fn resolve(&self, pat_plaintext: &str) -> Result<TenantId, NpmAdapterError> {
         let tenant_text = self.0.verify(pat_plaintext).await.map_err(|e| match e {
             VerifyError::InvalidPat => NpmAdapterError::Auth("invalid PAT".to_owned()),
-            VerifyError::Backend(m) => NpmAdapterError::Auth(format!("backend: {m}")),
+            VerifyError::Backend(m) => NpmAdapterError::VerifierOverloaded(m),
         })?;
         let uuid = uuid::Uuid::parse_str(&tenant_text)
             .map_err(|e| NpmAdapterError::Auth(format!("backend: tenant id not a UUID: {e}")))?;
@@ -258,7 +266,7 @@ impl TenantResolver for NpmPatResolver {
                 .await
                 .map_err(|e| match e {
                     VerifyError::InvalidPat => NpmAdapterError::Auth("invalid PAT".to_owned()),
-                    VerifyError::Backend(m) => NpmAdapterError::Auth(format!("backend: {m}")),
+                    VerifyError::Backend(m) => NpmAdapterError::VerifierOverloaded(m),
                 })?;
         let uuid = uuid::Uuid::parse_str(&tenant_text)
             .map_err(|e| NpmAdapterError::Auth(format!("backend: tenant id not a UUID: {e}")))?;

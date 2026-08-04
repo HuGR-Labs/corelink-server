@@ -23,6 +23,18 @@ pub enum BrewAdapterError {
     #[error("auth: {0}")]
     Auth(String),
 
+    /// The PAT verifier SHED this request under load — it never reached a
+    /// verdict on the credential, so this is emphatically NOT an auth
+    /// failure. Routes map this to HTTP 503 +
+    /// `Retry-After: `[`crate::overload::SHED_RETRY_AFTER_SECS`].
+    ///
+    /// Distinct from [`Self::Auth`] because collapsing the two told a client
+    /// holding a perfectly valid PAT that its credential was invalid, and
+    /// because the split must stay uniform across D1 row existence
+    /// (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`).
+    #[error("verifier overloaded: {0}")]
+    VerifierOverloaded(String),
+
     /// Per-tenant CAS read / write failed. The `String` is a structured
     /// reason from the [`crate::brew::ports::CasStore`] implementor. Routes
     /// map this to HTTP 502 (we treat CAS unavailability as a gateway
@@ -68,8 +80,26 @@ impl BrewAdapterError {
     pub const fn leaks_internal_detail(&self) -> bool {
         matches!(
             self,
-            Self::Bind(_) | Self::Auth(_) | Self::Cas(_) | Self::Upstream(_) | Self::Audit(_)
+            Self::Bind(_)
+                | Self::Auth(_)
+                | Self::VerifierOverloaded(_)
+                | Self::Cas(_)
+                | Self::Upstream(_)
+                | Self::Audit(_)
         )
+    }
+
+    /// `Retry-After` (seconds) this error must carry, if any.
+    ///
+    /// Only the load-shed variant is retryable on a bounded horizon; every
+    /// other 503 here (`Audit`) is a fail-CLOSED fault with no useful
+    /// back-off to advertise.
+    #[must_use]
+    pub const fn retry_after_secs(&self) -> Option<u64> {
+        match self {
+            Self::VerifierOverloaded(_) => Some(crate::overload::SHED_RETRY_AFTER_SECS),
+            _ => None,
+        }
     }
 
     /// The CLIENT-FACING response body for this error (Cluster E).
@@ -83,6 +113,9 @@ impl BrewAdapterError {
         if self.leaks_internal_detail() {
             let class = match self {
                 Self::Auth(_) => "authentication failed",
+                // A shed is NOT an auth verdict — say so, without leaking
+                // which internal pool shed (the message is class-only).
+                Self::VerifierOverloaded(_) => "authentication service overloaded; retry",
                 _ => "internal error",
             };
             format!("{class} (ref: {request_id})")

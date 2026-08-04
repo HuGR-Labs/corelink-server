@@ -228,6 +228,13 @@ impl KvStore for PipIndexKvStore {
 /// `TenantResolver`. Maps the verifier's tenant-uuid TEXT onto the
 /// adapter's [`TenantId`] (the adapter's port returns a typed id, unlike
 /// brew's string port).
+///
+/// `VerifyError::Backend` — a D1 fault OR an Argon2id permit-pool load shed —
+/// maps to `PipAdapterError::VerifierOverloaded`. pip already answered 503
+/// here (it borrowed `Cas`), so this is a naming/`Retry-After` correction, not
+/// a status change: a shed is not a storage fault, and the client needs a
+/// bounded back-off. The variant split also keeps the container's symmetric
+/// shed (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) legible end-to-end.
 #[derive(Debug)]
 struct PipPatResolver(Arc<PatVerifier>);
 
@@ -236,7 +243,7 @@ impl TenantResolver for PipPatResolver {
     async fn resolve(&self, pat_plaintext: &str) -> Result<TenantId, PipAdapterError> {
         let tenant_text = self.0.verify(pat_plaintext).await.map_err(|e| match e {
             VerifyError::InvalidPat => PipAdapterError::Auth("invalid PAT".to_owned()),
-            VerifyError::Backend(m) => PipAdapterError::Cas(format!("verifier backend: {m}")),
+            VerifyError::Backend(m) => PipAdapterError::VerifierOverloaded(m),
         })?;
         let uuid = uuid::Uuid::parse_str(&tenant_text).map_err(|e| {
             // D1 stores canonical uuid text; a non-uuid here is a backend

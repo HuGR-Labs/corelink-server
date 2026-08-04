@@ -63,4 +63,5 @@ pub mod brew;
 pub mod cargo;
 pub mod npm;
 pub mod oci;
+pub mod overload;
 pub mod pip;
