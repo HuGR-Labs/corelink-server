@@ -281,13 +281,22 @@ CoreLink exposes an sccache **WebDAV** backend at `/cargo/<tenant>`, backed
 by the same per-tenant content-addressable store as the native CAS — and
 both key artifacts by BLAKE3, so there is no digest translation. There is
 no `.cargo/config.toml` edit: sccache is configured entirely by environment,
-so the same three variables work locally and in CI.
+so the same variables work locally and in CI.
 
 ```bash
 export SCCACHE_WEBDAV_ENDPOINT="https://corelink-api.humangr.com/cargo/<your-tenant-id>"
 export SCCACHE_WEBDAV_TOKEN="corelink_pat_XXXX"
+export SCCACHE_MULTILEVEL_CHAIN="disk,webdav"   # requires sccache >= 0.15
+export SCCACHE_DIR="$HOME/.cache/sccache"       # where the local layer lives
 export RUSTC_WRAPPER=sccache
 ```
+
+Do not drop the last two. sccache uses **exactly one** storage backend, and
+its disk backend is only reachable when no remote backend is configured — so
+`SCCACHE_WEBDAV_ENDPOINT` on its own makes every cache read an HTTPS round
+trip and leaves `SCCACHE_DIR` inert. `SCCACHE_MULTILEVEL_CHAIN="disk,webdav"`
+(sccache 0.15+) puts a local disk layer in front of CoreLink, which is the
+shape you want when you are comparing against an S3 setup.
 
 Full walkthrough: [sccache (Rust / cargo) integration](/integrations/sccache-cargo).
 
@@ -302,8 +311,8 @@ error rate.
 **Step 5: Cut over.**
 
 When the shadow week confirms cache-hit parity, swap the S3 variables
-(`SCCACHE_BUCKET` and friends) for the two `SCCACHE_WEBDAV_*` variables
-across your CI env. `RUSTC_WRAPPER=sccache` stays — sccache remains the
+(`SCCACHE_BUCKET` and friends) for the `SCCACHE_WEBDAV_*` variables plus the
+multi-level chain across your CI env. `RUSTC_WRAPPER=sccache` stays — sccache remains the
 compiler wrapper; only its storage backend moves. Keep the S3 bucket alive
 for 30 days (one TTL window) in case you need to roll back.
 
