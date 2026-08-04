@@ -7,10 +7,10 @@ source_files:
   - "worker/src/durable_object.ts"
   - "crates/corelink-container/src/routes.rs"
 source_blobs:
-  - "worker/src/index.ts@3e9cde684944962569a6e24e62a07d68cfd662a2"
+  - "worker/src/index.ts@89c868121dd770a3755adaf6f0b0c5b20f2a6d8d"
   - "worker/src/durable_object.ts@9b407f2b402cc395576be41779afe9387d5a6bc9"
   - "crates/corelink-container/src/routes.rs@37c9e0fc4514d4276e195c8cd8c576a78668fc32"
-checkpoint_sha: "109cff8ea56c6125e115409d3008ff1b14420ff6"
+checkpoint_sha: "3819a1426c77840c0e7004b052c92753c2a1920c"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -49,11 +49,11 @@ semantics in the container.
    to a retryable 503, not a 401 — the request never reaches the DO, and a transient infra fault is
    never surfaced to the client as "bad credentials" (H1).
 3. The Worker derives the per-tenant DO with `idFromName(resolvedTenantId)`, making isolation structural
-   (`worker/src/index.ts:3129-3131`). A non-local-region tenant may first be routed to the LOCAL
+   (`worker/src/index.ts:3137-3139`). A non-local-region tenant may first be routed to the LOCAL
    (this-region) `_system` container branch above this forward; the fall-through then lands on the
    per-tenant DO derivation here (`worker/src/index.ts:1961-1963`).
 4. It strips any client-supplied trust headers (delete-then-set discipline), sets its own verified
-   tenant-id/scope/token-prefix, and dispatches via `stub.fetch` (`worker/src/index.ts:3134-3213`).
+   tenant-id/scope/token-prefix, and dispatches via `stub.fetch` (`worker/src/index.ts:3142-3221`).
 5. The DO's `fetch` binds the forwarded tenant-id, ensures the container is running, then proxies the
    request (`worker/src/durable_object.ts:333-432`).
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
@@ -66,9 +66,9 @@ semantics in the container.
 
 # Invariants
 - The DO is always selected from the PAT-resolved tenant, never the URL tenant — isolation is
-  established at this hop (`worker/src/index.ts:3129-3131`).
+  established at this hop (`worker/src/index.ts:3137-3139`).
 - The request that crosses Worker→DO carries only Worker-established trust headers; client values are
-  stripped first (`worker/src/index.ts:3134-3165`).
+  stripped first (`worker/src/index.ts:3142-3173`).
 - The DO→container hop always targets port 50051 via the `getTcpPort` fetcher
   (`worker/src/durable_object.ts:282-295`).
 - The container re-verifies possession at the shared handler chokepoint rather than trusting the hop
@@ -87,9 +87,9 @@ semantics in the container.
 1. `worker/src/index.ts:1-20` — the `Internet → Worker → DO → container` topology header.
 2. `worker/src/index.ts:1134-1292` — edge PAT auth (HMAC fast-reject + D1 lookup + expiry).
 3. `worker/src/index.ts:1751-1792` — the Worker `fetch` entry + `matchRoute`.
-4. `worker/src/index.ts:3129-3131` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
-5. `worker/src/index.ts:3134-3165` — strip-then-set trust headers on the forward.
-6. `worker/src/index.ts:3134-3213` — the augmented forward + `stub.fetch` dispatch to the DO.
+4. `worker/src/index.ts:3137-3139` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
+5. `worker/src/index.ts:3142-3173` — strip-then-set trust headers on the forward.
+6. `worker/src/index.ts:3142-3221` — the augmented forward + `stub.fetch` dispatch to the DO.
 7. `worker/src/durable_object.ts:282-295` — the DO→container proxy via `getTcpPort(50051)`.
 8. `worker/src/durable_object.ts:333-432` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:363-392` — the ensure-running gate before proxying (503/500 otherwise).
