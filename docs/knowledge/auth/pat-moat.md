@@ -13,8 +13,8 @@ source_blobs:
   - "worker/src/index.ts@e0300e4d06ccd5aa81bb2bf4c7a8f9c13354b048"
   - "worker/src/lib/pat_verify_cache.ts@b0dafab6381684057de4c0589b5d95d18a35c741"
   - "worker/src/lib/tenant_suspend_gate.ts@bed740c1e2a471244a2c9680fcf4f1e800f26d7c"
-  - "crates/corelink-container/src/adapter_pat.rs@386fafda97f30a5c077a0ea2ce1b994e428b3b27"
-checkpoint_sha: "7bf58501233442c34e6613dd304a38afc3337f75"
+  - "crates/corelink-container/src/adapter_pat.rs@11b497327213ffa18ce2c1224e200ee8649c9984"
+checkpoint_sha: "a9c3ba522578ced988aa71c7c7b1cb975eefed70"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"

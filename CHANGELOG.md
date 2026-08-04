@@ -23,6 +23,31 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(okf): the OKF wiki gate certified `main` green against evidence that no longer existed —
+  a blob anchor was validated by PRESENCE in the clone, which is a timing artifact of when CI
+  cloned.** #1022 anchored `docs/knowledge/auth/pat-moat.md` on
+  `crates/corelink-container/src/adapter_pat.rs@386fafda`, the blob of an INTERMEDIATE commit
+  (`7bf58501`) on its own PR branch. A later commit on that same branch superseded it, so the
+  squash-merge landed the branch TIP's blob (`11b49732`) and `386fafda` never reached `main` at
+  all — its only ref was the PR head, which GitHub auto-deleted at merge. The `push:main` run
+  cloned **7 seconds** after the merge (merge 02:22:44Z, checkout fetch 02:22:51Z), still fetched
+  the dying `refs/heads/*` entry, resolved the object, and printed
+  `✅ … 160 concepts, 0 stale, 0 drift`. Twelve minutes later the byte-identical concept RED-ed
+  on an unrelated PR (`[C4b]` + 5 spurious `[C5] STALE`) because that clone no longer had the ref.
+  Same check, same command, no `--base-ref` difference and no changed-file scoping — only the
+  clock differed. `C4b` now requires an anchor to be the content of its declared path at some
+  commit **reachable from HEAD**, not merely present in the object database
+  (`Git.blob_reachable_for_path`, `scripts/validate_okf.py`): reachability is a property of the
+  history being gated, so the verdict is identical at merge time and forever after, and the
+  post-merge state is now gated with the same strength as the PR state. Reproduced locally
+  (the orphaned object still lingers in the author's clone): the pre-fix validator prints
+  `✅ … valid` on the exact anchor CI reds. Deliberately permissive about AGE — an anchor may name
+  any historical version still on the history; whether the CITED LINES have drifted stays C5's
+  job, so C5 is not made vacuous (fixture: `C4b: an OLDER blob still on HEAD's history passes`).
+  `pat-moat.md` re-anchored to the blob that actually landed; all five cited ranges were verified
+  byte-identical between the two blobs, so no line range moved and the `[C5] STALE` reports were
+  pure fallout of the absent object. Contract §4 C4b + the validator module docstring updated;
+  3 new acceptance fixtures (84/84).
 - **fix(container): every request on the cache-adapter plane ran a full 64-MiB Argon2id, capping
   a tenant at roughly 3 requests/second — the product was structurally slow at exactly the traffic
   shape a build cache exists to serve.** `PatVerifier::verify_capability` ran the OWASP-2024

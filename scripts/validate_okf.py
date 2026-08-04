@@ -19,7 +19,15 @@ IS that content, and is immutable under all three. So a concept may anchor each
 cited FILE on its blob id (`path@<40-hex>`), additively — `checkpoint_sha` stays
 required for provenance and for C-AGE / C-REV / C5b, which want a commit_date.
 When a file has a blob anchor, C5 compares against that blob and NOTHING else: the
-squash-orphan tolerance and the base-ref fallback below DO NOT APPLY to it. That is
+squash-orphan tolerance and the base-ref fallback below DO NOT APPLY to it. C4b
+demands TWO things of an anchor, not one: the object must resolve as a blob AND it
+must be the content that path had at some commit REACHABLE FROM HEAD. Presence
+alone was a timing artifact — an anchor taken from an intermediate PR commit that a
+later commit on the same branch superseded is reachable only from the PR head ref,
+which GitHub auto-deletes at merge, so the `push:main` run that clones seconds
+after the merge still resolves it (green) while every clone after it cannot (red).
+Reachability is a property of the history being gated, so it answers the same at
+merge time and forever after. That is
 the point — it deletes the recurring re-anchor tax (a rebase that leaves the cited
 file byte-identical can no longer make its citations read STALE) and it closes the
 laundering residual the tolerance accepted (a forged unreachable blob is an absent
@@ -190,13 +198,15 @@ class Git:
         self._blob_present_cache: dict[str, bool] = {}
         self._blob_lines_cache: dict[str, list[str] | None] = {}
         self._show_file_cache: dict[tuple[str, str], str | None] = {}
+        self._path_blobs_cache: dict[str, set[str]] = {}
 
-    def run(self, args: list[str]) -> subprocess.CompletedProcess:
+    def run(self, args: list[str], stdin: str | None = None) -> subprocess.CompletedProcess:
         return subprocess.run(
             ["git"] + args,
             cwd=str(self.repo_root),
             capture_output=True,
             text=True,
+            input=stdin,
         )
 
     def sha_exists(self, sha: str) -> bool:
@@ -291,6 +301,60 @@ class Git:
         ok = cp.returncode == 0 and cp.stdout.strip() == "blob"
         self._blob_present_cache[sha] = ok
         return ok
+
+    def path_blob_history(self, repo_rel: str) -> set[str]:
+        """Every blob id `repo_rel` has EVER had at a commit REACHABLE FROM HEAD,
+        plus HEAD's own. This is the durable-reachability oracle behind C4b's
+        second half (`blob_reachable_for_path`).
+
+        Cost is bounded and lazy: `git rev-list HEAD -- <path>` (one process) fed
+        into ONE `git cat-file --batch-check` (a second process) per path, and the
+        whole thing is skipped for the overwhelmingly common case where the anchor
+        already equals HEAD's blob. Nothing here walks the object database."""
+        if repo_rel in self._path_blobs_cache:
+            return self._path_blobs_cache[repo_rel]
+        blobs: set[str] = set()
+        head_blob = self.file_blob_sha("HEAD", repo_rel)
+        if head_blob:
+            blobs.add(head_blob)
+        cp = self.run(["rev-list", "HEAD", "--", repo_rel])
+        revs = cp.stdout.split() if cp.returncode == 0 else []
+        if revs:
+            probe = "".join(f"{r}:{repo_rel}\n" for r in revs)
+            out = self.run(["cat-file", "--batch-check=%(objectname) %(objecttype)"], stdin=probe)
+            for line in out.stdout.splitlines():
+                parts = line.split()
+                if len(parts) == 2 and parts[1] == "blob":
+                    blobs.add(parts[0])
+        self._path_blobs_cache[repo_rel] = blobs
+        return blobs
+
+    def blob_reachable_for_path(self, repo_rel: str, sha: str) -> bool:
+        """True iff `sha` is the content `repo_rel` had at SOME commit reachable
+        from HEAD — i.e. the anchored content DURABLY LANDED on this history.
+
+        `blob_is_present` above is NOT sufficient, and the gap is not theoretical:
+        it cost us a false-green on `push:main`. A concept authored mid-PR can
+        anchor an INTERMEDIATE commit's blob; a later commit on the same PR branch
+        supersedes it, so the squash-merge lands the branch TIP's blob and the
+        anchored one never reaches `main` at all. The anchor is then reachable only
+        from the PR head ref — which GitHub auto-DELETES at merge. The `push:main`
+        run clones seconds after the merge and still fetches that dying ref, so
+        `cat-file -t` resolves and C4b passes; every later clone lacks the ref, the
+        object is gone, and the identical check REDs. Presence in the object
+        database is therefore a TIMING artifact of when the gate happened to clone.
+        Reachability from HEAD is not: it is a property of the history being gated,
+        so it returns the same verdict at merge time and forever after.
+
+        Deliberately permissive about AGE — an anchor may name any historical
+        version of the file, not just HEAD's. That is the point of a content anchor
+        (C5 is what decides whether the cited lines have since drifted); this check
+        only rejects content that was never on this history at all."""
+        if not sha or not repo_rel:
+            return False
+        if self.file_blob_sha("HEAD", repo_rel) == sha:
+            return True  # fast path: the anchor IS HEAD's content
+        return sha in self.path_blob_history(repo_rel)
 
     def blob_lines(self, sha: str):
         """Lines of the blob object `sha` (line terminators stripped), or None
@@ -1352,6 +1416,21 @@ def run_checks(args, git: Git, fails: Failures):
                     "present in this clone — a blob id is immutable under rebase/squash/"
                     "cherry-pick, so this is a typo or a forged anchor, NOT a squash-orphan "
                     "(no base-ref fallback applies)",
+                )
+                continue
+            # C4b REACHABILITY (the false-green closure). Presence in the object
+            # database is a TIMING artifact — see `Git.blob_reachable_for_path`.
+            # An anchor must name content this history actually carries, so the
+            # verdict is identical in the `push:main` run that clones seconds
+            # after the squash-merge and in every clone that comes after it.
+            if not git.blob_reachable_for_path(bpath, bsha):
+                fails.add(
+                    "C4b", loc,
+                    f"`source_blobs` anchor `{bpath}@{bsha[:12]}` resolves as a blob in "
+                    "this clone but is NOT the content of that path at ANY commit "
+                    "reachable from HEAD — it never landed on this history (typically an "
+                    "intermediate PR commit superseded before the squash-merge, whose only "
+                    "ref is the auto-deleted PR head). Re-anchor to the blob that landed",
                 )
 
         # Build cited-line ranges per file (HEAD coordinates).
