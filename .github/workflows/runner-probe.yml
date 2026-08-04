@@ -76,6 +76,14 @@ jobs:
           probe clippy-driver clippy-driver --version
           probe rustfmt rustfmt --version
           echo "  cargo fmt  : $( cargo fmt --version >/dev/null 2>&1 && echo WORKS || echo BROKEN )"
+          # Baked into the image by corelink-runners#447. Probed here because an
+          # inventory that does not look for what the image ships reports a clean
+          # box while a lane silently compiles cold — which is exactly what
+          # happened: the sccache pilot printed "sccache not on the box image"
+          # and its gate went green anyway.
+          probe sccache sccache --version
+          probe cargo-deny cargo-deny --version
+          probe cargo-audit cargo-audit --version
           echo "  ~/.cargo   : $( [ -d "$HOME/.cargo" ]  && echo EXISTS || echo missing )"
           echo "  ~/.rustup  : $( [ -d "$HOME/.rustup" ] && echo EXISTS || echo missing )"
           echo
