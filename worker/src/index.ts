@@ -26,8 +26,7 @@ import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
 import { EventLogDO } from "./event_log_do.js";
 import {
-  checkStorageQuota,
-  incrementMonthlyRequestCount,
+  runQuotaBatch,
   requestCapResultForCount,
   storageQuotaHeaderValue,
   FREE_REQUEST_CAP,
@@ -1762,22 +1761,27 @@ const baseHandler: ExportedHandler<Env> = {
     let stOriginStart = 0;
     let stOriginEnd = 0;
     let stPatSource: "l1" | "kv" | "d1" | undefined;
-    // `wdb` sub-phase clocks — the four SERIAL awaits between `auth` and `origin`
-    // (metering UPSERT → tier resolve → storage SUM → residency resolve). The
-    // aggregate `wdb` says "the worker-side reads cost ~118 ms p50" but not WHICH of
-    // the four owns it: two are cache-backed (tier, residency) and two are
-    // uncached D1 (the counter UPSERT, the storage SUM), and an isolate-cold
-    // request can turn a "cached" one back into a D1 round trip. Attributing
-    // before optimising is the whole point — do not guess which one to fix.
+    // `wdb` sub-phase clocks — the THREE awaits between `auth` and `origin`
+    // (tier resolve → the batched metering-UPSERT + storage-SUM round trip →
+    // residency resolve).
     //
-    // `-1` = "this phase did not run" (anon/system tenant, uncapped tier, an
-    // early 429). That sentinel is what lets `dur=0` MEAN "ran, and cost less
+    // It was four, and attributing them is what produced this shape. The
+    // 2026-08-04 prod measurement (warm, n=30) read `qmeter` 152/158/163 ms,
+    // `qstor` 120/126/130 ms, `qtier` 0/0/3 ms, `qresid` 0/0/2 ms against a
+    // `wdb` of 277/284/302 ms — sum(4) − wdb = 0 on 30 of 30 requests. So `wdb`
+    // was entirely TWO serial uncached round trips to the ENAM D1 primary, and
+    // the two cache-backed phases cost nothing. The two now travel as a single
+    // `db.batch` and report as one phase, `qbatch`: the header describes the
+    // round trips that actually happen, which is the only reason to trust it.
+    //
+    // `-1` = "this phase did not run" (anon/system tenant, an early 429, or —
+    // for `qbatch` — both of its statements skipped, so no round trip was
+    // issued). That sentinel is what lets `dur=0` MEAN "ran, and cost less
     // than the clock can see" instead of being indistinguishable from a phase
     // that never executed — the ambiguity that forced an inference from the
     // `auth` phase's 3-of-30 emission rate in probe run 30916725902.
-    let stQMeterMs = -1;
     let stQTierMs = -1;
-    let stQStorMs = -1;
+    let stQBatchMs = -1;
     let stQResidMs = -1;
     const requestId = resolveRequestId(request);
     requestCounter = (requestCounter + 1) | 0;
@@ -2835,68 +2839,6 @@ const baseHandler: ExportedHandler<Env> = {
         env.CORELINK_INTERNAL_AUTH_KEY.length > 0 &&
         constantTimeSecretEqual(env.CORELINK_INTERNAL_AUTH_KEY, fanoutHeader);
 
-      // ── rt-nuclear #24: cheap monthly request-count check FIRST ───────────
-      // Do the single atomic counter UPSERT (the cheapest D1 op in the quota
-      // pipeline) BEFORE the costlier checkStorageQuota (1 SUM read). A
-      // $-ceiling-capped / over-quota tenant already over even the LOWEST tier
-      // cap (FREE = 500K/mo) is 429'd here WITHOUT re-paying the storage-SUM
-      // read on every request all month long. Counting happens exactly once
-      // (no double increment).
-      //
-      // Correctness vs. paid tenants: when the post-increment count is within
-      // the FREE cap it is within EVERY tier's cap, so the request gate is
-      // already cleared regardless of tier (`withinFreeCap`). Only when the
-      // count EXCEEDS the free cap does the tier matter — a paid tenant has
-      // real headroom and must NOT be rejected; a free tenant gets the 429.
-      // getTierForTenant is resolved unconditionally because the SERVED path
-      // needs the tier for both the storage check and the server-trusted
-      // STORAGE_QUOTA_HEADER forwarded to the container.
-      // #11: skip the metering UPSERT on an internal fan-out sub-request (the
-      // primary Worker already counted this logical request). `counted:false`
-      // yields `withinFreeCap === true`, so the request-cap comparison below is
-      // also skipped — a fan-out sub-request is never re-metered nor 429'd on
-      // the request cap.
-      const meterStart = Date.now();
-      const inc = isFanout
-        ? { counted: false, count: 0 }
-        : await incrementMonthlyRequestCount(
-            env.CONFIG_DB,
-            resolvedTenantId,
-            requestQuotaEnabled,
-          );
-      // A fan-out sub-request skips the UPSERT entirely, so leave the `-1`
-      // sentinel: the phase DID NOT RUN, which is a different fact from "ran and
-      // cost nothing". (`requestQuotaEnabled === false` does call in and return
-      // without a write — that legitimately reads as a real 0.)
-      //
-      // ACCEPTED SIGNAL (independent review of this commit): because the omission
-      // is keyed on `isFanout`, an absent `qmeter` WHILE `qtier`/`qstor`/`qresid`
-      // are present confirms to the CALLER that their `x-corelink-fanout-from`
-      // matched CORELINK_INTERNAL_AUTH_KEY — a one-request confirmation oracle,
-      // where previously a successful forgery was only observable indirectly
-      // (never being 429'd). Note the conjunction: `qmeter` is ALSO absent for
-      // `_anonymous`/`_system`/`_pending`, but there the other three are absent too.
-      //
-      // Be precise about what is confirmed. CORELINK_INTERNAL_AUTH_KEY is NOT a
-      // metering key — it is the SHARED internal-auth secret that every consumer
-      // falls back to when its dedicated key is unset/short (lib/internal_auth.ts),
-      // which today is the live configuration for PAT mint/rotate, runner mint,
-      // session exchange, githugr tenant-lookup and the `/_internal/*` gate.
-      //
-      // Accepted anyway, for a reason that survives that blast radius: a caller who
-      // can reach this oracle already holds the complete key (the compare is
-      // constant-time and FULL-VALUE — it confirms a complete guess, it never helps
-      // build one byte-by-byte), and a key holder has a far more direct oracle in a
-      // 200-vs-401 on `/_internal/*`. So this adds no capability. Emitting
-      // `qmeter;dur=0` instead would re-introduce exactly the "skipped vs fast"
-      // ambiguity this phase exists to remove. The real close is to ingress-strip
-      // `x-corelink-fanout-from` at the public edge — the primary sets it only on
-      // the service-binding forward, which never traverses the public edge, so
-      // stripping it costs nothing and removes the forgery surface and this oracle
-      // together. Tracked separately; it is edge config, not a Worker change.
-      if (!isFanout) stQMeterMs = Date.now() - meterStart;
-      const withinFreeCap = !inc.counted || inc.count <= FREE_REQUEST_CAP;
-
       // UNCONDITIONAL (also on fan-out): the served path — including a fan-out
       // sub-request forwarding to its regional container — needs the resolved
       // tier for the server-trusted STORAGE_QUOTA_HEADER. Gating these on
@@ -2906,6 +2848,13 @@ const baseHandler: ExportedHandler<Env> = {
       // pair of the `wdb` quota trio for far-from-D1 (SAM/GRU) callers. Returns
       // the same TierResult shape; an unconfirmed (`d1Error`) result is never
       // cached, so the F21 fail-open posture is preserved.
+      //
+      // Resolved FIRST (it used to run between the counter UPSERT and the storage
+      // SUM) because the batch below needs the tier to decide whether the storage
+      // read is worth issuing at all. It is cache-served in steady state — the
+      // 2026-08-04 prod measurement puts `qtier` at 0/0/3 ms — and it was already
+      // UNCONDITIONAL, so nothing pays extra for the reorder: the same reads
+      // happen, in a different order.
       const tierKv = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
       const tierStart = Date.now();
       const quotaTier = await resolveTenantTierCached(env.CONFIG_DB, resolvedTenantId, {
@@ -2915,11 +2864,68 @@ const baseHandler: ExportedHandler<Env> = {
       stQTierMs = Date.now() - tierStart;
       storageQuotaHeader = storageQuotaHeaderValue(quotaTier);
 
+      // A storage-increasing op is a write verb (PUT uploads / POST). DELETE
+      // reduces storage and reads (GET/HEAD) cannot grow it, so both stay
+      // available during a D1 outage.
+      const isStorageMutating = request.method === "PUT" || request.method === "POST";
+
+      // ── ONE round trip for both uncached D1 statements ────────────────────
+      // The monthly-counter UPSERT and the storage `SUM(bytes_used)` read used to
+      // run as two SERIAL awaits, and the 2026-08-04 prod measurement (warm, n=30)
+      // showed they were the ENTIRE `wdb` phase: `qmeter` 152/158/163 ms + `qstor`
+      // 120/126/130 ms = `wdb` 277/284/302 ms, with sum(4) − wdb = 0 on 30/30
+      // requests. Neither reads the other's result, so the seriality bought
+      // nothing and cost a full ENAM round trip. `db.batch` issues both in one.
+      //
+      // The counter is still incremented SYNCHRONOUSLY here, and deliberately: it
+      // is a billing/quota counter whose post-increment value IS the 429 decision
+      // below, and `ctx.waitUntil` carries no durability guarantee (an evicted
+      // isolate drops the pending write → a silently under-counted tenant). What
+      // is counted, when, and against which cap is byte-for-byte unchanged; only
+      // the number of network round trips changed. (`runQuotaBatch` documents the
+      // one real consequence: a D1 batch is a transaction, so a fault now rolls
+      // the increment back too — an UNDER-count, the direction this counter's
+      // fail-open design already tolerates, never an over-count.)
+      //
+      // #11: skip the metering UPSERT on an internal fan-out sub-request (the
+      // primary Worker already counted this logical request). `counted:false`
+      // yields `withinFreeCap === true`, so the request-cap comparison below is
+      // also skipped — a fan-out sub-request is never re-metered nor 429'd on the
+      // request cap. The storage read is likewise skipped for an unlimited-storage
+      // tier or an unconfirmed (`d1Error`) one, exactly as before.
+      //
+      // rt-nuclear #24 (accepted, narrowed): the counter UPSERT used to run FIRST
+      // so a tenant already over even the LOWEST tier cap was 429'd without paying
+      // the storage SUM. Batched, an over-cap tenant now also pays that read — but
+      // in the SAME round trip, so the cost is rows-read, not latency, and it is
+      // bounded (a SUM over that tenant's handful of `tenant_storage_state` rows).
+      // The alternative — remembering that this tenant was over-cap to skip the
+      // read — is a cached authorization decision, which this path must not have.
+      const qbatchStart = Date.now();
+      const quotaBatch = await runQuotaBatch(env.CONFIG_DB, resolvedTenantId, quotaTier, {
+        meter: !isFanout && requestQuotaEnabled,
+        isMutating: isStorageMutating,
+      });
+      // `-1` (phase omitted) iff no round trip was issued at all — both statements
+      // skipped. Anything else is a real measurement of the one round trip, 0
+      // included. Unlike the `qmeter`/`qstor` pair it replaces, `qbatch` does NOT
+      // reveal WHICH statements were in it, which incidentally closes the
+      // confirmation oracle the old `qmeter` omission gave a fan-out caller (an
+      // absent `qmeter` beside a present `qtier`/`qstor`/`qresid` confirmed that
+      // their `x-corelink-fanout-from` matched CORELINK_INTERNAL_AUTH_KEY). What
+      // remains is strictly narrower: `qbatch` is absent only when the metering
+      // AND the storage statement are both skipped, i.e. a fan-out (or
+      // kill-switched) request from an unlimited-STORAGE tenant — enterprise only.
+      if (quotaBatch.ranD1) stQBatchMs = Date.now() - qbatchStart;
+      const inc = quotaBatch.increment;
+
       // Monthly request-count quota (red-team #5): compare the already-counted
       // value against the tenant's RESOLVED tier cap. No re-increment. Within
       // the free cap → already within every cap, skip the comparison. Over the
-      // free cap → a free tenant rejects HERE, before the storage SUM below; a
-      // paid tenant under its (higher) cap passes through.
+      // free cap → a free tenant rejects HERE; a paid tenant under its (higher)
+      // cap passes through. Checked BEFORE the storage verdict so the 429 a
+      // client sees for a doubly-over-cap tenant is unchanged by the batching.
+      const withinFreeCap = !inc.counted || inc.count <= FREE_REQUEST_CAP;
       if (!withinFreeCap) {
         const requestCheck = requestCapResultForCount(inc.count, quotaTier.tier);
         if (!requestCheck.ok) {
@@ -2927,21 +2933,9 @@ const baseHandler: ExportedHandler<Env> = {
         }
       }
 
-      // A storage-increasing op is a write verb (PUT uploads / POST). DELETE
-      // reduces storage and reads (GET/HEAD) cannot grow it, so both stay
-      // available during a D1 outage.
-      const isStorageMutating = request.method === "PUT" || request.method === "POST";
-
-      // Storage quota check. (OCI never reaches this PAT-gate path — see the
+      // Storage quota verdict. (OCI never reaches this PAT-gate path — see the
       // dedicated pass-through branch above; the container enforces OCI quota.)
-      const storStart = Date.now();
-      const storageCheck = await checkStorageQuota(
-        env.CONFIG_DB,
-        resolvedTenantId,
-        quotaTier,
-        isStorageMutating,
-      );
-      stQStorMs = Date.now() - storStart;
+      const storageCheck = quotaBatch.storage;
       if (!storageCheck.ok) {
         return quotaExceeded(storageCheck.reason, storageCheck.retryAfterSec);
       }
@@ -3282,13 +3276,14 @@ const baseHandler: ExportedHandler<Env> = {
       if (stAuthEnd > 0 && stOriginStart > 0) {
         st.push(`wdb;dur=${stOriginStart - stAuthEnd}`);
       }
-      // The four serial awaits `wdb` is made of, in execution order. `-1` is the
+      // The three awaits `wdb` is made of, in execution order. `-1` is the
       // did-not-run sentinel (see the declarations); anything >= 0 ran and is
-      // reported at its real cost, 0 included.
+      // reported at its real cost, 0 included. `qbatch` is ONE D1 round trip
+      // carrying the metering UPSERT and the storage SUM — the two phases that
+      // shipped as `qmeter` and `qstor` and were the whole of `wdb`.
       for (const [name, ms] of [
-        ["qmeter", stQMeterMs],
         ["qtier", stQTierMs],
-        ["qstor", stQStorMs],
+        ["qbatch", stQBatchMs],
         ["qresid", stQResidMs],
       ] as const) {
         if (ms >= 0) st.push(`${name};dur=${ms}`);

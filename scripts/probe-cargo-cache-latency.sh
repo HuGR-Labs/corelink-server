@@ -157,17 +157,22 @@ echo
 # data-plane response carries `Server-Timing` (worker/src/index.ts):
 #   auth   — the Worker's PAT verify, with `desc` naming the cache tier that
 #            served the row (l1 / kv / d1)
-#   wdb    — the Worker-side quota + residency reads to the ENAM primary, now
-#            broken into the four SERIAL awaits it is made of:
-#              qmeter — the monthly request-counter UPSERT (D1 write, uncached
-#                       by nature: it is a counter)
+#   wdb    — the Worker-side quota + residency reads to the ENAM primary, broken
+#            into the awaits it is made of:
 #              qtier  — tier resolve  (L1 isolate -> KV -> D1)
-#              qstor  — the storage SUM(bytes_used) read (D1, uncached)
+#              qbatch — ONE D1 round trip carrying BOTH uncached quota
+#                       statements: the monthly request-counter UPSERT and the
+#                       storage SUM(bytes_used) read, issued as a `db.batch`
 #              qresid — residency resolve (L1 isolate -> KV -> D1)
-#            Two of the four are cache-backed and two are not, so the aggregate
-#            alone cannot say what to fix. A cache-backed phase can still cost a
-#            full D1 round trip on an isolate-cold request — which is exactly why
-#            these are measured rather than assumed.
+#            `qbatch` is the phase that used to be `qmeter` + `qstor`, two SERIAL
+#            round trips. This probe is what showed they were the entire `wdb`
+#            (2026-08-04, warm, n=30: qmeter 152/158/163 + qstor 120/126/130 =
+#            wdb 277/284/302, with qtier and qresid at 0), which is why they were
+#            merged. A Worker deployed BEFORE that merge still emits the old two
+#            names; both sets are queried below so the probe reads either.
+#            The cache-backed phases can still cost a full D1 round trip on an
+#            isolate-cold request — which is exactly why these are measured
+#            rather than assumed.
 #   origin — the whole DO + container subrequest (so the container's own D1 `pat`
 #            read, the memo, the quota gate and the storage lookup are all
 #            INSIDE this one number — this phase narrows the residue to a tier,
@@ -205,7 +210,10 @@ else
   # skipped. If you see a low `n` on `auth`/`wdb`/`origin`, check what is actually
   # deployed before concluding anything — that number is the reason this contract
   # was made explicit.
-  for ph in auth wdb qmeter qtier qstor qresid origin total; do
+  # `qmeter`/`qstor` are the PRE-merge names of `qbatch` — kept in the list so a
+  # probe run against an older deployed Worker still attributes its `wdb`
+  # instead of silently reporting an unexplained aggregate.
+  for ph in auth wdb qtier qbatch qresid qmeter qstor origin total; do
     # `dur` is milliseconds; `pct` takes seconds.
     #
     # An ABSENT phase must not kill the probe. Under `set -euo pipefail` a `grep`

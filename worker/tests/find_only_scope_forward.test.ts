@@ -15,6 +15,7 @@ import { describe, it, expect } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
 import workerHandler from "../src/index.js";
 import type { Env } from "../src/index.js";
+import { batchViaFirst } from "./d1_batch_mock.js";
 
 const TEST_TOKEN_ID = "AAAAAAAAAAAAAAAA"; // 16 Crockford-b32 chars
 const TEST_TENANT_ID = "00000000-0000-0000-0000-000000000001";
@@ -77,7 +78,9 @@ function makeD1(scope: string, findOnly: number | null): D1Database {
       run: async <T>() => ({ success: true as const, meta: {} as never, results: [] as T[] }),
       raw: async <T>() => [] as T[],
     }),
-    batch: async () => [],
+    // Both quota statements travel as ONE `db.batch` round trip
+    // (`runQuotaBatch`); resolve them through this mock's own routing.
+    batch: batchViaFirst(),
     exec: async () => ({ count: 0, duration: 0 }),
     withSession() { return this; },
     dump: async () => new ArrayBuffer(0),
