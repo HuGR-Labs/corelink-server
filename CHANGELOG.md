@@ -64,6 +64,37 @@ Each entry cross-references:
   assertion. 0 failures in 25 runs under 6 busy loops after the fix.
 
 ### Fixed
+- **fix(oci): the OCI `/token` rate-limit bucket was GLOBAL — one host at 50 req/s could 429
+  `docker login` / `pull` / `push` for every CoreLink user, with no credential of any kind.**
+  `oci_bucket_key` (`crates/corelink-container/src/routes/ratelimit_layer.rs`) derived the bucket
+  key from the synthetic OCI realm UUID plus the literal scope string only. For the two synthetic
+  scopes — `_token` (the OCI Basic→Bearer exchange) and `_v2root` (the `/v2` version-check ping
+  every client sends first) — that is a *constant*, so the entire internet shared ONE 50 req/s /
+  200-burst bucket per scope. The OCI plane is uniquely exposed because the Worker forwards it to a
+  single shared Durable Object (`idFromName("_oci")`), unlike every other PAT surface, which is
+  per-tenant. The layer charges the token **before** `next.run(req)`, so a garbage `Authorization`
+  header — or none — spends it just as well as a real credential: the flood needs no account.
+  Both scopes now additionally partition on the **server-trusted client IP**
+  (`x-corelink-client-ip`, set by the Worker from `cf-connecting-ip` after
+  `stripClientTrustHeaders` has deleted any client copy, so it cannot be spoofed or removed).
+  Credential-gated per-repo scopes keep their existing per-repo keying — per-repo isolation is the
+  property they exist for — and neither the rate (50/s) nor the burst (200) changed. Absent/empty
+  header (what `index.ts` writes when `cf-connecting-ip` is missing, and what a request that never
+  traversed the Worker carries) maps to ONE dedicated `_no_ip` partition: not fail-OPEN (that would
+  restore the unbounded flood) and not fail-CLOSED (a 429 on a missing header would lock out real
+  users); safe because the partition is **disjoint** from every real per-IP bucket, so draining it
+  can never shed a request that carries a trusted IP, and reaching it at all requires bypassing the
+  Worker entirely. Two stale comments corrected in the same file: it claimed the OCI forward arm
+  "does not carry `cf-connecting-ip`" (it has carried it since F-016) and cited "a Cloudflare WAF
+  rule on corelink-oci (infra)" as the compensating per-IP edge cap — **verified 2026-08-04 against
+  the live Cloudflare API: the zone's only `http_ratelimit` rule covers `corelink-signup` /
+  `corelink-admin` / `corelink-app` / `corelink-docs`; `corelink-oci` is not in it.** There was no
+  edge cap. Stated plainly in the module docs: per-IP partitioning is a **mitigation, not an
+  elimination** — a distributed attacker who rotates source IPs still gets a fresh bucket per IP,
+  and blunting that needs a real edge per-IP/ASN cap (residual, OPEN). 5 new tests pin the
+  behaviour (distinct IPs draw distinct `/token` and `/v2` buckets; the same IP shares one and is
+  still shed; per-repo scopes ignore the IP; the `_no_ip` partition is bounded AND isolated); all
+  4 behavioural ones were confirmed to FAIL against the pre-fix keying.
 - **fix(okf): the OKF wiki gate certified `main` green against evidence that no longer existed —
   a blob anchor was validated by PRESENCE in the clone, which is a timing artifact of when CI
   cloned.** #1022 anchored `docs/knowledge/auth/pat-moat.md` on

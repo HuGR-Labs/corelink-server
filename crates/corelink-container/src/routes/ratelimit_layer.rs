@@ -67,11 +67,31 @@
 //! the shared `_oci` pool with no per-second limit (an unauthenticated
 //! `/v2/`+`/token` flood can starve all OCI tenants). This layer keys a
 //! SEPARATE, tighter limiter on the OCI repo/realm parsed from the path
-//! ([`oci_repo_scope`]) so a single repo/realm's req/s is bounded. **Residual**:
-//! a true per-IP edge limit needs `cf-connecting-ip` forwarded on the OCI arm
-//! (the Worker does not set it there today) and/or an edge per-IP WAF rule on
-//! `corelink-oci.humangr.com` — both are Worker/infra, off-repo. The
-//! container-side per-repo velocity gate closes the no-limit-at-all hole.
+//! ([`oci_repo_scope`]) so a single repo/realm's req/s is bounded.
+//!
+//! # Per-source partition of the UNAUTHENTICATED OCI scopes
+//!
+//! Two of those scopes are reachable with NO credential of any kind: `/token`
+//! (the OCI Basic→Bearer exchange) and the `/v2` version-check root — every
+//! `docker login` / `pull` / `push` starts by hitting BOTH, and this layer
+//! charges the bucket BEFORE `next.run(req)`, so a garbage `Authorization`
+//! header (or none at all) still spends a token. Keying those two on the scope
+//! literal alone therefore gave the whole internet ONE
+//! [`OCI_REPO_REQ_PER_SEC`]-req/s bucket each: a single host could 429 OCI token
+//! exchange for every legitimate user. They are now additionally partitioned by
+//! the server-trusted client IP ([`CLIENT_IP_HEADER`] — set by the Worker from
+//! `cf-connecting-ip`, unspoofable because `stripClientTrustHeaders` deletes any
+//! client-supplied copy before the Worker sets its own). Credential-gated
+//! per-repo scopes keep their existing per-repo keying (that is the isolation
+//! property they are there for).
+//!
+//! **Partition ≠ elimination.** A distributed attacker who rotates source IPs
+//! still gets a fresh bucket per IP; blunting THAT needs an edge per-IP/ASN cap.
+//! Verified 2026-08-04 against the live Cloudflare API: the zone's only
+//! `http_ratelimit` rule covers `corelink-signup` / `corelink-admin` /
+//! `corelink-app` / `corelink-docs` — `corelink-oci` is NOT in it. An earlier
+//! revision of this file claimed such a WAF rule as the mitigation for exactly
+//! this hole; that claim was false and the residual is real and OPEN.
 //!
 //! # Fail-OPEN posture
 //!
@@ -144,10 +164,34 @@ const COST_PER_REQUEST: u32 = 1;
 /// container resolves the bearer: the OCI **repository name** parsed from the
 /// request path (`/v2/<repo>/...`), with `/token` and the `/v2/` root mapped to
 /// fixed synthetic scopes. This bounds any single repo/realm's req/s against the
-/// shared pool. It is NOT a per-IP edge limit (the OCI forward arm does not
-/// carry `cf-connecting-ip`, and the edge per-IP WAF rule is infra, off-repo) —
-/// see the module residual note.
+/// shared pool.
+///
+/// For the two synthetic scopes that carry NO credential ([`OCI_UNAUTH_SCOPES`])
+/// the key additionally folds in the server-trusted client IP — see
+/// [`oci_bucket_key`] and the module's per-source-partition note. This is NOT an
+/// edge cap: it runs in-container, after the request has already been paid for
+/// at the edge.
 const OCI_NS: [u8; 16] = *b"corelink-rl-oci!";
+
+/// The server-trusted client IP header the Worker injects on the OCI forward
+/// arm (`worker/src/index.ts`, `oci_v2`/`oci_token` route kinds): it is set from
+/// `cf-connecting-ip` AFTER `stripClientTrustHeaders` has deleted any
+/// client-supplied copy, so a client cannot spoof or remove it. Same header the
+/// signup and public-attestation rate limits key on.
+const CLIENT_IP_HEADER: &str = "x-corelink-client-ip";
+
+/// The OCI velocity-gate scopes reachable with NO credential of any kind, whose
+/// buckets are partitioned per client IP (see the module note).
+///
+/// These are the two synthetic literals minted by [`oci_repo_scope`], never a
+/// real repository name: the OCI Distribution grammar requires a repo path
+/// component to START with an alphanumeric (`[a-z0-9]+(?:[._-]+[a-z0-9]+)*`), so
+/// no real repo can be spelled `_token` / `_v2root` and collide with them.
+const OCI_UNAUTH_SCOPES: &[&str] = &["_token", "_v2root"];
+
+/// Bucket partition used for an unauthenticated OCI scope when the trusted
+/// client IP is absent or empty — see [`oci_bucket_key`] for the rationale.
+const NO_CLIENT_IP_PARTITION: &str = "_no_ip";
 
 /// Sustained per-OCI-repo request rate (tokens / second). Tighter than the
 /// per-tenant default because this gate guards the SHARED `_oci` pool reachable
@@ -506,6 +550,8 @@ pub async fn rate_limit_layer(
 ///
 /// Keying on the repo name gives per-repo isolation (one hot/abused repo can't
 /// starve the rest) plus a global per-repo ceiling on the shared `_oci` pool.
+/// The two synthetic scopes ([`OCI_UNAUTH_SCOPES`]) are credential-free and are
+/// further partitioned per client IP in [`oci_bucket_key`].
 /// The repo name is taken verbatim (OCI repo names are `[a-z0-9._/-]+`); it is
 /// only ever used as an opaque bucket scope string, never interpreted.
 #[must_use]
@@ -548,10 +594,61 @@ fn oci_repo_scope(path: &str) -> Option<String> {
 /// Derive a STABLE per-OCI-repo bucket key under the synthetic OCI namespace
 /// ([`OCI_NS`]). All OCI buckets share one synthetic tenant id (the namespace
 /// UUID) and isolate by repo via the `per_tenant_per_endpoint` scope.
+///
+/// For a credential-gated per-repo scope the key is the repo name verbatim
+/// (unchanged: per-repo isolation is exactly the property that scope wants).
+/// For an UNAUTHENTICATED scope ([`OCI_UNAUTH_SCOPES`] — `/token` and the `/v2`
+/// version-check root) the trusted client IP is folded in, so one abusive source
+/// can no longer drain the single global bucket that every `docker login` /
+/// `pull` / `push` on the platform has to draw from. `|` and `=` cannot appear
+/// in an OCI repo name, so the composed scope string can never alias a repo key.
+///
+/// # Absent / empty `x-corelink-client-ip`
+///
+/// `index.ts` writes `""` when `cf-connecting-ip` is missing, and a request that
+/// never traversed the Worker carries no header at all. Those requests go into
+/// ONE dedicated [`NO_CLIENT_IP_PARTITION`] bucket per unauthenticated scope —
+/// deliberately NOT fail-OPEN (that would restore the unbounded flood this fix
+/// exists to close) and deliberately NOT fail-CLOSED (a 429 on a missing header
+/// would lock out real users on any future forward path that forgets to set it).
+///
+/// Collapsing them together is safe here specifically because the partition is
+/// DISJOINT from every real per-IP bucket: draining `_no_ip` cannot 429 any
+/// request that carries a trusted IP, and every request arriving through the
+/// sanctioned Worker path carries one (the Worker is the header's sole setter
+/// and sets it unconditionally on the OCI arm). An attacker cannot move itself
+/// into `_no_ip` by stripping the header, because `stripClientTrustHeaders`
+/// deletes the client's copy and the Worker then sets its own from
+/// `cf-connecting-ip`; reaching `_no_ip` at all requires bypassing the Worker,
+/// at which point the only traffic it can starve is other Worker-bypassing
+/// traffic. The bucket map is capped with approximate-LRU eviction upstream, so
+/// per-IP keys cannot grow it without bound.
 #[must_use]
-fn oci_bucket_key(scope: &str) -> (Uuid, BucketKey) {
+fn oci_bucket_key(scope: &str, client_ip: &str) -> (Uuid, BucketKey) {
     let realm = Uuid::from_bytes(OCI_NS);
-    (realm, BucketKey::per_tenant_per_endpoint(realm, scope))
+    let scope_key = if OCI_UNAUTH_SCOPES.contains(&scope) {
+        let ip = client_ip.trim();
+        let partition = if ip.is_empty() {
+            NO_CLIENT_IP_PARTITION
+        } else {
+            ip
+        };
+        format!("{scope}|ip={partition}")
+    } else {
+        scope.to_owned()
+    };
+    (realm, BucketKey::per_tenant_per_endpoint(realm, scope_key))
+}
+
+/// Read the server-trusted client IP ([`CLIENT_IP_HEADER`]) off a request.
+/// Absent / non-UTF-8 / whitespace-only all collapse to `""`, which
+/// [`oci_bucket_key`] maps to the [`NO_CLIENT_IP_PARTITION`] bucket.
+fn trusted_client_ip(req: &Request) -> &str {
+    req.headers()
+        .get(CLIENT_IP_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .unwrap_or("")
 }
 
 /// Run the per-OCI-repo velocity gate (F-016). Fail-OPEN on the limiter's own
@@ -562,7 +659,7 @@ async fn run_oci_velocity_gate(
     req: Request,
     next: Next,
 ) -> Response {
-    let (realm, bucket_key) = oci_bucket_key(scope);
+    let (realm, bucket_key) = oci_bucket_key(scope, trusted_client_ip(&req));
     let now_ms = state.clock.now_ms();
     match state
         .oci_limiter
@@ -661,14 +758,26 @@ mod tests {
         b.body(Body::empty()).unwrap()
     }
 
-    /// An app mounting an OCI-shaped route so the layer's path-based OCI gate
-    /// (F-016) is exercised end-to-end.
+    /// An app mounting OCI-shaped routes so the layer's path-based OCI gate
+    /// (F-016) is exercised end-to-end. `/token` is mounted alongside `/v2/*`
+    /// because the unauthenticated-scope partition is keyed there.
     fn oci_app(state: RateLimitLayerState, hits: Arc<AtomicUsize>) -> Router {
+        let token_hits = hits.clone();
         Router::new()
             .route(
                 "/v2/{*rest}",
                 get(move || {
                     let h = hits.clone();
+                    async move {
+                        h.fetch_add(1, Ordering::SeqCst);
+                        "ok"
+                    }
+                }),
+            )
+            .route(
+                "/token",
+                get(move || {
+                    let h = token_hits.clone();
                     async move {
                         h.fetch_add(1, Ordering::SeqCst);
                         "ok"
@@ -685,6 +794,29 @@ mod tests {
     /// the F-016 condition that fail-OPENED the per-tenant gate.
     fn oci_req(uri: &str) -> HttpRequest<Body> {
         HttpRequest::builder().uri(uri).body(Body::empty()).unwrap()
+    }
+
+    /// An OCI request as the Worker actually forwards it: no tenant header, but
+    /// the server-trusted `x-corelink-client-ip` set from `cf-connecting-ip`.
+    fn oci_req_from_ip(uri: &str, ip: &str) -> HttpRequest<Body> {
+        HttpRequest::builder()
+            .uri(uri)
+            .header(CLIENT_IP_HEADER, ip)
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    /// Drain an OCI bucket to exhaustion by replaying `build` `OCI_REPO_BURST`
+    /// times against the shared `state`.
+    async fn drain_oci_bucket(
+        state: &RateLimitLayerState,
+        hits: &Arc<AtomicUsize>,
+        build: impl Fn() -> HttpRequest<Body>,
+    ) {
+        for _ in 0..OCI_REPO_BURST {
+            let app = oci_app(state.clone(), hits.clone());
+            let _ = app.oneshot(build()).await.unwrap();
+        }
     }
 
     /// A fake tier resolver returning a fixed label (F-017 wiring test).
@@ -822,12 +954,56 @@ mod tests {
 
     #[test]
     fn distinct_oci_repos_get_distinct_buckets() {
-        let (_, a) = oci_bucket_key("alpine");
-        let (_, b) = oci_bucket_key("nginx");
+        let (_, a) = oci_bucket_key("alpine", "203.0.113.1");
+        let (_, b) = oci_bucket_key("nginx", "203.0.113.1");
         assert_ne!(a, b);
         // Same repo → same key (stable).
-        let (_, a2) = oci_bucket_key("alpine");
+        let (_, a2) = oci_bucket_key("alpine", "203.0.113.1");
         assert_eq!(a, a2);
+    }
+
+    #[test]
+    fn credential_gated_repo_scopes_ignore_the_client_ip() {
+        // Per-repo scopes are already credential-gated (HMAC Bearer minted at
+        // /token); their keying is UNCHANGED by this fix — the per-repo ceiling
+        // is the isolation property they exist for.
+        let (_, a) = oci_bucket_key("alpine", "203.0.113.1");
+        let (_, b) = oci_bucket_key("alpine", "198.51.100.7");
+        let (_, c) = oci_bucket_key("alpine", "");
+        assert_eq!(a, b);
+        assert_eq!(a, c);
+    }
+
+    #[test]
+    fn unauthenticated_oci_scopes_partition_by_client_ip() {
+        // The live defect: `_token` (and the equally credential-free `/v2`
+        // version-check root) keyed on the scope literal alone, so every caller
+        // on earth shared ONE 50 rps bucket.
+        for scope in OCI_UNAUTH_SCOPES {
+            let (_, a) = oci_bucket_key(scope, "203.0.113.1");
+            let (_, b) = oci_bucket_key(scope, "198.51.100.7");
+            assert_ne!(a, b, "{scope}: distinct client IPs must not share a bucket");
+            // Same IP → same bucket (the limit still binds per source).
+            let (_, a2) = oci_bucket_key(scope, "203.0.113.1");
+            assert_eq!(a, a2, "{scope}: same client IP must share one bucket");
+        }
+        // The two unauthenticated scopes never alias each other.
+        let (_, tok) = oci_bucket_key("_token", "203.0.113.1");
+        let (_, root) = oci_bucket_key("_v2root", "203.0.113.1");
+        assert_ne!(tok, root);
+    }
+
+    #[test]
+    fn absent_or_empty_client_ip_shares_one_disjoint_partition() {
+        // Absent (`""`, what index.ts writes when cf-connecting-ip is missing)
+        // and whitespace-only collapse to the SAME dedicated `_no_ip` bucket —
+        // bounded (not fail-OPEN) yet disjoint from every real per-IP bucket, so
+        // draining it can never 429 a request that carries a trusted IP.
+        let (_, empty) = oci_bucket_key("_token", "");
+        let (_, blank) = oci_bucket_key("_token", "   ");
+        assert_eq!(empty, blank);
+        let (_, real) = oci_bucket_key("_token", "203.0.113.1");
+        assert_ne!(empty, real);
     }
 
     #[tokio::test]
@@ -884,6 +1060,110 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn oci_token_flood_from_one_ip_does_not_429_another_ip() {
+        // The live defect, end-to-end: one host draining /token used to 429
+        // `docker login` for EVERY OCI user. Burn IP A's whole burst, then a
+        // request from IP B must still be served.
+        let clock = fixed_clock(8_000_000);
+        let state = RateLimitLayerState::with_clock(clock);
+        let hits = Arc::new(AtomicUsize::new(0));
+
+        drain_oci_bucket(&state, &hits, || oci_req_from_ip("/token", "203.0.113.1")).await;
+
+        // Same IP, one more request → its own bucket is empty → 429.
+        let app = oci_app(state.clone(), hits.clone());
+        let resp = app
+            .oneshot(oci_req_from_ip("/token", "203.0.113.1"))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "the flooding source must still be shed"
+        );
+
+        // Different IP → fresh bucket → allowed.
+        let app = oci_app(state.clone(), hits.clone());
+        let resp = app
+            .oneshot(oci_req_from_ip("/token", "198.51.100.7"))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "a flood from one host must not 429 /token for everyone else"
+        );
+    }
+
+    #[tokio::test]
+    async fn oci_v2_root_flood_from_one_ip_does_not_429_another_ip() {
+        // `/v2/_catalog` maps to the `_v2root` scope, which is reachable with no
+        // credential at all (the OCI version-check ping every client sends
+        // first) — same unauthenticated shape as /token, same partition.
+        let clock = fixed_clock(9_000_000);
+        let state = RateLimitLayerState::with_clock(clock);
+        let hits = Arc::new(AtomicUsize::new(0));
+
+        drain_oci_bucket(&state, &hits, || {
+            oci_req_from_ip("/v2/_catalog", "203.0.113.1")
+        })
+        .await;
+
+        let app = oci_app(state.clone(), hits.clone());
+        let resp = app
+            .oneshot(oci_req_from_ip("/v2/_catalog", "203.0.113.1"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        let app = oci_app(state.clone(), hits.clone());
+        let resp = app
+            .oneshot(oci_req_from_ip("/v2/_catalog", "198.51.100.7"))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn oci_token_flood_without_client_ip_is_bounded_and_isolated() {
+        // Header absent entirely (a request that never traversed the Worker):
+        // it must still be SHED once the `_no_ip` partition is drained (not
+        // fail-OPEN), and draining it must NOT lock out a real IP-carrying user
+        // (not fail-CLOSED onto the shared population).
+        let clock = fixed_clock(10_000_000);
+        let state = RateLimitLayerState::with_clock(clock);
+        let hits = Arc::new(AtomicUsize::new(0));
+
+        drain_oci_bucket(&state, &hits, || oci_req("/token")).await;
+
+        let app = oci_app(state.clone(), hits.clone());
+        let resp = app.oneshot(oci_req("/token")).await.unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::TOO_MANY_REQUESTS,
+            "no-IP traffic must still be bounded, never fail-OPEN"
+        );
+
+        // An empty header value (what index.ts writes when cf-connecting-ip is
+        // missing) lands in the SAME `_no_ip` partition.
+        let app = oci_app(state.clone(), hits.clone());
+        let resp = app.oneshot(oci_req_from_ip("/token", "")).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        // ...and a genuine client IP is untouched by that drain.
+        let app = oci_app(state.clone(), hits.clone());
+        let resp = app
+            .oneshot(oci_req_from_ip("/token", "203.0.113.1"))
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "the _no_ip partition must be disjoint from every real per-IP bucket"
+        );
     }
 
     // ---- F-017: per-tenant tier ladder -----------------------------------
