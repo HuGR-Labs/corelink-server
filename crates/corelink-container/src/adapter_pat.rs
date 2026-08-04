@@ -570,18 +570,36 @@ impl std::fmt::Debug for SecretMatchMemo {
 }
 
 /// The [`SecretMatchMemo`] key: a domain-separated, length-prefixed SHA-256 over
-/// `(plaintext, token_id, stored_pat_hash)`.
+/// every field of the row that the decision depends on —
+/// `(plaintext, token_id, stored_pat_hash, scope, find_only)`.
 ///
 /// Length-prefixing every field makes the pre-image unambiguous (no
-/// concatenation-boundary confusion between two different triples), and the
+/// concatenation-boundary confusion between two different tuples), and the
 /// domain tag keeps this fingerprint from ever colliding with another
 /// SHA-256-of-a-token use in the codebase (e.g. `native_pat_gate::fingerprint`).
 /// Only the digest is retained, so the memo never holds recoverable secret
 /// material.
-fn secret_match_fingerprint(plaintext: &str, token_id: &str, pat_hash: &str) -> String {
+///
+/// `scope` and `find_only` are in the key even though the gate re-reads them
+/// fresh every request and the memoised fact does not depend on them. They are
+/// here to close the last latency tail: without them, a PAT that verified
+/// successfully and was then *downgraded* in D1 (rather than revoked) would keep
+/// hitting the memo for the rest of the TTL and 401 in ~0 ms, while a *revoked*
+/// PAT still pays the slow dummy burn — distinguishing "downgraded" from
+/// "revoked" on latency alone. With them in the key, any change to either field
+/// makes the old entry unreachable, exactly as a `pat_hash` change already does,
+/// and the two rejections stay uniform.
+fn secret_match_fingerprint(
+    plaintext: &str,
+    token_id: &str,
+    pat_hash: &str,
+    scope: &str,
+    find_only: bool,
+) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(b"corelink/adapter-pat/secret-match/v1\0");
-    for part in [plaintext, token_id, pat_hash] {
+    hasher.update(b"corelink/adapter-pat/secret-match/v2\0");
+    let find_only = if find_only { "1" } else { "0" };
+    for part in [plaintext, token_id, pat_hash, scope, find_only] {
         hasher.update((part.len() as u64).to_be_bytes());
         hasher.update(part.as_bytes());
     }
@@ -1027,7 +1045,13 @@ impl PatVerifier {
         //    401 paths symmetric. That is a separate change with its own
         //    threat-model review; the cold-burst 503 it would fix is
         //    pre-existing behaviour, not a regression introduced here.
-        let fp = secret_match_fingerprint(pat_plaintext, token_id.as_str(), &row.pat_hash);
+        let fp = secret_match_fingerprint(
+            pat_plaintext,
+            token_id.as_str(),
+            &row.pat_hash,
+            &row.scope,
+            row.find_only,
+        );
         // Whether THIS request paid the Argon2id. The memo is populated only at
         // the very END of the pipeline, after the step-4 scope gate — see the
         // comment there for why populating it here would be an oracle.
@@ -2167,18 +2191,80 @@ mod tests {
         );
     }
 
+    /// A scope DOWNGRADE must invalidate the memo, so a downgraded PAT stays
+    /// indistinguishable from a revoked one.
+    ///
+    /// Without `scope` in the fingerprint, a PAT that verified successfully and
+    /// was then downgraded (rather than revoked) would keep hitting the memo for
+    /// the rest of the TTL and 401 in ~0 ms, while a REVOKED PAT still pays the
+    /// slow dummy burn — telling the holder "downgraded, not revoked" on latency
+    /// alone. Both are uniform on `main` and must stay uniform.
+    ///
+    /// Proven with the drained-permit technique: after the downgrade the verify
+    /// must attempt a fresh Argon2id (⇒ `Backend` on an exhausted pool). A fast
+    /// `InvalidPat` would mean the stale entry was still being served.
+    #[tokio::test]
+    async fn a_scope_downgrade_invalidates_the_memo() {
+        let key = test_key();
+        let (pt, _tid, hash, tenant) = mint_pat(&key, 71, SCOPE_CACHE_RW);
+        let lookup = Arc::new(SwitchableLookup::new(
+            Ok(Some(row(&hash, &tenant, "cas:rw"))),
+            0,
+        ));
+        let verifier =
+            PatVerifier::with_key_set_and_permits(lookup.clone(), vec![(*key).clone()], 1);
+
+        // Warm the memo on the fully-scoped PAT.
+        assert_eq!(verifier.verify(&pt).await.unwrap(), tenant);
+
+        // Downgrade in D1 to a scope that grants nothing (NOT a revocation).
+        lookup.set(Ok(Some(row(&hash, &tenant, ""))));
+
+        // Drain the pool: no Argon2id can run from here on.
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "a downgraded PAT must miss the memo and re-pay Argon2id, got {err:?}"
+        );
+    }
+
     /// The memo key binds all three fields and is unambiguous across them.
     #[test]
-    fn secret_match_fingerprint_binds_plaintext_token_id_and_hash() {
-        let base = secret_match_fingerprint("pt", "tid", "hash");
-        assert_ne!(base, secret_match_fingerprint("pt-x", "tid", "hash"));
-        assert_ne!(base, secret_match_fingerprint("pt", "tid-x", "hash"));
-        assert_ne!(base, secret_match_fingerprint("pt", "tid", "hash-x"));
+    fn secret_match_fingerprint_binds_every_decision_field() {
+        let base = secret_match_fingerprint("pt", "tid", "hash", "cas:rw", false);
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt-x", "tid", "hash", "cas:rw", false)
+        );
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt", "tid-x", "hash", "cas:rw", false)
+        );
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt", "tid", "hash-x", "cas:rw", false)
+        );
+        // scope + find_only are in the key so a DOWNGRADE (as opposed to a
+        // revocation) makes the old entry unreachable instead of serving a
+        // fast 401 that a revoked PAT would not get.
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt", "tid", "hash", "cas:r", false)
+        );
+        assert_ne!(
+            base,
+            secret_match_fingerprint("pt", "tid", "hash", "cas:rw", true)
+        );
         // Length-prefixed ⇒ no concatenation-boundary collision between two
         // different triples that share a flat concatenation.
         assert_ne!(
-            secret_match_fingerprint("ab", "c", "d"),
-            secret_match_fingerprint("a", "bc", "d")
+            secret_match_fingerprint("ab", "c", "d", "e", false),
+            secret_match_fingerprint("a", "bc", "d", "e", false)
         );
         // A digest, never recoverable material. `!contains("pt")` would be
         // VACUOUS here — `p` and `t` are not hex digits, so it holds for any

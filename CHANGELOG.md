@@ -90,8 +90,17 @@ Each entry cross-references:
   to be indistinguishable on the wire, and latency is part of the wire. The insert now happens past
   the scope gate, so a scope-rejected PAT re-pays Argon2id on every request exactly as on `main`;
   `a_scope_rejected_pat_is_never_memoised` locks it and was proven RED against the old placement,
-  failing with `got InvalidPat` — the fast 401 that IS the oracle. 35/35 `adapter_pat`, 10/10
-  `native_pat_gate` and 834/834 `routes::` tests pass.
+  failing with `got InvalidPat` — the fast 401 that IS the oracle. A second confirmation pass then
+  found the tail of the same class and it is closed too: the memo key bound only
+  `(plaintext, token_id, pat_hash)`, so a PAT that verified successfully and was then *downgraded*
+  in D1 (rather than revoked) kept hitting the memo for the rest of the TTL and 401'd in ~0 ms, while
+  a *revoked* PAT still paid the slow dummy burn — separating "downgraded" from "revoked" on latency.
+  `scope` and `find_only` are now two more length-prefixed fields in the fingerprint (domain tag
+  bumped to `v2`), so any change to either makes the old entry unreachable exactly as a `pat_hash`
+  change already did. `a_scope_downgrade_invalidates_the_memo` locks it, likewise proven RED with
+  those fields removed from the key. **Every one of the five findings across three reviewers is
+  closed in-branch; none was deferred.** 36/36 `adapter_pat`, 10/10 `native_pat_gate` and 834/834
+  `routes::` tests pass.
 - **fix(ci): five workflow `paths:` globs matched zero tracked files, so those triggers had
   silently stopped firing — and a trigger that never fires produces no red check.** A
   `pull_request` workflow runs only when a changed file matches one of its globs; when a
