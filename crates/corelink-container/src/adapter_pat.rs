@@ -3502,4 +3502,125 @@ mod tests {
             "outside saturation an unknown row must be the uniform 401, never a 503"
         );
     }
+
+    /// THE ACCEPTED DIVERGENCE, pinned. `INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM` is
+    /// scoped to saturation of a tier BOTH arms share — the global pool, or a
+    /// per-tenant tier where each arm's own bucket is full. There is exactly one
+    /// state in between, which neither
+    /// `shed_is_indistinguishable_between_live_and_unknown_rows` (it drains the
+    /// GLOBAL pool) nor
+    /// `both_401_arms_shed_alike_when_the_per_tenant_tier_is_saturated` (it
+    /// saturates BOTH per-tenant buckets) reaches:
+    ///
+    /// > the shared [`UNKNOWN_TOKEN_BUCKET`] is saturated while the live
+    /// > tenant's OWN bucket is free and the global pool is ample.
+    ///
+    /// There the two arms legitimately diverge — the unknown/expired/revoked
+    /// `token_id` sheds `Backend("pat verifier overloaded")` (⇒ 503) while a
+    /// live PAT routes to its own unsaturated bucket, pays a real Argon2id and
+    /// resolves. That is not a regression of the uniformity rule; it is the
+    /// direct consequence of the finding-#12 defence that gives the row-NOT-FOUND
+    /// path its own capped bucket precisely so a leaked-key flood across bogus
+    /// `token_id`s cannot drain the pool real tenants need.
+    ///
+    /// ⚠️ DO NOT "FIX" THIS INTO UNIFORMITY. It is accepted, and here is why it
+    /// is not an exploitable row-existence oracle:
+    ///
+    ///  - **Reaching either arm requires the PAT signing key.** Both arms sit
+    ///    downstream of the HMAC fast-reject (step 1 of
+    ///    [`PatVerifier::verify_capability`]); without the key every probe is an
+    ///    `InvalidPat` that never touches D1, a permit, or a bucket — see
+    ///    `forged_token_does_not_touch_argon2_permits`. An attacker who holds
+    ///    the signing key can mint valid PATs outright and has no use for a
+    ///    liveness bit.
+    ///  - **The one edge-unauthenticated surface collapses both arms anyway.**
+    ///    OCI `/token` (`routes/oci.rs`) maps `InvalidPat` AND
+    ///    `Backend(..)` to the same scrubbed `401 authentication failed (ref:…)`
+    ///    envelope — pinned by `oci::tests::token_backend_fault_is_opaque_to_unauth_caller`
+    ///    — so the divergence is not observable there even with the key.
+    ///  - **Saturating the shared bucket is itself the flood the bucket exists
+    ///    to bound**, and holding it saturated costs the attacker a sustained
+    ///    valid-HMAC flood while learning nothing a `token_id`'s ordinary
+    ///    latency signature would not already give (that axis is the dummy
+    ///    burn's job — `INV-AUTH-CONSTANT-TIME-COLD-PAD`).
+    ///
+    /// What this test defends is the SHAPE of the state, so a future refactor
+    /// cannot slide the live arm into the shared bucket (which would turn one
+    /// bogus-token flood into a fleet-wide 503) or the unknown arm out of it
+    /// (which would restore the drain vector) without turning this red.
+    #[tokio::test]
+    async fn a_saturated_shared_burn_bucket_sheds_only_the_unknown_arm() {
+        let key = test_key();
+        let (pt_live, tid, hash, tenant) = mint_pat(&key, 100, SCOPE_CACHE_RW);
+        let (pt_unknown, _tid2, _h2, _t2) = mint_pat(&key, 101, SCOPE_CACHE_RW);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "cas:rw")));
+        // Ample global pool and the per-tenant sub-cap at its PRODUCTION value,
+        // so the only thing that can reject is a bucket this test holds itself.
+        let verifier = PatVerifier::with_key_set_and_permits_per_tenant(
+            lookup,
+            vec![(*key).clone()],
+            64,
+            ARGON2_PER_TENANT_PERMITS,
+        );
+
+        // Saturate ONLY the shared synthetic bucket the dummy burn routes through.
+        let burn_bucket = verifier
+            .per_tenant_semaphore(UNKNOWN_TOKEN_BUCKET)
+            .expect("dummy bucket");
+        let held: Vec<_> = (0..ARGON2_PER_TENANT_PERMITS)
+            .map(|_| {
+                Arc::clone(&burn_bucket)
+                    .try_acquire_owned()
+                    .expect("burn-bucket permit")
+            })
+            .collect();
+        assert_eq!(burn_bucket.available_permits(), 0, "burn bucket saturated");
+        // …and prove the live tenant's OWN bucket is untouched, so an Ok below
+        // cannot be explained by the live arm having been given headroom the
+        // unknown arm lacked at the GLOBAL tier.
+        let tenant_bucket = verifier
+            .per_tenant_semaphore(&tenant)
+            .expect("tenant bucket");
+        assert_eq!(
+            tenant_bucket.available_permits(),
+            ARGON2_PER_TENANT_PERMITS,
+            "the live tenant's own bucket must be FREE — that is the whole point"
+        );
+        assert!(
+            verifier.argon2_permits.available_permits() >= ARGON2_PER_TENANT_PERMITS,
+            "the global pool must stay ample so no shed can be attributed to it"
+        );
+
+        // Arm 1 — the unknown/revoked token_id sheds on the shared bucket.
+        let unknown = verifier.verify(&pt_unknown).await;
+        match &unknown {
+            Err(VerifyError::Backend(m)) => assert_eq!(
+                m, "pat verifier overloaded",
+                "the shared-bucket shed must be the ordinary overloaded signal"
+            ),
+            other => panic!("expected Backend(pat verifier overloaded), got {other:?}"),
+        }
+
+        // Arm 2 — THE HALF THAT MAKES THIS A PIN RATHER THAN A TAUTOLOGY. In the
+        // same instant, on the same verifier, a live PAT still resolves: it never
+        // consults the shared bucket, so a bogus-token flood cannot 503 a paying
+        // tenant.
+        let live = verifier.verify(&pt_live).await;
+        assert_eq!(
+            observe(&live),
+            Observed::Ok,
+            "a saturated dummy-burn bucket must NOT shed a live PAT, got {live:?}"
+        );
+        assert_eq!(live.expect("live PAT resolves"), tenant);
+
+        // CONTROL — release the shared bucket and the unknown arm goes back to
+        // the uniform 401. Without this the test would pass just as happily
+        // against a verifier that 503s every unknown token unconditionally.
+        drop(held);
+        assert_eq!(
+            observe(&verifier.verify(&pt_unknown).await),
+            Observed::Unauthorized,
+            "outside saturation an unknown row must be the uniform 401, never a 503"
+        );
+    }
 }
