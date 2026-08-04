@@ -399,11 +399,20 @@ const SECRET_MATCH_MEMO_TTL: Duration = Duration::from_secs(300);
 /// exchange and the public/anonymous surfaces pin ALL tenants onto the SHARED
 /// `_oci` / `_anonymous` DOs — the same reason `ARGON2_VERIFY_PERMITS` above
 /// talks about OOM-killing "the shared container … a registry outage for ALL
-/// tenants". A cap sized for one tenant would put that shared container in
-/// permanent eviction thrash: every insert would take the at-capacity branch,
-/// pay the O(n) purge under the map lock on the hot path, and drop the hit rate
-/// toward zero — turning the fix into a pessimisation on exactly one of the
-/// planes it targets.
+/// tenants". A cap sized for one tenant would put that shared container into
+/// at-capacity eviction on a working set it should comfortably hold.
+///
+/// Be honest about what this buys: raising the cap DEFERS saturation, it does
+/// not remove it. Once a shared DO's live set does reach the cap, every
+/// cold-miss insert takes the at-capacity branch and pays an O(cap) purge while
+/// holding the same `std::sync::Mutex` that each warm `contains()` needs — and a
+/// bigger cap makes that pass longer, not shorter. It is acceptable rather than
+/// ideal because the insert RATE is bounded by [`ARGON2_VERIFY_PERMITS`]: a cold
+/// miss cannot happen without an Argon2id, so inserts arrive at most ~50/s even
+/// on a saturated box, which is a small duty cycle for a microsecond-scale pass
+/// over an in-memory map. If a shared surface is ever observed to sit at
+/// capacity in steady state, the right fix is an O(1)-amortised eviction (or
+/// moving the purge off the request path), NOT another cap bump.
 const SECRET_MATCH_MEMO_CAP: usize = 32_768;
 
 /// One memoised secret-match: the tick at which it was recorded. The value is
@@ -1019,7 +1028,12 @@ impl PatVerifier {
         //    threat-model review; the cold-burst 503 it would fix is
         //    pre-existing behaviour, not a regression introduced here.
         let fp = secret_match_fingerprint(pat_plaintext, token_id.as_str(), &row.pat_hash);
+        // Whether THIS request paid the Argon2id. The memo is populated only at
+        // the very END of the pipeline, after the step-4 scope gate — see the
+        // comment there for why populating it here would be an oracle.
+        let mut proved_here = false;
         if !self.secret_match_memo.contains(&fp) {
+            proved_here = true;
             let plaintext = pat_plaintext.to_owned();
             let signing_keys = Arc::clone(&self.signing_keys);
             let stored_hash = PatHash::from_phc_string(row.pat_hash.clone());
@@ -1065,10 +1079,6 @@ impl PatVerifier {
             .await
             .map_err(|e| VerifyError::Backend(format!("verify join: {e}")))?;
             verify_result.map_err(|_| VerifyError::InvalidPat)?;
-            // Proven. Record it AFTER the verify succeeded — a failed verify
-            // must never populate the memo (and never does: the `?` above
-            // returns first).
-            self.secret_match_memo.insert(fp);
         }
 
         // 4. Scope gate — fail-CLOSED on NO cache capability at all, then
@@ -1090,6 +1100,26 @@ impl PatVerifier {
             return Err(VerifyError::InvalidPat);
         }
         let can_write = requires_cache_write(&row.scope);
+
+        // ⚠️ The memo is populated HERE — past the scope gate — and nowhere
+        // earlier. Populating it at the end of step 3 (right after the Argon2id
+        // succeeded) looks natural and is an ORACLE: a PAT whose secret is
+        // CORRECT but whose scope is rejected (`find_only`, or no cache grant)
+        // would be memoised on its first, slow 401, and every later attempt with
+        // that same token would 401 in ~0 ms instead of paying Argon2id. An
+        // attacker replaying a bag of leaked plaintexts TWICE could then sort
+        // "live credential, insufficient scope" from "dead/unknown/wrong-secret"
+        // — and a *revoked* PAT (row gone ⇒ slow dummy burn) from a merely
+        // *scope-downgraded* one (fast memo hit) — purely on latency, with no
+        // grant of any kind. The module header requires every rejection reason to
+        // be indistinguishable on the wire; latency is part of the wire.
+        //
+        // Gating on `proved_here` (rather than inserting unconditionally) keeps a
+        // warm hit off the memo's write lock and keeps the TTL anchored at the
+        // proof, not sliding on use.
+        if proved_here {
+            self.secret_match_memo.insert(fp);
+        }
 
         Ok((row.tenant_id, can_write))
     }
@@ -2088,6 +2118,52 @@ mod tests {
         assert!(
             matches!(err, VerifyError::InvalidPat),
             "the memo must not survive a pat_hash change, got {err:?}"
+        );
+    }
+
+    /// A PAT whose SECRET is correct but whose SCOPE is rejected must keep
+    /// paying full Argon2id on every attempt — it must never be memoised.
+    ///
+    /// This is the oracle the memo's placement past the step-4 scope gate
+    /// closes. If the memo were populated as soon as the Argon2id succeeded, a
+    /// live-but-insufficiently-scoped credential would 401 slowly ONCE and then
+    /// ~instantly forever, which separates it on latency alone from a dead /
+    /// unknown / wrong-secret token — and separates a revoked PAT from a merely
+    /// scope-downgraded one. Every rejection must stay indistinguishable.
+    ///
+    /// Proven the same way as the hit test, in reverse: hold the verifier's only
+    /// Argon2id permit, then present the scope-rejected PAT again. If it were
+    /// memoised it would skip Argon2id and fall through to the scope gate for a
+    /// fast `InvalidPat`; because it is NOT, it must block on the drained pool
+    /// and surface the overloaded `Backend` instead.
+    #[tokio::test]
+    async fn a_scope_rejected_pat_is_never_memoised() {
+        let key = test_key();
+        // `SCOPE_CACHE_R` mints a genuine PAT; the D1 row then carries a scope
+        // string that grants NOTHING, which is what the step-4 gate rejects.
+        let (pt, tid, hash, tenant) = mint_pat(&key, 61, SCOPE_CACHE_R);
+        let lookup = Arc::new(FakeLookup::with_row(&tid, row(&hash, &tenant, "")));
+        let verifier = PatVerifier::with_key_set_and_permits(lookup, vec![(*key).clone()], 1);
+
+        // First attempt: real Argon2id runs, scope gate rejects.
+        assert!(matches!(
+            verifier.verify(&pt).await.unwrap_err(),
+            VerifyError::InvalidPat
+        ));
+
+        // Drain the pool: no Argon2id can run from here on.
+        let _held = Arc::clone(&verifier.argon2_permits)
+            .acquire_owned()
+            .await
+            .unwrap();
+
+        // Second attempt MUST still try to run Argon2id ⇒ overloaded, not a fast
+        // 401. A fast `InvalidPat` here would mean the scope-rejected PAT had
+        // been memoised — the oracle.
+        let err = verifier.verify(&pt).await.unwrap_err();
+        assert!(
+            matches!(err, VerifyError::Backend(ref m) if m.contains("overloaded")),
+            "a scope-rejected PAT must re-pay Argon2id every request, got {err:?}"
         );
     }
 

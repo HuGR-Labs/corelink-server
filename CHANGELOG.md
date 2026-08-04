@@ -79,7 +79,19 @@ Each entry cross-references:
   (`contains(newest)` holds by construction since the insert lands after the eviction pass, and
   `!contains("pt")` holds for any hex string). Three further tests pin the safety claims: a scope
   downgrade and a revocation each take effect on the very next request with a warm memo, and a
-  re-hashed row is never served from it. 34/34 `adapter_pat` and 10/10 `native_pat_gate` tests pass.
+  re-hashed row is never served from it. **A confirmation pass by the reviewer who found the first
+  three then surfaced a fourth defect that had been present since the first draft and that everyone,
+  including that reviewer, had walked past:** the memo was populated at the end of the Argon2id step,
+  *before* the step-4 scope gate. That is an oracle. A PAT whose secret is CORRECT but whose scope is
+  rejected (`find_only`, or no cache grant — a live, shipped ADR-0071 state) would be memoised on its
+  first slow 401 and 401 in ~0 ms on every attempt after, sorting "live credential, insufficient
+  scope" from "dead / unknown / wrong secret", and a *revoked* PAT from a merely *scope-downgraded*
+  one, on latency alone with no grant of any kind. The module header requires every rejection reason
+  to be indistinguishable on the wire, and latency is part of the wire. The insert now happens past
+  the scope gate, so a scope-rejected PAT re-pays Argon2id on every request exactly as on `main`;
+  `a_scope_rejected_pat_is_never_memoised` locks it and was proven RED against the old placement,
+  failing with `got InvalidPat` — the fast 401 that IS the oracle. 35/35 `adapter_pat`, 10/10
+  `native_pat_gate` and 834/834 `routes::` tests pass.
 - **fix(ci): five workflow `paths:` globs matched zero tracked files, so those triggers had
   silently stopped firing — and a trigger that never fires produces no red check.** A
   `pull_request` workflow runs only when a changed file matches one of its globs; when a
