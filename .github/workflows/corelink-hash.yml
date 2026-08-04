@@ -67,6 +67,14 @@ jobs:
     # does not bound queued time. That is a stall, not a false pass —
     # `scripts/pre-merge-gate-check.sh` scores a pending check as ⛔ DO NOT MERGE.
     runs-on: corelink
+    # Measured median 198 s (~3.3 min) over the last 19 hosted runs; 6.9x headroom.
+    # Migrated before the bound was standard, so it inherited GitHub's 360-min
+    # default — one wedged run could pin a PR for 6 h. This bounds RUNNING time
+    # only: it does not start until the job is running, so it does not cap a job
+    # queued on a fabric spawn, and it cannot pre-empt the "runner lost
+    # communication" failure (GitHub fails that job itself). Backstop against a
+    # wedged-but-alive box, not a fix for fleet instability.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
@@ -111,6 +119,9 @@ jobs:
     # Runner: `corelink` (wave 2, 2026-08-03) — see the pr-gate job above for the
     # ephemeral-box caveats.
     runs-on: corelink
+    # Measured median 48 s over the last 23 hosted runs (53 s over 2 fabric runs);
+    # 3x is under the 10-min floor, so the floor applies.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       # `dtolnay/rust-toolchain@stable` with `targets: wasm32-unknown-unknown`

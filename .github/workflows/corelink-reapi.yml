@@ -82,6 +82,15 @@ jobs:
     # stall, not a false pass: `scripts/pre-merge-gate-check.sh` scores a pending
     # check as ⛔ DO NOT MERGE, so a stranded box blocks the PR.
     runs-on: corelink
+    # Measured median 416 s (~6.9 min) over the last 6 runs ON THIS FABRIC (hosted
+    # history is slower, median 685 s); 3x rounds to 25 min, ~2.2x over the worst
+    # fabric run observed (676 s). Migrated before the bound was standard, so it
+    # inherited GitHub's 360-min default — one wedged run could pin a PR for 6 h.
+    # This bounds RUNNING time only: it does not start until the job is running,
+    # so it does not cap a job queued on a fabric spawn, and it cannot pre-empt
+    # the "runner lost communication" failure (GitHub fails that job itself).
+    # Backstop against a wedged-but-alive box, not a fix for fleet instability.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
 
@@ -278,6 +287,9 @@ jobs:
     # ephemeral-box caveats (no cache between runs; a dropped spawn stalls the
     # job as ⛔ pending rather than passing it).
     runs-on: corelink
+    # Measured median 82 s over the last 8 fabric runs (112 s hosted); 3x is under
+    # the 10-min floor, so the floor applies.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       # `dtolnay/rust-toolchain@stable` with `targets: wasm32-unknown-unknown`
