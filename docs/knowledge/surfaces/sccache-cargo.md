@@ -5,7 +5,7 @@ description: "The sccache HTTP build-cache surface mounted at /cargo/<tenant>/<k
 source_files:
   - "crates/corelink-container/src/routes/cargo.rs"
   - "crates/corelink-container/src/d1_coread.rs"
-checkpoint_sha: "43d9672f7006732b5df89820a16699a3c4a20f59"
+checkpoint_sha: "e9ae18611297c2719117519cb63c9c8b19223cc1"
 provenance: "AUTHORED"
 tags: ["surfaces", "sccache", "cargo", "cache"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -71,7 +71,8 @@ namespaced per tenant.
 - A PROPFIND on an existing key reports the stored blob's real byte length in `getcontentlength`; an absent key is `404` (opendal treats it as not-found and writes) (`crates/corelink-container/src/routes/cargo.rs:607-613`; `crates/corelink-container/src/routes/cargo.rs:698-715`).
 - A DELETE removes only the url→content-hash map row (the CAS blob is left for GC, as it may be shared by dedup); it is idempotent — `204` even for an absent key (`crates/corelink-container/src/routes/cargo.rs:656-662`).
 - An unmapped HTTP method is denied at the gate rather than assumed safe (fail-closed) (`crates/corelink-container/src/routes/cargo.rs:431-431`).
-- The co-read hint is a FETCH-ORDER optimisation, never a trust source: its namespace is the Worker-set `x-corelink-tenant-id`, but the moat is still keyed by the PAT-derived tenant, and a prefetched row is served only under an exact `(namespace, url_hash)` match — a hint naming a different tenant is discarded unread and the storage read is re-issued (`crates/corelink-container/src/routes/cargo.rs:307-313`; `crates/corelink-container/src/d1_coread.rs:153-155`).
+- The co-read hint is a FETCH-ORDER optimisation, never a trust source: its namespace is the Worker-set `x-corelink-tenant-id`, but the moat is still keyed by the PAT-derived tenant, and a prefetched row is served only under an exact `(namespace, url_hash)` match — a hint naming a different tenant is discarded unread and the storage read is re-issued (`crates/corelink-container/src/routes/cargo.rs:307-313`; `crates/corelink-container/src/d1_coread.rs:211-213`).
+- A co-read answer is published into the cell **handle the producer captured with the hint**, never into whichever cell happens to be ambient when the row lands: `hint` returns the `Arc<CoReadCell>` together with the key (`crates/corelink-container/src/d1_coread.rs:183`) and `publish` is a method that writes that cell's own slot (`crates/corelink-container/src/d1_coread.rs:135-137`) — there is no ambient publish to reach for. This is load-bearing because the producer's future is not guaranteed to be polled by the task that started it (the container's `pat` read is coalesced by `SingleFlightPatLookup`, whose `Shared` future is awaited unspawned), so an ambient publish could file one request's `content_hash` under a concurrent request's `url_hash`; the moat's integrity check only ties bytes↔hash, never key↔hash, so it would not catch it.
 
 # Gotchas
 - `nest` would flatten the adapter's `/:key` into a 2-segment matcher (`/cargo/:key`) and reject the
@@ -100,5 +101,7 @@ namespaced per tenant.
 14. `crates/corelink-container/src/routes/cargo.rs:407-420` — `cargo_gate` WebDAV `DELETE` short-circuit (cache-write gated).
 15a. `crates/corelink-container/src/routes/cargo.rs:266-268` — the co-read hint layer added LAST (outermost), so its scope covers `cargo_gate`'s own PROPFIND handling.
 15b. `crates/corelink-container/src/routes/cargo.rs:300-321` — `cargo_coread_hint`: READ verbs only; hint = trimmed `x-corelink-tenant-id` + `key_from_path` (the SAME normalization the moat will ask with).
-15c. `crates/corelink-container/src/d1_coread.rs:153-155` — the exact `(namespace, url_hash)` match that makes a prefetched row unservable under any tenant but the PAT-derived one.
+15c. `crates/corelink-container/src/d1_coread.rs:211-213` — the exact `(namespace, url_hash)` match that makes a prefetched row unservable under any tenant but the PAT-derived one.
+15d. `crates/corelink-container/src/d1_coread.rs:183` — `hint` hands the producer the cell HANDLE (`Arc::clone`) along with the key, so the publish destination is captured at hint time.
+15e. `crates/corelink-container/src/d1_coread.rs:135-137` — `CoReadCell::publish`: the answer is written into `self`'s slot, so it lands in the cell whose hint keyed the statement no matter which task is driving the poll.
 15. `crates/corelink-container/src/routes/cargo.rs:623-663` — `handle_delete`: F27 `can_write` + PAT-resolved tenant → moat map-row removal → `204`.
