@@ -2977,6 +2977,19 @@ mod tests {
     /// both callers get the same row either way. Only the inner call count
     /// distinguishes "one read shared" from "two reads raced", which is exactly
     /// the property #1055's co-read correctness is written against.
+    ///
+    /// # Why a SEQUENTIAL third verify is also asserted
+    ///
+    /// "concurrent pair ⇒ 1 inner read" on its own does NOT say the stack
+    /// coalesces — a genuine CACHE at this seam would satisfy it too, while
+    /// silently breaking `INV-PAT-REVOKE-PROPAGATION` (a revoked PAT would keep
+    /// working for the cache's TTL). That distinction IS tested
+    /// (`single_flight_is_not_a_cache_sequential_reads_are_fresh`,
+    /// `single_flight_revocation_is_immediate`) — but only against a
+    /// hand-built wrapper, i.e. inside the exact blind spot this test exists to
+    /// close. So the third verify runs AFTER the pair has resolved and must
+    /// produce a SECOND inner read: at the production assembly, freshness per
+    /// request is pinned alongside coalescing.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn the_production_stack_coalesces_concurrent_reads_of_one_token() {
         let key = test_key();
@@ -2992,7 +3005,7 @@ mod tests {
         let verifier = Arc::new(PatVerifier::from_parts(inner, vec![(*key).clone()]));
 
         let (a, b) = (Arc::clone(&verifier), Arc::clone(&verifier));
-        let (pt_a, pt_b) = (pt.clone(), pt);
+        let (pt_a, pt_b) = (pt.clone(), pt.clone());
         let h1 = tokio::spawn(async move { a.verify(&pt_a).await });
         let h2 = tokio::spawn(async move { b.verify(&pt_b).await });
         let (r1, r2) = (h1.await.unwrap(), h2.await.unwrap());
@@ -3008,6 +3021,24 @@ mod tests {
              one token_id into ONE D1 read — 2 means `from_parts` no longer \
              wraps the row source in SingleFlightPatLookup (or the wrapper stopped \
              coalescing)"
+        );
+
+        // …and it is a single-FLIGHT, not a cache: a later request for the same
+        // token re-reads D1, which is what keeps revocation immediate.
+        assert_eq!(
+            verifier
+                .verify(&pt)
+                .await
+                .expect("third verify must succeed"),
+            tenant
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "the production PAT lookup stack must NOT cache — a verify issued \
+             after the flight resolved must pay its own D1 read. Still 1 means \
+             something at this seam is serving a retained row, which would defeat \
+             INV-PAT-REVOKE-PROPAGATION"
         );
     }
 
