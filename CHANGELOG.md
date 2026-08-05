@@ -50,10 +50,11 @@ Each entry cross-references:
   **A THIRD round found a second, distinct wrong claim about the same two gates — the STATUS CODE.**
   `requireInternalAuth` / `requireConsumerAuth` return **503** for an unresolvable key (their own
   comments say "503, NOT 403" verbatim, and the 403 is what silently ate every runner job in the
-  fleet until 2026-08-02). Three more sites still asserted the retired 403: the `internal_auth.ts`
+  fleet until 2026-08-02). Four more sites still asserted the retired 403: the `internal_auth.ts`
   MODULE HEADER — i.e. the header this very PR rewrote, four lines above the sentence it fixed —
   and the route JSDocs of `runner_mint.ts` and `auth_rotate.ts`, which carry the same templated
-  "401 wrong/missing header, 403 no sized key" line. The security review's LOW-2 asserted the same
+  "401 wrong/missing header, 403 no sized key" line, plus `session_exchange.ts`, whose
+  fail-CLOSED summary billed the `requireInternalAuth` gate as "401/403". The security review's LOW-2 asserted the same
   wrong status. **Two of that review's findings also rested on premises that are false at HEAD:**
   LOW-1 cited the container as MIRRORING the shared-key fallback, but `resolve_mint_auth_key` reads
   nothing but the dedicated key and never consults the shared one; LOW-2 described a bare shared
