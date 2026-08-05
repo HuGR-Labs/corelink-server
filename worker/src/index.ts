@@ -260,6 +260,23 @@ export interface Env {
 }
 
 /**
+ * Route prefix of the DO D1-placement probe: `/_internal/do-d1-probe/{tenant_id}`.
+ *
+ * A DIAGNOSTIC, not a product surface. It forwards to the tenant's own
+ * `CoreLinkServer` DO `/_do/health`, whose body carries two timed `SELECT 1`
+ * reads (D1 primary vs nearest replica) measured from INSIDE the DO. That is
+ * the one unmeasured fact the "route the container's D1 reads through the DO"
+ * proposal hinges on: a DO-issued primary read ≤25 ms means the DO is
+ * co-located with the ENAM primary (the proposal wins ~60-75 ms); ≥100 ms means
+ * it is far (the proposal is a regression).
+ *
+ * The tenant id is REQUIRED and caller-supplied because DO placement is
+ * per-DO-id: `idFromName(tenant)` — the number is only comparable to a measured
+ * container `opat` if it comes from the SAME DO that serves that tenant.
+ */
+const INTERNAL_DO_D1_PROBE_PREFIX = "/_internal/do-d1-probe/";
+
+/**
  * Map a `/_internal/*` path to its auth CONSUMER (red-team #3 key split).
  *
  * The container exposes three internal surfaces with distinct blast radii:
@@ -299,6 +316,15 @@ export function internalConsumerForPath(pathSuffix: string): InternalConsumer {
   // so a leak of this low-privilege read secret cannot mint, erase, or admin. Matched
   // BEFORE the erase catch-all below.
   if (pathSuffix.startsWith("/_internal/tenant/") && pathSuffix.endsWith("/quota")) {
+    return "quota_read";
+  }
+  // Read-only DO D1-placement probe (`/_internal/do-d1-probe/{tenant_id}`) — the
+  // diagnostic instrument that answers "where does this tenant's DO sit relative
+  // to the ENAM D1 primary?". It mutates nothing (two `SELECT 1`s), so it gates
+  // on the SAME low-privilege READ consumer as the quota lookup rather than on
+  // the erase catch-all: an operator reading a latency number must not need the
+  // key that can delete a tenant's bytes. No new key is introduced.
+  if (pathSuffix.startsWith(INTERNAL_DO_D1_PROBE_PREFIX)) {
     return "quota_read";
   }
   // DSR erase surface (`/_internal/dsr/*`) and any other internal data-plane
@@ -1960,6 +1986,66 @@ const baseHandler: ExportedHandler<Env> = {
               : await request.clone().arrayBuffer(),
         });
         return applyCors(await coordStub.fetch(coordReq), request);
+      }
+
+      // DO D1-PLACEMENT PROBE — `/_internal/do-d1-probe/{tenant_id}` → that
+      // tenant's CoreLinkServer DO `/_do/health`. Same shape as the replication
+      // forward above (rewrite the path, strip client trust headers, forward to
+      // a DO stub, return its body verbatim), intercepted AFTER the internal-auth
+      // gate and BEFORE the generic `_system` container forward.
+      //
+      // WHY THE TENANT IS IN THE PATH: DO placement is per-DO-id. The id is
+      // derived here with `env.CORELINK_SERVER.idFromName(tenantId)` — the
+      // IDENTICAL derivation the tenant data path uses ("Route to the per-tenant
+      // DO" below), against the same namespace binding in the same Worker, so
+      // this reaches the SAME DO instance that serves that tenant's traffic (a
+      // fresh DO would measure a different placement and answer nothing).
+      //
+      // CAVEAT (must be understood before trusting the number): a tenant whose
+      // `primary_region` maps to a non-IAD colo is served by a REGIONAL Worker
+      // via a Service Binding (see the residency fan-out below), and that
+      // regional Worker has its OWN CORELINK_SERVER namespace — so its DO is a
+      // different instance living in a different region. `/_internal/*` does NOT
+      // fan out. For such a tenant, probe the REGIONAL Worker, not this one.
+      if (route.pathSuffix.startsWith(INTERNAL_DO_D1_PROBE_PREFIX)) {
+        const rawTenant = route.pathSuffix.slice(INTERNAL_DO_D1_PROBE_PREFIX.length);
+        let probeTenantId: string;
+        try {
+          probeTenantId = decodeURIComponent(rawTenant);
+        } catch {
+          probeTenantId = "";
+        }
+        if (probeTenantId.length === 0 || probeTenantId.includes("/")) {
+          return applyCors(
+            reapiError(
+              "INVALID_ARGUMENT",
+              "usage: /_internal/do-d1-probe/{tenant_id}[?colo=1]",
+              400,
+              requestId,
+            ),
+            request,
+          );
+        }
+        const probeDoId = env.CORELINK_SERVER.idFromName(probeTenantId);
+        const probeStub = env.CORELINK_SERVER.get(probeDoId);
+        const probeUrl = new URL(request.url);
+        probeUrl.pathname = "/_do/health";
+        const probeHeaders = new Headers(request.headers);
+        // Strip every client-suppliable trust header (incl. the caller's
+        // internal-auth secret and any x-corelink-tenant-id): the probe reads a
+        // health page, it must never smuggle authority into the DO.
+        stripClientTrustHeaders(probeHeaders);
+        probeHeaders.set("x-request-id", requestId);
+        // Always GET: /_do/health is a read, and this must not be a body-carrying
+        // path into the DO.
+        const probeReq = new Request(probeUrl.toString(), {
+          method: "GET",
+          headers: probeHeaders,
+        });
+        // Body verbatim. NOTE: /_do/health answers 503 while the tenant's
+        // container is not running — the d1_probe numbers are still in the body,
+        // so read the BODY, not the status.
+        return applyCors(await probeStub.fetch(probeReq), request);
       }
 
       // Route to the _system DO which hosts the LOCAL (this-region) container.
