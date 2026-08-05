@@ -216,6 +216,36 @@ Each entry cross-references:
   assertion. 0 failures in 25 runs under 6 busy loops after the fix.
 
 ### Fixed
+- **fix(container): the D1 co-read published into the AMBIENT cell, so a coalesced `pat` read could
+  file one request's url-map row under another request's cache key.** Found by adversarial review of
+  this same PR, before merge. The producer read its hint with `d1_coread::hint()` and then published
+  with a free `publish(value)` that resolved the task-local **at poll time** and carried no key — so
+  the destination was "whatever request is running when the row lands", not "the request whose key
+  fetched it". That is not academic: production wires the read as
+  `SingleFlightPatLookup::new(Arc::new(d1))`, which coalesces concurrent lookups of one `token_id`
+  onto a `Shared` future it `.await`s **without spawning** — and a `Shared` future is driven only by
+  whoever polls it, which is exactly the rationale `FlightGroup::run` documents for spawning ITS
+  work. So request A could read hint `(T, K_a)`, start the co-read, and request B — same runner PAT,
+  different object, i.e. the ordinary cargo hot path — could take over the driving poll and receive
+  A's `content_hash` under `K_b`. Nothing downstream catches it: `MoatCache::get_untimed`'s integrity
+  check re-hashes the served bytes against the mapped `content_hash`, tying bytes↔hash and never
+  key↔hash, so the wrong-but-internally-consistent blob is served silently (`HEAD` too —
+  `CargoMoatStore` has no `exists` override, so it routes through `get`). Coalescing is keyed on
+  `token_id` ⇒ one `pat` row ⇒ one tenant, so this is a cross-object INTEGRITY defect, not a
+  cross-tenant leak. **Fix:** `hint()` now hands back the cell HANDLE with the key, and the co-read
+  publishes through `CoReadCell::publish(&self, …)`; the ambient-publish path is deleted, so it
+  cannot be reintroduced. The row lands in the cell whose hint keyed the SQL no matter who polls; a
+  joiner gets nothing published and falls back to its own correctly-keyed read, which is the right
+  answer because its key was never fetched. The leader keeps the optimisation, so the measured win
+  is unchanged. `take`'s exact `(namespace, url_hash)` gate is KEPT as defence in depth. **Why it
+  shipped:** every co-read test built the verifier as `PatVerifier::with_key_set(d1, keys)`, so the
+  real `SingleFlightPatLookup` wrapper was never in the loop. The regression test now puts it there —
+  two concurrent lookups on one `token_id` in two co-read scopes with different `url_hash`es — and
+  asserts on the served CONTENT HASH, not on round-trip counts. It fails against the unfixed code
+  with `left: Some(Some("content-hash-A")) right: Some(Some("content-hash-A"))` on the joiner, and
+  passes after. The false doc-comment that licensed the bug ("the published key is the cell's key
+  **by construction**") is replaced by a statement of the actual mechanism and of the hazard it
+  defends against.
 - **fix(ci): `--merge`'s first day found two holes — the gate passed a DRAFT PR (#1048), and a merge
   that SUCCEEDED reported failure (#1051).** Both are in `scripts/pre-merge-gate-check.sh`; neither
   weakens #1050's guarantee (the `gh pr merge` call is still reachable only past an all-green gate,

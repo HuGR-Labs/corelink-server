@@ -1420,8 +1420,8 @@ mod tests {
                 return Err(e.clone());
             }
             if self.honours_coread {
-                if let Some((ns, key)) = crate::d1_coread::hint() {
-                    crate::d1_coread::publish(self.lookup_map(&ns, &key));
+                if let Some((cell, ns, key)) = crate::d1_coread::hint() {
+                    cell.publish(self.lookup_map(&ns, &key));
                 }
             }
             Ok(self.row.lock().unwrap().clone())
@@ -1772,7 +1772,8 @@ mod tests {
             .fallback(axum::routing::any(move || {
                 let sink = Arc::clone(&sink);
                 async move {
-                    *sink.lock().unwrap() = Some(crate::d1_coread::hint());
+                    *sink.lock().unwrap() =
+                        Some(crate::d1_coread::hint().map(|(_cell, ns, key)| (ns, key)));
                     StatusCode::OK
                 }
             }))

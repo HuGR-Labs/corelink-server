@@ -275,16 +275,35 @@ impl D1HttpClient {
         .map(Some)
     }
 
-    /// Run [`PAT_URL_MAP_COREAD_SQL`], publish the url-map arm into the
-    /// in-scope [`crate::d1_coread`] cell, and return the `pat` arm.
+    /// Run [`PAT_URL_MAP_COREAD_SQL`], publish the url-map arm into `cell`, and
+    /// return the `pat` arm.
     ///
     /// The url-map answer is published — including a MISS, which is the
     /// interesting case (the measured 404 path) — but it is only ever *served*
     /// to a caller whose namespace matches the hint the co-read was keyed by,
     /// i.e. the tenant this very `pat` row is about to establish. Auth still
     /// decides first; the co-read only changes when the bytes arrived.
+    ///
+    /// # `cell` is a parameter, and that is load-bearing
+    ///
+    /// `cell` is the very [`crate::d1_coread::CoReadCell`] whose hint supplied
+    /// `namespace`/`url_hash`, captured by the caller BEFORE the `.await`. It is
+    /// not re-derived from the task-local here, because this future is not
+    /// guaranteed to be polled by the task that started it: production wraps
+    /// this lookup in [`SingleFlightPatLookup`], which `.await`s a `Shared`
+    /// future it does NOT spawn — and a `Shared` future is driven only by
+    /// whoever polls it (the same property [`FlightGroup::run`] spawns to escape;
+    /// see its "The work is SPAWNED, and that is load-bearing" note). So a second
+    /// request for the same `token_id` — same PAT, DIFFERENT object, i.e. the
+    /// ordinary cargo hot path — can be the one in scope when these rows land.
+    /// Publishing into the ambient cell there would file this request's
+    /// `content_hash` under that request's `url_hash`, and nothing downstream
+    /// would notice: the moat's integrity check re-hashes bytes against the
+    /// mapped hash, tying bytes↔hash, never key↔hash. Holding the handle makes
+    /// the destination a property of the fetch instead of the scheduler.
     async fn pat_lookup_coread(
         &self,
+        cell: &crate::d1_coread::CoReadCell,
         token_id: &str,
         namespace: &str,
         url_hash: &str,
@@ -317,7 +336,9 @@ impl D1HttpClient {
 
         // Publish the url-map arm — `None` here is a real answer ("no mapping
         // row"), not an absence, and it is exactly the 404 the probe measures.
-        crate::d1_coread::publish(map_hash);
+        // Into the CAPTURED cell: see this method's doc for why the ambient one
+        // may belong to a different request by now.
+        cell.publish(map_hash);
 
         match pat_row {
             None => Ok(None),
@@ -345,9 +366,13 @@ impl PatRowLookup for D1HttpClient {
     /// wasted round trip on a failing request — paid only when D1 is already
     /// erroring, never on the hot path.
     async fn lookup(&self, token_id: &str) -> Result<Option<PatRow>, String> {
-        if let Some((namespace, url_hash)) = crate::d1_coread::hint() {
+        // Capture the cell HANDLE together with the key, here, before any
+        // `.await` — the co-read's answer must land in the cell whose hint keyed
+        // it even if a coalescing joiner ends up driving the poll (see
+        // [`Self::pat_lookup_coread`]).
+        if let Some((cell, namespace, url_hash)) = crate::d1_coread::hint() {
             match self
-                .pat_lookup_coread(token_id, &namespace, &url_hash)
+                .pat_lookup_coread(&cell, token_id, &namespace, &url_hash)
                 .await
             {
                 Ok(row) => return Ok(row),
@@ -2899,6 +2924,106 @@ mod tests {
             "error not cached"
         );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    // ── The co-read row must land in the cell whose key fetched it ─────────
+
+    /// A `PatRowLookup` fake shaped exactly like [`D1HttpClient::lookup`] on the
+    /// co-read path: read the hint, make ONE round trip, publish the url-map arm
+    /// it fetched, return the `pat` arm.
+    ///
+    /// The `yield_now` in the middle is the round trip, and it is the whole
+    /// point: [`SingleFlightPatLookup`] shares an **unspawned** future, so the
+    /// task that resumes it after an await point is whichever caller happens to
+    /// poll next — a *joiner*, not necessarily the leader that read the hint.
+    struct CoReadingLookup {
+        calls: Arc<AtomicUsize>,
+        /// `(namespace, url_hash) -> content_hash`.
+        map: HashMap<(String, String), String>,
+        row: Option<PatRow>,
+    }
+
+    #[async_trait]
+    impl PatRowLookup for CoReadingLookup {
+        async fn lookup(&self, _token_id: &str) -> Result<Option<PatRow>, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            // Capture the destination cell WITH the key, before the await —
+            // exactly as `D1HttpClient::lookup` does.
+            let Some((cell, namespace, url_hash)) = crate::d1_coread::hint() else {
+                return Ok(self.row.clone());
+            };
+            // ── the D1 round trip ──
+            tokio::task::yield_now().await;
+            let fetched = self.map.get(&(namespace, url_hash)).cloned();
+            cell.publish(fetched);
+            Ok(self.row.clone())
+        }
+    }
+
+    /// ⚠️ REGRESSION GUARD. Two concurrent cargo reads on the SAME runner PAT
+    /// but DIFFERENT objects — the exact hot path this PR optimises — coalesce
+    /// into one `SingleFlightPatLookup` flight. The single co-read is keyed by
+    /// the LEADER's url_hash, so the row it brings back belongs to the leader
+    /// and to nobody else. A joiner must be served NOTHING (and fall back to its
+    /// own correctly-keyed read), never the leader's `content_hash` under its
+    /// own key.
+    #[tokio::test]
+    async fn a_joined_single_flight_never_publishes_into_the_joiners_cell() {
+        let key_a = "a".repeat(64);
+        let key_b = "b".repeat(64);
+        let mut map = HashMap::new();
+        let _ = map.insert(("t".to_owned(), key_a.clone()), "content-hash-A".to_owned());
+        let _ = map.insert(("t".to_owned(), key_b.clone()), "content-hash-B".to_owned());
+        let inner = Arc::new(CoReadingLookup {
+            calls: Arc::new(AtomicUsize::new(0)),
+            map,
+            row: Some(row("h", "t", "cas:rw")),
+        });
+        let calls = Arc::clone(&inner.calls);
+        let sf = Arc::new(SingleFlightPatLookup::new(inner));
+
+        // Each request gets its OWN co-read scope, as the cargo layer gives it.
+        // `futures::future::join` polls in declaration order, so A leads the
+        // flight and B joins it and drives it past the round trip.
+        let (a_sf, b_sf) = (Arc::clone(&sf), Arc::clone(&sf));
+        let (a_key, b_key) = (key_a.clone(), key_b.clone());
+        let (served_a, served_b) = futures::future::join(
+            crate::d1_coread::scope("t", a_key.clone(), async move {
+                let _ = a_sf.lookup("tok-shared").await.unwrap();
+                crate::d1_coread::take("t", &a_key)
+            }),
+            crate::d1_coread::scope("t", b_key.clone(), async move {
+                let _ = b_sf.lookup("tok-shared").await.unwrap();
+                crate::d1_coread::take("t", &b_key)
+            }),
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "the two requests must actually have coalesced — otherwise this test \
+             proves nothing about the joiner"
+        );
+        // Serve the CONTENT HASH, not a count: this is what the moat hands to
+        // the CAS read, and the integrity check downstream only ties bytes to
+        // hash — never key to hash — so a mis-keyed row is served silently.
+        assert_ne!(
+            served_b,
+            Some(Some("content-hash-A".to_owned())),
+            "the joiner was served the LEADER's row under its own url_hash — \
+             cross-object content substitution"
+        );
+        assert_eq!(
+            served_b, None,
+            "the joiner's key was never fetched, so it must get no prefetch and \
+             fall back to its own read"
+        );
+        assert_eq!(
+            served_a,
+            Some(Some("content-hash-A".to_owned())),
+            "the leader still keeps the co-read it paid for"
+        );
     }
 
     // ---------------------------------------------------------------------
