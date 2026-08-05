@@ -23,6 +23,59 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Performance
+- **perf(container): the container's `pat` read and its url-map read were TWO serial D1 round trips
+  on the sccache hot path; they now travel as one statement.** The `origin` split shipped in #1053
+  answered the question it was built for. Live prod (`1ee76248-r1`, n=65 across two independent
+  batches, authenticated `/cargo` 404 miss): `ohop` 114/116/119 ms (a fixed network leg, ±4 %),
+  **`opat` 62/72/81**, **`ostore` 66/75/84**, `oquota` 0/0/0 (already amortised) and `oother` 0/1/1
+  of an `origin` of 247/267/312 ms — the sub-phases summing EXACTLY on 65 of 65, 0 unreconciled. So
+  `opat + ostore` = **147 ms = 55 % of `origin`**, and both are container→D1-primary round trips of
+  ~72-75 ms: **one RTT apiece**, not query time. On a MISS `ostore` is the url-map `SELECT` alone —
+  `MoatCache::get_untimed` returns early when the map misses, so no CAS/R2 fetch happens.
+  Same shape and same fix as #1047 one tier up (`qmeter` + `qstor` → one `db.batch`, `wdb` 284 →
+  156 ms): the cost is the number of ocean crossings, not the SQL. `PAT_URL_MAP_COREAD_SQL`
+  (`crates/corelink-container/src/adapter_pat.rs`) is a `UNION ALL` of two individually-`LIMIT 1`-ed
+  index probes — the `pat` arm is the previous statement verbatim, plus the
+  `adapter_cache_map(namespace, url_hash)` row the storage step is about to need. Expected `opat +
+  ostore` after repin: **~75 ms** (one round trip), i.e. roughly **-72 ms off `origin` and off
+  `total`** on every sccache GET/HEAD/PROPFIND. To be confirmed by re-running
+  `scripts/probe-cargo-cache-latency.sh` — the same instrument that measured the before.
+- **The url-map read is fetched early but never *acted on* early — auth still decides first.** The
+  storage lookup is keyed by the tenant the CONTAINER derives from the PAT (Option B; the container
+  never trusts the Worker's tenant header for storage), and that tenant is not known until the `pat`
+  row lands. So the co-read is keyed by a *hint* — the Worker-set, client-unsettable
+  `x-corelink-tenant-id`, the same header the $-ceiling gate already attributes cost by — and the
+  fetched row is served ONLY under an exact `(namespace, url_hash)` match with the key the moat is
+  actually called with (`crates/corelink-container/src/d1_coread.rs`, a request-scoped task-local
+  cell, `take` one-shot). A hint that named a different tenant is discarded unread and the storage
+  read is re-issued for real: a wrong hint costs one wasted index probe, never a wrong answer. This
+  is a fetch-order change, not a trust change — nothing decides on the hint.
+- **⛔ Immediate revocation is untouched, and pinned.** #1022 kept the per-request `pat` read for
+  exactly this and it was proven live (revoke in D1 → the very next request 401s). Nothing is
+  cached: not the row, not the authorization decision, not across requests — the `pat` row is still
+  read from D1 on every single request, and the co-read's `pat` arm carries every predicate of the
+  serial statement (`token_id`, the `expires_ms` expiry filter, `revoked_at_ms IS NULL`), asserted
+  as a property rather than trusted to stay in sync by eye. The `SecretMatchMemo`, the Argon2id
+  permit pools, the shed uniformity (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) and the HMAC fast-reject
+  are all unchanged — a forged token still drives zero D1 cost, because the co-read happens at
+  exactly the point in the pipeline the `pat` read already did.
+- **D1-failure semantics are preserved by construction.** A co-read that errors is never
+  load-bearing: it is logged and the plain `PAT_LOOKUP_SQL` read runs, so the result is decided by
+  the exact same statement as before (a `pat`-side fault is still the 503 SHED, never a 401) and,
+  nothing having been published, the moat's own url-map read still surfaces its fault as the 502
+  CAS-dependency error. The price is one wasted round trip on a request that is already failing.
+  Only the READ verbs (`GET`/`HEAD`/`PROPFIND`) publish a hint — `PUT` writes the map and `DELETE`
+  removes it, so co-reading there would be a wasted probe per upload.
+- **Instrument follows the code:** the one round trip is charged to **`opat`**, the phase whose
+  statement leads it, so `ostore` now reads ~0 on a miss and the CAS/R2 fetch alone on a hit. The
+  phase NAMES are deliberately unchanged: `originSubPhases` ignores names outside its allowlist, so
+  a renamed phase would silently strand its milliseconds in `ohop` on any Worker not yet
+  redeployed — the exact mis-attribution the split exists to prevent. The identity still holds
+  (`ohop + opat + oquota + ostore + oother == origin`); the millisecond changed phase, it did not
+  disappear. 16 tests pin the round-trip COUNT, the hit and miss paths, revocation, the
+  cross-tenant guard, both failure branches and the hint-publication rules; the negative control is
+  recorded in the PR (7 fail against the serial path, headline signature `the cargo GET issued 2 D1
+  round trips; expected exactly 1 … left: 2, right: 1`).
 - **perf(worker): `wdb` was TWO serial uncached D1 round trips to the ENAM primary; they now
   travel as one `db.batch`.** The sub-phase split shipped in #1036 answered the question it was
   built for. Measured warm against live prod (n=30, single reused connection, 2026-08-04):
@@ -163,6 +216,36 @@ Each entry cross-references:
   assertion. 0 failures in 25 runs under 6 busy loops after the fix.
 
 ### Fixed
+- **fix(container): the D1 co-read published into the AMBIENT cell, so a coalesced `pat` read could
+  file one request's url-map row under another request's cache key.** Found by adversarial review of
+  this same PR, before merge. The producer read its hint with `d1_coread::hint()` and then published
+  with a free `publish(value)` that resolved the task-local **at poll time** and carried no key — so
+  the destination was "whatever request is running when the row lands", not "the request whose key
+  fetched it". That is not academic: production wires the read as
+  `SingleFlightPatLookup::new(Arc::new(d1))`, which coalesces concurrent lookups of one `token_id`
+  onto a `Shared` future it `.await`s **without spawning** — and a `Shared` future is driven only by
+  whoever polls it, which is exactly the rationale `FlightGroup::run` documents for spawning ITS
+  work. So request A could read hint `(T, K_a)`, start the co-read, and request B — same runner PAT,
+  different object, i.e. the ordinary cargo hot path — could take over the driving poll and receive
+  A's `content_hash` under `K_b`. Nothing downstream catches it: `MoatCache::get_untimed`'s integrity
+  check re-hashes the served bytes against the mapped `content_hash`, tying bytes↔hash and never
+  key↔hash, so the wrong-but-internally-consistent blob is served silently (`HEAD` too —
+  `CargoMoatStore` has no `exists` override, so it routes through `get`). Coalescing is keyed on
+  `token_id` ⇒ one `pat` row ⇒ one tenant, so this is a cross-object INTEGRITY defect, not a
+  cross-tenant leak. **Fix:** `hint()` now hands back the cell HANDLE with the key, and the co-read
+  publishes through `CoReadCell::publish(&self, …)`; the ambient-publish path is deleted, so it
+  cannot be reintroduced. The row lands in the cell whose hint keyed the SQL no matter who polls; a
+  joiner gets nothing published and falls back to its own correctly-keyed read, which is the right
+  answer because its key was never fetched. The leader keeps the optimisation, so the measured win
+  is unchanged. `take`'s exact `(namespace, url_hash)` gate is KEPT as defence in depth. **Why it
+  shipped:** every co-read test built the verifier as `PatVerifier::with_key_set(d1, keys)`, so the
+  real `SingleFlightPatLookup` wrapper was never in the loop. The regression test now puts it there —
+  two concurrent lookups on one `token_id` in two co-read scopes with different `url_hash`es — and
+  asserts on the served CONTENT HASH, not on round-trip counts. It fails against the unfixed code
+  with `left: Some(Some("content-hash-A")) right: Some(Some("content-hash-A"))` on the joiner, and
+  passes after. The false doc-comment that licensed the bug ("the published key is the cell's key
+  **by construction**") is replaced by a statement of the actual mechanism and of the hazard it
+  defends against.
 - **fix(ci): `--merge`'s first day found two holes — the gate passed a DRAFT PR (#1048), and a merge
   that SUCCEEDED reported failure (#1051).** Both are in `scripts/pre-merge-gate-check.sh`; neither
   weakens #1050's guarantee (the `gh pr merge` call is still reachable only past an all-green gate,

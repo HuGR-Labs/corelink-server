@@ -25,6 +25,14 @@
 //!    and reject a bad signature in ≤100µs, *before* any D1 round-trip,
 //!    so forged tokens cannot drive D1 query cost.
 //! 2. **D1 lookup** by the non-secret `token_id` (expiry filtered in SQL).
+//!    Since the co-read (`PAT_URL_MAP_COREAD_SQL`) this one round trip ALSO
+//!    carries the url-map row the storage layer is about to need, when the
+//!    route in scope published a hint — see [`crate::d1_coread`]. It is the
+//!    same statement's `pat` arm, taken at the same point in the pipeline
+//!    (still AFTER the HMAC fast-reject, so a forged token still drives no D1
+//!    cost) and decided by the same filters, so nothing about this step's auth
+//!    semantics changes; only the storage read that used to follow it serially
+//!    is folded in.
 //!    This row lookup runs BEFORE the expensive Argon2id verify (finding #12):
 //!    a valid-HMAC token for a nonexistent / expired / revoked / wrong-tenant
 //!    `token_id` is decided here at the cheap D1 stage, so a leaked-signing-key
@@ -91,7 +99,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::scope::{requires_cache_read, requires_cache_write};
-use crate::storage::d1_http::D1HttpClient;
+use crate::storage::d1_http::{D1HttpClient, D1Row};
 use crate::storage::{non_empty_env, StorageEnv};
 
 /// Failure surface of [`PatVerifier::verify`].
@@ -169,49 +177,214 @@ const PAT_LOOKUP_SQL: &str = "SELECT tenant_id, pat_hash, scope, find_only FROM 
        AND revoked_at_ms IS NULL \
      LIMIT 1";
 
-/// Production [`PatRowLookup`] over the CF D1 HTTP API.
-#[async_trait]
-impl PatRowLookup for D1HttpClient {
-    async fn lookup(&self, token_id: &str) -> Result<Option<PatRow>, String> {
+/// The **co-read**: [`PAT_LOOKUP_SQL`] and the url-map lookup the storage layer
+/// is about to need, in ONE statement ⇒ ONE D1 round trip.
+///
+/// # Why
+///
+/// Prod (`1ee76248-r1`, n=65) measured `opat` 72 ms and `ostore` 75 ms as the
+/// median halves of a 267 ms `origin` — two container→D1-primary round trips of
+/// one RTT each, issued back to back. Merging them is the same move PR #1047
+/// made on the Worker side (`qmeter` + `qstor` → one `db.batch`, `wdb` 284 →
+/// 156 ms): the cost is the ocean crossing, not the query.
+///
+/// # Shape
+///
+/// A compound `UNION ALL` of two independently-`LIMIT 1`-ed arms (SQLite
+/// requires the subquery wrapper: a bare `LIMIT` in a compound arm binds to the
+/// whole compound). Each arm is an `O(1)` index probe — `pat.token_id`
+/// (migration `0054_pat_token_id`) and `adapter_cache_map(namespace, url_hash)`
+/// — so the co-read is two point lookups in one trip, never a scan.
+///
+/// The arms are discriminated by the literal `kind` column, NOT by row order:
+/// a compound `SELECT` has no ordering guarantee without `ORDER BY`, and a
+/// mis-assigned arm here would hand a `content_hash` to the PAT verifier.
+///
+/// The pat arm is [`PAT_LOOKUP_SQL`] verbatim (same filters, same `LIMIT 1`,
+/// same columns, only aliased), so a co-read decides expiry and soft-revocation
+/// identically to the serial read — `INV-PAT-REVOKE-PROPAGATION` is untouched.
+const PAT_URL_MAP_COREAD_SQL: &str = "SELECT * FROM (\
+       SELECT 'p' AS kind, tenant_id AS c1, pat_hash AS c2, scope AS c3, find_only AS c4 \
+       FROM pat \
+       WHERE token_id = ?1 \
+         AND (expires_ms = 0 OR expires_ms > unixepoch('now', 'subsec') * 1000) \
+         AND revoked_at_ms IS NULL \
+       LIMIT 1) \
+     UNION ALL \
+     SELECT * FROM (\
+       SELECT 'm' AS kind, content_hash AS c1, NULL AS c2, NULL AS c3, NULL AS c4 \
+       FROM adapter_cache_map \
+       WHERE namespace = ?2 AND url_hash = ?3 \
+       LIMIT 1)";
+
+/// Build a [`PatRow`] from the four `pat` column values, whatever they were
+/// named by the statement that fetched them.
+///
+/// Shared verbatim by the serial read and the co-read so the two can never
+/// diverge on a NULL/absent column: the error strings, the legacy-`scope`
+/// fail-CLOSED default and the `find_only` decoding are defined ONCE.
+fn pat_row_from_columns(
+    tenant_id: Option<&serde_json::Value>,
+    pat_hash: Option<&serde_json::Value>,
+    scope: Option<&serde_json::Value>,
+    find_only: Option<&serde_json::Value>,
+) -> Result<PatRow, String> {
+    let tenant_id = tenant_id
+        .and_then(|v| v.as_str())
+        .ok_or("D1 pat: missing `tenant_id` column")?
+        .to_owned();
+    let pat_hash = pat_hash
+        .and_then(|v| v.as_str())
+        .ok_or("D1 pat: missing `pat_hash` column")?
+        .to_owned();
+    // `scope` may be NULL on legacy rows; map that to "" (fail-CLOSED
+    // at the scope gate) rather than a backend error.
+    let scope = scope.and_then(|v| v.as_str()).unwrap_or("").to_owned();
+    // `find_only` (0093): NULL/0 = normal PAT; 1 = find-missing-only. Absent on
+    // a legacy row ⇒ false (a normal PAT). The D1 HTTP API returns integers as
+    // JSON numbers.
+    let find_only = find_only.and_then(serde_json::Value::as_i64) == Some(1);
+    Ok(PatRow {
+        tenant_id,
+        pat_hash,
+        scope,
+        find_only,
+    })
+}
+
+impl D1HttpClient {
+    /// The serial `pat` read — [`PAT_LOOKUP_SQL`] alone. Unchanged behaviour;
+    /// still the path for every route that publishes no co-read hint, and the
+    /// fallback when a co-read fails.
+    async fn pat_lookup_only(&self, token_id: &str) -> Result<Option<PatRow>, String> {
         let rows = self
             .query(
                 PAT_LOOKUP_SQL,
                 &[serde_json::Value::String(token_id.to_owned())],
             )
             .await?;
-
         let Some(row) = rows.into_iter().next() else {
             return Ok(None);
         };
+        pat_row_from_columns(
+            row.get("tenant_id"),
+            row.get("pat_hash"),
+            row.get("scope"),
+            row.get("find_only"),
+        )
+        .map(Some)
+    }
 
-        let tenant_id = row
-            .get("tenant_id")
-            .and_then(|v| v.as_str())
-            .ok_or("D1 pat: missing `tenant_id` column")?
-            .to_owned();
-        let pat_hash = row
-            .get("pat_hash")
-            .and_then(|v| v.as_str())
-            .ok_or("D1 pat: missing `pat_hash` column")?
-            .to_owned();
-        // `scope` may be NULL on legacy rows; map that to "" (fail-CLOSED
-        // at the scope gate) rather than a backend error.
-        let scope = row
-            .get("scope")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_owned();
-        // `find_only` (0093): NULL/0 = normal PAT; 1 = find-missing-only. Absent on
-        // a legacy row ⇒ false (a normal PAT). The D1 HTTP API returns integers as
-        // JSON numbers.
-        let find_only = row.get("find_only").and_then(serde_json::Value::as_i64) == Some(1);
+    /// Run [`PAT_URL_MAP_COREAD_SQL`], publish the url-map arm into `cell`, and
+    /// return the `pat` arm.
+    ///
+    /// The url-map answer is published — including a MISS, which is the
+    /// interesting case (the measured 404 path) — but it is only ever *served*
+    /// to a caller whose namespace matches the hint the co-read was keyed by,
+    /// i.e. the tenant this very `pat` row is about to establish. Auth still
+    /// decides first; the co-read only changes when the bytes arrived.
+    ///
+    /// # `cell` is a parameter, and that is load-bearing
+    ///
+    /// `cell` is the very [`crate::d1_coread::CoReadCell`] whose hint supplied
+    /// `namespace`/`url_hash`, captured by the caller BEFORE the `.await`. It is
+    /// not re-derived from the task-local here, because this future is not
+    /// guaranteed to be polled by the task that started it: production wraps
+    /// this lookup in [`SingleFlightPatLookup`], which `.await`s a `Shared`
+    /// future it does NOT spawn — and a `Shared` future is driven only by
+    /// whoever polls it (the same property [`FlightGroup::run`] spawns to escape;
+    /// see its "The work is SPAWNED, and that is load-bearing" note). So a second
+    /// request for the same `token_id` — same PAT, DIFFERENT object, i.e. the
+    /// ordinary cargo hot path — can be the one in scope when these rows land.
+    /// Publishing into the ambient cell there would file this request's
+    /// `content_hash` under that request's `url_hash`, and nothing downstream
+    /// would notice: the moat's integrity check re-hashes bytes against the
+    /// mapped hash, tying bytes↔hash, never key↔hash. Holding the handle makes
+    /// the destination a property of the fetch instead of the scheduler.
+    async fn pat_lookup_coread(
+        &self,
+        cell: &crate::d1_coread::CoReadCell,
+        token_id: &str,
+        namespace: &str,
+        url_hash: &str,
+    ) -> Result<Option<PatRow>, String> {
+        let rows = self
+            .query(
+                PAT_URL_MAP_COREAD_SQL,
+                &[
+                    serde_json::Value::String(token_id.to_owned()),
+                    serde_json::Value::String(namespace.to_owned()),
+                    serde_json::Value::String(url_hash.to_owned()),
+                ],
+            )
+            .await?;
 
-        Ok(Some(PatRow {
-            tenant_id,
-            pat_hash,
-            scope,
-            find_only,
-        }))
+        let mut pat_row: Option<&D1Row> = None;
+        let mut map_hash: Option<String> = None;
+        for row in &rows {
+            match row.get("kind").and_then(|v| v.as_str()) {
+                Some("p") => pat_row = Some(row),
+                Some("m") => {
+                    map_hash = row.get("c1").and_then(|v| v.as_str()).map(str::to_owned);
+                }
+                // A row we cannot attribute to an arm. Refuse to guess: fail the
+                // co-read so the caller falls back to the serial pair rather
+                // than hand an unidentified column to the PAT verifier.
+                _ => return Err("D1 co-read: row with unknown `kind`".to_owned()),
+            }
+        }
+
+        // Publish the url-map arm — `None` here is a real answer ("no mapping
+        // row"), not an absence, and it is exactly the 404 the probe measures.
+        // Into the CAPTURED cell: see this method's doc for why the ambient one
+        // may belong to a different request by now.
+        cell.publish(map_hash);
+
+        match pat_row {
+            None => Ok(None),
+            Some(row) => {
+                pat_row_from_columns(row.get("c1"), row.get("c2"), row.get("c3"), row.get("c4"))
+                    .map(Some)
+            }
+        }
+    }
+}
+
+/// Production [`PatRowLookup`] over the CF D1 HTTP API.
+#[async_trait]
+impl PatRowLookup for D1HttpClient {
+    /// Reads the `pat` row — and, when the route in scope published a co-read
+    /// hint ([`crate::d1_coread::hint`]), carries that route's url-map lookup in
+    /// the SAME round trip.
+    ///
+    /// # Failure semantics are unchanged, by construction
+    ///
+    /// A co-read that errors is NEVER load-bearing: it is logged and the serial
+    /// [`PAT_LOOKUP_SQL`] read runs, so the returned `Result` is decided by the
+    /// exact same statement as before, and (nothing having been published) the
+    /// url-map read the moat makes is the exact same one too. The price is one
+    /// wasted round trip on a failing request — paid only when D1 is already
+    /// erroring, never on the hot path.
+    async fn lookup(&self, token_id: &str) -> Result<Option<PatRow>, String> {
+        // Capture the cell HANDLE together with the key, here, before any
+        // `.await` — the co-read's answer must land in the cell whose hint keyed
+        // it even if a coalescing joiner ends up driving the poll (see
+        // [`Self::pat_lookup_coread`]).
+        if let Some((cell, namespace, url_hash)) = crate::d1_coread::hint() {
+            match self
+                .pat_lookup_coread(&cell, token_id, &namespace, &url_hash)
+                .await
+            {
+                Ok(row) => return Ok(row),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "D1 pat co-read failed; falling back to the serial pat read"
+                    );
+                }
+            }
+        }
+        self.pat_lookup_only(token_id).await
     }
 }
 
@@ -2753,6 +2926,106 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
+    // ── The co-read row must land in the cell whose key fetched it ─────────
+
+    /// A `PatRowLookup` fake shaped exactly like [`D1HttpClient::lookup`] on the
+    /// co-read path: read the hint, make ONE round trip, publish the url-map arm
+    /// it fetched, return the `pat` arm.
+    ///
+    /// The `yield_now` in the middle is the round trip, and it is the whole
+    /// point: [`SingleFlightPatLookup`] shares an **unspawned** future, so the
+    /// task that resumes it after an await point is whichever caller happens to
+    /// poll next — a *joiner*, not necessarily the leader that read the hint.
+    struct CoReadingLookup {
+        calls: Arc<AtomicUsize>,
+        /// `(namespace, url_hash) -> content_hash`.
+        map: HashMap<(String, String), String>,
+        row: Option<PatRow>,
+    }
+
+    #[async_trait]
+    impl PatRowLookup for CoReadingLookup {
+        async fn lookup(&self, _token_id: &str) -> Result<Option<PatRow>, String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            // Capture the destination cell WITH the key, before the await —
+            // exactly as `D1HttpClient::lookup` does.
+            let Some((cell, namespace, url_hash)) = crate::d1_coread::hint() else {
+                return Ok(self.row.clone());
+            };
+            // ── the D1 round trip ──
+            tokio::task::yield_now().await;
+            let fetched = self.map.get(&(namespace, url_hash)).cloned();
+            cell.publish(fetched);
+            Ok(self.row.clone())
+        }
+    }
+
+    /// ⚠️ REGRESSION GUARD. Two concurrent cargo reads on the SAME runner PAT
+    /// but DIFFERENT objects — the exact hot path this PR optimises — coalesce
+    /// into one `SingleFlightPatLookup` flight. The single co-read is keyed by
+    /// the LEADER's url_hash, so the row it brings back belongs to the leader
+    /// and to nobody else. A joiner must be served NOTHING (and fall back to its
+    /// own correctly-keyed read), never the leader's `content_hash` under its
+    /// own key.
+    #[tokio::test]
+    async fn a_joined_single_flight_never_publishes_into_the_joiners_cell() {
+        let key_a = "a".repeat(64);
+        let key_b = "b".repeat(64);
+        let mut map = HashMap::new();
+        let _ = map.insert(("t".to_owned(), key_a.clone()), "content-hash-A".to_owned());
+        let _ = map.insert(("t".to_owned(), key_b.clone()), "content-hash-B".to_owned());
+        let inner = Arc::new(CoReadingLookup {
+            calls: Arc::new(AtomicUsize::new(0)),
+            map,
+            row: Some(row("h", "t", "cas:rw")),
+        });
+        let calls = Arc::clone(&inner.calls);
+        let sf = Arc::new(SingleFlightPatLookup::new(inner));
+
+        // Each request gets its OWN co-read scope, as the cargo layer gives it.
+        // `futures::future::join` polls in declaration order, so A leads the
+        // flight and B joins it and drives it past the round trip.
+        let (a_sf, b_sf) = (Arc::clone(&sf), Arc::clone(&sf));
+        let (a_key, b_key) = (key_a.clone(), key_b.clone());
+        let (served_a, served_b) = futures::future::join(
+            crate::d1_coread::scope("t", a_key.clone(), async move {
+                let _ = a_sf.lookup("tok-shared").await.unwrap();
+                crate::d1_coread::take("t", &a_key)
+            }),
+            crate::d1_coread::scope("t", b_key.clone(), async move {
+                let _ = b_sf.lookup("tok-shared").await.unwrap();
+                crate::d1_coread::take("t", &b_key)
+            }),
+        )
+        .await;
+
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "the two requests must actually have coalesced — otherwise this test \
+             proves nothing about the joiner"
+        );
+        // Serve the CONTENT HASH, not a count: this is what the moat hands to
+        // the CAS read, and the integrity check downstream only ties bytes to
+        // hash — never key to hash — so a mis-keyed row is served silently.
+        assert_ne!(
+            served_b,
+            Some(Some("content-hash-A".to_owned())),
+            "the joiner was served the LEADER's row under its own url_hash — \
+             cross-object content substitution"
+        );
+        assert_eq!(
+            served_b, None,
+            "the joiner's key was never fetched, so it must get no prefetch and \
+             fall back to its own read"
+        );
+        assert_eq!(
+            served_a,
+            Some(Some("content-hash-A".to_owned())),
+            "the leader still keeps the co-read it paid for"
+        );
+    }
+
     // ---------------------------------------------------------------------
     // SecretMatchMemo — the Argon2id memo that lifts the adapter plane's
     // ~3 req/s throughput ceiling. The tests below are written to prove the
@@ -3939,6 +4212,78 @@ mod tests {
             observe(&verifier.verify(&pt_probe).await),
             Observed::Unauthorized,
             "outside saturation an unknown row must be the uniform 401, never a 503"
+        );
+    }
+
+    // ── The co-read statement (PAT_URL_MAP_COREAD_SQL) ────────────────────────
+
+    /// ⛔ The co-read must not be able to weaken revocation or expiry. Its `pat`
+    /// arm carries EVERY predicate of the serial [`PAT_LOOKUP_SQL`], so a
+    /// revoked or expired row is filtered out by the same SQL either way — the
+    /// #1022 guarantee is a property of the statement, and this asserts it as
+    /// one rather than trusting the two to stay in sync by eye.
+    #[test]
+    fn the_coread_pat_arm_keeps_every_serial_filter() {
+        for predicate in [
+            "token_id = ?1",
+            "expires_ms = 0",
+            "expires_ms > unixepoch('now', 'subsec') * 1000",
+            "revoked_at_ms IS NULL",
+        ] {
+            assert!(
+                PAT_LOOKUP_SQL.contains(predicate),
+                "the serial statement lost `{predicate}` — update this test WITH \
+                 the security review that removed it"
+            );
+            assert!(
+                PAT_URL_MAP_COREAD_SQL.contains(predicate),
+                "the co-read's pat arm is missing `{predicate}`: it would decide \
+                 expiry/revocation differently from the serial read, which is \
+                 exactly the guarantee #1022 kept the per-request read for"
+            );
+        }
+    }
+
+    /// The map arm is keyed by BOTH columns of the url-map's unique key, and the
+    /// two arms are discriminated by an explicit `kind` literal — a compound
+    /// `SELECT` has no row order without `ORDER BY`, so positional attribution
+    /// would eventually hand a `content_hash` to the PAT verifier.
+    #[test]
+    fn the_coread_map_arm_is_fully_keyed_and_tagged() {
+        assert!(PAT_URL_MAP_COREAD_SQL.contains("namespace = ?2 AND url_hash = ?3"));
+        assert!(PAT_URL_MAP_COREAD_SQL.contains("'p' AS kind"));
+        assert!(PAT_URL_MAP_COREAD_SQL.contains("'m' AS kind"));
+        // Both arms are individually LIMIT-ed via the subquery wrapper (a bare
+        // LIMIT in a compound arm binds to the whole compound in SQLite).
+        assert_eq!(PAT_URL_MAP_COREAD_SQL.matches("LIMIT 1").count(), 2);
+    }
+
+    /// The two statements decode through ONE parser, so a NULL `scope` still
+    /// fails CLOSED and `find_only` still needs an exact `1` — on both paths.
+    #[test]
+    fn column_decoding_is_shared_and_fails_closed() {
+        let null = serde_json::Value::Null;
+        let one = serde_json::Value::from(1);
+        let tenant = serde_json::Value::String("t".to_owned());
+        let hash = serde_json::Value::String("h".to_owned());
+
+        let legacy = pat_row_from_columns(Some(&tenant), Some(&hash), Some(&null), None)
+            .expect("a legacy row is not a backend error");
+        assert_eq!(legacy.scope, "", "NULL scope ⇒ \"\" ⇒ fail-CLOSED gate");
+        assert!(!legacy.find_only, "absent find_only ⇒ a normal PAT");
+
+        let find_only = pat_row_from_columns(Some(&tenant), Some(&hash), Some(&null), Some(&one))
+            .expect("row decodes");
+        assert!(find_only.find_only);
+
+        // A missing REQUIRED column is a backend fault, never a silent default.
+        assert_eq!(
+            pat_row_from_columns(None, Some(&hash), None, None),
+            Err("D1 pat: missing `tenant_id` column".to_owned())
+        );
+        assert_eq!(
+            pat_row_from_columns(Some(&tenant), None, None, None),
+            Err("D1 pat: missing `pat_hash` column".to_owned())
         );
     }
 }

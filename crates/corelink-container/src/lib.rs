@@ -110,6 +110,12 @@ pub mod byte_accounting;
 /// deployed table exists, explicit empty/zero/501 where it doesn't.
 /// See module docs for the per-endpoint matrix.
 pub mod customer_d1;
+/// The request-scoped **co-read cell**: how the container's per-request D1
+/// `pat` row read carries the url-map row the storage lookup is about to need,
+/// so the two cost ONE round trip instead of two (`opat` + `ostore` were 55 %
+/// of `origin` in prod, one RTT apiece). The hint is never authority — a
+/// prefetched row is served only under the PAT-derived tenant.
+pub mod d1_coread;
 /// Canonical pseudonymized email-hash helper (CTRL-PRIV-001) — the ONE
 /// `hash_email` every email-hash site shares so the invite→match flow and DSR
 /// rectification stay byte-identical (HMAC-SHA256 under `EMAIL_HASH_SALT`, with

@@ -23,10 +23,24 @@
 //!
 //! | name     | covers                                                             |
 //! |----------|--------------------------------------------------------------------|
-//! | `opat`   | the container's per-request D1 `pat` row read (kept by #1022 for immediate revocation) |
+//! | `opat`   | the container's per-request D1 `pat` row read (kept by #1022 for immediate revocation) — and, on the cargo read path, the url-map row it CO-READS in the same round trip |
 //! | `oquota` | the per-tenant monthly `$`-ceiling check/accrue (ADR-0068) — a D1 round trip |
 //! | `ostore` | the moat storage lookup: the `(namespace,key)→content_hash` map read plus the CAS/R2 blob fetch |
 //! | `oother` | **residue** — every other millisecond the container spent: routing, the rate-limit layer, HMAC, Argon2id (or its memo hit), body handling, response assembly |
+//!
+//! ## The co-read moved a millisecond, it did not lose one
+//!
+//! `opat` and `ostore` were the two halves the first measurement found: 72 and
+//! 75 ms of a 267 ms `origin`, one D1 round trip each. They are now ONE round
+//! trip (`crate::d1_coread`), and it is charged to **`opat`** — the phase whose
+//! statement leads it — so on the cargo read path `ostore` falls to ~0 on a
+//! miss and to the CAS/R2 fetch alone on a hit. The names are deliberately
+//! unchanged: renaming a phase would strand the ms in `ohop` on any Worker that
+//! has not yet been redeployed (`originSubPhases` ignores names outside its
+//! allowlist), which is exactly the silent mis-attribution this split exists to
+//! prevent. The reconciliation is unaffected — the four still sum EXACTLY to
+//! the time the container held the request, because `oother` is a residue and
+//! the phases partition, not label, the work.
 //!
 //! `oother` is computed by subtraction from the layer's own whole-request clock
 //! and is emitted ALWAYS, so the four **sum exactly** to the time the container
