@@ -1401,6 +1401,12 @@ impl PatVerifier {
     /// too short) fails CLOSED too: the whole verifier is refused rather
     /// than silently dropping a key the operator believes is live. An
     /// *absent* sibling is simply omitted from the set.
+    ///
+    /// This function reads env and NOTHING else — the stack assembly lives in
+    /// [`Self::from_parts`], which a test can construct (same reason
+    /// `crate::routes::residency::residency_decision` is extracted from its
+    /// header parsing: unit-testable with ZERO process-env mutation, avoiding
+    /// the parallel-test `set_var` race).
     #[must_use]
     pub fn from_env() -> Option<Self> {
         let storage_env = StorageEnv::from_env()?;
@@ -1423,12 +1429,33 @@ impl PatVerifier {
             }
         }
 
-        // Front the per-op D1 `pat` read with single-flight coalescing so a cold
-        // parallel burst of the SAME runner PAT (a hydrate) collapses to one D1
-        // read instead of a thundering herd — no cache, so revocation stays
-        // immediate. See [`SingleFlightPatLookup`].
-        let lookup: Arc<dyn PatRowLookup> = Arc::new(SingleFlightPatLookup::new(Arc::new(d1)));
-        Some(Self::with_key_set(lookup, signing_keys))
+        Some(Self::from_parts(Arc::new(d1), signing_keys))
+    }
+
+    /// THE production stack assembly: everything [`Self::from_env`] does EXCEPT
+    /// reading env. `inner` is the raw row source (the D1 HTTP client in
+    /// production); this is where it gets wrapped into the stack the running
+    /// container actually uses.
+    ///
+    /// It is split out so the assembly can be exercised by a test. Before the
+    /// split, the only site that built the production stack was `from_env`,
+    /// which no test could construct (it reads process env, and this repo
+    /// deliberately keeps tests at zero env mutation — see the note on
+    /// `crate::routes::residency`); every existing verifier test therefore built
+    /// `PatVerifier::with_key_set(d1, keys)` and ran with NO wrapper at all.
+    /// That gap is not hypothetical: PR #1055's co-read correctness depends on
+    /// properties of this exact wrapper (an unspawned `Shared` future polled by
+    /// an arbitrary joiner), and the bug that made it necessary shipped review
+    /// precisely because the wrapper was never in a test's loop.
+    ///
+    /// # What the wrapper is for
+    ///
+    /// Front the per-op D1 `pat` read with single-flight coalescing so a cold
+    /// parallel burst of the SAME runner PAT (a hydrate) collapses to one D1
+    /// read instead of a thundering herd — no cache, so revocation stays
+    /// immediate. See [`SingleFlightPatLookup`].
+    fn from_parts(inner: Arc<dyn PatRowLookup>, signing_keys: Vec<PatSigningKey>) -> Self {
+        Self::with_key_set(Arc::new(SingleFlightPatLookup::new(inner)), signing_keys)
     }
 
     /// Decode one hex `PatSigningKey` from the named env var.
@@ -2924,6 +2951,95 @@ mod tests {
             "error not cached"
         );
         assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    /// ⚠️ WIRING GUARD. Everything above builds `SingleFlightPatLookup` by hand,
+    /// so none of it notices if PRODUCTION stops using it. This one goes through
+    /// [`PatVerifier::from_parts`] — the sole stack assembly `from_env` defers to
+    /// — and asserts the wrapper's EFFECT rather than its presence, so it fails
+    /// if the wrapper is removed AND if it is neutered into a pass-through.
+    ///
+    /// # What this pins, and what it does NOT
+    ///
+    /// Pinned: the production assembly coalesces concurrent D1 `pat` reads of one
+    /// `token_id` into a single inner read, driven through the real
+    /// `verify` pipeline (HMAC → D1 → Argon2id → scope), not through a
+    /// hand-built lookup.
+    ///
+    /// NOT pinned: that `from_env` calls `from_parts`. That is four lines of env
+    /// decoding plus one call, all visible in review, and testing it would need
+    /// process-env mutation this repo deliberately avoids. Saying so explicitly
+    /// is the point — a doc claim wider than the mechanism is what let the #1055
+    /// co-read defect through review ("the published key is the cell's key **by
+    /// construction**").
+    ///
+    /// Why the count is the assertion: coalescing is invisible in the RESULT —
+    /// both callers get the same row either way. Only the inner call count
+    /// distinguishes "one read shared" from "two reads raced", which is exactly
+    /// the property #1055's co-read correctness is written against.
+    ///
+    /// # Why a SEQUENTIAL third verify is also asserted
+    ///
+    /// "concurrent pair ⇒ 1 inner read" on its own does NOT say the stack
+    /// coalesces — a genuine CACHE at this seam would satisfy it too, while
+    /// silently breaking `INV-PAT-REVOKE-PROPAGATION` (a revoked PAT would keep
+    /// working for the cache's TTL). That distinction IS tested
+    /// (`single_flight_is_not_a_cache_sequential_reads_are_fresh`,
+    /// `single_flight_revocation_is_immediate`) — but only against a
+    /// hand-built wrapper, i.e. inside the exact blind spot this test exists to
+    /// close. So the third verify runs AFTER the pair has resolved and must
+    /// produce a SECOND inner read: at the production assembly, freshness per
+    /// request is pinned alongside coalescing.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_production_stack_coalesces_concurrent_reads_of_one_token() {
+        let key = test_key();
+        let (pt, _tid, hash, tenant) = mint_pat(&key, 91, SCOPE_CACHE_RW);
+        // 30 ms in the inner read so the second verify genuinely JOINS the first
+        // one's flight instead of arriving after it resolved (a resolved flight
+        // is deliberately never reused — see `single_flight_is_not_a_cache…`).
+        let inner = Arc::new(SwitchableLookup::new(
+            Ok(Some(row(&hash, &tenant, "cas:rw"))),
+            30,
+        ));
+        let calls = Arc::clone(&inner.calls);
+        let verifier = Arc::new(PatVerifier::from_parts(inner, vec![(*key).clone()]));
+
+        let (a, b) = (Arc::clone(&verifier), Arc::clone(&verifier));
+        let (pt_a, pt_b) = (pt.clone(), pt.clone());
+        let h1 = tokio::spawn(async move { a.verify(&pt_a).await });
+        let h2 = tokio::spawn(async move { b.verify(&pt_b).await });
+        let (r1, r2) = (h1.await.unwrap(), h2.await.unwrap());
+
+        // Both must have gone all the way through — otherwise a count of 1 could
+        // just mean one of them was rejected before it ever reached D1.
+        assert_eq!(r1.expect("first verify must succeed"), tenant);
+        assert_eq!(r2.expect("second verify must succeed"), tenant);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "the production PAT lookup stack must coalesce a concurrent burst of \
+             one token_id into ONE D1 read — 2 means `from_parts` no longer \
+             wraps the row source in SingleFlightPatLookup (or the wrapper stopped \
+             coalescing)"
+        );
+
+        // …and it is a single-FLIGHT, not a cache: a later request for the same
+        // token re-reads D1, which is what keeps revocation immediate.
+        assert_eq!(
+            verifier
+                .verify(&pt)
+                .await
+                .expect("third verify must succeed"),
+            tenant
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            2,
+            "the production PAT lookup stack must NOT cache — a verify issued \
+             after the flight resolved must pay its own D1 read. Still 1 means \
+             something at this seam is serving a retained row, which would defeat \
+             INV-PAT-REVOKE-PROPAGATION"
+        );
     }
 
     // ── The co-read row must land in the cell whose key fetched it ─────────
