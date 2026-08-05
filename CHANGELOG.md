@@ -124,6 +124,39 @@ Each entry cross-references:
   `the quota gate issued 0 batch round trips: []`).
 
 ### Added
+- **feat(worker): the "route the container's D1 reads through its parent DO" proposal is a coin flip
+  on ONE unmeasured fact — where the DO sits relative to the ENAM D1 primary. This ships the
+  instrument that measures it, and nothing else.** The container reads D1 over the public REST API
+  (`crates/corelink-container/src/storage/d1_http.rs:92`), which always hits the ENAM primary — the
+  measured `opat` is 79/86/99 ms. Routing those reads through the parent `CoreLinkServer` DO (which
+  holds the `CONFIG_DB` binding) is worth somewhere between **−70 ms and +65 ms**: a DO-issued
+  primary read of **≤25 ms means the DO is co-located with the primary** (the proposal wins
+  ~60-75 ms), **≥100 ms means it is far** (a regression — the Worker's own primary read from SAM
+  measures 156 ms). Nothing in the repo could answer that, so the proposal was unbuildable on
+  evidence. `/_do/health` (`worker/src/durable_object.ts`) now carries a `d1_probe` object: two
+  timed `SELECT 1` reads taken from INSIDE the DO — one on `this.env.CONFIG_DB` (the PRIMARY), one
+  on `withSession("first-unconstrained")` (the nearest replica) — plus D1's own
+  `served_by_region`/`served_by_primary`/`served_by_colo` provenance, which is what distinguishes "a
+  real replica served this" from "the Sessions API quietly served the primary". Three samples per
+  path plus an UNCOUNTED, still-reported warm-up read, so connection setup is never charged to the
+  measurement and never hidden either. `withSession` is feature-detected exactly as
+  `worker/src/index.ts:1259-1260` does it, so a runtime or test double without the Sessions API
+  degrades to primary-only instead of breaking the health probe. **A read that throws reports an
+  explicit `error` field — never a fast number, never a missing field** — and "unavailable, fell
+  back" (`available: false`) stays distinguishable from "measured, and it matched the primary"; that
+  distinction IS the instrument. The reads run ONLY on `/_do/health` and never on the
+  request-serving path, and every pre-existing field of the health body is untouched (additive
+  only). Delivery: `/_internal/do-d1-probe/{tenant_id}` (`worker/src/index.ts`) forwards to that
+  DO's `/_do/health`, mirroring the `/_internal/replication/` → `/_repl` precedent, behind the same
+  `/_internal/*` constant-time internal-auth gate — mapped to the LOW-PRIVILEGE `quota_read`
+  consumer (no new key: reading a latency number must not require the key that can erase a tenant's
+  bytes). The tenant id is REQUIRED and caller-supplied because DO placement is per-DO-id: the id is
+  derived with `env.CORELINK_SERVER.idFromName(tenant)`, the identical derivation the tenant data
+  path uses, so the probe measures the SAME DO instance that serves that tenant's cargo traffic —
+  a probe of a freshly-created DO would answer nothing. Optional `?colo=1` additionally reports the
+  DO's serving colo (best-effort `cdn-cgi/trace`, off by default so the ordinary probe makes no
+  external request). Read the BODY, not the status: `/_do/health` answers 503 while the tenant's
+  container is stopped, and the numbers are in the body either way.
 - **feat(worker+container): `origin` was 66 % of an authenticated request and one opaque block; it
   is now five named phases that sum to it exactly.** Live prod (`3bd8f3b7-r1`, warm memo-hit steady
   state, n=30, single reused connection, authenticated `/cargo` 404 miss): `auth` 0/0/7 ms (solved,

@@ -184,6 +184,198 @@ describe("DO /_do/health", () => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// DO D1 placement instrument (/_do/health → d1_probe)
+//
+// The instrument exists to answer ONE question: is this DO co-located with the
+// ENAM D1 primary? These tests pin the property that makes the answer
+// trustworthy — a read that never happened, or that threw, can NEVER surface as
+// a fast number or as a missing field.
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Build a D1-ish binding double. `withSession` is omitted when `sessions` is false. */
+function makeD1Double(opts: {
+  sessions: boolean;
+  primaryDelayMs?: number;
+  replicaDelayMs?: number;
+  throwOn?: "primary" | "replica" | "both";
+  withSessionThrows?: boolean;
+}): unknown {
+  const handle = (kind: "primary" | "replica", delayMs: number) => ({
+    prepare: (_q: string) => ({
+      all: async () => {
+        await new Promise<void>((r) => setTimeout(r, delayMs));
+        if (opts.throwOn === kind || opts.throwOn === "both") {
+          throw new Error(`${kind} read exploded`);
+        }
+        return {
+          results: [{ "1": 1 }],
+          meta: {
+            served_by_region: kind === "primary" ? "ENAM" : "WNAM",
+            served_by_primary: kind === "primary",
+            served_by_colo: kind === "primary" ? "MIA" : "SJC",
+          },
+        };
+      },
+    }),
+  });
+
+  const primary = handle("primary", opts.primaryDelayMs ?? 0);
+  if (!opts.sessions) return primary;
+  return {
+    ...primary,
+    withSession: (_c: string) => {
+      if (opts.withSessionThrows === true) throw new Error("no sessions here");
+      return handle("replica", opts.replicaDelayMs ?? 0);
+    },
+  };
+}
+
+function envWithD1(db: unknown): Env {
+  return { ...makeEnv(), CONFIG_DB: db } as unknown as Env;
+}
+
+async function healthBody(env: Env, path = "http://localhost/_do/health"): Promise<Record<string, unknown>> {
+  const state = makeMockState();
+  const do_ = new CoreLinkServer(state, env);
+  await new Promise<void>((r) => setTimeout(r, 5));
+  const resp = await do_.fetch(new Request(path));
+  return (await resp.json()) as Record<string, unknown>;
+}
+
+describe("DO /_do/health d1_probe (placement instrument)", () => {
+  it("measures BOTH paths and reports D1's served_by provenance", async () => {
+    const body = await healthBody(envWithD1(makeD1Double({ sessions: true })));
+    const probe = body["d1_probe"] as Record<string, unknown>;
+    expect(probe["binding_bound"]).toBe(true);
+    expect(probe["sessions_api_available"]).toBe(true);
+
+    const primary = probe["primary"] as Record<string, unknown>;
+    const replica = probe["replica"] as Record<string, unknown>;
+    expect(primary["available"]).toBe(true);
+    expect(primary["ok"]).toBe(true);
+    expect((primary["samples_ms"] as number[]).length).toBe(3);
+    expect(typeof primary["min_ms"]).toBe("number");
+    expect(primary["error"]).toBeNull();
+    // The provenance is what distinguishes "the replica path really hit a
+    // replica" from "the Sessions API quietly served the primary".
+    expect(primary["served_by_primary"]).toBe(true);
+    expect(primary["served_by_region"]).toBe("ENAM");
+    expect(replica["served_by_primary"]).toBe(false);
+    expect(replica["ok"]).toBe(true);
+    // The warm-up is REPORTED, not hidden — it is the honest cold number.
+    expect(typeof probe["warmup_ms"]).toBe("number");
+  });
+
+  it("degrades to primary-only (never throws) when the Sessions API is absent", async () => {
+    const body = await healthBody(envWithD1(makeD1Double({ sessions: false })));
+    const probe = body["d1_probe"] as Record<string, unknown>;
+    expect(probe["sessions_api_available"]).toBe(false);
+    const replica = probe["replica"] as Record<string, unknown>;
+    // "unavailable, fell back" — NOT silently reported as equal to the primary.
+    expect(replica["available"]).toBe(false);
+    expect(replica["error"]).toContain("withSession");
+    expect(replica["min_ms"]).toBeNull();
+    expect((probe["primary"] as Record<string, unknown>)["ok"]).toBe(true);
+    // The health probe itself must be unaffected.
+    expect(body["container_status"]).toBeDefined();
+  });
+
+  it("a read that THROWS is an explicit error — never a fast number, never a missing field", async () => {
+    const body = await healthBody(envWithD1(makeD1Double({ sessions: true, throwOn: "primary" })));
+    const probe = body["d1_probe"] as Record<string, unknown>;
+    const primary = probe["primary"] as Record<string, unknown>;
+    expect(primary["available"]).toBe(true); // it WAS attempted…
+    expect(primary["ok"]).toBe(false); // …and it failed.
+    expect(primary["min_ms"]).toBeNull();
+    expect(primary["samples_ms"]).toEqual([]);
+    expect(typeof primary["error"]).toBe("string");
+    expect(primary["error"]).toContain("exploded");
+  });
+
+  it("reports an unbound CONFIG_DB as unavailable on both paths, not as zero", async () => {
+    // makeEnv() has no CONFIG_DB at all — the pre-existing test double.
+    const body = await healthBody(makeEnv());
+    const probe = body["d1_probe"] as Record<string, unknown>;
+    expect(probe["binding_bound"]).toBe(false);
+    for (const path of ["primary", "replica"]) {
+      const p = probe[path] as Record<string, unknown>;
+      expect(p["available"]).toBe(false);
+      expect(p["min_ms"]).toBeNull();
+      expect(p["error"]).toContain("CONFIG_DB");
+    }
+  });
+
+  it("a throwing withSession is reported, not propagated", async () => {
+    const body = await healthBody(
+      envWithD1(makeD1Double({ sessions: true, withSessionThrows: true })),
+    );
+    const probe = body["d1_probe"] as Record<string, unknown>;
+    const replica = probe["replica"] as Record<string, unknown>;
+    expect(replica["available"]).toBe(false);
+    expect(replica["error"]).toContain("no sessions here");
+    expect((probe["primary"] as Record<string, unknown>)["ok"]).toBe(true);
+  });
+
+  it("makes no external colo request unless ?colo=1 is passed", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    try {
+      const body = await healthBody(envWithD1(makeD1Double({ sessions: true })));
+      const probe = body["d1_probe"] as Record<string, unknown>;
+      expect(probe["do_colo"]).toBeNull();
+      expect(probe["do_colo_error"]).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("?colo=1 resolves the DO colo, and a failing trace is an error field", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("fl=1\ncolo=IAD\n", { status: 200 }));
+    try {
+      const body = await healthBody(
+        envWithD1(makeD1Double({ sessions: true })),
+        "http://localhost/_do/health?colo=1",
+      );
+      expect((body["d1_probe"] as Record<string, unknown>)["do_colo"]).toBe("IAD");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+
+    const failSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("trace down"));
+    try {
+      const body = await healthBody(
+        envWithD1(makeD1Double({ sessions: true })),
+        "http://localhost/_do/health?colo=1",
+      );
+      const probe = body["d1_probe"] as Record<string, unknown>;
+      expect(probe["do_colo"]).toBeNull();
+      expect(probe["do_colo_error"]).toContain("trace down");
+    } finally {
+      failSpy.mockRestore();
+    }
+  });
+
+  it("the D1 reads run ONLY on /_do/health — /_do/stop never touches D1", async () => {
+    let reads = 0;
+    const db = {
+      prepare: (_q: string) => ({
+        all: async () => {
+          reads += 1;
+          return { results: [], meta: {} };
+        },
+      }),
+    };
+    const state = makeMockState();
+    const do_ = new CoreLinkServer(state, envWithD1(db));
+    await new Promise<void>((r) => setTimeout(r, 5));
+    await do_.fetch(new Request("http://localhost/_do/stop"));
+    expect(reads).toBe(0);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // DO stop endpoint
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -455,6 +647,10 @@ describe("DO response sanitization", () => {
     const allowedFields = new Set([
       "status", "container_status", "container_running",
       "cold_start_count", "last_health_check_ms", "request_id",
+      // D1 placement instrument: timings + D1's own served_by_* provenance +
+      // bounded error strings from a `SELECT 1`. No tenant id, no binding value,
+      // no body bytes ever enter it.
+      "d1_probe",
     ]);
     for (const key of Object.keys(body)) {
       expect(allowedFields.has(key), `unexpected field: ${key}`).toBe(true);

@@ -84,11 +84,74 @@ interface LifecycleEvent {
   };
 }
 
+/**
+ * One D1 read path (primary or nearest-replica) as measured by the
+ * `/_do/health` placement instrument.
+ *
+ * The three failure modes are DELIBERATELY distinguishable — collapsing them is
+ * how a broken instrument reports a fast number it never measured:
+ *   - `available: false`            → the path could not be attempted at all.
+ *   - `available: true, ok: false`  → attempted and THREW (`error` is non-null).
+ *   - `available: true, ok: true`   → measured; `samples_ms` are real.
+ */
+interface D1PathProbeResult {
+  /** Could this path be attempted at all (binding bound / Sessions API present)? */
+  readonly available: boolean;
+  /** Did every attempted sample succeed? False whenever `error` is non-null. */
+  readonly ok: boolean;
+  /** Wall-clock ms per sample, in order. Empty when the path was unavailable. */
+  readonly samples_ms: readonly number[];
+  /** Fastest sample — the number to read. `null` when nothing was measured. */
+  readonly min_ms: number | null;
+  /** Non-null iff a read threw or was unavailable. NEVER silently a number. */
+  readonly error: string | null;
+  /** D1 `meta.served_by_region` (e.g. "ENAM") of the last successful sample. */
+  readonly served_by_region: string | null;
+  /** D1 `meta.served_by_primary` — false proves a real replica served the read. */
+  readonly served_by_primary: boolean | null;
+  /** D1 `meta.served_by_colo` (e.g. "MIA") of the last successful sample. */
+  readonly served_by_colo: string | null;
+}
+
+/** The `d1_probe` object added to the `/_do/health` body. Purely additive. */
+interface D1ProbeReport {
+  readonly probe_version: number;
+  readonly samples: number;
+  readonly binding_bound: boolean;
+  readonly sessions_api_available: boolean;
+  /** Uncounted first read that absorbs connection setup (the "cold" number). */
+  readonly warmup_ms: number | null;
+  readonly warmup_error: string | null;
+  readonly primary: D1PathProbeResult;
+  readonly replica: D1PathProbeResult;
+  /** Serving colo of THIS DO — only with `?colo=1`, best-effort. */
+  readonly do_colo: string | null;
+  readonly do_colo_error: string | null;
+}
+
+/** Minimal structural shape of a D1 read handle (a DB or a session). */
+interface D1ProbeHandle {
+  prepare(query: string): { all(): Promise<unknown> };
+}
+
+/** A `CONFIG_DB` binding: a read handle that MAY expose the Sessions API. */
+interface D1ProbeBinding extends D1ProbeHandle {
+  withSession?: (constraint: string) => D1ProbeHandle;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Constants
 // ──────────────────────────────────────────────────────────────────────────────
 
 const CONTAINER_PORT = 50051;
+/** Timed samples taken per D1 read path on `/_do/health`. */
+const D1_PROBE_SAMPLES = 3;
+/** Per-sample ceiling (ms). A hung D1 must not hang the health probe. */
+const D1_PROBE_TIMEOUT_MS = 5_000;
+/** Ceiling (ms) for the best-effort `?colo=1` trace fetch. */
+const DO_COLO_TIMEOUT_MS = 2_000;
+/** Bumped whenever the `d1_probe` shape changes, so a reader can tell. */
+const D1_PROBE_VERSION = 1;
 /**
  * Idle timeout before container is destroyed (ms). 30 minutes.
  *
@@ -295,6 +358,151 @@ async function proxyToContainer(request: Request, fetcher: Fetcher): Promise<Res
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// D1 placement instrument helpers (used ONLY by /_do/health)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Short, bounded error text. Never carries a body or a secret. */
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message.slice(0, 160) : "unknown error";
+}
+
+/**
+ * Reject after `ms` if `p` has not settled. The loser's rejection is absorbed
+ * (`void p.catch`) so a late failure cannot surface as an unhandled rejection.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  void p.catch(() => {});
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([p, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  }) as Promise<T>;
+}
+
+/** Extract D1's own `meta.served_by_*` provenance from a result, defensively. */
+function readServedBy(result: unknown): {
+  region: string | null;
+  primary: boolean | null;
+  colo: string | null;
+} {
+  const empty = { region: null, primary: null, colo: null };
+  if (typeof result !== "object" || result === null) return empty;
+  const meta = (result as { meta?: unknown }).meta;
+  if (typeof meta !== "object" || meta === null) return empty;
+  const m = meta as Record<string, unknown>;
+  return {
+    region: typeof m["served_by_region"] === "string" ? m["served_by_region"] : null,
+    primary: typeof m["served_by_primary"] === "boolean" ? m["served_by_primary"] : null,
+    colo: typeof m["served_by_colo"] === "string" ? m["served_by_colo"] : null,
+  };
+}
+
+/**
+ * One timed `SELECT 1` against a D1 read handle.
+ *
+ * `SELECT 1` touches no table, so what is measured is the ROUND TRIP to whatever
+ * D1 instance serves the handle — which is exactly the placement question.
+ */
+async function timedD1Read(
+  handle: D1ProbeHandle,
+): Promise<{ ms: number | null; error: string | null; result: unknown }> {
+  const started = Date.now();
+  try {
+    const result = await withTimeout(
+      handle.prepare("SELECT 1").all(),
+      D1_PROBE_TIMEOUT_MS,
+      "d1 probe read",
+    );
+    return { ms: Date.now() - started, error: null, result };
+  } catch (err: unknown) {
+    // A throw is reported as an EXPLICIT error — never as a fast number and
+    // never as a missing field. That distinction is the whole instrument.
+    return { ms: null, error: errText(err), result: null };
+  }
+}
+
+/** A path that could not be attempted at all (distinct from attempted-and-failed). */
+function unavailablePath(reason: string): D1PathProbeResult {
+  return {
+    available: false,
+    ok: false,
+    samples_ms: [],
+    min_ms: null,
+    error: reason,
+    served_by_region: null,
+    served_by_primary: null,
+    served_by_colo: null,
+  };
+}
+
+/** Take {@link D1_PROBE_SAMPLES} timed reads on one handle; stop at the first throw. */
+async function probeD1Path(handle: D1ProbeHandle): Promise<D1PathProbeResult> {
+  const samples: number[] = [];
+  let error: string | null = null;
+  let servedBy: { region: string | null; primary: boolean | null; colo: string | null } = {
+    region: null,
+    primary: null,
+    colo: null,
+  };
+
+  for (let i = 0; i < D1_PROBE_SAMPLES; i++) {
+    const sample = await timedD1Read(handle);
+    if (sample.error !== null || sample.ms === null) {
+      error = sample.error ?? "no timing produced";
+      break;
+    }
+    samples.push(sample.ms);
+    const provenance = readServedBy(sample.result);
+    if (provenance.region !== null || provenance.primary !== null || provenance.colo !== null) {
+      servedBy = provenance;
+    }
+  }
+
+  return {
+    available: true,
+    ok: error === null && samples.length === D1_PROBE_SAMPLES,
+    samples_ms: samples,
+    min_ms: samples.length > 0 ? Math.min(...samples) : null,
+    error,
+    served_by_region: servedBy.region,
+    served_by_primary: servedBy.primary,
+    served_by_colo: servedBy.colo,
+  };
+}
+
+/**
+ * Best-effort serving colo of THIS DO (`/_do/health?colo=1` only).
+ *
+ * An outbound `fetch` from a DO egresses through the colo the DO runs in, so
+ * `cdn-cgi/trace` reports that colo. ADVISORY: it is a inference from an
+ * external call, not a platform-attested placement API — read it as a hint that
+ * EXPLAINS the timings, never as the timing itself. Off by default so the plain
+ * health probe makes no external request.
+ */
+async function resolveDoColo(): Promise<{ colo: string | null; error: string | null }> {
+  try {
+    const resp = await withTimeout(
+      fetch("https://workers.cloudflare.com/cdn-cgi/trace", {
+        method: "GET",
+        headers: { "Cache-Control": "no-cache" },
+      }),
+      DO_COLO_TIMEOUT_MS,
+      "colo trace",
+    );
+    if (!resp.ok) return { colo: null, error: `trace status ${resp.status}` };
+    const text = await resp.text();
+    const line = text.split("\n").find((l) => l.startsWith("colo="));
+    return line === undefined
+      ? { colo: null, error: "no colo line in trace" }
+      : { colo: line.slice("colo=".length).trim(), error: null };
+  } catch (err: unknown) {
+    return { colo: null, error: errText(err) };
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Durable Object class
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -336,7 +544,9 @@ export class CoreLinkServer implements DurableObject {
 
     // Internal DO management paths
     if (url.pathname === "/_do/health") {
-      return this.handleHealthProbe(requestId);
+      // `?colo=1` additionally resolves this DO's serving colo (one best-effort
+      // external fetch). Opt-in so the ordinary probe stays network-free.
+      return this.handleHealthProbe(requestId, url.searchParams.get("colo") === "1");
     }
     if (url.pathname === "/_do/stop") {
       return this.handleStop(requestId);
@@ -904,11 +1114,22 @@ export class CoreLinkServer implements DurableObject {
   /**
    * Health probe handler (/_do/health).
    * Also used by wrangler dev --local smoke test.
+   *
+   * Additionally carries the D1-placement INSTRUMENT (`d1_probe`) — see
+   * {@link probeD1Latency}. Existing fields are untouched (something may parse
+   * this); the instrument is purely additive.
+   *
+   * @param includeColo when true (`/_do/health?colo=1`) also resolve the DO's
+   *   serving colo via a best-effort `cdn-cgi/trace` fetch. OFF by default so
+   *   the ordinary probe makes no external request.
    */
-  private async handleHealthProbe(requestId: string): Promise<Response> {
+  private async handleHealthProbe(requestId: string, includeColo = false): Promise<Response> {
     const container = this.state.container;
     const containerRunning = container !== undefined && container.running;
     const status = this.lifecycleState.containerStatus;
+
+    // The instrument. Never throws (every failure is reported as a field).
+    const d1Probe = await this.probeD1Latency(includeColo);
 
     const body = JSON.stringify({
       status: containerRunning ? "ok" : status,
@@ -917,11 +1138,116 @@ export class CoreLinkServer implements DurableObject {
       cold_start_count: this.lifecycleState.coldStartCount,
       last_health_check_ms: this.lifecycleState.lastHealthCheckMs,
       request_id: requestId,
+      d1_probe: d1Probe,
     });
     return new Response(body, {
       status: containerRunning ? 200 : 503,
       headers: { "Content-Type": "application/json", "X-Request-Id": requestId },
     });
+  }
+
+  /**
+   * D1 PLACEMENT INSTRUMENT — measures, from INSIDE this DO, how far the DO is
+   * from the D1 primary (ENAM) and from the nearest read replica.
+   *
+   * ## Why this exists
+   *
+   * The container reads D1 over the public REST API
+   * (`crates/corelink-container/src/storage/d1_http.rs:92`), which ALWAYS hits
+   * the ENAM primary — measured 79/86/99 ms in prod. A proposal to route those
+   * reads through this DO (which holds the `CONFIG_DB` binding) is worth
+   * somewhere between −70 ms and +65 ms, and the sign hinges on ONE unmeasured
+   * fact: where this DO sits relative to the ENAM primary. A DO-issued primary
+   * read of ≤25 ms means co-location (the proposal wins ~60-75 ms); ≥100 ms
+   * means the DO is far (the proposal is a regression — the Worker's own
+   * primary read from SAM measures 156 ms). This function IS that measurement.
+   *
+   * ## What it does NOT do
+   *
+   * It runs ONLY on `/_do/health`. Nothing on the request-serving path calls it,
+   * and it neither starts nor touches the container.
+   *
+   * ## How to read the numbers
+   *
+   *   - `warmup_ms` is an UNCOUNTED first read whose sole job is to absorb
+   *     connection setup so it is not charged to `primary`. It is reported, not
+   *     hidden — it is also the honest "cold" number.
+   *   - `primary.min_ms` is the decision number for the primary path;
+   *     `samples_ms` is every sample in order so a warm/cold spread is visible.
+   *   - `served_by_region` / `served_by_primary` / `served_by_colo` come from
+   *     D1's own result `meta`. They are what distinguishes "the replica read
+   *     landed on a real replica" from "the Sessions API silently served the
+   *     primary" — a replica time equal to the primary time is meaningless
+   *     without them.
+   *   - A read that THROWS reports `ok: false` + a non-null `error`. It is NEVER
+   *     reported as a fast number and never as a missing field.
+   *   - `available: false` means the path could not be attempted at all
+   *     (binding unbound / no Sessions API), which is DISTINCT from "attempted
+   *     and failed" (`available: true, ok: false`).
+   */
+  private async probeD1Latency(includeColo: boolean): Promise<D1ProbeReport> {
+    // Structural read of the binding: `Env.CONFIG_DB` is declared non-optional,
+    // but a test double (or a stripped env) may simply not have it. Mirrors the
+    // optional-binding pattern in index.ts (`env as unknown as { METADATA_KV?… }`).
+    const binding = (this.env as unknown as { CONFIG_DB?: D1ProbeBinding }).CONFIG_DB;
+
+    const doColo = includeColo ? await resolveDoColo() : { colo: null, error: null };
+
+    if (binding === undefined || binding === null) {
+      const unavailable = unavailablePath("CONFIG_DB binding is not bound");
+      return {
+        probe_version: D1_PROBE_VERSION,
+        samples: D1_PROBE_SAMPLES,
+        binding_bound: false,
+        sessions_api_available: false,
+        warmup_ms: null,
+        warmup_error: "CONFIG_DB binding is not bound",
+        primary: unavailable,
+        replica: unavailable,
+        do_colo: doColo.colo,
+        do_colo_error: doColo.error,
+      };
+    }
+
+    // Uncounted warm-up on the primary handle: the FIRST D1 call in a fresh
+    // isolate pays connection setup, and charging that to `primary` would fake a
+    // "the DO is far from ENAM" verdict. Reported separately, never dropped.
+    const warmup = await timedD1Read(binding);
+
+    const primary = await probeD1Path(binding);
+
+    // Feature-detect the Sessions API EXACTLY as index.ts:1259-1260 does. A
+    // runtime (or a test double) without it must degrade to primary-only, never
+    // throw — the health probe outranks the instrument.
+    const sessionsAvailable = typeof binding.withSession === "function";
+    let replica: D1PathProbeResult;
+    if (!sessionsAvailable) {
+      replica = unavailablePath("Sessions API (withSession) not available on this binding");
+    } else {
+      try {
+        // `first-unconstrained` = no bookmark constraint → nearest replica.
+        const session = binding.withSession?.("first-unconstrained");
+        replica =
+          session === undefined || session === null
+            ? unavailablePath("withSession returned no session handle")
+            : await probeD1Path(session);
+      } catch (err: unknown) {
+        replica = { ...unavailablePath("withSession threw"), error: errText(err) };
+      }
+    }
+
+    return {
+      probe_version: D1_PROBE_VERSION,
+      samples: D1_PROBE_SAMPLES,
+      binding_bound: true,
+      sessions_api_available: sessionsAvailable,
+      warmup_ms: warmup.ms,
+      warmup_error: warmup.error,
+      primary,
+      replica,
+      do_colo: doColo.colo,
+      do_colo_error: doColo.error,
+    };
   }
 
   /**
