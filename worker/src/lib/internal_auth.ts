@@ -10,8 +10,10 @@
  * secret; only githugr's www server (a trusted backend) does.
  *
  * Posture (fail-CLOSED):
- *   - secret unbound / too short → endpoint unavailable (403). We never serve
- *     an internal endpoint without a properly sized gate.
+ *   - secret unbound / too short → endpoint unavailable (503, NOT 403 — see
+ *     the status-distinction note on `requireInternalAuth` below; a config
+ *     fault is an outage, and a 403 is read as a FINAL denial by callers).
+ *     We never serve an internal endpoint without a properly sized gate.
  *   - header missing / wrong → 401.
  *   - match → `null` (caller proceeds).
  *

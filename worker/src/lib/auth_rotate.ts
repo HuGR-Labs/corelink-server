@@ -123,7 +123,8 @@ function computeRotateTtlSeconds(_oldExpiresMs: number): number {
  *   1. Method gate (POST only → 405).
  *   2. Internal-auth gate — the `pat_mint` consumer key
  *      (`CORELINK_PAT_MINT_AUTH_KEY` with shared `CORELINK_INTERNAL_AUTH_KEY`
- *      fallback). 401 wrong/missing header, 403 no sized key. The clw backend
+ *      fallback). 401 wrong/missing header, 503 no sized key (`requireConsumerAuth`
+ *      returns 503, NOT 403 — an unbound key is a config fault). The clw backend
  *      holds this key; an end-user PAT cannot call this.
  *   3. Fail-CLOSED on the SHARED key (the secret presented to the container's
  *      mint route) → else 403.
@@ -206,10 +207,10 @@ export async function handleAuthRotate(
   // pat_mint key must NOT be able to mint a fresh working credential for a PAT it
   // names by id alone — an omitted owner_tenant previously skipped the cross-tenant
   // check below and minted a cross-tenant PAT (privilege escalation). Require it
-  // (absent/empty → hard 400), exactly like the sibling runner_revoke
-  // (runner_mint.ts:264-267), and always enforce owner_tenant === oldRow.tenant_id
-  // below. The CHANGELOG already documents rotate as requiring owner_tenant, so this
-  // makes the code match the contract.
+  // (absent/empty → hard 400) and always enforce owner_tenant === oldRow.tenant_id
+  // below. NOT "exactly like the sibling runner_revoke" any more: the 2026-07-08
+  // owner-ratified contract made revoke's owner_tenant OPTIONAL (runner_mint.ts:621-641)
+  // — revoke-by-pat_id is capability-bounded; a cross-tenant MINT is not.
   const ownerTenant =
     typeof body.owner_tenant === "string" && body.owner_tenant.length > 0
       ? body.owner_tenant

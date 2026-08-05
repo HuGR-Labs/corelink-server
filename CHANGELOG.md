@@ -46,7 +46,22 @@ Each entry cross-references:
   radius". Its doc-comment claimed the opposite — *"A too-short dedicated key is treated as ABSENT (falls
   through to the shared key)"* — and that phrasing had been copied into the `Env` declaration, the
   live `/_internal/*` gate comment, `requireConsumerAuth`'s own JSDoc, the `Env` block preamble, and
-  the 2026-06-23 credentials security review — six sites in all, found across two review rounds. Concrete risk: someone simplifying the function to match its
+  the 2026-06-23 credentials security review — six sites in all, found across two review rounds.
+  **A THIRD round found a second, distinct wrong claim about the same two gates — the STATUS CODE.**
+  `requireInternalAuth` / `requireConsumerAuth` return **503** for an unresolvable key (their own
+  comments say "503, NOT 403" verbatim, and the 403 is what silently ate every runner job in the
+  fleet until 2026-08-02). Three more sites still asserted the retired 403: the `internal_auth.ts`
+  MODULE HEADER — i.e. the header this very PR rewrote, four lines above the sentence it fixed —
+  and the route JSDocs of `runner_mint.ts` and `auth_rotate.ts`, which carry the same templated
+  "401 wrong/missing header, 403 no sized key" line. The security review's LOW-2 asserted the same
+  wrong status. **Two of that review's findings also rested on premises that are false at HEAD:**
+  LOW-1 cited the container as MIRRORING the shared-key fallback, but `resolve_mint_auth_key` reads
+  nothing but the dedicated key and never consults the shared one; LOW-2 described a bare shared
+  re-read that is now dedicated-key-first. Both are recorded as dated status notes rather than
+  rewritten, so the point-in-time audit trail survives. Separately, `auth_rotate.ts` justified its
+  mandatory `owner_tenant` as "exactly like the sibling `runner_revoke`" — a control the
+  2026-07-08 owner-ratified runners contract had since made OPTIONAL; the rationale now stands on
+  its own F-006 footing instead of on a sibling that no longer does it. Concrete risk: someone simplifying the function to match its
   documented contract reintroduces exactly the widening the code was written to prevent. No behaviour
   change. The `internal_auth.ts` module header now also states what the shared key IS, enumerated by
   ROLE and shipping the grep that re-derives the enumeration, because a count in prose is a claim and
