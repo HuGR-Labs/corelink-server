@@ -11,8 +11,8 @@ source_blobs:
   - "worker/src/index.ts@6df5436e6c1947da94dbbfd7d1c2820bdb0ea2d1"
   - "worker/src/durable_object.ts@9b407f2b402cc395576be41779afe9387d5a6bc9"
   - "crates/corelink-container/src/routes.rs@b8ffcbade4ab9a7cb1768431ad0be9a11c5dc0bd"
-  - "crates/corelink-container/src/origin_timing.rs@19feb58ad4069489a610696396f9d2eac30e52a2"
-checkpoint_sha: "10b4aad1b605f80fc6f2729662476569aae65939"
+  - "crates/corelink-container/src/origin_timing.rs@6eac1fc37428babeeb919d51d7f234a2d41c501c"
+checkpoint_sha: "43d9672f7006732b5df89820a16699a3c4a20f59"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -68,12 +68,12 @@ semantics in the container.
 9. The hop is MEASURED end to end, and the measurement is split across the same boundary the request
    crosses. The container's outermost data-plane layer clocks its whole share of the request and stamps
    `opat` / `oquota` / `ostore` / `oother` onto the response's own `Server-Timing`
-   (`crates/corelink-container/src/origin_timing.rs:251-259`, wired last so it wraps every inner layer at
+   (`crates/corelink-container/src/origin_timing.rs:265-273`, wired last so it wraps every inner layer at
    `crates/corelink-container/src/routes.rs:1067-1069`); the Worker forwards those four and derives the
    one term only it can see, `ohop = origin − Σ(container phases)` — the dispatch, the DO's prologue and
    the wire (`worker/src/index.ts:3475`). Recording is a task-local ledger, so an instrumented region
    reached outside a request (a test, a background task) simply records nothing
-   (`crates/corelink-container/src/origin_timing.rs:233-238`).
+   (`crates/corelink-container/src/origin_timing.rs:247-252`).
 
 # Invariants
 - The DO is always selected from the PAT-resolved tenant, never the URL tenant — isolation is
@@ -88,7 +88,7 @@ semantics in the container.
   (`worker/src/durable_object.ts:363-392`).
 - The `origin` split always reconciles: the container's residue phase is computed against its OWN
   whole-request clock, so its parts sum exactly to the time it held the request
-  (`crates/corelink-container/src/origin_timing.rs:211`), and the Worker publishes no split it cannot
+  (`crates/corelink-container/src/origin_timing.rs:225`), and the Worker publishes no split it cannot
   make add up (`worker/src/index.ts:3472-3473`).
 
 # Gotchas
@@ -110,4 +110,4 @@ semantics in the container.
 9. `worker/src/durable_object.ts:363-392` — the ensure-running gate before proxying (503/500 otherwise).
 10. `crates/corelink-container/src/routes.rs:426-428` — the container's composed router receiving the request.
 11. `crates/corelink-container/src/routes.rs:489-598` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
-12. `crates/corelink-container/src/origin_timing.rs:251-259` — the container's outermost data-plane layer: scope a task-local phase ledger over the request, clock the whole of it, and stamp the phases on the response's `Server-Timing`. Wired last (so it wraps every inner layer) at `crates/corelink-container/src/routes.rs:1067-1069`; the residue that makes the parts sum to the whole is `crates/corelink-container/src/origin_timing.rs:211`; `timed` is the pass-through recorder at `crates/corelink-container/src/origin_timing.rs:233-238`.
+12. `crates/corelink-container/src/origin_timing.rs:265-273` — the container's outermost data-plane layer: scope a task-local phase ledger over the request, clock the whole of it, and stamp the phases on the response's `Server-Timing`. Wired last (so it wraps every inner layer) at `crates/corelink-container/src/routes.rs:1067-1069`; the residue that makes the parts sum to the whole is `crates/corelink-container/src/origin_timing.rs:225`; `timed` is the pass-through recorder at `crates/corelink-container/src/origin_timing.rs:247-252`.
