@@ -40,7 +40,14 @@ jobs:
   # ── Rust unit tests (all 3 FFI crates) ────────────────────────────────────
   rust-unit:
     name: Rust unit tests (FFI crates)
-    runs-on: corelink
+    # ⛔ GitHub-hosted on purpose: this job provisions a Rust toolchain, and the
+    # corelink image ships 1.96.0 while the workspace pins 1.91.1 (ADR-0015).
+    # `ci-use-host-toolchain.sh` provisions nothing — it only points PATH at a
+    # pre-installed pinned toolchain — so it has nothing to point at there.
+    # Probe run 30865752338 shows rustup pulling 1.91.1 on demand, which is the
+    # provisioning that validate_no_shared_rustup_mutation.py bans.
+    # Frees itself the moment 1.91.1 is baked into the corelink image.
+    runs-on: ubuntu-latest
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -94,7 +101,14 @@ jobs:
   # ── Python × maturin × multiple Python versions ───────────────────────────
   python-matrix:
     name: Python ${{ matrix.python-version }}
-    runs-on: corelink
+    # ⛔ GitHub-hosted on purpose: this job provisions a Rust toolchain, and the
+    # corelink image ships 1.96.0 while the workspace pins 1.91.1 (ADR-0015).
+    # `ci-use-host-toolchain.sh` provisions nothing — it only points PATH at a
+    # pre-installed pinned toolchain — so it has nothing to point at there.
+    # Probe run 30865752338 shows rustup pulling 1.91.1 on demand, which is the
+    # provisioning that validate_no_shared_rustup_mutation.py bans.
+    # Frees itself the moment 1.91.1 is baked into the corelink image.
+    runs-on: ubuntu-latest
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -177,7 +191,14 @@ jobs:
   # ── Go × cgo × multiple Go versions ──────────────────────────────────────
   go-matrix:
     name: Go ${{ matrix.go-version }}
-    runs-on: corelink
+    # ⛔ GitHub-hosted on purpose: this job provisions a Rust toolchain, and the
+    # corelink image ships 1.96.0 while the workspace pins 1.91.1 (ADR-0015).
+    # `ci-use-host-toolchain.sh` provisions nothing — it only points PATH at a
+    # pre-installed pinned toolchain — so it has nothing to point at there.
+    # Probe run 30865752338 shows rustup pulling 1.91.1 on demand, which is the
+    # provisioning that validate_no_shared_rustup_mutation.py bans.
+    # Frees itself the moment 1.91.1 is baked into the corelink image.
+    runs-on: ubuntu-latest
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -232,7 +253,14 @@ jobs:
   # ── JS/TS × WASM × multiple Node.js versions ──────────────────────────────
   js-matrix:
     name: Node.js ${{ matrix.node-version }}
-    runs-on: corelink
+    # ⛔ GitHub-hosted on purpose: this job provisions a Rust toolchain, and the
+    # corelink image ships 1.96.0 while the workspace pins 1.91.1 (ADR-0015).
+    # `ci-use-host-toolchain.sh` provisions nothing — it only points PATH at a
+    # pre-installed pinned toolchain — so it has nothing to point at there.
+    # Probe run 30865752338 shows rustup pulling 1.91.1 on demand, which is the
+    # provisioning that validate_no_shared_rustup_mutation.py bans.
+    # Frees itself the moment 1.91.1 is baked into the corelink image.
+    runs-on: ubuntu-latest
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -318,7 +346,14 @@ jobs:
   # ── Client-verify same hash across 3 languages (single Rust truth) ────────
   cross-language-verify:
     name: Cross-language BLAKE3 verify (single Rust truth)
-    runs-on: corelink
+    # ⛔ GitHub-hosted on purpose: this job provisions a Rust toolchain, and the
+    # corelink image ships 1.96.0 while the workspace pins 1.91.1 (ADR-0015).
+    # `ci-use-host-toolchain.sh` provisions nothing — it only points PATH at a
+    # pre-installed pinned toolchain — so it has nothing to point at there.
+    # Probe run 30865752338 shows rustup pulling 1.91.1 on demand, which is the
+    # provisioning that validate_no_shared_rustup_mutation.py bans.
+    # Frees itself the moment 1.91.1 is baked into the corelink image.
+    runs-on: ubuntu-latest
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.

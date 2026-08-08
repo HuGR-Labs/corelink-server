@@ -236,7 +236,14 @@ jobs:
     # not assumed — cargo-fuzz turned out to have none and would have silently
     # fallen back to a source build). Not done here: inventing an install step to
     # make a job fit is out of scope for a runner-label wave.
-    runs-on: corelink
+    # ⛔ GitHub-hosted on purpose: this job provisions a Rust toolchain, and the
+    # corelink image ships 1.96.0 while the workspace pins 1.91.1 (ADR-0015).
+    # `ci-use-host-toolchain.sh` provisions nothing — it only points PATH at a
+    # pre-installed pinned toolchain — so it has nothing to point at there.
+    # Probe run 30865752338 shows rustup pulling 1.91.1 on demand, which is the
+    # provisioning that validate_no_shared_rustup_mutation.py bans.
+    # Frees itself the moment 1.91.1 is baked into the corelink image.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # dtolnay/rust-toolchain@stable@2026-05-15

@@ -22,6 +22,26 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Changed
+- **ci: 94 jobs moved off GitHub-hosted runners onto CoreLink's own ephemeral fleet.** Owner rule:
+  zero hosted Actions spend. Measured 2026-08-08, one day: **50 scheduled runs vs 13 pull_request
+  runs** — cron dominates the hosted bill, not PRs, and `cas-canary` alone is hourly (`17 * * * *`,
+  24/day). Final tally: 94 `corelink`, 80 mac, 10 self-hosted Linux, **38 still hosted, each for a
+  proven reason**. `corelink` was chosen over the mac fleet because it is Linux, so `apt-get` steps
+  keep working, and it adds no load to the founder's Mac. Two limits were found by PROBE, not
+  assumption, and both are recorded at the `runs-on` they constrain: (a) **the box has no Docker** —
+  `runner-probe.yml` run 30865752338 printed `docker ABSENT` — so the 3 image-building jobs
+  (`container-build-push-prod`, `cosign-sign/sign-release`, `smoke-install`) stay hosted; the mac
+  fleet is no escape either, its docker binary exists but the daemon is dead; (b) **the box ships
+  rustc 1.96.0 while the workspace pins 1.91.1** (ADR-0015), and `ci-use-host-toolchain.sh`
+  provisions nothing — it only points PATH at a pre-installed pinned toolchain — so the 35
+  Rust-building jobs stay hosted rather than pull 1.91.1 on demand, which is the provisioning
+  `validate_no_shared_rustup_mutation.py` exists to ban. Both free themselves the moment Docker and
+  1.91.1 are baked into the corelink image (corelink-runners repo). Residual hosted cost is
+  non-recurring by trigger shape: image builds are `workflow_dispatch`, signing is release-tag only,
+  and the Rust gates are weekly/nightly. Guards re-run green: 180 self-hosted jobs inspected, none
+  provisions a toolchain; 80 cache steps all gated to hosted; 222 workflow YAMLs parse.
+
 ### Performance
 - **perf(container): the container's `pat` read and its url-map read were TWO serial D1 round trips
   on the sccache hot path; they now travel as one statement.** The `origin` split shipped in #1053

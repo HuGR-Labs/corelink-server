@@ -84,7 +84,14 @@ env:
 jobs:
   analyze:
     name: CodeQL ${{ matrix.language }}
-    runs-on: corelink
+    # ⛔ GitHub-hosted on purpose: this job provisions a Rust toolchain, and the
+    # corelink image ships 1.96.0 while the workspace pins 1.91.1 (ADR-0015).
+    # `ci-use-host-toolchain.sh` provisions nothing — it only points PATH at a
+    # pre-installed pinned toolchain — so it has nothing to point at there.
+    # Probe run 30865752338 shows rustup pulling 1.91.1 on demand, which is the
+    # provisioning that validate_no_shared_rustup_mutation.py bans.
+    # Frees itself the moment 1.91.1 is baked into the corelink image.
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
       fail-fast: false

@@ -61,7 +61,14 @@ jobs:
   # --------------------------------------------------------------------
   prop-and-tests:
     name: corelink-billing-{emit,aggregator,stripe,reconcile}+billing(umbrella) tests (lib + prop @ 10k iter)
-    runs-on: corelink
+    # ⛔ GitHub-hosted on purpose: this job provisions a Rust toolchain, and the
+    # corelink image ships 1.96.0 while the workspace pins 1.91.1 (ADR-0015).
+    # `ci-use-host-toolchain.sh` provisions nothing — it only points PATH at a
+    # pre-installed pinned toolchain — so it has nothing to point at there.
+    # Probe run 30865752338 shows rustup pulling 1.91.1 on demand, which is the
+    # provisioning that validate_no_shared_rustup_mutation.py bans.
+    # Frees itself the moment 1.91.1 is baked into the corelink image.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -100,7 +107,14 @@ jobs:
   # --------------------------------------------------------------------
   rb-dry-runs:
     name: RB-BILLING-001 + RB-FM-151 + RB-FM-302 host-side dry-runs
-    runs-on: corelink
+    # ⛔ GitHub-hosted on purpose: this job provisions a Rust toolchain, and the
+    # corelink image ships 1.96.0 while the workspace pins 1.91.1 (ADR-0015).
+    # `ci-use-host-toolchain.sh` provisions nothing — it only points PATH at a
+    # pre-installed pinned toolchain — so it has nothing to point at there.
+    # Probe run 30865752338 shows rustup pulling 1.91.1 on demand, which is the
+    # provisioning that validate_no_shared_rustup_mutation.py bans.
+    # Frees itself the moment 1.91.1 is baked into the corelink image.
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: [prop-and-tests]
     steps:
