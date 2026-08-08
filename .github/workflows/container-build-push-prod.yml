@@ -65,7 +65,19 @@ jobs:
     # If this OOMs anyway, the fallback is `runs-on: corelink` (our own CoreLink
     # Runners, already registered on this repo) — NOT relaxing `lto = "fat"`,
     # which would degrade the shipped production binary to work around CI.
-    runs-on: corelink
+    #
+    # ⛔ That fallback is NOT available today, and this job is the reason the
+    # repo is not 100 % off hosted runners: **the corelink box has no Docker.**
+    # Proven, not assumed — `runner-probe.yml` inventories the image and its
+    # 2026-08-04 run (30865752338) printed `docker  ABSENT`. This job runs
+    # `docker buildx`, so moving it would break the ONLY path that ships the
+    # production container image. The mac fleet is no escape either: the binary
+    # is at /usr/local/bin/docker but the daemon does not answer.
+    # Trigger is `workflow_dispatch` ONLY, so the residual hosted cost is
+    # ~11 min per deliberate build — not recurring spend.
+    # To finish the job: install Docker in the corelink runner image
+    # (corelink-runners repo), then flip this to `corelink`.
+    runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - name: Confirm intent

@@ -57,7 +57,13 @@ jobs:
   # ─────────────────────────────────────────────────────────────────────────
   sign-release:
     name: build, push & cosign-sign
-    runs-on: corelink
+    # ⛔ Stays GitHub-hosted: this job builds and pushes the OCI image, and the
+    # corelink box has NO Docker — `runner-probe.yml` run 30865752338
+    # (2026-08-04) printed `docker  ABSENT`. The mac fleet has the binary but a
+    # dead daemon. Trigger is a release tag only (`v[0-9]+.[0-9]+.[0-9]+`), so
+    # this bills on releases, not on ordinary pushes.
+    # Fix that frees it: install Docker in the corelink runner image.
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
     outputs:

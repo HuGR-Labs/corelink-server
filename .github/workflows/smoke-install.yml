@@ -99,7 +99,14 @@ concurrency:
 
 jobs:
   smoke:
-    runs-on: corelink
+    # ⛔ Stays GitHub-hosted: this job builds and runs a throwaway Docker image,
+    # and the corelink box has NO Docker — `runner-probe.yml` run 30865752338
+    # (2026-08-04) printed `docker  ABSENT`. The error text further down this
+    # file ("ubuntu-latest ships one") is why that matters. The mac fleet has
+    # the binary but a dead daemon. Cadence is weekly + a paths-filtered push,
+    # so this is ~5 min/week, not recurring bulk spend.
+    # Fix that frees it: install Docker in the corelink runner image.
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       # Map the secret to a job-level env so the preflight can test for its
