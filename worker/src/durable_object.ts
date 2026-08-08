@@ -1081,10 +1081,6 @@ export class CoreLinkServer implements DurableObject {
   }
 
   /**
-   * Poll container health endpoint until healthy or timeout.
-   * Uses HTTP GET /_health on the container port via getTcpPort fetcher.
-   */
-  /**
    * Arm Cloudflare's OWN idle auto-destroy for this container.
    *
    * `container.setInactivityTimeout(ms)` is the platform-side reaper: workerd
@@ -1136,6 +1132,10 @@ export class CoreLinkServer implements DurableObject {
     }
   }
 
+  /**
+   * Poll container health endpoint until healthy or timeout.
+   * Uses HTTP GET /_health on the container port via getTcpPort fetcher.
+   */
   private async waitForContainerHealth(
     requestId: string,
     container: Container,
