@@ -970,6 +970,11 @@ export class CoreLinkServer implements DurableObject {
         },
       });
 
+      // Arm the PLATFORM idle reaper immediately — before the health poll, so
+      // a container that starts and then wedges on /_health is still reaped by
+      // Cloudflare even if every line below this one fails to run.
+      await this.armInactivityTimeout(container, requestId);
+
       // Poll health until container is responsive or timeout
       const healthy = await this.waitForContainerHealth(requestId, container);
       if (!healthy) {
@@ -1079,6 +1084,58 @@ export class CoreLinkServer implements DurableObject {
    * Poll container health endpoint until healthy or timeout.
    * Uses HTTP GET /_health on the container port via getTcpPort fetcher.
    */
+  /**
+   * Arm Cloudflare's OWN idle auto-destroy for this container.
+   *
+   * `container.setInactivityTimeout(ms)` is the platform-side reaper: workerd
+   * destroys the container after `ms` without activity, with no help from this
+   * Worker. It has been named in this file's header doc-comment since day one
+   * (see the `state.container` capability list) and was NEVER CALLED — the repo
+   * hand-rolled the alarm reaper in `alarm()` instead. That reaper shipped in
+   * #927 and never moved the live instance count off 35 (5 regions x 7 x 4 GiB
+   * resident, `active: 0` in regions with zero traffic).
+   *
+   * Platform-side is strictly stronger than ours: it survives DO eviction, a
+   * broken alarm chain and a wedged isolate — precisely the failure modes that
+   * made containers immortal. The alarm reaper is KEPT as defence in depth and
+   * because it also stops re-arming the chain, letting the DO itself hibernate
+   * (a live alarm chain bills DO duration on its own).
+   *
+   * ⚠️ The type declaration (`worker-configuration.d.ts`, `interface Container`)
+   * carries NO doc-comment, so it is UNSPECIFIED whether the timer restarts on
+   * container activity or is an absolute deadline from the moment it is armed.
+   * Under the absolute reading, arming once at start would kill a BUSY
+   * container mid-request one window later. So this is called at start AND
+   * re-armed from `alarm()` while the container is non-idle — correct under
+   * both readings: idempotent if the platform already tracks activity, a
+   * sliding window if it does not. Re-arming rides the existing alarm and
+   * never the request path; a per-request `await` here would tax the hot path.
+   *
+   * Never throws — a container that cannot arm its idle timer must still
+   * serve. But it must not fail SILENTLY: an unarmed timer is exactly how this
+   * leak survived a whole fix cycle, so a failure is logged loudly.
+   */
+  private async armInactivityTimeout(container: Container, requestId: string): Promise<void> {
+    if (typeof container.setInactivityTimeout !== "function") {
+      // Older workerd, or a test double predating the API: the alarm reaper in
+      // alarm() remains the only reaper. Not an error, but not silent either.
+      console.warn(
+        `[${requestId}] container.setInactivityTimeout unavailable — ` +
+          `platform idle auto-destroy NOT armed; relying on the alarm reaper alone`,
+      );
+      return;
+    }
+    try {
+      await container.setInactivityTimeout(IDLE_TIMEOUT_MS);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[${requestId}] container.setInactivityTimeout(${IDLE_TIMEOUT_MS}) threw: ${msg} — ` +
+          `platform idle auto-destroy NOT armed; relying on the alarm reaper alone`,
+      );
+    }
+  }
+
   private async waitForContainerHealth(
     requestId: string,
     container: Container,
@@ -1406,6 +1463,14 @@ export class CoreLinkServer implements DurableObject {
       await this.updateLifecycleState({ ...this.lifecycleState });
       return false;
     }
+
+    // Re-arm the platform idle reaper. Reached only when the container is
+    // running AND the reaper above did NOT find it idle, so this slides the
+    // window for a container that is actually being used. Placed before the
+    // health-probe dedupe below so a deduped double-fire still re-arms.
+    // See armInactivityTimeout: the timer's reset semantics are unspecified,
+    // and re-arming is what makes this correct under the absolute reading.
+    await this.armInactivityTimeout(container, requestId);
 
     if (now - this.lifecycleState.lastHealthCheckMs < HEALTH_CHECK_INTERVAL_MS) {
       // Deduped double-fire: skip the probe but NEVER break the alarm chain —
