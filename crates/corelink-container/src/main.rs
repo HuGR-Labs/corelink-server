@@ -435,6 +435,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }) {
                 missing.push(env_name);
             }
+            // ERASURE_ATTESTATION_SEED_HEX: the Ed25519 seed for signing erasure
+            // attestations (Artifact 1, WP-C1). Without it the verify sweep produces
+            // no signed attestation → GDPR Art.17 proof-of-erasure is a non-functional
+            // stub. The seed is also reused for CF-6 audit chain head signing.
+            let erasure_attestation_seed_present = std::env::var("ERASURE_ATTESTATION_SEED_HEX")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if !erasure_attestation_seed_present {
+                missing.push("ERASURE_ATTESTATION_SEED_HEX (Ed25519 attestation signing seed)");
+            }
+            // ERASURE_ATTESTATION_KEY_ID: the monotonic key id stamped into signed
+            // attestations + audit chain heads. Maps to erasure_public_keys.key_id.
+            let erasure_attestation_key_id_present = std::env::var("ERASURE_ATTESTATION_KEY_ID")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if !erasure_attestation_key_id_present {
+                missing.push("ERASURE_ATTESTATION_KEY_ID (Ed25519 key id)");
+            }
+            // ERASURE_ATTESTATION_SINGLE_REGION: explicit operator assertion that
+            // this deployment is single-region. Prevents silent mis-attribution of
+            // erasure attestations to the wrong region (Schrems II compliance).
+            let erasure_attestation_single_region_present = std::env::var("ERASURE_ATTESTATION_SINGLE_REGION")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if !erasure_attestation_single_region_present {
+                missing.push("ERASURE_ATTESTATION_SINGLE_REGION (operator region assertion)");
+            }
+            // ERASURE_ATTESTATION_REGION: the canonical region this deployment serves.
+            // Bound into the signed attestation payload + selects the R2 audit bucket.
+            let erasure_attestation_region_present = std::env::var("ERASURE_ATTESTATION_REGION")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if !erasure_attestation_region_present {
+                missing.push("ERASURE_ATTESTATION_REGION (canonical region)");
+            }
+            // R2_AUDIT_BUCKET: the R2 bucket for erasure attestation bundles + audit
+            // export NDJSON. Without it the verify sweep cannot persist signed
+            // attestations → fail-CLOSED (no dangling r2_key).
+            let r2_audit_bucket_present = std::env::var("R2_AUDIT_BUCKET")
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if !r2_audit_bucket_present {
+                missing.push("R2_AUDIT_BUCKET (attestation + audit export archive)");
+            }
             if !missing.is_empty() {
                 tracing::error!(
                     event = "prod_controls_not_fully_armed",

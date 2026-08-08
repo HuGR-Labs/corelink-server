@@ -179,7 +179,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=corelink-cargo-regist
     for pkg in $FIRST_PARTY; do CLEAN_ARGS="$CLEAN_ARGS -p $pkg"; done; \
     # shellcheck disable=SC2086 -- $CLEAN_ARGS is an intentional list of -p flags
     cargo clean --release --locked $CLEAN_ARGS; \
-    cargo build --release --locked -p corelink-server --bin corelink-server; \
+    cargo build --release --locked -p corelink-server --bin corelink-server --features byok-aws-real; \
     mkdir -p /out; \
     cp /build/target/release/corelink-server /out/corelink-server
 
