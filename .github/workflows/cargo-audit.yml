@@ -155,7 +155,7 @@ jobs:
     # STAYS hosted (wave 2, 2026-08-03). Its "Classify findings + emit SEV alerts"
     # step is a `python3` heredoc, and the corelink image has no python3. It is
     # also cron-only, so it carries no per-PR bill worth moving.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 10
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.deny_warnings == 'false')
     steps:

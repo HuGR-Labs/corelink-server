@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   roundtrip:
-    runs-on: ubuntu-latest          # datacenter IP = the customer's CI
+    runs-on: corelink          # datacenter IP = the customer's CI
     timeout-minutes: 5
     steps:
       - name: Authenticated CAS BLAKE3 round-trip against prod

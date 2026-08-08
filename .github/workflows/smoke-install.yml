@@ -99,7 +99,7 @@ concurrency:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 5
     env:
       # Map the secret to a job-level env so the preflight can test for its

@@ -72,7 +72,7 @@ jobs:
     # Runner: GitHub-hosted on purpose — see the "Runner:" paragraph in the
     # header above for the three reasons (heavy compile off the founder's Mac,
     # the shared-~/.rustup ROOT FIX, fleet saturation of the merge gate).
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): it had NO timeout, so the GitHub
     # default of 360 min applied — a wedged cargo-mutants run could burn 6h of
     # paid minutes. `--in-diff` runs are minutes; 20 is generous headroom.

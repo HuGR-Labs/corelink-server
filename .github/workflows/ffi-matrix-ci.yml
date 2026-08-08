@@ -40,7 +40,7 @@ jobs:
   # ── Rust unit tests (all 3 FFI crates) ────────────────────────────────────
   rust-unit:
     name: Rust unit tests (FFI crates)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -94,7 +94,7 @@ jobs:
   # ── Python × maturin × multiple Python versions ───────────────────────────
   python-matrix:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -177,7 +177,7 @@ jobs:
   # ── Go × cgo × multiple Go versions ──────────────────────────────────────
   go-matrix:
     name: Go ${{ matrix.go-version }}
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -232,7 +232,7 @@ jobs:
   # ── JS/TS × WASM × multiple Node.js versions ──────────────────────────────
   js-matrix:
     name: Node.js ${{ matrix.node-version }}
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.
@@ -318,7 +318,7 @@ jobs:
   # ── Client-verify same hash across 3 languages (single Rust truth) ────────
   cross-language-verify:
     name: Cross-language BLAKE3 verify (single Rust truth)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # Bound the job (CI cost diet 2026-08-01): a hosted job with no timeout
     # inherits GitHub's 360-min default, so one wedged run can burn 6h of
     # PAID minutes. Measured runs are minutes; this is generous headroom.

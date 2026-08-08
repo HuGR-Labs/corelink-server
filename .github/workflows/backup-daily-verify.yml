@@ -34,7 +34,7 @@ jobs:
     name: Verify backups (daily)
     # GitHub-hosted (Mac-free), matching cf-deploy-prod.yml. The live lane only
     # needs wrangler + jq + CF auth to list the backup R2 bucket.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     environment: production
     timeout-minutes: 35
 

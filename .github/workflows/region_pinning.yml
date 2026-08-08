@@ -61,7 +61,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   migration-check:
     name: migration additivity check (0028_tenant_primary_region)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -224,7 +224,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   rb-region-leak-dry-run:
     name: RB-region-leak dry-run (INV-REGION-NO-CROSS-LEAK forensic)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -237,7 +237,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   workflow-yaml-smoke:
     name: region_pinning.yml YAML parse smoke
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -250,7 +250,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   region-pinning-gate:
     name: region pinning gate (aggregate — INV-REGION-NO-CROSS-LEAK)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 1
     needs:
       - migration-check

@@ -43,7 +43,7 @@ jobs:
   okf-wiki-validation:
     # ubuntu-latest (zero Mac load) — the self-hosted setup-python hack noted in
     # spec_validation.yml is N/A here.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     steps:
       - name: Checkout
         # fetch-depth: 0 — C4/C5 need full history (checkpoint_sha lookup + the

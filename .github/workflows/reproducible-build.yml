@@ -71,7 +71,7 @@ jobs:
     # `ubuntu-latest` image, so the within-run comparison stays valid; the
     # cross-run baseline moves when GitHub bumps the image, which is expected and
     # is what `docs/build/reproducible.md` calls a re-baseline event.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     # No timeout existed on either job. A self-hosted job with no timeout
     # inherits GitHub's 360-min default; a QUEUED one just sits. Bound it.
     timeout-minutes: 45
@@ -173,7 +173,7 @@ jobs:
   diff-check:
     name: Diff check (2-runner compare)
     needs: build
-    runs-on: ubuntu-latest       # see the note on `build` — no self-hosted Linux exists
+    runs-on: corelink       # see the note on `build` — no self-hosted Linux exists
     timeout-minutes: 15
 
     outputs:

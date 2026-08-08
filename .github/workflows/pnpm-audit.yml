@@ -78,7 +78,7 @@ jobs:
     # Do NOT route to [self-hosted, mac, corelink-builder] — that fleet is
     # shared with all Rust build jobs and the Mac cannot afford idle network
     # slots (ref: cargo-audit.yml "stop heavy-gate stampede" note).
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 5
 
     steps:

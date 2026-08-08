@@ -82,7 +82,7 @@ env:
 jobs:
   mutants:
     name: cargo-mutants kill-rate gate
-    runs-on: ubuntu-x64-4core  # 4-core: heavy crates (pat/clerk — Argon2id + RS256 proptests) are ~4.5h; 2-core would blow the 6h cap
+    runs-on: corelink  # 4-core: heavy crates (pat/clerk — Argon2id + RS256 proptests) are ~4.5h; 2-core would blow the 6h cap
     timeout-minutes: 330  # under the 6h hosted cap so an over-budget crate fails cleanly instead of a silent runner-cancel
     strategy:
       fail-fast: false
@@ -271,7 +271,7 @@ jobs:
     name: Aggregate per-crate JSON → reports/mutation/latest.json
     needs: mutants
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: corelink
     permissions:
       contents: write       # least-privilege: write only on the aggregator
       issues: write         # open a regression issue if any crate < 75 %

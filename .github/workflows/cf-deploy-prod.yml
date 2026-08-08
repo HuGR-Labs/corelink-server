@@ -55,7 +55,7 @@ jobs:
   # ---------------------------------------------------------------------------
   gate-secrets-checklist:
     name: gate — secrets checklist drift
-    runs-on: ubuntu-latest
+    runs-on: corelink
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -116,7 +116,7 @@ jobs:
   migrate-d1:
     name: apply D1 migrations (shared prod D1)
     needs: gate-secrets-checklist
-    runs-on: ubuntu-latest
+    runs-on: corelink
     environment: production
     steps:
       - name: Checkout
@@ -157,7 +157,7 @@ jobs:
   gate-cf-secrets-populated:
     name: gate — CF secrets populated (${{ matrix.env }})
     needs: gate-secrets-checklist
-    runs-on: ubuntu-latest
+    runs-on: corelink
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.gate-secrets-checklist.outputs.matrix) }}
@@ -261,7 +261,7 @@ jobs:
       - gate-secrets-checklist
       - gate-cf-secrets-populated
       - migrate-d1
-    runs-on: ubuntu-latest
+    runs-on: corelink
     environment: production
     strategy:
       fail-fast: false

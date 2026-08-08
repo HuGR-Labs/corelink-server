@@ -84,7 +84,7 @@ env:
 jobs:
   analyze:
     name: CodeQL ${{ matrix.language }}
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 60
     strategy:
       fail-fast: false

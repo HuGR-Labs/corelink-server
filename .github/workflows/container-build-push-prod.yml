@@ -65,7 +65,7 @@ jobs:
     # If this OOMs anyway, the fallback is `runs-on: corelink` (our own CoreLink
     # Runners, already registered on this repo) — NOT relaxing `lto = "fat"`,
     # which would degrade the shipped production binary to work around CI.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 60
     steps:
       - name: Confirm intent

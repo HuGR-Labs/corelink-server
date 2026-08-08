@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   vitest:
-    runs-on: ubuntu-latest
+    runs-on: corelink
     defaults:
       run:
         working-directory: worker

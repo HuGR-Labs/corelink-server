@@ -43,7 +43,7 @@ jobs:
     # every touched file; the ~200-file legacy backlog does not block
     # unrelated PRs and burns down as files are edited. Full-tree visibility
     # lives in docs-ci.yml's advisory "Vale prose lint" job.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 10
     env:
       VALE_VERSION: 3.9.1

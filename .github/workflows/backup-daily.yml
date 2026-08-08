@@ -64,7 +64,7 @@ concurrency:
 jobs:
   backup:
     name: Daily backup (live)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     environment: production
     timeout-minutes: 35
     env:

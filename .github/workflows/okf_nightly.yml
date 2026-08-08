@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   okf-nightly:
-    runs-on: ubuntu-latest
+    runs-on: corelink
     steps:
       - name: Checkout
         # fetch-depth: 0 — C-AGE reads each checkpoint_sha commit date and C-REV

@@ -68,7 +68,7 @@ jobs:
     # run Semgrep natively via the host `python3`/`pip3` — NOT
     # `actions/setup-python`, whose RUNNER_TOOL_CACHE provisioning is unwritable
     # on the fleet. (2026-06-02)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 20
 
     # Skip duplicate runs on dependabot push events (PR already covers them).

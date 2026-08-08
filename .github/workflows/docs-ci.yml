@@ -215,7 +215,7 @@ jobs:
     # Chrome/Chromium (image inventory 91857115465). Installing one is out of
     # bounds: a browser is ~1 GiB on disk and the box is ephemeral, so EVERY Rust
     # spawn sharing the image would pay for it. 41 billed min / 3 days stays hosted.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -293,7 +293,7 @@ jobs:
     # The fabric box has none (image inventory 91857115465) and baking one in was
     # rejected on cost (~1 GiB, charged to every spawn of the shared image).
     # 38 billed min / 3 days stays hosted.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -347,7 +347,7 @@ jobs:
     # Moving it would mean dropping the pinned action for a hand-rolled lychee
     # install, i.e. trading a supply-chain-pinned action for a bespoke download.
     # 74 billed min / 3 days stays hosted; revisit only if lychee is ever baked in.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -451,7 +451,7 @@ jobs:
     # rejected — every Rust spawn would pay it. This is the second-most expensive
     # job in the file (111 billed min / 3 days) and the biggest remaining prize:
     # it becomes movable the day a browser-bearing runner label exists.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 30
     defaults:
       run:
@@ -509,7 +509,7 @@ jobs:
     # all off PATH, which is exactly the state of the fabric box (image inventory
     # 91857115465). That guard is doing its job — do not weaken it to make the
     # migration "work". 52 billed min / 3 days stays hosted.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 25
     defaults:
       run:
@@ -706,7 +706,7 @@ jobs:
     # autorun` needs headless Chrome, absent from the fabric box (image inventory
     # 91857115465). Cheapest job in the file anyway — it is `schedule`/`dispatch`
     # only, so it ran 4 times in the 3-day window for 4 billed minutes total.
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 30
     defaults:
       run:

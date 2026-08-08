@@ -38,7 +38,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   byok-matrix-16:
     name: BYOK 16-cell matrix (${{ inputs.mock_mode == 'false' && 'STAGING' || 'MOCK' }})
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 30
 
     steps:
@@ -92,7 +92,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   byok-proptest-100k:
     name: BYOK proptest 100k iter (4 props × all providers)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 30
 
     steps:
@@ -125,7 +125,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   byok-adversarial:
     name: BYOK adversarial regression (16 scenarios)
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 15
 
     steps:
@@ -157,7 +157,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────
   byok-fips-status-check:
     name: BYOK FIPS compliance status check
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 5
     if: github.event_name == 'workflow_dispatch' || (github.event.schedule == '17 6 * * 1')
 
