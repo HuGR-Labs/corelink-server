@@ -29,6 +29,7 @@ tags:
 > **Audience:** CS team (consumers), VPMkt + CS Lead (owners), Eng/Data (implementers), Founder (review).
 > **Companion:** `CHURN-RISK-SIGNALS.md` (sibling worktree `wt-churn-retention`) enumerates the raw risk signals; this doc weights them into the score. `HEALTH-DASHBOARD-SPEC.md` consumes the output; `NPS-SURVEY-SCHEDULE.md` feeds one of the six inputs; `CSM-PLAYBOOK.md` acts on the tier transitions.
 > **Hard rule:** **the score MUST be reproducible from public-to-CS inputs alone**. No subjective "vibes" inputs. If the algorithm ever has to be tuned, the tuning is a versioned spec change (`version: 1.1.0`) with rationale + before/after distribution check.
+> **Instrumentation status.** This is a **design methodology, not a live pipeline**. The `health_score_audit` table (§1 rule 8, §7 Implementation contract) does **not exist in the D1 schema today** — no nightly job computes or writes scores yet. CS should not expect a live health score / dashboard until the implementation contract in §7 is actually built and deployed.
 
 ---
 
@@ -41,7 +42,7 @@ tags:
 5. **Tier transitions are sticky** — to prevent flapping between tiers, a tenant entering `At-Risk` or `Critical` requires **2 consecutive daily scores** below the threshold (anti-flap); leaving requires **3 consecutive daily scores** above the threshold.
 6. **No surprise downgrades** — if a tenant drops by >15 points day-over-day, CS Lead receives an alert (see `HEALTH-DASHBOARD-SPEC.md` §"Action queue").
 7. **Versioned** — every change to weights, normalisation, or thresholds bumps `version:` in front matter and is logged in §9 (Change log).
-8. **Auditable** — every nightly score computation writes one row to `health_score_audit` (tenant_id, score, tier, six normalised inputs, weights_version, computed_at). Retention 18 months.
+8. **Auditable** — every nightly score computation writes one row to `health_score_audit` (tenant_id, score, tier, six normalised inputs, weights_version, computed_at). Retention 18 months. **⚠️ Planned / not-yet-instrumented: this table does not exist yet — see Instrumentation status note above.**
 
 ---
 
@@ -288,7 +289,7 @@ Tier: **Healthy**.
 | Job schedule | Nightly cron at 02:00 UTC. SLA: complete within 30 min for ≤ 10k tenants. |
 | Idempotency | Re-running for the same `(tenant_id, computed_at_date)` MUST produce identical output and be a no-op write. |
 | Input source | Postgres read-replica `analytics.events_30d_agg`; ticket queue API; billing service API. |
-| Output table | `cs.health_score_audit` — columns `(tenant_id, computed_at, score, tier, U, B, S, P, E, N, nps_missing, weights_version)`. Append-only. Retention 18 months. |
+| Output table | `cs.health_score_audit` — columns `(tenant_id, computed_at, score, tier, U, B, S, P, E, N, nps_missing, weights_version)`. Append-only. Retention 18 months. **⚠️ Planned / not-yet-instrumented — table does not exist in the D1 schema today.** |
 | Failure mode | If any input is unavailable, **do not score**. Write a row with `score = NULL, tier = NULL, error = '<reason>'` and alert `health.score.compute_failed`. Last-known-good tier is preserved on the dashboard until next successful run. |
 | Backfill | A weights or formula change triggers a backfill of last 30 days under the new version. Both `weights_version` rows coexist; the dashboard reads the latest version. |
 | Privacy | Score and inputs are tenant-internal data, not customer-visible by default. Lighthouse + Enterprise customers can request to see their own score quarterly (see `CSM-PLAYBOOK.md` §6 Transparency-on-request). |
@@ -324,7 +325,7 @@ Every re-baseline:
 
 - **`CHURN-RISK-SIGNALS.md`** (sibling worktree `wt-churn-retention`): enumerates raw signals; subset feeds this score (specifically support friction, payment reliability, engagement). Tier transitions trigger signals listed there.
 - **`NPS-SURVEY-SCHEDULE.md`**: feeds input §3.6 (NPS).
-- **`HEALTH-DASHBOARD-SPEC.md`**: consumes `cs.health_score_audit` output.
+- **`HEALTH-DASHBOARD-SPEC.md`**: consumes `cs.health_score_audit` output (planned / not-yet-instrumented — see status note above).
 - **`CSM-PLAYBOOK.md`** §3: tier-keyed playbook actions.
 - **`specs/_runbooks/RB-CUSTOMER-SUPPORT-T-90.md`** §3 (severity matrix): provides the P0–P3 + SLA-breach + reopen counters consumed by §3.3.
 - **`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md`** §Comms protocol: provides comms-tier overrides for lighthouse customers (they have named CS engineers regardless of score).

@@ -23,7 +23,9 @@ and 30d sustained correctness gate.
   same digest OR admin endpoint (S-13 forward).
 - **Customer-visible reclaim metric** `bytes_reclaimed_last_30d` per
   tenant tier (free / solo / team / business / enterprise) on the
-  customer dashboard (S-16 forward).
+  customer dashboard (S-16 forward). **Roadmap:** `corelink_gc_reclaimed_bytes_total`
+  has no emitter in the codebase yet — only Grafana dashboard queries
+  reference it today; the metric is not actually recorded.
 - **Refcount reconciliation daily** with dual-condition auto-fix gate
   (count ≤ 5 AND percent ≤ 0.01%) and canonical `json_each` JSON-aware
   membership idiom (no fragile substring matching).

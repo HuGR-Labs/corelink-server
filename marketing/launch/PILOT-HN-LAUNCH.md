@@ -26,8 +26,8 @@
 >
 > - BLAKE3 + SHA-256 addressing; per-tenant CAS namespace.
 > - Tenant isolation modelled in TLA+ (the invariant fails CI if a regression touches it).
-> - Per-tenant append-only Merkle audit chain, Ed25519-signed, replayable.
-> - Multi-region (US-East, EU-West, AP-Southeast, AU-East) on Cloudflare R2 + Workers + D1.
+> - Per-tenant append-only hash-chain audit log (BLAKE3-linked, not Merkle), Ed25519-signed, replayable.
+> - Multi-region: three regions today — WNAM, ENAM, WEUR (US-West, US-East, EU-West) — on Cloudflare R2 + Workers + D1; more regions on the roadmap.
 > - Customer-success playbook + signup pipeline + admin scripts shipped over the last two waves.
 >
 > What's NOT shipped yet — important context, not buried:

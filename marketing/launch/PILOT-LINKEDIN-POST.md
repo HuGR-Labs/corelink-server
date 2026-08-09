@@ -16,9 +16,9 @@
 >
 > 1) **Tenant isolation is a TLA+ invariant.** We maintain a formal specification of cross-tenant byte non-leakage and the CI fails if the safety property regresses. The difference between marketing-language multi-tenant and actually-multi-tenant is exactly the kind of gap formal verification was invented to close.
 >
-> 2) **Audit is cryptographic.** Every CAS read and write appends to a per-tenant append-only Merkle log, Ed25519-signed, replayable. You can prove what happened, when, and that nothing was retro-edited.
+> 2) **Audit is cryptographic.** Every CAS read and write appends to a per-tenant append-only hash chain (BLAKE3-linked, Ed25519-signed, replayable). You can prove what happened, when, and that nothing was retro-edited.
 >
-> 3) **Replication is multi-region, residency-aware.** US-East, EU-West, AP-Southeast, AU-East. Read locally. Write once. Converge globally. Residency policies are enforced per tenant, not assumed.
+> 3) **Replication is multi-region, residency-aware.** Three regions today — WNAM, ENAM, WEUR (US-West, US-East, EU-West) — with more on the roadmap. Read locally. Write once. Converge globally. Residency policies are enforced per tenant, not assumed.
 >
 > The pilot is **pre-GA** and we are honest about that. No BYOK yet. No SOC 2 Type II yet (gap analysis only). No production SLA contract — we publish target SLOs and run best-effort during the pilot. If you need any of those today, wait for GA. If you can evaluate ahead of GA on the merits of the technical core, we want to talk.
 >

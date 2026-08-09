@@ -178,13 +178,17 @@ you shorter.
 **Q:** Bazel/Buck2/RBE clients talk to your CAS + ByteStream over gRPC.
 Same stability tier?
 
-**A:** Yes — all seven customer-facing REAPI v2 RPCs are **GA**:
+**A:** We don't offer a gRPC transport — CoreLink runs on Cloudflare
+Workers (workerd), and workerd has no HTTP/2 trailers support, which
+gRPC requires. REAPI v2 is served **REST-only**
+(`crates/corelink-container/src/routes/bazel_v2.rs`). All seven
+customer-facing REAPI v2 endpoints are **GA** over REST:
 `Capabilities.GetCapabilities`, `CAS.BatchUpdateBlobs`,
 `CAS.FindMissingBlobs`, `CAS.BatchReadBlobs`, `ByteStream.Read`,
 `ByteStream.Write`, `ByteStream.QueryWriteStatus`. We are pinned to the
 upstream `build.bazel.remote.execution.v2` namespace; a v3 ships only if
 upstream ships v3. The same 24-month GA deprecation window applies. The
-`Health.Check` RPC is Internal (LB probe; not part of the customer
+`Health.Check` endpoint is Internal (LB probe; not part of the customer
 contract).
 
 Action Cache (`GetActionResult`, `UpdateActionResult`) is not yet exposed

@@ -13,12 +13,16 @@ per-tenant Cloudflare R2 store the native CAS serves, and every blob is verified
 with **BLAKE3** (native keyspace) — the Bazel REAPI keyspace uses SHA-256
 digests as the wire format per the REAPI spec.
 
-> **Native `bazel --remote_cache` support: in progress.** Stock Bazel's
-> plain-HTTP remote cache emits `/cas/<hash>` and `/ac/<hash>` requests, which do
-> **not** match CoreLink's ByteStream scheme and currently return **404**. A
-> stock-HTTP alias is being built and is not yet live. Until it ships, use a
-> **REAPI/ByteStream-compatible client** pointed at `/bazel/v2/<tenant>`. Do not
-> point stock Bazel's plain HTTP cache at the bare origin — it will 404.
+> **Native `bazel --remote_cache` support: live.** Stock Bazel's plain-HTTP
+> remote cache (`build --remote_cache=https://host/bazel/cache`) is served by a
+> dedicated alias route at `/bazel/cache/{cas,ac}/<hash>` — no `:instance` or
+> `:size` segment, matching what a vanilla Bazel client actually sends. It's
+> tenant-scoped via the same `x-corelink-tenant-id` mechanism as the REAPI v2
+> routes; an unauthenticated request gets **401**, not 404 (see
+> `crates/corelink-container/src/routes/bazel_v2.rs`, `handle_http_cas_read` /
+> `handle_http_cas_write` / their AC counterparts). You can still use a
+> REAPI/ByteStream-compatible client pointed at `/bazel/v2/<tenant>` if you
+> prefer the size-checked, sharded-key surface.
 
 ## Configuration
 
@@ -70,8 +74,8 @@ curl -s -H "Authorization: Bearer $CORELINK_PAT" \
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Every request 404s | Using stock plain-HTTP `--remote_cache` | Native `--remote_cache` is not yet live; use a REAPI/ByteStream client against `/bazel/v2/<tenant>` |
-| `UNAUTHENTICATED` | Missing or wrong `Authorization` header | Verify `CORELINK_PAT` is exported |
+| 401 on every request via `/bazel/cache/...` | Missing or wrong `Authorization` header on the stock-HTTP alias | Verify `CORELINK_PAT` is exported and the header is set |
+| `UNAUTHENTICATED` (REAPI v2 path) | Missing or wrong `Authorization` header | Verify `CORELINK_PAT` is exported |
 | `PERMISSION_DENIED` / 403 | Instance name is not your tenant | Set `--remote_instance_name` to your tenant UUID |
 | Cache miss on every build | `--remote_upload_local_results=false` | Set to `true` in at least one CI job |
 

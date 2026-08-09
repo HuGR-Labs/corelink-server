@@ -26,7 +26,13 @@ recovery procedures.
 1. **You revoke or disable your CMK** in your KMS provider (AWS / GCP /
    Azure / Vault).
 2. **CoreLink detects the revocation** within 60 seconds via our background
-   KMS access check.
+   KMS access check — **once BYOK is enabled for your tenant.** The
+   `RevocationDetector` background loop (`crates/corelink-byok/src/byok_revocation/detector.rs`)
+   is implemented and exercised by property + adversarial tests today, but
+   is not yet spawned by any production app/worker entry point — this is
+   the roadmap detection path for when BYOK ships, not something running
+   in the launched data plane now (consistent with the feature-availability
+   notice above).
 3. **Your data becomes inaccessible**:
    - DEK cache is immediately cleared (all cached decryption keys removed).
    - Your tenant is switched to read-only degraded mode.

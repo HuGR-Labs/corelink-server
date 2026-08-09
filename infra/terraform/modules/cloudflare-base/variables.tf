@@ -16,7 +16,7 @@ variable "cf_zone_id" {
 
 variable "zone_name" {
   type        = string
-  description = "Apex zone name (e.g. corelink.dev)."
+  description = "Apex zone name (e.g. humangr.com)."
 }
 
 variable "environment" {
@@ -60,7 +60,7 @@ variable "dkim_records" {
 variable "dmarc_record_value" {
   type        = string
   description = "DMARC policy TXT value."
-  default     = "v=DMARC1; p=quarantine; rua=mailto:dmarc@corelink.dev; ruf=mailto:dmarc@corelink.dev; fo=1"
+  default     = "v=DMARC1; p=quarantine; rua=mailto:dmarc@humangr.com; ruf=mailto:dmarc@humangr.com; fo=1"
 }
 
 # -----------------------------------------------------------------------
@@ -75,7 +75,7 @@ variable "create_api_apex" {
 
 variable "api_subdomain" {
   type        = string
-  description = "API apex subdomain (e.g. \"api\" → api.corelink.dev)."
+  description = "API apex subdomain (e.g. \"api\" → api.humangr.com)."
   default     = "api"
 }
 

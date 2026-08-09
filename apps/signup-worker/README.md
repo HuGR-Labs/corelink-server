@@ -33,7 +33,7 @@ moved any of the three numbers in PLG §7.5.
 - `POST /webhooks/stripe` — Stripe-signed events
   (`checkout.session.created`, `checkout.session.completed`,
   `customer.subscription.deleted`, etc.)
-- `GET /healthz`
+- `GET /health`
 
 ## Contract with `@corelink/analytics-worker`
 

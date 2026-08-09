@@ -23,7 +23,7 @@
 │  │                        │  │                        │    │
 │  │  1. checkout (full)    │  │  1. checkout (full)    │    │
 │  │  2. rust-toolchain     │  │  2. rust-toolchain     │    │
-│  │     .toml pin 1.84.0   │  │     .toml pin 1.84.0   │    │
+│  │     .toml pin 1.91.1   │  │     .toml pin 1.91.1   │    │
 │  │  3. SOURCE_DATE_EPOCH  │  │  3. SOURCE_DATE_EPOCH  │    │
 │  │     = git log -1 --ct  │  │     = git log -1 --ct  │    │
 │  │  4. cargo build        │  │  4. cargo build        │    │
@@ -108,7 +108,7 @@ This replaces runner-specific prefixes with canonical labels `/SRC` and
 `/CARGO` before LLVM writes the DWARF data.
 
 **Residual risk**: A subset of LLVM DWARF paths (e.g. system libc paths,
-`core` stdlib paths) may not be fully remapped by current rustc 1.84.x.
+`core` stdlib paths) may not be fully remapped by current rustc 1.91.x.
 These contribute to the ≤ 5 % tolerance budget.  Tracked in ADR-0015 §5
 (Consequences) for resolution in the post-GA Q3 toolchain upgrade.
 
@@ -116,18 +116,23 @@ These contribute to the ≤ 5 % tolerance budget.  Tracked in ADR-0015 §5
 
 ### 3.3 Rust Compiler (rustc) Version Drift
 
-**Source**: A rustc minor-version upgrade (e.g. 1.84 → 1.85) can change
+**Source**: A rustc minor-version upgrade (e.g. 1.91 → 1.92) can change
 LLVM IR optimisation passes, introduction of new MIR rewrites, or linker
 plugin behaviour — all of which can produce different byte sequences for
 identical source.
 
-**Mitigation**: `rust-toolchain.toml` pins `channel = "1.84.0"` (exact
+**Mitigation**: `rust-toolchain.toml` pins `channel = "1.91.1"` (exact
 minor).  Cargo automatically reads this file and installs the correct
 toolchain on every runner.
 
 **Upgrade procedure**:
 1. Open PR bumping `rust-toolchain.toml`.
-2. Reproducible-build workflow MUST pass on the PR (2-runner diff ≤ 5 %).
+2. Trigger a `workflow_dispatch` run of `reproducible-build.yml` and confirm
+   it comes back green (2-runner diff ≤ 5 %) before merging — the workflow
+   has **no `pull_request` trigger** (moved off per-PR 2026-06-02) and runs
+   on a weekly schedule otherwise, so it will not gate the PR automatically.
+   As of this writing the gate has **0 observed successes** — see §7 and
+   the note in `.github/workflows/reproducible-build.yml`.
 3. ADR-0015 amendment required documenting the new baseline diff and any
    new non-determinism sources introduced.
 
@@ -250,19 +255,31 @@ back to `0` for local dev.
 
 ## 7. Customer Verification Quickstart
 
+> **Current state:** the `reproducible-build.yml` workflow has **no
+> `pull_request` trigger** (moved off per-PR 2026-06-02) and runs on a
+> weekly schedule plus `workflow_dispatch`. As of this writing it has **0
+> observed successes** — the `runs-on` previously pointed at a self-hosted
+> fleet that didn't exist, so runs queued forever and never executed a
+> step. That root cause is now fixed, but a fixed cause is not an observed
+> pass: nobody has yet confirmed the two runners actually reproduce within
+> the ADR-0015 5 % tolerance. Treat the steps below as what verification
+> will look like once a green run exists — if you download an artifact and
+> find none, that is the current, known state, not a broken instruction.
+
 A SecOps lead or enterprise prospect can verify the 2-runner diff report
-for any release:
+for any release, once a workflow run has actually completed:
 
 ```bash
 # 1. Download the reproducible-build-report artifact from the GitHub Actions
-#    run associated with the release tag.
-gh run download --name reproducible-build-report --repo HumanGuardrail/corelink-server
+#    run associated with the release tag (trigger via workflow_dispatch if
+#    no scheduled run has completed yet).
+gh run download --name reproducible-build-report --repo HuGR-Labs/corelink-server
 
 # 2. Inspect the step summary (printed to GITHUB_STEP_SUMMARY in CI).
 #    The report table includes: outcome, bit_identical, diff_bytes, diff_percentage.
 
 # 3. Re-verify locally (requires the same rust-toolchain.toml pin):
-rustup toolchain install 1.84.0
+rustup toolchain install 1.91.1
 rustup target add wasm32-unknown-unknown
 SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct) \
 RUSTFLAGS="--remap-path-prefix=$(pwd)=/SRC --remap-path-prefix=$HOME/.cargo=/CARGO -C codegen-units=1" \

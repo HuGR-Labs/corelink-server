@@ -34,31 +34,33 @@ tags: ["sales", "faq", "objection-handling", "r-prep", "ga", "customer-facing-so
 
 ## Pricing (8)
 
-### P1 — How do the tiers compare (Free / Team / Lighthouse / Enterprise)?
+### P1 — How do the tiers compare (Free / Solo / Starter / Pro / Max / Enterprise)?
 
 **Q:** What do I actually get at each tier?
 
-**A:** Four tiers; the differences that matter at sales time are storage cap, egress allowance, TPS ceiling, audit retention, BYOK availability, region count, and the SLA we sign.
+**A:** Six tiers on one self-serve ladder — Free is instant-activation, Solo / Starter / Pro / Max self-serve via Stripe Checkout, and Enterprise routes through the inquiry form. The differences that matter at sales time are storage cap, egress allowance, audit retention, BYOK availability, region count, and the SLA we sign — not capability (every tier runs the same data plane and SLO catalog).
 
-| Limit | **Sandbox** | **Free** | **Team** | **Lighthouse** | **Enterprise** |
-| --- | --- | --- | --- | --- | --- |
-| Storage cap | 1 GiB | 10 GiB | 100 GiB | 1 TiB | unlimited |
-| Egress / mo | 5 GiB | 50 GiB | 500 GiB | 5 TiB | negotiated |
-| TPS (put/get) | 50 | 100 | 500 | 5000 | negotiated |
-| Audit retention | 24h | 14d | 90d | 365d | 365d+ |
-| BYOK | no | no | no | no | yes |
-| Regions available | 1 (auto) | 1 | 2 | 4 | 4 + cross-region |
-| SLA | none | none | 99.5% | 99.9% | 99.95% |
+| Limit | **Free** | **Solo** | **Starter** | **Pro** | **Max** | **Enterprise** |
+| --- | --- | --- | --- | --- | --- | --- |
+| Monthly price | $0 | $15 | $35 | $50 | $149 | Contact us |
+| Storage cap | 10 GB | 50 GB | 150 GB | 500 GB | 2 TB | Custom |
+| Egress / mo | 50 GB | 500 GB | 1.5 TB | 5 TB | 20 TB | Custom |
+| Audit retention | 7d | 30d | 30d | 90d | 90d | 365d+ |
+| BYOK | — | — | — | — | optional add-on ($99/mo) | included |
+| Region pin | shared | 1 of 4 | 1 of 4 | up to 2 | up to 2 | all 4 |
+| Uptime SLO | best-effort | 99.5% | 99.5% | 99.9% | 99.9% | 99.95% |
+
+**Lighthouse** is our design-partner pilot **program**, not a separate billing tier — a Lighthouse customer still lands on one of the six tiers above (typically comped or discounted) and gets the extra concierge playbook (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md`) layered on top. Per-tier TPS ceilings live in the rate-limit ladder (`marketing/sales/RATE-LIMIT-FAQ.md` RL1) — that ladder is versioned separately from this pricing ladder; check `crates/corelink-ratelimit/src/tier.rs` for the current mapping before quoting a number.
 
 The egress numbers are *generous* by build-cache standards because the underlying R2 substrate has zero egress fees on cache reads (see `BLOG-POSTS/05-fast-cache-hit-economics.md`); the cap exists to prevent abuse, not to extract bandwidth rent.
 
-**Sources:** `apps/docs/docs/tutorials/quickstart-faq.mdx#8`; `marketing/launch/BLOG-POSTS/01-introducing-corelink.md#pricing`.
+**Sources:** `apps/docs/docs/explanation/pricing/index.mdx`; `crates/corelink-tier-selection/src/tier.rs`; `marketing/sales/PRICING-WORKSHEET.md`.
 
 ### P2 — How does overage work? Do we get rate-limited or billed?
 
 **Q:** If we blow through our tier's storage / TPS / egress cap, what happens?
 
-**A:** Soft-cap then notify, then negotiate. Concretely: at 80% of any cap we emit a webhook + email; at 100% we serve a `429 / overage-pending` for **TPS** (rate-limited, not refused — your build still completes, just slower) and continue serving **storage / egress** with the overage line appearing on the next invoice. We *do not* hard-fail builds in production tenants when caps are exceeded; we'd rather invoice you than break your inner loop. For Enterprise the overage line is governed by your order form; for Team it's metered at our standard list rate. We are happy to convert a recurring overage into a contractual tier upgrade with no penalty (see P5 — migration discount).
+**A:** Soft-cap then notify, then negotiate. Concretely: at 80% of any cap we emit a webhook + email; at 100% we serve a `429 / overage-pending` for **TPS** (rate-limited, not refused — your build still completes, just slower) and continue serving **storage / egress** with the overage line appearing on the next invoice. We *do not* hard-fail builds in production tenants when caps are exceeded; we'd rather invoice you than break your inner loop. For Enterprise the overage line is governed by your order form; for the self-serve tiers (Solo / Starter / Pro / Max) it's metered at our standard list rate. We are happy to convert a recurring overage into a contractual tier upgrade with no penalty (see P5 — migration discount).
 
 **Sources:** SLO catalog (`specs/03_architecture/slo_catalog.md` — internal; no public SLO page is published today, `/slo` 404s); overage runbook (`specs/_runbooks/RB-BILLING-OVERAGE.md`); quickstart-faq Q8.
 
@@ -66,7 +68,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** What does BYOK actually cost on top of Enterprise base?
 
-**A:** BYOK is an Enterprise-tier capability — it's not sold as an add-on to Team. The premium versus a hypothetical "Enterprise without BYOK" is governed by your order form (negotiated; Sales recreates from the live Finance model — `marketing/lighthouse-kit/07-pricing-comparison-internal.md` §5). The premium reflects four real costs: (1) per-tenant KMS call volume to your AWS / GCP / Azure / Vault provider, (2) dedicated incident channels for kill-switch events, (3) FIPS-endpoint pinning per provider, and (4) the weekly synthetic kill-switch chaos drill we run on your tenant. No, we don't run BYOK as a marketing checkbox; the kill switch is exercised on a schedule and recorded in the audit chain.
+**A:** BYOK is included on Enterprise and available as an optional add-on on Max ($99/mo) — it's not sold as an add-on to Free / Solo / Starter / Pro. The premium versus a hypothetical "Enterprise without BYOK" is governed by your order form (negotiated; Sales recreates from the live Finance model — `marketing/lighthouse-kit/07-pricing-comparison-internal.md` §5). The premium reflects four real costs: (1) per-tenant KMS call volume to your AWS / GCP / Azure / Vault provider, (2) dedicated incident channels for kill-switch events, (3) FIPS-endpoint pinning per provider, and (4) the weekly synthetic kill-switch chaos drill we run on your tenant. No, we don't run BYOK as a marketing checkbox; the kill switch is exercised on a schedule and recorded in the audit chain.
 
 **Sources:** `marketing/launch/BLOG-POSTS/02-byok-deep-dive.md`; `apps/docs/docs/trust/data-handling.mdx#encryption`.
 
@@ -82,7 +84,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** If we're switching from bazel-remote / BuildBuddy / a self-hosted cache, do we get a transition price?
 
-**A:** Yes — the **migration credit**. Customers actively decommissioning a competing remote-cache deployment receive 3 months at 50% of list on Team tier (or Enterprise equivalent), conditional on (a) signing the standard MSA, (b) committing to a minimum 12-month term, and (c) participating in a non-binding 30-minute "what made you switch" interview at month 4 (used internally for product roadmap; not published without your sign-off). The credit does not stack with the lighthouse program (which is more generous but capacity-constrained — see P7).
+**A:** Yes — the **migration credit**. Customers actively decommissioning a competing remote-cache deployment receive 3 months at 50% of list on their paid self-serve tier (Solo / Starter / Pro / Max, or Enterprise equivalent), conditional on (a) signing the standard MSA, (b) committing to a minimum 12-month term, and (c) participating in a non-binding 30-minute "what made you switch" interview at month 4 (used internally for product roadmap; not published without your sign-off). The credit does not stack with the lighthouse program (which is more generous but capacity-constrained — see P7).
 
 **Sources:** `marketing/lighthouse-kit/07-pricing-comparison-internal.md`; sales decision tree (internal).
 
@@ -94,7 +96,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Sources:** standard MSA §10 (cancellation); `legal/dpa/v1.0.0` §11 (termination).
 
-**Self-service surface.** Team-tier and below cancel through the Stripe Customer Portal — see the customer guide at `apps/docs/docs/how-to/billing/manage-subscription.mdx` (published as `/how-to/billing/manage-subscription`). Enterprise cancellation routes through your sales contact for the paper amendment + DPA closure (see `specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md` §2.2 — Enterprise downgrade rule).
+**Self-service surface.** Free, Solo, Starter, Pro, and Max cancel through the Stripe Customer Portal — see the customer guide at `apps/docs/docs/how-to/billing/manage-subscription.mdx` (published as `/how-to/billing/manage-subscription`). Enterprise cancellation routes through your sales contact for the paper amendment + DPA closure (see `specs/_audits/sealed/2026-05-15-stripe-customer-portal-spec.md` §2.2 — Enterprise downgrade rule).
 
 ### P7 — Can we sign a multi-year contract?
 
@@ -294,7 +296,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** When my CI runner asks for a blob and you have it, how long does it take?
 
-**A:** **p99 CAS GET latency target ≤ 300 ms** in-region (SLO `SLO-LAT-CAS-GET`, customer-tenant scope). For lighthouse customers we measure daily; representative steady-state runs are well below target (typical observed p99: **180–220 ms** depending on region and blob-size mix; the calculator at `corelink.humangr.com/calculator` exposes your projected value). Audit-append p99 target ≤ 500 ms. The fast path does *not* call your KMS — DEK is unwrapped at first read into the bounded 5-min in-memory cache and re-used until expiry. Cache-miss reads pay one KMS unwrap RTT (provider-specific; AWS / GCP / Azure / Vault all sub-100 ms p99 in practice).
+**A:** **p99 CAS GET latency target ≤ 300 ms** in-region (SLO `SLO-LAT-CAS-GET`, customer-tenant scope). For lighthouse customers we measure daily; representative steady-state runs are well below target (typical observed p99: **180–220 ms** depending on region and blob-size mix; the calculator at `corelink-docs.humangr.com` exposes your projected value). Audit-append p99 target ≤ 500 ms. The fast path does *not* call your KMS — DEK is unwrapped at first read into the bounded 5-min in-memory cache and re-used until expiry. Cache-miss reads pay one KMS unwrap RTT (provider-specific; AWS / GCP / Azure / Vault all sub-100 ms p99 in practice).
 
 **Sources:** SLO catalog (`specs/03_architecture/slo_catalog.md` — internal; no public SLO page is published today, `/slo` 404s); `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#what-were-measuring-daily-automated`; `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md`.
 
@@ -310,7 +312,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** How many puts/gets per second?
 
-**A:** Per-tier TPS ceilings are in the comparison table (P1). The **Enterprise tier is negotiated** — we've stress-tested in staging to 5× the Lighthouse-tier 5000 TPS with no observed degradation, and the Cloudflare R2 + Workers substrate scales horizontally per region. If you need a specific committed TPS, name it in the order form; we'll either commit or come back with a fact-based pushback. We do not artificially throttle below the published cap; we *do* rate-limit gracefully above it (soft-cap then 429 / overage-pending — see P2).
+**A:** Per-tier TPS ceilings are in the rate-limit ladder (`marketing/sales/RATE-LIMIT-FAQ.md` RL1). The **Enterprise tier is negotiated** — we've stress-tested in staging to 5× our highest self-serve tier's sustained TPS with no observed degradation, and the Cloudflare R2 + Workers substrate scales horizontally per region. If you need a specific committed TPS, name it in the order form; we'll either commit or come back with a fact-based pushback. We do not artificially throttle below the published cap; we *do* rate-limit gracefully above it (soft-cap then 429 / overage-pending — see P2).
 
 **Sources:** `apps/docs/docs/tutorials/quickstart-faq.mdx#8`; SLO catalog.
 
@@ -334,7 +336,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** First week — what do we measure?
 
-**A:** Cold-start curve: first build of a fresh repo populates the cache (every blob is a miss, paying upload cost). Hit rate climbs over D+1 to D+7 as the working set warms. **Steady state is typically observable by D+7** for Bazel monorepos with typical build profiles; very large polyglot graphs may take longer to warm. The calculator at `corelink.humangr.com/calculator` projects steady-state economics from your inputs; the dashboard shows your *actual* warming curve from D+1. This is true of every remote cache — we name it explicitly because some vendors don't.
+**A:** Cold-start curve: first build of a fresh repo populates the cache (every blob is a miss, paying upload cost). Hit rate climbs over D+1 to D+7 as the working set warms. **Steady state is typically observable by D+7** for Bazel monorepos with typical build profiles; very large polyglot graphs may take longer to warm. The calculator at `corelink-docs.humangr.com` projects steady-state economics from your inputs; the dashboard shows your *actual* warming curve from D+1. This is true of every remote cache — we name it explicitly because some vendors don't.
 
 **Sources:** `marketing/launch/BLOG-POSTS/05-fast-cache-hit-economics.md#honest-caveats`; `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#phase-1-days-1-7-mirror-your-ci`.
 
@@ -362,7 +364,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** How fast do you respond?
 
-**A:** Tier-dependent. **Team:** community Slack (`#help`) median < 1 hour weekday response; GitHub Issues / Discussions for design + bugs; email `support@humangr.com` for billing / account. **Enterprise:** dedicated Slack Connect channel; SEV-1 response SLA **4 hours**; weekly account review available. **Lighthouse:** the full playbook applies (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#support-slas`) — Slack acknowledge ≤ 1h business / ≤ 4h outside, PagerDuty ≤ 10 min 24/7, P1 engineering response ≤ 24h, attestation draft delivery ≤ 24h after D+40.
+**A:** Tier-dependent (see the support row of the P1 feature matrix for the Free/Solo/Starter/Pro/Max ladder). **Self-serve tiers:** community Slack (`#help`) median < 1 hour weekday response; GitHub Issues / Discussions for design + bugs; email `support@humangr.com` for billing / account. **Enterprise:** dedicated Slack Connect channel; SEV-1 response SLA **4 hours**; weekly account review available. **Lighthouse** (design-partner pilot program, not a billing tier — the customer is on one of the tiers above): the full playbook applies (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#support-slas`) — Slack acknowledge ≤ 1h business / ≤ 4h outside, PagerDuty ≤ 10 min 24/7, P1 engineering response ≤ 24h, attestation draft delivery ≤ 24h after D+40.
 
 **Sources:** `apps/docs/docs/tutorials/quickstart-faq.mdx#15`; `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#support-slas`.
 
@@ -456,7 +458,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** What's the rollback story?
 
-**A:** Two layers. (1) **Build-tool rollback** — flip `--remote_cache` back to your previous cache URL. Trivial; minutes. We recommend keeping your previous cache running for at least 30 days after cutover for exactly this reason. (2) **Data rollback** — your data on CoreLink doesn't get destroyed when you flip; it remains under the retention policy you've configured (default 90-day LRU on Team). If you flip back and then forward later, the cache repopulates from your live build traffic. There is no "decision penalty" for trying us, finding it doesn't fit, and rolling back; that's the point of the mirror-then-cutover pattern (M5).
+**A:** Two layers. (1) **Build-tool rollback** — flip `--remote_cache` back to your previous cache URL. Trivial; minutes. We recommend keeping your previous cache running for at least 30 days after cutover for exactly this reason. (2) **Data rollback** — your data on CoreLink doesn't get destroyed when you flip; it remains under the retention policy you've configured (default 90-day LRU on the self-serve tiers). If you flip back and then forward later, the cache repopulates from your live build traffic. There is no "decision penalty" for trying us, finding it doesn't fit, and rolling back; that's the point of the mirror-then-cutover pattern (M5).
 
 **Sources:** `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#phase-1-days-1-7-mirror-your-ci`; rollback runbook (`specs/_runbooks/RB-CUSTOMER-ROLLBACK.md`).
 
@@ -464,7 +466,7 @@ The egress numbers are *generous* by build-cache standards because the underlyin
 
 **Q:** During the actual cutover, what support is available?
 
-**A:** Tier-dependent. **Team:** community Slack, GitHub Issues, written migration guides; we'll review your `.bazelrc` / `buckconfig.local` on request via `support@humangr.com`. **Enterprise:** named Customer Success engineer for the cutover window, scheduled cutover-day Slack Connect call, post-cutover review at 24h / 7d / 30d. **Lighthouse:** the full Customer Playbook applies — dedicated engineer, weekly check-in, daily SLA samples, attestation at D+30 (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md`). We do **not** charge for cutover support on Enterprise — it's part of the contract.
+**A:** Tier-dependent. **Self-serve tiers:** community Slack, GitHub Issues, written migration guides; we'll review your `.bazelrc` / `buckconfig.local` on request via `support@humangr.com`. **Enterprise:** named Customer Success engineer for the cutover window, scheduled cutover-day Slack Connect call, post-cutover review at 24h / 7d / 30d. **Lighthouse** (pilot program, not a billing tier): the full Customer Playbook applies — dedicated engineer, weekly check-in, daily SLA samples, attestation at D+30 (`marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md`). We do **not** charge for cutover support on Enterprise — it's part of the contract.
 
 **Sources:** `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md`; `apps/docs/docs/tutorials/quickstart-faq.mdx#15`.
 

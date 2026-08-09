@@ -32,7 +32,7 @@ Run by HuGR Labs. Free during the pilot period. 30-day evaluation. Pre-GA.
 
 ## What CoreLink is (one paragraph)
 
-CoreLink is a **shared, tenant-isolated, content-addressable cache** for any workload that benefits from blob deduplication and cryptographic addressing. It is REAPI-compatible (Bazel / Buck2 / Pants / Remote Build Execution) and exposes a generic S3-style content-addressable API for non-build workloads — Docker layer caches, Nix store mirrors, package registries (npm, PyPI, cargo), and ML model / dataset registries. Built on Cloudflare R2 + Workers + D1. Multi-region replication across four regions (US-East, EU-West, AP-Southeast, AU-East). Per-tenant cryptographic audit chain with append-only Merkle proofs.
+CoreLink is a **shared, tenant-isolated, content-addressable cache** for any workload that benefits from blob deduplication and cryptographic addressing. It is REAPI-compatible (Bazel / Buck2 / Pants / Remote Build Execution) and exposes a generic S3-style content-addressable API for non-build workloads — Docker layer caches, Nix store mirrors, package registries (npm, PyPI, cargo), and ML model / dataset registries. Built on Cloudflare R2 + Workers + D1. Multi-region replication across three regions today — WNAM (US-West), ENAM (US-East), WEUR (EU-West) — with more regions on the roadmap. Per-tenant cryptographic audit chain: an append-only, tamper-evident hash chain (BLAKE3-linked, each event chained to the previous one).
 
 ## Who we are looking for
 
@@ -77,8 +77,8 @@ Slots are limited to the **first 10 qualified applicants** (DEBT-027 minimum to 
 |---|---|---|
 | Multi-tenant CAS (BLAKE3 / SHA-256) | yes | yes |
 | Tenant isolation modelled in TLA+ | yes | yes |
-| Audit chain (append-only Merkle) | yes | yes |
-| Multi-region replication (4 regions) | yes | yes |
+| Audit chain (append-only hash chain) | yes | yes |
+| Multi-region replication (3 regions today) | yes | yes |
 | REAPI compatibility (Bazel / Buck2) | yes | yes |
 | Generic S3-style API (Docker / Nix / ML) | yes | yes |
 | **BYOK (AWS KMS at GA; GCP/Azure/Vault roadmap)** | **no** | yes (AWS KMS) |

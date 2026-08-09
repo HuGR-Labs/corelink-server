@@ -88,7 +88,7 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
   - Self-hosting carries a real, persistent operational tax: eviction tuning, GC correctness, dashboards, 3am pages, blob sprawl across regions. Often a part-time job for an SRE, full-time during bad weeks.
   - On S3 with realistic CI traffic, **egress** is typically the single largest line item — `BLOG-POSTS/05-fast-cache-hit-economics.md`. CoreLink on R2 has zero egress.
   - No multi-tenant isolation, no audit chain with Merkle proofs, no BYOK, no residency invariants.
-- **Counter-question:** "Would you run the calculator at `corelink.humangr.com/calculator` against your actual CI numbers? If the answer comes back 'self-hosted is cheaper,' the answer is self-hosted. We're aware that's a possible outcome."
+- **Counter-question:** "Would you run the calculator at `corelink-docs.humangr.com` against your actual CI numbers? If the answer comes back 'self-hosted is cheaper,' the answer is self-hosted. We're aware that's a possible outcome."
 
 ### Obj-7 — "Why not just S3 + CloudFront?"
 
@@ -261,7 +261,7 @@ tags: ["sales", "objection-handling", "r-prep", "ga", "playbook"]
 
 - **Why it matters:** often a proxy for "I haven't seen the TCO math."
 - **Our position:** run the calculator. If TCO genuinely doesn't pencil out, the answer is self-hosted.
-- **Evidence:** `corelink.humangr.com/calculator` runs against your actual inputs. The cache-tax model in `BLOG-POSTS/05-fast-cache-hit-economics.md` makes the components visible (storage / egress / operations). Self-hosted on S3: egress dominates. Self-hosted on bazel-remote-cache: operations dominate.
+- **Evidence:** `corelink-docs.humangr.com` runs against your actual inputs. The cache-tax model in `BLOG-POSTS/05-fast-cache-hit-economics.md` makes the components visible (storage / egress / operations). Self-hosted on S3: egress dominates. Self-hosted on bazel-remote-cache: operations dominate.
 - **Counter-question:** "Have you measured your current cache TCO? Most teams haven't — egress + SRE-on-call is the underweighted part. If you have measured and we still cost more, I want to know which line drives it."
 
 ### Obj-27 — "Egress fees will kill us."

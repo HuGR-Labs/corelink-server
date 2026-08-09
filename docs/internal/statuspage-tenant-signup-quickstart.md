@@ -54,7 +54,9 @@ In the new-page setup wizard:
   (this is the `<statuspage-tenant>` that the DNS CNAME will
   target; pick a name you can live with — it is rarely seen by
   customers once the CNAME is in place).
-- **Support URL:** `https://corelink.humangr.com`
+- **Support URL:** `https://humangr.com/corelink/` (marketing home is the
+  separate `hugr-site` Pages project on the apex; `corelink.humangr.com` is
+  not a live host)
 - **Time zone:** UTC (matches the trust-corpus cadence math).
 - **Visibility:** hidden from search until GA (the bootstrap script
   enforces this, but starting hidden avoids a public preview window).
@@ -127,7 +129,9 @@ return to verify"*. Leave this tab open.
 
 ## Step 6 — DNS provider: add the CNAME
 
-In **Cloudflare DNS** (zone `corelink.humangr.com`), add the record exactly as
+In **Cloudflare DNS** (zone `humangr.com` — CoreLink hostnames are flat
+records within this zone, e.g. `corelink-api.humangr.com`; there is no
+separate `corelink.humangr.com` zone), add the record exactly as
 specified in `config/statuspage/dns-cname-record.txt`:
 
 | Field | Value |

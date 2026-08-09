@@ -49,6 +49,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
+  # TODO(org-rename): HumanGuardrail→HuGR-Labs pending coordinated code+registry move
   IMAGE_NAME: HumanGuardrail/corelink-worker
 
 jobs:

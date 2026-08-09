@@ -31,10 +31,10 @@ adds the CLI, Bazel wiring, and cache HITs.
 
 ```bash
 # 1. Install the CLI (macOS shown; Linux/Windows in the quickstart).
-brew install HumanGuardrail/tap/corelink
+brew install HuGR-Labs/tap/corelink
 
 # 2. Sign in to the sandbox (24h scratch tenant; no credit card).
-#    Visit https://app.corelink.humangr.com/sandbox, copy the PAT, then:
+#    Visit https://corelink-app.humangr.com/sandbox, copy the PAT, then:
 export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"
 corelink doctor                    # 8/8 checks PASS
 
@@ -59,8 +59,9 @@ mismatch refuses the read and emits a P0 integrity event.
 The production data plane is wired and deployed. The Wave 32
 production-deploy campaign sealed 2026-05-22 (tag
 [`corelink-prod-deploy-v1`](https://github.com/HumanGuardrail/corelink-server/releases/tag/corelink-prod-deploy-v1)),
-with all 5 customer endpoints live behind the canonical
-`corelink.humangr.com` domain. The Wave 33-36 reorg campaign
+with all 5 customer endpoints live behind the flat
+`corelink-{api,signup,app,docs,get}.humangr.com` hosts (the dotted
+`corelink.humangr.com` apex is dead). The Wave 33-36 reorg campaign
 (2026-05-22 → 2026-05-27) then consolidated the workspace from 149
 packages to 87 across 11 umbrella crates, restored the wasm32 build,
 resolved the materializer dependency cycle via traits extraction,
@@ -118,7 +119,7 @@ takes you from install to a stored + retrieved + audited artifact.
 Sandbox tenants are free, 24h-TTL, and require no credit card.
 
 ```bash
-brew install HumanGuardrail/tap/corelink   # see quickstart for Linux/Windows
+brew install HuGR-Labs/tap/corelink   # see quickstart for Linux/Windows
 corelink doctor
 ```
 
@@ -197,7 +198,7 @@ Then:
 - Code of conduct: [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)
   (Contributor Covenant v2.1).
 - First-PR backlog: GitHub issues labeled
-  [`good first issue`](https://github.com/HumanGuardrail/corelink-server/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+  [`good first issue`](https://github.com/HuGR-Labs/corelink-server/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
   — each scoped to roughly half a day.
 - OSS vs closed boundary:
   [`docs/internal/OSS-VS-CLOSED-MATRIX.md`](./docs/internal/OSS-VS-CLOSED-MATRIX.md)

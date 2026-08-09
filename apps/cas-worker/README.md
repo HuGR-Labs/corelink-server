@@ -19,7 +19,8 @@ narrow so Stream B can move the file location or rewrite the surrounding
 worker without touching the contract:
 
 ```ts
-emitFirstHit({ env, tenantId, patId, contentHash, latencyMs, cfColo })
+recordCasEvent({ ctx, kv, analytics })
+recordFirstCliAuthed({ tenantId, patId, cliVersion, userAgent, kv, analytics })
 ```
 
 If Stream B has already moved the file, the import path adapts but the
@@ -30,18 +31,21 @@ function signature does not.
 Wire from whichever handler serves `GET /v1/cache/{key}`:
 
 ```ts
-import { emitCacheHit } from "./middleware/analytics";
+import { recordCasEvent } from "./middleware/analytics";
 
 const start = Date.now();
 const obj = await env.CAS_BUCKET.get(key);
 if (obj) {
-  ctx.waitUntil(emitCacheHit({
-    env,
-    tenantId,
-    patId,
-    contentHash: key,
-    latencyMs: Date.now() - start,
-    cfColo: request.cf?.colo ?? "unknown",
+  ctx.waitUntil(recordCasEvent({
+    ctx: {
+      tenantId,
+      patId,
+      contentHash: key,
+      kind: "read_hit",
+      occurredAt: new Date(),
+    },
+    kv,
+    analytics,
   }));
   return new Response(obj.body, { headers: { "Content-Type": "application/octet-stream" } });
 }

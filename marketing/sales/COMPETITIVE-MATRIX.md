@@ -155,7 +155,7 @@ Q2: Are you in a regulated industry (financial, healthcare-adjacent, gov-adjacen
     → No: continue to Q3.
 
 Q3: Do you have an SRE rotation that wants to own a cache, AND tolerance for the operational tail?
-    → Yes: self-hosted is a real option (bazel-remote / BuildBarn / NativeLink). Run the TCO comparison at corelink.humangr.com/calculator.
+    → Yes: self-hosted is a real option (bazel-remote / BuildBarn / NativeLink). Run the TCO comparison at corelink-docs.humangr.com.
     → No: managed (CoreLink / BuildBuddy hosted) is the smaller-toil path. Continue to Q4.
 
 Q4: Single primary region acceptable, or multi-region residency required?

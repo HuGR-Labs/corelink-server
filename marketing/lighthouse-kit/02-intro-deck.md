@@ -27,7 +27,7 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 
 **Header:** "CoreLink — managed content-addressable storage for build, package, and ML pipelines."
 
-**One-liner:** "BLAKE3-keyed, multi-region, audit-chain-backed cache that drops into Bazel, Buck2, Pants, and OCI/ML toolchains in under an hour."
+**One-liner:** "BLAKE3-keyed, multi-region, audit-chain-backed cache that drops into Bazel and OCI/ML toolchains in under an hour — Turborepo and sccache too, with Buck2 and Pants on the roadmap."
 
 **Speaker notes:**
 - We are the cache layer your CI already wants — but with multi-region failover, BYOK, and an Ed25519-signed audit chain.
@@ -75,12 +75,13 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 
 ## Slide 4 — Team tier feature deep-dive (1 of 2)
 
-**Header:** "Team tier — built for Bazel/Buck2/Pants OSS and product teams."
+**Header:** "Team tier — built for Bazel OSS and product teams (Buck2/Pants on the roadmap)."
 
 **Bullets:**
-- Native bazel-remote-cache HTTP + gRPC protocol
-- Buck2 CAS adapter (REST + gRPC)
-- Pants v2 lifted-cache shim
+- Native bazel-remote-cache over REST (Bazel REAPI v2 — no gRPC; workerd has no HTTP trailers support)
+- Turborepo REST integration
+- sccache over WebDAV
+- Buck2 CAS adapter and Pants v2 lifted-cache shim — **roadmap, not yet shipped**
 - Multi-region (wnam, enam, weur, sam) with geo-aware routing
 - Sub-300 ms P99 cache-GET globally
 
@@ -168,7 +169,7 @@ tags: ["lighthouse", "marketing", "deck", "intro", "pitch", "slides"]
 - Remote Build Execution (RBE) — not just cache, full RBE worker pool
 - Bring-your-own-worker for compliance-restricted compute
 - ML checkpoint store with content-addressed model versioning
-- Buck2 deep integration: Skylark cache hooks beyond CAS
+- Buck2 native integration (CAS adapter) and Pants v2 support: Skylark cache hooks, plus the base CAS adapters themselves
 
 **Lighthouse benefit:** "You get quarterly roadmap-review calls and your feedback is committed to the RFC pipeline before public disclosure."
 

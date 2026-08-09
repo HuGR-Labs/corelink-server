@@ -84,16 +84,22 @@ prefix); it is not sent to the server.
 
 ## `corelink stat --output=json`
 
+`stat` issues a single `HEAD /v1/cas/{tenant}/{digest}` — there is no
+`/v1/cas/stat/…` route. `created_at`/`age`/`region` are **not** exposed on a
+HEAD response, so the CLI does not emit them (see `tools/cli/src/commands/stat.rs`).
+The actual emitted shape is:
+
 ```json
 {
   "digest": "string",
+  "exists": true,
   "size_bytes": 12345,
-  "created_at": "ISO-8601 timestamp",
-  "age": "string (human-readable, e.g. '2 days')",
-  "region": "string (e.g. 'wnam')",
-  "tenant_id_pseudonym": "string (e.g. 't-abc***')"
+  "tenant_id": "string (e.g. 't-abc')"
 }
 ```
+
+`size_bytes` is omitted entirely (not `null`) when the blob does not exist
+or the server did not report `content-length`.
 
 ---
 
@@ -162,23 +168,27 @@ Exit code: `0` if all checks ok/skip, `1` if any check fails.
 
 ## `corelink config list --output=json`
 
-```json
-{
-  "auth": {
-    "pat": "corelink_prod_abc***",
-    "byok_enabled": false
-  },
-  "defaults": {
-    "tenant_id": "acme-corp",
-    "output_format": "text"
-  },
-  "telemetry": {
-    "enabled": false
-  }
-}
+**`--output=json` is currently ignored by `config list` — it always prints
+TOML**, not JSON (`tools/cli/src/commands/config_cmd.rs` calls
+`config::list_sanitised()`, which serialises via `toml::to_string_pretty`
+unconditionally; the `_format` parameter is unused). Actual output:
+
+```toml
+[auth]
+pat = "corelink_prod_abc***"
+
+[defaults]
+tenant_id = "acme-corp"
+output_format = "text"
+
+[telemetry]
+enabled = false
 ```
 
-PAT is always redacted in output (CTRL-CRED-001). Full secret is never emitted.
+Field names/shape mirror `CorelinkConfig` (see `tools/cli/src/config.rs`);
+treat the exact key set as roadmap/subject to change, not a stable
+contract, since JSON output isn't wired here yet. PAT is always redacted
+(CTRL-CRED-001) — full secret is never emitted.
 
 ---
 

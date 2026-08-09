@@ -7,18 +7,19 @@ tools that default to BYOK, residency honesty, and verifiable audit logs.
 
 ### CoreLink — content-addressable cache
 
-[corelink-server](https://github.com/HumanGuardrail/corelink-server) |
-[corelink-cli](https://github.com/HumanGuardrail/corelink-cli)
+[corelink-server](https://github.com/HuGR-Labs/corelink-server) |
+[corelink-cli](https://github.com/HuGR-Labs/corelink-cli)
 
 REAPI v2 compatible cache for Bazel, Buck2, Cargo, npm, pip, OCI Docker
-layers, and ML model registries. Multi-tenant. Per-tenant BYOK ships at GA
-with AWS KMS first (GCP Cloud KMS, Azure Key Vault, and HashiCorp Vault on
-the roadmap), not in pilot. An RFC-6962-style append-only audit chain —
-BLAKE3-addressed, with tenant-replayable verification and Ed25519-signed,
-Object-Lock-immutable heads — is on the roadmap for GA.
+layers, and ML model registries. Multi-tenant. Per-tenant BYOK is on the
+roadmap, with AWS KMS planned first (GCP Cloud KMS, Azure Key Vault, and
+HashiCorp Vault to follow) — not yet shipped. An RFC-6962-style append-only
+audit chain — BLAKE3-addressed, with tenant-replayable verification and
+Ed25519-signed, Object-Lock-immutable heads — is on the roadmap.
 
-Currently shipping: **pilot-open, pre-GA**. Free tier available; 10 pilot
-slots for organisations on the path to the BYOK + verifiable-audit roadmap.
+Currently shipping: **launched, self-serve** (GA since 2026-07-10). Free
+tier available for organisations on the path to the BYOK + verifiable-audit
+roadmap.
 
 ## Engineering philosophy
 
@@ -45,10 +46,9 @@ workspace.
 
 ## Currently shipping
 
-CoreLink is in active pilot. Pilot milestone requires three active tenants
-before GA gate opens. See
-[ROADMAP-TO-LAUNCH.md](https://github.com/HumanGuardrail/corelink-server/blob/main/ROADMAP-TO-LAUNCH.md)
-for the full 8-phase plan.
+CoreLink launched self-serve on 2026-07-10 and is generally available. See
+[ROADMAP-TO-LAUNCH.md](https://github.com/HuGR-Labs/corelink-server/blob/main/ROADMAP-TO-LAUNCH.md)
+for the full 8-phase plan and what ships next.
 
 ## Community
 

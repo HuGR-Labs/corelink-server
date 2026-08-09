@@ -13,16 +13,20 @@ The script:
 2. Detects the host OS (`linux` / `darwin` / `windows`) and architecture
    (`x86_64` / `aarch64`).
 3. Downloads the matching CoreLink CLI binary from
-   `https://github.com/HumanGuardrail/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`.
+   `https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`.
 4. Writes `~/.corelink/config.toml` with `token`, `region`, and the
    default `endpoint = "https://corelink-api.humangr.com"`.
 5. Runs `corelink whoami` to verify connectivity AND cache the resolved
    `tenant_id` into `~/.corelink/config.toml` (the script itself does not write
    it, and every later tenant-scoped command needs it). This was `corelink ping`
    until 2026-08-02 — a subcommand that never existed, so the one-liner exited
-   non-zero for every customer. On success, the
-   developer's `/welcome` SSE pane in `admin-ui` flips from "Waiting"
-   to "Connected" within ~1 second.
+   non-zero for every customer. The developer's `/welcome` SSE pane in
+   `admin-ui` listens for a `first_cli_authed` event to flip from "Waiting"
+   to "Connected", but that event is **not currently emitted** — the emitter
+   (`recordFirstCliAuthed` in `apps/cas-worker/src/middleware/analytics.ts`)
+   lives in an app with no `wrangler.toml`/entrypoint/deploy workflow, so it
+   is never invoked in any deployed environment. The pane will wait
+   indefinitely until that emitter is wired up.
 
 ## Conventions
 
@@ -54,19 +58,19 @@ testing the install flow.
 ## CLI Release Procedure
 
 The install Worker at `https://corelink-get.humangr.com` serves binaries
-from `https://github.com/HumanGuardrail/corelink-cli/releases/latest/download`.
+from `https://github.com/HuGR-Labs/corelink-cli/releases/latest/download`.
 Releases in that repo are created automatically by
-`.github/workflows/release-cli.yml` in `HumanGuardrail/corelink-server`
+`.github/workflows/release-cli.yml` in `HuGR-Labs/corelink-server`
 whenever a `cli-v*` tag is pushed.
 
 ### One-time operator setup (do this once, before the first release)
 
 1. **Create a GitHub PAT** with `repo` scope scoped to
-   `HumanGuardrail/corelink-cli` (or a fine-grained token with
+   `HuGR-Labs/corelink-cli` (or a fine-grained token with
    "Contents: write" on that repo).
 
 2. **Store the PAT as a repository secret** in
-   `HumanGuardrail/corelink-server`:
+   `HuGR-Labs/corelink-server`:
    - Name: `CORELINK_CLI_RELEASE_TOKEN`
    - Value: the PAT from step 1
 
@@ -91,7 +95,7 @@ git push origin cli-v0.1.0
 The workflow will:
 1. Build 5 binaries via `cargo-zigbuild` on ubuntu-22.04
 2. Compute SHA-256 checksums
-3. Create a release in `HumanGuardrail/corelink-cli` tagged `v0.1.0`
+3. Create a release in `HuGR-Labs/corelink-cli` tagged `v0.1.0`
 4. Upload 11 files: 5 binaries + 5 `.sha256` files + `checksums.txt`
 
 ### Expected artifact list (per release)
@@ -137,7 +141,7 @@ The workflow will:
 3. `curl -fsSL https://corelink-get.humangr.com | sh -s --` (no `--token`) exits
    non-zero with `FATAL: --token required` on stderr.
 4. The served script's `URL=` line points at the
-   `HumanGuardrail/corelink-cli` Releases path verbatim — the GitHub
+   `HuGR-Labs/corelink-cli` Releases path verbatim — the GitHub
    Releases CI in that repo (separate runbook,
    `2026-05-27-phase-0-corelink-cli-repo-bootstrap.md`) must be green
    before end-to-end works for real customers.

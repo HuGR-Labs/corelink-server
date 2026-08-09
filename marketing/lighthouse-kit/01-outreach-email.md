@@ -40,7 +40,7 @@ Subject: Re: [warm intro topic] — CoreLink Lighthouse Program (6 months free)
 
 ## Variant A — OSS Bazel/Buck2-using team (LH-OSS-01)
 
-**Audience:** OSS maintainer / engineering lead of a Bazel, Buck2, or Pants project from the shortlist (e.g. `bazelbuild/bazel-buildfarm`, `bazelbuild/rules_rust`, Buck2-adjacent projects, `tilt-dev/tilt`, `wix/exodus`).
+**Audience:** OSS maintainer / engineering lead of a Bazel, Buck2, or Pants project from the shortlist (e.g. `bazelbuild/bazel-buildfarm`, `bazelbuild/rules_rust`, Buck2-adjacent projects, `tilt-dev/tilt`, `wix/exodus`). Note: today CoreLink's shipped build-tool integration is Bazel REAPI v2 (REST); Buck2 and Pants support is roadmap, not yet shipped — see the roadmap caveat in the template below before sending to a Buck2/Pants-only maintainer.
 
 **Tone:** Engineer-to-engineer; respect maintainer time; no marketing fluff.
 
@@ -51,9 +51,10 @@ I'm reaching out because {Project} is one of the build-tooling projects in
 the Bazel/Buck2 ecosystem we admire most, and I think we can save your
 contributors a meaningful chunk of CI minutes.
 
-CoreLink is a managed, content-addressable remote cache built specifically
-for Bazel / Buck2 / Pants. It speaks the bazel-remote-cache + Buck2 CAS
-protocols natively, ships across 4 regions with active-active failover,
+CoreLink is a managed, content-addressable remote cache built for the
+Bazel ecosystem (Buck2 and Pants support is on our roadmap, not yet
+shipped). It speaks the bazel-remote-cache protocol over REST (Bazel
+REAPI v2), ships across 4 regions with active-active failover,
 and we are at the tail end of a 60-day GA gate that requires us to recruit
 3 lighthouse customers — one of those slots is reserved for an OSS project
 that uses Bazel or Buck2 in real CI traffic.
@@ -86,9 +87,10 @@ Customer Success, CoreLink
 
 ```
 Hey {first_name} — I run customer engagement at CoreLink (managed remote
-cache for Bazel/Buck2/Pants). We have a 6-month-free lighthouse slot open
-for one OSS project in the Bazel ecosystem in exchange for a 30-day SLA
-attestation + case study. Worth a 30-min intro? Calendar: {LINK}
+cache for Bazel, with Buck2/Pants on our roadmap). We have a 6-month-free
+lighthouse slot open for one OSS project in the Bazel ecosystem in
+exchange for a 30-day SLA attestation + case study. Worth a 30-min intro?
+Calendar: {LINK}
 ```
 
 ---

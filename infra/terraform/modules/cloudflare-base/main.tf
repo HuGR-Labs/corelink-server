@@ -61,7 +61,7 @@ resource "cloudflare_record" "dmarc" {
 }
 
 # ---------------------------------------------------------------------------
-# Apex DNS record — points api.corelink.dev → CF proxy
+# Apex DNS record — points api.humangr.com → CF proxy
 # Region-specific subdomains are managed in modules/corelink-region.
 # ---------------------------------------------------------------------------
 
@@ -76,7 +76,7 @@ resource "cloudflare_record" "api_apex" {
 }
 
 # ---------------------------------------------------------------------------
-# Worker route — apex `api.corelink.dev/*` smart-routes to closest region.
+# Worker route — apex `api.humangr.com/*` smart-routes to closest region.
 # Per-region explicit routes live in modules/corelink-region.
 # ---------------------------------------------------------------------------
 

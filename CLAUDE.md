@@ -12,7 +12,7 @@ It already exposes multiple cache surfaces: native CAS/AC, **Bazel REAPI v2**
 
 ## Architecture wiki (OKF)
 
-`docs/knowledge/` is the **code-grounded architecture wiki** — 157 OKF concepts,
+`docs/knowledge/` is the **code-grounded architecture wiki** — 160 OKF concepts,
 each naming the `source_files` it explains (anti-drift gated against them).
 Browse `docs/knowledge/index.md`, or the rendered site `docs/okf-wiki-site/index.html` (search + cross-link graph; regen via `scripts/okf_render.py`). **Rule: before modifying a
 subsystem, load its concepts first** — don't work blind. Query them with
@@ -58,8 +58,9 @@ it and merge ONLY if it prints all-green. The heavy gates (coverage / CodeQL / f
 / cas-foundation / s10-ship-gate) were moved OFF per-PR (2026-06-02) and run
 **on a cron + on-demand only** — no `pull_request`, no `push` lane — so nothing
 gates on them between scheduled runs. Cadence after the 2026-08-01 CI cost diet:
-**CodeQL + reproducible-build stay nightly; coverage / cas-foundation /
-ffi-matrix / s10-ship-gate are WEEKLY** (Tue/Wed/Thu/Fri). Dispatch the weekly
+**CodeQL stays nightly; reproducible-build (Wed) + coverage / cas-foundation /
+ffi-matrix / s10-ship-gate are WEEKLY** (Tue/Wed/Thu/Fri) — and TLA+ (`tla_check`)
+had its cron REMOVED 2026-08-02 (now PR-path + on-demand only). Dispatch the weekly
 ones explicitly when a PR touches their surface. The checks that REMAIN on a PR
 are the fast, load-bearing ones and they MUST be green. Never blind `--admin` merge; if you must `--admin`, state the documented
 infra/flake reason explicitly — `--merge --admin-reason "<why>"`, which the

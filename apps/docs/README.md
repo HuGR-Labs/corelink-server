@@ -1,7 +1,10 @@
 # `apps/docs` — CoreLink public documentation
 
-Public documentation for CoreLink, published to
-[corelink-docs.humangr.com](https://corelink-docs.humangr.com) on Cloudflare Pages.
+Public documentation for CoreLink, published at the canonical product path
+[humangr.com/corelink/docs](https://humangr.com/corelink/docs) via a
+Cloudflare **Worker** with a Static-Assets binding (`apps/docs/wrangler.toml`).
+The legacy `corelink-docs.humangr.com` host still resolves but 301-redirects
+to the canonical path.
 
 Built with [Docusaurus 3](https://docusaurus.io/), organized per the
 [Diátaxis framework](https://diataxis.fr/) (tutorial / how-to /
@@ -65,30 +68,33 @@ or understanding?** That answer picks the folder. If unsure, read the
    required JSON file is missing.
 6. Translate the MDX content under `i18n/fr-FR/docusaurus-plugin-content-docs/current/`.
 
-## Custom domain DNS setup (Cloudflare Pages)
+## Routing setup (Cloudflare Worker)
 
-1. In the Cloudflare dashboard, open the **corelink-docs** Pages
-   project → **Custom domains** → **Set up a custom domain**.
-2. Enter `corelink-docs.humangr.com`.
-3. Cloudflare auto-creates a `CNAME docs → <project>.pages.dev` record
-   on the `corelink.humangr.com` zone (since the zone is on the same account).
-   No manual DNS change is needed if the zone is on Cloudflare; if the
-   zone lives elsewhere, add a `CNAME` record manually.
-4. SSL: Cloudflare provisions a Let's Encrypt certificate automatically
-   within ~5 minutes. HSTS is enabled at the zone level.
-5. Verify: `dig corelink-docs.humangr.com` returns a `*.pages.dev` CNAME, and
-   `curl -I https://corelink-docs.humangr.com` returns `200` with
-   `strict-transport-security` present.
+The site is served by the `corelink-docs` Worker (Static Assets binding),
+deployed by `.github/workflows/docs-deploy.yml` on every push to `main`
+that touches `apps/docs/**`. Routing is declared in-repo, not hand-wired
+in the dashboard:
 
-The repo also ships `static/CNAME` so that mirror deploys to GitHub
-Pages would resolve the same custom domain — Cloudflare Pages ignores
-`CNAME` but it documents intent.
+1. `apps/docs/wrangler.toml` declares two zone routes on `humangr.com`:
+   `humangr.com/corelink/docs` and `humangr.com/corelink/docs/*`. Both are
+   more specific than the admin-ui app's `humangr.com/corelink/*` route, so
+   Cloudflare matches the docs Worker first.
+2. A third route, `corelink-docs.humangr.com/*`, catches the legacy
+   subdomain; `worker/index.ts` issues a 301 to the canonical
+   `humangr.com/corelink/docs` path for any non-`humangr.com` host.
+3. `wrangler deploy` (run by the GH Action) provisions the routes — no
+   manual dashboard step, and no Pages custom-domain step, since this is
+   no longer a Pages project.
+4. Verify: `curl -I https://humangr.com/corelink/docs` returns `200`, and
+   `curl -I https://corelink-docs.humangr.com` returns a `301` to the
+   canonical path.
 
 ## Algolia DocSearch
 
 Search is configured in `docusaurus.config.ts → themeConfig.algolia`
 with stub credentials (`STUB_APP_ID` + `stub_search_only_api_key_replace_at_dday`).
-At D-day, set the following Cloudflare Pages environment variables:
+At D-day, set the following as GH Repo Variables so the `docs-deploy.yml`
+Worker deploy can inject them at build time:
 
 | Variable | Source |
 |---|---|
@@ -122,9 +128,9 @@ We ship a partial mitigation in `patches/@docusaurus__core@3.10.1.patch`
 
 The remaining theme-alias resolution issue is tracked for follow-up;
 in the meantime the production build runs in CI via the official
-Docusaurus Docker image (see `.github/workflows/docs-ci.yml`) and on
-Cloudflare Pages directly. Typecheck, lint, and tests all pass locally
-and in CI.
+Docusaurus Docker image (see `.github/workflows/docs-ci.yml`) and via
+`docs-deploy.yml`'s `wrangler deploy` step directly. Typecheck, lint, and
+tests all pass locally and in CI.
 
 If you need a local preview, use `pnpm dev` (no SSG step) or run the
 build inside the upstream `node:22-bookworm` container.

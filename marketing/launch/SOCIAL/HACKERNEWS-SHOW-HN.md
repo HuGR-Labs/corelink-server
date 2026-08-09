@@ -26,7 +26,7 @@ CoreLink is a multi-tenant content-addressable remote cache for Bazel, Buck2, an
 
 - **TLA+ formal verification of tenant isolation, in CI, gating the build.** Four specs (tenant_isolation, cas_integrity, audit_immutability, gc_correctness) maintained green. We chose to publish them — link in the trust center.
 - **BYOK on AWS KMS** (GCP / Azure / Vault on the roadmap) with envelope encryption, a 5-minute hard cap on the DEK cache, and a customer-managed kill switch. The vendor cannot decrypt unilaterally; the kill is structural, not policy-level.
-- **Audit chain follows RFC 6962** (the Certificate Transparency Merkle tree construction) over RFC 8785 JCS-canonicalized leaves. Customers independently re-derive the chain head from their copy of the events. Consistency proofs published daily.
+- **Audit chain is an append-only, tamper-evident hash chain** (`BLAKE3(prev || event)`, each event chained to the previous one — not a Merkle tree). Customers independently re-derive the chain head from their copy of the events, published daily.
 - **Engineering gate is separated from launch orchestration.** GA was decided by a binary engineering gate (PRR + external pentest clean with retest + 30d sustained staging + 3 lighthouse customers attested + zero CRITICAL waivers), not by marketing readiness. Splitting those two gates was a discipline we wanted to bake in from the start.
 - **REAPI conformant.** Most existing Bazel / Buck2 configurations work with a `--remote_cache` URL change.
 

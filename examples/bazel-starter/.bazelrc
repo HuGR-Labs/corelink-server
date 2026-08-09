@@ -14,8 +14,8 @@
 # See https://bazel.build/docs/credential-helper for the full specification.
 
 # Remote cache endpoint.
-# Replace with your tenant URL, e.g. https://<YOUR_TENANT_ID>.corelink.dev/v1/cache
-build --remote_cache=https://corelink.dev/v1/cache
+# Live CoreLink Bazel REAPI v2 cache route (see routes/bazel_v2.rs).
+build --remote_cache=https://corelink-api.humangr.com/bazel/cache
 
 # Credential helper (Bazel 6+ protocol).
 # The helper script at .bazel/corelink-credential-helper.sh reads CORELINK_PAT

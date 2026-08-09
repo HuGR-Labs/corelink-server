@@ -25,7 +25,7 @@ from **org-only dogfood** to **public cold self-serve**.
 ## Why the current state is *safe*, not broken
 
 With the OAuth creds **unbound**, the install callback **skips** the ownership
-proof — but that path is `public:false` **org-only** (only a HumanGuardrail org
+proof — but that path is `public:false` **org-only** (only a HuGR-Labs org
 member can install), so the dogfood is unaffected and no stranger can bind an
 installation. A **structural guard** (`github_install_callback.ts:283-290`) makes
 the proof **mandatory** the moment `GITHUB_APP_PUBLIC` is truthy: a public App with
@@ -70,7 +70,7 @@ To prove the **resolve** chain without waiting on step 2–3, seed the map direc
 via the internal-auth primitive (the Option-A trigger of the *same* shared write):
 `POST https://corelink-signup.humangr.com/internal/v1/runner/provision-installation`
 `Authorization: Bearer $CORELINK_INTERNAL_AUTH_KEY`
-`{ "installation_id": "144561227", "tenant_id": "<tenant>", "repositories": ["HumanGuardrail/corelink-cold-organic-e2e"] }`
+`{ "installation_id": "144561227", "tenant_id": "<tenant>", "repositories": ["HuGR-Labs/corelink-cold-organic-e2e"] }`
 → then runners drives the mint with that `installation_id`. This proves
 map→allowlist→entitlement→mint end-to-end; only the *self-serve public install UX*
 still needs step 2–3. (Needs the runners TL to name `<tenant>`.)

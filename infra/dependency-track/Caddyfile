@@ -2,11 +2,11 @@
 # Let's Encrypt automatic TLS + HSTS enforced.
 
 {
-    email ops@corelink.dev
+    email corelinksec@humangr.com
     # ACME HTTPS challenge (port 80 redirected, port 443 serves TLS).
 }
 
-dt.corelink.dev {
+dt.corelink.humangr.com {
     # HSTS: 1 year, includeSubDomains, preload-ready.
     header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
     header X-Content-Type-Options nosniff
@@ -33,7 +33,7 @@ dt.corelink.dev {
     }
 }
 
-dt-staging.corelink.dev {
+dt-staging.corelink.humangr.com {
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"
     header X-Content-Type-Options nosniff
     header X-Frame-Options DENY
