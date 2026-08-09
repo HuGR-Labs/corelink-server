@@ -988,12 +988,19 @@ interface ReaperHarness {
   state: DurableObjectState;
   destroy: ReturnType<typeof vi.fn>;
   portFetch: ReturnType<typeof vi.fn>;
+  setInactivityTimeout: ReturnType<typeof vi.fn>;
   alarms: number[];
   storageMap: Map<string, unknown>;
 }
 
-/** Mock state WITH a running container + setAlarm capture. */
-function makeReaperState(lifecycle: Record<string, unknown>, currentAlarm: number | null = 1): ReaperHarness {
+/**
+ * Mock state WITH a running container + setAlarm capture.
+ *
+ * `withInactivityApi=false` models an older workerd (or any runtime predating
+ * `Container.setInactivityTimeout`): the DO must still start and serve, just
+ * without the platform reaper.
+ */
+function makeReaperState(lifecycle: Record<string, unknown>, currentAlarm: number | null = 1, withInactivityApi = true): ReaperHarness {
   const storageMap = new Map<string, unknown>();
   storageMap.set("lifecycle", lifecycle);
   const alarms: number[] = [];
@@ -1003,6 +1010,7 @@ function makeReaperState(lifecycle: Record<string, unknown>, currentAlarm: numbe
   const containerRef = { running: true };
   const destroy = vi.fn(async () => { containerRef.running = false; });
   const portFetch = vi.fn(async () => new Response(null, { status: 200 }));
+  const setInactivityTimeout = vi.fn(async (_ms: number) => {});
   let pendingAlarm: number | null = currentAlarm;
 
   const state = {
@@ -1027,16 +1035,17 @@ function makeReaperState(lifecycle: Record<string, unknown>, currentAlarm: numbe
       getTcpPort: () => ({ fetch: portFetch }),
       start: () => {},
       monitor: () => new Promise<void>(() => {}),
+      ...(withInactivityApi ? { setInactivityTimeout } : {}),
     },
     waitUntil: (_p: Promise<unknown>) => {},
     blockConcurrencyWhile: async <T>(fn: () => Promise<T>): Promise<T> => fn(),
   } as unknown as DurableObjectState;
 
-  return { state, destroy, portFetch, alarms, storageMap };
+  return { state, destroy, portFetch, setInactivityTimeout, alarms, storageMap };
 }
 
-async function makeReaperDO(lifecycle: Record<string, unknown>, currentAlarm: number | null = 1): Promise<{ h: ReaperHarness; do_: CoreLinkServer }> {
-  const h = makeReaperState(lifecycle, currentAlarm);
+async function makeReaperDO(lifecycle: Record<string, unknown>, currentAlarm: number | null = 1, withInactivityApi = true): Promise<{ h: ReaperHarness; do_: CoreLinkServer }> {
+  const h = makeReaperState(lifecycle, currentAlarm, withInactivityApi);
   const do_ = new CoreLinkServer(h.state, makeEnv());
   await new Promise<void>((r) => setTimeout(r, 5));
   return { h, do_ };
@@ -1329,5 +1338,72 @@ describe("DO start-failure reaps the container (resident-but-wedged bill)", () =
     expect(resp.status).toBe(503);
     const persisted = h.storageMap.get("lifecycle") as { containerStatus: string };
     expect(persisted.containerStatus).toBe("stopped");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PLATFORM idle auto-destroy (container.setInactivityTimeout)
+//
+// Cloudflare's own reaper. It was named in durable_object.ts's header
+// doc-comment from day one and NEVER CALLED — the hand-rolled alarm reaper
+// above shipped in #927 and never moved the live instance count off 35
+// (5 regions x 7 x 4 GiB resident, `active: 0` in regions with zero traffic).
+// Platform-side survives DO eviction, a broken alarm chain and a wedged
+// isolate: exactly the failure modes that made containers immortal.
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("platform idle auto-destroy (setInactivityTimeout)", () => {
+  it("re-arms with IDLE_TIMEOUT_MS on an alarm tick for a live, non-idle container", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({
+      containerStatus: "running",
+      lastHealthCheckMs: now - 60_000,
+      coldStartCount: 1,
+      tenantId: "tenant-live",
+      lastActivityMs: now, // NOT idle — the alarm reaper must not fire
+    });
+
+    await do_.alarm();
+
+    expect(h.destroy).not.toHaveBeenCalled(); // sanity: not the idle path
+    expect(h.setInactivityTimeout).toHaveBeenCalledWith(IDLE_MS);
+  });
+
+  it("does not throw, and still serves, when the runtime lacks setInactivityTimeout", async () => {
+    const now = Date.now();
+    // withInactivityApi=false → container object has no such method at all.
+    const { h, do_ } = await makeReaperDO(
+      {
+        containerStatus: "running",
+        lastHealthCheckMs: now - 60_000,
+        coldStartCount: 1,
+        tenantId: "tenant-old-runtime",
+        lastActivityMs: now,
+      },
+      1,
+      false,
+    );
+
+    await expect(do_.alarm()).resolves.not.toThrow();
+    // The alarm reaper remains the sole reaper and the chain stays armed —
+    // degrading must not silently end the chain (that is the other half of
+    // the immortal-container bill).
+    expect(h.destroy).not.toHaveBeenCalled();
+    expect(h.alarms.length).toBeGreaterThan(0);
+  });
+
+  it("arming failure is swallowed so the container still serves", async () => {
+    const now = Date.now();
+    const { h, do_ } = await makeReaperDO({
+      containerStatus: "running",
+      lastHealthCheckMs: now - 60_000,
+      coldStartCount: 1,
+      tenantId: "tenant-arm-throws",
+      lastActivityMs: now,
+    });
+    h.setInactivityTimeout.mockRejectedValueOnce(new Error("unsupported"));
+
+    await expect(do_.alarm()).resolves.not.toThrow();
+    expect(h.destroy).not.toHaveBeenCalled();
   });
 });
