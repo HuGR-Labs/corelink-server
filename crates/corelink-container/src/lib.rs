@@ -110,6 +110,12 @@ pub mod byte_accounting;
 /// deployed table exists, explicit empty/zero/501 where it doesn't.
 /// See module docs for the per-endpoint matrix.
 pub mod customer_d1;
+/// The request-scoped **co-read cell**: how the container's per-request D1
+/// `pat` row read carries the url-map row the storage lookup is about to need,
+/// so the two cost ONE round trip instead of two (`opat` + `ostore` were 55 %
+/// of `origin` in prod, one RTT apiece). The hint is never authority — a
+/// prefetched row is served only under the PAT-derived tenant.
+pub mod d1_coread;
 /// Canonical pseudonymized email-hash helper (CTRL-PRIV-001) — the ONE
 /// `hash_email` every email-hash site shares so the invite→match flow and DSR
 /// rectification stay byte-identical (HMAC-SHA256 under `EMAIL_HASH_SALT`, with
@@ -133,6 +139,14 @@ pub mod oci_cap;
 /// bypass container-side at both the token mint and the residual `/v2` legs.
 /// Fail-CLOSED (a known-suspended tenant stays denied through a D1 read fault).
 pub mod oci_suspend;
+/// Container-side decomposition of the Worker's `origin` Server-Timing phase:
+/// a task-local phase ledger (`opat` / `oquota` / `ostore` / `oother`) plus the
+/// outermost data-plane layer that reports it on the subresponse's own
+/// `Server-Timing`, which the Worker merges under `origin`. Instrumentation
+/// only — no behaviour, ordering or D1 access pattern depends on it. (Declared
+/// last, after the alphabetical block above, so adding it shifts no existing
+/// OKF line-anchor.)
+pub mod origin_timing;
 /// Per-tenant monthly **request-count** middleware primitive (rt-nuclear #8):
 /// the container-side mirror of `worker/src/lib/quota.ts::checkRequestQuota`,
 /// backed by the `monthly_request_counts` D1 table (migration 0071). Wired into

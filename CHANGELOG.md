@@ -72,6 +72,59 @@ Each entry cross-references:
   money path.
 
 ### Performance
+- **perf(container): the container's `pat` read and its url-map read were TWO serial D1 round trips
+  on the sccache hot path; they now travel as one statement.** The `origin` split shipped in #1053
+  answered the question it was built for. Live prod (`1ee76248-r1`, n=65 across two independent
+  batches, authenticated `/cargo` 404 miss): `ohop` 114/116/119 ms (a fixed network leg, ±4 %),
+  **`opat` 62/72/81**, **`ostore` 66/75/84**, `oquota` 0/0/0 (already amortised) and `oother` 0/1/1
+  of an `origin` of 247/267/312 ms — the sub-phases summing EXACTLY on 65 of 65, 0 unreconciled. So
+  `opat + ostore` = **147 ms = 55 % of `origin`**, and both are container→D1-primary round trips of
+  ~72-75 ms: **one RTT apiece**, not query time. On a MISS `ostore` is the url-map `SELECT` alone —
+  `MoatCache::get_untimed` returns early when the map misses, so no CAS/R2 fetch happens.
+  Same shape and same fix as #1047 one tier up (`qmeter` + `qstor` → one `db.batch`, `wdb` 284 →
+  156 ms): the cost is the number of ocean crossings, not the SQL. `PAT_URL_MAP_COREAD_SQL`
+  (`crates/corelink-container/src/adapter_pat.rs`) is a `UNION ALL` of two individually-`LIMIT 1`-ed
+  index probes — the `pat` arm is the previous statement verbatim, plus the
+  `adapter_cache_map(namespace, url_hash)` row the storage step is about to need. Expected `opat +
+  ostore` after repin: **~75 ms** (one round trip), i.e. roughly **-72 ms off `origin` and off
+  `total`** on every sccache GET/HEAD/PROPFIND. To be confirmed by re-running
+  `scripts/probe-cargo-cache-latency.sh` — the same instrument that measured the before.
+- **The url-map read is fetched early but never *acted on* early — auth still decides first.** The
+  storage lookup is keyed by the tenant the CONTAINER derives from the PAT (Option B; the container
+  never trusts the Worker's tenant header for storage), and that tenant is not known until the `pat`
+  row lands. So the co-read is keyed by a *hint* — the Worker-set, client-unsettable
+  `x-corelink-tenant-id`, the same header the $-ceiling gate already attributes cost by — and the
+  fetched row is served ONLY under an exact `(namespace, url_hash)` match with the key the moat is
+  actually called with (`crates/corelink-container/src/d1_coread.rs`, a request-scoped task-local
+  cell, `take` one-shot). A hint that named a different tenant is discarded unread and the storage
+  read is re-issued for real: a wrong hint costs one wasted index probe, never a wrong answer. This
+  is a fetch-order change, not a trust change — nothing decides on the hint.
+- **⛔ Immediate revocation is untouched, and pinned.** #1022 kept the per-request `pat` read for
+  exactly this and it was proven live (revoke in D1 → the very next request 401s). Nothing is
+  cached: not the row, not the authorization decision, not across requests — the `pat` row is still
+  read from D1 on every single request, and the co-read's `pat` arm carries every predicate of the
+  serial statement (`token_id`, the `expires_ms` expiry filter, `revoked_at_ms IS NULL`), asserted
+  as a property rather than trusted to stay in sync by eye. The `SecretMatchMemo`, the Argon2id
+  permit pools, the shed uniformity (`INV-AUTH-PAT-OVERLOAD-SHED-UNIFORM`) and the HMAC fast-reject
+  are all unchanged — a forged token still drives zero D1 cost, because the co-read happens at
+  exactly the point in the pipeline the `pat` read already did.
+- **D1-failure semantics are preserved by construction.** A co-read that errors is never
+  load-bearing: it is logged and the plain `PAT_LOOKUP_SQL` read runs, so the result is decided by
+  the exact same statement as before (a `pat`-side fault is still the 503 SHED, never a 401) and,
+  nothing having been published, the moat's own url-map read still surfaces its fault as the 502
+  CAS-dependency error. The price is one wasted round trip on a request that is already failing.
+  Only the READ verbs (`GET`/`HEAD`/`PROPFIND`) publish a hint — `PUT` writes the map and `DELETE`
+  removes it, so co-reading there would be a wasted probe per upload.
+- **Instrument follows the code:** the one round trip is charged to **`opat`**, the phase whose
+  statement leads it, so `ostore` now reads ~0 on a miss and the CAS/R2 fetch alone on a hit. The
+  phase NAMES are deliberately unchanged: `originSubPhases` ignores names outside its allowlist, so
+  a renamed phase would silently strand its milliseconds in `ohop` on any Worker not yet
+  redeployed — the exact mis-attribution the split exists to prevent. The identity still holds
+  (`ohop + opat + oquota + ostore + oother == origin`); the millisecond changed phase, it did not
+  disappear. 16 tests pin the round-trip COUNT, the hit and miss paths, revocation, the
+  cross-tenant guard, both failure branches and the hint-publication rules; the negative control is
+  recorded in the PR (7 fail against the serial path, headline signature `the cargo GET issued 2 D1
+  round trips; expected exactly 1 … left: 2, right: 1`).
 - **perf(worker): `wdb` was TWO serial uncached D1 round trips to the ENAM primary; they now
   travel as one `db.batch`.** The sub-phase split shipped in #1036 answered the question it was
   built for. Measured warm against live prod (n=30, single reused connection, 2026-08-04):
@@ -120,6 +173,90 @@ Each entry cross-references:
   `the quota gate issued 0 batch round trips: []`).
 
 ### Added
+- **feat(worker): the "route the container's D1 reads through its parent DO" proposal is a coin flip
+  on ONE unmeasured fact — where the DO sits relative to the ENAM D1 primary. This ships the
+  instrument that measures it, and nothing else.** The container reads D1 over the public REST API
+  (`crates/corelink-container/src/storage/d1_http.rs:92`), which always hits the ENAM primary — the
+  measured `opat` is 79/86/99 ms. Routing those reads through the parent `CoreLinkServer` DO (which
+  holds the `CONFIG_DB` binding) is worth somewhere between **−70 ms and +65 ms**: a DO-issued
+  primary read of **≤25 ms means the DO is co-located with the primary** (the proposal wins
+  ~60-75 ms), **≥100 ms means it is far** (a regression — the Worker's own primary read from SAM
+  measures 156 ms). Nothing in the repo could answer that, so the proposal was unbuildable on
+  evidence. `/_do/health` (`worker/src/durable_object.ts`) now carries a `d1_probe` object: two
+  timed `SELECT 1` reads taken from INSIDE the DO — one on `this.env.CONFIG_DB` (the PRIMARY), one
+  on `withSession("first-unconstrained")` (the nearest replica) — plus D1's own
+  `served_by_region`/`served_by_primary`/`served_by_colo` provenance, which is what distinguishes "a
+  real replica served this" from "the Sessions API quietly served the primary". Three samples per
+  path plus an UNCOUNTED, still-reported warm-up read, so connection setup is never charged to the
+  measurement and never hidden either. `withSession` is feature-detected exactly as
+  `worker/src/index.ts:1259-1260` does it, so a runtime or test double without the Sessions API
+  degrades to primary-only instead of breaking the health probe. **A read that throws reports an
+  explicit `error` field — never a fast number, never a missing field** — and "unavailable, fell
+  back" (`available: false`) stays distinguishable from "measured, and it matched the primary"; that
+  distinction IS the instrument. The reads run ONLY on `/_do/health` and never on the
+  request-serving path, and every pre-existing field of the health body is untouched (additive
+  only). Delivery: `/_internal/do-d1-probe/{tenant_id}` (`worker/src/index.ts`) forwards to that
+  DO's `/_do/health`, mirroring the `/_internal/replication/` → `/_repl` precedent, behind the same
+  `/_internal/*` constant-time internal-auth gate — mapped to the LOW-PRIVILEGE `quota_read`
+  consumer (no new key: reading a latency number must not require the key that can erase a tenant's
+  bytes). The tenant id is REQUIRED and caller-supplied because DO placement is per-DO-id: the id is
+  derived with `env.CORELINK_SERVER.idFromName(tenant)`, the identical derivation the tenant data
+  path uses, so the probe measures the SAME DO instance that serves that tenant's cargo traffic —
+  a probe of a freshly-created DO would answer nothing. Optional `?colo=1` additionally reports the
+  DO's serving colo (best-effort `cdn-cgi/trace`, off by default so the ordinary probe makes no
+  external request). Read the BODY, not the status: `/_do/health` answers 503 while the tenant's
+  container is stopped, and the numbers are in the body either way.
+- **feat(worker+container): `origin` was 66 % of an authenticated request and one opaque block; it
+  is now five named phases that sum to it exactly.** Live prod (`3bd8f3b7-r1`, warm memo-hit steady
+  state, n=30, single reused connection, authenticated `/cargo` 404 miss): `auth` 0/0/7 ms (solved,
+  #1022), `wdb` 152/156/161 ms (solved, #1047), **`origin` 281/300/329 ms**, `total` 443/457/547 ms
+  — with `total == auth + wdb + origin` on 30/30, so the residue is genuinely inside `origin` and
+  nowhere else. Everything in it was unmeasured: the DO dispatch and placement, the container's own
+  per-request D1 `pat` read (#1022 deliberately KEPT it for immediate revocation), the `$`-ceiling
+  quota accrue, the storage lookup. This is the third turn of the recipe that worked twice: decompose
+  BEFORE optimising, because both previous wins landed somewhere nobody predicted.
+  The split spans the Worker→DO boundary. The container reports what only it can see —
+  `opat` (its D1 `pat` read) / `oquota` (the ADR-0068 check-and-accrue) / `ostore` (the moat url-map
+  read + CAS/R2 blob) / `oother` (its own residue against its own whole-request clock) — on the
+  **subresponse's own `Server-Timing`**, via a new outermost data-plane layer
+  (`crates/corelink-container/src/origin_timing.rs`, a task-local phase ledger). The Worker parses
+  that, forwards the four verbatim, and derives the one number only IT can see: `ohop = origin −
+  Σ(container phases)` — the DO dispatch + placement, the DO's own prologue, the wire, and the
+  response coming back. The container's raw header never reaches the client on the measured path;
+  the Worker's merged one overwrites it.
+- **The five reconcile by construction, and the tests pin the arithmetic rather than the labels.**
+  `ohop + opat + oquota + ostore + oother == origin`, exactly. A split that does not add up is worse
+  than no split — it invites a confident wrong conclusion about which tier to attack — so the two
+  failure modes are refusals, not fudges: **no container report** (an older container image, or a
+  503 the DO synthesized without ever reaching the container) leaves `origin` undecomposed exactly
+  as before, which is what lets the Worker deploy ahead of the container repin; **a report that does
+  not fit** (Σ > `origin`, or a phase we consume carrying an unreadable duration) is dropped WHOLE
+  and says so on the wire as `ohop;dur=<origin>;desc="unreconciled"`.
+  `worker/tests/server_timing_origin_subphases.test.ts` (11 cases) asserts the sum identity, that a
+  delay the container never saw lands in `ohop` and in no container phase, that the container's
+  numbers survive the merge verbatim, and sweeps the identity across five `origin` values × four
+  reports. Negative control recorded in the PR: silently dropping one phase from the merge fails 4
+  of 11, headline `origin=300 with container report "opat;dur=1, oquota;dur=2, ostore;dur=3,
+  oother;dur=4" produced [...], which sums to 297: expected 297 to be 300`.
+- **What each phase will let us decide, and what it deliberately does NOT separate.** A large `ohop`
+  ⇒ attack DO placement/dispatch, not the container; a large `opat` ⇒ the per-request revocation
+  read is the price and the memo/TTL trade-off is back on the table; a large `oquota` ⇒ the accrue is
+  a second uncached D1 round trip AFTER the Worker already made one; a large `ostore` ⇒ it is R2/the
+  url-map. `ohop` bundles the DO's prologue (lifecycle bind, `ensureContainerRunning`, the
+  `getAlarm()` re-arm) with the dispatch RPC and the wire — separating those needs the DO to rewrite
+  the subresponse's headers on the hot path, which is a behaviour change an instrumentation-only PR
+  does not make. If `ohop` dominates, that is the next split; the decomposition decides, not a hunch.
+  `ostore` instruments the moat (cargo/brew/npm/pip); the native CAS/AC plane does not go through it,
+  so there its storage time lands in `oother` — stated rather than faked.
+  Overhead is a couple of microseconds per request (one `Arc`, one task-local scope, four
+  `Instant::now()` calls, three relaxed atomic adds, one ~50-byte header) against a phase measured in
+  hundreds of milliseconds. Documented clock caveat, now on BOTH sides: a Worker phase at `dur=0`
+  means "no I/O" (`Date.now()` advances only across I/O), a container phase at `dur=0` means "under a
+  millisecond of real wall time" (`Instant`) — directional attribution, never a profile.
+  `scripts/probe-cargo-cache-latency.sh` phase 2b reads the new names AND every old one, so a probe
+  run before the deploy still attributes, and it now checks the sum identity per response and reports
+  `unreconciled` / `ABSENT` explicitly. No behaviour, caching, ordering or D1 access pattern changed
+  — this measures, it does not optimise.
 - **feat(worker): `wdb` is four serial awaits and the header only reported their sum — a third
   of an authenticated request was attributable to "the Worker-side reads" and to nothing more
   precise.** Probe run 30916725902 (2026-08-04, 30 samples) reports p50s of `auth` 8 ms (emitted on 3 of 30 responses, `desc="kv"`), `wdb` 118 ms, `origin` 192 ms, `total` 311 ms — percentiles over a sample, NOT the decomposition of a single request, and they do not add. (The
@@ -161,6 +298,143 @@ Each entry cross-references:
   assertion. 0 failures in 25 runs under 6 busy loops after the fix.
 
 ### Fixed
+- **fix(container): the D1 co-read published into the AMBIENT cell, so a coalesced `pat` read could
+  file one request's url-map row under another request's cache key.** Found by adversarial review of
+  this same PR, before merge. The producer read its hint with `d1_coread::hint()` and then published
+  with a free `publish(value)` that resolved the task-local **at poll time** and carried no key — so
+  the destination was "whatever request is running when the row lands", not "the request whose key
+  fetched it". That is not academic: production wires the read as
+  `SingleFlightPatLookup::new(Arc::new(d1))`, which coalesces concurrent lookups of one `token_id`
+  onto a `Shared` future it `.await`s **without spawning** — and a `Shared` future is driven only by
+  whoever polls it, which is exactly the rationale `FlightGroup::run` documents for spawning ITS
+  work. So request A could read hint `(T, K_a)`, start the co-read, and request B — same runner PAT,
+  different object, i.e. the ordinary cargo hot path — could take over the driving poll and receive
+  A's `content_hash` under `K_b`. Nothing downstream catches it: `MoatCache::get_untimed`'s integrity
+  check re-hashes the served bytes against the mapped `content_hash`, tying bytes↔hash and never
+  key↔hash, so the wrong-but-internally-consistent blob is served silently (`HEAD` too —
+  `CargoMoatStore` has no `exists` override, so it routes through `get`). Coalescing is keyed on
+  `token_id` ⇒ one `pat` row ⇒ one tenant, so this is a cross-object INTEGRITY defect, not a
+  cross-tenant leak. **Fix:** `hint()` now hands back the cell HANDLE with the key, and the co-read
+  publishes through `CoReadCell::publish(&self, …)`; the ambient-publish path is deleted, so it
+  cannot be reintroduced. The row lands in the cell whose hint keyed the SQL no matter who polls; a
+  joiner gets nothing published and falls back to its own correctly-keyed read, which is the right
+  answer because its key was never fetched. The leader keeps the optimisation, so the measured win
+  is unchanged. `take`'s exact `(namespace, url_hash)` gate is KEPT as defence in depth. **Why it
+  shipped:** every co-read test built the verifier as `PatVerifier::with_key_set(d1, keys)`, so the
+  real `SingleFlightPatLookup` wrapper was never in the loop. The regression test now puts it there —
+  two concurrent lookups on one `token_id` in two co-read scopes with different `url_hash`es — and
+  asserts on the served CONTENT HASH, not on round-trip counts. It fails against the unfixed code
+  with `left: Some(Some("content-hash-A")) right: Some(Some("content-hash-A"))` on the joiner, and
+  passes after. The false doc-comment that licensed the bug ("the published key is the cell's key
+  **by construction**") is replaced by a statement of the actual mechanism and of the hazard it
+  defends against.
+- **fix(ci): `--merge`'s first day found two holes — the gate passed a DRAFT PR (#1048), and a merge
+  that SUCCEEDED reported failure (#1051).** Both are in `scripts/pre-merge-gate-check.sh`; neither
+  weakens #1050's guarantee (the `gh pr merge` call is still reachable only past an all-green gate,
+  in one process). **(1) Draft.** On **PR #1048** the gate printed `✅ All gates green — OK to merge
+  PR #1048` and issued the merge, which GitHub rejected: `GraphQL: Pull Request is still a draft
+  (mergePullRequest)`. Green checks on a draft prove the code compiles; they do not prove the AUTHOR
+  considers it done, which is the one thing draft states — so the check list was green and the
+  verdict was still wrong. `isDraft` is now read alongside `mergeable`/`state` and a draft is refused
+  as **STRUCTURAL**, the same family as not-OPEN / CONFLICTING / pending / required-gates-absent, and
+  therefore **not overridable by `--admin-reason`**: no documented flake reason makes an unfinished PR
+  finished. The test is `!= "false"`, not `== "true"`, so an empty or renamed field refuses too
+  (fail-closed, same direction as the bucket allowlist). **(2) Exit status.** On **PR #1051** the
+  squash landed (`state=MERGED` on GitHub) and then `gh pr merge --squash --delete-branch` died
+  deleting the **local** branch — `fatal: 'main' is already used by worktree at …` — and the script
+  exited 1. Safe direction, still wrong, and structural here: this repo runs a dozen simultaneous
+  worktrees and one of them holds `main`, so the `git checkout main` gh performs before deleting the
+  local branch fails as a matter of course. The exit status is now derived from **whether the PR
+  merged** — after the merge call the script re-queries `state` (3 attempts, so a transient read error
+  is not reported as a failed merge) and decides on that: `MERGED` ⇒ exit 0, with an explicit warning
+  naming the leftover branch when `gh` itself exited non-zero; anything else ⇒ exit non-zero with
+  `⛔ THE MERGE DID NOT LAND — PR #N is state=<state>`. **`--delete-branch` was dropped, not patched.**
+  gh deletes the local branch *before* the remote one, so the #1051 abort also skipped the remote
+  delete — `refs/heads/chore/repin-3bd8f3b7` is still on origin today, i.e. the flag both broke the
+  exit status and failed at its own job. The script now passes `--delete-branch=false` (which also
+  suppresses gh's interactive delete prompt) and deletes the merged ref itself with
+  `gh api -X DELETE repos/{owner}/{repo}/git/refs/heads/<head>` once the merge is confirmed — the part
+  that actually needed doing, given `delete_branch_on_merge=false`, with no local git side effects and
+  no ability to fail the merge. Fork PRs are skipped; the **local** branch is deliberately left alone
+  (a worktree may be sitting on it) and is named in the output. **Default (report-only) mode is
+  unchanged**, proven by diffing stdout+exit against `git show origin/main:` on live PRs #1009
+  (9 failing checks, exit 1) and #795 (CONFLICTING, exit 1) — both `IDENTICAL` — plus stub scenarios
+  green/pending/fail/conflicting/not-OPEN, all identical. The **only** deliberate delta is a draft:
+  on live #1048 the old script prints `✅ All gates green — OK to merge` and exits 0, the new one
+  refuses and exits 1 — that delta *is* the fix. **Proven with a `gh` stub logging every invocation:**
+  draft + `--merge` ⇒ `⛔ DO NOT MERGE … the PR is a DRAFT`, exit 1, **zero** `gh pr merge` calls;
+  draft + `--merge --admin-reason "<why>"` ⇒ `⛔ --admin-reason REFUSED: this refusal is STRUCTURAL`,
+  **zero** merge calls; merge lands + `gh` exits 1 in cleanup ⇒ `✅ PR #1051 IS MERGED … the merge
+  LANDED` + the leftover-branch warning, **exit 0**; merge genuinely fails (PR still OPEN) ⇒ `⛔ THE
+  MERGE DID NOT LAND`, **exit 1**. #1050's own controls re-run unchanged: pending ⇒ zero merges,
+  CONFLICTING ⇒ zero merges, bare `--admin` ⇒ exit 2.
+- **fix(ci): the mandatory merge gate was correct and still failed to gate — a pipeline threw its
+  exit code away, so `pre-merge-gate-check.sh` now performs the merge itself (`--merge`).** Observed
+  live on **PR #1049**: the invocation was
+  `bash scripts/pre-merge-gate-check.sh 1049 | tail -3 && gh pr merge 1049 --squash`. The script
+  printed `⛔ DO NOT MERGE — 4 pending` and exited **1**, exactly as designed — but `&&` binds to the
+  **pipeline**, whose exit status is the LAST command's (`tail`, always 0), so the refusal was
+  discarded and the merge ran with four checks still in flight. They happened to pass; that was luck,
+  not process. The same shape was used on #1043/#1045/#1046/#1047 (those printed green, so no harm —
+  but there was no enforcement in any of them either). This is the **second** occurrence of the class:
+  the 2026-08-03 cancelled-bucket fix in this same file records the identical `| tail -3 &&`
+  invocation as the reason that defect surfaced at all. A guard piped through `tail` is disarmed
+  exactly as thoroughly as the bug the guard was written to catch, and "be more careful" does not fix
+  a shell operator. **Fix: collapse gating and merging into ONE process.**
+  `bash scripts/pre-merge-gate-check.sh --merge <PR>` runs the gate, then reaches
+  `gh pr merge <PR> --squash --delete-branch` through a single `if` on the gate's own return code —
+  there is exactly one `gh pr merge` call site in the file and it is inside that branch, so no exit
+  status is left for a caller's pipeline to swallow. `--squash --delete-branch` is house practice,
+  verified rather than assumed: every PR merged since #1013 landed on `main` as a single `… (#NNNN)`
+  squash commit, and the repo has `delete_branch_on_merge=false`, so the branch must be deleted
+  explicitly. **`--admin` is NOT auto-granted.** Bare `--admin` is rejected (exit 2); the override is
+  `--merge --admin-reason "<why>"`, the reason string is echoed into the output above the merge, and
+  it is accepted **only** when every gate RAN and the sole non-green entries are `fail`/`cancel`.
+  Pending, CONFLICTING, non-OPEN and missing-required-gate refusals are classified `STRUCTURAL` via a
+  private side-channel file and are **never** overridable — a pending check has produced no verdict,
+  and that is precisely the #1049 state. **Default behaviour is byte-identical:** with no flags the
+  gate's stdout and exit code are unchanged, proven by diffing the pre-change script against the new
+  one on two live PRs — #1049 (merged ⇒ `not OPEN`, 60 bytes, exit 1) and #1048 (all-green, 605
+  bytes, exit 0) — both `STDOUT IDENTICAL`. The new stderr warning (see below) is the only addition,
+  and it is on stderr precisely so piped stdout stays identical. **Proven in both directions with a
+  `gh` stub that logs every invocation:** 4 pending ⇒ `⛔ NO MERGE ISSUED`, exit 1, **zero** `gh pr
+  merge` calls; 4 pending **+ `--admin-reason`** ⇒ `⛔ --admin-reason REFUSED: this refusal is
+  STRUCTURAL`, zero merge calls; a `fail` bucket ⇒ zero merge calls; `CONFLICTING` ⇒ zero merge calls
+  (and it never even reaches the check list); all-green ⇒ exactly
+  `gh pr merge 1234 --squash --delete-branch`; `fail` + `--admin-reason` ⇒
+  `gh pr merge 1234 --squash --delete-branch --admin` with the reason printed. The regression itself
+  is pinned: `--merge <PR> | tail -3` on the pending fixture leaves the pipeline exit status at 0 —
+  and **zero merge commands are issued**, because the decision never leaves the process. Additionally,
+  when `--merge` was NOT used and **stdout is not a tty** (`[ -t 1 ]` false — exactly the footgun
+  shape), the script prints a warning naming `#1049` and the `--merge` form. It goes to **stderr**,
+  which the pipe does not capture, so it reaches the human even while `tail` truncates stdout, and it
+  is emitted from an `EXIT` trap so it survives `2>&1 | tail -N` and fires on every exit path.
+  Honesty note kept in the record: the default mode still cannot stop a caller who insists on
+  chaining — that hole lives in the caller's shell, not in this script — which is why `CLAUDE.md`
+  now prescribes the `--merge` form as *the* way to merge.
+- **fix(auth): the "why the shed divergence is safe" rationale in `adapter_pat.rs` rested on a
+  security argument its own author later withdrew — two of its three bullets were false.** The
+  comment above `a_saturated_shared_burn_bucket_sheds_only_the_unknown_arm` documents the one
+  accepted state where the row-NOT-FOUND arm sheds `503` while a live PAT resolves. Bullet 1
+  claimed "an attacker who holds the signing key can mint valid PATs outright and has no use for a
+  liveness bit" — false: the key mints an HMAC, not access. A PAT authenticates only if a live D1
+  row exists whose `pat_hash` Argon2id-verifies the presented secret (step 3,
+  `verify_with_hash_multi`), and writing D1 is not something the signing key grants. A key-holder
+  can mint `token_id.<any secret>` at will, so "valid signature, wrong secret" is a state they
+  construct freely and a liveness bit **is** their reconnaissance step. Bullet 3 was backwards: it
+  cited the dummy burn and `INV-AUTH-CONSTANT-TIME-COLD-PAD` as covering the latency axis, but in
+  this exact state the burn is *skipped* — and since #1046 the shared-bucket acquire is
+  non-blocking, so the unknown arm answers immediately with no Argon2id while the live arm pays a
+  full one. The pad covers nothing here; the gap is wider than the comment implied, not narrower.
+  The corrected rationale rests on what is actually load-bearing: the only edge-unauthenticated
+  surface (OCI `/token`) collapses both arms into one scrubbed 401; every surface that *does*
+  distinguish them is gated (the Worker's `extractAuth` 401s `pat_not_found` at the edge before
+  forwarding and its verify cache is positives-only, so the arm is unreachable there;
+  `/internal/v1/auth/introspect` demands the internal-auth key on top of the signing key); and the
+  timing residual is *accepted and named*, not explained away. The test gains a wrong-secret arm —
+  same saturation, same free tenant bucket, live `token_id` presented with a non-matching secret →
+  `InvalidPat` — so the pinned divergence isolates row-existence instead of conflating it with
+  credential-correctness. Comment and test only; no production code path changed.
 - **fix(deploy): the exact wrangler pin was never in force on the production deploy path — a
   `-x` path test silently discarded the CI override and every prod deploy ran
   `npx wrangler@latest`.** `.github/workflows/cf-deploy-prod.yml` installs `wrangler@4.95.0`

@@ -220,15 +220,62 @@ impl MoatCache {
     ///
     /// A map hit whose CAS blob has been GC'd is treated as a miss (the caller
     /// re-fetches upstream + re-stores), not an error.
+    ///
+    /// Timed as the `ostore` sub-phase of the Worker's `origin` block (see
+    /// [`crate::origin_timing`]): the whole storage cost of a cache lookup —
+    /// the url-map read AND, on a map hit, the CAS/R2 blob fetch. The work is
+    /// in [`Self::get_untimed`]; this wrapper only starts and stops a clock.
+    ///
+    /// On the cargo read path the url-map read is now served from the `pat`
+    /// read's co-read ([`crate::d1_coread`]), so `ostore` measures ~0 on a miss
+    /// and the CAS/R2 fetch alone on a hit; the round trip it used to measure
+    /// moved into `opat`, which now carries both statements. The phases still
+    /// sum exactly — the millisecond changed phase, it did not disappear.
     pub async fn get(&self, namespace: &str, url_hash: &str) -> Result<Option<Vec<u8>>, MoatError> {
-        let content_hash = match self
-            .map
-            .get(namespace, url_hash)
-            .await
-            .map_err(MoatError::Backend)?
-        {
-            Some(h) => h,
-            None => return Ok(None),
+        crate::origin_timing::timed(
+            crate::origin_timing::Phase::Store,
+            self.get_untimed(namespace, url_hash),
+        )
+        .await
+    }
+
+    /// The unwrapped body of [`Self::get`] — see it for the contract.
+    async fn get_untimed(
+        &self,
+        namespace: &str,
+        url_hash: &str,
+    ) -> Result<Option<Vec<u8>>, MoatError> {
+        // The url-map row may already be in hand: on the cargo read path the
+        // container's per-request D1 `pat` read carries it in the SAME round
+        // trip (see [`crate::d1_coread`]), which is what collapsed `opat` +
+        // `ostore` from two RTTs to one.
+        //
+        // ⚠️ AUTH BEFORE ACT. `namespace` here is the tenant the container
+        // derived from the PAT (the moat is NEVER keyed by the Worker's tenant
+        // header), and `take` serves the prefetched row ONLY under an exact
+        // `(namespace, url_hash)` match with the key it was fetched under. So a
+        // prefetch is consumable only after the PAT verify that produced this
+        // very `namespace` has already succeeded, and a hint that named a
+        // different tenant is discarded unread — we fall through to the real,
+        // correctly-keyed read below. There is no path on which a row fetched
+        // under one namespace is served under another.
+        let prefetched = crate::d1_coread::take(namespace, url_hash);
+        let content_hash = match prefetched {
+            Some(hit) => match hit {
+                Some(h) => h,
+                // A co-read MISS is a real answer, and it is the hot one: the
+                // whole 404 path now costs zero storage round trips.
+                None => return Ok(None),
+            },
+            None => match self
+                .map
+                .get(namespace, url_hash)
+                .await
+                .map_err(MoatError::Backend)?
+            {
+                Some(h) => h,
+                None => return Ok(None),
+            },
         };
         let handler = Arc::clone(&self.cas_read);
         let req = CasReadRequest::new(
@@ -273,7 +320,26 @@ impl MoatCache {
 
     /// Store `bytes` content-addressed + map `(namespace, url_hash)` to the
     /// content-hash. Identical bytes (any namespace/url) dedup to one CAS blob.
+    ///
+    /// Timed as `ostore`, like [`Self::get`] — a write's storage cost belongs
+    /// to the same phase as a read's, so a probe against the write path
+    /// attributes without a second convention.
     pub async fn put(
+        &self,
+        namespace: &str,
+        url_hash: &str,
+        bytes: Vec<u8>,
+        storage_quota_bytes: Option<i64>,
+    ) -> Result<(), MoatError> {
+        crate::origin_timing::timed(
+            crate::origin_timing::Phase::Store,
+            self.put_untimed(namespace, url_hash, bytes, storage_quota_bytes),
+        )
+        .await
+    }
+
+    /// The unwrapped body of [`Self::put`] — see it for the contract.
+    async fn put_untimed(
         &self,
         namespace: &str,
         url_hash: &str,
@@ -322,11 +388,17 @@ impl MoatCache {
     /// (content dedup), so removing it here could break an unrelated mapping;
     /// unreferenced blobs are reclaimed by the storage GC, not by this path.
     /// Idempotent: deleting an absent key succeeds.
+    ///
+    /// Timed as `ostore`, like [`Self::get`] / [`Self::put`] — sccache's
+    /// write-probe cleanup issues one of these per build, so it is on the
+    /// measured surface.
     pub async fn delete(&self, namespace: &str, url_hash: &str) -> Result<(), MoatError> {
-        self.map
-            .delete(namespace, url_hash)
-            .await
-            .map_err(MoatError::Backend)
+        crate::origin_timing::timed(
+            crate::origin_timing::Phase::Store,
+            self.map.delete(namespace, url_hash),
+        )
+        .await
+        .map_err(MoatError::Backend)
     }
 }
 

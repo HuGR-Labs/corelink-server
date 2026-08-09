@@ -352,7 +352,7 @@ candidates:
     title: "Container/platform crate cluster"
     status: "active"
     source_cluster: "crates"
-    seed_from: ["crates/corelink-container", "crates/corelink-config-do", "crates/corelink-cf-bindings", "crates/corelink-meta", "crates/corelink-handler-admin", "crates/corelink-handler-customer", "crates/corelink-worker", "crates/corelink-wasm", "crates/tenant-path", "crates/corelink-container/src/adapter_cache.rs", "crates/corelink-container/src/adapter_kv.rs", "crates/corelink-container/src/adapter_oci_kv.rs", "crates/corelink-container/src/neon_shadow_factory.rs", "crates/corelink-container/src/wall_clock.rs", "crates/corelink-container/src/webhook.rs"]
+    seed_from: ["crates/corelink-container", "crates/corelink-config-do", "crates/corelink-cf-bindings", "crates/corelink-meta", "crates/corelink-handler-admin", "crates/corelink-handler-customer", "crates/corelink-worker", "crates/corelink-wasm", "crates/tenant-path", "crates/corelink-container/src/adapter_cache.rs", "crates/corelink-container/src/adapter_kv.rs", "crates/corelink-container/src/adapter_oci_kv.rs", "crates/corelink-container/src/neon_shadow_factory.rs", "crates/corelink-container/src/wall_clock.rs", "crates/corelink-container/src/webhook.rs", "crates/corelink-container/src/origin_timing.rs", "crates/corelink-container/src/d1_coread.rs"]
   # ---- Dedicated deep-dive concepts for load-bearing subsystems the breadth
   #      clusters above only NAME-DROP (final-audit LENS-4 completeness gaps,
   #      2026-06-28). These crates remain in their cluster's seed_from for breadth;
