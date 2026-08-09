@@ -5,7 +5,7 @@ description: "The machine-readable --output=json contract (with SemVer disciplin
 source_files:
   - "docs/cli/json-output-schema.md"
   - "docs/cli/telemetry.md"
-checkpoint_sha: "ec9a1e0cfc1f7d48e904a1cee70245ca9ef8ad83"
+checkpoint_sha: "2353f8087b481e9371bdd028a08672a8e753df63"
 provenance: "AUTHORED"
 tags: ["ops", "cli", "json", "telemetry", "privacy", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -27,8 +27,8 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 # How it works
 
 - Every subcommand accepts `--output=json` (with a `--json` shorthand on `doctor`) `docs/cli/json-output-schema.md:17-30`.
-- Each subcommand has a fixed JSON shape (ls/get/put/stat/bench/doctor/version/config); `ls` returns one **page** of the server's `GET /v1/cas/{tenant}` body — `{"blobs":[{"hash","size","created_at"}],"next_cursor":<string|null>}` with no `total_count` `docs/cli/json-output-schema.md:34-183`.
-- Errors go to stderr with exit 1 for general failures and exit 2 for CTRL-CRED-001 violations `docs/cli/json-output-schema.md:185-198`.
+- Each subcommand has a fixed JSON shape (ls/get/put/stat/bench/doctor/version/config); `ls` returns one **page** of the server's `GET /v1/cas/{tenant}` body — `{"blobs":[{"hash","size","created_at"}],"next_cursor":<string|null>}` with no `total_count` `docs/cli/json-output-schema.md:34-191`.
+- Errors go to stderr with exit 1 for general failures and exit 2 for CTRL-CRED-001 violations `docs/cli/json-output-schema.md:195-208`.
 - Telemetry is opt-in, default off — no data leaves the machine until enabled `docs/cli/telemetry.md:10-15`.
 - The collected fields are a fixed, minimal set (version, os, subcommand, outcome, duration, anonymized id) `docs/cli/telemetry.md:18-29`.
 - Opt-in/out is a single config command writing `~/.corelink/config.toml` `docs/cli/telemetry.md:46-64`.
@@ -37,24 +37,24 @@ evolves, and exactly what (minimal, anonymous) data the binary may phone home wh
 # Invariants
 
 - SemVer discipline: additive fields are MINOR, removing/renaming is MAJOR, deprecations warn ≥ 90 days `docs/cli/json-output-schema.md:13-15`.
-- The PAT is always redacted in output; passing it as a CLI arg is a hard exit-2 CTRL-CRED-001 violation `docs/cli/json-output-schema.md:193-198`.
+- The PAT is always redacted in output; passing it as a CLI arg is a hard exit-2 CTRL-CRED-001 violation `docs/cli/json-output-schema.md:203-208`.
 - Telemetry NEVER collects tenant_id, digests, PAT, file paths, IP, hostname, username/email, or any PII `docs/cli/telemetry.md:32-44`.
 - The `anonymized_id` is not linked to account/tenant/PAT, is rotatable, and is discardable `docs/cli/telemetry.md:87-94`.
 - Raw telemetry events are deleted within 7 days; only PII-free aggregates persist 90 days `docs/cli/telemetry.md:114-120`.
 
 # Gotchas
 
-- `write_latency` is `null` in `--read` mode and `read_latency` is `null` in `--write` mode — wrappers must tolerate the null `docs/cli/json-output-schema.md:100-125`.
+- `write_latency` is `null` in `--read` mode and `read_latency` is `null` in `--write` mode — wrappers must tolerate the null `docs/cli/json-output-schema.md:114-131`.
 - You can firewall-block the telemetry domain without affecting cache operations because it is a separate host from the data plane `docs/cli/telemetry.md:98-111`.
 
 # Citations
 
 1. `docs/cli/json-output-schema.md:13-15` — SemVer discipline for the JSON schema.
 2. `docs/cli/json-output-schema.md:17-30` — the global `--output=json` flag + subcommand set.
-3. `docs/cli/json-output-schema.md:34-183` — per-subcommand JSON shapes (`ls` is the paginated `{blobs,next_cursor}` page).
-4. `docs/cli/json-output-schema.md:100-125` — bench read/write latency nullability.
-5. `docs/cli/json-output-schema.md:185-198` — error response + exit codes (1 general, 2 CTRL-CRED-001).
-6. `docs/cli/json-output-schema.md:193-198` — PAT-in-args exit-2 violation.
+3. `docs/cli/json-output-schema.md:34-191` — per-subcommand JSON shapes (`ls` is the paginated `{blobs,next_cursor}` page).
+4. `docs/cli/json-output-schema.md:114-131` — bench read/write latency nullability.
+5. `docs/cli/json-output-schema.md:195-208` — error response + exit codes (1 general, 2 CTRL-CRED-001).
+6. `docs/cli/json-output-schema.md:203-208` — PAT-in-args exit-2 violation.
 7. `docs/cli/telemetry.md:10-15` — opt-in, default-off telemetry.
 8. `docs/cli/telemetry.md:18-29` — the minimal collected field set.
 9. `docs/cli/telemetry.md:32-44` — the never-collected list (no PII).

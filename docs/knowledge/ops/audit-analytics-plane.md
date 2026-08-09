@@ -22,7 +22,7 @@ source_files:
   - "apps/analytics-worker/src/ingest.ts"
   - "apps/signup-worker/src/webhooks/audit_drain_cron.ts"
   - "docs/cli/audit-export.md"
-checkpoint_sha: "3b77668adffbbbd52e9531b24edd3cb2e916f36a"
+checkpoint_sha: "2353f8087b481e9371bdd028a08672a8e753df63"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -111,13 +111,13 @@ another tenant's rows.
 - Analytics data access is gated per-tenant: the PAT gate rejects forged/wrong-tenant (401) or verifier fault (503) before reads `crates/corelink-container/src/routes/audit_analytics.rs:124-129`.
 - The edge ingest tap is authenticated, never anonymous: an event with neither an allow-listed `Origin` nor a correct constant-time-matched `X-Corelink-Ingest-Key` is rejected 403 before any D1 write `apps/analytics-worker/src/ingest.ts:127-136`.
 - PII can never land in the analytics store: the edge validator hard-rejects any event whose `properties` carries an `email`/`ip`/`ip_address`/`remote_addr` field — the privacy rule is enforced at the gate, not left to each caller `apps/analytics-worker/src/ingest.ts:104-107`.
-- A mid-stream abort surfaces as sysexits DATAERR (65) on the CLI, distinct from generic exit 1 `docs/cli/audit-export.md:79-89`.
-- The bearer token is never logged, printed, or surfaced in error messages (CTRL-CRED-001) `docs/cli/audit-export.md:91-99`.
+- A mid-stream abort surfaces as sysexits DATAERR (65) on the CLI, distinct from generic exit 1 `docs/cli/audit-export.md:84-90`.
+- The bearer token is never logged, printed, or surfaced in error messages (CTRL-CRED-001) `docs/cli/audit-export.md:98-101`.
 
 # Gotchas
 
-- The HTTP-fetch path caps the response body at 64 MiB so a malicious server cannot drain CLI memory `docs/cli/audit-export.md:100-102`.
-- If both the `--chain-head-anchor` flag and the response header are present they MUST match constant-time — a mismatch is an error, not a warning `docs/cli/audit-export.md:51-55`.
+- The HTTP-fetch path caps the response body at 64 MiB so a malicious server cannot drain CLI memory `docs/cli/audit-export.md:105-107`.
+- If both the `--chain-head-anchor` flag and the response header are present they MUST match constant-time — a mismatch is an error, not a warning `docs/cli/audit-export.md:60`, `docs/cli/audit-export.md:102-104`.
 
 # Citations
 
@@ -129,9 +129,9 @@ another tenant's rows.
 6. `crates/corelink-container/src/routes/audit_analytics.rs:124-129` — per-handler native PAT possession gate (in-barrel impl).
 7. `docs/cli/audit-export.md:10-31` — CLI offline (file) re-verify mode.
 8. `docs/cli/audit-export.md:33-55` — CLI HTTP-aware re-verify + anchor cross-check.
-9. `docs/cli/audit-export.md:79-89` — exit-65 sysexits DATAERR on mid-stream abort.
-10. `docs/cli/audit-export.md:91-99` — token never logged (CTRL-CRED-001) + constant-time anchor compare.
-11. `docs/cli/audit-export.md:100-102` — 64 MiB response-body cap.
+9. `docs/cli/audit-export.md:84-90` — exit-65 sysexits DATAERR on mid-stream abort.
+10. `docs/cli/audit-export.md:98-104` — token never logged (CTRL-CRED-001) + constant-time anchor compare.
+11. `docs/cli/audit-export.md:105-107` — 64 MiB response-body cap.
 12. `apps/analytics-worker/src/ingest.ts:114-136` — the edge `POST /v1/event` collector entry (CORS-origin OR ingest-key auth, 403 otherwise); the dual-auth 403 gate at `apps/analytics-worker/src/ingest.ts:127-136`; the constant-time key compare `constantTimeEqual` at `apps/analytics-worker/src/ingest.ts:71-78`.
 13. `apps/analytics-worker/src/ingest.ts:85-112` — the `validate()` event gate (closed `event_name` allow-list + size bounds); the hard PII privacy gate forbidding `email`/`ip`/`ip_address`/`remote_addr` in `properties` at `apps/analytics-worker/src/ingest.ts:104-107`.
 14. `crates/corelink-container/src/routes/audit_analytics/audit_sink.rs:76-85` — analytics `emit_or_503` fail-CLOSED helper (drops success response, returns 503 on sink `Err`).
