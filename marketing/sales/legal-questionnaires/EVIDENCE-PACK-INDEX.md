@@ -135,7 +135,7 @@ If a question family is not listed here, escalate to DPO before answering — it
 | 87 | PGP key | `/.well-known/security-pgp.asc` | PUBLIC |
 <<<<<<< HEAD
 | 88 | **SLO catalog** | `specs/03_architecture/slo_catalog.md` | NDA |
-| 89 | SLO — public summary | `https://docs.corelink.humangr.com/slo` | PUBLIC |
+| 89 | SLO — public summary | `https://corelink-docs.humangr.com/slo` | PUBLIC |
 =======
 | 88 | **SLO catalog** | `specs/03_architecture/slo_catalog.md` | NDA |
 | 89 | SLO — public summary | **not published** — `/slo` 404s on the live docs site and no source page exists; use row 88 | NDA |

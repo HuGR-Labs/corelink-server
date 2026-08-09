@@ -81,7 +81,7 @@ This release contains forward-looking statements regarding planned product capab
 ## Media contact
 
 **press@humangr.com**
-Press kit, embargoed assets, executive bios, and high-resolution logos: `corelink.humangr.com/press` (gated until embargo lift).
+Press kit, embargoed assets, executive bios, and high-resolution logos: `humangr.com/corelink/press` (gated until embargo lift).
 
 ## Wire distribution
 

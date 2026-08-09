@@ -28,7 +28,7 @@ Quick context on what we're shipping and why we think it matters.
 - Docs: corelink-docs.humangr.com
 - Trust center: corelink-docs.humangr.com/trust
 - Blog series (launch day): corelink-docs.humangr.com/blog
-- TLA+ specs: corelink.humangr.com/trust/formal-verification
+- TLA+ specs: humangr.com/corelink/trust/formal-verification
 
 I'll be here through the launch day responding. Thank you to **[HUNTER_NAME]** for the hunt, and to the engineers — both inside HuGR and at our three lighthouse customers — who got this to a place where we could ship it without flinching.
 

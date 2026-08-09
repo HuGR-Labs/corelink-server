@@ -108,7 +108,7 @@ If you have a working Bazel or Buck2 toolchain, the on-ramp is short. Sign up at
 
 - **Sign up:** `humangr.com/corelink/sign-up`
 - **Docs:** `corelink-docs.humangr.com`
-- **Press kit:** `corelink.humangr.com/press`
+- **Press kit:** `humangr.com/corelink/press`
 - **Trust center:** `corelink-docs.humangr.com/trust`
 
 We are deeply proud of this launch and of the customers who came along for the ride before there was a launch to come along to. If you have a build cache that is, today, the bottleneck in your inner loop — we would like to hear from you.

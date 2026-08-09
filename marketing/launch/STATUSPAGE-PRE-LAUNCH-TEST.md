@@ -36,7 +36,7 @@ Before any test runs, **all** of these must be true:
 
 - [ ] `STATUSPAGE-INIT.md` §1–§7 complete (page exists, components present, secrets stored).
 - [ ] DNS for `status.corelink.humangr.com` resolves; TLS cert valid for ≥ 80 days.
-- [ ] Fallback page at `https://corelink.humangr.com/status` returns HTTP 200.
+- [ ] Fallback page at `https://humangr.com/corelink/status` returns HTTP 200.
 - [ ] Webhook receiver spec reviewed; **native PagerDuty → Statuspage integration is the active path under test** (custom receiver is spec-only for GA).
 - [ ] **Test component created:** add a 9th component called `TEST — DO NOT SUBSCRIBE` in group `Operations`. Visibility: **public**, **but** marked with a banner description: "Internal test surface; do not subscribe; will be removed before T-0."
 - [ ] **Test PagerDuty service created:** `corelink-statuspage-test-prerelease` with the Statuspage integration attached and pointing at the test component.
