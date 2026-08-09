@@ -22,6 +22,29 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **fix(container): call Cloudflare's OWN idle auto-destroy — `setInactivityTimeout` was documented
+  in `durable_object.ts` from day one and NEVER called.** The platform reaper
+  (`Container.setInactivityTimeout(ms)`, `worker-configuration.d.ts`) destroys an idle container
+  from inside workerd, with no help from this Worker. The repo instead hand-rolled the alarm reaper
+  in `alarm()`; it shipped in #927 and **never moved the live instance count off 35** (5 regions x 7
+  x 4 GiB resident). Measured 2026-08-08 on the per-application CF Containers API (the list endpoint
+  serves stale reads and must not be trusted): `syd` and `nrt` sat at `active: 0, healthy: 7` —
+  seven containers up in regions with zero traffic. Idle container **memory**, not vCPU, is the
+  dominant invoice line: the Jun-25/Jul-24 bill was $84.09 of Container Memory against $5.28 of vCPU
+  and $0.00 of Workers/R2/D1 traffic. Platform-side is strictly stronger than ours because it
+  survives DO eviction, a broken alarm chain and a wedged isolate — precisely the failure modes that
+  made containers immortal. The alarm reaper is **kept** as defence in depth and because it also
+  stops re-arming the chain, letting the DO hibernate (a live alarm chain bills DO duration alone).
+  ⚠️ The type declaration carries no doc-comment, so it is **unspecified** whether the timer resets
+  on activity or is an absolute deadline from arming; it is therefore armed at start **and** re-armed
+  from `alarm()` while the container is non-idle — correct under both readings, and never on the
+  request path. Arming failures are logged, never thrown: a container that cannot arm its idle timer
+  must still serve, but must not fail silently — a silently unarmed timer is exactly how this leak
+  survived a whole fix cycle. **Not proven to fix the bill:** the only acceptable proof is the live
+  instance count falling after deploy, and prod containers are currently scaled to
+  `max_instances: 0` deliberately.
+
 ### Performance
 - **perf(container): the container's `pat` read and its url-map read were TWO serial D1 round trips
   on the sccache hot path; they now travel as one statement.** The `origin` split shipped in #1053
