@@ -850,7 +850,7 @@ export async function mintScopedPat(
  * (holding `CORELINK_INTERNAL_AUTH_KEY`) may call it, AND it must present a
  * valid user session AND the audience must match. Three independent checks.
  *
- * Fail-CLOSED throughout: internal-auth (401/403), method (405), secrets (403),
+ * Fail-CLOSED throughout: internal-auth (401/503 — `requireInternalAuth` never 403),
  * session (401/403), audience required+match (400/403), bad scope (400),
  * throttle (429), upstream (500).
  */

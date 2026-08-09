@@ -33,18 +33,29 @@ launch blocker.
 
 ### LOW-1 — `pat_mint` / `admin` / `erase` / `runner_mint` consumer keys fall back to the shared `CORELINK_INTERNAL_AUTH_KEY`
 
-- **Where:** `worker/src/lib/internal_auth.ts:73-90` (`resolveConsumerKey`);
-  mirrored in `crates/corelink-container/src/routes/internal_pat.rs:698-707`
-  (`resolve_internal_auth_key("CORELINK_PAT_MINT_AUTH_KEY").or_else(... shared)`).
+- **Where:** `worker/src/lib/internal_auth.ts:159-198` (`resolveConsumerKey`).
+- **Status 2026-08-05 — the container mirror named here NO LONGER falls back, and
+  arguably never should have been described as mirroring.** This finding cited
+  `internal_pat.rs` as doing `resolve_internal_auth_key("CORELINK_PAT_MINT_AUTH_KEY")
+  .or_else(... shared)`. At HEAD the mint resolver is `resolve_mint_auth_key`
+  (`crates/corelink-container/src/routes/internal_pat.rs:763-771`, doc `742-761`),
+  a pure function that reads NOTHING but the dedicated value and **never** consults
+  the shared key — an absent/blank/<32-char value yields `None` and the route is not
+  mounted (503). The `.or_else(...)` at `:797` is a LOGGING branch, not a key
+  fallback. So for `pat_mint` the container is strictly stronger than the Worker,
+  and the Worker-side fallback this finding describes is real but UNMIRRORED.
 - **Risk:** Until the operator provisions the dedicated per-consumer keys, all
   four consumer surfaces (signup PAT-mint, admin, erase, runner-mint) authenticate
   against the SAME `CORELINK_INTERNAL_AUTH_KEY`. A leak of that one shared secret
   unlocks every one of those surfaces — the least-privilege benefit the split was
   designed to give is only realized once the dedicated keys are actually set.
 - **Assessment:** This is a **documented, intentional** flag-day-free rollout
-  shape (internal_auth.ts:41-43, 51-57) — the dedicated key is preferred when
-  present, the shared key is the fallback, and a sub-floor (<32 char) dedicated
-  key is treated as absent rather than weakening the gate. **Crucially, the two
+  shape (internal_auth.ts:38-47, 142-155, 172-197) — the dedicated key is preferred
+  when present and the shared key is the fallback **only when the dedicated key is
+  UNSET**. A sub-floor (<32 char) dedicated key is **NOT** treated as absent: it is
+  REFUSED fail-closed and logged, because falling through there would hand that
+  consumer the broad shared key exactly when the operator was trying to isolate it.
+  (This bullet asserted the opposite; corrected 2026-08-04 against the code.) **Crucially, the two
   highest-blast-radius dedicated keys do NOT fall back** (see INFO-1), so the
   fallback is confined to the worker-side `/internal/*` mint family.
 - **Fix (launch hardening, not blocker):** Provision `CORELINK_PAT_MINT_AUTH_KEY`,
@@ -54,18 +65,25 @@ launch blocker.
 
 ### LOW-2 — `handleRunnerMint` re-reads the shared key directly with a weaker length check
 
-- **Where:** `worker/src/lib/runner_mint.ts:130-133`.
+- **Where:** `worker/src/lib/runner_mint.ts:287-288` (the read; `:282-286` is the
+  rationale comment). The originally cited `:130-133` is a different function's
+  doc-comment at HEAD.
 - **Detail:** After the `requireConsumerAuth(..., "runner_mint", ...)` gate passes,
-  the handler re-reads `env.CORELINK_INTERNAL_AUTH_KEY` to present to the
-  container's `/_internal/pat/mint` route, guarding only on `length === 0` (not the
-  `>= 32` floor the gate enforces). A 1–31-char shared key would pass this second
+  the handler re-reads the onward credential to present to the container's
+  `/_internal/pat/mint` route, guarding only on `length === 0` (not the
+  `>= 32` floor the gate enforces). **Status 2026-08-05:** the read is now
+  `env.CORELINK_PAT_MINT_AUTH_KEY ?? env.CORELINK_INTERNAL_AUTH_KEY` — dedicated
+  key first, shared only as fallback — not the bare shared re-read this finding
+  described. The weak `length === 0` guard is UNCHANGED, so the finding stands. A 1–31-char shared key would pass this second
   check yet would have been rejected by `resolveConsumerKey` — but only if a
   ≥32-char *dedicated* runner key existed, in which case the mint-to-container call
   would still present the short shared key. In practice the container's own gate
   (`internal_pat.rs` `< 32` floor) rejects it, so this fails closed downstream.
 - **Risk:** None exploitable (container rejects sub-floor keys), but the
   inconsistency means a misconfigured short shared key surfaces as a confusing
-  container-side 401/403 rather than a clean worker-side 403.
+  container-side 401/403 rather than a clean worker-side **503** (the worker gate
+  returns 503, NOT 403, for an unresolvable key — `internal_auth.ts:264-269` and
+  `:304-310`, whose comments say "503, NOT 403" verbatim).
 - **Fix:** Use the gate's `MIN_INTERNAL_AUTH_KEY_LEN` floor here too, or reuse the
   already-resolved key from the gate instead of re-reading the env.
 
@@ -133,7 +151,7 @@ launch blocker.
   single idempotent `UPDATE pat SET revoked_at_ms WHERE ... AND revoked_at_ms IS
   NULL`, tenant-scoped (REV-S2) to bound a leaked runner-mint key's blast radius.
 - **Constant-time internal-auth compare:** both the TS gate
-  (`internal_auth.ts:112-127` `constantTimeSecretEqual`) and the Rust gate
+  (`internal_auth.ts:220-235` `constantTimeSecretEqual`) and the Rust gate
   (`internal_pat.rs` / `dsr.rs:127-146` `internal_auth_ok`) pad the provided value
   to the expected length, run ONE `timingSafeEqual`/`ct_eq`, then AND a single
   length-equality bit — no length oracle (CAA-360 #27).

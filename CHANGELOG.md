@@ -23,6 +23,53 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(test): the `wdb` sub-phase harness's "no delay" case had a 150 ms delay in it — and the suite
+  passes either way, which is why it survived two reviews and a re-introduction.** The no-delay sentinel
+  was a MEMBER of `SlowTarget` (`"none"`) while `phaseOf` returned that same value for a statement it
+  could not classify, so `makeEnv("none")` delayed every unnamed statement — including
+  `SELECT tier FROM tier_selections` inside the `wdb` window, and the PAT lookup. Counted on this base with an
+  instrumented mock, the supposedly-quiet case injected **3** delays in a cold isolate (the PAT
+  lookup, the suspend-gate read and `tier_selections`) and **0** after the fix. The wall-clock split
+  is order-dependent — `beforeEach` resets the tier and residency caches but not the suspend gate, so
+  a warm predecessor hides one injection — which is why the injection COUNT is the honest figure and
+  the millisecond split is not quoted as a fixed measurement. The sentinel now lives OUTSIDE the union (`SlowTarget | null`),
+  so "delay nothing" and "cannot classify this" can no longer be the same value. This is a correctness
+  bug in the INSTRUMENT, invisible to the instrument's own assertions — it had to be measured, not
+  asserted. Also fixed a companion assertion that the above would have rendered vacuous: the cache-warm
+  `qtier` bound now runs against a declared tier delay, proven RED by disabling the L1 tier cache
+  ("expected 151 to be less than 50").
+
+### Documentation
+- **docs(auth): the repo documented a fail-closed control as fail-open, including in the function's own
+  normative contract.** `resolveConsumerKey` REFUSES the shared-key fallback for a dedicated key that is
+  SET but under the length floor, and logs "REFUSING to fall back … that would silently widen the blast
+  radius". Its doc-comment claimed the opposite — *"A too-short dedicated key is treated as ABSENT (falls
+  through to the shared key)"* — and that phrasing had been copied into the `Env` declaration, the
+  live `/_internal/*` gate comment, `requireConsumerAuth`'s own JSDoc, the `Env` block preamble, and
+  the 2026-06-23 credentials security review — six sites in all, found across two review rounds.
+  **A THIRD round found a second, distinct wrong claim about the same two gates — the STATUS CODE.**
+  `requireInternalAuth` / `requireConsumerAuth` return **503** for an unresolvable key (their own
+  comments say "503, NOT 403" verbatim, and the 403 is what silently ate every runner job in the
+  fleet until 2026-08-02). Four more sites still asserted the retired 403: the `internal_auth.ts`
+  MODULE HEADER — i.e. the header this very PR rewrote, four lines above the sentence it fixed —
+  and the route JSDocs of `runner_mint.ts` and `auth_rotate.ts`, which carry the same templated
+  "401 wrong/missing header, 403 no sized key" line, plus `session_exchange.ts`, whose
+  fail-CLOSED summary billed the `requireInternalAuth` gate as "401/403". The security review's LOW-2 asserted the same
+  wrong status. **Two of that review's findings also rested on premises that are false at HEAD:**
+  LOW-1 cited the container as MIRRORING the shared-key fallback, but `resolve_mint_auth_key` reads
+  nothing but the dedicated key and never consults the shared one; LOW-2 described a bare shared
+  re-read that is now dedicated-key-first. Both are recorded as dated status notes rather than
+  rewritten, so the point-in-time audit trail survives. Separately, `auth_rotate.ts` justified its
+  mandatory `owner_tenant` as "exactly like the sibling `runner_revoke`" — a control the
+  2026-07-08 owner-ratified runners contract had since made OPTIONAL; the rationale now stands on
+  its own F-006 footing instead of on a sibling that no longer does it. Concrete risk: someone simplifying the function to match its
+  documented contract reintroduces exactly the widening the code was written to prevent. No behaviour
+  change. The `internal_auth.ts` module header now also states what the shared key IS, enumerated by
+  ROLE and shipping the grep that re-derives the enumeration, because a count in prose is a claim and
+  this one was wrong in five successive drafts: six inbound gates accept it, two of which have NO
+  per-consumer isolation at all, and the `onboarding`/tier-select-checkout arm reads it with no
+  dedicated-key preference — so provisioning a dedicated key can never narrow that one, and it is on the
+  money path.
 - **fix(container): call Cloudflare's OWN idle auto-destroy — `setInactivityTimeout` was documented
   in `durable_object.ts` from day one and NEVER called.** The platform reaper
   (`Container.setInactivityTimeout(ms)`, `worker-configuration.d.ts`) destroys an idle container

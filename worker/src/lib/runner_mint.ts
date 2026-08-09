@@ -211,7 +211,9 @@ async function resolveTenantFromAcquiringPat(
  *   1. Method gate (POST only → 405).
  *   2. Internal-auth gate — the `runner_mint` consumer key
  *      (`CORELINK_RUNNER_MINT_AUTH_KEY`) with fallback to the shared
- *      `CORELINK_INTERNAL_AUTH_KEY` (401 wrong/missing header, 403 no sized key).
+ *      `CORELINK_INTERNAL_AUTH_KEY` (401 wrong/missing header, 503 no sized key —
+ *      `requireConsumerAuth` returns 503, NOT 403: an unbound key is a config
+ *      fault, and this route's dispatcher drops the job forever on a 403).
  *   3. Secrets: a properly sized internal-auth key must be bound to AUTHORIZE
  *      the mint to the container (the mint is server-to-server). The runner-mint
  *      surface needs NO Clerk secret (no session is verified).

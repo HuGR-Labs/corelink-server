@@ -145,11 +145,13 @@ export interface Env {
   // container's just-merged Rust split (red-team #3): each internal consumer
   // gets its OWN key so a single leak does not unlock every internal surface.
   // Resolution per consumer (see lib/internal_auth.ts `resolveConsumerKey`):
-  // use the consumer-specific key iff set AND >= 32 chars; else the shared key
-  // iff >= 32; else fail-CLOSED. FROZEN names (identical to the Rust side):
+  // use the consumer-specific key iff set AND >= 32 chars; if it is SET but
+  // shorter, fail-CLOSED (never widened to the shared key); only when it is UNSET
+  // does the shared key serve, iff >= 32; else fail-CLOSED. FROZEN names:
   CORELINK_INTERNAL_AUTH_KEY?: string;
   // Per-consumer internal-auth keys (red-team #3 split). Each falls back to
-  // CORELINK_INTERNAL_AUTH_KEY when unset/short. Provisioned by the operator
+  // CORELINK_INTERNAL_AUTH_KEY when UNSET (a set-but-short key is refused
+  // fail-closed — see lib/internal_auth.ts). Provisioned by the operator
   // (`wrangler secret put …`) — see LEAD FLAGS in the PR. The container reads
   // the same names on its side.
   CORELINK_PAT_MINT_AUTH_KEY?: string; // gate for `/_internal/pat/mint`
@@ -1910,8 +1912,9 @@ const baseHandler: ExportedHandler<Env> = {
     // the container's Rust split — a leak of one consumer's secret must not unlock
     // every internal surface. The consumer is derived from the path prefix; each
     // consumer key falls back to the shared CORELINK_INTERNAL_AUTH_KEY when its
-    // dedicated key is unset/short (resolveConsumerKey). If neither qualifies,
-    // deny (fail-CLOSED — never open an unauthenticated proxy).
+    // dedicated key is UNSET (resolveConsumerKey) — a dedicated key that is set
+    // but under the floor is REFUSED rather than widened to the shared key. If
+    // neither qualifies, deny (fail-CLOSED — never open an unauthenticated proxy).
     if (route.routeKind === "internal") {
       const internalConsumer = internalConsumerForPath(route.pathSuffix);
       const internalAuthKey = resolveConsumerKey(env, internalConsumer);
