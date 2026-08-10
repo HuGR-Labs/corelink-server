@@ -22,6 +22,19 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Changed
+- **perf(container): right-size the prod cache container from `standard-1` (4 GiB / 0.5 vCPU) to
+  `basic` (1 GiB / 0.25 vCPU), cutting the always-on served-cost from ~$52/mo to ~$15/mo per the
+  2-instance pre-warm floor.** The container is an I/O-bound R2/D1 request server; its steady-state
+  working set fits comfortably in 1 GiB. Load-verified on the `iad` prod app (image `8c117c52-r1`):
+  it boots healthy in 1 GiB, and under 16 concurrent 10 MiB CAS PUTs + 32 concurrent Argon2id PAT
+  mints it held `health.instances.failed = 0` with zero OOM/crash/restart — excess load shed
+  gracefully as `429` (concurrency) / `413` (single-blob size cap), both pre-existing policy limits
+  independent of instance memory, not new regressions. The `0.25` vCPU (vs `0.5`) means earlier,
+  graceful backpressure under very high concurrency; a demand spike is a one-line revert to
+  `standard-1`. Applied to the base block, `[env.prod]`, and all five `[env.prod-*]` regional blocks
+  (identical image/binary across regions; `iad` is the load-tested representative).
+
 ### Fixed
 - **fix(deps): `trivy fs` went red for every PR on 5 HIGH CVEs published against dependencies already on `main`; 2 are FIXED by override and 2 have no fix to take.** The gate runs on `pull_request` only, never on push to `main` (`.github/workflows/trivy.yml:63`), so `main` showed green while every branch opened after the CVEs published failed identically — the failure looked like a property of whichever PR happened to be open. **Fixed, not suppressed** (the house rule `.trivyignore.yaml` already sets, and the precedent `ws@7.5.10` set): `js-yaml@4.3.0` GHSA-5p4m-2wfm-xmqj / CVE-2026-59870 (quadratic CPU in `!!omap` resolution) — the *existing* override `js-yaml@>=4.0.0 <4.3.0` → `>=4.3.0` had pinned the tree to exactly the version that later became vulnerable, a standing hazard of any lower-bound override, so both js-yaml bounds move up (`>=4.3.1`, `>=3.15.1`); and `nanoid@3.3.12` CVE-2026-67213 / CVE-2026-67214 (infinite loop) is reached via `postcss@8.5.19`, and a `nanoid@<3.3.17` → `>=3.3.17 <4` pnpm override resolves it to **3.3.18**; a second override covers the 4.x/5.x line at `>=5.1.16` so a future hoist cannot land back on a vulnerable major. **Accepted as risk, with Owner sign-off, because there is nothing to upgrade to:** `image-size@2.0.2` CVE-2025-71329 / CVE-2025-71330 (DoS via crafted image / ICNS) — `npm view image-size versions` ends at **2.0.2**, so 2.0.2 IS the latest ever published and no override can fix it. It is reached only through `@docusaurus/mdx-loader` (`pnpm-lock.yaml:13170`), i.e. the docs-site BUILD toolchain: not in the Worker, not in the container, not on any request path a customer can reach, and the only images it parses are ones we commit ourselves. Both entries are path-scoped to `pnpm-lock.yaml`, carry the `statement` the file's policy requires, are labelled **ACCEPTED RISK (not a false positive)** so a later reader cannot mistake them for a classification, and name their own retirement condition — an upstream patch, or the docs site being retired. **Not fixed here:** the gate's `pull_request`-only trigger is what let a repo-wide supply-chain finding masquerade as a per-PR failure; a scheduled run on `main` would have surfaced it as what it is.
 - **fix(test): the `wdb` sub-phase harness's "no delay" case had a 150 ms delay in it — and the suite
