@@ -695,17 +695,40 @@ impl LeasedQuotaStore {
                 // front (invariant 1). Serve THIS op from it and bank the
                 // remainder as the lease (invariant 3: remainder ≤ one
                 // chunk). Replace any stale lease for this tenant.
-                let mut leases = self
-                    .leases
-                    .lock()
-                    .map_err(|_| "LeasedQuotaStore: poisoned lock".to_owned())?;
-                let _ = leases.insert(
-                    tenant_id.to_owned(),
-                    Lease {
-                        remaining_micros: attempt - cost_micros,
-                        cycle_anchor_ms: anchor,
-                    },
-                );
+                {
+                    let mut leases = self
+                        .leases
+                        .lock()
+                        .map_err(|_| "LeasedQuotaStore: poisoned lock".to_owned())?;
+                    let _ = leases.insert(
+                        tenant_id.to_owned(),
+                        Lease {
+                            remaining_micros: attempt - cost_micros,
+                            cycle_anchor_ms: anchor,
+                        },
+                    );
+                }
+                // Near-$-ceiling telemetry (WP-C). The refill loop had to shrink
+                // below a full chunk to fit under the ceiling (it only halves
+                // when the inner store rejected a larger chunk), so this tenant
+                // is now within one lease-chunk of its monthly $-cap. Emit a
+                // structured warn as an early-warning signal BEFORE the hard 402
+                // (`quota_exceeded`). This is a by-product of the partial-lease
+                // logic — no extra D1 round-trip on the hot path — and is
+                // naturally low-volume: it can only fire on the last chunk(s) a
+                // cycle has left, and the served-from-lease fast path above skips
+                // it entirely. Routing this to a paging sink (Slack/PagerDuty) is
+                // a deliberate follow-up (C2); this increment lands it in the
+                // container's structured logs (queryable in the CF dashboard).
+                if attempt < full_chunk {
+                    tracing::warn!(
+                        tenant_id = %tenant_id,
+                        granted_micros = attempt,
+                        full_chunk_micros = full_chunk,
+                        cycle_anchor_ms = anchor,
+                        "tenant-quota: near monthly $-ceiling — refill granted a partial lease (within one chunk of the cap)"
+                    );
+                }
                 return Ok(true);
             }
             // The inner store rejected this chunk (over ceiling). If we were
