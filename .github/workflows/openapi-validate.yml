@@ -74,10 +74,12 @@ jobs:
   breaking-change-detection:
     name: breaking-change detection (vs base branch)
     if: github.event_name == 'pull_request'
-    # STAYS hosted: this job `go install`s oasdiff and Go is not baked into the
-    # corelink image. Migrate once Go is added (a later image increment) or
-    # oasdiff ships a pinnable prebuilt binary.
-    runs-on: ubuntu-latest
+    # Runner: `corelink` (zero-hosted). We do NOT bake Go into the shared box
+    # image just for this rare lane — oasdiff ships a prebuilt static binary, so
+    # the job downloads the SAME pinned version (v1.10.27) at runtime,
+    # sha256-verified, instead of `go install`. github.com egress is available at
+    # job time (same as actions/checkout). Keeps the runner image lean.
+    runs-on: corelink
     timeout-minutes: 10
     # PR context passed via env (not interpolated into run: shell) —
     # template-injection-safe (branch names + label JSON can carry shell
@@ -105,15 +107,27 @@ jobs:
             echo "info: no spec on base branch — first introduction; skipping diff"
           fi
 
-      - name: Install oasdiff
+      # Prebuilt oasdiff binary — verified pinned download (X4 supply-chain floor),
+      # replacing the previous `go install …@v1.10.27` so no Go toolchain is needed
+      # on the corelink box. Same version. The sha256 is from the release's OWN
+      # published checksums.txt (oasdiff/oasdiff v1.10.27, line
+      # `…  oasdiff_1.10.27_linux_amd64.tar.gz`) — NEVER fabricated.
+      - name: Install oasdiff (prebuilt binary, sha256-verified)
         if: steps.base.outputs.has_base == 'true'
+        env:
+          OASDIFF_VERSION: '1.10.27'
+          OASDIFF_SHA256: '09648692362fd63658bc83188d25465b47c900f59036f77cf9ae6064d41e3ed7'
         run: |
-          # v1.10.27's go.mod still declares the pre-rename module path
-          # (`github.com/tufin/oasdiff`); installing via the new
-          # `github.com/oasdiff/oasdiff` path fails "version constraints conflict".
-          # Use the path the pinned version actually declares.
-          go install github.com/tufin/oasdiff@v1.10.27
-          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/oasdiff.tar.gz
+          echo "${OASDIFF_SHA256}  /tmp/oasdiff.tar.gz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf /tmp/oasdiff.tar.gz -C "$HOME/.local/bin" oasdiff
+          rm -f /tmp/oasdiff.tar.gz
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/oasdiff" --version
 
       - name: Run oasdiff breaking-change scan
         if: steps.base.outputs.has_base == 'true'
