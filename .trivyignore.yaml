@@ -28,5 +28,32 @@ misconfigurations:
       should not run as root) does not apply to a throwaway test container that is
       root by design.
 
-# vulnerabilities: (none — the ws@7.5.10 CVE-2026-48779 is FIXED via a pnpm
-# override, not suppressed; Cargo.lock/RustSec is cargo-deny's lane, skipped in fs)
+# The ws@7.5.10 CVE-2026-48779 and the nanoid CVE-2026-67213/-67214 are FIXED via
+# pnpm overrides, not suppressed. Cargo.lock/RustSec is cargo-deny's lane, skipped
+# in fs. The one entry below is the exception, and it is an ACCEPTED RISK.
+
+vulnerabilities:
+  - id: CVE-2025-71329
+    paths:
+      - "pnpm-lock.yaml"
+    statement: >-
+      ACCEPTED RISK (not a false positive) — Owner sign-off required, see the PR
+      that introduced this entry. image-size@2.0.2 is Denial of Service via a
+      crafted image. There is NOTHING to upgrade to: 2.0.2 is the latest version
+      ever published (npm view image-size versions ends at 2.0.2), so no override
+      can fix it. It is reached only through @docusaurus/mdx-loader, i.e. the
+      docs-site BUILD toolchain — it is not in the Worker, not in the container,
+      and not on any request path a customer can reach. The only input it parses
+      is images committed to this repo by us. Re-check when image-size publishes
+      a patched release or when the docs site is retired; this entry must not
+      outlive either event.
+  - id: CVE-2025-71330
+    paths:
+      - "pnpm-lock.yaml"
+    statement: >-
+      ACCEPTED RISK (not a false positive) — Owner sign-off required, see the PR
+      that introduced this entry. Same package, same reachability, same absence of
+      a fix as CVE-2025-71329 above: image-size@2.0.2 Denial of Service via a
+      crafted ICNS, reached only via @docusaurus/mdx-loader at docs-build time,
+      parsing only images we commit ourselves. Retire this entry together with
+      CVE-2025-71329.
