@@ -74,7 +74,10 @@ jobs:
   breaking-change-detection:
     name: breaking-change detection (vs base branch)
     if: github.event_name == 'pull_request'
-    runs-on: corelink  # zero-hosted: node/python already baked into the corelink image
+    # STAYS hosted: this job `go install`s oasdiff and Go is not baked into the
+    # corelink image. Migrate once Go is added (a later image increment) or
+    # oasdiff ships a pinnable prebuilt binary.
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     # PR context passed via env (not interpolated into run: shell) —
     # template-injection-safe (branch names + label JSON can carry shell
