@@ -232,6 +232,15 @@ Each entry cross-references:
   `the quota gate issued 0 batch round trips: []`).
 
 ### Added
+- **feat(quota): near-$-ceiling early-warning telemetry.** The leased quota
+  gate (`crates/corelink-container/src/tenant_quota.rs`) now emits a structured
+  `warn!` the moment a tenant's lease refill has to shrink below a full chunk to
+  stay under the monthly $-cap — i.e. the tenant is within one lease-chunk of its
+  ceiling, *before* it hits the hard `402 quota_exceeded`. The signal is a
+  by-product of the existing partial-lease logic (no extra D1 round-trip on the
+  hot path) and is naturally low-volume (only the last chunk(s) of a cycle, and
+  never on the served-from-lease fast path). Lands in the container's structured
+  logs; routing it to a paging sink (Slack/PagerDuty) is a deliberate follow-up.
 - **feat(worker): the "route the container's D1 reads through its parent DO" proposal is a coin flip
   on ONE unmeasured fact — where the DO sits relative to the ENAM D1 primary. This ships the
   instrument that measures it, and nothing else.** The container reads D1 over the public REST API
