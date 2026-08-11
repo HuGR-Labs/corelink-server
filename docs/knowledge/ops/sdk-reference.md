@@ -6,7 +6,10 @@ source_files:
   - "docs/sdk/python.md"
   - "docs/sdk/go.md"
   - "docs/sdk/javascript.md"
-checkpoint_sha: "2353f8087b481e9371bdd028a08672a8e753df63"
+source_blobs:
+  - "docs/sdk/python.md@ec9f1468c8196bc7f53298b7b55cbb23219ede28"
+  - "docs/sdk/go.md@a02a374b5a65de2c0b471dcfc7544c22f22ba79b"
+checkpoint_sha: "d53bcc2dc642c656a37708e0f92c25bdf73e285e"
 provenance: "AUTHORED"
 tags: ["ops", "sdk", "client-verify", "blake3", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

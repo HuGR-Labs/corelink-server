@@ -6,7 +6,9 @@ source_files:
   - "docs/build/reproducible.md"
   - "specs/03_architecture/adrs/ADR-0015-reproducible-build-best-effort.md"
   - "rust-toolchain.toml"
-checkpoint_sha: "2353f8087b481e9371bdd028a08672a8e753df63"
+source_blobs:
+  - "docs/build/reproducible.md@98c49bb49cc7b3ba0a0af5b9417454d2e8af15cb"
+checkpoint_sha: "d53bcc2dc642c656a37708e0f92c25bdf73e285e"
 provenance: "AUTHORED"
 tags: ["ops", "reproducible-build", "supply-chain", "tamper-detection", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

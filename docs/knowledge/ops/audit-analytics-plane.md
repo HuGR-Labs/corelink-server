@@ -24,7 +24,7 @@ source_files:
   - "docs/cli/audit-export.md"
 source_blobs:
   - "docs/cli/audit-export.md@813c70f0a1807411138d865e73c44bb16143102e"
-checkpoint_sha: "49c06bd80d89fcf17d8569b3db9d1827db1000f6"
+checkpoint_sha: "d53bcc2dc642c656a37708e0f92c25bdf73e285e"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

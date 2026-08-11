@@ -5,7 +5,9 @@ description: "The post-GA new-engineer ramp — offer to first-PR in ≤5 days, 
 source_files:
   - "docs/internal/ENGINEERING-ONBOARDING.md"
   - "docs/internal/onboarding/BUDDY-PROTOCOL.md"
-checkpoint_sha: "2353f8087b481e9371bdd028a08672a8e753df63"
+source_blobs:
+  - "docs/internal/ENGINEERING-ONBOARDING.md@fa1f2689fc136fbdbedda3018873ad91c6cd36ca"
+checkpoint_sha: "d53bcc2dc642c656a37708e0f92c25bdf73e285e"
 provenance: "AUTHORED"
 tags: ["ops", "onboarding", "buddy", "process", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
