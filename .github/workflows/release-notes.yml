@@ -61,7 +61,10 @@ concurrency:
 jobs:
   generate:
     name: Generate release notes draft
-    runs-on: ubuntu-latest
+    # Runner: `corelink` (zero-hosted). Pure stdlib python3
+    # (generate-release-notes.py) + `gh` (pr create) + the softprops release
+    # action (node) — all provided by the box image (gh 2.97.0 at increment 3).
+    runs-on: corelink
     timeout-minutes: 10
     steps:
       - name: Checkout full history
