@@ -30,7 +30,10 @@ concurrency:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    # Self-hosted `corelink` (ephemeral CF-Container Ubuntu 24.04): this job needs
+    # only curl + python3 (stdlib json) + bash, all baked into the runner image —
+    # so it runs at zero hosted-Actions cost. Per the zero-hosted-CI mandate.
+    runs-on: corelink
     timeout-minutes: 10
     steps:
       - name: Checkout repo
@@ -63,6 +66,30 @@ jobs:
           fi
           REGIONS=(sam iad lhr nrt syd)
           ERRORS=0
+          # Classify the CORS body. A bucket is HARDENED when it carries the
+          # canonical empty-CORS posture, which R2 expresses in EITHER of two
+          # shapes: a successful response with `rules == []`, OR — the common
+          # case for a never-configured bucket — `success:false` whose sole
+          # error is code 10059 "The CORS configuration does not exist"
+          # (result:null). Exit codes: 0=hardened, 1=drift (rules present),
+          # 2=genuine API error (auth/other). The prior one-liner did
+          # `data.get("result", data).get("rules")`, which crashed on the
+          # 10059 shape (result is null, not absent) and mis-flagged every
+          # hardened bucket as drifted — a false RB-FM-AC-BUCKET-LEAK.
+          # `python3 -c` (program as arg) — NOT `python3 - <<HEREDOC`, because the
+          # heredoc would occupy stdin and starve the `classify <<<"$body"` read.
+          classify() {
+            python3 -c '
+          import json, sys
+          d = json.loads(sys.stdin.read())
+          if d.get("success") is True:
+              rules = (d.get("result") or {}).get("rules") or []
+              sys.exit(0 if rules == [] else 1)
+          if any((e or {}).get("code") == 10059 for e in (d.get("errors") or [])):
+              sys.exit(0)  # no CORS configuration = hardened
+          sys.exit(2)      # genuine API error
+          '
+          }
           for region in "${REGIONS[@]}"; do
             bucket="corelink-ac-${region}"
             url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${bucket}/cors"
@@ -73,12 +100,14 @@ jobs:
                 ERRORS=$((ERRORS+1))
                 continue
               }
-            if ! python3 -c 'import json, sys; data = json.loads(sys.stdin.read()); rules = data.get("result", data).get("rules", None); sys.exit(0 if rules == [] else 1)' <<<"$body"; then
-              echo "::error::Bucket $bucket CORS rules NOT empty — RB-FM-AC-BUCKET-LEAK"
-              ERRORS=$((ERRORS+1))
-            else
-              echo "  OK — $bucket CORS empty"
-            fi
+            rc=0; classify <<<"$body" || rc=$?
+            case "$rc" in
+              0) echo "  OK — $bucket empty CORS (hardened)" ;;
+              1) echo "::error::Bucket $bucket CORS rules NOT empty — RB-FM-AC-BUCKET-LEAK"
+                 ERRORS=$((ERRORS+1)) ;;
+              *) echo "::error::Bucket $bucket CORS check failed (API error): $body"
+                 ERRORS=$((ERRORS+1)) ;;
+            esac
           done
           if (( ERRORS > 0 )); then
             echo "::error::$ERRORS bucket(s) drifted; trigger RB-FM-AC-BUCKET-LEAK"
@@ -102,11 +131,14 @@ jobs:
             bucket="corelink-ac-${region}"
             url="https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${bucket}/cors"
             echo "Re-asserting empty-CORS for $bucket"
+            # DELETE (not PUT {"rules":[]}): R2 rejects an empty rules array with
+            # HTTP 400, and the canonical hardened posture is an ABSENT CORS
+            # configuration (a subsequent GET then returns code 10059, which the
+            # audit treats as hardened). DELETE clears any drifted rules to reach
+            # exactly that state.
             curl --silent --show-error --fail-with-body \
-              -X PUT "$url" \
-              -H "Authorization: Bearer ${CF_API_TOKEN}" \
-              -H "Content-Type: application/json" \
-              -d '{"rules": []}' >/dev/null \
-              && echo "  reset" \
-              || echo "::warning::Self-heal PUT failed for $bucket"
+              -X DELETE "$url" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" >/dev/null \
+              && echo "  cleared CORS config for $bucket" \
+              || echo "::warning::Self-heal DELETE failed for $bucket"
           done
