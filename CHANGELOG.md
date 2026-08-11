@@ -43,6 +43,14 @@ Each entry cross-references:
   deferred to a second runner-image increment.
 
 ### Fixed
+- **fix(deps): bump `lru` 0.18.1 → 0.18.2 (RUSTSEC-2026-0253).** `LruCache::pop()` was not
+  panic-safe — a panic in a stored key's `Drop` skipped `self.detach()`, leaving a dangling pointer
+  in the internal linked list that a later eviction would traverse (use-after-free). `lru 0.18.1` is
+  a direct dependency of `corelink-byok`; the advisory flagged only that instance (the transitive
+  `lru 0.16.4` via `aws-sdk-s3` is outside the affected range and untouched). Lockfile-only bump —
+  the version requirement already admits the patch. This unblocked the `cargo-deny` advisories gate,
+  which had gone red on every Rust PR the moment the advisory published (a repo-wide finding, not a
+  property of any one branch).
 - **fix(ci): `ac-bucket-acl-cron` mis-flagged every hardened AC bucket as CORS drift.** The audit's
   `python3 -c` one-liner did `data.get("result", data).get("rules")`; a bucket with no CORS config
   returns `{"success":false,"errors":[{"code":10059,…}],"result":null}`, so `result` is present-but-null,
