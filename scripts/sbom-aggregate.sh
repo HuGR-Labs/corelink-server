@@ -58,14 +58,9 @@ fi
 
 SBOM_REF="${SBOM_REF:-$(git describe --always --dirty 2>/dev/null || echo unknown)}"
 
-echo "==> cargo cyclonedx --format json (all workspace members)"
-# cargo-cyclonedx writes one bom.json per crate next to its Cargo.toml. The
-# pinned 0.5.7 processes every workspace member by default when run from the
-# workspace root — it has no `--workspace` flag (that was a stale invocation
-# for a newer cyclonedx; this lane had never actually run, so it was never
-# caught). Removing it is the fix; --format/--override-filename/--spec-version
-# are all valid on 0.5.7.
-cargo cyclonedx --format json --override-filename bom \
+echo "==> cargo cyclonedx --workspace --format json"
+# cargo-cyclonedx writes one bom.json per crate next to its Cargo.toml.
+cargo cyclonedx --workspace --format json --override-filename bom \
     --spec-version 1.6 >/dev/null
 
 # Collect every per-crate bom file. Excludes the target dir to avoid stale
