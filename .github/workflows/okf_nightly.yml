@@ -27,7 +27,11 @@ concurrency:
 
 jobs:
   okf-nightly:
-    runs-on: ubuntu-latest
+    # Self-hosted `corelink` (ephemeral CF-Container Ubuntu 24.04): the runner
+    # image ships PyYAML as the `python3-yaml` apt package, so the validator's
+    # `import yaml` resolves against system python3 with no runtime venv/pip —
+    # closing this hosted-Actions faucet. Per the zero-hosted-CI mandate.
+    runs-on: corelink
     steps:
       - name: Checkout
         # fetch-depth: 0 — C-AGE reads each checkpoint_sha commit date and C-REV
@@ -35,16 +39,6 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # actions/checkout@v7.0.0
         with:
           fetch-depth: 0
-
-      - name: Install PyYAML (venv on system python3)
-        # Mirror okf_wiki.yml: the validator runs on stdlib, but the nested
-        # concept-manifest.yaml (C10/C10b oracle) needs a real YAML parser.
-        run: |
-          set -euo pipefail
-          python3 -m venv .venv
-          .venv/bin/python3 -m pip install --upgrade pip
-          .venv/bin/python3 -m pip install pyyaml
-          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Validate OKF-CoreLink bundle with nightly WARN checks
         # --nightly adds C-AGE + C-REV; --verbose so the WARN lines print to the
