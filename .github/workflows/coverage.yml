@@ -28,8 +28,17 @@ on:
   #     15 cancelled out of 21), so daily cadence is currently buying no signal
   #     at all.
   # Stays `workflow_dispatch`-able for a pre-release coverage snapshot.
-  schedule:
-    - cron: '0 5 * * 2'
+  #
+  # PARKED 2026-08-10 (cost hygiene, owner-authorized): the weekly cron is
+  # commented out because this lane produced ZERO successful scheduled runs
+  # (6 failure / 15 cancelled out of 21 in July 2026) while costing ~860 hosted
+  # 4-core min/month — it was paying for no signal and, under the recurring
+  # hosted-Actions spending-limit block, its stuck runs sat queued for hours.
+  # It stays `workflow_dispatch`-able for a manual pre-release snapshot. RESTORE
+  # the `schedule:` block once the underlying failure is diagnosed + fixed
+  # (tracked as debt — see the parking PR).
+  # schedule:
+  #   - cron: '0 5 * * 2'
   workflow_dispatch:
 
 permissions:

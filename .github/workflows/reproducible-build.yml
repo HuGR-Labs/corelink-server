@@ -31,11 +31,18 @@ on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
   # nightly (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
-  schedule:
-    # CI cost diet 2026-08-02: daily -> WEEKLY. determinism of an UNCHANGED tree — nothing varies day to day.
-    # Kept the same minute/hour (spread out, low-traffic window); only the
-    # weekday field is added. Per-PR gating is unchanged.
-    - cron: '0 10 * * 3'
+  # PARKED 2026-08-10 (cost hygiene, owner-authorized): the weekly cron is
+  # commented out because this lane produced ZERO successful scheduled runs of
+  # the last 8 (failures + runs that sat queued for hours under the recurring
+  # hosted-Actions spending-limit block) while gating nothing between runs. It
+  # stays `workflow_dispatch`-able for an on-demand determinism check. RESTORE
+  # the `schedule:` block once the underlying failure is diagnosed + fixed
+  # (tracked as debt — see the parking PR).
+  # schedule:
+  #   # CI cost diet 2026-08-02: daily -> WEEKLY. determinism of an UNCHANGED tree — nothing varies day to day.
+  #   # Kept the same minute/hour (spread out, low-traffic window); only the
+  #   # weekday field is added. Per-PR gating is unchanged.
+  #   - cron: '0 10 * * 3'
   workflow_dispatch:
 
 permissions:
