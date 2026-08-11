@@ -37,7 +37,7 @@ concurrency:
 jobs:
   lint-and-validate:
     name: lint + meta-schema + JSON sync
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: node/python already baked into the corelink image
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -74,7 +74,7 @@ jobs:
   breaking-change-detection:
     name: breaking-change detection (vs base branch)
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: node/python already baked into the corelink image
     timeout-minutes: 10
     # PR context passed via env (not interpolated into run: shell) —
     # template-injection-safe (branch names + label JSON can carry shell
