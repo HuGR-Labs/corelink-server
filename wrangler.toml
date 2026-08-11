@@ -56,7 +56,7 @@ cpu_ms = 100
 class_name = "CoreLinkServer"
 image = "./Dockerfile"
 max_instances = 5
-instance_type = "standard-1"
+instance_type = "basic"
 
 # Durable Object que gerencia lifecycle do Container + event bus
 [[durable_objects.bindings]]
@@ -464,7 +464,7 @@ class_name = "CoreLinkServer"
 # itself end-to-end in CI, revert to "./Dockerfile".
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:8c117c52-r1"
 max_instances = 20
-instance_type = "standard-1"
+instance_type = "basic"
 # P0-5 — DECISION-GATE-1 Option A: the container reaches R2 (S3 API) + D1 (HTTP
 # API) over egress. NOTE: wrangler's `[[containers]]` schema does NOT accept
 # `enableInternet`, `vars`, or `secrets` fields (they were silently ignored +
@@ -632,7 +632,7 @@ class_name = "ReplicationCoordinatorDO"
 class_name = "CoreLinkServer"
 image = "./Dockerfile"
 max_instances = 10
-instance_type = "standard-1"
+instance_type = "basic"
 
 # Staging crons — chaos + synthetic-pager fire here too (per WI-S17/S20
 # default = dev/staging only). Prod remains crons-omitted.
@@ -803,7 +803,7 @@ class_name = "ReplicationCoordinatorDO"
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:8c117c52-r1"
 max_instances = 10
-instance_type = "standard-1"
+instance_type = "basic"
 
 # ── LHR (London / Europe West) ───────────────────────────────────────────────
 [env.prod-lhr]
@@ -944,7 +944,7 @@ class_name = "ReplicationCoordinatorDO"
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:8c117c52-r1"
 max_instances = 10
-instance_type = "standard-1"
+instance_type = "basic"
 
 # ── NRT (Tokyo / Asia Pacific Northeast) ─────────────────────────────────────
 [env.prod-nrt]
@@ -1075,7 +1075,7 @@ class_name = "ReplicationCoordinatorDO"
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:8c117c52-r1"
 max_instances = 10
-instance_type = "standard-1"
+instance_type = "basic"
 
 # ── SYD (Sydney / Asia Pacific Southeast) ────────────────────────────────────
 [env.prod-syd]
@@ -1206,4 +1206,4 @@ class_name = "ReplicationCoordinatorDO"
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:8c117c52-r1"
 max_instances = 10
-instance_type = "standard-1"
+instance_type = "basic"
