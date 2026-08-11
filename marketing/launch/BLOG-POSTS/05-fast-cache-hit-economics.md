@@ -10,7 +10,7 @@
 
 If you do nothing else after reading this post, do this: open your CI dashboard, find the median time spent downloading prebuilt artifacts from your remote cache during a green build, and multiply it by your weekly green-build count, your engineer count, and a fully-loaded engineer-hour cost. That is your annual cache-tax bill. It is almost always larger than the line-item you currently allocate to your remote cache.
 
-The cache is a tax on every build, every retry, every CI job — and most teams pay it without measuring it. CoreLink is built to change two terms in that equation: the per-hit latency, and the hit rate. The economics underneath the latency-and-hit-rate conversation are equally interesting, and largely under-discussed, so this post walks the full picture: what a remote cache actually costs to run, where the dollars go, where CoreLink's pricing model differs from the obvious alternatives, and what the calculator at `corelink.humangr.com/calculator` does.
+The cache is a tax on every build, every retry, every CI job — and most teams pay it without measuring it. CoreLink is built to change two terms in that equation: the per-hit latency, and the hit rate. The economics underneath the latency-and-hit-rate conversation are equally interesting, and largely under-discussed, so this post walks the full picture: what a remote cache actually costs to run, where the dollars go, where CoreLink's pricing model differs from the obvious alternatives, and what the calculator at `humangr.com/corelink/calculator` does.
 
 ## The economics of remote build cache
 
@@ -71,7 +71,7 @@ REMOTE-CACHE-PRODUCT-PROFILE pins each of those policies explicitly. The hit-rat
 
 `DRAFT — bench numbers pending CAP-GA-007 staging confirmation.`
 
-Consider a representative customer: an engineering team of around 200 developers, running a Bazel monorepo, producing a non-trivial volume of green builds per day. With the customer's measured hit rate stable in the high range and per-hit latency at the CoreLink SLO budget, the inner-loop time saved annually relative to a self-hosted baseline maps to engineer-hours that any team can price into their loaded-cost model. The calculator at `corelink.humangr.com/calculator` runs this arithmetic for the customer's actual inputs, not for a published average.
+Consider a representative customer: an engineering team of around 200 developers, running a Bazel monorepo, producing a non-trivial volume of green builds per day. With the customer's measured hit rate stable in the high range and per-hit latency at the CoreLink SLO budget, the inner-loop time saved annually relative to a self-hosted baseline maps to engineer-hours that any team can price into their loaded-cost model. The calculator at `humangr.com/corelink/calculator` runs this arithmetic for the customer's actual inputs, not for a published average.
 
 ## Cost comparison vs. self-hosted
 
@@ -87,7 +87,7 @@ We do not publish a headline ROI number, because the honest number depends on th
 
 ## What the calculator does
 
-The CoreLink cost-savings calculator (at `corelink.humangr.com/calculator`, pending GA-day publication) takes the customer-side inputs from the model above, asks for current observed hit rate and current average latency, and returns:
+The CoreLink cost-savings calculator (at `humangr.com/corelink/calculator`, pending GA-day publication) takes the customer-side inputs from the model above, asks for current observed hit rate and current average latency, and returns:
 
 - Current annualized cache-tax estimate.
 - Projected annualized cache-tax with CoreLink's published `SLO-LAT-CAS-GET` budgets.
@@ -133,10 +133,10 @@ That experiment will tell you, with measurement rather than marketing, whether t
 
 ## Where to go next
 
-- **Calculator:** `corelink.humangr.com/calculator`
+- **Calculator:** `humangr.com/corelink/calculator`
 - **Pricing:** `corelink-docs.humangr.com/pricing`
-- **SLO catalog:** `docs.corelink.humangr.com/slo`
-- **Product profile (remote cache semantics):** `docs.corelink.humangr.com/architecture/remote-cache-product-profile`
+- **SLO catalog:** `corelink-docs.humangr.com/slo`
+- **Product profile (remote cache semantics):** `corelink-docs.humangr.com/architecture/remote-cache-product-profile`
 
 — Product at CoreLink
 

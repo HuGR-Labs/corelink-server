@@ -13,7 +13,7 @@ variable "cf_zone_id" {
 
 variable "zone_name" {
   type    = string
-  default = "corelink.dev"
+  default = "humangr.com"
 }
 
 variable "dkim_records" {

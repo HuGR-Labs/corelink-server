@@ -43,7 +43,7 @@ sudo ./svc.sh start # if installed as a service
 Verify all online:
 
 ```sh
-gh api repos/HumanGuardrail/corelink-server/actions/runners \
+gh api repos/HuGR-Labs/corelink-server/actions/runners \
   --jq '.runners[] | {name, os, status}'
 # expect status: "online" for corelink-builder-1..5 (+ corelink-linux-1)
 ```

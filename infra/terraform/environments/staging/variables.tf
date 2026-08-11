@@ -16,8 +16,8 @@ variable "cf_zone_id" {
 
 variable "zone_name" {
   type        = string
-  description = "Apex zone (e.g. staging.corelink.dev)."
-  default     = "staging.corelink.dev"
+  description = "Apex zone (e.g. humangr.com)."
+  default     = "humangr.com"
 }
 
 variable "dkim_records" {

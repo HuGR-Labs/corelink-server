@@ -27,7 +27,7 @@
 
 ## Hero subhead (one sentence)
 
-> CoreLink deduplicates and audits the blobs your CI, your registries, and your model store re-upload a hundred times a day — across regions, across workloads, across teams — with cryptographic tenant isolation and an append-only Merkle audit chain. **Pre-GA pilot. $0 for 30 days. 10 slots.**
+> CoreLink deduplicates and audits the blobs your CI, your registries, and your model store re-upload a hundred times a day — across regions, across workloads, across teams — with cryptographic tenant isolation and an append-only, tamper-evident audit chain. **Pre-GA pilot. $0 for 30 days. 10 slots.**
 
 ## Primary CTA (above the fold)
 
@@ -56,23 +56,23 @@
 
 **Body (≤60 words):**
 
-> Every CAS read and write appends to a per-tenant append-only Merkle log. Each entry is Ed25519-signed. The full log is replayable. You can answer the auditor's question — *"what happened on this artefact, when, and has anything been retro-edited?"* — with a cryptographic proof, not a vendor's word.
+> Every CAS read and write appends to a per-tenant append-only hash chain — each entry cryptographically linked to the one before it (`BLAKE3(prev || event)`). Each entry is Ed25519-signed. The full log is replayable. You can answer the auditor's question — *"what happened on this artefact, when, and has anything been retro-edited?"* — with a cryptographic proof, not a vendor's word.
 
 **Supporting bullets:**
-- Append-only Merkle log per tenant
+- Append-only, BLAKE3-linked hash chain per tenant
 - Ed25519 signatures on every entry
 - Replayable from any verified anchor
 
 ## Feature block 3 — Multi-region replication
 
-**Headline:** *Four regions. Residency you control.*
+**Headline:** *Three regions today. Residency you control.*
 
 **Body (≤60 words):**
 
-> Active in US-East, EU-West, AP-Southeast, AU-East on Cloudflare R2 + Workers + D1. Reads route locally; writes converge globally; residency policies are enforced per tenant — not assumed and not opt-in. EU bytes stay in EU. AU bytes stay in AU. If your residency requirement is harder than that, talk to us before applying.
+> Active today in WNAM, ENAM, and WEUR (US-West, US-East, EU-West) on Cloudflare R2 + Workers + D1, with more regions on the roadmap. Reads route locally; writes converge globally; residency policies are enforced per tenant — not assumed and not opt-in. EU bytes stay in EU. If your residency requirement is harder than that, talk to us before applying.
 
 **Supporting bullets:**
-- 4 active regions on Cloudflare's edge
+- 3 active regions on Cloudflare's edge today; more on the roadmap
 - Per-tenant residency policy (region-pin or replicate)
 - Schrems-II-aware routing
 
@@ -104,7 +104,7 @@
 > - **Production-tier SLA contract** — pilot is best-effort against published target SLOs.
 > - **Signed DPA / SCC** — template available; signed DPA is conditional on legal review timeline.
 >
-> What **is** in the pilot: all of the above as engineering capabilities (TLA+ isolation, Merkle audit, multi-region) and the operational footprint to run them. The gap to GA is procurement / certification artefacts, not the technical core.
+> What **is** in the pilot: all of the above as engineering capabilities (TLA+ isolation, append-only hash-chain audit, multi-region) and the operational footprint to run them. The gap to GA is procurement / certification artefacts, not the technical core.
 
 ---
 

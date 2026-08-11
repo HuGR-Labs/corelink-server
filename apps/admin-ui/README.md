@@ -74,7 +74,7 @@ present, `report-uri` set — regardless of the mode in effect.
 | `script-src` | `'self' 'nonce-…' https://clerk.corelink-app.humangr.com` |
 | `style-src` | `'self' 'nonce-…'` |
 | `img-src` | `'self' data: https:` |
-| `connect-src` | `'self' https://api.corelink.humangr.com https://clerk.corelink-app.humangr.com` |
+| `connect-src` | `'self' https://corelink-api.humangr.com https://corelink-analytics.humangr.com https://clerk.corelink-app.humangr.com` |
 | `frame-ancestors` | `'none'` |
 | `form-action` | `'self'` |
 | `base-uri` | `'self'` |
@@ -112,7 +112,7 @@ Next build. SHA-pinned actions per repo policy.
 ### Architecture
 
 `apps/admin-ui` deploys to the Cloudflare **Worker** named **`corelink-admin-ui`**
-(HumanGuardrail org) via `@opennextjs/cloudflare`. The GH Action
+(HuGR-Labs org) via `@opennextjs/cloudflare`. The GH Action
 `.github/workflows/admin-ui-deploy.yml` builds and deploys automatically on every
 push to `main` that touches `apps/admin-ui/**`.
 

@@ -72,7 +72,7 @@ For each provider, CoreLink publishes:
 - The expected unwrap-latency budget (p99 ≤ 100 ms for the read path; the cache hit path does not call KMS at all).
 - The failure mode if the customer's KMS is unreachable (the data path returns a documented hard-fail error class; no fallback decryption path exists by design).
 
-Specific FIPS-validation references for each provider are maintained at `docs.corelink.humangr.com/trust/byok-providers` and are versioned alongside the integration. When a provider rolls a new module validation, the documentation rolls with it.
+Specific FIPS-validation references for each provider are maintained at `corelink-docs.humangr.com/trust/byok-providers` and are versioned alongside the integration. When a provider rolls a new module validation, the documentation rolls with it.
 
 ### FIPS endpoint selection
 
@@ -152,9 +152,9 @@ A BYOK implementation is a series of trade-offs. The ones we made consciously:
 ## Where to go next
 
 - **Trust center:** `corelink-docs.humangr.com/trust`
-- **BYOK provider matrix:** `docs.corelink.humangr.com/trust/byok-providers`
-- **Erasure attestation spec:** `docs.corelink.humangr.com/trust/erasure-attestation`
-- **Kill switch runbook:** `docs.corelink.humangr.com/runbooks/byok-kill-switch`
+- **BYOK provider matrix:** `corelink-docs.humangr.com/trust/byok-providers`
+- **Erasure attestation spec:** `corelink-docs.humangr.com/trust/erasure-attestation`
+- **Kill switch runbook:** `corelink-docs.humangr.com/runbooks/byok-kill-switch`
 
 — Crypto and Trust at CoreLink
 

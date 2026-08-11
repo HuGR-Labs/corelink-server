@@ -48,7 +48,7 @@ variable "do_jurisdiction" {
 
 variable "cf_zone_id" {
   type        = string
-  description = "Cloudflare zone ID for {region}.api.corelink.dev"
+  description = "Cloudflare zone ID for {region}.api.humangr.com"
 }
 
 variable "cf_account_id" {

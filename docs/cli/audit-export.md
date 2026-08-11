@@ -41,12 +41,17 @@ break before flushing all bytes:
 ```bash
 export CORELINK_PAT=corelink_prod_<token_id>.<secret>.<sig>
 corelink audit verify-ndjson \
-    --url 'https://api.corelink.humangr.com/v1/audit/export?from=0&to=10000000000'
+    --url 'https://corelink-api.humangr.com/v1/audit/export?from=0&to=10000000000'
 ```
 
-You can also pass the bearer explicitly via `--bearer <TOKEN>`; the
-flag is hidden from `--help` output to avoid accidental shell-history
-leakage (CTRL-CRED-001). The CLI never logs or prints the token.
+You can also pass the bearer explicitly via `--bearer <TOKEN>`. The
+`--bearer` flag itself is **not** hidden from `--help` — clap's
+`hide_env_values = true` (see `tools/cli/src/main.rs`) only suppresses
+displaying the *value* clap would otherwise show when the flag falls
+back to an env var; it does not hide the flag from the help listing.
+Passing the token as a literal CLI argument is still discouraged
+(shell history, `ps`) — prefer `CORELINK_PAT`. The CLI never logs or
+prints the token.
 
 | Flag | Required | Description |
 |---|---|---|
@@ -104,6 +109,6 @@ generic CLI failure by checking specifically for `65`.
 ### Cross-references
 
 - Spec: `specs/04_sprints/_sealed/S09/work_items/WI-S09-008-customer-audit-export.md` §6 + §12
-- Server emit: `apps/server/src/routes/audit_export.rs` (constants `HEADER_EXPORT_ABORTED`, `HEADER_CHAIN_HEAD_ANCHOR`)
-- Wave-18 server tests: `apps/server/tests/audit_export.rs` (`abort_trailer_emitted_on_mid_stream_chain_break`, `customer_cli_handles_abort_trailer_gracefully`)
-- Wave-19 CLI sources: `crates/corelink-cli/src/commands/verify_ndjson_http.rs` + `crates/corelink-cli/tests/verify_ndjson_http.rs`
+- Server emit: `crates/corelink-container/src/routes/audit_export.rs` (constants `HEADER_EXPORT_ABORTED`, `HEADER_CHAIN_HEAD_ANCHOR`)
+- Wave-18 server tests: `crates/corelink-container/tests/audit_export.rs` (`abort_trailer_emitted_on_mid_stream_chain_break`, `customer_cli_handles_abort_trailer_gracefully`)
+- Wave-19 CLI sources: `tools/cli/src/commands/verify_ndjson_http.rs` + `tools/cli/tests/verify_ndjson_http.rs`

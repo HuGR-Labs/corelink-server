@@ -75,7 +75,7 @@ this is your fault to chase.
 
 | System | Role | Who provisions |
 |---|---|---|
-| GitHub org `HumanGuardrail` | `engineering` team (write to non-protected branches) | Eng Manager |
+| GitHub org `HuGR-Labs` | `engineering` team (write to non-protected branches) | Eng Manager |
 | Drata (compliance) | `auditor-read` | Security |
 | PagerDuty | `observer` (escalate to responder after Week 2 shadow) | SRE Lead |
 | Slack | `#corelink-eng`, `#corelink-oncall`, `#corelink-ops`, `#corelink-launch` | Eng Manager |
@@ -115,7 +115,7 @@ you are over-preparing. Stop.
 
 ```bash
 # 1. Clone (SSH).
-git clone git@github.com:HumanGuardrail/corelink-server.git
+git clone git@github.com:HuGR-Labs/corelink-server.git
 cd corelink-server
 
 # 2. Pin toolchain (reads rust-toolchain.toml automatically).

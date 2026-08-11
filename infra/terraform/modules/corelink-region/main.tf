@@ -126,11 +126,11 @@ resource "cloudflare_workers_script" "corelink_do_region" {
 }
 
 # ---------------------------------------------------------------------------
-# DNS Record — {region}.api.corelink.dev → Workers route
+# DNS Record — {region}.api.humangr.com → Workers route
 # ---------------------------------------------------------------------------
 resource "cloudflare_record" "region_api_dns" {
   zone_id = var.cf_zone_id
-  name    = "${var.region_name}.api.corelink.dev"
+  name    = "${var.region_name}.api.humangr.com"
   value   = "corelink-do-${var.region_name}.workers.dev"
   type    = "CNAME"
   proxied = true # Cloudflare proxy; SSL termination at CF edge
@@ -141,10 +141,10 @@ resource "cloudflare_record" "region_api_dns" {
 # ---------------------------------------------------------------------------
 # Worker Route — explicit per-region routing
 # Explicit routing enables customer verification of region affinity.
-# Falls back to api.corelink.dev smart routing for non-region-aware clients.
+# Falls back to api.humangr.com smart routing for non-region-aware clients.
 # ---------------------------------------------------------------------------
 resource "cloudflare_worker_route" "region_api_route" {
   zone_id     = var.cf_zone_id
-  pattern     = "${var.region_name}.api.corelink.dev/*"
+  pattern     = "${var.region_name}.api.humangr.com/*"
   script_name = cloudflare_workers_script.corelink_do_region.name
 }

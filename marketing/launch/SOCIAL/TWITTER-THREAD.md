@@ -36,7 +36,7 @@
 
 > BYOK is over-claimed. Strong BYOK means the vendor cannot read your bytes unilaterally.
 >
-> CoreLink: envelope encryption across AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault. DEK cache hard-capped at 5 min. Customer KEK off → CoreLink hard-fails the data path.
+> CoreLink: envelope encryption on AWS KMS today (GCP KMS, Azure Key Vault, HashiCorp Vault on the roadmap). DEK cache hard-capped at 5 min. Customer KEK off → CoreLink hard-fails the data path.
 >
 > That's the property.
 
@@ -52,18 +52,18 @@
 
 > Audit chain on CoreLink:
 >
-> - RFC 6962 Merkle construction
-> - RFC 8785 JCS canonical leaves
-> - Daily proof publication
-> - Inclusion + consistency proofs on request
+> - Append-only, tamper-evident hash chain (`BLAKE3(prev || event)`), not a Merkle tree
+> - Each event cryptographically chained to the one before it
+> - Daily chain-head publication
+> - Customers independently re-derive the chain head from their own copy of the events
 >
-> Customers re-derive the chain head from their copy of the events. Trust the math, not us.
+> Trust the math, not us.
 
-`[image_4: Merkle tree visualization — chain with consistency proof highlighted; 1600x900]`
+`[image_4: hash-chain visualization — events linked via BLAKE3(prev || event), daily head highlighted; 1600x900]`
 
-## Tweet 7 — Four regions, no cross-leak
+## Tweet 7 — Three regions, no cross-leak
 
-> 4 regions at GA: WNAM, ENAM, WEUR, SAM.
+> 3 regions at GA: WNAM, ENAM, WEUR. SAM and APAC are on the roadmap.
 >
 > "No cross-region leak" is an invariant (`INV-REGION-NO-CROSS-LEAK`), verified in the TLA+ tenant isolation spec.
 >
@@ -106,7 +106,7 @@
 | 1 | Hero | "CoreLink wordmark with tagline 'Multi-tenant Bazel cache, TLA+ verified, BYOK-ready' on dark background." |
 | 2 | TLA+ snippet | "Code excerpt from tenant_isolation.tla showing the safety invariant that cross-tenant CAS reads are structurally impossible." |
 | 3 | BYOK flow | "Diagram showing customer-held KEK in customer KMS, per-object DEK at CoreLink wrapped under KEK, and customer-initiated kill switch arrow." |
-| 4 | Merkle tree | "Merkle tree diagram with daily chain heads highlighted and a consistency proof path between two heads marked." |
+| 4 | Hash chain | "Hash-chain diagram: append-only BLAKE3(prev || event) links between events, with daily chain heads highlighted." |
 | 5 | Closing | "CoreLink GA announcement card with humangr.com/corelink URL and HuGR Labs logo." |
 
 ---

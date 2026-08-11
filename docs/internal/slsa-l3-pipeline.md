@@ -2,6 +2,14 @@
 
 Internal documentation for the CoreLink SLSA L3 supply chain hardening pipeline.
 
+> **Note on `HumanGuardrail/corelink-server` below:** the GitHub org moved to
+> `HuGR-Labs` (2026-08-01), but the provenance/builder-identity strings on
+> this page are deliberately left as `HumanGuardrail/corelink-server` because
+> the code that emits and verifies them (Sigstore builder ID, `--expected-builder`
+> default, cosign/provenance config) still hardcodes the old org. Doc and code
+> must move together — this is out of scope for a docs-only fix and is pending
+> the org-rename landing in code.
+
 ## Overview
 
 CoreLink generates **SLSA Level 3 build provenance** for every release (tagged + nightly canary)

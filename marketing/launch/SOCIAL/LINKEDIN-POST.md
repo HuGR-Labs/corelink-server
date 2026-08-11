@@ -18,7 +18,7 @@ Some technical decisions I am proud of, in the order I am proud of them:
 
 **3. BYOK is real.** AWS KMS at GA — GCP, Azure, and HashiCorp Vault on the roadmap. Customer-managed kill switch. Verifiable crypto-erasure (a replayable Ed25519-signed attestation is on the roadmap). The DEK cache is hard-capped at five minutes by code path, not configuration. The vendor cannot read your bytes unilaterally. We took the procurement-team question seriously.
 
-**4. The audit chain is primary, not side-effect.** RFC 6962 Merkle construction over RFC 8785 JCS-canonicalized leaves. Customers re-derive the chain head from their own copy of the events. Trust the math, not the vendor.
+**4. The audit chain is primary, not side-effect.** An append-only, tamper-evident hash chain — each event linked to the previous one via `BLAKE3(prev || event)`. Customers re-derive the chain head from their own copy of the events. Trust the math, not the vendor.
 
 **5. We named three lighthouse customers and held the gate against marketing pressure.** Two team-tier deployments and one enterprise BYOK deployment, each with SLA claims met across a sustained 30-day observation. None of those attestations were waived. None of the engineering criteria were waived.
 

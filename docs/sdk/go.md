@@ -2,6 +2,14 @@
 
 > cgo-based Go wrapper with context-based API.
 > Client-verify default-on per CTRL-CAS-002 via single Rust truth.
+>
+> **Status: network client is a stub, not yet wired.** `Put()` computes a
+> real BLAKE3 digest via the Rust cgo bridge, but `Get()` always returns
+> empty bytes (it never fetches the body from the server) and `Stat()`
+> always reports `Exists: false`. Neither method performs network I/O
+> today. See `corelink-go/corelink.go` (`Client.Get`, `Client.Stat`) for
+> the stub comments in the shipped code. Treat the examples below as the
+> target API shape, not a working round-trip yet.
 
 ## Installation
 
@@ -9,7 +17,9 @@
 go get github.com/HumanGuardrail/corelink-go/v1
 ```
 
-Requires `libcorelink_go.{so,dylib,a}` compiled from `crates/corelink-go`:
+Requires `libcorelink_go.{so,dylib,a}` compiled from `tools/sdks/go`
+(Rust package `corelink-go`; the Go module itself lives at `corelink-go/`
+in the repo root):
 
 ```sh
 cargo build --release -p corelink-go
@@ -48,10 +58,15 @@ func main() {
     if err != nil { panic(err) }
     fmt.Printf("Uploaded: blake3:%s\n", digest)
 
+    // NOTE: Get() is a stub today — it does not fetch the body from the
+    // server. It always returns empty bytes (and a verify error unless
+    // digest == the empty-blob BLAKE3 hash).
     data, err := client.Get(ctx, digest)
     if err != nil { panic(err) }
     fmt.Printf("Downloaded %d bytes\n", len(data))
 
+    // NOTE: Stat() is also a stub — it always reports Exists: false and
+    // never queries the server.
     stat, err := client.Stat(ctx, digest)
     if err != nil { panic(err) }
     fmt.Printf("Exists: %v\n", stat.Exists)
@@ -73,16 +88,23 @@ Returns `error` if PAT is empty or cgo construction fails.
 
 ### `(*Client).Put(ctx, data []byte) (string, error)`
 
-Upload bytes; returns 64-char BLAKE3 hex digest.
+Upload bytes; returns 64-char BLAKE3 hex digest computed via the Rust cgo
+bridge. This is the one method that does real work today — note it does not
+yet perform any network I/O to persist the bytes server-side either; the
+digest computation is local.
 
 ```go
 digest, err := client.Put(ctx, []byte("artifact"))
 ```
 
-### `(*Client).Get(ctx, digest string) ([]byte, error)`
+### `(*Client).Get(ctx, digest string) ([]byte, error)` — **stub**
 
-Download blob by digest. Returns `error` containing
-`COR_CAS_DIGEST_MISMATCH` on integrity failure.
+**Not wired to the network today.** The shipped implementation
+(`corelink-go/corelink.go`) always uses an empty body — it never fetches
+bytes from the server. It still runs the BLAKE3 verify path against that
+empty body, so calling `Get` with any digest other than the empty-blob
+hash returns `COR_CAS_DIGEST_MISMATCH`. Treat this as a stub pending the
+production network layer, not a working download path.
 
 ```go
 data, err := client.Get(ctx, "6b86b273ff34fc...")
@@ -91,9 +113,10 @@ if err != nil {
 }
 ```
 
-### `(*Client).Stat(ctx, digest string) (StatResult, error)`
+### `(*Client).Stat(ctx, digest string) (StatResult, error)` — **stub**
 
-Return metadata: `Digest`, `SizeBytes`, `Exists`.
+**Not wired to the network today.** Always returns `Exists: false` and
+`SizeBytes: 0`; the shipped implementation never queries the server.
 
 ### `(*Client).IsClientVerifyEnabled() bool`
 
@@ -125,7 +148,7 @@ go test -race ./...
 ```
 
 All tests pass under the Go race detector. The Rust layer is validated
-separately via valgrind (see `crates/corelink-go`).
+separately via valgrind (see `tools/sdks/go`).
 
 ## Error Reference
 

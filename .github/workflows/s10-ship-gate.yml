@@ -17,10 +17,11 @@ name: S-10 ship gate (WI-S10-007)
 #
 # All gates fail-closed (HIGH_RISK lane FF-HR-005 + FF-HR-009). Per sprint
 # contract §6 DoD prerequisite: WI-S10-001..006 SEALED is a hard prerequisite;
-# this workflow runs at WI-S10-007 SEAL + on every subsequent PR that touches
+# this workflow runs at WI-S10-007 SEAL + thereafter on a WEEKLY schedule
+# (Fri) plus workflow_dispatch — it has NO pull_request trigger, so touching
 # any of the 6 S-10 crates, the S-10 migrations 0017..0021, the TLA+ spec or
 # its workflow, the RB dry-run scripts, the Finance walkthrough, or the spec
-# contract.
+# contract does NOT run it automatically; dispatch it explicitly.
 
 on:
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs

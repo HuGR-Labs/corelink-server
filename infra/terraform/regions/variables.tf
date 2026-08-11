@@ -8,7 +8,7 @@ variable "cf_account_id" {
 
 variable "cf_zone_id" {
   type        = string
-  description = "Cloudflare zone ID for api.corelink.dev. Injected via TF_VAR_cf_zone_id."
+  description = "Cloudflare zone ID for api.humangr.com. Injected via TF_VAR_cf_zone_id."
 }
 
 variable "environment" {

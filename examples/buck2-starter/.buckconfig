@@ -20,7 +20,7 @@
 [remote_cache]
     # CoreLink CAS HTTP endpoint (REAPI v2).
     # Override per-environment by setting CORELINK_REMOTE_CACHE_URL.
-    url = https://corelink.dev/v1/cache
+    url = https://corelink-api.humangr.com/bazel/cache
 
     # PAT injected from environment — never hardcode.
     http_headers = Authorization: Bearer ${CORELINK_PAT}
@@ -38,7 +38,7 @@
 
 [buck2_re_client]
     # REAPI v2 endpoint — same CAS backing store as [remote_cache].
-    remote_cache_address = https://corelink.dev/v1/cache
+    remote_cache_address = https://corelink-api.humangr.com/bazel/cache
 
     # Auth header injected from environment.
     http_headers = Authorization: Bearer ${CORELINK_PAT}

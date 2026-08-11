@@ -127,7 +127,7 @@ candidate. Walk back 5 minutes to capture the leading edge.
 
 ```bash
 # All prod deploys in the bracket window
-gh api repos/HumanGuardrail/corelink-server/deployments \
+gh api repos/HuGR-Labs/corelink-server/deployments \
     --jq '.[] | select(.environment == "production")' \
     | jq 'select(.created_at >= "2026-05-15T13:00:00Z" \
                  and .created_at <= "2026-05-15T15:30:00Z")'

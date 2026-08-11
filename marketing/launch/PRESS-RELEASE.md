@@ -13,7 +13,7 @@
 
 ## Sub-headline
 
-CoreLink delivers TLA+ formally verified multi-tenant isolation, a BYOK enterprise tier on AWS KMS (GCP / Azure / Vault providers on the roadmap), customer-managed kill switch, and Schrems-II-compliant residency across four regions — backed by 30 days of sustained staging, external pentest with retest, and three lighthouse customer attestations.
+CoreLink delivers TLA+ formally verified multi-tenant isolation, a BYOK enterprise tier on AWS KMS (GCP / Azure / Vault providers on the roadmap), customer-managed kill switch, and Schrems-II-compliant residency across three regions today — WNAM, ENAM, WEUR, with additional regions on the roadmap — backed by 30 days of sustained staging, external pentest with retest, and three lighthouse customer attestations.
 
 ## Dateline
 
@@ -21,7 +21,7 @@ CoreLink delivers TLA+ formally verified multi-tenant isolation, a BYOK enterpri
 
 ## Lead paragraphs
 
-For build-heavy engineering organizations, the cache is the single most leveraged latency primitive in the inner loop. Existing remote-cache offerings force a choice between operational simplicity (single-tenant SaaS without isolation or residency guarantees) and full self-hosting (operational burden, blob-sprawl, eviction tuning, GC correctness gaps). CoreLink resolves that trade-off by combining (a) a content-addressable storage model conformant with the Remote Execution API (REAPI) family, (b) tenant isolation modeled in TLA+ with the safety property mechanically checked in CI, and (c) optional BYOK with envelope encryption across AWS KMS, GCP KMS, Azure Key Vault, and HashiCorp Vault.
+For build-heavy engineering organizations, the cache is the single most leveraged latency primitive in the inner loop. Existing remote-cache offerings force a choice between operational simplicity (single-tenant SaaS without isolation or residency guarantees) and full self-hosting (operational burden, blob-sprawl, eviction tuning, GC correctness gaps). CoreLink resolves that trade-off by combining (a) a content-addressable storage model conformant with the Remote Execution API (REAPI) family, (b) tenant isolation modeled in TLA+ with the safety property mechanically checked in CI, and (c) optional BYOK with envelope encryption on AWS KMS today, with GCP KMS, Azure Key Vault, and HashiCorp Vault on the roadmap.
 
 "CoreLink was built on a single non-negotiable rule: a tenant's bytes belong to that tenant, full stop — provable in TLA+, enforced at the data path, and revocable at any moment through customer-held keys," said **[CEO_NAME], CEO of HuGR Labs**. "GA means we have third-party pentest evidence, thirty days of sustained staging, three lighthouse customers in production, and an external compliance gap analysis on file. We will not announce GA on any other basis."
 
@@ -33,8 +33,8 @@ Every claim below traces to a canonical CoreLink spec source, an external letter
 - **BYOK on AWS KMS.** Envelope encryption with a bounded DEK cache (≤ 5 minutes) per sprint S-14; GCP KMS, Azure Key Vault, and HashiCorp Vault providers are on the roadmap.
 - **Customer-managed kill switch.** Hard-fail crypto sovereignty without operator override (INV-BYOK-CRYPTO-SOVEREIGNTY).
 - **Crypto-erasure (NIST SP 800-88 Rev. 1 semantics).** PII-bearing claims made cryptographically unrecoverable; a customer-served Ed25519 erasure attestation is on the near-term roadmap (INV-ERASURE-ATTESTATION-SIGNED).
-- **Four enumerated regions** — WNAM, ENAM, WEUR, SAM — with no-cross-region-leak invariant (INV-REGION-NO-CROSS-LEAK) and Schrems-II Transfer Impact Assessment on file.
-- **Append-only audit chain.** RFC 6962 Merkle tree construction, JCS-canonicalized leaves (RFC 8785), daily proof publication (INV-AUDIT-APPEND-ONLY).
+- **Three enumerated regions live at GA** — WNAM, ENAM, WEUR — with no-cross-region-leak invariant (INV-REGION-NO-CROSS-LEAK) and Schrems-II Transfer Impact Assessment on file; SAM and APAC are on the roadmap.
+- **Append-only audit chain.** A tamper-evident, BLAKE3-linked hash chain (each event chained to the previous event's hash), daily head publication (INV-AUDIT-APPEND-ONLY).
 - **SBOM published, signed.** CycloneDX 1.5+ format, signed and published per sprint S-12.
 - **External pentest, clean.** Independent firm engagement plus post-remediation retest; zero HIGH/CRITICAL findings pending (CAP-GA-002).
 - **SOC 2 gap analysis delivered.** Continuous-compliance tooling stood up; concrete GAP-XX items with remediation timeline. Type I engagement scheduled six months post-GA (CAP-GA-003).
@@ -81,7 +81,7 @@ This release contains forward-looking statements regarding planned product capab
 ## Media contact
 
 **press@humangr.com**
-Press kit, embargoed assets, executive bios, and high-resolution logos: `corelink.humangr.com/press` (gated until embargo lift).
+Press kit, embargoed assets, executive bios, and high-resolution logos: `humangr.com/corelink/press` (gated until embargo lift).
 
 ## Wire distribution
 

@@ -101,10 +101,15 @@ the audit chain.
 
 ## What customers see
 
-CoreLink emits the customer-visible metric
-`corelink_gc_reclaimed_bytes_total{tenant_id, tier}` aggregated as
-`bytes_reclaimed_last_30d` per tier. You see this on your customer
-dashboard (S-16 forward).
+**Roadmap / not yet wired:** the customer-visible metric
+`corelink_gc_reclaimed_bytes_total{tenant_id, tier}` (aggregated as
+`bytes_reclaimed_last_30d` per tier) has no emitter in the codebase today
+— it exists only as a query referenced by Grafana dashboards
+(`dashboards/grafana/DASH-GC.json`, `dashboards/alerts/dash-gc-alerts.yml`,
+`infra/grafana/dashboards/dash-capacity-planning.json`), not as a metric
+any Rust code actually records. Until an emitter ships, this section
+describes the target customer-dashboard experience (S-16 forward), not a
+live capability.
 
 We do NOT delete:
 

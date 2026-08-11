@@ -20,6 +20,7 @@ tags: ["marketing", "retention", "churn", "heuristics", "r-prep", "ga", "post-la
 > **Audience.** Customer Success, Account Executives, SRE on-call for SLO breaches, Founder (CEO touch).
 > **Purpose.** Catalog of **15 heuristic signals** that suggest a tenant is at risk of cancellation. No ML model — every signal is a query against existing observability + billing + audit data. The retention play (per-signal response) lives in [`RETENTION-PLAYBOOK.md`](./RETENTION-PLAYBOOK.md). The operational runbook (who owns each, escalation, discount authority) lives in [`../../specs/_runbooks/RB-CHURN-RISK-RESPONSE.md`](../../specs/_runbooks/RB-CHURN-RISK-RESPONSE.md).
 > **Non-goal.** Predicting churn with a model. We are buying signal at the cost of false positives; CS triages, not the system. Re-tune quarterly via [`quarterly-review-template.md`](./quarterly-review-template.md).
+> **Instrumentation status.** This catalog is a **design spec**, not a live feed. The six PromQL-based signals below (S-01, S-05, S-06, S-10, S-13, S-15) reference `corelink_*` metrics that have **no code emitter anywhere in the codebase today** — they are planned / not-yet-instrumented. CS should NOT expect these six to fire in production until an engineering ticket wires the emitter and the alerting rule. The SQL-based signals (billing/support/CRM queries) are unaffected by this note.
 > **Companion.** [`../sales/OBJECTION-HANDLING.md`](../sales/OBJECTION-HANDLING.md) for renewal conversations; [`../lighthouse-kit/CUSTOMER-PLAYBOOK.md`](../lighthouse-kit/CUSTOMER-PLAYBOOK.md) for the customer-facing engagement contract.
 > **Roadmap link.** [`../../ROADMAP-TO-GA.md`](../../ROADMAP-TO-GA.md) §8 (post-launch Wave R-8) — retention plays activate from T+1d.
 
@@ -52,6 +53,7 @@ Severity tiers map roughly to:
 ### S-01 — Usage drop > 50% week-over-week
 
 - **Severity:** `high`
+- **Status:** ⚠️ planned / not-yet-instrumented — `corelink_cas_bytes_total` has no emitter in the codebase yet.
 - **What it means.** A tenant's weekly CAS PUT+GET byte volume has dropped by more than 50% compared with the trailing 4-week median. Strongest leading indicator of cancellation we have — confirmed by three Forge customer-zero retention windows.
 - **Detection (PromQL):**
   ```promql
@@ -136,6 +138,7 @@ Severity tiers map roughly to:
 ### S-05 — Audit trail query rate drops to zero
 
 - **Severity:** `medium`
+- **Status:** ⚠️ planned / not-yet-instrumented — `corelink_audit_query_total` has no emitter in the codebase yet.
 - **What it means.** A tenant who has historically queried the audit chain (via `corelink audit tail` / `corelink audit verify` / `corelink audit export`, or the `/v1/audit/*` API) has stopped entirely for 14 consecutive days. Indicates that internal compliance or governance interest in CoreLink has cooled — frequently a precursor to procurement reviewing the contract for cut.
 - **Detection (PromQL):**
   ```promql
@@ -158,6 +161,7 @@ Severity tiers map roughly to:
 ### S-06 — SLO breach experienced by this tenant in last 30d
 
 - **Severity:** `high`
+- **Status:** ⚠️ planned / not-yet-instrumented — `corelink_slo_breach_total` has no emitter in the codebase yet.
 - **What it means.** The tenant has been on the wrong side of at least one SLO breach in the past 30 days — measured per-tenant, not fleet-wide. A fleet-wide breach is bad; a customer-experienced breach is a renewal blocker.
 - **Detection (PromQL):**
   ```promql
@@ -229,6 +233,7 @@ Severity tiers map roughly to:
 ### S-10 — Egress / export activity spike
 
 - **Severity:** `high`
+- **Status:** ⚠️ planned / not-yet-instrumented — `corelink_cas_export_bytes_total` has no emitter in the codebase yet.
 - **What it means.** Tenant has used `corelink cas export` (the documented escape-hatch — see [`OBJECTION-HANDLING.md`](../sales/OBJECTION-HANDLING.md) Obj-1) at a volume more than 10× their trailing 90-day baseline. This is the most literal possible churn signal: they are exfiltrating their own data, likely to a competitor or to a self-hosted alternative.
 - **Detection (PromQL):**
   ```promql
@@ -283,6 +288,7 @@ Severity tiers map roughly to:
 ### S-13 — Cache hit ratio degradation > 20 pp
 
 - **Severity:** `medium`
+- **Status:** ⚠️ planned / not-yet-instrumented — `corelink_cache_hit_ratio` has no emitter in the codebase yet.
 - **What it means.** Tenant's 7-day rolling cache hit ratio has dropped by more than 20 percentage points compared with their trailing 28-day baseline. Hit ratio is the headline value metric for CoreLink — degradation directly erodes ROI and triggers renewal scrutiny.
 - **Detection (PromQL):**
   ```promql
@@ -315,6 +321,7 @@ Severity tiers map roughly to:
 ### S-15 — BYOK kill-switch armed
 
 - **Severity:** `high`
+- **Status:** ⚠️ planned / not-yet-instrumented — `corelink_byok_killswitch_armed` has no emitter in the codebase yet.
 - **What it means.** (Enterprise only.) Tenant has armed the BYOK kill-switch (per [`specs/_runbooks/RB-DPA-CHANGE.md`](../../specs/_runbooks/RB-DPA-CHANGE.md) and the BYOK chaos drill cadence). The kill-switch is a legitimate operational primitive, but arming it outside a scheduled drill window indicates either a security incident OR a deliberate "we are getting ready to leave."
 - **Detection (PromQL):**
   ```promql
@@ -342,7 +349,7 @@ Severity tiers map roughly to:
 ## Operational notes
 
 - **Signals are AND'd at triage, not OR'd at fire time.** Multiple concurrent signals on the same tenant escalate severity automatically — see [`RB-CHURN-RISK-RESPONSE.md`](../../specs/_runbooks/RB-CHURN-RISK-RESPONSE.md) §4.
-- **Every signal is a Prometheus alerting rule OR a HubSpot workflow OR a SQL-on-cron job.** No manual scraping. The owning team is on the signal in [`RB-CHURN-RISK-RESPONSE.md`](../../specs/_runbooks/RB-CHURN-RISK-RESPONSE.md) §2.
+- **Every signal is DESIGNED as a Prometheus alerting rule OR a HubSpot workflow OR a SQL-on-cron job — no manual scraping.** As of this writing the six Prometheus-based signals (S-01, S-05, S-06, S-10, S-13, S-15, see per-signal Status notes above) are not yet instrumented; the SQL/HubSpot-based signals are the ones actually queryable today. The owning team is on the signal in [`RB-CHURN-RISK-RESPONSE.md`](../../specs/_runbooks/RB-CHURN-RISK-RESPONSE.md) §2.
 - **Quarterly tuning.** See [`quarterly-review-template.md`](./quarterly-review-template.md) for the rolling KPI dashboard that drives signal addition / removal / threshold adjustment. Default policy: a signal with >70% false-positive rate over a quarter is retired or re-thresholded; a missed-churn that did not fire any signal in 30 d window prior triggers a new candidate signal.
 - **Privacy boundary.** No signal exports tenant content. All signals operate on metadata (counts, ratios, timestamps, billing state). The audit chain query rate (S-05) is itself observed via audit-on-audit metrics — we observe that an export *happened*, not what was exported.
 

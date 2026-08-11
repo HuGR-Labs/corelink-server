@@ -90,7 +90,7 @@ TITLE: Resolved — <component> restored
 UPDATE (HH:MM UTC):
 Service has been restored. <Component> has been operating normally for the
 past 15 minutes. We will publish a public post-incident retrospective within
-14 days at corelink.humangr.com/blog/incidents.
+14 days at humangr.com/corelink/blog/incidents.
 
 We apologize for the disruption. Thank you for your patience.
 ```
@@ -121,7 +121,7 @@ What we're doing:
 <One paragraph: immediate remediation + medium-term prevention.>
 
 Live updates: https://hugrl.betteruptime.com
-Public retrospective: published within 14 days at corelink.humangr.com/blog/incidents
+Public retrospective: published within 14 days at humangr.com/corelink/blog/incidents
 
 If you have questions or believe your impact was greater than what we've
 described, please reply to this email and we'll get back to you within 4
@@ -439,7 +439,7 @@ We'd like to coordinate the disclosure timeline. Our standard window
 fix is straightforward. Could we set up a call this week?
 
 We credit good-faith research in our Hall of Fame
-(https://corelink.humangr.com/security/hall-of-fame) and have a bug bounty for
+(https://humangr.com/corelink/security/hall-of-fame) and have a bug bounty for
 in-scope findings.
 
 — <VPSec name>, Security, HuGR Labs / CoreLink

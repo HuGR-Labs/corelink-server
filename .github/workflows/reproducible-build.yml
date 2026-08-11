@@ -29,7 +29,7 @@ on:
   # and say in that PR what the measured diff was. Turning it on now would just
   # move an unknown onto every pull request.
   # Moved OFF per-PR 2026-06-02 to keep PRs fast (was a heavy gate). Runs
-  # nightly (staggered) + on-demand. Re-add pull_request only if
+  # WEEKLY (staggered) + on-demand. Re-add pull_request only if
   # this must block PRs again.
   # PARKED 2026-08-10 (cost hygiene, owner-authorized): the weekly cron is
   # commented out because this lane produced ZERO successful scheduled runs of

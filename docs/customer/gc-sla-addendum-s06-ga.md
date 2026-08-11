@@ -42,17 +42,19 @@ WI-S06-006 100k race property test.
 
 ## 4. Customer-visible reclaim metric (CAP-GC-006)
 
-CoreLink emits the canonical metric
-`corelink_gc_reclaimed_bytes_total{tenant_id, tier}` aggregated as
-`bytes_reclaimed_last_30d` per tenant_tier (free / solo / team /
-business / enterprise). Customers see this metric in the CoreLink
-customer dashboard (S-16 forward).
+**Roadmap — not yet wired.** The canonical metric
+`corelink_gc_reclaimed_bytes_total{tenant_id, tier}` (aggregated as
+`bytes_reclaimed_last_30d` per tenant_tier: free / solo / team /
+business / enterprise) has no code emitter today; it exists only as a
+Grafana dashboard query. Customers do not yet see this metric anywhere —
+the customer dashboard exposure (S-16 forward) and the emitter itself
+both remain to be built.
 
 ## 5. Soft-delete reversibility window
 
 | Cache surface | Grace period | Reversibility |
 |---|---|---|
-| CAS (blob_meta) | 72h | re-upload of same digest OR admin `POST /v1/admin/gc/undelete?digest=X` (S-13 admin plane) |
+| CAS (blob_meta) | 72h | re-upload of same digest OR admin undelete (S-13 admin plane). **Not yet built:** the only shipped admin GC route today is `POST /v1/admin/gc/trigger`; there is no `/v1/admin/gc/undelete` endpoint. The re-upload path is real (`undelete()` in `crates/corelink-gc/src/sweep.rs`, exercised via CAS re-upload), but a direct admin-triggered undelete endpoint is roadmap, not shipped. |
 | AC (ac_meta) | 24h | re-upload (UpdateActionResult) OR admin endpoint |
 
 After grace expires, the physical-delete worker (post-grace strict-`>`

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # rotate-cli-release-token.sh — rotate CORELINK_CLI_RELEASE_TOKEN to a
-# fine-grained PAT scoped only to HumanGuardrail/corelink-cli contents:write.
+# fine-grained PAT scoped only to HuGR-Labs/corelink-cli contents:write.
 #
 # WHY: the current token is the operator's gh-CLI session token (broad
-# `repo` scope across all HumanGuardrail repos). For defense-in-depth, the
+# `repo` scope across all HuGR-Labs repos). For defense-in-depth, the
 # release workflow should use a token that can ONLY upload release assets
 # to corelink-cli — nothing else.
 #
@@ -22,7 +22,7 @@ cat <<'STEPS'
 ═══ CORELINK_CLI_RELEASE_TOKEN ROTATION ═══
 
 This is a 1-time operator action. Sets a fine-grained PAT scoped only to
-release uploads on HumanGuardrail/corelink-cli (instead of the current
+release uploads on HuGR-Labs/corelink-cli (instead of the current
 broad-scope gh-CLI token).
 
 1) Open the fine-grained PAT creator (paste in browser):
@@ -34,7 +34,7 @@ broad-scope gh-CLI token).
    Token name:           corelink-cli-release-2026
    Expiration:           1 year (or longer — pick a calendar reminder
                          to rotate before expiry)
-   Resource owner:       HumanGuardrail
+   Resource owner:       HuGR-Labs
    Repository access:    Only select repositories
                          → check `corelink-cli`
    Repository permissions:
@@ -57,23 +57,23 @@ if [[ ! "$NEW_PAT" =~ ^github_pat_ ]]; then
 fi
 
 # Verify the PAT works for the intended scope
-echo "Verifying PAT can write to HumanGuardrail/corelink-cli..."
+echo "Verifying PAT can write to HuGR-Labs/corelink-cli..."
 if ! curl -fsS \
     -H "Authorization: token $NEW_PAT" \
     -H "Accept: application/vnd.github+json" \
-    https://api.github.com/repos/HumanGuardrail/corelink-cli > /dev/null; then
+    https://api.github.com/repos/HuGR-Labs/corelink-cli > /dev/null; then
     echo "ERROR: PAT can't read corelink-cli — wrong repo selection?" >&2
     exit 1
 fi
 
 # Set as secret on corelink-server (where the workflow lives)
-echo "Setting CORELINK_CLI_RELEASE_TOKEN on HumanGuardrail/corelink-server..."
+echo "Setting CORELINK_CLI_RELEASE_TOKEN on HuGR-Labs/corelink-server..."
 echo -n "$NEW_PAT" | gh secret set CORELINK_CLI_RELEASE_TOKEN \
-    --repo HumanGuardrail/corelink-server
+    --repo HuGR-Labs/corelink-server
 
 echo
 echo "✓ Done. Verify with:"
-echo "  gh secret list --repo HumanGuardrail/corelink-server | grep CORELINK_CLI"
+echo "  gh secret list --repo HuGR-Labs/corelink-server | grep CORELINK_CLI"
 echo
 echo "Next release will use the new fine-grained PAT."
 echo "Old gh-CLI token can stay in gh's keyring — it's not used by the"

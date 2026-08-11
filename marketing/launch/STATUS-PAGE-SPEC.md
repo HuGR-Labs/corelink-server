@@ -54,8 +54,8 @@ tags:
 ## 2. Domain + branding
 
 - **Public URL:** `https://status.corelink.humangr.com` (CNAME → Statuspage.io).
-- **Fallback URL:** `https://corelink.humangr.com/status` — a static-HTML page in the CF Pages site, manually updated, served if Statuspage.io is itself down. Pre-staged with a "checking with our status provider" message.
-- **Brand:** CoreLink logo, neutral typography matching `corelink.humangr.com`; status indicator colors follow industry convention (green/yellow/orange/red).
+- **Fallback URL:** `https://humangr.com/corelink/status` — a static-HTML page in the CF Pages site, manually updated, served if Statuspage.io is itself down. Pre-staged with a "checking with our status provider" message.
+- **Brand:** CoreLink logo, neutral typography matching `humangr.com/corelink`; status indicator colors follow industry convention (green/yellow/orange/red).
 - **Footer:** RFC 9116 link to `security.txt`; link to `SECURITY.md`; link to trust center.
 
 ---
@@ -66,13 +66,13 @@ The status page advertises exactly the following 8 components. Each maps to a Co
 
 | # | Component name | What it advertises | Primary SLO mapped | Owner |
 |---|---|---|---|---|
-| C1 | **API** | The CoreLink control-plane API (`api.corelink.humangr.com`) — REAPI surface, admin endpoints, signup/billing endpoints, BYOK key-management calls. | API p99 ≤ 250 ms; error rate ≤ 0.1%. | SRE-OC |
+| C1 | **API** | The CoreLink control-plane API (`corelink-api.humangr.com`) — REAPI surface, admin endpoints, signup/billing endpoints, BYOK key-management calls. | API p99 ≤ 250 ms; error rate ≤ 0.1%. | SRE-OC |
 | C2 | **CAS Read Path** | Content-addressable storage read serving — `GetBlob`, `BatchGetBlobs`, cache hits. | CAS read p99 ≤ 100 ms (hit); error rate ≤ 0.05%. | SRE-OC |
 | C3 | **CAS Write Path** | CAS write serving — `UpdateBlob`, `BatchUpdateBlobs`, deduplication, GC backpressure. | CAS write p99 ≤ 500 ms; error rate ≤ 0.1%. | SRE-OC |
 | C4 | **BYOK** | Customer-managed-key envelope encryption against AWS KMS / GCP KMS / Azure Key Vault / HashiCorp Vault. | BYOK envelope p99 ≤ 50 ms; vendor success rate ≥ 99.9%. | SRE-OC + VPSec |
 | C5 | **Audit** | Audit-chain ingest + Merkle-proof issuance; SIEM forwarding (S3 + Splunk-compatible). | Audit ingest lag ≤ 60 s; proof issuance p99 ≤ 200 ms. | VPSec |
 | C6 | **Billing** | Stripe webhook ingest, invoice generation, metering aggregation. | Webhook ingest success ≥ 99.9%; billing freshness ≤ 1 h. | Finance + SRE-OC |
-| C7 | **Docs** | `docs.corelink.humangr.com` Docusaurus site + CDN; including security.txt + trust center. | Docs availability ≥ 99.95%. | VPMkt + Engineering |
+| C7 | **Docs** | `corelink-docs.humangr.com` Docusaurus site + CDN; including security.txt + trust center. | Docs availability ≥ 99.95%. | VPMkt + Engineering |
 | C8 | **Admin Console** | `admin.corelink.humangr.com` operator console — Clerk-gated; org/tenant/user admin. | Admin availability ≥ 99.9%. | SRE-OC |
 
 **Hidden / private components.** None at GA. (If we add tenant-scoped private status visibility post-GA, file ADR-0036.)
@@ -205,7 +205,7 @@ approval_bypass:
 
 ### 7.3 Failure mode
 
-If PagerDuty → Statuspage webhook fails (3 attempts exhausted), the integration emits a SEV2 internal page-out to SRE-OC titled "Statuspage publish failed" with the original incident payload attached. SRE-OC then either (a) manually pushes to Statuspage from the PagerDuty mobile app, or (b) updates the static fallback page at `corelink.humangr.com/status` and tweets from `@corelinkdev`.
+If PagerDuty → Statuspage webhook fails (3 attempts exhausted), the integration emits a SEV2 internal page-out to SRE-OC titled "Statuspage publish failed" with the original incident payload attached. SRE-OC then either (a) manually pushes to Statuspage from the PagerDuty mobile app, or (b) updates the static fallback page at `humangr.com/corelink/status` and tweets from `@corelinkdev`.
 
 ---
 

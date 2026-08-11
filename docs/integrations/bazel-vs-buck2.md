@@ -1,8 +1,16 @@
 # Bazel vs Buck2 — CoreLink DX Comparison
 
+> **Buck2 is NOT supported today.** CoreLink is cache-only over HTTP; Buck2's
+> remote-execution client speaks gRPC, which CoreLink does not expose. There
+> is no working `.buckconfig` — see [`buck2.md`](./buck2.md) for the honest
+> current state. Everything below describing Buck2 as configured, tested, or
+> "fully supported" is aspirational/roadmap content from an earlier draft of
+> this comparison and should be read as such until Buck2 support actually
+> ships.
+
 **Purpose:** Apples-to-apples comparison of the CoreLink remote-cache
 developer experience using the Bazel starter project (WI-S15-002) and the
-Buck2 starter project (WI-S15-003).
+Buck2 starter project (WI-S15-003, **not built** — see the notice above).
 
 Same scope: `hello-world` binary + 1 transitive C++ library dep.
 
@@ -44,9 +52,16 @@ both starters.  Only the build descriptor and config differ.
 
 ### Bazel `.bazelrc`
 
+The committed starter config (`examples/bazel-starter/.bazelrc`) uses a
+credential-helper endpoint placeholder rather than the production
+`corelink-api.humangr.com/bazel/v2` route documented in
+[`bazel.md`](./bazel.md) — replace the endpoint with your tenant's
+`https://corelink-api.humangr.com/bazel/v2` (or the stock-HTTP alias
+`/bazel/cache`) before using it against production:
+
 ```bash
-# Remote cache endpoint
-build --remote_cache=https://corelink.humangr.com/v1/cache
+# Remote cache endpoint (see bazel.md for the real prod endpoint)
+build --remote_cache=https://corelink-api.humangr.com/bazel/v2
 
 # Auth via credential helper (Bazel 6+ CTRL-CRED-001 compliant)
 # PAT read from CORELINK_PAT env var; emitted as JSON response; never in argv.
@@ -61,11 +76,20 @@ build --remote_retries=3
 via `ps aux` (argv exposure).  See `.bazel/corelink-credential-helper.sh` for
 the helper implementation.
 
-### Buck2 `.buckconfig`
+### Buck2 `.buckconfig` — **does not exist / not supported**
+
+There is no working `.buckconfig` for CoreLink. The block below was an
+earlier draft's aspirational example — kept for illustration of the target
+shape only. It is **wrong on every count**: `corelink.humangr.com` is a
+dead apex host, `/v1/cache` is not a real CoreLink route, and — more
+fundamentally — Buck2's remote-cache client speaks gRPC
+(`buck2_re_client`), which CoreLink does not implement at all today. Do
+not attempt to point a real Buck2 build at this config.
 
 ```ini
+# ILLUSTRATIVE ONLY — not a working config, Buck2 is not supported.
 [remote_cache]
-url = https://corelink.humangr.com/v1/cache
+url = grpcs://<not-a-real-corelink-endpoint>
 http_headers = Authorization: Bearer ${CORELINK_PAT}
 read = true
 write = true
@@ -75,8 +99,7 @@ max_retries = 3
 hash_algorithm = BLAKE3
 ```
 
-**Note:** Buck2 uses Shell env-var interpolation in `http_headers` — safe
-because the header value is not exposed in the process argument list.
+See [`buck2.md`](./buck2.md) for the current, honest state.
 
 ### Auth complexity
 
@@ -212,8 +235,9 @@ ratios should be near-identical for deterministic C++ builds.  Divergence
 - Want BLAKE3 digest verification by default.
 - Are migrating from Buck1 (Meta legacy) to Buck2.
 
-**Both are fully supported** with CoreLink REAPI v2, CI integration tests, and
-maintained starter projects.
+**Bazel is fully supported** with CoreLink REAPI v2 and CI integration tests.
+**Buck2 is not supported** — CoreLink has no gRPC remote-execution endpoint,
+so no working `.buckconfig` exists today; see [`buck2.md`](./buck2.md).
 
 ---
 

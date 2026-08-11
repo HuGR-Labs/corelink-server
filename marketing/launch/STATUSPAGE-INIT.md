@@ -49,7 +49,7 @@ tags:
 
 ### 1.1 Create the Atlassian account
 
-1. DevOps signs into Atlassian under the **`corelink.humangr.com`** organization (Atlassian admin URL: `https://admin.atlassian.com/o/<org-id>`).
+1. DevOps signs into Atlassian under the **`humangr.com/corelink`** organization (Atlassian admin URL: `https://admin.atlassian.com/o/<org-id>`).
 2. From the org admin console, click **Add product → Statuspage**.
 3. Select **Business** plan. Confirm the **annual billing** option (≈ 17% discount vs. monthly; aligns with `ROADMAP-TO-GA.md` §H-18 budget).
 4. Billing contact: `finance@humangr.com`. Technical contact: `sre@humangr.com`.
@@ -64,7 +64,7 @@ tags:
    - Page name: `CoreLink`
    - Page URL slug: `corelink` (resulting default URL: `corelink.statuspage.io` — used only as a fallback; we will CNAME).
    - Time zone: **UTC** (do not localize; SLO/SLA math is in UTC).
-   - Support URL: `https://corelink.humangr.com/support`
+   - Support URL: `https://humangr.com/corelink/support`
    - Notification "from" email: `status@humangr.com`
 3. Capture the `page_id` shown in the URL bar after the page is created. This is your `SP_PAGE_ID`. Save as a placeholder for §5 secrets storage.
 
@@ -80,7 +80,7 @@ tags:
 - Add with **Page Viewer** role:
   - `ceo@humangr.com`
   - `cto@humangr.com`
-- **Do not** add personal Gmail accounts; only `corelink.humangr.com` SSO-backed accounts. Atlassian SSO is configured via the existing Atlassian Access subscription (`docs/internal/sso-vendor-registry.md`).
+- **Do not** add personal Gmail accounts; only `humangr.com/corelink` SSO-backed accounts. Atlassian SSO is configured via the existing Atlassian Access subscription (`docs/internal/sso-vendor-registry.md`).
 
 ---
 
@@ -93,9 +93,9 @@ tags:
 
    ```html
    <p>
-     <a href="https://corelink.humangr.com/security.txt">security.txt</a> ·
-     <a href="https://corelink.humangr.com/SECURITY.md">Security policy</a> ·
-     <a href="https://corelink.humangr.com/trust">Trust center</a>
+     <a href="https://humangr.com/corelink/security.txt">security.txt</a> ·
+     <a href="https://humangr.com/corelink/SECURITY.md">Security policy</a> ·
+     <a href="https://humangr.com/corelink/trust">Trust center</a>
    </p>
    ```
 5. **Tweet button:** disabled (CEO approves all public CoreLink tweets per `STATUS-PAGE-SPEC.md` §8).
@@ -112,7 +112,7 @@ tags:
 
 ### 3.2 DNS side (Cloudflare)
 
-1. Open the Cloudflare zone for `corelink.humangr.com`.
+1. Open the Cloudflare zone for `humangr.com/corelink`.
 2. Add a new DNS record:
    - **Type:** `CNAME`
    - **Name:** `status`
@@ -125,12 +125,12 @@ tags:
 
 ### 3.3 Fallback static page
 
-Per `STATUS-PAGE-SPEC.md` §2, pre-stage a static fallback at `https://corelink.humangr.com/status`:
+Per `STATUS-PAGE-SPEC.md` §2, pre-stage a static fallback at `https://humangr.com/corelink/status`:
 
 1. Author `apps/docs/static/status/index.html` with the message:
    > "We are checking with our status provider. For real-time updates please follow `@corelinkdev` on X/Twitter or email `status@humangr.com`."
 2. Commit + deploy as part of the `wt-r8-1` work-tree.
-3. **Validation:** `curl -sI https://corelink.humangr.com/status` returns 200 before T-24h.
+3. **Validation:** `curl -sI https://humangr.com/corelink/status` returns 200 before T-24h.
 
 ---
 
@@ -148,7 +148,7 @@ For each component, in Statuspage UI: **Components → Add Component**. Set the 
 | **C4** | `BYOK` | "Customer-managed-key envelope encryption against AWS KMS / GCP KMS / Azure Key Vault / HashiCorp Vault." | `Security` | Public | vendor success rate |
 | **C5** | `Audit` | "Audit-chain ingest + Merkle-proof issuance; SIEM forwarding (S3 + Splunk-compatible)." | `Security` | Public | ingest lag |
 | **C6** | `Billing` | "Stripe webhook ingest, invoice generation, metering aggregation." | `Operations` | Public | webhook success rate |
-| **C7** | `Docs` | "docs.corelink.humangr.com Docusaurus site + CDN; includes security.txt + trust center." | `Operations` | Public | availability |
+| **C7** | `Docs` | "corelink-docs.humangr.com Docusaurus site + CDN; includes security.txt + trust center." | `Operations` | Public | availability |
 | **C8** | `Admin Console` | "admin.corelink.humangr.com operator console — Clerk-gated; org/tenant/user admin." | `Operations` | Public | availability |
 
 **After each component is created, copy the component ID from the URL** (`https://manage.statuspage.io/pages/<page-id>/components/<component-id>`). Each becomes one of the `SP_COMPONENT_*` placeholders in §5.
@@ -257,7 +257,7 @@ Per `STATUS-PAGE-SPEC.md` §7.3: if PagerDuty → Statuspage publish fails 3× (
 
 1. Manual publish from PagerDuty mobile app (often the same integration retry button works on a fresh network path).
 2. Manual login to `manage.statuspage.io` and create the incident by hand using the template from `CRISIS-COMMS-TEMPLATES.md` §A.
-3. Update the static fallback page at `corelink.humangr.com/status` (single-line replacement via `apps/docs/static/status/index.html` push + `wrangler pages publish`).
+3. Update the static fallback page at `humangr.com/corelink/status` (single-line replacement via `apps/docs/static/status/index.html` push + `wrangler pages publish`).
 4. Tweet from `@corelinkdev` (CEO or VPMkt — see `STATUS-PAGE-SPEC.md` §8 approval matrix; SEV1 bypasses approval).
 
 ---

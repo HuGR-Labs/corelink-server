@@ -38,17 +38,17 @@
 
 > Capability 2: cryptographic audit chain.
 >
-> Every CAS read/write appends to a per-tenant append-only Merkle log. Ed25519-signed. Replayable. You can prove what happened, when, and that nothing was retro-edited. 4/8
+> Every CAS read/write appends to a per-tenant append-only hash chain (BLAKE3-linked). Ed25519-signed. Replayable. You can prove what happened, when, and that nothing was retro-edited. 4/8
 
-**Char count:** 218.
+**Char count:** 228.
 
 ## Tweet 5/8 — Capability 3 — Multi-region replication
 
 > Capability 3: multi-region replication.
 >
-> Active across US-East, EU-West, AP-Southeast, AU-East on Cloudflare R2 + Workers + D1. Read locally; write once; converge globally. Residency-aware routing per tenant policy. 5/8
+> Active today across WNAM, ENAM, WEUR (US-West, US-East, EU-West) on Cloudflare R2 + Workers + D1; more regions on the roadmap. Read locally; write once; converge globally. Residency-aware routing per tenant policy. 5/8
 
-**Char count:** 232.
+**Char count:** 259.
 
 ## Tweet 6/8 — Pilot offer
 
@@ -107,8 +107,8 @@ If Owner wants images, here are 1-sentence alt-text briefs (1 image / tweet max;
 1. Hook tweet: bar chart of CI build minutes wasted on duplicate blob re-uploads (synthetic).
 2. Intro tweet: CoreLink wordmark + 5 workload icons (Bazel, Docker, Nix, npm, model).
 3. Capability 1: redacted TLA+ `tenant_isolation` invariant snippet.
-4. Capability 2: Merkle audit-chain diagram, 3 leaves + root.
-5. Capability 3: 4-region world map with replication arrows.
+4. Capability 2: BLAKE3-linked hash-chain diagram, 3 events + chain head.
+5. Capability 3: 3-region world map (WNAM/ENAM/WEUR) with replication arrows.
 6. Offer: pilot tier table — quota / window / conversion.
 7. Looking-for: 4-quadrant grid of target personas.
 8. CTA: signup page screenshot or QR code.

@@ -94,7 +94,7 @@ Per WI-S20-005, external counsel (Cooley / DLA Piper / Bird & Bird) reviewed and
 
 For EU customers on **WEUR**, the TIA conclusion is straightforward: **data does not leave the EU, so there is no transfer to assess.** EU-tenant CAS and action-cache blobs are stored in physically-EU R2 buckets (EEUR), served via the `lhr` cluster. **This is live today.**
 
-For data stored under a US (ENAM) binding — including EU-origin data a customer chooses to keep in the US, or any future `sam`-bound data (which resides in the US or EU because Cloudflare has no South-America region) — CoreLink provides the SCC module language in the DPA, a customer-facing TIA template, and a documented evaluation of US surveillance law as it applies to a CoreLink operator (published at `docs.corelink.humangr.com/trust/schrems-ii`). Customers handling EU-origin personal data who require in-EU storage can select WEUR — it is a live capability, not a roadmap commitment.
+For data stored under a US (ENAM) binding — including EU-origin data a customer chooses to keep in the US, or any future `sam`-bound data (which resides in the US or EU because Cloudflare has no South-America region) — CoreLink provides the SCC module language in the DPA, a customer-facing TIA template, and a documented evaluation of US surveillance law as it applies to a CoreLink operator (published at `corelink-docs.humangr.com/trust/schrems-ii`). Customers handling EU-origin personal data who require in-EU storage can select WEUR — it is a live capability, not a roadmap commitment.
 
 ## A customer story (placeholder)
 
@@ -123,8 +123,8 @@ CoreLink residency is also not a guarantee against governmental compulsion of th
 ## Where to go next
 
 - **Trust center:** `corelink-docs.humangr.com/trust`
-- **Residency invariant:** `docs.corelink.humangr.com/trust/residency`
-- **Schrems II TIA template:** `docs.corelink.humangr.com/trust/schrems-ii`
+- **Residency invariant:** `corelink-docs.humangr.com/trust/residency`
+- **Schrems II TIA template:** `corelink-docs.humangr.com/trust/schrems-ii`
 - **DPA package (EN / PT-BR / ES):** `humangr.com/corelink/en/legal/dpa`
 
 — Privacy and Trust at CoreLink

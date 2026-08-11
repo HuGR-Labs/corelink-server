@@ -6,29 +6,29 @@ Runnable, copy-and-edit-friendly examples for the **top-10 CoreLink REST endpoin
 
 ## Sandbox setup
 
-All examples default to the public sandbox at `https://sandbox.corelink.humangr.com` when `CORELINK_API_URL` is not set. To run against your own tenant:
+All examples default to the public sandbox at `https://corelink-app.humangr.com/sandbox` when `CORELINK_API_URL` is not set. To run against your own tenant:
 
 ```bash
-export CORELINK_API_URL="https://api.corelink.humangr.com"     # or your dedicated region URL
+export CORELINK_API_URL="https://corelink-api.humangr.com"     # or your dedicated region URL
 export CORELINK_PAT="corelink_pat_..."                  # PAT issued via POST /v1/pats
 ```
 
-Issue a sandbox PAT through the Console (https://console.corelink.humangr.com/pats) or via the bootstrap signup flow (`quickstart_signup` + `quickstart_put`).
+Issue a sandbox PAT through the Console (https://corelink-app.humangr.com/pats) or via the bootstrap signup flow (`quickstart_signup` + `quickstart_put`).
 
 ## Index — 10 endpoints × 4 languages = 40 examples
 
 | Endpoint | Concept | Rust | Python | Go | TypeScript |
 | --- | --- | --- | --- | --- | --- |
-| `POST /v1/signup` | Provision a new tenant (atomic) | [`quickstart_signup.rs`](../crates/corelink-cli/examples/quickstart_signup.rs) | [`quickstart_signup.py`](../crates/corelink-py/examples/quickstart_signup.py) | [`quickstart_signup.go`](../crates/corelink-go/examples/quickstart_signup.go) | [`quickstart_signup.ts`](../crates/corelink-wasm/examples/quickstart_signup.ts) |
-| `POST /v1/pats` | Issue a PAT (shown-once token) | [`quickstart_put.rs`](../crates/corelink-cli/examples/quickstart_put.rs) | [`quickstart_put.py`](../crates/corelink-py/examples/quickstart_put.py) | [`quickstart_put.go`](../crates/corelink-go/examples/quickstart_put.go) | [`quickstart_put.ts`](../crates/corelink-wasm/examples/quickstart_put.ts) |
-| `GET /v1/users/me` | "Who am I?" — verify PAT | [`quickstart_get.rs`](../crates/corelink-cli/examples/quickstart_get.rs) | [`quickstart_get.py`](../crates/corelink-py/examples/quickstart_get.py) | [`quickstart_get.go`](../crates/corelink-go/examples/quickstart_get.go) | [`quickstart_get.ts`](../crates/corelink-wasm/examples/quickstart_get.ts) |
-| `GET /v1/pats` | List PATs (no plaintext) | [`quickstart_list.rs`](../crates/corelink-cli/examples/quickstart_list.rs) | [`quickstart_list.py`](../crates/corelink-py/examples/quickstart_list.py) | [`quickstart_list.go`](../crates/corelink-go/examples/quickstart_list.go) | [`quickstart_list.ts`](../crates/corelink-wasm/examples/quickstart_list.ts) |
-| `GET /v1/admin/audit-events` | Merkle-chained audit log | [`quickstart_audit.rs`](../crates/corelink-cli/examples/quickstart_audit.rs) | [`quickstart_audit.py`](../crates/corelink-py/examples/quickstart_audit.py) | [`quickstart_audit.go`](../crates/corelink-go/examples/quickstart_audit.go) | [`quickstart_audit.ts`](../crates/corelink-wasm/examples/quickstart_audit.ts) |
-| `POST /v1/admin/ops` (`byok_rotate`) | BYOK key rotation (dual-approval) | [`quickstart_byok_rotate.rs`](../crates/corelink-cli/examples/quickstart_byok_rotate.rs) | [`quickstart_byok_rotate.py`](../crates/corelink-py/examples/quickstart_byok_rotate.py) | [`quickstart_byok_rotate.go`](../crates/corelink-go/examples/quickstart_byok_rotate.go) | [`quickstart_byok_rotate.ts`](../crates/corelink-wasm/examples/quickstart_byok_rotate.ts) |
-| `GET /api/health` | Liveness + dependency status | [`quickstart_stats.rs`](../crates/corelink-cli/examples/quickstart_stats.rs) | [`quickstart_stats.py`](../crates/corelink-py/examples/quickstart_stats.py) | [`quickstart_stats.go`](../crates/corelink-go/examples/quickstart_stats.go) | [`quickstart_stats.ts`](../crates/corelink-wasm/examples/quickstart_stats.ts) |
-| `POST /v1/privacy/dsr/{action}` | GDPR/CCPA DSR submission | [`quickstart_dsr_submit.rs`](../crates/corelink-cli/examples/quickstart_dsr_submit.rs) | [`quickstart_dsr_submit.py`](../crates/corelink-py/examples/quickstart_dsr_submit.py) | [`quickstart_dsr_submit.go`](../crates/corelink-go/examples/quickstart_dsr_submit.go) | [`quickstart_dsr_submit.ts`](../crates/corelink-wasm/examples/quickstart_dsr_submit.ts) |
-| `POST /v1/admin/ops` (`team_invite`) | Invite a team member (dual-approval) | [`quickstart_team_invite.rs`](../crates/corelink-cli/examples/quickstart_team_invite.rs) | [`quickstart_team_invite.py`](../crates/corelink-py/examples/quickstart_team_invite.py) | [`quickstart_team_invite.go`](../crates/corelink-go/examples/quickstart_team_invite.go) | [`quickstart_team_invite.ts`](../crates/corelink-wasm/examples/quickstart_team_invite.ts) |
-| `POST /v1/enterprise/inquire` | Enterprise-portal session | [`quickstart_portal_session.rs`](../crates/corelink-cli/examples/quickstart_portal_session.rs) | [`quickstart_portal_session.py`](../crates/corelink-py/examples/quickstart_portal_session.py) | [`quickstart_portal_session.go`](../crates/corelink-go/examples/quickstart_portal_session.go) | [`quickstart_portal_session.ts`](../crates/corelink-wasm/examples/quickstart_portal_session.ts) |
+| `POST /v1/signup` | Provision a new tenant (atomic) | [`quickstart_signup.rs`](../tools/cli/examples/quickstart_signup.rs) | [`quickstart_signup.py`](../tools/sdks/python/examples/quickstart_signup.py) | [`quickstart_signup.go`](../tools/sdks/go/examples/quickstart_signup.go) | [`quickstart_signup.ts`](../crates/corelink-wasm/examples/quickstart_signup.ts) |
+| `POST /v1/pats` | Issue a PAT (shown-once token) | [`quickstart_put.rs`](../tools/cli/examples/quickstart_put.rs) | [`quickstart_put.py`](../tools/sdks/python/examples/quickstart_put.py) | [`quickstart_put.go`](../tools/sdks/go/examples/quickstart_put.go) | [`quickstart_put.ts`](../crates/corelink-wasm/examples/quickstart_put.ts) |
+| `GET /v1/users/me` | "Who am I?" — verify PAT | [`quickstart_get.rs`](../tools/cli/examples/quickstart_get.rs) | [`quickstart_get.py`](../tools/sdks/python/examples/quickstart_get.py) | [`quickstart_get.go`](../tools/sdks/go/examples/quickstart_get.go) | [`quickstart_get.ts`](../crates/corelink-wasm/examples/quickstart_get.ts) |
+| `GET /v1/pats` | List PATs (no plaintext) | [`quickstart_list.rs`](../tools/cli/examples/quickstart_list.rs) | [`quickstart_list.py`](../tools/sdks/python/examples/quickstart_list.py) | [`quickstart_list.go`](../tools/sdks/go/examples/quickstart_list.go) | [`quickstart_list.ts`](../crates/corelink-wasm/examples/quickstart_list.ts) |
+| `GET /v1/admin/audit-events` | Merkle-chained audit log | [`quickstart_audit.rs`](../tools/cli/examples/quickstart_audit.rs) | [`quickstart_audit.py`](../tools/sdks/python/examples/quickstart_audit.py) | [`quickstart_audit.go`](../tools/sdks/go/examples/quickstart_audit.go) | [`quickstart_audit.ts`](../crates/corelink-wasm/examples/quickstart_audit.ts) |
+| `POST /v1/admin/ops` (`byok_rotate`) | BYOK key rotation (dual-approval) | [`quickstart_byok_rotate.rs`](../tools/cli/examples/quickstart_byok_rotate.rs) | [`quickstart_byok_rotate.py`](../tools/sdks/python/examples/quickstart_byok_rotate.py) | [`quickstart_byok_rotate.go`](../tools/sdks/go/examples/quickstart_byok_rotate.go) | [`quickstart_byok_rotate.ts`](../crates/corelink-wasm/examples/quickstart_byok_rotate.ts) |
+| `GET /api/health` | Liveness + dependency status | [`quickstart_stats.rs`](../tools/cli/examples/quickstart_stats.rs) | [`quickstart_stats.py`](../tools/sdks/python/examples/quickstart_stats.py) | [`quickstart_stats.go`](../tools/sdks/go/examples/quickstart_stats.go) | [`quickstart_stats.ts`](../crates/corelink-wasm/examples/quickstart_stats.ts) |
+| `POST /v1/privacy/dsr/{action}` | GDPR/CCPA DSR submission | [`quickstart_dsr_submit.rs`](../tools/cli/examples/quickstart_dsr_submit.rs) | [`quickstart_dsr_submit.py`](../tools/sdks/python/examples/quickstart_dsr_submit.py) | [`quickstart_dsr_submit.go`](../tools/sdks/go/examples/quickstart_dsr_submit.go) | [`quickstart_dsr_submit.ts`](../crates/corelink-wasm/examples/quickstart_dsr_submit.ts) |
+| `POST /v1/admin/ops` (`team_invite`) | Invite a team member (dual-approval) | [`quickstart_team_invite.rs`](../tools/cli/examples/quickstart_team_invite.rs) | [`quickstart_team_invite.py`](../tools/sdks/python/examples/quickstart_team_invite.py) | [`quickstart_team_invite.go`](../tools/sdks/go/examples/quickstart_team_invite.go) | [`quickstart_team_invite.ts`](../crates/corelink-wasm/examples/quickstart_team_invite.ts) |
+| `POST /v1/enterprise/inquire` | Enterprise-portal session | [`quickstart_portal_session.rs`](../tools/cli/examples/quickstart_portal_session.rs) | [`quickstart_portal_session.py`](../tools/sdks/python/examples/quickstart_portal_session.py) | [`quickstart_portal_session.go`](../tools/sdks/go/examples/quickstart_portal_session.go) | [`quickstart_portal_session.ts`](../crates/corelink-wasm/examples/quickstart_portal_session.ts) |
 
 ## How to run
 
@@ -47,7 +47,7 @@ Build all 10 at once: `cargo build --examples -p corelink-cli`.
 Examples use only the stdlib (`urllib.request`) so no `pip install` is required:
 
 ```bash
-CORELINK_PAT=$PAT python3 crates/corelink-py/examples/quickstart_signup.py
+CORELINK_PAT=$PAT python3 tools/sdks/python/examples/quickstart_signup.py
 ```
 
 ### Go (≥1.21)
@@ -55,7 +55,7 @@ CORELINK_PAT=$PAT python3 crates/corelink-py/examples/quickstart_signup.py
 Each `.go` file is marked `//go:build ignore` (canonical Go-stdlib pattern) so the files coexist as runnable single-file programs:
 
 ```bash
-CORELINK_PAT=$PAT go run crates/corelink-go/examples/quickstart_signup.go
+CORELINK_PAT=$PAT go run tools/sdks/go/examples/quickstart_signup.go
 ```
 
 ### TypeScript (Node ≥18, `tsx` recommended)

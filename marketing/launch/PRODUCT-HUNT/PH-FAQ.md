@@ -9,8 +9,8 @@
 ## General
 
 **Q: How is CoreLink different from `[existing remote cache]`?**
-A: CoreLink is multi-tenant with TLA+-verified tenant isolation, BYOK on AWS KMS (GCP / Azure / Vault on the roadmap) with customer-managed kill switch, and four enumerated regions with a structural no-cross-region-leak invariant. The relevant differentiators are listed in the launch post; we will not characterize competitors directly.
-Source: `corelink.humangr.com/blog/01-introducing-corelink`.
+A: CoreLink is multi-tenant with TLA+-verified tenant isolation, BYOK on AWS KMS (GCP / Azure / Vault on the roadmap) with customer-managed kill switch, and three enumerated regions live at GA (WNAM, ENAM, WEUR; SAM / APAC on the roadmap) with a structural no-cross-region-leak invariant. The relevant differentiators are listed in the launch post; we will not characterize competitors directly.
+Source: `humangr.com/corelink/blog/01-introducing-corelink`.
 
 **Q: Is CoreLink open source?**
 A: CoreLink is a managed service at GA. Apache 2.0 release is anti-scope for GA and a post-GA decision per the spec contract; the verification toolkit for the audit chain is planned for an open-source release.
@@ -27,8 +27,8 @@ A: Yes. CoreLink is conformant with the Remote Execution API family (CAS + AC), 
 Source: REMOTE-CACHE-PRODUCT-PROFILE.
 
 **Q: What hash algorithm does CoreLink use for content addressing?**
-A: BLAKE3 where the protocol permits; SHA-256 for REAPI compatibility. The audit chain layer pins SHA-256 per RFC 6962.
-Source: `corelink.humangr.com/blog/03-audit-chain-merkle-proofs`.
+A: BLAKE3 where the protocol permits; SHA-256 for REAPI compatibility. The audit chain is a linear, append-only hash chain (`BLAKE3(prev || event)`) — not a Merkle-tree structure.
+Source: `humangr.com/corelink/blog/03-audit-chain-merkle-proofs`.
 
 **Q: How does CoreLink handle build-without-the-bytes?**
 A: REAPI semantics are honored: clients that opt into build-without-the-bytes receive directory and action digests without the full blob download, with CoreLink retrieving blobs on demand.
@@ -53,16 +53,16 @@ A: External pentest is engaged with one of Schellman, A-LIGN, or Trail of Bits, 
 Source: spec contract S-20 §5.1 R-S20-2 + CAP-GA-002.
 
 **Q: How does BYOK work?**
-A: Envelope encryption. Customer holds the KEK in their KMS (AWS / GCP / Azure / Vault). CoreLink wraps per-object DEKs under the customer's KEK. Bounded DEK cache (5-minute hard cap). Customer disables KEK → CoreLink hard-fails the data path → kill switch enforced cryptographically, not by policy.
-Source: `corelink.humangr.com/blog/02-byok-deep-dive` + INV-BYOK-CRYPTO-SOVEREIGNTY.
+A: Envelope encryption. Customer holds the KEK in their KMS — AWS KMS today, with GCP / Azure / Vault on the roadmap. CoreLink wraps per-object DEKs under the customer's KEK. Bounded DEK cache (5-minute hard cap). Customer disables KEK → CoreLink hard-fails the data path → kill switch enforced cryptographically, not by policy.
+Source: `humangr.com/corelink/blog/02-byok-deep-dive` + INV-BYOK-CRYPTO-SOVEREIGNTY.
 
 **Q: What regions do you support?**
-A: Four regions at GA: WNAM, ENAM, WEUR, SAM. APAC is anti-scope for GA, planned post-GA Q1 demand-driven.
+A: Three regions at GA: WNAM, ENAM, WEUR. SAM and APAC are anti-scope for GA, planned post-GA Q1 demand-driven.
 Source: spec contract S-20 §10 + INV-DATA-RESIDENCY.
 
 **Q: Is data ever moved across regions?**
 A: No. Cross-region replication of customer data is structurally not permitted (`INV-REGION-NO-CROSS-LEAK`). The invariant is part of the TLA+ tenant isolation spec.
-Source: `corelink.humangr.com/blog/04-multi-region-residency`.
+Source: `humangr.com/corelink/blog/04-multi-region-residency`.
 
 **Q: How does erasure work?**
 A: NIST SP 800-88 Rev. 1 crypto-erase semantics. Erasure is verifiable today; a customer-served Ed25519-signed attestation (replayable against CoreLink's published signing key) is on the near-term roadmap. 7-year attestation retention.
@@ -85,8 +85,8 @@ A: Phase 2 (Remote Execution — executor identity, sandboxed action execution, 
 Source: spec contract S-20 §10.
 
 **Q: When does APAC ship?**
-A: Post-GA Q1, demand-driven. We will not announce APAC until we can ship it with the same operational coverage as the existing four regions.
-Source: spec contract S-20 §10 + `corelink.humangr.com/blog/04-multi-region-residency`.
+A: Post-GA Q1, demand-driven. We will not announce APAC until we can ship it with the same operational coverage as the existing three regions.
+Source: spec contract S-20 §10 + `humangr.com/corelink/blog/04-multi-region-residency`.
 
 **Q: What about SOC 2 Type II?**
 A: Type I engagement six months post-GA; Type II is the follow-on. We are not pre-committing a Type II date in this thread.
@@ -95,10 +95,10 @@ Source: spec contract S-20 §5.1 R-S20-3.
 ## Trust posture
 
 **Q: Can I see your TLA+ specs?**
-A: Yes. Published at `corelink.humangr.com/trust/formal-verification`.
+A: Yes. Published at `humangr.com/corelink/trust/formal-verification`.
 
 **Q: Can I see your SBOM?**
-A: Yes. CycloneDX 1.5+, signed, published. `corelink.humangr.com/trust/sbom`.
+A: Yes. CycloneDX 1.5+, signed, published. `humangr.com/corelink/trust/sbom`.
 
 **Q: Can I see your DPA?**
 A: Yes. `humangr.com/corelink/en/legal/dpa`. The DPA package was Legal-reviewed by external EU privacy counsel before any lighthouse customer signed.
