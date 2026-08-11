@@ -5,7 +5,9 @@ description: "The machine-readable --output=json contract (with SemVer disciplin
 source_files:
   - "docs/cli/json-output-schema.md"
   - "docs/cli/telemetry.md"
-checkpoint_sha: "2353f8087b481e9371bdd028a08672a8e753df63"
+source_blobs:
+  - "docs/cli/json-output-schema.md@988fee18f8144acf554a998ab50ea21cf9bc4945"
+checkpoint_sha: "49c06bd80d89fcf17d8569b3db9d1827db1000f6"
 provenance: "AUTHORED"
 tags: ["ops", "cli", "json", "telemetry", "privacy", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

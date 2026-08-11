@@ -22,7 +22,9 @@ source_files:
   - "apps/analytics-worker/src/ingest.ts"
   - "apps/signup-worker/src/webhooks/audit_drain_cron.ts"
   - "docs/cli/audit-export.md"
-checkpoint_sha: "2353f8087b481e9371bdd028a08672a8e753df63"
+source_blobs:
+  - "docs/cli/audit-export.md@813c70f0a1807411138d865e73c44bb16143102e"
+checkpoint_sha: "49c06bd80d89fcf17d8569b3db9d1827db1000f6"
 provenance: "AUTHORED"
 tags: ["ops", "audit", "export", "analytics", "compliance", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
