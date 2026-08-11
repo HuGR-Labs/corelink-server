@@ -32,7 +32,12 @@ concurrency:
 
 jobs:
   flag-legal-review:
-    runs-on: ubuntu-latest
+    # Runner: `corelink` — the product's own ephemeral runner fabric (zero
+    # GitHub-hosted spend). This job is pure `actions/github-script` (labels +
+    # a sticky comment via the runner's bundled node), so it needs nothing off
+    # the box image. Fires only on `legal/dpa/**` PRs, so it is rare — but the
+    # zero-hosted floor is absolute: self-hosted or it does not run.
+    runs-on: corelink
     steps:
       - name: Add legal-review-required label
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0

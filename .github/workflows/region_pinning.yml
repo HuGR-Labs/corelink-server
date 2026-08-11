@@ -224,7 +224,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   rb-region-leak-dry-run:
     name: RB-region-leak dry-run (INV-REGION-NO-CROSS-LEAK forensic)
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: pure bash/python3 forensic script (baked into the corelink image)
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -237,20 +237,32 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   workflow-yaml-smoke:
     name: region_pinning.yml YAML parse smoke
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: pure python3 + PyYAML (baked into the corelink image)
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      - name: region_pinning.yml parse smoke
-        run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/region_pinning.yml'))"
+      # PyYAML is NOT part of the corelink box image's global site-packages
+      # (the image bakes python3 + venv, not every wheel). We do NOT assume a
+      # global `import yaml`; instead we self-provision PyYAML in a repo-local
+      # venv — the exact pattern proven green on corelink by openapi-validate.yml.
+      # (Do not "simplify" back to a bare `python3 -c "import yaml"`: that silently
+      # depends on an unversioned image detail and reds the gate if the wheel is
+      # ever absent.)
+      - name: region_pinning.yml parse smoke (PyYAML in a venv on system python3)
+        run: |
+          set -euo pipefail
+          python3 -m venv .yamlsmoke-venv
+          .yamlsmoke-venv/bin/python3 -m pip install --quiet --upgrade pip
+          .yamlsmoke-venv/bin/python3 -m pip install --quiet pyyaml
+          .yamlsmoke-venv/bin/python3 -c "import yaml; yaml.safe_load(open('.github/workflows/region_pinning.yml')); print('region_pinning.yml parses clean')"
 
   # ────────────────────────────────────────────────────────────────────────────
   # 7. Aggregate gate (fan-in for required-status-checks branch protection).
   # ────────────────────────────────────────────────────────────────────────────
   region-pinning-gate:
     name: region pinning gate (aggregate — INV-REGION-NO-CROSS-LEAK)
-    runs-on: ubuntu-latest
+    runs-on: corelink  # zero-hosted: fan-in echo only; nothing off the box image
     timeout-minutes: 1
     needs:
       - migration-check
