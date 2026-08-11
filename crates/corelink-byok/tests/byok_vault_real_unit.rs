@@ -627,7 +627,25 @@ mod prop {
     }
 
     fn arb_ctx_pair() -> impl Strategy<Value = (serde_json::Value, serde_json::Value)> {
-        proptest::collection::vec(arb_kv(), 1..=6).prop_map(|mut kvs| {
+        proptest::collection::vec(arb_kv(), 1..=6).prop_map(|kvs| {
+            // Collapse duplicate keys FIRST. `arb_kv` can emit the same key
+            // twice with different values; a JSON object keeps only the LAST
+            // value written for a key, so reversing the insertion order below
+            // would then leave a DIFFERENT surviving value — making m1 and m2
+            // two genuinely different logical maps, not the order-permutation
+            // of the SAME key/value set this property means to test. (That
+            // collision is exactly what failed the coverage lane: a `("n", _)`
+            // pair overwriting another gave `{"n":"0"}` vs `{"n":"-"}`.) Dedup
+            // last-write-wins, matching object insert semantics, so both maps
+            // hold an identical key/value set and only the insertion ORDER
+            // differs — which is the invariant actually under test.
+            let mut dedup: std::collections::BTreeMap<String, String> =
+                std::collections::BTreeMap::new();
+            for (k, v) in kvs {
+                dedup.insert(k, v);
+            }
+            let mut kvs: Vec<(String, String)> = dedup.into_iter().collect();
+
             let mut m1 = serde_json::Map::new();
             for (k, v) in &kvs {
                 m1.insert(k.clone(), serde_json::Value::String(v.clone()));
