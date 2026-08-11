@@ -34,8 +34,24 @@ Each entry cross-references:
   graceful backpressure under very high concurrency; a demand spike is a one-line revert to
   `standard-1`. Applied to the base block, `[env.prod]`, and all five `[env.prod-*]` regional blocks
   (identical image/binary across regions; `iad` is the load-tested representative).
+- **ci: moved the `ac-bucket-acl-cron` and `gc-sweep-dry-run` daily scheduled lanes from `ubuntu-latest`
+  to the self-hosted `corelink` ephemeral runner**, closing two hosted-Actions faucets that resumed
+  spending the moment the billing block cleared. Both need only tools already baked into the runner
+  image (curl + `python3` stdlib; the pinned Rust toolchain via `scripts/ci-use-host-toolchain.sh`).
+  Both were dispatch-verified green on `corelink` before merge. The 3 remaining armed hosted crons
+  (`okf_nightly`, `billing-reconcile-daily`, `compliance-weekly`) need `pip`/`venv` or the `gh` CLI,
+  deferred to a second runner-image increment.
 
 ### Fixed
+- **fix(ci): `ac-bucket-acl-cron` mis-flagged every hardened AC bucket as CORS drift.** The audit's
+  `python3 -c` one-liner did `data.get("result", data).get("rules")`; a bucket with no CORS config
+  returns `{"success":false,"errors":[{"code":10059,…}],"result":null}`, so `result` is present-but-null,
+  `.get("result", data)` returned null, and `.get("rules")` raised `AttributeError` — read by the shell
+  as "rules NOT empty", firing a false `RB-FM-AC-BUCKET-LEAK` on all five hardened buckets. The bug was
+  runner-independent (it would crash identically on `ubuntu-latest`); it surfaced when the lane moved to
+  `corelink`. The audit now classifies via a helper (0=hardened for either `rules==[]` or the 10059
+  absent-config shape, 1=drift, 2=genuine API error), and self-heal `DELETE`s the CORS config instead of
+  `PUT {"rules":[]}` (which R2 rejects with HTTP 400; the canonical hardened posture is an absent config).
 - **fix(deps): `trivy fs` went red for every PR on 5 HIGH CVEs published against dependencies already on `main`; 2 are FIXED by override and 2 have no fix to take.** The gate runs on `pull_request` only, never on push to `main` (`.github/workflows/trivy.yml:63`), so `main` showed green while every branch opened after the CVEs published failed identically — the failure looked like a property of whichever PR happened to be open. **Fixed, not suppressed** (the house rule `.trivyignore.yaml` already sets, and the precedent `ws@7.5.10` set): `js-yaml@4.3.0` GHSA-5p4m-2wfm-xmqj / CVE-2026-59870 (quadratic CPU in `!!omap` resolution) — the *existing* override `js-yaml@>=4.0.0 <4.3.0` → `>=4.3.0` had pinned the tree to exactly the version that later became vulnerable, a standing hazard of any lower-bound override, so both js-yaml bounds move up (`>=4.3.1`, `>=3.15.1`); and `nanoid@3.3.12` CVE-2026-67213 / CVE-2026-67214 (infinite loop) is reached via `postcss@8.5.19`, and a `nanoid@<3.3.17` → `>=3.3.17 <4` pnpm override resolves it to **3.3.18**; a second override covers the 4.x/5.x line at `>=5.1.16` so a future hoist cannot land back on a vulnerable major. **Accepted as risk, with Owner sign-off, because there is nothing to upgrade to:** `image-size@2.0.2` CVE-2025-71329 / CVE-2025-71330 (DoS via crafted image / ICNS) — `npm view image-size versions` ends at **2.0.2**, so 2.0.2 IS the latest ever published and no override can fix it. It is reached only through `@docusaurus/mdx-loader` (`pnpm-lock.yaml:13170`), i.e. the docs-site BUILD toolchain: not in the Worker, not in the container, not on any request path a customer can reach, and the only images it parses are ones we commit ourselves. Both entries are path-scoped to `pnpm-lock.yaml`, carry the `statement` the file's policy requires, are labelled **ACCEPTED RISK (not a false positive)** so a later reader cannot mistake them for a classification, and name their own retirement condition — an upstream patch, or the docs site being retired. **Not fixed here:** the gate's `pull_request`-only trigger is what let a repo-wide supply-chain finding masquerade as a per-PR failure; a scheduled run on `main` would have surfaced it as what it is.
 - **fix(test): the `wdb` sub-phase harness's "no delay" case had a 150 ms delay in it — and the suite
   passes either way, which is why it survived two reviews and a re-introduction.** The no-delay sentinel
