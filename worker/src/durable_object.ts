@@ -904,11 +904,14 @@ export class CoreLinkServer implements DurableObject {
           // env-contract class as FABRIC_INTROSPECT_AUTH_KEY above (check-env-contract.py).
           BILLING_INGEST_AUTH_KEY: this.env.BILLING_INGEST_AUTH_KEY ?? "",
           // Complete the env contract (2026-06-13 audit): every var the container
-          // reads via env::var MUST be forwarded, else setting the secret later
-          // silently never reaches the container (the class of bug that hid the
-          // ERASURE_SALT_KEY gap). These are unset in prod today (features off /
-          // CAS fallback-derivation), so forwarding empty strings is a no-op now
-          // but makes a future secret-set "just work".
+          // reads via env::var MUST be forwarded UNCONDITIONALLY, else setting the
+          // secret later silently never reaches the container (the class of bug
+          // that hid the ERASURE_SALT_KEY gap). Some of these ARE set in prod
+          // (verified 2026-08-10: R2_TDK_HEX is populated on prod + all regionals,
+          // so CAS uses real per-tenant HMAC prefix derivation — NOT the fallback;
+          // the OCI signing key is set under the legacy HUGR_OCI_TOKEN_KEY name
+          // below). Others remain unset; forwarding an empty string when a var is
+          // unset is a harmless no-op that makes a future secret-set "just work".
           R2_TDK_HEX: this.env.R2_TDK_HEX ?? "",
           SIGNUP_TOKEN_KEY: this.env.SIGNUP_TOKEN_KEY ?? "",
           // OCI token-mint signing key — read by the container's OCI adapter.
