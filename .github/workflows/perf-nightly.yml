@@ -27,7 +27,14 @@ on:
     # 03:17 UTC — early enough to settle before the SLO nightly digest at
     # 06:00 UTC. Staggered relative to the WI-S01-007 nightly extended
     # gates that fire at 04:23 UTC.
-    - cron: '17 3 * * *'
+    #
+    # Cadence DAILY -> WEEKLY Thu (2026-08-10 cost hygiene, owner-authorized):
+    # this lane is healthy (8/8) but is the single most expensive ACTIVE daily
+    # hosted lane — ~31 min/run, ~930 hosted min/month. Weekly cuts ~800
+    # min/month; the trade-off is a perf regression can go up to 7 days
+    # undetected (owner-accepted, reversible). `workflow_dispatch` remains for an
+    # on-demand run before a perf-sensitive release.
+    - cron: '17 3 * * 4'
   workflow_dispatch:
     inputs:
       update_baseline:
