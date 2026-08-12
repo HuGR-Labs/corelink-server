@@ -37,6 +37,8 @@ excludes:
     reason: "OKF reserved file (machine-generated listing) — never a concept doc (contract C9)."
   - surface: "docs/knowledge/log.md"
     reason: "OKF reserved file (machine-appended history) — never a concept doc (contract C9)."
+  - surface: "crates/corelink-runner-overage"
+    reason: "Pure leaf money-math primitive (WI-S10-007): integer-only overage + shadow-charge arithmetic for runner compute billing — zero I/O, zero deps, no credentials, no request-reachable enforcement; a stateless computation helper, same class as worker/src/region-map.ts & worker/src/lib/blake3.ts. The runner-overage billing NARRATIVE (staging → aggregate → shadow-charge → Stripe flow) lives in the WI-S10-007 aggregator concept, not this arithmetic leaf."
   # ---- EDGE-PLANE / apps file-granular exempts (BR5; glob-matched) ----
   # signup-worker + analytics-worker are now gated FILE-GRANULAR (their load-bearing
   # files seed the edge concepts below); only the genuinely concept-exempt files
