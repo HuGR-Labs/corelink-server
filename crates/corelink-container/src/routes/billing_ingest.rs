@@ -183,15 +183,22 @@ pub trait UsageStagingStore: Send + Sync + core::fmt::Debug {
 }
 
 /// SQL: idempotent insert into the canonical `usage_event_staging` table
-/// (migration 0017). `request_id` carries the record's `idem_key` (the
-/// `(tenant_id, request_id)` PRIMARY KEY is the INV-BILLING-NO-DUP dedup
-/// coordinate). `ON CONFLICT DO NOTHING` makes a re-push a pure no-op; the
-/// `changes()` count distinguishes a fresh insert (1) from a dedup (0).
-/// `drained_to_r2_at` is left NULL — the drain Worker advances that
+/// (migration 0017; `qty` / `event_kind` / `billing_period` added by 0095 so the
+/// counter aggregator can drain the quantity directly). `request_id` carries the
+/// record's `idem_key` (the `(tenant_id, request_id)` PRIMARY KEY is the
+/// INV-BILLING-NO-DUP dedup coordinate). `ON CONFLICT DO NOTHING` makes a re-push
+/// a pure no-op; the `changes()` count distinguishes a fresh insert (1) from a
+/// dedup (0). `drained_to_r2_at` is left NULL — the drain Worker advances that
 /// watermark when it commits the R2 PutObject.
+///
+/// `qty` / `event_kind` / `billing_period` are persisted (not just hashed) so the
+/// billable quantity is durably aggregatable server-side (WI-S10-007); the
+/// `event_payload_hash` still binds all three, so a tampered stored `qty` is
+/// detectable.
 const STAGE_INSERT_SQL: &str = "INSERT INTO usage_event_staging \
-     (tenant_id, region, request_id, event_type, event_payload_hash, event_id, emitted_at) \
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+     (tenant_id, region, request_id, event_type, event_payload_hash, event_id, emitted_at, \
+      qty, event_kind, billing_period) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
      ON CONFLICT (tenant_id, request_id) DO NOTHING";
 
 /// SQL: read back whether the `(tenant_id, request_id)` coordinate now
@@ -273,6 +280,8 @@ impl UsageStagingStore for D1UsageStagingStore {
         let payload_hash = Self::payload_hash(record);
         let i64_time = i64::try_from(record.time_ms)
             .map_err(|_| format!("time_ms out of i64 range: {}", record.time_ms))?;
+        let i64_qty = i64::try_from(record.qty)
+            .map_err(|_| format!("qty out of i64 range: {}", record.qty))?;
         self.d1
             .query(
                 STAGE_INSERT_SQL,
@@ -284,6 +293,9 @@ impl UsageStagingStore for D1UsageStagingStore {
                     serde_json::Value::String(payload_hash),
                     serde_json::Value::String(record.source.clone()),
                     serde_json::Value::Number(i64_time.into()),
+                    serde_json::Value::Number(i64_qty.into()),
+                    serde_json::Value::String(record.event_kind.as_str().to_owned()),
+                    serde_json::Value::String(record.billing_period.clone()),
                 ],
             )
             .await?;
