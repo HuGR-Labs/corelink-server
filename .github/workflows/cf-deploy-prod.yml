@@ -55,6 +55,14 @@ jobs:
   # ---------------------------------------------------------------------------
   gate-secrets-checklist:
     name: gate — secrets checklist drift
+    # Fail-CLOSED on the release-pipeline (workflow_run) path: `workflow_run` fires
+    # on EVERY release-cli completion — including a FAILED one — and the manual
+    # `confirm` step below is skipped for non-dispatch events. Without this guard a
+    # failed/cancelled release-cli would still roll all 5 prod envs. Only proceed
+    # when release-cli actually SUCCEEDED; workflow_dispatch is unaffected.
+    if: >-
+      github.event_name != 'workflow_run'
+      || github.event.workflow_run.conclusion == 'success'
     runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
