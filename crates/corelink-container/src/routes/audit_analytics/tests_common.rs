@@ -26,6 +26,21 @@ use super::shadow_factory::ShadowSinkFactory;
 use super::state::{build_state, AuditAnalyticsRouteState};
 use super::types::AnalyticsAuditRow;
 
+/// A `HeaderMap` carrying an owner-grade `admin` `x-corelink-scope` value —
+/// the audit-read capability (WP-B). Every handler now gates on
+/// [`crate::scope::requires_audit_read`] BEFORE any data access, so the
+/// behavior-under-test fixtures must present an admin scope to reach the arm
+/// they exercise (a scope-less request is correctly rejected 403). The
+/// dedicated scope-gate test uses its own non-admin headers.
+pub(super) fn admin_scope_headers() -> axum::http::HeaderMap {
+    let mut headers = axum::http::HeaderMap::new();
+    headers.insert(
+        crate::scope::SCOPE_HEADER,
+        axum::http::HeaderValue::from_static("admin"),
+    );
+    headers
+}
+
 /// Audit sink that always errors on `emit` — drives the
 /// `audit pipeline closed → 503` fail-CLOSED tests.
 #[derive(Debug, Default)]

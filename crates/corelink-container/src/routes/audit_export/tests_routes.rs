@@ -64,6 +64,7 @@ async fn cross_tenant_reject_returns_503_on_audit_sink_failure() {
         .uri(uri)
         .header(TENANT_ID_HEADER, auth_tenant.to_string())
         .header("x-corelink-tenant-id", auth_tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -161,6 +162,7 @@ async fn path_tenant_ne_header_returns_403_and_audits_sev1() {
         .uri(uri)
         .header(TENANT_ID_HEADER, auth_tenant.to_string())
         .header("x-corelink-tenant-id", auth_tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -216,6 +218,7 @@ async fn rate_limit_deny_returns_503_on_audit_sink_failure() {
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req1");
     let resp1 = app.clone().oneshot(req1).await.expect("oneshot");
@@ -227,6 +230,7 @@ async fn rate_limit_deny_returns_503_on_audit_sink_failure() {
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req2");
     let resp2 = app.oneshot(req2).await.expect("oneshot");
@@ -282,6 +286,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req1");
     let resp1 = app.clone().oneshot(req1).await.expect("oneshot");
@@ -297,6 +302,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req2");
     let resp2 = app.clone().oneshot(req2).await.expect("oneshot");
@@ -314,6 +320,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req3");
     let resp3 = app.oneshot(req3).await.expect("oneshot");
@@ -367,6 +374,7 @@ async fn wall_clock_saturated_to_zero_returns_503_and_emits_clock_unavailable_ro
         .uri(format!("/v1/audit/{tenant}/export?from=0&to=1000"))
         .header(TENANT_ID_HEADER, tenant.to_string())
         .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -544,6 +552,7 @@ async fn export_window_exceeding_30_days_returns_400() {
         .uri(uri)
         .header(TENANT_ID_HEADER, tenant.to_string())
         .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -589,6 +598,7 @@ async fn export_window_at_30_day_boundary_is_allowed() {
         .uri(uri)
         .header(TENANT_ID_HEADER, tenant.to_string())
         .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req");
     let resp = app.oneshot(req).await.expect("oneshot");
@@ -596,6 +606,76 @@ async fn export_window_at_30_day_boundary_is_allowed() {
         resp.status(),
         StatusCode::OK,
         "window == 30 days MUST pass the span gate (inclusive boundary)"
+    );
+}
+
+/// WP-B — audit-read requires a READ-capable PAT. A request whose
+/// server-trusted `x-corelink-scope` carries NO read capability (here a
+/// `find-missing`-only, existence-probe token) MUST be rejected 403
+/// "insufficient scope" BEFORE any data access, even with a valid tenant
+/// binding and window. A `read-only` PAT (the self-serve customer-export
+/// case) MUST clear the gate — so the owner's flip from admin-only does not
+/// break `corelink audit export`. The `admin` happy path is also pinned by
+/// `export_window_at_30_day_boundary_is_allowed`.
+#[tokio::test]
+async fn non_read_scope_is_rejected_403_read_scope_passes() {
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    let build_app = || {
+        let sink = Arc::new(InMemoryExportAuditSink::new());
+        let exporter: Arc<dyn AuditExporter> = Arc::new(InMemoryAuditExporter::new());
+        let rl_audit = Arc::new(InMemoryRateLimitAuditSink::new());
+        let rl_metrics = Arc::new(InMemoryRateLimitMetrics::new());
+        let rate_limiter: Arc<dyn RateLimiter> = Arc::new(InMemoryTokenBucketRateLimiter::new(
+            rl_audit,
+            rl_metrics,
+            audit_export_rate_limit_config(),
+        ));
+        let state = AuditExportRouteState {
+            exporter,
+            rate_limiter,
+            audit_sink: sink as Arc<dyn ExportAuditSink>,
+            pager_page_size: R2_LIST_PAGE_SIZE,
+            wall_clock: default_wall_clock(),
+            pat_gate: None,
+        };
+        router(state)
+    };
+
+    let tenant = Uuid::from_u128(0x5C0BE);
+    let uri = format!("/v1/audit/{tenant}/export?from=0&to=1000");
+
+    // find-missing-only (no read capability) → 403 "insufficient scope".
+    let req = axum::http::Request::builder()
+        .uri(uri.clone())
+        .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "find-missing")
+        .body(axum::body::Body::empty())
+        .expect("req");
+    let resp = build_app().oneshot(req).await.expect("oneshot");
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "a find-missing-only (no-read) scope MUST be rejected 403 at the audit-read gate"
+    );
+    let body = resp.into_body().collect().await.expect("body").to_bytes();
+    assert_eq!(body.as_ref(), b"insufficient scope");
+
+    // read-only (the self-serve customer export case) → clears the gate (200).
+    let req_ro = axum::http::Request::builder()
+        .uri(uri)
+        .header(TENANT_ID_HEADER, tenant.to_string())
+        .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "read-only")
+        .body(axum::body::Body::empty())
+        .expect("req");
+    let resp_ro = build_app().oneshot(req_ro).await.expect("oneshot");
+    assert_eq!(
+        resp_ro.status(),
+        StatusCode::OK,
+        "a read-only PAT MUST clear the audit-read gate (customer self-serve export)"
     );
 }
 
@@ -649,6 +729,7 @@ async fn forged_pat_is_rejected_when_gate_present() {
         .uri(uri)
         .header(TENANT_ID_HEADER, tenant.to_string())
         .header("x-corelink-tenant-id", tenant.to_string())
+        .header(crate::scope::SCOPE_HEADER, "admin")
         .body(axum::body::Body::empty())
         .expect("req");
     let resp = app.oneshot(req).await.expect("oneshot");

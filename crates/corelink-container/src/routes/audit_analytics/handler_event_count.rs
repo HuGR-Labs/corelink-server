@@ -52,6 +52,16 @@ pub(super) async fn handle_event_count(
             return (StatusCode::BAD_REQUEST, "tenant: invalid uuid in header").into_response();
         }
     };
+    // Audit-read scope gate (WP-B, fail-CLOSED): analytics over the security /
+    // PII audit log requires a READ-capable PAT (any of `read-only` /
+    // `read-write` / `cas:*` / `admin`) in the Worker-trusted `x-corelink-scope`
+    // header. A credential with NO read capability (empty / missing scope, or a
+    // `find-missing`-only / `billing`-only token) is rejected 403 BEFORE any
+    // data access and BEFORE the PAT-possession gate below. Cross-tenant
+    // isolation is the `x-corelink-tenant-id` binding's job, not this predicate's.
+    if !crate::scope::requires_audit_read(crate::scope::scope_from_headers(&headers)) {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
     // Native PAT possession gate (rt-nuclear #17 — defense-in-depth): re-verify the
     // bearer PAT resolves to the authenticated tenant BEFORE any data access, so a
     // leaked PAT_SIGNING_KEY cannot serve a forged tenant's analytics. Mirrors

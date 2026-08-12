@@ -52,6 +52,14 @@ pub(super) async fn handle_timeline(
             return (StatusCode::BAD_REQUEST, "tenant: invalid uuid in header").into_response();
         }
     };
+    // Audit-read scope gate (WP-B, fail-CLOSED): analytics over the security /
+    // PII audit log requires a READ-capable PAT — see `handle_event_count`. A
+    // credential with NO read capability (empty / missing scope, or a
+    // `find-missing`-only / `billing`-only token) is rejected 403 BEFORE any
+    // data access and BEFORE the PAT-possession gate below.
+    if !crate::scope::requires_audit_read(crate::scope::scope_from_headers(&headers)) {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
     // Native PAT possession gate (rt-nuclear #17) — see `handle_event_count`.
     if let Some(resp) = super::pat_gate_reject(&state, &auth.0, &headers).await {
         return resp;
