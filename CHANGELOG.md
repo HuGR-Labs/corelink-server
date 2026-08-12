@@ -245,6 +245,20 @@ Each entry cross-references:
   `the quota gate issued 0 batch round trips: []`).
 
 ### Added
+- **feat(billing): dedicated runner-compute counter lane (migration `0094`; WI-S10-007 foundation).**
+  Adds `runner_usage_counter` (per-`(tenant_id, region, billing_period)` aggregate of the billable
+  `runner_vcpu_seconds` meter) + `runner_hash_chain_head` (per-region tamper-chain resume coordinate).
+  The cache `usage_counter` (WI-S10-002) is left UNTOUCHED: its `CHECK (sku IN …)` enumerates only the
+  five cache SKUs and cannot hold `runner_vcpu_seconds`, and runner compute is a distinct product
+  surface (own Stripe subscription `runner_billing`, own entitlement `runners_entitlement.max_vcpu_h`,
+  own unit vCPU-seconds, outside the cache R2-hour reconciliation). This is storage foundation only —
+  it bills nothing; the aggregator cron and Stripe submission that read it are separate WI-S10-007
+  work. Additive-only (INV-AUTH-MIGRATION-ADDITIVE); replay-verified via
+  `cargo test -p corelink-ops --test migrations_d1_migration_integration` (3 pass). `runner_usage_counter`
+  is tenant-keyed, so it is classified into the DSR erase-set (`TENANT_ID_TABLES` /
+  `ALL_TENANT_KEYED_TABLES`, `routes/dsr/adapter_d1.rs`) as ERASE — the runner analog of `usage_counter`
+  (an operational pre-invoice counter, not the retained fiscal record) — satisfying the CF-1 GDPR
+  completeness gate (`runner_hash_chain_head` is region-keyed, not tenant-keyed, so it is out of scope).
 - **feat(quota): near-$-ceiling early-warning telemetry.** The leased quota
   gate (`crates/corelink-container/src/tenant_quota.rs`) now emits a structured
   `warn!` the moment a tenant's lease refill has to shrink below a full chunk to
