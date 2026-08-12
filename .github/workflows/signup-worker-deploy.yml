@@ -1,0 +1,81 @@
+name: signup-worker — CF Worker deploy
+
+# Deploys the signup-worker (Worker name: corelink-signup-worker — the LIVE
+# Stripe webhook + Clerk signup handler, the money path) on every push to main
+# that touches apps/signup-worker/**, plus manual dispatch.
+#
+# Before this lane, the signup-worker had NO CI deploy — it shipped only via a
+# manual `wrangler deploy`, so a merged change could silently sit undeployed
+# (the handler in prod lagging main). This closes that gap.
+#
+# Runner: `corelink` — the product's own ephemeral fabric (zero GitHub billing),
+# same host signup-worker-vitest.yml already tests on. wrangler-only (no docker).
+#
+# Deploy auth: CF_API_TOKEN + CF_ACCOUNT_ID (GH Actions secrets). The worker's
+# RUNTIME secrets (CLERK_WEBHOOK_SECRET, CLERK_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+# STRIPE_SECRET_KEY, CORELINK_INTERNAL_AUTH_KEY, CORELINK_PAT_MINT_AUTH_KEY,
+# ERASURE_SALT_KEY, …) are bound out-of-band via `wrangler secret put` — NOT by
+# this workflow — and are already populated in prod. `wrangler deploy` never
+# clears existing secrets, so a deploy is safe w.r.t. them.
+#
+# SHA-pinned per repo hard constraint; action bumps require review.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/signup-worker/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+
+concurrency:
+  group: signup-worker-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: build + deploy to CF Worker
+    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler-only, no docker
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/signup-worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          # No `cache:` — the corelink runner is ephemeral (fresh box each run),
+          # so a GH-cache round-trip is pure cost, and signup-worker's lockfile is
+          # gitignored (there is nothing to key a cache on). Mirrors docs-ci /
+          # signup-worker-vitest.
+
+      # `npm ci` cannot run — the lockfile is gitignored here (same as
+      # signup-worker-vitest.yml). --legacy-peer-deps: a fresh install floats
+      # wrangler ≥4.108 whose peerOPTIONAL ERESOLVEs under strict resolution.
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      # wrangler is a devDependency of signup-worker, but pin the global CLI to
+      # the repo-wide exact version for parity with the other deploy lanes (v3
+      # cannot parse [[env.*.containers]]; v4 is the supported line).
+      - name: Install wrangler
+        working-directory: .
+        run: npm install -g wrangler@4.95.0
+
+      # `wrangler deploy` esbuild-bundles src/index.ts and reads
+      # apps/signup-worker/wrangler.toml (single default env — no [env.*] blocks —
+      # name corelink-signup-worker, route corelink-signup.humangr.com/*).
+      - name: Deploy Worker
+        run: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
