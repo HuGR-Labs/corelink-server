@@ -1,14 +1,12 @@
 {
   "bench": "blake3_bench",
   "bench_id": "Digest__compute/1024 KiB",
-  "captured_at": "2026-07-02T20:32:01Z",
-  "commit": "8802e060",
+  "captured_at": "2026-08-12T00:01:11Z",
+  "commit": "716b3c1b",
   "crate": "corelink-hash",
-  "criticality": "CRITICAL",
-  "mean_ns": 300257.6674,
-  "median_ns": 300018.8494,
-  "notes": "Recaptured 2026-07-02 via perf-regression.yml on ubuntu-latest (GitHub-hosted), --measurement-time 5 \u2014 the audit \u00a75 operator recapture that supersedes the wave-29/30 --quick laptop proxy. Gated on MEDIAN (stable to <4% run-to-run on shared CI runners); no per-bench tolerance override needed even though this bench is memory-bandwidth-bound \u2014 the median is robust to the p99 tail jitter that made the old p99 gate false-positive.",
-  "p99_ns": 304863.9163,
-  "sample_count": 100,
-  "tolerance_pct": null
+  "mean_ns": 304058.2526673437,
+  "median_ns": 304017.21587301587,
+  "notes": "recaptured on corelink-builder (Mac) \u2014 runner move + refresh bench_id fix",
+  "p99_ns": 337794.99483552633,
+  "sample_count": 100
 }

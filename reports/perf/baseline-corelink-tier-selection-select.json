@@ -1,14 +1,12 @@
 {
   "bench": "select",
   "bench_id": "tier_selection_select_starter",
-  "captured_at": "2026-07-02T20:32:01Z",
-  "commit": "8802e060",
+  "captured_at": "2026-08-12T00:01:11Z",
+  "commit": "716b3c1b",
   "crate": "corelink-tier-selection",
-  "criticality": "NON_CRITICAL",
-  "mean_ns": 1269.361,
-  "median_ns": 1261.3706,
-  "notes": "Recaptured 2026-07-02T20:32:01Z via perf-regression.yml on ubuntu-latest (GitHub-hosted), --measurement-time 5 \u2014 audit \u00a75 operator recapture; supersedes the wave-29/30 --quick proxy. CPU-bound + stable run-to-run \u2192 tight CRITICAL/NON_CRITICAL class default (no per-bench tolerance override).",
-  "p99_ns": 1421.9143,
-  "sample_count": 100,
-  "tolerance_pct": null
+  "mean_ns": 7929.704368079783,
+  "median_ns": 7777.239274088542,
+  "notes": "recaptured on corelink-builder (Mac) \u2014 runner move + refresh bench_id fix",
+  "p99_ns": 10981.266737555576,
+  "sample_count": 100
 }

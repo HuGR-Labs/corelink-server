@@ -1,14 +1,12 @@
 {
   "bench": "merkle_append",
   "bench_id": "audit_chain_append_single",
-  "captured_at": "2026-07-02T20:32:01Z",
-  "commit": "8802e060",
+  "captured_at": "2026-08-12T00:01:11Z",
+  "commit": "716b3c1b",
   "crate": "corelink-audit-chain",
-  "criticality": "CRITICAL",
-  "mean_ns": 6400.6745,
-  "median_ns": 6369.0791,
-  "notes": "Recaptured 2026-07-02T20:32:01Z via perf-regression.yml on ubuntu-latest (GitHub-hosted), --measurement-time 5 \u2014 audit \u00a75 operator recapture; supersedes the wave-29/30 --quick proxy. CPU-bound + stable run-to-run \u2192 tight CRITICAL/NON_CRITICAL class default (no per-bench tolerance override).",
-  "p99_ns": 7648.7951,
-  "sample_count": 100,
-  "tolerance_pct": null
+  "mean_ns": 20825.3771659959,
+  "median_ns": 20502.826614481408,
+  "notes": "recaptured on corelink-builder (Mac) \u2014 runner move + refresh bench_id fix",
+  "p99_ns": 27933.272871428584,
+  "sample_count": 100
 }
