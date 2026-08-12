@@ -245,6 +245,16 @@ Each entry cross-references:
   `the quota gate issued 0 batch round trips: []`).
 
 ### Added
+- **feat(billing): runner compute-overage money core `corelink-runner-overage` (WI-S10-007 Phase B / shadow).**
+  A pure, integer-only, zero-I/O crate: given a tenant's aggregated runner compute for a billing period
+  (vCPU-seconds — the billable `runner_vcpu_seconds` meter) and its `RunnerTier` (the frozen `max_vcpu_h`
+  ladder starter 100 / pro 240 / team 600 / scale 1200 / max 2400, mirrored from the checkout backend), it
+  computes the overage above the included allowance, the Stripe meter quantity (vCPU-hours, exact decimal
+  string), and the **shadow charge** in millicents (fixed-point — money is never `f64`). The default rate
+  `$0.20`/vCPU-hour (owner-confirmed, derived first-principles) drives the shadow only; the live Stripe
+  graduated Price is the billing authority. No credentials, no D1/HTTP/Stripe — the deterministic math the
+  aggregator binary + shadow ledger call, so it bills nothing. 9 unit tests pin the tier ladder, the
+  overage boundary, and the charge math (incl. the 140-vCPU-h upgrade-nudge example = `$28.00`).
 - **feat(billing): dedicated runner-compute counter lane (migration `0094`; WI-S10-007 foundation).**
   Adds `runner_usage_counter` (per-`(tenant_id, region, billing_period)` aggregate of the billable
   `runner_vcpu_seconds` meter) + `runner_hash_chain_head` (per-region tamper-chain resume coordinate).

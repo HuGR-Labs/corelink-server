@@ -1,0 +1,13 @@
+[package]
+name = "corelink-runner-overage"
+description = "CoreLink runner compute-overage money core (WI-S10-007, Phase B / shadow). Pure, integer-only, zero-I/O arithmetic: given a tenant's aggregated runner compute for a billing period (vCPU-seconds, the billable `runner_vcpu_seconds` meter) and its RunnerTier (the frozen max_vcpu_h ladder starter 100 / pro 240 / team 600 / scale 1200 / max 2400, mirrored from the checkout backend), computes the overage above the included allowance, the Stripe meter quantity (vCPU-hours, exact decimal string), and the SHADOW charge in millicents (fixed-point, never f64). Holds no credentials and performs no D1/HTTP/Stripe I/O — the deterministic money math the aggregator binary + shadow ledger call. The $0.20/vCPU-hour default rate drives the shadow only; the live Stripe graduated Price is the billing authority."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

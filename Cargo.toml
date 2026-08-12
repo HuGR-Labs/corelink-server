@@ -112,6 +112,7 @@ members = [
     "crates/corelink-billing-aggregator",
     "crates/corelink-billing-stripe",
     "crates/corelink-billing-reconcile",
+    "crates/corelink-runner-overage",
     "crates/corelink-dsr",
     # R-prep tenant offboarding state machine (R-prep; complements DSR
     # individual-erasure surface with the canonical tenant-level
@@ -607,6 +608,7 @@ corelink-billing-emit = { path = "crates/corelink-billing-emit" }
 corelink-billing-aggregator = { path = "crates/corelink-billing-aggregator" }
 corelink-billing-stripe = { path = "crates/corelink-billing-stripe" }
 corelink-billing-reconcile = { path = "crates/corelink-billing-reconcile" }
+corelink-runner-overage = { path = "crates/corelink-runner-overage" }
 corelink-dsr = { path = "crates/corelink-dsr" }
 # R-prep tenant offboarding state machine.
 corelink-clerk-cf = { path = "crates/corelink-clerk-cf" }
