@@ -4,6 +4,17 @@ name: Cosign Sign Release Artifacts (WI-S12-003)
 # release tag is pushed.  Publishes signature to Rekor transparency log
 # and attaches it to the OCI registry (ghcr.io).
 #
+# WAIVER (human-authorized) — this lane stays GitHub-HOSTED, exempt from the
+# zero-hosted-spend mandate. Reason: it needs `docker` (build-push-action) + the
+# GitHub-hosted OIDC identity for Cosign keyless Fulcio/Rekor signing. The
+# self-hosted `corelink` Firecracker fabric has no docker daemon; the only
+# docker-capable self-hosted box is the founder's arm64 Mac, which would emulate
+# the amd64 image build. Cost is negligible: fires only on a release tag push /
+# manual dispatch, not per-PR.
+#   authorized-by: repo owner | 2026-08-11 ("manter hosted c/ waiver")
+#   remediation: move to self-hosted once a docker-capable native-amd64 runner
+#     exists (and keyless OIDC is verified to issue from it).
+#
 # Workflow contract (WI-S12-003 §6.1.1):
 #
 #   1. Build OCI image from Dockerfile.
