@@ -2276,6 +2276,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "corelink-runner-aggregate"
+version = "0.1.0"
+dependencies = [
+ "corelink-billing-aggregator",
+ "corelink-billing-emit",
+ "corelink-runner-overage",
+ "hex",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
+name = "corelink-runner-overage"
+version = "0.1.0"
+
+[[package]]
 name = "corelink-server"
 version = "0.1.0"
 dependencies = [
