@@ -52,13 +52,18 @@
  *      (step 5 again, full re-sign-in on session lapse) BEFORE every probe — the
  *      probe always uses a LIVE bearer. We succeed only on 200, so the emitted
  *      session is GUARANTEED tenant-ready; budget exhausted ⇒ FAIL LOUD.
- *   7. FRESHNESS (GAP 2): once ready, mint ONE final fresh JWT right before emit
+ *   7. DPA ACCEPT (GAP 3, default ON; `--no-dpa` to skip): once the tenant exists,
+ *      POST `${API}/v1/onboarding/dpa-accept` with the session bearer so the
+ *      tenant has a `dpa_acceptances` row for the current DPA version. Without it
+ *      the money-path gate (`tier-select`) 403s `dpa_required` and ~15 journeys
+ *      stay GATED. Idempotent; version from `CORELINK_DPA_VERSION`.
+ *   8. FRESHNESS (GAP 2): once ready, mint ONE final fresh JWT right before emit
  *      so the consumer gets a full ~60s window.
- *   8. Best-effort resolve the CoreLink tenant id (signup-worker webhook maps
+ *   9. Best-effort resolve the CoreLink tenant id (signup-worker webhook maps
  *      user.created → tenant; may lag — we poll, never write D1).
- *   9. Emit `export CORELINK_E2E_{CLERK,DSR,DSR_TEST}_SESSION=<jwt>` to stdout +
+ *  10. Emit `export CORELINK_E2E_{CLERK,DSR,DSR_TEST}_SESSION=<jwt>` to stdout +
  *      an output file (default /tmp/e2e-clerk-session.sh); print user_id.
- *  10. `--refresh` re-mints a fresh JWT for the same user (60s TTL); it skips the
+ *  11. `--refresh` re-mints a fresh JWT for the same user (60s TTL); it skips the
  *      readiness wait if a prior run already recorded the tenant as provisioned
  *      (sidecar `tenantReady` flag).
  *
@@ -79,7 +84,7 @@
  */
 
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config — every knob is env-driven with sane defaults for the LIVE instance.
@@ -155,6 +160,18 @@ const argv = process.argv.slice(2);
 const REFRESH = argv.includes("--refresh");
 /** Tenant-readiness gate (GAP 1) is ON by default; `--no-wait` skips it. */
 const WAIT_TENANT = !argv.includes("--no-wait");
+/** DPA acceptance (GAP 3) is ON by default; `--no-dpa` skips it. Without it the
+ * emitted session gates on `dpa_required` for every money-path journey. */
+const ACCEPT_DPA = !argv.includes("--no-dpa");
+/** The DPA version to accept — MUST equal the deployed container's
+ * `CORELINK_DPA_VERSION` or the accept 400s `dpa_version_mismatch`. Same env name
+ * the server reads, with an e2e-specific override. Default is the CANONICAL prod
+ * value `1.0.0` (docs/internal/secrets-checklist.md #146 + apps/admin-ui/src/
+ * content/dpa.en.ts — a mismatch like `v3` 403s every checkout forever). */
+const DPA_VERSION =
+  process.env.CORELINK_DPA_VERSION ||
+  process.env.CORELINK_E2E_DPA_VERSION ||
+  "1.0.0";
 const OUT_FILE =
   argv.find((a) => !a.startsWith("--")) || "/tmp/e2e-clerk-session.sh";
 /** Sidecar that records the throwaway user's creds so --refresh can re-sign-in
@@ -670,7 +687,75 @@ async function resolveTenantBestEffort(jwt) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Step 6 — emit the exports (stdout + file).
+// Step 6.5 — DPA onboarding accept (GAP 3). The money-path gate
+// (`/v1/onboarding/tier-select`) 403s `dpa_required` until the tenant has a
+// `dpa_acceptances` row for the CURRENT DPA version (INV-ONBOARD-DPA-FIRST). The
+// readiness gate (GAP 1) only proves the tenant ROW exists; it does NOT accept
+// the DPA. Without this, ~15 Clerk-session journeys (billing / dsr /
+// runner_purchase) stay GATED on `dpa_required`. Idempotent: a re-accept for the
+// same (tenant, version) is a no-op success. The deployed container's writer
+// (`routes/dpa_accept.rs::validate_request`) only checks version == current +
+// a 64-hex notice hash (it writes the client-attested "what the user saw" hash
+// straight to D1 — no server-side notice registry on that path), so we attest the
+// SHA-256 of a labelled fixture notice.
+// ─────────────────────────────────────────────────────────────────────────────
+const DPA_ACCEPT_PATH = "/v1/onboarding/dpa-accept";
+const FIXTURE_NOTICE_TEXT =
+  "corelink-e2e fixture DPA notice — accepted by clerk-session-minter.mjs";
+
+/**
+ * POST the DPA acceptance with a fresh session bearer. Fail-loud on anything but
+ * a 2xx (a mismatch would silently leave the money-path journeys gated).
+ * @param {{jwt:string}} ctx
+ */
+async function acceptDpa(ctx) {
+  const url = `${TENANT_PROBE_ENDPOINT}${DPA_ACCEPT_PATH}`;
+  const noticeHash = createHash("sha256")
+    .update(FIXTURE_NOTICE_TEXT)
+    .digest("hex");
+  const payload = {
+    dpa_version: DPA_VERSION,
+    dpa_locale: "en",
+    notice_text_hash: noticeHash,
+  };
+  log(`accepting DPA (version=${DPA_VERSION}, locale=en) → POST ${url} …`);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${ctx.jwt}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    die(`DPA accept POST ${url} failed to connect: ${e?.message || String(e)}`);
+  }
+  if (res.ok) {
+    log(
+      `DPA accepted (${res.status}) — tenant is now DPA-onboarded; the ` +
+        "money-path journeys (billing / dsr / runner_purchase) can un-gate.",
+    );
+    return;
+  }
+  const text = await res.text().catch(() => "");
+  if (res.status === 400 && text.includes("dpa_version_mismatch")) {
+    die(
+      `DPA accept rejected: the server's current DPA version != "${DPA_VERSION}". ` +
+        "Set CORELINK_DPA_VERSION (or CORELINK_E2E_DPA_VERSION) to the deployed " +
+        `container's CORELINK_DPA_VERSION and re-run. Server said:\n${text.slice(0, 300)}`,
+    );
+  }
+  die(
+    `DPA accept POST ${url} returned ${res.status} (expected 2xx). The emitted ` +
+      "session would still gate on `dpa_required` for tier-select/billing. Body:\n" +
+      text.slice(0, 500),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Step 7 — emit the exports (stdout + file).
 // ─────────────────────────────────────────────────────────────────────────────
 function emit({ jwt, userId, tenantId, tenantReady }) {
   const lines = [
@@ -792,8 +877,28 @@ async function main() {
     log("tenant already provisioned (sidecar) — skipping the readiness wait.");
   }
 
+  // GAP 3 — accept the current DPA so the money-path journeys don't 403
+  // `dpa_required`. Only when the tenant is proven to exist (an accept needs the
+  // tenant row); `--no-dpa` skips it. Uses a fresh bearer (the accept is
+  // session-authed and the JWT lives ~60s).
+  if (tenantAlreadyProvisioned && ACCEPT_DPA) {
+    ctx = await remintJwt(ctx, creds);
+    await acceptDpa(ctx);
+  } else if (!ACCEPT_DPA) {
+    log(
+      "--no-dpa: skipping DPA acceptance — the emitted session will gate on " +
+        "`dpa_required` for tier-select / billing / runner-purchase journeys.",
+    );
+  } else {
+    log(
+      "tenant not proven ready (--no-wait, no sidecar) — skipping DPA accept; " +
+        "the session may gate on `dpa_required`.",
+    );
+  }
+
   // GAP 2 / freshness — mint ONE final fresh JWT right before emitting so the
-  // consumer gets a full ~60s window (the probe loop spent some of the last one).
+  // consumer gets a full ~60s window (the probe loop + DPA accept spent some of
+  // the last one).
   ctx = await remintJwt(ctx, creds);
 
   const tenantId = await resolveTenantBestEffort(ctx.jwt);
