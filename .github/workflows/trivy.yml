@@ -40,6 +40,20 @@ name: trivy (JS-deps CVE + IaC misconfig)
 
 on:
   pull_request:
+    # Scoped to what trivy actually scans — the JS/npm dependency graph and
+    # IaC/Dockerfile/config. A Rust-only PR (crates/** with no lockfile or
+    # Dockerfile change) has nothing for trivy to scan, so it no longer fires
+    # there. Kept deliberately GENEROUS (any package manifest/lockfile anywhere,
+    # the whole worker/ + apps/ JS trees, every Dockerfile, terraform) so no CVE
+    # surface slips through; self-path so editing this gate re-runs it.
+    paths:
+      - '**/package.json'
+      - '**/pnpm-lock.yaml'
+      - '**/Dockerfile*'
+      - '**/*.tf'
+      - 'worker/**'
+      - 'apps/**'
+      - '.github/workflows/trivy.yml'
   workflow_dispatch:
 
 permissions:

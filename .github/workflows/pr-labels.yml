@@ -1,20 +1,16 @@
-# Auto-label PRs with a size bucket (XS / S / M / L / XL).
+# PR labels — path-based labels + size bucket, in ONE workflow.
 # -----------------------------------------------------------------------------
-# Thresholds (lines changed = additions + deletions):
-#   XS  <    10
-#   S   <    50
-#   M   <   200
-#   L   <   500
-#   XL  >=  500   → reviewer SHOULD ask author to split (see PR template L0.2).
+# Merged from the former `labeler.yml` (PR Auto-Label) + `size-label.yml` (PR Size
+# Label): identical trigger (`pull_request_target` [opened, synchronize, reopened,
+# ready_for_review]) + identical runner, both just label the PR. Folding them into
+# one workflow with two jobs halves the workflow-run count per PR event without
+# changing behavior — the job names ("Apply path-based labels" / "Compute size
+# bucket") are preserved so the pre-merge gate check still finds them.
 #
-# We exclude lock files and generated artifacts from the size count so a
-# legitimate small change isn't punished by a `Cargo.lock` regen or pnpm
-# lockfile churn.
-#
-# Cross-link: docs/internal/CODE-REVIEW-CHECKLIST.md L0.2 (scope < 2000 LoC,
-# or clearly partitioned), .github/PULL_REQUEST_TEMPLATE.md.
+# Cross-link: .github/labeler.yml (path rules), .github/PULL_REQUEST_TEMPLATE.md,
+# docs/internal/CODE-REVIEW-CHECKLIST.md L0.2 (size guidance).
 
-name: PR Size Label
+name: PR labels
 
 on:
   pull_request_target:
@@ -26,10 +22,24 @@ permissions:
   issues: write
 
 concurrency:
-  group: size-label-${{ github.event.pull_request.number }}
+  group: pr-labels-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
+  label:
+    name: Apply path-based labels
+    runs-on: [self-hosted, mac, corelink-builder]
+    steps:
+      - name: Apply labels
+        uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d # v6.2.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
+          # Never strip labels a human triaged in.
+          sync-labels: false
+          # Operate on the PR's diff (default true on v5 — explicit for clarity).
+          dot: true
+
   size:
     name: Compute size bucket
     runs-on: [self-hosted, mac, corelink-builder]
