@@ -49,11 +49,8 @@ on:
     paths:
       - '**/package.json'
       - '**/pnpm-lock.yaml'
-      - '**/package-lock.json'
-      - '**/yarn.lock'
       - '**/Dockerfile*'
       - '**/*.tf'
-      - '**/*.tfvars'
       - 'worker/**'
       - 'apps/**'
       - '.github/workflows/trivy.yml'
