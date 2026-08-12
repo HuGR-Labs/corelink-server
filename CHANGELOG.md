@@ -245,6 +245,18 @@ Each entry cross-references:
   `the quota gate issued 0 batch round trips: []`).
 
 ### Added
+- **feat(billing): runner compute-overage aggregation core + pure shadow binary `corelink-runner-aggregate`
+  (WI-S10-007 Phase B / shadow).** Given staged `runner_vcpu_seconds` events for a billing period, the
+  per-tenant runner tier map, and the per-region prior hash-chain heads, `aggregate_runner_usage` aggregates
+  per `(tenant_id, region, billing_period)`, links each counter into the per-region BLAKE3 hash chain
+  (reusing `corelink-billing-aggregator`'s `HashChainBuilder`), and computes the per-tenant **shadow charge**
+  (reusing `corelink-runner-overage`) — with NO Stripe contact. The `runner-aggregate-run` binary is the same
+  logic as a JSON-in/JSON-out shell (mirroring `billing-reconcile-run`): the credentialed D1 drain + the
+  atomic `runner_usage_counter` UPSERT / `runner_hash_chain_head` UPDATE (migration 0094) are the cron
+  workflow's job, so the binary holds no credentials and does no I/O. Deterministic (BTreeMap walk + sorted
+  idem-keys → reproducible chain digest). Shadow-only: **it bills nothing.** 8 unit tests pin the sum, the
+  cross-region per-tenant allowance, the chain linking + resume + determinism, the unknown-tier skip, and the
+  240-vCPU-h Starter example (= \$28.00). clippy -D + fmt clean.
 - **feat(billing): runner compute-overage money core `corelink-runner-overage` (WI-S10-007 Phase B / shadow).**
   A pure, integer-only, zero-I/O crate: given a tenant's aggregated runner compute for a billing period
   (vCPU-seconds — the billable `runner_vcpu_seconds` meter) and its `RunnerTier` (the frozen `max_vcpu_h`

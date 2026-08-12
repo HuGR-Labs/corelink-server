@@ -1,0 +1,30 @@
+[package]
+name = "corelink-runner-aggregate"
+description = "CoreLink runner compute-overage aggregation core + pure shadow runner binary (WI-S10-007, Phase B / shadow). Given staged `runner_vcpu_seconds` usage events for a billing period (drained from `usage_event_staging` by the credentialed cron workflow) + the per-tenant runner tier map + the per-region prior hash-chain heads, it aggregates per `(tenant_id, region, billing_period)`, links each aggregate into the per-region BLAKE3 hash chain (reusing `corelink-billing-aggregator`'s `HashChainBuilder`), and computes the per-tenant SHADOW charge (reusing `corelink-runner-overage`) — what WOULD be billed, with no Stripe contact. The `runner-aggregate-run` binary is PURE (JSON stdin → JSON stdout, no credentials, no D1/HTTP), mirroring `billing-reconcile-run`: the credentialed D1 read (drain staging) + the atomic write (UPSERT `runner_usage_counter` + UPDATE `runner_hash_chain_head`, migration 0094) is the cron workflow's job. Shadow-only: it bills nothing until the live Stripe graduated Price is wired (Phase C)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+hex = { workspace = true }
+uuid = { workspace = true, features = ["v5", "serde"] }
+corelink-billing-emit = { workspace = true }
+corelink-billing-aggregator = { workspace = true }
+corelink-runner-overage = { workspace = true }
+
+[[bin]]
+# Pure shadow runner-aggregation binary (WI-S10-007 Phase B). Reads a
+# RunnerAggregateInput JSON on stdin, writes a RunnerAggregateOutput JSON on
+# stdout, exits non-zero on a malformed input or a hash-chain break. Pure — no
+# tokio / HTTP / credentials; the credentialed D1 drain + atomic write is the
+# `billing-aggregate-runner.yml` cron workflow's job (mirrors billing-reconcile-run).
+name = "runner-aggregate-run"
+path = "src/bin/runner-aggregate-run.rs"
