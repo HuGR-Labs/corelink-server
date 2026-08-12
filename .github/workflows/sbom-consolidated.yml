@@ -82,10 +82,17 @@ jobs:
           SBOM_REF: ${{ inputs.ref || github.ref_name }}
         run: bash scripts/sbom-aggregate.sh
 
+      # Artifact names may not contain '/', but github.ref_name does for branch
+      # dispatches (e.g. `fix/…`). Releases fire on slash-free tags, but sanitize
+      # so a workflow_dispatch on any branch does not fail the upload.
+      - name: Compute slash-safe artifact ref
+        id: saferef
+        run: echo "ref=${GITHUB_REF_NAME//\//-}" >> "$GITHUB_OUTPUT"
+
       - name: Upload consolidated SBOM (release artifact)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: corelink-workspace-sbom-${{ github.ref_name }}
+          name: corelink-workspace-sbom-${{ steps.saferef.outputs.ref }}
           path: target/sbom/corelink-workspace.cdx.json
           retention-days: 365
           if-no-files-found: error
