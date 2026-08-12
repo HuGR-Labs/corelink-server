@@ -110,6 +110,10 @@ fn build_request(tenant: Uuid, from_ms: u64, to_ms: u64) -> Request<Body> {
         // DO-injected, PAT-resolved tenant) and the handler 403s unless it
         // equals the `:tenant` path segment; mirror the path tenant here.
         .header("x-corelink-tenant-id", tenant.to_string())
+        // WP-B: audit reads are ADMIN-ONLY — present the server-trusted
+        // owner-grade `x-corelink-scope: admin` so the request clears the
+        // audit-read gate and exercises the export path under test.
+        .header("x-corelink-scope", "admin")
         .body(Body::empty())
         .expect("request")
 }
@@ -133,6 +137,10 @@ fn build_request_with_attempted_tenant(
         // so `AuthTenant` must authenticate against the path tenant.
         .header(TENANT_ID_HEADER, auth_tenant.to_string())
         .header("x-corelink-tenant-id", auth_tenant.to_string())
+        // WP-B: audit reads are ADMIN-ONLY — clear the audit-read gate so the
+        // cross-tenant (?tenant=) mismatch path is the reason for the 403, not
+        // the scope gate. The scope header is orthogonal to the tenant mismatch.
+        .header("x-corelink-scope", "admin")
         .body(Body::empty())
         .expect("request")
 }

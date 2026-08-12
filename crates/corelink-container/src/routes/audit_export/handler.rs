@@ -98,6 +98,20 @@ pub(super) async fn handle_export(
         return (StatusCode::FORBIDDEN, "cross-tenant audit-export denied").into_response();
     }
 
+    // 1b-scope. Audit-read scope gate (WP-B, fail-CLOSED): reading the
+    //     security / PII audit log requires a READ-capable PAT (any of
+    //     `read-only` / `read-write` / `cas:*` / `admin`) in the
+    //     Worker-trusted `x-corelink-scope` header — this keeps the
+    //     customer-facing self-serve export working (self-serve PATs can
+    //     never be `admin`). A credential with NO read capability (empty /
+    //     missing scope, or a `find-missing`-only / `billing`-only token) is
+    //     rejected 403 BEFORE any data access and BEFORE the PAT-possession
+    //     gate below. Cross-tenant isolation is the `x-corelink-tenant-id`
+    //     binding's job (checked above), not this predicate's.
+    if !crate::scope::requires_audit_read(crate::scope::scope_from_headers(&headers)) {
+        return (StatusCode::FORBIDDEN, "insufficient scope").into_response();
+    }
+
     // 1c. Native PAT possession gate (rt-nuclear #17 — defense-in-depth): a leaked
     //     `PAT_SIGNING_KEY` lets an attacker HMAC-forge a bearer for the audit
     //     surface. Re-verify the bearer PAT (full Argon2id Option-B pipeline)

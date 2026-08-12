@@ -78,7 +78,7 @@ async fn tenant_isolation_violation_returns_503_on_audit_sink_failure() {
         auth.clone(),
         None,
         Query(query),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -101,7 +101,7 @@ async fn tenant_isolation_violation_returns_503_on_audit_sink_failure() {
         auth,
         None,
         Query(tq),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -142,7 +142,7 @@ async fn handle_timeline_error_arm_returns_503_on_audit_sink_failure() {
         auth,
         None,
         Query(tq),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -207,7 +207,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
             auth.clone(),
             None,
             Query(query.clone()),
-            axum::http::HeaderMap::new(),
+            super::tests_common::admin_scope_headers(),
         )
         .await
         .into_response();
@@ -226,7 +226,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
         auth.clone(),
         None,
         Query(query.clone()),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -245,7 +245,7 @@ async fn rate_limit_now_ms_is_driven_by_injected_wall_clock() {
         auth,
         None,
         Query(query),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -305,7 +305,7 @@ async fn analytics_wall_clock_saturated_to_zero_returns_503_and_emits_clock_unav
         auth,
         None,
         Query(query),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -340,4 +340,107 @@ async fn analytics_wall_clock_saturated_to_zero_returns_503_and_emits_clock_unav
     assert_eq!(row.to_ms, 1_000);
     assert_eq!(row.buckets_returned, 0);
     assert_eq!(row.event_type, EVENT_TYPE_ANALYTICS_QUERY);
+}
+
+/// WP-B — analytics over the security / PII audit log requires a READ-capable
+/// PAT. A request whose server-trusted `x-corelink-scope` carries NO read
+/// capability (here a `find-missing`-only, existence-probe token) MUST be
+/// rejected 403 "insufficient scope" at the TOP of the handler, BEFORE any data
+/// access. A missing scope header is likewise rejected (fail-CLOSED). A
+/// `read-only` scope (the self-serve customer case) passes the gate (200) —
+/// the complementary happy path proving the owner's flip does not lock out
+/// non-admin PATs.
+#[tokio::test]
+async fn analytics_non_read_scope_is_rejected_403_read_scope_passes() {
+    let tenant = Uuid::now_v7();
+    let shadow: Arc<dyn NeonShadowSink> = Arc::new(InMemoryNeonShadowSink::new(
+        tenant,
+        Region::Iad,
+        Arc::new(InMemoryShadowSyncAuditSink::new()),
+    ));
+    let factory: Arc<dyn ShadowSinkFactory> = Arc::new(OneTenantFactory { tenant, shadow });
+    let state = build_state(factory);
+    let auth = AuthTenant(tenant.to_string());
+    let query = EventCountQuery {
+        from: 0,
+        to: 1_000,
+        event_type: None,
+    };
+
+    // A `find-missing`-only scope carries NO read capability.
+    let mut no_read_headers = axum::http::HeaderMap::new();
+    no_read_headers.insert(
+        crate::scope::SCOPE_HEADER,
+        axum::http::HeaderValue::from_static("find-missing"),
+    );
+
+    // event-count: no-read scope → 403 "insufficient scope".
+    let resp = handle_event_count(
+        State(state.clone()),
+        auth.clone(),
+        None,
+        Query(query.clone()),
+        no_read_headers.clone(),
+    )
+    .await
+    .into_response();
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "a find-missing-only (no-read) scope MUST be rejected 403 at the audit-read gate",
+    );
+    let body = to_bytes(resp.into_body(), 1024).await.expect("body");
+    assert_eq!(&body[..], b"insufficient scope");
+
+    // timeline: same gate, same rejection.
+    let tq = TimelineQuery {
+        from: 0,
+        to: 1_000,
+        granularity: Some(100),
+    };
+    let resp_tl = handle_timeline(
+        State(state.clone()),
+        auth.clone(),
+        None,
+        Query(tq),
+        no_read_headers,
+    )
+    .await
+    .into_response();
+    assert_eq!(
+        resp_tl.status(),
+        StatusCode::FORBIDDEN,
+        "timeline: a no-read scope MUST be rejected 403 at the audit-read gate",
+    );
+
+    // Missing scope header → fail-CLOSED 403.
+    let resp_missing = handle_event_count(
+        State(state.clone()),
+        auth.clone(),
+        None,
+        Query(query.clone()),
+        axum::http::HeaderMap::new(),
+    )
+    .await
+    .into_response();
+    assert_eq!(
+        resp_missing.status(),
+        StatusCode::FORBIDDEN,
+        "a missing scope header MUST fail-CLOSED 403 at the audit-read gate",
+    );
+
+    // read-only scope passes the gate → 200 (self-serve customer happy path).
+    let mut read_only_headers = axum::http::HeaderMap::new();
+    read_only_headers.insert(
+        crate::scope::SCOPE_HEADER,
+        axum::http::HeaderValue::from_static("read-only"),
+    );
+    let resp_ro = handle_event_count(State(state), auth, None, Query(query), read_only_headers)
+        .await
+        .into_response();
+    assert_eq!(
+        resp_ro.status(),
+        StatusCode::OK,
+        "a read-only PAT MUST pass the audit-read gate (customer self-serve)",
+    );
 }

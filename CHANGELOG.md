@@ -43,6 +43,19 @@ Each entry cross-references:
   deferred to a second runner-image increment.
 
 ### Fixed
+- **fix(security): gate `/v1/audit/*` reads on cache-read scope (WP-B).** The customer-plane audit
+  surfaces (`/v1/audit/export`, `/v1/audit/analytics/{event-count,timeline}`) authorized on PAT
+  possession + tenant match only — they never read the PAT's scope, so a credential with NO read
+  capability (empty/missing scope, or a find-missing-only PAT) could read audit / security-PII data.
+  Added `scope::requires_audit_read` (any read-capable token: `read-only`/`read-write`/`cas:*`/`admin`/
+  `owner`; empty, `find-missing`-only, and `billing`-only are rejected) + `scope::scope_from_headers`,
+  and a fail-CLOSED `403 "insufficient scope"` gate at the top of all three handlers, BEFORE any data
+  access and BEFORE the PAT-possession gate — making the pre-existing "AFTER the scope+tenant gate"
+  comments true. Gated on read (not admin) deliberately: self-serve PATs can never be `admin`
+  (`customer_d1.rs` "admin NEVER grantable"), so the customer CLI `corelink audit export` (WI-S09-008)
+  keeps working — the log is tenant-isolated, so a read-only PAT reading its own tenant's audit is not
+  a cross-tenant breach. The admin-ui dashboard is unaffected (it uses the separate `/v1/admin/audit/*`
+  internal-auth plane).
 - **fix(deps): bump `lru` 0.18.1 → 0.18.2 (RUSTSEC-2026-0253).** `LruCache::pop()` was not
   panic-safe — a panic in a stored key's `Drop` skipped `self.detach()`, leaving a dangling pointer
   in the internal linked list that a later eviction would traverse (use-after-free). `lru 0.18.1` is

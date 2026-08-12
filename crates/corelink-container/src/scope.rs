@@ -230,6 +230,40 @@ pub fn requires_billing_admin(scope: &str) -> bool {
     tokens(scope).any(|t| matches!(t, "billing" | "admin" | "owner"))
 }
 
+/// True when `scope` grants the **audit-read** capability — reading the
+/// security / PII audit log (`/v1/audit/*`, incl. the customer-facing
+/// `corelink audit export` / WI-S09-008 self-serve export).
+///
+/// Audit-read = **any READ-capable PAT** — the same grant as
+/// [`requires_cache_read`] (`read-only` / `read-write` / `cas:r` / `cas:rw` /
+/// `cas:w` / `admin` all TRUE), plus the owner-grade `owner` superset (a
+/// sibling of `admin`). Self-serve PATs can NEVER be `admin` (`customer_d1.rs`:
+/// "admin NEVER grantable"), so gating audit-read on admin/owner would lock
+/// customers out of exporting their OWN audit log — which is the feature.
+/// Cross-tenant isolation is enforced separately by the container's
+/// `x-corelink-tenant-id` binding (the authoritative isolation key); this
+/// predicate's ONLY job is to reject credentials with NO read capability — an
+/// empty / missing scope, a `find-missing`-only PAT (existence-probe-only,
+/// ADR-0071), or a `billing`-only dashboard token that carries no cache-read
+/// grant. Fail-CLOSED: empty / missing / no read token ⇒ `false`. Uses the
+/// same [`tokens`] exact-match grammar (no substring match).
+#[must_use]
+pub fn requires_audit_read(scope: &str) -> bool {
+    requires_cache_read(scope) || tokens(scope).any(|t| t == "owner")
+}
+
+/// Read the SERVER-TRUSTED [`SCOPE_HEADER`] value off a raw `HeaderMap`, trimmed.
+/// Returns `""` when absent / non-UTF-8 (⇒ fail-CLOSED). For handlers that
+/// already have a `HeaderMap` in scope (e.g. the audit routes).
+#[must_use]
+pub fn scope_from_headers(headers: &axum::http::HeaderMap) -> &str {
+    headers
+        .get(SCOPE_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .unwrap_or("")
+}
+
 /// Read the trusted [`SCOPE_HEADER`] value off the request parts, trimmed.
 ///
 /// Returns `""` when the header is absent or non-UTF-8 (⇒ fail-CLOSED at the
@@ -630,6 +664,58 @@ mod tests {
         assert!(!requires_billing_admin("admin-x"));
         assert!(!requires_billing_admin("co-owner"));
         assert!(!requires_billing_admin("ownership"));
+    }
+
+    #[test]
+    fn requires_audit_read_needs_read_capability() {
+        // WP-B (owner decision): audit-read = any READ-capable PAT, so the
+        // customer-facing `corelink audit export` (self-serve PATs, which can
+        // NEVER be `admin`) keeps working. Cross-tenant isolation is the
+        // `x-corelink-tenant-id` binding's job; this predicate only rejects
+        // credentials with NO read capability.
+        //
+        // GRANTED: every read-capable scope (mirrors `requires_cache_read`).
+        for granted in [
+            "admin",
+            "owner",
+            "read-only",
+            "read-write",
+            "cas:rw",
+            "cas:r",
+            "cas:w",
+        ] {
+            assert!(
+                requires_audit_read(granted),
+                "{granted:?} is read-capable and MUST grant audit-read",
+            );
+        }
+        // Granted when a read token appears anywhere in a tolerated list.
+        assert!(requires_audit_read("cas:rw admin"));
+        assert!(requires_audit_read("read-write,billing"));
+        // DENIED: credentials with NO read capability — a find-missing-only
+        // (existence-probe) PAT, a billing-only dashboard token, an unknown
+        // token, and the empty / whitespace-only scope (fail-CLOSED).
+        for denied in ["find-missing", "cache:find-missing", "billing", "viewer"] {
+            assert!(
+                !requires_audit_read(denied),
+                "{denied:?} carries no read capability and MUST NOT grant audit-read",
+            );
+        }
+        assert!(!requires_audit_read(""));
+        assert!(!requires_audit_read("   \t "));
+    }
+
+    #[test]
+    fn scope_from_headers_reads_trusted_header() {
+        // Reads + trims the server-trusted `x-corelink-scope` header.
+        let mut headers = axum::http::HeaderMap::new();
+        headers.insert(SCOPE_HEADER, "  admin  ".parse().unwrap());
+        assert_eq!(scope_from_headers(&headers), "admin");
+        assert!(requires_audit_read(scope_from_headers(&headers)));
+        // Absent header ⇒ "" (fail-CLOSED at the capability check).
+        let empty = axum::http::HeaderMap::new();
+        assert_eq!(scope_from_headers(&empty), "");
+        assert!(!requires_audit_read(scope_from_headers(&empty)));
     }
 
     #[test]

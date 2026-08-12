@@ -73,7 +73,7 @@ async fn request_prelude_consumed_dispatches_through_for_tenant_in_region() {
         auth,
         Some(Extension(prelude)),
         Query(query),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -127,7 +127,7 @@ async fn request_prelude_missing_falls_back_with_warn_and_audit() {
         auth,
         None,
         Query(query),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -210,7 +210,7 @@ async fn request_prelude_missing_emit_pinned_for_timeline_route() {
         auth,
         Some(Extension(stale_prelude)),
         Query(tq),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -276,7 +276,7 @@ async fn audit_analytics_consumes_prelude_region_without_extra_d1_round_trip() {
         auth,
         Some(Extension(prelude)),
         Query(query),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
@@ -362,7 +362,7 @@ async fn audit_analytics_fallback_path_tags_region_source_fallback() {
         auth,
         None,
         Query(query),
-        axum::http::HeaderMap::new(),
+        super::tests_common::admin_scope_headers(),
     )
     .await
     .into_response();
