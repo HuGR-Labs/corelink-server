@@ -254,7 +254,11 @@ Each entry cross-references:
   own unit vCPU-seconds, outside the cache R2-hour reconciliation). This is storage foundation only —
   it bills nothing; the aggregator cron and Stripe submission that read it are separate WI-S10-007
   work. Additive-only (INV-AUTH-MIGRATION-ADDITIVE); replay-verified via
-  `cargo test -p corelink-ops --test migrations_d1_migration_integration` (3 pass).
+  `cargo test -p corelink-ops --test migrations_d1_migration_integration` (3 pass). `runner_usage_counter`
+  is tenant-keyed, so it is classified into the DSR erase-set (`TENANT_ID_TABLES` /
+  `ALL_TENANT_KEYED_TABLES`, `routes/dsr/adapter_d1.rs`) as ERASE — the runner analog of `usage_counter`
+  (an operational pre-invoice counter, not the retained fiscal record) — satisfying the CF-1 GDPR
+  completeness gate (`runner_hash_chain_head` is region-keyed, not tenant-keyed, so it is out of scope).
 - **feat(quota): near-$-ceiling early-warning telemetry.** The leased quota
   gate (`crates/corelink-container/src/tenant_quota.rs`) now emits a structured
   `warn!` the moment a tenant's lease refill has to shrink below a full chunk to

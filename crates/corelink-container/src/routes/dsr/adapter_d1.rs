@@ -150,6 +150,14 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     // `(tenant_id, day)` (migr. 0089). Display telemetry — the tenant's own
     // operational usage state, no retention basis → ERASE.
     "usage_daily",
+    // Per-tenant, per-region, per-period runner vCPU-seconds aggregate,
+    // tenant-leftmost composite PK `(tenant_id, region, billing_period)`
+    // (migr. 0094). The runner analog of `usage_counter` above: an OPERATIONAL
+    // pre-invoice usage counter, NOT the fiscal record (the retained Stripe
+    // invoice/customer/subscription rows are the fiscal artifact). Same class
+    // as `usage_counter` / `usage_daily` → ERASE per ADR-S11-013
+    // (`DELETE ... WHERE tenant_id = ?`; the tenant-leftmost PK covers it).
+    "runner_usage_counter",
 ];
 
 /// Erase-set tables keyed by a `namespace` column. The bound value is the
@@ -302,6 +310,7 @@ const ALL_TENANT_KEYED_TABLES: &[&str] = &[
     "runner_repo_allowlist",
     "workspaces",
     "usage_daily",
+    "runner_usage_counter",
     // erase-set (namespace)
     "adapter_cache_map",
     "adapter_npm_meta",
