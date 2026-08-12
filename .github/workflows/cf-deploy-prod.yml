@@ -55,7 +55,7 @@ jobs:
   # ---------------------------------------------------------------------------
   gate-secrets-checklist:
     name: gate — secrets checklist drift
-    runs-on: ubuntu-latest
+    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -116,7 +116,7 @@ jobs:
   migrate-d1:
     name: apply D1 migrations (shared prod D1)
     needs: gate-secrets-checklist
-    runs-on: ubuntu-latest
+    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
     environment: production
     steps:
       - name: Checkout
@@ -157,7 +157,7 @@ jobs:
   gate-cf-secrets-populated:
     name: gate — CF secrets populated (${{ matrix.env }})
     needs: gate-secrets-checklist
-    runs-on: ubuntu-latest
+    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.gate-secrets-checklist.outputs.matrix) }}
@@ -261,7 +261,7 @@ jobs:
       - gate-secrets-checklist
       - gate-cf-secrets-populated
       - migrate-d1
-    runs-on: ubuntu-latest
+    runs-on: corelink  # product's own ephemeral fabric (zero GitHub billing); wrangler/python/bash only, no docker
     environment: production
     strategy:
       fail-fast: false
@@ -306,8 +306,11 @@ jobs:
           npm install -g "wrangler@${WRANGLER_PINNED_VERSION}"
           wrangler --version
 
-      - name: Install jq (CF rollout-verify parser)
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends jq
+      - name: Verify jq present (baked into the corelink box image)
+        # jq is pre-baked in the corelink runner image (same as sbom-consolidated.yml).
+        # No `sudo apt-get` — the ephemeral fabric box has no passwordless sudo and
+        # apt egress is not configured; the tool is already on PATH.
+        run: jq --version
 
       - name: Deploy Worker + verify container rollout (prod)
         env:
