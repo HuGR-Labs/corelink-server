@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # scripts/sbom-aggregate.sh — R7-1 supply-quality rollup (c) SBOM consolidated.
 #
-# Produces a SINGLE CycloneDX 1.6 JSON document spanning the entire CoreLink
+# Produces a SINGLE CycloneDX 1.5 JSON document spanning the entire CoreLink
 # workspace (crates/ + apps/). The existing `tools/sbom-publish` crate emits
 # per-binary SBOMs via cargo-cyclonedx; this script wraps it and stitches
 # the per-crate components into one canonical workspace bom whose top-level
 # `component` is `pkg:cargo/corelink-workspace@<git-sha>`.
 #
-# Output: target/sbom/corelink-workspace.cdx.json  (CycloneDX 1.6 / JSON)
+# Output: target/sbom/corelink-workspace.cdx.json  (CycloneDX 1.5 / JSON)
 #
 # Dependencies:
 #   - cargo-cyclonedx     SBOM generator (per cargo subcommand, SHA-pinned
@@ -20,7 +20,7 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE'
-sbom-aggregate.sh — consolidated workspace SBOM (CycloneDX 1.6 JSON).
+sbom-aggregate.sh — consolidated workspace SBOM (CycloneDX 1.5 JSON).
 
 Usage:
   scripts/sbom-aggregate.sh                # full workspace consolidation
@@ -58,10 +58,15 @@ fi
 
 SBOM_REF="${SBOM_REF:-$(git describe --always --dirty 2>/dev/null || echo unknown)}"
 
-echo "==> cargo cyclonedx --workspace --format json"
-# cargo-cyclonedx writes one bom.json per crate next to its Cargo.toml.
-cargo cyclonedx --workspace --format json --override-filename bom \
-    --spec-version 1.6 >/dev/null
+echo "==> cargo cyclonedx --format json --spec-version 1.5 (all workspace members)"
+# cargo-cyclonedx (=0.5.9, per ADR-0044) writes one bom.json per crate next to
+# its Cargo.toml, processing every workspace member by default when run from the
+# workspace root — it has NO `--workspace` flag, and its max spec is 1.5
+# (ADR-0014/0044/S12-001 fix the format at CycloneDX 1.5). The prior invocation
+# (`--workspace --spec-version 1.6`) was never valid on any pinned version; this
+# lane had never actually run, so it was never caught.
+cargo cyclonedx --format json --override-filename bom \
+    --spec-version 1.5 >/dev/null
 
 # Collect every per-crate bom file. Excludes the target dir to avoid stale
 # outputs from prior runs.
@@ -90,7 +95,7 @@ jq -s \
     '
     {
         bomFormat: "CycloneDX",
-        specVersion: "1.6",
+        specVersion: "1.5",
         serialNumber: $serial,
         version: 1,
         metadata: {
