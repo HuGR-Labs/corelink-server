@@ -245,6 +245,15 @@ Each entry cross-references:
   `the quota gate issued 0 batch round trips: []`).
 
 ### Added
+- **feat(billing): make `usage_event_staging` aggregatable — persist `qty`/`event_kind`/`billing_period`
+  (migration `0095`; WI-S10-007).** The staging table was a pure dedup coordinate: it stored only the
+  one-way `event_payload_hash`, so the billable quantity was unrecoverable (the design's staging→R2 drain
+  Worker is unwired in prod — every row has `drained_to_r2_at IS NULL`). Migration 0095 adds three
+  additive, nullable columns and the ingest writer (`crates/corelink-container/src/routes/billing_ingest.rs`)
+  now populates them on every staged row, so the counter aggregator can drain the quantity directly (no R2
+  replay, no drain Worker). The `event_payload_hash` still binds all three, so a tampered stored `qty` is
+  detectable; the `(tenant_id, request_id)` dedup PK is unchanged. Pre-0095 rows keep NULL `qty` (their
+  quantity was never persisted) and are skipped by the aggregator.
 - **feat(billing): runner compute-overage aggregation core + pure shadow binary `corelink-runner-aggregate`
   (WI-S10-007 Phase B / shadow).** Given staged `runner_vcpu_seconds` events for a billing period, the
   per-tenant runner tier map, and the per-region prior hash-chain heads, `aggregate_runner_usage` aggregates

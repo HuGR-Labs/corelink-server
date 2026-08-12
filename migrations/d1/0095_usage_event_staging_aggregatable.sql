@@ -1,0 +1,53 @@
+-- 0095_usage_event_staging_aggregatable.sql
+--
+-- WI-S10-007 (runner compute overage billing) — make `usage_event_staging`
+-- (migration 0017) directly AGGREGATABLE by adding the three columns the counter
+-- aggregator needs, so the billable quantity is durably recoverable server-side.
+--
+-- ## Why (the gap this closes)
+--
+-- `usage_event_staging` was built as a pure DEDUP coordinate: it stored the
+-- CloudEvent envelope + a one-way `event_payload_hash` (BLAKE3 of
+-- tenant\x1fkind\x1fqty\x1fperiod\x1f… — `billing_ingest.rs::payload_hash`) and
+-- NOTHING else. The billable `qty` (vCPU-seconds for `runner_vcpu_seconds`), the
+-- `event_kind`, and the `billing_period` lived only inside that irreversible
+-- hash. The original design assumed a separate "drain Worker" would replay the
+-- raw payload from R2 — but that drain is unwired in prod (every prod row has
+-- `drained_to_r2_at IS NULL`, verified 2026-08-12), and the ingest retains no
+-- payload for it to drain. Net effect: the runner meter reached staging but its
+-- quantity was unrecoverable, so nothing downstream could sum it. This migration
+-- persists the quantity (and the kind + period needed to group + filter it) as
+-- first-class columns, so the aggregator can drain staging directly — no R2
+-- replay, no drain Worker.
+--
+-- ## Columns (all NULLABLE, additive)
+--
+--   qty             INTEGER — the billable quantity of the staged record
+--                             (vCPU-seconds for `runner_vcpu_seconds`; bytes/ops
+--                             for the cache kinds). NULL on the pre-0095 rows
+--                             (their quantity was never persisted — those legacy
+--                             dev rows are not aggregatable and are skipped).
+--   event_kind      TEXT    — the canonical `UsageEventKind` string
+--                             (`runner_vcpu_seconds` / `cas_get` / …), so the
+--                             aggregator can filter one lane without re-deriving
+--                             it from `event_id`/`source`.
+--   billing_period  TEXT    — the `YYYY-MM` UTC month bucket the emitter computed
+--                             (authoritative at month boundaries; not re-derived
+--                             from `emitted_at`).
+--
+-- The `event_payload_hash` stays the integrity anchor: the hash still binds the
+-- quantity, so a stored `qty` that disagrees with the hash is detectable. The
+-- `(tenant_id, request_id)` PRIMARY KEY (INV-BILLING-NO-DUP) is unchanged.
+--
+-- ## Additive-only / replay posture
+--
+-- `ALTER TABLE … ADD COLUMN` is additive (INV-AUTH-MIGRATION-ADDITIVE): it adds
+-- new NULLABLE columns and never alters/drops/renames an existing object, so it
+-- needs no ADR waiver and no `-- additive-allowed:` suppression. SQLite/D1 apply
+-- one ADD COLUMN per statement. The columns default to NULL on existing rows.
+-- The ingest writer (`crates/corelink-container/src/routes/billing_ingest.rs`)
+-- is updated in the same change to populate all three on every new staged row.
+
+ALTER TABLE usage_event_staging ADD COLUMN qty INTEGER;
+ALTER TABLE usage_event_staging ADD COLUMN event_kind TEXT;
+ALTER TABLE usage_event_staging ADD COLUMN billing_period TEXT;
