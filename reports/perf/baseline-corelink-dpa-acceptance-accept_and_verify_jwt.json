@@ -1,14 +1,12 @@
 {
   "bench": "accept_and_verify_jwt",
   "bench_id": "dpa_verify_receipt_rs256",
-  "captured_at": "2026-07-10T05:05:03Z",
-  "commit": "faf19721",
+  "captured_at": "2026-08-12T00:01:11Z",
+  "commit": "716b3c1b",
   "crate": "corelink-dpa-acceptance",
-  "criticality": "CRITICAL",
-  "mean_ns": 242457.7948,
-  "median_ns": 241043.641,
-  "notes": "Recaptured 2026-07-10T05:05:03Z via perf-regression.yml on ubuntu-latest (GitHub-hosted), --measurement-time 5, on main HEAD faf19721 (integration wave carries no code change to this crate). SUPERSEDES the stale 2026-07-02 baseline (median 35498 ns, commit 8802e060), which was captured on jsonwebtoken 9.3.1 whose default RS256 verify used the `ring` native backend. The non-security dep-major wave (commit 968f408c, merged 2026-07-09) bumped jsonwebtoken 9->10; this crate (and corelink-worker) deliberately pin the `rust_crypto` provider (pure-Rust `rsa`) for wasm32-cleanliness (ring/aws-lc-rs do not compile to the worker's wasm target), which is ~7x slower for RS256 verify — hence the honest ~241 us here. 0.24 ms per receipt verify is negligible for the (rare) receipt-issuance path; no SLA impact. Proven pre-existing + repo-wide (main HEAD itself regresses +579% vs the old baseline, run 29069813507), NOT introduced by any feature branch. CPU-bound + stable run-to-run (main 241043, branch runs 242298/241103 -> within ~1%) -> tight CRITICAL class default (no per-bench tolerance override).",
-  "p99_ns": 263327.035,
-  "sample_count": 100,
-  "tolerance_pct": null
+  "mean_ns": 249325.72700140174,
+  "median_ns": 234494.75088841506,
+  "notes": "recaptured on corelink-builder (Mac) \u2014 runner move + refresh bench_id fix",
+  "p99_ns": 546410.185274726,
+  "sample_count": 100
 }

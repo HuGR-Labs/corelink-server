@@ -1,14 +1,12 @@
 {
   "bench": "derive_prefix_v2",
   "bench_id": "tenant_path_derive_prefix_batch/1000-distinct-tenants",
-  "captured_at": "2026-07-02T20:32:01Z",
-  "commit": "8802e060",
+  "captured_at": "2026-08-12T00:01:11Z",
+  "commit": "716b3c1b",
   "crate": "corelink-tenant-path",
-  "criticality": "CRITICAL",
-  "mean_ns": 264065.0899,
-  "median_ns": 260600.6011,
-  "notes": "Recaptured 2026-07-02T20:32:01Z via perf-regression.yml on ubuntu-latest (GitHub-hosted), --measurement-time 5 \u2014 audit \u00a75 operator recapture; supersedes the wave-29/30 --quick proxy. CPU-bound + stable run-to-run \u2192 tight CRITICAL/NON_CRITICAL class default (no per-bench tolerance override).",
-  "p99_ns": 311993.8458,
-  "sample_count": 100,
-  "tolerance_pct": null
+  "mean_ns": 1354749.9902541304,
+  "median_ns": 1230321.5468656716,
+  "notes": "recaptured on corelink-builder (Mac) \u2014 runner move + refresh bench_id fix",
+  "p99_ns": 2823585.021250035,
+  "sample_count": 100
 }

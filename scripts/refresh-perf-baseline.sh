@@ -152,12 +152,39 @@ def best_match(crate, bench):
     return candidates[0][2]
 
 
+def locate_group(group):
+    """Resolve a criterion GROUP id (possibly nested, e.g. 'blake3_hash/1MiB' or
+    'Digest__compute/1024 KiB') to its 'new' dir. Authoritative when the group is
+    known from the existing baseline's bench_id."""
+    if not group:
+        return None
+    new_dir = crit_root / group / "new"
+    if (new_dir / "estimates.json").is_file():
+        return str(new_dir)
+    return None
+
+
 written = 0
 pending = 0
 for entry in benches:
     crate, _, bench = entry.partition(":")
-    new_dir = best_match(crate, bench)
     out_path = baseline_dir / f"baseline-{crate}-{bench}.json"
+    # Prefer the criterion group recorded in the EXISTING baseline's bench_id.
+    # Criterion group names routinely differ from the cargo `--bench` TARGET
+    # (target `orchestrator` emits group `signup_provision_new`; `merkle_append`
+    # emits `audit_chain_append_single`; …), and best_match's target/crate
+    # heuristic silently MISSES those — writing median_ns=null and corrupting the
+    # baseline. The committed bench_id is the authoritative, human-chosen group
+    # (a bench may emit several — e.g. blake3's size groups — and the baseline
+    # tracks exactly one). Fall back to the heuristic only for a brand-new bench
+    # with no committed baseline yet.
+    expected_group = None
+    if out_path.is_file():
+        try:
+            expected_group = json.load(out_path.open()).get("bench_id")
+        except Exception:
+            expected_group = None
+    new_dir = locate_group(expected_group) or best_match(crate, bench)
 
     payload = {
         "bench_id": f"{bench}",
