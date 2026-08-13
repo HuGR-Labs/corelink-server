@@ -1,8 +1,81 @@
 # F3.2 — Cross-tenant public layer cache (the network-effect jaw-drop)
 
-**Status:** DESIGN — owner + security review REQUIRED before any code lands.
+**Status:** REVIEWED 2026-08-13 → **DO NOT BUILD AS SCOPED.** Adversarial review (2
+independent lenses) found a wrong value premise + a critical un-erasability
+landmine. See "Audit review" below. The original design follows unchanged for the
+record; the review supersedes its "Recommendation".
 **Author:** engineering (Claude), 2026-08-13.
 **Precedes:** any implementation PR. This doc exists to be reviewed, not merged as fact.
+
+## Audit review (2026-08-13) — findings, worst-first
+
+Two independent adversarial reviewers attacked this design against the real code
+seams. Verdict: **the two "blocking controls" are stated but the three hardest
+seams are open questions or one-liners, and the headline value targets a blob flow
+that never passes the hook.** Do not implement until every BLOCKER below is closed.
+
+- **BLOCKER-1 (CRITICAL) — `_public` is physically un-erasable; misclassification =
+  permanent breach with a FALSE "erased" audit record.** The erase seam keys off the
+  DSR tenant's HMAC prefix (`cas_erase.rs:1377,1407`); `_public` lives under the
+  separate sentinel-UUID prefix (`r2_s3.rs:869,877`) that no tenant erase ever
+  reaches. A Control-1 miss that routes a private blob to `_public` → the tenant's
+  DSR deletes nothing, upserts a 410 tombstone (read path 410s, audit says erased),
+  but the bytes persist and keep serving every other tenant. There is **zero** code
+  path to delete or revoke a `_public` blob. `_public` must gain an erase/revocation
+  path BEFORE it can hold anything.
+- **BLOCKER-2 (HIGH) — the value premise is largely wrong ("born warm" over-claim).**
+  BuildKit fetches `FROM ubuntu:24.04` base layers via the **image-pull / registry**
+  path; CoreLink's cache surface stores build-cache manifests + `RUN`-step outputs
+  that reference base layers by **digest pointer**, not by re-uploading base bytes.
+  So allowlisted base blobs rarely transit the cache-write hook (step 2) — the
+  storage-dedup mostly never fires, and importing a base into the CAS does NOT make
+  BuildKit skip re-pulling it. To actually capture the base-layer network effect,
+  CoreLink would have to be a **registry pull-through mirror** for base images (a
+  different, larger feature the design explicitly excludes) — NOT a build-cache
+  backend hook. Confirm empirically that base bytes transit the hook at all before
+  building anything on this premise.
+- **BLOCKER-3 (HIGH) — allowlist-by-tag IS the poisoning vector; no revocation.**
+  Resolving mutable tags (`ubuntu:24.04`) to "whatever digest they point at now" and
+  auto-allowlisting reopens exactly the hole content-addressing closes: a compromised
+  upstream's malicious digest gets promoted to `_public` cross-tenant. Trust root must
+  be **digest-pinned + owner-gated**, never tag-resolved; and combined with BLOCKER-1
+  a poisoned entry is un-revocable.
+- **BLOCKER-4 (HIGH) — byte-accounting cannot express "write but don't charge."**
+  `AccountingCasHandler::write` charges `req.tenant` unconditionally
+  (`byte_accounting.rs:776,816`); there is no shared/unowned mode. Charging `_public`
+  → unseeded row → 503 fail-closed, or a finite shared cap → cache-fill DoS across ALL
+  tenants; routing after accounting → first-writer pays + free-riders + phantom
+  release on their GC/erase (`_public` has no owner). Needs a defined shared-blob
+  ownership/accounting model first.
+
+Non-blocking but must fold into the threat model:
+
+- **GAP-A — read-path re-hash does not cover the OCI surface.** The self-healing
+  re-hash-on-read (`adapter_cache.rs:254-265`) runs only on `MoatCache.get`
+  (brew/pip/npm). OCI reads go through `BlobStore` directly with **no** re-hash;
+  F3.2 routing OCI blobs to `_public` would ship the shared surface with strictly
+  weaker integrity than the paths it is modeled on. Port the re-hash onto the OCI
+  `_public` read path — mandatory.
+- **GAP-B — routing-by-digest must be ordered strictly AFTER content verification.**
+  The client supplies the claimed digest; if `_public` routing happens before the
+  CAS content==hash check, a client writes arbitrary bytes under an allowlisted
+  digest = the poisoning the design claims to prevent. State the ordering explicitly.
+- **GAP-C — the "no mutable `_public` share exists" claim is already false.** npm
+  package **metadata** JSON is served cross-tenant under `_public`
+  (`routes/npm.rs:101-106`), mutable + not content-addressed (server-fetched from
+  upstream, so not client-injectable, but it IS the "shared mutable manifest" surface
+  threat #3 lists as out-of-scope). Acknowledge it.
+- **GAP-D — "public upstream" ≠ "no personal data."** A public base can legitimately
+  embed personal data/secrets; combined with BLOCKER-1 that becomes permanently
+  un-erasable and outside DSR reach. `_public`'s GDPR-out-of-scope assumption is
+  unjustified.
+
+**Revised recommendation:** F3.1 (private) stays shipped. F3.2 is **not buildable as
+scoped** — it needs (a) a `_public` erase/revocation path, (b) a digest-pinned +
+owner-gated allowlist trust root, (c) a shared-blob accounting/ownership model, and
+(d) empirical confirmation that base-layer bytes transit the cache-write hook at all
+(BLOCKER-2 suggests they do not — in which case the whole approach should pivot to a
+registry pull-through mirror, or be dropped). Re-scope before any implementation.
 
 ## Why this doc is gated
 
