@@ -83,6 +83,19 @@ Non-blocking but must fold into the threat model:
   dedup-or-reject, never populate. (Distinct from GAP-B, which is verify-vs-route
   ordering within one write; this is allowlist-vs-populate ordering across the
   control plane.)
+- **GAP-F — dedup timing side-channel (LOW impact, but a real design tension).**
+  (3rd-lens review, verified.) A cross-tenant dedup store leaks residency by
+  timing: a tenant times its own push — fast = the blob is already in `_public`
+  (deduped), slow = full upload — and thereby probes which digests are resident.
+  It is passive and bypasses both controls (it only reads dedup state, never
+  writes, never needs misclassification). **Bounded impact:** `_public` holds only
+  PUBLIC base layers whose digests are already public and are typically always
+  resident, so the reconnaissance value is low (it does NOT reach private layers —
+  those stay tenant-prefixed, never in `_public`). The tension: the only clean fix
+  is constant-time dedup (always run the full upload flow), which **defeats the very
+  speed win** F3.2 exists for — so a residency side-channel is largely inherent to
+  cross-tenant dedup. Record it and accept-or-mitigate explicitly at re-scope; do
+  not silently ship a timing oracle.
 
 **Revised recommendation:** F3.1 (private) stays shipped. F3.2 is **not buildable as
 scoped** — it needs (a) a `_public` erase/revocation path, (b) a digest-pinned +
