@@ -1,0 +1,79 @@
+-- 0096_runner_aggregate_watermark.sql
+--
+-- WI-S10-007 (runner compute overage billing) — the two schema coordinates the
+-- shadow-aggregation cron (`billing-aggregate-runner.yml`, WP-3c) needs to drain
+-- `usage_event_staging` into `runner_usage_counter` SAFELY and resume the
+-- per-region BLAKE3 tamper-chain VERIFIABLY. Adds NOTHING billable; it closes the
+-- gap between the WP-0 storage foundation (migration 0094, authored BEFORE the
+-- aggregation core existed) and the frozen contract of the shipped
+-- `corelink-runner-aggregate` crate (WI-S10-007 WP-3b).
+--
+-- ## Gap 1 — the drain watermark (`usage_event_staging.runner_aggregated_at`)
+--
+-- The aggregation core is WATERMARK / DELTA based, not full-recompute: its
+-- docstring is explicit that "the chain advances once per (tenant, region)
+-- aggregate per call, so the workflow MUST feed only not-yet-aggregated staged
+-- rows — re-feeding the same events would double-advance the chain"
+-- (`crates/corelink-runner-aggregate/src/lib.rs`). The cron therefore needs a
+-- per-row marker recording that a staged `runner_vcpu_seconds` record has already
+-- been folded into a counter, so a subsequent run drains only the NEW rows.
+--
+-- We do NOT reuse the existing `drained_to_r2_at` watermark (migration 0017): that
+-- column is the R2-NDJSON drain Worker's coordinate (a DIFFERENT, currently
+-- unwired consumer). Overloading it would collide the instant the R2 drain is
+-- wired and conflate two independent watermarks on one row. A dedicated,
+-- nullable `runner_aggregated_at` keeps the two lanes orthogonal.
+--
+--   runner_aggregated_at  INTEGER — unix epoch MILLISECONDS the runner-aggregate
+--                                   cron folded this staged record into
+--                                   `runner_usage_counter`. NULL = not yet
+--                                   aggregated (the drain scans
+--                                   `WHERE event_kind='runner_vcpu_seconds'
+--                                    AND qty IS NOT NULL AND runner_aggregated_at
+--                                    IS NULL`). Set in the SAME atomic D1 batch
+--                                   as the counter UPSERT + chain-head advance, so
+--                                   a partial write can never mark a row
+--                                   aggregated without its usage being counted
+--                                   (D1 batch = all-or-nothing).
+--
+-- ## Gap 2 — the resume sequence (`runner_hash_chain_head.next_sequence`)
+--
+-- `runner_hash_chain_head` (migration 0094) persists `current_head` (the prev_hash
+-- slot of the next append) but NOT the chain sequence number. The aggregation
+-- core resumes via `HashChainBuilder::resume(head, next_sequence)`, and that
+-- sequence is stamped into each aggregate's canonical bytes (so it is part of the
+-- digest a verifier reproduces). Without persisting it, a resumed run cannot
+-- reconstruct the correct `seq`, and the replayed chain would not verify. This
+-- adds the missing coordinate.
+--
+--   next_sequence  INTEGER NOT NULL DEFAULT 0 — the sequence number of the NEXT
+--                                   aggregate to append to this region's chain.
+--                                   0 at genesis (no aggregate appended yet);
+--                                   advanced by the cron in lockstep with
+--                                   `current_head`. DEFAULT 0 makes the ADD COLUMN
+--                                   valid on any pre-existing (genesis) rows —
+--                                   in prod the table is still empty, so the cron
+--                                   INSERTs fresh rows carrying the real sequence.
+--
+-- ## Correction to the 0094 doc-comment (semantics, not schema)
+--
+-- Migration 0094's header describes the counter UPSERT as OVERWRITING the row
+-- "with the recomputed aggregate" (a full-recompute model inherited from the
+-- cache counter). The shipped aggregation core is instead DELTA/watermark based:
+-- each run contributes only the newly-drained rows, so the cron's UPSERT is
+-- ADDITIVE (`vcpu_seconds = vcpu_seconds + excluded.vcpu_seconds`,
+-- `event_count = event_count + excluded.event_count`). 0094 is already applied and
+-- immutable; this note is the authoritative correction. The additive UPSERT is
+-- implemented in `billing-aggregate-runner.yml` (WP-3c).
+--
+-- ## Additive-only / replay posture
+--
+-- `ALTER TABLE … ADD COLUMN` is additive (INV-AUTH-MIGRATION-ADDITIVE): it adds
+-- new columns and never alters/drops/renames an existing object, so it needs no
+-- ADR waiver and no `-- additive-allowed:` suppression. SQLite/D1 apply one
+-- ADD COLUMN per statement. `runner_aggregated_at` is NULLABLE (NULL on existing
+-- rows = not yet aggregated, correct). `next_sequence` is NOT NULL with a DEFAULT
+-- (required for a NOT NULL ADD COLUMN; existing/genesis rows take 0, correct).
+
+ALTER TABLE usage_event_staging ADD COLUMN runner_aggregated_at INTEGER;
+ALTER TABLE runner_hash_chain_head ADD COLUMN next_sequence INTEGER NOT NULL DEFAULT 0;
