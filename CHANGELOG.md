@@ -109,6 +109,12 @@ Each entry cross-references:
   deferred to a second runner-image increment.
 
 ### Fixed
+- **fix(ci): the daemonless prod-container Gate 3 (runc binary smoke) false-failed on its own UP
+  signal.** A healthy server is SIGKILLed at the 6s deadline (`ec=124/137` = booted + stayed up), but
+  GitHub runs the step under `bash -e` and `set -uo pipefail` does not clear that errexit, so
+  `timeout … runc run …; ec=$?` aborted the whole step on the 137 before the `124/137`=UP branch ran
+  (false `Process completed with exit code 137`; build/size/cred all green). Capture errexit-exempt with
+  `|| ec=$?`. No behavior change for a genuinely broken binary (fast self-exit → its own code → HARD FAIL).
 - **fix(security): gate `/v1/audit/*` reads on cache-read scope (WP-B).** The customer-plane audit
   surfaces (`/v1/audit/export`, `/v1/audit/analytics/{event-count,timeline}`) authorized on PAT
   possession + tenant match only — they never read the PAT's scope, so a credential with NO read
