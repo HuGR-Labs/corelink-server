@@ -170,7 +170,14 @@ jobs:
           jq --argjson a "$EP" '.process.args=$a | .process.terminal=false | .root.readonly=false' "$B/config.json" > "$B/c2"
           mv "$B/c2" "$B/config.json"
           cid="corelink-smoke-${{ steps.meta.outputs.short_sha }}"
-          timeout -s KILL 6 sudo runc run --bundle "$B" "$cid" >/dev/null 2>&1; ec=$?
+          # GitHub runs this step under `bash -e`, and `set -uo pipefail` above does
+          # NOT clear that errexit. A healthy server is SIGKILLed at the deadline
+          # (ec=137/124) — the UP signal — but a bare `runc run …; ec=$?` lets errexit
+          # abort the step on that 137 BEFORE the branch runs (the whole step then
+          # exits 137, a false failure). `|| ec=$?` makes the command errexit-exempt
+          # AND captures the code, so the 124/137=UP branch below actually runs.
+          ec=0
+          timeout -s KILL 6 sudo runc run --bundle "$B" "$cid" >/dev/null 2>&1 || ec=$?
           sudo runc delete -f "$cid" >/dev/null 2>&1 || true
           if [ "$ec" = "124" ] || [ "$ec" = "137" ]; then
             echo "Smoke probe: PASS (binary booted + stayed up to the deadline; ec=$ec)"
