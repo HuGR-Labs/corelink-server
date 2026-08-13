@@ -1,47 +1,28 @@
-# Build + push the prod container image on a GitHub-HOSTED Linux runner — OFF the
-# founder's dev Mac.
+# Build + push the prod container image on the SELF-HOSTED `corelink` fleet —
+# daemonless (BuildKit + runc), $0 GitHub billing, off the founder's dev Mac AND
+# off GitHub-hosted runners.
 #
-# WAIVER (human-authorized) — this lane stays GitHub-HOSTED, exempt from the
-# zero-hosted-spend mandate. Reason: it needs `docker` + buildx to build a native
-# linux/amd64 image. The self-hosted `corelink` fabric runs in Firecracker with no
-# docker daemon (docker-in-Firecracker is unbuilt), and the only docker-capable
-# self-hosted box is the founder's arm64 Mac (`corelink-builder`) — where an
-# amd64 build means slow qemu emulation of a fat-LTO Rust link, exactly what this
-# lane was moved off the Mac to avoid. Cost is negligible: it fires only on
-# `workflow_dispatch` (a manual release step), not per-PR or per-push.
-#   authorized-by: repo owner | 2026-08-11 ("manter hosted c/ waiver")
-#   remediation: move to `runs-on: corelink` once the corelink runner image ships
-#     a docker daemon, OR to a native-amd64 self-hosted box if one is provisioned.
+# This REPLACES the GitHub-hosted docker+buildx lane (and its WAIVER). The move
+# is possible because the runner image now bakes BuildKit (buildkitd+buildctl+
+# runc, X4-pinned — corelink-runners deploy/runner/Dockerfile), so `docker` is no
+# longer needed anywhere: `buildctl` builds the linux/amd64 image, the three SOTA
+# gates run daemonless against the OCI output + a runc smoke, and the push to the
+# CF managed registry uses a wrangler-minted registry credential (no docker).
+# Every step was proven live before this lane shipped:
+#   - build FROM ubuntu:24.04 + daemonless push to registry.cloudflare.com — run 31664445243
+#   - all 3 gates daemonless (size/cred/runc-smoke discriminates) — run 31713087683
 #
-# History: the off-Mac build was blocked twice on 2026-06-19 — Blacksmith needs a
-# GitHub Org (account was personal), and GitHub-hosted was billing-blocked. BOTH
-# were resolved when the account moved to the `HumanGuardrail` GitHub Org + a paid
-# GitHub plan was added. So we're back on GitHub-hosted runners: Linux x86 with
-# docker + buildx → builds the linux/amd64 image natively, no Mac, no
-# Docker-Desktop-on-the-laptop, no third-party.
-#
-# === 2026-06-20: SOTA build — no across-run cache machinery ===
-#
-# The Dockerfile builds with the canonical `[profile.release]` (lto="fat",
-# codegen-units=1) for the best prod binary (smaller = faster container
-# cold-start) and uses BuildKit `--mount=type=cache` for the cargo registry,
-# cargo git db, and `/build/target` WITHIN a run. We deliberately do NOT persist
-# those mounts across runs: no `actions/cache`, no `buildkit-cache-dance`, no
-# `cache-to/cache-from type=gha`. The build is fast and the gha cache risks the
-# 10 GB limit. The build is followed by the SOTA gates that the prior local
-# script (scripts/build-container-prod.sh) ran: an image-size gate, a
-# CTRL-CRED-001 docker-history credential scan, and a bounded binary smoke probe.
+# === SOTA build — no across-run cache machinery (unchanged intent) ===
+# The Dockerfile builds with the canonical [profile.release] (lto="fat",
+# codegen-units=1) and uses BuildKit `--mount=type=cache` for the cargo registry,
+# cargo git db, and /build/target WITHIN a run. We deliberately do NOT persist
+# those mounts across runs. buildctl honours the same `--mount=type=cache`
+# natively, so the Dockerfile is untouched.
 #
 # HARD CONSTRAINT (do NOT change): we do NOT touch the Dockerfile's dependency
 # caching DESIGN. No cargo-chef, no stub/skeleton dep layer, no layer-cached deps.
-# The Dockerfile header documents a PROD INCIDENT caused exactly by layer-cached
-# deps (a stub binary shipped, bit-identical image hashes). The cache-MOUNT design
-# is deliberate + incident-proof.
-#
-# The build step uses docker/build-push-action with `load: true` so the image is
-# loaded into the local docker daemon as `corelink-server:<short-sha>` (the ref
-# `scripts/push-container-multiregion.sh` consumes as LOCAL_REF) + `:prod`. Push
-# stays exactly as before: scripts/push-container-multiregion.sh --apply.
+# The cache-MOUNT design is deliberate + incident-proof (a prod incident shipped a
+# stub binary from layer-cached deps).
 name: container-build-push-prod
 
 on:
@@ -57,28 +38,12 @@ permissions:
 
 jobs:
   build-push:
-    name: build + push prod container (fat-LTO SOTA, off-Mac)
-    # `ubuntu-x64-4core` was a GitHub LARGER runner, which is a per-organization
-    # resource. It did not survive the move to the HuGR-Labs org (Free plan —
-    # larger runners are a Team/Enterprise feature), so the label now matches
-    # nothing and a dispatch simply QUEUES FOREVER with no error: verified
-    # 2026-08-02, run 30743452742 sat queued 4h30 with zero competing jobs, and
-    # every other workflow on this label last ran 2026-07-20/21, i.e. before the
-    # migration. Standard hosted runners are unaffected and ran fine the same day.
-    #
-    # Why standard is expected to cope here: the OOM warnings on this label
-    # elsewhere in the repo ("ld Bus error, signal 7") come from `coverage.yml`
-    # (cargo-llvm-cov instrumenting the WHOLE workspace) and the full-workspace
-    # TEST link (every test binary). This job links ONE release binary, and took
-    # 6.5 / 6.8 min on the 4-core — a small job that inherited a big label.
-    # Timeout raised 30 -> 60 to absorb the halved core count (link is the long
-    # pole and is largely single-threaded under `codegen-units = 1`).
-    #
-    # If this OOMs anyway, the fallback is `runs-on: corelink` (our own CoreLink
-    # Runners, already registered on this repo) — NOT relaxing `lto = "fat"`,
-    # which would degrade the shipped production binary to work around CI.
-    runs-on: ubuntu-latest
+    name: build + push prod container (fat-LTO SOTA, daemonless on corelink)
+    runs-on: corelink
     timeout-minutes: 60
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
     steps:
       - name: Confirm intent
         run: |
@@ -91,154 +56,170 @@ jobs:
         with:
           fetch-depth: 0 # full history so `git rev-parse --short HEAD` resolves the image tag
 
+      - name: Preflight — BuildKit + runc must be baked in the runner image
+        run: |
+          set -uo pipefail
+          missing=0
+          for t in buildkitd buildctl runc; do
+            if ! command -v "$t" >/dev/null 2>&1; then echo "::error::'$t' not on PATH"; missing=1; fi
+          done
+          if [ "$missing" = "1" ]; then
+            echo "::error::This lane needs BuildKit + runc baked in the corelink runner image."
+            echo "::error::Roll the runner image that bakes them first (corelink-runners deploy/runner/Dockerfile)."
+            exit 1
+          fi
+          buildkitd --version; buildctl --version; runc --version | head -1
+
       - name: Compute short SHA + reproducible-build args
         id: meta
         run: |
-          # ADR-0015: SOURCE_DATE_EPOCH from HEAD commit timestamp (matches
-          # scripts/build-container-prod.sh). RUST_VERSION mirrors the script;
-          # both are passed as build-args for fidelity with the prior path.
+          # ADR-0015: SOURCE_DATE_EPOCH from HEAD commit timestamp. RUST_VERSION
+          # mirrors the prior lane; both passed as build-args for fidelity (the
+          # Dockerfile hardcodes FROM rust:1.91 + does not declare the ARGs, so
+          # BuildKit ignores undeclared args — passed anyway for parity + to stay
+          # correct if the Dockerfile later wires them).
           {
             echo "short_sha=$(git rev-parse --short HEAD)"
             echo "source_date_epoch=$(git log -1 --format=%ct)"
             echo "rust_version=1.91"
           } >> "$GITHUB_OUTPUT"
 
-      # build-push-action needs a buildx builder. The Dockerfile's
-      # `--mount=type=cache` cargo/target mounts still work within a single run;
-      # we deliberately do NOT persist them across runs (no gha cache) — the
-      # build is fast and the gha cache risks the 10GB limit.
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Start buildkitd (rootful; the microVM is the isolation boundary)
+        run: |
+          set -uo pipefail
+          ADDR="unix://$RUNNER_TEMP/bk.sock"
+          echo "BUILDKIT_ADDR=$ADDR" >> "$GITHUB_ENV"
+          # redirect inside the root shell (SC2024: sudo does not affect a redirect
+          # done by the invoking user); background the daemon, poll the socket.
+          sudo sh -c "buildkitd --addr '$ADDR' --oci-worker-snapshotter=overlayfs --root '$RUNNER_TEMP/bkroot' >'$RUNNER_TEMP/bk.log' 2>&1 &"
+          for i in $(seq 1 40); do sudo buildctl --addr "$ADDR" debug workers >/dev/null 2>&1 && { echo "buildkitd up after ${i}s"; break; }; sleep 1; done
+          sudo buildctl --addr "$ADDR" debug workers >/dev/null 2>&1 || { echo "::error::buildkitd did not come up"; sudo sed -n '1,60p' "$RUNNER_TEMP/bk.log"; exit 1; }
 
-      - name: Build prod container image (Dockerfile → corelink-server:<sha> + :prod)
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64
-          load: true   # load into the local docker daemon for the push script
-          push: false
-          # LOCAL_REF the push script consumes is `corelink-server:<short-sha>`
-          # (scripts/push-container-multiregion.sh:63). :prod kept for parity.
-          tags: |
-            corelink-server:prod
-            corelink-server:${{ steps.meta.outputs.short_sha }}
-          # NB: the Dockerfile hardcodes FROM rust:1.91 + does not declare
-          # ARG RUST_VERSION / ARG SOURCE_DATE_EPOCH, so these build-args are
-          # currently inert (BuildKit ignores undeclared args). Passed anyway to
-          # mirror scripts/build-container-prod.sh and to stay correct if the
-          # Dockerfile later wires the ARGs.
-          build-args: |
-            RUST_VERSION=${{ steps.meta.outputs.rust_version }}
-            SOURCE_DATE_EPOCH=${{ steps.meta.outputs.source_date_epoch }}
+      - name: Build prod image (buildctl → OCI) — fat-LTO, cache-mounts, native amd64
+        run: |
+          set -uo pipefail
+          # One REAL build to an OCI archive. The 3 gates run against this; the
+          # push steps below re-export from BuildKit's warm cache (instant), so
+          # the fat-LTO link happens exactly once.
+          sudo buildctl --addr "$BUILDKIT_ADDR" build \
+            --frontend dockerfile.v0 \
+            --local context=. --local dockerfile=. \
+            --opt build-arg:RUST_VERSION=${{ steps.meta.outputs.rust_version }} \
+            --opt build-arg:SOURCE_DATE_EPOCH=${{ steps.meta.outputs.source_date_epoch }} \
+            --output type=oci,dest="$RUNNER_TEMP/image.tar" 2>&1 | tail -40
+          [ -s "$RUNNER_TEMP/image.tar" ] || { echo "::error::build produced no OCI archive"; exit 1; }
+          echo "OCI archive: $(du -h "$RUNNER_TEMP/image.tar" | cut -f1)"
 
-      # ── Build gates (mirror scripts/build-container-prod.sh steps 4–6) ──────
-      # The image is loaded locally as corelink-server:<short-sha>. ubuntu runs
-      # the linux/amd64 image natively, so we probe it directly.
-      - name: Image size gate (CF Containers 2 GiB ceiling)
-        env:
-          IMAGE_REF: corelink-server:${{ steps.meta.outputs.short_sha }}
+      # ── the OCI archive → manifest.json + config.json (shared by the gates) ──
+      - name: Extract OCI manifest + config
         run: |
           set -euo pipefail
-          IMAGE_SIZE="$(docker images --format '{{.Size}}' "$IMAGE_REF" | head -1)"
-          echo "Image size: $IMAGE_SIZE"
-          # Docker reports sizes with a unit suffix (kB/MB/GB/B). Parse number+unit.
-          SIZE_VALUE="$(echo "$IMAGE_SIZE" | grep -oE '[0-9]+(\.[0-9]+)?')"
-          SIZE_UNIT="$(echo "$IMAGE_SIZE" | grep -oE '[A-Za-z]+')"
-          SIZE_BYTES=0
-          case "$SIZE_UNIT" in
-            kB|KB) SIZE_BYTES=$(echo "$SIZE_VALUE * 1024" | bc) ;;
-            MB)    SIZE_BYTES=$(echo "$SIZE_VALUE * 1048576" | bc) ;;
-            GB)    SIZE_BYTES=$(echo "$SIZE_VALUE * 1073741824" | bc) ;;
-            B)     SIZE_BYTES="$SIZE_VALUE" ;;
-            *)     echo "::warning::Could not parse image size unit '$SIZE_UNIT'; skipping size gate." ;;
-          esac
-          MAX_BYTES=$(( 2 * 1024 * 1024 * 1024 ))  # 2 GiB
-          # bc may emit a float (e.g. "123.4"); truncate to an integer for -gt.
-          SIZE_BYTES_INT="${SIZE_BYTES%.*}"
-          if [ -n "${SIZE_BYTES_INT:-}" ] && [ "$SIZE_BYTES_INT" -gt "$MAX_BYTES" ] 2>/dev/null; then
-            echo "::error::HARD FAIL: image size ($IMAGE_SIZE) exceeds the 2 GiB CF Containers limit."
-            exit 1
-          fi
-          echo "Size gate: PASS ($IMAGE_SIZE < 2 GiB)"
+          D="$RUNNER_TEMP/oci"; mkdir -p "$D/x"
+          tar -xf "$RUNNER_TEMP/image.tar" -C "$D/x"
+          md=$(jq -r '.manifests[0].digest' "$D/x/index.json" | cut -d: -f2)
+          cp "$D/x/blobs/sha256/$md" "$D/manifest.json"
+          cd=$(jq -r '.config.digest' "$D/manifest.json" | cut -d: -f2)
+          cp "$D/x/blobs/sha256/$cd" "$D/config.json"
+          echo "OCI_DIR=$D" >> "$GITHUB_ENV"
 
-      - name: CTRL-CRED-001 — no credentials in image layers
-        env:
-          IMAGE_REF: corelink-server:${{ steps.meta.outputs.short_sha }}
+      - name: Gate 1 — image size (CF Containers 2 GiB ceiling, daemonless)
         run: |
           set -euo pipefail
-          HISTORY_OUTPUT="$(docker history --no-trunc --format '{{.CreatedBy}}' "$IMAGE_REF")"
-          CRED_PATTERNS=(
-            "API_TOKEN" "API_KEY" "SECRET" "PASSWORD" "PASSWD"
-            "PRIVATE_KEY" "ACCESS_KEY" "CF_API" "STRIPE_" "CLERK_"
-            "PAGERDUTY" "NEON_" "DATABASE_URL"
-          )
-          CRED_HITS=0
-          for pattern in "${CRED_PATTERNS[@]}"; do
-            if echo "$HISTORY_OUTPUT" | grep -qi "$pattern"; then
-              echo "::error::CTRL-CRED-001 VIOLATION: pattern '$pattern' found in docker history."
-              CRED_HITS=$(( CRED_HITS + 1 ))
-            fi
-          done
-          if [ "$CRED_HITS" -gt 0 ]; then
-            echo "::error::HARD FAIL: $CRED_HITS credential pattern(s) in image layers (CTRL-CRED-001)."
-            exit 1
-          fi
-          echo "CTRL-CRED-001 scan: PASS (0 credential patterns found)."
+          SIZE=$(jq '([.layers[].size] + [.config.size]) | add' "$OCI_DIR/manifest.json")
+          MAX=$(( 2 * 1024 * 1024 * 1024 ))
+          echo "Image registry size: ${SIZE} bytes (limit ${MAX})"
+          if [ -z "$SIZE" ] || [ "$SIZE" -le 0 ]; then echo "::error::could not measure image size"; exit 1; fi
+          if [ "$SIZE" -gt "$MAX" ]; then echo "::error::HARD FAIL: image size ${SIZE}B exceeds the 2 GiB CF Containers limit."; exit 1; fi
+          echo "Size gate: PASS"
 
-      - name: Binary smoke probe (detached, bounded-by-construction)
-        env:
-          IMAGE_REF: corelink-server:${{ steps.meta.outputs.short_sha }}
+      - name: Gate 2 — CTRL-CRED-001, no credentials in image layers (daemonless)
         run: |
           set -euo pipefail
-          # ROOT-CAUSE FIX (the original "2h build" hang): the server binary IGNORES
-          # --version/--help and BOOTS the gRPC server (blocks forever). The prior
-          # `timeout 8s docker run … --version` did NOT bound it — `timeout` sends
-          # SIGTERM, the server ignores it, and without `--kill-after` timeout waits
-          # forever → the step hung ~85min until the job timeout. So we NEVER run a
-          # blocking `docker run --version`. Instead: start DETACHED (returns
-          # immediately), check the binary is still alive after a few seconds (a
-          # broken binary panics/exits immediately), then FORCE-remove. Bounded by
-          # construction (~6s); `docker rm -f` cannot hang.
-          docker rm -f corelink-smoke >/dev/null 2>&1 || true
-          CID="$(docker run -d --name corelink-smoke "$IMAGE_REF" 2>/dev/null || true)"
-          if [ -z "$CID" ]; then
-            echo "::error::HARD FAIL: container failed to start (docker run -d returned no id)."
+          BLOB=$(jq -r '([.history[]?.created_by] + [.config.Env[]?]) | join("\n")' "$OCI_DIR/config.json")
+          PATTERNS='API_TOKEN|API_KEY|SECRET|PASSWORD|PASSWD|PRIVATE_KEY|ACCESS_KEY|CF_API|STRIPE_|CLERK_|PAGERDUTY|NEON_|DATABASE_URL'
+          if echo "$BLOB" | grep -qiE "$PATTERNS"; then
+            echo "::error::CTRL-CRED-001 VIOLATION: a credential pattern is present in the image config/history."
+            echo "$BLOB" | grep -iE "$PATTERNS" | sed -E 's/=.*/=<redacted>/' | head
             exit 1
           fi
-          # A boot panic is immediate; 6s is ample to catch it. The server boots its
-          # listener even without backend secrets (storage degrades to in-memory; no
-          # boot panic), so a healthy binary is Running=true here.
-          sleep 6
-          RUNNING="$(docker inspect -f '{{.State.Running}}' corelink-smoke 2>/dev/null || echo false)"
-          EXITCODE="$(docker inspect -f '{{.State.ExitCode}}' corelink-smoke 2>/dev/null || echo 1)"
-          docker rm -f corelink-smoke >/dev/null 2>&1 || true
-          if [ "$RUNNING" != "true" ] && [ "$EXITCODE" != "0" ]; then
-            echo "::error::HARD FAIL: container exited non-zero ($EXITCODE) within 6s — binary smoke failed."
+          echo "CTRL-CRED-001 scan: PASS (0 credential patterns)."
+
+      - name: Gate 3 — binary smoke (runc on the extracted rootfs, daemonless)
+        run: |
+          set -uo pipefail
+          # ROOT-CAUSE FIX (the original "2h build" hang): the server IGNORES
+          # --version/--help and BOOTS the gRPC server (blocks forever). So we do
+          # NOT run a blocking invocation unbounded. Instead: extract the image
+          # rootfs, run its ENTRYPOINT under runc with a hard timeout. A healthy
+          # server boots its listener (storage degrades to in-memory, no panic) and
+          # is still alive at the deadline → runc is SIGKILLed (124/137) → UP. A
+          # broken/stub binary panics/exits fast with its own code → DOWN.
+          B="$RUNNER_TEMP/smoke"; rm -rf "$B"; mkdir -p "$B"
+          sudo buildctl --addr "$BUILDKIT_ADDR" build \
+            --frontend dockerfile.v0 --local context=. --local dockerfile=. \
+            --opt build-arg:RUST_VERSION=${{ steps.meta.outputs.rust_version }} \
+            --opt build-arg:SOURCE_DATE_EPOCH=${{ steps.meta.outputs.source_date_epoch }} \
+            --output type=local,dest="$B/rootfs" >/dev/null 2>&1
+          EP=$(jq -c '(.config.Entrypoint // []) + (.config.Cmd // [])' "$OCI_DIR/config.json")
+          echo "entrypoint: $EP"
+          # `runc spec` + the jq edit + mv need no root (only `runc run` does), so
+          # no sudo here — avoids the SC2024 "sudo doesn't affect redirect" class.
+          runc spec -b "$B"
+          # args=entrypoint; no tty; rootfs writable (the server writes on boot);
+          # runc spec's default mounts already give a writable /tmp + /proc + /dev.
+          jq --argjson a "$EP" '.process.args=$a | .process.terminal=false | .root.readonly=false' "$B/config.json" > "$B/c2"
+          mv "$B/c2" "$B/config.json"
+          cid="corelink-smoke-${{ steps.meta.outputs.short_sha }}"
+          timeout -s KILL 6 sudo runc run --bundle "$B" "$cid" >/dev/null 2>&1; ec=$?
+          sudo runc delete -f "$cid" >/dev/null 2>&1 || true
+          if [ "$ec" = "124" ] || [ "$ec" = "137" ]; then
+            echo "Smoke probe: PASS (binary booted + stayed up to the deadline; ec=$ec)"
+          else
+            echo "::error::HARD FAIL: the entrypoint exited on its own (ec=$ec) within 6s — binary smoke failed."
             exit 1
           fi
-          echo "Smoke probe: PASS (binary started + stayed up; Running=$RUNNING ExitCode=$EXITCODE)"
 
       - name: ADR-0015 reproducibility attestation (reminder)
         run: |
-          set -euo pipefail
-          echo "ADR-0015: to verify reproducibility, rebuild on the same HEAD and compare"
-          echo "  docker inspect --format '{{.Id}}' corelink-server:prod"
-          echo "Both runs MUST produce the same sha256 for ADR-0015 compliance."
+          echo "ADR-0015: to verify reproducibility, rebuild on the same HEAD and compare the OCI manifest digest."
 
-      - name: Install wrangler (4.x — required for [[containers]] push)
-        run: npm install -g wrangler@4.95.0
+      - name: Push image to the 5 CF Containers registries (daemonless, wrangler cred)
+        run: |
+          set -uo pipefail
+          TAG="${{ steps.meta.outputs.short_sha }}-r1"
+          ACCT="$CLOUDFLARE_ACCOUNT_ID"
+          [ -n "$ACCT" ] || { echo "::error::CLOUDFLARE_ACCOUNT_ID unset"; exit 1; }
 
-      - name: Push image to the 5 CF Containers registries
-        env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          WRANGLER: wrangler
-        run: bash scripts/push-container-multiregion.sh --apply
+          # One short-lived push credential for the whole registry host (all 5
+          # image repos live under the same account on registry.cloudflare.com).
+          CRED="$(npx -y wrangler@4.111.0 containers registries credentials registry.cloudflare.com --push --expiration-minutes 30 --json 2>/dev/null)"
+          U=$(echo "$CRED" | jq -r '.username'); P=$(echo "$CRED" | jq -r '.password')
+          [ -n "$U" ] && [ -n "$P" ] || { echo "::error::failed to mint a registry push credential"; exit 1; }
+          CFG="$RUNNER_TEMP/dockercfg"; mkdir -p "$CFG"
+          AUTH=$(printf '%s:%s' "$U" "$P" | base64 | tr -d '\n')
+          printf '{"auths":{"registry.cloudflare.com":{"auth":"%s"}}}' "$AUTH" > "$CFG/config.json"
+
+          # (env, image-name) pairs — must match wrangler.toml [[env.X.containers]].
+          IMAGES="corelink-prod-corelinkserver-prod corelink-prod-sam-corelinkserver-prod corelink-prod-lhr-corelinkserver-prod corelink-prod-nrt-corelinkserver-prod corelink-prod-syd-corelinkserver-prod"
+          N=0; TOTAL=5
+          for img in $IMAGES; do
+            N=$((N+1))
+            REF="registry.cloudflare.com/${ACCT}/${img}:${TAG}"
+            echo "[$N/$TOTAL] push → $REF"
+            # Re-export from BuildKit's warm cache (no rebuild) straight to the
+            # registry — daemonless. Same inputs ⇒ cache hit ⇒ instant.
+            if ! sudo DOCKER_CONFIG="$CFG" buildctl --addr "$BUILDKIT_ADDR" build \
+                 --frontend dockerfile.v0 --local context=. --local dockerfile=. \
+                 --opt build-arg:RUST_VERSION=${{ steps.meta.outputs.rust_version }} \
+                 --opt build-arg:SOURCE_DATE_EPOCH=${{ steps.meta.outputs.source_date_epoch }} \
+                 --output type=image,name="$REF",push=true 2>&1 | tail -8; then
+              echo "::error::[$N/$TOTAL] push failed for $img"; exit 1
+            fi
+            echo "[$N/$TOTAL] $img :: $TAG OK"
+          done
+          echo "All $TOTAL pushes COMPLETE (daemonless)."
 
       - name: Next step (repin + deploy)
         run: |
-          echo "Built+pushed corelink-server:$(git rev-parse --short HEAD) to the CF registries."
+          echo "Built+pushed corelink-server:${{ steps.meta.outputs.short_sha }}-r1 to the 5 CF registries (daemonless, on corelink)."
           echo "NEXT: repin wrangler.toml [[env.*.containers]] image= to the new tag, then run cf-deploy-prod."
