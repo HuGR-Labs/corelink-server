@@ -47,6 +47,12 @@
       "webpack-dev-server@<5.2.6": ">=5.2.6 <6",
       "websocket-driver@<0.7.5": ">=0.7.5 <0.8",
       "ws@<7.5.11": ">=7.5.11 <8"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-w3rx-r6r6-pgpr",
+        "GHSA-5p2g-fcmc-qvqq"
+      ]
     }
   },
   "scripts": {

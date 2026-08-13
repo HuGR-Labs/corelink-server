@@ -22,6 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **chore(security): waive the two image-size DoS advisories in the `pnpm audit --prod` HIGH+ gate
+  (`pnpm.auditConfig.ignoreGhsas`), turning that blocking gate green.** `image-size@2.0.2` carries
+  GHSA-w3rx-r6r6-pgpr (ICNS parser DoS) + GHSA-5p2g-fcmc-qvqq (JXL/HEIF parser DoS), both HIGH, both
+  with **no upstream fix** (2.0.2 is the latest published release). It is reached **only** through
+  `@docusaurus/*` mdx-loader (the `apps/docs` static-site build tooling) — it is NOT in any production
+  Cloudflare Worker runtime graph (`worker/`, `apps/signup-worker`, `apps/analytics-worker`,
+  `apps/get-corelink-worker`, `apps/admin-ui`), and DoS of a build-time image parser is not a served-
+  product exposure. This mirrors the already-accepted trivy suppression of the same CVEs
+  (CVE-2025-71329/71330) landed in #1064 — the trivy scanner got its waiver there but the pnpm audit
+  gate did not, so it was left genuinely RED on the sole remaining HIGH. `pnpm audit --prod
+  --audit-level high` now exits 0 (`2 high (2 ignored)`); re-check when image-size ships a patched
+  release or the docs site is retired.
+
 ### Added
 - **feat(billing): the runner compute-overage SHADOW aggregation cron (`billing-aggregate-runner.yml`)
   + its two enabling schema coordinates (migration 0096), closing the last downstream gap of
