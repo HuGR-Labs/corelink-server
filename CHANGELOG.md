@@ -22,6 +22,34 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(billing): the runner compute-overage SHADOW aggregation cron (`billing-aggregate-runner.yml`)
+  + its two enabling schema coordinates (migration 0096), closing the last downstream gap of
+  WI-S10-007 Phase B.** The deep audit found only ingest→stage was production-wired; the aggregate
+  step was InMemory-only. This lands the credentialed drain that folds the staged `runner_vcpu_seconds`
+  meter into the dedicated runner counter lane (`runner_usage_counter`) + advances the per-region
+  BLAKE3 tamper-chain (`runner_hash_chain_head`), and computes the per-tenant **shadow charge** — what
+  WOULD be billed at $0.20/vCPU-h above the tier allowance — with **NO Stripe contact** (it bills
+  nothing; the live Stripe submission is the separate owner-gated flip). The cron runs the PURE
+  `runner-aggregate-run` bin (JSON stdin→stdout, no creds/clock/HTTP) exactly as `billing-reconcile-run`
+  does, on the self-hosted `corelink` runner (zero hosted-Actions cost), and until the repo var
+  `BILLING_AGGREGATE_LIVE=1` is set it runs a green SMOKE (empty-input) no-op that touches no prod D1 —
+  "the wiring ships, the cron goes green the moment the secrets + migration are applied." **Migration
+  0096** (additive-only) adds the two coordinates the shipped `corelink-runner-aggregate` contract
+  needs but migration 0094 (authored before that crate existed) lacked: `usage_event_staging
+  .runner_aggregated_at` (the drain watermark — the aggregation core is delta/watermark based, so the
+  cron must feed only not-yet-aggregated rows or the chain double-advances; a dedicated column, NOT the
+  R2-drain's `drained_to_r2_at`, keeps the two lanes orthogonal) and `runner_hash_chain_head
+  .next_sequence` (the resume sequence stamped into each aggregate's canonical bytes — without it a
+  resumed chain cannot be reproduced/verified). The 0096 header also records the authoritative
+  correction to 0094's doc-comment: the counter UPSERT is **additive** (`vcpu_seconds =
+  vcpu_seconds + excluded.vcpu_seconds`), not overwrite, because each run contributes only its
+  newly-drained delta. The live write is **ONE atomic D1 batch** (counter UPSERTs + chain-head
+  advances + watermark marks together — D1 batch is all-or-nothing, so a partial write can never mark
+  a row aggregated without counting it, nor double-advance the chain), fail-CLOSED on any non-2xx,
+  with integer binds wrapped `CAST(? AS INTEGER)` (the D1 REST API otherwise binds JSON numbers as
+  REAL). WI-S10-007.
+
 ### Changed
 - **perf(container): right-size the prod cache container from `standard-1` (4 GiB / 0.5 vCPU) to
   `basic` (1 GiB / 0.25 vCPU), cutting the always-on served-cost from ~$52/mo to ~$15/mo per the

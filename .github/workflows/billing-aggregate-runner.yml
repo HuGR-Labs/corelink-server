@@ -1,0 +1,439 @@
+name: billing-aggregate-runner
+
+# WI-S10-007 Phase B (SHADOW) — the runner compute-overage aggregation cron.
+#
+# Drains the staged `runner_vcpu_seconds` meter from D1 `usage_event_staging`
+# (populated by the spawn-Worker → container ingest, migrations 0017/0095),
+# folds it into the dedicated runner counter lane `runner_usage_counter` +
+# advances the per-region BLAKE3 tamper-chain `runner_hash_chain_head`
+# (migration 0094), and computes the per-tenant SHADOW charge — what WOULD be
+# billed — with NO Stripe contact. It bills NOTHING: the live Stripe submission
+# is the separate, owner-gated flip (WP-8). This closes the last downstream gap
+# the deep audit named (aggregate step was InMemory-only).
+#
+# ## Shape (mirrors billing-reconcile-daily.yml: pure bin + gated live lane)
+#
+#   1. Build the PURE `runner-aggregate-run` bin (JSON stdin→stdout, no creds,
+#      no clock, no HTTP — the money/chain logic is unit-falsifiable; this
+#      workflow owns all credentialed I/O, exactly as the reconcile cron does).
+#   2. EXTRACT (live lane, gated on BILLING_AGGREGATE_LIVE=1 AND secrets):
+#      three READ-ONLY D1 queries assemble the `RunnerAggregateInput`:
+#        - the drain: NOT-yet-aggregated staged runner rows for the period
+#          (`event_kind='runner_vcpu_seconds' AND qty IS NOT NULL AND
+#           runner_aggregated_at IS NULL AND billing_period=?`, LIMIT drain_limit,
+#          watermark = migration 0096) → `staged[]`;
+#        - the tier map: `runner_billing.plan` per tenant (billable statuses) →
+#          `tenant_tiers`;
+#        - the resume coordinate: `runner_hash_chain_head` → `prior_chain_heads`.
+#      The default (smoke) lane writes an EMPTY input so the cron is a green
+#      no-op until the owner sets BILLING_AGGREGATE_LIVE=1 — the wiring ships,
+#      the cron goes green the moment the secrets + migration 0096 are applied.
+#   3. RUN the bin: exit 0 = ok (output.json on stdout); non-zero = malformed
+#      input / hash-chain break → fail-CLOSED (job red, nothing written).
+#   4. WRITE (live lane only): ONE atomic D1 batch — the additive
+#      `runner_usage_counter` UPSERTs + the `runner_hash_chain_head` advances +
+#      the `usage_event_staging.runner_aggregated_at` watermark marks — in a
+#      single `{batch:[…]}` request (D1 batch = all-or-nothing, so a partial
+#      write can NEVER mark a row aggregated without its usage being counted, nor
+#      double-advance the chain). Fail-CLOSED on any non-2xx / success!=true.
+#   5. Log the shadow ledger (charges nothing) + upload the artifact
+#      (SOC 2 / GAAP ASC 606 evidence: input, output, write response).
+#
+# ## Safety / idempotency
+#
+#   - Watermark + LIMIT: each run drains only NEW rows (bounded); leftover rows
+#     are picked up next run. Rows are marked by their EXACT (tenant_id,
+#     request_id) PKs, so a row inserted between the SELECT and the WRITE is not
+#     mis-marked — it is simply drained next run.
+#   - The counter UPSERT is ADDITIVE (each run contributes only its delta), per
+#     the watermark/delta contract of `corelink-runner-aggregate` (see the 0096
+#     migration header correcting the 0094 doc-comment).
+#   - Integer bind params are wrapped `CAST(? AS INTEGER)` — the D1 REST API
+#     binds JSON numbers as REAL otherwise (documented footgun).
+#   - A failed write leaves every drained row un-marked (NULL) → the next run
+#     re-drains them cleanly. No page here (shadow charges nothing); PagerDuty is
+#     the owner's add at the live flip.
+#
+# OWNER ACTION before flipping BILLING_AGGREGATE_LIVE=1 (names only; no values):
+#   - CF_API_TOKEN                     (#50 variant — needs D1:Edit on the billing
+#                                       DB: this cron WRITES the counter/chain/
+#                                       watermark, unlike the read-only reconcile).
+#   - CF_ACCOUNT_ID                    (#49) — EXISTS.
+#   - CORELINK_BILLING_D1_DATABASE_ID  — the prod billing/usage D1 (corelink-prod-d1
+#                                       = CONFIG_DB); same secret the reconcile cron
+#                                       uses. EXISTS once reconcile was wired.
+#   Also: migration 0096 (+ 0094/0095) MUST be applied to the prod D1 first, and
+#   the container roll that activates the 0095 ingest MUST have shipped (so staged
+#   rows carry `qty`). Optional repo var BILLING_OVERAGE_RATE_CENTS overrides the
+#   default $0.20/vCPU-h (20).
+#
+# SHA-pinned third-party actions per HIGH_RISK lane tooling-pin policy.
+
+on:
+  schedule:
+    - cron: "0 5 * * *"  # 05:00 UTC daily — after audit-chain (02:00),
+                          # neon-shadow (03:00), billing-reconcile (04:00);
+                          # same low-traffic window, no collision.
+  workflow_dispatch:
+    inputs:
+      billing_period:
+        description: "Billing period YYYY-MM to aggregate (defaults to current UTC month)"
+        required: false
+        type: string
+      drain_limit:
+        description: "Max staged rows to drain in one run (watermark bound; default 10000)"
+        required: false
+        default: "10000"
+        type: string
+
+# The credentialed D1 write uses CF_API_TOKEN Bearer, not the GITHUB_TOKEN.
+permissions:
+  contents: read
+
+concurrency:
+  group: billing-aggregate-runner
+  cancel-in-progress: false
+
+jobs:
+  aggregate:
+    name: runner-aggregate-shadow
+    # Self-hosted `corelink` (ephemeral CF-Container Ubuntu 24.04): pinned Rust
+    # toolchain + python3-requests baked into the runner image → zero hosted-Actions
+    # cost (zero-hosted-CI mandate). Until BILLING_AGGREGATE_LIVE=1 it runs the
+    # SMOKE (empty-input) no-op lane, so it neither queries nor writes prod D1.
+    runs-on: corelink
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      # Use the runner image's pre-installed, workspace-pinned toolchain — a
+      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py).
+      - name: Use host toolchain (baked, workspace-pinned)
+        env:
+          HOST_TRIPLE: x86_64-unknown-linux-gnu
+        run: bash scripts/ci-use-host-toolchain.sh
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
+        if: runner.environment == 'github-hosted'  # shared-$HOME guard (see scripts/validate_shared_home_cache_guard.py)
+        with:
+          shared-key: billing-aggregate-runner
+
+      - name: Build runner-aggregate-run binary
+        run: cargo build -p corelink-runner-aggregate --bin runner-aggregate-run --release
+
+      - name: Compute billing period (input or current UTC month)
+        id: period
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.billing_period }}" ]]; then
+            PERIOD="${{ inputs.billing_period }}"
+          else
+            PERIOD=$(date -u +%Y-%m)
+          fi
+          if ! [[ "$PERIOD" =~ ^[0-9]{4}-[0-9]{2}$ ]]; then
+            echo "::error::Invalid billing_period: $PERIOD (want YYYY-MM)"
+            exit 1
+          fi
+          echo "period=$PERIOD" >> "$GITHUB_OUTPUT"
+          echo "run_date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+          echo "Aggregating runner overage for billing period: $PERIOD"
+
+      # No pip install: `requests` is the python3-requests apt package baked into
+      # the `corelink` image (Ubuntu 24.04 is PEP-668 externally-managed). The
+      # smoke lane never imports it.
+
+      - name: Extract staged runner usage + tiers + chain heads (live lane gated)
+        id: extract
+        env:
+          BILLING_AGGREGATE_LIVE: ${{ vars.BILLING_AGGREGATE_LIVE }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.CORELINK_BILLING_D1_DATABASE_ID }}
+          PERIOD: ${{ steps.period.outputs.period }}
+          DRAIN_LIMIT: ${{ inputs.drain_limit || '10000' }}
+          OVERAGE_RATE_CENTS: ${{ vars.BILLING_OVERAGE_RATE_CENTS }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${CF_API_TOKEN:-}"
+          # Smoke / no-op lane: not live, or any required secret missing.
+          if [[ "${BILLING_AGGREGATE_LIVE:-0}" != "1" || -z "${CF_API_TOKEN:-}" || -z "${CF_ACCOUNT_ID:-}" || -z "${D1_DATABASE_ID:-}" ]]; then
+            echo "Smoke lane (BILLING_AGGREGATE_LIVE!=1 or secrets absent): empty input no-op."
+            # heredoc body MUST be un-indented: <<'PY' does not strip leading
+            # whitespace, so indented python would be an IndentationError.
+          python3 - <<'PY'
+          import json, datetime, os
+          period = os.environ["PERIOD"]
+          y, m = int(period[:4]), int(period[5:7])
+          start = int(datetime.datetime(y, m, 1, tzinfo=datetime.timezone.utc).timestamp() * 1000)
+          ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
+          end = int(datetime.datetime(ny, nm, 1, tzinfo=datetime.timezone.utc).timestamp() * 1000)
+          doc = {
+              "billing_period": period,
+              "period_start_ms": start,
+              "period_end_ms": end,
+              "now_ms": 0,
+              "staged": [],
+              "tenant_tiers": {},
+              "prior_chain_heads": {},
+          }
+          with open("aggregate-input.json", "w") as f:
+              json.dump(doc, f)
+          with open("drained-pks.json", "w") as f:
+              json.dump([], f)
+          PY
+            echo "live=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Live lane: draining staged runner usage for $PERIOD (limit=$DRAIN_LIMIT)"
+          echo "live=1" >> "$GITHUB_OUTPUT"
+          # Fail-CLOSED: any non-2xx, success!=true, or JSON error → non-zero exit.
+          python3 - <<'PY'
+          import calendar, datetime, json, os, sys, time
+          import requests
+
+          acct = os.environ["CF_ACCOUNT_ID"]
+          db = os.environ["D1_DATABASE_ID"]
+          token = os.environ["CF_API_TOKEN"]
+          period = os.environ["PERIOD"]
+          limit = int(os.environ.get("DRAIN_LIMIT") or "10000")
+          rate_env = os.environ.get("OVERAGE_RATE_CENTS") or ""
+
+          url = f"https://api.cloudflare.com/client/v4/accounts/{acct}/d1/database/{db}/query"
+          headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+          def d1_query(sql, params):
+              r = requests.post(url, headers=headers, json={"sql": sql, "params": params}, timeout=60)
+              if r.status_code != 200:
+                  sys.stderr.write(f"AGGREGATE_ERROR: D1 query HTTP {r.status_code}: {r.text[:500]}\n")
+                  sys.exit(3)
+              body = r.json()
+              if not body.get("success", False):
+                  sys.stderr.write(f"AGGREGATE_ERROR: D1 success!=true: {body.get('errors')}\n")
+                  sys.exit(3)
+              rows = []
+              for block in (body.get("result") or []):
+                  rows.extend(block.get("results") or [])
+              return rows
+
+          # 1) The drain: NOT-yet-aggregated staged runner rows for this period.
+          staged_rows = d1_query(
+              "SELECT tenant_id, request_id, region, qty, event_payload_hash, emitted_at "
+              "FROM usage_event_staging "
+              "WHERE event_kind = 'runner_vcpu_seconds' AND qty IS NOT NULL "
+              "AND runner_aggregated_at IS NULL AND billing_period = ? "
+              "ORDER BY emitted_at LIMIT ?",
+              [period, limit],
+          )
+          staged = []
+          pks = []
+          for row in staged_rows:
+              staged.append({
+                  "tenant_id": str(row["tenant_id"]),
+                  "region": str(row["region"]),
+                  "qty_vcpu_seconds": int(row["qty"]),
+                  "idem_key_hex": str(row["event_payload_hash"]),
+                  "time_ms": int(row["emitted_at"]),
+              })
+              pks.append({"tenant_id": str(row["tenant_id"]), "request_id": str(row["request_id"])})
+
+          # 2) The tier map: runner_billing.plan per tenant (billable statuses),
+          #    newest active subscription wins.
+          tier_rows = d1_query(
+              "SELECT tenant_id, plan, updated_at_ms FROM runner_billing "
+              "WHERE status IN ('active', 'trialing', 'past_due') ORDER BY updated_at_ms ASC",
+              [],
+          )
+          tenant_tiers = {}
+          for row in tier_rows:  # ascending order → later rows overwrite = newest wins
+              tenant_tiers[str(row["tenant_id"])] = str(row["plan"])
+
+          # 3) The resume coordinate: per-region prior chain head.
+          head_rows = d1_query(
+              "SELECT region, current_head, next_sequence FROM runner_hash_chain_head "
+              "WHERE chain_kind = 'runner_vcpu'",
+              [],
+          )
+          prior_chain_heads = {}
+          for row in head_rows:
+              prior_chain_heads[str(row["region"])] = {
+                  "current_head_hex": str(row["current_head"]),
+                  "next_sequence": int(row["next_sequence"]),
+              }
+
+          y, m = int(period[:4]), int(period[5:7])
+          start = int(datetime.datetime(y, m, 1, tzinfo=datetime.timezone.utc).timestamp() * 1000)
+          ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
+          end = int(datetime.datetime(ny, nm, 1, tzinfo=datetime.timezone.utc).timestamp() * 1000)
+
+          doc = {
+              "billing_period": period,
+              "period_start_ms": start,
+              "period_end_ms": end,
+              "now_ms": int(time.time() * 1000),
+              "staged": staged,
+              "tenant_tiers": tenant_tiers,
+              "prior_chain_heads": prior_chain_heads,
+          }
+          if rate_env.strip():
+              doc["rate_cents_per_vcpu_hour"] = int(rate_env)
+
+          with open("aggregate-input.json", "w") as f:
+              json.dump(doc, f)
+          with open("drained-pks.json", "w") as f:
+              json.dump(pks, f)
+          sys.stderr.write(f"Drained {len(staged)} staged row(s), {len(tenant_tiers)} tier(s), "
+                           f"{len(prior_chain_heads)} prior head(s) for {period}\n")
+          PY
+
+      - name: Run aggregation pass (pure bin)
+        id: run
+        run: |
+          set -euo pipefail
+          set +e
+          ./target/release/runner-aggregate-run < aggregate-input.json > aggregate-output.json 2> aggregate-stderr.log
+          CODE=$?
+          set -e
+          echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "Aggregate runner exit code: $CODE"
+          if [[ "$CODE" != "0" ]]; then
+            echo "::error::runner-aggregate-run exit $CODE (malformed input / hash-chain break) — nothing written (fail-CLOSED)"
+            cat aggregate-stderr.log || true
+            exit "$CODE"
+          fi
+          # Shadow ledger summary (charges nothing).
+          python3 - <<'PY'
+          import json
+          out = json.load(open("aggregate-output.json"))
+          total = out.get("total_shadow_millicents", 0)
+          print(f"counters={len(out.get('counters', []))} "
+                f"chain_head_updates={len(out.get('chain_head_updates', []))} "
+                f"shadow_lines={len(out.get('shadow_ledger', []))} "
+                f"skipped={len(out.get('skipped', []))}")
+          print(f"TOTAL SHADOW CHARGE (would-be, bills $0): {total} millicents = "
+                f"${total / 100000:.2f}")
+          for line in out.get("shadow_ledger", []):
+              print(f"  tenant={line['tenant_id']} tier={line['tier_sku']} "
+                    f"overage_vcpu_hours={line['overage_vcpu_hours']} "
+                    f"shadow_cents={line['shadow_charge_cents']}")
+          PY
+
+      - name: Write counters + chain heads + watermark (live lane, ONE atomic batch)
+        id: write
+        if: steps.extract.outputs.live == '1'
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.CORELINK_BILLING_D1_DATABASE_ID }}
+        run: |
+          set -euo pipefail
+          echo "::add-mask::${CF_API_TOKEN:-}"
+          # Fail-CLOSED: a non-2xx / success!=true on the batch → non-zero exit.
+          python3 - <<'PY'
+          import json, os, sys
+          import requests
+
+          acct = os.environ["CF_ACCOUNT_ID"]
+          db = os.environ["D1_DATABASE_ID"]
+          token = os.environ["CF_API_TOKEN"]
+
+          out = json.load(open("aggregate-output.json"))
+          inp = json.load(open("aggregate-input.json"))
+          pks = json.load(open("drained-pks.json"))
+          now_ms = int(inp["now_ms"])
+
+          counters = out.get("counters", [])
+          heads = out.get("chain_head_updates", [])
+
+          if not counters and not heads and not pks:
+              print("Nothing drained this run — no write.")
+              sys.exit(0)
+
+          batch = []
+
+          # Additive counter UPSERT (each run contributes its delta; see 0096).
+          for c in counters:
+              batch.append({
+                  "sql": (
+                      "INSERT INTO runner_usage_counter "
+                      "(tenant_id, region, billing_period, vcpu_seconds, event_count, "
+                      " aggregated_at, prev_hash, own_digest, schema_version) "
+                      "VALUES (?, ?, ?, CAST(? AS INTEGER), CAST(? AS INTEGER), "
+                      " CAST(? AS INTEGER), ?, ?, '1.0.0') "
+                      "ON CONFLICT(tenant_id, region, billing_period) DO UPDATE SET "
+                      " vcpu_seconds = vcpu_seconds + excluded.vcpu_seconds, "
+                      " event_count = event_count + excluded.event_count, "
+                      " aggregated_at = excluded.aggregated_at, "
+                      " prev_hash = excluded.prev_hash, "
+                      " own_digest = excluded.own_digest"
+                  ),
+                  "params": [
+                      c["tenant_id"], c["region"], c["billing_period"],
+                      int(c["vcpu_seconds"]), int(c["event_count"]),
+                      int(c["aggregated_at_ms"]), c["prev_hash_hex"], c["own_digest_hex"],
+                  ],
+              })
+
+          # Chain-head advance UPSERT.
+          for h in heads:
+              batch.append({
+                  "sql": (
+                      "INSERT INTO runner_hash_chain_head "
+                      "(region, chain_kind, current_head, last_aggregated_period, "
+                      " updated_at, next_sequence) "
+                      "VALUES (?, 'runner_vcpu', ?, ?, CAST(? AS INTEGER), CAST(? AS INTEGER)) "
+                      "ON CONFLICT(region, chain_kind) DO UPDATE SET "
+                      " current_head = excluded.current_head, "
+                      " last_aggregated_period = excluded.last_aggregated_period, "
+                      " updated_at = excluded.updated_at, "
+                      " next_sequence = excluded.next_sequence"
+                  ),
+                  "params": [
+                      h["region"], h["current_head_hex"], h["last_aggregated_period"],
+                      now_ms, int(h["next_sequence"]),
+                  ],
+              })
+
+          # Watermark: mark EXACTLY the drained PKs as aggregated.
+          for pk in pks:
+              batch.append({
+                  "sql": (
+                      "UPDATE usage_event_staging SET runner_aggregated_at = CAST(? AS INTEGER) "
+                      "WHERE tenant_id = ? AND request_id = ? AND runner_aggregated_at IS NULL"
+                  ),
+                  "params": [now_ms, pk["tenant_id"], pk["request_id"]],
+              })
+
+          url = f"https://api.cloudflare.com/client/v4/accounts/{acct}/d1/database/{db}/query"
+          headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+          # ONE atomic batch: D1 commits all statements together or rolls back all.
+          r = requests.post(url, headers=headers, json={"batch": batch}, timeout=120)
+          with open("write-response.json", "w") as f:
+              f.write(r.text)
+          if r.status_code != 200:
+              sys.stderr.write(f"AGGREGATE_WRITE_ERROR: D1 batch HTTP {r.status_code}: {r.text[:500]}\n")
+              sys.exit(4)
+          body = r.json()
+          if not body.get("success", False):
+              sys.stderr.write(f"AGGREGATE_WRITE_ERROR: D1 success!=true: {body.get('errors')}\n")
+              sys.exit(4)
+          print(f"Atomic write ok: {len(counters)} counter(s), {len(heads)} head(s), "
+                f"{len(pks)} watermark mark(s).")
+          PY
+
+      - name: Upload aggregation artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: billing-aggregate-${{ steps.period.outputs.period }}-${{ github.run_id }}
+          path: |
+            aggregate-input.json
+            aggregate-output.json
+            aggregate-stderr.log
+            drained-pks.json
+            write-response.json
+          retention-days: 90  # SOC 2 CC7.2 / GAAP ASC 606 evidence window.
+          if-no-files-found: ignore
