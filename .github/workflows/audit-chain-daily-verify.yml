@@ -102,7 +102,7 @@ jobs:
   # tick regardless of secret availability.
   smoke-verify:
     name: smoke-verify
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 15
     steps:
       - name: Checkout repo
@@ -110,10 +110,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
-        with:
-          toolchain: stable
+      # Use the runner image's pre-installed, workspace-pinned toolchain — a
+      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py;
+      # `corelink` counts as self-hosted). HOST_TRIPLE selects the Linux triple.
+      - name: Use host toolchain (baked, workspace-pinned)
+        env:
+          HOST_TRIPLE: x86_64-unknown-linux-gnu
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7
@@ -158,7 +161,7 @@ jobs:
   # workflow stays green on PR runs without secrets.
   seven-day-verify:
     name: seven-day-verify
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 60
     needs: smoke-verify
     steps:
@@ -167,10 +170,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable as of 2026-04-29
-        with:
-          toolchain: stable
+      # Use the runner image's pre-installed, workspace-pinned toolchain — a
+      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py;
+      # `corelink` counts as self-hosted). HOST_TRIPLE selects the Linux triple.
+      - name: Use host toolchain (baked, workspace-pinned)
+        env:
+          HOST_TRIPLE: x86_64-unknown-linux-gnu
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@400e7407cfd7a091e5fbb6afec01ec146c432b7c # v2.7.7

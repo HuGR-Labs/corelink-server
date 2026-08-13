@@ -17,7 +17,7 @@ permissions:
 jobs:
   kill-switch-drill:
     name: BYOK Kill Switch Drill
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 20  # SLA ≤ 6 min + overhead
 
     steps:

@@ -271,7 +271,7 @@ jobs:
     name: Aggregate per-crate JSON → reports/mutation/latest.json
     needs: mutants
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: corelink
     permissions:
       contents: write       # least-privilege: write only on the aggregator
       issues: write         # open a regression issue if any crate < 75 %

@@ -11,17 +11,13 @@ on:
   # on a staggered schedule + on-demand. There is NO `pull_request` lane and
   # NO `push` lane — re-add one only if this must block PRs again.
   #
-  # Cadence: daily -> WEEKLY Thu (CI cost diet 2026-08-01). No PR lane covers
-  # this, so weekly does add up to 7 days of drift latency on the FFI surface.
-  # That is accepted here because this lane has NEVER been green: 0 successful
-  # scheduled runs in July 2026 (8 failure / 13 cancelled out of 21), matching
-  # the standing "ffi-matrix never worked, deliberately parked" position. It is
-  # a 3-language x N-runtime matrix (~19 hosted min, 10 jobs, the widest fan-out
-  # in the repo), so daily cadence pays ~490 min/month to re-observe the same
-  # two known breaks. Weekly keeps the drift signal alive; fixing the lane is
-  # tracked separately, and when it is fixed this cron should go back to daily.
-  schedule:
-    - cron: '30 6 * * 4'
+  # Cadence: daily -> weekly (2026-08-01) -> DISPATCH-ONLY (2026-08-13). This
+  # lane has NEVER been green (0 successful scheduled runs; the same two known
+  # breaks every run) and is the widest hosted fan-out in the repo (~19 hosted
+  # min, 10 jobs). Re-observing known breaks on a schedule was net-negative CI
+  # spend on a guaranteed-red gate, so the automatic cron is removed: run it
+  # ON DEMAND (`workflow_dispatch`) when someone actually works the FFI surface.
+  # When the lane is fixed, restore a `schedule:` cron here.
   workflow_dispatch:
 
 # Least-privilege: this build/test matrix only checks out + compiles + tests —

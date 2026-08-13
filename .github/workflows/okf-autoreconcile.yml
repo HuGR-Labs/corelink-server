@@ -48,7 +48,11 @@ permissions:
 
 jobs:
   autoreconcile:
-    runs-on: ubuntu-latest
+    # corelink: CoreLink's own ephemeral runner fabric (zero-hosted migration).
+    # node 22 / npm are baked into the image, so `npm install -g
+    # @anthropic-ai/claude-code` below needs no explicit setup-node step —
+    # same convention as admin-ui-ci.yml. No docker/browser deps here.
+    runs-on: corelink
     timeout-minutes: 20
     steps:
       - name: Checkout (full history — reconcile compares cited lines across SHAs)
