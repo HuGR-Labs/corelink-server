@@ -69,6 +69,20 @@ Non-blocking but must fold into the threat model:
   embed personal data/secrets; combined with BLOCKER-1 that becomes permanently
   un-erasable and outside DSR reach. `_public`'s GDPR-out-of-scope assumption is
   unjustified.
+- **GAP-E — allowlist/populate ordering: it MUST be populate-then-allowlist, never
+  the reverse (TOCTOU).** (3rd-lens review, verified.) If a digest is added to the
+  allowlist BEFORE the server's own mirror has populated `_public` for it, a window
+  opens where the FIRST writer of that `_public` blob is a *client* pushing the
+  allowlisted digest — so the client, not the server, populates the shared blob.
+  Content-addressing keeps the bytes correct (H(B)=D pins B), but it destroys the
+  provenance invariant Control 1 rests on ("`_public` was written by the server from
+  a trusted upstream"), and any verify-vs-place ordering gap (GAP-B) then serves
+  transient unverified bytes cross-tenant. Constraint: the allowlist entry for a
+  digest goes live ONLY after the server has itself populated `_public[digest]` from
+  the trusted upstream; a client push of an allowlisted-but-unresident digest must
+  dedup-or-reject, never populate. (Distinct from GAP-B, which is verify-vs-route
+  ordering within one write; this is allowlist-vs-populate ordering across the
+  control plane.)
 
 **Revised recommendation:** F3.1 (private) stays shipped. F3.2 is **not buildable as
 scoped** — it needs (a) a `_public` erase/revocation path, (b) a digest-pinned +
