@@ -30,13 +30,12 @@ name: pnpm-audit (supply-chain)
 # default) to make this a hard gate. Track: search for
 # "TODO(flip-to-blocking)" in this file.
 #
-# Runner: self-hosted (this private repo has no GitHub-hosted runners; the
-#         ubuntu-latest attempt 2s-failed with 'no runner'). Pure registry
-#         call — light on the Mac; runs sequentially after heavier jobs.
-# (pnpm install --frozen-lockfile + pnpm audit). Sending it to the self-hosted
-# Mac would waste a CI slot and contribute to the Mac-overload problem
-# (load 398/665 recorded 2026-06-04; see cargo-audit.yml note). No compilation
-# or platform-specific tooling is needed here.
+# Runner: `corelink` — CoreLink's own ephemeral runner fabric (zero-hosted
+# migration), NOT the founder's self-hosted Mac fleet (`[self-hosted, mac,
+# corelink-builder]`, shared with Rust build jobs — see cargo-audit.yml's
+# "stop heavy-gate stampede" note for why THAT fleet must stay clear of light
+# network-only jobs). Pure registry call (pnpm install --frozen-lockfile +
+# pnpm audit) — no compilation or platform-specific tooling needed.
 #
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin policy.
 # Bump of any action SHA requires ADR + Security review.
@@ -74,28 +73,29 @@ jobs:
   # -----------------------------------------------------------------------
   pnpm-audit:
     name: pnpm advisory audit
-    # self-hosted: this job only calls the npm registry + parses JSON.
+    # corelink: this job only calls the npm registry + parses JSON.
     # Do NOT route to [self-hosted, mac, corelink-builder] — that fleet is
     # shared with all Rust build jobs and the Mac cannot afford idle network
     # slots (ref: cargo-audit.yml "stop heavy-gate stampede" note).
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 5
 
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      # Takes the composite's zero-network fast path on the fabric box (node
+      # 22 / pnpm 10.32.1 baked in) — mirrors admin-ui-ci.yml's convention.
       - name: Set up pnpm
-        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v4.1.0
-        with:
-          version: 10.32.1
+        uses: ./.github/actions/setup-pnpm
 
+      # `cache: pnpm` intentionally omitted — the fabric box is ephemeral (no
+      # cache to restore between runs); see admin-ui-ci.yml's "Set up Node.js"
+      # step note for the measured 0%-hit-rate rationale.
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies (frozen, no scripts)
         # --frozen-lockfile: abort if pnpm-lock.yaml would change (lockfile

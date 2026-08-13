@@ -22,6 +22,30 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Changed
+- **ci: finish migrating the remaining safely-portable hosted CI lanes to the self-hosted `corelink`
+  runner + demote the never-green `ffi-matrix` cron to dispatch-only (zero-hosted-CI mandate).** A real
+  org-billing audit (GitHub enhanced-billing usage API, Aug 2026) found `corelink-server` was still the
+  #1 hosted-minute consumer (7701 Linux min, ~$33 net of the org's ~$45) despite the mandate — the
+  self-hosted migration was never finished. This migrates the lanes whose toolchain the `corelink`
+  image actually provides (Rust via `scripts/ci-use-host-toolchain.sh`; Node 22 + pnpm 10.32.1 baked):
+  `audit-chain-daily-verify`, `byok_matrix_weekly`, `byok_kill_switch_drill_weekly`, `dr-drill-monthly`,
+  `pre-cutover-weekly-cron`, `subprocessors-sync`, `mutation-nightly` (aggregate job only),
+  `pnpm-audit`, `okf-autoreconcile` — mirroring the already-migrated `billing-reconcile-daily.yml`
+  (Rust) / `admin-ui-ci.yml` (Node) idioms. **Deliberately LEFT hosted, with reason** (a blind swap
+  would break them): the Docker/buildx lanes (`container-build-push-prod`, `cas_foundation`,
+  `cosign-sign`, `docs-ci`, `semgrep`, `smoke-install`, `cargo-deny` — the image has no docker);
+  the headless-browser lanes (`admin-ui-e2e`, `e2e-prod`, `lighthouse-ci` — no system Chrome on the
+  fabric image); `cas-canary` (its whole assertion is that a *datacenter* IP reaches the cache —
+  a residential self-hosted IP invalidates the canary); `corelink-client-verify`'s `cbindgen` job
+  (cold `cargo install` every run on the ephemeral box); `backup-daily`/`-verify` (`apt-get` system
+  deps unverified on the image + live prod backup secrets — flagged for a separate spike);
+  `mutation-nightly`'s 4.5 h `mutants` sweep (would crush the shared founder Mac); and `codeql` /
+  `reproducible-build` (GitHub CodeQL infra / reference build environment). `ffi-matrix` has never had
+  a green run, so its weekly cron (re-observing the same known breaks at ~19 hosted min/run) is removed
+  in favour of `workflow_dispatch`-only. Gates verified green: actionlint, `validate_no_shared_rustup_mutation`,
+  `validate_shared_home_cache_guard`, action-SHA-pin, workflow path-filters.
+
 ### Security
 - **chore(security): waive the two image-size DoS advisories in the `pnpm audit --prod` HIGH+ gate
   (`pnpm.auditConfig.ignoreGhsas`), turning that blocking gate green.** `image-size@2.0.2` carries

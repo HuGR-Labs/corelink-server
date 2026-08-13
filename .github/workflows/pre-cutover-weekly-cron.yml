@@ -61,7 +61,7 @@ env:
 jobs:
   verify:
     name: Pre-cutover weekly verify + digest
-    runs-on: ubuntu-latest
+    runs-on: corelink
     timeout-minutes: 30
     outputs:
       regression: ${{ steps.verify.outputs.regression }}
@@ -74,12 +74,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Rust toolchain
+      # Use the runner image's pre-installed, workspace-pinned toolchain — a
+      # self-hosted job must not provision one (validate_no_shared_rustup_mutation.py;
+      # `corelink` counts as self-hosted). HOST_TRIPLE selects the Linux triple.
+      - name: Use host toolchain (baked, workspace-pinned)
         if: github.event.inputs.no_tests != 'true' && github.event.inputs.dry_run != 'true' && github.event_name != 'push'
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b # 1.83.0
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          components: clippy,rustfmt
+        env:
+          HOST_TRIPLE: x86_64-unknown-linux-gnu
+        run: bash scripts/ci-use-host-toolchain.sh
 
       - name: Compute digest date (Bahia)
         id: date
