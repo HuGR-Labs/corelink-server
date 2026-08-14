@@ -4,8 +4,9 @@
 BUILD as the pull-through mirror model (gated mini-campaign).** Adversarial review (2
 independent lenses) found a wrong value premise + a critical un-erasability landmine
 in the *cache-write-hook* framing; the re-scope at the bottom pivots to the registry
-pull-through mirror that BLOCKER-2 itself points to, which dissolves the four
-blockers by watching the PULL path. See "Audit review" then "RE-SCOPE" below. The
+pull-through mirror that BLOCKER-2 itself points to, which fixes the value premise (BLOCKER-2) and closes client-side
+poisoning by watching the PULL path; a 2nd review (below) corrects the
+"dissolves all four" over-claim — B1+B4 remain prerequisites. See "Audit review" then "RE-SCOPE" below. The
 original design + review follow unchanged for the record; the RE-SCOPE supersedes
 both recommendations.
 **Author:** engineering (Claude), 2026-08-13.
@@ -319,3 +320,53 @@ gate → gated rollout. If the owner judges the launch-scale tenant count doesn'
 justify the added blast radius (original open Q3), **defer, don't drop** — the seam is
 marked and the private win (F3.1) already ships the customer-visible speedup (F3.3:
 8.5×).
+
+---
+
+## Second adversarial review 2026-08-13 (DeepSeek + Kimi-K2, via gateway) — honesty correction
+
+Two more independent engines attacked the mirror re-scope. **Split verdict:** DeepSeek
+BUILD-WITH-CHANGES, Kimi-K2 DO-NOT-BUILD. They converge on one correction this doc must
+own: **"dissolves the four blockers" was an over-claim.** Only **BLOCKER-2 is truly
+dissolved** (the structural pull-vs-write fix). The other three are *relocated*, not
+eliminated — and two of them are **build-blocking prerequisites, not audit TODOs**:
+
+- **BLOCKER-3 → becomes an allowlist-governance control (not "dissolved").** Client-driven
+  poisoning IS closed (only the server authors `_public`). But the trust root moves into the
+  curation pipeline: the allowlist must be **digest-pinned** and the mirror-populate →
+  allowlist-commit step must be **atomic** (else the GAP-E TOCTOU just moves server-side —
+  a digest resident but not-yet-allowlisted, or allowlisted but not-yet-populated, reopens the
+  window). Governance that accepts a *tag* anywhere reintroduces the vector.
+- **BLOCKER-4 → cost externalization, PREREQUISITE.** "Server writes, nothing to not-charge"
+  hides the COGS, it does not resolve it. `_public` bytes still cost money. Required BEFORE
+  build: an explicit decision that the **platform absorbs `_public` storage as the network-effect
+  subsidy**, PLUS an **unbounded-growth cap** (allowlist bloat / mirror-amplification must not
+  let `_public` grow without bound — otherwise it is a cross-tenant cost-contagion DoS).
+- **BLOCKER-1 → PREREQUISITE, not "narrowed-and-fine."** `_public` still has **no erase or
+  revocation path**, and "holds only public data" is a classification *assertion* that fails
+  under (a) upstream compromise or (b) any misclassification. A `_public` **revocation/erase
+  path is a hard prerequisite** — needed for incident response (purge a poisoned upstream
+  digest) independent of GDPR.
+
+New operational risks both engines surfaced that this doc missed (verified as real):
+
+- **Mirror-amplification DoS** — a cache miss triggers a server-side upstream fetch; an
+  attacker who can force misses (un-allowlisted-digest flooding) amplifies tenant pulls into
+  upstream fetches. Needs rate/cost throttling on the mirror path.
+- **Silent allowlist desync** — if the tag→digest refresh job stalls (upstream down), tenants
+  serve against stale pinned digests with no fail-closed / health signal. Needs a staleness gate.
+- **Upstream rollback / orphaned pin** (Kimi N-1) — a pinned digest can be orphaned from
+  upstream's later intent; folds into the same revocation-path requirement as BLOCKER-1.
+
+One raised risk is **bounded, not independent:** the manifest/blob confused-deputy (Kimi N-3)
+is harmless *while the B1 public-only invariant holds* — every `_public` blob is public by
+construction, so cross-referencing one is not a leak. It becomes real only under a B1
+misclassification, which is exactly why B1's revocation path is a prerequisite.
+
+**Net (honest) verdict:** the mirror is still the **right direction** — B2 is genuinely fixed
+and client-poisoning is genuinely closed — but the accurate framing is **"1 blocker dissolved,
+1 becomes a governance control, 2 (B1 revocation, B4 shared-accounting+cap) are hard
+prerequisites,"** NOT "4 dissolved." Recommendation is therefore **BUILD only after B1
+(revocation/erase for `_public`) + B4 (platform-absorbs + growth cap) are designed and the
+allowlist-commit atomicity + mirror rate-limit + staleness-gate are specced** — else **defer**.
+This supersedes the "dissolves the four blockers" wording above.
