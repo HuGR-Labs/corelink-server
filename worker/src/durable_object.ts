@@ -875,6 +875,10 @@ export class CoreLinkServer implements DurableObject {
           AUDIT_CHAIN_SIGNING_SEED_HEX: this.env.AUDIT_CHAIN_SIGNING_SEED_HEX ?? "",
           AUDIT_CHAIN_SIGNING_KEY_ID: this.env.AUDIT_CHAIN_SIGNING_KEY_ID ?? "",
           AUDIT_CHAIN_TRUST_UNSIGNED_RESUME: this.env.AUDIT_CHAIN_TRUST_UNSIGNED_RESUME ?? "",
+          // Non-secret tuning knob (secrets-matrix #189): per-call row budget for
+          // the audit/drain sweep. "" ⇒ container default (200). Forwarded so a
+          // Worker-side var actually reaches the container process.
+          AUDIT_DRAIN_BATCH_LIMIT: this.env.AUDIT_DRAIN_BATCH_LIMIT ?? "",
           // CTRL-PRIV-001: server-held salt for the email_hash pseudonym. Unset →
           // legacy unsalted SHA-256 (zero regression); set → HMAC-SHA256. MUST be
           // forwarded or the container can't see it when the owner registers it.
