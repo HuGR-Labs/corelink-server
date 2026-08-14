@@ -134,6 +134,13 @@ pub struct AuditDrainState {
     /// pre-0080 legacy heads, or a coordinated seed/key rotation) — it re-opens the
     /// legacy tolerance and MUST be turned back off once the fleet is re-signed.
     trust_unsigned_resume: bool,
+    /// Global per-call row budget: at most this many rows are sealed across ALL
+    /// partitions in one `POST /_internal/audit/drain`, so a cold backlog can
+    /// never make a single call exceed the edge subrequest timeout (one D1-HTTP
+    /// UPDATE per row, ~0.3s each). A capped call returns `incomplete: true`; a
+    /// caller (the hourly cron, or a manual loop) re-calls until `incomplete`
+    /// is false. `AUDIT_DRAIN_BATCH_LIMIT`, default 200 (~60s at 0.3s/row).
+    batch_limit: i64,
 }
 
 impl std::fmt::Debug for AuditDrainState {
@@ -149,6 +156,7 @@ impl std::fmt::Debug for AuditDrainState {
             )
             .field("signing_key_id", &self.signing_key_id)
             .field("trust_unsigned_resume", &self.trust_unsigned_resume)
+            .field("batch_limit", &self.batch_limit)
             .finish()
     }
 }
@@ -343,12 +351,22 @@ pub fn build_state_from_env() -> Option<AuditDrainState> {
              re-signed under the current key."
         );
     }
+    // Global per-call row budget. Default 200 keeps a call ~60s at ~0.3s/row —
+    // well under the edge subrequest timeout — so a cold backlog drains over
+    // repeated calls (hourly cron or a manual loop) instead of hanging + sealing
+    // ZERO. Clamped to >= 1 (a non-positive value would seal nothing forever).
+    let batch_limit = std::env::var("AUDIT_DRAIN_BATCH_LIMIT")
+        .ok()
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .filter(|n| *n >= 1)
+        .unwrap_or(200);
     Some(AuditDrainState {
         internal_auth_key,
         d1,
         signing_seed,
         signing_key_id,
         trust_unsigned_resume,
+        batch_limit,
     })
 }
 
@@ -656,18 +674,26 @@ async fn read_sealed_tail(
     Ok(Some((chain, seq)))
 }
 
-/// Read the pending rows of a partition in deterministic seal order.
+/// Read up to `limit` pending rows of a partition in deterministic seal order.
+///
+/// The `LIMIT` seals only the ordered PREFIX of the unsealed tail; the next call
+/// resumes from the advanced head (`emitted_at IS NULL` excludes the rows this
+/// call sealed, so the same `ORDER BY` picks up exactly where we left off). This
+/// keeps the hash chain intact — a prefix of a deterministic order is still a
+/// deterministic order — while bounding the work per call.
 async fn read_pending_rows(
     d1: &D1HttpClient,
     tenant_id: &str,
     region: &str,
+    limit: i64,
 ) -> Result<Vec<(String, Value)>, String> {
     let rows = d1
         .query(
             "SELECT id, payload_json FROM audit_outbox \
              WHERE tenant_id = ?1 AND region = ?2 AND emitted_at IS NULL \
-             ORDER BY enqueued_at, id",
-            &[json!(tenant_id), json!(region)],
+             ORDER BY enqueued_at, id \
+             LIMIT ?3",
+            &[json!(tenant_id), json!(region), json!(limit)],
         )
         .await?;
     let mut out = Vec::with_capacity(rows.len());
@@ -806,6 +832,7 @@ async fn drain_partition(
     signing_seed: Option<&[u8; 32]>,
     signing_key_id: u64,
     trust_unsigned_resume: bool,
+    batch_limit: i64,
 ) -> Result<PartitionOutcome, String> {
     let checkpoint = read_checkpoint(d1, tenant_id, region).await?;
 
@@ -860,7 +887,7 @@ async fn drain_partition(
         None => HashChainBuilder::new(),
     };
 
-    let rows = read_pending_rows(d1, tenant_id, region).await?;
+    let rows = read_pending_rows(d1, tenant_id, region, batch_limit).await?;
     if rows.is_empty() {
         return Ok(PartitionOutcome::Empty);
     }
@@ -936,9 +963,23 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
     let mut rows_sealed: u64 = 0;
     let mut partitions_drifted: u64 = 0;
     let mut partitions_failed: u64 = 0;
+    // Global per-call row budget (see `AuditDrainState::batch_limit`). Bounds the
+    // total sealing work so a cold backlog can never make one call exceed the edge
+    // subrequest timeout. When the budget is spent (or a partition's tail was
+    // truncated by it) the call returns `incomplete: true` — a caller (hourly cron
+    // or a manual loop) re-drains until it returns `incomplete: false`.
+    let mut remaining = state.batch_limit;
+    let mut incomplete = false;
     // CF-6: borrow the keyed-head signing seed once for the whole sweep.
     let signing_seed: Option<&[u8; 32]> = state.signing_seed.as_deref().map(|z| &**z);
     for (tenant_id, region) in partitions {
+        if remaining <= 0 {
+            // Budget spent before every partition was visited — pending rows
+            // remain in the unvisited partitions; a re-drain is required.
+            incomplete = true;
+            break;
+        }
+        let limit = remaining;
         match drain_partition(
             &state.d1,
             &tenant_id,
@@ -947,12 +988,20 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
             signing_seed,
             state.signing_key_id,
             state.trust_unsigned_resume,
+            limit,
         )
         .await
         {
             Ok(PartitionOutcome::Sealed(n)) => {
                 partitions_drained = partitions_drained.saturating_add(1);
                 rows_sealed = rows_sealed.saturating_add(n);
+                let sealed_i = i64::try_from(n).unwrap_or(i64::MAX);
+                remaining = remaining.saturating_sub(sealed_i);
+                // A full batch means this partition's unsealed tail was truncated
+                // by the limit — it may hold more rows a later call must seal.
+                if sealed_i >= limit {
+                    incomplete = true;
+                }
             }
             Ok(PartitionOutcome::Drift) => {
                 partitions_drifted = partitions_drifted.saturating_add(1);
@@ -976,6 +1025,11 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
             "rows_sealed": rows_sealed,
             "partitions_drifted": partitions_drifted,
             "partitions_failed": partitions_failed,
+            // `true` ⇒ the per-call row budget bounded this sweep and pending rows
+            // remain; a caller (hourly cron or a manual loop) must re-drain until
+            // this is `false`. Independent of `partitions_failed` (a distinct retry
+            // signal).
+            "incomplete": incomplete,
         })),
     )
         .into_response()
@@ -998,6 +1052,41 @@ mod tests {
             .enumerate()
             .map(|(i, p)| (format!("row-{i:04}"), p.clone()))
             .collect()
+    }
+
+    #[test]
+    fn limit_prefix_seal_then_resume_equals_one_shot_seal() {
+        // The batched-drain fix seals only an ordered PREFIX per call (LIMIT) and
+        // the next call resumes from the advanced head. This MUST yield the exact
+        // same chain as sealing the whole partition in one shot — a prefix of a
+        // deterministic order is still a deterministic order.
+        let all = rows(&[
+            json!({"a": 1}),
+            json!({"b": 2}),
+            json!({"c": 3}),
+            json!({"d": 4}),
+            json!({"e": 5}),
+        ]);
+        let (one_shot, one_head, one_seq) = seal_rows(ChainHash::genesis(), 0, &all).unwrap();
+
+        // Call 1: seal the first 2 rows (LIMIT 2), from genesis.
+        let (p1, head1, seq1) = seal_rows(ChainHash::genesis(), 0, &all[0..2]).unwrap();
+        // Call 2: resume from call 1's advanced head + seq, seal the remaining 3.
+        let (p2, head2, seq2) = seal_rows(head1, seq1, &all[2..5]).unwrap();
+
+        // Same final head + next-sequence.
+        assert_eq!(head1.to_hex(), one_shot[1].chain_hash_hex);
+        assert_eq!(head2.to_hex(), one_head.to_hex());
+        assert_eq!(seq2, one_seq);
+        // Every sealed row is byte-identical to the one-shot chain.
+        let chained: Vec<_> = p1.into_iter().chain(p2).collect();
+        assert_eq!(chained.len(), one_shot.len());
+        for (got, want) in chained.iter().zip(one_shot.iter()) {
+            assert_eq!(got.sequence_number, want.sequence_number);
+            assert_eq!(got.prev_hash_hex, want.prev_hash_hex);
+            assert_eq!(got.chain_hash_hex, want.chain_hash_hex);
+            assert_eq!(got.canonical_jcs, want.canonical_jcs);
+        }
     }
 
     #[test]
