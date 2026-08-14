@@ -1,9 +1,13 @@
 # F3.2 — Cross-tenant public layer cache (the network-effect jaw-drop)
 
-**Status:** REVIEWED 2026-08-13 → **DO NOT BUILD AS SCOPED.** Adversarial review (2
-independent lenses) found a wrong value premise + a critical un-erasability
-landmine. See "Audit review" below. The original design follows unchanged for the
-record; the review supersedes its "Recommendation".
+**Status:** REVIEWED 2026-08-13 → DO NOT BUILD AS SCOPED → **RE-SCOPED 2026-08-13:
+BUILD as the pull-through mirror model (gated mini-campaign).** Adversarial review (2
+independent lenses) found a wrong value premise + a critical un-erasability landmine
+in the *cache-write-hook* framing; the re-scope at the bottom pivots to the registry
+pull-through mirror that BLOCKER-2 itself points to, which dissolves the four
+blockers by watching the PULL path. See "Audit review" then "RE-SCOPE" below. The
+original design + review follow unchanged for the record; the RE-SCOPE supersedes
+both recommendations.
 **Author:** engineering (Claude), 2026-08-13.
 **Precedes:** any implementation PR. This doc exists to be reviewed, not merged as fact.
 
@@ -207,3 +211,111 @@ Ship F3.1 (private — done). Treat F3.2 as a security-reviewed feature: this de
 → audit-team red-team of the classification + poisoning controls → implementation
 behind a flag → cross-tenant isolation test in the story suite → gated rollout.
 Do NOT fast-path it.
+
+# RE-SCOPE 2026-08-13 — the pull-through mirror model (supersedes the "cache-write hook" framing)
+
+**Status:** RE-SCOPE STUDY. Flips the shape from "classify cache writes" to "serve a
+pull-through mirror." Still gated on owner + audit sign-off before code. Author: Claude.
+
+## Why re-scope
+
+The original framing above tried to make the shared/private decision on the BuildKit
+**cache-write** path (a client pushes `.../cache/<repo>`; the server classifies each
+blob). That framing carries four hard blockers (surfaced in the multi-engine review,
+PRs #1103–1106): base layers do NOT arrive via that hook (they arrive via the
+registry PULL of `FROM`), the `_public` map is un-erasable off the tenant prefix,
+byte-accounting can't "write-but-not-charge," and allowlist-by-tag is poisonable.
+The **blocker-2 root cause** is structural: *we were watching the wrong path.*
+
+**The mirror model watches the right path.** The shareable content — public base
+image layers — enters the system when BuildKit **pulls** `FROM ubuntu:24.04`, not
+when it pushes a cache. CoreLink already runs trusted server-side pull-through
+mirrors for exactly this shape (npm/PyPI/Homebrew/cargo write `_public`;
+`adapter_cache.rs:35 PUBLIC_NAMESPACE`), and the OCI surface **already anticipates
+this exact follow-up**: `routes/oci.rs:188-192` — *"Cross-tenant public-image dedup
+(storing public base images under PUBLIC_NAMESPACE) is an explicit follow-up"* — with
+the upstream **fetch + digest-verify already implemented** (`oci.rs:518`, reject a
+digest mismatch BEFORE `moat.put`). So F3.2-via-mirror is a small extension of an
+existing, security-reviewed seam — not a new subsystem, and not a new client API.
+
+## The model in one paragraph
+
+Add a **container-registry pull-through mirror** for public base images. When any
+tenant's build does `FROM <allowlisted-public-base>`, BuildKit pulls it through
+CoreLink's OCI surface; the server fetches from the trusted upstream (docker.io /
+registry-1), **verifies each layer digest against the upstream** (already done at
+`oci.rs:518`), and stores it **once** under `PUBLIC_NAMESPACE`, keyed by its OCI
+digest. Every later tenant that pulls the same base is served from the resident
+`_public` blob — "born warm" — and it is stored once (COGS win). Customer-derived
+layers (their `RUN` outputs) never enter this path; they stay private under the
+tenant HMAC prefix (F3.1), unchanged.
+
+## How the mirror dissolves each blocker
+
+- **BLOCKER-2 (value premise — base layers bypass the cache-write hook):** DISSOLVED.
+  The mirror sits on the PULL path, which is exactly where base layers travel. We no
+  longer need a cache-write classifier at all.
+- **BLOCKER-1 / GAP-A (`_public` un-erasable; re-hash only on `MoatCache.get`, not
+  OCI):** NARROWED. `_public` holds ONLY public upstream base layers (no personal
+  data), so the erase seam should *refuse* to erase `_public` by design (open Q2
+  above) — the un-erasability becomes correct behavior, not a bug. The OCI read path
+  must still content-verify on serve; wire the same re-hash-on-read the native
+  `MoatCache.get` has (GAP-A) into `OciMoatStore` reads from `_public`.
+- **BLOCKER-3 / GAP-E (first-writer / allowlist-by-tag poisoning, populate-then-
+  allowlist TOCTOU):** DISSOLVED at the source. No client write ever authors a
+  `_public` entry — only the server's mirror does, and ONLY for bytes it fetched from
+  the trusted upstream and digest-verified. Allowlist is **by immutable digest**, not
+  by tag (a tag→digest resolution is pinned server-side at mirror time, closing the
+  tag-poisoning + TOCTOU windows).
+- **BLOCKER-4 (byte-accounting can't write-but-not-charge):** SIDESTEPPED. `_public`
+  base bytes are written by the **server mirror**, not on a tenant's metered write
+  path, so there is nothing to "not charge" — the tenant's private writes account
+  exactly as today (`byte_accounting.rs`).
+- **GAP-B (verify-before-route), GAP-F (dedup timing side-channel):** verify-before-
+  route is already the upstream-digest check; the dedup side-channel shrinks because
+  membership in `_public` is a fixed server-curated base-digest set, not a function of
+  another tenant's recent activity.
+
+## Honest residual risks (what the audit MUST still red-team)
+
+1. **Upstream compromise / revocation.** If a poisoned base ships from docker.io and
+   we mirror it, every tenant gets it. Same trust we already extend to npm/PyPI
+   mirrors — but base images are higher-value. Needs a revocation path (evict a digest
+   from `_public` + allowlist) and a documented upstream-trust boundary.
+2. **Allowlist governance (open Q1).** Who curates the base-digest allowlist, how a
+   base is added, how a compromised digest is revoked. Must be server-side, auditable.
+3. **`_public` read isolation.** A read for an allowlisted digest must serve `_public`;
+   a read for ANY non-allowlisted digest must NEVER fall through to another tenant's
+   prefix. The story-suite cross-tenant isolation test is mandatory before rollout.
+4. **The "born-warm speed" claim is bounded.** COGS-dedup is unconditional. The
+   cold-build *speed* win materializes only for the base-PULL, not for BuildKit
+   cache-manifest import (manifests stay per-tenant, never shared — blocker-3 stays
+   respected). Claim exactly that and no more.
+
+## Smallest safe implementation (if owner says build)
+
+1. Server-curated **allowlist of public base-image layer digests** (seed: ubuntu,
+   alpine, debian, node, python, golang), refreshed by a server job that pulls those
+   bases through the trusted mirror and pins tag→digest.
+2. In `OciMoatStore` (`oci.rs:212`): on persist, if the OCI digest ∈ allowlist →
+   `moat.put(PUBLIC_NAMESPACE, digest, …)`; else tenant prefix (today's behavior).
+   On read: check `_public` for allowlisted digests, then tenant prefix. Wire
+   re-hash-on-read (GAP-A) for `_public` serves.
+3. Erase seam (`cas_erase.rs`): explicitly refuse `_public` (shared infra, not
+   personal data) — closes open Q2.
+4. Behind a flag; cross-tenant isolation story test green BEFORE any prod rollout.
+5. No new client-facing API (property preserved from the original scope).
+
+## Re-scope recommendation
+
+**BUILD — but as its own gated mini-campaign, not a fast-path.** The mirror model is
+the honest, structurally-safe route to the network-effect win, it reuses a seam the
+code already flags as the intended follow-up, and it dissolves the four blockers that
+killed the cache-write framing. It is NOT free: it extends our upstream-trust boundary
+to base images and demands the allowlist-governance + revocation + isolation-test work
+above. Sequence: this re-scope → audit-team red-team (upstream-trust + `_public` read
+isolation) → flag-gated impl in `OciMoatStore` → story-suite cross-tenant isolation
+gate → gated rollout. If the owner judges the launch-scale tenant count doesn't yet
+justify the added blast radius (original open Q3), **defer, don't drop** — the seam is
+marked and the private win (F3.1) already ships the customer-visible speedup (F3.3:
+8.5×).
