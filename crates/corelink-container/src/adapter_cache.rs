@@ -75,10 +75,27 @@ pub trait UrlMapStore: Send + Sync {
 #[async_trait]
 impl UrlMapStore for D1HttpClient {
     async fn get(&self, namespace: &str, url_hash: &str) -> Result<Option<String>, String> {
+        // F3.2 BLOCKER-1: a `_public` lookup must NEVER resolve a content_hash that
+        // has been revoked (`public_blocklist`, migration 0097). The blocklist filter
+        // is a `NOT EXISTS` join in the SAME statement — not a second query after the
+        // map read — so there is no map-read → blocklist-read TOCTOU: the lookup is
+        // linearized either before the revocation's blocklist insert (returns the
+        // hash, whose bytes may then be deleted → a later CAS read misses, still safe)
+        // or after it (returns None). The private-namespace path is UNCHANGED.
+        let sql = if namespace == PUBLIC_NAMESPACE {
+            "SELECT c.content_hash FROM adapter_cache_map c \
+             WHERE c.namespace = ?1 AND c.url_hash = ?2 \
+               AND NOT EXISTS ( \
+                   SELECT 1 FROM public_blocklist pb WHERE pb.content_hash = c.content_hash \
+               ) \
+             LIMIT 1"
+        } else {
+            "SELECT content_hash FROM adapter_cache_map \
+             WHERE namespace = ?1 AND url_hash = ?2 LIMIT 1"
+        };
         let rows = self
             .query(
-                "SELECT content_hash FROM adapter_cache_map \
-                 WHERE namespace = ?1 AND url_hash = ?2 LIMIT 1",
+                sql,
                 &[
                     serde_json::Value::String(namespace.to_owned()),
                     serde_json::Value::String(url_hash.to_owned()),
