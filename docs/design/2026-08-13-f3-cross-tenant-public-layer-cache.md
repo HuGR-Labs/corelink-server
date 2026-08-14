@@ -370,3 +370,35 @@ prerequisites,"** NOT "4 dissolved." Recommendation is therefore **BUILD only af
 (revocation/erase for `_public`) + B4 (platform-absorbs + growth cap) are designed and the
 allowlist-commit atomicity + mirror rate-limit + staleness-gate are specced** — else **defer**.
 This supersedes the "dissolves the four blockers" wording above.
+
+---
+
+## Cost measurement + owner decision 2026-08-13
+
+**B4 storage COGS is NOT a seed-money problem — measured, not guessed.** The shareable
+`_public` surface is a *bounded, server-curated* set of popular public base images.
+Measured compressed sizes (Docker Hub `full_size`, 15 popular bases: ubuntu/alpine/
+debian/node/python/golang/rust/busybox across common tags) sum to **1.71 GB** with no
+cross-image layer dedup. On R2 (`$0.015/GB-mo`, **egress $0**):
+
+| scenario | R2 storage / month |
+|---|---|
+| real 15-base set | **$0.026** |
+| 10× (hundreds of tags, zero dedup) | $0.26 |
+| 100× paranoia (huge curated set) | $2.56 |
+
+Upstream pulls are one-time per digest (then resident) and Docker Hub pulls are free;
+R2 Class A/B ops at base-image serve volume are cents. The **growth cap** (B4) is what
+keeps `_public` inside this range — it caps the curated allowlist, so cost cannot run
+away even under allowlist-bloat / mirror-amplification pressure. Closes open Q3: the
+infra cost is trivially affordable, even with zero seed money.
+
+**The real gate is engineering time, not cash:** designing the B1 `_public`
+revocation/erase path + the B4 growth cap + passing the cross-tenant isolation audit.
+
+**Owner decision (2026-08-13):** F3.2 (the cross-tenant public / network-effect moat) is
+**committed — "super important, we have to do it"** — but **deferred to the END of the
+backlog**. Sequence when picked up: design B1 (revocation) + B4 (growth cap; platform
+absorbs the measured ~cents/mo COGS as the network-effect subsidy) → audit red-team →
+flag-gated `OciMoatStore` impl → story-suite cross-tenant isolation gate → gated rollout.
+Until then, F3.1 (private) ships the customer-visible speedup (F3.3: 8.5×).
