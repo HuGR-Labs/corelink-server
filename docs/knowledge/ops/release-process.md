@@ -6,7 +6,7 @@ source_files:
   - "docs/release/v1.0.0-GA-tag-draft-final.txt"
   - "crates/corelink-container/src/routes/audit_drain.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "57da24b964fb0a3b565c6b441f87f8d2fba793cc"
+checkpoint_sha: "fbddf48f72ba793bae24429ad24420e995237ccf"
 provenance: "AUTHORED"
 tags: ["ops", "release", "ga", "sign-off", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -47,7 +47,7 @@ proves the artifact, and to the GA staffing waiver in
    (`crates/corelink-container/src/main.rs:586`, now mounted directly alongside the
    `/_internal/dsr/{erase,verify,access,portability,rectification}` family that the DSAR-completion work
    expanded; seal logic at
-   `crates/corelink-container/src/routes/audit_drain.rs:461`/`:827`/`:923`), and stays mounted-inert
+   `crates/corelink-container/src/routes/audit_drain.rs:500`/`:827`/`:923`), and stays mounted-inert
    (fail-CLOSED unmount) when the key+D1 are absent — it is NOT a designed-only skeleton (this matches the
    audit-chain concept's WIRED treatment, [compliance/audit-chain.md](/compliance/audit-chain.md));
    **(c) DESIGNED-but-UNWIRED skeletons** enumerated as the target GA posture, not running GA wiring —
