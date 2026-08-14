@@ -958,6 +958,63 @@ async fn resign_unsigned_head(
     Ok(!rows.is_empty())
 }
 
+/// CF-6 convergence sweep: stamp the current-key signature onto genuinely UNSIGNED
+/// (`head_signature IS NULL`) heads IN PLACE so the operator can turn
+/// `AUDIT_CHAIN_TRUST_UNSIGNED_RESUME` back OFF WITHOUT waiting weeks for organic
+/// per-partition traffic to advance each head — converging fast MINIMISES the total
+/// tamper-tolerant exposure window. SELF-GATED on the toggle being ON (the operator's
+/// explicit "these legacy heads are trusted") AND a seed being configured; outside the
+/// window a legacy NULL head is TAMPER (fail-CLOSED) and is NEVER auto-blessed. Idle
+/// heads have no pending rows, so the pending-partition drain loop never visits them —
+/// this scans `audit_chain_head` directly, bounded by `batch_limit` per call (a large
+/// legacy backlog converges over repeated calls, like the row drain). Returns
+/// `(heads_resigned, incomplete)`. Pure D1 orchestration — excluded from mutation
+/// testing (no in-CI test can drive live D1; see `.cargo/mutants.toml`).
+async fn converge_unsigned_heads(
+    d1: &D1HttpClient,
+    signing_seed: Option<&[u8; 32]>,
+    trust_unsigned_resume: bool,
+    signing_key_id: u64,
+    batch_limit: i64,
+    now: i64,
+) -> (u64, bool) {
+    let Some(seed) = signing_seed else {
+        return (0, false);
+    };
+    if !trust_unsigned_resume {
+        return (0, false);
+    }
+    let unsigned = match read_unsigned_head_partitions(d1, batch_limit).await {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::error!(error = %e, "audit/drain: unsigned-head scan failed");
+            return (0, false);
+        }
+    };
+    let scanned = unsigned.len() as i64;
+    let mut heads_resigned: u64 = 0;
+    for (tenant_id, region) in unsigned {
+        match resign_unsigned_head(d1, &tenant_id, &region, seed, signing_key_id, now).await {
+            Ok(true) => {
+                heads_resigned = heads_resigned.saturating_add(1);
+                tracing::warn!(
+                    region = %region,
+                    key_id = signing_key_id,
+                    "audit/drain: CF-6 legacy UNSIGNED head re-signed in place \
+                     (AUDIT_CHAIN_TRUST_UNSIGNED_RESUME migration)"
+                );
+            }
+            Ok(false) => {}
+            Err(e) => tracing::error!(
+                error = %e, region = %region,
+                "audit/drain: legacy head re-sign failed"
+            ),
+        }
+    }
+    // A full page ⇒ more unsigned heads remain; a caller must re-drain.
+    (heads_resigned, scanned >= batch_limit)
+}
+
 /// Drain a single `(tenant_id, region)` partition.
 #[allow(
     clippy::too_many_arguments,
@@ -1157,61 +1214,16 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
         }
     }
 
-    // CF-6 convergence sweep: stamp the current-key signature onto genuinely UNSIGNED
-    // (`head_signature IS NULL`) heads IN PLACE so the operator can turn
-    // `AUDIT_CHAIN_TRUST_UNSIGNED_RESUME` back OFF WITHOUT waiting weeks for organic
-    // per-partition traffic to advance each head — converging fast MINIMISES the total
-    // tamper-tolerant exposure window. GATED on the toggle being ON (the operator's
-    // explicit "these legacy heads are trusted") AND a seed being configured; outside
-    // the window a legacy NULL head is TAMPER (fail-CLOSED) and is NEVER auto-blessed.
-    // Idle heads have no pending rows, so the pending-partition loop above never visits
-    // them — this scans `audit_chain_head` directly, bounded by `batch_limit` per call
-    // (a large legacy backlog converges over repeated calls, like the row drain).
-    let mut heads_resigned: u64 = 0;
-    let mut heads_resign_incomplete = false;
-    if state.trust_unsigned_resume {
-        if let Some(seed) = signing_seed {
-            match read_unsigned_head_partitions(&state.d1, state.batch_limit).await {
-                Ok(unsigned) => {
-                    let scanned = unsigned.len() as i64;
-                    for (tenant_id, region) in unsigned {
-                        match resign_unsigned_head(
-                            &state.d1,
-                            &tenant_id,
-                            &region,
-                            seed,
-                            state.signing_key_id,
-                            now,
-                        )
-                        .await
-                        {
-                            Ok(true) => {
-                                heads_resigned = heads_resigned.saturating_add(1);
-                                tracing::warn!(
-                                    region = %region,
-                                    key_id = state.signing_key_id,
-                                    "audit/drain: CF-6 legacy UNSIGNED head re-signed in place \
-                                     (AUDIT_CHAIN_TRUST_UNSIGNED_RESUME migration)"
-                                );
-                            }
-                            Ok(false) => {}
-                            Err(e) => tracing::error!(
-                                error = %e, region = %region,
-                                "audit/drain: legacy head re-sign failed"
-                            ),
-                        }
-                    }
-                    // A full page ⇒ more unsigned heads remain; a caller must re-drain.
-                    if scanned >= state.batch_limit {
-                        heads_resign_incomplete = true;
-                    }
-                }
-                Err(e) => {
-                    tracing::error!(error = %e, "audit/drain: unsigned-head scan failed");
-                }
-            }
-        }
-    }
+    // CF-6 convergence sweep (self-gated, D1-only — see `converge_unsigned_heads`).
+    let (heads_resigned, heads_resign_incomplete) = converge_unsigned_heads(
+        &state.d1,
+        signing_seed,
+        state.trust_unsigned_resume,
+        state.signing_key_id,
+        state.batch_limit,
+        now,
+    )
+    .await;
     incomplete = incomplete || heads_resign_incomplete;
     (
         StatusCode::OK,

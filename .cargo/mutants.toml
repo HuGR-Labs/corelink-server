@@ -45,4 +45,15 @@ exclude_globs = [
 # and the cargo WebDAV gate (PROPFIND/DELETE) — stay fully mutation-covered.
 exclude_re = [
     "impl UrlMapStore for D1HttpClient",
+    # CF-6 legacy-head re-sign convergence (routes/audit_drain.rs): pure D1
+    # orchestration — a live-D1 `SELECT … audit_chain_head` scan and an `UPDATE …
+    # audit_chain_head` guarded re-sign, driven only by a real Cloudflare D1. No
+    # in-CI test can KILL a mutant here (same rationale as the D1HttpClient map
+    # methods above); every changed line surfaces as a FALSE survivor. The
+    # TESTABLE logic — head signing/verification (`sign_head`/`verify_head`), the
+    # resume/tamper decision (`check_head_on_resume`), and the seal chain
+    # (`seal_rows`/`resolve_resume`) — stays fully mutation-covered.
+    "read_unsigned_head_partitions",
+    "resign_unsigned_head",
+    "converge_unsigned_heads",
 ]
