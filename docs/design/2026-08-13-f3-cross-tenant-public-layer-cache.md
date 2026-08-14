@@ -402,3 +402,67 @@ backlog**. Sequence when picked up: design B1 (revocation) + B4 (growth cap; pla
 absorbs the measured ~cents/mo COGS as the network-effect subsidy) → audit red-team →
 flag-gated `OciMoatStore` impl → story-suite cross-tenant isolation gate → gated rollout.
 Until then, F3.1 (private) ships the customer-visible speedup (F3.3: 8.5×).
+
+---
+
+## Third-review audit 2026-08-13 (DeepSeek-V4-pro + V4-flash + GPT-5.6-luna-pro, 1M-ctx) — two internal contradictions fixed
+
+A fine-tooth-comb re-audit by three independent 1M-context models (the prior reviews used a
+weaker 164K-ctx engine) converged on **BUILD-WITH-CHANGES** and caught **two internal
+contradictions in the sections above that were merged**. Both are verified against this doc's own
+text. They do not kill the mirror direction, but the earlier "smallest safe implementation" sketch
+was self-defeating and is corrected here.
+
+### Contradiction 1 — the persist-routing sketch lets a TENANT write `_public` (recreates B1/GAP-E)
+
+The model says "the server fetches from the trusted upstream" (server-only writer), but the
+"smallest safe implementation" step 2 says *on `OciMoatStore.persist`, if digest ∈ allowlist →
+`moat.put(PUBLIC_NAMESPACE, …)`*. `OciMoatStore.persist` is the **client upload/push** path — so a
+tenant push of an allowlisted digest would populate `_public`. That is NOT server-only; it makes the
+public-only invariant depend on allowlist correctness + hash-verification instead of **path
+separation**, and a poisoned allowlist entry or a persist bug directly recreates BLOCKER-1.
+**Correction:** `_public` is written ONLY by a dedicated server-mirror fetch path (server pulls on
+cache-miss and is the sole writer). A tenant `persist` whose digest is allowlisted must
+**dedup-read-only or reject — never populate** `_public`. Do not route generic tenant persists into
+public by digest membership.
+
+### Contradiction 2 — the allowlist auto-follows mutable tags (recreates B3)
+
+The doc claims the allowlist is "**by immutable digest**, not by tag," but the implementation step 1
+says the digest set is "refreshed by a server job that pulls those bases … and **pins tag→digest**."
+An auto-refresh that follows a mutable tag and auto-commits the fetched digest means an upstream
+**tag-poisoning at refresh time** becomes a mirrored, allowlisted, poisoned digest (digest
+verification only proves bytes match the manifest the *same upstream* served — it is not a trust
+root). **Correction:** allowlist digest commits must be **out-of-band / owner-gated** (signed or
+manually approved). A refresh job may *propose* new digests; a human/owner gate *commits* them.
+Automatic tag-following must never auto-commit to the allowlist.
+
+### Other corrections the three models converged on
+
+- **BLOCKER-2 is CONDITIONALLY, not unconditionally, dissolved.** The value only materializes if
+  tenant BuildKit base pulls actually traverse CoreLink — which requires a **client-side registry-
+  mirror config / image-prefix rewrite**, not just "no new server API." Without that routing,
+  `FROM ubuntu:24.04` still pulls straight from Docker Hub and B2 is false in practice. Add a rollout
+  gate that verifies target base pulls hit CoreLink.
+- **Elevate to prerequisites (were under-designed):** (a) **SSRF-safe upstream fetch** — OCI uses
+  token-auth + redirects unlike the npm/PyPI mirror path; the fetch target must be a strict registry
+  allowlist. (b) **Cold-pull stampede / amplification** — needs singleflight, per-tenant rate-limit,
+  and an upstream Docker-Hub auth/quota model (anon = 100 pulls/6h). (c) **Multi-arch / manifest-list
+  handling** — `ubuntu:24.04` is a manifest list; layer digests are per-arch; decide which arches to
+  store. (d) **Admin `_public` eviction path, SEPARATE from tenant DSR erase** — resolves the
+  "refuse `_public` erase" (step 3) vs "revocation path" (residual risk 1) contradiction: tenant DSR
+  must not erase shared infra, but an operator MUST be able to evict a poisoned base digest.
+- **Cost note is storage-ONLY.** The $0.026/mo figure is arithmetically right for one month of R2
+  blob storage of the 15-image sample, and storage IS trivially cheap — but it does NOT settle B4.
+  Missed vectors: R2 Class A/B ops (can exceed storage at pull volume), multi-arch expansion of
+  stored bytes, old-digest accumulation without GC, re-hash-on-read compute, and the
+  amplification/upstream cost — all **control-dependent**, so B4 remains a prerequisite, not settled
+  by the storage figure.
+- **The confused-deputy "bounded by the public-only invariant" is circular** — the invariant is the
+  control that must be *enforced (via path separation)*, not an assumption. It is bounded only AFTER
+  B1 is proven, not before.
+
+**Net:** the mirror is still the right direction (B2 directionally correct), but the honest status is
+**BUILD-WITH-CHANGES**: fix the two contradictions above (server-only `_public` writer; owner-gated
+allowlist), specify client pull-routing, and design B1(revocation)+B3(governance)+B4(amplification/
+cost caps)+SSRF-safe fetch before any code. F3.1 private already ships the customer-visible 8.5×.
