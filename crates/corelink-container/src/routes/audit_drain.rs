@@ -169,16 +169,38 @@ impl std::fmt::Debug for AuditDrainState {
 /// 32 bytes. `None` when neither is set / malformed (caller then advances the
 /// head UNSIGNED). Held in [`Zeroizing`] so the secret is wiped after the
 /// [`ErasureSigningKey`] is constructed.
+///
+/// MUST treat an EMPTY value as absent at each stage (via `non_empty_env`), not
+/// just `.ok()`: the DO forward-list sends every key as `this.env.X ?? ""`, so an
+/// UNSET dedicated `AUDIT_CHAIN_SIGNING_SEED_HEX` arrives as `""` (present, empty).
+/// A plain `std::env::var(...).ok()` returns `Some("")`, which SHORT-CIRCUITS the
+/// `.or_else` fallback to the erasure-attestation seed — the head then advances
+/// UNSIGNED even though `ERASURE_ATTESTATION_SEED_HEX` is set and forwarded (the
+/// CF-6-silently-off prod bug: `signed=0` across every partition head).
 fn load_signing_seed() -> Option<Zeroizing<[u8; 32]>> {
-    let hex_str = std::env::var("AUDIT_CHAIN_SIGNING_SEED_HEX")
-        .ok()
-        .or_else(|| std::env::var("ERASURE_ATTESTATION_SEED_HEX").ok())?;
-    let hex_str = hex_str.trim();
+    // Read raw (may be `Some("")` from the DO forward-list); the empty-is-absent
+    // + select + decode rule lives in the pure `resolve_seed` so it is unit-tested
+    // without a `set_var` race (see tests).
+    resolve_seed(
+        std::env::var("AUDIT_CHAIN_SIGNING_SEED_HEX").ok(),
+        std::env::var("ERASURE_ATTESTATION_SEED_HEX").ok(),
+    )
+}
+
+/// Pure seed resolution: first NON-EMPTY of `(dedicated, reused)`, then 64-hex →
+/// 32 bytes. A `Some("")` (an unset secret forwarded as `""`) is treated as
+/// ABSENT so the dedicated slot never masks the reused erasure-attestation seed.
+fn resolve_seed(dedicated: Option<String>, reused: Option<String>) -> Option<Zeroizing<[u8; 32]>> {
+    let hex_str = [dedicated, reused]
+        .into_iter()
+        .flatten()
+        .map(|s| s.trim().to_owned())
+        .find(|s| !s.is_empty())?;
     if hex_str.len() != 64 {
         return None;
     }
     let mut bytes = Zeroizing::new([0u8; 32]);
-    hex::decode_to_slice(hex_str, bytes.as_mut()).ok()?;
+    hex::decode_to_slice(&hex_str, bytes.as_mut()).ok()?;
     Some(bytes)
 }
 
@@ -186,11 +208,28 @@ fn load_signing_seed() -> Option<Zeroizing<[u8; 32]>> {
 /// (dedicated) else `ERASURE_ATTESTATION_KEY_ID` (reused) else `1` (launch key).
 /// Stamped into `audit_chain_head.signing_key_id` so a seed/key rotation is
 /// distinguishable from tampering on resume.
+///
+/// Same empty-is-absent rule as [`load_signing_seed`]: a forwarded `""` for the
+/// dedicated `AUDIT_CHAIN_SIGNING_KEY_ID` must NOT mask the reused
+/// `ERASURE_ATTESTATION_KEY_ID`, so the key id stamped alongside the head stays
+/// consistent with the seed actually used to sign it.
 fn signing_key_id_from_env() -> u64 {
-    std::env::var("AUDIT_CHAIN_SIGNING_KEY_ID")
-        .ok()
-        .or_else(|| std::env::var("ERASURE_ATTESTATION_KEY_ID").ok())
-        .and_then(|s| s.trim().parse::<u64>().ok())
+    resolve_key_id(
+        std::env::var("AUDIT_CHAIN_SIGNING_KEY_ID").ok(),
+        std::env::var("ERASURE_ATTESTATION_KEY_ID").ok(),
+    )
+}
+
+/// Pure key-id resolution: first NON-EMPTY of `(dedicated, reused)` parsed as
+/// `u64`, else `1`. Mirrors [`resolve_seed`]'s empty-is-absent rule so a
+/// forwarded `""` dedicated id never masks the reused erasure-attestation id.
+fn resolve_key_id(dedicated: Option<String>, reused: Option<String>) -> u64 {
+    [dedicated, reused]
+        .into_iter()
+        .flatten()
+        .map(|s| s.trim().to_owned())
+        .find(|s| !s.is_empty())
+        .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(1)
 }
 
@@ -1052,6 +1091,51 @@ mod tests {
             .enumerate()
             .map(|(i, p)| (format!("row-{i:04}"), p.clone()))
             .collect()
+    }
+
+    // A forwarded UNSET secret arrives as Some(""), NOT None (the DO forward-list
+    // sends `this.env.X ?? ""`). The empty dedicated slot MUST fall through to the
+    // reused erasure-attestation seed, or CF-6 head-signing is silently OFF in
+    // prod (the observed `signed=0` regression).
+    #[test]
+    fn resolve_seed_empty_dedicated_falls_back_to_reused() {
+        let reused = "a".repeat(64);
+        let got = resolve_seed(Some(String::new()), Some(reused.clone()))
+            .expect("empty dedicated must fall back to the reused seed");
+        assert_eq!(got.as_slice(), &[0xaau8; 32]);
+        // Whitespace-only is also empty.
+        assert!(resolve_seed(Some("   ".into()), Some(reused)).is_some());
+    }
+
+    #[test]
+    fn resolve_seed_prefers_dedicated_and_rejects_malformed() {
+        let dedicated = "b".repeat(64);
+        let reused = "c".repeat(64);
+        // Dedicated wins when present + non-empty.
+        assert_eq!(
+            resolve_seed(Some(dedicated), Some(reused))
+                .unwrap()
+                .as_slice(),
+            &[0xbbu8; 32]
+        );
+        // Both empty ⇒ None (advance UNSIGNED).
+        assert!(resolve_seed(Some(String::new()), Some(String::new())).is_none());
+        assert!(resolve_seed(None, None).is_none());
+        // Wrong length / non-hex ⇒ None.
+        assert!(resolve_seed(Some("dead".into()), None).is_none());
+        assert!(resolve_seed(Some("zz".repeat(32)), None).is_none());
+    }
+
+    #[test]
+    fn resolve_key_id_empty_dedicated_falls_back_then_defaults() {
+        // Empty dedicated ⇒ use the reused id.
+        assert_eq!(resolve_key_id(Some(String::new()), Some("7".into())), 7);
+        // Dedicated wins when present.
+        assert_eq!(resolve_key_id(Some("3".into()), Some("7".into())), 3);
+        // Neither / unparseable ⇒ launch default 1.
+        assert_eq!(resolve_key_id(Some(String::new()), Some(String::new())), 1);
+        assert_eq!(resolve_key_id(None, None), 1);
+        assert_eq!(resolve_key_id(Some("nope".into()), None), 1);
     }
 
     #[test]
