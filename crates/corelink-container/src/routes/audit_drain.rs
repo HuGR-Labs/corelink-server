@@ -634,6 +634,36 @@ async fn read_pending_partitions(d1: &D1HttpClient) -> Result<Vec<(String, Strin
         .collect())
 }
 
+/// Read up to `limit` `(tenant_id, region)` partitions whose `audit_chain_head` is
+/// genuinely UNSIGNED (`head_signature IS NULL`, legacy pre-0080 / seed-was-broken).
+///
+/// DELIBERATELY NULL-only — NOT foreign-key (`signing_key_id != current`). Re-signing
+/// a foreign-key head without verifying its old signature is a broader trust action
+/// (and an attacker with D1 write could set a non-current key id to force a re-sign),
+/// so key-rotation convergence is out of scope here; this sweep only heals the exact
+/// legacy-NULL case the CF-6-seed-bug produced. `LIMIT` bounds the per-call work so a
+/// large backlog cannot make one drain call exceed the edge subrequest timeout.
+async fn read_unsigned_head_partitions(
+    d1: &D1HttpClient,
+    limit: i64,
+) -> Result<Vec<(String, String)>, String> {
+    let rows = d1
+        .query(
+            "SELECT tenant_id, region FROM audit_chain_head \
+             WHERE head_signature IS NULL LIMIT ?1",
+            &[json!(limit)],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|r| {
+            let t = r.get("tenant_id").and_then(Value::as_str)?.to_owned();
+            let region = r.get("region").and_then(Value::as_str)?.to_owned();
+            Some((t, region))
+        })
+        .collect())
+}
+
 /// Read the `audit_chain_head` checkpoint for a partition.
 async fn read_checkpoint(
     d1: &D1HttpClient,
@@ -858,6 +888,133 @@ async fn advance_head_cas(
     Ok(!rows.is_empty())
 }
 
+/// CF-6 convergence: stamp the current-key signature onto a genuinely UNSIGNED
+/// `audit_chain_head` IN PLACE — the SAME `(head_hash, next_sequence)`, no chain
+/// mutation, no new row. Returns `Ok(true)` when a NULL head was signed, `Ok(false)`
+/// when it was already signed (or a concurrent write signed it first).
+///
+/// SCOPE + SAFETY (hardened per the 2026-08-14 adversarial review):
+/// - Only ever touches a head whose `head_signature IS NULL`. It NEVER re-signs a
+///   head that already carries a signature — a current-key head with an INVALID
+///   signature is left for `check_head_on_resume` to fail-CLOSE, never laundered, and
+///   a foreign-key head is out of scope (key-rotation convergence is a separate,
+///   old-signature-verifying operation, not this).
+/// - The `… AND head_signature IS NULL` on the UPDATE makes the NULL→signed
+///   transition ATOMIC: a concurrent normal drain (which changes head_hash/seq) or a
+///   concurrent re-sign both lose the guard, so no signature is ever overwritten and
+///   there is no double-sign race.
+/// - This is NOT laundering-proof: under the operator's explicit
+///   `AUDIT_CHAIN_TRUST_UNSIGNED_RESUME` window (the caller's gate) the current head
+///   state IS the trust root — the same blindness the window already carries. The
+///   value is that converging FAST lets the operator CLOSE the window sooner, which
+///   MINIMISES total tamper-tolerant exposure vs. leaving it open for weeks of organic
+///   per-partition re-signing.
+async fn resign_unsigned_head(
+    d1: &D1HttpClient,
+    tenant_id: &str,
+    region: &str,
+    seed: &[u8; 32],
+    signing_key_id: u64,
+    now: i64,
+) -> Result<bool, String> {
+    let Some(cp) = read_checkpoint(d1, tenant_id, region).await? else {
+        return Ok(false); // no head yet (genesis) — nothing to re-sign
+    };
+    if cp.head_signature.is_some() {
+        return Ok(false); // already signed (any key) — never overwrite / launder
+    }
+    let signing_key_id_i =
+        i64::try_from(signing_key_id).map_err(|_| "signing_key_id exceeds i64")?;
+    let seq_i = i64::try_from(cp.next_sequence).map_err(|_| "next_sequence exceeds i64")?;
+    let sig = sign_head(
+        seed,
+        signing_key_id,
+        tenant_id,
+        region,
+        &cp.head_hex,
+        cp.next_sequence,
+    )?;
+    // Atomic NULL→signed: the `AND head_signature IS NULL` guard means a row that a
+    // concurrent write signed (or advanced) first is left untouched — no overwrite.
+    let rows = d1
+        .query(
+            "UPDATE audit_chain_head \
+             SET head_signature = ?1, head_signed_at_ms = ?2, signing_key_id = ?3 \
+             WHERE tenant_id = ?4 AND region = ?5 \
+               AND head_hash = ?6 AND next_sequence = ?7 \
+               AND head_signature IS NULL \
+             RETURNING tenant_id",
+            &[
+                json!(sig),
+                json!(now),
+                json!(signing_key_id_i),
+                json!(tenant_id),
+                json!(region),
+                json!(cp.head_hex),
+                json!(seq_i),
+            ],
+        )
+        .await?;
+    Ok(!rows.is_empty())
+}
+
+/// CF-6 convergence sweep: stamp the current-key signature onto genuinely UNSIGNED
+/// (`head_signature IS NULL`) heads IN PLACE so the operator can turn
+/// `AUDIT_CHAIN_TRUST_UNSIGNED_RESUME` back OFF WITHOUT waiting weeks for organic
+/// per-partition traffic to advance each head — converging fast MINIMISES the total
+/// tamper-tolerant exposure window. SELF-GATED on the toggle being ON (the operator's
+/// explicit "these legacy heads are trusted") AND a seed being configured; outside the
+/// window a legacy NULL head is TAMPER (fail-CLOSED) and is NEVER auto-blessed. Idle
+/// heads have no pending rows, so the pending-partition drain loop never visits them —
+/// this scans `audit_chain_head` directly, bounded by `batch_limit` per call (a large
+/// legacy backlog converges over repeated calls, like the row drain). Returns
+/// `(heads_resigned, incomplete)`. Pure D1 orchestration — excluded from mutation
+/// testing (no in-CI test can drive live D1; see `.cargo/mutants.toml`).
+async fn converge_unsigned_heads(
+    d1: &D1HttpClient,
+    signing_seed: Option<&[u8; 32]>,
+    trust_unsigned_resume: bool,
+    signing_key_id: u64,
+    batch_limit: i64,
+    now: i64,
+) -> (u64, bool) {
+    let Some(seed) = signing_seed else {
+        return (0, false);
+    };
+    if !trust_unsigned_resume {
+        return (0, false);
+    }
+    let unsigned = match read_unsigned_head_partitions(d1, batch_limit).await {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::error!(error = %e, "audit/drain: unsigned-head scan failed");
+            return (0, false);
+        }
+    };
+    let scanned = unsigned.len() as i64;
+    let mut heads_resigned: u64 = 0;
+    for (tenant_id, region) in unsigned {
+        match resign_unsigned_head(d1, &tenant_id, &region, seed, signing_key_id, now).await {
+            Ok(true) => {
+                heads_resigned = heads_resigned.saturating_add(1);
+                tracing::warn!(
+                    region = %region,
+                    key_id = signing_key_id,
+                    "audit/drain: CF-6 legacy UNSIGNED head re-signed in place \
+                     (AUDIT_CHAIN_TRUST_UNSIGNED_RESUME migration)"
+                );
+            }
+            Ok(false) => {}
+            Err(e) => tracing::error!(
+                error = %e, region = %region,
+                "audit/drain: legacy head re-sign failed"
+            ),
+        }
+    }
+    // A full page ⇒ more unsigned heads remain; a caller must re-drain.
+    (heads_resigned, scanned >= batch_limit)
+}
+
 /// Drain a single `(tenant_id, region)` partition.
 #[allow(
     clippy::too_many_arguments,
@@ -1056,6 +1213,18 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
             }
         }
     }
+
+    // CF-6 convergence sweep (self-gated, D1-only — see `converge_unsigned_heads`).
+    let (heads_resigned, heads_resign_incomplete) = converge_unsigned_heads(
+        &state.d1,
+        signing_seed,
+        state.trust_unsigned_resume,
+        state.signing_key_id,
+        state.batch_limit,
+        now,
+    )
+    .await;
+    incomplete = incomplete || heads_resign_incomplete;
     (
         StatusCode::OK,
         Json(json!({
@@ -1064,6 +1233,9 @@ async fn handle_drain(State(state): State<AuditDrainState>, headers: HeaderMap) 
             "rows_sealed": rows_sealed,
             "partitions_drifted": partitions_drifted,
             "partitions_failed": partitions_failed,
+            // CF-6 convergence: legacy UNSIGNED/foreign-key heads re-signed in place
+            // this sweep (only non-zero while AUDIT_CHAIN_TRUST_UNSIGNED_RESUME is ON).
+            "heads_resigned": heads_resigned,
             // `true` ⇒ the per-call row budget bounded this sweep and pending rows
             // remain; a caller (hourly cron or a manual loop) must re-drain until
             // this is `false`. Independent of `partitions_failed` (a distinct retry
