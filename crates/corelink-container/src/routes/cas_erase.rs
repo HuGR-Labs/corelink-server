@@ -1368,6 +1368,19 @@ impl R2CasBlobEraser {
         Self { cas_bucket, tdk }
     }
 
+    /// Build the production eraser from env (`R2_TDK_HEX` + `R2_CAS_BUCKET`).
+    /// `None` when the TDK is absent — fail-CLOSED, since without it the tenant
+    /// (or `_public` sentinel) prefix cannot be derived and the erase could not
+    /// address the stored objects. Reused by the `_public` revocation route
+    /// ([`crate::routes::public_revoke`]) so both erase surfaces share one
+    /// TDK-keyed derivation.
+    #[must_use]
+    pub fn from_env() -> Option<Self> {
+        let tdk = load_tdk_from_env()?;
+        let cas_bucket = crate::storage::env_or("R2_CAS_BUCKET", DEFAULT_CAS_BUCKET);
+        Some(Self::new(Arc::new(tdk), cas_bucket))
+    }
+
     /// Derive the 16-char tenant prefix the SAME way the CAS writer
     /// ([`crate::storage::r2_s3::R2CasHandler`]'s `r2_key`) did: parse the
     /// tenant as a UUID and `derive_prefix(tdk, uuid)`, else raw-pad/truncate
@@ -1375,6 +1388,15 @@ impl R2CasBlobEraser {
     /// Keeping the two derivations identical is what makes the erase key match
     /// the stored object **by construction**.
     fn tenant_prefix(&self, tenant: &str) -> Result<String, String> {
+        // `_public` shared-dedup namespace (F3.2): NOT a UUID tenant. Its bytes
+        // are stored under the reserved TDK-keyed sentinel prefix, NOT a
+        // per-tenant HMAC. Derive via the SINGLE SOURCE the CAS writer uses
+        // (`r2_s3::public_namespace_prefix`) so the public-revocation eraser
+        // addresses the exact key the `_public` write path created. Placed
+        // BEFORE the UUID parse (the sentinel is not a parseable UUID).
+        if tenant == crate::adapter_cache::PUBLIC_NAMESPACE {
+            return Ok(crate::storage::r2_s3::public_namespace_prefix(&self.tdk));
+        }
         if let Ok(uid) = Uuid::try_parse(tenant) {
             return Ok(derive_prefix(&self.tdk, uid).to_string());
         }
@@ -1833,6 +1855,27 @@ mod tests {
         assert_eq!(list_key, blob_key);
         assert!(blob_key.starts_with("iad/"), "key={blob_key}");
         assert!(blob_key.ends_with(&format!("/{DIGEST}")), "key={blob_key}");
+    }
+
+    /// F3.2 B1b: erasing the `_public` shared-dedup namespace derives the SAME
+    /// reserved sentinel prefix the `_public` CAS writer uses
+    /// (`r2_s3::public_namespace_prefix`) — so the public-revocation R2 delete
+    /// addresses the exact key `MoatCache::put` created. This is the
+    /// by-construction guarantee that a revoked public blob's bytes are
+    /// physically erasable (the BLOCKER-1 fix), NOT a per-principal miss.
+    #[test]
+    fn eraser_prefix_for_public_namespace_matches_writer_sentinel() {
+        let tdk = test_tdk();
+        let eraser = R2CasBlobEraser::new(tdk.clone(), "corelink-cas-prod".to_owned());
+        let writer_public_prefix = crate::storage::r2_s3::public_namespace_prefix(&tdk);
+        let eraser_public_prefix = eraser
+            .tenant_prefix(crate::adapter_cache::PUBLIC_NAMESPACE)
+            .expect("_public prefix derivable");
+        assert_eq!(
+            eraser_public_prefix, writer_public_prefix,
+            "_public erase prefix must equal the writer's sentinel prefix"
+        );
+        assert_eq!(writer_public_prefix.len(), TENANT_PREFIX_LEN);
     }
 
     /// Non-UUID tenant uses the writer's raw-padded 16-char fallback (dev/test

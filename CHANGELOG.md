@@ -22,6 +22,23 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(f3.2): `_public` shared-dedup blob revocation endpoint (`POST /_internal/admin/public/revoke`) —
+  the write-side kill-switch that makes a poisoned cross-tenant public blob physically erasable
+  (BLOCKER-1, increment B1b).** Complements the B1a enforcement floor (migration 0097 `public_blocklist`
+  + read-guard + triggers, #1116): the endpoint INSERTs the offending `content_hash` into
+  `public_blocklist` (the durable, atomic, cross-region linearization point) → DELETEs its
+  `adapter_cache_map` rows → emits a CloudEvents audit row into `audit_outbox` (UNCHAINED; mirrors the
+  DSR sink) → best-effort R2 hard-deletes the bytes across all five CAS regions. A key correctness fix
+  vs the original design: `_public` bytes live under a SINGLE reserved TDK-keyed sentinel prefix (the
+  CAS-layer *tenant* is the literal `_public` namespace, not the surface principal), so a revoked
+  digest is erased with ONE key per region — not one per adapter principal. The production
+  `R2CasBlobEraser` is now `_public`-aware, deriving that sentinel prefix via the same
+  `r2_s3::public_namespace_prefix` single-source the writer uses (proven by test: erase key == writer
+  key by construction). Gated by the dedicated `CORELINK_ERASE_AUTH_KEY` (NOT the admin key — an
+  admin-key leak must not drive irreversible deletes; finding H4) and fail-CLOSED (route unmounted)
+  without the erase key + R2 TDK + D1. (WI-F3.2-B1b)
+
 ### Changed
 - **ci: finish migrating the remaining safely-portable hosted CI lanes to the self-hosted `corelink`
   runner + demote the never-green `ffi-matrix` cron to dispatch-only (zero-hosted-CI mandate).** A real
