@@ -287,9 +287,17 @@ const INTERNAL_DO_D1_PROBE_PREFIX = "/_internal/do-d1-probe/";
  *   - `/_internal/admin/*`   → `admin`    (CORELINK_ADMIN_AUTH_KEY)
  *   - `/_internal/dsr/*`     → `erase`    (CORELINK_ERASE_AUTH_KEY)
  *
- * Anything else under `/_internal/*` (e.g. `/_internal/cas/*`) defaults to the
- * most-privileged data-plane consumer, `erase` — its key (and, via fallback,
- * the shared key) gates the CAS delete surface used by the DSR/erasure path.
+ * Anything else under `/_internal/*` (e.g. `/_internal/cas/*`,
+ * `/_internal/public/revoke`) defaults to the most-privileged data-plane
+ * consumer, `erase` — its key (and, via fallback, the shared key) gates the CAS
+ * delete surface used by the DSR/erasure path. The F3.2 `_public` blob
+ * revocation endpoint (`/_internal/public/revoke`, B1b) is DELIBERATELY here in
+ * the erase-consumer space, NOT under `/_internal/admin/*`: it performs an
+ * irreversible R2 hard-delete, so — like `cas_erase` (finding H4) — it must gate
+ * on the dedicated CORELINK_ERASE_AUTH_KEY, not the admin key, so an admin-key
+ * leak cannot drive irreversible public-cache deletion. The container handler
+ * gates on the SAME erase key, so the edge and handler agree (a `/_internal/admin/`
+ * path would map here to the admin key and 401 against the erase-keyed handler).
  * Every consumer falls back to the shared CORELINK_INTERNAL_AUTH_KEY when its
  * dedicated key is unset (see resolveConsumerKey), so this never widens access.
  *
