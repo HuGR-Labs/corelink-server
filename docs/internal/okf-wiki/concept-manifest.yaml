@@ -384,7 +384,7 @@ candidates:
     title: "Handler-trait seam (CAS/AC/customer/erase/admin)"
     status: "active"
     source_cluster: "crates"
-    seed_from: ["crates/corelink-handler-cas", "crates/corelink-handler-ac", "crates/corelink-handler-customer", "crates/corelink-handler-cas-erase", "crates/corelink-handler-admin"]
+    seed_from: ["crates/corelink-handler-cas", "crates/corelink-handler-ac", "crates/corelink-handler-customer", "crates/corelink-handler-cas-erase", "crates/corelink-handler-admin", "crates/corelink-container/src/routes/public_revoke.rs"]
   - id: "crates/billing-pipeline"
     type: "CrateCluster"
     title: "Billing usage→charge pipeline (emit/reconcile/aggregate/materialize + stripe-real egress)"
