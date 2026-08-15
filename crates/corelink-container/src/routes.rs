@@ -205,6 +205,11 @@ pub mod pip;
 /// UNAUTHENTICATED by design (an erasure proof is publicly verifiable) — D1-read
 /// only, mounted OUTSIDE the ratelimit/residency/auth layers in [`crate::main`].
 pub mod public_attestation;
+/// `_public` shared-dedup blob revocation endpoint (F3.2 BLOCKER-1, B1b). The
+/// write-side incident-response counterpart to [`cas_erase`]: blocklist +
+/// map-delete + audit + R2 hard-delete of a poisoned cross-tenant public blob,
+/// gated by the dedicated `CORELINK_ERASE_AUTH_KEY`.
+pub mod public_revoke;
 /// Per-tenant request-rate token-bucket middleware (audit #14/#16). A router
 /// `layer` wrapping the already-built `corelink-ratelimit` engine: it charges
 /// one token per request against the DO-injected `x-corelink-tenant-id`

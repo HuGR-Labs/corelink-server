@@ -672,6 +672,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
+    // F3.2 BLOCKER-1 (B1b): `POST /_internal/admin/public/revoke` — the `_public`
+    // shared-dedup blob kill-switch (blocklist → map-delete → audit → R2 hard-delete
+    // across CAS regions). Gated by the SAME dedicated CORELINK_ERASE_AUTH_KEY as
+    // cas_erase (it is an irreversible R2 delete; an admin-key leak must not drive
+    // it — finding H4), and fail-CLOSED (unmounted) without the erase key + R2 TDK
+    // + D1. Reuses the `_public`-aware R2CasBlobEraser so the erase key matches the
+    // sentinel-prefix key the `_public` writer created.
+    let public_revoke_auth_key = corelink_server::routes::admin::erase_auth_key_from_env();
+    if let Some(public_revoke_state) =
+        corelink_server::routes::public_revoke::build_state_from_env(public_revoke_auth_key)
+    {
+        info!("routes: /_internal/admin/public/revoke route mounted (erase key + R2 TDK + D1 present)");
+        app = app.merge(corelink_server::routes::public_revoke::router(
+            public_revoke_state,
+        ));
+    } else {
+        warn!(
+            "CORELINK_ERASE_AUTH_KEY / R2_TDK_HEX / D1 incomplete; \
+             /_internal/admin/public/revoke route NOT mounted (fail-CLOSED)"
+        );
+    }
+
     // L3: `POST /v1/onboarding/tier-select` — self-serve Stripe Checkout.
     // Mounted only when the internal-auth secret + D1 + Stripe + DPA version
     // are ALL configured (fail-safe; same internal-auth gate as the PAT route).

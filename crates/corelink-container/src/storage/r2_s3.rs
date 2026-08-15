@@ -868,6 +868,20 @@ impl R2CasHandler {
 /// package cache is non-functional (the brew 502 root cause, 2026-06-21).
 const PUBLIC_NAMESPACE_UUID: Uuid = Uuid::from_u128(0x5f5f_7075_626c_6963_0000_0000_0000_0001);
 
+/// The stable, TDK-keyed R2 key prefix for the `_public` shared-dedup namespace
+/// (see [`PUBLIC_NAMESPACE_UUID`]).
+///
+/// SINGLE SOURCE OF TRUTH for the public sentinel derivation. The `_public` CAS
+/// **write** path ([`tenant_prefix`] below) and the public-revocation **eraser**
+/// (`routes::public_revoke`, F3.2 B1b) MUST address the identical prefix — a
+/// drift between the two would leave a revoked public blob's bytes physically
+/// un-erasable (the exact BLOCKER-1 the revocation path exists to close). Both
+/// go through this one function so the write key and the erase key are equal by
+/// construction.
+pub(crate) fn public_namespace_prefix(tdk: &TenantDerivationKey) -> String {
+    derive_prefix(tdk, PUBLIC_NAMESPACE_UUID).to_string()
+}
+
 fn tenant_prefix(tdk: Option<&TenantDerivationKey>, tenant: &str) -> Result<String, String> {
     match tdk {
         // Public shared-dedup namespace: stable, TDK-keyed, reserved sentinel
@@ -875,7 +889,7 @@ fn tenant_prefix(tdk: Option<&TenantDerivationKey>, tenant: &str) -> Result<Stri
         // string — real UUID tenants are unaffected, other non-UUID tenants
         // still fail CLOSED below.
         Some(tdk) if tenant == crate::adapter_cache::PUBLIC_NAMESPACE => {
-            Ok(derive_prefix(tdk, PUBLIC_NAMESPACE_UUID).to_string())
+            Ok(public_namespace_prefix(tdk))
         }
         Some(tdk) => match Uuid::try_parse(tenant) {
             Ok(uid) => Ok(derive_prefix(tdk, uid).to_string()),
