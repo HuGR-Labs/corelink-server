@@ -54,15 +54,40 @@ is refused outright, `--admin-reason` included (#1048). **Never chain
 `pre-merge-gate-check.sh <PR> | tail -N && gh pr merge`:** a pipeline's exit
 status is `tail`'s, so the gate's refusal is discarded — that is how #1049
 merged with 4 checks pending. The report-only form (no flag) is unchanged: run
-it and merge ONLY if it prints all-green. The heavy gates (coverage / CodeQL / ffi-matrix / reproducible-build
-/ cas-foundation / s10-ship-gate) were moved OFF per-PR (2026-06-02) and run
-**on a cron + on-demand only** — no `pull_request`, no `push` lane — so nothing
-gates on them between scheduled runs. Cadence after the 2026-08-01 CI cost diet:
-**CodeQL stays nightly; reproducible-build (Wed) + coverage / cas-foundation /
-ffi-matrix / s10-ship-gate are WEEKLY** (Tue/Wed/Thu/Fri) — and TLA+ (`tla_check`)
-had its cron REMOVED 2026-08-02 (now PR-path + on-demand only). Dispatch the weekly
-ones explicitly when a PR touches their surface. The checks that REMAIN on a PR
-are the fast, load-bearing ones and they MUST be green. Never blind `--admin` merge; if you must `--admin`, state the documented
+it and merge ONLY if it prints all-green. The heavy gates (coverage / CodeQL /
+ffi-matrix / reproducible-build / cas-foundation) were moved OFF per-PR
+(2026-06-02) — no `pull_request`, no `push` lane on any of them — so nothing
+gates on them between runs. **Cadence, verified against each workflow's actual
+`on:` block (2026-08-16), not assumed:**
+- **CodeQL** (`codeql.yml`) — genuinely nightly: `schedule: '30 5 * * *'` +
+  `workflow_dispatch`. The only one of this group still on a real clock.
+- **coverage** (`coverage.yml`), **cas-foundation** (`cas_foundation.yml`),
+  **reproducible-build** (`reproducible-build.yml`) — all **`workflow_dispatch`-only
+  today**. Each had a weekly `schedule:` cron that is now **commented out**
+  in-file (reproducible-build's since 2026-08-10, "PARKED... this lane
+  produced ZERO successful scheduled runs of the last 8"; coverage and
+  cas-foundation similarly parked pending a fix). They do NOT run
+  automatically at all — only on-demand or when a PR happens to touch a
+  workflow that dispatches them.
+- **ffi-matrix** (`ffi-matrix-ci.yml`) — **`workflow_dispatch`-only**, no
+  `schedule:` in the file at all (matches the standing note that this lane
+  "never worked" and is parked).
+- **s10-ship-gate — DELETED.** It was a per-sprint SEAL gate
+  (`s10-ship-gate.yml`, along with the sibling s07/s08/s09/gc-ship-gate
+  files); all were `disabled_manually` with their sprints long sealed, and
+  PR #1091 (2026-08-12) removed all 5 as dead weight. There is nothing named
+  `s10-ship-gate` left to dispatch.
+- **TLA+** (`tla_check.yml`) — path-scoped `pull_request` (only on PRs
+  touching `specs/tla/**` / the runner scripts / itself) + `workflow_dispatch`.
+  Its cron was removed 2026-08-02 as redundant with the PR trigger, so it is
+  **not** on a nightly or weekly clock — it runs when the relevant paths
+  change, and on demand otherwise.
+
+None of the above run automatically on an unrelated PR today; if a PR touches
+their surface, dispatch the relevant ones explicitly (`gh workflow run
+<file>.yml`) rather than assuming a cron will catch it. The checks that REMAIN
+on a PR by default are the fast, load-bearing ones and they MUST be green.
+Never blind `--admin` merge; if you must `--admin`, state the documented
 infra/flake reason explicitly — `--merge --admin-reason "<why>"`, which the
 script refuses on draft/pending/conflicting/missing-gate states (those never ran).
 (A green PR now takes minutes, not 30+.)
