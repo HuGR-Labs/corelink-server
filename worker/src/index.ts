@@ -3323,7 +3323,7 @@ const baseHandler: ExportedHandler<Env> = {
       (route.routeKind === "brew" || route.routeKind === "pip")
     ) {
       try {
-        const edge = await readPublicHit(env, route.routeKind, route.pathSuffix);
+        const edge = await readPublicHit(env, route.routeKind, route.pathSuffix, ctx);
         if (edge) {
           edgeServed = new Response(edge.bytes, {
             status: 200,

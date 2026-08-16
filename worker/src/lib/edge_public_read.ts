@@ -27,6 +27,7 @@
 //   - re-hash-on-read is mandatory before returning bytes (poison self-heal = MISS).
 
 import { blake3Hex, blake3HexBytes } from "./blake3.js";
+import type { KvReader } from "./pat_verify_cache.js";
 
 /** `_public` reserved namespace — matches `adapter_cache.rs:35`. */
 export const PUBLIC_NAMESPACE = "_public";
@@ -81,6 +82,12 @@ export interface EdgePublicReadEnv {
   CAS_BUCKET: R2Bucket;
   R2_TDK_HEX?: string;
   R2_CAS_REGION?: string;
+  /**
+   * Workers KV (METADATA_KV). Absent ⇒ the L2 map cache is skipped (L1 + D1
+   * only). Runtime always has it in prod; declared optional so tests/builds
+   * without the binding still typecheck (mirrors how `index.ts` reads it).
+   */
+  METADATA_KV?: KvReader;
 }
 
 /**
@@ -167,6 +174,179 @@ export async function lookupPublicContentHash(
   return row?.content_hash ?? null;
 }
 
+// ── WP-C: cached `_public` map+blocklist lookup (the revocation gate) ─────────
+//
+// The map read is the ONLY mutable authorization in the HIT path, so it — not the
+// (immutable, content-addressed) blob — carries the short TTL and IS the
+// revocation window. A revoked/blocklisted content_hash stops being served within
+// ≤ PUBMAP_KV_TTL_S + the L1 slack (a B1b revoke may additionally purge the
+// `pubmap:` key to collapse this to the L1 slack — tracked follow-up). Mirrors the
+// pat/tsusp/tier/residency three-tier cache (ADR-0070), same uniform 60 s window.
+//
+// Both a HIT (content_hash) and a NEGATIVE (miss/revoked ⇒ null) are cached; a D1
+// FAULT (the read throws) is never cached — it rejects before any write, so a
+// transient error can never pin a stale verdict.
+const PUBMAP_L1_TTL_MS = 5_000;
+const PUBMAP_KV_TTL_S = 60; // KV floor; = the bounded revocation window (ADR)
+const PUBMAP_KV_PREFIX = "pubmap:";
+const PUBMAP_L1_CAP = 4096;
+
+interface CachedMap {
+  readonly h: string | null;
+  readonly at: number;
+}
+const mapCache = new Map<string, CachedMap>();
+const mapInflight = new Map<string, Promise<string | null>>();
+
+/** TEST-ONLY: reset the per-isolate map-cache singletons between cases. */
+export function __resetPublicMapCacheForTests(): void {
+  mapCache.clear();
+  mapInflight.clear();
+}
+
+/** KV key for a cached `_public` map verdict (namespace is always `_public`). */
+export function pubmapKvKey(urlHash: string): string {
+  return PUBMAP_KV_PREFIX + urlHash;
+}
+
+function putMapL1(urlHash: string, h: string | null, nowMs: number): void {
+  if (mapCache.size >= PUBMAP_L1_CAP && !mapCache.has(urlHash)) {
+    for (const [k, e] of mapCache) {
+      if (nowMs - e.at >= PUBMAP_L1_TTL_MS) mapCache.delete(k);
+    }
+    if (mapCache.size >= PUBMAP_L1_CAP) {
+      const oldest = mapCache.keys().next().value;
+      if (oldest !== undefined) mapCache.delete(oldest);
+    }
+  }
+  mapCache.set(urlHash, { h, at: nowMs });
+}
+
+/**
+ * Read a cached map verdict from KV. Returns `{ h }` (h = content_hash or null) on
+ * a clean hit, or `null` on miss / malformed / KV fault (⇒ fall through to D1).
+ * Never throws.
+ */
+async function kvGetMap(
+  kv: KvReader,
+  urlHash: string,
+): Promise<{ h: string | null } | null> {
+  let raw: string | null;
+  try {
+    raw = await kv.get(pubmapKvKey(urlHash));
+  } catch {
+    return null;
+  }
+  if (raw === null) return null;
+  try {
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    const h = o["h"];
+    if (h === null) return { h: null };
+    if (typeof h === "string" && /^[0-9a-f]{64}$/.test(h)) return { h };
+  } catch {
+    /* malformed → miss */
+  }
+  return null;
+}
+
+/** Options for {@link lookupPublicContentHashCached}. All optional (tests pass none). */
+export interface MapCacheOpts {
+  /** L2 Workers KV (METADATA_KV). Absent ⇒ L2 skipped. */
+  readonly kv?: KvReader;
+  /** `ctx.waitUntil` so the KV write-behind survives response return. */
+  readonly waitUntil?: (p: Promise<unknown>) => void;
+  /** Wall-clock ms (injectable for tests). */
+  readonly nowMs?: number;
+  /** L3 fetch (injectable for tests); defaults to {@link lookupPublicContentHash}. */
+  readonly fetch?: (db: D1Database, urlHash: string) => Promise<string | null>;
+}
+
+/**
+ * L1 → L2 KV → L3 D1 cached form of {@link lookupPublicContentHash}. Caches both
+ * the positive (content_hash) and negative (null) verdict with a bounded TTL (the
+ * revocation window); a D1 fault rejects and is never cached. Single-flighted per
+ * url_hash.
+ */
+export async function lookupPublicContentHashCached(
+  db: D1Database,
+  urlHash: string,
+  opts: MapCacheOpts = {},
+): Promise<string | null> {
+  const nowMs = opts.nowMs ?? Date.now();
+  const fetchMap = opts.fetch ?? lookupPublicContentHash;
+
+  const l1 = mapCache.get(urlHash);
+  if (l1 !== undefined && nowMs - l1.at < PUBMAP_L1_TTL_MS) return l1.h;
+
+  const existing = mapInflight.get(urlHash);
+  if (existing !== undefined) return existing;
+
+  const chain = (async (): Promise<string | null> => {
+    if (opts.kv !== undefined) {
+      const kvv = await kvGetMap(opts.kv, urlHash);
+      if (kvv !== null) {
+        putMapL1(urlHash, kvv.h, nowMs);
+        return kvv.h;
+      }
+    }
+    // L3 D1 (throws on fault ⇒ chain rejects ⇒ nothing cached).
+    const h = await fetchMap(db, urlHash);
+    putMapL1(urlHash, h, nowMs);
+    if (opts.kv !== undefined) {
+      const kv = opts.kv;
+      const write = kv
+        .put(pubmapKvKey(urlHash), JSON.stringify({ h }), {
+          expirationTtl: PUBMAP_KV_TTL_S,
+        })
+        .catch(() => {
+          /* best-effort: a KV write fault must not fail the request */
+        });
+      if (opts.waitUntil !== undefined) opts.waitUntil(write);
+      else await write;
+    }
+    return h;
+  })();
+
+  mapInflight.set(urlHash, chain);
+  try {
+    return await chain;
+  } finally {
+    mapInflight.delete(urlHash);
+  }
+}
+
+// ── WP-A: colo Cache API L1 for the `_public` blob (R2 = origin-of-record) ────
+//
+// The blob is content-addressed and IMMUTABLE (the bytes for a given content_hash
+// never change), so it is cached per-colo with a LONG TTL under a key that is the
+// content identity itself — NEVER the PAT — so tenants transparently share one
+// colo entry (the whole point of `_public`). Only our own fill (which re-hash
+// validates) ever writes it, so a colo-hit serves fill-validated bytes WITHOUT
+// re-hashing (owner-approved: the key IS the hash and the colo cache is as trusted
+// as the runtime). Revocation is enforced UPSTREAM at the map gate (short TTL), so
+// a long blob TTL is safe: a revoked hash simply stops being reachable (map miss)
+// while its now-unreferenced bytes age out of the colo cache.
+const PUBLIC_BLOB_CACHE_TTL_S = 604_800; // 7 d — immutable content-addressed blob
+
+/**
+ * Synthetic per-colo Cache API key for a `_public` blob. The host is never
+ * resolved — the Cache API keys purely on the URL string — so this is a pure
+ * content-addressed cache handle shared across every tenant in the colo.
+ */
+export function publicBlobCacheKey(contentHash: string): Request {
+  return new Request(`https://public-cas.cache.local/${contentHash}`);
+}
+
+/**
+ * The Cloudflare per-colo default cache, or `null` where the Cache API is absent
+ * (node unit tests, or any runtime without `caches`). A `null` degrades the read
+ * to the R2-direct path — the colo cache is a pure optimization, never load-bearing.
+ */
+function coloCache(): Cache | null {
+  const c = (globalThis as unknown as { caches?: { default?: Cache } }).caches;
+  return c?.default ?? null;
+}
+
 export type EdgeRouteKind = "brew" | "pip";
 
 /**
@@ -181,6 +361,7 @@ export async function readPublicHit(
   env: EdgePublicReadEnv,
   routeKind: EdgeRouteKind,
   rawPath: string,
+  ctx?: { waitUntil(p: Promise<unknown>): void },
 ): Promise<{ bytes: ArrayBuffer; contentHash: string } | null> {
   if (!env.R2_TDK_HEX || !env.R2_CAS_REGION) return null;
 
@@ -188,9 +369,25 @@ export async function readPublicHit(
     routeKind === "brew" ? await brewUrlHash(rawPath) : pipUrlHash(rawPath);
   if (!urlHash) return null;
 
-  const contentHash = await lookupPublicContentHash(env.CONFIG_DB, urlHash);
+  // WP-C: map+blocklist gate (cached, bounded TTL = the revocation window).
+  const contentHash = await lookupPublicContentHashCached(env.CONFIG_DB, urlHash, {
+    ...(env.METADATA_KV ? { kv: env.METADATA_KV } : {}),
+    ...(ctx ? { waitUntil: ctx.waitUntil.bind(ctx) } : {}),
+  });
   if (!contentHash) return null; // map miss OR revoked
 
+  // WP-A: colo Cache API L1. Serve fill-validated bytes on a colo-hit without
+  // re-hashing (key IS the content_hash; only our validated fill writes it).
+  const cache = coloCache();
+  const cacheKey = publicBlobCacheKey(contentHash);
+  if (cache) {
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      return { bytes: await cached.arrayBuffer(), contentHash };
+    }
+  }
+
+  // Colo MISS = FILL: R2 (origin-of-record) → re-hash validate → populate colo.
   const prefix = await derivePublicPrefix(env.R2_TDK_HEX);
   const key = publicR2Key(env.R2_CAS_REGION, prefix, contentHash);
 
@@ -199,8 +396,30 @@ export async function readPublicHit(
 
   const bytes = await obj.arrayBuffer();
 
-  // Re-hash-on-read: never serve bytes that do not hash to the mapped content_hash.
+  // Re-hash-on-FILL: never cache/serve bytes that do not hash to the mapped
+  // content_hash (poison self-heal = MISS).
   if ((await blake3HexBytes(new Uint8Array(bytes))) !== contentHash) return null;
+
+  // Populate the colo cache with the immutable blob (a fresh copy so the returned
+  // ArrayBuffer is never detached by the Response body). Skipped where the Cache
+  // API is absent (the read already succeeded via R2).
+  if (cache) {
+    const fill = cache
+      .put(
+        cacheKey,
+        new Response(bytes.slice(0), {
+          headers: {
+            "Cache-Control": `max-age=${PUBLIC_BLOB_CACHE_TTL_S}`,
+            "Content-Type": "application/octet-stream",
+          },
+        }),
+      )
+      .catch(() => {
+        /* best-effort: a colo-cache write fault must not fail the request */
+      });
+    if (ctx) ctx.waitUntil(fill);
+    else await fill;
+  }
 
   return { bytes, contentHash };
 }

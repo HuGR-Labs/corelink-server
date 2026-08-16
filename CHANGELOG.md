@@ -23,6 +23,21 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(worker): colo Cache API L1 + cached map gate for the `_public` edge read (multi-region latency,
+  WP-A + WP-C).** The edge `_public` HIT path is re-architected into a proper multi-tier edge cache to close
+  the measured same-region floor (from a real US runner box, colo ATL: warm HIT ~120 ms server / ~190 ms
+  wall, of which the R2 GET ~50 ms and the metering D1 write ~54 ms — the `<100 ms` product bar was NOT met
+  by edge-serve alone). WP-C: `lookupPublicContentHash` gains an L1 (per-isolate, 5 s) + L2 (METADATA_KV,
+  `pubmap:<url_hash>`, 60 s = the bounded revocation window) cache mirroring the pat/tsusp/tier/residency
+  three-tier pattern; it caches both the positive (content_hash) and negative (miss/revoked) verdict, never
+  caches a D1 fault, and IS the revocation gate. WP-A: a per-colo Cloudflare Cache API L1 sits in front of R2
+  (now the origin-of-record) keyed by the content identity (content_hash, NEVER the PAT) so tenants share one
+  colo entry; a colo-hit serves fill-validated bytes without re-hashing (the key IS the hash and only our
+  re-hash-validating fill writes the cache), and the immutable blob carries a long TTL because revocation is
+  enforced upstream at the short-TTL map gate. Absent Cache API (node tests) degrades to the R2-direct path —
+  the colo cache is a pure optimization, never load-bearing. Flag-gated behind the existing
+  `EDGE_PUBLIC_READ`; any miss/fault still falls through to the container. Re-hash-relocation-to-fill is
+  owner-approved; ADR to follow.
 - **feat(worker): Worker-native `_public` cache-HIT edge SERVE path (F3.3 F2) — flag-gated, HIT-only, MISS
   falls through to the container.** Builds on the shadow foundation (proven live: brew `_public` HITs
   reproduced byte-identically at the edge on real iad traffic, zero `parity_bytes_diff`). With

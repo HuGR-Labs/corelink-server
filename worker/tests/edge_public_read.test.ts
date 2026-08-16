@@ -21,7 +21,7 @@
  * the F0 evidence) and is re-proven live in the F1 shadow run.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   canonicalBottlePath,
   brewUrlHash,
@@ -29,10 +29,20 @@ import {
   derivePublicPrefix,
   publicR2Key,
   lookupPublicContentHash,
+  lookupPublicContentHashCached,
+  pubmapKvKey,
+  publicBlobCacheKey,
   readPublicHit,
   shadowCompareEdgePublicRead,
+  __resetPublicMapCacheForTests,
   PUBLIC_NAMESPACE,
 } from "../src/lib/edge_public_read.js";
+
+// The `_public` map cache is a module-level (per-isolate) singleton; reset it
+// between cases so an L1 entry from one test never leaks into the next.
+beforeEach(() => {
+  __resetPublicMapCacheForTests();
+});
 
 const TREE_PATH =
   "/brew/d863fafb-17c3-4ec3-92f6-b5a85c27d7bd/v2/homebrew/core/tree/blobs/" +
@@ -224,5 +234,147 @@ describe("shadowCompareEdgePublicRead — F1 parity verdicts", () => {
   it("container_miss_edge_hit — container filled but edge already had it", async () => {
     const e = { ...baseEnv, CONFIG_DB: fakeDb({ content_hash: BODY_HASH }), CAS_BUCKET: fakeBucket(BODY) };
     expect(await shadowCompareEdgePublicRead(e as never, "brew", PATH, containerResp(BODY, "MISS"))).toBe("container_miss_edge_hit");
+  });
+});
+
+// ── WP-C: cached map lookup (L1 dedup, negative cache, KV L2, D1-error-safe) ──
+describe("lookupPublicContentHashCached — three-tier cache", () => {
+  const UH = "a".repeat(64);
+  const CH = "b".repeat(64);
+  const db = {} as never; // never touched; the injected `fetch` stands in for D1
+
+  it("L1 dedups: two calls for one url_hash hit D1 once", async () => {
+    let n = 0;
+    const fetch = async () => {
+      n++;
+      return CH;
+    };
+    expect(await lookupPublicContentHashCached(db, UH, { fetch })).toBe(CH);
+    expect(await lookupPublicContentHashCached(db, UH, { fetch })).toBe(CH);
+    expect(n).toBe(1);
+  });
+
+  it("caches the NEGATIVE (miss) verdict too — a miss also hits D1 once", async () => {
+    let n = 0;
+    const fetch = async () => {
+      n++;
+      return null;
+    };
+    expect(await lookupPublicContentHashCached(db, UH, { fetch })).toBeNull();
+    expect(await lookupPublicContentHashCached(db, UH, { fetch })).toBeNull();
+    expect(n).toBe(1);
+  });
+
+  it("a D1 FAULT is never cached — the next call retries", async () => {
+    let n = 0;
+    const fetch = async () => {
+      n++;
+      if (n === 1) throw new Error("d1 down");
+      return CH;
+    };
+    await expect(lookupPublicContentHashCached(db, UH, { fetch })).rejects.toThrow();
+    // second call must re-hit D1 (nothing pinned by the fault) and succeed
+    expect(await lookupPublicContentHashCached(db, UH, { fetch })).toBe(CH);
+    expect(n).toBe(2);
+  });
+
+  it("KV L2 hit short-circuits D1", async () => {
+    let n = 0;
+    const fetch = async () => {
+      n++;
+      return "should-not-be-called";
+    };
+    const kv = {
+      get: async (k: string) => (k === pubmapKvKey(UH) ? JSON.stringify({ h: CH }) : null),
+      put: async () => undefined,
+    };
+    expect(await lookupPublicContentHashCached(db, UH, { fetch, kv: kv as never })).toBe(CH);
+    expect(n).toBe(0);
+  });
+
+  it("on a D1 miss, writes the verdict back to KV under the pubmap key + TTL", async () => {
+    const puts: Array<{ key: string; val: string; ttl?: number }> = [];
+    const kv = {
+      get: async () => null,
+      put: async (key: string, val: string, opts?: { expirationTtl?: number }) => {
+        puts.push({ key, val, ttl: opts?.expirationTtl });
+      },
+    };
+    await lookupPublicContentHashCached(db, UH, { fetch: async () => CH, kv: kv as never });
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.key).toBe(pubmapKvKey(UH));
+    expect(JSON.parse(puts[0]!.val)).toEqual({ h: CH });
+    expect(puts[0]!.ttl).toBe(60);
+  });
+
+  it("pubmapKvKey / publicBlobCacheKey embed the identity", () => {
+    expect(pubmapKvKey(UH)).toBe("pubmap:" + UH);
+    expect(publicBlobCacheKey(CH).url).toContain(CH);
+  });
+});
+
+// ── WP-A: colo Cache API L1 (colo-hit skips R2+re-hash; colo-miss fills) ──────
+describe("readPublicHit — colo Cache API L1", () => {
+  const BODY = new TextEncoder().encode("abc");
+  const BODY_HASH = "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85";
+  const env = { R2_TDK_HEX: "00".repeat(32), R2_CAS_REGION: "iad" };
+  const PATH = "/brew/t/v2/homebrew/core/x/blobs/sha256:00";
+
+  function withFakeCaches<T>(fake: unknown, fn: () => Promise<T>): Promise<T> {
+    const g = globalThis as unknown as { caches?: unknown };
+    const prev = g.caches;
+    g.caches = fake;
+    return fn().finally(() => {
+      g.caches = prev;
+    });
+  }
+
+  it("colo-HIT serves the cached bytes WITHOUT calling R2 or re-hashing", async () => {
+    let bucketGets = 0;
+    // Cache returns DIFFERENT bytes than R2 would — proving no re-hash on colo-hit
+    // and that R2 is never consulted (bucketGets stays 0).
+    const cachedBytes = new TextEncoder().encode("cached-trusted");
+    const fakeCaches = {
+      default: {
+        match: async () => new Response(cachedBytes),
+        put: async () => undefined,
+      },
+    };
+    const e = {
+      ...env,
+      CONFIG_DB: fakeDb({ content_hash: BODY_HASH }),
+      CAS_BUCKET: {
+        get: async () => {
+          bucketGets++;
+          return null;
+        },
+      },
+    };
+    const hit = await withFakeCaches(fakeCaches, () =>
+      readPublicHit(e as never, "brew", PATH),
+    );
+    expect(hit).not.toBeNull();
+    expect(new Uint8Array(hit!.bytes)).toEqual(cachedBytes);
+    expect(bucketGets).toBe(0);
+  });
+
+  it("colo-MISS fills the colo cache from R2 after re-hash validation", async () => {
+    const puts: Request[] = [];
+    const fakeCaches = {
+      default: {
+        match: async () => undefined, // colo miss
+        put: async (req: Request) => {
+          puts.push(req);
+        },
+      },
+    };
+    const e = { ...env, CONFIG_DB: fakeDb({ content_hash: BODY_HASH }), CAS_BUCKET: fakeBucket(BODY) };
+    const hit = await withFakeCaches(fakeCaches, () =>
+      readPublicHit(e as never, "brew", PATH),
+    );
+    expect(hit).not.toBeNull();
+    expect(new Uint8Array(hit!.bytes)).toEqual(BODY);
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.url).toContain(BODY_HASH);
   });
 });
