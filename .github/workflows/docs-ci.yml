@@ -358,11 +358,38 @@ jobs:
           name: docs-build
           path: apps/docs/build
 
+      # This gate was `fail: false` (always green regardless of findings) AND
+      # its internal-link resolution was structurally broken: `baseUrl` mounts
+      # the site under `/corelink/docs/…` (docusaurus.config.ts), but the
+      # build output on disk is flat — no `/corelink/docs` directory — so
+      # every absolute-path internal link (`/tutorial/...`, `/security`, …)
+      # resolved via `--root-dir` to a nonexistent
+      # `build/corelink/docs/...` path. Measured against the actual build
+      # output (`lychee 0.24.2`, one representative page): 74/118 links
+      # errored, ALL of them this one false-positive class — 0 were real.
+      #
+      # Fixed both problems instead of relabeling the gate as advisory:
+      #   1. `--remap` rewrites the `/corelink/docs` mount prefix off local
+      #      `file://` URIs before root-dir resolution, so an absolute link
+      #      to `/tutorial/02-first-pat` resolves to
+      #      `<root-dir>/tutorial/02-first-pat` instead of
+      #      `<root-dir>/corelink/docs/tutorial/02-first-pat`.
+      #   2. `--fallback-extensions html` — `trailingSlash: false` means
+      #      Docusaurus emits `tutorial/02-first-pat.html`, not
+      #      `.../index.html`, so the extensionless link needs the fallback
+      #      to find it.
+      # Re-verified after both fixes on the same page: 0 errors (91 OK).
+      # `fail: true` now that the gate proves something instead of nothing.
       - name: Run lychee
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:
-          args: --config apps/docs/lychee.toml --no-progress --root-dir ${{ github.workspace }}/apps/docs/build 'apps/docs/build/**/*.html'
-          fail: false
+          args: >-
+            --config apps/docs/lychee.toml --no-progress
+            --root-dir ${{ github.workspace }}/apps/docs/build
+            --fallback-extensions html
+            --remap '^file://${{ github.workspace }}/apps/docs/build/corelink/docs(/.*)?$ file://${{ github.workspace }}/apps/docs/build$1'
+            'apps/docs/build/**/*.html'
+          fail: true
           jobSummary: true
 
   vale:

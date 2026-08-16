@@ -41,7 +41,7 @@ Every blob is addressed by its SHA-256 digest. If two tenants upload the same by
 | Multi-tenancy | Each tenant is isolated at the PAT level. Cross-tenant reads are never possible. |
 | BYOK encryption | Tenants on the Enterprise plan can supply their own AES-256 key. |
 | Audit log | Every read and write is appended to an immutable, tenant-scoped log. |
-| REAPI v2 | Full `ContentAddressableStorage` + `ActionCache` + `ByteStream` gRPC services. |
+| REAPI v2 | Bazel REAPI v2 (`ContentAddressableStorage` + `ActionCache` + `ByteStream` semantics) served over plain HTTP/REST — no gRPC ingress. |
 
 ## Next step
 
