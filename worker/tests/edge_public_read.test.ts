@@ -32,6 +32,7 @@ import {
   lookupPublicContentHashCached,
   pubmapKvKey,
   publicBlobCacheKey,
+  parseByteRange,
   readPublicHit,
   shadowCompareEdgePublicRead,
   __resetPublicMapCacheForTests,
@@ -376,5 +377,39 @@ describe("readPublicHit — colo Cache API L1", () => {
     expect(new Uint8Array(hit!.bytes)).toEqual(BODY);
     expect(puts).toHaveLength(1);
     expect(puts[0]!.url).toContain(BODY_HASH);
+  });
+});
+
+// ── Range parsing (edge serve 206/416 support) ──────────────────────────────
+describe("parseByteRange", () => {
+  const N = 1000;
+  it("returns null when there is no Range header", () => {
+    expect(parseByteRange(null, N)).toBeNull();
+  });
+  it("parses a closed range bytes=a-b (inclusive)", () => {
+    expect(parseByteRange("bytes=0-99", N)).toEqual({ start: 0, end: 99 });
+    expect(parseByteRange("bytes=100-199", N)).toEqual({ start: 100, end: 199 });
+  });
+  it("parses an open-ended range bytes=a-", () => {
+    expect(parseByteRange("bytes=500-", N)).toEqual({ start: 500, end: 999 });
+  });
+  it("parses a suffix range bytes=-N (last N bytes)", () => {
+    expect(parseByteRange("bytes=-50", N)).toEqual({ start: 950, end: 999 });
+    // suffix larger than the object → whole object
+    expect(parseByteRange("bytes=-5000", N)).toEqual({ start: 0, end: 999 });
+  });
+  it("clamps an end past the last byte", () => {
+    expect(parseByteRange("bytes=900-999999", N)).toEqual({ start: 900, end: 999 });
+  });
+  it("returns 'unsatisfiable' for an out-of-bounds start or bytes=-0", () => {
+    expect(parseByteRange("bytes=1000-1100", N)).toBe("unsatisfiable");
+    expect(parseByteRange("bytes=5000-", N)).toBe("unsatisfiable");
+    expect(parseByteRange("bytes=-0", N)).toBe("unsatisfiable");
+  });
+  it("returns null (→ full 200) for malformed / multi-range / non-bytes units", () => {
+    expect(parseByteRange("bytes=abc", N)).toBeNull();
+    expect(parseByteRange("bytes=0-9,20-29", N)).toBeNull();
+    expect(parseByteRange("items=0-9", N)).toBeNull();
+    expect(parseByteRange("bytes=-", N)).toBeNull();
   });
 });

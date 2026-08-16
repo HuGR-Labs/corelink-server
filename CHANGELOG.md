@@ -23,6 +23,16 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **fix(worker): edge `_public` serve — faithful `Content-Type`, HTTP Range (206/416) support, and the
+  documented $-ceiling exemption (audit follow-ups).** The edge serve path previously returned only
+  `x-cache: HIT`, dropping the `Content-Type` the container sets and answering a `Range` request with a full
+  `200`. It now stamps `Content-Type: application/octet-stream` (the faithful type for the opaque
+  content-addressed bottle/wheel blobs, matching the container + the colo-cache fill) and `Accept-Ranges: bytes`,
+  and serves a satisfiable single `Range` as a `206` with `Content-Range` (`416` for an out-of-bounds range) via
+  a new parity-tested `parseByteRange`. Also documents, as an explicit invariant, that a `_public` cache HIT is
+  intentionally exempt from the container's per-op $-ceiling (ADR-0068) — a shared, deduped, ~free-to-serve public
+  read is not charged against the spend cap (request-count + storage quota still apply); this was previously an
+  undocumented side effect of the container bypass, now a stated design decision.
 - **feat(worker): colo Cache API L1 + cached map gate for the `_public` edge read (multi-region latency,
   WP-A + WP-C).** The edge `_public` HIT path is re-architected into a proper multi-tier edge cache to close
   the measured same-region floor (from a real US runner box, colo ATL: warm HIT ~120 ms server / ~190 ms

@@ -347,6 +347,51 @@ function coloCache(): Cache | null {
   return c?.default ?? null;
 }
 
+/**
+ * Content-Type served for an edge `_public` blob. These are opaque
+ * content-addressed CAS artifacts (Homebrew bottles, pip wheels) — clients fetch
+ * by bytes and verify by hash, so `application/octet-stream` is the faithful,
+ * safe type (also what the colo-cache fill stamps and what the container's binary
+ * blob read returns). Kept as a single constant so the serve path and the fill
+ * agree.
+ */
+export const PUBLIC_BLOB_CONTENT_TYPE = "application/octet-stream";
+
+/**
+ * Parse a single HTTP `Range: bytes=…` header against a known total length.
+ * Returns the inclusive `{start,end}` for a satisfiable single range,
+ * `"unsatisfiable"` for a syntactically-valid but out-of-bounds range (caller →
+ * 416), or `null` when there is no Range header or it is a form we don't serve
+ * from the edge (multi-range / non-`bytes` unit → caller falls back to a full 200).
+ * Supports `bytes=a-b`, `bytes=a-` (open-ended), and `bytes=-N` (suffix).
+ */
+export function parseByteRange(
+  rangeHeader: string | null,
+  totalLen: number,
+): { start: number; end: number } | "unsatisfiable" | null {
+  if (!rangeHeader) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+  if (!m) return null; // multi-range / malformed / non-bytes unit → serve full 200
+  const startRaw = m[1] ?? "";
+  const endRaw = m[2] ?? "";
+  if (startRaw === "" && endRaw === "") return null;
+  let start: number;
+  let end: number;
+  if (startRaw === "") {
+    // suffix form: the last `endRaw` bytes
+    const suffix = Number(endRaw);
+    if (suffix === 0) return "unsatisfiable";
+    start = Math.max(0, totalLen - suffix);
+    end = totalLen - 1;
+  } else {
+    start = Number(startRaw);
+    end = endRaw === "" ? totalLen - 1 : Number(endRaw);
+    if (end >= totalLen) end = totalLen - 1;
+  }
+  if (start > end || start >= totalLen) return "unsatisfiable";
+  return { start, end };
+}
+
 export type EdgeRouteKind = "brew" | "pip";
 
 /**
