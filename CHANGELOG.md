@@ -22,6 +22,24 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(worker): Worker-native `_public` cache-HIT read path (F3.3) — shadow mode, flag-gated, inert
+  by default.** F3.2 proved cross-tenant `_public` dedup is correct in prod, but a warm HIT still
+  costs ~750 ms (cold 3.4 s) because every HIT round-trips the Rust container (`origin ~585 ms`, of
+  which R2 fetch ~353 ms) plus a D1-over-HTTP map read (~159 ms) — slower than a customer's own
+  upstream pull, so the "faster + cheaper" promise is unmet. New `worker/src/lib/edge_public_read.ts`
+  serves a brew/pip `_public` HIT directly from the edge: `env.CONFIG_DB` map read WITH the mandatory
+  `public_blocklist` `NOT EXISTS` revocation join (a faithful port of `adapter_cache.rs:85-91`), native
+  `env.CAS_BUCKET.get(<R2_CAS_REGION>/<derive_prefix(tdk,PUBLIC_UUID)>/<content_hash>)`, and
+  re-hash-on-read (`blake3(bytes)==content_hash` or MISS). Every transform is parity-tested against
+  live prod ground-truth (the `tree` bottle: url_hash `5cbfb8ce…`, prefix `PyVXQ4S5KVrIUwJf`, 77998
+  real bytes, blake3 `bd095a1b…`), including a real-TDK assertion. This lands ONLY the SHADOW path:
+  gated on `EDGE_PUBLIC_READ === "shadow"` (unset = no-op), it computes the edge result on a background
+  `ctx.waitUntil` clone and logs an edge-vs-container parity verdict while serving the container
+  response unchanged — zero user impact — to prove 100% parity on real traffic before the
+  edge-authoritative flip (F2). npm is out of scope (its shared bytes are per-tenant, not `_public`).
+  ADR: `docs/design/2026-08-16-adr-worker-native-public-cache-read.md`.
+
 ### Fixed
 - **fix(adapter-host): consolidate the read-through upstream SSRF guard into one audited module and close a
   pip/npm gap.** brew, pip and npm each carried their OWN copy of the outbound-fetch SSRF guard
