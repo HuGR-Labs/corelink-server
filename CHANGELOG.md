@@ -22,6 +22,18 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(f3.2): the digest-pinned, owner-gated public-base allowlist trust root (increment 3).**
+  Adds `crates/corelink-container/src/public_base_allowlist.rs` + a container-baked manifest
+  (`public_base_allowlist.manifest`) that governs which upstream OCI base-layer digests may EVER
+  enter the cross-tenant `_public` namespace. The allowlist is baked into the binary (no runtime
+  mutation path — only a reviewed commit + redeploy can change it, so a compromised token/D1 write
+  cannot widen it; design Contradiction-2), digest-pinned (every entry is an immutable `sha256:<64hex>`
+  digest — the loader FAIL-CLOSES on any tag, per design BLOCKER-3), and ships **deny-all** (empty)
+  so nothing is eligible for `_public` until the increment-4 mirror populates it (design GAP-E,
+  populate-then-allowlist). Inert: nothing consumes `is_allowlisted` yet — the flag-gated increment-6
+  `OciMoatStore` router (behind the increment-5 red-team) is the first caller.
+
 ### Fixed
 - **fix(f3.2): account the `_public` shared-dedup cache as UNOWNED (write-but-don't-charge) so the
   byte-accounting layer can never outage the cross-tenant moat write path.** The `AccountingCasHandler`
