@@ -70,7 +70,7 @@ export function safeLog(
 const TOKEN_PATTERNS: RegExp[] = [
   /Bearer\s+[A-Za-z0-9._\-]+/g,
   /eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+/g, // JWT-ish
-  /corelink_(?:prod|test)_[A-Za-z0-9_-]+/g,
+  /corelink_(?:pat|ci|ro)_[A-Za-z0-9_-]+/g,
   /sk_(?:live|test)_[A-Za-z0-9]+/g,
 ];
 

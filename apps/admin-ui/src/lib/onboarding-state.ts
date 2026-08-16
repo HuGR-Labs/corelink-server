@@ -70,7 +70,7 @@ export function saveState(
   if (!s) return;
   const json = JSON.stringify(state);
   // CTRL-CRED-001 guard: refuse to write anything that looks like a PAT.
-  if (/corelink_(prod|test)_/.test(json)) {
+  if (/corelink_(pat|ci|ro)_/.test(json)) {
     throw new Error("Refusing to persist credential-shaped data");
   }
   s.setItem(STORAGE_KEY, json);
