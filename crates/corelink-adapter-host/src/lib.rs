@@ -65,3 +65,7 @@ pub mod npm;
 pub mod oci;
 pub mod overload;
 pub mod pip;
+/// Shared SSRF guard for the read-through upstream fetchers — the single audited
+/// copy of the internal-IP classification + redirect policy brew/pip/npm (and the
+/// F3.2 public-base OCI mirror) reuse.
+pub(crate) mod upstream_ssrf;
