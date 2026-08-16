@@ -781,10 +781,31 @@ impl corelink_handler_cas::CasWriteHandler for AccountingCasHandler {
         use corelink_handler_cas::CasHandlerError;
         let tenant = req.tenant.clone();
         let plaintext_len = i64::try_from(req.bytes.len()).unwrap_or(i64::MAX);
+        // F3.2 B4 — UNOWNED shared-cache mode. The `_public` namespace is NOT a
+        // billable tenant: its blobs are the cross-tenant dedup moat (brew/pip/
+        // npm/oci base layers), a platform COGS, not a customer's bill. Force the
+        // genuine-unlimited shared-meter seed (`Some(0)`) for it — regardless of
+        // what the surface threaded — so a `_public` write:
+        //   (a) ALWAYS succeeds (the accrue cap-predicate `?5 = 0` passes),
+        //   (b) SELF-SEEDS a missing per-region row (the `Some(0)` INSERT branch
+        //       seeds `bytes_quota = 0`), instead of the `None` UPDATE-only path
+        //       that 503s on an absent row (a fresh region / evicted row would
+        //       otherwise take the WHOLE cross-tenant moat write path down), and
+        //   (c) can NEVER be capped by a stray finite `bytes_quota` a quota-
+        //       reconcile / eviction job might write onto the `_public` row.
+        // `bytes_used` still accrues → the row stays a shared-cache COGS meter
+        // (accounting, not blindness). A real tenant is charged EXACTLY as
+        // before: for a non-`_public` tenant `quota_seed == req.storage_quota_bytes`,
+        // byte-identical to prior behaviour.
+        let unowned_shared_namespace = tenant == crate::adapter_cache::PUBLIC_NAMESPACE;
         // The Worker-resolved per-tier cap (threaded via the request) seeds a
         // FRESH `tenant_storage_state` row; `None` ⇒ indeterminate ⇒ a fresh row
-        // FAILS CLOSED (never seeded uncapped).
-        let quota_seed = req.storage_quota_bytes;
+        // FAILS CLOSED (never seeded uncapped). `_public` overrides to `Some(0)`.
+        let quota_seed = if unowned_shared_namespace {
+            Some(0)
+        } else {
+            req.storage_quota_bytes
+        };
         // rt-nuclear C2: hold the per-`(tenant, hash)` serialization guard across
         // the WHOLE reserve→commit→release below, so a concurrent `delete` of the
         // SAME content-addressed key cannot interleave its delete→release with our
@@ -1195,13 +1216,22 @@ pub(crate) mod testing {
                             row.quota = seed;
                         }
                     }
-                    // Effective cap for this write: the finite incoming cap when
-                    // provided, else the (possibly just-reconciled) stored cap.
-                    let effective_quota = match quota_seed {
-                        Some(seed) if seed != 0 => seed,
-                        _ => row.quota,
+                    // Over-cap predicate, faithful to the D1 UPSERT DO UPDATE
+                    // `WHERE ?5 = 0 OR bytes_used + ?3 <= ?5` and the None-path
+                    // `WHERE bytes_quota = 0 OR bytes_used + ?3 <= bytes_quota`:
+                    //   - `Some(0)` — unlimited INCOMING cap ⇒ ALWAYS passes,
+                    //     bypassing any (even finite) stored cap (F3.2 B4: this is
+                    //     what lets a `_public` write survive a stray finite quota
+                    //     on the shared-meter row);
+                    //   - `Some(n>0)` — gate by the incoming finite cap `n`;
+                    //   - `None` — gate by the (possibly just-reconciled) stored
+                    //     cap (`0` stored = genuine unlimited).
+                    let over_cap = match quota_seed {
+                        Some(0) => false,
+                        Some(seed) => row.used.saturating_add(bytes) > seed,
+                        None => row.quota != 0 && row.used.saturating_add(bytes) > row.quota,
                     };
-                    if effective_quota != 0 && row.used.saturating_add(bytes) > effective_quota {
+                    if over_cap {
                         return Ok(AccrueOutcome::OverCap);
                     }
                     row.used = row.used.saturating_add(bytes);
@@ -1859,6 +1889,96 @@ mod decorator_tests {
             4,
             "over-cap reservation must not move the counter"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn public_namespace_write_self_seeds_and_never_fails_closed() {
+        // F3.2 B4: a `_public` moat write with NO resolved cap header (exactly
+        // what the brew/npm/pip surfaces pass) against an EMPTY store must
+        // SELF-SEED its shared-meter row and ACCRUE — NOT fail closed the way a
+        // real fresh tenant with `None` does (`fresh_tenant_no_cap_header_...`).
+        let (dec, _inner, store) = cas_fixture(None);
+        let body = vec![b'p'; 512];
+        let n = body.len() as i64;
+        let hash = hash_for(&body);
+        dec.write(
+            // storage_quota_bytes = None → today's None-path would 503 (no row);
+            // the unowned override forces Some(0) → self-seed + accrue.
+            CasWriteRequest::new(
+                crate::adapter_cache::PUBLIC_NAMESPACE,
+                hash,
+                body,
+                "brew-adapter-host",
+                crate::adapter_cache::PUBLIC_NAMESPACE,
+                1,
+            ),
+        )
+        .expect("a _public write must never fail closed on a missing shared-meter row");
+        assert_eq!(
+            store.used(crate::adapter_cache::PUBLIC_NAMESPACE, REGION),
+            n,
+            "the shared-cache COGS meter must still accrue the stored bytes"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn public_namespace_write_survives_poisoned_finite_quota() {
+        // F3.2 B4 (moat-outage footgun closed): even if a quota-reconcile /
+        // eviction job wrote a tiny FINITE `bytes_quota` onto the `_public` row,
+        // a large moat write must STILL succeed (the unowned override forces the
+        // genuine-unlimited predicate), so the cross-tenant public write path can
+        // never be capped/outaged by the accounting layer.
+        let (dec, _inner, store) = cas_fixture(Some((
+            crate::adapter_cache::PUBLIC_NAMESPACE,
+            Row { used: 0, quota: 1 },
+        )));
+        let body = vec![b'q'; 4096];
+        let n = body.len() as i64;
+        let hash = hash_for(&body);
+        dec.write(CasWriteRequest::new(
+            crate::adapter_cache::PUBLIC_NAMESPACE,
+            hash,
+            body,
+            "npm-adapter-host",
+            crate::adapter_cache::PUBLIC_NAMESPACE,
+            1,
+        ))
+        .expect("a _public write must not be capped by a stray finite quota");
+        assert_eq!(
+            store.used(crate::adapter_cache::PUBLIC_NAMESPACE, REGION),
+            n,
+            "the write accrues the shared meter despite the finite stored quota"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn real_tenant_finite_cap_still_enforced_after_public_override() {
+        // Guard: the unowned override is scoped to `_public` ONLY — a real tenant
+        // with a finite cap is still enforced byte-identically (no regression).
+        let (dec, inner, store) = cas_fixture(Some(("t-real", Row { used: 4, quota: 4 })));
+        let body = b"over-the-real-cap".to_vec();
+        let hash = hash_for(&body);
+        let err = dec
+            .write(
+                CasWriteRequest::new("t-real", hash.clone(), body, "p", "t-real", 1)
+                    .with_storage_quota_bytes(Some(4)),
+            )
+            .expect_err("a real tenant's over-cap write must still be refused");
+        match err {
+            corelink_handler_cas::CasHandlerError::Internal(ref m) => {
+                assert!(m.starts_with(OVER_CAP_SENTINEL), "over-cap sentinel: {m}");
+            }
+            other => panic!("expected over-cap Internal, got {other:?}"),
+        }
+        let read = inner.read(CasReadRequest::new("t-real", hash, "p", "t-real", 2));
+        assert!(
+            matches!(
+                read,
+                Err(corelink_handler_cas::CasHandlerError::NotFound { .. })
+            ),
+            "the real tenant's over-cap write must leave no blob"
+        );
+        assert_eq!(store.used("t-real", REGION), 4, "counter unchanged");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
