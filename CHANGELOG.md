@@ -61,6 +61,31 @@ Each entry cross-references:
   is the single audited copy (brew's strongest classification); brew/pip/npm now import it. This LIFTS pip
   and npm to block CGNAT/broadcast/documentation too; brew is byte-identical. Foundation for the F3.2
   increment-4 public-base OCI pull-through mirror, which reuses the same guard.
+- **fix(admin-ui): 4 verified customer-facing bugs on the Connect/billing surfaces.**
+  1. `components/customer/ConnectClient.tsx` — the "CAS (curl)" smoke-test snippet hashed with
+     `shasum -a 256` and PUT/GET'd `${origin}/v1/cas/$HASH`, omitting the required `{tenant}`
+     segment (`CAS_READ_ROUTE`/`CAS_WRITE_ROUTE` = `/v1/cas/{tenant}/{hash}`) — every copy-pasted
+     command 422'd. Native CAS is BLAKE3 (`crates/corelink-hash`), not SHA-256. Switched the
+     snippet to `b3sum --no-names` (the same tool `docs/integrations/*` and `scripts/quickstart.sh`
+     already tell customers to install) and interpolated the existing in-scope `tenantId` into both
+     URLs — the command now actually succeeds against the live API.
+  2. Same file — the Bazel entry's copy claimed "Remote cache + remote execution ... via the REAPI
+     v2 endpoint", but only `--remote_cache` is configured and the backend is cache-only
+     (INV-BAZEL-NO-GRPC, no gRPC remote-execution surface exists). Reworded to "Remote cache ...
+     (cache only — no remote execution)".
+  3. `lib/safe-log.ts` and `lib/onboarding-state.ts` — both PAT-redaction regexes matched
+     `corelink_(prod|test)_...`, but the real wire format (`crates/corelink-pat/src/format.rs`) uses
+     env literals `pat|ci|ro`, never `prod`/`test` — so these two redaction guards were a permanent
+     no-op against every real PAT. Fixed both to `corelink_(pat|ci|ro)_...`, matching the pattern
+     already correct in `lib/sentry-scrub.ts`. Updated the two test suites that hardcoded the fake
+     `corelink_prod_.../corelink_test_...` fixtures (`dsr-client.test.ts`,
+     `state-persistence.test.ts`) to use real env literals so they actually exercise the fixed regex.
+  4. `app/[locale]/(authenticated)/customer/billing/PortalLauncher.tsx` — the client-side Stripe
+     Customer Portal `return_url` was built as `${origin}/${locale}/customer/billing`, dropping the
+     `/corelink` `APP_BASE_PATH` the app is mounted under (the same class of bug fixed in #804 for
+     checkout). After closing the portal, Stripe would redirect the customer to the apex
+     `humangr.com` marketing site instead of back into admin-ui. Now built with `APP_BASE_PATH`,
+     mirroring `app/api/checkout/session/route.ts`.
 
 ### Added
 - **feat(f3.2): the digest-pinned, owner-gated public-base allowlist trust root (increment 3).**

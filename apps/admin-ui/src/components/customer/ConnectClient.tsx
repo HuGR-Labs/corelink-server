@@ -48,7 +48,7 @@ function buildSurfaces(origin: string, tenantId: string): SurfaceDef[] {
       id: "bazel",
       label: "Bazel",
       lang: "python",
-      what: "Remote cache + remote execution for Bazel via the REAPI v2 endpoint.",
+      what: "Remote cache for Bazel via the REAPI v2 endpoint (cache only — no remote execution).",
       help: "Adds a Bazel remote cache. Reads $" +
         TOKEN_ENV +
         " into the gRPC/HTTP Authorization header — no token is written into .bazelrc.",
@@ -136,21 +136,23 @@ pip install -r requirements.txt`,
       label: "CAS (curl)",
       lang: "bash",
       what: "Raw content-addressable store — a direct put/get to prove the wiring.",
-      help: "The native CAS surface: content addressed by SHA-256. Use it to smoke-test your token. The bearer is read from $" +
+      help: "The native CAS surface: content addressed by BLAKE3. Use it to smoke-test your token. The bearer is read from $" +
         TOKEN_ENV +
         " so it never lands in your shell history as a literal.",
       docsHref: `${DOCS}/cas`,
       code: `# Native CAS — write one blob, then read it back (token via env only)
 #   export ${TOKEN_ENV}=<paste a PAT from /customer/keys>
-HASH=$(printf 'hello corelink' | shasum -a 256 | cut -d' ' -f1)
+# Needs b3sum (macOS: brew install b3sum; Linux: cargo install b3sum) —
+# CAS digests are BLAKE3, not SHA-256.
+HASH=$(printf 'hello corelink' | b3sum --no-names)
 
 # PUT:
 printf 'hello corelink' | curl -sS -X PUT \\
   -H "authorization: Bearer \${${TOKEN_ENV}}" \\
-  --data-binary @- "${origin}/v1/cas/$HASH"
+  --data-binary @- "${origin}/v1/cas/${tenantId}/$HASH"
 
 # GET (should echo it straight back):
-curl -sS -H "authorization: Bearer \${${TOKEN_ENV}}" "${origin}/v1/cas/$HASH"`,
+curl -sS -H "authorization: Bearer \${${TOKEN_ENV}}" "${origin}/v1/cas/${tenantId}/$HASH"`,
     },
   ];
 }
