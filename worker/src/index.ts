@@ -42,6 +42,7 @@ import { resolveTenantTierCached } from "./lib/tenant_tier_cache.js";
 import { verifyPatRowCached, type KvReader } from "./lib/pat_verify_cache.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
+import { shadowCompareEdgePublicRead } from "./lib/edge_public_read.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import {
@@ -205,6 +206,12 @@ export interface Env {
   // Container env-contract (forwarded via durable_object.ts container.start):
   // secrets + provider vars the native container reads from its own process env.
   R2_TDK_HEX?: string;
+  // F3.3 worker-native `_public` cache-HIT read. `CAS_BUCKET` is the native R2
+  // binding (already deployed on every env) the edge read fetches bytes from
+  // directly; `EDGE_PUBLIC_READ` is the runtime flag: "shadow" = compute+compare
+  // only (serve the container), "serve" = edge-authoritative HIT. Unset = off.
+  CAS_BUCKET: R2Bucket;
+  EDGE_PUBLIC_READ?: string;
   ERASURE_SALT_KEY?: string;
   ERASURE_ATTESTATION_SEED_HEX?: string;
   ERASURE_ATTESTATION_KEY_ID?: string;
@@ -3314,6 +3321,36 @@ const baseHandler: ExportedHandler<Env> = {
       return applyCors(
         reapiError("INTERNAL_ERROR", "upstream error", 500, requestId),
         request,
+      );
+    }
+
+    // F3.3 SHADOW: prove Worker-native `_public` edge-read parity vs the container
+    // on real traffic, with ZERO user impact — we serve the container's response
+    // unchanged and only compare a CLONE in the background (`ctx.waitUntil`).
+    // Reached only on the tenant's home-region leg (non-local regions early-return
+    // above), so `env.CAS_BUCKET`/`env.R2_CAS_REGION` are correct for this tenant.
+    // Gate on the "shadow" flag; brew/pip GETs only (the `_public` byte surfaces).
+    if (
+      env.EDGE_PUBLIC_READ === "shadow" &&
+      request.method === "GET" &&
+      (route.routeKind === "brew" || route.routeKind === "pip") &&
+      doResponse.ok
+    ) {
+      const shadowClone = doResponse.clone();
+      const shadowKind = route.routeKind;
+      const shadowPath = route.pathSuffix;
+      ctx.waitUntil(
+        shadowCompareEdgePublicRead(env, shadowKind, shadowPath, shadowClone)
+          .then((verdict) =>
+            console.log(
+              `[${requestId}] edge_public_shadow routeKind=${shadowKind} verdict=${verdict}`,
+            ),
+          )
+          .catch((e) =>
+            console.error(
+              `[${requestId}] edge_public_shadow error: ${String(e).slice(0, 80)}`,
+            ),
+          ),
       );
     }
 
