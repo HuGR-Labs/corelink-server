@@ -22,6 +22,20 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **fix(f3.2): the `_public` revocation endpoint was unreachable in prod — move it out of the
+  `/_internal/admin/*` worker-edge auth space into the erase-consumer space (`/_internal/public/revoke`).**
+  End-to-end prod proof (2026-08-15) caught what CI/unit tests could not: B1b (#1117) shipped the route at
+  `/_internal/admin/public/revoke`, which the worker front-gate (`internalConsumerForPath`) maps to the
+  **admin** consumer (`CORELINK_ADMIN_AUTH_KEY`) — but the container handler gates on the **erase** key
+  (`CORELINK_ERASE_AUTH_KEY`, finding H4: an admin-key leak must not drive irreversible R2 deletes). No
+  single key satisfied both gates, so every call 401'd at the edge and the kill-switch could never fire.
+  Renaming the path out of `/_internal/admin/*` makes it fall through to the worker's erase-consumer
+  catch-all, so the edge and the handler agree on the erase key. Adds a worker regression test
+  (`public_revoke_consumer.test.ts`) pinning `/_internal/public/revoke → erase` (mirrors the dsr-anchor
+  consumer regression) and documents the path↔consumer contract in both `worker/src/index.ts` and the
+  container module. (WI-F3.2-B1b)
+
 ### Added
 - **feat(f3.2): `_public` shared-dedup blob revocation endpoint (`POST /_internal/admin/public/revoke`) —
   the write-side kill-switch that makes a poisoned cross-tenant public blob physically erasable

@@ -1,4 +1,4 @@
-//! `POST /_internal/admin/public/revoke` — the `_public` shared-dedup blob
+//! `POST /_internal/public/revoke` — the `_public` shared-dedup blob
 //! revocation endpoint (F3.2 BLOCKER-1, increment B1b).
 //!
 //! The write-side, incident-response counterpart to the per-tenant DSR erase
@@ -45,7 +45,13 @@
 //! Gated by the DEDICATED `CORELINK_ERASE_AUTH_KEY` (constant-time compared),
 //! the SAME irreversible-delete authority as [`crate::routes::cas_erase`] — NOT
 //! the admin key (finding H4: an admin-key leak must not be able to drive
-//! irreversible deletes). Unlike the DSR erase this path has NO per-subject
+//! irreversible deletes). The route path is `/_internal/public/revoke` — kept
+//! OUT of `/_internal/admin/*` ON PURPOSE: the worker edge front-gate
+//! (`worker/src/index.ts` `internalConsumerForPath`) maps `/_internal/admin/*`
+//! to the ADMIN consumer key but any other `/_internal/*` path to the ERASE
+//! consumer key, so an `/_internal/admin/…` path would gate on the admin key at
+//! the edge and 401 against this erase-keyed handler (the live blocker the B1b
+//! prod proof caught, 2026-08-15). Edge consumer == handler gate == ERASE key. Unlike the DSR erase this path has NO per-subject
 //! `dsr_requested` legitimacy anchor: revoking a public blob is content
 //! moderation / incident response, not a data-subject request, so there is no
 //! per-blob ticket to bind to. The controls are the dedicated erase key + the
@@ -89,7 +95,7 @@ const INTERNAL_AUTH_HEADER: &str = "x-corelink-internal-auth";
 
 /// Canonical revoke route path (matchit `{name}` captures — none needed; the
 /// digest travels in the JSON body so it is never logged in a URL).
-pub const PUBLIC_REVOKE_ROUTE: &str = "/_internal/admin/public/revoke";
+pub const PUBLIC_REVOKE_ROUTE: &str = "/_internal/public/revoke";
 
 /// Max accepted `reason` / `approver` length (bounds the D1 rows; never PII).
 const MAX_FIELD_LEN: usize = 256;
@@ -223,7 +229,7 @@ pub fn router(state: PublicRevokeRouteState) -> Router {
         .with_state(state)
 }
 
-/// `POST /_internal/admin/public/revoke`.
+/// `POST /_internal/public/revoke`.
 ///
 /// Order (fail-CLOSED): erase-auth gate (constant-time, BEFORE any work) →
 /// validate the 64-hex digest → INSERT blocklist (linearize) → DELETE map →

@@ -672,7 +672,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
-    // F3.2 BLOCKER-1 (B1b): `POST /_internal/admin/public/revoke` — the `_public`
+    // F3.2 BLOCKER-1 (B1b): `POST /_internal/public/revoke` — the `_public`
     // shared-dedup blob kill-switch (blocklist → map-delete → audit → R2 hard-delete
     // across CAS regions). Gated by the SAME dedicated CORELINK_ERASE_AUTH_KEY as
     // cas_erase (it is an irreversible R2 delete; an admin-key leak must not drive
@@ -683,14 +683,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if let Some(public_revoke_state) =
         corelink_server::routes::public_revoke::build_state_from_env(public_revoke_auth_key)
     {
-        info!("routes: /_internal/admin/public/revoke route mounted (erase key + R2 TDK + D1 present)");
+        info!("routes: /_internal/public/revoke route mounted (erase key + R2 TDK + D1 present)");
         app = app.merge(corelink_server::routes::public_revoke::router(
             public_revoke_state,
         ));
     } else {
         warn!(
             "CORELINK_ERASE_AUTH_KEY / R2_TDK_HEX / D1 incomplete; \
-             /_internal/admin/public/revoke route NOT mounted (fail-CLOSED)"
+             /_internal/public/revoke route NOT mounted (fail-CLOSED)"
         );
     }
 
