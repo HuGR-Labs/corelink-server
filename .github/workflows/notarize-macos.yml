@@ -52,7 +52,16 @@ env:
 jobs:
   apple-cert-present:
     name: gate — Apple cert present
-    runs-on: [self-hosted, Linux, X64]
+    # Runner: `[self-hosted, mac, corelink-builder]` — was `[self-hosted, Linux,
+    # X64]`, a pool that DOES NOT EXIST (every online self-hosted runner in this
+    # repo is labelled `self-hosted,macOS,X64,mac,corelink-builder`; see
+    # reproducible-build.yml's `build` job for the same root-cause finding).
+    # GitHub queues an unsatisfiable `runs-on` forever rather than failing it.
+    # This job only runs a trivial secret-presence check, but it gates the
+    # `notarize` job below (which already correctly targets the mac fleet), so
+    # it must actually execute on a pool that exists — reusing the mac fleet is
+    # simplest since that's the only self-hosted pool this repo has.
+    runs-on: [self-hosted, mac, corelink-builder]
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:

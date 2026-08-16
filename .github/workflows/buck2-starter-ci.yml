@@ -1,15 +1,19 @@
 ---
 # WI-S15-003 — Buck2 Starter Integration Test + Benchmark
 #
-# Validates that examples/buck2-starter achieves a remote cache hit via
-# CoreLink CAS (REAPI v2) on every PR touching that tree, plus a weekly cron
-# to detect silent drift.
+# Intends to validate that examples/buck2-starter achieves a remote cache hit
+# via CoreLink CAS (REAPI v2). Currently `workflow_dispatch`-only — NOT wired
+# to `pull_request`/`push`/`schedule` — because it has never gone green; see
+# the `on:` block below for the full failure history and what's still
+# unproven. Do not treat a green dispatch run as "this always worked": it
+# hasn't, on any runner this repo has had.
 #
-# Gates:
+# Gates (intended, once un-parked):
 #   build   — cold build + warm cache-hit assertion (≥ 80 % hits)
 #   benchmark — 10+10 iteration report; updates BENCHMARK.md on main
 #
-# Failure = SEV-3 alert + blocking PR merge (fail-closed, STANDARD lane).
+# Originally spec'd as: failure = SEV-3 alert + blocking PR merge
+# (fail-closed, STANDARD lane). Not true today — see `on:` block.
 #
 # All `uses:` lines are SHA-pinned (CTRL-SUPPLY-001).
 # SHA comment format: # <action-name>@<semver-tag>
@@ -17,18 +21,42 @@
 name: Buck2 Starter CI (WI-S15-003)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "examples/buck2-starter/**"
-      - ".github/workflows/buck2-starter-ci.yml"
-  pull_request:
-    paths:
-      - "examples/buck2-starter/**"
-      - ".github/workflows/buck2-starter-ci.yml"
-  schedule:
-    # Weekly cron: Monday 06:00 UTC — parity with bazel-starter CI cadence.
-    - cron: "0 6 * * 1"
+  # NON-BLOCKING BY DESIGN (2026-08-16) — do not re-add `pull_request`/`push`
+  # until this is observed GREEN end-to-end via a dispatched run.
+  #
+  # This example gate has never once worked, through three distinct failure
+  # modes uncovered in sequence:
+  #   1. `runs-on: [self-hosted, Linux, X64]` named a pool that does not
+  #      exist, so every run QUEUED FOREVER (never executed a step) — fixed
+  #      by repointing to `runs-on: corelink` (see the `build` job below).
+  #   2. That unblocked execution and surfaced that the Buck2 download URL
+  #      404'd — `facebook/buck2` tags releases by date, and the
+  #      `/releases/latest/download/...` convenience URL resolves against a
+  #      stale 2023 `latest` tag that carries no matching asset — fixed by
+  #      pinning `BUCK2_VERSION` to a real dated tag (see the env: block
+  #      below).
+  #   3. Past the fixed URL, the job still fails with `buck2: command not
+  #      found` in the later steps — the downloaded binary is not reliably
+  #      ending up executable-on-PATH for the shells that run
+  #      `buck2 build :hello`. Root cause NOT YET diagnosed (possible
+  #      candidates: the `corelink` fabric not persisting `$GITHUB_PATH`
+  #      additions the way the never-existed Linux pool would have, or the
+  #      pinned zstd/apt path silently no-op'ing via the `|| true` in the
+  #      install step). The buck2-starter EXAMPLE build itself has therefore
+  #      never been proven to actually work on ANY runner this repo has ever
+  #      had.
+  #
+  # Per the no-gate-that-proves-nothing rule: a gate this broken must not
+  # block real PRs while it's diagnosed. `workflow_dispatch` keeps it
+  # runnable on demand for whoever picks up the PATH-wiring fix, without
+  # holding examples/buck2-starter/** PRs (or main) hostage to an example
+  # that has never gone green. Re-add `pull_request` + `push` (and restore
+  # the weekly `schedule:` cron below) only after a `workflow_dispatch` run
+  # is observed GREEN.
+  #
+  # schedule:
+  #   # Weekly cron: Monday 06:00 UTC — parity with bazel-starter CI cadence.
+  #   - cron: "0 6 * * 1"
   workflow_dispatch: {}
 
 permissions:
@@ -39,16 +67,35 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Buck2 version to download — pinned to a known good release.
+  # Buck2 version to download — pinned to a known good, EXISTING release tag.
+  # facebook/buck2 tags releases by date (no rolling "latest" release with a
+  # `buck2-x86_64-unknown-linux-gnu.zst` asset — the literal `latest` tag is a
+  # stale 2023-04-13 leftover, and GitHub's `/releases/latest/download/...`
+  # convenience redirect 404s because that stale tag is never the repo's
+  # "latest release"). Verified 2026-08-16: this tag's Linux asset resolves
+  # (302 -> a real 38 MB .zst download; `curl -fsSL` against the OLD
+  # `releases/latest/download/...` URL 404'd instead, which is why this gate
+  # never actually ran successfully even after it started executing).
   # Update via PR when a new Buck2 stable is available; CI catches regressions.
-  BUCK2_VERSION: "2024-02-01"
+  BUCK2_VERSION: "2026-08-01"
   BUCK2_INSTALL_DIR: "${{ github.workspace }}/.buck2-bin"
 
 jobs:
   # ── build: cold → warm cache-hit validation ─────────────────────────────────
   build:
     name: buck2 build :hello (cold → warm cache hit)
-    runs-on: [self-hosted, Linux, X64]
+    # Runner: `corelink` — was `[self-hosted, Linux, X64]`, a pool that DOES NOT
+    # EXIST (every online self-hosted runner in this repo is labelled
+    # `self-hosted,macOS,X64,mac,corelink-builder`; see reproducible-build.yml's
+    # `build` job for the same root-cause finding). GitHub does not fail an
+    # unsatisfiable `runs-on` — it QUEUES IT FOREVER, which is what this
+    # workflow did on every PR touching examples/buck2-starter back when it
+    # still carried a `pull_request` trigger (see the top-level `on:` block
+    # for why that trigger is gone for now). `corelink` is CoreLink's own
+    # ephemeral Linux (Ubuntu 24.04, Firecracker) fabric — a real Linux pool
+    # that exists, with apt-get + passwordless sudo, which is all this job's
+    # steps (buck2/zstd/clang download + apt install) need.
+    runs-on: corelink
     timeout-minutes: 20
 
     steps:
@@ -62,10 +109,11 @@ jobs:
           set -euo pipefail
           mkdir -p "${BUCK2_INSTALL_DIR}"
 
-          # Download Buck2 prebuilt binary for Linux x86_64.
-          # The GitHub release asset name follows: buck2-x86_64-unknown-linux-gnu.zst
+          # Download Buck2 prebuilt binary for Linux x86_64, pinned to
+          # BUCK2_VERSION (a real dated release tag — see the env: block above
+          # for why the "latest" convenience URL 404s).
           ARCH="x86_64-unknown-linux-gnu"
-          RELEASE_URL="https://github.com/facebook/buck2/releases/latest/download/buck2-${ARCH}.zst"
+          RELEASE_URL="https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/buck2-${ARCH}.zst"
 
           echo "Downloading Buck2 from ${RELEASE_URL}"
           curl -fsSL --retry 3 "${RELEASE_URL}" -o /tmp/buck2.zst
@@ -183,7 +231,10 @@ jobs:
   # ── negative scenarios ───────────────────────────────────────────────────────
   negative-scenarios:
     name: Negative scenarios (PAT missing / invalid / endpoint bad)
-    runs-on: [self-hosted, Linux, X64]
+    # Runner: `corelink` — see the `build` job above for why the previous
+    # `[self-hosted, Linux, X64]` pool does not exist and queued this job
+    # forever on every PR.
+    runs-on: corelink
     timeout-minutes: 10
     needs: build
 
@@ -196,8 +247,10 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.local/bin
           ARCH="x86_64-unknown-linux-gnu"
+          # Pinned to BUCK2_VERSION (a real dated tag) — see the workflow-level
+          # env: block for why the "latest" convenience URL 404s.
           curl -fsSL --retry 3 \
-            "https://github.com/facebook/buck2/releases/latest/download/buck2-${ARCH}.zst" \
+            "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/buck2-${ARCH}.zst" \
             -o /tmp/buck2.zst
           sudo apt-get install -y --no-install-recommends zstd 2>/dev/null || true
           zstd -d /tmp/buck2.zst -o ~/.local/bin/buck2
@@ -268,7 +321,11 @@ jobs:
   # ── benchmark (weekly + push to main) ────────────────────────────────────────
   benchmark:
     name: Benchmark (10+10 iterations) + update BENCHMARK.md
-    runs-on: [self-hosted, Linux, X64]
+    # Runner: `corelink` — see the `build` job above for why the previous
+    # `[self-hosted, Linux, X64]` pool does not exist. This job only runs on
+    # push/schedule/workflow_dispatch (never `pull_request`), so it wasn't a PR
+    # gate, but it was still queuing forever whenever it fired.
+    runs-on: corelink
     timeout-minutes: 30
     # Only run on push to main or weekly cron; skip on PRs to save minutes.
     if: |
@@ -290,8 +347,10 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.local/bin
           ARCH="x86_64-unknown-linux-gnu"
+          # Pinned to BUCK2_VERSION (a real dated tag) — see the workflow-level
+          # env: block for why the "latest" convenience URL 404s.
           curl -fsSL --retry 3 \
-            "https://github.com/facebook/buck2/releases/latest/download/buck2-${ARCH}.zst" \
+            "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/buck2-${ARCH}.zst" \
             -o /tmp/buck2.zst
           sudo apt-get install -y --no-install-recommends zstd jq 2>/dev/null || true
           zstd -d /tmp/buck2.zst -o ~/.local/bin/buck2
