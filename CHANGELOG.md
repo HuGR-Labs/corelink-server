@@ -22,6 +22,17 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **fix(adapter-host): consolidate the read-through upstream SSRF guard into one audited module and close a
+  pip/npm gap.** brew, pip and npm each carried their OWN copy of the outbound-fetch SSRF guard
+  (`host_is_internal_ip` + `ssrf_safe_redirect_policy`), and they had DRIFTED: brew rejected carrier-grade
+  NAT (`100.64.0.0/10`, RFC-6598), IPv4 broadcast and documentation ranges while pip and npm did NOT — so
+  the pip/npm upstream fetchers had a strictly WEAKER SSRF guard (a redirect `Location` at a CGNAT address
+  was blocked for brew bottles but followed for PyPI wheels / npm tarballs). New `crates/corelink-adapter-host/src/upstream_ssrf.rs`
+  is the single audited copy (brew's strongest classification); brew/pip/npm now import it. This LIFTS pip
+  and npm to block CGNAT/broadcast/documentation too; brew is byte-identical. Foundation for the F3.2
+  increment-4 public-base OCI pull-through mirror, which reuses the same guard.
+
 ### Added
 - **feat(f3.2): the digest-pinned, owner-gated public-base allowlist trust root (increment 3).**
   Adds `crates/corelink-container/src/public_base_allowlist.rs` + a container-baked manifest

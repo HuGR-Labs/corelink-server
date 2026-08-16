@@ -3,7 +3,7 @@
 //! Performs a plain HTTPS `GET <upstream_domain>/<canonical_path>` and
 //! returns the body bytes. Enforces the configured bottle-size cap.
 
-use std::net::IpAddr;
+use crate::upstream_ssrf::ssrf_safe_redirect_policy;
 
 use bytes::Bytes;
 use url::Url;
@@ -249,67 +249,6 @@ fn extend_from_bytes(buf: &mut Vec<u8>, chunk: &Bytes) {
     buf.extend_from_slice(chunk);
 }
 
-/// True when `host` is a literal IP address in a range that must never be
-/// reachable from an outbound upstream fetch (the classic SSRF targets:
-/// loopback, RFC-1918 / RFC-4193 private space, link-local — which includes
-/// the 169.254.169.254 cloud-metadata endpoint — and the unspecified
-/// address). DNS host names are NOT classified here: they are resolved by
-/// the OS at connect time and the danger surface this guard closes is a
-/// redirect `Location` pointing straight at an internal IP literal.
-fn host_is_internal_ip(host: &str) -> bool {
-    // `url` hands IPv6 hosts back WITHOUT the surrounding brackets.
-    let stripped = host.strip_prefix('[').and_then(|h| h.strip_suffix(']'));
-    let candidate = stripped.unwrap_or(host);
-    let Ok(ip) = candidate.parse::<IpAddr>() else {
-        return false;
-    };
-    match ip {
-        IpAddr::V4(v4) => {
-            // Destructure (no indexing — `indexing_slicing` is denied).
-            let [a, b, _, _] = v4.octets();
-            v4.is_private()
-                || v4.is_loopback()
-                || v4.is_link_local()
-                || v4.is_unspecified()
-                || v4.is_broadcast()
-                || v4.is_documentation()
-                // Carrier-grade NAT 100.64.0.0/10 — internal-ish, deny.
-                || (a == 100 && (b & 0xc0) == 0x40)
-        }
-        IpAddr::V6(v6) => {
-            let [s0, ..] = v6.segments();
-            v6.is_loopback()
-                || v6.is_unspecified()
-                // Unique-local fc00::/7.
-                || (s0 & 0xfe00) == 0xfc00
-                // Link-local fe80::/10.
-                || (s0 & 0xffc0) == 0xfe80
-                // IPv4-mapped / -compatible: re-classify the embedded v4.
-                || v6.to_ipv4().is_some_and(|m| {
-                    m.is_private() || m.is_loopback() || m.is_link_local() || m.is_unspecified()
-                })
-        }
-    }
-}
-
-/// Build a redirect policy that follows up to `max` redirects but REFUSES any
-/// hop whose `Location` resolves to an internal IP literal (SSRF guard, see
-/// [`host_is_internal_ip`]). reqwest's DEFAULT policy follows up to 10 hops to
-/// ANY host, which would let a first-hop upstream bounce the request at an
-/// RFC-1918 / metadata address; this policy closes that on EVERY hop while
-/// still permitting the legitimate ghcr → public-CDN 307.
-fn ssrf_safe_redirect_policy(max: usize) -> reqwest::redirect::Policy {
-    reqwest::redirect::Policy::custom(move |attempt| {
-        if attempt.previous().len() >= max {
-            return attempt.stop();
-        }
-        match attempt.url().host_str() {
-            Some(host) if host_is_internal_ip(host) => attempt.stop(),
-            _ => attempt.follow(),
-        }
-    })
-}
-
 /// Join `path` onto `upstream` and verify the result stays on the SAME origin
 /// (scheme + host + port). `Url::join` host-swaps when `path` carries a scheme
 /// (`https://evil/…`) or a protocol-relative authority (`//evil/…`) — this is
@@ -374,33 +313,6 @@ mod tests {
             join_within_upstream(&up, "//evil.example/x").is_err(),
             "protocol-relative authority must be rejected by the SSRF guard"
         );
-    }
-
-    #[test]
-    fn internal_ip_hosts_are_classified_ssrf() {
-        // Loopback, RFC-1918, link-local (incl. cloud metadata), unspecified.
-        for h in [
-            "127.0.0.1",
-            "10.0.0.5",
-            "192.168.1.1",
-            "172.16.0.1",
-            "169.254.169.254",
-            "0.0.0.0",
-            "100.64.0.1",
-            "[::1]",
-            "[fc00::1]",
-            "[fe80::1]",
-            "[::ffff:127.0.0.1]",
-        ] {
-            assert!(host_is_internal_ip(h), "{h} must be flagged internal");
-        }
-    }
-
-    #[test]
-    fn public_hosts_and_names_are_not_internal() {
-        for h in ["ghcr.io", "1.1.1.1", "8.8.8.8", "[2606:4700::1111]"] {
-            assert!(!host_is_internal_ip(h), "{h} must NOT be flagged internal");
-        }
     }
 
     #[test]
