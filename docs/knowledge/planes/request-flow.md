@@ -8,11 +8,11 @@ source_files:
   - "crates/corelink-container/src/routes.rs"
   - "crates/corelink-container/src/origin_timing.rs"
 source_blobs:
-  - "worker/src/index.ts@5eb4ab79d8ba25493d6764af521a76ed25c057c2"
+  - "worker/src/index.ts@0ce0cefa1bbd0eaea064987747519b6fc0410161"
   - "worker/src/durable_object.ts@bf36fd6a2f94c92c8b5d47872dedb93cfc95d137"
   - "crates/corelink-container/src/routes.rs@fe49db9455326e980ee761012a5990c8a5e30a42"
   - "crates/corelink-container/src/origin_timing.rs@6eac1fc37428babeeb919d51d7f234a2d41c501c"
-checkpoint_sha: "2f1e1f8e4ae49dae8abecbec094777a93d9b684c"
+checkpoint_sha: "7ed366f6060ef793e0ffc5883831898565d65292"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -55,7 +55,7 @@ semantics in the container.
    (this-region) `_system` container branch above this forward; the fall-through then lands on the
    per-tenant DO derivation here (`worker/src/index.ts:2062-2064`).
 4. It strips any client-supplied trust headers (delete-then-set discipline), sets its own verified
-   tenant-id/scope/token-prefix, and dispatches via `stub.fetch` (`worker/src/index.ts:3234-3313`).
+   tenant-id/scope/token-prefix, and dispatches via `stub.fetch` (`worker/src/index.ts:3234-3347`).
 5. The DO's `fetch` binds the forwarded tenant-id, ensures the container is running, then proxies the
    request (`worker/src/durable_object.ts:541-642`).
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
@@ -71,7 +71,7 @@ semantics in the container.
    (`crates/corelink-container/src/origin_timing.rs:265-273`, wired last so it wraps every inner layer at
    `crates/corelink-container/src/routes.rs:1072-1074`); the Worker forwards those four and derives the
    one term only it can see, `ohop = origin − Σ(container phases)` — the dispatch, the DO's prologue and
-   the wire (`worker/src/index.ts:3602`). Recording is a task-local ledger, so an instrumented region
+   the wire (`worker/src/index.ts:3637`). Recording is a task-local ledger, so an instrumented region
    reached outside a request (a test, a background task) simply records nothing
    (`crates/corelink-container/src/origin_timing.rs:247-252`).
 
@@ -89,7 +89,7 @@ semantics in the container.
 - The `origin` split always reconciles: the container's residue phase is computed against its OWN
   whole-request clock, so its parts sum exactly to the time it held the request
   (`crates/corelink-container/src/origin_timing.rs:225`), and the Worker publishes no split it cannot
-  make add up (`worker/src/index.ts:3599-3600`).
+  make add up (`worker/src/index.ts:3634-3635`).
 
 # Gotchas
 - OCI, the Stripe webhook, and fabric-introspect take dedicated pass-through arms in the Worker that
@@ -104,7 +104,7 @@ semantics in the container.
 3. `worker/src/index.ts:1786-1832` — the Worker `fetch` entry + `matchRoute`.
 4. `worker/src/index.ts:3229-3231` — `idFromName(resolvedTenantId)` DO derivation (structural isolation).
 5. `worker/src/index.ts:3234-3265` — strip-then-set trust headers on the forward.
-6. `worker/src/index.ts:3234-3313` — the augmented forward + `stub.fetch` dispatch to the DO.
+6. `worker/src/index.ts:3234-3347` — the augmented forward + `stub.fetch` dispatch to the DO.
 7. `worker/src/durable_object.ts:345-358` — the DO→container proxy via `getTcpPort(50051)`.
 8. `worker/src/durable_object.ts:541-642` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:573-602` — the ensure-running gate before proxying (503/500 otherwise).
