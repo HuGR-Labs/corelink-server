@@ -42,7 +42,12 @@ import { resolveTenantTierCached } from "./lib/tenant_tier_cache.js";
 import { verifyPatRowCached, type KvReader } from "./lib/pat_verify_cache.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
-import { readPublicHit, shadowCompareEdgePublicRead } from "./lib/edge_public_read.js";
+import {
+  readPublicHit,
+  shadowCompareEdgePublicRead,
+  parseByteRange,
+  PUBLIC_BLOB_CONTENT_TYPE,
+} from "./lib/edge_public_read.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import {
@@ -3323,12 +3328,41 @@ const baseHandler: ExportedHandler<Env> = {
       (route.routeKind === "brew" || route.routeKind === "pip")
     ) {
       try {
-        const edge = await readPublicHit(env, route.routeKind, route.pathSuffix);
+        const edge = await readPublicHit(env, route.routeKind, route.pathSuffix, ctx);
         if (edge) {
-          edgeServed = new Response(edge.bytes, {
-            status: 200,
-            headers: { "x-cache": "HIT" },
-          });
+          // $-CEILING EXEMPTION (owner decision 2026-08-16): a `_public` cache
+          // HIT served from the edge deliberately does NOT pass through the
+          // container's per-op $-ceiling gate (ADR-0068). A shared, deduped,
+          // content-addressed public read is ~free to serve, and the product's
+          // whole promise is "the cache is cheap+fast" — charging the spend cap
+          // on the cheapest, most-shared traffic class is off-brand. Request-count
+          // + storage quota still apply (runQuotaBatch, above). Documented as an
+          // invariant in the F3.3 ADR; not an accidental bypass.
+          const total = edge.bytes.byteLength;
+          const baseHeaders: Record<string, string> = {
+            "x-cache": "HIT",
+            // Faithful type for opaque CAS blobs (bottles/wheels); the container
+            // binary read returns the same. Previously dropped on the edge path.
+            "Content-Type": PUBLIC_BLOB_CONTENT_TYPE,
+            "Accept-Ranges": "bytes",
+          };
+          const range = parseByteRange(request.headers.get("Range"), total);
+          if (range === "unsatisfiable") {
+            edgeServed = new Response(null, {
+              status: 416,
+              headers: { ...baseHeaders, "Content-Range": `bytes */${total}` },
+            });
+          } else if (range) {
+            edgeServed = new Response(edge.bytes.slice(range.start, range.end + 1), {
+              status: 206,
+              headers: {
+                ...baseHeaders,
+                "Content-Range": `bytes ${range.start}-${range.end}/${total}`,
+              },
+            });
+          } else {
+            edgeServed = new Response(edge.bytes, { status: 200, headers: baseHeaders });
+          }
         }
       } catch (e: unknown) {
         // An edge-read fault must NEVER fail a request that the container can serve.
