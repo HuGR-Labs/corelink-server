@@ -8,7 +8,8 @@ source_files:
   - "crates/corelink-container/src/routes/brew.rs"
   - "crates/corelink-container/src/routes/oci.rs"
   - "crates/corelink-container/src/oci_cap.rs"
-checkpoint_sha: "a298cd91a4f0429d6e3d31a64191d2b0e87eced5"
+  - "crates/corelink-container/src/public_base_allowlist.rs"
+checkpoint_sha: "5a638a7b9679bc940cdb8d303a3e627937002bf2"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -58,6 +59,16 @@ hold.
    ports the Worker's `QUOTAS` table (finite caps per tier, `Some(0)` only for `enterprise`, unknown tier →
    the `free` cap, never unlimited) so the OCI bearer carries the same cap the native plane would resolve
    (`crates/corelink-container/src/oci_cap.rs:63-82`).
+8. **F3.2 increment 3 — the public-base allowlist trust root (inert).** Which upstream OCI base-layer
+   digests may EVER enter the cross-tenant `_public` namespace is governed by an owner-curated manifest
+   BAKED INTO the container binary (`include_str!`), loaded + validated by `PublicBaseAllowlist::from_baked_manifest`
+   (`crates/corelink-container/src/public_base_allowlist.rs:53`). `is_allowlisted(digest)` is a constant-set
+   membership test the future increment-6 `OciMoatStore` router will consult before routing a blob to
+   `_public` (`crates/corelink-container/src/public_base_allowlist.rs:85`). The loader is FAIL-CLOSED on any
+   non-digest entry — a tag has no `sha256:` prefix / wrong length / non-lowercase-hex and is rejected, so a
+   mutable tag can never widen the shared namespace (`crates/corelink-container/src/public_base_allowlist.rs:107`).
+   Nothing consumes `is_allowlisted` yet (increment 6, behind the increment-5 red-team); the module ships
+   deny-all (empty active manifest).
 
 # Invariants
 - Tenant identity comes from the bearer PAT (re-verified, Option B); the path `<tenant>` is NEVER trusted. The executed enforcers: `PipPatResolver::resolve` / `BrewPatResolver::resolve` derive the tenant by calling `verify(pat_plaintext)` (`crates/corelink-container/src/routes/pip.rs:243-244`; `crates/corelink-container/src/routes/brew.rs:118-119`), and the gate REWRITES the wire path to strip the leading `<tenant>` segment before the adapter sees it (`crates/corelink-container/src/routes/pip.rs:523-528`; `crates/corelink-container/src/routes/brew.rs:336`) (`crates/corelink-container/src/routes/npm.rs:30-32`).
@@ -66,6 +77,7 @@ hold.
 - npm `@scoped` (private) packages stay in the per-tenant namespace, never `PUBLIC_NAMESPACE` (`crates/corelink-container/src/routes/npm.rs:97-106`).
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
 - OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci.rs:849-859`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci.rs:911-915`).
+- Eligibility for `_public` is a SERVER-owned, owner-gated, digest-pinned decision — never client-asserted. The trust root is baked into the binary (no runtime mutation path can widen it) and fail-closes on any tag, so only immutable `sha256:` digests the owner committed can ever be allowlisted (`crates/corelink-container/src/public_base_allowlist.rs:107`); the shipped default is deny-all (`crates/corelink-container/src/public_base_allowlist.rs:53`).
 
 # Gotchas
 - `_public` writes need BOTH a `tenant_storage_state` row AND a sentinel R2 prefix for byte accounting;
@@ -116,3 +128,6 @@ hold.
 24. `crates/corelink-container/src/routes/npm.rs:149-177` — `NpmMoatStore` get/put namespace npm tarball BYTES per-tenant (cross-tenant dedup is a tracked enhancement).
 25. `crates/corelink-container/src/routes/oci.rs:188-192` — OCI images stored under the per-tenant namespace; cross-tenant public-image dedup is a tracked OPEN DECISION.
 26. `crates/corelink-container/src/oci_cap.rs:63-82` — `tier_to_cap_bytes`: container-side port of the Worker `QUOTAS` per-tier storage cap for the OCI `/token` mint (unknown tier → `free`, never unlimited).
+27. `crates/corelink-container/src/public_base_allowlist.rs:53` — `PublicBaseAllowlist::from_baked_manifest` loads + validates the container-baked owner-curated allowlist (ships deny-all).
+28. `crates/corelink-container/src/public_base_allowlist.rs:85` — `is_allowlisted(digest)` membership test the increment-6 `_public` router will gate on.
+29. `crates/corelink-container/src/public_base_allowlist.rs:107` — `validate_digest` fail-closes on any non-`sha256:` entry (tags BANNED — digest-pinned trust root).

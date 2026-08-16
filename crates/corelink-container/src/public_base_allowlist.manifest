@@ -1,0 +1,65 @@
+# CoreLink — public-base-allowlist (F3.2 increment 3: the digest-pinned,
+# owner-gated trust root that governs which upstream layers may EVER reside in
+# the cross-tenant `_public` cache).
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# WHY THIS FILE IS THE TRUST ROOT
+# ─────────────────────────────────────────────────────────────────────────────
+# The `_public` namespace dedups content-addressed blobs across EVERY tenant. A
+# poisoned or misclassified blob that enters `_public` serves cross-tenant. So
+# the set of digests eligible for `_public` is a security boundary. This file is
+# that boundary, and it is deliberately the most owner-gated artifact we have:
+#
+#   * BAKED INTO THE CONTAINER at build time (`include_str!`). There is NO runtime
+#     mutation path — no API, no D1 write, no admin endpoint can widen it. The
+#     ONLY way to add or remove an entry is a reviewed code commit + a redeploy.
+#     A compromised token or a D1 write therefore cannot enlarge what may enter
+#     `_public`. (design Contradiction-2: allowlist commits are out-of-band /
+#     owner-gated, never runtime-mutable.)
+#
+#   * DIGEST-PINNED, NEVER TAG-RESOLVED. Every active entry is an immutable
+#     upstream OCI content digest `sha256:<64 lowercase hex>`. TAGS ARE BANNED:
+#     a tag (`ubuntu:22.04`) is mutable and re-resolving it is exactly the
+#     poisoning vector content-addressing closes (design BLOCKER-3). The loader
+#     (`public_base_allowlist.rs`) FAIL-CLOSES on any non-digest active line —
+#     one bad entry makes the whole load error, so the public-base router refuses
+#     to arm rather than trust a partially-valid allowlist.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# HOW AN ENTRY IS ADDED (the owner-gated, populate-then-allowlist procedure)
+# ─────────────────────────────────────────────────────────────────────────────
+# ORDERING INVARIANT (design GAP-E): a digest may be added here ONLY AFTER the
+# server's own trusted mirror has already populated `_public` for it (the
+# increment-4 SSRF-safe server-only mirror job). Allowlisting a digest the server
+# has NOT yet mirrored would let a CLIENT push be the one that populates the
+# shared blob — the exact hole this control closes. So the procedure is:
+#   1. Owner pins an upstream base layer OUT OF BAND: resolve `repo:tag` to its
+#      immutable `sha256:` layer digest yourself (e.g. `docker buildx imagetools
+#      inspect`), and record the pin below with provenance.
+#   2. The increment-4 mirror job pulls THAT pinned digest through the trusted
+#      registry path, verifies the bytes, and populates `_public`.
+#   3. ONLY THEN is the digest un-commented here and shipped in a redeploy.
+# Revocation of a compromised base is the B1b `_public` blocklist kill-switch
+# (`/_internal/public/revoke`) — orthogonal to this file.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# FORMAT
+# ─────────────────────────────────────────────────────────────────────────────
+#   sha256:<64 lowercase hex>    <provenance: registry/repo:tag (arch) it was pinned from>
+# `#` starts a comment (whole-line or trailing). Blank lines ignored. Only the
+# leading whitespace-delimited token per active line is parsed; the rest is
+# human provenance.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# ACTIVE ALLOWLIST — currently EMPTY (deny-all default).
+# ─────────────────────────────────────────────────────────────────────────────
+# The trust root ships deny-all: until the increment-4 mirror job has populated
+# `_public` for a pinned digest, NOTHING is eligible for the shared namespace and
+# `is_allowlisted` returns false for every digest (default-private, design
+# Control 1). Entries are added post-mirror per the procedure above.
+#
+# Example pins (COMMENTED — NOT yet server-mirrored, so NOT active). These are
+# real, resolved amd64 rootfs layer digests kept here to document the format and
+# seed the increment-4 mirror job:
+#   sha256:25f1d6b1951ac8eb3740558fe94cb83d377bdadf95fd9f98b50d2e1b96130471   docker.io/library/alpine:3.20 (amd64 rootfs layer)
+#   sha256:039e6f9f9752f74a3ff4a6a224f64c7c864da16ed98f882107704328f41b9c42   docker.io/library/debian:bookworm-slim (amd64 rootfs layer)

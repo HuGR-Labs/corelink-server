@@ -188,7 +188,7 @@ candidates:
     title: "_public package-manager surfaces (npm/pip/brew/oci)"
     status: "active"
     source_cluster: "surfaces"
-    seed_from: ["crates/corelink-container/src/routes/npm.rs", "crates/corelink-container/src/routes/pip.rs", "crates/corelink-container/src/routes/brew.rs", "crates/corelink-container/src/routes/oci.rs", "crates/corelink-container/src/oci_cap.rs"]
+    seed_from: ["crates/corelink-container/src/routes/npm.rs", "crates/corelink-container/src/routes/pip.rs", "crates/corelink-container/src/routes/brew.rs", "crates/corelink-container/src/routes/oci.rs", "crates/corelink-container/src/oci_cap.rs", "crates/corelink-container/src/public_base_allowlist.rs"]
   - id: "auth/pat-moat"
     type: "AuthMechanism"
     title: "2-level PAT moat (PatVerifier)"

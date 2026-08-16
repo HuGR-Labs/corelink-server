@@ -147,6 +147,12 @@ pub mod oci_suspend;
 /// last, after the alphabetical block above, so adding it shifts no existing
 /// OKF line-anchor.)
 pub mod origin_timing;
+/// F3.2 increment 3 — the digest-pinned, owner-gated **public-base allowlist**
+/// trust root: loads the container-baked manifest of upstream OCI base-layer
+/// digests eligible for the cross-tenant `_public` namespace, fail-closed on any
+/// non-digest (tag) entry. Inert until the increment-6 `OciMoatStore` router
+/// consumes `is_allowlisted`; ships deny-all.
+pub mod public_base_allowlist;
 /// Per-tenant monthly **request-count** middleware primitive (rt-nuclear #8):
 /// the container-side mirror of `worker/src/lib/quota.ts::checkRequestQuota`,
 /// backed by the `monthly_request_counts` D1 table (migration 0071). Wired into
