@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(f3.2): account the `_public` shared-dedup cache as UNOWNED (write-but-don't-charge) so the
+  byte-accounting layer can never outage the cross-tenant moat write path.** The `AccountingCasHandler`
+  charged `req.tenant` unconditionally; for a `_public` moat write that meant accruing against a synthetic
+  `_public` row in `tenant_storage_state` whose liveness silently depended on it existing per-region AND
+  staying at the `bytes_quota = 0` "unlimited" sentinel forever — a missing row (fresh region / evicted)
+  fails CLOSED (503) and a stray finite quota (any reconcile/eviction job touching the row) trips OverCap,
+  either of which takes down brew/pip/npm/OCI public caching for everyone. The decorator now detects the
+  `_public` namespace and forces the genuine-unlimited shared-meter seed (`quota_seed = Some(0)`), so a
+  shared-cache write ALWAYS accrues-and-passes, SELF-SEEDS a missing per-region meter row, and can never be
+  capped — while `bytes_used` still tracks the shared cache's COGS. A real tenant is charged byte-identically
+  to before (F3.2 increment B4). Also makes the in-memory `ByteStore` test double faithful to the D1
+  `?5 = 0` unlimited-incoming predicate.
 - **fix(f3.2): the `_public` revocation endpoint was unreachable in prod — move it out of the
   `/_internal/admin/*` worker-edge auth space into the erase-consumer space (`/_internal/public/revoke`).**
   End-to-end prod proof (2026-08-15) caught what CI/unit tests could not: B1b (#1117) shipped the route at
