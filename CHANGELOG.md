@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(worker): Worker-native `_public` cache-HIT edge SERVE path (F3.3 F2) — flag-gated, HIT-only, MISS
+  falls through to the container.** Builds on the shadow foundation (proven live: brew `_public` HITs
+  reproduced byte-identically at the edge on real iad traffic, zero `parity_bytes_diff`). With
+  `EDGE_PUBLIC_READ === "serve"`, a brew/pip `_public` GET now tries the edge read FIRST (native
+  `CONFIG_DB` map+`public_blocklist` join → `CAS_BUCKET.get` → blake3 re-verify) and, on a HIT, returns the
+  bytes directly — SKIPPING the Durable Object + Rust container round-trip that dominates warm-HIT latency
+  (`origin ~585 ms`). Any miss / revocation / re-hash mismatch / fault yields null and falls through to the
+  unchanged container path, so this can only make a HIT faster, never change correctness. The serve path
+  deliberately does not stamp the origin timing, so `Server-Timing` omits the `origin` phase — the wire-level
+  proof the container was bypassed. Reached only on the tenant's home-region leg. Rollback = flip the flag
+  back to `"shadow"` or unset it. ADR: `docs/design/2026-08-16-adr-worker-native-public-cache-read.md`.
 - **feat(worker): Worker-native `_public` cache-HIT read path (F3.3) — shadow mode, flag-gated, inert
   by default.** F3.2 proved cross-tenant `_public` dedup is correct in prod, but a warm HIT still
   costs ~750 ms (cold 3.4 s) because every HIT round-trips the Rust container (`origin ~585 ms`, of
