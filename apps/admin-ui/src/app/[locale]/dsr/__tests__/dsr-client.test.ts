@@ -18,7 +18,7 @@ describe("dsr-client does NOT log session token (Test 11)", () => {
       await submitDsr(
         { action: "access" },
         {
-          token: "Bearer corelink_prod_LEAKY_TOKEN_AB12",
+          token: "Bearer corelink_pat_LEAKY_TOKEN_AB12",
           fetchImpl: fakeFetch as unknown as typeof fetch,
         },
       );
@@ -30,15 +30,15 @@ describe("dsr-client does NOT log session token (Test 11)", () => {
       err: (err as DsrClientError).message,
       body: (err as DsrClientError).message,
     });
-    expect(stringified).not.toContain("corelink_prod_LEAKY_TOKEN_AB12");
+    expect(stringified).not.toContain("corelink_pat_LEAKY_TOKEN_AB12");
   });
 
   it("redactString strips bearer-shaped, JWT-shaped, and corelink tokens", () => {
     const samples = [
       "Authorization: Bearer abc.def.ghi",
       "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.signature",
-      "corelink_prod_AAA111",
-      "corelink_test_BBB222",
+      "corelink_pat_AAA111",
+      "corelink_ci_BBB222",
     ];
     for (const s of samples) {
       expect(redactString(s)).toContain("[REDACTED]");
@@ -48,12 +48,12 @@ describe("dsr-client does NOT log session token (Test 11)", () => {
   it("redact() replaces Authorization headers in nested objects", () => {
     const input = {
       headers: { Authorization: "Bearer secret_123", "X-Other": "ok" },
-      nested: { token: "corelink_prod_AAA" },
+      nested: { token: "corelink_pat_AAA" },
     };
     const out = redact(input) as typeof input;
     expect(out.headers.Authorization).toBe("[REDACTED]");
     expect(out.headers["X-Other"]).toBe("ok");
-    expect(JSON.stringify(out)).not.toContain("corelink_prod_AAA");
+    expect(JSON.stringify(out)).not.toContain("corelink_pat_AAA");
   });
 
   it("isMfaFresh respects the 30-minute CTRL-AUTH-010 window", () => {

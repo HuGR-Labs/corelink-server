@@ -35,7 +35,7 @@ export interface ApiCallOptions {
   signal?: AbortSignal;
 }
 
-const TOKEN_RE = /(corelink_(?:prod|test)_[A-Za-z0-9_-]+)/g;
+const TOKEN_RE = /(corelink_(?:pat|ci|ro)_[A-Za-z0-9_-]+)/g;
 // JWT-shaped substrings (three base64url segments, header starting with
 // `eyJ` = `{"` ) — covers Clerk session tokens and any other JWT that an
 // upstream error body might echo back.

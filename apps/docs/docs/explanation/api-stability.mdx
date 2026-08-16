@@ -10,13 +10,19 @@ last_updated: "2026-05-15"
 # API stability & deprecation policy
 
 > **Audience.** Customers, platform engineers, and SDK maintainers integrating
-> against `corelink-api.humangr.com` (REST) or `cas.corelink.humangr.com` / `bytestream.corelink.humangr.com` (gRPC REAPI v2).
+> against `corelink-api.humangr.com` — including the Bazel REAPI v2 surface at
+> `/bazel/cache` (stock-HTTP alias) and `/bazel/v2` (REAPI/ByteStream over
+> REST). There is no separate gRPC host: CoreLink has no gRPC ingress at all
+> (the data plane is a single HTTP/1.1 listener behind Cloudflare Workers, and
+> `workerd` implements no HTTP trailers, which gRPC requires — see
+> [Migrate from a Docker registry](/how-to/migrate/from-docker-registry) for
+> the same constraint on the OCI surface).
 >
 > **Status.** Public policy. **Binding for GA endpoints** once promoted; subject to MSA §6.
 >
-> **Scope.** All HTTP REST endpoints under `/v1/*` and `/api/*`, plus the gRPC
-> REAPI v2 services (`build.bazel.remote.execution.v2.*`, `google.bytestream.*`,
-> `build.bazel.remote.execution.v2.Capabilities`).
+> **Scope.** All HTTP REST endpoints under `/v1/*` and `/api/*`, plus the
+> Bazel REAPI v2 semantics (`ContentAddressableStorage`, `ActionCache`,
+> `ByteStream`, `Capabilities`) served as HTTP/REST under `/bazel/v2`.
 
 CoreLink commits to a **predictable, written API contract** so that customers
 can build CI/CD pipelines, SDKs, and downstream products against us with
@@ -72,9 +78,9 @@ prefix** (`/v2/...`). The old major remains available for the full GA
 deprecation window (§3).
 
 We will run **at most two major REST versions concurrently** (`v1` + `v2`).
-gRPC REAPI follows the upstream `build.bazel.remote.execution.v2` namespace
-and is **pinned to v2** for the foreseeable future; a v3 only ships if the
-upstream spec ships v3.
+The Bazel REAPI surface (`/bazel/v2`, served as HTTP/REST — not gRPC) follows
+the upstream `build.bazel.remote.execution.v2` namespace and is **pinned to
+v2** for the foreseeable future; a v3 only ships if the upstream spec ships v3.
 
 ### 2.2 Minor version — request header
 
@@ -274,7 +280,7 @@ report uploaded to `specs/_audits/api-deprecations.json`.
 - [Roadmap §7 R-7 — Evidence Gate](https://github.com/HumanGuardrail/corelink-server/blob/main/ROADMAP-TO-GA.md#7-wave-r-7--evidence-gate-depends-on-r-5--r-6-sustained-7-days-2-agents) — promotes the GA tier as part of the GA gate.
 - [Per-endpoint stability baseline](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_audits/sealed/2026-05-15-api-stability-baseline.md) — current tier of every endpoint.
 - [API reference (REST)](/reference/api/).
-- [API reference (REAPI gRPC)](/reference/reapi/).
+- [API reference (REAPI v2, HTTP/REST)](/reference/reapi/).
 - [Sales FAQ — API stability](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/sales/API-STABILITY-FAQ.md).
 
 ---

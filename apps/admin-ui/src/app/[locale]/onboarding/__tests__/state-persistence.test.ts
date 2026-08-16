@@ -46,18 +46,18 @@ describe("onboarding state persistence (collapsed wizard)", () => {
 
   it("refuses to persist PAT-shaped strings (CTRL-CRED-001)", () => {
     const s = makeStorage();
-    expect(() => saveState({ tenantId: "corelink_prod_LEAK" }, s)).toThrowError(
+    expect(() => saveState({ tenantId: "corelink_pat_LEAK" }, s)).toThrowError(
       /credential-shaped/,
     );
   });
 
   it("never writes the plaintext PAT to storage", () => {
     const s = makeStorage();
-    setPlaintextPat("corelink_prod_secret_xyz");
+    setPlaintextPat("corelink_pat_secret_xyz");
     saveState({ tenantId: "ten_123" }, s);
     const dumped = JSON.stringify(s.dump());
-    expect(dumped).not.toContain("corelink_prod_secret_xyz");
-    expect(getPlaintextPat()).toBe("corelink_prod_secret_xyz");
+    expect(dumped).not.toContain("corelink_pat_secret_xyz");
+    expect(getPlaintextPat()).toBe("corelink_pat_secret_xyz");
     clearPlaintextPat();
     expect(getPlaintextPat()).toBeNull();
   });

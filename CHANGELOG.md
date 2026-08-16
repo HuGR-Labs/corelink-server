@@ -48,6 +48,49 @@ Each entry cross-references:
   the colo cache is a pure optimization, never load-bearing. Flag-gated behind the existing
   `EDGE_PUBLIC_READ`; any miss/fault still falls through to the container. Re-hash-relocation-to-fill is
   owner-approved; ADR to follow.
+- **feat(docs): replace the dead Algolia DocSearch stub with free, fully offline local search.**
+  `apps/docs/docusaurus.config.ts` wired Algolia DocSearch with placeholder credentials
+  (`ALGOLIA_APP_ID ?? "STUB_APP_ID"`) and no `ALGOLIA_*` secrets were ever provisioned (the owner
+  has no Algolia account), so `STUB_APP_ID` shipped in the production HTML and the search modal
+  was permanently broken. Replaced with `@easyops-cn/docusaurus-search-local` — a lunr-based index
+  built at `pnpm build` time from the same docs/blog content, served entirely client-side with no
+  external service and no secrets (`hashed: true`, 4-language index matching the site's i18n
+  locales). Verified `STUB_APP_ID` no longer appears anywhere in `apps/docs/build/`.
+
+### Fixed
+- **fix(docs-ci): make the lychee broken-link gate actually gate.** `.github/workflows/docs-ci.yml`
+  ran lychee with `fail: false`, so a broken-link PR always showed green — and separately, ~64% of
+  its findings were false positives from a structural mismatch: the site's `baseUrl` mounts pages
+  under `/corelink/docs/…` but the Docusaurus build output on disk is flat (no `/corelink/docs`
+  prefix), so every absolute-path internal link (`/tutorial/...`, `/how-to/...`) resolved against
+  `--root-dir` to a nonexistent `build/corelink/docs/...` path. Added `--remap` rules to the lychee
+  invocation to strip the `/corelink/docs` mount prefix before local-path resolution, and flipped
+  `fail: true` now that internal links resolve correctly — the gate proves something again instead
+  of always passing.
+- **fix(docs): remove false gRPC claims for the Bazel REAPI surface.** `docs/intro.md`'s capabilities
+  table claimed "Full … `ByteStream` gRPC services", and `docs/explanation/api-stability.mdx` named
+  two dead hostnames (`cas.corelink.humangr.com`, `bytestream.corelink.humangr.com`, both NXDOMAIN)
+  as gRPC REAPI endpoints. CoreLink has no gRPC ingress at all — `workerd` implements no HTTP
+  trailers, which gRPC requires (already documented honestly in
+  `docs/how-to/migrate/from-docker-registry.mdx`, INV-BAZEL-NO-GRPC /
+  `crates/corelink-bazel-bridge`). Rewrote both pages to describe the real HTTP/REST REAPI v2
+  surface at `https://corelink-api.humangr.com/bazel/cache` and `/bazel/v2`, matching the working
+  tutorial (`docs/tutorial/03-bazel-quickstart.mdx`).
+- **fix(deps): close trivy HIGH CVE-2026-13697 (`undici` 7.28.0) pulled in by the new docs-search
+  dependency.** `@easyops-cn/docusaurus-search-local` (added above) transitively pulls `undici`
+  7.28.0 via `cheerio`; `vitest`/`jsdom` pull the same line. Added `pnpm.overrides["undici@<7.29.0"]
+  = ">=7.29.0 <8"` (root `package.json`), mirroring the repo's existing range-bound override
+  pattern, and re-ran `pnpm install` to update `pnpm-lock.yaml` — resolves to `undici@7.29.0`
+  everywhere. Also suppressed 6 pre-existing-but-newly-surfaced trivy findings
+  (CVE-2022-25648/-47318, CVE-2013-0269, CVE-2020-10663/-8130, CVE-2021-31799) on
+  `node_modules/lunr-languages/build/stopwords-filter/Gemfile.lock` — a vendored, never-executed
+  Ruby build-tooling fixture bundled inside `lunr-languages` (a `docusaurus-search-local`
+  transitive dep); nothing in this repo's install/build/runtime ever invokes `bundle`, so it is an
+  in-context false positive, documented in `.trivyignore.yaml` the same way as the existing
+  `AVD-DS-0002` exemption. Verified with the exact CI command
+  (`trivy fs . --scanners vuln --severity HIGH,CRITICAL --skip-files Cargo.lock --ignorefile
+  .trivyignore.yaml --exit-code 1`): 0 findings, exit 0.
+
 - **feat(worker): Worker-native `_public` cache-HIT edge SERVE path (F3.3 F2) — flag-gated, HIT-only, MISS
   falls through to the container.** Builds on the shadow foundation (proven live: brew `_public` HITs
   reproduced byte-identically at the edge on real iad traffic, zero `parity_bytes_diff`). With
@@ -77,6 +120,21 @@ Each entry cross-references:
   ADR: `docs/design/2026-08-16-adr-worker-native-public-cache-read.md`.
 
 ### Fixed
+- **fix(ci): `buck2-starter-ci` never once went green — took it off `pull_request`/`push` instead of
+  faking a pass.** Repointing the workflow off its nonexistent `[self-hosted, Linux, X64]` pool onto
+  `runs-on: corelink` made it EXECUTE for the first time (it had queued forever on every PR before), which
+  surfaced that `https://github.com/facebook/buck2/releases/latest/download/buck2-x86_64-unknown-linux-gnu.zst`
+  404s: facebook/buck2 tags releases by date (`2026-08-01`, `2026-07-15`, ...); the literal `latest` tag is
+  a stale 2023-04-13 leftover that is never the repo's actual latest release, so GitHub's
+  `/releases/latest/download/...` convenience redirect resolves against it. Pinned `BUCK2_VERSION` to
+  `2026-08-01` (verified: `curl -fsSL` against the dated-tag URL 302s to a real 38,310,864-byte zstd
+  binary) and wired every download URL in the file through that env var instead of the dead `latest` path.
+  Past that fix, the job still fails with `buck2: command not found` in later steps — the buck2-starter
+  EXAMPLE build has therefore never been proven to work on any runner this repo has had, and root-causing
+  the PATH wiring is unstarted. Per the no-gate-that-proves-nothing rule, moved the workflow to
+  `workflow_dispatch`-only (removed `pull_request` / `push` / the weekly `schedule` cron, all documented
+  in-file) so this dead example can no longer block real PRs while it's fixed; the URL pin stays, so
+  whoever finishes the PATH wiring via a dispatched run starts from a working download.
 - **fix(adapter-host): consolidate the read-through upstream SSRF guard into one audited module and close a
   pip/npm gap.** brew, pip and npm each carried their OWN copy of the outbound-fetch SSRF guard
   (`host_is_internal_ip` + `ssrf_safe_redirect_policy`), and they had DRIFTED: brew rejected carrier-grade
@@ -86,6 +144,32 @@ Each entry cross-references:
   is the single audited copy (brew's strongest classification); brew/pip/npm now import it. This LIFTS pip
   and npm to block CGNAT/broadcast/documentation too; brew is byte-identical. Foundation for the F3.2
   increment-4 public-base OCI pull-through mirror, which reuses the same guard.
+- **fix(admin-ui): 5 verified customer-facing bugs on the Connect/billing surfaces.**
+  1. `components/customer/ConnectClient.tsx` — the "CAS (curl)" smoke-test snippet hashed with
+     `shasum -a 256` and PUT/GET'd `${origin}/v1/cas/$HASH`, omitting the required `{tenant}`
+     segment (`CAS_READ_ROUTE`/`CAS_WRITE_ROUTE` = `/v1/cas/{tenant}/{hash}`) — every copy-pasted
+     command 422'd. Native CAS is BLAKE3 (`crates/corelink-hash`), not SHA-256. Switched the
+     snippet to `b3sum --no-names` (the same tool `docs/integrations/*` and `scripts/quickstart.sh`
+     already tell customers to install) and interpolated the existing in-scope `tenantId` into both
+     URLs — the command now actually succeeds against the live API.
+  2. Same file — the Bazel entry's copy claimed "Remote cache + remote execution ... via the REAPI
+     v2 endpoint", but only `--remote_cache` is configured and the backend is cache-only
+     (INV-BAZEL-NO-GRPC, no gRPC remote-execution surface exists). Reworded to "Remote cache ...
+     (cache only — no remote execution)".
+  3. `lib/safe-log.ts`, `lib/onboarding-state.ts`, and `lib/api-client.ts` — all three
+     PAT-redaction regexes matched `corelink_(prod|test)_...`, but the real wire format
+     (`crates/corelink-pat/src/format.rs`) uses env literals `pat|ci|ro`, never `prod`/`test` — so
+     these three redaction guards were a permanent no-op against every real PAT. Fixed all three to
+     `corelink_(pat|ci|ro)_...`, matching the pattern already correct in `lib/sentry-scrub.ts`.
+     Updated the three test suites that hardcoded the fake `corelink_prod_.../corelink_test_...`
+     fixtures (`dsr-client.test.ts`, `state-persistence.test.ts`, `onboarding/api-client.test.ts`) to
+     use real env literals so they actually exercise the fixed regex.
+  4. `app/[locale]/(authenticated)/customer/billing/PortalLauncher.tsx` — the client-side Stripe
+     Customer Portal `return_url` was built as `${origin}/${locale}/customer/billing`, dropping the
+     `/corelink` `APP_BASE_PATH` the app is mounted under (the same class of bug fixed in #804 for
+     checkout). After closing the portal, Stripe would redirect the customer to the apex
+     `humangr.com` marketing site instead of back into admin-ui. Now built with `APP_BASE_PATH`,
+     mirroring `app/api/checkout/session/route.ts`.
 
 ### Added
 - **feat(f3.2): the digest-pinned, owner-gated public-base allowlist trust root (increment 3).**

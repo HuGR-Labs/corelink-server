@@ -67,6 +67,18 @@ concurrency:
 jobs:
   lhci:
     name: lighthouse-ci (≥ 95)
+    # STAYS HOSTED (documented zero-hosted exception, mirrors docs-ci.yml's
+    # `lighthouse` job). `lhci autorun` launches headless Chrome to collect the
+    # trace, and the corelink-runners fabric image ships NO system
+    # Chrome/Chromium (see corelink-runners:deploy/runner/Dockerfile
+    # "BROWSERS ARE DELIBERATELY *NOT* BAKED" — a browser is ~1 GiB on disk and
+    # the box is ephemeral and SHARED with every Rust job, so baking one here
+    # would tax every spawn, not just this workflow). Unlike admin-ui-e2e's
+    # Playwright jobs, LHCI's chrome-launcher has no per-run `install --with-deps`
+    # escape hatch — it needs a preinstalled system Chrome on PATH. Revisit only
+    # if a separate browser-capable runner-image variant (or a CAS-cached
+    # browser) ships; until then this is an intentional, not overlooked,
+    # zero-hosted gap.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:

@@ -25,7 +25,7 @@
  */
 
 import * as React from "react";
-import { withAppBasePath } from "@/lib/route-matcher";
+import { APP_BASE_PATH, withAppBasePath } from "@/lib/route-matcher";
 
 interface PortalSessionResponse {
   portal_url: string;
@@ -60,7 +60,7 @@ export function PortalLauncher({
       // value MUST agree.
       const returnUrl =
         typeof window !== "undefined"
-          ? `${window.location.origin}/${locale}/customer/billing`
+          ? `${window.location.origin}${APP_BASE_PATH}/${locale}/customer/billing`
           : `https://humangr.com/corelink/${locale}/customer/billing`;
       const f = fetchImpl ?? fetch;
       // Re-attach the surface's `/corelink` basePath. Next auto-prefixes

@@ -42,7 +42,7 @@ describe("api-client", () => {
 
   it("redacts corelink_ tokens from error bodies", () => {
     expect(
-      redactTokens("token=corelink_prod_abc123xyz failed"),
+      redactTokens("token=corelink_pat_abc123xyz failed"),
     ).toBe("token=corelink_***_REDACTED failed");
   });
 
@@ -54,7 +54,7 @@ describe("api-client", () => {
     );
     // Both token shapes in one body are scrubbed.
     expect(
-      redactTokens(`pat=corelink_test_abc jwt=${jwt}`),
+      redactTokens(`pat=corelink_ci_abc jwt=${jwt}`),
     ).toBe("pat=corelink_***_REDACTED jwt=jwt_***_REDACTED");
     // Non-JWT text containing "eyJ" without the 3-segment shape is untouched.
     expect(redactTokens("prefix eyJonly-one-segment suffix")).toBe(
@@ -64,7 +64,7 @@ describe("api-client", () => {
 
   it("throws ApiClientError on non-2xx with redacted body", async () => {
     const fetchImpl = async (): Promise<Response> =>
-      new Response("denied: corelink_prod_leaked_value", { status: 403 });
+      new Response("denied: corelink_pat_leaked_value", { status: 403 });
     await expect(
       apiGet("/v1/oops", {
         baseUrl: "https://api.test",

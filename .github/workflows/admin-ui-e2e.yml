@@ -44,7 +44,16 @@ concurrency:
 jobs:
   legacy-e2e:
     name: playwright legacy (chromium)
-    runs-on: ubuntu-latest
+    # Runner: `corelink` — CoreLink's own ephemeral runner fabric (zero-hosted
+    # migration). The corelink-runners image ships NO baked browsers
+    # (deliberately — see corelink-runners:deploy/runner/Dockerfile "BROWSERS
+    # ARE DELIBERATELY *NOT* BAKED", ~1 GiB/browser would tax every Rust spawn
+    # sharing the image), but the box IS Ubuntu 24.04 with apt-get + passwordless
+    # sudo, which is exactly what `playwright install --with-deps` needs — the
+    # same Dockerfile note confirms this job "works; it just pays the browser
+    # download every run." So this migrates for real, at the cost of a per-run
+    # browser download (no caching across runs yet).
+    runs-on: corelink
     timeout-minutes: 30
     defaults:
       run:
@@ -94,7 +103,11 @@ jobs:
 
   critical-e2e:
     name: playwright critical-flows (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    # Runner: `corelink` — see the `legacy-e2e` job above for why this is safe
+    # to migrate even though the image bakes no browsers: apt-get + sudo are
+    # present, so `playwright install --with-deps` (below) still works for all
+    # three matrix browsers, at the cost of a per-run download.
+    runs-on: corelink
     timeout-minutes: 30
     strategy:
       fail-fast: false
