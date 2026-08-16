@@ -39,9 +39,17 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Buck2 version to download — pinned to a known good release.
+  # Buck2 version to download — pinned to a known good, EXISTING release tag.
+  # facebook/buck2 tags releases by date (no rolling "latest" release with a
+  # `buck2-x86_64-unknown-linux-gnu.zst` asset — the literal `latest` tag is a
+  # stale 2023-04-13 leftover, and GitHub's `/releases/latest/download/...`
+  # convenience redirect 404s because that stale tag is never the repo's
+  # "latest release"). Verified 2026-08-16: this tag's Linux asset resolves
+  # (302 -> a real 38 MB .zst download; `curl -fsSL` against the OLD
+  # `releases/latest/download/...` URL 404'd instead, which is why this gate
+  # never actually ran successfully even after it started executing).
   # Update via PR when a new Buck2 stable is available; CI catches regressions.
-  BUCK2_VERSION: "2024-02-01"
+  BUCK2_VERSION: "2026-08-01"
   BUCK2_INSTALL_DIR: "${{ github.workspace }}/.buck2-bin"
 
 jobs:
@@ -72,10 +80,11 @@ jobs:
           set -euo pipefail
           mkdir -p "${BUCK2_INSTALL_DIR}"
 
-          # Download Buck2 prebuilt binary for Linux x86_64.
-          # The GitHub release asset name follows: buck2-x86_64-unknown-linux-gnu.zst
+          # Download Buck2 prebuilt binary for Linux x86_64, pinned to
+          # BUCK2_VERSION (a real dated release tag — see the env: block above
+          # for why the "latest" convenience URL 404s).
           ARCH="x86_64-unknown-linux-gnu"
-          RELEASE_URL="https://github.com/facebook/buck2/releases/latest/download/buck2-${ARCH}.zst"
+          RELEASE_URL="https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/buck2-${ARCH}.zst"
 
           echo "Downloading Buck2 from ${RELEASE_URL}"
           curl -fsSL --retry 3 "${RELEASE_URL}" -o /tmp/buck2.zst
@@ -209,8 +218,10 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.local/bin
           ARCH="x86_64-unknown-linux-gnu"
+          # Pinned to BUCK2_VERSION (a real dated tag) — see the workflow-level
+          # env: block for why the "latest" convenience URL 404s.
           curl -fsSL --retry 3 \
-            "https://github.com/facebook/buck2/releases/latest/download/buck2-${ARCH}.zst" \
+            "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/buck2-${ARCH}.zst" \
             -o /tmp/buck2.zst
           sudo apt-get install -y --no-install-recommends zstd 2>/dev/null || true
           zstd -d /tmp/buck2.zst -o ~/.local/bin/buck2
@@ -307,8 +318,10 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.local/bin
           ARCH="x86_64-unknown-linux-gnu"
+          # Pinned to BUCK2_VERSION (a real dated tag) — see the workflow-level
+          # env: block for why the "latest" convenience URL 404s.
           curl -fsSL --retry 3 \
-            "https://github.com/facebook/buck2/releases/latest/download/buck2-${ARCH}.zst" \
+            "https://github.com/facebook/buck2/releases/download/${BUCK2_VERSION}/buck2-${ARCH}.zst" \
             -o /tmp/buck2.zst
           sudo apt-get install -y --no-install-recommends zstd jq 2>/dev/null || true
           zstd -d /tmp/buck2.zst -o ~/.local/bin/buck2

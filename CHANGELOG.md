@@ -52,6 +52,16 @@ Each entry cross-references:
   ADR: `docs/design/2026-08-16-adr-worker-native-public-cache-read.md`.
 
 ### Fixed
+- **fix(ci): `buck2-starter-ci`'s Buck2 install downloaded from a 404'ing URL — the gate never actually
+  worked, even before it started executing.** Repointing `buck2-starter-ci.yml` off the nonexistent
+  `[self-hosted, Linux, X64]` pool onto `runs-on: corelink` made the gate run for the first time, which
+  surfaced that `https://github.com/facebook/buck2/releases/latest/download/buck2-x86_64-unknown-linux-gnu.zst`
+  404s: facebook/buck2 tags releases by date (`2026-08-01`, `2026-07-15`, ...); the literal `latest` tag is
+  a stale 2023-04-13 leftover that is never the repo's actual latest release, so GitHub's
+  `/releases/latest/download/...` convenience redirect resolves against it and 404s. Pinned `BUCK2_VERSION`
+  to `2026-08-01` (verified: `curl -fsSL` against the dated-tag URL 302s to a real 38,310,864-byte zstd
+  binary) and wired every download URL in the file (build / negative-scenarios / benchmark jobs) through
+  that env var instead of the dead `latest` path — the var already existed but was never actually used.
 - **fix(adapter-host): consolidate the read-through upstream SSRF guard into one audited module and close a
   pip/npm gap.** brew, pip and npm each carried their OWN copy of the outbound-fetch SSRF guard
   (`host_is_internal_ip` + `ssrf_safe_redirect_policy`), and they had DRIFTED: brew rejected carrier-grade
