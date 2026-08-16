@@ -42,7 +42,7 @@ import { resolveTenantTierCached } from "./lib/tenant_tier_cache.js";
 import { verifyPatRowCached, type KvReader } from "./lib/pat_verify_cache.js";
 import { handleSessionExchange, handleTokenExchange } from "./lib/session_exchange.js";
 import { handleRunnerMint, handleRunnerRevoke } from "./lib/runner_mint.js";
-import { shadowCompareEdgePublicRead } from "./lib/edge_public_read.js";
+import { readPublicHit, shadowCompareEdgePublicRead } from "./lib/edge_public_read.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
 import {
@@ -3307,21 +3307,56 @@ const baseHandler: ExportedHandler<Env> = {
       })(),
     });
 
+    // F3.3 F2 SERVE: on a brew/pip `_public` HIT, serve the bytes from the Worker
+    // edge (native CONFIG_DB map + CAS_BUCKET R2) and SKIP the container round-trip
+    // entirely — the whole point of F3.3, removing `origin` (~585 ms) from the HIT
+    // path. Any miss / revocation / re-hash mismatch / fault yields null and we fall
+    // through to the unchanged container path (which owns the upstream fill), so this
+    // can only make a HIT faster, never change correctness. Reached only on the
+    // tenant's home-region leg, so env.CAS_BUCKET/R2_CAS_REGION are correct here.
+    // We deliberately do NOT stamp stOrigin*, so Server-Timing omits `origin` — the
+    // absence of that phase IS the wire-level proof the container was bypassed.
+    let edgeServed: Response | null = null;
+    if (
+      env.EDGE_PUBLIC_READ === "serve" &&
+      request.method === "GET" &&
+      (route.routeKind === "brew" || route.routeKind === "pip")
+    ) {
+      try {
+        const edge = await readPublicHit(env, route.routeKind, route.pathSuffix);
+        if (edge) {
+          edgeServed = new Response(edge.bytes, {
+            status: 200,
+            headers: { "x-cache": "HIT" },
+          });
+        }
+      } catch (e: unknown) {
+        // An edge-read fault must NEVER fail a request that the container can serve.
+        console.error(
+          `[${requestId}] edge_public_serve error: ${String(e).slice(0, 80)}`,
+        );
+      }
+    }
+
     let doResponse: Response;
-    try {
-      stOriginStart = Date.now();
-      doResponse = await stub.fetch(augmented);
-      stOriginEnd = Date.now();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "unknown error";
-      // Do NOT include error detail that could leak internal topology
-      console.error(`[${requestId}] DO fetch failed: ${message.slice(0, 80)}`);
-      // OCI never reaches this PAT-gate DO forward — see the dedicated
-      // pass-through branch above (which has its own DO forward + error path).
-      return applyCors(
-        reapiError("INTERNAL_ERROR", "upstream error", 500, requestId),
-        request,
-      );
+    if (edgeServed) {
+      doResponse = edgeServed;
+    } else {
+      try {
+        stOriginStart = Date.now();
+        doResponse = await stub.fetch(augmented);
+        stOriginEnd = Date.now();
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "unknown error";
+        // Do NOT include error detail that could leak internal topology
+        console.error(`[${requestId}] DO fetch failed: ${message.slice(0, 80)}`);
+        // OCI never reaches this PAT-gate DO forward — see the dedicated
+        // pass-through branch above (which has its own DO forward + error path).
+        return applyCors(
+          reapiError("INTERNAL_ERROR", "upstream error", 500, requestId),
+          request,
+        );
+      }
     }
 
     // F3.3 SHADOW: prove Worker-native `_public` edge-read parity vs the container

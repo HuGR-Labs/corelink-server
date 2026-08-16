@@ -10,13 +10,13 @@ source_files:
   - "worker/src/lib/onboarding_events.ts"
   - "worker/src/lib/internal_auth.ts"
 source_blobs:
-  - "worker/src/index.ts@5eb4ab79d8ba25493d6764af521a76ed25c057c2"
+  - "worker/src/index.ts@0ce0cefa1bbd0eaea064987747519b6fc0410161"
   - "worker/src/sentry-scrub.ts@e9cd0d761cab3aaa83ea618f7d270e8b77adc316"
   - "worker/src/lib/tenant_residency_cache.ts@dc42b4123dae51e9887264168efcc5d8f6ab817b"
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
   - "worker/src/lib/onboarding_events.ts@13087a3f130b93729ade6e30e9568ea500344c22"
   - "worker/src/lib/internal_auth.ts@0cf740cdb227a3a163c1a92c6272e93f65cad713"
-checkpoint_sha: "2f1e1f8e4ae49dae8abecbec094777a93d9b684c"
+checkpoint_sha: "7ed366f6060ef793e0ffc5883831898565d65292"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -143,19 +143,19 @@ keeps forged tokens cheap to reject before any expensive work.
    at 0 ms instead, which is why the 2026-08-04 probe saw `auth` on 3 of 30 responses. Durations are coarse
    by construction — a Worker's `Date.now()` advances only across I/O, so a CPU-only stretch reads 0 —
    which makes them directional attribution, never a profile
-   (`worker/src/index.ts:3396-3437`). `origin` is decomposed the same way `wdb` is, and the split spans
+   (`worker/src/index.ts:3431-3472`). `origin` is decomposed the same way `wdb` is, and the split spans
    the process boundary: the CONTAINER reports `opat` (its own per-request D1 `pat` read) / `oquota`
    (the `$`-ceiling accrue) / `ostore` (the moat storage lookup) / `oother` (its residue) on the
    subresponse's own `Server-Timing`, which the Worker reads off the DO response
-   (`worker/src/index.ts:3432`), forwards verbatim (`worker/src/index.ts:3608`) and completes with the
+   (`worker/src/index.ts:3467`), forwards verbatim (`worker/src/index.ts:3643`) and completes with the
    one number only the Worker can see: `ohop = origin − Σ(container phases)`
-   (`worker/src/index.ts:3602`), covering the DO dispatch + placement, the DO's own prologue, the wire
+   (`worker/src/index.ts:3637`), covering the DO dispatch + placement, the DO's own prologue, the wire
    and the response coming back. The five always sum to `origin` exactly, and both ways that could
    fail are refusals: a container that reports nothing — an image predating the split, or a response
    the DO synthesized without reaching the container — leaves `origin` undecomposed
-   (`worker/src/index.ts:3575`, `worker/src/index.ts:3596`), and a report that cannot be reconciled,
+   (`worker/src/index.ts:3610`, `worker/src/index.ts:3631`), and a report that cannot be reconciled,
    its phases exceeding `origin` or a consumed phase carrying an unreadable duration, is dropped WHOLE
-   as `ohop;dur=<origin>;desc="unreconciled"` (`worker/src/index.ts:3599-3600`) rather than published
+   as `ohop;dur=<origin>;desc="unreconciled"` (`worker/src/index.ts:3634-3635`) rather than published
    as a split that does not add up.
    Two caveats a reader needs:
    **(a)** on a multi-region tenant the client sees the REGIONAL Worker's split; the primary Worker
@@ -184,18 +184,18 @@ keeps forged tokens cheap to reject before any expensive work.
    today); the primary sets that header only on the service-binding forward, which never traverses the
    public edge, so stripping it costs nothing and removes the forgery surface and this oracle together.
 8. The request is routed to the per-tenant DO via `idFromName(resolvedTenantId)`
-   (`worker/src/index.ts:3229-3231`) and dispatched with `stub.fetch` (`worker/src/index.ts:3313`). A
+   (`worker/src/index.ts:3229-3231`) and dispatched with `stub.fetch` (`worker/src/index.ts:3347`). A
    multi-region tenant may first take the LOCAL (this-region) `_system` container branch above this
    forward (`worker/src/index.ts:2062-2064`); a non-resident tenant falls through to the per-tenant DO
    derivation here.
 9. The forwarded request is augmented: strip-then-set the trusted tenant-id, scope, token-prefix, and
    client-ip headers (`worker/src/index.ts:3234-3265`).
 10. The whole handler is wrapped by `Sentry.withSentry`, inert until `SENTRY_DSN` is set and with
-    `sendDefaultPii=false` (`worker/src/index.ts:3464-3472`); its `beforeSend`/`beforeSendTransaction`
+    `sendDefaultPii=false` (`worker/src/index.ts:3499-3507`); its `beforeSend`/`beforeSendTransaction`
     run `scrubSentryEvent` (`worker/src/sentry-scrub.ts`) over EVERY event before it leaves the Worker —
     not just sensitive header KEYS but message/exception bodies, breadcrumbs, and `extra`/`contexts`
     VALUES (CoreLink PATs, bearer/basic auth, Stripe `sk_`/`pk_`/`whsec_` keys, emails are
-    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:3473-3478`).
+    `[REDACTED]`), closing the WP4 PII/secret-leak gap (`worker/src/index.ts:3508-3513`).
 
 # Invariants
 - Tenant isolation is structural: the DO id is derived solely from the PAT-resolved tenant, never the
@@ -218,7 +218,7 @@ keeps forged tokens cheap to reject before any expensive work.
   cancel subscription / financial PII) is now OWNER/ADMIN-only and a plain `member` no longer clears the
   container's F-018 billing/PII gate; the Worker is the sole setter (`worker/src/index.ts:2656-2663`).
 - A 404 from the DO is timing-padded to defeat cross-tenant enumeration
-  (`worker/src/index.ts:3357-3365`).
+  (`worker/src/index.ts:3392-3400`).
 - Data-residency is resolved FAIL-CLOSED before the DO forward: an unresolvable region (a D1 fault with
   no cached fallback) is a `503`, never an IAD-local fall-through that could place an EU tenant's bytes in
   US storage; only a resolved `null` (no row / no pin) falls through to IAD-local
@@ -252,9 +252,9 @@ keeps forged tokens cheap to reject before any expensive work.
 11. `worker/src/index.ts:3229-3231` — `idFromName(resolvedTenantId)` per-tenant DO routing.
 12. `worker/src/index.ts:3234-3265` — the augmented forward (strip-then-set trust headers).
 13. `worker/src/index.ts:3265` — forwarding the D1-resolved scope as `x-corelink-scope` (narrowed to `find-missing` for a find-only PAT, ADR-0071 `worker/src/index.ts:1367`).
-14. `worker/src/index.ts:3313` — `stub.fetch` dispatch to the DO.
-14a. `worker/src/index.ts:3396-3437` — the `Server-Timing` emission: `auth` / `wdb` / `origin` / `total`, with `wdb` decomposed into `qtier` / `qbatch` / `qresid` (`qbatch` = the one D1 round trip carrying both quota statements; it replaced the retired `qmeter` + `qstor` pair when those two serial round trips were merged). A phase that ran is emitted even at `dur=0`; a phase that was skipped is omitted (the `-1` sentinel at `worker/src/index.ts:1819-1821`), so a cache-served phase is never mistaken for one that did not execute.
-14b. `worker/src/index.ts:3574-3611` — `originSubPhases`, the merge that decomposes `origin` across the Worker↔container boundary. The container's four phases are named at `worker/src/index.ts:3528` (`opat` / `oquota` / `ostore` / `oother`) and arrive on the DO response's own `Server-Timing`, read at `worker/src/index.ts:3432`; the Worker re-emits them unchanged (`worker/src/index.ts:3608`) and derives `ohop` as `origin` minus their sum (`worker/src/index.ts:3602`). No container report ⇒ no split (`worker/src/index.ts:3575`, `worker/src/index.ts:3596`), which is what lets the Worker deploy ahead of the container image; an irreconcilable report ⇒ the whole split is refused as `ohop;dur=<origin>;desc="unreconciled"` (`worker/src/index.ts:3599-3600`). Same emission contract as the `wdb` children: a container phase that ran is forwarded even at `dur=0`, one that did not run is absent (`worker/src/index.ts:3604-3608`).
-15. `worker/src/index.ts:3357-3365` — 404 timing-pad.
-16. `worker/src/index.ts:3464-3472` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
-17. `worker/src/index.ts:3473-3478` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.
+14. `worker/src/index.ts:3347` — `stub.fetch` dispatch to the DO.
+14a. `worker/src/index.ts:3431-3472` — the `Server-Timing` emission: `auth` / `wdb` / `origin` / `total`, with `wdb` decomposed into `qtier` / `qbatch` / `qresid` (`qbatch` = the one D1 round trip carrying both quota statements; it replaced the retired `qmeter` + `qstor` pair when those two serial round trips were merged). A phase that ran is emitted even at `dur=0`; a phase that was skipped is omitted (the `-1` sentinel at `worker/src/index.ts:1819-1821`), so a cache-served phase is never mistaken for one that did not execute.
+14b. `worker/src/index.ts:3609-3646` — `originSubPhases`, the merge that decomposes `origin` across the Worker↔container boundary. The container's four phases are named at `worker/src/index.ts:3563` (`opat` / `oquota` / `ostore` / `oother`) and arrive on the DO response's own `Server-Timing`, read at `worker/src/index.ts:3467`; the Worker re-emits them unchanged (`worker/src/index.ts:3643`) and derives `ohop` as `origin` minus their sum (`worker/src/index.ts:3637`). No container report ⇒ no split (`worker/src/index.ts:3610`, `worker/src/index.ts:3631`), which is what lets the Worker deploy ahead of the container image; an irreconcilable report ⇒ the whole split is refused as `ohop;dur=<origin>;desc="unreconciled"` (`worker/src/index.ts:3634-3635`). Same emission contract as the `wdb` children: a container phase that ran is forwarded even at `dur=0`, one that did not run is absent (`worker/src/index.ts:3639-3643`).
+15. `worker/src/index.ts:3392-3400` — 404 timing-pad.
+16. `worker/src/index.ts:3499-3507` — the `Sentry.withSentry` wrapper (inert until `SENTRY_DSN`; `sendDefaultPii=false`).
+17. `worker/src/index.ts:3508-3513` — `beforeSend`/`beforeSendTransaction` → `scrubSentryEvent` (`worker/src/sentry-scrub.ts:101-188`): full-event PII/secret scrub (default-DENY sensitive keys + free-text secret/PII shapes), not just header keys.
