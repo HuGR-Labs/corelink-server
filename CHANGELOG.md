@@ -51,6 +51,20 @@ Each entry cross-references:
   `crates/corelink-bazel-bridge`). Rewrote both pages to describe the real HTTP/REST REAPI v2
   surface at `https://corelink-api.humangr.com/bazel/cache` and `/bazel/v2`, matching the working
   tutorial (`docs/tutorial/03-bazel-quickstart.mdx`).
+- **fix(deps): close trivy HIGH CVE-2026-13697 (`undici` 7.28.0) pulled in by the new docs-search
+  dependency.** `@easyops-cn/docusaurus-search-local` (added above) transitively pulls `undici`
+  7.28.0 via `cheerio`; `vitest`/`jsdom` pull the same line. Added `pnpm.overrides["undici@<7.29.0"]
+  = ">=7.29.0 <8"` (root `package.json`), mirroring the repo's existing range-bound override
+  pattern, and re-ran `pnpm install` to update `pnpm-lock.yaml` — resolves to `undici@7.29.0`
+  everywhere. Also suppressed 6 pre-existing-but-newly-surfaced trivy findings
+  (CVE-2022-25648/-47318, CVE-2013-0269, CVE-2020-10663/-8130, CVE-2021-31799) on
+  `node_modules/lunr-languages/build/stopwords-filter/Gemfile.lock` — a vendored, never-executed
+  Ruby build-tooling fixture bundled inside `lunr-languages` (a `docusaurus-search-local`
+  transitive dep); nothing in this repo's install/build/runtime ever invokes `bundle`, so it is an
+  in-context false positive, documented in `.trivyignore.yaml` the same way as the existing
+  `AVD-DS-0002` exemption. Verified with the exact CI command
+  (`trivy fs . --scanners vuln --severity HIGH,CRITICAL --skip-files Cargo.lock --ignorefile
+  .trivyignore.yaml --exit-code 1`): 0 findings, exit 0.
 
 - **feat(worker): Worker-native `_public` cache-HIT edge SERVE path (F3.3 F2) — flag-gated, HIT-only, MISS
   falls through to the container.** Builds on the shadow foundation (proven live: brew `_public` HITs
