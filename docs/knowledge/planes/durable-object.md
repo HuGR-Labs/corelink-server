@@ -10,11 +10,11 @@ source_files:
   - "worker/src/replication_coordinator_do.ts"
 source_blobs:
   - "worker/src/durable_object.ts@f9bd18b0494b8f8c557f147b6efb09b40be5715e"
-  - "worker/src/index.ts@777e5ccf4f3379982398877c914b23eb96a08ed9"
+  - "worker/src/index.ts@5eb4ab79d8ba25493d6764af521a76ed25c057c2"
   - "worker/src/event_log_do.ts@2dac20f20396ef0e0f5f35a0b3b640c096aabe09"
   - "worker/src/rollout_controller.ts@cb91436477c54a2d6085f5a52a52a6e130ab79a0"
   - "worker/src/replication_coordinator_do.ts@9123a2c4cd02c0f71e363a6447f3e15edf12ed1e"
-checkpoint_sha: "741ae3a74e75197cfee91dd06c9b237191b4f0d0"
+checkpoint_sha: "2f1e1f8e4ae49dae8abecbec094777a93d9b684c"
 provenance: "AUTHORED"
 tags: ["planes", "durable-object", "container-lifecycle", "cold-start"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -97,14 +97,14 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
    container stays in the chain (probe skipped) so it remains subject to the reaper
    (`worker/src/durable_object.ts:1381-1397`, `worker/src/durable_object.ts:1405-1526`).
 10. The Worker exports three SIBLING DO classes alongside `CoreLinkServer`
-    (`worker/src/index.ts:3449`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
+    (`worker/src/index.ts:3486`). `EventLogDO` is the ADR-0065 per-tenant append-only event-log
     primitive — it adopts the first `x-corelink-tenant-id` it sees, persists that pin, and refuses any
     other tenant's request with a `403 TENANT_MISMATCH` (`worker/src/event_log_do.ts:207-218`). Its
     `append` monotonically assigns `seq` under `blockConcurrencyWhile` (persist the entry, THEN advance
     the head, so a crash orphans rather than gaps), dispatched from `/_eventlog/append`
     (`worker/src/event_log_do.ts:220-225`, `worker/src/event_log_do.ts:266-277`). It is bound in
     `wrangler.toml` and exported, but NO edge route dispatches to it — the `EVENT_LOG_DO` binding is
-    referenced only as an OPTIONAL field of `Env` (`worker/src/index.ts:65-70`); it is a ready primitive
+    referenced only as an OPTIONAL field of `Env` (`worker/src/index.ts:66-71`); it is a ready primitive
     awaiting its hugit-P2 seam-D consumer.
 11. `RolloutController` is an UNWIRED stub: bound in `wrangler.toml` and exported, it answers
     `/_do/health` with 200 but returns `501 NOT_IMPLEMENTED` ("RolloutController WASM bridge not yet
@@ -137,7 +137,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 - Honest wiring: of the four exported DO classes, `CoreLinkServer` serves every tenant's data plane and
   `ReplicationCoordinatorDO` serves the single-instance `/_internal/replication/*` control plane
   (`worker/src/replication_coordinator_do.ts:419-476`). `EventLogDO` is implemented + bound + exported but
-  has NO live edge caller yet (`EVENT_LOG_DO` is an OPTIONAL `Env` field, `worker/src/index.ts:65-70`), and
+  has NO live edge caller yet (`EVENT_LOG_DO` is an OPTIONAL `Env` field, `worker/src/index.ts:66-71`), and
   `RolloutController` is a bound+exported STUB returning `501 NOT_IMPLEMENTED` for everything but health
   (`worker/src/rollout_controller.ts:34-56`).
 - The replication coordinator is a TRUE singleton: because the Worker always addresses it by the fixed
@@ -163,7 +163,7 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
   behind the same `/_internal/*` internal-auth gate on the low-privilege `quota_read` consumer; the
   tenant is REQUIRED because placement is per-DO-id, and the id is derived with the same
   `idFromName(tenant)` the data path uses so it probes the SAME instance
-  (`worker/src/index.ts:2014-2053`). CAVEAT: `/_internal/*` does not fan out, so a tenant whose
+  (`worker/src/index.ts:2021-2060`). CAVEAT: `/_internal/*` does not fan out, so a tenant whose
   residency is a non-IAD colo must be probed on ITS regional Worker.
 - Two of the Worker's four exported DO classes are NOT live request paths: `EventLogDO` is a wired-but-
   unconsumed primitive (no edge dispatcher reads the optional `EVENT_LOG_DO` binding) and
@@ -184,14 +184,14 @@ feature secret into `container.start({ env })`. Its hardest correctness problems
 11. `worker/src/durable_object.ts:1146-1176` — `waitForContainerHealth` polling `/_health`; `worker/src/durable_object.ts:1059-1088` — the M1 fast-exit on a terminal `"stopped"` container (no full ~90s spin on a dead container).
 12. `worker/src/durable_object.ts:1433-1462` — the DURABLE idle reaper inside `alarmTick()`: an absent `lastActivityMs` backfills, an expired one emits the death event (audit-before-mutation), RE-CHECKS the clock (every `await` is a yield point where a queued request may have arrived), then destroys the container and signals chain-end so the DO hibernates instead of heartbeating a dead container forever.
 13. `worker/src/durable_object.ts:1381-1397` — `alarm()`: a thin `try/finally` that ALWAYS re-arms the chain unless the tick reported a deliberate end, so a throwing tick can never strand the reaper (the posture `ReplicationCoordinatorDO.alarm()` already used); `worker/src/durable_object.ts:1405-1526` — `alarmTick()`: chain guard (dead container ⇒ end the chain), the idle reaper, the `degraded`-but-running arm (probe skipped, chain kept so the reaper still applies), the dedup arm, then the health re-probe + degrade.
-14. `worker/src/index.ts:3449` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO`, `ReplicationCoordinatorDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
+14. `worker/src/index.ts:3486` — the Worker's named export of `CoreLinkServer`, `RolloutController`, `EventLogDO`, `ReplicationCoordinatorDO` (the DO-class exports at the module tail, immediately after the `export default handler` Sentry-wrapped fetch handler).
 15. `worker/src/event_log_do.ts:207-218` — `EventLogDO` cross-tenant guard: a tenant-pinned DO rejects a different `x-corelink-tenant-id` with `403 TENANT_MISMATCH` (ADR-0065).
 16. `worker/src/event_log_do.ts:220-225` — the `/_eventlog/append` + `/_eventlog/read` route dispatch.
 17. `worker/src/event_log_do.ts:266-277` — `handleAppend`: monotonic gap-free `seq` under `blockConcurrencyWhile` (persist-entry-then-advance-head).
-18. `worker/src/index.ts:65-70` — the `EVENT_LOG_DO` binding declared OPTIONAL on `Env` (the only `worker/src` reference; no edge route dispatches to it yet).
+18. `worker/src/index.ts:66-71` — the `EVENT_LOG_DO` binding declared OPTIONAL on `Env` (the only `worker/src` reference; no edge route dispatches to it yet).
 19. `worker/src/rollout_controller.ts:34-56` — `RolloutController` UNWIRED stub: `/_do/health` 200 but `501 NOT_IMPLEMENTED` "WASM bridge not yet wired (Phase C)" for all other requests.
 20. `worker/src/replication_coordinator_do.ts:419-476` — `ReplicationCoordinatorDO`: the single global coordinator DO — persists role-map + heartbeats under `blockConcurrencyWhile` and self-arms the periodic `alarm()` evaluate→promote driver (always re-arms, even on a throwing tick).
 21. `worker/src/replication_coordinator_do.ts:525-547` — the DO `fetch` router for the `/_repl/<op>` control plane (`arm`/`status`/`tick`), which the Worker reaches by mapping `/_internal/replication/*` onto it; the fixed `REPLICATION_COORDINATOR_SINGLETON` name is the split-brain-safe single-writer promotion lock.
-22. `worker/src/durable_object.ts:1190-1315` — `handleHealthProbe` + `probeD1Latency`: the `d1_probe` placement instrument on `/_do/health` (primary vs `withSession("first-unconstrained")` replica, feature-detected exactly as `worker/src/index.ts:1287-1290` does it, warm-up reported not hidden, a throw surfaced as an explicit `error` field, never on the request-serving path).
-23. `worker/src/index.ts:2014-2053` — `/_internal/do-d1-probe/{tenant_id}` → that tenant's DO `/_do/health`: same forward shape as the `/_internal/replication` → `/_repl` precedent, behind the internal-auth gate on the low-privilege `quota_read` consumer (`worker/src/index.ts:324-332`), with the DO id derived by `idFromName(tenant)` so the probe measures the SAME instance that serves that tenant.
+22. `worker/src/durable_object.ts:1190-1315` — `handleHealthProbe` + `probeD1Latency`: the `d1_probe` placement instrument on `/_do/health` (primary vs `withSession("first-unconstrained")` replica, feature-detected exactly as `worker/src/index.ts:1294-1297` does it, warm-up reported not hidden, a throw surfaced as an explicit `error` field, never on the request-serving path).
+23. `worker/src/index.ts:2021-2060` — `/_internal/do-d1-probe/{tenant_id}` → that tenant's DO `/_do/health`: same forward shape as the `/_internal/replication` → `/_repl` precedent, behind the internal-auth gate on the low-privilege `quota_read` consumer (`worker/src/index.ts:331-339`), with the DO id derived by `idFromName(tenant)` so the probe measures the SAME instance that serves that tenant.
 24. `worker/src/durable_object.ts:1132` — `armInactivityTimeout`: the PLATFORM idle reaper, `container.setInactivityTimeout(IDLE_TIMEOUT_MS)`, which workerd enforces without this Worker (it survives DO eviction, a broken alarm chain and a wedged isolate — the failure modes that made containers immortal). Armed right after `container.start()`, before the health poll (`worker/src/durable_object.ts:983`), and re-armed on a live non-idle alarm tick (`worker/src/durable_object.ts:1480`) because the type declaration does not specify whether the timer resets on activity or is absolute from arming. Feature-detected, and an arming failure is logged rather than thrown (`worker/src/durable_object.ts:1122`) — a container that cannot arm its idle timer must still serve.
