@@ -48,7 +48,17 @@ jobs:
   # ── build: cold → warm cache-hit validation ─────────────────────────────────
   build:
     name: buck2 build :hello (cold → warm cache hit)
-    runs-on: [self-hosted, Linux, X64]
+    # Runner: `corelink` — was `[self-hosted, Linux, X64]`, a pool that DOES NOT
+    # EXIST (every online self-hosted runner in this repo is labelled
+    # `self-hosted,macOS,X64,mac,corelink-builder`; see reproducible-build.yml's
+    # `build` job for the same root-cause finding). GitHub does not fail an
+    # unsatisfiable `runs-on` — it QUEUES IT FOREVER — and this workflow (unlike
+    # reproducible-build.yml) is `pull_request`-gated, so it was a broken gate
+    # queuing forever on every PR touching examples/buck2-starter. `corelink` is
+    # CoreLink's own ephemeral Linux (Ubuntu 24.04, Firecracker) fabric — a real
+    # Linux pool that exists, with apt-get + passwordless sudo, which is all this
+    # job's steps (buck2/zstd/clang download + apt install) need.
+    runs-on: corelink
     timeout-minutes: 20
 
     steps:
@@ -183,7 +193,10 @@ jobs:
   # ── negative scenarios ───────────────────────────────────────────────────────
   negative-scenarios:
     name: Negative scenarios (PAT missing / invalid / endpoint bad)
-    runs-on: [self-hosted, Linux, X64]
+    # Runner: `corelink` — see the `build` job above for why the previous
+    # `[self-hosted, Linux, X64]` pool does not exist and queued this job
+    # forever on every PR.
+    runs-on: corelink
     timeout-minutes: 10
     needs: build
 
@@ -268,7 +281,11 @@ jobs:
   # ── benchmark (weekly + push to main) ────────────────────────────────────────
   benchmark:
     name: Benchmark (10+10 iterations) + update BENCHMARK.md
-    runs-on: [self-hosted, Linux, X64]
+    # Runner: `corelink` — see the `build` job above for why the previous
+    # `[self-hosted, Linux, X64]` pool does not exist. This job only runs on
+    # push/schedule/workflow_dispatch (never `pull_request`), so it wasn't a PR
+    # gate, but it was still queuing forever whenever it fired.
+    runs-on: corelink
     timeout-minutes: 30
     # Only run on push to main or weekly cron; skip on PRs to save minutes.
     if: |

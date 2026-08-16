@@ -47,7 +47,15 @@ env:
 jobs:
   windows-cert-present:
     name: gate — Windows cert present
-    runs-on: [self-hosted, Linux, X64]
+    # Runner: `corelink` — was `[self-hosted, Linux, X64]`, a pool that DOES NOT
+    # EXIST (every online self-hosted runner in this repo is labelled
+    # `self-hosted,macOS,X64,mac,corelink-builder`; see reproducible-build.yml's
+    # `build` job for the same root-cause finding). GitHub queues an
+    # unsatisfiable `runs-on` forever rather than failing it. `corelink` is
+    # CoreLink's own ephemeral Linux (Ubuntu 24.04, Firecracker) fabric — a real
+    # Linux pool that exists, which is what the `sign` job below actually needs
+    # (osslsigncode via apt-get + sudo, both present on that image).
+    runs-on: corelink
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
@@ -67,7 +75,11 @@ jobs:
     name: osslsigncode authenticode (windows-x86_64, cross-signed on Linux)
     needs: windows-cert-present
     if: needs.windows-cert-present.outputs.ready == 'true'
-    runs-on: [self-hosted, Linux, X64]
+    # Runner: `corelink` — see the `windows-cert-present` job above for why the
+    # previous `[self-hosted, Linux, X64]` pool does not exist. `corelink` is
+    # Ubuntu 24.04 with apt-get + passwordless sudo, exactly what the
+    # "Install osslsigncode + p7zip" step below needs.
+    runs-on: corelink
 
     steps:
       - name: Checkout
