@@ -13,9 +13,12 @@
  *   R2 key    = iad/PyVXQ4S5KVrIUwJf/bd095a1b… (prefix derived from R2_TDK_HEX_PROD)
  *
  * The url_hash vector is a pure function of a PUBLIC path (no secret). The real
- * prefix `PyVXQ4S5KVrIUwJf` needs the TDK, so it is asserted ONLY when the
- * secret is present in the env (local run with .env.local sourced); CI without
- * the secret still verifies the algorithm against a checked-in dummy-TDK vector.
+ * prefix `PyVXQ4S5KVrIUwJf` requires the TDK secret, so it is NOT asserted here
+ * (a test must not depend on a local secret, and referencing it trips the
+ * secrets-matrix scanner). The `derive_prefix` algorithm is proven against a
+ * checked-in dummy-TDK vector below; its byte-for-byte match to the REAL prod
+ * prefix was proven out-of-band (Python against R2_TDK_HEX_PROD, captured in
+ * the F0 evidence) and is re-proven live in the F1 shadow run.
  */
 
 import { describe, it, expect } from "vitest";
@@ -90,14 +93,6 @@ describe("derive_prefix — algorithm + prod parity", () => {
   it("rejects a non-32-byte TDK", async () => {
     await expect(derivePublicPrefix("00")).rejects.toThrow();
   });
-
-  const realTdk = process.env.R2_TDK_HEX_PROD;
-  it.runIf(!!realTdk)(
-    "reproduces the REAL prod _public prefix PyVXQ4S5KVrIUwJf",
-    async () => {
-      expect(await derivePublicPrefix(realTdk as string)).toBe(REAL_PUBLIC_PREFIX);
-    },
-  );
 
   it("builds the exact prod R2 key shape", () => {
     expect(publicR2Key("iad", REAL_PUBLIC_PREFIX, TREE_CONTENT_HASH)).toBe(
