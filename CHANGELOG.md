@@ -23,6 +23,35 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(docs): replace the dead Algolia DocSearch stub with free, fully offline local search.**
+  `apps/docs/docusaurus.config.ts` wired Algolia DocSearch with placeholder credentials
+  (`ALGOLIA_APP_ID ?? "STUB_APP_ID"`) and no `ALGOLIA_*` secrets were ever provisioned (the owner
+  has no Algolia account), so `STUB_APP_ID` shipped in the production HTML and the search modal
+  was permanently broken. Replaced with `@easyops-cn/docusaurus-search-local` — a lunr-based index
+  built at `pnpm build` time from the same docs/blog content, served entirely client-side with no
+  external service and no secrets (`hashed: true`, 4-language index matching the site's i18n
+  locales). Verified `STUB_APP_ID` no longer appears anywhere in `apps/docs/build/`.
+
+### Fixed
+- **fix(docs-ci): make the lychee broken-link gate actually gate.** `.github/workflows/docs-ci.yml`
+  ran lychee with `fail: false`, so a broken-link PR always showed green — and separately, ~64% of
+  its findings were false positives from a structural mismatch: the site's `baseUrl` mounts pages
+  under `/corelink/docs/…` but the Docusaurus build output on disk is flat (no `/corelink/docs`
+  prefix), so every absolute-path internal link (`/tutorial/...`, `/how-to/...`) resolved against
+  `--root-dir` to a nonexistent `build/corelink/docs/...` path. Added `--remap` rules to the lychee
+  invocation to strip the `/corelink/docs` mount prefix before local-path resolution, and flipped
+  `fail: true` now that internal links resolve correctly — the gate proves something again instead
+  of always passing.
+- **fix(docs): remove false gRPC claims for the Bazel REAPI surface.** `docs/intro.md`'s capabilities
+  table claimed "Full … `ByteStream` gRPC services", and `docs/explanation/api-stability.mdx` named
+  two dead hostnames (`cas.corelink.humangr.com`, `bytestream.corelink.humangr.com`, both NXDOMAIN)
+  as gRPC REAPI endpoints. CoreLink has no gRPC ingress at all — `workerd` implements no HTTP
+  trailers, which gRPC requires (already documented honestly in
+  `docs/how-to/migrate/from-docker-registry.mdx`, INV-BAZEL-NO-GRPC /
+  `crates/corelink-bazel-bridge`). Rewrote both pages to describe the real HTTP/REST REAPI v2
+  surface at `https://corelink-api.humangr.com/bazel/cache` and `/bazel/v2`, matching the working
+  tutorial (`docs/tutorial/03-bazel-quickstart.mdx`).
+
 - **feat(worker): Worker-native `_public` cache-HIT edge SERVE path (F3.3 F2) — flag-gated, HIT-only, MISS
   falls through to the container.** Builds on the shadow foundation (proven live: brew `_public` HITs
   reproduced byte-identically at the edge on real iad traffic, zero `parity_bytes_diff`). With

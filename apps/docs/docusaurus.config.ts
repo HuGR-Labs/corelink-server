@@ -12,9 +12,14 @@ import { getStatuspageUrl } from "./src/statuspage-url";
  * (en-US default + pt-BR + es-419 per sprint contract R-S18-12) and a
  * Diátaxis-organized sidebar (tutorial / how-to / reference / explanation).
  *
- * Algolia DocSearch is configured as a stub; production credentials are
- * injected at D-day via environment variables (`ALGOLIA_APP_ID`,
- * `ALGOLIA_SEARCH_API_KEY`, `ALGOLIA_INDEX_NAME`).
+ * Search is `@easyops-cn/docusaurus-search-local` — a free, fully
+ * client-side offline index (lunr-based). Algolia DocSearch was wired here
+ * as a stub (`ALGOLIA_APP_ID ?? "STUB_APP_ID"`), but no ALGOLIA_* secrets
+ * were ever provisioned and the owner has no Algolia account, so the search
+ * modal shipped broken in production (the literal string `STUB_APP_ID` in
+ * the built HTML). The local plugin needs no external service and no
+ * secrets — it builds its index at `pnpm build` time and serves it from the
+ * static site itself.
  */
 // Canonical path-based home: the docs are mounted under the CoreLink product
 // path on the primary zone (humangr.com/corelink/docs) — NOT a subdomain — so
@@ -254,9 +259,8 @@ const config: Config = {
     //               router, search-bar shell, tslib, …)
     //
     // `chunks: "initial"` on the vendor group is deliberate: it leaves
-    // async-only code (e.g. the 444 KB Algolia DocSearch *modal*, loaded only
-    // when a user opens search) in its own on-demand chunk — never on first
-    // paint.
+    // async-only code (e.g. the local-search index + modal, loaded only when
+    // a user opens search) in its own on-demand chunk — never on first paint.
     function bundleSplitPlugin() {
       return {
         name: "corelink-bundle-split",
@@ -289,6 +293,22 @@ const config: Config = {
         },
       };
     },
+    // Free, fully offline local search index (no external service, no
+    // secrets) — replaces the broken Algolia DocSearch stub (see the
+    // header comment on this file). Builds the index at `pnpm build` time
+    // from the same docs/blog dirs the classic preset uses below.
+    [
+      "@easyops-cn/docusaurus-search-local",
+      {
+        hashed: true,
+        indexDocs: true,
+        indexBlog: true,
+        indexPages: false,
+        docsRouteBasePath: "/",
+        blogRouteBasePath: "/blog",
+        language: ["en", "pt", "es", "de"],
+      },
+    ],
     // Phase 0 §A `LEGAL-FOOTER-WIRE` — alias legacy compliance paths to the
     // public `/legal/*` surface and absorb common visitor typos. Footer links
     // (themeConfig.footer) keep their canonical `/legal/{privacy,terms,sub-processors}`
@@ -464,15 +484,6 @@ const config: Config = {
       theme: prismThemes.github,
       darkTheme: prismThemes.dracula,
       additionalLanguages: ["bash", "diff", "json", "rust", "toml", "yaml", "python", "go"],
-    },
-    algolia: {
-      // Production keys injected at D-day. These stubs allow the build to
-      // succeed locally and in CI without secrets.
-      appId: process.env.ALGOLIA_APP_ID ?? "STUB_APP_ID",
-      apiKey: process.env.ALGOLIA_SEARCH_API_KEY ?? "stub_search_only_api_key_replace_at_dday",
-      indexName: process.env.ALGOLIA_INDEX_NAME ?? "corelink",
-      contextualSearch: true,
-      searchPagePath: "search",
     },
   } satisfies Preset.ThemeConfig,
 };
