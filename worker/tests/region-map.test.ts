@@ -12,7 +12,7 @@ import {
 } from "../src/region-map.js";
 
 /** The CANONICAL provisionable macro set — the one truth all three copies obey. */
-const CANONICAL_PROVISIONED = ["enam", "weur", "wnam"]; // sorted
+const CANONICAL_PROVISIONED = ["apac", "enam", "weur", "wnam"]; // sorted (apac added by WP4)
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -61,13 +61,12 @@ describe("region-map (FROZEN macro→colo contract)", () => {
     expect(isMacroRegion("")).toBe(false);
   });
 
-  it("provisioned set = {wnam, enam, weur} (sam removed — see LGPD trap below)", () => {
-    const expected: MacroRegion[] = ["wnam", "enam", "weur"];
+  it("provisioned set = {wnam, enam, weur, apac} (apac added by WP4; sam/afr excluded)", () => {
+    const expected: MacroRegion[] = ["wnam", "enam", "weur", "apac"];
     expect([...PROVISIONED_MACROS].sort()).toEqual([...expected].sort());
     for (const m of expected) expect(isProvisionedMacro(m)).toBe(true);
-    // sam/apac/afr are valid macros but NOT provisionable.
+    // sam/afr are valid macros but NOT provisionable (no CF SAM region; afr no colo).
     expect(isProvisionedMacro("sam")).toBe(false);
-    expect(isProvisionedMacro("apac")).toBe(false);
     expect(isProvisionedMacro("afr")).toBe(false);
   });
 

@@ -40,11 +40,16 @@
 /// The canonical CoreLink data-residency MACRO region codes (the D1 CHECK set).
 pub const MACRO_REGIONS: [&str; 6] = ["wnam", "enam", "weur", "sam", "apac", "afr"];
 
-/// Macro regions provisioned today — exactly those with a jurisdiction-correct
-/// R2 bucket. Signup rejects the rest (`sam`/`apac`/`afr`). `sam` stays routable
-/// (`colo_for_macro` recognises it) but is NOT provisionable until PROD_SAM has a
-/// real SAM-jurisdiction bucket (else its data mis-lands in US R2 — LGPD).
-pub const PROVISIONED_MACROS: [&str; 3] = ["wnam", "enam", "weur"];
+/// Macro regions provisioned today — exactly those with a location/jurisdiction-
+/// correct R2 bucket. Signup rejects the rest (`sam`/`afr`). `apac` is now
+/// provisioned: WP4 (2026-08-17) created the APAC-LOCATED bucket
+/// `corelink-cas-apac` (Tokyo/nrt) and pointed prod-nrt at it, so apac CAS bytes
+/// are stored + served in-region. NOTE apac is a physical LOCATION hint (no APAC
+/// data-residency jurisdiction exists in R2, unlike EU), which suffices for the
+/// latency-locality goal. `sam` stays routable (`colo_for_macro` recognises it)
+/// but is NOT provisionable — Cloudflare has no SAM region (documented platform
+/// limit), so its data would mis-land in US R2 under a false residency label.
+pub const PROVISIONED_MACROS: [&str; 4] = ["wnam", "enam", "weur", "apac"];
 
 /// Canonical CAS/AC storage regions — the `<region>/` key-prefix segment swept
 /// by a tenant-wide erase (`<region>/<tenant_prefix>/<digest>`).
@@ -121,16 +126,17 @@ mod tests {
     #[test]
     fn provisioned_set_is_exact() {
         // Mirror of `worker/src/region-map.ts` PROVISIONED_MACROS — the canonical
-        // provisionable set is EXACTLY {wnam, enam, weur}.
-        assert_eq!(PROVISIONED_MACROS, ["wnam", "enam", "weur"]);
+        // provisionable set is EXACTLY {wnam, enam, weur, apac} (apac added by WP4
+        // once corelink-cas-apac, APAC-located, went live).
+        assert_eq!(PROVISIONED_MACROS, ["wnam", "enam", "weur", "apac"]);
         assert!(is_provisioned_macro("wnam"));
         assert!(is_provisioned_macro("enam"));
         assert!(is_provisioned_macro("weur"));
-        // sam/apac/afr are valid macros but NOT provisioned. `sam` in particular
-        // stays ROUTABLE (still maps to a colo) but is not provisionable until
-        // PROD_SAM has a real SAM-jurisdiction bucket (LGPD).
+        assert!(is_provisioned_macro("apac"));
+        // sam/afr are valid macros but NOT provisioned. `sam` in particular stays
+        // ROUTABLE (still maps to a colo) but is not provisionable — Cloudflare has
+        // no SAM region (documented platform limit).
         assert!(!is_provisioned_macro("sam"));
-        assert!(!is_provisioned_macro("apac"));
         assert!(!is_provisioned_macro("afr"));
         // ...yet `sam` is still a recognised, routable macro.
         assert!(is_macro_region("sam"));

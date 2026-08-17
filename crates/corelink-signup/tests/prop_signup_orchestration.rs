@@ -283,6 +283,13 @@ proptest! {
             PrimaryRegion::Sam
         } else if lower.starts_with("de") || lower.starts_with("fr") || lower.starts_with("es-es") {
             PrimaryRegion::Eu
+        } else if lower.starts_with("ja")
+            || lower.starts_with("ko")
+            || lower.starts_with("zh")
+            || lower.starts_with("en-sg")
+            || lower.starts_with("en-hk")
+        {
+            PrimaryRegion::Apac
         } else {
             PrimaryRegion::Enam
         };

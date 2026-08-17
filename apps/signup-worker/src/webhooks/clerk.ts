@@ -541,20 +541,19 @@ export type MacroRegion = "wnam" | "enam" | "weur" | "sam" | "apac" | "afr";
  * the rest with a terminal 422 (never silently mis-land a tenant's data — backlog
  * #29).
  *
- * Provisionable = `{wnam, enam, weur}` — exactly the macros whose serving infra
- * stores data in the CORRECT legal jurisdiction. `wnam`/`enam`→`iad` (US R2);
- * `weur`→`lhr` (EU R2 bucket `corelink-cas-eu` via the eu R2 endpoint — LGPD/GDPR
- * compliant).
+ * Provisionable = `{wnam, enam, weur, apac}` — exactly the macros whose serving
+ * infra stores data in the CORRECT location/jurisdiction. `wnam`/`enam`→`iad`
+ * (US R2); `weur`→`lhr` (EU R2 bucket `corelink-cas-eu` via the eu R2 endpoint —
+ * LGPD/GDPR compliant); `apac`→`nrt` (WP4 — APAC-LOCATED bucket `corelink-cas-apac`,
+ * Tokyo; a physical location hint, no APAC residency jurisdiction exists in R2).
  *
  * `sam` is DELIBERATELY EXCLUDED even though it is a valid, routable macro:
  * `PROD_SAM` still points at the DEFAULT US R2 endpoint + the shared US bucket
  * (`corelink-cas-prod`), so a `sam`-labelled tenant's data would land in US
- * storage under a FALSE residency label — an LGPD cross-border violation. The
- * drift that previously made this set a 2-set `{wnam, enam}` was the only thing
- * preventing it; the fix is to make `sam` non-provisionable EVERYWHERE while
- * keeping it routable. Re-add `sam` here ONLY once `PROD_SAM` has a real
- * SAM-jurisdiction bucket/endpoint. `apac`/`afr` remain unprovisioned (no colo
- * build-out).
+ * storage under a FALSE residency label — an LGPD cross-border violation.
+ * Cloudflare has NO SAM region (documented platform limit), so `sam` stays
+ * non-provisionable EVERYWHERE while remaining routable. `afr` remains
+ * unprovisioned (no colo build-out).
  *
  * SINGLE SOURCE OF TRUTH: this set MUST equal `worker/src/region-map.ts`
  * `PROVISIONED_MACROS` and the Rust `region_map.rs` `PROVISIONED_MACROS`. The
@@ -565,11 +564,13 @@ export const PROVISIONED_MACROS: ReadonlySet<MacroRegion> = new Set<MacroRegion>
   "wnam",
   "enam",
   "weur",
+  "apac",
 ]);
 
 /**
  * Thrown when a tenant's geo-derived macro region is a VALID canonical region
- * but is NOT provisioned in Phase 1 (apac/afr today). Caught by the webhook
+ * but is NOT provisioned (afr today; sam is a CF platform limit — apac was
+ * provisioned by WP4). Caught by the webhook
  * handler and mapped to a TERMINAL 422 (no Svix retry) — signup MUST reject the
  * tenant rather than silently downgrade them to a US region (backlog #29).
  */
@@ -610,7 +611,9 @@ export function regionFromColo(colo: string | undefined | null): MacroRegion {
     "GRU", "GIG", "BSB", "POA", "FOR", "REC", "CWB", "CNF", // Brazil
     "EZE", "SCL", "BOG", "LIM", "UIO", "MDE", "MVD", "ASU",
   ]);
-  // Asia-Pacific colos → apac (valid macro but NOT provisioned in Phase 1).
+  // Asia-Pacific + Oceania colos → apac (provisioned by WP4 → Tokyo/nrt,
+  // physical bucket corelink-cas-apac; Oceania is served from Tokyo until an OC
+  // region exists).
   const APAC = new Set([
     "NRT", "KIX", "ITM", "HND", // Japan
     "ICN", "TPE", "HKG", "SIN", "KUL", "BKK", "CGK", "MNL",

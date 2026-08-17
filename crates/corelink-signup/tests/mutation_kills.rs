@@ -115,6 +115,7 @@ fn primary_region_as_str_strings_canonical_and_distinct() {
         (PrimaryRegion::Enam, "enam"),
         (PrimaryRegion::Sam, "sam"),
         (PrimaryRegion::Eu, "weur"),
+        (PrimaryRegion::Apac, "apac"),
     ];
     for (r, expected) in &pairs {
         assert_eq!(r.as_str(), *expected);
@@ -122,7 +123,7 @@ fn primary_region_as_str_strings_canonical_and_distinct() {
         assert_ne!(r.as_str(), "xyzzy");
         assert_eq!(format!("{}", r), *expected);
     }
-    assert_eq!(canonical_regions(), &["enam", "sam", "weur"]);
+    assert_eq!(canonical_regions(), &["enam", "sam", "weur", "apac"]);
 }
 
 // =====================================================================
