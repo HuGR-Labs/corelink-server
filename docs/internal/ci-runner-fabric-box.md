@@ -4,6 +4,24 @@
 [§7 The image changes without notice](#7-the-image-changes-without-notice)
 before you rely on any line below.
 
+> **Update 2026-08-17 (delta since the snapshot):** `lighthouse-ci` was **deleted** —
+> low-value perf score on admin-ui, not worth baking system Chrome, and dead under the
+> block today so nothing green is lost. The class-D `lighthouse-ci` row below is stale.
+>
+> Migrating the remaining hosted lanes is **not a simple `runs-on:` flip**: the `corelink`
+> label is a MIXED pool (Mac builders with a shared `$HOME` **and** the ephemeral CF fleet),
+> the scheduler picks either, so a migrated job must work on BOTH. Concretely: a job that
+> provisions a Rust toolchain or `cargo install`s a tool (e.g. `corelink-client-verify`'s
+> `cbindgen-header-stable`) mutates the shared `~/.cargo`/`~/.rustup` on a Mac builder — the
+> `actionlint` "must not provision a Rust toolchain" guard rejects it (see
+> `scripts/validate_no_shared_rustup_mutation.py`; the fix pattern is the baked toolchain +
+> `rust-toolchain.toml`, and cbindgen would need to be baked into the runner image, not
+> `cargo install`ed). And a docker job (`smoke-install`) only works where the docker-shim is
+> present (CF fleet), not on a bare Mac builder. So the remaining lanes need either an
+> ephemeral-fleet-only label or runner-image work — a follow-up, tracked, NOT done here.
+> Still hosted: `bazel-starter-ci`, `smoke-install`, `corelink-client-verify/cbindgen`,
+> `docs-ci` a11y/lighthouse jobs, `e2e-prod`, `cosign-sign`.
+
 Why this doc exists: reading `deploy/runner/Dockerfile` (in the
 `corelink-runners` repo) answers *"what was installed"*, not *"what the box
 has"* — and on two decisive points the answers differ. Everything here was
