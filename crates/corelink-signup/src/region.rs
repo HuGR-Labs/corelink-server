@@ -137,10 +137,12 @@ pub const fn canonical_regions() -> &'static [&'static str; 4] {
 }
 
 /// The canonical `tenant.primary_region` D1 CHECK set — the EXACT string
-/// set the D1 column constraint admits (migration 0023). Every
+/// set the D1 column constraint admits (migration 0023:
+/// `IN ('wnam','enam','weur','sam','apac','afr')`). Every
 /// [`PrimaryRegion::as_str`] output MUST be a member or the INSERT
-/// fails-closed with RAISE(ABORT).
-pub const D1_PRIMARY_REGION_CHECK_SET: &[&str] = &["wnam", "enam", "weur", "sam", "apac"];
+/// fails-closed with RAISE(ABORT). `afr` is admitted by the constraint but has
+/// no `PrimaryRegion` variant (no provisioned colo), so nothing emits it here.
+pub const D1_PRIMARY_REGION_CHECK_SET: &[&str] = &["wnam", "enam", "weur", "sam", "apac", "afr"];
 
 #[cfg(test)]
 #[allow(
