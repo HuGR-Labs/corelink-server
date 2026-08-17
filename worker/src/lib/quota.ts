@@ -364,7 +364,7 @@ export async function checkStorageQuota(
 }
 
 /** Row shape of the storage `SUM(bytes_used)` read. */
-interface StorageSumRow {
+export interface StorageSumRow {
   total_bytes: number | null;
 }
 
@@ -374,7 +374,7 @@ interface StorageSumRow {
  * {@link runQuotaBatch} issue exactly this statement, so the two paths cannot
  * drift apart into enforcing different things.
  */
-function storageSumStatement(db: D1Database, tenantId: string): D1PreparedStatement {
+export function storageSumStatement(db: D1Database, tenantId: string): D1PreparedStatement {
   return db
     .prepare(
       "SELECT SUM(bytes_used) AS total_bytes FROM tenant_storage_state WHERE tenant_id = ?1",
@@ -383,7 +383,7 @@ function storageSumStatement(db: D1Database, tenantId: string): D1PreparedStatem
 }
 
 /** True when the tier has a FINITE storage ceiling, i.e. the SUM read is worth paying for. */
-function storageCapIsFinite(tier: Tier): boolean {
+export function storageCapIsFinite(tier: Tier): boolean {
   return QUOTAS[tier].storageBytesMax !== Number.MAX_SAFE_INTEGER;
 }
 
@@ -408,7 +408,7 @@ function storageD1ErrorResult(isMutating: boolean): QuotaCheckResult {
  * factored out so the serial and the batched read reach the identical verdict
  * (and the identical `reason` string) from the identical bytes.
  */
-function storageResultForBytes(totalBytes: number, tier: Tier): QuotaCheckResult {
+export function storageResultForBytes(totalBytes: number, tier: Tier): QuotaCheckResult {
   const max = QUOTAS[tier].storageBytesMax;
   if (totalBytes < max) {
     return { ok: true };
@@ -428,7 +428,7 @@ function storageResultForBytes(totalBytes: number, tier: Tier): QuotaCheckResult
  * new month's first request INSERTs a fresh `(tenant_id, year_month)` row and
  * the advertised Retry-After lands exactly on that reset.
  */
-function currentYearMonthUtc(): string {
+export function currentYearMonthUtc(): string {
   // `toISOString()` is always UTC `YYYY-MM-DDТHH:mm:ss.sssZ`; slice → `YYYY-MM`.
   return new Date().toISOString().slice(0, 7);
 }
@@ -585,7 +585,7 @@ export async function incrementMonthlyRequestCount(
 }
 
 /** Row shape returned by the metering UPSERT's `RETURNING request_count`. */
-interface RequestCountRow {
+export interface RequestCountRow {
   request_count: number;
 }
 
@@ -596,7 +596,7 @@ interface RequestCountRow {
  * {@link runQuotaBatch} issue exactly this statement, so the two paths cannot
  * drift into counting differently.
  */
-function monthlyRequestCountStatement(db: D1Database, tenantId: string): D1PreparedStatement {
+export function monthlyRequestCountStatement(db: D1Database, tenantId: string): D1PreparedStatement {
   return db
     .prepare(
       "INSERT INTO monthly_request_counts (tenant_id, year_month, request_count, updated_at_ms) " +
