@@ -54,6 +54,7 @@ import {
   shadowCompareEdgePublicRead,
   parseByteRange,
   PUBLIC_BLOB_CONTENT_TYPE,
+  writePublicBlocklistKv,
 } from "./lib/edge_public_read.js";
 import { handleAuthRotate } from "./lib/auth_rotate.js";
 import { handleTenantLookup } from "./lib/tenant_lookup.js";
@@ -2178,6 +2179,50 @@ const baseHandler: ExportedHandler<Env> = {
           );
         }
         internalResp = localResp;
+      } else if (route.pathSuffix === "/_internal/public/revoke") {
+        // B1b — collapse the edge revocation window. Forward the revoke to the
+        // container (the authoritative D1 blocklist + cache_map delete + R2 erase),
+        // and on SUCCESS also write the content_hash-keyed edge blocklist KV so a
+        // revoked `_public` hash stops edge-serving within KV propagation
+        // (~seconds) instead of the map-cache TTL (~60s). Buffer the body once: it
+        // is both forwarded to the container AND parsed here for the content_hash.
+        // The KV write is best-effort (ctx.waitUntil) — a KV fault must NEVER fail
+        // the revoke, which the container has already applied authoritatively.
+        const revokeBody = await request.arrayBuffer();
+        try {
+          internalResp = await systemStub.fetch(
+            new Request(request.url, {
+              method: request.method,
+              headers: buildInternalHeaders(request.headers),
+              body: revokeBody,
+            }),
+          );
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "unknown error";
+          console.error(`[${requestId}] public-revoke DO fetch failed: ${message.slice(0, 80)}`);
+          return applyCors(
+            reapiError("INTERNAL_ERROR", "internal upstream error", 500, requestId),
+            request,
+          );
+        }
+        const revokeKv = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
+        if (internalResp.ok && revokeKv) {
+          try {
+            const parsed = JSON.parse(new TextDecoder().decode(revokeBody)) as {
+              content_hash?: unknown;
+            };
+            const ch =
+              typeof parsed.content_hash === "string"
+                ? parsed.content_hash.toLowerCase()
+                : "";
+            if (/^[0-9a-f]{64}$/.test(ch)) {
+              ctx.waitUntil(writePublicBlocklistKv(revokeKv, ch));
+            }
+          } catch {
+            // Body was not the expected {content_hash} JSON — the container still
+            // revoked authoritatively; the edge falls back to the ~60s map window.
+          }
+        }
       } else {
         // Non-erase internal route (pat/mint, admin, …) OR a fan-out target (a
         // regional worker running the erase for its own jurisdiction): single local

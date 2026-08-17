@@ -191,6 +191,23 @@ const PUBMAP_KV_TTL_S = 60; // KV floor; = the bounded revocation window (ADR)
 const PUBMAP_KV_PREFIX = "pubmap:";
 const PUBMAP_L1_CAP = 4096;
 
+// ── B1b: active revocation accelerator (collapse the ~60s window to ~seconds) ─
+//
+// The map cache above serves a POSITIVE verdict (a content_hash) for up to
+// PUBMAP_KV_TTL_S without re-consulting D1's `public_blocklist`, so a revoke only
+// takes effect at the edge once that verdict expires (~60s). To collapse that,
+// a successful `_public` revoke ALSO writes a content_hash-keyed blocklist key
+// here (`pubblock:<content_hash>`, written by the Worker revoke seam in
+// index.ts). readPublicHit checks it on the resolved content_hash BEFORE serving
+// — even on a cached-positive map verdict — so a revoked hash stops serving
+// within KV propagation (~seconds). D1's blocklist join remains the permanent,
+// authoritative backstop once the ~60s positive verdict expires; this KV entry
+// only has to outlive that window, hence a generous but bounded TTL. A KV fault
+// FAILS OPEN (serve continues, falling back to the ~60s D1-backed window) — it
+// is an accelerator, never the sole gate.
+const PUBBLOCK_KV_PREFIX = "pubblock:";
+const PUBBLOCK_KV_TTL_S = 3_600; // ≫ the ~65s positive-verdict lifetime it must cover
+
 interface CachedMap {
   readonly h: string | null;
   readonly at: number;
@@ -207,6 +224,42 @@ export function __resetPublicMapCacheForTests(): void {
 /** KV key for a cached `_public` map verdict (namespace is always `_public`). */
 export function pubmapKvKey(urlHash: string): string {
   return PUBMAP_KV_PREFIX + urlHash;
+}
+
+/** KV key for the content_hash-keyed `_public` revocation marker (B1b). */
+export function publicBlocklistKvKey(contentHash: string): string {
+  return PUBBLOCK_KV_PREFIX + contentHash;
+}
+
+/**
+ * Mark a `_public` content_hash as revoked at the edge (B1b). Called by the
+ * Worker revoke seam AFTER the container's authoritative revoke succeeds. The
+ * value is a non-empty sentinel; only presence matters. Bounded TTL — the D1
+ * blocklist is the permanent backstop.
+ */
+export async function writePublicBlocklistKv(
+  kv: KvReader,
+  contentHash: string,
+): Promise<void> {
+  await kv.put(publicBlocklistKvKey(contentHash), "1", {
+    expirationTtl: PUBBLOCK_KV_TTL_S,
+  });
+}
+
+/**
+ * Is this content_hash revoked at the edge? A present `pubblock:<hash>` key ⇒
+ * revoked. FAILS OPEN (returns false) on any KV fault: the accelerator must
+ * never fail a serveable request — the ~60s D1-backed map gate still applies.
+ */
+export async function isPublicRevokedAtEdge(
+  kv: KvReader,
+  contentHash: string,
+): Promise<boolean> {
+  try {
+    return (await kv.get(publicBlocklistKvKey(contentHash))) !== null;
+  } catch {
+    return false;
+  }
 }
 
 function putMapL1(urlHash: string, h: string | null, nowMs: number): void {
@@ -419,7 +472,16 @@ export async function readPublicHit(
     ...(env.METADATA_KV ? { kv: env.METADATA_KV } : {}),
     ...(ctx ? { waitUntil: ctx.waitUntil.bind(ctx) } : {}),
   });
-  if (!contentHash) return null; // map miss OR revoked
+  if (!contentHash) return null; // map miss OR revoked (D1 blocklist join)
+
+  // B1b: revocation accelerator. The map verdict above may be a cached POSITIVE
+  // (skips the D1 blocklist join for up to ~60s); honor a fresh revoke NOW by
+  // checking the content_hash-keyed KV marker before serving. Fails open on KV
+  // fault (the ~60s D1-backed window remains the backstop). Also gates the colo
+  // Cache API read below, so a revoked hash is never served from any tier.
+  if (env.METADATA_KV && (await isPublicRevokedAtEdge(env.METADATA_KV, contentHash))) {
+    return null;
+  }
 
   // WP-A: colo Cache API L1. Serve fill-validated bytes on a colo-hit without
   // re-hashing (key IS the content_hash; only our validated fill writes it).
