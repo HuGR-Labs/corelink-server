@@ -964,10 +964,14 @@ R2_AC_BUCKET = "corelink-ac-nrt"
 R2_AC_REGION = "nrt"
 R2_CHUNK_BUCKET = "corelink-chunk-nrt"
 R2_CHUNK_REGION = "nrt"
-# F7 (2026-06-13 audit) — CAS residency. NRT/JP CAS bytes key under "nrt", not
-# the US default "iad". Per-region CAS *buckets* are an infra follow-up
-# (R2_CAS_BUCKET stays corelink-cas-prod until they exist); region key = invariant.
+# F7 (2026-06-13 audit) — CAS residency. NRT/JP CAS bytes key under "nrt".
+# WP4 (2026-08-17): the physical per-region CAS bucket now EXISTS — corelink-cas-apac
+# is APAC-LOCATED (Tokyo), so nrt CAS bytes are stored + served IN-REGION (not the
+# ENAM corelink-cas-prod). BOTH the edge read (CAS_BUCKET binding below) and the
+# container fill (R2_CAS_BUCKET var, routes/cas.rs env_or) must point at it, or a
+# HIT reads a bucket the fill never wrote. The "nrt" key prefix stays invariant.
 R2_CAS_REGION = "nrt"
+R2_CAS_BUCKET = "corelink-cas-apac"
 
 [[env.prod-nrt.routes]]
 pattern = "nrt.corelink-api.humangr.com"
@@ -975,7 +979,7 @@ custom_domain = true
 
 [[env.prod-nrt.r2_buckets]]
 binding = "CAS_BUCKET"
-bucket_name = "corelink-cas-prod"
+bucket_name = "corelink-cas-apac"
 
 [[env.prod-nrt.r2_buckets]]
 binding = "AC_BUCKET_SAM"

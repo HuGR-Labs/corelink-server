@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(worker): nrt (Tokyo/apac) CAS is now physically APAC-local (WP4 infra).** Created the APAC-located R2
+  bucket `corelink-cas-apac` (CF `locationHint: apac`, verified `location=APAC`) and pointed the `prod-nrt`
+  worker at it on BOTH the read and the fill legs: the `CAS_BUCKET` R2 binding (the edge `_public` read) and the
+  new `R2_CAS_BUCKET` var (the container fill target, `routes/cas.rs` `env_or`). Previously both defaulted to the
+  ENAM `corelink-cas-prod`, so an nrt tenant's CAS bytes were stored + served from the US; they now round-trip in
+  Tokyo. The `nrt` region key-prefix is unchanged. No data migration (the nrt prefix in `corelink-cas-prod` and
+  the old cosmetic `corelink-cas-nrt` were both empty — verified). Combined with WP-A/WP-C/WP-B (already LIVE) an
+  APAC tenant's warm `_public` HIT serves fully in-region. Requires a container roll to pick up the new env var.
+  Plan + self-review: `docs/design/2026-08-17-wp4-apac-physical-plan.md`. SAM remains the documented CF
+  platform limit (no SAM region). Opening `apac` to customer signup (the `PROVISIONED_MACROS` + `PrimaryRegion`
+  locale surface) is a separate follow-up. (Multi-region closure, WP4.)
 - **feat(worker): edge async metering — take the quota trio off the warm READ path (WP-B1 + WP-B2,
   flag-gated).** After WP-A/WP-C collapsed the `_public` blob + map reads to the colo edge, a warm same-region
   cache HIT still paid one synchronous cross-colo D1 round trip — the `runQuotaBatch` monthly-counter UPSERT +
