@@ -29,9 +29,16 @@ import {
   runQuotaBatch,
   requestCapResultForCount,
   storageQuotaHeaderValue,
+  storageCapIsFinite,
   FREE_REQUEST_CAP,
   STORAGE_QUOTA_HEADER,
 } from "./lib/quota.js";
+import { checkStorageQuotaCachedRead } from "./lib/quota_storage_cache.js";
+import {
+  tryFastRequestCount,
+  decideFastPath,
+  populateRequestCountKv,
+} from "./lib/quota_request_cache.js";
 import { verifyClerkSessionAndResolveTenant } from "./lib/clerk_auth.js";
 import { isTenantSuspended } from "./lib/tenant_suspend_gate.js";
 import {
@@ -2970,6 +2977,71 @@ const baseHandler: ExportedHandler<Env> = {
       // reduces storage and reads (GET/HEAD) cannot grow it, so both stay
       // available during a D1 outage.
       const isStorageMutating = request.method === "PUT" || request.method === "POST";
+      const meter = !isFanout && requestQuotaEnabled;
+
+      // ── WP-B (async metering): take the quota trio off the WARM READ path ──
+      // For a metered, tier-CONFIRMED, NON-mutating request whose tenant is
+      // provably far under its request cap, serve with ZERO synchronous D1: the
+      // monthly-counter increment runs via ctx.waitUntil (off the hot path) and
+      // the storage verdict comes from the B1 KV cache (a READ cannot grow
+      // storage, so a ≤60s-stale byte count is safe and customer-favorable).
+      // Every OTHER case — a WRITE verb, a fan-out/kill-switched request, an
+      // unconfirmed (d1Error) tier, a KV miss, or a tenant within burstMargin of
+      // its cap — falls through to the EXACT `runQuotaBatch` path below,
+      // byte-identical to before. Flag `EDGE_ASYNC_METER`: unset/off ⇒ exact path
+      // (today's behaviour); `shadow` ⇒ exact path + a no-PII divergence log to
+      // prove the arming rule on real traffic; `on` ⇒ serve the fast path.
+      // ADR: docs/design/2026-08-17-adr-edge-async-metering.md.
+      const asyncMeterMode = (env as unknown as { EDGE_ASYNC_METER?: string }).EDGE_ASYNC_METER;
+      const asyncMeterEligible =
+        meter && !isStorageMutating && !quotaTier.d1Error;
+      let handledFast = false;
+
+      if (asyncMeterMode === "on" && asyncMeterEligible) {
+        const fast = await tryFastRequestCount(env.CONFIG_DB, resolvedTenantId, quotaTier.tier, {
+          ...(tierKv ? { kv: tierKv } : {}),
+          waitUntil: ctx.waitUntil.bind(ctx),
+        });
+        if (fast !== null) {
+          // Request cap: armed ⇒ headroom > burstMargin ⇒ within cap by
+          // construction. Storage: B1 cached read verdict (same verdict the live
+          // SUM would return, from a ≤60s-fresh byte count).
+          const storageCheck = await checkStorageQuotaCachedRead(
+            env.CONFIG_DB,
+            resolvedTenantId,
+            quotaTier.tier,
+            false,
+            storageCapIsFinite(quotaTier.tier),
+            { ...(tierKv ? { kv: tierKv } : {}), waitUntil: ctx.waitUntil.bind(ctx) },
+          );
+          if (!storageCheck.ok) {
+            return quotaExceeded(storageCheck.reason, storageCheck.retryAfterSec);
+          }
+          handledFast = true;
+        }
+      } else if (asyncMeterMode === "shadow" && asyncMeterEligible) {
+        // Canary: compute the arming DECISION (no side effect, no double-count)
+        // and log it; the exact path below still serves. No tenant id (no PII).
+        ctx.waitUntil(
+          decideFastPath(resolvedTenantId, quotaTier.tier, {
+            ...(tierKv ? { kv: tierKv } : {}),
+          })
+            .then((d) => {
+              console.log(
+                JSON.stringify({
+                  evt: "async_meter_shadow",
+                  tier: quotaTier.tier,
+                  arm: d.arm,
+                  reason: d.reason,
+                  cachedCount: d.cachedCount,
+                }),
+              );
+            })
+            .catch(() => {
+              /* telemetry must never break the request */
+            }),
+        );
+      }
 
       // ── ONE round trip for both uncached D1 statements ────────────────────
       // The monthly-counter UPSERT and the storage `SUM(bytes_used)` read used to
@@ -3003,9 +3075,10 @@ const baseHandler: ExportedHandler<Env> = {
       // bounded (a SUM over that tenant's handful of `tenant_storage_state` rows).
       // The alternative — remembering that this tenant was over-cap to skip the
       // read — is a cached authorization decision, which this path must not have.
+      if (!handledFast) {
       const qbatchStart = Date.now();
       const quotaBatch = await runQuotaBatch(env.CONFIG_DB, resolvedTenantId, quotaTier, {
-        meter: !isFanout && requestQuotaEnabled,
+        meter,
         isMutating: isStorageMutating,
       });
       // `-1` (phase omitted) iff no round trip was issued at all — both statements
@@ -3040,6 +3113,22 @@ const baseHandler: ExportedHandler<Env> = {
       const storageCheck = quotaBatch.storage;
       if (!storageCheck.ok) {
         return quotaExceeded(storageCheck.reason, storageCheck.retryAfterSec);
+      }
+
+      // WP-B2: seed the request-count KV from this authoritative count so
+      // subsequent reads for this tenant can arm the async fast path. Only when
+      // we actually counted (not a fan-out / kill-switch / uncounted fault) and
+      // the flag is engaged (shadow or on). Best-effort, off the response path.
+      if (
+        (asyncMeterMode === "on" || asyncMeterMode === "shadow") &&
+        inc.counted &&
+        tierKv !== undefined
+      ) {
+        populateRequestCountKv(resolvedTenantId, inc.count, {
+          kv: tierKv,
+          waitUntil: ctx.waitUntil.bind(ctx),
+        });
+      }
       }
     }
 

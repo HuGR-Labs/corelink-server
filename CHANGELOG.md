@@ -23,6 +23,24 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(worker): edge async metering — take the quota trio off the warm READ path (WP-B1 + WP-B2,
+  flag-gated).** After WP-A/WP-C collapsed the `_public` blob + map reads to the colo edge, a warm same-region
+  cache HIT still paid one synchronous cross-colo D1 round trip — the `runQuotaBatch` monthly-counter UPSERT +
+  storage `SUM(bytes_used)` — measured as the whole ~44 ms server residual (US runner box, 2026-08-16). Two new
+  edge caches, each mirroring the ADR-0070 `pat`/`tsusp`/`ttier` three-tier family, remove it for
+  NON-mutating reads: **B1** (`worker/src/lib/quota_storage_cache.ts`) caches the storage SUM (L1 5 s +
+  Workers-KV `qstor:` 60 s) and recomputes the cheap cap verdict live against the freshly-resolved tier — a READ
+  cannot grow storage, so a ≤65 s-stale byte count is safe and customer-favorable, and the existing 402-on-read
+  behaviour is preserved (no product change); **B2** (`worker/src/lib/quota_request_cache.ts`) serves a tenant
+  proven to be more than a `burstMargin` (max(5 % of cap, 25 000)) below its request cap immediately and runs
+  the increment via `ctx.waitUntil` off the hot path, refreshing the `qreq:<tenant>:<ym>` KV count from the
+  authoritative D1 `RETURNING` value (never a blind local `+1`, so it can UNDER-count on a dropped write — the
+  fail-open direction this counter already tolerates — but NEVER over-count). Any write verb, fan-out,
+  unconfirmed (`d1Error`) tier, KV miss, or tenant within `burstMargin` of its cap falls back to the exact
+  synchronous `runQuotaBatch` path, byte-identical to before. Gated by `EDGE_ASYNC_METER`: unset/`off` = today's
+  exact path, `shadow` = exact path + a no-PII arming-decision log (canary), `on` = serve the fast path. 26 new
+  unit tests; the full 741-test worker suite stays green. ADR:
+  `docs/design/2026-08-17-adr-edge-async-metering.md`. (Multi-region latency campaign, WP-B.)
 - **fix(worker): edge `_public` serve — faithful `Content-Type`, HTTP Range (206/416) support, and the
   documented $-ceiling exemption (audit follow-ups).** The edge serve path previously returned only
   `x-cache: HIT`, dropping the `Content-Type` the container sets and answering a `Range` request with a full

@@ -411,7 +411,7 @@ candidates:
     title: "Edge quota & tier serving"
     status: "active"
     source_cluster: "docs/launch"
-    seed_from: ["worker/src/lib/quota.ts"]
+    seed_from: ["worker/src/lib/quota.ts", "worker/src/lib/quota_storage_cache.ts", "worker/src/lib/quota_request_cache.ts"]
   - id: "launch/stripe-activation-webhook"
     type: "BillingControl"
     title: "Stripe activation webhook — the money-path activation half"
