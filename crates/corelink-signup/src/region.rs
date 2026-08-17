@@ -186,7 +186,9 @@ mod tests {
     #[test]
     fn apac_locales_map_apac() {
         // WP4: East-Asian primary subtags + SG/HK English pin to Tokyo (nrt).
-        for loc in ["ja-JP", "ko-KR", "zh-CN", "zh-TW", "zh-HK", "en-SG", "en-HK"] {
+        for loc in [
+            "ja-JP", "ko-KR", "zh-CN", "zh-TW", "zh-HK", "en-SG", "en-HK",
+        ] {
             let r = PrimaryRegion::from_locale(&Bcp47Locale::new(loc));
             assert_eq!(r, PrimaryRegion::Apac, "{loc} should map to Apac");
             assert_eq!(r.as_str(), "apac");
