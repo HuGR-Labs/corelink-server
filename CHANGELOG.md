@@ -22,7 +22,25 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+- **fix(ci): correct two release-workflow action pins that pointed at non-existent SHAs.**
+  `docker/metadata-action` in `cosign-sign.yml` (`369eb591…b57f98d1be3b14574` → the real v5.6.1
+  `369eb591…b94e711f089e6ca96`) and `softprops/action-gh-release` in `release-slsa3.yml`
+  (`c95fe148…b046f0b6a56a05b2d3513ae11142` → the real v2.3.1 `f3cad8bcbf209fe591aa1823e372c5d96b7fc800`, matching
+  `release-notes.yml`). Both SHAs 422 on `git/commits` — any tag push would have failed at "Set up job" resolving
+  the action. Surfaced by the action-archive-cache seeding below (which fetches every pinned action by SHA).
+
 ### Added
+- **ci: pre-seed the self-hosted runner action-archive cache to kill the codeload-429 setup failures.**
+  A broad PR fans ~20 gates out at once; each cold-downloads `actions/checkout` (+friends) from
+  codeload.github.com, and concurrent downloads on the runners' single egress IP trip a `429 Too Many Requests`
+  that fails jobs at "Set up job" having run no test (this repeatedly stalled #1133). Fix: point the runners at
+  `ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE` (a read-only, pre-seeded archive mirror the runner ≥2.336 consults before
+  codeload) + `scripts/seed-runner-action-cache.sh` to populate it from the SHA pins in `.github/workflows/`.
+  Proven by use on the four `corelink-builder` runners: a job that previously downloaded now logs
+  `Found action archive '…/actions_checkout/….tar.gz' in cache directory` with **0 codeload requests**, still
+  green. Idempotent — re-run after a dependabot pin bump. (Ephemeral CF runners get the same cache baked into the
+  `corelink-runners` image — follow-up.)
 - **feat(signup): open the `apac` (Tokyo) region to customer signup (WP4 product).** With the physical
   APAC-located CAS bucket live (previous entry), `apac` is now a **provisioned** region. Added `apac` to
   `PROVISIONED_MACROS` in all THREE synchronized copies (worker `region-map.ts`, container
@@ -32,8 +50,10 @@ Each entry cross-references:
   `corelink-signup` locale path gains a `PrimaryRegion::Apac` arm mapping `ja` / `ko` / `zh` / `en-SG` /
   `en-HK` → `apac` (`en-AU`/Oceania stays enam on the locale path until a dedicated OC region; the colo path
   already serves it from Tokyo). The D1 `tenant.primary_region` CHECK already admits `apac` (migration 0023)
-  — no migration. Requires a container rebuild + redeploy to take effect. `sam` stays non-provisionable (no CF
-  SAM region — platform limit). Multi-region closure, WP4.
+  — no migration. **No container rebuild is required**: the container `region_map.rs` / worker `region-map.ts`
+  `PROVISIONED_MACROS` copies have NO live runtime caller (`is_provisioned_macro` / `isProvisionedMacro` exist
+  only for the 3-way drift gate), so the sole live consumer is the signup-worker, which redeploys on push. `sam`
+  stays non-provisionable (no CF SAM region — platform limit). Multi-region closure, WP4.
 - **feat(worker): nrt (Tokyo/apac) CAS is now physically APAC-local (WP4 infra).** Created the APAC-located R2
   bucket `corelink-cas-apac` (CF `locationHint: apac`, verified `location=APAC`) and pointed the `prod-nrt`
   worker at it on BOTH the read and the fill legs: the `CAS_BUCKET` R2 binding (the edge `_public` read) and the
