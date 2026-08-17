@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(signup): open the `apac` (Tokyo) region to customer signup (WP4 product).** With the physical
+  APAC-located CAS bucket live (previous entry), `apac` is now a **provisioned** region. Added `apac` to
+  `PROVISIONED_MACROS` in all THREE synchronized copies (worker `region-map.ts`, container
+  `region_map.rs` + its mirror-assert test, signup-worker `clerk.ts`) — the 3-way drift gate stays green.
+  Signup now pins Asia-Pacific + Oceania users to Tokyo/nrt: the live Clerk-webhook path
+  (`clerk.ts regionFromColo`) already mapped APAC/OC colos → `apac` and simply stops 422-rejecting them; the
+  `corelink-signup` locale path gains a `PrimaryRegion::Apac` arm mapping `ja` / `ko` / `zh` / `en-SG` /
+  `en-HK` → `apac` (`en-AU`/Oceania stays enam on the locale path until a dedicated OC region; the colo path
+  already serves it from Tokyo). The D1 `tenant.primary_region` CHECK already admits `apac` (migration 0023)
+  — no migration. Requires a container rebuild + redeploy to take effect. `sam` stays non-provisionable (no CF
+  SAM region — platform limit). Multi-region closure, WP4.
 - **feat(worker): nrt (Tokyo/apac) CAS is now physically APAC-local (WP4 infra).** Created the APAC-located R2
   bucket `corelink-cas-apac` (CF `locationHint: apac`, verified `location=APAC`) and pointed the `prod-nrt`
   worker at it on BOTH the read and the fill legs: the `CAS_BUCKET` R2 binding (the edge `_public` read) and the

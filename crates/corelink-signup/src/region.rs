@@ -61,9 +61,13 @@ pub enum PrimaryRegion {
     /// `weur` — Western Europe (`de-DE` / `fr-FR` / `es-ES`; reserved
     /// for S-14 EU residency routing). NOTE: the canonical D1 label is
     /// `weur`, NOT `eu` — the `tenant.primary_region` CHECK set is
-    /// `{wnam, enam, weur, sam}` and an `"eu"` string would `RAISE(ABORT)`
-    /// every DE/FR/ES signup.
+    /// `{wnam, enam, weur, sam, apac, afr}` and an `"eu"` string would
+    /// `RAISE(ABORT)` every DE/FR/ES signup.
     Eu,
+    /// `apac` — Asia-Pacific (Tokyo/nrt; `ja` / `ko` / `zh` / `en-SG` /
+    /// `en-HK`). Provisioned by WP4 — the APAC-located bucket
+    /// `corelink-cas-apac` stores + serves apac CAS bytes in-region.
+    Apac,
 }
 
 impl PrimaryRegion {
@@ -76,9 +80,10 @@ impl PrimaryRegion {
             Self::Sam => "sam",
             // Canonical D1 label is `weur` (Western Europe). Emitting the
             // non-canonical `"eu"` here would violate the
-            // `tenant.primary_region` CHECK set `{wnam, enam, weur, sam}`
+            // `tenant.primary_region` CHECK set `{wnam, enam, weur, sam, apac, afr}`
             // and fail-closed every DE/FR/ES signup with RAISE(ABORT).
             Self::Eu => "weur",
+            Self::Apac => "apac",
         }
     }
 
@@ -101,6 +106,16 @@ impl PrimaryRegion {
             Self::Sam
         } else if lower.starts_with("de") || lower.starts_with("fr") || lower.starts_with("es-es") {
             Self::Eu
+        } else if lower.starts_with("ja")
+            || lower.starts_with("ko")
+            || lower.starts_with("zh")
+            || lower.starts_with("en-sg")
+            || lower.starts_with("en-hk")
+        {
+            // Asia-Pacific → Tokyo (nrt). East-Asian primary subtags + the
+            // Singapore/Hong-Kong English variants pin here. `en-AU` (Sydney/OC)
+            // stays enam until a dedicated OC region exists (WP4 follow-up).
+            Self::Apac
         } else {
             Self::Enam
         }
@@ -113,19 +128,21 @@ impl core::fmt::Display for PrimaryRegion {
     }
 }
 
-/// Canonical 3-element list of [`PrimaryRegion`] labels (as persisted to
-/// D1) for surface-stability regression tests. Every entry MUST be a
-/// member of the `tenant.primary_region` D1 CHECK set
-/// `{wnam, enam, weur, sam}`.
+/// Canonical list of [`PrimaryRegion`] labels (as persisted to D1) for
+/// surface-stability regression tests. Every entry MUST be a member of the
+/// `tenant.primary_region` D1 CHECK set `{wnam, enam, weur, sam, apac, afr}`.
 #[must_use]
-pub const fn canonical_regions() -> &'static [&'static str; 3] {
-    &["enam", "sam", "weur"]
+pub const fn canonical_regions() -> &'static [&'static str; 4] {
+    &["enam", "sam", "weur", "apac"]
 }
 
 /// The canonical `tenant.primary_region` D1 CHECK set — the EXACT string
-/// set the D1 column constraint admits. Every [`PrimaryRegion::as_str`]
-/// output MUST be a member or the INSERT fails-closed with RAISE(ABORT).
-pub const D1_PRIMARY_REGION_CHECK_SET: &[&str] = &["wnam", "enam", "weur", "sam"];
+/// set the D1 column constraint admits (migration 0023:
+/// `IN ('wnam','enam','weur','sam','apac','afr')`). Every
+/// [`PrimaryRegion::as_str`] output MUST be a member or the INSERT
+/// fails-closed with RAISE(ABORT). `afr` is admitted by the constraint but has
+/// no `PrimaryRegion` variant (no provisioned colo), so nothing emits it here.
+pub const D1_PRIMARY_REGION_CHECK_SET: &[&str] = &["wnam", "enam", "weur", "sam", "apac", "afr"];
 
 #[cfg(test)]
 #[allow(
@@ -167,8 +184,25 @@ mod tests {
     }
 
     #[test]
+    fn apac_locales_map_apac() {
+        // WP4: East-Asian primary subtags + SG/HK English pin to Tokyo (nrt).
+        for loc in [
+            "ja-JP", "ko-KR", "zh-CN", "zh-TW", "zh-HK", "en-SG", "en-HK",
+        ] {
+            let r = PrimaryRegion::from_locale(&Bcp47Locale::new(loc));
+            assert_eq!(r, PrimaryRegion::Apac, "{loc} should map to Apac");
+            assert_eq!(r.as_str(), "apac");
+        }
+        // en-AU is NOT apac yet (Sydney/OC is a follow-up) — stays enam.
+        assert_eq!(
+            PrimaryRegion::from_locale(&Bcp47Locale::new("en-AU")),
+            PrimaryRegion::Enam
+        );
+    }
+
+    #[test]
     fn canonical_regions_stable() {
-        assert_eq!(canonical_regions(), &["enam", "sam", "weur"]);
+        assert_eq!(canonical_regions(), &["enam", "sam", "weur", "apac"]);
     }
 
     #[test]
@@ -178,7 +212,12 @@ mod tests {
         // constraint admits, else the INSERT fails-closed (RAISE(ABORT)).
         // The previous `Eu => "eu"` violated this for every DE/FR/ES
         // signup.
-        for region in [PrimaryRegion::Enam, PrimaryRegion::Sam, PrimaryRegion::Eu] {
+        for region in [
+            PrimaryRegion::Enam,
+            PrimaryRegion::Sam,
+            PrimaryRegion::Eu,
+            PrimaryRegion::Apac,
+        ] {
             let s = region.as_str();
             assert!(
                 D1_PRIMARY_REGION_CHECK_SET.contains(&s),

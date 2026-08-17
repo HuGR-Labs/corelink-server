@@ -57,17 +57,22 @@ const MACRO_TO_COLO: Readonly<Record<MacroRegion, Colo | undefined>> = {
 };
 
 /**
- * Macro regions provisioned today — exactly those with a jurisdiction-correct R2
- * bucket. Signup MUST reject any macro NOT in this set (sam/apac/afr today)
- * rather than route/store the tenant anywhere. `sam` is deliberately EXCLUDED:
- * it stays routable (`MACRO_TO_COLO`/`coloForMacro` still recognise it) but is
- * NOT provisionable until PROD_SAM has a real SAM-jurisdiction bucket — provisioning
- * it today would mis-land data in US R2 under a false residency label (LGPD).
+ * Macro regions provisioned today — exactly those with a location/jurisdiction-
+ * correct R2 bucket. Signup MUST reject any macro NOT in this set (sam/afr today)
+ * rather than route/store the tenant anywhere. `apac` is now provisioned: WP4
+ * (2026-08-17) created the APAC-LOCATED bucket `corelink-cas-apac` (Tokyo/nrt) and
+ * pointed prod-nrt at it, so apac CAS bytes store + serve in-region (apac is a
+ * physical LOCATION hint — R2 has no APAC data-residency jurisdiction, unlike EU —
+ * which suffices for latency-locality). `sam` is deliberately EXCLUDED: it stays
+ * routable (`MACRO_TO_COLO`/`coloForMacro` still recognise it) but is NOT
+ * provisionable — Cloudflare has no SAM region (documented platform limit), so its
+ * data would mis-land in US R2 under a false residency label.
  */
 export const PROVISIONED_MACROS: ReadonlySet<MacroRegion> = new Set<MacroRegion>([
   "wnam",
   "enam",
   "weur",
+  "apac",
 ]);
 
 /** Type guard: is `s` one of the six canonical macro region codes? */
