@@ -37,6 +37,9 @@ import {
   shadowCompareEdgePublicRead,
   __resetPublicMapCacheForTests,
   PUBLIC_NAMESPACE,
+  publicBlocklistKvKey,
+  writePublicBlocklistKv,
+  isPublicRevokedAtEdge,
 } from "../src/lib/edge_public_read.js";
 
 // The `_public` map cache is a module-level (per-isolate) singleton; reset it
@@ -197,6 +200,93 @@ describe("readPublicHit — end-to-end with fakes", () => {
   it("returns null when the region/TDK env is not configured", async () => {
     const e = { CONFIG_DB: fakeDb({ content_hash: BODY_HASH }), CAS_BUCKET: fakeBucket(BODY) };
     expect(await readPublicHit(e as never, "brew", "/brew/t/v2/homebrew/core/x/blobs/sha256:00")).toBeNull();
+  });
+});
+
+describe("B1b — content_hash edge revocation accelerator (pubblock KV)", () => {
+  const BODY = new TextEncoder().encode("abc");
+  const BODY_HASH = "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85";
+  const env = {
+    R2_TDK_HEX: "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+    R2_CAS_REGION: "iad",
+  };
+  const PATH = "/brew/t/v2/homebrew/core/x/blobs/sha256:00";
+
+  /** In-memory KV supporting get/put + a throwing variant for fail-open. */
+  function fakeKv(seed: Record<string, string> = {}, opts: { throwOnGet?: boolean } = {}) {
+    const store = new Map<string, string>(Object.entries(seed));
+    const puts: Array<{ key: string; value: string; ttl?: number }> = [];
+    const kv = {
+      async get(key: string) {
+        if (opts.throwOnGet) throw new Error("kv down");
+        return store.get(key) ?? null;
+      },
+      async put(key: string, value: string, o?: { expirationTtl?: number }) {
+        puts.push({ key, value, ttl: o?.expirationTtl });
+        store.set(key, value);
+      },
+    };
+    return { kv, puts };
+  }
+
+  it("keys the marker by content_hash under the pubblock: prefix", () => {
+    expect(publicBlocklistKvKey(BODY_HASH)).toBe(`pubblock:${BODY_HASH}`);
+  });
+
+  it("writePublicBlocklistKv puts a bounded-TTL sentinel at the content_hash key", async () => {
+    const { kv, puts } = fakeKv();
+    await writePublicBlocklistKv(kv, BODY_HASH);
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.key).toBe(`pubblock:${BODY_HASH}`);
+    expect(puts[0]!.value.length).toBeGreaterThan(0);
+    expect(puts[0]!.ttl).toBe(3600);
+  });
+
+  it("isPublicRevokedAtEdge: true when marked, false when absent, false (fail-open) on KV fault", async () => {
+    const marked = fakeKv({ [`pubblock:${BODY_HASH}`]: "1" });
+    expect(await isPublicRevokedAtEdge(marked.kv, BODY_HASH)).toBe(true);
+    const clean = fakeKv();
+    expect(await isPublicRevokedAtEdge(clean.kv, BODY_HASH)).toBe(false);
+    const broken = fakeKv({}, { throwOnGet: true });
+    expect(await isPublicRevokedAtEdge(broken.kv, BODY_HASH)).toBe(false);
+  });
+
+  it("readPublicHit returns null when the content_hash is edge-revoked, even on a map+R2 HIT", async () => {
+    // Map resolves + R2 has the bytes + they re-hash OK — a HIT by every prior
+    // gate. The pubblock marker must still force a MISS (→ container).
+    const { kv } = fakeKv({ [`pubblock:${BODY_HASH}`]: "1" });
+    const e = {
+      ...env,
+      CONFIG_DB: fakeDb({ content_hash: BODY_HASH }),
+      CAS_BUCKET: fakeBucket(BODY),
+      METADATA_KV: kv,
+    };
+    expect(await readPublicHit(e as never, "brew", PATH)).toBeNull();
+  });
+
+  it("readPublicHit still HITs when the marker is absent (accelerator is off-path)", async () => {
+    const { kv } = fakeKv();
+    const e = {
+      ...env,
+      CONFIG_DB: fakeDb({ content_hash: BODY_HASH }),
+      CAS_BUCKET: fakeBucket(BODY),
+      METADATA_KV: kv,
+    };
+    const hit = await readPublicHit(e as never, "brew", PATH);
+    expect(hit).not.toBeNull();
+    expect(hit!.contentHash).toBe(BODY_HASH);
+  });
+
+  it("readPublicHit serves (fails open) when the pubblock KV read faults", async () => {
+    const { kv } = fakeKv({}, { throwOnGet: true });
+    const e = {
+      ...env,
+      CONFIG_DB: fakeDb({ content_hash: BODY_HASH }),
+      CAS_BUCKET: fakeBucket(BODY),
+      METADATA_KV: kv,
+    };
+    const hit = await readPublicHit(e as never, "brew", PATH);
+    expect(hit).not.toBeNull();
   });
 });
 

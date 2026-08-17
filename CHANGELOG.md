@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(worker): collapse the `_public` edge revocation window from ~60 s to ~seconds (B1b active purge).**
+  The edge map-verdict cache serves a positive `content_hash` for up to ~60 s without re-consulting D1's
+  `public_blocklist`, so a `_public` revoke only took effect at the edge once that verdict expired (a bounded,
+  ADR-documented window — but wider than necessary). Now a successful revoke ALSO writes a content_hash-keyed
+  marker `pubblock:<hash>` to `METADATA_KV` (at the Worker's `/_internal/public/revoke` forward seam, which
+  already holds the KV binding and the request's `content_hash`), and `readPublicHit` checks it on the
+  resolved `content_hash` **before serving any tier** (colo/KV/R2) — so a revoked hash stops edge-serving
+  within KV propagation (~seconds) even on a cached-positive map verdict. D1's blocklist join remains the
+  permanent authoritative backstop once the ~60 s verdict expires; the KV marker only bridges that window
+  (bounded TTL). Best-effort + **fail-open**: a KV fault never fails the revoke (container already applied it)
+  nor a serveable read (falls back to the ~60 s D1-backed window). No new infra; the revoke already transits
+  the Worker, so no cross-plane RPC and no reverse index. Unit-tested (write/read/fail-open + revoked-HIT→MISS).
 - **fix(worker): make the `_public` edge $-ceiling exemption a tested invariant (was a false doc claim).**
   ADR `2026-08-16-adr-edge-public-cache-invariants.md` Decision 2 records the owner's decision that a
   `_public` brew/pip GET cache HIT served from the Worker edge is exempt from the container's per-op
