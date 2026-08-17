@@ -56,7 +56,10 @@ Scope + limits:
 - The un-charged amount is the flat per-op ceiling cost on the cheapest path — not "unlimited spend" (the
   audit's initial HIGH framing was over-dimensioned; the real exposure is a per-op flat charge on public reads).
 - Recorded as an invariant at the serve site (`worker/src/index.ts`, the `EDGE_PUBLIC_READ==="serve"` block)
-  and asserted by the edge serve tests, so it can never silently regress into an accidental bypass again.
+  and asserted by `worker/tests/edge_ceiling_exemption.test.ts`: the container Durable Object (`stub.fetch`)
+  is the only $-ceiling charge site, so the test proves an edge HIT reaches it **0×** (exemption holds) while
+  a MISS, an absent blob, and the flag-unset rollback each reach it exactly **1×** (ceiling applies). It can
+  therefore never silently regress into an accidental bypass — nor back into an un-exempted container charge.
 
 ## Decision 3 — Brazil / South America has no Cloudflare region; BR is served from US (and EU)
 

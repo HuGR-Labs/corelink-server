@@ -23,6 +23,15 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(worker): make the `_public` edge $-ceiling exemption a tested invariant (was a false doc claim).**
+  ADR `2026-08-16-adr-edge-public-cache-invariants.md` Decision 2 records the owner's decision that a
+  `_public` brew/pip GET cache HIT served from the Worker edge is exempt from the container's per-op
+  $-ceiling — but the ADR claimed it was "asserted by the edge serve tests" when no such test existed, so
+  the money invariant could silently regress. Added `worker/tests/edge_ceiling_exemption.test.ts`: the
+  container Durable Object (`stub.fetch`) is the only $-ceiling charge site, so the test proves an edge HIT
+  reaches it **0×** (exemption holds) while a map MISS, an absent-blob MISS, and the flag-unset rollback each
+  reach it exactly **1×** (ceiling applies). The negatives are the mutation control for the positive.
+  Corrected the ADR sentence to point at the real test. No behaviour change — invariant lock only.
 - **fix(ci): correct two release-workflow action pins that pointed at non-existent SHAs.**
   `docker/metadata-action` in `cosign-sign.yml` (`369eb591…b57f98d1be3b14574` → the real v5.6.1
   `369eb591…b94e711f089e6ca96`) and `softprops/action-gh-release` in `release-slsa3.yml`
