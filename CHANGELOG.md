@@ -75,6 +75,17 @@ Each entry cross-references:
   the action. Surfaced by the action-archive-cache seeding below (which fetches every pinned action by SHA).
 
 ### Added
+- **feat(worker): operator container force-recycle route (`POST /_internal/admin/recycle-system`).**
+  Destroys the `_system` container (via the existing DO management path `/_do/stop` →
+  `container.destroy()`) so the NEXT request boots it FRESH with the current start-env, and fans the
+  recycle to every regional worker so one operator call converges the whole fleet. This is the missing
+  lever behind a live GDPR-erasure outage: a rotated start-time secret (`CORELINK_ERASE_AUTH_KEY`) never
+  reaches an already-running DO container — a container-app rollout does not restart it and a hot
+  `_system` container does not self-cycle within any useful window (observed iad/syd `_system` running
+  44+ min past a key rotation, still serving the pre-rotation key → every erase fan-out leg 401s → apex
+  502 fail-closed). Best-effort + idempotent (destroying a cold/fresh container just reboots it), so —
+  unlike the erase fan-out — it reports per-region status instead of failing closed; gated by the admin
+  consumer key and loop-guarded via `x-corelink-fanout-from`. Worker-only; instant rollback.
 - **ci: pre-seed the self-hosted runner action-archive cache to kill the codeload-429 setup failures.**
   A broad PR fans ~20 gates out at once; each cold-downloads `actions/checkout` (+friends) from
   codeload.github.com, and concurrent downloads on the runners' single egress IP trip a `429 Too Many Requests`
