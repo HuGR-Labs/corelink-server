@@ -136,6 +136,20 @@ Each entry cross-references:
   the action. Surfaced by the action-archive-cache seeding below (which fetches every pinned action by SHA).
 
 ### Added
+- **feat(oci): F3.2 inc6 — flag-gated `_public` namespace routing for allowlisted base layers (WP-B).**
+  `OciMoatStore::new` now takes a `dedup: bool` (prod injects `public_flags::oci_public_dedup_enabled()`;
+  tests pass a literal — no `env::set_var`). When `dedup` is on AND a LAYER-BLOB digest is
+  `PublicBaseAllowlist::is_allowlisted`, that blob's put/get is routed to the shared
+  `adapter_cache::PUBLIC_NAMESPACE` (uncapped `Some(0)` quota-seed — the ONLY route to it) instead of the
+  per-tenant namespace, deduping identical public base layers cross-tenant. A SINGLE predicate
+  (`routes_to_public`) guards BOTH the write (`finalize_upload`) and read (`get_blob`) paths, so the write
+  namespace always equals the read namespace (no split-brain); on an allowlisted `_public` read miss the
+  read falls back to the per-tenant namespace, then 404 (no upstream fetch — that is WP-G). Introduces NO
+  new `_public` writer (it only ROUTES the existing tenant write), keeps the write-time
+  `verify_against_bytes` fail-closed on the public path, and never routes manifests/config objects
+  (allowlist holds layer-blob digests only). Fail-CLOSED: a malformed baked manifest degrades to deny-all.
+  The flag defaults **OFF** and the shipped allowlist is deny-all, so this WP is **INERT** until the WP-E
+  repin flips it — proven byte-identical to the pre-inc6 per-tenant behavior with `dedup=false`.
 - **feat(oci): F3.2 S0 scaffold — inert public-base mirror seam + dedup flag.** The first, deliberately
   INERT increment of the cross-tenant public OCI base-layer cache campaign. Adds `public_flags.rs`
   (`oci_public_dedup_enabled()`, boot-read `OCI_PUBLIC_DEDUP_ENABLED`, default **OFF** — activation is a
