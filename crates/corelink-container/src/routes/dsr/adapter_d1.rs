@@ -572,14 +572,16 @@ mod tests {
     /// root cause). If a future edit reorders these, this test fails LOUD.
     #[test]
     fn stripe_checkout_sessions_precedes_tier_selections() {
+        // (`.unwrap()` — the test module allow-lists `clippy::unwrap_used`; both
+        // tables are compile-time constants in the slice, so these never panic.)
         let child = TENANT_ID_TABLES
             .iter()
             .position(|&t| t == "stripe_checkout_sessions")
-            .expect("stripe_checkout_sessions must be in the erase-set");
+            .unwrap();
         let parent = TENANT_ID_TABLES
             .iter()
             .position(|&t| t == "tier_selections")
-            .expect("tier_selections must be in the erase-set");
+            .unwrap();
         assert!(
             child < parent,
             "FK-ORDER VIOLATION: stripe_checkout_sessions (idx {child}) must be \
