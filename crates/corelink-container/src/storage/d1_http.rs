@@ -92,7 +92,22 @@ impl D1HttpClient {
             "https://api.cloudflare.com/client/v4/accounts/{}/d1/database/{}/query",
             env.cloudflare_account_id, env.d1_database_id,
         );
+        // Bound EVERY D1-over-HTTP call. A single erase drives ~15 serial D1
+        // round-trips (legitimacy + idempotency ledger + audit envelope + the
+        // D1/R2 adapters), and the CF D1 REST API rate-limits + slows under a
+        // burst (e.g. a bulk DSR backlog drain). A reqwest client built with NO
+        // timeout lets a slowed/stuck call hold its container worker
+        // INDEFINITELY; under sustained load those held workers accrete until the
+        // tokio executor is saturated and the whole container stops responding
+        // (observed: the `_system` container hanging after ~35-45 DSR ops, only a
+        // recycle restoring it). Explicit connect + total timeouts convert a slow
+        // backend into a fast, retryable error that RELEASES the worker, so the
+        // container degrades gracefully instead of wedging. `pool_idle_timeout`
+        // keeps the idle-connection set from lingering across a long drain.
         let http = reqwest::Client::builder()
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(20))
+            .pool_idle_timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| format!("D1HttpClient: reqwest build failed: {e}"))?;
         Ok(Self {
