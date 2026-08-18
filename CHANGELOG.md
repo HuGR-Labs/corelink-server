@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(dsr): EU Action-Cache erase was a GDPR Art.17 false-completion — the erase now targets each
+  container's own `R2_AC_BUCKET`.** The AC erase adapter swept hardcoded `corelink-ac-<region>` bucket
+  names and IGNORED `R2_AC_BUCKET`, so on the EU container (`R2_AC_BUCKET=corelink-ac-eu`,
+  `wrangler.toml`) it listed a nonexistent `corelink-ac-lhr` and NEVER the real `corelink-ac-eu` — every
+  EU-tenant erasure signed a `VerifiedComplete` attestation while the EU Action-Cache envelopes survived
+  (and it tried US bucket names against the EU S3 endpoint). `list_and_delete_ac` / `count_ac_remaining`
+  now read the SAME `env_or("R2_AC_BUCKET", "corelink-ac-iad")` the WRITE path (`routes/ac.rs`) uses and
+  sweep every region key-prefix within that one endpoint-reachable bucket; the multi-region erase fan-out
+  (fail-CLOSED) already reaches every region's container, so each container erasing its own bucket makes
+  the union complete, and the verify sweep now counts the real bucket so a non-empty EU bucket BLOCKS
+  `VerifiedComplete` (→ `VerifiedPartial`). Mirrors how CAS already reads `R2_CAS_BUCKET`. `primary_region`
+  is immutable (`migrations/d1/0028`), so a tenant's AC bytes only ever live in its home region's bucket.
 - **fix(worker): stop the cold-region container-start thrash — don't destroy an already-running container.**
   `startContainer`'s catch treated EVERY `container.start()` throw as a start failure and `destroyContainer`d.
   But Cloudflare's `start()` throws `start() cannot be called on a container that is already running` when the
@@ -75,6 +87,20 @@ Each entry cross-references:
   the action. Surfaced by the action-archive-cache seeding below (which fetches every pinned action by SHA).
 
 ### Added
+- **feat(dsr): dual-key rotation window for the erase auth key.** The container now accepts the current
+  `CORELINK_ERASE_AUTH_KEY` OR, when set, the outgoing `CORELINK_ERASE_AUTH_KEY_PREVIOUS`
+  (`erase_auth_keys_from_env` → `internal_auth_ok_any`, both dedicated-only ≥32, current first, dup/short
+  dropped; forwarded via `durable_object.ts`). Bridges the window where the apex forwards the NEW key but a
+  not-yet-recycled DO container still booted with the OLD one (the env-read-at-start footgun that took the
+  whole erase path down) — so a rotation no longer 401s in-flight erase legs. Complements the
+  `/_internal/admin/recycle-system` lever (which applies a rotation atomically); the operator clears
+  `CORELINK_ERASE_AUTH_KEY_PREVIOUS` once the fleet has recycled.
+- **feat(dsr): APAC region support for the erasure attestation subsystem.** Adds `Region::Apac`
+  (`corelink-erasure-attestation`) — `parse("apac")`/`as_str`/`audit_bucket` (`corelink-audit-apac`) — and
+  migration `0098` widens the `erasure_attestations` / `erasure_public_keys` region CHECK to all six macro
+  regions (`wnam,enam,weur,sam,apac,afr`) via the additive table-rebuild (ADR-0098). The container
+  self-publishes its apac pubkey on first verify; no manual keygen. Unblocks a signed erasure attestation
+  for APAC-resident tenants.
 - **feat(worker): operator container force-recycle route (`POST /_internal/admin/recycle-system`).**
   Destroys the `_system` container (via the existing DO management path `/_do/stop` →
   `container.destroy()`) so the NEXT request boots it FRESH with the current start-env, and fans the

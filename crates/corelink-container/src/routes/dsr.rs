@@ -102,7 +102,9 @@ pub struct DsrQueuedV1 {
 /// Shared state for the DSR erasure route.
 #[derive(Clone)]
 pub struct DsrRouteState {
-    internal_auth_key: String,
+    /// Accepted internal-auth keys: `[current]`, or `[current, previous]` during
+    /// a rotation window (dual-key — see [`internal_auth_ok_any`]).
+    internal_auth_keys: Vec<String>,
     worker: Arc<InMemoryErasureWorker>,
     /// D1 client for the verify-path attestation signer (G3). `None` in the
     /// unconfigured/test fallback (all-placeholder worker) — attestation is then
@@ -121,7 +123,7 @@ impl std::fmt::Debug for DsrRouteState {
     // Redact the internal-auth secret; never let it reach a log/Debug sink.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DsrRouteState")
-            .field("internal_auth_key", &"<redacted>")
+            .field("internal_auth_keys", &"<redacted>")
             .field("worker", &self.worker)
             .field("d1", &self.d1.as_ref().map(|_| "[D1HttpClient]"))
             .field("r2_audit", &self.r2_audit.as_ref().map(|_| "[R2S3Client]"))
@@ -150,6 +152,23 @@ fn internal_auth_ok(expected: &[u8], headers: &HeaderMap) -> bool {
     let content_ok = expected.ct_eq(&provided_padded).unwrap_u8();
     let len_ok = u8::from(expected.len() == provided_bytes.len());
     (content_ok & len_ok) == 1
+}
+
+/// Constant-time internal-auth check against ANY of the accepted keys — the
+/// dual-key rotation window. `keys` is `[current]` or `[current, previous]`
+/// (see [`crate::routes::admin::erase_auth_keys_from_env`]): during a key
+/// rotation the operator sets the new value AND keeps the old as
+/// `CORELINK_ERASE_AUTH_KEY_PREVIOUS`, so an in-flight erase leg gated on either
+/// value never 401s while the fleet's DO containers cycle onto the new key (the
+/// env-read-at-start footgun). Every key is compared (no early return) so the
+/// check does not leak, via timing, WHICH key matched or how many were tried.
+#[must_use]
+fn internal_auth_ok_any(keys: &[String], headers: &HeaderMap) -> bool {
+    let mut matched = false;
+    for key in keys {
+        matched |= internal_auth_ok(key.as_bytes(), headers);
+    }
+    matched
 }
 
 /// Build the canonical 12-backend orchestrator. WAVE 0: every adapter is the
@@ -373,16 +392,19 @@ pub fn build_state_from_env() -> Option<DsrRouteState> {
     // is DEDICATED-ONLY: NO fallback to the shared CORELINK_INTERNAL_AUTH_KEY
     // (H4 — a shared-key leak must not drive erases), and it preserves the
     // ≥32-char fail-CLOSED floor (F28/F15).
-    let internal_auth_key = match crate::routes::admin::erase_auth_key_from_env() {
-        Some(k) if k.len() >= 32 => k.to_string(),
-        _ => {
-            tracing::warn!(
-                "no usable CORELINK_ERASE_AUTH_KEY (dedicated; NO shared fallback) \
-                 (< 32 chars); /_internal/dsr/* NOT mounted (fail-CLOSED)"
-            );
-            return None;
-        }
-    };
+    // Dual-key: the current `CORELINK_ERASE_AUTH_KEY` plus, DURING A ROTATION, the
+    // outgoing `CORELINK_ERASE_AUTH_KEY_PREVIOUS` (both dedicated-only, ≥32 — H4/
+    // F28/F15 preserved). Accepting both bridges the window where the apex forwards
+    // the NEW key but a not-yet-recycled DO container still booted with the OLD one
+    // (the env-read-at-start footgun). Empty ⇒ route NOT mounted (fail-CLOSED).
+    let internal_auth_keys = crate::routes::admin::erase_auth_keys_from_env();
+    if internal_auth_keys.is_empty() {
+        tracing::warn!(
+            "no usable CORELINK_ERASE_AUTH_KEY (dedicated; NO shared fallback) \
+             (< 32 chars); /_internal/dsr/* NOT mounted (fail-CLOSED)"
+        );
+        return None;
+    }
     // Prefer the real D1-backed worker; fall back to the all-placeholder
     // worker when storage is unconfigured (keeps the route mountable in
     // tests / partially-configured envs). The D1 handle (when present) also
@@ -400,7 +422,7 @@ pub fn build_state_from_env() -> Option<DsrRouteState> {
         None
     };
     Some(DsrRouteState {
-        internal_auth_key,
+        internal_auth_keys,
         worker: Arc::new(worker),
         d1,
         r2_audit,
@@ -456,7 +478,7 @@ async fn handle_access(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+    if !internal_auth_ok_any(&state.internal_auth_keys, &headers) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
     let msg: DsrSubjectV1 = match serde_json::from_slice(&body) {
@@ -490,7 +512,7 @@ async fn handle_portability(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+    if !internal_auth_ok_any(&state.internal_auth_keys, &headers) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
     let msg: DsrSubjectV1 = match serde_json::from_slice(&body) {
@@ -539,7 +561,7 @@ async fn handle_rectification(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+    if !internal_auth_ok_any(&state.internal_auth_keys, &headers) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
     let msg: DsrRectifyV1 = match serde_json::from_slice(&body) {
@@ -658,7 +680,7 @@ async fn handle_erase(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+    if !internal_auth_ok_any(&state.internal_auth_keys, &headers) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
     let msg: DsrQueuedV1 = match serde_json::from_slice(&body) {
@@ -705,7 +727,7 @@ async fn handle_verify(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if !internal_auth_ok(state.internal_auth_key.as_bytes(), &headers) {
+    if !internal_auth_ok_any(&state.internal_auth_keys, &headers) {
         return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
     }
     let msg: DsrVerifyV1 = match serde_json::from_slice(&body) {
@@ -787,6 +809,40 @@ mod tests {
             "H4: a valid shared key must NOT mount erase without the dedicated key"
         );
         std::env::remove_var("CORELINK_INTERNAL_AUTH_KEY");
+    }
+
+    #[test]
+    fn dual_key_accepts_current_or_previous_rejects_unknown() {
+        // Pure (no env): the dual-key rotation window accepts EITHER accepted key.
+        let cur = "a".repeat(40);
+        let prev = "b".repeat(40);
+        let keys = vec![cur.clone(), prev.clone()];
+        let hdr = |v: &str| {
+            let mut h = HeaderMap::new();
+            h.insert(
+                axum::http::HeaderName::from_static("x-corelink-internal-auth"),
+                axum::http::HeaderValue::from_str(v).unwrap(),
+            );
+            h
+        };
+        assert!(
+            internal_auth_ok_any(&keys, &hdr(&cur)),
+            "current key accepted"
+        );
+        assert!(
+            internal_auth_ok_any(&keys, &hdr(&prev)),
+            "previous key accepted"
+        );
+        assert!(
+            !internal_auth_ok_any(&keys, &hdr(&"c".repeat(40))),
+            "an unrelated key is rejected"
+        );
+        assert!(
+            !internal_auth_ok_any(&keys, &hdr(&cur[..39])),
+            "a length-truncated prefix of a valid key is rejected"
+        );
+        // No accepted keys ⇒ nothing matches (fail-CLOSED — mirrors an unmounted route).
+        assert!(!internal_auth_ok_any(&[], &hdr(&cur)));
     }
 
     #[test]

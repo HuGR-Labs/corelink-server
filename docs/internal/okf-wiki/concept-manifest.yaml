@@ -635,6 +635,12 @@ candidates:
     status: "active"
     source_cluster: "adr"
     seed_from: ["specs/03_architecture/adrs/ADR-0064-tenant-tier-max-check-rebuild.md"]
+  - id: "adr/adr-0098-erasure-region-check-widen-rebuild"
+    type: "ADR"
+    title: "ADR 0098 erasure region check widen rebuild"
+    status: "active"
+    source_cluster: "adr"
+    seed_from: ["specs/03_architecture/adrs/ADR-0098-erasure-region-check-widen-rebuild.md"]
   - id: "adr/adr-0065-event-log-do-thin-append-only-primitive"
     type: "ADR"
     title: "ADR 0065 event log do thin append only primitive"
