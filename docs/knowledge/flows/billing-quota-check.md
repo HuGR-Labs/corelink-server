@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-container/src/quota_error.rs"
   - "crates/corelink-container/src/routes/billing_ingest.rs"
   - "crates/corelink-container/src/routes/tenant_quota_read.rs"
-checkpoint_sha: "56a508f980729be4b921ae28a8c4ebcbb842da8a"
+checkpoint_sha: "a862f467"
 provenance: "AUTHORED"
 tags: ["flows", "billing", "quota", "tenancy", "request-flow"]
 timestamp: "2026-06-26T00:00:00Z"
