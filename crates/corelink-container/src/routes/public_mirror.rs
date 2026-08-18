@@ -73,7 +73,6 @@ pub fn build_state_from_env() -> Option<PublicMirrorRouteState> {
 }
 
 /// Mount the mirror router at its top-level `/_internal/admin/*` path.
-#[must_use]
 pub fn router(state: PublicMirrorRouteState) -> Router {
     Router::new()
         .route(
@@ -112,6 +111,12 @@ async fn handle_promote(
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests are allowed to use these primitives"
+)]
 mod tests {
     use super::*;
     use axum::body::Body;
