@@ -124,6 +124,16 @@ Each entry cross-references:
   the action. Surfaced by the action-archive-cache seeding below (which fetches every pinned action by SHA).
 
 ### Added
+- **feat(oci): F3.2 S0 scaffold — inert public-base mirror seam + dedup flag.** The first, deliberately
+  INERT increment of the cross-tenant public OCI base-layer cache campaign. Adds `public_flags.rs`
+  (`oci_public_dedup_enabled()`, boot-read `OCI_PUBLIC_DEDUP_ENABLED`, default **OFF** — activation is a
+  repin, never a live env flip), and a stub `POST /_internal/admin/public-mirror/promote` route
+  (`routes/public_mirror.rs`) that is admin-gated (consumer-specific `CORELINK_PUBLIC_MIRROR_AUTH_KEY` with
+  the `CORELINK_INTERNAL_AUTH_KEY` shared fallback — NOT the erase key) and returns **401** unauthenticated
+  / **501** authenticated: the SSRF-safe fetch → `verify_against_bytes` → `_public` promote body lands in
+  inc4b. Freezes the three shared files (`routes.rs`, `lib.rs`, `main.rs`) so the campaign's downstream
+  work-packages never collide on them. Zero behavior change: no `_public` write path exists yet, the flag
+  is off, and the OCI path is byte-identical.
 - **feat(dsr): dual-key rotation window for the erase auth key.** The container now accepts the current
   `CORELINK_ERASE_AUTH_KEY` OR, when set, the outgoing `CORELINK_ERASE_AUTH_KEY_PREVIOUS`
   (`erase_auth_keys_from_env` → `internal_auth_ok_any`, both dedicated-only ≥32, current first, dup/short

@@ -153,6 +153,8 @@ pub mod origin_timing;
 /// non-digest (tag) entry. Inert until the increment-6 `OciMoatStore` router
 /// consumes `is_allowlisted`; ships deny-all.
 pub mod public_base_allowlist;
+/// Boot-read F3.2 feature flags (increment-6 OCI `_public` dedup activation).
+pub mod public_flags;
 /// Per-tenant monthly **request-count** middleware primitive (rt-nuclear #8):
 /// the container-side mirror of `worker/src/lib/quota.ts::checkRequestQuota`,
 /// backed by the `monthly_request_counts` D1 table (migration 0071). Wired into
