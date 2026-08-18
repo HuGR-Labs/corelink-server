@@ -29,6 +29,18 @@ Each entry cross-references:
   is a lockfile-only patch bump. Ridden here to unblock the erasure-hardening PR's `cargo-deny` gate.
 
 ### Fixed
+- **fix(dsr): GDPR Art.17 erase 500'd for any tenant with a pending Stripe checkout session (FK delete
+  order).** D1 enforces `PRAGMA foreign_keys = ON`, and `stripe_checkout_sessions` carries
+  `FOREIGN KEY (tenant_id) REFERENCES tier_selections(tenant_id)`. The D1 erase adapter deletes
+  `TENANT_ID_TABLES` in list order via separate per-statement D1-REST calls, but listed the PARENT
+  (`tier_selections`, index 0) BEFORE the CHILD (`stripe_checkout_sessions`, index 27) — so deleting
+  the parent while an orphan child row was still pending failed the FK constraint, the whole D1 backend
+  Err'd, and the tenant's erasure returned `500 "erasure failed"` and stayed stuck forever. Root-caused
+  2026-08-18 via `dsr_erasure_log` forensics: 4 real tenants (each with an un-completed checkout
+  session) were the entire tail of the 166-row backlog drain. Fix: move `stripe_checkout_sessions`
+  (child) ahead of `tier_selections` (parent) in the erase-set, add the
+  `stripe_checkout_sessions_precedes_tier_selections` FK-order guard test, and document the
+  child-before-parent invariant. (`routes/dsr/adapter_d1.rs`.)
 - **fix(okf): `scripts/okf_reanchor.py` advances a `source_blobs` anchor only for a file named with
   `--blob`, not every entry.** The helper (added in #1146 to mechanize the reconcile checkpoint/blob
   advance) blanket-rewrote every `source_blobs` entry to the current `git hash-object`. That is wrong:

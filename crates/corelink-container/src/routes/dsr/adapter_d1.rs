@@ -61,6 +61,21 @@ use crate::storage::d1_http::D1HttpClient;
 /// added here is then covered by BOTH erase AND access (no parallel list to
 /// drift).
 pub(super) const TENANT_ID_TABLES: &[&str] = &[
+    // ⚠️ FK-ORDER — D1 enforces `PRAGMA foreign_keys = ON` (verified on the prod
+    // REST path 2026-08-18). `stripe_checkout_sessions` carries
+    // `FOREIGN KEY (tenant_id) REFERENCES tier_selections(tenant_id)`, so the
+    // CHILD MUST be deleted BEFORE the PARENT `tier_selections`. The adapter
+    // deletes this slice in ORDER via separate per-statement D1-REST calls, so if
+    // the parent is deleted while an orphan child row is still pending, the
+    // parent DELETE fails the FK constraint → the D1 backend Errs → the tenant's
+    // Art.17 erasure 500s and stays stuck. ROOT CAUSE of the 2026-08-18 drain
+    // tail: 4 tenants with an un-completed checkout session were the only rows
+    // left un-erased for weeks. Keep every erase-set CHILD ahead of its PARENT;
+    // the `stripe_checkout_sessions_precedes_tier_selections` test guards this edge.
+    // Stripe Checkout *session* state, `tenant_id`-keyed (migr. 0039/0062).
+    // Transient pre-purchase intent — NOT the fiscal record (the retained
+    // invoice/customer/subscription rows are the 5y fiscal artifact). ERASE.
+    "stripe_checkout_sessions",
     "tier_selections",
     "tenant_billing",
     "pilot_signups",
@@ -105,11 +120,6 @@ pub(super) const TENANT_ID_TABLES: &[&str] = &[
     "monthly_request_counts",
     // Advisory tier-selection lock, `tenant_id` PK (migr. 0039). Operational.
     "tier_selection_locks",
-    // Stripe Checkout *session* state, `tenant_id`-keyed (migr. 0039/0062).
-    // Transient pre-purchase intent — NOT the fiscal record (the retained
-    // invoice/customer/subscription rows are the 5y fiscal artifact). ERASE.
-    // [owner edge: defensible as billing-adjacent; see FLAGGED note below.]
-    "stripe_checkout_sessions",
     // Runner subscription↔tenant billing mirror, `tenant_id`-indexed (migr. 0087).
     // The runner analog of `tenant_billing`: an OPERATIONAL subscription-state
     // mirror (plan/status), NOT the fiscal record (the retained Stripe
@@ -550,6 +560,34 @@ impl BackendErasureAdapter for D1EraseAdapter {
 )]
 mod tests {
     use super::*;
+
+    /// FK-ORDER guard. D1 enforces `PRAGMA foreign_keys = ON`, and
+    /// `stripe_checkout_sessions` has `FOREIGN KEY (tenant_id) REFERENCES
+    /// tier_selections(tenant_id)`. The erase loop deletes `TENANT_ID_TABLES` in
+    /// order via separate D1-REST statements, so the CHILD
+    /// (`stripe_checkout_sessions`) MUST be deleted BEFORE the PARENT
+    /// (`tier_selections`) — otherwise deleting the parent while an orphan child
+    /// is still pending fails the FK constraint, the D1 backend Errs, and the
+    /// tenant's Art.17 erasure 500s and stays stuck (the 2026-08-18 drain-tail
+    /// root cause). If a future edit reorders these, this test fails LOUD.
+    #[test]
+    fn stripe_checkout_sessions_precedes_tier_selections() {
+        let child = TENANT_ID_TABLES
+            .iter()
+            .position(|&t| t == "stripe_checkout_sessions")
+            .expect("stripe_checkout_sessions must be in the erase-set");
+        let parent = TENANT_ID_TABLES
+            .iter()
+            .position(|&t| t == "tier_selections")
+            .expect("tier_selections must be in the erase-set");
+        assert!(
+            child < parent,
+            "FK-ORDER VIOLATION: stripe_checkout_sessions (idx {child}) must be \
+             deleted BEFORE tier_selections (idx {parent}) — it holds \
+             FOREIGN KEY (tenant_id) REFERENCES tier_selections(tenant_id) and D1 \
+             enforces FKs, so parent-first deletion 500s the whole erasure."
+        );
+    }
 
     #[test]
     fn erase_set_has_no_overlap_and_no_dupes() {
