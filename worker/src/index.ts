@@ -2159,6 +2159,88 @@ const baseHandler: ExportedHandler<Env> = {
         return h;
       };
 
+      // ── Operator container force-recycle ──────────────────────────────────────
+      // `POST /_internal/admin/recycle-system` destroys the `_system` container so
+      // the NEXT request boots it FRESH — the only reliable way to apply a rotated
+      // START-TIME secret (e.g. a rotated CORELINK_ERASE_AUTH_KEY) to an
+      // already-running DO container. A container-app ROLLOUT does NOT restart a
+      // live DO container, and a hot `_system` container does not self-cycle within
+      // any useful window (observed: 44+ min uptime past a key rotation), so a
+      // rotated erase key silently 401s every fan-out leg until forced. Reuses the
+      // existing DO management path `/_do/stop` (handleStop → destroyContainer →
+      // container.destroy()); the operator gate is THIS apex internal-auth check
+      // (admin consumer key). Best-effort + idempotent: destroying a cold/fresh
+      // container is harmless (it just reboots), so — unlike the erase fan-out — it
+      // reports per-region status instead of failing closed. Fans to every regional
+      // worker so one call converges the whole fleet onto the current start-env.
+      if (route.pathSuffix === "/_internal/admin/recycle-system") {
+        const stopLocal = async (): Promise<boolean> => {
+          const stopUrl = new URL(request.url);
+          stopUrl.pathname = "/_do/stop";
+          try {
+            const r = await systemStub.fetch(
+              new Request(stopUrl.toString(), {
+                method: "POST",
+                headers: buildInternalHeaders(request.headers),
+              }),
+            );
+            return r.ok;
+          } catch (err: unknown) {
+            const m = err instanceof Error ? err.message : "unknown error";
+            console.error(
+              `[${requestId}] recycle-system local /_do/stop threw: ${m.slice(0, 80)}`,
+            );
+            return false;
+          }
+        };
+        const jsonResp = (obj: unknown, status: number): Response =>
+          new Response(JSON.stringify(obj), {
+            status,
+            headers: { "Content-Type": "application/json", "X-Request-Id": requestId },
+          });
+        // A fan-out target (a regional worker) recycles ONLY its own local container.
+        if (request.headers.has("x-corelink-fanout-from")) {
+          const ok = await stopLocal();
+          return applyCors(
+            jsonResp({ recycled: ok, scope: "regional-local", request_id: requestId }, ok ? 200 : 502),
+            request,
+          );
+        }
+        const localOk = await stopLocal();
+        const recycleRegionals: Array<[string, { fetch: typeof fetch } | undefined]> = [
+          ["lhr", env.PROD_LHR],
+          ["sam", env.PROD_SAM],
+          ["nrt", env.PROD_NRT],
+          ["syd", env.PROD_SYD],
+        ];
+        const regionOutcomes = await Promise.all(
+          recycleRegionals.map(async ([region, binding]) => {
+            if (binding === undefined) {
+              return { region, recycled: false, reason: "binding_absent" };
+            }
+            try {
+              const r = await binding.fetch(
+                new Request(request.url, {
+                  method: "POST",
+                  headers: buildInternalHeaders(request.headers, "iad"),
+                }),
+              );
+              return { region, recycled: r.ok };
+            } catch (err: unknown) {
+              const m = err instanceof Error ? err.message : "unknown error";
+              return { region, recycled: false, reason: m.slice(0, 80) };
+            }
+          }),
+        );
+        return applyCors(
+          jsonResp(
+            { recycled_local: localOk, regions: regionOutcomes, request_id: requestId },
+            200,
+          ),
+          request,
+        );
+      }
+
       // ── GDPR Art.17 erasure completeness across residency (CAA-360 CRITICAL) ──
       // A DSR erase MUST run in EVERY jurisdiction the tenant could have data. An
       // EU tenant's CAS/AC bytes live in the prod-lhr container's EU buckets
