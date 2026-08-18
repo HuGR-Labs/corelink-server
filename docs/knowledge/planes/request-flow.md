@@ -10,9 +10,9 @@ source_files:
 source_blobs:
   - "worker/src/index.ts@5957a323bd0fbc55ed5ae0b9ccde992c0a72364a"
   - "worker/src/durable_object.ts@bf36fd6a2f94c92c8b5d47872dedb93cfc95d137"
-  - "crates/corelink-container/src/routes.rs@fe49db9455326e980ee761012a5990c8a5e30a42"
+  - "crates/corelink-container/src/routes.rs@ac26a8af1d00036f39811a9bdfe4df8ce1a78bc1"
   - "crates/corelink-container/src/origin_timing.rs@6eac1fc37428babeeb919d51d7f234a2d41c501c"
-checkpoint_sha: "f8edd349285878f48f128efc02a19dd795f7339a"
+checkpoint_sha: "7052fdff8973b6d6cb503191050b137f10401a2a"
 provenance: "AUTHORED"
 tags: ["planes", "request-flow", "topology", "end-to-end"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -88,15 +88,15 @@ semantics in the container.
 6. The proxy rewrites the request onto `http://localhost:50051` through the `getTcpPort` fetcher — the
    DO→container hop (`worker/src/durable_object.ts:345-358`).
 7. The container's composed router (built by `build_with_factory`) receives the request and routes it to
-   the matching handler (`crates/corelink-container/src/routes.rs:431-433`).
+   the matching handler (`crates/corelink-container/src/routes.rs:434-436`).
 8. The shared CAS/AC handler objects — wrapped once with byte-accounting, the erasure tombstone gate,
    and the native PAT possession backstop — execute the actual cache operation
-   (`crates/corelink-container/src/routes.rs:494-603`).
+   (`crates/corelink-container/src/routes.rs:497-606`).
 9. The hop is MEASURED end to end, and the measurement is split across the same boundary the request
    crosses. The container's outermost data-plane layer clocks its whole share of the request and stamps
    `opat` / `oquota` / `ostore` / `oother` onto the response's own `Server-Timing`
    (`crates/corelink-container/src/origin_timing.rs:265-273`, wired last so it wraps every inner layer at
-   `crates/corelink-container/src/routes.rs:1072-1074`); the Worker forwards those four and derives the
+   `crates/corelink-container/src/routes.rs:1075-1077`); the Worker forwards those four and derives the
    one term only it can see, `ohop = origin − Σ(container phases)` — the dispatch, the DO's prologue and
    the wire (`worker/src/index.ts:3954`). Recording is a task-local ledger, so an instrumented region
    reached outside a request (a test, a background task) simply records nothing
@@ -110,7 +110,7 @@ semantics in the container.
 - The DO→container hop always targets port 50051 via the `getTcpPort` fetcher
   (`worker/src/durable_object.ts:345-358`).
 - The container re-verifies possession at the shared handler chokepoint rather than trusting the hop
-  blindly (`crates/corelink-container/src/routes.rs:494-603`).
+  blindly (`crates/corelink-container/src/routes.rs:497-606`).
 - The DO will not proxy until the container is confirmed running (or it returns 503/500)
   (`worker/src/durable_object.ts:573-602`).
 - The `origin` split always reconciles: the container's residue phase is computed against its OWN
@@ -144,6 +144,6 @@ semantics in the container.
 7. `worker/src/durable_object.ts:345-358` — the DO→container proxy via `getTcpPort(50051)`.
 8. `worker/src/durable_object.ts:541-642` — the DO `fetch`: tenant bind, ensure-running, proxy.
 9. `worker/src/durable_object.ts:573-602` — the ensure-running gate before proxying (503/500 otherwise).
-10. `crates/corelink-container/src/routes.rs:431-433` — the container's composed router receiving the request.
-11. `crates/corelink-container/src/routes.rs:494-603` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
-12. `crates/corelink-container/src/origin_timing.rs:265-273` — the container's outermost data-plane layer: scope a task-local phase ledger over the request, clock the whole of it, and stamp the phases on the response's `Server-Timing`. Wired last (so it wraps every inner layer) at `crates/corelink-container/src/routes.rs:1072-1074`; the residue that makes the parts sum to the whole is `crates/corelink-container/src/origin_timing.rs:225`; `timed` is the pass-through recorder at `crates/corelink-container/src/origin_timing.rs:247-252`.
+10. `crates/corelink-container/src/routes.rs:434-436` — the container's composed router receiving the request.
+11. `crates/corelink-container/src/routes.rs:497-606` — the shared CAS/AC handlers (accounting + tombstone + PAT gate) executing the op.
+12. `crates/corelink-container/src/origin_timing.rs:265-273` — the container's outermost data-plane layer: scope a task-local phase ledger over the request, clock the whole of it, and stamp the phases on the response's `Server-Timing`. Wired last (so it wraps every inner layer) at `crates/corelink-container/src/routes.rs:1075-1077`; the residue that makes the parts sum to the whole is `crates/corelink-container/src/origin_timing.rs:225`; `timed` is the pass-through recorder at `crates/corelink-container/src/origin_timing.rs:247-252`.
