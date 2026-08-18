@@ -50,7 +50,20 @@ the stale concept so every claim is true again, and advance its checkpoint.
    e. **Advance the BLOB anchors** (concepts that carry `source_blobs`). For every
       re-authored file, set its entry to the file's blob id at the content you just
       cited: `git hash-object <path>` (equivalently `git rev-parse HEAD:<path>` once
-      committed). The anchor is what C5 actually compares against, so a stale entry
+      committed).
+
+   > **Mechanize (d)+(e) — do NOT hand-edit the sha.** Run
+   > `python3 scripts/okf_reanchor.py <concept.md…>` (or bare, to auto-detect every
+   > modified `docs/knowledge/*.md`). It writes the FULL 40-hex `git rev-parse HEAD`
+   > into `checkpoint_sha` and rewrites each `source_blobs` entry to its
+   > `git hash-object`. Hand-editing these has cost two CI cycles: a SHORT sha (the
+   > gate demands 40-hex) and an ORPHANED sha written before a rebase (the gate then
+   > falls back to the base-ref and reports the concept stale). Run it AFTER the body
+   > re-author in (c) — never as a substitute for one (a bump with no body edit fails
+   > C5b). **Especially re-run it after any rebase/force-push**, since the rebase
+   > orphans the commit the old `checkpoint_sha` named.
+
+      The anchor is what C5 actually compares against, so a stale entry
       keeps the concept red; a MISSING entry for a path that had one fails C4c
       (blob addressing is a ratchet — never delete an anchor to make a red go away).
       A blob anchor is immutable under rebase/squash/cherry-pick, so unlike
