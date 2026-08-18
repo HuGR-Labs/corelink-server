@@ -3,21 +3,31 @@
 //! envelopes from the per-region `corelink-ac-<region>` R2 buckets.
 //!
 //! AC topology (cold-verified 2026-06-11, ADR-S11-013 §R2-erasure; corrected
-//! 2026-06-22 — F-003):
-//! - AC is stored as **per-region R2 buckets** `corelink-ac-{sam,iad,lhr,nrt,syd}`
-//!   (region in the bucket NAME) — unlike CAS (one bucket, region in the key).
-//! - The R2 object key is `<region>/<tenant_prefix_hex>/<action_digest>`
-//!   ([`R2S3Client::blob_key`]).
+//! 2026-06-22 — F-003; endpoint-scoped 2026-08-18 — EU false-completion fix):
+//! - AC is stored as **per-region R2 buckets** whose name is the container's
+//!   `R2_AC_BUCKET` env (`corelink-ac-iad`/`-sam`/`-nrt`/`-syd` on the US
+//!   endpoint, **`corelink-ac-eu`** on the physically separate EU endpoint) —
+//!   unlike CAS (one bucket, region in the key). The R2 object key is
+//!   `<region>/<tenant_prefix_hex>/<action_digest>` ([`R2S3Client::blob_key`]).
 //! - **Erasure is LIST-by-prefix, NOT index-driven.** The live Bazel REAPI AC
 //!   write path (`R2AcHandler::update`) PUTs the AC envelope to R2 but writes
 //!   **no `ac_meta` D1 index row** (repo-wide `ac_meta` writers = 0). The old
 //!   `ac_meta`-driven erase therefore ALWAYS short-circuited on an empty index
 //!   (`NotApplicable`, no R2 delete) while still signing a `VerifiedComplete`
-//!   attestation — a GDPR Art.17 false-completion (F-003). We now mirror the
-//!   CAS adapter (`adapter_r2_cas`): LIST every object under
-//!   `<region>/<tenant_prefix>/` across the five regional AC buckets and DELETE
-//!   it — **complete by construction**, independent of any D1 index, and robust
-//!   to a deployment whose region changed over time.
+//!   attestation — a GDPR Art.17 false-completion (F-003).
+//! - **Each container erases its OWN `R2_AC_BUCKET`** — the exact bucket its
+//!   WRITE path used (`routes/ac.rs` reads the same `env_or("R2_AC_BUCKET",
+//!   "corelink-ac-iad")`), always reachable from this container's S3 endpoint.
+//!   The multi-region erase fan-out (`worker/src/index.ts`, fail-CLOSED — any
+//!   regional leg non-2xx ⇒ 502 retry) sends the erase to EVERY region's
+//!   container, so each container erasing its own bucket makes the **union
+//!   complete**. `tenant.primary_region` is immutable (`migrations/d1/0028`), so
+//!   a tenant's AC bytes only ever live in its home region's bucket.
+//!   ⚠️ Pre-2026-08-18 this swept hardcoded `corelink-ac-<region>` names for all
+//!   five regions, which (a) NEVER listed the EU bucket `corelink-ac-eu`
+//!   (⇒ every EU-tenant erase falsely signed VerifiedComplete while EU AC bytes
+//!   survived) and (b) tried US bucket names against the EU endpoint. Reading
+//!   `R2_AC_BUCKET` — as CAS already does with `R2_CAS_BUCKET` — closes both.
 //! - `tenant_prefix` is `derive_prefix(tdk, tenant).to_string()` — the SAME
 //!   derivation the writer used, so the LIST prefix matches the stored objects
 //!   by construction. No TDK ⇒ fail CLOSED (cannot address them).
@@ -42,18 +52,18 @@ use crate::storage::d1_http::D1HttpClient;
 use crate::storage::r2_s3::R2S3Client;
 use crate::storage::StorageEnv;
 
-/// Default per-region AC bucket-name prefix: `<prefix><region>` =
-/// `corelink-ac-iad`, …, matching the `[[r2_buckets]]` bindings in
-/// `wrangler.toml`. Overridable via `R2_AC_BUCKET_PREFIX` (non-prod envs).
-const DEFAULT_AC_BUCKET_PREFIX: &str = "corelink-ac-";
+/// Default AC bucket when `R2_AC_BUCKET` is unset (dev/CI + the iad default) —
+/// matches the `routes/ac.rs` WRITE path default (`env_or("R2_AC_BUCKET",
+/// "corelink-ac-iad")`), so erase targets the SAME bucket the writer used.
+const DEFAULT_AC_BUCKET: &str = "corelink-ac-iad";
 
-// Canonical AC storage regions — the per-region bucket SUFFIX (`corelink-ac-<r>`)
-// AND the leading `<region>/` key segment. Byte-for-byte the same region sweep
-// the CAS erase uses — so it shares the SINGLE SOURCE OF TRUTH
-// (`crate::storage::region_map::CAS_REGIONS`, superset-gated so an Art.17 erase
-// never skips a colo). The container writes AC through a single global region,
-// but a once-per-account erase sweeps all buckets so it is robust to a write
-// region that changed over time (cheap — a once-per-erase LIST per bucket).
+// Canonical AC region key-prefixes — the leading `<region>/` segment of every AC
+// object key `<region>/<tenant_prefix>/<digest>`. Shared SINGLE SOURCE OF TRUTH
+// with the CAS sweep (`crate::storage::region_map::CAS_REGIONS`). We sweep ALL of
+// these prefixes WITHIN THIS container's own bucket (below) — cheap belt-and-
+// suspenders that stays complete even if a legacy object was written under a
+// different region key; `tenant.primary_region` is immutable
+// (`migrations/d1/0028`), so in practice only the home prefix is populated.
 use crate::storage::region_map::CAS_REGIONS as AC_REGIONS;
 
 /// Real R2 Action-Cache erase adapter.
@@ -66,7 +76,15 @@ pub(super) struct R2AcEraseAdapter {
         reason = "kept for adapter-construction symmetry with the sibling DSR adapters"
     )]
     d1: Arc<D1HttpClient>,
-    bucket_prefix: String,
+    /// This container's OWN AC bucket (`R2_AC_BUCKET`) — the SAME bucket its
+    /// write path targets (`routes/ac.rs`), always reachable from this
+    /// container's S3 endpoint. The multi-region erase fan-out (fail-CLOSED)
+    /// sends the erase to EVERY region's container, so each container erasing
+    /// its own bucket makes the union complete — while never listing a bucket on
+    /// a different jurisdiction's endpoint (the pre-2026-08-18 bug: it swept
+    /// hardcoded `corelink-ac-<region>` names, missing the EU bucket
+    /// `corelink-ac-eu` entirely AND trying US buckets from the EU endpoint).
+    write_bucket: String,
 }
 
 impl std::fmt::Debug for R2AcEraseAdapter {
@@ -74,25 +92,24 @@ impl std::fmt::Debug for R2AcEraseAdapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("R2AcEraseAdapter")
             .field("d1", &"[D1HttpClient]")
-            .field("bucket_prefix", &self.bucket_prefix)
+            .field("write_bucket", &self.write_bucket)
             .finish()
     }
 }
 
 impl R2AcEraseAdapter {
-    /// Construct over a shared [`D1HttpClient`]. The per-region S3 clients are
-    /// built lazily inside `erase`/`verification_hash` (request-time, where the
+    /// Construct over a shared [`D1HttpClient`]. The S3 client is built lazily
+    /// inside `erase`/`verification_hash` (request-time, where the
     /// `block_in_place` runtime context is guaranteed — `StorageEnv` is not
-    /// `Clone`, so it is re-read from env there rather than stored).
+    /// `Clone`, so it is re-read from env there rather than stored). The AC
+    /// bucket is resolved from `R2_AC_BUCKET` — byte-for-byte the same env the
+    /// WRITE path reads (`routes/ac.rs` `env_or("R2_AC_BUCKET",
+    /// "corelink-ac-iad")`) — so the erase can never miss a bucket the writer
+    /// used (the EU `corelink-ac-eu` false-completion, fixed 2026-08-18).
     pub(super) fn new(d1: Arc<D1HttpClient>) -> Self {
-        let bucket_prefix = crate::storage::env_or("R2_AC_BUCKET_PREFIX", DEFAULT_AC_BUCKET_PREFIX);
-        Self { d1, bucket_prefix }
+        let write_bucket = crate::storage::env_or("R2_AC_BUCKET", DEFAULT_AC_BUCKET);
+        Self { d1, write_bucket }
     }
-}
-
-/// `<prefix><region>` → `corelink-ac-iad`, … (free fn for unit testing).
-fn ac_bucket_name(prefix: &str, region: &str) -> String {
-    format!("{prefix}{region}")
 }
 
 /// The per-region LIST prefix for a tenant: `<region>/<tenant_prefix>/`. This is
@@ -108,21 +125,21 @@ fn ac_list_prefix(region: &str, tenant_prefix: &str) -> String {
 /// deleted. Single `block_in_place`/`block_on` bridge (same envelope as
 /// [`super::d1util::d1_query_blocking`]). A region whose bucket holds nothing for
 /// the tenant contributes zero and is a safe no-op (DeleteObject idempotency).
-fn list_and_delete_ac(
-    bucket_prefix: &str,
-    tenant_prefix: &str,
-) -> Result<u64, ErasureBackendError> {
+fn list_and_delete_ac(write_bucket: &str, tenant_prefix: &str) -> Result<u64, ErasureBackendError> {
     tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
             let env = StorageEnv::from_env().ok_or_else(|| {
                 ErasureBackendError::Transport("StorageEnv unavailable for R2 AC erase".to_owned())
             })?;
+            // ONE bucket — THIS container's own `R2_AC_BUCKET`, reachable from its
+            // own S3 endpoint (the fan-out reaches every region's container, so the
+            // union is complete). Sweep every region KEY-prefix within it (cheap;
+            // immutable primary_region ⇒ only the home prefix is ever populated).
+            let client = R2S3Client::new(&env, write_bucket.to_owned())
+                .await
+                .map_err(ErasureBackendError::Transport)?;
             let mut deleted = 0u64;
             for region in AC_REGIONS {
-                let bucket = ac_bucket_name(bucket_prefix, region);
-                let client = R2S3Client::new(&env, bucket)
-                    .await
-                    .map_err(ErasureBackendError::Transport)?;
                 let prefix = ac_list_prefix(region, tenant_prefix);
                 let keys = client
                     .list_objects_v2(&prefix)
@@ -143,21 +160,21 @@ fn list_and_delete_ac(
 
 /// Count AC objects still present under the tenant's prefix across all regional
 /// buckets (verification sweep — counts ACTUAL R2 objects, not D1 rows).
-fn count_ac_remaining(
-    bucket_prefix: &str,
-    tenant_prefix: &str,
-) -> Result<u64, ErasureBackendError> {
+fn count_ac_remaining(write_bucket: &str, tenant_prefix: &str) -> Result<u64, ErasureBackendError> {
     tokio::task::block_in_place(|| {
         tokio::runtime::Handle::current().block_on(async {
             let env = StorageEnv::from_env().ok_or_else(|| {
                 ErasureBackendError::Transport("StorageEnv unavailable for R2 AC verify".to_owned())
             })?;
+            // Count the ACTUAL write bucket (this container's `R2_AC_BUCKET`) so a
+            // non-empty EU `corelink-ac-eu` BLOCKS VerifiedComplete (fail-CLOSED →
+            // VerifiedPartial) instead of silently passing against a wrong/empty
+            // bucket name — the false-completion this fix closes.
+            let client = R2S3Client::new(&env, write_bucket.to_owned())
+                .await
+                .map_err(ErasureBackendError::Transport)?;
             let mut remaining = 0u64;
             for region in AC_REGIONS {
-                let bucket = ac_bucket_name(bucket_prefix, region);
-                let client = R2S3Client::new(&env, bucket)
-                    .await
-                    .map_err(ErasureBackendError::Transport)?;
                 let prefix = ac_list_prefix(region, tenant_prefix);
                 let keys = client
                     .list_objects_v2(&prefix)
@@ -201,7 +218,7 @@ impl BackendErasureAdapter for R2AcEraseAdapter {
         // LIST + DELETE every AC envelope under `<region>/<prefix>/` across the
         // five regional buckets. Complete by construction (no dead `ac_meta`
         // index dependency — see the module doc / F-003).
-        let deleted = list_and_delete_ac(&self.bucket_prefix, &prefix)?;
+        let deleted = list_and_delete_ac(&self.write_bucket, &prefix)?;
 
         Ok(BackendErasureOutcome::Erased {
             records_deleted: deleted,
@@ -218,7 +235,7 @@ impl BackendErasureAdapter for R2AcEraseAdapter {
             )
         })?;
         let prefix = derive_prefix(&tdk, ctx.tenant_id).to_string();
-        let remaining = count_ac_remaining(&self.bucket_prefix, &prefix)?;
+        let remaining = count_ac_remaining(&self.write_bucket, &prefix)?;
         if remaining == 0 {
             Ok(CANONICAL_EMPTY_TENANT_HASH)
         } else {
@@ -246,20 +263,33 @@ mod tests {
     }
 
     #[test]
-    fn bucket_name_is_per_region() {
+    fn erase_targets_this_containers_own_write_bucket() {
+        // The erase must read the SAME env the WRITE path (routes/ac.rs) reads —
+        // `R2_AC_BUCKET` — so it can never miss a bucket the writer used. On the
+        // EU container that env is `corelink-ac-eu`; the pre-fix code hardcoded
+        // `corelink-ac-<region>` and never listed it (the false-completion bug).
+        // Uses a UNIQUELY-named env var to stay parallel-test-safe (env_or is a
+        // pure fn of the var it is given).
+        assert_eq!(DEFAULT_AC_BUCKET, "corelink-ac-iad");
+        const PROBE: &str = "R2_AC_BUCKET_PROBE_ACTEST";
+        std::env::set_var(PROBE, "corelink-ac-eu");
         assert_eq!(
-            ac_bucket_name(DEFAULT_AC_BUCKET_PREFIX, "iad"),
-            "corelink-ac-iad"
+            crate::storage::env_or(PROBE, DEFAULT_AC_BUCKET),
+            "corelink-ac-eu",
+            "EU container erases its own R2_AC_BUCKET (corelink-ac-eu), not a hardcoded name"
         );
+        std::env::remove_var(PROBE);
         assert_eq!(
-            ac_bucket_name(DEFAULT_AC_BUCKET_PREFIX, "syd"),
-            "corelink-ac-syd"
+            crate::storage::env_or(PROBE, DEFAULT_AC_BUCKET),
+            "corelink-ac-iad",
+            "unset ⇒ the write-path default (corelink-ac-iad)"
         );
     }
 
     #[test]
-    fn five_canonical_ac_regions() {
-        // Same sweep + order as the DSR CAS adapter (adapter_r2_cas::CAS_REGIONS).
+    fn five_canonical_ac_region_key_prefixes() {
+        // The region KEY-prefixes swept within the single own-bucket — same set +
+        // order as the DSR CAS adapter (adapter_r2_cas::CAS_REGIONS).
         assert_eq!(AC_REGIONS, &["sam", "iad", "lhr", "nrt", "syd"]);
     }
 

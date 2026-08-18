@@ -554,8 +554,9 @@ mod tests {
 
     #[test]
     fn region_pub_param_rejects_unknown_and_missing_suffix() {
+        // APAC is now a known attestation region → Some.
+        assert_eq!(region_from_pub_param("apac.pub"), Some(Region::Apac));
         // Unknown region → None → 404.
-        assert_eq!(region_from_pub_param("apac.pub"), None);
         assert_eq!(region_from_pub_param("bogus.pub"), None);
         // Missing .pub suffix → None.
         assert_eq!(region_from_pub_param("weur"), None);

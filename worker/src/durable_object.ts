@@ -803,6 +803,11 @@ export class CoreLinkServer implements DurableObject {
           CORELINK_PAT_MINT_AUTH_KEY: this.env.CORELINK_PAT_MINT_AUTH_KEY ?? "",
           CORELINK_ADMIN_AUTH_KEY: this.env.CORELINK_ADMIN_AUTH_KEY ?? "",
           CORELINK_ERASE_AUTH_KEY: this.env.CORELINK_ERASE_AUTH_KEY ?? "",
+          // Dual-key rotation: the OUTGOING erase key, accepted alongside the
+          // current one by the container (`dsr::internal_auth_ok_any`) for the
+          // duration of a rotation so an in-flight erase leg never 401s while the
+          // DO containers cycle onto the new key. Empty when unset ⇒ single-key.
+          CORELINK_ERASE_AUTH_KEY_PREVIOUS: this.env.CORELINK_ERASE_AUTH_KEY_PREVIOUS ?? "",
           // H5 dual-approval: the container's `POST /v1/admin/approve` gate reads
           // a DEDICATED `CORELINK_ADMIN_APPROVER_AUTH_KEY` (distinct from the
           // mutate/admin key so approve+mutate need different keys — real

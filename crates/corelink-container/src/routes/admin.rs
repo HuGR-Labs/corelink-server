@@ -646,6 +646,32 @@ pub fn erase_auth_key_from_env() -> Option<Arc<str>> {
     resolve_dedicated_auth_key("CORELINK_ERASE_AUTH_KEY")
 }
 
+/// Dual-key rotation variant of [`erase_auth_key_from_env`]: the accepted ERASE
+/// keys = the current `CORELINK_ERASE_AUTH_KEY` PLUS, when set and ≥
+/// [`INTERNAL_AUTH_KEY_MIN_LEN`], the outgoing `CORELINK_ERASE_AUTH_KEY_PREVIOUS`.
+///
+/// Both are DEDICATED-ONLY (no shared `CORELINK_INTERNAL_AUTH_KEY` fallback — H4)
+/// and hold the ≥32-char floor (F28/F15). Accepting the previous value for the
+/// duration of a rotation bridges the window where the apex already forwards the
+/// NEW key but a not-yet-recycled DO container still booted with the OLD one (the
+/// env-read-at-start footgun that took the whole erase path down). The operator
+/// clears `CORELINK_ERASE_AUTH_KEY_PREVIOUS` once the fleet has recycled. Returns
+/// an empty vec (⇒ erase surfaces fail CLOSED / stay unmounted) when neither is
+/// usable. The current key is always FIRST; a duplicate previous is dropped.
+#[must_use]
+pub fn erase_auth_keys_from_env() -> Vec<String> {
+    let mut keys: Vec<String> = Vec::with_capacity(2);
+    if let Some(current) = erase_auth_key_from_env() {
+        keys.push(current.to_string());
+    }
+    if let Ok(previous) = std::env::var("CORELINK_ERASE_AUTH_KEY_PREVIOUS") {
+        if previous.len() >= INTERNAL_AUTH_KEY_MIN_LEN && !keys.contains(&previous) {
+            keys.push(previous);
+        }
+    }
+    keys
+}
+
 /// Build the axum `Router` exposing the admin read + mutate + approve routes.
 pub fn router(state: AdminRouteState) -> Router {
     Router::new()
@@ -1816,6 +1842,41 @@ mod tests {
             erase_auth_key_from_env().is_none(),
             "H4: a < 32-char dedicated erase key fails CLOSED (no shared fallback)"
         );
+        clear_key_env();
+    }
+
+    /// Dual-key rotation: `erase_auth_keys_from_env` returns `[current]` normally
+    /// and `[current, previous]` while `CORELINK_ERASE_AUTH_KEY_PREVIOUS` is set
+    /// (≥32), current FIRST, a too-short or duplicate previous dropped.
+    #[test]
+    fn erase_auth_keys_dual_key_rotation_window() {
+        clear_key_env();
+        std::env::remove_var("CORELINK_ERASE_AUTH_KEY_PREVIOUS");
+        std::env::set_var("CORELINK_ERASE_AUTH_KEY", KEY_A);
+        assert_eq!(
+            erase_auth_keys_from_env(),
+            vec![KEY_A.to_string()],
+            "single accepted key when no previous is set"
+        );
+        std::env::set_var("CORELINK_ERASE_AUTH_KEY_PREVIOUS", KEY_B);
+        assert_eq!(
+            erase_auth_keys_from_env(),
+            vec![KEY_A.to_string(), KEY_B.to_string()],
+            "rotation window accepts both, current first"
+        );
+        std::env::set_var("CORELINK_ERASE_AUTH_KEY_PREVIOUS", "too-short");
+        assert_eq!(
+            erase_auth_keys_from_env(),
+            vec![KEY_A.to_string()],
+            "a < 32-char previous is ignored"
+        );
+        std::env::set_var("CORELINK_ERASE_AUTH_KEY_PREVIOUS", KEY_A);
+        assert_eq!(
+            erase_auth_keys_from_env(),
+            vec![KEY_A.to_string()],
+            "a previous equal to the current key is deduped"
+        );
+        std::env::remove_var("CORELINK_ERASE_AUTH_KEY_PREVIOUS");
         clear_key_env();
     }
 
