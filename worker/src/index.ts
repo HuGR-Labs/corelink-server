@@ -283,6 +283,72 @@ export interface Env {
 }
 
 /**
+ * Cloudflare Durable Object location hints (the `locationHint` option of
+ * `DurableObjectNamespace.get`). A DO with NO hint homes at the colo of first
+ * access; the hint pins WHERE a brand-new DO — and, for `CoreLinkServer`, its
+ * attached Rust container — is created.
+ */
+type DoLocationHint =
+  | "wnam"
+  | "enam"
+  | "sam"
+  | "weur"
+  | "eeur"
+  | "apac"
+  | "oc"
+  | "afr"
+  | "me";
+
+/**
+ * Map this Worker's own serving region (`R2_CAS_REGION`, a colo code) to the CF
+ * DO location hint for the region it serves.
+ *
+ * WHY THIS EXISTS (multi-region container-serving bug, 2026-08-18): the region
+ * fan-out is a CO-LOCATED Service Binding — the regional Worker (`PROD_LHR` /
+ * `PROD_NRT` / …) executes in the CALLER's entry colo, not its named region.
+ * Combined with a hint-LESS `CORELINK_SERVER.get()`, a regional tenant's DO +
+ * its container homed at the entry colo instead of the region. When that colo is
+ * not a CF Containers metro (or cannot start the container) the DO's container
+ * never became reachable → `container_health_check_failed`. Hinting the DO to
+ * this Worker's own region makes placement DETERMINISTIC and in-region.
+ *
+ * `sam` has NO Cloudflare region (documented platform limit — see
+ * region-map.ts) so a sam-serving Worker pins to `enam` (US), matching where
+ * sam-labelled data physically lands today. An unknown/unset region returns
+ * `undefined` (no hint) → today's exact behaviour, never worse.
+ */
+export function doLocationHintForRegion(region: string | undefined): DoLocationHint | undefined {
+  switch (region) {
+    case "iad":
+      return "enam";
+    case "lhr":
+      return "weur";
+    case "nrt":
+      return "apac";
+    case "syd":
+      return "oc";
+    case "sam":
+      // Cloudflare has no SAM region; sam data lands in US R2 today. Pin the DO
+      // (and its container) to ENAM so it starts in a supported container metro
+      // rather than homing non-deterministically at the caller's entry colo.
+      return "enam";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Build the options bag for `CORELINK_SERVER.get(id, opts)`: a region location
+ * hint when this Worker's region is known, else `undefined` (bare `.get(id)`).
+ * Every `CoreLinkServer` DO owns a container, so ALL `.get()` sites route
+ * through this so the container homes in-region deterministically.
+ */
+function serverGetOpts(env: Env): { locationHint: DoLocationHint } | undefined {
+  const hint = doLocationHintForRegion(env.R2_CAS_REGION);
+  return hint ? { locationHint: hint } : undefined;
+}
+
+/**
  * Route prefix of the DO D1-placement probe: `/_internal/do-d1-probe/{tenant_id}`.
  *
  * A DIAGNOSTIC, not a product surface. It forwards to the tenant's own
@@ -1873,7 +1939,7 @@ const baseHandler: ExportedHandler<Env> = {
     // liveness `status` field is preserved so monitoring tools still work.
     if (route.routeKind === "health_container") {
       const systemDoId = env.CORELINK_SERVER.idFromName("_system");
-      const systemStub = env.CORELINK_SERVER.get(systemDoId);
+      const systemStub = env.CORELINK_SERVER.get(systemDoId, serverGetOpts(env));
       const containerHealthUrl = new URL(request.url);
       containerHealthUrl.pathname = "/_health";
       const containerReq = new Request(containerHealthUrl.toString(), {
@@ -2051,7 +2117,7 @@ const baseHandler: ExportedHandler<Env> = {
           );
         }
         const probeDoId = env.CORELINK_SERVER.idFromName(probeTenantId);
-        const probeStub = env.CORELINK_SERVER.get(probeDoId);
+        const probeStub = env.CORELINK_SERVER.get(probeDoId, serverGetOpts(env));
         const probeUrl = new URL(request.url);
         probeUrl.pathname = "/_do/health";
         const probeHeaders = new Headers(request.headers);
@@ -2074,7 +2140,7 @@ const baseHandler: ExportedHandler<Env> = {
 
       // Route to the _system DO which hosts the LOCAL (this-region) container.
       const systemDoId = env.CORELINK_SERVER.idFromName("_system");
-      const systemStub = env.CORELINK_SERVER.get(systemDoId);
+      const systemStub = env.CORELINK_SERVER.get(systemDoId, serverGetOpts(env));
       // Build server-trusted internal headers (client trust headers stripped, then
       // re-established). `fanoutFrom`, when set, marks a request as ALREADY fanned
       // out so the receiving regional worker does not re-fan (loop guard).
@@ -2295,7 +2361,7 @@ const baseHandler: ExportedHandler<Env> = {
       // id), then set them from server-trusted values. Drop the Clerk JWT — the
       // container authenticates via internal-auth, not the session token.
       const onbDoId = env.CORELINK_SERVER.idFromName(onbTenantId);
-      const onbStub = env.CORELINK_SERVER.get(onbDoId);
+      const onbStub = env.CORELINK_SERVER.get(onbDoId, serverGetOpts(env));
       const onbAugmented = new Request(request, {
         headers: (() => {
           const h = new Headers(request.headers);
@@ -2423,7 +2489,7 @@ const baseHandler: ExportedHandler<Env> = {
     // container does per-tenant CAS namespacing from the OCI-token tenant.
     if (route.routeKind === "oci_v2" || route.routeKind === "oci_token") {
       const ociDoId = env.CORELINK_SERVER.idFromName("_oci");
-      const ociStub = env.CORELINK_SERVER.get(ociDoId);
+      const ociStub = env.CORELINK_SERVER.get(ociDoId, serverGetOpts(env));
       const ociReq = new Request(request, {
         headers: (() => {
           const h = new Headers(request.headers);
@@ -2491,7 +2557,7 @@ const baseHandler: ExportedHandler<Env> = {
     // read/clone/parse the body (a re-serialized body would break the signature).
     if (route.routeKind === "billing_webhook") {
       const billingDoId = env.CORELINK_SERVER.idFromName("_system");
-      const billingStub = env.CORELINK_SERVER.get(billingDoId);
+      const billingStub = env.CORELINK_SERVER.get(billingDoId, serverGetOpts(env));
       const billingReq = new Request(request, {
         headers: (() => {
           const h = new Headers(request.headers);
@@ -2537,7 +2603,7 @@ const baseHandler: ExportedHandler<Env> = {
     // are stripped; the container routes are mounted outside its auth layers.
     if (route.routeKind === "public_attestation") {
       const pubDoId = env.CORELINK_SERVER.idFromName("_anonymous");
-      const pubStub = env.CORELINK_SERVER.get(pubDoId);
+      const pubStub = env.CORELINK_SERVER.get(pubDoId, serverGetOpts(env));
       const pubReq = new Request(request, {
         headers: (() => {
           const h = new Headers(request.headers);
@@ -2576,7 +2642,7 @@ const baseHandler: ExportedHandler<Env> = {
     // where the container verifies the Stripe signature). See the matchRoute note.
     if (route.routeKind === "fabric_introspect") {
       const fbDoId = env.CORELINK_SERVER.idFromName("_system");
-      const fbStub = env.CORELINK_SERVER.get(fbDoId);
+      const fbStub = env.CORELINK_SERVER.get(fbDoId, serverGetOpts(env));
       // Capture the FABRIC secret BEFORE stripping client trust headers.
       const fabricAuth = request.headers.get("x-corelink-internal-auth") ?? "";
       const fbReq = new Request(request, {
@@ -2614,7 +2680,7 @@ const baseHandler: ExportedHandler<Env> = {
     // matchRoute note.
     if (route.routeKind === "billing_ingest") {
       const biDoId = env.CORELINK_SERVER.idFromName("_system");
-      const biStub = env.CORELINK_SERVER.get(biDoId);
+      const biStub = env.CORELINK_SERVER.get(biDoId, serverGetOpts(env));
       // Capture the INGEST secret BEFORE stripping client trust headers.
       const ingestAuth = request.headers.get("x-corelink-internal-auth") ?? "";
       const biReq = new Request(request, {
@@ -2686,7 +2752,7 @@ const baseHandler: ExportedHandler<Env> = {
         // JWT — the container trusts the Worker-set x-corelink-tenant-id, and
         // the session token must not travel further than the edge.
         const custDoId = env.CORELINK_SERVER.idFromName(custTenantId);
-        const custStub = env.CORELINK_SERVER.get(custDoId);
+        const custStub = env.CORELINK_SERVER.get(custDoId, serverGetOpts(env));
         const custAugmented = new Request(request, {
           headers: (() => {
             const h = new Headers(request.headers);
@@ -3368,7 +3434,7 @@ const baseHandler: ExportedHandler<Env> = {
     // Route to the per-tenant DO. idFromName(resolvedTenantId) guarantees
     // each tenant gets its own isolated DO — never the shared "_pending_auth".
     const doId = env.CORELINK_SERVER.idFromName(resolvedTenantId);
-    const stub = env.CORELINK_SERVER.get(doId);
+    const stub = env.CORELINK_SERVER.get(doId, serverGetOpts(env));
 
     // Augment request with correlation headers (no body inspection — INV-NO-BODY-IN-LOGS)
     const augmented = new Request(request, {
