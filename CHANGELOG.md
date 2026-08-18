@@ -22,6 +22,12 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Security
+- **deps: bump `h2` 0.4.14 → 0.4.16 (RUSTSEC-2026-0258).** The `h2` crate (transitive via hyper)
+  accepted and queued empty DATA frames without limit → unbounded memory / panic-on-overflow. A
+  newly-published advisory that failed `cargo-deny` repo-wide; `cargo update -p h2 --precise 0.4.16`
+  is a lockfile-only patch bump. Ridden here to unblock the erasure-hardening PR's `cargo-deny` gate.
+
 ### Fixed
 - **fix(dsr): EU Action-Cache erase was a GDPR Art.17 false-completion — the erase now targets each
   container's own `R2_AC_BUCKET`.** The AC erase adapter swept hardcoded `corelink-ac-<region>` bucket
