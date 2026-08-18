@@ -23,6 +23,17 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(worker): pin each `CoreLinkServer` DO (and its container) to its serving region via `locationHint`.**
+  Every `env.CORELINK_SERVER.get()` was called WITHOUT a `locationHint`, so a brand-new Durable Object — and the
+  Rust container it cold-starts — homed at the colo of first access. Because the multi-region fan-out is a
+  CO-LOCATED Service Binding (a regional Worker `PROD_LHR`/`PROD_NRT`/… runs in the *caller's* entry colo, not its
+  named region), an EU/APAC tenant's DO+container homed outside its region; when that colo was not a CF Containers
+  metro the container never became reachable → `container_health_check_failed` (only the long-warmed IAD DOs
+  served). `doLocationHintForRegion(env.R2_CAS_REGION)` now maps each Worker's own region to its CF DO location
+  hint (`iad→enam`, `lhr→weur`, `nrt→apac`, `syd→oc`; `sam→enam` — Cloudflare has no SAM region, a documented
+  platform limit) and threads it through all 11 `.get()` sites, so DO+container placement is deterministic and
+  in-region. Unknown/unset region → no hint (bare `.get(id)`, today's exact behaviour). Rollback: the hint only
+  affects DO *creation*, so existing DOs are unchanged and reverting the Worker restores prior behaviour.
 - **fix(worker): collapse the `_public` edge revocation window from ~60 s to ~seconds (B1b active purge).**
   The edge map-verdict cache serves a positive `content_hash` for up to ~60 s without re-consulting D1's
   `public_blocklist`, so a `_public` revoke only took effect at the edge once that verdict expired (a bounded,
