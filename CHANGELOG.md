@@ -38,6 +38,18 @@ Each entry cross-references:
   after ~35-45 DSR ops, only a `recycle-system` restoring it). Added explicit `connect_timeout(5s)` +
   `timeout(20s)` + `pool_idle_timeout(30s)` so a slow backend becomes a fast, retryable error that
   RELEASES the worker — graceful degradation instead of a wedge. (`storage/d1_http.rs`.)
+- **fix(billing): ingest no longer 400s a whole batch on one bad record, and accepts an upper/mixed-case
+  region.** A runner box misconfigured with `BILLING_REGION="IAD"` (uppercase) emitted a region the ingest
+  rejected (`bad_region`); combined with the emitter's retain-and-retry on any non-2xx, ONE such record
+  400'd its entire batch and the runner re-POSTed it every tick forever — a live self-inflicted ingest
+  flood in which the batch's VALID records never staged either (silent billing-data loss). Two fixes:
+  `validate_record` now lowercase-canonicalizes `region` before validating (mirrors the `idem_key`
+  canonicalization; a colo is case-insensitive, so `IAD` stages as `iad` — no data loss), and the batch
+  loop now SKIPS a per-record validation failure (counted in a new `rejected` response field) instead of
+  400-ing the whole batch. A malformed record can never again block its batch-mates or trigger the
+  infinite retry. Batch-level faults (unparseable / empty / oversized) stay 400; a backend persist fault
+  stays 503 (fail-CLOSED, idempotent retry). Pairs with the emitter-side canonicalization in
+  corelink-runners. (WP-2A.)
 - **fix(dsr): EU Action-Cache erase was a GDPR Art.17 false-completion — the erase now targets each
   container's own `R2_AC_BUCKET`.** The AC erase adapter swept hardcoded `corelink-ac-<region>` bucket
   names and IGNORED `R2_AC_BUCKET`, so on the EU container (`R2_AC_BUCKET=corelink-ac-eu`,

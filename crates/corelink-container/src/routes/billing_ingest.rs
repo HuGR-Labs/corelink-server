@@ -63,20 +63,22 @@
 //!
 //! # Response shapes
 //!
-//! - All records validated + persisted (202):
+//! - Batch accepted (202):
 //!   ```text
-//!   { "accepted": <n>, "deduped": <m>, "total": <n+m> }
+//!   { "accepted": <n>, "deduped": <m>, "rejected": <r>, "total": <n+m> }
 //!   ```
 //!   `accepted` = first-sight rows inserted; `deduped` = rows whose
 //!   `idem_key` (the `(tenant_id, request_id)` staging coordinate) already
-//!   existed (idempotent no-op). Both are success — the runner can retry a
-//!   batch freely.
+//!   existed (idempotent no-op) — both are success. `rejected` = records
+//!   DROPPED for failing per-record validation (bad `billing_period`, non-uuid
+//!   `tenant_id`, unknown `event_kind`, non-letter `region`/`idem_key`); they
+//!   are never persisted and never retried (a malformed record cannot become
+//!   valid). A non-zero `rejected` is an emitter/config defect to chase, not a
+//!   retry signal — the runner can retry the whole batch freely, valid records
+//!   dedup and bad ones re-reject identically.
 //! - Missing / wrong service secret (401).
-//! - Malformed JSON, empty batch, an over-limit batch, or any record that
-//!   fails validation (bad `billing_period`, non-uuid `tenant_id`, unknown
-//!   `event_kind`, bad `region`/`idem_key`) (400) — the WHOLE batch is
-//!   rejected before any persist (all-or-nothing validation; no partial
-//!   stage on a malformed batch).
+//! - Malformed JSON, empty batch, or an over-limit batch (400) — a BATCH-level
+//!   fault, distinct from a single bad record (which is skipped, not a 400).
 //! - A genuine D1 backend fault mid-persist (503) — fail-CLOSED; the runner
 //!   retries the batch (idempotent by `idem_key`).
 //!
@@ -84,7 +86,9 @@
 //!
 //! - `idem_key` is the dedup coordinate; re-pushing the same record is a
 //!   no-op (`deduped`), never a double-count.
-//! - The batch is validated in full BEFORE any row is persisted.
+//! - A per-record validation failure SKIPS that record (counted in `rejected`)
+//!   and never fails the batch — one poison record must never block its
+//!   batch-mates or trigger the runner's infinite retain-and-retry.
 
 use std::sync::Arc;
 
@@ -370,14 +374,20 @@ struct UsageRecordWire {
     idem_key: String,
 }
 
-/// JSON response body: the per-batch accepted / deduped tally.
+/// JSON response body: the per-batch accepted / deduped / rejected tally.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IngestResponse {
     /// First-sight records inserted into the staging store.
     pub accepted: u32,
     /// Records whose `idem_key` already existed (idempotent no-ops).
     pub deduped: u32,
-    /// Total records in the batch (`accepted + deduped`).
+    /// Records dropped for failing per-record validation (never persisted). A
+    /// non-zero value is an emitter/config defect to investigate, NOT a retry
+    /// signal — the batch is still drained (2xx) so a poison record cannot flood.
+    #[serde(default)]
+    pub rejected: u32,
+    /// Total records successfully staged (`accepted + deduped`; excludes
+    /// `rejected`).
     pub total: u32,
 }
 
@@ -389,7 +399,8 @@ enum RecordError {
     BadTenantId,
     /// `billing_period` is not the canonical `YYYY-MM` shape.
     BadBillingPeriod,
-    /// `region` is not a 3-char lowercase ASCII colocode.
+    /// `region` is not 3 ASCII letters (checked AFTER lowercase-canonicalization,
+    /// so a mixed/upper-case colo like `IAD` is accepted, not rejected).
     BadRegion,
     /// `idem_key` is not exactly 64 lowercase hex chars (BLAKE3-256 form).
     BadIdemKey,
@@ -424,10 +435,22 @@ const MAX_SOURCE_LEN: usize = 256;
 fn validate_record(wire: UsageRecordWire) -> Result<StagedUsageRecord, RecordError> {
     let tenant_id = Uuid::parse_str(&wire.tenant_id).map_err(|_| RecordError::BadTenantId)?;
     validate_billing_period(&wire.billing_period).map_err(|_| RecordError::BadBillingPeriod)?;
-    // Canonical CF colocode: exactly 3 lowercase ASCII letters (matches the
+    // Canonical CF colocode: 3 ASCII letters (matches the
     // `usage_event_staging` CHECK(length(region) = 3) + the
-    // `corelink_analytics::Region::as_str()` shape). Fail-CLOSED on garbage.
-    if wire.region.len() != 3 || !wire.region.bytes().all(|b| b.is_ascii_lowercase()) {
+    // `corelink_analytics::Region::as_str()` shape).
+    //
+    // CANONICALIZE to lowercase BEFORE validating + storing — exactly as the
+    // `idem_key` below. A colo is a case-INSENSITIVE identifier: a box
+    // misconfigured with `BILLING_REGION="IAD"` emits the SAME region as `iad`.
+    // Rejecting the upper-cased spelling (as this once did) made every such
+    // record a `BadRegion` 400; combined with the runner's retain-and-retry on
+    // non-2xx that turned ONE bad-cased record into an infinite re-POST flood
+    // that also blocked its batch-mates from ingesting. Collapsing case here
+    // accepts the legitimate colo; the per-record skip below contains any record
+    // that is genuinely non-canonical. Fail-CLOSED on non-letters (a digit /
+    // symbol is not `is_ascii_lowercase` even after lowercasing).
+    let region = wire.region.to_ascii_lowercase();
+    if region.len() != 3 || !region.bytes().all(|b| b.is_ascii_lowercase()) {
         return Err(RecordError::BadRegion);
     }
     // 64-char lowercase hex (BLAKE3-256 canonical form) — matches the
@@ -458,7 +481,7 @@ fn validate_record(wire: UsageRecordWire) -> Result<StagedUsageRecord, RecordErr
         event_kind: wire.event_kind,
         qty: wire.qty,
         billing_period: wire.billing_period,
-        region: wire.region,
+        region,
         source: wire.source,
         time_ms: wire.time_ms,
         idem_key,
@@ -514,17 +537,29 @@ async fn handle_ingest(
         return bad_request("batch_too_large");
     }
 
-    // ── 3. Validate the WHOLE batch before any persist (all-or-nothing) ─────
+    // ── 3. Validate each record; SKIP (never persist) the ones that fail ────
+    // A record that fails validation is PERMANENTLY malformed — no retry will
+    // ever make it valid. 400-ing the whole batch on a single poison record
+    // (as this once did) made the runner RETAIN the batch and re-POST it every
+    // tick forever (`flush_now` bails on any non-2xx), an infinite self-inflicted
+    // flood in which the batch's VALID records never ingested either — silent
+    // billing-data loss. Per-record skip drains the batch (2xx) while dropping
+    // only the bad records, surfaced as `rejected` in the response body + a warn
+    // per reason (a non-zero `rejected` is an emitter/config defect to chase, not
+    // a retry signal). Batch-level faults (unparseable / empty / oversized) stay
+    // 400 above; a genuine backend persist fault stays 503 below (fail-CLOSED,
+    // idempotent retry).
     let mut staged: Vec<StagedUsageRecord> = Vec::with_capacity(wire_records.len());
+    let mut rejected: u32 = 0;
     for wire in wire_records {
         match validate_record(wire) {
             Ok(rec) => staged.push(rec),
             Err(e) => {
+                rejected = rejected.saturating_add(1);
                 tracing::warn!(
                     reason = e.code(),
-                    "billing_ingest: record validation failed"
+                    "billing_ingest: record validation failed; skipping (batch not rejected)"
                 );
-                return bad_request(e.code());
             }
         }
     }
@@ -551,6 +586,7 @@ async fn handle_ingest(
         Json(IngestResponse {
             accepted,
             deduped,
+            rejected,
             total,
         }),
     )
@@ -858,8 +894,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bad_tenant_id_is_400() {
-        let app = router(state_with(Arc::new(FakeStore::new())));
+    async fn bad_tenant_id_is_skipped_not_fatal() {
+        // A single malformed record is SKIPPED (202, rejected:1, nothing staged),
+        // NOT a 400 — the per-record-skip contract. The reason-code mapping is
+        // pinned separately in `validate_record_reasons_pinned`.
+        let store = Arc::new(FakeStore::new());
+        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
         let resp = app
             .oneshot(ingest_request(
                 Some(TEST_AUTH_KEY),
@@ -867,14 +907,18 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
+        assert_eq!((ir.accepted, ir.rejected, ir.total), (0, 1, 0));
+        assert!(store.seen.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
-    async fn bad_billing_period_is_400() {
+    async fn bad_billing_period_is_skipped_not_fatal() {
+        let store = Arc::new(FakeStore::new());
+        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
         let mut rec = record_json(&tenant_a(), &hex64(0x13));
         rec["billing_period"] = serde_json::json!("2026-13");
-        let app = router(state_with(Arc::new(FakeStore::new())));
         let resp = app
             .oneshot(ingest_request(
                 Some(TEST_AUTH_KEY),
@@ -882,14 +926,22 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
+        assert_eq!((ir.accepted, ir.rejected, ir.total), (0, 1, 0));
+        assert!(store.seen.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
-    async fn bad_region_is_400() {
+    async fn uppercase_region_is_canonicalized_and_accepted() {
+        // Regression for the live `bad_region` flood: a box misconfigured with
+        // BILLING_REGION="IAD" (uppercase) emits the SAME colo as "iad". It must
+        // be canonicalized + ACCEPTED (202), staged as "iad" — never a 400 that
+        // makes the runner retain-and-retry the batch forever.
+        let store = Arc::new(FakeStore::new());
+        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
         let mut rec = record_json(&tenant_a(), &hex64(0x14));
-        rec["region"] = serde_json::json!("IAD"); // uppercase / not canonical
-        let app = router(state_with(Arc::new(FakeStore::new())));
+        rec["region"] = serde_json::json!("IAD");
         let resp = app
             .oneshot(ingest_request(
                 Some(TEST_AUTH_KEY),
@@ -897,12 +949,46 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        assert_eq!(
+            store.seen.lock().unwrap().len(),
+            1,
+            "the upper-cased colo must be staged, not dropped"
+        );
+    }
+
+    #[test]
+    fn region_uppercase_canonicalizes_to_lowercase() {
+        let wire: UsageRecordWire = serde_json::from_value({
+            let mut r = record_json(&tenant_a(), &hex64(0x14));
+            r["region"] = serde_json::json!("IaD");
+            r
+        })
+        .unwrap();
+        assert_eq!(validate_record(wire).unwrap().region, "iad");
+    }
+
+    #[test]
+    fn region_with_non_letters_is_bad_region_even_after_lowercasing() {
+        for bad in ["i2d", "us", "iada", "i-d"] {
+            let wire: UsageRecordWire = serde_json::from_value({
+                let mut r = record_json(&tenant_a(), &hex64(0x14));
+                r["region"] = serde_json::json!(bad);
+                r
+            })
+            .unwrap();
+            assert_eq!(
+                validate_record(wire),
+                Err(RecordError::BadRegion),
+                "region {bad:?} must fail-closed"
+            );
+        }
     }
 
     #[tokio::test]
-    async fn bad_idem_key_is_400() {
-        let app = router(state_with(Arc::new(FakeStore::new())));
+    async fn bad_idem_key_is_skipped_not_fatal() {
+        let store = Arc::new(FakeStore::new());
+        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
         let resp = app
             .oneshot(ingest_request(
                 Some(TEST_AUTH_KEY),
@@ -910,13 +996,18 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
+        assert_eq!((ir.accepted, ir.rejected, ir.total), (0, 1, 0));
+        assert!(store.seen.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
-    async fn malformed_record_rejects_whole_batch_no_partial_stage() {
-        // A batch with one GOOD then one BAD record must 400 the WHOLE batch
-        // and stage NOTHING (all-or-nothing validation before persist).
+    async fn malformed_record_is_skipped_good_record_staged() {
+        // A batch with one GOOD then one BAD record must stage the GOOD one and
+        // SKIP the bad one (202, `rejected:1`) — NOT 400 the whole batch. The old
+        // all-or-nothing behaviour let one poison record block its batch-mates
+        // AND flood the ingest (the runner retains + re-POSTs a non-2xx forever).
         let store = Arc::new(FakeStore::new());
         let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
         let mut bad = record_json(&tenant_a(), &hex64(0x15));
@@ -926,11 +1017,43 @@ mod tests {
             .oneshot(ingest_request(Some(TEST_AUTH_KEY), body))
             .await
             .unwrap();
-        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-        assert!(
-            store.seen.lock().unwrap().is_empty(),
-            "no record may be staged when the batch is rejected"
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
+        assert_eq!(ir.accepted, 1, "the good record is staged");
+        assert_eq!(ir.rejected, 1, "the bad record is counted, not fatal");
+        assert_eq!(ir.total, 1, "total counts only successfully-staged rows");
+        assert_eq!(
+            store.seen.lock().unwrap().len(),
+            1,
+            "exactly the good record is staged"
         );
+    }
+
+    #[tokio::test]
+    async fn all_records_invalid_still_drains_202() {
+        // Even an ALL-bad batch must drain (202, `rejected:N`, nothing staged),
+        // so a runner buffer full of poison records empties instead of re-POSTing
+        // forever. Batch-LEVEL faults (empty / oversized / unparseable) stay 400.
+        let store = Arc::new(FakeStore::new());
+        let app = router(state_with(Arc::clone(&store) as Arc<dyn UsageStagingStore>));
+        let mut b1 = record_json(&tenant_a(), &hex64(0x18));
+        b1["region"] = serde_json::json!("nope4"); // > 3 chars → BadRegion
+        let mut b2 = record_json(&tenant_a(), &hex64(0x19));
+        b2["billing_period"] = serde_json::json!("2026-13");
+        let resp = app
+            .oneshot(ingest_request(
+                Some(TEST_AUTH_KEY),
+                serde_json::json!([b1, b2]),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+        let ir: IngestResponse = serde_json::from_value(body_json(resp).await).unwrap();
+        assert_eq!(
+            (ir.accepted, ir.deduped, ir.rejected, ir.total),
+            (0, 0, 2, 0)
+        );
+        assert!(store.seen.lock().unwrap().is_empty());
     }
 
     // ── Backend fault → 503 (fail-CLOSED) ────────────────────────────────────
