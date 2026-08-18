@@ -29,6 +29,16 @@ Each entry cross-references:
   is a lockfile-only patch bump. Ridden here to unblock the erasure-hardening PR's `cargo-deny` gate.
 
 ### Fixed
+- **fix(okf): `scripts/okf_reanchor.py` advances a `source_blobs` anchor only for a file named with
+  `--blob`, not every entry.** The helper (added in #1146 to mechanize the reconcile checkpoint/blob
+  advance) blanket-rewrote every `source_blobs` entry to the current `git hash-object`. That is wrong:
+  C5 does not compare the whole-file blob — it uses the anchor as a reference point and flags a concept
+  only when its CITED line ranges differ, so an anchor whose oid ≠ hash-object but whose cited ranges are
+  unchanged is fresh (confirmed: `validate_okf` is VALID on `main` with money-path's `main.rs` anchor at
+  the old `d7013815` while hash-object is `508dbb40`). Blanket-advancing would move the drift reference
+  past unreviewed changes and mask real drift. The default now advances `checkpoint_sha` only; blob
+  anchors move only for `--blob <path>` (the file whose citations were re-authored). The `okf-reconcile`
+  skill step (e) is updated to match. No concept on `main` needed reconciling — it is clean (0 stale).
 - **fix(container): bound every D1-over-HTTP call so a bulk DSR load can't wedge the container.**
   The `D1HttpClient` reqwest client was built with NO timeout. A single erase drives ~15 serial D1
   round-trips (legitimacy + idempotency ledger + audit envelope + D1/R2 adapters), and the CF D1 REST
