@@ -11,20 +11,35 @@ sharp footguns that each cost a full CI cycle:
   2. an ORPHANED sha — e.g. one written before a rebase, no longer reachable,
      so the gate falls back to the base-ref and reports the concept stale.
 
-This helper removes both: it sets `checkpoint_sha` to the FULL 40-hex
-`git rev-parse HEAD` (always reachable at run time) and rewrites every
-`source_blobs` entry to the working-tree `git hash-object` of its path (the
-exact blob the gate compares against). It NEVER edits a concept body — run it
-AFTER a real re-author (the reconcile skill's step 2), never as a substitute for
-one (a checkpoint bump with no body change fails C5b by design).
+This helper removes both by writing the FULL 40-hex `git rev-parse HEAD` into
+`checkpoint_sha` (always reachable at run time).
+
+BLOB ANCHORS ARE DIFFERENT — advance them ONLY for files you actually
+re-authored. C5 does NOT compare the whole-file blob; it uses the anchor as a
+REFERENCE POINT and flags the concept only when the concept's CITED LINE RANGES
+differ between the anchor blob and the current file. So a `source_blobs` entry
+whose oid != `git hash-object` is NORMAL and correct whenever the file changed
+OUTSIDE this concept's cited lines — the concept is still fresh. Blindly
+advancing that anchor to the current blob would move the reference PAST changes
+you never reviewed and could MASK real drift. Therefore this helper advances a
+blob anchor ONLY when you name its path with `--blob` (the file you re-authored
+in reconcile step 2c); every other `source_blobs` entry is left untouched.
+
+It NEVER edits a concept body — run it AFTER a real re-author (the reconcile
+skill's step 2), never as a substitute for one (a checkpoint bump with no body
+change fails C5b by design).
 
 Usage:
-    # explicit concepts
-    python3 scripts/okf_reanchor.py docs/knowledge/launch/money-path.md ...
-    # or auto-detect every modified/added concept under docs/knowledge/
+    # checkpoint_sha only (the common case — you edited a body, cited lines in
+    # no source file's blob-anchored region moved):
+    python3 scripts/okf_reanchor.py docs/knowledge/launch/money-path.md
+    # auto-detect every modified/added concept under docs/knowledge/:
     python3 scripts/okf_reanchor.py
+    # ALSO advance the blob anchor of a file you re-authored the citations for:
+    python3 scripts/okf_reanchor.py docs/knowledge/launch/money-path.md \
+        --blob crates/corelink-container/src/routes/billing_ingest.rs
 
-Idempotent: re-running with no further edits rewrites the same values.
+Idempotent: re-running with the same args rewrites the same values.
 """
 from __future__ import annotations
 
@@ -66,7 +81,7 @@ def _detect_concepts() -> list[str]:
     return sorted(files)
 
 
-def reanchor(path: str, head: str) -> bool:
+def reanchor(path: str, head: str, blob_paths: set[str]) -> bool:
     p = Path(path)
     if not p.is_file():
         print(f"  skip (missing): {path}", file=sys.stderr)
@@ -83,10 +98,17 @@ def reanchor(path: str, head: str) -> bool:
             continue
         m = BLOB_RE.match(line)
         if m:
+            # Advance a blob anchor ONLY when its path was explicitly named with
+            # --blob (a file whose CITED lines you re-authored). Leaving every
+            # other entry alone is deliberate: an anchor that != hash-object but
+            # whose cited ranges are unchanged is fresh, and bumping it would
+            # mask future drift (see module docstring).
+            if m.group("path") not in blob_paths:
+                continue
             oid = _blob_oid(m.group("path"))
             if oid is None:
                 print(
-                    f"  warn: {path}: blob path not found, left as-is: {m.group('path')}",
+                    f"  warn: {path}: --blob path not found, left as-is: {m.group('path')}",
                     file=sys.stderr,
                 )
                 continue
@@ -108,6 +130,15 @@ def main() -> int:
         nargs="*",
         help="concept .md paths; if omitted, auto-detect modified docs/knowledge/*.md",
     )
+    ap.add_argument(
+        "--blob",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="source_files path whose blob anchor to ALSO advance (a file whose "
+        "cited lines you re-authored). Repeatable. Omit to advance checkpoint_sha "
+        "only — blob anchors of unchanged-citation files must NOT be bumped.",
+    )
     args = ap.parse_args()
 
     concepts = args.concepts or _detect_concepts()
@@ -115,11 +146,15 @@ def main() -> int:
         print("no concepts to re-anchor (none passed, none modified under docs/knowledge/)")
         return 0
 
+    blob_paths = set(args.blob)
     head = _head_sha()
-    print(f"re-anchoring {len(concepts)} concept(s) to HEAD {head}")
+    print(
+        f"re-anchoring {len(concepts)} concept(s) to HEAD {head}"
+        + (f"; blob anchors: {sorted(blob_paths)}" if blob_paths else " (checkpoint_sha only)")
+    )
     any_changed = False
     for c in concepts:
-        any_changed |= reanchor(c, head)
+        any_changed |= reanchor(c, head, blob_paths)
     print(
         "done — run `python3 scripts/validate_okf.py` to confirm 0 stale, then commit."
         if any_changed

@@ -52,16 +52,22 @@ the stale concept so every claim is true again, and advance its checkpoint.
       cited: `git hash-object <path>` (equivalently `git rev-parse HEAD:<path>` once
       committed).
 
-   > **Mechanize (d)+(e) — do NOT hand-edit the sha.** Run
+   > **Mechanize (d) — do NOT hand-edit the checkpoint sha.** Run
    > `python3 scripts/okf_reanchor.py <concept.md…>` (or bare, to auto-detect every
    > modified `docs/knowledge/*.md`). It writes the FULL 40-hex `git rev-parse HEAD`
-   > into `checkpoint_sha` and rewrites each `source_blobs` entry to its
-   > `git hash-object`. Hand-editing these has cost two CI cycles: a SHORT sha (the
+   > into `checkpoint_sha`. Hand-editing that has cost two CI cycles: a SHORT sha (the
    > gate demands 40-hex) and an ORPHANED sha written before a rebase (the gate then
    > falls back to the base-ref and reports the concept stale). Run it AFTER the body
    > re-author in (c) — never as a substitute for one (a bump with no body edit fails
    > C5b). **Especially re-run it after any rebase/force-push**, since the rebase
    > orphans the commit the old `checkpoint_sha` named.
+   >
+   > For (e), advance a blob anchor ONLY for a file whose CITED lines you actually
+   > re-authored: `okf_reanchor.py <concept.md> --blob <path>`. The helper leaves
+   > every other `source_blobs` entry untouched ON PURPOSE — an anchor whose oid !=
+   > `git hash-object` but whose cited ranges are unchanged is FRESH (C5 compares the
+   > cited ranges, not the whole-file blob), and bumping it would move the reference
+   > past unreviewed changes and mask future drift. Never blanket-advance blobs.
 
       The anchor is what C5 actually compares against, so a stale entry
       keeps the concept red; a MISSING entry for a path that had one fails C4c
