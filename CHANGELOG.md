@@ -23,6 +23,18 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Fixed
+- **fix(worker): stop the cold-region container-start thrash — don't destroy an already-running container.**
+  `startContainer`'s catch treated EVERY `container.start()` throw as a start failure and `destroyContainer`d.
+  But Cloudflare's `start()` throws `start() cannot be called on a container that is already running` when the
+  binding is already up — which happens when a prior request's start already took effect (or a health-timeout
+  `destroyContainer` raced CF's async teardown, leaving `container.running` true). Destroying then tears down a
+  LIVE container; the next request finds it "stopped", starts again, races again → permanent 503 thrash. Invisible
+  in the long-warm IAD DO, but DETERMINISTIC in a cold region (APAC/EU): the first cold start's health probe times
+  out (~90 s, R2/D1 init far from the US primary), and every subsequent request then hits the "already running"
+  throw. The catch now detects that specific message and, instead of destroying, health-gates the live container
+  and serves it (reconciling lifecycle state to running). Any other throw still destroys (resident-orphan reaping
+  unchanged). Proven live: a fresh APAC tenant now serves CAS from its in-region container. Pairs with the DO
+  `locationHint` fix (#1138) which is what first places the container in-region for this path to matter.
 - **fix(worker): pin each `CoreLinkServer` DO (and its container) to its serving region via `locationHint`.**
   Every `env.CORELINK_SERVER.get()` was called WITHOUT a `locationHint`, so a brand-new Durable Object — and the
   Rust container it cold-starts — homed at the colo of first access. Because the multi-region fan-out is a

@@ -68,6 +68,74 @@ function makeEnv(): Env {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Idempotent-start guard (multi-region cold-start thrash fix, 2026-08-18)
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("startContainer already-running race handling", () => {
+  function makeDO(opts: {
+    startThrows: string;
+    healthStatus: number;
+    running: boolean;
+  }): { do_: CoreLinkServer; destroySpy: ReturnType<typeof vi.fn> } {
+    const state = makeMockState();
+    const destroySpy = vi.fn();
+    (state as unknown as { container: unknown }).container = {
+      running: opts.running,
+      start: () => {
+        throw new Error(opts.startThrows);
+      },
+      destroy: destroySpy,
+      getTcpPort: () => ({
+        fetch: async () => new Response("x", { status: opts.healthStatus }),
+      }),
+      setInactivityTimeout: async () => {},
+      monitor: () => new Promise<void>(() => {}),
+    };
+    const do_ = new CoreLinkServer(state, makeEnv());
+    (do_ as unknown as { lifecycleState: Record<string, unknown> }).lifecycleState = {
+      containerStatus: "stopped",
+      tenantId: "t",
+      coldStartCount: 0,
+    };
+    return { do_, destroySpy };
+  }
+
+  it("serves (health-gates), does NOT destroy, when start() throws 'already running'", async () => {
+    // The cold-region thrash: CF's start() flips running true then (or a prior
+    // request's start already did) throws "already running". The container IS
+    // up — destroying it re-opens the thrash. Health-gate + serve instead.
+    const { do_, destroySpy } = makeDO({
+      startThrows: "start() cannot be called on a container that is already running.",
+      healthStatus: 200,
+      running: true,
+    });
+    const res = await (
+      do_ as unknown as {
+        startContainer: (r: string) => Promise<{ ok: boolean; reason?: string }>;
+      }
+    ).startContainer("req-already-running");
+    expect(res.ok).toBe(true);
+    expect(destroySpy).not.toHaveBeenCalled();
+  });
+
+  it("still DESTROYS + reports container_start_threw on a genuine (non-already-running) throw", async () => {
+    const { do_, destroySpy } = makeDO({
+      startThrows: "container start threw for real",
+      healthStatus: 500,
+      running: true,
+    });
+    const res = await (
+      do_ as unknown as {
+        startContainer: (r: string) => Promise<{ ok: boolean; reason?: string }>;
+      }
+    ).startContainer("req-real-throw");
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("container_start_threw");
+    expect(destroySpy).toHaveBeenCalled();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Constant-time comparison
 // ──────────────────────────────────────────────────────────────────────────────
 

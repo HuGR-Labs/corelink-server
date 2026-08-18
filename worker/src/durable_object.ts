@@ -1034,6 +1034,32 @@ export class CoreLinkServer implements DurableObject {
       return { ok: true };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message.slice(0, 80) : "unknown";
+
+      // ALREADY-RUNNING RACE (mirrors the idempotent-start guard at the top of
+      // this method): `container.running` can flip true BETWEEN that guard and
+      // this `start()` call (CF's start is async), so start() throws "start()
+      // cannot be called on a container that is already running". The container
+      // IS up — destroying it here would re-open the exact thrash the guard
+      // closes. Treat it as started: health-gate the live container, don't
+      // destroy on the throw.
+      if (err instanceof Error && /already running/i.test(err.message)) {
+        console.warn(
+          `[${requestId}] start() raced an already-running container — health-gating instead of destroying`,
+        );
+        const healthy = await this.waitForContainerHealth(requestId, container);
+        if (healthy) {
+          await this.updateLifecycleState({
+            ...this.lifecycleState,
+            containerStatus: "running",
+            lastHealthCheckMs: Date.now(),
+            lastActivityMs: Date.now(),
+          });
+          return { ok: true };
+        }
+        await this.destroyContainer(requestId);
+        return { ok: false, reason: "container_health_check_failed" };
+      }
+
       console.error(`[${requestId}] container start error: ${msg}`);
 
       await emitLifecycleEvent(
