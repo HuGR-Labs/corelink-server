@@ -29,6 +29,15 @@ Each entry cross-references:
   is a lockfile-only patch bump. Ridden here to unblock the erasure-hardening PR's `cargo-deny` gate.
 
 ### Fixed
+- **fix(container): bound every D1-over-HTTP call so a bulk DSR load can't wedge the container.**
+  The `D1HttpClient` reqwest client was built with NO timeout. A single erase drives ~15 serial D1
+  round-trips (legitimacy + idempotency ledger + audit envelope + D1/R2 adapters), and the CF D1 REST
+  API slows/rate-limits under a burst (e.g. a bulk `dsr_requested` backlog drain). With no timeout a
+  slowed call held its container worker indefinitely; under sustained load the held workers accreted
+  until the tokio executor saturated and the `_system` container stopped responding (observed hanging
+  after ~35-45 DSR ops, only a `recycle-system` restoring it). Added explicit `connect_timeout(5s)` +
+  `timeout(20s)` + `pool_idle_timeout(30s)` so a slow backend becomes a fast, retryable error that
+  RELEASES the worker — graceful degradation instead of a wedge. (`storage/d1_http.rs`.)
 - **fix(dsr): EU Action-Cache erase was a GDPR Art.17 false-completion — the erase now targets each
   container's own `R2_AC_BUCKET`.** The AC erase adapter swept hardcoded `corelink-ac-<region>` bucket
   names and IGNORED `R2_AC_BUCKET`, so on the EU container (`R2_AC_BUCKET=corelink-ac-eu`,

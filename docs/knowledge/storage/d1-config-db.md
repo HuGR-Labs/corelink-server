@@ -7,7 +7,7 @@ source_files:
   - "crates/corelink-config-do/src/lib.rs"
   - "crates/corelink-config-do/src/types.rs"
   - "crates/corelink-container/src/storage/d1_http.rs"
-checkpoint_sha: "52e29ead10476745c69beb1de2f001f93421db02"
+checkpoint_sha: "f90ad9372fc9eba930baca718d90c6544e9f4496"
 provenance: "AUTHORED"
 tags: ["storage", "d1", "config-db", "control-plane", "tenant-isolation"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -36,7 +36,7 @@ the [billing quota check](/flows/billing-quota-check.md).
 1. D1 is reachable outside a CF Worker via the REST API; the native container posts parameterised SQL to
    `api.cloudflare.com/.../d1/database/{db}/query` (`crates/corelink-container/src/storage/d1_http.rs:1-23`).
 2. The client builds its query URL from the account id + database id and carries the CF API token as a
-   bearer (`crates/corelink-container/src/storage/d1_http.rs:90-103`).
+   bearer (`crates/corelink-container/src/storage/d1_http.rs:90-118`).
 3. `D1CustomerHandler` serves dashboard data from deployed tables (`tenant`, `tenant_storage_state`,
    `tenant_billing`, `tier_selections`, `pat`, `customer_audit_events` — migration 0077 — which now
    backs BOTH the audit log AND the overview's `recent_activity` feed since BE-3, and
@@ -86,4 +86,4 @@ the [billing quota check](/flows/billing-quota-check.md).
 7. `crates/corelink-config-do/src/lib.rs:42-49` — CAS `expected_version` → `VersionConflict`, DO-transactional.
 8. `crates/corelink-container/src/storage/d1_http.rs:1-23` — D1 reached via the CF REST query endpoint from the native container.
 9. `crates/corelink-container/src/storage/d1_http.rs:44-51` — CF API token redacted in the manual `Debug` impl.
-10. `crates/corelink-container/src/storage/d1_http.rs:90-103` — query-URL construction from account + database id + bearer token.
+10. `crates/corelink-container/src/storage/d1_http.rs:90-118` — query-URL construction from account + database id + bearer token.
