@@ -23,6 +23,14 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(worker): P3 token-lease accounting core (`worker/src/lib/request_meter_lease.ts`, INERT).**
+  Pure, dependency-free lease-accounting for the ACCEPTED edge-local DO request-metering design
+  (`docs/design/2026-08-19-adr-edge-local-do-request-metering.md`): a per-tenant coordinator grants
+  token leases to per-(tenant,region) shards; `refill`/`reclaimIdle` maintain `{yearMonth, consumed,
+  outstanding}` so `consumed + Σoutstanding ≤ cap` holds STRICTLY (**over-serve = 0**), with
+  under-serve bounded ≤ #regions·block (→ ~0 via idle reclaim). Not wired to any request path yet — the
+  DO shells + worker wiring behind `EDGE_DO_METER` are the next WPs. 8 tests incl. a randomised
+  over-serve=0 property test (40 seeds × 300 steps); corrects the ADR's initial "under-serve = 0".
 - **test(oci): F3.2 inc7 — e2e `_public` cross-tenant SAFETY invariants (WP-D).** New black-box
   journey `tests/e2e-user-journeys/src/journeys/oci_public_isolation.rs` (registered in the runner)
   asserting the three FLAG-INDEPENDENT cross-tenant safety properties the `OCI_PUBLIC_DEDUP_ENABLED`
