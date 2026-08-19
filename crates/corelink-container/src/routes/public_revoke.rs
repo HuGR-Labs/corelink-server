@@ -85,6 +85,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use subtle::ConstantTimeEq;
 
+use corelink_adapter_host::oci::digest::OciDigest;
+
 use crate::adapter_cache::PUBLIC_NAMESPACE;
 use crate::routes::cas_erase::{CasBlobEraser, R2CasBlobEraser};
 use crate::storage::d1_http::D1HttpClient;
@@ -140,6 +142,21 @@ pub trait PublicRevocationStore: Send + Sync + std::fmt::Debug {
     /// DELETE every `adapter_cache_map` row for `(namespace='_public',
     /// content_hash)`. Idempotent (deleting zero rows is success).
     async fn delete_cache_map(&self, content_hash: &str) -> Result<(), String>;
+
+    /// Resolve an UPSTREAM `_public` OCI digest wire string (`sha256:<hex>`) to
+    /// its BLAKE3 `content_hash` via the SAME `adapter_cache_map` the OCI
+    /// read/mirror path keys by — the `_public` moat stores the OCI digest
+    /// verbatim as the `url_hash` (`crate::routes::oci`), so this is exactly the
+    /// `OCI-digest → blake3-content-hash` indirection, reused (NOT a new table).
+    ///
+    /// Returns `None` when NO `_public` row maps that digest — the operator's
+    /// incident action would silently do nothing, which [`handle_revoke`]
+    /// surfaces as a LOUD error rather than a false 200.
+    ///
+    /// Deliberately NOT blocklist-filtered (unlike the read-side `_public`
+    /// lookup in `adapter_cache.rs`): an already-revoked digest must still
+    /// resolve so a re-revoke by upstream digest stays idempotent.
+    async fn resolve_public_digest(&self, oci_digest_wire: &str) -> Result<Option<String>, String>;
 }
 
 /// The revocation audit record (a CloudEvents envelope is built from it).
@@ -189,13 +206,33 @@ impl std::fmt::Debug for PublicRevokeRouteState {
     }
 }
 
-/// Revoke request body. `content_hash` is the 64-hex BLAKE3 digest of the
-/// offending public blob; `reason` is a bounded audit string; `approver` is an
-/// optional actor label (the auth carries no identity).
+/// Revoke request body. The operator names the offending blob in EXACTLY ONE of
+/// two mutually-exclusive spaces (see [`handle_revoke`] for why a bare 64-hex is
+/// ambiguous between them and is refused):
+///
+/// - [`content_hash`](Self::content_hash) — the raw 64-hex BLAKE3 CoreLink
+///   content digest, revoked directly (a pre-emptive block of a not-yet-active
+///   digest is legitimately idempotent).
+/// - [`upstream_digest`](Self::upstream_digest) — an UPSTREAM OCI digest in
+///   canonical wire form (`sha256:<hex>`), resolved to its BLAKE3 content_hash
+///   via the `_public` `adapter_cache_map` before revocation. This is the space
+///   an operator holds during an OCI base-layer poisoning incident.
+///
+/// `reason` is a bounded audit string; `approver` is an optional actor label
+/// (the auth carries no identity).
 #[derive(Debug, Clone, Deserialize)]
 pub struct PublicRevokeRequest {
-    /// The 64-hex BLAKE3 content digest of the public blob to revoke.
-    pub content_hash: String,
+    /// The raw 64-hex BLAKE3 content digest of the public blob to revoke.
+    /// Mutually exclusive with [`upstream_digest`](Self::upstream_digest).
+    #[serde(default)]
+    pub content_hash: Option<String>,
+    /// An UPSTREAM OCI digest to revoke by (`sha256:<hex>`), resolved to its
+    /// BLAKE3 content_hash via the `_public` `adapter_cache_map`. MUST carry the
+    /// explicit `sha256:`/`sha512:` algorithm prefix — a bare 64-hex here is
+    /// refused as ambiguous. Mutually exclusive with
+    /// [`content_hash`](Self::content_hash).
+    #[serde(default)]
+    pub upstream_digest: Option<String>,
     /// Bounded audit reason (why the blob is being revoked).
     #[serde(default)]
     pub reason: String,
@@ -232,9 +269,31 @@ pub fn router(state: PublicRevokeRouteState) -> Router {
 /// `POST /_internal/public/revoke`.
 ///
 /// Order (fail-CLOSED): erase-auth gate (constant-time, BEFORE any work) →
-/// validate the 64-hex digest → INSERT blocklist (linearize) → DELETE map →
+/// resolve the target BLAKE3 content_hash from the request (either the raw
+/// `content_hash`, or an upstream `sha256:` OCI digest resolved via the
+/// `_public` `adapter_cache_map`) → INSERT blocklist (linearize) → DELETE map →
 /// emit audit → best-effort R2 delete under the `_public` prefix. The blocklist
 /// insert is the durability barrier; everything after it is safe to retry.
+///
+/// # Two revoke spaces, and why a bare 64-hex is refused
+///
+/// A CoreLink BLAKE3 content digest and an upstream OCI `sha256` digest are
+/// BOTH 64 hex characters, so a bare 64-hex is ambiguous between them. During an
+/// OCI base-layer poisoning incident the operator holds the UPSTREAM `sha256:`
+/// digest, NOT the BLAKE3 content_hash the blocklist keys by — so a bare 64-hex
+/// interpreted as a content_hash would INSERT a value that matches no row,
+/// return success, and audit a silent no-op while the poisoned blob keeps
+/// serving. The endpoint therefore demands the caller name the space:
+///
+/// - `content_hash` (raw 64-hex BLAKE3) → revoked directly. A pre-emptive block
+///   of a digest with no currently-active row is legitimately idempotent (200).
+/// - `upstream_digest` (`sha256:<hex>`, algo prefix REQUIRED) → resolved to its
+///   BLAKE3 content_hash via [`PublicRevocationStore::resolve_public_digest`]. A
+///   digest that resolves to NO `_public` blob is a LOUD error (NOT 200): the
+///   operator's incident action did nothing and that MUST surface. A bare 64-hex
+///   supplied here (no `sha256:` prefix) is refused as ambiguous.
+///
+/// Exactly one of the two fields must be present.
 async fn handle_revoke(
     State(state): State<PublicRevokeRouteState>,
     headers: HeaderMap,
@@ -245,13 +304,13 @@ async fn handle_revoke(
         return error_response(StatusCode::UNAUTHORIZED, "unauthorized");
     }
 
-    // 2. Validate the digest shape (lower-cased canonical 64-hex).
-    if !is_64_hex(&req.content_hash) {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "content_hash must be 64 hex characters",
-        );
-    }
+    // 2. Resolve the target BLAKE3 content_hash from whichever space the caller
+    //    named (fail-LOUD on an unresolvable / ambiguous / absent request).
+    let content_hash = match resolve_target_content_hash(&state, &req).await {
+        Ok(h) => h,
+        Err(resp) => return resp,
+    };
+
     if req.reason.len() > MAX_FIELD_LEN {
         return error_response(StatusCode::BAD_REQUEST, "reason too long");
     }
@@ -263,7 +322,6 @@ async fn handle_revoke(
         return error_response(StatusCode::BAD_REQUEST, "approver too long");
     }
 
-    let content_hash = req.content_hash.to_ascii_lowercase();
     let revoked_at_ms = now_ms();
     let fresh_audit_event_id = uuid_v4_string();
 
@@ -329,6 +387,74 @@ async fn handle_revoke(
         r2_delete_failures,
     })
     .into_response()
+}
+
+/// Resolve the request to the single BLAKE3 `content_hash` to revoke, or an
+/// early error [`Response`] (fail-LOUD — never a false 200). Enforces the
+/// two-space contract: exactly one of `content_hash` / `upstream_digest`, an
+/// explicit `sha256:` prefix on the upstream space (a bare 64-hex is ambiguous),
+/// and a LOUD `404` when an upstream digest maps to no `_public` blob.
+async fn resolve_target_content_hash(
+    state: &PublicRevokeRouteState,
+    req: &PublicRevokeRequest,
+) -> Result<String, Response> {
+    match (req.content_hash.as_deref(), req.upstream_digest.as_deref()) {
+        (Some(_), Some(_)) => Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "provide exactly one of content_hash or upstream_digest, not both",
+        )),
+        (None, None) => Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "provide content_hash (64-hex blake3) or upstream_digest (sha256:<hex>)",
+        )),
+        // Raw BLAKE3 content_hash space — direct, idempotent (pre-emptive block OK).
+        (Some(content_hash), None) => {
+            if !is_64_hex(content_hash) {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "content_hash must be 64 hex characters",
+                ));
+            }
+            Ok(content_hash.to_ascii_lowercase())
+        }
+        // Upstream OCI digest space — REQUIRE the algo prefix, then resolve.
+        (None, Some(upstream_digest)) => {
+            // A bare 64-hex could be either space; refuse it explicitly so the
+            // operator cannot revoke the wrong thing during an incident.
+            if !upstream_digest.contains(':') {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "upstream_digest is ambiguous: pass an explicit OCI digest \
+                     (e.g. sha256:<hex>), not a bare 64-hex",
+                ));
+            }
+            let digest = OciDigest::parse(upstream_digest).map_err(|_| {
+                error_response(
+                    StatusCode::BAD_REQUEST,
+                    "upstream_digest must be a valid OCI digest (sha256:<hex>)",
+                )
+            })?;
+            // Resolve OCI-digest → blake3 via the `_public` adapter_cache_map
+            // (the same map the OCI read/mirror path keys by; the digest wire
+            // string IS the moat url_hash).
+            match state.store.resolve_public_digest(&digest.to_wire()).await {
+                Ok(Some(content_hash)) => Ok(content_hash.to_ascii_lowercase()),
+                // LOUD: nothing maps this upstream digest ⇒ revoking by it would
+                // have silently done nothing. Surface it (NOT a 200).
+                Ok(None) => Err(error_response(
+                    StatusCode::NOT_FOUND,
+                    "upstream_digest maps to no cached _public blob; nothing was revoked",
+                )),
+                Err(e) => {
+                    tracing::error!(error = %e, "public_revoke: digest resolve failed");
+                    Err(error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "internal",
+                    ))
+                }
+            }
+        }
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -408,6 +534,27 @@ impl PublicRevocationStore for D1PublicRevocationStore {
             )
             .await
             .map(|_| ())
+    }
+
+    async fn resolve_public_digest(&self, oci_digest_wire: &str) -> Result<Option<String>, String> {
+        // The `_public` moat stores the OCI digest wire string verbatim as the
+        // `url_hash` (see `crate::routes::oci`), so the OCI-digest → blake3
+        // indirection is a plain `(namespace, url_hash)` lookup. NOT
+        // blocklist-filtered on purpose (see the trait doc): a re-revoke of an
+        // already-blocklisted digest must still resolve.
+        let rows = self
+            .d1
+            .query(
+                "SELECT content_hash FROM adapter_cache_map \
+                 WHERE namespace = ?1 AND url_hash = ?2 LIMIT 1",
+                &[json!(PUBLIC_NAMESPACE), json!(oci_digest_wire)],
+            )
+            .await?;
+        Ok(rows.into_iter().next().and_then(|r| {
+            r.get("content_hash")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        }))
     }
 }
 
@@ -599,11 +746,17 @@ mod tests {
 
     const KEY: &str = "test-erase-key-0000000000000000000000";
     const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    /// An UPSTREAM OCI digest an operator holds during an incident (64-hex, but a
+    /// DIFFERENT value from any CoreLink blake3 content_hash — this is the bug).
+    const UPSTREAM_DIGEST: &str =
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
     #[derive(Debug, Default)]
     struct FakeStoreInner {
         blocklist: HashMap<String, String>, // content_hash -> audit_event_id
         map_deletes: Vec<String>,
+        // `_public` adapter_cache_map: OCI digest wire string -> blake3 content_hash.
+        resolve: HashMap<String, String>,
     }
 
     #[derive(Debug, Default)]
@@ -639,6 +792,19 @@ mod tests {
                 .map_deletes
                 .push(content_hash.to_owned());
             Ok(())
+        }
+
+        async fn resolve_public_digest(
+            &self,
+            oci_digest_wire: &str,
+        ) -> Result<Option<String>, String> {
+            Ok(self
+                .inner
+                .lock()
+                .await
+                .resolve
+                .get(oci_digest_wire)
+                .cloned())
         }
     }
 
@@ -694,10 +860,22 @@ mod tests {
         h
     }
 
+    /// A revoke request in the raw-BLAKE3 `content_hash` space.
     fn body(hash: &str) -> PublicRevokeRequest {
         PublicRevokeRequest {
-            content_hash: hash.to_owned(),
+            content_hash: Some(hash.to_owned()),
+            upstream_digest: None,
             reason: "malware".to_owned(),
+            approver: Some("sec-oncall".to_owned()),
+        }
+    }
+
+    /// A revoke request in the upstream OCI `sha256:` digest space.
+    fn upstream_body(digest: &str) -> PublicRevokeRequest {
+        PublicRevokeRequest {
+            content_hash: None,
+            upstream_digest: Some(digest.to_owned()),
+            reason: "poisoned base layer".to_owned(),
             approver: Some("sec-oncall".to_owned()),
         }
     }
@@ -825,5 +1003,146 @@ mod tests {
         assert!(!is_64_hex("abc"));
         assert!(!is_64_hex(&"g".repeat(64)));
         assert!(!is_64_hex(&"a".repeat(63)));
+    }
+
+    // ── WP-F: revoke-by-sha256 upstream digest ──────────────────────────────
+
+    /// DoD: revoke by an operator-held `sha256:` digest that maps to a LIVE
+    /// `_public` blob → the blob's BLAKE3 content_hash is blocklisted + erased
+    /// (serving is killed). The upstream digest and the blake3 differ; the map
+    /// resolves the indirection.
+    #[tokio::test]
+    async fn revoke_by_upstream_sha256_that_maps_kills_serving() {
+        let store = Arc::new(FakeStore::default());
+        // Seed the `_public` adapter_cache_map: upstream OCI digest → blake3.
+        store
+            .inner
+            .lock()
+            .await
+            .resolve
+            .insert(UPSTREAM_DIGEST.to_owned(), HASH.to_owned());
+        let audit = Arc::new(FakeAudit::default());
+        let eraser = Arc::new(FakeEraser::default());
+
+        let resp = handle_revoke(
+            State(state_with(store.clone(), audit.clone(), eraser.clone())),
+            auth_headers(),
+            Json(upstream_body(UPSTREAM_DIGEST)),
+        )
+        .await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let out = parse(resp).await;
+        assert!(out.revoked);
+        assert!(!out.already_revoked);
+        // The BLAKE3 content_hash (NOT the sha256 digest) is what got blocklisted.
+        let g = store.inner.lock().await;
+        assert!(g.blocklist.contains_key(HASH));
+        assert!(!g.blocklist.contains_key(UPSTREAM_DIGEST));
+        assert_eq!(g.map_deletes, vec![HASH.to_owned()]);
+        drop(g);
+        let calls = eraser.calls.lock().await;
+        assert_eq!(calls[0], (PUBLIC_NAMESPACE.to_owned(), HASH.to_owned()));
+    }
+
+    /// DoD: a `sha256:` digest that resolves to NOTHING → EXPLICIT error (assert
+    /// NOT 200) and touches nothing. This is the silent-audited-no-op the WP
+    /// exists to kill: the operator's incident action MUST surface, not succeed.
+    #[tokio::test]
+    async fn revoke_by_upstream_sha256_resolving_to_nothing_is_loud_error() {
+        let store = Arc::new(FakeStore::default()); // empty resolve map
+        let audit = Arc::new(FakeAudit::default());
+        let eraser = Arc::new(FakeEraser::default());
+
+        let resp = handle_revoke(
+            State(state_with(store.clone(), audit.clone(), eraser.clone())),
+            auth_headers(),
+            Json(upstream_body(UPSTREAM_DIGEST)),
+        )
+        .await;
+
+        assert_ne!(resp.status(), StatusCode::OK, "must NOT be a false success");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert!(store.inner.lock().await.blocklist.is_empty());
+        assert!(store.inner.lock().await.map_deletes.is_empty());
+        assert!(audit.events.lock().await.is_empty());
+        assert!(eraser.calls.lock().await.is_empty());
+    }
+
+    /// DoD: a pre-emptive block by a raw BLAKE3 content_hash with no currently
+    /// active row → still 200 idempotent (a legitimate pre-emptive block).
+    #[tokio::test]
+    async fn preemptive_raw_blake3_block_with_no_active_row_is_200() {
+        let store = Arc::new(FakeStore::default());
+        let audit = Arc::new(FakeAudit::default());
+        let eraser = Arc::new(FakeEraser::default());
+
+        let resp = handle_revoke(
+            State(state_with(store.clone(), audit.clone(), eraser.clone())),
+            auth_headers(),
+            Json(body(HASH)),
+        )
+        .await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        let out = parse(resp).await;
+        assert!(out.revoked);
+        assert!(!out.already_revoked);
+        assert!(store.inner.lock().await.blocklist.contains_key(HASH));
+    }
+
+    /// DoD: a bare 64-hex supplied in the upstream space (no `sha256:` prefix,
+    /// but INTENDED as an upstream digest) → refused as ambiguous, touches
+    /// nothing. It could be a blake3 or a stripped sha256 — the operator must
+    /// name the space.
+    #[tokio::test]
+    async fn bare_64hex_as_upstream_digest_is_rejected_ambiguous() {
+        let store = Arc::new(FakeStore::default());
+        let audit = Arc::new(FakeAudit::default());
+        let eraser = Arc::new(FakeEraser::default());
+
+        let resp = handle_revoke(
+            State(state_with(store.clone(), audit.clone(), eraser.clone())),
+            auth_headers(),
+            Json(upstream_body(HASH)), // HASH is a bare 64-hex, no `sha256:`
+        )
+        .await;
+
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(store.inner.lock().await.blocklist.is_empty());
+        assert!(audit.events.lock().await.is_empty());
+        assert!(eraser.calls.lock().await.is_empty());
+    }
+
+    /// Guard: neither field, or both fields, is a 400 (exactly-one contract).
+    #[tokio::test]
+    async fn neither_or_both_fields_is_400() {
+        let mk = || {
+            (
+                Arc::new(FakeStore::default()),
+                Arc::new(FakeAudit::default()),
+                Arc::new(FakeEraser::default()),
+            )
+        };
+
+        let (s, a, e) = mk();
+        let neither = PublicRevokeRequest {
+            content_hash: None,
+            upstream_digest: None,
+            reason: String::new(),
+            approver: None,
+        };
+        let resp = handle_revoke(State(state_with(s, a, e)), auth_headers(), Json(neither)).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        let (s, a, e) = mk();
+        let both = PublicRevokeRequest {
+            content_hash: Some(HASH.to_owned()),
+            upstream_digest: Some(UPSTREAM_DIGEST.to_owned()),
+            reason: String::new(),
+            approver: None,
+        };
+        let resp = handle_revoke(State(state_with(s, a, e)), auth_headers(), Json(both)).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 }

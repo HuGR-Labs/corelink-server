@@ -57,6 +57,19 @@ Each entry cross-references:
   (child) ahead of `tier_selections` (parent) in the erase-set, add the
   `stripe_checkout_sessions_precedes_tier_selections` FK-order guard test, and document the
   child-before-parent invariant. (`routes/dsr/adapter_d1.rs`.)
+- **fix(oci): F3.2 `public_revoke` can now revoke a poisoned base layer by its `sha256:` upstream
+  digest (WP-F).** During an OCI base-layer poisoning incident the operator holds the UPSTREAM OCI
+  `sha256:` digest, but `POST /_internal/public/revoke` blocklisted by the 64-hex BLAKE3
+  `content_hash`. Both are 64-hex, so the endpoint accepted the wrong value, INSERTed it, returned
+  success and audited it — yet `public_blocklist.content_hash` never matched any row and the
+  compromised blob kept serving: a silent, audited no-op mid-incident. The request now names the
+  space explicitly: `content_hash` (raw 64-hex BLAKE3, unchanged, idempotent pre-emptive block) OR
+  `upstream_digest` (`sha256:<hex>`, algo prefix REQUIRED), resolved to its BLAKE3 content_hash via
+  the same `_public` `adapter_cache_map` the OCI read/mirror path keys by (the digest wire string is
+  the moat `url_hash`). A bare 64-hex in the upstream space is refused as ambiguous, and an upstream
+  digest that maps to NO `_public` blob is a LOUD `404` (never a false 200) so the operator's action
+  cannot silently do nothing. Auth unchanged: dedicated `CORELINK_ERASE_AUTH_KEY`, no shared fallback
+  (finding H4).
 - **fix(okf): `scripts/okf_reanchor.py` advances a `source_blobs` anchor only for a file named with
   `--blob`, not every entry.** The helper (added in #1146 to mechanize the reconcile checkpoint/blob
   advance) blanket-rewrote every `source_blobs` entry to the current `git hash-object`. That is wrong:
