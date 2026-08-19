@@ -22,6 +22,22 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Added
+- **feat(oci): F3.2 inc4b — the server-only public-base MIRROR promote path (WP-A).** Replaces the S0
+  stub `handle_promote` (401/501) with the real, fail-CLOSED promote body behind
+  `POST /_internal/admin/public-mirror/promote` (admin-gated, `CORELINK_PUBLIC_MIRROR_AUTH_KEY` with
+  shared fallback). The flow — via the shared `fetch_verify_promote` helper — is: (1) the OCI digest
+  MUST be `is_allowlisted` (owner-pinned, digest-only trust root; the shipped manifest is **deny-all**,
+  so every real prod call rejects here — the INERT posture); (2) fetch the blob from the FIXED upstream
+  registry (`registry-1.docker.io`, never a caller URL) through the SINGLE audited SSRF guard
+  (`corelink-adapter-host`'s `upstream_ssrf` — widened `pub(crate)`→`pub` so the container reuses it
+  rather than re-implementing SSRF; the 307→CDN redirect and the anonymous-token realm are both
+  internal-IP-guarded); (3) `OciDigest::verify_against_bytes` fail-CLOSED — a digest-lie never reaches
+  the shared slot; (4) idempotent `MoatCache::put` into the `_public` namespace with the shared-meter
+  seed. This is the SECOND and LAST legitimate `_public` writer (the set is exhaustively
+  `{ tenant finalize_upload, this inc4b admin mirror }`). Ships INERT: admin-gated AND allowlist
+  deny-all until the WP-E repin. (`routes/public_mirror.rs`, `corelink-adapter-host/src/upstream_ssrf.rs`.)
+
 ### Security
 - **deps: bump `h2` 0.4.14 → 0.4.16 (RUSTSEC-2026-0258).** The `h2` crate (transitive via hyper)
   accepted and queued empty DATA frames without limit → unbounded memory / panic-on-overflow. A
