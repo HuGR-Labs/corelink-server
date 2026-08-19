@@ -307,7 +307,7 @@ name = "corelink-prod"
 # put, WP3 2026-08-17); declared here as non-secret vars so the live prod behavior
 # is reproducible from config and a fresh deploy does NOT silently ship them OFF
 # (which would regress edge-HIT latency + under-count billing).
-vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on" }
+vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on", EDGE_DO_METER = "off" }
 
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.prod.observability]
@@ -734,6 +734,7 @@ ENVIRONMENT = "prod-sam"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
+EDGE_DO_METER = "off"
 EDGE_ASYNC_METER = "on"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
@@ -879,6 +880,7 @@ ENVIRONMENT = "prod-lhr"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
+EDGE_DO_METER = "off"
 EDGE_ASYNC_METER = "on"
 # EU residency (2026-06-23) — the container's CAS/AC R2 config now points at the
 # REAL eu-jurisdiction buckets (corelink-cas-eu / corelink-ac-eu, both physically
@@ -1033,6 +1035,7 @@ ENVIRONMENT = "prod-nrt"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
+EDGE_DO_METER = "off"
 EDGE_ASYNC_METER = "on"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
@@ -1181,6 +1184,7 @@ ENVIRONMENT = "prod-syd"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
+EDGE_DO_METER = "off"
 EDGE_ASYNC_METER = "on"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"

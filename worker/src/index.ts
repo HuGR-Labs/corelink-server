@@ -34,7 +34,10 @@ import {
   storageCapIsFinite,
   FREE_REQUEST_CAP,
   STORAGE_QUOTA_HEADER,
+  QUOTAS,
+  currentYearMonthUtc,
 } from "./lib/quota.js";
+import { meterViaDO } from "./lib/edge_do_meter.js";
 import { checkStorageQuotaCachedRead } from "./lib/quota_storage_cache.js";
 import {
   tryFastRequestCount,
@@ -236,6 +239,12 @@ export interface Env {
   // only (serve the container), "serve" = edge-authoritative HIT. Unset = off.
   CAS_BUCKET: R2Bucket;
   EDGE_PUBLIC_READ?: string;
+  // P3 edge-local request metering (ADR 2026-08-19). Runtime flag: unset/off =
+  // today's D1-UPSERT request-count path (unchanged); "shadow" = additionally run
+  // the DO metering path off the response path and log its verdict vs D1 (D1 still
+  // authoritative, no user impact); "serve" = DO-authoritative (NOT flip-ready
+  // until the WP-4 DO→D1 reconcile lands). Per-region, owner-flipped.
+  EDGE_DO_METER?: string;
   ERASURE_SALT_KEY?: string;
   ERASURE_ATTESTATION_SEED_HEX?: string;
   ERASURE_ATTESTATION_KEY_ID?: string;
@@ -507,6 +516,14 @@ type AuthResult =
 // ──────────────────────────────────────────────────────────────────────────────
 // Constants
 // ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * P3 EDGE_DO_METER lease block `L` (tokens a shard leases from the coordinator per
+ * refill). Bounds under-serve (≤ #regions·L stranded) and the coordinator-hop rate
+ * (~1 hop per L requests). Capped by the tier's own cap at the call-site so a
+ * small-cap tier never leases more than its ceiling.
+ */
+const DO_METER_LEASE_BLOCK = 1_000;
 
 /** Target p99 wall-clock for 404 timing-padding (ms). Covers slowest arm. */
 const TIMING_PAD_TARGET_MS = 80;
@@ -3297,6 +3314,66 @@ const baseHandler: ExportedHandler<Env> = {
       // kill-switched) request from an unlimited-STORAGE tenant — enterprise only.
       if (quotaBatch.ranD1) stQBatchMs = Date.now() - qbatchStart;
       const inc = quotaBatch.increment;
+
+      // P3 EDGE_DO_METER shadow (ADR 2026-08-19): run the edge-local DO metering
+      // path in parallel to the authoritative D1 verdict and log agreement. D1
+      // still enforces below; the DO path performs NO enforcement here. Runs OFF
+      // the response path (`ctx.waitUntil`) so it never adds latency, and only for
+      // a genuinely-counted request (`inc.counted` — a fan-out sub-request is not
+      // re-metered) on a CAPPED tier (uncapped never denies). No tenant id is
+      // logged (region is a colo code + tier are not PII). NOTE: an UNSEEDED
+      // shadow diverges from D1 mid-month by construction (the DO count starts at
+      // 0 while D1 already holds this month's count) — this shadow validates the
+      // DO MECHANISM (lease math, hop health, error rate, zero user impact), not
+      // absolute mid-month parity; parity requires the WP-4 DO→D1 reconcile/seed.
+      const doMeterMode = (env as unknown as { EDGE_DO_METER?: string }).EDGE_DO_METER;
+      if (
+        doMeterMode === "shadow" &&
+        inc.counted &&
+        env.REQUEST_METER_SHARD_DO &&
+        env.REQUEST_METER_COORDINATOR_DO &&
+        env.R2_CAS_REGION
+      ) {
+        const doMeterCap = QUOTAS[quotaTier.tier].requestsPerMonthMax;
+        if (doMeterCap !== Number.MAX_SAFE_INTEGER) {
+          const d1WithinCap =
+            inc.count <= FREE_REQUEST_CAP ||
+            requestCapResultForCount(inc.count, quotaTier.tier).ok;
+          const tier = quotaTier.tier;
+          const region = env.R2_CAS_REGION;
+          const shardNs = env.REQUEST_METER_SHARD_DO;
+          const coordNs = env.REQUEST_METER_COORDINATOR_DO;
+          ctx.waitUntil(
+            meterViaDO(
+              { shard: shardNs, coordinator: coordNs },
+              {
+                tenantId: resolvedTenantId,
+                region,
+                yearMonth: currentYearMonthUtc(),
+                cap: doMeterCap,
+                block: Math.min(doMeterCap, DO_METER_LEASE_BLOCK),
+                lowWater: 0,
+              },
+            )
+              .then((v) => {
+                console.log(
+                  JSON.stringify({
+                    evt: "do_meter_shadow",
+                    tier,
+                    region,
+                    d1WithinCap,
+                    doWithinCap: v.withinCap,
+                    agree: d1WithinCap === v.withinCap,
+                    refilled: v.refilled,
+                  }),
+                );
+              })
+              .catch(() => {
+                /* telemetry must never break the request */
+              }),
+          );
+        }
+      }
 
       // Monthly request-count quota (red-team #5): compare the already-counted
       // value against the tenant's RESOLVED tier cap. No re-increment. Within
