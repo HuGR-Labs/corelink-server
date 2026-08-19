@@ -51,28 +51,44 @@
 # human provenance.
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# ACTIVE ALLOWLIST — one active pin: alpine (WP-E Roll-1).
+# ACTIVE ALLOWLIST — WP-G M3: alpine layer (WP-E) + 5 base IMAGE index digests.
 # ─────────────────────────────────────────────────────────────────────────────
-# As of WP-E Roll-1 the trust root is NO LONGER deny-all: the alpine amd64 rootfs
-# layer below is the ONE active pin. `is_allowlisted` returns true for exactly
-# that digest and false for every other (debian stays COMMENTED — a later roll).
+# TWO KINDS of entry now coexist, both digest-pinned + owner-gated:
 #
-# EXECUTABLE-ORDERING NOTE (honours design GAP-E's server-populates-first intent).
-# The alpine pin is uncommented WHILE `OCI_PUBLIC_DEDUP_ENABLED` is still OFF.
-# The two `_public` writers are gated by DIFFERENT switches:
-#   * the server-only mirror (`/_internal/admin/public-mirror/promote`) is gated
-#     by THIS allowlist, NOT by the dedup flag — so with the pin active it CAN
-#     populate `_public` for the alpine digest right now; while
-#   * a CLIENT OCI finalize routes per-tenant (never `_public`) as long as
-#     `OCI_PUBLIC_DEDUP_ENABLED` is OFF — so NO client can populate the shared
-#     blob in Roll-1.
-# Net: the server mirror populates `_public` FIRST; a later roll flips dedup ON
-# to let client finalizes dedup into the now-server-seeded shared blob. This is
-# exactly GAP-E's ordering invariant (server-populates-before-client).
+#  1. LAYER-blob digest (WP-E model). A single upstream rootfs LAYER blob. Gates
+#     BOTH the client-push `_public` route (`finalize_upload` `routes_to_public`)
+#     and the server mirror (`/_internal/admin/public-mirror/promote`). The alpine
+#     amd64 rootfs layer below is the one such pin.
 #
-# The pinned digest is an immutable, resolved amd64 rootfs layer:
+#  2. base-image INDEX/manifest digest (WP-G M2 model). An immutable multi-arch
+#     INDEX (or image-manifest) digest. On the FIRST request for
+#     `<repo>@sha256:<index>` under both flags ON, the M2 resolver
+#     (`promote_public_closure`, `routes/public_pullthrough.rs`) fetches the
+#     closure from the FIXED upstream (`registry-1.docker.io`), digest-verifies
+#     EVERY descriptor (index → linux per-arch children → config + layers)
+#     fail-CLOSED, and promotes the whole closure into `_public`; later tenants
+#     serve it cross-tenant by EXISTENCE. This SUPERSEDES GAP-E's separate
+#     "mirror-populates-first" step: the on-demand promote IS the trusted server
+#     populate, and it is fused with the read. It opens NO client-push hole —
+#     client pushes route by LAYER digest and these index digests are NOT layer
+#     digests, so a client can never populate `_public` for them; only the
+#     server-side, upstream-verified closure promote can.
+#
+# ACTIVATION (M3): both `OCI_PUBLIC_DEDUP_ENABLED` and `OCI_UPSTREAM_ON_MISS` are
+# "1" in prod (baked-boot flags; activation is a repin). Revocation of any
+# promoted digest is the B1b `_public` blocklist kill-switch
+# (`/_internal/public/revoke`) — orthogonal to this file.
+#
+# NOTE (drift): index digests are the CURRENT resolution of a mutable tag; a base
+# rebuild yields a NEW index digest. A stale pin still serves whoever requests
+# that exact digest (content-addressed); refresh = owner re-pins out of band.
+#
+# ── LAYER pins (WP-E) ─────────────────────────────────────────────────────────
 sha256:25f1d6b1951ac8eb3740558fe94cb83d377bdadf95fd9f98b50d2e1b96130471   docker.io/library/alpine:3.20 (amd64 rootfs layer)
 #
-# Example pin kept COMMENTED (NOT yet activated — a later roll), documenting the
-# format + seeding a future mirror job:
-#   sha256:039e6f9f9752f74a3ff4a6a224f64c7c864da16ed98f882107704328f41b9c42   docker.io/library/debian:bookworm-slim (amd64 rootfs layer)
+# ── base-image INDEX pins (WP-G M2), resolved 2026-08-19 ──────────────────────
+sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc   docker.io/library/alpine:3.20 (multi-arch image index)
+sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931   docker.io/library/debian:12 (multi-arch image index)
+sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517   docker.io/library/ubuntu:24.04 (multi-arch image index)
+sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436   docker.io/library/node:22-slim (multi-arch image index)
+sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a   docker.io/library/python:3.12-slim (multi-arch image index)

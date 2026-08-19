@@ -244,6 +244,7 @@ export interface Env {
   // (Roll-1) = client OCI finalize routes per-tenant (never `_public`); a later
   // roll flips it on so client finalizes dedup into the server-seeded shared blob.
   OCI_PUBLIC_DEDUP_ENABLED?: string;
+  OCI_UPSTREAM_ON_MISS?: string;
   // P3 edge-local request metering (ADR 2026-08-19). Runtime flag: unset/off =
   // today's D1-UPSERT request-count path (unchanged); "shadow" = additionally run
   // the DO metering path off the response path and log its verdict vs D1 (D1 still
