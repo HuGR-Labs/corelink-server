@@ -498,7 +498,7 @@ image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-
 # tenants for nothing. The account limit (shared across all container apps) is the
 # real backstop and is raiseable via CF support — raise it when concurrent load
 # approaches it.
-max_instances = 2000
+max_instances = 20
 instance_type = "basic"
 # P0-5 — DECISION-GATE-1 Option A: the container reaches R2 (S3 API) + D1 (HTTP
 # API) over egress. NOTE: wrangler's `[[containers]]` schema does NOT accept
@@ -872,7 +872,7 @@ class_name = "RequestMeterShardDO"
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:0acf07e8-r1"
 # Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
-max_instances = 2000
+max_instances = 10
 instance_type = "basic"
 
 # ── LHR (London / Europe West) ───────────────────────────────────────────────
@@ -1030,7 +1030,7 @@ class_name = "RequestMeterShardDO"
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:0acf07e8-r1"
 # Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
-max_instances = 2000
+max_instances = 10
 instance_type = "basic"
 
 # ── NRT (Tokyo / Asia Pacific Northeast) ─────────────────────────────────────
@@ -1182,7 +1182,7 @@ class_name = "RequestMeterShardDO"
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:0acf07e8-r1"
 # Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
-max_instances = 2000
+max_instances = 10
 instance_type = "basic"
 
 # ── SYD (Sydney / Asia Pacific Southeast) ────────────────────────────────────
@@ -1330,5 +1330,5 @@ class_name = "RequestMeterShardDO"
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:0acf07e8-r1"
 # Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
-max_instances = 2000
+max_instances = 10
 instance_type = "basic"
