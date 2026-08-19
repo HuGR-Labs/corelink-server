@@ -208,6 +208,13 @@ pub mod public_attestation;
 /// F3.2 increment-4b server-only public-base MIRROR endpoint (admin-gated;
 /// S0 ships the mount seam + stub, bodies land in inc4b).
 pub mod public_mirror;
+/// WP-G per-tenant OCI manifest + blob upstream-on-miss resolver (M1 of the
+/// manifest-resolution keystone, `OCI_UPSTREAM_ON_MISS`). Flag-gated OFF, INERT
+/// until a repin: on a per-tenant manifest KV miss it fetches + verifies +
+/// per-tenant-caches the manifest (and, for an image, its config + layer blobs)
+/// from the fixed upstream instead of 404-ing. Fail-open at every step; reuses
+/// the ONE audited SSRF/token client from [`public_mirror`].
+pub mod public_pullthrough;
 /// `_public` shared-dedup blob revocation endpoint (F3.2 BLOCKER-1, B1b). The
 /// write-side incident-response counterpart to [`cas_erase`]: blocklist +
 /// map-delete + audit + R2 hard-delete of a poisoned cross-tenant public blob,

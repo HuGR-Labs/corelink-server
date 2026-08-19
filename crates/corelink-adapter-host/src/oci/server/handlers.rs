@@ -593,6 +593,7 @@ async fn dispatch_manifest(
                 scope,
                 repo,
                 reference,
+                state.config.manifest_resolver.as_deref(),
             )
             .await
         }
@@ -603,6 +604,7 @@ async fn dispatch_manifest(
                 scope,
                 repo,
                 reference,
+                state.config.manifest_resolver.as_deref(),
             )
             .await
         }

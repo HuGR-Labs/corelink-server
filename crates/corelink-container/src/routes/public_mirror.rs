@@ -384,7 +384,11 @@ pub(crate) async fn fetch_verify_promote(
 /// empty path component (`//`), and any `..` component (path traversal). A valid
 /// name can only extend the FIXED upstream's `/v2/<repo>/blobs/…` path, never
 /// swap its host.
-fn validate_repository(repository: &str) -> Result<(), String> {
+///
+/// `pub(crate)` so the WP-G read pull-through
+/// ([`crate::routes::public_pullthrough`]) gates the repo through the SAME guard
+/// before any upstream manifest/blob fetch.
+pub(crate) fn validate_repository(repository: &str) -> Result<(), String> {
     if repository.is_empty() {
         return Err("repository is empty".to_owned());
     }
@@ -416,37 +420,43 @@ fn validate_repository(repository: &str) -> Result<(), String> {
     Ok(())
 }
 
-// ── Upstream blob fetcher ────────────────────────────────────────────────────
+/// The multi-media-type `Accept` a manifest fetch negotiates: an OCI image
+/// index, a Docker manifest list, an OCI image manifest, and a Docker v2 image
+/// manifest — the four shapes buildkit resolves through. Docker Hub
+/// content-negotiates on this header, so omitting it yields the legacy v1
+/// manifest.
+const MANIFEST_ACCEPT: &str = "application/vnd.oci.image.index.v1+json,\
+application/vnd.docker.distribution.manifest.list.v2+json,\
+application/vnd.oci.image.manifest.v1+json,\
+application/vnd.docker.distribution.manifest.v2+json";
 
-/// SSRF-safe fetcher of an upstream OCI layer blob. A trait so the promote flow
-/// is testable hermetically (a fake returns canned bytes) while prod wires the
-/// reqwest client against the FIXED registry.
-#[async_trait::async_trait]
-pub(crate) trait UpstreamBlobFetcher: Send + Sync + std::fmt::Debug {
-    /// Fetch the blob identified by `digest` under `repository` from the FIXED
-    /// upstream. Returns the raw bytes (unverified — the caller runs
-    /// `verify_against_bytes`), or an error string on any failure.
-    async fn fetch_blob(&self, repository: &str, digest: &str) -> Result<Vec<u8>, String>;
-}
+/// Hard cap on a single fetched manifest (bytes buffered before verify). OCI
+/// manifests + indexes are KiB-scale; 4 MiB mirrors the adapter's
+/// `MAX_MANIFEST_BYTES` DoS guard and bounds a hostile upstream.
+const MIRROR_MAX_MANIFEST_BYTES: u64 = 4 * 1024 * 1024;
 
-/// Production fetcher: pulls `GET {FIXED_UPSTREAM_REGISTRY}/v2/<repo>/blobs/<digest>`
-/// through a reqwest client whose redirect policy is the SINGLE audited SSRF
-/// guard ([`ssrf_safe_redirect_policy`]). Docker Hub 401s an anonymous pull with
-/// a `WWW-Authenticate: Bearer` challenge; we resolve the anonymous token from
-/// the (SSRF-guarded) realm and retry once with it.
+// ── Shared SSRF-safe upstream registry client ────────────────────────────────
+
+/// The ONE audited SSRF-safe upstream registry client: a reqwest client wired
+/// with the SINGLE [`ssrf_safe_redirect_policy`] guard, the FIXED
+/// `registry-1.docker.io` origin, and the anonymous-token dance. BOTH the blob
+/// fetcher ([`DockerHubBlobFetcher`]) and the manifest fetcher
+/// ([`DockerHubManifestFetcher`]) share ONE instance, so there is exactly one
+/// SSRF/token implementation (the F3.2 "one SSRF guard" audit invariant) — a
+/// second copy of the redirect policy or the token dance is FORBIDDEN.
 #[derive(Debug)]
-struct DockerHubBlobFetcher {
+pub(crate) struct UpstreamRegistryClient {
     client: reqwest::Client,
     upstream: url::Url,
 }
 
-impl DockerHubBlobFetcher {
-    /// Build the fetcher against [`FIXED_UPSTREAM_REGISTRY`].
+impl UpstreamRegistryClient {
+    /// Build the client against [`FIXED_UPSTREAM_REGISTRY`].
     ///
     /// # Errors
     /// Returns an error string if the fixed URL is unparseable or the reqwest
     /// client cannot be built (e.g. TLS init failure).
-    fn new() -> Result<Self, String> {
+    pub(crate) fn new() -> Result<Self, String> {
         let upstream = url::Url::parse(FIXED_UPSTREAM_REGISTRY)
             .map_err(|e| format!("fixed upstream parse: {e}"))?;
         let client = reqwest::Client::builder()
@@ -529,58 +539,59 @@ impl DockerHubBlobFetcher {
             .and_then(serde_json::Value::as_str)
             .map(str::to_owned))
     }
-}
 
-#[async_trait::async_trait]
-impl UpstreamBlobFetcher for DockerHubBlobFetcher {
-    async fn fetch_blob(&self, repository: &str, digest: &str) -> Result<Vec<u8>, String> {
-        // Build the blob path on the FIXED upstream origin. `repository` is
-        // pre-validated by `validate_repository`, and we re-assert the joined URL
-        // stays on the fixed origin (defence in depth — a scheme-bearing repo
-        // would host-swap via `Url::join`).
-        let path = format!("/v2/{repository}/blobs/{digest}");
+    /// GET `path` on the FIXED upstream origin with the given `accept` header,
+    /// retrying ONCE with an anonymous bearer on a 401. Returns the successful
+    /// response (headers intact, body unread) or an error string. `path` is
+    /// built on the fixed origin and re-asserted to stay there (defence in
+    /// depth — a scheme-bearing repo would host-swap via `Url::join`).
+    async fn get_with_anon_retry(
+        &self,
+        path: &str,
+        repository: &str,
+        accept: &str,
+    ) -> Result<reqwest::Response, String> {
         let url = self
             .upstream
-            .join(&path)
-            .map_err(|e| format!("blob url join: {e}"))?;
+            .join(path)
+            .map_err(|e| format!("url join: {e}"))?;
         if url.scheme() != self.upstream.scheme() || url.host_str() != self.upstream.host_str() {
-            return Err("SSRF guard: blob URL escaped the fixed upstream origin".to_owned());
+            return Err("SSRF guard: URL escaped the fixed upstream origin".to_owned());
         }
-
         let mut response = self
             .client
             .get(url.clone())
-            .header(reqwest::header::ACCEPT, "*/*")
+            .header(reqwest::header::ACCEPT, accept)
             .send()
             .await
             .map_err(|e| format!("send: {e}"))?;
-
         // Docker Hub 401s an anonymous pull with a Bearer challenge; resolve the
         // anonymous token and retry once.
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
             if let Some(token) = self.anon_token_for(&response, repository).await? {
                 response = self
                     .client
-                    .get(url.clone())
+                    .get(url)
                     .bearer_auth(token)
-                    .header(reqwest::header::ACCEPT, "*/*")
+                    .header(reqwest::header::ACCEPT, accept)
                     .send()
                     .await
                     .map_err(|e| format!("send (authed): {e}"))?;
             }
         }
-
         let status = response.status();
         if !status.is_success() {
             return Err(format!("upstream status: {status}"));
         }
+        Ok(response)
+    }
 
-        // Fail-fast against Content-Length, then enforce the streamed total.
+    /// Stream `response`'s body into a heap buffer, enforcing `max_bytes` both
+    /// against the declared `Content-Length` (fail-fast) and the streamed total.
+    async fn read_capped(response: reqwest::Response, max_bytes: u64) -> Result<Vec<u8>, String> {
         if let Some(declared) = response.content_length() {
-            if declared > MIRROR_MAX_BLOB_BYTES {
-                return Err(format!(
-                    "upstream blob oversized: {declared} > {MIRROR_MAX_BLOB_BYTES}"
-                ));
+            if declared > max_bytes {
+                return Err(format!("upstream body oversized: {declared} > {max_bytes}"));
             }
         }
         let capacity = response
@@ -596,14 +607,151 @@ impl UpstreamBlobFetcher for DockerHubBlobFetcher {
         {
             let new_total =
                 u64::try_from(buf.len().saturating_add(chunk.len())).unwrap_or(u64::MAX);
-            if new_total > MIRROR_MAX_BLOB_BYTES {
+            if new_total > max_bytes {
                 return Err(format!(
-                    "upstream blob oversized while streaming: {new_total} > {MIRROR_MAX_BLOB_BYTES}"
+                    "upstream body oversized while streaming: {new_total} > {max_bytes}"
                 ));
             }
             buf.extend_from_slice(&chunk);
         }
         Ok(buf)
+    }
+
+    /// Fetch `GET /v2/<repo>/blobs/<digest>` (unverified bytes).
+    async fn fetch_blob(&self, repository: &str, digest: &str) -> Result<Vec<u8>, String> {
+        let path = format!("/v2/{repository}/blobs/{digest}");
+        let response = self.get_with_anon_retry(&path, repository, "*/*").await?;
+        Self::read_capped(response, MIRROR_MAX_BLOB_BYTES).await
+    }
+
+    /// Fetch `GET /v2/<repo>/manifests/<reference>` (tag OR `sha256:` digest)
+    /// with the multi-media-type [`MANIFEST_ACCEPT`], returning the raw bytes,
+    /// the served `Content-Type`, and the upstream `Docker-Content-Digest` (when
+    /// present — the caller still recomputes for a tag). Unverified.
+    async fn fetch_manifest(
+        &self,
+        repository: &str,
+        reference: &str,
+    ) -> Result<FetchedManifest, String> {
+        let path = format!("/v2/{repository}/manifests/{reference}");
+        let response = self
+            .get_with_anon_retry(&path, repository, MANIFEST_ACCEPT)
+            .await?;
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let docker_content_digest = response
+            .headers()
+            .get("docker-content-digest")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+        let bytes = Self::read_capped(response, MIRROR_MAX_MANIFEST_BYTES).await?;
+        Ok(FetchedManifest {
+            bytes,
+            content_type,
+            docker_content_digest,
+        })
+    }
+}
+
+// ── Upstream blob fetcher ────────────────────────────────────────────────────
+
+/// SSRF-safe fetcher of an upstream OCI layer blob. A trait so the promote flow
+/// is testable hermetically (a fake returns canned bytes) while prod wires the
+/// reqwest client against the FIXED registry.
+#[async_trait::async_trait]
+pub(crate) trait UpstreamBlobFetcher: Send + Sync + std::fmt::Debug {
+    /// Fetch the blob identified by `digest` under `repository` from the FIXED
+    /// upstream. Returns the raw bytes (unverified — the caller runs
+    /// `verify_against_bytes`), or an error string on any failure.
+    async fn fetch_blob(&self, repository: &str, digest: &str) -> Result<Vec<u8>, String>;
+}
+
+/// Production blob fetcher: a thin wrapper over the shared
+/// [`UpstreamRegistryClient`] (`GET {FIXED_UPSTREAM_REGISTRY}/v2/<repo>/blobs/<digest>`).
+#[derive(Debug)]
+pub(crate) struct DockerHubBlobFetcher {
+    client: Arc<UpstreamRegistryClient>,
+}
+
+impl DockerHubBlobFetcher {
+    /// Build a blob fetcher over a fresh [`UpstreamRegistryClient`].
+    ///
+    /// # Errors
+    /// Propagates [`UpstreamRegistryClient::new`]'s error.
+    fn new() -> Result<Self, String> {
+        Ok(Self {
+            client: Arc::new(UpstreamRegistryClient::new()?),
+        })
+    }
+
+    /// Build a blob fetcher SHARING an existing [`UpstreamRegistryClient`] (so
+    /// the blob + manifest fetchers reuse ONE SSRF/token implementation).
+    pub(crate) fn from_client(client: Arc<UpstreamRegistryClient>) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait::async_trait]
+impl UpstreamBlobFetcher for DockerHubBlobFetcher {
+    async fn fetch_blob(&self, repository: &str, digest: &str) -> Result<Vec<u8>, String> {
+        self.client.fetch_blob(repository, digest).await
+    }
+}
+
+// ── Upstream manifest fetcher ────────────────────────────────────────────────
+
+/// A manifest fetched from the FIXED upstream (unverified — the caller
+/// digest-verifies for a `sha256:` reference or recomputes for a tag).
+#[derive(Debug, Clone)]
+pub(crate) struct FetchedManifest {
+    /// Raw manifest bytes.
+    pub bytes: Vec<u8>,
+    /// The upstream-served `Content-Type` (media type), if any.
+    pub content_type: Option<String>,
+    /// The upstream `Docker-Content-Digest`, if any.
+    pub docker_content_digest: Option<String>,
+}
+
+/// SSRF-safe fetcher of an upstream OCI manifest (tag OR digest). A trait so the
+/// WP-G resolver is testable hermetically while prod wires the shared reqwest
+/// client against the FIXED registry.
+#[async_trait::async_trait]
+pub(crate) trait UpstreamManifestFetcher: Send + Sync + std::fmt::Debug {
+    /// Fetch the manifest for `reference` under `repository` from the FIXED
+    /// upstream with the multi-media-type `Accept`. Returns the unverified
+    /// [`FetchedManifest`], or an error string on any failure.
+    async fn fetch_manifest(
+        &self,
+        repository: &str,
+        reference: &str,
+    ) -> Result<FetchedManifest, String>;
+}
+
+/// Production manifest fetcher: a thin wrapper over the shared
+/// [`UpstreamRegistryClient`].
+#[derive(Debug)]
+pub(crate) struct DockerHubManifestFetcher {
+    client: Arc<UpstreamRegistryClient>,
+}
+
+impl DockerHubManifestFetcher {
+    /// Build a manifest fetcher SHARING an existing [`UpstreamRegistryClient`].
+    pub(crate) fn from_client(client: Arc<UpstreamRegistryClient>) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait::async_trait]
+impl UpstreamManifestFetcher for DockerHubManifestFetcher {
+    async fn fetch_manifest(
+        &self,
+        repository: &str,
+        reference: &str,
+    ) -> Result<FetchedManifest, String> {
+        self.client.fetch_manifest(repository, reference).await
     }
 }
 
