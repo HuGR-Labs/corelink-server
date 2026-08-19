@@ -43,6 +43,7 @@
 //! the resolver never serves unverified bytes.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -61,8 +62,9 @@ use corelink_ratelimit::{
     RateLimitConfig, RateLimiter,
 };
 
-use crate::adapter_cache::MoatCache;
+use crate::adapter_cache::{MoatCache, PUBLIC_NAMESPACE};
 use crate::oci_cap::TenantCapResolver;
+use crate::public_base_allowlist::PublicBaseAllowlist;
 use crate::routes::public_mirror::{
     validate_repository, DockerHubBlobFetcher, DockerHubManifestFetcher, UpstreamBlobFetcher,
     UpstreamManifestFetcher, UpstreamRegistryClient,
@@ -100,6 +102,35 @@ const MAX_PULLTHROUGH_MANIFEST_BYTES: usize = 4 * 1024 * 1024;
 /// fails open to `Ok(None)`.
 const MAX_PULLTHROUGH_BLOB_BYTES: usize = 1024 * 1024 * 1024;
 
+/// Storage cap threaded into every `_public` moat write (M2 closure promote).
+/// `Some(0)` is the genuine-unlimited shared-meter SEED — a `_public` write is
+/// never charged to any tenant's per-tier quota (matches `byte_accounting.rs`'s
+/// `unowned_shared_namespace` override and `public_mirror.rs`'s admin promote).
+/// The GROWTH of `_public` is bounded by [`PUBLIC_GROWTH_CEILING_BYTES`], NOT by
+/// this per-write cap.
+const PUBLIC_CAP: Option<i64> = Some(0);
+
+/// Anti-bloat ceiling (B4) on how many bytes THIS resolver instance may promote
+/// into the shared `_public` namespace over its lifetime. A `_public` closure
+/// promote is REFUSED (fail-open to the per-tenant path) once the running total
+/// reaches this bound, so a hostile allowlist-bloat / mirror-amplification cannot
+/// grow `_public` without limit (cross-tenant cost-contagion).
+///
+/// 64 GiB is generous headroom for the owner-curated base-image set (a base
+/// image's full closure is hundreds of MiB) while still a hard in-process cap.
+///
+/// **SCOPE (durable follow-up needed):** this is an IN-PROCESS counter — it
+/// bounds a single container's contribution to `_public` per boot, NOT the
+/// durable cross-region `_public` row's `bytes_used`. A container reaps to zero
+/// and the counter resets; N regions × M containers each get their own budget.
+/// A durable cross-region ceiling would read the `_public` per-region
+/// `tenant_storage_state.bytes_used` (accrued by `byte_accounting.rs`) and gate
+/// on it — that read path does not exist today (the `TenantCapResolver` reads
+/// tier tables, not `bytes_used`), so wiring it is NEW D1 plumbing tracked as a
+/// follow-up. Until then the WRITE allowlist (owner-pinned root digests only) is
+/// the primary admission bound and this in-process ceiling is the backstop.
+const PUBLIC_GROWTH_CEILING_BYTES: u64 = 64 * 1024 * 1024 * 1024;
+
 /// Per-tenant manifest + blob upstream-on-miss resolver (M1). See the module
 /// doc. Everything is fail-open; the flag gates whether it is wired at all.
 pub(crate) struct UpstreamManifestResolver {
@@ -123,6 +154,25 @@ pub(crate) struct UpstreamManifestResolver {
     /// the now-warm KV instead). Same per-key async-mutex pattern as
     /// [`crate::request_count::CachedTierResolver`].
     inflight: AsyncMutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    /// M2 cross-tenant `_public` routing. When `dedup` is on
+    /// ([`crate::public_flags::oci_public_dedup_enabled`], boot-read) a DIGEST
+    /// reference resolves from / promotes into the shared `_public` namespace
+    /// (see [`Self::resolve_on_miss`]); when off the resolver is byte-identical to
+    /// M1 (per-tenant only). Shared with `OciMoatStore` at the router.
+    dedup: bool,
+    /// The owner-curated, digest-pinned allowlist. A DIGEST reference on this
+    /// allowlist is the ROOT of a cross-tenant `_public` closure promote; the
+    /// transitively-referenced children/blobs are content-addressed from that
+    /// pinned root, so they need NOT be individually allowlisted.
+    allowlist: PublicBaseAllowlist,
+    /// Running total of bytes THIS resolver instance has promoted into `_public`
+    /// (anti-bloat ceiling B4). Gated against [`Self::public_ceiling_bytes`]
+    /// BEFORE each promote. See [`PUBLIC_GROWTH_CEILING_BYTES`] for the
+    /// in-process-scope caveat + the durable follow-up.
+    public_bytes_promoted: AtomicU64,
+    /// The `_public` growth ceiling this instance enforces (default
+    /// [`PUBLIC_GROWTH_CEILING_BYTES`]; tests override it to exercise the gate).
+    public_ceiling_bytes: u64,
 }
 
 impl std::fmt::Debug for UpstreamManifestResolver {
@@ -144,12 +194,15 @@ impl UpstreamManifestResolver {
         kv: Arc<dyn ManifestKvStore>,
         moat: Arc<MoatCache>,
         cap_resolver: Option<Arc<dyn TenantCapResolver>>,
+        allowlist: PublicBaseAllowlist,
     ) -> Option<Self> {
         let client = Arc::new(UpstreamRegistryClient::new().ok()?);
         let manifest_fetcher: Arc<dyn UpstreamManifestFetcher> =
             Arc::new(DockerHubManifestFetcher::from_client(Arc::clone(&client)));
         let blob_fetcher: Arc<dyn UpstreamBlobFetcher> =
             Arc::new(DockerHubBlobFetcher::from_client(client));
+        // Read the SAME boot flag `OciMoatStore` reads — cross-tenant `_public`
+        // routing is on only when the F3.2 dedup flag is `"1"` at boot.
         Some(Self::with_parts(
             manifest_fetcher,
             blob_fetcher,
@@ -157,10 +210,19 @@ impl UpstreamManifestResolver {
             moat,
             cap_resolver,
             Self::default_limiter(),
+            allowlist,
+            crate::public_flags::oci_public_dedup_enabled(),
         ))
     }
 
-    /// Construct from explicit parts (the wiring seam tests inject fakes at).
+    /// Construct from explicit parts (the wiring seam tests inject fakes at). The
+    /// `allowlist` + `dedup` are passed explicitly here so a test can exercise the
+    /// `_public` closure promote without the shipped (alpine-only) baked manifest.
+    // Each argument is a distinct injected collaborator (two fetchers, the KV, the
+    // moat, the cap resolver, the limiter) plus the two M2 `_public` knobs
+    // (allowlist + dedup) — bundling them into a params struct adds indirection
+    // without removing real coupling, exactly as `routes::oci::router` documents.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn with_parts(
         manifest_fetcher: Arc<dyn UpstreamManifestFetcher>,
         blob_fetcher: Arc<dyn UpstreamBlobFetcher>,
@@ -168,6 +230,8 @@ impl UpstreamManifestResolver {
         moat: Arc<MoatCache>,
         cap_resolver: Option<Arc<dyn TenantCapResolver>>,
         limiter: InMemoryTokenBucketRateLimiter<NoOpRateLimitAuditSink, NoOpRateLimitMetrics>,
+        allowlist: PublicBaseAllowlist,
+        dedup: bool,
     ) -> Self {
         Self {
             manifest_fetcher,
@@ -177,6 +241,10 @@ impl UpstreamManifestResolver {
             cap_resolver,
             limiter,
             inflight: AsyncMutex::new(HashMap::new()),
+            dedup,
+            allowlist,
+            public_bytes_promoted: AtomicU64::new(0),
+            public_ceiling_bytes: PUBLIC_GROWTH_CEILING_BYTES,
         }
     }
 
@@ -275,13 +343,16 @@ impl UpstreamManifestResolver {
         }
     }
 
-    /// Fetch + digest-verify + per-tenant-persist one blob (config or layer) by
-    /// its `sha256:` digest. Fail-open: any fetch/verify/store failure ⇒ `false`
-    /// (the image resolve then aborts to `Ok(None)`). NO allowlist gate — the
-    /// bytes are content-addressed + land in the tenant's OWN namespace.
+    /// Fetch + digest-verify + persist one blob (config or layer) by its
+    /// `sha256:` digest into `namespace` (the tenant's OWN namespace for the M1
+    /// per-tenant path; [`PUBLIC_NAMESPACE`] for the M2 closure promote — the
+    /// SAME fetch→verify→put either way). Fail-open: any fetch/verify/store
+    /// failure ⇒ `false` (the image resolve then aborts to `Ok(None)`). NO
+    /// allowlist gate — the bytes are content-addressed, and for `_public` the
+    /// admission control is the allowlisted ROOT the closure descends from.
     async fn persist_blob(
         &self,
-        tenant_ns: &str,
+        namespace: &str,
         repo: &str,
         digest_wire: &str,
         cap: Option<i64>,
@@ -303,10 +374,198 @@ impl UpstreamManifestResolver {
         if parsed.verify_against_bytes(&bytes).is_err() {
             return false;
         }
-        self.moat
-            .put(tenant_ns, &canonical, bytes, cap)
+        let len = bytes.len();
+        let ok = self
+            .moat
+            .put(namespace, &canonical, bytes, cap)
             .await
-            .is_ok()
+            .is_ok();
+        // Account bytes that actually landed in `_public` toward the anti-bloat
+        // ceiling (B4). Blobs dominate a closure's size, so counting them here
+        // (not just the KB-sized manifests) is what makes the ceiling meaningful.
+        if ok && namespace == PUBLIC_NAMESPACE {
+            self.note_public_bytes(len);
+        }
+        ok
+    }
+
+    /// Add `n` bytes to the running `_public`-promoted total (anti-bloat
+    /// ceiling B4), saturating.
+    fn note_public_bytes(&self, n: usize) {
+        self.public_bytes_promoted
+            .fetch_add(n as u64, Ordering::Relaxed);
+    }
+
+    /// Is this instance still under its `_public` growth ceiling (B4)? Checked
+    /// BEFORE a closure promote; `false` ⇒ refuse the promote (fail-open to the
+    /// per-tenant path). READS from `_public` are never ceiling-gated.
+    fn public_under_ceiling(&self) -> bool {
+        self.public_bytes_promoted.load(Ordering::Relaxed) < self.public_ceiling_bytes
+    }
+
+    /// Serve a manifest already present in the shared `_public` namespace (the
+    /// cross-tenant existence HIT — no upstream call). `None` ⇒ not in `_public`
+    /// (or revoked: [`MoatCache::get`] applies the `public_blocklist` filter for
+    /// `_public`, so a revoked digest reads as a MISS and falls through).
+    /// Content-type is inferred from the manifest body's `mediaType`; the digest
+    /// is the (canonical) reference itself, since a `_public` manifest is only
+    /// ever stored under a by-digest key.
+    async fn serve_from_public(&self, digest_wire: &str) -> Option<ResolvedManifest> {
+        let body = self.moat.get(PUBLIC_NAMESPACE, digest_wire).await.ok()??;
+        let body = Bytes::from(body);
+        let json = serde_json::from_slice::<serde_json::Value>(&body).ok()?;
+        let content_type = manifest_media_type(None, &json);
+        Some(ResolvedManifest {
+            bytes: body,
+            content_type,
+            digest: digest_wire.to_owned(),
+        })
+    }
+
+    /// Promote the FULL TRANSITIVE CLOSURE of an allowlisted-root DIGEST into the
+    /// shared `_public` namespace, then serve the just-promoted manifest. Returns
+    /// `None` on ANY failure (fail-open: the caller falls through to the M1
+    /// per-tenant path) — and, critically, the root index/manifest is stored LAST
+    /// (only after every child + blob verified + stored), so a mid-closure
+    /// failure never leaves a `_public` root that a later existence read would
+    /// serve as a COMPLETE closure. Orphaned children/blobs left behind are
+    /// individually digest-verified + content-addressed (harmless; a re-promote
+    /// is idempotent).
+    ///
+    /// Every descriptor is digest-verified against fetched bytes BEFORE its
+    /// `_public` write (fail-CLOSED). `repo` is gated through the SAME
+    /// origin-escape guard the mirror uses before any upstream fetch.
+    async fn promote_public_closure(
+        &self,
+        repo: &str,
+        root_digest: &str,
+    ) -> Option<ResolvedManifest> {
+        // Anti-bloat ceiling (B4): refuse once this instance has promoted enough
+        // into `_public`. Fail-open — the tenant still gets a per-tenant resolve.
+        if !self.public_under_ceiling() {
+            return None;
+        }
+        if validate_repository(repo).is_err() {
+            return None;
+        }
+        // Fetch + verify the ROOT by its immutable digest.
+        let parsed_root = OciDigest::parse(root_digest).ok()?;
+        let fetched = self
+            .manifest_fetcher
+            .fetch_manifest(repo, root_digest)
+            .await
+            .ok()?;
+        if fetched.bytes.len() > MAX_PULLTHROUGH_MANIFEST_BYTES {
+            return None;
+        }
+        // Fail-CLOSED: the fetched bytes MUST hash to the allowlisted digest.
+        parsed_root.verify_against_bytes(&fetched.bytes).ok()?;
+        let json = serde_json::from_slice::<serde_json::Value>(&fetched.bytes).ok()?;
+        let content_type = manifest_media_type(fetched.content_type.as_deref(), &json);
+
+        if let Some(children) = index_child_digests(&json) {
+            // INDEX: promote each per-arch child (its config + layers + the child
+            // manifest) FIRST; only if ALL succeed store the index bytes LAST.
+            for child in &children {
+                if !self.promote_public_child_manifest(repo, child).await {
+                    return None;
+                }
+            }
+            if self
+                .moat
+                .put(
+                    PUBLIC_NAMESPACE,
+                    root_digest,
+                    fetched.bytes.clone(),
+                    PUBLIC_CAP,
+                )
+                .await
+                .is_err()
+            {
+                return None;
+            }
+            self.note_public_bytes(fetched.bytes.len());
+        } else if let Some(blob_digests) = image_blob_digests(&json) {
+            // IMAGE manifest: promote config + layers FIRST, store the manifest
+            // LAST (so a partial blob failure never leaves a served-as-complete
+            // manifest in `_public`).
+            for d in &blob_digests {
+                if !self
+                    .persist_blob(PUBLIC_NAMESPACE, repo, d, PUBLIC_CAP)
+                    .await
+                {
+                    return None;
+                }
+            }
+            if self
+                .moat
+                .put(
+                    PUBLIC_NAMESPACE,
+                    root_digest,
+                    fetched.bytes.clone(),
+                    PUBLIC_CAP,
+                )
+                .await
+                .is_err()
+            {
+                return None;
+            }
+            self.note_public_bytes(fetched.bytes.len());
+        } else {
+            // Neither an index nor an image manifest ⇒ nothing to promote.
+            return None;
+        }
+
+        Some(ResolvedManifest {
+            bytes: Bytes::from(fetched.bytes),
+            content_type,
+            digest: root_digest.to_owned(),
+        })
+    }
+
+    /// Promote ONE per-arch child (an image manifest) of an index into `_public`:
+    /// fetch it BY digest, digest-verify (fail-CLOSED), promote its config +
+    /// layer blobs, then store the child manifest bytes LAST. `false` on any
+    /// failure (the caller aborts the whole closure promote, fail-open).
+    async fn promote_public_child_manifest(&self, repo: &str, child_digest: &str) -> bool {
+        let Ok(parsed) = OciDigest::parse(child_digest) else {
+            return false;
+        };
+        let canonical = parsed.to_wire();
+        let Ok(fetched) = self.manifest_fetcher.fetch_manifest(repo, &canonical).await else {
+            return false;
+        };
+        if fetched.bytes.len() > MAX_PULLTHROUGH_MANIFEST_BYTES {
+            return false;
+        }
+        if parsed.verify_against_bytes(&fetched.bytes).is_err() {
+            return false;
+        }
+        let Ok(json) = serde_json::from_slice::<serde_json::Value>(&fetched.bytes) else {
+            return false;
+        };
+        // A child of an index is an IMAGE manifest (config + layers).
+        let Some(blob_digests) = image_blob_digests(&json) else {
+            return false;
+        };
+        for d in &blob_digests {
+            if !self
+                .persist_blob(PUBLIC_NAMESPACE, repo, d, PUBLIC_CAP)
+                .await
+            {
+                return false;
+            }
+        }
+        let len = fetched.bytes.len();
+        let ok = self
+            .moat
+            .put(PUBLIC_NAMESPACE, &canonical, fetched.bytes, PUBLIC_CAP)
+            .await
+            .is_ok();
+        if ok {
+            self.note_public_bytes(len);
+        }
+        ok
     }
 }
 
@@ -356,6 +615,39 @@ fn image_blob_digests(body: &serde_json::Value) -> Option<Vec<String>> {
     Some(digests)
 }
 
+/// Collect an OCI index / manifest-list's per-arch child manifest digests,
+/// keeping ONLY `linux` children (`platform.os == "linux"`), or `None` when the
+/// doc is NOT an index (an image manifest carries `config`+`layers`, not
+/// `manifests`). A returned `Some(vec)` means "this is an index; recurse-promote
+/// these children".
+///
+/// The filter is `os == "linux"`, NOT merely "not `unknown`": besides the
+/// `unknown/unknown` attestation entries (buildkit SBOM / provenance), a real
+/// base image's index also carries non-linux runnable entries (e.g. `golang`'s
+/// `windows/amd64` child). CoreLink runners are linux, so promoting a windows
+/// image manifest + its layers into `_public` is fetch/storage we would never
+/// serve — skip everything but linux. A child kept this way must still carry a
+/// `digest`; a linux child missing one is a malformed index ⇒ `None`
+/// (fail-closed, nothing promoted).
+fn index_child_digests(body: &serde_json::Value) -> Option<Vec<String>> {
+    let manifests = body.get("manifests")?.as_array()?;
+    let mut out = Vec::with_capacity(manifests.len());
+    for m in manifests {
+        let os = m
+            .get("platform")
+            .and_then(|p| p.get("os"))
+            .and_then(serde_json::Value::as_str);
+        if os != Some("linux") {
+            // Skip windows / unknown-attestation / any non-linux child — never
+            // served on a linux runner, so never worth promoting to `_public`.
+            continue;
+        }
+        let d = m.get("digest").and_then(serde_json::Value::as_str)?;
+        out.push(d.to_owned());
+    }
+    Some(out)
+}
+
 #[async_trait]
 impl ManifestResolver for UpstreamManifestResolver {
     async fn resolve_on_miss(
@@ -379,6 +671,31 @@ impl ManifestResolver for UpstreamManifestResolver {
         // instead of fetching again.
         if let Some(rm) = self.serve_from_kv(tenant, repo, reference).await {
             return Ok(Some(rm));
+        }
+
+        // 2.5 CROSS-TENANT `_public` decision (M2), BEFORE the per-tenant path.
+        //     Only a DIGEST reference is `_public`-eligible — a TAG is mutable
+        //     (first-writer poisoning) so it ALWAYS takes the M1 per-tenant path
+        //     and never reads or writes `_public`.
+        if self.dedup {
+            if let Ok(parsed_ref) = OciDigest::parse(reference) {
+                let canonical_ref = parsed_ref.to_wire();
+                // `_public` READ (existence): a cross-tenant HIT needs NO upstream
+                // call — serve the shared copy (byte-identical, content-addressed;
+                // revocation still filters inside `MoatCache::get`). This serves a
+                // transitively-promoted child that is NOT individually allowlisted.
+                if let Some(rm) = self.serve_from_public(&canonical_ref).await {
+                    return Ok(Some(rm));
+                }
+                // `_public` WRITE: only an allowlisted ROOT digest promotes its
+                // full transitive closure into `_public`. Fail-open — a failed
+                // promote falls through to the M1 per-tenant path below.
+                if self.allowlist.is_allowlisted(&canonical_ref) {
+                    if let Some(rm) = self.promote_public_closure(repo, &canonical_ref).await {
+                        return Ok(Some(rm));
+                    }
+                }
+            }
         }
 
         // 3. Gate the repo through the SAME origin-escape guard the mirror uses
@@ -767,14 +1084,26 @@ mod tests {
         blob_fetcher: Arc<FakeBlobFetcher>,
         kv: Arc<FakeKv>,
         cas: Arc<RecordingCas>,
+        map: Arc<FakeMap>,
     }
 
+    /// Default rig: dedup OFF, empty (deny-all) allowlist → the M1 per-tenant-only
+    /// behavior. Every M1 test uses this, so they double as the "dedup OFF ⇒
+    /// byte-identical to M1, no `_public` writes/reads" proof.
     fn rig() -> Rig {
-        rig_with_limiter(generous_limiter())
+        rig_full(generous_limiter(), PublicBaseAllowlist::default(), false)
     }
 
-    fn rig_with_limiter(
+    /// Build an allowlist from a set of already-canonical `sha256:` digests.
+    fn allowlist_of(digests: &[&str]) -> PublicBaseAllowlist {
+        let manifest = digests.iter().map(|d| format!("{d}\n")).collect::<String>();
+        PublicBaseAllowlist::parse(&manifest).expect("hermetic allowlist parses")
+    }
+
+    fn rig_full(
         limiter: InMemoryTokenBucketRateLimiter<NoOpRateLimitAuditSink, NoOpRateLimitMetrics>,
+        allowlist: PublicBaseAllowlist,
+        dedup: bool,
     ) -> Rig {
         let manifest_fetcher = Arc::new(FakeManifestFetcher::default());
         let blob_fetcher = Arc::new(FakeBlobFetcher::default());
@@ -788,6 +1117,8 @@ mod tests {
             moat(Arc::clone(&cas), Arc::clone(&map)),
             None, // cap resolver: None → moat.put gets None; RecordingCas ignores it.
             limiter,
+            allowlist,
+            dedup,
         );
         Rig {
             resolver,
@@ -795,6 +1126,7 @@ mod tests {
             blob_fetcher,
             kv,
             cas,
+            map,
         }
     }
 
@@ -1149,5 +1481,452 @@ mod tests {
             1,
             "concurrent identical misses must coalesce into ONE upstream fetch"
         );
+    }
+
+    // ── M2 `_public` cross-tenant tests ──────────────────────────────────────
+
+    /// True iff `(PUBLIC_NAMESPACE, url_hash)` has a map row (the digest was
+    /// promoted into `_public`).
+    fn in_public(rig: &Rig, url_hash: &str) -> bool {
+        rig.map
+            .0
+            .lock()
+            .unwrap()
+            .contains_key(&(PUBLIC_NAMESPACE.to_owned(), url_hash.to_owned()))
+    }
+
+    /// Count of distinct `_public` map rows (promoted manifests + blobs).
+    fn public_row_count(rig: &Rig) -> usize {
+        rig.map
+            .0
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|(ns, _)| ns == PUBLIC_NAMESPACE)
+            .count()
+    }
+
+    /// Allowlisted IMAGE digest, dedup ON: the config + layer + the manifest are
+    /// promoted to `_public`, served — and a SECOND tenant that never pushed it,
+    /// resolving the SAME digest, is served from `_public` with ZERO extra
+    /// upstream fetch. This is the cross-tenant proof.
+    #[tokio::test]
+    async fn allowlisted_image_promotes_closure_and_serves_cross_tenant() {
+        let repo = "library/alpine";
+        let config_bytes = b"cfg-object".to_vec();
+        let layer_bytes = b"layer-bytes".to_vec();
+        let config_digest = sha256_wire(&config_bytes);
+        let layer_digest = sha256_wire(&layer_bytes);
+        let manifest = image_manifest_bytes(&config_digest, &[&layer_digest]);
+        let manifest_digest = sha256_wire(&manifest);
+
+        let r = rig_full(generous_limiter(), allowlist_of(&[&manifest_digest]), true);
+        r.manifest_fetcher.insert(
+            repo,
+            &manifest_digest,
+            FetchedManifest {
+                bytes: manifest.clone(),
+                content_type: Some("application/vnd.oci.image.manifest.v1+json".to_owned()),
+                docker_content_digest: Some(manifest_digest.clone()),
+            },
+        );
+        r.blob_fetcher
+            .insert(repo, &config_digest, config_bytes.clone());
+        r.blob_fetcher
+            .insert(repo, &layer_digest, layer_bytes.clone());
+
+        // Tenant A (by-digest FROM) → promote closure to `_public`, serve it.
+        let ta = tenant(100);
+        let out = r
+            .resolver
+            .resolve_on_miss(&ta, repo, &manifest_digest)
+            .await
+            .unwrap()
+            .expect("allowlisted image resolves from the promote");
+        assert_eq!(out.digest, manifest_digest);
+        assert_eq!(out.bytes.as_ref(), manifest.as_slice());
+        assert_eq!(
+            r.manifest_fetcher.call_count(),
+            1,
+            "one manifest fetch for A"
+        );
+
+        // Full closure lives in `_public`: manifest + config + layer.
+        assert!(in_public(&r, &manifest_digest), "manifest in `_public`");
+        assert!(in_public(&r, &config_digest), "config in `_public`");
+        assert!(in_public(&r, &layer_digest), "layer in `_public`");
+        // Nothing landed in tenant A's OWN namespace (cross-tenant, not per-tenant).
+        assert!(
+            r.kv.0.lock().unwrap().is_empty(),
+            "an allowlisted `_public` promote does NOT write per-tenant KV"
+        );
+        assert!(
+            !r.cas
+                .0
+                .lock()
+                .unwrap()
+                .keys()
+                .any(|(ns, _)| *ns == ta.to_canonical_text()),
+            "no per-tenant CAS write on the `_public` promote"
+        );
+
+        // Tenant B (never pushed alpine) resolves the SAME digest → served from
+        // `_public`, ZERO extra upstream fetch (the cross-tenant proof).
+        let tb = tenant(101);
+        let out_b = r
+            .resolver
+            .resolve_on_miss(&tb, repo, &manifest_digest)
+            .await
+            .unwrap()
+            .expect("tenant B served from `_public`");
+        assert_eq!(out_b.bytes.as_ref(), manifest.as_slice());
+        assert_eq!(
+            r.manifest_fetcher.call_count(),
+            1,
+            "tenant B must be served from `_public` with NO extra upstream fetch"
+        );
+    }
+
+    /// Allowlisted INDEX digest, dedup ON: the per-arch child (skip
+    /// `unknown/unknown`) + its blobs + the index are all promoted to `_public`;
+    /// a by-digest GET of the child — which is NOT individually allowlisted —
+    /// serves from `_public` (the existence read).
+    #[tokio::test]
+    async fn allowlisted_index_promotes_children_and_child_serves_from_public() {
+        let repo = "library/debian";
+        let config_bytes = b"debian-cfg".to_vec();
+        let layer_bytes = b"debian-layer".to_vec();
+        let config_digest = sha256_wire(&config_bytes);
+        let layer_digest = sha256_wire(&layer_bytes);
+        let child_manifest = image_manifest_bytes(&config_digest, &[&layer_digest]);
+        let child_digest = sha256_wire(&child_manifest);
+        // Index with one real linux/amd64 child + a `windows/amd64` child + an
+        // `unknown/unknown` attestation entry. ONLY the linux child is promoted;
+        // the windows + attestation entries MUST be skipped (never fetched — their
+        // digests are intentionally NOT registered with the fetcher, so any fetch
+        // of them would error and abort the promote).
+        let index = serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "manifests": [
+                {
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "digest": child_digest,
+                    "size": 1,
+                    "platform": { "os": "linux", "architecture": "amd64" }
+                },
+                {
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "digest": sha256_wire(b"windows-image-manifest"),
+                    "size": 1,
+                    "platform": { "os": "windows", "architecture": "amd64" }
+                },
+                {
+                    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+                    "digest": sha256_wire(b"attestation-blob"),
+                    "size": 1,
+                    "platform": { "os": "unknown", "architecture": "unknown" }
+                }
+            ]
+        }))
+        .unwrap();
+        let index_digest = sha256_wire(&index);
+
+        let r = rig_full(generous_limiter(), allowlist_of(&[&index_digest]), true);
+        r.manifest_fetcher.insert(
+            repo,
+            &index_digest,
+            FetchedManifest {
+                bytes: index.clone(),
+                content_type: Some("application/vnd.oci.image.index.v1+json".to_owned()),
+                docker_content_digest: Some(index_digest.clone()),
+            },
+        );
+        r.manifest_fetcher.insert(
+            repo,
+            &child_digest,
+            FetchedManifest {
+                bytes: child_manifest.clone(),
+                content_type: Some("application/vnd.oci.image.manifest.v1+json".to_owned()),
+                docker_content_digest: Some(child_digest.clone()),
+            },
+        );
+        r.blob_fetcher.insert(repo, &config_digest, config_bytes);
+        r.blob_fetcher.insert(repo, &layer_digest, layer_bytes);
+
+        let ta = tenant(110);
+        let out = r
+            .resolver
+            .resolve_on_miss(&ta, repo, &index_digest)
+            .await
+            .unwrap()
+            .expect("index resolves via promote");
+        assert_eq!(out.digest, index_digest);
+        // index + the ONE linux child fetched (2); the windows + attestation
+        // entries are skipped (never fetched).
+        assert_eq!(
+            r.manifest_fetcher.call_count(),
+            2,
+            "only the index + its one LINUX child are fetched (windows + attestation skipped)"
+        );
+        // Closure fully in `_public`: index, child manifest, config, layer.
+        assert!(in_public(&r, &index_digest));
+        assert!(in_public(&r, &child_digest));
+        assert!(in_public(&r, &config_digest));
+        assert!(in_public(&r, &layer_digest));
+
+        // A by-digest GET of the child (NOT individually allowlisted) serves from
+        // `_public` via the existence read — for a tenant that never pushed it.
+        let tb = tenant(111);
+        let child_out = r
+            .resolver
+            .resolve_on_miss(&tb, repo, &child_digest)
+            .await
+            .unwrap()
+            .expect("child manifest served from `_public` by existence");
+        assert_eq!(child_out.bytes.as_ref(), child_manifest.as_slice());
+        assert_eq!(
+            r.manifest_fetcher.call_count(),
+            2,
+            "the child existence read must NOT trigger any upstream fetch"
+        );
+    }
+
+    /// UN-allowlisted digest, dedup ON: nothing enters `_public`; the M1
+    /// per-tenant path is taken.
+    #[tokio::test]
+    async fn unallowlisted_digest_dedup_on_stays_per_tenant() {
+        let repo = "library/alpine";
+        let config_bytes = b"cfg".to_vec();
+        let layer_bytes = b"lyr".to_vec();
+        let config_digest = sha256_wire(&config_bytes);
+        let layer_digest = sha256_wire(&layer_bytes);
+        let manifest = image_manifest_bytes(&config_digest, &[&layer_digest]);
+        let manifest_digest = sha256_wire(&manifest);
+
+        // dedup ON but the allowlist does NOT contain this digest.
+        let r = rig_full(
+            generous_limiter(),
+            allowlist_of(&[&sha256_wire(b"some-other-image")]),
+            true,
+        );
+        r.manifest_fetcher.insert(
+            repo,
+            &manifest_digest,
+            FetchedManifest {
+                bytes: manifest.clone(),
+                content_type: None,
+                docker_content_digest: None,
+            },
+        );
+        r.blob_fetcher.insert(repo, &config_digest, config_bytes);
+        r.blob_fetcher.insert(repo, &layer_digest, layer_bytes);
+
+        let t = tenant(120);
+        let out = r
+            .resolver
+            .resolve_on_miss(&t, repo, &manifest_digest)
+            .await
+            .unwrap()
+            .expect("un-allowlisted digest resolves per-tenant (M1)");
+        assert_eq!(out.digest, manifest_digest);
+        assert_eq!(public_row_count(&r), 0, "nothing in `_public`");
+        // Per-tenant path: manifest in the tenant's OWN KV.
+        assert!(r
+            .kv
+            .0
+            .lock()
+            .unwrap()
+            .contains_key(&(t.to_canonical_text(), manifest_key(repo, &manifest_digest))));
+    }
+
+    /// TAG reference, dedup ON: never touches `_public` (per-tenant only) even
+    /// when a homograph digest is allowlisted — a tag is mutable.
+    #[tokio::test]
+    async fn tag_reference_dedup_on_never_public() {
+        let repo = "library/alpine";
+        let config_bytes = b"cfg".to_vec();
+        let layer_bytes = b"lyr".to_vec();
+        let config_digest = sha256_wire(&config_bytes);
+        let layer_digest = sha256_wire(&layer_bytes);
+        let manifest = image_manifest_bytes(&config_digest, &[&layer_digest]);
+        let manifest_digest = sha256_wire(&manifest);
+
+        // The manifest's digest IS allowlisted, but the request is by TAG.
+        let r = rig_full(generous_limiter(), allowlist_of(&[&manifest_digest]), true);
+        r.manifest_fetcher.insert(
+            repo,
+            "3.20",
+            FetchedManifest {
+                bytes: manifest,
+                content_type: None,
+                docker_content_digest: Some(manifest_digest.clone()),
+            },
+        );
+        r.blob_fetcher.insert(repo, &config_digest, config_bytes);
+        r.blob_fetcher.insert(repo, &layer_digest, layer_bytes);
+
+        let t = tenant(130);
+        let _ = r
+            .resolver
+            .resolve_on_miss(&t, repo, "3.20")
+            .await
+            .unwrap()
+            .expect("tag resolves per-tenant");
+        assert_eq!(public_row_count(&r), 0, "a TAG never writes `_public`");
+        assert!(r
+            .kv
+            .0
+            .lock()
+            .unwrap()
+            .contains_key(&(t.to_canonical_text(), manifest_key(repo, "3.20"))));
+    }
+
+    /// dedup OFF, even an allowlisted digest: no `_public` reads/writes — the
+    /// resolver is byte-identical to M1 (this is the explicit dedup-OFF proof;
+    /// the whole M1 suite runs on `rig()` which is dedup OFF too).
+    #[tokio::test]
+    async fn dedup_off_allowlisted_digest_no_public() {
+        let repo = "library/alpine";
+        let config_bytes = b"cfg".to_vec();
+        let layer_bytes = b"lyr".to_vec();
+        let config_digest = sha256_wire(&config_bytes);
+        let layer_digest = sha256_wire(&layer_bytes);
+        let manifest = image_manifest_bytes(&config_digest, &[&layer_digest]);
+        let manifest_digest = sha256_wire(&manifest);
+
+        // Allowlisted, but dedup is OFF → per-tenant.
+        let r = rig_full(generous_limiter(), allowlist_of(&[&manifest_digest]), false);
+        r.manifest_fetcher.insert(
+            repo,
+            &manifest_digest,
+            FetchedManifest {
+                bytes: manifest,
+                content_type: None,
+                docker_content_digest: None,
+            },
+        );
+        r.blob_fetcher.insert(repo, &config_digest, config_bytes);
+        r.blob_fetcher.insert(repo, &layer_digest, layer_bytes);
+
+        let t = tenant(140);
+        let _ = r
+            .resolver
+            .resolve_on_miss(&t, repo, &manifest_digest)
+            .await
+            .unwrap()
+            .expect("resolves per-tenant with dedup OFF");
+        assert_eq!(public_row_count(&r), 0, "dedup OFF ⇒ no `_public` writes");
+        assert!(r
+            .kv
+            .0
+            .lock()
+            .unwrap()
+            .contains_key(&(t.to_canonical_text(), manifest_key(repo, &manifest_digest))));
+    }
+
+    /// Over the `_public` growth ceiling: no promote (fail-open to per-tenant).
+    #[tokio::test]
+    async fn over_ceiling_no_public_promote_fails_open() {
+        let repo = "library/alpine";
+        let config_bytes = b"cfg".to_vec();
+        let layer_bytes = b"lyr".to_vec();
+        let config_digest = sha256_wire(&config_bytes);
+        let layer_digest = sha256_wire(&layer_bytes);
+        let manifest = image_manifest_bytes(&config_digest, &[&layer_digest]);
+        let manifest_digest = sha256_wire(&manifest);
+
+        let mut r = rig_full(generous_limiter(), allowlist_of(&[&manifest_digest]), true);
+        // Force the ceiling to zero: `0 >= 0` ⇒ every promote is refused.
+        r.resolver.public_ceiling_bytes = 0;
+        r.manifest_fetcher.insert(
+            repo,
+            &manifest_digest,
+            FetchedManifest {
+                bytes: manifest.clone(),
+                content_type: None,
+                docker_content_digest: None,
+            },
+        );
+        r.blob_fetcher.insert(repo, &config_digest, config_bytes);
+        r.blob_fetcher.insert(repo, &layer_digest, layer_bytes);
+
+        let t = tenant(150);
+        let out = r
+            .resolver
+            .resolve_on_miss(&t, repo, &manifest_digest)
+            .await
+            .unwrap()
+            .expect("over-ceiling still resolves per-tenant (fail-open)");
+        assert_eq!(out.digest, manifest_digest);
+        assert_eq!(
+            public_row_count(&r),
+            0,
+            "over-ceiling ⇒ no `_public` promote"
+        );
+        // Fell through to the per-tenant M1 path.
+        assert!(r
+            .kv
+            .0
+            .lock()
+            .unwrap()
+            .contains_key(&(t.to_canonical_text(), manifest_key(repo, &manifest_digest))));
+    }
+
+    /// A broken child fetch mid-closure ⇒ nothing partial served, and the index
+    /// ROOT is NOT left in `_public` (so a later existence read cannot serve an
+    /// incomplete closure as complete). The resolve fails open to per-tenant.
+    #[tokio::test]
+    async fn broken_child_mid_closure_leaves_no_public_root() {
+        let repo = "library/debian";
+        let config_bytes = b"cfg".to_vec();
+        let layer_bytes = b"lyr".to_vec();
+        let config_digest = sha256_wire(&config_bytes);
+        let layer_digest = sha256_wire(&layer_bytes);
+        let child_manifest = image_manifest_bytes(&config_digest, &[&layer_digest]);
+        let child_digest = sha256_wire(&child_manifest);
+        let index = index_bytes(&child_digest);
+        let index_digest = sha256_wire(&index);
+
+        let r = rig_full(generous_limiter(), allowlist_of(&[&index_digest]), true);
+        // The index is fetchable, but the CHILD manifest is NOT (upstream fetch
+        // fails) → the closure promote aborts.
+        r.manifest_fetcher.insert(
+            repo,
+            &index_digest,
+            FetchedManifest {
+                bytes: index,
+                content_type: Some("application/vnd.oci.image.index.v1+json".to_owned()),
+                docker_content_digest: Some(index_digest.clone()),
+            },
+        );
+        // (child_digest intentionally NOT inserted → fetch_manifest errs.)
+        // Also make the index itself resolvable per-tenant on the fail-open path.
+
+        let t = tenant(160);
+        let out = r
+            .resolver
+            .resolve_on_miss(&t, repo, &index_digest)
+            .await
+            .unwrap();
+        // Fell open to per-tenant (the index IS fetchable there → resolves), but
+        // CRUCIALLY the index root is NOT in `_public`.
+        assert!(
+            !in_public(&r, &index_digest),
+            "a mid-closure failure must NOT leave the index root in `_public`"
+        );
+        // Whatever the per-tenant outcome, no `_public` root exists for a later
+        // existence read to serve as a complete closure.
+        assert!(
+            out.is_some(),
+            "index still resolves per-tenant on the fail-open path"
+        );
+        // The index was stored per-tenant, never as a `_public` root.
+        assert!(r
+            .kv
+            .0
+            .lock()
+            .unwrap()
+            .contains_key(&(t.to_canonical_text(), manifest_key(repo, &index_digest))));
     }
 }

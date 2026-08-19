@@ -154,12 +154,49 @@ cross-tenant would require an owner-pinned tag→digest map, deferred).
   → 404; SSRF reuse; tenant-B isolation). Flag OFF ⇒ byte-identical to today.
   **Gate:** hermetic tests green; flag-off no-op proven; no new prod behavior.
 - **M2 — `_public` cross-tenant image resolution (B), flag-gated, INERT.**
-  Image-manifest-digest allowlist; transitive promote (index + per-arch + config
-  + layers, all digest-verified) into `_public`; manifest GET `_public`-first
-  routing for allowlisted; `_public` anti-bloat ceiling. Cross-tenant isolation
-  e2e (`tests/e2e-user-journeys/.../oci_public_isolation.rs` extended).
-  **Gate:** isolation suite green; a poisoned/unallowlisted image cannot enter
-  `_public` (adversarial test); flag-off no-op.
+  Concrete design (locked 2026-08-19):
+  - **Allowlist is digest-agnostic** — `public_base_allowlist.is_allowlisted(d)`
+    is a flat `sha256:` set membership; the SAME allowlist gates an **image /
+    index manifest digest** (M2) exactly as a layer-blob digest (M1's write path).
+    No new allowlist type. Owner pins the **immutable index (or image-manifest)
+    digest** of a base; tags are never pinned.
+  - **Write gate (into `_public`)** — the ONLY way content enters `_public` from
+    the read path: in the resolver, when the requested `reference` is a DIGEST
+    and `is_allowlisted(reference)`, fetch → verify → promote the **full
+    transitive closure** to `_public`: an index promotes its per-arch child
+    manifests (skip `unknown/unknown`) + each child's config + layer blobs; an
+    image manifest promotes its config + layers. Every descriptor is
+    digest-verified against fetched bytes before any `_public` write. Trust flows
+    from the ONE allowlisted root: the root pins exact child digests, children pin
+    exact blob digests — the whole closure is content-addressed from the pinned
+    root, so the children/blobs need NOT be individually allowlisted.
+  - **Read gate (from `_public`) = EXISTENCE, not allowlist** — for a
+    **by-digest** manifest/blob GET, check `_public` FIRST (through the same
+    `MoatCache.get(PUBLIC_NAMESPACE, …)` that already applies the
+    `public_blocklist` revocation filter); on a `_public` hit serve it, else fall
+    back to per-tenant. Safe because (a) by-digest is content-addressed —
+    `_public`'s copy is byte-identical to any private copy of the same digest, no
+    leak; (b) the WRITE gate (allowlisted root + closure verify) is the sole
+    admission control for what is IN `_public`; (c) revocation still filters on
+    read. **By-TAG never reads or writes `_public`** (tags are mutable →
+    first-writer poisoning). This REPLACES M1/inc6's allowlist-on-read for
+    by-digest GETs so transitively-promoted children/layers (not individually
+    allowlisted) serve cross-tenant. Flag-gated; OFF ⇒ per-tenant only.
+  - **Anti-bloat ceiling (B4)** — `_public` writes are `Some(0)`-uncapped in
+    `byte_accounting.rs:800`, but the `_public` per-region row DOES accrue
+    `bytes_used`. Before a `_public` promote, read that row and REFUSE (fail-open
+    to per-tenant / 404) once `bytes_used` exceeds a documented `_public`
+    growth ceiling — bounds cross-tenant cost-contagion / mirror-amplification.
+  - **Writer-set invariant preserved** — `_public` writers stay `{tenant
+    finalize_upload, admin mirror, THIS resolver closure-promote}`, all
+    verify-before-write.
+  Cross-tenant isolation + adversarial e2e
+  (`tests/e2e-user-journeys/.../oci_public_isolation.rs` extended): an allowlisted
+  index → a second tenant that never pushed it is served the closure from
+  `_public` (the cross-tenant proof); an UN-allowlisted image digest can NEVER
+  enter `_public` (adversarial); a per-tenant private digest is never served to
+  another tenant; revocation on a `_public` digest makes the read MISS.
+  **Gate:** isolation suite green; adversarial no-poison green; flag-off no-op.
 - **M3 — deploy + prove-by-use (one image roll, flags baked ON).** From a runner
   box, tenant that never pushed the image: cold `docker build FROM <curated>` →
   served entirely from CoreLink (manifest + config + layers), buildkit debug log
