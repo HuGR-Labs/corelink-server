@@ -743,7 +743,7 @@ ENVIRONMENT = "prod-sam"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
-EDGE_DO_METER = "shadow"
+EDGE_DO_METER = "serve"
 EDGE_ASYNC_METER = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
@@ -892,7 +892,7 @@ ENVIRONMENT = "prod-lhr"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
-EDGE_DO_METER = "shadow"
+EDGE_DO_METER = "serve"
 EDGE_ASYNC_METER = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
@@ -1050,7 +1050,7 @@ ENVIRONMENT = "prod-nrt"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
-EDGE_DO_METER = "shadow"
+EDGE_DO_METER = "serve"
 EDGE_ASYNC_METER = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
@@ -1202,7 +1202,7 @@ ENVIRONMENT = "prod-syd"
 # Edge _public read + async metering (see [env.prod].vars note). Declared as vars
 # so the live behavior is repo-reproducible, not a hidden runtime secret.
 EDGE_PUBLIC_READ = "serve"
-EDGE_DO_METER = "shadow"
+EDGE_DO_METER = "serve"
 EDGE_ASYNC_METER = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
 OCI_PUBLIC_DEDUP_ENABLED = "1"
