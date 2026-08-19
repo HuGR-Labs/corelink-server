@@ -8,7 +8,7 @@ source_files:
   - "crates/corelink-container/src/routes/admin_tenant_detail.rs"
   - "crates/corelink-container/src/routes.rs"
   - "docs/internal/admin-plane.md"
-checkpoint_sha: "ca1a659f2eb09af134cd022cc5083f89a7b8c652"
+checkpoint_sha: "5e42dedcb67fb7809a006a70e2e16ae216c8884c"
 provenance: "AUTHORED"
 tags: ["ops", "admin", "config", "dual-approval", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"

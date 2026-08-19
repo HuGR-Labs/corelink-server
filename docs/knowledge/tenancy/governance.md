@@ -14,7 +14,7 @@ source_files:
   - "crates/corelink-container/src/usage_meter.rs"
   - "crates/corelink-ratelimit/src/audit.rs"
   - "crates/corelink-ratelimit/src/metrics.rs"
-checkpoint_sha: "ca1a659f2eb09af134cd022cc5083f89a7b8c652"
+checkpoint_sha: "5e42dedcb67fb7809a006a70e2e16ae216c8884c"
 provenance: "AUTHORED"
 tags: ["tenancy", "governance", "rate-limit", "customer", "users", "fail-closed"]
 timestamp: "2026-06-26T00:00:00Z"
