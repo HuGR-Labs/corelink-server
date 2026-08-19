@@ -39,6 +39,8 @@ excludes:
     reason: "OKF reserved file (machine-appended history) — never a concept doc (contract C9)."
   - surface: "crates/corelink-runner-overage"
     reason: "Pure leaf money-math primitive (WI-S10-007): integer-only overage + shadow-charge arithmetic for runner compute billing — zero I/O, zero deps, no credentials, no request-reachable enforcement; a stateless computation helper, same class as worker/src/region-map.ts & worker/src/lib/blake3.ts. The runner-overage billing NARRATIVE (staging → aggregate → shadow-charge → Stripe flow) lives in the WI-S10-007 aggregator concept (lands when the pipeline is wired live), not this arithmetic leaf."
+  - surface: "worker/src/request_meter_coordinator_do.ts"
+    reason: "Thin per-tenant Durable-Object SHELL over the request_meter_lease.ts core (P3 edge-local metering, ACCEPTED) — persists CoordinatorState + serializes ops; INERT, not wired to any request path yet. Gets a concept together with the shard DO + worker wiring when the EDGE_DO_METER pipeline lands, same as the pending WI-S10-007 / runner-overage narrative."
   - surface: "worker/src/lib/request_meter_lease.ts"
     reason: "Pure token-lease accounting leaf for the P3 edge-local DO request-metering design (ACCEPTED, docs/design/2026-08-19-adr-edge-local-do-request-metering.md) — zero I/O, zero deps, no credentials, not wired to any request path yet; a stateless computation helper, same class as worker/src/lib/blake3.ts & worker/src/region-map.ts & crates/corelink-runner-overage. The metering NARRATIVE (per-tenant coordinator + per-region shard DOs, lease/refill/reconcile flow) gets a concept when the DO pipeline is wired live, not this arithmetic leaf."
   - surface: "crates/corelink-runner-aggregate"
