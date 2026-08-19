@@ -10,10 +10,10 @@
 //!
 //! The sole gate is a constant-time compare of the caller-supplied
 //! `x-corelink-internal-auth` header against the resolved auth key
-//! ([`build_state_from_env`] — the dedicated `CORELINK_QUOTA_READ_AUTH_KEY`,
-//! falling back to the shared `CORELINK_INTERNAL_AUTH_KEY` when the dedicated
-//! key is unset/blank/`< 32` chars, via
-//! [`crate::routes::admin::resolve_internal_auth_key`]). The compare is
+//! ([`build_state_from_env`] — the DEDICATED `CORELINK_QUOTA_READ_AUTH_KEY`
+//! ONLY, with NO shared `CORELINK_INTERNAL_AUTH_KEY` fallback (2026-08-19
+//! red-team), via [`crate::routes::admin::resolve_dedicated_auth_key`]; unset/
+//! `< 32` chars ⇒ route not mounted, fail-CLOSED). The compare is
 //! fail-CLOSED and uses the SAME padded `ct_eq` gate as
 //! [`crate::routes::internal_pat`] / [`crate::routes::audit_drain`] so no
 //! secret-length or content oracle leaks via an early branch.
@@ -240,22 +240,25 @@ async fn handle_get_quota(
 }
 
 /// Build the route state from env. `None` (route NOT mounted, fail-CLOSED) when
-/// the internal-auth key is unset or shorter than 32 chars, OR when the D1
-/// `StorageEnv` is not configured (dev/CI). Prefers the dedicated
-/// `CORELINK_QUOTA_READ_AUTH_KEY`, falling back to the shared
-/// `CORELINK_INTERNAL_AUTH_KEY` (≥32-char floor) via
-/// [`crate::routes::admin::resolve_internal_auth_key`] — the SAME resolver the
-/// erase / dsr-anchor surfaces use. Without D1 there is nothing to read, so the
-/// route is simply not mounted.
+/// the dedicated `CORELINK_QUOTA_READ_AUTH_KEY` is unset or shorter than 32
+/// chars, OR when the D1 `StorageEnv` is not configured (dev/CI). Uses the
+/// DEDICATED key ONLY via [`crate::routes::admin::resolve_dedicated_auth_key`]
+/// — NO shared `CORELINK_INTERNAL_AUTH_KEY` fallback (2026-08-19 red-team,
+/// "leaked shared internal key → cross-tenant quota disclosure"): a low-priv
+/// cross-tenant read must never be unlockable by the broad shared master key.
+/// This matches the edge, which already forwards the resolved dedicated
+/// quota_read key (`worker/src/lib/internal_auth.ts` `DEDICATED_REQUIRED_CONSUMERS`),
+/// and the erase / dsr-anchor / pat-mint surfaces which are already dedicated-only.
+/// Without D1 there is nothing to read, so the route is simply not mounted.
 #[must_use]
 pub fn build_state_from_env() -> Option<TenantQuotaReadState> {
-    let internal_auth_key = crate::routes::admin::resolve_internal_auth_key(
+    let internal_auth_key = crate::routes::admin::resolve_dedicated_auth_key(
         "CORELINK_QUOTA_READ_AUTH_KEY",
     )
     .or_else(|| {
         tracing::warn!(
-            "no usable CORELINK_QUOTA_READ_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY \
-                     (< 32 chars); /_internal/tenant/{{tenant_id}}/quota NOT mounted (fail-CLOSED)"
+            "no usable CORELINK_QUOTA_READ_AUTH_KEY (< 32 chars, dedicated-only, \
+                     NO shared fallback); /_internal/tenant/{{tenant_id}}/quota NOT mounted (fail-CLOSED)"
         );
         None
     })?;

@@ -88,6 +88,10 @@ describe("resolveConsumerKey — dsr_anchor key selection", () => {
   });
 
   it("falls back to the shared key when the dedicated anchor key is unset", () => {
+    // dsr_anchor keeps the shared fallback for now (its container gate is already
+    // dedicated-only; the edge exposure is closed by the Inc-2 /_internal/*
+    // network lockdown, not by narrowing this consumer here — see
+    // DEDICATED_REQUIRED_CONSUMERS, currently scoped to quota_read only).
     expect(resolveConsumerKey(env({}), "dsr_anchor")).toBe(SHARED);
   });
 
