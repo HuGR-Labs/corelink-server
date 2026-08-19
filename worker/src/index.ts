@@ -970,14 +970,14 @@ function matchRoute(url: URL): RouteMatch {
   // is performed in the fetch handler (not in matchRoute) so the route is
   // never accidentally skipped on 404-padding paths.
   //
-  // SECURITY NOTE (F4): /_internal/* is currently reachable from the public
-  // internet (no WAF rule / CF Access / IP allowlist). The sole gate is the
-  // constant-time CORELINK_INTERNAL_AUTH_KEY compare below. A leak of this
-  // single shared secret enables any-tenant admin-PAT minting via
-  // /_internal/pat/mint. Hardening tracked as F4 follow-up:
-  //   (1) Restrict to Service Binding only (remove public route).
-  //   (2) Separate per-consumer secrets (mint vs onboarding vs signup-worker).
-  //   (3) Add per-tenant authorization to the mint endpoint.
+  // SECURITY NOTE (F4 — CLOSED 2026-08-19, Inc-2): /_internal/* is no longer
+  // publicly reachable unauthenticated. A Cloudflare Access self-hosted app
+  // (Service-Auth) gates corelink-api.humangr.com/_internal* at the NETWORK
+  // layer — no `CF-Access-Client-Id`/`-Secret` service token ⇒ 403 before this
+  // Worker. Same-account callers (signup pat/mint + DSR crons + erase fan-out)
+  // use Service Bindings, which bypass the edge/CF Access, so are unaffected.
+  // The per-consumer x-corelink-internal-auth compare below stays UNDER Access
+  // (defense-in-depth). Runbook: docs/internal/inc2-cf-access-lockdown.md.
   if (path.startsWith("/_internal/")) {
     return { tenantId: "_system", pathSuffix: path, routeKind: "internal" };
   }
