@@ -36,6 +36,12 @@ export interface DOMeterParams {
   readonly block: number;
   /** Refill-eagerly threshold; the shard flags a refill at/below this balance. */
   readonly lowWater: number;
+  /**
+   * SERVE-only: have the coordinator write `consumed` back to the D1 ledger on
+   * refill. MUST be false/absent in shadow (D1 is authoritative there). Defaults
+   * to false, so a shadow caller never touches the ledger.
+   */
+  readonly reconcileToD1?: boolean;
 }
 
 export interface DOMeterVerdict {
@@ -118,6 +124,8 @@ export async function meterViaDO(
     spentDelta: debit.refillReq.spentDelta,
     reportedBalance: debit.refillReq.reportedBalance,
     block: params.block,
+    tenantId: params.tenantId,
+    reconcileToD1: params.reconcileToD1 === true,
   });
   const applied = await postJson<ApplyRefillResponse>(ns.shard, shardName, {
     op: "applyRefill",
