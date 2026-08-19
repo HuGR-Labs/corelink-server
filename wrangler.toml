@@ -307,7 +307,7 @@ name = "corelink-prod"
 # put, WP3 2026-08-17); declared here as non-secret vars so the live prod behavior
 # is reproducible from config and a fresh deploy does NOT silently ship them OFF
 # (which would regress edge-HIT latency + under-count billing).
-vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on", EDGE_DO_METER = "shadow", OCI_PUBLIC_DEDUP_ENABLED = "0" }
+vars = { ENVIRONMENT = "prod", R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com", D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562", R2_AC_BUCKET = "corelink-ac-iad", R2_AC_REGION = "iad", R2_CAS_REGION = "iad", EDGE_PUBLIC_READ = "serve", EDGE_ASYNC_METER = "on", EDGE_DO_METER = "shadow", OCI_PUBLIC_DEDUP_ENABLED = "1" }
 
 # Native retained Workers Logs (per-env; not inherited from top-level).
 [env.prod.observability]
@@ -746,7 +746,7 @@ EDGE_PUBLIC_READ = "serve"
 EDGE_DO_METER = "shadow"
 EDGE_ASYNC_METER = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
-OCI_PUBLIC_DEDUP_ENABLED = "0"
+OCI_PUBLIC_DEDUP_ENABLED = "1"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
 R2_AC_BUCKET = "corelink-ac-sam"
@@ -895,7 +895,7 @@ EDGE_PUBLIC_READ = "serve"
 EDGE_DO_METER = "shadow"
 EDGE_ASYNC_METER = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
-OCI_PUBLIC_DEDUP_ENABLED = "0"
+OCI_PUBLIC_DEDUP_ENABLED = "1"
 # EU residency (2026-06-23) — the container's CAS/AC R2 config now points at the
 # REAL eu-jurisdiction buckets (corelink-cas-eu / corelink-ac-eu, both physically
 # EEUR) served via the EU S3 endpoint. The non-eu per-region buckets
@@ -1053,7 +1053,7 @@ EDGE_PUBLIC_READ = "serve"
 EDGE_DO_METER = "shadow"
 EDGE_ASYNC_METER = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
-OCI_PUBLIC_DEDUP_ENABLED = "0"
+OCI_PUBLIC_DEDUP_ENABLED = "1"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
 R2_AC_BUCKET = "corelink-ac-nrt"
@@ -1205,7 +1205,7 @@ EDGE_PUBLIC_READ = "serve"
 EDGE_DO_METER = "shadow"
 EDGE_ASYNC_METER = "on"
 # F3.2 WP-E — client `_public` dedup flag. "0" (Roll-1) keeps it OFF.
-OCI_PUBLIC_DEDUP_ENABLED = "0"
+OCI_PUBLIC_DEDUP_ENABLED = "1"
 R2_S3_ENDPOINT = "https://6a1fc1c626fc2628823e60b9db01f5cd.r2.cloudflarestorage.com"
 D1_DATABASE_ID = "d64742ea-e102-40b2-a844-ff02e3f94562"
 R2_AC_BUCKET = "corelink-ac-syd"
