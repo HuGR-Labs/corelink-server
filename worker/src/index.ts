@@ -239,6 +239,10 @@ export interface Env {
   // only (serve the container), "serve" = edge-authoritative HIT. Unset = off.
   CAS_BUCKET: R2Bucket;
   EDGE_PUBLIC_READ?: string;
+  // F3.2 WP-E client-side `_public` dedup flag, forwarded to the container. "0"
+  // (Roll-1) = client OCI finalize routes per-tenant (never `_public`); a later
+  // roll flips it on so client finalizes dedup into the server-seeded shared blob.
+  OCI_PUBLIC_DEDUP_ENABLED?: string;
   // P3 edge-local request metering (ADR 2026-08-19). Runtime flag: unset/off =
   // today's D1-UPSERT request-count path (unchanged); "shadow" = additionally run
   // the DO metering path off the response path and log its verdict vs D1 (D1 still

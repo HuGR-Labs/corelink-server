@@ -13,11 +13,12 @@
 //! **Owner-gated by construction:** there is NO runtime mutation path. The only
 //! way to change the allowlist is a reviewed code commit + a redeploy, so a
 //! compromised token / D1 write cannot widen what may enter `_public` (design
-//! Contradiction-2). **Inert until increment 6:** nothing consumes
-//! [`is_allowlisted`](PublicBaseAllowlist::is_allowlisted) yet; the flag-gated
-//! `OciMoatStore` public-base router (increment 6, gated behind the increment-5
-//! red-team) is the first caller. Shipping the trust root first, deny-all, keeps
-//! the campaign's reviews-mandated order.
+//! Contradiction-2). The read side is consumed by the server-only public mirror
+//! ([`crate::routes::public_mirror`]), which promotes a digest into `_public`
+//! only if it `is_allowlisted`. **WP-E Roll-1:** the baked manifest carries
+//! exactly the alpine pin (no longer deny-all); the mirror can now populate
+//! `_public` for alpine while client dedup stays OFF, honouring the
+//! server-populates-first order (design GAP-E).
 
 use std::collections::HashSet;
 
@@ -145,19 +146,29 @@ mod tests {
         "sha256:039e6f9f9752f74a3ff4a6a224f64c7c864da16ed98f882107704328f41b9c42";
 
     #[test]
-    fn baked_manifest_loads_and_is_deny_all_by_default() {
-        // The shipped trust root MUST parse (no malformed active entry) and MUST
-        // be empty — deny-all until the increment-4 mirror populates `_public`.
+    fn baked_manifest_has_alpine_pin_active() {
+        // WP-E Roll-1: the shipped trust root MUST parse (no malformed active
+        // entry) and now carries EXACTLY the alpine pin — alpine allowlisted,
+        // debian still commented (a later roll).
         let al =
             PublicBaseAllowlist::from_baked_manifest().expect("baked manifest must be well-formed");
         assert!(
-            al.is_empty(),
-            "the shipped allowlist must be deny-all (empty) until post-mirror entries are added; had {}",
+            !al.is_empty(),
+            "the shipped allowlist is no longer deny-all after Roll-1"
+        );
+        assert_eq!(
+            al.len(),
+            1,
+            "exactly one active pin (alpine) after Roll-1; had {}",
             al.len()
         );
         assert!(
-            !al.is_allowlisted(REAL_ALPINE),
-            "deny-all ⇒ nothing allowlisted"
+            al.is_allowlisted(REAL_ALPINE),
+            "alpine is the one active Roll-1 pin"
+        );
+        assert!(
+            !al.is_allowlisted(REAL_DEBIAN),
+            "debian stays commented until a later roll"
         );
     }
 

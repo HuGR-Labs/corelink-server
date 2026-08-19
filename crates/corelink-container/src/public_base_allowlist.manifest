@@ -51,15 +51,28 @@
 # human provenance.
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# ACTIVE ALLOWLIST — currently EMPTY (deny-all default).
+# ACTIVE ALLOWLIST — one active pin: alpine (WP-E Roll-1).
 # ─────────────────────────────────────────────────────────────────────────────
-# The trust root ships deny-all: until the increment-4 mirror job has populated
-# `_public` for a pinned digest, NOTHING is eligible for the shared namespace and
-# `is_allowlisted` returns false for every digest (default-private, design
-# Control 1). Entries are added post-mirror per the procedure above.
+# As of WP-E Roll-1 the trust root is NO LONGER deny-all: the alpine amd64 rootfs
+# layer below is the ONE active pin. `is_allowlisted` returns true for exactly
+# that digest and false for every other (debian stays COMMENTED — a later roll).
 #
-# Example pins (COMMENTED — NOT yet server-mirrored, so NOT active). These are
-# real, resolved amd64 rootfs layer digests kept here to document the format and
-# seed the increment-4 mirror job:
-#   sha256:25f1d6b1951ac8eb3740558fe94cb83d377bdadf95fd9f98b50d2e1b96130471   docker.io/library/alpine:3.20 (amd64 rootfs layer)
+# EXECUTABLE-ORDERING NOTE (honours design GAP-E's server-populates-first intent).
+# The alpine pin is uncommented WHILE `OCI_PUBLIC_DEDUP_ENABLED` is still OFF.
+# The two `_public` writers are gated by DIFFERENT switches:
+#   * the server-only mirror (`/_internal/admin/public-mirror/promote`) is gated
+#     by THIS allowlist, NOT by the dedup flag — so with the pin active it CAN
+#     populate `_public` for the alpine digest right now; while
+#   * a CLIENT OCI finalize routes per-tenant (never `_public`) as long as
+#     `OCI_PUBLIC_DEDUP_ENABLED` is OFF — so NO client can populate the shared
+#     blob in Roll-1.
+# Net: the server mirror populates `_public` FIRST; a later roll flips dedup ON
+# to let client finalizes dedup into the now-server-seeded shared blob. This is
+# exactly GAP-E's ordering invariant (server-populates-before-client).
+#
+# The pinned digest is an immutable, resolved amd64 rootfs layer:
+sha256:25f1d6b1951ac8eb3740558fe94cb83d377bdadf95fd9f98b50d2e1b96130471   docker.io/library/alpine:3.20 (amd64 rootfs layer)
+#
+# Example pin kept COMMENTED (NOT yet activated — a later roll), documenting the
+# format + seeding a future mirror job:
 #   sha256:039e6f9f9752f74a3ff4a6a224f64c7c864da16ed98f882107704328f41b9c42   docker.io/library/debian:bookworm-slim (amd64 rootfs layer)
