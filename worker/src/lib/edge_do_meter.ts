@@ -149,3 +149,65 @@ export async function meterViaDO(
   });
   return { withinCap: retry.served, balance: retry.balance, refilled: true };
 }
+
+/**
+ * SERVE path: meter one request through the DO as the AUTHORITATIVE monthly
+ * request-count cap, reconciling the coordinator's `consumed` back into the D1
+ * ledger (`reconcileToD1: true`). This is the awaited, enforcing counterpart of
+ * the `shadow` caller — the caller drops the per-request D1 counter UPSERT and
+ * treats `withinCap` as the request-cap verdict.
+ *
+ * Thin over {@link meterViaDO}: it only pins `reconcileToD1` true and narrows the
+ * return to the one field the serve call-site enforces on, so the sequencing
+ * (and the over-serve=0 guarantee) stays in the single tested code path. Throws
+ * exactly when meterViaDO throws — the serve caller catches and fails OPEN to the
+ * D1 count path, so a DO outage can never break or fail-closed a request.
+ */
+export async function serveViaDO(
+  ns: DOMeterNamespaces,
+  params: DOMeterParams,
+): Promise<{ withinCap: boolean }> {
+  const verdict = await meterViaDO(ns, { ...params, reconcileToD1: true });
+  return { withinCap: verdict.withinCap };
+}
+
+/** Inputs to the {@link serveGateActive} decision (pure; no env/DO access). */
+export interface ServeGateInputs {
+  /** The `EDGE_DO_METER` flag value (`"serve"` | `"shadow"` | undefined | …). */
+  readonly mode: string | undefined;
+  /** True only for a genuinely-counted request (a fan-out sub-request is false). */
+  readonly meter: boolean;
+  /** Whether the shard DO namespace is bound in this env. */
+  readonly hasShardNs: boolean;
+  /** Whether the coordinator DO namespace is bound in this env. */
+  readonly hasCoordNs: boolean;
+  /** This worker's serving region code (`R2_CAS_REGION`), or undefined. */
+  readonly region: string | undefined;
+  /** The tenant tier's monthly request cap (`Number.MAX_SAFE_INTEGER` = uncapped). */
+  readonly cap: number;
+}
+
+/**
+ * Pure decision: should the edge-local DO be the AUTHORITATIVE request-count
+ * meter for this request? True iff EVERY condition holds:
+ *   - `EDGE_DO_METER === "serve"` (only `serve` enforces; off/shadow never do);
+ *   - `meter === true` (a genuinely-counted request — a fan-out sub-request,
+ *     which has `meter=false`, NEVER hits the DO, so it is never double-counted);
+ *   - both DO namespaces are bound AND `R2_CAS_REGION` is a non-empty string
+ *     (the shard is per tenant+region — no region ⇒ no shard identity);
+ *   - the tier is CAPPED (`cap !== MAX_SAFE_INTEGER`) — an uncapped tier
+ *     (team/enterprise) can never deny, so there is nothing to serve.
+ *
+ * Factored out of the call-site so its truth table is unit-testable without env.
+ */
+export function serveGateActive(inputs: ServeGateInputs): boolean {
+  return (
+    inputs.mode === "serve" &&
+    inputs.meter === true &&
+    inputs.hasShardNs &&
+    inputs.hasCoordNs &&
+    typeof inputs.region === "string" &&
+    inputs.region.length > 0 &&
+    inputs.cap !== Number.MAX_SAFE_INTEGER
+  );
+}

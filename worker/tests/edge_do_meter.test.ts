@@ -9,7 +9,12 @@ import type {
 } from "@cloudflare/workers-types";
 import { RequestMeterShardDO } from "../src/request_meter_shard_do.js";
 import { RequestMeterCoordinatorDO } from "../src/request_meter_coordinator_do.js";
-import { meterViaDO, type DOMeterNamespaces } from "../src/lib/edge_do_meter.js";
+import {
+  meterViaDO,
+  serveViaDO,
+  serveGateActive,
+  type DOMeterNamespaces,
+} from "../src/lib/edge_do_meter.js";
 import type { Env } from "../src/index.js";
 
 // DO state mock (mirrors request_meter_*_do.test.ts).
@@ -155,5 +160,103 @@ describe("meterViaDO — worker-side shard+coordinator orchestration", () => {
     // New month: budget resets.
     const next = await meterViaDO(ns, P({ cap, block: 10, yearMonth: "2026-09" }));
     expect(next.withinCap).toBe(true);
+  });
+});
+
+describe("serveViaDO — authoritative serve path (reconcile→D1 ON)", () => {
+  it("within cap ⇒ withinCap:true", async () => {
+    const ns = freshNs();
+    const v = await serveViaDO(ns, P());
+    expect(v.withinCap).toBe(true);
+  });
+
+  it("over cap ⇒ withinCap:false (never over-serves)", async () => {
+    const ns = freshNs();
+    const cap = 3;
+    let served = 0;
+    for (let i = 0; i < 8; i++) {
+      const v = await serveViaDO(ns, P({ cap, block: 10 }));
+      if (v.withinCap) served++;
+    }
+    expect(served).toBe(3);
+    const last = await serveViaDO(ns, P({ cap, block: 10 }));
+    expect(last.withinCap).toBe(false);
+  });
+
+  it("passes reconcileToD1:true through to meterViaDO (SERVE reconciles the ledger)", async () => {
+    // Capture the params the coordinator refill hop actually receives.
+    let sawReconcile: unknown = "unset";
+    const shard: DurableObjectNamespace = {
+      idFromName: (name: string) => ({ toString: () => name, name }) as unknown as DurableObjectId,
+      get: () => ({
+        // Report empty + needs-refill so the coordinator hop runs, then serve
+        // after the refill applies.
+        fetch: async (_i: RequestInfo, init?: RequestInit) => {
+          const body = JSON.parse((init?.body as string) ?? "{}") as { op: string };
+          if (body.op === "debit") {
+            return new Response(
+              JSON.stringify({
+                served: true,
+                needsRefill: true,
+                balance: 0,
+                yearMonth: YM,
+                refillReq: { spentDelta: 0, reportedBalance: 0 },
+              }),
+            );
+          }
+          // applyRefill
+          return new Response(JSON.stringify({ balance: 999 }));
+        },
+      }),
+    } as unknown as DurableObjectNamespace;
+    const coordinator: DurableObjectNamespace = {
+      idFromName: (name: string) => ({ toString: () => name, name }) as unknown as DurableObjectId,
+      get: () => ({
+        fetch: async (_i: RequestInfo, init?: RequestInit) => {
+          const body = JSON.parse((init?.body as string) ?? "{}") as { reconcileToD1: unknown };
+          sawReconcile = body.reconcileToD1;
+          return new Response(JSON.stringify({ granted: 1000, newBalance: 1000 }));
+        },
+      }),
+    } as unknown as DurableObjectNamespace;
+    const v = await serveViaDO({ shard, coordinator }, P());
+    expect(v.withinCap).toBe(true);
+    expect(sawReconcile).toBe(true);
+  });
+});
+
+describe("serveGateActive — pure serve-eligibility truth table", () => {
+  const base = {
+    mode: "serve" as string | undefined,
+    meter: true,
+    hasShardNs: true,
+    hasCoordNs: true,
+    region: "iad" as string | undefined,
+    cap: 500_000,
+  };
+  it("serve + counted + capped + DOs + region ⇒ ACTIVE", () => {
+    expect(serveGateActive({ ...base })).toBe(true);
+  });
+  it("meter=false (fan-out sub-request) ⇒ NOT active", () => {
+    expect(serveGateActive({ ...base, meter: false })).toBe(false);
+  });
+  it("uncapped tier (MAX_SAFE_INTEGER) ⇒ NOT active", () => {
+    expect(serveGateActive({ ...base, cap: Number.MAX_SAFE_INTEGER })).toBe(false);
+  });
+  it("mode 'shadow' ⇒ NOT active", () => {
+    expect(serveGateActive({ ...base, mode: "shadow" })).toBe(false);
+  });
+  it("mode off (undefined) ⇒ NOT active", () => {
+    expect(serveGateActive({ ...base, mode: undefined })).toBe(false);
+  });
+  it("missing shard namespace ⇒ NOT active", () => {
+    expect(serveGateActive({ ...base, hasShardNs: false })).toBe(false);
+  });
+  it("missing coordinator namespace ⇒ NOT active", () => {
+    expect(serveGateActive({ ...base, hasCoordNs: false })).toBe(false);
+  });
+  it("missing / empty region ⇒ NOT active", () => {
+    expect(serveGateActive({ ...base, region: undefined })).toBe(false);
+    expect(serveGateActive({ ...base, region: "" })).toBe(false);
   });
 });
