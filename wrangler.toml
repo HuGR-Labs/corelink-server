@@ -490,7 +490,7 @@ class_name = "CoreLinkServer"
 # WP-S1.2 real AC R2 handler + WP-S1.2 real D1 Admin handler + cas.rs
 # block_in_place fix. Once 2aa2be6f's Dockerfile cache invalidation fix proves
 # itself end-to-end in CI, revert to "./Dockerfile".
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:77c371f8-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:0acf07e8-r1"
 # Cap raised 20→2000 (2026-08-19) = the account's DO-container ceiling
 # (durable_object_offset_instances = 2000). 1 container per active tenant + idle
 # scales to zero, so a high ceiling is free when idle and only bounds worst-case
@@ -870,7 +870,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-sam.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:77c371f8-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:0acf07e8-r1"
 # Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
 max_instances = 2000
 instance_type = "basic"
@@ -1028,7 +1028,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-lhr.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:77c371f8-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:0acf07e8-r1"
 # Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
 max_instances = 2000
 instance_type = "basic"
@@ -1180,7 +1180,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-nrt.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:77c371f8-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:0acf07e8-r1"
 # Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
 max_instances = 2000
 instance_type = "basic"
@@ -1328,7 +1328,7 @@ class_name = "RequestMeterShardDO"
 
 [[env.prod-syd.containers]]
 class_name = "CoreLinkServer"
-image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:77c371f8-r1"
+image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:0acf07e8-r1"
 # Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
 max_instances = 2000
 instance_type = "basic"
