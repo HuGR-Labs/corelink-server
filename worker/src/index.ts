@@ -36,8 +36,9 @@ import {
   STORAGE_QUOTA_HEADER,
   QUOTAS,
   currentYearMonthUtc,
+  secondsUntilNextMonthStart,
 } from "./lib/quota.js";
-import { meterViaDO } from "./lib/edge_do_meter.js";
+import { meterViaDO, serveViaDO, serveGateActive } from "./lib/edge_do_meter.js";
 import { checkStorageQuotaCachedRead } from "./lib/quota_storage_cache.js";
 import {
   tryFastRequestCount,
@@ -3220,6 +3221,65 @@ const baseHandler: ExportedHandler<Env> = {
       const isStorageMutating = request.method === "PUT" || request.method === "POST";
       const meter = !isFanout && requestQuotaEnabled;
 
+      // ── P3 EDGE_DO_METER serve (ADR 2026-08-19): the edge-local DO is the
+      //    AUTHORITATIVE monthly request-count cap ──────────────────────────
+      // When EDGE_DO_METER === "serve" (per-region flag) AND this is a
+      // genuinely-counted request on a CAPPED tier with both DOs + a region
+      // bound, we meter this request through the shard/coordinator SYNCHRONOUSLY
+      // (awaited — the verdict is a serve decision, not telemetry) with
+      // reconcile→D1 ON, and treat the DO's `withinCap` as the request-cap
+      // verdict. On success we DROP the per-request D1 counter UPSERT (pass
+      // `meter:false` to runQuotaBatch, storage-only) and SKIP the async-`on`
+      // fast path and the D1 `withinFreeCap` gate below — the DO owns the cap.
+      //
+      // FAIL-OPEN (money-path safety): if serveViaDO THROWS (any DO hop non-2xx
+      // / outage), we swallow it to `serveVerdict = null` and fall straight back
+      // to today's exact D1 count path (meter stays true, async/D1 metering +
+      // withinFreeCap run). A DO outage must NEVER break a request nor fail it
+      // closed. Storage quota is ALWAYS enforced regardless (serve concerns ONLY
+      // the request-count cap). FAN-OUT: the gate requires meter===true, so a
+      // fan-out sub-request (meter=false) never hits the DO — no double count.
+      const doServeCap = QUOTAS[quotaTier.tier].requestsPerMonthMax;
+      const doServeActive = serveGateActive({
+        mode: (env as unknown as { EDGE_DO_METER?: string }).EDGE_DO_METER,
+        meter,
+        hasShardNs: env.REQUEST_METER_SHARD_DO !== undefined,
+        hasCoordNs: env.REQUEST_METER_COORDINATOR_DO !== undefined,
+        region: env.R2_CAS_REGION,
+        cap: doServeCap,
+      });
+      let serveVerdict: { withinCap: boolean } | null = null;
+      // The extra env truthiness checks are always-true given doServeActive
+      // (serveGateActive already required them) — they are here solely so TS
+      // narrows the optional DO namespaces + region, mirroring the shadow branch.
+      if (
+        doServeActive &&
+        env.REQUEST_METER_SHARD_DO &&
+        env.REQUEST_METER_COORDINATOR_DO &&
+        env.R2_CAS_REGION
+      ) {
+        const shardNs = env.REQUEST_METER_SHARD_DO;
+        const coordNs = env.REQUEST_METER_COORDINATOR_DO;
+        try {
+          serveVerdict = await serveViaDO(
+            { shard: shardNs, coordinator: coordNs },
+            {
+              tenantId: resolvedTenantId,
+              region: env.R2_CAS_REGION,
+              yearMonth: currentYearMonthUtc(),
+              cap: doServeCap,
+              block: Math.min(doServeCap, DO_METER_LEASE_BLOCK),
+              lowWater: 0,
+            },
+          );
+        } catch {
+          // Fail-OPEN: fall back to the normal D1 count path below.
+          serveVerdict = null;
+        }
+      }
+      // True iff the DO authoritatively metered this request (verdict in hand).
+      const serveHandled = serveVerdict !== null;
+
       // ── WP-B (async metering): take the quota trio off the WARM READ path ──
       // For a metered, tier-CONFIRMED, NON-mutating request whose tenant is
       // provably far under its request cap, serve with ZERO synchronous D1: the
@@ -3238,7 +3298,7 @@ const baseHandler: ExportedHandler<Env> = {
         meter && !isStorageMutating && !quotaTier.d1Error;
       let handledFast = false;
 
-      if (asyncMeterMode === "on" && asyncMeterEligible) {
+      if (!serveHandled && asyncMeterMode === "on" && asyncMeterEligible) {
         const fast = await tryFastRequestCount(env.CONFIG_DB, resolvedTenantId, quotaTier.tier, {
           ...(tierKv ? { kv: tierKv } : {}),
           waitUntil: ctx.waitUntil.bind(ctx),
@@ -3319,7 +3379,9 @@ const baseHandler: ExportedHandler<Env> = {
       if (!handledFast) {
       const qbatchStart = Date.now();
       const quotaBatch = await runQuotaBatch(env.CONFIG_DB, resolvedTenantId, quotaTier, {
-        meter,
+        // P3 serve: the DO authoritatively counted this request, so DROP the
+        // per-request D1 counter UPSERT (storage-only batch). Otherwise unchanged.
+        meter: serveHandled ? false : meter,
         isMutating: isStorageMutating,
       });
       // `-1` (phase omitted) iff no round trip was issued at all — both statements
@@ -3411,9 +3473,25 @@ const baseHandler: ExportedHandler<Env> = {
 
       // Storage quota verdict. (OCI never reaches this PAT-gate path — see the
       // dedicated pass-through branch above; the container enforces OCI quota.)
+      // Storage is ALWAYS enforced — serve concerns ONLY the request-count cap.
       const storageCheck = quotaBatch.storage;
       if (!storageCheck.ok) {
         return quotaExceeded(storageCheck.reason, storageCheck.retryAfterSec);
+      }
+
+      // P3 serve: the edge-local DO is AUTHORITATIVE for the request-count cap.
+      // Enforce its verdict here — AFTER storage — REPLACING the D1 `withinFreeCap`
+      // gate above (which is inert on the serve path: meter=false ⇒ inc.counted=
+      // false ⇒ withinFreeCap=true, so it never fires). `serveVerdict` is non-null
+      // only when the DO metered this request (serve active + no DO error). The
+      // 429 shape matches requestCapResultForCount: Retry-After = seconds to the
+      // next UTC-month reset (the DO count is authoritative, so no D1 `count` is
+      // available to echo).
+      if (serveVerdict !== null && !serveVerdict.withinCap) {
+        return quotaExceeded(
+          `Monthly request quota exceeded: limit is ${doServeCap} (tier: ${quotaTier.tier})`,
+          secondsUntilNextMonthStart(),
+        );
       }
 
       // WP-B2: seed the request-count KV from this authoritative count so
