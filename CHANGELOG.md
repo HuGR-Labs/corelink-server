@@ -23,6 +23,7 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **feat(worker): P3 `RequestMeterCoordinatorDO` shell (INERT).** Per-tenant Durable-Object shell over the WP-1a `request_meter_lease.ts` core: persists `CoordinatorState` and serializes refill/reclaim/read ops via `blockConcurrencyWhile` (the single-writer guarantee that makes the core's over-serve=0 invariant hold under concurrency). 5 tests incl. persistence-survives-restart and over-serve=0 through the fetch API. Not wired to any request path; the wrangler binding + migration tag + worker wiring behind `EDGE_DO_METER` land with the shard DO in a later WP.
 - **feat(worker): P3 token-lease accounting core (`worker/src/lib/request_meter_lease.ts`, INERT).**
   Pure, dependency-free lease-accounting for the ACCEPTED edge-local DO request-metering design
   (`docs/design/2026-08-19-adr-edge-local-do-request-metering.md`): a per-tenant coordinator grants
