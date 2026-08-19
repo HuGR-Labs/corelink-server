@@ -72,6 +72,7 @@ Each entry cross-references:
   is a lockfile-only patch bump. Ridden here to unblock the erasure-hardening PR's `cargo-deny` gate.
 
 ### Fixed
+- **fix(f3.2): public-base mirror mints its Docker Hub token with the challenge's `service`, not the blob host.** The `DockerHubBlobFetcher` requested its anonymous OCI token with `service = self.upstream.host_str()` = `registry-1.docker.io`, but Docker Hub's token `service` identifier is `registry.docker.io` (no `-1`) as its blob-401 `WWW-Authenticate` challenge states; `auth.docker.io` binds the token to the requested `service` and the registry 401s a mismatched token, so the authed retry failed and `promote` returned 502 `upstream status: 401` — blocking the WP-E Roll-1 `_public` populate of the alpine pin. Now echoes the `service` FROM the challenge (`parse_bearer_realm` generalized to `parse_bearer_param`), upstream-host fallback only when omitted. No SSRF-surface change (realm host still `host_is_internal_ip`-guarded, blob origin still the FIXED upstream). +1 unit test; verified live against Docker Hub (wrong-service token → 401, challenge-service token → 200).
 - **fix(oci): a `_public` revoke-by-`upstream_digest` now collapses the brew/pip edge-serve window too
   (F3.2 red-team finding F-1).** `EDGE_PUBLIC_READ="serve"` serves brew/pip `_public` cache HITs from the
   edge, bypassing the container; the edge only drops its ≤60 s revocation window early when the Worker
