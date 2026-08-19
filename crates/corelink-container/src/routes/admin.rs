@@ -146,11 +146,13 @@ pub struct AdminRouteState {
     /// `POST /v1/admin/approve`. Shares the same ledger the `mutate`
     /// handler verifies + consumes against.
     pub approval_writer: Arc<dyn ApprovalLedgerWriter>,
-    /// Operator-only shared secret for the **approve** gate (sourced from
-    /// `CORELINK_ADMIN_APPROVER_AUTH_KEY`, shared-key fallback). Deliberately
-    /// a DIFFERENT credential from `internal_auth_key` so approve and mutate
-    /// require different keys (real two-person control). `None` ⇒ the approve
-    /// route fails CLOSED (403).
+    /// Operator-only dedicated secret for the **approve** gate (sourced from
+    /// `CORELINK_ADMIN_APPROVER_AUTH_KEY` ONLY — NO shared-key fallback).
+    /// Deliberately a DIFFERENT credential from `internal_auth_key` so approve
+    /// and mutate require different keys (real two-person control), and enforced
+    /// DISTINCT at boot by [`crate::routes::approver_key_distinct_or_none`] (a
+    /// byte-equal key collapses to `None`). `None` ⇒ the approve route fails
+    /// CLOSED (403).
     pub approver_auth_key: Option<Arc<str>>,
     /// True when the approval ledger is D1-backed (durable). When false
     /// (in-memory dev/CI), recorded approvals do not survive a restart.
@@ -603,8 +605,9 @@ pub fn internal_auth_key_from_env() -> Option<Arc<str>> {
     resolve_internal_auth_key("CORELINK_ADMIN_AUTH_KEY")
 }
 
-/// Read the operator **dual-approver** shared secret from the environment
-/// (finding H5).
+/// Read the operator **dual-approver** dedicated secret from the environment
+/// (finding H5; hardened by the 2026-08-19 red-team, finding "two-person
+/// control collapses to one shared secret").
 ///
 /// This gates `POST /v1/admin/approve` — the step that RECORDS a second
 /// approver into the durable approval ledger. It is deliberately a **separate
@@ -613,16 +616,29 @@ pub fn internal_auth_key_from_env() -> Option<Arc<str>> {
 /// DIFFERENT keys, so a single admin-key holder cannot both create the
 /// approval and spend it.
 ///
-/// Reads `CORELINK_ADMIN_APPROVER_AUTH_KEY` first, falling back to the shared
-/// `CORELINK_INTERNAL_AUTH_KEY` when unset/blank/too-short (see
-/// [`resolve_internal_auth_key`]) — additive, deployable before the dedicated
-/// secret exists. Until a DISTINCT `CORELINK_ADMIN_APPROVER_AUTH_KEY` is
-/// provisioned, the two surfaces may resolve to the same shared key; provision
-/// a distinct value to obtain true credential separation. When `None`, the
-/// approve route fails CLOSED (403).
+/// Reads `CORELINK_ADMIN_APPROVER_AUTH_KEY` ONLY and does **NOT** fall back to
+/// the shared `CORELINK_INTERNAL_AUTH_KEY` — same DEDICATED-only treatment as
+/// the erase authority ([`erase_auth_key_from_env`], finding H4) and the DSR
+/// anchor. The old shared-key fallback silently COLLAPSED two-person control:
+/// with `CORELINK_ADMIN_APPROVER_AUTH_KEY` unset both this key and the mutate
+/// key resolved to the SAME `CORELINK_INTERNAL_AUTH_KEY`, so a single
+/// shared-secret holder could call `/v1/admin/approve` (records
+/// `approver@internal`) then `/v1/admin/mutate` (initiator `operator@internal`)
+/// and defeat dual approval — the only discriminator being two hardcoded,
+/// cosmetic principal strings. Dedicated-only closes that: when unset or
+/// < 32 chars the approve route fails CLOSED (403) and dual approval cannot be
+/// recorded until a distinct approver key is provisioned.
+///
+/// # Owner action (REQUIRED in prod)
+///
+/// `CORELINK_ADMIN_APPROVER_AUTH_KEY` MUST be bound in prod (≥ 32 chars,
+/// `openssl rand -hex 32`) and MUST be DISTINCT from `CORELINK_INTERNAL_AUTH_KEY`
+/// / `CORELINK_ADMIN_AUTH_KEY`; [`crate::routes::approver_key_distinct_or_none`]
+/// enforces the distinctness at boot (a byte-equal approver key is treated as
+/// unset → approve fails CLOSED).
 #[must_use]
 pub fn approver_auth_key_from_env() -> Option<Arc<str>> {
-    resolve_internal_auth_key("CORELINK_ADMIN_APPROVER_AUTH_KEY")
+    resolve_dedicated_auth_key("CORELINK_ADMIN_APPROVER_AUTH_KEY")
 }
 
 /// Read the **CAS-erase / DSR** dedicated secret from the environment

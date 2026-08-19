@@ -435,6 +435,45 @@ pub fn build() -> Router {
     build_with_factory(Arc::new(InMemoryShadowSinkFactory::new()))
 }
 
+/// Boot-time credential-separation invariant for the admin dual-approve gate
+/// (2026-08-19 red-team, "two-person control collapses to one shared secret").
+///
+/// Two-person control on `/v1/admin/approve` + `/v1/admin/mutate` is only real
+/// if the approver key and the mutate/internal key are DIFFERENT secrets. The
+/// dedicated-only [`admin::approver_auth_key_from_env`] already refuses the
+/// shared-key fallback, but this closes the residual foot-gun where an operator
+/// binds `CORELINK_ADMIN_APPROVER_AUTH_KEY` to the SAME value as
+/// `CORELINK_INTERNAL_AUTH_KEY`: if the resolved approver key is byte-equal to
+/// the internal/mutate key, it is treated as unconfigured (`None`) so the
+/// approve route fails CLOSED (403) rather than silently permitting
+/// self-approval. Enforced in code, not by an operator remembering to pick
+/// distinct values. The comparison is constant-time (no secret-length or
+/// content timing oracle).
+#[must_use]
+pub(crate) fn approver_key_distinct_or_none(
+    approver_auth_key: Option<Arc<str>>,
+    internal_auth_key: Option<&Arc<str>>,
+) -> Option<Arc<str>> {
+    use subtle::ConstantTimeEq;
+    let approver = approver_auth_key?;
+    if let Some(internal) = internal_auth_key {
+        // Constant-time equality; length difference short-circuits to "distinct"
+        // without leaking either length via a content compare.
+        if approver.len() == internal.len()
+            && approver.as_bytes().ct_eq(internal.as_bytes()).unwrap_u8() == 1
+        {
+            tracing::error!(
+                "CORELINK_ADMIN_APPROVER_AUTH_KEY is byte-equal to \
+                 CORELINK_INTERNAL_AUTH_KEY — two-person control would collapse; \
+                 treating the approver key as UNSET so POST /v1/admin/approve fails \
+                 CLOSED (403). Provision a DISTINCT approver key (`openssl rand -hex 32`)."
+            );
+            return None;
+        }
+    }
+    Some(approver)
+}
+
 /// Build the composed router with an explicit
 /// [`ShadowSinkFactory`] — used by the production boot path to swap
 /// in the D1-backed `D1ShadowSinkFactory` while keeping every other
@@ -685,15 +724,21 @@ pub fn build_with_factory(shadow_factory: Arc<dyn ShadowSinkFactory>) -> Router 
         );
     }
     let admin_stack = admin::build_handler_stack();
-    // Dedicated approve-gate key (finding H5) — a DIFFERENT credential from
-    // the mutate/admin key so approve and mutate require distinct keys (real
-    // two-person control). Shared-key fallback keeps it additive.
-    let admin_approver_auth_key = admin::approver_auth_key_from_env();
+    // Dedicated approve-gate key (finding H5, hardened 2026-08-19) — a DIFFERENT
+    // credential from the mutate/admin key so approve and mutate require distinct
+    // keys (real two-person control). DEDICATED-ONLY (no shared-key fallback), and
+    // a byte-equal-to-internal key is rejected at boot by
+    // `approver_key_distinct_or_none` so credential separation is enforced in code.
+    let admin_approver_auth_key = approver_key_distinct_or_none(
+        admin::approver_auth_key_from_env(),
+        admin_internal_auth_key.as_ref(),
+    );
     if admin_approver_auth_key.is_none() {
         tracing::warn!(
-            "CORELINK_ADMIN_APPROVER_AUTH_KEY (and shared fallback) unset; \
-             POST /v1/admin/approve mounted but FAILS CLOSED (403) — dual-approval \
-             cannot be recorded until an approver key is configured"
+            "CORELINK_ADMIN_APPROVER_AUTH_KEY unset, < 32 chars, or byte-equal to \
+             CORELINK_INTERNAL_AUTH_KEY; POST /v1/admin/approve mounted but FAILS \
+             CLOSED (403) — dual-approval cannot be recorded until a DISTINCT \
+             dedicated approver key is provisioned (no shared-key fallback)"
         );
     }
     let admin_state = admin::AdminRouteState {
@@ -1112,6 +1157,37 @@ mod tests {
         // native target. Per-route behaviour is covered by the
         // module-level integration tests in cas.rs / ac.rs / admin.rs.
         let _router = build();
+    }
+
+    #[test]
+    fn approver_key_distinct_or_none_enforces_credential_separation() {
+        let internal: Arc<str> = Arc::from("internal-shared-key-32-bytes-aaaa");
+        let same: Arc<str> = Arc::from("internal-shared-key-32-bytes-aaaa");
+        let distinct: Arc<str> = Arc::from("dedicated-approver-key-32-bytes-b");
+
+        // Byte-equal to the internal/mutate key ⇒ treated as unset (fail-closed).
+        assert!(
+            approver_key_distinct_or_none(Some(same), Some(&internal)).is_none(),
+            "an approver key byte-equal to the internal key must collapse to None"
+        );
+        // A genuinely distinct approver key survives.
+        assert_eq!(
+            approver_key_distinct_or_none(Some(distinct.clone()), Some(&internal)).as_deref(),
+            Some(distinct.as_ref()),
+        );
+        // No approver key ⇒ None regardless of the internal key.
+        assert!(approver_key_distinct_or_none(None, Some(&internal)).is_none());
+        // No internal key bound (dev/CI) ⇒ the approver key passes through as-is.
+        assert_eq!(
+            approver_key_distinct_or_none(Some(distinct.clone()), None).as_deref(),
+            Some(distinct.as_ref()),
+        );
+        // Different lengths are distinct (constant-time path short-circuits).
+        let shorter: Arc<str> = Arc::from("short-approver-key-32-bytes-cccc");
+        assert!(
+            approver_key_distinct_or_none(Some(shorter.clone()), Some(&internal)).is_some(),
+            "a different-length approver key is distinct"
+        );
     }
 
     #[test]
