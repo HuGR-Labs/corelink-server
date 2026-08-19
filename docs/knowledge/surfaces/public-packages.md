@@ -10,7 +10,9 @@ source_files:
   - "crates/corelink-container/src/routes/public_pullthrough.rs"
   - "crates/corelink-container/src/oci_cap.rs"
   - "crates/corelink-container/src/public_base_allowlist.rs"
-checkpoint_sha: "509128f6160128b509b64f02c98f4f06ef329498"
+  - "crates/corelink-container/src/public_base_allowlist.manifest"
+  - "wrangler.toml"
+checkpoint_sha: "f0fe680dc251781133d48793e122d7c7da987f08"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -75,12 +77,24 @@ hold.
    `_public` (`crates/corelink-container/src/public_base_allowlist.rs:86`). The loader is FAIL-CLOSED on any
    non-digest entry — a tag has no `sha256:` prefix / wrong length / non-lowercase-hex and is rejected, so a
    mutable tag can never widen the shared namespace (`crates/corelink-container/src/public_base_allowlist.rs:108`).
-   As of WP-E Roll-1 the shipped manifest activates exactly the alpine pin (debian stays commented); every other digest still rejects (fail-closed).
+   As of **WP-G M3** the shipped manifest activates **6** pins — the alpine WP-E rootfs LAYER blob
+   (`crates/corelink-container/src/public_base_allowlist.manifest:87`) PLUS 5 base-image multi-arch
+   INDEX digests (alpine/debian12/ubuntu24.04/node22-slim/python3.12-slim,
+   `crates/corelink-container/src/public_base_allowlist.manifest:90-94`); the baked test asserts the set
+   parses and `len() == 6` (`crates/corelink-container/src/public_base_allowlist.rs:163`,
+   `crates/corelink-container/src/public_base_allowlist.rs:170`). LAYER pins gate the client-push WRITE
+   route; INDEX pins are consumed only by the WP-G M2 server-side closure-promote (a client can never
+   populate `_public` for them — they are not layer digests). Every other digest still rejects
+   (fail-closed).
 9. **F3.2 flag-gated `_public` routing (WP-B write gate + WP-G M2 existence read).** The boot `dedup` flag
    (`public_flags::oci_public_dedup_enabled()`) and the baked allowlist are read ONCE at the router and SHARED
    with both the blob store (`OciMoatStore::with_allowlist`) and the manifest resolver; the allowlist load is
    FAIL-CLOSED, degrading a malformed manifest to deny-all
    (`crates/corelink-container/src/routes/oci.rs:829-830`; `crates/corelink-container/src/routes/oci.rs:854-858`).
+   **WP-G M3 activation:** both boot flags are now `"1"` in every prod env block —
+   `OCI_PUBLIC_DEDUP_ENABLED` (`wrangler.toml:749`) and `OCI_UPSTREAM_ON_MISS` (`wrangler.toml:750`) —
+   forwarded to the container through the DO env-contract (see [DO lifecycle](/planes/durable-object.md)),
+   so the existence-read + upstream-on-miss closure-promote paths are LIVE in prod, not inert.
    **WRITE path (still allowlist-gated):** the predicate `routes_to_public` = `dedup && is_allowlisted(blob_key)`
    (`crates/corelink-container/src/routes/oci.rs:289-291`) decides `finalize_upload`'s namespace — an
    allowlisted layer lands under `PUBLIC_NAMESPACE` with an uncapped `Some(0)` quota-seed, everything else
@@ -104,7 +118,7 @@ hold.
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
 - OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci.rs:975-987`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci.rs:1035-1039`).
 - **The `_public` WRITE is allowlist-gated and the M2 READ is existence-based, but they cannot split-brain: the read is a strict SUPERSET of the write.** Only a `dedup && is_allowlisted` hit reaches `PUBLIC_NAMESPACE` with the uncapped `Some(0)` quota-seed on write (`routes_to_public`, `crates/corelink-container/src/routes/oci.rs:289-291`; `crates/corelink-container/src/routes/oci.rs:592-596`), so a non-allowlisted client push (including every manifest/config object, whose digest is never a layer-blob allowlist entry) stays per-tenant and quota-charged. The read reads `_public` FIRST by EXISTENCE for any digest under `dedup` (`crates/corelink-container/src/routes/oci.rs:645-663`): anything the write path (or the resolver's closure-promote) placed in `_public` is always found there, and content-addressing makes serving it leak-free — so a by-digest read never disagrees with where the bytes actually live.
-- Eligibility for `_public` is a SERVER-owned, owner-gated, digest-pinned decision — never client-asserted. The trust root is baked into the binary (no runtime mutation path can widen it) and fail-closes on any tag, so only immutable `sha256:` digests the owner committed can ever be allowlisted (`crates/corelink-container/src/public_base_allowlist.rs:108`); as of WP-E Roll-1 the shipped manifest carries exactly the alpine pin (`crates/corelink-container/src/public_base_allowlist.rs:54`).
+- Eligibility for `_public` is a SERVER-owned, owner-gated, digest-pinned decision — never client-asserted. The trust root is baked into the binary (no runtime mutation path can widen it) and fail-closes on any tag, so only immutable `sha256:` digests the owner committed can ever be allowlisted (`crates/corelink-container/src/public_base_allowlist.rs:108`); as of WP-G M3 the shipped manifest carries 6 active pins — the alpine LAYER blob plus 5 base-image INDEX digests (`crates/corelink-container/src/public_base_allowlist.manifest:87`, `crates/corelink-container/src/public_base_allowlist.manifest:90-94`; loaded by `crates/corelink-container/src/public_base_allowlist.rs:54`).
 
 # Gotchas
 - `_public` writes need BOTH a `tenant_storage_state` row AND a sentinel R2 prefix for byte accounting;
@@ -158,7 +172,10 @@ hold.
 27. `crates/corelink-container/src/routes/oci.rs:592-596` — `finalize_upload` routes an allowlisted layer to `PUBLIC_NAMESPACE` (uncapped `Some(0)`), else per-tenant with the resolved cap.
 28. `crates/corelink-container/src/routes/oci.rs:645-663` — WP-G M2: `get_blob` reads the shared `_public` namespace FIRST by EXISTENCE (any blob key) when the `dedup` flag is on, then falls back to the per-tenant namespace on a miss (no upstream fetch — read pull-through promotion is the resolver's job). Safe because an OCI blob is `sha256:`-addressed, so a `_public` copy is byte-identical to any private copy; admission to `_public` stays WRITE-gated (cite 25) and revocation still filters via `MoatCache::get`'s `public_blocklist`.
 29. `crates/corelink-container/src/oci_cap.rs:63-82` — `tier_to_cap_bytes`: container-side port of the Worker `QUOTAS` per-tier storage cap for the OCI `/token` mint (unknown tier → `free`, never unlimited).
-30. `crates/corelink-container/src/public_base_allowlist.rs:54` — `PublicBaseAllowlist::from_baked_manifest` loads + validates the container-baked owner-curated allowlist (WP-E Roll-1: one active pin, alpine).
+30. `crates/corelink-container/src/public_base_allowlist.rs:54` — `PublicBaseAllowlist::from_baked_manifest` loads + validates the container-baked owner-curated allowlist (WP-G M3: 6 active pins).
+30b. `crates/corelink-container/src/public_base_allowlist.manifest:87` — the alpine WP-E rootfs LAYER blob pin; `crates/corelink-container/src/public_base_allowlist.manifest:90-94` — the 5 base-image multi-arch INDEX digests (alpine/debian12/ubuntu24.04/node22-slim/python3.12-slim) consumed by the WP-G M2 closure-promote. 6 active pins total.
+30c. `crates/corelink-container/src/public_base_allowlist.rs:163` — the baked test `baked_manifest_has_m3_pins_active`; `crates/corelink-container/src/public_base_allowlist.rs:170` — asserts `len() == 6`.
+30d. `wrangler.toml:749` (`OCI_PUBLIC_DEDUP_ENABLED = "1"`) + `wrangler.toml:750` (`OCI_UPSTREAM_ON_MISS = "1"`) — both keystone flags active in prod (all 5 prod env blocks); M3 activation.
 31. `crates/corelink-container/src/public_base_allowlist.rs:86` — `is_allowlisted(digest)` membership test the increment-6 `_public` router gates on.
 32. `crates/corelink-container/src/routes/public_pullthrough.rs:653` — `UpstreamManifestResolver::resolve_on_miss` (impl `ManifestResolver`): the OCI manifest+blob upstream-on-miss resolver wired conditionally into the router (cite 18). Rate-limited per-tenant, single-flight coalesced, and digest-verified before caching (`crates/corelink-container/src/routes/public_pullthrough.rs:722-726`) — a manifest that fails `verify_against_bytes` is dropped (`Ok(None)`), never persisted; every step fail-opens to `Ok(None)` so the handler 404s the miss. Constructed by `UpstreamManifestResolver::new` (`crates/corelink-container/src/routes/public_pullthrough.rs:193-199`), which returns `None` when the fixed-upstream client cannot be built (flag then inert). Reuses the ONE audited SSRF/token client shared with the `_public` mirror. Under WP-G M2 (`dedup` on), a by-DIGEST reference reads `_public` by existence first (`crates/corelink-container/src/routes/public_pullthrough.rs:676-699`) and, when the digest is an allowlisted ROOT, promotes its full transitive closure into `_public` (`promote_public_closure`) — so this path IS a `_public` writer, but ONLY for owner-allowlisted roots; every `_public` write is digest-verified fail-closed and a TAG reference never reads or writes `_public`.
 32. `crates/corelink-container/src/public_base_allowlist.rs:108` — `validate_digest` fail-closes on any non-`sha256:` entry (tags BANNED — digest-pinned trust root).
