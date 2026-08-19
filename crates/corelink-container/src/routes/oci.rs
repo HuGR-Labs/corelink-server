@@ -80,8 +80,9 @@ use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
 use corelink_core::{SecretWrap, TenantId};
 use corelink_handler_cas::{CasReadHandler, CasWriteHandler};
 
-use crate::adapter_cache::{MoatCache, MoatError, UrlMapStore};
+use crate::adapter_cache::{MoatCache, MoatError, UrlMapStore, PUBLIC_NAMESPACE};
 use crate::adapter_pat::{PatVerifier, VerifyError};
+use crate::public_base_allowlist::PublicBaseAllowlist;
 
 /// Service principal stamped on the adapter's CAS operations. Identifies
 /// the adapter-host service, NOT the end-user PAT.
@@ -186,10 +187,15 @@ struct UploadSession {
 /// persist, so this shell never re-hashes for verification.
 ///
 /// Images are stored under the PER-TENANT namespace (the `tenant` arg's
-/// canonical text) — isolated by default. Cross-tenant public-image
-/// dedup (storing public base images under
-/// [`crate::adapter_cache::PUBLIC_NAMESPACE`]) is an explicit follow-up;
-/// see the module OPEN DECISIONS.
+/// canonical text) — isolated by default. **F3.2 increment 6** adds
+/// flag-gated cross-tenant dedup: when `dedup` is on AND a LAYER-BLOB
+/// digest is [`is_allowlisted`](PublicBaseAllowlist::is_allowlisted), that
+/// blob's put/get is routed to the shared
+/// [`crate::adapter_cache::PUBLIC_NAMESPACE`] (uncapped) via the SAME
+/// predicate on both paths ([`Self::routes_to_public`]) — never manifests or
+/// config objects (their digests are not layer-blob allowlist entries).
+/// The flag defaults OFF, so this shell is INERT until the WP-E repin flips
+/// it; the shipped allowlist is deny-all until then regardless.
 ///
 /// Upload sessions are buffered in-process in `uploads` keyed by the
 /// server-allocated UUID; `finalize_upload` flushes the assembled bytes
@@ -222,6 +228,18 @@ struct OciMoatStore {
     /// `append_chunk` reservation so the per-tenant budget is enforced atomically
     /// with the buffer extend; pruned to zero on release.
     tenant_inflight: Mutex<HashMap<String, u64>>,
+    /// F3.2 inc6: is flag-gated cross-tenant `_public` routing of allowlisted
+    /// base layers enabled? PROD injects
+    /// [`crate::public_flags::oci_public_dedup_enabled`] (boot-read, default
+    /// OFF); tests inject a literal. When `false` this store is byte-identical
+    /// to the per-tenant-only pre-inc6 behavior (the whole WP is a no-op).
+    dedup: bool,
+    /// The owner-curated, digest-pinned public-base allowlist consulted ONLY
+    /// when `dedup` is on. Fail-CLOSED: a malformed baked manifest degrades to
+    /// deny-all (empty), never a partially-trusted set. Contains LAYER-blob
+    /// digests only, so manifests/config objects can never match → never route
+    /// to `_public`.
+    allowlist: PublicBaseAllowlist,
 }
 
 impl std::fmt::Debug for OciMoatStore {
@@ -231,13 +249,42 @@ impl std::fmt::Debug for OciMoatStore {
 }
 
 impl OciMoatStore {
-    fn new(moat: Arc<MoatCache>) -> Self {
+    /// Production constructor. `dedup` is the boot flag
+    /// ([`crate::public_flags::oci_public_dedup_enabled`]); the allowlist is the
+    /// baked owner manifest, loaded FAIL-CLOSED — a malformed manifest degrades
+    /// to deny-all (empty) rather than a partially-trusted set, so a broken
+    /// manifest can never widen the shared namespace.
+    fn new(moat: Arc<MoatCache>, dedup: bool) -> Self {
+        Self::with_allowlist(
+            moat,
+            dedup,
+            PublicBaseAllowlist::from_baked_manifest().unwrap_or_default(),
+        )
+    }
+
+    /// Constructor with an explicit allowlist. The production [`Self::new`]
+    /// delegates here with the baked manifest; tests inject a hermetic allowlist
+    /// so `_public` routing can be exercised without depending on the shipped
+    /// deny-all manifest (which never matches → dedup would silently never fire).
+    fn with_allowlist(moat: Arc<MoatCache>, dedup: bool, allowlist: PublicBaseAllowlist) -> Self {
         Self {
             moat,
             uploads: Mutex::new(HashMap::new()),
             inflight_bytes: AtomicU64::new(0),
             tenant_inflight: Mutex::new(HashMap::new()),
+            dedup,
+            allowlist,
         }
+    }
+
+    /// The SINGLE flag+allowlist predicate deciding whether a LAYER-BLOB digest
+    /// routes to the shared `_public` namespace. Used IDENTICALLY on the write
+    /// ([`BlobStore::finalize_upload`]) and read ([`BlobStore::get_blob`]) paths,
+    /// so a blob is never written to one namespace and read from another (no
+    /// split-brain). Config/manifest objects never match: the allowlist holds
+    /// only owner-pinned layer-blob digests.
+    fn routes_to_public(&self, blob_key: &str) -> bool {
+        self.dedup && self.allowlist.is_allowlisted(blob_key)
     }
 
     /// Release `bytes` from a tenant's per-tenant in-flight counter (rt-nuclear
@@ -523,20 +570,29 @@ impl BlobStore for OciMoatStore {
             .map_err(|e| {
                 format!("oci finalize: content does not match declared digest {blob_key}: {e:?}")
             })?;
-        // Persist content-addressed under the per-tenant namespace,
-        // mapping the OCI digest (`blob_key`) → blake3 content hash. Thread the
-        // RESOLVED per-tier storage cap (from the verified bearer) so the
-        // byte-accounting reservation reserves against it — a DOWNGRADED tenant
-        // pushing exclusively over OCI is rejected once over the resolved cap,
-        // and an indeterminate cap (`None`) fails CLOSED on an unseeded tenant
-        // (mirrors native).
+        // Persist content-addressed, mapping the OCI digest (`blob_key`) → blake3
+        // content hash. Namespace + cap depend on the flag-gated `_public`
+        // routing decision (the SAME predicate the read path uses):
+        //   * allowlisted base layer → shared `_public`, uncapped (`Some(0)`).
+        //     This is the ONLY route to the uncapped quota-seed — public base
+        //     bytes are not charged to any tenant (network-effect moat). The
+        //     write-time `verify_against_bytes` above STILL guards this path
+        //     (fail-closed; a digest-lie never reaches the shared slot).
+        //   * everything else (private layers, config objects, any blob when the
+        //     flag is OFF or the allowlist is deny-all) → PER-TENANT namespace
+        //     with the RESOLVED per-tier storage cap threaded from the verified
+        //     bearer, so a DOWNGRADED tenant is rejected once over the resolved
+        //     cap and an indeterminate cap (`None`) fails CLOSED on an unseeded
+        //     tenant (mirrors native). This introduces NO new `_public` writer:
+        //     it only ROUTES this existing tenant write to the shared namespace.
+        let tenant_ns = tenant.to_canonical_text();
+        let (namespace, cap) = if self.routes_to_public(blob_key) {
+            (PUBLIC_NAMESPACE, Some(0))
+        } else {
+            (tenant_ns.as_str(), storage_cap_bytes)
+        };
         self.moat
-            .put(
-                &tenant.to_canonical_text(),
-                blob_key,
-                session.buf,
-                storage_cap_bytes,
-            )
+            .put(namespace, blob_key, session.buf, cap)
             .await
             .map_err(|e| match e {
                 MoatError::Backend(m) => m,
@@ -565,6 +621,25 @@ impl BlobStore for OciMoatStore {
     }
 
     async fn get_blob(&self, tenant: &TenantId, blob_key: &str) -> PortResult<Option<Bytes>> {
+        // Flag-gated `_public` read routing, using the IDENTICAL predicate as the
+        // write path so the read namespace always matches the write namespace for
+        // a given digest (no split-brain). For an allowlisted base layer: read
+        // shared `_public` FIRST; on a miss fall back to the per-tenant namespace
+        // (a copy pushed before the digest was allowlisted, or a same-hash private
+        // blob), then 404. We do NOT fetch upstream on a miss here — read
+        // pull-through promotion is WP-G, a later stacked change.
+        if self.routes_to_public(blob_key) {
+            if let Some(v) =
+                self.moat
+                    .get(PUBLIC_NAMESPACE, blob_key)
+                    .await
+                    .map_err(|e| match e {
+                        MoatError::Backend(m) => m,
+                    })?
+            {
+                return Ok(Some(Bytes::from(v)));
+            }
+        }
         self.moat
             .get(&tenant.to_canonical_text(), blob_key)
             .await
@@ -732,7 +807,10 @@ pub fn router(
         map,
         OCI_SERVICE_PRINCIPAL,
     ));
-    let cas: Arc<dyn BlobStore> = Arc::new(OciMoatStore::new(moat));
+    let cas: Arc<dyn BlobStore> = Arc::new(OciMoatStore::new(
+        moat,
+        crate::public_flags::oci_public_dedup_enabled(),
+    ));
     let resolver: Arc<dyn TenantResolver> = Arc::new(OciPatResolver {
         verifier,
         cap_resolver,
@@ -1437,7 +1515,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             "oci-test",
         ));
-        let store = OciMoatStore::new(moat);
+        let store = OciMoatStore::new(moat, false);
         let tenant = TenantId::from_uuid(Uuid::from_u128(0xC));
         let uuid = store.open_upload(&tenant).await.unwrap();
         store
@@ -1473,7 +1551,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             "oci-test",
         ));
-        let store = OciMoatStore::new(moat);
+        let store = OciMoatStore::new(moat, false);
         let tenant_a = TenantId::from_uuid(Uuid::from_u128(0xA));
         let tenant_b = TenantId::from_uuid(Uuid::from_u128(0xB));
 
@@ -1530,7 +1608,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             "oci-cap-test",
         ));
-        (OciMoatStore::new(moat), byte_store, region)
+        (OciMoatStore::new(moat, false), byte_store, region)
     }
 
     /// Push a blob of `len` bytes through open→append→finalize under `cap`.
@@ -1554,6 +1632,335 @@ mod tests {
             .finalize_upload(tenant, &uuid, &digest.to_wire(), cap)
             .await
             .map(|_| ())
+    }
+
+    // ── F3.2 inc6 (WP-B): flag-gated `_public` routing of allowlisted base
+    //    layers ─────────────────────────────────────────────────────────────
+    //
+    // These prove the routing contract WITHOUT `env::set_var` (the flag is a
+    // constructor param) and WITHOUT the shipped deny-all manifest (tests inject
+    // a hermetic allowlist via `with_allowlist`, whose only production consumer is
+    // `OciMoatStore::new`).
+
+    /// The `sha256:<hex>` wire digest of `bytes` — the exact string the allowlist
+    /// must contain for `routes_to_public` to fire.
+    fn digest_wire(bytes: &[u8]) -> String {
+        corelink_adapter_host::oci::digest::OciDigest::compute(
+            corelink_adapter_host::oci::digest::OciDigestAlgo::Sha256,
+            bytes,
+        )
+        .expect("sha256 digest computes")
+        .to_wire()
+    }
+
+    /// Push explicit `bytes` (so the digest is predictable/allowlistable) through
+    /// open→append→finalize under `cap`. Returns the digest wire string.
+    async fn push_bytes(
+        store: &OciMoatStore,
+        tenant: &TenantId,
+        bytes: &[u8],
+        cap: Option<i64>,
+    ) -> Result<String, String> {
+        let wire = digest_wire(bytes);
+        let uuid = store.open_upload(tenant).await?;
+        store
+            .append_chunk(tenant, &uuid, Bytes::copy_from_slice(bytes))
+            .await?;
+        store
+            .finalize_upload(tenant, &uuid, &wire, cap)
+            .await
+            .map(|_| wire)
+    }
+
+    /// A dedup-configurable `OciMoatStore` over a `StubCas` + an inspectable
+    /// `FakeMap`, so a test can COUNT rows per namespace (`_public` vs
+    /// per-tenant) after a push. `StubCas` is non-verifying, but the moat still
+    /// content-addresses with the real blake3 hasher, so identical bytes dedup.
+    fn dedup_store(dedup: bool, allowlist: PublicBaseAllowlist) -> (OciMoatStore, Arc<FakeMap>) {
+        let cas = Arc::new(StubCas::default());
+        let map = Arc::new(FakeMap::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::clone(&map) as Arc<dyn UrlMapStore>,
+            "oci-dedup-test",
+        ));
+        (OciMoatStore::with_allowlist(moat, dedup, allowlist), map)
+    }
+
+    /// Count url→hash map rows whose namespace == `ns`.
+    fn rows_in_ns(map: &FakeMap, ns: &str) -> usize {
+        map.0
+            .lock()
+            .unwrap()
+            .keys()
+            .filter(|(n, _)| n == ns)
+            .count()
+    }
+
+    /// An accounting-backed dedup store (real byte reservation), so the quota
+    /// test can assert the per-tenant counter moves (private) or not (public).
+    fn accounting_dedup_store(
+        allowlist: PublicBaseAllowlist,
+    ) -> (
+        OciMoatStore,
+        Arc<crate::byte_accounting::testing::InMemoryByteStore>,
+        String,
+    ) {
+        use crate::byte_accounting::{
+            testing::InMemoryByteStore, AccountingCasHandler, ByteAccountant,
+        };
+        let inner = Arc::new(StubCas::default());
+        let byte_store = Arc::new(InMemoryByteStore::new());
+        let region = "iad".to_owned();
+        let accountant = Arc::new(ByteAccountant::new(byte_store.clone(), region.clone()));
+        let acct = Arc::new(AccountingCasHandler::new(
+            Arc::clone(&inner) as Arc<dyn CasWriteHandler>,
+            Arc::clone(&inner) as Arc<dyn corelink_handler_cas::CasDeleteHandler>,
+            accountant,
+        ));
+        let moat = Arc::new(MoatCache::production(
+            inner as Arc<dyn CasReadHandler>,
+            acct as Arc<dyn CasWriteHandler>,
+            Arc::new(FakeMap::default()),
+            "oci-dedup-cap-test",
+        ));
+        (
+            OciMoatStore::with_allowlist(moat, true, allowlist),
+            byte_store,
+            region,
+        )
+    }
+
+    #[tokio::test]
+    async fn inc6_two_tenants_same_allowlisted_base_share_one_public_row() {
+        // DoD: two DISTINCT tenants push the SAME allowlisted base layer → exactly
+        // ONE shared `_public` row (cross-tenant content dedup — the moat).
+        let base = b"alpine-3.20-base-layer-bytes".as_slice();
+        let wire = digest_wire(base);
+        let allowlist = PublicBaseAllowlist::parse(&wire).expect("valid digest allowlist");
+        let (store, map) = dedup_store(true, allowlist);
+
+        let ta = TenantId::from_uuid(Uuid::from_u128(0xA1));
+        let tb = TenantId::from_uuid(Uuid::from_u128(0xB2));
+        let wa = push_bytes(&store, &ta, base, Some(0)).await.unwrap();
+        let wb = push_bytes(&store, &tb, base, Some(0)).await.unwrap();
+        assert_eq!(wa, wb, "same bytes → same digest");
+
+        assert_eq!(
+            rows_in_ns(&map, PUBLIC_NAMESPACE),
+            1,
+            "two tenants pushing the same allowlisted base must share ONE `_public` row"
+        );
+        assert_eq!(
+            rows_in_ns(&map, &ta.to_canonical_text()),
+            0,
+            "an allowlisted base must NOT also occupy a per-tenant row"
+        );
+        assert_eq!(rows_in_ns(&map, &tb.to_canonical_text()), 0);
+        // Both tenants read the shared bytes back.
+        assert_eq!(
+            store.get_blob(&ta, &wire).await.unwrap().as_deref(),
+            Some(base)
+        );
+        assert_eq!(
+            store.get_blob(&tb, &wire).await.unwrap().as_deref(),
+            Some(base)
+        );
+    }
+
+    #[tokio::test]
+    async fn inc6_private_layer_stays_per_tenant() {
+        // DoD: a private (non-allowlisted) layer is NEVER shared — one row per
+        // tenant, nothing in `_public`, even with the flag ON.
+        let private = b"proprietary-secret-layer".as_slice();
+        // Allowlist a DIFFERENT digest so the flag is on but this blob misses it.
+        let other = digest_wire(b"some-unrelated-allowlisted-base");
+        let allowlist = PublicBaseAllowlist::parse(&other).unwrap();
+        let (store, map) = dedup_store(true, allowlist);
+
+        let ta = TenantId::from_uuid(Uuid::from_u128(0xA1));
+        let tb = TenantId::from_uuid(Uuid::from_u128(0xB2));
+        push_bytes(&store, &ta, private, Some(1_000)).await.unwrap();
+        push_bytes(&store, &tb, private, Some(1_000)).await.unwrap();
+
+        assert_eq!(
+            rows_in_ns(&map, PUBLIC_NAMESPACE),
+            0,
+            "a non-allowlisted private layer must never reach `_public`"
+        );
+        assert_eq!(rows_in_ns(&map, &ta.to_canonical_text()), 1);
+        assert_eq!(rows_in_ns(&map, &tb.to_canonical_text()), 1);
+    }
+
+    #[tokio::test]
+    async fn inc6_write_namespace_equals_read_namespace_no_split_brain() {
+        // DoD (parity / split-brain): the SAME predicate guards write and read.
+        // (1) An allowlisted push lands ONLY in `_public` (no per-tenant row), yet
+        //     get_blob still returns it → the read resolved `_public`, matching the
+        //     write. (2) The predicate is stable across paths and gated by BOTH the
+        //     flag and the allowlist. (3) `_public` miss falls back to per-tenant.
+        let base = b"parity-base-layer".as_slice();
+        let wire = digest_wire(base);
+        let other = digest_wire(b"not-this-one");
+        let allowlist = PublicBaseAllowlist::parse(&wire).unwrap();
+
+        // Shared moat so an off-store per-tenant write is visible to an on-store
+        // read (fallback proof).
+        let cas = Arc::new(StubCas::default());
+        let map = Arc::new(FakeMap::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::clone(&map) as Arc<dyn UrlMapStore>,
+            "oci-parity-test",
+        ));
+        let on = OciMoatStore::with_allowlist(Arc::clone(&moat), true, allowlist.clone());
+        let off = OciMoatStore::with_allowlist(Arc::clone(&moat), false, allowlist);
+
+        // Predicate parity: identical decision on both paths; gated by flag AND
+        // allowlist.
+        assert!(on.routes_to_public(&wire), "flag on + allowlisted ⇒ public");
+        assert!(
+            !on.routes_to_public(&other),
+            "flag on + not-allowlisted ⇒ tenant"
+        );
+        assert!(
+            !off.routes_to_public(&wire),
+            "flag off ⇒ tenant even if allowlisted"
+        );
+
+        let t = TenantId::from_uuid(Uuid::from_u128(0xC3));
+        push_bytes(&on, &t, base, Some(0)).await.unwrap();
+        assert_eq!(rows_in_ns(&map, PUBLIC_NAMESPACE), 1);
+        assert_eq!(
+            rows_in_ns(&map, &t.to_canonical_text()),
+            0,
+            "write went to `_public` only; the read must find it there, not per-tenant"
+        );
+        assert_eq!(on.get_blob(&t, &wire).await.unwrap().as_deref(), Some(base));
+
+        // Fallback: an allowlisted digest present ONLY per-tenant (written when the
+        // flag was off) is still served by an on-store read via the per-tenant
+        // fallback after the `_public` miss — WITHOUT fetching upstream.
+        let legacy = b"allowlisted-but-written-per-tenant".as_slice();
+        let legacy_wire = digest_wire(legacy);
+        // Extend the allowlist to cover the legacy digest too.
+        let al2 = PublicBaseAllowlist::parse(&format!("{wire}\n{legacy_wire}")).unwrap();
+        let on2 = OciMoatStore::with_allowlist(Arc::clone(&moat), true, al2);
+        let tl = TenantId::from_uuid(Uuid::from_u128(0xC4));
+        push_bytes(&off, &tl, legacy, Some(1_000)).await.unwrap();
+        assert_eq!(rows_in_ns(&map, &tl.to_canonical_text()), 1);
+        assert_eq!(
+            on2.get_blob(&tl, &legacy_wire).await.unwrap().as_deref(),
+            Some(legacy),
+            "`_public` miss must fall back to the per-tenant namespace"
+        );
+    }
+
+    #[tokio::test]
+    async fn inc6_non_allowlisted_write_is_per_tenant_and_quota_charged() {
+        // DoD: a non-allowlisted push charges the tenant's quota and is capped;
+        // an allowlisted push is the ONLY route to the uncapped (`Some(0)`) seed —
+        // it does NOT charge the tenant even far past its cap.
+        let base = b"uncapped-allowlisted-base".as_slice();
+        let base_wire = digest_wire(base);
+        let allowlist = PublicBaseAllowlist::parse(&base_wire).unwrap();
+        let (store, byte_store, region) = accounting_dedup_store(allowlist);
+
+        let tenant = TenantId::from_uuid(Uuid::from_u128(0xD00D));
+        let t_text = tenant.to_canonical_text();
+        let cap = Some(10i64);
+
+        // Private 5-byte push (≤10) → per-tenant, quota charged.
+        push_bytes(&store, &tenant, b"12345", cap)
+            .await
+            .expect("under-cap private push succeeds");
+        assert_eq!(
+            byte_store.used(&t_text, &region),
+            5,
+            "a private layer must charge the tenant's quota"
+        );
+        // Private 20-byte push (>10) → REJECTED by the resolved cap.
+        let err = push_bytes(&store, &tenant, &[0u8; 20], cap)
+            .await
+            .expect_err("over-cap private push is rejected");
+        assert!(
+            err.contains(crate::byte_accounting::OVER_CAP_SENTINEL),
+            "over-cap private push must carry the 402 sentinel; got: {err}"
+        );
+        assert_eq!(
+            byte_store.used(&t_text, &region),
+            5,
+            "rejected push moved nothing"
+        );
+
+        // Allowlisted 1000-byte base at the SAME tiny cap → SUCCEEDS (routes to
+        // `_public`, uncapped `Some(0)`); charges `_public`, not the tenant.
+        push_bytes(&store, &tenant, base, cap)
+            .await
+            .expect("allowlisted base bypasses the per-tenant cap (uncapped `_public`)");
+        assert_eq!(
+            byte_store.used(&t_text, &region),
+            5,
+            "the allowlisted base must NOT charge the tenant (uncapped path) — the ONLY \
+             route to the uncapped `Some(0)` seed is an `is_allowlisted` hit"
+        );
+    }
+
+    #[tokio::test]
+    async fn inc6_config_object_never_lands_in_public() {
+        // DoD: manifests/config objects NEVER route to `_public` — only layer-blob
+        // digests are allowlisted, so a config blob's digest can never match, even
+        // with the flag ON and a valid layer allowlisted.
+        let layer = b"a-real-allowlisted-layer".as_slice();
+        let layer_wire = digest_wire(layer);
+        let config = br#"{"architecture":"amd64","os":"linux"}"#.as_slice();
+        let config_wire = digest_wire(config);
+        let allowlist = PublicBaseAllowlist::parse(&layer_wire).unwrap();
+        let (store, map) = dedup_store(true, allowlist);
+
+        // The layer routes public; the config (never an allowlist entry) does not.
+        assert!(store.routes_to_public(&layer_wire));
+        assert!(
+            !store.routes_to_public(&config_wire),
+            "a config/manifest digest is never a layer-blob allowlist entry"
+        );
+
+        let t = TenantId::from_uuid(Uuid::from_u128(0xE5));
+        push_bytes(&store, &t, config, Some(1_000)).await.unwrap();
+        assert_eq!(
+            rows_in_ns(&map, PUBLIC_NAMESPACE),
+            0,
+            "a config object must never land in `_public`"
+        );
+        assert_eq!(
+            rows_in_ns(&map, &t.to_canonical_text()),
+            1,
+            "the config object stays per-tenant"
+        );
+    }
+
+    #[tokio::test]
+    async fn inc6_flag_off_is_inert_no_op() {
+        // Binding invariant: flag OFF ⇒ the whole WP is INERT — even an allowlisted
+        // base stays per-tenant (byte-identical to pre-inc6). Proves the no-op.
+        let base = b"would-be-shared-base".as_slice();
+        let wire = digest_wire(base);
+        let allowlist = PublicBaseAllowlist::parse(&wire).unwrap();
+        let (store, map) = dedup_store(false, allowlist);
+
+        let ta = TenantId::from_uuid(Uuid::from_u128(0xA1));
+        let tb = TenantId::from_uuid(Uuid::from_u128(0xB2));
+        push_bytes(&store, &ta, base, Some(1_000)).await.unwrap();
+        push_bytes(&store, &tb, base, Some(1_000)).await.unwrap();
+        assert_eq!(
+            rows_in_ns(&map, PUBLIC_NAMESPACE),
+            0,
+            "flag OFF ⇒ nothing may reach `_public`, even an allowlisted digest"
+        );
+        assert_eq!(rows_in_ns(&map, &ta.to_canonical_text()), 1);
+        assert_eq!(rows_in_ns(&map, &tb.to_canonical_text()), 1);
     }
 
     #[tokio::test]
@@ -1621,7 +2028,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             "oci-test-cap",
         ));
-        let store = OciMoatStore::new(moat);
+        let store = OciMoatStore::new(moat, false);
         let tenant_a = TenantId::from_uuid(Uuid::from_u128(0xAA));
         let tenant_b = TenantId::from_uuid(Uuid::from_u128(0xBB));
 
@@ -1787,7 +2194,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             "oci-test-ceiling",
         ));
-        let store = OciMoatStore::new(moat);
+        let store = OciMoatStore::new(moat, false);
         let tenant = TenantId::from_uuid(Uuid::from_u128(0xCE117));
 
         let uuid = store.open_upload(&tenant).await.unwrap();
@@ -1833,7 +2240,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             "oci-test-per-tenant",
         ));
-        let store = OciMoatStore::new(moat);
+        let store = OciMoatStore::new(moat, false);
         let hog = TenantId::from_uuid(Uuid::from_u128(0x803));
         let victim = TenantId::from_uuid(Uuid::from_u128(0x71C7100));
 
@@ -1907,7 +2314,7 @@ mod tests {
             Arc::new(FakeMap::default()),
             "oci-test-reaper",
         ));
-        let store = OciMoatStore::new(moat);
+        let store = OciMoatStore::new(moat, false);
         let tenant = TenantId::from_uuid(Uuid::from_u128(0xABAD1DEA));
         let tenant_text = tenant.to_canonical_text();
 
