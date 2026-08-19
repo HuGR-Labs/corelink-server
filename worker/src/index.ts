@@ -25,6 +25,8 @@ import { scrubSentryEvent } from "./sentry-scrub.js";
 import { CoreLinkServer } from "./durable_object.js";
 import { RolloutController } from "./rollout_controller.js";
 import { EventLogDO } from "./event_log_do.js";
+import { RequestMeterCoordinatorDO } from "./request_meter_coordinator_do.js";
+import { RequestMeterShardDO } from "./request_meter_shard_do.js";
 import {
   runQuotaBatch,
   requestCapResultForCount,
@@ -89,6 +91,14 @@ export interface Env {
   // `[[durable_objects.bindings]]` (name = "REPLICATION_COORDINATOR_DO").
   // Optional so existing test envs that omit it still typecheck.
   REPLICATION_COORDINATOR_DO?: DurableObjectNamespace;
+  // P3 edge-local request-metering DOs (ACCEPTED, docs/design/2026-08-19-adr-edge-
+  // local-do-request-metering.md). RequestMeterCoordinatorDO — 1/tenant, the
+  // monthly-cap token-lease authority; RequestMeterShardDO — 1/(tenant,region),
+  // the edge-local lease balance. Bound in wrangler.toml but INERT until the
+  // per-region EDGE_DO_METER flag is flipped; optional so envs that omit them (and
+  // test envs) still typecheck.
+  REQUEST_METER_COORDINATOR_DO?: DurableObjectNamespace;
+  REQUEST_METER_SHARD_DO?: DurableObjectNamespace;
   ENVIRONMENT: string;
   // D1 CONFIG_DB — control-plane database. Holds the `pat` table queried
   // during PAT validation (WP-A1). Bound in wrangler.toml `[[d1_databases]]`.
@@ -3835,7 +3845,14 @@ const handler = Sentry.withSentry(
 ) as ExportedHandler<Env>;
 
 export default handler;
-export { CoreLinkServer, RolloutController, EventLogDO, ReplicationCoordinatorDO };
+export {
+  CoreLinkServer,
+  RolloutController,
+  EventLogDO,
+  ReplicationCoordinatorDO,
+  RequestMeterCoordinatorDO,
+  RequestMeterShardDO,
+};
 
 /**
  * Whether an internal route participates in the GDPR cross-residency erase

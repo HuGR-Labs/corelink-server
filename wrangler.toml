@@ -230,6 +230,27 @@ class_name = "ReplicationCoordinatorDO"
 tag = "v4"
 new_sqlite_classes = ["ReplicationCoordinatorDO"]
 
+# P3 edge-local request metering (ACCEPTED, docs/design/2026-08-19-adr-edge-local-do-
+# request-metering.md). Two SQLite-backed DOs, INERT until the per-region
+# EDGE_DO_METER flag is flipped: RequestMeterCoordinatorDO — 1/tenant
+# (idFromName(tenant_id)), the authoritative monthly-cap token-lease coordinator;
+# RequestMeterShardDO — 1/(tenant,region) (idFromName(tenant + ":" + region)), the
+# edge-local lease balance debited per request. Classes exported from
+# worker/src/index.ts; cores in worker/src/lib/request_meter_lease.ts +
+# request_meter_shard.ts. Bound (and migrated) in every environment so the flip is a
+# var change with no infra step; with EDGE_DO_METER unset no instance is ever created.
+[[durable_objects.bindings]]
+name = "REQUEST_METER_COORDINATOR_DO"
+class_name = "RequestMeterCoordinatorDO"
+
+[[durable_objects.bindings]]
+name = "REQUEST_METER_SHARD_DO"
+class_name = "RequestMeterShardDO"
+
+[[migrations]]
+tag = "v5"
+new_sqlite_classes = ["RequestMeterCoordinatorDO", "RequestMeterShardDO"]
+
 # Vars não-secretas
 [vars]
 ENVIRONMENT = "dev"
@@ -519,6 +540,15 @@ class_name = "EventLogDO"
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
 
+# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+[[env.prod.durable_objects.bindings]]
+name = "REQUEST_METER_COORDINATOR_DO"
+class_name = "RequestMeterCoordinatorDO"
+
+[[env.prod.durable_objects.bindings]]
+name = "REQUEST_METER_SHARD_DO"
+class_name = "RequestMeterShardDO"
+
 # ============================================================================
 # R2-10 — Staging environment (`wrangler deploy --env staging`).
 #
@@ -634,6 +664,15 @@ class_name = "EventLogDO"
 [[env.staging.durable_objects.bindings]]
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
+
+# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+[[env.staging.durable_objects.bindings]]
+name = "REQUEST_METER_COORDINATOR_DO"
+class_name = "RequestMeterCoordinatorDO"
+
+[[env.staging.durable_objects.bindings]]
+name = "REQUEST_METER_SHARD_DO"
+class_name = "RequestMeterShardDO"
 
 [[env.staging.containers]]
 class_name = "CoreLinkServer"
@@ -810,6 +849,15 @@ class_name = "EventLogDO"
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
 
+# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+[[env.prod-sam.durable_objects.bindings]]
+name = "REQUEST_METER_COORDINATOR_DO"
+class_name = "RequestMeterCoordinatorDO"
+
+[[env.prod-sam.durable_objects.bindings]]
+name = "REQUEST_METER_SHARD_DO"
+class_name = "RequestMeterShardDO"
+
 [[env.prod-sam.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:77c371f8-r1"
@@ -955,6 +1003,15 @@ class_name = "EventLogDO"
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
 
+# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+[[env.prod-lhr.durable_objects.bindings]]
+name = "REQUEST_METER_COORDINATOR_DO"
+class_name = "RequestMeterCoordinatorDO"
+
+[[env.prod-lhr.durable_objects.bindings]]
+name = "REQUEST_METER_SHARD_DO"
+class_name = "RequestMeterShardDO"
+
 [[env.prod-lhr.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:77c371f8-r1"
@@ -1094,6 +1151,15 @@ class_name = "EventLogDO"
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
 
+# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+[[env.prod-nrt.durable_objects.bindings]]
+name = "REQUEST_METER_COORDINATOR_DO"
+class_name = "RequestMeterCoordinatorDO"
+
+[[env.prod-nrt.durable_objects.bindings]]
+name = "REQUEST_METER_SHARD_DO"
+class_name = "RequestMeterShardDO"
+
 [[env.prod-nrt.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:77c371f8-r1"
@@ -1228,6 +1294,15 @@ class_name = "EventLogDO"
 [[env.prod-syd.durable_objects.bindings]]
 name = "REPLICATION_COORDINATOR_DO"
 class_name = "ReplicationCoordinatorDO"
+
+# P3 metering DOs (INERT until EDGE_DO_METER flip) — see base bindings.
+[[env.prod-syd.durable_objects.bindings]]
+name = "REQUEST_METER_COORDINATOR_DO"
+class_name = "RequestMeterCoordinatorDO"
+
+[[env.prod-syd.durable_objects.bindings]]
+name = "REQUEST_METER_SHARD_DO"
+class_name = "RequestMeterShardDO"
 
 [[env.prod-syd.containers]]
 class_name = "CoreLinkServer"
