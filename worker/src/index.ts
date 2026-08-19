@@ -2383,10 +2383,26 @@ const baseHandler: ExportedHandler<Env> = {
         }
         const revokeKv = (env as unknown as { METADATA_KV?: KvReader }).METADATA_KV;
         if (internalResp.ok && revokeKv) {
+          // Mark the brew/pip edge `pubblock:<hash>` KV from the RESOLVED
+          // content_hash the container returns in its RESPONSE — authoritative for
+          // BOTH revoke spaces. Parsing the REQUEST body (as before) missed the
+          // revoke-by-`upstream_digest` incident path, whose request carries no
+          // `content_hash`, leaving poisoned brew/pip bytes edge-serving for up to
+          // ~60 s after an authoritative container revoke (finding F-1). Buffer the
+          // body and rebuild the Response so the client leg below still streams it.
+          let respText = "";
           try {
-            const parsed = JSON.parse(new TextDecoder().decode(revokeBody)) as {
-              content_hash?: unknown;
-            };
+            respText = await internalResp.text();
+          } catch {
+            respText = "";
+          }
+          internalResp = new Response(respText, {
+            status: internalResp.status,
+            statusText: internalResp.statusText,
+            headers: internalResp.headers,
+          });
+          try {
+            const parsed = JSON.parse(respText) as { content_hash?: unknown };
             const ch =
               typeof parsed.content_hash === "string"
                 ? parsed.content_hash.toLowerCase()
@@ -2395,8 +2411,8 @@ const baseHandler: ExportedHandler<Env> = {
               ctx.waitUntil(writePublicBlocklistKv(revokeKv, ch));
             }
           } catch {
-            // Body was not the expected {content_hash} JSON — the container still
-            // revoked authoritatively; the edge falls back to the ~60s map window.
+            // Response was not the expected {content_hash} JSON — the container
+            // still revoked authoritatively; the edge falls back to the ~60 s map window.
           }
         }
       } else {
