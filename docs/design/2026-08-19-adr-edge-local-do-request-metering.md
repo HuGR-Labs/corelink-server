@@ -1,7 +1,8 @@
 # ADR — Edge-local per-tenant request metering via Durable Objects (P3)
 
 - Status: **ACCEPTED (2026-08-19)** — owner chose **D-edge**, engineered as a strict hierarchical
-  token-lease (over-serve = 0, under-serve = 0). See the "DECISION" section at the end. Implementation
+  token-lease (over-serve = 0 STRICT; under-serve bounded ≤ #regions·block, → ~0 via idle reclaim —
+  corrected from the initial "under-serve = 0", see the lease-accounting core). See "DECISION". Implementation
   is now schedulable (build-inert; nothing goes live without the owner's per-region flip).
 - Date: 2026-08-19
 - Area: billing / quota / multi-region hot path
@@ -147,7 +148,7 @@ before scheduling.
 Owner chose **D-edge** (edge-local) over the D-exact recommendation. Engineering refinement (mine,
 within the product choice): D-edge is realised as a **hierarchical token-lease** (distributed
 token-bucket with local leases), NOT the simpler headroom-redistribution variant §4 sketched — the
-token-lease keeps the §2 invariant **strict (over-serve = 0 AND under-serve = 0)** while still
+token-lease keeps the §2 invariant **strict on the load-bearing side (over-serve = 0)** while still
 serving every request edge-locally. What the owner actually trades for edge-locality is therefore
 **more complexity, not cap leakage.**
 
@@ -168,8 +169,11 @@ serving every request edge-locally. What the owner actually trades for edge-loca
 - **over-serve = 0:** a shard can only serve against tokens it was leased; the coordinator's strict
   `Σleased ≤ cap` accounting means the sum of all shards' serveable tokens can never exceed the
   global cap. No composition of regions can serve past it.
-- **under-serve = 0:** any shard can refill while the coordinator has budget; a single-region-heavy
-  tenant simply refills more often from the same coordinator (no false 402 below the global cap).
+- **under-serve is BOUNDED (not 0):** a shard can refill while the coordinator has budget, but tokens
+  can sit idle as `outstanding` balance in OTHER regions — so a region can be denied while another
+  holds idle budget. Worst-case stranded ≤ #regions·block; driven → ~0 by a small block + `reclaimIdle`
+  (the coordinator reclaims an idle region's balance). Proven + characterised in
+  `worker/tests/request_meter_lease.test.ts` (this corrects the initial optimistic "under-serve = 0").
 - **the hop, honestly:** the per-request US write is gone; a **per-lease-block** coordinator hop
   remains (the coordinator is single-homed). For `L=10_000` on a 2M cap that is ~200 coordinator
   calls/month/tenant — amortised ~1/L of the old per-request cost. `L` trades hop-frequency against
