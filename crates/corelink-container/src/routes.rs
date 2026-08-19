@@ -459,7 +459,7 @@ pub(crate) fn approver_key_distinct_or_none(
     if let Some(internal) = internal_auth_key {
         // Constant-time equality; length difference short-circuits to "distinct"
         // without leaking either length via a content compare.
-        if approver.as_bytes().len() == internal.as_bytes().len()
+        if approver.len() == internal.len()
             && approver.as_bytes().ct_eq(internal.as_bytes()).unwrap_u8() == 1
         {
             tracing::error!(
