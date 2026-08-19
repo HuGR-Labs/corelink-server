@@ -9,12 +9,12 @@ source_files:
   - "worker/src/lib/tenant_suspend_gate.ts"
   - "crates/corelink-container/src/adapter_pat.rs"
 source_blobs:
-  - "worker/src/lib/internal_auth.ts@0cf740cdb227a3a163c1a92c6272e93f65cad713"
+  - "worker/src/lib/internal_auth.ts@fb27ec67f58a10c777261c7485f79baeff0965de"
   - "worker/src/index.ts@47927973dad6fe4310c2810c65d6e5d1b4b4b86c"
   - "worker/src/lib/pat_verify_cache.ts@b0dafab6381684057de4c0589b5d95d18a35c741"
   - "worker/src/lib/tenant_suspend_gate.ts@bed740c1e2a471244a2c9680fcf4f1e800f26d7c"
   - "crates/corelink-container/src/adapter_pat.rs@8fd06b24868bae17b07b9ecda569c3016038dc56"
-checkpoint_sha: "9748ac8843a2f4ed34539fae54d91be049a56083"
+checkpoint_sha: "209d3880ceefd8c9a0228b0a554e43e42fb02ca5"
 provenance: "AUTHORED"
 tags: ["auth", "pat", "security", "hot-path"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -47,23 +47,28 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - The Worker-edge internal gate compares a presented secret against the expected one in constant time,
   copying into a fixed buffer so neither length nor content leaks via an early branch — one
   `timingSafeEqual` over equal-length buffers AND a single length-equality bit
-  (`worker/src/lib/internal_auth.ts:220-235`).
+  (`worker/src/lib/internal_auth.ts:262-276`).
 - That edge gate is fail-CLOSED: an unbound or too-short secret makes the endpoint unavailable (503),
   a missing/wrong header is 401, and only an exact match returns `null` to let the caller proceed
-  (`worker/src/lib/internal_auth.ts:262-276`).
+  (`worker/src/lib/internal_auth.ts:304-316`).
 - Per-consumer key resolution is `resolveConsumerKey`, which prefers a consumer's dedicated key. A
-  genuinely UNSET dedicated key falls back to the shared secret (the common case). A dedicated key that is
-  EXPLICITLY SET but sub-floor (<32 chars) is a misconfiguration: it fails LOUD (`console.error`) +
-  fail-CLOSED (`null`, so that consumer's gate rejects until fixed) rather than silently widening the
-  consumer's blast radius to the shared key (deep-audit C/sub-floor)
-  (`worker/src/lib/internal_auth.ts:172-197`).
+  dedicated key EXPLICITLY SET but sub-floor (<32 chars) is a misconfiguration: it fails LOUD
+  (`console.error`) + fail-CLOSED (`null`, so that consumer's gate rejects until fixed) rather than
+  silently widening the consumer's blast radius to the shared key (deep-audit C/sub-floor)
+  (`worker/src/lib/internal_auth.ts:191-208`). When the dedicated key is genuinely UNSET the fallback now
+  SPLITS by consumer: a DEDICATED-REQUIRED consumer — currently `quota_read`, listed in the
+  `DEDICATED_REQUIRED_CONSUMERS` set (`worker/src/lib/internal_auth.ts:154-156`) — fails CLOSED (`null`,
+  logged) rather than degrade to the broad shared `CORELINK_INTERNAL_AUTH_KEY`, closing the
+  shared-master-amplifier where one leaked shared secret would read any tenant's quota
+  (`worker/src/lib/internal_auth.ts:223-231`); every other (shared-allowed) consumer such as `admin`
+  still falls back to the shared key when it is ≥floor (`worker/src/lib/internal_auth.ts:232-237`).
 - The internal consumers now split the DSR surface into TWO authorities. The irreversible physical-erase
   cascade (`/_internal/dsr/*`) gates on the `erase` key, but the per-user DSR legitimacy ANCHOR
   (`/_internal/dsr/anchor`) resolves its OWN dedicated `dsr_anchor` consumer key
   (`CORELINK_DSR_ANCHOR_AUTH_KEY`, held by githugr and DISTINCT from the eraser's key): it is matched by
   an exact-path special-case in `internalConsumerForPath` placed BEFORE the `/_internal/dsr/*` erase
   catch-all (`worker/src/index.ts:424-426`) and resolved by the `dsr_anchor` branch of the
-  consumer-key ternary (`worker/src/lib/internal_auth.ts:167-168`). This is an anti-forge two-authority
+  consumer-key ternary (`worker/src/lib/internal_auth.ts:186-187`). This is an anti-forge two-authority
   split — a leaked erase key cannot pass the anchor gate and vice-versa (least privilege, A6).
 - In the container the **first** verification step is the HMAC fast-reject: the plaintext is parsed and
   a bad signature is rejected pre-D1, so a forged token drives no D1 cost and consumes no Argon2id
@@ -134,10 +139,10 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 - A token that fails the cheap HMAC fast-reject NEVER reaches the Argon2id layer
   (`crates/corelink-container/src/adapter_pat.rs:1509-1510`).
 - Both layers are constant-time with no length or content oracle — the edge compare
-  (`worker/src/lib/internal_auth.ts:220-235`) and the uniform `InvalidPat` collapse in the container
+  (`worker/src/lib/internal_auth.ts:262-276`) and the uniform `InvalidPat` collapse in the container
   (`crates/corelink-container/src/adapter_pat.rs:56-60`).
 - The edge gate fails CLOSED: an unbound/short secret is unavailable, never an open gate
-  (`worker/src/lib/internal_auth.ts:262-276`).
+  (`worker/src/lib/internal_auth.ts:304-316`).
 - The edge PAT-verify cache keeps D1 the source-of-truth (INV-AUTH-NEON-IS-SOT): NEGATIVES are never
   cached in EITHER L1 or L2 KV, so a freshly-minted token authenticates immediately — a KV miss falls
   through to D1 and its replica MISS is re-confirmed on the primary (read-after-write freshness) — and a
@@ -216,10 +221,10 @@ lookup fails **closed** but maps to a retryable **503**, not a 401 — a DB hicc
 
 # Citations
 
-1. `worker/src/lib/internal_auth.ts:220-235` — the edge constant-time secret compare with no length oracle.
-2. `worker/src/lib/internal_auth.ts:262-276` — the fail-CLOSED edge gate (503 unbound / 401 wrong / `null` pass).
-2a. `worker/src/lib/internal_auth.ts:172-197` — `resolveConsumerKey`: prefers a consumer's dedicated key; a SET-but-sub-floor (<32-char) dedicated key fails LOUD + fail-CLOSED (null) instead of silently widening to the shared key (deep-audit C/sub-floor); a genuinely UNSET dedicated key still falls back to shared.
-2b. `worker/src/lib/internal_auth.ts:167-168` — the `dsr_anchor` branch of the consumer-key ternary (`CORELINK_DSR_ANCHOR_AUTH_KEY`).
+1. `worker/src/lib/internal_auth.ts:262-276` — the edge constant-time secret compare with no length oracle.
+2. `worker/src/lib/internal_auth.ts:304-316` — the fail-CLOSED edge gate (503 unbound / 401 wrong / `null` pass).
+2a. `worker/src/lib/internal_auth.ts:191-208` — `resolveConsumerKey`: prefers a consumer's dedicated key; a SET-but-sub-floor (<32-char) dedicated key fails LOUD + fail-CLOSED (null) instead of silently widening to the shared key (deep-audit C/sub-floor). On an UNSET dedicated key the fallback SPLITS: a DEDICATED-REQUIRED consumer (`quota_read`, in `DEDICATED_REQUIRED_CONSUMERS` at `worker/src/lib/internal_auth.ts:154-156`) fails CLOSED with no shared-master fallback (`worker/src/lib/internal_auth.ts:223-231`); a shared-allowed consumer (e.g. `admin`) still falls back to the shared key (`worker/src/lib/internal_auth.ts:232-237`).
+2b. `worker/src/lib/internal_auth.ts:186-187` — the `dsr_anchor` branch of the consumer-key ternary (`CORELINK_DSR_ANCHOR_AUTH_KEY`).
 2c. `worker/src/index.ts:424-426` — `internalConsumerForPath` special-cases `/_internal/dsr/anchor` → `dsr_anchor` before the `/_internal/dsr/*` erase catch-all.
 3. `crates/corelink-container/src/adapter_pat.rs:5-14` — why the container re-runs full verification (Option B).
 4. `crates/corelink-container/src/adapter_pat.rs:56-60` — uniform `InvalidPat`: no on-the-wire oracle.
