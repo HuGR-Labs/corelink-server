@@ -23,6 +23,19 @@ Each entry cross-references:
 ## [Unreleased]
 
 ### Added
+- **test(oci): F3.2 inc7 — e2e `_public` cross-tenant SAFETY invariants (WP-D).** New black-box
+  journey `tests/e2e-user-journeys/src/journeys/oci_public_isolation.rs` (registered in the runner)
+  asserting the three FLAG-INDEPENDENT cross-tenant safety properties the `OCI_PUBLIC_DEDUP_ENABLED`
+  flip must never break — true whether the flag is ON or OFF because every digest under test is
+  freshly-randomised (never allowlisted, so the dedup path is never taken): (1) **private isolation** —
+  a non-allowlisted layer pushed by tenant A is never served to tenant B even for a byte-identical
+  digest (cross-tenant blob GET → 404, never A's bytes, never a 403 existence-leak); (2) **PAT-gated** —
+  a missing or forged bearer on a `/v2/` blob op is actively rejected with a 401 (a 404 is a FAILURE:
+  gate absent ⇒ unproven), no byte leak; (3) **digest integrity** — a served blob's bytes hash to the
+  requested digest (and `Docker-Content-Digest`, when served, matches), so no substitution. The flag is
+  a prod boot var with no black-box toggle, so the journey asserts the currently-deployed (flag-OFF)
+  reality and documents inline why each assertion also holds under flag-ON. Compiles + clippy-clean;
+  runs green against a provisioned live endpoint, GATES (never fails) when creds are absent.
 - **feat(oci): F3.2 inc4b — the server-only public-base MIRROR promote path (WP-A).** Replaces the S0
   stub `handle_promote` (401/501) with the real, fail-CLOSED promote body behind
   `POST /_internal/admin/public-mirror/promote` (admin-gated, `CORELINK_PUBLIC_MIRROR_AUTH_KEY` with
