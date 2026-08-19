@@ -71,6 +71,19 @@ Each entry cross-references:
   is a lockfile-only patch bump. Ridden here to unblock the erasure-hardening PR's `cargo-deny` gate.
 
 ### Fixed
+- **fix(oci): a `_public` revoke-by-`upstream_digest` now collapses the brew/pip edge-serve window too
+  (F3.2 red-team finding F-1).** `EDGE_PUBLIC_READ="serve"` serves brew/pip `_public` cache HITs from the
+  edge, bypassing the container; the edge only drops its ≤60 s revocation window early when the Worker
+  revoke seam writes a `pubblock:<content_hash>` KV marker. That marker was written by parsing the revoke
+  REQUEST body for a bare 64-hex `content_hash` — but the documented incident path revokes by
+  `upstream_digest: "sha256:…"`, whose request carries NO `content_hash`, so the marker never fired and a
+  poisoned brew/pip blob kept edge-serving for up to ~60 s after the container authoritatively revoked. Fix:
+  `PublicRevokeResponse` now returns the RESOLVED blake3 `content_hash` (authoritative for BOTH revoke
+  spaces — raw returns it verbatim, `upstream_digest` returns what it resolved to), and the Worker seam
+  marks the edge from the RESPONSE (buffering + rebuilding it so the client leg still streams) instead of
+  the request body. OCI is never edge-served, so this only tightens the brew/pip incident control; it does
+  not change the OCI dedup flip (still inert behind `OCI_PUBLIC_DEDUP_ENABLED=OFF`). Container test asserts
+  the resolved hash is returned for both spaces; Worker change is typecheck-clean.
 - **fix(dsr): GDPR Art.17 erase 500'd for any tenant with a pending Stripe checkout session (FK delete
   order).** D1 enforces `PRAGMA foreign_keys = ON`, and `stripe_checkout_sessions` carries
   `FOREIGN KEY (tenant_id) REFERENCES tier_selections(tenant_id)`. The D1 erase adapter deletes

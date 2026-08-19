@@ -252,6 +252,14 @@ pub struct PublicRevokeResponse {
     /// Per-region R2 delete failures (reported, non-fatal — the blocklist row
     /// already guarantees the bytes are never served; a retry re-deletes).
     pub r2_delete_failures: Vec<String>,
+    /// The RESOLVED 64-hex BLAKE3 content_hash that was revoked (for BOTH revoke
+    /// spaces: the raw `content_hash` space returns it verbatim, the
+    /// `upstream_digest` space returns the hash it resolved to). The Worker
+    /// revoke seam marks the brew/pip edge `pubblock:<hash>` KV from THIS
+    /// authoritative field rather than parsing the request body, so a
+    /// revoke-by-upstream_digest collapses the edge-serve window too (finding
+    /// F-1). Always present on a 200.
+    pub content_hash: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -385,6 +393,7 @@ async fn handle_revoke(
         revoked: true,
         already_revoked,
         r2_delete_failures,
+        content_hash,
     })
     .into_response()
 }
@@ -901,6 +910,9 @@ mod tests {
         assert!(out.revoked);
         assert!(!out.already_revoked);
         assert!(out.r2_delete_failures.is_empty());
+        // F-1: the response carries the resolved content_hash so the Worker seam
+        // can mark the brew/pip edge from the RESPONSE (raw space: verbatim).
+        assert_eq!(out.content_hash, HASH);
 
         assert_eq!(store.inner.lock().await.blocklist.len(), 1);
         assert_eq!(store.inner.lock().await.map_deletes, vec![HASH.to_owned()]);
@@ -1035,6 +1047,11 @@ mod tests {
         let out = parse(resp).await;
         assert!(out.revoked);
         assert!(!out.already_revoked);
+        // F-1: the response returns the RESOLVED blake3 content_hash (NOT the
+        // sha256 upstream digest) — this is what lets the Worker seam mark the
+        // brew/pip edge `pubblock:<hash>` for the upstream_digest incident path.
+        assert_eq!(out.content_hash, HASH);
+        assert_ne!(out.content_hash, UPSTREAM_DIGEST);
         // The BLAKE3 content_hash (NOT the sha256 digest) is what got blocklisted.
         let g = store.inner.lock().await;
         assert!(g.blocklist.contains_key(HASH));
