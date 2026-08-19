@@ -27,7 +27,7 @@
 //   - re-hash-on-read is mandatory before returning bytes (poison self-heal = MISS).
 
 import { blake3Hex, blake3HexBytes } from "./blake3.js";
-import type { KvReader } from "./pat_verify_cache.js";
+import type { KvReader, D1Reader } from "./pat_verify_cache.js";
 
 /** `_public` reserved namespace — matches `adapter_cache.rs:35`. */
 export const PUBLIC_NAMESPACE = "_public";
@@ -159,7 +159,7 @@ export function publicR2Key(region: string, prefix: string, contentHash: string)
  * a miss OR a blocklisted content_hash.
  */
 export async function lookupPublicContentHash(
-  db: D1Database,
+  db: D1Reader,
   urlHash: string,
 ): Promise<string | null> {
   const row = await db
@@ -311,7 +311,7 @@ export interface MapCacheOpts {
   /** Wall-clock ms (injectable for tests). */
   readonly nowMs?: number;
   /** L3 fetch (injectable for tests); defaults to {@link lookupPublicContentHash}. */
-  readonly fetch?: (db: D1Database, urlHash: string) => Promise<string | null>;
+  readonly fetch?: (db: D1Reader, urlHash: string) => Promise<string | null>;
 }
 
 /**
@@ -321,7 +321,7 @@ export interface MapCacheOpts {
  * url_hash.
  */
 export async function lookupPublicContentHashCached(
-  db: D1Database,
+  db: D1Reader,
   urlHash: string,
   opts: MapCacheOpts = {},
 ): Promise<string | null> {
@@ -468,7 +468,19 @@ export async function readPublicHit(
   if (!urlHash) return null;
 
   // WP-C: map+blocklist gate (cached, bounded TTL = the revocation window).
-  const contentHash = await lookupPublicContentHashCached(env.CONFIG_DB, urlHash, {
+  // P1: read it through the nearest D1 read replica (`withSession`), mirroring the
+  // PAT verify path (ADR-0070, index.ts) — the map read is the last synchronous
+  // D1-PRIMARY round trip on the far-region (e.g. SAM) HIT hot path once L1+L2
+  // miss. Feature-detected: a test double / a runtime without `withSession`
+  // degrades to the primary. Correctness is unchanged — the `pubblock:` KV marker
+  // (checked below) and the D1 `public_blocklist` join remain the authoritative
+  // revocation backstops; the replica only widens the POSITIVE-map staleness by at
+  // most replica lag, already inside the ~60s map-cache TTL window (ADR-0070).
+  const mapReadDb: D1Reader =
+    typeof env.CONFIG_DB.withSession === "function"
+      ? env.CONFIG_DB.withSession("first-unconstrained")
+      : env.CONFIG_DB;
+  const contentHash = await lookupPublicContentHashCached(mapReadDb, urlHash, {
     ...(env.METADATA_KV ? { kv: env.METADATA_KV } : {}),
     ...(ctx ? { waitUntil: ctx.waitUntil.bind(ctx) } : {}),
   });
