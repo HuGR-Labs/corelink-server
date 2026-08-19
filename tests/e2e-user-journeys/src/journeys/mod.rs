@@ -36,6 +36,7 @@ pub mod edge;
 pub mod identity;
 pub mod introspect;
 pub mod oci;
+pub mod oci_public_isolation;
 pub mod pat_lifecycle;
 pub mod quota;
 pub mod runner_purchase;
@@ -61,6 +62,7 @@ pub fn all(cfg: &Config, client: &Client) -> Vec<JourneyResult> {
     out.extend(turbo::run(cfg, client));
     out.extend(adapters::run(cfg, client));
     out.extend(oci::run(cfg, client));
+    out.extend(oci_public_isolation::run(cfg, client));
     out.extend(dashboard::run(cfg, client));
     out.extend(pat_lifecycle::run(cfg, client));
     out.extend(billing::run(cfg, client));
