@@ -22,7 +22,7 @@ use std::net::IpAddr;
 /// guard closes is a redirect `Location` pointing straight at an internal IP
 /// literal.
 #[must_use]
-pub(crate) fn host_is_internal_ip(host: &str) -> bool {
+pub fn host_is_internal_ip(host: &str) -> bool {
     // `url` hands IPv6 hosts back WITHOUT the surrounding brackets; accept both.
     let stripped = host.strip_prefix('[').and_then(|h| h.strip_suffix(']'));
     let candidate = stripped.unwrap_or(host);
@@ -65,7 +65,7 @@ pub(crate) fn host_is_internal_ip(host: &str) -> bool {
 /// RFC-1918 / metadata address; this policy closes that on EVERY hop while still
 /// permitting the legitimate public-CDN 307.
 #[must_use]
-pub(crate) fn ssrf_safe_redirect_policy(max: usize) -> reqwest::redirect::Policy {
+pub fn ssrf_safe_redirect_policy(max: usize) -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(move |attempt| {
         if attempt.previous().len() >= max {
             return attempt.stop();

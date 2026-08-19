@@ -67,5 +67,8 @@ pub mod overload;
 pub mod pip;
 /// Shared SSRF guard for the read-through upstream fetchers — the single audited
 /// copy of the internal-IP classification + redirect policy brew/pip/npm (and the
-/// F3.2 public-base OCI mirror) reuse.
-pub(crate) mod upstream_ssrf;
+/// F3.2 public-base OCI mirror) reuse. `pub` (not `pub(crate)`) so the container's
+/// F3.2 inc4b public-base mirror (`corelink-container`) reuses the SAME audited
+/// guard rather than re-implementing SSRF — re-implementing it elsewhere is
+/// forbidden by the campaign contract.
+pub mod upstream_ssrf;
