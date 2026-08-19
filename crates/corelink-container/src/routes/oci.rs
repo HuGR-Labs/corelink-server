@@ -249,11 +249,14 @@ impl std::fmt::Debug for OciMoatStore {
 }
 
 impl OciMoatStore {
-    /// Production constructor. `dedup` is the boot flag
+    /// Test constructor. `dedup` is the boot flag
     /// ([`crate::public_flags::oci_public_dedup_enabled`]); the allowlist is the
     /// baked owner manifest, loaded FAIL-CLOSED — a malformed manifest degrades
     /// to deny-all (empty) rather than a partially-trusted set, so a broken
-    /// manifest can never widen the shared namespace.
+    /// manifest can never widen the shared namespace. Production wires
+    /// [`Self::with_allowlist`] directly so the allowlist instance is SHARED with
+    /// the manifest resolver (loaded once at the router).
+    #[cfg(test)]
     fn new(moat: Arc<MoatCache>, dedup: bool) -> Self {
         Self::with_allowlist(
             moat,
@@ -621,14 +624,25 @@ impl BlobStore for OciMoatStore {
     }
 
     async fn get_blob(&self, tenant: &TenantId, blob_key: &str) -> PortResult<Option<Bytes>> {
-        // Flag-gated `_public` read routing, using the IDENTICAL predicate as the
-        // write path so the read namespace always matches the write namespace for
-        // a given digest (no split-brain). For an allowlisted base layer: read
-        // shared `_public` FIRST; on a miss fall back to the per-tenant namespace
-        // (a copy pushed before the digest was allowlisted, or a same-hash private
-        // blob), then 404. We do NOT fetch upstream on a miss here — read
-        // pull-through promotion is WP-G, a later stacked change.
-        if self.routes_to_public(blob_key) {
+        // M2 `_public` READ = EXISTENCE (not allowlist). When `dedup` is on, read
+        // the shared `_public` namespace FIRST for ANY blob key, then fall back to
+        // the per-tenant namespace.
+        //
+        // Why an existence-based cross-tenant read of a content-addressed blob is
+        // SAFE: an OCI blob is ALWAYS addressed by its `sha256:` digest, so
+        // `_public`'s copy of a digest is BYTE-IDENTICAL to any private copy of
+        // the same digest — serving the shared copy leaks nothing (there is no
+        // "different tenant's bytes" for the same digest). Admission control for
+        // what may be IN `_public` is the WRITE gate (client push:
+        // `routes_to_public` = allowlist; resolver closure-promote: an allowlisted
+        // ROOT), and revocation still filters on read (`MoatCache::get` applies the
+        // `public_blocklist` for `_public`). This REPLACES the inc6 allowlist-on-read
+        // so a transitively-promoted child layer (config/layer of an allowlisted
+        // base, NOT individually allowlisted) serves cross-tenant. The WRITE path
+        // (`finalize_upload`) still gates on `routes_to_public`, so a client push
+        // to `_public` stays allowlist-gated. Under `dedup == false` (flag OFF)
+        // this is byte-identical to the pre-M2 per-tenant-only read.
+        if self.dedup {
             if let Some(v) =
                 self.moat
                     .get(PUBLIC_NAMESPACE, blob_key)
@@ -808,29 +822,39 @@ pub fn router(
         OCI_SERVICE_PRINCIPAL,
     ));
 
-    // WP-G (M1, `OCI_UPSTREAM_ON_MISS`): build the per-tenant manifest
-    // upstream-on-miss resolver ONLY when the flag is ON at boot AND the shared
-    // SSRF-safe upstream client builds; else `None` — the manifest handlers then
-    // 404 a KV miss exactly as today (flag OFF ⇒ byte-identical). It SHARES the
-    // moat (per-tenant blob persist), the manifest KV (per-tenant manifest
-    // persist), and the tenant cap resolver (fail-closed on an indeterminate
-    // cap, like `finalize_upload`). Fail-open at every step; NO `_public` writes
-    // (that is M2). Boot-read, so activation is a repin, not a live flip.
+    // Read the F3.2 cross-tenant dedup flag + load the owner-pinned allowlist
+    // ONCE, then SHARE both with the resolver (M2 `_public` closure promote /
+    // read) and the blob store (`finalize_upload` write routing). Fail-CLOSED
+    // allowlist load: a malformed baked manifest degrades to deny-all (empty).
+    let oci_dedup = crate::public_flags::oci_public_dedup_enabled();
+    let public_allowlist = PublicBaseAllowlist::from_baked_manifest().unwrap_or_default();
+
+    // WP-G (M1 `OCI_UPSTREAM_ON_MISS` + M2 `OCI_PUBLIC_DEDUP_ENABLED`): build the
+    // manifest upstream-on-miss resolver ONLY when the on-miss flag is ON at boot
+    // AND the shared SSRF-safe upstream client builds; else `None` — the manifest
+    // handlers then 404 a KV miss exactly as today (flag OFF ⇒ byte-identical). It
+    // SHARES the moat, the manifest KV, the tenant cap resolver, and (M2) the
+    // owner-pinned allowlist + the dedup flag: when dedup is ON a by-digest resolve
+    // reads / closure-promotes the shared `_public` namespace cross-tenant; when
+    // OFF it is the M1 per-tenant path only. Fail-open at every step. Boot-read, so
+    // activation is a repin, not a live flip.
     let manifest_resolver: Option<Arc<dyn ManifestResolver>> =
         if crate::public_flags::oci_upstream_on_miss() {
             crate::routes::public_pullthrough::UpstreamManifestResolver::new(
                 Arc::clone(&manifest_kv),
                 Arc::clone(&moat),
                 cap_resolver.clone(),
+                public_allowlist.clone(),
             )
             .map(|r| Arc::new(r) as Arc<dyn ManifestResolver>)
         } else {
             None
         };
 
-    let cas: Arc<dyn BlobStore> = Arc::new(OciMoatStore::new(
+    let cas: Arc<dyn BlobStore> = Arc::new(OciMoatStore::with_allowlist(
         moat,
-        crate::public_flags::oci_public_dedup_enabled(),
+        oci_dedup,
+        public_allowlist,
     ));
     let resolver: Arc<dyn TenantResolver> = Arc::new(OciPatResolver {
         verifier,
@@ -1983,6 +2007,96 @@ mod tests {
         );
         assert_eq!(rows_in_ns(&map, &ta.to_canonical_text()), 1);
         assert_eq!(rows_in_ns(&map, &tb.to_canonical_text()), 1);
+    }
+
+    // ── M2 (WP-G): `_public` READ = EXISTENCE (not allowlist) ────────────────
+
+    /// A blob present ONLY in `_public` and NOT individually allowlisted (a
+    /// transitively-promoted child layer) is served for a tenant that never
+    /// pushed it when dedup is ON (existence read); with dedup OFF, `_public` is
+    /// not consulted → per-tenant miss → `None`.
+    #[tokio::test]
+    async fn m2_existence_read_serves_public_blob_for_unpushed_tenant() {
+        let base = b"m2-transitively-promoted-child-layer".as_slice();
+        let wire = digest_wire(base);
+        let cas = Arc::new(StubCas::default());
+        let map = Arc::new(FakeMap::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::clone(&map) as Arc<dyn UrlMapStore>,
+            "oci-m2-existence-test",
+        ));
+        // Seed the blob ONLY in `_public` (as the resolver's closure promote does)
+        // — the digest is NOT on any allowlist.
+        moat.put(PUBLIC_NAMESPACE, &wire, base.to_vec(), Some(0))
+            .await
+            .unwrap();
+
+        // Empty (deny-all) allowlist → the read cannot be an allowlist hit; only
+        // the M2 existence read can serve it.
+        let store_on =
+            OciMoatStore::with_allowlist(Arc::clone(&moat), true, PublicBaseAllowlist::default());
+        let store_off =
+            OciMoatStore::with_allowlist(Arc::clone(&moat), false, PublicBaseAllowlist::default());
+        let unpushed = TenantId::from_uuid(Uuid::from_u128(0xD40D)); // never pushed
+
+        assert!(
+            !store_on.routes_to_public(&wire),
+            "the digest is NOT allowlisted — the WRITE-path predicate stays false"
+        );
+        assert_eq!(
+            store_on
+                .get_blob(&unpushed, &wire)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(base),
+            "dedup ON ⇒ the existence read serves the `_public` copy cross-tenant"
+        );
+        assert_eq!(
+            store_off.get_blob(&unpushed, &wire).await.unwrap(),
+            None,
+            "dedup OFF ⇒ `_public` is not consulted → per-tenant miss → None"
+        );
+    }
+
+    /// A `_public` MISS falls back to the per-tenant namespace for ANY blob key
+    /// (dedup ON); a different tenant that never pushed it still gets `None`.
+    #[tokio::test]
+    async fn m2_existence_read_falls_back_to_per_tenant_on_public_miss() {
+        let private = b"m2-private-only-layer".as_slice();
+        let wire = digest_wire(private);
+        let cas = Arc::new(StubCas::default());
+        let map = Arc::new(FakeMap::default());
+        let moat = Arc::new(MoatCache::production(
+            Arc::clone(&cas) as Arc<dyn CasReadHandler>,
+            cas as Arc<dyn CasWriteHandler>,
+            Arc::clone(&map) as Arc<dyn UrlMapStore>,
+            "oci-m2-fallback-test",
+        ));
+        let owner = TenantId::from_uuid(Uuid::from_u128(0xE60E));
+        // Seed ONLY in the owner's per-tenant namespace (nothing in `_public`).
+        moat.put(&owner.to_canonical_text(), &wire, private.to_vec(), Some(0))
+            .await
+            .unwrap();
+
+        let store =
+            OciMoatStore::with_allowlist(Arc::clone(&moat), true, PublicBaseAllowlist::default());
+        // Owner: `_public` miss → per-tenant hit.
+        assert_eq!(
+            store.get_blob(&owner, &wire).await.unwrap().as_deref(),
+            Some(private),
+            "a `_public` miss must fall back to the per-tenant namespace"
+        );
+        // A different tenant: `_public` miss AND their own per-tenant miss → None
+        // (no cross-tenant private leak).
+        let other = TenantId::from_uuid(Uuid::from_u128(0xF70F));
+        assert_eq!(
+            store.get_blob(&other, &wire).await.unwrap(),
+            None,
+            "a private per-tenant blob is never served to another tenant"
+        );
     }
 
     #[tokio::test]
