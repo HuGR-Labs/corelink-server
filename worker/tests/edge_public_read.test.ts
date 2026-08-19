@@ -181,6 +181,44 @@ describe("readPublicHit — end-to-end with fakes", () => {
     expect(hit!.contentHash).toBe(BODY_HASH);
   });
 
+  it("P1: routes the map read through the withSession('first-unconstrained') read replica when available", async () => {
+    // The PRIMARY throws on prepare(); only the replica session serves the row.
+    // If readPublicHit correctly routes the map read through withSession, it HITs;
+    // if it wrongly read the primary it would throw. Proves the replica is used.
+    let sessionConstraint: string | undefined;
+    let replicaPrepared = false;
+    const replica = fakeDb({ content_hash: BODY_HASH });
+    const primary = {
+      prepare() {
+        throw new Error("map read must go through the replica session, not the D1 primary");
+      },
+      withSession(constraint: string) {
+        sessionConstraint = constraint;
+        return {
+          prepare(sql: string) {
+            replicaPrepared = true;
+            return (replica as unknown as { prepare(s: string): unknown }).prepare(sql);
+          },
+        };
+      },
+    };
+    const e = { ...env, CONFIG_DB: primary, CAS_BUCKET: fakeBucket(BODY) };
+    const hit = await readPublicHit(e as never, "brew", "/brew/t/v2/homebrew/core/x/blobs/sha256:00");
+    expect(hit).not.toBeNull();
+    expect(new Uint8Array(hit!.bytes)).toEqual(BODY);
+    expect(replicaPrepared).toBe(true);
+    expect(sessionConstraint).toBe("first-unconstrained");
+  });
+
+  it("P1: degrades to the primary when withSession is absent (runtime/test double without read replication)", async () => {
+    // No withSession on the handle ⇒ feature-detect falls back to the primary,
+    // which serves the row directly. Guards the graceful-degradation path.
+    const e = { ...env, CONFIG_DB: fakeDb({ content_hash: BODY_HASH }), CAS_BUCKET: fakeBucket(BODY) };
+    const hit = await readPublicHit(e as never, "brew", "/brew/t/v2/homebrew/core/x/blobs/sha256:00");
+    expect(hit).not.toBeNull();
+    expect(hit!.contentHash).toBe(BODY_HASH);
+  });
+
   it("returns null (falls through) on a map miss", async () => {
     const e = { ...env, CONFIG_DB: fakeDb(null), CAS_BUCKET: fakeBucket(BODY) };
     expect(await readPublicHit(e as never, "brew", "/brew/t/v2/homebrew/core/x/blobs/sha256:00")).toBeNull();
