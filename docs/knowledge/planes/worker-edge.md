@@ -10,13 +10,13 @@ source_files:
   - "worker/src/lib/onboarding_events.ts"
   - "worker/src/lib/internal_auth.ts"
 source_blobs:
-  - "worker/src/index.ts@47927973dad6fe4310c2810c65d6e5d1b4b4b86c"
+  - "worker/src/index.ts@6f9b7b7d58cd676d001041017098d5e3a918ac62"
   - "worker/src/sentry-scrub.ts@e9cd0d761cab3aaa83ea618f7d270e8b77adc316"
   - "worker/src/lib/tenant_residency_cache.ts@dc42b4123dae51e9887264168efcc5d8f6ab817b"
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
   - "worker/src/lib/onboarding_events.ts@13087a3f130b93729ade6e30e9568ea500344c22"
   - "worker/src/lib/internal_auth.ts@fb27ec67f58a10c777261c7485f79baeff0965de"
-checkpoint_sha: "209d3880ceefd8c9a0228b0a554e43e42fb02ca5"
+checkpoint_sha: "084201047745e60454a91a4575c0acb531de0e25"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -51,7 +51,12 @@ keeps forged tokens cheap to reject before any expensive work.
    and matches the route before doing anything else (`worker/src/index.ts:1897-1943`).
 2. `matchRoute` is an ordered first-match table mapping each URL to a `RouteKind` + tenant, with
    specificity ordering (signup/customer/onboarding before the generic `/v1/*` arm)
-   (`worker/src/index.ts:800-1112`).
+   (`worker/src/index.ts:800-1112`). The `/_internal/*` arm (`routeKind="internal"`,
+   tenant `_system`) is, as of the Inc-2 lockdown (2026-08-19), gated at the NETWORK layer by a
+   Cloudflare Access self-hosted app (Service-Auth service tokens) in front of
+   `corelink-api.humangr.com/_internal*` — an unauthenticated public request is rejected 403 before the
+   Worker; the constant-time per-consumer `x-corelink-internal-auth` compare stays as the app-layer gate
+   underneath (see the SECURITY NOTE at the `/_internal/` arm + `docs/internal/inc2-cf-access-lockdown.md`).
 3. Health routes short-circuit with no auth and no DO forward (`worker/src/index.ts:1945-1962`).
    The Artifact 1 `/v1/public/*` arm (the erasure-attestation verifier, `routeKind="public_attestation"`)
    is matched BEFORE the generic `/v1/*` PAT bucket and forwarded to the `_anonymous` DO → container as a
