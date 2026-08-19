@@ -137,6 +137,25 @@ export type InternalConsumer =
   | "quota_read";
 
 /**
+ * Consumers whose gate MUST be a DEDICATED key — a missing dedicated key
+ * fail-CLOSES (503) instead of degrading to the shared `CORELINK_INTERNAL_AUTH_KEY`
+ * (the shared-master-amplifier the 2026-08-19 red-team surfaced: a leaked shared
+ * secret would read any tenant's quota the moment the dedicated quota_read key
+ * went unset). Scoped to `quota_read` here — the LOW finding's exact surface, a
+ * cross-tenant read whose container gate is also dedicated-only
+ * (`tenant_quota_read.rs`). The broader control-plane exposure (pat_mint, erase,
+ * dsr_anchor, runner_mint — all already reject the shared key at the edge in prod
+ * because their dedicated keys ARE bound) is closed wholesale by the Inc-2
+ * `/_internal/*` network lockdown (off the public edge), which makes the
+ * shared-master-amplifier moot without churning those consumers' shared-fallback
+ * test fixtures. `admin` is intentionally NOT dedicated-required (no dedicated key
+ * in prod; runs on the shared key — Inc-2 closes its exposure too).
+ */
+const DEDICATED_REQUIRED_CONSUMERS: ReadonlySet<InternalConsumer> = new Set([
+  "quota_read",
+]);
+
+/**
  * Resolve the internal-auth key to verify against for a given consumer.
  *
  * Selection (matches the Rust contract exactly):
@@ -188,8 +207,30 @@ export function resolveConsumerKey(env: Env, consumer: InternalConsumer): string
     );
     return null;
   }
-  // No dedicated key configured (the common case) → the shared key IS the
-  // intended credential for this consumer.
+  // No dedicated key configured for this consumer. For a DEDICATED-REQUIRED
+  // consumer this is a fail-CLOSED condition, NOT a licence to serve the broad
+  // shared master key (2026-08-19 red-team, "leaked shared internal key →
+  // cross-tenant disclosure" + the recurring shared-master-amplifier theme).
+  // Silently degrading a privileged consumer to CORELINK_INTERNAL_AUTH_KEY on a
+  // missing dedicated key is exactly how a single leaked shared secret unlocks
+  // the whole control plane — so a missing dedicated key must 503, never widen.
+  // Verified live 2026-08-19: pat_mint/erase/dsr_anchor/quota_read/runner_mint
+  // all already reject the shared key at the edge (their dedicated keys ARE
+  // bound), so this is a no-op for live traffic and only closes the
+  // unset→shared-master regression. `admin` is intentionally NOT dedicated-
+  // required: it has no dedicated key in prod and legitimately runs on the
+  // shared key (its network exposure is the Inc-2 /_internal/* lockdown).
+  if (DEDICATED_REQUIRED_CONSUMERS.has(consumer)) {
+    console.error(
+      `[internal-auth] no dedicated key bound for dedicated-required consumer ` +
+        `"${consumer}" — REFUSING to fall back to the shared ` +
+        `CORELINK_INTERNAL_AUTH_KEY (that would silently widen a single leaked ` +
+        `shared secret to this privileged surface). Bind its dedicated key.`,
+    );
+    return null;
+  }
+  // Shared-allowed consumer (e.g. `admin`) → the shared key IS the intended
+  // credential when no dedicated key is configured.
   const shared = env.CORELINK_INTERNAL_AUTH_KEY;
   if (shared && shared.length >= MIN_INTERNAL_AUTH_KEY_LEN) {
     return shared;

@@ -22,6 +22,10 @@ import workerHandler, { internalConsumerForPath } from "../src/index.js";
 import type { Env } from "../src/index.js";
 
 const SHARED_KEY = "s".repeat(64);
+// quota_read is dedicated-required (2026-08-19 red-team): its route is gated by
+// the DEDICATED CORELINK_QUOTA_READ_AUTH_KEY, never the shared key. The base
+// fixture binds it (the prod-realistic setup); the shared key must NOT unlock it.
+const READ_KEY = "q".repeat(64);
 const TENANT = "ee30f7ba-fc25-4d71-939e-ebe130b4c6a3";
 
 function makeCtx(): ExecutionContext {
@@ -61,6 +65,7 @@ function makeEnv(over: Partial<Record<string, unknown>> = {}): {
     } as unknown as Env["CORELINK_SERVER"],
     ENVIRONMENT: "test",
     CORELINK_INTERNAL_AUTH_KEY: SHARED_KEY,
+    CORELINK_QUOTA_READ_AUTH_KEY: READ_KEY,
     REQUEST_QUOTA_DISABLED: "true",
     ...over,
   } as unknown as Env;
@@ -96,7 +101,7 @@ describe("/_internal/do-d1-probe/{tenant} — delivery", () => {
     const { env, idFromNameCalls, forwarded } = makeEnv();
     const resp = await workerHandler.fetch!(
       new Request(`http://localhost/_internal/do-d1-probe/${TENANT}`, {
-        headers: { "x-corelink-internal-auth": SHARED_KEY },
+        headers: { "x-corelink-internal-auth": READ_KEY },
       }),
       env,
       makeCtx(),
@@ -119,7 +124,7 @@ describe("/_internal/do-d1-probe/{tenant} — delivery", () => {
     await workerHandler.fetch!(
       new Request(`http://localhost/_internal/do-d1-probe/${TENANT}?colo=1`, {
         headers: {
-          "x-corelink-internal-auth": SHARED_KEY,
+          "x-corelink-internal-auth": READ_KEY,
           // A caller trying to smuggle a forged tenant into the DO.
           "x-corelink-tenant-id": "victim-tenant",
         },
@@ -137,7 +142,7 @@ describe("/_internal/do-d1-probe/{tenant} — delivery", () => {
     const { env, idFromNameCalls } = makeEnv();
     const resp = await workerHandler.fetch!(
       new Request("http://localhost/_internal/do-d1-probe/", {
-        headers: { "x-corelink-internal-auth": SHARED_KEY },
+        headers: { "x-corelink-internal-auth": READ_KEY },
       }),
       env,
       makeCtx(),

@@ -15,8 +15,8 @@ source_blobs:
   - "worker/src/lib/tenant_residency_cache.ts@dc42b4123dae51e9887264168efcc5d8f6ab817b"
   - "worker/src/lib/tenant_tier_cache.ts@4a440e51a8199a471bcde1b80ed31a872aee2b53"
   - "worker/src/lib/onboarding_events.ts@13087a3f130b93729ade6e30e9568ea500344c22"
-  - "worker/src/lib/internal_auth.ts@0cf740cdb227a3a163c1a92c6272e93f65cad713"
-checkpoint_sha: "9748ac8843a2f4ed34539fae54d91be049a56083"
+  - "worker/src/lib/internal_auth.ts@fb27ec67f58a10c777261c7485f79baeff0965de"
+checkpoint_sha: "209d3880ceefd8c9a0228b0a554e43e42fb02ca5"
 provenance: "AUTHORED"
 tags: ["planes", "worker", "edge", "auth", "routing"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -183,9 +183,14 @@ keeps forged tokens cheap to reject before any expensive work.
    confirmation is gone; what remains is far narrower (`qbatch` is omitted only when BOTH statements are
    skipped — a fan-out from an unlimited-STORAGE tenant, i.e. enterprise). Be precise about the stake —
    that variable is NOT a metering key, it is the SHARED internal-auth secret, and the fallback that
-   reaches it fires only when a consumer's dedicated key is **unset**: a key that is SET but under the
-   length floor is REFUSED fail-closed (`worker/src/lib/internal_auth.ts:172-197`), precisely so a
-   misconfiguration cannot silently widen the blast radius. The full picture — three roles, six inbound
+   reaches it now fires only for a SHARED-ALLOWED consumer whose dedicated key is **unset**: a key that
+   is SET but under the length floor is REFUSED fail-closed (`worker/src/lib/internal_auth.ts:191-208`),
+   and a DEDICATED-REQUIRED consumer — currently `quota_read`, listed in the `DEDICATED_REQUIRED_CONSUMERS`
+   set (`worker/src/lib/internal_auth.ts:154-156`) — never reaches the shared key at all: even an UNSET
+   dedicated key fails CLOSED there (`worker/src/lib/internal_auth.ts:223-231`), closing the
+   shared-master-amplifier where a single leaked shared secret would read any tenant's quota (its
+   container quota gate in `tenant_quota_read.rs` is dedicated-only too). Both refusals exist precisely so
+   a misconfiguration — or a leaked shared secret — cannot silently widen the blast radius. The full picture — three roles, six inbound
    gates of which two carry no per-consumer isolation at all, and the `onboarding`/tier-select-checkout
    arm that reads the shared key with NO dedicated-key preference and therefore can never be narrowed by
    provisioning — is enumerated in the `internal_auth.ts` module header, together with the grep that
