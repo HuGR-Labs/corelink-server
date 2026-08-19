@@ -41,8 +41,6 @@ excludes:
     reason: "Pure leaf money-math primitive (WI-S10-007): integer-only overage + shadow-charge arithmetic for runner compute billing — zero I/O, zero deps, no credentials, no request-reachable enforcement; a stateless computation helper, same class as worker/src/region-map.ts & worker/src/lib/blake3.ts. The runner-overage billing NARRATIVE (staging → aggregate → shadow-charge → Stripe flow) lives in the WI-S10-007 aggregator concept (lands when the pipeline is wired live), not this arithmetic leaf."
   - surface: "crates/corelink-runner-aggregate"
     reason: "Pure shadow aggregation logic + a stdin/stdout binary (WI-S10-007 Phase B): aggregates staged runner_vcpu_seconds per (tenant, region, period), links the per-region BLAKE3 hash chain, and computes the SHADOW charge — no I/O, no credentials, not request-reachable, and NOT yet wired into any deployable (the credentialed D1 drain + atomic write + the billing-aggregate-runner cron workflow land in a follow-up WP). Per the designed-vs-wired discipline, an OKF concept describes LIVE behavior; until this pipeline is wired end-to-end it is pure logic exercised only by its own unit tests + the shadow binary. The end-to-end runner-overage NARRATIVE becomes a concept when it runs live."
-  - surface: "crates/corelink-container/src/routes/public_mirror.rs"
-    reason: "F3.2 S0 INERT scaffold: an admin-gated stub route that returns 401 (unauth) / 501 (auth) and has NO _public write path — the SSRF-safe fetch → verify_against_bytes → MoatCache::put(_public) promote body lands in inc4b (WP-A). Per the designed-vs-wired discipline, an OKF concept describes LIVE behavior; until the mirror actually promotes bytes this is an inert stub, same class as the not-yet-wired crates/corelink-runner-aggregate exclude. The cross-tenant public-base-mirror NARRATIVE becomes a concept (seeded into handler-trait-seam alongside its sibling public_revoke.rs) when inc4b wires it live."
   - surface: "crates/corelink-container/src/public_flags.rs"
     reason: "Pure boot-read feature-flag leaf: oci_public_dedup_enabled() reads one env var and returns a bool — zero I/O, zero deps, no credentials, no request-reachable enforcement; same class as worker/src/lib/blake3.ts & the crates/corelink-runner-overage arithmetic leaf. The increment-6 cross-tenant _public dedup activation NARRATIVE (how the flag gates OciMoatStore routing) lives in the OCI concept, and lands when inc6 (WP-B) wires the flag into the store."
   # ---- EDGE-PLANE / apps file-granular exempts (BR5; glob-matched) ----
@@ -390,7 +388,7 @@ candidates:
     title: "Handler-trait seam (CAS/AC/customer/erase/admin)"
     status: "active"
     source_cluster: "crates"
-    seed_from: ["crates/corelink-handler-cas", "crates/corelink-handler-ac", "crates/corelink-handler-customer", "crates/corelink-handler-cas-erase", "crates/corelink-handler-admin", "crates/corelink-container/src/routes/public_revoke.rs"]
+    seed_from: ["crates/corelink-handler-cas", "crates/corelink-handler-ac", "crates/corelink-handler-customer", "crates/corelink-handler-cas-erase", "crates/corelink-handler-admin", "crates/corelink-container/src/routes/public_revoke.rs", "crates/corelink-container/src/routes/public_mirror.rs"]
   - id: "crates/billing-pipeline"
     type: "CrateCluster"
     title: "Billing usage→charge pipeline (emit/reconcile/aggregate/materialize + stripe-real egress)"
