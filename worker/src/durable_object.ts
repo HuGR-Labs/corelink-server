@@ -979,6 +979,10 @@ export class CoreLinkServer implements DurableObject {
           PAT_MINT_MAX_PER_MINUTE: this.env.PAT_MINT_MAX_PER_MINUTE ?? "",
           QUOTA_COST_PER_OP_MICROS: this.env.QUOTA_COST_PER_OP_MICROS ?? "",
           EXPORT_ROW_BUFFER_BYTES: this.env.EXPORT_ROW_BUFFER_BYTES ?? "",
+          // F3.2 WP-E — client-side `_public` dedup flag. "0" (Roll-1) keeps
+          // client OCI finalize per-tenant; a later roll flips it on. Empty ⇒
+          // container default (OFF).
+          OCI_PUBLIC_DEDUP_ENABLED: this.env.OCI_PUBLIC_DEDUP_ENABLED ?? "",
         },
       });
 

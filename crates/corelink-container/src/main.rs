@@ -694,21 +694,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         );
     }
 
-    // F3.2 increment-4b public-base MIRROR (S0 scaffold — admin-gated, stub 501;
-    // the SSRF fetch/verify/promote body lands in inc4b/WP-A). Admin key is the
-    // consumer-specific CORELINK_PUBLIC_MIRROR_AUTH_KEY with CORELINK_INTERNAL_AUTH_KEY
-    // shared fallback (NOT the erase key — the mirror is an admin op, per the
-    // campaign contract). Route is INERT: no `_public` write path exists yet.
+    // F3.2 public-base MIRROR (admin-gated). The route lives under
+    // /_internal/admin/*, which the edge maps to the admin consumer and forwards
+    // verbatim, so the container gates on CORELINK_ADMIN_AUTH_KEY (shared
+    // CORELINK_INTERNAL_AUTH_KEY fallback) — NOT a dedicated mirror key (which
+    // could never match the forwarded header) and NOT the erase key.
     if let Some(public_mirror_state) =
         corelink_server::routes::public_mirror::build_state_from_env()
     {
-        info!("routes: /_internal/admin/public-mirror route mounted (admin key present; stub until inc4b)");
+        info!("routes: /_internal/admin/public-mirror route mounted (admin key present)");
         app = app.merge(corelink_server::routes::public_mirror::router(
             public_mirror_state,
         ));
     } else {
         warn!(
-            "CORELINK_PUBLIC_MIRROR_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY absent; \
+            "CORELINK_ADMIN_AUTH_KEY / CORELINK_INTERNAL_AUTH_KEY absent; \
              /_internal/admin/public-mirror route NOT mounted (fail-CLOSED)"
         );
     }

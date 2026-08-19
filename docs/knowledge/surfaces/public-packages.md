@@ -9,7 +9,7 @@ source_files:
   - "crates/corelink-container/src/routes/oci.rs"
   - "crates/corelink-container/src/oci_cap.rs"
   - "crates/corelink-container/src/public_base_allowlist.rs"
-checkpoint_sha: "c6fb48f431950248e6e9a9d26b9481cab1712193"
+checkpoint_sha: "9748ac8843a2f4ed34539fae54d91be049a56083"
 provenance: "AUTHORED"
 tags: ["surfaces", "public", "npm", "pip", "brew", "oci", "moat"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -66,12 +66,12 @@ hold.
 8. **F3.2 increment 3 — the public-base allowlist trust root (inert).** Which upstream OCI base-layer
    digests may EVER enter the cross-tenant `_public` namespace is governed by an owner-curated manifest
    BAKED INTO the container binary (`include_str!`), loaded + validated by `PublicBaseAllowlist::from_baked_manifest`
-   (`crates/corelink-container/src/public_base_allowlist.rs:53`). `is_allowlisted(digest)` is a constant-set
+   (`crates/corelink-container/src/public_base_allowlist.rs:54`). `is_allowlisted(digest)` is a constant-set
    membership test the increment-6 `OciMoatStore` router consults before routing a blob to
-   `_public` (`crates/corelink-container/src/public_base_allowlist.rs:85`). The loader is FAIL-CLOSED on any
+   `_public` (`crates/corelink-container/src/public_base_allowlist.rs:86`). The loader is FAIL-CLOSED on any
    non-digest entry — a tag has no `sha256:` prefix / wrong length / non-lowercase-hex and is rejected, so a
-   mutable tag can never widen the shared namespace (`crates/corelink-container/src/public_base_allowlist.rs:107`).
-   The shipped default is deny-all (empty active manifest) until the WP-E repin adds entries.
+   mutable tag can never widen the shared namespace (`crates/corelink-container/src/public_base_allowlist.rs:108`).
+   As of WP-E Roll-1 the shipped manifest activates exactly the alpine pin (debian stays commented); every other digest still rejects (fail-closed).
 9. **F3.2 increment 6 — flag-gated `_public` routing (WP-B).** `OciMoatStore` takes a boot `dedup` flag
    (prod injects `public_flags::oci_public_dedup_enabled()`; the store loads the baked allowlist FAIL-CLOSED,
    degrading a malformed manifest to deny-all) (`crates/corelink-container/src/routes/oci.rs:257-262`). A
@@ -92,7 +92,7 @@ hold.
 - OCI uses `.merge` not `nest_service` because the first segment after `/v2/` is the OCI repo name, not a tenant — stripping it would corrupt the repo (`crates/corelink-container/src/routes/oci.rs:19-30`).
 - OCI cost/request-count attribution is keyed on the tenant recovered from the verified bearer, not a (stripped, forgeable) header: `oci_bearer_tenant` calls `oci::auth::verify` and recovers the tenant (`crates/corelink-container/src/routes/oci.rs:927-939`), and `oci_quota_gate` charges that resolved tenant (`crates/corelink-container/src/routes/oci.rs:962-966`).
 - **inc6 `_public` routing uses ONE predicate on BOTH the write and read path, so the write namespace always equals the read namespace (no split-brain), and only a `dedup && is_allowlisted` hit reaches the uncapped `Some(0)` quota-seed** — a non-allowlisted blob (including every manifest/config object, whose digest is never a layer-blob allowlist entry) stays per-tenant and quota-charged (`crates/corelink-container/src/routes/oci.rs:286-288`; `crates/corelink-container/src/routes/oci.rs:588-593`; `crates/corelink-container/src/routes/oci.rs:631-641`).
-- Eligibility for `_public` is a SERVER-owned, owner-gated, digest-pinned decision — never client-asserted. The trust root is baked into the binary (no runtime mutation path can widen it) and fail-closes on any tag, so only immutable `sha256:` digests the owner committed can ever be allowlisted (`crates/corelink-container/src/public_base_allowlist.rs:107`); the shipped default is deny-all (`crates/corelink-container/src/public_base_allowlist.rs:53`).
+- Eligibility for `_public` is a SERVER-owned, owner-gated, digest-pinned decision — never client-asserted. The trust root is baked into the binary (no runtime mutation path can widen it) and fail-closes on any tag, so only immutable `sha256:` digests the owner committed can ever be allowlisted (`crates/corelink-container/src/public_base_allowlist.rs:108`); as of WP-E Roll-1 the shipped manifest carries exactly the alpine pin (`crates/corelink-container/src/public_base_allowlist.rs:54`).
 
 # Gotchas
 - `_public` writes need BOTH a `tenant_storage_state` row AND a sentinel R2 prefix for byte accounting;
@@ -146,6 +146,6 @@ hold.
 27. `crates/corelink-container/src/routes/oci.rs:588-593` — `finalize_upload` routes an allowlisted layer to `PUBLIC_NAMESPACE` (uncapped `Some(0)`), else per-tenant with the resolved cap.
 28. `crates/corelink-container/src/routes/oci.rs:631-641` — `get_blob` reads `_public` first for an allowlisted digest, then falls back to the per-tenant namespace on a miss (no upstream fetch).
 29. `crates/corelink-container/src/oci_cap.rs:63-82` — `tier_to_cap_bytes`: container-side port of the Worker `QUOTAS` per-tier storage cap for the OCI `/token` mint (unknown tier → `free`, never unlimited).
-30. `crates/corelink-container/src/public_base_allowlist.rs:53` — `PublicBaseAllowlist::from_baked_manifest` loads + validates the container-baked owner-curated allowlist (ships deny-all).
-31. `crates/corelink-container/src/public_base_allowlist.rs:85` — `is_allowlisted(digest)` membership test the increment-6 `_public` router gates on.
-32. `crates/corelink-container/src/public_base_allowlist.rs:107` — `validate_digest` fail-closes on any non-`sha256:` entry (tags BANNED — digest-pinned trust root).
+30. `crates/corelink-container/src/public_base_allowlist.rs:54` — `PublicBaseAllowlist::from_baked_manifest` loads + validates the container-baked owner-curated allowlist (WP-E Roll-1: one active pin, alpine).
+31. `crates/corelink-container/src/public_base_allowlist.rs:86` — `is_allowlisted(digest)` membership test the increment-6 `_public` router gates on.
+32. `crates/corelink-container/src/public_base_allowlist.rs:108` — `validate_digest` fail-closes on any non-`sha256:` entry (tags BANNED — digest-pinned trust root).

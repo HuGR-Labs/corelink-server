@@ -8,15 +8,21 @@
 //!   a tenant request is rejected at the edge (403) and never reaches this
 //!   handler. This is the write side of Control 2 (only the operator, never a
 //!   client, can promote bytes into `_public`).
-//! - **Admin-gated (fail-CLOSED).** Every call must carry
-//!   `x-corelink-internal-auth` matching a **consumer-specific**
-//!   `CORELINK_PUBLIC_MIRROR_AUTH_KEY`, with the shared
+//! - **Admin-gated (fail-CLOSED).** The route lives at
+//!   `/_internal/admin/public-mirror/promote`, and the edge Worker maps every
+//!   `/_internal/admin/*` path to the **admin consumer**, forwarding the caller's
+//!   `x-corelink-internal-auth` header verbatim to the container. So — exactly
+//!   like its sibling `/_internal/admin/*` routes — the container validates the
+//!   **admin** key: `CORELINK_ADMIN_AUTH_KEY`, with the shared
 //!   `CORELINK_INTERNAL_AUTH_KEY` as fallback (the per-consumer split in
-//!   [`crate::routes::admin::resolve_internal_auth_key`]). This is DELIBERATELY
-//!   distinct from the erase key: the mirror is an admin operation and HAS the
-//!   shared fallback, whereas [`crate::routes::public_revoke`] uses the
-//!   dedicated erase key with NO fallback (finding H4). If no key resolves the
-//!   route is NOT mounted ([`build_state_from_env`] returns `None`).
+//!   [`crate::routes::admin::resolve_internal_auth_key`]). A dedicated
+//!   mirror-specific key would be WRONG here: it could never match what the edge
+//!   forwards for an admin path, so the route would 401 dead. This does NOT
+//!   weaken finding H4 — that is about the erase/REVOKE path
+//!   ([`crate::routes::public_revoke`]) using the dedicated erase key with NO
+//!   fallback; the mirror only PROMOTES with a verify-before-write, so admin-level
+//!   auth is the correct gate. If no key resolves the route is NOT mounted
+//!   ([`build_state_from_env`] returns `None`).
 //!
 //! # What the promote endpoint does (inc4b / WP-A — LIVE)
 //!
@@ -27,9 +33,9 @@
 //! 1. **Allowlist gate.** The digest MUST be
 //!    [`is_allowlisted`](crate::public_base_allowlist::PublicBaseAllowlist::is_allowlisted)
 //!    — the owner-pinned, digest-only layer-blob trust root
-//!    ([`crate::public_base_allowlist`]). The shipped manifest is **deny-all**
-//!    until WP-E, so in prod every real call rejects here (the INERT posture);
-//!    an arbitrary digest can never enter `_public`.
+//!    ([`crate::public_base_allowlist`]). As of WP-E Roll-1 the shipped manifest
+//!    allowlists exactly the alpine pin, so only that digest promotes; any other
+//!    digest still rejects here — an arbitrary digest can never enter `_public`.
 //! 2. **SSRF-safe upstream fetch.** The blob bytes are fetched from the FIXED
 //!    upstream registry ([`FIXED_UPSTREAM_REGISTRY`], never a caller-supplied
 //!    URL) through a reqwest client wired with the SINGLE audited SSRF guard
@@ -54,11 +60,15 @@
 //! [`fetch_verify_promote`] but promotes **per-tenant only**, never `_public`,
 //! by passing a tenant namespace — so it adds no third `_public` writer.
 //!
-//! # Ships INERT
+//! # Roll-1 posture
 //!
-//! The route is admin-gated (unmounted unless the key is bound) AND the shipped
-//! allowlist is deny-all, so no real digest is promotable until the WP-E repin
-//! flips both. Nothing here sets a secret or touches the manifest.
+//! The route is admin-gated (unmounted unless the admin key is bound). As of
+//! WP-E Roll-1 the shipped allowlist activates exactly the alpine pin, so the
+//! server mirror can promote that one digest into `_public`; every other digest
+//! still rejects at the allowlist gate. Client-side dedup stays OFF
+//! (`OCI_PUBLIC_DEDUP_ENABLED`), so no CLIENT can populate `_public` — only this
+//! server mirror can (server-populates-first, design GAP-E). INERT until a
+//! deploy + flip: this PR changes no live behaviour on its own.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -81,9 +91,13 @@ use crate::public_base_allowlist::PublicBaseAllowlist;
 use crate::routes::admin::resolve_internal_auth_key;
 use crate::routes::internal_pat::internal_auth_ok;
 
-/// Consumer-specific admin secret for the public-mirror surface. Resolved with
-/// the shared-key fallback in [`resolve_internal_auth_key`].
-const MIRROR_AUTH_KEY_ENV: &str = "CORELINK_PUBLIC_MIRROR_AUTH_KEY";
+/// The **admin** consumer secret gating the public-mirror surface. The route
+/// sits under `/_internal/admin/*`, which the edge maps to the admin consumer
+/// and forwards verbatim — so the container must validate this exact key (a
+/// dedicated mirror key could never match the forwarded header). Resolved with
+/// the shared `CORELINK_INTERNAL_AUTH_KEY` fallback in
+/// [`resolve_internal_auth_key`].
+const MIRROR_AUTH_KEY_ENV: &str = "CORELINK_ADMIN_AUTH_KEY";
 
 /// Service principal stamped on the mirror's CAS writes (identifies the mirror
 /// job, not any tenant PAT).
@@ -143,9 +157,9 @@ impl std::fmt::Debug for PublicMirrorRouteState {
 }
 
 /// Build the route state from env, or `None` (route NOT mounted) when the
-/// prerequisites are absent — the consumer-specific
-/// `CORELINK_PUBLIC_MIRROR_AUTH_KEY` (or the shared `CORELINK_INTERNAL_AUTH_KEY`
-/// fallback, each ≥ 32 chars) AND the D1/R2 storage env the moat needs.
+/// prerequisites are absent — the admin `CORELINK_ADMIN_AUTH_KEY` (or the shared
+/// `CORELINK_INTERNAL_AUTH_KEY` fallback, each ≥ 32 chars) AND the D1/R2 storage
+/// env the moat needs.
 /// Fail-CLOSED: absent config yields no route, exactly like the sibling admin
 /// surfaces.
 #[must_use]
