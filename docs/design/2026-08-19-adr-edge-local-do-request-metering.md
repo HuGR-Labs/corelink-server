@@ -1,7 +1,8 @@
 # ADR — Edge-local per-tenant request metering via Durable Objects (P3)
 
-- Status: **PROPOSED** (design only — no code lands from this ADR; it exists to make the one
-  embedded product decision explicit before any implementation is scheduled).
+- Status: **ACCEPTED (2026-08-19)** — owner chose **D-edge**, engineered as a strict hierarchical
+  token-lease (over-serve = 0, under-serve = 0). See the "DECISION" section at the end. Implementation
+  is now schedulable (build-inert; nothing goes live without the owner's per-region flip).
 - Date: 2026-08-19
 - Area: billing / quota / multi-region hot path
 - Supersedes-interim: the `EDGE_ASYNC_METER` async-KV metering (Forma 1, LIVE) — the interim that
@@ -138,3 +139,59 @@ inert rollout), not research.
 Owner to pick §4 **(D-exact — recommended)** or **(D-edge)**. On D-exact, implementation is
 schedulable as-is; on D-edge, add the coordinator + headroom-budget design + the over-serve bound
 before scheduling.
+
+---
+
+## DECISION (2026-08-19) — **D-edge**, implemented as a strict hierarchical **token-lease**
+
+Owner chose **D-edge** (edge-local) over the D-exact recommendation. Engineering refinement (mine,
+within the product choice): D-edge is realised as a **hierarchical token-lease** (distributed
+token-bucket with local leases), NOT the simpler headroom-redistribution variant §4 sketched — the
+token-lease keeps the §2 invariant **strict (over-serve = 0 AND under-serve = 0)** while still
+serving every request edge-locally. What the owner actually trades for edge-locality is therefore
+**more complexity, not cap leakage.**
+
+### Topology
+- **`RequestMeterCoordinatorDO`** — one per tenant (`idFromName(tenant_id)`). Authoritative
+  `remaining = requestsPerMonthMax(tier) − Σ(outstanding leases) − Σ(reconciled-consumed)` for the
+  current UTC `year_month`. Grants **leases** (blocks of `L` tokens; `L` tuned per tier, e.g. 10_000).
+  Hard rule: it NEVER grants a lease that would push `Σleased` past the cap. Hit **once per lease
+  block, not per request**. Hibernates when idle. Reconciles `consumed = cap − remaining` to
+  `monthly_request_counts` (D1 = billing ledger, not the enforcement authority).
+- **`RequestMeterShardDO`** — one per `(tenant, region)` (`idFromName(tenant_id + ":" + region)`).
+  Holds a local lease balance + its lease's month-epoch. Each metered request decrements the balance
+  **locally (no cross-region hop)**. At a low-water mark it async-refills a new lease from the
+  coordinator (`ctx.waitUntil`; it keeps serving from the remaining balance during the refill). A
+  refill that returns 0 (coordinator cap reached) ⇒ the shard 402s once its balance is exhausted.
+
+### Why the invariant holds
+- **over-serve = 0:** a shard can only serve against tokens it was leased; the coordinator's strict
+  `Σleased ≤ cap` accounting means the sum of all shards' serveable tokens can never exceed the
+  global cap. No composition of regions can serve past it.
+- **under-serve = 0:** any shard can refill while the coordinator has budget; a single-region-heavy
+  tenant simply refills more often from the same coordinator (no false 402 below the global cap).
+- **the hop, honestly:** the per-request US write is gone; a **per-lease-block** coordinator hop
+  remains (the coordinator is single-homed). For `L=10_000` on a 2M cap that is ~200 coordinator
+  calls/month/tenant — amortised ~1/L of the old per-request cost. `L` trades hop-frequency against
+  last-block granularity.
+- **month rollover:** each lease carries a `year_month` epoch; the coordinator resets `remaining` to
+  the cap on the first lease of a new UTC month; a shard force-refills any lease whose epoch ≠ the
+  current month before serving (a stale-epoch lease is never spent).
+
+### Test matrix (adds to §6, all before any flip)
+1. lease exhaustion → async refill keeps serving; 2. coordinator-empty → shard 402s exactly at cap;
+3. **concurrency: N shards refilling/serving concurrently can NEVER collectively exceed the cap**
+   (the over-serve=0 property — the load-bearing test); 4. refill race (two shards refill at once)
+   never over-grants (coordinator serialises lease grants); 5. month rollover invalidates stale-epoch
+   leases; 6. coordinator + shard hibernation/eviction preserve `remaining`/balance; 7. uncapped
+   tiers (team/enterprise) never 402, still reconciled; 8. shadow dual-run parity vs the D1 UPSERT
+   per region before the DO becomes authoritative.
+
+### Rollout (unchanged pattern)
+Build both DO classes + bindings + reconcile INERT behind `EDGE_DO_METER` (unset/off = today's D1
+UPSERT path). `shadow`: dual-run + per-region parity vs D1. `serve`: DO authoritative, owner-gated
+per-region flip, instant rollback (unset the flag → the D1 UPSERT path resumes; 0071 never abandoned).
+
+**Status: ACCEPTED (D-edge / token-lease). Implementation schedulable** — a techlead-decompose build
+(2 DO classes + lease protocol + reconcile + the test matrix above + inert rollout). Nothing goes
+live without the owner's per-region `serve` flip.
