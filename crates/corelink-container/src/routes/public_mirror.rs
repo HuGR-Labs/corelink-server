@@ -494,13 +494,24 @@ impl DockerHubBlobFetcher {
             Some(h) => return Err(format!("SSRF guard: token realm host {h} is internal")),
             None => return Err("SSRF guard: token realm has no host".to_owned()),
         }
+        // Echo the `service` value FROM the challenge, not the upstream HOST.
+        // Docker Hub's blob host is `registry-1.docker.io` but its token service
+        // identifier is `registry.docker.io` (no `-1`); `auth.docker.io` binds
+        // the issued token to the requested `service`, and the registry rejects
+        // a token whose `service` does not match its own identifier with a 401.
+        // Deriving `service` from `upstream.host_str()` therefore mints a token
+        // the registry refuses. Use the challenge's `service`, falling back to
+        // the upstream host only when the challenge omits it.
+        let service = parse_bearer_param(header, "service").unwrap_or_else(|| {
+            self.upstream
+                .host_str()
+                .unwrap_or("registry-1.docker.io")
+                .to_owned()
+        });
         let mut token_url = realm_url;
         token_url
             .query_pairs_mut()
-            .append_pair(
-                "service",
-                self.upstream.host_str().unwrap_or("registry-1.docker.io"),
-            )
+            .append_pair("service", &service)
             .append_pair("scope", &format!("repository:{repository}:pull"));
         let resp = self
             .client
@@ -601,12 +612,20 @@ impl UpstreamBlobFetcher for DockerHubBlobFetcher {
 /// challenge values contain no commas, so a comma split of the param list is
 /// sufficient.
 fn parse_bearer_realm(header: &str) -> Option<String> {
+    parse_bearer_param(header, "realm")
+}
+
+/// Extract a single `key="value"` parameter from a `Bearer …` challenge header
+/// (`realm`, `service`, `scope`). Case-insensitive on the `Bearer` prefix; the
+/// value's surrounding quotes are stripped. Returns `None` when the prefix or
+/// the key is absent.
+fn parse_bearer_param(header: &str, key: &str) -> Option<String> {
     let rest = header
         .strip_prefix("Bearer ")
         .or_else(|| header.strip_prefix("bearer "))?;
     for part in rest.split(',') {
         if let Some((k, v)) = part.trim().split_once('=') {
-            if k.trim() == "realm" {
+            if k.trim() == key {
                 return Some(v.trim().trim_matches('"').to_owned());
             }
         }
@@ -639,6 +658,29 @@ mod tests {
     use crate::adapter_cache::UrlMapStore;
 
     use super::*;
+
+    #[test]
+    fn bearer_param_extracts_dockerhub_service_not_blob_host() {
+        // The real Docker Hub blob-401 challenge: the blob HOST is
+        // `registry-1.docker.io` but the token `service` is `registry.docker.io`
+        // (no `-1`). The fetcher MUST echo this `service`, not re-derive it from
+        // the upstream host, or auth.docker.io mints a token the registry 401s.
+        let header = r#"Bearer realm="https://auth.docker.io/token",service="registry.docker.io",scope="repository:library/alpine:pull""#;
+        assert_eq!(
+            parse_bearer_realm(header).as_deref(),
+            Some("https://auth.docker.io/token"),
+        );
+        assert_eq!(
+            parse_bearer_param(header, "service").as_deref(),
+            Some("registry.docker.io"),
+        );
+        assert_eq!(
+            parse_bearer_param(header, "scope").as_deref(),
+            Some("repository:library/alpine:pull"),
+        );
+        assert_eq!(parse_bearer_param(header, "absent"), None);
+        assert_eq!(parse_bearer_param("Basic realm=\"x\"", "service"), None);
+    }
 
     const TEST_KEY: &str = "test-admin-secret-key-at-least-32-chars!!";
     /// A real alpine amd64 rootfs layer digest (the commented example pin in the
