@@ -491,14 +491,16 @@ class_name = "CoreLinkServer"
 # block_in_place fix. Once 2aa2be6f's Dockerfile cache invalidation fix proves
 # itself end-to-end in CI, revert to "./Dockerfile".
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-corelinkserver-prod:0acf07e8-r1"
-# Cap raised 20→2000 (2026-08-19) = the account's DO-container ceiling
-# (durable_object_offset_instances = 2000). 1 container per active tenant + idle
-# scales to zero, so a high ceiling is free when idle and only bounds worst-case
-# concurrent-active; an app-level cap BELOW the account limit just starves real
-# tenants for nothing. The account limit (shared across all container apps) is the
-# real backstop and is raiseable via CF support — raise it when concurrent load
-# approaches it.
-max_instances = 20
+# Cap 20→200 (2026-08-19). 1 `basic` container (0.25 vCPU) per active tenant; idle
+# scales to zero so a high ceiling is free when idle. The BINDING account limit is
+# vCPU, NOT instance count: CF RESERVES max_instances × per-instance-vCPU against
+# total_vcpu=1500, SHARED across all container apps (5 cache regions + the standard-4
+# runner fleet @ 4 vCPU each). A first attempt at 2000 (=500 vCPU/region) was REJECTED
+# by CF ("Surpassed total account limits: ... vcpus"). 200/region (5×200×0.25=250 vCPU)
+# co-exists with the runner (250×4=1000 vCPU) under 1500. Going higher — toward real
+# 2000-user scale — requires a Cloudflare account-limit increase (total_vcpu/memory/
+# instances), drafted separately; no config can exceed it.
+max_instances = 200
 instance_type = "basic"
 # P0-5 — DECISION-GATE-1 Option A: the container reaches R2 (S3 API) + D1 (HTTP
 # API) over egress. NOTE: wrangler's `[[containers]]` schema does NOT accept
@@ -871,8 +873,8 @@ class_name = "RequestMeterShardDO"
 [[env.prod-sam.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-sam-corelinkserver-prod:0acf07e8-r1"
-# Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
-max_instances = 10
+# Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
+max_instances = 200
 instance_type = "basic"
 
 # ── LHR (London / Europe West) ───────────────────────────────────────────────
@@ -1029,8 +1031,8 @@ class_name = "RequestMeterShardDO"
 [[env.prod-lhr.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-lhr-corelinkserver-prod:0acf07e8-r1"
-# Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
-max_instances = 10
+# Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
+max_instances = 200
 instance_type = "basic"
 
 # ── NRT (Tokyo / Asia Pacific Northeast) ─────────────────────────────────────
@@ -1181,8 +1183,8 @@ class_name = "RequestMeterShardDO"
 [[env.prod-nrt.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-nrt-corelinkserver-prod:0acf07e8-r1"
-# Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
-max_instances = 10
+# Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
+max_instances = 200
 instance_type = "basic"
 
 # ── SYD (Sydney / Asia Pacific Southeast) ────────────────────────────────────
@@ -1329,6 +1331,6 @@ class_name = "RequestMeterShardDO"
 [[env.prod-syd.containers]]
 class_name = "CoreLinkServer"
 image = "registry.cloudflare.com/6a1fc1c626fc2628823e60b9db01f5cd/corelink-prod-syd-corelinkserver-prod:0acf07e8-r1"
-# Cap raised 10→2000 (2026-08-19) = account DO-container ceiling — see the iad block.
-max_instances = 10
+# Cap raised 10→200 (2026-08-19) — see the iad block (account vCPU is the binding limit).
+max_instances = 200
 instance_type = "basic"
