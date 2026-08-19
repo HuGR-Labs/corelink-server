@@ -22,7 +22,7 @@ use std::sync::Arc;
 use corelink_audit::ports::AuditEmitter;
 use corelink_core::SecretWrap;
 
-use crate::oci::ports::{BlobStore, ManifestKvStore, TenantResolver};
+use crate::oci::ports::{BlobStore, ManifestKvStore, ManifestResolver, TenantResolver};
 
 /// Live configuration consumed by [`crate::oci::run_oci_adapter`].
 ///
@@ -86,6 +86,15 @@ pub struct OciAdapterConfig {
     /// PAT → tenant resolver.
     pub tenant_resolver: Arc<dyn TenantResolver>,
 
+    /// Optional per-tenant manifest upstream-on-miss resolver (M1 of the
+    /// manifest-resolution keystone, `OCI_UPSTREAM_ON_MISS`). `None` ⇒ a
+    /// manifest KV miss 404s exactly as today (byte-identical to the
+    /// pre-M1 behavior); `Some` ⇒ the `GET`/`HEAD` handlers resolve a KV
+    /// miss from the fixed upstream (per-tenant, fail-open). Wired to
+    /// `Some` by the container router only when the flag is ON and the
+    /// upstream client builds.
+    pub manifest_resolver: Option<Arc<dyn ManifestResolver>>,
+
     /// Audit emitter — every state mutation emits BEFORE returning
     /// success to the client per INV-AUDIT-EMIT-ATOMIC-WITH-HANDLER.
     pub auditor: Arc<dyn AuditEmitter>,
@@ -107,6 +116,7 @@ impl std::fmt::Debug for OciAdapterConfig {
             .field("enable_catalog", &self.enable_catalog)
             .field("token_ttl_secs", &self.token_ttl_secs)
             .field("token_signing_key", &"<redacted>")
+            .field("manifest_resolver", &self.manifest_resolver.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -160,6 +170,7 @@ impl OciAdapterConfig {
         cas: Arc<dyn BlobStore>,
         metadata_kv: Arc<dyn ManifestKvStore>,
         tenant_resolver: Arc<dyn TenantResolver>,
+        manifest_resolver: Option<Arc<dyn ManifestResolver>>,
         auditor: Arc<dyn AuditEmitter>,
     ) -> Self {
         Self {
@@ -173,6 +184,7 @@ impl OciAdapterConfig {
             cas,
             metadata_kv,
             tenant_resolver,
+            manifest_resolver,
             auditor,
         }
     }
@@ -255,6 +267,7 @@ mod tests {
             cas: Arc::new(InMemoryBlobStore::default()),
             metadata_kv: Arc::new(InMemoryKv::default()),
             tenant_resolver: Arc::new(StaticTenantResolver::default()),
+            manifest_resolver: None,
             auditor: Arc::new(InMemoryAuditEmitter::default()),
         }
     }

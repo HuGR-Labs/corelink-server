@@ -73,7 +73,7 @@ use uuid::Uuid;
 use corelink_adapter_host::oci::config::defaults;
 use corelink_adapter_host::oci::digest::OciDigest;
 use corelink_adapter_host::oci::ports::{
-    BlobStore, ManifestKvStore, PortResult, ResolvedPat, TenantResolver,
+    BlobStore, ManifestKvStore, ManifestResolver, PortResult, ResolvedPat, TenantResolver,
 };
 use corelink_adapter_host::oci::{router as oci_router, AppState, OciAdapterConfig};
 use corelink_audit::ports::{AuditEmitter, InMemoryAuditEmitter};
@@ -807,6 +807,27 @@ pub fn router(
         map,
         OCI_SERVICE_PRINCIPAL,
     ));
+
+    // WP-G (M1, `OCI_UPSTREAM_ON_MISS`): build the per-tenant manifest
+    // upstream-on-miss resolver ONLY when the flag is ON at boot AND the shared
+    // SSRF-safe upstream client builds; else `None` — the manifest handlers then
+    // 404 a KV miss exactly as today (flag OFF ⇒ byte-identical). It SHARES the
+    // moat (per-tenant blob persist), the manifest KV (per-tenant manifest
+    // persist), and the tenant cap resolver (fail-closed on an indeterminate
+    // cap, like `finalize_upload`). Fail-open at every step; NO `_public` writes
+    // (that is M2). Boot-read, so activation is a repin, not a live flip.
+    let manifest_resolver: Option<Arc<dyn ManifestResolver>> =
+        if crate::public_flags::oci_upstream_on_miss() {
+            crate::routes::public_pullthrough::UpstreamManifestResolver::new(
+                Arc::clone(&manifest_kv),
+                Arc::clone(&moat),
+                cap_resolver.clone(),
+            )
+            .map(|r| Arc::new(r) as Arc<dyn ManifestResolver>)
+        } else {
+            None
+        };
+
     let cas: Arc<dyn BlobStore> = Arc::new(OciMoatStore::new(
         moat,
         crate::public_flags::oci_public_dedup_enabled(),
@@ -833,6 +854,7 @@ pub fn router(
         cas,
         manifest_kv,
         resolver,
+        manifest_resolver,
         auditor,
     );
 

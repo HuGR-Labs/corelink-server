@@ -168,6 +168,53 @@ pub trait ManifestKvStore: Send + Sync + fmt::Debug {
     async fn list_prefix(&self, tenant: &TenantId, prefix: &str) -> PortResult<Vec<String>>;
 }
 
+/// A manifest resolved from the fixed upstream and ready to serve (the
+/// output of a [`ManifestResolver::resolve_on_miss`]).
+///
+/// NOT `#[non_exhaustive]`: the container's `UpstreamManifestResolver`
+/// constructs it directly.
+#[derive(Debug, Clone)]
+pub struct ResolvedManifest {
+    /// The verified manifest bytes to serve as the `GET`/`HEAD` body.
+    pub bytes: Bytes,
+    /// The media type to serve in `Content-Type` (e.g.
+    /// `application/vnd.oci.image.index.v1+json`).
+    pub content_type: String,
+    /// Canonical `sha256:<hex>` digest of [`Self::bytes`], served in
+    /// `Docker-Content-Digest`.
+    pub digest: String,
+}
+
+/// Upstream manifest resolver — the M1 keystone port
+/// (`OCI_UPSTREAM_ON_MISS`).
+///
+/// The manifest `GET`/`HEAD` handlers consult a per-tenant
+/// [`ManifestKvStore`] first; only on a MISS, and only when a resolver
+/// is wired (flag ON), do they call [`Self::resolve_on_miss`]. With no
+/// resolver the handler 404s exactly as today (buildkit then fails open
+/// to the upstream registry) — so a wired `None` is byte-identical to
+/// the pre-M1 behavior.
+///
+/// Every implementation is **fail-open**: `Ok(None)` ⇒ the handler 404s.
+/// A tenant fetching a bad reference only affects its own namespace (the
+/// bytes land per-tenant, digest-verified on fetch), so the gate here is
+/// abuse (rate-limit + size-cap + the tenant's own quota), not trust.
+#[async_trait::async_trait]
+pub trait ManifestResolver: Send + Sync + fmt::Debug {
+    /// Called ONLY after a per-tenant [`ManifestKvStore::get`] miss. Fetch
+    /// the manifest for `(tenant, repo, reference)` from the fixed
+    /// upstream, verify, persist (manifest→KV, and for an image manifest
+    /// its config+layer blobs→the per-tenant moat), and return the bytes
+    /// to serve. `Ok(None)` ⇒ the handler 404s (buildkit then fails open
+    /// to upstream — today's behavior).
+    async fn resolve_on_miss(
+        &self,
+        tenant: &TenantId,
+        repo: &str,
+        reference: &str,
+    ) -> PortResult<Option<ResolvedManifest>>;
+}
+
 /// A resolved PAT: the owning tenant plus whether the PAT carries cache
 /// WRITE capability. Returned by [`TenantResolver::resolve_pat_capability`]
 /// so the `/token` exchange can downscope the minted registry bearer to

@@ -73,6 +73,7 @@ impl TestRig {
             cas.clone(),
             kv.clone(),
             resolver.clone(),
+            None,
             audit.clone(),
         );
         let state = AppState::new(Arc::new(cfg), fixed_clock_ms);

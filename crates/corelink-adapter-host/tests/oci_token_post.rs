@@ -90,6 +90,7 @@ fn rig(pat: &str, can_write: bool) -> (AppState, Arc<InMemoryAuditEmitter>) {
         cas,
         kv,
         resolver,
+        None,
         audit.clone(),
     );
     (AppState::new(Arc::new(cfg), fixed_clock_ms), audit)
