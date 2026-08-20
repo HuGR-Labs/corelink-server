@@ -158,17 +158,18 @@ export async function meterViaDO(
  * treats `withinCap` as the request-cap verdict.
  *
  * Thin over {@link meterViaDO}: it only pins `reconcileToD1` true and narrows the
- * return to the one field the serve call-site enforces on, so the sequencing
- * (and the over-serve=0 guarantee) stays in the single tested code path. Throws
+ * return to the fields the serve call-site uses — `withinCap` (the enforced
+ * verdict) and `refilled` (hop-health telemetry only) — so the sequencing (and
+ * the over-serve=0 guarantee) stays in the single tested code path. Throws
  * exactly when meterViaDO throws — the serve caller catches and fails OPEN to the
  * D1 count path, so a DO outage can never break or fail-closed a request.
  */
 export async function serveViaDO(
   ns: DOMeterNamespaces,
   params: DOMeterParams,
-): Promise<{ withinCap: boolean }> {
+): Promise<{ withinCap: boolean; refilled: boolean }> {
   const verdict = await meterViaDO(ns, { ...params, reconcileToD1: true });
-  return { withinCap: verdict.withinCap };
+  return { withinCap: verdict.withinCap, refilled: verdict.refilled };
 }
 
 /** Inputs to the {@link serveGateActive} decision (pure; no env/DO access). */

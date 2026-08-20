@@ -3249,7 +3249,7 @@ const baseHandler: ExportedHandler<Env> = {
         region: env.R2_CAS_REGION,
         cap: doServeCap,
       });
-      let serveVerdict: { withinCap: boolean } | null = null;
+      let serveVerdict: { withinCap: boolean; refilled: boolean } | null = null;
       // The extra env truthiness checks are always-true given doServeActive
       // (serveGateActive already required them) — they are here solely so TS
       // narrows the optional DO namespaces + region, mirroring the shadow branch.
@@ -3276,6 +3276,23 @@ const baseHandler: ExportedHandler<Env> = {
         } catch {
           // Fail-OPEN: fall back to the normal D1 count path below.
           serveVerdict = null;
+        }
+        // P3 serve telemetry: mirror `do_meter_shadow` for the LIVE serve path so
+        // its verdict + hop-health are observable in prod. ONLY on the success
+        // path (serveVerdict non-null); on a DO error the catch above already
+        // fell open and the D1 fallback owns the request — nothing to log. Cheap
+        // synchronous console.log (no ctx.waitUntil); no tenant id (region+tier
+        // are not PII, matching shadow). Emits no control-flow effect.
+        if (serveVerdict !== null) {
+          console.log(
+            JSON.stringify({
+              evt: "do_meter_serve",
+              tier: quotaTier.tier,
+              region: env.R2_CAS_REGION,
+              withinCap: serveVerdict.withinCap,
+              refilled: serveVerdict.refilled,
+            }),
+          );
         }
       }
       // True iff the DO authoritatively metered this request (verdict in hand).
