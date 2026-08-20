@@ -164,10 +164,16 @@ describe("meterViaDO — worker-side shard+coordinator orchestration", () => {
 });
 
 describe("serveViaDO — authoritative serve path (reconcile→D1 ON)", () => {
-  it("within cap ⇒ withinCap:true", async () => {
+  it("within cap ⇒ withinCap:true, and refilled passes through (true then false)", async () => {
     const ns = freshNs();
-    const v = await serveViaDO(ns, P());
-    expect(v.withinCap).toBe(true);
+    // First request on an empty shard: refills from the coordinator ⇒ refilled:true.
+    const first = await serveViaDO(ns, P());
+    expect(first.withinCap).toBe(true);
+    expect(first.refilled).toBe(true);
+    // Second request serves from the local lease balance ⇒ refilled:false.
+    const second = await serveViaDO(ns, P());
+    expect(second.withinCap).toBe(true);
+    expect(second.refilled).toBe(false);
   });
 
   it("over cap ⇒ withinCap:false (never over-serves)", async () => {
@@ -221,6 +227,8 @@ describe("serveViaDO — authoritative serve path (reconcile→D1 ON)", () => {
     } as unknown as DurableObjectNamespace;
     const v = await serveViaDO({ shard, coordinator }, P());
     expect(v.withinCap).toBe(true);
+    // The coordinator refill hop ran ⇒ refilled passes through as true.
+    expect(v.refilled).toBe(true);
     expect(sawReconcile).toBe(true);
   });
 });
