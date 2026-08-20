@@ -145,30 +145,49 @@ mod tests {
     const REAL_DEBIAN: &str =
         "sha256:039e6f9f9752f74a3ff4a6a224f64c7c864da16ed98f882107704328f41b9c42";
 
+    // WP-G M3 base-image INDEX pins (multi-arch manifest-list digests), resolved
+    // 2026-08-19. These gate the M2 `_public` closure-promote (server-side,
+    // upstream-verified), NOT the client-push layer route.
+    const IDX_ALPINE: &str =
+        "sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc";
+    const IDX_DEBIAN12: &str =
+        "sha256:813017f3d62be4b5891a7acca6a01bdcd4b8513daa81b1ab99d3a50385b26931";
+    const IDX_UBUNTU2404: &str =
+        "sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517";
+    const IDX_NODE22SLIM: &str =
+        "sha256:d649c27dae7ba0137b3cef5dd75baa422c08dc3d9e3fc0c23dfb172dc3cc6436";
+    const IDX_PYTHON312SLIM: &str =
+        "sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a";
+
     #[test]
-    fn baked_manifest_has_alpine_pin_active() {
-        // WP-E Roll-1: the shipped trust root MUST parse (no malformed active
-        // entry) and now carries EXACTLY the alpine pin — alpine allowlisted,
-        // debian still commented (a later roll).
+    fn baked_manifest_has_m3_pins_active() {
+        // WP-G M3: the shipped trust root MUST parse (no malformed active entry)
+        // and carries the alpine WP-E LAYER pin plus the 5 base-image INDEX pins.
         let al =
             PublicBaseAllowlist::from_baked_manifest().expect("baked manifest must be well-formed");
-        assert!(
-            !al.is_empty(),
-            "the shipped allowlist is no longer deny-all after Roll-1"
-        );
+        assert!(!al.is_empty(), "the shipped allowlist is not deny-all");
         assert_eq!(
             al.len(),
-            1,
-            "exactly one active pin (alpine) after Roll-1; had {}",
+            6,
+            "alpine LAYER + 5 base-image INDEX pins after M3; had {}",
             al.len()
         );
         assert!(
             al.is_allowlisted(REAL_ALPINE),
-            "alpine is the one active Roll-1 pin"
+            "alpine WP-E layer pin still active"
         );
+        for (name, idx) in [
+            ("alpine", IDX_ALPINE),
+            ("debian12", IDX_DEBIAN12),
+            ("ubuntu24.04", IDX_UBUNTU2404),
+            ("node22-slim", IDX_NODE22SLIM),
+            ("python3.12-slim", IDX_PYTHON312SLIM),
+        ] {
+            assert!(al.is_allowlisted(idx), "{name} index pin must be active");
+        }
         assert!(
             !al.is_allowlisted(REAL_DEBIAN),
-            "debian stays commented until a later roll"
+            "the old bookworm-slim LAYER example stays a non-active example (never a layer pin)"
         );
     }
 

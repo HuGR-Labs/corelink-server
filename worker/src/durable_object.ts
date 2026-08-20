@@ -983,6 +983,7 @@ export class CoreLinkServer implements DurableObject {
           // client OCI finalize per-tenant; a later roll flips it on. Empty ⇒
           // container default (OFF).
           OCI_PUBLIC_DEDUP_ENABLED: this.env.OCI_PUBLIC_DEDUP_ENABLED ?? "",
+          OCI_UPSTREAM_ON_MISS: this.env.OCI_UPSTREAM_ON_MISS ?? "",
         },
       });
 
