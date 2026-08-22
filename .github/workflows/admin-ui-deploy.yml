@@ -25,9 +25,14 @@ name: admin-ui — CF Worker deploy
 #   STRIPE_SECRET_KEY
 #   SENTRY_AUTH_TOKEN  (optional — enables source-map upload)
 #
-# Custom domain: bound directly to the Worker in apps/admin-ui/wrangler.toml
-# (`routes = [{ pattern = "humangr.com", custom_domain = true }]`),
-# so `wrangler deploy` provisions it — no manual Pages-dashboard step.
+# Domain binding: NOT in this repo. `apps/admin-ui/wrangler.toml` has `routes = []`
+# (line 71) — this workflow's `wrangler deploy` provisions NO hostname. The public
+# app is served at `https://humangr.com/corelink` via the `humangr.com/corelink/*`
+# zone route, which is OPERATOR-MANAGED in the Cloudflare dashboard and exists in no
+# repo file. If the app 404s after a green deploy, check that zone route in the
+# dashboard — grepping the repo for the binding will find nothing.
+# (Corrected 2026-08-22: this comment previously claimed a `custom_domain` route
+# that does not exist in wrangler.toml.)
 
 on:
   push:

@@ -58,6 +58,16 @@ changed: `deploy-pages-docs-prod.sh` / `deploy-pages-admin-ui-prod.sh`.
    does not resolve. Confirm the Clerk custom-domain CNAME is set at launch, **or** the
    CSP must list Clerk's default Frontend-API domain — else the sign-in widget is
    CSP-blocked. See `docs/operator/host-scheme-canonical-2026-06-09.md`.
+
+   > **CORRECTION 2026-08-22 (RESOLVED — read this, not the flag above).** The host
+   > named above is wrong and was never the CSP host. The live, auth-critical Clerk
+   > production Frontend API is **`clerk.corelink-app.humangr.com`** — baked into the
+   > `pk_live_` publishable key and hardcoded in `apps/admin-ui/src/lib/csp.ts:137,166,169`
+   > (`script-src` / `connect-src` / `frame-src`). `clerk.corelink.humangr.com` is
+   > NXDOMAIN and always was; checking it during an auth incident proves nothing.
+   > `clerk.corelink-app.humangr.com` is a SEPARATE DNS record from the retired
+   > `corelink-app.humangr.com` app subdomain — do not remove it.
+
 2. **`get.corelink.io`** — install host does not resolve; `e2e-prod`'s install-script
    test stays red until it is provisioned (or that test is gated).
 3. **Billing portal is a STUB** — the customer self-service "Manage billing" returns a

@@ -1,6 +1,27 @@
 # Runbook — corelink-app.humangr.com domain flip (Pages → Worker)
 
-**Status:** config fix in this PR (`apps/admin-ui/wrangler.toml` route added);
+> # ⛔ SUPERSEDED — 2026-08-22. DO NOT EXECUTE.
+>
+> This runbook plans the **opposite** of what shipped. It describes flipping
+> `corelink-app.humangr.com` off the dead Pages project and onto the `corelink-admin-ui`
+> Worker. The project instead **retired the subdomain entirely** (July 2026, commits
+> `f92da211`, `cddabbd2`) and **path-mounted the app at `https://humangr.com/corelink`**
+> (Next `basePath: "/corelink"` + an operator-managed `humangr.com/corelink/*` zone
+> route; `apps/admin-ui/wrangler.toml` carries `routes = []`).
+>
+> - `corelink-app.humangr.com` and `corelink-admin.humangr.com` are **NXDOMAIN by
+>   design**. Do not revive them.
+> - **`clerk.corelink-app.humangr.com` is a DIFFERENT record and is LIVE + auth-critical**
+>   — the Clerk production Frontend API, baked into the `pk_live_` key and hardcoded in
+>   `apps/admin-ui/src/lib/csp.ts:137,166,169`. Retiring the app subdomain did not and
+>   must not touch it.
+> - Replaced by: the path-mounted `/corelink` scheme. For the deploy path see
+>   `.github/workflows/admin-ui-deploy.yml` and `docs/knowledge/ops/deploy-runbook.md`.
+>
+> Kept as a historical record of the 2026-06-10 root-cause analysis (the broken
+> `next-on-pages` build), which is still accurate. Everything below is the abandoned plan.
+
+**Status:** ⛔ SUPERSEDED (2026-08-22) — historical only. Originally: config fix in this PR (`apps/admin-ui/wrangler.toml` route added);
 the actual flip is **owner-gated** — it changes what production serves on the
 public app hostname.
 **Discovered:** pre-existing since ≥ 2026-05-27 (launch-readiness audit §2),

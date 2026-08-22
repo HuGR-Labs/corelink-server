@@ -15,7 +15,13 @@
  *
  * Env overrides:
  *   E2E_BASE_URL              app URL          (default https://humangr.com/corelink)
- *   E2E_DOCS_URL              docs URL         (default https://docs.corelink.humangr.com)
+ *   E2E_DOCS_URL              docs URL         (canonical https://humangr.com/corelink/docs —
+ *                             the value `.github/workflows/e2e-prod.yml` passes.
+ *                             `corelink-docs.humangr.com` is a live 301 alias to it;
+ *                             `docs.corelink.humangr.com` is NXDOMAIN. The in-repo
+ *                             fallback still literally reads `docs.corelink.humangr.com`
+ *                             at `e2e/signup-welcome.spec.ts:30` — a dead default that
+ *                             only bites when the env var is unset.)
  *   E2E_INSTALL_URL           install Worker   (default https://get.corelink.io)
  *   E2E_AUTH_STORAGE_STATE    path to Playwright storageState.json from a real
  *                             signed-in operator. When set, enables the

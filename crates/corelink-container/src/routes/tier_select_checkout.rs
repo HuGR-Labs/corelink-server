@@ -1,27 +1,28 @@
 //! Production [`CheckoutCreator`] adapter: the hosted Stripe Checkout
 //! Session creator backing `POST /v1/onboarding/tier-select`.
 //!
-//! This is the **WP-B SCAFFOLD**. The struct + trait impl + collaborator
-//! wiring + secret-redacting `Debug` are frozen here so WP-B can fill the
-//! single method body (currently `todo!("WP-B")`) against a stable surface
-//! WITHOUT touching the trait, the orchestration, or the other adapters.
+//! **Status: IMPLEMENTED and LIVE in production.** (Landed as the WP-B scaffold
+//! with a `todo!("WP-B")` body, since filled in; docs corrected 2026-08-22.)
 //!
-//! # What WP-B implements
+//! # What `create` does
 //!
-//! [`CheckoutCreator::create`] builds a [`CheckoutSessionRequest`] and calls
-//! [`corelink_stripe_real::StripeRealClient::create_checkout_session`].
-//! That client uses `reqwest::blocking`, so the body MUST run it under
-//! `tokio::task::spawn_blocking` (the async trait method awaits the join
-//! handle). It maps the result into [`CheckoutCreated`]
-//! (`checkout_url` / `session_id` / `stripe_customer_id`) and returns
-//! `Err(String)` on ANY Stripe failure (→ 502 `stripe_unavailable`).
+//! [`CheckoutCreator::create`] maps the route's [`RequestedTier`] to a
+//! `TierKind`, builds a [`CheckoutSessionRequest`], calls
+//! [`corelink_stripe_real::StripeRealClient::create_checkout_session`], maps
+//! the result into [`CheckoutCreated`] (`checkout_url` / `session_id` /
+//! `stripe_customer_id`), and returns `Err(String)` on ANY Stripe failure
+//! (→ 502 `stripe_unavailable`). That client wraps a persistent
+//! `reqwest::blocking::Client`, which must not run inside a tokio runtime —
+//! and `tokio::task::spawn_blocking` is NOT sufficient (its threads still
+//! carry the runtime context, so reqwest panics there), so the call runs on a
+//! **dedicated `std::thread`**, the result ferried back over a oneshot.
 //!
 //! Mapping the trait's [`RequestedTier`] → `corelink_tier_selection::tier::
 //! TierKind` is identity per variant: `Solo→Solo`, `Starter→Starter`,
 //! `Pro→Pro`, `Max→Max`, and the runner SKUs `RunnerStarter→RunnerStarter`,
 //! `RunnerPro→RunnerPro`, `RunnerTeam→RunnerTeam`, `RunnerScale→RunnerScale`,
 //! `RunnerMax→RunnerMax`. `Free` never reaches this adapter (the
-//! orchestration activates free instantly without Stripe), so WP-B may treat
+//! orchestration activates free instantly without Stripe), so the adapter treats
 //! `Free` as an internal invariant violation (`Err(...)`).
 //!
 //! ──────────────────────────────────────────────────────────────────────
@@ -31,7 +32,7 @@
 //! **Decision: the `CheckoutCreator` trait stays email-free, and the
 //! production adapter does NOT thread a `customer_email` from the Worker.
 //! `CheckoutSessionRequest` is left UNCHANGED (`customer_email: String`).
-//! WP-B constructs it with an EMPTY `customer_email` (`String::new()`).**
+//! The adapter constructs it with an EMPTY `customer_email` (`String::new()`).**
 //!
 //! Why empty / why not thread it from the edge (the SOTA pattern):
 //!
@@ -64,14 +65,13 @@
 //!   `corelink-stripe-real` (skip the `customer_email` form pair when
 //!   `None`) + the 4 call sites — out of scope for this scaffold.
 //!
-//! # SECURITY INVARIANTS (preserved by WP-B — do NOT regress)
+//! # SECURITY INVARIANTS (upheld by the implementation — do NOT regress)
 //!
-//! - **Stripe owns PCI.** WP-B returns only the Stripe-hosted `checkout_url`
+//! - **Stripe owns PCI.** `create` returns only the Stripe-hosted `checkout_url`
 //!   (the orchestration additionally re-asserts it is `https://`); card data
 //!   never transits CoreLink.
 //! - **DPA-FIRST:** this adapter is only ever reached AFTER the DPA gate
-//!   passes (enforced by `orchestrate_*`); WP-B must not add any pre-DPA
-//!   side effect.
+//!   passes (enforced by `orchestrate_*`); it adds no pre-DPA side effect.
 //! - **Secrets never logged:** the Stripe bearer token lives inside
 //!   [`StripeRealClient`] (which redacts it in its own `Debug`); this
 //!   adapter's `Debug` surfaces only a redaction marker.
@@ -86,13 +86,13 @@ use corelink_tier_selection::tier::TierKind;
 use crate::routes::tier_select::{CheckoutCreated, CheckoutCreator, RequestedTier};
 
 /// Production Stripe Checkout creator, backed by the real HTTPS
-/// [`StripeRealClient`] (`reqwest::blocking` → driven via `spawn_blocking`).
+/// [`StripeRealClient`] (`reqwest::blocking` → driven on a dedicated `std::thread`).
 ///
 /// Holds the shared client (which owns + redacts the Stripe bearer token).
 #[derive(Clone)]
 pub struct StripeCheckoutCreator {
     /// Real Stripe HTTPS client. `Arc` so the blocking client is shared
-    /// (and `move`d into `spawn_blocking` closures) across requests.
+    /// (and `move`d into the dedicated blocking thread) across requests.
     stripe: Arc<StripeRealClient>,
 }
 
@@ -103,8 +103,8 @@ impl StripeCheckoutCreator {
         Self { stripe }
     }
 
-    /// Borrow the underlying Stripe client (used by the WP-B method body,
-    /// typically cloned into a `spawn_blocking` closure).
+    /// Borrow the underlying Stripe client (used by the `create` method body,
+    /// which clones it into the dedicated blocking thread).
     #[must_use]
     pub fn stripe(&self) -> &Arc<StripeRealClient> {
         &self.stripe
@@ -123,7 +123,7 @@ impl StripeCheckoutCreator {
     /// network I/O occurs at construction. `STRIPE_SECRET_KEY` is read only
     /// by `corelink-stripe-real`; NO other `corelink-server` test reads it,
     /// so setting it in this test process is inert. WP-B's behavioural
-    /// coverage of the real `spawn_blocking` path uses the `#[ignore]`
+    /// coverage of the real blocking-thread path uses the `#[ignore]`
     /// live-Stripe harness, not this inert fixture.
     #[cfg(test)]
     #[allow(
@@ -234,7 +234,7 @@ impl CheckoutCreator for StripeCheckoutCreator {
 mod tests {
     /// Guard: the email seam is closed at the adapter (empty
     /// `customer_email`), so the trait stays email-free. WP-B adds the
-    /// behavioural coverage of the spawn_blocking + mapping path.
+    /// behavioural coverage of the blocking-thread + mapping path.
     #[test]
     fn email_seam_is_adapter_local_not_trait() {
         // The decision is documented in the module header; this test pins
