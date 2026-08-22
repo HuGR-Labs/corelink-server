@@ -1,0 +1,69 @@
+# Daily LIVE billing-health check — flags revenue-affecting anomalies.
+#
+# WHY A SECOND BILLING CRON EXISTS
+# --------------------------------
+# `billing-reconcile-daily.yml` answers "do our usage numbers and our Stripe
+# ledger agree?". It CANNOT answer "is anyone's subscription failing to pay?" —
+# it compares two D1 tables and never inspects subscription status. On
+# 2026-08-22 a live $16/mo subscription was found in `past_due` for a month,
+# with an open invoice at two failed attempts, while that cron reported success
+# daily. Two independent reasons it could not have caught it:
+#
+#   1. Wrong question — it reconciles totals, not payment state.
+#   2. Wrong data — the ledger table it reads (`stripe_idempotency_keys`) holds
+#      zero rows, and the repo var `BILLING_RECONCILE_LIVE` has never been set,
+#      so it has always executed its own SMOKE (empty-input) no-op lane.
+#
+# This lane asks the missing question, against the subscription + webhook state
+# the Stripe webhook handler already materializes into D1.
+#
+# CRON JUSTIFICATION (per CLAUDE.md: a cron earns its keep only when something
+# can change WITHOUT a commit): billing state changes on Stripe's clock — a card
+# expires, a renewal declines, dunning escalates — with no commit involved. This
+# is exactly the class that warrants a schedule.
+#
+# NO NEW SECRET: reads D1 with the same `CF_API_TOKEN` / `CF_ACCOUNT_ID` /
+# `CORELINK_BILLING_D1_DATABASE_ID` the billing crons already carry. The signal
+# was already in D1; nobody was reading it. Polling the Stripe API on a schedule
+# would mean minting a live Stripe key into CI for data we already have.
+#
+# FAILS LOUD, NEVER SILENTLY GREEN: missing credentials or a missing table exit
+# non-zero with `NOT CONFIGURED`. That is the direct lesson of the bug above — a
+# check that no-ops when it cannot see anything manufactures false confidence,
+# which is worse than having no check at all.
+
+name: Billing Health Daily
+
+on:
+  schedule:
+    - cron: "0 5 * * *"  # 05:00 UTC daily — after billing-reconcile-daily (04:00)
+  workflow_dispatch:
+
+# Read-only: this lane reads D1 and reports. It never writes repo contents,
+# Stripe, or D1.
+permissions:
+  contents: read
+
+concurrency:
+  group: billing-health-daily
+  cancel-in-progress: false
+
+jobs:
+  billing-health:
+    name: Flag revenue-affecting billing anomalies
+    # Self-hosted `corelink` (ephemeral CF-Container Ubuntu 24.04) per the
+    # zero-hosted-CI mandate. Uses only the stdlib, so no package install step.
+    runs-on: corelink
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Check billing health
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.CORELINK_BILLING_D1_DATABASE_ID }}
+        run: python3 scripts/check_billing_health.py
