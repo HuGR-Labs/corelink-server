@@ -25,7 +25,7 @@ operator can execute Phases D→H deterministically and roll back at any point.
 
 # How it works
 
-- Only the operator can set the LIVE Clerk/Stripe keys; `.env.local` holds TEST keys only `docs/operator/launch-day-sequence-2026-06-09.md:9-15`.
+- The operator sets the LIVE Clerk/Stripe keys in Cloudflare; the launch-day runbook records that `.env.local` holds TEST keys `docs/operator/launch-day-sequence-2026-06-09.md:9-15`. **CORRECTION 2026-08-22:** that was true when written, but `.env.local` now ALSO carries live credentials under `*_LIVE_*` names — `CLERK_LIVE_SECRET_KEY` (`sk_live_`), `CLERK_LIVE_PUBLISHABLE_KEY` (`pk_live_`), `STRIPE_LIVE_SECRET_KEY` (`rk_live_`, restricted), `STRIPE_LIVE_WEBHOOK_SECRET` — alongside the plainly-named test ones. Verified live: Stripe `GET /v1/prices` returns `livemode:true`; Clerk Backend API `GET /v1/instance` returns `environment_type: production`. Treat "`.env.local` is test-only" as FALSE: grep `^[A-Z_]*LIVE[A-Z_]*=` before assuming a live check is impossible, and redact on the variable NAME (a `whsec_` value has no mode infix and will print in full).
 - Phase D1 pushes the MVP secret allowlist into Cloudflare and verifies deployment `docs/operator/launch-day-sequence-2026-06-09.md:24-29`.
 - Phase D2 applies the D1 migrations (dry-run lists the real count, then `--apply`) `docs/operator/launch-day-sequence-2026-06-09.md:31-33`.
 - Phase E builds, pre-push-scans, pushes, and 5%→100% canaries the container `docs/operator/launch-day-sequence-2026-06-09.md:35-39`.
