@@ -225,13 +225,6 @@
         "expires": "2026-09-30",
         "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
       },
-      "acme-dev.corelink.humangr.com": {
-        "reason": "TODO(dead-host-sweep): Example-tenant host baked into the generated REAPI reference examples (apps/docs/docs/reference/reapi/_examples/**). Illustrative, but it is copy-pasteable prod-shaped config on a live docs page.",
-        "added": "2026-08-22",
-        "owner": "dead-host-sweep",
-        "expires": "2026-09-30",
-        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
-      },
       "go.corelink.humangr.com": {
         "reason": "TODO(dead-host-sweep): Short-link host used across the docs site; never provisioned.",
         "added": "2026-08-22",
@@ -241,13 +234,6 @@
       },
       "app.corelink.humangr.com": {
         "reason": "TODO(dead-host-sweep): Console host in docs + release notes; the console lives under the flat corelink-app.humangr.com Clerk names.",
-        "added": "2026-08-22",
-        "owner": "dead-host-sweep",
-        "expires": "2026-09-30",
-        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
-      },
-      "sandbox.corelink.humangr.com": {
-        "reason": "TODO(dead-host-sweep): Sandbox/base-URL default echoed in tools/cli + tools/sdks samples; no sandbox host exists.",
         "added": "2026-08-22",
         "owner": "dead-host-sweep",
         "expires": "2026-09-30",
@@ -351,13 +337,6 @@
         "expires": "2026-09-30",
         "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
       },
-      "demo.corelink.humangr.com": {
-        "reason": "TODO(dead-host-sweep): Demo host in examples/** starter configs; not provisioned.",
-        "added": "2026-08-22",
-        "owner": "dead-host-sweep",
-        "expires": "2026-09-30",
-        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
-      },
       "telemetry.corelink.humangr.com": {
         "reason": "TODO(dead-host-sweep): Telemetry sink host in tools/cli; not provisioned.",
         "added": "2026-08-22",
@@ -401,7 +380,35 @@
         "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
       }
     },
-    "_retired": []
+    "_retired": [
+      {
+        "host": "demo.corelink.humangr.com",
+        "bucket": "tracked_dead",
+        "removed": "2026-08-22",
+        "removed_by": "dead-host-sweep",
+        "old_reason": "TODO(dead-host-sweep): Demo host in examples/** starter configs; not provisioned.",
+        "verdict": "Swept from every shipped surface by the concurrent dead-host-sweep PRs before this gate landed; the [suppression-hygiene] WARN caught it as a zero-match entry on the merge with main, and it is deleted rather than left armed.",
+        "zero_matches_verified": "gate run 2026-08-22 on the merge of feat/docs-reality-hostname-liveness with main"
+      },
+      {
+        "host": "sandbox.corelink.humangr.com",
+        "bucket": "tracked_dead",
+        "removed": "2026-08-22",
+        "removed_by": "dead-host-sweep",
+        "old_reason": "TODO(dead-host-sweep): Sandbox/base-URL default echoed in tools/cli + tools/sdks samples; no sandbox host exists.",
+        "verdict": "Swept from every shipped surface by the concurrent dead-host-sweep PRs before this gate landed; the [suppression-hygiene] WARN caught it as a zero-match entry on the merge with main, and it is deleted rather than left armed.",
+        "zero_matches_verified": "gate run 2026-08-22 on the merge of feat/docs-reality-hostname-liveness with main"
+      },
+      {
+        "host": "acme-dev.corelink.humangr.com",
+        "bucket": "tracked_dead",
+        "removed": "2026-08-22",
+        "removed_by": "dead-host-sweep",
+        "old_reason": "TODO(dead-host-sweep): Example-tenant host baked into the generated REAPI reference examples (apps/docs/docs/reference/reapi/_examples/**). Illustrative, but it is copy-pasteable prod-shaped config on a live docs page.",
+        "verdict": "Swept from the generated REAPI reference examples by the concurrent dead-host-sweep PRs before this gate landed; caught as a zero-match entry by [suppression-hygiene] on rebase and deleted rather than left armed.",
+        "zero_matches_verified": "gate run 2026-08-22 on feat/docs-reality-hostname-liveness rebased onto main"
+      }
+    ]
   },
   "endpoint": {
     "_comment": "Best-effort HTTP-path check. Unresolved paths WARN (non-fatal). Add a doc file to flagship_files to escalate its unresolved paths to a hard FAIL once its recipe is verified end-to-end. ignore_path_prefixes drops noisy non-route matches (illustrative/placeholder paths).",
