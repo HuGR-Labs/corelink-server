@@ -4,7 +4,7 @@ title: "Launch-day production deploy sequence (Phases D→H)"
 description: "The operator runbook for cutting CoreLink to production: live secrets, D1 migrations, container build/canary, Pages/DNS, and the Worker cutover with auto-rollback."
 source_files:
   - "docs/operator/launch-day-sequence-2026-06-09.md"
-checkpoint_sha: "b4523656d8809c7e793873e375302a703a05bc12"
+checkpoint_sha: "e5d8696d07beca20c0a3ff19cf0b7675044be375"
 provenance: "AUTHORED"
 tags: ["ops", "deploy", "launch", "cutover", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
