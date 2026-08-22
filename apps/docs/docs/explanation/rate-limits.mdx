@@ -72,7 +72,7 @@ informational `X-CoreLink-*` vendor headers:
 | `X-Rate-Limit-Type` | one of the 5 canonical arms | CoreLink-specific |
 | `X-CoreLink-Tier` | `free` / `solo` / `starter` / `pro` / `max` / `enterprise` | informational |
 | `X-CoreLink-Quota-Reset-UTC` | RFC 3339 absolute timestamp | informational |
-| `X-CoreLink-Tier-Upgrade-URL` | `https://corelink.humangr.com/pricing` | informational |
+| `X-CoreLink-Tier-Upgrade-URL` | `https://corelink-docs.humangr.com/pricing` | informational |
 
 The canonical pair (`RateLimit` + `RateLimit-Policy`) is the
 **only** rate-limit header surface that ships in CoreLink — legacy
@@ -91,7 +91,7 @@ Retry-After: 5
 X-Rate-Limit-Type: tenant_quota
 X-CoreLink-Tier: free
 X-CoreLink-Quota-Reset-UTC: 2026-05-15T14:30:25Z
-X-CoreLink-Tier-Upgrade-URL: https://corelink.humangr.com/pricing
+X-CoreLink-Tier-Upgrade-URL: https://corelink-docs.humangr.com/pricing
 Content-Type: application/json
 ```
 
@@ -107,7 +107,7 @@ The body is a stable, deterministically-ordered JSON envelope:
     "message": "Request rate exceeded the per-tenant ceiling. Back off and retry after the Retry-After interval.",
     "retry_after_seconds": 5,
     "tier": "free",
-    "tier_upgrade_url": "https://corelink.humangr.com/pricing",
+    "tier_upgrade_url": "https://corelink-docs.humangr.com/pricing",
     "docs_url": "https://corelink-docs.humangr.com/explanation/rate-limits",
     "request_id": "01HFXYZABCDEFGHJKMNPQRSTVW",
     "limit": 10,
@@ -171,7 +171,7 @@ You should consider upgrading your tier when you see **sustained
 - Your `remaining` value (from the `RateLimit` header) is at zero
   for ≥ 5 consecutive seconds on a hot workflow.
 - The `X-CoreLink-Tier-Upgrade-URL` header redirects to
-  `https://corelink.humangr.com/pricing` — start there.
+  `https://corelink-docs.humangr.com/pricing` — start there.
 
 You should **not** upgrade for:
 

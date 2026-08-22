@@ -127,7 +127,7 @@ For sustained high throughput, contact support to raise limits on your plan.
 
 This is typically triggered during a compliance audit or a billing dispute. Reads (downloads) remain available.
 
-**Fix**: Contact CoreLink support at [support@corelink.humangr.com](mailto:support@corelink.humangr.com) with your tenant ID.
+**Fix**: Contact CoreLink support at [support@humangr.com](mailto:support@humangr.com) with your tenant ID.
 
 ---
 
@@ -210,6 +210,6 @@ If all four steps pass, CoreLink is working. Any failure before step 4 means the
 ## Getting help
 
 - GitHub Issues: [github.com/HumanGuardrail/corelink-server/issues](https://github.com/HumanGuardrail/corelink-server/issues)
-- Email support: [support@corelink.humangr.com](mailto:support@corelink.humangr.com)
+- Email support: [support@humangr.com](mailto:support@humangr.com)
 
 When filing a support request, include the output of steps 1–4 above and your tenant ID.
