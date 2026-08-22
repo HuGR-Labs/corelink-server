@@ -32,8 +32,27 @@ exactly 5 hosts (per `smoke-prod-corelink.sh` `DNS_PLAN`):
 | `corelink-api.humangr.com`    | worker (`corelink-prod.…workers.dev`) |
 | `corelink-signup.humangr.com` | worker |
 | `humangr.com`  | worker |
-| `corelink-app.humangr.com`    | pages (`corelink-admin-ui.pages.dev`) — the customer console UI |
+| ~~`corelink-app.humangr.com`~~ | ⛔ **RETIRED July 2026 — NXDOMAIN by design.** See the correction below. |
 | `corelink-docs.humangr.com`   | pages (`corelink-docs.pages.dev`) |
+
+> **CORRECTION 2026-08-22.** The `corelink-app.humangr.com` row above is stale: that
+> host is **no longer the customer console UI**. It was deliberately retired in July 2026
+> (commits `f92da211`, `cddabbd2`) along with `corelink-admin.humangr.com`; both are
+> **NXDOMAIN by design** and must not be revived. The customer app is served at
+> **`https://humangr.com/corelink`** — the `corelink-admin-ui` Worker behind an
+> operator-managed `humangr.com/corelink/*` zone route, with Next `basePath: "/corelink"`.
+> `apps/admin-ui/wrangler.toml` carries `routes = []`; the binding lives only in the
+> Cloudflare dashboard.
+>
+> **`clerk.corelink-app.humangr.com` is a SEPARATE, LIVE, auth-critical DNS record** —
+> the Clerk production Frontend API, baked into the `pk_live_` key and hardcoded in the
+> live CSP (`apps/admin-ui/src/lib/csp.ts:137,166,169`). It shares a parent name with the
+> retired host; it is not the same record. **Never delete it.**
+>
+> `corelink-docs.humangr.com` is live but 301-redirects to `https://humangr.com/corelink/docs/`,
+> which is the canonical docs URL (and the value `e2e-prod.yml` uses).
+
+
 
 ## Scope of the corrective fix (live-operational surface ONLY)
 

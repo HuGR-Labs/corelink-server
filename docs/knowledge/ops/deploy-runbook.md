@@ -4,7 +4,7 @@ title: "Launch-day production deploy sequence (Phases D→H)"
 description: "The operator runbook for cutting CoreLink to production: live secrets, D1 migrations, container build/canary, Pages/DNS, and the Worker cutover with auto-rollback."
 source_files:
   - "docs/operator/launch-day-sequence-2026-06-09.md"
-checkpoint_sha: "c100df62c1ce7d50185f5102ce1185da0a9fe9f9"
+checkpoint_sha: "e5d8696d07beca20c0a3ff19cf0b7675044be375"
 provenance: "AUTHORED"
 tags: ["ops", "deploy", "launch", "cutover", "runbook"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -25,7 +25,7 @@ operator can execute Phases D→H deterministically and roll back at any point.
 
 # How it works
 
-- Only the operator can set the LIVE Clerk/Stripe keys; `.env.local` holds TEST keys only `docs/operator/launch-day-sequence-2026-06-09.md:9-15`.
+- The operator sets the LIVE Clerk/Stripe keys in Cloudflare; the launch-day runbook records that `.env.local` holds TEST keys `docs/operator/launch-day-sequence-2026-06-09.md:9-15`. **CORRECTION 2026-08-22:** that was true when written, but `.env.local` now ALSO carries live credentials under `*_LIVE_*` names — `CLERK_LIVE_SECRET_KEY` (`sk_live_`), `CLERK_LIVE_PUBLISHABLE_KEY` (`pk_live_`), `STRIPE_LIVE_SECRET_KEY` (`rk_live_`, restricted), `STRIPE_LIVE_WEBHOOK_SECRET` — alongside the plainly-named test ones. Verified live: Stripe `GET /v1/prices` returns `livemode:true`; Clerk Backend API `GET /v1/instance` returns `environment_type: production`. Treat "`.env.local` is test-only" as FALSE: grep `^[A-Z_]*LIVE[A-Z_]*=` before assuming a live check is impossible, and redact on the variable NAME (a `whsec_` value has no mode infix and will print in full).
 - Phase D1 pushes the MVP secret allowlist into Cloudflare and verifies deployment `docs/operator/launch-day-sequence-2026-06-09.md:24-29`.
 - Phase D2 applies the D1 migrations (dry-run lists the real count, then `--apply`) `docs/operator/launch-day-sequence-2026-06-09.md:31-33`.
 - Phase E builds, pre-push-scans, pushes, and 5%→100% canaries the container `docs/operator/launch-day-sequence-2026-06-09.md:35-39`.
@@ -40,8 +40,8 @@ operator can execute Phases D→H deterministically and roll back at any point.
 
 # Gotchas
 
-- The customer "Manage billing" portal is a STUB returning a fake Stripe URL at launch — checkout + webhook provisioning are unaffected, but the self-service portal must be wired post-launch `docs/operator/launch-day-sequence-2026-06-09.md:63-65`.
-- The Clerk CSP host is an AUTH-critical owner flag: if `clerk.corelink.humangr.com` does not resolve, the sign-in widget is CSP-blocked `docs/operator/launch-day-sequence-2026-06-09.md:57-60`.
+- The customer "Manage billing" portal is a STUB returning a fake Stripe URL at launch — checkout + webhook provisioning are unaffected, but the self-service portal must be wired post-launch `docs/operator/launch-day-sequence-2026-06-09.md:73-75`.
+- The Clerk CSP host is an AUTH-critical owner flag: if the Clerk Frontend-API host in the `admin-ui` CSP does not resolve, the sign-in widget is CSP-blocked `docs/operator/launch-day-sequence-2026-06-09.md:57-60`. **The live host is `clerk.corelink-app.humangr.com`** — it is baked into the `pk_live_` publishable key and hardcoded in `apps/admin-ui/src/lib/csp.ts:137,166,169` (`script-src` / `connect-src` / `frame-src`). Check THAT host when auth breaks. The launch-day flag named `clerk.corelink.humangr.com`, which is NXDOMAIN and was never the CSP host; that name is a launch-day-era error, corrected 2026-08-22. Note that `clerk.corelink-app.humangr.com` shares a parent name with the deliberately-retired `corelink-app.humangr.com` app subdomain but is a SEPARATE, auth-critical DNS record — never remove it.
 
 # Citations
 
@@ -55,4 +55,4 @@ operator can execute Phases D→H deterministically and roll back at any point.
 8. `docs/operator/launch-day-sequence-2026-06-09.md:47-52` — Phase H Worker deploy + cutover.
 9. `docs/operator/launch-day-sequence-2026-06-09.md:49-53` — auto-rollback on cutover smoke fail.
 10. `docs/operator/launch-day-sequence-2026-06-09.md:57-60` — Clerk CSP owner flag.
-11. `docs/operator/launch-day-sequence-2026-06-09.md:63-65` — billing portal stub.
+11. `docs/operator/launch-day-sequence-2026-06-09.md:73-75` — billing portal stub.
