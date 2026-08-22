@@ -5,15 +5,15 @@
     "version": "0.1.0",
     "summary": "REST surface for CoreLink customer onboarding, privacy (DSR / consent / DPA), billing webhooks, admin operations and health.",
     "description": "Hand-authored OpenAPI 3.1 contract for the **non-REAPI** surface of CoreLink.\nThe high-volume CAS / AC / ByteStream / Capabilities surface is gRPC\n(Remote Execution API v2) and documented separately under\n`docs/reference/reapi/`.\n\nEndpoint canonical paths are sourced from the implementing crates' doc-comments:\n`corelink-signup`, `corelink-dpa-acceptance`, `corelink-dpa-versioning`,\n`corelink-tier-selection`, `corelink-pat`, `corelink-dsr`,\n`corelink-privacy-consent-ledger`, `corelink-admin-api`,\n`corelink-enterprise-inquiry`, plus `apps/server::webhook` (Stripe).\n\n**Stability:** `v1` \u2014 public, semver-compatible. Breaking changes require a\nnew major path prefix (`/v2/...`).\n",
-    "termsOfService": "https://corelink.humangr.com/legal/terms",
+    "termsOfService": "https://corelink-docs.humangr.com/legal/terms",
     "contact": {
       "name": "CoreLink Support",
-      "email": "test-tenant@example.com",
-      "url": "https://corelink.humangr.com/support"
+      "email": "support@humangr.com",
+      "url": "mailto:support@humangr.com"
     },
     "license": {
       "name": "Proprietary",
-      "url": "https://corelink.humangr.com/legal/terms"
+      "url": "https://corelink-docs.humangr.com/legal/terms"
     }
   },
   "servers": [

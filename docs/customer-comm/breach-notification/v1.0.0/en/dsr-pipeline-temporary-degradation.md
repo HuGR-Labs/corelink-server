@@ -105,7 +105,7 @@ Typical scenarios:
 - **Current state:** partial mitigation in production; pipeline gradually returning to nominal.
 - **Full-resolution ETA:** `{{estimated_resolution_eta}}` (UTC).
 - **Incident status page:** `{{incident_status_url}}`.
-- **Public post-mortem:** within 5 business days of closure, at `https://corelink.humangr.com/incidents/{{breach_id}}`.
+- **Public post-mortem:** within 5 business days of closure, at `https://corelink-docs.humangr.com/trust/incident-history` (reference `{{breach_id}}`).
 
 ## 6. Your rights and regulatory complaint channels
 
