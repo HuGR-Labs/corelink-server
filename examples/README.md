@@ -6,14 +6,14 @@ Runnable, copy-and-edit-friendly examples for the **top-10 CoreLink REST endpoin
 
 ## Sandbox setup
 
-All examples default to the public sandbox at `https://corelink-app.humangr.com/sandbox` when `CORELINK_API_URL` is not set. To run against your own tenant:
+All examples default to the production API at `https://corelink-api.humangr.com` when `CORELINK_API_URL` is not set. To run against your own tenant:
 
 ```bash
 export CORELINK_API_URL="https://corelink-api.humangr.com"     # or your dedicated region URL
 export CORELINK_PAT="corelink_pat_..."                  # PAT issued via POST /v1/pats
 ```
 
-Issue a sandbox PAT through the Console (https://corelink-app.humangr.com/pats) or via the bootstrap signup flow (`quickstart_signup` + `quickstart_put`).
+Issue a PAT through the Console (https://humangr.com/corelink/en/customer/keys) or via the bootstrap signup flow (`quickstart_signup` + `quickstart_put`).
 
 ## Index — 10 endpoints × 4 languages = 40 examples
 
@@ -70,7 +70,7 @@ CORELINK_PAT=$PAT npx tsx crates/corelink-wasm/examples/quickstart_signup.ts
 
 Every example in this tree:
 
-- **Reads config from env** — `CORELINK_API_URL` (defaults to public sandbox) + `CORELINK_PAT` (sanity-checked with an actionable error when missing).
+- **Reads config from env** — `CORELINK_API_URL` (defaults to the production API) + `CORELINK_PAT` (sanity-checked with an actionable error when missing).
 - **Idiomatic per language** — async/await in Rust+TS, blocking `urllib` in Python, channels-less `net/http` in Go.
 - **No `unwrap`/`expect`/`panic!`** in Rust; `?` propagation via `anyhow::Result`. `#![forbid(unsafe_code)]` on all Rust examples.
 - **Proper error handling** — HTTP error vs network error vs decoding error are distinguished where it adds signal.

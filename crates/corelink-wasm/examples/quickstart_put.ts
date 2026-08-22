@@ -5,7 +5,7 @@
 //
 // Run: CORELINK_PAT=$BOOTSTRAP_PAT tsx examples/quickstart_put.ts
 
-const api = process.env.CORELINK_API_URL ?? "https://sandbox.corelink.humangr.com";
+const api = process.env.CORELINK_API_URL ?? "https://corelink-api.humangr.com";
 const pat = process.env.CORELINK_PAT;
 if (!pat) {
   console.error("error: CORELINK_PAT env var is required");

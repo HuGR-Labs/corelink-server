@@ -373,7 +373,7 @@ enum AuditAction {
         /// exclusive with `--url`).
         #[arg(long = "ndjson", value_name = "FILE", conflicts_with = "url")]
         ndjson: Option<PathBuf>,
-        /// Export URL (`https://api.corelink.humangr.com/v1/audit/export?...`).
+        /// Export URL (`https://corelink-api.humangr.com/v1/audit/export?...`).
         /// Mutually exclusive with `--ndjson`. Requires `--bearer`.
         #[arg(
             long = "url",

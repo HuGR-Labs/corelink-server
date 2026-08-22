@@ -33,7 +33,7 @@ func randomID() string {
 func main() {
 	api := os.Getenv("CORELINK_API_URL")
 	if api == "" {
-		api = "https://sandbox.corelink.dev"
+		api = "https://corelink-api.humangr.com"
 	}
 	pat := os.Getenv("CORELINK_PAT")
 	if pat == "" {

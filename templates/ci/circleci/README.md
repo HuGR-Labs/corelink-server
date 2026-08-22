@@ -11,9 +11,8 @@
    (Organization Settings → Contexts → Create Context).
    Add environment variable `CORELINK_PAT`.
 
-3. Replace `<YOUR_TENANT_ID>` with your CoreLink tenant slug.
 
-4. Push — the workflow runs on `main` and `release/**` branches.
+3. Push — the workflow runs on `main` and `release/**` branches.
 
 ## Cache hit ratio
 

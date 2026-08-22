@@ -23,7 +23,7 @@ use std::env;
 #[tokio::main]
 async fn main() -> Result<()> {
     let api = env::var("CORELINK_API_URL")
-        .unwrap_or_else(|_| "https://sandbox.corelink.humangr.com".to_string());
+        .unwrap_or_else(|_| "https://corelink-api.humangr.com".to_string());
     let pat = env::var("CORELINK_PAT").context("CORELINK_PAT is required")?;
 
     let resp = reqwest::Client::new()

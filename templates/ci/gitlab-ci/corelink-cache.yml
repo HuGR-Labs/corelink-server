@@ -5,8 +5,7 @@
 # Prerequisites:
 #   1. Add CORELINK_PAT to your project CI/CD variables
 #      (Settings → CI/CD → Variables → Add variable; check "Masked").
-#   2. Replace <YOUR_TENANT_ID> with your CoreLink tenant slug.
-#   3. For Buck2: uncomment the Buck2 stage.
+#   2. For Buck2: uncomment the Buck2 stage.
 #
 # Security (CTRL-CRED-001): CORELINK_PAT is a GitLab masked variable — never
 # printed to job logs. It is passed to Bazel via --remote_header env expansion
@@ -28,7 +27,7 @@ stages:
 variables:
   # CORELINK_PAT: set in GitLab CI/CD project variables (masked, protected).
   # Do NOT hardcode here — anti-pattern per CTRL-CRED-001.
-  BAZEL_REMOTE_CACHE: "https://<YOUR_TENANT_ID>.corelink.humangr.com/v1/cache"
+  BAZEL_REMOTE_CACHE: "https://corelink-api.humangr.com/v1/cache"
   BEP_JSON: "bazel-out/bep.json"
 
 # ── Default image ─────────────────────────────────────────────────────────────

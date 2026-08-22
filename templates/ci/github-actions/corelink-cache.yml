@@ -5,8 +5,7 @@
 # Prerequisites:
 #   1. Add CORELINK_PAT to your repository secrets
 #      (Settings → Secrets and variables → Actions → New repository secret).
-#   2. Replace <YOUR_TENANT_ID> with your CoreLink tenant slug.
-#   3. For Buck2: uncomment the Buck2 block and comment out the Bazel block.
+#   2. For Buck2: uncomment the Buck2 block and comment out the Bazel block.
 #
 # Security (CTRL-CRED-001): CORELINK_PAT is passed via environment variable only.
 # It is NEVER placed in command-line arguments (prevents `ps aux` credential leak).
@@ -74,7 +73,7 @@ jobs:
           CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
         run: |
           bazel build //... \
-            --remote_cache=https://<YOUR_TENANT_ID>.corelink.humangr.com/v1/cache \
+            --remote_cache=https://corelink-api.humangr.com/v1/cache \
             --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh \
             --remote_timeout=30 \
             --remote_retries=2 \
@@ -86,7 +85,7 @@ jobs:
       #     CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
       #   run: |
       #     buck2 build //... \
-      #       --config repository.remote_cache_url=https://<YOUR_TENANT_ID>.corelink.humangr.com/v1/cache \
+      #       --config repository.remote_cache_url=https://corelink-api.humangr.com/v1/cache \
       #       --config repository.remote_cache_auth_header="Bearer ${CORELINK_PAT}"
       #   # See: examples/buck2-starter (WI-S15-003)
 
@@ -115,6 +114,6 @@ jobs:
             echo "| Total actions | ${TOTAL} |"
             echo "| Hit ratio | ${RATIO}% |"
             echo ""
-            echo "_Remote cache: \`https://<YOUR_TENANT_ID>.corelink.humangr.com/v1/cache\`_"
+            echo "_Remote cache: \`https://corelink-api.humangr.com/v1/cache\`_"
           } >> "${GITHUB_STEP_SUMMARY}"
           echo "cache_hit_ratio=${RATIO}" >> "${GITHUB_OUTPUT}"

@@ -21,7 +21,7 @@ Get your **first remote-cache hit in under 5 minutes** using Buck2 + CoreLink.
 
 ## Step 1 — Get a CoreLink PAT (~1 min)
 
-1. Sign up at <https://corelink-app.humangr.com> (free tier available).
+1. Sign up at <https://humangr.com/corelink/sign-up> (free tier available).
 2. Navigate to **Settings → API Tokens → New token**.
 3. Copy the token; you will export it in the next step.
 
@@ -134,7 +134,7 @@ Error: HTTP 401 Unauthorized
 Error: HTTP 429 Too Many Requests
 ```
 
-- Your tenant has reached its usage limit.  Upgrade at <https://corelink-app.humangr.com/billing>.
+- Your tenant has reached its usage limit.  Upgrade at <https://humangr.com/corelink/en/customer/billing>.
 
 ### Network unreachable
 
