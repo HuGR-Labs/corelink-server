@@ -28,7 +28,7 @@ async def main() -> None:
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
 
     async with CoreLinkClient(
-        endpoint="https://acme-dev.corelink.humangr.com",
+        endpoint="https://corelink-api.humangr.com",
         pat=os.environ["CORELINK_PAT"],
     ) as client:
         async def chunks():

@@ -133,7 +133,7 @@ Para throughput alto e sustentado, contate o suporte para aumentar os limites do
 
 Isso normalmente é acionado durante uma auditoria de conformidade ou uma disputa de cobrança. Leituras (downloads) continuam disponíveis.
 
-**Correção**: Contate o suporte do CoreLink em [support@corelink.humangr.com](mailto:support@corelink.humangr.com) informando o ID do seu tenant.
+**Correção**: Contate o suporte do CoreLink em [support@humangr.com](mailto:support@humangr.com) informando o ID do seu tenant.
 
 ---
 
@@ -216,6 +216,6 @@ Se todos os quatro passos passarem, o CoreLink está funcionando. Qualquer falha
 ## Como obter ajuda
 
 - GitHub Issues: [github.com/HumanGuardrail/corelink-server/issues](https://github.com/HumanGuardrail/corelink-server/issues)
-- Suporte por e-mail: [support@corelink.humangr.com](mailto:support@corelink.humangr.com)
+- Suporte por e-mail: [support@humangr.com](mailto:support@humangr.com)
 
 Ao abrir uma solicitação de suporte, inclua a saída dos passos de 1 a 4 acima e o ID do seu tenant.
