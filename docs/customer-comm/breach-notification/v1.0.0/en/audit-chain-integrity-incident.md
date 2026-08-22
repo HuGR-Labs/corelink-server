@@ -100,7 +100,7 @@ Typical scenarios:
 - **Current state:** investigation active; technical classification `{{classification}}`.
 - **Resolution ETA:** `{{estimated_resolution_eta}}` (UTC). Contractual MTTR ≤ 4h end-to-end; may extend if the rebuild spans a wide R2 window.
 - **Incident status page:** `{{incident_status_url}}`.
-- **Public post-mortem:** within 5 business days of closure, published at `https://corelink.humangr.com/incidents/{{breach_id}}`.
+- **Public post-mortem:** within 5 business days of closure, published at `https://corelink-docs.humangr.com/trust/incident-history` (reference `{{breach_id}}`).
 
 ## 6. Your rights and regulatory complaint channels
 

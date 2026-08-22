@@ -106,7 +106,7 @@ Escenarios típicos:
 - **Estado actual:** mitigación parcial en producción; el pipeline vuelve progresivamente a la operación nominal.
 - **ETA de resolución plena:** `{{estimated_resolution_eta}}` (UTC).
 - **Página de estado del incidente:** `{{incident_status_url}}`.
-- **Post-mortem público:** dentro de 5 días hábiles posteriores al cierre, en `https://corelink.humangr.com/incidents/{{breach_id}}`.
+- **Post-mortem público:** dentro de 5 días hábiles posteriores al cierre, en `https://corelink-docs.humangr.com/trust/incident-history` (referencia `{{breach_id}}`).
 
 ## 6. Derechos del titular y canales regulatorios
 

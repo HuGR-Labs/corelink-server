@@ -18,14 +18,14 @@ info:
 
     **Stability:** `v1` — public, semver-compatible. Breaking changes require a
     new major path prefix (`/v2/...`).
-  termsOfService: https://corelink.humangr.com/legal/terms
+  termsOfService: https://corelink-docs.humangr.com/legal/terms
   contact:
     name: CoreLink Support
-    email: test-tenant@example.com
-    url: https://corelink.humangr.com/support
+    email: support@humangr.com
+    url: mailto:support@humangr.com
   license:
     name: Proprietary
-    url: https://corelink.humangr.com/legal/terms
+    url: https://corelink-docs.humangr.com/legal/terms
 servers:
   - url: https://corelink-api.humangr.com
     description: Production (Cloudflare Durable Object + container)
