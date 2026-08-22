@@ -42,7 +42,7 @@ build:
   variables:
     CORELINK_PAT: $CORELINK_PAT  # masked CI variable
   before_script:
-    - curl -sSL https://corelink.humangr.com/install.sh | sh
+    - curl -fsSL https://corelink-get.humangr.com | sh
     - export PATH="$HOME/.corelink/bin:$PATH"
   script:
     - corelink doctor --output json
@@ -60,7 +60,7 @@ jobs:
       CORELINK_PAT: $CORELINK_PAT
     steps:
       - checkout
-      - run: curl -sSL https://corelink.humangr.com/install.sh | sh
+      - run: curl -fsSL https://corelink-get.humangr.com | sh
       - run: corelink doctor --output json
 ```
 
