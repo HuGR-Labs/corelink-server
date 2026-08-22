@@ -174,6 +174,235 @@
       "reason": "The CAS plane addresses + client-verifies blobs by BLAKE3 (CTRL-CAS-002; see the CLI Get/Put docstrings). A quickstart that computes the digest with `sha256sum` and uploads `sha256:<digest>` instructs users to produce a digest the server will reject. Use BLAKE3 (`corelink put` computes it)."
     }
   ],
+  "hostname": {
+    "_README": "Registry for [hostname-liveness] in scripts/validate_docs_reality.py. `live_allow` is a FACT REGISTRY, not a mute: every entry was verified to resolve AND serve on the date in its reason (re-derive with `python3 scripts/validate_docs_reality.py --verify-dns`). `live_patterns` covers name FAMILIES that are infrastructure records rather than enumerable hosts (DKIM selectors). `tracked_dead` is the SUPPRESSION bucket: non-fatal in the normal gate, FAILS under --strict, and every entry MUST carry a reason, an owner and an ISO `expires` — a missing or past expiry is a hard failure, because an expiring suppression that never expires is a permanent mute wearing a date. Any *.humangr.com hostname on a shipped surface that is in neither bucket FAILS.",
+    "_REFRESH_RECIPE": [
+      "The gate NEVER touches the network: CI here runs on the founder's own Mac, and a DNS-dependent gate is a flaky gate that trains everyone to re-run it.",
+      "To refresh: `python3 scripts/validate_docs_reality.py --verify-dns` (opt-in, networked). It probes every hostname found on a shipped surface plus every allowlisted one, with DNS resolution + a TLS handshake on :443.",
+      "LIVE  -> belongs in live_allow, with the probe date in the reason string.",
+      "DEAD / DNS-ONLY -> fix the DOCS (preferred) or add a tracked_dead entry. Do NOT add it to live_allow: that bucket asserts the host exists.",
+      "`python3 scripts/validate_docs_reality.py --list-hosts` dumps the current corpus with per-host verdicts and mention counts."
+    ],
+    "live_allow": {
+      "humangr.com": "Apex. Verified DNS+TLS 2026-08-22 (serves hugr-site).",
+      "www.humangr.com": "Verified DNS+TLS 2026-08-22.",
+      "corelink-api.humangr.com": "Prod API edge. Verified DNS+TLS 2026-08-22.",
+      "corelink-docs.humangr.com": "Docs site. Verified DNS+TLS 2026-08-22.",
+      "corelink-get.humangr.com": "Install one-liner host. Verified DNS+TLS 2026-08-22.",
+      "corelink-signup.humangr.com": "Signup worker. Verified DNS+TLS 2026-08-22.",
+      "corelink-oci.humangr.com": "OCI registry surface. Verified DNS+TLS 2026-08-22.",
+      "corelink-analytics.humangr.com": "Analytics surface. Verified DNS+TLS 2026-08-22.",
+      "clerk.corelink-app.humangr.com": "Clerk frontend API (CNAME to Clerk). Verified DNS+TLS 2026-08-22.",
+      "accounts.corelink-app.humangr.com": "Clerk account portal. Verified DNS+TLS 2026-08-22.",
+      "lhr.corelink-api.humangr.com": "Regional API edge (weur). Verified DNS+TLS 2026-08-22.",
+      "nrt.corelink-api.humangr.com": "Regional API edge (apac). Verified DNS+TLS 2026-08-22.",
+      "sam.corelink-api.humangr.com": "Regional API edge (sam). Verified DNS+TLS 2026-08-22.",
+      "syd.corelink-api.humangr.com": "Regional API edge (oc). Verified DNS+TLS 2026-08-22.",
+      "dl.humangr.com": "Release download host. Verified DNS+TLS 2026-08-22.",
+      "api.humangr.com": "LIVE, but bound to a DIFFERENT project (hugr-wallet) — it resolves and serves, so it is not a dead host, yet it is not CoreLink's API either. Do not introduce new CoreLink copy pointing here; CoreLink's API is corelink-api.humangr.com. Verified DNS+TLS 2026-08-22.",
+      "send.humangr.com": "Transactional-mail sending domain (MX/SPF). Verified 2026-08-22.",
+      "mail.humangr.com": "Mail record. Verified 2026-08-22.",
+      "_dmarc.humangr.com": "DMARC policy record. Verified 2026-08-22."
+    },
+    "live_patterns": [
+      {
+        "pattern": "^[A-Za-z0-9_-]+\\._domainkey\\.humangr\\.com$",
+        "reason": "DKIM selector records. A family of TXT records, not an enumerable set of serving hosts — pattern-allowed rather than listed one by one."
+      }
+    ],
+    "tracked_dead": {
+      "status.corelink.humangr.com": {
+        "reason": "DNS RESOLVES but the TLS handshake fails, so no client can reach it — a dead host that looks alive to a `dig`. It is a THIRD-level name, and Cloudflare Universal SSL covers `humangr.com` and `*.humangr.com` ONE LEVEL ONLY, so the edge holds no certificate for it; BetterUptime returns 403 for that Host, meaning the custom domain was never registered on their side either. Neither side holds a certificate. The fix requires the BetterUptime dashboard (register the custom domain, then issue the cert) and is tracked separately by the tech lead — it cannot be done from this repo, which is why this is a suppression with an expiry rather than a docs edit.",
+        "added": "2026-08-22",
+        "owner": "tech-lead",
+        "expires": "2026-11-30",
+        "ref": "dead-host-sweep / BetterUptime custom-domain registration"
+      },
+      "corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Legacy second-level brand host (`corelink.humangr.com` and everything under it) that was never provisioned — NXDOMAIN. The shipped surfaces are corelink-api / corelink-docs / corelink-get / corelink-signup .humangr.com (flat, not dotted).",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "acme-dev.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Example-tenant host baked into the generated REAPI reference examples (apps/docs/docs/reference/reapi/_examples/**). Illustrative, but it is copy-pasteable prod-shaped config on a live docs page.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "go.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Short-link host used across the docs site; never provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "app.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Console host in docs + release notes; the console lives under the flat corelink-app.humangr.com Clerk names.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "sandbox.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Sandbox/base-URL default echoed in tools/cli + tools/sdks samples; no sandbox host exists.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "docs.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Docs host in the dotted form; the real docs host is corelink-docs.humangr.com.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "signup.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Signup host in the dotted form; the real one is corelink-signup.humangr.com. Also present in openapi/corelink-v1.{json,yaml} (machine-read config, not just prose).",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "admin.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Admin-plane host in docs/marketing/auth doc-comments; the admin plane is served from the flat names behind CF Access.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "attest.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Attestation host in the docs site; never provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "join.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Invite/join host in the docs site; never provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "api.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Dotted API host in corelink-ops deploy doc-comments/examples and CLI samples; the API is corelink-api.humangr.com.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "corelink-app.humangr.com": {
+        "reason": "TODO(dead-host-sweep): The bare app host is NOT provisioned — only the Clerk-owned `clerk.` and `accounts.` names under it resolve. examples/** and README-class copy point readers at the bare name.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "dt.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Dependency-Track host referenced by tools/sbom-publish + tools/dt-reconcile; not provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "cas.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): CAS-plane host in docs + FAQ; the CAS plane is served under corelink-api.humangr.com.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "docs.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Docs host referenced from apps/admin-ui; the real docs host is corelink-docs.humangr.com.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "billing.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Billing host in the docs site; billing is console/Stripe, there is no such host.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "evil.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Adversary hostname in the WebAuthn RP-ID-confusion doc-comments (crates/corelink-auth/src/webauthn*). It MUST NOT exist — but it lives in a live src/ tree the gate scans, so it is tracked rather than silently exempted.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "grafana.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Grafana host in marketing launch/retention runbooks; not provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "bytestream.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): ByteStream endpoint host in the docs site; the REAPI/bytestream surface is served under corelink-api.humangr.com.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "demo.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Demo host in examples/** starter configs; not provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "telemetry.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Telemetry sink host in tools/cli; not provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "trust.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Trust-center host in ROADMAP-TO-GA.md; not provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "pilot.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Pilot host in marketing/launch; not provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "releases.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Releases host in marketing/launch; downloads are served from dl.humangr.com.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "survey.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Survey-link host rendered by crates/corelink-ops/src/survey/token.rs into customer-facing survey URLs; not provisioned.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      },
+      "cache.corelink.humangr.com": {
+        "reason": "TODO(dead-host-sweep): Cache host in the GA FAQ; the cache surfaces are served under corelink-api.humangr.com.",
+        "added": "2026-08-22",
+        "owner": "dead-host-sweep",
+        "expires": "2026-09-30",
+        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
+      }
+    },
+    "_retired": []
+  },
   "endpoint": {
     "_comment": "Best-effort HTTP-path check. Unresolved paths WARN (non-fatal). Add a doc file to flagship_files to escalate its unresolved paths to a hard FAIL once its recipe is verified end-to-end. ignore_path_prefixes drops noisy non-route matches (illustrative/placeholder paths).",
     "flagship_files": [],
