@@ -19,7 +19,7 @@ async def main() -> None:
     digest = "sha256:bdd9ea4a8e6b...:41943040"
     out = Path("/tmp/big.bin")
     async with CoreLinkClient(
-        endpoint="https://acme-dev.corelink.humangr.com",
+        endpoint="https://corelink-api.humangr.com",
         pat=os.environ["CORELINK_PAT"],
     ) as client:
         with out.open("wb") as f:

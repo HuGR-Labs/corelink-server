@@ -28,7 +28,7 @@ import (
 func main() {
     ctx := context.Background()
     client, _ := corelink.NewClient(ctx, corelink.Config{
-        Endpoint: "https://acme-dev.corelink.humangr.com",
+        Endpoint: "https://corelink-api.humangr.com",
         PAT:      os.Getenv("CORELINK_PAT"),
     })
     defer client.Close()

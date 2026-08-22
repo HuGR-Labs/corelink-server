@@ -133,7 +133,7 @@ Für dauerhaft hohen Durchsatz kontaktieren Sie den Support, um die Grenzen Ihre
 
 Dies wird typischerweise während eines Compliance-Audits oder einer Abrechnungsstreitigkeit ausgelöst. Lesevorgänge (Downloads) bleiben verfügbar.
 
-**Behebung**: Kontaktieren Sie den CoreLink-Support unter [support@corelink.humangr.com](mailto:support@corelink.humangr.com) mit Ihrer Tenant-ID.
+**Behebung**: Kontaktieren Sie den CoreLink-Support unter [support@humangr.com](mailto:support@humangr.com) mit Ihrer Tenant-ID.
 
 ---
 
@@ -216,6 +216,6 @@ Wenn alle vier Schritte erfolgreich sind, funktioniert CoreLink. Jeder Fehler vo
 ## Hilfe erhalten
 
 - GitHub Issues: [github.com/HumanGuardrail/corelink-server/issues](https://github.com/HumanGuardrail/corelink-server/issues)
-- E-Mail-Support: [support@corelink.humangr.com](mailto:support@corelink.humangr.com)
+- E-Mail-Support: [support@humangr.com](mailto:support@humangr.com)
 
 Wenn Sie eine Support-Anfrage stellen, fügen Sie die Ausgabe der obigen Schritte 1 bis 4 sowie Ihre Tenant-ID bei.

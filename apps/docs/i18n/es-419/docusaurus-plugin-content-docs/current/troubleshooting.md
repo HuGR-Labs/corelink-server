@@ -133,7 +133,7 @@ Para un throughput alto y sostenido, contacte a soporte para elevar los límites
 
 Esto suele desencadenarse durante una auditoría de cumplimiento o una disputa de facturación. Las lecturas (descargas) siguen disponibles.
 
-**Solución**: Contacte a soporte de CoreLink en [support@corelink.humangr.com](mailto:support@corelink.humangr.com) indicando el ID de su tenant.
+**Solución**: Contacte a soporte de CoreLink en [support@humangr.com](mailto:support@humangr.com) indicando el ID de su tenant.
 
 ---
 
@@ -216,6 +216,6 @@ Si los cuatro pasos pasan, CoreLink está funcionando. Cualquier fallo antes del
 ## Cómo obtener ayuda
 
 - GitHub Issues: [github.com/HumanGuardrail/corelink-server/issues](https://github.com/HumanGuardrail/corelink-server/issues)
-- Soporte por correo electrónico: [support@corelink.humangr.com](mailto:support@corelink.humangr.com)
+- Soporte por correo electrónico: [support@humangr.com](mailto:support@humangr.com)
 
 Al abrir una solicitud de soporte, incluya la salida de los pasos 1 a 4 anteriores y el ID de su tenant.

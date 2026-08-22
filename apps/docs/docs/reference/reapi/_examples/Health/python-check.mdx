@@ -16,7 +16,7 @@ from corelink import CoreLinkClient
 
 async def main() -> None:
     async with CoreLinkClient(
-        endpoint="https://acme-dev.corelink.humangr.com",
+        endpoint="https://corelink-api.humangr.com",
         pat=os.environ["CORELINK_PAT"],
     ) as client:
         status = await client.health.check()
