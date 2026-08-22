@@ -6,7 +6,7 @@
 //
 // Run: CORELINK_PAT=$PAT DSR_ACTION=export tsx examples/quickstart_dsr_submit.ts
 
-const api = process.env.CORELINK_API_URL ?? "https://sandbox.corelink.humangr.com";
+const api = process.env.CORELINK_API_URL ?? "https://corelink-api.humangr.com";
 const pat = process.env.CORELINK_PAT;
 if (!pat) {
   console.error("error: CORELINK_PAT env var is required");

@@ -6,7 +6,7 @@ Reference project for wiring Bazel 7.x to CoreLink remote cache via REAPI v2.
 
 - Bazel 7.x (or [Bazelisk](https://github.com/bazelbuild/bazelisk))
 - C++ toolchain (`gcc` / `clang`)
-- A CoreLink Personal Access Token (PAT) — [generate one](https://corelink-app.humangr.com/tokens)
+- A CoreLink Personal Access Token (PAT) — [generate one](https://humangr.com/corelink/en/customer/keys)
 
 ## Step-by-step setup (~3 min)
 

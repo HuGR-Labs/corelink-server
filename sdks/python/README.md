@@ -1,6 +1,6 @@
 # corelink-py — Python SDK for CoreLink
 
-Python client SDK for the [CoreLink](https://corelink.humangr.com) Customer & Privacy REST API.
+Python client SDK for the [CoreLink](https://humangr.com/corelink) Customer & Privacy REST API.
 
 **Status:** Alpha (`v0.1.0a1`). Control-plane (health / PAT / signup) +
 BLAKE3-keyed CAS data plane (put / get / stat), sync and async.  

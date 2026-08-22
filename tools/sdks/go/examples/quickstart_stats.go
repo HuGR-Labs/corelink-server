@@ -21,7 +21,7 @@ import (
 func main() {
 	api := os.Getenv("CORELINK_API_URL")
 	if api == "" {
-		api = "https://sandbox.corelink.dev"
+		api = "https://corelink-api.humangr.com"
 	}
 	req, err := http.NewRequest("GET", api+"/api/health", nil)
 	if err != nil {

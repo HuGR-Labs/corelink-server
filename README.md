@@ -33,9 +33,10 @@ adds the CLI, Bazel wiring, and cache HITs.
 # 1. Install the CLI (macOS shown; Linux/Windows in the quickstart).
 brew install HuGR-Labs/tap/corelink
 
-# 2. Sign in to the sandbox (24h scratch tenant; no credit card).
-#    Visit https://corelink-app.humangr.com/sandbox, copy the PAT, then:
-export CORELINK_PAT="corelink_sandbox_t_xxx.xxx.xxx"
+# 2. Create a tenant on the Free tier (no credit card).
+#    Sign up at https://humangr.com/corelink/sign-up, then mint a PAT at
+#    https://humangr.com/corelink/en/customer/keys and copy it:
+export CORELINK_PAT="corelink_pat_xxx.xxx.xxx"
 corelink doctor                    # 8/8 checks PASS
 
 # 3. Store an artifact. BLAKE3 digest IS the storage key.
@@ -116,7 +117,7 @@ Pick the route that matches what you came here for.
 
 The [10-minute quickstart](./apps/docs/docs/tutorials/quickstart-10min.mdx)
 takes you from install to a stored + retrieved + audited artifact.
-Sandbox tenants are free, 24h-TTL, and require no credit card.
+The Free tier is free forever and requires no credit card.
 
 ```bash
 brew install HuGR-Labs/tap/corelink   # see quickstart for Linux/Windows

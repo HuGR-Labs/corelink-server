@@ -9,9 +9,8 @@
 
 2. Add `CORELINK_PAT` to your repository secrets (Settings → Secrets → Actions).
 
-3. Replace `<YOUR_TENANT_ID>` in the workflow with your CoreLink tenant slug.
 
-4. Push — the workflow runs on every push and PR.
+3. Push — the workflow runs on every push and PR.
 
 ## Cache hit ratio
 

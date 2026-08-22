@@ -57,7 +57,7 @@ jobs:
           name: Bazel build //:hello with CoreLink remote cache
           command: |
             bazel build //:hello \
-              --remote_cache=https://demo.corelink.humangr.com/v1/cache \
+              --remote_cache=https://corelink-api.humangr.com/v1/cache \
               --credential_helper=%workspace%/.bazel/corelink-credential-helper.sh \
               --remote_timeout=30 \
               --remote_retries=2 \

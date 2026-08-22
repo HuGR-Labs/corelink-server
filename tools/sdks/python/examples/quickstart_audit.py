@@ -20,7 +20,7 @@ import urllib.request
 
 
 def main() -> int:
-    api = os.environ.get("CORELINK_API_URL", "https://sandbox.corelink.humangr.com")
+    api = os.environ.get("CORELINK_API_URL", "https://corelink-api.humangr.com")
     pat = os.environ.get("CORELINK_PAT")
     if not pat:
         print("error: CORELINK_PAT env var is required", file=sys.stderr)

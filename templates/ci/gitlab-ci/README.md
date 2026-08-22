@@ -10,9 +10,8 @@
 2. Add `CORELINK_PAT` as a **masked, protected** CI/CD variable
    (Settings → CI/CD → Variables → Add variable).
 
-3. Replace `<YOUR_TENANT_ID>` in the file with your CoreLink tenant slug.
 
-4. Push — the pipeline runs on every push.
+3. Push — the pipeline runs on every push.
 
 ## Cache hit ratio
 

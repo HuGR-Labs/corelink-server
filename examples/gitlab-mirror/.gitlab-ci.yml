@@ -13,7 +13,7 @@ stages:
 
 variables:
   CORELINK_PAT: $CORELINK_PAT  # GitLab CI/CD masked variable — set in project settings
-  BAZEL_REMOTE_CACHE: "https://demo.corelink.humangr.com/v1/cache"
+  BAZEL_REMOTE_CACHE: "https://corelink-api.humangr.com/v1/cache"
   BEP_JSON: "bazel-out/bep-gitlab-sample.json"
 
 default:

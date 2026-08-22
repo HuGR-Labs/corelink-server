@@ -14,7 +14,7 @@
 //!     --duration-seconds 720 \
 //!     --expected-seconds 600 \
 //!     --evidence https://r2.example/evidence-runbooks/cast-1.cast \
-//!   | curl -X POST https://api.corelink.humangr.com/admin/runbook-drill \
+//!   | curl -X POST https://corelink-api.humangr.com/admin/runbook-drill \
 //!         -H "Authorization: Bearer $CORELINK_PAT" -d @-
 //! ```
 //!
