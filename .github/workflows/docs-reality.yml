@@ -29,21 +29,49 @@ on:
   pull_request:
     paths:
       - 'apps/docs/**'
+      - 'apps/*/src/**'
       - 'marketing/**'
       - 'docs/**'
-      - 'tools/cli/src/**'
+      - 'tools/**'
       - 'docs/knowledge/**'
       - 'crates/**/src/**'
       - 'worker/src/**'
+      # [hostname-liveness] surfaces: a dead hostname ships from these too.
+      - 'README.md'
+      - '*.md'
+      # CHANGELOG.md is NOT scanned (it narrates dead hosts by design), so a
+      # changelog-only edit must not wake the fleet — every feat:/fix: PR has one.
+      - '!CHANGELOG.md'
+      - 'openapi/**'
+      - 'sdks/**'
+      - 'examples/**'
+      - 'templates/**'
+      - 'legal/**'
+      - 'corelink-go/**'
       - 'scripts/validate_docs_reality.py'
       - 'scripts/docs_reality_allowlist.json'
+      - 'tests/test_validate_docs_reality_hostnames.py'
       - '.github/workflows/docs-reality.yml'
   push:
     branches: [main]
     paths:
       - 'apps/docs/**'
+      - 'apps/*/src/**'
       - 'marketing/**'
-      - 'tools/cli/src/**'
+      - 'tools/**'
+      - 'crates/**/src/**'
+      - 'worker/src/**'
+      - 'README.md'
+      - '*.md'
+      # CHANGELOG.md is NOT scanned (it narrates dead hosts by design), so a
+      # changelog-only edit must not wake the fleet — every feat:/fix: PR has one.
+      - '!CHANGELOG.md'
+      - 'openapi/**'
+      - 'sdks/**'
+      - 'examples/**'
+      - 'templates/**'
+      - 'legal/**'
+      - 'corelink-go/**'
       - 'scripts/validate_docs_reality.py'
       - 'scripts/docs_reality_allowlist.json'
 
@@ -86,6 +114,14 @@ jobs:
           set -o pipefail
           mkdir -p target/docs-reality
           python3 scripts/validate_docs_reality.py | tee target/docs-reality/report.txt
+
+      # The validator's own regression net. Gated here rather than left to be run
+      # by hand: an ungated test suite is a suite that rots, and the floors it
+      # asserts (a scan that inspected nothing is an ERROR) are the only thing
+      # standing between this gate and a permanent, meaningless green.
+      - name: Run the hostname-liveness regression suite
+        shell: bash
+        run: python3 -m pytest tests/test_validate_docs_reality_hostnames.py -q
 
       - name: Summarize results in PR
         if: always()
