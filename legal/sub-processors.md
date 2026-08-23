@@ -1,7 +1,7 @@
 ---
-version: "1.0.0"
-last_updated: "2026-05-13"
-notification_required: false
+version: "1.1.0"
+last_updated: "2026-08-23"
+notification_required: true
 sub_processors:
   - id: "cloudflare"
     name: "Cloudflare, Inc."
@@ -23,22 +23,31 @@ sub_processors:
     contract_signed_at: "2026-04-23"
     legal_review_evidence: "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md"
 
-
-  - id: "grafana-cloud"
-    name: "Grafana Labs"
-    role: "Observability platform (metrics, logs, dashboards)"
+  - id: "clerk"
+    name: "Clerk, Inc."
+    role: "Authentication, identity provider, JWT issuer"
     data_categories_processed:
-      - "telemetry"
-      - "audit_logs"
-      - "system_metrics"
-    region: "EU or US (selectable)"
+      - "account_pii"
+    region: "Multi-region (tenant-pinned per tenant.primary_region)"
     certifications:
       - "SOC 2 Type II"
-      - "ISO 27001"
-    dpa_url: "https://grafana.com/legal/data-processing-addendum/"
+      - "GDPR processor"
+    dpa_url: "Clerk DPA (on request)"
     primary_jurisdiction: "United States"
     contract_signed_at: "2026-04-23"
-    legal_review_evidence: "docs/compliance/vendor-reviews/grafana-dpa-review-2026-04.md"
+    legal_review_evidence: "docs/compliance/vendor-reviews/clerk-dpa-review-2026-04.md"
+
+  - id: "resend"
+    name: "Resend, Inc."
+    role: "Transactional email + newsletter-audience delivery"
+    data_categories_processed:
+      - "recipient_email_pii"
+    region: "United States"
+    certifications: []
+    dpa_url: "https://resend.com/legal/dpa"
+    primary_jurisdiction: "United States"
+    contract_signed_at: null
+    legal_review_evidence: "PENDING — VR-6 in specs/_compliance/VENDOR-RISK-REGISTER.md §5; DPA policy is published, no signed-copy evidence file on file yet"
 
   - id: "stripe"
     name: "Stripe, Inc."
@@ -70,19 +79,6 @@ sub_processors:
     primary_jurisdiction: "United States"
     contract_signed_at: "2026-04-23"
     legal_review_evidence: "docs/compliance/vendor-reviews/github-dpa-review-2026-04.md"
-
-  - id: "sigstore"
-    name: "The Linux Foundation (Sigstore)"
-    role: "Software supply chain signing and transparency log (Rekor)"
-    data_categories_processed:
-      - "code_signing_metadata"
-    region: "Global (transparency log)"
-    certifications:
-      - "Open Source (Linux Foundation)"
-    dpa_url: "https://www.sigstore.dev/"
-    primary_jurisdiction: "United States"
-    contract_signed_at: "2026-04-23"
-    legal_review_evidence: "docs/compliance/vendor-reviews/sigstore-review-2026-04.md"
 
   - id: "pagerduty"
     name: "PagerDuty, Inc."
@@ -132,14 +128,43 @@ Rate limit: 5 objections/day/subject (anti-DoS; S-08 inheritance).
 
 ## Sub-Processors
 
+Active sub-processors (6) — vendors actually processing customer personal data
+today, matching `apps/docs/docs/trust/subprocessors.mdx`'s "Active
+sub-processors" table and `specs/_compliance/VENDOR-RISK-REGISTER.md` §2:
+
 | ID | Nome | Função | Região | Certificações | DPA |
 |---|---|---|---|---|---|
 | cloudflare | Cloudflare, Inc. | Infrastructure (Workers, R2, KV, DO, D1, Pages, Email) | Multi-region (tenant-pinned) | SOC 2 Type II, ISO 27001, ISO 27018, PCI-DSS Level 1 | [DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
-| grafana-cloud | Grafana Labs | Observability (metrics, logs, dashboards) | EU or US (selectable) | SOC 2 Type II, ISO 27001 | [DPA](https://grafana.com/legal/data-processing-addendum/) |
+| clerk | Clerk, Inc. | Authentication, identity provider, JWT issuer | Multi-region (tenant-pinned) | SOC 2 Type II, GDPR processor | Clerk DPA (on request) |
 | stripe | Stripe, Inc. | Payment processing and billing | US and EU | PCI-DSS Level 1, SOC 2 Type II, ISO 27001 | [DPA](https://stripe.com/legal/dpa) |
 | github | GitHub, Inc. | Source code repository and CI/CD | United States | SOC 2 Type II, ISO 27001 | [DPA](https://docs.github.com/en/site-policy/privacy-policies/github-data-protection-agreement) |
-| sigstore | Linux Foundation (Sigstore) | Supply chain signing + Rekor transparency log | Global | Open Source (Linux Foundation) | [Site](https://www.sigstore.dev/) |
 | pagerduty | PagerDuty, Inc. | Incident management + on-call alerting | United States | SOC 2 Type II, ISO 27001 | [Privacy Policy](https://www.pagerduty.com/privacy-policy/) |
+| resend | Resend, Inc. | Transactional email + newsletter-audience delivery (recipient email is PII) | United States | DPA policy published; signed-copy evidence pending (VR-6) | [DPA](https://resend.com/legal/dpa) |
+
+## Contracted-but-not-active / integration built, not enabled
+
+The vendors below have a real client integration in the codebase (and, for
+Grafana, a prior contractual review) but are **not** currently
+sub-processors — no production credential is deployed for them, or no code
+path invokes the client, so no customer data is flowing today. Kept here
+rather than deleted so the disclosure stays truthful if one is switched on
+later; mirrors `apps/docs/docs/trust/subprocessors.mdx`'s
+"Contracted-but-not-active" table and `specs/_compliance/VENDOR-RISK-REGISTER.md`
+§4b.
+
+| Vendor | Integration | Why not active today |
+|---|---|---|
+| Grafana Labs | `grafana_cloud` OTel exporter variant (`crates/corelink-container/src/routes/otel_layer.rs:158-248`) | `CORELINK_GRAFANA_API_KEY` is deployed on no Worker; the exporter falls back to `disabled`. |
+| Drata, Inc. | `crates/corelink-ops/src/drata/` client | `DRATA_API_KEY` is deployed on none of 10 production Workers and is not a GitHub Actions secret. |
+| Slack Technologies, LLC (Salesforce) | Security-webhook delivery in `.github/workflows/pentest-findings-sync.yml` | `SLACK_SECURITY_WEBHOOK` is unset everywhere; the workflow skips the delivery step. |
+| HubSpot, Inc. | `crates/corelink-enterprise-inquiry/src/hubspot.rs` | `HUBSPOT_PRIVATE_APP_TOKEN` is unset; the client is not mounted as a route or a dependency of `corelink-container`. |
+| Twilio, Inc. (SendGrid + Twilio SMS) | None found | `SENDGRID_API_KEY` is unset everywhere and there is no code consumer at all; the live transactional-email path is Resend (above), not Twilio/SendGrid. |
+
+## Non-customer-data (supply-chain only — not counted as a sub-processor)
+
+| Vendor | Role | Why it is not a customer-data sub-processor |
+|---|---|---|
+| The Linux Foundation (Sigstore) | Keyless signing + Rekor transparency log (`.github/workflows/cosign-sign.yml`) over **CoreLink's own build artifacts** | Never receives customer data; open-source supply-chain infrastructure, not a processor under Art. 28. Listed for completeness only. |
 
 ## Notification Policy
 

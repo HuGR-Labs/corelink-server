@@ -141,6 +141,7 @@ bundler
 bursty
 canonicalization
 canonicalized
+cdylib
 cgo
 ci
 ciphertext
@@ -192,6 +193,7 @@ iframed
 impl
 informada
 inspectable
+keyless
 lameduck
 leaderboards
 lhr
@@ -273,6 +275,7 @@ stderr
 stdout
 subcommand
 subcommands
+substring
 sysexits
 takedown
 teamId
@@ -293,5 +296,3 @@ walkthroughs
 webpack
 workerd
 zstd
-cdylib
-substring

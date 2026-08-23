@@ -13,7 +13,7 @@ pending_signoff:
 sources:
   - "specs/_compliance/VENDOR-RISK-REGISTER.md"
   - "legal/sub-processors.md"
-last_updated: "2026-05-27"
+last_updated: "2026-08-23"
 ---
 
 {/* AUTO-GENERATED FILE — DO NOT EDIT BY HAND.
@@ -29,10 +29,14 @@ CoreLink uses a small set of carefully selected sub-processors to operate
 the service. This page is the **public list** maintained per GDPR Art. 28
 §2 and LGPD Art. 39 + Art. 27 §4º. It is a subset of our internal
 [Vendor Risk Register](https://github.com/HumanGuardrail/corelink/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md)
-(19 vendors total) — only those who *process customer personal data on
-CoreLink's behalf* appear in the **Active sub-processors** table.
+(19 vendors total) — only those who *actually process customer
+personal data on CoreLink's behalf today* appear in the **Active
+sub-processors** table (6 of them). A handful of registered
+vendors have a built integration but no live credential or code path yet —
+see "Contracted-but-not-active" below; they are not sub-processors until
+that changes.
 
-> **Last refreshed:** 2026-05-27. This page is **auto-generated** from
+> **Last refreshed:** 2026-08-23. This page is **auto-generated** from
 > the internal vendor register on every change; see
 > `.github/workflows/subprocessors-sync.yml` for the drift gate.
 
@@ -65,13 +69,27 @@ unresolved).
 | 1 | **Cloudflare, Inc.** | Workers / R2 / D1 / DO / KV / Pages / Email | metadata, encrypted-blobs, audit-logs, telemetry | Multi-region (per tenant `primary_region` pin) | [Cloudflare DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
 | 2 | **Stripe, Inc.** | Payment processing + subscription billing + Stripe Atlas counsel | payment, pii | Multi-region (per tenant `primary_region` pin) | [Stripe DPA](https://stripe.com/legal/dpa) |
 | 3 | **Clerk, Inc.** | Authentication + identity provider + JWT issuer | pii | Multi-region (per tenant `primary_region` pin) | Clerk DPA (on request) |
-| 4 | **Drata, Inc.** | SOC 2 / ISO 27001 evidence-collection platform + vendor-risk module + employee-attestat... | metadata, audit-logs | US / EU (selectable) | [Trust portal](https://drata.com/trust) |
-| 5 | **PagerDuty, Inc.** | Incident management + on-call alerting (prod + synthetic-drill routes) | audit-logs, metadata | US / EU (selectable) | [Trust portal](https://www.pagerduty.com/security/) |
-| 6 | **Slack Technologies, LLC (Salesforce)** | Slack | metadata, audit-logs (notification payloads — no customer PII) | US / EU (selectable) | Slack Technologies DPA (on request) |
-| 7 | **HubSpot, Inc.** | CRM (enterprise-inquiry intake) | pii (sales prospect contact data only) | Multi-region (per tenant `primary_region` pin) | [Trust portal](https://www.hubspot.com/data-privacy/security) |
-| 8 | **GitHub, Inc. (Microsoft Enterprise)** | Source code repository + CI/CD pipeline + Actions secrets store | source code (proprietary), ci artifacts, audit-logs | US / EU (selectable) | [Trust portal](https://github.com/security) |
-| 9 | **Grafana Labs** | Grafana Cloud | telemetry, audit-logs (no customer PII payloads; only aggregates) | US / EU (selectable) | [Trust portal](https://grafana.com/security/) |
-| 11 | **Twilio, Inc. (SendGrid + Twilio SMS)** | Transactional email (SendGrid) + SMS (Twilio) | pii (recipient contact only — DKIM-signed transactional mail) | Multi-region (per tenant `primary_region` pin) | Twilio DPA (on request) |
+| 4 | **PagerDuty, Inc.** | Incident management + on-call alerting (prod + synthetic-drill routes) | audit-logs, metadata | US / EU (selectable) | [Trust portal](https://www.pagerduty.com/security/) |
+| 5 | **GitHub, Inc. (Microsoft Enterprise)** | Source code repository + CI/CD pipeline + Actions secrets store | source code (proprietary), ci artifacts, audit-logs | US / EU (selectable) | [Trust portal](https://github.com/security) |
+| 6 | **Resend, Inc.** | Transactional email + newsletter-audience delivery (`apps/admin-ui/src/app/api/newslett... | pii (recipient email address) | Multi-region (per tenant `primary_region` pin) | [Resend DPA](https://resend.com/legal/dpa) |
+
+## Contracted-but-not-active / integration built, not enabled
+
+The vendors below are registered internally (reviewed contract posture,
+real client code lives in the codebase) but are **not** currently
+sub-processors: no production credential is deployed for them, or no code
+path actually invokes the client, so no customer data flows to them today.
+They are listed here — rather than omitted — so the disclosure stays
+truthful if one of them is switched on later. Each is re-verified whenever
+the register is updated (`specs/_compliance/VENDOR-RISK-REGISTER.md` §4b).
+
+| Vendor | Service (as integrated) | Why it is not active today |
+| --- | --- | --- |
+| **Drata, Inc.** | SOC 2 / ISO 27001 evidence-collection platform + vendor-risk module + employee-attestat... | `DRATA_API_KEY` is deployed on none of 10 production Workers and is not a GitHub Actions secret; no binary or workflow invokes the client. |
+| **Slack Technologies, LLC (Salesforce)** | Slack | `SLACK_SECURITY_WEBHOOK` is unset everywhere; `.github/workflows/pentest-findings-sync.yml` skips the delivery step when it is absent — no code consumer is actually wired. |
+| **HubSpot, Inc.** | CRM (enterprise-inquiry intake) | `HUBSPOT_PRIVATE_APP_TOKEN` is unset; the HubSpot client is not a dependency of `corelink-container` and is never mounted as a route. |
+| **Grafana Labs** | Grafana Cloud | `CORELINK_GRAFANA_API_KEY` is deployed on no Worker, so the `grafana_cloud` OTel exporter variant falls back to `disabled`. |
+| **Twilio, Inc. (SendGrid + Twilio SMS)** | Transactional email (SendGrid) + SMS (Twilio) | `SENDGRID_API_KEY` is unset everywhere and Twilio has no code consumer at all; the live transactional-email path is Resend, not Twilio/SendGrid. |
 
 ### BYOK key custodians (customer-side; not sub-processors)
 
@@ -110,8 +128,10 @@ zero-retention guarantee and no-customer-data scope, please raise it via
 The following appear in our internal registers but are **not**
 sub-processors:
 
-- **Sigstore (Linux Foundation)** — public transparency log; no PII is
-  written; treated as open-source infrastructure.
+- **Sigstore (Linux Foundation)** — keyless signing (`.github/workflows/cosign-sign.yml`)
+  over CoreLink's **own build artifacts** as part of our supply-chain pipeline.
+  It never receives customer data and is not a customer-data sub-processor;
+  captured in `legal/sub-processors.md` for completeness only.
 - **Self-hosted Dependency-Track** — operated by CoreLink; no third party.
 - **Per-customer HashiCorp Vault instances** — customer-side infrastructure
   outside CoreLink's processor relationship.

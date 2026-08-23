@@ -272,11 +272,11 @@ CSP / CSC responsibility column:
 
 | # | Question | A | Resp | Answer + Evidence | TSC |
 |---|---|---|---|---|---|
-| STA-01.1 | Sub-processor inventory maintained? | Y | CSP | 11 active sub-processors at `apps/docs/docs/trust/subprocessors.mdx`; 19 total vendors in `VENDOR-RISK-REGISTER.md`. | CC9.2 |
+| STA-01.1 | Sub-processor inventory maintained? | Y | CSP | 6 active sub-processors at `apps/docs/docs/trust/subprocessors.mdx`; 19 total vendors in `VENDOR-RISK-REGISTER.md`. | CC9.2 |
 | STA-02.1 | Sub-processor risk-assessed? | Y | CSP | Methodology `specs/_compliance/VENDOR-RISK-METHODOLOGY.md`; 5 Critical-vendor DD files. | CC9.2 |
-| STA-03.1 | Sub-processor SLA / DPA in place? | Y | CSP | 19/19 vendors have signed DPA. | CC9.2 |
+| STA-03.1 | Sub-processor SLA / DPA in place? | Y | CSP | 18/19 vendors have a signed DPA (Resend: DPA policy published, signed-copy evidence pending). | CC9.2 |
 | STA-04.1 | Sub-processor changes communicated? | Y | CSP | 30-day advance notice per DPA §6 + GDPR Art. 28 §2 + LGPD Art. 27 §4º. | CC2.3 |
-| STA-05.1 | Sub-processor SOC 2 / ISO held? | Y | CSP | 14/19 vendors current SOC 2 Type II (≤ 12 mo). | CC9.2 |
+| STA-05.1 | Sub-processor SOC 2 / ISO held? | Y | CSP | 13/19 vendors current SOC 2 Type II (≤ 12 mo). | CC9.2 |
 | STA-06.1 | Right to audit sub-processors? | Y | CSP | Flow-through via CoreLink DPA §8 + sub-processor DPAs. | CC9.2 |
 | STA-07.1 | Sub-processor termination procedures? | Y | CSP | `legal/sub-processors-templates/` termination clauses. | CC6.5 |
 | STA-08.1 | Software supply chain attestation? | Y | CSP | SLSA Level 3 + Cosign + Rekor + CycloneDX SBOM + reproducible builds. | CC6.7 |

@@ -3,9 +3,9 @@ id: "VENDOR-RISK-REGISTER-2026-05-15"
 type: "compliance_register"
 doc_status: "ACTIVE"
 audit_status: "ACTIVE"
-version: "1.1.0"
+version: "1.2.0"
 created: "2026-05-15"
-updated: "2026-05-27"
+updated: "2026-08-23"
 sprint: "R5-3"
 parent_wi: "WI-R5-3-GAP-14-VENDOR-RISK"
 owner: "Gustavo Schneiter"
@@ -40,11 +40,23 @@ tags: ["soc2", "cc9.2", "vendor-risk", "register", "gap-14", "drata"]
 | Critical | 6 |
 | Important | 8 |
 | Standard | 5 |
-| Vendors with signed DPA | 19 / 19 |
-| Vendors with current SOC 2 Type II (≤ 12 mo) | 14 / 19 |
+| Vendors with signed DPA | 18 / 19 (Resend: DPA policy published, signed-copy evidence pending — VR-6) |
+| Vendors with current SOC 2 Type II (≤ 12 mo) | 13 / 19 (Neon's SOC 2 left with its row-16 removal; Resend's SOC 2 report is not yet pulled into Drata — VR-6) |
 | Vendors carrying residual score ≥ 8.0 | 0 |
 | Vendors flagged for ad-hoc re-review | 0 |
 | Vendors with critical-category second-vendor failover | 5 / 6 (Drata: monitoring-only, no failover required — see §4) |
+| Registered vendors NOT currently active as public-facing (Art. 28) sub-processors | 5 / 19 — see §4b |
+
+> **2026-08-23 correction:** row 16 previously listed **Neon, Inc.** as an
+> active sub-processor processing `pii + metadata`. `DATABASE_URL` has zero
+> readers across `crates/` and `worker/`
+> (`crates/corelink-container/src/routes/dsr.rs:224-228` states plainly
+> *"Neon control-plane not shipped"*), so it was a phantom entry — removed
+> here and in `legal/sub-processors.md` / `apps/docs/docs/trust/subprocessors.mdx`
+> (tracked with PR #1215, which removed it from the contractual/public
+> disclosures). Row 16 is now **Resend, Inc.**, added because it *is* live and
+> was undisclosed in **both** registers — see §4b and the 2026-08-23 change-log
+> entry below.
 
 ---
 
@@ -84,7 +96,7 @@ Columns:
 | 13 | Anthropic, PBC | Claude model API — internal-only LLM tooling (no customer-data inference) | I | metadata only (CoreLink internal prompts; no customer payloads) | SOC 2 Type II, ISO 27001 (in progress), enterprise zero-retention API | S (zero-retention) / S / N/A | Anthropic Trust Portal | 8 | 0.40 | 3.2 | B | 2026-05-15 | 2026-11-15 | Eng-Lead |
 | 14 | OpenAI, LLC | OpenAI API — internal-only LLM tooling (no customer-data inference) | I | metadata only (CoreLink internal prompts; no customer payloads) | SOC 2 Type II, enterprise zero-retention API, GDPR processor | S (zero-retention) / S / N/A | OpenAI Trust Portal | 8 | 0.40 | 3.2 | B | 2026-05-15 | 2026-11-15 | Eng-Lead |
 | 15 | Grafana Labs | Grafana Cloud — observability (metrics, logs, dashboards) | I | telemetry + audit-logs (no customer PII payloads; only aggregates) | SOC 2 Type II, ISO 27001 | S / S / N/A | [Grafana Trust](https://grafana.com/security/) + `docs/compliance/vendor-reviews/grafana-dpa-review-2026-04.md` | 9 | 0.40 | 3.6 | B | 2026-05-15 | 2026-11-15 | Eng-Lead |
-| 16 | Neon, Inc. | Neon Postgres — control-plane DB (dsr_tickets, account, tenant, billing-ledger snapshots) | I | pii + metadata | SOC 2 Type II, ISO 27001, HIPAA-compliant | S / S / N/A | Neon SOC 2 Type II (Drata-pulled) + `docs/compliance/vendor-reviews/neon-dpa-review-2026-04.md` | 12 | 0.25 | 3.0 | B | 2026-05-15 | 2026-11-15 | Eng-Lead |
+| 16 | Resend, Inc. | Transactional email + newsletter-audience delivery (`apps/admin-ui/src/app/api/newsletter/subscribe/route.ts`; `RESEND_API_KEY` deployed on `corelink-prod` and `corelink-analytics-prod`) | I | pii (recipient email address) | GDPR processor (self-attested; SOC 2 report not yet pulled into Drata) | P / N/A / N/A (DPA policy published; signed-copy evidence not yet on file — VR-6) | [Resend DPA](https://resend.com/legal/dpa) | 12 | 0.40 | 4.8 | Q | 2026-08-23 | 2026-11-23 | VP-Sec |
 | 17 | Twilio, Inc. (SendGrid + Twilio SMS) | Transactional email (SendGrid) + SMS (Twilio) | S | pii (recipient contact only — DKIM-signed transactional mail) | SOC 2 Type II, ISO 27001, GDPR processor | S / S / N/A | Twilio Trust Hub | 6 | 0.40 | 2.4 | A | 2026-05-15 | 2027-05-15 | Eng-Lead |
 | 18 | Atlassian (Statuspage.io) | Public status page hosting | S | metadata (incident titles + impact statements only) | SOC 2 Type II, ISO 27001 | S / S / N/A | Atlassian Trust | 4 | 0.40 | 1.6 | A | 2026-05-15 | 2027-05-15 | Eng-Lead |
 | 19 | Cybot A/S (Cookiebot) | Cookie consent management (admin-ui surface) | S | pii (consent records only) | GDPR processor, ISO 27001 | S / S / N/A | Cybot DPA | 4 | 0.40 | 1.6 | A | 2026-05-15 | 2027-05-15 | Eng-Lead |
@@ -121,6 +133,31 @@ Additional note: **Datadog** appears in the task brief vendor list but is **not 
 
 ---
 
+## 4b. Registered vendors **not currently active** as customer-data sub-processors (2026-08-23)
+
+These vendors stay **in this register** (contract/DPA posture reviewed, real client
+code exists in-repo) but are **not** listed on the public
+`apps/docs/docs/trust/subprocessors.mdx` "Active sub-processors" table or in
+`legal/sub-processors.md`'s active set, because no customer data is actually
+flowing to them today. Verified 2026-08-23; each generates a line item under
+"Contracted-but-not-active / integration built, not enabled" on both the
+public page and the legal register:
+
+| Vendor | Row | Why not active |
+|---|---|---|
+| Drata, Inc. | 7 | `DRATA_API_KEY` is deployed on none of 10 production Workers and is not a GitHub Actions secret; no binary or workflow invokes the `crates/corelink-ops/src/drata/` client. |
+| Slack Technologies, LLC (Salesforce) | 10 | `SLACK_SECURITY_WEBHOOK` is unset everywhere; `.github/workflows/pentest-findings-sync.yml` skips the delivery step when it is absent. `docs/internal/secrets-checklist.md:316` records it as "not yet wired into a code consumer." |
+| HubSpot, Inc. | 11 | `HUBSPOT_PRIVATE_APP_TOKEN` is unset; `crates/corelink-enterprise-inquiry/src/hubspot.rs` is not a dependency of `corelink-container` and is never mounted as a route. `docs/internal/secrets-checklist.md:314`: "paused pending Sales Ops onboarding." |
+| Grafana Labs | 15 | `CORELINK_GRAFANA_API_KEY` is deployed on no Worker, so the `grafana_cloud` OTel variant in `crates/corelink-container/src/routes/otel_layer.rs:158-248` falls back to `disabled`. The Grafana hosts referenced in internal docs are NXDOMAIN. |
+| Twilio, Inc. (SendGrid + Twilio SMS) | 17 | `SENDGRID_API_KEY` is unset everywhere and Twilio has no code consumer at all (`docs/internal/secrets-checklist.md:102-103,305-306`: "forward-looking… No code consumer yet"). The real transactional-email path is **Resend** (row 16). |
+
+This section is the source list consumed by `scripts/gen-public-subprocessors.py`'s
+`INERT_VENDORS` map — keep both in sync when a vendor here goes live (move the
+row out of this section, drop it from `INERT_VENDORS`) or when a currently-active
+vendor goes dark (the reverse).
+
+---
+
 ## 5. Open actions
 
 | # | Action | Owner | Due | Status |
@@ -130,6 +167,7 @@ Additional note: **Datadog** appears in the task brief vendor list but is **not 
 | VR-3 | Confirm BAA signature requirement is not triggered (no PHI today); document the negative as an explicit Privacy-Officer signoff | VP-Sec | 2026-07-15 | Open |
 | VR-4 | Add Cookiebot to Drata vendor module (currently manual) | Eng-Lead | 2026-07-15 | Open |
 | VR-5 | Annual methodology refresh + Risk-Committee charter ratification | VP-Sec | 2027-05-15 | Scheduled |
+| VR-6 | Obtain a signed-copy DPA evidence file for Resend (row 16) — today only the public DPA policy page is linked, no `docs/compliance/vendor-reviews/resend-dpa-review-*.md` exists | Legal | 2026-09-23 | Open |
 
 ---
 
@@ -139,3 +177,4 @@ Additional note: **Datadog** appears in the task brief vendor list but is **not 
 |---|---|---|---|
 | 1.0.0 | 2026-05-15 | Gustavo Schneiter (via Sonnet builder, R5-3 GAP-14 closure) | Initial register; 19 vendors; closes GAP-14 from `SOC2-EVIDENCE-ROLLUP-2026-05-15.md`. |
 | 1.1.0 | 2026-05-15 | Gustavo Schneiter (Important-tier DD batch) | Added 6 vendor DD files (`DD-GCP-KMS.md`, `DD-AZURE-KEYVAULT.md`, `DD-HASHICORP-VAULT.md`, `DD-HUBSPOT.md`, `DD-PAGERDUTY.md`, `DD-SLACK.md`); cross-linked in the "Attestation evidence" column for rows 5, 6, 8, 9, 10, 11. Brings DD-file coverage to 11/19 vendors (Cloudflare/Stripe/Clerk/AWS-KMS/GCP-KMS/Azure-KV/Drata Critical row + Vault/PagerDuty/Slack/HubSpot Important rows). Remaining Important DD backlog: GitHub, Anthropic, OpenAI, Grafana, Neon (deferred to Q3 review cycle). |
+| 1.2.0 | 2026-08-23 | Gustavo Schneiter (subprocessor register-truth reconciliation) | Row 16 swapped from **Neon, Inc.** (phantom — `DATABASE_URL` has zero readers; removal tracked jointly with PR #1215) to **Resend, Inc.** (real and previously undisclosed — `RESEND_API_KEY` deployed prod, POSTs recipient PII per `apps/admin-ui/src/app/api/newsletter/subscribe/route.ts`). Added §4b listing 5 registered-but-inert vendors (Drata, Slack, HubSpot, Grafana Labs, Twilio/SendGrid) that must not appear on the public "Active sub-processors" table until a real credential + code consumer exists. `scripts/gen-public-subprocessors.py` updated to render an inert vendors out of a separate `INERT_VENDORS` map; public page regenerated. Sigstore's DPA-matrix status in `legal/sub-processors.md` clarified as supply-chain-only (no customer data), not a customer-data sub-processor. |
