@@ -8057,6 +8057,7 @@ Each entry cross-references:
   `wave-36-final-sealed`.
 - **Wave-33 → Wave-34 closure-followups #1–#5** flipped
   `audit_status: ACTIVE → CLOSED` (5/5 deferrals delivered).
+- **fix(ci): `mutation-nightly.yml`'s 11-crate matrix was failing 100% on `error: the argument '--in-place' cannot be used with '--jobs <JOBS>'`** — a cargo-mutants CLI change made the two flags mutually exclusive (`--in-place` mutates the single checked-out tree directly, which is only safe with one mutant running at a time). Dropped `--in-place` and kept `--jobs 4`: the heavy crates (`corelink-pat`, `corelink-clerk`) already take ~4.5h serially and need the 4-way parallelism (each job gets its own scratch-dir copy) to fit inside the 330-minute job timeout, so the copy overhead `--in-place` would have saved is worth far less than blowing the timeout. No kill-rate impact — only how mutants are executed, not which mutants are generated. Also replaced the `cron: '23 5 * * 1'` schedule with `workflow_dispatch`-only: mutation kill-rate is a pure function of code + tests, it cannot regress between commits, so per repo rule a cron here doesn't earn its keep (that rule is reserved for things that change WITHOUT a commit — CVE feeds, prod state, cert drift). The workflow is currently `disabled_manually` and stays that way — re-enabling is left to whoever verifies this fix.
 
 ---
 
