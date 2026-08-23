@@ -31,6 +31,10 @@ on:
 
 permissions:
   contents: read
+  # Two items ask the Actions API which workflows are disabled. Without this the
+  # token gets 403 and the item reports DRIFTED for a reason that has nothing to
+  # do with the item — a false red is as corrosive as a false green.
+  actions: read
 
 jobs:
   verify:
@@ -46,7 +50,10 @@ jobs:
         run: bash scripts/test_backlog_verify.sh
 
       - name: BACKLOG.md agrees with the repo
-        # Several items ask GitHub about sibling repos; gh needs a token.
+        # Items that query the Actions API need gh authenticated. Items about
+        # SIBLING repos are deliberately `verify: manual` — the Actions token is
+        # scoped to this repo, and pretending otherwise would produce a red that
+        # says nothing about the item. They still decay after 14 days.
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/backlog_verify.py

@@ -73,10 +73,10 @@ id: B-001
 repo: corelink-runners
 owner: tl
 status: done
-verify: |
-  gh api "repos/HuGR-Labs/corelink-runners/contents/deploy/cloudflare/src/index.ts?ref=main" \
-    -q .content | base64 -d | grep -q enforceDurableIdleBackstop
-verify-means: done while main carries the durable backstop; red if it is ever removed
+verify: manual
+verify-means: |
+  lives in corelink-runners; the Actions token cannot read a sibling repo, so this
+  cannot be automated until [B-012] lands a cross-repo credential
 last-verified: 2026-08-23
 ```
 
@@ -109,10 +109,10 @@ id: B-003
 repo: corelink-runners
 owner: tl
 status: open
-verify: |
-  gh api "repos/HuGR-Labs/corelink-runners/contents/CHANGELOG.md?ref=main" \
-    -q .content | base64 -d | grep -q "was being SIGTERMed"
-verify-means: open while the unqualified claim stands; closes when corrected or explained
+verify: manual
+verify-means: |
+  lives in corelink-runners; not automatable until [B-012] lands a cross-repo
+  credential. Open while the unqualified claim stands in that CHANGELOG.
 last-verified: 2026-08-23
 ```
 
@@ -293,10 +293,8 @@ id: B-015
 repo: corelink-server
 owner: tl
 status: open
-verify: |
-  ! gh api "repos/HuGR-Labs/corelink-server/contents/wrangler.toml?ref=main" \
-      -q .content | base64 -d | grep -q "AUDIT_BUCKET"
-verify-means: open while main has no AUDIT_BUCKET r2 binding wiring the archive producer
+verify: "! grep -q 'AUDIT_BUCKET' wrangler.toml"
+verify-means: open while there is no AUDIT_BUCKET r2 binding wiring the archive producer
 last-verified: 2026-08-23
 ```
 
@@ -348,8 +346,7 @@ id: B-016
 repo: corelink-server
 owner: tl
 status: open
-verify: |
-  ! git show origin/main:crates/corelink-worker/Cargo.toml | grep -q 'crate-type'
+verify: "! grep -q 'crate-type' crates/corelink-worker/Cargo.toml"
 verify-means: open while corelink-worker still cannot emit the wasm its attestation lanes hash
 last-verified: 2026-08-23
 ```
@@ -420,9 +417,9 @@ id: B-011
 repo: corelink-runners
 owner: tl
 status: open
-verify: |
-  test "$(gh api repos/HuGR-Labs/corelink-runners/branches --paginate -q '.[].name' | wc -l | tr -d ' ')" -gt 20
-verify-means: open while the branch count is unswept; the threshold is a floor, not a target
+verify: manual
+verify-means: |
+  lives in corelink-runners; not automatable until [B-012] lands a cross-repo credential
 last-verified: 2026-08-23
 ```
 
