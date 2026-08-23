@@ -36,21 +36,22 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 | Item | Valor |
 |---|---|
 | **Para onde enviar** | `security@humangr.com` |
-| **Impressão digital da chave PGP** | `5C2C 8E2A 6B17 9F4D 1A0B 3E9C 6F8B 2D7E 4A91 0C15` (publicada em [`/.well-known/security.txt`](/.well-known/security.txt)) |
+| **PGP** | Não disponível no momento — envie os relatórios por e-mail normal |
 | **SLA de resposta — confirmação** | 1 dia útil |
 | **SLA de resposta — decisão de triagem** | 5 dias úteis |
 | **Janela de divulgação coordenada** | 90 dias a partir da aceitação da triagem |
-| **Escopo do safe harbor** | Todos os domínios `*.corelink.humangr.com` + crates e CLIs open-source da CoreLink |
+| **Escopo do safe harbor** | Os hosts ativos da CoreLink em `humangr.com` (planos, com hífen — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` para a UI de administração) + crates e CLIs open-source da CoreLink |
 | **Programa de recompensas** | Ainda não ativo pré-GA; as recompensas monetárias entram em vigor no GA +30 dias |
 
 ## Como reportar
 
 1. Envie um e-mail para `security@humangr.com` com o prefixo de assunto
-   `[VULN-REPORT]`. Criptografe o corpo com nossa chave PGP (impressão digital acima).
+   `[VULN-REPORT]`. O envio criptografado com PGP não está disponível no
+   momento — envie o relatório por e-mail normal.
 2. Inclua detalhes suficientes para reproduzir: endpoint ou componente afetado,
    payload da requisição, comportamento esperado vs. observado. Código de prova
    de conceito é bem-vindo, mas não obrigatório.
-3. Diga-nos sua atribuição preferida (identificador para o Hall of Thanks no
+3. Diga-nos sua atribuição preferida (identificador para o Hall of Fame no
    GA +30 dias, ou "anônimo").
 4. Diga-nos sua região geográfica para que possamos encaminhar à rotação de
    plantão que cobre seu fuso horário.
@@ -76,13 +77,14 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 Se você fizer um esforço de boa-fé para cumprir esta política, não moveremos
 nem apoiaremos ação legal contra você (DMCA, CFAA ou estatutos estrangeiros
 análogos) e trataremos sua pesquisa como autorizada nos termos de
-18 U.S.C. §1030. O texto completo do safe harbor está em
-[`specs/_security/vulnerability-disclosure-policy.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_security/vulnerability-disclosure-policy.md)
-§3.
+18 U.S.C. §1030. O texto completo do safe harbor está na VDP juridicamente
+vinculante em `specs/_security/vulnerability-disclosure-policy.md` §6.
 
 ## Escopo
 
-**No escopo:** todos os subdomínios `*.corelink.humangr.com`, todos os crates
+**No escopo:** os hosts ativos da CoreLink em `humangr.com`
+(`corelink-api.humangr.com`, `corelink-docs.humangr.com`,
+`humangr.com/corelink/*` para a UI de administração), todos os crates
 open-source publicados a partir de `github.com/HumanGuardrail/corelink-server`, o
 distribuível `corelink-cli` e os entrypoints do Cloudflare Worker da CoreLink.
 
@@ -95,8 +97,8 @@ e vulnerabilidades já divulgadas em dependências de terceiros.
 ## Programa de recompensas
 
 **Pré-GA (hoje):** apenas reconhecimento. Pesquisadores que enviarem relatórios
-válidos serão reconhecidos no Hall of Thanks público no lançamento GA +30 dias
-(`/security/hall-of-thanks`).
+válidos serão reconhecidos no Hall of Fame público no lançamento GA +30 dias
+(`/security/hall-of-fame`).
 
 **GA +30 dias (planejado):** recompensas monetárias em escala de USD (Crítica
 USD 2,500 – USD 10,000; Alta USD 1,000 – USD 2,500; Média USD 250 –
