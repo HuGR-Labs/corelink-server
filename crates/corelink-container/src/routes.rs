@@ -67,6 +67,13 @@ pub mod audit_analytics;
 /// checkpoint under a compare-and-set anti-fork guard). Internal-auth gated
 /// (mirrors [`dsr`]); env-gated mount in [`crate::main`] (erase key + D1).
 pub mod audit_drain;
+
+/// Internal S-09 audit ARCHIVE route: `POST /_internal/audit/archive`.
+///
+/// Copies rows the drain already sealed into immutable NDJSON chunks in R2.
+/// Deliberately SEPARATE from [`audit_drain`] so an R2 outage can never
+/// endanger a D1 seal — see the module docs.
+pub mod audit_archive;
 /// Customer-facing audit-export route (Wave-15.3 wiring of
 /// WI-S09-008): `GET /v1/audit/export?from=&to=` streams NDJSON
 /// audit events + inclusion proofs.

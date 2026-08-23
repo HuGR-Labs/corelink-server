@@ -143,6 +143,7 @@ pub mod error;
 pub mod event;
 pub mod exporter;
 pub mod neon_shadow;
+pub mod sealed_archive;
 pub mod sink;
 pub mod verifier;
 
@@ -195,6 +196,11 @@ pub use exporter::{
     hashes_eq_ct, verify_export_result, verify_inclusion_proof, AuditExporter, ExportAuditRecord,
     ExportManifest, ExportResult, ExportWindow, ExportedAuditEvent, InMemoryAuditExporter,
     InclusionProof, ProofSibling,
+};
+pub use sealed_archive::{
+    sealed_chunk_key, serialize_chunk, split_into_chunks, verify_chunk, SealedArchiveError,
+    SealedArchiveLine, DEFAULT_SEALED_MAX_BYTES_PER_CHUNK, DEFAULT_SEALED_MAX_LINES_PER_CHUNK,
+    SEALED_LINE_SCHEMA,
 };
 pub use sink::{
     canonical_date_yyyy_mm_dd, canonical_r2_key, CapturedR2AuditSink, FailingR2AuditSink,

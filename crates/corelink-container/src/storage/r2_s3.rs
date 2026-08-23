@@ -160,6 +160,57 @@ impl R2S3Client {
         Ok(())
     }
 
+    /// Upload `bytes` under `key` ONLY if no object exists there.
+    ///
+    /// Returns `Ok(true)` when this call created the object and `Ok(false)`
+    /// when the key was already taken. The conditional is server-side
+    /// (`If-None-Match: *`), so two racing writers cannot both believe they
+    /// created it.
+    ///
+    /// This exists for the audit archive, whose bucket carries a 7-year Object
+    /// Lock: an existing object there CANNOT be overwritten, so the caller has
+    /// to know which of the two happened rather than firing a blind `put` and
+    /// reading success into an error it never saw.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(String)` on any S3/network error other than the
+    /// precondition failure, which is reported as `Ok(false)`.
+    pub async fn put_if_absent(&self, key: &str, bytes: Vec<u8>) -> Result<bool, String> {
+        debug!(
+            bucket = %self.bucket,
+            key = %key,
+            bytes = bytes.len(),
+            "R2S3Client::put_if_absent"
+        );
+        let len = bytes.len() as i64;
+        let result = self
+            .inner
+            .put_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .body(bytes.into())
+            .content_length(len)
+            .if_none_match("*")
+            .send()
+            .await;
+        match result {
+            Ok(_) => Ok(true),
+            Err(sdk_err) => {
+                // R2 answers a failed `If-None-Match: *` with 412
+                // PreconditionFailed. The SDK has no typed variant for it on
+                // PutObject, so the HTTP status is the discriminator.
+                let status = sdk_err.raw_response().map(|r| r.status().as_u16());
+                if status == Some(412) {
+                    return Ok(false);
+                }
+                Err(format!(
+                    "R2 conditional put failed for key {key}: {sdk_err}"
+                ))
+            }
+        }
+    }
+
     /// Download the bytes stored under `key`.
     ///
     /// Returns `Ok(Some(bytes))` on success, `Ok(None)` if the object
