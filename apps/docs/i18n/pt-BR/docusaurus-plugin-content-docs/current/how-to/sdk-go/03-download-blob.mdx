@@ -6,6 +6,7 @@ description: Fetch a blob by digest with default-on BLAKE3 client-side verify.
 tags: [sdk, go, cas, how-to]
 ---
 
+
 <!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
 > MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
@@ -16,9 +17,9 @@ tags: [sdk, go, cas, how-to]
 
 ## When to use this guide
 
-You hold a BLAKE3 digest and need the materialized bytes. The Go SDK verifies
-the digest client-side by default (CTRL-CAS-002) — corrupted bytes never
-escape `Get`.
+You hold a BLAKE3 digest and need the bytes. `Get` verifies the digest
+client-side when the client was constructed with verify enabled (the
+default — see [Authenticate](./01-authenticate.mdx)).
 
 ## Prerequisites
 
@@ -33,51 +34,37 @@ func download(ctx context.Context, cli *corelink.Client, digest string) ([]byte,
 }
 ```
 
-If verification fails, the SDK returns `*corelink.DigestMismatchError` and
-**no bytes** — you cannot accidentally use unverified data.
+If verification fails, `Get` returns an error containing
+`COR_CAS_DIGEST_MISMATCH` and no bytes.
 
-## Streaming download
+## No streaming download
 
-```go
-func streamToFile(ctx context.Context, cli *corelink.Client, digest, dest string) error {
-    rc, err := cli.GetStream(ctx, digest)
-    if err != nil {
-        return err
-    }
-    defer rc.Close()
+There is no `GetStream` — `Get` returns the full `[]byte`. If you need to
+stream a download without buffering the whole blob in memory, use
+`corelink-py`'s `AsyncCoreLinkClient.get_stream(digest)` (an async context
+manager you iterate with `async for chunk in stream:`) — that method exists
+only on the async Python client, not the sync one or this Go SDK.
 
-    f, err := os.Create(dest)
-    if err != nil {
-        return err
-    }
-    defer f.Close()
+## Verification is a construction-time setting, not a per-call flag
 
-    if _, err := io.Copy(f, rc); err != nil {
-        return err
-    }
-    // rc.Close() validates the BLAKE3 root; an error here means the file is
-    // corrupt and must be deleted by the caller before swapping into place.
-    return rc.Close()
-}
-```
-
-## Opting out of verification
-
-**Strongly discouraged**. Use the `WithoutVerify` option only for transport
-latency benchmarks. The SDK emits a structured warning log
-`corelink.client.verify_disabled` per CTRL-CAS-002.
-
-```go
-data, err := cli.Get(ctx, digest, corelink.WithoutVerify())
-```
+There is no `WithoutVerify()` call-site option. Client-verify is set once,
+at `NewClient`, via `Config.ClientVerify` +
+`Config.ClientVerifyExplicitFalse` (see
+[Authenticate](./01-authenticate.mdx)) — every `Get` on that client either
+verifies or doesn't, for the client's lifetime.
 
 ## Errors
 
-| Error type | Meaning |
+Plain `error` values (message strings) — there is no
+`*corelink.NotFoundError`, `*corelink.DigestMismatchError`, or
+`*corelink.RegionError` type:
+
+| Message contains | Cause |
 |---|---|
-| `*corelink.NotFoundError` | Digest not in tenant CAS |
-| `*corelink.DigestMismatchError` | Bytes corrupted; do not use |
-| `*corelink.RegionError` | Blob lives elsewhere; inspect `corelink stat` |
+| `invalid digest length %d (expected 64)` | The digest passed to `Get` isn't 64 hex chars — recompute (CoreLink digests are BLAKE3, not SHA-256). |
+| `COR_CAS_DIGEST_MISMATCH: digest mismatch for %s` | Client-verify caught a BLAKE3 mismatch. Possible corruption in transit; retry, and open a support ticket if it persists. |
+| `COR_CAS_VERIFY_DISABLED` | `Get` was called on a client constructed with verify explicitly disabled — expected if you meant to disable it. |
+| `get verify failed (rc=%d)` | Non-zero, non-mismatch return from the native call. |
 
 ## Next steps
 
