@@ -695,6 +695,12 @@ candidates:
     status: "active"
     source_cluster: "adr"
     seed_from: ["specs/03_architecture/adrs/ADR-0071-find-missing-scope-read-superset-hierarchy.md"]
+  - id: "adr/adr-0072-humangr-zone-min-tls-1-2"
+    type: "ADR"
+    title: "ADR 0072 humangr zone min tls 1.2"
+    status: "active"
+    source_cluster: "adr"
+    seed_from: ["specs/03_architecture/adrs/ADR-0072-humangr-zone-min-tls-1.2.md"]
   - id: "adr/adr-multi-region-v1"
     type: "ADR"
     title: "ADR MULTI REGION V1"

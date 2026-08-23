@@ -121,6 +121,7 @@ This is the reserved machine-generated listing of every concept in `docs/knowled
 - [ADR-0069 — PAT verification: fast keyed hash, not Argon2id (high-entropy tokens)](/adr/adr-0069-pat-verification-fast-hash-vs-argon2id.md)
 - [ADR-0070 — Tenant-suspend gate: L2 KV cache with a bounded enforcement window](/adr/adr-0070-tenant-suspend-gate-kv-l2-cache.md)
 - [ADR-0071 — Cache find-missing is a read-superset capability (read ⊇ find-missing)](/adr/adr-0071-find-missing-scope-read-superset-hierarchy.md)
+- [ADR-0072 — humangr.com zone min_tls_version lowered 1.3 → 1.2 for sccache](/adr/adr-0072-humangr-zone-min-tls-1-2.md)
 - [ADR-0098 — erasure region-CHECK widening via additive table rebuild (migration 0098)](/adr/adr-0098-erasure-region-check-widen-rebuild.md)
 - [ADR-MULTI-REGION-V1 — Multi-region container deployments v1 (per-region worker envs)](/adr/adr-multi-region-v1.md)
 - [ADR-S11-001 — MFA step-up required only on destructive DSR arms](/adr/adr-s11-001-mfa-step-up-destructive-arms-only.md)
