@@ -1,0 +1,59 @@
+# The backlog gate — make BACKLOG.md unable to lie for long.
+#
+# Every item in BACKLOG.md carries a command that decides whether its own claim is
+# still true. This runs them. An item whose declared status no longer matches the
+# repo is DRIFTED; an unverifiable item that has aged past its freshness limit is
+# STALE. Either fails the job.
+#
+# WHY A CRON IS JUSTIFIED HERE, given this repo's rule that a schedule earns its
+# keep only when something changes WITHOUT a commit: a backlog item closes when
+# work lands in ANOTHER repo (corelink-runners, corelink-workspaces) or when live
+# state changes. Neither produces a commit here, so a PR trigger alone would let
+# the file drift silently between merges — which is the exact failure this replaces.
+name: backlog-verify
+
+on:
+  pull_request:
+    paths:
+      - "BACKLOG.md"
+      - "scripts/backlog_verify.py"
+      - "scripts/test_backlog_verify.sh"
+      - ".github/workflows/backlog-verify.yml"
+  push:
+    branches: [main]
+    paths:
+      - "BACKLOG.md"
+      - "scripts/backlog_verify.py"
+  schedule:
+    # Daily, early UTC. Cheap: a handful of greps and gh API calls.
+    - cron: "17 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  # Two items ask the Actions API which workflows are disabled. Without this the
+  # token gets 403 and the item reports DRIFTED for a reason that has nothing to
+  # do with the item — a false red is as corrosive as a false green.
+  actions: read
+
+jobs:
+  verify:
+    # Self-hosted fleet — zero GitHub-hosted spend, per the standing mandate.
+    runs-on: corelink
+    steps:
+      - uses: actions/checkout@9f698171ed81b15d1823a05fc7211befd50c8ae0  # v6.0.3
+
+      # The gate's own gate. A checker nobody has watched fail proves nothing, so
+      # the self-test runs FIRST: if it cannot produce a red verdict on a backlog
+      # designed to fail, the real run below is worthless and we stop here.
+      - name: the gate can go red (self-test)
+        run: bash scripts/test_backlog_verify.sh
+
+      - name: BACKLOG.md agrees with the repo
+        # Items that query the Actions API need gh authenticated. Items about
+        # SIBLING repos are deliberately `verify: manual` — the Actions token is
+        # scoped to this repo, and pretending otherwise would produce a red that
+        # says nothing about the item. They still decay after 14 days.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/backlog_verify.py
