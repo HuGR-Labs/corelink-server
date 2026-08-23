@@ -494,9 +494,21 @@ verify-means: settled when a bot-opened PR shows checks
 last-verified: 2026-08-23
 ```
 
-### B-013 — three PEM files in ~/Downloads
+### B-013 — three private keys sitting in ~/Downloads
 
-Permanent deletion is not something I do. `rm -P`.
+Re-checked 2026-08-23, still present:
+
+```
+corelink-app.pk8.pem                              1704 B  2026-06-15
+corelink-runners-fleet.2026-06-15.private-key.pem 1675 B  2026-06-15
+corelink-runners.2026-07-13.private-key.pem       1679 B  2026-07-13
+```
+
+A fourth file, `githugr-clerk-pubkey.pem`, is a **public** key and harmless — it
+is listed here only so nobody deletes three and calls it four.
+
+These are GitHub App private keys. Secure deletion is genuinely the owner's: I do
+not permanently delete data. `rm -P` overwrites before unlinking.
 
 ```backlog
 id: B-013
@@ -508,16 +520,37 @@ verify-means: local filesystem state, outside any repo
 last-verified: 2026-08-23
 ```
 
-### B-014 — confirm the leaked Stripe webhook secret was rotated
+### B-014 — the leaked Stripe webhook secret was already verified harmless
 
-A `whsec_` value was exposed. Rotation must be confirmed in the Stripe dashboard.
+**Closed 2026-08-23 on re-check, and it was never the owner's to do.** This item
+was seeded from a stale index line reading "leaked Stripe whsec — OWNER confirm
+rotation". The check had already been done on 2026-07-11: the leaked value was
+compared against the live deployed secret and they differ, and the leaked one
+belonged to endpoint `we_1Tca…`, which no longer exists. Confirmed again today —
+the account has three live webhook endpoints (`we_1Toli…` signup 2026-07-02,
+`we_1Tfh8…` api 2026-06-07, and the wallet endpoint `we_1TJ1Y…` which is
+`disabled`), and the leaked endpoint is not among them.
+
+So there is nothing to rotate: the live secret was never the leaked one. The only
+residue is a dead value in git history, and a history purge was already rejected
+because it would orphan the OKF wiki's blob anchors.
+
+Kept as a closed item rather than deleted, per the density rule — and as a record
+of the re-check, since "owner must confirm" survived in my notes for six weeks
+after it had already been settled.
 
 ```backlog
 id: B-014
 repo: corelink-server
-owner: owner
-status: open
-verify: manual
-verify-means: vendor dashboard state; not observable from any repo
+owner: tl
+status: done
+verify: |
+  test "$(curl -s "https://api.stripe.com/v1/webhook_endpoints?limit=20" \
+    -u "$(grep -m1 '^STRIPE_LIVE_SECRET_KEY=' .env.local | cut -d= -f2-):" \
+    | grep -c 'we_1Tca')" = "0"
+verify-means: |
+  done while the endpoint the leaked secret belonged to stays absent from the live
+  account. Requires .env.local, so it only runs locally — the CI gate treats a
+  missing file as a failed check, which is the correct direction.
 last-verified: 2026-08-23
 ```
