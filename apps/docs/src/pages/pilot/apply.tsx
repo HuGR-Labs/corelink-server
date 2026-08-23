@@ -1,9 +1,13 @@
 /**
  * Pilot signup form — `humangr.com/corelink/docs/pilot/apply`.
  *
- * R-prep wave-29 stream-2 deliverable. Pairs with the
- * `signup.corelink.humangr.com` backend handler (stream-1):
- *   POST https://signup.corelink.humangr.com/v1/signup/pilot/{token}
+ * R-prep wave-29 stream-2 deliverable. Pairs with the container-side handler
+ * (`crates/corelink-container/src/routes/signup.rs`, stream-1):
+ *   POST https://corelink-api.humangr.com/v1/signup/pilot/{token}
+ *
+ * The route mounts fail-CLOSED: the container only registers it when
+ * `SIGNUP_TOKEN_KEY` is present and valid at boot (`routes.rs:789-797`), so an
+ * unset secret is indistinguishable from "never implemented" — a silent 404.
  *
  * Validation rules (client-side; backend re-validates):
  *   - token: 32-char Crockford base32 (0-9A-HJKMNP-TV-Z, case-insensitive,
@@ -28,7 +32,12 @@ import Layout from "@theme/Layout";
 import Translate, { translate } from "@docusaurus/Translate";
 import styles from "./pilot.module.css";
 
-const SIGNUP_ENDPOINT = "https://signup.corelink.humangr.com/v1/signup/pilot";
+// The route is served by the container behind the prod API host. The old
+// `signup.corelink.humangr.com` name is NXDOMAIN (dotted scheme, retired — the
+// flat `corelink-*.humangr.com` scheme is canonical), so every submission from
+// this form failed at DNS: the pilot intake was advertised as open and could
+// not accept a single application.
+const SIGNUP_ENDPOINT = "https://corelink-api.humangr.com/v1/signup/pilot";
 
 // Crockford base32 alphabet (32 chars, no I/L/O/U; case-insensitive on input).
 const CROCKFORD_RE = /^[0-9A-HJKMNP-TV-Z]{32}$/;
@@ -196,7 +205,7 @@ export default function PilotApply(): ReactElement {
           message: translate({
             id: "pilot.apply.backend.network",
             message:
-              "Network error contacting signup.corelink.humangr.com. Retry, or email pilot@humangr.com.",
+              "Network error contacting corelink-api.humangr.com. Retry, or email pilot@humangr.com.",
             description: "Pilot apply form — network/fetch failure",
           }),
         });

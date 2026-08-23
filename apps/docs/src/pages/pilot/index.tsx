@@ -4,9 +4,9 @@
  * R-prep wave-29 stream-2 deliverable. Source-of-truth copy:
  *   marketing/launch/PILOT-LANDING-PAGE-COPY.md (wave-28 step-7, b0485bc).
  *
- * Pairs with the `signup.corelink.humangr.com` backend handler built in stream-1.
+ * Pairs with the `corelink-api.humangr.com` backend handler built in stream-1.
  * Submitted form (see `./apply.tsx`) POSTs to
- *   `https://signup.corelink.humangr.com/v1/signup/pilot/{token}`
+ *   `https://corelink-api.humangr.com/v1/signup/pilot/{token}`
  *
  * Honest pre-GA framing is mandatory (wave-28 pilot comms precedent):
  * the in-page banner makes the pilot-vs-GA boundary explicit so it is

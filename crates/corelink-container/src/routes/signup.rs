@@ -5,9 +5,11 @@
 //! shell scripts (`grant-pilot-tier.sh`, `list-pilot-tenants.sh`,
 //! `pilot-24h-checkin.sh`) and the Grafana dashboard panel template;
 //! wave-28's pilot-comms package (`docs/internal/pilot-comms-templates.md`)
-//! references the public URL
-//! `https://signup.corelink.humangr.com/pilot/<token>`. This module is the
-//! production backend that finally redeems those tokens.
+//! references a public URL for token redemption. That URL was
+//! `https://signup.corelink.humangr.com/pilot/<token>`, on the retired
+//! dotted hostname scheme; the live one is
+//! `https://corelink-api.humangr.com/v1/signup/pilot/<token>`. This
+//! module is the production backend that redeems those tokens.
 //!
 //! # Token format
 //!
@@ -59,7 +61,7 @@
 //!
 //! {
 //!   "tenant_id": "<uuid v7>",
-//!   "activation_url": "https://signup.corelink.humangr.com/pilot/activate/<id>",
+//!   "activation_url": "https://humangr.com/corelink/sign-up?pilot=<id>",
 //!   "state": "RESERVED"
 //! }
 //! ```
@@ -650,7 +652,7 @@ pub struct SignupRouteState {
     /// Wall clock — anchors the TTL check + emit wall-clock.
     pub wall_clock: Arc<dyn WallClock>,
     /// Activation URL base — production binds to
-    /// `https://signup.corelink.humangr.com/pilot/activate`.
+    /// [`DEFAULT_ACTIVATION_URL_BASE`], the live Clerk sign-up surface.
     pub activation_url_base: Arc<String>,
 }
 
@@ -662,7 +664,22 @@ impl core::fmt::Debug for SignupRouteState {
 
 /// Canonical activation-URL base (production wiring). Tests inject a
 /// fixture base via [`build_state_with_key`].
-pub const DEFAULT_ACTIVATION_URL_BASE: &str = "https://signup.corelink.humangr.com/pilot/activate";
+///
+/// This points at the **live Clerk sign-up surface**, which is the only
+/// account-creation path that exists. The previous value
+/// (`https://signup.corelink.humangr.com/pilot/activate`) was dead twice
+/// over: the `signup.corelink.humangr.com` name is NXDOMAIN (dotted
+/// scheme, retired in favour of the flat `corelink-*.humangr.com` one),
+/// and no `/pilot/activate` page was ever built on any host — so an
+/// applicant who reserved a slot received a link that could not resolve
+/// and, had it resolved, would have 404'd.
+///
+/// The reservation id rides as the `pilot` query parameter rather than a
+/// path segment: `/corelink/sign-up` is a Clerk catch-all route
+/// (`sign-up/[[...sign-up]]`) that owns its own sub-paths for the
+/// multi-step flow, so an extra path segment would collide with Clerk's
+/// routing. A query parameter passes through untouched.
+pub const DEFAULT_ACTIVATION_URL_BASE: &str = "https://humangr.com/corelink/sign-up";
 
 /// Construct the native dev/CI route state with the given HMAC key.
 ///
@@ -903,7 +920,7 @@ async fn handle_pilot_signup(
     }
 
     // 6) Render the 201 response.
-    let activation_url = format!("{}/{}", state.activation_url_base, stored.id);
+    let activation_url = format!("{}?pilot={}", state.activation_url_base, stored.id);
     let resp_body = PilotSignupResponse {
         tenant_id: stored.tenant_id,
         activation_url,

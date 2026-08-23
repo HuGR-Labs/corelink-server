@@ -5,7 +5,7 @@
  * variables (`--ifm-*`) so the palette tracks light/dark mode automatically
  * and inherits the WCAG 2.2 AA contrast budget established in
  * `src/css/custom.css` (R-prep wave-29 stream-2 — pairs with
- * `signup.corelink.humangr.com` backend handler).
+ * `corelink-api.humangr.com` backend handler).
  */
 
 .page {

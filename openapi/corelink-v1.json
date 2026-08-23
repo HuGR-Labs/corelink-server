@@ -4358,8 +4358,9 @@
           "activation_url": {
             "type": "string",
             "format": "uri",
+            "description": "Where the applicant completes account creation. Points at the live Clerk sign-up surface, carrying the reservation id as the `pilot` query parameter.",
             "examples": [
-              "https://signup.corelink.humangr.com/pilot/activate/01J..."
+              "https://humangr.com/corelink/sign-up?pilot=01J..."
             ]
           },
           "state": {
