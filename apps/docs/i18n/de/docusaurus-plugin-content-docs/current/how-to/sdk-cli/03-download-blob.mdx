@@ -6,12 +6,12 @@ description: Fetch a blob by digest with default-on BLAKE3 client-side verify.
 tags: [sdk, cli, cas, how-to]
 ---
 
+
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
 
 > MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
 >
 > Canonical EN source: `docs/how-to/sdk-cli/03-download-blob.mdx`
-
 
 # Download a blob
 
@@ -33,7 +33,10 @@ corelink get 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   -o ./restored.tar
 ```
 
-If verification fails, the CLI exits `3` and **deletes the partial file**.
+If verification fails, the CLI exits `1` with an
+`error: Client verify FAILED: ...` message. The download is fully buffered
+in memory before verification, so nothing is ever written to `-o` for a
+failed verify — there is no partial file to clean up.
 
 ## To stdout
 
@@ -43,15 +46,15 @@ corelink get <digest> > ./restored.tar
 
 stdout is binary; do not redirect to a tty.
 
-## Streaming verification
+## Verification
 
-The CLI hashes the response incrementally as it arrives. At end-of-stream
-the BLAKE3 root is checked against the requested digest. A mismatch always
-results in:
+The CLI downloads the full response body, then hashes it and compares the
+result to the requested digest before writing anything to disk or stdout.
+A mismatch always results in:
 
-- Exit code `3`.
-- `COR_VERIFY_001` written to stderr.
-- Partial output removed (when `-o` is used).
+- Exit code `1`.
+- `error: Client verify FAILED: expected blake3:<requested>, got blake3:<actual>. ...` on stderr.
+- No output file created (verification happens before the write, not after).
 
 ## JSON output
 
@@ -77,13 +80,14 @@ performance measurement use `corelink bench`.
 
 ## Exit codes
 
+The CLI has exactly four exit codes, shared by every subcommand:
+
 | Code | Meaning |
 |---|---|
 | `0` | Downloaded + verified |
-| `1` | Network or auth failure |
-| `2` | Argument error |
-| `3` | Verify failure (`COR_VERIFY_001`) |
-| `4` | Not found (`COR_CAS_NOT_FOUND`) |
+| `1` | Any failure — network, auth, not found, verify mismatch. Read the `error: ...` message on stderr for which. |
+| `2` | Argument/flag error, or the `--pat` flag was rejected (CTRL-CRED-001) |
+| `65` | Reserved for `corelink audit verify-ndjson --url` mid-stream abort only — not used by `get` |
 
 ## Next steps
 

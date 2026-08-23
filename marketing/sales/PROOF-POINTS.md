@@ -28,7 +28,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 1. **p99 cache-hit latency: target ≤ 300 ms in-region, typical observed 180–220 ms.** Source: SLO catalog `SLO-LAT-CAS-GET`; lighthouse Customer Playbook `marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md#what-were-measuring-daily-automated`.
 2. **Cache availability SLO: ≥ 99.9% per-customer.** Source: SLO catalog `cache-availability`; Lighthouse Customer Playbook table.
 3. **Tenant isolation: TLA+ model-checked, gated in CI.** Source: `tenant_isolation.tla` formal spec; `INV-TenantIsolation` CRITICAL invariant; `apps/docs/docs/trust/index.mdx#posture-at-a-glance`.
-4. **0 cross-tenant leaks ever.** Source: adversarial E2E test suite; audit-chain reconciliation; external pentest tenant-isolation scenario (clean + clean retest).
+4. **0 cross-tenant leaks ever.** Source: adversarial E2E test suite; audit-chain reconciliation. NOTE: no external penetration test has been performed — do NOT cite one.
 5. **BYOK kill-switch round-trip: ≤ 5 minutes hard cap.** Source: DEK cache TTL code path (`crates/corelink-crypto-envelope/src/dek_cache.rs`); `INV-BYOK-CRYPTO-SOVEREIGNTY` CRITICAL invariant; `BLOG-POSTS/02-byok-deep-dive.md#bounded-dek-cache`; lighthouse SLO `byok-kill-switch-rtt`.
 6. **Audit chain: RFC 6962 + RFC 8785 JCS, 7-year retention.** Source: `BLOG-POSTS/03-audit-chain-merkle-proofs.md`; `audit_immutability.tla`; `INV-AUDIT-APPEND-ONLY` + `INV-OBS-AUDIT-CHAIN-INTEGRITY` CRITICAL invariants; `apps/docs/docs/trust/data-handling.mdx#retention`. **In-browser proof verifier** at `/customer/audit/visualization` (spec: `specs/_audits/sealed/2026-05-15-audit-viz-spec.md`) — auditors verify inclusion proofs in a tab, no CLI install required.
 7. **SOC 2 readiness: 83.7% weighted (113/135 weighted criterion-points green).** Source: `specs/_compliance/SOC2-EVIDENCE-ROLLUP-2026-05-15.md`; Drata dashboard; `apps/docs/docs/trust/compliance.mdx#soc-2`.
@@ -58,7 +58,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 | # | Claim | Source |
 | --- | --- | --- |
 | 2.1 | Tenant isolation modeled in `tenant_isolation.tla`, gated in CI | `INV-TenantIsolation`; `apps/docs/docs/trust/index.mdx` |
-| 2.2 | 0 cross-tenant leaks ever | Adversarial E2E + audit-chain reconciliation; pentest tenant-isolation scenario clean + retest clean |
+| 2.2 | 0 cross-tenant leaks ever | Adversarial E2E + audit-chain reconciliation |
 | 2.3 | BYOK envelope encryption; AWS KMS provider at GA (GCP / Azure / Vault on the roadmap) | `BLOG-POSTS/02-byok-deep-dive.md#the-four-providers`; `apps/docs/docs/explanation/security/byok.mdx` (provider status) |
 | 2.4 | DEK cache TTL hard-capped at 5 minutes (code path, not config) | `crates/corelink-crypto-envelope/src/dek_cache.rs`; ADR-S14-004 |
 | 2.5 | AAD binding: `tenant_id \|\| blob_hash \|\| cache_id` enforced on every wrap | `BLOG-POSTS/02-byok-deep-dive.md#aad-binding-cryptographic-locality` |
@@ -68,7 +68,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 | 2.9 | Client-side BLAKE3 re-hash default-on (CTRL-CAS-002); mismatch raises `COR_CAS_DIGEST_MISMATCH` | `apps/docs/docs/tutorials/quickstart-faq.mdx#12` |
 | 2.10 | `--pat` CLI flag rejected by design (CTRL-CRED-001) | `apps/docs/docs/tutorials/quickstart-faq.mdx#11` |
 | 2.11 | Crypto-erasure live (NIST SP 800-88 Rev. 1 classification); customer-served Ed25519-signed erasure attestation on the roadmap | `BLOG-POSTS/02-byok-deep-dive.md#erasure-attestation`; `INV-ERASURE-ATTESTATION-SIGNED` |
-| 2.12 | External pentest (Pentest-1 firm) clean with post-remediation retest pre-GA | `BLOG-POSTS/01-introducing-corelink.md`; spec contract S-20 §6.1 |
+| 2.12 | ~~External pentest clean + retest~~ **NOT A CLAIM — no external pentest has been commissioned.** The RFP has not been sent (`marketing/launch/PENTEST-RFP-EMAIL-BISHOP-FOX.md`, send step unchecked) and no report exists. The public docs page states this correctly (`apps/docs/docs/explanation/compliance/pentest-summary.mdx`: "No vendor has been contracted"). Reps must not assert any pentest result. | — |
 | 2.13 | Weekly synthetic BYOK chaos drill on lighthouse tenants | `CUSTOMER-PLAYBOOK.md#what-to-look-for-what-to-escalate` |
 | 2.14 | Dual-approval gate on 5 destructive admin ops (`ConfigRollback`, `RetentionPolicyReduce`, `FeatureFlagDisable`, `SecretRotationStart`, `TenantTombstone`) | `CUSTOMER-PLAYBOOK.md#within-48h-of-the-call`; `PAT-DUAL-APPROVAL-001` |
 | 2.15 | Signed-deploy pipeline + Rekor transparency-log entries per release | `apps/docs/docs/trust/compliance.mdx#what-you-can-rely-on-today-pre-type-i` |
@@ -96,7 +96,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 | 3.16 | HIPAA out-of-scope by design; no BAAs signed | `apps/docs/docs/trust/compliance.mdx#hipaa` |
 | 3.17 | FedRAMP not in roadmap; NIST 800-53 crosswalk informational | `apps/docs/docs/trust/compliance.mdx#quick-scope-map` |
 | 3.18 | Sub-processor change notice: 30 calendar days advance | `apps/docs/docs/trust/subprocessors.mdx#notice-of-changes-30-day-grace` |
-| 3.19 | Vendor risk register: 19 vendors; 11 active sub-processors at GA | `specs/_compliance/VENDOR-RISK-REGISTER.md`; `apps/docs/docs/trust/subprocessors.mdx` |
+| 3.19 | Vendor risk register: 19 vendors; 6 active sub-processors at GA (5 more are registered with a built integration but not yet processing customer data — see the register's "Contracted-but-not-active" section) | `specs/_compliance/VENDOR-RISK-REGISTER.md`; `apps/docs/docs/trust/subprocessors.mdx` |
 
 ## 4. Operations claims
 

@@ -33,6 +33,7 @@ import { createPortal } from "react-dom";
 import OriginalNavbarContent from "@theme-original/Navbar/Content";
 import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
 import StatusPill from "@site/src/components/StatusPill/StatusPill";
+import { DEFAULT_STATUSPAGE_URL } from "@site/src/statuspage-url";
 
 interface StatuspageCustomFields {
   statuspageUrl?: string;
@@ -44,7 +45,7 @@ export default function NavbarContentWrapper(): ReactElement {
   const statuspageUrl =
     typeof customFields.statuspageUrl === "string" && customFields.statuspageUrl.length > 0
       ? customFields.statuspageUrl
-      : "https://status.corelink.humangr.com";
+      : DEFAULT_STATUSPAGE_URL;
 
   const [host, setHost] = useState<HTMLElement | null>(null);
 

@@ -89,6 +89,38 @@ PUBLIC_EXCLUDED = {
     "Cybot A/S (Cookiebot)",  # consent vendor; documented under /privacy
 }
 
+# Vendors that are registered (real client code + reviewed contract posture)
+# but are NOT currently receiving customer data: the credential is not
+# deployed anywhere, or no code path invokes the client. Kept off the
+# "Active sub-processors" table and rendered instead under a separate
+# "Contracted-but-not-active" section so they are documented, not silently
+# dropped. Source of truth for the reasons: register §4b. Keep this map in
+# sync with that section.
+INERT_VENDORS = {
+    "Drata, Inc.": (
+        "`DRATA_API_KEY` is deployed on none of 10 production Workers and is "
+        "not a GitHub Actions secret; no binary or workflow invokes the client."
+    ),
+    "Slack Technologies, LLC (Salesforce)": (
+        "`SLACK_SECURITY_WEBHOOK` is unset everywhere; "
+        "`.github/workflows/pentest-findings-sync.yml` skips the delivery "
+        "step when it is absent — no code consumer is actually wired."
+    ),
+    "HubSpot, Inc.": (
+        "`HUBSPOT_PRIVATE_APP_TOKEN` is unset; the HubSpot client is not a "
+        "dependency of `corelink-container` and is never mounted as a route."
+    ),
+    "Grafana Labs": (
+        "`CORELINK_GRAFANA_API_KEY` is deployed on no Worker, so the "
+        "`grafana_cloud` OTel exporter variant falls back to `disabled`."
+    ),
+    "Twilio, Inc. (SendGrid + Twilio SMS)": (
+        "`SENDGRID_API_KEY` is unset everywhere and Twilio has no code "
+        "consumer at all; the live transactional-email path is Resend, "
+        "not Twilio/SendGrid."
+    ),
+}
+
 
 @dataclass(frozen=True)
 class VendorRow:
@@ -123,9 +155,19 @@ class VendorRow:
         return self.vendor in PUBLIC_EXCLUDED
 
     @property
+    def is_inert(self) -> bool:
+        return self.vendor in INERT_VENDORS
+
+    @property
+    def inert_reason(self) -> str:
+        return INERT_VENDORS.get(self.vendor, "")
+
+    @property
     def is_customer_data_processor(self) -> bool:
         """True if the vendor actually receives CoreLink-customer data and
         must appear on the public list per GDPR Art. 28 / LGPD Art. 39."""
+        if self.is_inert:
+            return False
         if self.is_byok_custodian or self.is_internal_llm or self.is_public_excluded:
             return False
         if self.data_sharing.strip().lower() == "none":
@@ -290,6 +332,18 @@ def render_internal_llm_table(rows: Iterable[VendorRow]) -> str:
     return "\n".join(out)
 
 
+def render_inert_table(rows: Iterable[VendorRow]) -> str:
+    out = [
+        "| Vendor | Service (as integrated) | Why it is not active today |",
+        "| --- | --- | --- |",
+    ]
+    for r in rows:
+        out.append(
+            f"| **{r.vendor}** | {shorten_service(r.service)} | {r.inert_reason} |"
+        )
+    return "\n".join(out)
+
+
 MDX_TEMPLATE = '''---
 title: "Sub-processors"
 slug: "/trust/subprocessors"
@@ -321,8 +375,12 @@ CoreLink uses a small set of carefully selected sub-processors to operate
 the service. This page is the **public list** maintained per GDPR Art. 28
 §2 and LGPD Art. 39 + Art. 27 §4º. It is a subset of our internal
 [Vendor Risk Register](https://github.com/HumanGuardrail/corelink/blob/main/specs/_compliance/VENDOR-RISK-REGISTER.md)
-(19 vendors total) — only those who *process customer personal data on
-CoreLink's behalf* appear in the **Active sub-processors** table.
+({total_vendors} vendors total) — only those who *actually process customer
+personal data on CoreLink's behalf today* appear in the **Active
+sub-processors** table ({active_count} of them). A handful of registered
+vendors have a built integration but no live credential or code path yet —
+see "Contracted-but-not-active" below; they are not sub-processors until
+that changes.
 
 > **Last refreshed:** {last_updated}. This page is **auto-generated** from
 > the internal vendor register on every change; see
@@ -354,6 +412,18 @@ unresolved).
 
 {active_table}
 
+## Contracted-but-not-active / integration built, not enabled
+
+The vendors below are registered internally (reviewed contract posture,
+real client code lives in the codebase) but are **not** currently
+sub-processors: no production credential is deployed for them, or no code
+path actually invokes the client, so no customer data flows to them today.
+They are listed here — rather than omitted — so the disclosure stays
+truthful if one of them is switched on later. Each is re-verified whenever
+the register is updated (`specs/_compliance/VENDOR-RISK-REGISTER.md` §4b).
+
+{inert_table}
+
 ### BYOK key custodians (customer-side; not sub-processors)
 
 The four KMS providers below are listed for completeness. CoreLink does
@@ -383,8 +453,10 @@ zero-retention guarantee and no-customer-data scope, please raise it via
 The following appear in our internal registers but are **not**
 sub-processors:
 
-- **Sigstore (Linux Foundation)** — public transparency log; no PII is
-  written; treated as open-source infrastructure.
+- **Sigstore (Linux Foundation)** — keyless signing (`.github/workflows/cosign-sign.yml`)
+  over CoreLink's **own build artifacts** as part of our supply-chain pipeline.
+  It never receives customer data and is not a customer-data sub-processor;
+  captured in `legal/sub-processors.md` for completeness only.
 - **Self-hosted Dependency-Track** — operated by CoreLink; no third party.
 - **Per-customer HashiCorp Vault instances** — customer-side infrastructure
   outside CoreLink's processor relationship.
@@ -419,9 +491,13 @@ def render_mdx(rows: list[VendorRow], last_updated: str) -> str:
     active = [r for r in rows if r.is_customer_data_processor]
     byok = [r for r in rows if r.is_byok_custodian]
     llm = [r for r in rows if r.is_internal_llm]
+    inert = [r for r in rows if r.is_inert]
     return MDX_TEMPLATE.format(
         last_updated=last_updated,
+        total_vendors=len(rows),
+        active_count=len(active),
         active_table=render_active_table(active),
+        inert_table=render_inert_table(inert),
         byok_table=render_byok_table(byok),
         internal_llm_table=render_internal_llm_table(llm),
     )
@@ -462,6 +538,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"\n--- dry-run: {len(rows)} register rows; "
             f"{sum(1 for r in rows if r.is_customer_data_processor)} active; "
+            f"{sum(1 for r in rows if r.is_inert)} inert; "
             f"{sum(1 for r in rows if r.is_byok_custodian)} BYOK; "
             f"{sum(1 for r in rows if r.is_internal_llm)} internal-LLM ---",
             file=sys.stderr,

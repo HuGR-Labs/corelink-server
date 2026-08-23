@@ -72,8 +72,9 @@ in the South America (São Paulo) region:
 The following are **not** pinned to `sam` by default, and are subject to
 contractual / SCC-based international transfer:
 
-- **Billing detail** (Neon EU, Frankfurt) — under Art. 33, V LGPD
-  (contractual necessity for billing) and SCC Modules 2/3 in the DPA.
+- **Billing detail** (Cloudflare D1, region per the tenant's `primary_region`
+  pin) — under Art. 33, V LGPD (contractual necessity for billing) and SCC
+  Modules 2/3 in the DPA.
 - **Payment processing** (Stripe) — under Art. 33, V and PCI-DSS-scoped
   handling. CoreLink never sees card data; only pseudonymised customer IDs
   and amounts.
@@ -82,9 +83,9 @@ contractual / SCC-based international transfer:
 
 If your contractual obligations to Brazilian data subjects require that
 *even billing detail* stays in Brazil, contact us — this is an enterprise
-DPA amendment, not a default. (We can route billing detail through the
-São Paulo subset of our Postgres surface once Neon ships BR region;
-in the interim, we can manually run billing detail in `sa-east-1` AWS.)
+DPA amendment, not a default. (Note: Cloudflare has no South-America region for D1/R2, so a Brazil-resident
+billing-detail store is not available on the current substrate — treat this as
+an enterprise DPA amendment to scope explicitly, not a default we can switch on.)
 
 ## 3. How to set the flag
 
@@ -187,7 +188,7 @@ Brazil revenue or BRL 50M per offence; our availability SLO does not.
 | Audit trail | `audit-sam` Object Lock 7y | Art. 33 caput |
 | Tenant config (D1) | `sam` only | Art. 33 caput |
 | Telemetry (Grafana metrics, traces, logs — pseudonymised) | Currently US/EU; pseudonymisation per LIA | Art. 7 IX (legitimate interest, LIA in `legal/lia/`) |
-| Billing detail | Neon EU (Frankfurt) | Art. 33, V (contractual) + SCC Modules 2/3 |
+| Billing detail | Cloudflare D1 (per-tenant `primary_region`) | Art. 33, V (contractual) + SCC Modules 2/3 |
 | Payment processing | Stripe (global) | Art. 33, V (contractual) + PCI-DSS handling |
 | Auth tokens | Clerk (US) | Art. 33, V (contractual) |
 

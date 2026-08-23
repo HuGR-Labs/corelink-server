@@ -7,47 +7,109 @@
     "4. New entries SHOULD carry provenance: `added` (ISO date), `owner`, `expires` (ISO date), `ref` (PR/issue). The existing entries carry none — there is no way to tell `known and accepted` from `known and forgotten`."
   ],
   "cli": {
-    "roadmap_allow": {
-      "kms": "BYOK CMK attach — ships at GA per the BYOK roadmap (byok concept still gated-inert). Zero matches as of 2026-08-02: candidate for deletion (see _retired).",
-      "workspace": "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary. Zero matches as of 2026-08-02: candidate for deletion (see _retired).",
-      "workspaces": "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary. Zero matches as of 2026-08-02: candidate for deletion (see _retired).",
-      "runners": "Runners metered add-on — roadmap surface, not a shipped `corelink` verb. Zero matches as of 2026-08-02: candidate for deletion (see _retired)."
-    },
-    "tracked_drift": {
-      "cas import": {
-        "reason": "A migration/objection doc references `corelink cas import`; the shipped CAS actions are `export` / `get` (bulk ingest is `corelink import`, a top-level verb). Docs-fix PR reconciling the verb name.",
-        "PRODUCT_GAP": "This reason is TRUE BUT INCOMPLETE, and the incompleteness hides a product gap: marketing/sales/OBJECTION-HANDLING.md sold `corelink cas import s3://...` as an idempotent, safe-to-re-run migration path. The shipped `corelink import` REJECTS `s3://` sources outright (tools/cli/src/commands/import_cmd.rs:26 — 'direct S3 ingestion needs an object-store client + credentials (flagged gap)'). Renaming the verb does not deliver the capability the objection-handler promised to a prospect. Track the S3-ingest gap separately from the wording fix.",
-        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
-      },
-      "cas put": {
-        "reason": "Docs/marketing reference `corelink cas put`; the shipped CAS action set is `export` / `get` and the write verb is top-level `corelink put`. Docs-fix PR reconciling the verb name.",
-        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
-      },
-      "init": {
-        "reason": "An onboarding step references `corelink init`; not in the CLI enum (`corelink login` is the setup verb).",
-        "customer_facing": "The reference lives in marketing/profile-readme.md — the PUBLIC GitHub org profile README ('Zero config after `corelink init`'), not an internal note. Same class of surface as the install one-liner: copy a reader can paste.",
-        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
-      },
-      "billing": {
-        "reason": "A retention health-score doc references `corelink billing`; billing is admin/console-plane, not a CLI verb.",
-        "verified": "Doc-only: no health-score implementation exists in code (no rs/ts/sql/py consumer of the surface list), so nothing computes off the phantom verb.",
-        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
-      },
-      "dsr": {
-        "reason": "Support templates document `corelink dsr request`; DSR is an admin-plane operation, not a CLI verb.",
-        "customer_facing": "marketing/launch/SUPPORT-RESPONSE-TEMPLATES.md is copy a support agent SENDS TO A CUSTOMER, offering `corelink dsr request --type access` as the GDPR export/exit path. The real surface is the privacy portal `/dsr` + `POST /v1/privacy/dsr/erasure`. Doc bug, but the blast radius is a customer's data-rights exit path, not an internal note.",
-        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
-      },
-      "auth": {
-        "reason": "A playbook documents `corelink auth login`; the shipped verb is top-level `corelink login`.",
-        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
-      },
-      "audit list": {
-        "reason": "Marketing/retention docs document `corelink audit list`; there is no `list` action (valid: export / tail / verify / verify-ndjson).",
-        "zero_match_as_of": "2026-08-02 (in-flight docs fix, uncommitted at audit time) — delete once that fix is merged"
-      }
-    },
+    "roadmap_allow": {},
+    "tracked_drift": {},
     "_retired": [
+      {
+        "key": "kms",
+        "bucket": "roadmap_allow",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "BYOK CMK attach — ships at GA per the BYOK roadmap (byok concept still gated-inert).",
+        "verdict": "[suppression-hygiene] confirmed zero matches — dead suppression, deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "workspace",
+        "bucket": "roadmap_allow",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary.",
+        "verdict": "[suppression-hygiene] confirmed zero matches — dead suppression, deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "workspaces",
+        "bucket": "roadmap_allow",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "Separate CoreLink Workspaces product (corelink-workspaces / clw CLI), not this binary.",
+        "verdict": "[suppression-hygiene] confirmed zero matches — dead suppression, deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "runners",
+        "bucket": "roadmap_allow",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "Runners metered add-on — roadmap surface, not a shipped `corelink` verb.",
+        "verdict": "[suppression-hygiene] confirmed zero matches — dead suppression, deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "cas import",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "A migration/objection doc references `corelink cas import`; the shipped CAS actions are `export` / `get` (bulk ingest is `corelink import`, a top-level verb). Docs-fix PR reconciling the verb name.",
+        "PRODUCT_GAP": "This reason was TRUE BUT INCOMPLETE, and the incompleteness hid a product gap: marketing/sales/OBJECTION-HANDLING.md sold `corelink cas import s3://...` as an idempotent, safe-to-re-run migration path. The shipped `corelink import` REJECTS `s3://` sources outright (tools/cli/src/commands/import_cmd.rs:26 — 'direct S3 ingestion needs an object-store client + credentials (flagged gap)'). Renaming the verb did not deliver the capability the objection-handler promised to a prospect; the S3-ingest gap is tracked separately from this wording fix.",
+        "verdict": "[suppression-hygiene] confirmed zero matches — the underlying docs-fix PR merged, dead suppression deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "cas put",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "Docs/marketing reference `corelink cas put`; the shipped CAS action set is `export` / `get` and the write verb is top-level `corelink put`. Docs-fix PR reconciling the verb name.",
+        "verdict": "[suppression-hygiene] confirmed zero matches — the underlying docs-fix PR merged, dead suppression deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "init",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "An onboarding step references `corelink init`; not in the CLI enum (`corelink login` is the setup verb). Lived in the public GitHub org profile README (marketing/profile-readme.md).",
+        "verdict": "[suppression-hygiene] confirmed zero matches — the underlying docs-fix PR merged, dead suppression deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "billing",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "A retention health-score doc references `corelink billing`; billing is admin/console-plane, not a CLI verb.",
+        "verdict": "[suppression-hygiene] confirmed zero matches — the underlying docs-fix PR merged, dead suppression deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "dsr",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "Support templates document `corelink dsr request`; DSR is an admin-plane operation, not a CLI verb. Lived in marketing/launch/SUPPORT-RESPONSE-TEMPLATES.md, copy a support agent sends to a customer.",
+        "verdict": "[suppression-hygiene] confirmed zero matches — the underlying docs-fix PR merged, dead suppression deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "auth",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "A playbook documents `corelink auth login`; the shipped verb is top-level `corelink login`.",
+        "verdict": "[suppression-hygiene] confirmed zero matches — the underlying docs-fix PR merged, dead suppression deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
+      {
+        "key": "audit list",
+        "bucket": "tracked_drift",
+        "removed": "2026-08-23",
+        "removed_by": "W-docs-reality-warnings",
+        "old_reason": "Marketing/retention docs document `corelink audit list`; there is no `list` action (valid: export / tail / verify / verify-ndjson).",
+        "verdict": "[suppression-hygiene] confirmed zero matches — the underlying docs-fix PR merged, dead suppression deleted.",
+        "zero_matches_verified": "gate run 2026-08-23"
+      },
       {
         "key": "ping",
         "bucket": "tracked_drift",

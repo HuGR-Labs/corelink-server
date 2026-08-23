@@ -116,7 +116,7 @@ CSP / CSC responsibility column:
 | CEK-06.1 | Key rotation supported? | Y | CSP | KMS-side automatic rotation (provider-default cadence). DEK rotation on customer trigger; CMK rotation transparent to CoreLink. | C1.1 |
 | CEK-07.1 | Key escrow / recovery documented? | Y | CSP | Customer-side — KMS provider handles escrow per customer's IAM policy. CoreLink never holds CMK material. | C1.1 |
 | CEK-08.1 | Cryptographic keys protected throughout lifecycle? | Y | CSP | Plaintext DEKs never leave request scope (V8 isolate memory). Wrapped DEKs at rest only. | C1.1 |
-| CEK-09.1 | Customer-managed key option (BYOK) available? | Y | CSP | Yes — 4 providers: AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault. | C1.1 |
+| CEK-09.1 | Customer-managed key option (BYOK) available? | P | CSP | No BYOK at GA today — 4-provider (AWS KMS / GCP Cloud KMS / Azure Key Vault / HashiCorp Vault) envelope encryption is pre-GA: wired into CAS+AC storage but gated-inert (zero active tenants). On the roadmap, not yet in pilot; will ship once self-serve CMK onboarding lands. | C1.1 |
 | CEK-10.1 | Kill-switch / key-revocation supported? | Y | CSP | Customer revokes CMK access in their KMS → CoreLink cache declines within ≤ 5 min (`byok-kill-switch-rtt` SLO; drilled weekly). | C1.1 |
 | CEK-11.1 | HSM-protected key material? | Y | CSP | KMS providers HSM-backed (AWS / GCP / Azure / Vault). FIPS 140-2/3 endpoint posture per `BYOK-FIPS-ATTESTATION-MATRIX.md`. | C1.1 |
 | CEK-12.1 | Certificate management documented? | Y | CSP | Cloudflare-managed TLS certificates; HSTS preload submitted. | CC6.7 |
@@ -272,11 +272,11 @@ CSP / CSC responsibility column:
 
 | # | Question | A | Resp | Answer + Evidence | TSC |
 |---|---|---|---|---|---|
-| STA-01.1 | Sub-processor inventory maintained? | Y | CSP | 11 active sub-processors at `apps/docs/docs/trust/subprocessors.mdx`; 19 total vendors in `VENDOR-RISK-REGISTER.md`. | CC9.2 |
+| STA-01.1 | Sub-processor inventory maintained? | Y | CSP | 6 active sub-processors at `apps/docs/docs/trust/subprocessors.mdx`; 19 total vendors in `VENDOR-RISK-REGISTER.md`. | CC9.2 |
 | STA-02.1 | Sub-processor risk-assessed? | Y | CSP | Methodology `specs/_compliance/VENDOR-RISK-METHODOLOGY.md`; 5 Critical-vendor DD files. | CC9.2 |
-| STA-03.1 | Sub-processor SLA / DPA in place? | Y | CSP | 19/19 vendors have signed DPA. | CC9.2 |
+| STA-03.1 | Sub-processor SLA / DPA in place? | Y | CSP | 18/19 vendors have a signed DPA (Resend: DPA policy published, signed-copy evidence pending). | CC9.2 |
 | STA-04.1 | Sub-processor changes communicated? | Y | CSP | 30-day advance notice per DPA §6 + GDPR Art. 28 §2 + LGPD Art. 27 §4º. | CC2.3 |
-| STA-05.1 | Sub-processor SOC 2 / ISO held? | Y | CSP | 14/19 vendors current SOC 2 Type II (≤ 12 mo). | CC9.2 |
+| STA-05.1 | Sub-processor SOC 2 / ISO held? | Y | CSP | 13/19 vendors current SOC 2 Type II (≤ 12 mo). | CC9.2 |
 | STA-06.1 | Right to audit sub-processors? | Y | CSP | Flow-through via CoreLink DPA §8 + sub-processor DPAs. | CC9.2 |
 | STA-07.1 | Sub-processor termination procedures? | Y | CSP | `legal/sub-processors-templates/` termination clauses. | CC6.5 |
 | STA-08.1 | Software supply chain attestation? | Y | CSP | SLSA Level 3 + Cosign + Rekor + CycloneDX SBOM + reproducible builds. | CC6.7 |

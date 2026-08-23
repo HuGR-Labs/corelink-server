@@ -188,6 +188,79 @@ impl corelink_handler_ac::AuditSink for D1AuditOutboxSink {
     }
 }
 
+/// [`crate::routes::signup::SignupAuditSink`] over the SAME durable
+/// `audit_outbox` table + bridge as the CAS/AC impls above — this is a NEW
+/// trait impl on the EXISTING durable sink, not a new audit mechanism.
+///
+/// `SignupAuditRow` doesn't carry a `digest` (pre-auth pilot signups have
+/// no blob hash); the token id/prefix rides in the `digest` column slot
+/// instead (same "nullable, non-blob events" contract the column doc
+/// already states) and the full row (`tenant_id`, `token_id_or_prefix`,
+/// `exit_status`, `payload`) is preserved verbatim in the CloudEvents
+/// `data` envelope, unlike the CAS/AC `append()` helper which only carries
+/// `(tenant, digest, principal)`. Pre-auth events (rate-limit / token
+/// reject, before a tenant_id is allocated) use the nil UUID sentinel —
+/// mirrors `routes::signup::PRE_AUTH_TENANT`.
+impl crate::routes::signup::SignupAuditSink for D1AuditOutboxSink {
+    fn emit(&self, row: crate::routes::signup::SignupAuditRow) -> Result<(), &'static str> {
+        let at_ms = i64::try_from(row.emitted_at_ms).unwrap_or(i64::MAX);
+        let tenant = row.tenant_id.unwrap_or_else(uuid::Uuid::nil).to_string();
+        let token = row.token_id_or_prefix.clone().unwrap_or_default();
+        let id = format!(
+            "{}:{tenant}:{}:{}:{at_ms}",
+            self.source,
+            row.event_type,
+            if token.is_empty() { "-" } else { &token },
+        );
+        let request_id = format!(
+            "{tenant}:{}:{}:{at_ms}",
+            row.event_type,
+            if token.is_empty() { "-" } else { &token },
+        );
+        let payload = json!({
+            "specversion": "1.0",
+            "type": row.event_type,
+            "source": self.source,
+            "id": id,
+            "subject": tenant,
+            "time": ms_to_iso8601(at_ms),
+            "data": {
+                "tenant_id": row.tenant_id.map(|u| u.to_string()),
+                "token_id_or_prefix": row.token_id_or_prefix,
+                "exit_status": row.exit_status,
+                "payload": row.payload,
+            }
+        });
+        let payload_json = serde_json::to_string(&payload)
+            .map_err(|_| "signup audit sink: payload serialize failed")?;
+        let digest_param = if token.is_empty() {
+            Value::Null
+        } else {
+            json!(token)
+        };
+        // Same region-safety COALESCE as `append()`: a pilot signup's
+        // tenant_id typically does NOT exist in `tenant` yet (the operator's
+        // `grant-pilot-tier.sh` provisions it later), so the correlated
+        // subquery returns NULL and the trigger's `!= NULL` is UNKNOWN ⇒ no
+        // abort; COALESCE pins the row to `'wnam'` in that case.
+        let sql = "INSERT OR IGNORE INTO audit_outbox \
+             (id, tenant_id, digest, request_id, event_type, payload_json, enqueued_at, emitted_at, region) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, \
+                     COALESCE((SELECT primary_region FROM tenant WHERE tenant_id = ?2), 'wnam'))";
+        let params = vec![
+            json!(id),
+            json!(tenant),
+            digest_param,
+            json!(request_id),
+            json!(row.event_type),
+            json!(payload_json),
+            json!(at_ms),
+        ];
+        self.write_blocking(sql, params)
+            .map_err(|_| "signup audit sink: D1 write failed")
+    }
+}
+
 /// Yield a DURABLE CAS audit sink from a D1-client construction result, or
 /// REFUSE (fail-CLOSED) when the D1 client could not be built.
 ///
@@ -221,6 +294,23 @@ pub(crate) fn ac_audit_sink_from_d1(
     Ok(Arc::new(D1AuditOutboxSink::new(
         durable_client(d1)?,
         "corelink/ac",
+    )))
+}
+
+/// Pilot-signup counterpart of [`cas_audit_sink_from_d1`] — same
+/// durable `audit_outbox` seam, wired for
+/// `routes::signup::build_state_from_env()`.
+///
+/// # Errors
+///
+/// Returns `Err(String)` when `d1` is `Err` (fail-CLOSED — see
+/// [`cas_audit_sink_from_d1`]).
+pub(crate) fn signup_audit_sink_from_d1(
+    d1: Result<D1HttpClient, String>,
+) -> Result<Arc<dyn crate::routes::signup::SignupAuditSink>, String> {
+    Ok(Arc::new(D1AuditOutboxSink::new(
+        durable_client(d1)?,
+        "corelink/signup",
     )))
 }
 

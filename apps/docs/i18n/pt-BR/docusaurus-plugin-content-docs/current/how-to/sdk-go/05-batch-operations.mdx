@@ -2,9 +2,10 @@
 id: sdk-go-batch-operations
 title: Batch operations (Go)
 sidebar_label: Batch operations
-description: Drive concurrent uploads with errgroup and rate-limit backoff.
+description: Drive concurrent uploads with errgroup; the real Client has no built-in retry/rate-limit handling.
 tags: [sdk, go, performance, how-to]
 ---
+
 
 <!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
@@ -16,10 +17,10 @@ tags: [sdk, go, performance, how-to]
 
 ## When to use this guide
 
-You have many small blobs to push or pull and want to saturate available
-bandwidth without exceeding the server-side per-PAT concurrency limit.
+You have many small blobs to push and want to saturate available bandwidth
+without exceeding the server-side per-PAT concurrency limit.
 
-## Pattern: bounded `errgroup`
+## Pattern: Bounded `errgroup`
 
 ```go
 import "golang.org/x/sync/errgroup"
@@ -52,48 +53,79 @@ func uploadMany(ctx context.Context, cli *corelink.Client, paths []string,
 }
 ```
 
-`concurrency=32` is a safe default; server allows up to `256` per PAT.
+`concurrency=32` is a reasonable starting point; back off if you see repeated
+failures.
 
-## Rate-limit handling
+## No built-in retry or rate-limit handling
 
-`*corelink.RateLimitError` is retried with exponential backoff + jitter
-(3 attempts, capped at 30 s total). Customize:
+`Client` does not retry anything itself, has no `*corelink.RateLimitError`
+type, no `WithRetryPolicy` option, and `NewClient` takes a single `Config`
+struct — there's no `corelink.NewClient(ctx, corelink.WithTenantID(...), ...)`
+functional-options form (see [Authenticate](./01-authenticate.mdx)). If a
+`Put`/`Get` call in the loop above fails, `errgroup` surfaces the plain
+`error` string; you own the retry loop:
 
 ```go
-cli, _ := corelink.NewClient(ctx,
-    corelink.WithTenantID("acme-corp"),
-    corelink.WithRetryPolicy(corelink.RetryPolicy{
-        MaxAttempts:  5,
-        BaseDelay:    200 * time.Millisecond,
-        MaxDelay:     10 * time.Second,
-    }),
-)
+for attempt := 0; ; attempt++ {
+    if _, err := cli.Put(gctx, data); err != nil {
+        if attempt >= 4 {
+            return err
+        }
+        time.Sleep(time.Duration(1<<attempt) * time.Second) // 1s, 2s, 4s, 8s
+        continue
+    }
+    break
+}
 ```
 
-When attempts are exhausted, drain in-flight work and stop submitting new
-tasks.
+Because the error is an unstructured string, this retries on *any* failure
+(network, auth, quota) the same way — there's no way to isolate "rate
+limited" specifically from this SDK today.
 
-## Pattern: pre-digest dedupe
+## Pre-dedupe before upload
+
+`Put` has no `expected_digest`/`WithExpectedDigest` option (unlike
+`corelink-py`'s `put(data, expected_digest=...)`) — it always computes the
+digest itself. Client-side pre-dedup here is purely a local optimization to
+skip redundant `Put` calls within one run; it does not skip a network round
+trip the way passing a pre-computed digest would:
 
 ```go
 func uploadDedup(ctx context.Context, cli *corelink.Client, paths []string) (map[string]string, error) {
-    seen := map[string]string{}
+    seen := map[string]bool{}
+    digests := map[string]string{}
     for _, p := range paths {
         data, err := os.ReadFile(p)
         if err != nil {
             return nil, err
         }
-        d := blake3.Sum256(data)
-        hex := fmt.Sprintf("%x", d)
-        if _, ok := seen[hex]; ok {
+        // Local hash purely to decide whether to call Put again this run —
+        // Put still recomputes BLAKE3 itself server-side/native-side. Use
+        // whichever Go BLAKE3 package you've already vendored (this SDK
+        // itself doesn't expose a standalone hash function); a SHA-256 or
+        // any other stable local hash works equally well for this
+        // in-process dedup check since it's never sent to the server.
+        hex := localHash(data)
+        if seen[hex] {
             continue
         }
-        if _, err := cli.Put(ctx, data, corelink.WithExpectedDigest(hex)); err != nil {
+        seen[hex] = true
+        digest, err := cli.Put(ctx, data)
+        if err != nil {
             return nil, err
         }
-        seen[hex] = hex
+        digests[p] = digest
     }
-    return seen, nil
+    return digests, nil
+}
+
+// localHash is a stand-in for whatever hash function you already have
+// available (a BLAKE3 or SHA-256 package of your choosing) — it only needs
+// to be stable within one run, since it's used purely to skip redundant
+// local Put calls and is never sent to the server.
+func localHash(data []byte) string {
+    sum := sha256.Sum256(data)
+    return hex.EncodeToString(sum[:])
 }
 ```
 

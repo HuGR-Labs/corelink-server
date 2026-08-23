@@ -37,23 +37,20 @@ name: mutation-nightly (R2 baseline + 5-crate expansion + wave-24 large-crate la
 # Reference: tenant-path nightly mutants lane (WI-S01-001 §17).
 
 on:
-  schedule:
-    # DEMOTED from nightly to WEEKLY (Mondays 05:23 UTC).
-    #
-    # The per-PR `mutation-pr.yml` (cargo-mutants --in-diff) is now the fast
-    # first line — it mutates only the lines each PR changed and catches test
-    # blind spots in NEW code in minutes, on every PR. This full-workspace
-    # sweep (11 crates × full build × full test suite ≈ 6-8h) re-audits code
-    # nobody has touched in weeks and was pinning the shared self-hosted Mac
-    # every single night. It now runs at most weekly as the kill-rate BASELINE
-    # regression gate (catches coverage regressions from refactors elsewhere).
-    #
-    # FOLLOW-UP (infra): move this weekly full sweep to a DEDICATED runner so it
-    # never competes with interactive use of the shared founder Mac. Until then,
-    # `workflow_dispatch` is the on-demand escape hatch.
-    - cron: '23 5 * * 1'
+  # No `schedule` trigger here. Repo rule (CLAUDE.md): a cron earns its keep
+  # ONLY when something can change WITHOUT a commit (CVE feeds, prod state,
+  # backups, cert/infra drift). Mutation kill-rate is a pure function of code
+  # + tests — it cannot regress between commits, so a weekly clock re-runs a
+  # ~6-8h, 11-crate sweep for no reason on weeks nobody touched these crates.
+  # This workflow was ALSO broken (cargo-mutants CLI flag conflict, fixed in
+  # this same change) and `disabled_manually`, so the cron was firing into a
+  # guaranteed-red job for weeks with nobody watching. Do not re-add a cron
+  # here — if you want kill-rate re-verified on a cadence, that still isn't
+  # "something changed without a commit"; wire it to `pull_request` (scoped to
+  # the paths of the crates in the matrix) instead, or dispatch manually.
   workflow_dispatch:
-    # Manual trigger for baseline re-record after a deliberate refactor.
+    # Manual trigger for baseline re-record after a deliberate refactor, or
+    # for an on-demand kill-rate re-check.
 
 permissions:
   contents: read
@@ -125,10 +122,20 @@ jobs:
           # *inside* the `--output` directory (src: `in_dir.join("mutants.out")`).
           # Passing `--output .` therefore writes results to `./mutants.out/`
           # (NOT `./mutants.out/mutants.out/`). The gate below reads `mutants.out/`.
+          # `--in-place` and `--jobs` are mutually exclusive as of a recent
+          # cargo-mutants release: `--in-place` mutates the single checked-out
+          # tree directly, which is only safe with one mutant running at a
+          # time, so the CLI now refuses to combine it with `--jobs`. We keep
+          # `--jobs 4` (each parallel job gets its own scratch-dir copy) and
+          # drop `--in-place`, because the heavy crates (corelink-pat,
+          # corelink-clerk) already take ~4.5h serially and need the 4-way
+          # parallelism to fit inside the 330-minute job timeout; the copy
+          # overhead `--in-place` would have saved is worth far less than
+          # blowing the timeout. No kill-rate impact — this only changes how
+          # mutants are executed, not which mutants are generated.
           cargo mutants \
             --package ${{ matrix.crate }} \
             --no-shuffle \
-            --in-place \
             --jobs 4 \
             --output . \
             --timeout 180 \

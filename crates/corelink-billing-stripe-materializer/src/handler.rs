@@ -1131,8 +1131,10 @@ mod tests {
             }),
         );
         handler.on_subscription_deleted(&del).unwrap();
-        // Cache tier downgraded to free.
-        assert_eq!(d1.tier_for("ten_cache"), Some("free".to_string()));
+        // Cache tier's `subscription_state` gate flips off, but the historical
+        // `tier` label is preserved (the signup-worker is the tier authority
+        // on cancel; the container must never overwrite it to 'free').
+        assert_eq!(d1.tier_for("ten_cache"), Some("pro".to_string()));
         // Runner entitlement UNTOUCHED (no revoke ran on a cache-price cancel).
         assert_eq!(d1.runners_entitlement_of("ten_cache"), Some((80, 600)));
         assert_eq!(
@@ -1252,7 +1254,18 @@ mod tests {
     }
 
     #[test]
-    fn subscription_deleted_marks_canceled_and_downgrades_to_free() {
+    fn subscription_deleted_marks_canceled_and_preserves_historical_tier() {
+        // Stripe-cancel tier-race fix: previously named
+        // `subscription_deleted_marks_canceled_and_downgrades_to_free` and
+        // asserted `tier_for("ten_1") == Some("free")` — that encoded the BUG
+        // (the container overwriting `tier_selections.tier` to `'free'` on
+        // cancel, racing the signup-worker authority, which deliberately
+        // leaves `tier` untouched and only flips `subscription_state`).
+        // Renamed + re-asserted: cancel must set `subscription_state` to the
+        // access-OFF gate (proven by `mark_subscription_canceled`'s row /
+        // `downgrade_tier` being the driven path — see
+        // `subscription_deleted_takes_downgrade_path_not_grant_path` below)
+        // WITHOUT touching the historical `tier` label — it must stay `pro`.
         let (handler, d1, audit) = fixture();
         d1.upsert_tier("ten_1", "pro", 1_700_000_000_000, "init")
             .unwrap();
@@ -1268,7 +1281,11 @@ mod tests {
             }),
         );
         handler.on_subscription_deleted(&e).unwrap();
-        assert_eq!(d1.tier_for("ten_1"), Some("free".to_string()));
+        assert_eq!(
+            d1.tier_for("ten_1"),
+            Some("pro".to_string()),
+            "cancel must preserve the historical tier label, NOT overwrite it to 'free'"
+        );
         assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 1);
         assert_eq!(
             audit.count_event("corelink.billing.subscription_canceled.materialized.v1"),
@@ -1321,9 +1338,10 @@ mod tests {
             stripe_event_id: &str,
             canonical_event_type: &str,
             now_ms: u64,
+            outcome: crate::d1::WebhookOutcome,
         ) -> Result<bool, BillingD1Error> {
             self.inner
-                .try_record_event(stripe_event_id, canonical_event_type, now_ms)
+                .try_record_event(stripe_event_id, canonical_event_type, now_ms, outcome)
         }
         fn read_tier(&self, tenant_id: &str) -> Result<Option<String>, BillingD1Error> {
             self.inner.read_tier(tenant_id)
@@ -1420,7 +1438,11 @@ mod tests {
             upserts.is_empty(),
             "cancel must NOT drive the grant upsert_tier path: {upserts:?}"
         );
-        assert_eq!(rec.inner.tier_for("ten_1").as_deref(), Some("free"));
+        // The handler still DRIVES downgrade_tier with tier_wire="free" (the
+        // call-site argument, asserted above), but the tier column itself must
+        // stay 'pro' — the underlying writer (mirroring SQL_DOWNGRADE_TIER)
+        // preserves the existing row's tier rather than overwriting it.
+        assert_eq!(rec.inner.tier_for("ten_1").as_deref(), Some("pro"));
         assert_eq!(audit.count_event("corelink.tenant.tier_changed.v1"), 1);
     }
 

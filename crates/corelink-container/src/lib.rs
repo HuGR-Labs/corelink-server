@@ -175,6 +175,14 @@ pub mod routes;
 /// surfaces (CAS / AC / Turbo) on read vs write capability. Fail-CLOSED:
 /// missing/empty scope grants nothing. See module docs for the grammar.
 pub mod scope;
+/// Durable native [`crate::routes::signup::SignupStore`] over the CF D1
+/// REST API (`signup_d1_http::D1HttpSignupStore`). Bridges the SYNC
+/// `SignupStore` trait to the async [`storage::d1_http::D1HttpClient`] via
+/// `block_in_place`, so `POST /v1/signup/pilot/{token}` persists pilot
+/// reservations DURABLY to D1 instead of the in-memory fake. Wired ONLY
+/// into `routes::signup::build_state_from_env()`; the dev/test path
+/// (`build_state_with_key`) keeps `InMemorySignupStore`. See module docs.
+pub mod signup_d1_http;
 /// Native-container storage adapters (R2 S3-compatible API + D1 HTTP).
 ///
 /// WP-S1 Phase 1 — provides [`storage::r2_s3::R2CasHandler`] (real

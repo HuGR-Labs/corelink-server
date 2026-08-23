@@ -26,7 +26,7 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 
 # Reportar una vulnerabilidad de seguridad
 
-> **Fuente de verdad:** [`docs/security/report-security.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/docs/security/report-security.md).
+> **Fuente de verdad:** `docs/security/report-security.md`.
 > Este MDX es un espejo delgado para que la landing del Trust Center en React (`/trust`)
 > y la URL `/.well-known/security.txt` puedan enlazar en profundidad (deep-link) a
 > una ruta pública canónica. Entregable del Wave-29 stream-8.
@@ -36,21 +36,22 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 | Item | Valor |
 |---|---|
 | **A dónde enviar** | `security@humangr.com` |
-| **Huella de la clave PGP** | `5C2C 8E2A 6B17 9F4D 1A0B 3E9C 6F8B 2D7E 4A91 0C15` (publicada en [`/.well-known/security.txt`](/.well-known/security.txt)) |
+| **PGP** | No disponible actualmente — envíe los reportes por correo electrónico normal |
 | **SLA de respuesta — acuse de recibo** | 1 día hábil |
 | **SLA de respuesta — decisión de triaje** | 5 días hábiles |
 | **Ventana de divulgación coordinada** | 90 días desde la aceptación del triaje |
-| **Alcance del safe harbor** | Todos los dominios `*.corelink.humangr.com` + crates y CLIs open-source de CoreLink |
+| **Alcance del safe harbor** | Los hosts activos de CoreLink en `humangr.com` (planos, con guion — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` para la UI de administración) + el `corelink-cli` distribuido públicamente |
 | **Programa de recompensas** | Aún no activo antes de GA; las recompensas monetarias se implementan en GA +30 días |
 
 ## Cómo reportar
 
 1. Envíe un correo electrónico a `security@humangr.com` con el prefijo de asunto
-   `[VULN-REPORT]`. Cifre el cuerpo con nuestra clave PGP (huella arriba).
+   `[VULN-REPORT]`. El envío cifrado con PGP no está disponible actualmente —
+   envíe el reporte por correo electrónico normal.
 2. Incluya suficiente detalle para reproducir: endpoint o componente afectado,
    payload de la solicitud, comportamiento esperado vs. observado. El código de
    prueba de concepto es bienvenido pero no obligatorio.
-3. Indíquenos su atribución preferida (identificador para el Hall of Thanks en
+3. Indíquenos su atribución preferida (identificador para el Hall of Fame en
    GA +30 días, o "anónimo").
 4. Indíquenos su geografía para que podamos enrutar a la rotación de guardia que
    cubre su zona horaria.
@@ -78,14 +79,19 @@ Si hace un esfuerzo de buena fe por cumplir con esta política, no
 emprenderemos ni respaldaremos acciones legales en su contra (DMCA, CFAA o
 estatutos extranjeros análogos) y trataremos su investigación como autorizada
 conforme a 18 U.S.C. §1030. El texto completo del safe harbor se encuentra en
-[`specs/_security/vulnerability-disclosure-policy.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_security/vulnerability-disclosure-policy.md)
-§3.
+la VDP legalmente vinculante en `specs/_security/vulnerability-disclosure-policy.md`
+§6.
 
 ## Alcance
 
-**Dentro del alcance:** todos los subdominios `*.corelink.humangr.com`, todos los
-crates open-source publicados desde `github.com/HumanGuardrail/corelink-server`, el
-distribuible `corelink-cli` y los entrypoints del Cloudflare Worker de CoreLink.
+**Dentro del alcance:** los hosts activos de CoreLink en `humangr.com`
+(`corelink-api.humangr.com`, `corelink-docs.humangr.com`,
+`humangr.com/corelink/*` para la UI de administración), el `corelink-cli`
+distribuido públicamente (el instalador `humangr.com/install.sh` y la fórmula
+de Homebrew `HumanGuardrail/tap/corelink`) y los entrypoints del Cloudflare
+Worker de CoreLink. El repositorio fuente del servidor es privado y no se
+publica ningún crate de CoreLink en un registro público, por lo que ninguno
+de los dos está dentro del alcance.
 
 **Fuera del alcance:** subprocesadores de terceros (repórtelos directamente al
 proveedor — lista en [`/trust/sub-processor-register`](/trust/sub-processor-register)),
@@ -96,8 +102,8 @@ desactualizado y vulnerabilidades de dependencias de terceros ya divulgadas.
 ## Programa de recompensas
 
 **Antes de GA (hoy):** solo reconocimiento. Los investigadores que envíen
-reportes válidos serán reconocidos en el Hall of Thanks público en el
-lanzamiento GA +30 días (`/security/hall-of-thanks`).
+reportes válidos serán reconocidos en el Hall of Fame público en el
+lanzamiento GA +30 días (`/security/hall-of-fame`).
 
 **GA +30 días (planeado):** recompensas monetarias en una escala de USD (Crítica
 USD 2,500 – USD 10,000; Alta USD 1,000 – USD 2,500; Media USD 250 –

@@ -6,12 +6,12 @@ description: Wire the Python SDK into GitHub Actions, GitLab CI, and CircleCI.
 tags: [sdk, python, ci, how-to]
 ---
 
+
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
 
 > MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
 >
 > Canonical EN source: `docs/how-to/sdk-python/06-ci-integration.mdx`
-
 
 # CI integration
 
@@ -42,14 +42,20 @@ Store the PAT as a repository secret named `CORELINK_PAT`. Do not echo it.
 
 ```python
 # ci/warm_cache.py
-import asyncio, os, sys
-from corelink import CoreLinkClient
+import asyncio
+import os
+import sys
+
+from corelink import AsyncCoreLinkClient
 
 async def main() -> int:
-    async with CoreLinkClient(tenant_id=os.environ["CORELINK_TENANT"]) as c:
-        report = await c.bench(read=True, samples=10)
-        print(f"p50={report.p50_ms}ms p99={report.p99_ms}ms")
-        return 0 if report.p99_ms < 500 else 1
+    # There is no bench() method on this SDK — warm the cache with a real
+    # put/get round trip and fail the job on error.
+    async with AsyncCoreLinkClient(tenant_id=os.environ["CORELINK_TENANT"]) as c:
+        digest = await c.put(b"ci-warm-cache-probe")
+        await c.get(digest)
+    print("cache reachable")
+    return 0
 
 sys.exit(asyncio.run(main()))
 ```
@@ -84,9 +90,10 @@ jobs:
 
 ## Job-scoped PATs (recommended)
 
-Issue a short-lived PAT per job via the admin API and pass it through the
-runner's env. See the [admin runbook for ephemeral
-credentials](../../reference/cli/index.mdx) for the full flow.
+There is no self-service API to mint a short-lived PAT per pipeline today
+(see [Security model](../../security.md)) — email
+[support@humangr.com](mailto:support@humangr.com) to request a dedicated CI
+PAT, then inject it via your CI provider's secret store as shown above.
 
 ## Next steps
 

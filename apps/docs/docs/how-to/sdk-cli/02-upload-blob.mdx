@@ -34,7 +34,11 @@ DIGEST=$(b3sum ./build/output.tar | awk '{print $1}')
 corelink put ./build/output.tar --digest "$DIGEST"
 ```
 
-Mismatch fails with exit code `1` and `COR_VERIFY_001` — re-run the hash.
+`--digest` is not checked client-side against the file bytes — the CLI
+uploads the claim as-is and the server re-hashes and rejects a wrong claim
+with `422`. A wrong `--digest` therefore fails with exit code `1` and an
+`error: cas_put: HTTP 422 ...` message — re-run without `--digest` to let
+the CLI compute it for you.
 
 ## JSON output
 
@@ -69,12 +73,15 @@ find ./outputs -type f -print0 \
 
 ## Exit codes
 
+The CLI has exactly four exit codes, shared by every subcommand (per
+`tools/cli/src/main.rs`):
+
 | Code | Meaning |
 |---|---|
-| `0` | Uploaded (or dedup hit) |
-| `1` | Network, auth, or quota failure |
-| `2` | Argument error (for example, unreadable file) |
-| `3` | Digest mismatch (`--digest` wrong) |
+| `0` | Success |
+| `1` | Any command failure — network, auth, quota, digest mismatch, unreadable file, or HTTP error. There is no finer-grained taxonomy; read the `error: ...` message on stderr. |
+| `2` | Argument/flag error (clap parse failure), or the `--pat` flag was rejected (CTRL-CRED-001 — PATs must come from `CORELINK_PAT` or the config file, never a CLI argument) |
+| `65` | Reserved for `corelink audit verify-ndjson --url` mid-stream integrity abort only — not used by `put`/`get` |
 
 ## Next steps
 

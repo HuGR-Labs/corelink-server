@@ -29,16 +29,25 @@
 #     https://*.ingest.sentry.io — Sentry event/error ingest from CDN loader
 #     (docs has no tunnel route, so the loader POSTs directly to Sentry).
 #     Source: https://docs.sentry.io/platforms/javascript/install/cdn/#content-security-policy
-#     https://status.corelink.humangr.com — BetterStack badge.json fetch by
-#     StatusPill component (CNAME to BetterStack; browser sees this hostname).
+#     https://hugrl.betteruptime.com — the live BetterStack status page's
+#     JSON endpoint (`/index.json`), fetched by the StatusPill component.
+#     Replaces the never-provisioned `status.corelink.humangr.com` CNAME,
+#     which fails its TLS handshake and was masked by StatusPill's old
+#     "assume good on fetch failure" fallback (fixed alongside this entry —
+#     see StatusPill.tsx's doc-comment).
 #     https://humangr.com — NewsletterSignup POSTs cross-origin
 #     to admin-ui /api/newsletter/subscribe route.
+#     https://corelink-api.humangr.com — the pilot apply form POSTs
+#     cross-origin to /v1/signup/pilot/{token}. Without this entry the
+#     browser refuses the fetch before it leaves the page, and the form's
+#     catch branch renders a "network error" that names a host the request
+#     never actually reached.
 #   - img-src: data: + https: kept permissive for embedded screenshots.
 #   - frame-ancestors 'none' (no embedding the docs site in iframes).
 #   - no frame-src needed — docs never embeds Stripe / Clerk.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-0xt7rjlfRsoD7aukiSWSNvMBWU159Lh5cl3WNaV1g+w=' 'sha256-0ruMAFH9auSuLY3YAHGSHAcwCIo9sGOgiXNMd+7JqKQ=' https://plausible.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://plausible.io https://*.ingest.sentry.io https://status.corelink.humangr.com https://humangr.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-0xt7rjlfRsoD7aukiSWSNvMBWU159Lh5cl3WNaV1g+w=' 'sha256-0ruMAFH9auSuLY3YAHGSHAcwCIo9sGOgiXNMd+7JqKQ=' https://plausible.io https://browser.sentry-cdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://plausible.io https://*.ingest.sentry.io https://hugrl.betteruptime.com https://humangr.com https://corelink-api.humangr.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'
   Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY

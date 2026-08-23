@@ -108,6 +108,17 @@ before the change: 10 of the previous 14 days had ZERO commits to `main`, while
 the self-hosted Mac — the founder's own machine — burned ~8.8 h/day on scheduled
 jobs, 75% of which failed.
 
+## The backlog
+
+`BACKLOG.md` (repo root) is the **single source of truth** for open work across all
+three repos. Not session notes, not memory files, not a chat thread — if it is not
+in `BACKLOG.md`, it is not tracked. Every item carries a `verify` command that
+decides whether its own claim still holds; `python3 scripts/backlog_verify.py`
+runs them and fails on DRIFTED (the item and the repo disagree) or STALE (a
+`verify: manual` item older than 14 days). **Read it before planning anything, and
+when you finish an item, update its status — finishing the work turns the gate red
+until you do.** Fix the item or fix the world; never delete the check.
+
 ## Workflow
 
 - Owner mandate: **zero debt, no loose ends, impeccable repo.** Verify claims; never

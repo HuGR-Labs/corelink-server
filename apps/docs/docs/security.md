@@ -15,10 +15,10 @@ Personal Access Tokens (PATs) are the only credential type CoreLink accepts. Und
 
 PATs are created in two places:
 
-1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes.
-2. **Admin dashboard** or `POST /v1/pats` — issues a PAT with any subset of scopes.
+1. **Sign-up wizard** — issues a starter PAT with `cas:read cas:write ac:read ac:write` scopes automatically. This is the only PAT-creation path that is live today.
+2. **Self-service PAT issuance** (`POST /v1/pats`, creating additional PATs with a custom scope subset) is planned but not yet wired to a route — it will 404 today. Until it ships, ask support to mint additional PATs for your tenant.
 
-At creation time, the plaintext token is displayed **exactly once**. CoreLink stores only a salted SHA-256 hash of the token value. There is no retrieval endpoint.
+At creation time, the plaintext token is displayed **exactly once**. CoreLink never stores the plaintext. There is no retrieval endpoint.
 
 **Store your PAT in a secret manager before closing the creation dialog.** Suitable options:
 
@@ -40,7 +40,8 @@ CoreLink does not serve HTTP. All API traffic uses TLS 1.2 or TLS 1.3. HTTPS is 
 
 ### Rotation
 
-PATs have no automatic rotation. You must rotate manually. Recommended rotation cadence:
+PATs have no automatic rotation. Recommended rotation cadence once
+self-service issuance ships:
 
 | PAT type | Cadence |
 |---|---|
@@ -48,29 +49,18 @@ PATs have no automatic rotation. You must rotate manually. Recommended rotation 
 | CI/CD | 90 days or on team change |
 | Integration (shared) | 30 days |
 
-To rotate a PAT:
-
-1. Create the new PAT (`POST /v1/pats`).
-2. Update the secret in your secret manager.
-3. Deploy/restart anything consuming the old PAT.
-4. Revoke the old PAT (`DELETE /v1/pats/:pat_id`).
-
-Do not delete the old PAT before the new one is in use — there is no grace period.
+**Self-service PAT creation and revocation (`POST /v1/pats`,
+`DELETE /v1/pats/:pat_id`) are not yet live** — the routes are not mounted.
+Until they ship, email [support@humangr.com](mailto:support@humangr.com) to
+mint a replacement PAT and to revoke the old one; there is no in-product way
+to do either today.
 
 ### Revocation
 
-```bash
-# List PATs to find the ID
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/pats
-
-# Revoke
-curl -s -X DELETE \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  "https://corelink-api.humangr.com/v1/pats/<pat_id>"
-```
-
-Revocation is immediate. In-flight requests using the revoked PAT will fail with `401` within milliseconds (bounded by the Cloudflare edge propagation window, typically < 100 ms).
+Revocation currently goes through support — email
+[support@humangr.com](mailto:support@humangr.com) with the PAT's label or
+tenant ID. Once revoked, in-flight requests using that PAT fail with `401`
+within the Cloudflare edge propagation window (typically < 100 ms).
 
 ## Scopes
 
@@ -108,7 +98,7 @@ Every successful CAS read, CAS write, and AC operation is appended to an immutab
 | `event_type` | `cas.write`, `cas.read`, `ac.write`, `ac.read` |
 | `tenant_id` | `acme-prod` |
 | `content_hash` | `sha256:e3b0c4...` |
-| `pat_prefix` | `clk_live` |
+| `pat_prefix` | `aZ3xQ1` |
 | `ip_address` | `1.2.3.4` (hashed in GDPR-constrained regions) |
 | `timestamp` | `2026-05-28T08:42:00.123Z` |
 | `bytes` | `4096` |

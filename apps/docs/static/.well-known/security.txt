@@ -4,19 +4,22 @@
 # This file is served at https://corelink-docs.humangr.com/.well-known/security.txt
 # (Docusaurus copies /static/.well-known/* as-is during build.)
 #
-# PGP-signed variant is at /.well-known/security.txt.sig once the signing
-# key is published. The unsigned plain-text form below remains canonical
-# per RFC 9116 §2.3 (Canonical field).
+# No PGP key is published at this time; the Encryption field is omitted
+# rather than pointing at a key that does not exist. This file remains
+# canonical per RFC 9116 §2.3 (Canonical field).
+#
+# Exactly one Contact address is listed, and it is the one with an explicit
+# Cloudflare Email Routing rule (verified: security@ -> forward, priority 10,
+# ahead of the catch-all). A second address was removed rather than left
+# unrouted: an unrouted address in the canonical disclosure file silently
+# swallows the report it invites.
 
-Contact: mailto:corelinksec@humangr.com
 Contact: mailto:security@humangr.com
 Expires: 2027-05-14T00:00:00.000Z
-Encryption: https://corelink-docs.humangr.com/.well-known/security-pgp.asc
 Acknowledgments: https://corelink-docs.humangr.com/security/hall-of-fame
 Preferred-Languages: en, pt-BR, es
 Canonical: https://corelink-docs.humangr.com/.well-known/security.txt
 Policy: https://corelink-docs.humangr.com/security/policy
-Hiring: https://corelink-docs.humangr.com/careers
 
 # Trust Center — public-facing compliance / data-handling / sub-processors /
 # incident-response posture. trust@ is the procurement + DPA + auditor

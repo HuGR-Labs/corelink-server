@@ -138,6 +138,15 @@ jobs:
         if: github.event.inputs.dry_run != 'true'
         id: pr
         env:
+          # ⚠️ KNOWN GAP — the PR this step opens gets ZERO checks. GitHub
+          # deliberately does not trigger workflows for events created with
+          # `GITHUB_TOKEN` (recursion guard), so the digest PR arrives with no
+          # dco / gitleaks / vale run at all and `scripts/pre-merge-gate-check.sh`
+          # correctly refuses it. Closing this needs a non-Actions credential
+          # (a fine-grained PAT or GitHub App token with contents:write +
+          # pull_requests:write) swapped in here — owner-gated, tracked.
+          # Until then the digest PR must be re-opened by a human/agent
+          # credential to be gate-able.
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
@@ -149,8 +158,17 @@ jobs:
             echo "pr_created=false" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
-          git commit -m "chore(compliance): weekly digest ${{ steps.date.outputs.digest_date }} (CC4.2)"
-          git push origin "${BRANCH}"
+          # DCO: the repo's `dco` check requires a Signed-off-by trailer on
+          # every commit, including this bot's. Without it the digest PR is
+          # born un-mergeable (found 2026-08-23, the first run after the
+          # lane was unblocked).
+          git commit -m "chore(compliance): weekly digest ${{ steps.date.outputs.digest_date }} (CC4.2)" \
+            -m "Signed-off-by: compliance-bot <compliance-bot@users.noreply.github.com>"
+          # `--force` because the branch name is date-derived: a re-run on the
+          # same day (a retry, or a manual dispatch after a scheduled failure)
+          # would otherwise die on a non-fast-forward push and leave the branch
+          # orphaned with no PR — exactly what happened on 2026-08-23.
+          git push --force origin "${BRANCH}"
           REGRESSION_LABEL=""
           if [ "${{ steps.digest.outputs.regression }}" = "true" ]; then
             REGRESSION_LABEL=",compliance-regression"

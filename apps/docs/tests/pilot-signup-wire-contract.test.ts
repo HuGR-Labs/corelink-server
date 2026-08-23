@@ -88,4 +88,26 @@ describe("pilot signup — form/API wire contract", () => {
     expect(source).toMatch(/status === 401/);
     expect(source).toMatch(/status === 400 \|\| status === 422/);
   });
+
+  it("allows the endpoint's origin in the site's CSP connect-src", () => {
+    // A cross-origin fetch this page makes must be listed in connect-src or
+    // the browser refuses it before the request leaves — and the failure
+    // surfaces in the form's catch branch as a "network error" naming a host
+    // the request never reached, which reads as an outage rather than a
+    // policy header. The API's own CORS is correct and cannot help here:
+    // connect-src is enforced by the browser on the sending side.
+    const endpoint = source.match(
+      /const SIGNUP_ENDPOINT\s*=\s*"([^"]+)"/,
+    )?.[1];
+    const origin = new URL(endpoint as string).origin;
+    const headers = fs.readFileSync(
+      path.resolve(__dirname, "..", "static", "_headers"),
+      "utf8",
+    );
+    const connectSrc = headers.match(
+      /Content-Security-Policy:[^\n]*?connect-src ([^;]+);/,
+    )?.[1];
+    expect(connectSrc).toBeDefined();
+    expect(connectSrc?.split(/\s+/)).toContain(origin);
+  });
 });

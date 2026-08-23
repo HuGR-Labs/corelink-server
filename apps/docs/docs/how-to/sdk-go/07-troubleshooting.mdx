@@ -2,7 +2,7 @@
 id: sdk-go-troubleshooting
 title: Troubleshooting (Go)
 sidebar_label: Troubleshooting
-description: Diagnose common Go SDK errors with reproducible recipes.
+description: Diagnose common Go SDK errors — corelink-go's real, minimal error surface.
 tags: [sdk, go, debug, how-to]
 ---
 
@@ -10,67 +10,50 @@ tags: [sdk, go, debug, how-to]
 
 ## When to use this guide
 
-A `corelink-go` call is returning an unexpected error or stalling. Use the
-table below to map errors to the canonical fix in
-`docs/reference/error-taxonomy`.
+A `corelink-go` call returned an error. `corelink-go` is intentionally
+minimal: `Client` exposes only `Put` / `Get` / `Stat` / `Close` /
+`IsClientVerifyEnabled`, and every error is a plain `error` value (message
+string), not a typed error hierarchy. There is no `Doctor`, `Whoami`,
+streaming reader, or structured logging in this SDK today.
 
-## Diagnostic flow
+If you want the 8-check `doctor` diagnostic or a CLI-driven identity check,
+use the [`corelink` CLI](../../reference/cli/doctor.mdx) or the
+[Python](../sdk-python/07-troubleshooting.mdx) /
+[JS](../sdk-js/07-troubleshooting.mdx) SDKs, which have richer surfaces.
 
-```go
-rep, err := cli.Doctor(ctx)
-if err != nil {
-    log.Fatal(err)
-}
-for _, c := range rep.Checks {
-    log.Printf("%s %s %s", c.Name, c.Status, c.NextActionDoc)
-}
-```
+## Errors you'll actually see
 
-Same 8 checks as `corelink doctor --json`: network, auth, storage-write,
-storage-read, BYOK, region, quota, client-verify.
+`errors.New` / `fmt.Errorf` messages, matched by substring — there is no
+`error_code` field or typed error to switch on:
 
-## Common errors
-
-| Error code | Type | First action |
+| Message contains | Cause | Fix |
 |---|---|---|
-| `COR_AUTH_001` | `*AuthError` | Re-export `CORELINK_PAT`; check scopes via `cli.Whoami(ctx)` |
-| `COR_AUTH_002` | `*AuthError` | PAT revoked; mint a new one |
-| `COR_QUOTA_001` | `*QuotaError` | Tenant over storage cap |
-| `COR_REGION_001` | `*RegionError` | Use regional endpoint; `corelink stat` reveals home region |
-| `COR_VERIFY_001` | `*DigestMismatchError` | Discard bytes; retry; persistent → Sev-2 |
-| `COR_NET_001` | `*ConnectError` | `corelink doctor network` — egress filtering likely |
+| `PAT must not be empty` | `Config.PAT` was empty at `NewClient` | Set `CORELINK_PAT` and read it into `Config.PAT` yourself — `NewClient` does not read env vars for you. |
+| `TenantID must not be empty` | `Config.TenantID` was empty at `NewClient` | Pass a non-empty `TenantID`. |
+| `failed to construct client (invalid PAT or TenantID encoding)` | The cgo constructor rejected the PAT or tenant ID bytes | Check the PAT was copied in full (`corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`), no truncation. |
+| `put failed (rc=%d)` | Non-zero return from the native `Put` call | Check network/auth first (a valid PAT and tenant on a failing `Get`/`Stat` narrows it down). |
+| `invalid digest length %d (expected 64)` | Digest passed to `Get`/`Stat` isn't 64 hex chars | Recompute — CoreLink digests are BLAKE3, not SHA-256. |
+| `COR_CAS_DIGEST_MISMATCH: digest mismatch for %s` | Client-verify (default-on, CTRL-CAS-002) caught a BLAKE3 mismatch on `Get` | Possible corruption in transit; retry. Persistent → open a support ticket. |
+| `COR_CAS_VERIFY_DISABLED` | `Get` called with client-verify explicitly disabled | Expected if you set `ClientVerify: false, ClientVerifyExplicitFalse: true` — not an error condition unless you didn't mean to disable it. |
+| `get verify failed (rc=%d)` | Non-zero, non-mismatch return from the native verify call | Check network/auth; retry. |
 
-## Goroutine leaks
+## Confirm the client is talking to the server at all
 
-The most common Go-specific failure mode is dropping a streaming reader
-without `Close()`:
+There's no `Whoami` — the first real signal is a successful `Put`/`Get`:
 
 ```go
-// WRONG — leaks a connection and the verify goroutine
-rc, _ := cli.GetStream(ctx, digest)
-io.ReadAll(rc)
-
-// RIGHT
-rc, err := cli.GetStream(ctx, digest)
-if err != nil { ... }
-defer rc.Close()
-```
-
-`Close()` returns an error when the BLAKE3 root fails to verify — check it.
-
-## Verbose logging
-
-```bash
-export CORELINK_LOG=debug
-```
-
-The SDK writes structured JSON to `stderr`. Pipe through `jq`:
-
-```bash
-./build 2>&1 | jq 'select(.level=="error")'
+digest, err := client.Put(ctx, []byte("healthcheck"))
+if err != nil {
+    log.Fatalf("client not working: %v", err)
+}
+log.Println("ok, wrote", digest)
 ```
 
 ## Filing a bug
 
-Include `corelink doctor --json` and `cli.Whoami(ctx)` output. Never include
-your PAT.
+Include the exact error message (`err.Error()`), your `corelink-go`
+version (`go.mod` / `go list -m github.com/HumanGuardrail/corelink-go/v1`),
+and whether you built against a matching `libcorelink_go`
+(`cargo build --release -p corelink-go`) — a version skew between the Go
+module and the linked Rust cdylib is a common source of opaque `rc=%d`
+failures. Never include your PAT.

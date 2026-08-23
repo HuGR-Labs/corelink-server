@@ -46,8 +46,12 @@ useful war room member within 5 minutes.
   `#inc-YYYYMMDD-N` channel has been spun up, join that too.
 - Voice bridge: Zoom link in the `#incident-active` topic. Mic muted
   by default; unmute only to commit to an action.
-- Status page admin: <https://status.corelink.humangr.com/admin> — read-only
-  unless you are IC.
+- Status page admin: <https://status.corelink.humangr.com/admin> — ⚠️ **UNAVAILABLE**:
+  this URL TLS-fails (connection resets during the TLS handshake), even though the
+  hostname itself resolves (CNAME to `hugrl.betteruptime.com`). The working status
+  page is **<https://hugrl.betteruptime.com>** — use that instead. If you need
+  admin-level status-page control (not just viewing), confirm the current Better
+  Uptime admin URL with the on-call SRE Lead; this doc does not invent one.
 
 ### 1.2 Claim incident command (only if no IC exists)
 
@@ -65,7 +69,11 @@ Before you change anything, capture the "now" snapshot — this becomes
 evidence for the retro and a reference for "did it get better?".
 
 - Open the **Incident Overview** Grafana dashboard
-  (`grafana.corelink.humangr.com/d/incident-overview`).
+  (`grafana.corelink.humangr.com/d/incident-overview`) — ⚠️ **UNAVAILABLE**: this
+  hostname does not resolve (verified NXDOMAIN). No live Grafana host is
+  documented anywhere in this repo as its replacement; confirm with the on-call
+  SRE Lead whether a Grafana instance still exists before relying on this step,
+  and do not substitute a guessed hostname.
 - Screenshot the SLO panels at the current timestamp. Save to
   `incidents/INC-YYYYMMDD-N/00-baseline-grafana-<ts>.png` (see §10).
 - Note p50/p95/p99 latency, error rate, and which SLO is breached
@@ -452,7 +460,10 @@ chronological order.
 `trace_id` is the right correlator when one external request fans out
 to multiple internal services. Search Grafana Tempo
 (`tempo.corelink.humangr.com`) by `trace_id`; every span across every service
-that participated will appear.
+that participated will appear. ⚠️ **UNAVAILABLE**: this hostname does not
+resolve (verified NXDOMAIN), same as the Grafana host in §1.3. No live Tempo
+endpoint is documented anywhere in this repo; confirm with the on-call SRE
+Lead before relying on this step.
 
 ### 6.4 Active-failover incidents
 

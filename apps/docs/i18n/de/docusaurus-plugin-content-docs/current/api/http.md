@@ -46,7 +46,7 @@ curl -s -H "Authorization: Bearer $CORELINK_PAT" \
 ```json
 {
   "tenant_id": "acme-prod",
-  "token_prefix": "clk_live",
+  "token_prefix": "aZ3xQ1",
   "route_kind": "cas"
 }
 ```
@@ -54,7 +54,7 @@ curl -s -H "Authorization: Bearer $CORELINK_PAT" \
 | Feld | Typ | Beschreibung |
 |---|---|---|
 | `tenant_id` | string | Der Tenant, auf den dieses PAT beschränkt ist. Entspricht dem Pfadsegment in CAS-/AC-URLs. |
-| `token_prefix` | string | `clk_live` (Produktion) oder `clk_test` (Testumgebung). |
+| `token_prefix` | string | Eine 6-stellige, hash-abgeleitete Kennung für Log-/Rate-Limit-Korrelation — kein wörtliches Präfix Ihres Tokens. |
 | `route_kind` | string | Immer `cas` für PATs der Datenebene. |
 
 ---
@@ -141,77 +141,22 @@ curl -s https://corelink-api.humangr.com/api/health
 
 ---
 
-### `GET /v1/pats`
+### Verwaltung von PATs (`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) — geplant, noch nicht live
 
-Listet alle PATs Ihres Tenants auf.
+Diese Routen sind für eine zukünftige Self-Service-PAT-Verwaltung (Liste,
+Erstellung, Widerruf) spezifiziert, aber **heute nicht verdrahtet** — jeder
+Aufruf liefert `404`. Der einzige aktive PAT-Erstellungsweg ist der
+automatische Start-PAT des Registrierungsassistenten. Eine Admin-only,
+nur lesende Oberfläche existiert, damit der Support die PATs eines Tenants
+einsehen kann (`GET /v1/admin/tenants/{tenant_id}/pats`), erfordert aber
+ein Admin-PAT und ist nicht mit einem normalen Kunden-Token aufrufbar.
 
-```bash
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/pats
-```
-
-**Antwort 200**
-
-```json
-[
-  {
-    "pat_id": "pat_01HX...",
-    "label": "ci-bazel",
-    "scopes": ["cas:read", "cas:write", "ac:read", "ac:write"],
-    "created_at": "2026-05-01T12:00:00Z",
-    "expires_at": null,
-    "last_used_at": "2026-05-28T08:42:00Z"
-  }
-]
-```
+Bis die Self-Service-PAT-Verwaltung verfügbar ist, schreiben Sie an
+[support@humangr.com](mailto:support@humangr.com), um ein zusätzliches PAT
+ausstellen oder eines widerrufen zu lassen.
 
 ---
 
-### `POST /v1/pats`
-
-Erstellt ein neues PAT.
-
-```bash
-curl -s -X POST \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "label": "ci-bazel",
-    "scopes": ["cas:read", "cas:write", "ac:read", "ac:write"],
-    "expires_in_days": 90
-  }' \
-  https://corelink-api.humangr.com/v1/pats
-```
-
-**Antwort 201**
-
-```json
-{
-  "pat_id": "pat_01HX...",
-  "label": "ci-bazel",
-  "token": "clk_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  "scopes": ["cas:read", "cas:write", "ac:read", "ac:write"],
-  "expires_at": "2026-08-28T00:00:00Z"
-}
-```
-
-Das Feld `token` ist nur in der Erstellungsantwort enthalten. Es kann nicht erneut abgerufen werden.
-
----
-
-### `DELETE /v1/pats/:pat_id`
-
-Widerruft ein PAT sofort.
-
-```bash
-curl -s -X DELETE \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  "https://corelink-api.humangr.com/v1/pats/pat_01HX..."
-```
-
-**Antwort 204** — widerrufen. Nachfolgende Anfragen mit diesem PAT geben `401` zurück.
-
----
 
 ## Fehlercodes
 
@@ -258,7 +203,7 @@ Enterprise-Tarife haben höhere Grenzen. Kontaktieren Sie den Vertrieb für indi
 
 ## Paginierung
 
-Listen-Endpunkte (`GET /v1/pats`, Audit-Log) geben cursorbasierte Paginierung zurück:
+Listen-Endpunkte (Audit-Log, CAS-Auflistung) geben cursorbasierte Paginierung zurück:
 
 ```json
 {

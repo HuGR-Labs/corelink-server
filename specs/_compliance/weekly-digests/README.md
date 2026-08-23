@@ -91,7 +91,51 @@ Triage details: `specs/_runbooks/RB-COMPLIANCE-WEEKLY-REVIEW.md` §4.
 
 | Date | Regression? | Key delta | PR | Notes |
 |---|---|---|---|---|
-| _(2026-05-18 will be the first scheduled digest)_ | — | — | — | First scheduled cron after this runbook lands |
+| 2026-05-15 | — | — | — | Baseline digest; the reference every later digest diffs against |
+| _2026-05-18 → 2026-08-10_ | **NOT PRODUCED** | — | — | **Evidence gap — see §6.1. Deliberately NOT backfilled.** |
+| 2026-08-17 | NO | no change vs `2026-05-15.md` | #1229 | Generated on 2026-08-17 by run 32016803572; its PR could not be opened (see §6.1), landed by hand |
+| 2026-08-23 | NO | no change vs `2026-05-15.md` | #1227 | First digest to land through the repaired lane |
+
+### 6.1 Evidence gap 2026-05-18 → 2026-08-10 (declared, not backfilled)
+
+**No weekly digest exists for the thirteen Mondays between 2026-05-18 and
+2026-08-10.** This is recorded here rather than quietly filled, because a
+fabricated digest is worse than a declared gap.
+
+**What happened.** The cron fired as scheduled; the digest script ran and
+succeeded every time. Every run died in the tail that commits the file and
+opens the PR:
+
+| Date | Run | Failure |
+|---|---|---|
+| 2026-08-17 | 32016803572 | `gh pr create` → *"GitHub Actions is not permitted to create or approve pull requests"* |
+| 2026-08-10 | 31378601701 | same lane |
+| 2026-08-08 (`subprocessors-sync`, same class) | 31245724676 | job never started — `runner=""`, `steps=0`, 9s, `ubuntu-latest`: the hosted-Actions billing block |
+| 2026-08-03 | 30813673838 | same lane |
+| 2026-07-20 | 29739827151 | same lane |
+| 2026-07-13 | 29248756088 | same lane |
+
+Two distinct root causes, both since removed: the repository-level
+*"Allow GitHub Actions to create and approve pull requests"* setting was off
+(granted 2026-08-23), and the earlier lane ran on hosted runners under a
+billing block (since migrated to `runs-on: corelink`). Two further defects
+that would have kept the lane broken were fixed the same day (#1225): the bot
+commit carried no DCO trailer, and a same-day re-run could not push.
+
+**Why the gap is NOT backfilled.** `scripts/compliance-weekly-digest.py`
+computes every metric from the repository's **current** state. Running it now
+with a past date would emit today's numbers under that date — an artefact that
+looks like contemporaneous evidence and is not. For CC4.2 the honest record is
+this declaration: the control's *detective* function (the digest script and its
+inputs) was continuously healthy and demonstrably re-runnable; its
+*communication* function (PR + review) was interrupted for thirteen weeks by a
+CI permission defect, and no compliance regression was detected on either side
+of the gap (`2026-05-15` and `2026-08-17` are identical on every tracked
+metric, which is itself evidence that nothing drifted unobserved).
+
+**Auditor note.** The gap is bounded and attributable. Anyone verifying it can
+re-run `python3 scripts/compliance-weekly-digest.py` against any historical
+commit to reconstruct what a given week *would* have reported.
 
 ## 7. Future work
 

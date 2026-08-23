@@ -21,10 +21,10 @@ Personal Access Tokens (PATs) sind der einzige Anmeldeinformationstyp, den CoreL
 
 PATs werden an zwei Stellen erstellt:
 
-1. **Registrierungsassistent** — stellt ein Starter-PAT mit den Scopes `cas:read cas:write ac:read ac:write` aus.
-2. **Admin-Dashboard** oder `POST /v1/pats` — stellt ein PAT mit einer beliebigen Teilmenge von Scopes aus.
+1. **Registrierungsassistent** — stellt automatisch ein Starter-PAT mit den Scopes `cas:read cas:write ac:read ac:write` aus. Dies ist heute der einzige produktive Weg, ein PAT zu erstellen.
+2. **Self-Service-PAT-Ausstellung** (`POST /v1/pats`, ein PAT mit einer beliebigen Teilmenge von Scopes) ist geplant, aber noch nicht auf eine Route verdrahtet — der Aufruf liefert heute `404`. Wenden Sie sich bis dahin an den Support, um weitere PATs für Ihren Mandanten ausstellen zu lassen.
 
-Bei der Erstellung wird der Klartext-Token **genau einmal** angezeigt. CoreLink speichert nur einen gesalzenen SHA-256-Hash des Token-Werts. Es gibt keinen Endpunkt zum Abrufen.
+Bei der Erstellung wird der Klartext-Token **genau einmal** angezeigt. CoreLink speichert den Klartext niemals. Es gibt keinen Endpunkt zum Abrufen.
 
 **Speichern Sie Ihr PAT in einem Secret-Manager, bevor Sie den Erstellungsdialog schließen.** Geeignete Optionen:
 
@@ -46,7 +46,7 @@ CoreLink stellt kein HTTP bereit. Der gesamte API-Verkehr verwendet TLS 1.2 oder
 
 ### Rotation
 
-PATs haben keine automatische Rotation. Sie müssen manuell rotieren. Empfohlene Rotationskadenz:
+PATs haben keine automatische Rotation. Empfohlene Rotationskadenz, sobald die Self-Service-Ausstellung verfügbar ist:
 
 | PAT-Typ | Kadenz |
 |---|---|
@@ -54,29 +54,11 @@ PATs haben keine automatische Rotation. Sie müssen manuell rotieren. Empfohlene
 | CI/CD | 90 Tage oder bei Teamwechsel |
 | Integration (gemeinsam genutzt) | 30 Tage |
 
-So rotieren Sie ein PAT:
-
-1. Erstellen Sie das neue PAT (`POST /v1/pats`).
-2. Aktualisieren Sie das Secret in Ihrem Secret-Manager.
-3. Deployen/starten Sie alles neu, das das alte PAT nutzt.
-4. Widerrufen Sie das alte PAT (`DELETE /v1/pats/:pat_id`).
-
-Löschen Sie das alte PAT nicht, bevor das neue in Gebrauch ist — es gibt keine Übergangsfrist.
+**Self-Service-PAT-Erstellung und -Widerruf (`POST /v1/pats`, `DELETE /v1/pats/:pat_id`) sind noch nicht produktiv** — die Routen sind nicht verdrahtet. Wenden Sie sich bis dahin an [support@humangr.com](mailto:support@humangr.com), um ein Ersatz-PAT ausstellen zu lassen und das alte zu widerrufen; es gibt heute keinen Weg im Produkt selbst.
 
 ### Widerruf
 
-```bash
-# List PATs to find the ID
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/pats
-
-# Revoke
-curl -s -X DELETE \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  "https://corelink-api.humangr.com/v1/pats/<pat_id>"
-```
-
-Der Widerruf erfolgt sofort. Laufende Anfragen, die das widerrufene PAT verwenden, schlagen innerhalb von Millisekunden mit `401` fehl (begrenzt durch das Propagationsfenster des Cloudflare-Edge, typischerweise < 100 ms).
+Der Widerruf läuft aktuell über den Support — schreiben Sie an [support@humangr.com](mailto:support@humangr.com) mit dem Label des PATs oder der Mandanten-ID. Nach dem Widerruf schlagen laufende Anfragen mit diesem PAT innerhalb des Cloudflare-Edge-Propagationsfensters (typischerweise < 100 ms) mit `401` fehl.
 
 ## Scopes
 
@@ -114,7 +96,7 @@ Jeder erfolgreiche CAS-Lesevorgang, CAS-Schreibvorgang und AC-Vorgang wird an ei
 | `event_type` | `cas.write`, `cas.read`, `ac.write`, `ac.read` |
 | `tenant_id` | `acme-prod` |
 | `content_hash` | `sha256:e3b0c4...` |
-| `pat_prefix` | `clk_live` |
+| `pat_prefix` | `aZ3xQ1` |
 | `ip_address` | `1.2.3.4` (hashed in GDPR-constrained regions) |
 | `timestamp` | `2026-05-28T08:42:00.123Z` |
 | `bytes` | `4096` |
