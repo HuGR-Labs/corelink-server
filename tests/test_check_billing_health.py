@@ -40,10 +40,25 @@ spec.loader.exec_module(mod)
 CREDS = ("acct", "db", "token")
 
 
-def fake_d1(subscriptions=(), payment_failed_count=0, dlq_count=0, tables=None):
-    """Build a `d1_query` stand-in that dispatches on the SQL it is handed."""
+def fake_d1(
+    subscriptions=(),
+    payment_failed_count=0,
+    payment_failed_derived=None,
+    duplicate_event_types=(),
+    dlq_count=0,
+    tables=None,
+):
+    """Build a `d1_query` stand-in that dispatches on the SQL it is handed.
+
+    `payment_failed_count` is the count under Stripe's canonical `evt_…` id
+    scheme; `payment_failed_derived` is the count under the container's derived
+    hash scheme (defaults to the same value, which is what production looks like
+    while two endpoints are live). The checker must reduce the two with MAX, so
+    a caller that sets both to N is asserting "N real events", not "2N".
+    """
     known = {"stripe_subscriptions", "stripe_webhook_events_processed", "stripe_webhook_events_dlq"}
     present = known if tables is None else set(tables)
+    derived = payment_failed_count if payment_failed_derived is None else payment_failed_derived
 
     def _query(_account, _database, _token, sql):
         if "sqlite_master" in sql:
@@ -51,8 +66,10 @@ def fake_d1(subscriptions=(), payment_failed_count=0, dlq_count=0, tables=None):
             return [{"name": name}] if name in present else []
         if "FROM stripe_subscriptions" in sql:
             return list(subscriptions)
+        if "GROUP BY event_type" in sql:
+            return list(duplicate_event_types)
         if "invoice.payment_failed" in sql:
-            return [{"n": payment_failed_count}]
+            return [{"canonical": payment_failed_count, "derived": derived}]
         if "stripe_webhook_events_dlq" in sql:
             return [{"n": dlq_count}]
         raise AssertionError(f"unexpected SQL: {sql}")
@@ -139,6 +156,81 @@ def test_isolated_payment_failures_below_threshold_are_tolerated(monkeypatch, co
 def test_dead_letter_queue_backlog_is_flagged(monkeypatch, configured):
     monkeypatch.setattr(mod, "d1_query", fake_d1(dlq_count=1))
     assert mod.main() == 1
+
+
+# --- double-counting across webhook id schemes ------------------------------
+#
+# Found in production 2026-08-23: the daily cron failed with "4
+# invoice.payment_failed webhooks (threshold 3)". There were TWO real Stripe
+# events. Each was recorded twice because two separately-registered endpoints
+# write this table under different `event_id` schemes, and the old rule summed
+# the rows. The subscription behind them was already canceled and its invoice
+# already void — the alarm described money that was not at risk.
+
+
+def test_two_id_schemes_for_the_same_events_do_not_double_count(monkeypatch, configured):
+    """The exact production shape: 2 real events, 2 rows each, threshold 3.
+
+    Summing gives 4 and pages. Taking the MAX gives 2 and stays quiet, which is
+    the truth. This is the regression test for the false alarm.
+    """
+    monkeypatch.setattr(
+        mod,
+        "d1_query",
+        fake_d1(payment_failed_count=2, payment_failed_derived=2),
+    )
+    assert mod.check_payment_failure_clusters(*CREDS) == []
+
+
+def test_cluster_still_fires_when_only_one_scheme_is_present(monkeypatch, configured):
+    """Retiring the duplicate endpoint must not blind the dunning rule."""
+    monkeypatch.setattr(
+        mod,
+        "d1_query",
+        fake_d1(
+            payment_failed_count=mod.PAYMENT_FAILED_ALERT_THRESHOLD,
+            payment_failed_derived=0,
+        ),
+    )
+    assert mod.check_payment_failure_clusters(*CREDS) != []
+
+
+def test_cluster_fires_on_derived_scheme_alone(monkeypatch, configured):
+    """Symmetric: neither scheme is privileged as the source of truth."""
+    monkeypatch.setattr(
+        mod,
+        "d1_query",
+        fake_d1(
+            payment_failed_count=0,
+            payment_failed_derived=mod.PAYMENT_FAILED_ALERT_THRESHOLD,
+        ),
+    )
+    assert mod.check_payment_failure_clusters(*CREDS) != []
+
+
+def test_duplicate_ingestion_is_flagged(monkeypatch, configured, capsys):
+    """A second live endpoint is itself the anomaly, and must be named as one."""
+    monkeypatch.setattr(
+        mod,
+        "d1_query",
+        fake_d1(
+            duplicate_event_types=[
+                {"event_type": "invoice.payment_failed", "canonical": 2, "derived": 2},
+                {"event_type": "customer.subscription.updated", "canonical": 2, "derived": 5},
+            ]
+        ),
+    )
+    assert mod.main() == 1
+    out = capsys.readouterr().out
+    assert "BOTH id schemes" in out
+    assert "invoice.payment_failed" in out
+    assert "customer.subscription.updated" in out
+
+
+def test_single_scheme_is_not_reported_as_duplicate(monkeypatch, configured):
+    """One endpoint writing many events is normal — only BOTH schemes is the bug."""
+    monkeypatch.setattr(mod, "d1_query", fake_d1(duplicate_event_types=[]))
+    assert mod.check_duplicate_webhook_ingestion(*CREDS) == []
 
 
 # --- the "green while blind" failure mode -----------------------------------
