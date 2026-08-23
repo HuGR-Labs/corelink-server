@@ -2,7 +2,7 @@
 id: quickstart-faq
 title: Quickstart FAQ
 sidebar_label: Quickstart FAQ
-description: 15 questions every new CoreLink user asks in the first hour — sandbox expiry, billing triggers, region availability, BYOK, language support, free vs paid limits, support channels.
+description: 15 questions every new CoreLink user asks in the first hour — free-tier limits, billing triggers, region availability, BYOK, language support, free vs paid limits, support channels.
 ---
 
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
@@ -20,36 +20,30 @@ isn't here, jump to [Support](#15--how-do-i-get-help-if-i-am-stuck).
 
 ---
 
-## 1 — When does my sandbox tenant expire?
+## 1 — Does my free tenant expire?
 
-24 hours from PAT creation. The tenant ID, every blob stored, every
-PAT minted against it, and every audit event are garbage-collected
-**hard** at TTL — there is no extension. You can spin up a new sandbox
-tenant any time by minting a fresh sandbox PAT at
-[app.corelink.humangr.com/sandbox](https://app.corelink.humangr.com/sandbox); each is a
-fresh namespace, not a renewal of the prior one.
+**No.** The **Free** tier is free forever and never asks for a card
+(see [/pricing](/pricing)). It is a real tenant, not a scratch one:
+nothing is garbage-collected on a clock. What is bounded is the plan's
+own allowance — cache size, monthly requests, and audit retention —
+see question 8.
 
-## 2 — Does sandbox usage trigger billing?
+## 2 — Does free-tier usage trigger billing?
 
-**No.** Sandbox tenants are unmetered for storage, egress, and audit
-within the 24h TTL. Billing only starts when you create a *production*
-tenant (any plan ≥ Team) and attach a payment method or PO. You can
-finish the quickstart, evaluate for a week (one sandbox per day), and
-never enter a credit card.
+**No.** The Free tier carries no payment method, so it cannot be
+charged; when you exhaust its allowance the cache returns quota errors
+rather than an invoice. Billing only starts when you upgrade to a paid
+plan and attach a payment method or PO. You can finish the quickstart,
+evaluate for as long as you like, and never enter a credit card.
 
-## 3 — What triggers a sandbox-to-production conversion?
+## 3 — How do I move from Free to a paid plan?
 
-There is no automatic conversion. Sandbox and production tenants are
-distinct namespaces with different IDs. To "promote" you:
-
-1. Sign up for a paid plan at [humangr.com/corelink/en/customer/billing](https://humangr.com/corelink/en/customer/billing) (Stripe checkout, ~2 min).
-2. Create a fresh production tenant — pick a slug + region.
-3. Mint a production PAT (`corelink_prod_t_xxx.xxx.xxx`).
-4. Re-run your `corelink put` commands against the new tenant — the
-   first reference of each blob *uploads*, subsequent identical
-   contents hit the dedupe layer (CAS by definition).
-
-There is **no in-place tenant ID migration**.
+You upgrade in place — there is no tenant-to-tenant migration and no
+new tenant ID. Pick a plan on [/pricing](/pricing), then complete
+Stripe checkout at
+[humangr.com/corelink/upgrade](https://humangr.com/corelink/upgrade)
+(~2 min). Your tenant, its blobs, and its audit history are unchanged;
+only the plan allowances move.
 
 ## 4 — Which regions can I deploy to?
 
@@ -57,15 +51,15 @@ GA regions at launch: **`us-east-1`** (Cloudflare IAD), **`us-west-2`**
 (LAX), **`eu-west-1`** (DUB), **`ap-southeast-1`** (SIN). The
 control-plane is global; data-plane is regional and **never crosses
 boundaries** without an explicit cross-region replication policy
-(Lighthouse+). Sandbox tenants are provisioned in the geographically
+(Lighthouse+). Free-tier tenants are provisioned in the geographically
 closest region to your sign-up IP.
 
-## 5 — Can I use BYOK in sandbox?
+## 5 — Can I use BYOK on the Free tier?
 
 **No** — BYOK (Bring Your Own Key) is an Enterprise-tier control that
 requires your own AWS KMS / GCP Cloud KMS / Azure Key Vault / HashiCorp
-Vault key reference. Sandbox tenants use the CoreLink-managed envelope
-key (still XChaCha20-Poly1305 AEAD, per-tenant DEK). To trial BYOK,
+Vault key reference. Free-tier tenants use the CoreLink-managed
+envelope key (still XChaCha20-Poly1305 AEAD, per-tenant DEK). To trial BYOK,
 contact [enterprise@humangr.com](mailto:enterprise@humangr.com) for
 a 30-day BYOK evaluation tenant.
 
@@ -97,21 +91,21 @@ to influence priority.
 
 Quick reference (full SLA at [/pricing](/pricing)):
 
-| Limit | **Sandbox** | **Free** | **Team** | **Lighthouse** | **Enterprise** |
-| --- | --- | --- | --- | --- | --- |
-| Storage cap | 1 GiB | 10 GiB | 100 GiB | 1 TiB | unlimited |
-| Egress / mo | 5 GiB | 50 GiB | 500 GiB | 5 TiB | negotiated |
-| TPS (put/get) | 50 | 100 | 500 | 5000 | negotiated |
-| Audit retention | 24h | 14d | 90d | 365d | 365d+ |
-| BYOK | ✗ | ✗ | ✗ | ✗ | ✓ |
-| Regions | 1 (auto) | 1 | 2 | 4 | 4 + cross-region |
-| SLA | none | none | 99.5% | 99.9% | 99.95% |
+| Limit | **Free** | **Team** | **Lighthouse** | **Enterprise** |
+| --- | --- | --- | --- | --- |
+| Storage cap | 10 GiB | 100 GiB | 1 TiB | unlimited |
+| Egress / mo | 50 GiB | 500 GiB | 5 TiB | negotiated |
+| TPS (put/get) | 100 | 500 | 5000 | negotiated |
+| Audit retention | 14d | 90d | 365d | 365d+ |
+| BYOK | ✗ | ✗ | ✗ | ✓ |
+| Regions | 1 | 2 | 4 | 4 + cross-region |
+| SLA | none | 99.5% | 99.9% | 99.95% |
 
 ## 9 — Do I need a separate PAT per environment?
 
 Yes — PATs are tenant-scoped and environment-scoped. The token format
-`corelink_<env>_t_xxx.xxx.xxx` makes the env explicit (`sandbox`,
-`dev`, `staging`, `prod`). Mixing a `prod` PAT against a `staging`
+`corelink_<env>_t_xxx.xxx.xxx` makes the env explicit (`dev`,
+`staging`, `prod`). Mixing a `prod` PAT against a `staging`
 tenant is rejected with `COR_AUTH_TENANT_MISMATCH` at the edge. You
 can mint as many PATs per tenant as you want; revocation is per-token.
 
@@ -151,7 +145,7 @@ Three paths:
 - **REST** — `GET /v1/audit/events?since=2026-05-15T00:00:00Z` with your PAT (see [REST reference](../reference/api/openapi.mdx)).
 - **Streaming** — Enterprise tier supports webhook delivery to your SIEM (Datadog, Splunk, Sumo, custom HTTPS endpoint) with HMAC-signed payloads.
 
-Sandbox tenants expose the same REST surface; only the retention
+Free-tier tenants expose the same REST surface; only the retention
 window differs.
 
 ## 14 — What is the CLI's `doctor` subcommand for?
@@ -167,7 +161,6 @@ we can usually triage without further questions.
 
 Support channels, fastest first:
 
-- **Community Slack** — [join.corelink.humangr.com/slack](https://join.corelink.humangr.com/slack) — `#help` channel, weekday median response < 1 hour.
 - **GitHub Discussions** — [github.com/HumanGuardrail/corelink-server/discussions](https://github.com/HumanGuardrail/corelink-server/discussions) for design questions + roadmap.
 - **GitHub Issues** — [github.com/HumanGuardrail/corelink-server/issues](https://github.com/HumanGuardrail/corelink-server/issues) for bugs (please include `corelink doctor --output=json`).
 - **Email** — [support@humangr.com](mailto:support@humangr.com) for billing or account issues. **Enterprise plans** include a dedicated Slack Connect channel + a 4-hour SEV-1 response SLA.
