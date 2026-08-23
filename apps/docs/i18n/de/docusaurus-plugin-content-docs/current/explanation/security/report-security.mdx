@@ -26,7 +26,7 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 
 # Eine Sicherheitslücke melden
 
-> **Verbindliche Quelle:** [`docs/security/report-security.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/docs/security/report-security.md).
+> **Verbindliche Quelle:** `docs/security/report-security.md`.
 > Dieses MDX ist ein schlankes Spiegelbild, damit die React-Landingpage des Trust Center (`/trust`)
 > und die URL `/.well-known/security.txt` per Deep-Link auf eine kanonische
 > öffentliche Route verweisen können. Liefergegenstand von Wave-29 Stream-8.
@@ -40,7 +40,7 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 | **Antwort-SLA — Bestätigung** | 1 Werktag |
 | **Antwort-SLA — Triage-Entscheidung** | 5 Werktage |
 | **Fenster der koordinierten Offenlegung** | 90 Tage ab Annahme der Triage |
-| **Umfang des Safe Harbor** | Die live CoreLink-Hosts unter `humangr.com` (flach, mit Bindestrich — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` für die Admin-UI) + Open-Source-CoreLink-Crates und -CLIs |
+| **Umfang des Safe Harbor** | Die live CoreLink-Hosts unter `humangr.com` (flach, mit Bindestrich — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` für die Admin-UI) + das öffentlich vertriebene `corelink-cli` |
 | **Bug-Bounty-Programm** | Vor GA noch nicht aktiv; monetäre Belohnungen werden bei GA +30 Tage eingeführt |
 
 ## Wie man meldet
@@ -87,10 +87,12 @@ befindet sich in der rechtsverbindlichen VDP unter
 
 **Im Umfang:** die live CoreLink-Hosts unter `humangr.com`
 (`corelink-api.humangr.com`, `corelink-docs.humangr.com`,
-`humangr.com/corelink/*` für die Admin-UI), alle Open-Source-Crates, die aus
-`github.com/HumanGuardrail/corelink-server` veröffentlicht werden, das
-`corelink-cli`-Distributable und die Einstiegspunkte des CoreLink Cloudflare
-Worker.
+`humangr.com/corelink/*` für die Admin-UI), das öffentlich vertriebene
+`corelink-cli` (der Installer unter `humangr.com/install.sh` und die
+Homebrew-Formel `HumanGuardrail/tap/corelink`) und die Einstiegspunkte des
+CoreLink Cloudflare Worker. Das Server-Quellrepository ist privat und es
+werden keine CoreLink-Crates in einer öffentlichen Registry veröffentlicht —
+beides liegt daher außerhalb des Umfangs.
 
 **Außerhalb des Umfangs:** Drittanbieter-Unterauftragsverarbeiter (melden Sie
 direkt an den Anbieter — Liste unter [`/trust/sub-processor-register`](/trust/sub-processor-register)),

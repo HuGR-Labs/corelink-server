@@ -26,7 +26,7 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 
 # Reportar uma vulnerabilidade de segurança
 
-> **Fonte de verdade:** [`docs/security/report-security.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/docs/security/report-security.md).
+> **Fonte de verdade:** `docs/security/report-security.md`.
 > Este MDX é um espelho fino para que a landing do Trust Center em React (`/trust`)
 > e a URL `/.well-known/security.txt` possam apontar (deep-link) para uma rota
 > pública canônica. Entregável do Wave-29 stream-8.
@@ -40,7 +40,7 @@ import { DraftBanner } from "@site/src/components/DraftBanner";
 | **SLA de resposta — confirmação** | 1 dia útil |
 | **SLA de resposta — decisão de triagem** | 5 dias úteis |
 | **Janela de divulgação coordenada** | 90 dias a partir da aceitação da triagem |
-| **Escopo do safe harbor** | Os hosts ativos da CoreLink em `humangr.com` (planos, com hífen — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` para a UI de administração) + crates e CLIs open-source da CoreLink |
+| **Escopo do safe harbor** | Os hosts ativos da CoreLink em `humangr.com` (planos, com hífen — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` para a UI de administração) + o `corelink-cli` distribuído publicamente |
 | **Programa de recompensas** | Ainda não ativo pré-GA; as recompensas monetárias entram em vigor no GA +30 dias |
 
 ## Como reportar
@@ -84,9 +84,12 @@ vinculante em `specs/_security/vulnerability-disclosure-policy.md` §6.
 
 **No escopo:** os hosts ativos da CoreLink em `humangr.com`
 (`corelink-api.humangr.com`, `corelink-docs.humangr.com`,
-`humangr.com/corelink/*` para a UI de administração), todos os crates
-open-source publicados a partir de `github.com/HumanGuardrail/corelink-server`, o
-distribuível `corelink-cli` e os entrypoints do Cloudflare Worker da CoreLink.
+`humangr.com/corelink/*` para a UI de administração), o `corelink-cli`
+distribuído publicamente (o instalador `humangr.com/install.sh` e a fórmula
+Homebrew `HumanGuardrail/tap/corelink`) e os entrypoints do Cloudflare Worker
+da CoreLink. O repositório-fonte do servidor é privado e nenhum crate da
+CoreLink é publicado em um registro público, portanto nenhum dos dois está
+no escopo.
 
 **Fora do escopo:** subprocessadores de terceiros (reporte diretamente ao
 fornecedor — lista em [`/trust/sub-processor-register`](/trust/sub-processor-register)),

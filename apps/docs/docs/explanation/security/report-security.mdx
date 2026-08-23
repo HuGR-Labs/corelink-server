@@ -20,7 +20,7 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 # Report a security vulnerability
 
-> **Source-of-truth:** [`docs/security/report-security.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/docs/security/report-security.md).
+> **Source-of-truth:** `docs/security/report-security.md`.
 > This MDX is a thin mirror so the React Trust Center landing (`/trust`)
 > and the `/.well-known/security.txt` URL can deep-link into one canonical
 > public route. Wave-29 stream-8 deliverable.
@@ -34,7 +34,7 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 | **Response SLA — acknowledgement** | 1 business day |
 | **Response SLA — triage decision** | 5 business days |
 | **Coordinated disclosure window** | 90 days from triage acceptance |
-| **Safe-harbor scope** | The live CoreLink hosts on `humangr.com` (flat, hyphenated — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` for the admin UI) + open-source CoreLink crates and CLIs |
+| **Safe-harbor scope** | The live CoreLink hosts on `humangr.com` (flat, hyphenated — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` for the admin UI) + the publicly distributed `corelink-cli` |
 | **Bounty program** | Not yet active pre-GA; monetary rewards roll out at GA +30 days |
 
 ## How to report
@@ -78,10 +78,11 @@ foreign statutes) and will treat your research as authorised under
 
 **In-scope:** the live CoreLink hosts on `humangr.com`
 (`corelink-api.humangr.com`, `corelink-docs.humangr.com`,
-`humangr.com/corelink/*` for the admin UI), all open-source crates
-published from `github.com/HumanGuardrail/corelink-server`, the
-`corelink-cli` distributable, and the CoreLink Cloudflare Worker
-entrypoints.
+`humangr.com/corelink/*` for the admin UI), the publicly distributed
+`corelink-cli` (the `humangr.com/install.sh` installer and the
+`HumanGuardrail/tap/corelink` Homebrew formula), and the CoreLink Cloudflare
+Worker entrypoints. The server source repository is private and no CoreLink
+crates are published to a public registry, so neither is in scope.
 
 **Out-of-scope:** third-party sub-processors (report directly to the
 vendor — list at [`/trust/sub-processor-register`](/trust/sub-processor-register)),
