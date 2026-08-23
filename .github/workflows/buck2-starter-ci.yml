@@ -20,6 +20,21 @@
 
 name: Buck2 Starter CI (WI-S15-003)
 
+# CREDENTIAL (2026-08-23): the secret is `CORELINK_CANARY_PAT`, NOT `CORELINK_PAT`.
+# `CORELINK_PAT` is documented in the secrets matrix (row 65) and referenced here
+# since this workflow was written, but it was NEVER BOUND on the repo — so every
+# run since at least 2026-07-09 died at "ERROR: CORELINK_PAT is not set." before
+# reaching a single Bazel action. 8 of the last 8 runs failed that way, which is
+# why this gate has never once exercised the surface it claims to guard.
+# `CORELINK_CANARY_PAT` is a real, bound prod credential already backing
+# `cas-canary.yml` + `smoke-install.yml`; reusing it needs no owner action, per
+# the same precedent smoke-install.yml documents at its own head. The ENV name
+# the credential helper reads stays `CORELINK_PAT` — only the secret it is
+# sourced from changes.
+#
+# NOT a claim that the Bazel surface works: the live endpoint was probed on
+# 2026-08-23 and answers 401 unauthenticated + 401 on an invalid token, so it is
+# alive and gating, but no run has yet completed a build against it end-to-end.
 on:
   # NON-BLOCKING BY DESIGN (2026-08-16) — do not re-add `pull_request`/`push`
   # until this is observed GREEN end-to-end via a dispatched run.
@@ -143,7 +158,7 @@ jobs:
           fi
           echo "CORELINK_PAT is set (length=${#CORELINK_PAT})"
         env:
-          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
 
       # ── cold build ─────────────────────────────────────────────────────────
       - name: Cold build — buck2 build :hello (populate remote cache)
@@ -158,7 +173,7 @@ jobs:
           echo "Cold build succeeded."
           cat /tmp/cold-report.json || true
         env:
-          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
 
       # ── warm build (assert cache hits) ────────────────────────────────────
       - name: Warm build — assert ≥ 80 % remote cache hits
@@ -202,7 +217,7 @@ jobs:
             echo "WARN: build report missing total_actions field; skipping ratio check." >&2
           fi
         env:
-          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
 
       # ── run binary ────────────────────────────────────────────────────────
       - name: Smoke-run binary
@@ -215,7 +230,7 @@ jobs:
             exit 1
           fi
         env:
-          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
 
       # ── upload artefacts ──────────────────────────────────────────────────
       - name: Upload build reports
@@ -368,7 +383,7 @@ jobs:
           chmod +x scripts/benchmark.sh
           ./scripts/benchmark.sh --iterations 10
         env:
-          CORELINK_PAT: ${{ secrets.CORELINK_PAT }}
+          CORELINK_PAT: ${{ secrets.CORELINK_CANARY_PAT }}
 
       - name: Commit updated BENCHMARK.md
         run: |

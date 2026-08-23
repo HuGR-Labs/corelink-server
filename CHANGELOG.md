@@ -22,6 +22,37 @@ Each entry cross-references:
 
 ## [Unreleased]
 
+### Fixed
+
+- **fix(ci): the Bazel and Buck2 integration gates were sourcing a secret that
+  never existed, so neither has ever exercised the surface it claims to guard.**
+  `bazel-starter-ci.yml` and `buck2-starter-ci.yml` both read
+  `${{ secrets.CORELINK_PAT }}`, a secret documented in the secrets matrix (row
+  65) but never created on the repo. Every run died at
+  `ERROR: CORELINK_PAT is not set.` before reaching a single Bazel or Buck2
+  action — 8 of the last 8 bazel runs, back to 2026-07-09. Two customer-facing
+  build-tool surfaces were therefore advertised and completely untested.
+  - Both now source `CORELINK_CANARY_PAT`, an already-bound prod credential
+    shared with `cas-canary.yml` + `smoke-install.yml`, so nothing waits on a
+    human (the precedent `smoke-install.yml` documents at its own head). The ENV
+    name the credential helpers read is unchanged; only the secret it is sourced
+    FROM changed.
+  - `bazel-starter-ci.yml` also ran all three jobs on `ubuntu-latest` — hosted
+    minutes, against the zero-hosted mandate — and is now on `corelink`.
+    `buck2-starter-ci.yml` was already self-hosted.
+  - **This is not a claim that the Bazel surface works.** The live endpoint was
+    probed on 2026-08-23 and answers `401` unauthenticated and `401` on an
+    invalid token, so it is alive and gating correctly, but no run has yet
+    completed a build against it end-to-end. What changes here is that the gate
+    can now fail for a real reason instead of a missing secret.
+  - Its weekly cron is KEPT, deliberately, against the "a cron earns its keep
+    only when something can change without a commit" rule: this workflow builds
+    against LIVE prod (`corelink-api.humangr.com/bazel/cache` with a real PAT),
+    and both triggers are path-filtered to `examples/bazel-starter/**`, which
+    changes almost never. Without the cron the only prod smoke of the Bazel
+    surface would effectively never run.
+
+
 ### Added
 
 - **`scripts/detect_unreachable.py`** — reports Cloudflare bindings and Worker
