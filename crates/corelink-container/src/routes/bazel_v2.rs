@@ -56,12 +56,12 @@
 //!    method.
 //! 5. Map [`BazelBridgeError`] to the canonical HTTP status code.
 //!
-//! # Note on matchit 0.7 syntax
+//! # Note on matchit 0.8 syntax
 //!
-//! All routes use the `:name` capture form, NOT `{name}`. matchit 0.7.3
-//! (pinned transitively via `axum = "0.7"`) treats `{name}` as a literal
-//! path segment — this was tracked as DEBT-029 and closed on the CAS/AC
-//! surfaces. The same rule is enforced here.
+//! All routes use the `{name}` brace capture form, NOT `:name`. The
+//! workspace is pinned to axum 0.8 / matchit 0.8, where `:name` is now a
+//! literal path segment (silent 404) and `{name}` is the capture — the
+//! inverse of matchit 0.7. Tracked as DEBT-029, closed on the CAS/AC surfaces too.
 
 #![forbid(unsafe_code)]
 
@@ -295,10 +295,10 @@ pub fn build_handlers() -> BazelRouteState {
 /// All routes share the single [`BazelRouteState`]; axum disambiguates
 /// operations by HTTP method and path template.
 ///
-/// # matchit 0.7 note
+/// # matchit 0.8 note
 ///
-/// Path params use `:name` syntax (never `{name}`). See module-level
-/// doc for rationale.
+/// Path params use `{name}` brace syntax (never `:name`, which is a literal
+/// in matchit 0.8). See module-level doc for rationale.
 pub fn router(state: BazelRouteState) -> Router {
     Router::new()
         // CAS read:  GET  /bazel/v2/:instance/blobs/:hash/:size
@@ -1668,7 +1668,7 @@ mod tests {
         let _r = router(state);
     }
 
-    // ── Route constants use matchit-0.7 colon syntax ──────────────────────────
+    // ── Route constants use matchit-0.8 brace syntax (NOT the legacy 0.7 colon form) ──
 
     #[test]
     fn route_paths_use_brace_syntax_not_colon() {

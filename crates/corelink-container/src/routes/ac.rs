@@ -81,13 +81,18 @@ fn clamp_limit(requested: Option<u32>) -> u32 {
     }
 }
 
-/// Canonical AC lookup route path (axum-0.7 / matchit-0.7 `:name` captures).
+/// Canonical AC lookup route path (axum-0.8 / matchit-0.8 `{name}` brace captures).
 ///
-/// DEBT-029 (2026-05-16): previously declared with `{tenant}/{action_digest}`
-/// which is matchit-0.8+ syntax and would have panicked at `Router::new()`
-/// against the workspace-pinned axum 0.7 / matchit 0.7. Fixed by replacing
-/// brace placeholders with the `:name` form used by every other live
-/// route (see `admin_pilot.rs`, `signup.rs`).
+/// DEBT-029 (2026-05-16, historical): at the time this crate was pinned to
+/// axum 0.7 / matchit 0.7, `:name` was the capture syntax and `{name}` was a
+/// literal path segment (silent 404). The workspace has SINCE moved to
+/// **axum 0.8 / matchit 0.8** (`Cargo.toml`: `axum = { version = "0.8", ... }`),
+/// which inverted the syntax: `{name}` is now the capture form and a bare
+/// `:name` is a literal that silently 404s. This constant and every other
+/// live route in the workspace use the current `{name}` brace form — see the
+/// pinning regression test `list_route_constant_uses_axum_0_8_brace_syntax`
+/// below, which asserts brace-presence + colon-absence to prevent drift back
+/// to the pre-0.8 syntax.
 pub const AC_LOOKUP_ROUTE: &str = "/v1/ac/{tenant}/{action_digest}";
 
 /// Canonical AC update route path. The update path reuses the
