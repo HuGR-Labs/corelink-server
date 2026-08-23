@@ -96,7 +96,7 @@ tags: ["sales", "proof-points", "r-prep", "ga", "numeric-claims", "sources"]
 | 3.16 | HIPAA out-of-scope by design; no BAAs signed | `apps/docs/docs/trust/compliance.mdx#hipaa` |
 | 3.17 | FedRAMP not in roadmap; NIST 800-53 crosswalk informational | `apps/docs/docs/trust/compliance.mdx#quick-scope-map` |
 | 3.18 | Sub-processor change notice: 30 calendar days advance | `apps/docs/docs/trust/subprocessors.mdx#notice-of-changes-30-day-grace` |
-| 3.19 | Vendor risk register: 19 vendors; 11 active sub-processors at GA | `specs/_compliance/VENDOR-RISK-REGISTER.md`; `apps/docs/docs/trust/subprocessors.mdx` |
+| 3.19 | Vendor risk register: 19 vendors; 6 active sub-processors at GA (5 more are registered with a built integration but not yet processing customer data — see the register's "Contracted-but-not-active" section) | `specs/_compliance/VENDOR-RISK-REGISTER.md`; `apps/docs/docs/trust/subprocessors.mdx` |
 
 ## 4. Operations claims
 
