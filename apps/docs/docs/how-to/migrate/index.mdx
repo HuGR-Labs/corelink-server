@@ -69,7 +69,7 @@ Before you read any specific guide, run this once.
 - [ ] **CLI installed** — `corelink version` prints `1.0.0` or newer.
 - [ ] **PAT exported** — `echo $CORELINK_PAT` is non-empty (or it's in `~/.corelink/config.toml`).
 - [ ] **`corelink doctor`** — all 8 checks PASS (net, auth, storage, BYOK, region, quota, client verify, time-skew).
-- [ ] **Tenant id known** — `corelink config get defaults.tenant_id` returns your production tenant (not `sandbox-xxxx`).
+- [ ] **Tenant id known** — `corelink config get defaults.tenant_id` returns your production tenant, not the one you evaluated with.
 - [ ] **Region pin chosen** — `wnam` / `enam` / `weur` / `sam` (data residency; see the [residency explainer](../../explanation/residency/lgpd-brazil.mdx)).
 - [ ] **CI users identified** — who else (humans + service accounts) writes to the existing system today? They need a CoreLink PAT scoped appropriately.
 - [ ] **Backup of existing config committed** — `git stash` is not enough; tag the commit (`pre-corelink-migration`).
@@ -78,7 +78,7 @@ Before you read any specific guide, run this once.
 ## Cross-links you'll want during the migration
 
 - [10-minute quickstart](../../tutorials/quickstart-10min.mdx) — install + first put/get.
-- [Quickstart FAQ](../../tutorials/quickstart-faq.mdx) — sandbox vs production, billing triggers.
+- [Quickstart FAQ](../../tutorials/quickstart-faq.mdx) — free vs paid tiers, billing triggers.
 - [How-to: production setup](../index.mdx) — custom domain, BYOK, region pinning.
 - [Lighthouse Customer Playbook](https://github.com/HumanGuardrail/corelink-server/blob/main/marketing/lighthouse-kit/CUSTOMER-PLAYBOOK.md) — if you decide partway through that you want a dedicated engineer.
 

@@ -9,8 +9,7 @@
 # per RFC 9116 §2.3 (Canonical field).
 
 Contact: mailto:corelinksec@humangr.com
-Contact: https://corelink-docs.humangr.com/.well-known/security-report
-Contact: mailto:corelinksec@humangr.com
+Contact: mailto:security@humangr.com
 Expires: 2027-05-14T00:00:00.000Z
 Encryption: https://corelink-docs.humangr.com/.well-known/security-pgp.asc
 Acknowledgments: https://corelink-docs.humangr.com/security/hall-of-fame

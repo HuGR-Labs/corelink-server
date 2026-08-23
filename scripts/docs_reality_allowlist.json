@@ -267,13 +267,6 @@
         "expires": "2026-09-30",
         "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
       },
-      "join.corelink.humangr.com": {
-        "reason": "TODO(dead-host-sweep): Invite/join host in the docs site; never provisioned.",
-        "added": "2026-08-22",
-        "owner": "dead-host-sweep",
-        "expires": "2026-09-30",
-        "ref": "dead-host-sweep — concurrent cleanup PRs; each landing PR should DELETE its entry here (the gate WARNs [suppression-hygiene] once an entry stops matching)"
-      },
       "api.corelink.humangr.com": {
         "reason": "TODO(dead-host-sweep): Dotted API host in corelink-ops deploy doc-comments/examples and CLI samples; the API is corelink-api.humangr.com.",
         "added": "2026-08-22",
@@ -381,6 +374,15 @@
       }
     },
     "_retired": [
+      {
+        "host": "join.corelink.humangr.com",
+        "bucket": "tracked_dead",
+        "removed": "2026-08-22",
+        "removed_by": "phantom-promise-sweep",
+        "old_reason": "TODO(dead-host-sweep): Invite/join host in the docs site; never provisioned.",
+        "verdict": "Not a wrong address — a phantom promise. The host backed exactly one reference, the `Community Slack` invite in the Quickstart FAQ support list (EN + 3 i18n mirrors), and NO Slack community exists to repoint it at (the only repo hits for `slack` are unrelated crate names). The invitation was removed rather than re-addressed; the list already carries GitHub Discussions and support@humangr.com, both live.",
+        "zero_matches_verified": "gate run 2026-08-22 on fix/phantom-promises ([suppression-hygiene] WARN cleared)"
+      },
       {
         "host": "demo.corelink.humangr.com",
         "bucket": "tracked_dead",
