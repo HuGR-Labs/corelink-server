@@ -402,8 +402,8 @@ appeared in the log but never executed.
 So **every** real install via the public one-liner dies looking like a total
 install failure, when in fact the binary installed correctly. The config-write
 schema bug is day-one (`77927c6e`); it only started surfacing as "No PAT found"
-on 2026-08-02 (`#942`), when the closing verb changed from a non-existent
-`corelink ping` to the real `corelink whoami`. Before that it failed with a
+on 2026-08-02 (`#942`), when the closing verb changed from a `ping` subcommand
+the CLI has never had, to `whoami`, which exists. Before that it failed with a
 different error. The one-liner has arguably never worked.
 
 Not a hard lockout — `corelink config set auth.pat` works standalone, so a user
