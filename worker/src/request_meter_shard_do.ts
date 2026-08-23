@@ -16,7 +16,7 @@
  * hold the coordinator binding — the coordinator hop + `EDGE_DO_METER` gate
  * are wired there too (`EDGE_DO_METER` = "serve" for prod environments).
  * The refill values (`spentDelta`, `reportedBalance`) are RETURNED to the caller
- * so the shell stays free of the coordinator dependency until then.
+ * so this shell never has to hold the coordinator binding itself.
  *
  * Charter (mirrored from request_meter_coordinator_do.ts):
  *   - INV-NO-PII-IN-LOGS: tenant ids are NOT logged (the tenant+region is the DO

@@ -35,6 +35,18 @@ Each entry cross-references:
   prints the patterns it searched so a human can audit each negative. Known
   blind spot, stated in its own output: it scans only `worker/src` TypeScript,
   so a binding forwarded into the Rust container will appear unreached.
+  `scripts/test_detect_unreachable.sh` pins that behaviour — six synthetic cells
+  covering each access shape (including the type-cast read that fooled the naive
+  grep) plus two assertions about the real tree — and the `unreachable-radar`
+  workflow runs it on any PR touching `wrangler.toml`, `worker/src`, or the
+  detector itself. The self-test was watched failing before it was trusted. The
+  detector's comment-stripper has one accepted limitation, now stated in the
+  right direction in its own docstring: a `//` inside a string literal blanks the
+  rest of that line, which could destroy a real reference and produce a false
+  `UNREACHED`. It is accepted only because no line in `worker/src` currently
+  mixes a URL string with an `env` reference, and the self-test re-checks that
+  precondition on every run.
+
 ### Fixed
 - **fix(installer): the public `curl | sh` one-liner's own `config.toml` write did not match the schema the CLI reads, so its trailing `corelink whoami` call — and anything chained after the pipe with `&&` — always failed with `error: No PAT found`, for any token.** `apps/get-corelink-worker/src/install.ts` wrote a flat top-level `token = "$TOKEN"` / `region = "..."` into `~/.corelink/config.toml`, but `tools/cli/src/config.rs` (`CorelinkConfig`/`AuthConfig`) only ever populates `cfg.auth.pat` from a `[auth]` table's `pat` key — TOML deserialization silently ignores unrecognized top-level scalars rather than erroring, so `auth.pat` stayed `None` regardless of how valid the supplied PAT was. Under `set -eu` that made the script's own final `corelink whoami` invocation fail and abort the *entire* one-liner non-zero, which is what `smoke-install.yml` caught (run `30988335681`, 2026-08-05): both docker legs logged `error: No PAT found...` immediately after "Checksum OK.", not because `corelink --version` needs a credential (it never has — confirmed directly against the published v0.1.1 binary: `--version`/`-V`/`--help`/`version`/`config set` all still work with zero PAT present), but because the install script's *own* trailing verification call died first and short-circuited the `&&`-chained `corelink --version` in the workflow's `docker run` command. `config.toml` now writes `[auth]\npat = "$TOKEN"` and `[defaults]\nendpoint = "..."`, matching `CorelinkConfig` exactly; `--region` remains a no-op CLI flag since no `[defaults].region` config key exists yet. New regression coverage in `apps/get-corelink-worker/tests/install.test.ts` parses `tools/cli/src/config.rs`'s real `AuthConfig`/`DefaultsConfig` structs (ground-truth, same discipline as the existing subcommand-membership test) and asserts the rendered heredoc writes `[auth].pat`/`[defaults].endpoint`, pinning against ever regressing back to the flat, silently-ignored form.
 ### Added

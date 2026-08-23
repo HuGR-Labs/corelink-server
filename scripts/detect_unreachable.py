@@ -118,7 +118,7 @@ def parse_inline_table(raw: str) -> dict:
 
 @dataclass
 class WranglerModel:
-    # list of (name, class_name, table_path) for every [[...durable_objects.bindings]]
+    # list of (name, table_path) for every [[...durable_objects.bindings]]
     durable_objects: list = field(default_factory=list)
     # list of (binding, kind, table_path) for r2/d1/kv/service bindings
     resource_bindings: list = field(default_factory=list)
@@ -263,10 +263,18 @@ def strip_comments_preserve_lines(text: str) -> str:
     line comments) while preserving line numbers and non-comment code, so
     prose that merely NAMES a binding (design notes, "Status: bound but
     unused" annotations, etc.) can never masquerade as a reaching reference.
-    This is intentionally simple (no string-literal awareness for `//` /
-    `/*` inside strings) — the rare case where that miscounts a real string
-    literal as a comment only makes the tool MORE conservative (more
-    REACHED, never less), which matches "prefer false negatives"."""
+    KNOWN LIMITATION (measured, currently zero-impact): this is
+    intentionally simple and has no string-literal awareness, so a `//`
+    inside a string literal — a URL, typically — blanks the REST OF THAT
+    LINE. `const u = "https://x"; const f = env.MY_FLAG;` loses the
+    `env.MY_FLAG` reference entirely. That cuts AGAINST this tool's
+    conservatism: a destroyed reference produces a FALSE `UNREACHED`, the
+    exact verdict this design is supposed to never emit. It is accepted
+    only because worker/src today contains ZERO lines where a URL string
+    and a binding reference share a line (verified 2026-08-23,
+    `test_detect_unreachable.sh` case 7 re-checks it). If that ever stops
+    holding, teach this function about string literals before trusting an
+    `UNREACHED` verdict again."""
     out = []
     i = 0
     n = len(text)
@@ -449,7 +457,7 @@ def run(repo_root: str) -> dict:
                 category=f"{kind}_binding",
                 name=binding,
                 status=status,
-                detail=f"wrangler.toml [[{kind}s]] binding" if not kind.endswith("s") else f"wrangler.toml [[{kind}]] binding",
+                detail=f"wrangler.toml [[{kind}s]] binding",
                 patterns_searched=patterns_desc,
                 evidence=evidence,
             )
