@@ -157,8 +157,12 @@ panels:
     title: "Pilot dashboard tile — public link"
     type: text
     content: |
-      Customer-facing signup link (token-based slot reservation):
-      https://signup.corelink.humangr.com/pilot/<token>
+      Customer-facing signup link (token-based slot reservation) — the
+      applicant pastes the token into this form:
+      https://corelink-docs.humangr.com/pilot/apply
+
+      The form POSTs to the API route behind it:
+      https://corelink-api.humangr.com/v1/signup/pilot/<token>
 
       Operator playbook:
       docs/internal/customer-success-playbook.md

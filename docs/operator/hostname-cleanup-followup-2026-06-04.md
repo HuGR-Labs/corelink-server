@@ -40,6 +40,18 @@ All repointed to live flat hosts in `7cd188b1`:
 | 8 | **CLI doc-comment examples** | `tools/cli/examples/quickstart_signup.rs:10`, `src/main.rs:258`, `src/commands/runbook_drill.rs:17` | Comments only; the CLI **default endpoint is already** `corelink-api` (correct). | Low |
 | 9 | **Dead Pages middleware canonical host** | `apps/admin-ui/functions/_middleware.ts:30` (`CANONICAL_HOST = "app.corelink…"`) | Part of GAP-1 (dead Pages path). Confirm the live `middleware.ts` does NOT redirect to a dead canonical host. | **Check (overlaps GAP-1)** |
 
+### Row 6 — RESOLVED 2026-08-22
+
+The owner decision the row asked for was made: **the pilot flow is on the launch
+path**, and it is not superseded by self-serve Clerk — it feeds into it. The
+activation URL now points at the live Clerk sign-up surface
+(`https://humangr.com/corelink/sign-up?pilot=<id>`) instead of the dead
+`signup.corelink.humangr.com/pilot/activate`, which was dead twice over: the
+hostname is NXDOMAIN, and no `/pilot/activate` page was ever built on any host.
+Fixed in the same change: the Rust constant, both OpenAPI mirrors, this
+dashboard tile, and the intake form's POST target (which was also aimed at the
+NXDOMAIN host, so the advertised-open pilot could not accept one application).
+
 ## Owner launch-day hostname items
 
 - Ensure **`CORELINK_API_URL`** (server-side, admin-ui Worker) **and**

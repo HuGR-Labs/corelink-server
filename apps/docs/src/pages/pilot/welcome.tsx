@@ -2,7 +2,7 @@
  * Pilot welcome page — `humangr.com/corelink/docs/pilot/welcome`.
  *
  * R-prep wave-29 stream-2 deliverable. Reached after successful POST
- * to `signup.corelink.humangr.com/v1/signup/pilot/{token}` from `./apply.tsx`.
+ * to `corelink-api.humangr.com/v1/signup/pilot/{token}` from `./apply.tsx`.
  *
  * Confetti is intentionally tiny (8 emoji spans + a CSS animation in
  * `pilot.module.css`) — no third-party dependency, no canvas. The
