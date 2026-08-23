@@ -190,7 +190,19 @@ pub const SQL_UPSERT_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier,
 /// row needs no started_at, and the DO UPDATE **deliberately does NOT reset**
 /// `subscription_started_at_ms` (a downgrade must preserve the ORIGINAL
 /// subscription start; only [`SQL_UPSERT_TIER`]'s grant path refreshes it).
-pub const SQL_DOWNGRADE_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'inactive', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET tier = excluded.tier, subscription_state = 'inactive', correlation_id = excluded.correlation_id";
+///
+/// The DO UPDATE **deliberately does NOT touch `tier` either.** The
+/// signup-worker (`apps/signup-worker/src/webhooks/stripe.ts`,
+/// `deactivateTierSelectionBySubscription`) is the authoritative writer on
+/// cancel and its own statement leaves `tier` untouched, preserving the
+/// tenant's historical tier label. This statement must converge to the SAME
+/// outcome — overwriting `tier` to `'free'` here would race the authority and
+/// non-deterministically stomp the historical label depending on which writer
+/// lands last. `tier` is still bound (`?2`) for the INSERT branch, which only
+/// fires if no row exists yet (the NOT-NULL column needs a value); on the
+/// far-more-common conflict path (a row the signup-worker or a prior
+/// tier-select already created) the existing `tier` value survives untouched.
+pub const SQL_DOWNGRADE_TIER: &str = "INSERT INTO tier_selections (tenant_id, tier, subscription_state, subscription_started_at_ms, correlation_id) VALUES (?, ?, 'inactive', ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET subscription_state = 'inactive', correlation_id = excluded.correlation_id";
 
 /// UPSERT a tenant's Runners entitlement (`runners_entitlement`, migrations
 /// 0070 `max_concurrency` + 0072 `max_vcpu_h`). A SEPARATE axis from the cache
@@ -273,14 +285,18 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
     ) -> Result<(), BillingD1Error>;
 
     /// DOWNGRADE the tier for `tenant_id` on cancel. Production writes
-    /// `tier_selections.(tier, subscription_state='inactive', correlation_id)`
-    /// via [`SQL_DOWNGRADE_TIER`] — the container's defense-in-depth convergent
+    /// `tier_selections.(subscription_state='inactive', correlation_id)` via
+    /// [`SQL_DOWNGRADE_TIER`] — the container's defense-in-depth convergent
     /// write for `customer.subscription.deleted` (the signup-worker is the
     /// primary downgrade authority). UNLIKE [`Self::upsert_tier`], this writes
-    /// `subscription_state='inactive'` (the access gate OFF) and does NOT reset
+    /// `subscription_state='inactive'` (the access gate OFF), does NOT reset
     /// `subscription_started_at_ms` on conflict (the original start is
-    /// preserved). `now_ms` is threaded for the INSERT (new-row) started_at bind
-    /// + trait parity; the native mirror keeps its `(tier, correlation_id)` shape.
+    /// preserved), and — matching the signup-worker's own cancel statement —
+    /// does NOT overwrite `tier` on conflict either, preserving the tenant's
+    /// historical tier label rather than stomping it to `tier_wire`. `tier_wire`
+    /// is only used if the INSERT branch fires (no existing row — the NOT-NULL
+    /// column needs a value); `now_ms` is threaded for that same INSERT-branch
+    /// started_at bind + trait parity.
     fn downgrade_tier(
         &self,
         tenant_id: &str,
@@ -517,10 +533,21 @@ impl BillingD1Writer for InMemoryBillingD1 {
             .tiers
             .lock()
             .map_err(|e| BillingD1Error::Transient(format!("tiers mutex poisoned: {e}")))?;
-        g.insert(
-            tenant_id.to_string(),
-            (tier_wire.to_string(), correlation_id.to_string()),
-        );
+        // Mirror `SQL_DOWNGRADE_TIER`'s ON CONFLICT: an EXISTING row keeps its
+        // `tier` untouched (only `correlation_id` refreshes) — `tier_wire` is
+        // used ONLY for the INSERT (new-row) branch, matching the production
+        // statement not overwriting the historical tier label on cancel.
+        match g.get_mut(tenant_id) {
+            Some((_existing_tier, existing_correlation_id)) => {
+                *existing_correlation_id = correlation_id.to_string();
+            }
+            None => {
+                g.insert(
+                    tenant_id.to_string(),
+                    (tier_wire.to_string(), correlation_id.to_string()),
+                );
+            }
+        }
         Ok(())
     }
 
@@ -645,6 +672,37 @@ mod tests {
             "must be tenant-scoped by a single bind: {sql}"
         );
         assert_eq!(sql.matches('?').count(), 1, "single tenant_id bind: {sql}");
+    }
+
+    #[test]
+    fn downgrade_tier_preserves_existing_tier_never_writes_free() {
+        // Stripe-cancel tier-race fix: on an EXISTING row, downgrade_tier must
+        // preserve `tier` (mirrors SQL_DOWNGRADE_TIER no longer overwriting it)
+        // even though the caller passes `tier_wire="free"` — only
+        // `subscription_state` (tracked out-of-band by production; this mirror
+        // only tracks `tier`) may change. FAILS on the old behaviour (which
+        // unconditionally overwrote the entry to `("free", …)`).
+        let d1 = InMemoryBillingD1::new();
+        d1.upsert_tier("ten_1", "pro", 1_700_000_000_000, "init")
+            .unwrap();
+        d1.downgrade_tier("ten_1", "free", 1_700_000_100_000, "evt_cancel")
+            .unwrap();
+        assert_eq!(
+            d1.tier_for("ten_1"),
+            Some("pro".to_string()),
+            "cancel must NOT overwrite the historical tier label to 'free'"
+        );
+    }
+
+    #[test]
+    fn downgrade_tier_seeds_tier_wire_when_no_row_exists() {
+        // The INSERT (new-row) branch still needs a tier value for the
+        // NOT-NULL column — only the conflict/existing-row branch preserves.
+        let d1 = InMemoryBillingD1::new();
+        assert_eq!(d1.tier_for("ten_new"), None);
+        d1.downgrade_tier("ten_new", "free", 1_700_000_000_000, "evt_cancel")
+            .unwrap();
+        assert_eq!(d1.tier_for("ten_new"), Some("free".to_string()));
     }
 
     #[test]
@@ -864,6 +922,37 @@ mod tests {
         assert!(
             !sql.contains("subscription_started_at_ms = excluded"),
             "downgrade must NOT reset subscription_started_at_ms on conflict: {sql}"
+        );
+    }
+
+    /// Stripe-cancel tier-race fix: the container's cancel path must converge
+    /// with the signup-worker authority
+    /// (`apps/signup-worker/src/webhooks/stripe.ts`
+    /// `deactivateTierSelectionBySubscription`), which sets
+    /// `subscription_state='inactive'` and deliberately leaves `tier`
+    /// untouched. `SQL_DOWNGRADE_TIER`'s DO UPDATE must therefore NEVER
+    /// overwrite `tier` (previously `tier = excluded.tier`, which raced the
+    /// authority and stomped the historical tier label to whatever
+    /// `persist_tier_downgrade` passed in, e.g. `'free'`).
+    #[test]
+    fn downgrade_tier_sql_do_update_never_overwrites_tier_column() {
+        let sql = SQL_DOWNGRADE_TIER;
+        assert!(
+            !sql.contains("tier = excluded.tier"),
+            "cancel DO UPDATE must NOT overwrite the tier column \
+             (the signup-worker is the tier authority on cancel): {sql}"
+        );
+        // The DO UPDATE clause itself must only touch subscription_state +
+        // correlation_id — assert on the exact clause so a future edit that
+        // reintroduces a tier write (even under a different token spelling)
+        // is caught.
+        let do_update = sql
+            .split("DO UPDATE SET ")
+            .nth(1)
+            .expect("SQL must have a DO UPDATE SET clause");
+        assert_eq!(
+            do_update, "subscription_state = 'inactive', correlation_id = excluded.correlation_id",
+            "DO UPDATE must set ONLY subscription_state + correlation_id: {sql}"
         );
     }
 }
