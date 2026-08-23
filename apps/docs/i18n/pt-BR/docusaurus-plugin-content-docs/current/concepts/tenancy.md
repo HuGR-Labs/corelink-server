@@ -44,10 +44,10 @@ serviço.
 
 | Propriedade | Detalhes |
 |---|---|
-| Prefixo | `clk_live_` (produção) ou `clk_test_` (ambiente de teste) |
+| Formato | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` é `pat` (PAT de usuário), `ci` (token de runner de CI) ou `ro` (token somente leitura) |
 | Escopo | Exatamente um tenant no momento da emissão |
-| Exibido uma vez | Exibido em texto puro apenas na criação; o hash é armazenado no servidor |
-| Revogável | A qualquer momento pelo painel de administração ou `DELETE /v1/pats/:pat_id` |
+| Exibido uma vez | Exibido em texto puro apenas na criação; nunca armazenado em texto puro no servidor |
+| Revogável | Apenas o PAT inicial emitido no cadastro existe self-service hoje; revogar ou emitir PATs adicionais (`DELETE /v1/pats/:pat_id`, `POST /v1/pats`) ainda não está conectado a nenhuma rota — até lá, escreva para o suporte |
 | Expiração | Opcional; definida no momento da criação; por padrão não expira |
 
 ### Escopos de PAT
@@ -68,17 +68,11 @@ suficiente para todas as integrações de ferramentas de build.
 
 ### Boas práticas de CI/CD
 
-Não use seu PAT inicial pessoal em CI. Crie um PAT de CI dedicado com os escopos
-mínimos necessários:
-
-```bash
-# Create a CI PAT with CAS + AC access only (no admin)
-curl -s -X POST \
-  -H "Authorization: Bearer $CORELINK_ADMIN_PAT" \
-  -H "Content-Type: application/json" \
-  -d '{"label": "ci-bazel", "scopes": ["cas:read", "cas:write", "ac:read", "ac:write"]}' \
-  https://corelink-api.humangr.com/v1/pats
-```
+Não use seu PAT inicial pessoal em CI. A criação self-service de um PAT de CI
+dedicado (`POST /v1/pats`) está planejada, mas ainda não conectada a uma rota.
+Até lá, escreva para [support@humangr.com](mailto:support@humangr.com) para
+solicitar um PAT de CI dedicado com os escopos mínimos necessários
+(tipicamente `cas:read cas:write ac:read ac:write`, sem `admin`).
 
 Armazene o valor do token retornado nos secrets do GitHub Actions, no Vault ou no
 gerenciador de segredos de sua escolha.
@@ -121,16 +115,12 @@ configurados por ambiente.
 
 ## Listar e revogar PATs
 
-```bash
-# List all PATs for your tenant
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/pats
+Hoje não existe rota self-service para listar ou revogar PATs (`GET`/`POST
+/v1/pats`, `DELETE /v1/pats/:pat_id` estão planejadas, mas não conectadas).
+Existe uma superfície de leitura admin-only para o suporte inspecionar os PATs
+de um tenant (`GET /v1/admin/tenants/{tenant_id}/pats`), mas não é chamável com
+um PAT comum. Para revogar um PAT, escreva para
+[support@humangr.com](mailto:support@humangr.com).
 
-# Revoke a PAT by ID
-curl -s -X DELETE \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/pats/<pat_id>
-```
-
-Após a revogação, quaisquer requisições em andamento que usem aquele PAT receberão
-`401 Unauthorized`.
+Assim que a revogação estiver disponível (self-service ou via suporte),
+quaisquer requisições em andamento com aquele PAT receberão `401 Unauthorized`.

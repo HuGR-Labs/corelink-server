@@ -6,18 +6,18 @@ description: Drive many corelink puts and gets with bounded parallelism.
 tags: [sdk, cli, performance, how-to]
 ---
 
+
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
 
 > MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
 >
 > Canonical EN source: `docs/how-to/sdk-cli/05-batch-operations.mdx`
 
-
 # Batch operations
 
 ## When to use this guide
 
-You need to push or pull many blobs from a shell script (e.g. CI bootstrap)
+You need to push or pull many blobs from a shell script (for example, CI bootstrap)
 and want maximum throughput without exceeding rate limits.
 
 ## Bulk upload with `xargs -P`
@@ -47,20 +47,30 @@ cat digests.txt \
 
 ## Rate-limit handling
 
-`corelink` exits `5` on `COR_QUOTA_RATELIMIT`. A back-off loop:
+The CLI has exactly four exit codes (`0`/`1`/`2`/`65` — see
+[Troubleshooting](./07-troubleshooting.mdx)); a rate limit is not
+distinguished from any other failure — it exits `1` like every other
+command error, with the reason on stderr. A retry loop can't branch on the
+exit code alone; check stderr (or re-run unconditionally with a cap):
 
 ```bash
 attempt=0
-until corelink put "$file"; do
-  rc=$?
-  [[ $rc -ne 5 ]] && exit $rc       # non-rate-limit failure: bail
+until corelink put "$file" 2>err.log; do
   attempt=$((attempt+1))
-  [[ $attempt -ge 5 ]] && exit 5    # give up
-  sleep $((2 ** attempt))           # 2s, 4s, 8s, 16s
+  if [[ $attempt -ge 5 ]]; then
+    cat err.log >&2
+    exit 1                          # give up, surface the last error
+  fi
+  sleep $((2 ** attempt))           # 2s, 4s, 8s, 16s — retries every failure,
+                                     # not just rate limits, since the CLI
+                                     # doesn't expose which kind occurred
 done
 ```
 
-In real scripts use one of the SDKs which implement this loop natively.
+In real scripts use one of the SDKs, whose HTTP exception types
+(`CoreLinkRequestError.status_code == 429` in Python, an HTTP status check
+in Go/JS) let you retry rate limits specifically instead of retrying every
+failure.
 
 ## Pre-dedupe with `b3sum`
 

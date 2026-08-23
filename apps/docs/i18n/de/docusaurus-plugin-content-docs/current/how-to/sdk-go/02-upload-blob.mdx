@@ -6,20 +6,21 @@ description: Store a content-addressable blob using the corelink-go SDK.
 tags: [sdk, go, cas, how-to]
 ---
 
+
 <!-- i18n:MT (de) — bootstrap MT-stub from EN source; replace with native-speaker translation before GA -->
 
 > MT: Diese Seite wird übersetzt. Die englische Fassung gilt als verbindlich, bis ein Muttersprachler die Übersetzung freigibt (D+14).
 >
 > Canonical EN source: `docs/how-to/sdk-go/02-upload-blob.mdx`
 
-
 # Upload a blob
 
 ## When to use this guide
 
-You have arbitrary bytes (a `[]byte` or `io.Reader`) and want them persisted
-into the CoreLink CAS. The SDK computes the BLAKE3 digest unless you pass
-one explicitly.
+You have a `[]byte` and want it persisted into the CoreLink CAS. `Put`
+computes the BLAKE3 digest for you — there is no way to supply a
+pre-computed digest client-side in this SDK (unlike `corelink-py`'s
+`expected_digest=`).
 
 ## Prerequisites
 
@@ -32,7 +33,7 @@ import (
     "context"
     "os"
 
-    "github.com/HumanGuardrail/corelink-go/corelink"
+    "github.com/HumanGuardrail/corelink-go/v1"
 )
 
 func upload(ctx context.Context, cli *corelink.Client, path string) (string, error) {
@@ -44,45 +45,42 @@ func upload(ctx context.Context, cli *corelink.Client, path string) (string, err
 }
 ```
 
-## Streaming upload (large blobs)
+## No streaming upload
 
-```go
-func uploadLarge(ctx context.Context, cli *corelink.Client, path string) (string, error) {
-    f, err := os.Open(path)
-    if err != nil {
-        return "", err
-    }
-    defer f.Close()
-    return cli.PutStream(ctx, f, corelink.WithChunkSize(4*1024*1024))
-}
-```
-
-`PutStream` is goroutine-safe and respects the `context.Context` deadline.
+`Client` has exactly three data-plane methods — `Put`, `Get`, `Stat` — and
+`Put` takes a `[]byte`, not an `io.Reader`; there is no `PutStream` or
+chunk-size option. For a file too large to hold fully in memory, read it in
+your own chunks and assemble the upload yourself, or use `corelink-py`'s
+`put_stream(fileobj, chunk_size=...)` (both the sync and async Python
+clients have it), which streams from an open file handle without buffering
+the whole thing.
 
 ## Idempotency
 
-`Put` deduplicates server-side. Two callers uploading identical bytes
-race-resolve to the same digest with no double-billing.
+The native CAS is content-addressed: two `Put` calls with identical bytes
+resolve to the same digest, so a duplicate upload is not billed as separate
+storage.
 
 ## Context plumbing
 
-Always pass a request-scoped `context.Context`. Inside an HTTP handler, use
-`r.Context()`; inside a worker, derive a deadline:
-
-```go
-ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-defer cancel()
-```
-
-The SDK aborts in-flight uploads when the context is cancelled.
+`Put`'s `context.Context` parameter is accepted for API shape but is
+**not currently wired to cancellation** — the parameter is discarded
+(`func (c *Client) Put(_ context.Context, data []byte) ...`,
+`corelink-go/corelink.go:160`). Passing a cancelled or timed-out context
+does not abort an in-flight `Put`; if you need a hard timeout, enforce it
+around the call yourself (for example, run it in a goroutine and select on
+`ctx.Done()`).
 
 ## Errors
 
-| Error type | Cause | Action |
+`Client` methods return plain `error` values (message strings), not a
+typed error hierarchy — there is no `*corelink.AuthError`,
+`*corelink.QuotaError`, or similar type to type-switch on. Match on the
+message instead:
+
+| Message contains | Cause | Action |
 |---|---|---|
-| `*corelink.AuthError` | PAT missing or revoked | Re-run [01-authenticate](./01-authenticate.mdx) |
-| `*corelink.QuotaError` | Tenant over quota | See [troubleshooting](./07-troubleshooting.mdx) |
-| `*corelink.DigestMismatchError` | Caller-supplied digest wrong | Recompute |
+| `put failed (rc=%d)` | The native `Put` call returned non-zero — could be network, auth, or quota | Confirm the PAT/tenant with a `Stat` call first; if that also fails, see [Troubleshooting](./07-troubleshooting.mdx) |
 
 ## Next steps
 

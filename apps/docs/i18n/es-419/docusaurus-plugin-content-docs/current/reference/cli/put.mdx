@@ -6,6 +6,7 @@ description: Upload a file as a content-addressable blob.
 tags: [reference, cli, put]
 ---
 
+
 <!-- i18n:MT (es-419) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
 > MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
@@ -33,7 +34,7 @@ corelink put <FILE> [--digest <DIGEST>] [--output <FORMAT>]
 
 | Flag | Required | Default | Description |
 |---|---|---|---|
-| `--digest` | no | computed | Pre-computed BLAKE3 hex digest. Mismatch fails with exit `3`. |
+| `--digest` | no | computed | Pre-computed BLAKE3 hex digest. Not checked client-side — uploaded as claimed; the server re-hashes and rejects a wrong claim with `422`, which fails with exit `1`. |
 | `--output` | no | `text` | `text` or `json`. |
 
 ## Examples
@@ -73,13 +74,14 @@ upload short-circuited (CTRL-CAS-001 dedupe).
 
 ## Exit codes
 
+The CLI has exactly four exit codes, shared by every subcommand:
+
 | Code | Meaning |
 |---|---|
 | `0` | Uploaded (or dedup hit). |
-| `1` | Network, auth, or quota failure. |
-| `2` | Argument error (e.g. unreadable file). |
-| `3` | Digest mismatch (`--digest` wrong). |
-| `5` | Rate limit (`COR_QUOTA_RATELIMIT`). |
+| `1` | Any failure — network, auth, quota, digest mismatch (`--digest` wrong), unreadable file. Read the `error: ...` message on stderr for which. |
+| `2` | Argument error (for example, malformed flags). |
+| `65` | Reserved for `corelink audit verify-ndjson --url` mid-stream abort only — not used by `put`. |
 
 ## See also
 

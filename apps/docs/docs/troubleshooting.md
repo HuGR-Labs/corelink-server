@@ -28,7 +28,9 @@ If `/v1/users/me` returns `401`, the PAT is invalid. Possibilities:
 
 1. The PAT was revoked from the admin dashboard.
 2. The PAT was never exported (`export CORELINK_PAT=...` vs `CORELINK_PAT=...`).
-3. You are using a test PAT (`clk_test_...`) against the production API.
+3. You copy-pasted a truncated or reformatted token — a valid PAT is the
+   three dot-separated segments `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`
+   in full; any edit to that string fails validation.
 
 **Fix**: Regenerate a PAT from the admin dashboard. Store it in a secret manager before closing the tab.
 
@@ -195,7 +197,7 @@ curl -s https://corelink-api.humangr.com/api/health
 # 2. PAT validity
 curl -s -H "Authorization: Bearer $CORELINK_PAT" \
   https://corelink-api.humangr.com/v1/users/me
-# {"tenant_id":"...","token_prefix":"clk_live","route_kind":"cas"}
+# {"tenant_id":"...","token_prefix":"aZ3xQ1","route_kind":"cas"}
 
 # 3. Write a test blob (CoreLink's CAS is addressed by BLAKE3, not SHA-256)
 echo "healthcheck" > /tmp/cl-test.txt

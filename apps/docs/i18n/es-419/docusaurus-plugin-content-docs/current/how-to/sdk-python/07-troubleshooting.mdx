@@ -2,9 +2,10 @@
 id: sdk-python-troubleshooting
 title: Troubleshooting (Python)
 sidebar_label: Troubleshooting
-description: Diagnose common Python SDK errors with reproducible recipes.
+description: Diagnose common Python SDK errors — corelink-py's real exception taxonomy.
 tags: [sdk, python, debug, how-to]
 ---
+
 
 <!-- i18n:MT (es-419) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
@@ -16,64 +17,58 @@ tags: [sdk, python, debug, how-to]
 
 ## When to use this guide
 
-A call is failing with an exception, a slow first-byte time, or wrong-region
-behaviour, and you need a deterministic next step. Each row below maps an
-error code to the canonical fix in `docs/reference/error-taxonomy`.
+A call raised an exception and you need the fix. `corelink-py` has no
+`doctor()` or `whoami()` method and no `COR_*` error-code strings — every
+SDK error is one of the six concrete subclasses of `corelink.CoreLinkError`
+below, distinguished by **type**, not by a code field.
 
-## Diagnostic flow
+If you want the 8-check `doctor` diagnostic, use the
+[`corelink` CLI](../../reference/cli/doctor.mdx) instead —
+`corelink doctor --json`.
 
-```python
-import asyncio
-from corelink import CoreLinkClient
+## The exception taxonomy
 
-async def diagnose() -> None:
-    async with CoreLinkClient() as client:
-        rep = await client.doctor()
-        for check in rep.checks:
-            print(check.name, check.status, check.next_action_doc)
-```
+All inherit `corelink.exceptions.CoreLinkError` (catch this as the
+single base type if you don't need to distinguish):
 
-This is the same set of 8 checks as `corelink doctor --json` (network, auth,
-storage-write, storage-read, BYOK, region, quota, client-verify).
-
-## Common errors
-
-| Error code | Exception | First action |
+| Exception | Raised when | First action |
 |---|---|---|
-| `COR_AUTH_001` | `AuthError` | Re-export `CORELINK_PAT`; confirm scopes via `await client.whoami()` |
-| `COR_AUTH_002` | `AuthError` | PAT revoked; mint a new one |
-| `COR_QUOTA_001` | `QuotaError` | Tenant over storage cap; raise quota or evict old digests |
-| `COR_REGION_001` | `RegionError` | Use the regional endpoint; `corelink stat` reveals home region |
-| `COR_VERIFY_001` | `DigestMismatchError` | Discard bytes; retry; if it persists open a Sev-2 incident |
-| `COR_NET_001` | `ConnectError` | Inspect `corelink doctor network` — likely egress filtering |
+| `CoreLinkAuthError` | Server returned `401` (missing/invalid/revoked PAT) | Re-export `CORELINK_PAT`; if it's set, the PAT itself is invalid — mint a new one. |
+| `CoreLinkNotFoundError` | Server returned `404` (never uploaded) or `410` (erased) | Confirm the tenant and digest with `corelink stat <digest>`. |
+| `CoreLinkDigestMismatchError` | `422` from a `put`/`put_stream` with a wrong `expected_digest`, **or** a client-side BLAKE3 mismatch on `get` (has `.expected`/`.actual` attributes when known) | Server-side: drop `expected_digest`, let the SDK compute it. Client-side: possible corruption in transit — retry; persistent → open a support ticket. |
+| `CoreLinkQuotaError` | Server returned `402` (tenant over storage/spend ceiling; has `.status_code`) | Check usage with `corelink stat`; raise the plan limit or evict old digests. |
+| `CoreLinkRequestError` | Any other `4xx` (has `.status_code` and, when the response body carried one, `.error_code`) | Read `.error_code`/message; usually a malformed request. |
+| `CoreLinkServerError` | `5xx` (has `.status_code`) | Transient — retry with backoff; persistent → open a support ticket. |
 
-## When the SDK hangs
+**Network-level failures** (DNS, connection refused, timeout) are **not**
+wrapped — they surface as the underlying `httpx` exceptions
+(`httpx.ConnectError`, `httpx.TimeoutException`, ...), raised before the
+SDK gets a chance to inspect a response.
 
-Most often this is a forgotten `async with`:
+## When the SDK hangs or leaks connections
+
+Forgetting the context manager leaks the underlying `httpx` connection
+pool. Use whichever client matches your code — `with` for the sync
+`CoreLinkClient`, `async with` for `AsyncCoreLinkClient` (they are not
+interchangeable, see [Authenticate](./01-authenticate.mdx)):
 
 ```python
-# WRONG — leaks a connection pool
-client = CoreLinkClient()
+# WRONG — leaks the pool, and awaiting a sync method is also an error
+client = CoreLinkClient(tenant_id="acme-corp")
 await client.get(digest)
 
-# RIGHT
-async with CoreLinkClient() as client:
-    await client.get(digest)
-```
+# RIGHT (async)
+async with AsyncCoreLinkClient(tenant_id="acme-corp") as client:
+    data = await client.get(digest)
 
-## Verbose logging
-
-```bash
-export CORELINK_LOG=debug
-```
-
-The SDK writes structured JSON logs to `stderr`; pipe through `jq`:
-
-```bash
-python ./script.py 2>&1 | jq 'select(.level=="error")'
+# RIGHT (sync)
+with CoreLinkClient(tenant_id="acme-corp") as client:
+    data = client.get(digest)
 ```
 
 ## Filing a bug
 
-Include the output of `corelink doctor --json` and the redacted `whoami`
-response. Never include your PAT.
+Include the exception type and message (`repr(e)`), the `corelink-py`
+version (`python -c "import corelink; print(corelink.__version__)"` if
+exposed, otherwise `pip show corelink-py`), and whether you're on the
+sync or async client. Never include your PAT.

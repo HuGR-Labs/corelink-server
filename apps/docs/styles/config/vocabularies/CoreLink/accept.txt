@@ -293,3 +293,5 @@ walkthroughs
 webpack
 workerd
 zstd
+cdylib
+substring

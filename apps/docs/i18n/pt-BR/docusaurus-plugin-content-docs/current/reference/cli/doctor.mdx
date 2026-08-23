@@ -6,6 +6,7 @@ description: Run the 8 diagnostic checks (network, auth, storage, BYOK, region, 
 tags: [reference, cli, doctor]
 ---
 
+
 <!-- i18n:MT (pt-BR) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
 > MT: Esta página está em tradução. A versão canônica em inglês é a fonte de verdade até a revisão por falante nativo (D+10).
@@ -14,8 +15,10 @@ tags: [reference, cli, doctor]
 
 # `corelink doctor`
 
-Run the 8 canonical diagnostic checks. Every non-`ok` check carries a
-`next_action_doc` URL pointing at the right fix in the error taxonomy.
+Run the 8 canonical diagnostic checks. Every `fail` check carries an
+`error_code` (`COR_*`, documented in `docs/error_taxonomy.md`) and a
+`next_action` remediation string; `skip` checks carry `next_action` but no
+`error_code`.
 
 ## Synopsis
 
@@ -34,14 +37,14 @@ corelink doctor [--json] [--output <FORMAT>]
 
 | # | Check | What it validates |
 |---|---|---|
-| 1 | `network`         | DNS + TCP + TLS handshake to the CoreLink API. |
-| 2 | `auth`            | PAT resolves, scopes are non-empty, tenant matches. |
-| 3 | `storage_write`   | 1 KB synthetic blob round-trip write. |
-| 4 | `storage_read`    | Read-back of the synthetic blob. |
-| 5 | `byok`            | BYOK key reachable (skipped if BYOK disabled). |
-| 6 | `region`          | Tenant home region matches resolved endpoint. |
-| 7 | `quota`           | Storage and bandwidth headroom > 10%. |
-| 8 | `client_verify`   | BLAKE3 WASM/native verifier loads + matches root. |
+| 1 | `network`         | `GET /health` (public worker liveness route) reachable. |
+| 2 | `auth`            | `GET /v1/users/me` resolves the PAT's identity. |
+| 3 | `storage_write`   | Real CAS round-trip: `PUT` a small synthetic blob. |
+| 4 | `storage_read`    | `GET` the same blob back + BLAKE3 integrity verify. |
+| 5 | `byok`            | BYOK status from `GET /v1/customer/overview` — `skip` if BYOK isn't enabled, or if the token can't read the billing-gated overview. |
+| 6 | `region`          | Always `skip` — no public route exposes the tenant's primary region today; this check is informational only. |
+| 7 | `quota`           | `cas_bytes`/`quota_bytes` from `GET /v1/customer/usage`. |
+| 8 | `client_verify`   | Reported `ok` without a network call — this CLI always BLAKE3-verifies downloads (compile-time guarantee, CTRL-CAS-002), so there's nothing to probe. |
 
 ## Examples
 
@@ -50,15 +53,22 @@ corelink doctor
 ```
 
 ```text
-✔ network          OK
-✔ auth             OK (scopes: cas:read, cas:write)
-✔ storage_write    OK (12ms)
-✔ storage_read     OK (8ms)
-○ byok             SKIP (disabled for tenant)
-✔ region           OK (iad1)
-⚠ quota            WARN — 92% storage used  →  docs/reference/error-taxonomy#COR_QUOTA_001
-✔ client_verify    OK
+CHECK              STATUS  LATENCY             ERROR_CODE   NEXT_ACTION
+----------------------------------------------------------------------------------------------
+network            ok         42ms
+auth               ok         38ms
+storage_write      ok        210ms
+storage_read       ok         95ms
+byok               skip         n/a                         BYOK is not enabled for this tenant, or the token cannot read the billing-gated overview.
+region             skip         n/a                         Tenant primary region is not exposed on a public read route; skipping (informational only).
+quota              FAIL        61ms   COR_QUOTA_EXCEEDED     Tenant storage quota reached (cas_bytes >= quota_bytes). Verify plan limits and contact sales to upgrade. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED
+client_verify      ok          n/a
+
+1 check(s) failed, 0 skipped.
 ```
+
+(Skip checks also count toward the "skipped" tally — the sample above
+shows `byok`/`region` skipping, which the summary line reports.)
 
 JSON:
 
@@ -69,30 +79,37 @@ corelink doctor --json
 ## JSON schema
 
 ```json
-{
-  "ok": false,
-  "subcommand": "doctor",
-  "checks": [
-    {
-      "name": "quota",
-      "status": "warn",
-      "message": "92% storage used",
-      "next_action_doc": "docs/reference/error-taxonomy#COR_QUOTA_001"
-    }
-  ]
-}
+[
+  { "check": "network", "status": "ok", "latency_ms": 42 },
+  { "check": "auth", "status": "ok", "latency_ms": 38 },
+  { "check": "storage_write", "status": "ok", "latency_ms": 210 },
+  { "check": "storage_read", "status": "ok", "latency_ms": 95 },
+  { "check": "byok", "status": "skip",
+    "next_action": "BYOK is not enabled for this tenant, or the token cannot read the billing-gated overview." },
+  { "check": "region", "status": "skip",
+    "next_action": "Tenant primary region is not exposed on a public read route; skipping (informational only)." },
+  { "check": "quota", "status": "fail", "latency_ms": 61,
+    "error_code": "COR_QUOTA_EXCEEDED",
+    "next_action": "Tenant storage quota reached (cas_bytes >= quota_bytes). Verify plan limits and contact sales to upgrade. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED" },
+  { "check": "client_verify", "status": "ok" }
+]
 ```
 
-`status` is one of `ok | warn | fail | skip`. The top-level `ok` is `false`
-if any check is `fail`; `warn` does not flip the overall flag.
+The report is a bare JSON array of check objects — there is no wrapper
+object and no top-level `ok` field. `status` is one of `ok | fail | skip`
+(there is no `warn`); `latency_ms` is present for network-backed checks
+and absent for `client_verify`'s always-`ok` no-network result.
 
 ## Exit codes
 
+The CLI has exactly four exit codes, shared by every subcommand:
+
 | Code | Meaning |
 |---|---|
-| `0` | All checks `ok` (or `warn` only). |
+| `0` | All checks `ok` or `skip` — no `fail`. |
 | `1` | One or more checks `fail`. |
 | `2` | Argument error. |
+| `65` | Reserved for `corelink audit verify-ndjson --url` mid-stream abort only — not used by `doctor`. |
 
 ## See also
 

@@ -6,6 +6,7 @@ description: Wire the Go SDK into GitHub Actions, GitLab CI, and CircleCI.
 tags: [sdk, go, ci, how-to]
 ---
 
+
 <!-- i18n:MT (es-419) — TMX-seeded machine-translation stub; replace with native-speaker translation before GA -->
 
 > MT: Esta página está en traducción. La versión canónica en inglés es la fuente de verdad hasta la revisión por hablante nativo (D+10).
@@ -33,7 +34,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - run: go run ./ci/warm-cache
+      - run: cargo build --release -p corelink-go   # builds libcorelink_go for the cgo link
+      - run: CGO_LDFLAGS="-L./target/release -lcorelink_go" go run ./ci/warm-cache
 ```
 
 ```go
@@ -45,27 +47,30 @@ import (
     "log"
     "os"
 
-    "github.com/HumanGuardrail/corelink-go/corelink"
+    "github.com/HumanGuardrail/corelink-go/v1"
 )
 
 func main() {
     ctx := context.Background()
-    cli, err := corelink.NewClient(ctx,
-        corelink.WithTenantID(os.Getenv("CORELINK_TENANT")),
-    )
+    cli, err := corelink.NewClient(corelink.Config{
+        PAT:      os.Getenv("CORELINK_PAT"),
+        TenantID: os.Getenv("CORELINK_TENANT"),
+    })
     if err != nil {
         log.Fatal(err)
     }
     defer cli.Close()
 
-    report, err := cli.Bench(ctx, corelink.BenchOptions{Read: true, Samples: 10})
+    // There is no Bench method on this SDK — warm the cache with a real
+    // Put/Get round trip instead, and fail the job on error.
+    digest, err := cli.Put(ctx, []byte("ci-warm-cache-probe"))
     if err != nil {
-        log.Fatal(err)
+        log.Fatalf("cache warm-up failed: %v", err)
     }
-    log.Printf("p50=%vms p99=%vms", report.P50Ms, report.P99Ms)
-    if report.P99Ms > 500 {
-        os.Exit(1)
+    if _, err := cli.Get(ctx, digest); err != nil {
+        log.Fatalf("cache verify failed: %v", err)
     }
+    log.Println("cache reachable")
 }
 ```
 
@@ -77,7 +82,8 @@ build:
   variables:
     CORELINK_PAT: $CORELINK_PAT  # masked
   script:
-    - go run ./ci/warm-cache
+    - cargo build --release -p corelink-go
+    - CGO_LDFLAGS="-L./target/release -lcorelink_go" go run ./ci/warm-cache
 ```
 
 ## CircleCI
@@ -92,13 +98,16 @@ jobs:
       CORELINK_PAT: $CORELINK_PAT
     steps:
       - checkout
-      - run: go run ./ci/warm-cache
+      - run: cargo build --release -p corelink-go
+      - run: CGO_LDFLAGS="-L./target/release -lcorelink_go" go run ./ci/warm-cache
 ```
 
 ## Job-scoped PATs
 
-Mint a short-lived PAT per pipeline via the admin API and inject into the
-runner env. See [CLI reference](../../reference/cli/index.mdx).
+There is no self-service API to mint a short-lived PAT per pipeline today
+(see [Security model](../../security.md)) — email
+[support@humangr.com](mailto:support@humangr.com) to request a dedicated CI
+PAT, then inject it via your CI provider's secret store as shown above.
 
 ## Next steps
 

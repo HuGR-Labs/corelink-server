@@ -43,10 +43,10 @@ akzeptiert. Es gibt keine API-Schlüssel, OAuth-Tokens oder Dienstkonten — ein
 
 | Eigenschaft | Details |
 |---|---|
-| Präfix | `clk_live_` (Produktion) oder `clk_test_` (Testumgebung) |
+| Format | `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` ist `pat` (Nutzer-PAT), `ci` (CI-Runner-Token) oder `ro` (Nur-Lese-Token) |
 | Geltungsbereich | Genau ein Tenant zum Zeitpunkt der Ausstellung |
-| Einmal angezeigt | Wird nur bei der Erstellung im Klartext angezeigt; der Hash wird serverseitig gespeichert |
-| Widerrufbar | Jederzeit über das Admin-Dashboard oder `DELETE /v1/pats/:pat_id` |
+| Einmal angezeigt | Wird nur bei der Erstellung im Klartext angezeigt; niemals im Klartext serverseitig gespeichert |
+| Widerrufbar | Nur der bei der Registrierung ausgestellte Start-PAT existiert heute self-service; Widerruf oder Ausstellung weiterer PATs (`DELETE /v1/pats/:pat_id`, `POST /v1/pats`) ist noch nicht auf eine Route verdrahtet — wenden Sie sich in der Zwischenzeit an den Support |
 | Ablauf | Optional; bei der Erstellung festgelegt; standardmäßig ohne Ablauf |
 
 ### PAT-Geltungsbereiche
@@ -68,17 +68,11 @@ ausführen kann. Der bei der Registrierung ausgestellte Start-PAT hat
 
 ### CI/CD-Best-Practice
 
-Verwenden Sie Ihren persönlichen Start-PAT nicht in der CI. Erstellen Sie einen
-dedizierten CI-PAT mit den minimal erforderlichen Geltungsbereichen:
-
-```bash
-# Create a CI PAT with CAS + AC access only (no admin)
-curl -s -X POST \
-  -H "Authorization: Bearer $CORELINK_ADMIN_PAT" \
-  -H "Content-Type: application/json" \
-  -d '{"label": "ci-bazel", "scopes": ["cas:read", "cas:write", "ac:read", "ac:write"]}' \
-  https://corelink-api.humangr.com/v1/pats
-```
+Verwenden Sie Ihren persönlichen Start-PAT nicht in der CI. Die Self-Service-Erstellung
+eines dedizierten CI-PAT (`POST /v1/pats`) ist geplant, aber noch nicht auf eine
+Route verdrahtet. Wenden Sie sich bis dahin an [support@humangr.com](mailto:support@humangr.com)
+und fordern Sie einen dedizierten CI-PAT mit minimalen Geltungsbereichen an
+(typischerweise `cas:read cas:write ac:read ac:write`, ohne `admin`).
 
 Speichern Sie den zurückgegebenen Token-Wert in den GitHub-Actions-Secrets, in
 Vault oder im Secrets-Manager Ihrer Wahl.
@@ -122,16 +116,12 @@ werden pro Umgebung konfiguriert.
 
 ## PATs auflisten und widerrufen
 
-```bash
-# List all PATs for your tenant
-curl -s -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/pats
+Es gibt heute keine Self-Service-Route zum Auflisten oder Widerrufen von PATs
+(`GET`/`POST /v1/pats`, `DELETE /v1/pats/:pat_id` sind geplant, aber nicht
+verdrahtet). Eine Admin-only-Leseoberfläche existiert für den Support, um die
+PATs eines Tenants einzusehen (`GET /v1/admin/tenants/{tenant_id}/pats`), ist
+aber nicht mit einem regulären PAT aufrufbar. Um ein PAT zu widerrufen, schreiben
+Sie an [support@humangr.com](mailto:support@humangr.com).
 
-# Revoke a PAT by ID
-curl -s -X DELETE \
-  -H "Authorization: Bearer $CORELINK_PAT" \
-  https://corelink-api.humangr.com/v1/pats/<pat_id>
-```
-
-Nach dem Widerruf erhalten alle laufenden Anfragen, die diesen PAT verwenden,
-`401 Unauthorized`.
+Sobald der Widerruf verfügbar ist (self-service oder über den Support), erhalten
+laufende Anfragen mit diesem PAT `401 Unauthorized`.
