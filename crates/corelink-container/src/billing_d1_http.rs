@@ -53,10 +53,11 @@
 use std::sync::Arc;
 
 use corelink_billing_stripe_materializer::{
-    BillingD1Error, BillingD1Writer, MaterializedRow, SQL_DELETE_RUNNERS_ENTITLEMENT,
-    SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND, SQL_INSERT_WEBHOOK_EVENT_PROCESSED,
-    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE,
-    SQL_UPSERT_RUNNERS_ENTITLEMENT, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    BillingD1Error, BillingD1Writer, MaterializedRow, WebhookOutcome,
+    SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
+    SQL_INSERT_WEBHOOK_EVENT_PROCESSED, SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER,
+    SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT,
+    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 use serde_json::{json, Value};
 
@@ -278,19 +279,20 @@ impl BillingD1Writer for D1HttpBillingWriter {
         stripe_event_id: &str,
         canonical_event_type: &str,
         now_ms: u64,
+        outcome: WebhookOutcome,
     ) -> Result<bool, BillingD1Error> {
         if stripe_event_id.is_empty() {
             return Err(BillingD1Error::InvalidPayload(
                 "d1-http-billing: empty stripe_event_id rejected".to_owned(),
             ));
         }
-        // Binds (?1..?4): event_id, event_type, processed_at_ms,
-        // correlation_id. `outcome` is the literal `'dispatched'`; the
-        // Stripe event id doubles as the NOT-NULL correlation_id (the sync
-        // trait carries neither). `RETURNING event_id` → a row comes back
-        // iff WE inserted (first delivery); a PK conflict (replay) yields
-        // no row → Ok(false) so the dispatcher acks the duplicate without
-        // re-mutating state.
+        // Binds (?1..?5): event_id, event_type, processed_at_ms, outcome,
+        // correlation_id. `outcome` is bound from the caller's classification
+        // (see `WebhookOutcome`); the Stripe event id doubles as the
+        // NOT-NULL correlation_id (the sync trait carries neither).
+        // `RETURNING event_id` → a row comes back iff WE inserted (first
+        // delivery); a PK conflict (replay) yields no row → Ok(false) so the
+        // dispatcher acks the duplicate without re-mutating state.
         let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
         let rows = self.run(
             SQL_INSERT_WEBHOOK_EVENT_PROCESSED,
@@ -298,6 +300,7 @@ impl BillingD1Writer for D1HttpBillingWriter {
                 json!(stripe_event_id),
                 json!(canonical_event_type),
                 json!(now),
+                json!(outcome.as_str()),
                 json!(stripe_event_id),
             ],
         )?;
@@ -485,7 +488,9 @@ mod tests {
         // `try_record_event` must reject an empty id BEFORE any D1 call,
         // so this is safe to run against the inert writer.
         let w = inert_writer();
-        let err = w.try_record_event("", "invoice.paid", 1).unwrap_err();
+        let err = w
+            .try_record_event("", "invoice.paid", 1, WebhookOutcome::Dispatched)
+            .unwrap_err();
         assert!(matches!(err, BillingD1Error::InvalidPayload(_)), "{err:?}");
     }
 }

@@ -25,7 +25,7 @@ use corelink_billing_stripe_traits::{
 };
 use subtle::ConstantTimeEq;
 
-use crate::d1::BillingD1Writer;
+use crate::d1::{BillingD1Writer, WebhookOutcome};
 
 /// Idempotency store backed by [`BillingD1Writer::try_record_event`].
 ///
@@ -71,9 +71,18 @@ impl IdempotencyStore for D1IdempotencyStore {
         if !self_eq {
             return Err("idempotency token self-eq invariant failed".to_string());
         }
+        // The dispatcher already classified `event_type`; reuse that
+        // classification rather than re-deriving it — `Unknown` is the
+        // forward-compat sink for event types outside the canonical
+        // 10-element taxonomy, so it acknowledges without dispatching.
+        let outcome = if event_type == CanonicalWebhookEventType::Unknown {
+            WebhookOutcome::AcknowledgedUnknown
+        } else {
+            WebhookOutcome::Dispatched
+        };
         let inserted = self
             .writer
-            .try_record_event(&token_hex, event_type.label(), now_ms)
+            .try_record_event(&token_hex, event_type.label(), now_ms, outcome)
             .map_err(|e| format!("billing-d1: {e}"))?;
         if inserted {
             Ok(IdempotencyOutcome::FirstSight)
@@ -109,6 +118,40 @@ mod tests {
         assert_eq!(second, IdempotencyOutcome::AlreadyProcessed);
 
         assert_eq!(writer.distinct_events(), 1);
+    }
+
+    #[test]
+    fn unknown_event_type_records_acknowledged_unknown_outcome() {
+        // FAILS on the old code: the old writer hardcoded 'dispatched' for
+        // every event regardless of classification, so an Unknown-classified
+        // event was indistinguishable from a handled one in the D1 mirror.
+        let writer = Arc::new(InMemoryBillingD1::new());
+        let store = D1IdempotencyStore::new(writer.clone());
+        let token = IdempotencyToken::from_event_id("evt_unknown");
+
+        let outcome = store
+            .try_insert(token, CanonicalWebhookEventType::Unknown, 1)
+            .unwrap();
+        assert_eq!(outcome, IdempotencyOutcome::FirstSight);
+        assert_eq!(
+            writer.outcome_for(&token.to_hex()),
+            Some(crate::d1::WebhookOutcome::AcknowledgedUnknown)
+        );
+    }
+
+    #[test]
+    fn handled_event_type_records_dispatched_outcome() {
+        let writer = Arc::new(InMemoryBillingD1::new());
+        let store = D1IdempotencyStore::new(writer.clone());
+        let token = IdempotencyToken::from_event_id("evt_handled");
+
+        store
+            .try_insert(token, CanonicalWebhookEventType::InvoicePaid, 1)
+            .unwrap();
+        assert_eq!(
+            writer.outcome_for(&token.to_hex()),
+            Some(crate::d1::WebhookOutcome::Dispatched)
+        );
     }
 
     #[test]

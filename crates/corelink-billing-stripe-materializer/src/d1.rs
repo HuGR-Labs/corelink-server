@@ -156,12 +156,39 @@ pub const SQL_INSERT_REFUND: &str = "INSERT INTO stripe_refunds (tenant_id, stri
 /// Idempotency dedup INSERT into `stripe_webhook_events_processed`
 /// (migration 0044). This table is UN-tenanted — its PRIMARY KEY is the
 /// globally-unique Stripe `event_id`; there is NO `tenant_id` column.
-/// `outcome` is the literal `'dispatched'` (try_record is the dispatch
-/// path; the CHECK admits `dispatched`/`acknowledged_unknown`) and the
-/// Stripe `event_id` doubles as the NOT-NULL `correlation_id` (the sync
-/// trait carries neither). `RETURNING event_id` lets the native writer
-/// detect insert-vs-ignore (mirrors the tier-select lock probe).
-pub const SQL_INSERT_WEBHOOK_EVENT_PROCESSED: &str = "INSERT INTO stripe_webhook_events_processed (event_id, event_type, processed_at_ms, outcome, correlation_id) VALUES (?, ?, ?, 'dispatched', ?) ON CONFLICT DO NOTHING RETURNING event_id";
+/// `outcome` is a BOUND parameter (see [`WebhookOutcome`] — the CHECK
+/// admits `dispatched`/`acknowledged_unknown`, and the caller supplies
+/// whichever actually happened) and the Stripe `event_id` doubles as
+/// the NOT-NULL `correlation_id` (the sync trait carries neither).
+/// `RETURNING event_id` lets the native writer detect insert-vs-ignore
+/// (mirrors the tier-select lock probe).
+pub const SQL_INSERT_WEBHOOK_EVENT_PROCESSED: &str = "INSERT INTO stripe_webhook_events_processed (event_id, event_type, processed_at_ms, outcome, correlation_id) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING RETURNING event_id";
+
+/// Outcome bucket for a webhook dedup row (`stripe_webhook_events_processed.outcome`,
+/// migration `0044`). The CHECK constraint admits exactly these two
+/// strings — [`Self::as_str`] MUST keep returning them verbatim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum WebhookOutcome {
+    /// The dispatcher acted on the event (a known, handled canonical
+    /// event type).
+    Dispatched,
+    /// The event type was outside the canonical 10-element taxonomy
+    /// ([`corelink_billing_stripe_traits::CanonicalWebhookEventType::Unknown`]) —
+    /// acknowledged for forward-compat but not acted on.
+    AcknowledgedUnknown,
+}
+
+impl WebhookOutcome {
+    /// The exact CHECK-admitted SQL literal for this outcome.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Dispatched => "dispatched",
+            Self::AcknowledgedUnknown => "acknowledged_unknown",
+        }
+    }
+}
 /// Read the current tier for a tenant (`tier_selections`, migration
 /// 0039). Bind `?1` = `tenant_id`. Already schema-correct (the #172 fix).
 pub const SQL_READ_TIER: &str = "SELECT tier FROM tier_selections WHERE tenant_id = ?";
@@ -252,6 +279,10 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
     /// Returns `Ok(true)` iff the row was created; `Ok(false)` iff a
     /// row with the same `stripe_event_id` already existed.
     ///
+    /// `outcome` is bound into the `outcome` column verbatim (see
+    /// [`WebhookOutcome`]) — the caller decides `Dispatched` vs
+    /// `AcknowledgedUnknown`, this seam only persists it.
+    ///
     /// Mirrors `INSERT OR IGNORE` against
     /// `stripe_webhook_events_processed` from migration `0044`.
     fn try_record_event(
@@ -259,6 +290,7 @@ pub trait BillingD1Writer: fmt::Debug + Send + Sync {
         stripe_event_id: &str,
         canonical_event_type: &str,
         now_ms: u64,
+        outcome: WebhookOutcome,
     ) -> Result<bool, BillingD1Error>;
 
     /// Read the current tier for `tenant_id` (from the
@@ -338,6 +370,10 @@ pub struct InMemoryBillingD1 {
     /// `stripe_event_id` → canonical event type (mirrors
     /// `stripe_webhook_events_processed` PRIMARY KEY).
     events_seen: Arc<Mutex<HashMap<String, (String, u64)>>>,
+    /// `stripe_event_id` → recorded [`WebhookOutcome`] (mirrors the
+    /// `outcome` column so tests can assert what was actually stored,
+    /// not just that a row exists).
+    outcomes: Arc<Mutex<HashMap<String, WebhookOutcome>>>,
     /// `tenant_id` → (`tier_wire`, `correlation_id`).
     tiers: Arc<Mutex<HashMap<String, (String, String)>>>,
     /// `tenant_id` → (`max_concurrency`, `max_vcpu_h`) — the Runners
@@ -407,6 +443,16 @@ impl InMemoryBillingD1 {
         }
     }
 
+    /// Read the recorded [`WebhookOutcome`] for `stripe_event_id` (None
+    /// iff never recorded). Mirrors [`Self::tier_for`]'s naming.
+    #[must_use]
+    pub fn outcome_for(&self, stripe_event_id: &str) -> Option<WebhookOutcome> {
+        match self.outcomes.lock() {
+            Ok(g) => g.get(stripe_event_id).copied(),
+            Err(p) => p.into_inner().get(stripe_event_id).copied(),
+        }
+    }
+
     /// Read the recorded tier for `tenant_id` (None iff never written).
     #[must_use]
     pub fn tier_for(&self, tenant_id: &str) -> Option<String> {
@@ -469,6 +515,7 @@ impl BillingD1Writer for InMemoryBillingD1 {
         stripe_event_id: &str,
         canonical_event_type: &str,
         now_ms: u64,
+        outcome: WebhookOutcome,
     ) -> Result<bool, BillingD1Error> {
         self.check_armed()?;
         let mut g = self
@@ -482,6 +529,11 @@ impl BillingD1Writer for InMemoryBillingD1 {
                 stripe_event_id.to_string(),
                 (canonical_event_type.to_string(), now_ms),
             );
+            let mut outcomes = self
+                .outcomes
+                .lock()
+                .map_err(|e| BillingD1Error::Transient(format!("outcomes mutex poisoned: {e}")))?;
+            outcomes.insert(stripe_event_id.to_string(), outcome);
             Ok(true)
         }
     }
@@ -627,9 +679,50 @@ mod tests {
     #[test]
     fn idempotency_record_returns_false_on_replay() {
         let d1 = InMemoryBillingD1::new();
-        assert!(d1.try_record_event("evt_1", "invoice.paid", 1).unwrap());
-        assert!(!d1.try_record_event("evt_1", "invoice.paid", 2).unwrap());
+        assert!(d1
+            .try_record_event("evt_1", "invoice.paid", 1, WebhookOutcome::Dispatched)
+            .unwrap());
+        assert!(!d1
+            .try_record_event("evt_1", "invoice.paid", 2, WebhookOutcome::Dispatched)
+            .unwrap());
         assert_eq!(d1.distinct_events(), 1);
+    }
+
+    #[test]
+    fn outcome_recorded_as_acknowledged_unknown_for_unknown_events() {
+        // FAILS on the old code: the old writer had no `outcome` param at
+        // all, so this could not even compile against it — and the old SQL
+        // hardcoded 'dispatched' regardless of what the caller intended.
+        let d1 = InMemoryBillingD1::new();
+        assert!(d1
+            .try_record_event(
+                "evt_unknown_1",
+                "some.future.event",
+                1,
+                WebhookOutcome::AcknowledgedUnknown,
+            )
+            .unwrap());
+        assert_eq!(
+            d1.outcome_for("evt_unknown_1"),
+            Some(WebhookOutcome::AcknowledgedUnknown)
+        );
+    }
+
+    #[test]
+    fn outcome_recorded_as_dispatched_for_handled_events() {
+        let d1 = InMemoryBillingD1::new();
+        assert!(d1
+            .try_record_event(
+                "evt_handled_1",
+                "invoice.paid",
+                1,
+                WebhookOutcome::Dispatched
+            )
+            .unwrap());
+        assert_eq!(
+            d1.outcome_for("evt_handled_1"),
+            Some(WebhookOutcome::Dispatched)
+        );
     }
 
     #[test]
@@ -859,17 +952,17 @@ mod tests {
             !sql.contains("canonical_event_type"),
             "renamed→event_type: {sql}"
         );
-        // outcome bound as the dispatch literal (CHECK-admitted).
-        assert!(sql.contains("'dispatched'"), "outcome literal: {sql}");
+        // outcome is now a BOUND parameter, not a hardcoded literal — the
+        // caller decides `dispatched` vs `acknowledged_unknown` per event
+        // (see `WebhookOutcome`). The old 'dispatched' literal must be gone.
+        assert!(
+            !sql.contains("'dispatched'"),
+            "outcome must be a bind, not a hardcoded literal: {sql}"
+        );
         // RETURNING lets the native writer detect insert-vs-ignore.
         assert!(sql.contains("RETURNING event_id"), "{sql}");
-        // 3 binds: event_id, event_type, processed_at_ms, correlation_id
-        // (outcome is a literal, not a bind) → 4 placeholders actually.
-        assert_eq!(
-            sql.matches('?').count(),
-            4,
-            "4 binds (outcome is literal): {sql}"
-        );
+        // 5 binds: event_id, event_type, processed_at_ms, outcome, correlation_id.
+        assert_eq!(sql.matches('?').count(), 5, "5 binds: {sql}");
     }
 
     #[test]

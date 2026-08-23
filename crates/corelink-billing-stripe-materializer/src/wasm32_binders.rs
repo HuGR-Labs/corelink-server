@@ -79,10 +79,10 @@ use corelink_cf_bindings::{CfD1DatabaseReal, D1Error, TenantId};
 
 use crate::audit::{BillingAuditEmitter, BillingAuditError, BillingAuditRecord};
 use crate::d1::{
-    BillingD1Error, BillingD1Writer, MaterializedRow, SQL_DELETE_RUNNERS_ENTITLEMENT,
-    SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND, SQL_MARK_SUBSCRIPTION_CANCELED,
-    SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE, SQL_UPSERT_RUNNERS_ENTITLEMENT,
-    SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
+    BillingD1Error, BillingD1Writer, MaterializedRow, WebhookOutcome,
+    SQL_DELETE_RUNNERS_ENTITLEMENT, SQL_DOWNGRADE_TIER, SQL_INSERT_DISPUTE, SQL_INSERT_REFUND,
+    SQL_MARK_SUBSCRIPTION_CANCELED, SQL_READ_TIER, SQL_UPSERT_CUSTOMER, SQL_UPSERT_INVOICE,
+    SQL_UPSERT_RUNNERS_ENTITLEMENT, SQL_UPSERT_SUBSCRIPTION, SQL_UPSERT_TIER,
 };
 
 // ---------------------------------------------------------------------------
@@ -222,6 +222,7 @@ impl BillingD1Writer for CfD1BillingWriter {
         stripe_event_id: &str,
         _canonical_event_type: &str,
         _now_ms: u64,
+        _outcome: WebhookOutcome,
     ) -> Result<bool, BillingD1Error> {
         if stripe_event_id.is_empty() {
             return Err(BillingD1Error::InvalidPayload(

@@ -45,6 +45,7 @@ use corelink_audit_chain::{
 use corelink_billing_stripe_materializer::{
     ArchiveProducerBillingEmitter, AuditSeverity, BillingAuditEmitter, BillingAuditError,
     BillingAuditRecord, BillingD1Error, BillingD1Writer, CfD1BillingWriter, MaterializedRow,
+    WebhookOutcome,
 };
 use corelink_cf_bindings::{CfD1DatabaseReal, TenantId};
 use uuid::Uuid;
@@ -138,7 +139,9 @@ fn insert_refund_passes_sync_gate_and_stages_pending() {
 #[test]
 fn try_record_event_rejects_empty_event_id() {
     let w = writer();
-    let err = w.try_record_event("", "invoice.paid", 1).unwrap_err();
+    let err = w
+        .try_record_event("", "invoice.paid", 1, WebhookOutcome::Dispatched)
+        .unwrap_err();
     assert!(
         matches!(err, BillingD1Error::InvalidPayload(ref s) if s.contains("empty stripe_event_id"))
     );
@@ -147,7 +150,9 @@ fn try_record_event_rejects_empty_event_id() {
 #[test]
 fn try_record_event_passes_sync_gate_and_stages_pending() {
     let w = writer();
-    let err = w.try_record_event("evt_1", "invoice.paid", 1).unwrap_err();
+    let err = w
+        .try_record_event("evt_1", "invoice.paid", 1, WebhookOutcome::Dispatched)
+        .unwrap_err();
     assert!(
         matches!(err, BillingD1Error::Transient(ref s) if s.contains("wasm32_async_dispatch_pending"))
     );
