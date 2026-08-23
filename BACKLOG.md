@@ -383,30 +383,43 @@ verify-means: open while the workflow stays disabled; re-enabling it requires th
 last-verified: 2026-08-23
 ```
 
-### B-018 — `corelink --version` demands a PAT it is documented not to need
+### B-018 — the public install one-liner has never worked end to end
 
-`smoke-install` runs the published CLI inside a clean container. Its last real run
-(2026-08-05) shows **both** invocations failing — including the step explicitly
-documented as the unauthenticated path — with `error: No PAT found. Set env var
-CORELINK_PAT or run corelink config set auth.pat <value>`.
+**Corrected 2026-08-23.** I first reported this as "`corelink --version` demands a
+PAT". That was the symptom visible in the CI log, not the truth — `--version`
+never actually ran.
 
-This is a customer-facing break: the very first command a new user types fails on
-a fresh install. The gate is working exactly as designed and found a real
-regression; it went unreported only because the gate was switched off. Its own
-header records that it caught this same class of bug once before (`#842`) while
-unit tests stayed green — the lesson being that the published binary must be
-operated, not unit-tested.
+The installer at `apps/get-corelink-worker/src/install.ts:183-187` writes
+`~/.corelink/config.toml` as a flat `token = "..."`. The CLI
+(`tools/cli/src/config.rs`, `auth.rs:47`) only ever reads the PAT from an
+`[auth]` table's `pat` key. TOML deserialisation **silently ignores** the
+unrecognised top-level scalar, so `auth.pat` stays `None` for any PAT, however
+well-formed. The script's own closing `corelink whoami` then fails with "No PAT
+found", and under `set -eu` that aborts the whole `curl | sh` pipeline non-zero —
+swallowing everything chained after it, including the `--version` call that
+appeared in the log but never executed.
 
-The defect is in the separate `corelink-cli` repo, not here. The workflow has
-been re-enabled.
+So **every** real install via the public one-liner dies looking like a total
+install failure, when in fact the binary installed correctly. The config-write
+schema bug is day-one (`77927c6e`); it only started surfacing as "No PAT found"
+on 2026-08-02 (`#942`), when the closing verb changed from a non-existent
+`corelink ping` to the real `corelink whoami`. Before that it failed with a
+different error. The one-liner has arguably never worked.
+
+Not a hard lockout — `corelink config set auth.pat` works standalone, so a user
+who knows to do that can recover. It is a first-impression failure on the very
+first thing a new user does.
+
+Fixed in `#1233`, with regression tests that parse the real Rust struct fields
+rather than restating the expected shape.
 
 ```backlog
 id: B-018
 repo: corelink-server
 owner: tl
 status: open
-verify: manual
-verify-means: lives in the corelink-cli repo; settled by running the published binary with no PAT
+verify: "grep -q 'token = ' apps/get-corelink-worker/src/install.ts"
+verify-means: open while the installer still writes the flat key the CLI cannot read
 last-verified: 2026-08-23
 ```
 
@@ -421,9 +434,6 @@ This one matters beyond tidiness: a security model is what an auditor or a
 customer's security review reads, and it currently describes a control that is
 not in force. The change itself was correct and is now recorded in ADR-0072; what
 is missing is that the control table was never updated to match.
-
-Found while writing that ADR — the agent flagged it and deliberately left it
-alone rather than widening a docs-only PR, which was the right call.
 
 ```backlog
 id: B-019

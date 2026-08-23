@@ -204,6 +204,26 @@ def main() -> int:
         print(f"FATAL: {path.name} contains no parseable ```backlog blocks", file=sys.stderr)
         return 2
 
+    # A deleted item is invisible to per-item checks — every survivor still passes
+    # while the record silently loses work. This happened on 2026-08-23: an edit
+    # that rewrote one item removed its neighbour, and the gate reported all-green.
+    # So ids must stay DENSE. Retiring an item means marking it, never deleting it.
+    numbered = sorted(
+        int(m.group(1))
+        for i in items
+        if (m := re.fullmatch(r"B-(\d+)", i.id))
+    )
+    if numbered:
+        missing = sorted(set(range(1, max(numbered) + 1)) - set(numbered))
+        if missing:
+            gaps = ", ".join(f"B-{n:03d}" for n in missing)
+            print(
+                f"FATAL: BACKLOG.md is missing {gaps} — ids must be dense. An item was "
+                "deleted rather than resolved. Restore it, or mark it retired in place.",
+                file=sys.stderr,
+            )
+            return 2
+
     seen: dict[str, int] = {}
     for it in items:
         if it.id in seen:

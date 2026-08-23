@@ -58,6 +58,12 @@ cell "an invalid status is BROKEN" 1 BROKEN "$(item B-1 nearly-done '"true"' 202
 cell "a duplicate id is BROKEN" 1 BROKEN "$(item B-1 open '"true"' 2026-08-23; item B-1 open '"true"' 2026-08-23)"
 cell "unparseable YAML is BROKEN" 1 BROKEN "$(printf '```backlog\nid: [B-1\n```\n')"
 
+# A deleted item passes every per-item check — the survivors are all still true.
+# Only density catches it. This cell exists because exactly that happened while
+# this file was being written, and the gate reported all-green.
+cell "a gap in the ids is a hard failure (an item was deleted)" 2 - \
+  "$(item B-1 open '"true"' 2026-08-23; item B-3 open '"true"' 2026-08-23)"
+
 # An empty file is far more likely to be a broken format than genuinely no work.
 cell "an empty backlog is a hard failure, not a pass" 2 - "$(printf 'no items here\n')"
 
