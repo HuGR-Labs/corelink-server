@@ -344,7 +344,7 @@ bazel info --config=ci | grep remote_cache
 corelink ls --tenant "$CORELINK_TENANT_ID" --limit 5
 
 # 3. Audit trail is populated:
-# Open https://humangr.com/corelink/tenants/$CORELINK_TENANT_ID/audit
+# Open https://humangr.com/corelink/en/customer/audit
 # Filter: event_type=cas.write, last 24h. You should see one event per
 # CI action with a non-trivial output.
 
