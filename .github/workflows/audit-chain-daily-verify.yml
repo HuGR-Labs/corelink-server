@@ -310,6 +310,46 @@ jobs:
             fi
           }
 
+          # ── Preflight: does the archive bucket exist at all? ─────────────────────
+          # Added 2026-08-23. This job had been paging SEV-0 — SEVEN times per run, every
+          # day since at least 2026-07-17 — because the bucket it lists does not exist and
+          # never has: the archive PRODUCER is real code but is feature-gated off and lives
+          # in a crate the deployed Worker never imports. Every one of those pages was
+          # accepted by PagerDuty (HTTP 202 confirmed), so this was not theoretical noise.
+          #
+          # "The archive was never provisioned" is a BUILD FAILURE, not an integrity
+          # incident. A chain that breaks wakes someone at 3am; a chain that was never
+          # built is a bug report. Conflating them buries the first under weeks of the
+          # second — which is exactly what happened here.
+          #
+          # No verification signal is lost by not paging: if the bucket is absent, nothing
+          # could have been verified anyway. The job still exits non-zero and says why, so
+          # the failure stays loud — it simply stops ringing a phone about it.
+          if [ -n "${CF_API_TOKEN:-}" ] && [ -n "${CF_ACCOUNT_ID:-}" ] && [ -n "${BUCKET:-}" ]; then
+            bucket_probe="./.audit-verify-staging/bucket-probe.json"
+            bucket_code=$(curl --silent --show-error \
+              -o "${bucket_probe}" -w "%{http_code}" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -H "Accept: application/json" \
+              "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets/${BUCKET}" || echo "000")
+            if [[ "${bucket_code}" == "404" ]]; then
+              echo "::error::AUDIT_ARCHIVE_NOT_PROVISIONED — R2 bucket '${BUCKET}' does not exist."
+              echo "::error::This is a configuration/wiring gap, NOT a chain break. Deliberately NOT paging."
+              echo "::error::The archive producer (crates/corelink-audit-chain/src/archive_producer.rs) is"
+              echo "::error::gated behind the cf-billing-real feature, which no build or deploy path passes,"
+              echo "::error::and its only caller lives in a crate the deployed Worker never imports."
+              echo "::error::Live tamper-evidence today is D1-only (BLAKE3 chain + Ed25519 head)."
+              echo "::error::Fix the wiring or retarget this verifier — see BACKLOG.md B-015."
+              exit 1
+            fi
+            if [[ "${bucket_code}" != "200" ]]; then
+              # Anything else — auth, 5xx, network — is genuinely inconclusive. Fail closed
+              # and let the per-day paging path below do its job, since we cannot tell an
+              # outage from a break from here.
+              echo "::warning::bucket probe returned HTTP ${bucket_code} — continuing to the per-day path (fail-CLOSED)"
+            fi
+          fi
+
           for D in $DATES; do
             YYYY=$(echo "$D" | cut -d- -f1)
             MM=$(echo "$D" | cut -d- -f2)
