@@ -30,7 +30,7 @@ busca de cambios de rol y eventos de doble aprobación.
 
 > La gestión de equipo y de roles se hace **solo desde el panel y la API
 > HTTP** — no existe una CLI para eso. Administra los miembros en
-> `https://humangr.com/corelink/customer/team`, o mediante
+> `https://humangr.com/corelink/en/customer/team`, o mediante
 > `GET /v1/customer/team`, `POST /v1/customer/team/invite`
 > (`{email, role}`) y `DELETE /v1/customer/team/{user_id}` (invitar y
 > quitar son exclusivos de owner/admin). Leer el rastro de auditoría —el
@@ -94,7 +94,7 @@ luego repítela con `&event_type=<type>` para aislar una de ellas.
 > Los correos aparecen solo como hashes (`email_hash`), según
 > `INV-AUDIT-NO-RAW-PII`. Para volver a una persona, cruza la
 > información con la página del equipo
-> (`https://humangr.com/corelink/customer/team`) mientras la membresía
+> (`https://humangr.com/corelink/en/customer/team`) mientras la membresía
 > siga activa.
 
 ## Consulta 2 — cuándo ocurrieron
