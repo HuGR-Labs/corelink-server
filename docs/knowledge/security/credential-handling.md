@@ -5,7 +5,9 @@ description: "How CoreLink stores, separates, and protects its secrets and PATs 
 source_files:
   - "docs/security/2026-06-23-secreview-credentials.md"
   - "docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md"
-checkpoint_sha: "5e1515dd3a19bb0302f03d83c22a39d96033ae48"
+  - "worker/src/durable_object.ts"
+  - "crates/corelink-container/src/routes/admin.rs"
+checkpoint_sha: "8af9ed65caf286d3f800e91d3f823face3aefd31"
 provenance: "AUTHORED"
 tags: ["security", "credentials", "pat", "secrets", "clerk"]
 timestamp: "2026-06-26T00:00:00Z"
@@ -64,10 +66,19 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
 
 # Gotchas
 
-- The internal-auth consumer-key split is INERT until the operator actually provisions the dedicated
-  per-consumer keys: until then `pat_mint`/`admin`/`erase`/`runner_mint` all fall back to the one
-  shared `CORELINK_INTERNAL_AUTH_KEY`, so a single leaked secret unlocks all four (LOW-1; the two
-  highest-blast-radius keys are exempt from this fallback) (`docs/security/2026-06-23-secreview-credentials.md:34-64`).
+- **The internal-auth consumer-key split is NOT architecturally inert — that was CP-1, and it is
+  code-RESOLVED.** `worker/src/durable_object.ts` now forwards the dedicated per-consumer keys
+  (`CORELINK_PAT_MINT_AUTH_KEY` / `CORELINK_ADMIN_AUTH_KEY` / `CORELINK_ERASE_AUTH_KEY` /
+  `CORELINK_ADMIN_APPROVER_AUTH_KEY` / `CORELINK_DSR_ANCHOR_AUTH_KEY` / `CORELINK_QUOTA_READ_AUTH_KEY`),
+  and `crates/corelink-container/src/routes/admin.rs`'s `resolve_internal_auth_key` prefers the
+  dedicated key over the shared one. What is still true, and what LOW-1 actually described, is a
+  **provisioning gap, not a code gap**: a consumer's key stays on the shared-fallback path until an
+  operator binds its dedicated secret. Verified against the CF Workers secrets-list API on this
+  checkpoint's date: `pat_mint` / `erase` / `admin_approver` / `quota_read` / `dsr_anchor` ARE bound in
+  prod and genuinely isolated; **`admin` (`CORELINK_ADMIN_AUTH_KEY`) is NOT bound on any of the 5 prod
+  Workers**, so the admin-mutate consumer alone still resolves to the shared
+  `CORELINK_INTERNAL_AUTH_KEY` today (`docs/security/2026-06-23-secreview-credentials.md:34-64`,
+  `worker/src/durable_object.ts:795-826`).
 - The remediation leaves a documented, accepted residual: the plaintext still lives transiently in
   Clerk `private_metadata` (a sub-processor backend store) until the clear/cron — the future
   hardening is a single-use reveal in our own D1 (`docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:48-51`).
@@ -78,6 +89,9 @@ channel for a freshly-minted PAT must NOT be (client-readable Clerk metadata / t
 2. `docs/security/2026-06-23-secreview-credentials.md:34-64` — LOW-1: consumer keys fall back to the shared internal-auth key.
 3. `docs/security/2026-06-23-secreview-credentials.md:90-100` — INFO-1: dedicated introspect/billing keys truly separated (no fallback).
 4. `docs/security/2026-06-23-secreview-credentials.md:134-157` — INFO-4: PAT lifecycle, plane separation, constant-time, rotation.
+5. `worker/src/durable_object.ts:795-826` — CP-1 fix: the DO forwards all six dedicated per-consumer keys.
+6. `crates/corelink-container/src/routes/admin.rs:567-605` — `resolve_internal_auth_key` prefers the dedicated key, shared key only as fallback.
+7. CF Workers secrets-list API, checked on this checkpoint's date — `CORELINK_ADMIN_AUTH_KEY` unset on all 5 prod Workers; the other five dedicated keys are bound.
 5. `docs/security/2026-06-23-secreview-credentials.md:173-186` — repo secret sweep: no committed live secrets.
 6. `docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:8-21` — the finding: PAT plaintext in `public_metadata` is JWT-broadcast.
 7. `docs/security/2026-06-19-CRED-pat-plaintext-in-clerk-public-metadata.md:18-26` — client-driven cleanup → PAT persists forever.

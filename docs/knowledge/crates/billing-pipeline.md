@@ -1,7 +1,7 @@
 ---
 type: "CrateCluster"
 title: "Billing usage→charge pipeline (emit/reconcile/aggregate/materialize + stripe-real egress)"
-description: "The end-to-end metered-usage path — CloudEvents usage emit, cron aggregation, drift reconciliation, the LIVE container Stripe-webhook state materializer (subscription_state/tier write), and the real HTTPS Stripe transport with HMAC webhook verify."
+description: "The end-to-end metered-usage path — CloudEvents usage emit, cron aggregation, drift reconciliation (cron infra runs daily but is currently a GREEN NO-OP: `BILLING_RECONCILE_LIVE` repo var is unset, so it never queries prod), the LIVE container Stripe-webhook state materializer (subscription_state/tier write), and the real HTTPS Stripe transport with HMAC webhook verify."
 source_files:
   - "crates/corelink-billing-emit/src/lib.rs"
   - "crates/corelink-billing-emit/src/emitter.rs"
@@ -20,7 +20,8 @@ source_files:
   - "crates/corelink-analytics/src/lib.rs"
   - "crates/corelink-analytics/src/validator.rs"
   - "crates/corelink-container/src/main.rs"
-checkpoint_sha: "7052fdff8973b6d6cb503191050b137f10401a2a"
+  - ".github/workflows/billing-reconcile-daily.yml"
+checkpoint_sha: "8af9ed65caf286d3f800e91d3f823face3aefd31"
 provenance: "AUTHORED"
 tags: ["billing", "stripe", "usage-metering", "reconciliation", "money-path"]
 timestamp: "2026-06-28T00:00:00Z"
@@ -34,7 +35,7 @@ This is the metered side of the money path: the chain that turns raw cache/runne
 
 The crates split into a **deferred pure-logic front** and a **live egress + materialize back**. Be honest about which is which:
 
-- `corelink-billing-emit` / `corelink-billing-aggregator` are **pure-logic skeletons** per the `trait-abstraction-defer` charter: trait surfaces + an in-memory orchestrator that pins every invariant a future CF R2/Cron/Queue binding will rely on; the real R2 PutObject + Cron Durable Object are explicitly deferred (emit → WI-S10-007). They are NOT yet wired into a production fetch path. `corelink-billing-reconcile` is **NOW WIRED** (DD-5): a daily GHA cron + the `billing-reconcile-run` bin drive a live read-only usage↔Stripe drift reconcile (see the Reconcile bullet below).
+- `corelink-billing-emit` / `corelink-billing-aggregator` are **pure-logic skeletons** per the `trait-abstraction-defer` charter: trait surfaces + an in-memory orchestrator that pins every invariant a future CF R2/Cron/Queue binding will rely on; the real R2 PutObject + Cron Durable Object are explicitly deferred (emit → WI-S10-007). They are NOT yet wired into a production fetch path. `corelink-billing-reconcile`'s cron **INFRASTRUCTURE is wired** (DD-5): a daily GHA cron + the `billing-reconcile-run` bin exist and run every day — but the cron is presently a **green no-op**, not a live drift check (see the Reconcile bullet below for what is actually gated).
 - `corelink-billing-stripe-materializer` ships the **production** `StateMaterializer`: native CI uses `InMemoryBillingD1`, but the container wires the durable `D1HttpBillingWriter` so the same handler writes real D1 rows over the CF REST API. This is the LIVE container activation surface.
 - `corelink-stripe-real` is the **real transport**: inbound HMAC webhook verify + the full dispatch pipeline AND the outbound `reqwest::blocking` HTTPS client (the actual Stripe egress, `Bearer`-authed, idempotency-keyed, retrying).
 - `corelink-analytics` is a **pure-logic skeleton** (Analytics Engine binding deferred to WI-S09-007) carrying the cardinality validator that the billing `metric_emitted` counter rides.
@@ -43,7 +44,24 @@ The crates split into a **deferred pure-logic front** and a **live egress + mate
 
 - **Usage emit (skeleton).** `InMemoryUsageEventEmitter::emit` canonicalizes the `UsageEvent` (JCS, idem-slot zeroed), derives the BLAKE3-256 `idem_key`, runs the per-tenant idempotency tracker, fires the audit envelope, then appends to the R2 sink — duplicates short-circuit to `DuplicateRejected` with no second write (`crates/corelink-billing-emit/src/emitter.rs:213-314`). The crate doc-comment is explicit that the R2 PutObject + D1 staging mirror are deferred to WI-S10-007 (`crates/corelink-billing-emit/src/lib.rs:119-132`).
 - **Aggregate (skeleton).** `InMemoryCounterAggregator::run` audits `run_started` BEFORE any state read, deterministically orders events by `(time_ms, idem_key)`, sums `qty`, and — on a watermark replay where the recomputed `data` byte-equals the prior aggregate — returns `SkippedDuplicateRun` so the hash-chain head does NOT advance twice (`crates/corelink-billing-aggregator/src/aggregator.rs:373-381`). The production CF Cron DO is deferred (`crates/corelink-billing-aggregator/src/lib.rs:1-20`).
-- **Reconcile (NOW WIRED — live daily cron, DD-5).** `InMemoryBillingReconciler::reconcile` classifies max drift through a 4-tier ladder; only the `PageSev1AutoPaused` arm calls `StripeSubmissionControl::pause(...)` — and the canonical audit + drift-history row land BEFORE the pause attempt (`crates/corelink-billing-reconcile/src/reconciler.rs:280-285`, `crates/corelink-billing-reconcile/src/reconciler.rs:328-340`). As of DD-5 closure it runs on a LIVE schedule: `run_reconcile_pass` (`crates/corelink-billing-reconcile/src/run.rs`) drives one read-only pass per tenant (D1 usage vs the Stripe submission ledger → drift report + audit trail), invoked by the `billing-reconcile-run` bin (`crates/corelink-billing-reconcile/src/bin/billing-reconcile-run.rs`) on a daily GHA cron (`.github/workflows/billing-reconcile-daily.yml`, 04:00 UTC); drift past the floor → non-zero + PagerDuty SEV-2 + a 90-day evidence artifact. READ-ONLY/report-only: the auto-pause runs against the in-memory dry-run control (never mutates Stripe/D1); the live lane is secret-gated (`BILLING_RECONCILE_LIVE`). A CF Cron Durable Object variant remains a later option, but reconciliation is no longer unwired.
+- **Reconcile (cron infrastructure wired, DD-5 — but presently a GREEN NO-OP, not a live drift check).**
+  `InMemoryBillingReconciler::reconcile` classifies max drift through a 4-tier ladder; only the
+  `PageSev1AutoPaused` arm calls `StripeSubmissionControl::pause(...)` — and the canonical audit + drift-
+  history row land BEFORE the pause attempt (`crates/corelink-billing-reconcile/src/reconciler.rs:280-285`,
+  `crates/corelink-billing-reconcile/src/reconciler.rs:328-340`). The `run_reconcile_pass` binary
+  (`crates/corelink-billing-reconcile/src/bin/billing-reconcile-run.rs`) DOES run on a daily GHA cron
+  (`.github/workflows/billing-reconcile-daily.yml`, 04:00 UTC) — but **only does live extraction when the
+  repo variable `BILLING_RECONCILE_LIVE == "1"` AND `CF_API_TOKEN` / `CF_ACCOUNT_ID` /
+  `CORELINK_BILLING_D1_DATABASE_ID` are all present**; otherwise it writes an EMPTY input
+  (`{"snapshots": []}`) and the run is a **green no-op with zero tenants reconciled** — it reports
+  "clean" every day regardless of actual drift. **Verified against the live repo as of this checkpoint:**
+  the `CORELINK_BILLING_D1_DATABASE_ID` secret DOES now exist (set 2026-07-12, `gh secret list`), but the
+  repo variable `BILLING_RECONCILE_LIVE` is **not set at all** (`gh variable list` — absent from the list),
+  so the live lane's own gate condition is false and the cron is still the smoke lane today. Do not read
+  "the drift check runs daily" as "drift would actually be caught" until an operator sets
+  `BILLING_RECONCILE_LIVE=1`. On the day it flips, drift past the floor → non-zero exit + PagerDuty SEV-2
+  + a 90-day evidence artifact; auto-pause runs against the in-memory dry-run control (never mutates
+  Stripe/D1) regardless. A CF Cron Durable Object variant remains a later option.
 - **Inbound webhook verify (live).** `verify_webhook_signature` parses `t=…,v1=…`, enforces the ±5-minute replay window, recomputes `HMAC-SHA256("{t}.{payload}", secret)` over the EXACT body bytes, and constant-time-compares each `v1` candidate via `subtle::ConstantTimeEq` (`crates/corelink-stripe-real/src/webhook.rs:41-78`).
 - **Dispatch (live).** `WebhookDispatcher::process` runs the strict order: header present → signature verify → parse → idempotency dedup (`try_insert`) → materialize → audit/SLI. An already-processed event returns `200` with NO re-dispatch; a bad signature is `401`; a materializer transient is `500` so Stripe retries (`crates/corelink-stripe-real/src/webhook_dispatch.rs:530-622`, `crates/corelink-stripe-real/src/webhook_dispatch.rs:648-690`).
 - **Materialize → D1 write (live).** `D1SubscriptionStateHandler` emits the billing audit BEFORE every D1 mutation; on `customer.subscription.updated` `reconcile_tier` recomputes the tier and, for a granting status only, drives `persist_tier_change` → `SQL_UPSERT_TIER` which writes the literal `subscription_state='active'` + the new `tier` row on `ON CONFLICT(tenant_id)` (`crates/corelink-billing-stripe-materializer/src/handler.rs:480-524`, `crates/corelink-billing-stripe-materializer/src/d1.rs:173`).
@@ -67,7 +85,7 @@ The crates split into a **deferred pure-logic front** and a **live egress + mate
 
 - **TWO live activation surfaces — do not assume single-writer.** The container's `D1SubscriptionStateHandler` is a SECOND writer of `tier_selections.subscription_state` alongside the signup-worker; the handler's own comment names itself "a SECOND writer of `subscription_state`" and explains the status gate exists precisely to stop it re-granting `active` on an unpaid `updated` (`crates/corelink-billing-stripe-materializer/src/handler.rs:124-140`). Reconcile a change against BOTH writers.
 - **The native binary never reaches real D1 via the wasm32 binder.** `CfD1BillingWriter::sync_gate` validates SQL shape + does the tenant ct-eq probe, then returns `Transient("wasm32_async_dispatch_pending: …")` — the actual `worker::D1Database` call is dispatched one frame above in the CF Worker boot layer (`crates/corelink-billing-stripe-materializer/src/wasm32_binders.rs:158-191`). The runner REVOKE has its own binder: `delete_runners_entitlement` ct-eq-anchors the tenant and stages `SQL_DELETE_RUNNERS_ENTITLEMENT` the same way (`crates/corelink-billing-stripe-materializer/src/wasm32_binders.rs:373-391`). The container instead uses the native `D1HttpBillingWriter`; the wasm32 binder is for the CF Worker target.
-- **emit / aggregate / analytics are NOT yet on a production fetch path** (charter-deferred trait + in-memory-fake skeletons; their R2/Cron/Analytics-Engine bindings ship in the WI-S10-007 / WI-S09-007 PRR gates). **reconcile IS now on a production path** (DD-5: the daily `billing-reconcile-daily` GHA cron + `billing-reconcile-run` bin — read-only drift report, auto-pause still dry-run). Do not cite emit/aggregate as "live metering" — the LIVE metered surfaces today are the materializer webhook + the runner-usage ingest (money-path concept) + the live reconcile-report cron.
+- **emit / aggregate / analytics are NOT yet on a production fetch path** (charter-deferred trait + in-memory-fake skeletons; their R2/Cron/Analytics-Engine bindings ship in the WI-S10-007 / WI-S09-007 PRR gates). **reconcile's cron infrastructure exists and runs daily** (DD-5: `.github/workflows/billing-reconcile-daily.yml` + `billing-reconcile-run` bin) **but is currently a green no-op** — `BILLING_RECONCILE_LIVE` is not set as a repo variable, so the live-extraction gate never fires and the workflow always writes an empty input. Do not cite emit/aggregate/reconcile as "live metering" today — the only LIVE metered surfaces are the materializer webhook + the runner-usage ingest (money-path concept). Flipping `BILLING_RECONCILE_LIVE=1` is the remaining operator action to make reconcile live.
 - **The plan→tier map must key off the real `STRIPE_PRICE_ID_{TIER}` env values**, not the `plan_{tier}` literals — a real `customer.subscription.updated` carries `price_…` ids, so a misconfigured map resolves every event to `UnknownPlan` → `422` and Stripe stops retrying (`crates/corelink-container/src/main.rs:838-849`).
 - **`extract_plan_id` tolerates both Stripe shapes** — legacy `data.object.plan.id` and modern `items.data[0].price.id` — so a pinned-API-version bump that drops `plan.id` doesn't 422 every subscription (`crates/corelink-billing-stripe-materializer/src/handler.rs:150-163`).
 - **The outbound client is `reqwest::blocking`** and must be driven off the tokio runtime (the container ferries the call to a dedicated thread); it also has a dual auth mode (`direct` default / `wallet-broker`) selected by `STRIPE_AUTH_MODE`, with no silent fallback between them (`crates/corelink-stripe-real/src/client.rs:30-32`, `crates/corelink-stripe-real/src/lib.rs:18-41`).
@@ -97,5 +115,7 @@ The crates split into a **deferred pure-logic front** and a **live egress + mate
 20. `crates/corelink-container/src/main.rs:838-849` — plan→tier map MUST key off real `STRIPE_PRICE_ID_{TIER}` env values or every event is `UnknownPlan` 422 (env→tier table + `build_tier_selector` at `:93-214`).
 21. `crates/corelink-analytics/src/validator.rs:195-237` — `validate_and_register` rejects over-budget emits BEFORE registering (INV-OBS-CARDINALITY-BUDGET runtime half).
 22. `crates/corelink-analytics/src/lib.rs:98-103` — `tenant_id` forbidden as a label; only canonical `Tier` appears.
+23. `.github/workflows/billing-reconcile-daily.yml:1` — the live-extraction gate (`BILLING_RECONCILE_LIVE == "1"` AND `CF_API_TOKEN`/`CF_ACCOUNT_ID`/`CORELINK_BILLING_D1_DATABASE_ID` all present); empty-input smoke lane otherwise.
+24. `gh secret list` / `gh variable list` against the live repo (checked this checkpoint's date) — `CORELINK_BILLING_D1_DATABASE_ID` secret EXISTS; `BILLING_RECONCILE_LIVE` repo variable is ABSENT, so the live lane's gate is false today.
 </content>
 </invoke>
