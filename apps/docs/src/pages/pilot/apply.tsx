@@ -18,6 +18,10 @@
  *   - tierHint: enum (FREE / STANDARD / PRO / ENTERPRISE / undecided).
  *   - useCase: 1..280 chars (matches COPY.md form-field constraint).
  *
+ * These are the component's internal names. On the wire they are sent as
+ * `email` / `company_name` / `tier_hint` / `expected_use_case`, which is what
+ * `PilotSignupBody` deserialises — see the submit handler.
+ *
  * Success → /pilot/welcome (with `?slot=reserved` so welcome.tsx can
  *   conditionally show confetti without leaking the token).
  * Failure → inline `errorBox` with backend-message or fallback copy.
@@ -112,12 +116,29 @@ function validate(input: {
 }
 
 function backendErrorMessage(status: number, raw: string): string {
-  if (status === 400) {
+  // 401 — NOT 400 — is the token verdict. The route returns 401 for a
+  // malformed, expired or forged token and 400 for a body that fails field
+  // validation; this mapping used to be inverted, so a bad token produced the
+  // generic "signup failed" and a bad field told the applicant their token was
+  // invalid. Both are recoverable errors, and telling someone the wrong one
+  // sends them to re-request a token they already have.
+  if (status === 401) {
     return translate({
       id: "pilot.apply.backend.invalidToken",
       message:
         "Invalid or expired token. Tokens are one-shot and tied to your outreach email — check the latest email or contact pilot@humangr.com.",
-      description: "Pilot apply form — backend 400 fallback",
+      description: "Pilot apply form — backend 401 (token rejected)",
+    });
+  }
+  if (status === 400 || status === 422) {
+    // 400 = the handler's own field validation; 422 = axum's Json extractor
+    // refusing the body shape. The 422 body is plain text, not JSON, so the
+    // `message`-field fallback below cannot surface anything useful for it.
+    return translate({
+      id: "pilot.apply.backend.badRequest",
+      message:
+        "One of the fields was rejected. Check the email, company and use-case fields and try again — or send the details to pilot@humangr.com.",
+      description: "Pilot apply form — backend 400/422 (body rejected)",
     });
   }
   if (status === 429) {
@@ -180,11 +201,18 @@ export default function PilotApply(): ReactElement {
             method: "POST",
             credentials: "omit",
             headers: { "Content-Type": "application/json" },
+            // Wire field names are snake_case and are NOT the component's
+            // internal camelCase state names. `PilotSignupBody` in
+            // crates/corelink-container/src/routes/signup.rs derives a plain
+            // serde `Deserialize` with no rename attribute, so axum's Json
+            // extractor rejects the whole request with 422 before the handler
+            // runs if any name differs — which is what the form used to do on
+            // every single submission.
             body: JSON.stringify({
               email: email.trim(),
-              company: company.trim(),
-              tierHint,
-              useCase: useCase.trim(),
+              company_name: company.trim(),
+              tier_hint: tierHint,
+              expected_use_case: useCase.trim(),
             }),
           },
         );
