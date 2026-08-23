@@ -9,7 +9,7 @@ source_files:
   - "apps/signup-worker/src/lib/d1.ts"
   - "apps/signup-worker/src/lib/clerk-metadata.ts"
   - "apps/signup-worker/src/sentry-scrub.ts"
-checkpoint_sha: "ec8eb3f50d8aecb03de3cb3744f1c4e237554751"
+checkpoint_sha: "94bbcd5eb6cf97bf962cdc3bffe8bd58eac30c4b"
 provenance: "AUTHORED"
 tags: ["flows", "signup", "clerk", "webhook", "dsr", "erasure", "worker-edge"]
 timestamp: "2026-07-03T00:00:00Z"
