@@ -14,8 +14,12 @@ The script:
    (`x86_64` / `aarch64`).
 3. Downloads the matching CoreLink CLI binary from
    `https://github.com/HuGR-Labs/corelink-cli/releases/latest/download/corelink-${OS}-${ARCH}`.
-4. Writes `~/.corelink/config.toml` with `token`, `region`, and the
-   default `endpoint = "https://corelink-api.humangr.com"`.
+4. Writes `~/.corelink/config.toml` with `[auth].pat` and
+   `[defaults].endpoint = "https://corelink-api.humangr.com"` — the schema
+   `tools/cli/src/config.rs` actually reads. (Until fixed, this wrote a flat
+   top-level `token`/`region` that the CLI's TOML deserializer silently
+   ignored, so `[auth].pat` stayed unset and every install's own `corelink
+   whoami` call below failed with "No PAT found" — see CHANGELOG.)
 5. Runs `corelink whoami` to verify connectivity AND cache the resolved
    `tenant_id` into `~/.corelink/config.toml` (the script itself does not write
    it, and every later tenant-scoped command needs it). This was `corelink ping`

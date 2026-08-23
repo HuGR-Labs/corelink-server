@@ -180,9 +180,22 @@ else
 fi
 
 mkdir -p "$HOME/.corelink"
+# Schema MUST match \`tools/cli/src/config.rs\` (CorelinkConfig / AuthConfig /
+# DefaultsConfig): PAT lives at \`[auth].pat\`, not a bare top-level \`token\`
+# key, and the base URL is \`[defaults].endpoint\`. A flat \`token = \"...\"\`
+# key is silently ignored by the TOML deserializer (no [auth] table means
+# \`cfg.auth.pat\` stays None), so this script's own \`corelink whoami\` call
+# below always failed with "No PAT found" regardless of how valid $TOKEN
+# was — and under \`set -eu\` that aborted the whole one-liner non-zero,
+# taking any caller-side \`&& corelink ...\` with it. There is no
+# \`[defaults].region\` (or any region) config key in the CLI today, so
+# \$REGION is intentionally not persisted here; \`--region\` remains accepted
+# on the command line as a no-op until a real config key exists for it.
 cat > "$HOME/.corelink/config.toml" <<EOF
-token = "$TOKEN"
-region = "\${REGION:-auto}"
+[auth]
+pat = "$TOKEN"
+
+[defaults]
 endpoint = "__DEFAULT_API_ENDPOINT__"
 EOF
 chmod 600 "$HOME/.corelink/config.toml"

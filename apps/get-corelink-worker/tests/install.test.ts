@@ -123,6 +123,65 @@ describe("renderInstallScript", () => {
       .toEqual([]);
   });
 
+  // ── Config schema (regression) ─────────────────────────────────────────────
+  // The installer's own `corelink whoami` call (invariant 4) always failed
+  // with "No PAT found", for ANY token, because the config.toml it writes did
+  // not match the schema `tools/cli/src/config.rs` reads: it wrote a bare
+  // top-level `token = "..."` key, but `CorelinkConfig`/`AuthConfig` only ever
+  // populate `cfg.auth.pat` from a `[auth]` table's `pat` key — an unknown
+  // top-level scalar is silently ignored, not an error, so this shipped green
+  // through every test that only checked the *value* of `endpoint =` and never
+  // the *section* the PAT lived under. Under `set -eu` that made the ENTIRE
+  // one-liner exit non-zero on every install, taking any caller-side
+  // `&& corelink ...` (e.g. smoke-install.yml's `&& corelink --version`) down
+  // with it — even though `--version` itself needs no credential at all.
+  //
+  // Ground-truth (not string-matched) against `tools/cli/src/config.rs`, the
+  // same discipline invariant 4b uses for subcommands: parse the real
+  // `AuthConfig`/`DefaultsConfig` structs so this test would catch a RENAMED
+  // field too, not just this one regression.
+  function cliConfigFields(): { authPat: boolean; defaultsEndpoint: boolean } {
+    const src = readFileSync(
+      fileURLToPath(new URL("../../../tools/cli/src/config.rs", import.meta.url)),
+      "utf8",
+    );
+    const authBlock = /struct AuthConfig \{[\s\S]*?\n\}/.exec(src)?.[0] ?? "";
+    const defaultsBlock = /struct DefaultsConfig \{[\s\S]*?\n\}/.exec(src)?.[0] ?? "";
+    return {
+      authPat: /pub pat: Option<String>/.test(authBlock),
+      defaultsEndpoint: /pub endpoint: Option<String>/.test(defaultsBlock),
+    };
+  }
+
+  it("config schema :: writes the PAT under [auth].pat, matching CorelinkConfig — not a bare `token` key", () => {
+    const fields = cliConfigFields();
+    expect(fields.authPat, "tools/cli/src/config.rs AuthConfig has no `pat` field — update this test").toBe(
+      true,
+    );
+
+    const script = renderInstallScript(FIXTURE);
+    const heredoc = /cat > "\$HOME\/\.corelink\/config\.toml" <<EOF\n([\s\S]*?)\nEOF/.exec(script)?.[1] ?? "";
+    expect(heredoc, "config.toml heredoc not found in rendered script").not.toBe("");
+
+    expect(heredoc).toContain("[auth]");
+    expect(heredoc).toContain('pat = "$TOKEN"');
+    // Pin against regressing back to the flat, silently-ignored form.
+    expect(heredoc).not.toMatch(/^token\s*=/m);
+  });
+
+  it("config schema :: writes the API endpoint under [defaults].endpoint, matching CorelinkConfig", () => {
+    const fields = cliConfigFields();
+    expect(
+      fields.defaultsEndpoint,
+      "tools/cli/src/config.rs DefaultsConfig has no `endpoint` field — update this test",
+    ).toBe(true);
+
+    const script = renderInstallScript(FIXTURE);
+    const heredoc = /cat > "\$HOME\/\.corelink\/config\.toml" <<EOF\n([\s\S]*?)\nEOF/.exec(script)?.[1] ?? "";
+    expect(heredoc).toContain("[defaults]");
+    expect(heredoc).toContain(`endpoint = "${FIXTURE.defaultApiEndpoint}"`);
+  });
+
   // ── Architecture mapping (2026-08-02) ──────────────────────────────────────
   // `uname -m` says `arm64` on Apple Silicon; the published release asset is
   // `corelink-darwin-aarch64`. Passing uname through unmapped built a URL that
