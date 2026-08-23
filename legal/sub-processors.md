@@ -23,21 +23,6 @@ sub_processors:
     contract_signed_at: "2026-04-23"
     legal_review_evidence: "docs/compliance/vendor-reviews/cloudflare-dpa-review-2026-04.md"
 
-  - id: "neon"
-    name: "Neon Inc."
-    role: "Postgres database hosting (control plane — dsr_tickets, account, tenant, billing)"
-    data_categories_processed:
-      - "billing_data"
-      - "account_data"
-    region: "US or EU (selectable per tenant)"
-    certifications:
-      - "SOC 2 Type II"
-      - "ISO 27001"
-      - "HIPAA-compliant"
-    dpa_url: "https://neon.tech/dpa"
-    primary_jurisdiction: "United States"
-    contract_signed_at: "2026-04-23"
-    legal_review_evidence: "docs/compliance/vendor-reviews/neon-dpa-review-2026-04.md"
 
   - id: "grafana-cloud"
     name: "Grafana Labs"
@@ -150,7 +135,6 @@ Rate limit: 5 objections/day/subject (anti-DoS; S-08 inheritance).
 | ID | Nome | Função | Região | Certificações | DPA |
 |---|---|---|---|---|---|
 | cloudflare | Cloudflare, Inc. | Infrastructure (Workers, R2, KV, DO, D1, Pages, Email) | Multi-region (tenant-pinned) | SOC 2 Type II, ISO 27001, ISO 27018, PCI-DSS Level 1 | [DPA](https://www.cloudflare.com/cloudflare-customer-dpa/) |
-| neon | Neon Inc. | Postgres database hosting | US or EU (tenant-selectable) | SOC 2 Type II, ISO 27001 | [DPA](https://neon.tech/dpa) |
 | grafana-cloud | Grafana Labs | Observability (metrics, logs, dashboards) | EU or US (selectable) | SOC 2 Type II, ISO 27001 | [DPA](https://grafana.com/legal/data-processing-addendum/) |
 | stripe | Stripe, Inc. | Payment processing and billing | US and EU | PCI-DSS Level 1, SOC 2 Type II, ISO 27001 | [DPA](https://stripe.com/legal/dpa) |
 | github | GitHub, Inc. | Source code repository and CI/CD | United States | SOC 2 Type II, ISO 27001 | [DPA](https://docs.github.com/en/site-policy/privacy-policies/github-data-protection-agreement) |
