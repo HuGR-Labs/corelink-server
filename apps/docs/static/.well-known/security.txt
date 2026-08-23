@@ -7,8 +7,13 @@
 # No PGP key is published at this time; the Encryption field is omitted
 # rather than pointing at a key that does not exist. This file remains
 # canonical per RFC 9116 §2.3 (Canonical field).
+#
+# Exactly one Contact address is listed, and it is the one with an explicit
+# Cloudflare Email Routing rule (verified: security@ -> forward, priority 10,
+# ahead of the catch-all). A second address was removed rather than left
+# unrouted: an unrouted address in the canonical disclosure file silently
+# swallows the report it invites.
 
-Contact: mailto:corelinksec@humangr.com
 Contact: mailto:security@humangr.com
 Expires: 2027-05-14T00:00:00.000Z
 Acknowledgments: https://corelink-docs.humangr.com/security/hall-of-fame
