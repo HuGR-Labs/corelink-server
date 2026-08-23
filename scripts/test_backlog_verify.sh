@@ -37,10 +37,14 @@ item() { # $1 id, $2 status, $3 verify, $4 last-verified
 
 echo "backlog gate"
 
-cell "a truthful item passes" 0 CONFIRMED "$(item B-1 open true 2026-08-23)"
+cell "a truthful item passes" 0 CONFIRMED "$(item B-1 open '"true"' 2026-08-23)"
+
+# YAML reads a bare `true` as a boolean, which silently stops being a command.
+# This file's own first draft made exactly that mistake and CI caught it.
+cell "an unquoted YAML boolean verify is BROKEN, not run" 1 BROKEN "$(item B-1 open true 2026-08-23)"
 
 # The core contract: the world moved, the file did not.
-cell "a claim the repo contradicts is DRIFTED" 1 DRIFTED "$(item B-1 open false 2026-08-23)"
+cell "a claim the repo contradicts is DRIFTED" 1 DRIFTED "$(item B-1 open '"false"' 2026-08-23)"
 
 # The decay rule — the thing that would have caught this project's stale notes.
 cell "an unverifiable claim goes STALE once it ages out" 1 STALE "$(item B-1 open manual 2026-07-01)"
@@ -50,8 +54,8 @@ cell "a freshly verified manual claim is fine" 0 CONFIRMED "$(item B-1 open manu
 # the whole gate exists to prevent.
 cell "a missing required field is BROKEN, not ignored" 1 BROKEN \
   "$(printf '```backlog\nid: B-1\nrepo: corelink-server\nowner: tl\nstatus: open\n```\n')"
-cell "an invalid status is BROKEN" 1 BROKEN "$(item B-1 nearly-done true 2026-08-23)"
-cell "a duplicate id is BROKEN" 1 BROKEN "$(item B-1 open true 2026-08-23; item B-1 open true 2026-08-23)"
+cell "an invalid status is BROKEN" 1 BROKEN "$(item B-1 nearly-done '"true"' 2026-08-23)"
+cell "a duplicate id is BROKEN" 1 BROKEN "$(item B-1 open '"true"' 2026-08-23; item B-1 open '"true"' 2026-08-23)"
 cell "unparseable YAML is BROKEN" 1 BROKEN "$(printf '```backlog\nid: [B-1\n```\n')"
 
 # An empty file is far more likely to be a broken format than genuinely no work.

@@ -101,6 +101,15 @@ def validate_schema(item: Item) -> None:
     for f in REQUIRED_FIELDS:
         if f not in d or d[f] in (None, ""):
             item.problems.append(f"missing required field `{f}`")
+    # YAML turns bare `true`, `yes`, `on`, `no`, `off` into booleans, so a verify
+    # written without quotes silently stops being a command. Caught by this file's
+    # own self-test on 2026-08-23; a real item could make the same mistake and would
+    # otherwise report DRIFTED with a baffling "command not found".
+    if "verify" in d and not isinstance(d["verify"], str):
+        item.problems.append(
+            f"verify must be a quoted string, got {type(d['verify']).__name__} "
+            f"({d['verify']!r}) — YAML reads bare true/yes/on as booleans"
+        )
     if d.get("status") not in VALID_STATUS and "status" in d:
         item.problems.append(f"status must be one of {VALID_STATUS}, got {d.get('status')!r}")
     if d.get("owner") not in VALID_OWNER and "owner" in d:

@@ -60,15 +60,23 @@ eviction, a redeploy, even a `/v1/status` poll on a cold stub — silently rearm
 the full window with no real activity. This sits *upstream* of the SIGTERM defect:
 there `stop()` was called and had no effect; here it is never called at all.
 
+**Landed 2026-08-23 in `#490`** — a durable last-activity stamp plus escalation to
+`destroy()` after two soft stops that did not end a still-running container. The
+check below is now inverted: it fails if the backstop ever leaves `main`.
+
+This item is also the first thing the gate caught. Merging `#490` turned it
+DRIFTED within minutes, exactly as designed — finishing the work reddens the gate
+until the record is updated.
+
 ```backlog
 id: B-001
 repo: corelink-runners
 owner: tl
-status: open
+status: done
 verify: |
-  ! gh api "repos/HuGR-Labs/corelink-runners/contents/deploy/cloudflare/src/index.ts?ref=main" \
-      -q .content | base64 -d | grep -q enforceDurableIdleBackstop
-verify-means: open while main carries no durable backstop; flips the moment PR #490 merges
+  gh api "repos/HuGR-Labs/corelink-runners/contents/deploy/cloudflare/src/index.ts?ref=main" \
+    -q .content | base64 -d | grep -q enforceDurableIdleBackstop
+verify-means: done while main carries the durable backstop; red if it is ever removed
 last-verified: 2026-08-23
 ```
 
@@ -112,14 +120,25 @@ last-verified: 2026-08-23
 
 ## CI integrity
 
-### B-004 — 21 workflows sit at `disabled_manually`
+### B-004 — workflows silenced by the 2026-08-08 mass-disable
 
-Not three, as first reported — `gh api ... --paginate` is required or the count
-comes out wrong. The list includes `backup-daily`, `backup-daily-verify`,
-`audit-chain-daily-verify`, `cargo-audit`, `pnpm-audit`, `codeql`, `cas-canary`
-and `e2e-prod` — precisely the categories whose crons this repo's own rule says
-are justified, because they guard things that change with no commit. A gate goes
-red, someone silences it, and the silence outlives the reason.
+**21** were disabled inside a single 39-second window on 2026-08-08 — one script,
+not 21 decisions, ~24 minutes into a day-long GitHub Actions billing outage. Not
+three, as first reported: `gh api ... --paginate` is required or the count comes
+out wrong.
+
+**12 have been re-enabled and verified**, including `backup-daily` (dispatched and
+proven to run: real runner, 13 steps, 50 s, success — D1 backups had not run for
+16 days). Two of them turned out not to be dormant crons at all but **silenced
+pull-request gates** — `region_pinning`, the Schrems II tenant-isolation forensic
+check, and `corelink-client-verify` — which had been letting PRs go green
+unchecked for 15 days.
+
+**9 remain**, each of them already chronically red or deliberately parked *before*
+the sweep, so none can simply be flipped back: `bazel-starter-ci`, `cas_foundation`,
+`coverage`, `ffi-matrix-ci`, `mutation-nightly`, `pnpm-audit`,
+`pre-cutover-weekly-cron`, `reproducible-build`, `smoke-install`. Each needs a
+decision: fix, retire, or park with the reason written down.
 
 ```backlog
 id: B-004
