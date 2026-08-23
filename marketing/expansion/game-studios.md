@@ -31,7 +31,14 @@ studios to run a ScyllaDB cluster themselves.**
 | Event streaming | Cloudflare Queues | Confluent, WarpStream, Pub/Sub |
 | Software build cache | — | Depot, Cachely, Buildless, BuildFetch |
 | Game VCS (Perforce) | **Epic open-sourced Lore (MIT)** | Diversion, Anchorpoint, Xet |
-| **Game derived-data cache** | **Epic withdrew from hosting** | **none found** |
+| Game C++ compile cache | **Epic ships UBA cache, free** | octobuild, FASTBuild |
+| Game build distribution | **Epic ships UBA** | IncrediBuild (entrenched) |
+| **Game derived-data cache (hosted)** | **Epic withdrew from hosting** | **none found** |
+
+The pattern across the whole day is that the platform owner is already sitting in
+almost every adjacent space — Cloudflare Queues, Epic's Lore, Epic's UBA. The
+hosted-DDC gap is the documented exception, and it exists because Epic actively
+**left**: the offering was removed from the marketplace rather than never built.
 
 Epic's Unreal Cloud DDC shipped only as an Azure "managed application" the studio
 deployed into **its own** cloud account, and that listing was **removed**: *"The
@@ -97,10 +104,31 @@ consumes their value. Better to know that before a commercial conversation.
 
 ## The pipeline, mapped to the three pillars
 
-**Cache — the wedge (space empty).** Unreal DDC (shaders, cooked assets, baked
-lighting) and Unity Accelerator. The C++ compilation half may also be reachable via
-the sccache surface CoreLink already has — **under investigation; see open
-questions.**
+**Cache — the wedge, but only the derived-data half (space empty).** Unreal DDC
+(shaders, cooked assets, baked lighting) and Unity Accelerator.
+
+**The C++ compilation half is contested — investigated and closed.** Epic's Unreal
+Build Accelerator ships its own action-level compile cache (`Cache`, `WriteCache`,
+`CacheProviders`, `bResetCas`), Beta in UE 5.4 and Production on Windows since 5.5.
+It is free and increasingly the default. It is also **LAN-scoped and not pluggable**:
+entries live at `C:\ProgramData\Epic\UbaCli\cas\casdb`, are served by a dedicated
+`UbaCache.exe` addressed by IP, and cross-machine hits require UBA's own VFS path
+virtualization — there is no documented way to point it at third-party HTTP.
+
+Beyond Epic, **UBT has no official ccache/sccache hook** (community patches only);
+the tool studios actually use is **octobuild**, with measured warm-cache results of
+Linux 3m54s→36s and Windows 8m4s→2m15s; and **FASTBuild** is a long-standing
+incumbent with mature PCH and unity-build cache-safety fixes.
+
+Two structural obstacles compound this. Unreal's **unity/jumbo builds** bundle many
+`.cpp` files into large translation units, so editing one file invalidates the whole
+blob — this fights fine-grained compile caching by construction. And **MSVC
+determinism** is a real problem: clang-cl embeds timestamps by default, and UE's own
+`bDeterministic` flag *"disables codegen multithreading so compiling will be
+slower."*
+
+**Conclusion: do not plan on the C++ half.** It is not empty space, and the technical
+headwinds are real.
 
 **Runners — expansion, not entry (space contested).** Cook farms, shader
 compilation, automated tests. IncrediBuild is entrenched (used by Microsoft, Epic,
@@ -142,8 +170,8 @@ compilation, asset cooking, lighting bakes, automated tests — is **not** gated
    version?** The cross-tenant dedup pitch depends entirely on this and **it is
    unproven** — DDC key composition is not public, and no source confirms or denies
    it. This was an assumption, not a finding. Measure before promising.
-2. **Can the C++ half be taken via sccache, or has Epic's UBA already occupied it?**
-   Under investigation.
+2. ~~Can the C++ half be taken via sccache?~~ **ANSWERED — no, treat it as
+   contested.** See the pillar mapping above.
 3. **Licensing.** Implementing a compatible server from **public documentation** is
    the intended path. The Unreal Cloud DDC source is under the Unreal Engine licence
    and reading it risks contamination. This needs a conscious decision, not an
