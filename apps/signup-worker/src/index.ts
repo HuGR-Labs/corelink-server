@@ -31,6 +31,7 @@ import type { QueueMessageBatch, DsrDlqBody } from "./webhooks/dsr_consumer.js";
 import { runDsrVerifySweep } from "./webhooks/dsr_verify_cron.js";
 import { runPatScrubSweep } from "./webhooks/pat_scrub_cron.js";
 import { runAuditDrainSweep } from "./webhooks/audit_drain_cron.js";
+import { runAuditArchiveSweep } from "./webhooks/audit_archive_cron.js";
 import { withSecurityHeaders } from "./security-headers.js";
 
 type WorkerEnv = AutoProvisionEnv &
@@ -172,6 +173,23 @@ const baseHandler: ExportedHandler<SignupEnv> = {
           if (!r.skipped) {
             console.log(
               `[audit-drain-cron] ok=${r.ok} status=${r.status} sealed=${r.sealed} partitions=${r.partitions}`,
+            );
+          }
+        })
+        .catch((err: unknown) => {
+          Sentry.captureException(err);
+        }),
+    );
+
+    // Runs alongside the drain, not after it: the archive only ever touches
+    // rows the drain has ALREADY sealed, so ordering between the two ticks does
+    // not matter — rows sealed this hour are archived next hour at the latest.
+    ctx.waitUntil(
+      runAuditArchiveSweep(env, nowMs)
+        .then((r) => {
+          if (!r.skipped) {
+            console.log(
+              `[audit-archive-cron] ok=${r.ok} status=${r.status} rows=${r.rowsArchived} chunks=${r.chunksCreated} failed_partitions=${r.partitionsFailed} incomplete=${r.incomplete}`,
             );
           }
         })

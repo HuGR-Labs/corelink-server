@@ -95,7 +95,7 @@ env:
   # Bucket default — overridable via repo/env `AUDIT_R2_BUCKET` (row
   # #118 of secrets-checklist). Same default as
   # `audit-chain-daily-verify.yml`.
-  AUDIT_R2_BUCKET_DEFAULT: "corelink-audit-archive"
+  AUDIT_R2_BUCKET_DEFAULT: "corelink-audit-weur"
 
 jobs:
   reconcile:

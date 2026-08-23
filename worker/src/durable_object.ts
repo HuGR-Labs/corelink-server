@@ -884,6 +884,14 @@ export class CoreLinkServer implements DurableObject {
           // the audit/drain sweep. "" ⇒ container default (200). Forwarded so a
           // Worker-side var actually reaches the container process.
           AUDIT_DRAIN_BATCH_LIMIT: this.env.AUDIT_DRAIN_BATCH_LIMIT ?? "",
+          // S-09 offsite archive (`POST /_internal/audit/archive`). Both are
+          // non-secret tuning knobs; "" ⇒ container defaults (bucket
+          // `corelink-audit-weur`, which already carries the 7-year Object
+          // Lock, and a 2000-row per-partition budget). Forwarded because the
+          // container reads them at boot — an operator override that is not on
+          // this list silently no-ops (the ERASURE_SALT_KEY-class bug).
+          R2_AUDIT_BUCKET: this.env.R2_AUDIT_BUCKET ?? "",
+          AUDIT_ARCHIVE_BATCH_LIMIT: this.env.AUDIT_ARCHIVE_BATCH_LIMIT ?? "",
           // CTRL-PRIV-001: server-held salt for the email_hash pseudonym. Unset →
           // legacy unsalted SHA-256 (zero regression); set → HMAC-SHA256. MUST be
           // forwarded or the container can't see it when the owner registers it.

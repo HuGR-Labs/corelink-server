@@ -267,34 +267,47 @@ last-verified: 2026-08-23
 
 ### B-015 — the sealed audit archive was never built, only its verifier
 
-`audit-chain-daily-verify` lists `corelink-audit-archive` under `audit/<date>/`.
-That bucket does not exist and never did. The producer does —
+`audit-chain-daily-verify` listed `corelink-audit-archive` under `audit/<date>/`.
+That bucket did not exist and never had. The producer did —
 `crates/corelink-audit-chain/src/archive_producer.rs`, writing exactly the key
-shape the verifier looks for — but it is dead on two independent axes: its only
+shape the verifier looked for — but it was dead on two independent axes: its only
 caller sits behind the Cargo feature `cf-billing-real`, which no build or deploy
 path ever passes, and the crate that owns that caller is a wasm cdylib the live
 Worker never imports. Commit `8ba0353b` added producer and verifier together;
-nothing since ever wired the producer to a binding. The `AUDIT_BUCKET` binding
-that would do it exists **only** on the quarantined `feat/remediation-gated-features`
-branch, which must not land, and even there it backs a different consumer.
+nothing since ever wired the producer to a binding.
 
-So this is not a broken cron. **Live tamper-evidence is D1-only** — a real BLAKE3
-hash chain with an Ed25519-signed head, sealed by `/_internal/audit/drain` — with
-**no offsite, immutable copy**. The control the specs describe (S-09: R2 NDJSON
-archive with 7-year retention) exists in source and tests, not in the running
-system. Pairs with [B-009], which is the retention half of the same gap.
+So this was not a broken cron. **Live tamper-evidence was D1-only** — a real
+BLAKE3 hash chain with an Ed25519-signed head, sealed by `/_internal/audit/drain`
+— with **no offsite, immutable copy**. 56,026 rows sealed, zero archived.
 
-Meanwhile the verifier has fired SEV-0 pages every day since ~2026-07-17 over a
-configuration that could never have been satisfied — burying any real chain break
-under weeks of false alarm.
+**Closed 2026-08-23.** `POST /_internal/audit/archive`
+(`crates/corelink-container/src/routes/audit_archive.rs`) reads rows the drain
+has already sealed, re-verifies every link from the persisted JCS bytes, and
+writes NDJSON chunks to `corelink-audit-weur`, which already carries the 7-year
+Object Lock rule `corelink-audit-7y-retention`. It is a SEPARATE endpoint from
+the drain on purpose — an R2 outage must never be able to abort or corrupt a D1
+seal — and that separation is also what lets it walk backward over the 56,026-row
+backlog through its ordinary hourly sweep. Three things had to change beyond the
+wiring: the archive line format now carries `canonical_jcs` verbatim (the live
+chain's generic CloudEvents rows never deserialized into the crate's typed
+`AuditEvent`, so the verifier binary could not have verified a real archive); the
+chunk key now carries `(tenant_id, region)` (the documented shape collided
+between partitions, which under a create-if-absent writer would have silently
+dropped a chunk); and both verifier workflows now default to the bucket that is
+actually written to. Pairs with [B-009], the retention half of the same gap,
+which the chosen bucket already satisfies.
+
+Remaining after this: the archive proves the chain is intact against ITSELF. An
+external anchor (Rekor) is still roadmap, and the ≤1h pre-seal window in
+`audit_outbox` is still unprotected — both pre-existing and out of this item.
 
 ```backlog
 id: B-015
 repo: corelink-server
 owner: tl
-status: open
-verify: "! grep -q 'AUDIT_BUCKET' wrangler.toml"
-verify-means: open while there is no AUDIT_BUCKET r2 binding wiring the archive producer
+status: done
+verify: "grep -q 'audit/archive' crates/corelink-container/src/main.rs && grep -q 'corelink-audit-weur' .github/workflows/audit-chain-daily-verify.yml"
+verify-means: done while the archive route is MOUNTED in the container composition root and the daily verifier reads the same bucket the archiver writes
 last-verified: 2026-08-23
 ```
 

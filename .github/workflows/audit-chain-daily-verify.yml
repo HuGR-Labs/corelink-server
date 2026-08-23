@@ -56,9 +56,9 @@ name: audit-chain-daily-verify (Wave 18)
 #   - CF_ACCOUNT_ID            (#49) — CF account id
 #   - CF_API_TOKEN             (#50, audit-read variant) — `Workers R2
 #                                       Storage:Read` on
-#                                       `corelink-audit-archive` ONLY
+#                                       `corelink-audit-weur` ONLY
 #   - AUDIT_R2_BUCKET          (#118 var, optional override) — defaults
-#                                       to `corelink-audit-archive`
+#                                       to `corelink-audit-weur`
 #   - PAGERDUTY_ROUTING_KEY    (#11) — SEV-0 page on per-day chain break
 #
 # SHA-pinned per HIGH_RISK lane FF-HR-005 + ADR-S12-045 §6 tooling-pin
@@ -94,7 +94,15 @@ env:
   # Bucket default — overridable via the `AUDIT_R2_BUCKET` repo/env var
   # (secrets-checklist row #118). The cron is fail-safe on rename:
   # absent var falls through to the literal below.
-  AUDIT_R2_BUCKET_DEFAULT: "corelink-audit-archive"
+  #
+  # This MUST stay equal to `DEFAULT_AUDIT_BUCKET` in
+  # `crates/corelink-container/src/routes/audit_archive.rs`, which is where the
+  # chunks are actually written. It used to read `corelink-audit-archive` — a
+  # bucket that never existed — so the verifier looked for an archive at an
+  # address the (never-wired) producer would not have used either.
+  # `corelink-audit-weur` is real and already carries the 7-year Object Lock
+  # rule `corelink-audit-7y-retention` (maxAgeSeconds=220924800).
+  AUDIT_R2_BUCKET_DEFAULT: "corelink-audit-weur"
 
 jobs:
   # Job 1: smoke-test the verifier binary on empty input + a synthetic
