@@ -1,18 +1,41 @@
 {
-  "link.title.Product": { "message": "Producto" },
-  "link.title.Trust": { "message": "Confianza" },
-  "link.title.Community": { "message": "Comunidad" },
-  "link.item.label.Tutorial": { "message": "Tutorial" },
-  "link.item.label.How-to": { "message": "Cómo hacer" },
-  "link.item.label.Reference": { "message": "Referencia" },
-  "link.item.label.Pricing": { "message": "Precios" },
-  "link.item.label.Security": { "message": "Seguridad" },
-  "link.item.label.Privacy": { "message": "Privacidad" },
-  "link.item.label.Terms": { "message": "Términos" },
-  "link.item.label.Sub-processors": { "message": "Subprocesadores" },
-  "link.item.label.GitHub": { "message": "GitHub" },
-  "link.item.label.Edit this site": { "message": "Editar este sitio" },
-  "copyright": {
-    "message": "Copyright © {year} HuGR Labs. Construido con Docusaurus."
+  "link.title.Product": {
+    "message": "Producto"
+  },
+  "link.title.Trust": {
+    "message": "Confianza"
+  },
+  "link.title.Community": {
+    "message": "Comunidad"
+  },
+  "link.item.label.Tutorial": {
+    "message": "Tutorial"
+  },
+  "link.item.label.How-to": {
+    "message": "Cómo hacer"
+  },
+  "link.item.label.Reference": {
+    "message": "Referencia"
+  },
+  "link.item.label.Pricing": {
+    "message": "Precios"
+  },
+  "link.item.label.Security": {
+    "message": "Seguridad"
+  },
+  "link.item.label.Privacy": {
+    "message": "Privacidad"
+  },
+  "link.item.label.Terms": {
+    "message": "Términos"
+  },
+  "link.item.label.Sub-processors": {
+    "message": "Subprocesadores"
+  },
+  "link.item.label.GitHub": {
+    "message": "GitHub"
+  },
+  "link.item.label.Edit this site": {
+    "message": "Editar este sitio"
   }
 }
