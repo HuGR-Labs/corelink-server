@@ -53,7 +53,7 @@ The CLI has exactly four exit codes, shared by every subcommand:
 | Exit | Meaning | Next step |
 |---|---|---|
 | `0` | Success | — |
-| `1` | Any command failure — network, auth, quota, verify mismatch, not found, and so on. `corelink doctor` does not use a distinct code; it also exits `1` when any check fails. | `corelink doctor --json` to narrow down which subsystem |
+| `1` | Any command failure — network, auth, quota, verify mismatch, or not found. `corelink doctor` does not use a distinct code; it also exits `1` when any check fails. | `corelink doctor --json` to narrow down which subsystem |
 | `2` | Argument/flag error, or `--pat` was rejected (CTRL-CRED-001) | Re-read [01-authenticate](./01-authenticate.mdx) |
 | `65` | `corelink audit verify-ndjson --url` mid-stream integrity abort only | N/A for `put`/`get`/`doctor` |
 

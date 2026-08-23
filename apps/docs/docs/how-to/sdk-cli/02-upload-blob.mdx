@@ -79,8 +79,8 @@ The CLI has exactly four exit codes, shared by every subcommand (per
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | Any command failure — network, auth, quota, digest mismatch, unreadable file, HTTP error, and so on. There is no finer-grained taxonomy; read the `error: ...` message on stderr. |
-| `2` | Argument/flag error (clap parse failure), or the `--pat` flag was rejected (CTRL-CRED-001 — PATs must come from `CORELINK_PAT` or the config file, never a CLI arg) |
+| `1` | Any command failure — network, auth, quota, digest mismatch, unreadable file, or HTTP error. There is no finer-grained taxonomy; read the `error: ...` message on stderr. |
+| `2` | Argument/flag error (clap parse failure), or the `--pat` flag was rejected (CTRL-CRED-001 — PATs must come from `CORELINK_PAT` or the config file, never a CLI argument) |
 | `65` | Reserved for `corelink audit verify-ndjson --url` mid-stream integrity abort only — not used by `put`/`get` |
 
 ## Next steps

@@ -70,7 +70,7 @@ CoreLink enforces tenant isolation at every layer:
 2. **Storage layer**: R2 object keys are prefixed by tenant ID. A bug that omits the prefix check cannot produce a key collision that leaks data from another tenant because the prefix is mandatory, not optional.
 3. **Audit log**: each event carries the tenant ID and is stored in a tenant-specific KV namespace. Admin-level queries are scoped to the calling tenant's namespace.
 
-Cross-tenant reads are **not possible** — not as a configuration option, not by request, not via the admin API. If you need to share artifacts between two tenants (e.g. a shared library used by two product teams), push the blob under both tenants or use a single shared tenant with multiple PATs scoped by team.
+Cross-tenant reads are **not possible** — not as a configuration option, not by request, not via the admin API. If you need to share artifacts between two tenants (for example, a shared library used by two product teams), push the blob under both tenants or use a single shared tenant with multiple PATs scoped by team.
 
 This isolation guarantee is documented as invariant **INV-TENANT-ISOLATION** in the security model. See [Security](../security.md) for the full invariant list.
 
