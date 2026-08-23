@@ -162,7 +162,6 @@ pub async fn build_state_from_env() -> Option<AuditArchiveState> {
 }
 
 /// Mount `POST /_internal/audit/archive`.
-#[must_use]
 pub fn router(state: AuditArchiveState) -> Router {
     Router::new()
         .route("/_internal/audit/archive", post(handle_archive))
@@ -379,11 +378,17 @@ async fn archive_partition(
         ..PartitionOutcome::default()
     };
     for chunk in chunks {
+        // `split_into_chunks` never emits an empty chunk, but the key derives
+        // from the FIRST line and an empty chunk would have no key at all --
+        // ask for the line rather than index and assume.
+        let Some(first) = chunk.first() else {
+            continue;
+        };
         // `serialize_chunk` re-verifies every link from the persisted bytes
         // before producing any output, so a chain break in D1 stops the archive
         // here instead of being copied offsite as if it were evidence.
         let body = serialize_chunk(&chunk).map_err(|e| e.to_string())?;
-        let key = sealed_chunk_key(&chunk[0]);
+        let key = sealed_chunk_key(first);
         match put_chunk_if_absent(&state.r2, &key, &body).await? {
             ChunkWrite::Created => {
                 outcome.chunks_created = outcome.chunks_created.saturating_add(1)
@@ -468,13 +473,22 @@ async fn handle_archive(State(state): State<AuditArchiveState>, headers: HeaderM
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "tests are allowed to use these primitives"
+)]
 mod tests {
     use super::*;
     use axum::http::HeaderValue;
 
     fn headers_with(key: &str) -> HeaderMap {
         let mut h = HeaderMap::new();
-        h.insert(INTERNAL_AUTH_HEADER, HeaderValue::from_str(key).unwrap());
+        h.insert(
+            INTERNAL_AUTH_HEADER,
+            HeaderValue::from_str(key).expect("test key is a valid header value"),
+        );
         h
     }
 
