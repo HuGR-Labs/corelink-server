@@ -72,9 +72,11 @@ echo $CORELINK_TENANT
 **Diagnostics**:
 
 ```bash
-# Verify the digest
-sha256sum ./my-file.bin
-# Compare to the hash you are requesting
+# CoreLink's CAS addresses blobs by BLAKE3, not SHA-256 — `corelink put`
+# computes it for you. To check by hand, use a BLAKE3 tool (e.g. b3sum):
+b3sum --no-names ./my-file.bin
+# Compare to the hash you are requesting — `corelink stat <digest>` confirms
+# whether that digest exists in the tenant's CAS.
 ```
 
 **Fix**: Upload the blob before fetching it. Confirm the tenant in the URL matches the uploading tenant.
@@ -83,7 +85,7 @@ sha256sum ./my-file.bin
 
 ### `422 Unprocessable Entity` (hash mismatch)
 
-**Meaning**: The SHA-256 in the URL path does not match the SHA-256 of the request body.
+**Meaning**: The BLAKE3 digest in the URL path does not match the BLAKE3 digest of the request body.
 
 This is a client-side error. The server computes the digest of the received bytes and compares it to the path segment. If they differ, the upload is rejected.
 
@@ -92,12 +94,18 @@ This is a client-side error. The server computes the digest of the received byte
 - Digest was computed before compression (e.g., computed on `file.tar` then uploaded `file.tar.gz`).
 - Digest was computed on a partial read.
 - Multipart upload tooling that adds framing bytes.
+- Digest was computed with `sha256sum`/`shasum` instead of BLAKE3 — the CAS plane only ever accepts a BLAKE3 digest.
 
-**Fix**:
+**Fix**: Let the CLI compute the digest for you — it uses BLAKE3, matching what the server re-hashes:
 
 ```bash
-# Always compute the digest from the exact bytes being sent
-DIGEST=$(sha256sum ./artifact.tar.gz | awk '{print $1}')
+corelink put ./artifact.tar.gz
+```
+
+If you must construct the request by hand (e.g. from CI without the CLI), compute a BLAKE3 digest (not SHA-256) of the exact bytes being sent, then PUT to that path:
+
+```bash
+DIGEST=$(b3sum --no-names ./artifact.tar.gz)
 curl -X PUT ... --data-binary @./artifact.tar.gz \
   ".../v1/cas/$CORELINK_TENANT/$DIGEST"
 ```
@@ -189,14 +197,14 @@ curl -s -H "Authorization: Bearer $CORELINK_PAT" \
   https://corelink-api.humangr.com/v1/users/me
 # {"tenant_id":"...","token_prefix":"clk_live","route_kind":"cas"}
 
-# 3. Write a test blob
+# 3. Write a test blob (CoreLink's CAS is addressed by BLAKE3, not SHA-256)
 echo "healthcheck" > /tmp/cl-test.txt
-DIGEST=$(sha256sum /tmp/cl-test.txt | awk '{print $1}')
+DIGEST=$(b3sum --no-names /tmp/cl-test.txt)
 curl -s -X PUT \
   -H "Authorization: Bearer $CORELINK_PAT" \
   --data-binary @/tmp/cl-test.txt \
   "https://corelink-api.humangr.com/v1/cas/$CORELINK_TENANT/$DIGEST"
-# {"hash":"sha256:<digest>"}
+# <digest>   (the server echoes the bare stored hash, not a JSON body)
 
 # 4. Read it back
 curl -s \

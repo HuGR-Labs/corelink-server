@@ -116,7 +116,7 @@ CSP / CSC responsibility column:
 | CEK-06.1 | Key rotation supported? | Y | CSP | KMS-side automatic rotation (provider-default cadence). DEK rotation on customer trigger; CMK rotation transparent to CoreLink. | C1.1 |
 | CEK-07.1 | Key escrow / recovery documented? | Y | CSP | Customer-side — KMS provider handles escrow per customer's IAM policy. CoreLink never holds CMK material. | C1.1 |
 | CEK-08.1 | Cryptographic keys protected throughout lifecycle? | Y | CSP | Plaintext DEKs never leave request scope (V8 isolate memory). Wrapped DEKs at rest only. | C1.1 |
-| CEK-09.1 | Customer-managed key option (BYOK) available? | Y | CSP | Yes — 4 providers: AWS KMS, GCP Cloud KMS, Azure Key Vault, HashiCorp Vault. | C1.1 |
+| CEK-09.1 | Customer-managed key option (BYOK) available? | P | CSP | No BYOK at GA today — 4-provider (AWS KMS / GCP Cloud KMS / Azure Key Vault / HashiCorp Vault) envelope encryption is pre-GA: wired into CAS+AC storage but gated-inert (zero active tenants). On the roadmap, not yet in pilot; will ship once self-serve CMK onboarding lands. | C1.1 |
 | CEK-10.1 | Kill-switch / key-revocation supported? | Y | CSP | Customer revokes CMK access in their KMS → CoreLink cache declines within ≤ 5 min (`byok-kill-switch-rtt` SLO; drilled weekly). | C1.1 |
 | CEK-11.1 | HSM-protected key material? | Y | CSP | KMS providers HSM-backed (AWS / GCP / Azure / Vault). FIPS 140-2/3 endpoint posture per `BYOK-FIPS-ATTESTATION-MATRIX.md`. | C1.1 |
 | CEK-12.1 | Certificate management documented? | Y | CSP | Cloudflare-managed TLS certificates; HSTS preload submitted. | CC6.7 |

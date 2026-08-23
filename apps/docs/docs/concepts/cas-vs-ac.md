@@ -11,10 +11,10 @@ CoreLink exposes two distinct caches that work together. Most users only think a
 
 ## Content-Addressable Storage (CAS)
 
-CAS stores arbitrary blobs keyed by their SHA-256 digest. The key *is* the digest: there is no separate filename, version tag, or metadata required.
+CAS stores arbitrary blobs keyed by their BLAKE3 digest. The key *is* the digest: there is no separate filename, version tag, or metadata required.
 
 ```
-key:   sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+key:   e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85   (BLAKE3, 64 lowercase hex)
 value: <bytes>
 ```
 
@@ -22,7 +22,7 @@ Properties:
 
 - **Immutable**: once a blob is stored at a given digest, the content at that digest never changes.
 - **Deduplicated**: if two tenants (or two CI jobs) upload the same bytes, the storage layer stores one copy. Both tenants pay for access, not for duplicate storage.
-- **Verifiable**: the client computing `sha256(downloaded_bytes)` will always match the key used to retrieve it.
+- **Verifiable**: the client computing `blake3(downloaded_bytes)` will always match the key used to retrieve it — the write path re-hashes the uploaded bytes and rejects a mismatched claim with `422`.
 
 ### CAS in the REAPI context
 
@@ -37,8 +37,8 @@ Bazel uploads inputs to CAS before dispatching a remote action. The executor rea
 ### CAS HTTP endpoints
 
 ```
-PUT /v1/cas/<tenant_id>/<sha256>   body: raw bytes  → 201 + {"hash": "sha256:<digest>"}
-GET /v1/cas/<tenant_id>/<sha256>                    → 200 + raw bytes
+PUT /v1/cas/<tenant_id>/<blake3>   body: raw bytes  → 201 (fresh) / 200 (idempotent) + bare digest as the response body
+GET /v1/cas/<tenant_id>/<blake3>                    → 200 + raw bytes
 ```
 
 See the [HTTP API reference](../api/http.md) for full details.
@@ -94,7 +94,7 @@ build tool
 
 | | CAS | Action Cache |
 |---|---|---|
-| Key | SHA-256 of content | SHA-256 of Action proto |
+| Key | BLAKE3 of content | SHA-256 of Action proto |
 | Value | Raw bytes | ActionResult (output digests, exit code) |
 | Immutable | Yes | Yes (entries are not updated, only written once) |
 | Used for | Blobs (files, protos) | Build action memoization |
