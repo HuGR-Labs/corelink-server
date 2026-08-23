@@ -309,9 +309,13 @@ id: B-010
 repo: corelink-server
 owner: tl
 status: open
-verify: |
-  ! ls docs/design/ | grep -qi tls
-verify-means: open while no ADR mentioning TLS exists
+verify: "! ls specs/03_architecture/adrs/ | grep -qi tls"
+verify-means: |
+  open while no ADR mentioning TLS exists. NOTE: this check first pointed at
+  docs/design/, which holds informal planning docs — the numbered ADR series lives
+  in specs/03_architecture/adrs/. A check aimed at the wrong directory would have
+  stayed green forever after the ADR landed, which is a false negative in the gate
+  itself, not in the item.
 last-verified: 2026-08-23
 ```
 
@@ -403,6 +407,31 @@ owner: tl
 status: open
 verify: manual
 verify-means: lives in the corelink-cli repo; settled by running the published binary with no PAT
+last-verified: 2026-08-23
+```
+
+### B-019 — the security model asserts a control that is not in force
+
+`specs/03_architecture/security_model.md:254` lists **CTRL-CRYPTO-001 — "TLS 1.3
+only"** as a live control, with quarterly review and SSL Labs A+ as its evidence.
+The zone has been on **TLS 1.2** since sccache clients were found to be rejected
+by a 1.3-only floor. Three S-02 sprint documents repeat the same claim.
+
+This one matters beyond tidiness: a security model is what an auditor or a
+customer's security review reads, and it currently describes a control that is
+not in force. The change itself was correct and is now recorded in ADR-0072; what
+is missing is that the control table was never updated to match.
+
+Found while writing that ADR — the agent flagged it and deliberately left it
+alone rather than widening a docs-only PR, which was the right call.
+
+```backlog
+id: B-019
+repo: corelink-server
+owner: tl
+status: open
+verify: "grep -q 'TLS 1.3 only' specs/03_architecture/security_model.md"
+verify-means: open while the control table still claims a 1.3-only floor
 last-verified: 2026-08-23
 ```
 
