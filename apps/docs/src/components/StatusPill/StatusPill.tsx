@@ -5,13 +5,14 @@
  * signals operational legitimacy to docs visitors and gives a low-friction
  * path to the public status page when something is wrong.
  *
- * Data source: BetterStack public status JSON. BetterStack exposes each
- * public status page as JSON at `<page-url>/badge.json` (and as the legacy
- * Atlassian-compatible `<page-url>/api/v2/status.json`). We default to
- * the `badge.json` shape because it is the canonical BetterStack endpoint
- * for this purpose. The URL is overridable via the
- * `statusBadgeUrl` site-config customField so operators can rewire to a
- * different status page (e.g. white-label) without touching code.
+ * Data source: the BetterStack public status page's JSON endpoint,
+ * `<page-url>/index.json`. NOTE: `<page-url>/badge.json` returns HTML, not
+ * JSON, on this BetterStack tenant — do not use it. The legacy
+ * Atlassian-compatible `<page-url>/api/v2/status.json` shape is also parsed
+ * (see `classify()`) so an operator override that points at a real
+ * Atlassian Statuspage still works. The endpoint is overridable via the
+ * `statusBadgeUrl` prop / site-config customField so operators can rewire to
+ * a different status page (e.g. white-label) without touching code.
  *
  * Cache: 30 minutes. The pill stores the last successful fetch in
  * `sessionStorage` keyed by URL, plus a stale-while-revalidate fetch on
@@ -19,20 +20,32 @@
  * NOT a real-time monitor — for that, visitors follow the link to the
  * full BetterStack status page (which has its own auto-refresh).
  *
- * Graceful degradation:
- *   - Cold render (no cache, no network response yet) → "operational"
- *     pill, neutral grey dot. This avoids a layout flicker and is
- *     consistent with the BetterStack badge's own "assume good" default.
- *   - Fetch failure → keep the neutral default. We do NOT show "down"
- *     on a CORS/network error, because that would be a false positive
- *     and undermine the trust signal.
+ * Fetch-failure handling — history + current rationale:
+ *   This component used to render a green "All systems operational" pill
+ *   on ANY fetch failure ("assume good when we can't prove otherwise").
+ *   That shipped a false claim for an extended period: the default badge
+ *   endpoint's hostname failed its TLS handshake outright (never
+ *   provisioned at the status-page host), so every single page load hit
+ *   the failure path and rendered "All systems operational" in green — even
+ *   while the real page's `aggregate_state` was `"downtime"`. A pill that
+ *   asserts good status it has never actually observed is worse than no
+ *   pill: it is a trust signal the component cannot back up. So the rule
+ *   now is evidence-gated: the pill only ever shows "ok" after a fetch that
+ *   actually returned an operational payload (this run, or a still-fresh
+ *   cache entry from a prior successful run). Cold render or fetch
+ *   failure with nothing cached renders a neutral "unknown" state instead —
+ *   grey dot, "Status unavailable" label — which is an honest statement
+ *   ("we don't know") rather than an unverified claim of health.
  *
  * State machine (post-fetch):
- *   - status === "operational"  → ok (green)
- *   - status === "degraded" / "maintenance" → degraded (yellow)
- *   - status === "downtime" / "outage" / "major_outage" → down (red)
- *   - any other / unknown / fetch failure → ok (green, "All systems
- *     operational" label) — assume good when we can't prove otherwise.
+ *   - status === "operational" / aggregate_state === "operational" → ok (green)
+ *   - status === "degraded" / "maintenance" / indicator === "minor" /
+ *     aggregate_state === "degraded" / "maintenance" → degraded (yellow)
+ *   - status === "down" / "outage" / indicator === "major" / "critical" /
+ *     aggregate_state === "downtime" / "outage" → down (red)
+ *   - any other / unrecognised payload → unknown (grey, "Status
+ *     unavailable") — we do not guess a severity we cannot back with data.
+ *   - fetch failure / no cache → unknown (grey, "Status unavailable").
  *
  * Privacy: the component does not send any user data to BetterStack;
  * it just GETs a static JSON URL. No cookies, no fingerprint.
@@ -40,14 +53,21 @@
 
 import { useEffect, useState, type ReactElement } from "react";
 import styles from "./StatusPill.module.css";
+import {
+  classify,
+  type BetterStackBadgePayload,
+  type Severity,
+} from "./classify";
+
+export type { BetterStackBadgePayload, Severity };
+export { classify };
 
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const STORAGE_PREFIX = "corelink:statuspill:v1:";
 const DEFAULT_LABEL_OK = "All systems operational";
 const DEFAULT_LABEL_DEGRADED = "Degraded performance";
 const DEFAULT_LABEL_DOWN = "Active incident";
-
-type Severity = "ok" | "degraded" | "down";
+const DEFAULT_LABEL_UNKNOWN = "Status unavailable";
 
 export interface StatusPillProps {
   /**
@@ -57,56 +77,21 @@ export interface StatusPillProps {
    */
   readonly statuspageUrl: string;
   /**
-   * BetterStack JSON badge endpoint. Defaults to
-   * `<statuspageUrl>/badge.json`.
+   * BetterStack JSON status endpoint. Defaults to
+   * `<statuspageUrl>/index.json`. Do NOT default to `/badge.json` — on
+   * this BetterStack tenant it returns HTML, not JSON.
    */
   readonly statusBadgeUrl?: string;
   /** Optional translated labels per severity. */
   readonly labelOk?: string;
   readonly labelDegraded?: string;
   readonly labelDown?: string;
+  readonly labelUnknown?: string;
 }
 
 interface CachedStatus {
   severity: Severity;
   fetchedAt: number;
-}
-
-interface BetterStackBadgePayload {
-  /**
-   * BetterStack's `badge.json` returns a `status` string. The historical
-   * values observed are: "up" | "down" | "degraded" | "maintenance" |
-   * "validating" | "paused". We treat unknown values as "ok" — see the
-   * module-level rationale.
-   */
-  status?: string;
-  /**
-   * Some BetterStack accounts return the older Atlassian-compatible
-   * `status.indicator` field instead ("none" | "minor" | "major" |
-   * "critical"). We map both.
-   */
-  indicator?: string;
-}
-
-function classify(payload: BetterStackBadgePayload): Severity {
-  const status = (payload.status ?? "").toLowerCase();
-  const indicator = (payload.indicator ?? "").toLowerCase();
-  if (
-    status === "down" ||
-    status === "outage" ||
-    indicator === "major" ||
-    indicator === "critical"
-  ) {
-    return "down";
-  }
-  if (
-    status === "degraded" ||
-    status === "maintenance" ||
-    indicator === "minor"
-  ) {
-    return "degraded";
-  }
-  return "ok";
 }
 
 function readCache(key: string): CachedStatus | null {
@@ -118,7 +103,8 @@ function readCache(key: string): CachedStatus | null {
     if (
       parsed.severity === "ok" ||
       parsed.severity === "degraded" ||
-      parsed.severity === "down"
+      parsed.severity === "down" ||
+      parsed.severity === "unknown"
     ) {
       if (typeof parsed.fetchedAt === "number") {
         return { severity: parsed.severity, fetchedAt: parsed.fetchedAt };
@@ -142,18 +128,21 @@ function writeCache(key: string, value: CachedStatus): void {
 export default function StatusPill(props: StatusPillProps): ReactElement {
   const {
     statuspageUrl,
-    statusBadgeUrl = `${statuspageUrl.replace(/\/+$/, "")}/badge.json`,
+    statusBadgeUrl = `${statuspageUrl.replace(/\/+$/, "")}/index.json`,
     labelOk = DEFAULT_LABEL_OK,
     labelDegraded = DEFAULT_LABEL_DEGRADED,
     labelDown = DEFAULT_LABEL_DOWN,
+    labelUnknown = DEFAULT_LABEL_UNKNOWN,
   } = props;
 
   // Hydrate from cache synchronously so the first paint matches the cached
   // severity (avoids a green→red flash if there's an ongoing incident the
-  // visitor just saw a moment ago).
+  // visitor just saw a moment ago). With nothing cached yet, we render the
+  // neutral "unknown" state — NOT "ok" — because we have not observed any
+  // status at all; see the module doc-comment.
   const [severity, setSeverity] = useState<Severity>(() => {
     const cached = readCache(statusBadgeUrl);
-    return cached?.severity ?? "ok";
+    return cached?.severity ?? "unknown";
   });
 
   useEffect(() => {
@@ -184,7 +173,10 @@ export default function StatusPill(props: StatusPillProps): ReactElement {
         setSeverity(next);
         writeCache(statusBadgeUrl, { severity: next, fetchedAt: Date.now() });
       } catch {
-        /* Network or CORS error — keep current state, do not flip to "down". */
+        /* Network or CORS error — keep current state (which defaults to
+         * "unknown", not "ok" — see the module doc-comment). We do not
+         * flip to "down" on a network error, because that would ALSO be
+         * an unverified claim; nor do we flip to "ok". */
       }
     })();
     return (): void => {
@@ -197,14 +189,18 @@ export default function StatusPill(props: StatusPillProps): ReactElement {
       ? labelDown
       : severity === "degraded"
         ? labelDegraded
-        : labelOk;
+        : severity === "ok"
+          ? labelOk
+          : labelUnknown;
 
   const severityClass =
     severity === "down"
       ? styles.down
       : severity === "degraded"
         ? styles.degraded
-        : styles.ok;
+        : severity === "ok"
+          ? styles.ok
+          : styles.unknown;
 
   return (
     <a
