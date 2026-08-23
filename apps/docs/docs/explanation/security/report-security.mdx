@@ -20,7 +20,7 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 
 # Report a security vulnerability
 
-> **Source-of-truth:** [`docs/security/report-security.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/docs/security/report-security.md).
+> **Source-of-truth:** `docs/security/report-security.md`.
 > This MDX is a thin mirror so the React Trust Center landing (`/trust`)
 > and the `/.well-known/security.txt` URL can deep-link into one canonical
 > public route. Wave-29 stream-8 deliverable.
@@ -30,21 +30,22 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 | Item | Value |
 |---|---|
 | **Where to send** | `security@humangr.com` |
-| **PGP key fingerprint** | `5C2C 8E2A 6B17 9F4D 1A0B 3E9C 6F8B 2D7E 4A91 0C15` (published at [`/.well-known/security.txt`](/.well-known/security.txt)) |
+| **PGP** | Not currently offered — send reports over plain email |
 | **Response SLA — acknowledgement** | 1 business day |
 | **Response SLA — triage decision** | 5 business days |
 | **Coordinated disclosure window** | 90 days from triage acceptance |
-| **Safe-harbor scope** | All `*.corelink.humangr.com` domains + open-source CoreLink crates and CLIs |
+| **Safe-harbor scope** | The live CoreLink hosts on `humangr.com` (flat, hyphenated — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` for the admin UI) + the publicly distributed `corelink-cli` |
 | **Bounty program** | Not yet active pre-GA; monetary rewards roll out at GA +30 days |
 
 ## How to report
 
 1. Send an email to `security@humangr.com` with subject prefix
-   `[VULN-REPORT]`. Encrypt the body with our PGP key (fingerprint above).
+   `[VULN-REPORT]`. PGP-encrypted submission is not currently offered —
+   send the report over plain email.
 2. Include enough detail to reproduce: affected endpoint or component,
    request payload, expected vs observed behaviour. Proof-of-concept code
    is welcome but not required.
-3. Tell us your preferred attribution (handle for the Hall of Thanks at
+3. Tell us your preferred attribution (handle for the Hall of Fame at
    GA +30 days, or "anonymous").
 4. Tell us your geography so we can route to the on-call rotation that
    covers your timezone.
@@ -70,16 +71,18 @@ import { DraftBanner } from "../../../src/components/DraftBanner";
 If you make a good-faith effort to comply with this policy we will not
 pursue or support legal action against you (DMCA, CFAA, or analogous
 foreign statutes) and will treat your research as authorised under
-18 U.S.C. §1030. Full safe-harbor text lives in
-[`specs/_security/vulnerability-disclosure-policy.md`](https://github.com/HumanGuardrail/corelink-server/blob/main/specs/_security/vulnerability-disclosure-policy.md)
-§3.
+18 U.S.C. §1030. Full safe-harbor text lives in the legally-binding VDP at
+`specs/_security/vulnerability-disclosure-policy.md` §6.
 
 ## Scope
 
-**In-scope:** all `*.corelink.humangr.com` subdomains, all open-source crates
-published from `github.com/HumanGuardrail/corelink-server`, the
-`corelink-cli` distributable, and the CoreLink Cloudflare Worker
-entrypoints.
+**In-scope:** the live CoreLink hosts on `humangr.com`
+(`corelink-api.humangr.com`, `corelink-docs.humangr.com`,
+`humangr.com/corelink/*` for the admin UI), the publicly distributed
+`corelink-cli` (the `humangr.com/install.sh` installer and the
+`HumanGuardrail/tap/corelink` Homebrew formula), and the CoreLink Cloudflare
+Worker entrypoints. The server source repository is private and no CoreLink
+crates are published to a public registry, so neither is in scope.
 
 **Out-of-scope:** third-party sub-processors (report directly to the
 vendor — list at [`/trust/sub-processor-register`](/trust/sub-processor-register)),
@@ -90,8 +93,8 @@ already-disclosed third-party dependency vulnerabilities.
 ## Bounty program
 
 **Pre-GA (today):** recognition only. Researchers who submit valid reports
-will be acknowledged in the public Hall of Thanks at GA launch +30 days
-(`/security/hall-of-thanks`).
+will be acknowledged in the public Hall of Fame at GA launch +30 days
+(`/security/hall-of-fame`).
 
 **GA +30 days (planned):** monetary rewards on a USD scale (Critical
 USD 2,500 – USD 10,000; High USD 1,000 – USD 2,500; Medium USD 250 –

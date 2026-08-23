@@ -59,7 +59,7 @@ regardless of the DNT signal.
 
 If you observe a violation of this policy:
 
-  Email:  corelinksec@humangr.com
+  Email:  security@humangr.com
   Subject prefix: [DNT]
   Trust Center: https://corelink-docs.humangr.com/trust
 

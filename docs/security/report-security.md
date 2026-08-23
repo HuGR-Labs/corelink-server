@@ -97,9 +97,17 @@ initial report so we can confirm coverage with our counsel.
   five hostnames currently resolve** (verified via `dig`) — do not target
   them; a report against them is out of scope by construction because nothing
   answers there.
-- All open-source crates published from
-  `github.com/HumanGuardrail/corelink-server` (CLI, SDKs, REAPI shim).
-- The `corelink-cli` distributable.
+- The publicly distributed `corelink-cli`: the `humangr.com/install.sh`
+  installer (verified 200) and the `HumanGuardrail/tap/corelink` Homebrew
+  formula.
+
+  **⚠️ Corrected from a prior "all open-source crates published from
+  `github.com/HumanGuardrail/corelink-server`" scope.** That clause named
+  three things that are not true at once: the repository lives under
+  `HuGR-Labs`, it is **private**, and no `corelink-*` crate is published to
+  crates.io. A safe-harbor clause pointing at open-source artefacts that do
+  not exist authorises nothing, so it is replaced with the distribution
+  channel researchers can actually obtain.
 - The CoreLink Cloudflare Worker entrypoints (Bazel / Buck2 / Pants
   remote-cache REAPI).
 
