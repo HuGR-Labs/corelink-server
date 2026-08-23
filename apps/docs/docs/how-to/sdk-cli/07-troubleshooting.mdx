@@ -14,6 +14,11 @@ A `corelink` invocation is failing with a non-zero exit code, hanging, or
 returning unexpected JSON. The eight `doctor` checks below cover every
 known failure class.
 
+The CLI itself uses only four exit codes (`0`/`1`/`2`/`65`) and does not
+attach a stable error code to `put`/`get`/`ls`-style command failures —
+`doctor`'s `COR_*` codes below are a *different*, more specific taxonomy
+used only by the 8 `doctor` diagnostic checks.
+
 ## Run the doctor
 
 ```bash
@@ -21,34 +26,36 @@ corelink doctor --json | jq
 ```
 
 ```json
-{
-  "ok": false,
-  "subcommand": "doctor",
-  "checks": [
-    { "name": "network",        "status": "ok"   },
-    { "name": "auth",           "status": "ok"   },
-    { "name": "storage_write",  "status": "ok"   },
-    { "name": "storage_read",   "status": "ok"   },
-    { "name": "byok",           "status": "skip" },
-    { "name": "region",         "status": "ok"   },
-    { "name": "quota",          "status": "warn", "next_action_doc": "docs/reference/error-taxonomy#COR_QUOTA_001" },
-    { "name": "client_verify",  "status": "ok"   }
-  ]
-}
+[
+  { "check": "network",       "status": "ok", "latency_ms": 42 },
+  { "check": "auth",          "status": "ok", "latency_ms": 38 },
+  { "check": "storage_write", "status": "ok", "latency_ms": 210 },
+  { "check": "storage_read",  "status": "ok", "latency_ms": 95 },
+  { "check": "byok",          "status": "skip", "next_action": "BYOK is not enabled for this tenant, or the token cannot read the billing-gated overview." },
+  { "check": "region",        "status": "skip", "next_action": "Tenant primary region is not exposed on a public read route; skipping (informational only)." },
+  { "check": "quota",         "status": "fail", "latency_ms": 61,
+    "error_code": "COR_QUOTA_EXCEEDED",
+    "next_action": "Tenant storage quota reached (cas_bytes >= quota_bytes). Verify plan limits and contact sales to upgrade. See docs/error_taxonomy.md#COR_QUOTA_EXCEEDED" },
+  { "check": "client_verify", "status": "ok", "latency_ms": 0 }
+]
 ```
 
-Every non-`ok` check carries a `next_action_doc` URL pointing at the
-canonical fix in `docs/reference/error-taxonomy`.
+The report is a bare JSON array of checks, not a wrapper object — `jq`
+straight over it. Every non-`ok` check carries an `error_code` (`COR_*`,
+documented in `docs/error_taxonomy.md`) and a `next_action` remediation
+string; `skip` checks carry `next_action` but no `error_code` or
+`latency_ms`.
 
 ## Common exit codes
 
+The CLI has exactly four exit codes, shared by every subcommand:
+
 | Exit | Meaning | Next step |
 |---|---|---|
-| `1` | Generic failure | `corelink doctor --json` |
-| `2` | Argument error or `--pat` flag rejected | Re-read [01-authenticate](./01-authenticate.mdx) |
-| `3` | Verify mismatch (`COR_VERIFY_001`) | Retry; if persistent open Sev-2 |
-| `4` | Not found (`COR_CAS_NOT_FOUND`) | Confirm digest with `corelink stat` |
-| `5` | Rate limit (`COR_QUOTA_RATELIMIT`) | Back off + retry |
+| `0` | Success | — |
+| `1` | Any command failure — network, auth, quota, verify mismatch, not found, and so on. `corelink doctor` does not use a distinct code; it also exits `1` when any check fails. | `corelink doctor --json` to narrow down which subsystem |
+| `2` | Argument/flag error, or `--pat` was rejected (CTRL-CRED-001) | Re-read [01-authenticate](./01-authenticate.mdx) |
+| `65` | `corelink audit verify-ndjson --url` mid-stream integrity abort only | N/A for `put`/`get`/`doctor` |
 
 ## Hanging commands
 

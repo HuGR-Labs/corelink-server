@@ -1,70 +1,50 @@
 ---
 id: sdk-python-action-cache
-title: Action Cache lookup & store (Python)
+title: Action Cache (Python)
 sidebar_label: Action Cache
-description: Use the REAPI v2 Action Cache via the Python SDK.
+description: Action Cache support in the Python SDK — and where it actually lives.
 tags: [sdk, python, ac, reapi, how-to]
 ---
 
-# Action Cache lookup and store
+# Action Cache
 
-## When to use this guide
+## The Python SDK does not implement an Action Cache client
 
-You are wiring a build tool (Bazel, Buck2, Pants) to CoreLink and need to read
-and write `ActionResult` entries keyed by an `Action` digest. If you only need
-raw CAS get/put, see [02-upload-blob](./02-upload-blob.mdx) and
-[03-download-blob](./03-download-blob.mdx).
+`corelink-py` (`corelink.client.CoreLinkClient` and
+`corelink.aio.AsyncCoreLinkClient`) implements the CAS data plane (`put` /
+`put_stream` / `get` / `stat`) and the control plane (`get_health` /
+`issue_pat` / `signup`) — there is no `action_cache` attribute, no
+`ActionCache` type, and no REAPI v2 wrapper in this SDK today.
 
-## Prerequisites
+If you need Action Cache from JS/TS, use `@corelink/client`, which does
+implement it (`client.actionCache.get` / `.put`) — see the
+[JS/TS Action Cache guide](../sdk-js/04-action-cache.mdx).
 
-- Authentication configured.
-- An `Action` proto already hashed to a BLAKE3 digest.
+## Working around it from Python today
 
-## Lookup
-
-```python
-import asyncio
-from corelink import CoreLinkClient, ActionCacheMiss
-
-async def get_or_run(action_digest: str) -> bytes:
-    async with CoreLinkClient(tenant_id="acme-corp") as client:
-        try:
-            result = await client.action_cache.get(action_digest)
-            return await client.get(result.stdout_digest)
-        except ActionCacheMiss:
-            # Run the action locally, then store the result.
-            return await run_locally_and_store(client, action_digest)
-```
-
-## Store
+The Action Cache is a real server surface (`routes/ac.rs`, REAPI v2) even
+though this SDK doesn't wrap it — you can call it directly over HTTP with
+the same PAT you already configured:
 
 ```python
-from corelink import ActionResult
+import httpx
+from corelink.client import CoreLinkClient
 
-async def store_result(client: CoreLinkClient, action_digest: str,
-                       stdout: bytes, exit_code: int) -> None:
-    stdout_digest = await client.put(stdout)
-    await client.action_cache.put(
-        action_digest,
-        ActionResult(
-            stdout_digest=stdout_digest,
-            exit_code=exit_code,
-        ),
+def get_or_run(client: CoreLinkClient, action_digest: str) -> bytes:
+    resp = httpx.get(
+        f"{client._base_url}/v1/ac/{client._tenant_id}/{action_digest}",
+        headers={"Authorization": f"Bearer {client._pat}"},
     )
+    if resp.status_code == 404:
+        return run_locally_and_store(client, action_digest)
+    resp.raise_for_status()
+    return resp.content  # opaque ActionResult bytes — you own the encoding
 ```
 
-## TTL and eviction
-
-Action Cache entries inherit tenant TTL (default 30 days). Override per-entry:
-
-```python
-await client.action_cache.put(action_digest, result, ttl_seconds=86_400)
-```
-
-## Cache poisoning protection
-
-Every `ActionResult` payload is content-addressed and verified on read; you
-cannot insert a result for a digest that does not match the bytes you uploaded.
+The Action Cache stores an opaque byte payload keyed by a 64-hex action
+digest — the server does not parse it, so how you encode/decode the
+`ActionResult` (a serialized REAPI message, your own JSON manifest
+referencing CAS blobs by digest, etc.) is up to you, same as the JS SDK.
 
 ## Next steps
 

@@ -1,67 +1,59 @@
 ---
 id: sdk-go-action-cache
-title: Action Cache lookup & store (Go)
+title: Action Cache (Go)
 sidebar_label: Action Cache
-description: Use the REAPI v2 Action Cache via the Go SDK.
+description: Action Cache support in the Go SDK — and where it actually lives.
 tags: [sdk, go, ac, reapi, how-to]
 ---
 
-# Action Cache lookup and store
+# Action Cache
 
-## When to use this guide
+## The Go SDK does not implement an Action Cache client
 
-You are integrating Bazel, Buck2, or Pants directly via the REAPI v2 Go
-stubs and need a typed wrapper around `ActionCache.GetActionResult` and
-`ActionCache.UpdateActionResult`.
+`corelink-go` (`corelink.Client`, `corelink-go/corelink.go`) exposes exactly
+three data-plane methods — `Put`, `Get`, `Stat` — plus `Close` and
+`IsClientVerifyEnabled`. There is no `ActionCache()` method, no
+`corelink.ActionResult` type, and no `corelink.ErrActionCacheMiss` in this
+SDK today.
 
-If you only need CAS get/put, see [02-upload-blob](./02-upload-blob.mdx) and
-[03-download-blob](./03-download-blob.mdx).
+If you need Action Cache from JS/TS, use `@corelink/client`, which does
+implement it (`client.actionCache.get` / `.put`) — see the
+[JS/TS Action Cache guide](../sdk-js/04-action-cache.mdx).
 
-## Lookup
+## Working around it from Go today
+
+The Action Cache is a real server surface (`routes/ac.rs`, REAPI v2) even
+though this SDK doesn't wrap it — call it directly over HTTP with the same
+PAT you already configured for the `Client`:
 
 ```go
-func getOrRun(ctx context.Context, cli *corelink.Client, actionDigest string) ([]byte, error) {
-    result, err := cli.ActionCache().Get(ctx, actionDigest)
-    if errors.Is(err, corelink.ErrActionCacheMiss) {
-        return runLocallyAndStore(ctx, cli, actionDigest)
-    }
+func getOrRun(ctx context.Context, pat, tenantID, baseURL, actionDigest string) ([]byte, error) {
+    req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+        fmt.Sprintf("%s/v1/ac/%s/%s", baseURL, tenantID, actionDigest), nil)
     if err != nil {
         return nil, err
     }
-    return cli.Get(ctx, result.StdoutDigest)
-}
-```
+    req.Header.Set("Authorization", "Bearer "+pat)
 
-## Store
-
-```go
-func storeResult(ctx context.Context, cli *corelink.Client,
-    actionDigest string, stdout []byte, exitCode int32,
-) error {
-    stdoutDigest, err := cli.Put(ctx, stdout)
+    resp, err := http.DefaultClient.Do(req)
     if err != nil {
-        return err
+        return nil, err
     }
-    return cli.ActionCache().Put(ctx, actionDigest, &corelink.ActionResult{
-        StdoutDigest: stdoutDigest,
-        ExitCode:     exitCode,
-    })
+    defer resp.Body.Close()
+
+    if resp.StatusCode == http.StatusNotFound {
+        return runLocallyAndStore(ctx, actionDigest)
+    }
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("ac lookup: unexpected status %d", resp.StatusCode)
+    }
+    return io.ReadAll(resp.Body) // opaque ActionResult bytes — you own the encoding
 }
 ```
 
-## TTL and eviction
-
-```go
-err := cli.ActionCache().Put(ctx, actionDigest, result,
-    corelink.WithTTL(24*time.Hour),
-)
-```
-
-## Cache poisoning protection
-
-Server-side verification rejects any `ActionResult` whose declared
-`stdout_digest` does not match the bytes already stored under that digest.
-You cannot lie about what an action produced.
+The Action Cache stores an opaque byte payload keyed by a 64-hex action
+digest — the server does not parse it, so how you encode/decode the
+`ActionResult` is up to you, same as the JS SDK.
 
 ## Next steps
 

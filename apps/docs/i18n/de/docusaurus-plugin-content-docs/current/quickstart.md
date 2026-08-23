@@ -28,13 +28,15 @@ Ziel: authentifiziert, erster Push und Pull, verifiziert in unter 5 Minuten.
 Ihr PAT sieht so aus:
 
 ```text
-clk_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x
 ```
+
+(EN note: `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>` — `<env>` is `pat` for a user-issued token; `ci`/`ro` exist for CI and read-only tokens.)
 
 Exportieren Sie es für die folgenden Beispiele:
 
 ```bash
-export CORELINK_PAT="clk_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export CORELINK_PAT="corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x"
 export CORELINK_TENANT="your-tenant-id"   # shown on the welcome screen
 ```
 
@@ -50,7 +52,7 @@ Erwartete Antwort:
 ```json
 {
   "tenant_id": "your-tenant-id",
-  "token_prefix": "clk_live",
+  "token_prefix": "aZ3xQ1",
   "route_kind": "cas"
 }
 ```

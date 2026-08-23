@@ -22,13 +22,17 @@ Goal: authenticated, first push and pull, verified in under 5 minutes.
 Your PAT looks like:
 
 ```text
-clk_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x
 ```
+
+That is `corelink_<env>_<token_id>.<random_secret>.<hmac_sig>`, where `<env>`
+is `pat` for a user-issued token (`ci` and `ro` exist for CI and read-only
+tokens respectively).
 
 Export it for the examples below:
 
 ```bash
-export CORELINK_PAT="clk_live_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+export CORELINK_PAT="corelink_pat_01ARZ3NDEKTSV4RRFFQ69G5FAV.4pT7q1yZ9vX2wL8cR5nB3sD6fH0jK1mQ8aV2eS.7bY4tN9oL2x"
 export CORELINK_TENANT="your-tenant-id"   # shown on the welcome screen
 ```
 
@@ -44,10 +48,13 @@ Expected response:
 ```json
 {
   "tenant_id": "your-tenant-id",
-  "token_prefix": "clk_live",
+  "token_prefix": "aZ3xQ1",
   "route_kind": "cas"
 }
 ```
+
+(`token_prefix` is a 6-character hash-derived identifier for log/rate-limit
+correlation — it is not a literal prefix of your token.)
 
 If you get `401 Unauthorized`, the PAT is wrong or expired — generate a new one from the admin dashboard.
 
