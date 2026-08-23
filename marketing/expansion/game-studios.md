@@ -1,6 +1,21 @@
 # Expansion candidate — game studios (derived-data cache as the wedge)
 
-> **Status:** CONCEPT BRIEF — early. Drafted 2026-08-23 from sourced research.
+> **Status:** 🗄️ **SHELVED 2026-08-23 — on sequencing and on a deflated moat.**
+> The market gap is real and verified. The *moat* is not: cross-tenant dedup was
+> the reason this looked like it could obliterate someone, and it does not hold
+> (see "The dedup question — ANSWERED, downward"). What remains is a normal
+> business opportunity in an empty space — good, but defensible only by execution.
+> Combined with CoreLink having no paying customer on its existing product, and
+> this vertical requiring domain knowledge and sales into a conservative industry,
+> the sequencing argument says not now.
+>
+> **Revisit when:** the core product has paying customers, OR a game studio asks
+> for hosted DDC by name, OR someone with games-industry access joins.
+>
+> **Kill early if:** Epic resumes hosting Unreal Cloud DDC, or a third-party
+> hosted DDC vendor appears.
+>
+> **CONCEPT BRIEF — drafted 2026-08-23 from sourced research.**
 > Nothing committed, no code written. **Not** a change to the launch route.
 >
 > **Why this exists:** every other expansion candidate examined on 2026-08-23
@@ -166,10 +181,8 @@ compilation, asset cooking, lighting bakes, automated tests — is **not** gated
 
 ## Open questions that could kill or resize this
 
-1. **Is engine-derived data byte-identical across studios on the same engine
-   version?** The cross-tenant dedup pitch depends entirely on this and **it is
-   unproven** — DDC key composition is not public, and no source confirms or denies
-   it. This was an assumption, not a finding. Measure before promising.
+1. ~~Is engine-derived data byte-identical across studios?~~ **ANSWERED —
+   PARTIAL, and the answer removes the moat.** See below.
 2. ~~Can the C++ half be taken via sccache?~~ **ANSWERED — no, treat it as
    contested.** See the pillar mapping above.
 3. **Licensing.** Implementing a compatible server from **public documentation** is
@@ -183,9 +196,55 @@ compilation, asset cooking, lighting bakes, automated tests — is **not** gated
 
 ---
 
+## The dedup question — ANSWERED, downward
+
+This was the brief's central open question, and answering it is what moved this
+document from "candidate" to "shelved."
+
+**The evidence is decisive and comes from Epic itself.** Engine downloads from the
+Epic Games Store ship with a **DDC Pak (`.ddp`)**, which *"contains derived data for
+all engine content, so you can start working without compiling shaders and other
+engine assets that use derived data."* Engine-derived data is therefore provably
+identical and reusable across every install of a given engine version, independent
+of project. Cross-tenant dedup on that slice is real, not speculative.
+
+**But the second-order reading removes the value:**
+
+- **The slice that deduplicates, Epic already ships for free.** A studio downloading
+  the engine already has it locally. There is nothing left to capture.
+- **The slice that is expensive does not deduplicate.** Material shader-map keys are
+  built from that material's own `ShaderMapId` — permutations, static switches,
+  material attributes. Materials are studio-authored assets; two studios essentially
+  never collide by coincidence.
+
+**So the network-effect argument does not hold.** The shareable part is free and the
+valuable part is private by construction.
+
+**Three unverified possibilities partially rescue it**, and would need measuring
+before anyone revives this:
+
+- **Engine built from source.** AAA studios frequently build Unreal with their own
+  modifications, in which case the Epic DDC Pak does not apply and the engine slice
+  must be compiled per studio again.
+- **Target platforms.** The Pak plausibly covers editor/desktop only; console and
+  mobile targets would still compile.
+- **Engine patches.** Each one invalidates the Pak.
+
+**No public estimate exists** of what fraction of a real project's DDC is
+engine-derived versus project-derived — this was searched for and not found.
+
+**The definitive experiment**, if this is ever revived: two clean installs of the
+same exact UE build, two unrelated real projects with their own rendering settings,
+local DDC deleted, build both, and diff the resulting **global-shader** DDC keys and
+blobs byte-for-byte. Global shaders — not material shader maps — are where sharing
+would occur.
+
+---
+
 ## Recommended next step
 
-Not code. **Answer question 1** — whether engine-derived data deduplicates across
-studios — because it is the difference between "a hosted cache in an empty space"
-(good) and "a hosted cache in an empty space with a structural network effect no
-competitor can replicate" (much better). Everything else can wait on that answer.
+~~Answer question 1.~~ **Done — and the answer is why this is shelved rather than
+pursued.** The gap is real; the moat is not. If revived, the first step is the
+definitive dedup experiment described above, because the three unverified rescues
+(source-built engines, non-desktop platforms, engine patches) are the only path back
+to a structural advantage.
