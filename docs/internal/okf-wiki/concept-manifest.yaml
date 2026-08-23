@@ -1031,7 +1031,7 @@ candidates:
     title: "Signup -> tenant onboarding flow"
     status: "active"
     source_cluster: "docs/launch"
-    seed_from: ["crates/corelink-container/src/routes/signup.rs", "docs/operator/e2e-signup-sealed-2026-05-30.md"]
+    seed_from: ["crates/corelink-container/src/routes/signup.rs", "crates/corelink-container/src/signup_d1_http.rs", "docs/operator/e2e-signup-sealed-2026-05-30.md"]
   - id: "ops/deploy-runbook"
     type: "Runbook"
     title: "Deploy / launch-day runbook"
