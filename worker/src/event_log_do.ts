@@ -43,6 +43,10 @@
  *   - INV-NO-BODY-IN-LOGS: payload bytes are NEVER logged.
  *   - INV-NO-PII-IN-LOGS: tenant ids are NOT logged.
  *   - JSON error envelopes match the REAPI shape used across the Worker.
+ *
+ * Status: deployed and bound (EVENT_LOG_DO, migration tag v3, prod
+ * environments), but no handler in worker/src currently calls
+ * `env.EVENT_LOG_DO`. It carries no traffic.
  */
 
 import type {

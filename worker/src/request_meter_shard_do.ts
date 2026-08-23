@@ -12,9 +12,9 @@
  * `lib/request_meter_shard.ts` (fully unit-tested); this shell only persists
  * `ShardState` and routes ops.
  *
- * INERT: not wired to any request path, and it does NOT hold the coordinator
- * binding — the coordinator hop + `EDGE_DO_METER` gate are the later worker-wiring
- * WP (where the per-env DO binding + migration tag land together with the caller).
+ * LIVE: wired into the request path in worker/src/index.ts, and it does NOT
+ * hold the coordinator binding — the coordinator hop + `EDGE_DO_METER` gate
+ * are wired there too (`EDGE_DO_METER` = "serve" for prod environments).
  * The refill values (`spentDelta`, `reportedBalance`) are RETURNED to the caller
  * so the shell stays free of the coordinator dependency until then.
  *
