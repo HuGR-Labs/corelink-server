@@ -1,17 +1,36 @@
 # DT DR Runbook — Dependency-Track Disaster Recovery (WI-S12-005)
 
 **Runbook ID:** RB-DT-001  
-**Status:** ACTIVE  
+**Status:** ⚠️ NOT EXECUTABLE AS WRITTEN — see verification note below. Was marked
+ACTIVE but never drilled ("_pending first quarterly DR test_" below, unchanged since
+authoring) and every command in this document targets a host that does not resolve.  
 **Owner:** SRE Lead  
-**Last tested:** _pending first quarterly DR test_  
+**Last tested:** _pending first quarterly DR test_ (still true — this runbook has
+never actually been run)  
 **Next test due:** Q3 2026  
+
+> ⚠️ **Verified NXDOMAIN, no live equivalent documented anywhere in this repo.**
+> Every procedure below targets `dt.corelink.humangr.com`, which does not resolve
+> (`dig dt.corelink.humangr.com` returns no answer). The `DT_API_URL` /
+> `DT_API_KEY` / `DT_WEBHOOK_SECRET` / `DT_PROJECT_UUID` secrets referenced by
+> `crates/corelink-dt-reconcile` / `crates/corelink-dt-cli` / `.github/workflows/sbom.yml`
+> are declared in `docs/internal/secrets-checklist.md` (#44-48) but **none of them
+> are actually set as GitHub secrets on this repo** (`gh secret list` shows zero
+> `DT_*` entries) — so the Dependency-Track self-hosted instance this runbook
+> assumes appears to have never been provisioned, or was decommissioned without
+> this runbook being updated. **Do not treat this document as executable until an
+> operator confirms whether Dependency-Track is still in service and, if so,
+> supplies the current instance URL** — this document does not invent one. If DT
+> is no longer in service, the correct fix is to retire this runbook (and the SBOM
+> workflow's DT dependency) rather than patch a host name.
 
 ---
 
 ## 1. Overview
 
 This runbook covers recovery of the Dependency-Track self-hosted instance
-(`https://dt.corelink.humangr.com`) from the following failure modes:
+(`https://dt.corelink.humangr.com` — **UNVERIFIED / does not currently resolve; see
+the warning above**) from the following failure modes:
 
 | Failure | RTO | RPO | Recovery path |
 |---------|-----|-----|---------------|

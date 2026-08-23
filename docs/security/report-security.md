@@ -18,7 +18,7 @@
 | **Response SLA — acknowledgement** | 1 business day |
 | **Response SLA — triage decision** | 5 business days |
 | **Coordinated disclosure window** | 90 days from triage acceptance (extendable by mutual agreement) |
-| **Safe-harbor scope** | All `*.corelink.humangr.com` domains + open-source CoreLink crates and CLIs |
+| **Safe-harbor scope** | The live CoreLink hosts on `humangr.com` (flat, hyphenated — `corelink-api.humangr.com`, `corelink-docs.humangr.com`, `humangr.com/corelink/*` for the admin UI; **NOT** dotted `*.corelink.humangr.com` subdomains, which do not resolve — see Scope below) + open-source CoreLink crates and CLIs |
 | **Bounty program** | Not yet active — recognition only pre-GA; monetary rewards roll out at GA + 30 days |
 
 ## How to report
@@ -58,9 +58,10 @@
    closes or we have agreed an early-release date.
 2. **Do not exfiltrate customer data**. If your proof-of-concept happens to
    surface another tenant's data, stop immediately and notify us.
-3. **Do not run automated scans against `*.corelink.humangr.com` production**
-   without our written authorisation. We monitor those endpoints; aggressive
-   scanning may cause real customer impact.
+3. **Do not run automated scans against the production `humangr.com` CoreLink
+   hosts** (see Scope below for the exact live hostnames) without our written
+   authorisation. We monitor those endpoints; aggressive scanning may cause
+   real customer impact.
 4. **Do not pivot from a low-severity finding into a higher-severity one**
    without checking in with us first.
 5. **Do not test on customer tenants you do not own or have explicit
@@ -86,8 +87,16 @@ initial report so we can confirm coverage with our counsel.
 
 ### In-scope
 
-- All `*.corelink.humangr.com` subdomains (`app.`, `api.`, `docs.`, `status.`,
-  `cdn.`).
+- The live CoreLink hosts on `humangr.com`: `corelink-api.humangr.com` (API),
+  `corelink-docs.humangr.com` (docs), and `humangr.com/corelink/*` (the admin
+  UI, path-mounted — see `docs/operator/corelink-app-domain-flip-runbook.md`
+  for why this replaced a dotted-subdomain scheme). Status monitoring is
+  hosted externally at `https://hugrl.betteruptime.com`.
+  **⚠️ Corrected from a prior dotted-subdomain scope
+  (`app.`/`api.`/`docs.`/`status.`/`cdn.corelink.humangr.com`): none of those
+  five hostnames currently resolve** (verified via `dig`) — do not target
+  them; a report against them is out of scope by construction because nothing
+  answers there.
 - All open-source crates published from
   `github.com/HumanGuardrail/corelink-server` (CLI, SDKs, REAPI shim).
 - The `corelink-cli` distributable.
@@ -136,7 +145,13 @@ will be honoured at that page's launch.
 - **Email**: `security@humangr.com`
 - **PGP**: fingerprint above, key at `/.well-known/security.txt`
 - **Tor mirror**: `corelink-vdp.onion` (post-GA)
-- **Bug-bounty intake form**: `corelink.humangr.com/security/report` (post-GA — pre-GA, use email)
+- **Bug-bounty intake form**: `corelink.humangr.com/security/report` (post-GA — pre-GA, use email).
+  ⚠️ Note: `corelink.humangr.com` (dotted subdomain) does not currently resolve and is
+  inconsistent with the flat/path-mounted hostname convention the rest of this doc now
+  uses (see Scope above; `docs/operator/corelink-app-domain-flip-runbook.md`). This is a
+  **future, not-yet-live** placeholder path, so it is not a live-destination contradiction
+  today — but when this form actually ships, use the current flat convention
+  (e.g. `humangr.com/corelink/security/report`), not this dotted form.
 
 ## References
 
