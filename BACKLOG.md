@@ -134,11 +134,23 @@ pull-request gates** — `region_pinning`, the Schrems II tenant-isolation foren
 check, and `corelink-client-verify` — which had been letting PRs go green
 unchecked for 15 days.
 
-**9 remain**, each of them already chronically red or deliberately parked *before*
-the sweep, so none can simply be flipped back: `bazel-starter-ci`, `cas_foundation`,
-`coverage`, `ffi-matrix-ci`, `mutation-nightly`, `pnpm-audit`,
-`pre-cutover-weekly-cron`, `reproducible-build`, `smoke-install`. Each needs a
-decision: fix, retire, or park with the reason written down.
+**17 are now re-enabled.** The nine chronically-red ones were triaged individually
+rather than flipped: `pnpm-audit` (its advisory — a HIGH in `js-yaml` — turned out
+to have been fixed nine days earlier in `#1129`), `cas_foundation`, `coverage` and
+`ffi-matrix-ci` (all genuinely dispatch-only parks, now enabled with their crons
+still commented out so nothing auto-fires), and `smoke-install`, which is enabled
+urgently because it is actively catching a live regression — see [B-018].
+
+**4 remain, each with a decision rather than a flip:** `reproducible-build` and
+`bazel-starter-ci` (see [B-016] and [B-017]), `mutation-nightly` (every crate job
+dies on `--in-place` conflicting with `--jobs` after a cargo-mutants CLI change —
+a one-line fix, but its weekly cron does not earn its keep under this repo's own
+rule, since mutation kill-rate only changes with a commit), and
+`pre-cutover-weekly-cron`, whose premise expired: it verified readiness for a GA
+cutover that happened on 2026-07-10, six weeks ago, and it now dies trying to
+apply a GitHub label that does not exist. That one should be **retired**, not
+fixed — a one-line repair to a workflow whose reason to exist has passed is the
+wrong move.
 
 ```backlog
 id: B-004
@@ -308,6 +320,94 @@ last-verified: 2026-08-23
 ---
 
 ## Repo hygiene
+
+### B-016 — the build-attestation lanes attest an artifact that cannot exist
+
+`reproducible-build` compiles `corelink-worker` for `wasm32-unknown-unknown` and
+then hashes `target/wasm32-unknown-unknown/release/corelink_worker.wasm`. That
+file has never existed: the crate has no `[lib] crate-type = ["cdylib"]`, so the
+build can only ever emit an `.rlib`. Every run dies on `sha256sum: ... No such
+file or directory` **after** a successful compile. So reproducibility has never
+been tested even once — the gate has been red for a structural reason, not a
+flaky one.
+
+Worse, the deployed Worker is not wasm at all: `wrangler.toml:15` reads
+`main = "worker/src/index.ts"`. So the artifact being attested is neither
+producible nor shipped. `release-slsa3.yml` builds the identical artifact with
+the identical command and has run exactly once, on 2026-05-29, and failed — which
+means the SLSA provenance bundle has most likely never been produced either.
+
+The fix is therefore **not** "add cdylib". It is to decide what should actually be
+attested — the TypeScript Worker bundle and the container image are what ship —
+or to withdraw the claim. No customer-facing page currently makes a reproducible-
+build or SLSA claim, so this is an internal-integrity gap today, not a false
+public statement; it would become one the moment such a page is written.
+
+```backlog
+id: B-016
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  ! git show origin/main:crates/corelink-worker/Cargo.toml | grep -q 'crate-type'
+verify-means: open while corelink-worker still cannot emit the wasm its attestation lanes hash
+last-verified: 2026-08-23
+```
+
+### B-017 — our own flagship Bazel cache demo records zero cache hits
+
+`bazel-starter-ci` fails on two independent breaks. One is cosmetic — a negative
+scenario asserts a `CORELINK_PAT` error string the CLI no longer emits. The other
+is not: the "Bazel cache hit (>= 80%)" job reports `WARNING: No remote cache
+entries in execution log.` **Zero** REAPI hits. The example that exists to
+demonstrate CoreLink's Bazel cache is not hitting the cache at all in CI.
+
+That is close to the product claim, so it needs a real answer rather than a
+threshold tweak. Likely a credential or tenant wiring gap in the example's
+`.bazelrc` credential helper rather than Bazel itself — but likely is not
+established.
+
+It was also a **silenced PR gate**: the workflow has a live `pull_request` trigger
+scoped to `examples/bazel-starter/**`, so any PR touching that path between
+2026-08-08 and today merged without it.
+
+```backlog
+id: B-017
+repo: corelink-server
+owner: tl
+status: open
+verify: |
+  test "$(gh api repos/HuGR-Labs/corelink-server/actions/workflows/bazel-starter-ci.yml -q .state)" != "active"
+verify-means: open while the workflow stays disabled; re-enabling it requires the cache-hit break fixed first
+last-verified: 2026-08-23
+```
+
+### B-018 — `corelink --version` demands a PAT it is documented not to need
+
+`smoke-install` runs the published CLI inside a clean container. Its last real run
+(2026-08-05) shows **both** invocations failing — including the step explicitly
+documented as the unauthenticated path — with `error: No PAT found. Set env var
+CORELINK_PAT or run corelink config set auth.pat <value>`.
+
+This is a customer-facing break: the very first command a new user types fails on
+a fresh install. The gate is working exactly as designed and found a real
+regression; it went unreported only because the gate was switched off. Its own
+header records that it caught this same class of bug once before (`#842`) while
+unit tests stayed green — the lesson being that the published binary must be
+operated, not unit-tested.
+
+The defect is in the separate `corelink-cli` repo, not here. The workflow has
+been re-enabled.
+
+```backlog
+id: B-018
+repo: corelink-server
+owner: tl
+status: open
+verify: manual
+verify-means: lives in the corelink-cli repo; settled by running the published binary with no PAT
+last-verified: 2026-08-23
+```
 
 ### B-011 — ~115 branches in corelink-runners have no open PR
 
